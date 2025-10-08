@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { fromFile } from 'geotiff';
 
 const app = express();
+const HOST = process.env.HOST ?? '0.0.0.0';
 const PORT = Number.parseInt(process.env.PORT ?? '5174', 10);
 
 app.use(cors());
@@ -125,6 +126,7 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-app.listen(PORT, () => {
-  console.log(`LLSM viewer API listening on http://localhost:${PORT}`);
+app.listen(PORT, HOST, () => {
+  const hostname = HOST === '0.0.0.0' ? 'localhost' : HOST;
+  console.log(`LLSM viewer API listening on http://${hostname}:${PORT} (bound to ${HOST})`);
 });
