@@ -23,6 +23,20 @@ type VolumeResources = {
   texture: THREE.Data3DTexture;
 };
 
+type PointerState = {
+  mode: 'pan' | 'dolly';
+  pointerId: number;
+  lastX: number;
+  lastY: number;
+  previousControlsEnabled: boolean;
+};
+
+const panOffset = new THREE.Vector3();
+const panXAxis = new THREE.Vector3();
+const panYAxis = new THREE.Vector3();
+const panMatrix = new THREE.Matrix4();
+const forwardVector = new THREE.Vector3();
+
 function createColormapTexture() {
   const size = 256;
   const data = new Uint8Array(size * 4);
@@ -101,6 +115,7 @@ function VolumeViewer({ volume, filename, isLoading, timeIndex, totalTimepoints 
   const animationFrameRef = useRef<number | null>(null);
   const resourcesRef = useRef<VolumeResources | null>(null);
   const colormapRef = useRef<THREE.DataTexture | null>(null);
+  const pointerStateRef = useRef<PointerState | null>(null);
   const [stats, setStats] = useState<VolumeStats | null>(null);
 
   if (!colormapRef.current) {
@@ -155,6 +170,117 @@ function VolumeViewer({ volume, filename, isLoading, timeIndex, totalTimepoints 
     controls.zoomSpeed = 0.7;
     controlsRef.current = controls;
 
+    const domElement = renderer.domElement;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.button !== 0 || !controlsRef.current || !cameraRef.current) {
+        return;
+      }
+
+      const mode = event.ctrlKey ? 'dolly' : event.shiftKey ? 'pan' : null;
+      if (!mode) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+
+      const controls = controlsRef.current;
+      pointerStateRef.current = {
+        mode,
+        pointerId: event.pointerId,
+        lastX: event.clientX,
+        lastY: event.clientY,
+        previousControlsEnabled: controls.enabled
+      };
+      controls.enabled = false;
+
+      try {
+        domElement.setPointerCapture(event.pointerId);
+      } catch (error) {
+        // Ignore errors from unsupported pointer capture (e.g., Safari)
+      }
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const state = pointerStateRef.current;
+      if (!state || event.pointerId !== state.pointerId) {
+        return;
+      }
+
+      const controls = controlsRef.current;
+      const camera = cameraRef.current;
+      const renderer = rendererRef.current;
+      if (!controls || !camera || !renderer) {
+        return;
+      }
+
+      const deltaX = event.clientX - state.lastX;
+      const deltaY = event.clientY - state.lastY;
+
+      if (state.mode === 'pan') {
+        const element = renderer.domElement;
+        const width = element.clientWidth || 1;
+        const height = element.clientHeight || 1;
+        const distance = controls.target.distanceTo(camera.position);
+        const fovInRadians = THREE.MathUtils.degToRad(camera.fov);
+        const halfHeight = Math.tan(fovInRadians * 0.5) * distance;
+        const halfWidth = halfHeight * camera.aspect;
+        const moveX = (-deltaX / width) * (halfWidth * 2);
+        const moveY = (deltaY / height) * (halfHeight * 2);
+
+        panMatrix.extractRotation(camera.matrixWorld);
+        panXAxis.set(1, 0, 0).applyMatrix4(panMatrix).normalize();
+        panYAxis.set(0, 1, 0).applyMatrix4(panMatrix).normalize();
+
+        panOffset.copy(panXAxis).multiplyScalar(moveX);
+        panOffset.addScaledVector(panYAxis, moveY);
+
+        camera.position.add(panOffset);
+        controls.target.add(panOffset);
+      } else {
+        camera.getWorldDirection(forwardVector);
+        const distance = controls.target.distanceTo(camera.position);
+        const depthScale = Math.max(distance * 0.002, 0.0005);
+        const moveAmount = -deltaY * depthScale;
+        forwardVector.multiplyScalar(moveAmount);
+        camera.position.add(forwardVector);
+        controls.target.add(forwardVector);
+      }
+
+      controls.update();
+      state.lastX = event.clientX;
+      state.lastY = event.clientY;
+    };
+
+    const handlePointerUp = (event: PointerEvent) => {
+      const state = pointerStateRef.current;
+      if (!state || event.pointerId !== state.pointerId) {
+        return;
+      }
+
+      const controls = controlsRef.current;
+      if (controls) {
+        controls.enabled = state.previousControlsEnabled;
+      }
+
+      try {
+        domElement.releasePointerCapture(event.pointerId);
+      } catch (error) {
+        // Ignore errors from unsupported pointer capture (e.g., Safari)
+      }
+
+      pointerStateRef.current = null;
+    };
+
+    const pointerDownOptions: AddEventListenerOptions = { capture: true };
+
+    domElement.addEventListener('pointerdown', handlePointerDown, pointerDownOptions);
+    domElement.addEventListener('pointermove', handlePointerMove);
+    domElement.addEventListener('pointerup', handlePointerUp);
+    domElement.addEventListener('pointercancel', handlePointerUp);
+
     rendererRef.current = renderer;
     sceneRef.current = scene;
     cameraRef.current = camera;
@@ -182,6 +308,17 @@ function VolumeViewer({ volume, filename, isLoading, timeIndex, totalTimepoints 
     renderLoop();
 
     return () => {
+      domElement.removeEventListener('pointerdown', handlePointerDown, pointerDownOptions);
+      domElement.removeEventListener('pointermove', handlePointerMove);
+      domElement.removeEventListener('pointerup', handlePointerUp);
+      domElement.removeEventListener('pointercancel', handlePointerUp);
+
+      const activePointerState = pointerStateRef.current;
+      if (activePointerState && controlsRef.current) {
+        controlsRef.current.enabled = activePointerState.previousControlsEnabled;
+      }
+      pointerStateRef.current = null;
+
       if (animationFrameRef.current !== null) {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
