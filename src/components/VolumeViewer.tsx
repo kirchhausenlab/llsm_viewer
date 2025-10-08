@@ -31,12 +31,6 @@ type PointerState = {
   previousControlsEnabled: boolean;
 };
 
-const panOffset = new THREE.Vector3();
-const panXAxis = new THREE.Vector3();
-const panYAxis = new THREE.Vector3();
-const panMatrix = new THREE.Matrix4();
-const forwardVector = new THREE.Vector3();
-
 function createColormapTexture() {
   const size = 256;
   const data = new Uint8Array(size * 4);
@@ -211,8 +205,7 @@ function VolumeViewer({ volume, filename, isLoading, timeIndex, totalTimepoints 
 
       const controls = controlsRef.current;
       const camera = cameraRef.current;
-      const renderer = rendererRef.current;
-      if (!controls || !camera || !renderer) {
+      if (!controls || !camera) {
         return;
       }
 
@@ -220,33 +213,16 @@ function VolumeViewer({ volume, filename, isLoading, timeIndex, totalTimepoints 
       const deltaY = event.clientY - state.lastY;
 
       if (state.mode === 'pan') {
-        const element = renderer.domElement;
-        const width = element.clientWidth || 1;
-        const height = element.clientHeight || 1;
-        const distance = controls.target.distanceTo(camera.position);
-        const fovInRadians = THREE.MathUtils.degToRad(camera.fov);
-        const halfHeight = Math.tan(fovInRadians * 0.5) * distance;
-        const halfWidth = halfHeight * camera.aspect;
-        const moveX = (-deltaX / width) * (halfWidth * 2);
-        const moveY = (deltaY / height) * (halfHeight * 2);
-
-        panMatrix.extractRotation(camera.matrixWorld);
-        panXAxis.set(1, 0, 0).applyMatrix4(panMatrix).normalize();
-        panYAxis.set(0, 1, 0).applyMatrix4(panMatrix).normalize();
-
-        panOffset.copy(panXAxis).multiplyScalar(moveX);
-        panOffset.addScaledVector(panYAxis, moveY);
-
-        camera.position.add(panOffset);
-        controls.target.add(panOffset);
+        (controls as unknown as { pan: (dx: number, dy: number) => void }).pan(deltaX, deltaY);
       } else {
-        camera.getWorldDirection(forwardVector);
+        const direction = new THREE.Vector3();
+        camera.getWorldDirection(direction);
         const distance = controls.target.distanceTo(camera.position);
         const depthScale = Math.max(distance * 0.002, 0.0005);
         const moveAmount = -deltaY * depthScale;
-        forwardVector.multiplyScalar(moveAmount);
-        camera.position.add(forwardVector);
-        controls.target.add(forwardVector);
+        direction.multiplyScalar(moveAmount);
+        camera.position.add(direction);
+        controls.target.add(direction);
       }
 
       controls.update();
