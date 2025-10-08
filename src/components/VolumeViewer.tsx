@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { VolumeRenderShader1 } from 'three/examples/jsm/shaders/VolumeShader.js';
 import type { VolumePayload } from '../api';
 import './VolumeViewer.css';
 
@@ -10,24 +13,99 @@ type VolumeViewerProps = {
   isLoading: boolean;
 };
 
-type SliceInfo = {
+type VolumeStats = {
   min: number;
   max: number;
 };
 
-function normalizeValue(value: number, min: number, max: number) {
-  if (!Number.isFinite(value)) {
-    return 0;
+type VolumeResources = {
+  mesh: THREE.Mesh<THREE.BoxGeometry, THREE.ShaderMaterial>;
+  texture: THREE.Data3DTexture;
+};
+
+function createColormapTexture() {
+  const size = 256;
+  const data = new Uint8Array(size * 4);
+  for (let i = 0; i < size; i++) {
+    const t = i / (size - 1);
+    const intensity = Math.round(t * 255);
+    data[i * 4 + 0] = intensity;
+    data[i * 4 + 1] = intensity;
+    data[i * 4 + 2] = intensity;
+    data[i * 4 + 3] = Math.round(Math.min(255, Math.max(0, intensity)));
   }
-  if (max <= min) {
-    return 0;
+  const texture = new THREE.DataTexture(data, size, 1, THREE.RGBAFormat);
+  texture.needsUpdate = true;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function extractVolume(volume: VolumePayload) {
+  const { width, height, depth, channels } = volume;
+  const voxelCount = width * height * depth;
+  const source = new Float32Array(volume.data);
+  const intensities = new Float32Array(voxelCount);
+
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+
+  if (channels === 1) {
+    for (let i = 0; i < voxelCount; i++) {
+      const value = source[i];
+      intensities[i] = value;
+      if (value < min) min = value;
+      if (value > max) max = value;
+    }
+  } else {
+    for (let i = 0; i < voxelCount; i++) {
+      let sum = 0;
+      const base = i * channels;
+      for (let channel = 0; channel < channels; channel++) {
+        sum += source[base + channel];
+      }
+      const value = sum / channels;
+      intensities[i] = value;
+      if (value < min) min = value;
+      if (value > max) max = value;
+    }
   }
-  return (value - min) / (max - min);
+
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min === Number.POSITIVE_INFINITY) {
+    min = 0;
+    max = 1;
+  }
+
+  const range = max - min || 1;
+  const normalized = new Uint8Array(voxelCount);
+  for (let i = 0; i < voxelCount; i++) {
+    const normalizedValue = (intensities[i] - min) / range;
+    const clamped = Math.max(0, Math.min(1, normalizedValue));
+    normalized[i] = Math.round(clamped * 255);
+  }
+
+  return {
+    normalized,
+    min,
+    max
+  };
 }
 
 function VolumeViewer({ volume, filename, isLoading, timeIndex, totalTimepoints }: VolumeViewerProps) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [sliceInfo, setSliceInfo] = useState<SliceInfo | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const resourcesRef = useRef<VolumeResources | null>(null);
+  const colormapRef = useRef<THREE.DataTexture | null>(null);
+  const [stats, setStats] = useState<VolumeStats | null>(null);
+
+  if (!colormapRef.current) {
+    colormapRef.current = createColormapTexture();
+  }
 
   const title = useMemo(() => {
     if (!filename) {
@@ -37,107 +115,161 @@ function VolumeViewer({ volume, filename, isLoading, timeIndex, totalTimepoints 
   }, [filename]);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!volume || !canvas) {
-      if (canvas) {
-        const context = canvas.getContext('2d');
-        context?.clearRect(0, 0, canvas.width, canvas.height);
-      }
-      setSliceInfo(null);
+    const container = containerRef.current;
+    if (!container) {
       return;
     }
 
-    const width = volume.width;
-    const height = volume.height;
-    const depth = volume.depth;
-    const channels = volume.channels;
-    const sliceIndex = Math.floor(depth / 2);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(container.clientWidth, container.clientHeight);
 
-    canvas.width = width;
-    canvas.height = height;
+    container.appendChild(renderer.domElement);
 
-    const context = canvas.getContext('2d');
-    if (!context) {
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x05080c);
+
+    const camera = new THREE.PerspectiveCamera(
+      38,
+      container.clientWidth / container.clientHeight,
+      0.01,
+      100
+    );
+    camera.position.set(0, 0, 2.5);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.enablePan = false;
+    controls.rotateSpeed = 0.65;
+    controls.zoomSpeed = 0.7;
+    controlsRef.current = controls;
+
+    rendererRef.current = renderer;
+    sceneRef.current = scene;
+    cameraRef.current = camera;
+
+    const handleResize = () => {
+      const target = containerRef.current;
+      if (!target || !rendererRef.current || !cameraRef.current) {
+        return;
+      }
+      const width = target.clientWidth;
+      const height = target.clientHeight;
+      rendererRef.current.setSize(width, height);
+      cameraRef.current.aspect = width / height;
+      cameraRef.current.updateProjectionMatrix();
+    };
+
+    const resizeObserver = new ResizeObserver(handleResize);
+    resizeObserver.observe(container);
+
+    const renderLoop = () => {
+      controls.update();
+      renderer.render(scene, camera);
+      animationFrameRef.current = requestAnimationFrame(renderLoop);
+    };
+    renderLoop();
+
+    return () => {
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+      resizeObserver.disconnect();
+      controls.dispose();
+      renderer.dispose();
+      if (renderer.domElement.parentNode) {
+        renderer.domElement.parentNode.removeChild(renderer.domElement);
+      }
+      rendererRef.current = null;
+      sceneRef.current = null;
+      cameraRef.current = null;
+      controlsRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const resources = resourcesRef.current;
+    const scene = sceneRef.current;
+    if (resources && scene) {
+      scene.remove(resources.mesh);
+      resources.mesh.geometry.dispose();
+      resources.mesh.material.dispose();
+      resources.texture.dispose();
+      resourcesRef.current = null;
+    }
+
+    if (!volume || !scene || !rendererRef.current || !cameraRef.current || !controlsRef.current) {
+      setStats(null);
       return;
     }
 
-    const floatData = new Float32Array(volume.data);
-    const sliceLength = width * height * channels;
-    const offset = sliceIndex * sliceLength;
+    const { width, height, depth } = volume;
+    const { normalized, min, max } = extractVolume(volume);
 
-    let minValue = Number.POSITIVE_INFINITY;
-    let maxValue = Number.NEGATIVE_INFINITY;
+    const texture = new THREE.Data3DTexture(normalized, width, height, depth);
+    texture.format = THREE.RedFormat;
+    texture.type = THREE.UnsignedByteType;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.unpackAlignment = 1;
+    texture.needsUpdate = true;
 
-    const imageData = context.createImageData(width, height);
-    const output = imageData.data;
+    const shader = VolumeRenderShader1;
+    const uniforms = THREE.UniformsUtils.clone(shader.uniforms);
+    uniforms.u_data.value = texture;
+    uniforms.u_size.value.set(width, height, depth);
+    uniforms.u_clim.value.set(0, 1);
+    uniforms.u_renderstyle.value = 0;
+    uniforms.u_renderthreshold.value = 0.5;
+    uniforms.u_cmdata.value = colormapRef.current;
 
-    if (channels === 1) {
-      for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-          const voxelIndex = offset + (y * width + x);
-          const value = floatData[voxelIndex];
-          if (value < minValue) minValue = value;
-          if (value > maxValue) maxValue = value;
-        }
+    const material = new THREE.ShaderMaterial({
+      uniforms,
+      vertexShader: shader.vertexShader,
+      fragmentShader: shader.fragmentShader,
+      side: THREE.BackSide,
+      transparent: true
+    });
+
+    const geometry = new THREE.BoxGeometry(width, height, depth);
+    geometry.translate(width / 2 - 0.5, height / 2 - 0.5, depth / 2 - 0.5);
+
+    const mesh = new THREE.Mesh(geometry, material);
+    const maxDimension = Math.max(width, height, depth);
+    const scale = 1 / maxDimension;
+    mesh.scale.setScalar(scale);
+
+    scene.add(mesh);
+    resourcesRef.current = { mesh, texture };
+    setStats({ min, max });
+
+    controlsRef.current.target.set(0, 0, 0);
+    const distance = 1.8;
+    cameraRef.current.position.set(0, 0, distance);
+    controlsRef.current.update();
+
+    return () => {
+      if (resourcesRef.current) {
+        const current = resourcesRef.current;
+        scene.remove(current.mesh);
+        current.mesh.geometry.dispose();
+        current.mesh.material.dispose();
+        current.texture.dispose();
+        resourcesRef.current = null;
       }
-
-      const rangeMin = minValue;
-      const rangeMax = maxValue;
-
-      for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-          const voxelIndex = offset + (y * width + x);
-          const normalized = normalizeValue(floatData[voxelIndex], rangeMin, rangeMax);
-          const byteValue = Math.max(0, Math.min(255, Math.round(normalized * 255)));
-          const pixelIndex = (y * width + x) * 4;
-          output[pixelIndex + 0] = byteValue;
-          output[pixelIndex + 1] = byteValue;
-          output[pixelIndex + 2] = byteValue;
-          output[pixelIndex + 3] = 255;
-        }
-      }
-
-      setSliceInfo({ min: rangeMin, max: rangeMax });
-    } else if (channels === 3) {
-      for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-          const baseIndex = offset + (y * width + x) * channels;
-          const r = floatData[baseIndex + 0];
-          const g = floatData[baseIndex + 1];
-          const b = floatData[baseIndex + 2];
-          minValue = Math.min(minValue, r, g, b);
-          maxValue = Math.max(maxValue, r, g, b);
-        }
-      }
-
-      const rangeMin = minValue;
-      const rangeMax = maxValue;
-
-      for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-          const baseIndex = offset + (y * width + x) * channels;
-          const pixelIndex = (y * width + x) * 4;
-          output[pixelIndex + 0] = Math.round(
-            normalizeValue(floatData[baseIndex + 0], rangeMin, rangeMax) * 255
-          );
-          output[pixelIndex + 1] = Math.round(
-            normalizeValue(floatData[baseIndex + 1], rangeMin, rangeMax) * 255
-          );
-          output[pixelIndex + 2] = Math.round(
-            normalizeValue(floatData[baseIndex + 2], rangeMin, rangeMax) * 255
-          );
-          output[pixelIndex + 3] = 255;
-        }
-      }
-
-      setSliceInfo({ min: rangeMin, max: rangeMax });
-    } else {
-      output.fill(0);
-      setSliceInfo(null);
-    }
-
-    context.putImageData(imageData, 0, 0);
+    };
   }, [volume]);
+
+  useEffect(() => {
+    return () => {
+      if (colormapRef.current) {
+        colormapRef.current.dispose();
+        colormapRef.current = null;
+      }
+    };
+  }, []);
 
   return (
     <div className="volume-viewer">
@@ -149,7 +281,7 @@ function VolumeViewer({ volume, filename, isLoading, timeIndex, totalTimepoints 
               {volume.width} × {volume.height} × {volume.depth} · {volume.channels} channel{volume.channels > 1 ? 's' : ''}
             </p>
           ) : (
-            <p>Select a dataset to preview its central slice.</p>
+            <p>Select a dataset to preview its 3D volume.</p>
           )}
         </div>
         <div className="time-info">
@@ -161,12 +293,14 @@ function VolumeViewer({ volume, filename, isLoading, timeIndex, totalTimepoints 
 
       <section className="viewer-surface">
         {isLoading && <div className="overlay">Loading…</div>}
-        <canvas ref={canvasRef} />
+        <div className="render-surface" ref={containerRef} />
       </section>
 
-      {sliceInfo && (
+      {stats && (
         <footer>
-          <span>Slice normalization: {sliceInfo.min.toFixed(3)} – {sliceInfo.max.toFixed(3)}</span>
+          <span>
+            Intensity normalization: {stats.min.toFixed(3)} – {stats.max.toFixed(3)}
+          </span>
         </footer>
       )}
     </div>
