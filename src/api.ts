@@ -11,10 +11,6 @@ export type VolumePayload = VolumeMetadata & {
   data: ArrayBuffer;
 };
 
-export type VolumeResponse = VolumeMetadata & {
-  data: string;
-};
-
 async function handleResponse(response: Response) {
   if (!response.ok) {
     const message = await response.text();
@@ -47,10 +43,23 @@ export async function loadVolume(path: string, filename: string): Promise<Volume
       body: JSON.stringify({ path, filename })
     })
   );
-  const payload = (await response.json()) as VolumeResponse;
-  const data = Uint8Array.from(atob(payload.data), (c) => c.charCodeAt(0)).buffer;
+
+  const metadataHeader = response.headers.get('x-volume-metadata');
+  if (!metadataHeader) {
+    throw new Error('Volume metadata is missing from the response.');
+  }
+
+  let metadata: VolumeMetadata;
+  try {
+    metadata = JSON.parse(metadataHeader) as VolumeMetadata;
+  } catch (error) {
+    console.error('Failed to parse volume metadata header', error);
+    throw new Error('Received malformed volume metadata.');
+  }
+
+  const data = await response.arrayBuffer();
   return {
-    ...payload,
+    ...metadata,
     data
   };
 }
