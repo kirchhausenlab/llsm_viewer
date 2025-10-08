@@ -5,6 +5,8 @@
   padding: 1rem 1.5rem;
   gap: 1rem;
   color: rgba(255, 255, 255, 0.85);
+  max-width: min(100%, 1100px);
+  margin: 0 auto;
 }
 
 .volume-viewer header {
@@ -34,7 +36,7 @@
 
 .viewer-surface {
   position: relative;
-  flex: 1;
+  flex: 0 1 auto;
   border-radius: 0.75rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: radial-gradient(circle at center, rgba(40, 60, 80, 0.35), rgba(10, 14, 18, 0.75));
@@ -42,6 +44,8 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  max-height: clamp(320px, 70vh, 900px);
+  width: 100%;
 }
 
 .viewer-surface canvas {
