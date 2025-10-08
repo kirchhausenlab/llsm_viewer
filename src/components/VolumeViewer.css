@@ -1,0 +1,67 @@
+.volume-viewer {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 1rem 1.5rem;
+  gap: 1rem;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.volume-viewer header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.volume-viewer header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.volume-viewer header p {
+  margin: 0.35rem 0 0;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.time-info {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.viewer-surface {
+  position: relative;
+  flex: 1;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: radial-gradient(circle at center, rgba(40, 60, 80, 0.35), rgba(10, 14, 18, 0.75));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.viewer-surface canvas {
+  max-width: 100%;
+  max-height: 100%;
+  image-rendering: pixelated;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(4, 6, 7, 0.6);
+  font-size: 1.25rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.volume-viewer footer {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+}

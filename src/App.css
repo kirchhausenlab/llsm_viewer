@@ -1,0 +1,160 @@
+.app {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  width: 100%;
+  min-height: 100vh;
+  background: radial-gradient(circle at top left, #18202a, #080a0d 55%);
+}
+
+.sidebar {
+  padding: 1.5rem;
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(12, 16, 24, 0.8);
+  backdrop-filter: blur(20px);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.sidebar header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.sidebar header p {
+  margin-top: 0.5rem;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.path-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.path-form label {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.path-input-wrapper {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.path-input-wrapper input {
+  flex: 1;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.35);
+  color: inherit;
+}
+
+.path-input-wrapper input:focus {
+  outline: 2px solid #5b8cff;
+  outline-offset: 2px;
+}
+
+.path-input-wrapper button {
+  border: none;
+  border-radius: 0.5rem;
+  padding: 0.6rem 1rem;
+  background: linear-gradient(135deg, #5b8cff, #5b52ff);
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.path-input-wrapper button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.path-input-wrapper button:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+.file-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+}
+
+.file-list header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.file-list h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.file-count {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.file-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  overflow: auto;
+}
+
+.file-list li button {
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.4rem;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.file-list li button.active {
+  border-color: rgba(91, 140, 255, 0.65);
+  background: rgba(91, 140, 255, 0.1);
+}
+
+.file-list li button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.error {
+  padding: 0.75rem 0.9rem;
+  background: rgba(255, 71, 87, 0.16);
+  border: 1px solid rgba(255, 71, 87, 0.35);
+  border-radius: 0.6rem;
+  color: #ff8c99;
+}
+
+.hint {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.viewer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: #040607;
+}
+
+.viewer canvas {
+  flex: 1;
+}
