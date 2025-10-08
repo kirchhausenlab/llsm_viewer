@@ -2,8 +2,9 @@
   display: grid;
   grid-template-columns: 320px 1fr;
   width: 100%;
-  min-height: 100vh;
+  height: 100vh;
   background: radial-gradient(circle at top left, #18202a, #080a0d 55%);
+  overflow: hidden;
 }
 
 .sidebar {
@@ -14,6 +15,9 @@
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  box-sizing: border-box;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .sidebar header h1 {
@@ -153,10 +157,12 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
   background: #040607;
   padding: 1.25rem 1.5rem;
-  overflow-y: auto;
+  box-sizing: border-box;
+  height: 100vh;
+  overflow: hidden;
+  min-height: 0;
 }
 
 .viewer canvas {

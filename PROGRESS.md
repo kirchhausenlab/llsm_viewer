@@ -13,6 +13,7 @@
 - Normalized incoming voxel intensities on the CPU and uploaded them into a `Data3DTexture`, reusing a grayscale transfer function texture.
 - Wired `OrbitControls` for intuitive drag-to-rotate and scroll-to-zoom interaction inside the viewer.
 - Added responsive resizing and resource cleanup so the renderer adapts to layout changes without leaking WebGL resources.
+- Tightened the layout so the viewer fits within the viewport without scrollbars and added a "Reset view" control that recenters the orbit camera.
 
 Next steps:
 - Build the WebGPU ray-marched volume renderer integrated with transfer-function controls.

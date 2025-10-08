@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { VolumeRenderShader1 } from 'three/examples/jsm/shaders/VolumeShader.js';
@@ -114,6 +114,15 @@ function VolumeViewer({ volume, filename, isLoading, timeIndex, totalTimepoints 
     return `${filename}`;
   }, [filename]);
 
+  const handleResetView = useCallback(() => {
+    const controls = controlsRef.current;
+    if (!controls) {
+      return;
+    }
+    controls.reset();
+    controls.update();
+  }, []);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) {
@@ -139,7 +148,8 @@ function VolumeViewer({ volume, filename, isLoading, timeIndex, totalTimepoints 
     camera.position.set(0, 0, 2.5);
 
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
+    controls.enableDamping = false;
+    controls.dampingFactor = 0;
     controls.enablePan = false;
     controls.rotateSpeed = 0.65;
     controls.zoomSpeed = 0.7;
@@ -241,14 +251,21 @@ function VolumeViewer({ volume, filename, isLoading, timeIndex, totalTimepoints 
     const scale = 1 / maxDimension;
     mesh.scale.setScalar(scale);
 
+    const centerOffset = new THREE.Vector3(width / 2 - 0.5, height / 2 - 0.5, depth / 2 - 0.5).multiplyScalar(scale);
+    mesh.position.set(-centerOffset.x, -centerOffset.y, -centerOffset.z);
+
     scene.add(mesh);
     resourcesRef.current = { mesh, texture };
     setStats({ min, max });
 
     controlsRef.current.target.set(0, 0, 0);
-    const distance = 1.8;
-    cameraRef.current.position.set(0, 0, distance);
+    const boundingRadius = Math.sqrt(width * width + height * height + depth * depth) * scale * 0.5;
+    const fovInRadians = THREE.MathUtils.degToRad(cameraRef.current.fov * 0.5);
+    const distance = boundingRadius / Math.sin(fovInRadians);
+    const safeDistance = Number.isFinite(distance) ? distance * 1.2 : 2.5;
+    cameraRef.current.position.set(0, 0, safeDistance);
     controlsRef.current.update();
+    controlsRef.current.saveState();
 
     return () => {
       if (resourcesRef.current) {
@@ -284,10 +301,15 @@ function VolumeViewer({ volume, filename, isLoading, timeIndex, totalTimepoints 
             <p>Select a dataset to preview its 3D volume.</p>
           )}
         </div>
-        <div className="time-info">
-          <span>Frame {totalTimepoints === 0 ? 0 : timeIndex + 1}</span>
-          <span>/</span>
-          <span>{totalTimepoints}</span>
+        <div className="viewer-meta">
+          <div className="time-info">
+            <span>Frame {totalTimepoints === 0 ? 0 : timeIndex + 1}</span>
+            <span>/</span>
+            <span>{totalTimepoints}</span>
+          </div>
+          <button type="button" onClick={handleResetView} disabled={!volume}>
+            Reset view
+          </button>
         </div>
       </header>
 
