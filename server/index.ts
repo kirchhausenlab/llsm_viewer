@@ -102,14 +102,20 @@ app.post('/api/volume', async (request, response) => {
       }
     }
 
-    response.json({
+    const metadata = {
       width,
       height,
       depth: imageCount,
       channels,
-      dataType: 'float32',
-      data: Buffer.from(floatData.buffer).toString('base64')
-    });
+      dataType: 'float32' as const
+    };
+
+    const buffer = Buffer.from(floatData.buffer, floatData.byteOffset, floatData.byteLength);
+    response.setHeader('Content-Type', 'application/octet-stream');
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('X-Volume-Metadata', JSON.stringify(metadata));
+    response.setHeader('Content-Length', buffer.byteLength.toString());
+    response.send(buffer);
   } catch (error) {
     console.error('Failed to load TIFF volume', error);
     response.status(500).send('Failed to load TIFF volume.');
