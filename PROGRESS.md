@@ -15,6 +15,9 @@
 - Added responsive resizing and resource cleanup so the renderer adapts to layout changes without leaking WebGL resources.
 - Tightened the layout so the viewer fits within the viewport without scrollbars and added a "Reset view" control that recenters the orbit camera.
 
+## Interaction polish
+- Restored Shift-drag panning by temporarily enabling the underlying OrbitControls pan mechanics during custom pointer handling, then restoring the prior configuration on release.
+
 Next steps:
 - Build the WebGPU ray-marched volume renderer integrated with transfer-function controls.
 - Add asynchronous preprocessing hooks for caching multi-resolution volumes when needed.

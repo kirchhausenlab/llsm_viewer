@@ -29,6 +29,7 @@ type PointerState = {
   lastX: number;
   lastY: number;
   previousControlsEnabled: boolean;
+  previousEnablePan: boolean | null;
 };
 
 function createColormapTexture() {
@@ -181,12 +182,18 @@ function VolumeViewer({ volume, filename, isLoading, timeIndex, totalTimepoints 
       event.stopImmediatePropagation();
 
       const controls = controlsRef.current;
+      const previousEnablePan = mode === 'pan' ? controls.enablePan : null;
+      if (mode === 'pan') {
+        controls.enablePan = true;
+      }
+
       pointerStateRef.current = {
         mode,
         pointerId: event.pointerId,
         lastX: event.clientX,
         lastY: event.clientY,
-        previousControlsEnabled: controls.enabled
+        previousControlsEnabled: controls.enabled,
+        previousEnablePan
       };
       controls.enabled = false;
 
@@ -239,6 +246,9 @@ function VolumeViewer({ volume, filename, isLoading, timeIndex, totalTimepoints 
       const controls = controlsRef.current;
       if (controls) {
         controls.enabled = state.previousControlsEnabled;
+        if (state.mode === 'pan' && state.previousEnablePan !== null) {
+          controls.enablePan = state.previousEnablePan;
+        }
       }
 
       try {
@@ -292,6 +302,9 @@ function VolumeViewer({ volume, filename, isLoading, timeIndex, totalTimepoints 
       const activePointerState = pointerStateRef.current;
       if (activePointerState && controlsRef.current) {
         controlsRef.current.enabled = activePointerState.previousControlsEnabled;
+        if (activePointerState.mode === 'pan' && activePointerState.previousEnablePan !== null) {
+          controlsRef.current.enablePan = activePointerState.previousEnablePan;
+        }
       }
       pointerStateRef.current = null;
 
