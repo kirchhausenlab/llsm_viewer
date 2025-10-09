@@ -2,15 +2,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { VolumeRenderShader1 } from 'three/examples/jsm/shaders/VolumeShader.js';
-import type { VolumePayload } from '../api';
+import type { NormalizedVolume } from '../volumeProcessing';
 import './VolumeViewer.css';
 
 type VolumeViewerProps = {
-  volume: VolumePayload | null;
+  volume: NormalizedVolume | null;
   filename: string | null;
   timeIndex: number;
   totalTimepoints: number;
+  expectedTimepoints: number;
   isLoading: boolean;
+  loadingProgress: number;
+  loadedTimepoints: number;
+  isPlaying: boolean;
+  onTogglePlayback: () => void;
+  onTimeIndexChange: (index: number) => void;
 };
 
 type VolumeStats = {
@@ -21,6 +27,11 @@ type VolumeStats = {
 type VolumeResources = {
   mesh: THREE.Mesh<THREE.BoxGeometry, THREE.ShaderMaterial>;
   texture: THREE.Data3DTexture;
+  dimensions: {
+    width: number;
+    height: number;
+    depth: number;
+  };
 };
 
 type PointerState = {
@@ -51,57 +62,19 @@ function createColormapTexture() {
   return texture;
 }
 
-function extractVolume(volume: VolumePayload) {
-  const { width, height, depth, channels } = volume;
-  const voxelCount = width * height * depth;
-  const source = new Float32Array(volume.data);
-  const intensities = new Float32Array(voxelCount);
-
-  let min = Number.POSITIVE_INFINITY;
-  let max = Number.NEGATIVE_INFINITY;
-
-  if (channels === 1) {
-    for (let i = 0; i < voxelCount; i++) {
-      const value = source[i];
-      intensities[i] = value;
-      if (value < min) min = value;
-      if (value > max) max = value;
-    }
-  } else {
-    for (let i = 0; i < voxelCount; i++) {
-      let sum = 0;
-      const base = i * channels;
-      for (let channel = 0; channel < channels; channel++) {
-        sum += source[base + channel];
-      }
-      const value = sum / channels;
-      intensities[i] = value;
-      if (value < min) min = value;
-      if (value > max) max = value;
-    }
-  }
-
-  if (!Number.isFinite(min) || !Number.isFinite(max) || min === Number.POSITIVE_INFINITY) {
-    min = 0;
-    max = 1;
-  }
-
-  const range = max - min || 1;
-  const normalized = new Uint8Array(voxelCount);
-  for (let i = 0; i < voxelCount; i++) {
-    const normalizedValue = (intensities[i] - min) / range;
-    const clamped = Math.max(0, Math.min(1, normalizedValue));
-    normalized[i] = Math.round(clamped * 255);
-  }
-
-  return {
-    normalized,
-    min,
-    max
-  };
-}
-
-function VolumeViewer({ volume, filename, isLoading, timeIndex, totalTimepoints }: VolumeViewerProps) {
+function VolumeViewer({
+  volume,
+  filename,
+  isLoading,
+  loadingProgress,
+  loadedTimepoints,
+  expectedTimepoints,
+  timeIndex,
+  totalTimepoints,
+  isPlaying,
+  onTogglePlayback,
+  onTimeIndexChange
+}: VolumeViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -123,6 +96,10 @@ function VolumeViewer({ volume, filename, isLoading, timeIndex, totalTimepoints 
     }
     return `${filename}`;
   }, [filename]);
+
+  const safeProgress = Math.min(1, Math.max(0, loadingProgress));
+  const progressPercentage = Math.round(safeProgress * 100);
+  const clampedTimeIndex = totalTimepoints === 0 ? 0 : Math.min(timeIndex, totalTimepoints - 1);
 
   const handleResetView = useCallback(() => {
     const controls = controlsRef.current;
@@ -294,6 +271,15 @@ function VolumeViewer({ volume, filename, isLoading, timeIndex, totalTimepoints 
     renderLoop();
 
     return () => {
+      const resources = resourcesRef.current;
+      if (resources) {
+        scene.remove(resources.mesh);
+        resources.mesh.geometry.dispose();
+        resources.mesh.material.dispose();
+        resources.texture.dispose();
+        resourcesRef.current = null;
+      }
+
       domElement.removeEventListener('pointerdown', handlePointerDown, pointerDownOptions);
       domElement.removeEventListener('pointermove', handlePointerMove);
       domElement.removeEventListener('pointerup', handlePointerUp);
@@ -326,81 +312,109 @@ function VolumeViewer({ volume, filename, isLoading, timeIndex, totalTimepoints 
   }, []);
 
   useEffect(() => {
-    const resources = resourcesRef.current;
     const scene = sceneRef.current;
-    if (resources && scene) {
-      scene.remove(resources.mesh);
-      resources.mesh.geometry.dispose();
-      resources.mesh.material.dispose();
-      resources.texture.dispose();
-      resourcesRef.current = null;
-    }
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    const colormap = colormapRef.current;
 
-    if (!volume || !scene || !rendererRef.current || !cameraRef.current || !controlsRef.current) {
+    const disposeResources = () => {
+      const resources = resourcesRef.current;
+      if (resources && scene) {
+        scene.remove(resources.mesh);
+        resources.mesh.geometry.dispose();
+        resources.mesh.material.dispose();
+        resources.texture.dispose();
+        resourcesRef.current = null;
+      }
+    };
+
+    if (!scene || !camera || !controls || !colormap) {
+      disposeResources();
       setStats(null);
       return;
     }
 
-    const { width, height, depth } = volume;
-    const { normalized, min, max } = extractVolume(volume);
+    if (!volume) {
+      disposeResources();
+      setStats(null);
+      return;
+    }
 
-    const texture = new THREE.Data3DTexture(normalized, width, height, depth);
-    texture.format = THREE.RedFormat;
-    texture.type = THREE.UnsignedByteType;
-    texture.minFilter = THREE.LinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-    texture.unpackAlignment = 1;
-    texture.needsUpdate = true;
+    const { width, height, depth, min, max, normalized } = volume;
+    const resources = resourcesRef.current;
+    const dimensionsChanged =
+      !resources ||
+      resources.dimensions.width !== width ||
+      resources.dimensions.height !== height ||
+      resources.dimensions.depth !== depth;
 
-    const shader = VolumeRenderShader1;
-    const uniforms = THREE.UniformsUtils.clone(shader.uniforms);
-    uniforms.u_data.value = texture;
-    uniforms.u_size.value.set(width, height, depth);
-    uniforms.u_clim.value.set(0, 1);
-    uniforms.u_renderstyle.value = 0;
-    uniforms.u_renderthreshold.value = 0.5;
-    uniforms.u_cmdata.value = colormapRef.current;
+    if (dimensionsChanged) {
+      disposeResources();
 
-    const material = new THREE.ShaderMaterial({
-      uniforms,
-      vertexShader: shader.vertexShader,
-      fragmentShader: shader.fragmentShader,
-      side: THREE.BackSide,
-      transparent: true
-    });
+      const textureData = new Uint8Array(normalized.length);
+      textureData.set(normalized);
 
-    const geometry = new THREE.BoxGeometry(width, height, depth);
-    geometry.translate(width / 2 - 0.5, height / 2 - 0.5, depth / 2 - 0.5);
+      const texture = new THREE.Data3DTexture(textureData, width, height, depth);
+      texture.format = THREE.RedFormat;
+      texture.type = THREE.UnsignedByteType;
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.unpackAlignment = 1;
+      texture.needsUpdate = true;
 
-    const mesh = new THREE.Mesh(geometry, material);
-    const maxDimension = Math.max(width, height, depth);
-    const scale = 1 / maxDimension;
-    mesh.scale.setScalar(scale);
+      const shader = VolumeRenderShader1;
+      const uniforms = THREE.UniformsUtils.clone(shader.uniforms);
+      uniforms.u_data.value = texture;
+      uniforms.u_size.value.set(width, height, depth);
+      uniforms.u_clim.value.set(0, 1);
+      uniforms.u_renderstyle.value = 0;
+      uniforms.u_renderthreshold.value = 0.5;
+      uniforms.u_cmdata.value = colormap;
 
-    const centerOffset = new THREE.Vector3(width / 2 - 0.5, height / 2 - 0.5, depth / 2 - 0.5).multiplyScalar(scale);
-    mesh.position.set(-centerOffset.x, -centerOffset.y, -centerOffset.z);
+      const material = new THREE.ShaderMaterial({
+        uniforms,
+        vertexShader: shader.vertexShader,
+        fragmentShader: shader.fragmentShader,
+        side: THREE.BackSide,
+        transparent: true
+      });
 
-    scene.add(mesh);
-    resourcesRef.current = { mesh, texture };
+      const geometry = new THREE.BoxGeometry(width, height, depth);
+      geometry.translate(width / 2 - 0.5, height / 2 - 0.5, depth / 2 - 0.5);
+
+      const mesh = new THREE.Mesh(geometry, material);
+      const maxDimension = Math.max(width, height, depth);
+      const scale = 1 / maxDimension;
+      mesh.scale.setScalar(scale);
+
+      const centerOffset = new THREE.Vector3(width / 2 - 0.5, height / 2 - 0.5, depth / 2 - 0.5).multiplyScalar(scale);
+      mesh.position.set(-centerOffset.x, -centerOffset.y, -centerOffset.z);
+
+      scene.add(mesh);
+      resourcesRef.current = {
+        mesh,
+        texture,
+        dimensions: { width, height, depth }
+      };
+
+      controls.target.set(0, 0, 0);
+      const boundingRadius = Math.sqrt(width * width + height * height + depth * depth) * scale * 0.5;
+      const fovInRadians = THREE.MathUtils.degToRad(camera.fov * 0.5);
+      const distance = boundingRadius / Math.sin(fovInRadians);
+      const safeDistance = Number.isFinite(distance) ? distance * 1.2 : 2.5;
+      camera.position.set(0, 0, safeDistance);
+      controls.update();
+      controls.saveState();
+    } else if (resources) {
+      resources.texture.image.data.set(normalized);
+      resources.texture.needsUpdate = true;
+    }
+
     setStats({ min, max });
 
-    controlsRef.current.target.set(0, 0, 0);
-    const boundingRadius = Math.sqrt(width * width + height * height + depth * depth) * scale * 0.5;
-    const fovInRadians = THREE.MathUtils.degToRad(cameraRef.current.fov * 0.5);
-    const distance = boundingRadius / Math.sin(fovInRadians);
-    const safeDistance = Number.isFinite(distance) ? distance * 1.2 : 2.5;
-    cameraRef.current.position.set(0, 0, safeDistance);
-    controlsRef.current.update();
-    controlsRef.current.saveState();
-
     return () => {
-      if (resourcesRef.current) {
-        const current = resourcesRef.current;
-        scene.remove(current.mesh);
-        current.mesh.geometry.dispose();
-        current.mesh.material.dispose();
-        current.texture.dispose();
-        resourcesRef.current = null;
+      if (dimensionsChanged) {
+        disposeResources();
       }
     };
   }, [volume]);
@@ -440,9 +454,47 @@ function VolumeViewer({ volume, filename, isLoading, timeIndex, totalTimepoints 
       </header>
 
       <section className="viewer-surface">
-        {isLoading && <div className="overlay">Loading…</div>}
-        <div className="render-surface" ref={containerRef} />
+      {isLoading && (
+        <div className="overlay">
+          <div className="loading-panel">
+            <span className="loading-title">Loading volumes…</span>
+            <div className="progress-bar">
+              <span style={{ width: `${safeProgress * 100}%` }} />
+            </div>
+            <span className="progress-meta">
+              {expectedTimepoints > 0
+                ? `${Math.min(loadedTimepoints, expectedTimepoints)} / ${expectedTimepoints} · ${progressPercentage}%`
+                : `${progressPercentage}%`}
+            </span>
+          </div>
+        </div>
+      )}
+      <div className="render-surface" ref={containerRef} />
+    </section>
+
+    {totalTimepoints > 0 && (
+      <section className="time-controls">
+        <button
+          type="button"
+          onClick={onTogglePlayback}
+          disabled={isLoading || totalTimepoints <= 1}
+          className={isPlaying ? 'playing' : ''}
+        >
+          {isPlaying ? 'Pause' : 'Play'}
+        </button>
+        <input
+          type="range"
+          min={0}
+          max={Math.max(0, totalTimepoints - 1)}
+          value={clampedTimeIndex}
+          onChange={(event) => onTimeIndexChange(Number(event.target.value))}
+          disabled={isLoading || totalTimepoints <= 1}
+        />
+        <span className="time-label">
+          {totalTimepoints === 0 ? 0 : clampedTimeIndex + 1} / {totalTimepoints}
+        </span>
       </section>
+    )}
 
       {stats && (
         <footer>
