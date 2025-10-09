@@ -15,6 +15,12 @@ declare module 'three' {
     multiplyScalar(s: number): this;
     distanceTo(v: Vector3): number;
     copy(v: Vector3): this;
+    normalize(): this;
+    projectOnPlane(planeNormal: Vector3): this;
+    lengthSq(): number;
+    crossVectors(a: Vector3, b: Vector3): this;
+    addScaledVector(vector: Vector3, scale: number): this;
+    clone(): Vector3;
   }
 
   export class Color {
@@ -57,6 +63,8 @@ declare module 'three' {
     geometry: TGeometry;
     material: TMaterial;
     scale: { setScalar(value: number): void };
+    updateMatrixWorld(force?: boolean): void;
+    worldToLocal(vector: Vector3): Vector3;
   }
 
   export class PerspectiveCamera extends Object3D {
