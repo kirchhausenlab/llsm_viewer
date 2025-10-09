@@ -5,6 +5,7 @@ import type { NormalizedVolume } from '../volumeProcessing';
 import { VolumeRenderShader } from '../shaders/volumeRenderShader';
 import { getCachedTextureData } from '../textureCache';
 import './VolumeViewer.css';
+import type { TrackDefinition } from '../types/tracks';
 
 type ViewerLayer = {
   key: string;
@@ -28,6 +29,8 @@ type VolumeViewerProps = {
   onTogglePlayback: () => void;
   onTimeIndexChange: (index: number) => void;
   onRegisterReset: (handler: (() => void) | null) => void;
+  tracks: TrackDefinition[];
+  showTrackOverlay: boolean;
 };
 
 type VolumeStats = {
@@ -64,6 +67,11 @@ type MovementState = {
   moveDown: boolean;
 };
 
+type TrackLineResource = {
+  line: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>;
+  times: number[];
+};
+
 const MOVEMENT_KEY_MAP: Record<string, keyof MovementState> = {
   KeyW: 'moveForward',
   KeyS: 'moveBackward',
@@ -92,6 +100,14 @@ function createColormapTexture() {
   return texture;
 }
 
+function createTrackColor(trackId: number) {
+  const color = new THREE.Color();
+  const normalizedId = Math.abs(trackId) + 1;
+  const hue = ((normalizedId * 137.508) % 360) / 360;
+  color.setHSL(hue, 0.75, 0.55);
+  return color;
+}
+
 function VolumeViewer({
   layers,
   filename,
@@ -104,7 +120,9 @@ function VolumeViewer({
   isPlaying,
   onTogglePlayback,
   onTimeIndexChange,
-  onRegisterReset
+  onRegisterReset,
+  tracks,
+  showTrackOverlay
 }: VolumeViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -129,8 +147,34 @@ function VolumeViewer({
     moveUp: false,
     moveDown: false
   });
+  const trackGroupRef = useRef<THREE.Group | null>(null);
+  const trackLinesRef = useRef<Map<number, TrackLineResource>>(new Map());
+  const timeIndexRef = useRef(0);
   const [layerStats, setLayerStats] = useState<Record<string, VolumeStats>>({});
   const [hasMeasured, setHasMeasured] = useState(false);
+
+  const updateTrackDrawRanges = useCallback((targetTimeIndex: number) => {
+    const lines = trackLinesRef.current;
+    const maxVisibleTime = targetTimeIndex + 1;
+
+    for (const resource of lines.values()) {
+      const { line, times } = resource;
+      let visiblePoints = 0;
+      for (let index = 0; index < times.length; index++) {
+        if (times[index] <= maxVisibleTime) {
+          visiblePoints = index + 1;
+        } else {
+          break;
+        }
+      }
+
+      if (visiblePoints >= 2) {
+        line.geometry.setDrawRange(0, visiblePoints);
+      } else {
+        line.geometry.setDrawRange(0, 0);
+      }
+    }
+  }, []);
 
   if (!colormapRef.current) {
     colormapRef.current = createColormapTexture();
@@ -164,6 +208,92 @@ function VolumeViewer({
     return null;
   }, [layers]);
   const hasRenderableLayer = Boolean(primaryVolume);
+
+  useEffect(() => {
+    const trackGroup = trackGroupRef.current;
+    if (!trackGroup) {
+      return;
+    }
+
+    const trackLines = trackLinesRef.current;
+    const activeIds = new Set<number>();
+    tracks.forEach((track) => {
+      if (track.points.length > 0) {
+        activeIds.add(track.id);
+      }
+    });
+
+    for (const [id, resource] of Array.from(trackLines.entries())) {
+      if (!activeIds.has(id)) {
+        trackGroup.remove(resource.line);
+        resource.line.geometry.dispose();
+        resource.line.material.dispose();
+        trackLines.delete(id);
+      }
+    }
+
+    for (const track of tracks) {
+      if (track.points.length === 0) {
+        continue;
+      }
+
+      let resource = trackLines.get(track.id) ?? null;
+      const positions = new Float32Array(track.points.length * 3);
+      const times = new Array<number>(track.points.length);
+
+      for (let index = 0; index < track.points.length; index++) {
+        const point = track.points[index];
+        positions[index * 3 + 0] = point.x;
+        positions[index * 3 + 1] = point.y;
+        positions[index * 3 + 2] = point.z;
+        times[index] = point.time;
+      }
+
+      if (!resource) {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setDrawRange(0, 0);
+        geometry.computeBoundingSphere();
+        const material = new THREE.LineBasicMaterial({
+          color: createTrackColor(track.id),
+          linewidth: 1,
+          depthTest: false,
+          depthWrite: false,
+          transparent: true,
+          opacity: 0.9
+        });
+        const line = new THREE.Line(geometry, material);
+        line.renderOrder = 1000;
+        line.frustumCulled = false;
+        trackGroup.add(line);
+        resource = { line, times };
+        trackLines.set(track.id, resource);
+      } else {
+        const { line } = resource;
+        const geometry = line.geometry as THREE.BufferGeometry;
+        const positionAttribute = geometry.getAttribute('position') as
+          | THREE.BufferAttribute
+          | undefined
+          | null;
+        if (!positionAttribute || positionAttribute.count !== track.points.length) {
+          geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        } else {
+          positionAttribute.array.set(positions);
+          positionAttribute.needsUpdate = true;
+        }
+        geometry.computeBoundingSphere();
+        resource.times = times;
+      }
+    }
+
+    trackGroup.visible = showTrackOverlay && tracks.length > 0;
+    updateTrackDrawRanges(timeIndexRef.current);
+  }, [tracks, showTrackOverlay, updateTrackDrawRanges]);
+
+  useEffect(() => {
+    timeIndexRef.current = clampedTimeIndex;
+    updateTrackDrawRanges(clampedTimeIndex);
+  }, [clampedTimeIndex, updateTrackDrawRanges]);
 
   const handleResetView = useCallback(() => {
     const controls = controlsRef.current;
@@ -206,6 +336,12 @@ function VolumeViewer({
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x05080c);
+
+    const trackGroup = new THREE.Group();
+    trackGroup.name = 'TrackingOverlay';
+    trackGroup.visible = false;
+    scene.add(trackGroup);
+    trackGroupRef.current = trackGroup;
 
     const camera = new THREE.PerspectiveCamera(
       38,
@@ -445,6 +581,20 @@ function VolumeViewer({
       }
       resources.clear();
 
+      const trackGroup = trackGroupRef.current;
+      if (trackGroup) {
+        for (const resource of trackLinesRef.current.values()) {
+          trackGroup.remove(resource.line);
+          resource.line.geometry.dispose();
+          resource.line.material.dispose();
+        }
+        trackLinesRef.current.clear();
+        if (trackGroup.parent) {
+          trackGroup.parent.remove(trackGroup);
+        }
+      }
+      trackGroupRef.current = null;
+
       domElement.removeEventListener('pointerdown', handlePointerDown, pointerDownOptions);
       domElement.removeEventListener('pointermove', handlePointerMove);
       domElement.removeEventListener('pointerup', handlePointerUp);
@@ -574,6 +724,12 @@ function VolumeViewer({
         position: camera.position.clone(),
         target: controls.target.clone()
       };
+      const trackGroup = trackGroupRef.current;
+      if (trackGroup) {
+        trackGroup.visible = false;
+        trackGroup.position.set(0, 0, 0);
+        trackGroup.scale.set(1, 1, 1);
+      }
       setLayerStats({});
       return;
     }
@@ -612,6 +768,17 @@ function VolumeViewer({
         target: controls.target.clone()
       };
       controls.saveState();
+
+      const trackGroup = trackGroupRef.current;
+      if (trackGroup) {
+        const centerOffset = new THREE.Vector3(
+          width / 2 - 0.5,
+          height / 2 - 0.5,
+          depth / 2 - 0.5
+        ).multiplyScalar(scale);
+        trackGroup.scale.setScalar(scale);
+        trackGroup.position.set(-centerOffset.x, -centerOffset.y, -centerOffset.z);
+      }
     }
 
     const nextStats: Record<string, VolumeStats> = {};
