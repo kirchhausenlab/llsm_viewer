@@ -81,3 +81,7 @@ Next steps:
 - Added a dedicated "Load tracks" widget beneath the dataset loader that accepts a CSV path, provides a file picker, and surfaces success/error states.
 - Implemented backend CSV browsing/loading endpoints that accept file paths, ensuring each row supplies exactly eight columns before the data is stored client-side for later use.
 - Tightened the CSV validator error messaging to spell out the requirement for eight comma-separated fields per row.
+
+## Grayscale tint controls
+- Added per-layer tint settings for monochannel volumes, including preset swatches and a custom color picker directly in each layer tab.
+- Threaded the selected tint through the viewer so grayscale datasets render with the chosen color-specific colormap while RGB volumes remain unchanged.

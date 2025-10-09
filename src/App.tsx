@@ -3,10 +3,11 @@ import { browseDirectory, listTiffFiles, loadTracks, loadVolume, type VolumePayl
 import VolumeViewer from './components/VolumeViewer';
 import { computeNormalizationParameters, normalizeVolume, NormalizedVolume } from './volumeProcessing';
 import { clearTextureCache } from './textureCache';
-import './App.css';
 import DirectoryPickerDialog from './components/DirectoryPickerDialog';
 import FilePickerDialog from './components/FilePickerDialog';
 import type { TrackDefinition, TrackPoint } from './types/tracks';
+import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from './layerColors';
+import './App.css';
 
 const DEFAULT_CONTRAST = 1;
 const DEFAULT_BRIGHTNESS = 0;
@@ -27,11 +28,13 @@ type LoadedLayer = LayerTarget & {
 type LayerSettings = {
   contrast: number;
   brightness: number;
+  color: string;
 };
 
 const createDefaultLayerSettings = (): LayerSettings => ({
   contrast: DEFAULT_CONTRAST,
-  brightness: DEFAULT_BRIGHTNESS
+  brightness: DEFAULT_BRIGHTNESS,
+  color: DEFAULT_LAYER_COLOR
 });
 
 function joinPath(base: string, segment: string) {
@@ -439,7 +442,11 @@ function App() {
         const settings = layerSettings[layer.key];
         const contrast = settings?.contrast ?? DEFAULT_CONTRAST;
         const brightness = settings?.brightness ?? DEFAULT_BRIGHTNESS;
-        return contrast === DEFAULT_CONTRAST && brightness === DEFAULT_BRIGHTNESS;
+        const color = normalizeHexColor(settings?.color, DEFAULT_LAYER_COLOR);
+        const firstVolume = layer.volumes[0] ?? null;
+        const isGrayscale = firstVolume?.channels === 1;
+        const colorAtDefault = !isGrayscale || color === DEFAULT_LAYER_COLOR;
+        return contrast === DEFAULT_CONTRAST && brightness === DEFAULT_BRIGHTNESS && colorAtDefault;
       });
 
     const overlayDefault = hasParsedTrackData;
@@ -604,6 +611,23 @@ function App() {
     });
   }, []);
 
+  const handleLayerColorChange = useCallback((key: string, value: string) => {
+    setLayerSettings((current) => {
+      const previous = current[key] ?? createDefaultLayerSettings();
+      const normalized = normalizeHexColor(value, DEFAULT_LAYER_COLOR);
+      if (previous.color === normalized) {
+        return current;
+      }
+      return {
+        ...current,
+        [key]: {
+          ...previous,
+          color: normalized
+        }
+      };
+    });
+  }, []);
+
   const subfolderItems = useMemo(() => {
     if (!subfolderSummary) {
       return [];
@@ -628,7 +652,8 @@ function App() {
           volume: layer.volumes[selectedIndex] ?? null,
           visible: Boolean(visibleLayers[layer.key]),
           contrast: settings.contrast,
-          brightness: settings.brightness
+          brightness: settings.brightness,
+          color: normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR)
         };
       }),
     [layerSettings, layers, selectedIndex, visibleLayers]
@@ -768,6 +793,10 @@ function App() {
               const isActive = layer.key === activeLayerKey;
               const settings = layerSettings[layer.key] ?? createDefaultLayerSettings();
               const sliderDisabled = layer.volumes.length === 0;
+              const firstVolume = layer.volumes[0] ?? null;
+              const isGrayscale = firstVolume?.channels === 1;
+              const normalizedColor = normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR);
+              const displayColor = normalizedColor.toUpperCase();
               return (
                 <div
                   key={layer.key}
@@ -819,6 +848,50 @@ function App() {
                       disabled={sliderDisabled}
                     />
                   </div>
+                  {isGrayscale ? (
+                    <div className="color-control">
+                      <div className="color-control-header">
+                        <span id={`layer-color-label-${layer.key}`}>Tint color</span>
+                        <span>{displayColor}</span>
+                      </div>
+                      <div
+                        className="color-swatch-grid"
+                        role="group"
+                        aria-labelledby={`layer-color-label-${layer.key}`}
+                      >
+                        {GRAYSCALE_COLOR_SWATCHES.map((swatch) => {
+                          const swatchColor = normalizeHexColor(swatch.value, DEFAULT_LAYER_COLOR);
+                          const isSelected = swatchColor === normalizedColor;
+                          return (
+                            <button
+                              key={swatch.value}
+                              type="button"
+                              className={
+                                isSelected ? 'color-swatch-button is-selected' : 'color-swatch-button'
+                              }
+                              style={{ backgroundColor: swatch.value }}
+                              onClick={() => handleLayerColorChange(layer.key, swatch.value)}
+                              disabled={sliderDisabled}
+                              aria-pressed={isSelected}
+                              aria-label={`${swatch.label} tint`}
+                              title={swatch.label}
+                            />
+                          );
+                        })}
+                      </div>
+                      <label className="color-picker" htmlFor={`layer-color-custom-${layer.key}`}>
+                        <span>Custom</span>
+                        <input
+                          id={`layer-color-custom-${layer.key}`}
+                          type="color"
+                          value={normalizedColor}
+                          onChange={(event) => handleLayerColorChange(layer.key, event.target.value)}
+                          disabled={sliderDisabled}
+                          aria-label="Choose custom tint color"
+                        />
+                      </label>
+                    </div>
+                  ) : null}
                 </div>
               );
             })}

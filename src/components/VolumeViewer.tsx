@@ -6,6 +6,7 @@ import { VolumeRenderShader } from '../shaders/volumeRenderShader';
 import { getCachedTextureData } from '../textureCache';
 import './VolumeViewer.css';
 import type { TrackDefinition } from '../types/tracks';
+import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../layerColors';
 
 type ViewerLayer = {
   key: string;
@@ -14,6 +15,7 @@ type ViewerLayer = {
   visible: boolean;
   contrast: number;
   brightness: number;
+  color: string;
 };
 
 type VolumeViewerProps = {
@@ -81,16 +83,20 @@ const MOVEMENT_KEY_MAP: Record<string, keyof MovementState> = {
   KeyQ: 'moveDown'
 };
 
-function createColormapTexture() {
+function createColormapTexture(hexColor: string) {
+  const normalized = normalizeHexColor(hexColor, DEFAULT_LAYER_COLOR);
+  const red = parseInt(normalized.slice(1, 3), 16) / 255;
+  const green = parseInt(normalized.slice(3, 5), 16) / 255;
+  const blue = parseInt(normalized.slice(5, 7), 16) / 255;
+
   const size = 256;
   const data = new Uint8Array(size * 4);
   for (let i = 0; i < size; i++) {
-    const t = i / (size - 1);
-    const intensity = Math.round(t * 255);
-    data[i * 4 + 0] = intensity;
-    data[i * 4 + 1] = intensity;
-    data[i * 4 + 2] = intensity;
-    data[i * 4 + 3] = Math.round(Math.min(255, Math.max(0, intensity)));
+    const intensity = i / (size - 1);
+    data[i * 4 + 0] = Math.round(red * intensity * 255);
+    data[i * 4 + 1] = Math.round(green * intensity * 255);
+    data[i * 4 + 2] = Math.round(blue * intensity * 255);
+    data[i * 4 + 3] = Math.round(intensity * 255);
   }
   const texture = new THREE.DataTexture(data, size, 1, THREE.RGBAFormat);
   texture.needsUpdate = true;
@@ -132,7 +138,7 @@ function VolumeViewer({
   const animationFrameRef = useRef<number | null>(null);
   const resourcesRef = useRef<Map<string, VolumeResources>>(new Map());
   const currentDimensionsRef = useRef<{ width: number; height: number; depth: number } | null>(null);
-  const colormapRef = useRef<THREE.DataTexture | null>(null);
+  const colormapCacheRef = useRef<Map<string, THREE.DataTexture>>(new Map());
   const rotationTargetRef = useRef(new THREE.Vector3());
   const defaultViewStateRef = useRef<{
     position: THREE.Vector3;
@@ -152,6 +158,17 @@ function VolumeViewer({
   const timeIndexRef = useRef(0);
   const [layerStats, setLayerStats] = useState<Record<string, VolumeStats>>({});
   const [hasMeasured, setHasMeasured] = useState(false);
+
+  const getColormapTexture = useCallback((color: string) => {
+    const normalized = normalizeHexColor(color, DEFAULT_LAYER_COLOR);
+    const cache = colormapCacheRef.current;
+    let texture = cache.get(normalized) ?? null;
+    if (!texture) {
+      texture = createColormapTexture(normalized);
+      cache.set(normalized, texture);
+    }
+    return texture;
+  }, []);
 
   const updateTrackDrawRanges = useCallback((targetTimeIndex: number) => {
     const lines = trackLinesRef.current;
@@ -175,10 +192,6 @@ function VolumeViewer({
       }
     }
   }, []);
-
-  if (!colormapRef.current) {
-    colormapRef.current = createColormapTexture();
-  }
 
   const title = useMemo(() => {
     if (!filename) {
@@ -703,9 +716,8 @@ function VolumeViewer({
     const scene = sceneRef.current;
     const camera = cameraRef.current;
     const controls = controlsRef.current;
-    const colormap = colormapRef.current;
 
-    if (!scene || !camera || !controls || !colormap) {
+    if (!scene || !camera || !controls) {
       removeAllResources();
       currentDimensionsRef.current = null;
       setLayerStats({});
@@ -803,6 +815,11 @@ function VolumeViewer({
         resources.texture.image.data.length !== textureData.length ||
         resources.texture.format !== textureFormat;
 
+      const isGrayscale = volume.channels === 1;
+      const colormapTexture = getColormapTexture(
+        isGrayscale ? layer.color : DEFAULT_LAYER_COLOR
+      );
+
       if (needsRebuild) {
         removeResource(layer.key);
 
@@ -822,7 +839,7 @@ function VolumeViewer({
         uniforms.u_clim.value.set(0, 1);
         uniforms.u_renderstyle.value = 0;
         uniforms.u_renderthreshold.value = 0.5;
-        uniforms.u_cmdata.value = colormap;
+        uniforms.u_cmdata.value = colormapTexture;
         uniforms.u_channels.value = volume.channels;
         uniforms.u_contrast.value = layer.contrast;
         uniforms.u_brightness.value = layer.brightness;
@@ -886,6 +903,7 @@ function VolumeViewer({
         materialUniforms.u_channels.value = volume.channels;
         materialUniforms.u_contrast.value = layer.contrast;
         materialUniforms.u_brightness.value = layer.brightness;
+        materialUniforms.u_cmdata.value = colormapTexture;
 
         const localCameraPosition = camera.position.clone();
         mesh.updateMatrixWorld();
@@ -904,14 +922,14 @@ function VolumeViewer({
     }
 
     setLayerStats(nextStats);
-  }, [layers]);
+  }, [getColormapTexture, layers]);
 
   useEffect(() => {
     return () => {
-      if (colormapRef.current) {
-        colormapRef.current.dispose();
-        colormapRef.current = null;
+      for (const texture of colormapCacheRef.current.values()) {
+        texture.dispose();
       }
+      colormapCacheRef.current.clear();
     };
   }, []);
 
