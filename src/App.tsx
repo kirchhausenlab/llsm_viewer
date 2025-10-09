@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { listTiffFiles, loadVolume } from './api';
+import { listTiffFiles, loadVolume, type VolumePayload } from './api';
 import VolumeViewer from './components/VolumeViewer';
-import { normalizeVolume, NormalizedVolume } from './volumeProcessing';
+import { computeNormalizationParameters, normalizeVolume, NormalizedVolume } from './volumeProcessing';
 import { clearTextureCache } from './textureCache';
 import './App.css';
 
@@ -70,13 +70,13 @@ function App() {
           return;
         }
 
-        const loadedVolumes: NormalizedVolume[] = new Array(total);
+        const rawVolumes: VolumePayload[] = new Array(total);
         for (let index = 0; index < total; index++) {
           const rawVolume = await loadVolume(trimmed, discovered[index]);
           if (loadRequestRef.current !== requestId) {
             return;
           }
-          loadedVolumes[index] = normalizeVolume(rawVolume);
+          rawVolumes[index] = rawVolume;
           setLoadedCount(index + 1);
           setLoadProgress((index + 1) / total);
         }
@@ -84,6 +84,11 @@ function App() {
         if (loadRequestRef.current !== requestId) {
           return;
         }
+
+        const normalizationParameters = computeNormalizationParameters(rawVolumes);
+        const loadedVolumes: NormalizedVolume[] = rawVolumes.map((rawVolume) =>
+          normalizeVolume(rawVolume, normalizationParameters)
+        );
 
         clearTextureCache();
         setVolumes(loadedVolumes);

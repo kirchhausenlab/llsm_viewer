@@ -60,3 +60,6 @@ Next steps:
 ## Camera rotation pivot corrections
 - Locked the orbit target to the normalized volume center so rotations always pivot around the dataset regardless of how the camera is translated.
 - Cached the default camera position/target pair on load and reused it for the reset-view handler to guarantee the button restores the original composition.
+
+## Intensity normalization consistency
+- Switched the preprocessing pipeline to compute a single intensity range across every loaded timepoint and channel, ensuring all normalized volumes share consistent brightness.
