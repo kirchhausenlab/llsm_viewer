@@ -320,21 +320,11 @@ function VolumeViewer({
       if (!target || !rendererRef.current || !cameraRef.current) {
         return;
       }
-
-      let width = target.clientWidth;
-      let height = target.clientHeight;
-
-      if (entries && entries.length > 0) {
-        const entry = entries[0];
-        width = Math.round(entry.contentRect.width);
-        height = Math.round(entry.contentRect.height);
+      const width = target.clientWidth;
+      const height = target.clientHeight;
+      if (width > 0 && height > 0) {
+        setHasMeasured(true);
       }
-
-      if (width <= 0 || height <= 0) {
-        return;
-      }
-
-      setHasMeasured((previous) => (previous ? previous : true));
       rendererRef.current.setSize(width, height);
       cameraRef.current.aspect = width / height;
       cameraRef.current.updateProjectionMatrix();
