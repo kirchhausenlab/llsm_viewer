@@ -72,3 +72,7 @@ Next steps:
 ## Render surface readiness gating
 - Prevented zero-sized resize events from propagating to the renderer so the canvas no longer flashes at startup while the container is measuring.
 - Latched a `hasMeasured` flag once the observer reports positive dimensions and used it to toggle the render surface visibility.
+
+## Layer-specific rendering controls
+- Converted the layer list into a tabbed interface so each layer exposes its own visibility toggle alongside dedicated contrast and brightness sliders.
+- Removed the global contrast/brightness controls, wiring the per-layer slider values directly into the volume renderer uniforms for independent adjustments.

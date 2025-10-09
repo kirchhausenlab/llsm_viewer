@@ -11,6 +11,8 @@ type ViewerLayer = {
   label: string;
   volume: NormalizedVolume | null;
   visible: boolean;
+  contrast: number;
+  brightness: number;
 };
 
 type VolumeViewerProps = {
@@ -25,8 +27,6 @@ type VolumeViewerProps = {
   isPlaying: boolean;
   onTogglePlayback: () => void;
   onTimeIndexChange: (index: number) => void;
-  contrast: number;
-  brightness: number;
   onRegisterReset: (handler: (() => void) | null) => void;
 };
 
@@ -36,7 +36,7 @@ type VolumeStats = {
 };
 
 type VolumeResources = {
-  mesh: THREE.Mesh<THREE.BoxGeometry, THREE.ShaderMaterial>;
+  mesh: THREE.Mesh;
   texture: THREE.Data3DTexture;
   dimensions: {
     width: number;
@@ -104,8 +104,6 @@ function VolumeViewer({
   isPlaying,
   onTogglePlayback,
   onTimeIndexChange,
-  contrast,
-  brightness,
   onRegisterReset
 }: VolumeViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -628,7 +626,7 @@ function VolumeViewer({
 
       const texturePreparation = getCachedTextureData(volume);
       const { data: textureData, format: textureFormat } = texturePreparation;
-      let resources = resourcesRef.current.get(layer.key);
+      let resources: VolumeResources | null = resourcesRef.current.get(layer.key) ?? null;
       const needsRebuild =
         !resources ||
         resources.dimensions.width !== volume.width ||
@@ -659,18 +657,18 @@ function VolumeViewer({
         uniforms.u_renderthreshold.value = 0.5;
         uniforms.u_cmdata.value = colormap;
         uniforms.u_channels.value = volume.channels;
-        uniforms.u_contrast.value = contrast;
-        uniforms.u_brightness.value = brightness;
+        uniforms.u_contrast.value = layer.contrast;
+        uniforms.u_brightness.value = layer.brightness;
 
         const material = new THREE.ShaderMaterial({
           uniforms,
           vertexShader: shader.vertexShader,
           fragmentShader: shader.fragmentShader,
           side: THREE.BackSide,
-          transparent: true,
-          depthWrite: false,
-          blending: THREE.NormalBlending
+          transparent: true
         });
+        const baseMaterial = material as unknown as { depthWrite: boolean };
+        baseMaterial.depthWrite = false;
 
         const geometry = new THREE.BoxGeometry(volume.width, volume.height, volume.depth);
         geometry.translate(volume.width / 2 - 0.5, volume.height / 2 - 0.5, volume.depth / 2 - 0.5);
@@ -687,8 +685,9 @@ function VolumeViewer({
         ).multiplyScalar(scale);
         mesh.position.set(-centerOffset.x, -centerOffset.y, -centerOffset.z);
 
-        mesh.visible = layer.visible;
-        mesh.renderOrder = index;
+        const meshObject = mesh as unknown as { visible: boolean; renderOrder: number };
+        meshObject.visible = layer.visible;
+        meshObject.renderOrder = index;
 
         scene.add(mesh);
         mesh.updateMatrixWorld(true);
@@ -712,13 +711,14 @@ function VolumeViewer({
         resources.texture.needsUpdate = true;
 
         const { mesh } = resources;
-        mesh.visible = layer.visible;
-        mesh.renderOrder = index;
+        const meshObject = mesh as unknown as { visible: boolean; renderOrder: number };
+        meshObject.visible = layer.visible;
+        meshObject.renderOrder = index;
         const materialUniforms = mesh.material.uniforms;
         materialUniforms.u_data.value = resources.texture;
         materialUniforms.u_channels.value = volume.channels;
-        materialUniforms.u_contrast.value = contrast;
-        materialUniforms.u_brightness.value = brightness;
+        materialUniforms.u_contrast.value = layer.contrast;
+        materialUniforms.u_brightness.value = layer.brightness;
 
         const localCameraPosition = camera.position.clone();
         mesh.updateMatrixWorld();
@@ -737,7 +737,7 @@ function VolumeViewer({
     }
 
     setLayerStats(nextStats);
-  }, [brightness, contrast, layers]);
+  }, [layers]);
 
   useEffect(() => {
     return () => {
@@ -747,19 +747,6 @@ function VolumeViewer({
       }
     };
   }, []);
-
-  useEffect(() => {
-    const resources = resourcesRef.current;
-    for (const resource of resources.values()) {
-      const uniforms = resource.mesh.material.uniforms;
-      if ('u_contrast' in uniforms) {
-        uniforms.u_contrast.value = contrast;
-      }
-      if ('u_brightness' in uniforms) {
-        uniforms.u_brightness.value = brightness;
-      }
-    }
-  }, [brightness, contrast]);
 
   return (
     <div className="volume-viewer">
