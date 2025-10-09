@@ -63,3 +63,8 @@ Next steps:
 
 ## Intensity normalization consistency
 - Switched the preprocessing pipeline to compute a single intensity range across every loaded timepoint and channel, ensuring all normalized volumes share consistent brightness.
+
+## Loading throughput improvements
+- Parallelized individual TIFF fetches on the client so multiple timepoints stream simultaneously while preserving cancellation safety and progress tracking.
+- Copied slice rasters into the volume buffer with `Float32Array#set` on the server and tracked per-volume intensity extrema during ingestion.
+- Sent the precomputed min/max values alongside each volume so the client can normalize without re-scanning raw buffers.

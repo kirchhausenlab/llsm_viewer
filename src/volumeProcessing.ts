@@ -20,11 +20,11 @@ export function computeNormalizationParameters(volumes: VolumePayload[]): Normal
   let max = Number.NEGATIVE_INFINITY;
 
   for (const volume of volumes) {
-    const source = new Float32Array(volume.data);
-    for (let i = 0; i < source.length; i++) {
-      const value = source[i];
-      if (value < min) min = value;
-      if (value > max) max = value;
+    if (Number.isFinite(volume.min) && volume.min < min) {
+      min = volume.min;
+    }
+    if (Number.isFinite(volume.max) && volume.max > max) {
+      max = volume.max;
     }
   }
 

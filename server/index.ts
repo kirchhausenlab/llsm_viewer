@@ -83,6 +83,8 @@ app.post('/api/volume', async (request, response) => {
     const channels = firstImage.getSamplesPerPixel();
 
     const floatData = new Float32Array(width * height * imageCount * channels);
+    let globalMin = Number.POSITIVE_INFINITY;
+    let globalMax = Number.NEGATIVE_INFINITY;
 
     for (let index = 0; index < imageCount; index++) {
       const image = await tiff.getImage(index);
@@ -97,9 +99,27 @@ app.post('/api/volume', async (request, response) => {
 
       const raster = (await image.readRasters({ interleave: true })) as ArrayLike<number>;
       const offset = index * width * height * channels;
+      floatData.set(raster, offset);
+
       for (let i = 0; i < raster.length; i++) {
-        floatData[offset + i] = raster[i];
+        const value = raster[i];
+        if (value < globalMin) {
+          globalMin = value;
+        }
+        if (value > globalMax) {
+          globalMax = value;
+        }
       }
+    }
+
+    if (!Number.isFinite(globalMin) || globalMin === Number.POSITIVE_INFINITY) {
+      globalMin = 0;
+    }
+    if (!Number.isFinite(globalMax) || globalMax === Number.NEGATIVE_INFINITY) {
+      globalMax = 1;
+    }
+    if (globalMin === globalMax) {
+      globalMax = globalMin + 1;
     }
 
     const metadata = {
@@ -107,7 +127,9 @@ app.post('/api/volume', async (request, response) => {
       height,
       depth: imageCount,
       channels,
-      dataType: 'float32' as const
+      dataType: 'float32' as const,
+      min: globalMin,
+      max: globalMax
     };
 
     const buffer = Buffer.from(floatData.buffer, floatData.byteOffset, floatData.byteLength);
