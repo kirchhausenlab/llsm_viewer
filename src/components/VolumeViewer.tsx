@@ -36,6 +36,7 @@ type VolumeViewerProps = {
   trackVisibility: Record<number, boolean>;
   trackOpacity: number;
   trackLineWidth: number;
+  followedTrackId: number | null;
 };
 
 type VolumeStats = {
@@ -134,7 +135,8 @@ function VolumeViewer({
   showTrackOverlay,
   trackVisibility,
   trackOpacity,
-  trackLineWidth
+  trackLineWidth,
+  followedTrackId
 }: VolumeViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -162,8 +164,13 @@ function VolumeViewer({
   const trackGroupRef = useRef<THREE.Group | null>(null);
   const trackLinesRef = useRef<Map<number, TrackLineResource>>(new Map());
   const timeIndexRef = useRef(0);
+  const followedTrackIdRef = useRef<number | null>(null);
+  const trackFollowOffsetRef = useRef<THREE.Vector3 | null>(null);
+  const previousFollowedTrackIdRef = useRef<number | null>(null);
   const [layerStats, setLayerStats] = useState<Record<string, VolumeStats>>({});
   const [hasMeasured, setHasMeasured] = useState(false);
+
+  followedTrackIdRef.current = followedTrackId;
 
   const getColormapTexture = useCallback((color: string) => {
     const normalized = normalizeHexColor(color, DEFAULT_LAYER_COLOR);
@@ -351,6 +358,105 @@ function VolumeViewer({
     timeIndexRef.current = clampedTimeIndex;
     updateTrackDrawRanges(clampedTimeIndex);
   }, [clampedTimeIndex, updateTrackDrawRanges]);
+
+  const computeTrackCentroid = useCallback(
+    (trackId: number, targetTimeIndex: number) => {
+      const track = tracks.find((candidate) => candidate.id === trackId);
+      if (!track || track.points.length === 0) {
+        return null;
+      }
+
+      const maxVisibleTime = targetTimeIndex + 1;
+      const epsilon = 1e-3;
+      let latestTime = -Infinity;
+      let count = 0;
+      let sumX = 0;
+      let sumY = 0;
+      let sumZ = 0;
+
+      for (const point of track.points) {
+        if (point.time - maxVisibleTime > epsilon) {
+          break;
+        }
+
+        if (point.time > latestTime + epsilon) {
+          latestTime = point.time;
+          count = 1;
+          sumX = point.x;
+          sumY = point.y;
+          sumZ = point.z;
+        } else if (Math.abs(point.time - latestTime) <= epsilon) {
+          count += 1;
+          sumX += point.x;
+          sumY += point.y;
+          sumZ += point.z;
+        }
+      }
+
+      if (count === 0) {
+        return null;
+      }
+
+      const trackGroup = trackGroupRef.current;
+      if (!trackGroup) {
+        return null;
+      }
+
+      const centroidLocal = new THREE.Vector3(sumX / count, sumY / count, sumZ / count);
+      trackGroup.updateMatrixWorld(true);
+      return trackGroup.localToWorld(centroidLocal);
+    },
+    [tracks]
+  );
+
+  useEffect(() => {
+    followedTrackIdRef.current = followedTrackId;
+    if (followedTrackId === null) {
+      trackFollowOffsetRef.current = null;
+      previousFollowedTrackIdRef.current = null;
+      return;
+    }
+
+    const movementState = movementStateRef.current;
+    if (movementState) {
+      movementState.moveForward = false;
+      movementState.moveBackward = false;
+      movementState.moveLeft = false;
+      movementState.moveRight = false;
+      movementState.moveUp = false;
+      movementState.moveDown = false;
+    }
+
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    const rotationTarget = rotationTargetRef.current;
+
+    if (!camera || !controls || !rotationTarget) {
+      return;
+    }
+
+    const centroid = computeTrackCentroid(followedTrackId, clampedTimeIndex);
+    if (!centroid) {
+      return;
+    }
+
+    const previousTrackId = previousFollowedTrackIdRef.current;
+    previousFollowedTrackIdRef.current = followedTrackId;
+
+    let offset: THREE.Vector3;
+    if (previousTrackId === followedTrackId && trackFollowOffsetRef.current) {
+      offset = trackFollowOffsetRef.current.clone();
+    } else {
+      offset = camera.position.clone().sub(rotationTarget);
+    }
+
+    rotationTarget.copy(centroid);
+    controls.target.copy(centroid);
+    camera.position.copy(centroid).add(offset);
+    controls.update();
+
+    trackFollowOffsetRef.current = camera.position.clone().sub(rotationTarget);
+  }, [clampedTimeIndex, computeTrackCentroid, followedTrackId, primaryVolume]);
 
   const handleResetView = useCallback(() => {
     const controls = controlsRef.current;
@@ -550,6 +656,9 @@ function VolumeViewer({
     const dollyDirection = new THREE.Vector3();
 
     const applyKeyboardMovement = () => {
+      if (followedTrackIdRef.current !== null) {
+        return;
+      }
       const movementState = movementStateRef.current;
       if (
         !movementState ||
@@ -700,6 +809,10 @@ function VolumeViewer({
       }
 
       event.preventDefault();
+
+      if (followedTrackIdRef.current !== null) {
+        return;
+      }
 
       const movementState = movementStateRef.current;
       if (!movementState) {

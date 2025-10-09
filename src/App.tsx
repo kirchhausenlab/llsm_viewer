@@ -82,6 +82,7 @@ function App() {
   const [trackVisibility, setTrackVisibility] = useState<Record<number, boolean>>({});
   const [trackOpacity, setTrackOpacity] = useState(DEFAULT_TRACK_OPACITY);
   const [trackLineWidth, setTrackLineWidth] = useState(DEFAULT_TRACK_LINE_WIDTH);
+  const [followedTrackId, setFollowedTrackId] = useState<number | null>(null);
 
   const loadRequestRef = useRef(0);
   const subfolderRequestRef = useRef(0);
@@ -140,6 +141,13 @@ function App() {
     return parsed;
   }, [tracks]);
   const hasParsedTrackData = parsedTracks.length > 0;
+  const followedTrackDisplayIndex = useMemo(() => {
+    if (followedTrackId === null) {
+      return null;
+    }
+    const index = parsedTracks.findIndex((track) => track.id === followedTrackId);
+    return index >= 0 ? index + 1 : null;
+  }, [followedTrackId, parsedTracks]);
 
   const handleRegisterReset = useCallback((handler: (() => void) | null) => {
     setResetViewHandler(() => handler);
@@ -195,6 +203,17 @@ function App() {
       return next;
     });
   }, [parsedTracks]);
+
+  useEffect(() => {
+    if (followedTrackId === null) {
+      return;
+    }
+
+    const hasTrack = parsedTracks.some((track) => track.id === followedTrackId);
+    if (!hasTrack) {
+      setFollowedTrackId(null);
+    }
+  }, [followedTrackId, parsedTracks]);
 
   const refreshSubfolderSummary = useCallback(
     async (targetPath: string) => {
@@ -706,6 +725,24 @@ function App() {
     });
   }, []);
 
+  const handleTrackFollow = useCallback(
+    (trackId: number) => {
+      setFollowedTrackId((current) => (current === trackId ? current : trackId));
+      setShowTrackOverlay(true);
+      setTrackVisibility((current) => {
+        if (current[trackId]) {
+          return current;
+        }
+        return { ...current, [trackId]: true };
+      });
+    },
+    []
+  );
+
+  const handleStopTrackFollow = useCallback(() => {
+    setFollowedTrackId(null);
+  }, []);
+
   useEffect(() => {
     if (layers.length === 0) {
       setActiveLayerKey(null);
@@ -1033,6 +1070,21 @@ function App() {
       </aside>
 
       <main className="viewer">
+        <div className="viewer-toolbar">
+          <span className="viewer-following-label">
+            {followedTrackDisplayIndex !== null
+              ? `Following Track #${followedTrackDisplayIndex}`
+              : 'Not following any track'}
+          </span>
+          <button
+            type="button"
+            onClick={handleStopTrackFollow}
+            disabled={followedTrackId === null}
+            className="viewer-stop-tracking"
+          >
+            Stop tracking
+          </button>
+        </div>
         <VolumeViewer
           layers={viewerLayers}
           filename={selectedFile}
@@ -1051,6 +1103,7 @@ function App() {
           trackVisibility={trackVisibility}
           trackOpacity={trackOpacity}
           trackLineWidth={trackLineWidth}
+          followedTrackId={followedTrackId}
         />
       </main>
       <aside className="sidebar sidebar-right">
@@ -1159,15 +1212,26 @@ function App() {
             <div className="track-list" role="group" aria-label="Track visibility">
               {parsedTracks.map((track, index) => {
                 const isChecked = trackVisibility[track.id] ?? true;
+                const isFollowed = followedTrackId === track.id;
                 return (
-                  <label key={track.id} className="track-item" title={`Track ID ${track.id}`}>
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      onChange={() => handleTrackVisibilityToggle(track.id)}
-                    />
-                    <span>Track #{index + 1}</span>
-                  </label>
+                  <div key={track.id} className="track-item" title={`Track ID ${track.id}`}>
+                    <label className="track-toggle">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => handleTrackVisibilityToggle(track.id)}
+                      />
+                      <span>Track #{index + 1}</span>
+                    </label>
+                    <button
+                      type="button"
+                      className={isFollowed ? 'track-follow-button is-active' : 'track-follow-button'}
+                      onClick={() => handleTrackFollow(track.id)}
+                      aria-pressed={isFollowed}
+                    >
+                      {isFollowed ? 'Following' : 'Follow'}
+                    </button>
+                  </div>
                 );
               })}
             </div>
