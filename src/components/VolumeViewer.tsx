@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { Line2 } from 'three/examples/jsm/lines/Line2';
+import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
 import type { NormalizedVolume } from '../volumeProcessing';
 import { VolumeRenderShader } from '../shaders/volumeRenderShader';
 import { getCachedTextureData } from '../textureCache';
 import './VolumeViewer.css';
 import type { TrackDefinition } from '../types/tracks';
 import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../layerColors';
+import { createTrackColor } from '../trackColors';
 
 type ViewerLayer = {
   key: string;
@@ -32,7 +36,6 @@ type VolumeViewerProps = {
   onTimeIndexChange: (index: number) => void;
   onRegisterReset: (handler: (() => void) | null) => void;
   tracks: TrackDefinition[];
-  showTrackOverlay: boolean;
   trackVisibility: Record<number, boolean>;
   trackOpacity: number;
   trackLineWidth: number;
@@ -74,8 +77,12 @@ type MovementState = {
 };
 
 type TrackLineResource = {
-  line: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>;
+  line: Line2;
+  geometry: LineGeometry;
+  material: LineMaterial;
   times: number[];
+  baseColor: THREE.Color;
+  highlightColor: THREE.Color;
 };
 
 const MOVEMENT_KEY_MAP: Record<string, keyof MovementState> = {
@@ -110,14 +117,6 @@ function createColormapTexture(hexColor: string) {
   return texture;
 }
 
-function createTrackColor(trackId: number) {
-  const color = new THREE.Color();
-  const normalizedId = Math.abs(trackId) + 1;
-  const hue = ((normalizedId * 137.508) % 360) / 360;
-  color.setHSL(hue, 0.75, 0.55);
-  return color;
-}
-
 function VolumeViewer({
   layers,
   filename,
@@ -132,7 +131,6 @@ function VolumeViewer({
   onTimeIndexChange,
   onRegisterReset,
   tracks,
-  showTrackOverlay,
   trackVisibility,
   trackOpacity,
   trackLineWidth,
@@ -188,7 +186,7 @@ function VolumeViewer({
     const maxVisibleTime = targetTimeIndex + 1;
 
     for (const resource of lines.values()) {
-      const { line, times } = resource;
+      const { geometry, times } = resource;
       let visiblePoints = 0;
       for (let index = 0; index < times.length; index++) {
         if (times[index] <= maxVisibleTime) {
@@ -198,11 +196,9 @@ function VolumeViewer({
         }
       }
 
-      if (visiblePoints >= 2) {
-        line.geometry.setDrawRange(0, visiblePoints);
-      } else {
-        line.geometry.setDrawRange(0, 0);
-      }
+      const totalSegments = Math.max(times.length - 1, 0);
+      const visibleSegments = Math.min(Math.max(visiblePoints - 1, 0), totalSegments);
+      geometry.instanceCount = visibleSegments;
     }
   }, []);
 
@@ -252,8 +248,8 @@ function VolumeViewer({
     for (const [id, resource] of Array.from(trackLines.entries())) {
       if (!activeIds.has(id)) {
         trackGroup.remove(resource.line);
-        resource.line.geometry.dispose();
-        resource.line.material.dispose();
+        resource.geometry.dispose();
+        resource.material.dispose();
         trackLines.delete(id);
       }
     }
@@ -276,38 +272,40 @@ function VolumeViewer({
       }
 
       if (!resource) {
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        geometry.setDrawRange(0, 0);
-        geometry.computeBoundingSphere();
-        const material = new THREE.LineBasicMaterial({
-          color: createTrackColor(track.id),
+        const geometry = new LineGeometry();
+        geometry.setPositions(Array.from(positions));
+        geometry.instanceCount = 0;
+
+        const baseColor = createTrackColor(track.id);
+        const highlightColor = baseColor.clone().lerp(new THREE.Color(0xffffff), 0.25);
+        const material = new LineMaterial({
+          color: baseColor.clone(),
           linewidth: 1,
-          depthTest: false,
-          depthWrite: false,
           transparent: true,
-          opacity: 0.9
+          opacity: 0.9,
+          depthTest: false,
+          depthWrite: false
         });
-        const line = new THREE.Line(geometry, material);
+        const containerNode = containerRef.current;
+        if (containerNode) {
+          const width = Math.max(containerNode.clientWidth, 1);
+          const height = Math.max(containerNode.clientHeight, 1);
+          material.resolution.set(width, height);
+        } else {
+          material.resolution.set(1, 1);
+        }
+
+        const line = new Line2(geometry, material);
+        line.computeLineDistances();
         line.renderOrder = 1000;
         line.frustumCulled = false;
         trackGroup.add(line);
-        resource = { line, times };
+        resource = { line, geometry, material, times, baseColor, highlightColor };
         trackLines.set(track.id, resource);
       } else {
-        const { line } = resource;
-        const geometry = line.geometry as THREE.BufferGeometry;
-        const positionAttribute = geometry.getAttribute('position') as
-          | THREE.BufferAttribute
-          | undefined
-          | null;
-        if (!positionAttribute || positionAttribute.count !== track.points.length) {
-          geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        } else {
-          positionAttribute.array.set(positions);
-          positionAttribute.needsUpdate = true;
-        }
-        geometry.computeBoundingSphere();
+        const { geometry, line } = resource;
+        geometry.setPositions(Array.from(positions));
+        line.computeLineDistances();
         resource.times = times;
       }
     }
@@ -331,28 +329,40 @@ function VolumeViewer({
         continue;
       }
 
-      const line = resource.line;
-      const material = line.material;
-      if (material instanceof THREE.LineBasicMaterial) {
-        if (material.opacity !== sanitizedOpacity) {
-          material.opacity = sanitizedOpacity;
-          material.needsUpdate = true;
-        }
-        if (material.linewidth !== sanitizedLineWidth) {
-          material.linewidth = sanitizedLineWidth;
-          material.needsUpdate = true;
-        }
+      const { line, material, baseColor, highlightColor } = resource;
+
+      const isExplicitlyVisible = trackVisibility[track.id] ?? true;
+      const isFollowed = followedTrackId === track.id;
+      const shouldShow = isFollowed || isExplicitlyVisible;
+      line.visible = shouldShow;
+      if (shouldShow) {
+        visibleCount += 1;
       }
 
-      const isVisible = showTrackOverlay && (trackVisibility[track.id] ?? true);
-      line.visible = isVisible;
-      if (isVisible) {
-        visibleCount += 1;
+      const targetColor = isFollowed ? highlightColor : baseColor;
+      if (!material.color.equals(targetColor)) {
+        material.color.copy(targetColor);
+        material.needsUpdate = true;
+      }
+
+      const targetOpacity = isFollowed ? Math.min(1, sanitizedOpacity + 0.1) : sanitizedOpacity;
+      if (material.opacity !== targetOpacity) {
+        material.opacity = targetOpacity;
+        material.needsUpdate = true;
+      }
+
+      const widthMultiplier = isFollowed ? 1.35 : 1;
+      const targetWidth = sanitizedLineWidth * widthMultiplier;
+      if (material.linewidth !== targetWidth) {
+        material.linewidth = targetWidth;
+        material.needsUpdate = true;
       }
     }
 
-    trackGroup.visible = showTrackOverlay && visibleCount > 0;
-  }, [showTrackOverlay, trackLineWidth, trackOpacity, trackVisibility, tracks]);
+    const followedTrackExists = followedTrackId !== null && trackLinesRef.current.has(followedTrackId);
+
+    trackGroup.visible = visibleCount > 0 || followedTrackExists;
+  }, [followedTrackId, trackLineWidth, trackOpacity, trackVisibility, tracks]);
 
   useEffect(() => {
     timeIndexRef.current = clampedTimeIndex;
@@ -640,6 +650,12 @@ function VolumeViewer({
         setHasMeasured(true);
       }
       rendererRef.current.setSize(width, height);
+      if (width > 0 && height > 0) {
+        for (const resource of trackLinesRef.current.values()) {
+          resource.material.resolution.set(width, height);
+          resource.material.needsUpdate = true;
+        }
+      }
       cameraRef.current.aspect = width / height;
       cameraRef.current.updateProjectionMatrix();
     };
@@ -762,8 +778,8 @@ function VolumeViewer({
       if (trackGroup) {
         for (const resource of trackLinesRef.current.values()) {
           trackGroup.remove(resource.line);
-          resource.line.geometry.dispose();
-          resource.line.material.dispose();
+          resource.geometry.dispose();
+          resource.material.dispose();
         }
         trackLinesRef.current.clear();
         if (trackGroup.parent) {

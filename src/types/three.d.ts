@@ -24,11 +24,31 @@ declare module 'three' {
   }
 
   export class Color {
-    constructor(hex?: number);
+    constructor(hex?: number | string);
+    setHSL(h: number, s: number, l: number): this;
+    clone(): Color;
+    copy(color: Color): this;
+    lerp(color: Color, alpha: number): this;
+    equals(color: Color): boolean;
+    getHexString(): string;
   }
 
   export class Object3D {
     position: Vector3;
+    parent: Object3D | null;
+    add(...objects: Object3D[]): this;
+    remove(...objects: Object3D[]): this;
+    name: string;
+    visible: boolean;
+    scale: { set(x: number, y: number, z: number): void; setScalar(value: number): void };
+    updateMatrixWorld(force?: boolean): void;
+    localToWorld(vector: Vector3): Vector3;
+  }
+
+  export class Group extends Object3D {
+    constructor();
+    add(...objects: Object3D[]): this;
+    remove(...objects: Object3D[]): this;
   }
 
   export class Scene extends Object3D {
@@ -44,6 +64,7 @@ declare module 'three' {
   }
 
   export class Material {
+    needsUpdate: boolean;
     dispose(): void;
   }
 
@@ -62,7 +83,6 @@ declare module 'three' {
     constructor(geometry: TGeometry, material: TMaterial);
     geometry: TGeometry;
     material: TMaterial;
-    scale: { setScalar(value: number): void };
     updateMatrixWorld(force?: boolean): void;
     worldToLocal(vector: Vector3): Vector3;
   }
@@ -142,5 +162,54 @@ declare module 'three/examples/jsm/controls/OrbitControls' {
     reset(): void;
     saveState(): void;
     dispose(): void;
+  }
+}
+
+declare module 'three/examples/jsm/lines/LineGeometry' {
+  export class LineGeometry {
+    instanceCount: number;
+    setPositions(array: number[] | ArrayLike<number>): this;
+    dispose(): void;
+  }
+}
+
+declare module 'three/examples/jsm/lines/LineMaterial' {
+  import type { Color, ShaderMaterial, Vector2 } from 'three';
+
+  export interface LineMaterialParameters {
+    color?: Color | string | number;
+    linewidth?: number;
+    transparent?: boolean;
+    opacity?: number;
+    depthTest?: boolean;
+    depthWrite?: boolean;
+  }
+
+  export class LineMaterial extends ShaderMaterial {
+    color: Color;
+    linewidth: number;
+    opacity: number;
+    transparent: boolean;
+    depthTest: boolean;
+    depthWrite: boolean;
+    resolution: Vector2;
+    needsUpdate: boolean;
+    constructor(parameters?: LineMaterialParameters);
+  }
+}
+
+declare module 'three/examples/jsm/lines/Line2' {
+  import type { Group } from 'three';
+  import type { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
+  import type { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
+
+  export class Line2 extends Group {
+    constructor(geometry?: LineGeometry, material?: LineMaterial);
+    geometry: LineGeometry;
+    material: LineMaterial;
+    visible: boolean;
+    renderOrder: number;
+    frustumCulled: boolean;
+    computeLineDistances(): void;
   }
 }
