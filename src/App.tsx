@@ -6,6 +6,7 @@ import { clearTextureCache } from './textureCache';
 import './App.css';
 import DirectoryPickerDialog from './components/DirectoryPickerDialog';
 import FilePickerDialog from './components/FilePickerDialog';
+import type { TrackDefinition, TrackPoint } from './types/tracks';
 
 const DEFAULT_CONTRAST = 1;
 const DEFAULT_BRIGHTNESS = 0;
@@ -72,16 +73,83 @@ function App() {
   const [tracks, setTracks] = useState<string[][]>([]);
   const [trackStatus, setTrackStatus] = useState<LoadState>('idle');
   const [trackError, setTrackError] = useState<string | null>(null);
+  const [showTrackOverlay, setShowTrackOverlay] = useState(false);
 
   const loadRequestRef = useRef(0);
   const subfolderRequestRef = useRef(0);
+  const hasTrackDataRef = useRef(false);
 
   const selectedFile = useMemo(() => files[selectedIndex] ?? null, [files, selectedIndex]);
   const timepointCount = layers.length > 0 ? layers[0].volumes.length : 0;
+  const parsedTracks = useMemo<TrackDefinition[]>(() => {
+    if (tracks.length === 0) {
+      return [];
+    }
+
+    const trackMap = new Map<number, TrackPoint[]>();
+
+    for (const row of tracks) {
+      if (row.length < 6) {
+        continue;
+      }
+
+      const rawId = Number(row[0]);
+      const time = Number(row[2]);
+      const x = Number(row[3]);
+      const y = Number(row[4]);
+      const z = Number(row[5]);
+
+      if (
+        !Number.isFinite(rawId) ||
+        !Number.isFinite(time) ||
+        !Number.isFinite(x) ||
+        !Number.isFinite(y) ||
+        !Number.isFinite(z)
+      ) {
+        continue;
+      }
+
+      const id = Math.trunc(rawId);
+      const point: TrackPoint = { time, x, y, z };
+      const existing = trackMap.get(id);
+      if (existing) {
+        existing.push(point);
+      } else {
+        trackMap.set(id, [point]);
+      }
+    }
+
+    const parsed: TrackDefinition[] = [];
+
+    for (const [id, points] of trackMap.entries()) {
+      const sortedPoints = [...points].sort((a, b) => a.time - b.time);
+      parsed.push({ id, points: sortedPoints });
+    }
+
+    parsed.sort((a, b) => a.id - b.id);
+
+    return parsed;
+  }, [tracks]);
+  const hasParsedTrackData = parsedTracks.length > 0;
 
   const handleRegisterReset = useCallback((handler: (() => void) | null) => {
     setResetViewHandler(() => handler);
   }, []);
+
+  useEffect(() => {
+    const previouslyHadData = hasTrackDataRef.current;
+    if (!hasParsedTrackData) {
+      hasTrackDataRef.current = false;
+      setShowTrackOverlay(false);
+      return;
+    }
+
+    if (!previouslyHadData) {
+      setShowTrackOverlay(true);
+    }
+
+    hasTrackDataRef.current = true;
+  }, [hasParsedTrackData]);
 
   const refreshSubfolderSummary = useCallback(
     async (targetPath: string) => {
@@ -361,7 +429,8 @@ function App() {
       }, {})
     );
     setFps(DEFAULT_FPS);
-  }, [layers]);
+    setShowTrackOverlay(hasParsedTrackData);
+  }, [hasParsedTrackData, layers]);
 
   const controlsAtDefaults = useMemo(() => {
     const allLayerDefaults =
@@ -373,8 +442,11 @@ function App() {
         return contrast === DEFAULT_CONTRAST && brightness === DEFAULT_BRIGHTNESS;
       });
 
-    return allLayerDefaults && fps === DEFAULT_FPS;
-  }, [fps, layerSettings, layers]);
+    const overlayDefault = hasParsedTrackData;
+    const overlayAtDefault = showTrackOverlay === overlayDefault;
+
+    return allLayerDefaults && fps === DEFAULT_FPS && overlayAtDefault;
+  }, [fps, hasParsedTrackData, layerSettings, layers, showTrackOverlay]);
 
   const handleTogglePlayback = useCallback(() => {
     setIsPlaying((current) => {
@@ -766,6 +838,17 @@ function App() {
             </button>
           </div>
           <div className="control-group">
+            <label>
+              <span>Show tracking overlay</span>
+              <input
+                type="checkbox"
+                checked={showTrackOverlay}
+                onChange={(event) => setShowTrackOverlay(event.target.checked)}
+                disabled={!hasParsedTrackData}
+              />
+            </label>
+          </div>
+          <div className="control-group">
             <label htmlFor="fps-slider">
               FPS <span>{fps}</span>
             </label>
@@ -799,6 +882,8 @@ function App() {
           onTogglePlayback={handleTogglePlayback}
           onTimeIndexChange={handleTimeIndexChange}
           onRegisterReset={handleRegisterReset}
+          tracks={parsedTracks}
+          showTrackOverlay={showTrackOverlay}
         />
       </main>
       {isPickerOpen ? (
