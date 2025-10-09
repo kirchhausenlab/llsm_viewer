@@ -724,6 +724,17 @@ function VolumeViewer({
     const renderLoop = () => {
       applyKeyboardMovement();
       controls.update();
+
+      if (followedTrackIdRef.current !== null) {
+        const rotationTarget = rotationTargetRef.current;
+        if (rotationTarget) {
+          if (!trackFollowOffsetRef.current) {
+            trackFollowOffsetRef.current = new THREE.Vector3();
+          }
+          trackFollowOffsetRef.current.copy(camera.position).sub(rotationTarget);
+        }
+      }
+
       const resources = resourcesRef.current;
       for (const resource of resources.values()) {
         const { mesh } = resource;
