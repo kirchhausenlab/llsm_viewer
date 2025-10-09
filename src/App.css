@@ -129,6 +129,12 @@
   color: #ff7b7b;
 }
 
+.subfolder-warning {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #ffcf6b;
+}
+
 .subfolder-list {
   display: flex;
   flex-direction: column;
@@ -197,6 +203,26 @@
   margin: 0;
   font-weight: 600;
   word-break: break-word;
+}
+
+.layer-controls .layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.layer-controls .layer-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.layer-controls .layer-item input[type='checkbox'] {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: #5b8cff;
 }
 
 .view-controls {

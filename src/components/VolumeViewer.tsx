@@ -6,15 +6,22 @@ import { VolumeRenderShader } from '../shaders/volumeRenderShader';
 import { getCachedTextureData } from '../textureCache';
 import './VolumeViewer.css';
 
-type VolumeViewerProps = {
+type ViewerLayer = {
+  key: string;
+  label: string;
   volume: NormalizedVolume | null;
+  visible: boolean;
+};
+
+type VolumeViewerProps = {
+  layers: ViewerLayer[];
   filename: string | null;
   timeIndex: number;
   totalTimepoints: number;
-  expectedTimepoints: number;
   isLoading: boolean;
   loadingProgress: number;
-  loadedTimepoints: number;
+  loadedVolumes: number;
+  expectedVolumes: number;
   isPlaying: boolean;
   onTogglePlayback: () => void;
   onTimeIndexChange: (index: number) => void;
@@ -86,12 +93,12 @@ function createColormapTexture() {
 }
 
 function VolumeViewer({
-  volume,
+  layers,
   filename,
   isLoading,
   loadingProgress,
-  loadedTimepoints,
-  expectedTimepoints,
+  loadedVolumes,
+  expectedVolumes,
   timeIndex,
   totalTimepoints,
   isPlaying,
@@ -107,7 +114,8 @@ function VolumeViewer({
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const animationFrameRef = useRef<number | null>(null);
-  const resourcesRef = useRef<VolumeResources | null>(null);
+  const resourcesRef = useRef<Map<string, VolumeResources>>(new Map());
+  const currentDimensionsRef = useRef<{ width: number; height: number; depth: number } | null>(null);
   const colormapRef = useRef<THREE.DataTexture | null>(null);
   const rotationTargetRef = useRef(new THREE.Vector3());
   const defaultViewStateRef = useRef<{
@@ -123,7 +131,7 @@ function VolumeViewer({
     moveUp: false,
     moveDown: false
   });
-  const [stats, setStats] = useState<VolumeStats | null>(null);
+  const [layerStats, setLayerStats] = useState<Record<string, VolumeStats>>({});
   const [hasMeasured, setHasMeasured] = useState(false);
 
   if (!colormapRef.current) {
@@ -138,17 +146,26 @@ function VolumeViewer({
   }, [filename]);
 
   const safeProgress = Math.min(1, Math.max(0, loadingProgress));
-  const clampedLoadedTimepoints = Math.max(0, loadedTimepoints);
-  const clampedExpectedTimepoints = Math.max(0, expectedTimepoints);
+  const clampedLoadedVolumes = Math.max(0, loadedVolumes);
+  const clampedExpectedVolumes = Math.max(0, expectedVolumes);
   const normalizedProgress =
-    clampedExpectedTimepoints > 0
-      ? Math.min(1, clampedLoadedTimepoints / clampedExpectedTimepoints)
+    clampedExpectedVolumes > 0
+      ? Math.min(1, clampedLoadedVolumes / clampedExpectedVolumes)
       : safeProgress;
-  const hasStartedLoading = normalizedProgress > 0 || clampedLoadedTimepoints > 0 || safeProgress > 0;
+  const hasStartedLoading = normalizedProgress > 0 || clampedLoadedVolumes > 0 || safeProgress > 0;
   const hasFinishedLoading =
-    clampedExpectedTimepoints > 0 ? clampedLoadedTimepoints >= clampedExpectedTimepoints : safeProgress >= 1;
+    clampedExpectedVolumes > 0 ? clampedLoadedVolumes >= clampedExpectedVolumes : safeProgress >= 1;
   const showLoadingOverlay = isLoading || (hasStartedLoading && !hasFinishedLoading);
   const clampedTimeIndex = totalTimepoints === 0 ? 0 : Math.min(timeIndex, totalTimepoints - 1);
+  const primaryVolume = useMemo(() => {
+    for (const layer of layers) {
+      if (layer.volume) {
+        return layer.volume;
+      }
+    }
+    return null;
+  }, [layers]);
+  const hasRenderableLayer = Boolean(primaryVolume);
 
   const handleResetView = useCallback(() => {
     const controls = controlsRef.current;
@@ -170,11 +187,11 @@ function VolumeViewer({
   }, []);
 
   useEffect(() => {
-    onRegisterReset(volume ? handleResetView : null);
+    onRegisterReset(hasRenderableLayer ? handleResetView : null);
     return () => {
       onRegisterReset(null);
     };
-  }, [handleResetView, onRegisterReset, volume]);
+  }, [handleResetView, hasRenderableLayer, onRegisterReset]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -408,8 +425,8 @@ function VolumeViewer({
       applyKeyboardMovement();
       controls.update();
       const resources = resourcesRef.current;
-      if (resources) {
-        const { mesh } = resources;
+      for (const resource of resources.values()) {
+        const { mesh } = resource;
         mesh.updateMatrixWorld();
         const cameraUniform = mesh.material.uniforms.u_cameraPos.value;
         cameraUniform.copy(camera.position);
@@ -422,13 +439,13 @@ function VolumeViewer({
 
     return () => {
       const resources = resourcesRef.current;
-      if (resources) {
-        scene.remove(resources.mesh);
-        resources.mesh.geometry.dispose();
-        resources.mesh.material.dispose();
-        resources.texture.dispose();
-        resourcesRef.current = null;
+      for (const resource of resources.values()) {
+        scene.remove(resource.mesh);
+        resource.mesh.geometry.dispose();
+        resource.mesh.material.dispose();
+        resource.texture.dispose();
       }
+      resources.clear();
 
       domElement.removeEventListener('pointerdown', handlePointerDown, pointerDownOptions);
       domElement.removeEventListener('pointermove', handlePointerMove);
@@ -514,21 +531,25 @@ function VolumeViewer({
   }, []);
 
   useEffect(() => {
-    const releaseResources = () => {
-      const resources = resourcesRef.current;
-      if (!resources) {
+    const removeResource = (key: string) => {
+      const resource = resourcesRef.current.get(key);
+      if (!resource) {
         return;
       }
-
       const activeScene = sceneRef.current;
       if (activeScene) {
-        activeScene.remove(resources.mesh);
+        activeScene.remove(resource.mesh);
       }
+      resource.mesh.geometry.dispose();
+      resource.mesh.material.dispose();
+      resource.texture.dispose();
+      resourcesRef.current.delete(key);
+    };
 
-      resources.mesh.geometry.dispose();
-      resources.mesh.material.dispose();
-      resources.texture.dispose();
-      resourcesRef.current = null;
+    const removeAllResources = () => {
+      for (const key of Array.from(resourcesRef.current.keys())) {
+        removeResource(key);
+      }
     };
 
     const scene = sceneRef.current;
@@ -537,99 +558,41 @@ function VolumeViewer({
     const colormap = colormapRef.current;
 
     if (!scene || !camera || !controls || !colormap) {
-      releaseResources();
-      setStats(null);
+      removeAllResources();
+      currentDimensionsRef.current = null;
+      setLayerStats({});
       return;
     }
 
-    if (!volume) {
-      releaseResources();
+    const referenceVolume = primaryVolume;
+
+    if (!referenceVolume) {
+      removeAllResources();
+      currentDimensionsRef.current = null;
       rotationTargetRef.current.set(0, 0, 0);
-      if (controls && camera) {
-        controls.target.set(0, 0, 0);
-        defaultViewStateRef.current = {
-          position: camera.position.clone(),
-          target: controls.target.clone()
-        };
-        controls.update();
-      }
-      setStats(null);
+      controls.target.set(0, 0, 0);
+      controls.update();
+      defaultViewStateRef.current = {
+        position: camera.position.clone(),
+        target: controls.target.clone()
+      };
+      setLayerStats({});
       return;
     }
 
-    const { width, height, depth, min, max, channels } = volume;
-    const texturePreparation = getCachedTextureData(volume);
-    const { data: textureData, format: textureFormat } = texturePreparation;
-    let resources = resourcesRef.current;
+    const { width, height, depth } = referenceVolume;
     const dimensionsChanged =
-      !resources ||
-      resources.dimensions.width !== width ||
-      resources.dimensions.height !== height ||
-      resources.dimensions.depth !== depth ||
-      resources.channels !== channels ||
-      resources.texture.image.data.length !== textureData.length ||
-      resources.texture.format !== textureFormat;
+      !currentDimensionsRef.current ||
+      currentDimensionsRef.current.width !== width ||
+      currentDimensionsRef.current.height !== height ||
+      currentDimensionsRef.current.depth !== depth;
 
     if (dimensionsChanged) {
-      if (resources) {
-        releaseResources();
-        resources = null;
-      }
+      removeAllResources();
+      currentDimensionsRef.current = { width, height, depth };
 
-      const texture = new THREE.Data3DTexture(textureData, width, height, depth);
-      texture.format = textureFormat;
-      texture.type = THREE.UnsignedByteType;
-      texture.minFilter = THREE.LinearFilter;
-      texture.magFilter = THREE.LinearFilter;
-      texture.unpackAlignment = 1;
-      texture.colorSpace = THREE.LinearSRGBColorSpace;
-      texture.needsUpdate = true;
-
-      const shader = VolumeRenderShader;
-      const uniforms = THREE.UniformsUtils.clone(shader.uniforms);
-      uniforms.u_data.value = texture;
-      uniforms.u_size.value.set(width, height, depth);
-      uniforms.u_clim.value.set(0, 1);
-      uniforms.u_renderstyle.value = 0;
-      uniforms.u_renderthreshold.value = 0.5;
-      uniforms.u_cmdata.value = colormap;
-      uniforms.u_channels.value = channels;
-      uniforms.u_contrast.value = contrast;
-      uniforms.u_brightness.value = brightness;
-
-      const material = new THREE.ShaderMaterial({
-        uniforms,
-        vertexShader: shader.vertexShader,
-        fragmentShader: shader.fragmentShader,
-        side: THREE.BackSide,
-        transparent: true
-      });
-
-      const geometry = new THREE.BoxGeometry(width, height, depth);
-      geometry.translate(width / 2 - 0.5, height / 2 - 0.5, depth / 2 - 0.5);
-
-      const mesh = new THREE.Mesh(geometry, material);
       const maxDimension = Math.max(width, height, depth);
       const scale = 1 / maxDimension;
-      mesh.scale.setScalar(scale);
-
-      const centerOffset = new THREE.Vector3(width / 2 - 0.5, height / 2 - 0.5, depth / 2 - 0.5).multiplyScalar(scale);
-      mesh.position.set(-centerOffset.x, -centerOffset.y, -centerOffset.z);
-
-      scene.add(mesh);
-      mesh.updateMatrixWorld(true);
-
-      const rotationTarget = rotationTargetRef.current;
-      rotationTarget.set(0, 0, 0);
-      controls.target.copy(rotationTarget);
-
-      resourcesRef.current = {
-        mesh,
-        texture,
-        dimensions: { width, height, depth },
-        channels
-      };
-
       const boundingRadius = Math.sqrt(width * width + height * height + depth * depth) * scale * 0.5;
       const fovInRadians = THREE.MathUtils.degToRad(camera.fov * 0.5);
       const distance = boundingRadius / Math.sin(fovInRadians);
@@ -642,35 +605,139 @@ function VolumeViewer({
         camera.updateProjectionMatrix();
       }
       camera.position.set(0, 0, safeDistance);
+      const rotationTarget = rotationTargetRef.current;
+      rotationTarget.set(0, 0, 0);
+      controls.target.copy(rotationTarget);
       controls.update();
       defaultViewStateRef.current = {
         position: camera.position.clone(),
         target: controls.target.clone()
       };
       controls.saveState();
-
-      const cameraUniform = mesh.material.uniforms.u_cameraPos.value;
-      cameraUniform.copy(camera.position);
-      mesh.worldToLocal(cameraUniform);
-    } else if (resources) {
-      resources.texture.image.data = textureData;
-      resources.texture.format = textureFormat;
-      resources.texture.needsUpdate = true;
-      const { mesh } = resources;
-      const materialUniforms = mesh.material.uniforms;
-      materialUniforms.u_data.value = resources.texture;
-      materialUniforms.u_channels.value = channels;
-      materialUniforms.u_contrast.value = contrast;
-      materialUniforms.u_brightness.value = brightness;
-
-      const localCameraPosition = camera.position.clone();
-      mesh.updateMatrixWorld();
-      mesh.worldToLocal(localCameraPosition);
-      materialUniforms.u_cameraPos.value.copy(localCameraPosition);
     }
 
-    setStats({ min, max });
-  }, [volume]);
+    const nextStats: Record<string, VolumeStats> = {};
+    const seenKeys = new Set<string>();
+
+    layers.forEach((layer, index) => {
+      const volume = layer.volume;
+      if (!volume) {
+        removeResource(layer.key);
+        return;
+      }
+
+      const texturePreparation = getCachedTextureData(volume);
+      const { data: textureData, format: textureFormat } = texturePreparation;
+      let resources = resourcesRef.current.get(layer.key);
+      const needsRebuild =
+        !resources ||
+        resources.dimensions.width !== volume.width ||
+        resources.dimensions.height !== volume.height ||
+        resources.dimensions.depth !== volume.depth ||
+        resources.channels !== volume.channels ||
+        resources.texture.image.data.length !== textureData.length ||
+        resources.texture.format !== textureFormat;
+
+      if (needsRebuild) {
+        removeResource(layer.key);
+
+        const texture = new THREE.Data3DTexture(textureData, volume.width, volume.height, volume.depth);
+        texture.format = textureFormat;
+        texture.type = THREE.UnsignedByteType;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.unpackAlignment = 1;
+        texture.colorSpace = THREE.LinearSRGBColorSpace;
+        texture.needsUpdate = true;
+
+        const shader = VolumeRenderShader;
+        const uniforms = THREE.UniformsUtils.clone(shader.uniforms);
+        uniforms.u_data.value = texture;
+        uniforms.u_size.value.set(volume.width, volume.height, volume.depth);
+        uniforms.u_clim.value.set(0, 1);
+        uniforms.u_renderstyle.value = 0;
+        uniforms.u_renderthreshold.value = 0.5;
+        uniforms.u_cmdata.value = colormap;
+        uniforms.u_channels.value = volume.channels;
+        uniforms.u_contrast.value = contrast;
+        uniforms.u_brightness.value = brightness;
+
+        const material = new THREE.ShaderMaterial({
+          uniforms,
+          vertexShader: shader.vertexShader,
+          fragmentShader: shader.fragmentShader,
+          side: THREE.BackSide,
+          transparent: true,
+          depthWrite: false,
+          blending: THREE.NormalBlending
+        });
+
+        const geometry = new THREE.BoxGeometry(volume.width, volume.height, volume.depth);
+        geometry.translate(volume.width / 2 - 0.5, volume.height / 2 - 0.5, volume.depth / 2 - 0.5);
+
+        const mesh = new THREE.Mesh(geometry, material);
+        const maxDimension = Math.max(volume.width, volume.height, volume.depth);
+        const scale = 1 / maxDimension;
+        mesh.scale.setScalar(scale);
+
+        const centerOffset = new THREE.Vector3(
+          volume.width / 2 - 0.5,
+          volume.height / 2 - 0.5,
+          volume.depth / 2 - 0.5
+        ).multiplyScalar(scale);
+        mesh.position.set(-centerOffset.x, -centerOffset.y, -centerOffset.z);
+
+        mesh.visible = layer.visible;
+        mesh.renderOrder = index;
+
+        scene.add(mesh);
+        mesh.updateMatrixWorld(true);
+
+        const cameraUniform = mesh.material.uniforms.u_cameraPos.value;
+        cameraUniform.copy(camera.position);
+        mesh.worldToLocal(cameraUniform);
+
+        resourcesRef.current.set(layer.key, {
+          mesh,
+          texture,
+          dimensions: { width: volume.width, height: volume.height, depth: volume.depth },
+          channels: volume.channels
+        });
+        resources = resourcesRef.current.get(layer.key) ?? null;
+      }
+
+      if (resources) {
+        resources.texture.image.data = textureData;
+        resources.texture.format = textureFormat;
+        resources.texture.needsUpdate = true;
+
+        const { mesh } = resources;
+        mesh.visible = layer.visible;
+        mesh.renderOrder = index;
+        const materialUniforms = mesh.material.uniforms;
+        materialUniforms.u_data.value = resources.texture;
+        materialUniforms.u_channels.value = volume.channels;
+        materialUniforms.u_contrast.value = contrast;
+        materialUniforms.u_brightness.value = brightness;
+
+        const localCameraPosition = camera.position.clone();
+        mesh.updateMatrixWorld();
+        mesh.worldToLocal(localCameraPosition);
+        materialUniforms.u_cameraPos.value.copy(localCameraPosition);
+      }
+
+      nextStats[layer.key] = { min: volume.min, max: volume.max };
+      seenKeys.add(layer.key);
+    });
+
+    for (const key of Array.from(resourcesRef.current.keys())) {
+      if (!seenKeys.has(key)) {
+        removeResource(key);
+      }
+    }
+
+    setLayerStats(nextStats);
+  }, [brightness, contrast, layers]);
 
   useEffect(() => {
     return () => {
@@ -683,16 +750,14 @@ function VolumeViewer({
 
   useEffect(() => {
     const resources = resourcesRef.current;
-    if (!resources) {
-      return;
-    }
-
-    const uniforms = resources.mesh.material.uniforms;
-    if ('u_contrast' in uniforms) {
-      uniforms.u_contrast.value = contrast;
-    }
-    if ('u_brightness' in uniforms) {
-      uniforms.u_brightness.value = brightness;
+    for (const resource of resources.values()) {
+      const uniforms = resource.mesh.material.uniforms;
+      if ('u_contrast' in uniforms) {
+        uniforms.u_contrast.value = contrast;
+      }
+      if ('u_brightness' in uniforms) {
+        uniforms.u_brightness.value = brightness;
+      }
     }
   }, [brightness, contrast]);
 
@@ -701,13 +766,27 @@ function VolumeViewer({
       <header>
         <div>
           <h2>{title}</h2>
-          {volume ? (
+          {primaryVolume ? (
             <p>
-              {volume.width} × {volume.height} × {volume.depth} · {volume.channels} channel{volume.channels > 1 ? 's' : ''}
+              {primaryVolume.width} × {primaryVolume.height} × {primaryVolume.depth} · {primaryVolume.channels} channel
+              {primaryVolume.channels > 1 ? 's' : ''}
             </p>
           ) : (
             <p>Select a dataset to preview its 3D volume.</p>
           )}
+          {layers.length > 0 ? (
+            <div className="viewer-layer-summary">
+              {layers.map((layer) => (
+                <span
+                  key={layer.key}
+                  className={layer.visible ? 'layer-pill' : 'layer-pill is-hidden'}
+                  aria-label={layer.visible ? `${layer.label} visible` : `${layer.label} hidden`}
+                >
+                  {layer.label}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
         <div className="viewer-meta">
           <div className="time-info">
@@ -753,11 +832,27 @@ function VolumeViewer({
       </section>
     )}
 
-      {stats && (
-        <footer>
-          <span>
-            Intensity normalization: {stats.min.toFixed(3)} – {stats.max.toFixed(3)}
-          </span>
+      {Object.keys(layerStats).length > 0 && (
+        <footer className="viewer-stats">
+          <span className="viewer-stats-title">Intensity normalization</span>
+          <ul>
+            {layers
+              .filter((layer) => layerStats[layer.key])
+              .map((layer) => {
+                const stats = layerStats[layer.key];
+                if (!stats) {
+                  return null;
+                }
+                return (
+                  <li key={layer.key} className={layer.visible ? '' : 'is-hidden'}>
+                    <span className="layer-label">{layer.label}</span>
+                    <span className="layer-range">
+                      {stats.min.toFixed(3)} – {stats.max.toFixed(3)}
+                    </span>
+                  </li>
+                );
+              })}
+          </ul>
         </footer>
       )}
     </div>

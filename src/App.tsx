@@ -12,15 +12,37 @@ const DEFAULT_FPS = 12;
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 
+type LayerTarget = {
+  key: string;
+  label: string;
+  directory: string;
+};
+
+type LoadedLayer = LayerTarget & {
+  volumes: NormalizedVolume[];
+};
+
+function joinPath(base: string, segment: string) {
+  if (!base) {
+    return segment;
+  }
+  if (base.endsWith('/')) {
+    return `${base}${segment}`;
+  }
+  return `${base}/${segment}`;
+}
+
 function App() {
   const [path, setPath] = useState('');
   const [files, setFiles] = useState<string[]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
-  const [volumes, setVolumes] = useState<NormalizedVolume[]>([]);
+  const [layers, setLayers] = useState<LoadedLayer[]>([]);
+  const [visibleLayers, setVisibleLayers] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState<LoadState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [loadProgress, setLoadProgress] = useState(0);
   const [loadedCount, setLoadedCount] = useState(0);
+  const [expectedVolumeCount, setExpectedVolumeCount] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [contrast, setContrast] = useState(DEFAULT_CONTRAST);
   const [brightness, setBrightness] = useState(DEFAULT_BRIGHTNESS);
@@ -39,7 +61,8 @@ function App() {
   const subfolderRequestRef = useRef(0);
 
   const selectedFile = useMemo(() => files[selectedIndex] ?? null, [files, selectedIndex]);
-  const hasVolume = volumes.length > 0;
+  const timepointCount = layers.length > 0 ? layers[0].volumes.length : 0;
+  const hasVolume = layers.some((layer) => layer.volumes.length > 0);
 
   const handleRegisterReset = useCallback((handler: (() => void) | null) => {
     setResetViewHandler(() => handler);
@@ -113,42 +136,41 @@ function App() {
       setError(null);
       setFiles([]);
       clearTextureCache();
-      setVolumes([]);
+      setLayers([]);
+      setVisibleLayers({});
       setSelectedIndex(0);
       setIsPlaying(false);
       setLoadProgress(0);
       setLoadedCount(0);
+      setExpectedVolumeCount(0);
       try {
-        const discovered = await listTiffFiles(trimmed);
-        if (loadRequestRef.current !== requestId) {
-          return;
-        }
-        setFiles(discovered);
-        setSelectedIndex(0);
-        const total = discovered.length;
-
-        if (total === 0) {
-          setStatus('loaded');
-          setLoadProgress(1);
-          return;
-        }
-
-        const rawVolumes: VolumePayload[] = new Array(total);
-        await Promise.all(
-          discovered.map(async (filename, index) => {
-            const rawVolume = await loadVolume(trimmed, filename);
-            if (loadRequestRef.current !== requestId) {
-              return;
-            }
-            rawVolumes[index] = rawVolume;
-            setLoadedCount((current) => {
-              if (loadRequestRef.current !== requestId) {
-                return current;
+        const explicitTargets: LayerTarget[] = (() => {
+          if (!subfolderSummary) {
+            return [
+              {
+                key: 'root',
+                label: 'root',
+                directory: trimmed
               }
-              const next = current + 1;
-              setLoadProgress(next / total);
-              return next;
-            });
+            ];
+          }
+
+          const selectedEntries = Object.entries(subfolderChecks).filter(([, checked]) => checked);
+          if (selectedEntries.length === 0) {
+            throw new Error('Select at least one layer to load.');
+          }
+
+          return selectedEntries.map(([key]) => ({
+            key,
+            label: key === 'root' ? 'root' : key,
+            directory: key === 'root' ? trimmed : joinPath(trimmed, key)
+          }));
+        })();
+
+        const layerFileLists = await Promise.all(
+          explicitTargets.map(async (target) => {
+            const filesForLayer = await listTiffFiles(target.directory);
+            return { target, files: filesForLayer };
           })
         );
 
@@ -156,15 +178,109 @@ function App() {
           return;
         }
 
-        const normalizationParameters = computeNormalizationParameters(rawVolumes);
-        const loadedVolumes: NormalizedVolume[] = rawVolumes.map((rawVolume) =>
-          normalizeVolume(rawVolume, normalizationParameters)
+        if (layerFileLists.length === 0) {
+          setStatus('loaded');
+          setLoadProgress(1);
+          return;
+        }
+
+        const referenceFiles = layerFileLists[0].files;
+        if (referenceFiles.length === 0) {
+          setFiles([]);
+          setStatus('loaded');
+          setLoadProgress(1);
+          return;
+        }
+
+        const totalExpectedVolumes = referenceFiles.length * layerFileLists.length;
+        setExpectedVolumeCount(totalExpectedVolumes);
+
+        for (const { files: candidateFiles, target } of layerFileLists) {
+          if (candidateFiles.length !== referenceFiles.length) {
+            throw new Error(
+              `Layer "${target.label}" has a different number of timepoints (${candidateFiles.length}) than the reference layer (${referenceFiles.length}).`
+            );
+          }
+
+          for (let index = 0; index < referenceFiles.length; index++) {
+            if (candidateFiles[index] !== referenceFiles[index]) {
+              throw new Error(
+                `Layer "${target.label}" does not match the reference file ordering at position ${index + 1}.`
+              );
+            }
+          }
+        }
+
+        const rawLayers: { target: LayerTarget; volumes: VolumePayload[] }[] = layerFileLists.map(
+          ({ target }) => ({ target, volumes: new Array<VolumePayload>(referenceFiles.length) })
         );
 
+        let referenceShape: { width: number; height: number; depth: number } | null = null;
+
+        await Promise.all(
+          rawLayers.map(async ({ target, volumes }) => {
+            await Promise.all(
+              referenceFiles.map(async (filename, index) => {
+                const rawVolume = await loadVolume(target.directory, filename);
+                if (loadRequestRef.current !== requestId) {
+                  return;
+                }
+
+                if (!referenceShape) {
+                  referenceShape = {
+                    width: rawVolume.width,
+                    height: rawVolume.height,
+                    depth: rawVolume.depth
+                  };
+                } else if (
+                  rawVolume.width !== referenceShape.width ||
+                  rawVolume.height !== referenceShape.height ||
+                  rawVolume.depth !== referenceShape.depth
+                ) {
+                  throw new Error(
+                    `Layer "${target.label}" has volume dimensions ${rawVolume.width}×${rawVolume.height}×${rawVolume.depth} that do not match the reference shape ${referenceShape.width}×${referenceShape.height}×${referenceShape.depth}.`
+                  );
+                }
+
+                volumes[index] = rawVolume;
+                setLoadedCount((current) => {
+                  if (loadRequestRef.current !== requestId) {
+                    return current;
+                  }
+                  const next = current + 1;
+                  setLoadProgress(next / totalExpectedVolumes);
+                  return next;
+                });
+              })
+            );
+          })
+        );
+
+        if (loadRequestRef.current !== requestId) {
+          return;
+        }
+
+        const normalizedLayers: LoadedLayer[] = rawLayers.map(({ target, volumes }) => {
+          const normalizationParameters = computeNormalizationParameters(volumes);
+          const normalizedVolumes = volumes.map((rawVolume) => normalizeVolume(rawVolume, normalizationParameters));
+          return {
+            ...target,
+            volumes: normalizedVolumes
+          };
+        });
+
         clearTextureCache();
-        setVolumes(loadedVolumes);
+        setFiles(referenceFiles);
+        setLayers(normalizedLayers);
+        setVisibleLayers(
+          normalizedLayers.reduce<Record<string, boolean>>((acc, layer) => {
+            acc[layer.key] = true;
+            return acc;
+          }, {})
+        );
+        setSelectedIndex(0);
         setStatus('loaded');
-        setLoadedCount(total);
+        setLoadedCount(totalExpectedVolumes);
         setLoadProgress(1);
       } catch (err) {
         if (loadRequestRef.current !== requestId) {
@@ -174,29 +290,31 @@ function App() {
         setStatus('error');
         setFiles([]);
         clearTextureCache();
-        setVolumes([]);
+        setLayers([]);
+        setVisibleLayers({});
         setSelectedIndex(0);
         setLoadProgress(0);
         setLoadedCount(0);
+        setExpectedVolumeCount(0);
         setIsPlaying(false);
         setError(err instanceof Error ? err.message : 'Failed to load volumes.');
       }
     },
-    [path]
+    [path, subfolderChecks, subfolderSummary]
   );
 
   useEffect(() => {
-    if (!isPlaying || volumes.length <= 1) {
+    if (!isPlaying || timepointCount <= 1) {
       return;
     }
 
     const safeFps = Math.max(1, fps);
     const interval = window.setInterval(() => {
       setSelectedIndex((prev) => {
-        if (volumes.length === 0) {
+        if (timepointCount === 0) {
           return prev;
         }
-        const next = (prev + 1) % volumes.length;
+        const next = (prev + 1) % timepointCount;
         return next;
       });
     }, 1000 / safeFps);
@@ -204,16 +322,16 @@ function App() {
     return () => {
       window.clearInterval(interval);
     };
-  }, [fps, isPlaying, volumes.length]);
+  }, [fps, isPlaying, timepointCount]);
 
   useEffect(() => {
-    if (volumes.length <= 1 && isPlaying) {
+    if (timepointCount <= 1 && isPlaying) {
       setIsPlaying(false);
     }
-    if (selectedIndex >= volumes.length && volumes.length > 0) {
+    if (selectedIndex >= timepointCount && timepointCount > 0) {
       setSelectedIndex(0);
     }
-  }, [isPlaying, selectedIndex, volumes.length]);
+  }, [isPlaying, selectedIndex, timepointCount]);
 
   const isLoading = status === 'loading';
 
@@ -228,24 +346,24 @@ function App() {
 
   const handleTogglePlayback = useCallback(() => {
     setIsPlaying((current) => {
-      if (!current && volumes.length <= 1) {
+      if (!current && timepointCount <= 1) {
         return current;
       }
       return !current;
     });
-  }, [volumes.length]);
+  }, [timepointCount]);
 
   const handleTimeIndexChange = useCallback(
     (nextIndex: number) => {
       setSelectedIndex((prev) => {
-        if (volumes.length === 0) {
+        if (timepointCount === 0) {
           return prev;
         }
-        const clamped = Math.max(0, Math.min(volumes.length - 1, nextIndex));
+        const clamped = Math.max(0, Math.min(timepointCount - 1, nextIndex));
         return clamped;
       });
     },
-    [volumes.length]
+    [timepointCount]
   );
 
   const handleOpenPicker = useCallback(() => {
@@ -283,6 +401,13 @@ function App() {
     }));
   }, []);
 
+  const handleLayerVisibilityToggle = useCallback((key: string) => {
+    setVisibleLayers((current) => ({
+      ...current,
+      [key]: !current[key]
+    }));
+  }, []);
+
   const subfolderItems = useMemo(() => {
     if (!subfolderSummary) {
       return [];
@@ -296,6 +421,24 @@ function App() {
     }
     return items;
   }, [subfolderSummary]);
+
+  const viewerLayers = useMemo(
+    () =>
+      layers.map((layer) => ({
+        key: layer.key,
+        label: layer.label,
+        volume: layer.volumes[selectedIndex] ?? null,
+        visible: Boolean(visibleLayers[layer.key])
+      })),
+    [layers, selectedIndex, visibleLayers]
+  );
+
+  const hasExplicitLayerSelection = useMemo(() => {
+    if (!subfolderSummary) {
+      return true;
+    }
+    return Object.values(subfolderChecks).some(Boolean);
+  }, [subfolderChecks, subfolderSummary]);
 
   return (
     <div className="app">
@@ -348,14 +491,37 @@ function App() {
                   </label>
                 ))}
               </div>
-            ) : (
+          ) : (
               <p className="subfolder-status">no .tif files detected</p>
             )
           ) : null}
-          <button type="submit" disabled={!path.trim() || isLoading}>
+          {subfolderSummary && !hasExplicitLayerSelection ? (
+            <p className="subfolder-warning">Select at least one layer to enable loading.</p>
+          ) : null}
+          <button type="submit" disabled={!path.trim() || isLoading || !hasExplicitLayerSelection}>
             Load dataset
           </button>
         </form>
+
+        {layers.length > 0 ? (
+          <section className="sidebar-panel layer-controls">
+            <header>
+              <h2>Layers</h2>
+            </header>
+            <div className="layer-list">
+              {layers.map((layer) => (
+                <label key={layer.key} className="layer-item">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(visibleLayers[layer.key])}
+                    onChange={() => handleLayerVisibilityToggle(layer.key)}
+                  />
+                  <span>{layer.label}</span>
+                </label>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <section className="sidebar-panel view-controls">
           <header>
@@ -411,7 +577,7 @@ function App() {
               step={1}
               value={fps}
               onChange={(event) => setFps(Number(event.target.value))}
-              disabled={volumes.length <= 1}
+              disabled={timepointCount <= 1}
             />
           </div>
         </section>
@@ -421,14 +587,14 @@ function App() {
 
       <main className="viewer">
         <VolumeViewer
-          volume={volumes[selectedIndex] ?? null}
+          layers={viewerLayers}
           filename={selectedFile}
           isLoading={isLoading}
           loadingProgress={loadProgress}
-          loadedTimepoints={loadedCount}
+          loadedVolumes={loadedCount}
+          expectedVolumes={expectedVolumeCount}
           timeIndex={selectedIndex}
-          totalTimepoints={volumes.length}
-          expectedTimepoints={files.length}
+          totalTimepoints={timepointCount}
           isPlaying={isPlaying}
           onTogglePlayback={handleTogglePlayback}
           onTimeIndexChange={handleTimeIndexChange}
