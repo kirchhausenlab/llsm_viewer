@@ -67,6 +67,10 @@ function hasTiffExtension(name: string) {
   return lower.endsWith('.tif') || lower.endsWith('.tiff');
 }
 
+function hasCsvExtension(name: string) {
+  return name.toLowerCase().endsWith('.csv');
+}
+
 async function directoryHasTiffFiles(targetPath: string) {
   try {
     const entries = await fs.readdir(targetPath, { withFileTypes: true });
@@ -202,6 +206,148 @@ app.post('/api/browse', async (request, response) => {
   } catch (error) {
     console.error('Failed to browse directory', error);
     response.status(500).send('Failed to browse directory.');
+  }
+});
+
+app.post('/api/browse-csv', async (request, response) => {
+  const { path: targetPath } = request.body as { path?: string };
+  const requestedPath = targetPath && targetPath.trim() ? targetPath : process.cwd();
+
+  try {
+    const resolved = sanitizeDirectory(requestedPath);
+    const stats = await fs.stat(resolved);
+
+    let directoryPath = resolved;
+    let selectedFile: string | null = null;
+
+    if (stats.isDirectory()) {
+      directoryPath = resolved;
+    } else if (stats.isFile()) {
+      if (!hasCsvExtension(resolved)) {
+        response.status(400).send('Only CSV files can be selected.');
+        return;
+      }
+      directoryPath = path.dirname(resolved);
+      selectedFile = path.basename(resolved);
+    } else {
+      response.status(400).send('Provided path must be a directory or CSV file.');
+      return;
+    }
+
+    const entries = await fs.readdir(directoryPath, { withFileTypes: true });
+    const directories: string[] = [];
+    const csvFiles: string[] = [];
+
+    for (const entry of entries) {
+      if (isHidden(entry.name)) {
+        continue;
+      }
+
+      if (entry.isDirectory()) {
+        directories.push(entry.name);
+        continue;
+      }
+
+      if (entry.isFile() && hasCsvExtension(entry.name)) {
+        csvFiles.push(entry.name);
+        continue;
+      }
+
+      if (entry.isSymbolicLink()) {
+        try {
+          const linkTarget = await fs.stat(path.join(directoryPath, entry.name));
+          if (linkTarget.isDirectory()) {
+            directories.push(entry.name);
+          } else if (linkTarget.isFile() && hasCsvExtension(entry.name)) {
+            csvFiles.push(entry.name);
+          }
+        } catch (error) {
+          console.warn('Failed to resolve symbolic link while browsing for CSV files', {
+            directory: directoryPath,
+            entry: entry.name,
+            error
+          });
+        }
+      }
+    }
+
+    directories.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+    csvFiles.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+    if (selectedFile && !csvFiles.includes(selectedFile)) {
+      csvFiles.push(selectedFile);
+      csvFiles.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+    }
+
+    const root = path.parse(directoryPath).root;
+    const parent = directoryPath === root ? null : path.dirname(directoryPath);
+
+    response.json({
+      path: directoryPath,
+      parent,
+      directories,
+      csvFiles,
+      selectedFile
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      response.status(404).send('The requested path could not be found.');
+      return;
+    }
+    console.error('Failed to browse for CSV file', error);
+    response.status(500).send('Failed to browse for CSV file.');
+  }
+});
+
+app.post('/api/tracks', async (request, response) => {
+  const { path: filePath } = request.body as { path?: string };
+  if (!filePath) {
+    response.status(400).send('Path is required.');
+    return;
+  }
+
+  try {
+    const resolved = sanitizeDirectory(filePath);
+    const stats = await fs.stat(resolved);
+    if (!stats.isFile()) {
+      response.status(400).send('Provided path is not a file.');
+      return;
+    }
+
+    if (!hasCsvExtension(resolved)) {
+      response.status(400).send('Tracks must be provided as a CSV file.');
+      return;
+    }
+
+    const contents = await fs.readFile(resolved, 'utf8');
+    const lines = contents.split(/\r?\n/);
+    const rows: string[][] = [];
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) {
+        continue;
+      }
+
+      const columns = line.split(',');
+      if (columns.length !== 8) {
+        response
+          .status(400)
+          .send('CSV file must contain exactly 8 comma-separated columns per row.');
+        return;
+      }
+
+      rows.push(columns.map((value) => value.trim()));
+    }
+
+    response.json({ rows });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      response.status(404).send('The requested CSV file could not be found.');
+      return;
+    }
+    console.error('Failed to load tracks CSV', error);
+    response.status(500).send('Failed to load tracks CSV.');
   }
 });
 
