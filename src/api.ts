@@ -15,6 +15,12 @@ export type VolumePayload = VolumeMetadata & {
   data: ArrayBuffer;
 };
 
+export type DirectoryListing = {
+  path: string;
+  parent: string | null;
+  directories: string[];
+};
+
 async function handleResponse(response: Response) {
   if (!response.ok) {
     const message = await response.text();
@@ -35,6 +41,19 @@ export async function listTiffFiles(path: string): Promise<string[]> {
   );
   const payload = (await response.json()) as { files: string[] };
   return payload.files;
+}
+
+export async function browseDirectory(path?: string): Promise<DirectoryListing> {
+  const response = await handleResponse(
+    await fetch('/api/browse', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(path ? { path } : {})
+    })
+  );
+  return (await response.json()) as DirectoryListing;
 }
 
 export async function loadVolume(path: string, filename: string): Promise<VolumePayload> {
