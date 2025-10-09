@@ -315,7 +315,7 @@ function VolumeViewer({
     sceneRef.current = scene;
     cameraRef.current = camera;
 
-    const handleResize = () => {
+    const handleResize = (entries?: ResizeObserverEntry[]) => {
       const target = containerRef.current;
       if (!target || !rendererRef.current || !cameraRef.current) {
         return;
@@ -330,7 +330,7 @@ function VolumeViewer({
       cameraRef.current.updateProjectionMatrix();
     };
 
-    const resizeObserver = new ResizeObserver(handleResize);
+    const resizeObserver = new ResizeObserver((entries) => handleResize(entries));
     resizeObserver.observe(container);
     handleResize();
 

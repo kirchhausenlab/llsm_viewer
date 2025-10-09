@@ -68,3 +68,7 @@ Next steps:
 - Parallelized individual TIFF fetches on the client so multiple timepoints stream simultaneously while preserving cancellation safety and progress tracking.
 - Copied slice rasters into the volume buffer with `Float32Array#set` on the server and tracked per-volume intensity extrema during ingestion.
 - Sent the precomputed min/max values alongside each volume so the client can normalize without re-scanning raw buffers.
+
+## Render surface readiness gating
+- Prevented zero-sized resize events from propagating to the renderer so the canvas no longer flashes at startup while the container is measuring.
+- Latched a `hasMeasured` flag once the observer reports positive dimensions and used it to toggle the render surface visibility.
