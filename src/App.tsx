@@ -7,6 +7,7 @@ import DirectoryPickerDialog from './components/DirectoryPickerDialog';
 import FilePickerDialog from './components/FilePickerDialog';
 import type { TrackDefinition, TrackPoint } from './types/tracks';
 import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from './layerColors';
+import { getTrackColorHex } from './trackColors';
 import './App.css';
 
 const DEFAULT_CONTRAST = 1;
@@ -78,7 +79,6 @@ function App() {
   const [tracks, setTracks] = useState<string[][]>([]);
   const [trackStatus, setTrackStatus] = useState<LoadState>('idle');
   const [trackError, setTrackError] = useState<string | null>(null);
-  const [showTrackOverlay, setShowTrackOverlay] = useState(false);
   const [trackVisibility, setTrackVisibility] = useState<Record<number, boolean>>({});
   const [trackOpacity, setTrackOpacity] = useState(DEFAULT_TRACK_OPACITY);
   const [trackLineWidth, setTrackLineWidth] = useState(DEFAULT_TRACK_LINE_WIDTH);
@@ -157,7 +157,6 @@ function App() {
     const previouslyHadData = hasTrackDataRef.current;
     if (!hasParsedTrackData) {
       hasTrackDataRef.current = false;
-      setShowTrackOverlay(false);
       setTrackVisibility({});
       setTrackOpacity(DEFAULT_TRACK_OPACITY);
       setTrackLineWidth(DEFAULT_TRACK_LINE_WIDTH);
@@ -165,7 +164,8 @@ function App() {
     }
 
     if (!previouslyHadData) {
-      setShowTrackOverlay(true);
+      setTrackOpacity(DEFAULT_TRACK_OPACITY);
+      setTrackLineWidth(DEFAULT_TRACK_LINE_WIDTH);
     }
 
     hasTrackDataRef.current = true;
@@ -493,7 +493,6 @@ function App() {
       }, {})
     );
     setFps(DEFAULT_FPS);
-    setShowTrackOverlay(hasParsedTrackData);
     setTrackOpacity(DEFAULT_TRACK_OPACITY);
     setTrackLineWidth(DEFAULT_TRACK_LINE_WIDTH);
     setTrackVisibility(
@@ -502,7 +501,7 @@ function App() {
         return acc;
       }, {})
     );
-  }, [hasParsedTrackData, layers, parsedTracks]);
+  }, [layers, parsedTracks]);
 
   const trackVisibilitySummary = useMemo(() => {
     if (parsedTracks.length === 0) {
@@ -546,9 +545,6 @@ function App() {
         return contrast === DEFAULT_CONTRAST && brightness === DEFAULT_BRIGHTNESS && colorAtDefault;
       });
 
-    const overlayDefault = hasParsedTrackData;
-    const overlayAtDefault = showTrackOverlay === overlayDefault;
-
     const trackVisibilityAtDefault =
       parsedTracks.length === 0 || parsedTracks.every((track) => trackVisibility[track.id] ?? true);
     const trackOpacityAtDefault = trackOpacity === DEFAULT_TRACK_OPACITY;
@@ -557,18 +553,15 @@ function App() {
     return (
       allLayerDefaults &&
       fps === DEFAULT_FPS &&
-      overlayAtDefault &&
       trackVisibilityAtDefault &&
       trackOpacityAtDefault &&
       trackLineWidthAtDefault
     );
   }, [
     fps,
-    hasParsedTrackData,
     layerSettings,
     layers,
     parsedTracks,
-    showTrackOverlay,
     trackLineWidth,
     trackOpacity,
     trackVisibility
@@ -685,18 +678,28 @@ function App() {
   }, []);
 
   const handleTrackVisibilityToggle = useCallback((trackId: number) => {
+    let toggledOff = false;
     setTrackVisibility((current) => {
       const previous = current[trackId];
       const nextValue = !(previous ?? true);
+      if (!nextValue) {
+        toggledOff = true;
+      }
       return {
         ...current,
         [trackId]: nextValue
       };
     });
+    if (toggledOff) {
+      setFollowedTrackId((current) => (current === trackId ? null : current));
+    }
   }, []);
 
   const handleTrackVisibilityAllChange = useCallback(
     (isChecked: boolean) => {
+      if (!isChecked) {
+        setFollowedTrackId(null);
+      }
       setTrackVisibility(
         parsedTracks.reduce<Record<number, boolean>>((acc, track) => {
           acc[track.id] = isChecked;
@@ -727,8 +730,7 @@ function App() {
 
   const handleTrackFollow = useCallback(
     (trackId: number) => {
-      setFollowedTrackId((current) => (current === trackId ? current : trackId));
-      setShowTrackOverlay(true);
+      setFollowedTrackId((current) => (current === trackId ? null : trackId));
       setTrackVisibility((current) => {
         if (current[trackId]) {
           return current;
@@ -907,6 +909,35 @@ function App() {
           </button>
         </form>
 
+        <section className="sidebar-panel global-controls">
+          <header>
+            <h2>Global controls</h2>
+          </header>
+          <div className="control-group">
+            <button type="button" onClick={() => resetViewHandler?.()} disabled={!resetViewHandler}>
+              Reset view
+            </button>
+            <button type="button" onClick={handleResetControls} disabled={controlsAtDefaults}>
+              Reset controls
+            </button>
+          </div>
+          <div className="control-group">
+            <label htmlFor="fps-slider">
+              FPS <span>{fps}</span>
+            </label>
+            <input
+              id="fps-slider"
+              type="range"
+              min={1}
+              max={60}
+              step={1}
+              value={fps}
+              onChange={(event) => setFps(Number(event.target.value))}
+              disabled={timepointCount <= 1}
+            />
+          </div>
+        </section>
+
         {layers.length > 0 ? (
           <section className="sidebar-panel layer-controls">
             <header>
@@ -1036,36 +1067,6 @@ function App() {
             })}
           </section>
         ) : null}
-
-        <section className="sidebar-panel view-controls">
-          <header>
-            <h2>View controls</h2>
-          </header>
-          <div className="control-group">
-            <button type="button" onClick={() => resetViewHandler?.()} disabled={!resetViewHandler}>
-              Reset view
-            </button>
-            <button type="button" onClick={handleResetControls} disabled={controlsAtDefaults}>
-              Reset controls
-            </button>
-          </div>
-          <div className="control-group">
-            <label htmlFor="fps-slider">
-              FPS <span>{fps}</span>
-            </label>
-            <input
-              id="fps-slider"
-              type="range"
-              min={1}
-              max={60}
-              step={1}
-              value={fps}
-              onChange={(event) => setFps(Number(event.target.value))}
-              disabled={timepointCount <= 1}
-            />
-          </div>
-        </section>
-
         {error && <p className="error">{error}</p>}
       </aside>
 
@@ -1099,7 +1100,6 @@ function App() {
           onTimeIndexChange={handleTimeIndexChange}
           onRegisterReset={handleRegisterReset}
           tracks={parsedTracks}
-          showTrackOverlay={showTrackOverlay}
           trackVisibility={trackVisibility}
           trackOpacity={trackOpacity}
           trackLineWidth={trackLineWidth}
@@ -1155,17 +1155,6 @@ function App() {
           <header>
             <h2>Overlay controls</h2>
           </header>
-          <div className="control-group">
-            <label className="track-overlay-toggle">
-              <span>Show tracking overlay</span>
-              <input
-                type="checkbox"
-                checked={showTrackOverlay}
-                onChange={(event) => setShowTrackOverlay(event.target.checked)}
-                disabled={!hasParsedTrackData}
-              />
-            </label>
-          </div>
           <div className="slider-control">
             <label htmlFor="track-opacity-slider">
               Opacity <span>{Math.round(trackOpacity * 100)}%</span>
@@ -1211,17 +1200,29 @@ function App() {
           {parsedTracks.length > 0 ? (
             <div className="track-list" role="group" aria-label="Track visibility">
               {parsedTracks.map((track, index) => {
-                const isChecked = trackVisibility[track.id] ?? true;
                 const isFollowed = followedTrackId === track.id;
+                const isChecked = isFollowed || (trackVisibility[track.id] ?? true);
+                const trackColor = getTrackColorHex(track.id);
                 return (
-                  <div key={track.id} className="track-item" title={`Track ID ${track.id}`}>
+                  <div
+                    key={track.id}
+                    className={isFollowed ? 'track-item is-following' : 'track-item'}
+                    title={`Track ID ${track.id}`}
+                  >
                     <label className="track-toggle">
                       <input
                         type="checkbox"
                         checked={isChecked}
                         onChange={() => handleTrackVisibilityToggle(track.id)}
                       />
-                      <span>Track #{index + 1}</span>
+                      <span className="track-label">
+                        <span
+                          className="track-color-swatch"
+                          style={{ backgroundColor: trackColor }}
+                          aria-hidden="true"
+                        />
+                        <span className="track-name">Track #{index + 1}</span>
+                      </span>
                     </label>
                     <button
                       type="button"
