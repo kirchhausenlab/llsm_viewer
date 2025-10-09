@@ -10,81 +10,53 @@ export type NormalizedVolume = {
   max: number;
 };
 
-export function normalizeVolume(volume: VolumePayload): NormalizedVolume {
-  const { width, height, depth, channels, data } = volume;
-  const voxelCount = width * height * depth;
+export type NormalizationParameters = {
+  min: number;
+  max: number;
+};
 
-  const source = new Float32Array(data);
-
+export function computeNormalizationParameters(volumes: VolumePayload[]): NormalizationParameters {
   let min = Number.POSITIVE_INFINITY;
   let max = Number.NEGATIVE_INFINITY;
 
-  const normalized = new Uint8Array(voxelCount * channels);
-
-  if (channels === 1) {
-    for (let i = 0; i < voxelCount; i++) {
+  for (const volume of volumes) {
+    const source = new Float32Array(volume.data);
+    for (let i = 0; i < source.length; i++) {
       const value = source[i];
       if (value < min) min = value;
       if (value > max) max = value;
     }
+  }
 
-    if (!Number.isFinite(min) || !Number.isFinite(max) || min === Number.POSITIVE_INFINITY) {
-      min = 0;
-      max = 1;
-    }
+  if (!Number.isFinite(min) || min === Number.POSITIVE_INFINITY) {
+    min = 0;
+  }
+  if (!Number.isFinite(max) || max === Number.NEGATIVE_INFINITY) {
+    max = 1;
+  }
+  if (min === max) {
+    max = min + 1;
+  }
 
-    const range = max - min || 1;
-    for (let i = 0; i < voxelCount; i++) {
-      const normalizedValue = (source[i] - min) / range;
-      const clamped = Math.max(0, Math.min(1, normalizedValue));
-      normalized[i] = Math.round(clamped * 255);
-    }
-  } else {
-    const channelMins = new Array<number>(channels).fill(Number.POSITIVE_INFINITY);
-    const channelMaxes = new Array<number>(channels).fill(Number.NEGATIVE_INFINITY);
+  return { min, max };
+}
 
-    for (let i = 0; i < voxelCount; i++) {
-      let sum = 0;
-      const base = i * channels;
-      for (let channel = 0; channel < channels; channel++) {
-        const value = source[base + channel];
-        if (value < channelMins[channel]) channelMins[channel] = value;
-        if (value > channelMaxes[channel]) channelMaxes[channel] = value;
-        sum += value;
-      }
-      const intensity = sum / channels;
-      if (intensity < min) min = intensity;
-      if (intensity > max) max = intensity;
-    }
+export function normalizeVolume(
+  volume: VolumePayload,
+  parameters: NormalizationParameters
+): NormalizedVolume {
+  const { width, height, depth, channels, data } = volume;
+  const source = new Float32Array(data);
+  const totalValues = source.length;
 
-    for (let channel = 0; channel < channels; channel++) {
-      if (!Number.isFinite(channelMins[channel]) || channelMins[channel] === Number.POSITIVE_INFINITY) {
-        channelMins[channel] = 0;
-      }
-      if (!Number.isFinite(channelMaxes[channel]) || channelMaxes[channel] === Number.NEGATIVE_INFINITY) {
-        channelMaxes[channel] = 1;
-      }
-    }
+  const { min, max } = parameters;
+  const range = max - min || 1;
+  const normalized = new Uint8Array(totalValues);
 
-    if (!Number.isFinite(min) || !Number.isFinite(max) || min === Number.POSITIVE_INFINITY) {
-      min = 0;
-      max = 1;
-    }
-
-    const ranges = channelMins.map((channelMin, index) => {
-      const channelRange = channelMaxes[index] - channelMin;
-      return channelRange === 0 ? 1 : channelRange;
-    });
-
-    for (let i = 0; i < voxelCount; i++) {
-      const base = i * channels;
-      for (let channel = 0; channel < channels; channel++) {
-        const value = source[base + channel];
-        const normalizedValue = (value - channelMins[channel]) / ranges[channel];
-        const clamped = Math.max(0, Math.min(1, normalizedValue));
-        normalized[base + channel] = Math.round(clamped * 255);
-      }
-    }
+  for (let i = 0; i < totalValues; i++) {
+    const normalizedValue = (source[i] - min) / range;
+    const clamped = Math.max(0, Math.min(1, normalizedValue));
+    normalized[i] = Math.round(clamped * 255);
   }
 
   return {
