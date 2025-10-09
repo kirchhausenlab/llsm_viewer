@@ -171,31 +171,31 @@ function App() {
           </div>
         </form>
 
-        <section className="file-list">
+        <section className="dataset-summary">
           <header>
-            <h2>Available timepoints</h2>
-            <span className="file-count">{files.length} files</span>
+            <h2>Dataset overview</h2>
           </header>
           {files.length === 0 ? (
             <p className="hint">Enter a path and press Discover to list TIFF files.</p>
           ) : (
-            <ul>
-              {files.map((file, index) => (
-                <li key={file}>
-                  <button
-                    type="button"
-                    className={index === selectedIndex ? 'active' : ''}
-                    onClick={() => {
-                      setIsPlaying(false);
-                      setSelectedIndex(index);
-                    }}
-                    disabled={isLoading}
-                  >
-                    {file}
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <dl>
+              <div>
+                <dt>Timepoints</dt>
+                <dd>{files.length}</dd>
+              </div>
+              <div>
+                <dt>Playback</dt>
+                <dd>
+                  Frame {volumes.length === 0 ? 0 : Math.min(selectedIndex + 1, volumes.length)} of {volumes.length}
+                </dd>
+              </div>
+              {selectedFile && (
+                <div>
+                  <dt>Current file</dt>
+                  <dd>{selectedFile}</dd>
+                </div>
+              )}
+            </dl>
           )}
         </section>
 
