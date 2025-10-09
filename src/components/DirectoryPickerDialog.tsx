@@ -108,7 +108,10 @@ function DirectoryPickerDialog({ initialPath, onClose, onSelect }: DirectoryPick
     onSelect(listing.path);
   }, [listing, onSelect]);
 
-  const directories = listing?.directories ?? [];
+  const directories = useMemo(
+    () => (listing?.directories ?? []).filter((name) => !name.startsWith('.')),
+    [listing]
+  );
 
   return (
     <div

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { listTiffFiles, loadVolume, type VolumePayload } from './api';
+import { browseDirectory, listTiffFiles, loadVolume, type VolumePayload } from './api';
 import VolumeViewer from './components/VolumeViewer';
 import { computeNormalizationParameters, normalizeVolume, NormalizedVolume } from './volumeProcessing';
 import { clearTextureCache } from './textureCache';
@@ -27,8 +27,16 @@ function App() {
   const [fps, setFps] = useState(DEFAULT_FPS);
   const [resetViewHandler, setResetViewHandler] = useState<(() => void) | null>(null);
   const [isPickerOpen, setIsPickerOpen] = useState(false);
+  const [subfolderSummary, setSubfolderSummary] = useState<{
+    rootHasTiffs: boolean;
+    subfolders: string[];
+  } | null>(null);
+  const [subfolderChecks, setSubfolderChecks] = useState<Record<string, boolean>>({});
+  const [subfolderLoading, setSubfolderLoading] = useState(false);
+  const [subfolderError, setSubfolderError] = useState<string | null>(null);
 
   const loadRequestRef = useRef(0);
+  const subfolderRequestRef = useRef(0);
 
   const selectedFile = useMemo(() => files[selectedIndex] ?? null, [files, selectedIndex]);
   const hasVolume = volumes.length > 0;
@@ -36,6 +44,59 @@ function App() {
   const handleRegisterReset = useCallback((handler: (() => void) | null) => {
     setResetViewHandler(() => handler);
   }, []);
+
+  const refreshSubfolderSummary = useCallback(
+    async (targetPath: string) => {
+      const trimmed = targetPath.trim();
+      if (!trimmed) {
+        setSubfolderSummary(null);
+        setSubfolderChecks({});
+        setSubfolderError(null);
+        setSubfolderLoading(false);
+        return;
+      }
+
+      const requestId = subfolderRequestRef.current + 1;
+      subfolderRequestRef.current = requestId;
+      setSubfolderLoading(true);
+      setSubfolderError(null);
+
+      try {
+        const listing = await browseDirectory(trimmed);
+        if (subfolderRequestRef.current !== requestId) {
+          return;
+        }
+
+        const rootHasTiffs = Boolean(listing.rootHasTiffs);
+        const subfolders = [...(listing.tiffSubdirectories ?? [])];
+
+        setSubfolderSummary({ rootHasTiffs, subfolders });
+        setSubfolderChecks(() => {
+          const initial: Record<string, boolean> = {};
+          if (rootHasTiffs) {
+            initial.root = false;
+          }
+          for (const name of subfolders) {
+            initial[name] = false;
+          }
+          return initial;
+        });
+      } catch (error) {
+        if (subfolderRequestRef.current !== requestId) {
+          return;
+        }
+        console.error('Failed to summarize subfolders', error);
+        setSubfolderSummary(null);
+        setSubfolderChecks({});
+        setSubfolderError(error instanceof Error ? error.message : 'Failed to analyze folder.');
+      } finally {
+        if (subfolderRequestRef.current === requestId) {
+          setSubfolderLoading(false);
+        }
+      }
+    },
+    []
+  );
 
   const handlePathSubmit = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
@@ -195,13 +256,46 @@ function App() {
     setIsPickerOpen(false);
   }, []);
 
+  const handlePathChange = useCallback((nextPath: string) => {
+    setPath(nextPath);
+    subfolderRequestRef.current += 1;
+    setSubfolderSummary(null);
+    setSubfolderChecks({});
+    setSubfolderError(null);
+    setSubfolderLoading(false);
+  }, []);
+
   const handlePathPicked = useCallback(
     (selectedPath: string) => {
-      setPath(selectedPath);
+      handlePathChange(selectedPath);
       setIsPickerOpen(false);
+      refreshSubfolderSummary(selectedPath).catch(() => {
+        // Error handled inside refreshSubfolderSummary
+      });
     },
-    []
+    [handlePathChange, refreshSubfolderSummary]
   );
+
+  const handleSubfolderToggle = useCallback((name: string) => {
+    setSubfolderChecks((current) => ({
+      ...current,
+      [name]: !current[name]
+    }));
+  }, []);
+
+  const subfolderItems = useMemo(() => {
+    if (!subfolderSummary) {
+      return [];
+    }
+    const items: { key: string; label: string }[] = [];
+    if (subfolderSummary.rootHasTiffs) {
+      items.push({ key: 'root', label: 'root' });
+    }
+    for (const name of subfolderSummary.subfolders) {
+      items.push({ key: name, label: name });
+    }
+    return items;
+  }, [subfolderSummary]);
 
   return (
     <div className="app">
@@ -219,7 +313,7 @@ function App() {
               type="text"
               value={path}
               placeholder="/nfs/scratch2/..."
-              onChange={(event) => setPath(event.target.value)}
+              onChange={(event) => handlePathChange(event.target.value)}
               autoComplete="off"
             />
             <button
@@ -236,6 +330,28 @@ function App() {
               </svg>
             </button>
           </div>
+          {subfolderLoading ? (
+            <p className="subfolder-status">Checking for .tif files…</p>
+          ) : subfolderError ? (
+            <p className="subfolder-error">{subfolderError}</p>
+          ) : subfolderSummary ? (
+            subfolderItems.length > 0 ? (
+              <div className="subfolder-list">
+                {subfolderItems.map((item, index) => (
+                  <label key={item.key} className={index === 0 ? 'subfolder-item root' : 'subfolder-item'}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(subfolderChecks[item.key])}
+                      onChange={() => handleSubfolderToggle(item.key)}
+                    />
+                    <span>{item.label}</span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <p className="subfolder-status">no .tif files detected</p>
+            )
+          ) : null}
           <button type="submit" disabled={!path.trim() || isLoading}>
             Load dataset
           </button>
