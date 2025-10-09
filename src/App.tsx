@@ -4,6 +4,7 @@ import VolumeViewer from './components/VolumeViewer';
 import { computeNormalizationParameters, normalizeVolume, NormalizedVolume } from './volumeProcessing';
 import { clearTextureCache } from './textureCache';
 import './App.css';
+import DirectoryPickerDialog from './components/DirectoryPickerDialog';
 
 const DEFAULT_CONTRAST = 1;
 const DEFAULT_BRIGHTNESS = 0;
@@ -25,6 +26,7 @@ function App() {
   const [brightness, setBrightness] = useState(DEFAULT_BRIGHTNESS);
   const [fps, setFps] = useState(DEFAULT_FPS);
   const [resetViewHandler, setResetViewHandler] = useState<(() => void) | null>(null);
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
 
   const loadRequestRef = useRef(0);
 
@@ -185,6 +187,22 @@ function App() {
     [volumes.length]
   );
 
+  const handleOpenPicker = useCallback(() => {
+    setIsPickerOpen(true);
+  }, []);
+
+  const handleClosePicker = useCallback(() => {
+    setIsPickerOpen(false);
+  }, []);
+
+  const handlePathPicked = useCallback(
+    (selectedPath: string) => {
+      setPath(selectedPath);
+      setIsPickerOpen(false);
+    },
+    []
+  );
+
   return (
     <div className="app">
       <aside className="sidebar">
@@ -204,6 +222,19 @@ function App() {
               onChange={(event) => setPath(event.target.value)}
               autoComplete="off"
             />
+            <button
+              type="button"
+              className="path-browse-button"
+              onClick={handleOpenPicker}
+              aria-label="Browse for dataset folder"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path
+                  d="M3 6.75A1.75 1.75 0 0 1 4.75 5h4.19c.46 0 .9.18 1.23.5l1.32 1.29H19.5A1.5 1.5 0 0 1 21 8.29v8.96A1.75 1.75 0 0 1 19.25 19H4.75A1.75 1.75 0 0 1 3 17.25Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </button>
           </div>
           <button type="submit" disabled={!path.trim() || isLoading}>
             Load dataset
@@ -290,6 +321,13 @@ function App() {
           onRegisterReset={handleRegisterReset}
         />
       </main>
+      {isPickerOpen ? (
+        <DirectoryPickerDialog
+          initialPath={path}
+          onClose={handleClosePicker}
+          onSelect={handlePathPicked}
+        />
+      ) : null}
     </div>
   );
 }

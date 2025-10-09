@@ -85,6 +85,38 @@ app.post('/api/list', async (request, response) => {
   }
 });
 
+app.post('/api/browse', async (request, response) => {
+  const { path: directoryPath } = request.body as { path?: string };
+  const targetPath = directoryPath && directoryPath.trim() ? directoryPath : process.cwd();
+
+  try {
+    const resolved = sanitizeDirectory(targetPath);
+    const stats = await fs.stat(resolved);
+    if (!stats.isDirectory()) {
+      response.status(400).send('Provided path is not a directory.');
+      return;
+    }
+
+    const entries = await fs.readdir(resolved, { withFileTypes: true });
+    const directories = entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+    const root = path.parse(resolved).root;
+    const parent = resolved === root ? null : path.dirname(resolved);
+
+    response.json({
+      path: resolved,
+      parent,
+      directories
+    });
+  } catch (error) {
+    console.error('Failed to browse directory', error);
+    response.status(500).send('Failed to browse directory.');
+  }
+});
+
 app.post('/api/volume', async (request, response) => {
   const { path: directoryPath, filename } = request.body as { path?: string; filename?: string };
   if (!directoryPath || !filename) {
