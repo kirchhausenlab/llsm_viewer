@@ -16,10 +16,17 @@ function App() {
   const [loadProgress, setLoadProgress] = useState(0);
   const [loadedCount, setLoadedCount] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [contrast, setContrast] = useState(1);
+  const [resetViewHandler, setResetViewHandler] = useState<(() => void) | null>(null);
 
   const loadRequestRef = useRef(0);
 
   const selectedFile = useMemo(() => files[selectedIndex] ?? null, [files, selectedIndex]);
+  const hasVolume = volumes.length > 0;
+
+  const handleRegisterReset = useCallback((handler: (() => void) | null) => {
+    setResetViewHandler(() => handler);
+  }, []);
 
   const handlePathSubmit = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
@@ -165,38 +172,36 @@ function App() {
               onChange={(event) => setPath(event.target.value)}
               autoComplete="off"
             />
-            <button type="submit" disabled={!path.trim() || isLoading}>
-              Discover
-            </button>
           </div>
+          <button type="submit" disabled={!path.trim() || isLoading}>
+            Load dataset
+          </button>
         </form>
 
-        <section className="dataset-summary">
+        <section className="sidebar-panel view-controls">
           <header>
-            <h2>Dataset overview</h2>
+            <h2>View controls</h2>
           </header>
-          {files.length === 0 ? (
-            <p className="hint">Enter a path and press Discover to list TIFF files.</p>
-          ) : (
-            <dl>
-              <div>
-                <dt>Timepoints</dt>
-                <dd>{files.length}</dd>
-              </div>
-              <div>
-                <dt>Playback</dt>
-                <dd>
-                  Frame {volumes.length === 0 ? 0 : Math.min(selectedIndex + 1, volumes.length)} of {volumes.length}
-                </dd>
-              </div>
-              {selectedFile && (
-                <div>
-                  <dt>Current file</dt>
-                  <dd>{selectedFile}</dd>
-                </div>
-              )}
-            </dl>
-          )}
+          <div className="control-group">
+            <button type="button" onClick={() => resetViewHandler?.()} disabled={!resetViewHandler}>
+              Reset view
+            </button>
+          </div>
+          <div className="control-group">
+            <label htmlFor="contrast-slider">
+              Contrast <span>{contrast.toFixed(2)}×</span>
+            </label>
+            <input
+              id="contrast-slider"
+              type="range"
+              min={0.2}
+              max={3}
+              step={0.05}
+              value={contrast}
+              onChange={(event) => setContrast(Number(event.target.value))}
+              disabled={!hasVolume}
+            />
+          </div>
         </section>
 
         {error && <p className="error">{error}</p>}
@@ -215,6 +220,8 @@ function App() {
           isPlaying={isPlaying}
           onTogglePlayback={handleTogglePlayback}
           onTimeIndexChange={handleTimeIndexChange}
+          contrast={contrast}
+          onRegisterReset={handleRegisterReset}
         />
       </main>
     </div>

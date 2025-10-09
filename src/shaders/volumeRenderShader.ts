@@ -10,6 +10,7 @@ type VolumeUniforms = {
   u_cmdata: { value: DataTexture | null };
   u_channels: { value: number };
   u_cameraPos: { value: Vector3 };
+  u_contrast: { value: number };
 };
 
 const uniforms = {
@@ -20,7 +21,8 @@ const uniforms = {
   u_data: { value: null as Data3DTexture | null },
   u_cmdata: { value: null as DataTexture | null },
   u_channels: { value: 1 },
-  u_cameraPos: { value: new Vector3() }
+  u_cameraPos: { value: new Vector3() },
+  u_contrast: { value: 1 }
 } satisfies VolumeUniforms;
 
 export const VolumeRenderShader = {
@@ -56,6 +58,7 @@ export const VolumeRenderShader = {
     uniform float u_renderthreshold;
     uniform vec2 u_clim;
     uniform int u_channels;
+    uniform float u_contrast;
 
     uniform sampler3D u_data;
     uniform sampler2D u_cmdata;
@@ -83,6 +86,11 @@ export const VolumeRenderShader = {
       return texture(u_data, texcoords.xyz);
     }
 
+    float apply_contrast(float value) {
+      float centered = value - 0.5;
+      return clamp(centered * u_contrast + 0.5, 0.0, 1.0);
+    }
+
     float luminance(vec4 colorSample) {
       if (u_channels == 1) {
         return colorSample.r;
@@ -107,10 +115,11 @@ export const VolumeRenderShader = {
     }
 
     vec4 compose_color(float intensity, vec4 colorSample) {
+      float adjustedIntensity = apply_contrast(intensity);
       if (u_channels == 1) {
-        return apply_colormap(intensity);
+        return apply_colormap(adjustedIntensity);
       }
-      float alpha = clamp(intensity, 0.0, 1.0);
+      float alpha = clamp(adjustedIntensity, 0.0, 1.0);
       return vec4(colorSample.rgb, alpha);
     }
 

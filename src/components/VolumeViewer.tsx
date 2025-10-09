@@ -17,6 +17,8 @@ type VolumeViewerProps = {
   isPlaying: boolean;
   onTogglePlayback: () => void;
   onTimeIndexChange: (index: number) => void;
+  contrast: number;
+  onRegisterReset: (handler: (() => void) | null) => void;
 };
 
 type VolumeStats = {
@@ -137,7 +139,9 @@ function VolumeViewer({
   totalTimepoints,
   isPlaying,
   onTogglePlayback,
-  onTimeIndexChange
+  onTimeIndexChange,
+  contrast,
+  onRegisterReset
 }: VolumeViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -183,6 +187,13 @@ function VolumeViewer({
     controls.reset();
     controls.update();
   }, []);
+
+  useEffect(() => {
+    onRegisterReset(volume ? handleResetView : null);
+    return () => {
+      onRegisterReset(null);
+    };
+  }, [handleResetView, onRegisterReset, volume]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -585,6 +596,7 @@ function VolumeViewer({
       uniforms.u_renderthreshold.value = 0.5;
       uniforms.u_cmdata.value = colormap;
       uniforms.u_channels.value = channels;
+      uniforms.u_contrast.value = contrast;
 
       const material = new THREE.ShaderMaterial({
         uniforms,
@@ -641,6 +653,7 @@ function VolumeViewer({
       const materialUniforms = mesh.material.uniforms;
       materialUniforms.u_data.value = resources.texture;
       materialUniforms.u_channels.value = channels;
+      materialUniforms.u_contrast.value = contrast;
 
       const localCameraPosition = camera.position.clone();
       mesh.updateMatrixWorld();
@@ -659,6 +672,18 @@ function VolumeViewer({
       }
     };
   }, []);
+
+  useEffect(() => {
+    const resources = resourcesRef.current;
+    if (!resources) {
+      return;
+    }
+
+    const uniforms = resources.mesh.material.uniforms;
+    if ('u_contrast' in uniforms) {
+      uniforms.u_contrast.value = contrast;
+    }
+  }, [contrast]);
 
   return (
     <div className="volume-viewer">
@@ -679,9 +704,6 @@ function VolumeViewer({
             <span>/</span>
             <span>{totalTimepoints}</span>
           </div>
-          <button type="button" onClick={handleResetView} disabled={!volume}>
-            Reset view
-          </button>
         </div>
       </header>
 

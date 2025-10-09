@@ -43,3 +43,8 @@
 Next steps:
 - Build the WebGPU ray-marched volume renderer integrated with transfer-function controls.
 - Add asynchronous preprocessing hooks for caching multi-resolution volumes when needed.
+
+## Sidebar and rendering controls refresh
+- Relocated dataset loading controls so the "Load dataset" action sits beneath the path field for clearer call-to-action placement.
+- Replaced the dataset overview with a "View controls" panel that exposes the reset-view action and a new global contrast slider.
+- Threaded the contrast parameter through the React tree into the shader uniforms so users can interactively tune rendering contrast from the sidebar.
