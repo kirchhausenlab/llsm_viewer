@@ -80,12 +80,21 @@ async function directoryHasTiffFiles(targetPath: string) {
       }
 
       if (entry.isSymbolicLink()) {
+        if (!hasTiffExtension(entry.name)) {
+          continue;
+        }
+
         try {
           const stats = await fs.stat(path.join(targetPath, entry.name));
-          if (stats.isFile() && hasTiffExtension(entry.name)) {
+          if (stats.isFile()) {
             return true;
           }
         } catch (error) {
+          const nodeError = error as NodeJS.ErrnoException;
+          if (nodeError?.code === 'ENOENT') {
+            continue;
+          }
+
           console.warn('Failed to inspect symbolic link while checking TIFF files', {
             directory: targetPath,
             entry: entry.name,
