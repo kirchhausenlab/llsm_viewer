@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { VolumeRenderShader1 } from 'three/examples/jsm/shaders/VolumeShader';
 import type { NormalizedVolume } from '../volumeProcessing';
+import { VolumeRenderShader } from '../shaders/volumeRenderShader';
 import './VolumeViewer.css';
 
 type VolumeViewerProps = {
@@ -32,6 +32,7 @@ type VolumeResources = {
     height: number;
     depth: number;
   };
+  channels: number;
 };
 
 type PointerState = {
@@ -348,13 +349,14 @@ function VolumeViewer({
       return;
     }
 
-    const { width, height, depth, min, max, normalized } = volume;
+    const { width, height, depth, min, max, normalized, channels } = volume;
     let resources = resourcesRef.current;
     const dimensionsChanged =
       !resources ||
       resources.dimensions.width !== width ||
       resources.dimensions.height !== height ||
-      resources.dimensions.depth !== depth;
+      resources.dimensions.depth !== depth ||
+      resources.channels !== channels;
 
     if (dimensionsChanged) {
       if (resources) {
@@ -366,14 +368,22 @@ function VolumeViewer({
       textureData.set(normalized);
 
       const texture = new THREE.Data3DTexture(textureData, width, height, depth);
-      texture.format = THREE.RedFormat;
+      texture.format =
+        channels === 1
+          ? THREE.RedFormat
+          : channels === 2
+            ? THREE.RGFormat
+            : channels === 3
+              ? THREE.RGBFormat
+              : THREE.RGBAFormat;
       texture.type = THREE.UnsignedByteType;
       texture.minFilter = THREE.LinearFilter;
       texture.magFilter = THREE.LinearFilter;
       texture.unpackAlignment = 1;
+      texture.colorSpace = channels > 1 ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace;
       texture.needsUpdate = true;
 
-      const shader = VolumeRenderShader1;
+      const shader = VolumeRenderShader;
       const uniforms = THREE.UniformsUtils.clone(shader.uniforms);
       uniforms.u_data.value = texture;
       uniforms.u_size.value.set(width, height, depth);
@@ -381,6 +391,7 @@ function VolumeViewer({
       uniforms.u_renderstyle.value = 0;
       uniforms.u_renderthreshold.value = 0.5;
       uniforms.u_cmdata.value = colormap;
+      uniforms.u_channels.value = channels;
 
       const material = new THREE.ShaderMaterial({
         uniforms,
@@ -405,7 +416,8 @@ function VolumeViewer({
       resourcesRef.current = {
         mesh,
         texture,
-        dimensions: { width, height, depth }
+        dimensions: { width, height, depth },
+        channels
       };
 
       controls.target.set(0, 0, 0);
@@ -419,6 +431,8 @@ function VolumeViewer({
     } else if (resources) {
       resources.texture.image.data.set(normalized);
       resources.texture.needsUpdate = true;
+      resources.mesh.material.uniforms.u_data.value = resources.texture;
+      resources.mesh.material.uniforms.u_channels.value = channels;
     }
 
     setStats({ min, max });
