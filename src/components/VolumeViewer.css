@@ -119,30 +119,6 @@
   text-transform: uppercase;
 }
 
-.progress-bar {
-  position: relative;
-  width: 100%;
-  height: 0.55rem;
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
-  overflow: hidden;
-}
-
-.progress-bar span {
-  display: block;
-  height: 100%;
-  background: linear-gradient(90deg, #5b8cff, #5b52ff);
-  transition: width 0.2s ease;
-}
-
-.progress-meta {
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.75);
-}
-
 .time-controls {
   display: flex;
   align-items: center;
