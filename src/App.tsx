@@ -22,6 +22,16 @@ type LoadedLayer = LayerTarget & {
   volumes: NormalizedVolume[];
 };
 
+type LayerSettings = {
+  contrast: number;
+  brightness: number;
+};
+
+const createDefaultLayerSettings = (): LayerSettings => ({
+  contrast: DEFAULT_CONTRAST,
+  brightness: DEFAULT_BRIGHTNESS
+});
+
 function joinPath(base: string, segment: string) {
   if (!base) {
     return segment;
@@ -38,14 +48,13 @@ function App() {
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [layers, setLayers] = useState<LoadedLayer[]>([]);
   const [visibleLayers, setVisibleLayers] = useState<Record<string, boolean>>({});
+  const [layerSettings, setLayerSettings] = useState<Record<string, LayerSettings>>({});
   const [status, setStatus] = useState<LoadState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [loadProgress, setLoadProgress] = useState(0);
   const [loadedCount, setLoadedCount] = useState(0);
   const [expectedVolumeCount, setExpectedVolumeCount] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [contrast, setContrast] = useState(DEFAULT_CONTRAST);
-  const [brightness, setBrightness] = useState(DEFAULT_BRIGHTNESS);
   const [fps, setFps] = useState(DEFAULT_FPS);
   const [resetViewHandler, setResetViewHandler] = useState<(() => void) | null>(null);
   const [isPickerOpen, setIsPickerOpen] = useState(false);
@@ -56,13 +65,13 @@ function App() {
   const [subfolderChecks, setSubfolderChecks] = useState<Record<string, boolean>>({});
   const [subfolderLoading, setSubfolderLoading] = useState(false);
   const [subfolderError, setSubfolderError] = useState<string | null>(null);
+  const [activeLayerKey, setActiveLayerKey] = useState<string | null>(null);
 
   const loadRequestRef = useRef(0);
   const subfolderRequestRef = useRef(0);
 
   const selectedFile = useMemo(() => files[selectedIndex] ?? null, [files, selectedIndex]);
   const timepointCount = layers.length > 0 ? layers[0].volumes.length : 0;
-  const hasVolume = layers.some((layer) => layer.volumes.length > 0);
 
   const handleRegisterReset = useCallback((handler: (() => void) | null) => {
     setResetViewHandler(() => handler);
@@ -138,11 +147,13 @@ function App() {
       clearTextureCache();
       setLayers([]);
       setVisibleLayers({});
+      setLayerSettings({});
       setSelectedIndex(0);
       setIsPlaying(false);
       setLoadProgress(0);
       setLoadedCount(0);
       setExpectedVolumeCount(0);
+      setActiveLayerKey(null);
       try {
         const explicitTargets: LayerTarget[] = (() => {
           if (!subfolderSummary) {
@@ -270,7 +281,14 @@ function App() {
             return acc;
           }, {})
         );
+        setLayerSettings(
+          normalizedLayers.reduce<Record<string, LayerSettings>>((acc, layer) => {
+            acc[layer.key] = createDefaultLayerSettings();
+            return acc;
+          }, {})
+        );
         setSelectedIndex(0);
+        setActiveLayerKey(normalizedLayers[0]?.key ?? null);
         setStatus('loaded');
         setLoadedCount(totalExpectedVolumes);
         setLoadProgress(1);
@@ -284,7 +302,9 @@ function App() {
         clearTextureCache();
         setLayers([]);
         setVisibleLayers({});
+        setLayerSettings({});
         setSelectedIndex(0);
+        setActiveLayerKey(null);
         setLoadProgress(0);
         setLoadedCount(0);
         setExpectedVolumeCount(0);
@@ -328,13 +348,27 @@ function App() {
   const isLoading = status === 'loading';
 
   const handleResetControls = useCallback(() => {
-    setContrast(DEFAULT_CONTRAST);
-    setBrightness(DEFAULT_BRIGHTNESS);
+    setLayerSettings(
+      layers.reduce<Record<string, LayerSettings>>((acc, layer) => {
+        acc[layer.key] = createDefaultLayerSettings();
+        return acc;
+      }, {})
+    );
     setFps(DEFAULT_FPS);
-  }, []);
+  }, [layers]);
 
-  const controlsAtDefaults =
-    contrast === DEFAULT_CONTRAST && brightness === DEFAULT_BRIGHTNESS && fps === DEFAULT_FPS;
+  const controlsAtDefaults = useMemo(() => {
+    const allLayerDefaults =
+      layers.length === 0 ||
+      layers.every((layer) => {
+        const settings = layerSettings[layer.key];
+        const contrast = settings?.contrast ?? DEFAULT_CONTRAST;
+        const brightness = settings?.brightness ?? DEFAULT_BRIGHTNESS;
+        return contrast === DEFAULT_CONTRAST && brightness === DEFAULT_BRIGHTNESS;
+      });
+
+    return allLayerDefaults && fps === DEFAULT_FPS;
+  }, [fps, layerSettings, layers]);
 
   const handleTogglePlayback = useCallback(() => {
     setIsPlaying((current) => {
@@ -400,6 +434,52 @@ function App() {
     }));
   }, []);
 
+  useEffect(() => {
+    if (layers.length === 0) {
+      setActiveLayerKey(null);
+      return;
+    }
+
+    setActiveLayerKey((current) => {
+      if (current && layers.some((layer) => layer.key === current)) {
+        return current;
+      }
+      return layers[0].key;
+    });
+  }, [layers]);
+
+  const handleLayerContrastChange = useCallback((key: string, value: number) => {
+    setLayerSettings((current) => {
+      const previous = current[key] ?? createDefaultLayerSettings();
+      if (previous.contrast === value) {
+        return current;
+      }
+      return {
+        ...current,
+        [key]: {
+          ...previous,
+          contrast: value
+        }
+      };
+    });
+  }, []);
+
+  const handleLayerBrightnessChange = useCallback((key: string, value: number) => {
+    setLayerSettings((current) => {
+      const previous = current[key] ?? createDefaultLayerSettings();
+      if (previous.brightness === value) {
+        return current;
+      }
+      return {
+        ...current,
+        [key]: {
+          ...previous,
+          brightness: value
+        }
+      };
+    });
+  }, []);
+
   const subfolderItems = useMemo(() => {
     if (!subfolderSummary) {
       return [];
@@ -416,13 +496,18 @@ function App() {
 
   const viewerLayers = useMemo(
     () =>
-      layers.map((layer) => ({
-        key: layer.key,
-        label: layer.label,
-        volume: layer.volumes[selectedIndex] ?? null,
-        visible: Boolean(visibleLayers[layer.key])
-      })),
-    [layers, selectedIndex, visibleLayers]
+      layers.map((layer) => {
+        const settings = layerSettings[layer.key] ?? createDefaultLayerSettings();
+        return {
+          key: layer.key,
+          label: layer.label,
+          volume: layer.volumes[selectedIndex] ?? null,
+          visible: Boolean(visibleLayers[layer.key]),
+          contrast: settings.contrast,
+          brightness: settings.brightness
+        };
+      }),
+    [layerSettings, layers, selectedIndex, visibleLayers]
   );
 
   const hasExplicitLayerSelection = useMemo(() => {
@@ -500,18 +585,80 @@ function App() {
             <header>
               <h2>Layers</h2>
             </header>
-            <div className="layer-list">
+            <div className="layer-tabs" role="tablist" aria-label="Volume layers">
               {layers.map((layer) => (
-                <label key={layer.key} className="layer-item">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(visibleLayers[layer.key])}
-                    onChange={() => handleLayerVisibilityToggle(layer.key)}
-                  />
-                  <span>{layer.label}</span>
-                </label>
+                <button
+                  key={layer.key}
+                  type="button"
+                  className={layer.key === activeLayerKey ? 'layer-tab is-active' : 'layer-tab'}
+                  onClick={() => setActiveLayerKey(layer.key)}
+                  role="tab"
+                  id={`layer-tab-${layer.key}`}
+                  aria-selected={layer.key === activeLayerKey}
+                  aria-controls={`layer-panel-${layer.key}`}
+                >
+                  {layer.label}
+                </button>
               ))}
             </div>
+            {layers.map((layer) => {
+              const isActive = layer.key === activeLayerKey;
+              const settings = layerSettings[layer.key] ?? createDefaultLayerSettings();
+              const sliderDisabled = layer.volumes.length === 0;
+              return (
+                <div
+                  key={layer.key}
+                  id={`layer-panel-${layer.key}`}
+                  role="tabpanel"
+                  aria-labelledby={`layer-tab-${layer.key}`}
+                  className={isActive ? 'layer-panel is-active' : 'layer-panel'}
+                  hidden={!isActive}
+                >
+                  <label className="layer-visibility">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(visibleLayers[layer.key])}
+                      onChange={() => handleLayerVisibilityToggle(layer.key)}
+                    />
+                    <span>Show layer</span>
+                  </label>
+                  <div className="slider-control">
+                    <label htmlFor={`layer-contrast-${layer.key}`}>
+                      Contrast <span>{settings.contrast.toFixed(2)}×</span>
+                    </label>
+                    <input
+                      id={`layer-contrast-${layer.key}`}
+                      type="range"
+                      min={0.2}
+                      max={3}
+                      step={0.05}
+                      value={settings.contrast}
+                      onChange={(event) => handleLayerContrastChange(layer.key, Number(event.target.value))}
+                      disabled={sliderDisabled}
+                    />
+                  </div>
+                  <div className="slider-control">
+                    <label htmlFor={`layer-brightness-${layer.key}`}>
+                      Brightness{' '}
+                      <span>
+                        {settings.brightness >= 0 ? '+' : ''}
+                        {settings.brightness.toFixed(2)}
+                      </span>
+                    </label>
+                    <input
+                      id={`layer-brightness-${layer.key}`}
+                      type="range"
+                      min={-0.5}
+                      max={0.5}
+                      step={0.01}
+                      value={settings.brightness}
+                      onChange={(event) => handleLayerBrightnessChange(layer.key, Number(event.target.value))}
+                      disabled={sliderDisabled}
+                    />
+                  </div>
+                </div>
+              );
+            })}
           </section>
         ) : null}
 
@@ -526,36 +673,6 @@ function App() {
             <button type="button" onClick={handleResetControls} disabled={controlsAtDefaults}>
               Reset controls
             </button>
-          </div>
-          <div className="control-group">
-            <label htmlFor="contrast-slider">
-              Contrast <span>{contrast.toFixed(2)}×</span>
-            </label>
-            <input
-              id="contrast-slider"
-              type="range"
-              min={0.2}
-              max={3}
-              step={0.05}
-              value={contrast}
-              onChange={(event) => setContrast(Number(event.target.value))}
-              disabled={!hasVolume}
-            />
-          </div>
-          <div className="control-group">
-            <label htmlFor="brightness-slider">
-              Brightness <span>{brightness >= 0 ? '+' : ''}{brightness.toFixed(2)}</span>
-            </label>
-            <input
-              id="brightness-slider"
-              type="range"
-              min={-0.5}
-              max={0.5}
-              step={0.01}
-              value={brightness}
-              onChange={(event) => setBrightness(Number(event.target.value))}
-              disabled={!hasVolume}
-            />
           </div>
           <div className="control-group">
             <label htmlFor="fps-slider">
@@ -590,8 +707,6 @@ function App() {
           isPlaying={isPlaying}
           onTogglePlayback={handleTogglePlayback}
           onTimeIndexChange={handleTimeIndexChange}
-          contrast={contrast}
-          brightness={brightness}
           onRegisterReset={handleRegisterReset}
         />
       </main>

@@ -205,13 +205,48 @@
   word-break: break-word;
 }
 
-.layer-controls .layer-list {
+.layer-controls .layer-tabs {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: 0.5rem;
 }
 
-.layer-controls .layer-item {
+.layer-controls .layer-tab {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  background: rgba(12, 16, 24, 0.65);
+  color: rgba(255, 255, 255, 0.75);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.layer-controls .layer-tab:hover,
+.layer-controls .layer-tab.is-active {
+  border-color: rgba(91, 140, 255, 0.65);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.layer-controls .layer-tab.is-active {
+  background: rgba(91, 140, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.layer-controls .layer-panel {
+  display: none;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.layer-controls .layer-panel.is-active {
+  display: flex;
+}
+
+.layer-controls .layer-visibility {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -219,9 +254,29 @@
   color: rgba(255, 255, 255, 0.85);
 }
 
-.layer-controls .layer-item input[type='checkbox'] {
+.layer-controls .layer-visibility input[type='checkbox'] {
   width: 1.1rem;
   height: 1.1rem;
+  accent-color: #5b8cff;
+}
+
+.layer-controls .slider-control {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.layer-controls .slider-control label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.layer-controls .slider-control input[type='range'] {
   accent-color: #5b8cff;
 }
 
