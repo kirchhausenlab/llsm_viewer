@@ -5,6 +5,10 @@ import { normalizeVolume, NormalizedVolume } from './volumeProcessing';
 import { clearTextureCache } from './textureCache';
 import './App.css';
 
+const DEFAULT_CONTRAST = 1;
+const DEFAULT_BRIGHTNESS = 0;
+const DEFAULT_FPS = 12;
+
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 
 function App() {
@@ -17,9 +21,9 @@ function App() {
   const [loadProgress, setLoadProgress] = useState(0);
   const [loadedCount, setLoadedCount] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [contrast, setContrast] = useState(1);
-  const [brightness, setBrightness] = useState(0);
-  const [fps, setFps] = useState(12);
+  const [contrast, setContrast] = useState(DEFAULT_CONTRAST);
+  const [brightness, setBrightness] = useState(DEFAULT_BRIGHTNESS);
+  const [fps, setFps] = useState(DEFAULT_FPS);
   const [resetViewHandler, setResetViewHandler] = useState<(() => void) | null>(null);
 
   const loadRequestRef = useRef(0);
@@ -137,6 +141,15 @@ function App() {
 
   const isLoading = status === 'loading';
 
+  const handleResetControls = useCallback(() => {
+    setContrast(DEFAULT_CONTRAST);
+    setBrightness(DEFAULT_BRIGHTNESS);
+    setFps(DEFAULT_FPS);
+  }, []);
+
+  const controlsAtDefaults =
+    contrast === DEFAULT_CONTRAST && brightness === DEFAULT_BRIGHTNESS && fps === DEFAULT_FPS;
+
   const handleTogglePlayback = useCallback(() => {
     setIsPlaying((current) => {
       if (!current && volumes.length <= 1) {
@@ -191,6 +204,9 @@ function App() {
           <div className="control-group">
             <button type="button" onClick={() => resetViewHandler?.()} disabled={!resetViewHandler}>
               Reset view
+            </button>
+            <button type="button" onClick={handleResetControls} disabled={controlsAtDefaults}>
+              Reset controls
             </button>
           </div>
           <div className="control-group">

@@ -53,8 +53,8 @@ type MovementState = {
   moveBackward: boolean;
   moveLeft: boolean;
   moveRight: boolean;
-  dollyIn: boolean;
-  dollyOut: boolean;
+  moveUp: boolean;
+  moveDown: boolean;
 };
 
 const MOVEMENT_KEY_MAP: Record<string, keyof MovementState> = {
@@ -62,8 +62,8 @@ const MOVEMENT_KEY_MAP: Record<string, keyof MovementState> = {
   KeyS: 'moveBackward',
   KeyA: 'moveLeft',
   KeyD: 'moveRight',
-  KeyE: 'dollyIn',
-  KeyQ: 'dollyOut'
+  KeyE: 'moveUp',
+  KeyQ: 'moveDown'
 };
 
 function createColormapTexture() {
@@ -115,8 +115,8 @@ function VolumeViewer({
     moveBackward: false,
     moveLeft: false,
     moveRight: false,
-    dollyIn: false,
-    dollyOut: false
+    moveUp: false,
+    moveDown: false
   });
   const [stats, setStats] = useState<VolumeStats | null>(null);
 
@@ -320,8 +320,8 @@ function VolumeViewer({
           !movementState.moveBackward &&
           !movementState.moveLeft &&
           !movementState.moveRight &&
-          !movementState.dollyIn &&
-          !movementState.dollyOut)
+          !movementState.moveUp &&
+          !movementState.moveDown)
       ) {
         return;
       }
@@ -358,11 +358,11 @@ function VolumeViewer({
       if (movementState.moveRight) {
         movementVector.addScaledVector(rightVector, movementScale);
       }
-      if (movementState.dollyIn) {
-        movementVector.addScaledVector(forwardVector, movementScale);
+      if (movementState.moveUp) {
+        movementVector.addScaledVector(worldUp, movementScale);
       }
-      if (movementState.dollyOut) {
-        movementVector.addScaledVector(forwardVector, -movementScale);
+      if (movementState.moveDown) {
+        movementVector.addScaledVector(worldUp, -movementScale);
       }
 
       if (movementVector.lengthSq() === 0) {
@@ -476,8 +476,8 @@ function VolumeViewer({
         movementState.moveBackward = false;
         movementState.moveLeft = false;
         movementState.moveRight = false;
-        movementState.dollyIn = false;
-        movementState.dollyOut = false;
+        movementState.moveUp = false;
+        movementState.moveDown = false;
       }
     };
   }, []);
