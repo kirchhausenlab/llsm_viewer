@@ -124,6 +124,7 @@ function VolumeViewer({
     moveDown: false
   });
   const [stats, setStats] = useState<VolumeStats | null>(null);
+  const [hasMeasured, setHasMeasured] = useState(false);
 
   if (!colormapRef.current) {
     colormapRef.current = createColormapTexture();
@@ -321,6 +322,9 @@ function VolumeViewer({
       }
       const width = target.clientWidth;
       const height = target.clientHeight;
+      if (width > 0 && height > 0) {
+        setHasMeasured(true);
+      }
       rendererRef.current.setSize(width, height);
       cameraRef.current.aspect = width / height;
       cameraRef.current.updateProjectionMatrix();
@@ -328,6 +332,7 @@ function VolumeViewer({
 
     const resizeObserver = new ResizeObserver(handleResize);
     resizeObserver.observe(container);
+    handleResize();
 
     const worldUp = new THREE.Vector3(0, 1, 0);
     const forwardVector = new THREE.Vector3();
@@ -721,7 +726,7 @@ function VolumeViewer({
             </div>
           </div>
         )}
-        <div className="render-surface" ref={containerRef} />
+        <div className={`render-surface${hasMeasured ? ' is-ready' : ''}`} ref={containerRef} />
       </section>
 
     {totalTimepoints > 0 && (
