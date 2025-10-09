@@ -728,17 +728,29 @@ function App() {
     });
   }, []);
 
+  const ensureTrackIsVisible = useCallback((trackId: number) => {
+    setTrackVisibility((current) => {
+      if (current[trackId]) {
+        return current;
+      }
+      return { ...current, [trackId]: true };
+    });
+  }, []);
+
   const handleTrackFollow = useCallback(
     (trackId: number) => {
       setFollowedTrackId((current) => (current === trackId ? null : trackId));
-      setTrackVisibility((current) => {
-        if (current[trackId]) {
-          return current;
-        }
-        return { ...current, [trackId]: true };
-      });
+      ensureTrackIsVisible(trackId);
     },
-    []
+    [ensureTrackIsVisible]
+  );
+
+  const handleTrackFollowFromViewer = useCallback(
+    (trackId: number) => {
+      setFollowedTrackId((current) => (current === trackId ? current : trackId));
+      ensureTrackIsVisible(trackId);
+    },
+    [ensureTrackIsVisible]
   );
 
   const handleStopTrackFollow = useCallback(() => {
@@ -1104,6 +1116,7 @@ function App() {
           trackOpacity={trackOpacity}
           trackLineWidth={trackLineWidth}
           followedTrackId={followedTrackId}
+          onTrackFollowRequest={handleTrackFollowFromViewer}
         />
       </main>
       <aside className="sidebar sidebar-right">
