@@ -255,7 +255,7 @@ function VolumeViewer({
         const rotationTarget = rotationTargetRef.current;
         camera.getWorldDirection(dollyDirection);
         const distance = rotationTarget.distanceTo(camera.position);
-        const depthScale = Math.max(distance * 0.002, 0.0005);
+        const depthScale = Math.max(distance * 0.0025, 0.0006);
         const moveAmount = -deltaY * depthScale;
         dollyDirection.multiplyScalar(moveAmount);
         camera.position.add(dollyDirection);
@@ -263,6 +263,9 @@ function VolumeViewer({
       }
 
       controls.update();
+      if (state.mode === 'pan') {
+        rotationTargetRef.current.copy(controls.target);
+      }
       state.lastX = event.clientX;
       state.lastY = event.clientY;
     };
@@ -339,7 +342,7 @@ function VolumeViewer({
 
       const rotationTarget = rotationTargetRef.current;
       const distance = rotationTarget.distanceTo(camera.position);
-      const movementScale = Math.max(distance * 0.002, 0.0005);
+      const movementScale = Math.max(distance * 0.0025, 0.0006);
 
       camera.getWorldDirection(forwardVector).normalize();
       horizontalForward.copy(forwardVector).projectOnPlane(worldUp);
@@ -382,6 +385,7 @@ function VolumeViewer({
       }
 
       camera.position.add(movementVector);
+      rotationTarget.add(movementVector);
       controls.target.copy(rotationTarget);
     };
 

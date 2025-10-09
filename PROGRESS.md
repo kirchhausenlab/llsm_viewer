@@ -52,3 +52,7 @@ Next steps:
 
 ## Loading overlay persistence
 - Reworked the progress calculations to rely on the decoded timepoint count when available, keeping the overlay visible until every expected frame has been ingested and preventing the early dismissal seen after the first volume finished loading.
+
+## Camera translation restoration
+- Restored strafe and dolly interactions so they once again translate the camera instead of orbiting the volume by keeping the orbit target synchronized with manual movements.
+- Increased the manual translation step size slightly so keyboard motion feels more responsive without overshooting the dataset.
