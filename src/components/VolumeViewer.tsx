@@ -124,6 +124,7 @@ function VolumeViewer({
     moveDown: false
   });
   const [stats, setStats] = useState<VolumeStats | null>(null);
+  const [hasMeasured, setHasMeasured] = useState(false);
 
   if (!colormapRef.current) {
     colormapRef.current = createColormapTexture();
@@ -314,20 +315,34 @@ function VolumeViewer({
     sceneRef.current = scene;
     cameraRef.current = camera;
 
-    const handleResize = () => {
+    const handleResize = (entries?: ResizeObserverEntry[]) => {
       const target = containerRef.current;
       if (!target || !rendererRef.current || !cameraRef.current) {
         return;
       }
-      const width = target.clientWidth;
-      const height = target.clientHeight;
+
+      let width = target.clientWidth;
+      let height = target.clientHeight;
+
+      if (entries && entries.length > 0) {
+        const entry = entries[0];
+        width = Math.round(entry.contentRect.width);
+        height = Math.round(entry.contentRect.height);
+      }
+
+      if (width <= 0 || height <= 0) {
+        return;
+      }
+
+      setHasMeasured((previous) => (previous ? previous : true));
       rendererRef.current.setSize(width, height);
       cameraRef.current.aspect = width / height;
       cameraRef.current.updateProjectionMatrix();
     };
 
-    const resizeObserver = new ResizeObserver(handleResize);
+    const resizeObserver = new ResizeObserver((entries) => handleResize(entries));
     resizeObserver.observe(container);
+    handleResize();
 
     const worldUp = new THREE.Vector3(0, 1, 0);
     const forwardVector = new THREE.Vector3();
@@ -721,7 +736,7 @@ function VolumeViewer({
             </div>
           </div>
         )}
-        <div className="render-surface" ref={containerRef} />
+        <div className={`render-surface${hasMeasured ? ' is-ready' : ''}`} ref={containerRef} />
       </section>
 
     {totalTimepoints > 0 && (
