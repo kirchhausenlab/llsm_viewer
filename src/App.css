@@ -1,6 +1,6 @@
 .app {
   display: grid;
-  grid-template-columns: 320px 1fr;
+  grid-template-columns: 320px 1fr 320px;
   width: 100%;
   height: 100vh;
   background: radial-gradient(circle at top left, #18202a, #080a0d 55%);
@@ -19,6 +19,11 @@
   height: 100vh;
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+.sidebar-right {
+  border-right: none;
+  border-left: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .sidebar header h1 {
@@ -403,6 +408,104 @@
 
 .view-controls input[type='range'] {
   accent-color: #5b8cff;
+}
+
+.track-controls {
+  gap: 0.85rem;
+}
+
+.track-controls .control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.track-controls .track-overlay-toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.track-controls .track-overlay-toggle input[type='checkbox'] {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: #5b8cff;
+}
+
+.track-controls .slider-control {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.track-controls .slider-control label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.track-controls .slider-control input[type='range'] {
+  accent-color: #5b8cff;
+}
+
+.track-controls .track-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.track-controls .track-master-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.track-controls .track-master-toggle input[type='checkbox'] {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: #5b8cff;
+}
+
+.track-controls .track-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 0.6rem;
+  padding-right: 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.6rem;
+  background: rgba(12, 16, 24, 0.55);
+}
+
+.track-controls .track-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.track-controls .track-item input[type='checkbox'] {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: #5b8cff;
+}
+
+.track-empty-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.65);
 }
 
 .error {

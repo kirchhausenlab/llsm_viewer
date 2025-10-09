@@ -12,6 +12,8 @@ import './App.css';
 const DEFAULT_CONTRAST = 1;
 const DEFAULT_BRIGHTNESS = 0;
 const DEFAULT_FPS = 12;
+const DEFAULT_TRACK_OPACITY = 0.9;
+const DEFAULT_TRACK_LINE_WIDTH = 1;
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 
@@ -77,10 +79,14 @@ function App() {
   const [trackStatus, setTrackStatus] = useState<LoadState>('idle');
   const [trackError, setTrackError] = useState<string | null>(null);
   const [showTrackOverlay, setShowTrackOverlay] = useState(false);
+  const [trackVisibility, setTrackVisibility] = useState<Record<number, boolean>>({});
+  const [trackOpacity, setTrackOpacity] = useState(DEFAULT_TRACK_OPACITY);
+  const [trackLineWidth, setTrackLineWidth] = useState(DEFAULT_TRACK_LINE_WIDTH);
 
   const loadRequestRef = useRef(0);
   const subfolderRequestRef = useRef(0);
   const hasTrackDataRef = useRef(false);
+  const trackMasterCheckboxRef = useRef<HTMLInputElement | null>(null);
 
   const selectedFile = useMemo(() => files[selectedIndex] ?? null, [files, selectedIndex]);
   const timepointCount = layers.length > 0 ? layers[0].volumes.length : 0;
@@ -144,6 +150,9 @@ function App() {
     if (!hasParsedTrackData) {
       hasTrackDataRef.current = false;
       setShowTrackOverlay(false);
+      setTrackVisibility({});
+      setTrackOpacity(DEFAULT_TRACK_OPACITY);
+      setTrackLineWidth(DEFAULT_TRACK_LINE_WIDTH);
       return;
     }
 
@@ -153,6 +162,39 @@ function App() {
 
     hasTrackDataRef.current = true;
   }, [hasParsedTrackData]);
+
+  useEffect(() => {
+    if (parsedTracks.length === 0) {
+      return;
+    }
+
+    setTrackVisibility((current) => {
+      const next: Record<number, boolean> = {};
+      let changed = false;
+
+      for (const track of parsedTracks) {
+        const previous = current[track.id];
+        if (previous === undefined) {
+          changed = true;
+        }
+        next[track.id] = previous ?? true;
+      }
+
+      for (const key of Object.keys(current)) {
+        const numericKey = Number(key);
+        if (!parsedTracks.some((track) => track.id === numericKey)) {
+          changed = true;
+          break;
+        }
+      }
+
+      if (!changed && Object.keys(next).length === Object.keys(current).length) {
+        return current;
+      }
+
+      return next;
+    });
+  }, [parsedTracks]);
 
   const refreshSubfolderSummary = useCallback(
     async (targetPath: string) => {
@@ -433,7 +475,43 @@ function App() {
     );
     setFps(DEFAULT_FPS);
     setShowTrackOverlay(hasParsedTrackData);
-  }, [hasParsedTrackData, layers]);
+    setTrackOpacity(DEFAULT_TRACK_OPACITY);
+    setTrackLineWidth(DEFAULT_TRACK_LINE_WIDTH);
+    setTrackVisibility(
+      parsedTracks.reduce<Record<number, boolean>>((acc, track) => {
+        acc[track.id] = true;
+        return acc;
+      }, {})
+    );
+  }, [hasParsedTrackData, layers, parsedTracks]);
+
+  const trackVisibilitySummary = useMemo(() => {
+    if (parsedTracks.length === 0) {
+      return { total: 0, visible: 0 };
+    }
+    let visible = 0;
+    for (const track of parsedTracks) {
+      if (trackVisibility[track.id] ?? true) {
+        visible += 1;
+      }
+    }
+    return { total: parsedTracks.length, visible };
+  }, [parsedTracks, trackVisibility]);
+
+  const allTracksChecked =
+    trackVisibilitySummary.total > 0 && trackVisibilitySummary.visible === trackVisibilitySummary.total;
+  const someTracksChecked =
+    trackVisibilitySummary.total > 0 &&
+    trackVisibilitySummary.visible > 0 &&
+    trackVisibilitySummary.visible < trackVisibilitySummary.total;
+
+  useEffect(() => {
+    const checkbox = trackMasterCheckboxRef.current;
+    if (!checkbox) {
+      return;
+    }
+    checkbox.indeterminate = someTracksChecked && !allTracksChecked;
+  }, [allTracksChecked, someTracksChecked]);
 
   const controlsAtDefaults = useMemo(() => {
     const allLayerDefaults =
@@ -452,8 +530,30 @@ function App() {
     const overlayDefault = hasParsedTrackData;
     const overlayAtDefault = showTrackOverlay === overlayDefault;
 
-    return allLayerDefaults && fps === DEFAULT_FPS && overlayAtDefault;
-  }, [fps, hasParsedTrackData, layerSettings, layers, showTrackOverlay]);
+    const trackVisibilityAtDefault =
+      parsedTracks.length === 0 || parsedTracks.every((track) => trackVisibility[track.id] ?? true);
+    const trackOpacityAtDefault = trackOpacity === DEFAULT_TRACK_OPACITY;
+    const trackLineWidthAtDefault = trackLineWidth === DEFAULT_TRACK_LINE_WIDTH;
+
+    return (
+      allLayerDefaults &&
+      fps === DEFAULT_FPS &&
+      overlayAtDefault &&
+      trackVisibilityAtDefault &&
+      trackOpacityAtDefault &&
+      trackLineWidthAtDefault
+    );
+  }, [
+    fps,
+    hasParsedTrackData,
+    layerSettings,
+    layers,
+    parsedTracks,
+    showTrackOverlay,
+    trackLineWidth,
+    trackOpacity,
+    trackVisibility
+  ]);
 
   const handleTogglePlayback = useCallback(() => {
     setIsPlaying((current) => {
@@ -565,6 +665,47 @@ function App() {
     }));
   }, []);
 
+  const handleTrackVisibilityToggle = useCallback((trackId: number) => {
+    setTrackVisibility((current) => {
+      const previous = current[trackId];
+      const nextValue = !(previous ?? true);
+      return {
+        ...current,
+        [trackId]: nextValue
+      };
+    });
+  }, []);
+
+  const handleTrackVisibilityAllChange = useCallback(
+    (isChecked: boolean) => {
+      setTrackVisibility(
+        parsedTracks.reduce<Record<number, boolean>>((acc, track) => {
+          acc[track.id] = isChecked;
+          return acc;
+        }, {})
+      );
+    },
+    [parsedTracks]
+  );
+
+  const handleTrackOpacityChange = useCallback((value: number) => {
+    setTrackOpacity((current) => {
+      if (current === value) {
+        return current;
+      }
+      return value;
+    });
+  }, []);
+
+  const handleTrackLineWidthChange = useCallback((value: number) => {
+    setTrackLineWidth((current) => {
+      if (current === value) {
+        return current;
+      }
+      return value;
+    });
+  }, []);
+
   useEffect(() => {
     if (layers.length === 0) {
       setActiveLayerKey(null);
@@ -668,7 +809,7 @@ function App() {
 
   return (
     <div className="app">
-      <aside className="sidebar">
+      <aside className="sidebar sidebar-left">
         <header>
           <h1>LLSM Viewer</h1>
           <p>Load 4D microscopy data by entering the path to a TIFF stack directory.</p>
@@ -726,45 +867,6 @@ function App() {
           ) : null}
           <button type="submit" disabled={!path.trim() || isLoading || !hasExplicitLayerSelection}>
             Load dataset
-          </button>
-        </form>
-
-        <form onSubmit={handleTrackSubmit} className="path-form">
-          <label htmlFor="tracks-input">Tracks file</label>
-          <div className="path-input-wrapper">
-            <input
-              id="tracks-input"
-              type="text"
-              value={trackPath}
-              placeholder="/nfs/scratch2/.../tracks.csv"
-              onChange={(event) => handleTrackPathChange(event.target.value)}
-              autoComplete="off"
-            />
-            <button
-              type="button"
-              className="path-browse-button"
-              onClick={handleOpenTrackPicker}
-              aria-label="Browse for tracks file"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path
-                  d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8.83a2 2 0 0 0-.59-1.41l-4.83-4.83A2 2 0 0 0 13.17 2Zm6 2.41L17.59 8H13a1 1 0 0 1-1-1Z"
-                  fill="currentColor"
-                />
-              </svg>
-            </button>
-          </div>
-          {trackStatus === 'loading' ? (
-            <p className="subfolder-status">Loading tracks…</p>
-          ) : trackError ? (
-            <p className="subfolder-error">{trackError}</p>
-          ) : trackStatus === 'loaded' ? (
-            <p className="subfolder-status">
-              {tracks.length === 1 ? 'Loaded 1 track entry.' : `Loaded ${tracks.length} track entries.`}
-            </p>
-          ) : null}
-          <button type="submit" disabled={!trackPath.trim() || trackStatus === 'loading'}>
-            Load tracks
           </button>
         </form>
 
@@ -911,17 +1013,6 @@ function App() {
             </button>
           </div>
           <div className="control-group">
-            <label>
-              <span>Show tracking overlay</span>
-              <input
-                type="checkbox"
-                checked={showTrackOverlay}
-                onChange={(event) => setShowTrackOverlay(event.target.checked)}
-                disabled={!hasParsedTrackData}
-              />
-            </label>
-          </div>
-          <div className="control-group">
             <label htmlFor="fps-slider">
               FPS <span>{fps}</span>
             </label>
@@ -957,8 +1048,134 @@ function App() {
           onRegisterReset={handleRegisterReset}
           tracks={parsedTracks}
           showTrackOverlay={showTrackOverlay}
+          trackVisibility={trackVisibility}
+          trackOpacity={trackOpacity}
+          trackLineWidth={trackLineWidth}
         />
       </main>
+      <aside className="sidebar sidebar-right">
+        <header>
+          <h2>Tracking</h2>
+          <p>Load track data and configure how trajectories appear in the viewer.</p>
+        </header>
+
+        <form onSubmit={handleTrackSubmit} className="path-form">
+          <label htmlFor="tracks-input">Tracks file</label>
+          <div className="path-input-wrapper">
+            <input
+              id="tracks-input"
+              type="text"
+              value={trackPath}
+              placeholder="/nfs/scratch2/.../tracks.csv"
+              onChange={(event) => handleTrackPathChange(event.target.value)}
+              autoComplete="off"
+            />
+            <button
+              type="button"
+              className="path-browse-button"
+              onClick={handleOpenTrackPicker}
+              aria-label="Browse for tracks file"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path
+                  d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8.83a2 2 0 0 0-.59-1.41l-4.83-4.83A2 2 0 0 0 13.17 2Zm6 2.41L17.59 8H13a1 1 0 0 1-1-1Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </button>
+          </div>
+          {trackStatus === 'loading' ? (
+            <p className="subfolder-status">Loading tracks…</p>
+          ) : trackError ? (
+            <p className="subfolder-error">{trackError}</p>
+          ) : trackStatus === 'loaded' ? (
+            <p className="subfolder-status">
+              {tracks.length === 1 ? 'Loaded 1 track entry.' : `Loaded ${tracks.length} track entries.`}
+            </p>
+          ) : null}
+          <button type="submit" disabled={!trackPath.trim() || trackStatus === 'loading'}>
+            Load tracks
+          </button>
+        </form>
+
+        <section className="sidebar-panel track-controls">
+          <header>
+            <h2>Overlay controls</h2>
+          </header>
+          <div className="control-group">
+            <label className="track-overlay-toggle">
+              <span>Show tracking overlay</span>
+              <input
+                type="checkbox"
+                checked={showTrackOverlay}
+                onChange={(event) => setShowTrackOverlay(event.target.checked)}
+                disabled={!hasParsedTrackData}
+              />
+            </label>
+          </div>
+          <div className="slider-control">
+            <label htmlFor="track-opacity-slider">
+              Opacity <span>{Math.round(trackOpacity * 100)}%</span>
+            </label>
+            <input
+              id="track-opacity-slider"
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={trackOpacity}
+              onChange={(event) => handleTrackOpacityChange(Number(event.target.value))}
+              disabled={parsedTracks.length === 0}
+            />
+          </div>
+          <div className="slider-control">
+            <label htmlFor="track-linewidth-slider">
+              Thickness <span>{trackLineWidth.toFixed(1)}</span>
+            </label>
+            <input
+              id="track-linewidth-slider"
+              type="range"
+              min={0.5}
+              max={5}
+              step={0.1}
+              value={trackLineWidth}
+              onChange={(event) => handleTrackLineWidthChange(Number(event.target.value))}
+              disabled={parsedTracks.length === 0}
+            />
+          </div>
+          <div className="track-list-header">
+            <label className="track-master-toggle">
+              <input
+                ref={trackMasterCheckboxRef}
+                type="checkbox"
+                checked={parsedTracks.length > 0 && allTracksChecked}
+                onChange={(event) => handleTrackVisibilityAllChange(event.target.checked)}
+                disabled={parsedTracks.length === 0}
+              />
+              <span>Show all tracks</span>
+            </label>
+          </div>
+          {parsedTracks.length > 0 ? (
+            <div className="track-list" role="group" aria-label="Track visibility">
+              {parsedTracks.map((track, index) => {
+                const isChecked = trackVisibility[track.id] ?? true;
+                return (
+                  <label key={track.id} className="track-item" title={`Track ID ${track.id}`}>
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => handleTrackVisibilityToggle(track.id)}
+                    />
+                    <span>Track #{index + 1}</span>
+                  </label>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="track-empty-hint">Load a tracks file to toggle individual trajectories.</p>
+          )}
+        </section>
+      </aside>
       {isPickerOpen ? (
         <DirectoryPickerDialog
           initialPath={path}

@@ -85,3 +85,8 @@ Next steps:
 ## Grayscale tint controls
 - Added per-layer tint settings for monochannel volumes, including preset swatches and a custom color picker directly in each layer tab.
 - Threaded the selected tint through the viewer so grayscale datasets render with the chosen color-specific colormap while RGB volumes remain unchanged.
+
+## Tracking layout overhaul
+- Split the interface into a three-column layout, introducing a dedicated right sidebar that houses every tracking-related control.
+- Moved the tracks file picker and overlay toggle into the new panel, added global opacity/thickness sliders, and exposed a scrollable checklist with per-track visibility plus a master checkbox.
+- Threaded the aggregate tracking settings into the WebGL renderer so overlay visibility, alpha, and line width respond instantly to the sidebar controls while respecting individual track toggles.

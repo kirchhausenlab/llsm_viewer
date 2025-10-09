@@ -33,6 +33,9 @@ type VolumeViewerProps = {
   onRegisterReset: (handler: (() => void) | null) => void;
   tracks: TrackDefinition[];
   showTrackOverlay: boolean;
+  trackVisibility: Record<number, boolean>;
+  trackOpacity: number;
+  trackLineWidth: number;
 };
 
 type VolumeStats = {
@@ -128,7 +131,10 @@ function VolumeViewer({
   onTimeIndexChange,
   onRegisterReset,
   tracks,
-  showTrackOverlay
+  showTrackOverlay,
+  trackVisibility,
+  trackOpacity,
+  trackLineWidth
 }: VolumeViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -299,9 +305,47 @@ function VolumeViewer({
       }
     }
 
-    trackGroup.visible = showTrackOverlay && tracks.length > 0;
     updateTrackDrawRanges(timeIndexRef.current);
-  }, [tracks, showTrackOverlay, updateTrackDrawRanges]);
+  }, [tracks, updateTrackDrawRanges]);
+
+  useEffect(() => {
+    const trackGroup = trackGroupRef.current;
+    if (!trackGroup) {
+      return;
+    }
+
+    const sanitizedOpacity = Math.min(1, Math.max(0, trackOpacity));
+    const sanitizedLineWidth = Math.max(0.1, Math.min(10, trackLineWidth));
+    let visibleCount = 0;
+
+    for (const track of tracks) {
+      const resource = trackLinesRef.current.get(track.id);
+      if (!resource) {
+        continue;
+      }
+
+      const line = resource.line;
+      const material = line.material;
+      if (material instanceof THREE.LineBasicMaterial) {
+        if (material.opacity !== sanitizedOpacity) {
+          material.opacity = sanitizedOpacity;
+          material.needsUpdate = true;
+        }
+        if (material.linewidth !== sanitizedLineWidth) {
+          material.linewidth = sanitizedLineWidth;
+          material.needsUpdate = true;
+        }
+      }
+
+      const isVisible = showTrackOverlay && (trackVisibility[track.id] ?? true);
+      line.visible = isVisible;
+      if (isVisible) {
+        visibleCount += 1;
+      }
+    }
+
+    trackGroup.visible = showTrackOverlay && visibleCount > 0;
+  }, [showTrackOverlay, trackLineWidth, trackOpacity, trackVisibility, tracks]);
 
   useEffect(() => {
     timeIndexRef.current = clampedTimeIndex;
