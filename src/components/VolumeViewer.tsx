@@ -264,7 +264,7 @@ function VolumeViewer({
 
       if (state.mode === 'pan') {
         (controls as unknown as { pan: (dx: number, dy: number) => void }).pan(deltaX, deltaY);
-        controls.target.copy(rotationTargetRef.current);
+        rotationTargetRef.current.copy(controls.target);
       } else {
         const rotationTarget = rotationTargetRef.current;
         camera.getWorldDirection(dollyDirection);
@@ -396,6 +396,7 @@ function VolumeViewer({
       }
 
       camera.position.add(movementVector);
+      rotationTarget.add(movementVector);
       controls.target.copy(rotationTarget);
     };
 
