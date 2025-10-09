@@ -24,6 +24,29 @@ npm run preview
 - `server/` – Express API that lists datasets and streams TIFF volumes decoded with `geotiff`.
 - `PROGRESS.md` – Running log of milestones and upcoming tasks.
 
+## Manual server verification
+
+Use the steps below to confirm that the browse endpoint includes symbolic links that target directories:
+
+1. Create a test directory structure that mixes real folders and symbolic links:
+
+   ```bash
+   mkdir -p /tmp/llsm-browse-test/real-dataset
+   ln -s /tmp/llsm-browse-test/real-dataset /tmp/llsm-browse-test/link-dataset
+   ```
+
+2. Start the development server in a separate terminal with `npm run dev`.
+
+3. Query the browse endpoint for the parent directory and confirm that both `real-dataset` and `link-dataset` are returned:
+
+   ```bash
+   curl -s http://localhost:5174/api/browse \
+     -H 'Content-Type: application/json' \
+     -d '{"path": "/tmp/llsm-browse-test"}' | jq '.directories'
+   ```
+
+   The response should list both the physical directory and the symbolic link.
+
 ## Next steps
 
 - Implement the WebGPU direct-volume renderer with transfer function controls.
