@@ -119,11 +119,63 @@ app.post('/api/volume', async (request, response) => {
     const height = firstImage.getHeight();
     const channels = firstImage.getSamplesPerPixel();
 
-    const floatData = new Float32Array(width * height * imageCount * channels);
+    const sliceLength = width * height * channels;
+    const totalValues = sliceLength * imageCount;
+
+    const firstRasterRaw = (await firstImage.readRasters({ interleave: true, pool })) as unknown;
+    if (!ArrayBuffer.isView(firstRasterRaw)) {
+      response.status(500).send('Volume rasters must be typed arrays.');
+      return;
+    }
+
+    type SupportedTypedArray = Uint8Array | Uint16Array | Float32Array;
+    type VolumeDataType = 'uint8' | 'uint16' | 'float32';
+
+    let dataType: VolumeDataType;
+    let combinedData: SupportedTypedArray;
+    let firstRaster: SupportedTypedArray;
+
+    if (firstRasterRaw instanceof Uint8Array) {
+      dataType = 'uint8';
+      combinedData = new Uint8Array(totalValues);
+      firstRaster = firstRasterRaw;
+    } else if (firstRasterRaw instanceof Uint16Array) {
+      dataType = 'uint16';
+      combinedData = new Uint16Array(totalValues);
+      firstRaster = firstRasterRaw;
+    } else if (firstRasterRaw instanceof Float32Array) {
+      dataType = 'float32';
+      combinedData = new Float32Array(totalValues);
+      firstRaster = firstRasterRaw;
+    } else {
+      response.status(415).send('Unsupported raster data type.');
+      return;
+    }
+
+    if (firstRaster.length !== sliceLength) {
+      response.status(500).send('Unexpected raster length for first slice.');
+      return;
+    }
+
     let globalMin = Number.POSITIVE_INFINITY;
     let globalMax = Number.NEGATIVE_INFINITY;
 
-    for (let index = 0; index < imageCount; index++) {
+    const copySlice = (source: SupportedTypedArray, offset: number) => {
+      for (let i = 0; i < source.length; i++) {
+        const value = source[i];
+        if (value < globalMin) {
+          globalMin = value;
+        }
+        if (value > globalMax) {
+          globalMax = value;
+        }
+        combinedData[offset + i] = value;
+      }
+    };
+
+    copySlice(firstRaster, 0);
+
+    for (let index = 1; index < imageCount; index++) {
       const image = await tiff.getImage(index);
       if (image.getWidth() !== width || image.getHeight() !== height) {
         response.status(400).send('All slices in a volume must have identical dimensions.');
@@ -134,19 +186,47 @@ app.post('/api/volume', async (request, response) => {
         return;
       }
 
-      const raster = (await image.readRasters({ interleave: true, pool })) as ArrayLike<number>;
-      const offset = index * width * height * channels;
-      floatData.set(raster, offset);
-
-      for (let i = 0; i < raster.length; i++) {
-        const value = raster[i];
-        if (value < globalMin) {
-          globalMin = value;
-        }
-        if (value > globalMax) {
-          globalMax = value;
-        }
+      const rasterRaw = (await image.readRasters({ interleave: true, pool })) as unknown;
+      if (!ArrayBuffer.isView(rasterRaw)) {
+        response.status(500).send('Volume rasters must be typed arrays.');
+        return;
       }
+
+      let raster: SupportedTypedArray;
+      switch (dataType) {
+        case 'uint8':
+          if (!(rasterRaw instanceof Uint8Array)) {
+            response.status(400).send('All slices in a volume must use the same sample type.');
+            return;
+          }
+          raster = rasterRaw;
+          break;
+        case 'uint16':
+          if (!(rasterRaw instanceof Uint16Array)) {
+            response.status(400).send('All slices in a volume must use the same sample type.');
+            return;
+          }
+          raster = rasterRaw;
+          break;
+        case 'float32':
+          if (!(rasterRaw instanceof Float32Array)) {
+            response.status(400).send('All slices in a volume must use the same sample type.');
+            return;
+          }
+          raster = rasterRaw;
+          break;
+        default:
+          response.status(500).send('Unsupported raster data type.');
+          return;
+      }
+
+      if (raster.length !== sliceLength) {
+        response.status(500).send('Unexpected raster length for slice.');
+        return;
+      }
+
+      const offset = index * sliceLength;
+      copySlice(raster, offset);
     }
 
     if (!Number.isFinite(globalMin) || globalMin === Number.POSITIVE_INFINITY) {
@@ -164,12 +244,12 @@ app.post('/api/volume', async (request, response) => {
       height,
       depth: imageCount,
       channels,
-      dataType: 'float32' as const,
+      dataType,
       min: globalMin,
       max: globalMax
     };
 
-    const buffer = Buffer.from(floatData.buffer, floatData.byteOffset, floatData.byteLength);
+    const buffer = Buffer.from(combinedData.buffer, combinedData.byteOffset, combinedData.byteLength);
     response.setHeader('Content-Type', 'application/octet-stream');
     response.setHeader('Cache-Control', 'no-store');
     response.setHeader('X-Volume-Metadata', JSON.stringify(metadata));

@@ -1,4 +1,4 @@
-import type { VolumePayload } from './api';
+import type { VolumeDataType, VolumePayload } from './api';
 
 export type NormalizedVolume = {
   width: number;
@@ -45,8 +45,8 @@ export function normalizeVolume(
   volume: VolumePayload,
   parameters: NormalizationParameters
 ): NormalizedVolume {
-  const { width, height, depth, channels, data } = volume;
-  const source = new Float32Array(data);
+  const { width, height, depth, channels, data, dataType } = volume;
+  const source = createSourceArray(data, dataType);
   const totalValues = source.length;
 
   const { min, max } = parameters;
@@ -68,4 +68,21 @@ export function normalizeVolume(
     min,
     max
   };
+}
+
+type SourceArray = Uint8Array | Uint16Array | Float32Array;
+
+function createSourceArray(data: ArrayBuffer, dataType: VolumeDataType): SourceArray {
+  switch (dataType) {
+    case 'uint8':
+      return new Uint8Array(data);
+    case 'uint16':
+      return new Uint16Array(data);
+    case 'float32':
+      return new Float32Array(data);
+    default: {
+      const exhaustiveCheck: never = dataType;
+      throw new Error(`Unsupported volume data type: ${exhaustiveCheck}`);
+    }
+  }
 }
