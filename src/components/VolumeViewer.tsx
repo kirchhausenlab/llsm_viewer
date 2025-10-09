@@ -143,7 +143,6 @@ function VolumeViewer({
     clampedExpectedTimepoints > 0
       ? Math.min(1, clampedLoadedTimepoints / clampedExpectedTimepoints)
       : safeProgress;
-  const progressPercentage = Math.round(normalizedProgress * 100);
   const hasStartedLoading = normalizedProgress > 0 || clampedLoadedTimepoints > 0 || safeProgress > 0;
   const hasFinishedLoading =
     clampedExpectedTimepoints > 0 ? clampedLoadedTimepoints >= clampedExpectedTimepoints : safeProgress >= 1;
@@ -718,15 +717,7 @@ function VolumeViewer({
         {showLoadingOverlay && (
           <div className="overlay">
             <div className="loading-panel">
-              <span className="loading-title">Loading volumes…</span>
-              <div className="progress-bar">
-                <span style={{ width: `${normalizedProgress * 100}%` }} />
-              </div>
-              <span className="progress-meta">
-                {clampedExpectedTimepoints > 0
-                  ? `${Math.min(clampedLoadedTimepoints, clampedExpectedTimepoints)} / ${clampedExpectedTimepoints} · ${progressPercentage}%`
-                  : `${progressPercentage}%`}
-              </span>
+              <span className="loading-title">Loading dataset…</span>
             </div>
           </div>
         )}
