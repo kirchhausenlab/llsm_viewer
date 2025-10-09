@@ -109,6 +109,7 @@ function VolumeViewer({
   const animationFrameRef = useRef<number | null>(null);
   const resourcesRef = useRef<VolumeResources | null>(null);
   const colormapRef = useRef<THREE.DataTexture | null>(null);
+  const rotationTargetRef = useRef(new THREE.Vector3());
   const pointerStateRef = useRef<PointerState | null>(null);
   const movementStateRef = useRef<MovementState>({
     moveForward: false,
@@ -151,6 +152,7 @@ function VolumeViewer({
       return;
     }
     controls.reset();
+    controls.target.copy(rotationTargetRef.current);
     controls.update();
   }, []);
 
@@ -250,14 +252,14 @@ function VolumeViewer({
       if (state.mode === 'pan') {
         (controls as unknown as { pan: (dx: number, dy: number) => void }).pan(deltaX, deltaY);
       } else {
-        const direction = new THREE.Vector3();
-        camera.getWorldDirection(direction);
-        const distance = controls.target.distanceTo(camera.position);
+        const rotationTarget = rotationTargetRef.current;
+        camera.getWorldDirection(dollyDirection);
+        const distance = rotationTarget.distanceTo(camera.position);
         const depthScale = Math.max(distance * 0.002, 0.0005);
         const moveAmount = -deltaY * depthScale;
-        direction.multiplyScalar(moveAmount);
-        camera.position.add(direction);
-        controls.target.add(direction);
+        dollyDirection.multiplyScalar(moveAmount);
+        camera.position.add(dollyDirection);
+        controls.target.copy(rotationTarget);
       }
 
       controls.update();
@@ -319,6 +321,7 @@ function VolumeViewer({
     const horizontalForward = new THREE.Vector3();
     const rightVector = new THREE.Vector3();
     const movementVector = new THREE.Vector3();
+    const dollyDirection = new THREE.Vector3();
 
     const applyKeyboardMovement = () => {
       const movementState = movementStateRef.current;
@@ -334,7 +337,8 @@ function VolumeViewer({
         return;
       }
 
-      const distance = controls.target.distanceTo(camera.position);
+      const rotationTarget = rotationTargetRef.current;
+      const distance = rotationTarget.distanceTo(camera.position);
       const movementScale = Math.max(distance * 0.002, 0.0005);
 
       camera.getWorldDirection(forwardVector).normalize();
@@ -378,7 +382,7 @@ function VolumeViewer({
       }
 
       camera.position.add(movementVector);
-      controls.target.add(movementVector);
+      controls.target.copy(rotationTarget);
     };
 
     const renderLoop = () => {
@@ -521,6 +525,11 @@ function VolumeViewer({
 
     if (!volume) {
       releaseResources();
+      rotationTargetRef.current.set(0, 0, 0);
+      if (controls) {
+        controls.target.set(0, 0, 0);
+        controls.update();
+      }
       setStats(null);
       return;
     }
@@ -587,6 +596,10 @@ function VolumeViewer({
       scene.add(mesh);
       mesh.updateMatrixWorld(true);
 
+      const rotationTarget = rotationTargetRef.current;
+      rotationTarget.set(0, 0, 0);
+      controls.target.copy(rotationTarget);
+
       resourcesRef.current = {
         mesh,
         texture,
@@ -594,7 +607,6 @@ function VolumeViewer({
         channels
       };
 
-      controls.target.set(0, 0, 0);
       const boundingRadius = Math.sqrt(width * width + height * height + depth * depth) * scale * 0.5;
       const fovInRadians = THREE.MathUtils.degToRad(camera.fov * 0.5);
       const distance = boundingRadius / Math.sin(fovInRadians);
