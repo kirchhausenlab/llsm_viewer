@@ -1,9 +1,11 @@
+export type VolumeDataType = 'uint8' | 'uint16' | 'float32';
+
 export type VolumeMetadata = {
   width: number;
   height: number;
   depth: number;
   channels: number;
-  dataType: 'float32';
+  dataType: VolumeDataType;
   voxelSize?: [number, number, number];
   min: number;
   max: number;
