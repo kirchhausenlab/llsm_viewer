@@ -110,6 +110,10 @@ function VolumeViewer({
   const resourcesRef = useRef<VolumeResources | null>(null);
   const colormapRef = useRef<THREE.DataTexture | null>(null);
   const rotationTargetRef = useRef(new THREE.Vector3());
+  const defaultViewStateRef = useRef<{
+    position: THREE.Vector3;
+    target: THREE.Vector3;
+  } | null>(null);
   const pointerStateRef = useRef<PointerState | null>(null);
   const movementStateRef = useRef<MovementState>({
     moveForward: false,
@@ -151,9 +155,18 @@ function VolumeViewer({
     if (!controls) {
       return;
     }
-    controls.reset();
-    controls.target.copy(rotationTargetRef.current);
-    controls.update();
+    const camera = cameraRef.current;
+    const defaultViewState = defaultViewStateRef.current;
+    if (defaultViewState && camera) {
+      camera.position.copy(defaultViewState.position);
+      controls.target.copy(defaultViewState.target);
+      rotationTargetRef.current.copy(defaultViewState.target);
+      controls.update();
+    } else {
+      controls.reset();
+      controls.target.copy(rotationTargetRef.current);
+      controls.update();
+    }
   }, []);
 
   useEffect(() => {
@@ -251,6 +264,7 @@ function VolumeViewer({
 
       if (state.mode === 'pan') {
         (controls as unknown as { pan: (dx: number, dy: number) => void }).pan(deltaX, deltaY);
+        controls.target.copy(rotationTargetRef.current);
       } else {
         const rotationTarget = rotationTargetRef.current;
         camera.getWorldDirection(dollyDirection);
@@ -263,9 +277,6 @@ function VolumeViewer({
       }
 
       controls.update();
-      if (state.mode === 'pan') {
-        rotationTargetRef.current.copy(controls.target);
-      }
       state.lastX = event.clientX;
       state.lastY = event.clientY;
     };
@@ -385,7 +396,6 @@ function VolumeViewer({
       }
 
       camera.position.add(movementVector);
-      rotationTarget.add(movementVector);
       controls.target.copy(rotationTarget);
     };
 
@@ -530,8 +540,12 @@ function VolumeViewer({
     if (!volume) {
       releaseResources();
       rotationTargetRef.current.set(0, 0, 0);
-      if (controls) {
+      if (controls && camera) {
         controls.target.set(0, 0, 0);
+        defaultViewStateRef.current = {
+          position: camera.position.clone(),
+          target: controls.target.clone()
+        };
         controls.update();
       }
       setStats(null);
@@ -624,6 +638,10 @@ function VolumeViewer({
       }
       camera.position.set(0, 0, safeDistance);
       controls.update();
+      defaultViewStateRef.current = {
+        position: camera.position.clone(),
+        target: controls.target.clone()
+      };
       controls.saveState();
 
       const cameraUniform = mesh.material.uniforms.u_cameraPos.value;

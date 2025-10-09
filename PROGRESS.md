@@ -56,3 +56,7 @@ Next steps:
 ## Camera translation restoration
 - Restored strafe and dolly interactions so they once again translate the camera instead of orbiting the volume by keeping the orbit target synchronized with manual movements.
 - Increased the manual translation step size slightly so keyboard motion feels more responsive without overshooting the dataset.
+
+## Camera rotation pivot corrections
+- Locked the orbit target to the normalized volume center so rotations always pivot around the dataset regardless of how the camera is translated.
+- Cached the default camera position/target pair on load and reused it for the reset-view handler to guarantee the button restores the original composition.
