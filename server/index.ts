@@ -25,7 +25,7 @@ const workerCount = (() => {
   return cpuInfo && cpuInfo.length > 0 ? cpuInfo.length : 1;
 })();
 
-const pool = new Pool({ numWorkers: workerCount });
+const pool = new Pool(Math.max(1, workerCount));
 let poolDestroyed = false;
 
 function destroyPool() {
