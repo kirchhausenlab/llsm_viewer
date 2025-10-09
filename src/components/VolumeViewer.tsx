@@ -40,6 +40,7 @@ type VolumeViewerProps = {
   trackOpacity: number;
   trackLineWidth: number;
   followedTrackId: number | null;
+  onTrackFollowRequest: (trackId: number) => void;
 };
 
 type VolumeStats = {
@@ -145,7 +146,8 @@ function VolumeViewer({
   trackVisibility,
   trackOpacity,
   trackLineWidth,
-  followedTrackId
+  followedTrackId,
+  onTrackFollowRequest
 }: VolumeViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -642,13 +644,13 @@ function VolumeViewer({
     };
     raycasterRef.current = raycaster;
 
-    const performHoverHitTest = (event: PointerEvent) => {
+    const performHoverHitTest = (event: PointerEvent): number | null => {
       const cameraInstance = cameraRef.current;
       const trackGroupInstance = trackGroupRef.current;
       const raycasterInstance = raycasterRef.current;
       if (!cameraInstance || !trackGroupInstance || !raycasterInstance || !trackGroupInstance.visible) {
         clearHoverState();
-        return;
+        return null;
       }
 
       const rect = domElement.getBoundingClientRect();
@@ -656,14 +658,14 @@ function VolumeViewer({
       const height = rect.height;
       if (width <= 0 || height <= 0) {
         clearHoverState();
-        return;
+        return null;
       }
 
       const offsetX = event.clientX - rect.left;
       const offsetY = event.clientY - rect.top;
       if (offsetX < 0 || offsetY < 0 || offsetX > width || offsetY > height) {
         clearHoverState();
-        return;
+        return null;
       }
 
       pointerVector.set((offsetX / width) * 2 - 1, -(offsetY / height) * 2 + 1);
@@ -678,13 +680,13 @@ function VolumeViewer({
 
       if (visibleLines.length === 0) {
         clearHoverState();
-        return;
+        return null;
       }
 
       const intersections = raycasterInstance.intersectObjects(visibleLines, false);
       if (intersections.length === 0) {
         clearHoverState();
-        return;
+        return null;
       }
 
       const intersection = intersections[0];
@@ -695,10 +697,11 @@ function VolumeViewer({
           : null;
       if (trackId === null) {
         clearHoverState();
-        return;
+        return null;
       }
 
       updateHoverState(trackId, { x: offsetX, y: offsetY });
+      return trackId;
     };
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -708,7 +711,10 @@ function VolumeViewer({
 
       const mode = event.ctrlKey ? 'dolly' : event.shiftKey ? 'pan' : null;
       if (!mode) {
-        performHoverHitTest(event);
+        const hitTrackId = performHoverHitTest(event);
+        if (hitTrackId !== null) {
+          onTrackFollowRequest(hitTrackId);
+        }
         return;
       }
 
