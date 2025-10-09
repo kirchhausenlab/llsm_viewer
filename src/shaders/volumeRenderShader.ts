@@ -9,6 +9,7 @@ type VolumeUniforms = {
   u_data: { value: Data3DTexture | null };
   u_cmdata: { value: DataTexture | null };
   u_channels: { value: number };
+  u_cameraPos: { value: Vector3 };
 };
 
 const uniforms = {
@@ -18,7 +19,8 @@ const uniforms = {
   u_clim: { value: new Vector2(1, 1) },
   u_data: { value: null as Data3DTexture | null },
   u_cmdata: { value: null as DataTexture | null },
-  u_channels: { value: 1 }
+  u_channels: { value: 1 },
+  u_cameraPos: { value: new Vector3() }
 } satisfies VolumeUniforms;
 
 export const VolumeRenderShader = {
@@ -57,6 +59,7 @@ export const VolumeRenderShader = {
 
     uniform sampler3D u_data;
     uniform sampler2D u_cmdata;
+    uniform vec3 u_cameraPos;
 
     varying vec3 v_position;
     varying vec4 v_nearpos;
@@ -65,6 +68,8 @@ export const VolumeRenderShader = {
     const int MAX_STEPS = 887;
     const int REFINEMENT_STEPS = 4;
     const float relative_step_size = 1.0;
+    const float EPSILON = 1e-6;
+    const float LARGE = 1e20;
     const float shininess = 40.0;
     const float ambientStrength = 0.2;
     const float diffuseStrength = 0.8;
@@ -113,22 +118,85 @@ export const VolumeRenderShader = {
       vec3 farpos = v_farpos.xyz / v_farpos.w;
       vec3 nearpos = v_nearpos.xyz / v_nearpos.w;
 
-      vec3 view_ray = normalize(nearpos.xyz - farpos.xyz);
+      vec3 rayOrigin = u_cameraPos;
+      vec3 rawDir = v_position - rayOrigin;
+      float rawDirLength = length(rawDir);
+      if (rawDirLength < EPSILON) {
+        discard;
+      }
+      vec3 rayDir = rawDir / rawDirLength;
 
-      float distance = dot(nearpos - v_position, view_ray);
-      distance = max(distance, min((-0.5 - v_position.x) / view_ray.x, (u_size.x - 0.5 - v_position.x) / view_ray.x));
-      distance = max(distance, min((-0.5 - v_position.y) / view_ray.y, (u_size.y - 0.5 - v_position.y) / view_ray.y));
-      distance = max(distance, min((-0.5 - v_position.z) / view_ray.z, (u_size.z - 0.5 - v_position.z) / view_ray.z));
+      vec3 boxMin = vec3(-0.5);
+      vec3 boxMax = u_size - 0.5;
 
-      vec3 front = v_position + view_ray * distance;
+      vec3 tLower;
+      vec3 tUpper;
 
-      int nsteps = int(-distance / relative_step_size + 0.5);
+      if (abs(rayDir.x) < EPSILON) {
+        if (rayOrigin.x < boxMin.x || rayOrigin.x > boxMax.x) {
+          discard;
+        }
+        tLower.x = -LARGE;
+        tUpper.x = LARGE;
+      } else {
+        float tx1 = (boxMin.x - rayOrigin.x) / rayDir.x;
+        float tx2 = (boxMax.x - rayOrigin.x) / rayDir.x;
+        tLower.x = min(tx1, tx2);
+        tUpper.x = max(tx1, tx2);
+      }
+
+      if (abs(rayDir.y) < EPSILON) {
+        if (rayOrigin.y < boxMin.y || rayOrigin.y > boxMax.y) {
+          discard;
+        }
+        tLower.y = -LARGE;
+        tUpper.y = LARGE;
+      } else {
+        float ty1 = (boxMin.y - rayOrigin.y) / rayDir.y;
+        float ty2 = (boxMax.y - rayOrigin.y) / rayDir.y;
+        tLower.y = min(ty1, ty2);
+        tUpper.y = max(ty1, ty2);
+      }
+
+      if (abs(rayDir.z) < EPSILON) {
+        if (rayOrigin.z < boxMin.z || rayOrigin.z > boxMax.z) {
+          discard;
+        }
+        tLower.z = -LARGE;
+        tUpper.z = LARGE;
+      } else {
+        float tz1 = (boxMin.z - rayOrigin.z) / rayDir.z;
+        float tz2 = (boxMax.z - rayOrigin.z) / rayDir.z;
+        tLower.z = min(tz1, tz2);
+        tUpper.z = max(tz1, tz2);
+      }
+
+      float entry = max(max(tLower.x, tLower.y), tLower.z);
+      float exit = min(min(tUpper.x, tUpper.y), tUpper.z);
+
+      if (exit <= entry) {
+        discard;
+      }
+
+      float tStart = max(entry, 0.0);
+      float tEnd = exit;
+
+      if (tEnd <= tStart) {
+        discard;
+      }
+
+      vec3 front = rayOrigin + rayDir * tStart;
+      vec3 back = rayOrigin + rayDir * tEnd;
+
+      float rayLength = tEnd - tStart;
+      int nsteps = int(rayLength / relative_step_size + 0.5);
       if (nsteps < 1) {
         discard;
       }
 
-      vec3 step = ((v_position - front) / u_size) / float(nsteps);
+      vec3 step = ((back - front) / u_size) / float(nsteps);
       vec3 start_loc = front / u_size;
+      vec3 view_ray = -rayDir;
 
       if (u_renderstyle == 0) {
         cast_mip(start_loc, step, nsteps, view_ray);

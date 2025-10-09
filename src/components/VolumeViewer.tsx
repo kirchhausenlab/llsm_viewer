@@ -177,8 +177,8 @@ function VolumeViewer({
     const camera = new THREE.PerspectiveCamera(
       38,
       container.clientWidth / container.clientHeight,
-      0.01,
-      100
+      0.0001,
+      1000
     );
     camera.position.set(0, 0, 2.5);
 
@@ -313,6 +313,10 @@ function VolumeViewer({
 
     const renderLoop = () => {
       controls.update();
+      const resources = resourcesRef.current;
+      if (resources) {
+        resources.mesh.material.uniforms.u_cameraPos.value.copy(camera.position);
+      }
       renderer.render(scene, camera);
       animationFrameRef.current = requestAnimationFrame(renderLoop);
     };
@@ -431,6 +435,7 @@ function VolumeViewer({
       uniforms.u_renderthreshold.value = 0.5;
       uniforms.u_cmdata.value = colormap;
       uniforms.u_channels.value = channels;
+      uniforms.u_cameraPos.value.copy(camera.position);
 
       const material = new THREE.ShaderMaterial({
         uniforms,
@@ -464,6 +469,13 @@ function VolumeViewer({
       const fovInRadians = THREE.MathUtils.degToRad(camera.fov * 0.5);
       const distance = boundingRadius / Math.sin(fovInRadians);
       const safeDistance = Number.isFinite(distance) ? distance * 1.2 : 2.5;
+      const nearDistance = Math.max(0.0001, boundingRadius * 0.00025);
+      const farDistance = Math.max(safeDistance * 5, boundingRadius * 10);
+      if (camera.near !== nearDistance || camera.far !== farDistance) {
+        camera.near = nearDistance;
+        camera.far = farDistance;
+        camera.updateProjectionMatrix();
+      }
       camera.position.set(0, 0, safeDistance);
       controls.update();
       controls.saveState();
@@ -472,6 +484,7 @@ function VolumeViewer({
       resources.texture.needsUpdate = true;
       resources.mesh.material.uniforms.u_data.value = resources.texture;
       resources.mesh.material.uniforms.u_channels.value = channels;
+      resources.mesh.material.uniforms.u_cameraPos.value.copy(camera.position);
     }
 
     setStats({ min, max });
