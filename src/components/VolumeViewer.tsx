@@ -35,6 +35,11 @@ type VolumeResources = {
   channels: number;
 };
 
+type PreparedTexture = {
+  data: Uint8Array;
+  format: THREE.Data3DTexture['format'];
+};
+
 type PointerState = {
   mode: 'pan' | 'dolly';
   pointerId: number;
@@ -61,6 +66,46 @@ function createColormapTexture() {
   texture.magFilter = THREE.LinearFilter;
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
+}
+
+function prepareTextureData(volume: NormalizedVolume): PreparedTexture {
+  const { normalized, width, height, depth, channels } = volume;
+  const voxelCount = width * height * depth;
+
+  if (channels <= 2) {
+    const data = new Uint8Array(normalized.length);
+    data.set(normalized);
+    const format = channels === 1 ? THREE.RedFormat : THREE.RGFormat;
+    return { data, format };
+  }
+
+  const packed = new Uint8Array(voxelCount * 4);
+  const alphaChannels = Math.min(channels, 3);
+
+  for (let index = 0; index < voxelCount; index++) {
+    const srcBase = index * channels;
+    const dstBase = index * 4;
+
+    const r = normalized[srcBase];
+    const g = channels > 1 ? normalized[srcBase + 1] : r;
+    const b = channels > 2 ? normalized[srcBase + 2] : g;
+
+    packed[dstBase] = r;
+    packed[dstBase + 1] = g;
+    packed[dstBase + 2] = b;
+
+    if (channels >= 4) {
+      packed[dstBase + 3] = normalized[srcBase + 3];
+    } else {
+      let alphaSum = 0;
+      for (let channel = 0; channel < alphaChannels; channel++) {
+        alphaSum += normalized[srcBase + channel];
+      }
+      packed[dstBase + 3] = Math.round(alphaSum / alphaChannels);
+    }
+  }
+
+  return { data: packed, format: THREE.RGBAFormat };
 }
 
 function VolumeViewer({
@@ -349,14 +394,18 @@ function VolumeViewer({
       return;
     }
 
-    const { width, height, depth, min, max, normalized, channels } = volume;
+    const { width, height, depth, min, max, channels } = volume;
+    const texturePreparation = prepareTextureData(volume);
+    const { data: textureData, format: textureFormat } = texturePreparation;
     let resources = resourcesRef.current;
     const dimensionsChanged =
       !resources ||
       resources.dimensions.width !== width ||
       resources.dimensions.height !== height ||
       resources.dimensions.depth !== depth ||
-      resources.channels !== channels;
+      resources.channels !== channels ||
+      resources.texture.image.data.length !== textureData.length ||
+      resources.texture.format !== textureFormat;
 
     if (dimensionsChanged) {
       if (resources) {
@@ -364,23 +413,13 @@ function VolumeViewer({
         resources = null;
       }
 
-      const textureData = new Uint8Array(normalized.length);
-      textureData.set(normalized);
-
       const texture = new THREE.Data3DTexture(textureData, width, height, depth);
-      texture.format =
-        channels === 1
-          ? THREE.RedFormat
-          : channels === 2
-            ? THREE.RGFormat
-            : channels === 3
-              ? THREE.RGBFormat
-              : THREE.RGBAFormat;
+      texture.format = textureFormat;
       texture.type = THREE.UnsignedByteType;
       texture.minFilter = THREE.LinearFilter;
       texture.magFilter = THREE.LinearFilter;
       texture.unpackAlignment = 1;
-      texture.colorSpace = channels > 1 ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace;
+      texture.colorSpace = THREE.LinearSRGBColorSpace;
       texture.needsUpdate = true;
 
       const shader = VolumeRenderShader;
@@ -429,7 +468,7 @@ function VolumeViewer({
       controls.update();
       controls.saveState();
     } else if (resources) {
-      resources.texture.image.data.set(normalized);
+      resources.texture.image.data.set(textureData);
       resources.texture.needsUpdate = true;
       resources.mesh.material.uniforms.u_data.value = resources.texture;
       resources.mesh.material.uniforms.u_channels.value = channels;
