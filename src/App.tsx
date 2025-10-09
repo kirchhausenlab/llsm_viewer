@@ -201,26 +201,18 @@ function App() {
               `Layer "${target.label}" has a different number of timepoints (${candidateFiles.length}) than the reference layer (${referenceFiles.length}).`
             );
           }
-
-          for (let index = 0; index < referenceFiles.length; index++) {
-            if (candidateFiles[index] !== referenceFiles[index]) {
-              throw new Error(
-                `Layer "${target.label}" does not match the reference file ordering at position ${index + 1}.`
-              );
-            }
-          }
         }
 
-        const rawLayers: { target: LayerTarget; volumes: VolumePayload[] }[] = layerFileLists.map(
-          ({ target }) => ({ target, volumes: new Array<VolumePayload>(referenceFiles.length) })
+        const rawLayers: { target: LayerTarget; files: string[]; volumes: VolumePayload[] }[] = layerFileLists.map(
+          ({ target, files }) => ({ target, files, volumes: new Array<VolumePayload>(referenceFiles.length) })
         );
 
         let referenceShape: { width: number; height: number; depth: number } | null = null;
 
         await Promise.all(
-          rawLayers.map(async ({ target, volumes }) => {
+          rawLayers.map(async ({ target, files, volumes }) => {
             await Promise.all(
-              referenceFiles.map(async (filename, index) => {
+              files.map(async (filename, index) => {
                 const rawVolume = await loadVolume(target.directory, filename);
                 if (loadRequestRef.current !== requestId) {
                   return;
