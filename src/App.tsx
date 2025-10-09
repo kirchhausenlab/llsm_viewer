@@ -71,15 +71,23 @@ function App() {
         }
 
         const rawVolumes: VolumePayload[] = new Array(total);
-        for (let index = 0; index < total; index++) {
-          const rawVolume = await loadVolume(trimmed, discovered[index]);
-          if (loadRequestRef.current !== requestId) {
-            return;
-          }
-          rawVolumes[index] = rawVolume;
-          setLoadedCount(index + 1);
-          setLoadProgress((index + 1) / total);
-        }
+        await Promise.all(
+          discovered.map(async (filename, index) => {
+            const rawVolume = await loadVolume(trimmed, filename);
+            if (loadRequestRef.current !== requestId) {
+              return;
+            }
+            rawVolumes[index] = rawVolume;
+            setLoadedCount((current) => {
+              if (loadRequestRef.current !== requestId) {
+                return current;
+              }
+              const next = current + 1;
+              setLoadProgress(next / total);
+              return next;
+            });
+          })
+        );
 
         if (loadRequestRef.current !== requestId) {
           return;

@@ -5,6 +5,8 @@ export type VolumeMetadata = {
   channels: number;
   dataType: 'float32';
   voxelSize?: [number, number, number];
+  min: number;
+  max: number;
 };
 
 export type VolumePayload = VolumeMetadata & {
