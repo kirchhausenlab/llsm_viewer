@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { browseDirectory, listTiffFiles, loadTracks, loadVolume, type VolumePayload } from './api';
+import { listTiffFiles, loadTracks, loadVolume, type VolumePayload } from './api';
 import VolumeViewer from './components/VolumeViewer';
 import { computeNormalizationParameters, normalizeVolume, NormalizedVolume } from './volumeProcessing';
 import { clearTextureCache } from './textureCache';
@@ -40,18 +40,38 @@ const createDefaultLayerSettings = (): LayerSettings => ({
   color: DEFAULT_LAYER_COLOR
 });
 
-function joinPath(base: string, segment: string) {
-  if (!base) {
-    return segment;
+type DatasetFolder = {
+  id: string;
+  path: string;
+  inputName: string;
+  suggestedName: string;
+};
+
+function normalizeFolderPath(path: string) {
+  const trimmed = path.trim();
+  if (!trimmed) {
+    return '';
   }
-  if (base.endsWith('/')) {
-    return `${base}${segment}`;
+  const withoutTrailing = trimmed.replace(/[\\/]+$/, '');
+  if (withoutTrailing.length === 0 || /^[a-zA-Z]:$/.test(withoutTrailing)) {
+    return trimmed;
   }
-  return `${base}/${segment}`;
+  return withoutTrailing;
+}
+
+function extractFolderName(path: string) {
+  const sanitized = path.replace(/[\\/]+$/, '');
+  const segments = sanitized.split(/[\\/]/).filter(Boolean);
+  if (segments.length === 0) {
+    return sanitized || 'layer';
+  }
+  return segments[segments.length - 1];
 }
 
 function App() {
-  const [path, setPath] = useState('');
+  const [pendingFolderPath, setPendingFolderPath] = useState('');
+  const [selectedFolders, setSelectedFolders] = useState<DatasetFolder[]>([]);
+  const [folderError, setFolderError] = useState<string | null>(null);
   const [files, setFiles] = useState<string[]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [layers, setLayers] = useState<LoadedLayer[]>([]);
@@ -67,13 +87,6 @@ function App() {
   const [resetViewHandler, setResetViewHandler] = useState<(() => void) | null>(null);
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [isTrackPickerOpen, setIsTrackPickerOpen] = useState(false);
-  const [subfolderSummary, setSubfolderSummary] = useState<{
-    rootHasTiffs: boolean;
-    subfolders: string[];
-  } | null>(null);
-  const [subfolderChecks, setSubfolderChecks] = useState<Record<string, boolean>>({});
-  const [subfolderLoading, setSubfolderLoading] = useState(false);
-  const [subfolderError, setSubfolderError] = useState<string | null>(null);
   const [activeLayerKey, setActiveLayerKey] = useState<string | null>(null);
   const [trackPath, setTrackPath] = useState('');
   const [tracks, setTracks] = useState<string[][]>([]);
@@ -83,11 +96,12 @@ function App() {
   const [trackOpacity, setTrackOpacity] = useState(DEFAULT_TRACK_OPACITY);
   const [trackLineWidth, setTrackLineWidth] = useState(DEFAULT_TRACK_LINE_WIDTH);
   const [followedTrackId, setFollowedTrackId] = useState<number | null>(null);
+  const [lastBrowsedPath, setLastBrowsedPath] = useState<string | null>(null);
 
   const loadRequestRef = useRef(0);
-  const subfolderRequestRef = useRef(0);
   const hasTrackDataRef = useRef(false);
   const trackMasterCheckboxRef = useRef<HTMLInputElement | null>(null);
+  const folderIdRef = useRef(0);
 
   const selectedFile = useMemo(() => files[selectedIndex] ?? null, [files, selectedIndex]);
   const timepointCount = layers.length > 0 ? layers[0].volumes.length : 0;
@@ -215,64 +229,11 @@ function App() {
     }
   }, [followedTrackId, parsedTracks]);
 
-  const refreshSubfolderSummary = useCallback(
-    async (targetPath: string) => {
-      const trimmed = targetPath.trim();
-      if (!trimmed) {
-        setSubfolderSummary(null);
-        setSubfolderChecks({});
-        setSubfolderError(null);
-        setSubfolderLoading(false);
-        return;
-      }
-
-      const requestId = subfolderRequestRef.current + 1;
-      subfolderRequestRef.current = requestId;
-      setSubfolderLoading(true);
-      setSubfolderError(null);
-
-      try {
-        const listing = await browseDirectory(trimmed);
-        if (subfolderRequestRef.current !== requestId) {
-          return;
-        }
-
-        const rootHasTiffs = Boolean(listing.rootHasTiffs);
-        const subfolders = [...(listing.tiffSubdirectories ?? [])];
-
-        setSubfolderSummary({ rootHasTiffs, subfolders });
-        setSubfolderChecks(() => {
-          const initial: Record<string, boolean> = {};
-          if (rootHasTiffs) {
-            initial.root = false;
-          }
-          for (const name of subfolders) {
-            initial[name] = false;
-          }
-          return initial;
-        });
-      } catch (error) {
-        if (subfolderRequestRef.current !== requestId) {
-          return;
-        }
-        console.error('Failed to summarize subfolders', error);
-        setSubfolderSummary(null);
-        setSubfolderChecks({});
-        setSubfolderError(error instanceof Error ? error.message : 'Failed to analyze folder.');
-      } finally {
-        if (subfolderRequestRef.current === requestId) {
-          setSubfolderLoading(false);
-        }
-      }
-    },
-    []
-  );
-
   const handlePathSubmit = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      const trimmed = path.trim();
-      if (!trimmed) {
+      setFolderError(null);
+      if (selectedFolders.length === 0) {
         return;
       }
 
@@ -293,28 +254,15 @@ function App() {
       setExpectedVolumeCount(0);
       setActiveLayerKey(null);
       try {
-        const explicitTargets: LayerTarget[] = (() => {
-          if (!subfolderSummary) {
-            return [
-              {
-                key: 'root',
-                label: 'root',
-                directory: trimmed
-              }
-            ];
-          }
-
-          const selectedEntries = Object.entries(subfolderChecks).filter(([, checked]) => checked);
-          if (selectedEntries.length === 0) {
-            throw new Error('Select at least one layer to load.');
-          }
-
-          return selectedEntries.map(([key]) => ({
-            key,
-            label: key === 'root' ? 'root' : key,
-            directory: key === 'root' ? trimmed : joinPath(trimmed, key)
-          }));
-        })();
+        const explicitTargets: LayerTarget[] = selectedFolders.map((folder, index) => {
+          const trimmedName = folder.inputName.trim();
+          const label = trimmedName || folder.suggestedName || `Layer ${index + 1}`;
+          return {
+            key: folder.id,
+            label,
+            directory: folder.path
+          };
+        });
 
         const layerFileLists = await Promise.all(
           explicitTargets.map(async (target) => {
@@ -450,7 +398,7 @@ function App() {
         setError(err instanceof Error ? err.message : 'Failed to load volumes.');
       }
     },
-    [path, subfolderChecks, subfolderSummary]
+    [selectedFolders]
   );
 
   useEffect(() => {
@@ -589,6 +537,55 @@ function App() {
     [timepointCount]
   );
 
+  const handleAddFolder = useCallback(
+    (rawPath: string) => {
+      const normalized = normalizeFolderPath(rawPath);
+      if (!normalized) {
+        setFolderError('Enter a folder path to add.');
+        return;
+      }
+
+      let added = false;
+      setSelectedFolders((current) => {
+        if (current.some((folder) => folder.path === normalized)) {
+          return current;
+        }
+        added = true;
+        const nextId = folderIdRef.current + 1;
+        folderIdRef.current = nextId;
+        return [
+          ...current,
+          {
+            id: `folder-${nextId}`,
+            path: normalized,
+            inputName: '',
+            suggestedName: extractFolderName(normalized)
+          }
+        ];
+      });
+
+      if (added) {
+        setFolderError(null);
+        setPendingFolderPath('');
+        setLastBrowsedPath(normalized);
+      } else {
+        setFolderError('Folder already added.');
+      }
+    },
+    []
+  );
+
+  const handleFolderNameChange = useCallback((id: string, value: string) => {
+    setSelectedFolders((current) =>
+      current.map((folder) => (folder.id === id ? { ...folder, inputName: value } : folder))
+    );
+  }, []);
+
+  const handleFolderRemove = useCallback((id: string) => {
+    setSelectedFolders((current) => current.filter((folder) => folder.id !== id));
+    setFolderError(null);
+  }, []);
+
   const handleOpenPicker = useCallback(() => {
     setIsPickerOpen(true);
   }, []);
@@ -605,24 +602,12 @@ function App() {
     setIsTrackPickerOpen(false);
   }, []);
 
-  const handlePathChange = useCallback((nextPath: string) => {
-    setPath(nextPath);
-    subfolderRequestRef.current += 1;
-    setSubfolderSummary(null);
-    setSubfolderChecks({});
-    setSubfolderError(null);
-    setSubfolderLoading(false);
-  }, []);
-
   const handlePathPicked = useCallback(
     (selectedPath: string) => {
-      handlePathChange(selectedPath);
       setIsPickerOpen(false);
-      refreshSubfolderSummary(selectedPath).catch(() => {
-        // Error handled inside refreshSubfolderSummary
-      });
+      handleAddFolder(selectedPath);
     },
-    [handlePathChange, refreshSubfolderSummary]
+    [handleAddFolder]
   );
 
   const handleTrackPathChange = useCallback((nextPath: string) => {
@@ -662,13 +647,6 @@ function App() {
     },
     [loadTracks, trackPath]
   );
-
-  const handleSubfolderToggle = useCallback((name: string) => {
-    setSubfolderChecks((current) => ({
-      ...current,
-      [name]: !current[name]
-    }));
-  }, []);
 
   const handleLayerVisibilityToggle = useCallback((key: string) => {
     setVisibleLayers((current) => ({
@@ -820,20 +798,6 @@ function App() {
     });
   }, []);
 
-  const subfolderItems = useMemo(() => {
-    if (!subfolderSummary) {
-      return [];
-    }
-    const items: { key: string; label: string }[] = [];
-    if (subfolderSummary.rootHasTiffs) {
-      items.push({ key: 'root', label: 'root' });
-    }
-    for (const name of subfolderSummary.subfolders) {
-      items.push({ key: name, label: name });
-    }
-    return items;
-  }, [subfolderSummary]);
-
   const viewerLayers = useMemo(
     () =>
       layers.map((layer) => {
@@ -851,37 +815,49 @@ function App() {
     [layerSettings, layers, selectedIndex, visibleLayers]
   );
 
-  const hasExplicitLayerSelection = useMemo(() => {
-    if (!subfolderSummary) {
-      return true;
-    }
-    return Object.values(subfolderChecks).some(Boolean);
-  }, [subfolderChecks, subfolderSummary]);
-
   return (
     <div className="app">
       <aside className="sidebar sidebar-left">
         <header>
           <h1>LLSM Viewer</h1>
-          <p>Load 4D microscopy data by entering the path to a TIFF stack directory.</p>
+          <p>Select one or more TIFF stack folders to load them as independent layers.</p>
         </header>
 
         <form onSubmit={handlePathSubmit} className="path-form">
-          <label htmlFor="path-input">Dataset folder</label>
+          <label htmlFor="path-input">Dataset folders</label>
           <div className="path-input-wrapper">
             <input
               id="path-input"
               type="text"
-              value={path}
-              placeholder="/nfs/scratch2/..."
-              onChange={(event) => handlePathChange(event.target.value)}
+              value={pendingFolderPath}
+              placeholder="/nfs/scratch2/.../dataset"
+              onChange={(event) => {
+                setPendingFolderPath(event.target.value);
+                setFolderError(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  handleAddFolder(pendingFolderPath);
+                }
+              }}
               autoComplete="off"
+              disabled={isLoading}
             />
+            <button
+              type="button"
+              className="path-add-button"
+              onClick={() => handleAddFolder(pendingFolderPath)}
+              disabled={!pendingFolderPath.trim() || isLoading}
+            >
+              Add
+            </button>
             <button
               type="button"
               className="path-browse-button"
               onClick={handleOpenPicker}
               aria-label="Browse for dataset folder"
+              disabled={isLoading}
             >
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <path
@@ -891,32 +867,47 @@ function App() {
               </svg>
             </button>
           </div>
-          {subfolderLoading ? (
-            <p className="subfolder-status">Checking for .tif files…</p>
-          ) : subfolderError ? (
-            <p className="subfolder-error">{subfolderError}</p>
-          ) : subfolderSummary ? (
-            subfolderItems.length > 0 ? (
-              <div className="subfolder-list">
-                {subfolderItems.map((item, index) => (
-                  <label key={item.key} className={index === 0 ? 'subfolder-item root' : 'subfolder-item'}>
+          {folderError ? <p className="subfolder-error">{folderError}</p> : null}
+          {selectedFolders.length > 0 ? (
+            <div className="folder-selection-list">
+              {selectedFolders.map((folder) => (
+                <div key={folder.id} className="folder-selection-item">
+                  <span className="folder-selection-path" title={folder.path}>
+                    {folder.path}
+                  </span>
+                  <div className="folder-selection-row">
                     <input
-                      type="checkbox"
-                      checked={Boolean(subfolderChecks[item.key])}
-                      onChange={() => handleSubfolderToggle(item.key)}
+                      type="text"
+                      value={folder.inputName}
+                      placeholder={folder.suggestedName}
+                      onChange={(event) => handleFolderNameChange(folder.id, event.target.value)}
+                      className="folder-selection-name-input"
+                      autoComplete="off"
+                      aria-label={`Layer name for ${folder.path}`}
+                      disabled={isLoading}
                     />
-                    <span>{item.label}</span>
-                  </label>
-                ))}
-              </div>
+                    <button
+                      type="button"
+                      className="folder-selection-remove"
+                      onClick={() => handleFolderRemove(folder.id)}
+                      aria-label={`Remove ${folder.path} from dataset`}
+                      disabled={isLoading}
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path
+                          d="M9 3a1 1 0 0 0-1 1v1H5.5a1 1 0 1 0 0 2h.54l.74 11.13A2 2 0 0 0 8.77 20h6.46a2 2 0 0 0 1.99-1.87L17.96 7H18.5a1 1 0 1 0 0-2H16V4a1 1 0 0 0-1-1Zm1 2h4V4h-4Zm-1.95 2h8.9l-.7 10.47a.5.5 0 0 1-.5.46H8.77a.5.5 0 0 1-.5-.46Z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : (
-              <p className="subfolder-status">no .tif files detected</p>
-            )
-          ) : null}
-          {subfolderSummary && !hasExplicitLayerSelection ? (
-            <p className="subfolder-warning">Select at least one layer to enable loading.</p>
-          ) : null}
-          <button type="submit" disabled={!path.trim() || isLoading || !hasExplicitLayerSelection}>
+            <p className="subfolder-status">Add folders to create layers.</p>
+          )}
+          <button type="submit" className="load-dataset-button" disabled={selectedFolders.length === 0 || isLoading}>
             Load dataset
           </button>
         </form>
@@ -1256,7 +1247,7 @@ function App() {
       </aside>
       {isPickerOpen ? (
         <DirectoryPickerDialog
-          initialPath={path}
+          initialPath={lastBrowsedPath ?? selectedFolders[selectedFolders.length - 1]?.path}
           onClose={handleClosePicker}
           onSelect={handlePathPicked}
         />

@@ -96,12 +96,18 @@
   outline-offset: 2px;
 }
 
+.path-browse-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
+}
+
 .path-input-wrapper input:focus {
   outline: 2px solid #5b8cff;
   outline-offset: 2px;
 }
 
-.path-form button {
+.path-form button[type='submit'] {
   border: none;
   border-radius: 0.5rem;
   padding: 0.6rem 1rem;
@@ -113,13 +119,40 @@
   white-space: nowrap;
 }
 
-.path-form button:disabled {
+.path-form button[type='submit']:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
 
-.path-form button:not(:disabled):hover {
+.path-form button[type='submit']:not(:disabled):hover {
   transform: translateY(-1px);
+}
+
+.path-add-button {
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(12, 16, 24, 0.8);
+  color: rgba(255, 255, 255, 0.85);
+  padding: 0.6rem 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+}
+
+.path-add-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.path-add-button:not(:disabled):hover {
+  border-color: rgba(91, 140, 255, 0.7);
+  background: rgba(91, 140, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.path-add-button:focus {
+  outline: 2px solid #5b8cff;
+  outline-offset: 2px;
 }
 
 .subfolder-status {
@@ -140,7 +173,8 @@
   color: #ffcf6b;
 }
 
-.subfolder-list {
+.subfolder-list,
+.folder-selection-list {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -167,6 +201,74 @@
 
 .subfolder-item.root {
   font-weight: 600;
+}
+
+.folder-selection-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.folder-selection-path {
+  color: rgba(255, 255, 255, 0.7);
+  word-break: break-word;
+}
+
+.folder-selection-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.folder-selection-name-input {
+  flex: 1;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.35);
+  color: inherit;
+}
+
+.folder-selection-name-input:focus {
+  outline: 2px solid #5b8cff;
+  outline-offset: 2px;
+}
+
+.folder-selection-remove {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(12, 16, 24, 0.8);
+  color: rgba(255, 255, 255, 0.85);
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+}
+
+.folder-selection-remove svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.folder-selection-remove:hover {
+  border-color: rgba(255, 123, 123, 0.6);
+  background: rgba(255, 123, 123, 0.2);
+  transform: translateY(-1px);
+}
+
+.folder-selection-remove:focus {
+  outline: 2px solid rgba(255, 123, 123, 0.75);
+  outline-offset: 2px;
+}
+
+.folder-selection-remove:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
 }
 
 .sidebar-panel {
