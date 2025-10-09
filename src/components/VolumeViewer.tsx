@@ -78,11 +78,22 @@ type MovementState = {
 
 type TrackLineResource = {
   line: Line2;
+  outline: Line2;
   geometry: LineGeometry;
   material: LineMaterial;
+  outlineMaterial: LineMaterial;
   times: number[];
   baseColor: THREE.Color;
   highlightColor: THREE.Color;
+};
+
+type RaycasterLike = {
+  params: { Line?: { threshold: number } } & Record<string, unknown>;
+  setFromCamera: (coords: THREE.Vector2, camera: THREE.PerspectiveCamera) => void;
+  intersectObjects: (
+    objects: THREE.Object3D[],
+    recursive?: boolean
+  ) => Array<{ object: THREE.Object3D }>;
 };
 
 const MOVEMENT_KEY_MAP: Record<string, keyof MovementState> = {
@@ -161,14 +172,37 @@ function VolumeViewer({
   });
   const trackGroupRef = useRef<THREE.Group | null>(null);
   const trackLinesRef = useRef<Map<number, TrackLineResource>>(new Map());
+  const raycasterRef = useRef<RaycasterLike | null>(null);
   const timeIndexRef = useRef(0);
   const followedTrackIdRef = useRef<number | null>(null);
   const trackFollowOffsetRef = useRef<THREE.Vector3 | null>(null);
   const previousFollowedTrackIdRef = useRef<number | null>(null);
   const [layerStats, setLayerStats] = useState<Record<string, VolumeStats>>({});
   const [hasMeasured, setHasMeasured] = useState(false);
+  const hoveredTrackIdRef = useRef<number | null>(null);
+  const [hoveredTrackId, setHoveredTrackId] = useState<number | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
 
   followedTrackIdRef.current = followedTrackId;
+
+  const updateHoverState = useCallback(
+    (trackId: number | null, position: { x: number; y: number } | null) => {
+      if (hoveredTrackIdRef.current !== trackId) {
+        hoveredTrackIdRef.current = trackId;
+        setHoveredTrackId(trackId);
+      }
+      setTooltipPosition(position);
+    },
+    []
+  );
+
+  const clearHoverState = useCallback(() => {
+    if (hoveredTrackIdRef.current !== null) {
+      hoveredTrackIdRef.current = null;
+      setHoveredTrackId(null);
+    }
+    setTooltipPosition(null);
+  }, []);
 
   const getColormapTexture = useCallback((color: string) => {
     const normalized = normalizeHexColor(color, DEFAULT_LAYER_COLOR);
@@ -248,8 +282,13 @@ function VolumeViewer({
     for (const [id, resource] of Array.from(trackLines.entries())) {
       if (!activeIds.has(id)) {
         trackGroup.remove(resource.line);
+        trackGroup.remove(resource.outline);
         resource.geometry.dispose();
         resource.material.dispose();
+        resource.outlineMaterial.dispose();
+        if (hoveredTrackIdRef.current === id) {
+          clearHoverState();
+        }
         trackLines.delete(id);
       }
     }
@@ -277,7 +316,7 @@ function VolumeViewer({
         geometry.instanceCount = 0;
 
         const baseColor = createTrackColor(track.id);
-        const highlightColor = baseColor.clone().lerp(new THREE.Color(0xffffff), 0.25);
+        const highlightColor = baseColor.clone().lerp(new THREE.Color(0xffffff), 0.4);
         const material = new LineMaterial({
           color: baseColor.clone(),
           linewidth: 1,
@@ -286,32 +325,62 @@ function VolumeViewer({
           depthTest: false,
           depthWrite: false
         });
+        const outlineMaterial = new LineMaterial({
+          color: new THREE.Color(0xffffff),
+          linewidth: 1,
+          transparent: true,
+          opacity: 0,
+          depthTest: false,
+          depthWrite: false
+        });
         const containerNode = containerRef.current;
         if (containerNode) {
           const width = Math.max(containerNode.clientWidth, 1);
           const height = Math.max(containerNode.clientHeight, 1);
           material.resolution.set(width, height);
+          outlineMaterial.resolution.set(width, height);
         } else {
           material.resolution.set(1, 1);
+          outlineMaterial.resolution.set(1, 1);
         }
+
+        const outline = new Line2(geometry, outlineMaterial);
+        outline.computeLineDistances();
+        outline.renderOrder = 999;
+        outline.frustumCulled = false;
+        outline.visible = false;
 
         const line = new Line2(geometry, material);
         line.computeLineDistances();
         line.renderOrder = 1000;
         line.frustumCulled = false;
+        const lineWithUserData = line as unknown as { userData: Record<string, unknown> };
+        lineWithUserData.userData.trackId = track.id;
+
+        trackGroup.add(outline);
         trackGroup.add(line);
-        resource = { line, geometry, material, times, baseColor, highlightColor };
+        resource = {
+          line,
+          outline,
+          geometry,
+          material,
+          outlineMaterial,
+          times,
+          baseColor,
+          highlightColor
+        };
         trackLines.set(track.id, resource);
       } else {
-        const { geometry, line } = resource;
+        const { geometry, line, outline } = resource;
         geometry.setPositions(Array.from(positions));
         line.computeLineDistances();
+        outline.computeLineDistances();
         resource.times = times;
       }
     }
 
     updateTrackDrawRanges(timeIndexRef.current);
-  }, [tracks, updateTrackDrawRanges]);
+  }, [clearHoverState, tracks, updateTrackDrawRanges]);
 
   useEffect(() => {
     const trackGroup = trackGroupRef.current;
@@ -329,40 +398,71 @@ function VolumeViewer({
         continue;
       }
 
-      const { line, material, baseColor, highlightColor } = resource;
+      const { line, outline, material, outlineMaterial, baseColor, highlightColor } = resource;
 
       const isExplicitlyVisible = trackVisibility[track.id] ?? true;
       const isFollowed = followedTrackId === track.id;
+      const isHovered = hoveredTrackId === track.id;
+      const isHighlighted = isFollowed || isHovered;
       const shouldShow = isFollowed || isExplicitlyVisible;
       line.visible = shouldShow;
+      outline.visible = shouldShow && isHighlighted;
       if (shouldShow) {
         visibleCount += 1;
       }
 
-      const targetColor = isFollowed ? highlightColor : baseColor;
+      const targetColor = isHighlighted ? highlightColor : baseColor;
       if (!material.color.equals(targetColor)) {
         material.color.copy(targetColor);
         material.needsUpdate = true;
       }
 
-      const targetOpacity = isFollowed ? Math.min(1, sanitizedOpacity + 0.1) : sanitizedOpacity;
+      const opacityBoost = isFollowed ? 0.15 : isHovered ? 0.12 : 0;
+      const targetOpacity = Math.min(1, sanitizedOpacity + opacityBoost);
       if (material.opacity !== targetOpacity) {
         material.opacity = targetOpacity;
         material.needsUpdate = true;
       }
 
-      const widthMultiplier = isFollowed ? 1.35 : 1;
+      const widthMultiplier = isFollowed ? 1.35 : isHovered ? 1.2 : 1;
       const targetWidth = sanitizedLineWidth * widthMultiplier;
       if (material.linewidth !== targetWidth) {
         material.linewidth = targetWidth;
         material.needsUpdate = true;
+      }
+
+      const outlineOpacity = isFollowed ? 0.75 : isHovered ? 0.9 : 0;
+      if (outlineMaterial.opacity !== outlineOpacity) {
+        outlineMaterial.opacity = outlineOpacity;
+        outlineMaterial.needsUpdate = true;
+      }
+
+      const outlineWidth = targetWidth + Math.max(sanitizedLineWidth * 0.75, 0.4);
+      if (outlineMaterial.linewidth !== outlineWidth) {
+        outlineMaterial.linewidth = outlineWidth;
+        outlineMaterial.needsUpdate = true;
       }
     }
 
     const followedTrackExists = followedTrackId !== null && trackLinesRef.current.has(followedTrackId);
 
     trackGroup.visible = visibleCount > 0 || followedTrackExists;
-  }, [followedTrackId, trackLineWidth, trackOpacity, trackVisibility, tracks]);
+
+    if (hoveredTrackId !== null) {
+      const hoveredResource = trackLinesRef.current.get(hoveredTrackId);
+      if (!hoveredResource || !hoveredResource.line.visible) {
+        clearHoverState();
+      }
+    }
+  }, [
+    clearHoverState,
+    followedTrackId,
+    hoveredTrackId,
+    trackLineWidth,
+    trackOpacity,
+    trackVisibility,
+    tracks
+  ]);
 
   useEffect(() => {
     timeIndexRef.current = clampedTimeIndex;
@@ -534,6 +634,73 @@ function VolumeViewer({
 
     const domElement = renderer.domElement;
 
+    const pointerVector = new THREE.Vector2();
+    const raycaster = new (THREE as unknown as { Raycaster: new () => RaycasterLike }).Raycaster();
+    raycaster.params.Line = { threshold: 0.02 };
+    (raycaster.params as unknown as { Line2?: { threshold: number } }).Line2 = {
+      threshold: 0.02
+    };
+    raycasterRef.current = raycaster;
+
+    const performHoverHitTest = (event: PointerEvent) => {
+      const cameraInstance = cameraRef.current;
+      const trackGroupInstance = trackGroupRef.current;
+      const raycasterInstance = raycasterRef.current;
+      if (!cameraInstance || !trackGroupInstance || !raycasterInstance || !trackGroupInstance.visible) {
+        clearHoverState();
+        return;
+      }
+
+      const rect = domElement.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+      if (width <= 0 || height <= 0) {
+        clearHoverState();
+        return;
+      }
+
+      const offsetX = event.clientX - rect.left;
+      const offsetY = event.clientY - rect.top;
+      if (offsetX < 0 || offsetY < 0 || offsetX > width || offsetY > height) {
+        clearHoverState();
+        return;
+      }
+
+      pointerVector.set((offsetX / width) * 2 - 1, -(offsetY / height) * 2 + 1);
+      raycasterInstance.setFromCamera(pointerVector, cameraInstance);
+
+      const visibleLines: Line2[] = [];
+      for (const resource of trackLinesRef.current.values()) {
+        if (resource.line.visible) {
+          visibleLines.push(resource.line);
+        }
+      }
+
+      if (visibleLines.length === 0) {
+        clearHoverState();
+        return;
+      }
+
+      const intersections = raycasterInstance.intersectObjects(visibleLines, false);
+      if (intersections.length === 0) {
+        clearHoverState();
+        return;
+      }
+
+      const intersection = intersections[0];
+      const hitObject = intersection.object as unknown as { userData: Record<string, unknown> };
+      const trackId =
+        typeof hitObject.userData.trackId === 'number'
+          ? (hitObject.userData.trackId as number)
+          : null;
+      if (trackId === null) {
+        clearHoverState();
+        return;
+      }
+
+      updateHoverState(trackId, { x: offsetX, y: offsetY });
+    };
+
     const handlePointerDown = (event: PointerEvent) => {
       if (event.button !== 0 || !controlsRef.current || !cameraRef.current) {
         return;
@@ -541,6 +708,7 @@ function VolumeViewer({
 
       const mode = event.ctrlKey ? 'dolly' : event.shiftKey ? 'pan' : null;
       if (!mode) {
+        performHoverHitTest(event);
         return;
       }
 
@@ -553,6 +721,8 @@ function VolumeViewer({
       if (mode === 'pan') {
         controls.enablePan = true;
       }
+
+      clearHoverState();
 
       pointerStateRef.current = {
         mode,
@@ -574,8 +744,11 @@ function VolumeViewer({
     const handlePointerMove = (event: PointerEvent) => {
       const state = pointerStateRef.current;
       if (!state || event.pointerId !== state.pointerId) {
+        performHoverHitTest(event);
         return;
       }
+
+      clearHoverState();
 
       const controls = controlsRef.current;
       const camera = cameraRef.current;
@@ -608,6 +781,7 @@ function VolumeViewer({
     const handlePointerUp = (event: PointerEvent) => {
       const state = pointerStateRef.current;
       if (!state || event.pointerId !== state.pointerId) {
+        performHoverHitTest(event);
         return;
       }
 
@@ -626,6 +800,11 @@ function VolumeViewer({
       }
 
       pointerStateRef.current = null;
+      performHoverHitTest(event);
+    };
+
+    const handlePointerLeave = () => {
+      clearHoverState();
     };
 
     const pointerDownOptions: AddEventListenerOptions = { capture: true };
@@ -634,6 +813,7 @@ function VolumeViewer({
     domElement.addEventListener('pointermove', handlePointerMove);
     domElement.addEventListener('pointerup', handlePointerUp);
     domElement.addEventListener('pointercancel', handlePointerUp);
+    domElement.addEventListener('pointerleave', handlePointerLeave);
 
     rendererRef.current = renderer;
     sceneRef.current = scene;
@@ -654,6 +834,8 @@ function VolumeViewer({
         for (const resource of trackLinesRef.current.values()) {
           resource.material.resolution.set(width, height);
           resource.material.needsUpdate = true;
+          resource.outlineMaterial.resolution.set(width, height);
+          resource.outlineMaterial.needsUpdate = true;
         }
       }
       cameraRef.current.aspect = width / height;
@@ -778,8 +960,10 @@ function VolumeViewer({
       if (trackGroup) {
         for (const resource of trackLinesRef.current.values()) {
           trackGroup.remove(resource.line);
+          trackGroup.remove(resource.outline);
           resource.geometry.dispose();
           resource.material.dispose();
+          resource.outlineMaterial.dispose();
         }
         trackLinesRef.current.clear();
         if (trackGroup.parent) {
@@ -787,11 +971,13 @@ function VolumeViewer({
         }
       }
       trackGroupRef.current = null;
+      clearHoverState();
 
       domElement.removeEventListener('pointerdown', handlePointerDown, pointerDownOptions);
       domElement.removeEventListener('pointermove', handlePointerMove);
       domElement.removeEventListener('pointerup', handlePointerUp);
       domElement.removeEventListener('pointercancel', handlePointerUp);
+      domElement.removeEventListener('pointerleave', handlePointerLeave);
 
       const activePointerState = pointerStateRef.current;
       if (activePointerState && controlsRef.current) {
@@ -801,6 +987,8 @@ function VolumeViewer({
         }
       }
       pointerStateRef.current = null;
+
+      raycasterRef.current = null;
 
       if (animationFrameRef.current !== null) {
         cancelAnimationFrame(animationFrameRef.current);
@@ -1161,7 +1349,18 @@ function VolumeViewer({
             </div>
           </div>
         )}
-        <div className={`render-surface${hasMeasured ? ' is-ready' : ''}`} ref={containerRef} />
+        <div className={`render-surface${hasMeasured ? ' is-ready' : ''}`} ref={containerRef}>
+          {hoveredTrackId !== null && tooltipPosition ? (
+            <div
+              className="track-tooltip"
+              style={{ left: `${tooltipPosition.x}px`, top: `${tooltipPosition.y}px` }}
+              role="status"
+              aria-live="polite"
+            >
+              Track #{hoveredTrackId}
+            </div>
+          ) : null}
+        </div>
       </section>
 
     {totalTimepoints > 0 && (
