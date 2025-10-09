@@ -76,8 +76,8 @@
 }
 
 .path-browse-button svg {
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 1.75rem;
+  height: 1.75rem;
 }
 
 .path-browse-button:hover {
@@ -115,6 +115,47 @@
 
 .path-form button:not(:disabled):hover {
   transform: translateY(-1px);
+}
+
+.subfolder-status {
+  margin: 0;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.subfolder-error {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #ff7b7b;
+}
+
+.subfolder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(12, 16, 24, 0.65);
+}
+
+.subfolder-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.85);
+  text-transform: none;
+}
+
+.subfolder-item input[type='checkbox'] {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: #5b8cff;
+}
+
+.subfolder-item.root {
+  font-weight: 600;
 }
 
 .sidebar-panel {

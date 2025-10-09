@@ -58,6 +58,48 @@ function sanitizeDirectory(inputPath: string) {
   return resolved;
 }
 
+function isHidden(name: string) {
+  return name.startsWith('.');
+}
+
+function hasTiffExtension(name: string) {
+  const lower = name.toLowerCase();
+  return lower.endsWith('.tif') || lower.endsWith('.tiff');
+}
+
+async function directoryHasTiffFiles(targetPath: string) {
+  try {
+    const entries = await fs.readdir(targetPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile() && hasTiffExtension(entry.name)) {
+        return true;
+      }
+
+      if (entry.isSymbolicLink()) {
+        try {
+          const stats = await fs.stat(path.join(targetPath, entry.name));
+          if (stats.isFile() && hasTiffExtension(entry.name)) {
+            return true;
+          }
+        } catch (error) {
+          console.warn('Failed to inspect symbolic link while checking TIFF files', {
+            directory: targetPath,
+            entry: entry.name,
+            error
+          });
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to read directory while checking for TIFF files', {
+      directory: targetPath,
+      error
+    });
+  }
+
+  return false;
+}
+
 app.post('/api/list', async (request, response) => {
   const { path: directoryPath } = request.body as { path?: string };
   if (!directoryPath) {
@@ -99,10 +141,16 @@ app.post('/api/browse', async (request, response) => {
 
     const entries = await fs.readdir(resolved, { withFileTypes: true });
     const directories: string[] = [];
+    const directoriesForSummary: string[] = [];
 
     for (const entry of entries) {
+      if (isHidden(entry.name)) {
+        continue;
+      }
+
       if (entry.isDirectory()) {
         directories.push(entry.name);
+        directoriesForSummary.push(entry.name);
         continue;
       }
 
@@ -111,6 +159,7 @@ app.post('/api/browse', async (request, response) => {
           const linkTarget = await fs.stat(path.join(resolved, entry.name));
           if (linkTarget.isDirectory()) {
             directories.push(entry.name);
+            directoriesForSummary.push(entry.name);
           }
         } catch (error) {
           console.warn('Failed to resolve symbolic link while browsing directory', {
@@ -123,14 +172,32 @@ app.post('/api/browse', async (request, response) => {
     }
 
     directories.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+    directoriesForSummary.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 
     const root = path.parse(resolved).root;
     const parent = resolved === root ? null : path.dirname(resolved);
 
+    const rootHasTiffs = await directoryHasTiffFiles(resolved);
+    const tiffSubdirectories: string[] = [];
+
+    await Promise.all(
+      directoriesForSummary.map(async (name) => {
+        const subdirectoryPath = path.join(resolved, name);
+        const containsTiffs = await directoryHasTiffFiles(subdirectoryPath);
+        if (containsTiffs) {
+          tiffSubdirectories.push(name);
+        }
+      })
+    );
+
+    tiffSubdirectories.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
     response.json({
       path: resolved,
       parent,
-      directories
+      directories,
+      tiffSubdirectories,
+      rootHasTiffs
     });
   } catch (error) {
     console.error('Failed to browse directory', error);

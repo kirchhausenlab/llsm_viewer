@@ -19,6 +19,8 @@ export type DirectoryListing = {
   path: string;
   parent: string | null;
   directories: string[];
+  tiffSubdirectories: string[];
+  rootHasTiffs: boolean;
 };
 
 async function handleResponse(response: Response) {
