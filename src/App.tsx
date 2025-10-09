@@ -865,14 +865,6 @@ function App() {
             />
             <button
               type="button"
-              className="path-add-button"
-              onClick={() => handleAddFolder(pendingFolderPath)}
-              disabled={!pendingFolderPath.trim() || isLoading}
-            >
-              Add
-            </button>
-            <button
-              type="button"
               className="path-browse-button"
               onClick={handleOpenPicker}
               aria-label="Browse for dataset folder"
@@ -924,7 +916,7 @@ function App() {
               ))}
             </div>
           ) : (
-            <p className="subfolder-status">Add folders to create layers.</p>
+            <p className="subfolder-status">Type a path and press Enter, or use the folder button to browse.</p>
           )}
           <button type="submit" className="load-dataset-button" disabled={selectedFolders.length === 0 || isLoading}>
             Load dataset
