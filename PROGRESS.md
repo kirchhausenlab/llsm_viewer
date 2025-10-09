@@ -90,3 +90,8 @@ Next steps:
 - Split the interface into a three-column layout, introducing a dedicated right sidebar that houses every tracking-related control.
 - Moved the tracks file picker and overlay toggle into the new panel, added global opacity/thickness sliders, and exposed a scrollable checklist with per-track visibility plus a master checkbox.
 - Threaded the aggregate tracking settings into the WebGL renderer so overlay visibility, alpha, and line width respond instantly to the sidebar controls while respecting individual track toggles.
+
+## Track following mode
+- Added per-track "Follow" actions that activate an auto-centering mode, keeping the camera target aligned with the selected trajectory's centroid at the current timepoint.
+- Surfaced a global "Stop tracking" control above the viewer that exits follow mode and reports which track, if any, is currently locked.
+- Disabled keyboard-based WASDQE translations while following so orbital rotation remains the only manual interaction, preventing accidental drifts away from the tracked particle.
