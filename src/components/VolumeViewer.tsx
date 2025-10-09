@@ -132,9 +132,17 @@ function VolumeViewer({
   }, [filename]);
 
   const safeProgress = Math.min(1, Math.max(0, loadingProgress));
-  const progressPercentage = Math.round(safeProgress * 100);
-  const hasStartedLoading = safeProgress > 0 || loadedTimepoints > 0;
-  const showLoadingOverlay = isLoading || (hasStartedLoading && safeProgress < 1);
+  const clampedLoadedTimepoints = Math.max(0, loadedTimepoints);
+  const clampedExpectedTimepoints = Math.max(0, expectedTimepoints);
+  const normalizedProgress =
+    clampedExpectedTimepoints > 0
+      ? Math.min(1, clampedLoadedTimepoints / clampedExpectedTimepoints)
+      : safeProgress;
+  const progressPercentage = Math.round(normalizedProgress * 100);
+  const hasStartedLoading = normalizedProgress > 0 || clampedLoadedTimepoints > 0 || safeProgress > 0;
+  const hasFinishedLoading =
+    clampedExpectedTimepoints > 0 ? clampedLoadedTimepoints >= clampedExpectedTimepoints : safeProgress >= 1;
+  const showLoadingOverlay = isLoading || (hasStartedLoading && !hasFinishedLoading);
   const clampedTimeIndex = totalTimepoints === 0 ? 0 : Math.min(timeIndex, totalTimepoints - 1);
 
   const handleResetView = useCallback(() => {
@@ -677,11 +685,11 @@ function VolumeViewer({
             <div className="loading-panel">
               <span className="loading-title">Loading volumes…</span>
               <div className="progress-bar">
-                <span style={{ width: `${safeProgress * 100}%` }} />
+                <span style={{ width: `${normalizedProgress * 100}%` }} />
               </div>
               <span className="progress-meta">
-                {expectedTimepoints > 0
-                  ? `${Math.min(loadedTimepoints, expectedTimepoints)} / ${expectedTimepoints} · ${progressPercentage}%`
+                {clampedExpectedTimepoints > 0
+                  ? `${Math.min(clampedLoadedTimepoints, clampedExpectedTimepoints)} / ${clampedExpectedTimepoints} · ${progressPercentage}%`
                   : `${progressPercentage}%`}
               </span>
             </div>

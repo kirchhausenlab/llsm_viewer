@@ -49,3 +49,6 @@ Next steps:
 - Replaced the dataset overview with a "View controls" panel that exposes the reset-view action and a new global contrast slider.
 - Threaded the contrast parameter through the React tree into the shader uniforms so users can interactively tune rendering contrast from the sidebar.
 - Introduced brightness and playback-speed sliders in the sidebar, routing the brightness value into the shader tone mapping and using the FPS control to drive the playback loop.
+
+## Loading overlay persistence
+- Reworked the progress calculations to rely on the decoded timepoint count when available, keeping the overlay visible until every expected frame has been ingested and preventing the early dismissal seen after the first volume finished loading.
