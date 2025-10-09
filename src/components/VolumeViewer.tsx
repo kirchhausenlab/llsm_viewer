@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import type { NormalizedVolume } from '../volumeProcessing';
 import { VolumeRenderShader } from '../shaders/volumeRenderShader';
+import { getCachedTextureData } from '../textureCache';
 import './VolumeViewer.css';
 
 type VolumeViewerProps = {
@@ -35,11 +36,6 @@ type VolumeResources = {
     depth: number;
   };
   channels: number;
-};
-
-type PreparedTexture = {
-  data: Uint8Array;
-  format: THREE.Data3DTexture['format'];
 };
 
 type PointerState = {
@@ -86,46 +82,6 @@ function createColormapTexture() {
   texture.magFilter = THREE.LinearFilter;
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
-}
-
-function prepareTextureData(volume: NormalizedVolume): PreparedTexture {
-  const { normalized, width, height, depth, channels } = volume;
-  const voxelCount = width * height * depth;
-
-  if (channels <= 2) {
-    const data = new Uint8Array(normalized.length);
-    data.set(normalized);
-    const format = channels === 1 ? THREE.RedFormat : THREE.RGFormat;
-    return { data, format };
-  }
-
-  const packed = new Uint8Array(voxelCount * 4);
-  const alphaChannels = Math.min(channels, 3);
-
-  for (let index = 0; index < voxelCount; index++) {
-    const srcBase = index * channels;
-    const dstBase = index * 4;
-
-    const r = normalized[srcBase];
-    const g = channels > 1 ? normalized[srcBase + 1] : r;
-    const b = channels > 2 ? normalized[srcBase + 2] : g;
-
-    packed[dstBase] = r;
-    packed[dstBase + 1] = g;
-    packed[dstBase + 2] = b;
-
-    if (channels >= 4) {
-      packed[dstBase + 3] = normalized[srcBase + 3];
-    } else {
-      let alphaSum = 0;
-      for (let channel = 0; channel < alphaChannels; channel++) {
-        alphaSum += normalized[srcBase + channel];
-      }
-      packed[dstBase + 3] = Math.round(alphaSum / alphaChannels);
-    }
-  }
-
-  return { data: packed, format: THREE.RGBAFormat };
 }
 
 function VolumeViewer({
@@ -560,7 +516,7 @@ function VolumeViewer({
     }
 
     const { width, height, depth, min, max, channels } = volume;
-    const texturePreparation = prepareTextureData(volume);
+    const texturePreparation = getCachedTextureData(volume);
     const { data: textureData, format: textureFormat } = texturePreparation;
     let resources = resourcesRef.current;
     const dimensionsChanged =
@@ -647,7 +603,8 @@ function VolumeViewer({
       cameraUniform.copy(camera.position);
       mesh.worldToLocal(cameraUniform);
     } else if (resources) {
-      resources.texture.image.data.set(textureData);
+      resources.texture.image.data = textureData;
+      resources.texture.format = textureFormat;
       resources.texture.needsUpdate = true;
       const { mesh } = resources;
       const materialUniforms = mesh.material.uniforms;
