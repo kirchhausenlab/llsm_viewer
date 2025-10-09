@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { listTiffFiles, loadVolume, VolumePayload } from './api';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { listTiffFiles, loadVolume } from './api';
 import VolumeViewer from './components/VolumeViewer';
+import { normalizeVolume, NormalizedVolume } from './volumeProcessing';
 import './App.css';
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
@@ -9,58 +10,141 @@ function App() {
   const [path, setPath] = useState('');
   const [files, setFiles] = useState<string[]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
-  const [volume, setVolume] = useState<VolumePayload | null>(null);
+  const [volumes, setVolumes] = useState<NormalizedVolume[]>([]);
   const [status, setStatus] = useState<LoadState>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [loadProgress, setLoadProgress] = useState(0);
+  const [loadedCount, setLoadedCount] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  const loadRequestRef = useRef(0);
 
   const selectedFile = useMemo(() => files[selectedIndex] ?? null, [files, selectedIndex]);
 
   const handlePathSubmit = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
+      const trimmed = path.trim();
+      if (!trimmed) {
+        return;
+      }
+
+      const requestId = loadRequestRef.current + 1;
+      loadRequestRef.current = requestId;
+
       setStatus('loading');
       setError(null);
+      setFiles([]);
+      setVolumes([]);
+      setSelectedIndex(0);
+      setIsPlaying(false);
+      setLoadProgress(0);
+      setLoadedCount(0);
       try {
-        const discovered = await listTiffFiles(path.trim());
+        const discovered = await listTiffFiles(trimmed);
+        if (loadRequestRef.current !== requestId) {
+          return;
+        }
         setFiles(discovered);
         setSelectedIndex(0);
+        const total = discovered.length;
+
+        if (total === 0) {
+          setStatus('loaded');
+          setLoadProgress(1);
+          return;
+        }
+
+        const loadedVolumes: NormalizedVolume[] = new Array(total);
+        for (let index = 0; index < total; index++) {
+          const rawVolume = await loadVolume(trimmed, discovered[index]);
+          if (loadRequestRef.current !== requestId) {
+            return;
+          }
+          loadedVolumes[index] = normalizeVolume(rawVolume);
+          setLoadedCount(index + 1);
+          setLoadProgress((index + 1) / total);
+        }
+
+        if (loadRequestRef.current !== requestId) {
+          return;
+        }
+
+        setVolumes(loadedVolumes);
         setStatus('loaded');
+        setLoadedCount(total);
+        setLoadProgress(1);
       } catch (err) {
+        if (loadRequestRef.current !== requestId) {
+          return;
+        }
         console.error(err);
         setStatus('error');
         setFiles([]);
-        setVolume(null);
-        setError(err instanceof Error ? err.message : 'Failed to enumerate volume files.');
+        setVolumes([]);
+        setSelectedIndex(0);
+        setLoadProgress(0);
+        setLoadedCount(0);
+        setIsPlaying(false);
+        setError(err instanceof Error ? err.message : 'Failed to load volumes.');
       }
     },
     [path]
   );
 
-  const fetchVolume = useCallback(
-    async (targetPath: string, filename: string) => {
-      setStatus('loading');
-      setError(null);
-      try {
-        const payload = await loadVolume(targetPath, filename);
-        setVolume(payload);
-        setStatus('loaded');
-      } catch (err) {
-        console.error(err);
-        setStatus('error');
-        setVolume(null);
-        setError(err instanceof Error ? err.message : 'Failed to load volume.');
-      }
-    },
-    []
-  );
+  useEffect(() => {
+    if (!isPlaying || volumes.length <= 1) {
+      return;
+    }
+
+    const fps = 12;
+    const interval = window.setInterval(() => {
+      setSelectedIndex((prev) => {
+        if (volumes.length === 0) {
+          return prev;
+        }
+        const next = (prev + 1) % volumes.length;
+        return next;
+      });
+    }, 1000 / fps);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [isPlaying, volumes.length]);
 
   useEffect(() => {
-    if (path && selectedFile) {
-      void fetchVolume(path, selectedFile);
+    if (volumes.length <= 1 && isPlaying) {
+      setIsPlaying(false);
     }
-  }, [fetchVolume, path, selectedFile]);
+    if (selectedIndex >= volumes.length && volumes.length > 0) {
+      setSelectedIndex(0);
+    }
+  }, [isPlaying, selectedIndex, volumes.length]);
 
   const isLoading = status === 'loading';
+
+  const handleTogglePlayback = useCallback(() => {
+    setIsPlaying((current) => {
+      if (!current && volumes.length <= 1) {
+        return current;
+      }
+      return !current;
+    });
+  }, [volumes.length]);
+
+  const handleTimeIndexChange = useCallback(
+    (nextIndex: number) => {
+      setSelectedIndex((prev) => {
+        if (volumes.length === 0) {
+          return prev;
+        }
+        const clamped = Math.max(0, Math.min(volumes.length - 1, nextIndex));
+        return clamped;
+      });
+    },
+    [volumes.length]
+  );
 
   return (
     <div className="app">
@@ -101,8 +185,11 @@ function App() {
                   <button
                     type="button"
                     className={index === selectedIndex ? 'active' : ''}
-                    onClick={() => setSelectedIndex(index)}
-                    disabled={isLoading && index === selectedIndex}
+                    onClick={() => {
+                      setIsPlaying(false);
+                      setSelectedIndex(index);
+                    }}
+                    disabled={isLoading}
                   >
                     {file}
                   </button>
@@ -117,11 +204,17 @@ function App() {
 
       <main className="viewer">
         <VolumeViewer
-          volume={volume}
+          volume={volumes[selectedIndex] ?? null}
           filename={selectedFile}
           isLoading={isLoading}
+          loadingProgress={loadProgress}
+          loadedTimepoints={loadedCount}
           timeIndex={selectedIndex}
-          totalTimepoints={files.length}
+          totalTimepoints={volumes.length}
+          expectedTimepoints={files.length}
+          isPlaying={isPlaying}
+          onTogglePlayback={handleTogglePlayback}
+          onTimeIndexChange={handleTimeIndexChange}
         />
       </main>
     </div>
