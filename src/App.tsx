@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { listTiffFiles, loadVolume } from './api';
 import VolumeViewer from './components/VolumeViewer';
 import { normalizeVolume, NormalizedVolume } from './volumeProcessing';
+import { clearTextureCache } from './textureCache';
 import './App.css';
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
@@ -42,6 +43,7 @@ function App() {
       setStatus('loading');
       setError(null);
       setFiles([]);
+      clearTextureCache();
       setVolumes([]);
       setSelectedIndex(0);
       setIsPlaying(false);
@@ -77,6 +79,7 @@ function App() {
           return;
         }
 
+        clearTextureCache();
         setVolumes(loadedVolumes);
         setStatus('loaded');
         setLoadedCount(total);
@@ -88,6 +91,7 @@ function App() {
         console.error(err);
         setStatus('error');
         setFiles([]);
+        clearTextureCache();
         setVolumes([]);
         setSelectedIndex(0);
         setLoadProgress(0);
