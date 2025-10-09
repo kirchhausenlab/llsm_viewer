@@ -11,6 +11,7 @@ type VolumeUniforms = {
   u_channels: { value: number };
   u_cameraPos: { value: Vector3 };
   u_contrast: { value: number };
+  u_brightness: { value: number };
 };
 
 const uniforms = {
@@ -22,7 +23,8 @@ const uniforms = {
   u_cmdata: { value: null as DataTexture | null },
   u_channels: { value: 1 },
   u_cameraPos: { value: new Vector3() },
-  u_contrast: { value: 1 }
+  u_contrast: { value: 1 },
+  u_brightness: { value: 0 }
 } satisfies VolumeUniforms;
 
 export const VolumeRenderShader = {
@@ -59,6 +61,7 @@ export const VolumeRenderShader = {
     uniform vec2 u_clim;
     uniform int u_channels;
     uniform float u_contrast;
+    uniform float u_brightness;
 
     uniform sampler3D u_data;
     uniform sampler2D u_cmdata;
@@ -86,9 +89,18 @@ export const VolumeRenderShader = {
       return texture(u_data, texcoords.xyz);
     }
 
+    float apply_brightness(float value) {
+      return clamp(value + u_brightness, 0.0, 1.0);
+    }
+
     float apply_contrast(float value) {
       float centered = value - 0.5;
       return clamp(centered * u_contrast + 0.5, 0.0, 1.0);
+    }
+
+    float adjust_intensity(float value) {
+      float brightened = apply_brightness(value);
+      return apply_contrast(brightened);
     }
 
     float luminance(vec4 colorSample) {
@@ -106,7 +118,8 @@ export const VolumeRenderShader = {
 
     float sample1(vec3 texcoords) {
       vec4 colorSample = sample_color(texcoords);
-      return luminance(colorSample);
+      float intensity = luminance(colorSample);
+      return adjust_intensity(intensity);
     }
 
     vec4 apply_colormap(float val) {
@@ -115,12 +128,13 @@ export const VolumeRenderShader = {
     }
 
     vec4 compose_color(float intensity, vec4 colorSample) {
-      float adjustedIntensity = apply_contrast(intensity);
+      float adjustedIntensity = adjust_intensity(intensity);
       if (u_channels == 1) {
         return apply_colormap(adjustedIntensity);
       }
+      vec3 adjustedColor = clamp(colorSample.rgb + vec3(u_brightness), 0.0, 1.0);
       float alpha = clamp(adjustedIntensity, 0.0, 1.0);
-      return vec4(colorSample.rgb, alpha);
+      return vec4(adjustedColor, alpha);
     }
 
     void main() {
@@ -229,7 +243,8 @@ export const VolumeRenderShader = {
           break;
         }
         vec4 colorSample = sample_color(loc);
-        float val = luminance(colorSample);
+        float rawVal = luminance(colorSample);
+        float val = adjust_intensity(rawVal);
         if (val > max_val) {
           max_val = val;
           max_i = iter;
@@ -242,7 +257,8 @@ export const VolumeRenderShader = {
       vec3 istep = step / float(REFINEMENT_STEPS);
       for (int i = 0; i < REFINEMENT_STEPS; i++) {
         vec4 colorSample = sample_color(iloc);
-        float refined = luminance(colorSample);
+        float refinedRaw = luminance(colorSample);
+        float refined = adjust_intensity(refinedRaw);
         if (refined > max_val) {
           max_val = refined;
           max_color = colorSample;
@@ -272,9 +288,9 @@ export const VolumeRenderShader = {
           vec3 istep = step / float(REFINEMENT_STEPS);
           for (int i = 0; i < REFINEMENT_STEPS; i++) {
             vec4 colorSample = sample_color(iloc);
-            val = luminance(colorSample);
-            if (val > u_renderthreshold) {
-              gl_FragColor = add_lighting(val, iloc, dstep, view_ray, colorSample);
+            float refined = adjust_intensity(luminance(colorSample));
+            if (refined > u_renderthreshold) {
+              gl_FragColor = add_lighting(refined, iloc, dstep, view_ray, colorSample);
               return;
             }
             iloc += istep;
@@ -289,16 +305,16 @@ export const VolumeRenderShader = {
       vec3 V = normalize(view_ray);
 
       vec3 N;
-      float val1 = luminance(sample_color(loc + vec3(-step[0], 0.0, 0.0)));
-      float val2 = luminance(sample_color(loc + vec3(+step[0], 0.0, 0.0)));
+      float val1 = adjust_intensity(luminance(sample_color(loc + vec3(-step[0], 0.0, 0.0))));
+      float val2 = adjust_intensity(luminance(sample_color(loc + vec3(+step[0], 0.0, 0.0))));
       N[0] = val1 - val2;
       val = max(max(val1, val2), val);
-      val1 = luminance(sample_color(loc + vec3(0.0, -step[1], 0.0)));
-      val2 = luminance(sample_color(loc + vec3(0.0, +step[1], 0.0)));
+      val1 = adjust_intensity(luminance(sample_color(loc + vec3(0.0, -step[1], 0.0))));
+      val2 = adjust_intensity(luminance(sample_color(loc + vec3(0.0, +step[1], 0.0))));
       N[1] = val1 - val2;
       val = max(max(val1, val2), val);
-      val1 = luminance(sample_color(loc + vec3(0.0, 0.0, -step[2])));
-      val2 = luminance(sample_color(loc + vec3(0.0, 0.0, +step[2])));
+      val1 = adjust_intensity(luminance(sample_color(loc + vec3(0.0, 0.0, -step[2]))));
+      val2 = adjust_intensity(luminance(sample_color(loc + vec3(0.0, 0.0, +step[2]))));
       N[2] = val1 - val2;
       val = max(max(val1, val2), val);
 

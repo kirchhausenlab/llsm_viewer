@@ -19,6 +19,7 @@ type VolumeViewerProps = {
   onTogglePlayback: () => void;
   onTimeIndexChange: (index: number) => void;
   contrast: number;
+  brightness: number;
   onRegisterReset: (handler: (() => void) | null) => void;
 };
 
@@ -97,6 +98,7 @@ function VolumeViewer({
   onTogglePlayback,
   onTimeIndexChange,
   contrast,
+  brightness,
   onRegisterReset
 }: VolumeViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -553,6 +555,7 @@ function VolumeViewer({
       uniforms.u_cmdata.value = colormap;
       uniforms.u_channels.value = channels;
       uniforms.u_contrast.value = contrast;
+      uniforms.u_brightness.value = brightness;
 
       const material = new THREE.ShaderMaterial({
         uniforms,
@@ -611,6 +614,7 @@ function VolumeViewer({
       materialUniforms.u_data.value = resources.texture;
       materialUniforms.u_channels.value = channels;
       materialUniforms.u_contrast.value = contrast;
+      materialUniforms.u_brightness.value = brightness;
 
       const localCameraPosition = camera.position.clone();
       mesh.updateMatrixWorld();
@@ -640,7 +644,10 @@ function VolumeViewer({
     if ('u_contrast' in uniforms) {
       uniforms.u_contrast.value = contrast;
     }
-  }, [contrast]);
+    if ('u_brightness' in uniforms) {
+      uniforms.u_brightness.value = brightness;
+    }
+  }, [brightness, contrast]);
 
   return (
     <div className="volume-viewer">

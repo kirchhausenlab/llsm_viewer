@@ -18,6 +18,8 @@ function App() {
   const [loadedCount, setLoadedCount] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [contrast, setContrast] = useState(1);
+  const [brightness, setBrightness] = useState(0);
+  const [fps, setFps] = useState(12);
   const [resetViewHandler, setResetViewHandler] = useState<(() => void) | null>(null);
 
   const loadRequestRef = useRef(0);
@@ -108,7 +110,7 @@ function App() {
       return;
     }
 
-    const fps = 12;
+    const safeFps = Math.max(1, fps);
     const interval = window.setInterval(() => {
       setSelectedIndex((prev) => {
         if (volumes.length === 0) {
@@ -117,12 +119,12 @@ function App() {
         const next = (prev + 1) % volumes.length;
         return next;
       });
-    }, 1000 / fps);
+    }, 1000 / safeFps);
 
     return () => {
       window.clearInterval(interval);
     };
-  }, [isPlaying, volumes.length]);
+  }, [fps, isPlaying, volumes.length]);
 
   useEffect(() => {
     if (volumes.length <= 1 && isPlaying) {
@@ -206,6 +208,36 @@ function App() {
               disabled={!hasVolume}
             />
           </div>
+          <div className="control-group">
+            <label htmlFor="brightness-slider">
+              Brightness <span>{brightness >= 0 ? '+' : ''}{brightness.toFixed(2)}</span>
+            </label>
+            <input
+              id="brightness-slider"
+              type="range"
+              min={-0.5}
+              max={0.5}
+              step={0.01}
+              value={brightness}
+              onChange={(event) => setBrightness(Number(event.target.value))}
+              disabled={!hasVolume}
+            />
+          </div>
+          <div className="control-group">
+            <label htmlFor="fps-slider">
+              FPS <span>{fps}</span>
+            </label>
+            <input
+              id="fps-slider"
+              type="range"
+              min={1}
+              max={60}
+              step={1}
+              value={fps}
+              onChange={(event) => setFps(Number(event.target.value))}
+              disabled={volumes.length <= 1}
+            />
+          </div>
         </section>
 
         {error && <p className="error">{error}</p>}
@@ -225,6 +257,7 @@ function App() {
           onTogglePlayback={handleTogglePlayback}
           onTimeIndexChange={handleTimeIndexChange}
           contrast={contrast}
+          brightness={brightness}
           onRegisterReset={handleRegisterReset}
         />
       </main>
