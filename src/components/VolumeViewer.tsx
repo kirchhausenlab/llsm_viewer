@@ -313,6 +313,10 @@ function VolumeViewer({
 
     const renderLoop = () => {
       controls.update();
+      const resources = resourcesRef.current;
+      if (resources) {
+        resources.mesh.material.uniforms.u_cameraPos.value.copy(camera.position);
+      }
       renderer.render(scene, camera);
       animationFrameRef.current = requestAnimationFrame(renderLoop);
     };
@@ -431,6 +435,7 @@ function VolumeViewer({
       uniforms.u_renderthreshold.value = 0.5;
       uniforms.u_cmdata.value = colormap;
       uniforms.u_channels.value = channels;
+      uniforms.u_cameraPos.value.copy(camera.position);
 
       const material = new THREE.ShaderMaterial({
         uniforms,
@@ -479,6 +484,7 @@ function VolumeViewer({
       resources.texture.needsUpdate = true;
       resources.mesh.material.uniforms.u_data.value = resources.texture;
       resources.mesh.material.uniforms.u_channels.value = channels;
+      resources.mesh.material.uniforms.u_cameraPos.value.copy(camera.position);
     }
 
     setStats({ min, max });
