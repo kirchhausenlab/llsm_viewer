@@ -177,8 +177,8 @@ function VolumeViewer({
     const camera = new THREE.PerspectiveCamera(
       38,
       container.clientWidth / container.clientHeight,
-      0.01,
-      100
+      0.0001,
+      1000
     );
     camera.position.set(0, 0, 2.5);
 
@@ -464,6 +464,13 @@ function VolumeViewer({
       const fovInRadians = THREE.MathUtils.degToRad(camera.fov * 0.5);
       const distance = boundingRadius / Math.sin(fovInRadians);
       const safeDistance = Number.isFinite(distance) ? distance * 1.2 : 2.5;
+      const nearDistance = Math.max(0.0001, boundingRadius * 0.00025);
+      const farDistance = Math.max(safeDistance * 5, boundingRadius * 10);
+      if (camera.near !== nearDistance || camera.far !== farDistance) {
+        camera.near = nearDistance;
+        camera.far = farDistance;
+        camera.updateProjectionMatrix();
+      }
       camera.position.set(0, 0, safeDistance);
       controls.update();
       controls.saveState();

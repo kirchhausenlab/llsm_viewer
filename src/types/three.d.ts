@@ -63,6 +63,8 @@ declare module 'three' {
     constructor(fov: number, aspect: number, near: number, far: number);
     fov: number;
     aspect: number;
+    near: number;
+    far: number;
     position: Vector3;
     updateProjectionMatrix(): void;
     getWorldDirection(target: Vector3): Vector3;
