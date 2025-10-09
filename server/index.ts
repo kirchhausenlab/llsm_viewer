@@ -98,10 +98,31 @@ app.post('/api/browse', async (request, response) => {
     }
 
     const entries = await fs.readdir(resolved, { withFileTypes: true });
-    const directories = entries
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+    const directories: string[] = [];
+
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        directories.push(entry.name);
+        continue;
+      }
+
+      if (entry.isSymbolicLink()) {
+        try {
+          const linkTarget = await fs.stat(path.join(resolved, entry.name));
+          if (linkTarget.isDirectory()) {
+            directories.push(entry.name);
+          }
+        } catch (error) {
+          console.warn('Failed to resolve symbolic link while browsing directory', {
+            directory: resolved,
+            entry: entry.name,
+            error
+          });
+        }
+      }
+    }
+
+    directories.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 
     const root = path.parse(resolved).root;
     const parent = resolved === root ? null : path.dirname(resolved);
