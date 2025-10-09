@@ -23,6 +23,10 @@
 - Added a persistent playback bar with play/pause controls and a scrubber, synchronizing the sidebar selection with smooth looping playback at 12 FPS.
 - Reused GPU resources between frames by re-uploading voxel data into a persistent 3D texture so time scrubbing remains responsive while the camera continues to orbit freely.
 
+## Playback UX refinements
+- Retired the sidebar filename list in favor of a compact dataset overview so time navigation happens exclusively through the playback controls.
+- Preserved orbit camera state while iterating through timepoints by reusing the existing 3D texture and geometry resources instead of rebuilding them on every frame.
+
 Next steps:
 - Build the WebGPU ray-marched volume renderer integrated with transfer-function controls.
 - Add asynchronous preprocessing hooks for caching multi-resolution volumes when needed.

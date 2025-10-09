@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { VolumeRenderShader1 } from 'three/examples/jsm/shaders/VolumeShader.js';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { VolumeRenderShader1 } from 'three/examples/jsm/shaders/VolumeShader';
 import type { NormalizedVolume } from '../volumeProcessing';
 import './VolumeViewer.css';
 
@@ -312,36 +312,42 @@ function VolumeViewer({
   }, []);
 
   useEffect(() => {
+    const releaseResources = () => {
+      const resources = resourcesRef.current;
+      if (!resources) {
+        return;
+      }
+
+      const activeScene = sceneRef.current;
+      if (activeScene) {
+        activeScene.remove(resources.mesh);
+      }
+
+      resources.mesh.geometry.dispose();
+      resources.mesh.material.dispose();
+      resources.texture.dispose();
+      resourcesRef.current = null;
+    };
+
     const scene = sceneRef.current;
     const camera = cameraRef.current;
     const controls = controlsRef.current;
     const colormap = colormapRef.current;
 
-    const disposeResources = () => {
-      const resources = resourcesRef.current;
-      if (resources && scene) {
-        scene.remove(resources.mesh);
-        resources.mesh.geometry.dispose();
-        resources.mesh.material.dispose();
-        resources.texture.dispose();
-        resourcesRef.current = null;
-      }
-    };
-
     if (!scene || !camera || !controls || !colormap) {
-      disposeResources();
+      releaseResources();
       setStats(null);
       return;
     }
 
     if (!volume) {
-      disposeResources();
+      releaseResources();
       setStats(null);
       return;
     }
 
     const { width, height, depth, min, max, normalized } = volume;
-    const resources = resourcesRef.current;
+    let resources = resourcesRef.current;
     const dimensionsChanged =
       !resources ||
       resources.dimensions.width !== width ||
@@ -349,7 +355,10 @@ function VolumeViewer({
       resources.dimensions.depth !== depth;
 
     if (dimensionsChanged) {
-      disposeResources();
+      if (resources) {
+        releaseResources();
+        resources = null;
+      }
 
       const textureData = new Uint8Array(normalized.length);
       textureData.set(normalized);
@@ -411,12 +420,6 @@ function VolumeViewer({
     }
 
     setStats({ min, max });
-
-    return () => {
-      if (dimensionsChanged) {
-        disposeResources();
-      }
-    };
   }, [volume]);
 
   useEffect(() => {
