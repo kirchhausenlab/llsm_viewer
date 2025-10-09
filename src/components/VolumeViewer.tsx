@@ -99,6 +99,8 @@ function VolumeViewer({
 
   const safeProgress = Math.min(1, Math.max(0, loadingProgress));
   const progressPercentage = Math.round(safeProgress * 100);
+  const hasStartedLoading = safeProgress > 0 || loadedTimepoints > 0;
+  const showLoadingOverlay = isLoading || (hasStartedLoading && safeProgress < 1);
   const clampedTimeIndex = totalTimepoints === 0 ? 0 : Math.min(timeIndex, totalTimepoints - 1);
 
   const handleResetView = useCallback(() => {
@@ -457,23 +459,23 @@ function VolumeViewer({
       </header>
 
       <section className="viewer-surface">
-      {isLoading && (
-        <div className="overlay">
-          <div className="loading-panel">
-            <span className="loading-title">Loading volumes…</span>
-            <div className="progress-bar">
-              <span style={{ width: `${safeProgress * 100}%` }} />
+        {showLoadingOverlay && (
+          <div className="overlay">
+            <div className="loading-panel">
+              <span className="loading-title">Loading volumes…</span>
+              <div className="progress-bar">
+                <span style={{ width: `${safeProgress * 100}%` }} />
+              </div>
+              <span className="progress-meta">
+                {expectedTimepoints > 0
+                  ? `${Math.min(loadedTimepoints, expectedTimepoints)} / ${expectedTimepoints} · ${progressPercentage}%`
+                  : `${progressPercentage}%`}
+              </span>
             </div>
-            <span className="progress-meta">
-              {expectedTimepoints > 0
-                ? `${Math.min(loadedTimepoints, expectedTimepoints)} / ${expectedTimepoints} · ${progressPercentage}%`
-                : `${progressPercentage}%`}
-            </span>
           </div>
-        </div>
-      )}
-      <div className="render-surface" ref={containerRef} />
-    </section>
+        )}
+        <div className="render-surface" ref={containerRef} />
+      </section>
 
     {totalTimepoints > 0 && (
       <section className="time-controls">
