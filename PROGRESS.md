@@ -30,6 +30,9 @@
 ## Loading feedback fixes
 - Adjusted the loading overlay logic so it remains visible until every discovered timepoint has finished decoding, preventing premature dismissal while frames are still streaming in.
 
+## Rendering regression fix
+- Repacked multi-channel volume textures into RGBA slices before uploading to the GPU so WebGL sampling no longer fails, restoring visible rendering while keeping RGB volumes displayed in color.
+
 Next steps:
 - Build the WebGPU ray-marched volume renderer integrated with transfer-function controls.
 - Add asynchronous preprocessing hooks for caching multi-resolution volumes when needed.
