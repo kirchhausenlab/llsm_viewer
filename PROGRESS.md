@@ -36,6 +36,9 @@
 ## Camera clipping improvements
 - Reduced the perspective camera's near plane dynamically relative to each dataset and extended the far plane to prevent the volume from being clipped when zooming in, allowing the user to move the camera inside the volume without losing detail.
 
+## Ray casting coordinate fixes
+- Corrected the shader camera uniform to use mesh-local coordinates so the new bounding-box intersection logic samples the volume in the proper orientation instead of collapsing the volume along the ray direction.
+
 Next steps:
 - Build the WebGPU ray-marched volume renderer integrated with transfer-function controls.
 - Add asynchronous preprocessing hooks for caching multi-resolution volumes when needed.
