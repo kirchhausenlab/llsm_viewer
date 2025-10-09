@@ -146,14 +146,26 @@ function App() {
     const parsed: TrackDefinition[] = [];
 
     for (const [id, points] of trackMap.entries()) {
+      if (points.length === 0) {
+        continue;
+      }
+
       const sortedPoints = [...points].sort((a, b) => a.time - b.time);
-      parsed.push({ id, points: sortedPoints });
+      const trackLength = sortedPoints.length;
+      const offset = timepointCount - trackLength;
+      const adjustedPoints = sortedPoints.map<TrackPoint>((point) => ({
+        time: point.time + offset,
+        x: point.x,
+        y: point.y,
+        z: point.z
+      }));
+      parsed.push({ id, points: adjustedPoints });
     }
 
     parsed.sort((a, b) => a.id - b.id);
 
     return parsed;
-  }, [tracks]);
+  }, [timepointCount, tracks]);
   const hasParsedTrackData = parsedTracks.length > 0;
   const followedTrackDisplayIndex = useMemo(() => {
     if (followedTrackId === null) {
