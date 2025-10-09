@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { browseDirectory, listTiffFiles, loadVolume, type VolumePayload } from './api';
+import { browseDirectory, listTiffFiles, loadTracks, loadVolume, type VolumePayload } from './api';
 import VolumeViewer from './components/VolumeViewer';
 import { computeNormalizationParameters, normalizeVolume, NormalizedVolume } from './volumeProcessing';
 import { clearTextureCache } from './textureCache';
 import './App.css';
 import DirectoryPickerDialog from './components/DirectoryPickerDialog';
+import FilePickerDialog from './components/FilePickerDialog';
 
 const DEFAULT_CONTRAST = 1;
 const DEFAULT_BRIGHTNESS = 0;
@@ -58,6 +59,7 @@ function App() {
   const [fps, setFps] = useState(DEFAULT_FPS);
   const [resetViewHandler, setResetViewHandler] = useState<(() => void) | null>(null);
   const [isPickerOpen, setIsPickerOpen] = useState(false);
+  const [isTrackPickerOpen, setIsTrackPickerOpen] = useState(false);
   const [subfolderSummary, setSubfolderSummary] = useState<{
     rootHasTiffs: boolean;
     subfolders: string[];
@@ -66,6 +68,10 @@ function App() {
   const [subfolderLoading, setSubfolderLoading] = useState(false);
   const [subfolderError, setSubfolderError] = useState<string | null>(null);
   const [activeLayerKey, setActiveLayerKey] = useState<string | null>(null);
+  const [trackPath, setTrackPath] = useState('');
+  const [tracks, setTracks] = useState<string[][]>([]);
+  const [trackStatus, setTrackStatus] = useState<LoadState>('idle');
+  const [trackError, setTrackError] = useState<string | null>(null);
 
   const loadRequestRef = useRef(0);
   const subfolderRequestRef = useRef(0);
@@ -400,6 +406,14 @@ function App() {
     setIsPickerOpen(false);
   }, []);
 
+  const handleOpenTrackPicker = useCallback(() => {
+    setIsTrackPickerOpen(true);
+  }, []);
+
+  const handleCloseTrackPicker = useCallback(() => {
+    setIsTrackPickerOpen(false);
+  }, []);
+
   const handlePathChange = useCallback((nextPath: string) => {
     setPath(nextPath);
     subfolderRequestRef.current += 1;
@@ -418,6 +432,44 @@ function App() {
       });
     },
     [handlePathChange, refreshSubfolderSummary]
+  );
+
+  const handleTrackPathChange = useCallback((nextPath: string) => {
+    setTrackPath(nextPath);
+    setTrackStatus('idle');
+    setTrackError(null);
+  }, []);
+
+  const handleTrackPathPicked = useCallback((selectedPath: string) => {
+    setTrackPath(selectedPath);
+    setIsTrackPickerOpen(false);
+    setTrackStatus('idle');
+    setTrackError(null);
+  }, []);
+
+  const handleTrackSubmit = useCallback(
+    async (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      const trimmed = trackPath.trim();
+      if (!trimmed) {
+        return;
+      }
+
+      setTrackStatus('loading');
+      setTrackError(null);
+
+      try {
+        const rows = await loadTracks(trimmed);
+        setTracks(rows);
+        setTrackStatus('loaded');
+      } catch (err) {
+        console.error('Failed to load tracks CSV', err);
+        setTrackError(err instanceof Error ? err.message : 'Failed to load tracks.');
+        setTrackStatus('error');
+        setTracks([]);
+      }
+    },
+    [loadTracks, trackPath]
   );
 
   const handleSubfolderToggle = useCallback((name: string) => {
@@ -580,6 +632,45 @@ function App() {
           </button>
         </form>
 
+        <form onSubmit={handleTrackSubmit} className="path-form">
+          <label htmlFor="tracks-input">Tracks file</label>
+          <div className="path-input-wrapper">
+            <input
+              id="tracks-input"
+              type="text"
+              value={trackPath}
+              placeholder="/nfs/scratch2/.../tracks.csv"
+              onChange={(event) => handleTrackPathChange(event.target.value)}
+              autoComplete="off"
+            />
+            <button
+              type="button"
+              className="path-browse-button"
+              onClick={handleOpenTrackPicker}
+              aria-label="Browse for tracks file"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path
+                  d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8.83a2 2 0 0 0-.59-1.41l-4.83-4.83A2 2 0 0 0 13.17 2Zm6 2.41L17.59 8H13a1 1 0 0 1-1-1Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </button>
+          </div>
+          {trackStatus === 'loading' ? (
+            <p className="subfolder-status">Loading tracks…</p>
+          ) : trackError ? (
+            <p className="subfolder-error">{trackError}</p>
+          ) : trackStatus === 'loaded' ? (
+            <p className="subfolder-status">
+              {tracks.length === 1 ? 'Loaded 1 track entry.' : `Loaded ${tracks.length} track entries.`}
+            </p>
+          ) : null}
+          <button type="submit" disabled={!trackPath.trim() || trackStatus === 'loading'}>
+            Load tracks
+          </button>
+        </form>
+
         {layers.length > 0 ? (
           <section className="sidebar-panel layer-controls">
             <header>
@@ -715,6 +806,13 @@ function App() {
           initialPath={path}
           onClose={handleClosePicker}
           onSelect={handlePathPicked}
+        />
+      ) : null}
+      {isTrackPickerOpen ? (
+        <FilePickerDialog
+          initialPath={trackPath}
+          onClose={handleCloseTrackPicker}
+          onSelect={handleTrackPathPicked}
         />
       ) : null}
     </div>
