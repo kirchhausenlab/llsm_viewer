@@ -3,11 +3,48 @@ import cors from 'cors';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { fromFile } from 'geotiff';
+import { fromFile, Pool } from 'geotiff';
+import { availableParallelism, cpus } from 'node:os';
 
 const app = express();
 const HOST = process.env.HOST ?? '0.0.0.0';
 const PORT = Number.parseInt(process.env.PORT ?? '5174', 10);
+
+const workerCount = (() => {
+  if (typeof availableParallelism === 'function') {
+    try {
+      const cores = availableParallelism();
+      if (Number.isFinite(cores) && cores > 0) {
+        return cores;
+      }
+    } catch {
+      // Fallback to cpus below.
+    }
+  }
+  const cpuInfo = cpus();
+  return cpuInfo && cpuInfo.length > 0 ? cpuInfo.length : 1;
+})();
+
+const pool = new Pool({ numWorkers: workerCount });
+let poolDestroyed = false;
+
+function destroyPool() {
+  if (!poolDestroyed) {
+    pool.destroy();
+    poolDestroyed = true;
+  }
+}
+
+process.on('exit', () => {
+  destroyPool();
+});
+
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.once(signal, () => {
+    destroyPool();
+    process.exit(signal === 'SIGINT' ? 130 : 143);
+  });
+}
 
 app.use(cors());
 app.use(
@@ -97,7 +134,7 @@ app.post('/api/volume', async (request, response) => {
         return;
       }
 
-      const raster = (await image.readRasters({ interleave: true })) as ArrayLike<number>;
+      const raster = (await image.readRasters({ interleave: true, pool })) as ArrayLike<number>;
       const offset = index * width * height * channels;
       floatData.set(raster, offset);
 
