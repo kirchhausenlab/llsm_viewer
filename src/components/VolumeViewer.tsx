@@ -49,6 +49,24 @@ type PointerState = {
   previousEnablePan: boolean | null;
 };
 
+type MovementState = {
+  moveForward: boolean;
+  moveBackward: boolean;
+  moveLeft: boolean;
+  moveRight: boolean;
+  dollyIn: boolean;
+  dollyOut: boolean;
+};
+
+const MOVEMENT_KEY_MAP: Record<string, keyof MovementState> = {
+  KeyW: 'moveForward',
+  KeyS: 'moveBackward',
+  KeyA: 'moveLeft',
+  KeyD: 'moveRight',
+  KeyE: 'dollyIn',
+  KeyQ: 'dollyOut'
+};
+
 function createColormapTexture() {
   const size = 256;
   const data = new Uint8Array(size * 4);
@@ -130,6 +148,14 @@ function VolumeViewer({
   const resourcesRef = useRef<VolumeResources | null>(null);
   const colormapRef = useRef<THREE.DataTexture | null>(null);
   const pointerStateRef = useRef<PointerState | null>(null);
+  const movementStateRef = useRef<MovementState>({
+    moveForward: false,
+    moveBackward: false,
+    moveLeft: false,
+    moveRight: false,
+    dollyIn: false,
+    dollyOut: false
+  });
   const [stats, setStats] = useState<VolumeStats | null>(null);
 
   if (!colormapRef.current) {
@@ -311,19 +337,87 @@ function VolumeViewer({
     const resizeObserver = new ResizeObserver(handleResize);
     resizeObserver.observe(container);
 
-      const renderLoop = () => {
-        controls.update();
-        const resources = resourcesRef.current;
-        if (resources) {
-          const { mesh } = resources;
-          mesh.updateMatrixWorld();
-          const cameraUniform = mesh.material.uniforms.u_cameraPos.value;
-          cameraUniform.copy(camera.position);
-          mesh.worldToLocal(cameraUniform);
-        }
-        renderer.render(scene, camera);
-        animationFrameRef.current = requestAnimationFrame(renderLoop);
-      };
+    const worldUp = new THREE.Vector3(0, 1, 0);
+    const forwardVector = new THREE.Vector3();
+    const horizontalForward = new THREE.Vector3();
+    const rightVector = new THREE.Vector3();
+    const movementVector = new THREE.Vector3();
+
+    const applyKeyboardMovement = () => {
+      const movementState = movementStateRef.current;
+      if (
+        !movementState ||
+        (!movementState.moveForward &&
+          !movementState.moveBackward &&
+          !movementState.moveLeft &&
+          !movementState.moveRight &&
+          !movementState.dollyIn &&
+          !movementState.dollyOut)
+      ) {
+        return;
+      }
+
+      const distance = controls.target.distanceTo(camera.position);
+      const movementScale = Math.max(distance * 0.002, 0.0005);
+
+      camera.getWorldDirection(forwardVector).normalize();
+      horizontalForward.copy(forwardVector).projectOnPlane(worldUp);
+      if (horizontalForward.lengthSq() < 1e-8) {
+        horizontalForward.set(0, 0, forwardVector.z >= 0 ? 1 : -1);
+      } else {
+        horizontalForward.normalize();
+      }
+
+      rightVector.crossVectors(horizontalForward, worldUp);
+      if (rightVector.lengthSq() < 1e-8) {
+        rightVector.set(1, 0, 0);
+      } else {
+        rightVector.normalize();
+      }
+
+      movementVector.set(0, 0, 0);
+
+      if (movementState.moveForward) {
+        movementVector.addScaledVector(horizontalForward, movementScale);
+      }
+      if (movementState.moveBackward) {
+        movementVector.addScaledVector(horizontalForward, -movementScale);
+      }
+      if (movementState.moveLeft) {
+        movementVector.addScaledVector(rightVector, -movementScale);
+      }
+      if (movementState.moveRight) {
+        movementVector.addScaledVector(rightVector, movementScale);
+      }
+      if (movementState.dollyIn) {
+        movementVector.addScaledVector(forwardVector, movementScale);
+      }
+      if (movementState.dollyOut) {
+        movementVector.addScaledVector(forwardVector, -movementScale);
+      }
+
+      if (movementVector.lengthSq() === 0) {
+        return;
+      }
+
+      camera.position.add(movementVector);
+      controls.target.add(movementVector);
+    };
+
+    const renderLoop = () => {
+      applyKeyboardMovement();
+      controls.update();
+      const resources = resourcesRef.current;
+      if (resources) {
+        const { mesh } = resources;
+        mesh.updateMatrixWorld();
+        const cameraUniform = mesh.material.uniforms.u_cameraPos.value;
+        cameraUniform.copy(camera.position);
+        mesh.worldToLocal(cameraUniform);
+      }
+      renderer.render(scene, camera);
+      animationFrameRef.current = requestAnimationFrame(renderLoop);
+    };
     renderLoop();
 
     return () => {
@@ -364,6 +458,58 @@ function VolumeViewer({
       sceneRef.current = null;
       cameraRef.current = null;
       controlsRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleKeyChange = (event: KeyboardEvent, isPressed: boolean) => {
+      const mappedKey = MOVEMENT_KEY_MAP[event.code];
+      if (!mappedKey) {
+        return;
+      }
+
+      const target = event.target as HTMLElement | null;
+      if (target) {
+        const tagName = target.tagName;
+        const isEditable = target.isContentEditable;
+        if (isEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') {
+          return;
+        }
+      }
+
+      event.preventDefault();
+
+      const movementState = movementStateRef.current;
+      if (!movementState) {
+        return;
+      }
+
+      movementState[mappedKey] = isPressed;
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      handleKeyChange(event, true);
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      handleKeyChange(event, false);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      const movementState = movementStateRef.current;
+      if (movementState) {
+        movementState.moveForward = false;
+        movementState.moveBackward = false;
+        movementState.moveLeft = false;
+        movementState.moveRight = false;
+        movementState.dollyIn = false;
+        movementState.dollyOut = false;
+      }
     };
   }, []);
 
