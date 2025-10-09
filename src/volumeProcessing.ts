@@ -16,10 +16,22 @@ export type NormalizationParameters = {
 };
 
 export function computeNormalizationParameters(volumes: VolumePayload[]): NormalizationParameters {
+  if (volumes.length === 0) {
+    return { min: 0, max: 1 };
+  }
+
+  const allUint8 = volumes.every((volume) => volume.dataType === 'uint8');
+  if (allUint8) {
+    return { min: 0, max: 255 };
+  }
+
+  const floatVolumes = volumes.filter((volume) => volume.dataType === 'float32');
+  const volumesToScan = floatVolumes.length > 0 ? floatVolumes : volumes;
+
   let min = Number.POSITIVE_INFINITY;
   let max = Number.NEGATIVE_INFINITY;
 
-  for (const volume of volumes) {
+  for (const volume of volumesToScan) {
     if (Number.isFinite(volume.min) && volume.min < min) {
       min = volume.min;
     }
@@ -32,7 +44,7 @@ export function computeNormalizationParameters(volumes: VolumePayload[]): Normal
     min = 0;
   }
   if (!Number.isFinite(max) || max === Number.NEGATIVE_INFINITY) {
-    max = 1;
+    max = min === 0 ? 1 : min + 1;
   }
   if (min === max) {
     max = min + 1;
