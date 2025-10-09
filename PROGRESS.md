@@ -35,7 +35,6 @@
 
 ## Camera clipping improvements
 - Reduced the perspective camera's near plane dynamically relative to each dataset and extended the far plane to prevent the volume from being clipped when zooming in, allowing the user to move the camera inside the volume without losing detail.
-- Reworked the volume raymarcher to compute ray entry/exit against the box using the camera position so the render loop keeps marching rays even when the camera is inside the dataset, eliminating the "cropped" look at close range.
 
 Next steps:
 - Build the WebGPU ray-marched volume renderer integrated with transfer-function controls.
