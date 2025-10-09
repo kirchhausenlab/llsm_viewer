@@ -104,13 +104,14 @@ function App() {
   const folderIdRef = useRef(0);
 
   const selectedFile = useMemo(() => files[selectedIndex] ?? null, [files, selectedIndex]);
-  const timepointCount = layers.length > 0 ? layers[0].volumes.length : 0;
+  const volumeTimepointCount = layers.length > 0 ? layers[0].volumes.length : 0;
   const parsedTracks = useMemo<TrackDefinition[]>(() => {
     if (tracks.length === 0) {
       return [];
     }
 
     const trackMap = new Map<number, TrackPoint[]>();
+    let maxTimeValue = -Infinity;
 
     for (const row of tracks) {
       if (row.length < 6) {
@@ -134,7 +135,12 @@ function App() {
       }
 
       const id = Math.trunc(rawId);
-      const point: TrackPoint = { time, x, y, z };
+      if (time > maxTimeValue) {
+        maxTimeValue = time;
+      }
+
+      const normalizedTime = Math.max(0, time - 1);
+      const point: TrackPoint = { time: normalizedTime, x, y, z };
       const existing = trackMap.get(id);
       if (existing) {
         existing.push(point);
@@ -144,10 +150,23 @@ function App() {
     }
 
     const parsed: TrackDefinition[] = [];
+    const datasetTimepointCount = Number.isFinite(maxTimeValue) ? Math.max(0, Math.trunc(maxTimeValue)) : 0;
 
     for (const [id, points] of trackMap.entries()) {
+      if (points.length === 0) {
+        continue;
+      }
+
       const sortedPoints = [...points].sort((a, b) => a.time - b.time);
-      parsed.push({ id, points: sortedPoints });
+      const uniqueTimeCount = new Set(sortedPoints.map((point) => point.time)).size;
+      const offset = Math.max(0, datasetTimepointCount - uniqueTimeCount);
+      const adjustedPoints = sortedPoints.map<TrackPoint>((point) => ({
+        time: point.time + offset,
+        x: point.x,
+        y: point.y,
+        z: point.z
+      }));
+      parsed.push({ id, points: adjustedPoints });
     }
 
     parsed.sort((a, b) => a.id - b.id);
@@ -402,17 +421,17 @@ function App() {
   );
 
   useEffect(() => {
-    if (!isPlaying || timepointCount <= 1) {
+    if (!isPlaying || volumeTimepointCount <= 1) {
       return;
     }
 
     const safeFps = Math.max(1, fps);
     const interval = window.setInterval(() => {
       setSelectedIndex((prev) => {
-        if (timepointCount === 0) {
+        if (volumeTimepointCount === 0) {
           return prev;
         }
-        const next = (prev + 1) % timepointCount;
+        const next = (prev + 1) % volumeTimepointCount;
         return next;
       });
     }, 1000 / safeFps);
@@ -420,16 +439,16 @@ function App() {
     return () => {
       window.clearInterval(interval);
     };
-  }, [fps, isPlaying, timepointCount]);
+  }, [fps, isPlaying, volumeTimepointCount]);
 
   useEffect(() => {
-    if (timepointCount <= 1 && isPlaying) {
+    if (volumeTimepointCount <= 1 && isPlaying) {
       setIsPlaying(false);
     }
-    if (selectedIndex >= timepointCount && timepointCount > 0) {
+    if (selectedIndex >= volumeTimepointCount && volumeTimepointCount > 0) {
       setSelectedIndex(0);
     }
-  }, [isPlaying, selectedIndex, timepointCount]);
+  }, [isPlaying, selectedIndex, volumeTimepointCount]);
 
   const isLoading = status === 'loading';
 
@@ -517,24 +536,24 @@ function App() {
 
   const handleTogglePlayback = useCallback(() => {
     setIsPlaying((current) => {
-      if (!current && timepointCount <= 1) {
+      if (!current && volumeTimepointCount <= 1) {
         return current;
       }
       return !current;
     });
-  }, [timepointCount]);
+  }, [volumeTimepointCount]);
 
   const handleTimeIndexChange = useCallback(
     (nextIndex: number) => {
       setSelectedIndex((prev) => {
-        if (timepointCount === 0) {
+        if (volumeTimepointCount === 0) {
           return prev;
         }
-        const clamped = Math.max(0, Math.min(timepointCount - 1, nextIndex));
+        const clamped = Math.max(0, Math.min(volumeTimepointCount - 1, nextIndex));
         return clamped;
       });
     },
-    [timepointCount]
+    [volumeTimepointCount]
   );
 
   const handleAddFolder = useCallback(
@@ -936,7 +955,7 @@ function App() {
               step={1}
               value={fps}
               onChange={(event) => setFps(Number(event.target.value))}
-              disabled={timepointCount <= 1}
+              disabled={volumeTimepointCount <= 1}
             />
           </div>
         </section>
@@ -1097,7 +1116,7 @@ function App() {
           loadedVolumes={loadedCount}
           expectedVolumes={expectedVolumeCount}
           timeIndex={selectedIndex}
-          totalTimepoints={timepointCount}
+          totalTimepoints={volumeTimepointCount}
           isPlaying={isPlaying}
           onTogglePlayback={handleTogglePlayback}
           onTimeIndexChange={handleTimeIndexChange}
