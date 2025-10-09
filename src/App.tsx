@@ -564,14 +564,19 @@ function App() {
         return;
       }
 
-      let added = false;
       setSelectedFolders((current) => {
         if (current.some((folder) => folder.path === normalized)) {
+          setFolderError('Folder already added.');
           return current;
         }
-        added = true;
+
         const nextId = folderIdRef.current + 1;
         folderIdRef.current = nextId;
+
+        setFolderError(null);
+        setPendingFolderPath('');
+        setLastBrowsedPath(normalized);
+
         return [
           ...current,
           {
@@ -582,14 +587,6 @@ function App() {
           }
         ];
       });
-
-      if (added) {
-        setFolderError(null);
-        setPendingFolderPath('');
-        setLastBrowsedPath(normalized);
-      } else {
-        setFolderError('Folder already added.');
-      }
     },
     []
   );
