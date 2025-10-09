@@ -311,15 +311,19 @@ function VolumeViewer({
     const resizeObserver = new ResizeObserver(handleResize);
     resizeObserver.observe(container);
 
-    const renderLoop = () => {
-      controls.update();
-      const resources = resourcesRef.current;
-      if (resources) {
-        resources.mesh.material.uniforms.u_cameraPos.value.copy(camera.position);
-      }
-      renderer.render(scene, camera);
-      animationFrameRef.current = requestAnimationFrame(renderLoop);
-    };
+      const renderLoop = () => {
+        controls.update();
+        const resources = resourcesRef.current;
+        if (resources) {
+          const { mesh } = resources;
+          mesh.updateMatrixWorld();
+          const cameraUniform = mesh.material.uniforms.u_cameraPos.value;
+          cameraUniform.copy(camera.position);
+          mesh.worldToLocal(cameraUniform);
+        }
+        renderer.render(scene, camera);
+        animationFrameRef.current = requestAnimationFrame(renderLoop);
+      };
     renderLoop();
 
     return () => {
@@ -435,7 +439,6 @@ function VolumeViewer({
       uniforms.u_renderthreshold.value = 0.5;
       uniforms.u_cmdata.value = colormap;
       uniforms.u_channels.value = channels;
-      uniforms.u_cameraPos.value.copy(camera.position);
 
       const material = new THREE.ShaderMaterial({
         uniforms,
@@ -457,6 +460,8 @@ function VolumeViewer({
       mesh.position.set(-centerOffset.x, -centerOffset.y, -centerOffset.z);
 
       scene.add(mesh);
+      mesh.updateMatrixWorld(true);
+
       resourcesRef.current = {
         mesh,
         texture,
@@ -479,12 +484,22 @@ function VolumeViewer({
       camera.position.set(0, 0, safeDistance);
       controls.update();
       controls.saveState();
+
+      const cameraUniform = mesh.material.uniforms.u_cameraPos.value;
+      cameraUniform.copy(camera.position);
+      mesh.worldToLocal(cameraUniform);
     } else if (resources) {
       resources.texture.image.data.set(textureData);
       resources.texture.needsUpdate = true;
-      resources.mesh.material.uniforms.u_data.value = resources.texture;
-      resources.mesh.material.uniforms.u_channels.value = channels;
-      resources.mesh.material.uniforms.u_cameraPos.value.copy(camera.position);
+      const { mesh } = resources;
+      const materialUniforms = mesh.material.uniforms;
+      materialUniforms.u_data.value = resources.texture;
+      materialUniforms.u_channels.value = channels;
+
+      const localCameraPosition = camera.position.clone();
+      mesh.updateMatrixWorld();
+      mesh.worldToLocal(localCameraPosition);
+      materialUniforms.u_cameraPos.value.copy(localCameraPosition);
     }
 
     setStats({ min, max });
