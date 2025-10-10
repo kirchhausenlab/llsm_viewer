@@ -62,55 +62,8 @@ function isHidden(name: string) {
   return name.startsWith('.');
 }
 
-function hasTiffExtension(name: string) {
-  const lower = name.toLowerCase();
-  return lower.endsWith('.tif') || lower.endsWith('.tiff');
-}
-
 function hasCsvExtension(name: string) {
   return name.toLowerCase().endsWith('.csv');
-}
-
-async function directoryHasTiffFiles(targetPath: string) {
-  try {
-    const entries = await fs.readdir(targetPath, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isFile() && hasTiffExtension(entry.name)) {
-        return true;
-      }
-
-      if (entry.isSymbolicLink()) {
-        if (!hasTiffExtension(entry.name)) {
-          continue;
-        }
-
-        try {
-          const stats = await fs.stat(path.join(targetPath, entry.name));
-          if (stats.isFile()) {
-            return true;
-          }
-        } catch (error) {
-          const nodeError = error as NodeJS.ErrnoException;
-          if (nodeError?.code === 'ENOENT') {
-            continue;
-          }
-
-          console.warn('Failed to inspect symbolic link while checking TIFF files', {
-            directory: targetPath,
-            entry: entry.name,
-            error
-          });
-        }
-      }
-    }
-  } catch (error) {
-    console.warn('Failed to read directory while checking for TIFF files', {
-      directory: targetPath,
-      error
-    });
-  }
-
-  return false;
 }
 
 app.post('/api/list', async (request, response) => {
@@ -154,7 +107,6 @@ app.post('/api/browse', async (request, response) => {
 
     const entries = await fs.readdir(resolved, { withFileTypes: true });
     const directories: string[] = [];
-    const directoriesForSummary: string[] = [];
 
     for (const entry of entries) {
       if (isHidden(entry.name)) {
@@ -163,7 +115,6 @@ app.post('/api/browse', async (request, response) => {
 
       if (entry.isDirectory()) {
         directories.push(entry.name);
-        directoriesForSummary.push(entry.name);
         continue;
       }
 
@@ -172,7 +123,6 @@ app.post('/api/browse', async (request, response) => {
           const linkTarget = await fs.stat(path.join(resolved, entry.name));
           if (linkTarget.isDirectory()) {
             directories.push(entry.name);
-            directoriesForSummary.push(entry.name);
           }
         } catch (error) {
           console.warn('Failed to resolve symbolic link while browsing directory', {
@@ -185,32 +135,14 @@ app.post('/api/browse', async (request, response) => {
     }
 
     directories.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
-    directoriesForSummary.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 
     const root = path.parse(resolved).root;
     const parent = resolved === root ? null : path.dirname(resolved);
 
-    const rootHasTiffs = await directoryHasTiffFiles(resolved);
-    const tiffSubdirectories: string[] = [];
-
-    await Promise.all(
-      directoriesForSummary.map(async (name) => {
-        const subdirectoryPath = path.join(resolved, name);
-        const containsTiffs = await directoryHasTiffFiles(subdirectoryPath);
-        if (containsTiffs) {
-          tiffSubdirectories.push(name);
-        }
-      })
-    );
-
-    tiffSubdirectories.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
-
     response.json({
       path: resolved,
       parent,
-      directories,
-      tiffSubdirectories,
-      rootHasTiffs
+      directories
     });
   } catch (error) {
     console.error('Failed to browse directory', error);
