@@ -219,7 +219,7 @@ function VolumeViewer({
 
   const updateTrackDrawRanges = useCallback((targetTimeIndex: number) => {
     const lines = trackLinesRef.current;
-    const maxVisibleTime = targetTimeIndex + 1;
+    const maxVisibleTime = targetTimeIndex;
 
     for (const resource of lines.values()) {
       const { geometry, times } = resource;
