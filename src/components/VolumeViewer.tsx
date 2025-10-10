@@ -945,15 +945,17 @@ function VolumeViewer({
       return;
     }
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(container.clientWidth, container.clientHeight);
+    const clearColor = 0x080a0d;
+    renderer.setClearColor(clearColor, 1);
 
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x05080c);
+    scene.background = new THREE.Color(clearColor);
 
     const trackGroup = new THREE.Group();
     trackGroup.name = 'TrackingOverlay';
