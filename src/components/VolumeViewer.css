@@ -235,6 +235,35 @@
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
 }
 
+.z-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: rgba(12, 16, 24, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.75rem;
+  padding: 0.6rem 1rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.z-controls label {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.z-controls input[type='range'] {
+  flex: 1;
+  accent-color: #5b8cff;
+  min-width: 0;
+}
+
+.z-controls .z-label {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
 .time-controls button {
   border: none;
   border-radius: 0.5rem;

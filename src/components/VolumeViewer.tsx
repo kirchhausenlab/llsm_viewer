@@ -7,6 +7,7 @@ import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
 import type { NormalizedVolume } from '../volumeProcessing';
 import { VolumeRenderShader } from '../shaders/volumeRenderShader';
+import { SliceRenderShader } from '../shaders/sliceRenderShader';
 import { getCachedTextureData } from '../textureCache';
 import './VolumeViewer.css';
 import type { TrackDefinition } from '../types/tracks';
@@ -27,6 +28,8 @@ type ViewerLayer = {
   color: string;
 };
 
+type ViewerMode = '3d' | '2d';
+
 type VolumeViewerProps = {
   layers: ViewerLayer[];
   filename: string | null;
@@ -46,6 +49,9 @@ type VolumeViewerProps = {
   trackLineWidth: number;
   followedTrackId: number | null;
   onTrackFollowRequest: (trackId: number) => void;
+  viewerMode: ViewerMode;
+  zIndex: number;
+  onZIndexChange: (index: number) => void;
 };
 
 type VolumeStats = {
@@ -62,6 +68,7 @@ type VolumeResources = {
     depth: number;
   };
   channels: number;
+  mode: ViewerMode;
 };
 
 type PointerState = {
@@ -109,6 +116,13 @@ const MOVEMENT_KEY_MAP: Record<string, keyof MovementState> = {
   KeyD: 'moveRight',
   KeyE: 'moveUp',
   KeyQ: 'moveDown'
+};
+
+type SliceInteractionState = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  startRotation: number;
 };
 
 type HeadModeState = {
@@ -235,7 +249,10 @@ function VolumeViewer({
   trackOpacity,
   trackLineWidth,
   followedTrackId,
-  onTrackFollowRequest
+  onTrackFollowRequest,
+  viewerMode,
+  zIndex,
+  onZIndexChange
 }: VolumeViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -261,6 +278,7 @@ function VolumeViewer({
     moveDown: false
   });
   const trackGroupRef = useRef<THREE.Group | null>(null);
+  const sliceGroupRef = useRef<THREE.Group | null>(null);
   const trackLinesRef = useRef<Map<number, TrackLineResource>>(new Map());
   const raycasterRef = useRef<RaycasterLike | null>(null);
   const timeIndexRef = useRef(0);
@@ -271,6 +289,11 @@ function VolumeViewer({
   const headTrackingControllerRef = useRef<HeadTrackingController | null>(null);
   const headPoseRef = useRef<HeadTrackingPose | null>(null);
   const headModeStateRef = useRef<HeadModeState | null>(null);
+  const viewerModeRef = useRef<ViewerMode>(viewerMode);
+  const zIndexRef = useRef(zIndex);
+  const onZIndexChangeRef = useRef(onZIndexChange);
+  const sliceRotationRef = useRef(0);
+  const sliceInteractionRef = useRef<SliceInteractionState | null>(null);
   const [layerStats, setLayerStats] = useState<Record<string, VolumeStats>>({});
   const [hasMeasured, setHasMeasured] = useState(false);
   const hoveredTrackIdRef = useRef<number | null>(null);
@@ -284,6 +307,7 @@ function VolumeViewer({
   const [headModeStatus, setHeadModeStatus] = useState<'idle' | 'starting' | 'active' | 'error'>('idle');
   const [headModeError, setHeadModeError] = useState<string | null>(null);
   const [headModeHasFace, setHeadModeHasFace] = useState(false);
+  const [sliceRotation, setSliceRotation] = useState(0);
 
   followedTrackIdRef.current = followedTrackId;
 
@@ -543,6 +567,8 @@ function VolumeViewer({
     }
     return null;
   }, [layers]);
+  const volumeDepth = primaryVolume ? primaryVolume.depth : 0;
+  const clampedZIndex = volumeDepth === 0 ? 0 : Math.min(Math.max(zIndex, 0), volumeDepth - 1);
   const hasRenderableLayer = Boolean(primaryVolume);
   const headModeButtonDisabled =
     !headTrackingSupported || !hasRenderableLayer || headModeStatus === 'starting';
@@ -931,6 +957,11 @@ function VolumeViewer({
     scene.add(trackGroup);
     trackGroupRef.current = trackGroup;
 
+    const sliceGroup = new THREE.Group();
+    sliceGroup.name = 'SliceGroup';
+    scene.add(sliceGroup);
+    sliceGroupRef.current = sliceGroup;
+
     const camera = new THREE.PerspectiveCamera(
       38,
       container.clientWidth / container.clientHeight,
@@ -1018,7 +1049,32 @@ function VolumeViewer({
     };
 
     const handlePointerDown = (event: PointerEvent) => {
-      if (event.button !== 0 || !controlsRef.current || !cameraRef.current) {
+      const controls = controlsRef.current;
+      const cameraInstance = cameraRef.current;
+      if (!controls || !cameraInstance) {
+        return;
+      }
+
+      if (viewerModeRef.current === '2d') {
+        if (event.button === 0 && !event.ctrlKey && !event.shiftKey) {
+          event.preventDefault();
+          event.stopPropagation();
+          sliceInteractionRef.current = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            startRotation: sliceRotationRef.current
+          };
+          try {
+            domElement.setPointerCapture(event.pointerId);
+          } catch (error) {
+            // Ignore errors from unsupported pointer capture (e.g., Safari)
+          }
+        }
+        return;
+      }
+
+      if (event.button !== 0) {
         return;
       }
 
@@ -1046,7 +1102,6 @@ function VolumeViewer({
       event.stopPropagation();
       event.stopImmediatePropagation();
 
-      const controls = controlsRef.current;
       const previousEnablePan = mode === 'pan' ? controls.enablePan : null;
       if (mode === 'pan') {
         controls.enablePan = true;
@@ -1072,6 +1127,18 @@ function VolumeViewer({
     };
 
     const handlePointerMove = (event: PointerEvent) => {
+      if (viewerModeRef.current === '2d') {
+        const interaction = sliceInteractionRef.current;
+        if (!interaction || interaction.pointerId !== event.pointerId) {
+          return;
+        }
+        const deltaX = event.clientX - interaction.startX;
+        const deltaY = event.clientY - interaction.startY;
+        const rotationDelta = (deltaX - deltaY) * 0.005;
+        setSliceRotation(interaction.startRotation + rotationDelta);
+        return;
+      }
+
       const state = pointerStateRef.current;
       if (headModeStateRef.current?.isActive) {
         performHoverHitTest(event);
@@ -1113,6 +1180,19 @@ function VolumeViewer({
     };
 
     const handlePointerUp = (event: PointerEvent) => {
+      if (viewerModeRef.current === '2d') {
+        const interaction = sliceInteractionRef.current;
+        if (interaction && interaction.pointerId === event.pointerId) {
+          sliceInteractionRef.current = null;
+          try {
+            domElement.releasePointerCapture(event.pointerId);
+          } catch (error) {
+            // Ignore errors from unsupported pointer capture (e.g., Safari)
+          }
+        }
+        return;
+      }
+
       const state = pointerStateRef.current;
       if (headModeStateRef.current?.isActive) {
         performHoverHitTest(event);
@@ -1142,6 +1222,9 @@ function VolumeViewer({
     };
 
     const handlePointerLeave = () => {
+      if (viewerModeRef.current === '2d') {
+        sliceInteractionRef.current = null;
+      }
       clearHoverState();
     };
 
@@ -1213,6 +1296,27 @@ function VolumeViewer({
           !movementState.moveUp &&
           !movementState.moveDown)
       ) {
+        return;
+      }
+
+      if (viewerModeRef.current === '2d') {
+        const sliceGroup = sliceGroupRef.current;
+        if (!sliceGroup) {
+          return;
+        }
+        const panStep = 0.01;
+        if (movementState.moveLeft) {
+          sliceGroup.position.x -= panStep;
+        }
+        if (movementState.moveRight) {
+          sliceGroup.position.x += panStep;
+        }
+        if (movementState.moveUp) {
+          sliceGroup.position.y += panStep;
+        }
+        if (movementState.moveDown) {
+          sliceGroup.position.y -= panStep;
+        }
         return;
       }
 
@@ -1457,6 +1561,32 @@ function VolumeViewer({
         return;
       }
 
+      if (viewerModeRef.current === '2d') {
+        if (mappedKey === 'moveForward' || mappedKey === 'moveBackward') {
+          if (isPressed) {
+            const dimensions = currentDimensionsRef.current;
+            if (!dimensions) {
+              return;
+            }
+            const maxIndex = Math.max(0, dimensions.depth - 1);
+            if (maxIndex <= 0) {
+              return;
+            }
+            const currentIndex = zIndexRef.current;
+            const delta = mappedKey === 'moveForward' ? 1 : -1;
+            const nextIndex = Math.min(Math.max(currentIndex + delta, 0), maxIndex);
+            if (nextIndex !== currentIndex) {
+              onZIndexChangeRef.current(nextIndex);
+            }
+          }
+          movementState[mappedKey] = false;
+          return;
+        }
+
+        movementState[mappedKey] = isPressed;
+        return;
+      }
+
       movementState[mappedKey] = isPressed;
     };
 
@@ -1492,9 +1622,14 @@ function VolumeViewer({
       if (!resource) {
         return;
       }
-      const activeScene = sceneRef.current;
-      if (activeScene) {
-        activeScene.remove(resource.mesh);
+      const parent = resource.mesh.parent;
+      if (parent) {
+        parent.remove(resource.mesh);
+      } else {
+        const activeScene = sceneRef.current;
+        if (activeScene) {
+          activeScene.remove(resource.mesh);
+        }
       }
       resource.mesh.geometry.dispose();
       resource.mesh.material.dispose();
@@ -1511,6 +1646,15 @@ function VolumeViewer({
     const scene = sceneRef.current;
     const camera = cameraRef.current;
     const controls = controlsRef.current;
+    const sliceGroup = sliceGroupRef.current;
+    if (sliceGroup) {
+      sliceGroup.visible = viewerMode === '2d';
+      if (viewerMode === '2d') {
+        sliceGroup.rotation.set(0, 0, sliceRotationRef.current);
+      } else {
+        sliceGroup.position.set(0, 0, 0);
+      }
+    }
 
     if (!scene || !camera || !controls) {
       removeAllResources();
@@ -1640,6 +1784,7 @@ function VolumeViewer({
       let resources: VolumeResources | null = resourcesRef.current.get(layer.key) ?? null;
       const needsRebuild =
         !resources ||
+        resources.mode !== viewerMode ||
         resources.dimensions.width !== volume.width ||
         resources.dimensions.height !== volume.height ||
         resources.dimensions.depth !== volume.depth ||
@@ -1664,60 +1809,113 @@ function VolumeViewer({
         texture.colorSpace = THREE.LinearSRGBColorSpace;
         texture.needsUpdate = true;
 
-        const shader = VolumeRenderShader;
-        const uniforms = THREE.UniformsUtils.clone(shader.uniforms);
-        uniforms.u_data.value = texture;
-        uniforms.u_size.value.set(volume.width, volume.height, volume.depth);
-        uniforms.u_clim.value.set(0, 1);
-        uniforms.u_renderstyle.value = 0;
-        uniforms.u_renderthreshold.value = 0.5;
-        uniforms.u_cmdata.value = colormapTexture;
-        uniforms.u_channels.value = volume.channels;
-        uniforms.u_contrast.value = layer.contrast;
-        uniforms.u_brightness.value = layer.brightness;
+        if (viewerMode === '3d') {
+          const shader = VolumeRenderShader;
+          const uniforms = THREE.UniformsUtils.clone(shader.uniforms);
+          uniforms.u_data.value = texture;
+          uniforms.u_size.value.set(volume.width, volume.height, volume.depth);
+          uniforms.u_clim.value.set(0, 1);
+          uniforms.u_renderstyle.value = 0;
+          uniforms.u_renderthreshold.value = 0.5;
+          uniforms.u_cmdata.value = colormapTexture;
+          uniforms.u_channels.value = volume.channels;
+          uniforms.u_contrast.value = layer.contrast;
+          uniforms.u_brightness.value = layer.brightness;
 
-        const material = new THREE.ShaderMaterial({
-          uniforms,
-          vertexShader: shader.vertexShader,
-          fragmentShader: shader.fragmentShader,
-          side: THREE.BackSide,
-          transparent: true
-        });
-        const baseMaterial = material as unknown as { depthWrite: boolean };
-        baseMaterial.depthWrite = false;
+          const material = new THREE.ShaderMaterial({
+            uniforms,
+            vertexShader: shader.vertexShader,
+            fragmentShader: shader.fragmentShader,
+            side: THREE.BackSide,
+            transparent: true
+          });
+          const baseMaterial = material as unknown as { depthWrite: boolean };
+          baseMaterial.depthWrite = false;
 
-        const geometry = new THREE.BoxGeometry(volume.width, volume.height, volume.depth);
-        geometry.translate(volume.width / 2 - 0.5, volume.height / 2 - 0.5, volume.depth / 2 - 0.5);
+          const geometry = new THREE.BoxGeometry(volume.width, volume.height, volume.depth);
+          geometry.translate(volume.width / 2 - 0.5, volume.height / 2 - 0.5, volume.depth / 2 - 0.5);
 
-        const mesh = new THREE.Mesh(geometry, material);
-        const maxDimension = Math.max(volume.width, volume.height, volume.depth);
-        const scale = 1 / maxDimension;
-        mesh.scale.setScalar(scale);
+          const mesh = new THREE.Mesh(geometry, material);
+          const maxDimension = Math.max(volume.width, volume.height, volume.depth);
+          const scale = 1 / maxDimension;
+          mesh.scale.setScalar(scale);
 
-        const centerOffset = new THREE.Vector3(
-          volume.width / 2 - 0.5,
-          volume.height / 2 - 0.5,
-          volume.depth / 2 - 0.5
-        ).multiplyScalar(scale);
-        mesh.position.set(-centerOffset.x, -centerOffset.y, -centerOffset.z);
+          const centerOffset = new THREE.Vector3(
+            volume.width / 2 - 0.5,
+            volume.height / 2 - 0.5,
+            volume.depth / 2 - 0.5
+          ).multiplyScalar(scale);
+          mesh.position.set(-centerOffset.x, -centerOffset.y, -centerOffset.z);
 
-        const meshObject = mesh as unknown as { visible: boolean; renderOrder: number };
-        meshObject.visible = layer.visible;
-        meshObject.renderOrder = index;
+          const meshObject = mesh as unknown as { visible: boolean; renderOrder: number };
+          meshObject.visible = layer.visible;
+          meshObject.renderOrder = index;
 
-        scene.add(mesh);
-        mesh.updateMatrixWorld(true);
+          scene.add(mesh);
+          mesh.updateMatrixWorld(true);
 
-        const cameraUniform = mesh.material.uniforms.u_cameraPos.value;
-        cameraUniform.copy(camera.position);
-        mesh.worldToLocal(cameraUniform);
+          const cameraUniform = mesh.material.uniforms.u_cameraPos.value;
+          cameraUniform.copy(camera.position);
+          mesh.worldToLocal(cameraUniform);
 
-        resourcesRef.current.set(layer.key, {
-          mesh,
-          texture,
-          dimensions: { width: volume.width, height: volume.height, depth: volume.depth },
-          channels: volume.channels
-        });
+          resourcesRef.current.set(layer.key, {
+            mesh,
+            texture,
+            dimensions: { width: volume.width, height: volume.height, depth: volume.depth },
+            channels: volume.channels,
+            mode: viewerMode
+          });
+        } else {
+          const shader = SliceRenderShader;
+          const uniforms = THREE.UniformsUtils.clone(shader.uniforms);
+          uniforms.u_data.value = texture;
+          uniforms.u_size.value.set(volume.width, volume.height, volume.depth);
+          uniforms.u_cmdata.value = colormapTexture;
+          uniforms.u_channels.value = volume.channels;
+          uniforms.u_contrast.value = layer.contrast;
+          uniforms.u_brightness.value = layer.brightness;
+          const clampedIndex = Math.min(Math.max(zIndexRef.current, 0), Math.max(0, volume.depth - 1));
+          uniforms.u_sliceIndex.value = clampedIndex;
+
+          const material = new THREE.ShaderMaterial({
+            uniforms,
+            vertexShader: shader.vertexShader,
+            fragmentShader: shader.fragmentShader,
+            transparent: true,
+            side: THREE.DoubleSide,
+            depthTest: false,
+            depthWrite: false
+          });
+
+          const geometry = new THREE.PlaneGeometry(volume.width, volume.height);
+          geometry.translate(volume.width / 2 - 0.5, volume.height / 2 - 0.5, 0);
+
+          const mesh = new THREE.Mesh(geometry, material);
+          const maxDimension = Math.max(volume.width, volume.height, volume.depth);
+          const scale = 1 / maxDimension;
+          mesh.scale.setScalar(scale);
+          const depthCenter = (volume.depth - 1) / 2;
+          const offsetX = -(volume.width / 2 - 0.5) * scale;
+          const offsetY = -(volume.height / 2 - 0.5) * scale;
+          const offsetZ = (clampedIndex - depthCenter) * scale;
+          mesh.position.set(offsetX, offsetY, offsetZ);
+          const meshObject = mesh as unknown as { visible: boolean; renderOrder: number };
+          meshObject.visible = layer.visible;
+          meshObject.renderOrder = index;
+          if (sliceGroup) {
+            sliceGroup.add(mesh);
+          } else {
+            scene.add(mesh);
+          }
+
+          resourcesRef.current.set(layer.key, {
+            mesh,
+            texture,
+            dimensions: { width: volume.width, height: volume.height, depth: volume.depth },
+            channels: volume.channels,
+            mode: viewerMode
+          });
+        }
         resources = resourcesRef.current.get(layer.key) ?? null;
       }
 
@@ -1730,17 +1928,31 @@ function VolumeViewer({
         const meshObject = mesh as unknown as { visible: boolean; renderOrder: number };
         meshObject.visible = layer.visible;
         meshObject.renderOrder = index;
-        const materialUniforms = mesh.material.uniforms;
+
+        const materialUniforms = (mesh.material as THREE.ShaderMaterial).uniforms;
         materialUniforms.u_data.value = resources.texture;
         materialUniforms.u_channels.value = volume.channels;
         materialUniforms.u_contrast.value = layer.contrast;
         materialUniforms.u_brightness.value = layer.brightness;
         materialUniforms.u_cmdata.value = colormapTexture;
-
-        const localCameraPosition = camera.position.clone();
-        mesh.updateMatrixWorld();
-        mesh.worldToLocal(localCameraPosition);
-        materialUniforms.u_cameraPos.value.copy(localCameraPosition);
+        if (resources.mode === '3d') {
+          const localCameraPosition = camera.position.clone();
+          mesh.updateMatrixWorld();
+          mesh.worldToLocal(localCameraPosition);
+          materialUniforms.u_cameraPos.value.copy(localCameraPosition);
+        } else {
+          materialUniforms.u_size.value.set(volume.width, volume.height, volume.depth);
+          const maxIndex = Math.max(0, volume.depth - 1);
+          const clampedIndex = Math.min(Math.max(zIndexRef.current, 0), maxIndex);
+          materialUniforms.u_sliceIndex.value = clampedIndex;
+          const maxDimension = Math.max(volume.width, volume.height, volume.depth);
+          const scale = 1 / Math.max(maxDimension, 1);
+          const depthCenter = (volume.depth - 1) / 2;
+          const offsetX = -(volume.width / 2 - 0.5) * scale;
+          const offsetY = -(volume.height / 2 - 0.5) * scale;
+          const offsetZ = (clampedIndex - depthCenter) * scale;
+          mesh.position.set(offsetX, offsetY, offsetZ);
+        }
       }
 
       nextStats[layer.key] = { min: volume.min, max: volume.max };
@@ -1754,7 +1966,7 @@ function VolumeViewer({
     }
 
     setLayerStats(nextStats);
-  }, [disableHeadMode, getColormapTexture, layers]);
+  }, [disableHeadMode, getColormapTexture, layers, viewerMode, zIndex]);
 
   useEffect(() => {
     return () => {
@@ -1777,6 +1989,29 @@ function VolumeViewer({
       headPoseRef.current = null;
     };
   }, [handleHeadPose]);
+
+  useEffect(() => {
+    sliceRotationRef.current = sliceRotation;
+    const sliceGroup = sliceGroupRef.current;
+    if (sliceGroup) {
+      sliceGroup.rotation.set(0, 0, sliceRotation);
+    }
+  }, [sliceRotation]);
+
+  useEffect(() => {
+    viewerModeRef.current = viewerMode;
+    if (viewerMode === '2d') {
+      setSliceRotation(0);
+    }
+  }, [viewerMode]);
+
+  useEffect(() => {
+    zIndexRef.current = zIndex;
+  }, [zIndex]);
+
+  useEffect(() => {
+    onZIndexChangeRef.current = onZIndexChange;
+  }, [onZIndexChange]);
 
   return (
     <div className="volume-viewer">
@@ -1849,6 +2084,24 @@ function VolumeViewer({
           ) : null}
         </div>
       </section>
+
+      {viewerMode === '2d' && volumeDepth > 0 ? (
+        <section className="z-controls">
+          <label htmlFor="z-slider">Z slice</label>
+          <input
+            id="z-slider"
+            type="range"
+            min={0}
+            max={Math.max(0, volumeDepth - 1)}
+            value={clampedZIndex}
+            onChange={(event) => onZIndexChange(Number(event.target.value))}
+            disabled={isLoading || volumeDepth <= 1}
+          />
+          <span className="z-label">
+            {volumeDepth === 0 ? 0 : clampedZIndex + 1} / {volumeDepth}
+          </span>
+        </section>
+      ) : null}
 
     {totalTimepoints > 0 && (
       <section className="time-controls">
