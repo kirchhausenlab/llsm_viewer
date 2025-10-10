@@ -115,3 +115,9 @@ Next steps:
 
 ## Head mode orientation fix
 - Derived the default head-mode screen basis from the active camera orientation so enabling the feature after orbiting still computes a stable off-axis projection.
+- Cached the last known head pose to avoid sudden jumps when re-entering manual camera control, smoothing the transition out of head mode.
+
+## Worker pool build resilience
+- Guarded the worker thread message port reference so TypeScript recognizes it as always available in worker contexts, satisfying strict null checks during compilation.
+- Normalized the transferable buffer handling inside the volume loader worker to produce concrete `ArrayBuffer` instances, keeping zero-copy transfers functional on every platform.
+- Raised the server TypeScript target to ES2022 and replaced Map iteration with `forEach` so the worker pool can compile cleanly without downlevel iteration flags on both Windows and Linux.
