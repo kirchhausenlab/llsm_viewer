@@ -189,10 +189,10 @@ export class LoadVolumeWorkerPool {
     }
     this.jobQueue.length = 0;
 
-    this.activeJobs.forEach((job, worker) => {
+    for (const [worker, job] of this.activeJobs.entries()) {
       job.reject(new LoadVolumeWorkerError('Worker pool destroyed.'));
       this.activeJobs.delete(worker);
-    });
+    }
 
     await Promise.allSettled(
       Array.from(this.workers.values()).map((worker) => worker.terminate())
