@@ -115,3 +115,8 @@ Next steps:
 
 ## Head mode orientation fix
 - Derived the default head-mode screen basis from the active camera orientation so enabling the feature after orbiting still computes a stable off-axis projection.
+
+## 2D slice renderer rewrite
+- Replaced the 2D viewer's slice renderer with a DataTexture pipeline that extracts per-slice textures on the CPU, bypassing the failing sampler3D shader path.
+- Added reusable helpers for packing slice data so grayscale and multi-channel volumes share the same upload logic.
+- Updated the slice shader to sample 2D textures, enforce a minimum opacity, and honor layer tint/contrast uniforms for visible cross-sections.
