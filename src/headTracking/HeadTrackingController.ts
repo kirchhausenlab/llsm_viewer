@@ -1,4 +1,5 @@
-import { FaceLandmarker, FilesetResolver, type FaceLandmarkerResult } from '@mediapipe/tasks-vision';
+import type { FaceLandmarker, FaceLandmarkerResult } from './mediapipeTypes';
+import { loadFaceLandmarkerModule } from './mediapipeLoader';
 
 export type HeadTrackingPose = {
   hasFace: boolean;
@@ -133,6 +134,7 @@ export class HeadTrackingController {
     if (this.landmarker) {
       return this.landmarker;
     }
+    const { FilesetResolver, FaceLandmarker } = await loadFaceLandmarkerModule();
     const resolver = await FilesetResolver.forVisionTasks(DEFAULT_WASM_ROOT);
     return FaceLandmarker.createFromOptions(resolver, {
       baseOptions: {
@@ -157,7 +159,7 @@ export class HeadTrackingController {
     };
 
     if (this.video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-      const result = this.landmarker.detectForVideo(this.video, now) as FaceLandmarkerResult | null;
+      const result = this.landmarker.detectForVideo(this.video, now);
       if (result && result.faceLandmarks.length > 0) {
         const normalized = this.computeNormalizedPose(result);
         if (normalized) {
