@@ -294,6 +294,7 @@ function VolumeViewer({
   const onZIndexChangeRef = useRef(onZIndexChange);
   const sliceRotationRef = useRef(0);
   const sliceInteractionRef = useRef<SliceInteractionState | null>(null);
+  const needsSliceInitializationRef = useRef(true);
   const [layerStats, setLayerStats] = useState<Record<string, VolumeStats>>({});
   const [hasMeasured, setHasMeasured] = useState(false);
   const hoveredTrackIdRef = useRef<number | null>(null);
@@ -501,6 +502,9 @@ function VolumeViewer({
   }, [handleHeadPose, headTrackingSupported]);
 
   const toggleHeadMode = useCallback(() => {
+    if (viewerModeRef.current === '2d') {
+      return;
+    }
     if (isHeadModeActive) {
       disableHeadMode();
     } else {
@@ -571,7 +575,7 @@ function VolumeViewer({
   const clampedZIndex = volumeDepth === 0 ? 0 : Math.min(Math.max(zIndex, 0), volumeDepth - 1);
   const hasRenderableLayer = Boolean(primaryVolume);
   const headModeButtonDisabled =
-    !headTrackingSupported || !hasRenderableLayer || headModeStatus === 'starting';
+    viewerMode !== '3d' || !headTrackingSupported || !hasRenderableLayer || headModeStatus === 'starting';
   const headModeButtonLabel = isHeadModeActive ? 'Disable head mode' : 'Enable head mode';
   const headModeIndicatorLabel = headTrackingSupported
     ? headModeStatus === 'starting'
@@ -1678,6 +1682,7 @@ function VolumeViewer({
         position: camera.position.clone(),
         target: controls.target.clone()
       };
+      needsSliceInitializationRef.current = true;
       const trackGroup = trackGroupRef.current;
       if (trackGroup) {
         trackGroup.visible = false;
@@ -1702,6 +1707,7 @@ function VolumeViewer({
       }
       removeAllResources();
       currentDimensionsRef.current = { width, height, depth };
+      needsSliceInitializationRef.current = true;
 
       const maxDimension = Math.max(width, height, depth);
       const scale = 1 / maxDimension;
@@ -2002,8 +2008,33 @@ function VolumeViewer({
     viewerModeRef.current = viewerMode;
     if (viewerMode === '2d') {
       setSliceRotation(0);
+      if (headModeStateRef.current?.isActive || isHeadModeActive) {
+        disableHeadMode();
+      }
+      const dimensions = currentDimensionsRef.current;
+      if (dimensions) {
+        const maxIndex = Math.max(0, dimensions.depth - 1);
+        const defaultIndex = maxIndex > 0 ? Math.round(maxIndex / 2) : 0;
+        let targetIndex = Math.min(Math.max(zIndexRef.current, 0), maxIndex);
+        if (
+          needsSliceInitializationRef.current ||
+          zIndexRef.current < 0 ||
+          zIndexRef.current > maxIndex ||
+          (zIndexRef.current === 0 && defaultIndex !== 0)
+        ) {
+          targetIndex = defaultIndex;
+        }
+        needsSliceInitializationRef.current = false;
+        if (targetIndex !== zIndexRef.current) {
+          zIndexRef.current = targetIndex;
+          onZIndexChangeRef.current(targetIndex);
+        }
+      } else {
+        needsSliceInitializationRef.current = true;
+      }
+      handleResetView();
     }
-  }, [viewerMode]);
+  }, [disableHeadMode, handleResetView, isHeadModeActive, viewerMode]);
 
   useEffect(() => {
     zIndexRef.current = zIndex;
@@ -2041,20 +2072,22 @@ function VolumeViewer({
           ) : null}
         </div>
         <div className="viewer-meta">
-          <div className="head-mode-controls">
-            <button
-              type="button"
-              onClick={toggleHeadMode}
-              disabled={headModeButtonDisabled}
-              className={isHeadModeActive ? 'head-mode-toggle is-active' : 'head-mode-toggle'}
-            >
-              {headModeButtonLabel}
-            </button>
-            <span className={headModeIndicatorClass}>
-              {headModeIndicatorLabel}
-            </span>
-            {headModeError ? <span className="head-mode-error">{headModeError}</span> : null}
-          </div>
+          {viewerMode === '3d' ? (
+            <div className="head-mode-controls">
+              <button
+                type="button"
+                onClick={toggleHeadMode}
+                disabled={headModeButtonDisabled}
+                className={isHeadModeActive ? 'head-mode-toggle is-active' : 'head-mode-toggle'}
+              >
+                {headModeButtonLabel}
+              </button>
+              <span className={headModeIndicatorClass}>
+                {headModeIndicatorLabel}
+              </span>
+              {headModeError ? <span className="head-mode-error">{headModeError}</span> : null}
+            </div>
+          ) : null}
           <div className="time-info">
             <span>Frame {totalTimepoints === 0 ? 0 : timeIndex + 1}</span>
             <span>/</span>
