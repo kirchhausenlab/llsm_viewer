@@ -1943,7 +1943,7 @@ function VolumeViewer({
         resources = resourcesRef.current.get(layer.key) ?? null;
       } else {
         const maxIndex = Math.max(0, volume.depth - 1);
-        const clampedIndex = Math.min(Math.max(zIndexRef.current, 0), maxIndex);
+        const clampedIndex = Math.min(Math.max(zIndex, 0), maxIndex);
         const expectedLength = getExpectedSliceBufferLength(volume);
 
         const needsRebuild =
@@ -2051,7 +2051,7 @@ function VolumeViewer({
           materialUniforms.u_cameraPos.value.copy(localCameraPosition);
         } else {
           const maxIndex = Math.max(0, volume.depth - 1);
-          const clampedIndex = Math.min(Math.max(zIndexRef.current, 0), maxIndex);
+          const clampedIndex = Math.min(Math.max(zIndex, 0), maxIndex);
           const existingBuffer = resources.sliceBuffer ?? null;
           const sliceInfo = prepareSliceTexture(volume, clampedIndex, existingBuffer);
           resources.sliceBuffer = sliceInfo.data;
