@@ -19,8 +19,6 @@ export type DirectoryListing = {
   path: string;
   parent: string | null;
   directories: string[];
-  tiffSubdirectories: string[];
-  rootHasTiffs: boolean;
 };
 
 export type CsvBrowserListing = {
