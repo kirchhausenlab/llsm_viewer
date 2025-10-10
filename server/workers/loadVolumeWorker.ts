@@ -6,9 +6,11 @@ import type {
   LoadVolumeWorkerResponse,
   VolumeDataType,
   VolumeMetadata
-} from './types';
+} from './types.js';
 
-if (!parentPort) {
+const port = parentPort;
+
+if (!port) {
   throw new Error('loadVolumeWorker must be run as a worker thread.');
 }
 
@@ -29,10 +31,10 @@ process.on('exit', () => {
 
 const send = (message: LoadVolumeWorkerResponse, transfer?: ArrayBuffer[]) => {
   if (transfer) {
-    parentPort.postMessage(message, transfer);
+    port.postMessage(message, transfer);
     return;
   }
-  parentPort.postMessage(message);
+  port.postMessage(message);
 };
 
 type SupportedTypedArray =
@@ -57,7 +59,7 @@ function fail(message: string, statusCode: number): never {
   throw error;
 }
 
-parentPort.on('message', async (rawMessage: LoadVolumeRequestMessage) => {
+port.on('message', async (rawMessage: LoadVolumeRequestMessage) => {
   const { id, directoryPath, filename } = rawMessage;
   try {
     const resolvedDirectory = path.resolve(directoryPath);
@@ -241,8 +243,16 @@ parentPort.on('message', async (rawMessage: LoadVolumeRequestMessage) => {
       max: globalMax
     };
 
-    const buffer = combinedData.buffer;
-    send({ id, ok: true, metadata, buffer }, [buffer]);
+    const sourceBuffer = combinedData.buffer;
+    let transferableBuffer: ArrayBuffer;
+    if (sourceBuffer instanceof ArrayBuffer) {
+      transferableBuffer = sourceBuffer;
+    } else {
+      transferableBuffer = new ArrayBuffer(sourceBuffer.byteLength);
+      new Uint8Array(transferableBuffer).set(new Uint8Array(sourceBuffer));
+    }
+
+    send({ id, ok: true, metadata, buffer: transferableBuffer }, [transferableBuffer]);
   } catch (rawError) {
     const error = rawError as WorkerError;
     send({

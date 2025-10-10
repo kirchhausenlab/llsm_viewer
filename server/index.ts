@@ -5,7 +5,7 @@ import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { Pool } from 'geotiff';
 import { availableParallelism, cpus } from 'node:os';
-import { LoadVolumeWorkerPool, LoadVolumeWorkerError } from './workers/loadVolumeWorkerPool';
+import { LoadVolumeWorkerPool, LoadVolumeWorkerError } from './workers/loadVolumeWorkerPool.js';
 
 const app = express();
 const HOST = process.env.HOST ?? '0.0.0.0';

@@ -7,7 +7,7 @@ import type {
   LoadVolumeSuccessMessage,
   LoadVolumeWorkerResponse,
   VolumeMetadata
-} from './types';
+} from './types.js';
 
 export class LoadVolumeWorkerError extends Error {
   public readonly statusCode?: number;
@@ -189,10 +189,10 @@ export class LoadVolumeWorkerPool {
     }
     this.jobQueue.length = 0;
 
-    for (const [worker, job] of this.activeJobs.entries()) {
+    this.activeJobs.forEach((job, worker) => {
       job.reject(new LoadVolumeWorkerError('Worker pool destroyed.'));
       this.activeJobs.delete(worker);
-    }
+    });
 
     await Promise.allSettled(
       Array.from(this.workers.values()).map((worker) => worker.terminate())
