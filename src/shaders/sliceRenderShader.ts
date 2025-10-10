@@ -1,10 +1,7 @@
-import { Vector3 } from 'three';
-import type { Data3DTexture, DataTexture } from 'three';
+import type { DataTexture } from 'three';
 
 type SliceUniforms = {
-  u_size: { value: Vector3 };
-  u_sliceIndex: { value: number };
-  u_data: { value: Data3DTexture | null };
+  u_slice: { value: DataTexture | null };
   u_cmdata: { value: DataTexture | null };
   u_channels: { value: number };
   u_contrast: { value: number };
@@ -12,9 +9,7 @@ type SliceUniforms = {
 };
 
 const uniforms = {
-  u_size: { value: new Vector3(1, 1, 1) },
-  u_sliceIndex: { value: 0 },
-  u_data: { value: null as Data3DTexture | null },
+  u_slice: { value: null as DataTexture | null },
   u_cmdata: { value: null as DataTexture | null },
   u_channels: { value: 1 },
   u_contrast: { value: 1 },
@@ -33,16 +28,14 @@ export const SliceRenderShader = {
   `,
   fragmentShader: /* glsl */ `
     precision highp float;
-    precision mediump sampler3D;
+    precision mediump sampler2D;
 
-    uniform vec3 u_size;
-    uniform float u_sliceIndex;
     uniform int u_channels;
     uniform float u_contrast;
     uniform float u_brightness;
 
-    uniform sampler3D u_data;
     uniform sampler2D u_cmdata;
+    uniform sampler2D u_slice;
 
     varying vec2 v_uv;
 
@@ -73,23 +66,8 @@ export const SliceRenderShader = {
     }
 
     vec4 sample_slice(vec2 uv) {
-      float width = max(u_size.x, 1.0);
-      float height = max(u_size.y, 1.0);
-      float depth = max(u_size.z, 1.0);
-
-      float sliceIndex = clamp(u_sliceIndex, 0.0, depth - 1.0);
-      float normalizedZ = (sliceIndex + 0.5) / depth;
-
-      float clampedX = clamp(uv.x, 0.0, 1.0);
-      float clampedY = clamp(uv.y, 0.0, 1.0);
-
-      float xIndex = floor(clampedX * width);
-      float yIndex = floor(clampedY * height);
-
-      float normalizedX = (xIndex + 0.5) / width;
-      float normalizedY = (yIndex + 0.5) / height;
-
-      return texture(u_data, vec3(normalizedX, normalizedY, normalizedZ));
+      vec2 clamped = clamp(uv, 0.0, 1.0);
+      return texture2D(u_slice, clamped);
     }
 
     vec4 apply_colormap(float intensity) {
@@ -103,10 +81,12 @@ export const SliceRenderShader = {
       float adjusted = adjust_intensity(intensity);
 
       if (u_channels == 1) {
-        gl_FragColor = apply_colormap(adjusted);
+        vec4 tinted = apply_colormap(adjusted);
+        gl_FragColor = vec4(tinted.rgb, max(adjusted, 0.05));
       } else {
         vec3 adjustedColor = clamp(sample.rgb + vec3(u_brightness), 0.0, 1.0);
         float alpha = clamp(adjusted, 0.0, 1.0);
+        alpha = max(alpha, 0.05);
         gl_FragColor = vec4(adjustedColor, alpha);
       }
     }
