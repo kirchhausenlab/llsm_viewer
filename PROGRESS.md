@@ -124,7 +124,3 @@ Next steps:
 ## 2D slice index refresh
 - Updated the slice rendering pipeline to derive the active depth index directly from the component props so keyboard and slider changes immediately refresh the displayed plane.
 - Reused the prop-derived index both for resource creation and per-frame slice updates, keeping the mesh translation and CPU buffer packing in sync with the latest UI state.
-
-## 2D viewer removal
-- Removed the legacy 2D slice renderer, its UI controls, and supporting state so the application exclusively exposes the 3D ray-marched viewer.
-- Simplified the rendering pipeline to maintain only 3D resources and interactions, eliminating the stale mode toggles and slice-specific shaders.

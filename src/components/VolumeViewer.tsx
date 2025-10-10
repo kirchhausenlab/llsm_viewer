@@ -1740,7 +1740,90 @@ function VolumeViewer({
             mesh,
             texture,
             dimensions: { width: volume.width, height: volume.height, depth: volume.depth },
-            channels: volume.channels
+            channels: volume.channels,
+            mode: viewerMode
+          });
+        }
+
+        resources = resourcesRef.current.get(layer.key) ?? null;
+      } else {
+        const maxIndex = Math.max(0, volume.depth - 1);
+        const clampedIndex = Math.min(Math.max(zIndex, 0), maxIndex);
+        const expectedLength = getExpectedSliceBufferLength(volume);
+
+        const needsRebuild =
+          !resources ||
+          resources.mode !== viewerMode ||
+          resources.dimensions.width !== volume.width ||
+          resources.dimensions.height !== volume.height ||
+          resources.dimensions.depth !== volume.depth ||
+          resources.channels !== volume.channels ||
+          !(resources.texture instanceof THREE.DataTexture) ||
+          (resources.sliceBuffer?.length ?? 0) !== expectedLength;
+
+        if (needsRebuild) {
+          removeResource(layer.key);
+
+          const sliceInfo = prepareSliceTexture(volume, clampedIndex, null);
+          const texture = new THREE.DataTexture(
+            sliceInfo.data,
+            volume.width,
+            volume.height,
+            sliceInfo.format
+          );
+          texture.type = THREE.UnsignedByteType;
+          texture.minFilter = THREE.LinearFilter;
+          texture.magFilter = THREE.LinearFilter;
+          texture.unpackAlignment = 1;
+          texture.colorSpace = THREE.LinearSRGBColorSpace;
+          texture.needsUpdate = true;
+
+          const shader = SliceRenderShader;
+          const uniforms = THREE.UniformsUtils.clone(shader.uniforms);
+          uniforms.u_slice.value = texture;
+          uniforms.u_cmdata.value = colormapTexture;
+          uniforms.u_channels.value = volume.channels;
+          uniforms.u_contrast.value = layer.contrast;
+          uniforms.u_brightness.value = layer.brightness;
+
+          const material = new THREE.ShaderMaterial({
+            uniforms,
+            vertexShader: shader.vertexShader,
+            fragmentShader: shader.fragmentShader,
+            transparent: true,
+            side: THREE.DoubleSide,
+            depthTest: false,
+            depthWrite: false
+          });
+
+          const geometry = new THREE.PlaneGeometry(volume.width, volume.height);
+          geometry.translate(volume.width / 2 - 0.5, volume.height / 2 - 0.5, 0);
+
+          const mesh = new THREE.Mesh(geometry, material);
+          const maxDimension = Math.max(volume.width, volume.height, volume.depth);
+          const scale = 1 / maxDimension;
+          mesh.scale.setScalar(scale);
+          const depthCenter = (volume.depth - 1) / 2;
+          const offsetX = -(volume.width / 2 - 0.5) * scale;
+          const offsetY = -(volume.height / 2 - 0.5) * scale;
+          const offsetZ = (clampedIndex - depthCenter) * scale;
+          mesh.position.set(offsetX, offsetY, offsetZ);
+          const meshObject = mesh as unknown as { visible: boolean; renderOrder: number };
+          meshObject.visible = layer.visible;
+          meshObject.renderOrder = index;
+          if (sliceGroup) {
+            sliceGroup.add(mesh);
+          } else {
+            scene.add(mesh);
+          }
+
+          resourcesRef.current.set(layer.key, {
+            mesh,
+            texture,
+            dimensions: { width: volume.width, height: volume.height, depth: volume.depth },
+            channels: volume.channels,
+            mode: viewerMode,
+            sliceBuffer: sliceInfo.data
           });
         }
 
@@ -1759,12 +1842,31 @@ function VolumeViewer({
         materialUniforms.u_brightness.value = layer.brightness;
         materialUniforms.u_cmdata.value = colormapTexture;
 
-        const preparation = cachedPreparation ?? getCachedTextureData(volume);
-        const dataTexture = resources.texture;
-        dataTexture.image.data = preparation.data;
-        dataTexture.format = preparation.format;
-        dataTexture.needsUpdate = true;
-        materialUniforms.u_data.value = dataTexture;
+        if (resources.mode === '3d') {
+          const preparation = cachedPreparation ?? getCachedTextureData(volume);
+          const dataTexture = resources.texture as THREE.Data3DTexture;
+          dataTexture.image.data = preparation.data;
+          dataTexture.format = preparation.format;
+          dataTexture.needsUpdate = true;
+          materialUniforms.u_data.value = dataTexture;
+
+          const localCameraPosition = camera.position.clone();
+          mesh.updateMatrixWorld();
+          mesh.worldToLocal(localCameraPosition);
+          materialUniforms.u_cameraPos.value.copy(localCameraPosition);
+        } else {
+          const maxIndex = Math.max(0, volume.depth - 1);
+          const clampedIndex = Math.min(Math.max(zIndex, 0), maxIndex);
+          const existingBuffer = resources.sliceBuffer ?? null;
+          const sliceInfo = prepareSliceTexture(volume, clampedIndex, existingBuffer);
+          resources.sliceBuffer = sliceInfo.data;
+          const dataTexture = resources.texture as THREE.DataTexture;
+          dataTexture.image.data = sliceInfo.data;
+          dataTexture.image.width = volume.width;
+          dataTexture.image.height = volume.height;
+          dataTexture.format = sliceInfo.format;
+          dataTexture.needsUpdate = true;
+          materialUniforms.u_slice.value = dataTexture;
 
         const localCameraPosition = camera.position.clone();
         mesh.updateMatrixWorld();
