@@ -97,8 +97,6 @@ function App() {
   const [trackLineWidth, setTrackLineWidth] = useState(DEFAULT_TRACK_LINE_WIDTH);
   const [followedTrackId, setFollowedTrackId] = useState<number | null>(null);
   const [lastBrowsedPath, setLastBrowsedPath] = useState<string | null>(null);
-  const [viewerMode, setViewerMode] = useState<'3d' | '2d'>('3d');
-  const [zIndex, setZIndex] = useState(0);
 
   const loadRequestRef = useRef(0);
   const hasTrackDataRef = useRef(false);
@@ -832,35 +830,6 @@ function App() {
       }),
     [layerSettings, layers, selectedIndex, visibleLayers]
   );
-  const viewerDepth = useMemo(() => {
-    for (const layer of viewerLayers) {
-      if (layer.volume) {
-        return layer.volume.depth;
-      }
-    }
-    return 0;
-  }, [viewerLayers]);
-
-  useEffect(() => {
-    setZIndex((current) => {
-      if (viewerDepth <= 0) {
-        return 0;
-      }
-      const maxIndex = viewerDepth - 1;
-      if (current < 0) {
-        return 0;
-      }
-      if (current > maxIndex) {
-        return maxIndex;
-      }
-      return current;
-    });
-  }, [viewerDepth]);
-
-  const handleToggleViewerMode = useCallback(() => {
-    setViewerMode((mode) => (mode === '3d' ? '2d' : '3d'));
-  }, []);
-
   return (
     <div className="app">
       <aside className="sidebar sidebar-left">
@@ -1120,14 +1089,6 @@ function App() {
           </span>
           <button
             type="button"
-            onClick={handleToggleViewerMode}
-            className="viewer-mode-toggle"
-            disabled={viewerDepth === 0}
-          >
-            {viewerMode === '3d' ? 'Switch to 2D mode' : 'Switch to 3D mode'}
-          </button>
-          <button
-            type="button"
             onClick={handleStopTrackFollow}
             disabled={followedTrackId === null}
             className="viewer-stop-tracking"
@@ -1154,9 +1115,6 @@ function App() {
           trackLineWidth={trackLineWidth}
           followedTrackId={followedTrackId}
           onTrackFollowRequest={handleTrackFollowFromViewer}
-          viewerMode={viewerMode}
-          zIndex={zIndex}
-          onZIndexChange={setZIndex}
         />
       </main>
       <aside className="sidebar sidebar-right">
