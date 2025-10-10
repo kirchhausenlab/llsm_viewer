@@ -1460,17 +1460,11 @@ function VolumeViewer({
 
       const resources = resourcesRef.current;
       for (const resource of resources.values()) {
-        const { mesh, mode } = resource;
+        const { mesh } = resource;
         mesh.updateMatrixWorld();
-
-        if (mode === '3d') {
-          const material = mesh.material as THREE.ShaderMaterial;
-          const cameraUniform = material.uniforms?.u_cameraPos;
-          if (cameraUniform?.value instanceof THREE.Vector3) {
-            cameraUniform.value.copy(camera.position);
-            mesh.worldToLocal(cameraUniform.value);
-          }
-        }
+        const cameraUniform = mesh.material.uniforms.u_cameraPos.value;
+        cameraUniform.copy(camera.position);
+        mesh.worldToLocal(cameraUniform);
       }
       renderer.render(scene, camera);
       animationFrameRef.current = requestAnimationFrame(renderLoop);
