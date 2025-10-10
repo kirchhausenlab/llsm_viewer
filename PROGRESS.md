@@ -99,3 +99,7 @@ Next steps:
 ## File system access hardening
 - Stopped the directory browser endpoint from scanning for TIFF files during navigation so protected Windows folders no longer trigger permission errors while exploring the tree.
 - Limited TIFF enumeration to the explicit dataset load step, aligning the backend's filesystem access with the UI workflow and preventing unnecessary volume probing.
+
+## Float and 32-bit volume ingestion
+- Extended the TIFF ingestion pipeline to accept every GeoTIFF numeric sample format, including signed/unsigned 32-bit integers and both 32-bit and 64-bit floating-point rasters, while preserving min/max tracking.
+- Threaded the expanded data-type metadata through the client normalization utilities so fetched buffers are interpreted with the proper typed-array view before intensity normalization.

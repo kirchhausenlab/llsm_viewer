@@ -1,4 +1,12 @@
-export type VolumeDataType = 'uint8' | 'uint16' | 'float32';
+export type VolumeDataType =
+  | 'uint8'
+  | 'int8'
+  | 'uint16'
+  | 'int16'
+  | 'uint32'
+  | 'int32'
+  | 'float32'
+  | 'float64';
 
 export type VolumeMetadata = {
   width: number;

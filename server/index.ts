@@ -335,8 +335,24 @@ app.post('/api/volume', async (request, response) => {
       return;
     }
 
-    type SupportedTypedArray = Uint8Array | Uint16Array | Float32Array;
-    type VolumeDataType = 'uint8' | 'uint16' | 'float32';
+    type SupportedTypedArray =
+      | Uint8Array
+      | Int8Array
+      | Uint16Array
+      | Int16Array
+      | Uint32Array
+      | Int32Array
+      | Float32Array
+      | Float64Array;
+    type VolumeDataType =
+      | 'uint8'
+      | 'int8'
+      | 'uint16'
+      | 'int16'
+      | 'uint32'
+      | 'int32'
+      | 'float32'
+      | 'float64';
 
     let dataType: VolumeDataType;
     let combinedData: SupportedTypedArray;
@@ -346,13 +362,33 @@ app.post('/api/volume', async (request, response) => {
       dataType = 'uint8';
       combinedData = new Uint8Array(totalValues);
       firstRaster = firstRasterRaw;
+    } else if (firstRasterRaw instanceof Int8Array) {
+      dataType = 'int8';
+      combinedData = new Int8Array(totalValues);
+      firstRaster = firstRasterRaw;
     } else if (firstRasterRaw instanceof Uint16Array) {
       dataType = 'uint16';
       combinedData = new Uint16Array(totalValues);
       firstRaster = firstRasterRaw;
+    } else if (firstRasterRaw instanceof Int16Array) {
+      dataType = 'int16';
+      combinedData = new Int16Array(totalValues);
+      firstRaster = firstRasterRaw;
+    } else if (firstRasterRaw instanceof Uint32Array) {
+      dataType = 'uint32';
+      combinedData = new Uint32Array(totalValues);
+      firstRaster = firstRasterRaw;
+    } else if (firstRasterRaw instanceof Int32Array) {
+      dataType = 'int32';
+      combinedData = new Int32Array(totalValues);
+      firstRaster = firstRasterRaw;
     } else if (firstRasterRaw instanceof Float32Array) {
       dataType = 'float32';
       combinedData = new Float32Array(totalValues);
+      firstRaster = firstRasterRaw;
+    } else if (firstRasterRaw instanceof Float64Array) {
+      dataType = 'float64';
+      combinedData = new Float64Array(totalValues);
       firstRaster = firstRasterRaw;
     } else {
       response.status(415).send('Unsupported raster data type.');
@@ -408,6 +444,13 @@ app.post('/api/volume', async (request, response) => {
           }
           raster = rasterRaw;
           break;
+        case 'int8':
+          if (!(rasterRaw instanceof Int8Array)) {
+            response.status(400).send('All slices in a volume must use the same sample type.');
+            return;
+          }
+          raster = rasterRaw;
+          break;
         case 'uint16':
           if (!(rasterRaw instanceof Uint16Array)) {
             response.status(400).send('All slices in a volume must use the same sample type.');
@@ -415,8 +458,36 @@ app.post('/api/volume', async (request, response) => {
           }
           raster = rasterRaw;
           break;
+        case 'int16':
+          if (!(rasterRaw instanceof Int16Array)) {
+            response.status(400).send('All slices in a volume must use the same sample type.');
+            return;
+          }
+          raster = rasterRaw;
+          break;
+        case 'uint32':
+          if (!(rasterRaw instanceof Uint32Array)) {
+            response.status(400).send('All slices in a volume must use the same sample type.');
+            return;
+          }
+          raster = rasterRaw;
+          break;
+        case 'int32':
+          if (!(rasterRaw instanceof Int32Array)) {
+            response.status(400).send('All slices in a volume must use the same sample type.');
+            return;
+          }
+          raster = rasterRaw;
+          break;
         case 'float32':
           if (!(rasterRaw instanceof Float32Array)) {
+            response.status(400).send('All slices in a volume must use the same sample type.');
+            return;
+          }
+          raster = rasterRaw;
+          break;
+        case 'float64':
+          if (!(rasterRaw instanceof Float64Array)) {
             response.status(400).send('All slices in a volume must use the same sample type.');
             return;
           }
