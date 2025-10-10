@@ -25,7 +25,9 @@ export function computeNormalizationParameters(volumes: VolumePayload[]): Normal
     return { min: 0, max: 255 };
   }
 
-  const floatVolumes = volumes.filter((volume) => volume.dataType === 'float32');
+  const floatVolumes = volumes.filter(
+    (volume) => volume.dataType === 'float32' || volume.dataType === 'float64'
+  );
   const volumesToScan = floatVolumes.length > 0 ? floatVolumes : volumes;
 
   let min = Number.POSITIVE_INFINITY;
@@ -82,16 +84,34 @@ export function normalizeVolume(
   };
 }
 
-type SourceArray = Uint8Array | Uint16Array | Float32Array;
+type SourceArray =
+  | Uint8Array
+  | Int8Array
+  | Uint16Array
+  | Int16Array
+  | Uint32Array
+  | Int32Array
+  | Float32Array
+  | Float64Array;
 
 function createSourceArray(data: ArrayBuffer, dataType: VolumeDataType): SourceArray {
   switch (dataType) {
     case 'uint8':
       return new Uint8Array(data);
+    case 'int8':
+      return new Int8Array(data);
     case 'uint16':
       return new Uint16Array(data);
+    case 'int16':
+      return new Int16Array(data);
+    case 'uint32':
+      return new Uint32Array(data);
+    case 'int32':
+      return new Int32Array(data);
     case 'float32':
       return new Float32Array(data);
+    case 'float64':
+      return new Float64Array(data);
     default: {
       const exhaustiveCheck: never = dataType;
       throw new Error(`Unsupported volume data type: ${exhaustiveCheck}`);
