@@ -121,5 +121,3 @@ Next steps:
 - Guarded the worker thread message port reference so TypeScript recognizes it as always available in worker contexts, satisfying strict null checks during compilation.
 - Normalized the transferable buffer handling inside the volume loader worker to produce concrete `ArrayBuffer` instances, keeping zero-copy transfers functional on every platform.
 - Raised the server TypeScript target to ES2022 and replaced Map iteration with `forEach` so the worker pool can compile cleanly without downlevel iteration flags on both Windows and Linux.
-- Restored production `npm run preview` support by switching the server build to NodeNext module resolution and adding `.js`
-  extensions to internal worker imports.
