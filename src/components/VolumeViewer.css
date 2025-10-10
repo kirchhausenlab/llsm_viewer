@@ -67,7 +67,7 @@
   flex: 1 1 0;
   border-radius: 0.75rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  background: radial-gradient(circle at center, rgba(40, 60, 80, 0.35), rgba(10, 14, 18, 0.75));
+  background: transparent;
   display: flex;
   align-items: stretch;
   justify-content: center;
