@@ -124,3 +124,7 @@ Next steps:
 ## 2D slice index refresh
 - Updated the slice rendering pipeline to derive the active depth index directly from the component props so keyboard and slider changes immediately refresh the displayed plane.
 - Reused the prop-derived index both for resource creation and per-frame slice updates, keeping the mesh translation and CPU buffer packing in sync with the latest UI state.
+
+## Slice renderer stability fixes
+- Added guarded resource management so the 3D and 2D rendering paths rebuild their materials only when their configuration changes, preventing Vite from failing with stray `else` blocks.
+- Introduced reusable helpers for slice buffer preparation and safe camera-uniform updates, allowing the volume viewer to build successfully when the slice shader is active.

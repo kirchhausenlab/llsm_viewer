@@ -7,6 +7,7 @@ import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
 import type { NormalizedVolume } from '../volumeProcessing';
 import { VolumeRenderShader } from '../shaders/volumeRenderShader';
+import { SliceRenderShader } from '../shaders/sliceRenderShader';
 import { getCachedTextureData } from '../textureCache';
 import './VolumeViewer.css';
 import type { TrackDefinition } from '../types/tracks';
@@ -25,6 +26,8 @@ type ViewerLayer = {
   contrast: number;
   brightness: number;
   color: string;
+  mode?: '3d' | 'slice';
+  sliceIndex?: number;
 };
 
 type VolumeViewerProps = {
@@ -55,14 +58,71 @@ type VolumeStats = {
 
 type VolumeResources = {
   mesh: THREE.Mesh;
-  texture: THREE.Data3DTexture;
+  texture: THREE.Data3DTexture | THREE.DataTexture;
   dimensions: {
     width: number;
     height: number;
     depth: number;
   };
   channels: number;
+  mode: '3d' | 'slice';
+  sliceBuffer?: Uint8Array | null;
 };
+
+function getExpectedSliceBufferLength(volume: NormalizedVolume) {
+  const pixelCount = volume.width * volume.height;
+  return pixelCount * 4;
+}
+
+function prepareSliceTexture(volume: NormalizedVolume, sliceIndex: number, existingBuffer: Uint8Array | null) {
+  const { width, height, depth, channels, normalized } = volume;
+  const pixelCount = width * height;
+  const targetLength = pixelCount * 4;
+
+  let buffer = existingBuffer ?? null;
+  if (!buffer || buffer.length !== targetLength) {
+    buffer = new Uint8Array(targetLength);
+  }
+
+  const maxIndex = Math.max(0, depth - 1);
+  const clampedIndex = Math.min(Math.max(sliceIndex, 0), maxIndex);
+  const sliceStride = pixelCount * channels;
+  const sliceOffset = clampedIndex * sliceStride;
+
+  for (let i = 0; i < pixelCount; i++) {
+    const sourceOffset = sliceOffset + i * channels;
+    const targetOffset = i * 4;
+
+    const red = normalized[sourceOffset] ?? 0;
+    const green = channels > 1 ? normalized[sourceOffset + 1] ?? 0 : red;
+    const blue = channels > 2 ? normalized[sourceOffset + 2] ?? 0 : green;
+    const alpha = channels > 3 ? normalized[sourceOffset + 3] ?? 255 : 255;
+
+    if (channels === 1) {
+      buffer[targetOffset] = red;
+      buffer[targetOffset + 1] = red;
+      buffer[targetOffset + 2] = red;
+      buffer[targetOffset + 3] = 255;
+    } else if (channels === 2) {
+      buffer[targetOffset] = red;
+      buffer[targetOffset + 1] = green;
+      buffer[targetOffset + 2] = 0;
+      buffer[targetOffset + 3] = 255;
+    } else if (channels === 3) {
+      buffer[targetOffset] = red;
+      buffer[targetOffset + 1] = green;
+      buffer[targetOffset + 2] = blue;
+      buffer[targetOffset + 3] = 255;
+    } else {
+      buffer[targetOffset] = red;
+      buffer[targetOffset + 1] = green;
+      buffer[targetOffset + 2] = blue;
+      buffer[targetOffset + 3] = alpha;
+    }
+  }
+
+  return { data: buffer, format: THREE.RGBAFormat };
+}
 
 type PointerState = {
   mode: 'pan' | 'dolly';
@@ -1663,16 +1723,27 @@ function VolumeViewer({
 
       let resources: VolumeResources | null = resourcesRef.current.get(layer.key) ?? null;
 
-      {
+      const viewerMode = layer.mode === 'slice' || layer.mode === '3d'
+        ? layer.mode
+        : volume.depth > 1
+        ? '3d'
+        : 'slice';
+      const zIndex = Number.isFinite(layer.sliceIndex)
+        ? Number(layer.sliceIndex)
+        : Math.floor(volume.depth / 2);
+
+      if (viewerMode === '3d') {
         cachedPreparation = getCachedTextureData(volume);
         const { data: textureData, format: textureFormat } = cachedPreparation;
 
         const needsRebuild =
           !resources ||
+          resources.mode !== viewerMode ||
           resources.dimensions.width !== volume.width ||
           resources.dimensions.height !== volume.height ||
           resources.dimensions.depth !== volume.depth ||
           resources.channels !== volume.channels ||
+          !(resources.texture instanceof THREE.Data3DTexture) ||
           resources.texture.image.data.length !== textureData.length ||
           resources.texture.format !== textureFormat;
 
@@ -1811,11 +1882,7 @@ function VolumeViewer({
           const meshObject = mesh as unknown as { visible: boolean; renderOrder: number };
           meshObject.visible = layer.visible;
           meshObject.renderOrder = index;
-          if (sliceGroup) {
-            sliceGroup.add(mesh);
-          } else {
-            scene.add(mesh);
-          }
+          scene.add(mesh);
 
           resourcesRef.current.set(layer.key, {
             mesh,
@@ -1867,11 +1934,15 @@ function VolumeViewer({
           dataTexture.format = sliceInfo.format;
           dataTexture.needsUpdate = true;
           materialUniforms.u_slice.value = dataTexture;
+        }
 
-        const localCameraPosition = camera.position.clone();
-        mesh.updateMatrixWorld();
-        mesh.worldToLocal(localCameraPosition);
-        materialUniforms.u_cameraPos.value.copy(localCameraPosition);
+        const cameraUniform = materialUniforms.u_cameraPos?.value as THREE.Vector3 | undefined;
+        if (cameraUniform) {
+          const localCameraPosition = camera.position.clone();
+          mesh.updateMatrixWorld();
+          mesh.worldToLocal(localCameraPosition);
+          cameraUniform.copy(localCameraPosition);
+        }
       }
 
       nextStats[layer.key] = { min: volume.min, max: volume.max };
