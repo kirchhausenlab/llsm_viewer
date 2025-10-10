@@ -13,10 +13,6 @@ import './VolumeViewer.css';
 import type { TrackDefinition } from '../types/tracks';
 import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../layerColors';
 import { createTrackColor } from '../trackColors';
-import {
-  HeadTrackingController,
-  type HeadTrackingPose
-} from '../headTracking/HeadTrackingController';
 
 type ViewerLayer = {
   key: string;
@@ -171,89 +167,6 @@ const MOVEMENT_KEY_MAP: Record<string, keyof MovementState> = {
   KeyQ: 'moveDown'
 };
 
-type HeadModeState = {
-  isActive: boolean;
-  baseCameraPosition: THREE.Vector3;
-  baseTarget: THREE.Vector3;
-  baseProjection: THREE.Matrix4;
-  baseProjectionInverse: THREE.Matrix4;
-  screenWidth: number;
-  screenHeight: number;
-  screenCenter: THREE.Vector3;
-  screenRight: THREE.Vector3;
-  screenUp: THREE.Vector3;
-  screenNormal: THREE.Vector3;
-  horizontalScale: number;
-  verticalScale: number;
-  depthScale: number;
-  basePose: { x: number; y: number; z: number } | null;
-  smoothedOffset: THREE.Vector3;
-  lastAppliedTimestamp: number | null;
-  previousControlsEnabled: boolean;
-};
-
-type ViewerCalibration = {
-  screenWidth: number;
-  screenHeight: number;
-  screenCenter: THREE.Vector3;
-  screenRight: THREE.Vector3;
-  screenUp: THREE.Vector3;
-  safeDistance: number;
-};
-
-const HEAD_POSE_SMOOTHING = 0.25;
-const HEAD_POSE_DECAY = 0.85;
-
-const tempVec1 = new THREE.Vector3();
-const tempVec2 = new THREE.Vector3();
-const tempVec3 = new THREE.Vector3();
-const tempVec4 = new THREE.Vector3();
-const tempVec5 = new THREE.Vector3();
-const tempVec6 = new THREE.Vector3();
-const tempVec7 = new THREE.Vector3();
-const tempVec8 = new THREE.Vector3();
-const tempMatrix = new THREE.Matrix4();
-const headLookDirection = new THREE.Vector3();
-const headRightVector = new THREE.Vector3();
-const headUpVector = new THREE.Vector3();
-const headFallbackUp = new THREE.Vector3();
-
-function applyOffAxisProjection(
-  camera: THREE.PerspectiveCamera,
-  eye: THREE.Vector3,
-  bottomLeft: THREE.Vector3,
-  bottomRight: THREE.Vector3,
-  topLeft: THREE.Vector3
-) {
-  const vr = tempVec1.copy(bottomRight).sub(bottomLeft);
-  const vu = tempVec2.copy(topLeft).sub(bottomLeft);
-  const vn = tempVec3.copy(vr).cross(vu).normalize();
-
-  const vrNormalized = tempVec4.copy(vr).normalize();
-  const vuNormalized = tempVec5.copy(vu).normalize();
-
-  const va = tempVec6.copy(bottomLeft).sub(eye);
-  const vb = tempVec7.copy(bottomRight).sub(eye);
-  const vc = tempVec8.copy(topLeft).sub(eye);
-
-  const d = -va.dot(vn);
-  if (!Number.isFinite(d) || d <= 1e-4) {
-    return;
-  }
-
-  const near = camera.near;
-  const far = camera.far;
-
-  const left = (near * va.dot(vrNormalized)) / d;
-  const right = (near * vb.dot(vrNormalized)) / d;
-  const bottom = (near * va.dot(vuNormalized)) / d;
-  const top = (near * vc.dot(vuNormalized)) / d;
-
-  tempMatrix.makePerspective(left, right, top, bottom, near, far);
-  camera.projectionMatrix.copy(tempMatrix);
-  camera.projectionMatrixInverse.copy(tempMatrix).invert();
-}
-
 function createColormapTexture(hexColor: string) {
   const normalized = normalizeHexColor(hexColor, DEFAULT_LAYER_COLOR);
   const red = parseInt(normalized.slice(1, 3), 16) / 255;
@@ -327,23 +240,11 @@ function VolumeViewer({
   const followedTrackIdRef = useRef<number | null>(null);
   const trackFollowOffsetRef = useRef<THREE.Vector3 | null>(null);
   const previousFollowedTrackIdRef = useRef<number | null>(null);
-  const viewerCalibrationRef = useRef<ViewerCalibration | null>(null);
-  const headTrackingControllerRef = useRef<HeadTrackingController | null>(null);
-  const headPoseRef = useRef<HeadTrackingPose | null>(null);
-  const headModeStateRef = useRef<HeadModeState | null>(null);
   const [layerStats, setLayerStats] = useState<Record<string, VolumeStats>>({});
   const [hasMeasured, setHasMeasured] = useState(false);
   const hoveredTrackIdRef = useRef<number | null>(null);
   const [hoveredTrackId, setHoveredTrackId] = useState<number | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
-  const headTrackingSupported = useMemo(
-    () => typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia),
-    []
-  );
-  const [isHeadModeActive, setIsHeadModeActive] = useState(false);
-  const [headModeStatus, setHeadModeStatus] = useState<'idle' | 'starting' | 'active' | 'error'>('idle');
-  const [headModeError, setHeadModeError] = useState<string | null>(null);
-  const [headModeHasFace, setHeadModeHasFace] = useState(false);
 
   followedTrackIdRef.current = followedTrackId;
 
@@ -365,184 +266,6 @@ function VolumeViewer({
     }
     setTooltipPosition(null);
   }, []);
-
-  const handleHeadPose = useCallback(
-    (pose: HeadTrackingPose) => {
-      headPoseRef.current = pose;
-      setHeadModeHasFace(pose.hasFace);
-    },
-    []
-  );
-
-  const disableHeadMode = useCallback(() => {
-    const controller = headTrackingControllerRef.current;
-    if (controller) {
-      controller.stop();
-    }
-
-    const state = headModeStateRef.current;
-    const camera = cameraRef.current;
-    const controls = controlsRef.current;
-
-    if (state && camera && controls) {
-      camera.position.copy(state.baseCameraPosition);
-      controls.target.copy(state.baseTarget);
-      rotationTargetRef.current.copy(state.baseTarget);
-      camera.projectionMatrix.copy(state.baseProjection);
-      camera.projectionMatrixInverse.copy(state.baseProjectionInverse);
-      camera.updateMatrixWorld(true);
-      controls.enabled = state.previousControlsEnabled;
-      controls.update();
-    } else if (controls && state) {
-      controls.enabled = state.previousControlsEnabled;
-    } else if (controls) {
-      controls.enabled = true;
-    }
-
-    headModeStateRef.current = null;
-    headPoseRef.current = null;
-    setIsHeadModeActive(false);
-    setHeadModeStatus('idle');
-    setHeadModeError(null);
-    setHeadModeHasFace(false);
-  }, []);
-
-  const enableHeadMode = useCallback(async () => {
-    if (!headTrackingSupported) {
-      setHeadModeStatus('error');
-      setHeadModeError('Head tracking is not supported in this browser.');
-      return;
-    }
-
-    const camera = cameraRef.current;
-    const controls = controlsRef.current;
-    const rotationTarget = rotationTargetRef.current;
-
-    if (!camera || !controls || !rotationTarget) {
-      setHeadModeStatus('error');
-      setHeadModeError('Viewer is not ready for head tracking yet.');
-      return;
-    }
-
-    setHeadModeStatus('starting');
-    setHeadModeError(null);
-    setHeadModeHasFace(false);
-    headPoseRef.current = null;
-
-    try {
-      let controller = headTrackingControllerRef.current;
-      if (!controller) {
-        controller = new HeadTrackingController();
-        controller.addListener(handleHeadPose);
-        headTrackingControllerRef.current = controller;
-      }
-
-      await controller.start();
-
-      const calibration = viewerCalibrationRef.current;
-      const baseCameraPosition = camera.position.clone();
-      const baseTarget = rotationTarget.clone();
-      const baseProjection = camera.projectionMatrix.clone();
-      const baseProjectionInverse = camera.projectionMatrixInverse.clone();
-      const screenCenter = calibration?.screenCenter.clone() ?? rotationTarget.clone();
-
-      let screenRight: THREE.Vector3;
-      let screenUp: THREE.Vector3;
-      if (calibration) {
-        screenRight = calibration.screenRight.clone();
-        screenUp = calibration.screenUp.clone();
-      } else {
-        camera.updateMatrixWorld(true);
-
-        camera.getWorldDirection(headLookDirection);
-        if (headLookDirection.lengthSq() < 1e-6 || !Number.isFinite(headLookDirection.lengthSq())) {
-          headLookDirection.set(0, 0, -1);
-        } else {
-          headLookDirection.normalize();
-        }
-
-        headUpVector.copy(camera.up);
-        if (headUpVector.lengthSq() < 1e-6 || !Number.isFinite(headUpVector.lengthSq())) {
-          headUpVector.set(0, 1, 0);
-        } else {
-          headUpVector.normalize();
-        }
-
-        headRightVector.crossVectors(headLookDirection, headUpVector);
-        if (headRightVector.lengthSq() < 1e-6) {
-          if (Math.abs(headLookDirection.y) > 0.9) {
-            headFallbackUp.set(1, 0, 0);
-          } else {
-            headFallbackUp.set(0, 1, 0);
-          }
-          headRightVector.crossVectors(headLookDirection, headFallbackUp);
-        }
-        headRightVector.normalize();
-
-        headUpVector.crossVectors(headRightVector, headLookDirection).normalize();
-
-        screenRight = headRightVector.clone();
-        screenUp = headUpVector.clone();
-      }
-
-      screenRight.normalize();
-      screenUp.normalize();
-      const screenNormal = new THREE.Vector3().crossVectors(screenRight, screenUp).normalize();
-      const cameraOffset = baseCameraPosition.clone().sub(screenCenter);
-      if (screenNormal.dot(cameraOffset) < 0) {
-        screenNormal.negate();
-      }
-
-      const screenWidth = calibration?.screenWidth ?? 1.2;
-      const screenHeight =
-        calibration?.screenHeight ?? screenWidth / Math.max(camera.aspect, 1e-6);
-      const depthScale =
-        calibration?.safeDistance ?? Math.max(baseCameraPosition.distanceTo(screenCenter), 0.5);
-
-      const headState: HeadModeState = {
-        isActive: true,
-        baseCameraPosition,
-        baseTarget,
-        baseProjection,
-        baseProjectionInverse,
-        screenWidth,
-        screenHeight,
-        screenCenter,
-        screenRight,
-        screenUp,
-        screenNormal,
-        horizontalScale: screenWidth * 1.6,
-        verticalScale: screenHeight * 1.6,
-        depthScale,
-        basePose: null,
-        smoothedOffset: new THREE.Vector3(),
-        lastAppliedTimestamp: null,
-        previousControlsEnabled: controls.enabled
-      };
-
-      headModeStateRef.current = headState;
-      controls.enabled = false;
-      setIsHeadModeActive(true);
-      setHeadModeStatus('active');
-    } catch (error) {
-      setHeadModeStatus('error');
-      setHeadModeError(error instanceof Error ? error.message : String(error));
-      const controller = headTrackingControllerRef.current;
-      if (controller) {
-        controller.stop();
-      }
-      headModeStateRef.current = null;
-      setIsHeadModeActive(false);
-    }
-  }, [handleHeadPose, headTrackingSupported]);
-
-  const toggleHeadMode = useCallback(() => {
-    if (isHeadModeActive) {
-      disableHeadMode();
-    } else {
-      void enableHeadMode();
-    }
-  }, [disableHeadMode, enableHeadMode, isHeadModeActive]);
 
   const getColormapTexture = useCallback((color: string) => {
     const normalized = normalizeHexColor(color, DEFAULT_LAYER_COLOR);
@@ -604,26 +327,6 @@ function VolumeViewer({
     return null;
   }, [layers]);
   const hasRenderableLayer = Boolean(primaryVolume);
-  const headModeButtonDisabled =
-    !headTrackingSupported || !hasRenderableLayer || headModeStatus === 'starting';
-  const headModeButtonLabel = isHeadModeActive ? 'Disable head mode' : 'Enable head mode';
-  const headModeIndicatorLabel = headTrackingSupported
-    ? headModeStatus === 'starting'
-      ? 'Starting…'
-      : headModeStatus === 'error'
-        ? 'Error'
-        : isHeadModeActive
-          ? headModeHasFace
-            ? 'Tracking face'
-            : 'Searching…'
-          : 'Idle'
-    : 'Not supported';
-  const headModeIndicatorClass =
-    headModeStatus === 'error'
-      ? 'head-mode-indicator has-error'
-      : isHeadModeActive && headModeHasFace
-        ? 'head-mode-indicator is-tracking'
-        : 'head-mode-indicator';
 
   useEffect(() => {
     const trackGroup = trackGroupRef.current;
@@ -880,10 +583,6 @@ function VolumeViewer({
   );
 
   useEffect(() => {
-    if (followedTrackId !== null && isHeadModeActive) {
-      disableHeadMode();
-    }
-
     followedTrackIdRef.current = followedTrackId;
     if (followedTrackId === null) {
       trackFollowOffsetRef.current = null;
@@ -933,17 +632,11 @@ function VolumeViewer({
   }, [
     clampedTimeIndex,
     computeTrackCentroid,
-    disableHeadMode,
     followedTrackId,
-    isHeadModeActive,
     primaryVolume
   ]);
 
   const handleResetView = useCallback(() => {
-    if (isHeadModeActive) {
-      disableHeadMode();
-    }
-
     const controls = controlsRef.current;
     if (!controls) {
       return;
@@ -955,12 +648,13 @@ function VolumeViewer({
       controls.target.copy(defaultViewState.target);
       rotationTargetRef.current.copy(defaultViewState.target);
       controls.update();
-    } else {
-      controls.reset();
-      controls.target.copy(rotationTargetRef.current);
-      controls.update();
+      return;
     }
-  }, [disableHeadMode, isHeadModeActive]);
+
+    controls.reset();
+    controls.target.copy(rotationTargetRef.current);
+    controls.update();
+  }, []);
 
   useEffect(() => {
     onRegisterReset(hasRenderableLayer ? handleResetView : null);
@@ -1092,16 +786,6 @@ function VolumeViewer({
 
       const mode = event.ctrlKey ? 'dolly' : event.shiftKey ? 'pan' : null;
 
-      if (headModeStateRef.current?.isActive) {
-        if (!mode) {
-          const hitTrackId = performHoverHitTest(event);
-          if (hitTrackId !== null) {
-            onTrackFollowRequest(hitTrackId);
-          }
-        }
-        return;
-      }
-
       if (!mode) {
         const hitTrackId = performHoverHitTest(event);
         if (hitTrackId !== null) {
@@ -1140,10 +824,6 @@ function VolumeViewer({
 
     const handlePointerMove = (event: PointerEvent) => {
       const state = pointerStateRef.current;
-      if (headModeStateRef.current?.isActive) {
-        performHoverHitTest(event);
-        return;
-      }
       if (!state || event.pointerId !== state.pointerId) {
         performHoverHitTest(event);
         return;
@@ -1181,10 +861,6 @@ function VolumeViewer({
 
     const handlePointerUp = (event: PointerEvent) => {
       const state = pointerStateRef.current;
-      if (headModeStateRef.current?.isActive) {
-        performHoverHitTest(event);
-        return;
-      }
       if (!state || event.pointerId !== state.pointerId) {
         performHoverHitTest(event);
         return;
@@ -1257,16 +933,8 @@ function VolumeViewer({
     const rightVector = new THREE.Vector3();
     const movementVector = new THREE.Vector3();
     const dollyDirection = new THREE.Vector3();
-    const headOffset = new THREE.Vector3();
-    const headCameraPosition = new THREE.Vector3();
-    const headBottomLeft = new THREE.Vector3();
-    const headBottomRight = new THREE.Vector3();
-    const headTopLeft = new THREE.Vector3();
 
     const applyKeyboardMovement = () => {
-      if (headModeStateRef.current?.isActive) {
-        return;
-      }
       if (followedTrackIdRef.current !== null) {
         return;
       }
@@ -1332,79 +1000,8 @@ function VolumeViewer({
       controls.target.copy(rotationTarget);
     };
 
-    const applyHeadModeTransform = () => {
-      const state = headModeStateRef.current;
-      if (!state || !state.isActive) {
-        return;
-      }
-
-      const pose = headPoseRef.current;
-      if (!pose || !pose.normalizedPosition) {
-        state.smoothedOffset.multiplyScalar(HEAD_POSE_DECAY);
-      } else {
-        const normalized = pose.normalizedPosition;
-        if (!state.basePose) {
-          state.basePose = { ...normalized };
-          state.smoothedOffset.set(0, 0, 0);
-        }
-        headOffset.set(
-          normalized.x - state.basePose.x,
-          normalized.y - state.basePose.y,
-          normalized.z - state.basePose.z
-        );
-        state.smoothedOffset.lerp(headOffset, HEAD_POSE_SMOOTHING);
-        state.lastAppliedTimestamp = pose.timestamp;
-      }
-
-      const effectiveOffset = state.smoothedOffset;
-      const offsetX = THREE.MathUtils.clamp(effectiveOffset.x, -0.45, 0.45);
-      const offsetY = THREE.MathUtils.clamp(effectiveOffset.y, -0.45, 0.45);
-      const offsetZ = THREE.MathUtils.clamp(effectiveOffset.z, -0.6, 0.6);
-
-      headCameraPosition
-        .copy(state.baseCameraPosition)
-        .addScaledVector(state.screenRight, offsetX * state.horizontalScale)
-        .addScaledVector(state.screenUp, -offsetY * state.verticalScale)
-        .addScaledVector(state.screenNormal, offsetZ * state.depthScale);
-
-      camera.position.copy(headCameraPosition);
-      controls.target.copy(state.baseTarget);
-      rotationTargetRef.current.copy(state.baseTarget);
-      camera.up.copy(state.screenUp);
-      camera.lookAt(state.screenCenter);
-      camera.updateMatrixWorld(true);
-
-      const halfWidth = state.screenWidth * 0.5;
-      const halfHeight = state.screenHeight * 0.5;
-
-      headBottomLeft
-        .copy(state.screenCenter)
-        .addScaledVector(state.screenRight, -halfWidth)
-        .addScaledVector(state.screenUp, -halfHeight);
-      headBottomRight
-        .copy(state.screenCenter)
-        .addScaledVector(state.screenRight, halfWidth)
-        .addScaledVector(state.screenUp, -halfHeight);
-      headTopLeft
-        .copy(state.screenCenter)
-        .addScaledVector(state.screenRight, -halfWidth)
-        .addScaledVector(state.screenUp, halfHeight);
-
-      applyOffAxisProjection(
-        camera,
-        headCameraPosition,
-        headBottomLeft,
-        headBottomRight,
-        headTopLeft
-      );
-    };
-
     const renderLoop = () => {
-      if (headModeStateRef.current?.isActive) {
-        applyHeadModeTransform();
-      } else {
-        applyKeyboardMovement();
-      }
+      applyKeyboardMovement();
       controls.update();
 
       if (followedTrackIdRef.current !== null) {
@@ -1439,12 +1036,6 @@ function VolumeViewer({
     renderLoop();
 
     return () => {
-      const controller = headTrackingControllerRef.current;
-      if (controller) {
-        controller.stop();
-      }
-      headModeStateRef.current = null;
-      headPoseRef.current = null;
       const resources = resourcesRef.current;
       for (const resource of resources.values()) {
         scene.remove(resource.mesh);
@@ -1601,9 +1192,6 @@ function VolumeViewer({
     const referenceVolume = primaryVolume;
 
     if (!referenceVolume) {
-      if (headModeStateRef.current?.isActive) {
-        disableHeadMode();
-      }
       removeAllResources();
       currentDimensionsRef.current = null;
       rotationTargetRef.current.set(0, 0, 0);
@@ -1619,7 +1207,6 @@ function VolumeViewer({
         trackGroup.position.set(0, 0, 0);
         trackGroup.scale.set(1, 1, 1);
       }
-      viewerCalibrationRef.current = null;
       setLayerStats({});
       return;
     }
@@ -1632,9 +1219,6 @@ function VolumeViewer({
       currentDimensionsRef.current.depth !== depth;
 
     if (dimensionsChanged) {
-      if (headModeStateRef.current?.isActive) {
-        disableHeadMode();
-      }
       removeAllResources();
       currentDimensionsRef.current = { width, height, depth };
 
@@ -1671,36 +1255,6 @@ function VolumeViewer({
         ).multiplyScalar(scale);
         trackGroup.scale.setScalar(scale);
         trackGroup.position.set(-centerOffset.x, -centerOffset.y, -centerOffset.z);
-      }
-      viewerCalibrationRef.current = {
-        screenWidth: referenceVolume.width * scale,
-        screenHeight: referenceVolume.height * scale,
-        screenCenter: rotationTarget.clone(),
-        screenRight: new THREE.Vector3(1, 0, 0),
-        screenUp: new THREE.Vector3(0, 1, 0),
-        safeDistance: safeDistance
-      };
-    }
-
-    const calibration = viewerCalibrationRef.current;
-    if (calibration) {
-      calibration.screenCenter.copy(rotationTargetRef.current);
-    }
-
-    const headState = headModeStateRef.current;
-    if (headState && headState.isActive && calibration) {
-      headState.screenWidth = calibration.screenWidth;
-      headState.screenHeight = calibration.screenHeight;
-      headState.screenCenter.copy(calibration.screenCenter);
-      headState.screenRight.copy(calibration.screenRight).normalize();
-      headState.screenUp.copy(calibration.screenUp).normalize();
-      headState.screenNormal
-        .copy(headState.screenRight)
-        .cross(headState.screenUp)
-        .normalize();
-      const toCamera = headState.baseCameraPosition.clone().sub(headState.screenCenter);
-      if (headState.screenNormal.dot(toCamera) < 0) {
-        headState.screenNormal.negate();
       }
     }
 
@@ -1956,7 +1510,7 @@ function VolumeViewer({
     }
 
     setLayerStats(nextStats);
-  }, [disableHeadMode, getColormapTexture, layers]);
+  }, [getColormapTexture, layers]);
 
   useEffect(() => {
     return () => {
@@ -1966,19 +1520,6 @@ function VolumeViewer({
       colormapCacheRef.current.clear();
     };
   }, []);
-
-  useEffect(() => {
-    return () => {
-      const controller = headTrackingControllerRef.current;
-      if (controller) {
-        controller.removeListener(handleHeadPose);
-        controller.dispose();
-        headTrackingControllerRef.current = null;
-      }
-      headModeStateRef.current = null;
-      headPoseRef.current = null;
-    };
-  }, [handleHeadPose]);
 
   return (
     <div className="volume-viewer">
@@ -2008,20 +1549,6 @@ function VolumeViewer({
           ) : null}
         </div>
         <div className="viewer-meta">
-          <div className="head-mode-controls">
-            <button
-              type="button"
-              onClick={toggleHeadMode}
-              disabled={headModeButtonDisabled}
-              className={isHeadModeActive ? 'head-mode-toggle is-active' : 'head-mode-toggle'}
-            >
-              {headModeButtonLabel}
-            </button>
-            <span className={headModeIndicatorClass}>
-              {headModeIndicatorLabel}
-            </span>
-            {headModeError ? <span className="head-mode-error">{headModeError}</span> : null}
-          </div>
           <div className="time-info">
             <span>Frame {totalTimepoints === 0 ? 0 : timeIndex + 1}</span>
             <span>/</span>

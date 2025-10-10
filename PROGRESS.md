@@ -116,6 +116,10 @@ Next steps:
 ## Head mode orientation fix
 - Derived the default head-mode screen basis from the active camera orientation so enabling the feature after orbiting still computes a stable off-axis projection.
 
+## Head mode deprecation
+- Removed the head-tracking subsystem, including the MediaPipe integration and associated UI toggles, to streamline the viewer and eliminate dormant permissions prompts.
+- Simplified the rendering loop and camera reset logic now that the off-axis projection path is gone, keeping keyboard navigation and track following unchanged.
+
 ## 2D slice renderer rewrite
 - Replaced the 2D viewer's slice renderer with a DataTexture pipeline that extracts per-slice textures on the CPU, bypassing the failing sampler3D shader path.
 - Added reusable helpers for packing slice data so grayscale and multi-channel volumes share the same upload logic.
