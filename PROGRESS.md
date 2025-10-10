@@ -112,3 +112,6 @@ Next steps:
 ## Head-tracking dependency resolution
 - Reworked the MediaPipe integration to lazy-load the face landmarker bundle directly from the jsDelivr CDN, eliminating Vite's module resolution failures when the npm package is unavailable locally.
 - Added lightweight TypeScript shims for the MediaPipe APIs so the head-tracking controller retains type safety while relying on the CDN-sourced module.
+
+## Head mode orientation fix
+- Derived the default head-mode screen basis from the active camera orientation so enabling the feature after orbiting still computes a stable off-axis projection.

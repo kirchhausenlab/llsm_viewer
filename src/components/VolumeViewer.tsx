@@ -153,6 +153,10 @@ const tempVec6 = new THREE.Vector3();
 const tempVec7 = new THREE.Vector3();
 const tempVec8 = new THREE.Vector3();
 const tempMatrix = new THREE.Matrix4();
+const headLookDirection = new THREE.Vector3();
+const headRightVector = new THREE.Vector3();
+const headUpVector = new THREE.Vector3();
+const headFallbackUp = new THREE.Vector3();
 
 function applyOffAxisProjection(
   camera: THREE.PerspectiveCamera,
@@ -381,8 +385,46 @@ function VolumeViewer({
       const baseProjection = camera.projectionMatrix.clone();
       const baseProjectionInverse = camera.projectionMatrixInverse.clone();
       const screenCenter = calibration?.screenCenter.clone() ?? rotationTarget.clone();
-      const screenRight = calibration?.screenRight.clone() ?? new THREE.Vector3(1, 0, 0);
-      const screenUp = calibration?.screenUp.clone() ?? new THREE.Vector3(0, 1, 0);
+
+      let screenRight: THREE.Vector3;
+      let screenUp: THREE.Vector3;
+      if (calibration) {
+        screenRight = calibration.screenRight.clone();
+        screenUp = calibration.screenUp.clone();
+      } else {
+        camera.updateMatrixWorld(true);
+
+        camera.getWorldDirection(headLookDirection);
+        if (headLookDirection.lengthSq() < 1e-6 || !Number.isFinite(headLookDirection.lengthSq())) {
+          headLookDirection.set(0, 0, -1);
+        } else {
+          headLookDirection.normalize();
+        }
+
+        headUpVector.copy(camera.up);
+        if (headUpVector.lengthSq() < 1e-6 || !Number.isFinite(headUpVector.lengthSq())) {
+          headUpVector.set(0, 1, 0);
+        } else {
+          headUpVector.normalize();
+        }
+
+        headRightVector.crossVectors(headLookDirection, headUpVector);
+        if (headRightVector.lengthSq() < 1e-6) {
+          if (Math.abs(headLookDirection.y) > 0.9) {
+            headFallbackUp.set(1, 0, 0);
+          } else {
+            headFallbackUp.set(0, 1, 0);
+          }
+          headRightVector.crossVectors(headLookDirection, headFallbackUp);
+        }
+        headRightVector.normalize();
+
+        headUpVector.crossVectors(headRightVector, headLookDirection).normalize();
+
+        screenRight = headRightVector.clone();
+        screenUp = headUpVector.clone();
+      }
+
       screenRight.normalize();
       screenUp.normalize();
       const screenNormal = new THREE.Vector3().crossVectors(screenRight, screenUp).normalize();
