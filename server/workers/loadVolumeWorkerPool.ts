@@ -7,7 +7,7 @@ import type {
   LoadVolumeSuccessMessage,
   LoadVolumeWorkerResponse,
   VolumeMetadata
-} from './types';
+} from './types.js';
 
 export class LoadVolumeWorkerError extends Error {
   public readonly statusCode?: number;

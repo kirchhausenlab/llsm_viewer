@@ -6,7 +6,7 @@ import type {
   LoadVolumeWorkerResponse,
   VolumeDataType,
   VolumeMetadata
-} from './types';
+} from './types.js';
 
 const port = parentPort;
 
