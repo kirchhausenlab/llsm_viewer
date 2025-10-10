@@ -3,9 +3,8 @@ import cors from 'cors';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { Pool } from 'geotiff';
+import { fromFile, Pool } from 'geotiff';
 import { availableParallelism, cpus } from 'node:os';
-import { LoadVolumeWorkerPool, LoadVolumeWorkerError } from './workers/loadVolumeWorkerPool.js';
 
 const app = express();
 const HOST = process.env.HOST ?? '0.0.0.0';
@@ -26,36 +25,23 @@ const workerCount = (() => {
   return cpuInfo && cpuInfo.length > 0 ? cpuInfo.length : 1;
 })();
 
-const poolSize = Math.max(1, workerCount);
-const geotiffWorkerPoolSize = Math.max(1, Math.floor(workerCount / poolSize));
-const pool = new Pool(poolSize);
-const volumeWorkerPool = new LoadVolumeWorkerPool(poolSize, { geotiffPoolSize: geotiffWorkerPoolSize });
-let resourcesDestroyed = false;
+const pool = new Pool(Math.max(1, workerCount));
+let poolDestroyed = false;
 
-function destroyResources() {
-  if (resourcesDestroyed) {
-    return;
-  }
-  resourcesDestroyed = true;
-
-  try {
+function destroyPool() {
+  if (!poolDestroyed) {
     pool.destroy();
-  } catch (error) {
-    console.error('Failed to destroy GeoTIFF worker pool', error);
+    poolDestroyed = true;
   }
-
-  volumeWorkerPool.destroy().catch((error) => {
-    console.error('Failed to destroy volume worker pool', error);
-  });
 }
 
 process.on('exit', () => {
-  destroyResources();
+  destroyPool();
 });
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
-    destroyResources();
+    destroyPool();
     process.exit(signal === 'SIGINT' ? 130 : 143);
   });
 }
@@ -328,24 +314,226 @@ app.post('/api/volume', async (request, response) => {
       return;
     }
 
-    const { metadata, buffer } = await volumeWorkerPool.schedule(resolvedDir, filename);
+    const tiff = await fromFile(resolvedFile);
+    const imageCount = await tiff.getImageCount();
+    if (imageCount === 0) {
+      response.status(400).send('TIFF file does not contain any images.');
+      return;
+    }
+
+    const firstImage = await tiff.getImage(0);
+    const width = firstImage.getWidth();
+    const height = firstImage.getHeight();
+    const channels = firstImage.getSamplesPerPixel();
+
+    const sliceLength = width * height * channels;
+    const totalValues = sliceLength * imageCount;
+
+    const firstRasterRaw = (await firstImage.readRasters({ interleave: true, pool })) as unknown;
+    if (!ArrayBuffer.isView(firstRasterRaw)) {
+      response.status(500).send('Volume rasters must be typed arrays.');
+      return;
+    }
+
+    type SupportedTypedArray =
+      | Uint8Array
+      | Int8Array
+      | Uint16Array
+      | Int16Array
+      | Uint32Array
+      | Int32Array
+      | Float32Array
+      | Float64Array;
+    type VolumeDataType =
+      | 'uint8'
+      | 'int8'
+      | 'uint16'
+      | 'int16'
+      | 'uint32'
+      | 'int32'
+      | 'float32'
+      | 'float64';
+
+    let dataType: VolumeDataType;
+    let combinedData: SupportedTypedArray;
+    let firstRaster: SupportedTypedArray;
+
+    if (firstRasterRaw instanceof Uint8Array) {
+      dataType = 'uint8';
+      combinedData = new Uint8Array(totalValues);
+      firstRaster = firstRasterRaw;
+    } else if (firstRasterRaw instanceof Int8Array) {
+      dataType = 'int8';
+      combinedData = new Int8Array(totalValues);
+      firstRaster = firstRasterRaw;
+    } else if (firstRasterRaw instanceof Uint16Array) {
+      dataType = 'uint16';
+      combinedData = new Uint16Array(totalValues);
+      firstRaster = firstRasterRaw;
+    } else if (firstRasterRaw instanceof Int16Array) {
+      dataType = 'int16';
+      combinedData = new Int16Array(totalValues);
+      firstRaster = firstRasterRaw;
+    } else if (firstRasterRaw instanceof Uint32Array) {
+      dataType = 'uint32';
+      combinedData = new Uint32Array(totalValues);
+      firstRaster = firstRasterRaw;
+    } else if (firstRasterRaw instanceof Int32Array) {
+      dataType = 'int32';
+      combinedData = new Int32Array(totalValues);
+      firstRaster = firstRasterRaw;
+    } else if (firstRasterRaw instanceof Float32Array) {
+      dataType = 'float32';
+      combinedData = new Float32Array(totalValues);
+      firstRaster = firstRasterRaw;
+    } else if (firstRasterRaw instanceof Float64Array) {
+      dataType = 'float64';
+      combinedData = new Float64Array(totalValues);
+      firstRaster = firstRasterRaw;
+    } else {
+      response.status(415).send('Unsupported raster data type.');
+      return;
+    }
+
+    if (firstRaster.length !== sliceLength) {
+      response.status(500).send('Unexpected raster length for first slice.');
+      return;
+    }
+
+    let globalMin = Number.POSITIVE_INFINITY;
+    let globalMax = Number.NEGATIVE_INFINITY;
+
+    const copySlice = (source: SupportedTypedArray, offset: number) => {
+      for (let i = 0; i < source.length; i++) {
+        const value = source[i];
+        if (value < globalMin) {
+          globalMin = value;
+        }
+        if (value > globalMax) {
+          globalMax = value;
+        }
+        combinedData[offset + i] = value;
+      }
+    };
+
+    copySlice(firstRaster, 0);
+
+    for (let index = 1; index < imageCount; index++) {
+      const image = await tiff.getImage(index);
+      if (image.getWidth() !== width || image.getHeight() !== height) {
+        response.status(400).send('All slices in a volume must have identical dimensions.');
+        return;
+      }
+      if (image.getSamplesPerPixel() !== channels) {
+        response.status(400).send('All slices in a volume must have the same channel count.');
+        return;
+      }
+
+      const rasterRaw = (await image.readRasters({ interleave: true, pool })) as unknown;
+      if (!ArrayBuffer.isView(rasterRaw)) {
+        response.status(500).send('Volume rasters must be typed arrays.');
+        return;
+      }
+
+      let raster: SupportedTypedArray;
+      switch (dataType) {
+        case 'uint8':
+          if (!(rasterRaw instanceof Uint8Array)) {
+            response.status(400).send('All slices in a volume must use the same sample type.');
+            return;
+          }
+          raster = rasterRaw;
+          break;
+        case 'int8':
+          if (!(rasterRaw instanceof Int8Array)) {
+            response.status(400).send('All slices in a volume must use the same sample type.');
+            return;
+          }
+          raster = rasterRaw;
+          break;
+        case 'uint16':
+          if (!(rasterRaw instanceof Uint16Array)) {
+            response.status(400).send('All slices in a volume must use the same sample type.');
+            return;
+          }
+          raster = rasterRaw;
+          break;
+        case 'int16':
+          if (!(rasterRaw instanceof Int16Array)) {
+            response.status(400).send('All slices in a volume must use the same sample type.');
+            return;
+          }
+          raster = rasterRaw;
+          break;
+        case 'uint32':
+          if (!(rasterRaw instanceof Uint32Array)) {
+            response.status(400).send('All slices in a volume must use the same sample type.');
+            return;
+          }
+          raster = rasterRaw;
+          break;
+        case 'int32':
+          if (!(rasterRaw instanceof Int32Array)) {
+            response.status(400).send('All slices in a volume must use the same sample type.');
+            return;
+          }
+          raster = rasterRaw;
+          break;
+        case 'float32':
+          if (!(rasterRaw instanceof Float32Array)) {
+            response.status(400).send('All slices in a volume must use the same sample type.');
+            return;
+          }
+          raster = rasterRaw;
+          break;
+        case 'float64':
+          if (!(rasterRaw instanceof Float64Array)) {
+            response.status(400).send('All slices in a volume must use the same sample type.');
+            return;
+          }
+          raster = rasterRaw;
+          break;
+        default:
+          response.status(500).send('Unsupported raster data type.');
+          return;
+      }
+
+      if (raster.length !== sliceLength) {
+        response.status(500).send('Unexpected raster length for slice.');
+        return;
+      }
+
+      const offset = index * sliceLength;
+      copySlice(raster, offset);
+    }
+
+    if (!Number.isFinite(globalMin) || globalMin === Number.POSITIVE_INFINITY) {
+      globalMin = 0;
+    }
+    if (!Number.isFinite(globalMax) || globalMax === Number.NEGATIVE_INFINITY) {
+      globalMax = 1;
+    }
+    if (globalMin === globalMax) {
+      globalMax = globalMin + 1;
+    }
+
+    const metadata = {
+      width,
+      height,
+      depth: imageCount,
+      channels,
+      dataType,
+      min: globalMin,
+      max: globalMax
+    };
+
+    const buffer = Buffer.from(combinedData.buffer, combinedData.byteOffset, combinedData.byteLength);
     response.setHeader('Content-Type', 'application/octet-stream');
     response.setHeader('Cache-Control', 'no-store');
     response.setHeader('X-Volume-Metadata', JSON.stringify(metadata));
     response.setHeader('Content-Length', buffer.byteLength.toString());
     response.send(buffer);
   } catch (error) {
-    if (error instanceof LoadVolumeWorkerError) {
-      const status = error.statusCode ?? 500;
-      response.status(status).send(error.message);
-      return;
-    }
-
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      response.status(404).send('Requested volume file was not found.');
-      return;
-    }
-
     console.error('Failed to load TIFF volume', error);
     response.status(500).send('Failed to load TIFF volume.');
   }
