@@ -1,7 +1,11 @@
 import type { FaceLandmarkerModule } from './mediapipeTypes';
 
-const MEDIAPIPE_MODULE_URL =
-  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/vision_bundle.mjs';
+const MEDIAPIPE_VERSION = '0.10.21';
+const MEDIAPIPE_CDN_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}`;
+
+export const MEDIAPIPE_MODULE_URL = `${MEDIAPIPE_CDN_BASE}/vision_bundle.mjs`;
+export const MEDIAPIPE_WASM_ROOT = `${MEDIAPIPE_CDN_BASE}/wasm`;
+export const MEDIAPIPE_MODEL_ASSET_URL = `${MEDIAPIPE_WASM_ROOT}/face_landmarker.task`;
 
 let modulePromise: Promise<FaceLandmarkerModule> | null = null;
 

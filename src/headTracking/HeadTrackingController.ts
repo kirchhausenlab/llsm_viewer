@@ -1,5 +1,9 @@
 import type { FaceLandmarker, FaceLandmarkerResult } from './mediapipeTypes';
-import { loadFaceLandmarkerModule } from './mediapipeLoader';
+import {
+  loadFaceLandmarkerModule,
+  MEDIAPIPE_MODEL_ASSET_URL,
+  MEDIAPIPE_WASM_ROOT
+} from './mediapipeLoader';
 
 export type HeadTrackingPose = {
   hasFace: boolean;
@@ -15,10 +19,6 @@ export type HeadTrackingListener = (pose: HeadTrackingPose) => void;
 
 const IRIS_LEFT_INDICES = [468, 469, 470, 471];
 const IRIS_RIGHT_INDICES = [473, 474, 475, 476];
-
-const DEFAULT_MODEL_ASSET_URL =
-  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/wasm/face_landmarker.task';
-const DEFAULT_WASM_ROOT = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/wasm';
 
 export class HeadTrackingController {
   private landmarker: FaceLandmarker | null = null;
@@ -135,10 +135,10 @@ export class HeadTrackingController {
       return this.landmarker;
     }
     const { FilesetResolver, FaceLandmarker } = await loadFaceLandmarkerModule();
-    const resolver = await FilesetResolver.forVisionTasks(DEFAULT_WASM_ROOT);
+    const resolver = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_ROOT);
     return FaceLandmarker.createFromOptions(resolver, {
       baseOptions: {
-        modelAssetPath: DEFAULT_MODEL_ASSET_URL
+        modelAssetPath: MEDIAPIPE_MODEL_ASSET_URL
       },
       runningMode: 'VIDEO',
       outputFaceBlendshapes: false,
