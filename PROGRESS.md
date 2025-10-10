@@ -103,3 +103,8 @@ Next steps:
 ## Float and 32-bit volume ingestion
 - Extended the TIFF ingestion pipeline to accept every GeoTIFF numeric sample format, including signed/unsigned 32-bit integers and both 32-bit and 64-bit floating-point rasters, while preserving min/max tracking.
 - Threaded the expanded data-type metadata through the client normalization utilities so fetched buffers are interpreted with the proper typed-array view before intensity normalization.
+
+## Head-tracked viewing mode
+- Integrated MediaPipe's `FaceLandmarker` through a reusable head-tracking controller that streams webcam frames, providing smoothed iris-based head pose updates without blocking the render loop.
+- Added a "Head mode" toggle in the viewer header with status telemetry and graceful fallbacks, coordinating camera takeover, permission prompts, and error reporting.
+- Implemented an off-axis projection pipeline that reprojects the perspective camera each frame based on the tracked eye position, suspending manual orbit interactions while active and restoring them on exit.

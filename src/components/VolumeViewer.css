@@ -121,7 +121,62 @@
   gap: 0.5rem;
 }
 
-.viewer-meta button {
+.head-mode-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.3rem;
+}
+
+.head-mode-toggle {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 0.5rem;
+  padding: 0.35rem 0.85rem;
+  background: rgba(12, 16, 24, 0.8);
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+}
+
+.head-mode-toggle.is-active {
+  border-color: rgba(91, 140, 255, 0.7);
+  background: rgba(91, 140, 255, 0.2);
+}
+
+.head-mode-toggle:not(:disabled):hover {
+  border-color: rgba(91, 140, 255, 0.7);
+  background: rgba(91, 140, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.head-mode-toggle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.head-mode-indicator {
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.head-mode-indicator.is-tracking {
+  color: rgba(107, 209, 137, 0.85);
+}
+
+.head-mode-indicator.has-error {
+  color: rgba(244, 127, 127, 0.9);
+}
+
+.head-mode-error {
+  color: rgba(244, 127, 127, 0.9);
+  font-size: 0.75rem;
+  max-width: 18rem;
+  text-align: right;
+}
+
+.viewer-meta button:not(.head-mode-toggle) {
   border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 0.5rem;
   padding: 0.4rem 0.85rem;
@@ -131,13 +186,13 @@
   transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
 }
 
-.viewer-meta button:not(:disabled):hover {
+.viewer-meta button:not(.head-mode-toggle):not(:disabled):hover {
   border-color: rgba(91, 140, 255, 0.7);
   background: rgba(91, 140, 255, 0.15);
   transform: translateY(-1px);
 }
 
-.viewer-meta button:disabled {
+.viewer-meta button:not(.head-mode-toggle):disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
