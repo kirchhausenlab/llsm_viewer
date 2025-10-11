@@ -151,3 +151,7 @@ Next steps:
 - Projected loaded trajectories into the 2D canvas so the XY slices render flattened paths that respect the current time scrubber while ignoring per-plane depth differences.
 - Matched the overlay styling and opacity controls from the 3D scene, including highlight cues for the actively followed track and persistent endpoint markers.
 - Synced track following with the 2D navigation stack by recentering on the current trajectory point and snapping the Z slider to the track's plane, mimicking the 3D follow behavior without disturbing existing controls.
+
+## Track overlay boot fix & planar control revert
+- Latched the render-surface ref through a stateful callback so the 3D viewer only initializes once the container is mounted, ensuring track overlays build immediately after loading trajectories.
+- Returned the 2D viewer to left-drag panning while restoring Q/E keyboard rotation, mirroring the earlier navigation scheme without disturbing slice shortcuts.
