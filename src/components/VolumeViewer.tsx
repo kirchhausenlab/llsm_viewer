@@ -234,6 +234,7 @@ function VolumeViewer({
     moveDown: false
   });
   const volumeRootGroupRef = useRef<THREE.Group | null>(null);
+  const volumeRootCenterOffsetRef = useRef(new THREE.Vector3());
   const trackGroupRef = useRef<THREE.Group | null>(null);
   const trackGroupCenterOffsetRef = useRef(new THREE.Vector3());
   const trackLinesRef = useRef<Map<number, TrackLineResource>>(new Map());
@@ -269,6 +270,39 @@ function VolumeViewer({
     }
     setTooltipPosition(null);
   }, []);
+
+  const applyVolumeRootTransform = useCallback(
+    (dimensions: { width: number; height: number; depth: number } | null) => {
+      const volumeRootGroup = volumeRootGroupRef.current;
+      if (!volumeRootGroup) {
+        return;
+      }
+
+      if (!dimensions) {
+        volumeRootGroup.position.set(0, 0, 0);
+        volumeRootGroup.scale.set(1, 1, 1);
+        return;
+      }
+
+      const { width, height, depth } = dimensions;
+      const maxDimension = Math.max(width, height, depth);
+      if (!Number.isFinite(maxDimension) || maxDimension <= 0) {
+        volumeRootGroup.position.set(0, 0, 0);
+        volumeRootGroup.scale.set(1, 1, 1);
+        return;
+      }
+
+      const scale = 1 / maxDimension;
+      const centerOffset = volumeRootCenterOffsetRef.current;
+      centerOffset
+        .set(width / 2 - 0.5, height / 2 - 0.5, depth / 2 - 0.5)
+        .multiplyScalar(scale);
+
+      volumeRootGroup.scale.setScalar(scale);
+      volumeRootGroup.position.set(-centerOffset.x, -centerOffset.y, -centerOffset.z);
+    },
+    []
+  );
 
   const applyTrackGroupTransform = useCallback(
     (dimensions: { width: number; height: number; depth: number } | null) => {
@@ -1155,7 +1189,7 @@ function VolumeViewer({
       cameraRef.current = null;
       controlsRef.current = null;
     };
-  }, [applyTrackGroupTransform]);
+  }, [applyTrackGroupTransform, applyVolumeRootTransform]);
 
   useEffect(() => {
     const handleKeyChange = (event: KeyboardEvent, isPressed: boolean) => {
@@ -1246,6 +1280,7 @@ function VolumeViewer({
     if (!scene || !camera || !controls) {
       removeAllResources();
       currentDimensionsRef.current = null;
+      applyVolumeRootTransform(null);
       setLayerStats({});
       return;
     }
@@ -1267,6 +1302,7 @@ function VolumeViewer({
         trackGroup.visible = false;
       }
       applyTrackGroupTransform(null);
+      applyVolumeRootTransform(null);
       setLayerStats({});
       return;
     }
@@ -1307,6 +1343,7 @@ function VolumeViewer({
       controls.saveState();
 
       applyTrackGroupTransform({ width, height, depth });
+      applyVolumeRootTransform({ width, height, depth });
     }
 
     const nextStats: Record<string, VolumeStats> = {};
