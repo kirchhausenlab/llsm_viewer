@@ -125,6 +125,9 @@ type PointerState = {
   pointerId: number;
   lastX: number;
   lastY: number;
+  startX: number;
+  startY: number;
+  hasMoved: boolean;
   previousControlsEnabled: boolean;
   previousEnablePan: boolean | null;
 };
@@ -136,6 +139,8 @@ type MovementState = {
   moveRight: boolean;
   moveUp: boolean;
   moveDown: boolean;
+  rotateLeft: boolean;
+  rotateRight: boolean;
 };
 
 type TrackLineResource = {
@@ -163,8 +168,10 @@ const MOVEMENT_KEY_MAP: Record<string, keyof MovementState> = {
   KeyS: 'moveBackward',
   KeyA: 'moveLeft',
   KeyD: 'moveRight',
-  KeyE: 'moveUp',
-  KeyQ: 'moveDown'
+  KeyR: 'moveUp',
+  KeyF: 'moveDown',
+  KeyQ: 'rotateLeft',
+  KeyE: 'rotateRight'
 };
 
 function createColormapTexture(hexColor: string) {
@@ -231,7 +238,9 @@ function VolumeViewer({
     moveLeft: false,
     moveRight: false,
     moveUp: false,
-    moveDown: false
+    moveDown: false,
+    rotateLeft: false,
+    rotateRight: false
   });
   const volumeRootGroupRef = useRef<THREE.Group | null>(null);
   const volumeRootCenterOffsetRef = useRef(new THREE.Vector3());
@@ -243,6 +252,7 @@ function VolumeViewer({
   const followedTrackIdRef = useRef<number | null>(null);
   const trackFollowOffsetRef = useRef<THREE.Vector3 | null>(null);
   const previousFollowedTrackIdRef = useRef<number | null>(null);
+  const hadPrimaryVolumeRef = useRef(false);
   const [layerStats, setLayerStats] = useState<Record<string, VolumeStats>>({});
   const [hasMeasured, setHasMeasured] = useState(false);
   const [trackOverlayRevision, setTrackOverlayRevision] = useState(0);
@@ -397,6 +407,15 @@ function VolumeViewer({
     return null;
   }, [layers]);
   const hasRenderableLayer = Boolean(primaryVolume);
+
+  useEffect(() => {
+    const hasVolume = Boolean(primaryVolume);
+    const hadVolume = hadPrimaryVolumeRef.current;
+    hadPrimaryVolumeRef.current = hasVolume;
+    if (hasVolume && !hadVolume && trackGroupRef.current) {
+      setTrackOverlayRevision((revision) => revision + 1);
+    }
+  }, [primaryVolume]);
 
   useEffect(() => {
     if (trackOverlayRevision === 0) {
@@ -677,6 +696,8 @@ function VolumeViewer({
       movementState.moveRight = false;
       movementState.moveUp = false;
       movementState.moveDown = false;
+      movementState.rotateLeft = false;
+      movementState.rotateRight = false;
     }
 
     const camera = cameraRef.current;
@@ -861,24 +882,11 @@ function VolumeViewer({
 
     const handlePointerDown = (event: PointerEvent) => {
       const controls = controlsRef.current;
-      const cameraInstance = cameraRef.current;
-      if (!controls || !cameraInstance) {
+      if (!controls || event.button !== 0) {
         return;
       }
 
-      if (event.button !== 0) {
-        return;
-      }
-
-      const mode = event.ctrlKey ? 'dolly' : event.shiftKey ? 'pan' : null;
-
-      if (!mode) {
-        const hitTrackId = performHoverHitTest(event);
-        if (hitTrackId !== null) {
-          onTrackFollowRequest(hitTrackId);
-        }
-        return;
-      }
+      const mode = event.ctrlKey ? 'dolly' : 'pan';
 
       event.preventDefault();
       event.stopPropagation();
@@ -896,6 +904,9 @@ function VolumeViewer({
         pointerId: event.pointerId,
         lastX: event.clientX,
         lastY: event.clientY,
+        startX: event.clientX,
+        startY: event.clientY,
+        hasMoved: false,
         previousControlsEnabled: controls.enabled,
         previousEnablePan
       };
@@ -926,6 +937,14 @@ function VolumeViewer({
       const deltaX = event.clientX - state.lastX;
       const deltaY = event.clientY - state.lastY;
 
+      if (!state.hasMoved) {
+        const totalDeltaX = event.clientX - state.startX;
+        const totalDeltaY = event.clientY - state.startY;
+        if (totalDeltaX * totalDeltaX + totalDeltaY * totalDeltaY > 4) {
+          state.hasMoved = true;
+        }
+      }
+
       if (state.mode === 'pan') {
         (controls as unknown as { pan: (dx: number, dy: number) => void }).pan(deltaX, deltaY);
         rotationTargetRef.current.copy(controls.target);
@@ -938,6 +957,7 @@ function VolumeViewer({
         dollyDirection.multiplyScalar(moveAmount);
         camera.position.add(dollyDirection);
         controls.target.copy(rotationTarget);
+        state.hasMoved = true;
       }
 
       controls.update();
@@ -966,8 +986,13 @@ function VolumeViewer({
         // Ignore errors from unsupported pointer capture (e.g., Safari)
       }
 
+      const shouldHandleClick = state.mode === 'pan' && !state.hasMoved;
+
       pointerStateRef.current = null;
-      performHoverHitTest(event);
+      const hitTrackId = performHoverHitTest(event);
+      if (shouldHandleClick && hitTrackId !== null) {
+        onTrackFollowRequest(hitTrackId);
+      }
     };
 
     const handlePointerLeave = () => {
@@ -1019,21 +1044,25 @@ function VolumeViewer({
     const rightVector = new THREE.Vector3();
     const movementVector = new THREE.Vector3();
     const dollyDirection = new THREE.Vector3();
+    const orbitOffset = new THREE.Vector3();
+    const rotationMatrix = new THREE.Matrix4();
 
     const applyKeyboardMovement = () => {
       if (followedTrackIdRef.current !== null) {
         return;
       }
       const movementState = movementStateRef.current;
-      if (
-        !movementState ||
-        (!movementState.moveForward &&
-          !movementState.moveBackward &&
-          !movementState.moveLeft &&
-          !movementState.moveRight &&
-          !movementState.moveUp &&
-          !movementState.moveDown)
-      ) {
+        if (
+          !movementState ||
+          (!movementState.moveForward &&
+            !movementState.moveBackward &&
+            !movementState.moveLeft &&
+            !movementState.moveRight &&
+            !movementState.moveUp &&
+            !movementState.moveDown &&
+            !movementState.rotateLeft &&
+            !movementState.rotateRight)
+        ) {
         return;
       }
 
@@ -1077,12 +1106,31 @@ function VolumeViewer({
         movementVector.addScaledVector(worldUp, -movementScale);
       }
 
-      if (movementVector.lengthSq() === 0) {
+      let hasUpdated = false;
+
+      if (movementVector.lengthSq() > 0) {
+        camera.position.add(movementVector);
+        rotationTarget.add(movementVector);
+        hasUpdated = true;
+      }
+
+      if (movementState.rotateLeft || movementState.rotateRight) {
+        const rotationDirection = (movementState.rotateLeft ? 1 : 0) - (movementState.rotateRight ? 1 : 0);
+        if (rotationDirection !== 0) {
+          const rotationSpeed = Math.min(Math.max(distance * 0.0015, 0.01), 0.05);
+          const angle = rotationDirection * rotationSpeed;
+          orbitOffset.copy(camera.position).sub(rotationTarget);
+          rotationMatrix.makeRotationAxis(worldUp, angle);
+          orbitOffset.applyMatrix4(rotationMatrix);
+          camera.position.copy(rotationTarget).add(orbitOffset);
+          hasUpdated = true;
+        }
+      }
+
+      if (!hasUpdated) {
         return;
       }
 
-      camera.position.add(movementVector);
-      rotationTarget.add(movementVector);
       controls.target.copy(rotationTarget);
     };
 
