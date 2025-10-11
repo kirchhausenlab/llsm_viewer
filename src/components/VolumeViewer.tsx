@@ -242,6 +242,7 @@ function VolumeViewer({
   const previousFollowedTrackIdRef = useRef<number | null>(null);
   const [layerStats, setLayerStats] = useState<Record<string, VolumeStats>>({});
   const [hasMeasured, setHasMeasured] = useState(false);
+  const [trackOverlayRevision, setTrackOverlayRevision] = useState(0);
   const hoveredTrackIdRef = useRef<number | null>(null);
   const [hoveredTrackId, setHoveredTrackId] = useState<number | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
@@ -329,6 +330,10 @@ function VolumeViewer({
   const hasRenderableLayer = Boolean(primaryVolume);
 
   useEffect(() => {
+    if (trackOverlayRevision === 0) {
+      return;
+    }
+
     const trackGroup = trackGroupRef.current;
     if (!trackGroup) {
       return;
@@ -443,9 +448,13 @@ function VolumeViewer({
     }
 
     updateTrackDrawRanges(timeIndexRef.current);
-  }, [clearHoverState, tracks, updateTrackDrawRanges]);
+  }, [clearHoverState, trackOverlayRevision, tracks, updateTrackDrawRanges]);
 
   useEffect(() => {
+    if (trackOverlayRevision === 0) {
+      return;
+    }
+
     const trackGroup = trackGroupRef.current;
     if (!trackGroup) {
       return;
@@ -519,6 +528,7 @@ function VolumeViewer({
     }
   }, [
     clearHoverState,
+    trackOverlayRevision,
     followedTrackId,
     hoveredTrackId,
     trackLineWidth,
@@ -686,6 +696,7 @@ function VolumeViewer({
     trackGroup.visible = false;
     scene.add(trackGroup);
     trackGroupRef.current = trackGroup;
+    setTrackOverlayRevision((revision) => revision + 1);
 
     const camera = new THREE.PerspectiveCamera(
       38,
