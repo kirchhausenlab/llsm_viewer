@@ -234,6 +234,7 @@ function VolumeViewer({
     moveDown: false
   });
   const trackGroupRef = useRef<THREE.Group | null>(null);
+  const trackGroupCenterOffsetRef = useRef(new THREE.Vector3());
   const trackLinesRef = useRef<Map<number, TrackLineResource>>(new Map());
   const raycasterRef = useRef<RaycasterLike | null>(null);
   const timeIndexRef = useRef(0);
@@ -267,6 +268,39 @@ function VolumeViewer({
     }
     setTooltipPosition(null);
   }, []);
+
+  const applyTrackGroupTransform = useCallback(
+    (dimensions: { width: number; height: number; depth: number } | null) => {
+      const trackGroup = trackGroupRef.current;
+      if (!trackGroup) {
+        return;
+      }
+
+      if (!dimensions) {
+        trackGroup.position.set(0, 0, 0);
+        trackGroup.scale.set(1, 1, 1);
+        return;
+      }
+
+      const { width, height, depth } = dimensions;
+      const maxDimension = Math.max(width, height, depth);
+      if (!Number.isFinite(maxDimension) || maxDimension <= 0) {
+        trackGroup.position.set(0, 0, 0);
+        trackGroup.scale.set(1, 1, 1);
+        return;
+      }
+
+      const scale = 1 / maxDimension;
+      const centerOffset = trackGroupCenterOffsetRef.current;
+      centerOffset
+        .set(width / 2 - 0.5, height / 2 - 0.5, depth / 2 - 0.5)
+        .multiplyScalar(scale);
+
+      trackGroup.scale.setScalar(scale);
+      trackGroup.position.set(-centerOffset.x, -centerOffset.y, -centerOffset.z);
+    },
+    []
+  );
 
   const getColormapTexture = useCallback((color: string) => {
     const normalized = normalizeHexColor(color, DEFAULT_LAYER_COLOR);
@@ -1105,7 +1139,7 @@ function VolumeViewer({
       cameraRef.current = null;
       controlsRef.current = null;
     };
-  }, []);
+  }, [applyTrackGroupTransform]);
 
   useEffect(() => {
     const handleKeyChange = (event: KeyboardEvent, isPressed: boolean) => {
@@ -1215,9 +1249,8 @@ function VolumeViewer({
       const trackGroup = trackGroupRef.current;
       if (trackGroup) {
         trackGroup.visible = false;
-        trackGroup.position.set(0, 0, 0);
-        trackGroup.scale.set(1, 1, 1);
       }
+      applyTrackGroupTransform(null);
       setLayerStats({});
       return;
     }
@@ -1257,16 +1290,7 @@ function VolumeViewer({
       };
       controls.saveState();
 
-      const trackGroup = trackGroupRef.current;
-      if (trackGroup) {
-        const centerOffset = new THREE.Vector3(
-          width / 2 - 0.5,
-          height / 2 - 0.5,
-          depth / 2 - 0.5
-        ).multiplyScalar(scale);
-        trackGroup.scale.setScalar(scale);
-        trackGroup.position.set(-centerOffset.x, -centerOffset.y, -centerOffset.z);
-      }
+      applyTrackGroupTransform({ width, height, depth });
     }
 
     const nextStats: Record<string, VolumeStats> = {};
@@ -1521,7 +1545,7 @@ function VolumeViewer({
     }
 
     setLayerStats(nextStats);
-  }, [getColormapTexture, layers]);
+  }, [applyTrackGroupTransform, getColormapTexture, layers]);
 
   useEffect(() => {
     return () => {
