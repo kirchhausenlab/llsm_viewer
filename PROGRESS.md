@@ -155,3 +155,6 @@ Next steps:
 ## Track overlay boot fix & planar control revert
 - Latched the render-surface ref through a stateful callback so the 3D viewer only initializes once the container is mounted, ensuring track overlays build immediately after loading trajectories.
 - Returned the 2D viewer to left-drag panning while restoring Q/E keyboard rotation, mirroring the earlier navigation scheme without disturbing slice shortcuts.
+
+## 3D track overlay alignment fix
+- Removed the redundant scaling/translation applied to the Three.js track overlay group so its coordinates match the normalized volume root, restoring visible trajectories in 3D mode across datasets.

@@ -236,7 +236,6 @@ function VolumeViewer({
   const volumeRootGroupRef = useRef<THREE.Group | null>(null);
   const volumeRootCenterOffsetRef = useRef(new THREE.Vector3());
   const trackGroupRef = useRef<THREE.Group | null>(null);
-  const trackGroupCenterOffsetRef = useRef(new THREE.Vector3());
   const trackLinesRef = useRef<Map<number, TrackLineResource>>(new Map());
   const raycasterRef = useRef<RaycasterLike | null>(null);
   const timeIndexRef = useRef(0);
@@ -331,14 +330,11 @@ function VolumeViewer({
         return;
       }
 
-      const scale = 1 / maxDimension;
-      const centerOffset = trackGroupCenterOffsetRef.current;
-      centerOffset
-        .set(width / 2 - 0.5, height / 2 - 0.5, depth / 2 - 0.5)
-        .multiplyScalar(scale);
-
-      trackGroup.scale.setScalar(scale);
-      trackGroup.position.set(-centerOffset.x, -centerOffset.y, -centerOffset.z);
+      // The volume root group already normalizes scale/position for all children,
+      // so the track overlay should keep an identity transform to match the
+      // volume data coordinates.
+      trackGroup.position.set(0, 0, 0);
+      trackGroup.scale.set(1, 1, 1);
     },
     []
   );
