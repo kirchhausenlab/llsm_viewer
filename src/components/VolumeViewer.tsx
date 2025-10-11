@@ -305,6 +305,7 @@ function VolumeViewer({
 
       volumeRootGroup.scale.setScalar(scale);
       volumeRootGroup.position.set(-centerOffset.x, -centerOffset.y, -centerOffset.z);
+      volumeRootGroup.updateMatrixWorld(true);
     },
     []
   );
@@ -319,6 +320,7 @@ function VolumeViewer({
       if (!dimensions) {
         trackGroup.position.set(0, 0, 0);
         trackGroup.scale.set(1, 1, 1);
+        trackGroup.matrixWorldNeedsUpdate = true;
         return;
       }
 
@@ -327,6 +329,7 @@ function VolumeViewer({
       if (!Number.isFinite(maxDimension) || maxDimension <= 0) {
         trackGroup.position.set(0, 0, 0);
         trackGroup.scale.set(1, 1, 1);
+        trackGroup.matrixWorldNeedsUpdate = true;
         return;
       }
 
@@ -335,6 +338,7 @@ function VolumeViewer({
       // volume data coordinates.
       trackGroup.position.set(0, 0, 0);
       trackGroup.scale.set(1, 1, 1);
+      trackGroup.matrixWorldNeedsUpdate = true;
     },
     []
   );
@@ -400,6 +404,23 @@ function VolumeViewer({
     return null;
   }, [layers]);
   const hasRenderableLayer = Boolean(primaryVolume);
+  const hasActive3DLayer = useMemo(
+    () =>
+      layers.some((layer) => {
+        if (!layer.volume) {
+          return false;
+        }
+        const viewerMode =
+          layer.mode === 'slice' || layer.mode === '3d'
+            ? layer.mode
+            : layer.volume.depth > 1
+            ? '3d'
+            : 'slice';
+        return viewerMode === '3d';
+      }),
+    [layers]
+  );
+  const previouslyHad3DLayerRef = useRef(false);
 
   useEffect(() => {
     if (trackOverlayRevision === 0) {
@@ -613,6 +634,31 @@ function VolumeViewer({
     updateTrackDrawRanges(clampedTimeIndex);
   }, [clampedTimeIndex, updateTrackDrawRanges]);
 
+  useEffect(() => {
+    const previouslyHad3DLayer = previouslyHad3DLayerRef.current;
+    previouslyHad3DLayerRef.current = hasActive3DLayer;
+
+    if (!hasActive3DLayer || previouslyHad3DLayer === hasActive3DLayer) {
+      return;
+    }
+
+    applyVolumeRootTransform(currentDimensionsRef.current);
+    applyTrackGroupTransform(currentDimensionsRef.current);
+
+    const trackGroup = trackGroupRef.current;
+    if (trackGroup) {
+      trackGroup.updateMatrixWorld(true);
+    }
+
+    setTrackOverlayRevision((revision) => revision + 1);
+    updateTrackDrawRanges(timeIndexRef.current);
+  }, [
+    applyTrackGroupTransform,
+    applyVolumeRootTransform,
+    hasActive3DLayer,
+    updateTrackDrawRanges
+  ]);
+
   const computeTrackCentroid = useCallback(
     (trackId: number, targetTimeIndex: number) => {
       const track = tracks.find((candidate) => candidate.id === trackId);
@@ -773,6 +819,14 @@ function VolumeViewer({
     trackGroup.visible = false;
     volumeRootGroup.add(trackGroup);
     trackGroupRef.current = trackGroup;
+
+    // If the volume dimensions were already resolved (e.g., when toggling
+    // between 2D and 3D views), make sure the tracking overlay immediately
+    // adopts the normalized transform. Otherwise the tracks momentarily render
+    // in unnormalized dataset coordinates until another interaction triggers a
+    // redraw.
+    applyTrackGroupTransform(currentDimensionsRef.current);
+
     setTrackOverlayRevision((revision) => revision + 1);
 
     const camera = new THREE.PerspectiveCamera(
