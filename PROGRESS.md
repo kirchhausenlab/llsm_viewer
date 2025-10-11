@@ -142,3 +142,7 @@ Next steps:
 ## Track overlay restoration after mode toggles
 - Latched a revision counter when the 3D viewer boots so the tracking overlay rebuilds once its scene graph is ready instead of relying on incidental prop changes.
 - Re-ran the track creation and visibility effects whenever the overlay is reinitialized, ensuring trajectories retain the correct translation and scale after returning from 2D mode.
+
+## Volume root transform regression fix
+- Restored the missing volume-root transform helper so the Three.js scene initializes even before a dataset is loaded, preventing the viewer from crashing on startup.
+- Reapplied the transform whenever dataset dimensions change or resources are torn down, keeping the volume and tracking overlays consistently centered.
