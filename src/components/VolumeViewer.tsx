@@ -245,6 +245,7 @@ function VolumeViewer({
   const [layerStats, setLayerStats] = useState<Record<string, VolumeStats>>({});
   const [hasMeasured, setHasMeasured] = useState(false);
   const [trackOverlayRevision, setTrackOverlayRevision] = useState(0);
+  const [renderContextRevision, setRenderContextRevision] = useState(0);
   const hoveredTrackIdRef = useRef<number | null>(null);
   const [hoveredTrackId, setHoveredTrackId] = useState<number | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
@@ -828,6 +829,7 @@ function VolumeViewer({
     applyTrackGroupTransform(currentDimensionsRef.current);
 
     setTrackOverlayRevision((revision) => revision + 1);
+    setRenderContextRevision((revision) => revision + 1);
 
     const camera = new THREE.PerspectiveCamera(
       38,
@@ -1647,7 +1649,7 @@ function VolumeViewer({
     }
 
     setLayerStats(nextStats);
-  }, [applyTrackGroupTransform, getColormapTexture, layers]);
+  }, [applyTrackGroupTransform, getColormapTexture, layers, renderContextRevision]);
 
   useEffect(() => {
     return () => {
