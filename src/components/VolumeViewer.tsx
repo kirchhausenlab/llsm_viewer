@@ -730,7 +730,6 @@ function VolumeViewer({
     trackGroup.visible = false;
     scene.add(trackGroup);
     trackGroupRef.current = trackGroup;
-    applyTrackGroupTransform(currentDimensionsRef.current);
     setTrackOverlayRevision((revision) => revision + 1);
 
     const camera = new THREE.PerspectiveCamera(

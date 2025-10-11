@@ -142,6 +142,3 @@ Next steps:
 ## Track overlay restoration after mode toggles
 - Latched a revision counter when the 3D viewer boots so the tracking overlay rebuilds once its scene graph is ready instead of relying on incidental prop changes.
 - Re-ran the track creation and visibility effects whenever the overlay is reinitialized, ensuring trajectories retain the correct translation and scale after returning from 2D mode.
-
-## Track overlay transform persistence
-- Reapplied the volume-derived transform to the tracking overlay whenever the 3D scene is re-created so trajectories preserve their scale/offset when returning from 2D mode without triggering a dimension change.
