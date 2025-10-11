@@ -233,7 +233,9 @@ function VolumeViewer({
     moveUp: false,
     moveDown: false
   });
+  const volumeRootGroupRef = useRef<THREE.Group | null>(null);
   const trackGroupRef = useRef<THREE.Group | null>(null);
+  const volumeRootCenterOffsetRef = useRef(new THREE.Vector3());
   const trackLinesRef = useRef<Map<number, TrackLineResource>>(new Map());
   const raycasterRef = useRef<RaycasterLike | null>(null);
   const timeIndexRef = useRef(0);
@@ -242,6 +244,7 @@ function VolumeViewer({
   const previousFollowedTrackIdRef = useRef<number | null>(null);
   const [layerStats, setLayerStats] = useState<Record<string, VolumeStats>>({});
   const [hasMeasured, setHasMeasured] = useState(false);
+  const [trackOverlayRevision, setTrackOverlayRevision] = useState(0);
   const hoveredTrackIdRef = useRef<number | null>(null);
   const [hoveredTrackId, setHoveredTrackId] = useState<number | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
@@ -266,6 +269,39 @@ function VolumeViewer({
     }
     setTooltipPosition(null);
   }, []);
+
+  const applyVolumeRootTransform = useCallback(
+    (dimensions: { width: number; height: number; depth: number } | null) => {
+      const volumeRoot = volumeRootGroupRef.current;
+      if (!volumeRoot) {
+        return;
+      }
+
+      if (!dimensions) {
+        volumeRoot.position.set(0, 0, 0);
+        volumeRoot.scale.set(1, 1, 1);
+        return;
+      }
+
+      const { width, height, depth } = dimensions;
+      const maxDimension = Math.max(width, height, depth);
+      if (!Number.isFinite(maxDimension) || maxDimension <= 0) {
+        volumeRoot.position.set(0, 0, 0);
+        volumeRoot.scale.set(1, 1, 1);
+        return;
+      }
+
+      const scale = 1 / maxDimension;
+      const centerOffset = volumeRootCenterOffsetRef.current;
+      centerOffset
+        .set(width / 2 - 0.5, height / 2 - 0.5, depth / 2 - 0.5)
+        .multiplyScalar(scale);
+
+      volumeRoot.scale.setScalar(scale);
+      volumeRoot.position.set(-centerOffset.x, -centerOffset.y, -centerOffset.z);
+    },
+    []
+  );
 
   const getColormapTexture = useCallback((color: string) => {
     const normalized = normalizeHexColor(color, DEFAULT_LAYER_COLOR);
@@ -329,6 +365,10 @@ function VolumeViewer({
   const hasRenderableLayer = Boolean(primaryVolume);
 
   useEffect(() => {
+    if (trackOverlayRevision === 0) {
+      return;
+    }
+
     const trackGroup = trackGroupRef.current;
     if (!trackGroup) {
       return;
@@ -443,9 +483,13 @@ function VolumeViewer({
     }
 
     updateTrackDrawRanges(timeIndexRef.current);
-  }, [clearHoverState, tracks, updateTrackDrawRanges]);
+  }, [clearHoverState, trackOverlayRevision, tracks, updateTrackDrawRanges]);
 
   useEffect(() => {
+    if (trackOverlayRevision === 0) {
+      return;
+    }
+
     const trackGroup = trackGroupRef.current;
     if (!trackGroup) {
       return;
@@ -519,6 +563,7 @@ function VolumeViewer({
     }
   }, [
     clearHoverState,
+    trackOverlayRevision,
     followedTrackId,
     hoveredTrackId,
     trackLineWidth,
@@ -681,11 +726,18 @@ function VolumeViewer({
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(clearColor);
 
+    const volumeRootGroup = new THREE.Group();
+    volumeRootGroup.name = 'VolumeRoot';
+    scene.add(volumeRootGroup);
+    volumeRootGroupRef.current = volumeRootGroup;
+    applyVolumeRootTransform(currentDimensionsRef.current);
+
     const trackGroup = new THREE.Group();
     trackGroup.name = 'TrackingOverlay';
     trackGroup.visible = false;
-    scene.add(trackGroup);
+    volumeRootGroup.add(trackGroup);
     trackGroupRef.current = trackGroup;
+    setTrackOverlayRevision((revision) => revision + 1);
 
     const camera = new THREE.PerspectiveCamera(
       38,
@@ -1055,11 +1107,20 @@ function VolumeViewer({
           resource.outlineMaterial.dispose();
         }
         trackLinesRef.current.clear();
-        if (trackGroup.parent) {
-          trackGroup.parent.remove(trackGroup);
-        }
       }
       trackGroupRef.current = null;
+
+      const volumeRootGroup = volumeRootGroupRef.current;
+      if (volumeRootGroup) {
+        if (trackGroup && trackGroup.parent === volumeRootGroup) {
+          volumeRootGroup.remove(trackGroup);
+        }
+        volumeRootGroup.clear();
+        if (volumeRootGroup.parent) {
+          volumeRootGroup.parent.remove(volumeRootGroup);
+        }
+      }
+      volumeRootGroupRef.current = null;
       clearHoverState();
 
       domElement.removeEventListener('pointerdown', handlePointerDown, pointerDownOptions);
@@ -1094,7 +1155,7 @@ function VolumeViewer({
       cameraRef.current = null;
       controlsRef.current = null;
     };
-  }, []);
+  }, [applyVolumeRootTransform]);
 
   useEffect(() => {
     const handleKeyChange = (event: KeyboardEvent, isPressed: boolean) => {
@@ -1204,9 +1265,8 @@ function VolumeViewer({
       const trackGroup = trackGroupRef.current;
       if (trackGroup) {
         trackGroup.visible = false;
-        trackGroup.position.set(0, 0, 0);
-        trackGroup.scale.set(1, 1, 1);
       }
+      applyVolumeRootTransform(null);
       setLayerStats({});
       return;
     }
@@ -1246,16 +1306,7 @@ function VolumeViewer({
       };
       controls.saveState();
 
-      const trackGroup = trackGroupRef.current;
-      if (trackGroup) {
-        const centerOffset = new THREE.Vector3(
-          width / 2 - 0.5,
-          height / 2 - 0.5,
-          depth / 2 - 0.5
-        ).multiplyScalar(scale);
-        trackGroup.scale.setScalar(scale);
-        trackGroup.position.set(-centerOffset.x, -centerOffset.y, -centerOffset.z);
-      }
+      applyVolumeRootTransform({ width, height, depth });
     }
 
     const nextStats: Record<string, VolumeStats> = {};
@@ -1339,22 +1390,16 @@ function VolumeViewer({
           geometry.translate(volume.width / 2 - 0.5, volume.height / 2 - 0.5, volume.depth / 2 - 0.5);
 
           const mesh = new THREE.Mesh(geometry, material);
-          const maxDimension = Math.max(volume.width, volume.height, volume.depth);
-          const scale = 1 / maxDimension;
-          mesh.scale.setScalar(scale);
-
-          const centerOffset = new THREE.Vector3(
-            volume.width / 2 - 0.5,
-            volume.height / 2 - 0.5,
-            volume.depth / 2 - 0.5
-          ).multiplyScalar(scale);
-          mesh.position.set(-centerOffset.x, -centerOffset.y, -centerOffset.z);
-
           const meshObject = mesh as unknown as { visible: boolean; renderOrder: number };
           meshObject.visible = layer.visible;
           meshObject.renderOrder = index;
 
-          scene.add(mesh);
+          const volumeRootGroup = volumeRootGroupRef.current;
+          if (volumeRootGroup) {
+            volumeRootGroup.add(mesh);
+          } else {
+            scene.add(mesh);
+          }
           mesh.updateMatrixWorld(true);
 
           const cameraUniform = mesh.material.uniforms.u_cameraPos.value;
@@ -1425,18 +1470,16 @@ function VolumeViewer({
           geometry.translate(volume.width / 2 - 0.5, volume.height / 2 - 0.5, 0);
 
           const mesh = new THREE.Mesh(geometry, material);
-          const maxDimension = Math.max(volume.width, volume.height, volume.depth);
-          const scale = 1 / maxDimension;
-          mesh.scale.setScalar(scale);
-          const depthCenter = (volume.depth - 1) / 2;
-          const offsetX = -(volume.width / 2 - 0.5) * scale;
-          const offsetY = -(volume.height / 2 - 0.5) * scale;
-          const offsetZ = (clampedIndex - depthCenter) * scale;
-          mesh.position.set(offsetX, offsetY, offsetZ);
+          mesh.position.set(0, 0, clampedIndex);
           const meshObject = mesh as unknown as { visible: boolean; renderOrder: number };
           meshObject.visible = layer.visible;
           meshObject.renderOrder = index;
-          scene.add(mesh);
+          const volumeRootGroup = volumeRootGroupRef.current;
+          if (volumeRootGroup) {
+            volumeRootGroup.add(mesh);
+          } else {
+            scene.add(mesh);
+          }
 
           resourcesRef.current.set(layer.key, {
             mesh,
@@ -1488,6 +1531,7 @@ function VolumeViewer({
           dataTexture.format = sliceInfo.format;
           dataTexture.needsUpdate = true;
           materialUniforms.u_slice.value = dataTexture;
+          mesh.position.set(0, 0, clampedIndex);
         }
 
         const cameraUniform = materialUniforms.u_cameraPos?.value as THREE.Vector3 | undefined;
@@ -1510,7 +1554,7 @@ function VolumeViewer({
     }
 
     setLayerStats(nextStats);
-  }, [getColormapTexture, layers]);
+  }, [applyVolumeRootTransform, getColormapTexture, layers]);
 
   useEffect(() => {
     return () => {
