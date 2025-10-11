@@ -138,3 +138,10 @@ Next steps:
 - Implemented a pixel-accurate XY slice renderer with brightness/contrast-aware compositing and configurable grayscale tinting while avoiding interpolation entirely.
 - Introduced keyboard, mouse, and slider controls for navigating Z planes, rotating within the slice plane, and panning/zooming in a manner consistent with the 3D controls.
 - Updated the layout and styling so both viewer modes share playback widgets and reset-view integration, while keeping tracking functionality as a no-op in 2D mode.
+
+## Track overlay restoration after mode toggles
+- Latched a revision counter when the 3D viewer boots so the tracking overlay rebuilds once its scene graph is ready instead of relying on incidental prop changes.
+- Re-ran the track creation and visibility effects whenever the overlay is reinitialized, ensuring trajectories retain the correct translation and scale after returning from 2D mode.
+
+## Track overlay transform persistence
+- Reapplied the volume-derived transform to the tracking overlay whenever the 3D scene is re-created so trajectories preserve their scale/offset when returning from 2D mode without triggering a dimension change.
