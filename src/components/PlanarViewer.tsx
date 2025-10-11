@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { TrackDefinition } from '../types/tracks';
+import { getTrackColorHex } from '../trackColors';
 import type { NormalizedVolume } from '../volumeProcessing';
 import './PlanarViewer.css';
 
@@ -28,6 +30,11 @@ type PlanarViewerProps = {
   sliceIndex: number;
   maxSlices: number;
   onSliceIndexChange: (index: number) => void;
+  tracks: TrackDefinition[];
+  trackVisibility: Record<number, boolean>;
+  trackOpacity: number;
+  trackLineWidth: number;
+  followedTrackId: number | null;
 };
 
 type SliceData = {
@@ -55,6 +62,10 @@ const ROTATION_DRAG_FACTOR = 0.005;
 const PAN_STEP = 40;
 const MIN_SCALE = 0.05;
 const MAX_SCALE = 40;
+const TRACK_HIGHLIGHT_BOOST = 0.4;
+const OUTLINE_OPACITY = 0.75;
+const OUTLINE_MIN_WIDTH = 0.4;
+const TRACK_EPSILON = 1e-3;
 
 function clamp(value: number, min: number, max: number) {
   if (value < min) {
@@ -82,6 +93,22 @@ function getColorComponents(color: string) {
   return { r: red, g: green, b: blue };
 }
 
+function mixWithWhite(color: { r: number; g: number; b: number }, intensity: number) {
+  const amount = clamp(intensity, 0, 1);
+  return {
+    r: clamp(color.r + (1 - color.r) * amount, 0, 1),
+    g: clamp(color.g + (1 - color.g) * amount, 0, 1),
+    b: clamp(color.b + (1 - color.b) * amount, 0, 1)
+  };
+}
+
+function componentsToCss({ r, g, b }: { r: number; g: number; b: number }) {
+  const red = Math.round(clamp(r, 0, 1) * 255);
+  const green = Math.round(clamp(g, 0, 1) * 255);
+  const blue = Math.round(clamp(b, 0, 1) * 255);
+  return `rgb(${red}, ${green}, ${blue})`;
+}
+
 function createInitialViewState(): ViewState {
   return { scale: 1, offsetX: 0, offsetY: 0, rotation: 0 };
 }
@@ -101,7 +128,12 @@ function PlanarViewer({
   onRegisterReset,
   sliceIndex,
   maxSlices,
-  onSliceIndexChange
+  onSliceIndexChange,
+  tracks,
+  trackVisibility,
+  trackOpacity,
+  trackLineWidth,
+  followedTrackId
 }: PlanarViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -123,6 +155,9 @@ function PlanarViewer({
   useEffect(() => {
     viewStateRef.current = viewState;
   }, [viewState]);
+
+  const sanitizedTrackOpacity = Math.min(1, Math.max(0, trackOpacity));
+  const sanitizedTrackLineWidth = Math.max(0.1, Math.min(10, trackLineWidth));
 
   const updateViewState = useCallback(
     (updater: Partial<ViewState> | ((prev: ViewState) => ViewState)) => {
@@ -338,6 +373,103 @@ function PlanarViewer({
     return { width, height, buffer: output, hasLayer };
   }, [layers, primaryVolume, clampedSliceIndex]);
 
+  const trackRenderData = useMemo(() => {
+    if (!primaryVolume) {
+      return [];
+    }
+
+    const width = primaryVolume.width;
+    const height = primaryVolume.height;
+    const centerX = width / 2 - 0.5;
+    const centerY = height / 2 - 0.5;
+    const maxVisibleTime = clampedTimeIndex;
+
+    return tracks
+      .map((track) => {
+        if (track.points.length === 0) {
+          return null;
+        }
+
+        const baseColor = getColorComponents(getTrackColorHex(track.id));
+        const highlightColor = mixWithWhite(baseColor, TRACK_HIGHLIGHT_BOOST);
+
+        const visiblePoints: { x: number; y: number; z: number }[] = [];
+        for (const point of track.points) {
+          if (point.time - maxVisibleTime > TRACK_EPSILON) {
+            break;
+          }
+          visiblePoints.push({
+            x: point.x - centerX,
+            y: point.y - centerY,
+            z: point.z
+          });
+        }
+
+        if (visiblePoints.length === 0) {
+          return null;
+        }
+
+        return {
+          id: track.id,
+          points: visiblePoints,
+          baseColor,
+          highlightColor
+        };
+      })
+      .filter((entry): entry is {
+        id: number;
+        points: { x: number; y: number; z: number }[];
+        baseColor: { r: number; g: number; b: number };
+        highlightColor: { r: number; g: number; b: number };
+      } => entry !== null);
+  }, [clampedTimeIndex, primaryVolume, tracks]);
+
+  const computeTrackCentroid = useCallback(
+    (trackId: number, targetTimeIndex: number) => {
+      const track = tracks.find((candidate) => candidate.id === trackId);
+      if (!track || track.points.length === 0) {
+        return null;
+      }
+
+      const maxVisibleTime = targetTimeIndex + 1;
+      let latestTime = -Infinity;
+      let count = 0;
+      let sumX = 0;
+      let sumY = 0;
+      let sumZ = 0;
+
+      for (const point of track.points) {
+        if (point.time - maxVisibleTime > TRACK_EPSILON) {
+          break;
+        }
+
+        if (point.time > latestTime + TRACK_EPSILON) {
+          latestTime = point.time;
+          count = 1;
+          sumX = point.x;
+          sumY = point.y;
+          sumZ = point.z;
+        } else if (Math.abs(point.time - latestTime) <= TRACK_EPSILON) {
+          count += 1;
+          sumX += point.x;
+          sumY += point.y;
+          sumZ += point.z;
+        }
+      }
+
+      if (count === 0) {
+        return null;
+      }
+
+      return {
+        x: sumX / count,
+        y: sumY / count,
+        z: sumZ / count
+      };
+    },
+    [tracks]
+  );
+
   const drawSlice = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) {
@@ -366,8 +498,86 @@ function PlanarViewer({
     context.rotate(viewState.rotation);
     context.scale(viewState.scale, viewState.scale);
     context.drawImage(sliceCanvas, -sliceCanvas.width / 2, -sliceCanvas.height / 2);
+
+    if (trackRenderData.length > 0) {
+      const scale = Math.max(viewState.scale, 1e-6);
+      const baseLineWidth = sanitizedTrackLineWidth / scale;
+      const outlineWidthBoost = Math.max(sanitizedTrackLineWidth * 0.75, OUTLINE_MIN_WIDTH) / scale;
+
+      for (const track of trackRenderData) {
+        const isFollowed = followedTrackId === track.id;
+        const isExplicitlyVisible = trackVisibility[track.id] ?? true;
+        const shouldShow = isFollowed || isExplicitlyVisible;
+        if (!shouldShow) {
+          continue;
+        }
+
+        const points = track.points;
+        if (points.length === 0) {
+          continue;
+        }
+
+        const opacityBoost = isFollowed ? 0.15 : 0;
+        const targetOpacity = Math.min(1, sanitizedTrackOpacity + opacityBoost);
+        const widthMultiplier = isFollowed ? 1.35 : 1;
+        const strokeWidth = Math.max(0.1, baseLineWidth * widthMultiplier);
+        const strokeColor = isFollowed ? track.highlightColor : track.baseColor;
+
+        if (points.length >= 2 && isFollowed) {
+          context.save();
+          context.lineCap = 'round';
+          context.lineJoin = 'round';
+          context.globalAlpha = Math.min(1, targetOpacity * OUTLINE_OPACITY);
+          context.strokeStyle = 'rgb(255, 255, 255)';
+          context.lineWidth = strokeWidth + outlineWidthBoost;
+          context.beginPath();
+          context.moveTo(points[0].x, points[0].y);
+          for (let i = 1; i < points.length; i++) {
+            context.lineTo(points[i].x, points[i].y);
+          }
+          context.stroke();
+          context.restore();
+        }
+
+        if (points.length >= 2) {
+          context.save();
+          context.lineCap = 'round';
+          context.lineJoin = 'round';
+          context.globalAlpha = targetOpacity;
+          context.strokeStyle = componentsToCss(strokeColor);
+          context.lineWidth = strokeWidth;
+          context.beginPath();
+          context.moveTo(points[0].x, points[0].y);
+          for (let i = 1; i < points.length; i++) {
+            context.lineTo(points[i].x, points[i].y);
+          }
+          context.stroke();
+          context.restore();
+        }
+
+        const endPoint = points[points.length - 1];
+        const pointRadius = Math.max(strokeWidth * 0.6, 1.2 / scale);
+        context.save();
+        context.globalAlpha = targetOpacity;
+        context.fillStyle = componentsToCss(strokeColor);
+        context.beginPath();
+        context.arc(endPoint.x, endPoint.y, pointRadius, 0, Math.PI * 2);
+        context.fill();
+        context.restore();
+      }
+    }
+
     context.restore();
-  }, [canvasSize.height, canvasSize.width, viewState]);
+  }, [
+    canvasSize.height,
+    canvasSize.width,
+    followedTrackId,
+    sanitizedTrackLineWidth,
+    sanitizedTrackOpacity,
+    trackRenderData,
+    trackVisibility,
+    viewState
+  ]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -441,6 +651,67 @@ function PlanarViewer({
   useEffect(() => {
     drawSlice();
   }, [drawSlice, sliceRevision]);
+
+  useEffect(() => {
+    if (followedTrackId === null) {
+      return;
+    }
+    if (!primaryVolume) {
+      return;
+    }
+
+    const centroid = computeTrackCentroid(followedTrackId, clampedTimeIndex);
+    if (!centroid) {
+      return;
+    }
+
+    const width = primaryVolume.width;
+    const height = primaryVolume.height;
+    const centerX = centroid.x - (width / 2 - 0.5);
+    const centerY = centroid.y - (height / 2 - 0.5);
+    const scale = viewStateRef.current.scale;
+    const rotation = viewStateRef.current.rotation;
+    const cos = Math.cos(rotation);
+    const sin = Math.sin(rotation);
+    const scaledX = centerX * scale;
+    const scaledY = centerY * scale;
+    const rotatedX = scaledX * cos - scaledY * sin;
+    const rotatedY = scaledX * sin + scaledY * cos;
+
+    updateViewState((previous) => {
+      const nextOffsetX = -rotatedX;
+      const nextOffsetY = -rotatedY;
+      if (
+        Math.abs(previous.offsetX - nextOffsetX) < 1e-3 &&
+        Math.abs(previous.offsetY - nextOffsetY) < 1e-3
+      ) {
+        return previous;
+      }
+      return { ...previous, offsetX: nextOffsetX, offsetY: nextOffsetY };
+    });
+
+    if (effectiveMaxSlices > 0) {
+      const targetSlice = clamp(
+        Math.round(centroid.z),
+        0,
+        Math.max(0, effectiveMaxSlices - 1)
+      );
+      if (targetSlice !== clampedSliceIndex) {
+        onSliceIndexChange(targetSlice);
+      }
+    }
+  }, [
+    clampedSliceIndex,
+    clampedTimeIndex,
+    computeTrackCentroid,
+    effectiveMaxSlices,
+    followedTrackId,
+    onSliceIndexChange,
+    primaryVolume,
+    updateViewState,
+    viewState.rotation,
+    viewState.scale
+  ]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
