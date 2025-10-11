@@ -132,3 +132,7 @@ Next steps:
 ## Slice renderer stability fixes
 - Added guarded resource management so the 3D and 2D rendering paths rebuild their materials only when their configuration changes, preventing Vite from failing with stray `else` blocks.
 - Introduced reusable helpers for slice buffer preparation and safe camera-uniform updates, allowing the volume viewer to build successfully when the slice shader is active.
+
+## 2D track overlay projection
+- Projected tracking polylines onto the active slice plane so overlays remain flat and consistent across every Z plane in the 2D viewer.
+- Synced track-following logic with slice navigation, switching planes based on track depth while keeping the camera locked to the flattened trajectory.

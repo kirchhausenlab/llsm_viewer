@@ -245,6 +245,8 @@ function VolumeViewer({
   const hoveredTrackIdRef = useRef<number | null>(null);
   const [hoveredTrackId, setHoveredTrackId] = useState<number | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
+  const [slicePlaneIndex, setSlicePlaneIndex] = useState<number | null>(null);
+  const slicePlaneIndexRef = useRef<number | null>(null);
 
   followedTrackIdRef.current = followedTrackId;
 
@@ -327,12 +329,100 @@ function VolumeViewer({
     return null;
   }, [layers]);
   const hasRenderableLayer = Boolean(primaryVolume);
+  const primaryLayerInfo = useMemo(() => {
+    for (const layer of layers) {
+      const volume = layer.volume;
+      if (!volume) {
+        continue;
+      }
+
+      const viewerMode =
+        layer.mode === 'slice' || layer.mode === '3d'
+          ? layer.mode
+          : volume.depth > 1
+          ? '3d'
+          : 'slice';
+
+      const baseSliceIndex = Number.isFinite(layer.sliceIndex)
+        ? Math.round(Number(layer.sliceIndex))
+        : Math.floor(volume.depth / 2);
+      const maxSliceIndex = Math.max(0, volume.depth - 1);
+      const clampedBaseIndex = Math.min(Math.max(baseSliceIndex, 0), maxSliceIndex);
+      return {
+        mode: viewerMode,
+        baseSliceIndex: clampedBaseIndex,
+        dimensions: {
+          width: volume.width,
+          height: volume.height,
+          depth: volume.depth
+        }
+      };
+    }
+
+    return null;
+  }, [layers]);
+  const isSliceModeActive = primaryLayerInfo?.mode === 'slice';
+  const effectiveSliceIndex = useMemo(() => {
+    if (!primaryLayerInfo || primaryLayerInfo.mode !== 'slice') {
+      return null;
+    }
+
+    const depth = primaryLayerInfo.dimensions.depth;
+    if (depth <= 0) {
+      return 0;
+    }
+
+    const maxIndex = Math.max(0, depth - 1);
+    const baseIndex = slicePlaneIndex ?? primaryLayerInfo.baseSliceIndex;
+    const rounded = Math.round(baseIndex);
+    return Math.min(Math.max(rounded, 0), maxIndex);
+  }, [primaryLayerInfo, slicePlaneIndex]);
+
+  useEffect(() => {
+    if (!primaryLayerInfo || primaryLayerInfo.mode !== 'slice') {
+      if (slicePlaneIndexRef.current !== null) {
+        slicePlaneIndexRef.current = null;
+        setSlicePlaneIndex(null);
+      }
+      return;
+    }
+
+    const depth = primaryLayerInfo.dimensions.depth;
+    const maxIndex = Math.max(0, depth - 1);
+    const baseIndex = Math.min(
+      Math.max(primaryLayerInfo.baseSliceIndex, 0),
+      maxIndex
+    );
+
+    setSlicePlaneIndex((current) => {
+      if (current === null) {
+        return baseIndex;
+      }
+
+      if (current > maxIndex) {
+        return maxIndex;
+      }
+
+      if (current < 0) {
+        return 0;
+      }
+
+      return current;
+    });
+  }, [primaryLayerInfo]);
+
+  useEffect(() => {
+    slicePlaneIndexRef.current = slicePlaneIndex;
+  }, [slicePlaneIndex]);
 
   useEffect(() => {
     const trackGroup = trackGroupRef.current;
     if (!trackGroup) {
       return;
     }
+
+    const projectionIndex =
+      isSliceModeActive && effectiveSliceIndex !== null ? effectiveSliceIndex : null;
 
     const trackLines = trackLinesRef.current;
     const activeIds = new Set<number>();
@@ -369,7 +459,7 @@ function VolumeViewer({
         const point = track.points[index];
         positions[index * 3 + 0] = point.x;
         positions[index * 3 + 1] = point.y;
-        positions[index * 3 + 2] = point.z;
+        positions[index * 3 + 2] = projectionIndex ?? point.z;
         times[index] = point.time;
       }
 
@@ -443,7 +533,13 @@ function VolumeViewer({
     }
 
     updateTrackDrawRanges(timeIndexRef.current);
-  }, [clearHoverState, tracks, updateTrackDrawRanges]);
+  }, [
+    clearHoverState,
+    effectiveSliceIndex,
+    isSliceModeActive,
+    tracks,
+    updateTrackDrawRanges
+  ]);
 
   useEffect(() => {
     const trackGroup = trackGroupRef.current;
@@ -577,7 +673,9 @@ function VolumeViewer({
 
       const centroidLocal = new THREE.Vector3(sumX / count, sumY / count, sumZ / count);
       trackGroup.updateMatrixWorld(true);
-      return trackGroup.localToWorld(centroidLocal);
+      const worldPosition = centroidLocal.clone();
+      trackGroup.localToWorld(worldPosition);
+      return { local: centroidLocal, world: worldPosition };
     },
     [tracks]
   );
@@ -608,10 +706,12 @@ function VolumeViewer({
       return;
     }
 
-    const centroid = computeTrackCentroid(followedTrackId, clampedTimeIndex);
-    if (!centroid) {
+    const centroidInfo = computeTrackCentroid(followedTrackId, clampedTimeIndex);
+    if (!centroidInfo) {
       return;
     }
+
+    const { world: centroidWorld, local: centroidLocal } = centroidInfo;
 
     const previousTrackId = previousFollowedTrackIdRef.current;
     previousFollowedTrackIdRef.current = followedTrackId;
@@ -623,9 +723,34 @@ function VolumeViewer({
       offset = camera.position.clone().sub(rotationTarget);
     }
 
-    rotationTarget.copy(centroid);
-    controls.target.copy(centroid);
-    camera.position.copy(centroid).add(offset);
+    const targetPosition = centroidWorld.clone();
+
+    if (isSliceModeActive && primaryLayerInfo) {
+      const depth = primaryLayerInfo.dimensions.depth;
+      if (depth > 0) {
+        const maxIndex = Math.max(0, depth - 1);
+        const targetIndex = Math.round(centroidLocal.z);
+        const clampedIndex = Math.min(Math.max(targetIndex, 0), maxIndex);
+
+        if (slicePlaneIndexRef.current !== clampedIndex) {
+          setSlicePlaneIndex((current) => (current === clampedIndex ? current : clampedIndex));
+        }
+
+        const trackGroup = trackGroupRef.current;
+        if (trackGroup) {
+          trackGroup.updateMatrixWorld(true);
+          const planeLocal = centroidLocal.clone();
+          planeLocal.z = clampedIndex;
+          const planeWorld = planeLocal.clone();
+          trackGroup.localToWorld(planeWorld);
+          targetPosition.copy(planeWorld);
+        }
+      }
+    }
+
+    rotationTarget.copy(targetPosition);
+    controls.target.copy(targetPosition);
+    camera.position.copy(targetPosition).add(offset);
     controls.update();
 
     trackFollowOffsetRef.current = camera.position.clone().sub(rotationTarget);
@@ -633,7 +758,8 @@ function VolumeViewer({
     clampedTimeIndex,
     computeTrackCentroid,
     followedTrackId,
-    primaryVolume
+    isSliceModeActive,
+    primaryLayerInfo
   ]);
 
   const handleResetView = useCallback(() => {
@@ -1277,14 +1403,19 @@ function VolumeViewer({
 
       let resources: VolumeResources | null = resourcesRef.current.get(layer.key) ?? null;
 
-      const viewerMode = layer.mode === 'slice' || layer.mode === '3d'
-        ? layer.mode
-        : volume.depth > 1
-        ? '3d'
-        : 'slice';
-      const zIndex = Number.isFinite(layer.sliceIndex)
+      const viewerMode =
+        layer.mode === 'slice' || layer.mode === '3d'
+          ? layer.mode
+          : volume.depth > 1
+          ? '3d'
+          : 'slice';
+      const fallbackSliceIndex = Number.isFinite(layer.sliceIndex)
         ? Number(layer.sliceIndex)
         : Math.floor(volume.depth / 2);
+      const targetSliceIndex =
+        viewerMode === 'slice'
+          ? effectiveSliceIndex ?? fallbackSliceIndex
+          : fallbackSliceIndex;
 
       if (viewerMode === '3d') {
         cachedPreparation = getCachedTextureData(volume);
@@ -1373,7 +1504,8 @@ function VolumeViewer({
         resources = resourcesRef.current.get(layer.key) ?? null;
       } else {
         const maxIndex = Math.max(0, volume.depth - 1);
-        const clampedIndex = Math.min(Math.max(zIndex, 0), maxIndex);
+        const desiredIndex = Math.round(targetSliceIndex);
+        const clampedIndex = Math.min(Math.max(desiredIndex, 0), maxIndex);
         const expectedLength = getExpectedSliceBufferLength(volume);
 
         const needsRebuild =
@@ -1477,7 +1609,8 @@ function VolumeViewer({
           materialUniforms.u_cameraPos.value.copy(localCameraPosition);
         } else {
           const maxIndex = Math.max(0, volume.depth - 1);
-          const clampedIndex = Math.min(Math.max(zIndex, 0), maxIndex);
+          const desiredIndex = Math.round(targetSliceIndex);
+          const clampedIndex = Math.min(Math.max(desiredIndex, 0), maxIndex);
           const existingBuffer = resources.sliceBuffer ?? null;
           const sliceInfo = prepareSliceTexture(volume, clampedIndex, existingBuffer);
           resources.sliceBuffer = sliceInfo.data;
@@ -1510,7 +1643,7 @@ function VolumeViewer({
     }
 
     setLayerStats(nextStats);
-  }, [getColormapTexture, layers]);
+  }, [effectiveSliceIndex, getColormapTexture, layers]);
 
   useEffect(() => {
     return () => {
