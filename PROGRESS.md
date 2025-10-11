@@ -161,3 +161,14 @@ Next steps:
 
 ## Track overlay timestep latch
 - Latched the 3D viewer's internal time index ref to the latest scrubber value on every render so the overlay rebuild always receives the correct timestep when returning from 2D mode, keeping trajectories lined up without requiring a manual follow action.
+
+## Track overlay transform sync
+- Applied the stored volume normalization transform to the tracking overlay as soon as the Three.js group is recreated so toggling back from 2D mode no longer leaves trajectories in raw voxel space until another interaction forces a refresh.
+
+## Track overlay reactivation fix
+- Detected when the viewer returns to 3D mode and reapplied the cached normalization transform to both the volume root and tracking overlay immediately.
+- Forced the trajectory resources to refresh as soon as 3D mode is active so their draw ranges and matrices align without waiting for an extra UI interaction.
+
+## Render context readiness latch
+- Added a render-context revision flag that flips as soon as the WebGL scene is bootstrapped so dependent effects rerun once the renderer exists.
+- Replayed the volume/track resource construction when the context becomes available, restoring intensity stats, layout sizing, and overlays immediately after switching back from 2D mode.
