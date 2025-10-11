@@ -249,6 +249,12 @@ function VolumeViewer({
   const hoveredTrackIdRef = useRef<number | null>(null);
   const [hoveredTrackId, setHoveredTrackId] = useState<number | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
+  const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(null);
+
+  const handleContainerRef = useCallback((node: HTMLDivElement | null) => {
+    containerRef.current = node;
+    setContainerNode(node);
+  }, []);
 
   followedTrackIdRef.current = followedTrackId;
 
@@ -743,7 +749,7 @@ function VolumeViewer({
   }, [handleResetView, hasRenderableLayer, onRegisterReset]);
 
   useEffect(() => {
-    const container = containerRef.current;
+    const container = containerNode;
     if (!container) {
       return;
     }
@@ -1189,7 +1195,7 @@ function VolumeViewer({
       cameraRef.current = null;
       controlsRef.current = null;
     };
-  }, [applyTrackGroupTransform, applyVolumeRootTransform]);
+  }, [applyTrackGroupTransform, applyVolumeRootTransform, containerNode]);
 
   useEffect(() => {
     const handleKeyChange = (event: KeyboardEvent, isPressed: boolean) => {
@@ -1646,7 +1652,7 @@ function VolumeViewer({
             </div>
           </div>
         )}
-        <div className={`render-surface${hasMeasured ? ' is-ready' : ''}`} ref={containerRef}>
+        <div className={`render-surface${hasMeasured ? ' is-ready' : ''}`} ref={handleContainerRef}>
           {hoveredTrackId !== null && tooltipPosition ? (
             <div
               className="track-tooltip"

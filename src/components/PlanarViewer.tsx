@@ -54,11 +54,13 @@ type ViewState = {
 type PointerState = {
   pointerId: number;
   startX: number;
-  startRotation: number;
+  startY: number;
+  startOffsetX: number;
+  startOffsetY: number;
 };
 
 const MIN_ALPHA = 0.05;
-const ROTATION_DRAG_FACTOR = 0.005;
+const ROTATION_KEY_STEP = 0.1;
 const PAN_STEP = 40;
 const MIN_SCALE = 0.05;
 const MAX_SCALE = 40;
@@ -727,10 +729,13 @@ function PlanarViewer({
       if (!target) {
         return;
       }
+      const currentView = viewStateRef.current;
       pointerStateRef.current = {
         pointerId: event.pointerId,
         startX: event.clientX,
-        startRotation: viewStateRef.current.rotation
+        startY: event.clientY,
+        startOffsetX: currentView.offsetX,
+        startOffsetY: currentView.offsetY
       };
       target.setPointerCapture(event.pointerId);
     };
@@ -741,11 +746,22 @@ function PlanarViewer({
         return;
       }
       const deltaX = event.clientX - state.startX;
-      const nextRotation = state.startRotation + deltaX * ROTATION_DRAG_FACTOR;
-      updateViewState((previous) => ({
-        ...previous,
-        rotation: nextRotation
-      }));
+      const deltaY = event.clientY - state.startY;
+      const nextOffsetX = state.startOffsetX + deltaX;
+      const nextOffsetY = state.startOffsetY + deltaY;
+      updateViewState((previous) => {
+        if (
+          Math.abs(previous.offsetX - nextOffsetX) < 1e-3 &&
+          Math.abs(previous.offsetY - nextOffsetY) < 1e-3
+        ) {
+          return previous;
+        }
+        return {
+          ...previous,
+          offsetX: nextOffsetX,
+          offsetY: nextOffsetY
+        };
+      });
     };
 
     const handlePointerEnd = (event: PointerEvent) => {
@@ -849,7 +865,7 @@ function PlanarViewer({
         case 'KeyQ': {
           updateViewState((previous) => ({
             ...previous,
-            offsetY: previous.offsetY - PAN_STEP
+            rotation: previous.rotation - ROTATION_KEY_STEP
           }));
           event.preventDefault();
           break;
@@ -857,7 +873,7 @@ function PlanarViewer({
         case 'KeyE': {
           updateViewState((previous) => ({
             ...previous,
-            offsetY: previous.offsetY + PAN_STEP
+            rotation: previous.rotation + ROTATION_KEY_STEP
           }));
           event.preventDefault();
           break;
