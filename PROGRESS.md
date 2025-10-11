@@ -132,3 +132,9 @@ Next steps:
 ## Slice renderer stability fixes
 - Added guarded resource management so the 3D and 2D rendering paths rebuild their materials only when their configuration changes, preventing Vite from failing with stray `else` blocks.
 - Introduced reusable helpers for slice buffer preparation and safe camera-uniform updates, allowing the volume viewer to build successfully when the slice shader is active.
+
+## Standalone 2D slice viewer
+- Added a dedicated mode toggle that swaps between the existing 3D renderer and a brand-new 2D slice viewer without sharing rendering code.
+- Implemented a pixel-accurate XY slice renderer with brightness/contrast-aware compositing and configurable grayscale tinting while avoiding interpolation entirely.
+- Introduced keyboard, mouse, and slider controls for navigating Z planes, rotating within the slice plane, and panning/zooming in a manner consistent with the 3D controls.
+- Updated the layout and styling so both viewer modes share playback widgets and reset-view integration, while keeping tracking functionality as a no-op in 2D mode.

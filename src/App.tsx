@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { listTiffFiles, loadTracks, loadVolume, type VolumePayload } from './api';
 import VolumeViewer from './components/VolumeViewer';
+import PlanarViewer from './components/PlanarViewer';
 import { computeNormalizationParameters, normalizeVolume, NormalizedVolume } from './volumeProcessing';
 import { clearTextureCache } from './textureCache';
 import DirectoryPickerDialog from './components/DirectoryPickerDialog';
@@ -97,6 +98,8 @@ function App() {
   const [trackLineWidth, setTrackLineWidth] = useState(DEFAULT_TRACK_LINE_WIDTH);
   const [followedTrackId, setFollowedTrackId] = useState<number | null>(null);
   const [lastBrowsedPath, setLastBrowsedPath] = useState<string | null>(null);
+  const [viewerMode, setViewerMode] = useState<'3d' | '2d'>('3d');
+  const [sliceIndex, setSliceIndex] = useState(0);
 
   const loadRequestRef = useRef(0);
   const hasTrackDataRef = useRef(false);
@@ -751,6 +754,16 @@ function App() {
     setFollowedTrackId(null);
   }, []);
 
+  const handleToggleViewerMode = useCallback(() => {
+    setViewerMode((current) => (current === '3d' ? '2d' : '3d'));
+    setResetViewHandler(null);
+    handleStopTrackFollow();
+  }, [handleStopTrackFollow]);
+
+  const handleSliceIndexChange = useCallback((index: number) => {
+    setSliceIndex(index);
+  }, []);
+
   useEffect(() => {
     if (layers.length === 0) {
       setActiveLayerKey(null);
@@ -830,6 +843,31 @@ function App() {
       }),
     [layerSettings, layers, selectedIndex, visibleLayers]
   );
+
+  const maxSliceDepth = useMemo(() => {
+    let depth = 0;
+    for (const layer of viewerLayers) {
+      if (layer.volume) {
+        depth = Math.max(depth, layer.volume.depth);
+      }
+    }
+    return depth;
+  }, [viewerLayers]);
+
+  useEffect(() => {
+    if (maxSliceDepth <= 0) {
+      if (sliceIndex !== 0) {
+        setSliceIndex(0);
+      }
+      return;
+    }
+    if (sliceIndex >= maxSliceDepth) {
+      setSliceIndex(maxSliceDepth - 1);
+    }
+    if (sliceIndex < 0) {
+      setSliceIndex(0);
+    }
+  }, [maxSliceDepth, sliceIndex]);
   return (
     <div className="app">
       <aside className="sidebar sidebar-left">
@@ -1083,39 +1121,69 @@ function App() {
       <main className="viewer">
         <div className="viewer-toolbar">
           <span className="viewer-following-label">
+            {viewerMode === '3d' ? '3D mode' : '2D mode'} ·{' '}
             {followedTrackDisplayIndex !== null
               ? `Following Track #${followedTrackDisplayIndex}`
               : 'Not following any track'}
           </span>
-          <button
-            type="button"
-            onClick={handleStopTrackFollow}
-            disabled={followedTrackId === null}
-            className="viewer-stop-tracking"
-          >
-            Stop tracking
-          </button>
+          <div className="viewer-toolbar-actions">
+            <button
+              type="button"
+              onClick={handleToggleViewerMode}
+              className={viewerMode === '3d' ? 'viewer-mode-button' : 'viewer-mode-button is-active'}
+            >
+              {viewerMode === '3d' ? 'Switch to 2D mode' : 'Switch to 3D mode'}
+            </button>
+            <button
+              type="button"
+              onClick={handleStopTrackFollow}
+              disabled={followedTrackId === null}
+              className="viewer-stop-tracking"
+            >
+              Stop tracking
+            </button>
+          </div>
         </div>
-        <VolumeViewer
-          layers={viewerLayers}
-          filename={selectedFile}
-          isLoading={isLoading}
-          loadingProgress={loadProgress}
-          loadedVolumes={loadedCount}
-          expectedVolumes={expectedVolumeCount}
-          timeIndex={selectedIndex}
-          totalTimepoints={volumeTimepointCount}
-          isPlaying={isPlaying}
-          onTogglePlayback={handleTogglePlayback}
-          onTimeIndexChange={handleTimeIndexChange}
-          onRegisterReset={handleRegisterReset}
-          tracks={parsedTracks}
-          trackVisibility={trackVisibility}
-          trackOpacity={trackOpacity}
-          trackLineWidth={trackLineWidth}
-          followedTrackId={followedTrackId}
-          onTrackFollowRequest={handleTrackFollowFromViewer}
-        />
+        {viewerMode === '3d' ? (
+          <VolumeViewer
+            layers={viewerLayers}
+            filename={selectedFile}
+            isLoading={isLoading}
+            loadingProgress={loadProgress}
+            loadedVolumes={loadedCount}
+            expectedVolumes={expectedVolumeCount}
+            timeIndex={selectedIndex}
+            totalTimepoints={volumeTimepointCount}
+            isPlaying={isPlaying}
+            onTogglePlayback={handleTogglePlayback}
+            onTimeIndexChange={handleTimeIndexChange}
+            onRegisterReset={handleRegisterReset}
+            tracks={parsedTracks}
+            trackVisibility={trackVisibility}
+            trackOpacity={trackOpacity}
+            trackLineWidth={trackLineWidth}
+            followedTrackId={followedTrackId}
+            onTrackFollowRequest={handleTrackFollowFromViewer}
+          />
+        ) : (
+          <PlanarViewer
+            layers={viewerLayers}
+            filename={selectedFile}
+            isLoading={isLoading}
+            loadingProgress={loadProgress}
+            loadedVolumes={loadedCount}
+            expectedVolumes={expectedVolumeCount}
+            timeIndex={selectedIndex}
+            totalTimepoints={volumeTimepointCount}
+            isPlaying={isPlaying}
+            onTogglePlayback={handleTogglePlayback}
+            onTimeIndexChange={handleTimeIndexChange}
+            onRegisterReset={handleRegisterReset}
+            sliceIndex={sliceIndex}
+            maxSlices={maxSliceDepth}
+            onSliceIndexChange={handleSliceIndexChange}
+          />
+        )}
       </main>
       <aside className="sidebar sidebar-right">
         <header>
