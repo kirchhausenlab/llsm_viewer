@@ -1390,17 +1390,6 @@ function VolumeViewer({
           geometry.translate(volume.width / 2 - 0.5, volume.height / 2 - 0.5, volume.depth / 2 - 0.5);
 
           const mesh = new THREE.Mesh(geometry, material);
-          const maxDimension = Math.max(volume.width, volume.height, volume.depth);
-          const scale = 1 / maxDimension;
-          mesh.scale.setScalar(scale);
-
-          const centerOffset = new THREE.Vector3(
-            volume.width / 2 - 0.5,
-            volume.height / 2 - 0.5,
-            volume.depth / 2 - 0.5
-          ).multiplyScalar(scale);
-          mesh.position.set(-centerOffset.x, -centerOffset.y, -centerOffset.z);
-
           const meshObject = mesh as unknown as { visible: boolean; renderOrder: number };
           meshObject.visible = layer.visible;
           meshObject.renderOrder = index;
@@ -1481,14 +1470,7 @@ function VolumeViewer({
           geometry.translate(volume.width / 2 - 0.5, volume.height / 2 - 0.5, 0);
 
           const mesh = new THREE.Mesh(geometry, material);
-          const maxDimension = Math.max(volume.width, volume.height, volume.depth);
-          const scale = 1 / maxDimension;
-          mesh.scale.setScalar(scale);
-          const depthCenter = (volume.depth - 1) / 2;
-          const offsetX = -(volume.width / 2 - 0.5) * scale;
-          const offsetY = -(volume.height / 2 - 0.5) * scale;
-          const offsetZ = (clampedIndex - depthCenter) * scale;
-          mesh.position.set(offsetX, offsetY, offsetZ);
+          mesh.position.set(0, 0, clampedIndex);
           const meshObject = mesh as unknown as { visible: boolean; renderOrder: number };
           meshObject.visible = layer.visible;
           meshObject.renderOrder = index;
@@ -1549,6 +1531,7 @@ function VolumeViewer({
           dataTexture.format = sliceInfo.format;
           dataTexture.needsUpdate = true;
           materialUniforms.u_slice.value = dataTexture;
+          mesh.position.set(0, 0, clampedIndex);
         }
 
         const cameraUniform = materialUniforms.u_cameraPos?.value as THREE.Vector3 | undefined;
