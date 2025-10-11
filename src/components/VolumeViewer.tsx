@@ -233,6 +233,7 @@ function VolumeViewer({
     moveUp: false,
     moveDown: false
   });
+  const volumeRootGroupRef = useRef<THREE.Group | null>(null);
   const trackGroupRef = useRef<THREE.Group | null>(null);
   const trackGroupCenterOffsetRef = useRef(new THREE.Vector3());
   const trackLinesRef = useRef<Map<number, TrackLineResource>>(new Map());
@@ -725,10 +726,16 @@ function VolumeViewer({
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(clearColor);
 
+    const volumeRootGroup = new THREE.Group();
+    volumeRootGroup.name = 'VolumeRoot';
+    scene.add(volumeRootGroup);
+    volumeRootGroupRef.current = volumeRootGroup;
+    applyVolumeRootTransform(currentDimensionsRef.current);
+
     const trackGroup = new THREE.Group();
     trackGroup.name = 'TrackingOverlay';
     trackGroup.visible = false;
-    scene.add(trackGroup);
+    volumeRootGroup.add(trackGroup);
     trackGroupRef.current = trackGroup;
     setTrackOverlayRevision((revision) => revision + 1);
 
@@ -1100,11 +1107,20 @@ function VolumeViewer({
           resource.outlineMaterial.dispose();
         }
         trackLinesRef.current.clear();
-        if (trackGroup.parent) {
-          trackGroup.parent.remove(trackGroup);
-        }
       }
       trackGroupRef.current = null;
+
+      const volumeRootGroup = volumeRootGroupRef.current;
+      if (volumeRootGroup) {
+        if (trackGroup && trackGroup.parent === volumeRootGroup) {
+          volumeRootGroup.remove(trackGroup);
+        }
+        volumeRootGroup.clear();
+        if (volumeRootGroup.parent) {
+          volumeRootGroup.parent.remove(volumeRootGroup);
+        }
+      }
+      volumeRootGroupRef.current = null;
       clearHoverState();
 
       domElement.removeEventListener('pointerdown', handlePointerDown, pointerDownOptions);
@@ -1389,7 +1405,12 @@ function VolumeViewer({
           meshObject.visible = layer.visible;
           meshObject.renderOrder = index;
 
-          scene.add(mesh);
+          const volumeRootGroup = volumeRootGroupRef.current;
+          if (volumeRootGroup) {
+            volumeRootGroup.add(mesh);
+          } else {
+            scene.add(mesh);
+          }
           mesh.updateMatrixWorld(true);
 
           const cameraUniform = mesh.material.uniforms.u_cameraPos.value;
@@ -1471,7 +1492,12 @@ function VolumeViewer({
           const meshObject = mesh as unknown as { visible: boolean; renderOrder: number };
           meshObject.visible = layer.visible;
           meshObject.renderOrder = index;
-          scene.add(mesh);
+          const volumeRootGroup = volumeRootGroupRef.current;
+          if (volumeRootGroup) {
+            volumeRootGroup.add(mesh);
+          } else {
+            scene.add(mesh);
+          }
 
           resourcesRef.current.set(layer.key, {
             mesh,
