@@ -142,13 +142,3 @@ Next steps:
 ## Track overlay restoration after mode toggles
 - Latched a revision counter when the 3D viewer boots so the tracking overlay rebuilds once its scene graph is ready instead of relying on incidental prop changes.
 - Re-ran the track creation and visibility effects whenever the overlay is reinitialized, ensuring trajectories retain the correct translation and scale after returning from 2D mode.
-
-## Track overlay transform persistence
-- Reapplied the volume-derived transform to the tracking overlay whenever the 3D scene is re-created so trajectories preserve their scale/offset when returning from 2D mode without triggering a dimension change.
-
-## Track overlay normalization root
-- Introduced a shared scene root that applies the volume-normalizing transform to both the volume meshes and the tracking overlay so their coordinate systems stay identical after toggling between viewer modes.
-- Updated resource management and cleanup to attach meshes to the shared root, ensuring the overlay inherits the same scale/translation as the volume each time the 3D renderer restarts.
-
-## Volume root regression fix
-- Removed per-mesh normalization transforms now that the shared scene root handles scaling/centering, restoring visible volume rendering and keeping slices positioned correctly after switching viewer modes.

@@ -235,7 +235,7 @@ function VolumeViewer({
   });
   const volumeRootGroupRef = useRef<THREE.Group | null>(null);
   const trackGroupRef = useRef<THREE.Group | null>(null);
-  const volumeRootCenterOffsetRef = useRef(new THREE.Vector3());
+  const trackGroupCenterOffsetRef = useRef(new THREE.Vector3());
   const trackLinesRef = useRef<Map<number, TrackLineResource>>(new Map());
   const raycasterRef = useRef<RaycasterLike | null>(null);
   const timeIndexRef = useRef(0);
@@ -270,35 +270,35 @@ function VolumeViewer({
     setTooltipPosition(null);
   }, []);
 
-  const applyVolumeRootTransform = useCallback(
+  const applyTrackGroupTransform = useCallback(
     (dimensions: { width: number; height: number; depth: number } | null) => {
-      const volumeRoot = volumeRootGroupRef.current;
-      if (!volumeRoot) {
+      const trackGroup = trackGroupRef.current;
+      if (!trackGroup) {
         return;
       }
 
       if (!dimensions) {
-        volumeRoot.position.set(0, 0, 0);
-        volumeRoot.scale.set(1, 1, 1);
+        trackGroup.position.set(0, 0, 0);
+        trackGroup.scale.set(1, 1, 1);
         return;
       }
 
       const { width, height, depth } = dimensions;
       const maxDimension = Math.max(width, height, depth);
       if (!Number.isFinite(maxDimension) || maxDimension <= 0) {
-        volumeRoot.position.set(0, 0, 0);
-        volumeRoot.scale.set(1, 1, 1);
+        trackGroup.position.set(0, 0, 0);
+        trackGroup.scale.set(1, 1, 1);
         return;
       }
 
       const scale = 1 / maxDimension;
-      const centerOffset = volumeRootCenterOffsetRef.current;
+      const centerOffset = trackGroupCenterOffsetRef.current;
       centerOffset
         .set(width / 2 - 0.5, height / 2 - 0.5, depth / 2 - 0.5)
         .multiplyScalar(scale);
 
-      volumeRoot.scale.setScalar(scale);
-      volumeRoot.position.set(-centerOffset.x, -centerOffset.y, -centerOffset.z);
+      trackGroup.scale.setScalar(scale);
+      trackGroup.position.set(-centerOffset.x, -centerOffset.y, -centerOffset.z);
     },
     []
   );
@@ -1155,7 +1155,7 @@ function VolumeViewer({
       cameraRef.current = null;
       controlsRef.current = null;
     };
-  }, [applyVolumeRootTransform]);
+  }, [applyTrackGroupTransform]);
 
   useEffect(() => {
     const handleKeyChange = (event: KeyboardEvent, isPressed: boolean) => {
@@ -1266,7 +1266,7 @@ function VolumeViewer({
       if (trackGroup) {
         trackGroup.visible = false;
       }
-      applyVolumeRootTransform(null);
+      applyTrackGroupTransform(null);
       setLayerStats({});
       return;
     }
@@ -1306,7 +1306,7 @@ function VolumeViewer({
       };
       controls.saveState();
 
-      applyVolumeRootTransform({ width, height, depth });
+      applyTrackGroupTransform({ width, height, depth });
     }
 
     const nextStats: Record<string, VolumeStats> = {};
@@ -1554,7 +1554,7 @@ function VolumeViewer({
     }
 
     setLayerStats(nextStats);
-  }, [applyVolumeRootTransform, getColormapTexture, layers]);
+  }, [applyTrackGroupTransform, getColormapTexture, layers]);
 
   useEffect(() => {
     return () => {
