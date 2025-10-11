@@ -146,3 +146,8 @@ Next steps:
 ## Volume root transform regression fix
 - Restored the missing volume-root transform helper so the Three.js scene initializes even before a dataset is loaded, preventing the viewer from crashing on startup.
 - Reapplied the transform whenever dataset dimensions change or resources are torn down, keeping the volume and tracking overlays consistently centered.
+
+## Planar viewer track projection
+- Projected loaded trajectories into the 2D canvas so the XY slices render flattened paths that respect the current time scrubber while ignoring per-plane depth differences.
+- Matched the overlay styling and opacity controls from the 3D scene, including highlight cues for the actively followed track and persistent endpoint markers.
+- Synced track following with the 2D navigation stack by recentering on the current trajectory point and snapping the Z slider to the track's plane, mimicking the 3D follow behavior without disturbing existing controls.

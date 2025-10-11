@@ -1182,6 +1182,11 @@ function App() {
             sliceIndex={sliceIndex}
             maxSlices={maxSliceDepth}
             onSliceIndexChange={handleSliceIndexChange}
+            tracks={parsedTracks}
+            trackVisibility={trackVisibility}
+            trackOpacity={trackOpacity}
+            trackLineWidth={trackLineWidth}
+            followedTrackId={followedTrackId}
           />
         )}
       </main>
