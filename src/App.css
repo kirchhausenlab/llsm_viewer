@@ -668,9 +668,41 @@
   margin-bottom: 0.75rem;
 }
 
+.viewer-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 .viewer-following-label {
   font-size: 0.9rem;
   color: rgba(255, 255, 255, 0.65);
+}
+
+.viewer-mode-button {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.95rem;
+  background: rgba(12, 16, 24, 0.8);
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+}
+
+.viewer-mode-button:hover {
+  border-color: rgba(91, 140, 255, 0.7);
+  background: rgba(91, 140, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.viewer-mode-button.is-active {
+  border-color: rgba(91, 140, 255, 0.7);
+  background: rgba(91, 140, 255, 0.25);
+}
+
+.viewer-mode-button.is-active:hover {
+  background: rgba(91, 140, 255, 0.35);
 }
 
 .viewer-stop-tracking {
