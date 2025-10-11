@@ -161,3 +161,6 @@ Next steps:
 
 ## Track overlay timestep latch
 - Latched the 3D viewer's internal time index ref to the latest scrubber value on every render so the overlay rebuild always receives the correct timestep when returning from 2D mode, keeping trajectories lined up without requiring a manual follow action.
+
+## Track overlay transform sync
+- Applied the stored volume normalization transform to the tracking overlay as soon as the Three.js group is recreated so toggling back from 2D mode no longer leaves trajectories in raw voxel space until another interaction forces a refresh.

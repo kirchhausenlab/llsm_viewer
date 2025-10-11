@@ -773,6 +773,14 @@ function VolumeViewer({
     trackGroup.visible = false;
     volumeRootGroup.add(trackGroup);
     trackGroupRef.current = trackGroup;
+
+    // If the volume dimensions were already resolved (e.g., when toggling
+    // between 2D and 3D views), make sure the tracking overlay immediately
+    // adopts the normalized transform. Otherwise the tracks momentarily render
+    // in unnormalized dataset coordinates until another interaction triggers a
+    // redraw.
+    applyTrackGroupTransform(currentDimensionsRef.current);
+
     setTrackOverlayRevision((revision) => revision + 1);
 
     const camera = new THREE.PerspectiveCamera(
