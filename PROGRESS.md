@@ -158,3 +158,6 @@ Next steps:
 
 ## 3D track overlay alignment fix
 - Removed the redundant scaling/translation applied to the Three.js track overlay group so its coordinates match the normalized volume root, restoring visible trajectories in 3D mode across datasets.
+
+## Track overlay timestep latch
+- Latched the 3D viewer's internal time index ref to the latest scrubber value on every render so the overlay rebuild always receives the correct timestep when returning from 2D mode, keeping trajectories lined up without requiring a manual follow action.

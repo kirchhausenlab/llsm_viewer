@@ -390,6 +390,7 @@ function VolumeViewer({
     clampedExpectedVolumes > 0 ? clampedLoadedVolumes >= clampedExpectedVolumes : safeProgress >= 1;
   const showLoadingOverlay = isLoading || (hasStartedLoading && !hasFinishedLoading);
   const clampedTimeIndex = totalTimepoints === 0 ? 0 : Math.min(timeIndex, totalTimepoints - 1);
+  timeIndexRef.current = clampedTimeIndex;
   const primaryVolume = useMemo(() => {
     for (const layer of layers) {
       if (layer.volume) {
@@ -609,7 +610,6 @@ function VolumeViewer({
   ]);
 
   useEffect(() => {
-    timeIndexRef.current = clampedTimeIndex;
     updateTrackDrawRanges(clampedTimeIndex);
   }, [clampedTimeIndex, updateTrackDrawRanges]);
 
