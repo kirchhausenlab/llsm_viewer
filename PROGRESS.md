@@ -178,4 +178,5 @@ d centered the front-page card in the viewport.
 ## Playback control layout updates
 - Moved the planar Z-plane slider into the shared playback window so slice navigation lives alongside the other temporal controls.
 - Updated button labels and layout to use standard play/pause icons, clarify mode switching copy, and align reset actions horizontally for quicker access.
+- Expanded the viewer canvas to span the entire screen and layered the floating control panels above it, giving both the 2D and 3D renderers maximum space while keeping the overlays draggable.
 
