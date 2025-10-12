@@ -35,6 +35,7 @@ type PlanarViewerProps = {
   trackOpacity: number;
   trackLineWidth: number;
   followedTrackId: number | null;
+  onTrackFollowRequest: (trackId: number) => void;
 };
 
 type SliceData = {
@@ -68,6 +69,7 @@ const TRACK_HIGHLIGHT_BOOST = 0.4;
 const OUTLINE_OPACITY = 0.75;
 const OUTLINE_MIN_WIDTH = 0.4;
 const TRACK_EPSILON = 1e-3;
+const TRACK_HIT_TEST_MIN_DISTANCE = 6;
 
 function clamp(value: number, min: number, max: number) {
   if (value < min) {
@@ -135,7 +137,8 @@ function PlanarViewer({
   trackVisibility,
   trackOpacity,
   trackLineWidth,
-  followedTrackId
+  followedTrackId,
+  onTrackFollowRequest
 }: PlanarViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -143,6 +146,7 @@ function PlanarViewer({
   const previousSliceSizeRef = useRef<{ width: number; height: number } | null>(null);
   const needsAutoFitRef = useRef(false);
   const pointerStateRef = useRef<PointerState | null>(null);
+  const followedTrackIdRef = useRef<number | null>(followedTrackId);
 
   const [hasMeasured, setHasMeasured] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
@@ -157,6 +161,10 @@ function PlanarViewer({
   useEffect(() => {
     viewStateRef.current = viewState;
   }, [viewState]);
+
+  useEffect(() => {
+    followedTrackIdRef.current = followedTrackId;
+  }, [followedTrackId]);
 
   const sanitizedTrackOpacity = Math.min(1, Math.max(0, trackOpacity));
   const sanitizedTrackLineWidth = Math.max(0.1, Math.min(10, trackLineWidth));
@@ -581,6 +589,128 @@ function PlanarViewer({
     viewState
   ]);
 
+  const performTrackHitTest = useCallback(
+    (event: PointerEvent): number | null => {
+      if (trackRenderData.length === 0) {
+        return null;
+      }
+
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        return null;
+      }
+
+      const rect = canvas.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+      if (width <= 0 || height <= 0) {
+        return null;
+      }
+
+      const pointerX = event.clientX - rect.left;
+      const pointerY = event.clientY - rect.top;
+      if (pointerX < 0 || pointerY < 0 || pointerX > width || pointerY > height) {
+        return null;
+      }
+
+      const currentView = viewStateRef.current;
+      const scale = currentView.scale;
+      const rotation = currentView.rotation;
+      const cos = Math.cos(rotation);
+      const sin = Math.sin(rotation);
+      const centerX = width / 2 + currentView.offsetX;
+      const centerY = height / 2 + currentView.offsetY;
+
+      let closestTrackId: number | null = null;
+      let closestDistance = Infinity;
+
+      const computeScreenPosition = (pointX: number, pointY: number) => {
+        const rotatedX = pointX * cos - pointY * sin;
+        const rotatedY = pointX * sin + pointY * cos;
+        return {
+          x: centerX + rotatedX * scale,
+          y: centerY + rotatedY * scale
+        };
+      };
+
+      const distanceToSegment = (
+        px: number,
+        py: number,
+        x1: number,
+        y1: number,
+        x2: number,
+        y2: number
+      ) => {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const lengthSq = dx * dx + dy * dy;
+        if (lengthSq < 1e-8) {
+          return Math.hypot(px - x1, py - y1);
+        }
+        const t = clamp(((px - x1) * dx + (py - y1) * dy) / lengthSq, 0, 1);
+        const projX = x1 + t * dx;
+        const projY = y1 + t * dy;
+        return Math.hypot(px - projX, py - projY);
+      };
+
+      for (const track of trackRenderData) {
+        const isFollowed = followedTrackIdRef.current === track.id;
+        const isExplicitlyVisible = trackVisibility[track.id] ?? true;
+        if (!isFollowed && !isExplicitlyVisible) {
+          continue;
+        }
+
+        let minDistanceForTrack = Infinity;
+        let previousPoint: { x: number; y: number } | null = null;
+
+        for (const point of track.points) {
+          const screenPoint = computeScreenPosition(point.x, point.y);
+          const pointDistance = Math.hypot(screenPoint.x - pointerX, screenPoint.y - pointerY);
+          if (pointDistance < minDistanceForTrack) {
+            minDistanceForTrack = pointDistance;
+          }
+
+          if (previousPoint) {
+            const segmentDistance = distanceToSegment(
+              pointerX,
+              pointerY,
+              previousPoint.x,
+              previousPoint.y,
+              screenPoint.x,
+              screenPoint.y
+            );
+            if (segmentDistance < minDistanceForTrack) {
+              minDistanceForTrack = segmentDistance;
+            }
+          }
+
+          previousPoint = screenPoint;
+        }
+
+        if (!isFinite(minDistanceForTrack)) {
+          continue;
+        }
+
+        const widthMultiplier = isFollowed ? 1.35 : 1;
+        const strokeScreenWidth = sanitizedTrackLineWidth * widthMultiplier;
+        const endpointRadius = Math.max(strokeScreenWidth * 0.6, 1.2);
+        const hitThreshold = Math.max(
+          TRACK_HIT_TEST_MIN_DISTANCE,
+          strokeScreenWidth * 0.75,
+          endpointRadius
+        );
+
+        if (minDistanceForTrack <= hitThreshold && minDistanceForTrack < closestDistance) {
+          closestDistance = minDistanceForTrack;
+          closestTrackId = track.id;
+        }
+      }
+
+      return closestTrackId;
+    },
+    [sanitizedTrackLineWidth, trackRenderData, trackVisibility]
+  );
+
   useEffect(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
@@ -725,6 +855,14 @@ function PlanarViewer({
       if (event.button !== 0) {
         return;
       }
+
+      const hitTrackId = performTrackHitTest(event);
+      if (hitTrackId !== null) {
+        pointerStateRef.current = null;
+        onTrackFollowRequest(hitTrackId);
+        return;
+      }
+
       const target = canvasRef.current;
       if (!target) {
         return;
@@ -803,7 +941,7 @@ function PlanarViewer({
       canvas.removeEventListener('pointerleave', handlePointerEnd);
       canvas.removeEventListener('wheel', handleWheel);
     };
-  }, [updateViewState]);
+  }, [onTrackFollowRequest, performTrackHitTest, updateViewState]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
