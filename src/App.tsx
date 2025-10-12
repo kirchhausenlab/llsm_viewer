@@ -100,6 +100,7 @@ function App() {
   const [lastBrowsedPath, setLastBrowsedPath] = useState<string | null>(null);
   const [viewerMode, setViewerMode] = useState<'3d' | '2d'>('3d');
   const [sliceIndex, setSliceIndex] = useState(0);
+  const [isViewerLaunched, setIsViewerLaunched] = useState(false);
 
   const loadRequestRef = useRef(0);
   const hasTrackDataRef = useRef(false);
@@ -868,15 +869,8 @@ function App() {
       setSliceIndex(0);
     }
   }, [maxSliceDepth, sliceIndex]);
-  return (
-    <div className="app">
-      <aside className="sidebar sidebar-left">
-        <header>
-          <h1>LLSM Viewer</h1>
-          <p>Select one or more TIFF stack folders to load them as independent layers.</p>
-        </header>
-
-        <form onSubmit={handlePathSubmit} className="path-form">
+  const datasetLoader = (
+    <form onSubmit={handlePathSubmit} className="path-form">
           <label htmlFor="path-input">Dataset folders</label>
           <div className="path-input-wrapper">
             <input
@@ -956,13 +950,125 @@ function App() {
             Load dataset
           </button>
         </form>
+  );
 
-        <section className="sidebar-panel global-controls">
-          <header>
-            <h2>Global controls</h2>
+  const trackLoader = (
+    <form onSubmit={handleTrackSubmit} className="path-form">
+      <label htmlFor="tracks-input">Tracks file</label>
+      <div className="path-input-wrapper">
+        <input
+          id="tracks-input"
+          type="text"
+          value={trackPath}
+          placeholder="/nfs/scratch2/.../tracks.csv"
+          onChange={(event) => handleTrackPathChange(event.target.value)}
+          autoComplete="off"
+        />
+        <button
+          type="button"
+          className="path-browse-button"
+          onClick={handleOpenTrackPicker}
+          aria-label="Browse for tracks file"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path
+              d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8.83a2 2 0 0 0-.59-1.41l-4.83-4.83A2 2 0 0 0 13.17 2Zm6 2.41L17.59 8H13a1 1 0 0 1-1-1Z"
+              fill="currentColor"
+            />
+          </svg>
+        </button>
+      </div>
+      {trackStatus === 'loading' ? (
+        <p className="subfolder-status">Loading tracks…</p>
+      ) : trackError ? (
+        <p className="subfolder-error">{trackError}</p>
+      ) : trackStatus === 'loaded' ? (
+        <p className="subfolder-status">
+          {tracks.length === 1 ? 'Loaded 1 track entry.' : `Loaded ${tracks.length} track entries.`}
+        </p>
+      ) : null}
+      <button type="submit" disabled={!trackPath.trim() || trackStatus === 'loading'}>
+        Load tracks
+      </button>
+    </form>
+  );
+
+  const pickerDialogs = (
+    <>
+      {isPickerOpen ? (
+        <DirectoryPickerDialog
+          initialPath={lastBrowsedPath ?? selectedFolders[selectedFolders.length - 1]?.path}
+          onClose={handleClosePicker}
+          onSelect={handlePathPicked}
+        />
+      ) : null}
+      {isTrackPickerOpen ? (
+        <FilePickerDialog
+          initialPath={trackPath}
+          onClose={handleCloseTrackPicker}
+          onSelect={handleTrackPathPicked}
+        />
+      ) : null}
+    </>
+  );
+
+  if (!isViewerLaunched) {
+    return (
+      <>
+        <div className="front-page">
+          <div className="front-page-card">
+            <h1>LLSM Viewer</h1>
+            <p>Load datasets and optional track overlays before launching the viewer.</p>
+            <div className="front-page-widgets">
+              <section className="front-page-widget">
+                <header>
+                  <h2>Dataset setup</h2>
+                  <p>Select one or more TIFF stack folders and give them layer names.</p>
+                </header>
+                {datasetLoader}
+              </section>
+              <section className="front-page-widget">
+                <header>
+                  <h2>Track overlays</h2>
+                  <p>Provide a CSV file with trajectory data to overlay in the viewer.</p>
+                </header>
+                {trackLoader}
+              </section>
+            </div>
+            <button
+              type="button"
+              className="launch-viewer-button"
+              onClick={() => setIsViewerLaunched(true)}
+            >
+              Launch viewer
+            </button>
+          </div>
+        </div>
+        {pickerDialogs}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="app">
+        <aside className="sidebar sidebar-left">
+          <header className="sidebar-header">
+            <div>
+              <h1>LLSM Viewer</h1>
+              <p>Adjust playback, layers, and rendering for the loaded dataset.</p>
+            </div>
+            <button type="button" className="sidebar-launcher-button" onClick={() => setIsViewerLaunched(false)}>
+              Open launcher
+            </button>
           </header>
-          <div className="control-group">
-            <button type="button" onClick={() => resetViewHandler?.()} disabled={!resetViewHandler}>
+
+          <section className="sidebar-panel global-controls">
+            <header>
+              <h2>Global controls</h2>
+            </header>
+            <div className="control-group">
+              <button type="button" onClick={() => resetViewHandler?.()} disabled={!resetViewHandler}>
               Reset view
             </button>
             <button type="button" onClick={handleResetControls} disabled={controlsAtDefaults}>
@@ -1193,48 +1299,9 @@ function App() {
       </main>
       <aside className="sidebar sidebar-right">
         <header>
-          <h2>Tracking</h2>
-          <p>Load track data and configure how trajectories appear in the viewer.</p>
+          <h2>Track overlays</h2>
+          <p>Configure how trajectories appear on top of the volume rendering.</p>
         </header>
-
-        <form onSubmit={handleTrackSubmit} className="path-form">
-          <label htmlFor="tracks-input">Tracks file</label>
-          <div className="path-input-wrapper">
-            <input
-              id="tracks-input"
-              type="text"
-              value={trackPath}
-              placeholder="/nfs/scratch2/.../tracks.csv"
-              onChange={(event) => handleTrackPathChange(event.target.value)}
-              autoComplete="off"
-            />
-            <button
-              type="button"
-              className="path-browse-button"
-              onClick={handleOpenTrackPicker}
-              aria-label="Browse for tracks file"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path
-                  d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8.83a2 2 0 0 0-.59-1.41l-4.83-4.83A2 2 0 0 0 13.17 2Zm6 2.41L17.59 8H13a1 1 0 0 1-1-1Z"
-                  fill="currentColor"
-                />
-              </svg>
-            </button>
-          </div>
-          {trackStatus === 'loading' ? (
-            <p className="subfolder-status">Loading tracks…</p>
-          ) : trackError ? (
-            <p className="subfolder-error">{trackError}</p>
-          ) : trackStatus === 'loaded' ? (
-            <p className="subfolder-status">
-              {tracks.length === 1 ? 'Loaded 1 track entry.' : `Loaded ${tracks.length} track entries.`}
-            </p>
-          ) : null}
-          <button type="submit" disabled={!trackPath.trim() || trackStatus === 'loading'}>
-            Load tracks
-          </button>
-        </form>
 
         <section className="sidebar-panel track-controls">
           <header>
@@ -1326,21 +1393,9 @@ function App() {
           )}
         </section>
       </aside>
-      {isPickerOpen ? (
-        <DirectoryPickerDialog
-          initialPath={lastBrowsedPath ?? selectedFolders[selectedFolders.length - 1]?.path}
-          onClose={handleClosePicker}
-          onSelect={handlePathPicked}
-        />
-      ) : null}
-      {isTrackPickerOpen ? (
-        <FilePickerDialog
-          initialPath={trackPath}
-          onClose={handleCloseTrackPicker}
-          onSelect={handleTrackPathPicked}
-        />
-      ) : null}
-    </div>
+      </div>
+      {pickerDialogs}
+    </>
   );
 }
 
