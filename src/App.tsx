@@ -119,8 +119,18 @@ function App() {
   const trackMasterCheckboxRef = useRef<HTMLInputElement | null>(null);
   const folderIdRef = useRef(0);
 
-  const selectedFile = useMemo(() => files[selectedIndex] ?? null, [files, selectedIndex]);
   const volumeTimepointCount = layers.length > 0 ? layers[0].volumes.length : 0;
+  const datasetShape = useMemo(() => {
+    for (const layer of layers) {
+      for (const volume of layer.volumes) {
+        if (volume) {
+          const channelLabel = volume.channels === 1 ? 'channel' : 'channels';
+          return `${volume.width} × ${volume.height} × ${volume.depth} · ${volume.channels} ${channelLabel}`;
+        }
+      }
+    }
+    return null;
+  }, [layers]);
   const parsedTracks = useMemo<TrackDefinition[]>(() => {
     if (tracks.length === 0) {
       return [];
@@ -481,6 +491,14 @@ function App() {
   }, [isPlaying, selectedIndex, volumeTimepointCount]);
 
   const isLoading = status === 'loading';
+  const playbackDisabled = isLoading || volumeTimepointCount <= 1;
+  const playbackLabel = useMemo(() => {
+    if (volumeTimepointCount === 0) {
+      return '0 / 0';
+    }
+    const currentFrame = Math.min(selectedIndex + 1, volumeTimepointCount);
+    return `${currentFrame} / ${volumeTimepointCount}`;
+  }, [selectedIndex, volumeTimepointCount]);
 
   const handleResetControls = useCallback(() => {
     setLayerSettings(
@@ -1113,37 +1131,16 @@ function App() {
                 ? `Following Track #${followedTrackDisplayIndex}`
                 : 'Not following any track'}
             </span>
-            <div className="viewer-toolbar-actions">
-              <button
-                type="button"
-                onClick={handleToggleViewerMode}
-                className={viewerMode === '3d' ? 'viewer-mode-button' : 'viewer-mode-button is-active'}
-              >
-                {viewerMode === '3d' ? 'Switch to 2D mode' : 'Switch to 3D mode'}
-              </button>
-              <button
-                type="button"
-                onClick={handleStopTrackFollow}
-                disabled={followedTrackId === null}
-                className="viewer-stop-tracking"
-              >
-                Stop tracking
-              </button>
-            </div>
           </div>
           {viewerMode === '3d' ? (
             <VolumeViewer
               layers={viewerLayers}
-              filename={selectedFile}
               isLoading={isLoading}
               loadingProgress={loadProgress}
               loadedVolumes={loadedCount}
               expectedVolumes={expectedVolumeCount}
               timeIndex={selectedIndex}
               totalTimepoints={volumeTimepointCount}
-              isPlaying={isPlaying}
-              onTogglePlayback={handleTogglePlayback}
-              onTimeIndexChange={handleTimeIndexChange}
               onRegisterReset={handleRegisterReset}
               tracks={parsedTracks}
               trackVisibility={trackVisibility}
@@ -1155,16 +1152,12 @@ function App() {
           ) : (
             <PlanarViewer
               layers={viewerLayers}
-              filename={selectedFile}
               isLoading={isLoading}
               loadingProgress={loadProgress}
               loadedVolumes={loadedCount}
               expectedVolumes={expectedVolumeCount}
               timeIndex={selectedIndex}
               totalTimepoints={volumeTimepointCount}
-              isPlaying={isPlaying}
-              onTogglePlayback={handleTogglePlayback}
-              onTimeIndexChange={handleTimeIndexChange}
               onRegisterReset={handleRegisterReset}
               sliceIndex={sliceIndex}
               maxSlices={maxSliceDepth}
@@ -1195,6 +1188,13 @@ function App() {
                 <h2>Movie</h2>
               </header>
               <div className="control-group">
+                <button
+                  type="button"
+                  onClick={handleToggleViewerMode}
+                  className={viewerMode === '3d' ? 'viewer-mode-button' : 'viewer-mode-button is-active'}
+                >
+                  {viewerMode === '3d' ? 'Switch to 2D mode' : 'Switch to 3D mode'}
+                </button>
                 <button type="button" onClick={() => resetViewHandler?.()} disabled={!resetViewHandler}>
                   Reset view
                 </button>
@@ -1217,12 +1217,34 @@ function App() {
                   disabled={volumeTimepointCount <= 1}
                 />
               </div>
+              <div className="playback-controls">
+                <div className="playback-controls-row">
+                  <button
+                    type="button"
+                    onClick={handleTogglePlayback}
+                    disabled={playbackDisabled}
+                    className={isPlaying ? 'playback-toggle playing' : 'playback-toggle'}
+                  >
+                    {isPlaying ? 'Pause' : 'Play'}
+                  </button>
+                  <input
+                    type="range"
+                    min={0}
+                    max={Math.max(0, volumeTimepointCount - 1)}
+                    value={Math.min(selectedIndex, Math.max(0, volumeTimepointCount - 1))}
+                    onChange={(event) => handleTimeIndexChange(Number(event.target.value))}
+                    disabled={playbackDisabled}
+                  />
+                  <span className="playback-time-label">{playbackLabel}</span>
+                </div>
+              </div>
             </section>
 
             {layers.length > 0 ? (
               <section className="sidebar-panel layer-controls">
                 <header>
                   <h2>Layers</h2>
+                  {datasetShape ? <p className="layer-dataset-shape">{datasetShape}</p> : null}
                 </header>
                 <div className="layer-tabs" role="tablist" aria-label="Volume layers">
                   {layers.map((layer) => (
@@ -1257,6 +1279,14 @@ function App() {
                       className={isActive ? 'layer-panel is-active' : 'layer-panel'}
                       hidden={!isActive}
                     >
+                      {firstVolume ? (
+                        <div className="layer-intensity" role="group" aria-label="Intensity normalization">
+                          <span className="layer-intensity-label">Intensity normalization</span>
+                          <span className="layer-intensity-range">
+                            {firstVolume.min.toFixed(3)} – {firstVolume.max.toFixed(3)}
+                          </span>
+                        </div>
+                      ) : null}
                       <label className="layer-visibility">
                         <input
                           type="checkbox"
@@ -1362,6 +1392,16 @@ function App() {
               <header>
                 <h2>Overlay controls</h2>
               </header>
+              <div className="control-group">
+                <button
+                  type="button"
+                  onClick={handleStopTrackFollow}
+                  disabled={followedTrackId === null}
+                  className="viewer-stop-tracking"
+                >
+                  Stop tracking
+                </button>
+              </div>
               <div className="slider-control">
                 <label htmlFor="track-opacity-slider">
                   Opacity <span>{Math.round(trackOpacity * 100)}%</span>
