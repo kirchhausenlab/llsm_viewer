@@ -1184,10 +1184,7 @@ function App() {
               </button>
             </header>
 
-            <section className="sidebar-panel global-controls">
-              <header>
-                <h2>Movie</h2>
-              </header>
+            <div className="global-controls">
               <div className="control-group">
                 <button
                   type="button"
@@ -1241,7 +1238,7 @@ function App() {
                   </div>
                 </div>
               </div>
-            </section>
+            </div>
             {error && <p className="error">{error}</p>}
           </div>
         </FloatingWindow>
@@ -1253,11 +1250,8 @@ function App() {
         >
           <div className="sidebar sidebar-left">
             {layers.length > 0 ? (
-              <section className="sidebar-panel layer-controls">
-                <header>
-                  <h2>Layers</h2>
-                  {datasetShape ? <p className="layer-dataset-shape">{datasetShape}</p> : null}
-                </header>
+              <div className="layer-controls">
+                {datasetShape ? <p className="layer-dataset-shape">{datasetShape}</p> : null}
                 <div className="layer-tabs" role="tablist" aria-label="Volume layers">
                   {layers.map((layer) => (
                     <button
@@ -1388,7 +1382,7 @@ function App() {
                     </div>
                   );
                 })}
-              </section>
+              </div>
             ) : (
               <p className="empty-layer-hint">Load a volume to configure layer properties.</p>
             )}
@@ -1401,10 +1395,7 @@ function App() {
           width={`min(${TRACK_WINDOW_WIDTH}px, calc(100vw - ${WINDOW_MARGIN * 2}px))`}
         >
           <div className="sidebar sidebar-right">
-            <section className="sidebar-panel track-controls">
-              <header>
-                <h2>Overlay controls</h2>
-              </header>
+            <div className="track-controls">
               <div className="control-group">
                 <button
                   type="button"
@@ -1499,7 +1490,7 @@ function App() {
               ) : (
                 <p className="track-empty-hint">Load a tracks file to toggle individual trajectories.</p>
               )}
-            </section>
+            </div>
           </div>
       </FloatingWindow>
       </div>
