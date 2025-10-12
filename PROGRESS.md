@@ -183,3 +183,9 @@ d centered the front-page card in the viewport.
 ## Canvas chrome removal
 - Stripped the residual padding, borders, and drop shadows from both the 3D and 2D viewer containers so their canvases now stretch edge-to-edge without visible framing.
 
+
+## Client-side dataset ingestion overhaul
+- Removed the server-side directory browser and volume APIs in favor of pure client-side loading.
+- Added drag-and-drop upload panels for TIFF stacks and track CSVs, grouping dropped files into layers automatically.
+- Introduced a web worker–powered TIFF decoder that reads local files with `geotiff` and streams progress updates without blocking the UI.
+- Replaced path-based configuration with on-page status messaging so launching validates timepoint counts and surfaces CSV parsing errors instantly.

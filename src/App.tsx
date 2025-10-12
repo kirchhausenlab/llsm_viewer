@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { listTiffFiles, loadTracks, loadVolume, type VolumePayload } from './api';
+import type { ChangeEvent, DragEvent } from 'react';
+import { loadVolumesFromFiles } from './loaders/volumeLoader';
 import VolumeViewer from './components/VolumeViewer';
 import PlanarViewer from './components/PlanarViewer';
 import { computeNormalizationParameters, normalizeVolume, NormalizedVolume } from './volumeProcessing';
 import { clearTextureCache } from './textureCache';
-import DirectoryPickerDialog from './components/DirectoryPickerDialog';
-import FilePickerDialog from './components/FilePickerDialog';
 import FloatingWindow from './components/FloatingWindow';
 import type { TrackDefinition, TrackPoint } from './types/tracks';
 import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from './layerColors';
@@ -22,15 +21,11 @@ const CONTROL_WINDOW_WIDTH = 360;
 const TRACK_WINDOW_WIDTH = 340;
 const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
 
-const LAST_BROWSED_PATH_STORAGE_KEY = 'llsm:lastBrowsedPath';
-const TRACK_PATH_STORAGE_KEY = 'llsm:trackPath';
-
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 
 type LayerTarget = {
   key: string;
   label: string;
-  directory: string;
 };
 
 type LoadedLayer = LayerTarget & {
@@ -49,39 +44,106 @@ const createDefaultLayerSettings = (): LayerSettings => ({
   color: DEFAULT_LAYER_COLOR
 });
 
-type DatasetFolder = {
+type DatasetLayerSource = {
   id: string;
-  path: string;
-  inputName: string;
-  suggestedName: string;
+  label: string;
+  files: File[];
 };
 
-function normalizeFolderPath(path: string) {
-  const trimmed = path.trim();
-  if (!trimmed) {
-    return '';
-  }
-  const withoutTrailing = trimmed.replace(/[\\/]+$/, '');
-  if (withoutTrailing.length === 0 || /^[a-zA-Z]:$/.test(withoutTrailing)) {
-    return trimmed;
-  }
-  return withoutTrailing;
+function hasTiffExtension(name: string) {
+  const lower = name.toLowerCase();
+  return lower.endsWith('.tif') || lower.endsWith('.tiff');
 }
 
-function extractFolderName(path: string) {
-  const sanitized = path.replace(/[\\/]+$/, '');
-  const segments = sanitized.split(/[\\/]/).filter(Boolean);
-  if (segments.length === 0) {
-    return sanitized || 'layer';
+function getFileSortKey(file: File) {
+  return file.webkitRelativePath || file.name;
+}
+
+function sortVolumeFiles(files: File[]): File[] {
+  return [...files].sort((a, b) =>
+    getFileSortKey(a).localeCompare(getFileSortKey(b), undefined, {
+      numeric: true,
+      sensitivity: 'base'
+    })
+  );
+}
+
+function getTopLevelFolderName(file: File): string | null {
+  const relative = file.webkitRelativePath;
+  if (!relative) {
+    return null;
   }
-  return segments[segments.length - 1];
+  const segments = relative.split('/').filter(Boolean);
+  if (segments.length <= 1) {
+    return null;
+  }
+  return segments[0] ?? null;
+}
+
+function groupFilesIntoLayers(files: File[]): File[][] {
+  const groups = new Map<string | null, File[]>();
+  let hasFolder = false;
+
+  for (const file of files) {
+    const folder = getTopLevelFolderName(file);
+    if (folder) {
+      hasFolder = true;
+    }
+    const key = folder ?? null;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.push(file);
+    } else {
+      groups.set(key, [file]);
+    }
+  }
+
+  if (!hasFolder) {
+    return files.length > 0 ? [files] : [];
+  }
+
+  return [...groups.entries()]
+    .sort((a, b) => (a[0] ?? '').localeCompare(b[0] ?? '', undefined, { numeric: true }))
+    .map(([, value]) => value);
+}
+
+function inferLayerLabel(
+  files: File[],
+  fallbackIndex: number,
+  existingLabels: Set<string>
+) {
+  let baseLabel: string | null = null;
+  const first = files[0];
+  if (first) {
+    const relative = first.webkitRelativePath;
+    if (relative) {
+      const segments = relative.split('/').filter(Boolean);
+      if (segments.length > 1) {
+        baseLabel = segments[segments.length - 2] ?? null;
+      }
+    }
+    if (!baseLabel) {
+      const nameWithoutExtension = first.name.replace(/\.[^.]+$/, '');
+      baseLabel = nameWithoutExtension || null;
+    }
+  }
+
+  if (!baseLabel) {
+    baseLabel = `Layer ${fallbackIndex + 1}`;
+  }
+
+  let candidate = baseLabel;
+  let counter = 2;
+  while (existingLabels.has(candidate)) {
+    candidate = `${baseLabel} (${counter})`;
+    counter += 1;
+  }
+  return candidate;
 }
 
 function App() {
-  const [pendingFolderPath, setPendingFolderPath] = useState('');
-  const [selectedFolders, setSelectedFolders] = useState<DatasetFolder[]>([]);
-  const [folderError, setFolderError] = useState<string | null>(null);
-  const [files, setFiles] = useState<string[]>([]);
+  const [layerSources, setLayerSources] = useState<DatasetLayerSource[]>([]);
+  const [datasetError, setDatasetError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [layers, setLayers] = useState<LoadedLayer[]>([]);
   const [visibleLayers, setVisibleLayers] = useState<Record<string, boolean>>({});
@@ -94,18 +156,15 @@ function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [fps, setFps] = useState(DEFAULT_FPS);
   const [resetViewHandler, setResetViewHandler] = useState<(() => void) | null>(null);
-  const [isPickerOpen, setIsPickerOpen] = useState(false);
-  const [isTrackPickerOpen, setIsTrackPickerOpen] = useState(false);
   const [activeLayerKey, setActiveLayerKey] = useState<string | null>(null);
-  const [trackPath, setTrackPath] = useState('');
   const [tracks, setTracks] = useState<string[][]>([]);
   const [trackStatus, setTrackStatus] = useState<LoadState>('idle');
   const [trackError, setTrackError] = useState<string | null>(null);
+  const [tracksFile, setTracksFile] = useState<File | null>(null);
   const [trackVisibility, setTrackVisibility] = useState<Record<number, boolean>>({});
   const [trackOpacity, setTrackOpacity] = useState(DEFAULT_TRACK_OPACITY);
   const [trackLineWidth, setTrackLineWidth] = useState(DEFAULT_TRACK_LINE_WIDTH);
   const [followedTrackId, setFollowedTrackId] = useState<number | null>(null);
-  const [lastBrowsedPath, setLastBrowsedPath] = useState<string | null>(null);
   const [viewerMode, setViewerMode] = useState<'3d' | '2d'>('3d');
   const [sliceIndex, setSliceIndex] = useState(0);
   const [isViewerLaunched, setIsViewerLaunched] = useState(false);
@@ -125,40 +184,13 @@ function App() {
   const loadRequestRef = useRef(0);
   const hasTrackDataRef = useRef(false);
   const trackMasterCheckboxRef = useRef<HTMLInputElement | null>(null);
-  const folderIdRef = useRef(0);
-
-  const persistPathValue = useCallback((key: string, value: string | null) => {
-    try {
-      if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
-        return;
-      }
-      if (value && value.trim()) {
-        window.localStorage.setItem(key, value);
-      } else {
-        window.localStorage.removeItem(key);
-      }
-    } catch (error) {
-      console.warn(`Failed to persist ${key} to localStorage`, error);
-    }
-  }, []);
-
-  useEffect(() => {
-    try {
-      if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
-        return;
-      }
-      const storedLastBrowsedPath = window.localStorage.getItem(LAST_BROWSED_PATH_STORAGE_KEY);
-      if (storedLastBrowsedPath !== null) {
-        setLastBrowsedPath(storedLastBrowsedPath);
-      }
-      const storedTrackPath = window.localStorage.getItem(TRACK_PATH_STORAGE_KEY);
-      if (storedTrackPath !== null) {
-        setTrackPath(storedTrackPath);
-      }
-    } catch (error) {
-      console.warn('Failed to restore persisted paths from localStorage', error);
-    }
-  }, []);
+  const layerIdRef = useRef(0);
+  const datasetInputRef = useRef<HTMLInputElement | null>(null);
+  const trackInputRef = useRef<HTMLInputElement | null>(null);
+  const datasetDragCounterRef = useRef(0);
+  const trackDragCounterRef = useRef(0);
+  const [isDatasetDragging, setIsDatasetDragging] = useState(false);
+  const [isTrackDragging, setIsTrackDragging] = useState(false);
 
   const volumeTimepointCount = layers.length > 0 ? layers[0].volumes.length : 0;
   const datasetShape = useMemo(() => {
@@ -336,8 +368,8 @@ function App() {
   }, [followedTrackId, parsedTracks]);
 
   const loadSelectedDataset = useCallback(async () => {
-    setFolderError(null);
-    if (selectedFolders.length === 0) {
+    setDatasetError(null);
+    if (layerSources.length === 0) {
       return false;
     }
 
@@ -346,7 +378,6 @@ function App() {
 
     setStatus('loading');
     setError(null);
-    setFiles([]);
     clearTextureCache();
     setLayers([]);
     setVisibleLayers({});
@@ -357,85 +388,70 @@ function App() {
     setLoadedCount(0);
     setExpectedVolumeCount(0);
     setActiveLayerKey(null);
+
+    const preparedLayers = layerSources
+      .map((layer, index) => ({
+        key: layer.id,
+        label: layer.label.trim() || `Layer ${index + 1}`,
+        files: sortVolumeFiles(layer.files)
+      }))
+      .filter((layer) => layer.files.length > 0);
+
+    if (preparedLayers.length === 0) {
+      const message = 'Each layer must include at least one TIFF file.';
+      setDatasetError(message);
+      setStatus('error');
+      setError(message);
+      return false;
+    }
+
+    const referenceFiles = preparedLayers[0].files;
+    const totalExpectedVolumes = referenceFiles.length * preparedLayers.length;
+    if (totalExpectedVolumes === 0) {
+      const message = 'The selected dataset does not contain any TIFF files.';
+      setDatasetError(message);
+      setStatus('error');
+      setError(message);
+      return false;
+    }
+
+    setExpectedVolumeCount(totalExpectedVolumes);
+
     try {
-      const explicitTargets: LayerTarget[] = selectedFolders.map((folder, index) => {
-        const trimmedName = folder.inputName.trim();
-        const label = trimmedName || folder.suggestedName || `Layer ${index + 1}`;
-        return {
-          key: folder.id,
-          label,
-          directory: folder.path
-        };
-      });
-
-      const layerFileLists = await Promise.all(
-        explicitTargets.map(async (target) => {
-          const filesForLayer = await listTiffFiles(target.directory);
-          return { target, files: filesForLayer };
-        })
-      );
-
-      if (loadRequestRef.current !== requestId) {
-        return false;
-      }
-
-      if (layerFileLists.length === 0) {
-        setStatus('loaded');
-        setLoadProgress(1);
-        return true;
-      }
-
-      const referenceFiles = layerFileLists[0].files;
-      if (referenceFiles.length === 0) {
-        setFiles([]);
-        setStatus('loaded');
-        setLoadProgress(1);
-        return true;
-      }
-
-      const totalExpectedVolumes = referenceFiles.length * layerFileLists.length;
-      setExpectedVolumeCount(totalExpectedVolumes);
-
-      for (const { files: candidateFiles, target } of layerFileLists) {
-        if (candidateFiles.length !== referenceFiles.length) {
+      for (const layer of preparedLayers) {
+        if (layer.files.length !== referenceFiles.length) {
           throw new Error(
-            `Layer "${target.label}" has a different number of timepoints (${candidateFiles.length}) than the reference layer (${referenceFiles.length}).`
+            `Layer "${layer.label}" has a different number of timepoints (${layer.files.length}) than the first layer (${referenceFiles.length}).`
           );
         }
       }
 
-      const rawLayers: { target: LayerTarget; files: string[]; volumes: VolumePayload[] }[] = layerFileLists.map(
-        ({ target, files }) => ({ target, files, volumes: new Array<VolumePayload>(referenceFiles.length) })
-      );
-
       let referenceShape: { width: number; height: number; depth: number } | null = null;
 
-      await Promise.all(
-        rawLayers.map(async ({ target, files, volumes }) => {
-          await Promise.all(
-            files.map(async (filename, index) => {
-              const rawVolume = await loadVolume(target.directory, filename);
+      const rawLayers = await Promise.all(
+        preparedLayers.map(async (layer) => {
+          const volumes = await loadVolumesFromFiles(layer.files, {
+            onVolumeLoaded: (_index, volume) => {
               if (loadRequestRef.current !== requestId) {
                 return;
               }
 
               if (!referenceShape) {
                 referenceShape = {
-                  width: rawVolume.width,
-                  height: rawVolume.height,
-                  depth: rawVolume.depth
+                  width: volume.width,
+                  height: volume.height,
+                  depth: volume.depth
                 };
               } else if (
-                rawVolume.width !== referenceShape.width ||
-                rawVolume.height !== referenceShape.height ||
-                rawVolume.depth !== referenceShape.depth
+                volume.width !== referenceShape.width ||
+                volume.height !== referenceShape.height ||
+                volume.depth !== referenceShape.depth
               ) {
                 throw new Error(
-                  `Layer "${target.label}" has volume dimensions ${rawVolume.width}×${rawVolume.height}×${rawVolume.depth} that do not match the reference shape ${referenceShape.width}×${referenceShape.height}×${referenceShape.depth}.`
+                  `Layer "${layer.label}" has volume dimensions ${volume.width}×${volume.height}×${volume.depth} that do not match the reference shape ${referenceShape.width}×${referenceShape.height}×${referenceShape.depth}.`
                 );
               }
 
-              volumes[index] = rawVolume;
               setLoadedCount((current) => {
                 if (loadRequestRef.current !== requestId) {
                   return current;
@@ -444,8 +460,9 @@ function App() {
                 setLoadProgress(next / totalExpectedVolumes);
                 return next;
               });
-            })
-          );
+            }
+          });
+          return { layer, volumes };
         })
       );
 
@@ -453,17 +470,17 @@ function App() {
         return false;
       }
 
-      const normalizedLayers: LoadedLayer[] = rawLayers.map(({ target, volumes }) => {
+      const normalizedLayers: LoadedLayer[] = rawLayers.map(({ layer, volumes }) => {
         const normalizationParameters = computeNormalizationParameters(volumes);
         const normalizedVolumes = volumes.map((rawVolume) => normalizeVolume(rawVolume, normalizationParameters));
         return {
-          ...target,
+          key: layer.key,
+          label: layer.label,
           volumes: normalizedVolumes
         };
       });
 
       clearTextureCache();
-      setFiles(referenceFiles);
       setLayers(normalizedLayers);
       setVisibleLayers(
         normalizedLayers.reduce<Record<string, boolean>>((acc, layer) => {
@@ -482,6 +499,7 @@ function App() {
       setStatus('loaded');
       setLoadedCount(totalExpectedVolumes);
       setLoadProgress(1);
+      setDatasetError(null);
       return true;
     } catch (err) {
       if (loadRequestRef.current !== requestId) {
@@ -489,7 +507,6 @@ function App() {
       }
       console.error(err);
       setStatus('error');
-      setFiles([]);
       clearTextureCache();
       setLayers([]);
       setVisibleLayers({});
@@ -500,10 +517,12 @@ function App() {
       setLoadedCount(0);
       setExpectedVolumeCount(0);
       setIsPlaying(false);
-      setError(err instanceof Error ? err.message : 'Failed to load volumes.');
+      const message = err instanceof Error ? err.message : 'Failed to load volumes.';
+      setDatasetError(message);
+      setError(message);
       return false;
     }
-  }, [selectedFolders]);
+  }, [layerSources]);
 
   useEffect(() => {
     if (!isPlaying || volumeTimepointCount <= 1) {
@@ -649,101 +668,181 @@ function App() {
     [volumeTimepointCount]
   );
 
-  const handleAddFolder = useCallback(
-    (rawPath: string) => {
-      const normalized = normalizeFolderPath(rawPath);
-      if (!normalized) {
-        setFolderError('Enter a folder path to add.');
-        return;
+  const handleDatasetFilesAdded = useCallback((incomingFiles: File[]) => {
+    const tiffFiles = incomingFiles.filter((file) => hasTiffExtension(file.name));
+    if (tiffFiles.length === 0) {
+      setDatasetError('Please drop TIFF (.tif/.tiff) files.');
+      return;
+    }
+
+    let addedAny = false;
+    setLayerSources((current) => {
+      const existingLabels = new Set(
+        current.map((layer) => layer.label.trim()).filter((label) => label.length > 0)
+      );
+
+      const grouped = groupFilesIntoLayers(tiffFiles);
+      const nextLayers: DatasetLayerSource[] = [];
+
+      for (const group of grouped) {
+        const sorted = sortVolumeFiles(group);
+        if (sorted.length === 0) {
+          continue;
+        }
+        const nextId = layerIdRef.current + 1;
+        layerIdRef.current = nextId;
+        const label = inferLayerLabel(sorted, current.length + nextLayers.length, existingLabels);
+        existingLabels.add(label);
+        nextLayers.push({
+          id: `layer-${nextId}`,
+          label,
+          files: sorted
+        });
       }
 
-      setSelectedFolders((current) => {
-        if (current.some((folder) => folder.path === normalized)) {
-          setFolderError('Folder already added.');
-          return current;
-        }
+      if (nextLayers.length === 0) {
+        return current;
+      }
 
-        const nextId = folderIdRef.current + 1;
-        folderIdRef.current = nextId;
+      addedAny = true;
+      return [...current, ...nextLayers];
+    });
 
-        setFolderError(null);
-        setPendingFolderPath('');
-        setLastBrowsedPath(normalized);
-        persistPathValue(LAST_BROWSED_PATH_STORAGE_KEY, normalized);
+    if (addedAny) {
+      setDatasetError(null);
+    } else {
+      setDatasetError('No TIFF files detected in the dropped selection.');
+    }
+  }, []);
 
-        return [
-          ...current,
-          {
-            id: `folder-${nextId}`,
-            path: normalized,
-            inputName: '',
-            suggestedName: extractFolderName(normalized)
-          }
-        ];
-      });
+  const handleDatasetBrowse = useCallback(() => {
+    datasetInputRef.current?.click();
+  }, []);
+
+  const handleDatasetInputChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const fileList = event.target.files;
+      if (fileList && fileList.length > 0) {
+        handleDatasetFilesAdded(Array.from(fileList));
+      }
+      event.target.value = '';
     },
-    [persistPathValue]
+    [handleDatasetFilesAdded]
   );
 
-  const handleFolderNameChange = useCallback((id: string, value: string) => {
-    setSelectedFolders((current) =>
-      current.map((folder) => (folder.id === id ? { ...folder, inputName: value } : folder))
-    );
+  const handleDatasetDragEnter = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    datasetDragCounterRef.current += 1;
+    setIsDatasetDragging(true);
   }, []);
 
-  const handleFolderRemove = useCallback((id: string) => {
-    setSelectedFolders((current) => current.filter((folder) => folder.id !== id));
-    setFolderError(null);
+  const handleDatasetDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
   }, []);
 
-  const handleOpenPicker = useCallback(() => {
-    setIsPickerOpen(true);
+  const handleDatasetDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    datasetDragCounterRef.current = Math.max(0, datasetDragCounterRef.current - 1);
+    if (datasetDragCounterRef.current === 0) {
+      setIsDatasetDragging(false);
+    }
   }, []);
 
-  const handleClosePicker = useCallback(() => {
-    setIsPickerOpen(false);
-  }, []);
-
-  const handleOpenTrackPicker = useCallback(() => {
-    setIsTrackPickerOpen(true);
-  }, []);
-
-  const handleCloseTrackPicker = useCallback(() => {
-    setIsTrackPickerOpen(false);
-  }, []);
-
-  const handlePathPicked = useCallback(
-    (selectedPath: string) => {
-      setIsPickerOpen(false);
-      handleAddFolder(selectedPath);
+  const handleDatasetDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      datasetDragCounterRef.current = 0;
+      setIsDatasetDragging(false);
+      const fileList = event.dataTransfer.files;
+      if (!fileList || fileList.length === 0) {
+        return;
+      }
+      handleDatasetFilesAdded(Array.from(fileList));
     },
-    [handleAddFolder]
+    [handleDatasetFilesAdded]
   );
 
-  const handleTrackPathChange = useCallback(
-    (nextPath: string) => {
-      setTrackPath(nextPath);
-      persistPathValue(TRACK_PATH_STORAGE_KEY, nextPath);
+  const handleLayerLabelChange = useCallback((id: string, value: string) => {
+    setLayerSources((current) => current.map((layer) => (layer.id === id ? { ...layer, label: value } : layer)));
+  }, []);
+
+  const handleLayerRemove = useCallback((id: string) => {
+    setLayerSources((current) => current.filter((layer) => layer.id !== id));
+    setDatasetError(null);
+  }, []);
+
+  const handleTrackFilesAdded = useCallback((files: File[]) => {
+    const csvFile = files.find((file) => file.name.toLowerCase().endsWith('.csv')) ?? null;
+    if (!csvFile) {
+      setTracksFile(null);
       setTrackStatus('idle');
-      setTrackError(null);
+      setTrackError('Please drop a CSV file.');
+      setTracks([]);
+      return;
+    }
+    setTracksFile(csvFile);
+    setTrackStatus('idle');
+    setTrackError(null);
+  }, []);
+
+  const handleTrackBrowse = useCallback(() => {
+    trackInputRef.current?.click();
+  }, []);
+
+  const handleTrackInputChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const fileList = event.target.files;
+      if (fileList && fileList.length > 0) {
+        handleTrackFilesAdded(Array.from(fileList));
+      }
+      event.target.value = '';
     },
-    [persistPathValue]
+    [handleTrackFilesAdded]
   );
 
-  const handleTrackPathPicked = useCallback(
-    (selectedPath: string) => {
-      setTrackPath(selectedPath);
-      persistPathValue(TRACK_PATH_STORAGE_KEY, selectedPath);
-      setIsTrackPickerOpen(false);
-      setTrackStatus('idle');
-      setTrackError(null);
+  const handleTrackDragEnter = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    trackDragCounterRef.current += 1;
+    setIsTrackDragging(true);
+  }, []);
+
+  const handleTrackDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+  }, []);
+
+  const handleTrackDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    trackDragCounterRef.current = Math.max(0, trackDragCounterRef.current - 1);
+    if (trackDragCounterRef.current === 0) {
+      setIsTrackDragging(false);
+    }
+  }, []);
+
+  const handleTrackDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      trackDragCounterRef.current = 0;
+      setIsTrackDragging(false);
+      const fileList = event.dataTransfer.files;
+      if (!fileList || fileList.length === 0) {
+        return;
+      }
+      handleTrackFilesAdded(Array.from(fileList));
     },
-    [persistPathValue]
+    [handleTrackFilesAdded]
   );
 
-  const loadTrackData = useCallback(async (path: string) => {
-    const trimmed = path.trim();
-    if (!trimmed) {
+  const handleTrackClear = useCallback(() => {
+    setTracksFile(null);
+    setTrackStatus('idle');
+    setTrackError(null);
+    setTracks([]);
+  }, []);
+
+  const loadTrackData = useCallback(async (file: File | null) => {
+    if (!file) {
       setTracks([]);
       setTrackStatus('idle');
       setTrackError(null);
@@ -754,7 +853,22 @@ function App() {
     setTrackError(null);
 
     try {
-      const rows = await loadTracks(trimmed);
+      const contents = await file.text();
+      const lines = contents.split(/\r?\n/);
+      const rows: string[][] = [];
+
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) {
+          continue;
+        }
+        const columns = line.split(',');
+        if (columns.length !== 8) {
+          throw new Error('CSV file must contain exactly 8 comma-separated columns per row.');
+        }
+        rows.push(columns.map((value) => value.trim()));
+      }
+
       setTracks(rows);
       setTrackStatus('loaded');
       return true;
@@ -765,10 +879,11 @@ function App() {
       setTracks([]);
       return false;
     }
-  }, [loadTracks]);
+  }, []);
 
   const handleLaunchViewer = useCallback(async () => {
-    if (isLaunchingViewer || selectedFolders.length === 0) {
+    if (isLaunchingViewer || layerSources.length === 0) {
+      setDatasetError('Add at least one dataset layer to continue.');
       return;
     }
 
@@ -779,7 +894,7 @@ function App() {
         return;
       }
 
-      const tracksLoaded = await loadTrackData(trackPath);
+      const tracksLoaded = await loadTrackData(tracksFile);
       if (!tracksLoaded) {
         return;
       }
@@ -788,7 +903,7 @@ function App() {
     } finally {
       setIsLaunchingViewer(false);
     }
-  }, [isLaunchingViewer, loadSelectedDataset, loadTrackData, selectedFolders.length, trackPath]);
+  }, [isLaunchingViewer, layerSources.length, loadSelectedDataset, loadTrackData, tracksFile]);
 
   const handleLayerVisibilityToggle = useCallback((key: string) => {
     setVisibleLayers((current) => ({
@@ -992,150 +1107,120 @@ function App() {
     }
   }, [maxSliceDepth, sliceIndex]);
   const datasetLoader = (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-      }}
-      className="path-form"
-    >
-          <label htmlFor="path-input">Dataset folders</label>
-          <div className="path-input-wrapper">
-            <input
-              id="path-input"
-              type="text"
-              value={pendingFolderPath}
-              placeholder="/nfs/scratch2/.../dataset"
-              onChange={(event) => {
-                setPendingFolderPath(event.target.value);
-                setFolderError(null);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault();
-                  handleAddFolder(pendingFolderPath);
-                }
-              }}
-              autoComplete="off"
-              disabled={isLoading}
-            />
-            <button
-              type="button"
-              className="path-browse-button"
-              onClick={handleOpenPicker}
-              aria-label="Browse for dataset folder"
-              disabled={isLoading}
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path
-                  d="M3 6.75A1.75 1.75 0 0 1 4.75 5h4.19c.46 0 .9.18 1.23.5l1.32 1.29H19.5A1.5 1.5 0 0 1 21 8.29v8.96A1.75 1.75 0 0 1 19.25 19H4.75A1.75 1.75 0 0 1 3 17.25Z"
-                  fill="currentColor"
-                />
-              </svg>
-            </button>
-          </div>
-          {folderError ? <p className="subfolder-error">{folderError}</p> : null}
-          {selectedFolders.length > 0 ? (
-            <div className="folder-selection-list">
-              {selectedFolders.map((folder) => (
-                <div key={folder.id} className="folder-selection-item">
-                  <span className="folder-selection-path" title={folder.path}>
-                    {folder.path}
-                  </span>
-                  <div className="folder-selection-row">
-                    <input
-                      type="text"
-                      value={folder.inputName}
-                      placeholder={folder.suggestedName}
-                      onChange={(event) => handleFolderNameChange(folder.id, event.target.value)}
-                      className="folder-selection-name-input"
-                      autoComplete="off"
-                      aria-label={`Layer name for ${folder.path}`}
-                      disabled={isLoading}
-                    />
-                    <button
-                      type="button"
-                      className="folder-selection-remove"
-                      onClick={() => handleFolderRemove(folder.id)}
-                      aria-label={`Remove ${folder.path} from dataset`}
-                      disabled={isLoading}
-                    >
-                      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                        <path
-                          d="M9 3a1 1 0 0 0-1 1v1H5.5a1 1 0 1 0 0 2h.54l.74 11.13A2 2 0 0 0 8.77 20h6.46a2 2 0 0 0 1.99-1.87L17.96 7H18.5a1 1 0 1 0 0-2H16V4a1 1 0 0 0-1-1Zm1 2h4V4h-4Zm-1.95 2h8.9l-.7 10.47a.5.5 0 0 1-.5.46H8.77a.5.5 0 0 1-.5-.46Z"
-                          fill="currentColor"
-                        />
-                      </svg>
-                    </button>
-                  </div>
+    <div className="upload-panel">
+      <div
+        className={`file-drop-zone${isDatasetDragging ? ' is-active' : ''}`}
+        onDragEnter={handleDatasetDragEnter}
+        onDragOver={handleDatasetDragOver}
+        onDragLeave={handleDatasetDragLeave}
+        onDrop={handleDatasetDrop}
+      >
+        <input
+          ref={datasetInputRef}
+          className="file-drop-input"
+          type="file"
+          accept=".tif,.tiff"
+          multiple
+          onChange={handleDatasetInputChange}
+        />
+        <div className="file-drop-content">
+          <p className="file-drop-title">Drop TIFF stacks here</p>
+          <p className="file-drop-subtitle">Drop a folder or multiple TIFF files to add a layer.</p>
+          <button type="button" className="file-drop-button" onClick={handleDatasetBrowse}>
+            Choose files
+          </button>
+        </div>
+      </div>
+      {datasetError ? <p className="drop-error">{datasetError}</p> : null}
+      {layerSources.length > 0 ? (
+        <ul className="layer-upload-list">
+          {layerSources.map((layer) => {
+            const firstName = layer.files[0] ? getFileSortKey(layer.files[0]) : null;
+            const lastName =
+              layer.files.length > 1 ? getFileSortKey(layer.files[layer.files.length - 1]) : firstName;
+            const preview =
+              firstName && lastName && lastName !== firstName ? `${firstName} → ${lastName}` : firstName;
+            return (
+              <li key={layer.id} className="layer-upload-item">
+                <div className="layer-upload-header">
+                  <input
+                    type="text"
+                    value={layer.label}
+                    placeholder="Layer name"
+                    onChange={(event) => handleLayerLabelChange(layer.id, event.target.value)}
+                    className="layer-upload-name-input"
+                    autoComplete="off"
+                  />
+                  <button
+                    type="button"
+                    className="layer-remove-button"
+                    onClick={() => handleLayerRemove(layer.id)}
+                    aria-label={`Remove ${layer.label}`}
+                  >
+                    Remove
+                  </button>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <p className="subfolder-status">Type a path and press Enter, or use the folder button to browse.</p>
-          )}
-        </form>
+                <p className="layer-upload-meta">
+                  {layer.files.length === 1 ? '1 file' : `${layer.files.length} files`}
+                </p>
+                {preview ? (
+                  <p className="layer-upload-preview" title={preview}>
+                    {preview}
+                  </p>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="drop-placeholder">Drop TIFF folders or files to create layers.</p>
+      )}
+    </div>
   );
 
   const trackLoader = (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-      }}
-      className="path-form"
-    >
-      <label htmlFor="tracks-input">Tracks file</label>
-      <div className="path-input-wrapper">
+    <div className="upload-panel">
+      <div
+        className={`file-drop-zone${isTrackDragging ? ' is-active' : ''}`}
+        onDragEnter={handleTrackDragEnter}
+        onDragOver={handleTrackDragOver}
+        onDragLeave={handleTrackDragLeave}
+        onDrop={handleTrackDrop}
+      >
         <input
-          id="tracks-input"
-          type="text"
-          value={trackPath}
-          placeholder="/nfs/scratch2/.../tracks.csv"
-          onChange={(event) => handleTrackPathChange(event.target.value)}
-          autoComplete="off"
+          ref={trackInputRef}
+          className="file-drop-input"
+          type="file"
+          accept=".csv"
+          onChange={handleTrackInputChange}
         />
-        <button
-          type="button"
-          className="path-browse-button"
-          onClick={handleOpenTrackPicker}
-          aria-label="Browse for tracks file"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path
-              d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8.83a2 2 0 0 0-.59-1.41l-4.83-4.83A2 2 0 0 0 13.17 2Zm6 2.41L17.59 8H13a1 1 0 0 1-1-1Z"
-              fill="currentColor"
-            />
-          </svg>
-        </button>
+        <div className="file-drop-content">
+          <p className="file-drop-title">Drop tracks CSV</p>
+          <p className="file-drop-subtitle">Drop a CSV file or choose one from your device.</p>
+          <button type="button" className="file-drop-button" onClick={handleTrackBrowse}>
+            Choose file
+          </button>
+        </div>
       </div>
+      {trackError ? <p className="drop-error">{trackError}</p> : null}
+      {tracksFile ? (
+        <div className="selected-file-chip">
+          <span title={tracksFile.name}>{tracksFile.name}</span>
+          <button type="button" onClick={handleTrackClear} aria-label="Remove tracks file">
+            ×
+          </button>
+        </div>
+      ) : (
+        <p className="drop-placeholder">Tracks are optional. Drop a CSV file to include them.</p>
+      )}
       {trackStatus === 'loading' ? (
-        <p className="subfolder-status">Loading tracks…</p>
-      ) : trackError ? (
-        <p className="subfolder-error">{trackError}</p>
+        <p className="drop-status">Loading tracks…</p>
       ) : trackStatus === 'loaded' ? (
-        <p className="subfolder-status">
+        <p className="drop-status">
           {tracks.length === 1 ? 'Loaded 1 track entry.' : `Loaded ${tracks.length} track entries.`}
         </p>
       ) : null}
-    </form>
-  );
-
-  const pickerDialogs = (
-    <>
-      {isPickerOpen ? (
-        <DirectoryPickerDialog
-          initialPath={lastBrowsedPath ?? selectedFolders[selectedFolders.length - 1]?.path}
-          onClose={handleClosePicker}
-          onSelect={handlePathPicked}
-        />
-      ) : null}
-      {isTrackPickerOpen ? (
-        <FilePickerDialog
-          initialPath={trackPath}
-          onClose={handleCloseTrackPicker}
-          onSelect={handleTrackPathPicked}
-        />
-      ) : null}
-    </>
+    </div>
   );
 
   if (!isViewerLaunched) {
@@ -1148,7 +1233,7 @@ function App() {
               <section className="front-page-widget">
                 <header>
                   <h2>Dataset setup</h2>
-                  <p>Select one or more TIFF stack folders and give them layer names.</p>
+                  <p>Drop TIFF stacks to create layers. Each drop becomes a new layer.</p>
                 </header>
                 {datasetLoader}
               </section>
@@ -1163,13 +1248,12 @@ function App() {
               type="button"
               className="launch-viewer-button"
               onClick={handleLaunchViewer}
-              disabled={selectedFolders.length === 0 || isLaunchingViewer}
+              disabled={layerSources.length === 0 || isLaunchingViewer}
             >
               {isLaunchingViewer ? 'Loading...' : 'Launch viewer'}
             </button>
           </div>
         </div>
-        {pickerDialogs}
       </>
     );
   }
@@ -1561,7 +1645,6 @@ function App() {
           </div>
       </FloatingWindow>
       </div>
-      {pickerDialogs}
     </>
   );
 }
