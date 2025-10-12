@@ -180,6 +180,3 @@ d centered the front-page card in the viewport.
 - Updated button labels and layout to use standard play/pause icons, clarify mode switching copy, and align reset actions horizontally for quicker access.
 - Expanded the viewer canvas to span the entire screen and layered the floating control panels above it, giving both the 2D and 3D renderers maximum space while keeping the overlays draggable.
 
-## Full-bleed viewer polish
-- Removed the residual padding, borders, and drop shadows from both the 2D and 3D viewer surfaces so the rendering canvases sit flush with the browser edges beneath the floating windows.
-
