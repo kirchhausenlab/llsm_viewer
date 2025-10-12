@@ -7,6 +7,92 @@
   overflow: hidden;
 }
 
+.front-page {
+  min-height: 100vh;
+  background: radial-gradient(circle at top left, rgba(91, 140, 255, 0.2), transparent 45%),
+    radial-gradient(circle at bottom right, rgba(146, 104, 255, 0.2), transparent 50%),
+    #080a0d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1.5rem;
+  box-sizing: border-box;
+}
+
+.front-page-card {
+  width: min(960px, 100%);
+  padding: 2.5rem;
+  border-radius: 1.25rem;
+  background: rgba(12, 16, 24, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.front-page-card h1 {
+  margin: 0;
+  font-size: clamp(2.25rem, 3vw, 3rem);
+  letter-spacing: -0.01em;
+}
+
+.front-page-card > p {
+  margin: 0;
+  font-size: 1.05rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.front-page-widgets {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.front-page-widget {
+  padding: 1.75rem;
+  border-radius: 1rem;
+  background: rgba(14, 18, 28, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.front-page-widget header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.front-page-widget header p {
+  margin: 0.35rem 0 0;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.45;
+}
+
+.launch-viewer-button {
+  align-self: flex-end;
+  padding: 0.85rem 1.75rem;
+  border-radius: 0.75rem;
+  border: none;
+  font-weight: 600;
+  font-size: 1rem;
+  color: white;
+  background: linear-gradient(135deg, #5b8cff, #5b52ff);
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.launch-viewer-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 15px 35px rgba(91, 140, 255, 0.35);
+}
+
+.launch-viewer-button:active {
+  transform: translateY(0);
+}
+
 .sidebar {
   padding: 1.5rem;
   border-right: 1px solid rgba(255, 255, 255, 0.05);
@@ -24,6 +110,44 @@
 .sidebar-right {
   border-right: none;
   border-left: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.sidebar-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.sidebar-header h1 {
+  margin-bottom: 0.25rem;
+}
+
+.sidebar-header p {
+  margin-top: 0;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.sidebar-launcher-button {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.6rem;
+  padding: 0.45rem 0.9rem;
+  background: rgba(12, 16, 24, 0.9);
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.sidebar-launcher-button:hover {
+  border-color: rgba(91, 140, 255, 0.7);
+  transform: translateY(-1px);
+}
+
+.sidebar-launcher-button:focus {
+  outline: 2px solid #5b8cff;
+  outline-offset: 2px;
 }
 
 .sidebar header h1 {

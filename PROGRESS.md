@@ -164,3 +164,8 @@ Next steps:
 
 ## Track overlay transform sync
 - Applied the stored volume normalization transform to the tracking overlay as soon as the Three.js group is recreated so toggling back from 2D mode no longer leaves trajectories in raw voxel space until another interaction forces a refresh.
+## Front page launcher
+- Introduced a dedicated landing screen with dataset and track loading widgets centered in a modal-style card.
+- Added a launch button that transitions into the viewer layout while leaving load controls exclusively on the front page.
+- Provided an "Open launcher" shortcut inside the viewer so datasets or track files can be reloaded without refreshing.
+
