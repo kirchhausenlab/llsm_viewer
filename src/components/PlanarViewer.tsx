@@ -16,16 +16,12 @@ type ViewerLayer = {
 
 type PlanarViewerProps = {
   layers: ViewerLayer[];
-  filename: string | null;
   isLoading: boolean;
   loadingProgress: number;
   loadedVolumes: number;
   expectedVolumes: number;
   timeIndex: number;
   totalTimepoints: number;
-  isPlaying: boolean;
-  onTogglePlayback: () => void;
-  onTimeIndexChange: (index: number) => void;
   onRegisterReset: (handler: (() => void) | null) => void;
   sliceIndex: number;
   maxSlices: number;
@@ -124,16 +120,12 @@ function createInitialViewState(): ViewState {
 
 function PlanarViewer({
   layers,
-  filename,
   isLoading,
   loadingProgress,
   loadedVolumes,
   expectedVolumes,
   timeIndex,
   totalTimepoints,
-  isPlaying,
-  onTogglePlayback,
-  onTimeIndexChange,
   onRegisterReset,
   sliceIndex,
   maxSlices,
@@ -216,13 +208,6 @@ function PlanarViewer({
       onRegisterReset(null);
     };
   }, [onRegisterReset, resetView]);
-
-  const title = useMemo(() => {
-    if (!filename) {
-      return 'No dataset selected';
-    }
-    return filename;
-  }, [filename]);
 
   const safeProgress = clamp(loadingProgress, 0, 1);
   const clampedLoadedVolumes = Math.max(0, loadedVolumes);
@@ -1104,45 +1089,10 @@ function PlanarViewer({
     };
   }, [clampedSliceIndex, effectiveMaxSlices, onSliceIndexChange, updateViewState]);
 
-  const disableTimeControls = isLoading || totalTimepoints <= 1;
   const disableSliceControls = effectiveMaxSlices <= 1;
 
   return (
     <div className="planar-viewer">
-      <header>
-        <div>
-          <h2>{title}</h2>
-          {primaryVolume ? (
-            <p>
-              {primaryVolume.width} × {primaryVolume.height} × {primaryVolume.depth} ·{' '}
-              {primaryVolume.channels} channel{primaryVolume.channels > 1 ? 's' : ''}
-            </p>
-          ) : (
-            <p>Select a dataset to explore its XY slices.</p>
-          )}
-          {layers.length > 0 ? (
-            <div className="viewer-layer-summary">
-              {layers.map((layer) => (
-                <span
-                  key={layer.key}
-                  className={layer.visible ? 'layer-pill' : 'layer-pill is-hidden'}
-                  aria-label={layer.visible ? `${layer.label} visible` : `${layer.label} hidden`}
-                >
-                  {layer.label}
-                </span>
-              ))}
-            </div>
-          ) : null}
-        </div>
-        <div className="viewer-meta">
-          <div className="time-info">
-            <span>Frame {totalTimepoints === 0 ? 0 : clampedTimeIndex + 1}</span>
-            <span>/</span>
-            <span>{totalTimepoints}</span>
-          </div>
-        </div>
-      </header>
-
       <section className="planar-surface">
         {showLoadingOverlay && (
           <div className="overlay">
@@ -1201,29 +1151,6 @@ function PlanarViewer({
         </section>
       ) : null}
 
-      {totalTimepoints > 0 ? (
-        <section className="time-controls">
-          <button
-            type="button"
-            onClick={onTogglePlayback}
-            disabled={disableTimeControls}
-            className={isPlaying ? 'playing' : ''}
-          >
-            {isPlaying ? 'Pause' : 'Play'}
-          </button>
-          <input
-            type="range"
-            min={0}
-            max={Math.max(0, totalTimepoints - 1)}
-            value={clampedTimeIndex}
-            onChange={(event) => onTimeIndexChange(Number(event.target.value))}
-            disabled={disableTimeControls}
-          />
-          <span className="time-label">
-            {totalTimepoints === 0 ? '0' : `${clampedTimeIndex + 1} / ${totalTimepoints}`}
-          </span>
-        </section>
-      ) : null}
     </div>
   );
 }

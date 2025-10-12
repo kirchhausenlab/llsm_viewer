@@ -28,16 +28,12 @@ type ViewerLayer = {
 
 type VolumeViewerProps = {
   layers: ViewerLayer[];
-  filename: string | null;
   timeIndex: number;
   totalTimepoints: number;
   isLoading: boolean;
   loadingProgress: number;
   loadedVolumes: number;
   expectedVolumes: number;
-  isPlaying: boolean;
-  onTogglePlayback: () => void;
-  onTimeIndexChange: (index: number) => void;
   onRegisterReset: (handler: (() => void) | null) => void;
   tracks: TrackDefinition[];
   trackVisibility: Record<number, boolean>;
@@ -45,11 +41,6 @@ type VolumeViewerProps = {
   trackLineWidth: number;
   followedTrackId: number | null;
   onTrackFollowRequest: (trackId: number) => void;
-};
-
-type VolumeStats = {
-  min: number;
-  max: number;
 };
 
 type VolumeResources = {
@@ -192,7 +183,6 @@ function createColormapTexture(hexColor: string) {
 
 function VolumeViewer({
   layers,
-  filename,
   isLoading,
   loadingProgress,
   loadedVolumes,
@@ -242,7 +232,6 @@ function VolumeViewer({
   const followedTrackIdRef = useRef<number | null>(null);
   const trackFollowOffsetRef = useRef<THREE.Vector3 | null>(null);
   const previousFollowedTrackIdRef = useRef<number | null>(null);
-  const [layerStats, setLayerStats] = useState<Record<string, VolumeStats>>({});
   const [hasMeasured, setHasMeasured] = useState(false);
   const [trackOverlayRevision, setTrackOverlayRevision] = useState(0);
   const [renderContextRevision, setRenderContextRevision] = useState(0);
@@ -375,13 +364,6 @@ function VolumeViewer({
       geometry.instanceCount = visibleSegments;
     }
   }, []);
-
-  const title = useMemo(() => {
-    if (!filename) {
-      return 'No dataset selected';
-    }
-    return `${filename}`;
-  }, [filename]);
 
   const safeProgress = Math.min(1, Math.max(0, loadingProgress));
   const clampedLoadedVolumes = Math.max(0, loadedVolumes);
@@ -1339,7 +1321,6 @@ function VolumeViewer({
       removeAllResources();
       currentDimensionsRef.current = null;
       applyVolumeRootTransform(null);
-      setLayerStats({});
       return;
     }
 
@@ -1361,7 +1342,6 @@ function VolumeViewer({
       }
       applyTrackGroupTransform(null);
       applyVolumeRootTransform(null);
-      setLayerStats({});
       return;
     }
 
@@ -1404,7 +1384,6 @@ function VolumeViewer({
       applyVolumeRootTransform({ width, height, depth });
     }
 
-    const nextStats: Record<string, VolumeStats> = {};
     const seenKeys = new Set<string>();
 
     layers.forEach((layer, index) => {
@@ -1638,7 +1617,6 @@ function VolumeViewer({
         }
       }
 
-      nextStats[layer.key] = { min: volume.min, max: volume.max };
       seenKeys.add(layer.key);
     });
 
@@ -1648,7 +1626,6 @@ function VolumeViewer({
       }
     }
 
-    setLayerStats(nextStats);
   }, [applyTrackGroupTransform, getColormapTexture, layers, renderContextRevision]);
 
   useEffect(() => {
@@ -1662,40 +1639,6 @@ function VolumeViewer({
 
   return (
     <div className="volume-viewer">
-      <header>
-        <div>
-          <h2>{title}</h2>
-          {primaryVolume ? (
-            <p>
-              {primaryVolume.width} × {primaryVolume.height} × {primaryVolume.depth} · {primaryVolume.channels} channel
-              {primaryVolume.channels > 1 ? 's' : ''}
-            </p>
-          ) : (
-            <p>Select a dataset to preview its 3D volume.</p>
-          )}
-          {layers.length > 0 ? (
-            <div className="viewer-layer-summary">
-              {layers.map((layer) => (
-                <span
-                  key={layer.key}
-                  className={layer.visible ? 'layer-pill' : 'layer-pill is-hidden'}
-                  aria-label={layer.visible ? `${layer.label} visible` : `${layer.label} hidden`}
-                >
-                  {layer.label}
-                </span>
-              ))}
-            </div>
-          ) : null}
-        </div>
-        <div className="viewer-meta">
-          <div className="time-info">
-            <span>Frame {totalTimepoints === 0 ? 0 : timeIndex + 1}</span>
-            <span>/</span>
-            <span>{totalTimepoints}</span>
-          </div>
-        </div>
-      </header>
-
       <section className="viewer-surface">
         {showLoadingOverlay && (
           <div className="overlay">
@@ -1717,54 +1660,6 @@ function VolumeViewer({
           ) : null}
         </div>
       </section>
-
-    {totalTimepoints > 0 && (
-      <section className="time-controls">
-        <button
-          type="button"
-          onClick={onTogglePlayback}
-          disabled={isLoading || totalTimepoints <= 1}
-          className={isPlaying ? 'playing' : ''}
-        >
-          {isPlaying ? 'Pause' : 'Play'}
-        </button>
-        <input
-          type="range"
-          min={0}
-          max={Math.max(0, totalTimepoints - 1)}
-          value={clampedTimeIndex}
-          onChange={(event) => onTimeIndexChange(Number(event.target.value))}
-          disabled={isLoading || totalTimepoints <= 1}
-        />
-        <span className="time-label">
-          {totalTimepoints === 0 ? 0 : clampedTimeIndex + 1} / {totalTimepoints}
-        </span>
-      </section>
-    )}
-
-      {Object.keys(layerStats).length > 0 && (
-        <footer className="viewer-stats">
-          <span className="viewer-stats-title">Intensity normalization</span>
-          <ul>
-            {layers
-              .filter((layer) => layerStats[layer.key])
-              .map((layer) => {
-                const stats = layerStats[layer.key];
-                if (!stats) {
-                  return null;
-                }
-                return (
-                  <li key={layer.key} className={layer.visible ? '' : 'is-hidden'}>
-                    <span className="layer-label">{layer.label}</span>
-                    <span className="layer-range">
-                      {stats.min.toFixed(3)} – {stats.max.toFixed(3)}
-                    </span>
-                  </li>
-                );
-              })}
-          </ul>
-        </footer>
-      )}
     </div>
   );
 }

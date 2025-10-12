@@ -35,6 +35,7 @@ function FloatingWindow({
   const [position, setPosition] = useState(() => resolvedInitialPosition);
   const [isDragging, setIsDragging] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
+  const lastInitialPositionRef = useRef(resolvedInitialPosition);
 
   const clampPosition = useCallback(
     (x: number, y: number) => {
@@ -68,6 +69,13 @@ function FloatingWindow({
   );
 
   useEffect(() => {
+    const previous = lastInitialPositionRef.current;
+    const hasChanged =
+      previous.x !== resolvedInitialPosition.x || previous.y !== resolvedInitialPosition.y;
+    lastInitialPositionRef.current = resolvedInitialPosition;
+    if (!hasChanged) {
+      return;
+    }
     setPosition((current) => {
       const next = clampPosition(resolvedInitialPosition.x, resolvedInitialPosition.y);
       if (current.x === next.x && current.y === next.y) {
@@ -75,7 +83,7 @@ function FloatingWindow({
       }
       return next;
     });
-  }, [resolvedInitialPosition.x, resolvedInitialPosition.y, clampPosition]);
+  }, [resolvedInitialPosition, clampPosition]);
 
   useEffect(() => {
     const handleResize = () => {
