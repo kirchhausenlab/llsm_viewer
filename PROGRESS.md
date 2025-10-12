@@ -180,3 +180,6 @@ d centered the front-page card in the viewport.
 - Updated button labels and layout to use standard play/pause icons, clarify mode switching copy, and align reset actions horizontally for quicker access.
 - Expanded the viewer canvas to span the entire screen and layered the floating control panels above it, giving both the 2D and 3D renderers maximum space while keeping the overlays draggable.
 
+## Canvas chrome removal
+- Stripped the residual padding, borders, and drop shadows from both the 3D and 2D viewer containers so their canvases now stretch edge-to-edge without visible framing.
+
