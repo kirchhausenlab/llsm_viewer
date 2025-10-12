@@ -1187,6 +1187,7 @@ function App() {
             trackOpacity={trackOpacity}
             trackLineWidth={trackLineWidth}
             followedTrackId={followedTrackId}
+            onTrackFollowRequest={handleTrackFollowFromViewer}
           />
         )}
       </main>
