@@ -1186,23 +1186,25 @@ function App() {
 
             <div className="global-controls">
               <div className="control-group">
-                <button
-                  type="button"
-                  onClick={handleToggleViewerMode}
-                  className={viewerMode === '3d' ? 'viewer-mode-button' : 'viewer-mode-button is-active'}
-                >
-                  {viewerMode === '3d' ? 'Switch to 2D mode' : 'Switch to 3D mode'}
-                </button>
-                <button type="button" onClick={() => resetViewHandler?.()} disabled={!resetViewHandler}>
-                  Reset view
-                </button>
+                <div className="viewer-mode-row">
+                  <button
+                    type="button"
+                    onClick={handleToggleViewerMode}
+                    className={viewerMode === '3d' ? 'viewer-mode-button' : 'viewer-mode-button is-active'}
+                  >
+                    {viewerMode === '3d' ? 'Go to 2D view' : 'Go to 3D view'}
+                  </button>
+                  <button type="button" onClick={() => resetViewHandler?.()} disabled={!resetViewHandler}>
+                    Reset view
+                  </button>
+                </div>
                 <button type="button" onClick={handleResetControls} disabled={controlsAtDefaults}>
                   Reset controls
                 </button>
               </div>
               <div className="control-group">
                 <label htmlFor="fps-slider">
-                  FPS <span>{fps}</span>
+                  frames per second <span>{fps}</span>
                 </label>
                 <input
                   id="fps-slider"
@@ -1215,6 +1217,25 @@ function App() {
                   disabled={volumeTimepointCount <= 1}
                 />
               </div>
+              {viewerMode === '2d' && maxSliceDepth > 0 ? (
+                <div className="control-group">
+                  <label htmlFor="z-plane-slider">
+                    Z plane{' '}
+                    <span>
+                      {Math.min(sliceIndex + 1, maxSliceDepth)} / {maxSliceDepth}
+                    </span>
+                  </label>
+                  <input
+                    id="z-plane-slider"
+                    type="range"
+                    min={0}
+                    max={Math.max(0, maxSliceDepth - 1)}
+                    value={Math.min(sliceIndex, Math.max(0, maxSliceDepth - 1))}
+                    onChange={(event) => handleSliceIndexChange(Number(event.target.value))}
+                    disabled={maxSliceDepth <= 1}
+                  />
+                </div>
+              ) : null}
               <div className="playback-controls">
                 <div className="playback-controls-row">
                   <button
@@ -1222,8 +1243,9 @@ function App() {
                     onClick={handleTogglePlayback}
                     disabled={playbackDisabled}
                     className={isPlaying ? 'playback-toggle playing' : 'playback-toggle'}
+                    aria-label={isPlaying ? 'Pause playback' : 'Start playback'}
                   >
-                    {isPlaying ? 'Pause' : 'Play'}
+                    {isPlaying ? '⏸' : '▶'}
                   </button>
                   <div className="playback-slider-group">
                     <input
