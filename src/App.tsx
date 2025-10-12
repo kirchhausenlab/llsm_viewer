@@ -22,6 +22,9 @@ const CONTROL_WINDOW_WIDTH = 360;
 const TRACK_WINDOW_WIDTH = 340;
 const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
 
+const LAST_BROWSED_PATH_STORAGE_KEY = 'llsm:lastBrowsedPath';
+const TRACK_PATH_STORAGE_KEY = 'llsm:trackPath';
+
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 
 type LayerTarget = {
@@ -123,6 +126,39 @@ function App() {
   const hasTrackDataRef = useRef(false);
   const trackMasterCheckboxRef = useRef<HTMLInputElement | null>(null);
   const folderIdRef = useRef(0);
+
+  const persistPathValue = useCallback((key: string, value: string | null) => {
+    try {
+      if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+        return;
+      }
+      if (value && value.trim()) {
+        window.localStorage.setItem(key, value);
+      } else {
+        window.localStorage.removeItem(key);
+      }
+    } catch (error) {
+      console.warn(`Failed to persist ${key} to localStorage`, error);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+        return;
+      }
+      const storedLastBrowsedPath = window.localStorage.getItem(LAST_BROWSED_PATH_STORAGE_KEY);
+      if (storedLastBrowsedPath !== null) {
+        setLastBrowsedPath(storedLastBrowsedPath);
+      }
+      const storedTrackPath = window.localStorage.getItem(TRACK_PATH_STORAGE_KEY);
+      if (storedTrackPath !== null) {
+        setTrackPath(storedTrackPath);
+      }
+    } catch (error) {
+      console.warn('Failed to restore persisted paths from localStorage', error);
+    }
+  }, []);
 
   const volumeTimepointCount = layers.length > 0 ? layers[0].volumes.length : 0;
   const datasetShape = useMemo(() => {
@@ -633,6 +669,7 @@ function App() {
         setFolderError(null);
         setPendingFolderPath('');
         setLastBrowsedPath(normalized);
+        persistPathValue(LAST_BROWSED_PATH_STORAGE_KEY, normalized);
 
         return [
           ...current,
@@ -645,7 +682,7 @@ function App() {
         ];
       });
     },
-    []
+    [persistPathValue]
   );
 
   const handleFolderNameChange = useCallback((id: string, value: string) => {
@@ -683,18 +720,26 @@ function App() {
     [handleAddFolder]
   );
 
-  const handleTrackPathChange = useCallback((nextPath: string) => {
-    setTrackPath(nextPath);
-    setTrackStatus('idle');
-    setTrackError(null);
-  }, []);
+  const handleTrackPathChange = useCallback(
+    (nextPath: string) => {
+      setTrackPath(nextPath);
+      persistPathValue(TRACK_PATH_STORAGE_KEY, nextPath);
+      setTrackStatus('idle');
+      setTrackError(null);
+    },
+    [persistPathValue]
+  );
 
-  const handleTrackPathPicked = useCallback((selectedPath: string) => {
-    setTrackPath(selectedPath);
-    setIsTrackPickerOpen(false);
-    setTrackStatus('idle');
-    setTrackError(null);
-  }, []);
+  const handleTrackPathPicked = useCallback(
+    (selectedPath: string) => {
+      setTrackPath(selectedPath);
+      persistPathValue(TRACK_PATH_STORAGE_KEY, selectedPath);
+      setIsTrackPickerOpen(false);
+      setTrackStatus('idle');
+      setTrackError(null);
+    },
+    [persistPathValue]
+  );
 
   const loadTrackData = useCallback(async (path: string) => {
     const trimmed = path.trim();
