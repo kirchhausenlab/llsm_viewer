@@ -55,6 +55,147 @@ function hasTiffExtension(name: string) {
   return lower.endsWith('.tif') || lower.endsWith('.tiff');
 }
 
+type FileSystemEntryLike = {
+  isFile: boolean;
+  isDirectory: boolean;
+  fullPath: string;
+};
+
+type FileSystemFileEntryLike = FileSystemEntryLike & {
+  isFile: true;
+  isDirectory: false;
+  file(
+    successCallback: (file: File) => void,
+    errorCallback?: (error: DOMException) => void
+  ): void;
+};
+
+type FileSystemDirectoryEntryLike = FileSystemEntryLike & {
+  isFile: false;
+  isDirectory: true;
+  createReader(): FileSystemDirectoryReaderLike;
+};
+
+type FileSystemDirectoryReaderLike = {
+  readEntries(
+    successCallback: (entries: FileSystemEntryLike[]) => void,
+    errorCallback?: (error: DOMException) => void
+  ): void;
+};
+
+const isFileEntry = (entry: FileSystemEntryLike): entry is FileSystemFileEntryLike => entry.isFile;
+
+const isDirectoryEntry = (entry: FileSystemEntryLike): entry is FileSystemDirectoryEntryLike =>
+  entry.isDirectory;
+
+async function getFilesFromFileEntry(entry: FileSystemFileEntryLike): Promise<File[]> {
+  return new Promise((resolve) => {
+    entry.file(
+      (file) => {
+        const relativePath = entry.fullPath.replace(/^\//, '');
+        if (relativePath && relativePath !== file.name) {
+          try {
+            Object.defineProperty(file, 'webkitRelativePath', {
+              value: relativePath,
+              configurable: true
+            });
+          } catch (err) {
+            (file as File & { webkitRelativePath?: string }).webkitRelativePath = relativePath;
+          }
+        }
+        resolve([file]);
+      },
+      (error) => {
+        console.warn('Failed to read file entry', error);
+        resolve([]);
+      }
+    );
+  });
+}
+
+async function readAllDirectoryEntries(
+  reader: FileSystemDirectoryReaderLike
+): Promise<FileSystemEntryLike[]> {
+  return new Promise((resolve) => {
+    reader.readEntries(
+      async (entries) => {
+        if (entries.length === 0) {
+          resolve([]);
+          return;
+        }
+        const remainder = await readAllDirectoryEntries(reader);
+        resolve([...entries, ...remainder]);
+      },
+      (error) => {
+        console.warn('Failed to read directory entries', error);
+        resolve([]);
+      }
+    );
+  });
+}
+
+async function getFilesFromDirectoryEntry(entry: FileSystemDirectoryEntryLike): Promise<File[]> {
+  const reader = entry.createReader();
+  const entries = await readAllDirectoryEntries(reader);
+  const nestedFiles: File[] = [];
+  for (const nested of entries) {
+    nestedFiles.push(...(await getFilesFromEntry(nested)));
+  }
+  return nestedFiles;
+}
+
+async function getFilesFromEntry(entry: FileSystemEntryLike): Promise<File[]> {
+  if (isFileEntry(entry)) {
+    return getFilesFromFileEntry(entry);
+  }
+  if (isDirectoryEntry(entry)) {
+    return getFilesFromDirectoryEntry(entry);
+  }
+  return [];
+}
+
+function dedupeFiles(files: File[]): File[] {
+  const seen = new Set<string>();
+  const result: File[] = [];
+  for (const file of files) {
+    const key = file.webkitRelativePath || file.name;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push(file);
+  }
+  return result;
+}
+
+async function collectFilesFromDataTransfer(dataTransfer: DataTransfer): Promise<File[]> {
+  const items = dataTransfer.items ? Array.from(dataTransfer.items) : [];
+  const collected: File[] = [];
+
+  for (const item of items) {
+    if (item.kind !== 'file') {
+      continue;
+    }
+    const entry = (item as DataTransferItem & {
+      webkitGetAsEntry?: () => FileSystemEntryLike | null;
+    }).webkitGetAsEntry?.();
+    if (entry) {
+      collected.push(...(await getFilesFromEntry(entry)));
+      continue;
+    }
+    const file = item.getAsFile();
+    if (file) {
+      collected.push(file);
+    }
+  }
+
+  if (collected.length > 0) {
+    return dedupeFiles(collected);
+  }
+
+  return dedupeFiles(dataTransfer.files ? Array.from(dataTransfer.files) : []);
+}
+
 function getFileSortKey(file: File) {
   return file.webkitRelativePath || file.name;
 }
@@ -189,6 +330,16 @@ function App() {
   const trackInputRef = useRef<HTMLInputElement | null>(null);
   const datasetDragCounterRef = useRef(0);
   const trackDragCounterRef = useRef(0);
+
+  useEffect(() => {
+    const input = datasetInputRef.current;
+    if (!input) {
+      return;
+    }
+    input.setAttribute('directory', '');
+    input.setAttribute('webkitdirectory', '');
+    input.setAttribute('mozdirectory', '');
+  }, []);
   const [isDatasetDragging, setIsDatasetDragging] = useState(false);
   const [isTrackDragging, setIsTrackDragging] = useState(false);
 
@@ -750,15 +901,22 @@ function App() {
   }, []);
 
   const handleDatasetDrop = useCallback(
-    (event: DragEvent<HTMLDivElement>) => {
+    async (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault();
       datasetDragCounterRef.current = 0;
       setIsDatasetDragging(false);
-      const fileList = event.dataTransfer.files;
-      if (!fileList || fileList.length === 0) {
+
+      const { dataTransfer } = event;
+      if (!dataTransfer) {
         return;
       }
-      handleDatasetFilesAdded(Array.from(fileList));
+
+      const files = await collectFilesFromDataTransfer(dataTransfer);
+      if (files.length === 0) {
+        return;
+      }
+
+      handleDatasetFilesAdded(files);
     },
     [handleDatasetFilesAdded]
   );
@@ -1119,7 +1277,7 @@ function App() {
           ref={datasetInputRef}
           className="file-drop-input"
           type="file"
-          accept=".tif,.tiff"
+          accept=".tif,.tiff,.TIF,.TIFF"
           multiple
           onChange={handleDatasetInputChange}
         />
