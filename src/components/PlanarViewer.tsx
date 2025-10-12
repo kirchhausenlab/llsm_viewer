@@ -60,6 +60,11 @@ type PointerState = {
   startOffsetY: number;
 };
 
+type TrackHitTestResult = {
+  trackId: number | null;
+  pointer: { x: number; y: number } | null;
+};
+
 const MIN_ALPHA = 0.05;
 const ROTATION_KEY_STEP = 0.1;
 const PAN_STEP = 40;
@@ -147,12 +152,15 @@ function PlanarViewer({
   const needsAutoFitRef = useRef(false);
   const pointerStateRef = useRef<PointerState | null>(null);
   const followedTrackIdRef = useRef<number | null>(followedTrackId);
+  const hoveredTrackIdRef = useRef<number | null>(null);
 
   const [hasMeasured, setHasMeasured] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [viewState, setViewState] = useState<ViewState>(() => createInitialViewState());
   const viewStateRef = useRef(viewState);
   const [sliceRevision, setSliceRevision] = useState(0);
+  const [hoveredTrackId, setHoveredTrackId] = useState<number | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
 
   const effectiveMaxSlices = Math.max(0, maxSlices);
   const clampedSliceIndex =
@@ -480,6 +488,25 @@ function PlanarViewer({
     [tracks]
   );
 
+  const updateHoverState = useCallback(
+    (trackId: number | null, position: { x: number; y: number } | null) => {
+      if (hoveredTrackIdRef.current !== trackId) {
+        hoveredTrackIdRef.current = trackId;
+        setHoveredTrackId(trackId);
+      }
+      setTooltipPosition(position);
+    },
+    []
+  );
+
+  const clearHoverState = useCallback(() => {
+    if (hoveredTrackIdRef.current !== null) {
+      hoveredTrackIdRef.current = null;
+      setHoveredTrackId(null);
+    }
+    setTooltipPosition(null);
+  }, []);
+
   const drawSlice = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) {
@@ -590,27 +617,27 @@ function PlanarViewer({
   ]);
 
   const performTrackHitTest = useCallback(
-    (event: PointerEvent): number | null => {
+    (event: PointerEvent): TrackHitTestResult => {
       if (trackRenderData.length === 0) {
-        return null;
+        return { trackId: null, pointer: null };
       }
 
       const canvas = canvasRef.current;
       if (!canvas) {
-        return null;
+        return { trackId: null, pointer: null };
       }
 
       const rect = canvas.getBoundingClientRect();
       const width = rect.width;
       const height = rect.height;
       if (width <= 0 || height <= 0) {
-        return null;
+        return { trackId: null, pointer: null };
       }
 
       const pointerX = event.clientX - rect.left;
       const pointerY = event.clientY - rect.top;
       if (pointerX < 0 || pointerY < 0 || pointerX > width || pointerY > height) {
-        return null;
+        return { trackId: null, pointer: null };
       }
 
       const currentView = viewStateRef.current;
@@ -706,10 +733,37 @@ function PlanarViewer({
         }
       }
 
-      return closestTrackId;
+      if (closestTrackId === null) {
+        return { trackId: null, pointer: null };
+      }
+
+      return { trackId: closestTrackId, pointer: { x: pointerX, y: pointerY } };
     },
     [sanitizedTrackLineWidth, trackRenderData, trackVisibility]
   );
+
+  useEffect(() => {
+    if (hoveredTrackId === null) {
+      return;
+    }
+
+    const stillPresent = trackRenderData.some((track) => track.id === hoveredTrackId);
+    if (!stillPresent) {
+      clearHoverState();
+    }
+  }, [clearHoverState, hoveredTrackId, trackRenderData]);
+
+  useEffect(() => {
+    if (hoveredTrackId === null) {
+      return;
+    }
+
+    const isExplicitlyVisible = trackVisibility[hoveredTrackId] ?? true;
+    const isFollowed = followedTrackId === hoveredTrackId;
+    if (!isExplicitlyVisible && !isFollowed) {
+      clearHoverState();
+    }
+  }, [clearHoverState, followedTrackId, hoveredTrackId, trackVisibility]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -856,10 +910,13 @@ function PlanarViewer({
         return;
       }
 
-      const hitTrackId = performTrackHitTest(event);
-      if (hitTrackId !== null) {
+      const { trackId, pointer } = performTrackHitTest(event);
+      if (trackId !== null) {
         pointerStateRef.current = null;
-        onTrackFollowRequest(hitTrackId);
+        onTrackFollowRequest(trackId);
+        if (pointer) {
+          updateHoverState(trackId, pointer);
+        }
         return;
       }
 
@@ -880,38 +937,52 @@ function PlanarViewer({
 
     const handlePointerMove = (event: PointerEvent) => {
       const state = pointerStateRef.current;
-      if (!state || state.pointerId !== event.pointerId) {
+      if (state && state.pointerId === event.pointerId) {
+        const deltaX = event.clientX - state.startX;
+        const deltaY = event.clientY - state.startY;
+        const nextOffsetX = state.startOffsetX + deltaX;
+        const nextOffsetY = state.startOffsetY + deltaY;
+        updateViewState((previous) => {
+          if (
+            Math.abs(previous.offsetX - nextOffsetX) < 1e-3 &&
+            Math.abs(previous.offsetY - nextOffsetY) < 1e-3
+          ) {
+            return previous;
+          }
+          return {
+            ...previous,
+            offsetX: nextOffsetX,
+            offsetY: nextOffsetY
+          };
+        });
+        clearHoverState();
         return;
       }
-      const deltaX = event.clientX - state.startX;
-      const deltaY = event.clientY - state.startY;
-      const nextOffsetX = state.startOffsetX + deltaX;
-      const nextOffsetY = state.startOffsetY + deltaY;
-      updateViewState((previous) => {
-        if (
-          Math.abs(previous.offsetX - nextOffsetX) < 1e-3 &&
-          Math.abs(previous.offsetY - nextOffsetY) < 1e-3
-        ) {
-          return previous;
-        }
-        return {
-          ...previous,
-          offsetX: nextOffsetX,
-          offsetY: nextOffsetY
-        };
-      });
+
+      const { trackId, pointer } = performTrackHitTest(event);
+      if (trackId !== null && pointer) {
+        updateHoverState(trackId, pointer);
+      } else {
+        clearHoverState();
+      }
     };
 
     const handlePointerEnd = (event: PointerEvent) => {
       const state = pointerStateRef.current;
-      if (!state || state.pointerId !== event.pointerId) {
-        return;
+      if (state && state.pointerId === event.pointerId) {
+        const target = canvasRef.current;
+        if (target) {
+          target.releasePointerCapture(event.pointerId);
+        }
+        pointerStateRef.current = null;
       }
-      const target = canvasRef.current;
-      if (target) {
-        target.releasePointerCapture(event.pointerId);
+
+      const { trackId, pointer } = performTrackHitTest(event);
+      if (trackId !== null && pointer) {
+        updateHoverState(trackId, pointer);
+      } else {
+        clearHoverState();
       }
-      pointerStateRef.current = null;
     };
 
     const handleWheel = (event: WheelEvent) => {
@@ -941,7 +1012,13 @@ function PlanarViewer({
       canvas.removeEventListener('pointerleave', handlePointerEnd);
       canvas.removeEventListener('wheel', handleWheel);
     };
-  }, [onTrackFollowRequest, performTrackHitTest, updateViewState]);
+  }, [
+    clearHoverState,
+    onTrackFollowRequest,
+    performTrackHitTest,
+    updateHoverState,
+    updateViewState
+  ]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1084,6 +1161,16 @@ function PlanarViewer({
           ref={containerRef}
         >
           <canvas ref={canvasRef} className="planar-canvas" />
+          {hoveredTrackId !== null && tooltipPosition ? (
+            <div
+              className="track-tooltip"
+              style={{ left: `${tooltipPosition.x}px`, top: `${tooltipPosition.y}px` }}
+              role="status"
+              aria-live="polite"
+            >
+              Track #{hoveredTrackId}
+            </div>
+          ) : null}
           {(!sliceData || !sliceData.hasLayer) && !showLoadingOverlay ? (
             <div className="planar-empty-hint">
               {layers.length === 0
