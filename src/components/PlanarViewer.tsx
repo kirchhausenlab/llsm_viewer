@@ -1089,8 +1089,6 @@ function PlanarViewer({
     };
   }, [clampedSliceIndex, effectiveMaxSlices, onSliceIndexChange, updateViewState]);
 
-  const disableSliceControls = effectiveMaxSlices <= 1;
-
   return (
     <div className="planar-viewer">
       <section className="planar-surface">
@@ -1130,27 +1128,6 @@ function PlanarViewer({
           ) : null}
         </div>
       </section>
-
-      {effectiveMaxSlices > 0 ? (
-        <section className="axis-controls">
-          <label htmlFor="planar-z-slider">
-            Z plane{' '}
-            <span>
-              {clampedSliceIndex + 1} / {effectiveMaxSlices}
-            </span>
-          </label>
-          <input
-            id="planar-z-slider"
-            type="range"
-            min={0}
-            max={Math.max(0, effectiveMaxSlices - 1)}
-            value={clampedSliceIndex}
-            onChange={(event) => onSliceIndexChange(Number(event.target.value))}
-            disabled={disableSliceControls}
-          />
-        </section>
-      ) : null}
-
     </div>
   );
 }

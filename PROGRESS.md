@@ -175,3 +175,7 @@ d centered the front-page card in the viewport.
 - Added a launch button that transitions into the viewer layout while leaving load controls exclusively on the front page.
 - Provided an "Open launcher" shortcut inside the viewer so datasets or track files can be reloaded without refreshing.
 
+## Playback control layout updates
+- Moved the planar Z-plane slider into the shared playback window so slice navigation lives alongside the other temporal controls.
+- Updated button labels and layout to use standard play/pause icons, clarify mode switching copy, and align reset actions horizontally for quicker access.
+
