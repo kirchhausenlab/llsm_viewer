@@ -998,11 +998,12 @@
 }
 
 .viewer {
-  position: relative;
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   background: #040607;
-  padding: 1.25rem 1.5rem;
+  padding: 0;
   box-sizing: border-box;
   width: 100%;
   height: 100%;
