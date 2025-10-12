@@ -521,6 +521,12 @@
   word-break: break-word;
 }
 
+.layer-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
 .layer-controls .layer-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -819,6 +825,8 @@
 }
 
 .track-controls {
+  display: flex;
+  flex-direction: column;
   gap: 0.85rem;
 }
 
