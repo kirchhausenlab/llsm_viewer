@@ -6,6 +6,7 @@ import { computeNormalizationParameters, normalizeVolume, NormalizedVolume } fro
 import { clearTextureCache } from './textureCache';
 import DirectoryPickerDialog from './components/DirectoryPickerDialog';
 import FilePickerDialog from './components/FilePickerDialog';
+import FloatingWindow from './components/FloatingWindow';
 import type { TrackDefinition, TrackPoint } from './types/tracks';
 import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from './layerColors';
 import { getTrackColorHex } from './trackColors';
@@ -16,6 +17,9 @@ const DEFAULT_BRIGHTNESS = 0;
 const DEFAULT_FPS = 12;
 const DEFAULT_TRACK_OPACITY = 0.9;
 const DEFAULT_TRACK_LINE_WIDTH = 1;
+const WINDOW_MARGIN = 24;
+const CONTROL_WINDOW_WIDTH = 360;
+const TRACK_WINDOW_WIDTH = 340;
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 
@@ -102,6 +106,13 @@ function App() {
   const [sliceIndex, setSliceIndex] = useState(0);
   const [isViewerLaunched, setIsViewerLaunched] = useState(false);
   const [isLaunchingViewer, setIsLaunchingViewer] = useState(false);
+  const controlWindowInitialPosition = useMemo(
+    () => ({ x: WINDOW_MARGIN, y: WINDOW_MARGIN }),
+    []
+  );
+  const [trackWindowInitialPosition, setTrackWindowInitialPosition] = useState<{ x: number; y: number }>(
+    () => ({ x: WINDOW_MARGIN, y: WINDOW_MARGIN })
+  );
 
   const loadRequestRef = useRef(0);
   const hasTrackDataRef = useRef(false);
@@ -189,6 +200,22 @@ function App() {
 
   const handleRegisterReset = useCallback((handler: (() => void) | null) => {
     setResetViewHandler(() => handler);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const trackWidth = Math.min(TRACK_WINDOW_WIDTH, window.innerWidth - WINDOW_MARGIN * 2);
+    const nextX = Math.max(WINDOW_MARGIN, window.innerWidth - trackWidth - WINDOW_MARGIN);
+
+    setTrackWindowInitialPosition((current) => {
+      if (current.x === nextX && current.y === WINDOW_MARGIN) {
+        return current;
+      }
+      return { x: nextX, y: WINDOW_MARGIN };
+    });
   }, []);
 
   useEffect(() => {
@@ -1078,345 +1105,350 @@ function App() {
   return (
     <>
       <div className="app">
-        <aside className="sidebar sidebar-left">
-          <header className="sidebar-header">
-            <button type="button" className="sidebar-launcher-button" onClick={() => setIsViewerLaunched(false)}>
-              Return to Launcher
-            </button>
-            <div>
-              <h1>LLSM Viewer</h1>
+        <main className="viewer">
+          <div className="viewer-toolbar">
+            <span className="viewer-following-label">
+              {viewerMode === '3d' ? '3D mode' : '2D mode'} ·{' '}
+              {followedTrackDisplayIndex !== null
+                ? `Following Track #${followedTrackDisplayIndex}`
+                : 'Not following any track'}
+            </span>
+            <div className="viewer-toolbar-actions">
+              <button
+                type="button"
+                onClick={handleToggleViewerMode}
+                className={viewerMode === '3d' ? 'viewer-mode-button' : 'viewer-mode-button is-active'}
+              >
+                {viewerMode === '3d' ? 'Switch to 2D mode' : 'Switch to 3D mode'}
+              </button>
+              <button
+                type="button"
+                onClick={handleStopTrackFollow}
+                disabled={followedTrackId === null}
+                className="viewer-stop-tracking"
+              >
+                Stop tracking
+              </button>
             </div>
-          </header>
-
-          <section className="sidebar-panel global-controls">
-            <header>
-              <h2>Movie</h2>
-            </header>
-            <div className="control-group">
-              <button type="button" onClick={() => resetViewHandler?.()} disabled={!resetViewHandler}>
-              Reset view
-            </button>
-            <button type="button" onClick={handleResetControls} disabled={controlsAtDefaults}>
-              Reset controls
-            </button>
           </div>
-          <div className="control-group">
-            <label htmlFor="fps-slider">
-              FPS <span>{fps}</span>
-            </label>
-            <input
-              id="fps-slider"
-              type="range"
-              min={1}
-              max={60}
-              step={1}
-              value={fps}
-              onChange={(event) => setFps(Number(event.target.value))}
-              disabled={volumeTimepointCount <= 1}
+          {viewerMode === '3d' ? (
+            <VolumeViewer
+              layers={viewerLayers}
+              filename={selectedFile}
+              isLoading={isLoading}
+              loadingProgress={loadProgress}
+              loadedVolumes={loadedCount}
+              expectedVolumes={expectedVolumeCount}
+              timeIndex={selectedIndex}
+              totalTimepoints={volumeTimepointCount}
+              isPlaying={isPlaying}
+              onTogglePlayback={handleTogglePlayback}
+              onTimeIndexChange={handleTimeIndexChange}
+              onRegisterReset={handleRegisterReset}
+              tracks={parsedTracks}
+              trackVisibility={trackVisibility}
+              trackOpacity={trackOpacity}
+              trackLineWidth={trackLineWidth}
+              followedTrackId={followedTrackId}
+              onTrackFollowRequest={handleTrackFollowFromViewer}
             />
-          </div>
-        </section>
-
-        {layers.length > 0 ? (
-          <section className="sidebar-panel layer-controls">
-            <header>
-              <h2>Layers</h2>
-            </header>
-            <div className="layer-tabs" role="tablist" aria-label="Volume layers">
-              {layers.map((layer) => (
-                <button
-                  key={layer.key}
-                  type="button"
-                  className={layer.key === activeLayerKey ? 'layer-tab is-active' : 'layer-tab'}
-                  onClick={() => setActiveLayerKey(layer.key)}
-                  role="tab"
-                  id={`layer-tab-${layer.key}`}
-                  aria-selected={layer.key === activeLayerKey}
-                  aria-controls={`layer-panel-${layer.key}`}
-                >
-                  {layer.label}
-                </button>
-              ))}
-            </div>
-            {layers.map((layer) => {
-              const isActive = layer.key === activeLayerKey;
-              const settings = layerSettings[layer.key] ?? createDefaultLayerSettings();
-              const sliderDisabled = layer.volumes.length === 0;
-              const firstVolume = layer.volumes[0] ?? null;
-              const isGrayscale = firstVolume?.channels === 1;
-              const normalizedColor = normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR);
-              const displayColor = normalizedColor.toUpperCase();
-              return (
-                <div
-                  key={layer.key}
-                  id={`layer-panel-${layer.key}`}
-                  role="tabpanel"
-                  aria-labelledby={`layer-tab-${layer.key}`}
-                  className={isActive ? 'layer-panel is-active' : 'layer-panel'}
-                  hidden={!isActive}
-                >
-                  <label className="layer-visibility">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(visibleLayers[layer.key])}
-                      onChange={() => handleLayerVisibilityToggle(layer.key)}
-                    />
-                    <span>Show layer</span>
-                  </label>
-                  <div className="slider-control">
-                    <label htmlFor={`layer-contrast-${layer.key}`}>
-                      Contrast <span>{settings.contrast.toFixed(2)}×</span>
-                    </label>
-                    <input
-                      id={`layer-contrast-${layer.key}`}
-                      type="range"
-                      min={0.2}
-                      max={3}
-                      step={0.05}
-                      value={settings.contrast}
-                      onChange={(event) => handleLayerContrastChange(layer.key, Number(event.target.value))}
-                      disabled={sliderDisabled}
-                    />
-                  </div>
-                  <div className="slider-control">
-                    <label htmlFor={`layer-brightness-${layer.key}`}>
-                      Brightness{' '}
-                      <span>
-                        {settings.brightness >= 0 ? '+' : ''}
-                        {settings.brightness.toFixed(2)}
-                      </span>
-                    </label>
-                    <input
-                      id={`layer-brightness-${layer.key}`}
-                      type="range"
-                      min={-0.5}
-                      max={0.5}
-                      step={0.01}
-                      value={settings.brightness}
-                      onChange={(event) => handleLayerBrightnessChange(layer.key, Number(event.target.value))}
-                      disabled={sliderDisabled}
-                    />
-                  </div>
-                  {isGrayscale ? (
-                    <div className="color-control">
-                      <div className="color-control-header">
-                        <span id={`layer-color-label-${layer.key}`}>Tint color</span>
-                        <span>{displayColor}</span>
-                      </div>
-                      <div
-                        className="color-swatch-grid"
-                        role="group"
-                        aria-labelledby={`layer-color-label-${layer.key}`}
-                      >
-                        {GRAYSCALE_COLOR_SWATCHES.map((swatch) => {
-                          const swatchColor = normalizeHexColor(swatch.value, DEFAULT_LAYER_COLOR);
-                          const isSelected = swatchColor === normalizedColor;
-                          return (
-                            <button
-                              key={swatch.value}
-                              type="button"
-                              className={
-                                isSelected ? 'color-swatch-button is-selected' : 'color-swatch-button'
-                              }
-                              style={{ backgroundColor: swatch.value }}
-                              onClick={() => handleLayerColorChange(layer.key, swatch.value)}
-                              disabled={sliderDisabled}
-                              aria-pressed={isSelected}
-                              aria-label={`${swatch.label} tint`}
-                              title={swatch.label}
-                            />
-                          );
-                        })}
-                      </div>
-                      <label className="color-picker" htmlFor={`layer-color-custom-${layer.key}`}>
-                        <span>Custom</span>
-                        <input
-                          id={`layer-color-custom-${layer.key}`}
-                          type="color"
-                          value={normalizedColor}
-                          onChange={(event) => handleLayerColorChange(layer.key, event.target.value)}
-                          disabled={sliderDisabled}
-                          aria-label="Choose custom tint color"
-                        />
-                      </label>
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
-          </section>
-        ) : null}
-        {error && <p className="error">{error}</p>}
-      </aside>
-
-      <main className="viewer">
-        <div className="viewer-toolbar">
-          <span className="viewer-following-label">
-            {viewerMode === '3d' ? '3D mode' : '2D mode'} ·{' '}
-            {followedTrackDisplayIndex !== null
-              ? `Following Track #${followedTrackDisplayIndex}`
-              : 'Not following any track'}
-          </span>
-          <div className="viewer-toolbar-actions">
-            <button
-              type="button"
-              onClick={handleToggleViewerMode}
-              className={viewerMode === '3d' ? 'viewer-mode-button' : 'viewer-mode-button is-active'}
-            >
-              {viewerMode === '3d' ? 'Switch to 2D mode' : 'Switch to 3D mode'}
-            </button>
-            <button
-              type="button"
-              onClick={handleStopTrackFollow}
-              disabled={followedTrackId === null}
-              className="viewer-stop-tracking"
-            >
-              Stop tracking
-            </button>
-          </div>
-        </div>
-        {viewerMode === '3d' ? (
-          <VolumeViewer
-            layers={viewerLayers}
-            filename={selectedFile}
-            isLoading={isLoading}
-            loadingProgress={loadProgress}
-            loadedVolumes={loadedCount}
-            expectedVolumes={expectedVolumeCount}
-            timeIndex={selectedIndex}
-            totalTimepoints={volumeTimepointCount}
-            isPlaying={isPlaying}
-            onTogglePlayback={handleTogglePlayback}
-            onTimeIndexChange={handleTimeIndexChange}
-            onRegisterReset={handleRegisterReset}
-            tracks={parsedTracks}
-            trackVisibility={trackVisibility}
-            trackOpacity={trackOpacity}
-            trackLineWidth={trackLineWidth}
-            followedTrackId={followedTrackId}
-            onTrackFollowRequest={handleTrackFollowFromViewer}
-          />
-        ) : (
-          <PlanarViewer
-            layers={viewerLayers}
-            filename={selectedFile}
-            isLoading={isLoading}
-            loadingProgress={loadProgress}
-            loadedVolumes={loadedCount}
-            expectedVolumes={expectedVolumeCount}
-            timeIndex={selectedIndex}
-            totalTimepoints={volumeTimepointCount}
-            isPlaying={isPlaying}
-            onTogglePlayback={handleTogglePlayback}
-            onTimeIndexChange={handleTimeIndexChange}
-            onRegisterReset={handleRegisterReset}
-            sliceIndex={sliceIndex}
-            maxSlices={maxSliceDepth}
-            onSliceIndexChange={handleSliceIndexChange}
-            tracks={parsedTracks}
-            trackVisibility={trackVisibility}
-            trackOpacity={trackOpacity}
-            trackLineWidth={trackLineWidth}
-            followedTrackId={followedTrackId}
-            onTrackFollowRequest={handleTrackFollowFromViewer}
-          />
-        )}
-      </main>
-      <aside className="sidebar sidebar-right">
-        <header>
-          <h2>Tracks</h2>
-        </header>
-
-        <section className="sidebar-panel track-controls">
-          <header>
-            <h2>Overlay controls</h2>
-          </header>
-          <div className="slider-control">
-            <label htmlFor="track-opacity-slider">
-              Opacity <span>{Math.round(trackOpacity * 100)}%</span>
-            </label>
-            <input
-              id="track-opacity-slider"
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={trackOpacity}
-              onChange={(event) => handleTrackOpacityChange(Number(event.target.value))}
-              disabled={parsedTracks.length === 0}
-            />
-          </div>
-          <div className="slider-control">
-            <label htmlFor="track-linewidth-slider">
-              Thickness <span>{trackLineWidth.toFixed(1)}</span>
-            </label>
-            <input
-              id="track-linewidth-slider"
-              type="range"
-              min={0.5}
-              max={5}
-              step={0.1}
-              value={trackLineWidth}
-              onChange={(event) => handleTrackLineWidthChange(Number(event.target.value))}
-              disabled={parsedTracks.length === 0}
-            />
-          </div>
-          <div className="track-list-header">
-            <label className="track-master-toggle">
-              <input
-                ref={trackMasterCheckboxRef}
-                type="checkbox"
-                checked={parsedTracks.length > 0 && allTracksChecked}
-                onChange={(event) => handleTrackVisibilityAllChange(event.target.checked)}
-                disabled={parsedTracks.length === 0}
-              />
-              <span>Show all tracks</span>
-            </label>
-          </div>
-          {parsedTracks.length > 0 ? (
-            <div className="track-list" role="group" aria-label="Track visibility">
-              {parsedTracks.map((track, index) => {
-                const isFollowed = followedTrackId === track.id;
-                const isChecked = isFollowed || (trackVisibility[track.id] ?? true);
-                const trackColor = getTrackColorHex(track.id);
-                return (
-                  <div
-                    key={track.id}
-                    className={isFollowed ? 'track-item is-following' : 'track-item'}
-                    title={`Track ID ${track.id}`}
-                  >
-                    <label className="track-toggle">
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => handleTrackVisibilityToggle(track.id)}
-                      />
-                      <span className="track-label">
-                        <span
-                          className="track-color-swatch"
-                          style={{ backgroundColor: trackColor }}
-                          aria-hidden="true"
-                        />
-                        <span className="track-name">Track #{index + 1}</span>
-                      </span>
-                    </label>
-                    <button
-                      type="button"
-                      className={isFollowed ? 'track-follow-button is-active' : 'track-follow-button'}
-                      onClick={() => handleTrackFollow(track.id)}
-                      aria-pressed={isFollowed}
-                    >
-                      {isFollowed ? 'Following' : 'Follow'}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
           ) : (
-            <p className="track-empty-hint">Load a tracks file to toggle individual trajectories.</p>
+            <PlanarViewer
+              layers={viewerLayers}
+              filename={selectedFile}
+              isLoading={isLoading}
+              loadingProgress={loadProgress}
+              loadedVolumes={loadedCount}
+              expectedVolumes={expectedVolumeCount}
+              timeIndex={selectedIndex}
+              totalTimepoints={volumeTimepointCount}
+              isPlaying={isPlaying}
+              onTogglePlayback={handleTogglePlayback}
+              onTimeIndexChange={handleTimeIndexChange}
+              onRegisterReset={handleRegisterReset}
+              sliceIndex={sliceIndex}
+              maxSlices={maxSliceDepth}
+              onSliceIndexChange={handleSliceIndexChange}
+              tracks={parsedTracks}
+              trackVisibility={trackVisibility}
+              trackOpacity={trackOpacity}
+              trackLineWidth={trackLineWidth}
+              followedTrackId={followedTrackId}
+              onTrackFollowRequest={handleTrackFollowFromViewer}
+            />
           )}
-        </section>
-      </aside>
+        </main>
+        <FloatingWindow
+          title="LLSM Viewer"
+          initialPosition={controlWindowInitialPosition}
+          width={`min(${CONTROL_WINDOW_WIDTH}px, calc(100vw - ${WINDOW_MARGIN * 2}px))`}
+        >
+          <div className="sidebar sidebar-left">
+            <header className="sidebar-header">
+              <button type="button" className="sidebar-launcher-button" onClick={() => setIsViewerLaunched(false)}>
+                Return to Launcher
+              </button>
+            </header>
+
+            <section className="sidebar-panel global-controls">
+              <header>
+                <h2>Movie</h2>
+              </header>
+              <div className="control-group">
+                <button type="button" onClick={() => resetViewHandler?.()} disabled={!resetViewHandler}>
+                  Reset view
+                </button>
+                <button type="button" onClick={handleResetControls} disabled={controlsAtDefaults}>
+                  Reset controls
+                </button>
+              </div>
+              <div className="control-group">
+                <label htmlFor="fps-slider">
+                  FPS <span>{fps}</span>
+                </label>
+                <input
+                  id="fps-slider"
+                  type="range"
+                  min={1}
+                  max={60}
+                  step={1}
+                  value={fps}
+                  onChange={(event) => setFps(Number(event.target.value))}
+                  disabled={volumeTimepointCount <= 1}
+                />
+              </div>
+            </section>
+
+            {layers.length > 0 ? (
+              <section className="sidebar-panel layer-controls">
+                <header>
+                  <h2>Layers</h2>
+                </header>
+                <div className="layer-tabs" role="tablist" aria-label="Volume layers">
+                  {layers.map((layer) => (
+                    <button
+                      key={layer.key}
+                      type="button"
+                      className={layer.key === activeLayerKey ? 'layer-tab is-active' : 'layer-tab'}
+                      onClick={() => setActiveLayerKey(layer.key)}
+                      role="tab"
+                      id={`layer-tab-${layer.key}`}
+                      aria-selected={layer.key === activeLayerKey}
+                      aria-controls={`layer-panel-${layer.key}`}
+                    >
+                      {layer.label}
+                    </button>
+                  ))}
+                </div>
+                {layers.map((layer) => {
+                  const isActive = layer.key === activeLayerKey;
+                  const settings = layerSettings[layer.key] ?? createDefaultLayerSettings();
+                  const sliderDisabled = layer.volumes.length === 0;
+                  const firstVolume = layer.volumes[0] ?? null;
+                  const isGrayscale = firstVolume?.channels === 1;
+                  const normalizedColor = normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR);
+                  const displayColor = normalizedColor.toUpperCase();
+                  return (
+                    <div
+                      key={layer.key}
+                      id={`layer-panel-${layer.key}`}
+                      role="tabpanel"
+                      aria-labelledby={`layer-tab-${layer.key}`}
+                      className={isActive ? 'layer-panel is-active' : 'layer-panel'}
+                      hidden={!isActive}
+                    >
+                      <label className="layer-visibility">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(visibleLayers[layer.key])}
+                          onChange={() => handleLayerVisibilityToggle(layer.key)}
+                        />
+                        <span>Show layer</span>
+                      </label>
+                      <div className="slider-control">
+                        <label htmlFor={`layer-contrast-${layer.key}`}>
+                          Contrast <span>{settings.contrast.toFixed(2)}×</span>
+                        </label>
+                        <input
+                          id={`layer-contrast-${layer.key}`}
+                          type="range"
+                          min={0.2}
+                          max={3}
+                          step={0.05}
+                          value={settings.contrast}
+                          onChange={(event) => handleLayerContrastChange(layer.key, Number(event.target.value))}
+                          disabled={sliderDisabled}
+                        />
+                      </div>
+                      <div className="slider-control">
+                        <label htmlFor={`layer-brightness-${layer.key}`}>
+                          Brightness{' '}
+                          <span>
+                            {settings.brightness >= 0 ? '+' : ''}
+                            {settings.brightness.toFixed(2)}
+                          </span>
+                        </label>
+                        <input
+                          id={`layer-brightness-${layer.key}`}
+                          type="range"
+                          min={-0.5}
+                          max={0.5}
+                          step={0.01}
+                          value={settings.brightness}
+                          onChange={(event) => handleLayerBrightnessChange(layer.key, Number(event.target.value))}
+                          disabled={sliderDisabled}
+                        />
+                      </div>
+                      {isGrayscale ? (
+                        <div className="color-control">
+                          <div className="color-control-header">
+                            <span id={`layer-color-label-${layer.key}`}>Tint color</span>
+                            <span>{displayColor}</span>
+                          </div>
+                          <div
+                            className="color-swatch-grid"
+                            role="group"
+                            aria-labelledby={`layer-color-label-${layer.key}`}
+                          >
+                            {GRAYSCALE_COLOR_SWATCHES.map((swatch) => {
+                              const swatchColor = normalizeHexColor(swatch.value, DEFAULT_LAYER_COLOR);
+                              const isSelected = swatchColor === normalizedColor;
+                              return (
+                                <button
+                                  key={swatch.value}
+                                  type="button"
+                                  className={
+                                    isSelected ? 'color-swatch-button is-selected' : 'color-swatch-button'
+                                  }
+                                  style={{ backgroundColor: swatch.value }}
+                                  onClick={() => handleLayerColorChange(layer.key, swatch.value)}
+                                  disabled={sliderDisabled}
+                                  aria-pressed={isSelected}
+                                  aria-label={`${swatch.label} tint`}
+                                  title={swatch.label}
+                                />
+                              );
+                            })}
+                          </div>
+                          <label className="color-picker" htmlFor={`layer-color-custom-${layer.key}`}>
+                            <span>Custom</span>
+                            <input
+                              id={`layer-color-custom-${layer.key}`}
+                              type="color"
+                              value={normalizedColor}
+                              onChange={(event) => handleLayerColorChange(layer.key, event.target.value)}
+                              disabled={sliderDisabled}
+                              aria-label="Choose custom tint color"
+                            />
+                          </label>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </section>
+            ) : null}
+            {error && <p className="error">{error}</p>}
+          </div>
+        </FloatingWindow>
+
+        <FloatingWindow
+          title="Tracks"
+          initialPosition={trackWindowInitialPosition}
+          width={`min(${TRACK_WINDOW_WIDTH}px, calc(100vw - ${WINDOW_MARGIN * 2}px))`}
+        >
+          <div className="sidebar sidebar-right">
+            <section className="sidebar-panel track-controls">
+              <header>
+                <h2>Overlay controls</h2>
+              </header>
+              <div className="slider-control">
+                <label htmlFor="track-opacity-slider">
+                  Opacity <span>{Math.round(trackOpacity * 100)}%</span>
+                </label>
+                <input
+                  id="track-opacity-slider"
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={trackOpacity}
+                  onChange={(event) => handleTrackOpacityChange(Number(event.target.value))}
+                  disabled={parsedTracks.length === 0}
+                />
+              </div>
+              <div className="slider-control">
+                <label htmlFor="track-linewidth-slider">
+                  Thickness <span>{trackLineWidth.toFixed(1)}</span>
+                </label>
+                <input
+                  id="track-linewidth-slider"
+                  type="range"
+                  min={0.5}
+                  max={5}
+                  step={0.1}
+                  value={trackLineWidth}
+                  onChange={(event) => handleTrackLineWidthChange(Number(event.target.value))}
+                  disabled={parsedTracks.length === 0}
+                />
+              </div>
+              <div className="track-list-header">
+                <label className="track-master-toggle">
+                  <input
+                    ref={trackMasterCheckboxRef}
+                    type="checkbox"
+                    checked={parsedTracks.length > 0 && allTracksChecked}
+                    onChange={(event) => handleTrackVisibilityAllChange(event.target.checked)}
+                    disabled={parsedTracks.length === 0}
+                  />
+                  <span>Show all tracks</span>
+                </label>
+              </div>
+              {parsedTracks.length > 0 ? (
+                <div className="track-list" role="group" aria-label="Track visibility">
+                  {parsedTracks.map((track, index) => {
+                    const isFollowed = followedTrackId === track.id;
+                    const isChecked = isFollowed || (trackVisibility[track.id] ?? true);
+                    const trackColor = getTrackColorHex(track.id);
+                    return (
+                      <div
+                        key={track.id}
+                        className={isFollowed ? 'track-item is-following' : 'track-item'}
+                        title={`Track ID ${track.id}`}
+                      >
+                        <label className="track-toggle">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleTrackVisibilityToggle(track.id)}
+                          />
+                          <span className="track-label">
+                            <span
+                              className="track-color-swatch"
+                              style={{ backgroundColor: trackColor }}
+                              aria-hidden="true"
+                            />
+                            <span className="track-name">Track #{index + 1}</span>
+                          </span>
+                        </label>
+                        <button
+                          type="button"
+                          className={isFollowed ? 'track-follow-button is-active' : 'track-follow-button'}
+                          onClick={() => handleTrackFollow(track.id)}
+                          aria-pressed={isFollowed}
+                        >
+                          {isFollowed ? 'Following' : 'Follow'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="track-empty-hint">Load a tracks file to toggle individual trajectories.</p>
+              )}
+            </section>
+          </div>
+      </FloatingWindow>
       </div>
       {pickerDialogs}
     </>
