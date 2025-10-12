@@ -20,6 +20,7 @@ const DEFAULT_TRACK_LINE_WIDTH = 1;
 const WINDOW_MARGIN = 24;
 const CONTROL_WINDOW_WIDTH = 360;
 const TRACK_WINDOW_WIDTH = 340;
+const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 
@@ -108,6 +109,10 @@ function App() {
   const [isLaunchingViewer, setIsLaunchingViewer] = useState(false);
   const controlWindowInitialPosition = useMemo(
     () => ({ x: WINDOW_MARGIN, y: WINDOW_MARGIN }),
+    []
+  );
+  const layersWindowInitialPosition = useMemo(
+    () => ({ x: WINDOW_MARGIN, y: WINDOW_MARGIN + LAYERS_WINDOW_VERTICAL_OFFSET }),
     []
   );
   const [trackWindowInitialPosition, setTrackWindowInitialPosition] = useState<{ x: number; y: number }>(
@@ -200,17 +205,21 @@ function App() {
     return parsed;
   }, [tracks]);
   const hasParsedTrackData = parsedTracks.length > 0;
-  const followedTrackDisplayIndex = useMemo(() => {
-    if (followedTrackId === null) {
-      return null;
-    }
-    const index = parsedTracks.findIndex((track) => track.id === followedTrackId);
-    return index >= 0 ? index + 1 : null;
-  }, [followedTrackId, parsedTracks]);
-
   const handleRegisterReset = useCallback((handler: (() => void) | null) => {
     setResetViewHandler(() => handler);
   }, []);
+
+  const handleReturnToLauncher = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      const confirmed = window.confirm(
+        'Do you really want to return? The current session will be discarded'
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+    setIsViewerLaunched(false);
+  }, [setIsViewerLaunched]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -1124,14 +1133,6 @@ function App() {
     <>
       <div className="app">
         <main className="viewer">
-          <div className="viewer-toolbar">
-            <span className="viewer-following-label">
-              {viewerMode === '3d' ? '3D mode' : '2D mode'} ·{' '}
-              {followedTrackDisplayIndex !== null
-                ? `Following Track #${followedTrackDisplayIndex}`
-                : 'Not following any track'}
-            </span>
-          </div>
           {viewerMode === '3d' ? (
             <VolumeViewer
               layers={viewerLayers}
@@ -1172,13 +1173,13 @@ function App() {
           )}
         </main>
         <FloatingWindow
-          title="LLSM Viewer"
+          title="Playback controls"
           initialPosition={controlWindowInitialPosition}
           width={`min(${CONTROL_WINDOW_WIDTH}px, calc(100vw - ${WINDOW_MARGIN * 2}px))`}
         >
           <div className="sidebar sidebar-left">
             <header className="sidebar-header">
-              <button type="button" className="sidebar-launcher-button" onClick={() => setIsViewerLaunched(false)}>
+              <button type="button" className="sidebar-launcher-button" onClick={handleReturnToLauncher}>
                 Return to Launcher
               </button>
             </header>
@@ -1227,19 +1228,30 @@ function App() {
                   >
                     {isPlaying ? 'Pause' : 'Play'}
                   </button>
-                  <input
-                    type="range"
-                    min={0}
-                    max={Math.max(0, volumeTimepointCount - 1)}
-                    value={Math.min(selectedIndex, Math.max(0, volumeTimepointCount - 1))}
-                    onChange={(event) => handleTimeIndexChange(Number(event.target.value))}
-                    disabled={playbackDisabled}
-                  />
-                  <span className="playback-time-label">{playbackLabel}</span>
+                  <div className="playback-slider-group">
+                    <input
+                      type="range"
+                      min={0}
+                      max={Math.max(0, volumeTimepointCount - 1)}
+                      value={Math.min(selectedIndex, Math.max(0, volumeTimepointCount - 1))}
+                      onChange={(event) => handleTimeIndexChange(Number(event.target.value))}
+                      disabled={playbackDisabled}
+                    />
+                    <span className="playback-time-label">{playbackLabel}</span>
+                  </div>
                 </div>
               </div>
             </section>
+            {error && <p className="error">{error}</p>}
+          </div>
+        </FloatingWindow>
 
+        <FloatingWindow
+          title="Layers"
+          initialPosition={layersWindowInitialPosition}
+          width={`min(${CONTROL_WINDOW_WIDTH}px, calc(100vw - ${WINDOW_MARGIN * 2}px))`}
+        >
+          <div className="sidebar sidebar-left">
             {layers.length > 0 ? (
               <section className="sidebar-panel layer-controls">
                 <header>
@@ -1377,8 +1389,9 @@ function App() {
                   );
                 })}
               </section>
-            ) : null}
-            {error && <p className="error">{error}</p>}
+            ) : (
+              <p className="empty-layer-hint">Load a volume to configure layer properties.</p>
+            )}
           </div>
         </FloatingWindow>
 

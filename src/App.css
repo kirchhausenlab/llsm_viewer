@@ -701,6 +701,13 @@
   opacity: 0.5;
 }
 
+.empty-layer-hint {
+  margin: 0;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.4;
+}
+
 .global-controls {
   display: flex;
   flex-direction: column;
@@ -761,8 +768,16 @@
   gap: 0.75rem;
 }
 
-.playback-controls-row input[type='range'] {
+.playback-slider-group {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.playback-slider-group input[type='range'] {
+  width: 100%;
   min-width: 0;
   accent-color: #5b8cff;
 }
@@ -795,7 +810,7 @@
 }
 
 .playback-time-label {
-  align-self: flex-end;
+  align-self: center;
   font-size: 0.8rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
