@@ -78,6 +78,12 @@ Next steps:
 - Removed the global contrast/brightness controls, wiring the per-layer slider values directly into the volume renderer uniforms for independent adjustments.
 
 ## Tracks ingestion groundwork
+- Consolidated dataset and track loading so the launcher performs both steps before entering the viewer, wiring the launch butt
+on into the existing dataset/track loaders.
+- Disabled launching when no dataset folders are selected and surfaced a loading state on the launch button while volumes and t
+racks stream in.
+- Tweaked the launcher and sidebar layout text to match the latest terminology ("Tracks", "Movie", and "Return to Launcher") an
+d centered the front-page card in the viewport.
 - Added a dedicated "Load tracks" widget beneath the dataset loader that accepts a CSV path, provides a file picker, and surfaces success/error states.
 - Implemented backend CSV browsing/loading endpoints that accept file paths, ensuring each row supplies exactly eight columns before the data is stored client-side for later use.
 - Tightened the CSV validator error messaging to spell out the requirement for eight comma-separated fields per row.

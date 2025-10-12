@@ -101,6 +101,7 @@ function App() {
   const [viewerMode, setViewerMode] = useState<'3d' | '2d'>('3d');
   const [sliceIndex, setSliceIndex] = useState(0);
   const [isViewerLaunched, setIsViewerLaunched] = useState(false);
+  const [isLaunchingViewer, setIsLaunchingViewer] = useState(false);
 
   const loadRequestRef = useRef(0);
   const hasTrackDataRef = useRef(false);
@@ -252,177 +253,175 @@ function App() {
     }
   }, [followedTrackId, parsedTracks]);
 
-  const handlePathSubmit = useCallback(
-    async (event: React.FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      setFolderError(null);
-      if (selectedFolders.length === 0) {
-        return;
+  const loadSelectedDataset = useCallback(async () => {
+    setFolderError(null);
+    if (selectedFolders.length === 0) {
+      return false;
+    }
+
+    const requestId = loadRequestRef.current + 1;
+    loadRequestRef.current = requestId;
+
+    setStatus('loading');
+    setError(null);
+    setFiles([]);
+    clearTextureCache();
+    setLayers([]);
+    setVisibleLayers({});
+    setLayerSettings({});
+    setSelectedIndex(0);
+    setIsPlaying(false);
+    setLoadProgress(0);
+    setLoadedCount(0);
+    setExpectedVolumeCount(0);
+    setActiveLayerKey(null);
+    try {
+      const explicitTargets: LayerTarget[] = selectedFolders.map((folder, index) => {
+        const trimmedName = folder.inputName.trim();
+        const label = trimmedName || folder.suggestedName || `Layer ${index + 1}`;
+        return {
+          key: folder.id,
+          label,
+          directory: folder.path
+        };
+      });
+
+      const layerFileLists = await Promise.all(
+        explicitTargets.map(async (target) => {
+          const filesForLayer = await listTiffFiles(target.directory);
+          return { target, files: filesForLayer };
+        })
+      );
+
+      if (loadRequestRef.current !== requestId) {
+        return false;
       }
 
-      const requestId = loadRequestRef.current + 1;
-      loadRequestRef.current = requestId;
+      if (layerFileLists.length === 0) {
+        setStatus('loaded');
+        setLoadProgress(1);
+        return true;
+      }
 
-      setStatus('loading');
-      setError(null);
+      const referenceFiles = layerFileLists[0].files;
+      if (referenceFiles.length === 0) {
+        setFiles([]);
+        setStatus('loaded');
+        setLoadProgress(1);
+        return true;
+      }
+
+      const totalExpectedVolumes = referenceFiles.length * layerFileLists.length;
+      setExpectedVolumeCount(totalExpectedVolumes);
+
+      for (const { files: candidateFiles, target } of layerFileLists) {
+        if (candidateFiles.length !== referenceFiles.length) {
+          throw new Error(
+            `Layer "${target.label}" has a different number of timepoints (${candidateFiles.length}) than the reference layer (${referenceFiles.length}).`
+          );
+        }
+      }
+
+      const rawLayers: { target: LayerTarget; files: string[]; volumes: VolumePayload[] }[] = layerFileLists.map(
+        ({ target, files }) => ({ target, files, volumes: new Array<VolumePayload>(referenceFiles.length) })
+      );
+
+      let referenceShape: { width: number; height: number; depth: number } | null = null;
+
+      await Promise.all(
+        rawLayers.map(async ({ target, files, volumes }) => {
+          await Promise.all(
+            files.map(async (filename, index) => {
+              const rawVolume = await loadVolume(target.directory, filename);
+              if (loadRequestRef.current !== requestId) {
+                return;
+              }
+
+              if (!referenceShape) {
+                referenceShape = {
+                  width: rawVolume.width,
+                  height: rawVolume.height,
+                  depth: rawVolume.depth
+                };
+              } else if (
+                rawVolume.width !== referenceShape.width ||
+                rawVolume.height !== referenceShape.height ||
+                rawVolume.depth !== referenceShape.depth
+              ) {
+                throw new Error(
+                  `Layer "${target.label}" has volume dimensions ${rawVolume.width}×${rawVolume.height}×${rawVolume.depth} that do not match the reference shape ${referenceShape.width}×${referenceShape.height}×${referenceShape.depth}.`
+                );
+              }
+
+              volumes[index] = rawVolume;
+              setLoadedCount((current) => {
+                if (loadRequestRef.current !== requestId) {
+                  return current;
+                }
+                const next = current + 1;
+                setLoadProgress(next / totalExpectedVolumes);
+                return next;
+              });
+            })
+          );
+        })
+      );
+
+      if (loadRequestRef.current !== requestId) {
+        return false;
+      }
+
+      const normalizedLayers: LoadedLayer[] = rawLayers.map(({ target, volumes }) => {
+        const normalizationParameters = computeNormalizationParameters(volumes);
+        const normalizedVolumes = volumes.map((rawVolume) => normalizeVolume(rawVolume, normalizationParameters));
+        return {
+          ...target,
+          volumes: normalizedVolumes
+        };
+      });
+
+      clearTextureCache();
+      setFiles(referenceFiles);
+      setLayers(normalizedLayers);
+      setVisibleLayers(
+        normalizedLayers.reduce<Record<string, boolean>>((acc, layer) => {
+          acc[layer.key] = true;
+          return acc;
+        }, {})
+      );
+      setLayerSettings(
+        normalizedLayers.reduce<Record<string, LayerSettings>>((acc, layer) => {
+          acc[layer.key] = createDefaultLayerSettings();
+          return acc;
+        }, {})
+      );
+      setSelectedIndex(0);
+      setActiveLayerKey(normalizedLayers[0]?.key ?? null);
+      setStatus('loaded');
+      setLoadedCount(totalExpectedVolumes);
+      setLoadProgress(1);
+      return true;
+    } catch (err) {
+      if (loadRequestRef.current !== requestId) {
+        return false;
+      }
+      console.error(err);
+      setStatus('error');
       setFiles([]);
       clearTextureCache();
       setLayers([]);
       setVisibleLayers({});
       setLayerSettings({});
       setSelectedIndex(0);
-      setIsPlaying(false);
+      setActiveLayerKey(null);
       setLoadProgress(0);
       setLoadedCount(0);
       setExpectedVolumeCount(0);
-      setActiveLayerKey(null);
-      try {
-        const explicitTargets: LayerTarget[] = selectedFolders.map((folder, index) => {
-          const trimmedName = folder.inputName.trim();
-          const label = trimmedName || folder.suggestedName || `Layer ${index + 1}`;
-          return {
-            key: folder.id,
-            label,
-            directory: folder.path
-          };
-        });
-
-        const layerFileLists = await Promise.all(
-          explicitTargets.map(async (target) => {
-            const filesForLayer = await listTiffFiles(target.directory);
-            return { target, files: filesForLayer };
-          })
-        );
-
-        if (loadRequestRef.current !== requestId) {
-          return;
-        }
-
-        if (layerFileLists.length === 0) {
-          setStatus('loaded');
-          setLoadProgress(1);
-          return;
-        }
-
-        const referenceFiles = layerFileLists[0].files;
-        if (referenceFiles.length === 0) {
-          setFiles([]);
-          setStatus('loaded');
-          setLoadProgress(1);
-          return;
-        }
-
-        const totalExpectedVolumes = referenceFiles.length * layerFileLists.length;
-        setExpectedVolumeCount(totalExpectedVolumes);
-
-        for (const { files: candidateFiles, target } of layerFileLists) {
-          if (candidateFiles.length !== referenceFiles.length) {
-            throw new Error(
-              `Layer "${target.label}" has a different number of timepoints (${candidateFiles.length}) than the reference layer (${referenceFiles.length}).`
-            );
-          }
-        }
-
-        const rawLayers: { target: LayerTarget; files: string[]; volumes: VolumePayload[] }[] = layerFileLists.map(
-          ({ target, files }) => ({ target, files, volumes: new Array<VolumePayload>(referenceFiles.length) })
-        );
-
-        let referenceShape: { width: number; height: number; depth: number } | null = null;
-
-        await Promise.all(
-          rawLayers.map(async ({ target, files, volumes }) => {
-            await Promise.all(
-              files.map(async (filename, index) => {
-                const rawVolume = await loadVolume(target.directory, filename);
-                if (loadRequestRef.current !== requestId) {
-                  return;
-                }
-
-                if (!referenceShape) {
-                  referenceShape = {
-                    width: rawVolume.width,
-                    height: rawVolume.height,
-                    depth: rawVolume.depth
-                  };
-                } else if (
-                  rawVolume.width !== referenceShape.width ||
-                  rawVolume.height !== referenceShape.height ||
-                  rawVolume.depth !== referenceShape.depth
-                ) {
-                  throw new Error(
-                    `Layer "${target.label}" has volume dimensions ${rawVolume.width}×${rawVolume.height}×${rawVolume.depth} that do not match the reference shape ${referenceShape.width}×${referenceShape.height}×${referenceShape.depth}.`
-                  );
-                }
-
-                volumes[index] = rawVolume;
-                setLoadedCount((current) => {
-                  if (loadRequestRef.current !== requestId) {
-                    return current;
-                  }
-                  const next = current + 1;
-                  setLoadProgress(next / totalExpectedVolumes);
-                  return next;
-                });
-              })
-            );
-          })
-        );
-
-        if (loadRequestRef.current !== requestId) {
-          return;
-        }
-
-        const normalizedLayers: LoadedLayer[] = rawLayers.map(({ target, volumes }) => {
-          const normalizationParameters = computeNormalizationParameters(volumes);
-          const normalizedVolumes = volumes.map((rawVolume) => normalizeVolume(rawVolume, normalizationParameters));
-          return {
-            ...target,
-            volumes: normalizedVolumes
-          };
-        });
-
-        clearTextureCache();
-        setFiles(referenceFiles);
-        setLayers(normalizedLayers);
-        setVisibleLayers(
-          normalizedLayers.reduce<Record<string, boolean>>((acc, layer) => {
-            acc[layer.key] = true;
-            return acc;
-          }, {})
-        );
-        setLayerSettings(
-          normalizedLayers.reduce<Record<string, LayerSettings>>((acc, layer) => {
-            acc[layer.key] = createDefaultLayerSettings();
-            return acc;
-          }, {})
-        );
-        setSelectedIndex(0);
-        setActiveLayerKey(normalizedLayers[0]?.key ?? null);
-        setStatus('loaded');
-        setLoadedCount(totalExpectedVolumes);
-        setLoadProgress(1);
-      } catch (err) {
-        if (loadRequestRef.current !== requestId) {
-          return;
-        }
-        console.error(err);
-        setStatus('error');
-        setFiles([]);
-        clearTextureCache();
-        setLayers([]);
-        setVisibleLayers({});
-        setLayerSettings({});
-        setSelectedIndex(0);
-        setActiveLayerKey(null);
-        setLoadProgress(0);
-        setLoadedCount(0);
-        setExpectedVolumeCount(0);
-        setIsPlaying(false);
-        setError(err instanceof Error ? err.message : 'Failed to load volumes.');
-      }
-    },
-    [selectedFolders]
-  );
+      setIsPlaying(false);
+      setError(err instanceof Error ? err.message : 'Failed to load volumes.');
+      return false;
+    }
+  }, [selectedFolders]);
 
   useEffect(() => {
     if (!isPlaying || volumeTimepointCount <= 1) {
@@ -643,30 +642,54 @@ function App() {
     setTrackError(null);
   }, []);
 
-  const handleTrackSubmit = useCallback(
-    async (event: React.FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      const trimmed = trackPath.trim();
-      if (!trimmed) {
+  const loadTrackData = useCallback(async (path: string) => {
+    const trimmed = path.trim();
+    if (!trimmed) {
+      setTracks([]);
+      setTrackStatus('idle');
+      setTrackError(null);
+      return true;
+    }
+
+    setTrackStatus('loading');
+    setTrackError(null);
+
+    try {
+      const rows = await loadTracks(trimmed);
+      setTracks(rows);
+      setTrackStatus('loaded');
+      return true;
+    } catch (err) {
+      console.error('Failed to load tracks CSV', err);
+      setTrackError(err instanceof Error ? err.message : 'Failed to load tracks.');
+      setTrackStatus('error');
+      setTracks([]);
+      return false;
+    }
+  }, [loadTracks]);
+
+  const handleLaunchViewer = useCallback(async () => {
+    if (isLaunchingViewer || selectedFolders.length === 0) {
+      return;
+    }
+
+    setIsLaunchingViewer(true);
+    try {
+      const datasetLoaded = await loadSelectedDataset();
+      if (!datasetLoaded) {
         return;
       }
 
-      setTrackStatus('loading');
-      setTrackError(null);
-
-      try {
-        const rows = await loadTracks(trimmed);
-        setTracks(rows);
-        setTrackStatus('loaded');
-      } catch (err) {
-        console.error('Failed to load tracks CSV', err);
-        setTrackError(err instanceof Error ? err.message : 'Failed to load tracks.');
-        setTrackStatus('error');
-        setTracks([]);
+      const tracksLoaded = await loadTrackData(trackPath);
+      if (!tracksLoaded) {
+        return;
       }
-    },
-    [loadTracks, trackPath]
-  );
+
+      setIsViewerLaunched(true);
+    } finally {
+      setIsLaunchingViewer(false);
+    }
+  }, [isLaunchingViewer, loadSelectedDataset, loadTrackData, selectedFolders.length, trackPath]);
 
   const handleLayerVisibilityToggle = useCallback((key: string) => {
     setVisibleLayers((current) => ({
@@ -870,7 +893,12 @@ function App() {
     }
   }, [maxSliceDepth, sliceIndex]);
   const datasetLoader = (
-    <form onSubmit={handlePathSubmit} className="path-form">
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+      }}
+      className="path-form"
+    >
           <label htmlFor="path-input">Dataset folders</label>
           <div className="path-input-wrapper">
             <input
@@ -946,14 +974,16 @@ function App() {
           ) : (
             <p className="subfolder-status">Type a path and press Enter, or use the folder button to browse.</p>
           )}
-          <button type="submit" className="load-dataset-button" disabled={selectedFolders.length === 0 || isLoading}>
-            Load dataset
-          </button>
         </form>
   );
 
   const trackLoader = (
-    <form onSubmit={handleTrackSubmit} className="path-form">
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+      }}
+      className="path-form"
+    >
       <label htmlFor="tracks-input">Tracks file</label>
       <div className="path-input-wrapper">
         <input
@@ -987,9 +1017,6 @@ function App() {
           {tracks.length === 1 ? 'Loaded 1 track entry.' : `Loaded ${tracks.length} track entries.`}
         </p>
       ) : null}
-      <button type="submit" disabled={!trackPath.trim() || trackStatus === 'loading'}>
-        Load tracks
-      </button>
     </form>
   );
 
@@ -1018,7 +1045,6 @@ function App() {
         <div className="front-page">
           <div className="front-page-card">
             <h1>LLSM Viewer</h1>
-            <p>Load datasets and optional track overlays before launching the viewer.</p>
             <div className="front-page-widgets">
               <section className="front-page-widget">
                 <header>
@@ -1029,8 +1055,7 @@ function App() {
               </section>
               <section className="front-page-widget">
                 <header>
-                  <h2>Track overlays</h2>
-                  <p>Provide a CSV file with trajectory data to overlay in the viewer.</p>
+                  <h2>Tracks</h2>
                 </header>
                 {trackLoader}
               </section>
@@ -1038,9 +1063,10 @@ function App() {
             <button
               type="button"
               className="launch-viewer-button"
-              onClick={() => setIsViewerLaunched(true)}
+              onClick={handleLaunchViewer}
+              disabled={selectedFolders.length === 0 || isLaunchingViewer}
             >
-              Launch viewer
+              {isLaunchingViewer ? 'Loading...' : 'Launch viewer'}
             </button>
           </div>
         </div>
@@ -1054,18 +1080,17 @@ function App() {
       <div className="app">
         <aside className="sidebar sidebar-left">
           <header className="sidebar-header">
+            <button type="button" className="sidebar-launcher-button" onClick={() => setIsViewerLaunched(false)}>
+              Return to Launcher
+            </button>
             <div>
               <h1>LLSM Viewer</h1>
-              <p>Adjust playback, layers, and rendering for the loaded dataset.</p>
             </div>
-            <button type="button" className="sidebar-launcher-button" onClick={() => setIsViewerLaunched(false)}>
-              Open launcher
-            </button>
           </header>
 
           <section className="sidebar-panel global-controls">
             <header>
-              <h2>Global controls</h2>
+              <h2>Movie</h2>
             </header>
             <div className="control-group">
               <button type="button" onClick={() => resetViewHandler?.()} disabled={!resetViewHandler}>
@@ -1299,8 +1324,7 @@ function App() {
       </main>
       <aside className="sidebar sidebar-right">
         <header>
-          <h2>Track overlays</h2>
-          <p>Configure how trajectories appear on top of the volume rendering.</p>
+          <h2>Tracks</h2>
         </header>
 
         <section className="sidebar-panel track-controls">
