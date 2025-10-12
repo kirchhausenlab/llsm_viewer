@@ -30,6 +30,7 @@
   flex-direction: column;
   gap: 2rem;
   color: rgba(255, 255, 255, 0.95);
+  margin: 0 auto;
 }
 
 .front-page-card h1 {
@@ -114,9 +115,9 @@
 
 .sidebar-header {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   gap: 1rem;
-  align-items: flex-start;
+  align-items: stretch;
 }
 
 .sidebar-header h1 {
@@ -138,6 +139,7 @@
   font-weight: 600;
   cursor: pointer;
   transition: border-color 0.2s ease, transform 0.2s ease;
+  align-self: flex-start;
 }
 
 .sidebar-launcher-button:hover {
