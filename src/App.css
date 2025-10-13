@@ -7,6 +7,7 @@
 }
 
 .app.front-page-mode {
+  background: transparent;
   color: rgba(255, 255, 255, 0.95);
 }
 
@@ -23,11 +24,9 @@
 
 .front-page {
   position: relative;
-  z-index: -1;
+  z-index: 0;
   min-height: 100dvh;
-  background: radial-gradient(circle at top left, rgba(91, 140, 255, 0.3), transparent 45%),
-    radial-gradient(circle at bottom right, rgba(146, 104, 255, 0.28), transparent 52%),
-    rgba(4, 6, 11, 0.66);
+  background: transparent;
   display: flex;
   flex: 1 1 auto;
   align-items: center;

@@ -196,3 +196,9 @@ d centered the front-page card in the viewport.
 - Enabled drag-and-drop creation of new channels, including auto-naming based on folder drops and a quick-add button for manual setup.
 - Summarized the pending configuration with total channel/layer/track counts and reused the viewer loader to flatten channel layers while ignoring secondary track files.
 - Verified the production build with `npm run build`, which succeeds while surfacing the existing CSS minifier warning for translucent backgrounds.
+
+## Front page background video overlay
+- Reworked the launcher background styling so the landing screen sits atop the looping video rather than the legacy gradient fill.
+- Moved the gradient tint into a pseudo-element overlay, letting the new video remain visible while preserving the subtle color wash.
+- After review feedback, removed the overlay entirely so the video renders without any additional gradient tint.
+- Cleared the front-page container background so the looping video displays instead of the solid fallback color while leaving the viewer mode styling unchanged.
