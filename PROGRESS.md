@@ -1,6 +1,10 @@
 # Progress Log
 
-## Initial scaffolding and data ingestion (current)
+## Client-side data ingestion cleanup (current)
+- Removed the Express backend and filesystem-scanning APIs now that datasets and tracks load directly from the client.
+- Simplified the npm scripts to run only the Vite dev server and removed the related server build configuration.
+
+## Initial scaffolding and data ingestion
 - Set up a Vite + React front-end with a sidebar workflow to enter dataset paths and browse discovered TIFF stacks.
 - Implemented an Express-based backend that lists TIFF files in a directory and streams 3D volumes (as Float32 arrays) decoded with `geotiff`.
 - Added a canvas-based central-slice previewer to validate volume ingestion while the full GPU renderer is under construction.
