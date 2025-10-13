@@ -169,10 +169,13 @@ async function loadVolumeFromFile(file: File): Promise<VolumePayload> {
     globalMax = globalMin + 1;
   }
 
-  const buffer = combined.buffer.slice(
-    combined.byteOffset,
-    combined.byteOffset + combined.byteLength
-  ) as ArrayBuffer;
+  const buffer =
+    combined.byteOffset === 0 && combined.byteLength === combined.buffer.byteLength
+      ? combined.buffer
+      : (combined.buffer.slice(
+          combined.byteOffset,
+          combined.byteOffset + combined.byteLength
+        ) as ArrayBuffer);
 
   return {
     width,
