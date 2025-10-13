@@ -10,7 +10,7 @@ import { VolumeRenderShader } from '../shaders/volumeRenderShader';
 import { SliceRenderShader } from '../shaders/sliceRenderShader';
 import { getCachedTextureData } from '../textureCache';
 import './VolumeViewer.css';
-import type { TrackDefinition } from '../types/tracks';
+import type { TrackColorMode, TrackDefinition } from '../types/tracks';
 import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../layerColors';
 import { createTrackColor } from '../trackColors';
 
@@ -38,11 +38,13 @@ type VolumeViewerProps = {
   expectedVolumes: number;
   onRegisterReset: (handler: (() => void) | null) => void;
   tracks: TrackDefinition[];
-  trackVisibility: Record<number, boolean>;
-  trackOpacity: number;
-  trackLineWidth: number;
-  followedTrackId: number | null;
-  onTrackFollowRequest: (trackId: number) => void;
+  trackVisibility: Record<string, boolean>;
+  trackOpacityByChannel: Record<string, number>;
+  trackLineWidthByChannel: Record<string, number>;
+  channelTrackColorModes: Record<string, TrackColorMode>;
+  channelTrackOffsets: Record<string, { x: number; y: number }>;
+  followedTrackId: string | null;
+  onTrackFollowRequest: (trackId: string) => void;
 };
 
 type VolumeResources = {
@@ -142,6 +144,9 @@ type TrackLineResource = {
   highlightColor: THREE.Color;
 };
 
+const DEFAULT_TRACK_OPACITY = 0.9;
+const DEFAULT_TRACK_LINE_WIDTH = 1;
+
 type RaycasterLike = {
   params: { Line?: { threshold: number } } & Record<string, unknown>;
   setFromCamera: (coords: THREE.Vector2, camera: THREE.PerspectiveCamera) => void;
@@ -197,8 +202,10 @@ function VolumeViewer({
   onRegisterReset,
   tracks,
   trackVisibility,
-  trackOpacity,
-  trackLineWidth,
+  trackOpacityByChannel,
+  trackLineWidthByChannel,
+  channelTrackColorModes,
+  channelTrackOffsets,
   followedTrackId,
   onTrackFollowRequest
 }: VolumeViewerProps) {
@@ -228,17 +235,17 @@ function VolumeViewer({
   const volumeRootGroupRef = useRef<THREE.Group | null>(null);
   const volumeRootCenterOffsetRef = useRef(new THREE.Vector3());
   const trackGroupRef = useRef<THREE.Group | null>(null);
-  const trackLinesRef = useRef<Map<number, TrackLineResource>>(new Map());
+  const trackLinesRef = useRef<Map<string, TrackLineResource>>(new Map());
   const raycasterRef = useRef<RaycasterLike | null>(null);
   const timeIndexRef = useRef(0);
-  const followedTrackIdRef = useRef<number | null>(null);
+  const followedTrackIdRef = useRef<string | null>(null);
   const trackFollowOffsetRef = useRef<THREE.Vector3 | null>(null);
-  const previousFollowedTrackIdRef = useRef<number | null>(null);
+  const previousFollowedTrackIdRef = useRef<string | null>(null);
   const [hasMeasured, setHasMeasured] = useState(false);
   const [trackOverlayRevision, setTrackOverlayRevision] = useState(0);
   const [renderContextRevision, setRenderContextRevision] = useState(0);
-  const hoveredTrackIdRef = useRef<number | null>(null);
-  const [hoveredTrackId, setHoveredTrackId] = useState<number | null>(null);
+  const hoveredTrackIdRef = useRef<string | null>(null);
+  const [hoveredTrackId, setHoveredTrackId] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
   const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(null);
 
@@ -249,8 +256,27 @@ function VolumeViewer({
 
   followedTrackIdRef.current = followedTrackId;
 
+  const trackLookup = useMemo(() => {
+    const map = new Map<string, TrackDefinition>();
+    for (const track of tracks) {
+      map.set(track.id, track);
+    }
+    return map;
+  }, [tracks]);
+
+  const resolveTrackColor = useCallback(
+    (track: TrackDefinition) => {
+      const mode = channelTrackColorModes[track.channelId];
+      if (mode && mode.type === 'uniform') {
+        return new THREE.Color(mode.color);
+      }
+      return createTrackColor(track.id);
+    },
+    [channelTrackColorModes]
+  );
+
   const updateHoverState = useCallback(
-    (trackId: number | null, position: { x: number; y: number } | null) => {
+    (trackId: string | null, position: { x: number; y: number } | null) => {
       if (hoveredTrackIdRef.current !== trackId) {
         hoveredTrackIdRef.current = trackId;
         setHoveredTrackId(trackId);
@@ -418,7 +444,7 @@ function VolumeViewer({
     }
 
     const trackLines = trackLinesRef.current;
-    const activeIds = new Set<number>();
+    const activeIds = new Set<string>();
     tracks.forEach((track) => {
       if (track.points.length > 0) {
         activeIds.add(track.id);
@@ -447,22 +473,23 @@ function VolumeViewer({
       let resource = trackLines.get(track.id) ?? null;
       const positions = new Float32Array(track.points.length * 3);
       const times = new Array<number>(track.points.length);
+      const offset = channelTrackOffsets[track.channelId] ?? { x: 0, y: 0 };
 
       for (let index = 0; index < track.points.length; index++) {
         const point = track.points[index];
-        positions[index * 3 + 0] = point.x;
-        positions[index * 3 + 1] = point.y;
+        positions[index * 3 + 0] = point.x + offset.x;
+        positions[index * 3 + 1] = point.y + offset.y;
         positions[index * 3 + 2] = point.z;
         times[index] = point.time;
       }
+
+      const baseColor = resolveTrackColor(track);
+      const highlightColor = baseColor.clone().lerp(new THREE.Color(0xffffff), 0.4);
 
       if (!resource) {
         const geometry = new LineGeometry();
         geometry.setPositions(Array.from(positions));
         geometry.instanceCount = 0;
-
-        const baseColor = createTrackColor(track.id);
-        const highlightColor = baseColor.clone().lerp(new THREE.Color(0xffffff), 0.4);
         const material = new LineMaterial({
           color: baseColor.clone(),
           linewidth: 1,
@@ -512,8 +539,8 @@ function VolumeViewer({
           material,
           outlineMaterial,
           times,
-          baseColor,
-          highlightColor
+          baseColor: baseColor.clone(),
+          highlightColor: highlightColor.clone()
         };
         trackLines.set(track.id, resource);
       } else {
@@ -522,11 +549,21 @@ function VolumeViewer({
         line.computeLineDistances();
         outline.computeLineDistances();
         resource.times = times;
+        resource.baseColor.copy(baseColor);
+        resource.highlightColor.copy(highlightColor);
       }
     }
 
     updateTrackDrawRanges(timeIndexRef.current);
-  }, [clearHoverState, trackOverlayRevision, tracks, updateTrackDrawRanges]);
+  }, [
+    channelTrackColorModes,
+    channelTrackOffsets,
+    clearHoverState,
+    resolveTrackColor,
+    trackOverlayRevision,
+    tracks,
+    updateTrackDrawRanges
+  ]);
 
   useEffect(() => {
     if (trackOverlayRevision === 0) {
@@ -538,8 +575,6 @@ function VolumeViewer({
       return;
     }
 
-    const sanitizedOpacity = Math.min(1, Math.max(0, trackOpacity));
-    const sanitizedLineWidth = Math.max(0.1, Math.min(10, trackLineWidth));
     let visibleCount = 0;
 
     for (const track of tracks) {
@@ -567,6 +602,8 @@ function VolumeViewer({
         material.needsUpdate = true;
       }
 
+      const channelOpacity = trackOpacityByChannel[track.channelId] ?? DEFAULT_TRACK_OPACITY;
+      const sanitizedOpacity = Math.min(1, Math.max(0, channelOpacity));
       const opacityBoost = isFollowed ? 0.15 : isHovered ? 0.12 : 0;
       const targetOpacity = Math.min(1, sanitizedOpacity + opacityBoost);
       if (material.opacity !== targetOpacity) {
@@ -574,6 +611,8 @@ function VolumeViewer({
         material.needsUpdate = true;
       }
 
+      const channelLineWidth = trackLineWidthByChannel[track.channelId] ?? DEFAULT_TRACK_LINE_WIDTH;
+      const sanitizedLineWidth = Math.max(0.1, Math.min(10, channelLineWidth));
       const widthMultiplier = isFollowed ? 1.35 : isHovered ? 1.2 : 1;
       const targetWidth = sanitizedLineWidth * widthMultiplier;
       if (material.linewidth !== targetWidth) {
@@ -609,8 +648,8 @@ function VolumeViewer({
     trackOverlayRevision,
     followedTrackId,
     hoveredTrackId,
-    trackLineWidth,
-    trackOpacity,
+    trackLineWidthByChannel,
+    trackOpacityByChannel,
     trackVisibility,
     tracks
   ]);
@@ -645,8 +684,8 @@ function VolumeViewer({
   ]);
 
   const computeTrackCentroid = useCallback(
-    (trackId: number, targetTimeIndex: number) => {
-      const track = tracks.find((candidate) => candidate.id === trackId);
+    (trackId: string, targetTimeIndex: number) => {
+      const track = trackLookup.get(trackId);
       if (!track || track.points.length === 0) {
         return null;
       }
@@ -658,6 +697,7 @@ function VolumeViewer({
       let sumX = 0;
       let sumY = 0;
       let sumZ = 0;
+      const offset = channelTrackOffsets[track.channelId] ?? { x: 0, y: 0 };
 
       for (const point of track.points) {
         if (point.time - maxVisibleTime > epsilon) {
@@ -667,13 +707,13 @@ function VolumeViewer({
         if (point.time > latestTime + epsilon) {
           latestTime = point.time;
           count = 1;
-          sumX = point.x;
-          sumY = point.y;
+          sumX = point.x + offset.x;
+          sumY = point.y + offset.y;
           sumZ = point.z;
         } else if (Math.abs(point.time - latestTime) <= epsilon) {
           count += 1;
-          sumX += point.x;
-          sumY += point.y;
+          sumX += point.x + offset.x;
+          sumY += point.y + offset.y;
           sumZ += point.z;
         }
       }
@@ -691,7 +731,7 @@ function VolumeViewer({
       trackGroup.updateMatrixWorld(true);
       return trackGroup.localToWorld(centroidLocal);
     },
-    [tracks]
+    [channelTrackOffsets, trackLookup]
   );
 
   useEffect(() => {
@@ -889,8 +929,8 @@ function VolumeViewer({
       const intersection = intersections[0];
       const hitObject = intersection.object as unknown as { userData: Record<string, unknown> };
       const trackId =
-        typeof hitObject.userData.trackId === 'number'
-          ? (hitObject.userData.trackId as number)
+        typeof hitObject.userData.trackId === 'string'
+          ? (hitObject.userData.trackId as string)
           : null;
       if (trackId === null) {
         clearHoverState();
@@ -1656,6 +1696,11 @@ function VolumeViewer({
     };
   }, []);
 
+  const hoveredTrackDefinition = hoveredTrackId ? trackLookup.get(hoveredTrackId) ?? null : null;
+  const hoveredTrackLabel = hoveredTrackDefinition
+    ? `${hoveredTrackDefinition.channelName} · Track #${hoveredTrackDefinition.trackNumber}`
+    : null;
+
   return (
     <div className="volume-viewer">
       <section className="viewer-surface">
@@ -1667,14 +1712,14 @@ function VolumeViewer({
           </div>
         )}
         <div className={`render-surface${hasMeasured ? ' is-ready' : ''}`} ref={handleContainerRef}>
-          {hoveredTrackId !== null && tooltipPosition ? (
+          {hoveredTrackLabel && tooltipPosition ? (
             <div
               className="track-tooltip"
               style={{ left: `${tooltipPosition.x}px`, top: `${tooltipPosition.y}px` }}
               role="status"
               aria-live="polite"
             >
-              Track #{hoveredTrackId}
+              {hoveredTrackLabel}
             </div>
           ) : null}
         </div>

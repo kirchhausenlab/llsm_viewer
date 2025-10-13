@@ -1309,6 +1309,107 @@
   color: rgba(255, 255, 255, 0.65);
 }
 
+.track-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.track-tab {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(12, 16, 24, 0.6);
+  color: rgba(255, 255, 255, 0.72);
+  border-radius: 0.6rem;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.track-tab:hover {
+  border-color: rgba(91, 140, 255, 0.6);
+  color: #ffffff;
+}
+
+.track-tab.is-active {
+  background: linear-gradient(135deg, rgba(91, 140, 255, 0.32), rgba(44, 93, 212, 0.38));
+  border-color: rgba(91, 140, 255, 0.75);
+  color: #ffffff;
+}
+
+.track-tab.is-empty {
+  opacity: 0.6;
+}
+
+.track-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.track-panel {
+  display: none;
+}
+
+.track-panel.is-active {
+  display: block;
+}
+
+.track-panel + .track-panel {
+  margin-top: 0.75rem;
+}
+
+.track-color-control {
+  margin-bottom: 0.75rem;
+}
+
+.track-color-control-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.75);
+  margin-bottom: 0.4rem;
+}
+
+.track-color-swatch-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.track-color-mode-button {
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(12, 16, 24, 0.55);
+  color: rgba(255, 255, 255, 0.85);
+  border-radius: 999px;
+  padding: 0.25rem 0.8rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.track-color-mode-button:hover:not(:disabled) {
+  border-color: rgba(91, 140, 255, 0.6);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.track-color-mode-button.is-active {
+  border-color: rgba(91, 140, 255, 0.75);
+  background: rgba(91, 140, 255, 0.24);
+  color: #ffffff;
+}
+
+.track-color-mode-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .error {
   padding: 0.75rem 0.9rem;
   background: rgba(255, 71, 87, 0.16);

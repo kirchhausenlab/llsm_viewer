@@ -6,7 +6,7 @@ import PlanarViewer from './components/PlanarViewer';
 import { computeNormalizationParameters, normalizeVolume, NormalizedVolume } from './volumeProcessing';
 import { clearTextureCache } from './textureCache';
 import FloatingWindow from './components/FloatingWindow';
-import type { TrackDefinition, TrackPoint } from './types/tracks';
+import type { TrackColorMode, TrackDefinition, TrackPoint } from './types/tracks';
 import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from './layerColors';
 import { getTrackColorHex } from './trackColors';
 import './App.css';
@@ -22,6 +22,25 @@ const TRACK_WINDOW_WIDTH = 340;
 const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
 const MAX_CHANNELS = 3;
 const MAX_CHANNELS_MESSAGE = 'Maximum of 3 channels reached. Remove a channel before adding a new one.';
+
+type TrackColorOption = {
+  value: string;
+  label: string;
+};
+
+const TRACK_COLOR_SWATCHES: TrackColorOption[] = [
+  { value: '#FF6B6B', label: 'Red' },
+  { value: '#FF9F40', label: 'Orange' },
+  { value: '#FFD93D', label: 'Yellow' },
+  { value: '#6BCB77', label: 'Green' },
+  { value: '#4D96FF', label: 'Blue' },
+  { value: '#8E94F2', label: 'Indigo' },
+  { value: '#FF6BF1', label: 'Magenta' }
+];
+
+const DEFAULT_TRACK_COLOR = TRACK_COLOR_SWATCHES[0].value;
+
+const normalizeTrackColor = (color: string) => normalizeHexColor(color, DEFAULT_TRACK_COLOR).toUpperCase();
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 
@@ -50,6 +69,25 @@ const createDefaultLayerSettings = (): LayerSettings => ({
   xOffset: 0,
   yOffset: 0
 });
+
+type ChannelTrackState = {
+  opacity: number;
+  lineWidth: number;
+  visibility: Record<string, boolean>;
+  colorMode: TrackColorMode;
+};
+
+const createDefaultChannelTrackState = (): ChannelTrackState => ({
+  opacity: DEFAULT_TRACK_OPACITY,
+  lineWidth: DEFAULT_TRACK_LINE_WIDTH,
+  visibility: {},
+  colorMode: { type: 'random' }
+});
+
+type FollowedTrackState = {
+  id: string;
+  channelId: string;
+} | null;
 
 type ChannelLayerSource = {
   id: string;
@@ -702,11 +740,9 @@ function App() {
   const [fps, setFps] = useState(DEFAULT_FPS);
   const [resetViewHandler, setResetViewHandler] = useState<(() => void) | null>(null);
   const [activeChannelTabId, setActiveChannelTabId] = useState<string | null>(null);
-  const [tracks, setTracks] = useState<string[][]>([]);
-  const [trackVisibility, setTrackVisibility] = useState<Record<number, boolean>>({});
-  const [trackOpacity, setTrackOpacity] = useState(DEFAULT_TRACK_OPACITY);
-  const [trackLineWidth, setTrackLineWidth] = useState(DEFAULT_TRACK_LINE_WIDTH);
-  const [followedTrackId, setFollowedTrackId] = useState<number | null>(null);
+  const [activeTrackChannelId, setActiveTrackChannelId] = useState<string | null>(null);
+  const [channelTrackStates, setChannelTrackStates] = useState<Record<string, ChannelTrackState>>({});
+  const [followedTrack, setFollowedTrack] = useState<FollowedTrackState>(null);
   const [viewerMode, setViewerMode] = useState<'3d' | '2d'>('3d');
   const [sliceIndex, setSliceIndex] = useState(0);
   const [isViewerLaunched, setIsViewerLaunched] = useState(false);
@@ -733,8 +769,7 @@ function App() {
   }, []);
 
   const loadRequestRef = useRef(0);
-  const hasTrackDataRef = useRef(false);
-  const trackMasterCheckboxRef = useRef<HTMLInputElement | null>(null);
+  const trackMasterCheckboxRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const channelIdRef = useRef(0);
   const layerIdRef = useRef(0);
   const editingChannelOriginalNameRef = useRef('');
@@ -852,74 +887,108 @@ function App() {
     }
     return order;
   }, [layers]);
-  const parsedTracks = useMemo<TrackDefinition[]>(() => {
-    if (tracks.length === 0) {
-      return [];
-    }
+  const parsedTracksByChannel = useMemo(() => {
+    const map = new Map<string, TrackDefinition[]>();
 
-    const trackMap = new Map<number, TrackPoint[]>();
-    let maxTimeValue = -Infinity;
-
-    for (const row of tracks) {
-      if (row.length < 6) {
+    for (const channel of channels) {
+      const entries = channel.trackEntries;
+      if (entries.length === 0) {
+        map.set(channel.id, []);
         continue;
       }
 
-      const rawId = Number(row[0]);
-      const time = Number(row[2]);
-      const x = Number(row[3]);
-      const y = Number(row[4]);
-      const z = Number(row[5]);
+      const trackMap = new Map<number, TrackPoint[]>();
+      let maxTimeValue = -Infinity;
 
-      if (
-        !Number.isFinite(rawId) ||
-        !Number.isFinite(time) ||
-        !Number.isFinite(x) ||
-        !Number.isFinite(y) ||
-        !Number.isFinite(z)
-      ) {
-        continue;
+      for (const row of entries) {
+        if (row.length < 6) {
+          continue;
+        }
+
+        const rawId = Number(row[0]);
+        const time = Number(row[2]);
+        const x = Number(row[3]);
+        const y = Number(row[4]);
+        const z = Number(row[5]);
+
+        if (
+          !Number.isFinite(rawId) ||
+          !Number.isFinite(time) ||
+          !Number.isFinite(x) ||
+          !Number.isFinite(y) ||
+          !Number.isFinite(z)
+        ) {
+          continue;
+        }
+
+        const id = Math.trunc(rawId);
+        if (time > maxTimeValue) {
+          maxTimeValue = time;
+        }
+
+        const normalizedTime = Math.max(0, time - 1);
+        const point: TrackPoint = { time: normalizedTime, x, y, z };
+        const existing = trackMap.get(id);
+        if (existing) {
+          existing.push(point);
+        } else {
+          trackMap.set(id, [point]);
+        }
       }
 
-      const id = Math.trunc(rawId);
-      if (time > maxTimeValue) {
-        maxTimeValue = time;
-      }
+      const datasetTimepointCount = Number.isFinite(maxTimeValue) ? Math.max(0, Math.trunc(maxTimeValue)) : 0;
+      const channelName = channel.name.trim() || 'Untitled channel';
+      const parsed: TrackDefinition[] = [];
 
-      const normalizedTime = Math.max(0, time - 1);
-      const point: TrackPoint = { time: normalizedTime, x, y, z };
-      const existing = trackMap.get(id);
-      if (existing) {
-        existing.push(point);
-      } else {
-        trackMap.set(id, [point]);
-      }
+      const sortedEntries = Array.from(trackMap.entries()).sort((a, b) => a[0] - b[0]);
+      sortedEntries.forEach(([sourceTrackId, points], index) => {
+        if (points.length === 0) {
+          return;
+        }
+
+        const sortedPoints = [...points].sort((a, b) => a.time - b.time);
+        const uniqueTimeCount = new Set(sortedPoints.map((point) => point.time)).size;
+        const offset = Math.max(0, datasetTimepointCount - uniqueTimeCount);
+        const adjustedPoints = sortedPoints.map<TrackPoint>((point) => ({
+          time: point.time + offset,
+          x: point.x,
+          y: point.y,
+          z: point.z
+        }));
+
+        parsed.push({
+          id: `${channel.id}:${sourceTrackId}`,
+          channelId: channel.id,
+          channelName,
+          trackNumber: index + 1,
+          sourceTrackId,
+          points: adjustedPoints
+        });
+      });
+
+      map.set(channel.id, parsed);
     }
 
-    const parsed: TrackDefinition[] = [];
-    const datasetTimepointCount = Number.isFinite(maxTimeValue) ? Math.max(0, Math.trunc(maxTimeValue)) : 0;
+    return map;
+  }, [channels]);
 
-    for (const [id, points] of trackMap.entries()) {
-      if (points.length === 0) {
-        continue;
-      }
-
-      const sortedPoints = [...points].sort((a, b) => a.time - b.time);
-      const uniqueTimeCount = new Set(sortedPoints.map((point) => point.time)).size;
-      const offset = Math.max(0, datasetTimepointCount - uniqueTimeCount);
-      const adjustedPoints = sortedPoints.map<TrackPoint>((point) => ({
-        time: point.time + offset,
-        x: point.x,
-        y: point.y,
-        z: point.z
-      }));
-      parsed.push({ id, points: adjustedPoints });
+  const parsedTracks = useMemo(() => {
+    const ordered: TrackDefinition[] = [];
+    for (const channel of channels) {
+      const channelTracks = parsedTracksByChannel.get(channel.id) ?? [];
+      ordered.push(...channelTracks);
     }
+    return ordered;
+  }, [channels, parsedTracksByChannel]);
 
-    parsed.sort((a, b) => a.id - b.id);
+  const trackLookup = useMemo(() => {
+    const map = new Map<string, TrackDefinition>();
+    for (const track of parsedTracks) {
+      map.set(track.id, track);
+    }
+    return map;
+  }, [parsedTracks]);
 
-    return parsed;
-  }, [tracks]);
   const hasParsedTrackData = parsedTracks.length > 0;
   const handleRegisterReset = useCallback((handler: (() => void) | null) => {
     setResetViewHandler(() => handler);
@@ -953,66 +1022,62 @@ function App() {
   }, [computeTrackWindowDefaultPosition]);
 
   useEffect(() => {
-    const previouslyHadData = hasTrackDataRef.current;
-    if (!hasParsedTrackData) {
-      hasTrackDataRef.current = false;
-      setTrackVisibility({});
-      setTrackOpacity(DEFAULT_TRACK_OPACITY);
-      setTrackLineWidth(DEFAULT_TRACK_LINE_WIDTH);
-      return;
-    }
-
-    if (!previouslyHadData) {
-      setTrackOpacity(DEFAULT_TRACK_OPACITY);
-      setTrackLineWidth(DEFAULT_TRACK_LINE_WIDTH);
-    }
-
-    hasTrackDataRef.current = true;
-  }, [hasParsedTrackData]);
-
-  useEffect(() => {
-    if (parsedTracks.length === 0) {
-      return;
-    }
-
-    setTrackVisibility((current) => {
-      const next: Record<number, boolean> = {};
+    setChannelTrackStates((current) => {
+      const next: Record<string, ChannelTrackState> = {};
       let changed = false;
 
-      for (const track of parsedTracks) {
-        const previous = current[track.id];
-        if (previous === undefined) {
+      for (const channel of channels) {
+        const channelId = channel.id;
+        const existing = current[channelId] ?? createDefaultChannelTrackState();
+        const tracks = parsedTracksByChannel.get(channelId) ?? [];
+
+        const visibility: Record<string, boolean> = {};
+        let visibilityChanged = false;
+        for (const track of tracks) {
+          const previous = existing.visibility[track.id];
+          if (previous === undefined) {
+            visibilityChanged = true;
+          }
+          visibility[track.id] = previous ?? true;
+        }
+
+        for (const key of Object.keys(existing.visibility)) {
+          if (!(key in visibility)) {
+            visibilityChanged = true;
+            break;
+          }
+        }
+
+        let nextState = existing;
+        if (visibilityChanged) {
+          nextState = { ...nextState, visibility };
+        }
+
+        next[channelId] = nextState;
+        if (!current[channelId] || nextState !== existing) {
           changed = true;
         }
-        next[track.id] = previous ?? true;
       }
 
-      for (const key of Object.keys(current)) {
-        const numericKey = Number(key);
-        if (!parsedTracks.some((track) => track.id === numericKey)) {
-          changed = true;
-          break;
-        }
+      if (Object.keys(current).length !== channels.length) {
+        changed = true;
       }
 
-      if (!changed && Object.keys(next).length === Object.keys(current).length) {
-        return current;
-      }
-
-      return next;
+      return changed ? next : current;
     });
-  }, [parsedTracks]);
+  }, [channels, parsedTracksByChannel]);
 
   useEffect(() => {
-    if (followedTrackId === null) {
-      return;
-    }
-
-    const hasTrack = parsedTracks.some((track) => track.id === followedTrackId);
-    if (!hasTrack) {
-      setFollowedTrackId(null);
-    }
-  }, [followedTrackId, parsedTracks]);
+    setFollowedTrack((current) => {
+      if (!current) {
+        return current;
+      }
+      if (trackLookup.has(current.id)) {
+        return current;
+      }
+      return null;
+    });
+  }, [trackLookup]);
 
   const loadSelectedDataset = useCallback(async () => {
     setDatasetError(null);
@@ -1219,33 +1284,105 @@ function App() {
     return `${currentFrame} / ${volumeTimepointCount}`;
   }, [selectedIndex, volumeTimepointCount]);
 
-  const trackVisibilitySummary = useMemo(() => {
-    if (parsedTracks.length === 0) {
-      return { total: 0, visible: 0 };
+  const trackSummaryByChannel = useMemo(() => {
+    const summary = new Map<string, { total: number; visible: number }>();
+    for (const channel of channels) {
+      const tracksForChannel = parsedTracksByChannel.get(channel.id) ?? [];
+      const state = channelTrackStates[channel.id] ?? createDefaultChannelTrackState();
+      let visible = 0;
+      for (const track of tracksForChannel) {
+        if (state.visibility[track.id] ?? true) {
+          visible += 1;
+        }
+      }
+      summary.set(channel.id, { total: tracksForChannel.length, visible });
     }
-    let visible = 0;
-    for (const track of parsedTracks) {
-      if (trackVisibility[track.id] ?? true) {
-        visible += 1;
+    return summary;
+  }, [channels, channelTrackStates, parsedTracksByChannel]);
+
+  const trackVisibility = useMemo(() => {
+    const visibility: Record<string, boolean> = {};
+    for (const channel of channels) {
+      const tracksForChannel = parsedTracksByChannel.get(channel.id) ?? [];
+      const state = channelTrackStates[channel.id] ?? createDefaultChannelTrackState();
+      for (const track of tracksForChannel) {
+        visibility[track.id] = state.visibility[track.id] ?? true;
       }
     }
-    return { total: parsedTracks.length, visible };
-  }, [parsedTracks, trackVisibility]);
+    return visibility;
+  }, [channelTrackStates, channels, parsedTracksByChannel]);
 
-  const allTracksChecked =
-    trackVisibilitySummary.total > 0 && trackVisibilitySummary.visible === trackVisibilitySummary.total;
-  const someTracksChecked =
-    trackVisibilitySummary.total > 0 &&
-    trackVisibilitySummary.visible > 0 &&
-    trackVisibilitySummary.visible < trackVisibilitySummary.total;
+  const trackOpacityByChannel = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const channel of channels) {
+      const state = channelTrackStates[channel.id] ?? createDefaultChannelTrackState();
+      map[channel.id] = state.opacity;
+    }
+    return map;
+  }, [channelTrackStates, channels]);
+
+  const trackLineWidthByChannel = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const channel of channels) {
+      const state = channelTrackStates[channel.id] ?? createDefaultChannelTrackState();
+      map[channel.id] = state.lineWidth;
+    }
+    return map;
+  }, [channelTrackStates, channels]);
+
+  const channelTrackColorModes = useMemo(() => {
+    const map: Record<string, TrackColorMode> = {};
+    for (const channel of channels) {
+      const state = channelTrackStates[channel.id] ?? createDefaultChannelTrackState();
+      map[channel.id] = state.colorMode;
+    }
+    return map;
+  }, [channelTrackStates, channels]);
+
+  const followedTrackId = followedTrack?.id ?? null;
+  const followedTrackChannelId = followedTrack?.channelId ?? null;
+
+  const channelTrackOffsets = useMemo(() => {
+    const offsets: Record<string, { x: number; y: number }> = {};
+    for (const channel of channels) {
+      const channelLayers = channelLayersMap.get(channel.id) ?? [];
+      const activeLayerKey = channelActiveLayer[channel.id] ?? channelLayers[0]?.key ?? null;
+      if (!activeLayerKey) {
+        offsets[channel.id] = { x: 0, y: 0 };
+        continue;
+      }
+      const settings = layerSettings[activeLayerKey] ?? createDefaultLayerSettings();
+      const isActive = channel.id === activeChannelTabId;
+      offsets[channel.id] = {
+        x: isActive ? settings.xOffset : 0,
+        y: isActive ? settings.yOffset : 0
+      };
+    }
+    return offsets;
+  }, [activeChannelTabId, channelActiveLayer, channelLayersMap, channels, layerSettings]);
 
   useEffect(() => {
-    const checkbox = trackMasterCheckboxRef.current;
-    if (!checkbox) {
-      return;
+    for (const channel of channels) {
+      const checkbox = trackMasterCheckboxRefs.current[channel.id];
+      if (!checkbox) {
+        continue;
+      }
+      const summary = trackSummaryByChannel.get(channel.id) ?? { total: 0, visible: 0 };
+      const allChecked = summary.total > 0 && summary.visible === summary.total;
+      const someChecked =
+        summary.total > 0 && summary.visible > 0 && summary.visible < summary.total;
+      checkbox.indeterminate = someChecked && !allChecked;
     }
-    checkbox.indeterminate = someTracksChecked && !allTracksChecked;
-  }, [allTracksChecked, someTracksChecked]);
+  }, [channels, trackSummaryByChannel]);
+
+  useEffect(() => {
+    const validIds = new Set(channels.map((channel) => channel.id));
+    for (const key of Object.keys(trackMasterCheckboxRefs.current)) {
+      if (!validIds.has(key)) {
+        delete trackMasterCheckboxRefs.current[key];
+      }
+    }
+  }, [channels]);
 
   const handleTogglePlayback = useCallback(() => {
     setIsPlaying((current) => {
@@ -1621,9 +1758,6 @@ function App() {
         return;
       }
 
-      const firstTrackChannel = channels.find((channel) => channel.trackEntries.length > 0);
-      setTracks(firstTrackChannel ? firstTrackChannel.trackEntries : []);
-
       setIsViewerLaunched(true);
     } finally {
       setIsLaunchingViewer(false);
@@ -1641,85 +1775,195 @@ function App() {
     });
   }, []);
 
-  const handleTrackVisibilityToggle = useCallback((trackId: number) => {
-    let toggledOff = false;
-    setTrackVisibility((current) => {
-      const previous = current[trackId];
-      const nextValue = !(previous ?? true);
-      if (!nextValue) {
-        toggledOff = true;
+  const handleTrackVisibilityToggle = useCallback(
+    (trackId: string) => {
+      const track = trackLookup.get(trackId);
+      if (!track) {
+        return;
+      }
+
+      let nextVisible = true;
+      setChannelTrackStates((current) => {
+        const existing = current[track.channelId] ?? createDefaultChannelTrackState();
+        const previous = existing.visibility[trackId] ?? true;
+        nextVisible = !previous;
+        return {
+          ...current,
+          [track.channelId]: {
+            ...existing,
+            visibility: {
+              ...existing.visibility,
+              [trackId]: nextVisible
+            }
+          }
+        };
+      });
+
+      if (!nextVisible) {
+        setFollowedTrack((current) => (current && current.id === trackId ? null : current));
+      }
+    },
+    [trackLookup]
+  );
+
+  const handleTrackVisibilityAllChange = useCallback(
+    (channelId: string, isChecked: boolean) => {
+      const tracksForChannel = parsedTracksByChannel.get(channelId) ?? [];
+      setChannelTrackStates((current) => {
+        const existing = current[channelId] ?? createDefaultChannelTrackState();
+        const visibility: Record<string, boolean> = {};
+        for (const track of tracksForChannel) {
+          visibility[track.id] = isChecked;
+        }
+        return {
+          ...current,
+          [channelId]: {
+            ...existing,
+            visibility
+          }
+        };
+      });
+
+      if (!isChecked) {
+        setFollowedTrack((current) => (current && current.channelId === channelId ? null : current));
+      }
+    },
+    [parsedTracksByChannel]
+  );
+
+  const handleTrackOpacityChange = useCallback((channelId: string, value: number) => {
+    setChannelTrackStates((current) => {
+      const existing = current[channelId] ?? createDefaultChannelTrackState();
+      if (existing.opacity === value) {
+        return current;
       }
       return {
         ...current,
-        [trackId]: nextValue
+        [channelId]: {
+          ...existing,
+          opacity: value
+        }
       };
     });
-    if (toggledOff) {
-      setFollowedTrackId((current) => (current === trackId ? null : current));
-    }
   }, []);
 
-  const handleTrackVisibilityAllChange = useCallback(
-    (isChecked: boolean) => {
-      if (!isChecked) {
-        setFollowedTrackId(null);
+  const handleTrackLineWidthChange = useCallback((channelId: string, value: number) => {
+    setChannelTrackStates((current) => {
+      const existing = current[channelId] ?? createDefaultChannelTrackState();
+      if (existing.lineWidth === value) {
+        return current;
       }
-      setTrackVisibility(
-        parsedTracks.reduce<Record<number, boolean>>((acc, track) => {
-          acc[track.id] = isChecked;
-          return acc;
-        }, {})
-      );
+      return {
+        ...current,
+        [channelId]: {
+          ...existing,
+          lineWidth: value
+        }
+      };
+    });
+  }, []);
+
+  const handleTrackColorSelect = useCallback((channelId: string, color: string) => {
+    const normalized = normalizeTrackColor(color);
+    setChannelTrackStates((current) => {
+      const existing = current[channelId] ?? createDefaultChannelTrackState();
+      if (existing.colorMode.type === 'uniform' && existing.colorMode.color === normalized) {
+        return current;
+      }
+      return {
+        ...current,
+        [channelId]: {
+          ...existing,
+          colorMode: { type: 'uniform', color: normalized }
+        }
+      };
+    });
+  }, []);
+
+  const handleTrackColorReset = useCallback((channelId: string) => {
+    setChannelTrackStates((current) => {
+      const existing = current[channelId] ?? createDefaultChannelTrackState();
+      if (existing.colorMode.type === 'random') {
+        return current;
+      }
+      return {
+        ...current,
+        [channelId]: {
+          ...existing,
+          colorMode: { type: 'random' }
+        }
+      };
+    });
+  }, []);
+
+  const ensureTrackIsVisible = useCallback(
+    (trackId: string) => {
+      const track = trackLookup.get(trackId);
+      if (!track) {
+        return;
+      }
+
+      setChannelTrackStates((current) => {
+        const existing = current[track.channelId] ?? createDefaultChannelTrackState();
+        if (existing.visibility[trackId] ?? true) {
+          return current;
+        }
+        return {
+          ...current,
+          [track.channelId]: {
+            ...existing,
+            visibility: {
+              ...existing.visibility,
+              [trackId]: true
+            }
+          }
+        };
+      });
     },
-    [parsedTracks]
+    [trackLookup]
   );
 
-  const handleTrackOpacityChange = useCallback((value: number) => {
-    setTrackOpacity((current) => {
-      if (current === value) {
-        return current;
-      }
-      return value;
-    });
-  }, []);
-
-  const handleTrackLineWidthChange = useCallback((value: number) => {
-    setTrackLineWidth((current) => {
-      if (current === value) {
-        return current;
-      }
-      return value;
-    });
-  }, []);
-
-  const ensureTrackIsVisible = useCallback((trackId: number) => {
-    setTrackVisibility((current) => {
-      if (current[trackId]) {
-        return current;
-      }
-      return { ...current, [trackId]: true };
-    });
-  }, []);
-
   const handleTrackFollow = useCallback(
-    (trackId: number) => {
-      setFollowedTrackId((current) => (current === trackId ? null : trackId));
+    (trackId: string) => {
+      const track = trackLookup.get(trackId);
+      if (!track) {
+        return;
+      }
+
+      setFollowedTrack((current) => (current && current.id === trackId ? null : { id: trackId, channelId: track.channelId }));
       ensureTrackIsVisible(trackId);
     },
-    [ensureTrackIsVisible]
+    [ensureTrackIsVisible, trackLookup]
   );
 
   const handleTrackFollowFromViewer = useCallback(
-    (trackId: number) => {
-      setFollowedTrackId((current) => (current === trackId ? current : trackId));
+    (trackId: string) => {
+      const track = trackLookup.get(trackId);
+      if (!track) {
+        return;
+      }
+
+      setFollowedTrack((current) => (current && current.id === trackId ? current : { id: trackId, channelId: track.channelId }));
       ensureTrackIsVisible(trackId);
+      setActiveTrackChannelId(track.channelId);
     },
-    [ensureTrackIsVisible]
+    [ensureTrackIsVisible, trackLookup]
   );
 
-  const handleStopTrackFollow = useCallback(() => {
-    setFollowedTrackId(null);
+  const handleStopTrackFollow = useCallback((channelId?: string) => {
+    if (!channelId) {
+      setFollowedTrack(null);
+      return;
+    }
+    setFollowedTrack((current) => (current && current.channelId === channelId ? null : current));
   }, []);
+
+  const registerTrackMasterCheckbox = useCallback(
+    (channelId: string) => (element: HTMLInputElement | null) => {
+      trackMasterCheckboxRefs.current[channelId] = element;
+    },
+    []
+  );
 
   const handleToggleViewerMode = useCallback(() => {
     setViewerMode((current) => (current === '3d' ? '2d' : '3d'));
@@ -1744,6 +1988,20 @@ function App() {
       return layers[0].channelId;
     });
   }, [layers]);
+
+  useEffect(() => {
+    if (channels.length === 0) {
+      setActiveTrackChannelId(null);
+      return;
+    }
+
+    setActiveTrackChannelId((current) => {
+      if (current && channels.some((channel) => channel.id === current)) {
+        return current;
+      }
+      return channels[0].id;
+    });
+  }, [channels]);
 
   useEffect(() => {
     setChannelActiveLayer((current) => {
@@ -2212,8 +2470,10 @@ function App() {
               onRegisterReset={handleRegisterReset}
               tracks={parsedTracks}
               trackVisibility={trackVisibility}
-              trackOpacity={trackOpacity}
-              trackLineWidth={trackLineWidth}
+              trackOpacityByChannel={trackOpacityByChannel}
+              trackLineWidthByChannel={trackLineWidthByChannel}
+              channelTrackColorModes={channelTrackColorModes}
+              channelTrackOffsets={channelTrackOffsets}
               followedTrackId={followedTrackId}
               onTrackFollowRequest={handleTrackFollowFromViewer}
             />
@@ -2232,8 +2492,10 @@ function App() {
               onSliceIndexChange={handleSliceIndexChange}
               tracks={parsedTracks}
               trackVisibility={trackVisibility}
-              trackOpacity={trackOpacity}
-              trackLineWidth={trackLineWidth}
+              trackOpacityByChannel={trackOpacityByChannel}
+              trackLineWidthByChannel={trackLineWidthByChannel}
+              channelTrackColorModes={channelTrackColorModes}
+              channelTrackOffsets={channelTrackOffsets}
               followedTrackId={followedTrackId}
               onTrackFollowRequest={handleTrackFollowFromViewer}
             />
@@ -2617,104 +2879,224 @@ function App() {
           resetSignal={layoutResetToken}
         >
           <div className="sidebar sidebar-right">
-            <div className="track-controls">
-              <div className="control-group">
-                <button
-                  type="button"
-                  onClick={handleStopTrackFollow}
-                  disabled={followedTrackId === null}
-                  className={
-                    followedTrackId !== null ? 'viewer-stop-tracking is-active' : 'viewer-stop-tracking'
-                  }
-                >
-                  Stop tracking
-                </button>
-              </div>
-              <div className="slider-control">
-                <label htmlFor="track-opacity-slider">
-                  Opacity <span>{Math.round(trackOpacity * 100)}%</span>
-                </label>
-                <input
-                  id="track-opacity-slider"
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={trackOpacity}
-                  onChange={(event) => handleTrackOpacityChange(Number(event.target.value))}
-                  disabled={parsedTracks.length === 0}
-                />
-              </div>
-              <div className="slider-control">
-                <label htmlFor="track-linewidth-slider">
-                  Thickness <span>{trackLineWidth.toFixed(1)}</span>
-                </label>
-                <input
-                  id="track-linewidth-slider"
-                  type="range"
-                  min={0.5}
-                  max={5}
-                  step={0.1}
-                  value={trackLineWidth}
-                  onChange={(event) => handleTrackLineWidthChange(Number(event.target.value))}
-                  disabled={parsedTracks.length === 0}
-                />
-              </div>
-              <div className="track-list-header">
-                <label className="track-master-toggle">
-                  <input
-                    ref={trackMasterCheckboxRef}
-                    type="checkbox"
-                    checked={parsedTracks.length > 0 && allTracksChecked}
-                    onChange={(event) => handleTrackVisibilityAllChange(event.target.checked)}
-                    disabled={parsedTracks.length === 0}
-                  />
-                  <span>Show all tracks</span>
-                </label>
-              </div>
-              {parsedTracks.length > 0 ? (
-                <div className="track-list" role="group" aria-label="Track visibility">
-                  {parsedTracks.map((track, index) => {
-                    const isFollowed = followedTrackId === track.id;
-                    const isChecked = isFollowed || (trackVisibility[track.id] ?? true);
-                    const trackColor = getTrackColorHex(track.id);
+            {channels.length > 0 ? (
+              <div className="track-controls">
+                <div className="track-tabs" role="tablist" aria-label="Track channels">
+                  {channels.map((channel) => {
+                    const isActive = channel.id === activeTrackChannelId;
+                    const channelName = channelNameMap.get(channel.id) ?? 'Untitled channel';
+                    const hasTracks = (parsedTracksByChannel.get(channel.id)?.length ?? 0) > 0;
+                    const tabClassName = ['track-tab', isActive ? 'is-active' : '', !hasTracks ? 'is-empty' : '']
+                      .filter(Boolean)
+                      .join(' ');
                     return (
-                      <div
-                        key={track.id}
-                        className={isFollowed ? 'track-item is-following' : 'track-item'}
-                        title={`Track ID ${track.id}`}
+                      <button
+                        key={channel.id}
+                        type="button"
+                        className={tabClassName}
+                        onClick={() => setActiveTrackChannelId(channel.id)}
+                        role="tab"
+                        id={`track-tab-${channel.id}`}
+                        aria-selected={isActive}
+                        aria-controls={`track-panel-${channel.id}`}
                       >
-                        <label className="track-toggle">
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => handleTrackVisibilityToggle(track.id)}
-                          />
-                          <span className="track-label">
-                            <span
-                              className="track-color-swatch"
-                              style={{ backgroundColor: trackColor }}
-                              aria-hidden="true"
-                            />
-                            <span className="track-name">Track #{index + 1}</span>
-                          </span>
-                        </label>
-                        <button
-                          type="button"
-                          className={isFollowed ? 'track-follow-button is-active' : 'track-follow-button'}
-                          onClick={() => handleTrackFollow(track.id)}
-                          aria-pressed={isFollowed}
-                        >
-                          {isFollowed ? 'Following' : 'Follow'}
-                        </button>
-                      </div>
+                        <span className="track-tab-label">{channelName}</span>
+                      </button>
                     );
                   })}
                 </div>
-              ) : (
-                <p className="track-empty-hint">Load a tracks file to toggle individual trajectories.</p>
-              )}
-            </div>
+                {channels.map((channel) => {
+                  const channelName = channelNameMap.get(channel.id) ?? 'Untitled channel';
+                  const tracksForChannel = parsedTracksByChannel.get(channel.id) ?? [];
+                  const isActive = channel.id === activeTrackChannelId;
+                  const colorMode = channelTrackColorModes[channel.id] ?? { type: 'random' };
+                  const opacity = trackOpacityByChannel[channel.id] ?? DEFAULT_TRACK_OPACITY;
+                  const lineWidth = trackLineWidthByChannel[channel.id] ?? DEFAULT_TRACK_LINE_WIDTH;
+                  const summary = trackSummaryByChannel.get(channel.id) ?? { total: 0, visible: 0 };
+                  const allChecked = summary.total > 0 && summary.visible === summary.total;
+                  const channelFollowedId = followedTrackChannelId === channel.id ? followedTrackId : null;
+                  const colorLabel =
+                    colorMode.type === 'uniform' ? normalizeTrackColor(colorMode.color) : 'Sorted';
+
+                  return (
+                    <div
+                      key={channel.id}
+                      id={`track-panel-${channel.id}`}
+                      role="tabpanel"
+                      aria-labelledby={`track-tab-${channel.id}`}
+                      className={isActive ? 'track-panel is-active' : 'track-panel'}
+                      hidden={!isActive}
+                    >
+                      <div className="control-group">
+                        <button
+                          type="button"
+                          onClick={() => handleStopTrackFollow(channel.id)}
+                          disabled={channelFollowedId === null}
+                          className={
+                            channelFollowedId !== null
+                              ? 'viewer-stop-tracking is-active'
+                              : 'viewer-stop-tracking'
+                          }
+                        >
+                          Stop tracking
+                        </button>
+                      </div>
+                      <div className="slider-control">
+                        <label htmlFor={`track-opacity-${channel.id}`}>
+                          Opacity <span>{Math.round(opacity * 100)}%</span>
+                        </label>
+                        <input
+                          id={`track-opacity-${channel.id}`}
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          value={opacity}
+                          onChange={(event) =>
+                            handleTrackOpacityChange(channel.id, Number(event.target.value))
+                          }
+                          disabled={tracksForChannel.length === 0}
+                        />
+                      </div>
+                      <div className="slider-control">
+                        <label htmlFor={`track-linewidth-${channel.id}`}>
+                          Thickness <span>{lineWidth.toFixed(1)}</span>
+                        </label>
+                        <input
+                          id={`track-linewidth-${channel.id}`}
+                          type="range"
+                          min={0.5}
+                          max={5}
+                          step={0.1}
+                          value={lineWidth}
+                          onChange={(event) =>
+                            handleTrackLineWidthChange(channel.id, Number(event.target.value))
+                          }
+                          disabled={tracksForChannel.length === 0}
+                        />
+                      </div>
+                      <div className="track-color-control">
+                        <div className="track-color-control-header">
+                          <span id={`track-color-label-${channel.id}`}>Preset colors</span>
+                          <span>{colorLabel}</span>
+                        </div>
+                        <div className="track-color-swatch-row">
+                          <div
+                            className="color-swatch-grid"
+                            role="group"
+                            aria-labelledby={`track-color-label-${channel.id}`}
+                          >
+                            {TRACK_COLOR_SWATCHES.map((swatch) => {
+                              const normalized = normalizeTrackColor(swatch.value);
+                              const isSelected =
+                                colorMode.type === 'uniform' &&
+                                normalizeTrackColor(colorMode.color) === normalized;
+                              return (
+                                <button
+                                  key={swatch.value}
+                                  type="button"
+                                  className={
+                                    isSelected ? 'color-swatch-button is-selected' : 'color-swatch-button'
+                                  }
+                                  style={{ backgroundColor: swatch.value }}
+                                  onClick={() => handleTrackColorSelect(channel.id, swatch.value)}
+                                  disabled={tracksForChannel.length === 0}
+                                  aria-pressed={isSelected}
+                                  aria-label={`${swatch.label} tracks color`}
+                                  title={swatch.label}
+                                />
+                              );
+                            })}
+                          </div>
+                          <button
+                            type="button"
+                            className={
+                              colorMode.type === 'random'
+                                ? 'track-color-mode-button is-active'
+                                : 'track-color-mode-button'
+                            }
+                            onClick={() => handleTrackColorReset(channel.id)}
+                            disabled={tracksForChannel.length === 0}
+                          >
+                            Sorted
+                          </button>
+                        </div>
+                      </div>
+                      <div className="track-list-header">
+                        <label className="track-master-toggle">
+                          <input
+                            ref={registerTrackMasterCheckbox(channel.id)}
+                            type="checkbox"
+                            checked={tracksForChannel.length > 0 && allChecked}
+                            onChange={(event) =>
+                              handleTrackVisibilityAllChange(channel.id, event.target.checked)
+                            }
+                            disabled={tracksForChannel.length === 0}
+                            aria-label={`Show all tracks for ${channelName}`}
+                          />
+                          <span>Show all tracks</span>
+                        </label>
+                      </div>
+                      {tracksForChannel.length > 0 ? (
+                        <div
+                          className="track-list"
+                          role="group"
+                          aria-label={`${channelName} track visibility`}
+                        >
+                          {tracksForChannel.map((track) => {
+                            const isFollowed = followedTrackId === track.id;
+                            const isChecked = isFollowed || (trackVisibility[track.id] ?? true);
+                            const trackColor =
+                              colorMode.type === 'uniform'
+                                ? normalizeTrackColor(colorMode.color)
+                                : getTrackColorHex(track.id);
+                            return (
+                              <div
+                                key={track.id}
+                                className={isFollowed ? 'track-item is-following' : 'track-item'}
+                                title={`${track.channelName} · Track #${track.trackNumber}`}
+                              >
+                                <label className="track-toggle">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => handleTrackVisibilityToggle(track.id)}
+                                  />
+                                  <span className="track-label">
+                                    <span
+                                      className="track-color-swatch"
+                                      style={{ backgroundColor: trackColor }}
+                                      aria-hidden="true"
+                                    />
+                                    <span className="track-name">Track #{track.trackNumber}</span>
+                                  </span>
+                                </label>
+                                <button
+                                  type="button"
+                                  className={
+                                    isFollowed ? 'track-follow-button is-active' : 'track-follow-button'
+                                  }
+                                  onClick={() => handleTrackFollow(track.id)}
+                                  aria-pressed={isFollowed}
+                                >
+                                  {isFollowed ? 'Following' : 'Follow'}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="track-empty-hint">
+                          Load a tracks file to toggle individual trajectories.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="track-empty-hint">Add a channel to manage tracks.</p>
+            )}
           </div>
       </FloatingWindow>
       </div>

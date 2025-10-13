@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { TrackDefinition } from '../types/tracks';
+import type { TrackColorMode, TrackDefinition } from '../types/tracks';
 import { getTrackColorHex } from '../trackColors';
 import type { NormalizedVolume } from '../volumeProcessing';
 import './PlanarViewer.css';
@@ -29,11 +29,13 @@ type PlanarViewerProps = {
   maxSlices: number;
   onSliceIndexChange: (index: number) => void;
   tracks: TrackDefinition[];
-  trackVisibility: Record<number, boolean>;
-  trackOpacity: number;
-  trackLineWidth: number;
-  followedTrackId: number | null;
-  onTrackFollowRequest: (trackId: number) => void;
+  trackVisibility: Record<string, boolean>;
+  trackOpacityByChannel: Record<string, number>;
+  trackLineWidthByChannel: Record<string, number>;
+  channelTrackColorModes: Record<string, TrackColorMode>;
+  channelTrackOffsets: Record<string, { x: number; y: number }>;
+  followedTrackId: string | null;
+  onTrackFollowRequest: (trackId: string) => void;
 };
 
 type SliceData = {
@@ -59,8 +61,18 @@ type PointerState = {
 };
 
 type TrackHitTestResult = {
-  trackId: number | null;
+  trackId: string | null;
   pointer: { x: number; y: number } | null;
+};
+
+type TrackRenderEntry = {
+  id: string;
+  channelId: string;
+  channelName: string;
+  trackNumber: number;
+  points: { x: number; y: number; z: number }[];
+  baseColor: { r: number; g: number; b: number };
+  highlightColor: { r: number; g: number; b: number };
 };
 
 const MIN_ALPHA = 0.05;
@@ -73,6 +85,8 @@ const OUTLINE_OPACITY = 0.75;
 const OUTLINE_MIN_WIDTH = 0.4;
 const TRACK_EPSILON = 1e-3;
 const TRACK_HIT_TEST_MIN_DISTANCE = 6;
+const DEFAULT_TRACK_OPACITY = 0.9;
+const DEFAULT_TRACK_LINE_WIDTH = 1;
 
 function clamp(value: number, min: number, max: number) {
   if (value < min) {
@@ -134,8 +148,10 @@ function PlanarViewer({
   onSliceIndexChange,
   tracks,
   trackVisibility,
-  trackOpacity,
-  trackLineWidth,
+  trackOpacityByChannel,
+  trackLineWidthByChannel,
+  channelTrackColorModes,
+  channelTrackOffsets,
   followedTrackId,
   onTrackFollowRequest
 }: PlanarViewerProps) {
@@ -147,15 +163,15 @@ function PlanarViewer({
   const previousSliceSizeRef = useRef<{ width: number; height: number } | null>(null);
   const needsAutoFitRef = useRef(false);
   const pointerStateRef = useRef<PointerState | null>(null);
-  const followedTrackIdRef = useRef<number | null>(followedTrackId);
-  const hoveredTrackIdRef = useRef<number | null>(null);
+  const followedTrackIdRef = useRef<string | null>(followedTrackId);
+  const hoveredTrackIdRef = useRef<string | null>(null);
 
   const [hasMeasured, setHasMeasured] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [viewState, setViewState] = useState<ViewState>(() => createInitialViewState());
   const viewStateRef = useRef(viewState);
   const [sliceRevision, setSliceRevision] = useState(0);
-  const [hoveredTrackId, setHoveredTrackId] = useState<number | null>(null);
+  const [hoveredTrackId, setHoveredTrackId] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
 
   const effectiveMaxSlices = Math.max(0, maxSlices);
@@ -170,8 +186,24 @@ function PlanarViewer({
     followedTrackIdRef.current = followedTrackId;
   }, [followedTrackId]);
 
-  const sanitizedTrackOpacity = Math.min(1, Math.max(0, trackOpacity));
-  const sanitizedTrackLineWidth = Math.max(0.1, Math.min(10, trackLineWidth));
+  const trackLookup = useMemo(() => {
+    const map = new Map<string, TrackDefinition>();
+    for (const track of tracks) {
+      map.set(track.id, track);
+    }
+    return map;
+  }, [tracks]);
+
+  const resolveTrackHexColor = useCallback(
+    (track: TrackDefinition) => {
+      const mode = channelTrackColorModes[track.channelId];
+      if (mode && mode.type === 'uniform') {
+        return mode.color;
+      }
+      return getTrackColorHex(track.id);
+    },
+    [channelTrackColorModes]
+  );
 
   const updateViewState = useCallback(
     (updater: Partial<ViewState> | ((prev: ViewState) => ViewState)) => {
@@ -447,7 +479,7 @@ function PlanarViewer({
 
   const trackRenderData = useMemo(() => {
     if (!primaryVolume) {
-      return [];
+      return [] as TrackRenderEntry[];
     }
 
     const width = primaryVolume.width;
@@ -457,12 +489,13 @@ function PlanarViewer({
     const maxVisibleTime = clampedTimeIndex;
 
     return tracks
-      .map((track) => {
+      .map<TrackRenderEntry | null>((track) => {
         if (track.points.length === 0) {
           return null;
         }
 
-        const baseColor = getColorComponents(getTrackColorHex(track.id));
+        const offset = channelTrackOffsets[track.channelId] ?? { x: 0, y: 0 };
+        const baseColor = getColorComponents(resolveTrackHexColor(track));
         const highlightColor = mixWithWhite(baseColor, TRACK_HIGHLIGHT_BOOST);
 
         const visiblePoints: { x: number; y: number; z: number }[] = [];
@@ -471,8 +504,8 @@ function PlanarViewer({
             break;
           }
           visiblePoints.push({
-            x: point.x - centerX,
-            y: point.y - centerY,
+            x: point.x + offset.x - centerX,
+            y: point.y + offset.y - centerY,
             z: point.z
           });
         }
@@ -483,22 +516,27 @@ function PlanarViewer({
 
         return {
           id: track.id,
+          channelId: track.channelId,
+          channelName: track.channelName,
+          trackNumber: track.trackNumber,
           points: visiblePoints,
           baseColor,
           highlightColor
         };
       })
-      .filter((entry): entry is {
-        id: number;
-        points: { x: number; y: number; z: number }[];
-        baseColor: { r: number; g: number; b: number };
-        highlightColor: { r: number; g: number; b: number };
-      } => entry !== null);
-  }, [clampedTimeIndex, primaryVolume, tracks]);
+      .filter((entry): entry is TrackRenderEntry => entry !== null);
+  }, [
+    channelTrackColorModes,
+    channelTrackOffsets,
+    clampedTimeIndex,
+    primaryVolume,
+    resolveTrackHexColor,
+    tracks
+  ]);
 
   const computeTrackCentroid = useCallback(
-    (trackId: number, targetTimeIndex: number) => {
-      const track = tracks.find((candidate) => candidate.id === trackId);
+    (trackId: string, targetTimeIndex: number) => {
+      const track = trackLookup.get(trackId);
       if (!track || track.points.length === 0) {
         return null;
       }
@@ -509,6 +547,7 @@ function PlanarViewer({
       let sumX = 0;
       let sumY = 0;
       let sumZ = 0;
+      const offset = channelTrackOffsets[track.channelId] ?? { x: 0, y: 0 };
 
       for (const point of track.points) {
         if (point.time - maxVisibleTime > TRACK_EPSILON) {
@@ -518,13 +557,13 @@ function PlanarViewer({
         if (point.time > latestTime + TRACK_EPSILON) {
           latestTime = point.time;
           count = 1;
-          sumX = point.x;
-          sumY = point.y;
+          sumX = point.x + offset.x;
+          sumY = point.y + offset.y;
           sumZ = point.z;
         } else if (Math.abs(point.time - latestTime) <= TRACK_EPSILON) {
           count += 1;
-          sumX += point.x;
-          sumY += point.y;
+          sumX += point.x + offset.x;
+          sumY += point.y + offset.y;
           sumZ += point.z;
         }
       }
@@ -539,11 +578,11 @@ function PlanarViewer({
         z: sumZ / count
       };
     },
-    [tracks]
+    [channelTrackOffsets, trackLookup]
   );
 
   const updateHoverState = useCallback(
-    (trackId: number | null, position: { x: number; y: number } | null) => {
+    (trackId: string | null, position: { x: number; y: number } | null) => {
       if (hoveredTrackIdRef.current !== trackId) {
         hoveredTrackIdRef.current = trackId;
         setHoveredTrackId(trackId);
@@ -592,8 +631,6 @@ function PlanarViewer({
 
     if (trackRenderData.length > 0) {
       const scale = Math.max(viewState.scale, 1e-6);
-      const baseLineWidth = sanitizedTrackLineWidth / scale;
-      const outlineWidthBoost = Math.max(sanitizedTrackLineWidth * 0.75, OUTLINE_MIN_WIDTH) / scale;
 
       for (const track of trackRenderData) {
         const isFollowed = followedTrackId === track.id;
@@ -608,8 +645,15 @@ function PlanarViewer({
           continue;
         }
 
+        const channelOpacity = trackOpacityByChannel[track.channelId] ?? DEFAULT_TRACK_OPACITY;
+        const sanitizedOpacity = Math.min(1, Math.max(0, channelOpacity));
         const opacityBoost = isFollowed ? 0.15 : 0;
-        const targetOpacity = Math.min(1, sanitizedTrackOpacity + opacityBoost);
+        const targetOpacity = Math.min(1, sanitizedOpacity + opacityBoost);
+
+        const channelLineWidth = trackLineWidthByChannel[track.channelId] ?? DEFAULT_TRACK_LINE_WIDTH;
+        const sanitizedLineWidth = Math.max(0.1, Math.min(10, channelLineWidth));
+        const baseLineWidth = sanitizedLineWidth / scale;
+        const outlineWidthBoost = Math.max(sanitizedLineWidth * 0.75, OUTLINE_MIN_WIDTH) / scale;
         const widthMultiplier = isFollowed ? 1.35 : 1;
         const strokeWidth = Math.max(0.1, baseLineWidth * widthMultiplier);
         const strokeColor = isFollowed ? track.highlightColor : track.baseColor;
@@ -663,8 +707,8 @@ function PlanarViewer({
     canvasSize.height,
     canvasSize.width,
     followedTrackId,
-    sanitizedTrackLineWidth,
-    sanitizedTrackOpacity,
+    trackLineWidthByChannel,
+    trackOpacityByChannel,
     trackRenderData,
     trackVisibility,
     viewState
@@ -702,7 +746,7 @@ function PlanarViewer({
       const centerX = width / 2 + currentView.offsetX;
       const centerY = height / 2 + currentView.offsetY;
 
-      let closestTrackId: number | null = null;
+      let closestTrackId: string | null = null;
       let closestDistance = Infinity;
 
       const computeScreenPosition = (pointX: number, pointY: number) => {
@@ -772,9 +816,11 @@ function PlanarViewer({
           continue;
         }
 
+        const channelLineWidth = trackLineWidthByChannel[track.channelId] ?? DEFAULT_TRACK_LINE_WIDTH;
+        const sanitizedLineWidth = Math.max(0.1, Math.min(10, channelLineWidth));
         const widthMultiplier = isFollowed ? 1.35 : 1;
-        const strokeScreenWidth = sanitizedTrackLineWidth * widthMultiplier;
-        const endpointRadius = Math.max(strokeScreenWidth * 0.6, 1.2);
+        const strokeScreenWidth = Math.max(0.1, (sanitizedLineWidth / scale) * widthMultiplier);
+        const endpointRadius = Math.max(strokeScreenWidth * 0.6, 1.2 / scale);
         const hitThreshold = Math.max(
           TRACK_HIT_TEST_MIN_DISTANCE,
           strokeScreenWidth * 0.75,
@@ -793,7 +839,7 @@ function PlanarViewer({
 
       return { trackId: closestTrackId, pointer: { x: pointerX, y: pointerY } };
     },
-    [sanitizedTrackLineWidth, trackRenderData, trackVisibility]
+    [trackLineWidthByChannel, trackRenderData, trackVisibility]
   );
 
   useEffect(() => {
@@ -1172,6 +1218,11 @@ function PlanarViewer({
     };
   }, [clampedSliceIndex, effectiveMaxSlices, onSliceIndexChange, updateViewState]);
 
+  const hoveredTrackDefinition = hoveredTrackId ? trackLookup.get(hoveredTrackId) ?? null : null;
+  const hoveredTrackLabel = hoveredTrackDefinition
+    ? `${hoveredTrackDefinition.channelName} · Track #${hoveredTrackDefinition.trackNumber}`
+    : null;
+
   return (
     <div className="planar-viewer">
       <section className="planar-surface">
@@ -1192,14 +1243,14 @@ function PlanarViewer({
           ref={containerRef}
         >
           <canvas ref={canvasRef} className="planar-canvas" />
-          {hoveredTrackId !== null && tooltipPosition ? (
+          {hoveredTrackLabel && tooltipPosition ? (
             <div
               className="track-tooltip"
               style={{ left: `${tooltipPosition.x}px`, top: `${tooltipPosition.y}px` }}
               role="status"
               aria-live="polite"
             >
-              Track #{hoveredTrackId}
+              {hoveredTrackLabel}
             </div>
           ) : null}
           {(!sliceData || !sliceData.hasLayer) && !showLoadingOverlay ? (
