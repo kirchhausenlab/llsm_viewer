@@ -361,10 +361,7 @@ const buildChannelTabMeta = (channel: ChannelSource, validation: ChannelValidati
 
 type ChannelCardProps = {
   channel: ChannelSource;
-  index: number;
   validation: ChannelValidation;
-  onChannelNameChange: (id: string, value: string) => void;
-  onRemoveChannel: (id: string) => void;
   onLayerFilesAdded: (id: string, files: File[]) => void;
   onLayerDrop: (id: string, dataTransfer: DataTransfer) => void;
   onLayerNameChange: (channelId: string, layerId: string, value: string) => void;
@@ -376,10 +373,7 @@ type ChannelCardProps = {
 
 function ChannelCard({
   channel,
-  index,
   validation,
-  onChannelNameChange,
-  onRemoveChannel,
   onLayerFilesAdded,
   onLayerDrop,
   onLayerNameChange,
@@ -510,29 +504,6 @@ function ChannelCard({
 
   return (
     <section className="channel-card">
-      <header className="channel-card-header">
-        <div className="channel-card-title-group">
-          <span className="channel-index">{String(index + 1).padStart(2, '0')}</span>
-          <input
-            type="text"
-            value={channel.name}
-            onChange={(event) => onChannelNameChange(channel.id, event.target.value)}
-            placeholder="Channel name"
-            className="channel-name-input"
-            autoComplete="off"
-          />
-        </div>
-        <div className="channel-card-actions">
-          <button
-            type="button"
-            onClick={() => onRemoveChannel(channel.id)}
-            className="channel-action"
-            aria-label="Remove channel"
-          >
-            Remove
-          </button>
-        </div>
-      </header>
       {validation.errors.length > 0 || validation.warnings.length > 0 ? (
         <ul className="channel-validation">
           {validation.errors.map((error, errorIndex) => (
@@ -687,7 +658,6 @@ function App() {
   const trackMasterCheckboxRef = useRef<HTMLInputElement | null>(null);
   const channelIdRef = useRef(0);
   const layerIdRef = useRef(0);
-  const channelAdderDragCounterRef = useRef(0);
   const editingChannelOriginalNameRef = useRef('');
   const editingChannelInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -717,7 +687,6 @@ function App() {
       files
     };
   }, []);
-  const [isChannelAdderDragging, setIsChannelAdderDragging] = useState(false);
 
   useEffect(() => {
     if (editingChannelId && editingChannelId !== activeChannelId) {
@@ -1460,133 +1429,6 @@ function App() {
     [handleChannelTrackFileSelected]
   );
 
-  const handleChannelAdderDragEnter = useCallback(
-    (event: DragEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      if (channels.length >= MAX_CHANNELS) {
-        setDatasetError(MAX_CHANNELS_MESSAGE);
-        return;
-      }
-      channelAdderDragCounterRef.current += 1;
-      setIsChannelAdderDragging(true);
-    },
-    [channels.length]
-  );
-
-  const handleChannelAdderDragOver = useCallback(
-    (event: DragEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      if (channels.length >= MAX_CHANNELS) {
-        event.dataTransfer.dropEffect = 'none';
-        return;
-      }
-      event.dataTransfer.dropEffect = 'copy';
-    },
-    [channels.length]
-  );
-
-  const handleChannelAdderDragLeave = useCallback(
-    (event: DragEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      if (channels.length >= MAX_CHANNELS) {
-        return;
-      }
-      channelAdderDragCounterRef.current = Math.max(0, channelAdderDragCounterRef.current - 1);
-      if (channelAdderDragCounterRef.current === 0) {
-        setIsChannelAdderDragging(false);
-      }
-    },
-    [channels.length]
-  );
-
-  const handleChannelAdderDrop = useCallback(
-    async (event: DragEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      channelAdderDragCounterRef.current = 0;
-      setIsChannelAdderDragging(false);
-
-      const { dataTransfer } = event;
-      if (!dataTransfer) {
-        return;
-      }
-
-      if (channels.length >= MAX_CHANNELS) {
-        setDatasetError(MAX_CHANNELS_MESSAGE);
-        return;
-      }
-
-      const files = await collectFilesFromDataTransfer(dataTransfer);
-      if (files.length === 0) {
-        return;
-      }
-
-      const tiffFiles = dedupeFiles(files.filter((file) => hasTiffExtension(file.name)));
-      if (tiffFiles.length === 0) {
-        setDatasetError('No TIFF files detected in the dropped selection.');
-        return;
-      }
-
-      const grouped = groupFilesIntoLayers(tiffFiles);
-      if (grouped.length === 0) {
-        setDatasetError('No TIFF files detected in the dropped selection.');
-        return;
-      }
-
-      let addedChannel = false;
-      let addedChannelId: string | null = null;
-      let blocked = false;
-      setChannels((current) => {
-        if (current.length >= MAX_CHANNELS) {
-          blocked = true;
-          return current;
-        }
-        const existingNames = new Set(current.map((channel) => channel.name));
-        let inferredName: string | null = null;
-        const firstFile = tiffFiles[0];
-        if (firstFile) {
-          const folder = getTopLevelFolderName(firstFile);
-          if (folder) {
-            inferredName = makeUniqueName(folder, existingNames);
-          }
-        }
-        if (!inferredName) {
-          inferredName = makeUniqueName(`Channel ${current.length + 1}`, existingNames);
-        }
-        const base = createChannelSource(inferredName);
-        const layerNames = new Set<string>();
-        const newLayers: ChannelLayerSource[] = [];
-        grouped.forEach((group, index) => {
-          const sorted = sortVolumeFiles(group);
-          if (sorted.length === 0) {
-            return;
-          }
-          const label = inferLayerLabel(sorted, index, layerNames);
-          layerNames.add(label);
-          newLayers.push(createLayerSource(label, sorted));
-        });
-        if (newLayers.length === 0) {
-          return current;
-        }
-        const channelToAdd: ChannelSource = {
-          ...base,
-          layers: newLayers
-        };
-        addedChannel = true;
-        addedChannelId = channelToAdd.id;
-        return [...current, channelToAdd];
-      });
-      if (blocked) {
-        setDatasetError(MAX_CHANNELS_MESSAGE);
-        return;
-      }
-      if (addedChannelId) {
-        setActiveChannelId(addedChannelId);
-      }
-      setDatasetError(addedChannel ? null : 'No new layers were added from that drop.');
-    },
-    [channels.length, createChannelSource, createLayerSource]
-  );
-
   const channelValidationList = useMemo(() => {
     return channels.map((channel) => {
       const errors: string[] = [];
@@ -1633,28 +1475,17 @@ function App() {
     return map;
   }, [channelValidationList]);
 
-  const datasetSummary = useMemo(() => {
-    const channelCount = channels.length;
-    let layerCount = 0;
-    let trackCount = 0;
+  const hasGlobalTimepointMismatch = useMemo(() => {
     const timepointCounts = new Set<number>();
-
     for (const channel of channels) {
-      layerCount += channel.layers.length;
-      if (channel.trackEntries.length > 0) {
-        trackCount += 1;
-      }
       for (const layer of channel.layers) {
         if (layer.files.length > 0) {
           timepointCounts.add(layer.files.length);
         }
       }
     }
-
-    return { channelCount, layerCount, trackCount, timepointCounts };
+    return timepointCounts.size > 1;
   }, [channels]);
-
-  const hasGlobalTimepointMismatch = datasetSummary.timepointCounts.size > 1;
   const hasAnyLayers = useMemo(
     () => channels.some((channel) => channel.layers.some((layer) => layer.files.length > 0)),
     [channels]
@@ -1673,13 +1504,6 @@ function App() {
     () => channels.find((channel) => channel.id === activeChannelId) ?? null,
     [activeChannelId, channels]
   );
-  const activeChannelIndex = useMemo(() => {
-    if (!activeChannel) {
-      return -1;
-    }
-    return channels.findIndex((channel) => channel.id === activeChannel.id);
-  }, [activeChannel, channels]);
-
 
 
   const handleLaunchViewer = useCallback(async () => {
@@ -1965,8 +1789,13 @@ function App() {
                             aria-controls="channel-detail-panel"
                             tabIndex={0}
                             onClick={() => setActiveChannelId(channel.id)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                setActiveChannelId(channel.id);
+                              }
+                            }}
                           >
-                            <span className="channel-tab-index">{String(index + 1).padStart(2, '0')}</span>
                             <span className="channel-tab-text">
                               <input
                                 ref={(node) => {
@@ -1996,18 +1825,30 @@ function App() {
                               />
                               <span className="channel-tab-meta">{tabMeta}</span>
                             </span>
+                            <button
+                              type="button"
+                              className="channel-tab-remove"
+                              aria-label={`Remove ${channel.name || `Channel ${index + 1}`}`}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                handleRemoveChannel(channel.id);
+                              }}
+                            >
+                              🗑️
+                            </button>
                           </div>
                         );
                       }
                       return (
-                        <button
+                        <div
                           key={channel.id}
-                          type="button"
                           id={`${channel.id}-tab`}
                           className={tabClassName}
                           role="tab"
                           aria-selected={isActive}
                           aria-controls="channel-detail-panel"
+                          tabIndex={0}
                           onClick={() => setActiveChannelId(channel.id)}
                           onDoubleClick={(event) => {
                             if (!isActive) {
@@ -2018,13 +1859,30 @@ function App() {
                             editingChannelOriginalNameRef.current = channel.name;
                             setEditingChannelId(channel.id);
                           }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              setActiveChannelId(channel.id);
+                            }
+                          }}
                         >
-                          <span className="channel-tab-index">{String(index + 1).padStart(2, '0')}</span>
                           <span className="channel-tab-text">
                             <span className="channel-tab-name">{channel.name || `Channel ${index + 1}`}</span>
                             <span className="channel-tab-meta">{tabMeta}</span>
                           </span>
-                        </button>
+                          <button
+                            type="button"
+                            className="channel-tab-remove"
+                            aria-label={`Remove ${channel.name || `Channel ${index + 1}`}`}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              handleRemoveChannel(channel.id);
+                            }}
+                          >
+                            🗑️
+                          </button>
+                        </div>
                       );
                     })}
                   </div>
@@ -2038,10 +1896,7 @@ function App() {
                       <ChannelCard
                         key={activeChannel.id}
                         channel={activeChannel}
-                        index={activeChannelIndex >= 0 ? activeChannelIndex : 0}
                         validation={channelValidationMap.get(activeChannel.id) ?? { errors: [], warnings: [] }}
-                        onChannelNameChange={handleChannelNameChange}
-                        onRemoveChannel={handleRemoveChannel}
                         onLayerFilesAdded={handleChannelLayerFilesAdded}
                         onLayerDrop={handleChannelLayerDrop}
                         onLayerNameChange={handleChannelLayerNameChange}
@@ -2056,16 +1911,7 @@ function App() {
                   </div>
                 </>
               ) : null}
-              <div
-                className={`channel-add-card${isChannelAdderDragging ? ' is-active' : ''}${
-                  canAddMoreChannels ? '' : ' is-disabled'
-                }`}
-                onDragEnter={handleChannelAdderDragEnter}
-                onDragOver={handleChannelAdderDragOver}
-                onDragLeave={handleChannelAdderDragLeave}
-                onDrop={handleChannelAdderDrop}
-                aria-disabled={!canAddMoreChannels}
-              >
+              <div className="channel-add-actions">
                 <button
                   type="button"
                   className="channel-add-button"
@@ -2074,32 +1920,14 @@ function App() {
                 >
                   Add channel
                 </button>
-                <p className="channel-add-hint">
-                  {canAddMoreChannels
-                    ? 'Drop a TIFF folder here to auto-create a channel.'
-                    : 'Maximum of 3 channels configured.'}
-                </p>
               </div>
             </div>
-            <div className="launch-summary">
-              <div className="launch-summary-row">
-                <span>
-                  {datasetSummary.channelCount} {datasetSummary.channelCount === 1 ? 'channel' : 'channels'}
-                </span>
-                <span>
-                  {datasetSummary.layerCount} {datasetSummary.layerCount === 1 ? 'layer' : 'layers'}
-                </span>
-                <span>
-                  {datasetSummary.trackCount} {datasetSummary.trackCount === 1 ? 'track set' : 'track sets'}
-                </span>
-              </div>
-              {hasGlobalTimepointMismatch ? (
-                <p className="launch-summary-warning">
-                  Timepoint counts differ across channels. Align them before launching.
-                </p>
-              ) : null}
-              {datasetError ? <p className="launch-summary-error">{datasetError}</p> : null}
-            </div>
+            {hasGlobalTimepointMismatch ? (
+              <p className="launch-feedback launch-feedback-warning">
+                Timepoint counts differ across channels. Align them before launching.
+              </p>
+            ) : null}
+            {datasetError ? <p className="launch-feedback launch-feedback-error">{datasetError}</p> : null}
             <div className="front-page-actions">
               <button
                 type="button"
