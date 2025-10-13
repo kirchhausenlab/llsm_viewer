@@ -142,6 +142,8 @@ function PlanarViewer({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const sliceCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const offscreenContextRef = useRef<CanvasRenderingContext2D | null>(null);
   const previousSliceSizeRef = useRef<{ width: number; height: number } | null>(null);
   const needsAutoFitRef = useRef(false);
   const pointerStateRef = useRef<PointerState | null>(null);
@@ -857,15 +859,29 @@ function PlanarViewer({
     }
 
     const { width, height, buffer } = sliceData;
-    const offscreen = document.createElement('canvas');
-    offscreen.width = width;
-    offscreen.height = height;
-    const context = offscreen.getContext('2d');
+    let offscreen = offscreenCanvasRef.current;
+    if (!offscreen) {
+      offscreen = document.createElement('canvas');
+      offscreenCanvasRef.current = offscreen;
+      offscreenContextRef.current = null;
+    }
+
+    if (offscreen.width !== width || offscreen.height !== height) {
+      offscreen.width = width;
+      offscreen.height = height;
+      offscreenContextRef.current = null;
+    }
+
+    let context = offscreenContextRef.current;
     if (!context) {
-      sliceCanvasRef.current = null;
-      previousSliceSizeRef.current = null;
-      drawSlice();
-      return;
+      context = offscreen.getContext('2d');
+      if (!context) {
+        sliceCanvasRef.current = null;
+        previousSliceSizeRef.current = null;
+        drawSlice();
+        return;
+      }
+      offscreenContextRef.current = context;
     }
 
     const image = new ImageData(buffer as unknown as ImageDataArray, width, height);
