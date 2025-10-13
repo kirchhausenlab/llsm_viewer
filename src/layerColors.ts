@@ -7,15 +7,12 @@ export const DEFAULT_LAYER_COLOR = '#ffffff';
 
 export const GRAYSCALE_COLOR_SWATCHES: LayerColorOption[] = [
   { label: 'White', value: '#ffffff' },
-  { label: 'Warm red', value: '#f87171' },
-  { label: 'Amber', value: '#facc15' },
-  { label: 'Lime', value: '#84cc16' },
-  { label: 'Emerald', value: '#10b981' },
-  { label: 'Teal', value: '#14b8a6' },
-  { label: 'Sky', value: '#38bdf8' },
-  { label: 'Indigo', value: '#6366f1' },
-  { label: 'Violet', value: '#a855f7' },
-  { label: 'Magenta', value: '#f472b6' }
+  { label: 'Blue', value: '#3b82f6' },
+  { label: 'Green', value: '#22c55e' },
+  { label: 'Red', value: '#ef4444' },
+  { label: 'Magenta', value: '#d946ef' },
+  { label: 'Cyan', value: '#06b6d4' },
+  { label: 'Yellow', value: '#facc15' }
 ];
 
 export function normalizeHexColor(
