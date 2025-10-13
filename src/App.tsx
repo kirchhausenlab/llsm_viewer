@@ -38,12 +38,14 @@ type LayerSettings = {
   contrast: number;
   brightness: number;
   color: string;
+  xOffset: number;
 };
 
 const createDefaultLayerSettings = (): LayerSettings => ({
   contrast: DEFAULT_CONTRAST,
   brightness: DEFAULT_BRIGHTNESS,
-  color: DEFAULT_LAYER_COLOR
+  color: DEFAULT_LAYER_COLOR,
+  xOffset: 0
 });
 
 type ChannelLayerSource = {
@@ -1783,6 +1785,22 @@ function App() {
     });
   }, []);
 
+  const handleLayerOffsetChange = useCallback((key: string, value: number) => {
+    setLayerSettings((current) => {
+      const previous = current[key] ?? createDefaultLayerSettings();
+      if (previous.xOffset === value) {
+        return current;
+      }
+      return {
+        ...current,
+        [key]: {
+          ...previous,
+          xOffset: value
+        }
+      };
+    });
+  }, []);
+
   const handleLayerColorChange = useCallback((key: string, value: string) => {
     setLayerSettings((current) => {
       const previous = current[key] ?? createDefaultLayerSettings();
@@ -1804,6 +1822,7 @@ function App() {
     () =>
       layers.map((layer) => {
         const settings = layerSettings[layer.key] ?? createDefaultLayerSettings();
+        const isActiveLayer = layer.key === activeLayerKey;
         return {
           key: layer.key,
           label: layer.label,
@@ -1811,10 +1830,11 @@ function App() {
           visible: Boolean(visibleLayers[layer.key]),
           contrast: settings.contrast,
           brightness: settings.brightness,
-          color: normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR)
+          color: normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR),
+          offsetX: isActiveLayer ? settings.xOffset : 0
         };
       }),
-    [layerSettings, layers, selectedIndex, visibleLayers]
+    [activeLayerKey, layerSettings, layers, selectedIndex, visibleLayers]
   );
 
   const maxSliceDepth = useMemo(() => {
@@ -2314,6 +2334,25 @@ function App() {
                           value={settings.brightness}
                           onChange={(event) => handleLayerBrightnessChange(layer.key, Number(event.target.value))}
                           disabled={sliderDisabled}
+                        />
+                      </div>
+                      <div className="slider-control">
+                        <label htmlFor={`layer-offset-x-${layer.key}`}>
+                          X displacement{' '}
+                          <span>
+                            {settings.xOffset >= 0 ? '+' : ''}
+                            {settings.xOffset.toFixed(2)} px
+                          </span>
+                        </label>
+                        <input
+                          id={`layer-offset-x-${layer.key}`}
+                          type="range"
+                          min={-5}
+                          max={5}
+                          step={0.1}
+                          value={settings.xOffset}
+                          onChange={(event) => handleLayerOffsetChange(layer.key, Number(event.target.value))}
+                          disabled={sliderDisabled || layer.key !== activeLayerKey}
                         />
                       </div>
                       {isGrayscale ? (
