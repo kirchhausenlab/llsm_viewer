@@ -724,6 +724,7 @@ function App() {
   const layerIdRef = useRef(0);
   const editingChannelOriginalNameRef = useRef('');
   const editingChannelInputRef = useRef<HTMLInputElement | null>(null);
+  const pendingChannelFocusIdRef = useRef<string | null>(null);
 
   const createChannelSource = useCallback(
     (name: string): ChannelSource => {
@@ -757,6 +758,22 @@ function App() {
       setEditingChannelId(null);
     }
   }, [activeChannelId, editingChannelId]);
+
+  useEffect(() => {
+    const pendingChannelId = pendingChannelFocusIdRef.current;
+    if (!pendingChannelId) {
+      return;
+    }
+    const pendingChannel = channels.find((channel) => channel.id === pendingChannelId);
+    if (!pendingChannel) {
+      pendingChannelFocusIdRef.current = null;
+      return;
+    }
+    pendingChannelFocusIdRef.current = null;
+    setActiveChannelId(pendingChannelId);
+    editingChannelOriginalNameRef.current = pendingChannel.name;
+    setEditingChannelId(pendingChannelId);
+  }, [channels]);
 
   useEffect(() => {
     if (editingChannelId && !channels.some((channel) => channel.id === editingChannelId)) {
@@ -1263,7 +1280,7 @@ function App() {
   );
 
   const handleAddChannel = useCallback(() => {
-    let createdChannel: ChannelSource | null = null;
+    let createdChannelMeta: { id: string; name: string } | null = null;
     let blocked = false;
     setChannels((current) => {
       if (current.length >= MAX_CHANNELS) {
@@ -1273,17 +1290,19 @@ function App() {
       const existingNames = new Set(current.map((channel) => channel.name));
       const defaultName = makeUniqueName(`Channel ${current.length + 1}`, existingNames);
       const newChannel = createChannelSource(defaultName);
-      createdChannel = newChannel;
+      createdChannelMeta = { id: newChannel.id, name: newChannel.name };
       return [...current, newChannel];
     });
     if (blocked) {
       setDatasetError(MAX_CHANNELS_MESSAGE);
       return;
     }
-    if (createdChannel) {
-      setActiveChannelId(createdChannel.id);
-      editingChannelOriginalNameRef.current = createdChannel.name;
-      setEditingChannelId(createdChannel.id);
+    if (createdChannelMeta) {
+      const { id, name } = createdChannelMeta;
+      pendingChannelFocusIdRef.current = id;
+      setActiveChannelId(id);
+      editingChannelOriginalNameRef.current = name;
+      setEditingChannelId(id);
       setDatasetError(null);
     }
   }, [createChannelSource]);
