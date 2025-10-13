@@ -1,5 +1,8 @@
 # Progress Log
 
+## Normalization fast path
+- Added a zero-copy normalization path for uint8 volumes already spanning [0, 255] and introduced regression tests to verify buffer reuse and clamped results for other ranges.
+
 ## Client-side data ingestion cleanup (current)
 - Removed the Express backend and filesystem-scanning APIs now that datasets and tracks load directly from the client.
 - Simplified the npm scripts to run only the Vite dev server and removed the related server build configuration.
