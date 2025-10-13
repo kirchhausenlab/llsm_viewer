@@ -119,6 +119,11 @@ d centered the front-page card in the viewport.
 - Added a "Head mode" toggle in the viewer header with status telemetry and graceful fallbacks, coordinating camera takeover, permission prompts, and error reporting.
 - Implemented an off-axis projection pipeline that reprojects the perspective camera each frame based on the tracked eye position, suspending manual orbit interactions while active and restoring them on exit.
 
+## Concurrent volume ingestion
+- Replaced the sequential worker-side queue with a concurrency-limited promise pool keyed to `navigator.hardwareConcurrency`, so multiple TIFF stacks decode in parallel while respecting transfer ownership of the underlying buffers.
+- Verified that the main-thread loader already stores payloads by index, making it compatible with the new out-of-order worker messages and ready for follow-up perf experiments.
+- Manual stress test with multi-gigabyte stacks remains outstanding in this environment; plan to validate throughput and memory residency with local datasets.
+
 ## Head-tracking dependency resolution
 - Reworked the MediaPipe integration to lazy-load the face landmarker bundle directly from the jsDelivr CDN, eliminating Vite's module resolution failures when the npm package is unavailable locally.
 - Added lightweight TypeScript shims for the MediaPipe APIs so the head-tracking controller retains type safety while relying on the CDN-sourced module.
