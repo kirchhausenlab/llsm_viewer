@@ -1842,6 +1842,8 @@ function App() {
     }
   }, [maxSliceDepth, sliceIndex]);
 
+  const backgroundVideoSrc = `${import.meta.env.BASE_URL}media/background.mp4`;
+
   if (!isViewerLaunched) {
     const canAddMoreChannels = channels.length < MAX_CHANNELS;
     const isFrontPageLocked = isLaunchingViewer;
@@ -1856,7 +1858,7 @@ function App() {
           preload="auto"
           aria-hidden="true"
         >
-          <source src="/media/background.mp4" type="video/mp4" />
+          <source src={backgroundVideoSrc} type="video/mp4" />
         </video>
         <div className="front-page">
           <div className={`front-page-card${isFrontPageLocked ? ' is-loading' : ''}`}>

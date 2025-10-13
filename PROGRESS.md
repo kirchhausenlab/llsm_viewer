@@ -205,3 +205,11 @@ d centered the front-page card in the viewport.
 - Reworked the launcher background styling so the landing screen sits atop the looping video rather than the legacy gradient fill.
 - Moved the gradient tint into a pseudo-element overlay, letting the new video remain visible while preserving the subtle color wash.
 - After review feedback, removed the overlay entirely so the video renders without any additional gradient tint.
+
+## GitHub Pages deployment
+- Added a GitHub Actions workflow that installs dependencies, builds the Vite project, and deploys the `dist/` output to GitHub Pages.
+- Updated the Vite configuration to emit builds into `dist/` and automatically derive the correct base path when running inside GitHub Actions.
+- Documented the deployment workflow and required GitHub Pages settings in the README.
+
+## Background video base-path fix
+- Pointed the front-page background video source at `import.meta.env.BASE_URL` so the GitHub Pages build loads the asset from the repository subdirectory instead of the domain root.
