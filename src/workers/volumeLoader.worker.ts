@@ -50,19 +50,9 @@ ctx.onmessage = async (event: MessageEvent<WorkerMessage>) => {
     case 'load-volumes': {
       const { files, requestId } = message;
       try {
-        for (let index = 0; index < files.length; index += 1) {
-          const file = files[index];
-          const payload = await loadVolumeFromFile(file);
-          const transferable = payload.data;
-          ctx.postMessage(
-            {
-              type: 'volume-loaded',
-              requestId,
-              index,
-              payload
-            } satisfies VolumeLoadedMessage,
-            [transferable]
-          );
+        const { error } = await loadVolumesConcurrently(files, requestId);
+        if (error !== null) {
+          throw error;
         }
         ctx.postMessage(
           {
@@ -88,6 +78,76 @@ ctx.onmessage = async (event: MessageEvent<WorkerMessage>) => {
       break;
   }
 };
+
+async function loadVolumesConcurrently(
+  files: File[],
+  requestId: number
+): Promise<{ error: unknown | null }> {
+  if (files.length === 0) {
+    return { error: null };
+  }
+
+  const hardwareConcurrency = ctx.navigator?.hardwareConcurrency;
+  const maxConcurrency = Number.isFinite(hardwareConcurrency) && hardwareConcurrency
+    ? hardwareConcurrency
+    : 4;
+  const concurrency = Math.max(1, Math.min(files.length, maxConcurrency));
+
+  let nextIndex = 0;
+  const getNextIndex = () => {
+    if (nextIndex >= files.length) {
+      return null;
+    }
+    const current = nextIndex;
+    nextIndex += 1;
+    return current;
+  };
+
+  const errorRef: { value: unknown | null } = { value: null };
+
+  const runWorker = async (): Promise<void> => {
+    while (true) {
+      if (errorRef.value) {
+        return;
+      }
+
+      const index = getNextIndex();
+      if (index === null) {
+        return;
+      }
+
+      const file = files[index];
+
+      try {
+        const payload = await loadVolumeFromFile(file);
+        if (errorRef.value) {
+          return;
+        }
+
+        const transferable = payload.data;
+        ctx.postMessage(
+          {
+            type: 'volume-loaded',
+            requestId,
+            index,
+            payload
+          } satisfies VolumeLoadedMessage,
+          [transferable]
+        );
+      } catch (error) {
+        if (!errorRef.value) {
+          errorRef.value = error;
+        }
+        return;
+      }
+    }
+  };
+
+  const workers = Array.from({ length: concurrency }, () => runWorker());
+  await Promise.all(workers);
+
+  return { error: errorRef.value };
+}
 
 async function loadVolumeFromFile(file: File): Promise<VolumePayload> {
   const tiff = await fromBlob(file);
