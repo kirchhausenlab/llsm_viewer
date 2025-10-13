@@ -10,6 +10,7 @@ type FloatingWindowProps = {
   children: ReactNode;
   className?: string;
   bodyClassName?: string;
+  resetSignal?: number;
 };
 
 const combineClassNames = (...values: Array<string | false | null | undefined>) =>
@@ -22,7 +23,8 @@ function FloatingWindow({
   headerActions,
   children,
   className,
-  bodyClassName
+  bodyClassName,
+  resetSignal
 }: FloatingWindowProps) {
   const resolvedInitialPosition = useMemo(
     () => initialPosition ?? { x: WINDOW_MARGIN, y: WINDOW_MARGIN },
@@ -36,6 +38,7 @@ function FloatingWindow({
   const [isDragging, setIsDragging] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const lastInitialPositionRef = useRef(resolvedInitialPosition);
+  const lastResetSignalRef = useRef(resetSignal);
 
   const clampPosition = useCallback(
     (x: number, y: number) => {
@@ -84,6 +87,19 @@ function FloatingWindow({
       return next;
     });
   }, [resolvedInitialPosition, clampPosition]);
+
+  useEffect(() => {
+    if (resetSignal === undefined) {
+      lastResetSignalRef.current = resetSignal;
+      return;
+    }
+    if (lastResetSignalRef.current === resetSignal) {
+      return;
+    }
+    lastResetSignalRef.current = resetSignal;
+    setIsMinimized(false);
+    setPosition(clampPosition(resolvedInitialPosition.x, resolvedInitialPosition.y));
+  }, [resetSignal, clampPosition, resolvedInitialPosition]);
 
   useEffect(() => {
     const handleResize = () => {

@@ -711,6 +711,7 @@ function App() {
   const [sliceIndex, setSliceIndex] = useState(0);
   const [isViewerLaunched, setIsViewerLaunched] = useState(false);
   const [isLaunchingViewer, setIsLaunchingViewer] = useState(false);
+  const [layoutResetToken, setLayoutResetToken] = useState(0);
   const controlWindowInitialPosition = useMemo(
     () => ({ x: WINDOW_MARGIN, y: WINDOW_MARGIN }),
     []
@@ -722,6 +723,14 @@ function App() {
   const [trackWindowInitialPosition, setTrackWindowInitialPosition] = useState<{ x: number; y: number }>(
     () => ({ x: WINDOW_MARGIN, y: WINDOW_MARGIN })
   );
+  const computeTrackWindowDefaultPosition = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return { x: WINDOW_MARGIN, y: WINDOW_MARGIN };
+    }
+    const trackWidth = Math.min(TRACK_WINDOW_WIDTH, window.innerWidth - WINDOW_MARGIN * 2);
+    const nextX = Math.max(WINDOW_MARGIN, window.innerWidth - trackWidth - WINDOW_MARGIN);
+    return { x: nextX, y: WINDOW_MARGIN };
+  }, []);
 
   const loadRequestRef = useRef(0);
   const hasTrackDataRef = useRef(false);
@@ -928,21 +937,20 @@ function App() {
     setIsViewerLaunched(false);
   }, [setIsViewerLaunched]);
 
+  const handleResetWindowLayout = useCallback(() => {
+    setLayoutResetToken((value) => value + 1);
+    setTrackWindowInitialPosition(computeTrackWindowDefaultPosition());
+  }, [computeTrackWindowDefaultPosition]);
+
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const trackWidth = Math.min(TRACK_WINDOW_WIDTH, window.innerWidth - WINDOW_MARGIN * 2);
-    const nextX = Math.max(WINDOW_MARGIN, window.innerWidth - trackWidth - WINDOW_MARGIN);
-
+    const defaultPosition = computeTrackWindowDefaultPosition();
     setTrackWindowInitialPosition((current) => {
-      if (current.x === nextX && current.y === WINDOW_MARGIN) {
+      if (current.x === defaultPosition.x && current.y === defaultPosition.y) {
         return current;
       }
-      return { x: nextX, y: WINDOW_MARGIN };
+      return defaultPosition;
     });
-  }, []);
+  }, [computeTrackWindowDefaultPosition]);
 
   useEffect(() => {
     const previouslyHadData = hasTrackDataRef.current;
@@ -2231,18 +2239,32 @@ function App() {
             />
           )}
         </main>
+        <div className="viewer-top-menu">
+          <div className="viewer-top-menu-row">
+            <button
+              type="button"
+              className="viewer-top-menu-button"
+              onClick={handleReturnToLauncher}
+            >
+              Return to Launcher
+            </button>
+            <button
+              type="button"
+              className="viewer-top-menu-button"
+              onClick={handleResetWindowLayout}
+            >
+              Reset layout
+            </button>
+          </div>
+        </div>
         <FloatingWindow
           title="Playback controls"
           initialPosition={controlWindowInitialPosition}
           width={`min(${CONTROL_WINDOW_WIDTH}px, calc(100vw - ${WINDOW_MARGIN * 2}px))`}
+          className="floating-window--playback"
+          resetSignal={layoutResetToken}
         >
           <div className="sidebar sidebar-left">
-            <header className="sidebar-header">
-              <button type="button" className="sidebar-launcher-button" onClick={handleReturnToLauncher}>
-                Return to Launcher
-              </button>
-            </header>
-
             <div className="global-controls">
               <div className="control-group">
                 <div className="viewer-mode-row">
@@ -2293,26 +2315,28 @@ function App() {
                 </div>
               ) : null}
               <div className="playback-controls">
-                <div className="playback-controls-row">
-                  <button
-                    type="button"
-                    onClick={handleTogglePlayback}
-                    disabled={playbackDisabled}
-                    className={isPlaying ? 'playback-toggle playing' : 'playback-toggle'}
-                    aria-label={isPlaying ? 'Pause playback' : 'Start playback'}
-                  >
-                    {isPlaying ? '⏸' : '▶'}
-                  </button>
-                  <div className="playback-slider-group">
-                    <input
-                      type="range"
-                      min={0}
-                      max={Math.max(0, volumeTimepointCount - 1)}
-                      value={Math.min(selectedIndex, Math.max(0, volumeTimepointCount - 1))}
-                      onChange={(event) => handleTimeIndexChange(Number(event.target.value))}
+                <div className="playback-highlight">
+                  <div className="playback-controls-row">
+                    <button
+                      type="button"
+                      onClick={handleTogglePlayback}
                       disabled={playbackDisabled}
-                    />
-                    <span className="playback-time-label">{playbackLabel}</span>
+                      className={isPlaying ? 'playback-toggle playing' : 'playback-toggle'}
+                      aria-label={isPlaying ? 'Pause playback' : 'Start playback'}
+                    >
+                      {isPlaying ? '⏸' : '▶'}
+                    </button>
+                    <div className="playback-slider-group">
+                      <input
+                        type="range"
+                        min={0}
+                        max={Math.max(0, volumeTimepointCount - 1)}
+                        value={Math.min(selectedIndex, Math.max(0, volumeTimepointCount - 1))}
+                        onChange={(event) => handleTimeIndexChange(Number(event.target.value))}
+                        disabled={playbackDisabled}
+                      />
+                      <span className="playback-time-label">{playbackLabel}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2325,6 +2349,8 @@ function App() {
           title="Channels"
           initialPosition={layersWindowInitialPosition}
           width={`min(${CONTROL_WINDOW_WIDTH}px, calc(100vw - ${WINDOW_MARGIN * 2}px))`}
+          className="floating-window--channels"
+          resetSignal={layoutResetToken}
         >
           <div className="sidebar sidebar-left">
             {loadedChannelIds.length > 0 ? (
@@ -2519,44 +2545,56 @@ function App() {
                                 <span id={`layer-color-label-${selectedLayer.key}`}>Tint color</span>
                                 <span>{displayColor}</span>
                               </div>
-                              <div
-                                className="color-swatch-grid"
-                                role="group"
-                                aria-labelledby={`layer-color-label-${selectedLayer.key}`}
-                              >
-                                {GRAYSCALE_COLOR_SWATCHES.map((swatch) => {
-                                  const swatchColor = normalizeHexColor(swatch.value, DEFAULT_LAYER_COLOR);
-                                  const isSelected = swatchColor === normalizedColor;
-                                  return (
-                                    <button
-                                      key={swatch.value}
-                                      type="button"
-                                      className={
-                                        isSelected ? 'color-swatch-button is-selected' : 'color-swatch-button'
-                                      }
-                                      style={{ backgroundColor: swatch.value }}
-                                      onClick={() => handleLayerColorChange(selectedLayer.key, swatch.value)}
-                                      disabled={sliderDisabled}
-                                      aria-pressed={isSelected}
-                                      aria-label={`${swatch.label} tint`}
-                                      title={swatch.label}
-                                    />
-                                  );
-                                })}
-                              </div>
-                              <label className="color-picker" htmlFor={`layer-color-custom-${selectedLayer.key}`}>
-                                <span>Custom</span>
-                                <input
-                                  id={`layer-color-custom-${selectedLayer.key}`}
-                                  type="color"
-                                  value={normalizedColor}
-                                  onChange={(event) =>
-                                    handleLayerColorChange(selectedLayer.key, event.target.value)
+                              <div className="color-swatch-row">
+                                <div
+                                  className="color-swatch-grid"
+                                  role="group"
+                                  aria-labelledby={`layer-color-label-${selectedLayer.key}`}
+                                >
+                                  {GRAYSCALE_COLOR_SWATCHES.map((swatch) => {
+                                    const swatchColor = normalizeHexColor(swatch.value, DEFAULT_LAYER_COLOR);
+                                    const isSelected = swatchColor === normalizedColor;
+                                    return (
+                                      <button
+                                        key={swatch.value}
+                                        type="button"
+                                        className={
+                                          isSelected ? 'color-swatch-button is-selected' : 'color-swatch-button'
+                                        }
+                                        style={{ backgroundColor: swatch.value }}
+                                        onClick={() => handleLayerColorChange(selectedLayer.key, swatch.value)}
+                                        disabled={sliderDisabled}
+                                        aria-pressed={isSelected}
+                                        aria-label={`${swatch.label} tint`}
+                                        title={swatch.label}
+                                      />
+                                    );
+                                  })}
+                                </div>
+                                <label
+                                  className={
+                                    sliderDisabled ? 'color-picker-trigger is-disabled' : 'color-picker-trigger'
                                   }
-                                  disabled={sliderDisabled}
-                                  aria-label="Choose custom tint color"
-                                />
-                              </label>
+                                  htmlFor={`layer-color-custom-${selectedLayer.key}`}
+                                >
+                                  <input
+                                    id={`layer-color-custom-${selectedLayer.key}`}
+                                    type="color"
+                                    value={normalizedColor}
+                                    onChange={(event) =>
+                                      handleLayerColorChange(selectedLayer.key, event.target.value)
+                                    }
+                                    disabled={sliderDisabled}
+                                    aria-label="Choose custom tint color"
+                                    className="color-picker-input"
+                                  />
+                                  <span
+                                    className="color-picker-indicator"
+                                    style={{ backgroundColor: normalizedColor }}
+                                    aria-hidden="true"
+                                  />
+                                </label>
+                              </div>
                             </div>
                           ) : null}
                         </>
@@ -2575,6 +2613,8 @@ function App() {
           title="Tracks"
           initialPosition={trackWindowInitialPosition}
           width={`min(${TRACK_WINDOW_WIDTH}px, calc(100vw - ${WINDOW_MARGIN * 2}px))`}
+          className="floating-window--tracks"
+          resetSignal={layoutResetToken}
         >
           <div className="sidebar sidebar-right">
             <div className="track-controls">
@@ -2583,7 +2623,9 @@ function App() {
                   type="button"
                   onClick={handleStopTrackFollow}
                   disabled={followedTrackId === null}
-                  className="viewer-stop-tracking"
+                  className={
+                    followedTrackId !== null ? 'viewer-stop-tracking is-active' : 'viewer-stop-tracking'
+                  }
                 >
                   Stop tracking
                 </button>
