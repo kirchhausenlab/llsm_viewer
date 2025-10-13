@@ -44,10 +44,20 @@ const createDefaultLayerSettings = (): LayerSettings => ({
   color: DEFAULT_LAYER_COLOR
 });
 
-type DatasetLayerSource = {
+type ChannelLayerSource = {
   id: string;
-  label: string;
+  name: string;
   files: File[];
+};
+
+type ChannelSource = {
+  id: string;
+  name: string;
+  layers: ChannelLayerSource[];
+  trackFile: File | null;
+  trackStatus: LoadState;
+  trackError: string | null;
+  trackEntries: string[][];
 };
 
 function hasTiffExtension(name: string) {
@@ -282,8 +292,370 @@ function inferLayerLabel(
   return candidate;
 }
 
+function makeUniqueName(baseName: string, existingNames: Set<string>) {
+  const trimmed = baseName.trim() || 'Untitled';
+  if (!existingNames.has(trimmed)) {
+    return trimmed;
+  }
+
+  let counter = 2;
+  let candidate = `${trimmed} (${counter})`;
+  while (existingNames.has(candidate)) {
+    counter += 1;
+    candidate = `${trimmed} (${counter})`;
+  }
+  return candidate;
+}
+
+async function parseTrackCsvFile(file: File): Promise<string[][]> {
+  const contents = await file.text();
+  const lines = contents.split(/\r?\n/);
+  const rows: string[][] = [];
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+    const columns = line.split(',');
+    if (columns.length !== 8) {
+      throw new Error('CSV file must contain exactly 8 comma-separated columns per row.');
+    }
+    rows.push(columns.map((value) => value.trim()));
+  }
+
+  return rows;
+}
+
+type ChannelValidation = {
+  errors: string[];
+  warnings: string[];
+};
+
+type ChannelCardProps = {
+  channel: ChannelSource;
+  index: number;
+  validation: ChannelValidation;
+  onChannelNameChange: (id: string, value: string) => void;
+  onDuplicateChannel: (id: string) => void;
+  onRemoveChannel: (id: string) => void;
+  onLayerFilesAdded: (id: string, files: File[]) => void;
+  onLayerDrop: (id: string, dataTransfer: DataTransfer) => void;
+  onLayerNameChange: (channelId: string, layerId: string, value: string) => void;
+  onLayerRemove: (channelId: string, layerId: string) => void;
+  onTrackFileSelected: (channelId: string, file: File | null) => void;
+  onTrackDrop: (channelId: string, dataTransfer: DataTransfer) => void;
+  onTrackClear: (channelId: string) => void;
+};
+
+function ChannelCard({
+  channel,
+  index,
+  validation,
+  onChannelNameChange,
+  onDuplicateChannel,
+  onRemoveChannel,
+  onLayerFilesAdded,
+  onLayerDrop,
+  onLayerNameChange,
+  onLayerRemove,
+  onTrackFileSelected,
+  onTrackDrop,
+  onTrackClear
+}: ChannelCardProps) {
+  const layerInputRef = useRef<HTMLInputElement | null>(null);
+  const trackInputRef = useRef<HTMLInputElement | null>(null);
+  const dragCounterRef = useRef(0);
+  const trackDragCounterRef = useRef(0);
+  const [isLayerDragging, setIsLayerDragging] = useState(false);
+  const [isTrackDragging, setIsTrackDragging] = useState(false);
+
+  useEffect(() => {
+    const input = layerInputRef.current;
+    if (!input) {
+      return;
+    }
+    input.setAttribute('directory', '');
+    input.setAttribute('webkitdirectory', '');
+    input.setAttribute('mozdirectory', '');
+  }, []);
+
+  const handleLayerBrowse = useCallback(() => {
+    layerInputRef.current?.click();
+  }, []);
+
+  const handleLayerInputChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const fileList = event.target.files;
+      if (fileList && fileList.length > 0) {
+        onLayerFilesAdded(channel.id, Array.from(fileList));
+      }
+      event.target.value = '';
+    },
+    [channel.id, onLayerFilesAdded]
+  );
+
+  const handleLayerDragEnter = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      dragCounterRef.current += 1;
+      setIsLayerDragging(true);
+    },
+    []
+  );
+
+  const handleLayerDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+  }, []);
+
+  const handleLayerDragLeave = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
+      if (dragCounterRef.current === 0) {
+        setIsLayerDragging(false);
+      }
+    },
+    []
+  );
+
+  const handleLayerDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      dragCounterRef.current = 0;
+      setIsLayerDragging(false);
+      const { dataTransfer } = event;
+      if (!dataTransfer) {
+        return;
+      }
+      onLayerDrop(channel.id, dataTransfer);
+    },
+    [channel.id, onLayerDrop]
+  );
+
+  const handleTrackBrowse = useCallback(() => {
+    trackInputRef.current?.click();
+  }, []);
+
+  const handleTrackInputChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const fileList = event.target.files;
+      if (fileList && fileList.length > 0) {
+        onTrackFileSelected(channel.id, fileList[0] ?? null);
+      }
+      event.target.value = '';
+    },
+    [channel.id, onTrackFileSelected]
+  );
+
+  const handleTrackDragEnter = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      trackDragCounterRef.current += 1;
+      setIsTrackDragging(true);
+    },
+    []
+  );
+
+  const handleTrackDragLeave = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      trackDragCounterRef.current = Math.max(0, trackDragCounterRef.current - 1);
+      if (trackDragCounterRef.current === 0) {
+        setIsTrackDragging(false);
+      }
+    },
+    []
+  );
+
+  const handleTrackDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      trackDragCounterRef.current = 0;
+      setIsTrackDragging(false);
+      const { dataTransfer } = event;
+      if (!dataTransfer) {
+        return;
+      }
+      onTrackDrop(channel.id, dataTransfer);
+    },
+    [channel.id, onTrackDrop]
+  );
+
+  const layerSummary = useMemo(() => {
+    if (channel.layers.length === 0) {
+      return 'No layers yet';
+    }
+    const totalFiles = channel.layers.reduce((acc, layer) => acc + layer.files.length, 0);
+    const layerLabel = channel.layers.length === 1 ? 'layer' : 'layers';
+    const fileLabel = totalFiles === 1 ? 'file' : 'files';
+    return `${channel.layers.length} ${layerLabel} · ${totalFiles} ${fileLabel}`;
+  }, [channel.layers]);
+
+  return (
+    <section className="channel-card">
+      <header className="channel-card-header">
+        <div className="channel-card-title-group">
+          <span className="channel-index">{String(index + 1).padStart(2, '0')}</span>
+          <input
+            type="text"
+            value={channel.name}
+            onChange={(event) => onChannelNameChange(channel.id, event.target.value)}
+            placeholder="Channel name"
+            className="channel-name-input"
+            autoComplete="off"
+          />
+        </div>
+        <div className="channel-card-actions">
+          <button
+            type="button"
+            onClick={() => onDuplicateChannel(channel.id)}
+            className="channel-action"
+            aria-label="Duplicate channel"
+          >
+            Duplicate
+          </button>
+          <button
+            type="button"
+            onClick={() => onRemoveChannel(channel.id)}
+            className="channel-action"
+            aria-label="Remove channel"
+          >
+            Remove
+          </button>
+        </div>
+      </header>
+      <p className="channel-summary">{layerSummary}</p>
+      {validation.errors.length > 0 || validation.warnings.length > 0 ? (
+        <ul className="channel-validation">
+          {validation.errors.map((error, errorIndex) => (
+            <li key={`error-${errorIndex}`} className="channel-validation-error">
+              {error}
+            </li>
+          ))}
+          {validation.warnings.map((warning, warningIndex) => (
+            <li key={`warning-${warningIndex}`} className="channel-validation-warning">
+              {warning}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <div
+        className={`channel-layer-drop${isLayerDragging ? ' is-active' : ''}`}
+        onDragEnter={handleLayerDragEnter}
+        onDragOver={handleLayerDragOver}
+        onDragLeave={handleLayerDragLeave}
+        onDrop={handleLayerDrop}
+      >
+        <input
+          ref={layerInputRef}
+          className="file-drop-input"
+          type="file"
+          accept=".tif,.tiff,.TIF,.TIFF"
+          multiple
+          onChange={handleLayerInputChange}
+        />
+        <div className="channel-layer-drop-content">
+          <p className="channel-layer-drop-title">Drop TIFF stacks here</p>
+          <p className="channel-layer-drop-subtitle">
+            Drop folders or multiple TIFF files to add layers to this channel.
+          </p>
+          <button type="button" className="channel-layer-drop-button" onClick={handleLayerBrowse}>
+            Add layers
+          </button>
+        </div>
+      </div>
+      {channel.layers.length > 0 ? (
+        <ul className="channel-layer-list">
+          {channel.layers.map((layer) => {
+            const firstName = layer.files[0] ? getFileSortKey(layer.files[0]) : null;
+            const lastName =
+              layer.files.length > 1 ? getFileSortKey(layer.files[layer.files.length - 1]) : firstName;
+            const preview =
+              firstName && lastName && lastName !== firstName ? `${firstName} → ${lastName}` : firstName;
+            return (
+              <li key={layer.id} className="channel-layer-item">
+                <div className="channel-layer-header">
+                  <input
+                    type="text"
+                    value={layer.name}
+                    placeholder="Layer name"
+                    onChange={(event) => onLayerNameChange(channel.id, layer.id, event.target.value)}
+                    className="channel-layer-name"
+                    autoComplete="off"
+                  />
+                  <button
+                    type="button"
+                    className="channel-layer-remove"
+                    onClick={() => onLayerRemove(channel.id, layer.id)}
+                    aria-label={`Remove ${layer.name}`}
+                  >
+                    Remove
+                  </button>
+                </div>
+                <p className="channel-layer-meta">
+                  {layer.files.length === 1 ? '1 file' : `${layer.files.length} files`}
+                </p>
+                {preview ? (
+                  <p className="channel-layer-preview" title={preview}>
+                    {preview}
+                  </p>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="channel-layer-empty">No layers yet. Drop TIFF files to get started.</p>
+      )}
+      <div
+        className={`channel-tracks-drop${isTrackDragging ? ' is-active' : ''}`}
+        onDragEnter={handleTrackDragEnter}
+        onDragLeave={handleTrackDragLeave}
+        onDragOver={handleLayerDragOver}
+        onDrop={handleTrackDrop}
+      >
+        <input
+          ref={trackInputRef}
+          className="file-drop-input"
+          type="file"
+          accept=".csv"
+          onChange={handleTrackInputChange}
+        />
+        <div className="channel-tracks-content">
+          <div className="channel-tracks-header">
+            <h3>Tracks</h3>
+            {channel.trackFile ? (
+              <button type="button" onClick={() => onTrackClear(channel.id)} className="channel-track-clear">
+                Clear
+              </button>
+            ) : null}
+          </div>
+          <p className="channel-tracks-subtitle">Drop a CSV or choose one to attach tracks to this channel.</p>
+          <button type="button" className="channel-tracks-button" onClick={handleTrackBrowse}>
+            {channel.trackFile ? 'Replace tracks' : 'Add tracks'}
+          </button>
+          {channel.trackError ? (
+            <p className="channel-tracks-error">{channel.trackError}</p>
+          ) : null}
+          {channel.trackStatus === 'loading' ? <p className="channel-tracks-status">Loading tracks…</p> : null}
+          {channel.trackStatus === 'loaded' ? (
+            <p className="channel-tracks-status">
+              {channel.trackEntries.length === 1
+                ? 'Loaded 1 track entry.'
+                : `Loaded ${channel.trackEntries.length} track entries.`}
+            </p>
+          ) : null}
+          {!channel.trackFile ? <p className="channel-tracks-hint">Tracks are optional.</p> : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function App() {
-  const [layerSources, setLayerSources] = useState<DatasetLayerSource[]>([]);
+  const [channels, setChannels] = useState<ChannelSource[]>([]);
   const [datasetError, setDatasetError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [layers, setLayers] = useState<LoadedLayer[]>([]);
@@ -299,9 +671,6 @@ function App() {
   const [resetViewHandler, setResetViewHandler] = useState<(() => void) | null>(null);
   const [activeLayerKey, setActiveLayerKey] = useState<string | null>(null);
   const [tracks, setTracks] = useState<string[][]>([]);
-  const [trackStatus, setTrackStatus] = useState<LoadState>('idle');
-  const [trackError, setTrackError] = useState<string | null>(null);
-  const [tracksFile, setTracksFile] = useState<File | null>(null);
   const [trackVisibility, setTrackVisibility] = useState<Record<number, boolean>>({});
   const [trackOpacity, setTrackOpacity] = useState(DEFAULT_TRACK_OPACITY);
   const [trackLineWidth, setTrackLineWidth] = useState(DEFAULT_TRACK_LINE_WIDTH);
@@ -325,23 +694,37 @@ function App() {
   const loadRequestRef = useRef(0);
   const hasTrackDataRef = useRef(false);
   const trackMasterCheckboxRef = useRef<HTMLInputElement | null>(null);
+  const channelIdRef = useRef(0);
   const layerIdRef = useRef(0);
-  const datasetInputRef = useRef<HTMLInputElement | null>(null);
-  const trackInputRef = useRef<HTMLInputElement | null>(null);
-  const datasetDragCounterRef = useRef(0);
-  const trackDragCounterRef = useRef(0);
+  const channelAdderDragCounterRef = useRef(0);
 
-  useEffect(() => {
-    const input = datasetInputRef.current;
-    if (!input) {
-      return;
-    }
-    input.setAttribute('directory', '');
-    input.setAttribute('webkitdirectory', '');
-    input.setAttribute('mozdirectory', '');
+  const createChannelSource = useCallback(
+    (name: string): ChannelSource => {
+      const nextId = channelIdRef.current + 1;
+      channelIdRef.current = nextId;
+      return {
+        id: `channel-${nextId}`,
+        name,
+        layers: [],
+        trackFile: null,
+        trackStatus: 'idle',
+        trackError: null,
+        trackEntries: []
+      };
+    },
+    []
+  );
+
+  const createLayerSource = useCallback((name: string, files: File[]): ChannelLayerSource => {
+    const nextId = layerIdRef.current + 1;
+    layerIdRef.current = nextId;
+    return {
+      id: `layer-${nextId}`,
+      name,
+      files
+    };
   }, []);
-  const [isDatasetDragging, setIsDatasetDragging] = useState(false);
-  const [isTrackDragging, setIsTrackDragging] = useState(false);
+  const [isChannelAdderDragging, setIsChannelAdderDragging] = useState(false);
 
   const volumeTimepointCount = layers.length > 0 ? layers[0].volumes.length : 0;
   const datasetShape = useMemo(() => {
@@ -520,7 +903,20 @@ function App() {
 
   const loadSelectedDataset = useCallback(async () => {
     setDatasetError(null);
-    if (layerSources.length === 0) {
+    const flatLayerSources = channels
+      .flatMap((channel) =>
+        channel.layers.map((layer) => ({
+          channelId: channel.id,
+          key: layer.id,
+          label: layer.name.trim() || 'Untitled layer',
+          files: sortVolumeFiles(layer.files)
+        }))
+      )
+      .filter((entry) => entry.files.length > 0);
+
+    if (flatLayerSources.length === 0) {
+      const message = 'Add at least one layer before launching the viewer.';
+      setDatasetError(message);
       return false;
     }
 
@@ -540,24 +936,8 @@ function App() {
     setExpectedVolumeCount(0);
     setActiveLayerKey(null);
 
-    const preparedLayers = layerSources
-      .map((layer, index) => ({
-        key: layer.id,
-        label: layer.label.trim() || `Layer ${index + 1}`,
-        files: sortVolumeFiles(layer.files)
-      }))
-      .filter((layer) => layer.files.length > 0);
-
-    if (preparedLayers.length === 0) {
-      const message = 'Each layer must include at least one TIFF file.';
-      setDatasetError(message);
-      setStatus('error');
-      setError(message);
-      return false;
-    }
-
-    const referenceFiles = preparedLayers[0].files;
-    const totalExpectedVolumes = referenceFiles.length * preparedLayers.length;
+    const referenceFiles = flatLayerSources[0]?.files ?? [];
+    const totalExpectedVolumes = referenceFiles.length * flatLayerSources.length;
     if (totalExpectedVolumes === 0) {
       const message = 'The selected dataset does not contain any TIFF files.';
       setDatasetError(message);
@@ -569,7 +949,7 @@ function App() {
     setExpectedVolumeCount(totalExpectedVolumes);
 
     try {
-      for (const layer of preparedLayers) {
+      for (const layer of flatLayerSources) {
         if (layer.files.length !== referenceFiles.length) {
           throw new Error(
             `Layer "${layer.label}" has a different number of timepoints (${layer.files.length}) than the first layer (${referenceFiles.length}).`
@@ -580,7 +960,7 @@ function App() {
       let referenceShape: { width: number; height: number; depth: number } | null = null;
 
       const rawLayers = await Promise.all(
-        preparedLayers.map(async (layer) => {
+        flatLayerSources.map(async (layer) => {
           const volumes = await loadVolumesFromFiles(layer.files, {
             onVolumeLoaded: (_index, volume) => {
               if (loadRequestRef.current !== requestId) {
@@ -673,7 +1053,7 @@ function App() {
       setError(message);
       return false;
     }
-  }, [layerSources]);
+  }, [channels]);
 
   useEffect(() => {
     if (!isPlaying || volumeTimepointCount <= 1) {
@@ -819,92 +1199,264 @@ function App() {
     [volumeTimepointCount]
   );
 
-  const handleDatasetFilesAdded = useCallback((incomingFiles: File[]) => {
-    const tiffFiles = incomingFiles.filter((file) => hasTiffExtension(file.name));
-    if (tiffFiles.length === 0) {
-      setDatasetError('Please drop TIFF (.tif/.tiff) files.');
+  const handleAddChannel = useCallback(() => {
+    setChannels((current) => {
+      const existingNames = new Set(current.map((channel) => channel.name));
+      const defaultName = makeUniqueName(`Channel ${current.length + 1}`, existingNames);
+      return [...current, createChannelSource(defaultName)];
+    });
+    setDatasetError(null);
+  }, [createChannelSource]);
+
+  const handleChannelNameChange = useCallback((channelId: string, value: string) => {
+    setChannels((current) =>
+      current.map((channel) => (channel.id === channelId ? { ...channel, name: value } : channel))
+    );
+  }, []);
+
+  const handleDuplicateChannel = useCallback(
+    (channelId: string) => {
+      setChannels((current) => {
+        const target = current.find((channel) => channel.id === channelId);
+        if (!target) {
+          return current;
+        }
+        const existingNames = new Set(current.map((channel) => channel.name));
+        const duplicateName = makeUniqueName(`${target.name} copy`, existingNames);
+        const base = createChannelSource(duplicateName);
+        const layerNames = new Set<string>();
+        const duplicatedLayers = target.layers.map((layer) => {
+          const uniqueLayerName = makeUniqueName(layer.name, layerNames);
+          layerNames.add(uniqueLayerName);
+          return createLayerSource(uniqueLayerName, Array.from(layer.files));
+        });
+        const duplicatedChannel: ChannelSource = {
+          ...base,
+          layers: duplicatedLayers,
+          trackFile: target.trackFile,
+          trackStatus: target.trackStatus,
+          trackError: target.trackError,
+          trackEntries: target.trackEntries.map((row) => [...row])
+        };
+        return [...current, duplicatedChannel];
+      });
+    },
+    [createChannelSource, createLayerSource]
+  );
+
+  const handleRemoveChannel = useCallback((channelId: string) => {
+    setChannels((current) => current.filter((channel) => channel.id !== channelId));
+  }, []);
+
+  const handleChannelLayerFilesAdded = useCallback(
+    (channelId: string, incomingFiles: File[]) => {
+      const tiffFiles = dedupeFiles(incomingFiles.filter((file) => hasTiffExtension(file.name)));
+      if (tiffFiles.length === 0) {
+        setDatasetError('No TIFF files detected in the dropped selection.');
+        return;
+      }
+
+      let addedAny = false;
+      setChannels((current) =>
+        current.map((channel) => {
+          if (channel.id !== channelId) {
+            return channel;
+          }
+          const grouped = groupFilesIntoLayers(tiffFiles);
+          if (grouped.length === 0) {
+            return channel;
+          }
+          const existingLabels = new Set(channel.layers.map((layer) => layer.name));
+          const newLayers: ChannelLayerSource[] = [];
+          for (const group of grouped) {
+            const sorted = sortVolumeFiles(group);
+            if (sorted.length === 0) {
+              continue;
+            }
+            const label = inferLayerLabel(sorted, channel.layers.length + newLayers.length, existingLabels);
+            existingLabels.add(label);
+            newLayers.push(createLayerSource(label, sorted));
+          }
+          if (newLayers.length === 0) {
+            return channel;
+          }
+          addedAny = true;
+          return { ...channel, layers: [...channel.layers, ...newLayers] };
+        })
+      );
+
+      if (addedAny) {
+        setDatasetError(null);
+      } else {
+        setDatasetError('No new layers were added from that drop.');
+      }
+    },
+    [createLayerSource]
+  );
+
+  const handleChannelLayerDrop = useCallback(
+    async (channelId: string, dataTransfer: DataTransfer) => {
+      const files = await collectFilesFromDataTransfer(dataTransfer);
+      if (files.length === 0) {
+        setDatasetError('No TIFF files detected in the dropped selection.');
+        return;
+      }
+      handleChannelLayerFilesAdded(channelId, files);
+    },
+    [handleChannelLayerFilesAdded]
+  );
+
+  const handleChannelLayerNameChange = useCallback(
+    (channelId: string, layerId: string, value: string) => {
+      setChannels((current) =>
+        current.map((channel) => {
+          if (channel.id !== channelId) {
+            return channel;
+          }
+          return {
+            ...channel,
+            layers: channel.layers.map((layer) => (layer.id === layerId ? { ...layer, name: value } : layer))
+          };
+        })
+      );
+    },
+    []
+  );
+
+  const handleChannelLayerRemove = useCallback((channelId: string, layerId: string) => {
+    setChannels((current) =>
+      current.map((channel) => {
+        if (channel.id !== channelId) {
+          return channel;
+        }
+        return {
+          ...channel,
+          layers: channel.layers.filter((layer) => layer.id !== layerId)
+        };
+      })
+    );
+  }, []);
+
+  const handleChannelTrackFileSelected = useCallback((channelId: string, file: File | null) => {
+    if (!file) {
+      setChannels((current) =>
+        current.map((channel) =>
+          channel.id === channelId
+            ? { ...channel, trackFile: null, trackStatus: 'idle', trackError: null, trackEntries: [] }
+            : channel
+        )
+      );
       return;
     }
 
-    let addedAny = false;
-    setLayerSources((current) => {
-      const existingLabels = new Set(
-        current.map((layer) => layer.label.trim()).filter((label) => label.length > 0)
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      setChannels((current) =>
+        current.map((channel) =>
+          channel.id === channelId
+            ? {
+                ...channel,
+                trackFile: null,
+                trackStatus: 'error',
+                trackError: 'Please drop a CSV file.',
+                trackEntries: []
+              }
+            : channel
+        )
       );
-
-      const grouped = groupFilesIntoLayers(tiffFiles);
-      const nextLayers: DatasetLayerSource[] = [];
-
-      for (const group of grouped) {
-        const sorted = sortVolumeFiles(group);
-        if (sorted.length === 0) {
-          continue;
-        }
-        const nextId = layerIdRef.current + 1;
-        layerIdRef.current = nextId;
-        const label = inferLayerLabel(sorted, current.length + nextLayers.length, existingLabels);
-        existingLabels.add(label);
-        nextLayers.push({
-          id: `layer-${nextId}`,
-          label,
-          files: sorted
-        });
-      }
-
-      if (nextLayers.length === 0) {
-        return current;
-      }
-
-      addedAny = true;
-      return [...current, ...nextLayers];
-    });
-
-    if (addedAny) {
-      setDatasetError(null);
-    } else {
-      setDatasetError('No TIFF files detected in the dropped selection.');
+      return;
     }
+
+    setChannels((current) =>
+      current.map((channel) =>
+        channel.id === channelId
+          ? { ...channel, trackFile: file, trackStatus: 'loading', trackError: null, trackEntries: [] }
+          : channel
+      )
+    );
+
+    parseTrackCsvFile(file)
+      .then((rows) => {
+        setChannels((current) =>
+          current.map((channel) =>
+            channel.id === channelId
+              ? { ...channel, trackFile: file, trackStatus: 'loaded', trackError: null, trackEntries: rows }
+              : channel
+          )
+        );
+      })
+      .catch((err) => {
+        console.error('Failed to load tracks CSV', err);
+        const message = err instanceof Error ? err.message : 'Failed to load tracks.';
+        setChannels((current) =>
+          current.map((channel) =>
+            channel.id === channelId
+              ? {
+                  ...channel,
+                  trackFile: null,
+                  trackStatus: 'error',
+                  trackError: message,
+                  trackEntries: []
+                }
+              : channel
+          )
+        );
+      });
   }, []);
 
-  const handleDatasetBrowse = useCallback(() => {
-    datasetInputRef.current?.click();
-  }, []);
-
-  const handleDatasetInputChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const fileList = event.target.files;
-      if (fileList && fileList.length > 0) {
-        handleDatasetFilesAdded(Array.from(fileList));
+  const handleChannelTrackDrop = useCallback(
+    async (channelId: string, dataTransfer: DataTransfer) => {
+      const files = await collectFilesFromDataTransfer(dataTransfer);
+      const csvFile = files.find((file) => file.name.toLowerCase().endsWith('.csv')) ?? null;
+      if (!csvFile) {
+        setChannels((current) =>
+          current.map((channel) =>
+            channel.id === channelId
+              ? {
+                  ...channel,
+                  trackFile: null,
+                  trackStatus: 'error',
+                  trackError: 'Please drop a CSV file.',
+                  trackEntries: []
+                }
+              : channel
+          )
+        );
+        return;
       }
-      event.target.value = '';
+      handleChannelTrackFileSelected(channelId, csvFile);
     },
-    [handleDatasetFilesAdded]
+    [handleChannelTrackFileSelected]
   );
 
-  const handleDatasetDragEnter = useCallback((event: DragEvent<HTMLDivElement>) => {
+  const handleChannelTrackClear = useCallback(
+    (channelId: string) => handleChannelTrackFileSelected(channelId, null),
+    [handleChannelTrackFileSelected]
+  );
+
+  const handleChannelAdderDragEnter = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
-    datasetDragCounterRef.current += 1;
-    setIsDatasetDragging(true);
+    channelAdderDragCounterRef.current += 1;
+    setIsChannelAdderDragging(true);
   }, []);
 
-  const handleDatasetDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+  const handleChannelAdderDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'copy';
   }, []);
 
-  const handleDatasetDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
+  const handleChannelAdderDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
-    datasetDragCounterRef.current = Math.max(0, datasetDragCounterRef.current - 1);
-    if (datasetDragCounterRef.current === 0) {
-      setIsDatasetDragging(false);
+    channelAdderDragCounterRef.current = Math.max(0, channelAdderDragCounterRef.current - 1);
+    if (channelAdderDragCounterRef.current === 0) {
+      setIsChannelAdderDragging(false);
     }
   }, []);
 
-  const handleDatasetDrop = useCallback(
+  const handleChannelAdderDrop = useCallback(
     async (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault();
-      datasetDragCounterRef.current = 0;
-      setIsDatasetDragging(false);
+      channelAdderDragCounterRef.current = 0;
+      setIsChannelAdderDragging(false);
 
       const { dataTransfer } = event;
       if (!dataTransfer) {
@@ -916,135 +1468,170 @@ function App() {
         return;
       }
 
-      handleDatasetFilesAdded(files);
-    },
-    [handleDatasetFilesAdded]
-  );
-
-  const handleLayerLabelChange = useCallback((id: string, value: string) => {
-    setLayerSources((current) => current.map((layer) => (layer.id === id ? { ...layer, label: value } : layer)));
-  }, []);
-
-  const handleLayerRemove = useCallback((id: string) => {
-    setLayerSources((current) => current.filter((layer) => layer.id !== id));
-    setDatasetError(null);
-  }, []);
-
-  const handleTrackFilesAdded = useCallback((files: File[]) => {
-    const csvFile = files.find((file) => file.name.toLowerCase().endsWith('.csv')) ?? null;
-    if (!csvFile) {
-      setTracksFile(null);
-      setTrackStatus('idle');
-      setTrackError('Please drop a CSV file.');
-      setTracks([]);
-      return;
-    }
-    setTracksFile(csvFile);
-    setTrackStatus('idle');
-    setTrackError(null);
-  }, []);
-
-  const handleTrackBrowse = useCallback(() => {
-    trackInputRef.current?.click();
-  }, []);
-
-  const handleTrackInputChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const fileList = event.target.files;
-      if (fileList && fileList.length > 0) {
-        handleTrackFilesAdded(Array.from(fileList));
-      }
-      event.target.value = '';
-    },
-    [handleTrackFilesAdded]
-  );
-
-  const handleTrackDragEnter = useCallback((event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    trackDragCounterRef.current += 1;
-    setIsTrackDragging(true);
-  }, []);
-
-  const handleTrackDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'copy';
-  }, []);
-
-  const handleTrackDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    trackDragCounterRef.current = Math.max(0, trackDragCounterRef.current - 1);
-    if (trackDragCounterRef.current === 0) {
-      setIsTrackDragging(false);
-    }
-  }, []);
-
-  const handleTrackDrop = useCallback(
-    (event: DragEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      trackDragCounterRef.current = 0;
-      setIsTrackDragging(false);
-      const fileList = event.dataTransfer.files;
-      if (!fileList || fileList.length === 0) {
+      const tiffFiles = dedupeFiles(files.filter((file) => hasTiffExtension(file.name)));
+      if (tiffFiles.length === 0) {
+        setDatasetError('No TIFF files detected in the dropped selection.');
         return;
       }
-      handleTrackFilesAdded(Array.from(fileList));
-    },
-    [handleTrackFilesAdded]
-  );
 
-  const handleTrackClear = useCallback(() => {
-    setTracksFile(null);
-    setTrackStatus('idle');
-    setTrackError(null);
-    setTracks([]);
-  }, []);
-
-  const loadTrackData = useCallback(async (file: File | null) => {
-    if (!file) {
-      setTracks([]);
-      setTrackStatus('idle');
-      setTrackError(null);
-      return true;
-    }
-
-    setTrackStatus('loading');
-    setTrackError(null);
-
-    try {
-      const contents = await file.text();
-      const lines = contents.split(/\r?\n/);
-      const rows: string[][] = [];
-
-      for (const rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line) {
-          continue;
-        }
-        const columns = line.split(',');
-        if (columns.length !== 8) {
-          throw new Error('CSV file must contain exactly 8 comma-separated columns per row.');
-        }
-        rows.push(columns.map((value) => value.trim()));
+      const grouped = groupFilesIntoLayers(tiffFiles);
+      if (grouped.length === 0) {
+        setDatasetError('No TIFF files detected in the dropped selection.');
+        return;
       }
 
-      setTracks(rows);
-      setTrackStatus('loaded');
-      return true;
-    } catch (err) {
-      console.error('Failed to load tracks CSV', err);
-      setTrackError(err instanceof Error ? err.message : 'Failed to load tracks.');
-      setTrackStatus('error');
-      setTracks([]);
-      return false;
+      let addedChannel = false;
+      setChannels((current) => {
+        const existingNames = new Set(current.map((channel) => channel.name));
+        let inferredName: string | null = null;
+        const firstFile = tiffFiles[0];
+        if (firstFile) {
+          const folder = getTopLevelFolderName(firstFile);
+          if (folder) {
+            inferredName = makeUniqueName(folder, existingNames);
+          }
+        }
+        if (!inferredName) {
+          inferredName = makeUniqueName(`Channel ${current.length + 1}`, existingNames);
+        }
+        const base = createChannelSource(inferredName);
+        const layerNames = new Set<string>();
+        const newLayers: ChannelLayerSource[] = [];
+        grouped.forEach((group, index) => {
+          const sorted = sortVolumeFiles(group);
+          if (sorted.length === 0) {
+            return;
+          }
+          const label = inferLayerLabel(sorted, index, layerNames);
+          layerNames.add(label);
+          newLayers.push(createLayerSource(label, sorted));
+        });
+        if (newLayers.length === 0) {
+          return current;
+        }
+        const channelToAdd: ChannelSource = {
+          ...base,
+          layers: newLayers
+        };
+        addedChannel = true;
+        return [...current, channelToAdd];
+      });
+      setDatasetError(addedChannel ? null : 'No new layers were added from that drop.');
+    },
+    [createChannelSource, createLayerSource]
+  );
+
+  const channelValidationList = useMemo(() => {
+    return channels.map((channel) => {
+      const errors: string[] = [];
+      const warnings: string[] = [];
+
+      if (channel.layers.length === 0) {
+        errors.push('Add at least one layer to this channel.');
+      } else {
+        const timepointCounts = new Set<number>();
+        for (const layer of channel.layers) {
+          if (layer.files.length === 0) {
+            errors.push(`Layer "${layer.name || 'Untitled layer'}" has no files.`);
+          }
+          timepointCounts.add(layer.files.length);
+        }
+        if (timepointCounts.size > 1) {
+          errors.push('Layers have mismatched timepoint counts.');
+        }
+      }
+
+      if (channel.trackStatus === 'error' && channel.trackError) {
+        errors.push(channel.trackError);
+      } else if (channel.trackStatus === 'loading') {
+        warnings.push('Tracks are still loading.');
+      } else if (channel.layers.length > 0 && !channel.trackFile) {
+        warnings.push('No tracks attached to this channel.');
+      }
+
+      return {
+        channelId: channel.id,
+        errors,
+        warnings,
+        layerCount: channel.layers.length,
+        timepointCount: channel.layers[0]?.files.length ?? 0
+      };
+    });
+  }, [channels]);
+
+  const channelValidationMap = useMemo(() => {
+    const map = new Map<string, ChannelValidation>();
+    for (const entry of channelValidationList) {
+      map.set(entry.channelId, { errors: entry.errors, warnings: entry.warnings });
     }
-  }, []);
+    return map;
+  }, [channelValidationList]);
+
+  const datasetSummary = useMemo(() => {
+    const channelCount = channels.length;
+    let layerCount = 0;
+    let trackCount = 0;
+    const timepointCounts = new Set<number>();
+
+    for (const channel of channels) {
+      layerCount += channel.layers.length;
+      if (channel.trackEntries.length > 0) {
+        trackCount += 1;
+      }
+      for (const layer of channel.layers) {
+        if (layer.files.length > 0) {
+          timepointCounts.add(layer.files.length);
+        }
+      }
+    }
+
+    return { channelCount, layerCount, trackCount, timepointCounts };
+  }, [channels]);
+
+  const hasGlobalTimepointMismatch = datasetSummary.timepointCounts.size > 1;
+  const hasAnyLayers = useMemo(
+    () => channels.some((channel) => channel.layers.some((layer) => layer.files.length > 0)),
+    [channels]
+  );
+  const hasLoadingTracks = useMemo(
+    () => channels.some((channel) => channel.trackStatus === 'loading'),
+    [channels]
+  );
+  const allChannelsValid = useMemo(
+    () => channelValidationList.every((entry) => entry.errors.length === 0),
+    [channelValidationList]
+  );
+  const canLaunch = hasAnyLayers && allChannelsValid && !hasLoadingTracks;
+
+
 
   const handleLaunchViewer = useCallback(async () => {
-    if (isLaunchingViewer || layerSources.length === 0) {
-      setDatasetError('Add at least one dataset layer to continue.');
+    if (isLaunchingViewer) {
       return;
     }
 
+    const hasAnyLayers = channels.some((channel) =>
+      channel.layers.some((layer) => layer.files.length > 0)
+    );
+    if (!hasAnyLayers) {
+      setDatasetError('Add at least one layer before launching the viewer.');
+      return;
+    }
+
+    const blockingChannel = channelValidationList.find((entry) => entry.errors.length > 0);
+    if (blockingChannel) {
+      const channelName = channels.find((channel) => channel.id === blockingChannel.channelId)?.name ?? 'a channel';
+      setDatasetError(`Resolve the errors in ${channelName} before launching.`);
+      return;
+    }
+
+    const hasLoadingTracks = channels.some((channel) => channel.trackStatus === 'loading');
+    if (hasLoadingTracks) {
+      setDatasetError('Wait for tracks to finish loading before launching.');
+      return;
+    }
+
+    setDatasetError(null);
     setIsLaunchingViewer(true);
     try {
       const datasetLoaded = await loadSelectedDataset();
@@ -1052,16 +1639,14 @@ function App() {
         return;
       }
 
-      const tracksLoaded = await loadTrackData(tracksFile);
-      if (!tracksLoaded) {
-        return;
-      }
+      const firstTrackChannel = channels.find((channel) => channel.trackEntries.length > 0);
+      setTracks(firstTrackChannel ? firstTrackChannel.trackEntries : []);
 
       setIsViewerLaunched(true);
     } finally {
       setIsLaunchingViewer(false);
     }
-  }, [isLaunchingViewer, layerSources.length, loadSelectedDataset, loadTrackData, tracksFile]);
+  }, [channels, channelValidationList, isLaunchingViewer, loadSelectedDataset]);
 
   const handleLayerVisibilityToggle = useCallback((key: string) => {
     setVisibleLayers((current) => ({
@@ -1264,152 +1849,81 @@ function App() {
       setSliceIndex(0);
     }
   }, [maxSliceDepth, sliceIndex]);
-  const datasetLoader = (
-    <div className="upload-panel">
-      <div
-        className={`file-drop-zone${isDatasetDragging ? ' is-active' : ''}`}
-        onDragEnter={handleDatasetDragEnter}
-        onDragOver={handleDatasetDragOver}
-        onDragLeave={handleDatasetDragLeave}
-        onDrop={handleDatasetDrop}
-      >
-        <input
-          ref={datasetInputRef}
-          className="file-drop-input"
-          type="file"
-          accept=".tif,.tiff,.TIF,.TIFF"
-          multiple
-          onChange={handleDatasetInputChange}
-        />
-        <div className="file-drop-content">
-          <p className="file-drop-title">Drop TIFF stacks here</p>
-          <p className="file-drop-subtitle">Drop a folder or multiple TIFF files to add a layer.</p>
-          <button type="button" className="file-drop-button" onClick={handleDatasetBrowse}>
-            Choose files
-          </button>
-        </div>
-      </div>
-      {datasetError ? <p className="drop-error">{datasetError}</p> : null}
-      {layerSources.length > 0 ? (
-        <ul className="layer-upload-list">
-          {layerSources.map((layer) => {
-            const firstName = layer.files[0] ? getFileSortKey(layer.files[0]) : null;
-            const lastName =
-              layer.files.length > 1 ? getFileSortKey(layer.files[layer.files.length - 1]) : firstName;
-            const preview =
-              firstName && lastName && lastName !== firstName ? `${firstName} → ${lastName}` : firstName;
-            return (
-              <li key={layer.id} className="layer-upload-item">
-                <div className="layer-upload-header">
-                  <input
-                    type="text"
-                    value={layer.label}
-                    placeholder="Layer name"
-                    onChange={(event) => handleLayerLabelChange(layer.id, event.target.value)}
-                    className="layer-upload-name-input"
-                    autoComplete="off"
-                  />
-                  <button
-                    type="button"
-                    className="layer-remove-button"
-                    onClick={() => handleLayerRemove(layer.id)}
-                    aria-label={`Remove ${layer.label}`}
-                  >
-                    Remove
-                  </button>
-                </div>
-                <p className="layer-upload-meta">
-                  {layer.files.length === 1 ? '1 file' : `${layer.files.length} files`}
-                </p>
-                {preview ? (
-                  <p className="layer-upload-preview" title={preview}>
-                    {preview}
-                  </p>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        <p className="drop-placeholder">Drop TIFF folders or files to create layers.</p>
-      )}
-    </div>
-  );
-
-  const trackLoader = (
-    <div className="upload-panel">
-      <div
-        className={`file-drop-zone${isTrackDragging ? ' is-active' : ''}`}
-        onDragEnter={handleTrackDragEnter}
-        onDragOver={handleTrackDragOver}
-        onDragLeave={handleTrackDragLeave}
-        onDrop={handleTrackDrop}
-      >
-        <input
-          ref={trackInputRef}
-          className="file-drop-input"
-          type="file"
-          accept=".csv"
-          onChange={handleTrackInputChange}
-        />
-        <div className="file-drop-content">
-          <p className="file-drop-title">Drop tracks CSV</p>
-          <p className="file-drop-subtitle">Drop a CSV file or choose one from your device.</p>
-          <button type="button" className="file-drop-button" onClick={handleTrackBrowse}>
-            Choose file
-          </button>
-        </div>
-      </div>
-      {trackError ? <p className="drop-error">{trackError}</p> : null}
-      {tracksFile ? (
-        <div className="selected-file-chip">
-          <span title={tracksFile.name}>{tracksFile.name}</span>
-          <button type="button" onClick={handleTrackClear} aria-label="Remove tracks file">
-            ×
-          </button>
-        </div>
-      ) : (
-        <p className="drop-placeholder">Tracks are optional. Drop a CSV file to include them.</p>
-      )}
-      {trackStatus === 'loading' ? (
-        <p className="drop-status">Loading tracks…</p>
-      ) : trackStatus === 'loaded' ? (
-        <p className="drop-status">
-          {tracks.length === 1 ? 'Loaded 1 track entry.' : `Loaded ${tracks.length} track entries.`}
-        </p>
-      ) : null}
-    </div>
-  );
 
   if (!isViewerLaunched) {
     return (
       <>
         <div className="front-page">
           <div className="front-page-card">
-            <h1>LLSM Viewer</h1>
-            <div className="front-page-widgets">
-              <section className="front-page-widget">
-                <header>
-                  <h2>Dataset setup</h2>
-                  <p>Drop TIFF stacks to create layers. Each drop becomes a new layer.</p>
-                </header>
-                {datasetLoader}
-              </section>
-              <section className="front-page-widget">
-                <header>
-                  <h2>Tracks</h2>
-                </header>
-                {trackLoader}
-              </section>
+            <header className="front-page-header">
+              <h1>LLSM Viewer</h1>
+              <p>Organize channels with their layers and tracks, then launch the viewer.</p>
+            </header>
+            <div className="channel-board">
+              {channels.length > 0 ? (
+                channels.map((channel, index) => (
+                  <ChannelCard
+                    key={channel.id}
+                    channel={channel}
+                    index={index}
+                    validation={channelValidationMap.get(channel.id) ?? { errors: [], warnings: [] }}
+                    onChannelNameChange={handleChannelNameChange}
+                    onDuplicateChannel={handleDuplicateChannel}
+                    onRemoveChannel={handleRemoveChannel}
+                    onLayerFilesAdded={handleChannelLayerFilesAdded}
+                    onLayerDrop={handleChannelLayerDrop}
+                    onLayerNameChange={handleChannelLayerNameChange}
+                    onLayerRemove={handleChannelLayerRemove}
+                    onTrackFileSelected={handleChannelTrackFileSelected}
+                    onTrackDrop={handleChannelTrackDrop}
+                    onTrackClear={handleChannelTrackClear}
+                  />
+                ))
+              ) : (
+                <p className="channel-empty-hint">Create a channel to start loading TIFF stacks.</p>
+              )}
+              <div
+                className={`channel-add-card${isChannelAdderDragging ? ' is-active' : ''}`}
+                onDragEnter={handleChannelAdderDragEnter}
+                onDragOver={handleChannelAdderDragOver}
+                onDragLeave={handleChannelAdderDragLeave}
+                onDrop={handleChannelAdderDrop}
+              >
+                <button type="button" className="channel-add-button" onClick={handleAddChannel}>
+                  Add channel
+                </button>
+                <p className="channel-add-hint">Drop a TIFF folder here to auto-create a channel.</p>
+              </div>
             </div>
-            <button
-              type="button"
-              className="launch-viewer-button"
-              onClick={handleLaunchViewer}
-              disabled={layerSources.length === 0 || isLaunchingViewer}
-            >
-              {isLaunchingViewer ? 'Loading...' : 'Launch viewer'}
-            </button>
+            <div className="launch-summary">
+              <div className="launch-summary-row">
+                <span>
+                  {datasetSummary.channelCount} {datasetSummary.channelCount === 1 ? 'channel' : 'channels'}
+                </span>
+                <span>
+                  {datasetSummary.layerCount} {datasetSummary.layerCount === 1 ? 'layer' : 'layers'}
+                </span>
+                <span>
+                  {datasetSummary.trackCount} {datasetSummary.trackCount === 1 ? 'track set' : 'track sets'}
+                </span>
+              </div>
+              {hasGlobalTimepointMismatch ? (
+                <p className="launch-summary-warning">
+                  Timepoint counts differ across channels. Align them before launching.
+                </p>
+              ) : null}
+              {datasetError ? <p className="launch-summary-error">{datasetError}</p> : null}
+            </div>
+            <div className="front-page-actions">
+              <button
+                type="button"
+                className="launch-viewer-button"
+                onClick={handleLaunchViewer}
+                disabled={!canLaunch || isLaunchingViewer}
+              >
+                {isLaunchingViewer ? 'Loading…' : 'Launch viewer'}
+              </button>
+            </div>
           </div>
         </div>
       </>
