@@ -23,6 +23,7 @@ type ViewerLayer = {
   brightness: number;
   color: string;
   offsetX: number;
+  offsetY: number;
   mode?: '3d' | 'slice';
   sliceIndex?: number;
 };
@@ -1468,7 +1469,7 @@ function VolumeViewer({
           const meshObject = mesh as unknown as { visible: boolean; renderOrder: number };
           meshObject.visible = layer.visible;
           meshObject.renderOrder = index;
-          mesh.position.set(layer.offsetX, 0, 0);
+          mesh.position.set(layer.offsetX, layer.offsetY, 0);
 
           const volumeRootGroup = volumeRootGroupRef.current;
           if (volumeRootGroup) {
@@ -1546,7 +1547,7 @@ function VolumeViewer({
           geometry.translate(volume.width / 2 - 0.5, volume.height / 2 - 0.5, 0);
 
           const mesh = new THREE.Mesh(geometry, material);
-          mesh.position.set(layer.offsetX, 0, clampedIndex);
+          mesh.position.set(layer.offsetX, layer.offsetY, clampedIndex);
           const meshObject = mesh as unknown as { visible: boolean; renderOrder: number };
           meshObject.visible = layer.visible;
           meshObject.renderOrder = index;
@@ -1590,8 +1591,10 @@ function VolumeViewer({
           dataTexture.needsUpdate = true;
           materialUniforms.u_data.value = dataTexture;
 
-          if (mesh.position.x !== layer.offsetX) {
-            mesh.position.x = layer.offsetX;
+          const desiredX = layer.offsetX;
+          const desiredY = layer.offsetY;
+          if (mesh.position.x !== desiredX || mesh.position.y !== desiredY) {
+            mesh.position.set(desiredX, desiredY, mesh.position.z);
             mesh.updateMatrixWorld();
           }
 
@@ -1613,8 +1616,13 @@ function VolumeViewer({
           dataTexture.needsUpdate = true;
           materialUniforms.u_slice.value = dataTexture;
           const desiredX = layer.offsetX;
-          if (mesh.position.x !== desiredX || mesh.position.z !== clampedIndex) {
-            mesh.position.set(desiredX, mesh.position.y, clampedIndex);
+          const desiredY = layer.offsetY;
+          if (
+            mesh.position.x !== desiredX ||
+            mesh.position.y !== desiredY ||
+            mesh.position.z !== clampedIndex
+          ) {
+            mesh.position.set(desiredX, desiredY, clampedIndex);
             mesh.updateMatrixWorld();
           }
         }

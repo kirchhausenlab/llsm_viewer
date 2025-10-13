@@ -13,6 +13,7 @@ type ViewerLayer = {
   brightness: number;
   color: string;
   offsetX: number;
+  offsetY: number;
 };
 
 type PlanarViewerProps = {
@@ -285,13 +286,15 @@ function PlanarViewer({
       const slice = clamp(clampedSliceIndex, 0, maxIndex);
       const sliceStride = width * height * channels;
       const sliceOffset = slice * sliceStride;
+      const rowStride = width * channels;
       const data = volume.normalized;
       const brightness = layer.brightness ?? 0;
       const contrast = layer.contrast ?? 1;
       const tint = channels === 1 ? getColor(layer.color) : null;
 
       const offsetX = layer.offsetX ?? 0;
-      const hasOffset = Math.abs(offsetX) > 1e-3;
+      const offsetY = layer.offsetY ?? 0;
+      const hasOffset = Math.abs(offsetX) > 1e-3 || Math.abs(offsetY) > 1e-3;
 
       for (let y = 0; y < height; y++) {
         const rowIndex = y * width;
@@ -306,31 +309,50 @@ function PlanarViewer({
 
           if (hasOffset) {
             const sampleX = x - offsetX;
+            const sampleY = y - offsetY;
             const clampedX = clamp(sampleX, 0, width - 1);
+            const clampedY = clamp(sampleY, 0, height - 1);
             const leftX = Math.floor(clampedX);
             const rightX = Math.min(width - 1, leftX + 1);
-            const t = clampedX - leftX;
-            const leftOffset = rowSliceOffset + leftX * channels;
-            const rightOffset = rowSliceOffset + rightX * channels;
-            const weightLeft = 1 - t;
-            const weightRight = t;
+            const topY = Math.floor(clampedY);
+            const bottomY = Math.min(height - 1, topY + 1);
+            const tX = clampedX - leftX;
+            const tY = clampedY - topY;
 
-            sourceR = (data[leftOffset] ?? 0) * weightLeft + (data[rightOffset] ?? 0) * weightRight;
+            const topRowOffset = sliceOffset + topY * rowStride;
+            const bottomRowOffset = sliceOffset + bottomY * rowStride;
+
+            const topLeftOffset = topRowOffset + leftX * channels;
+            const topRightOffset = topRowOffset + rightX * channels;
+            const bottomLeftOffset = bottomRowOffset + leftX * channels;
+            const bottomRightOffset = bottomRowOffset + rightX * channels;
+
+            const weightTopLeft = (1 - tX) * (1 - tY);
+            const weightTopRight = tX * (1 - tY);
+            const weightBottomLeft = (1 - tX) * tY;
+            const weightBottomRight = tX * tY;
+
+            const sampleChannel = (channelIndex: number) =>
+              (data[topLeftOffset + channelIndex] ?? 0) * weightTopLeft +
+              (data[topRightOffset + channelIndex] ?? 0) * weightTopRight +
+              (data[bottomLeftOffset + channelIndex] ?? 0) * weightBottomLeft +
+              (data[bottomRightOffset + channelIndex] ?? 0) * weightBottomRight;
+
+            sourceR = sampleChannel(0);
             if (channels > 1) {
-              sourceG =
-                (data[leftOffset + 1] ?? 0) * weightLeft + (data[rightOffset + 1] ?? 0) * weightRight;
+              sourceG = sampleChannel(1);
             } else {
               sourceG = sourceR;
             }
             if (channels > 2) {
-              sourceB =
-                (data[leftOffset + 2] ?? 0) * weightLeft + (data[rightOffset + 2] ?? 0) * weightRight;
+              sourceB = sampleChannel(2);
+            } else if (channels === 2) {
+              sourceB = 0;
             } else {
               sourceB = sourceG;
             }
             if (channels > 3) {
-              sourceA =
-                (data[leftOffset + 3] ?? 0) * weightLeft + (data[rightOffset + 3] ?? 0) * weightRight;
+              sourceA = sampleChannel(3);
             }
           } else {
             const pixelOffset = rowSliceOffset + x * channels;
