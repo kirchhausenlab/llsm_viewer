@@ -12,10 +12,12 @@
     radial-gradient(circle at bottom right, rgba(146, 104, 255, 0.2), transparent 50%),
     #080a0d;
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   justify-content: center;
   padding: 3.5rem 2rem;
   box-sizing: border-box;
+  width: 100%;
 }
 
 .front-page-card {
