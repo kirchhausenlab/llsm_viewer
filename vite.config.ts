@@ -2,7 +2,12 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 
+const repositoryName = process.env.GITHUB_REPOSITORY?.split('/')?.[1];
+const isGitHubActions = process.env.GITHUB_ACTIONS === 'true';
+const defaultBase = isGitHubActions && repositoryName ? `/${repositoryName}/` : '/';
+
 export default defineConfig({
+  base: process.env.DEPLOY_BASE_PATH ?? defaultBase,
   plugins: [react()],
   server: {
     host: '0.0.0.0',
@@ -20,6 +25,7 @@ export default defineConfig({
     format: 'es'
   },
   build: {
-    outDir: 'dist/client'
+    outDir: 'dist',
+    emptyOutDir: true
   }
 });
