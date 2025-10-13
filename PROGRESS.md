@@ -189,3 +189,10 @@ d centered the front-page card in the viewport.
 - Added drag-and-drop upload panels for TIFF stacks and track CSVs, grouping dropped files into layers automatically.
 - Introduced a web worker–powered TIFF decoder that reads local files with `geotiff` and streams progress updates without blocking the UI.
 - Replaced path-based configuration with on-page status messaging so launching validates timepoint counts and surfaces CSV parsing errors instantly.
+
+## Channel-centric launcher redesign
+- Replaced the flat dataset/track dropzones with channel cards that collect named layers and an optional tracks CSV per channel.
+- Added inline validation summaries for missing layers, mismatched timepoint counts, and track parsing status so issues surface before launch.
+- Enabled drag-and-drop creation of new channels, including auto-naming based on folder drops and a quick-add button for manual setup.
+- Summarized the pending configuration with total channel/layer/track counts and reused the viewer loader to flatten channel layers while ignoring secondary track files.
+- Verified the production build with `npm run build`, which succeeds while surfacing the existing CSS minifier warning for translucent backgrounds.
