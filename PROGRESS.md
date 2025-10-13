@@ -1,6 +1,10 @@
 # Progress Log
 
-## Initial scaffolding and data ingestion (current)
+## Client-side data ingestion cleanup (current)
+- Removed the Express backend and filesystem-scanning APIs now that datasets and tracks load directly from the client.
+- Simplified the npm scripts to run only the Vite dev server and removed the related server build configuration.
+
+## Initial scaffolding and data ingestion
 - Set up a Vite + React front-end with a sidebar workflow to enter dataset paths and browse discovered TIFF stacks.
 - Implemented an Express-based backend that lists TIFF files in a directory and streams 3D volumes (as Float32 arrays) decoded with `geotiff`.
 - Added a canvas-based central-slice previewer to validate volume ingestion while the full GPU renderer is under construction.
@@ -78,6 +82,12 @@ Next steps:
 - Removed the global contrast/brightness controls, wiring the per-layer slider values directly into the volume renderer uniforms for independent adjustments.
 
 ## Tracks ingestion groundwork
+- Consolidated dataset and track loading so the launcher performs both steps before entering the viewer, wiring the launch butt
+on into the existing dataset/track loaders.
+- Disabled launching when no dataset folders are selected and surfaced a loading state on the launch button while volumes and t
+racks stream in.
+- Tweaked the launcher and sidebar layout text to match the latest terminology ("Tracks", "Movie", and "Return to Launcher") an
+d centered the front-page card in the viewport.
 - Added a dedicated "Load tracks" widget beneath the dataset loader that accepts a CSV path, provides a file picker, and surfaces success/error states.
 - Implemented backend CSV browsing/loading endpoints that accept file paths, ensuring each row supplies exactly eight columns before the data is stored client-side for later use.
 - Tightened the CSV validator error messaging to spell out the requirement for eight comma-separated fields per row.
@@ -164,3 +174,34 @@ Next steps:
 
 ## Track overlay transform sync
 - Applied the stored volume normalization transform to the tracking overlay as soon as the Three.js group is recreated so toggling back from 2D mode no longer leaves trajectories in raw voxel space until another interaction forces a refresh.
+## Front page launcher
+- Introduced a dedicated landing screen with dataset and track loading widgets centered in a modal-style card.
+- Added a launch button that transitions into the viewer layout while leaving load controls exclusively on the front page.
+- Provided an "Open launcher" shortcut inside the viewer so datasets or track files can be reloaded without refreshing.
+
+## Playback control layout updates
+- Moved the planar Z-plane slider into the shared playback window so slice navigation lives alongside the other temporal controls.
+- Updated button labels and layout to use standard play/pause icons, clarify mode switching copy, and align reset actions horizontally for quicker access.
+- Expanded the viewer canvas to span the entire screen and layered the floating control panels above it, giving both the 2D and 3D renderers maximum space while keeping the overlays draggable.
+
+## Canvas chrome removal
+- Stripped the residual padding, borders, and drop shadows from both the 3D and 2D viewer containers so their canvases now stretch edge-to-edge without visible framing.
+
+
+## Client-side dataset ingestion overhaul
+- Removed the server-side directory browser and volume APIs in favor of pure client-side loading.
+- Added drag-and-drop upload panels for TIFF stacks and track CSVs, grouping dropped files into layers automatically.
+- Introduced a web worker–powered TIFF decoder that reads local files with `geotiff` and streams progress updates without blocking the UI.
+- Replaced path-based configuration with on-page status messaging so launching validates timepoint counts and surfaces CSV parsing errors instantly.
+
+## Channel-centric launcher redesign
+- Replaced the flat dataset/track dropzones with channel cards that collect named layers and an optional tracks CSV per channel.
+- Added inline validation summaries for missing layers, mismatched timepoint counts, and track parsing status so issues surface before launch.
+- Enabled drag-and-drop creation of new channels, including auto-naming based on folder drops and a quick-add button for manual setup.
+- Summarized the pending configuration with total channel/layer/track counts and reused the viewer loader to flatten channel layers while ignoring secondary track files.
+- Verified the production build with `npm run build`, which succeeds while surfacing the existing CSS minifier warning for translucent backgrounds.
+
+## Front page background video overlay
+- Reworked the launcher background styling so the landing screen sits atop the looping video rather than the legacy gradient fill.
+- Moved the gradient tint into a pseudo-element overlay, letting the new video remain visible while preserving the subtle color wash.
+- After review feedback, removed the overlay entirely so the video renders without any additional gradient tint.

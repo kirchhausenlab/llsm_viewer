@@ -1,4 +1,4 @@
-import type { VolumeDataType, VolumePayload } from './api';
+import type { VolumeDataType, VolumePayload } from './types/volume';
 
 export type NormalizedVolume = {
   width: number;
