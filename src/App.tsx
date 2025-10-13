@@ -1861,8 +1861,18 @@ function App() {
         <div className="front-page">
           <div className={`front-page-card${isFrontPageLocked ? ' is-loading' : ''}`}>
             <header className="front-page-header">
-              <h1>Fluorescence microscopy 4D data viewer</h1>
+              <h1>4D microscopy viewer</h1>
             </header>
+            <div className="channel-add-actions">
+              <button
+                type="button"
+                className="channel-add-button"
+                onClick={handleAddChannel}
+                disabled={!canAddMoreChannels || isFrontPageLocked}
+              >
+                Add channel
+              </button>
+            </div>
             <div className="channel-board">
               {channels.length > 0 ? (
                 <>
@@ -2053,16 +2063,6 @@ function App() {
                   </div>
                 </>
               ) : null}
-              <div className="channel-add-actions">
-                <button
-                  type="button"
-                  className="channel-add-button"
-                  onClick={handleAddChannel}
-                  disabled={!canAddMoreChannels || isFrontPageLocked}
-                >
-                  Add channel
-                </button>
-              </div>
             </div>
             {hasGlobalTimepointMismatch ? (
               <p className="launch-feedback launch-feedback-warning">
