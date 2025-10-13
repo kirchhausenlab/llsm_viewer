@@ -5,7 +5,12 @@ export type NormalizedVolume = {
   height: number;
   depth: number;
   channels: number;
-  normalized: Uint8Array;
+  /**
+   * Normalized voxel data. This view must be treated as read-only because it
+   * can share the underlying buffer with the source volume when normalization
+   * is already in the [0, 255] range.
+   */
+  readonly normalized: Uint8Array;
   min: number;
   max: number;
 };
@@ -61,9 +66,27 @@ export function normalizeVolume(
 ): NormalizedVolume {
   const { width, height, depth, channels, data, dataType } = volume;
   const source = createSourceArray(data, dataType);
-  const totalValues = source.length;
 
   const { min, max } = parameters;
+
+  if (
+    dataType === 'uint8' &&
+    min === 0 &&
+    max === 255 &&
+    source instanceof Uint8Array
+  ) {
+    return {
+      width,
+      height,
+      depth,
+      channels,
+      normalized: source,
+      min,
+      max
+    };
+  }
+
+  const totalValues = source.length;
   const range = max - min || 1;
   const normalized = new Uint8Array(totalValues);
 
