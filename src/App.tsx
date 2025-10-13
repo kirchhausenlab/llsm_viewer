@@ -362,6 +362,7 @@ const buildChannelTabMeta = (channel: ChannelSource, validation: ChannelValidati
 type ChannelCardProps = {
   channel: ChannelSource;
   validation: ChannelValidation;
+  isDisabled: boolean;
   onLayerFilesAdded: (id: string, files: File[]) => void;
   onLayerDrop: (id: string, dataTransfer: DataTransfer) => void;
   onLayerNameChange: (channelId: string, layerId: string, value: string) => void;
@@ -374,6 +375,7 @@ type ChannelCardProps = {
 function ChannelCard({
   channel,
   validation,
+  isDisabled,
   onLayerFilesAdded,
   onLayerDrop,
   onLayerNameChange,
@@ -399,44 +401,68 @@ function ChannelCard({
     input.setAttribute('mozdirectory', '');
   }, []);
 
+  useEffect(() => {
+    if (isDisabled) {
+      setIsLayerDragging(false);
+      setIsTrackDragging(false);
+    }
+  }, [isDisabled]);
+
   const handleLayerBrowse = useCallback(() => {
+    if (isDisabled) {
+      return;
+    }
     layerInputRef.current?.click();
-  }, []);
+  }, [isDisabled]);
 
   const handleLayerInputChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
+      if (isDisabled) {
+        event.target.value = '';
+        return;
+      }
       const fileList = event.target.files;
       if (fileList && fileList.length > 0) {
         onLayerFilesAdded(channel.id, Array.from(fileList));
       }
       event.target.value = '';
     },
-    [channel.id, onLayerFilesAdded]
+    [channel.id, isDisabled, onLayerFilesAdded]
   );
 
   const handleLayerDragEnter = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault();
+      if (isDisabled) {
+        return;
+      }
       dragCounterRef.current += 1;
       setIsLayerDragging(true);
     },
-    []
+    [isDisabled]
   );
 
   const handleLayerDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
+    if (isDisabled) {
+      event.dataTransfer.dropEffect = 'none';
+      return;
+    }
     event.dataTransfer.dropEffect = 'copy';
-  }, []);
+  }, [isDisabled]);
 
   const handleLayerDragLeave = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault();
+      if (isDisabled) {
+        return;
+      }
       dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
       if (dragCounterRef.current === 0) {
         setIsLayerDragging(false);
       }
     },
-    []
+    [isDisabled]
   );
 
   const handleLayerDrop = useCallback(
@@ -444,48 +470,64 @@ function ChannelCard({
       event.preventDefault();
       dragCounterRef.current = 0;
       setIsLayerDragging(false);
+      if (isDisabled) {
+        return;
+      }
       const { dataTransfer } = event;
       if (!dataTransfer) {
         return;
       }
       onLayerDrop(channel.id, dataTransfer);
     },
-    [channel.id, onLayerDrop]
+    [channel.id, isDisabled, onLayerDrop]
   );
 
   const handleTrackBrowse = useCallback(() => {
+    if (isDisabled) {
+      return;
+    }
     trackInputRef.current?.click();
-  }, []);
+  }, [isDisabled]);
 
   const handleTrackInputChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
+      if (isDisabled) {
+        event.target.value = '';
+        return;
+      }
       const fileList = event.target.files;
       if (fileList && fileList.length > 0) {
         onTrackFileSelected(channel.id, fileList[0] ?? null);
       }
       event.target.value = '';
     },
-    [channel.id, onTrackFileSelected]
+    [channel.id, isDisabled, onTrackFileSelected]
   );
 
   const handleTrackDragEnter = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault();
+      if (isDisabled) {
+        return;
+      }
       trackDragCounterRef.current += 1;
       setIsTrackDragging(true);
     },
-    []
+    [isDisabled]
   );
 
   const handleTrackDragLeave = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault();
+      if (isDisabled) {
+        return;
+      }
       trackDragCounterRef.current = Math.max(0, trackDragCounterRef.current - 1);
       if (trackDragCounterRef.current === 0) {
         setIsTrackDragging(false);
       }
     },
-    []
+    [isDisabled]
   );
 
   const handleTrackDrop = useCallback(
@@ -493,17 +535,20 @@ function ChannelCard({
       event.preventDefault();
       trackDragCounterRef.current = 0;
       setIsTrackDragging(false);
+      if (isDisabled) {
+        return;
+      }
       const { dataTransfer } = event;
       if (!dataTransfer) {
         return;
       }
       onTrackDrop(channel.id, dataTransfer);
     },
-    [channel.id, onTrackDrop]
+    [channel.id, isDisabled, onTrackDrop]
   );
 
   return (
-    <section className="channel-card">
+    <section className={`channel-card${isDisabled ? ' is-disabled' : ''}`} aria-disabled={isDisabled}>
       {validation.errors.length > 0 || validation.warnings.length > 0 ? (
         <ul className="channel-validation">
           {validation.errors.map((error, errorIndex) => (
@@ -532,9 +577,15 @@ function ChannelCard({
           accept=".tif,.tiff,.TIF,.TIFF"
           multiple
           onChange={handleLayerInputChange}
+          disabled={isDisabled}
         />
         <div className="channel-layer-drop-content">
-          <button type="button" className="channel-layer-drop-button" onClick={handleLayerBrowse}>
+          <button
+            type="button"
+            className="channel-layer-drop-button"
+            onClick={handleLayerBrowse}
+            disabled={isDisabled}
+          >
             Add layers
           </button>
           <p className="channel-layer-drop-subtitle">Drop folders or TIFF sequences to add layers.</p>
@@ -553,12 +604,14 @@ function ChannelCard({
                     onChange={(event) => onLayerNameChange(channel.id, layer.id, event.target.value)}
                     className="channel-layer-name"
                     autoComplete="off"
+                    disabled={isDisabled}
                   />
                   <button
                     type="button"
                     className="channel-layer-remove"
                     onClick={() => onLayerRemove(channel.id, layer.id)}
                     aria-label={`Remove ${layer.name}`}
+                    disabled={isDisabled}
                   >
                     Remove
                   </button>
@@ -584,17 +637,28 @@ function ChannelCard({
           type="file"
           accept=".csv"
           onChange={handleTrackInputChange}
+          disabled={isDisabled}
         />
         <div className="channel-tracks-content">
           <div className="channel-tracks-row">
             <div className="channel-tracks-description">
-              <button type="button" className="channel-tracks-button" onClick={handleTrackBrowse}>
+              <button
+                type="button"
+                className="channel-tracks-button"
+                onClick={handleTrackBrowse}
+                disabled={isDisabled}
+              >
                 Add tracks (optional)
               </button>
               <p className="channel-tracks-subtitle">Drop or browse for a CSV to attach tracks.</p>
             </div>
             {channel.trackFile ? (
-              <button type="button" onClick={() => onTrackClear(channel.id)} className="channel-track-clear">
+              <button
+                type="button"
+                onClick={() => onTrackClear(channel.id)}
+                className="channel-track-clear"
+                disabled={isDisabled}
+              >
                 Clear
               </button>
             ) : null}
@@ -699,6 +763,12 @@ function App() {
       setEditingChannelId(null);
     }
   }, [channels, editingChannelId]);
+
+  useEffect(() => {
+    if (isLaunchingViewer) {
+      setEditingChannelId(null);
+    }
+  }, [isLaunchingViewer]);
 
   useEffect(() => {
     if (editingChannelId) {
@@ -1193,7 +1263,7 @@ function App() {
   );
 
   const handleAddChannel = useCallback(() => {
-    let createdChannelId: string | null = null;
+    let createdChannel: ChannelSource | null = null;
     let blocked = false;
     setChannels((current) => {
       if (current.length >= MAX_CHANNELS) {
@@ -1203,15 +1273,17 @@ function App() {
       const existingNames = new Set(current.map((channel) => channel.name));
       const defaultName = makeUniqueName(`Channel ${current.length + 1}`, existingNames);
       const newChannel = createChannelSource(defaultName);
-      createdChannelId = newChannel.id;
+      createdChannel = newChannel;
       return [...current, newChannel];
     });
     if (blocked) {
       setDatasetError(MAX_CHANNELS_MESSAGE);
       return;
     }
-    if (createdChannelId) {
-      setActiveChannelId(createdChannelId);
+    if (createdChannel) {
+      setActiveChannelId(createdChannel.id);
+      editingChannelOriginalNameRef.current = createdChannel.name;
+      setEditingChannelId(createdChannel.id);
       setDatasetError(null);
     }
   }, [createChannelSource]);
@@ -1753,13 +1825,24 @@ function App() {
 
   if (!isViewerLaunched) {
     const canAddMoreChannels = channels.length < MAX_CHANNELS;
+    const isFrontPageLocked = isLaunchingViewer;
     return (
-      <>
+      <div className="app front-page-mode">
+        <video
+          className="app-background-video"
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="auto"
+          aria-hidden="true"
+        >
+          <source src="/media/background.mp4" type="video/mp4" />
+        </video>
         <div className="front-page">
-          <div className="front-page-card">
+          <div className={`front-page-card${isFrontPageLocked ? ' is-loading' : ''}`}>
             <header className="front-page-header">
-              <h1>LLSM Viewer</h1>
-              <p>Organize channels with their layers and tracks, then launch the viewer.</p>
+              <h1>Fluorescence microscopy 4D data viewer</h1>
             </header>
             <div className="channel-board">
               {channels.length > 0 ? (
@@ -1773,7 +1856,8 @@ function App() {
                         'channel-tab',
                         isActive ? 'is-active' : '',
                         validation.errors.length > 0 ? 'has-error' : '',
-                        validation.errors.length === 0 && validation.warnings.length > 0 ? 'has-warning' : ''
+                        validation.errors.length === 0 && validation.warnings.length > 0 ? 'has-warning' : '',
+                        isFrontPageLocked ? 'is-disabled' : ''
                       ]
                         .filter(Boolean)
                         .join(' ');
@@ -1787,9 +1871,19 @@ function App() {
                             role="tab"
                             aria-selected={isActive}
                             aria-controls="channel-detail-panel"
-                            tabIndex={0}
-                            onClick={() => setActiveChannelId(channel.id)}
+                            tabIndex={isFrontPageLocked ? -1 : 0}
+                            aria-disabled={isFrontPageLocked}
+                            onClick={() => {
+                              if (isFrontPageLocked) {
+                                return;
+                              }
+                              setActiveChannelId(channel.id);
+                            }}
                             onKeyDown={(event) => {
+                              if (isFrontPageLocked) {
+                                event.preventDefault();
+                                return;
+                              }
                               if (event.key === 'Enter' || event.key === ' ') {
                                 event.preventDefault();
                                 setActiveChannelId(channel.id);
@@ -1809,6 +1903,10 @@ function App() {
                                   setEditingChannelId(null);
                                 }}
                                 onKeyDown={(event) => {
+                                  if (isFrontPageLocked) {
+                                    event.preventDefault();
+                                    return;
+                                  }
                                   if (event.key === 'Enter') {
                                     event.preventDefault();
                                     editingChannelInputRef.current = null;
@@ -1822,6 +1920,7 @@ function App() {
                                 }}
                                 aria-label="Channel name"
                                 autoComplete="off"
+                                disabled={isFrontPageLocked}
                               />
                               <span className="channel-tab-meta">{tabMeta}</span>
                             </span>
@@ -1832,8 +1931,12 @@ function App() {
                               onClick={(event) => {
                                 event.preventDefault();
                                 event.stopPropagation();
+                                if (isFrontPageLocked) {
+                                  return;
+                                }
                                 handleRemoveChannel(channel.id);
                               }}
+                              disabled={isFrontPageLocked}
                             >
                               🗑️
                             </button>
@@ -1848,9 +1951,20 @@ function App() {
                           role="tab"
                           aria-selected={isActive}
                           aria-controls="channel-detail-panel"
-                          tabIndex={0}
-                          onClick={() => setActiveChannelId(channel.id)}
+                          tabIndex={isFrontPageLocked ? -1 : 0}
+                          aria-disabled={isFrontPageLocked}
+                          onClick={() => {
+                            if (isFrontPageLocked) {
+                              return;
+                            }
+                            setActiveChannelId(channel.id);
+                          }}
                           onDoubleClick={(event) => {
+                            if (isFrontPageLocked) {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              return;
+                            }
                             if (!isActive) {
                               return;
                             }
@@ -1860,6 +1974,10 @@ function App() {
                             setEditingChannelId(channel.id);
                           }}
                           onKeyDown={(event) => {
+                            if (isFrontPageLocked) {
+                              event.preventDefault();
+                              return;
+                            }
                             if (event.key === 'Enter' || event.key === ' ') {
                               event.preventDefault();
                               setActiveChannelId(channel.id);
@@ -1877,8 +1995,12 @@ function App() {
                             onClick={(event) => {
                               event.preventDefault();
                               event.stopPropagation();
+                              if (isFrontPageLocked) {
+                                return;
+                              }
                               handleRemoveChannel(channel.id);
                             }}
+                            disabled={isFrontPageLocked}
                           >
                             🗑️
                           </button>
@@ -1897,6 +2019,7 @@ function App() {
                         key={activeChannel.id}
                         channel={activeChannel}
                         validation={channelValidationMap.get(activeChannel.id) ?? { errors: [], warnings: [] }}
+                        isDisabled={isFrontPageLocked}
                         onLayerFilesAdded={handleChannelLayerFilesAdded}
                         onLayerDrop={handleChannelLayerDrop}
                         onLayerNameChange={handleChannelLayerNameChange}
@@ -1916,7 +2039,7 @@ function App() {
                   type="button"
                   className="channel-add-button"
                   onClick={handleAddChannel}
-                  disabled={!canAddMoreChannels}
+                  disabled={!canAddMoreChannels || isFrontPageLocked}
                 >
                   Add channel
                 </button>
@@ -1940,7 +2063,7 @@ function App() {
             </div>
           </div>
         </div>
-      </>
+      </div>
     );
   }
 
