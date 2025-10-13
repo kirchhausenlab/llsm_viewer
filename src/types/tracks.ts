@@ -5,7 +5,18 @@ export type TrackPoint = {
   z: number;
 };
 
+export type TrackColorMode =
+  | { type: 'random' }
+  | {
+      type: 'uniform';
+      color: string;
+    };
+
 export type TrackDefinition = {
-  id: number;
+  id: string;
+  channelId: string;
+  channelName: string;
+  trackNumber: number;
+  sourceTrackId: number;
   points: TrackPoint[];
 };

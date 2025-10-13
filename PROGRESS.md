@@ -7,6 +7,11 @@
 - Removed the Express backend and filesystem-scanning APIs now that datasets and tracks load directly from the client.
 - Simplified the npm scripts to run only the Vite dev server and removed the related server build configuration.
 
+## Per-channel track organization
+- Added per-channel tabs to the tracks window so each channel exposes independent visibility, opacity, thickness, and follow controls.
+- Persisted track color schemes per channel with preset swatches and a "Sorted" option that restores the rainbow palette.
+- Threaded channel-specific track color modes, offsets, and line styles into both the 3D and 2D viewers so trajectories shift and recolor alongside their parent channels.
+
 ## Initial scaffolding and data ingestion
 - Set up a Vite + React front-end with a sidebar workflow to enter dataset paths and browse discovered TIFF stacks.
 - Implemented an Express-based backend that lists TIFF files in a directory and streams 3D volumes (as Float32 arrays) decoded with `geotiff`.
