@@ -26,10 +26,5 @@
     "src",
     "vite.config.ts",
     "environment.d.ts"
-  ],
-  "references": [
-    {
-      "path": "./tsconfig.server.json"
-    }
   ]
 }
