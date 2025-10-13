@@ -31,6 +31,7 @@ type LayerTarget = {
 };
 
 type LoadedLayer = LayerTarget & {
+  channelId: string;
   volumes: NormalizedVolume[];
 };
 
@@ -689,7 +690,8 @@ function App() {
   const [datasetError, setDatasetError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [layers, setLayers] = useState<LoadedLayer[]>([]);
-  const [visibleLayers, setVisibleLayers] = useState<Record<string, boolean>>({});
+  const [channelVisibility, setChannelVisibility] = useState<Record<string, boolean>>({});
+  const [channelActiveLayer, setChannelActiveLayer] = useState<Record<string, string>>({});
   const [layerSettings, setLayerSettings] = useState<Record<string, LayerSettings>>({});
   const [status, setStatus] = useState<LoadState>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -699,7 +701,7 @@ function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [fps, setFps] = useState(DEFAULT_FPS);
   const [resetViewHandler, setResetViewHandler] = useState<(() => void) | null>(null);
-  const [activeLayerKey, setActiveLayerKey] = useState<string | null>(null);
+  const [activeChannelTabId, setActiveChannelTabId] = useState<string | null>(null);
   const [tracks, setTracks] = useState<string[][]>([]);
   const [trackVisibility, setTrackVisibility] = useState<Record<number, boolean>>({});
   const [trackOpacity, setTrackOpacity] = useState(DEFAULT_TRACK_OPACITY);
@@ -811,16 +813,35 @@ function App() {
   }, [activeChannelId, channels]);
 
   const volumeTimepointCount = layers.length > 0 ? layers[0].volumes.length : 0;
-  const datasetShape = useMemo(() => {
+  const channelNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const channel of channels) {
+      map.set(channel.id, channel.name.trim() || 'Untitled channel');
+    }
+    return map;
+  }, [channels]);
+  const channelLayersMap = useMemo(() => {
+    const map = new Map<string, LoadedLayer[]>();
     for (const layer of layers) {
-      for (const volume of layer.volumes) {
-        if (volume) {
-          const channelLabel = volume.channels === 1 ? 'channel' : 'channels';
-          return `${volume.width} × ${volume.height} × ${volume.depth} · ${volume.channels} ${channelLabel}`;
-        }
+      const collection = map.get(layer.channelId);
+      if (collection) {
+        collection.push(layer);
+      } else {
+        map.set(layer.channelId, [layer]);
       }
     }
-    return null;
+    return map;
+  }, [layers]);
+  const loadedChannelIds = useMemo(() => {
+    const seen = new Set<string>();
+    const order: string[] = [];
+    for (const layer of layers) {
+      if (!seen.has(layer.channelId)) {
+        seen.add(layer.channelId);
+        order.push(layer.channelId);
+      }
+    }
+    return order;
   }, [layers]);
   const parsedTracks = useMemo<TrackDefinition[]>(() => {
     if (tracks.length === 0) {
@@ -1011,14 +1032,15 @@ function App() {
     setError(null);
     clearTextureCache();
     setLayers([]);
-    setVisibleLayers({});
+    setChannelVisibility({});
+    setChannelActiveLayer({});
     setLayerSettings({});
     setSelectedIndex(0);
     setIsPlaying(false);
     setLoadProgress(0);
     setLoadedCount(0);
     setExpectedVolumeCount(0);
-    setActiveLayerKey(null);
+    setActiveChannelTabId(null);
 
     const referenceFiles = flatLayerSources[0]?.files ?? [];
     const totalExpectedVolumes = referenceFiles.length * flatLayerSources.length;
@@ -1091,18 +1113,27 @@ function App() {
         return {
           key: layer.key,
           label: layer.label,
+          channelId: layer.channelId,
           volumes: normalizedVolumes
         };
       });
 
       clearTextureCache();
       setLayers(normalizedLayers);
-      setVisibleLayers(
-        normalizedLayers.reduce<Record<string, boolean>>((acc, layer) => {
-          acc[layer.key] = true;
-          return acc;
-        }, {})
-      );
+      const visibilityDefaults = normalizedLayers.reduce<Record<string, boolean>>((acc, layer) => {
+        if (!(layer.channelId in acc)) {
+          acc[layer.channelId] = true;
+        }
+        return acc;
+      }, {});
+      const activeLayerDefaults = normalizedLayers.reduce<Record<string, string>>((acc, layer) => {
+        if (!(layer.channelId in acc)) {
+          acc[layer.channelId] = layer.key;
+        }
+        return acc;
+      }, {});
+      setChannelVisibility(visibilityDefaults);
+      setChannelActiveLayer(activeLayerDefaults);
       setLayerSettings(
         normalizedLayers.reduce<Record<string, LayerSettings>>((acc, layer) => {
           acc[layer.key] = createDefaultLayerSettings();
@@ -1110,7 +1141,7 @@ function App() {
         }, {})
       );
       setSelectedIndex(0);
-      setActiveLayerKey(normalizedLayers[0]?.key ?? null);
+      setActiveChannelTabId(Object.keys(activeLayerDefaults)[0] ?? null);
       setStatus('loaded');
       setLoadedCount(totalExpectedVolumes);
       setLoadProgress(1);
@@ -1124,10 +1155,11 @@ function App() {
       setStatus('error');
       clearTextureCache();
       setLayers([]);
-      setVisibleLayers({});
+      setChannelVisibility({});
+      setChannelActiveLayer({});
       setLayerSettings({});
       setSelectedIndex(0);
-      setActiveLayerKey(null);
+      setActiveChannelTabId(null);
       setLoadProgress(0);
       setLoadedCount(0);
       setExpectedVolumeCount(0);
@@ -1179,24 +1211,6 @@ function App() {
     return `${currentFrame} / ${volumeTimepointCount}`;
   }, [selectedIndex, volumeTimepointCount]);
 
-  const handleResetControls = useCallback(() => {
-    setLayerSettings(
-      layers.reduce<Record<string, LayerSettings>>((acc, layer) => {
-        acc[layer.key] = createDefaultLayerSettings();
-        return acc;
-      }, {})
-    );
-    setFps(DEFAULT_FPS);
-    setTrackOpacity(DEFAULT_TRACK_OPACITY);
-    setTrackLineWidth(DEFAULT_TRACK_LINE_WIDTH);
-    setTrackVisibility(
-      parsedTracks.reduce<Record<number, boolean>>((acc, track) => {
-        acc[track.id] = true;
-        return acc;
-      }, {})
-    );
-  }, [layers, parsedTracks]);
-
   const trackVisibilitySummary = useMemo(() => {
     if (parsedTracks.length === 0) {
       return { total: 0, visible: 0 };
@@ -1224,42 +1238,6 @@ function App() {
     }
     checkbox.indeterminate = someTracksChecked && !allTracksChecked;
   }, [allTracksChecked, someTracksChecked]);
-
-  const controlsAtDefaults = useMemo(() => {
-    const allLayerDefaults =
-      layers.length === 0 ||
-      layers.every((layer) => {
-        const settings = layerSettings[layer.key];
-        const contrast = settings?.contrast ?? DEFAULT_CONTRAST;
-        const brightness = settings?.brightness ?? DEFAULT_BRIGHTNESS;
-        const color = normalizeHexColor(settings?.color, DEFAULT_LAYER_COLOR);
-        const firstVolume = layer.volumes[0] ?? null;
-        const isGrayscale = firstVolume?.channels === 1;
-        const colorAtDefault = !isGrayscale || color === DEFAULT_LAYER_COLOR;
-        return contrast === DEFAULT_CONTRAST && brightness === DEFAULT_BRIGHTNESS && colorAtDefault;
-      });
-
-    const trackVisibilityAtDefault =
-      parsedTracks.length === 0 || parsedTracks.every((track) => trackVisibility[track.id] ?? true);
-    const trackOpacityAtDefault = trackOpacity === DEFAULT_TRACK_OPACITY;
-    const trackLineWidthAtDefault = trackLineWidth === DEFAULT_TRACK_LINE_WIDTH;
-
-    return (
-      allLayerDefaults &&
-      fps === DEFAULT_FPS &&
-      trackVisibilityAtDefault &&
-      trackOpacityAtDefault &&
-      trackLineWidthAtDefault
-    );
-  }, [
-    fps,
-    layerSettings,
-    layers,
-    parsedTracks,
-    trackLineWidth,
-    trackOpacity,
-    trackVisibility
-  ]);
 
   const handleTogglePlayback = useCallback(() => {
     setIsPlaying((current) => {
@@ -1644,11 +1622,15 @@ function App() {
     }
   }, [channels, channelValidationList, isLaunchingViewer, loadSelectedDataset]);
 
-  const handleLayerVisibilityToggle = useCallback((key: string) => {
-    setVisibleLayers((current) => ({
-      ...current,
-      [key]: !current[key]
-    }));
+  const handleChannelVisibilityToggle = useCallback((channelId: string) => {
+    setChannelVisibility((current) => {
+      const previous = current[channelId] ?? true;
+      const nextValue = !previous;
+      return {
+        ...current,
+        [channelId]: nextValue
+      };
+    });
   }, []);
 
   const handleTrackVisibilityToggle = useCallback((trackId: number) => {
@@ -1743,17 +1725,57 @@ function App() {
 
   useEffect(() => {
     if (layers.length === 0) {
-      setActiveLayerKey(null);
+      setActiveChannelTabId(null);
       return;
     }
 
-    setActiveLayerKey((current) => {
-      if (current && layers.some((layer) => layer.key === current)) {
+    setActiveChannelTabId((current) => {
+      if (current && layers.some((layer) => layer.channelId === current)) {
         return current;
       }
-      return layers[0].key;
+      return layers[0].channelId;
     });
   }, [layers]);
+
+  useEffect(() => {
+    setChannelActiveLayer((current) => {
+      if (layers.length === 0) {
+        if (Object.keys(current).length === 0) {
+          return current;
+        }
+        return {};
+      }
+
+      const next: Record<string, string> = { ...current };
+      let changed = false;
+      const validChannels = new Set<string>();
+      for (const layer of layers) {
+        validChannels.add(layer.channelId);
+      }
+
+      for (const channelId of Object.keys(next)) {
+        if (!validChannels.has(channelId)) {
+          delete next[channelId];
+          changed = true;
+        }
+      }
+
+      for (const channelId of validChannels) {
+        const channelLayers = channelLayersMap.get(channelId) ?? [];
+        const activeKey = next[channelId];
+        const hasActive = activeKey ? channelLayers.some((layer) => layer.key === activeKey) : false;
+        if (!hasActive) {
+          const fallback = channelLayers[0];
+          if (fallback) {
+            next[channelId] = fallback.key;
+            changed = true;
+          }
+        }
+      }
+
+      return changed ? next : current;
+    });
+  }, [channelLayersMap, layers]);
 
   const handleLayerContrastChange = useCallback((key: string, value: number) => {
     setLayerSettings((current) => {
@@ -1821,25 +1843,79 @@ function App() {
     });
   }, []);
 
-  const viewerLayers = useMemo(
-    () =>
-      layers.map((layer) => {
-        const settings = layerSettings[layer.key] ?? createDefaultLayerSettings();
-        const isActiveLayer = layer.key === activeLayerKey;
-        return {
-          key: layer.key,
-          label: layer.label,
-          volume: layer.volumes[selectedIndex] ?? null,
-          visible: Boolean(visibleLayers[layer.key]),
-          contrast: settings.contrast,
-          brightness: settings.brightness,
-          color: normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR),
-          offsetX: isActiveLayer ? settings.xOffset : 0,
-          offsetY: isActiveLayer ? settings.yOffset : 0
-        };
-      }),
-    [activeLayerKey, layerSettings, layers, selectedIndex, visibleLayers]
+  const handleChannelLayerSelectionChange = useCallback((channelId: string, layerKey: string) => {
+    setChannelActiveLayer((current) => {
+      if (current[channelId] === layerKey) {
+        return current;
+      }
+      return {
+        ...current,
+        [channelId]: layerKey
+      };
+    });
+  }, []);
+
+  const handleChannelSliderReset = useCallback(
+    (channelId: string) => {
+      setLayerSettings((current) => {
+        const relevantLayers = layers.filter((layer) => layer.channelId === channelId);
+        if (relevantLayers.length === 0) {
+          return current;
+        }
+
+        let changed = false;
+        const next: Record<string, LayerSettings> = { ...current };
+        for (const layer of relevantLayers) {
+          const previous = current[layer.key] ?? createDefaultLayerSettings();
+          const updated: LayerSettings = {
+            ...previous,
+            contrast: DEFAULT_CONTRAST,
+            brightness: DEFAULT_BRIGHTNESS,
+            xOffset: 0,
+            yOffset: 0
+          };
+          if (
+            previous.contrast !== updated.contrast ||
+            previous.brightness !== updated.brightness ||
+            previous.xOffset !== updated.xOffset ||
+            previous.yOffset !== updated.yOffset
+          ) {
+            next[layer.key] = updated;
+            changed = true;
+          }
+        }
+
+        return changed ? next : current;
+      });
+    },
+    [layers]
   );
+
+  const viewerLayers = useMemo(() => {
+    const activeLayers: LoadedLayer[] = [];
+    for (const layer of layers) {
+      if (channelActiveLayer[layer.channelId] === layer.key) {
+        activeLayers.push(layer);
+      }
+    }
+
+    return activeLayers.map((layer) => {
+      const settings = layerSettings[layer.key] ?? createDefaultLayerSettings();
+      const isActiveChannel = layer.channelId === activeChannelTabId;
+      const channelVisible = channelVisibility[layer.channelId];
+      return {
+        key: layer.key,
+        label: layer.label,
+        volume: layer.volumes[selectedIndex] ?? null,
+        visible: channelVisible ?? true,
+        contrast: settings.contrast,
+        brightness: settings.brightness,
+        color: normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR),
+        offsetX: isActiveChannel ? settings.xOffset : 0,
+        offsetY: isActiveChannel ? settings.yOffset : 0
+      };
+    });
+  }, [activeChannelTabId, channelActiveLayer, channelVisibility, layerSettings, layers, selectedIndex]);
 
   const maxSliceDepth = useMemo(() => {
     let depth = 0;
@@ -2181,9 +2257,6 @@ function App() {
                     Reset view
                   </button>
                 </div>
-                <button type="button" onClick={handleResetControls} disabled={controlsAtDefaults}>
-                  Reset controls
-                </button>
               </div>
               <div className="control-group">
                 <label htmlFor="fps-slider">
@@ -2249,191 +2322,251 @@ function App() {
         </FloatingWindow>
 
         <FloatingWindow
-          title="Layers"
+          title="Channels"
           initialPosition={layersWindowInitialPosition}
           width={`min(${CONTROL_WINDOW_WIDTH}px, calc(100vw - ${WINDOW_MARGIN * 2}px))`}
         >
           <div className="sidebar sidebar-left">
-            {layers.length > 0 ? (
-              <div className="layer-controls">
-                {datasetShape ? <p className="layer-dataset-shape">{datasetShape}</p> : null}
-                <div className="layer-tabs" role="tablist" aria-label="Volume layers">
-                  {layers.map((layer) => (
-                    <button
-                      key={layer.key}
-                      type="button"
-                      className={layer.key === activeLayerKey ? 'layer-tab is-active' : 'layer-tab'}
-                      onClick={() => setActiveLayerKey(layer.key)}
-                      role="tab"
-                      id={`layer-tab-${layer.key}`}
-                      aria-selected={layer.key === activeLayerKey}
-                      aria-controls={`layer-panel-${layer.key}`}
-                    >
-                      {layer.label}
-                    </button>
-                  ))}
+            {loadedChannelIds.length > 0 ? (
+              <div className="channel-controls">
+                <div className="channel-tabs" role="tablist" aria-label="Volume channels">
+                  {loadedChannelIds.map((channelId) => {
+                    const label = channelNameMap.get(channelId) ?? 'Untitled channel';
+                    const isActive = channelId === activeChannelTabId;
+                    const isVisible = channelVisibility[channelId] ?? true;
+                    const tabClassName = ['channel-tab', isActive ? 'is-active' : '', !isVisible ? 'is-hidden' : '']
+                      .filter(Boolean)
+                      .join(' ');
+                    const labelClassName = isVisible
+                      ? 'channel-tab-label'
+                      : 'channel-tab-label channel-tab-label--hidden';
+                    return (
+                      <button
+                        key={channelId}
+                        type="button"
+                        className={tabClassName}
+                        onClick={() => setActiveChannelTabId(channelId)}
+                        role="tab"
+                        id={`channel-tab-${channelId}`}
+                        aria-selected={isActive}
+                        aria-controls={`channel-panel-${channelId}`}
+                      >
+                        <span className={labelClassName}>{label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
-                {layers.map((layer) => {
-                  const isActive = layer.key === activeLayerKey;
-                  const settings = layerSettings[layer.key] ?? createDefaultLayerSettings();
-                  const sliderDisabled = layer.volumes.length === 0;
-                  const firstVolume = layer.volumes[0] ?? null;
-                  const isGrayscale = firstVolume?.channels === 1;
+                {loadedChannelIds.map((channelId) => {
+                  const channelLayers = channelLayersMap.get(channelId) ?? [];
+                  const selectedLayerKey = channelActiveLayer[channelId] ?? channelLayers[0]?.key ?? null;
+                  const selectedLayer =
+                    channelLayers.find((layer) => layer.key === selectedLayerKey) ?? channelLayers[0] ?? null;
+                  const settings =
+                    selectedLayer
+                      ? layerSettings[selectedLayer.key] ?? createDefaultLayerSettings()
+                      : createDefaultLayerSettings();
+                  const sliderDisabled = !selectedLayer || selectedLayer.volumes.length === 0;
+                  const offsetDisabled = sliderDisabled || channelId !== activeChannelTabId;
+                  const firstVolume = selectedLayer?.volumes[0] ?? null;
+                  const isGrayscale = Boolean(firstVolume && firstVolume.channels === 1);
                   const normalizedColor = normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR);
                   const displayColor = normalizedColor.toUpperCase();
+                  const isActive = channelId === activeChannelTabId;
+                  const isVisible = channelVisibility[channelId] ?? true;
+
                   return (
                     <div
-                      key={layer.key}
-                      id={`layer-panel-${layer.key}`}
+                      key={channelId}
+                      id={`channel-panel-${channelId}`}
                       role="tabpanel"
-                      aria-labelledby={`layer-tab-${layer.key}`}
-                      className={isActive ? 'layer-panel is-active' : 'layer-panel'}
+                      aria-labelledby={`channel-tab-${channelId}`}
+                      className={isActive ? 'channel-panel is-active' : 'channel-panel'}
                       hidden={!isActive}
                     >
-                      {firstVolume ? (
-                        <div className="layer-intensity" role="group" aria-label="Intensity normalization">
-                          <span className="layer-intensity-label">Intensity normalization</span>
-                          <span className="layer-intensity-range">
-                            {firstVolume.min.toFixed(3)} – {firstVolume.max.toFixed(3)}
-                          </span>
-                        </div>
-                      ) : null}
-                      <label className="layer-visibility">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(visibleLayers[layer.key])}
-                          onChange={() => handleLayerVisibilityToggle(layer.key)}
-                        />
-                        <span>Show layer</span>
-                      </label>
-                      <div className="slider-control">
-                        <label htmlFor={`layer-contrast-${layer.key}`}>
-                          Contrast <span>{settings.contrast.toFixed(2)}×</span>
-                        </label>
-                        <input
-                          id={`layer-contrast-${layer.key}`}
-                          type="range"
-                          min={0.2}
-                          max={3}
-                          step={0.05}
-                          value={settings.contrast}
-                          onChange={(event) => handleLayerContrastChange(layer.key, Number(event.target.value))}
-                          disabled={sliderDisabled}
-                        />
-                      </div>
-                      <div className="slider-control">
-                        <label htmlFor={`layer-brightness-${layer.key}`}>
-                          Brightness{' '}
-                          <span>
-                            {settings.brightness >= 0 ? '+' : ''}
-                            {settings.brightness.toFixed(2)}
-                          </span>
-                        </label>
-                        <input
-                          id={`layer-brightness-${layer.key}`}
-                          type="range"
-                          min={-0.5}
-                          max={0.5}
-                          step={0.01}
-                          value={settings.brightness}
-                          onChange={(event) => handleLayerBrightnessChange(layer.key, Number(event.target.value))}
-                          disabled={sliderDisabled}
-                        />
-                      </div>
-                      <div className="slider-control slider-control--pair">
-                        <div className="slider-control slider-control--inline">
-                          <label htmlFor={`layer-offset-x-${layer.key}`}>
-                            X displacement{' '}
-                            <span>
-                              {settings.xOffset >= 0 ? '+' : ''}
-                              {settings.xOffset.toFixed(2)} px
-                            </span>
-                          </label>
+                      <div className="channel-visibility-row">
+                        <label className="channel-visibility">
                           <input
-                            id={`layer-offset-x-${layer.key}`}
-                            type="range"
-                            min={-10}
-                            max={10}
-                            step={0.1}
-                            value={settings.xOffset}
-                            onChange={(event) =>
-                              handleLayerOffsetChange(layer.key, 'x', Number(event.target.value))
-                            }
-                            disabled={sliderDisabled || layer.key !== activeLayerKey}
+                            type="checkbox"
+                            checked={isVisible}
+                            onChange={() => handleChannelVisibilityToggle(channelId)}
                           />
-                        </div>
-                        <div className="slider-control slider-control--inline">
-                          <label htmlFor={`layer-offset-y-${layer.key}`}>
-                            Y displacement{' '}
-                            <span>
-                              {settings.yOffset >= 0 ? '+' : ''}
-                              {settings.yOffset.toFixed(2)} px
-                            </span>
-                          </label>
-                          <input
-                            id={`layer-offset-y-${layer.key}`}
-                            type="range"
-                            min={-10}
-                            max={10}
-                            step={0.1}
-                            value={settings.yOffset}
-                            onChange={(event) =>
-                              handleLayerOffsetChange(layer.key, 'y', Number(event.target.value))
-                            }
-                            disabled={sliderDisabled || layer.key !== activeLayerKey}
-                          />
-                        </div>
+                          <span>Show channel</span>
+                        </label>
+                        <button
+                          type="button"
+                          className="channel-reset"
+                          onClick={() => handleChannelSliderReset(channelId)}
+                          disabled={channelLayers.length === 0}
+                        >
+                          reset sliders
+                        </button>
                       </div>
-                      {isGrayscale ? (
-                        <div className="color-control">
-                          <div className="color-control-header">
-                            <span id={`layer-color-label-${layer.key}`}>Tint color</span>
-                            <span>{displayColor}</span>
-                          </div>
-                          <div
-                            className="color-swatch-grid"
-                            role="group"
-                            aria-labelledby={`layer-color-label-${layer.key}`}
-                          >
-                            {GRAYSCALE_COLOR_SWATCHES.map((swatch) => {
-                              const swatchColor = normalizeHexColor(swatch.value, DEFAULT_LAYER_COLOR);
-                              const isSelected = swatchColor === normalizedColor;
-                              return (
-                                <button
-                                  key={swatch.value}
-                                  type="button"
-                                  className={
-                                    isSelected ? 'color-swatch-button is-selected' : 'color-swatch-button'
-                                  }
-                                  style={{ backgroundColor: swatch.value }}
-                                  onClick={() => handleLayerColorChange(layer.key, swatch.value)}
-                                  disabled={sliderDisabled}
-                                  aria-pressed={isSelected}
-                                  aria-label={`${swatch.label} tint`}
-                                  title={swatch.label}
+                      {channelLayers.length > 0 ? (
+                        <div
+                          className="channel-layer-selector"
+                          role="radiogroup"
+                          aria-label={`${channelNameMap.get(channelId) ?? 'Channel'} layers`}
+                        >
+                          {channelLayers.map((layer) => {
+                            const isSelected = Boolean(selectedLayer && selectedLayer.key === layer.key);
+                            const inputId = `channel-${channelId}-layer-${layer.key}`;
+                            return (
+                              <label key={layer.key} className="channel-layer-option" htmlFor={inputId}>
+                                <input
+                                  type="radio"
+                                  id={inputId}
+                                  name={`channel-layer-${channelId}`}
+                                  checked={isSelected}
+                                  onChange={() => handleChannelLayerSelectionChange(channelId, layer.key)}
                                 />
-                              );
-                            })}
-                          </div>
-                          <label className="color-picker" htmlFor={`layer-color-custom-${layer.key}`}>
-                            <span>Custom</span>
-                            <input
-                              id={`layer-color-custom-${layer.key}`}
-                              type="color"
-                              value={normalizedColor}
-                              onChange={(event) => handleLayerColorChange(layer.key, event.target.value)}
-                              disabled={sliderDisabled}
-                              aria-label="Choose custom tint color"
-                            />
-                          </label>
+                                <span>{layer.label}</span>
+                              </label>
+                            );
+                          })}
                         </div>
+                      ) : (
+                        <p className="channel-empty-hint">No layers available for this channel.</p>
+                      )}
+                      {selectedLayer ? (
+                        <>
+                          <div className="slider-control slider-control--pair">
+                            <div className="slider-control slider-control--inline">
+                              <label htmlFor={`layer-contrast-${selectedLayer.key}`}>
+                                Contrast <span>{settings.contrast.toFixed(2)}×</span>
+                              </label>
+                              <input
+                                id={`layer-contrast-${selectedLayer.key}`}
+                                type="range"
+                                min={0.2}
+                                max={3}
+                                step={0.05}
+                                value={settings.contrast}
+                                onChange={(event) =>
+                                  handleLayerContrastChange(selectedLayer.key, Number(event.target.value))
+                                }
+                                disabled={sliderDisabled}
+                              />
+                            </div>
+                            <div className="slider-control slider-control--inline">
+                              <label htmlFor={`layer-brightness-${selectedLayer.key}`}>
+                                Brightness{' '}
+                                <span>
+                                  {settings.brightness >= 0 ? '+' : ''}
+                                  {settings.brightness.toFixed(2)}
+                                </span>
+                              </label>
+                              <input
+                                id={`layer-brightness-${selectedLayer.key}`}
+                                type="range"
+                                min={-0.5}
+                                max={0.5}
+                                step={0.01}
+                                value={settings.brightness}
+                                onChange={(event) =>
+                                  handleLayerBrightnessChange(selectedLayer.key, Number(event.target.value))
+                                }
+                                disabled={sliderDisabled}
+                              />
+                            </div>
+                          </div>
+                          <div className="slider-control slider-control--pair">
+                            <div className="slider-control slider-control--inline">
+                              <label htmlFor={`layer-offset-x-${selectedLayer.key}`}>
+                                X shift{' '}
+                                <span>
+                                  {settings.xOffset >= 0 ? '+' : ''}
+                                  {settings.xOffset.toFixed(2)} px
+                                </span>
+                              </label>
+                              <input
+                                id={`layer-offset-x-${selectedLayer.key}`}
+                                type="range"
+                                min={-10}
+                                max={10}
+                                step={0.1}
+                                value={settings.xOffset}
+                                onChange={(event) =>
+                                  handleLayerOffsetChange(selectedLayer.key, 'x', Number(event.target.value))
+                                }
+                                disabled={offsetDisabled}
+                              />
+                            </div>
+                            <div className="slider-control slider-control--inline">
+                              <label htmlFor={`layer-offset-y-${selectedLayer.key}`}>
+                                Y shift{' '}
+                                <span>
+                                  {settings.yOffset >= 0 ? '+' : ''}
+                                  {settings.yOffset.toFixed(2)} px
+                                </span>
+                              </label>
+                              <input
+                                id={`layer-offset-y-${selectedLayer.key}`}
+                                type="range"
+                                min={-10}
+                                max={10}
+                                step={0.1}
+                                value={settings.yOffset}
+                                onChange={(event) =>
+                                  handleLayerOffsetChange(selectedLayer.key, 'y', Number(event.target.value))
+                                }
+                                disabled={offsetDisabled}
+                              />
+                            </div>
+                          </div>
+                          {isGrayscale ? (
+                            <div className="color-control">
+                              <div className="color-control-header">
+                                <span id={`layer-color-label-${selectedLayer.key}`}>Tint color</span>
+                                <span>{displayColor}</span>
+                              </div>
+                              <div
+                                className="color-swatch-grid"
+                                role="group"
+                                aria-labelledby={`layer-color-label-${selectedLayer.key}`}
+                              >
+                                {GRAYSCALE_COLOR_SWATCHES.map((swatch) => {
+                                  const swatchColor = normalizeHexColor(swatch.value, DEFAULT_LAYER_COLOR);
+                                  const isSelected = swatchColor === normalizedColor;
+                                  return (
+                                    <button
+                                      key={swatch.value}
+                                      type="button"
+                                      className={
+                                        isSelected ? 'color-swatch-button is-selected' : 'color-swatch-button'
+                                      }
+                                      style={{ backgroundColor: swatch.value }}
+                                      onClick={() => handleLayerColorChange(selectedLayer.key, swatch.value)}
+                                      disabled={sliderDisabled}
+                                      aria-pressed={isSelected}
+                                      aria-label={`${swatch.label} tint`}
+                                      title={swatch.label}
+                                    />
+                                  );
+                                })}
+                              </div>
+                              <label className="color-picker" htmlFor={`layer-color-custom-${selectedLayer.key}`}>
+                                <span>Custom</span>
+                                <input
+                                  id={`layer-color-custom-${selectedLayer.key}`}
+                                  type="color"
+                                  value={normalizedColor}
+                                  onChange={(event) =>
+                                    handleLayerColorChange(selectedLayer.key, event.target.value)
+                                  }
+                                  disabled={sliderDisabled}
+                                  aria-label="Choose custom tint color"
+                                />
+                              </label>
+                            </div>
+                          ) : null}
+                        </>
                       ) : null}
                     </div>
                   );
                 })}
               </div>
             ) : (
-              <p className="empty-layer-hint">Load a volume to configure layer properties.</p>
+              <p className="channel-empty-hint">Load a volume to configure channel properties.</p>
             )}
           </div>
         </FloatingWindow>
