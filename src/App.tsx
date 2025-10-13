@@ -39,13 +39,15 @@ type LayerSettings = {
   brightness: number;
   color: string;
   xOffset: number;
+  yOffset: number;
 };
 
 const createDefaultLayerSettings = (): LayerSettings => ({
   contrast: DEFAULT_CONTRAST,
   brightness: DEFAULT_BRIGHTNESS,
   color: DEFAULT_LAYER_COLOR,
-  xOffset: 0
+  xOffset: 0,
+  yOffset: 0
 });
 
 type ChannelLayerSource = {
@@ -1785,17 +1787,18 @@ function App() {
     });
   }, []);
 
-  const handleLayerOffsetChange = useCallback((key: string, value: number) => {
+  const handleLayerOffsetChange = useCallback((key: string, axis: 'x' | 'y', value: number) => {
     setLayerSettings((current) => {
       const previous = current[key] ?? createDefaultLayerSettings();
-      if (previous.xOffset === value) {
+      const property = axis === 'x' ? 'xOffset' : 'yOffset';
+      if (previous[property] === value) {
         return current;
       }
       return {
         ...current,
         [key]: {
           ...previous,
-          xOffset: value
+          [property]: value
         }
       };
     });
@@ -1831,7 +1834,8 @@ function App() {
           contrast: settings.contrast,
           brightness: settings.brightness,
           color: normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR),
-          offsetX: isActiveLayer ? settings.xOffset : 0
+          offsetX: isActiveLayer ? settings.xOffset : 0,
+          offsetY: isActiveLayer ? settings.yOffset : 0
         };
       }),
     [activeLayerKey, layerSettings, layers, selectedIndex, visibleLayers]
@@ -2336,24 +2340,49 @@ function App() {
                           disabled={sliderDisabled}
                         />
                       </div>
-                      <div className="slider-control">
-                        <label htmlFor={`layer-offset-x-${layer.key}`}>
-                          X displacement{' '}
-                          <span>
-                            {settings.xOffset >= 0 ? '+' : ''}
-                            {settings.xOffset.toFixed(2)} px
-                          </span>
-                        </label>
-                        <input
-                          id={`layer-offset-x-${layer.key}`}
-                          type="range"
-                          min={-5}
-                          max={5}
-                          step={0.1}
-                          value={settings.xOffset}
-                          onChange={(event) => handleLayerOffsetChange(layer.key, Number(event.target.value))}
-                          disabled={sliderDisabled || layer.key !== activeLayerKey}
-                        />
+                      <div className="slider-control slider-control--pair">
+                        <div className="slider-control slider-control--inline">
+                          <label htmlFor={`layer-offset-x-${layer.key}`}>
+                            X displacement{' '}
+                            <span>
+                              {settings.xOffset >= 0 ? '+' : ''}
+                              {settings.xOffset.toFixed(2)} px
+                            </span>
+                          </label>
+                          <input
+                            id={`layer-offset-x-${layer.key}`}
+                            type="range"
+                            min={-10}
+                            max={10}
+                            step={0.1}
+                            value={settings.xOffset}
+                            onChange={(event) =>
+                              handleLayerOffsetChange(layer.key, 'x', Number(event.target.value))
+                            }
+                            disabled={sliderDisabled || layer.key !== activeLayerKey}
+                          />
+                        </div>
+                        <div className="slider-control slider-control--inline">
+                          <label htmlFor={`layer-offset-y-${layer.key}`}>
+                            Y displacement{' '}
+                            <span>
+                              {settings.yOffset >= 0 ? '+' : ''}
+                              {settings.yOffset.toFixed(2)} px
+                            </span>
+                          </label>
+                          <input
+                            id={`layer-offset-y-${layer.key}`}
+                            type="range"
+                            min={-10}
+                            max={10}
+                            step={0.1}
+                            value={settings.yOffset}
+                            onChange={(event) =>
+                              handleLayerOffsetChange(layer.key, 'y', Number(event.target.value))
+                            }
+                            disabled={sliderDisabled || layer.key !== activeLayerKey}
+                          />
+                        </div>
                       </div>
                       {isGrayscale ? (
                         <div className="color-control">

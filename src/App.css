@@ -829,6 +829,16 @@
   gap: 0.4rem;
 }
 
+.layer-controls .slider-control--pair {
+  flex-direction: row;
+  gap: 0.75rem;
+}
+
+.layer-controls .slider-control--pair > .slider-control,
+.layer-controls .slider-control--inline {
+  flex: 1;
+}
+
 .layer-controls .slider-control label {
   font-size: 0.85rem;
   font-weight: 600;
