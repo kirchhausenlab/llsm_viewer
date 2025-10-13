@@ -210,3 +210,6 @@ d centered the front-page card in the viewport.
 - Added a GitHub Actions workflow that installs dependencies, builds the Vite project, and deploys the `dist/` output to GitHub Pages.
 - Updated the Vite configuration to emit builds into `dist/` and automatically derive the correct base path when running inside GitHub Actions.
 - Documented the deployment workflow and required GitHub Pages settings in the README.
+
+## Layer alignment slider
+- Added a per-layer X displacement slider in the layers window that only affects the active layer, allowing subpixel alignment checks against other layers in both 3D and planar viewers.

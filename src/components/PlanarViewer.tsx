@@ -12,6 +12,7 @@ type ViewerLayer = {
   contrast: number;
   brightness: number;
   color: string;
+  offsetX: number;
 };
 
 type PlanarViewerProps = {
@@ -289,68 +290,112 @@ function PlanarViewer({
       const contrast = layer.contrast ?? 1;
       const tint = channels === 1 ? getColor(layer.color) : null;
 
-      for (let i = 0; i < pixelCount; i++) {
-        const pixelOffset = sliceOffset + i * channels;
-        const sourceR = data[pixelOffset] ?? 0;
-        const sourceG = channels > 1 ? data[pixelOffset + 1] ?? 0 : sourceR;
-        const sourceB = channels > 2 ? data[pixelOffset + 2] ?? 0 : sourceG;
-        const sourceA = channels > 3 ? data[pixelOffset + 3] ?? 0 : 0;
+      const offsetX = layer.offsetX ?? 0;
+      const hasOffset = Math.abs(offsetX) > 1e-3;
 
-        const r = sourceR / 255;
-        const g = sourceG / 255;
-        const b = sourceB / 255;
-        const a = sourceA / 255;
+      for (let y = 0; y < height; y++) {
+        const rowIndex = y * width;
+        const rowSliceOffset = sliceOffset + rowIndex * channels;
 
-        let srcR = 0;
-        let srcG = 0;
-        let srcB = 0;
-        let alpha = 0;
+        for (let x = 0; x < width; x++) {
+          const pixelIndex = rowIndex + x;
+          let sourceR = 0;
+          let sourceG = 0;
+          let sourceB = 0;
+          let sourceA = 0;
 
-        if (channels === 1) {
-          const brightened = clamp(r + brightness, 0, 1);
-          const contrasted = clamp((brightened - 0.5) * contrast + 0.5, 0, 1);
-          const layerAlpha = Math.max(contrasted, MIN_ALPHA);
-          const color = tint ?? getColor('#ffffff');
-          srcR = color.r * contrasted;
-          srcG = color.g * contrasted;
-          srcB = color.b * contrasted;
-          alpha = layerAlpha;
-        } else {
-          const intensity =
-            channels === 2
-              ? 0.5 * (r + g)
-              : channels === 3
-              ? r * 0.2126 + g * 0.7152 + b * 0.0722
-              : Math.max(r, g, Math.max(b, a));
-          const brightIntensity = clamp(intensity + brightness, 0, 1);
-          const contrasted = clamp((brightIntensity - 0.5) * contrast + 0.5, 0, 1);
-          alpha = Math.max(contrasted, MIN_ALPHA);
-          const brightR = clamp(r + brightness, 0, 1);
-          const brightG = clamp(g + brightness, 0, 1);
-          const brightB = clamp(b + brightness, 0, 1);
-          srcR = brightR;
-          srcG = channels > 1 ? brightG : brightR;
-          srcB = channels > 2 ? brightB : 0;
-        }
+          if (hasOffset) {
+            const sampleX = x - offsetX;
+            const clampedX = clamp(sampleX, 0, width - 1);
+            const leftX = Math.floor(clampedX);
+            const rightX = Math.min(width - 1, leftX + 1);
+            const t = clampedX - leftX;
+            const leftOffset = rowSliceOffset + leftX * channels;
+            const rightOffset = rowSliceOffset + rightX * channels;
+            const weightLeft = 1 - t;
+            const weightRight = t;
 
-        const srcA = clamp(alpha, 0, 1);
-        const srcRPremult = srcR * srcA;
-        const srcGPremult = srcG * srcA;
-        const srcBPremult = srcB * srcA;
+            sourceR = (data[leftOffset] ?? 0) * weightLeft + (data[rightOffset] ?? 0) * weightRight;
+            if (channels > 1) {
+              sourceG =
+                (data[leftOffset + 1] ?? 0) * weightLeft + (data[rightOffset + 1] ?? 0) * weightRight;
+            } else {
+              sourceG = sourceR;
+            }
+            if (channels > 2) {
+              sourceB =
+                (data[leftOffset + 2] ?? 0) * weightLeft + (data[rightOffset + 2] ?? 0) * weightRight;
+            } else {
+              sourceB = sourceG;
+            }
+            if (channels > 3) {
+              sourceA =
+                (data[leftOffset + 3] ?? 0) * weightLeft + (data[rightOffset + 3] ?? 0) * weightRight;
+            }
+          } else {
+            const pixelOffset = rowSliceOffset + x * channels;
+            sourceR = data[pixelOffset] ?? 0;
+            sourceG = channels > 1 ? data[pixelOffset + 1] ?? 0 : sourceR;
+            sourceB = channels > 2 ? data[pixelOffset + 2] ?? 0 : sourceG;
+            sourceA = channels > 3 ? data[pixelOffset + 3] ?? 0 : 0;
+          }
 
-        const prevR = accumR[i];
-        const prevG = accumG[i];
-        const prevB = accumB[i];
-        const prevA = accumA[i];
-        const oneMinusSrcA = 1 - srcA;
+          const r = sourceR / 255;
+          const g = sourceG / 255;
+          const b = sourceB / 255;
+          const a = sourceA / 255;
 
-        accumR[i] = srcRPremult + prevR * oneMinusSrcA;
-        accumG[i] = srcGPremult + prevG * oneMinusSrcA;
-        accumB[i] = srcBPremult + prevB * oneMinusSrcA;
-        accumA[i] = srcA + prevA * oneMinusSrcA;
+          let srcR = 0;
+          let srcG = 0;
+          let srcB = 0;
+          let alpha = 0;
 
-        if (!hasLayer && srcA > 0) {
-          hasLayer = true;
+          if (channels === 1) {
+            const brightened = clamp(r + brightness, 0, 1);
+            const contrasted = clamp((brightened - 0.5) * contrast + 0.5, 0, 1);
+            const layerAlpha = Math.max(contrasted, MIN_ALPHA);
+            const color = tint ?? getColor('#ffffff');
+            srcR = color.r * contrasted;
+            srcG = color.g * contrasted;
+            srcB = color.b * contrasted;
+            alpha = layerAlpha;
+          } else {
+            const intensity =
+              channels === 2
+                ? 0.5 * (r + g)
+                : channels === 3
+                ? r * 0.2126 + g * 0.7152 + b * 0.0722
+                : Math.max(r, g, Math.max(b, a));
+            const brightIntensity = clamp(intensity + brightness, 0, 1);
+            const contrasted = clamp((brightIntensity - 0.5) * contrast + 0.5, 0, 1);
+            alpha = Math.max(contrasted, MIN_ALPHA);
+            const brightR = clamp(r + brightness, 0, 1);
+            const brightG = clamp(g + brightness, 0, 1);
+            const brightB = clamp(b + brightness, 0, 1);
+            srcR = brightR;
+            srcG = channels > 1 ? brightG : brightR;
+            srcB = channels > 2 ? brightB : 0;
+          }
+
+          const srcA = clamp(alpha, 0, 1);
+          const srcRPremult = srcR * srcA;
+          const srcGPremult = srcG * srcA;
+          const srcBPremult = srcB * srcA;
+
+          const prevR = accumR[pixelIndex];
+          const prevG = accumG[pixelIndex];
+          const prevB = accumB[pixelIndex];
+          const prevA = accumA[pixelIndex];
+          const oneMinusSrcA = 1 - srcA;
+
+          accumR[pixelIndex] = srcRPremult + prevR * oneMinusSrcA;
+          accumG[pixelIndex] = srcGPremult + prevG * oneMinusSrcA;
+          accumB[pixelIndex] = srcBPremult + prevB * oneMinusSrcA;
+          accumA[pixelIndex] = srcA + prevA * oneMinusSrcA;
+
+          if (!hasLayer && srcA > 0) {
+            hasLayer = true;
+          }
         }
       }
     });

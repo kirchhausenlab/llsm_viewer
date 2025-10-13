@@ -22,6 +22,7 @@ type ViewerLayer = {
   contrast: number;
   brightness: number;
   color: string;
+  offsetX: number;
   mode?: '3d' | 'slice';
   sliceIndex?: number;
 };
@@ -1467,6 +1468,7 @@ function VolumeViewer({
           const meshObject = mesh as unknown as { visible: boolean; renderOrder: number };
           meshObject.visible = layer.visible;
           meshObject.renderOrder = index;
+          mesh.position.set(layer.offsetX, 0, 0);
 
           const volumeRootGroup = volumeRootGroupRef.current;
           if (volumeRootGroup) {
@@ -1544,7 +1546,7 @@ function VolumeViewer({
           geometry.translate(volume.width / 2 - 0.5, volume.height / 2 - 0.5, 0);
 
           const mesh = new THREE.Mesh(geometry, material);
-          mesh.position.set(0, 0, clampedIndex);
+          mesh.position.set(layer.offsetX, 0, clampedIndex);
           const meshObject = mesh as unknown as { visible: boolean; renderOrder: number };
           meshObject.visible = layer.visible;
           meshObject.renderOrder = index;
@@ -1588,6 +1590,11 @@ function VolumeViewer({
           dataTexture.needsUpdate = true;
           materialUniforms.u_data.value = dataTexture;
 
+          if (mesh.position.x !== layer.offsetX) {
+            mesh.position.x = layer.offsetX;
+            mesh.updateMatrixWorld();
+          }
+
           const localCameraPosition = camera.position.clone();
           mesh.updateMatrixWorld();
           mesh.worldToLocal(localCameraPosition);
@@ -1605,7 +1612,11 @@ function VolumeViewer({
           dataTexture.format = sliceInfo.format;
           dataTexture.needsUpdate = true;
           materialUniforms.u_slice.value = dataTexture;
-          mesh.position.set(0, 0, clampedIndex);
+          const desiredX = layer.offsetX;
+          if (mesh.position.x !== desiredX || mesh.position.z !== clampedIndex) {
+            mesh.position.set(desiredX, mesh.position.y, clampedIndex);
+            mesh.updateMatrixWorld();
+          }
         }
 
         const cameraUniform = materialUniforms.u_cameraPos?.value as THREE.Vector3 | undefined;
