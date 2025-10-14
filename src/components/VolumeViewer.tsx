@@ -1095,9 +1095,11 @@ function VolumeViewer({
       const material = new THREE.MeshBasicMaterial({
         color: baseColor,
         transparent: true,
-        opacity: baseOpacity
+        opacity: baseOpacity,
+        side: THREE.DoubleSide
       });
       const geometry = new THREE.PlaneGeometry(width, height);
+      geometry.rotateY(Math.PI);
       const mesh = new THREE.Mesh(geometry, material);
       mesh.position.copy(position);
       mesh.renderOrder = 20;
@@ -1135,9 +1137,11 @@ function VolumeViewer({
     const panelMaterial = new THREE.MeshBasicMaterial({
       color: 0x0c1018,
       transparent: true,
-      opacity: 0.82
+      opacity: 0.82,
+      side: THREE.DoubleSide
     });
     const panelGeometry = new THREE.PlaneGeometry(0.62, 0.36);
+    panelGeometry.rotateY(Math.PI);
     const panelMesh = new THREE.Mesh(panelGeometry, panelMaterial);
     panelMesh.renderOrder = 5;
     vrUiGroup.add(panelMesh);
@@ -1161,9 +1165,16 @@ function VolumeViewer({
     vrUiResources.labelContext = labelContext;
     vrUiResources.labelTexture = labelTexture;
 
+    const progressBackgroundGeometry = new THREE.PlaneGeometry(0.46, 0.05);
+    progressBackgroundGeometry.rotateY(Math.PI);
     const progressBackground = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.46, 0.05),
-      new THREE.MeshBasicMaterial({ color: 0x151e2c, transparent: true, opacity: 0.85 })
+      progressBackgroundGeometry,
+      new THREE.MeshBasicMaterial({
+        color: 0x151e2c,
+        transparent: true,
+        opacity: 0.85,
+        side: THREE.DoubleSide
+      })
     );
     progressBackground.position.set(0, -0.1, 0.015);
     progressBackground.renderOrder = 12;
@@ -1173,12 +1184,12 @@ function VolumeViewer({
     const progressFillMaterial = new THREE.MeshBasicMaterial({
       color: 0x5b8cff,
       transparent: true,
-      opacity: 0.9
+      opacity: 0.9,
+      side: THREE.DoubleSide
     });
-    const progressFill = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.46, 0.038),
-      progressFillMaterial
-    );
+    const progressFillGeometry = new THREE.PlaneGeometry(0.46, 0.038);
+    progressFillGeometry.rotateY(Math.PI);
+    const progressFill = new THREE.Mesh(progressFillGeometry, progressFillMaterial);
     progressFill.position.set(-0.23, -0.1, 0.02);
     progressFill.renderOrder = 14;
     progressFill.scale.x = 0.0001;

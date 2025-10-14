@@ -235,3 +235,7 @@ d centered the front-page card in the viewport.
 - Enabled Three.js WebXR support in the volume viewer and exposed a styled VR button that requests immersive sessions when hardware is available.
 - Transitioned the render loop to use `setAnimationLoop` so XR presentation shares the same draw pipeline while maintaining a requestAnimationFrame fallback for legacy browsers.
 - Disabled desktop orbit controls during VR sessions, reset keyboard navigation state, and restored the prior configuration on exit to keep pointer gestures predictable outside of XR.
+
+## VR control panel facing fixes
+- Rebuilt the VR UI panel meshes with double-sided materials and flipped geometry normals so the controls remain visible when the group matches the XR camera orientation.
+- Verified the progress bar, playback buttons, and time label share the corrected orientation while keeping sprite icons responsive to hover/selection rays.
