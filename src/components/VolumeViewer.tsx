@@ -1549,7 +1549,12 @@ function VolumeViewer({
 
     const handleResize = (entries?: ResizeObserverEntry[]) => {
       const target = containerRef.current;
-      if (!target || !rendererRef.current || !cameraRef.current) {
+      const rendererInstance = rendererRef.current;
+      const cameraInstance = cameraRef.current;
+      if (!target || !rendererInstance || !cameraInstance) {
+        return;
+      }
+      if (rendererInstance.xr?.isPresenting) {
         return;
       }
       const width = target.clientWidth;
@@ -1557,7 +1562,7 @@ function VolumeViewer({
       if (width > 0 && height > 0) {
         setHasMeasured(true);
       }
-      rendererRef.current.setSize(width, height);
+      rendererInstance.setSize(width, height);
       if (width > 0 && height > 0) {
         for (const resource of trackLinesRef.current.values()) {
           resource.material.resolution.set(width, height);
@@ -1566,8 +1571,8 @@ function VolumeViewer({
           resource.outlineMaterial.needsUpdate = true;
         }
       }
-      cameraRef.current.aspect = width / height;
-      cameraRef.current.updateProjectionMatrix();
+      cameraInstance.aspect = width / height;
+      cameraInstance.updateProjectionMatrix();
     };
 
     const resizeObserver = new ResizeObserver((entries) => handleResize(entries));
