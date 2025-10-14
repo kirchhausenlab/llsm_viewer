@@ -189,6 +189,44 @@ function createColormapTexture(hexColor: string) {
   return texture;
 }
 
+function ensureVolumeCameraUniformUpdater(mesh: THREE.Mesh, cameraUniform: THREE.Vector3) {
+  const userData = mesh.userData ?? (mesh.userData = {});
+  if (userData.__volumeCameraUniformUpdater) {
+    return;
+  }
+
+  const worldPositionBuffer = new THREE.Vector3();
+  const localPositionBuffer = new THREE.Vector3();
+  const previousOnBeforeRender = typeof mesh.onBeforeRender === 'function' ? mesh.onBeforeRender : null;
+
+  const handleBeforeRender = function (
+    renderer: THREE.WebGLRenderer,
+    scene: THREE.Scene,
+    renderCamera: THREE.Camera,
+    geometry: THREE.BufferGeometry,
+    material: THREE.Material,
+    group: THREE.Group | null
+  ) {
+    if (renderCamera) {
+      worldPositionBuffer.setFromMatrixPosition(renderCamera.matrixWorld);
+      localPositionBuffer.copy(worldPositionBuffer);
+      mesh.worldToLocal(localPositionBuffer);
+      cameraUniform.copy(localPositionBuffer);
+    }
+
+    if (previousOnBeforeRender) {
+      previousOnBeforeRender.call(mesh, renderer, scene, renderCamera, geometry, material, group);
+    }
+  };
+
+  mesh.onBeforeRender = handleBeforeRender;
+  userData.__volumeCameraUniformUpdater = {
+    dispose: () => {
+      mesh.onBeforeRender = previousOnBeforeRender ?? null;
+    }
+  };
+}
+
 function VolumeViewer({
   layers,
   isLoading,
@@ -1441,6 +1479,13 @@ function VolumeViewer({
       if (!resource) {
         return;
       }
+      const updater = resource.mesh.userData?.__volumeCameraUniformUpdater;
+      if (updater?.dispose) {
+        updater.dispose();
+      }
+      if (resource.mesh.userData) {
+        delete resource.mesh.userData.__volumeCameraUniformUpdater;
+      }
       const parent = resource.mesh.parent;
       if (parent) {
         parent.remove(resource.mesh);
@@ -1628,6 +1673,7 @@ function VolumeViewer({
           const cameraUniform = mesh.material.uniforms.u_cameraPos.value;
           cameraUniform.copy(camera.position);
           mesh.worldToLocal(cameraUniform);
+          ensureVolumeCameraUniformUpdater(mesh, cameraUniform);
 
           resourcesRef.current.set(layer.key, {
             mesh,
@@ -1748,6 +1794,7 @@ function VolumeViewer({
           mesh.updateMatrixWorld();
           mesh.worldToLocal(localCameraPosition);
           materialUniforms.u_cameraPos.value.copy(localCameraPosition);
+          ensureVolumeCameraUniformUpdater(mesh, materialUniforms.u_cameraPos.value);
         } else {
           const maxIndex = Math.max(0, volume.depth - 1);
           const clampedIndex = Math.min(Math.max(zIndex, 0), maxIndex);
