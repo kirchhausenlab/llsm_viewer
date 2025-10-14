@@ -1,3 +1,6 @@
+# VR state guard for viewer bootstrap
+- Restored the VR UI refs and presentation state bookkeeping so the volume viewer no longer throws `isVrPresenting`/`vrUiGroupRef` reference errors when datasets load, fixing the black screen regression that occurred after integrating the WebXR controls.
+
 # Progress Log
 
 ## Normalization fast path
