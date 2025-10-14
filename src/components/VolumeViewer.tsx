@@ -1634,10 +1634,6 @@ function VolumeViewer({
     const vrUiDirection = new THREE.Vector3();
     const vrUiCameraQuaternion = new THREE.Quaternion();
     const vrUiQuaternionTarget = new THREE.Quaternion();
-    const vrUiFlipQuaternion = new THREE.Quaternion().setFromAxisAngle(
-      new THREE.Vector3(0, 1, 0),
-      Math.PI
-    );
 
     const applyKeyboardMovement = () => {
       if (followedTrackIdRef.current !== null) {
@@ -1741,7 +1737,6 @@ function VolumeViewer({
           }
 
           vrUiQuaternionTarget.copy(vrUiCameraQuaternion);
-          vrUiQuaternionTarget.multiply(vrUiFlipQuaternion);
           vrUiGroup.quaternion.slerp(vrUiQuaternionTarget, 0.3);
         }
 
