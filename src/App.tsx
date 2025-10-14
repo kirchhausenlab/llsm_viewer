@@ -974,7 +974,7 @@ function App() {
       }
 
       try {
-        const supported = await isSessionSupportedFn.call(xr, 'immersive-vr');
+        const supported = await isSessionSupportedFn.call(navigator.xr!, 'immersive-vr');
         if (supported) {
           markSupport(true);
           return;
