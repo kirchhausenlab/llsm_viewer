@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { VRButton } from 'three/examples/jsm/webxr/VRButton';
 import { Line2 } from 'three/examples/jsm/lines/Line2';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
@@ -214,6 +215,7 @@ function VolumeViewer({
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
+  const controlsEnabledBeforeVRRef = useRef(true);
   const animationFrameRef = useRef<number | null>(null);
   const resourcesRef = useRef<Map<string, VolumeResources>>(new Map());
   const currentDimensionsRef = useRef<{ width: number; height: number; depth: number } | null>(null);
@@ -248,10 +250,73 @@ function VolumeViewer({
   const [hoveredTrackId, setHoveredTrackId] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
   const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(null);
+  const [vrButtonContainer, setVrButtonContainer] = useState<HTMLDivElement | null>(null);
+  const [isVrPresenting, setIsVrPresenting] = useState(false);
+  const vrUiGroupRef = useRef<THREE.Group | null>(null);
+  const vrUiInteractablesRef = useRef<THREE.Object3D[]>([]);
+  const vrHoverTargetRef = useRef<THREE.Object3D | null>(null);
+  const vrControllerStateRef = useRef<
+    Array<{
+      controller: THREE.Group;
+      line: THREE.Line;
+      onSelectStart: () => void;
+      onSelectEnd: () => void;
+      onConnected: (event: unknown) => void;
+      onDisconnected: (event: unknown) => void;
+      connected: boolean;
+    }>
+  >([]);
+  const vrRaycasterRef = useRef(new THREE.Raycaster());
+  const vrUiElementsRef = useRef<{
+    panel: THREE.Mesh | null;
+    progressBackground: THREE.Mesh | null;
+    progressFill: THREE.Mesh | null;
+    playButton: THREE.Mesh | null;
+    stepBackButton: THREE.Mesh | null;
+    stepForwardButton: THREE.Mesh | null;
+    playIcon: THREE.Sprite | null;
+    stepBackIcon: THREE.Sprite | null;
+    stepForwardIcon: THREE.Sprite | null;
+    labelSprite: THREE.Sprite | null;
+  }>({
+    panel: null,
+    progressBackground: null,
+    progressFill: null,
+    playButton: null,
+    stepBackButton: null,
+    stepForwardButton: null,
+    playIcon: null,
+    stepBackIcon: null,
+    stepForwardIcon: null,
+    labelSprite: null
+  });
+  const vrUiResourcesRef = useRef<{
+    labelCanvas: HTMLCanvasElement | null;
+    labelContext: CanvasRenderingContext2D | null;
+    labelTexture: THREE.CanvasTexture | null;
+    playIconCanvas: HTMLCanvasElement | null;
+    playIconContext: CanvasRenderingContext2D | null;
+    playIconTexture: THREE.CanvasTexture | null;
+    stepBackTexture: THREE.CanvasTexture | null;
+    stepForwardTexture: THREE.CanvasTexture | null;
+  }>({
+    labelCanvas: null,
+    labelContext: null,
+    labelTexture: null,
+    playIconCanvas: null,
+    playIconContext: null,
+    playIconTexture: null,
+    stepBackTexture: null,
+    stepForwardTexture: null
+  });
 
   const handleContainerRef = useCallback((node: HTMLDivElement | null) => {
     containerRef.current = node;
     setContainerNode(node);
+  }, []);
+
+  const handleVrButtonContainerRef = useCallback((node: HTMLDivElement | null) => {
+    setVrButtonContainer(node);
   }, []);
 
   followedTrackIdRef.current = followedTrackId;
@@ -293,6 +358,97 @@ function VolumeViewer({
     }
     setTooltipPosition(null);
   }, []);
+
+  const applyVrHoverTarget = useCallback((object: THREE.Object3D | null) => {
+    const target = object && object.userData && object.userData.disabled ? null : object;
+    const previous = vrHoverTargetRef.current;
+    if (previous === target) {
+      return;
+    }
+
+    if (previous && previous.userData && previous.userData.baseColor !== undefined) {
+      const previousMaterial = previous.material as THREE.Material & {
+        color?: THREE.Color;
+        opacity?: number;
+      };
+      if (previousMaterial && previousMaterial.color) {
+        previousMaterial.color.setHex(previous.userData.baseColor);
+      }
+      if (
+        typeof previous.userData.baseOpacity === 'number' &&
+        typeof previousMaterial.opacity === 'number'
+      ) {
+        previousMaterial.opacity = previous.userData.baseOpacity;
+      }
+    }
+
+    if (target && target.userData && target.userData.hoverColor !== undefined) {
+      const material = target.material as THREE.Material & {
+        color?: THREE.Color;
+        opacity?: number;
+      };
+      if (material && material.color) {
+        material.color.setHex(target.userData.hoverColor);
+      }
+      if (
+        typeof target.userData.hoverOpacity === 'number' &&
+        typeof material.opacity === 'number'
+      ) {
+        material.opacity = target.userData.hoverOpacity;
+      }
+    }
+
+    vrHoverTargetRef.current = target;
+  }, []);
+
+  const handleVrUiAction = useCallback(
+    (object: THREE.Object3D | null) => {
+      if (!object || !object.userData) {
+        return;
+      }
+
+      if (object.userData.disabled) {
+        return;
+      }
+
+      const action = object.userData.action;
+      if (!action) {
+        return;
+      }
+
+      if (action === 'toggle-playback') {
+        onTogglePlayback();
+        return;
+      }
+
+      if (!Number.isFinite(totalTimepoints) || totalTimepoints <= 0) {
+        return;
+      }
+
+      if (action === 'step-back') {
+        if (!onTimeIndexChange) {
+          return;
+        }
+        const nextIndex = Math.max(0, timeIndexRef.current - 1);
+        if (nextIndex !== timeIndexRef.current) {
+          onTimeIndexChange(nextIndex);
+        }
+        return;
+      }
+
+      if (action === 'step-forward') {
+        if (!onTimeIndexChange) {
+          return;
+        }
+        const maxIndex = Math.max(0, totalTimepoints - 1);
+        const nextIndex = Math.min(maxIndex, timeIndexRef.current + 1);
+        if (nextIndex !== timeIndexRef.current) {
+          onTimeIndexChange(nextIndex);
+        }
+      }
+    },
+    [onTimeIndexChange, onTogglePlayback, totalTimepoints]
+  );
 
   const applyVolumeRootTransform = useCallback(
     (dimensions: { width: number; height: number; depth: number } | null) => {
@@ -822,6 +978,7 @@ function VolumeViewer({
     }
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.xr.enabled = true;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(container.clientWidth, container.clientHeight);
@@ -844,6 +1001,251 @@ function VolumeViewer({
     trackGroup.visible = false;
     volumeRootGroup.add(trackGroup);
     trackGroupRef.current = trackGroup;
+
+    const vrUiGroup = new THREE.Group();
+    vrUiGroup.name = 'VrInterface';
+    vrUiGroup.visible = false;
+    scene.add(vrUiGroup);
+    vrUiGroupRef.current = vrUiGroup;
+    vrUiInteractablesRef.current = [];
+    applyVrHoverTarget(null);
+
+    const vrUiElements = vrUiElementsRef.current;
+    vrUiElements.panel = null;
+    vrUiElements.progressBackground = null;
+    vrUiElements.progressFill = null;
+    vrUiElements.playButton = null;
+    vrUiElements.stepBackButton = null;
+    vrUiElements.stepForwardButton = null;
+    vrUiElements.playIcon = null;
+    vrUiElements.stepBackIcon = null;
+    vrUiElements.stepForwardIcon = null;
+    vrUiElements.labelSprite = null;
+
+    const vrUiResources = vrUiResourcesRef.current;
+    if (vrUiResources.labelTexture) {
+      vrUiResources.labelTexture.dispose();
+    }
+    if (vrUiResources.playIconTexture) {
+      vrUiResources.playIconTexture.dispose();
+    }
+    if (vrUiResources.stepBackTexture) {
+      vrUiResources.stepBackTexture.dispose();
+    }
+    if (vrUiResources.stepForwardTexture) {
+      vrUiResources.stepForwardTexture.dispose();
+    }
+    vrUiResources.labelCanvas = null;
+    vrUiResources.labelContext = null;
+    vrUiResources.labelTexture = null;
+    vrUiResources.playIconCanvas = null;
+    vrUiResources.playIconContext = null;
+    vrUiResources.playIconTexture = null;
+    vrUiResources.stepBackTexture = null;
+    vrUiResources.stepForwardTexture = null;
+
+    const createButton = (
+      action: string,
+      width: number,
+      height: number,
+      position: THREE.Vector3,
+      baseColor: number,
+      hoverColor: number,
+      baseOpacity = 0.95,
+      hoverOpacity = 1
+    ) => {
+      const material = new THREE.MeshBasicMaterial({
+        color: baseColor,
+        transparent: true,
+        opacity: baseOpacity
+      });
+      const geometry = new THREE.PlaneGeometry(width, height);
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.copy(position);
+      mesh.renderOrder = 20;
+      mesh.userData = {
+        action,
+        baseColor,
+        hoverColor,
+        baseOpacity,
+        hoverOpacity,
+        defaultBaseColor: baseColor,
+        defaultBaseOpacity: baseOpacity,
+        disabled: false
+      };
+      vrUiGroup.add(mesh);
+      vrUiInteractablesRef.current.push(mesh);
+      return mesh;
+    };
+
+    const createIconTexture = (
+      draw: (context: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => void
+    ) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 256;
+      const context = canvas.getContext('2d');
+      if (context) {
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        draw(context, canvas);
+      }
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      return { canvas, context, texture };
+    };
+
+    const panelMaterial = new THREE.MeshBasicMaterial({
+      color: 0x0c1018,
+      transparent: true,
+      opacity: 0.82
+    });
+    const panelGeometry = new THREE.PlaneGeometry(0.62, 0.36);
+    const panelMesh = new THREE.Mesh(panelGeometry, panelMaterial);
+    panelMesh.renderOrder = 5;
+    vrUiGroup.add(panelMesh);
+    vrUiElements.panel = panelMesh;
+
+    const labelCanvas = document.createElement('canvas');
+    labelCanvas.width = 512;
+    labelCanvas.height = 256;
+    const labelContext = labelCanvas.getContext('2d');
+    const labelTexture = new THREE.CanvasTexture(labelCanvas);
+    labelTexture.colorSpace = THREE.SRGBColorSpace;
+    const labelSprite = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: labelTexture, transparent: true })
+    );
+    labelSprite.scale.set(0.52, 0.22, 1);
+    labelSprite.position.set(0, 0.06, 0.02);
+    labelSprite.renderOrder = 25;
+    vrUiGroup.add(labelSprite);
+    vrUiElements.labelSprite = labelSprite;
+    vrUiResources.labelCanvas = labelCanvas;
+    vrUiResources.labelContext = labelContext;
+    vrUiResources.labelTexture = labelTexture;
+
+    const progressBackground = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.46, 0.05),
+      new THREE.MeshBasicMaterial({ color: 0x151e2c, transparent: true, opacity: 0.85 })
+    );
+    progressBackground.position.set(0, -0.1, 0.015);
+    progressBackground.renderOrder = 12;
+    vrUiGroup.add(progressBackground);
+    vrUiElements.progressBackground = progressBackground;
+
+    const progressFillMaterial = new THREE.MeshBasicMaterial({
+      color: 0x5b8cff,
+      transparent: true,
+      opacity: 0.9
+    });
+    const progressFill = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.46, 0.038),
+      progressFillMaterial
+    );
+    progressFill.position.set(-0.23, -0.1, 0.02);
+    progressFill.renderOrder = 14;
+    progressFill.scale.x = 0.0001;
+    progressFill.userData = {
+      baseColor: 0x5b8cff,
+      baseOpacity: 0.9
+    };
+    vrUiGroup.add(progressFill);
+    vrUiElements.progressFill = progressFill;
+
+    const playButton = createButton(
+      'toggle-playback',
+      0.14,
+      0.14,
+      new THREE.Vector3(-0.19, 0.1, 0.02),
+      0x5b8cff,
+      0x82aaff
+    );
+    vrUiElements.playButton = playButton;
+
+    const stepBackButton = createButton(
+      'step-back',
+      0.12,
+      0.12,
+      new THREE.Vector3(-0.02, 0.1, 0.02),
+      0x2a344a,
+      0x3e4a64,
+      0.9,
+      0.98
+    );
+    vrUiElements.stepBackButton = stepBackButton;
+
+    const stepForwardButton = createButton(
+      'step-forward',
+      0.12,
+      0.12,
+      new THREE.Vector3(0.15, 0.1, 0.02),
+      0x2a344a,
+      0x3e4a64,
+      0.9,
+      0.98
+    );
+    vrUiElements.stepForwardButton = stepForwardButton;
+
+    const playIconResources = createIconTexture((context) => {
+      context.fillStyle = 'rgba(255, 255, 255, 0.95)';
+      const size = 180;
+      context.beginPath();
+      context.moveTo(90, 60);
+      context.lineTo(90, 196);
+      context.lineTo(206, 128);
+      context.closePath();
+      context.fill();
+    });
+    vrUiResources.playIconCanvas = playIconResources.canvas;
+    vrUiResources.playIconContext = playIconResources.context;
+    vrUiResources.playIconTexture = playIconResources.texture;
+    const playIconSprite = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: playIconResources.texture, transparent: true })
+    );
+    playIconSprite.scale.set(0.08, 0.08, 1);
+    playIconSprite.position.copy(playButton.position).setZ(playButton.position.z + 0.01);
+    playIconSprite.renderOrder = 30;
+    vrUiGroup.add(playIconSprite);
+    vrUiElements.playIcon = playIconSprite;
+
+    const stepBackResources = createIconTexture((context) => {
+      context.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      context.beginPath();
+      context.moveTo(170, 64);
+      context.lineTo(110, 128);
+      context.lineTo(170, 192);
+      context.closePath();
+      context.fill();
+      context.fillRect(98, 64, 28, 128);
+    });
+    vrUiResources.stepBackTexture = stepBackResources.texture;
+    const stepBackIcon = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: stepBackResources.texture, transparent: true })
+    );
+    stepBackIcon.scale.set(0.07, 0.07, 1);
+    stepBackIcon.position.copy(stepBackButton.position).setZ(stepBackButton.position.z + 0.01);
+    stepBackIcon.renderOrder = 30;
+    vrUiGroup.add(stepBackIcon);
+    vrUiElements.stepBackIcon = stepBackIcon;
+
+    const stepForwardResources = createIconTexture((context) => {
+      context.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      context.beginPath();
+      context.moveTo(86, 64);
+      context.lineTo(86, 192);
+      context.lineTo(206, 128);
+      context.closePath();
+      context.fill();
+      context.fillRect(196, 64, 24, 128);
+    });
+    vrUiResources.stepForwardTexture = stepForwardResources.texture;
+    const stepForwardIcon = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: stepForwardResources.texture, transparent: true })
+    );
+    stepForwardIcon.scale.set(0.07, 0.07, 1);
+    stepForwardIcon.position.copy(stepForwardButton.position).setZ(stepForwardButton.position.z + 0.01);
+    stepForwardIcon.renderOrder = 30;
+    vrUiGroup.add(stepForwardIcon);
+    vrUiElements.stepForwardIcon = stepForwardIcon;
 
     // If the volume dimensions were already resolved (e.g., when toggling
     // between 2D and 3D views), make sure the tracking overlay immediately
@@ -870,6 +1272,93 @@ function VolumeViewer({
     controls.rotateSpeed = 0.65;
     controls.zoomSpeed = 0.7;
     controlsRef.current = controls;
+
+    vrControllerStateRef.current = [];
+
+    const controllerRayOrigin = new THREE.Vector3();
+    const controllerRayDirection = new THREE.Vector3();
+    const controllerMatrix = new THREE.Matrix4();
+
+    const computeControllerIntersection = (controller: THREE.Group) => {
+      controllerMatrix.identity().extractRotation(controller.matrixWorld);
+      controllerRayDirection.set(0, 0, -1).applyMatrix4(controllerMatrix).normalize();
+      controllerRayOrigin.setFromMatrixPosition(controller.matrixWorld);
+      const raycaster = vrRaycasterRef.current;
+      raycaster.set(controllerRayOrigin, controllerRayDirection);
+      raycaster.far = 4;
+      const interactables = vrUiInteractablesRef.current;
+      if (!interactables || interactables.length === 0) {
+        return null;
+      }
+      const intersections = raycaster.intersectObjects(interactables, false);
+      if (!intersections || intersections.length === 0) {
+        return null;
+      }
+      return intersections[0];
+    };
+
+    for (let index = 0; index < 2; index += 1) {
+      const controller = renderer.xr.getController(index);
+      controller.name = `vr-controller-${index}`;
+      scene.add(controller);
+
+      const lineGeometry = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(0, 0, -1)
+      ]);
+      const lineMaterial = new THREE.LineBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.85
+      });
+      const line = new THREE.Line(lineGeometry, lineMaterial);
+      line.name = `vr-pointer-${index}`;
+      line.scale.z = 1;
+      line.visible = false;
+      controller.add(line);
+
+      const entry = {
+        controller,
+        line,
+        onSelectStart: () => {},
+        onSelectEnd: () => {},
+        onConnected: () => {},
+        onDisconnected: () => {},
+        connected: false
+      };
+
+      const onSelectStart = () => {
+        const intersection = computeControllerIntersection(controller);
+        handleVrUiAction(intersection ? intersection.object : null);
+      };
+
+      const onSelectEnd = () => {
+        applyVrHoverTarget(null);
+      };
+
+      const onConnected = () => {
+        entry.connected = true;
+        line.visible = true;
+      };
+
+      const onDisconnected = () => {
+        entry.connected = false;
+        applyVrHoverTarget(null);
+        line.visible = false;
+      };
+
+      entry.onSelectStart = onSelectStart;
+      entry.onSelectEnd = onSelectEnd;
+      entry.onConnected = onConnected;
+      entry.onDisconnected = onDisconnected;
+
+      vrControllerStateRef.current.push(entry);
+
+      controller.addEventListener('selectstart', onSelectStart);
+      controller.addEventListener('selectend', onSelectEnd);
+      controller.addEventListener('connected', onConnected);
+      controller.addEventListener('disconnected', onDisconnected);
+    }
 
     const domElement = renderer.domElement;
 
@@ -1101,6 +1590,16 @@ function VolumeViewer({
     const rightVector = new THREE.Vector3();
     const movementVector = new THREE.Vector3();
     const dollyDirection = new THREE.Vector3();
+    const activeCameraWorldPosition = new THREE.Vector3();
+    const localCameraPosition = new THREE.Vector3();
+    const vrUiTargetPosition = new THREE.Vector3();
+    const vrUiDirection = new THREE.Vector3();
+    const vrUiCameraQuaternion = new THREE.Quaternion();
+    const vrUiQuaternionTarget = new THREE.Quaternion();
+    const vrUiFlipQuaternion = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      Math.PI
+    );
 
     const applyKeyboardMovement = () => {
       if (followedTrackIdRef.current !== null) {
@@ -1169,10 +1668,80 @@ function VolumeViewer({
     };
 
     const renderLoop = () => {
-      applyKeyboardMovement();
-      controls.update();
+      const isPresentingXR = renderer.xr.isPresenting;
 
-      if (followedTrackIdRef.current !== null) {
+      if (!isPresentingXR) {
+        applyKeyboardMovement();
+        controls.update();
+      }
+
+      const activeCamera = isPresentingXR
+        ? (renderer.xr.getCamera(camera) as THREE.Camera)
+        : camera;
+      activeCamera.getWorldPosition(activeCameraWorldPosition);
+
+      if (isPresentingXR) {
+        const vrUiGroup = vrUiGroupRef.current;
+        if (vrUiGroup) {
+          activeCamera.getWorldDirection(vrUiDirection).normalize();
+          vrUiTargetPosition
+            .copy(activeCameraWorldPosition)
+            .addScaledVector(vrUiDirection, 0.6)
+            .addScaledVector(worldUp, 0.08);
+          vrUiGroup.position.lerp(vrUiTargetPosition, 0.3);
+
+          const arrayCamera = activeCamera as unknown as {
+            isArrayCamera?: boolean;
+            cameras?: THREE.PerspectiveCamera[];
+          };
+          if (arrayCamera.isArrayCamera && arrayCamera.cameras && arrayCamera.cameras.length > 0) {
+            vrUiCameraQuaternion.copy(arrayCamera.cameras[0].quaternion);
+          } else if (activeCamera.quaternion) {
+            vrUiCameraQuaternion.copy(activeCamera.quaternion);
+          } else {
+            vrUiCameraQuaternion.copy(camera.quaternion);
+          }
+
+          vrUiQuaternionTarget.copy(vrUiCameraQuaternion);
+          vrUiQuaternionTarget.multiply(vrUiFlipQuaternion);
+          vrUiGroup.quaternion.slerp(vrUiQuaternionTarget, 0.3);
+        }
+
+        let hoveredObject: THREE.Object3D | null = null;
+        let closestDistance = Number.POSITIVE_INFINITY;
+        for (const controllerState of vrControllerStateRef.current) {
+          const { controller, line, connected } = controllerState;
+          if (line) {
+            line.visible = connected;
+          }
+          if (!connected) {
+            continue;
+          }
+          const intersection = computeControllerIntersection(controller);
+          if (intersection) {
+            if (line) {
+              line.scale.z = Math.max(0.1, intersection.distance);
+            }
+            if (intersection.distance < closestDistance) {
+              closestDistance = intersection.distance;
+              hoveredObject = intersection.object;
+            }
+          } else if (line) {
+            line.scale.z = 1.5;
+          }
+        }
+        applyVrHoverTarget(hoveredObject);
+      } else {
+        for (const controllerState of vrControllerStateRef.current) {
+          const { line } = controllerState;
+          if (line) {
+            line.visible = false;
+          }
+        }
+        applyVrHoverTarget(null);
+      }
+
+      if (!isPresentingXR && followedTrackIdRef.current !== null) {
         const rotationTarget = rotationTargetRef.current;
         if (rotationTarget) {
           if (!trackFollowOffsetRef.current) {
@@ -1193,15 +1762,24 @@ function VolumeViewer({
             | THREE.Vector3
             | undefined;
           if (cameraUniform) {
-            cameraUniform.copy(camera.position);
-            mesh.worldToLocal(cameraUniform);
+            localCameraPosition.copy(activeCameraWorldPosition);
+            mesh.worldToLocal(localCameraPosition);
+            cameraUniform.copy(localCameraPosition);
           }
         }
       }
-      renderer.render(scene, camera);
-      animationFrameRef.current = requestAnimationFrame(renderLoop);
+      renderer.render(scene, activeCamera as THREE.Camera);
     };
-    renderLoop();
+
+    if (typeof renderer.setAnimationLoop === 'function') {
+      renderer.setAnimationLoop(renderLoop);
+    } else {
+      const fallbackLoop = () => {
+        renderLoop();
+        animationFrameRef.current = requestAnimationFrame(fallbackLoop);
+      };
+      fallbackLoop();
+    }
 
     return () => {
       const resources = resourcesRef.current;
@@ -1212,6 +1790,94 @@ function VolumeViewer({
         resource.texture.dispose();
       }
       resources.clear();
+
+      for (const controllerState of vrControllerStateRef.current) {
+        const { controller, line, onSelectStart, onSelectEnd, onConnected, onDisconnected } =
+          controllerState;
+        controller.removeEventListener('selectstart', onSelectStart);
+        controller.removeEventListener('selectend', onSelectEnd);
+        controller.removeEventListener('connected', onConnected);
+        controller.removeEventListener('disconnected', onDisconnected);
+        controllerState.connected = false;
+        if (line.parent) {
+          line.parent.remove(line);
+        }
+        if (line.geometry) {
+          line.geometry.dispose();
+        }
+        if (line.material && typeof (line.material as THREE.Material).dispose === 'function') {
+          (line.material as THREE.Material).dispose();
+        }
+        if (controller.parent) {
+          controller.parent.remove(controller);
+        }
+      }
+      vrControllerStateRef.current = [];
+
+      const disposeMaterial = (material: unknown) => {
+        if (!material) {
+          return;
+        }
+        if (Array.isArray(material)) {
+          material.forEach((entry) => disposeMaterial(entry));
+          return;
+        }
+        const typed = material as THREE.Material & { map?: THREE.Texture | null };
+        if (typed.map && typeof typed.map.dispose === 'function') {
+          typed.map.dispose();
+        }
+        if (typeof typed.dispose === 'function') {
+          typed.dispose();
+        }
+      };
+
+      const disposeObject = (object: THREE.Object3D) => {
+        const meshLike = object as unknown as {
+          geometry?: { dispose?: () => void } | null;
+          material?: THREE.Material | THREE.Material[] | null;
+        };
+        if (meshLike.geometry && typeof meshLike.geometry.dispose === 'function') {
+          meshLike.geometry.dispose();
+        }
+        disposeMaterial(meshLike.material ?? null);
+      };
+
+      const vrUiGroup = vrUiGroupRef.current;
+      if (vrUiGroup) {
+        const children = [...vrUiGroup.children];
+        for (const child of children) {
+          vrUiGroup.remove(child);
+          disposeObject(child);
+        }
+        if (vrUiGroup.parent) {
+          vrUiGroup.parent.remove(vrUiGroup);
+        }
+      }
+      vrUiGroupRef.current = null;
+      vrUiInteractablesRef.current = [];
+      vrHoverTargetRef.current = null;
+
+      const vrUiResources = vrUiResourcesRef.current;
+      if (vrUiResources.labelTexture) {
+        vrUiResources.labelTexture.dispose();
+      }
+      if (vrUiResources.playIconTexture) {
+        vrUiResources.playIconTexture.dispose();
+      }
+      if (vrUiResources.stepBackTexture) {
+        vrUiResources.stepBackTexture.dispose();
+      }
+      if (vrUiResources.stepForwardTexture) {
+        vrUiResources.stepForwardTexture.dispose();
+      }
+      vrUiResources.labelCanvas = null;
+      vrUiResources.labelContext = null;
+      vrUiResources.labelTexture = null;
+      vrUiResources.playIconCanvas = null;
+      vrUiResources.playIconContext = null;
+      vrUiResources.playIconTexture = null;
+      vrUiResources.stepBackTexture = null;
+      vrUiResources.stepForwardTexture = null;
 
       const trackGroup = trackGroupRef.current;
       if (trackGroup) {
@@ -1256,6 +1922,9 @@ function VolumeViewer({
 
       raycasterRef.current = null;
 
+      if (typeof renderer.setAnimationLoop === 'function') {
+        renderer.setAnimationLoop(null);
+      }
       if (animationFrameRef.current !== null) {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
@@ -1272,6 +1941,233 @@ function VolumeViewer({
       controlsRef.current = null;
     };
   }, [applyTrackGroupTransform, applyVolumeRootTransform, containerNode]);
+
+  useEffect(() => {
+    const vrUiElements = vrUiElementsRef.current;
+    const vrUiResources = vrUiResourcesRef.current;
+
+    if (vrUiResources.labelCanvas && vrUiResources.labelContext && vrUiResources.labelTexture) {
+      const canvas = vrUiResources.labelCanvas;
+      const context = vrUiResources.labelContext;
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = 'rgba(12, 16, 24, 0)';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = 'rgba(255, 255, 255, 0.94)';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+
+      const totalFrames = Math.max(totalTimepoints, 0);
+      const currentFrame = totalTimepoints > 0 ? timeIndex + 1 : 0;
+      const header = totalFrames > 0 ? `Timepoint ${currentFrame} / ${totalFrames}` : 'No frames loaded';
+      context.font = '600 60px sans-serif';
+      context.fillText(header, canvas.width / 2, canvas.height * 0.38);
+
+      const status = isPlaying ? 'Playing' : 'Paused';
+      context.font = '500 48px sans-serif';
+      context.fillStyle = 'rgba(255, 255, 255, 0.82)';
+      context.fillText(status, canvas.width / 2, canvas.height * 0.62);
+
+      if (isLoading) {
+        const progress = Math.round(Math.min(Math.max(loadingProgress, 0), 1) * 100);
+        context.font = '400 40px sans-serif';
+        context.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        context.fillText(`Loading… ${progress}%`, canvas.width / 2, canvas.height * 0.82);
+      } else {
+        const clampedLoaded = expectedVolumes > 0 ? Math.min(loadedVolumes, expectedVolumes) : loadedVolumes;
+        const detailLine = expectedVolumes > 0
+          ? `Volumes ${clampedLoaded}/${expectedVolumes} · Trigger: interact`
+          : 'Trigger: interact · Grip: move';
+        context.font = '400 36px sans-serif';
+        context.fillStyle = 'rgba(255, 255, 255, 0.6)';
+        context.fillText(detailLine, canvas.width / 2, canvas.height * 0.82);
+      }
+
+      vrUiResources.labelTexture.needsUpdate = true;
+    }
+
+    if (
+      vrUiResources.playIconCanvas &&
+      vrUiResources.playIconContext &&
+      vrUiResources.playIconTexture
+    ) {
+      const canvas = vrUiResources.playIconCanvas;
+      const context = vrUiResources.playIconContext;
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = 'rgba(255, 255, 255, 0.95)';
+      if (isPlaying) {
+        const barWidth = canvas.width * 0.18;
+        const barHeight = canvas.height * 0.5;
+        const top = (canvas.height - barHeight) / 2;
+        const leftBar = canvas.width * 0.32;
+        const rightBar = canvas.width * 0.5;
+        context.fillRect(leftBar, top, barWidth, barHeight);
+        context.fillRect(rightBar, top, barWidth, barHeight);
+      } else {
+        context.beginPath();
+        context.moveTo(canvas.width * 0.32, canvas.height * 0.26);
+        context.lineTo(canvas.width * 0.32, canvas.height * 0.74);
+        context.lineTo(canvas.width * 0.72, canvas.height * 0.5);
+        context.closePath();
+        context.fill();
+      }
+      vrUiResources.playIconTexture.needsUpdate = true;
+    }
+
+    const updateButtonState = (button: THREE.Mesh | null, disabled: boolean) => {
+      if (!button) {
+        return;
+      }
+      const material = button.material as THREE.MeshBasicMaterial;
+      const baseColor =
+        button.userData?.defaultBaseColor ?? button.userData?.baseColor ?? material.color?.getHex?.() ?? 0x5b8cff;
+      const baseOpacity =
+        button.userData?.defaultBaseOpacity ?? button.userData?.baseOpacity ?? material.opacity ?? 0.95;
+      button.userData.disabled = disabled;
+      const activeOpacity = disabled ? 0.35 : baseOpacity;
+      material.opacity = activeOpacity;
+      button.userData.baseOpacity = activeOpacity;
+      button.userData.baseColor = baseColor;
+      if (material.color) {
+        material.color.setHex(baseColor);
+      }
+    };
+
+    const totalFrames = Math.max(totalTimepoints, 0);
+    updateButtonState(vrUiElements.stepBackButton, totalFrames <= 0 || timeIndex <= 0);
+    updateButtonState(
+      vrUiElements.stepForwardButton,
+      totalFrames <= 0 || timeIndex >= Math.max(totalFrames - 1, 0)
+    );
+    updateButtonState(vrUiElements.playButton, totalFrames <= 0);
+
+    if (vrUiElements.playIcon) {
+      const spriteMaterial = vrUiElements.playIcon.material as THREE.SpriteMaterial;
+      spriteMaterial.opacity = totalFrames > 0 ? 1 : 0.35;
+    }
+
+    const progressFill = vrUiElements.progressFill;
+    const progressBackground = vrUiElements.progressBackground;
+    if (progressBackground) {
+      progressBackground.visible = totalFrames > 1;
+    }
+    if (progressFill) {
+      if (totalFrames > 1) {
+        const denominator = Math.max(totalFrames - 1, 1);
+        const ratio = Math.min(Math.max(timeIndex / denominator, 0), 1);
+        progressFill.visible = true;
+        progressFill.scale.x = Math.max(ratio, 0.001);
+        const halfWidth = 0.23;
+        progressFill.position.x = -halfWidth + halfWidth * progressFill.scale.x;
+      } else {
+        progressFill.visible = false;
+      }
+    }
+  }, [
+    expectedVolumes,
+    isLoading,
+    isPlaying,
+    loadingProgress,
+    loadedVolumes,
+    timeIndex,
+    totalTimepoints
+  ]);
+
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    if (!renderer) {
+      return;
+    }
+
+    const handleSessionStart = () => {
+      const controls = controlsRef.current;
+      const movementState = movementStateRef.current;
+      const pointerState = pointerStateRef.current;
+
+      if (pointerState) {
+        try {
+          renderer.domElement.releasePointerCapture(pointerState.pointerId);
+        } catch (error) {
+          // Ignore pointer capture release failures.
+        }
+        if (controls) {
+          controls.enabled = pointerState.previousControlsEnabled;
+          if (pointerState.mode === 'pan' && pointerState.previousEnablePan !== null) {
+            controls.enablePan = pointerState.previousEnablePan;
+          }
+        }
+        pointerStateRef.current = null;
+      }
+
+      if (controls) {
+        controlsEnabledBeforeVRRef.current = controls.enabled;
+        controls.enabled = false;
+      }
+
+      if (movementState) {
+        movementState.moveForward = false;
+        movementState.moveBackward = false;
+        movementState.moveLeft = false;
+        movementState.moveRight = false;
+        movementState.moveUp = false;
+        movementState.moveDown = false;
+      }
+
+      const vrUiGroup = vrUiGroupRef.current;
+      if (vrUiGroup) {
+        vrUiGroup.visible = true;
+      }
+      setIsVrPresenting(true);
+      applyVrHoverTarget(null);
+      clearHoverState();
+    };
+
+    const handleSessionEnd = () => {
+      const controls = controlsRef.current;
+      if (controls) {
+        controls.enabled = controlsEnabledBeforeVRRef.current;
+        controls.update();
+      }
+      const vrUiGroup = vrUiGroupRef.current;
+      if (vrUiGroup) {
+        vrUiGroup.visible = false;
+      }
+      applyVrHoverTarget(null);
+      setIsVrPresenting(false);
+    };
+
+    renderer.xr.addEventListener('sessionstart', handleSessionStart);
+    renderer.xr.addEventListener('sessionend', handleSessionEnd);
+
+    return () => {
+      renderer.xr.removeEventListener('sessionstart', handleSessionStart);
+      renderer.xr.removeEventListener('sessionend', handleSessionEnd);
+    };
+  }, [applyVrHoverTarget, clearHoverState]);
+
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    if (!renderer || isVrPresenting) {
+      return;
+    }
+
+    const targetContainer = vrButtonContainer ?? containerRef.current;
+    if (!targetContainer) {
+      return;
+    }
+
+    const button = VRButton.createButton(renderer);
+    button.classList.add('viewer-vr-button');
+    button.style.cssText = '';
+    button.setAttribute('aria-label', 'Toggle VR session');
+    button.setAttribute('title', 'Toggle VR session');
+    targetContainer.appendChild(button);
+
+    return () => {
+      if (button.parentNode) {
+        button.parentNode.removeChild(button);
+      }
+    };
+  }, [isVrPresenting, renderContextRevision, vrButtonContainer]);
 
   useEffect(() => {
     const handleKeyChange = (event: KeyboardEvent, isPressed: boolean) => {
@@ -1701,10 +2597,12 @@ function VolumeViewer({
     ? `${hoveredTrackDefinition.channelName} · Track #${hoveredTrackDefinition.trackNumber}`
     : null;
 
+  const rootClassName = `volume-viewer${isVrPresenting ? ' is-vr-presenting' : ''}`;
+
   return (
-    <div className="volume-viewer">
+    <div className={rootClassName}>
       <section className="viewer-surface">
-        {showLoadingOverlay && (
+        {!isVrPresenting && showLoadingOverlay && (
           <div className="overlay">
             <div className="loading-panel">
               <span className="loading-title">Loading dataset…</span>
@@ -1712,7 +2610,7 @@ function VolumeViewer({
           </div>
         )}
         <div className={`render-surface${hasMeasured ? ' is-ready' : ''}`} ref={handleContainerRef}>
-          {hoveredTrackLabel && tooltipPosition ? (
+          {!isVrPresenting && hoveredTrackLabel && tooltipPosition ? (
             <div
               className="track-tooltip"
               style={{ left: `${tooltipPosition.x}px`, top: `${tooltipPosition.y}px` }}
@@ -1721,6 +2619,9 @@ function VolumeViewer({
             >
               {hoveredTrackLabel}
             </div>
+          ) : null}
+          {!isVrPresenting ? (
+            <div className="vr-button-container" ref={handleVrButtonContainerRef} />
           ) : null}
         </div>
       </section>
