@@ -1470,7 +1470,6 @@ function VolumeViewer({
         controlsInstance.update();
       }
       preVrCameraStateRef.current = null;
-      renderer.xr.setSession?.(null);
       refreshControllerVisibility();
       handleResize();
       renderer.setAnimationLoop(renderLoop);
