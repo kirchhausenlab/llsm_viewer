@@ -994,6 +994,20 @@ function App() {
     setResetViewHandler(() => handler);
   }, []);
 
+  const resetViewerState = useCallback(() => {
+    clearTextureCache();
+    setLayers([]);
+    setChannelVisibility({});
+    setChannelActiveLayer({});
+    setLayerSettings({});
+    setSelectedIndex(0);
+    setIsPlaying(false);
+    setLoadProgress(0);
+    setLoadedCount(0);
+    setExpectedVolumeCount(0);
+    setActiveChannelTabId(null);
+  }, []);
+
   const handleReturnToLauncher = useCallback(() => {
     if (typeof window !== 'undefined') {
       const confirmed = window.confirm(
@@ -1003,8 +1017,9 @@ function App() {
         return;
       }
     }
+    resetViewerState();
     setIsViewerLaunched(false);
-  }, [setIsViewerLaunched]);
+  }, [resetViewerState, setIsViewerLaunched]);
 
   const handleResetWindowLayout = useCallback(() => {
     setLayoutResetToken((value) => value + 1);
@@ -1103,17 +1118,7 @@ function App() {
 
     setStatus('loading');
     setError(null);
-    clearTextureCache();
-    setLayers([]);
-    setChannelVisibility({});
-    setChannelActiveLayer({});
-    setLayerSettings({});
-    setSelectedIndex(0);
-    setIsPlaying(false);
-    setLoadProgress(0);
-    setLoadedCount(0);
-    setExpectedVolumeCount(0);
-    setActiveChannelTabId(null);
+    resetViewerState();
 
     const referenceFiles = flatLayerSources[0]?.files ?? [];
     const totalExpectedVolumes = referenceFiles.length * flatLayerSources.length;
@@ -1226,23 +1231,13 @@ function App() {
       }
       console.error(err);
       setStatus('error');
-      clearTextureCache();
-      setLayers([]);
-      setChannelVisibility({});
-      setChannelActiveLayer({});
-      setLayerSettings({});
-      setSelectedIndex(0);
-      setActiveChannelTabId(null);
-      setLoadProgress(0);
-      setLoadedCount(0);
-      setExpectedVolumeCount(0);
-      setIsPlaying(false);
+      resetViewerState();
       const message = err instanceof Error ? err.message : 'Failed to load volumes.';
       setDatasetError(message);
       setError(message);
       return false;
     }
-  }, [channels]);
+  }, [channels, resetViewerState]);
 
   useEffect(() => {
     if (!isPlaying || volumeTimepointCount <= 1) {
