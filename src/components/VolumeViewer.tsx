@@ -245,6 +245,12 @@ function VolumeViewer({
   onVrSessionStarted,
   onVrSessionEnded
 }: VolumeViewerProps) {
+  const vrLog = (...args: Parameters<typeof console.debug>) => {
+    if (import.meta.env?.DEV) {
+      console.debug(...args);
+    }
+  };
+
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -932,16 +938,31 @@ function VolumeViewer({
 
     const setControllerVisibility = (shouldShow: boolean) => {
       let anyVisible = false;
-      for (const entry of controllersRef.current) {
+      const visibilitySnapshot: Array<{
+        index: number;
+        visible: boolean;
+        isConnected: boolean;
+        targetRayMode: string | null;
+      }> = [];
+      controllersRef.current.forEach((entry, index) => {
         const visible = shouldShow && entry.isConnected && entry.targetRayMode !== 'tracked-hand';
         entry.controller.visible = visible;
         entry.grip.visible = visible;
         entry.ray.visible = visible;
+        visibilitySnapshot.push({
+          index,
+          visible,
+          isConnected: entry.isConnected,
+          targetRayMode: entry.targetRayMode
+        });
         if (!visible) {
           entry.hoverTrackId = null;
         } else {
           anyVisible = true;
         }
+      });
+      if (import.meta.env?.DEV) {
+        vrLog('[VR] controller visibility', { shouldShow, visibilitySnapshot });
       }
       if (!anyVisible) {
         clearHoverState('controller');
@@ -1006,6 +1027,10 @@ function VolumeViewer({
         entry.gamepad = event?.data?.gamepad ?? null;
         entry.hoverTrackId = null;
         entry.rayLength = 3;
+        vrLog('[VR] controller connected', index, {
+          targetRayMode: entry.targetRayMode,
+          hasGamepad: Boolean(entry.gamepad)
+        });
         refreshControllerVisibility();
       };
 
@@ -1017,16 +1042,19 @@ function VolumeViewer({
         entry.rayLength = 3;
         entry.isSelecting = false;
         entry.ray.scale.set(1, 1, entry.rayLength);
+        vrLog('[VR] controller disconnected', index);
         refreshControllerVisibility();
         clearHoverState('controller');
       };
 
       entry.onSelectStart = () => {
         entry.isSelecting = true;
+        vrLog('[VR] selectstart', index);
       };
 
       entry.onSelectEnd = () => {
         entry.isSelecting = false;
+        vrLog('[VR] selectend', index, { hoverTrackId: entry.hoverTrackId });
         if (entry.hoverTrackId) {
           onTrackFollowRequest(entry.hoverTrackId);
         }
@@ -1255,8 +1283,24 @@ function VolumeViewer({
     const controllerTempMatrix = new THREE.Matrix4();
     const controllerProjectedPoint = new THREE.Vector3();
 
+    let lastControllerRaySummary:
+      | {
+          presenting: boolean;
+          visibleLines: number;
+          hoverTrackIds: Array<string | null>;
+        }
+      | null = null;
+
     const updateControllerRays = () => {
       if (!renderer.xr.isPresenting) {
+        if (!lastControllerRaySummary || lastControllerRaySummary.presenting !== false) {
+          vrLog('[VR] skipping controller rays – not presenting');
+        }
+        lastControllerRaySummary = {
+          presenting: false,
+          visibleLines: 0,
+          hoverTrackIds: controllersRef.current.map((entry) => entry.hoverTrackId)
+        };
         clearHoverState('controller');
         return;
       }
@@ -1276,11 +1320,16 @@ function VolumeViewer({
 
       let hoveredByController: { trackId: string; position: { x: number; y: number } | null } | null = null;
 
-      for (const entry of controllersRef.current) {
+      for (let index = 0; index < controllersRef.current.length; index++) {
+        const entry = controllersRef.current[index];
+        const previousHoverTrackId = entry.hoverTrackId;
         if (!entry.controller.visible) {
           entry.hoverTrackId = null;
           entry.rayLength = 3;
           entry.ray.scale.set(1, 1, entry.rayLength);
+          if (previousHoverTrackId !== entry.hoverTrackId) {
+            vrLog('[VR] controller hover cleared', index);
+          }
           continue;
         }
 
@@ -1334,6 +1383,12 @@ function VolumeViewer({
         }
 
         entry.hoverTrackId = hoverTrackId;
+        if (previousHoverTrackId !== hoverTrackId) {
+          vrLog('[VR] controller hover update', index, {
+            hoverTrackId,
+            hoverPosition
+          });
+        }
         entry.rayLength = rayLength;
         entry.ray.scale.set(1, 1, rayLength);
 
@@ -1341,6 +1396,21 @@ function VolumeViewer({
           hoveredByController = { trackId: hoverTrackId, position: hoverPosition };
         }
       }
+
+      const summary = {
+        presenting: true,
+        visibleLines: visibleLines.length,
+        hoverTrackIds: controllersRef.current.map((entry) => entry.hoverTrackId)
+      };
+      if (
+        !lastControllerRaySummary ||
+        summary.visibleLines !== lastControllerRaySummary.visibleLines ||
+        summary.hoverTrackIds.length !== lastControllerRaySummary.hoverTrackIds.length ||
+        summary.hoverTrackIds.some((id, hoverIndex) => id !== lastControllerRaySummary?.hoverTrackIds[hoverIndex])
+      ) {
+        vrLog('[VR] ray pass', summary);
+      }
+      lastControllerRaySummary = summary;
 
       if (hoveredByController) {
         updateHoverState(hoveredByController.trackId, hoveredByController.position, 'controller');
@@ -1350,12 +1420,20 @@ function VolumeViewer({
     };
 
     const handleXrManagerSessionStart = () => {
+      vrLog('[VR] sessionstart event', {
+        presenting: renderer.xr.isPresenting,
+        visibilityState: xrSessionRef.current?.visibilityState ?? null
+      });
       refreshControllerVisibility();
       updateControllerRays();
       handleResize();
     };
 
     const handleXrManagerSessionEnd = () => {
+      vrLog('[VR] sessionend event', {
+        presenting: renderer.xr.isPresenting,
+        visibilityState: xrSessionRef.current?.visibilityState ?? null
+      });
       refreshControllerVisibility();
       handleResize();
     };
@@ -1368,6 +1446,10 @@ function VolumeViewer({
     cameraRef.current = camera;
 
     const handleSessionEnd = () => {
+      vrLog('[VR] handleSessionEnd', {
+        presenting: renderer.xr.isPresenting,
+        visibilityState: xrSessionRef.current?.visibilityState ?? null
+      });
       sessionCleanupRef.current = null;
       xrSessionRef.current = null;
       setControllerVisibility(false);
@@ -1404,8 +1486,13 @@ function VolumeViewer({
       if (typeof navigator === 'undefined' || !navigator.xr) {
         throw new Error('WebXR not available');
       }
+      vrLog('[VR] requestSession → navigator.xr.requestSession');
       const session = await navigator.xr.requestSession('immersive-vr', {
         optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'layers']
+      });
+      vrLog('[VR] requestSession resolved', {
+        presenting: renderer.xr.isPresenting,
+        visibilityState: session.visibilityState
       });
       xrSessionRef.current = session;
 
@@ -1434,6 +1521,10 @@ function VolumeViewer({
       };
 
       renderer.xr.setSession(session);
+      vrLog('[VR] setSession', {
+        presenting: renderer.xr.isPresenting,
+        visibilityState: session.visibilityState
+      });
       refreshControllerVisibility();
       updateControllerRays();
 
@@ -1560,6 +1651,8 @@ function VolumeViewer({
       controls.target.copy(rotationTarget);
     };
 
+    let lastRenderTickSummary: { presenting: boolean; hoveredByController: string | null } | null = null;
+
     const renderLoop = () => {
       applyKeyboardMovement();
       controls.update();
@@ -1592,6 +1685,19 @@ function VolumeViewer({
       }
 
       updateControllerRays();
+      const hoveredEntry = controllersRef.current.find((entry) => entry.hoverTrackId);
+      const renderSummary = {
+        presenting: renderer.xr.isPresenting,
+        hoveredByController: hoveredEntry?.hoverTrackId ?? null
+      };
+      if (
+        !lastRenderTickSummary ||
+        renderSummary.presenting !== lastRenderTickSummary.presenting ||
+        renderSummary.hoveredByController !== lastRenderTickSummary.hoveredByController
+      ) {
+        vrLog('[VR] render tick', renderSummary);
+      }
+      lastRenderTickSummary = renderSummary;
       renderer.render(scene, camera);
     };
     renderer.setAnimationLoop(renderLoop);
