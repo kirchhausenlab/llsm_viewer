@@ -937,7 +937,7 @@ function App() {
     let isCancelled = false;
 
     const detectVrSupport = async () => {
-      if (typeof navigator === 'undefined' || !navigator.xr || !navigator.xr.isSessionSupported) {
+      if (typeof navigator === 'undefined' || !navigator.xr) {
         if (!isCancelled) {
           setIsVrSupported(false);
           setIsVrSupportChecked(true);
@@ -945,18 +945,56 @@ function App() {
         return;
       }
 
-      try {
-        const supported = await navigator.xr.isSessionSupported('immersive-vr');
+      const xr = navigator.xr as { requestSession?: unknown; isSessionSupported?: unknown } | undefined;
+      const requestSession =
+        xr && typeof xr.requestSession === 'function'
+          ? (xr.requestSession as (mode: string, options?: unknown) => Promise<XRSession>)
+          : null;
+      const isSessionSupportedFn =
+        xr && typeof xr.isSessionSupported === 'function'
+          ? (xr.isSessionSupported as (mode: string) => Promise<boolean>)
+          : null;
+      const hasRequestSession = Boolean(requestSession);
+
+      const markSupport = (supported: boolean) => {
         if (!isCancelled) {
           setIsVrSupported(supported);
           setIsVrSupportChecked(true);
         }
-      } catch (error) {
-        if (!isCancelled) {
-          setIsVrSupported(false);
-          setIsVrSupportChecked(true);
+      };
+
+      if (!xr || !isSessionSupportedFn) {
+        if (hasRequestSession) {
+          console.warn('WebXR isSessionSupported unavailable; falling back to optimistic VR enablement.');
+          markSupport(true);
+        } else {
+          markSupport(false);
         }
+        return;
+      }
+
+      try {
+        const supported = await isSessionSupportedFn('immersive-vr');
+        if (supported) {
+          markSupport(true);
+          return;
+        }
+
+        if (hasRequestSession) {
+          console.warn(
+            'WebXR immersive-vr probe reported unsupported; falling back to optimistic VR enablement.'
+          );
+          markSupport(true);
+        } else {
+          markSupport(false);
+        }
+      } catch (error) {
         console.warn('Failed to detect WebXR support', error);
+        if (hasRequestSession) {
+          markSupport(true);
+        } else {
+          markSupport(false);
+        }
       }
     };
 
