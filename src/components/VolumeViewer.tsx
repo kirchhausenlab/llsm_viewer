@@ -161,9 +161,20 @@ type ControllerEntry = {
   ray: THREE.Line;
   rayGeometry: THREE.BufferGeometry;
   rayMaterial: THREE.Material;
-  onConnected: (event: { data?: { targetRayMode?: string } }) => void;
+  raycaster: THREE.Raycaster;
+  onConnected: (event: { data?: { targetRayMode?: string; gamepad?: Gamepad } }) => void;
   onDisconnected: () => void;
+  onSelectStart: () => void;
+  onSelectEnd: () => void;
   isConnected: boolean;
+  targetRayMode: string | null;
+  gamepad: Gamepad | null;
+  hoverTrackId: string | null;
+  hoverPoint: THREE.Vector3;
+  rayOrigin: THREE.Vector3;
+  rayDirection: THREE.Vector3;
+  rayLength: number;
+  isSelecting: boolean;
 };
 
 const DEFAULT_TRACK_OPACITY = 0.9;
@@ -279,6 +290,10 @@ function VolumeViewer({
   const hoveredTrackIdRef = useRef<string | null>(null);
   const [hoveredTrackId, setHoveredTrackId] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
+  const hoverSourcesRef = useRef({
+    pointer: { trackId: null as string | null, position: null as { x: number; y: number } | null },
+    controller: { trackId: null as string | null, position: null as { x: number; y: number } | null }
+  });
   const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(null);
 
   const handleContainerRef = useCallback((node: HTMLDivElement | null) => {
@@ -307,24 +322,46 @@ function VolumeViewer({
     [channelTrackColorModes]
   );
 
+  const applyHoverState = useCallback(() => {
+    const pointerState = hoverSourcesRef.current.pointer;
+    const controllerState = hoverSourcesRef.current.controller;
+    const nextState =
+      pointerState.trackId !== null
+        ? pointerState
+        : controllerState.trackId !== null
+        ? controllerState
+        : { trackId: null as string | null, position: null as { x: number; y: number } | null };
+    if (hoveredTrackIdRef.current !== nextState.trackId) {
+      hoveredTrackIdRef.current = nextState.trackId;
+      setHoveredTrackId(nextState.trackId);
+    }
+    setTooltipPosition(nextState.position);
+  }, []);
+
   const updateHoverState = useCallback(
-    (trackId: string | null, position: { x: number; y: number } | null) => {
-      if (hoveredTrackIdRef.current !== trackId) {
-        hoveredTrackIdRef.current = trackId;
-        setHoveredTrackId(trackId);
-      }
-      setTooltipPosition(position);
+    (
+      trackId: string | null,
+      position: { x: number; y: number } | null,
+      source: 'pointer' | 'controller' = 'pointer'
+    ) => {
+      hoverSourcesRef.current[source] = { trackId, position };
+      applyHoverState();
     },
-    []
+    [applyHoverState]
   );
 
-  const clearHoverState = useCallback(() => {
-    if (hoveredTrackIdRef.current !== null) {
-      hoveredTrackIdRef.current = null;
-      setHoveredTrackId(null);
-    }
-    setTooltipPosition(null);
-  }, []);
+  const clearHoverState = useCallback(
+    (source?: 'pointer' | 'controller') => {
+      if (source) {
+        hoverSourcesRef.current[source] = { trackId: null, position: null };
+      } else {
+        hoverSourcesRef.current.pointer = { trackId: null, position: null };
+        hoverSourcesRef.current.controller = { trackId: null, position: null };
+      }
+      applyHoverState();
+    },
+    [applyHoverState]
+  );
 
   const applyVolumeRootTransform = useCallback(
     (dimensions: { width: number; height: number; depth: number } | null) => {
@@ -894,11 +931,20 @@ function VolumeViewer({
     const controllerModelFactory = new XRControllerModelFactory();
 
     const setControllerVisibility = (shouldShow: boolean) => {
+      let anyVisible = false;
       for (const entry of controllersRef.current) {
-        const visible = shouldShow && entry.isConnected;
+        const visible = shouldShow && entry.isConnected && entry.targetRayMode !== 'tracked-hand';
         entry.controller.visible = visible;
         entry.grip.visible = visible;
         entry.ray.visible = visible;
+        if (!visible) {
+          entry.hoverTrackId = null;
+        } else {
+          anyVisible = true;
+        }
+      }
+      if (!anyVisible) {
+        clearHoverState('controller');
       }
     };
 
@@ -921,19 +967,42 @@ function VolumeViewer({
       const model = controllerModelFactory.createControllerModel(grip);
       grip.add(model);
 
+      const controllerRaycaster = new THREE.Raycaster();
+      controllerRaycaster.params.Line = { threshold: 0.02 };
+      (controllerRaycaster.params as unknown as { Line2?: { threshold: number } }).Line2 = {
+        threshold: 0.02
+      };
+      controllerRaycaster.far = 10;
+
       const entry: ControllerEntry = {
         controller,
         grip,
         ray,
         rayGeometry,
         rayMaterial,
+        raycaster: controllerRaycaster,
         onConnected: () => undefined,
         onDisconnected: () => undefined,
-        isConnected: false
+        onSelectStart: () => undefined,
+        onSelectEnd: () => undefined,
+        isConnected: false,
+        targetRayMode: null,
+        gamepad: null,
+        hoverTrackId: null,
+        hoverPoint: new THREE.Vector3(),
+        rayOrigin: new THREE.Vector3(),
+        rayDirection: new THREE.Vector3(0, 0, -1),
+        rayLength: 3,
+        isSelecting: false
       };
 
-      entry.onConnected = () => {
+      entry.onConnected = (event) => {
         entry.isConnected = true;
+        entry.targetRayMode = event?.data?.targetRayMode ?? null;
+        entry.gamepad = event?.data?.gamepad ?? null;
+        entry.hoverTrackId = null;
+        entry.rayLength = 3;
+        setControllerVisibility(renderer.xr.isPresenting);
         if (renderer.xr.isPresenting) {
           controller.visible = true;
           grip.visible = true;
@@ -943,13 +1012,32 @@ function VolumeViewer({
 
       entry.onDisconnected = () => {
         entry.isConnected = false;
+        entry.targetRayMode = null;
+        entry.gamepad = null;
+        entry.hoverTrackId = null;
+        entry.rayLength = 3;
+        entry.isSelecting = false;
         controller.visible = false;
         grip.visible = false;
         ray.visible = false;
+        clearHoverState('controller');
+      };
+
+      entry.onSelectStart = () => {
+        entry.isSelecting = true;
+      };
+
+      entry.onSelectEnd = () => {
+        entry.isSelecting = false;
+        if (entry.hoverTrackId) {
+          onTrackFollowRequest(entry.hoverTrackId);
+        }
       };
 
       controller.addEventListener('connected', entry.onConnected);
       controller.addEventListener('disconnected', entry.onDisconnected);
+      controller.addEventListener('selectstart', entry.onSelectStart);
+      controller.addEventListener('selectend', entry.onSelectEnd);
 
       scene.add(controller);
       scene.add(grip);
@@ -988,7 +1076,7 @@ function VolumeViewer({
       const trackGroupInstance = trackGroupRef.current;
       const raycasterInstance = raycasterRef.current;
       if (!cameraInstance || !trackGroupInstance || !raycasterInstance || !trackGroupInstance.visible) {
-        clearHoverState();
+        clearHoverState('pointer');
         return null;
       }
 
@@ -996,14 +1084,14 @@ function VolumeViewer({
       const width = rect.width;
       const height = rect.height;
       if (width <= 0 || height <= 0) {
-        clearHoverState();
+        clearHoverState('pointer');
         return null;
       }
 
       const offsetX = event.clientX - rect.left;
       const offsetY = event.clientY - rect.top;
       if (offsetX < 0 || offsetY < 0 || offsetX > width || offsetY > height) {
-        clearHoverState();
+        clearHoverState('pointer');
         return null;
       }
 
@@ -1018,13 +1106,13 @@ function VolumeViewer({
       }
 
       if (visibleLines.length === 0) {
-        clearHoverState();
+        clearHoverState('pointer');
         return null;
       }
 
       const intersections = raycasterInstance.intersectObjects(visibleLines, false);
       if (intersections.length === 0) {
-        clearHoverState();
+        clearHoverState('pointer');
         return null;
       }
 
@@ -1035,7 +1123,7 @@ function VolumeViewer({
           ? (hitObject.userData.trackId as string)
           : null;
       if (trackId === null) {
-        clearHoverState();
+        clearHoverState('pointer');
         return null;
       }
 
@@ -1073,7 +1161,7 @@ function VolumeViewer({
         controls.enablePan = true;
       }
 
-      clearHoverState();
+      clearHoverState('pointer');
 
       pointerStateRef.current = {
         mode,
@@ -1099,7 +1187,7 @@ function VolumeViewer({
         return;
       }
 
-      clearHoverState();
+      clearHoverState('pointer');
 
       const controls = controlsRef.current;
       const camera = cameraRef.current;
@@ -1155,7 +1243,7 @@ function VolumeViewer({
     };
 
     const handlePointerLeave = () => {
-      clearHoverState();
+      clearHoverState('pointer');
     };
 
     const pointerDownOptions: AddEventListenerOptions = { capture: true };
@@ -1166,16 +1254,100 @@ function VolumeViewer({
     domElement.addEventListener('pointercancel', handlePointerUp);
     domElement.addEventListener('pointerleave', handlePointerLeave);
 
+    const controllerTempMatrix = new THREE.Matrix4();
+    const controllerProjectedPoint = new THREE.Vector3();
+
     const updateControllerRays = () => {
       if (!renderer.xr.isPresenting) {
+        clearHoverState('controller');
         return;
       }
-      const rayLength = 3;
+
+      const cameraInstance = cameraRef.current;
+      const trackGroupInstance = trackGroupRef.current;
+      const containerInstance = containerRef.current;
+
+      const visibleLines: Line2[] = [];
+      if (trackGroupInstance && trackGroupInstance.visible) {
+        for (const resource of trackLinesRef.current.values()) {
+          if (resource.line.visible) {
+            visibleLines.push(resource.line);
+          }
+        }
+      }
+
+      let hoveredByController: { trackId: string; position: { x: number; y: number } | null } | null = null;
+
       for (const entry of controllersRef.current) {
-        if (!entry.ray.visible) {
+        if (!entry.controller.visible) {
+          entry.hoverTrackId = null;
+          entry.rayLength = 3;
+          entry.ray.scale.set(1, 1, entry.rayLength);
           continue;
         }
+
+        let rayLength = 3;
+        let hoverTrackId: string | null = null;
+        let hoverPosition: { x: number; y: number } | null = null;
+
+        if (visibleLines.length > 0 && cameraInstance) {
+          controllerTempMatrix.identity().extractRotation(entry.controller.matrixWorld);
+          entry.rayOrigin.setFromMatrixPosition(entry.controller.matrixWorld);
+          entry.rayDirection.set(0, 0, -1).applyMatrix4(controllerTempMatrix).normalize();
+          entry.raycaster.ray.origin.copy(entry.rayOrigin);
+          entry.raycaster.ray.direction.copy(entry.rayDirection);
+
+          const intersections = entry.raycaster.intersectObjects(visibleLines, false) as Array<{
+            object: THREE.Object3D & { userData?: Record<string, unknown> };
+            distance: number;
+            point: THREE.Vector3;
+          }>;
+
+          if (intersections.length > 0) {
+            const intersection = intersections[0];
+            const trackId =
+              intersection.object.userData && typeof intersection.object.userData.trackId === 'string'
+                ? (intersection.object.userData.trackId as string)
+                : null;
+
+            if (trackId) {
+              hoverTrackId = trackId;
+              entry.hoverPoint.copy(intersection.point);
+              const distance = Math.max(0.15, Math.min(intersection.distance, 8));
+              rayLength = distance;
+              if (containerInstance) {
+                const width = containerInstance.clientWidth;
+                const height = containerInstance.clientHeight;
+                if (width > 0 && height > 0) {
+                  controllerProjectedPoint.copy(intersection.point).project(cameraInstance);
+                  if (
+                    Number.isFinite(controllerProjectedPoint.x) &&
+                    Number.isFinite(controllerProjectedPoint.y)
+                  ) {
+                    hoverPosition = {
+                      x: (controllerProjectedPoint.x * 0.5 + 0.5) * width,
+                      y: (-controllerProjectedPoint.y * 0.5 + 0.5) * height
+                    };
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        entry.hoverTrackId = hoverTrackId;
+        entry.rayLength = rayLength;
         entry.ray.scale.set(1, 1, rayLength);
+
+        if (!hoveredByController && hoverTrackId) {
+          hoveredByController = { trackId: hoverTrackId, position: hoverPosition };
+        }
+      }
+
+      if (hoveredByController) {
+        updateHoverState(hoveredByController.trackId, hoveredByController.position, 'controller');
+      } else {
+        clearHoverState('controller');
       }
     };
 
@@ -1439,6 +1611,8 @@ function VolumeViewer({
       for (const entry of controllersRef.current) {
         entry.controller.removeEventListener('connected', entry.onConnected);
         entry.controller.removeEventListener('disconnected', entry.onDisconnected);
+        entry.controller.removeEventListener('selectstart', entry.onSelectStart);
+        entry.controller.removeEventListener('selectend', entry.onSelectEnd);
         entry.controller.remove(entry.ray);
         scene.remove(entry.controller);
         scene.remove(entry.grip);
