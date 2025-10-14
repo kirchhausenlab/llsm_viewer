@@ -1488,7 +1488,7 @@ function VolumeViewer({
       }
       vrLog('[VR] requestSession → navigator.xr.requestSession');
       const session = await navigator.xr.requestSession('immersive-vr', {
-        optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'layers']
+        optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
       });
       vrLog('[VR] requestSession resolved', {
         presenting: renderer.xr.isPresenting,
