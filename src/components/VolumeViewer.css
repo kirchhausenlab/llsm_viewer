@@ -140,12 +140,6 @@
   cursor: not-allowed;
 }
 
-.volume-viewer.is-vr-presenting .overlay,
-.volume-viewer.is-vr-presenting .track-tooltip,
-.volume-viewer.is-vr-presenting .vr-button-container {
-  display: none !important;
-}
-
 .track-tooltip {
   position: absolute;
   transform: translate(12px, 12px);
