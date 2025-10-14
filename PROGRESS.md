@@ -6,6 +6,11 @@
 - Reset the renderer sizing and animation loop after WebXR sessions end, restoring the desktop viewer instead of leaving a blank
   canvas when exiting VR.
 
+## VR volume ray-march fix
+- Updated the 3D volume meshes to refresh their camera-position uniforms during `onBeforeRender`, giving WebXR eye cameras the
+  correct ray origins so immersive mode renders the same ray-marched 3D texture seen on desktop instead of the fallback slice
+  planes.
+
 ## Immersive VR renderer integration
 - Added WebXR session management to the 3D viewer, exposing Enter/Exit VR controls in the playback window once immersive VR support is detected.
 - Swapped the render loop to Three.js's `setAnimationLoop`, enabling headset-driven frame timing while keeping the existing keyboard movement and track uniforms in sync.

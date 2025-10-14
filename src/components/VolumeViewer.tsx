@@ -1675,17 +1675,6 @@ function VolumeViewer({
       for (const resource of resources.values()) {
         const { mesh } = resource;
         mesh.updateMatrixWorld();
-
-        if (resource.mode === '3d') {
-          const material = mesh.material as { uniforms?: Record<string, { value: unknown }> };
-          const cameraUniform = material.uniforms?.u_cameraPos?.value as
-            | THREE.Vector3
-            | undefined;
-          if (cameraUniform) {
-            cameraUniform.copy(camera.position);
-            mesh.worldToLocal(cameraUniform);
-          }
-        }
       }
 
       updateControllerRays();
@@ -2048,6 +2037,23 @@ function VolumeViewer({
           meshObject.renderOrder = index;
           mesh.position.set(layer.offsetX, layer.offsetY, 0);
 
+          const worldCameraPosition = new THREE.Vector3();
+          const localCameraPosition = new THREE.Vector3();
+          mesh.onBeforeRender = (_renderer, _scene, renderCamera) => {
+            const shaderMaterial = mesh.material as THREE.ShaderMaterial;
+            const cameraUniform = shaderMaterial.uniforms?.u_cameraPos?.value as
+              | THREE.Vector3
+              | undefined;
+            if (!cameraUniform) {
+              return;
+            }
+
+            worldCameraPosition.setFromMatrixPosition(renderCamera.matrixWorld);
+            localCameraPosition.copy(worldCameraPosition);
+            mesh.worldToLocal(localCameraPosition);
+            cameraUniform.copy(localCameraPosition);
+          };
+
           const volumeRootGroup = volumeRootGroupRef.current;
           if (volumeRootGroup) {
             volumeRootGroup.add(mesh);
@@ -2055,10 +2061,6 @@ function VolumeViewer({
             scene.add(mesh);
           }
           mesh.updateMatrixWorld(true);
-
-          const cameraUniform = mesh.material.uniforms.u_cameraPos.value;
-          cameraUniform.copy(camera.position);
-          mesh.worldToLocal(cameraUniform);
 
           resourcesRef.current.set(layer.key, {
             mesh,
@@ -2174,11 +2176,6 @@ function VolumeViewer({
             mesh.position.set(desiredX, desiredY, mesh.position.z);
             mesh.updateMatrixWorld();
           }
-
-          const localCameraPosition = camera.position.clone();
-          mesh.updateMatrixWorld();
-          mesh.worldToLocal(localCameraPosition);
-          materialUniforms.u_cameraPos.value.copy(localCameraPosition);
         } else {
           const maxIndex = Math.max(0, volume.depth - 1);
           const clampedIndex = Math.min(Math.max(zIndex, 0), maxIndex);
@@ -2202,14 +2199,6 @@ function VolumeViewer({
             mesh.position.set(desiredX, desiredY, clampedIndex);
             mesh.updateMatrixWorld();
           }
-        }
-
-        const cameraUniform = materialUniforms.u_cameraPos?.value as THREE.Vector3 | undefined;
-        if (cameraUniform) {
-          const localCameraPosition = camera.position.clone();
-          mesh.updateMatrixWorld();
-          mesh.worldToLocal(localCameraPosition);
-          cameraUniform.copy(localCameraPosition);
         }
       }
 
