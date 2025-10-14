@@ -948,6 +948,10 @@ function VolumeViewer({
       }
     };
 
+    const refreshControllerVisibility = () => {
+      setControllerVisibility(renderer.xr.isPresenting);
+    };
+
     for (let index = 0; index < 2; index++) {
       const controller = renderer.xr.getController(index);
       controller.visible = false;
@@ -1002,12 +1006,7 @@ function VolumeViewer({
         entry.gamepad = event?.data?.gamepad ?? null;
         entry.hoverTrackId = null;
         entry.rayLength = 3;
-        setControllerVisibility(renderer.xr.isPresenting);
-        if (renderer.xr.isPresenting) {
-          controller.visible = true;
-          grip.visible = true;
-          ray.visible = true;
-        }
+        refreshControllerVisibility();
       };
 
       entry.onDisconnected = () => {
@@ -1017,9 +1016,8 @@ function VolumeViewer({
         entry.hoverTrackId = null;
         entry.rayLength = 3;
         entry.isSelecting = false;
-        controller.visible = false;
-        grip.visible = false;
-        ray.visible = false;
+        entry.ray.scale.set(1, 1, entry.rayLength);
+        refreshControllerVisibility();
         clearHoverState('controller');
       };
 
@@ -1351,6 +1349,20 @@ function VolumeViewer({
       }
     };
 
+    const handleXrManagerSessionStart = () => {
+      refreshControllerVisibility();
+      updateControllerRays();
+      handleResize();
+    };
+
+    const handleXrManagerSessionEnd = () => {
+      refreshControllerVisibility();
+      handleResize();
+    };
+
+    renderer.xr.addEventListener('sessionstart', handleXrManagerSessionStart);
+    renderer.xr.addEventListener('sessionend', handleXrManagerSessionEnd);
+
     rendererRef.current = renderer;
     sceneRef.current = scene;
     cameraRef.current = camera;
@@ -1377,6 +1389,9 @@ function VolumeViewer({
       }
       preVrCameraStateRef.current = null;
       renderer.xr.setSession?.(null);
+      refreshControllerVisibility();
+      handleResize();
+      renderer.setAnimationLoop(renderLoop);
       if (!isDisposed) {
         onVrSessionEnded?.();
       }
@@ -1419,7 +1434,7 @@ function VolumeViewer({
       };
 
       renderer.xr.setSession(session);
-      setControllerVisibility(true);
+      refreshControllerVisibility();
       updateControllerRays();
 
       if (!isDisposed) {
@@ -1584,6 +1599,8 @@ function VolumeViewer({
     return () => {
       isDisposed = true;
       onRegisterVrSession?.(null);
+      renderer.xr.removeEventListener('sessionstart', handleXrManagerSessionStart);
+      renderer.xr.removeEventListener('sessionend', handleXrManagerSessionEnd);
       renderer.setAnimationLoop(null);
 
       const activeSession = xrSessionRef.current;
