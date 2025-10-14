@@ -17,6 +17,11 @@
 - Instantiated Quest controller models with forward-pointing ray visuals, wiring them into the scene graph so they appear during VR sessions and tear down cleanly afterwards.
 - Routed session lifecycle callbacks to the React shell so the UI reflects active VR status and guards mode toggles while a headset session is live.
 
+## VR playback controls
+- Built a camera-anchored playback HUD for immersive mode with a 3D play/pause button, scrubber, and time label that mirror the desktop controls while remaining visible in-headset.
+- Wired controller raycasts to the HUD so hovering highlights elements, the trigger toggles playback, and dragging the slider updates the active timepoint in real time.
+- Synced session lifecycle hooks to show and hide the HUD as VR sessions start or end, cleaning up textures and materials when the Three.js renderer tears down.
+
 ## Normalization fast path
 - Added a zero-copy normalization path for uint8 volumes already spanning [0, 255] and introduced regression tests to verify buffer reuse and clamped results for other ranges.
 

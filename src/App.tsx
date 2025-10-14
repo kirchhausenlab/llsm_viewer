@@ -2634,6 +2634,11 @@ function App() {
               expectedVolumes={expectedVolumeCount}
               timeIndex={selectedIndex}
               totalTimepoints={volumeTimepointCount}
+              isPlaying={isPlaying}
+              playbackDisabled={playbackDisabled}
+              playbackLabel={playbackLabel}
+              onTogglePlayback={handleTogglePlayback}
+              onTimeIndexChange={handleTimeIndexChange}
               onRegisterReset={handleRegisterReset}
               tracks={parsedTracks}
               trackVisibility={trackVisibility}
