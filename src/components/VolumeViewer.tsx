@@ -189,6 +189,44 @@ function createColormapTexture(hexColor: string) {
   return texture;
 }
 
+function ensureVolumeCameraUniformUpdater(mesh: THREE.Mesh, cameraUniform: THREE.Vector3) {
+  const userData = mesh.userData ?? (mesh.userData = {});
+  if (userData.__volumeCameraUniformUpdater) {
+    return;
+  }
+
+  const worldPositionBuffer = new THREE.Vector3();
+  const localPositionBuffer = new THREE.Vector3();
+  const previousOnBeforeRender = typeof mesh.onBeforeRender === 'function' ? mesh.onBeforeRender : null;
+
+  const handleBeforeRender = function (
+    renderer: THREE.WebGLRenderer,
+    scene: THREE.Scene,
+    renderCamera: THREE.Camera,
+    geometry: THREE.BufferGeometry,
+    material: THREE.Material,
+    group: THREE.Group | null
+  ) {
+    if (renderCamera) {
+      worldPositionBuffer.setFromMatrixPosition(renderCamera.matrixWorld);
+      localPositionBuffer.copy(worldPositionBuffer);
+      mesh.worldToLocal(localPositionBuffer);
+      cameraUniform.copy(localPositionBuffer);
+    }
+
+    if (previousOnBeforeRender) {
+      previousOnBeforeRender.call(mesh, renderer, scene, renderCamera, geometry, material, group);
+    }
+  };
+
+  mesh.onBeforeRender = handleBeforeRender;
+  userData.__volumeCameraUniformUpdater = {
+    dispose: () => {
+      mesh.onBeforeRender = previousOnBeforeRender ?? null;
+    }
+  };
+}
+
 function VolumeViewer({
   layers,
   isLoading,
@@ -238,6 +276,63 @@ function VolumeViewer({
   const volumeRootCenterOffsetRef = useRef(new THREE.Vector3());
   const trackGroupRef = useRef<THREE.Group | null>(null);
   const trackLinesRef = useRef<Map<string, TrackLineResource>>(new Map());
+  const vrUiGroupRef = useRef<THREE.Group | null>(null);
+  const vrUiInteractablesRef = useRef<THREE.Object3D[]>([]);
+  const vrRaycasterRef = useRef<THREE.Raycaster | null>(null);
+  const vrControllerStateRef = useRef<
+    Array<{
+      controller: THREE.Group;
+      line: THREE.Line;
+      onSelectStart: () => void;
+      onSelectEnd: () => void;
+      onConnected: () => void;
+      onDisconnected: () => void;
+      connected: boolean;
+    }>
+  >([]);
+  const vrHoverTargetRef = useRef<THREE.Object3D | null>(null);
+  const vrUiElementsRef = useRef<{
+    panel: THREE.Mesh | null;
+    progressBackground: THREE.Mesh | null;
+    progressFill: THREE.Mesh | null;
+    playButton: THREE.Mesh | null;
+    stepBackButton: THREE.Mesh | null;
+    stepForwardButton: THREE.Mesh | null;
+    playIcon: THREE.Sprite | null;
+    stepBackIcon: THREE.Sprite | null;
+    stepForwardIcon: THREE.Sprite | null;
+    labelSprite: THREE.Sprite | null;
+  }>({
+    panel: null,
+    progressBackground: null,
+    progressFill: null,
+    playButton: null,
+    stepBackButton: null,
+    stepForwardButton: null,
+    playIcon: null,
+    stepBackIcon: null,
+    stepForwardIcon: null,
+    labelSprite: null
+  });
+  const vrUiResourcesRef = useRef<{
+    labelCanvas: HTMLCanvasElement | null;
+    labelContext: CanvasRenderingContext2D | null;
+    labelTexture: THREE.CanvasTexture | null;
+    playIconCanvas: HTMLCanvasElement | null;
+    playIconContext: CanvasRenderingContext2D | null;
+    playIconTexture: THREE.CanvasTexture | null;
+    stepBackTexture: THREE.CanvasTexture | null;
+    stepForwardTexture: THREE.CanvasTexture | null;
+  }>({
+    labelCanvas: null,
+    labelContext: null,
+    labelTexture: null,
+    playIconCanvas: null,
+    playIconContext: null,
+    playIconTexture: null,
+    stepBackTexture: null,
+    stepForwardTexture: null
+  });
   const raycasterRef = useRef<RaycasterLike | null>(null);
   const timeIndexRef = useRef(0);
   const followedTrackIdRef = useRef<string | null>(null);
@@ -246,6 +341,7 @@ function VolumeViewer({
   const [hasMeasured, setHasMeasured] = useState(false);
   const [trackOverlayRevision, setTrackOverlayRevision] = useState(0);
   const [renderContextRevision, setRenderContextRevision] = useState(0);
+  const [isVrPresenting, setIsVrPresenting] = useState(false);
   const hoveredTrackIdRef = useRef<string | null>(null);
   const [hoveredTrackId, setHoveredTrackId] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
@@ -2231,6 +2327,13 @@ function VolumeViewer({
       if (!resource) {
         return;
       }
+      const updater = resource.mesh.userData?.__volumeCameraUniformUpdater;
+      if (updater?.dispose) {
+        updater.dispose();
+      }
+      if (resource.mesh.userData) {
+        delete resource.mesh.userData.__volumeCameraUniformUpdater;
+      }
       const parent = resource.mesh.parent;
       if (parent) {
         parent.remove(resource.mesh);
@@ -2418,6 +2521,7 @@ function VolumeViewer({
           const cameraUniform = mesh.material.uniforms.u_cameraPos.value;
           cameraUniform.copy(camera.position);
           mesh.worldToLocal(cameraUniform);
+          ensureVolumeCameraUniformUpdater(mesh, cameraUniform);
 
           resourcesRef.current.set(layer.key, {
             mesh,
@@ -2538,6 +2642,7 @@ function VolumeViewer({
           mesh.updateMatrixWorld();
           mesh.worldToLocal(localCameraPosition);
           materialUniforms.u_cameraPos.value.copy(localCameraPosition);
+          ensureVolumeCameraUniformUpdater(mesh, materialUniforms.u_cameraPos.value);
         } else {
           const maxIndex = Math.max(0, volume.depth - 1);
           const clampedIndex = Math.min(Math.max(zIndex, 0), maxIndex);
