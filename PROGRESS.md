@@ -227,3 +227,8 @@ d centered the front-page card in the viewport.
 ## Layer alignment slider
 - Added a per-layer X displacement slider in the layers window that only affects the active layer, allowing subpixel alignment checks against other layers in both 3D and planar viewers.
 - Expanded the alignment controls to include matching ±10 px ranges on side-by-side X and Y displacement sliders without growing the panel footprint, updating both planar resampling and 3D mesh offsets to respect the new axis.
+
+## WebXR session bootstrap
+- Enabled Three.js WebXR support in the volume viewer and exposed a styled VR button that requests immersive sessions when hardware is available.
+- Transitioned the render loop to use `setAnimationLoop` so XR presentation shares the same draw pipeline while maintaining a requestAnimationFrame fallback for legacy browsers.
+- Disabled desktop orbit controls during VR sessions, reset keyboard navigation state, and restored the prior configuration on exit to keep pointer gestures predictable outside of XR.

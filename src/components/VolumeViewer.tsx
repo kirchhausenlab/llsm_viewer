@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { VRButton } from 'three/examples/jsm/webxr/VRButton';
 import { Line2 } from 'three/examples/jsm/lines/Line2';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
@@ -214,6 +215,7 @@ function VolumeViewer({
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
+  const controlsEnabledBeforeVRRef = useRef(true);
   const animationFrameRef = useRef<number | null>(null);
   const resourcesRef = useRef<Map<string, VolumeResources>>(new Map());
   const currentDimensionsRef = useRef<{ width: number; height: number; depth: number } | null>(null);
@@ -248,10 +250,15 @@ function VolumeViewer({
   const [hoveredTrackId, setHoveredTrackId] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
   const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(null);
+  const [vrButtonContainer, setVrButtonContainer] = useState<HTMLDivElement | null>(null);
 
   const handleContainerRef = useCallback((node: HTMLDivElement | null) => {
     containerRef.current = node;
     setContainerNode(node);
+  }, []);
+
+  const handleVrButtonContainerRef = useCallback((node: HTMLDivElement | null) => {
+    setVrButtonContainer(node);
   }, []);
 
   followedTrackIdRef.current = followedTrackId;
@@ -822,6 +829,7 @@ function VolumeViewer({
     }
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.xr.enabled = true;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(container.clientWidth, container.clientHeight);
@@ -1101,6 +1109,8 @@ function VolumeViewer({
     const rightVector = new THREE.Vector3();
     const movementVector = new THREE.Vector3();
     const dollyDirection = new THREE.Vector3();
+    const activeCameraWorldPosition = new THREE.Vector3();
+    const localCameraPosition = new THREE.Vector3();
 
     const applyKeyboardMovement = () => {
       if (followedTrackIdRef.current !== null) {
@@ -1169,10 +1179,19 @@ function VolumeViewer({
     };
 
     const renderLoop = () => {
-      applyKeyboardMovement();
-      controls.update();
+      const isPresentingXR = renderer.xr.isPresenting;
 
-      if (followedTrackIdRef.current !== null) {
+      if (!isPresentingXR) {
+        applyKeyboardMovement();
+        controls.update();
+      }
+
+      const activeCamera = isPresentingXR
+        ? (renderer.xr.getCamera(camera) as THREE.Camera)
+        : camera;
+      activeCamera.getWorldPosition(activeCameraWorldPosition);
+
+      if (!isPresentingXR && followedTrackIdRef.current !== null) {
         const rotationTarget = rotationTargetRef.current;
         if (rotationTarget) {
           if (!trackFollowOffsetRef.current) {
@@ -1193,15 +1212,24 @@ function VolumeViewer({
             | THREE.Vector3
             | undefined;
           if (cameraUniform) {
-            cameraUniform.copy(camera.position);
-            mesh.worldToLocal(cameraUniform);
+            localCameraPosition.copy(activeCameraWorldPosition);
+            mesh.worldToLocal(localCameraPosition);
+            cameraUniform.copy(localCameraPosition);
           }
         }
       }
       renderer.render(scene, camera);
-      animationFrameRef.current = requestAnimationFrame(renderLoop);
     };
-    renderLoop();
+
+    if (typeof renderer.setAnimationLoop === 'function') {
+      renderer.setAnimationLoop(renderLoop);
+    } else {
+      const fallbackLoop = () => {
+        renderLoop();
+        animationFrameRef.current = requestAnimationFrame(fallbackLoop);
+      };
+      fallbackLoop();
+    }
 
     return () => {
       const resources = resourcesRef.current;
@@ -1256,6 +1284,9 @@ function VolumeViewer({
 
       raycasterRef.current = null;
 
+      if (typeof renderer.setAnimationLoop === 'function') {
+        renderer.setAnimationLoop(null);
+      }
       if (animationFrameRef.current !== null) {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
@@ -1272,6 +1303,81 @@ function VolumeViewer({
       controlsRef.current = null;
     };
   }, [applyTrackGroupTransform, applyVolumeRootTransform, containerNode]);
+
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    if (!renderer) {
+      return;
+    }
+
+    const targetContainer = vrButtonContainer ?? containerRef.current;
+    if (!targetContainer) {
+      return;
+    }
+
+    const button = VRButton.createButton(renderer);
+    button.classList.add('viewer-vr-button');
+    button.style.cssText = '';
+    button.setAttribute('aria-label', 'Toggle VR session');
+    button.setAttribute('title', 'Toggle VR session');
+    targetContainer.appendChild(button);
+
+    const handleSessionStart = () => {
+      const controls = controlsRef.current;
+      const movementState = movementStateRef.current;
+      const pointerState = pointerStateRef.current;
+
+      if (pointerState) {
+        try {
+          renderer.domElement.releasePointerCapture(pointerState.pointerId);
+        } catch (error) {
+          // Ignore pointer capture release failures.
+        }
+        if (controls) {
+          controls.enabled = pointerState.previousControlsEnabled;
+          if (pointerState.mode === 'pan' && pointerState.previousEnablePan !== null) {
+            controls.enablePan = pointerState.previousEnablePan;
+          }
+        }
+        pointerStateRef.current = null;
+      }
+
+      if (controls) {
+        controlsEnabledBeforeVRRef.current = controls.enabled;
+        controls.enabled = false;
+      }
+
+      if (movementState) {
+        movementState.moveForward = false;
+        movementState.moveBackward = false;
+        movementState.moveLeft = false;
+        movementState.moveRight = false;
+        movementState.moveUp = false;
+        movementState.moveDown = false;
+      }
+
+      clearHoverState();
+    };
+
+    const handleSessionEnd = () => {
+      const controls = controlsRef.current;
+      if (controls) {
+        controls.enabled = controlsEnabledBeforeVRRef.current;
+        controls.update();
+      }
+    };
+
+    renderer.xr.addEventListener('sessionstart', handleSessionStart);
+    renderer.xr.addEventListener('sessionend', handleSessionEnd);
+
+    return () => {
+      renderer.xr.removeEventListener('sessionstart', handleSessionStart);
+      renderer.xr.removeEventListener('sessionend', handleSessionEnd);
+      if (button.parentNode) {
+        button.parentNode.removeChild(button);
+      }
+    };
+  }, [clearHoverState, renderContextRevision, vrButtonContainer]);
 
   useEffect(() => {
     const handleKeyChange = (event: KeyboardEvent, isPressed: boolean) => {
@@ -1722,6 +1828,7 @@ function VolumeViewer({
               {hoveredTrackLabel}
             </div>
           ) : null}
+          <div className="vr-button-container" ref={handleVrButtonContainerRef} />
         </div>
       </section>
     </div>
