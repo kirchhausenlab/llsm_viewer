@@ -5,6 +5,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { Line2 } from 'three/examples/jsm/lines/Line2';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
+import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory';
 import type { NormalizedVolume } from '../volumeProcessing';
 import { VolumeRenderShader } from '../shaders/volumeRenderShader';
 import { SliceRenderShader } from '../shaders/sliceRenderShader';
@@ -45,6 +46,16 @@ type VolumeViewerProps = {
   channelTrackOffsets: Record<string, { x: number; y: number }>;
   followedTrackId: string | null;
   onTrackFollowRequest: (trackId: string) => void;
+  onRegisterVrSession?: (
+    handlers:
+      | {
+          requestSession: () => Promise<XRSession | null>;
+          endSession: () => Promise<void> | void;
+        }
+      | null
+  ) => void;
+  onVrSessionStarted?: () => void;
+  onVrSessionEnded?: () => void;
 };
 
 type VolumeResources = {
@@ -144,6 +155,28 @@ type TrackLineResource = {
   highlightColor: THREE.Color;
 };
 
+type ControllerEntry = {
+  controller: THREE.Group;
+  grip: THREE.Group;
+  ray: THREE.Line;
+  rayGeometry: THREE.BufferGeometry;
+  rayMaterial: THREE.Material;
+  raycaster: THREE.Raycaster;
+  onConnected: (event: { data?: { targetRayMode?: string; gamepad?: Gamepad } }) => void;
+  onDisconnected: () => void;
+  onSelectStart: () => void;
+  onSelectEnd: () => void;
+  isConnected: boolean;
+  targetRayMode: string | null;
+  gamepad: Gamepad | null;
+  hoverTrackId: string | null;
+  hoverPoint: THREE.Vector3;
+  rayOrigin: THREE.Vector3;
+  rayDirection: THREE.Vector3;
+  rayLength: number;
+  isSelecting: boolean;
+};
+
 const DEFAULT_TRACK_OPACITY = 0.9;
 const DEFAULT_TRACK_LINE_WIDTH = 1;
 
@@ -207,14 +240,22 @@ function VolumeViewer({
   channelTrackColorModes,
   channelTrackOffsets,
   followedTrackId,
-  onTrackFollowRequest
+  onTrackFollowRequest,
+  onRegisterVrSession,
+  onVrSessionStarted,
+  onVrSessionEnded
 }: VolumeViewerProps) {
+  const vrLog = (...args: Parameters<typeof console.debug>) => {
+    if (import.meta.env?.DEV) {
+      console.debug(...args);
+    }
+  };
+
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
   const resourcesRef = useRef<Map<string, VolumeResources>>(new Map());
   const currentDimensionsRef = useRef<{ width: number; height: number; depth: number } | null>(null);
   const colormapCacheRef = useRef<Map<string, THREE.DataTexture>>(new Map());
@@ -236,17 +277,29 @@ function VolumeViewer({
   const volumeRootCenterOffsetRef = useRef(new THREE.Vector3());
   const trackGroupRef = useRef<THREE.Group | null>(null);
   const trackLinesRef = useRef<Map<string, TrackLineResource>>(new Map());
+  const controllersRef = useRef<ControllerEntry[]>([]);
   const raycasterRef = useRef<RaycasterLike | null>(null);
   const timeIndexRef = useRef(0);
   const followedTrackIdRef = useRef<string | null>(null);
   const trackFollowOffsetRef = useRef<THREE.Vector3 | null>(null);
   const previousFollowedTrackIdRef = useRef<string | null>(null);
+  const xrSessionRef = useRef<XRSession | null>(null);
+  const sessionCleanupRef = useRef<(() => void) | null>(null);
+  const preVrCameraStateRef = useRef<{
+    position: THREE.Vector3;
+    quaternion: THREE.Quaternion;
+    target: THREE.Vector3;
+  } | null>(null);
   const [hasMeasured, setHasMeasured] = useState(false);
   const [trackOverlayRevision, setTrackOverlayRevision] = useState(0);
   const [renderContextRevision, setRenderContextRevision] = useState(0);
   const hoveredTrackIdRef = useRef<string | null>(null);
   const [hoveredTrackId, setHoveredTrackId] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
+  const hoverSourcesRef = useRef({
+    pointer: { trackId: null as string | null, position: null as { x: number; y: number } | null },
+    controller: { trackId: null as string | null, position: null as { x: number; y: number } | null }
+  });
   const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(null);
 
   const handleContainerRef = useCallback((node: HTMLDivElement | null) => {
@@ -275,24 +328,46 @@ function VolumeViewer({
     [channelTrackColorModes]
   );
 
+  const applyHoverState = useCallback(() => {
+    const pointerState = hoverSourcesRef.current.pointer;
+    const controllerState = hoverSourcesRef.current.controller;
+    const nextState =
+      pointerState.trackId !== null
+        ? pointerState
+        : controllerState.trackId !== null
+        ? controllerState
+        : { trackId: null as string | null, position: null as { x: number; y: number } | null };
+    if (hoveredTrackIdRef.current !== nextState.trackId) {
+      hoveredTrackIdRef.current = nextState.trackId;
+      setHoveredTrackId(nextState.trackId);
+    }
+    setTooltipPosition(nextState.position);
+  }, []);
+
   const updateHoverState = useCallback(
-    (trackId: string | null, position: { x: number; y: number } | null) => {
-      if (hoveredTrackIdRef.current !== trackId) {
-        hoveredTrackIdRef.current = trackId;
-        setHoveredTrackId(trackId);
-      }
-      setTooltipPosition(position);
+    (
+      trackId: string | null,
+      position: { x: number; y: number } | null,
+      source: 'pointer' | 'controller' = 'pointer'
+    ) => {
+      hoverSourcesRef.current[source] = { trackId, position };
+      applyHoverState();
     },
-    []
+    [applyHoverState]
   );
 
-  const clearHoverState = useCallback(() => {
-    if (hoveredTrackIdRef.current !== null) {
-      hoveredTrackIdRef.current = null;
-      setHoveredTrackId(null);
-    }
-    setTooltipPosition(null);
-  }, []);
+  const clearHoverState = useCallback(
+    (source?: 'pointer' | 'controller') => {
+      if (source) {
+        hoverSourcesRef.current[source] = { trackId: null, position: null };
+      } else {
+        hoverSourcesRef.current.pointer = { trackId: null, position: null };
+        hoverSourcesRef.current.controller = { trackId: null, position: null };
+      }
+      applyHoverState();
+    },
+    [applyHoverState]
+  );
 
   const applyVolumeRootTransform = useCallback(
     (dimensions: { width: number; height: number; depth: number } | null) => {
@@ -821,12 +896,15 @@ function VolumeViewer({
       return;
     }
 
+    let isDisposed = false;
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(container.clientWidth, container.clientHeight);
     const clearColor = 0x080a0d;
     renderer.setClearColor(clearColor, 1);
+    renderer.xr.enabled = true;
+    renderer.xr.setReferenceSpaceType?.('local-floor');
 
     container.appendChild(renderer.domElement);
 
@@ -854,6 +932,144 @@ function VolumeViewer({
 
     setTrackOverlayRevision((revision) => revision + 1);
     setRenderContextRevision((revision) => revision + 1);
+
+    controllersRef.current = [];
+    const controllerModelFactory = new XRControllerModelFactory();
+
+    const setControllerVisibility = (shouldShow: boolean) => {
+      let anyVisible = false;
+      const visibilitySnapshot: Array<{
+        index: number;
+        visible: boolean;
+        isConnected: boolean;
+        targetRayMode: string | null;
+      }> = [];
+      controllersRef.current.forEach((entry, index) => {
+        const visible = shouldShow && entry.isConnected && entry.targetRayMode !== 'tracked-hand';
+        entry.controller.visible = visible;
+        entry.grip.visible = visible;
+        entry.ray.visible = visible;
+        visibilitySnapshot.push({
+          index,
+          visible,
+          isConnected: entry.isConnected,
+          targetRayMode: entry.targetRayMode
+        });
+        if (!visible) {
+          entry.hoverTrackId = null;
+        } else {
+          anyVisible = true;
+        }
+      });
+      if (import.meta.env?.DEV) {
+        vrLog('[VR] controller visibility', { shouldShow, visibilitySnapshot });
+      }
+      if (!anyVisible) {
+        clearHoverState('controller');
+      }
+    };
+
+    const refreshControllerVisibility = () => {
+      setControllerVisibility(renderer.xr.isPresenting);
+    };
+
+    for (let index = 0; index < 2; index++) {
+      const controller = renderer.xr.getController(index);
+      controller.visible = false;
+
+      const grip = renderer.xr.getControllerGrip(index);
+      grip.visible = false;
+
+      const rayGeometry = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(0, 0, -1)
+      ]);
+      const rayMaterial = new THREE.LineBasicMaterial({ color: 0xffffff });
+      const ray = new THREE.Line(rayGeometry, rayMaterial);
+      ray.visible = false;
+      controller.add(ray);
+
+      const model = controllerModelFactory.createControllerModel(grip);
+      grip.add(model);
+
+      const controllerRaycaster = new THREE.Raycaster();
+      controllerRaycaster.params.Line = { threshold: 0.02 };
+      (controllerRaycaster.params as unknown as { Line2?: { threshold: number } }).Line2 = {
+        threshold: 0.02
+      };
+      controllerRaycaster.far = 10;
+
+      const entry: ControllerEntry = {
+        controller,
+        grip,
+        ray,
+        rayGeometry,
+        rayMaterial,
+        raycaster: controllerRaycaster,
+        onConnected: () => undefined,
+        onDisconnected: () => undefined,
+        onSelectStart: () => undefined,
+        onSelectEnd: () => undefined,
+        isConnected: false,
+        targetRayMode: null,
+        gamepad: null,
+        hoverTrackId: null,
+        hoverPoint: new THREE.Vector3(),
+        rayOrigin: new THREE.Vector3(),
+        rayDirection: new THREE.Vector3(0, 0, -1),
+        rayLength: 3,
+        isSelecting: false
+      };
+
+      entry.onConnected = (event) => {
+        entry.isConnected = true;
+        entry.targetRayMode = event?.data?.targetRayMode ?? null;
+        entry.gamepad = event?.data?.gamepad ?? null;
+        entry.hoverTrackId = null;
+        entry.rayLength = 3;
+        vrLog('[VR] controller connected', index, {
+          targetRayMode: entry.targetRayMode,
+          hasGamepad: Boolean(entry.gamepad)
+        });
+        refreshControllerVisibility();
+      };
+
+      entry.onDisconnected = () => {
+        entry.isConnected = false;
+        entry.targetRayMode = null;
+        entry.gamepad = null;
+        entry.hoverTrackId = null;
+        entry.rayLength = 3;
+        entry.isSelecting = false;
+        entry.ray.scale.set(1, 1, entry.rayLength);
+        vrLog('[VR] controller disconnected', index);
+        refreshControllerVisibility();
+        clearHoverState('controller');
+      };
+
+      entry.onSelectStart = () => {
+        entry.isSelecting = true;
+        vrLog('[VR] selectstart', index);
+      };
+
+      entry.onSelectEnd = () => {
+        entry.isSelecting = false;
+        vrLog('[VR] selectend', index, { hoverTrackId: entry.hoverTrackId });
+        if (entry.hoverTrackId) {
+          onTrackFollowRequest(entry.hoverTrackId);
+        }
+      };
+
+      controller.addEventListener('connected', entry.onConnected);
+      controller.addEventListener('disconnected', entry.onDisconnected);
+      controller.addEventListener('selectstart', entry.onSelectStart);
+      controller.addEventListener('selectend', entry.onSelectEnd);
+
+      scene.add(controller);
+      scene.add(grip);
+
+      controllersRef.current.push(entry);
+    }
 
     const camera = new THREE.PerspectiveCamera(
       38,
@@ -886,7 +1102,7 @@ function VolumeViewer({
       const trackGroupInstance = trackGroupRef.current;
       const raycasterInstance = raycasterRef.current;
       if (!cameraInstance || !trackGroupInstance || !raycasterInstance || !trackGroupInstance.visible) {
-        clearHoverState();
+        clearHoverState('pointer');
         return null;
       }
 
@@ -894,14 +1110,14 @@ function VolumeViewer({
       const width = rect.width;
       const height = rect.height;
       if (width <= 0 || height <= 0) {
-        clearHoverState();
+        clearHoverState('pointer');
         return null;
       }
 
       const offsetX = event.clientX - rect.left;
       const offsetY = event.clientY - rect.top;
       if (offsetX < 0 || offsetY < 0 || offsetX > width || offsetY > height) {
-        clearHoverState();
+        clearHoverState('pointer');
         return null;
       }
 
@@ -916,13 +1132,13 @@ function VolumeViewer({
       }
 
       if (visibleLines.length === 0) {
-        clearHoverState();
+        clearHoverState('pointer');
         return null;
       }
 
       const intersections = raycasterInstance.intersectObjects(visibleLines, false);
       if (intersections.length === 0) {
-        clearHoverState();
+        clearHoverState('pointer');
         return null;
       }
 
@@ -933,7 +1149,7 @@ function VolumeViewer({
           ? (hitObject.userData.trackId as string)
           : null;
       if (trackId === null) {
-        clearHoverState();
+        clearHoverState('pointer');
         return null;
       }
 
@@ -971,7 +1187,7 @@ function VolumeViewer({
         controls.enablePan = true;
       }
 
-      clearHoverState();
+      clearHoverState('pointer');
 
       pointerStateRef.current = {
         mode,
@@ -997,7 +1213,7 @@ function VolumeViewer({
         return;
       }
 
-      clearHoverState();
+      clearHoverState('pointer');
 
       const controls = controlsRef.current;
       const camera = cameraRef.current;
@@ -1053,7 +1269,7 @@ function VolumeViewer({
     };
 
     const handlePointerLeave = () => {
-      clearHoverState();
+      clearHoverState('pointer');
     };
 
     const pointerDownOptions: AddEventListenerOptions = { capture: true };
@@ -1064,13 +1280,281 @@ function VolumeViewer({
     domElement.addEventListener('pointercancel', handlePointerUp);
     domElement.addEventListener('pointerleave', handlePointerLeave);
 
+    const controllerTempMatrix = new THREE.Matrix4();
+    const controllerProjectedPoint = new THREE.Vector3();
+
+    let lastControllerRaySummary:
+      | {
+          presenting: boolean;
+          visibleLines: number;
+          hoverTrackIds: Array<string | null>;
+        }
+      | null = null;
+
+    const updateControllerRays = () => {
+      if (!renderer.xr.isPresenting) {
+        if (!lastControllerRaySummary || lastControllerRaySummary.presenting !== false) {
+          vrLog('[VR] skipping controller rays – not presenting');
+        }
+        lastControllerRaySummary = {
+          presenting: false,
+          visibleLines: 0,
+          hoverTrackIds: controllersRef.current.map((entry) => entry.hoverTrackId)
+        };
+        clearHoverState('controller');
+        return;
+      }
+
+      const cameraInstance = cameraRef.current;
+      const trackGroupInstance = trackGroupRef.current;
+      const containerInstance = containerRef.current;
+
+      const visibleLines: Line2[] = [];
+      if (trackGroupInstance && trackGroupInstance.visible) {
+        for (const resource of trackLinesRef.current.values()) {
+          if (resource.line.visible) {
+            visibleLines.push(resource.line);
+          }
+        }
+      }
+
+      let hoveredByController: { trackId: string; position: { x: number; y: number } | null } | null = null;
+
+      for (let index = 0; index < controllersRef.current.length; index++) {
+        const entry = controllersRef.current[index];
+        const previousHoverTrackId = entry.hoverTrackId;
+        if (!entry.controller.visible) {
+          entry.hoverTrackId = null;
+          entry.rayLength = 3;
+          entry.ray.scale.set(1, 1, entry.rayLength);
+          if (previousHoverTrackId !== entry.hoverTrackId) {
+            vrLog('[VR] controller hover cleared', index);
+          }
+          continue;
+        }
+
+        let rayLength = 3;
+        let hoverTrackId: string | null = null;
+        let hoverPosition: { x: number; y: number } | null = null;
+
+        if (visibleLines.length > 0 && cameraInstance) {
+          controllerTempMatrix.identity().extractRotation(entry.controller.matrixWorld);
+          entry.rayOrigin.setFromMatrixPosition(entry.controller.matrixWorld);
+          entry.rayDirection.set(0, 0, -1).applyMatrix4(controllerTempMatrix).normalize();
+          entry.raycaster.ray.origin.copy(entry.rayOrigin);
+          entry.raycaster.ray.direction.copy(entry.rayDirection);
+
+          const intersections = entry.raycaster.intersectObjects(visibleLines, false) as Array<{
+            object: THREE.Object3D & { userData?: Record<string, unknown> };
+            distance: number;
+            point: THREE.Vector3;
+          }>;
+
+          if (intersections.length > 0) {
+            const intersection = intersections[0];
+            const trackId =
+              intersection.object.userData && typeof intersection.object.userData.trackId === 'string'
+                ? (intersection.object.userData.trackId as string)
+                : null;
+
+            if (trackId) {
+              hoverTrackId = trackId;
+              entry.hoverPoint.copy(intersection.point);
+              const distance = Math.max(0.15, Math.min(intersection.distance, 8));
+              rayLength = distance;
+              if (containerInstance) {
+                const width = containerInstance.clientWidth;
+                const height = containerInstance.clientHeight;
+                if (width > 0 && height > 0) {
+                  controllerProjectedPoint.copy(intersection.point).project(cameraInstance);
+                  if (
+                    Number.isFinite(controllerProjectedPoint.x) &&
+                    Number.isFinite(controllerProjectedPoint.y)
+                  ) {
+                    hoverPosition = {
+                      x: (controllerProjectedPoint.x * 0.5 + 0.5) * width,
+                      y: (-controllerProjectedPoint.y * 0.5 + 0.5) * height
+                    };
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        entry.hoverTrackId = hoverTrackId;
+        if (previousHoverTrackId !== hoverTrackId) {
+          vrLog('[VR] controller hover update', index, {
+            hoverTrackId,
+            hoverPosition
+          });
+        }
+        entry.rayLength = rayLength;
+        entry.ray.scale.set(1, 1, rayLength);
+
+        if (!hoveredByController && hoverTrackId) {
+          hoveredByController = { trackId: hoverTrackId, position: hoverPosition };
+        }
+      }
+
+      const summary = {
+        presenting: true,
+        visibleLines: visibleLines.length,
+        hoverTrackIds: controllersRef.current.map((entry) => entry.hoverTrackId)
+      };
+      if (
+        !lastControllerRaySummary ||
+        summary.visibleLines !== lastControllerRaySummary.visibleLines ||
+        summary.hoverTrackIds.length !== lastControllerRaySummary.hoverTrackIds.length ||
+        summary.hoverTrackIds.some((id, hoverIndex) => id !== lastControllerRaySummary?.hoverTrackIds[hoverIndex])
+      ) {
+        vrLog('[VR] ray pass', summary);
+      }
+      lastControllerRaySummary = summary;
+
+      if (hoveredByController) {
+        updateHoverState(hoveredByController.trackId, hoveredByController.position, 'controller');
+      } else {
+        clearHoverState('controller');
+      }
+    };
+
+    const handleXrManagerSessionStart = () => {
+      vrLog('[VR] sessionstart event', {
+        presenting: renderer.xr.isPresenting,
+        visibilityState: xrSessionRef.current?.visibilityState ?? null
+      });
+      refreshControllerVisibility();
+      updateControllerRays();
+      handleResize();
+    };
+
+    const handleXrManagerSessionEnd = () => {
+      vrLog('[VR] sessionend event', {
+        presenting: renderer.xr.isPresenting,
+        visibilityState: xrSessionRef.current?.visibilityState ?? null
+      });
+      refreshControllerVisibility();
+      handleResize();
+    };
+
+    renderer.xr.addEventListener('sessionstart', handleXrManagerSessionStart);
+    renderer.xr.addEventListener('sessionend', handleXrManagerSessionEnd);
+
     rendererRef.current = renderer;
     sceneRef.current = scene;
     cameraRef.current = camera;
 
+    const handleSessionEnd = () => {
+      vrLog('[VR] handleSessionEnd', {
+        presenting: renderer.xr.isPresenting,
+        visibilityState: xrSessionRef.current?.visibilityState ?? null
+      });
+      sessionCleanupRef.current = null;
+      xrSessionRef.current = null;
+      setControllerVisibility(false);
+      for (const entry of controllersRef.current) {
+        entry.ray.scale.set(1, 1, 1);
+      }
+      const controlsInstance = controlsRef.current;
+      if (controlsInstance) {
+        controlsInstance.enabled = true;
+      }
+      const stored = preVrCameraStateRef.current;
+      const cameraInstance = cameraRef.current;
+      if (stored && cameraInstance && controlsInstance) {
+        cameraInstance.position.copy(stored.position);
+        cameraInstance.quaternion.copy(stored.quaternion);
+        cameraInstance.updateMatrixWorld(true);
+        controlsInstance.target.copy(stored.target);
+        controlsInstance.update();
+      }
+      preVrCameraStateRef.current = null;
+      refreshControllerVisibility();
+      handleResize();
+      renderer.setAnimationLoop(renderLoop);
+      if (!isDisposed) {
+        onVrSessionEnded?.();
+      }
+    };
+
+    const requestVrSession = async () => {
+      if (xrSessionRef.current) {
+        return xrSessionRef.current;
+      }
+      if (typeof navigator === 'undefined' || !navigator.xr) {
+        throw new Error('WebXR not available');
+      }
+      vrLog('[VR] requestSession → navigator.xr.requestSession');
+      const session = await navigator.xr.requestSession('immersive-vr', {
+        optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
+      });
+      vrLog('[VR] requestSession resolved', {
+        presenting: renderer.xr.isPresenting,
+        visibilityState: session.visibilityState
+      });
+      xrSessionRef.current = session;
+
+      const controlsInstance = controlsRef.current;
+      if (controlsInstance) {
+        controlsInstance.enabled = false;
+      }
+      const cameraInstance = cameraRef.current;
+      if (cameraInstance && controlsInstance) {
+        preVrCameraStateRef.current = {
+          position: cameraInstance.position.clone(),
+          quaternion: cameraInstance.quaternion.clone(),
+          target: controlsInstance.target.clone()
+        };
+      } else {
+        preVrCameraStateRef.current = null;
+      }
+
+      const onSessionEnd = () => {
+        session.removeEventListener('end', onSessionEnd);
+        handleSessionEnd();
+      };
+      session.addEventListener('end', onSessionEnd);
+      sessionCleanupRef.current = () => {
+        session.removeEventListener('end', onSessionEnd);
+      };
+
+      renderer.xr.setSession(session);
+      vrLog('[VR] setSession', {
+        presenting: renderer.xr.isPresenting,
+        visibilityState: session.visibilityState
+      });
+      refreshControllerVisibility();
+      updateControllerRays();
+
+      if (!isDisposed) {
+        onVrSessionStarted?.();
+      }
+
+      return session;
+    };
+
+    const endVrSession = async () => {
+      const session = xrSessionRef.current;
+      if (!session) {
+        return;
+      }
+      await session.end();
+    };
+
+    onRegisterVrSession?.({
+      requestSession: requestVrSession,
+      endSession: endVrSession
+    });
+
     const handleResize = (entries?: ResizeObserverEntry[]) => {
       const target = containerRef.current;
-      if (!target || !rendererRef.current || !cameraRef.current) {
+      const rendererInstance = rendererRef.current;
+      const cameraInstance = cameraRef.current;
+      if (!target || !rendererInstance || !cameraInstance) {
+        return;
+      }
+      if (rendererInstance.xr?.isPresenting) {
         return;
       }
       const width = target.clientWidth;
@@ -1078,7 +1562,7 @@ function VolumeViewer({
       if (width > 0 && height > 0) {
         setHasMeasured(true);
       }
-      rendererRef.current.setSize(width, height);
+      rendererInstance.setSize(width, height);
       if (width > 0 && height > 0) {
         for (const resource of trackLinesRef.current.values()) {
           resource.material.resolution.set(width, height);
@@ -1087,8 +1571,8 @@ function VolumeViewer({
           resource.outlineMaterial.needsUpdate = true;
         }
       }
-      cameraRef.current.aspect = width / height;
-      cameraRef.current.updateProjectionMatrix();
+      cameraInstance.aspect = width / height;
+      cameraInstance.updateProjectionMatrix();
     };
 
     const resizeObserver = new ResizeObserver((entries) => handleResize(entries));
@@ -1103,6 +1587,9 @@ function VolumeViewer({
     const dollyDirection = new THREE.Vector3();
 
     const applyKeyboardMovement = () => {
+      if (renderer.xr.isPresenting) {
+        return;
+      }
       if (followedTrackIdRef.current !== null) {
         return;
       }
@@ -1168,6 +1655,8 @@ function VolumeViewer({
       controls.target.copy(rotationTarget);
     };
 
+    let lastRenderTickSummary: { presenting: boolean; hoveredByController: string | null } | null = null;
+
     const renderLoop = () => {
       applyKeyboardMovement();
       controls.update();
@@ -1198,12 +1687,45 @@ function VolumeViewer({
           }
         }
       }
+
+      updateControllerRays();
+      const hoveredEntry = controllersRef.current.find((entry) => entry.hoverTrackId);
+      const renderSummary = {
+        presenting: renderer.xr.isPresenting,
+        hoveredByController: hoveredEntry?.hoverTrackId ?? null
+      };
+      if (
+        !lastRenderTickSummary ||
+        renderSummary.presenting !== lastRenderTickSummary.presenting ||
+        renderSummary.hoveredByController !== lastRenderTickSummary.hoveredByController
+      ) {
+        vrLog('[VR] render tick', renderSummary);
+      }
+      lastRenderTickSummary = renderSummary;
       renderer.render(scene, camera);
-      animationFrameRef.current = requestAnimationFrame(renderLoop);
     };
-    renderLoop();
+    renderer.setAnimationLoop(renderLoop);
 
     return () => {
+      isDisposed = true;
+      onRegisterVrSession?.(null);
+      renderer.xr.removeEventListener('sessionstart', handleXrManagerSessionStart);
+      renderer.xr.removeEventListener('sessionend', handleXrManagerSessionEnd);
+      renderer.setAnimationLoop(null);
+
+      const activeSession = xrSessionRef.current;
+      if (activeSession) {
+        try {
+          sessionCleanupRef.current?.();
+        } finally {
+          activeSession.end().catch(() => undefined);
+        }
+      }
+      xrSessionRef.current = null;
+      sessionCleanupRef.current = null;
+      preVrCameraStateRef.current = null;
+      setControllerVisibility(false);
+
       const resources = resourcesRef.current;
       for (const resource of resources.values()) {
         scene.remove(resource.mesh);
@@ -1212,6 +1734,19 @@ function VolumeViewer({
         resource.texture.dispose();
       }
       resources.clear();
+
+      for (const entry of controllersRef.current) {
+        entry.controller.removeEventListener('connected', entry.onConnected);
+        entry.controller.removeEventListener('disconnected', entry.onDisconnected);
+        entry.controller.removeEventListener('selectstart', entry.onSelectStart);
+        entry.controller.removeEventListener('selectend', entry.onSelectEnd);
+        entry.controller.remove(entry.ray);
+        scene.remove(entry.controller);
+        scene.remove(entry.grip);
+        entry.rayGeometry.dispose();
+        entry.rayMaterial.dispose();
+      }
+      controllersRef.current = [];
 
       const trackGroup = trackGroupRef.current;
       if (trackGroup) {
@@ -1255,11 +1790,6 @@ function VolumeViewer({
       pointerStateRef.current = null;
 
       raycasterRef.current = null;
-
-      if (animationFrameRef.current !== null) {
-        cancelAnimationFrame(animationFrameRef.current);
-        animationFrameRef.current = null;
-      }
       resizeObserver.disconnect();
       controls.dispose();
       renderer.dispose();
@@ -1271,7 +1801,14 @@ function VolumeViewer({
       cameraRef.current = null;
       controlsRef.current = null;
     };
-  }, [applyTrackGroupTransform, applyVolumeRootTransform, containerNode]);
+  }, [
+    applyTrackGroupTransform,
+    applyVolumeRootTransform,
+    containerNode,
+    onRegisterVrSession,
+    onVrSessionEnded,
+    onVrSessionStarted
+  ]);
 
   useEffect(() => {
     const handleKeyChange = (event: KeyboardEvent, isPressed: boolean) => {
