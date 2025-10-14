@@ -1,5 +1,11 @@
 # Progress Log
 
+## Immersive VR renderer integration
+- Added WebXR session management to the 3D viewer, exposing Enter/Exit VR controls in the playback window once immersive VR support is detected.
+- Swapped the render loop to Three.js's `setAnimationLoop`, enabling headset-driven frame timing while keeping the existing keyboard movement and track uniforms in sync.
+- Instantiated Quest controller models with forward-pointing ray visuals, wiring them into the scene graph so they appear during VR sessions and tear down cleanly afterwards.
+- Routed session lifecycle callbacks to the React shell so the UI reflects active VR status and guards mode toggles while a headset session is live.
+
 ## Normalization fast path
 - Added a zero-copy normalization path for uint8 volumes already spanning [0, 255] and introduced regression tests to verify buffer reuse and clamped results for other ranges.
 

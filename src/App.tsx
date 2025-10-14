@@ -748,6 +748,11 @@ function App() {
   const [isViewerLaunched, setIsViewerLaunched] = useState(false);
   const [isLaunchingViewer, setIsLaunchingViewer] = useState(false);
   const [layoutResetToken, setLayoutResetToken] = useState(0);
+  const [isVrSupported, setIsVrSupported] = useState(false);
+  const [isVrSupportChecked, setIsVrSupportChecked] = useState(false);
+  const [isVrActive, setIsVrActive] = useState(false);
+  const [isVrRequesting, setIsVrRequesting] = useState(false);
+  const [hasVrSessionHandlers, setHasVrSessionHandlers] = useState(false);
   const controlWindowInitialPosition = useMemo(
     () => ({ x: WINDOW_MARGIN, y: WINDOW_MARGIN }),
     []
@@ -775,6 +780,13 @@ function App() {
   const editingChannelOriginalNameRef = useRef('');
   const editingChannelInputRef = useRef<HTMLInputElement | null>(null);
   const pendingChannelFocusIdRef = useRef<string | null>(null);
+  const vrSessionControlsRef = useRef<
+    | {
+        requestSession: () => Promise<XRSession | null>;
+        endSession: () => Promise<void> | void;
+      }
+    | null
+  >(null);
 
   const createChannelSource = useCallback(
     (name: string): ChannelSource => {
@@ -802,6 +814,71 @@ function App() {
       files
     };
   }, []);
+
+  const handleRegisterVrSession = useCallback(
+    (
+      handlers:
+        | {
+            requestSession: () => Promise<XRSession | null>;
+            endSession: () => Promise<void> | void;
+          }
+        | null
+    ) => {
+      vrSessionControlsRef.current = handlers;
+      setHasVrSessionHandlers(Boolean(handlers));
+    },
+    []
+  );
+
+  const handleVrSessionStarted = useCallback(() => {
+    setIsVrActive(true);
+  }, []);
+
+  const handleVrSessionEnded = useCallback(() => {
+    setIsVrActive(false);
+  }, []);
+
+  const enterVr = useCallback(async () => {
+    if (viewerMode !== '3d') {
+      return;
+    }
+    if (!isVrSupportChecked || !isVrSupported) {
+      return;
+    }
+    const controls = vrSessionControlsRef.current;
+    if (!controls) {
+      return;
+    }
+    setIsVrRequesting(true);
+    setFollowedTrack(null);
+    try {
+      await controls.requestSession();
+    } catch (error) {
+      console.error('Failed to start VR session', error);
+    } finally {
+      setIsVrRequesting(false);
+    }
+  }, [isVrSupportChecked, isVrSupported, setFollowedTrack, viewerMode]);
+
+  const exitVr = useCallback(async () => {
+    const controls = vrSessionControlsRef.current;
+    if (!controls) {
+      return;
+    }
+    try {
+      await Promise.resolve(controls.endSession());
+    } catch (error) {
+      console.error('Failed to end VR session', error);
+    }
+  }, []);
+
+  const handleVrButtonClick = useCallback(() => {
+    if (isVrActive) {
+      void exitVr();
+    } else {
+      void enterVr();
+    }
+  }, [enterVr, exitVr, isVrActive]);
 
   useEffect(() => {
     if (editingChannelId && editingChannelId !== activeChannelId) {
@@ -855,6 +932,40 @@ function App() {
       setActiveChannelId(channels[0].id);
     }
   }, [activeChannelId, channels]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const detectVrSupport = async () => {
+      if (typeof navigator === 'undefined' || !navigator.xr || !navigator.xr.isSessionSupported) {
+        if (!isCancelled) {
+          setIsVrSupported(false);
+          setIsVrSupportChecked(true);
+        }
+        return;
+      }
+
+      try {
+        const supported = await navigator.xr.isSessionSupported('immersive-vr');
+        if (!isCancelled) {
+          setIsVrSupported(supported);
+          setIsVrSupportChecked(true);
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          setIsVrSupported(false);
+          setIsVrSupportChecked(true);
+        }
+        console.warn('Failed to detect WebXR support', error);
+      }
+    };
+
+    detectVrSupport();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
 
   const volumeTimepointCount = layers.length > 0 ? layers[0].volumes.length : 0;
   const channelNameMap = useMemo(() => {
@@ -1276,6 +1387,24 @@ function App() {
 
   const isLoading = status === 'loading';
   const playbackDisabled = isLoading || volumeTimepointCount <= 1;
+  const vrButtonLabel = isVrActive ? 'Exit VR' : isVrRequesting ? 'Entering VR…' : 'Enter VR';
+  const isVrAvailable = viewerMode === '3d' && isVrSupportChecked && isVrSupported;
+  const vrButtonDisabled = isVrActive
+    ? false
+    : !isVrAvailable || !hasVrSessionHandlers || isVrRequesting;
+  const vrButtonTitle = isVrActive
+    ? 'Exit immersive VR session.'
+    : !isVrSupportChecked
+    ? 'Checking WebXR capabilities…'
+    : !isVrSupported
+    ? 'WebXR immersive VR is not supported in this browser.'
+    : viewerMode !== '3d'
+    ? 'Switch to the 3D view to enable VR.'
+    : !hasVrSessionHandlers
+    ? 'Viewer is still initializing.'
+    : isVrRequesting
+    ? 'Starting VR session…'
+    : undefined;
   const playbackLabel = useMemo(() => {
     if (volumeTimepointCount === 0) {
       return '0 / 0';
@@ -2476,6 +2605,9 @@ function App() {
               channelTrackOffsets={channelTrackOffsets}
               followedTrackId={followedTrackId}
               onTrackFollowRequest={handleTrackFollowFromViewer}
+              onRegisterVrSession={handleRegisterVrSession}
+              onVrSessionStarted={handleVrSessionStarted}
+              onVrSessionEnded={handleVrSessionEnded}
             />
           ) : (
             <PlanarViewer
@@ -2534,11 +2666,21 @@ function App() {
                     type="button"
                     onClick={handleToggleViewerMode}
                     className={viewerMode === '3d' ? 'viewer-mode-button' : 'viewer-mode-button is-active'}
+                    disabled={isVrActive || isVrRequesting}
                   >
                     {viewerMode === '3d' ? 'Go to 2D view' : 'Go to 3D view'}
                   </button>
                   <button type="button" onClick={() => resetViewHandler?.()} disabled={!resetViewHandler}>
                     Reset view
+                  </button>
+                  <button
+                    type="button"
+                    className="viewer-mode-button"
+                    onClick={handleVrButtonClick}
+                    disabled={vrButtonDisabled}
+                    title={vrButtonTitle}
+                  >
+                    {vrButtonLabel}
                   </button>
                 </div>
               </div>
