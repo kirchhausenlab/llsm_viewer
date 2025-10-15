@@ -469,15 +469,6 @@ function ChannelCard({
     }
   }, [isDisabled]);
 
-  const openDropboxConfig = useCallback(() => {
-    if (isDisabled) {
-      return;
-    }
-    syncDropboxConfigState();
-    setIsDropboxConfigOpen(true);
-    setDropboxInfo(null);
-  }, [isDisabled, syncDropboxConfigState]);
-
   const handleDropboxConfigCancel = useCallback(() => {
     setIsDropboxConfigOpen(false);
   }, []);
@@ -791,16 +782,6 @@ function ChannelCard({
           >
             {dropboxImportTarget === 'layers' ? 'Importing…' : 'Import from Dropbox'}
           </button>
-          {!isDropboxConfigOpen ? (
-            <button
-              type="button"
-              className="channel-layer-drop-link"
-              onClick={openDropboxConfig}
-              disabled={isDisabled}
-            >
-              Configure Dropbox
-            </button>
-          ) : null}
           <p className="channel-layer-drop-subtitle">Drop folders or TIFF sequences to add layers.</p>
         </div>
         {dropboxImportTarget === 'layers' ? (
@@ -932,16 +913,6 @@ function ChannelCard({
               >
                 {dropboxImportTarget === 'tracks' ? 'Importing…' : 'Import from Dropbox'}
               </button>
-              {!isDropboxConfigOpen ? (
-                <button
-                  type="button"
-                  className="channel-tracks-link"
-                  onClick={openDropboxConfig}
-                  disabled={isDisabled || isDropboxImporting}
-                >
-                  Configure Dropbox
-                </button>
-              ) : null}
               <p className="channel-tracks-subtitle">Drop or browse for a CSV to attach tracks.</p>
             </div>
             {channel.trackFile ? (
