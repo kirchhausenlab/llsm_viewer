@@ -21,6 +21,9 @@ two different ways:
 2. **In-app configuration** – Click **Import from Dropbox** inside any channel card and use the **Configure Dropbox** button to
    paste your app key. The viewer stores the key in `localStorage` so you only need to enter it once per browser profile.
 
+This repository embeds the Dropbox app key `1abfsrk62dy855r` so the chooser is ready to use out of the box. You can override it by
+setting `VITE_DROPBOX_APP_KEY` at build time or replacing the embedded key in `src/integrations/dropbox.ts`.
+
 If you do not have an app yet, create one in the [Dropbox App Console](https://www.dropbox.com/developers/apps) (Scoped app → Full
 Dropbox access) and enable the **Dropbox Chooser** capability.
 
