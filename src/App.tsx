@@ -8,7 +8,13 @@ import { clearTextureCache } from './textureCache';
 import FloatingWindow from './components/FloatingWindow';
 import type { TrackColorMode, TrackDefinition, TrackPoint } from './types/tracks';
 import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from './layerColors';
-import { getTrackColorHex } from './trackColors';
+import {
+  DEFAULT_TRACK_COLOR,
+  getTrackColorHex,
+  normalizeTrackColor,
+  TRACK_COLOR_SWATCHES,
+  type TrackColorOption
+} from './trackColors';
 import {
   chooseDropboxFiles,
   DropboxConfigurationError,
@@ -29,25 +35,6 @@ const TRACK_WINDOW_WIDTH = 340;
 const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
 const MAX_CHANNELS = 3;
 const MAX_CHANNELS_MESSAGE = 'Maximum of 3 channels reached. Remove a channel before adding a new one.';
-
-type TrackColorOption = {
-  value: string;
-  label: string;
-};
-
-const TRACK_COLOR_SWATCHES: TrackColorOption[] = [
-  { value: '#FF6B6B', label: 'Red' },
-  { value: '#FF9F40', label: 'Orange' },
-  { value: '#FFD93D', label: 'Yellow' },
-  { value: '#6BCB77', label: 'Green' },
-  { value: '#4D96FF', label: 'Blue' },
-  { value: '#8E94F2', label: 'Indigo' },
-  { value: '#FF6BF1', label: 'Magenta' }
-];
-
-const DEFAULT_TRACK_COLOR = TRACK_COLOR_SWATCHES[0].value;
-
-const normalizeTrackColor = (color: string) => normalizeHexColor(color, DEFAULT_TRACK_COLOR).toUpperCase();
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 
