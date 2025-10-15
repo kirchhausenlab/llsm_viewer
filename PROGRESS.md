@@ -4,6 +4,9 @@
 - Passed the channel catalog and track control callbacks down to the 3D viewer so the immersive tracks HUD no longer dereference
   undefined handlers and blank the canvas when initialized.
 
+## Floating window scrollbar cleanup
+- Removed horizontal overflow from floating window sidebars in the desktop viewer so overlay panels no longer show an unnecessary bottom scrollbar.
+
 ## VR track raycast crash fix
 - Ensured controller raycasters provide the active XR camera to fat-line intersections so turning on tracks in immersive mode no
   longer dereferences a missing camera and freezes the viewer.

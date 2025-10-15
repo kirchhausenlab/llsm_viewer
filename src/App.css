@@ -802,6 +802,7 @@
 .floating-window-body > .sidebar {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding-right: 0.25rem;
   margin-right: -0.25rem;
 }
