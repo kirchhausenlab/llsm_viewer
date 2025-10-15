@@ -799,34 +799,6 @@ function VolumeViewer({
   const vrTracksStateRef = useRef<VrTracksState>({ channels: [], activeChannelId: null });
   const sliderLocalPointRef = useRef(new THREE.Vector3());
 
-  const setPreferredXrSessionMode = useCallback(
-    (mode: 'immersive-vr' | 'immersive-ar') => {
-      xrPreferredSessionModeRef.current = mode;
-      playbackStateRef.current.preferredSessionMode = mode;
-      updateVrPlaybackHud();
-    },
-    [updateVrPlaybackHud]
-  );
-
-  const toggleXrSessionMode = useCallback(() => {
-    if (!xrPassthroughSupportedRef.current) {
-      return;
-    }
-    const nextMode = xrPreferredSessionModeRef.current === 'immersive-ar' ? 'immersive-vr' : 'immersive-ar';
-    setPreferredXrSessionMode(nextMode);
-    const session = xrSessionRef.current;
-    if (session) {
-      if (xrCurrentSessionModeRef.current === nextMode) {
-        return;
-      }
-      xrPendingModeSwitchRef.current = nextMode;
-      session.end().catch((error) => {
-        console.warn('Failed to switch XR session mode', error);
-        xrPendingModeSwitchRef.current = null;
-      });
-    }
-  }, [setPreferredXrSessionMode]);
-
   const updateVolumeHandles = useCallback(() => {
     const translationHandle = vrTranslationHandleRef.current;
     const rotationHandle = vrRotationHandleRef.current;
@@ -1784,6 +1756,34 @@ function VolumeViewer({
       hud.hoverRegion = null;
     }
   }, []);
+
+  const setPreferredXrSessionMode = useCallback(
+    (mode: 'immersive-vr' | 'immersive-ar') => {
+      xrPreferredSessionModeRef.current = mode;
+      playbackStateRef.current.preferredSessionMode = mode;
+      updateVrPlaybackHud();
+    },
+    [updateVrPlaybackHud]
+  );
+
+  const toggleXrSessionMode = useCallback(() => {
+    if (!xrPassthroughSupportedRef.current) {
+      return;
+    }
+    const nextMode = xrPreferredSessionModeRef.current === 'immersive-ar' ? 'immersive-vr' : 'immersive-ar';
+    setPreferredXrSessionMode(nextMode);
+    const session = xrSessionRef.current;
+    if (session) {
+      if (xrCurrentSessionModeRef.current === nextMode) {
+        return;
+      }
+      xrPendingModeSwitchRef.current = nextMode;
+      session.end().catch((error) => {
+        console.warn('Failed to switch XR session mode', error);
+        xrPendingModeSwitchRef.current = null;
+      });
+    }
+  }, [setPreferredXrSessionMode]);
 
   const applySliderFromWorldPoint = useCallback(
     (worldPoint: THREE.Vector3) => {
