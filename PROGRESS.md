@@ -1,5 +1,13 @@
 # Progress Log
 
+## WebXR passthrough toggle
+- Detected `immersive-ar` support alongside `immersive-vr` so the viewer can expose passthrough capabilities when available while
+  retaining an optimistic fallback when WebXR probing is incomplete.
+- Added a passthrough toggle button to the immersive playback HUD that restarts the session in-place, highlights the active mode,
+  and hides itself when passthrough is unavailable.
+- Switched the Three.js renderer to transparent clears so approved passthrough sessions show the real-world feed instead of an
+  opaque background.
+
 ## VR tracks window regression fix
 - Passed the channel catalog and track control callbacks down to the 3D viewer so the immersive tracks HUD no longer dereference
   undefined handlers and blank the canvas when initialized.

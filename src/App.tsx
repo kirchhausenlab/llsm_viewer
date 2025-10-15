@@ -975,6 +975,7 @@ function App() {
   const [isLaunchingViewer, setIsLaunchingViewer] = useState(false);
   const [layoutResetToken, setLayoutResetToken] = useState(0);
   const [isVrSupported, setIsVrSupported] = useState(false);
+  const [isVrPassthroughSupported, setIsVrPassthroughSupported] = useState(false);
   const [isVrSupportChecked, setIsVrSupportChecked] = useState(false);
   const [isVrActive, setIsVrActive] = useState(false);
   const [isVrRequesting, setIsVrRequesting] = useState(false);
@@ -1182,9 +1183,10 @@ function App() {
           : null;
       const hasRequestSession = Boolean(requestSession);
 
-      const markSupport = (supported: boolean) => {
+      const markSupport = (supported: boolean, passthrough: boolean) => {
         if (!isCancelled) {
           setIsVrSupported(supported);
+          setIsVrPassthroughSupported(passthrough);
           setIsVrSupportChecked(true);
         }
       };
@@ -1192,34 +1194,47 @@ function App() {
       if (!xr || !isSessionSupportedFn) {
         if (hasRequestSession) {
           console.warn('WebXR isSessionSupported unavailable; falling back to optimistic VR enablement.');
-          markSupport(true);
+          markSupport(true, false);
         } else {
-          markSupport(false);
+          markSupport(false, false);
         }
         return;
       }
 
       try {
-        const supported = await isSessionSupportedFn.call(navigator.xr!, 'immersive-vr');
-        if (supported) {
-          markSupport(true);
+        let immersiveVrSupported = false;
+        let immersiveArSupported = false;
+        try {
+          immersiveVrSupported = await isSessionSupportedFn.call(navigator.xr!, 'immersive-vr');
+        } catch (error) {
+          console.warn('Failed to detect immersive-vr support', error);
+        }
+
+        try {
+          immersiveArSupported = await isSessionSupportedFn.call(navigator.xr!, 'immersive-ar');
+        } catch (error) {
+          console.warn('Failed to detect immersive-ar support', error);
+        }
+
+        if (immersiveVrSupported || immersiveArSupported) {
+          markSupport(true, immersiveArSupported);
           return;
         }
 
         if (hasRequestSession) {
           console.warn(
-            'WebXR immersive-vr probe reported unsupported; falling back to optimistic VR enablement.'
+            'WebXR immersive session probe reported unsupported; falling back to optimistic VR enablement.'
           );
-          markSupport(true);
+          markSupport(true, immersiveArSupported);
         } else {
-          markSupport(false);
+          markSupport(false, immersiveArSupported);
         }
       } catch (error) {
         console.warn('Failed to detect WebXR support', error);
         if (hasRequestSession) {
-          markSupport(true);
+          markSupport(true, false);
         } else {
-          markSupport(false);
+          markSupport(false, false);
         }
       }
     };
@@ -2912,6 +2927,7 @@ function App() {
               onTogglePlayback={handleTogglePlayback}
               onTimeIndexChange={handleTimeIndexChange}
               onRegisterReset={handleRegisterReset}
+              isVrPassthroughSupported={isVrPassthroughSupported}
               tracks={parsedTracks}
               trackChannels={trackChannels}
               trackVisibility={trackVisibility}

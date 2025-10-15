@@ -49,6 +49,7 @@ type VolumeViewerProps = {
   onTogglePlayback: () => void;
   onTimeIndexChange: (nextIndex: number) => void;
   onRegisterReset: (handler: (() => void) | null) => void;
+  isVrPassthroughSupported: boolean;
   tracks: TrackDefinition[];
   trackChannels: Array<{ id: string; name: string }>;
   trackVisibility: Record<string, boolean>;
@@ -209,6 +210,7 @@ type VrUiTargetType =
   | 'playback-slider'
   | 'playback-reset-view'
   | 'playback-exit-vr'
+  | 'playback-toggle-mode'
   | 'playback-panel-grab'
   | 'channels-panel'
   | 'channels-panel-grab'
@@ -243,6 +245,9 @@ type VrPlaybackHud = {
   pauseGroup: THREE.Object3D;
   exitButton: THREE.Mesh;
   exitIcon: THREE.Object3D;
+  modeButton: THREE.Mesh;
+  modeVrIcon: THREE.Object3D;
+  modeArIcon: THREE.Object3D;
   sliderGroup: THREE.Group;
   sliderTrack: THREE.Mesh;
   sliderFill: THREE.Mesh;
@@ -260,9 +265,13 @@ type VrPlaybackHud = {
   sliderTrackBaseColor: THREE.Color;
   sliderKnobBaseColor: THREE.Color;
   exitButtonBaseColor: THREE.Color;
+  modeButtonBaseColor: THREE.Color;
+  modeButtonActiveColor: THREE.Color;
+  modeButtonDisabledColor: THREE.Color;
   hoverHighlightColor: THREE.Color;
   resetButtonRadius: number;
   exitButtonRadius: number;
+  modeButtonRadius: number;
 };
 
 type VrChannelsSliderKey = 'contrast' | 'brightness' | 'xOffset' | 'yOffset';
@@ -641,6 +650,7 @@ function VolumeViewer({
   onTogglePlayback,
   onTimeIndexChange,
   onRegisterReset,
+  isVrPassthroughSupported,
   tracks,
   trackChannels,
   trackVisibility,
@@ -761,6 +771,10 @@ function VolumeViewer({
   const vrHandleSecondaryPointRef = useRef(new THREE.Vector3());
   const vrHandleQuaternionTempRef = useRef(new THREE.Quaternion());
   const vrHandleQuaternionTemp2Ref = useRef(new THREE.Quaternion());
+  const xrPreferredSessionModeRef = useRef<'immersive-vr' | 'immersive-ar'>('immersive-vr');
+  const xrCurrentSessionModeRef = useRef<'immersive-vr' | 'immersive-ar' | null>(null);
+  const xrPendingModeSwitchRef = useRef<'immersive-vr' | 'immersive-ar' | null>(null);
+  const xrPassthroughSupportedRef = useRef(isVrPassthroughSupported);
   const playbackStateRef = useRef({
     isPlaying,
     playbackDisabled,
@@ -768,18 +782,50 @@ function VolumeViewer({
     timeIndex,
     totalTimepoints,
     onTogglePlayback,
-    onTimeIndexChange
+    onTimeIndexChange,
+    passthroughSupported: isVrPassthroughSupported,
+    preferredSessionMode: 'immersive-vr',
+    currentSessionMode: null
   });
   const vrHoverStateRef = useRef({
     play: false,
     slider: false,
     sliderActive: false,
     reset: false,
-    exit: false
+    exit: false,
+    mode: false
   });
   const vrChannelsStateRef = useRef<VrChannelsState>({ channels: [], activeChannelId: null });
   const vrTracksStateRef = useRef<VrTracksState>({ channels: [], activeChannelId: null });
   const sliderLocalPointRef = useRef(new THREE.Vector3());
+
+  const setPreferredXrSessionMode = useCallback(
+    (mode: 'immersive-vr' | 'immersive-ar') => {
+      xrPreferredSessionModeRef.current = mode;
+      playbackStateRef.current.preferredSessionMode = mode;
+      updateVrPlaybackHud();
+    },
+    [updateVrPlaybackHud]
+  );
+
+  const toggleXrSessionMode = useCallback(() => {
+    if (!xrPassthroughSupportedRef.current) {
+      return;
+    }
+    const nextMode = xrPreferredSessionModeRef.current === 'immersive-ar' ? 'immersive-vr' : 'immersive-ar';
+    setPreferredXrSessionMode(nextMode);
+    const session = xrSessionRef.current;
+    if (session) {
+      if (xrCurrentSessionModeRef.current === nextMode) {
+        return;
+      }
+      xrPendingModeSwitchRef.current = nextMode;
+      session.end().catch((error) => {
+        console.warn('Failed to switch XR session mode', error);
+        xrPendingModeSwitchRef.current = null;
+      });
+    }
+  }, [setPreferredXrSessionMode]);
 
   const updateVolumeHandles = useCallback(() => {
     const translationHandle = vrTranslationHandleRef.current;
@@ -1576,14 +1622,16 @@ function VolumeViewer({
       sliderHovered: boolean,
       sliderActive: boolean,
       resetHovered: boolean,
-      exitHovered: boolean
+      exitHovered: boolean,
+      modeHovered: boolean
     ) => {
       vrHoverStateRef.current = {
         play: playHovered,
         slider: sliderHovered,
         sliderActive,
         reset: resetHovered,
-        exit: exitHovered
+        exit: exitHovered,
+        mode: modeHovered
       };
       const hud = vrPlaybackHudRef.current;
       if (!hud) {
@@ -1615,6 +1663,13 @@ function VolumeViewer({
       if (exitHovered) {
         exitMaterial.color.lerp(hud.hoverHighlightColor, 0.35);
       }
+      if (hud.modeButton.visible) {
+        const modeMaterial = hud.modeButton.material as THREE.MeshBasicMaterial;
+        modeMaterial.color.copy(hud.modeButtonBaseColor);
+        if (modeHovered) {
+          modeMaterial.color.lerp(hud.hoverHighlightColor, 0.35);
+        }
+      }
     },
     []
   );
@@ -1629,6 +1684,7 @@ function VolumeViewer({
     const sliderTrackMaterial = hud.sliderTrack.material as THREE.MeshBasicMaterial;
     const sliderFillMaterial = hud.sliderFill.material as THREE.MeshBasicMaterial;
     const knobMaterial = hud.sliderKnob.material as THREE.MeshBasicMaterial;
+    const modeMaterial = hud.modeButton.material as THREE.MeshBasicMaterial;
 
     if (state.playbackDisabled) {
       hud.playButtonBaseColor.set(0x3a414d);
@@ -1654,6 +1710,28 @@ function VolumeViewer({
     sliderTrackMaterial.color.copy(hud.sliderTrackBaseColor);
     knobMaterial.color.copy(hud.sliderKnobBaseColor);
 
+    const passthroughSupported = Boolean(state.passthroughSupported);
+    if (!passthroughSupported) {
+      hud.modeButton.visible = false;
+      hud.modeVrIcon.visible = false;
+      hud.modeArIcon.visible = false;
+      hud.modeButtonBaseColor.copy(hud.modeButtonDisabledColor);
+      modeMaterial.color.copy(hud.modeButtonBaseColor);
+    } else {
+      hud.modeButton.visible = true;
+      const preferredMode = state.preferredSessionMode === 'immersive-ar' ? 'immersive-ar' : 'immersive-vr';
+      if (preferredMode === 'immersive-ar') {
+        hud.modeButtonBaseColor.copy(hud.modeButtonActiveColor);
+        hud.modeVrIcon.visible = false;
+        hud.modeArIcon.visible = true;
+      } else {
+        hud.modeButtonBaseColor.set(0x2b3340);
+        hud.modeVrIcon.visible = true;
+        hud.modeArIcon.visible = false;
+      }
+      modeMaterial.color.copy(hud.modeButtonBaseColor);
+    }
+
     hud.playIcon.visible = !state.isPlaying;
     hud.pauseGroup.visible = state.isPlaying;
 
@@ -1666,7 +1744,8 @@ function VolumeViewer({
       vrHoverStateRef.current.slider,
       vrHoverStateRef.current.sliderActive,
       vrHoverStateRef.current.reset,
-      vrHoverStateRef.current.exit
+      vrHoverStateRef.current.exit,
+      vrHoverStateRef.current.mode
     );
   }, [applyVrPlaybackHoverState]);
 
@@ -1678,7 +1757,7 @@ function VolumeViewer({
       }
       hud.group.visible = visible;
       if (!visible) {
-        applyVrPlaybackHoverState(false, false, false, false, false);
+        applyVrPlaybackHoverState(false, false, false, false, false, false);
       }
     },
     [applyVrPlaybackHoverState]
@@ -1837,6 +1916,46 @@ function VolumeViewer({
     pauseGroup.visible = false;
     playButton.add(pauseGroup);
 
+    const modeButtonMaterial = new THREE.MeshBasicMaterial({ color: 0x2b3340, side: THREE.DoubleSide });
+    const modeButton = new THREE.Mesh(new THREE.CircleGeometry(sideButtonRadius, 48), modeButtonMaterial);
+    const modeButtonX = sideButtonX - (sideButtonRadius * 2 + sideButtonMargin * 1.5);
+    modeButton.position.set(modeButtonX, 0, 0.01);
+    modeButton.userData.vrUiTarget = { type: 'playback-toggle-mode' } satisfies {
+      type: VrUiTargetType;
+    };
+    const modeIconMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+    const modeVrIcon = new THREE.Group();
+    const vrStrap = new THREE.Mesh(new THREE.PlaneGeometry(0.048, 0.006), modeIconMaterial.clone());
+    vrStrap.position.set(0, 0.016, 0.002);
+    const vrLeftLens = new THREE.Mesh(new THREE.CircleGeometry(0.012, 32), modeIconMaterial.clone());
+    vrLeftLens.position.set(-0.014, -0.002, 0.0025);
+    const vrRightLens = new THREE.Mesh(new THREE.CircleGeometry(0.012, 32), modeIconMaterial.clone());
+    vrRightLens.position.set(0.014, -0.002, 0.0025);
+    modeVrIcon.add(vrStrap);
+    modeVrIcon.add(vrLeftLens);
+    modeVrIcon.add(vrRightLens);
+    modeButton.add(modeVrIcon);
+    const modeArIcon = new THREE.Group();
+    const arOuter = new THREE.Mesh(new THREE.PlaneGeometry(0.048, 0.032), modeIconMaterial.clone());
+    arOuter.position.set(0, 0, 0.002);
+    const arInner = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.042, 0.026),
+      new THREE.MeshBasicMaterial({ color: 0x10161d, side: THREE.DoubleSide })
+    );
+    arInner.position.set(0, 0, 0.0025);
+    const arSlash = new THREE.Mesh(new THREE.PlaneGeometry(0.006, 0.036), modeIconMaterial.clone());
+    arSlash.position.set(0, 0, 0.003);
+    arSlash.rotation.z = Math.PI / 6;
+    const arFocus = new THREE.Mesh(new THREE.CircleGeometry(0.006, 24), modeIconMaterial.clone());
+    arFocus.position.set(0.012, -0.004, 0.0035);
+    modeArIcon.add(arOuter);
+    modeArIcon.add(arInner);
+    modeArIcon.add(arSlash);
+    modeArIcon.add(arFocus);
+    modeArIcon.visible = false;
+    modeButton.add(modeArIcon);
+    group.add(modeButton);
+
     const exitButtonMaterial = new THREE.MeshBasicMaterial({ color: 0x512b2b, side: THREE.DoubleSide });
     const exitButton = new THREE.Mesh(new THREE.CircleGeometry(sideButtonRadius, 48), exitButtonMaterial);
     exitButton.position.set(sideButtonX, 0, 0.01);
@@ -1941,15 +2060,30 @@ function VolumeViewer({
       labelCanvas,
       labelContext,
       labelText: '',
-      interactables: [panelGrabHandle, resetButton, playButton, exitButton, sliderHitArea, sliderKnob],
+      interactables: [
+        panelGrabHandle,
+        resetButton,
+        playButton,
+        modeButton,
+        exitButton,
+        sliderHitArea,
+        sliderKnob
+      ],
       resetButtonBaseColor: new THREE.Color(0x2b3340),
       playButtonBaseColor: new THREE.Color(0x2b3340),
       sliderTrackBaseColor: new THREE.Color(0x3b414d),
       sliderKnobBaseColor: new THREE.Color(0xffffff),
       exitButtonBaseColor: new THREE.Color(0x512b2b),
+      modeButtonBaseColor: new THREE.Color(0x2b3340),
+      modeButtonActiveColor: new THREE.Color(0x1f6f3f),
+      modeButtonDisabledColor: new THREE.Color(0x3a414d),
       hoverHighlightColor: new THREE.Color(0xffffff),
       resetButtonRadius: sideButtonRadius,
-      exitButtonRadius: sideButtonRadius
+      exitButtonRadius: sideButtonRadius,
+      modeButtonRadius: sideButtonRadius,
+      modeButton,
+      modeVrIcon,
+      modeArIcon
     };
 
     const state = playbackStateRef.current;
@@ -2765,15 +2899,14 @@ function VolumeViewer({
   followedTrackIdRef.current = followedTrackId;
 
   useEffect(() => {
-    playbackStateRef.current = {
-      isPlaying,
-      playbackDisabled,
-      playbackLabel,
-      timeIndex,
-      totalTimepoints,
-      onTogglePlayback,
-      onTimeIndexChange
-    };
+    playbackStateRef.current.isPlaying = isPlaying;
+    playbackStateRef.current.playbackDisabled = playbackDisabled;
+    playbackStateRef.current.playbackLabel = playbackLabel;
+    playbackStateRef.current.timeIndex = timeIndex;
+    playbackStateRef.current.totalTimepoints = totalTimepoints;
+    playbackStateRef.current.onTogglePlayback = onTogglePlayback;
+    playbackStateRef.current.onTimeIndexChange = onTimeIndexChange;
+    playbackStateRef.current.passthroughSupported = isVrPassthroughSupported;
     updateVrPlaybackHud();
   }, [
     isPlaying,
@@ -2783,8 +2916,19 @@ function VolumeViewer({
     playbackLabel,
     timeIndex,
     totalTimepoints,
+    isVrPassthroughSupported,
     updateVrPlaybackHud
   ]);
+
+  useEffect(() => {
+    xrPassthroughSupportedRef.current = isVrPassthroughSupported;
+    playbackStateRef.current.passthroughSupported = isVrPassthroughSupported;
+    if (!isVrPassthroughSupported && xrPreferredSessionModeRef.current === 'immersive-ar') {
+      setPreferredXrSessionMode('immersive-vr');
+    } else {
+      updateVrPlaybackHud();
+    }
+  }, [isVrPassthroughSupported, setPreferredXrSessionMode, updateVrPlaybackHud]);
 
   useEffect(() => {
     const nextChannels = channelPanels.map((panel) => ({
@@ -3628,19 +3772,18 @@ function VolumeViewer({
     }
 
     let isDisposed = false;
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(container.clientWidth, container.clientHeight);
-    const clearColor = 0x080a0d;
-    renderer.setClearColor(clearColor, 1);
+    renderer.setClearColor(0x000000, 0);
+    renderer.domElement.style.background = 'transparent';
     renderer.xr.enabled = true;
     renderer.xr.setReferenceSpaceType?.('local-floor');
 
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(clearColor);
 
     const volumeRootGroup = new THREE.Group();
     volumeRootGroup.name = 'VolumeRoot';
@@ -3745,7 +3888,7 @@ function VolumeViewer({
       }
       if (!anyVisible) {
         clearHoverState('controller');
-        applyVrPlaybackHoverState(false, false, false, false, false);
+        applyVrPlaybackHoverState(false, false, false, false, false, false);
       }
     };
 
@@ -4007,6 +4150,8 @@ function VolumeViewer({
           handleResetView();
         } else if (activeTarget?.type === 'playback-exit-vr') {
           void endVrSession();
+        } else if (activeTarget?.type === 'playback-toggle-mode') {
+          toggleXrSessionMode();
         } else if (activeTarget?.type === 'playback-slider') {
           if (entry.hasHoverUiPoint && !playbackState.playbackDisabled) {
             applySliderFromWorldPoint(entry.hoverUiPoint);
@@ -4343,7 +4488,7 @@ function VolumeViewer({
       vrPlaybackHudRef.current = hud;
       resetVrPlaybackHudPlacement();
       updateVrPlaybackHud();
-      applyVrPlaybackHoverState(false, false, false, false, false);
+      applyVrPlaybackHoverState(false, false, false, false, false, false);
     } else {
       vrPlaybackHudRef.current = null;
     }
@@ -4597,7 +4742,7 @@ function VolumeViewer({
           hoverTrackIds: controllersRef.current.map((entry) => entry.hoverTrackId)
         };
         clearHoverState('controller');
-        applyVrPlaybackHoverState(false, false, false, false, false);
+        applyVrPlaybackHoverState(false, false, false, false, false, false);
         return;
       }
 
@@ -4620,6 +4765,7 @@ function VolumeViewer({
       let sliderActiveAny = false;
       let resetHoveredAny = false;
       let exitHoveredAny = false;
+      let modeHoveredAny = false;
       let nextChannelsHoverRegion: VrChannelsInteractiveRegion | null = null;
       let nextTracksHoverRegion: VrTracksInteractiveRegion | null = null;
       let rotationHandleHovered = false;
@@ -4873,6 +5019,14 @@ function VolumeViewer({
                   const inExitButton =
                     exitDeltaX * exitDeltaX + exitDeltaY * exitDeltaY <= exitRadius * exitRadius;
 
+                  const modeCenter = playbackHudInstance.modeButton.position;
+                  const modeRadius = playbackHudInstance.modeButtonRadius + surfaceMargin;
+                  const modeDeltaX = playbackLocalPoint.x - modeCenter.x;
+                  const modeDeltaY = playbackLocalPoint.y - modeCenter.y;
+                  const inModeButton =
+                    playbackHudInstance.modeButton.visible &&
+                    modeDeltaX * modeDeltaX + modeDeltaY * modeDeltaY <= modeRadius * modeRadius;
+
                   if (inResetButton) {
                     playbackCandidate = {
                       target: { type: 'playback-reset-view', object: playbackHudInstance.resetButton },
@@ -4885,6 +5039,15 @@ function VolumeViewer({
                   } else if (inExitButton) {
                     playbackCandidate = {
                       target: { type: 'playback-exit-vr', object: playbackHudInstance.exitButton },
+                      point: playbackTouchPoint.clone(),
+                      distance: rawDistance,
+                      region: null
+                    };
+                    uiRayLength =
+                      uiRayLength === null ? clampedDistance : Math.min(uiRayLength, clampedDistance);
+                  } else if (inModeButton) {
+                    playbackCandidate = {
+                      target: { type: 'playback-toggle-mode', object: playbackHudInstance.modeButton },
                       point: playbackTouchPoint.clone(),
                       distance: rawDistance,
                       region: null
@@ -5189,6 +5352,9 @@ function VolumeViewer({
         } else if (uiType === 'playback-exit-vr') {
           exitHoveredAny = true;
           hoverTrackId = null;
+        } else if (uiType === 'playback-toggle-mode') {
+          modeHoveredAny = true;
+          hoverTrackId = null;
         } else if (uiType === 'volume-translate-handle' || uiType === 'volume-rotate-handle') {
           hoverTrackId = null;
         } else if (uiType && uiType.startsWith('tracks-')) {
@@ -5202,6 +5368,9 @@ function VolumeViewer({
           hoverTrackId = null;
         } else if (entry.activeUiTarget?.type === 'playback-exit-vr') {
           exitHoveredAny = true;
+          hoverTrackId = null;
+        } else if (entry.activeUiTarget?.type === 'playback-toggle-mode') {
+          modeHoveredAny = true;
           hoverTrackId = null;
         }
         if (
@@ -5323,7 +5492,8 @@ function VolumeViewer({
         sliderHoveredAny,
         sliderActiveAny,
         resetHoveredAny,
-        exitHoveredAny
+        exitHoveredAny,
+        modeHoveredAny
       );
 
       const rotationGuideInstance = vrRotationGuideRef.current;
@@ -5462,13 +5632,16 @@ function VolumeViewer({
       });
       sessionCleanupRef.current = null;
       xrSessionRef.current = null;
+      xrCurrentSessionModeRef.current = null;
+      playbackStateRef.current.currentSessionMode = null;
+      updateVrPlaybackHud();
       volumeRootBaseOffsetRef.current.set(0, 0, 0);
       applyVolumeRootTransform(currentDimensionsRef.current);
       setControllerVisibility(false);
       setVrPlaybackHudVisible(false);
       setVrChannelsHudVisible(false);
       setVrTracksHudVisible(false);
-      applyVrPlaybackHoverState(false, false, false, false, false);
+      applyVrPlaybackHoverState(false, false, false, false, false, false);
       for (const entry of controllersRef.current) {
         entry.ray.scale.set(1, 1, 1);
         entry.hudGrabOffsets.playback = null;
@@ -5492,8 +5665,16 @@ function VolumeViewer({
       refreshControllerVisibility();
       handleResize();
       renderer.setAnimationLoop(renderLoop);
+      const pendingMode = xrPendingModeSwitchRef.current;
+      xrPendingModeSwitchRef.current = null;
       if (!isDisposed) {
         onVrSessionEnded?.();
+        if (pendingMode) {
+          vrLog('[VR] restarting session to honor pending mode switch', { mode: pendingMode });
+          void requestVrSession().catch((error) => {
+            console.error('Failed to restart XR session after mode switch', error);
+          });
+        }
       }
     };
 
@@ -5504,15 +5685,57 @@ function VolumeViewer({
       if (typeof navigator === 'undefined' || !navigator.xr) {
         throw new Error('WebXR not available');
       }
-      vrLog('[VR] requestSession → navigator.xr.requestSession');
-      const session = await navigator.xr.requestSession('immersive-vr', {
-        optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
-      });
+      const preferredMode = xrPreferredSessionModeRef.current;
+      const attemptedModes: Array<'immersive-vr' | 'immersive-ar'> = [];
+      if (preferredMode === 'immersive-ar' && xrPassthroughSupportedRef.current) {
+        attemptedModes.push('immersive-ar');
+      }
+      attemptedModes.push('immersive-vr');
+      if (!attemptedModes.includes('immersive-ar') && xrPassthroughSupportedRef.current) {
+        attemptedModes.push('immersive-ar');
+      }
+
+      let session: XRSession | null = null;
+      let resolvedMode: 'immersive-vr' | 'immersive-ar' | null = null;
+      let lastError: unknown = null;
+      for (const mode of attemptedModes) {
+        try {
+          vrLog('[VR] requestSession → navigator.xr.requestSession', { mode });
+          const requestedSession = await navigator.xr.requestSession(mode, {
+            optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
+          });
+          session = requestedSession;
+          resolvedMode = mode;
+          break;
+        } catch (error) {
+          lastError = error;
+          if (mode === 'immersive-ar') {
+            console.warn('Failed to start immersive-ar session; falling back to immersive-vr.', error);
+            setPreferredXrSessionMode('immersive-vr');
+          } else {
+            console.warn('Failed to start immersive-vr session', error);
+          }
+        }
+      }
+
+      if (!session || !resolvedMode) {
+        throw lastError ?? new Error('Failed to start XR session');
+      }
+
       vrLog('[VR] requestSession resolved', {
         presenting: renderer.xr.isPresenting,
-        visibilityState: session.visibilityState
+        visibilityState: session.visibilityState,
+        mode: resolvedMode
       });
       xrSessionRef.current = session;
+      xrCurrentSessionModeRef.current = resolvedMode;
+      playbackStateRef.current.currentSessionMode = resolvedMode;
+      if (resolvedMode !== xrPreferredSessionModeRef.current) {
+        setPreferredXrSessionMode(resolvedMode);
+      } else {
+        updateVrPlaybackHud();
+      }
+      xrPendingModeSwitchRef.current = null;
 
       const controlsInstance = controlsRef.current;
       if (controlsInstance) {
@@ -5902,7 +6125,8 @@ function VolumeViewer({
     onVrSessionEnded,
     onVrSessionStarted,
     updateVolumeHandles,
-    refreshVrHudPlacements
+    refreshVrHudPlacements,
+    toggleXrSessionMode
   ]);
 
   useEffect(() => {
