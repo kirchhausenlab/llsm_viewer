@@ -332,6 +332,27 @@
   transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
+.channel-layer-drop-link {
+  border: none;
+  background: rgba(91, 140, 255, 0.12);
+  color: rgba(173, 204, 255, 0.95);
+  font-weight: 600;
+  padding: 0.5rem 0.9rem;
+  border-radius: 0.6rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.channel-layer-drop-link:hover {
+  background: rgba(91, 140, 255, 0.22);
+  color: rgba(205, 224, 255, 0.98);
+}
+
+.channel-layer-drop-link:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .channel-layer-drop-button:hover,
 .channel-tracks-button:hover,
 .channel-add-button:hover {
@@ -354,10 +375,136 @@
   color: rgba(255, 255, 255, 0.65);
 }
 
+.channel-layer-drop-info {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+  color: rgba(190, 215, 255, 0.9);
+}
+
 .channel-layer-drop-error {
   margin: 0;
   font-size: 0.85rem;
   color: #ff7f7f;
+}
+
+.channel-dropbox-config {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.85rem 0.9rem;
+  border-radius: 0.8rem;
+  background: rgba(11, 15, 24, 0.72);
+  border: 1px solid rgba(91, 140, 255, 0.3);
+}
+
+.channel-dropbox-config-label {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.channel-dropbox-config-input {
+  width: 100%;
+  border-radius: 0.65rem;
+  border: 1px solid rgba(91, 140, 255, 0.35);
+  background: rgba(5, 7, 12, 0.72);
+  padding: 0.55rem 0.75rem;
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 0.9rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.channel-dropbox-config-input:focus {
+  outline: none;
+  border-color: rgba(91, 140, 255, 0.8);
+  box-shadow: 0 0 0 3px rgba(91, 140, 255, 0.25);
+}
+
+.channel-dropbox-config-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.channel-dropbox-config-hint,
+.channel-dropbox-config-note {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.channel-dropbox-config-hint {
+  color: rgba(200, 213, 255, 0.75);
+}
+
+.channel-dropbox-config-hint a {
+  color: rgba(173, 204, 255, 0.95);
+  text-decoration: none;
+}
+
+.channel-dropbox-config-hint a:hover {
+  text-decoration: underline;
+}
+
+.channel-dropbox-config-note {
+  color: rgba(255, 204, 153, 0.85);
+}
+
+.channel-dropbox-config-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.channel-dropbox-config-save,
+.channel-dropbox-config-cancel,
+.channel-dropbox-config-clear {
+  border-radius: 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 0.45rem 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.channel-dropbox-config-save {
+  background: rgba(91, 140, 255, 0.22);
+  border-color: rgba(91, 140, 255, 0.5);
+  color: rgba(224, 236, 255, 0.95);
+}
+
+.channel-dropbox-config-save:hover {
+  background: rgba(91, 140, 255, 0.32);
+  border-color: rgba(91, 140, 255, 0.7);
+}
+
+.channel-dropbox-config-cancel {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.channel-dropbox-config-cancel:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.channel-dropbox-config-clear {
+  background: rgba(255, 120, 120, 0.16);
+  border-color: rgba(255, 140, 140, 0.45);
+  color: rgba(255, 205, 205, 0.95);
+}
+
+.channel-dropbox-config-clear:hover {
+  background: rgba(255, 120, 120, 0.26);
+  border-color: rgba(255, 140, 140, 0.65);
+}
+
+.channel-dropbox-config-save:disabled,
+.channel-dropbox-config-cancel:disabled,
+.channel-dropbox-config-clear:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .channel-tracks-row {

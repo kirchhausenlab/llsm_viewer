@@ -11,6 +11,19 @@ npm run dev
 
 The development setup runs the Vite front-end (http://localhost:5173).
 
+### Dropbox Chooser configuration
+
+Importing files directly from Dropbox requires a Dropbox app key with the Chooser permission enabled. You can provide the key in
+two different ways:
+
+1. **Build-time configuration** – Add a `.env.local` file next to `package.json` that defines `VITE_DROPBOX_APP_KEY=your_app_key`.
+   Restart the dev server after editing the environment file.
+2. **In-app configuration** – Click **Import from Dropbox** inside any channel card and use the **Configure Dropbox** button to
+   paste your app key. The viewer stores the key in `localStorage` so you only need to enter it once per browser profile.
+
+If you do not have an app yet, create one in the [Dropbox App Console](https://www.dropbox.com/developers/apps) (Scoped app → Full
+Dropbox access) and enable the **Dropbox Chooser** capability.
+
 ### Production build
 
 ```bash

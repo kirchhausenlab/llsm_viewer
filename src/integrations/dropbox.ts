@@ -1,11 +1,83 @@
 const DROPBOX_SCRIPT_ID = 'dropboxjs';
 const DROPBOX_SCRIPT_URL = 'https://www.dropbox.com/static/api/2/dropins.js';
+const DROPBOX_APP_KEY_STORAGE_KEY = 'llsm_viewer.dropbox_app_key';
 
 let dropboxLoadPromise: Promise<DropboxStatic> | null = null;
 
-const getAppKey = () => {
+export class DropboxConfigurationError extends Error {
+  constructor(message = 'Dropbox app key is not configured.') {
+    super(message);
+    this.name = 'DropboxConfigurationError';
+  }
+}
+
+export type DropboxAppKeySource = 'env' | 'local';
+
+const getEnvAppKey = () => {
   const appKey = import.meta.env.VITE_DROPBOX_APP_KEY;
-  return typeof appKey === 'string' && appKey.trim().length > 0 ? appKey : null;
+  return typeof appKey === 'string' && appKey.trim().length > 0 ? appKey.trim() : null;
+};
+
+const getStoredAppKey = (): string | null => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  try {
+    const stored = window.localStorage.getItem(DROPBOX_APP_KEY_STORAGE_KEY);
+    return stored && stored.trim().length > 0 ? stored.trim() : null;
+  } catch (error) {
+    console.warn('Unable to read Dropbox app key from localStorage.', error);
+    return null;
+  }
+};
+
+export const getDropboxAppKeyInfo = (): { appKey: string | null; source: DropboxAppKeySource | null } => {
+  const envKey = getEnvAppKey();
+  if (envKey) {
+    return { appKey: envKey, source: 'env' };
+  }
+
+  const stored = getStoredAppKey();
+  if (stored) {
+    return { appKey: stored, source: 'local' };
+  }
+
+  return { appKey: null, source: null };
+};
+
+export const setDropboxAppKey = (appKey: string | null) => {
+  if (typeof window === 'undefined') {
+    throw new Error('Dropbox app key can only be configured in the browser.');
+  }
+
+  const trimmed = appKey?.trim() ?? '';
+
+  try {
+    if (trimmed) {
+      window.localStorage.setItem(DROPBOX_APP_KEY_STORAGE_KEY, trimmed);
+    } else {
+      window.localStorage.removeItem(DROPBOX_APP_KEY_STORAGE_KEY);
+    }
+  } catch (error) {
+    console.warn('Failed to persist Dropbox app key.', error);
+  }
+
+  dropboxLoadPromise = null;
+
+  if (window.Dropbox) {
+    try {
+      delete window.Dropbox;
+    } catch (error) {
+      console.warn('Unable to clear Dropbox SDK from window.', error);
+    }
+  }
+
+  if (typeof document !== 'undefined') {
+    const existingScript = document.getElementById(DROPBOX_SCRIPT_ID) as HTMLScriptElement | null;
+    if (existingScript) {
+      removeExistingScript(existingScript);
+    }
+  }
 };
 
 function removeExistingScript(script: HTMLScriptElement | null) {
@@ -27,9 +99,9 @@ export async function ensureDropboxLoaded(): Promise<DropboxStatic> {
     return dropboxLoadPromise;
   }
 
-  const appKey = getAppKey();
+  const { appKey } = getDropboxAppKeyInfo();
   if (!appKey) {
-    throw new Error('Dropbox app key is not configured.');
+    throw new DropboxConfigurationError();
   }
 
   const existingScript = document.getElementById(DROPBOX_SCRIPT_ID) as HTMLScriptElement | null;
