@@ -314,3 +314,6 @@ d centered the front-page card in the viewport.
 ## Embedded Dropbox configuration
 - Embedded the Dropbox app key `1abfsrk62dy855r` directly into the front-end integration so every deployment loads the chooser without manual setup.
 - Documented the bundled key in the README and noted how to override it via `VITE_DROPBOX_APP_KEY` if needed.
+
+## VR HUD grab handle tuning
+- Restored the playback, channels, and tracks HUD grab handle height to its pre-regression size while retaining the deeper grab tolerance.
