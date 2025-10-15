@@ -5122,6 +5122,10 @@ function VolumeViewer({
         }
 
         if (visibleLines.length > 0 && cameraInstance) {
+          const raycastCamera = renderer.xr.isPresenting
+            ? renderer.xr.getCamera(cameraInstance)
+            : cameraInstance;
+          entry.raycaster.camera = raycastCamera as unknown as THREE.Camera;
           const intersections = entry.raycaster.intersectObjects(visibleLines, false) as Array<{
             object: THREE.Object3D & { userData?: Record<string, unknown> };
             distance: number;
