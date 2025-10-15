@@ -4,6 +4,12 @@
 - Updated the immersive playback "Reset view" control to restore the normalized volume pose, recentering the dataset and VR HUD
   panels instead of only touching the orbit camera.
 
+## VR HUD handle redesign
+- Replaced the flat grab bands on the playback, channels, and tracks HUDs with sphere handles that mirror the volume translation
+  grip, simplifying panel dragging to the proven mechanism.
+- Attached dedicated yaw handles to each HUD, enabling one-handed rotation via a side sphere without relying on a second
+  controller.
+
 ## VR playback reset split
 - Split the immersive playback reset control into dedicated volume and HUD buttons so users can re-center panels without moving
   the 3D volume, or vice versa.
