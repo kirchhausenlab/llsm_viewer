@@ -13,7 +13,13 @@ import { getCachedTextureData } from '../textureCache';
 import './VolumeViewer.css';
 import type { TrackColorMode, TrackDefinition } from '../types/tracks';
 import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from '../layerColors';
-import { createTrackColor } from '../trackColors';
+import {
+  createTrackColor,
+  DEFAULT_TRACK_COLOR,
+  getTrackColorHex,
+  normalizeTrackColor,
+  TRACK_COLOR_SWATCHES
+} from '../trackColors';
 
 type ViewerLayer = {
   key: string;
@@ -44,11 +50,21 @@ type VolumeViewerProps = {
   onTimeIndexChange: (nextIndex: number) => void;
   onRegisterReset: (handler: (() => void) | null) => void;
   tracks: TrackDefinition[];
+  trackChannels: Array<{ id: string; name: string }>;
   trackVisibility: Record<string, boolean>;
   trackOpacityByChannel: Record<string, number>;
   trackLineWidthByChannel: Record<string, number>;
   channelTrackColorModes: Record<string, TrackColorMode>;
   channelTrackOffsets: Record<string, { x: number; y: number }>;
+  activeTrackChannelId: string | null;
+  onTrackChannelSelect: (channelId: string) => void;
+  onTrackVisibilityToggle: (trackId: string) => void;
+  onTrackVisibilityAllChange: (channelId: string, visible: boolean) => void;
+  onTrackOpacityChange: (channelId: string, value: number) => void;
+  onTrackLineWidthChange: (channelId: string, value: number) => void;
+  onTrackColorSelect: (channelId: string, color: string) => void;
+  onTrackColorReset: (channelId: string) => void;
+  onStopTrackFollow: (channelId?: string) => void;
   channelPanels: Array<{
     id: string;
     name: string;
@@ -200,6 +216,16 @@ type VrUiTargetType =
   | 'channels-layer'
   | 'channels-slider'
   | 'channels-color'
+  | 'tracks-panel'
+  | 'tracks-panel-grab'
+  | 'tracks-tab'
+  | 'tracks-stop-follow'
+  | 'tracks-slider'
+  | 'tracks-color'
+  | 'tracks-color-mode'
+  | 'tracks-master-toggle'
+  | 'tracks-toggle'
+  | 'tracks-follow'
   | 'volume-translate-handle'
   | 'volume-rotate-handle';
 
@@ -293,6 +319,70 @@ type VrChannelsState = {
   activeChannelId: string | null;
 };
 
+type VrTracksSliderKey = 'opacity' | 'lineWidth';
+
+type VrTracksInteractiveRegion = {
+  targetType:
+    | 'tracks-tab'
+    | 'tracks-stop-follow'
+    | 'tracks-slider'
+    | 'tracks-color'
+    | 'tracks-color-mode'
+    | 'tracks-master-toggle'
+    | 'tracks-toggle'
+    | 'tracks-follow';
+  channelId: string;
+  trackId?: string;
+  sliderKey?: VrTracksSliderKey;
+  color?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  bounds: { minX: number; maxX: number; minY: number; maxY: number };
+  sliderTrack?: { minX: number; maxX: number; y: number };
+  disabled?: boolean;
+};
+
+type VrTracksHud = {
+  group: THREE.Group;
+  panel: THREE.Mesh;
+  panelGrabHandle: THREE.Mesh;
+  panelTexture: THREE.CanvasTexture;
+  panelCanvas: HTMLCanvasElement | null;
+  panelContext: CanvasRenderingContext2D | null;
+  panelDisplayWidth: number;
+  panelDisplayHeight: number;
+  pixelRatio: number;
+  interactables: THREE.Object3D[];
+  regions: VrTracksInteractiveRegion[];
+  width: number;
+  height: number;
+  hoverRegion: VrTracksInteractiveRegion | null;
+};
+
+type VrTracksState = {
+  channels: Array<{
+    id: string;
+    name: string;
+    opacity: number;
+    lineWidth: number;
+    colorMode: TrackColorMode;
+    totalTracks: number;
+    visibleTracks: number;
+    followedTrackId: string | null;
+    tracks: Array<{
+      id: string;
+      trackNumber: number;
+      label: string;
+      color: string;
+      explicitVisible: boolean;
+      visible: boolean;
+      isFollowed: boolean;
+    }>;
+  }>;
+  activeChannelId: string | null;
+};
+
 type ControllerEntry = {
   controller: THREE.Group;
   grip: THREE.Group;
@@ -318,7 +408,7 @@ type ControllerEntry = {
   rayDirection: THREE.Vector3;
   rayLength: number;
   isSelecting: boolean;
-  hudGrabOffsets: { playback: THREE.Vector3 | null; channels: THREE.Vector3 | null };
+  hudGrabOffsets: { playback: THREE.Vector3 | null; channels: THREE.Vector3 | null; tracks: THREE.Vector3 | null };
   translateGrabOffset: THREE.Vector3 | null;
   rotateGrabState:
     | {
@@ -358,6 +448,28 @@ const VR_CHANNELS_FONT_SIZES = {
   label: 32,
   value: 34,
   small: 28
+} as const;
+const VR_TRACKS_PANEL_WIDTH = 0.58;
+const VR_TRACKS_PANEL_HEIGHT = 0.64;
+const VR_TRACKS_VOLUME_MARGIN = 0.18;
+const VR_TRACKS_FALLBACK_HORIZONTAL_OFFSET = 0.95;
+const VR_TRACKS_VERTICAL_OFFSET = -0.12;
+const VR_TRACKS_DEPTH_OFFSET = 0;
+const VR_TRACKS_CAMERA_ANCHOR_OFFSET = new THREE.Vector3(0.7, -0.22, -0.7);
+const VR_TRACKS_CANVAS_WIDTH = 1180;
+const VR_TRACKS_CANVAS_HEIGHT = 1320;
+const VR_TRACKS_FONT_FAMILY = VR_CHANNELS_FONT_FAMILY;
+const vrTracksFont = (weight: string, size: number) => `${weight} ${size}px ${VR_TRACKS_FONT_FAMILY}`;
+const VR_TRACKS_FONT_SIZES = {
+  heading: 52,
+  emptyState: 32,
+  tab: 32,
+  body: 32,
+  label: 30,
+  value: 32,
+  button: 30,
+  track: 30,
+  small: 26
 } as const;
 const VR_HUD_CYLINDER_RADIUS = 0.9;
 const VR_HUD_CYLINDER_MIN_HEIGHT = 0;
@@ -421,7 +533,17 @@ function resolveVrUiTarget(object: THREE.Object3D | null): VrUiTarget | null {
           target.type === 'channels-reset' ||
           target.type === 'channels-layer' ||
           target.type === 'channels-slider' ||
-          target.type === 'channels-color')
+          target.type === 'channels-color' ||
+          target.type === 'tracks-panel' ||
+          target.type === 'tracks-panel-grab' ||
+          target.type === 'tracks-tab' ||
+          target.type === 'tracks-stop-follow' ||
+          target.type === 'tracks-slider' ||
+          target.type === 'tracks-color' ||
+          target.type === 'tracks-color-mode' ||
+          target.type === 'tracks-master-toggle' ||
+          target.type === 'tracks-toggle' ||
+          target.type === 'tracks-follow')
       ) {
         return { type: target.type, object: current, data: target.data };
       }
@@ -509,11 +631,21 @@ function VolumeViewer({
   onTimeIndexChange,
   onRegisterReset,
   tracks,
+  trackChannels,
   trackVisibility,
   trackOpacityByChannel,
   trackLineWidthByChannel,
   channelTrackColorModes,
   channelTrackOffsets,
+  activeTrackChannelId,
+  onTrackChannelSelect,
+  onTrackVisibilityToggle,
+  onTrackVisibilityAllChange,
+  onTrackOpacityChange,
+  onTrackLineWidthChange,
+  onTrackColorSelect,
+  onTrackColorReset,
+  onStopTrackFollow,
   channelPanels,
   activeChannelPanelId,
   onChannelPanelSelect,
@@ -598,15 +730,19 @@ function VolumeViewer({
   const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(null);
   const vrPlaybackHudRef = useRef<VrPlaybackHud | null>(null);
   const vrChannelsHudRef = useRef<VrChannelsHud | null>(null);
+  const vrTracksHudRef = useRef<VrTracksHud | null>(null);
   const vrPlaybackHudPlacementRef = useRef<{ position: THREE.Vector3 } | null>(null);
   const vrChannelsHudPlacementRef = useRef<{ position: THREE.Vector3 } | null>(null);
+  const vrTracksHudPlacementRef = useRef<{ position: THREE.Vector3 } | null>(null);
   const vrHudPlaneRef = useRef(new THREE.Plane());
   const vrHudPlanePointRef = useRef(new THREE.Vector3());
   const vrPlaybackHudDragTargetRef = useRef(new THREE.Vector3());
   const vrChannelsHudDragTargetRef = useRef(new THREE.Vector3());
+  const vrTracksHudDragTargetRef = useRef(new THREE.Vector3());
   const vrHudOffsetTempRef = useRef(new THREE.Vector3());
   const vrHudIntersectionRef = useRef(new THREE.Vector3());
   const vrChannelsLocalPointRef = useRef(new THREE.Vector3());
+  const vrTracksLocalPointRef = useRef(new THREE.Vector3());
   const vrHudForwardRef = useRef(new THREE.Vector3(0, 0, 1));
   const vrHudYawEulerRef = useRef(new THREE.Euler(0, 0, 0, 'YXZ'));
   const vrHudYawQuaternionRef = useRef(new THREE.Quaternion());
@@ -625,6 +761,7 @@ function VolumeViewer({
   });
   const vrHoverStateRef = useRef({ play: false, slider: false, sliderActive: false });
   const vrChannelsStateRef = useRef<VrChannelsState>({ channels: [], activeChannelId: null });
+  const vrTracksStateRef = useRef<VrTracksState>({ channels: [], activeChannelId: null });
   const sliderLocalPointRef = useRef(new THREE.Vector3());
 
   const updateVolumeHandles = useCallback(() => {
@@ -736,6 +873,605 @@ function VolumeViewer({
     target.y = Math.min(Math.max(target.y, VR_HUD_CYLINDER_MIN_HEIGHT), VR_HUD_CYLINDER_MAX_HEIGHT);
   }, []);
 
+  const renderVrTracksHud = useCallback((hud: VrTracksHud, state: VrTracksState) => {
+    if (!hud.panelCanvas || !hud.panelContext) {
+      hud.regions = [];
+      return;
+    }
+    const ctx = hud.panelContext;
+    const canvasWidth = hud.panelDisplayWidth;
+    const canvasHeight = hud.panelDisplayHeight;
+    const targetPixelRatio =
+      typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : hud.pixelRatio;
+    if (targetPixelRatio && Math.abs(targetPixelRatio - hud.pixelRatio) > 0.01 && hud.panelCanvas) {
+      hud.pixelRatio = targetPixelRatio;
+      hud.panelCanvas.width = Math.round(canvasWidth * hud.pixelRatio);
+      hud.panelCanvas.height = Math.round(canvasHeight * hud.pixelRatio);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+    }
+    const pixelRatio = hud.pixelRatio ?? 1;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, hud.panelCanvas.width, hud.panelCanvas.height);
+    ctx.save();
+    ctx.scale(pixelRatio, pixelRatio);
+    ctx.fillStyle = 'rgba(16, 22, 29, 0.95)';
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+    const toPanelX = (x: number) => (x / canvasWidth - 0.5) * hud.width;
+    const toPanelY = (y: number) => (0.5 - y / canvasHeight) * hud.height;
+    const regions: VrTracksInteractiveRegion[] = [];
+
+    const paddingX = 72;
+    const paddingTop = 48;
+
+    ctx.save();
+    ctx.fillStyle = '#dce7f7';
+    ctx.font = vrTracksFont('600', VR_TRACKS_FONT_SIZES.heading);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+    ctx.shadowBlur = 18;
+    ctx.fillText('Tracks', paddingX, paddingTop);
+    ctx.restore();
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+
+    let currentY = paddingTop + 84;
+
+    const channels = state.channels ?? [];
+    if (channels.length === 0) {
+      ctx.fillStyle = '#9fb2c8';
+      ctx.font = vrTracksFont('500', VR_TRACKS_FONT_SIZES.emptyState);
+      ctx.fillText('Add a channel to manage tracks.', paddingX, currentY + 20);
+      hud.regions = [];
+      hud.hoverRegion = null;
+      ctx.restore();
+      hud.panelTexture.needsUpdate = true;
+      return;
+    }
+
+    let activeChannelId = state.activeChannelId;
+    if (!activeChannelId || !channels.some((channel) => channel.id === activeChannelId)) {
+      activeChannelId = channels[0].id;
+      state.activeChannelId = activeChannelId;
+    }
+    const activeChannel = channels.find((channel) => channel.id === activeChannelId) ?? channels[0];
+
+    const tabAreaWidth = canvasWidth - paddingX * 2;
+    const tabSpacing = 18;
+    const baseTabWidth = Math.max(
+      160,
+      Math.min(260, (tabAreaWidth - (channels.length - 1) * tabSpacing) / channels.length)
+    );
+    const totalTabWidth = channels.length * baseTabWidth + Math.max(0, channels.length - 1) * tabSpacing;
+    let tabStartX = paddingX + Math.max(0, (tabAreaWidth - totalTabWidth) / 2);
+    const tabHeight = 82;
+
+    ctx.font = vrTracksFont('600', VR_TRACKS_FONT_SIZES.tab);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    for (const channel of channels) {
+      const isActive = channel.id === activeChannelId;
+      const x = tabStartX;
+      const y = currentY;
+      drawRoundedRect(ctx, x, y, baseTabWidth, tabHeight, 20);
+      const hasTracks = channel.totalTracks > 0;
+      ctx.fillStyle = hasTracks ? (isActive ? '#2b5fa6' : '#1d2734') : '#1a202b';
+      ctx.fill();
+      if (hud.hoverRegion && hud.hoverRegion.targetType === 'tracks-tab' && hud.hoverRegion.channelId === channel.id) {
+        ctx.save();
+        drawRoundedRect(ctx, x, y, baseTabWidth, tabHeight, 20);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x + 12, y + 12, baseTabWidth - 24, tabHeight - 24);
+      ctx.clip();
+      ctx.fillStyle = '#f3f6fc';
+      ctx.fillText(channel.name, x + baseTabWidth / 2, y + tabHeight / 2);
+      ctx.restore();
+
+      const rectBounds = {
+        minX: toPanelX(x),
+        maxX: toPanelX(x + baseTabWidth),
+        minY: Math.min(toPanelY(y), toPanelY(y + tabHeight)),
+        maxY: Math.max(toPanelY(y), toPanelY(y + tabHeight))
+      };
+      regions.push({ targetType: 'tracks-tab', channelId: channel.id, bounds: rectBounds });
+
+      tabStartX += baseTabWidth + tabSpacing;
+    }
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    currentY += tabHeight + 36;
+
+    ctx.fillStyle = '#9fb2c8';
+    ctx.font = vrTracksFont('500', VR_TRACKS_FONT_SIZES.body);
+    ctx.fillText(
+      `Visible ${Math.min(activeChannel.visibleTracks, activeChannel.totalTracks)} / ${activeChannel.totalTracks} tracks`,
+      paddingX,
+      currentY
+    );
+    currentY += 42;
+
+    const stopWidth = 220;
+    const stopHeight = 56;
+    const stopX = paddingX;
+    const stopY = currentY;
+    const stopDisabled = !activeChannel.followedTrackId;
+    drawRoundedRect(ctx, stopX, stopY, stopWidth, stopHeight, 16);
+    ctx.fillStyle = stopDisabled ? 'rgba(45, 60, 74, 0.6)' : '#2b3340';
+    if (!stopDisabled && activeChannel.followedTrackId) {
+      ctx.fillStyle = '#2b5fa6';
+    }
+    ctx.fill();
+    if (
+      hud.hoverRegion &&
+      hud.hoverRegion.targetType === 'tracks-stop-follow' &&
+      hud.hoverRegion.channelId === activeChannel.id
+    ) {
+      ctx.save();
+      drawRoundedRect(ctx, stopX, stopY, stopWidth, stopHeight, 16);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.fillStyle = stopDisabled ? '#7b8795' : '#f3f6fc';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = vrTracksFont('600', VR_TRACKS_FONT_SIZES.button);
+    ctx.fillText('Stop tracking', stopX + stopWidth / 2, stopY + stopHeight / 2);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+
+    const stopBounds = {
+      minX: toPanelX(stopX),
+      maxX: toPanelX(stopX + stopWidth),
+      minY: Math.min(toPanelY(stopY), toPanelY(stopY + stopHeight)),
+      maxY: Math.max(toPanelY(stopY), toPanelY(stopY + stopHeight))
+    };
+    regions.push({
+      targetType: 'tracks-stop-follow',
+      channelId: activeChannel.id,
+      bounds: stopBounds,
+      disabled: stopDisabled
+    });
+
+    currentY += stopHeight + 32;
+
+    const drawTrackSlider = (
+      label: string,
+      valueLabel: string,
+      sliderKey: VrTracksSliderKey,
+      value: number,
+      min: number,
+      max: number,
+      step: number
+    ) => {
+      ctx.fillStyle = '#9fb2c8';
+      ctx.font = vrTracksFont('500', VR_TRACKS_FONT_SIZES.label);
+      ctx.fillText(label, paddingX, currentY);
+      ctx.fillStyle = '#dce3f1';
+      ctx.font = vrTracksFont('600', VR_TRACKS_FONT_SIZES.value);
+      ctx.fillText(valueLabel, paddingX + 240, currentY);
+      ctx.font = vrTracksFont('500', VR_TRACKS_FONT_SIZES.body);
+
+      const sliderX = paddingX;
+      const sliderY = currentY + 34;
+      const sliderWidth = canvasWidth - paddingX * 2;
+      const sliderHeight = 26;
+      const sliderRadius = 14;
+      const disabled = activeChannel.totalTracks === 0;
+
+      drawRoundedRect(ctx, sliderX, sliderY, sliderWidth, sliderHeight, sliderRadius);
+      ctx.fillStyle = disabled ? 'rgba(45, 60, 74, 0.6)' : '#1f2733';
+      ctx.fill();
+
+      const ratio = Math.min(Math.max((value - min) / Math.max(max - min, 1e-5), 0), 1);
+      const knobX = sliderX + ratio * sliderWidth;
+      const knobY = sliderY + sliderHeight / 2;
+      ctx.beginPath();
+      ctx.arc(knobX, knobY, 18, 0, Math.PI * 2);
+      ctx.fillStyle = disabled ? '#45515f' : '#f3f6fc';
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = disabled ? 'rgba(0, 0, 0, 0.45)' : 'rgba(0, 0, 0, 0.3)';
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(knobX, knobY, 10, 0, Math.PI * 2);
+      ctx.fillStyle = disabled ? '#2a313c' : '#2b5fa6';
+      ctx.fill();
+
+      const isHovered =
+        hud.hoverRegion &&
+        hud.hoverRegion.targetType === 'tracks-slider' &&
+        hud.hoverRegion.channelId === activeChannel.id &&
+        hud.hoverRegion.sliderKey === sliderKey;
+      if (isHovered) {
+        ctx.save();
+        drawRoundedRect(ctx, sliderX, sliderY, sliderWidth, sliderHeight, sliderRadius);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+        ctx.fill();
+        ctx.restore();
+      }
+
+      const sliderBounds = {
+        minX: toPanelX(sliderX),
+        maxX: toPanelX(sliderX + sliderWidth),
+        minY: Math.min(toPanelY(sliderY - 10), toPanelY(sliderY + sliderHeight + 10)),
+        maxY: Math.max(toPanelY(sliderY - 10), toPanelY(sliderY + sliderHeight + 10))
+      };
+      regions.push({
+        targetType: 'tracks-slider',
+        channelId: activeChannel.id,
+        sliderKey,
+        min,
+        max,
+        step,
+        bounds: sliderBounds,
+        sliderTrack: {
+          minX: toPanelX(sliderX),
+          maxX: toPanelX(sliderX + sliderWidth),
+          y: toPanelY(sliderY + sliderHeight / 2)
+        },
+        disabled
+      });
+
+      currentY += sliderHeight + 56;
+    };
+
+    drawTrackSlider('Opacity', `${Math.round(activeChannel.opacity * 100)}%`, 'opacity', activeChannel.opacity, 0, 1, 0.05);
+    drawTrackSlider(
+      'Thickness',
+      `${activeChannel.lineWidth.toFixed(1)}`,
+      'lineWidth',
+      activeChannel.lineWidth,
+      0.5,
+      5,
+      0.1
+    );
+
+    ctx.fillStyle = '#9fb2c8';
+    ctx.font = vrTracksFont('500', VR_TRACKS_FONT_SIZES.body);
+    ctx.fillText('Preset colors', paddingX, currentY);
+    const colorLabel =
+      activeChannel.colorMode.type === 'uniform'
+        ? normalizeTrackColor(activeChannel.colorMode.color, DEFAULT_TRACK_COLOR)
+        : 'Sorted';
+    ctx.fillStyle = '#dce3f1';
+    ctx.font = vrTracksFont('600', VR_TRACKS_FONT_SIZES.value);
+    ctx.fillText(colorLabel, paddingX + 260, currentY);
+    ctx.font = vrTracksFont('500', VR_TRACKS_FONT_SIZES.body);
+    currentY += 40;
+
+    const swatchSize = 54;
+    const swatchSpacing = 20;
+    let swatchX = paddingX;
+    const swatchY = currentY;
+    const uniformColor =
+      activeChannel.colorMode.type === 'uniform'
+        ? normalizeTrackColor(activeChannel.colorMode.color, DEFAULT_TRACK_COLOR)
+        : null;
+
+    for (const swatch of TRACK_COLOR_SWATCHES) {
+      const normalized = normalizeTrackColor(swatch.value, DEFAULT_TRACK_COLOR);
+      const isSelected = uniformColor === normalized;
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(swatchX, swatchY, swatchSize, swatchSize, 14);
+      } else {
+        drawRoundedRect(ctx, swatchX, swatchY, swatchSize, swatchSize, 14);
+      }
+      ctx.fillStyle = normalized;
+      ctx.fill();
+      ctx.lineWidth = isSelected ? 4 : 2;
+      ctx.strokeStyle = isSelected ? '#ffffff' : 'rgba(255, 255, 255, 0.45)';
+      ctx.stroke();
+      const isHovered =
+        hud.hoverRegion &&
+        hud.hoverRegion.targetType === 'tracks-color' &&
+        hud.hoverRegion.channelId === activeChannel.id &&
+        hud.hoverRegion.color === normalized;
+      if (isHovered) {
+        ctx.save();
+        if (ctx.roundRect) {
+          ctx.roundRect(swatchX, swatchY, swatchSize, swatchSize, 14);
+        } else {
+          drawRoundedRect(ctx, swatchX, swatchY, swatchSize, swatchSize, 14);
+        }
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.28)';
+        ctx.fill();
+        ctx.restore();
+      }
+      const colorBounds = {
+        minX: toPanelX(swatchX),
+        maxX: toPanelX(swatchX + swatchSize),
+        minY: Math.min(toPanelY(swatchY), toPanelY(swatchY + swatchSize)),
+        maxY: Math.max(toPanelY(swatchY), toPanelY(swatchY + swatchSize))
+      };
+      regions.push({
+        targetType: 'tracks-color',
+        channelId: activeChannel.id,
+        color: normalized,
+        bounds: colorBounds,
+        disabled: activeChannel.totalTracks === 0
+      });
+
+      swatchX += swatchSize + swatchSpacing;
+    }
+
+    const modeWidth = 120;
+    const modeHeight = swatchSize;
+    const modeX = canvasWidth - paddingX - modeWidth;
+    const modeY = swatchY;
+    const isSortedMode = activeChannel.colorMode.type === 'random';
+    drawRoundedRect(ctx, modeX, modeY, modeWidth, modeHeight, 16);
+    ctx.fillStyle = isSortedMode ? '#2b5fa6' : '#1f2735';
+    if (activeChannel.totalTracks === 0) {
+      ctx.fillStyle = 'rgba(45, 60, 74, 0.6)';
+    }
+    ctx.fill();
+    if (
+      hud.hoverRegion &&
+      hud.hoverRegion.targetType === 'tracks-color-mode' &&
+      hud.hoverRegion.channelId === activeChannel.id
+    ) {
+      ctx.save();
+      drawRoundedRect(ctx, modeX, modeY, modeWidth, modeHeight, 16);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.fillStyle = activeChannel.totalTracks === 0 ? '#7b8795' : '#f3f6fc';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = vrTracksFont('600', VR_TRACKS_FONT_SIZES.button);
+    ctx.fillText('Sorted', modeX + modeWidth / 2, modeY + modeHeight / 2);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+
+    const modeBounds = {
+      minX: toPanelX(modeX),
+      maxX: toPanelX(modeX + modeWidth),
+      minY: Math.min(toPanelY(modeY), toPanelY(modeY + modeHeight)),
+      maxY: Math.max(toPanelY(modeY), toPanelY(modeY + modeHeight))
+    };
+    regions.push({
+      targetType: 'tracks-color-mode',
+      channelId: activeChannel.id,
+      bounds: modeBounds,
+      disabled: activeChannel.totalTracks === 0
+    });
+
+    currentY += swatchSize + 36;
+
+    const masterWidth = canvasWidth - paddingX * 2;
+    const masterHeight = 54;
+    const masterX = paddingX;
+    const masterY = currentY;
+    const allVisible =
+      activeChannel.totalTracks > 0 && activeChannel.visibleTracks === activeChannel.totalTracks;
+    const someVisible =
+      activeChannel.totalTracks > 0 &&
+      activeChannel.visibleTracks > 0 &&
+      activeChannel.visibleTracks < activeChannel.totalTracks;
+    drawRoundedRect(ctx, masterX, masterY, masterWidth, masterHeight, 16);
+    ctx.fillStyle = activeChannel.totalTracks === 0 ? 'rgba(45, 60, 74, 0.6)' : '#1f2735';
+    ctx.fill();
+    if (
+      hud.hoverRegion &&
+      hud.hoverRegion.targetType === 'tracks-master-toggle' &&
+      hud.hoverRegion.channelId === activeChannel.id
+    ) {
+      ctx.save();
+      drawRoundedRect(ctx, masterX, masterY, masterWidth, masterHeight, 16);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
+      ctx.fill();
+      ctx.restore();
+    }
+    const boxSize = 36;
+    const boxX = masterX + 18;
+    const boxY = masterY + (masterHeight - boxSize) / 2;
+    drawRoundedRect(ctx, boxX, boxY, boxSize, boxSize, 10);
+    ctx.fillStyle = allVisible ? '#2b5fa6' : '#2a313c';
+    if (activeChannel.totalTracks === 0) {
+      ctx.fillStyle = 'rgba(53, 64, 78, 0.8)';
+    }
+    ctx.fill();
+    if (allVisible || someVisible) {
+      ctx.strokeStyle = '#f3f6fc';
+      ctx.lineWidth = 4;
+      if (someVisible && !allVisible) {
+        ctx.beginPath();
+        ctx.moveTo(boxX + 8, boxY + boxSize / 2);
+        ctx.lineTo(boxX + boxSize - 8, boxY + boxSize / 2);
+        ctx.stroke();
+      } else {
+        ctx.beginPath();
+        ctx.moveTo(boxX + 9, boxY + boxSize / 2);
+        ctx.lineTo(boxX + boxSize / 2 - 2, boxY + boxSize - 9);
+        ctx.lineTo(boxX + boxSize - 9, boxY + 9);
+        ctx.stroke();
+      }
+    }
+    ctx.fillStyle = activeChannel.totalTracks === 0 ? '#7b8795' : '#dce3f1';
+    ctx.font = vrTracksFont('600', VR_TRACKS_FONT_SIZES.body);
+    ctx.fillText('Show all tracks', boxX + boxSize + 18, masterY + (masterHeight - 32) / 2);
+
+    const masterBounds = {
+      minX: toPanelX(masterX),
+      maxX: toPanelX(masterX + masterWidth),
+      minY: Math.min(toPanelY(masterY), toPanelY(masterY + masterHeight)),
+      maxY: Math.max(toPanelY(masterY), toPanelY(masterY + masterHeight))
+    };
+    regions.push({
+      targetType: 'tracks-master-toggle',
+      channelId: activeChannel.id,
+      bounds: masterBounds,
+      disabled: activeChannel.totalTracks === 0
+    });
+
+    currentY += masterHeight + 32;
+
+    if (activeChannel.totalTracks === 0) {
+      ctx.fillStyle = '#9fb2c8';
+      ctx.font = vrTracksFont('500', VR_TRACKS_FONT_SIZES.emptyState);
+      ctx.fillText('Load a tracks file to toggle individual trajectories.', paddingX, currentY + 12);
+    } else {
+      const listTop = currentY;
+      const listPaddingBottom = 64;
+      const availableHeight = Math.max(canvasHeight - listPaddingBottom - listTop, 120);
+      const baseRowHeight = 68;
+      let rowHeight = baseRowHeight;
+      let rowsToRender = activeChannel.tracks.length;
+      if (rowsToRender * rowHeight > availableHeight) {
+        rowHeight = Math.max(44, availableHeight / rowsToRender);
+        rowsToRender = Math.max(1, Math.floor(availableHeight / rowHeight));
+      }
+      const trackAreaWidth = canvasWidth - paddingX * 2;
+
+      for (let index = 0; index < rowsToRender; index += 1) {
+        const track = activeChannel.tracks[index];
+        const rowY = listTop + index * rowHeight;
+        const rowRadius = 16;
+        drawRoundedRect(ctx, paddingX, rowY, trackAreaWidth, rowHeight - 8, rowRadius);
+        const isHoveredRow =
+          hud.hoverRegion &&
+          (hud.hoverRegion.targetType === 'tracks-toggle' || hud.hoverRegion.targetType === 'tracks-follow') &&
+          hud.hoverRegion.channelId === activeChannel.id &&
+          hud.hoverRegion.trackId === track.id;
+        ctx.fillStyle = track.isFollowed ? '#2b3340' : '#1d2734';
+        if (isHoveredRow) {
+          ctx.fillStyle = '#334157';
+        }
+        ctx.fill();
+
+        const toggleBoxSize = 34;
+        const toggleBoxX = paddingX + 18;
+        const toggleBoxY = rowY + (rowHeight - 8 - toggleBoxSize) / 2;
+        drawRoundedRect(ctx, toggleBoxX, toggleBoxY, toggleBoxSize, toggleBoxSize, 10);
+        ctx.fillStyle = track.visible ? '#2b5fa6' : '#2a313c';
+        ctx.fill();
+        if (track.visible) {
+          ctx.strokeStyle = '#f3f6fc';
+          ctx.lineWidth = 3.5;
+          ctx.beginPath();
+          ctx.moveTo(toggleBoxX + 8, toggleBoxY + toggleBoxSize / 2);
+          ctx.lineTo(toggleBoxX + toggleBoxSize / 2 - 3, toggleBoxY + toggleBoxSize - 9);
+          ctx.lineTo(toggleBoxX + toggleBoxSize - 7, toggleBoxY + 10);
+          ctx.stroke();
+        }
+        const toggleBounds = {
+          minX: toPanelX(toggleBoxX),
+          maxX: toPanelX(toggleBoxX + toggleBoxSize),
+          minY: Math.min(toPanelY(toggleBoxY), toPanelY(toggleBoxY + toggleBoxSize)),
+          maxY: Math.max(toPanelY(toggleBoxY), toPanelY(toggleBoxY + toggleBoxSize))
+        };
+        regions.push({
+          targetType: 'tracks-toggle',
+          channelId: activeChannel.id,
+          trackId: track.id,
+          bounds: toggleBounds,
+          disabled: false
+        });
+
+        const swatchRadius = 10;
+        const swatchCenterX = toggleBoxX + toggleBoxSize + 26;
+        const swatchCenterY = toggleBoxY + toggleBoxSize / 2;
+        ctx.beginPath();
+        ctx.arc(swatchCenterX, swatchCenterY, swatchRadius, 0, Math.PI * 2);
+        ctx.fillStyle = track.color;
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#0b0f14';
+        ctx.stroke();
+
+        ctx.fillStyle = track.isFollowed ? '#f6fbff' : '#dce3f1';
+        ctx.font = vrTracksFont('600', VR_TRACKS_FONT_SIZES.track);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(track.label, swatchCenterX + 18, swatchCenterY);
+
+        const followWidth = 140;
+        const followHeight = rowHeight - 20;
+        const followX = paddingX + trackAreaWidth - followWidth - 18;
+        const followY = rowY + (rowHeight - 8 - followHeight) / 2;
+        drawRoundedRect(ctx, followX, followY, followWidth, followHeight, 14);
+        ctx.fillStyle = track.isFollowed ? '#2b5fa6' : '#2b3340';
+        if (isHoveredRow && hud.hoverRegion?.targetType === 'tracks-follow') {
+          ctx.fillStyle = '#336cd1';
+        }
+        ctx.fill();
+        ctx.fillStyle = '#f3f6fc';
+        ctx.font = vrTracksFont('600', VR_TRACKS_FONT_SIZES.button);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(track.isFollowed ? 'Following' : 'Follow', followX + followWidth / 2, followY + followHeight / 2);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+
+        const followBounds = {
+          minX: toPanelX(followX),
+          maxX: toPanelX(followX + followWidth),
+          minY: Math.min(toPanelY(followY), toPanelY(followY + followHeight)),
+          maxY: Math.max(toPanelY(followY), toPanelY(followY + followHeight))
+        };
+        regions.push({
+          targetType: 'tracks-follow',
+          channelId: activeChannel.id,
+          trackId: track.id,
+          bounds: followBounds,
+          disabled: false
+        });
+      }
+
+      if (rowsToRender < activeChannel.tracks.length) {
+        const remaining = activeChannel.tracks.length - rowsToRender;
+        ctx.fillStyle = '#9fb2c8';
+        ctx.font = vrTracksFont('500', VR_TRACKS_FONT_SIZES.small);
+        ctx.fillText(
+          `+${remaining} more tracks…`,
+          paddingX,
+          listTop + rowsToRender * rowHeight + 20
+        );
+      }
+    }
+
+    if (hud.hoverRegion) {
+      const stillValid = regions.some((region) => {
+        if (region.targetType !== hud.hoverRegion?.targetType) {
+          return false;
+        }
+        if (region.channelId !== hud.hoverRegion.channelId) {
+          return false;
+        }
+        if (region.trackId !== hud.hoverRegion.trackId) {
+          return false;
+        }
+        if (region.sliderKey !== hud.hoverRegion.sliderKey) {
+          return false;
+        }
+        if (region.color !== hud.hoverRegion.color) {
+          return false;
+        }
+        return true;
+      });
+      if (!stillValid) {
+        hud.hoverRegion = null;
+      }
+    }
+
+    hud.regions = regions;
+    ctx.restore();
+    hud.panelTexture.needsUpdate = true;
+  }, []);
+
   const getHudFacingQuaternion = useCallback((position: THREE.Vector3) => {
     const yawQuaternion = vrHudYawQuaternionRef.current;
     const yawEuler = vrHudYawEulerRef.current;
@@ -746,7 +1482,10 @@ function VolumeViewer({
   }, []);
 
   const updateHudGroupFromPlacement = useCallback(
-    (hud: VrPlaybackHud | VrChannelsHud | null, placement: { position: THREE.Vector3 } | null) => {
+    (
+      hud: VrPlaybackHud | VrChannelsHud | VrTracksHud | null,
+      placement: { position: THREE.Vector3 } | null
+    ) => {
       if (!hud || !placement) {
         return;
       }
@@ -781,6 +1520,33 @@ function VolumeViewer({
     },
     [constrainVectorToHudCylinder, updateHudGroupFromPlacement]
   );
+
+  const setVrTracksHudPlacementPosition = useCallback(
+    (nextPosition: THREE.Vector3) => {
+      const placement = vrTracksHudPlacementRef.current ?? { position: new THREE.Vector3() };
+      placement.position.copy(nextPosition);
+      constrainVectorToHudCylinder(placement.position);
+      vrTracksHudPlacementRef.current = placement;
+      vrTracksHudDragTargetRef.current.copy(placement.position);
+      updateHudGroupFromPlacement(vrTracksHudRef.current, placement);
+    },
+    [constrainVectorToHudCylinder, updateHudGroupFromPlacement]
+  );
+
+  const refreshVrHudPlacements = useCallback(() => {
+    updateHudGroupFromPlacement(
+      vrPlaybackHudRef.current,
+      vrPlaybackHudPlacementRef.current ?? null
+    );
+    updateHudGroupFromPlacement(
+      vrChannelsHudRef.current,
+      vrChannelsHudPlacementRef.current ?? null
+    );
+    updateHudGroupFromPlacement(
+      vrTracksHudRef.current,
+      vrTracksHudPlacementRef.current ?? null
+    );
+  }, [updateHudGroupFromPlacement]);
 
   const handleContainerRef = useCallback((node: HTMLDivElement | null) => {
     containerRef.current = node;
@@ -879,6 +1645,17 @@ function VolumeViewer({
 
   const setVrChannelsHudVisible = useCallback((visible: boolean) => {
     const hud = vrChannelsHudRef.current;
+    if (!hud) {
+      return;
+    }
+    hud.group.visible = visible;
+    if (!visible) {
+      hud.hoverRegion = null;
+    }
+  }, []);
+
+  const setVrTracksHudVisible = useCallback((visible: boolean) => {
+    const hud = vrTracksHudRef.current;
     if (!hud) {
       return;
     }
@@ -1168,6 +1945,91 @@ function VolumeViewer({
       regions: [],
       width: VR_CHANNELS_PANEL_WIDTH,
       height: VR_CHANNELS_PANEL_HEIGHT,
+      hoverRegion: null
+    };
+
+    return hud;
+  }, []);
+
+  const createVrTracksHud = useCallback(() => {
+    if (typeof document === 'undefined') {
+      return null;
+    }
+    const group = new THREE.Group();
+    group.name = 'VrTracksHud';
+
+    const backgroundMaterial = new THREE.MeshBasicMaterial({
+      color: 0x10161d,
+      transparent: true,
+      opacity: 0.9,
+      side: THREE.DoubleSide
+    });
+    const background = new THREE.Mesh(
+      new THREE.PlaneGeometry(VR_TRACKS_PANEL_WIDTH, VR_TRACKS_PANEL_HEIGHT),
+      backgroundMaterial
+    );
+    background.position.set(0, 0, 0);
+    group.add(background);
+
+    const panelCanvas = document.createElement('canvas');
+    const panelDisplayWidth = VR_TRACKS_CANVAS_WIDTH;
+    const panelDisplayHeight = VR_TRACKS_CANVAS_HEIGHT;
+    const pixelRatio = typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : 1;
+    panelCanvas.width = Math.round(panelDisplayWidth * pixelRatio);
+    panelCanvas.height = Math.round(panelDisplayHeight * pixelRatio);
+    const panelContext = panelCanvas.getContext('2d');
+    if (!panelContext) {
+      return null;
+    }
+    panelContext.imageSmoothingEnabled = true;
+    panelContext.imageSmoothingQuality = 'high';
+    const panelTexture = new THREE.CanvasTexture(panelCanvas);
+    panelTexture.colorSpace = THREE.SRGBColorSpace;
+    panelTexture.minFilter = THREE.LinearFilter;
+    panelTexture.magFilter = THREE.LinearFilter;
+    const panelMaterial = new THREE.MeshBasicMaterial({
+      map: panelTexture,
+      transparent: true,
+      opacity: 1,
+      side: THREE.DoubleSide
+    });
+    const panel = new THREE.Mesh(
+      new THREE.PlaneGeometry(VR_TRACKS_PANEL_WIDTH, VR_TRACKS_PANEL_HEIGHT),
+      panelMaterial
+    );
+    panel.position.set(0, 0, 0.001);
+    panel.userData.vrUiTarget = { type: 'tracks-panel' } satisfies { type: VrUiTargetType };
+    group.add(panel);
+
+    const panelGrabMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      opacity: 0.01,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    const panelGrabHandle = new THREE.Mesh(
+      new THREE.PlaneGeometry(VR_TRACKS_PANEL_WIDTH, 0.06),
+      panelGrabMaterial
+    );
+    panelGrabHandle.position.set(0, VR_TRACKS_PANEL_HEIGHT / 2 - 0.03, 0.0025);
+    panelGrabHandle.userData.vrUiTarget = { type: 'tracks-panel-grab' } satisfies { type: VrUiTargetType };
+    group.add(panelGrabHandle);
+
+    const hud: VrTracksHud = {
+      group,
+      panel,
+      panelGrabHandle,
+      panelTexture,
+      panelCanvas,
+      panelContext,
+      panelDisplayWidth,
+      panelDisplayHeight,
+      pixelRatio,
+      interactables: [panelGrabHandle, panel],
+      regions: [],
+      width: VR_TRACKS_PANEL_WIDTH,
+      height: VR_TRACKS_PANEL_HEIGHT,
       hoverRegion: null
     };
 
@@ -1637,6 +2499,15 @@ function VolumeViewer({
     hud.panelTexture.needsUpdate = true;
   }, []);
 
+  const updateVrTracksHud = useCallback(() => {
+    const hud = vrTracksHudRef.current;
+    if (!hud) {
+      return;
+    }
+    const state = vrTracksStateRef.current;
+    renderVrTracksHud(hud, state);
+  }, [renderVrTracksHud]);
+
   const updateVrChannelsHud = useCallback(() => {
     const hud = vrChannelsHudRef.current;
     if (!hud) {
@@ -1655,6 +2526,30 @@ function VolumeViewer({
       hud.panel.worldToLocal(vrChannelsLocalPointRef.current);
       const localX = vrChannelsLocalPointRef.current.x;
       const localY = vrChannelsLocalPointRef.current.y;
+      for (const region of hud.regions) {
+        const { minX, maxX, minY, maxY } = region.bounds;
+        const minBoundX = Math.min(minX, maxX);
+        const maxBoundX = Math.max(minX, maxX);
+        const minBoundY = Math.min(minY, maxY);
+        const maxBoundY = Math.max(minY, maxY);
+        if (localX >= minBoundX && localX <= maxBoundX && localY >= minBoundY && localY <= maxBoundY) {
+          return region;
+        }
+      }
+    return null;
+  },
+  []
+  );
+
+  const resolveTracksRegionFromPoint = useCallback(
+    (hud: VrTracksHud, worldPoint: THREE.Vector3): VrTracksInteractiveRegion | null => {
+      if (!hud || hud.regions.length === 0) {
+        return null;
+      }
+      vrTracksLocalPointRef.current.copy(worldPoint);
+      hud.panel.worldToLocal(vrTracksLocalPointRef.current);
+      const localX = vrTracksLocalPointRef.current.x;
+      const localY = vrTracksLocalPointRef.current.y;
       for (const region of hud.regions) {
         const { minX, maxX, minY, maxY } = region.bounds;
         const minBoundX = Math.min(minX, maxX);
@@ -1724,6 +2619,52 @@ function VolumeViewer({
     [onLayerBrightnessChange, onLayerContrastChange, onLayerOffsetChange, renderVrChannelsHud]
   );
 
+  const applyVrTracksSliderFromPoint = useCallback(
+    (region: VrTracksInteractiveRegion, worldPoint: THREE.Vector3) => {
+      if (!region || region.disabled || region.targetType !== 'tracks-slider' || !region.sliderTrack) {
+        return;
+      }
+      const hud = vrTracksHudRef.current;
+      if (!hud) {
+        return;
+      }
+      sliderLocalPointRef.current.copy(worldPoint);
+      hud.panel.worldToLocal(sliderLocalPointRef.current);
+      const localX = sliderLocalPointRef.current.x;
+      const trackMin = region.sliderTrack.minX;
+      const trackMax = region.sliderTrack.maxX;
+      const ratio = (localX - trackMin) / Math.max(trackMax - trackMin, 1e-5);
+      const clampedRatio = Math.min(Math.max(ratio, 0), 1);
+      const minValue = region.min ?? 0;
+      const maxValue = region.max ?? 1;
+      const rawValue = minValue + clampedRatio * (maxValue - minValue);
+      const step = region.step ?? 0;
+      let snappedValue = rawValue;
+      if (step > 0) {
+        const steps = Math.round((rawValue - minValue) / step);
+        snappedValue = minValue + steps * step;
+      }
+      snappedValue = Math.min(Math.max(snappedValue, minValue), maxValue);
+
+      const state = vrTracksStateRef.current;
+      const channelState = state.channels.find((entry) => entry.id === region.channelId);
+      if (!channelState) {
+        return;
+      }
+
+      if (region.sliderKey === 'opacity') {
+        channelState.opacity = snappedValue;
+        onTrackOpacityChange(region.channelId, snappedValue);
+      } else if (region.sliderKey === 'lineWidth') {
+        channelState.lineWidth = snappedValue;
+        onTrackLineWidthChange(region.channelId, snappedValue);
+      }
+
+      renderVrTracksHud(hud, state);
+    },
+    [onTrackLineWidthChange, onTrackOpacityChange, renderVrTracksHud]
+  );
+
   followedTrackIdRef.current = followedTrackId;
 
   useEffect(() => {
@@ -1775,10 +2716,84 @@ function VolumeViewer({
     updateVrChannelsHud();
   }, [activeChannelPanelId, channelPanels, updateVrChannelsHud]);
 
+  useEffect(() => {
+    const nextChannels = trackChannels.map((channel) => {
+      const tracksForChannel = tracksByChannel.get(channel.id) ?? [];
+      const colorMode = channelTrackColorModes[channel.id] ?? { type: 'random' };
+      const opacity = trackOpacityByChannel[channel.id] ?? DEFAULT_TRACK_OPACITY;
+      const lineWidth = trackLineWidthByChannel[channel.id] ?? DEFAULT_TRACK_LINE_WIDTH;
+      let visibleTracks = 0;
+      const trackEntries = tracksForChannel.map((track) => {
+        const explicitVisible = trackVisibility[track.id] ?? true;
+        if (explicitVisible) {
+          visibleTracks += 1;
+        }
+        const isFollowed = followedTrackId === track.id;
+        const color =
+          colorMode.type === 'uniform'
+            ? normalizeTrackColor(colorMode.color, DEFAULT_TRACK_COLOR)
+            : getTrackColorHex(track.id);
+        return {
+          id: track.id,
+          trackNumber: track.trackNumber,
+          label: `Track #${track.trackNumber}`,
+          color,
+          explicitVisible,
+          visible: isFollowed || explicitVisible,
+          isFollowed
+        };
+      });
+      const followedEntry = trackEntries.find((entry) => entry.isFollowed) ?? null;
+      return {
+        id: channel.id,
+        name: channel.name,
+        opacity,
+        lineWidth,
+        colorMode,
+        totalTracks: tracksForChannel.length,
+        visibleTracks,
+        followedTrackId: followedEntry ? followedEntry.id : null,
+        tracks: trackEntries
+      };
+    });
+    const nextState: VrTracksState = {
+      channels: nextChannels,
+      activeChannelId: activeTrackChannelId
+    };
+    if (!nextState.activeChannelId || !nextChannels.some((channel) => channel.id === nextState.activeChannelId)) {
+      nextState.activeChannelId = nextChannels[0]?.id ?? null;
+    }
+    vrTracksStateRef.current = nextState;
+    updateVrTracksHud();
+  }, [
+    activeTrackChannelId,
+    channelTrackColorModes,
+    trackChannels,
+    trackLineWidthByChannel,
+    trackOpacityByChannel,
+    trackVisibility,
+    tracksByChannel,
+    followedTrackId,
+    updateVrTracksHud
+  ]);
+
   const trackLookup = useMemo(() => {
     const map = new Map<string, TrackDefinition>();
     for (const track of tracks) {
       map.set(track.id, track);
+    }
+    return map;
+  }, [tracks]);
+
+  const tracksByChannel = useMemo(() => {
+    const map = new Map<string, TrackDefinition[]>();
+    for (const track of tracks) {
+      const existing = map.get(track.channelId);
+      if (existing) {
+        existing.push(track);
+      } else {
+        map.set(track.channelId, [track]);
+      }
     }
     return map;
   }, [tracks]);
@@ -1918,6 +2933,44 @@ function VolumeViewer({
     }
     setVrChannelsHudPlacementPosition(target);
   }, [setVrChannelsHudPlacementPosition]);
+
+  const resetVrTracksHudPlacement = useCallback(() => {
+    const camera = cameraRef.current;
+    const hud = vrTracksHudRef.current;
+    if (!camera || !hud) {
+      return;
+    }
+    const offset = vrHudOffsetTempRef.current;
+    const target = vrTracksHudDragTargetRef.current;
+    const baseOffset = volumeRootBaseOffsetRef.current;
+    const dimensions = currentDimensionsRef.current;
+    if (baseOffset.lengthSq() > 1e-6) {
+      let horizontalOffset = VR_TRACKS_FALLBACK_HORIZONTAL_OFFSET;
+      if (dimensions) {
+        const { width, height, depth } = dimensions;
+        const maxDimension = Math.max(width, height, depth);
+        if (Number.isFinite(maxDimension) && maxDimension > 0) {
+          const scale = 1 / maxDimension;
+          horizontalOffset = (width * scale) / 2 + VR_TRACKS_VOLUME_MARGIN;
+        }
+      }
+      offset.set(horizontalOffset, VR_TRACKS_VERTICAL_OFFSET, VR_TRACKS_DEPTH_OFFSET);
+      target.set(baseOffset.x + offset.x, baseOffset.y + offset.y, baseOffset.z + offset.z);
+    } else {
+      offset.copy(VR_TRACKS_CAMERA_ANCHOR_OFFSET);
+      const q = camera.quaternion;
+      const sinYaw = 2 * (q.w * q.y + q.x * q.z);
+      const cosYaw = 1 - 2 * (q.y * q.y + q.z * q.z);
+      const yaw = Math.atan2(sinYaw, cosYaw);
+      const cosValue = Math.cos(yaw);
+      const sinValue = Math.sin(yaw);
+      const rotatedX = offset.x * cosValue - offset.z * sinValue;
+      const rotatedZ = offset.x * sinValue + offset.z * cosValue;
+      offset.set(rotatedX, offset.y, rotatedZ);
+      target.copy(camera.position).add(offset);
+    }
+    setVrTracksHudPlacementPosition(target);
+  }, [setVrTracksHudPlacementPosition]);
 
   const applyVolumeRootTransform = useCallback(
     (dimensions: { width: number; height: number; depth: number } | null) => {
@@ -2583,6 +3636,7 @@ function VolumeViewer({
           entry.hasHoverUiPoint = false;
           entry.hudGrabOffsets.playback = null;
           entry.hudGrabOffsets.channels = null;
+          entry.hudGrabOffsets.tracks = null;
           entry.translateGrabOffset = null;
           entry.rotateGrabState = null;
         } else {
@@ -2667,7 +3721,7 @@ function VolumeViewer({
         rayDirection: new THREE.Vector3(0, 0, -1),
         rayLength: 3,
         isSelecting: false,
-        hudGrabOffsets: { playback: null, channels: null },
+        hudGrabOffsets: { playback: null, channels: null, tracks: null },
         translateGrabOffset: null,
         rotateGrabState: null
       };
@@ -2682,6 +3736,7 @@ function VolumeViewer({
         entry.hasHoverUiPoint = false;
         entry.hudGrabOffsets.playback = null;
         entry.hudGrabOffsets.channels = null;
+        entry.hudGrabOffsets.tracks = null;
         entry.translateGrabOffset = null;
         entry.rotateGrabState = null;
         entry.rayLength = 3;
@@ -2705,6 +3760,7 @@ function VolumeViewer({
         entry.ray.scale.set(1, 1, entry.rayLength);
         entry.hudGrabOffsets.playback = null;
         entry.hudGrabOffsets.channels = null;
+        entry.hudGrabOffsets.tracks = null;
         entry.translateGrabOffset = null;
         entry.rotateGrabState = null;
         entry.touchIndicator.visible = false;
@@ -2770,6 +3826,33 @@ function VolumeViewer({
             entry.hudGrabOffsets.channels.copy(referencePosition).sub(entry.hoverUiPoint);
           }
         }
+        if (
+          entry.activeUiTarget?.type === 'tracks-slider' &&
+          entry.hasHoverUiPoint &&
+          entry.activeUiTarget.data &&
+          !(entry.activeUiTarget.data as VrTracksInteractiveRegion).disabled
+        ) {
+          applyVrTracksSliderFromPoint(
+            entry.activeUiTarget.data as VrTracksInteractiveRegion,
+            entry.hoverUiPoint
+          );
+        }
+        if (entry.activeUiTarget?.type === 'tracks-panel-grab') {
+          const hud = vrTracksHudRef.current;
+          if (hud) {
+            const placement = vrTracksHudPlacementRef.current;
+            const referencePosition = vrTracksHudDragTargetRef.current;
+            referencePosition.copy(placement?.position ?? hud.group.position);
+            if (!entry.hasHoverUiPoint) {
+              entry.hoverUiPoint.copy(referencePosition);
+              entry.hasHoverUiPoint = true;
+            }
+            if (!entry.hudGrabOffsets.tracks) {
+              entry.hudGrabOffsets.tracks = new THREE.Vector3();
+            }
+            entry.hudGrabOffsets.tracks.copy(referencePosition).sub(entry.hoverUiPoint);
+          }
+        }
         if (entry.activeUiTarget?.type === 'volume-translate-handle') {
           const handle = vrTranslationHandleRef.current;
           if (handle) {
@@ -2831,6 +3914,8 @@ function VolumeViewer({
           entry.hudGrabOffsets.playback = null;
         } else if (activeTarget?.type === 'channels-panel-grab') {
           entry.hudGrabOffsets.channels = null;
+        } else if (activeTarget?.type === 'tracks-panel-grab') {
+          entry.hudGrabOffsets.tracks = null;
         } else if (activeTarget?.type === 'volume-translate-handle') {
           entry.translateGrabOffset = null;
         } else if (activeTarget?.type === 'volume-rotate-handle') {
@@ -2843,6 +3928,16 @@ function VolumeViewer({
         ) {
           applyVrChannelsSliderFromPoint(
             activeTarget.data as VrChannelsInteractiveRegion,
+            entry.hoverUiPoint
+          );
+        } else if (
+          activeTarget?.type === 'tracks-slider' &&
+          activeTarget.data &&
+          !(activeTarget.data as VrTracksInteractiveRegion).disabled &&
+          entry.hasHoverUiPoint
+        ) {
+          applyVrTracksSliderFromPoint(
+            activeTarget.data as VrTracksInteractiveRegion,
             entry.hoverUiPoint
           );
         } else if (activeTarget && activeTarget.type.startsWith('channels-')) {
@@ -2885,6 +3980,222 @@ function VolumeViewer({
             }
             updateVrChannelsHud();
           }
+        } else if (
+          activeTarget &&
+          (activeTarget.type === 'tracks-tab' ||
+            activeTarget.type === 'tracks-stop-follow' ||
+            activeTarget.type === 'tracks-color' ||
+            activeTarget.type === 'tracks-color-mode' ||
+            activeTarget.type === 'tracks-master-toggle' ||
+            activeTarget.type === 'tracks-toggle' ||
+            activeTarget.type === 'tracks-follow')
+        ) {
+          const region = activeTarget.data as VrTracksInteractiveRegion | undefined;
+          const hud = vrTracksHudRef.current;
+          const state = vrTracksStateRef.current;
+          let visibilityAllTarget: boolean | null = null;
+          let didMutate = false;
+          if (region && hud) {
+            const channelState = state.channels.find((channel) => channel.id === region.channelId);
+            if (channelState) {
+              switch (activeTarget.type) {
+                case 'tracks-tab': {
+                  if (state.activeChannelId !== region.channelId) {
+                    state.activeChannelId = region.channelId;
+                  }
+                  didMutate = true;
+                  break;
+                }
+                case 'tracks-stop-follow': {
+                  if (!region.disabled) {
+                    let changed = channelState.followedTrackId !== null;
+                    channelState.followedTrackId = null;
+                    for (const trackEntry of channelState.tracks) {
+                      if (trackEntry.isFollowed) {
+                        changed = true;
+                      }
+                      trackEntry.isFollowed = false;
+                      const nextVisible = trackEntry.explicitVisible;
+                      if (trackEntry.visible !== nextVisible) {
+                        trackEntry.visible = nextVisible;
+                        changed = true;
+                      } else {
+                        trackEntry.visible = nextVisible;
+                      }
+                    }
+                    if (changed) {
+                      didMutate = true;
+                    }
+                  }
+                  break;
+                }
+                case 'tracks-color': {
+                  if (!region.disabled && region.color) {
+                    const normalizedColor = normalizeTrackColor(region.color, DEFAULT_TRACK_COLOR);
+                    if (
+                      channelState.colorMode.type !== 'uniform' ||
+                      normalizeTrackColor(channelState.colorMode.color, DEFAULT_TRACK_COLOR) !== normalizedColor
+                    ) {
+                      channelState.colorMode = { type: 'uniform', color: normalizedColor };
+                      didMutate = true;
+                    }
+                    for (const trackEntry of channelState.tracks) {
+                      if (trackEntry.color !== normalizedColor) {
+                        trackEntry.color = normalizedColor;
+                        didMutate = true;
+                      }
+                    }
+                  }
+                  break;
+                }
+                case 'tracks-color-mode': {
+                  if (!region.disabled) {
+                    if (channelState.colorMode.type !== 'random') {
+                      channelState.colorMode = { type: 'random' };
+                      didMutate = true;
+                    }
+                    for (const trackEntry of channelState.tracks) {
+                      const nextColor = getTrackColorHex(trackEntry.id);
+                      if (trackEntry.color !== nextColor) {
+                        trackEntry.color = nextColor;
+                        didMutate = true;
+                      }
+                    }
+                  }
+                  break;
+                }
+                case 'tracks-master-toggle': {
+                  if (!region.disabled) {
+                    const trackCount = channelState.tracks.length;
+                    const enableAll = trackCount > 0 && channelState.visibleTracks < trackCount;
+                    visibilityAllTarget = enableAll;
+                    channelState.visibleTracks = enableAll ? trackCount : 0;
+                    for (const trackEntry of channelState.tracks) {
+                      trackEntry.explicitVisible = enableAll;
+                      const nextVisible = enableAll || trackEntry.isFollowed;
+                      if (trackEntry.visible !== nextVisible) {
+                        trackEntry.visible = nextVisible;
+                        didMutate = true;
+                      } else {
+                        trackEntry.visible = nextVisible;
+                      }
+                    }
+                    didMutate = true;
+                  }
+                  break;
+                }
+                case 'tracks-toggle': {
+                  if (region.trackId) {
+                    const trackEntry = channelState.tracks.find((entry) => entry.id === region.trackId);
+                    if (trackEntry) {
+                      const nextExplicit = !trackEntry.explicitVisible;
+                      trackEntry.explicitVisible = nextExplicit;
+                      const nextVisible = nextExplicit || trackEntry.isFollowed;
+                      if (trackEntry.visible !== nextVisible) {
+                        trackEntry.visible = nextVisible;
+                      } else {
+                        trackEntry.visible = nextVisible;
+                      }
+                      channelState.visibleTracks = channelState.tracks.reduce(
+                        (count, entry) => count + (entry.explicitVisible ? 1 : 0),
+                        0
+                      );
+                      didMutate = true;
+                    }
+                  }
+                  break;
+                }
+                case 'tracks-follow': {
+                  if (region.trackId) {
+                    const targetId = region.trackId;
+                    let changed = false;
+                    for (const channelEntry of state.channels) {
+                      let channelFollow: string | null = null;
+                      for (const trackEntry of channelEntry.tracks) {
+                        const isTarget = trackEntry.id === targetId;
+                        if (trackEntry.isFollowed !== isTarget) {
+                          trackEntry.isFollowed = isTarget;
+                          changed = true;
+                        }
+                        const nextVisible = trackEntry.explicitVisible || isTarget;
+                        if (trackEntry.visible !== nextVisible) {
+                          trackEntry.visible = nextVisible;
+                          changed = true;
+                        } else {
+                          trackEntry.visible = nextVisible;
+                        }
+                        if (isTarget) {
+                          channelFollow = trackEntry.id;
+                        }
+                      }
+                      if (channelEntry.followedTrackId !== channelFollow) {
+                        channelEntry.followedTrackId = channelFollow;
+                        changed = true;
+                      }
+                    }
+                    if (state.activeChannelId !== region.channelId) {
+                      state.activeChannelId = region.channelId;
+                      changed = true;
+                    }
+                    if (changed) {
+                      didMutate = true;
+                    }
+                  }
+                  break;
+                }
+                default:
+                  break;
+              }
+              if (didMutate) {
+                renderVrTracksHud(hud, state);
+              }
+            }
+          }
+
+          const invokeTrackCallback = () => {
+            if (!region) {
+              return;
+            }
+            switch (activeTarget.type) {
+              case 'tracks-tab':
+                onTrackChannelSelect(region.channelId);
+                break;
+              case 'tracks-stop-follow':
+                if (!region.disabled) {
+                  onStopTrackFollow(region.channelId);
+                }
+                break;
+              case 'tracks-color':
+                if (!region.disabled && region.color) {
+                  onTrackColorSelect(region.channelId, region.color);
+                }
+                break;
+              case 'tracks-color-mode':
+                if (!region.disabled) {
+                  onTrackColorReset(region.channelId);
+                }
+                break;
+              case 'tracks-master-toggle':
+                if (visibilityAllTarget !== null) {
+                  onTrackVisibilityAllChange(region.channelId, visibilityAllTarget);
+                }
+                break;
+              case 'tracks-toggle':
+                if (region.trackId) {
+                  onTrackVisibilityToggle(region.trackId);
+                }
+                break;
+              case 'tracks-follow':
+                if (region.trackId) {
+                  onTrackFollowRequest(region.trackId);
+                }
+                break;
+              default:
+                break;
+            }
+          };
+
+          invokeTrackCallback();
         } else if (entry.hoverTrackId) {
           onTrackFollowRequest(entry.hoverTrackId);
         }
@@ -2945,6 +4256,17 @@ function VolumeViewer({
       updateVrChannelsHud();
     } else {
       vrChannelsHudRef.current = null;
+    }
+
+    const tracksHud = createVrTracksHud();
+    if (tracksHud) {
+      tracksHud.group.visible = false;
+      scene.add(tracksHud.group);
+      vrTracksHudRef.current = tracksHud;
+      resetVrTracksHudPlacement();
+      updateVrTracksHud();
+    } else {
+      vrTracksHudRef.current = null;
     }
 
     const domElement = renderer.domElement;
@@ -3148,6 +4470,8 @@ function VolumeViewer({
     const playbackSliderPoint = new THREE.Vector3();
     const channelsTouchPoint = new THREE.Vector3();
     const channelsLocalPoint = new THREE.Vector3();
+    const tracksTouchPoint = new THREE.Vector3();
+    const tracksLocalPoint = new THREE.Vector3();
     const translationHandleWorldPoint = new THREE.Vector3();
     const rotationCenterWorldPoint = new THREE.Vector3();
     const rotationDirectionTemp = new THREE.Vector3();
@@ -3194,6 +4518,7 @@ function VolumeViewer({
       let sliderHoveredAny = false;
       let sliderActiveAny = false;
       let nextChannelsHoverRegion: VrChannelsInteractiveRegion | null = null;
+      let nextTracksHoverRegion: VrTracksInteractiveRegion | null = null;
       let rotationHandleHovered = false;
       let rotationHandleActive = false;
 
@@ -3229,6 +4554,7 @@ function VolumeViewer({
         let uiRayLength: number | null = null;
         const playbackHudInstance = vrPlaybackHudRef.current;
         const channelsHudInstance = vrChannelsHudRef.current;
+        const tracksHudInstance = vrTracksHudRef.current;
         const translationHandleInstance = vrTranslationHandleRef.current;
         const rotationHandleInstance = vrRotationHandleRef.current;
 
@@ -3362,6 +4688,12 @@ function VolumeViewer({
             distance: number;
             region: VrChannelsInteractiveRegion | null;
           } | null = null;
+          let tracksCandidate: {
+            target: VrUiTarget;
+            point: THREE.Vector3;
+            distance: number;
+            region: VrTracksInteractiveRegion | null;
+          } | null = null;
 
           if (playbackHudInstance) {
             const plane = vrHudPlaneRef.current;
@@ -3406,7 +4738,8 @@ function VolumeViewer({
                     playbackCandidate = {
                       target: { type: 'playback-panel-grab', object: playbackHudInstance.panelGrabHandle },
                       point: playbackTouchPoint.clone(),
-                      distance: rawDistance
+                      distance: rawDistance,
+                      region: null
                     };
                     uiRayLength =
                       uiRayLength === null ? clampedDistance : Math.min(uiRayLength, clampedDistance);
@@ -3443,7 +4776,8 @@ function VolumeViewer({
                       playbackCandidate = {
                         target: { type: 'playback-slider', object: playbackHudInstance.sliderHitArea },
                         point: playbackSliderPoint.clone(),
-                        distance: rawDistance
+                        distance: rawDistance,
+                        region: null
                       };
                       uiRayLength =
                         uiRayLength === null
@@ -3460,7 +4794,8 @@ function VolumeViewer({
                       playbackCandidate = {
                         target: { type: 'playback-play-toggle', object: playbackHudInstance.playButton },
                         point: playbackTouchPoint.clone(),
-                        distance: rawDistance
+                        distance: rawDistance,
+                        region: null
                       };
                       uiRayLength =
                         uiRayLength === null
@@ -3571,19 +4906,128 @@ function VolumeViewer({
             }
           }
 
+          if (tracksHudInstance) {
+            const plane = vrHudPlaneRef.current;
+            const planePoint = vrHudPlanePointRef.current;
+            tracksHudInstance.panel.getWorldPosition(planePoint);
+            const planeNormal = vrHudForwardRef.current;
+            planeNormal.set(0, 0, 1).applyQuaternion(tracksHudInstance.group.quaternion).normalize();
+            plane.setFromNormalAndCoplanarPoint(planeNormal, planePoint);
+            const activeType = entry.activeUiTarget?.type ?? null;
+            const activeTracks = activeType ? activeType.startsWith('tracks-') : false;
+            const denominator = planeNormal.dot(entry.rayDirection);
+            if (Math.abs(denominator) > 1e-5) {
+              const signedDistance = plane.distanceToPoint(entry.rayOrigin);
+              const distanceAlongRay = -signedDistance / denominator;
+              if (distanceAlongRay >= 0 && Number.isFinite(distanceAlongRay)) {
+                tracksTouchPoint
+                  .copy(entry.rayDirection)
+                  .multiplyScalar(distanceAlongRay)
+                  .add(entry.rayOrigin);
+                tracksLocalPoint.copy(tracksTouchPoint);
+                tracksHudInstance.group.worldToLocal(tracksLocalPoint);
+                const surfaceMargin = activeTracks
+                  ? VR_UI_TOUCH_SURFACE_MARGIN * 1.5
+                  : VR_UI_TOUCH_SURFACE_MARGIN;
+                const halfWidth = tracksHudInstance.width / 2 + surfaceMargin;
+                const halfHeight = tracksHudInstance.height / 2 + surfaceMargin;
+                if (
+                  tracksLocalPoint.x >= -halfWidth &&
+                  tracksLocalPoint.x <= halfWidth &&
+                  tracksLocalPoint.y >= -halfHeight &&
+                  tracksLocalPoint.y <= halfHeight
+                ) {
+                  const rawDistance = distanceAlongRay;
+                  const clampedDistance = Math.max(0.12, Math.min(rawDistance, 8));
+                  const panelGrabActive = activeType === 'tracks-panel-grab';
+                  const handleMinY = tracksHudInstance.height / 2 - 0.06 - surfaceMargin;
+                  const handleMaxY = tracksHudInstance.height / 2 + surfaceMargin;
+                  const inHandleBand =
+                    tracksLocalPoint.y >= handleMinY && tracksLocalPoint.y <= handleMaxY;
+                  if (panelGrabActive || inHandleBand) {
+                    tracksCandidate = {
+                      target: { type: 'tracks-panel-grab', object: tracksHudInstance.panelGrabHandle },
+                      point: tracksTouchPoint.clone(),
+                      distance: rawDistance,
+                      region: null
+                    };
+                    uiRayLength =
+                      uiRayLength === null ? clampedDistance : Math.min(uiRayLength, clampedDistance);
+                  } else {
+                    let region = resolveTracksRegionFromPoint(tracksHudInstance, tracksTouchPoint);
+                    if (region?.disabled) {
+                      region = null;
+                    }
+                    if (region) {
+                      tracksCandidate = {
+                        target: { type: region.targetType, object: tracksHudInstance.panel, data: region },
+                        point: tracksTouchPoint.clone(),
+                        distance: rawDistance,
+                        region
+                      };
+                      uiRayLength =
+                        uiRayLength === null
+                          ? clampedDistance
+                          : Math.min(uiRayLength, clampedDistance);
+                      nextTracksHoverRegion = region;
+                      if (
+                        entry.isSelecting &&
+                        entry.activeUiTarget?.type === 'tracks-slider' &&
+                        region.targetType === 'tracks-slider'
+                      ) {
+                        applyVrTracksSliderFromPoint(region, tracksTouchPoint);
+                      }
+                    } else if (
+                      entry.isSelecting &&
+                      entry.activeUiTarget?.type === 'tracks-slider' &&
+                      entry.activeUiTarget.data &&
+                      !(entry.activeUiTarget.data as VrTracksInteractiveRegion).disabled
+                    ) {
+                      const activeRegion = entry.activeUiTarget.data as VrTracksInteractiveRegion;
+                      tracksCandidate = {
+                        target: { type: 'tracks-slider', object: tracksHudInstance.panel, data: activeRegion },
+                        point: tracksTouchPoint.clone(),
+                        distance: rawDistance,
+                        region: activeRegion
+                      };
+                      uiRayLength =
+                        uiRayLength === null
+                          ? clampedDistance
+                          : Math.min(uiRayLength, clampedDistance);
+                      applyVrTracksSliderFromPoint(activeRegion, tracksTouchPoint);
+                      nextTracksHoverRegion = activeRegion;
+                    }
+                  }
+                }
+              }
+            }
+          }
+
           let chosenCandidate: {
             target: VrUiTarget;
             point: THREE.Vector3;
             distance: number;
-            region?: VrChannelsInteractiveRegion | null;
+            region?: VrChannelsInteractiveRegion | VrTracksInteractiveRegion | null;
           } | null = null;
-          if (playbackCandidate && channelsCandidate) {
-            chosenCandidate =
-              playbackCandidate.distance <= channelsCandidate.distance
-                ? playbackCandidate
-                : channelsCandidate;
-          } else {
-            chosenCandidate = playbackCandidate ?? channelsCandidate ?? null;
+          const candidateList: Array<{
+            target: VrUiTarget;
+            point: THREE.Vector3;
+            distance: number;
+            region?: VrChannelsInteractiveRegion | VrTracksInteractiveRegion | null;
+          }> = [];
+          if (playbackCandidate) {
+            candidateList.push(playbackCandidate);
+          }
+          if (channelsCandidate) {
+            candidateList.push(channelsCandidate);
+          }
+          if (tracksCandidate) {
+            candidateList.push(tracksCandidate);
+          }
+          if (candidateList.length > 0) {
+            chosenCandidate = candidateList.reduce((best, current) =>
+              current.distance < best.distance ? current : best
+            );
           }
 
           if (chosenCandidate) {
@@ -3598,6 +5042,11 @@ function VolumeViewer({
               chosenCandidate.region
             ) {
               nextChannelsHoverRegion = chosenCandidate.region;
+            } else if (
+              chosenCandidate.target.type.startsWith('tracks-') &&
+              chosenCandidate.region
+            ) {
+              nextTracksHoverRegion = chosenCandidate.region as VrTracksInteractiveRegion;
             }
           }
         }
@@ -3611,6 +5060,8 @@ function VolumeViewer({
           hoverTrackId = null;
         } else if (uiType === 'volume-translate-handle' || uiType === 'volume-rotate-handle') {
           hoverTrackId = null;
+        } else if (uiType && uiType.startsWith('tracks-')) {
+          hoverTrackId = null;
         }
         if (entry.activeUiTarget?.type === 'playback-slider') {
           sliderActiveAny = true;
@@ -3618,7 +5069,8 @@ function VolumeViewer({
         }
         if (
           entry.activeUiTarget?.type === 'playback-panel-grab' ||
-          entry.activeUiTarget?.type === 'channels-panel-grab'
+          entry.activeUiTarget?.type === 'channels-panel-grab' ||
+          entry.activeUiTarget?.type === 'tracks-panel-grab'
         ) {
           hoverTrackId = null;
         }
@@ -3653,6 +5105,20 @@ function VolumeViewer({
             newPosition.add(entry.hudGrabOffsets.channels);
           }
           setVrChannelsHudPlacementPosition(newPosition);
+        }
+
+        if (
+          entry.isSelecting &&
+          entry.activeUiTarget?.type === 'tracks-panel-grab' &&
+          tracksHudInstance &&
+          entry.hasHoverUiPoint
+        ) {
+          const newPosition = vrTracksHudDragTargetRef.current;
+          newPosition.copy(entry.hoverUiPoint);
+          if (entry.hudGrabOffsets.tracks) {
+            newPosition.add(entry.hudGrabOffsets.tracks);
+          }
+          setVrTracksHudPlacementPosition(newPosition);
         }
 
         if (visibleLines.length > 0 && cameraInstance) {
@@ -3749,6 +5215,30 @@ function VolumeViewer({
         renderVrChannelsHud(channelsHudInstance, vrChannelsStateRef.current);
       }
 
+      const tracksHudInstance = vrTracksHudRef.current;
+      const isSameTracksRegion = (
+        a: VrTracksInteractiveRegion | null,
+        b: VrTracksInteractiveRegion | null
+      ) => {
+        if (a === b) {
+          return true;
+        }
+        if (!a || !b) {
+          return false;
+        }
+        return (
+          a.targetType === b.targetType &&
+          a.channelId === b.channelId &&
+          a.trackId === b.trackId &&
+          a.sliderKey === b.sliderKey &&
+          a.color === b.color
+        );
+      };
+      if (tracksHudInstance && !isSameTracksRegion(tracksHudInstance.hoverRegion, nextTracksHoverRegion)) {
+        tracksHudInstance.hoverRegion = nextTracksHoverRegion;
+        renderVrTracksHud(tracksHudInstance, vrTracksStateRef.current);
+      }
+
       const summary = {
         presenting: true,
         visibleLines: visibleLines.length,
@@ -3781,10 +5271,13 @@ function VolumeViewer({
       refreshControllerVisibility();
       setVrPlaybackHudVisible(true);
       setVrChannelsHudVisible(true);
+      setVrTracksHudVisible(true);
       resetVrPlaybackHudPlacement();
       resetVrChannelsHudPlacement();
+      resetVrTracksHudPlacement();
       updateVrPlaybackHud();
       updateVrChannelsHud();
+      updateVrTracksHud();
       updateControllerRays();
       updateVolumeHandles();
       handleResize();
@@ -3800,6 +5293,7 @@ function VolumeViewer({
       refreshControllerVisibility();
       setVrPlaybackHudVisible(false);
       setVrChannelsHudVisible(false);
+      setVrTracksHudVisible(false);
       updateVolumeHandles();
       handleResize();
     };
@@ -3812,6 +5306,7 @@ function VolumeViewer({
     cameraRef.current = camera;
     resetVrPlaybackHudPlacement();
     resetVrChannelsHudPlacement();
+    resetVrTracksHudPlacement();
 
     const handleSessionEnd = () => {
       vrLog('[VR] handleSessionEnd', {
@@ -3825,11 +5320,13 @@ function VolumeViewer({
       setControllerVisibility(false);
       setVrPlaybackHudVisible(false);
       setVrChannelsHudVisible(false);
+      setVrTracksHudVisible(false);
       applyVrPlaybackHoverState(false, false, false);
       for (const entry of controllersRef.current) {
         entry.ray.scale.set(1, 1, 1);
         entry.hudGrabOffsets.playback = null;
         entry.hudGrabOffsets.channels = null;
+        entry.hudGrabOffsets.tracks = null;
       }
       const controlsInstance = controlsRef.current;
       if (controlsInstance) {
@@ -3902,7 +5399,11 @@ function VolumeViewer({
       volumeRootBaseOffsetRef.current.copy(VR_VOLUME_BASE_OFFSET);
       applyVolumeRootTransform(currentDimensionsRef.current);
       setVrPlaybackHudVisible(true);
+      setVrChannelsHudVisible(true);
+      setVrTracksHudVisible(true);
       updateVrPlaybackHud();
+      updateVrChannelsHud();
+      updateVrTracksHud();
       refreshControllerVisibility();
       updateControllerRays();
 
@@ -4056,7 +5557,7 @@ function VolumeViewer({
         mesh.updateMatrixWorld();
       }
 
-      updateHudGroupFromPlacement();
+      refreshVrHudPlacements();
 
       updateControllerRays();
       const hoveredEntry = controllersRef.current.find((entry) => entry.hoverTrackId);
@@ -4139,6 +5640,29 @@ function VolumeViewer({
         channelsHud.panelTexture.dispose();
         vrChannelsHudRef.current = null;
         vrChannelsHudPlacementRef.current = null;
+      }
+
+      const tracksHud = vrTracksHudRef.current;
+      if (tracksHud) {
+        if (tracksHud.group.parent) {
+          tracksHud.group.parent.remove(tracksHud.group);
+        }
+        tracksHud.group.traverse((object) => {
+          if ((object as THREE.Mesh).isMesh) {
+            const mesh = object as THREE.Mesh;
+            if (mesh.geometry) {
+              mesh.geometry.dispose?.();
+            }
+            if (Array.isArray(mesh.material)) {
+              mesh.material.forEach((material) => material?.dispose?.());
+            } else if (mesh.material) {
+              mesh.material.dispose?.();
+            }
+          }
+        });
+        tracksHud.panelTexture.dispose();
+        vrTracksHudRef.current = null;
+        vrTracksHudPlacementRef.current = null;
       }
 
       const resources = resourcesRef.current;
@@ -4230,7 +5754,8 @@ function VolumeViewer({
     onRegisterVrSession,
     onVrSessionEnded,
     onVrSessionStarted,
-    updateVolumeHandles
+    updateVolumeHandles,
+    refreshVrHudPlacements
   ]);
 
   useEffect(() => {
