@@ -1752,6 +1752,13 @@ function App() {
     return map;
   }, [channelTrackStates, channels]);
 
+  const trackChannels = useMemo(() => {
+    return loadedChannelIds.map((channelId) => ({
+      id: channelId,
+      name: channelNameMap.get(channelId) ?? 'Untitled channel'
+    }));
+  }, [channelNameMap, loadedChannelIds]);
+
   const vrChannelPanels = useMemo(() => {
     return loadedChannelIds.map((channelId) => {
       const channelLayers = channelLayersMap.get(channelId) ?? [];
@@ -2407,6 +2414,10 @@ function App() {
     [ensureTrackIsVisible, trackLookup]
   );
 
+  const handleTrackChannelSelect = useCallback((channelId: string) => {
+    setActiveTrackChannelId(channelId);
+  }, []);
+
   const handleStopTrackFollow = useCallback((channelId?: string) => {
     if (!channelId) {
       setFollowedTrack(null);
@@ -2931,11 +2942,20 @@ function App() {
               onTimeIndexChange={handleTimeIndexChange}
               onRegisterReset={handleRegisterReset}
               tracks={parsedTracks}
+              trackChannels={trackChannels}
               trackVisibility={trackVisibility}
               trackOpacityByChannel={trackOpacityByChannel}
               trackLineWidthByChannel={trackLineWidthByChannel}
               channelTrackColorModes={channelTrackColorModes}
               channelTrackOffsets={channelTrackOffsets}
+              activeTrackChannelId={activeTrackChannelId}
+              onTrackChannelSelect={handleTrackChannelSelect}
+              onTrackVisibilityToggle={handleTrackVisibilityToggle}
+              onTrackVisibilityAllChange={handleTrackVisibilityAllChange}
+              onTrackOpacityChange={handleTrackOpacityChange}
+              onTrackLineWidthChange={handleTrackLineWidthChange}
+              onTrackColorSelect={handleTrackColorSelect}
+              onTrackColorReset={handleTrackColorReset}
               channelPanels={vrChannelPanels}
               activeChannelPanelId={activeChannelTabId}
               onChannelPanelSelect={setActiveChannelTabId}
@@ -2948,6 +2968,7 @@ function App() {
               onLayerColorChange={handleLayerColorChange}
               followedTrackId={followedTrackId}
               onTrackFollowRequest={handleTrackFollowFromViewer}
+              onStopTrackFollow={handleStopTrackFollow}
               onRegisterVrSession={handleRegisterVrSession}
               onVrSessionStarted={handleVrSessionStarted}
               onVrSessionEnded={handleVrSessionEnded}
