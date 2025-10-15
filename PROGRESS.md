@@ -266,3 +266,8 @@ d centered the front-page card in the viewport.
 - Raised the VR volume anchor height to 1.2 meters so datasets sit closer to eye level when a session begins.
 - Repositioned the VR playback controls so they snap to the volume's left edge (with sensible fallbacks before data loads) instead of floating in front of the viewer.
 - Switched the playback panel materials to double-sided rendering so the controls remain visible when viewed from behind.
+
+## VR playback HUD cylindrical constraint
+- Constrained the draggable VR playback HUD to a 1.5 m radius cylinder spanning floor to 2 m, clamping controller drags onto that surface.
+- Reoriented the HUD so it always faces the world origin irrespective of head movement while preserving upright alignment.
+- Updated default placement logic to project the initial HUD position onto the cylinder when entering immersive mode.
