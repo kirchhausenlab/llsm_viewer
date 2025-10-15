@@ -348,6 +348,18 @@
   border-color: rgba(255, 255, 255, 0.14);
 }
 
+.channel-layer-drop-status {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.channel-layer-drop-error {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #ff7f7f;
+}
+
 .channel-tracks-row {
   display: flex;
   align-items: center;

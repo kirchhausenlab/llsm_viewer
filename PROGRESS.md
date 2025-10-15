@@ -33,6 +33,10 @@
 - Removed the Express backend and filesystem-scanning APIs now that datasets and tracks load directly from the client.
 - Simplified the npm scripts to run only the Vite dev server and removed the related server build configuration.
 
+## Dropbox chooser integration
+- Added a lazy-loaded Dropbox Dropins helper that injects the SDK with the configured app key and converts selections into `File` instances while preserving folder structure metadata.
+- Hooked the channel layer picker into the Dropbox chooser with loading/error states, letting users import multi-file TIFF stacks directly from their Dropbox account.
+
 ## Per-channel track organization
 - Added per-channel tabs to the tracks window so each channel exposes independent visibility, opacity, thickness, and follow controls.
 - Persisted track color schemes per channel with preset swatches and a "Sorted" option that restores the rainbow palette.

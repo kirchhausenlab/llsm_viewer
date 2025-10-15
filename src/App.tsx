@@ -9,6 +9,7 @@ import FloatingWindow from './components/FloatingWindow';
 import type { TrackColorMode, TrackDefinition, TrackPoint } from './types/tracks';
 import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from './layerColors';
 import { getTrackColorHex } from './trackColors';
+import { chooseDropboxFiles } from './integrations/dropbox';
 import './App.css';
 
 const DEFAULT_CONTRAST = 1;
@@ -433,6 +434,8 @@ function ChannelCard({
   const trackDragCounterRef = useRef(0);
   const [isLayerDragging, setIsLayerDragging] = useState(false);
   const [isTrackDragging, setIsTrackDragging] = useState(false);
+  const [isDropboxImporting, setIsDropboxImporting] = useState(false);
+  const [dropboxError, setDropboxError] = useState<string | null>(null);
 
   useEffect(() => {
     const input = layerInputRef.current;
@@ -448,6 +451,8 @@ function ChannelCard({
     if (isDisabled) {
       setIsLayerDragging(false);
       setIsTrackDragging(false);
+      setIsDropboxImporting(false);
+      setDropboxError(null);
     }
   }, [isDisabled]);
 
@@ -524,6 +529,29 @@ function ChannelCard({
     },
     [channel.id, isDisabled, onLayerDrop]
   );
+
+  const handleDropboxImport = useCallback(async () => {
+    if (isDisabled || isDropboxImporting) {
+      return;
+    }
+    setDropboxError(null);
+    setIsDropboxImporting(true);
+    try {
+      const files = await chooseDropboxFiles({
+        extensions: ['.tif', '.tiff'],
+        multiselect: true
+      });
+      if (files.length > 0) {
+        onLayerFilesAdded(channel.id, files);
+      }
+    } catch (error) {
+      console.error('Failed to import from Dropbox', error);
+      const message = error instanceof Error ? error.message : 'Failed to import files from Dropbox.';
+      setDropboxError(message);
+    } finally {
+      setIsDropboxImporting(false);
+    }
+  }, [channel.id, isDisabled, isDropboxImporting, onLayerFilesAdded]);
 
   const handleTrackBrowse = useCallback(() => {
     if (isDisabled) {
@@ -631,8 +659,20 @@ function ChannelCard({
           >
             Add layers
           </button>
+          <button
+            type="button"
+            className="channel-layer-drop-button"
+            onClick={handleDropboxImport}
+            disabled={isDisabled || isDropboxImporting}
+          >
+            {isDropboxImporting ? 'Importing…' : 'Import from Dropbox'}
+          </button>
           <p className="channel-layer-drop-subtitle">Drop folders or TIFF sequences to add layers.</p>
         </div>
+        {isDropboxImporting ? (
+          <p className="channel-layer-drop-status">Importing from Dropbox…</p>
+        ) : null}
+        {dropboxError ? <p className="channel-layer-drop-error">{dropboxError}</p> : null}
       </div>
       {channel.layers.length > 0 ? (
         <ul className="channel-layer-list">
