@@ -160,11 +160,12 @@ type TrackLineResource = {
   highlightColor: THREE.Color;
 };
 
-type VrUiTargetType = 'play-toggle' | 'slider';
+type VrUiTargetType = 'play-toggle' | 'slider' | 'panel-grab';
 
 type VrPlaybackHud = {
   group: THREE.Group;
   panel: THREE.Mesh;
+  panelGrabHandle: THREE.Mesh;
   playButton: THREE.Mesh;
   playIcon: THREE.Object3D;
   pauseGroup: THREE.Object3D;
@@ -210,6 +211,7 @@ type ControllerEntry = {
   rayDirection: THREE.Vector3;
   rayLength: number;
   isSelecting: boolean;
+  hudGrabOffset: THREE.Vector3 | null;
 };
 
 const DEFAULT_TRACK_OPACITY = 0.9;
@@ -256,7 +258,10 @@ function resolveVrUiTarget(object: THREE.Object3D | null): { type: VrUiTargetTyp
     const userData = current.userData ?? {};
     if (userData && typeof userData.vrUiTarget === 'object' && userData.vrUiTarget) {
       const target = userData.vrUiTarget as { type?: VrUiTargetType };
-      if (target && (target.type === 'play-toggle' || target.type === 'slider')) {
+      if (
+        target &&
+        (target.type === 'play-toggle' || target.type === 'slider' || target.type === 'panel-grab')
+      ) {
         return { type: target.type, object: current };
       }
     }
@@ -389,6 +394,13 @@ function VolumeViewer({
   });
   const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(null);
   const vrPlaybackHudRef = useRef<VrPlaybackHud | null>(null);
+  const vrHudPlacementRef = useRef<{ position: THREE.Vector3 } | null>(null);
+  const vrHudPlaneRef = useRef(new THREE.Plane());
+  const vrHudPlanePointRef = useRef(new THREE.Vector3());
+  const vrHudDragTargetRef = useRef(new THREE.Vector3());
+  const vrHudOffsetTempRef = useRef(new THREE.Vector3());
+  const vrHudIntersectionRef = useRef(new THREE.Vector3());
+  const vrHudForwardRef = useRef(new THREE.Vector3(0, 0, 1));
   const playbackStateRef = useRef({
     isPlaying,
     playbackDisabled,
@@ -548,6 +560,20 @@ function VolumeViewer({
     panel.position.set(0, 0, 0);
     group.add(panel);
 
+    const panelGrabMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      opacity: 0.01,
+      transparent: true,
+      depthWrite: false
+    });
+    const panelGrabHandle = new THREE.Mesh(
+      new THREE.PlaneGeometry(VR_PLAYBACK_PANEL_WIDTH, 0.06),
+      panelGrabMaterial
+    );
+    panelGrabHandle.position.set(0, VR_PLAYBACK_PANEL_HEIGHT / 2 - 0.03, 0.0025);
+    panelGrabHandle.userData.vrUiTarget = { type: 'panel-grab' } satisfies { type: VrUiTargetType };
+    group.add(panelGrabHandle);
+
     const playButtonMaterial = new THREE.MeshBasicMaterial({ color: 0x2b3340 });
     const playButton = new THREE.Mesh(new THREE.CircleGeometry(0.045, 48), playButtonMaterial);
     playButton.position.set(-VR_PLAYBACK_PANEL_WIDTH * 0.28, 0, 0.01);
@@ -633,6 +659,7 @@ function VolumeViewer({
     const hud: VrPlaybackHud = {
       group,
       panel,
+      panelGrabHandle,
       playButton,
       playIcon,
       pauseGroup,
@@ -647,7 +674,7 @@ function VolumeViewer({
       labelCanvas,
       labelContext,
       labelText: '',
-      interactables: [playButton, sliderHitArea, sliderKnob],
+      interactables: [panelGrabHandle, playButton, sliderHitArea, sliderKnob],
       playButtonBaseColor: new THREE.Color(0x2b3340),
       sliderTrackBaseColor: new THREE.Color(0x3b414d),
       sliderKnobBaseColor: new THREE.Color(0xffffff),
@@ -746,6 +773,27 @@ function VolumeViewer({
     },
     [applyHoverState]
   );
+
+  const resetVrHudPlacement = useCallback(() => {
+    const camera = cameraRef.current;
+    const hud = vrPlaybackHudRef.current;
+    if (!camera || !hud) {
+      return;
+    }
+    const offset = vrHudOffsetTempRef.current;
+    offset.set(VR_PLAYBACK_OFFSET.x, VR_PLAYBACK_OFFSET.y, VR_PLAYBACK_OFFSET.z);
+    offset.applyQuaternion(camera.quaternion);
+    const target = vrHudDragTargetRef.current;
+    target.copy(camera.position).add(offset);
+    if (vrHudPlacementRef.current) {
+      vrHudPlacementRef.current.position.copy(target);
+    } else {
+      vrHudPlacementRef.current = { position: target.clone() };
+    }
+    hud.group.position.copy(target);
+    hud.group.quaternion.copy(camera.quaternion);
+    hud.group.updateMatrixWorld(true);
+  }, []);
 
   const applyVolumeRootTransform = useCallback(
     (dimensions: { width: number; height: number; depth: number } | null) => {
@@ -1335,12 +1383,13 @@ function VolumeViewer({
         });
         if (!visible) {
           entry.hoverTrackId = null;
-          entry.hoverUiTarget = null;
-          entry.activeUiTarget = null;
-          entry.hasHoverUiPoint = false;
-        } else {
-          anyVisible = true;
-        }
+        entry.hoverUiTarget = null;
+        entry.activeUiTarget = null;
+        entry.hasHoverUiPoint = false;
+        entry.hudGrabOffset = null;
+      } else {
+        anyVisible = true;
+      }
       });
       if (import.meta.env?.DEV) {
         vrLog('[VR] controller visibility', { shouldShow, visibilitySnapshot });
@@ -1404,7 +1453,8 @@ function VolumeViewer({
         rayOrigin: new THREE.Vector3(),
         rayDirection: new THREE.Vector3(0, 0, -1),
         rayLength: 3,
-        isSelecting: false
+        isSelecting: false,
+        hudGrabOffset: null
       };
 
       entry.onConnected = (event) => {
@@ -1415,6 +1465,7 @@ function VolumeViewer({
         entry.hoverUiTarget = null;
         entry.activeUiTarget = null;
         entry.hasHoverUiPoint = false;
+        entry.hudGrabOffset = null;
         entry.rayLength = 3;
         vrLog('[VR] controller connected', index, {
           targetRayMode: entry.targetRayMode,
@@ -1434,6 +1485,7 @@ function VolumeViewer({
         entry.rayLength = 3;
         entry.isSelecting = false;
         entry.ray.scale.set(1, 1, entry.rayLength);
+        entry.hudGrabOffset = null;
         vrLog('[VR] controller disconnected', index);
         refreshControllerVisibility();
         clearHoverState('controller');
@@ -1448,6 +1500,22 @@ function VolumeViewer({
         }
         if (entry.activeUiTarget?.type === 'slider' && entry.hasHoverUiPoint && !state.playbackDisabled) {
           applySliderFromWorldPoint(entry.hoverUiPoint);
+        }
+        if (entry.activeUiTarget?.type === 'panel-grab') {
+          const hud = vrPlaybackHudRef.current;
+          if (hud) {
+            const placement = vrHudPlacementRef.current;
+            const referencePosition = vrHudDragTargetRef.current;
+            referencePosition.copy(placement?.position ?? hud.group.position);
+            if (!entry.hasHoverUiPoint) {
+              entry.hoverUiPoint.copy(referencePosition);
+              entry.hasHoverUiPoint = true;
+            }
+            if (!entry.hudGrabOffset) {
+              entry.hudGrabOffset = new THREE.Vector3();
+            }
+            entry.hudGrabOffset.copy(referencePosition).sub(entry.hoverUiPoint);
+          }
         }
         vrLog('[VR] selectstart', index, {
           hoverTrackId: entry.hoverTrackId,
@@ -1468,6 +1536,8 @@ function VolumeViewer({
           if (entry.hasHoverUiPoint && !state.playbackDisabled) {
             applySliderFromWorldPoint(entry.hoverUiPoint);
           }
+        } else if (activeTarget?.type === 'panel-grab') {
+          entry.hudGrabOffset = null;
         } else if (entry.hoverTrackId) {
           onTrackFollowRequest(entry.hoverTrackId);
         }
@@ -1497,6 +1567,7 @@ function VolumeViewer({
     camera.position.set(0, 0, 2.5);
 
     scene.add(camera);
+    cameraRef.current = camera;
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = false;
@@ -1508,10 +1579,10 @@ function VolumeViewer({
 
     const hud = createVrPlaybackHud();
     if (hud) {
-      hud.group.position.set(VR_PLAYBACK_OFFSET.x, VR_PLAYBACK_OFFSET.y, VR_PLAYBACK_OFFSET.z);
       hud.group.visible = false;
-      camera.add(hud.group);
+      scene.add(hud.group);
       vrPlaybackHudRef.current = hud;
+      resetVrHudPlacement();
       updateVrPlaybackHud();
       applyVrPlaybackHoverState(false, false, false);
     } else {
@@ -1821,19 +1892,79 @@ function VolumeViewer({
           }
         }
 
+        if (entry.isSelecting && entry.activeUiTarget?.type === 'panel-grab' && hud) {
+          const handleIntersections = entry.raycaster.intersectObject(
+            hud.panelGrabHandle,
+            false
+          ) as Array<{ distance: number; point: THREE.Vector3 }>;
+          let grabPoint: THREE.Vector3 | null = null;
+          if (handleIntersections.length > 0) {
+            grabPoint = handleIntersections[0].point;
+            const handleDistance = Math.max(0.12, Math.min(handleIntersections[0].distance, 8));
+            uiRayLength =
+              uiRayLength === null ? handleDistance : Math.min(uiRayLength, handleDistance);
+          } else {
+            const plane = vrHudPlaneRef.current;
+            const planePoint = vrHudPlanePointRef.current;
+            hud.panelGrabHandle.getWorldPosition(planePoint);
+            const planeNormal = vrHudForwardRef.current;
+            planeNormal.set(0, 0, 1).applyQuaternion(hud.group.quaternion).normalize();
+            plane.setFromNormalAndCoplanarPoint(planeNormal, planePoint);
+            const planeIntersection = vrHudIntersectionRef.current;
+            if (entry.raycaster.ray.intersectPlane(plane, planeIntersection)) {
+              grabPoint = planeIntersection;
+            }
+          }
+          if (grabPoint) {
+            const grabDistance = Math.max(
+              0.12,
+              Math.min(entry.rayOrigin.distanceTo(grabPoint), 8)
+            );
+            uiRayLength = uiRayLength === null ? grabDistance : Math.min(uiRayLength, grabDistance);
+            entry.hoverUiTarget = { type: 'panel-grab', object: hud.panelGrabHandle };
+            entry.hasHoverUiPoint = true;
+            entry.hoverUiPoint.copy(grabPoint);
+          }
+        }
+
         const uiType = entry.hoverUiTarget ? entry.hoverUiTarget.type : null;
         if (uiType === 'play-toggle') {
           playHoveredAny = true;
         } else if (uiType === 'slider') {
           sliderHoveredAny = true;
+        } else if (uiType === 'panel-grab') {
+          hoverTrackId = null;
         }
         if (entry.activeUiTarget?.type === 'slider') {
           sliderActiveAny = true;
           hoverTrackId = null;
         }
+        if (entry.activeUiTarget?.type === 'panel-grab') {
+          hoverTrackId = null;
+        }
 
         if (uiRayLength !== null && Number.isFinite(uiRayLength)) {
           rayLength = Math.min(rayLength, uiRayLength);
+        }
+
+        if (
+          entry.isSelecting &&
+          entry.activeUiTarget?.type === 'panel-grab' &&
+          hud &&
+          entry.hasHoverUiPoint
+        ) {
+          const newPosition = vrHudDragTargetRef.current;
+          newPosition.copy(entry.hoverUiPoint);
+          if (entry.hudGrabOffset) {
+            newPosition.add(entry.hudGrabOffset);
+          }
+          if (vrHudPlacementRef.current) {
+            vrHudPlacementRef.current.position.copy(newPosition);
+          } else {
+            vrHudPlacementRef.current = { position: newPosition.clone() };
+          }
+          hud.group.position.copy(newPosition);
+          hud.group.updateMatrixWorld(true);
         }
 
         if (visibleLines.length > 0 && cameraInstance) {
@@ -1923,6 +2054,7 @@ function VolumeViewer({
       });
       refreshControllerVisibility();
       setVrPlaybackHudVisible(true);
+      resetVrHudPlacement();
       updateVrPlaybackHud();
       updateControllerRays();
       handleResize();
@@ -1944,6 +2076,7 @@ function VolumeViewer({
     rendererRef.current = renderer;
     sceneRef.current = scene;
     cameraRef.current = camera;
+    resetVrHudPlacement();
 
     const handleSessionEnd = () => {
       vrLog('[VR] handleSessionEnd', {
@@ -1957,6 +2090,7 @@ function VolumeViewer({
       applyVrPlaybackHoverState(false, false, false);
       for (const entry of controllersRef.current) {
         entry.ray.scale.set(1, 1, 1);
+        entry.hudGrabOffset = null;
       }
       const controlsInstance = controlsRef.current;
       if (controlsInstance) {
@@ -2181,6 +2315,16 @@ function VolumeViewer({
         mesh.updateMatrixWorld();
       }
 
+      const hud = vrPlaybackHudRef.current;
+      if (hud) {
+        const placement = vrHudPlacementRef.current;
+        if (placement) {
+          hud.group.position.copy(placement.position);
+        }
+        hud.group.quaternion.copy(camera.quaternion);
+        hud.group.updateMatrixWorld(true);
+      }
+
       updateControllerRays();
       const hoveredEntry = controllersRef.current.find((entry) => entry.hoverTrackId);
       const renderSummary = {
@@ -2238,6 +2382,7 @@ function VolumeViewer({
         });
         hud.labelTexture.dispose();
         vrPlaybackHudRef.current = null;
+        vrHudPlacementRef.current = null;
       }
 
       const resources = resourcesRef.current;
