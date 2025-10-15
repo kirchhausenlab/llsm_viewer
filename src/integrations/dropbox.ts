@@ -1,6 +1,7 @@
 const DROPBOX_SCRIPT_ID = 'dropboxjs';
 const DROPBOX_SCRIPT_URL = 'https://www.dropbox.com/static/api/2/dropins.js';
 const DROPBOX_APP_KEY_STORAGE_KEY = 'llsm_viewer.dropbox_app_key';
+const EMBEDDED_DROPBOX_APP_KEY = '1abfsrk62dy855r' as const;
 
 let dropboxLoadPromise: Promise<DropboxStatic> | null = null;
 
@@ -15,7 +16,11 @@ export type DropboxAppKeySource = 'env' | 'local';
 
 const getEnvAppKey = () => {
   const appKey = import.meta.env.VITE_DROPBOX_APP_KEY;
-  return typeof appKey === 'string' && appKey.trim().length > 0 ? appKey.trim() : null;
+  if (typeof appKey === 'string' && appKey.trim().length > 0) {
+    return appKey.trim();
+  }
+
+  return EMBEDDED_DROPBOX_APP_KEY.trim().length > 0 ? EMBEDDED_DROPBOX_APP_KEY : null;
 };
 
 const getStoredAppKey = (): string | null => {

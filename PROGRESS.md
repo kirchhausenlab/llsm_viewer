@@ -277,3 +277,6 @@ d centered the front-page card in the viewport.
 - Reused the playback HUD's cylindrical positioning and drag constraints so both windows can be grabbed and moved independently in immersive mode.
 - Wired controller interactions to the existing React state pipeline so VR adjustments immediately sync with the desktop UI and underlying rendering state.
 - Raised the VR channels canvas fidelity by rendering at headset pixel ratios, enlarging typography, and brightening hover cues so controls remain legible inside WebXR headsets.
+## Embedded Dropbox configuration
+- Embedded the Dropbox app key `1abfsrk62dy855r` directly into the front-end integration so every deployment loads the chooser without manual setup.
+- Documented the bundled key in the README and noted how to override it via `VITE_DROPBOX_APP_KEY` if needed.
