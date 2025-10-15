@@ -199,7 +199,9 @@ type VrUiTargetType =
   | 'channels-reset'
   | 'channels-layer'
   | 'channels-slider'
-  | 'channels-color';
+  | 'channels-color'
+  | 'volume-translate-handle'
+  | 'volume-rotate-handle';
 
 type VrUiTarget = { type: VrUiTargetType; object: THREE.Object3D; data?: unknown };
 
@@ -297,6 +299,7 @@ type ControllerEntry = {
   ray: THREE.Line;
   rayGeometry: THREE.BufferGeometry;
   rayMaterial: THREE.Material;
+  touchIndicator: THREE.Mesh;
   raycaster: THREE.Raycaster;
   onConnected: (event: { data?: { targetRayMode?: string; gamepad?: Gamepad } }) => void;
   onDisconnected: () => void;
@@ -316,6 +319,14 @@ type ControllerEntry = {
   rayLength: number;
   isSelecting: boolean;
   hudGrabOffsets: { playback: THREE.Vector3 | null; channels: THREE.Vector3 | null };
+  translateGrabOffset: THREE.Vector3 | null;
+  rotateGrabState:
+    | {
+        initialQuaternion: THREE.Quaternion;
+        initialDirection: THREE.Vector3;
+        radius: number;
+      }
+    | null;
 };
 
 const DEFAULT_TRACK_OPACITY = 0.9;
@@ -354,8 +365,12 @@ const VR_HUD_CYLINDER_MAX_HEIGHT = 2;
 const VR_HUD_CYLINDER_EPSILON = 1e-6;
 const VR_VOLUME_BASE_OFFSET = new THREE.Vector3(0, 1.2, -0.3);
 const VR_UI_TOUCH_DISTANCE = 0.05;
-const VR_UI_TOUCH_DISTANCE_ACTIVE = 0.07;
 const VR_UI_TOUCH_SURFACE_MARGIN = 0.02;
+const VR_CONTROLLER_TOUCH_RADIUS = 0.015;
+const VR_TRANSLATION_HANDLE_RADIUS = 0.06;
+const VR_TRANSLATION_HANDLE_OFFSET = 0.04;
+const VR_ROTATION_HANDLE_RADIUS = 0.045;
+const VR_ROTATION_HANDLE_OFFSET = 0.03;
 
 function setVrPlaybackSliderFraction(hud: VrPlaybackHud, fraction: number) {
   const clamped = Math.min(Math.max(fraction, 0), 1);
@@ -546,6 +561,9 @@ function VolumeViewer({
   const volumeRootGroupRef = useRef<THREE.Group | null>(null);
   const volumeRootBaseOffsetRef = useRef(new THREE.Vector3());
   const volumeRootCenterOffsetRef = useRef(new THREE.Vector3());
+  const volumeRootCenterUnscaledRef = useRef(new THREE.Vector3());
+  const volumeRootHalfExtentsRef = useRef(new THREE.Vector3());
+  const volumeRootRotatedCenterTempRef = useRef(new THREE.Vector3());
   const trackGroupRef = useRef<THREE.Group | null>(null);
   const trackLinesRef = useRef<Map<string, TrackLineResource>>(new Map());
   const controllersRef = useRef<ControllerEntry[]>([]);
@@ -561,6 +579,12 @@ function VolumeViewer({
     quaternion: THREE.Quaternion;
     target: THREE.Vector3;
   } | null>(null);
+  const hasActive3DLayerRef = useRef(false);
+  const vrTranslationHandleRef = useRef<THREE.Mesh | null>(null);
+  const vrRotationHandleRef = useRef<THREE.Mesh | null>(null);
+  const vrRotationGuideRef = useRef<THREE.Mesh | null>(null);
+  const vrRotationGuideMaterialRef = useRef<THREE.MeshBasicMaterial | null>(null);
+  const vrHandleLocalPointRef = useRef(new THREE.Vector3());
   const [hasMeasured, setHasMeasured] = useState(false);
   const [trackOverlayRevision, setTrackOverlayRevision] = useState(0);
   const [renderContextRevision, setRenderContextRevision] = useState(0);
@@ -586,6 +610,10 @@ function VolumeViewer({
   const vrHudForwardRef = useRef(new THREE.Vector3(0, 0, 1));
   const vrHudYawEulerRef = useRef(new THREE.Euler(0, 0, 0, 'YXZ'));
   const vrHudYawQuaternionRef = useRef(new THREE.Quaternion());
+  const vrHandleWorldPointRef = useRef(new THREE.Vector3());
+  const vrHandleSecondaryPointRef = useRef(new THREE.Vector3());
+  const vrHandleQuaternionTempRef = useRef(new THREE.Quaternion());
+  const vrHandleQuaternionTemp2Ref = useRef(new THREE.Quaternion());
   const playbackStateRef = useRef({
     isPlaying,
     playbackDisabled,
@@ -598,6 +626,103 @@ function VolumeViewer({
   const vrHoverStateRef = useRef({ play: false, slider: false, sliderActive: false });
   const vrChannelsStateRef = useRef<VrChannelsState>({ channels: [], activeChannelId: null });
   const sliderLocalPointRef = useRef(new THREE.Vector3());
+
+  const updateVolumeHandles = useCallback(() => {
+    const translationHandle = vrTranslationHandleRef.current;
+    const rotationHandle = vrRotationHandleRef.current;
+    const rotationGuide = vrRotationGuideRef.current;
+    if (!translationHandle && !rotationHandle && !rotationGuide) {
+      return;
+    }
+
+    const renderer = rendererRef.current;
+    const volumeRootGroup = volumeRootGroupRef.current;
+    const dimensions = currentDimensionsRef.current;
+    const has3D = hasActive3DLayerRef.current;
+    const presenting = renderer?.xr?.isPresenting ?? false;
+
+    if (!presenting || !has3D || !dimensions || !volumeRootGroup || dimensions.depth <= 1) {
+      if (translationHandle) {
+        translationHandle.visible = false;
+      }
+      if (rotationHandle) {
+        rotationHandle.visible = false;
+      }
+      if (rotationGuide) {
+        rotationGuide.visible = false;
+      }
+      return;
+    }
+
+    const { width, height, depth } = dimensions;
+    const maxDimension = Math.max(width, height, depth);
+    if (!Number.isFinite(maxDimension) || maxDimension <= 0) {
+      if (translationHandle) {
+        translationHandle.visible = false;
+      }
+      if (rotationHandle) {
+        rotationHandle.visible = false;
+      }
+      if (rotationGuide) {
+        rotationGuide.visible = false;
+      }
+      return;
+    }
+
+    const scale = 1 / maxDimension;
+    const centerUnscaled = volumeRootCenterUnscaledRef.current;
+    const halfExtents = volumeRootHalfExtentsRef.current;
+    const translationLocal = vrHandleLocalPointRef.current;
+
+    translationLocal.set(
+      centerUnscaled.x,
+      centerUnscaled.y + (halfExtents.y + VR_TRANSLATION_HANDLE_OFFSET) / scale,
+      centerUnscaled.z
+    );
+    if (translationHandle) {
+      translationHandle.position.copy(translationLocal);
+      translationHandle.scale.setScalar(VR_TRANSLATION_HANDLE_RADIUS / scale);
+      translationHandle.visible = true;
+    }
+
+    if (rotationHandle || rotationGuide) {
+      const rotationLocal = vrHandleWorldPointRef.current;
+      const offsetWorld = vrHandleSecondaryPointRef.current;
+      offsetWorld.set(
+        halfExtents.x + VR_ROTATION_HANDLE_OFFSET,
+        halfExtents.y + VR_ROTATION_HANDLE_OFFSET,
+        -(halfExtents.z + VR_ROTATION_HANDLE_OFFSET)
+      );
+      rotationLocal.set(
+        centerUnscaled.x + offsetWorld.x / scale,
+        centerUnscaled.y + offsetWorld.y / scale,
+        centerUnscaled.z + offsetWorld.z / scale
+      );
+      if (rotationHandle) {
+        rotationHandle.position.copy(rotationLocal);
+        rotationHandle.scale.setScalar(VR_ROTATION_HANDLE_RADIUS / scale);
+        rotationHandle.visible = true;
+      }
+      const radius = offsetWorld.length();
+      if (rotationGuide) {
+        rotationGuide.position.copy(centerUnscaled);
+        rotationGuide.scale.setScalar(radius / scale);
+        rotationGuide.visible = false;
+      }
+    }
+  }, [
+    currentDimensionsRef,
+    hasActive3DLayerRef,
+    rendererRef,
+    vrHandleLocalPointRef,
+    vrHandleSecondaryPointRef,
+    vrHandleWorldPointRef,
+    vrRotationGuideRef,
+    vrTranslationHandleRef,
+    volumeRootCenterUnscaledRef,
+    volumeRootGroupRef,
+    volumeRootHalfExtentsRef
+  ]);
 
   const constrainVectorToHudCylinder = useCallback((target: THREE.Vector3) => {
     const horizontalLengthSq = target.x * target.x + target.z * target.z;
@@ -1803,8 +1928,14 @@ function VolumeViewer({
 
       if (!dimensions) {
         const baseOffset = volumeRootBaseOffsetRef.current;
-        volumeRootGroup.position.set(baseOffset.x, baseOffset.y, baseOffset.z);
+        volumeRootCenterOffsetRef.current.set(0, 0, 0);
+        volumeRootCenterUnscaledRef.current.set(0, 0, 0);
+        volumeRootHalfExtentsRef.current.set(0, 0, 0);
         volumeRootGroup.scale.set(1, 1, 1);
+        volumeRootGroup.quaternion.identity();
+        volumeRootGroup.position.set(baseOffset.x, baseOffset.y, baseOffset.z);
+        volumeRootGroup.updateMatrixWorld(true);
+        updateVolumeHandles();
         return;
       }
 
@@ -1812,27 +1943,41 @@ function VolumeViewer({
       const maxDimension = Math.max(width, height, depth);
       if (!Number.isFinite(maxDimension) || maxDimension <= 0) {
         const baseOffset = volumeRootBaseOffsetRef.current;
-        volumeRootGroup.position.set(baseOffset.x, baseOffset.y, baseOffset.z);
+        volumeRootCenterOffsetRef.current.set(0, 0, 0);
+        volumeRootCenterUnscaledRef.current.set(0, 0, 0);
+        volumeRootHalfExtentsRef.current.set(0, 0, 0);
         volumeRootGroup.scale.set(1, 1, 1);
+        volumeRootGroup.position.set(baseOffset.x, baseOffset.y, baseOffset.z);
+        volumeRootGroup.updateMatrixWorld(true);
+        updateVolumeHandles();
         return;
       }
 
       const scale = 1 / maxDimension;
+      const centerUnscaled = volumeRootCenterUnscaledRef.current;
+      centerUnscaled.set(width / 2 - 0.5, height / 2 - 0.5, depth / 2 - 0.5);
       const centerOffset = volumeRootCenterOffsetRef.current;
-      centerOffset
-        .set(width / 2 - 0.5, height / 2 - 0.5, depth / 2 - 0.5)
-        .multiplyScalar(scale);
+      centerOffset.copy(centerUnscaled).multiplyScalar(scale);
+      const halfExtents = volumeRootHalfExtentsRef.current;
+      halfExtents.set(
+        ((width - 1) / 2) * scale,
+        ((height - 1) / 2) * scale,
+        ((depth - 1) / 2) * scale
+      );
 
       volumeRootGroup.scale.setScalar(scale);
       const baseOffset = volumeRootBaseOffsetRef.current;
+      const rotatedCenter = volumeRootRotatedCenterTempRef.current;
+      rotatedCenter.copy(centerOffset).applyQuaternion(volumeRootGroup.quaternion);
       volumeRootGroup.position.set(
-        -centerOffset.x + baseOffset.x,
-        -centerOffset.y + baseOffset.y,
-        -centerOffset.z + baseOffset.z
+        baseOffset.x - rotatedCenter.x,
+        baseOffset.y - rotatedCenter.y,
+        baseOffset.z - rotatedCenter.z
       );
       volumeRootGroup.updateMatrixWorld(true);
+      updateVolumeHandles();
     },
-    []
+    [updateVolumeHandles]
   );
 
   const applyTrackGroupTransform = useCallback(
@@ -1938,6 +2083,10 @@ function VolumeViewer({
       }),
     [layers]
   );
+  useEffect(() => {
+    hasActive3DLayerRef.current = hasActive3DLayer;
+    updateVolumeHandles();
+  }, [hasActive3DLayer, updateVolumeHandles]);
   const previouslyHad3DLayerRef = useRef(false);
 
   useEffect(() => {
@@ -2347,6 +2496,45 @@ function VolumeViewer({
     volumeRootGroup.name = 'VolumeRoot';
     scene.add(volumeRootGroup);
     volumeRootGroupRef.current = volumeRootGroup;
+    const translationHandleMaterial = new THREE.MeshBasicMaterial({
+      color: 0x4d9dff,
+      transparent: true,
+      opacity: 0.75,
+      depthWrite: false
+    });
+    translationHandleMaterial.depthTest = false;
+    const translationHandle = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), translationHandleMaterial);
+    translationHandle.name = 'VolumeTranslateHandle';
+    translationHandle.visible = false;
+    volumeRootGroup.add(translationHandle);
+    vrTranslationHandleRef.current = translationHandle;
+
+    const rotationHandleMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffb347,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false
+    });
+    rotationHandleMaterial.depthTest = false;
+    const rotationHandle = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), rotationHandleMaterial);
+    rotationHandle.name = 'VolumeRotateHandle';
+    rotationHandle.visible = false;
+    volumeRootGroup.add(rotationHandle);
+    vrRotationHandleRef.current = rotationHandle;
+
+    const rotationGuideMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffb347,
+      transparent: true,
+      opacity: 0.18,
+      depthWrite: false
+    });
+    rotationGuideMaterial.depthTest = false;
+    const rotationGuide = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 48), rotationGuideMaterial);
+    rotationGuide.name = 'VolumeRotationGuide';
+    rotationGuide.visible = false;
+    volumeRootGroup.add(rotationGuide);
+    vrRotationGuideRef.current = rotationGuide;
+    vrRotationGuideMaterialRef.current = rotationGuideMaterial;
     applyVolumeRootTransform(currentDimensionsRef.current);
 
     const trackGroup = new THREE.Group();
@@ -2381,6 +2569,7 @@ function VolumeViewer({
         entry.controller.visible = visible;
         entry.grip.visible = visible;
         entry.ray.visible = visible;
+        entry.touchIndicator.visible = visible;
         visibilitySnapshot.push({
           index,
           visible,
@@ -2389,14 +2578,16 @@ function VolumeViewer({
         });
         if (!visible) {
           entry.hoverTrackId = null;
-        entry.hoverUiTarget = null;
-        entry.activeUiTarget = null;
-        entry.hasHoverUiPoint = false;
-        entry.hudGrabOffsets.playback = null;
-        entry.hudGrabOffsets.channels = null;
-      } else {
-        anyVisible = true;
-      }
+          entry.hoverUiTarget = null;
+          entry.activeUiTarget = null;
+          entry.hasHoverUiPoint = false;
+          entry.hudGrabOffsets.playback = null;
+          entry.hudGrabOffsets.channels = null;
+          entry.translateGrabOffset = null;
+          entry.rotateGrabState = null;
+        } else {
+          anyVisible = true;
+        }
       });
       if (import.meta.env?.DEV) {
         vrLog('[VR] controller visibility', { shouldShow, visibilitySnapshot });
@@ -2427,6 +2618,20 @@ function VolumeViewer({
       ray.visible = false;
       controller.add(ray);
 
+      const touchIndicatorMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.2,
+        depthWrite: false
+      });
+      touchIndicatorMaterial.depthTest = false;
+      const touchIndicator = new THREE.Mesh(
+        new THREE.SphereGeometry(VR_CONTROLLER_TOUCH_RADIUS, 16, 16),
+        touchIndicatorMaterial
+      );
+      touchIndicator.visible = false;
+      controller.add(touchIndicator);
+
       const model = controllerModelFactory.createControllerModel(grip);
       grip.add(model);
 
@@ -2443,6 +2648,7 @@ function VolumeViewer({
         ray,
         rayGeometry,
         rayMaterial,
+        touchIndicator,
         raycaster: controllerRaycaster,
         onConnected: () => undefined,
         onDisconnected: () => undefined,
@@ -2461,7 +2667,9 @@ function VolumeViewer({
         rayDirection: new THREE.Vector3(0, 0, -1),
         rayLength: 3,
         isSelecting: false,
-        hudGrabOffsets: { playback: null, channels: null }
+        hudGrabOffsets: { playback: null, channels: null },
+        translateGrabOffset: null,
+        rotateGrabState: null
       };
 
       entry.onConnected = (event) => {
@@ -2474,6 +2682,8 @@ function VolumeViewer({
         entry.hasHoverUiPoint = false;
         entry.hudGrabOffsets.playback = null;
         entry.hudGrabOffsets.channels = null;
+        entry.translateGrabOffset = null;
+        entry.rotateGrabState = null;
         entry.rayLength = 3;
         vrLog('[VR] controller connected', index, {
           targetRayMode: entry.targetRayMode,
@@ -2495,6 +2705,9 @@ function VolumeViewer({
         entry.ray.scale.set(1, 1, entry.rayLength);
         entry.hudGrabOffsets.playback = null;
         entry.hudGrabOffsets.channels = null;
+        entry.translateGrabOffset = null;
+        entry.rotateGrabState = null;
+        entry.touchIndicator.visible = false;
         vrLog('[VR] controller disconnected', index);
         refreshControllerVisibility();
         clearHoverState('controller');
@@ -2557,6 +2770,44 @@ function VolumeViewer({
             entry.hudGrabOffsets.channels.copy(referencePosition).sub(entry.hoverUiPoint);
           }
         }
+        if (entry.activeUiTarget?.type === 'volume-translate-handle') {
+          const handle = vrTranslationHandleRef.current;
+          if (handle) {
+            handle.getWorldPosition(translationHandleWorldPoint);
+            if (!entry.translateGrabOffset) {
+              entry.translateGrabOffset = new THREE.Vector3();
+            }
+            entry.translateGrabOffset.copy(translationHandleWorldPoint).sub(entry.rayOrigin);
+          }
+        }
+        if (entry.activeUiTarget?.type === 'volume-rotate-handle') {
+          const volumeRootGroup = volumeRootGroupRef.current;
+          const handle = vrRotationHandleRef.current;
+          if (volumeRootGroup && handle) {
+            handle.getWorldPosition(translationHandleWorldPoint);
+            rotationCenterWorldPoint.copy(volumeRootCenterUnscaledRef.current);
+            volumeRootGroup.localToWorld(rotationCenterWorldPoint);
+            rotationDirectionTemp.copy(translationHandleWorldPoint).sub(rotationCenterWorldPoint);
+            let directionLength = rotationDirectionTemp.length();
+            if (!entry.rotateGrabState) {
+              entry.rotateGrabState = {
+                initialQuaternion: new THREE.Quaternion(),
+                initialDirection: new THREE.Vector3(),
+                radius: 0
+              };
+            }
+            const rotateState = entry.rotateGrabState;
+            rotateState.initialQuaternion.copy(volumeRootGroup.quaternion);
+            if (directionLength <= 1e-5) {
+              rotationDirectionTemp.set(0, 1, 0);
+              directionLength = 1e-5;
+            } else {
+              rotationDirectionTemp.multiplyScalar(1 / directionLength);
+            }
+            rotateState.initialDirection.copy(rotationDirectionTemp);
+            rotateState.radius = directionLength;
+          }
+        }
         vrLog('[VR] selectstart', index, {
           hoverTrackId: entry.hoverTrackId,
           uiTarget: entry.activeUiTarget?.type ?? null
@@ -2580,6 +2831,10 @@ function VolumeViewer({
           entry.hudGrabOffsets.playback = null;
         } else if (activeTarget?.type === 'channels-panel-grab') {
           entry.hudGrabOffsets.channels = null;
+        } else if (activeTarget?.type === 'volume-translate-handle') {
+          entry.translateGrabOffset = null;
+        } else if (activeTarget?.type === 'volume-rotate-handle') {
+          entry.rotateGrabState = null;
         } else if (
           activeTarget?.type === 'channels-slider' &&
           activeTarget.data &&
@@ -2893,6 +3148,10 @@ function VolumeViewer({
     const playbackSliderPoint = new THREE.Vector3();
     const channelsTouchPoint = new THREE.Vector3();
     const channelsLocalPoint = new THREE.Vector3();
+    const translationHandleWorldPoint = new THREE.Vector3();
+    const rotationCenterWorldPoint = new THREE.Vector3();
+    const rotationDirectionTemp = new THREE.Vector3();
+    const rotationHandleWorldPoint = new THREE.Vector3();
 
     let lastControllerRaySummary:
       | {
@@ -2935,6 +3194,8 @@ function VolumeViewer({
       let sliderHoveredAny = false;
       let sliderActiveAny = false;
       let nextChannelsHoverRegion: VrChannelsInteractiveRegion | null = null;
+      let rotationHandleHovered = false;
+      let rotationHandleActive = false;
 
       for (let index = 0; index < controllersRef.current.length; index++) {
         const entry = controllersRef.current[index];
@@ -2968,240 +3229,376 @@ function VolumeViewer({
         let uiRayLength: number | null = null;
         const playbackHudInstance = vrPlaybackHudRef.current;
         const channelsHudInstance = vrChannelsHudRef.current;
-        let playbackCandidate: {
-          target: VrUiTarget;
-          point: THREE.Vector3;
-          distance: number;
-        } | null = null;
-        let channelsCandidate: {
-          target: VrUiTarget;
-          point: THREE.Vector3;
-          distance: number;
-          region: VrChannelsInteractiveRegion | null;
-        } | null = null;
+        const translationHandleInstance = vrTranslationHandleRef.current;
+        const rotationHandleInstance = vrRotationHandleRef.current;
 
-        if (playbackHudInstance) {
-          const plane = vrHudPlaneRef.current;
-          const planePoint = vrHudPlanePointRef.current;
-          playbackHudInstance.panel.getWorldPosition(planePoint);
-          const planeNormal = vrHudForwardRef.current;
-          planeNormal.set(0, 0, 1).applyQuaternion(playbackHudInstance.group.quaternion).normalize();
-          plane.setFromNormalAndCoplanarPoint(planeNormal, planePoint);
-          const activeType = entry.activeUiTarget?.type ?? null;
-          const activePlayback = activeType ? activeType.startsWith('playback-') : false;
-          const touchLimit = activePlayback ? VR_UI_TOUCH_DISTANCE_ACTIVE : VR_UI_TOUCH_DISTANCE;
-          const planeDistance = Math.abs(plane.distanceToPoint(entry.rayOrigin));
-          if (planeDistance <= touchLimit) {
-            plane.projectPoint(entry.rayOrigin, playbackTouchPoint);
-            playbackPlaneNormal.copy(planeNormal);
-            playbackLocalPoint.copy(playbackTouchPoint);
-            playbackHudInstance.group.worldToLocal(playbackLocalPoint);
-            const surfaceMargin = activePlayback
-              ? VR_UI_TOUCH_SURFACE_MARGIN * 1.5
-              : VR_UI_TOUCH_SURFACE_MARGIN;
-            const halfWidth = VR_PLAYBACK_PANEL_WIDTH / 2 + surfaceMargin;
-            const halfHeight = VR_PLAYBACK_PANEL_HEIGHT / 2 + surfaceMargin;
+        const isActiveTranslate = entry.activeUiTarget?.type === 'volume-translate-handle';
+        const isActiveRotate = entry.activeUiTarget?.type === 'volume-rotate-handle';
+        if (isActiveRotate) {
+          rotationHandleActive = true;
+        }
+
+        let handleCandidate: { target: VrUiTarget; point: THREE.Vector3; distance: number } | null = null;
+
+        if (translationHandleInstance && translationHandleInstance.visible) {
+          translationHandleInstance.getWorldPosition(translationHandleWorldPoint);
+          const distance = translationHandleWorldPoint.distanceTo(entry.rayOrigin);
+          if (isActiveTranslate || distance <= VR_UI_TOUCH_DISTANCE) {
+            handleCandidate = {
+              target: { type: 'volume-translate-handle', object: translationHandleInstance },
+              point: translationHandleWorldPoint.clone(),
+              distance
+            };
+          }
+        }
+
+        if (rotationHandleInstance && rotationHandleInstance.visible) {
+          rotationHandleInstance.getWorldPosition(rotationHandleWorldPoint);
+          const distance = rotationHandleWorldPoint.distanceTo(entry.rayOrigin);
+          if (distance <= VR_UI_TOUCH_DISTANCE) {
+            rotationHandleHovered = true;
+          }
+          if (isActiveRotate || distance <= VR_UI_TOUCH_DISTANCE) {
+            const candidate = {
+              target: { type: 'volume-rotate-handle', object: rotationHandleInstance },
+              point: rotationHandleWorldPoint.clone(),
+              distance
+            };
             if (
-              playbackLocalPoint.x >= -halfWidth &&
-              playbackLocalPoint.x <= halfWidth &&
-              playbackLocalPoint.y >= -halfHeight &&
-              playbackLocalPoint.y <= halfHeight
+              !handleCandidate ||
+              (handleCandidate.target.type !== 'volume-rotate-handle' && candidate.distance < handleCandidate.distance)
             ) {
-              const rawDistance = entry.rayOrigin.distanceTo(playbackTouchPoint);
-              const clampedDistance = Math.max(0.12, Math.min(rawDistance, 8));
-              const panelGrabActive = activeType === 'playback-panel-grab';
-              const handleMinY = VR_PLAYBACK_PANEL_HEIGHT / 2 - 0.06 - surfaceMargin;
-              const handleMaxY = VR_PLAYBACK_PANEL_HEIGHT / 2 + surfaceMargin;
-              const inHandleBand =
-                playbackLocalPoint.y >= handleMinY && playbackLocalPoint.y <= handleMaxY;
-              if (panelGrabActive || inHandleBand) {
-                playbackCandidate = {
-                  target: { type: 'playback-panel-grab', object: playbackHudInstance.panelGrabHandle },
-                  point: playbackTouchPoint.clone(),
-                  distance: rawDistance
-                };
-                uiRayLength =
-                  uiRayLength === null ? clampedDistance : Math.min(uiRayLength, clampedDistance);
-              } else {
-                const sliderActive = activeType === 'playback-slider';
-                const sliderMargin = sliderActive
+              handleCandidate = candidate;
+            }
+          }
+        }
+
+        if (entry.isSelecting && isActiveTranslate) {
+          const handle = vrTranslationHandleRef.current;
+          const volumeRootGroup = volumeRootGroupRef.current;
+          if (handle && volumeRootGroup) {
+            const desiredPosition = rotationHandleWorldPoint;
+            desiredPosition.copy(entry.rayOrigin);
+            if (entry.translateGrabOffset) {
+              desiredPosition.add(entry.translateGrabOffset);
+            }
+            handle.getWorldPosition(translationHandleWorldPoint);
+            rotationDirectionTemp.copy(desiredPosition).sub(translationHandleWorldPoint);
+            if (rotationDirectionTemp.lengthSq() > 1e-10) {
+              volumeRootGroup.position.add(rotationDirectionTemp);
+              volumeRootBaseOffsetRef.current.add(rotationDirectionTemp);
+              volumeRootGroup.updateMatrixWorld(true);
+            }
+            handle.getWorldPosition(translationHandleWorldPoint);
+            entry.hoverUiPoint.copy(translationHandleWorldPoint);
+            entry.hasHoverUiPoint = true;
+            const distance = entry.rayOrigin.distanceTo(translationHandleWorldPoint);
+            rayLength = Math.min(rayLength, Math.max(0.12, Math.min(distance, 8)));
+            if (handleCandidate?.target.type === 'volume-translate-handle') {
+              handleCandidate.point = translationHandleWorldPoint.clone();
+              handleCandidate.distance = distance;
+            }
+          }
+        }
+
+        if (entry.isSelecting && isActiveRotate) {
+          const handle = vrRotationHandleRef.current;
+          const volumeRootGroup = volumeRootGroupRef.current;
+          const rotateState = entry.rotateGrabState;
+          if (handle && volumeRootGroup && rotateState) {
+            rotationCenterWorldPoint.copy(volumeRootCenterUnscaledRef.current);
+            volumeRootGroup.localToWorld(rotationCenterWorldPoint);
+            rotationDirectionTemp.copy(entry.rayOrigin).sub(rotationCenterWorldPoint);
+            if (rotationDirectionTemp.lengthSq() > 1e-8) {
+              rotationDirectionTemp.normalize();
+              const deltaQuaternion = vrHandleQuaternionTempRef.current;
+              deltaQuaternion.setFromUnitVectors(rotateState.initialDirection, rotationDirectionTemp);
+              const nextQuaternion = vrHandleQuaternionTemp2Ref.current;
+              nextQuaternion.copy(rotateState.initialQuaternion).premultiply(deltaQuaternion);
+              volumeRootGroup.quaternion.copy(nextQuaternion);
+              const baseOffset = volumeRootBaseOffsetRef.current;
+              const centerOffset = volumeRootCenterOffsetRef.current;
+              const rotatedCenter = volumeRootRotatedCenterTempRef.current;
+              rotatedCenter.copy(centerOffset).applyQuaternion(volumeRootGroup.quaternion);
+              volumeRootGroup.position.set(
+                baseOffset.x - rotatedCenter.x,
+                baseOffset.y - rotatedCenter.y,
+                baseOffset.z - rotatedCenter.z
+              );
+              volumeRootGroup.updateMatrixWorld(true);
+            }
+            handle.getWorldPosition(rotationHandleWorldPoint);
+            entry.hoverUiPoint.copy(rotationHandleWorldPoint);
+            entry.hasHoverUiPoint = true;
+            const distance = entry.rayOrigin.distanceTo(rotationHandleWorldPoint);
+            rayLength = Math.min(rayLength, Math.max(0.12, Math.min(distance, 8)));
+            if (handleCandidate?.target.type === 'volume-rotate-handle') {
+              handleCandidate.point = rotationHandleWorldPoint.clone();
+              handleCandidate.distance = distance;
+            }
+          }
+        }
+
+        if (handleCandidate) {
+          entry.hoverUiTarget = handleCandidate.target;
+          entry.hasHoverUiPoint = true;
+          entry.hoverUiPoint.copy(handleCandidate.point);
+          const candidateDistance = Math.max(0.12, Math.min(handleCandidate.distance, 8));
+          rayLength = Math.min(rayLength, candidateDistance);
+          hoverTrackId = null;
+          if (handleCandidate.target.type === 'volume-rotate-handle') {
+            rotationHandleHovered = true;
+          }
+          nextChannelsHoverRegion = null;
+        } else {
+          let playbackCandidate: {
+            target: VrUiTarget;
+            point: THREE.Vector3;
+            distance: number;
+          } | null = null;
+          let channelsCandidate: {
+            target: VrUiTarget;
+            point: THREE.Vector3;
+            distance: number;
+            region: VrChannelsInteractiveRegion | null;
+          } | null = null;
+
+          if (playbackHudInstance) {
+            const plane = vrHudPlaneRef.current;
+            const planePoint = vrHudPlanePointRef.current;
+            playbackHudInstance.panel.getWorldPosition(planePoint);
+            const planeNormal = vrHudForwardRef.current;
+            planeNormal.set(0, 0, 1).applyQuaternion(playbackHudInstance.group.quaternion).normalize();
+            plane.setFromNormalAndCoplanarPoint(planeNormal, planePoint);
+            const activeType = entry.activeUiTarget?.type ?? null;
+            const activePlayback = activeType ? activeType.startsWith('playback-') : false;
+            const denominator = planeNormal.dot(entry.rayDirection);
+            if (Math.abs(denominator) > 1e-5) {
+              const signedDistance = plane.distanceToPoint(entry.rayOrigin);
+              const distanceAlongRay = -signedDistance / denominator;
+              if (distanceAlongRay >= 0 && Number.isFinite(distanceAlongRay)) {
+                playbackTouchPoint
+                  .copy(entry.rayDirection)
+                  .multiplyScalar(distanceAlongRay)
+                  .add(entry.rayOrigin);
+                playbackPlaneNormal.copy(planeNormal);
+                playbackLocalPoint.copy(playbackTouchPoint);
+                playbackHudInstance.group.worldToLocal(playbackLocalPoint);
+                const surfaceMargin = activePlayback
                   ? VR_UI_TOUCH_SURFACE_MARGIN * 1.5
                   : VR_UI_TOUCH_SURFACE_MARGIN;
-                const sliderHalfWidth =
-                  (playbackHudInstance.sliderWidth + 0.04) / 2 + sliderMargin;
-                const sliderHalfHeight = 0.08 / 2 + sliderMargin;
-                const sliderLocalX =
-                  playbackLocalPoint.x - playbackHudInstance.sliderGroup.position.x;
-                const sliderLocalY =
-                  playbackLocalPoint.y - playbackHudInstance.sliderGroup.position.y;
-                const inSliderArea =
-                  sliderLocalX >= -sliderHalfWidth &&
-                  sliderLocalX <= sliderHalfWidth &&
-                  sliderLocalY >= -sliderHalfHeight &&
-                  sliderLocalY <= sliderHalfHeight;
-                const playCenter = playbackHudInstance.playButton.position;
-                const playRadius = 0.045 + surfaceMargin;
-                const playDeltaX = playbackLocalPoint.x - playCenter.x;
-                const playDeltaY = playbackLocalPoint.y - playCenter.y;
-                const inPlayButton =
-                  playDeltaX * playDeltaX + playDeltaY * playDeltaY <= playRadius * playRadius;
-                if (inSliderArea) {
-                  const sliderDepth =
-                    playbackHudInstance.sliderGroup.position.z +
-                    playbackHudInstance.sliderHitArea.position.z;
-                  playbackSliderPoint
-                    .copy(playbackTouchPoint)
-                    .addScaledVector(playbackPlaneNormal, sliderDepth);
-                  playbackCandidate = {
-                    target: { type: 'playback-slider', object: playbackHudInstance.sliderHitArea },
-                    point: playbackSliderPoint.clone(),
-                    distance: rawDistance
-                  };
-                  uiRayLength =
-                    uiRayLength === null
-                      ? clampedDistance
-                      : Math.min(uiRayLength, clampedDistance);
-                  if (
-                    entry.isSelecting &&
-                    sliderActive &&
-                    !playbackStateRef.current.playbackDisabled
-                  ) {
-                    applySliderFromWorldPoint(playbackSliderPoint);
-                  }
-                } else if (inPlayButton) {
-                  playbackCandidate = {
-                    target: { type: 'playback-play-toggle', object: playbackHudInstance.playButton },
-                    point: playbackTouchPoint.clone(),
-                    distance: rawDistance
-                  };
-                  uiRayLength =
-                    uiRayLength === null
-                      ? clampedDistance
-                      : Math.min(uiRayLength, clampedDistance);
-                }
-              }
-            }
-          }
-        }
-
-        if (channelsHudInstance) {
-          const plane = vrHudPlaneRef.current;
-          const planePoint = vrHudPlanePointRef.current;
-          channelsHudInstance.panel.getWorldPosition(planePoint);
-          const planeNormal = vrHudForwardRef.current;
-          planeNormal.set(0, 0, 1).applyQuaternion(channelsHudInstance.group.quaternion).normalize();
-          plane.setFromNormalAndCoplanarPoint(planeNormal, planePoint);
-          const activeType = entry.activeUiTarget?.type ?? null;
-          const activeChannels = activeType ? activeType.startsWith('channels-') : false;
-          const touchLimit = activeChannels ? VR_UI_TOUCH_DISTANCE_ACTIVE : VR_UI_TOUCH_DISTANCE;
-          const planeDistance = Math.abs(plane.distanceToPoint(entry.rayOrigin));
-          if (planeDistance <= touchLimit) {
-            plane.projectPoint(entry.rayOrigin, channelsTouchPoint);
-            channelsLocalPoint.copy(channelsTouchPoint);
-            channelsHudInstance.group.worldToLocal(channelsLocalPoint);
-            const surfaceMargin = activeChannels
-              ? VR_UI_TOUCH_SURFACE_MARGIN * 1.5
-              : VR_UI_TOUCH_SURFACE_MARGIN;
-            const halfWidth = channelsHudInstance.width / 2 + surfaceMargin;
-            const halfHeight = channelsHudInstance.height / 2 + surfaceMargin;
-            if (
-              channelsLocalPoint.x >= -halfWidth &&
-              channelsLocalPoint.x <= halfWidth &&
-              channelsLocalPoint.y >= -halfHeight &&
-              channelsLocalPoint.y <= halfHeight
-            ) {
-              const rawDistance = entry.rayOrigin.distanceTo(channelsTouchPoint);
-              const clampedDistance = Math.max(0.12, Math.min(rawDistance, 8));
-              const panelGrabActive = activeType === 'channels-panel-grab';
-              const handleMinY = channelsHudInstance.height / 2 - 0.06 - surfaceMargin;
-              const handleMaxY = channelsHudInstance.height / 2 + surfaceMargin;
-              const inHandleBand =
-                channelsLocalPoint.y >= handleMinY && channelsLocalPoint.y <= handleMaxY;
-              if (panelGrabActive || inHandleBand) {
-                channelsCandidate = {
-                  target: { type: 'channels-panel-grab', object: channelsHudInstance.panelGrabHandle },
-                  point: channelsTouchPoint.clone(),
-                  distance: rawDistance,
-                  region: null
-                };
-                uiRayLength =
-                  uiRayLength === null ? clampedDistance : Math.min(uiRayLength, clampedDistance);
-              } else {
-                let region = resolveChannelsRegionFromPoint(channelsHudInstance, channelsTouchPoint);
-                if (region?.disabled) {
-                  region = null;
-                }
-                if (region) {
-                  channelsCandidate = {
-                    target: { type: region.targetType, object: channelsHudInstance.panel, data: region },
-                    point: channelsTouchPoint.clone(),
-                    distance: rawDistance,
-                    region
-                  };
-                  uiRayLength =
-                    uiRayLength === null
-                      ? clampedDistance
-                      : Math.min(uiRayLength, clampedDistance);
-                  nextChannelsHoverRegion = region;
-                  if (
-                    entry.isSelecting &&
-                    entry.activeUiTarget?.type === 'channels-slider' &&
-                    region.targetType === 'channels-slider'
-                  ) {
-                    applyVrChannelsSliderFromPoint(region, channelsTouchPoint);
-                  }
-                } else if (
-                  entry.isSelecting &&
-                  entry.activeUiTarget?.type === 'channels-slider' &&
-                  entry.activeUiTarget.data &&
-                  !(entry.activeUiTarget.data as VrChannelsInteractiveRegion).disabled
+                const halfWidth = VR_PLAYBACK_PANEL_WIDTH / 2 + surfaceMargin;
+                const halfHeight = VR_PLAYBACK_PANEL_HEIGHT / 2 + surfaceMargin;
+                if (
+                  playbackLocalPoint.x >= -halfWidth &&
+                  playbackLocalPoint.x <= halfWidth &&
+                  playbackLocalPoint.y >= -halfHeight &&
+                  playbackLocalPoint.y <= halfHeight
                 ) {
-                  const activeRegion = entry.activeUiTarget
-                    .data as VrChannelsInteractiveRegion;
-                  channelsCandidate = {
-                    target: { type: 'channels-slider', object: channelsHudInstance.panel, data: activeRegion },
-                    point: channelsTouchPoint.clone(),
-                    distance: rawDistance,
-                    region: activeRegion
-                  };
-                  uiRayLength =
-                    uiRayLength === null
-                      ? clampedDistance
-                      : Math.min(uiRayLength, clampedDistance);
-                  applyVrChannelsSliderFromPoint(activeRegion, channelsTouchPoint);
-                  nextChannelsHoverRegion = activeRegion;
+                  const rawDistance = distanceAlongRay;
+                  const clampedDistance = Math.max(0.12, Math.min(rawDistance, 8));
+                  const panelGrabActive = activeType === 'playback-panel-grab';
+                  const handleMinY = VR_PLAYBACK_PANEL_HEIGHT / 2 - 0.06 - surfaceMargin;
+                  const handleMaxY = VR_PLAYBACK_PANEL_HEIGHT / 2 + surfaceMargin;
+                  const inHandleBand =
+                    playbackLocalPoint.y >= handleMinY && playbackLocalPoint.y <= handleMaxY;
+                  if (panelGrabActive || inHandleBand) {
+                    playbackCandidate = {
+                      target: { type: 'playback-panel-grab', object: playbackHudInstance.panelGrabHandle },
+                      point: playbackTouchPoint.clone(),
+                      distance: rawDistance
+                    };
+                    uiRayLength =
+                      uiRayLength === null ? clampedDistance : Math.min(uiRayLength, clampedDistance);
+                  } else {
+                    const sliderActive = activeType === 'playback-slider';
+                    const sliderMargin = sliderActive
+                      ? VR_UI_TOUCH_SURFACE_MARGIN * 1.5
+                      : VR_UI_TOUCH_SURFACE_MARGIN;
+                    const sliderHalfWidth =
+                      (playbackHudInstance.sliderWidth + 0.04) / 2 + sliderMargin;
+                    const sliderHalfHeight = 0.08 / 2 + sliderMargin;
+                    const sliderLocalX =
+                      playbackLocalPoint.x - playbackHudInstance.sliderGroup.position.x;
+                    const sliderLocalY =
+                      playbackLocalPoint.y - playbackHudInstance.sliderGroup.position.y;
+                    const inSliderArea =
+                      sliderLocalX >= -sliderHalfWidth &&
+                      sliderLocalX <= sliderHalfWidth &&
+                      sliderLocalY >= -sliderHalfHeight &&
+                      sliderLocalY <= sliderHalfHeight;
+                    const playCenter = playbackHudInstance.playButton.position;
+                    const playRadius = 0.045 + surfaceMargin;
+                    const playDeltaX = playbackLocalPoint.x - playCenter.x;
+                    const playDeltaY = playbackLocalPoint.y - playCenter.y;
+                    const inPlayButton =
+                      playDeltaX * playDeltaX + playDeltaY * playDeltaY <= playRadius * playRadius;
+                    if (inSliderArea) {
+                      const sliderDepth =
+                        playbackHudInstance.sliderGroup.position.z +
+                        playbackHudInstance.sliderHitArea.position.z;
+                      playbackSliderPoint
+                        .copy(playbackTouchPoint)
+                        .addScaledVector(playbackPlaneNormal, sliderDepth);
+                      playbackCandidate = {
+                        target: { type: 'playback-slider', object: playbackHudInstance.sliderHitArea },
+                        point: playbackSliderPoint.clone(),
+                        distance: rawDistance
+                      };
+                      uiRayLength =
+                        uiRayLength === null
+                          ? clampedDistance
+                          : Math.min(uiRayLength, clampedDistance);
+                      if (
+                        entry.isSelecting &&
+                        sliderActive &&
+                        !playbackStateRef.current.playbackDisabled
+                      ) {
+                        applySliderFromWorldPoint(playbackSliderPoint);
+                      }
+                    } else if (inPlayButton) {
+                      playbackCandidate = {
+                        target: { type: 'playback-play-toggle', object: playbackHudInstance.playButton },
+                        point: playbackTouchPoint.clone(),
+                        distance: rawDistance
+                      };
+                      uiRayLength =
+                        uiRayLength === null
+                          ? clampedDistance
+                          : Math.min(uiRayLength, clampedDistance);
+                    }
+                  }
                 }
               }
             }
           }
-        }
 
-        let chosenCandidate: {
-          target: VrUiTarget;
-          point: THREE.Vector3;
-          distance: number;
-          region?: VrChannelsInteractiveRegion | null;
-        } | null = null;
-        if (playbackCandidate && channelsCandidate) {
-          chosenCandidate =
-            playbackCandidate.distance <= channelsCandidate.distance
-              ? playbackCandidate
-              : channelsCandidate;
-        } else {
-          chosenCandidate = playbackCandidate ?? channelsCandidate ?? null;
-        }
+          if (channelsHudInstance) {
+            const plane = vrHudPlaneRef.current;
+            const planePoint = vrHudPlanePointRef.current;
+            channelsHudInstance.panel.getWorldPosition(planePoint);
+            const planeNormal = vrHudForwardRef.current;
+            planeNormal.set(0, 0, 1).applyQuaternion(channelsHudInstance.group.quaternion).normalize();
+            plane.setFromNormalAndCoplanarPoint(planeNormal, planePoint);
+            const activeType = entry.activeUiTarget?.type ?? null;
+            const activeChannels = activeType ? activeType.startsWith('channels-') : false;
+            const denominator = planeNormal.dot(entry.rayDirection);
+            if (Math.abs(denominator) > 1e-5) {
+              const signedDistance = plane.distanceToPoint(entry.rayOrigin);
+              const distanceAlongRay = -signedDistance / denominator;
+              if (distanceAlongRay >= 0 && Number.isFinite(distanceAlongRay)) {
+                channelsTouchPoint
+                  .copy(entry.rayDirection)
+                  .multiplyScalar(distanceAlongRay)
+                  .add(entry.rayOrigin);
+                channelsLocalPoint.copy(channelsTouchPoint);
+                channelsHudInstance.group.worldToLocal(channelsLocalPoint);
+                const surfaceMargin = activeChannels
+                  ? VR_UI_TOUCH_SURFACE_MARGIN * 1.5
+                  : VR_UI_TOUCH_SURFACE_MARGIN;
+                const halfWidth = channelsHudInstance.width / 2 + surfaceMargin;
+                const halfHeight = channelsHudInstance.height / 2 + surfaceMargin;
+                if (
+                  channelsLocalPoint.x >= -halfWidth &&
+                  channelsLocalPoint.x <= halfWidth &&
+                  channelsLocalPoint.y >= -halfHeight &&
+                  channelsLocalPoint.y <= halfHeight
+                ) {
+                  const rawDistance = distanceAlongRay;
+                  const clampedDistance = Math.max(0.12, Math.min(rawDistance, 8));
+                  const panelGrabActive = activeType === 'channels-panel-grab';
+                  const handleMinY = channelsHudInstance.height / 2 - 0.06 - surfaceMargin;
+                  const handleMaxY = channelsHudInstance.height / 2 + surfaceMargin;
+                  const inHandleBand =
+                    channelsLocalPoint.y >= handleMinY && channelsLocalPoint.y <= handleMaxY;
+                  if (panelGrabActive || inHandleBand) {
+                    channelsCandidate = {
+                      target: { type: 'channels-panel-grab', object: channelsHudInstance.panelGrabHandle },
+                      point: channelsTouchPoint.clone(),
+                      distance: rawDistance,
+                      region: null
+                    };
+                    uiRayLength =
+                      uiRayLength === null ? clampedDistance : Math.min(uiRayLength, clampedDistance);
+                  } else {
+                    let region = resolveChannelsRegionFromPoint(channelsHudInstance, channelsTouchPoint);
+                    if (region?.disabled) {
+                      region = null;
+                    }
+                    if (region) {
+                      channelsCandidate = {
+                        target: { type: region.targetType, object: channelsHudInstance.panel, data: region },
+                        point: channelsTouchPoint.clone(),
+                        distance: rawDistance,
+                        region
+                      };
+                      uiRayLength =
+                        uiRayLength === null
+                          ? clampedDistance
+                          : Math.min(uiRayLength, clampedDistance);
+                      nextChannelsHoverRegion = region;
+                      if (
+                        entry.isSelecting &&
+                        entry.activeUiTarget?.type === 'channels-slider' &&
+                        region.targetType === 'channels-slider'
+                      ) {
+                        applyVrChannelsSliderFromPoint(region, channelsTouchPoint);
+                      }
+                    } else if (
+                      entry.isSelecting &&
+                      entry.activeUiTarget?.type === 'channels-slider' &&
+                      entry.activeUiTarget.data &&
+                      !(entry.activeUiTarget.data as VrChannelsInteractiveRegion).disabled
+                    ) {
+                      const activeRegion = entry.activeUiTarget
+                        .data as VrChannelsInteractiveRegion;
+                      channelsCandidate = {
+                        target: { type: 'channels-slider', object: channelsHudInstance.panel, data: activeRegion },
+                        point: channelsTouchPoint.clone(),
+                        distance: rawDistance,
+                        region: activeRegion
+                      };
+                      uiRayLength =
+                        uiRayLength === null
+                          ? clampedDistance
+                          : Math.min(uiRayLength, clampedDistance);
+                      applyVrChannelsSliderFromPoint(activeRegion, channelsTouchPoint);
+                      nextChannelsHoverRegion = activeRegion;
+                    }
+                  }
+                }
+              }
+            }
+          }
 
-        if (chosenCandidate) {
-          entry.hoverUiTarget = chosenCandidate.target;
-          entry.hasHoverUiPoint = true;
-          entry.hoverUiPoint.copy(chosenCandidate.point);
-          const candidateDistance = Math.max(0.12, Math.min(chosenCandidate.distance, 8));
-          uiRayLength = uiRayLength === null ? candidateDistance : Math.min(uiRayLength, candidateDistance);
-          if (
-            chosenCandidate.target.type.startsWith('channels-') &&
-            chosenCandidate.region
-          ) {
-            nextChannelsHoverRegion = chosenCandidate.region;
+          let chosenCandidate: {
+            target: VrUiTarget;
+            point: THREE.Vector3;
+            distance: number;
+            region?: VrChannelsInteractiveRegion | null;
+          } | null = null;
+          if (playbackCandidate && channelsCandidate) {
+            chosenCandidate =
+              playbackCandidate.distance <= channelsCandidate.distance
+                ? playbackCandidate
+                : channelsCandidate;
+          } else {
+            chosenCandidate = playbackCandidate ?? channelsCandidate ?? null;
+          }
+
+          if (chosenCandidate) {
+            entry.hoverUiTarget = chosenCandidate.target;
+            entry.hasHoverUiPoint = true;
+            entry.hoverUiPoint.copy(chosenCandidate.point);
+            const candidateDistance = Math.max(0.12, Math.min(chosenCandidate.distance, 8));
+            uiRayLength =
+              uiRayLength === null ? candidateDistance : Math.min(uiRayLength, candidateDistance);
+            if (
+              chosenCandidate.target.type.startsWith('channels-') &&
+              chosenCandidate.region
+            ) {
+              nextChannelsHoverRegion = chosenCandidate.region;
+            }
           }
         }
 
@@ -3211,6 +3608,8 @@ function VolumeViewer({
         } else if (uiType === 'playback-slider') {
           sliderHoveredAny = true;
         } else if (uiType === 'playback-panel-grab') {
+          hoverTrackId = null;
+        } else if (uiType === 'volume-translate-handle' || uiType === 'volume-rotate-handle') {
           hoverTrackId = null;
         }
         if (entry.activeUiTarget?.type === 'playback-slider') {
@@ -3314,6 +3713,18 @@ function VolumeViewer({
 
       applyVrPlaybackHoverState(playHoveredAny, sliderHoveredAny, sliderActiveAny);
 
+      const rotationGuideInstance = vrRotationGuideRef.current;
+      const rotationGuideMaterial = vrRotationGuideMaterialRef.current;
+      if (rotationGuideInstance && rotationGuideMaterial) {
+        const shouldShowGuide = rotationHandleHovered || rotationHandleActive;
+        rotationGuideInstance.visible = shouldShowGuide;
+        const desiredOpacity = rotationHandleActive ? 0.28 : 0.18;
+        if (Math.abs(rotationGuideMaterial.opacity - desiredOpacity) > 1e-3) {
+          rotationGuideMaterial.opacity = desiredOpacity;
+          rotationGuideMaterial.needsUpdate = true;
+        }
+      }
+
       const channelsHudInstance = vrChannelsHudRef.current;
       const isSameRegion = (
         a: VrChannelsInteractiveRegion | null,
@@ -3375,6 +3786,7 @@ function VolumeViewer({
       updateVrPlaybackHud();
       updateVrChannelsHud();
       updateControllerRays();
+      updateVolumeHandles();
       handleResize();
     };
 
@@ -3388,6 +3800,7 @@ function VolumeViewer({
       refreshControllerVisibility();
       setVrPlaybackHudVisible(false);
       setVrChannelsHudVisible(false);
+      updateVolumeHandles();
       handleResize();
     };
 
@@ -3743,6 +4156,9 @@ function VolumeViewer({
         entry.controller.removeEventListener('selectstart', entry.onSelectStart);
         entry.controller.removeEventListener('selectend', entry.onSelectEnd);
         entry.controller.remove(entry.ray);
+        entry.controller.remove(entry.touchIndicator);
+        entry.touchIndicator.geometry?.dispose?.();
+        (entry.touchIndicator.material as THREE.Material)?.dispose?.();
         scene.remove(entry.controller);
         scene.remove(entry.grip);
         entry.rayGeometry.dispose();
@@ -3773,6 +4189,10 @@ function VolumeViewer({
           volumeRootGroup.parent.remove(volumeRootGroup);
         }
       }
+      vrTranslationHandleRef.current = null;
+      vrRotationHandleRef.current = null;
+      vrRotationGuideRef.current = null;
+      vrRotationGuideMaterialRef.current = null;
       volumeRootGroupRef.current = null;
       clearHoverState();
 
@@ -3809,7 +4229,8 @@ function VolumeViewer({
     containerNode,
     onRegisterVrSession,
     onVrSessionEnded,
-    onVrSessionStarted
+    onVrSessionStarted,
+    updateVolumeHandles
   ]);
 
   useEffect(() => {
