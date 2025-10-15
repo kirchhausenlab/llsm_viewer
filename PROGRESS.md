@@ -6,6 +6,12 @@
 - Reset the renderer sizing and animation loop after WebXR sessions end, restoring the desktop viewer instead of leaving a blank
   canvas when exiting VR.
 
+## VR HUD tactile interaction
+- Replaced ray-only HUD hit tests with controller-origin proximity checks so playback and channel controls require physically
+  touching the panels before activating.
+- Adjusted the immersive HUD cylinder radius to 0.9 m to keep both panels within comfortable reach while emphasizing the new
+  touch interaction.
+
 ## VR HUD orientation and staging offset
 - Locked the VR playback HUD to the camera's yaw so it always stands vertically in-headset while remaining draggable.
 - Offset the normalized volume root by 0.8 m upward and 0.3 m forward when immersive sessions start, then restore the original placement after exiting VR.

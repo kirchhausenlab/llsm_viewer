@@ -348,11 +348,14 @@ const VR_CHANNELS_FONT_SIZES = {
   value: 34,
   small: 28
 } as const;
-const VR_HUD_CYLINDER_RADIUS = 1;
+const VR_HUD_CYLINDER_RADIUS = 0.9;
 const VR_HUD_CYLINDER_MIN_HEIGHT = 0;
 const VR_HUD_CYLINDER_MAX_HEIGHT = 2;
 const VR_HUD_CYLINDER_EPSILON = 1e-6;
 const VR_VOLUME_BASE_OFFSET = new THREE.Vector3(0, 1.2, -0.3);
+const VR_UI_TOUCH_DISTANCE = 0.05;
+const VR_UI_TOUCH_DISTANCE_ACTIVE = 0.07;
+const VR_UI_TOUCH_SURFACE_MARGIN = 0.02;
 
 function setVrPlaybackSliderFraction(hud: VrPlaybackHud, fraction: number) {
   const clamped = Math.min(Math.max(fraction, 0), 1);
@@ -2884,6 +2887,12 @@ function VolumeViewer({
 
     const controllerTempMatrix = new THREE.Matrix4();
     const controllerProjectedPoint = new THREE.Vector3();
+    const playbackTouchPoint = new THREE.Vector3();
+    const playbackLocalPoint = new THREE.Vector3();
+    const playbackPlaneNormal = new THREE.Vector3();
+    const playbackSliderPoint = new THREE.Vector3();
+    const channelsTouchPoint = new THREE.Vector3();
+    const channelsLocalPoint = new THREE.Vector3();
 
     let lastControllerRaySummary:
       | {
@@ -2971,189 +2980,199 @@ function VolumeViewer({
           region: VrChannelsInteractiveRegion | null;
         } | null = null;
 
-        if (playbackHudInstance && playbackHudInstance.interactables.length > 0) {
-          const uiIntersections = entry.raycaster.intersectObjects(
-            playbackHudInstance.interactables,
-            true
-          ) as Array<{ object: THREE.Object3D; distance: number; point: THREE.Vector3 }>;
-          if (uiIntersections.length > 0) {
-            const resolvedTarget = resolveVrUiTarget(uiIntersections[0].object);
-            if (resolvedTarget) {
-              playbackCandidate = {
-                target: resolvedTarget,
-                point: uiIntersections[0].point.clone(),
-                distance: uiIntersections[0].distance
-              };
-              uiRayLength = Math.max(0.12, Math.min(uiIntersections[0].distance, 8));
-            }
-          }
-        }
-
-        if (entry.isSelecting && entry.activeUiTarget?.type === 'playback-slider' && playbackHudInstance) {
-          const sliderIntersections = entry.raycaster.intersectObject(
-            playbackHudInstance.sliderHitArea,
-            false
-          ) as Array<{ distance: number; point: THREE.Vector3 }>;
-          if (sliderIntersections.length > 0) {
-            const sliderDistance = Math.max(0.12, Math.min(sliderIntersections[0].distance, 8));
-            uiRayLength =
-              uiRayLength === null ? sliderDistance : Math.min(uiRayLength, sliderDistance);
-            playbackCandidate = {
-              target: { type: 'playback-slider', object: playbackHudInstance.sliderHitArea },
-              point: sliderIntersections[0].point.clone(),
-              distance: sliderIntersections[0].distance
-            };
-            if (!playbackStateRef.current.playbackDisabled) {
-              applySliderFromWorldPoint(sliderIntersections[0].point);
-            }
-          }
-        }
-
-        if (entry.isSelecting && entry.activeUiTarget?.type === 'playback-panel-grab' && playbackHudInstance) {
-          const handleIntersections = entry.raycaster.intersectObject(
-            playbackHudInstance.panelGrabHandle,
-            false
-          ) as Array<{ distance: number; point: THREE.Vector3 }>;
-          let grabPoint: THREE.Vector3 | null = null;
-          if (handleIntersections.length > 0) {
-            grabPoint = handleIntersections[0].point;
-            const handleDistance = Math.max(0.12, Math.min(handleIntersections[0].distance, 8));
-            uiRayLength =
-              uiRayLength === null ? handleDistance : Math.min(uiRayLength, handleDistance);
-          } else {
-            const plane = vrHudPlaneRef.current;
-            const planePoint = vrHudPlanePointRef.current;
-            playbackHudInstance.panelGrabHandle.getWorldPosition(planePoint);
-            const planeNormal = vrHudForwardRef.current;
-            planeNormal.set(0, 0, 1).applyQuaternion(playbackHudInstance.group.quaternion).normalize();
-            plane.setFromNormalAndCoplanarPoint(planeNormal, planePoint);
-            const planeIntersection = vrHudIntersectionRef.current;
-            if (entry.raycaster.ray.intersectPlane(plane, planeIntersection)) {
-              grabPoint = planeIntersection.clone();
-            }
-          }
-          if (grabPoint) {
-            const grabDistance = Math.max(
-              0.12,
-              Math.min(entry.rayOrigin.distanceTo(grabPoint), 8)
-            );
-            uiRayLength = uiRayLength === null ? grabDistance : Math.min(uiRayLength, grabDistance);
-            playbackCandidate = {
-              target: { type: 'playback-panel-grab', object: playbackHudInstance.panelGrabHandle },
-              point: grabPoint.clone(),
-              distance: entry.rayOrigin.distanceTo(grabPoint)
-            };
-          }
-        }
-
-        if (channelsHudInstance && channelsHudInstance.interactables.length > 0) {
-          const channelIntersections = entry.raycaster.intersectObjects(
-            channelsHudInstance.interactables,
-            true
-          ) as Array<{ object: THREE.Object3D; distance: number; point: THREE.Vector3 }>;
-          if (channelIntersections.length > 0) {
-            let resolvedTarget = resolveVrUiTarget(channelIntersections[0].object);
-            let region: VrChannelsInteractiveRegion | null = null;
-            if (resolvedTarget?.type === 'channels-panel') {
-              region = resolveChannelsRegionFromPoint(channelsHudInstance, channelIntersections[0].point);
-              if (region?.disabled) {
-                region = null;
-                resolvedTarget = null;
-              } else if (region) {
-                resolvedTarget = {
-                  type: region.targetType,
-                  object: channelsHudInstance.panel,
-                  data: region
+        if (playbackHudInstance) {
+          const plane = vrHudPlaneRef.current;
+          const planePoint = vrHudPlanePointRef.current;
+          playbackHudInstance.panel.getWorldPosition(planePoint);
+          const planeNormal = vrHudForwardRef.current;
+          planeNormal.set(0, 0, 1).applyQuaternion(playbackHudInstance.group.quaternion).normalize();
+          plane.setFromNormalAndCoplanarPoint(planeNormal, planePoint);
+          const activeType = entry.activeUiTarget?.type ?? null;
+          const activePlayback = activeType ? activeType.startsWith('playback-') : false;
+          const touchLimit = activePlayback ? VR_UI_TOUCH_DISTANCE_ACTIVE : VR_UI_TOUCH_DISTANCE;
+          const planeDistance = Math.abs(plane.distanceToPoint(entry.rayOrigin));
+          if (planeDistance <= touchLimit) {
+            plane.projectPoint(entry.rayOrigin, playbackTouchPoint);
+            playbackPlaneNormal.copy(planeNormal);
+            playbackLocalPoint.copy(playbackTouchPoint);
+            playbackHudInstance.group.worldToLocal(playbackLocalPoint);
+            const surfaceMargin = activePlayback
+              ? VR_UI_TOUCH_SURFACE_MARGIN * 1.5
+              : VR_UI_TOUCH_SURFACE_MARGIN;
+            const halfWidth = VR_PLAYBACK_PANEL_WIDTH / 2 + surfaceMargin;
+            const halfHeight = VR_PLAYBACK_PANEL_HEIGHT / 2 + surfaceMargin;
+            if (
+              playbackLocalPoint.x >= -halfWidth &&
+              playbackLocalPoint.x <= halfWidth &&
+              playbackLocalPoint.y >= -halfHeight &&
+              playbackLocalPoint.y <= halfHeight
+            ) {
+              const rawDistance = entry.rayOrigin.distanceTo(playbackTouchPoint);
+              const clampedDistance = Math.max(0.12, Math.min(rawDistance, 8));
+              const panelGrabActive = activeType === 'playback-panel-grab';
+              const handleMinY = VR_PLAYBACK_PANEL_HEIGHT / 2 - 0.06 - surfaceMargin;
+              const handleMaxY = VR_PLAYBACK_PANEL_HEIGHT / 2 + surfaceMargin;
+              const inHandleBand =
+                playbackLocalPoint.y >= handleMinY && playbackLocalPoint.y <= handleMaxY;
+              if (panelGrabActive || inHandleBand) {
+                playbackCandidate = {
+                  target: { type: 'playback-panel-grab', object: playbackHudInstance.panelGrabHandle },
+                  point: playbackTouchPoint.clone(),
+                  distance: rawDistance
                 };
-              }
-            } else if (resolvedTarget && resolvedTarget.type.startsWith('channels-')) {
-              region = (resolvedTarget.data as VrChannelsInteractiveRegion) ?? null;
-              if (region?.disabled) {
-                resolvedTarget = null;
-                region = null;
-              }
-            }
-            if (resolvedTarget) {
-              channelsCandidate = {
-                target: resolvedTarget,
-                point: channelIntersections[0].point.clone(),
-                distance: channelIntersections[0].distance,
-                region: region ?? null
-              };
-              const channelDistance = Math.max(0.12, Math.min(channelIntersections[0].distance, 8));
-              uiRayLength =
-                uiRayLength === null ? channelDistance : Math.min(uiRayLength, channelDistance);
-              if (region) {
-                nextChannelsHoverRegion = region;
+                uiRayLength =
+                  uiRayLength === null ? clampedDistance : Math.min(uiRayLength, clampedDistance);
+              } else {
+                const sliderActive = activeType === 'playback-slider';
+                const sliderMargin = sliderActive
+                  ? VR_UI_TOUCH_SURFACE_MARGIN * 1.5
+                  : VR_UI_TOUCH_SURFACE_MARGIN;
+                const sliderHalfWidth =
+                  (playbackHudInstance.sliderWidth + 0.04) / 2 + sliderMargin;
+                const sliderHalfHeight = 0.08 / 2 + sliderMargin;
+                const sliderLocalX =
+                  playbackLocalPoint.x - playbackHudInstance.sliderGroup.position.x;
+                const sliderLocalY =
+                  playbackLocalPoint.y - playbackHudInstance.sliderGroup.position.y;
+                const inSliderArea =
+                  sliderLocalX >= -sliderHalfWidth &&
+                  sliderLocalX <= sliderHalfWidth &&
+                  sliderLocalY >= -sliderHalfHeight &&
+                  sliderLocalY <= sliderHalfHeight;
+                const playCenter = playbackHudInstance.playButton.position;
+                const playRadius = 0.045 + surfaceMargin;
+                const playDeltaX = playbackLocalPoint.x - playCenter.x;
+                const playDeltaY = playbackLocalPoint.y - playCenter.y;
+                const inPlayButton =
+                  playDeltaX * playDeltaX + playDeltaY * playDeltaY <= playRadius * playRadius;
+                if (inSliderArea) {
+                  const sliderDepth =
+                    playbackHudInstance.sliderGroup.position.z +
+                    playbackHudInstance.sliderHitArea.position.z;
+                  playbackSliderPoint
+                    .copy(playbackTouchPoint)
+                    .addScaledVector(playbackPlaneNormal, sliderDepth);
+                  playbackCandidate = {
+                    target: { type: 'playback-slider', object: playbackHudInstance.sliderHitArea },
+                    point: playbackSliderPoint.clone(),
+                    distance: rawDistance
+                  };
+                  uiRayLength =
+                    uiRayLength === null
+                      ? clampedDistance
+                      : Math.min(uiRayLength, clampedDistance);
+                  if (
+                    entry.isSelecting &&
+                    sliderActive &&
+                    !playbackStateRef.current.playbackDisabled
+                  ) {
+                    applySliderFromWorldPoint(playbackSliderPoint);
+                  }
+                } else if (inPlayButton) {
+                  playbackCandidate = {
+                    target: { type: 'playback-play-toggle', object: playbackHudInstance.playButton },
+                    point: playbackTouchPoint.clone(),
+                    distance: rawDistance
+                  };
+                  uiRayLength =
+                    uiRayLength === null
+                      ? clampedDistance
+                      : Math.min(uiRayLength, clampedDistance);
+                }
               }
             }
           }
         }
 
-        if (
-          entry.isSelecting &&
-          entry.activeUiTarget?.type === 'channels-slider' &&
-          channelsHudInstance &&
-          entry.activeUiTarget.data &&
-          !(entry.activeUiTarget.data as VrChannelsInteractiveRegion).disabled
-        ) {
-          const region = entry.activeUiTarget.data as VrChannelsInteractiveRegion;
-          const panelIntersections = entry.raycaster.intersectObject(
-            channelsHudInstance.panel,
-            false
-          ) as Array<{ distance: number; point: THREE.Vector3 }>;
-          if (panelIntersections.length > 0) {
-            const sliderDistance = Math.max(0.12, Math.min(panelIntersections[0].distance, 8));
-            uiRayLength =
-              uiRayLength === null ? sliderDistance : Math.min(uiRayLength, sliderDistance);
-            channelsCandidate = {
-              target: { type: 'channels-slider', object: channelsHudInstance.panel, data: region },
-              point: panelIntersections[0].point.clone(),
-              distance: panelIntersections[0].distance,
-              region
-            };
-            entry.hoverUiPoint.copy(panelIntersections[0].point);
-            entry.hasHoverUiPoint = true;
-            applyVrChannelsSliderFromPoint(region, panelIntersections[0].point);
-            nextChannelsHoverRegion = region;
-          }
-        }
-
-        if (entry.isSelecting && entry.activeUiTarget?.type === 'channels-panel-grab' && channelsHudInstance) {
-          const handleIntersections = entry.raycaster.intersectObject(
-            channelsHudInstance.panelGrabHandle,
-            false
-          ) as Array<{ distance: number; point: THREE.Vector3 }>;
-          let grabPoint: THREE.Vector3 | null = null;
-          if (handleIntersections.length > 0) {
-            grabPoint = handleIntersections[0].point;
-            const handleDistance = Math.max(0.12, Math.min(handleIntersections[0].distance, 8));
-            uiRayLength =
-              uiRayLength === null ? handleDistance : Math.min(uiRayLength, handleDistance);
-          } else {
-            const plane = vrHudPlaneRef.current;
-            const planePoint = vrHudPlanePointRef.current;
-            channelsHudInstance.panelGrabHandle.getWorldPosition(planePoint);
-            const planeNormal = vrHudForwardRef.current;
-            planeNormal.set(0, 0, 1).applyQuaternion(channelsHudInstance.group.quaternion).normalize();
-            plane.setFromNormalAndCoplanarPoint(planeNormal, planePoint);
-            const planeIntersection = vrHudIntersectionRef.current;
-            if (entry.raycaster.ray.intersectPlane(plane, planeIntersection)) {
-              grabPoint = planeIntersection.clone();
+        if (channelsHudInstance) {
+          const plane = vrHudPlaneRef.current;
+          const planePoint = vrHudPlanePointRef.current;
+          channelsHudInstance.panel.getWorldPosition(planePoint);
+          const planeNormal = vrHudForwardRef.current;
+          planeNormal.set(0, 0, 1).applyQuaternion(channelsHudInstance.group.quaternion).normalize();
+          plane.setFromNormalAndCoplanarPoint(planeNormal, planePoint);
+          const activeType = entry.activeUiTarget?.type ?? null;
+          const activeChannels = activeType ? activeType.startsWith('channels-') : false;
+          const touchLimit = activeChannels ? VR_UI_TOUCH_DISTANCE_ACTIVE : VR_UI_TOUCH_DISTANCE;
+          const planeDistance = Math.abs(plane.distanceToPoint(entry.rayOrigin));
+          if (planeDistance <= touchLimit) {
+            plane.projectPoint(entry.rayOrigin, channelsTouchPoint);
+            channelsLocalPoint.copy(channelsTouchPoint);
+            channelsHudInstance.group.worldToLocal(channelsLocalPoint);
+            const surfaceMargin = activeChannels
+              ? VR_UI_TOUCH_SURFACE_MARGIN * 1.5
+              : VR_UI_TOUCH_SURFACE_MARGIN;
+            const halfWidth = channelsHudInstance.width / 2 + surfaceMargin;
+            const halfHeight = channelsHudInstance.height / 2 + surfaceMargin;
+            if (
+              channelsLocalPoint.x >= -halfWidth &&
+              channelsLocalPoint.x <= halfWidth &&
+              channelsLocalPoint.y >= -halfHeight &&
+              channelsLocalPoint.y <= halfHeight
+            ) {
+              const rawDistance = entry.rayOrigin.distanceTo(channelsTouchPoint);
+              const clampedDistance = Math.max(0.12, Math.min(rawDistance, 8));
+              const panelGrabActive = activeType === 'channels-panel-grab';
+              const handleMinY = channelsHudInstance.height / 2 - 0.06 - surfaceMargin;
+              const handleMaxY = channelsHudInstance.height / 2 + surfaceMargin;
+              const inHandleBand =
+                channelsLocalPoint.y >= handleMinY && channelsLocalPoint.y <= handleMaxY;
+              if (panelGrabActive || inHandleBand) {
+                channelsCandidate = {
+                  target: { type: 'channels-panel-grab', object: channelsHudInstance.panelGrabHandle },
+                  point: channelsTouchPoint.clone(),
+                  distance: rawDistance,
+                  region: null
+                };
+                uiRayLength =
+                  uiRayLength === null ? clampedDistance : Math.min(uiRayLength, clampedDistance);
+              } else {
+                let region = resolveChannelsRegionFromPoint(channelsHudInstance, channelsTouchPoint);
+                if (region?.disabled) {
+                  region = null;
+                }
+                if (region) {
+                  channelsCandidate = {
+                    target: { type: region.targetType, object: channelsHudInstance.panel, data: region },
+                    point: channelsTouchPoint.clone(),
+                    distance: rawDistance,
+                    region
+                  };
+                  uiRayLength =
+                    uiRayLength === null
+                      ? clampedDistance
+                      : Math.min(uiRayLength, clampedDistance);
+                  nextChannelsHoverRegion = region;
+                  if (
+                    entry.isSelecting &&
+                    entry.activeUiTarget?.type === 'channels-slider' &&
+                    region.targetType === 'channels-slider'
+                  ) {
+                    applyVrChannelsSliderFromPoint(region, channelsTouchPoint);
+                  }
+                } else if (
+                  entry.isSelecting &&
+                  entry.activeUiTarget?.type === 'channels-slider' &&
+                  entry.activeUiTarget.data &&
+                  !(entry.activeUiTarget.data as VrChannelsInteractiveRegion).disabled
+                ) {
+                  const activeRegion = entry.activeUiTarget
+                    .data as VrChannelsInteractiveRegion;
+                  channelsCandidate = {
+                    target: { type: 'channels-slider', object: channelsHudInstance.panel, data: activeRegion },
+                    point: channelsTouchPoint.clone(),
+                    distance: rawDistance,
+                    region: activeRegion
+                  };
+                  uiRayLength =
+                    uiRayLength === null
+                      ? clampedDistance
+                      : Math.min(uiRayLength, clampedDistance);
+                  applyVrChannelsSliderFromPoint(activeRegion, channelsTouchPoint);
+                  nextChannelsHoverRegion = activeRegion;
+                }
+              }
             }
-          }
-          if (grabPoint) {
-            const grabDistance = Math.max(
-              0.12,
-              Math.min(entry.rayOrigin.distanceTo(grabPoint), 8)
-            );
-            uiRayLength = uiRayLength === null ? grabDistance : Math.min(uiRayLength, grabDistance);
-            channelsCandidate = {
-              target: { type: 'channels-panel-grab', object: channelsHudInstance.panelGrabHandle },
-              point: grabPoint.clone(),
-              distance: entry.rayOrigin.distanceTo(grabPoint),
-              region: null
-            };
           }
         }
 
