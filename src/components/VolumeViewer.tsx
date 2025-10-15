@@ -441,7 +441,7 @@ const DEFAULT_TRACK_OPACITY = 0.9;
 const DEFAULT_TRACK_LINE_WIDTH = 1;
 
 const VR_PLAYBACK_PANEL_WIDTH = 0.54;
-const VR_PLAYBACK_PANEL_HEIGHT = 0.24;
+const VR_PLAYBACK_PANEL_HEIGHT = 0.3;
 const VR_PLAYBACK_VOLUME_MARGIN = 0.12;
 const VR_PLAYBACK_FALLBACK_HORIZONTAL_OFFSET = -0.6;
 const VR_PLAYBACK_VERTICAL_OFFSET = 0;
@@ -1977,7 +1977,7 @@ function VolumeViewer({
     group.add(exitButton);
 
     const sliderGroup = new THREE.Group();
-    sliderGroup.position.set(0.08, 0, 0.01);
+    sliderGroup.position.set(0.08, -0.06, 0.01);
     group.add(sliderGroup);
 
     const sliderWidth = 0.32;
@@ -2036,7 +2036,7 @@ function VolumeViewer({
       side: THREE.DoubleSide
     });
     const labelMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.06), labelMaterial);
-    labelMesh.position.set(0.08, -0.085, 0.002);
+    labelMesh.position.set(0.08, -0.12, 0.002);
     group.add(labelMesh);
 
     const hud: VrPlaybackHud = {
