@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { MutableRefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { Line2 } from 'three/examples/jsm/lines/Line2';
@@ -211,9 +211,12 @@ type VrUiTargetType =
   | 'playback-reset-view'
   | 'playback-exit-vr'
   | 'playback-toggle-mode'
+  | 'playback-panel'
+  | 'playback-panel-yaw'
   | 'playback-panel-grab'
   | 'channels-panel'
   | 'channels-panel-grab'
+  | 'channels-panel-yaw'
   | 'channels-tab'
   | 'channels-visibility'
   | 'channels-reset'
@@ -222,6 +225,7 @@ type VrUiTargetType =
   | 'channels-color'
   | 'tracks-panel'
   | 'tracks-panel-grab'
+  | 'tracks-panel-yaw'
   | 'tracks-tab'
   | 'tracks-stop-follow'
   | 'tracks-slider'
@@ -435,24 +439,28 @@ type ControllerEntry = {
         radius: number;
       }
     | null;
+  hudYawState:
+    | {
+        hud: 'playback' | 'channels' | 'tracks';
+        primaryIndex: number;
+        initialYaw: number;
+        initialAngle: number;
+      }
+    | null;
 };
+
+type VrHudPlacement = { position: THREE.Vector3; yaw: number };
 
 const DEFAULT_TRACK_OPACITY = 0.9;
 const DEFAULT_TRACK_LINE_WIDTH = 1;
 
 const VR_PLAYBACK_PANEL_WIDTH = 0.54;
 const VR_PLAYBACK_PANEL_HEIGHT = 0.3;
-const VR_PLAYBACK_VOLUME_MARGIN = 0.12;
-const VR_PLAYBACK_FALLBACK_HORIZONTAL_OFFSET = -0.6;
 const VR_PLAYBACK_VERTICAL_OFFSET = 0;
-const VR_PLAYBACK_DEPTH_OFFSET = 0;
 const VR_PLAYBACK_CAMERA_ANCHOR_OFFSET = new THREE.Vector3(0, -0.18, -0.65);
 const VR_CHANNELS_PANEL_WIDTH = 0.52;
 const VR_CHANNELS_PANEL_HEIGHT = 0.52;
-const VR_CHANNELS_VOLUME_MARGIN = 0.12;
-const VR_CHANNELS_FALLBACK_HORIZONTAL_OFFSET = 0.6;
 const VR_CHANNELS_VERTICAL_OFFSET = 0;
-const VR_CHANNELS_DEPTH_OFFSET = 0;
 const VR_CHANNELS_CAMERA_ANCHOR_OFFSET = new THREE.Vector3(0.4, -0.18, -0.65);
 const VR_CHANNELS_CANVAS_WIDTH = 1024;
 const VR_CHANNELS_CANVAS_HEIGHT = 1024;
@@ -469,10 +477,7 @@ const VR_CHANNELS_FONT_SIZES = {
 } as const;
 const VR_TRACKS_PANEL_WIDTH = 0.58;
 const VR_TRACKS_PANEL_HEIGHT = 0.64;
-const VR_TRACKS_VOLUME_MARGIN = 0.18;
-const VR_TRACKS_FALLBACK_HORIZONTAL_OFFSET = 0.95;
 const VR_TRACKS_VERTICAL_OFFSET = -0.12;
-const VR_TRACKS_DEPTH_OFFSET = 0;
 const VR_TRACKS_CAMERA_ANCHOR_OFFSET = new THREE.Vector3(0.7, -0.22, -0.7);
 const VR_TRACKS_CANVAS_WIDTH = 1180;
 const VR_TRACKS_CANVAS_HEIGHT = 1320;
@@ -489,10 +494,9 @@ const VR_TRACKS_FONT_SIZES = {
   track: 30,
   small: 26
 } as const;
-const VR_HUD_CYLINDER_RADIUS = 0.9;
-const VR_HUD_CYLINDER_MIN_HEIGHT = 0;
-const VR_HUD_CYLINDER_MAX_HEIGHT = 2;
-const VR_HUD_CYLINDER_EPSILON = 1e-6;
+const VR_HUD_MIN_HEIGHT = 0;
+const VR_HUD_FRONT_MARGIN = 0.24;
+const VR_HUD_LATERAL_MARGIN = 0.1;
 const VR_VOLUME_BASE_OFFSET = new THREE.Vector3(0, 1.2, -0.3);
 const VR_UI_TOUCH_DISTANCE = 0.05;
 const VR_UI_TOUCH_SURFACE_MARGIN = 0.02;
@@ -545,6 +549,7 @@ function resolveVrUiTarget(object: THREE.Object3D | null): VrUiTarget | null {
           target.type === 'playback-slider' ||
           target.type === 'playback-reset-view' ||
           target.type === 'playback-exit-vr' ||
+          target.type === 'playback-panel' ||
           target.type === 'playback-panel-grab' ||
           target.type === 'channels-panel' ||
           target.type === 'channels-panel-grab' ||
@@ -569,6 +574,22 @@ function resolveVrUiTarget(object: THREE.Object3D | null): VrUiTarget | null {
       }
     }
     current = current.parent ?? null;
+  }
+  return null;
+}
+
+function getHudCategoryFromTarget(type: VrUiTargetType | null): 'playback' | 'channels' | 'tracks' | null {
+  if (!type) {
+    return null;
+  }
+  if (type.startsWith('playback-')) {
+    return 'playback';
+  }
+  if (type.startsWith('channels-')) {
+    return 'channels';
+  }
+  if (type.startsWith('tracks-')) {
+    return 'tracks';
   }
   return null;
 }
@@ -752,9 +773,9 @@ function VolumeViewer({
   const vrPlaybackHudRef = useRef<VrPlaybackHud | null>(null);
   const vrChannelsHudRef = useRef<VrChannelsHud | null>(null);
   const vrTracksHudRef = useRef<VrTracksHud | null>(null);
-  const vrPlaybackHudPlacementRef = useRef<{ position: THREE.Vector3 } | null>(null);
-  const vrChannelsHudPlacementRef = useRef<{ position: THREE.Vector3 } | null>(null);
-  const vrTracksHudPlacementRef = useRef<{ position: THREE.Vector3 } | null>(null);
+  const vrPlaybackHudPlacementRef = useRef<VrHudPlacement | null>(null);
+  const vrChannelsHudPlacementRef = useRef<VrHudPlacement | null>(null);
+  const vrTracksHudPlacementRef = useRef<VrHudPlacement | null>(null);
   const vrHudPlaneRef = useRef(new THREE.Plane());
   const vrHudPlanePointRef = useRef(new THREE.Vector3());
   const vrPlaybackHudDragTargetRef = useRef(new THREE.Vector3());
@@ -767,6 +788,7 @@ function VolumeViewer({
   const vrHudForwardRef = useRef(new THREE.Vector3(0, 0, 1));
   const vrHudYawEulerRef = useRef(new THREE.Euler(0, 0, 0, 'YXZ'));
   const vrHudYawQuaternionRef = useRef(new THREE.Quaternion());
+  const vrHudYawVectorRef = useRef(new THREE.Vector3());
   const vrHandleWorldPointRef = useRef(new THREE.Vector3());
   const vrHandleSecondaryPointRef = useRef(new THREE.Vector3());
   const vrHandleQuaternionTempRef = useRef(new THREE.Quaternion());
@@ -896,16 +918,8 @@ function VolumeViewer({
     volumeRootHalfExtentsRef
   ]);
 
-  const constrainVectorToHudCylinder = useCallback((target: THREE.Vector3) => {
-    const horizontalLengthSq = target.x * target.x + target.z * target.z;
-    if (horizontalLengthSq < VR_HUD_CYLINDER_EPSILON) {
-      target.set(VR_HUD_CYLINDER_RADIUS, target.y, 0);
-    } else {
-      const scale = VR_HUD_CYLINDER_RADIUS / Math.sqrt(horizontalLengthSq);
-      target.x *= scale;
-      target.z *= scale;
-    }
-    target.y = Math.min(Math.max(target.y, VR_HUD_CYLINDER_MIN_HEIGHT), VR_HUD_CYLINDER_MAX_HEIGHT);
+  const constrainHudPlacementPosition = useCallback((target: THREE.Vector3) => {
+    target.y = Math.max(target.y, VR_HUD_MIN_HEIGHT);
   }, []);
 
   const renderVrTracksHud = useCallback((hud: VrTracksHud, state: VrTracksState) => {
@@ -1507,10 +1521,9 @@ function VolumeViewer({
     hud.panelTexture.needsUpdate = true;
   }, []);
 
-  const getHudFacingQuaternion = useCallback((position: THREE.Vector3) => {
+  const getHudQuaternionFromYaw = useCallback((yaw: number) => {
     const yawQuaternion = vrHudYawQuaternionRef.current;
     const yawEuler = vrHudYawEulerRef.current;
-    const yaw = Math.atan2(-position.x, -position.z);
     yawEuler.set(0, yaw, 0, 'YXZ');
     yawQuaternion.setFromEuler(yawEuler);
     return yawQuaternion;
@@ -1519,54 +1532,142 @@ function VolumeViewer({
   const updateHudGroupFromPlacement = useCallback(
     (
       hud: VrPlaybackHud | VrChannelsHud | VrTracksHud | null,
-      placement: { position: THREE.Vector3 } | null
+      placement: VrHudPlacement | null
     ) => {
       if (!hud || !placement) {
         return;
       }
       hud.group.position.copy(placement.position);
-      const quaternion = getHudFacingQuaternion(placement.position);
+      const quaternion = getHudQuaternionFromYaw(placement.yaw);
       hud.group.quaternion.copy(quaternion);
       hud.group.updateMatrixWorld(true);
     },
-    [getHudFacingQuaternion]
+    [getHudQuaternionFromYaw]
   );
 
   const setVrPlaybackHudPlacementPosition = useCallback(
     (nextPosition: THREE.Vector3) => {
-      const placement = vrPlaybackHudPlacementRef.current ?? { position: new THREE.Vector3() };
+      const placement =
+        vrPlaybackHudPlacementRef.current ?? ({ position: new THREE.Vector3(), yaw: 0 } satisfies VrHudPlacement);
       placement.position.copy(nextPosition);
-      constrainVectorToHudCylinder(placement.position);
+      constrainHudPlacementPosition(placement.position);
       vrPlaybackHudPlacementRef.current = placement;
       vrPlaybackHudDragTargetRef.current.copy(placement.position);
       updateHudGroupFromPlacement(vrPlaybackHudRef.current, placement);
     },
-    [constrainVectorToHudCylinder, updateHudGroupFromPlacement]
+    [constrainHudPlacementPosition, updateHudGroupFromPlacement]
   );
 
   const setVrChannelsHudPlacementPosition = useCallback(
     (nextPosition: THREE.Vector3) => {
-      const placement = vrChannelsHudPlacementRef.current ?? { position: new THREE.Vector3() };
+      const placement =
+        vrChannelsHudPlacementRef.current ?? ({ position: new THREE.Vector3(), yaw: 0 } satisfies VrHudPlacement);
       placement.position.copy(nextPosition);
-      constrainVectorToHudCylinder(placement.position);
+      constrainHudPlacementPosition(placement.position);
       vrChannelsHudPlacementRef.current = placement;
       vrChannelsHudDragTargetRef.current.copy(placement.position);
       updateHudGroupFromPlacement(vrChannelsHudRef.current, placement);
     },
-    [constrainVectorToHudCylinder, updateHudGroupFromPlacement]
+    [constrainHudPlacementPosition, updateHudGroupFromPlacement]
   );
 
   const setVrTracksHudPlacementPosition = useCallback(
     (nextPosition: THREE.Vector3) => {
-      const placement = vrTracksHudPlacementRef.current ?? { position: new THREE.Vector3() };
+      const placement =
+        vrTracksHudPlacementRef.current ?? ({ position: new THREE.Vector3(), yaw: 0 } satisfies VrHudPlacement);
       placement.position.copy(nextPosition);
-      constrainVectorToHudCylinder(placement.position);
+      constrainHudPlacementPosition(placement.position);
       vrTracksHudPlacementRef.current = placement;
       vrTracksHudDragTargetRef.current.copy(placement.position);
       updateHudGroupFromPlacement(vrTracksHudRef.current, placement);
     },
-    [constrainVectorToHudCylinder, updateHudGroupFromPlacement]
+    [constrainHudPlacementPosition, updateHudGroupFromPlacement]
   );
+
+  const setVrPlaybackHudPlacementYaw = useCallback(
+    (nextYaw: number) => {
+      const placement =
+        vrPlaybackHudPlacementRef.current ?? ({ position: new THREE.Vector3(), yaw: 0 } satisfies VrHudPlacement);
+      placement.yaw = nextYaw;
+      vrPlaybackHudPlacementRef.current = placement;
+      updateHudGroupFromPlacement(vrPlaybackHudRef.current, placement);
+    },
+    [updateHudGroupFromPlacement]
+  );
+
+  const setVrChannelsHudPlacementYaw = useCallback(
+    (nextYaw: number) => {
+      const placement =
+        vrChannelsHudPlacementRef.current ?? ({ position: new THREE.Vector3(), yaw: 0 } satisfies VrHudPlacement);
+      placement.yaw = nextYaw;
+      vrChannelsHudPlacementRef.current = placement;
+      updateHudGroupFromPlacement(vrChannelsHudRef.current, placement);
+    },
+    [updateHudGroupFromPlacement]
+  );
+
+  const setVrTracksHudPlacementYaw = useCallback(
+    (nextYaw: number) => {
+      const placement =
+        vrTracksHudPlacementRef.current ?? ({ position: new THREE.Vector3(), yaw: 0 } satisfies VrHudPlacement);
+      placement.yaw = nextYaw;
+      vrTracksHudPlacementRef.current = placement;
+      updateHudGroupFromPlacement(vrTracksHudRef.current, placement);
+    },
+    [updateHudGroupFromPlacement]
+  );
+
+  const setHudPlacement = useCallback(
+    (
+      placementRef: MutableRefObject<VrHudPlacement | null>,
+      dragTargetRef: MutableRefObject<THREE.Vector3>,
+      hudRef: MutableRefObject<VrPlaybackHud | VrChannelsHud | VrTracksHud | null>,
+      position: THREE.Vector3,
+      yaw: number
+    ) => {
+      const placement =
+        placementRef.current ?? ({ position: new THREE.Vector3(), yaw: 0 } satisfies VrHudPlacement);
+      placement.position.copy(position);
+      constrainHudPlacementPosition(placement.position);
+      placement.yaw = yaw;
+      placementRef.current = placement;
+      dragTargetRef.current.copy(placement.position);
+      updateHudGroupFromPlacement(hudRef.current, placement);
+    },
+    [constrainHudPlacementPosition, updateHudGroupFromPlacement]
+  );
+
+  const computeVolumeHudFrame = useCallback(() => {
+    const baseOffset = volumeRootBaseOffsetRef.current;
+    const volumeRootGroup = volumeRootGroupRef.current;
+    const halfExtents = volumeRootHalfExtentsRef.current;
+    if (!volumeRootGroup || baseOffset.lengthSq() <= 1e-6) {
+      return null;
+    }
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(volumeRootGroup.quaternion);
+    if (forward.lengthSq() <= 1e-8) {
+      forward.set(0, 0, -1);
+    } else {
+      forward.normalize();
+    }
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(volumeRootGroup.quaternion);
+    if (right.lengthSq() <= 1e-8) {
+      right.set(1, 0, 0);
+    } else {
+      right.normalize();
+    }
+    const up = new THREE.Vector3(0, 1, 0);
+    const frontDistance = (halfExtents ? halfExtents.z : 0) + VR_HUD_FRONT_MARGIN;
+    const center = new THREE.Vector3().copy(baseOffset).addScaledVector(forward, frontDistance);
+    const horizontalForward = new THREE.Vector3(forward.x, 0, forward.z);
+    if (horizontalForward.lengthSq() <= 1e-8) {
+      horizontalForward.set(0, 0, -1);
+    } else {
+      horizontalForward.normalize();
+    }
+    const yaw = Math.atan2(horizontalForward.x, horizontalForward.z);
+    return { center, forward, right, up, yaw };
+  }, []);
 
   const refreshVrHudPlacements = useCallback(() => {
     updateHudGroupFromPlacement(
@@ -1836,6 +1937,7 @@ function VolumeViewer({
       panelMaterial
     );
     panel.position.set(0, 0, 0);
+    panel.userData.vrUiTarget = { type: 'playback-panel' } satisfies { type: VrUiTargetType };
     group.add(panel);
 
     const panelGrabMaterial = new THREE.MeshBasicMaterial({
@@ -3097,41 +3199,45 @@ function VolumeViewer({
     if (!camera || !hud) {
       return;
     }
-    const offset = vrHudOffsetTempRef.current;
-    const target = vrPlaybackHudDragTargetRef.current;
-    const baseOffset = volumeRootBaseOffsetRef.current;
-    const dimensions = currentDimensionsRef.current;
-    if (baseOffset.lengthSq() > 1e-6) {
-      let horizontalOffset = VR_PLAYBACK_FALLBACK_HORIZONTAL_OFFSET;
-      if (dimensions) {
-        const { width, height, depth } = dimensions;
-        const maxDimension = Math.max(width, height, depth);
-        if (Number.isFinite(maxDimension) && maxDimension > 0) {
-          const scale = 1 / maxDimension;
-          horizontalOffset = -(width * scale) / 2 - VR_PLAYBACK_VOLUME_MARGIN;
-        }
-      }
-      offset.set(horizontalOffset, VR_PLAYBACK_VERTICAL_OFFSET, VR_PLAYBACK_DEPTH_OFFSET);
-      target.set(
-        baseOffset.x + offset.x,
-        baseOffset.y + offset.y,
-        baseOffset.z + offset.z
+    const frame = computeVolumeHudFrame();
+    const target = vrHudOffsetTempRef.current;
+    if (frame) {
+      target.copy(frame.center).addScaledVector(frame.up, VR_PLAYBACK_VERTICAL_OFFSET);
+      setHudPlacement(
+        vrPlaybackHudPlacementRef,
+        vrPlaybackHudDragTargetRef,
+        vrPlaybackHudRef,
+        target,
+        frame.yaw
       );
-    } else {
-      offset.copy(VR_PLAYBACK_CAMERA_ANCHOR_OFFSET);
-      const q = camera.quaternion;
-      const sinYaw = 2 * (q.w * q.y + q.x * q.z);
-      const cosYaw = 1 - 2 * (q.y * q.y + q.z * q.z);
-      const yaw = Math.atan2(sinYaw, cosYaw);
-      const cosValue = Math.cos(yaw);
-      const sinValue = Math.sin(yaw);
-      const rotatedX = offset.x * cosValue - offset.z * sinValue;
-      const rotatedZ = offset.x * sinValue + offset.z * cosValue;
-      offset.set(rotatedX, offset.y, rotatedZ);
-      target.copy(camera.position).add(offset);
+      return;
     }
-    setVrPlaybackHudPlacementPosition(target);
-  }, [setVrPlaybackHudPlacementPosition]);
+    target.copy(VR_PLAYBACK_CAMERA_ANCHOR_OFFSET);
+    const q = camera.quaternion;
+    const sinYaw = 2 * (q.w * q.y + q.x * q.z);
+    const cosYaw = 1 - 2 * (q.y * q.y + q.z * q.z);
+    const yaw = Math.atan2(sinYaw, cosYaw);
+    const cosValue = Math.cos(yaw);
+    const sinValue = Math.sin(yaw);
+    const rotatedX = target.x * cosValue - target.z * sinValue;
+    const rotatedZ = target.x * sinValue + target.z * cosValue;
+    target.set(rotatedX, target.y, rotatedZ);
+    target.add(camera.position);
+    setHudPlacement(
+      vrPlaybackHudPlacementRef,
+      vrPlaybackHudDragTargetRef,
+      vrPlaybackHudRef,
+      target,
+      yaw
+    );
+  }, [
+    cameraRef,
+    computeVolumeHudFrame,
+    setHudPlacement,
+    vrPlaybackHudDragTargetRef,
+    vrPlaybackHudPlacementRef,
+    vrPlaybackHudRef
+  ]);
 
   const resetVrChannelsHudPlacement = useCallback(() => {
     const camera = cameraRef.current;
@@ -3139,41 +3245,50 @@ function VolumeViewer({
     if (!camera || !hud) {
       return;
     }
-    const offset = vrHudOffsetTempRef.current;
-    const target = vrChannelsHudDragTargetRef.current;
-    const baseOffset = volumeRootBaseOffsetRef.current;
-    const dimensions = currentDimensionsRef.current;
-    if (baseOffset.lengthSq() > 1e-6) {
-      let horizontalOffset = VR_CHANNELS_FALLBACK_HORIZONTAL_OFFSET;
-      if (dimensions) {
-        const { width, height, depth } = dimensions;
-        const maxDimension = Math.max(width, height, depth);
-        if (Number.isFinite(maxDimension) && maxDimension > 0) {
-          const scale = 1 / maxDimension;
-          horizontalOffset = (width * scale) / 2 + VR_CHANNELS_VOLUME_MARGIN;
-        }
-      }
-      offset.set(horizontalOffset, VR_CHANNELS_VERTICAL_OFFSET, VR_CHANNELS_DEPTH_OFFSET);
-      target.set(
-        baseOffset.x + offset.x,
-        baseOffset.y + offset.y,
-        baseOffset.z + offset.z
+    const frame = computeVolumeHudFrame();
+    const target = vrHudOffsetTempRef.current;
+    if (frame) {
+      const lateralDistance =
+        VR_PLAYBACK_PANEL_WIDTH / 2 + VR_HUD_LATERAL_MARGIN + VR_CHANNELS_PANEL_WIDTH / 2;
+      target
+        .copy(frame.center)
+        .addScaledVector(frame.right, lateralDistance)
+        .addScaledVector(frame.up, VR_CHANNELS_VERTICAL_OFFSET);
+      setHudPlacement(
+        vrChannelsHudPlacementRef,
+        vrChannelsHudDragTargetRef,
+        vrChannelsHudRef,
+        target,
+        frame.yaw
       );
-    } else {
-      offset.copy(VR_CHANNELS_CAMERA_ANCHOR_OFFSET);
-      const q = camera.quaternion;
-      const sinYaw = 2 * (q.w * q.y + q.x * q.z);
-      const cosYaw = 1 - 2 * (q.y * q.y + q.z * q.z);
-      const yaw = Math.atan2(sinYaw, cosYaw);
-      const cosValue = Math.cos(yaw);
-      const sinValue = Math.sin(yaw);
-      const rotatedX = offset.x * cosValue - offset.z * sinValue;
-      const rotatedZ = offset.x * sinValue + offset.z * cosValue;
-      offset.set(rotatedX, offset.y, rotatedZ);
-      target.copy(camera.position).add(offset);
+      return;
     }
-    setVrChannelsHudPlacementPosition(target);
-  }, [setVrChannelsHudPlacementPosition]);
+    target.copy(VR_CHANNELS_CAMERA_ANCHOR_OFFSET);
+    const q = camera.quaternion;
+    const sinYaw = 2 * (q.w * q.y + q.x * q.z);
+    const cosYaw = 1 - 2 * (q.y * q.y + q.z * q.z);
+    const yaw = Math.atan2(sinYaw, cosYaw);
+    const cosValue = Math.cos(yaw);
+    const sinValue = Math.sin(yaw);
+    const rotatedX = target.x * cosValue - target.z * sinValue;
+    const rotatedZ = target.x * sinValue + target.z * cosValue;
+    target.set(rotatedX, target.y, rotatedZ);
+    target.add(camera.position);
+    setHudPlacement(
+      vrChannelsHudPlacementRef,
+      vrChannelsHudDragTargetRef,
+      vrChannelsHudRef,
+      target,
+      yaw
+    );
+  }, [
+    cameraRef,
+    computeVolumeHudFrame,
+    setHudPlacement,
+    vrChannelsHudDragTargetRef,
+    vrChannelsHudPlacementRef,
+    vrChannelsHudRef
+  ]);
 
   const resetVrTracksHudPlacement = useCallback(() => {
     const camera = cameraRef.current;
@@ -3181,37 +3296,50 @@ function VolumeViewer({
     if (!camera || !hud) {
       return;
     }
-    const offset = vrHudOffsetTempRef.current;
-    const target = vrTracksHudDragTargetRef.current;
-    const baseOffset = volumeRootBaseOffsetRef.current;
-    const dimensions = currentDimensionsRef.current;
-    if (baseOffset.lengthSq() > 1e-6) {
-      let horizontalOffset = VR_TRACKS_FALLBACK_HORIZONTAL_OFFSET;
-      if (dimensions) {
-        const { width, height, depth } = dimensions;
-        const maxDimension = Math.max(width, height, depth);
-        if (Number.isFinite(maxDimension) && maxDimension > 0) {
-          const scale = 1 / maxDimension;
-          horizontalOffset = (width * scale) / 2 + VR_TRACKS_VOLUME_MARGIN;
-        }
-      }
-      offset.set(horizontalOffset, VR_TRACKS_VERTICAL_OFFSET, VR_TRACKS_DEPTH_OFFSET);
-      target.set(baseOffset.x + offset.x, baseOffset.y + offset.y, baseOffset.z + offset.z);
-    } else {
-      offset.copy(VR_TRACKS_CAMERA_ANCHOR_OFFSET);
-      const q = camera.quaternion;
-      const sinYaw = 2 * (q.w * q.y + q.x * q.z);
-      const cosYaw = 1 - 2 * (q.y * q.y + q.z * q.z);
-      const yaw = Math.atan2(sinYaw, cosYaw);
-      const cosValue = Math.cos(yaw);
-      const sinValue = Math.sin(yaw);
-      const rotatedX = offset.x * cosValue - offset.z * sinValue;
-      const rotatedZ = offset.x * sinValue + offset.z * cosValue;
-      offset.set(rotatedX, offset.y, rotatedZ);
-      target.copy(camera.position).add(offset);
+    const frame = computeVolumeHudFrame();
+    const target = vrHudOffsetTempRef.current;
+    if (frame) {
+      const lateralDistance =
+        VR_PLAYBACK_PANEL_WIDTH / 2 + VR_HUD_LATERAL_MARGIN + VR_TRACKS_PANEL_WIDTH / 2;
+      target
+        .copy(frame.center)
+        .addScaledVector(frame.right, -lateralDistance)
+        .addScaledVector(frame.up, VR_TRACKS_VERTICAL_OFFSET);
+      setHudPlacement(
+        vrTracksHudPlacementRef,
+        vrTracksHudDragTargetRef,
+        vrTracksHudRef,
+        target,
+        frame.yaw
+      );
+      return;
     }
-    setVrTracksHudPlacementPosition(target);
-  }, [setVrTracksHudPlacementPosition]);
+    target.copy(VR_TRACKS_CAMERA_ANCHOR_OFFSET);
+    const q = camera.quaternion;
+    const sinYaw = 2 * (q.w * q.y + q.x * q.z);
+    const cosYaw = 1 - 2 * (q.y * q.y + q.z * q.z);
+    const yaw = Math.atan2(sinYaw, cosYaw);
+    const cosValue = Math.cos(yaw);
+    const sinValue = Math.sin(yaw);
+    const rotatedX = target.x * cosValue - target.z * sinValue;
+    const rotatedZ = target.x * sinValue + target.z * cosValue;
+    target.set(rotatedX, target.y, rotatedZ);
+    target.add(camera.position);
+    setHudPlacement(
+      vrTracksHudPlacementRef,
+      vrTracksHudDragTargetRef,
+      vrTracksHudRef,
+      target,
+      yaw
+    );
+  }, [
+    cameraRef,
+    computeVolumeHudFrame,
+    setHudPlacement,
+    vrTracksHudDragTargetRef,
+    vrTracksHudPlacementRef,
+    vrTracksHudRef
+  ]);
 
   const applyVolumeRootTransform = useCallback(
     (dimensions: { width: number; height: number; depth: number } | null) => {
@@ -3879,6 +4007,7 @@ function VolumeViewer({
           entry.hudGrabOffsets.tracks = null;
           entry.translateGrabOffset = null;
           entry.rotateGrabState = null;
+          entry.hudYawState = null;
         } else {
           anyVisible = true;
         }
@@ -3963,7 +4092,8 @@ function VolumeViewer({
         isSelecting: false,
         hudGrabOffsets: { playback: null, channels: null, tracks: null },
         translateGrabOffset: null,
-        rotateGrabState: null
+        rotateGrabState: null,
+        hudYawState: null
       };
 
       entry.onConnected = (event) => {
@@ -4003,6 +4133,7 @@ function VolumeViewer({
         entry.hudGrabOffsets.tracks = null;
         entry.translateGrabOffset = null;
         entry.rotateGrabState = null;
+        entry.hudYawState = null;
         entry.touchIndicator.visible = false;
         vrLog('[VR] controller disconnected', index);
         refreshControllerVisibility();
@@ -4012,6 +4143,52 @@ function VolumeViewer({
       entry.onSelectStart = () => {
         entry.isSelecting = true;
         entry.activeUiTarget = entry.hoverUiTarget;
+        entry.hudYawState = null;
+        const activeType = entry.activeUiTarget?.type ?? null;
+        const hudCategory = getHudCategoryFromTarget(activeType);
+        if (hudCategory && activeType !== `${hudCategory}-panel-grab`) {
+          const controllers = controllersRef.current;
+          const primaryIndex = controllers.findIndex(
+            (otherEntry, otherIndex) =>
+              otherEntry !== entry &&
+              otherEntry.isSelecting &&
+              otherEntry.activeUiTarget?.type === `${hudCategory}-panel-grab`
+          );
+          if (primaryIndex >= 0) {
+            let placement: VrHudPlacement | null = null;
+            let panelObject: THREE.Object3D | null = null;
+            if (hudCategory === 'playback') {
+              placement = vrPlaybackHudPlacementRef.current;
+              panelObject = vrPlaybackHudRef.current?.panel ?? null;
+            } else if (hudCategory === 'channels') {
+              placement = vrChannelsHudPlacementRef.current;
+              panelObject = vrChannelsHudRef.current?.panel ?? null;
+            } else if (hudCategory === 'tracks') {
+              placement = vrTracksHudPlacementRef.current;
+              panelObject = vrTracksHudRef.current?.panel ?? null;
+            }
+            if (placement && panelObject) {
+              const yawVector = vrHudYawVectorRef.current;
+              const referencePoint = entry.hasHoverUiPoint ? entry.hoverUiPoint : entry.rayOrigin;
+              yawVector.copy(referencePoint).sub(placement.position);
+              yawVector.y = 0;
+              let initialAngle = placement.yaw;
+              if (yawVector.lengthSq() > 1e-6) {
+                initialAngle = Math.atan2(yawVector.x, yawVector.z);
+              }
+              entry.hudYawState = {
+                hud: hudCategory,
+                primaryIndex,
+                initialYaw: placement.yaw,
+                initialAngle
+              };
+              entry.activeUiTarget = {
+                type: `${hudCategory}-panel-yaw` as VrUiTargetType,
+                object: panelObject
+              };
+            }
+          }
+        }
         const playbackState = playbackStateRef.current;
         if (entry.activeUiTarget?.type === 'playback-play-toggle' && playbackState.playbackDisabled) {
           entry.activeUiTarget = null;
@@ -4036,7 +4213,7 @@ function VolumeViewer({
             if (!entry.hudGrabOffsets.playback) {
               entry.hudGrabOffsets.playback = new THREE.Vector3();
             }
-            entry.hudGrabOffsets.playback.copy(referencePosition).sub(entry.hoverUiPoint);
+            entry.hudGrabOffsets.playback.copy(referencePosition).sub(entry.rayOrigin);
           }
         }
         if (
@@ -4063,7 +4240,7 @@ function VolumeViewer({
             if (!entry.hudGrabOffsets.channels) {
               entry.hudGrabOffsets.channels = new THREE.Vector3();
             }
-            entry.hudGrabOffsets.channels.copy(referencePosition).sub(entry.hoverUiPoint);
+            entry.hudGrabOffsets.channels.copy(referencePosition).sub(entry.rayOrigin);
           }
         }
         if (
@@ -4090,7 +4267,7 @@ function VolumeViewer({
             if (!entry.hudGrabOffsets.tracks) {
               entry.hudGrabOffsets.tracks = new THREE.Vector3();
             }
-            entry.hudGrabOffsets.tracks.copy(referencePosition).sub(entry.hoverUiPoint);
+            entry.hudGrabOffsets.tracks.copy(referencePosition).sub(entry.rayOrigin);
           }
         }
         if (entry.activeUiTarget?.type === 'volume-translate-handle') {
@@ -4158,10 +4335,19 @@ function VolumeViewer({
           }
         } else if (activeTarget?.type === 'playback-panel-grab') {
           entry.hudGrabOffsets.playback = null;
+          entry.hudYawState = null;
+        } else if (activeTarget?.type === 'playback-panel-yaw') {
+          entry.hudYawState = null;
         } else if (activeTarget?.type === 'channels-panel-grab') {
           entry.hudGrabOffsets.channels = null;
+          entry.hudYawState = null;
+        } else if (activeTarget?.type === 'channels-panel-yaw') {
+          entry.hudYawState = null;
         } else if (activeTarget?.type === 'tracks-panel-grab') {
           entry.hudGrabOffsets.tracks = null;
+          entry.hudYawState = null;
+        } else if (activeTarget?.type === 'tracks-panel-yaw') {
+          entry.hudYawState = null;
         } else if (activeTarget?.type === 'volume-translate-handle') {
           entry.translateGrabOffset = null;
         } else if (activeTarget?.type === 'volume-rotate-handle') {
@@ -5090,6 +5276,16 @@ function VolumeViewer({
                     uiRayLength =
                       uiRayLength === null ? clampedDistance : Math.min(uiRayLength, clampedDistance);
                   }
+                  if (!playbackCandidate) {
+                    playbackCandidate = {
+                      target: { type: 'playback-panel', object: playbackHudInstance.panel },
+                      point: playbackTouchPoint.clone(),
+                      distance: rawDistance,
+                      region: null
+                    };
+                    uiRayLength =
+                      uiRayLength === null ? clampedDistance : Math.min(uiRayLength, clampedDistance);
+                  }
                 }
               }
             }
@@ -5188,6 +5384,16 @@ function VolumeViewer({
                       nextChannelsHoverRegion = activeRegion;
                     }
                   }
+                  if (!channelsCandidate) {
+                    channelsCandidate = {
+                      target: { type: 'channels-panel', object: channelsHudInstance.panel },
+                      point: channelsTouchPoint.clone(),
+                      distance: rawDistance,
+                      region: null
+                    };
+                    uiRayLength =
+                      uiRayLength === null ? clampedDistance : Math.min(uiRayLength, clampedDistance);
+                  }
                 }
               }
             }
@@ -5285,6 +5491,16 @@ function VolumeViewer({
                       nextTracksHoverRegion = activeRegion;
                     }
                   }
+                  if (!tracksCandidate) {
+                    tracksCandidate = {
+                      target: { type: 'tracks-panel', object: tracksHudInstance.panel },
+                      point: tracksTouchPoint.clone(),
+                      distance: rawDistance,
+                      region: null
+                    };
+                    uiRayLength =
+                      uiRayLength === null ? clampedDistance : Math.min(uiRayLength, clampedDistance);
+                  }
                 }
               }
             }
@@ -5344,7 +5560,11 @@ function VolumeViewer({
           hoverTrackId = null;
         } else if (uiType === 'playback-slider') {
           sliderHoveredAny = true;
-        } else if (uiType === 'playback-panel-grab') {
+        } else if (
+          uiType === 'playback-panel-grab' ||
+          uiType === 'playback-panel' ||
+          uiType === 'playback-panel-yaw'
+        ) {
           hoverTrackId = null;
         } else if (uiType === 'playback-reset-view') {
           resetHoveredAny = true;
@@ -5375,8 +5595,11 @@ function VolumeViewer({
         }
         if (
           entry.activeUiTarget?.type === 'playback-panel-grab' ||
+          entry.activeUiTarget?.type === 'playback-panel-yaw' ||
           entry.activeUiTarget?.type === 'channels-panel-grab' ||
-          entry.activeUiTarget?.type === 'tracks-panel-grab'
+          entry.activeUiTarget?.type === 'channels-panel-yaw' ||
+          entry.activeUiTarget?.type === 'tracks-panel-grab' ||
+          entry.activeUiTarget?.type === 'tracks-panel-yaw'
         ) {
           hoverTrackId = null;
         }
@@ -5392,7 +5615,7 @@ function VolumeViewer({
           entry.hasHoverUiPoint
         ) {
           const newPosition = vrPlaybackHudDragTargetRef.current;
-          newPosition.copy(entry.hoverUiPoint);
+          newPosition.copy(entry.rayOrigin);
           if (entry.hudGrabOffsets.playback) {
             newPosition.add(entry.hudGrabOffsets.playback);
           }
@@ -5406,7 +5629,7 @@ function VolumeViewer({
           entry.hasHoverUiPoint
         ) {
           const newPosition = vrChannelsHudDragTargetRef.current;
-          newPosition.copy(entry.hoverUiPoint);
+          newPosition.copy(entry.rayOrigin);
           if (entry.hudGrabOffsets.channels) {
             newPosition.add(entry.hudGrabOffsets.channels);
           }
@@ -5420,11 +5643,56 @@ function VolumeViewer({
           entry.hasHoverUiPoint
         ) {
           const newPosition = vrTracksHudDragTargetRef.current;
-          newPosition.copy(entry.hoverUiPoint);
+          newPosition.copy(entry.rayOrigin);
           if (entry.hudGrabOffsets.tracks) {
             newPosition.add(entry.hudGrabOffsets.tracks);
           }
           setVrTracksHudPlacementPosition(newPosition);
+        }
+
+        if (entry.isSelecting && entry.hudYawState) {
+          const yawState = entry.hudYawState;
+          const controllers = controllersRef.current;
+          const primaryEntry = controllers[yawState.primaryIndex];
+          const expectedTargetType = `${yawState.hud}-panel-grab` as VrUiTargetType;
+          if (
+            !primaryEntry ||
+            !primaryEntry.isSelecting ||
+            primaryEntry.activeUiTarget?.type !== expectedTargetType
+          ) {
+            entry.hudYawState = null;
+          } else {
+            let placement: VrHudPlacement | null = null;
+            let applyYaw: ((nextYaw: number) => void) | null = null;
+            if (yawState.hud === 'playback') {
+              placement = vrPlaybackHudPlacementRef.current;
+              applyYaw = setVrPlaybackHudPlacementYaw;
+            } else if (yawState.hud === 'channels') {
+              placement = vrChannelsHudPlacementRef.current;
+              applyYaw = setVrChannelsHudPlacementYaw;
+            } else if (yawState.hud === 'tracks') {
+              placement = vrTracksHudPlacementRef.current;
+              applyYaw = setVrTracksHudPlacementYaw;
+            }
+            if (placement && applyYaw) {
+              const yawVector = vrHudYawVectorRef.current;
+              const referencePoint = entry.hasHoverUiPoint ? entry.hoverUiPoint : entry.rayOrigin;
+              yawVector.copy(referencePoint).sub(placement.position);
+              yawVector.y = 0;
+              if (yawVector.lengthSq() > 1e-6) {
+                const currentAngle = Math.atan2(yawVector.x, yawVector.z);
+                let delta = currentAngle - yawState.initialAngle;
+                const tau = Math.PI * 2;
+                if (delta > Math.PI) {
+                  delta -= tau;
+                } else if (delta < -Math.PI) {
+                  delta += tau;
+                }
+                const nextYaw = yawState.initialYaw + delta;
+                applyYaw(nextYaw);
+              }
+            }
+          }
         }
 
         if (visibleLines.length > 0 && cameraInstance) {
