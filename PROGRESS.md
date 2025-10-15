@@ -6,6 +6,10 @@
 - Reset the renderer sizing and animation loop after WebXR sessions end, restoring the desktop viewer instead of leaving a blank
   canvas when exiting VR.
 
+## VR HUD orientation and staging offset
+- Locked the VR playback HUD to the camera's yaw so it always stands vertically in-headset while remaining draggable.
+- Offset the normalized volume root by 0.8 m upward and 0.3 m forward when immersive sessions start, then restore the original placement after exiting VR.
+
 ## VR volume ray-march fix
 - Updated the 3D volume meshes to refresh their camera-position uniforms during `onBeforeRender`, giving WebXR eye cameras the
   correct ray origins so immersive mode renders the same ray-marched 3D texture seen on desktop instead of the fallback slice
