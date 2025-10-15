@@ -14,6 +14,7 @@ import './VolumeViewer.css';
 import type { TrackColorMode, TrackDefinition } from '../types/tracks';
 import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../layerColors';
 import { createTrackColor } from '../trackColors';
+import { TRACK_COLOR_SWATCHES, normalizeTrackColorHex } from '../trackSwatches';
 
 type ViewerLayer = {
   key: string;
@@ -37,7 +38,11 @@ type VolumeViewerProps = {
   loadingProgress: number;
   loadedVolumes: number;
   expectedVolumes: number;
+  isPlaying: boolean;
+  onTogglePlayback: () => void;
+  onTimeIndexChange: (index: number) => void;
   onRegisterReset: (handler: (() => void) | null) => void;
+  trackChannels: Array<{ id: string; name: string }>;
   tracks: TrackDefinition[];
   trackVisibility: Record<string, boolean>;
   trackOpacityByChannel: Record<string, number>;
@@ -46,6 +51,14 @@ type VolumeViewerProps = {
   channelTrackOffsets: Record<string, { x: number; y: number }>;
   followedTrackId: string | null;
   onTrackFollowRequest: (trackId: string) => void;
+  onTrackVisibilityToggle?: (trackId: string) => void;
+  onTrackVisibilityAllChange?: (channelId: string, visible: boolean) => void;
+  onTrackOpacityChange?: (channelId: string, value: number) => void;
+  onTrackLineWidthChange?: (channelId: string, value: number) => void;
+  onTrackColorSelect?: (channelId: string, color: string) => void;
+  onTrackColorReset?: (channelId: string) => void;
+  onTrackFollowToggle?: (trackId: string) => void;
+  onTrackFollowStop?: (channelId: string | null) => void;
 };
 
 type VolumeResources = {
@@ -148,6 +161,238 @@ type TrackLineResource = {
 const DEFAULT_TRACK_OPACITY = 0.9;
 const DEFAULT_TRACK_LINE_WIDTH = 1;
 
+const VR_TRACK_PANEL_WIDTH = 0.68;
+const VR_TRACK_PANEL_HEIGHT = 0.68;
+const VR_TRACK_TEXTURE_WIDTH = 1024;
+const VR_TRACK_TEXTURE_HEIGHT = 1024;
+const VR_TRACK_VISIBLE_ROWS = 6;
+const VR_TRACK_ROW_HEIGHT = 60;
+const VR_TRACK_PADDING = 48;
+const VR_TRACK_GAP = 20;
+const VR_TRACK_HEADER_HEIGHT = 80;
+const VR_TRACK_STATS_HEIGHT = 92;
+const VR_TRACK_COLOR_HEIGHT = 120;
+const VR_TRACK_MASTER_HEIGHT = 76;
+const VR_TRACK_PAGINATION_HEIGHT = 72;
+const VR_TRACK_LIST_HEIGHT = VR_TRACK_ROW_HEIGHT * VR_TRACK_VISIBLE_ROWS;
+
+type Rect = { x: number; y: number; width: number; height: number };
+
+type TrackRowLayout = {
+  container: Rect;
+  toggle: Rect;
+  follow: Rect;
+};
+
+type TrackLayout = {
+  header: Rect;
+  stats: Rect;
+  color: Rect;
+  master: Rect;
+  list: Rect;
+  pagination: Rect;
+  prevChannel: Rect;
+  nextChannel: Rect;
+  opacityMinus: Rect;
+  opacityPlus: Rect;
+  lineWidthMinus: Rect;
+  lineWidthPlus: Rect;
+  stopFollow: Rect;
+  toggleAll: Rect;
+  sortedButton: Rect;
+  swatches: Rect[];
+  pagePrev: Rect;
+  pageNext: Rect;
+  rows: TrackRowLayout[];
+};
+
+const VR_TRACK_LAYOUT: TrackLayout = (() => {
+  const width = VR_TRACK_TEXTURE_WIDTH;
+  const padding = VR_TRACK_PADDING;
+  const gap = VR_TRACK_GAP;
+  const contentWidth = width - padding * 2;
+  let currentY = padding;
+
+  const header: Rect = { x: padding, y: currentY, width: contentWidth, height: VR_TRACK_HEADER_HEIGHT };
+  currentY += VR_TRACK_HEADER_HEIGHT + gap;
+
+  const stats: Rect = { x: padding, y: currentY, width: contentWidth, height: VR_TRACK_STATS_HEIGHT };
+  currentY += VR_TRACK_STATS_HEIGHT + gap;
+
+  const color: Rect = { x: padding, y: currentY, width: contentWidth, height: VR_TRACK_COLOR_HEIGHT };
+  currentY += VR_TRACK_COLOR_HEIGHT + gap;
+
+  const master: Rect = { x: padding, y: currentY, width: contentWidth, height: VR_TRACK_MASTER_HEIGHT };
+  currentY += VR_TRACK_MASTER_HEIGHT + gap;
+
+  const list: Rect = { x: padding, y: currentY, width: contentWidth, height: VR_TRACK_LIST_HEIGHT };
+  currentY += VR_TRACK_LIST_HEIGHT + gap;
+
+  const pagination: Rect = { x: padding, y: currentY, width: contentWidth, height: VR_TRACK_PAGINATION_HEIGHT };
+
+  const rows: TrackRowLayout[] = Array.from({ length: VR_TRACK_VISIBLE_ROWS }, (_, index) => {
+    const containerY = list.y + index * VR_TRACK_ROW_HEIGHT;
+    const container: Rect = {
+      x: list.x,
+      y: containerY,
+      width: list.width,
+      height: VR_TRACK_ROW_HEIGHT
+    };
+    const toggleSize = 40;
+    const followWidth = 148;
+    const followHeight = 44;
+    const toggle: Rect = {
+      x: container.x + 12,
+      y: container.y + (container.height - toggleSize) / 2,
+      width: toggleSize,
+      height: toggleSize
+    };
+    const follow: Rect = {
+      x: container.x + container.width - followWidth - 12,
+      y: container.y + (container.height - followHeight) / 2,
+      width: followWidth,
+      height: followHeight
+    };
+    return { container, toggle, follow };
+  });
+
+  const prevChannel: Rect = { x: header.x, y: header.y, width: 80, height: header.height };
+  const nextChannel: Rect = {
+    x: header.x + header.width - 80,
+    y: header.y,
+    width: 80,
+    height: header.height
+  };
+
+  const statsGap = 24;
+  const statsHalfWidth = (stats.width - statsGap) / 2;
+  const opacityArea: Rect = { x: stats.x, y: stats.y, width: statsHalfWidth, height: stats.height };
+  const lineWidthArea: Rect = {
+    x: stats.x + statsHalfWidth + statsGap,
+    y: stats.y,
+    width: statsHalfWidth,
+    height: stats.height
+  };
+  const controlSize = 44;
+  const controlOffsetY = stats.y + stats.height - controlSize - 12;
+  const opacityMinus: Rect = { x: opacityArea.x, y: controlOffsetY, width: controlSize, height: controlSize };
+  const opacityPlus: Rect = {
+    x: opacityArea.x + opacityArea.width - controlSize,
+    y: controlOffsetY,
+    width: controlSize,
+    height: controlSize
+  };
+  const lineWidthMinus: Rect = {
+    x: lineWidthArea.x,
+    y: controlOffsetY,
+    width: controlSize,
+    height: controlSize
+  };
+  const lineWidthPlus: Rect = {
+    x: lineWidthArea.x + lineWidthArea.width - controlSize,
+    y: controlOffsetY,
+    width: controlSize,
+    height: controlSize
+  };
+
+  const swatchSize = 72;
+  const swatchSpacing = 14;
+  const swatchStartX = color.x + 8;
+  const swatchY = color.y + (color.height - swatchSize) / 2;
+  const swatches: Rect[] = TRACK_COLOR_SWATCHES.map((_, index) => ({
+    x: swatchStartX + index * (swatchSize + swatchSpacing),
+    y: swatchY,
+    width: swatchSize,
+    height: swatchSize
+  }));
+
+  const sortedButton: Rect = {
+    x: color.x + color.width - 168,
+    y: color.y + (color.height - 64) / 2,
+    width: 160,
+    height: 64
+  };
+
+  const toggleAll: Rect = {
+    x: master.x,
+    y: master.y + (master.height - 56) / 2,
+    width: 220,
+    height: 56
+  };
+  const stopFollow: Rect = {
+    x: master.x + master.width - 220,
+    y: master.y + (master.height - 56) / 2,
+    width: 220,
+    height: 56
+  };
+
+  const pageButtonWidth = 90;
+  const pageButtonHeight = 58;
+  const pagePrev: Rect = {
+    x: pagination.x,
+    y: pagination.y + (pagination.height - pageButtonHeight) / 2,
+    width: pageButtonWidth,
+    height: pageButtonHeight
+  };
+  const pageNext: Rect = {
+    x: pagination.x + pagination.width - pageButtonWidth,
+    y: pagination.y + (pagination.height - pageButtonHeight) / 2,
+    width: pageButtonWidth,
+    height: pageButtonHeight
+  };
+
+  return {
+    header,
+    stats,
+    color,
+    master,
+    list,
+    pagination,
+    prevChannel,
+    nextChannel,
+    opacityMinus,
+    opacityPlus,
+    lineWidthMinus,
+    lineWidthPlus,
+    stopFollow,
+    toggleAll,
+    sortedButton,
+    swatches,
+    pagePrev,
+    pageNext,
+    rows
+  };
+})();
+
+type VrTrackRowInteractable = {
+  toggle: THREE.Mesh;
+  follow: THREE.Mesh;
+};
+
+type VrTrackUiState = {
+  group: THREE.Group | null;
+  background: THREE.Mesh | null;
+  canvasMesh: THREE.Mesh | null;
+  canvas: HTMLCanvasElement | null;
+  context: CanvasRenderingContext2D | null;
+  texture: THREE.CanvasTexture | null;
+  interactive: {
+    prevChannel: THREE.Mesh | null;
+    nextChannel: THREE.Mesh | null;
+    stopFollow: THREE.Mesh | null;
+    toggleAll: THREE.Mesh | null;
+    opacityMinus: THREE.Mesh | null;
+    opacityPlus: THREE.Mesh | null;
+    lineWidthMinus: THREE.Mesh | null;
+    lineWidthPlus: THREE.Mesh | null;
+    sortedButton: THREE.Mesh | null;
+    colorSwatches: Array<{ mesh: THREE.Mesh; color: string }>;
+    pagePrev: THREE.Mesh | null;
+    pageNext: THREE.Mesh | null;
+    trackRows: VrTrackRowInteractable[];
+  };
+};
+
 type RaycasterLike = {
   params: { Line?: { threshold: number } } & Record<string, unknown>;
   setFromCamera: (coords: THREE.Vector2, camera: THREE.PerspectiveCamera) => void;
@@ -239,6 +484,7 @@ function VolumeViewer({
   onTogglePlayback,
   onTimeIndexChange,
   onRegisterReset,
+  trackChannels,
   tracks,
   trackVisibility,
   trackOpacityByChannel,
@@ -246,7 +492,15 @@ function VolumeViewer({
   channelTrackColorModes,
   channelTrackOffsets,
   followedTrackId,
-  onTrackFollowRequest
+  onTrackFollowRequest,
+  onTrackVisibilityToggle,
+  onTrackVisibilityAllChange,
+  onTrackOpacityChange,
+  onTrackLineWidthChange,
+  onTrackColorSelect,
+  onTrackColorReset,
+  onTrackFollowToggle,
+  onTrackFollowStop
 }: VolumeViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -290,6 +544,8 @@ function VolumeViewer({
   const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(null);
   const [vrButtonContainer, setVrButtonContainer] = useState<HTMLDivElement | null>(null);
   const [isVrPresenting, setIsVrPresenting] = useState(false);
+  const [vrTrackActiveChannelId, setVrTrackActiveChannelId] = useState<string | null>(null);
+  const [vrTrackPageIndex, setVrTrackPageIndex] = useState(0);
   const vrUiGroupRef = useRef<THREE.Group | null>(null);
   const vrUiInteractablesRef = useRef<THREE.Object3D[]>([]);
   const vrHoverTargetRef = useRef<THREE.Object3D | null>(null);
@@ -347,6 +603,29 @@ function VolumeViewer({
     stepBackTexture: null,
     stepForwardTexture: null
   });
+  const vrTrackUiRef = useRef<VrTrackUiState>({
+    group: null,
+    background: null,
+    canvasMesh: null,
+    canvas: null,
+    context: null,
+    texture: null,
+    interactive: {
+      prevChannel: null,
+      nextChannel: null,
+      stopFollow: null,
+      toggleAll: null,
+      opacityMinus: null,
+      opacityPlus: null,
+      lineWidthMinus: null,
+      lineWidthPlus: null,
+      sortedButton: null,
+      colorSwatches: [],
+      pagePrev: null,
+      pageNext: null,
+      trackRows: []
+    }
+  });
 
   const handleContainerRef = useCallback((node: HTMLDivElement | null) => {
     containerRef.current = node;
@@ -366,6 +645,460 @@ function VolumeViewer({
     }
     return map;
   }, [tracks]);
+
+  const orderedTrackChannels = useMemo(
+    () =>
+      trackChannels.map((channel) => ({
+        id: channel.id,
+        name: channel.name.trim() || 'Untitled channel'
+      })),
+    [trackChannels]
+  );
+
+  const tracksByChannel = useMemo(() => {
+    const map = new Map<string, TrackDefinition[]>();
+    for (const channel of orderedTrackChannels) {
+      map.set(channel.id, []);
+    }
+    for (const track of tracks) {
+      const collection = map.get(track.channelId);
+      if (collection) {
+        collection.push(track);
+      } else {
+        map.set(track.channelId, [track]);
+      }
+    }
+    for (const collection of map.values()) {
+      collection.sort((a, b) => a.trackNumber - b.trackNumber);
+    }
+    return map;
+  }, [orderedTrackChannels, tracks]);
+
+  const trackSummaryByChannel = useMemo(() => {
+    const summary = new Map<string, { total: number; visible: number }>();
+    for (const channel of orderedTrackChannels) {
+      const channelTracks = tracksByChannel.get(channel.id) ?? [];
+      let visibleCount = 0;
+      for (const track of channelTracks) {
+        if (trackVisibility[track.id] ?? true) {
+          visibleCount += 1;
+        }
+      }
+      summary.set(channel.id, { total: channelTracks.length, visible: visibleCount });
+    }
+    return summary;
+  }, [orderedTrackChannels, trackVisibility, tracksByChannel]);
+
+  const followedTrackChannelId = useMemo(() => {
+    if (!followedTrackId) {
+      return null;
+    }
+    const track = trackLookup.get(followedTrackId);
+    return track ? track.channelId : null;
+  }, [followedTrackId, trackLookup]);
+
+  useEffect(() => {
+    if (orderedTrackChannels.length === 0) {
+      setVrTrackActiveChannelId(null);
+      setVrTrackPageIndex(0);
+      return;
+    }
+    setVrTrackActiveChannelId((current) => {
+      if (current && orderedTrackChannels.some((channel) => channel.id === current)) {
+        return current;
+      }
+      return orderedTrackChannels[0].id;
+    });
+  }, [orderedTrackChannels]);
+
+  useEffect(() => {
+    const activeChannelId = vrTrackActiveChannelId;
+    if (!activeChannelId) {
+      setVrTrackPageIndex(0);
+      return;
+    }
+    const channelTracks = tracksByChannel.get(activeChannelId) ?? [];
+    const maxPage = Math.max(0, Math.ceil(channelTracks.length / VR_TRACK_VISIBLE_ROWS) - 1);
+    setVrTrackPageIndex((current) => (current > maxPage ? maxPage : current));
+  }, [tracksByChannel, vrTrackActiveChannelId]);
+
+  useEffect(() => {
+    const trackUi = vrTrackUiRef.current;
+    if (!trackUi.group) {
+      return;
+    }
+
+    const channelId = vrTrackActiveChannelId;
+    const channelTracks = channelId ? tracksByChannel.get(channelId) ?? [] : [];
+    const summary = channelId
+      ? trackSummaryByChannel.get(channelId) ?? { total: 0, visible: 0 }
+      : { total: 0, visible: 0 };
+    const hasTracks = channelTracks.length > 0;
+    const maxPage = Math.max(0, Math.ceil(channelTracks.length / VR_TRACK_VISIBLE_ROWS) - 1);
+    const isFollowingActive = !!followedTrackId && followedTrackChannelId === channelId;
+
+    if (trackUi.interactive.prevChannel) {
+      trackUi.interactive.prevChannel.userData.disabled = orderedTrackChannels.length <= 1;
+    }
+    if (trackUi.interactive.nextChannel) {
+      trackUi.interactive.nextChannel.userData.disabled = orderedTrackChannels.length <= 1;
+    }
+    if (trackUi.interactive.toggleAll) {
+      trackUi.interactive.toggleAll.userData.disabled = !hasTracks;
+    }
+    if (trackUi.interactive.stopFollow) {
+      trackUi.interactive.stopFollow.userData.disabled = !isFollowingActive;
+    }
+    if (trackUi.interactive.opacityMinus) {
+      trackUi.interactive.opacityMinus.userData.disabled = !channelId;
+    }
+    if (trackUi.interactive.opacityPlus) {
+      trackUi.interactive.opacityPlus.userData.disabled = !channelId;
+    }
+    if (trackUi.interactive.lineWidthMinus) {
+      trackUi.interactive.lineWidthMinus.userData.disabled = !channelId;
+    }
+    if (trackUi.interactive.lineWidthPlus) {
+      trackUi.interactive.lineWidthPlus.userData.disabled = !channelId;
+    }
+    if (trackUi.interactive.sortedButton) {
+      trackUi.interactive.sortedButton.userData.disabled = !hasTracks;
+    }
+    if (trackUi.interactive.pagePrev) {
+      trackUi.interactive.pagePrev.userData.disabled = vrTrackPageIndex <= 0;
+    }
+    if (trackUi.interactive.pageNext) {
+      trackUi.interactive.pageNext.userData.disabled = vrTrackPageIndex >= maxPage;
+    }
+
+    trackUi.interactive.colorSwatches.forEach(({ mesh }) => {
+      mesh.userData.disabled = !hasTracks;
+    });
+
+    const startIndex = vrTrackPageIndex * VR_TRACK_VISIBLE_ROWS;
+    trackUi.interactive.trackRows.forEach((row, index) => {
+      const track = channelTracks[startIndex + index] ?? null;
+      const toggle = row.toggle;
+      const follow = row.follow;
+      if (track) {
+        toggle.visible = true;
+        follow.visible = true;
+        toggle.userData.trackId = track.id;
+        toggle.userData.disabled = false;
+        follow.userData.trackId = track.id;
+        follow.userData.disabled = false;
+      } else {
+        toggle.visible = false;
+        follow.visible = false;
+        toggle.userData.trackId = null;
+        toggle.userData.disabled = true;
+        follow.userData.trackId = null;
+        follow.userData.disabled = true;
+      }
+    });
+
+    const hoverTarget = vrHoverTargetRef.current;
+    if (hoverTarget && hoverTarget.userData && hoverTarget.userData.disabled) {
+      applyVrHoverTarget(null);
+    }
+  }, [
+    applyVrHoverTarget,
+    followedTrackChannelId,
+    followedTrackId,
+    orderedTrackChannels,
+    trackSummaryByChannel,
+    tracksByChannel,
+    vrTrackActiveChannelId,
+    vrTrackPageIndex
+  ]);
+
+  useEffect(() => {
+    const trackUi = vrTrackUiRef.current;
+    const canvas = trackUi.canvas;
+    const context = trackUi.context;
+    const texture = trackUi.texture;
+    if (!canvas || !context || !texture) {
+      return;
+    }
+
+    const layout = VR_TRACK_LAYOUT;
+    const channelId = vrTrackActiveChannelId;
+    const channelInfo = channelId
+      ? orderedTrackChannels.find((channel) => channel.id === channelId) ?? null
+      : null;
+    const channelTracks = channelId ? tracksByChannel.get(channelId) ?? [] : [];
+    const summary = channelId
+      ? trackSummaryByChannel.get(channelId) ?? { total: 0, visible: 0 }
+      : { total: 0, visible: 0 };
+    const opacity = channelId
+      ? trackOpacityByChannel[channelId] ?? DEFAULT_TRACK_OPACITY
+      : DEFAULT_TRACK_OPACITY;
+    const lineWidth = channelId
+      ? trackLineWidthByChannel[channelId] ?? DEFAULT_TRACK_LINE_WIDTH
+      : DEFAULT_TRACK_LINE_WIDTH;
+    const colorMode = channelId
+      ? channelTrackColorModes[channelId] ?? { type: 'random' }
+      : { type: 'random' };
+    const uniformColorHex =
+      colorMode.type === 'uniform' ? normalizeTrackColorHex(colorMode.color) : null;
+    const pageCount = channelTracks.length > 0 ? Math.ceil(channelTracks.length / VR_TRACK_VISIBLE_ROWS) : 1;
+    const currentPage = Math.min(vrTrackPageIndex + 1, pageCount);
+    const startIndex = vrTrackPageIndex * VR_TRACK_VISIBLE_ROWS;
+    const followedTrackForChannel =
+      followedTrackChannelId === channelId && followedTrackId ? followedTrackId : null;
+    const hasChannels = orderedTrackChannels.length > 0;
+    const hasTracks = channelTracks.length > 0;
+
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = 'rgba(8, 12, 20, 0.96)';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+
+    const drawBox = (rect: Rect, fill: string, stroke: string | null = null, lineWidth = 2) => {
+      context.save();
+      context.fillStyle = fill;
+      context.fillRect(rect.x, rect.y, rect.width, rect.height);
+      if (stroke) {
+        context.strokeStyle = stroke;
+        context.lineWidth = lineWidth;
+        context.strokeRect(rect.x + lineWidth / 2, rect.y + lineWidth / 2, rect.width - lineWidth, rect.height - lineWidth);
+      }
+      context.restore();
+    };
+
+    const drawButton = (rect: Rect, label: string, disabled: boolean, active = false) => {
+      context.save();
+      const baseFill = active ? 'rgba(91, 140, 255, 0.32)' : 'rgba(255, 255, 255, 0.14)';
+      const disabledFill = 'rgba(255, 255, 255, 0.08)';
+      const strokeColor = active ? 'rgba(91, 140, 255, 0.65)' : 'rgba(255, 255, 255, 0.28)';
+      drawBox(rect, disabled ? disabledFill : baseFill, disabled ? 'rgba(255, 255, 255, 0.18)' : strokeColor);
+      context.fillStyle = disabled ? 'rgba(255, 255, 255, 0.45)' : 'rgba(255, 255, 255, 0.95)';
+      context.font = '600 28px sans-serif';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillText(label, rect.x + rect.width / 2, rect.y + rect.height / 2 + 1);
+      context.restore();
+    };
+
+    const drawArrow = (rect: Rect, direction: 'left' | 'right', disabled: boolean) => {
+      context.save();
+      drawBox(rect, 'rgba(255, 255, 255, 0.04)', 'rgba(255, 255, 255, 0.18)');
+      context.fillStyle = disabled ? 'rgba(255, 255, 255, 0.28)' : 'rgba(255, 255, 255, 0.85)';
+      context.beginPath();
+      if (direction === 'left') {
+        context.moveTo(rect.x + rect.width * 0.65, rect.y + rect.height * 0.25);
+        context.lineTo(rect.x + rect.width * 0.35, rect.y + rect.height / 2);
+        context.lineTo(rect.x + rect.width * 0.65, rect.y + rect.height * 0.75);
+      } else {
+        context.moveTo(rect.x + rect.width * 0.35, rect.y + rect.height * 0.25);
+        context.lineTo(rect.x + rect.width * 0.65, rect.y + rect.height / 2);
+        context.lineTo(rect.x + rect.width * 0.35, rect.y + rect.height * 0.75);
+      }
+      context.closePath();
+      context.fill();
+      context.restore();
+    };
+
+    const drawSwatch = (rect: Rect, color: string, selected: boolean, disabled: boolean) => {
+      context.save();
+      context.fillStyle = color;
+      context.fillRect(rect.x, rect.y, rect.width, rect.height);
+      if (disabled) {
+        context.fillStyle = 'rgba(8, 12, 20, 0.55)';
+        context.fillRect(rect.x, rect.y, rect.width, rect.height);
+      }
+      context.lineWidth = selected ? 6 : 3;
+      context.strokeStyle = selected ? 'rgba(255, 255, 255, 0.95)' : 'rgba(255, 255, 255, 0.4)';
+      context.strokeRect(
+        rect.x + context.lineWidth / 2,
+        rect.y + context.lineWidth / 2,
+        rect.width - context.lineWidth,
+        rect.height - context.lineWidth
+      );
+      context.restore();
+    };
+
+    const drawCheckbox = (rect: Rect, checked: boolean, disabled: boolean) => {
+      context.save();
+      context.fillStyle = checked ? 'rgba(91, 140, 255, 0.85)' : 'rgba(0, 0, 0, 0.25)';
+      if (disabled) {
+        context.fillStyle = 'rgba(0, 0, 0, 0.2)';
+      }
+      context.fillRect(rect.x, rect.y, rect.width, rect.height);
+      context.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+      context.lineWidth = 2;
+      context.strokeRect(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2);
+      if (checked) {
+        context.strokeStyle = 'rgba(255, 255, 255, 0.92)';
+        context.lineWidth = 4;
+        context.beginPath();
+        context.moveTo(rect.x + rect.width * 0.2, rect.y + rect.height * 0.55);
+        context.lineTo(rect.x + rect.width * 0.45, rect.y + rect.height * 0.78);
+        context.lineTo(rect.x + rect.width * 0.82, rect.y + rect.height * 0.22);
+        context.stroke();
+      }
+      context.restore();
+    };
+
+    const drawFollowButton = (rect: Rect, active: boolean, disabled: boolean) => {
+      context.save();
+      const fill = active ? 'rgba(91, 140, 255, 0.3)' : 'rgba(255, 255, 255, 0.14)';
+      drawBox(rect, disabled ? 'rgba(255, 255, 255, 0.08)' : fill, disabled ? 'rgba(255, 255, 255, 0.18)' : 'rgba(255, 255, 255, 0.3)');
+      context.fillStyle = disabled ? 'rgba(255, 255, 255, 0.45)' : 'rgba(255, 255, 255, 0.95)';
+      context.font = '600 26px sans-serif';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillText(active ? 'Following' : 'Follow', rect.x + rect.width / 2, rect.y + rect.height / 2 + 1);
+      context.restore();
+    };
+
+    // Header background
+    drawBox(layout.header, 'rgba(255, 255, 255, 0.06)');
+    const headerCenterY = layout.header.y + layout.header.height / 2;
+    context.save();
+    context.fillStyle = 'rgba(255, 255, 255, 0.92)';
+    context.font = '600 46px sans-serif';
+    context.textAlign = 'left';
+    context.textBaseline = 'middle';
+    context.fillText('Tracks', layout.header.x + 24, headerCenterY);
+    context.fillStyle = 'rgba(255, 255, 255, 0.72)';
+    context.font = '500 34px sans-serif';
+    const channelLabel = channelInfo ? channelInfo.name : hasChannels ? 'Select a channel' : 'No channels';
+    context.fillText(channelLabel, layout.header.x + 220, headerCenterY);
+    context.restore();
+
+    drawArrow(layout.prevChannel, 'left', orderedTrackChannels.length <= 1);
+    drawArrow(layout.nextChannel, 'right', orderedTrackChannels.length <= 1);
+
+    // Stats row
+    drawBox(layout.stats, 'rgba(255, 255, 255, 0.04)');
+    context.save();
+    context.fillStyle = 'rgba(255, 255, 255, 0.85)';
+    context.font = '500 30px sans-serif';
+    context.textAlign = 'left';
+    context.textBaseline = 'middle';
+    context.fillText(`Visible ${summary.visible} / ${summary.total}`, layout.stats.x + 16, layout.stats.y + layout.stats.height * 0.32);
+    context.fillText(`Opacity ${(opacity * 100).toFixed(0)}%`, layout.stats.x + 16, layout.stats.y + layout.stats.height * 0.68);
+    context.textAlign = 'right';
+    const statsRight = layout.stats.x + layout.stats.width - 16;
+    context.fillText(`Thickness ${lineWidth.toFixed(1)} px`, statsRight, layout.stats.y + layout.stats.height * 0.32);
+    const modeLabel =
+      colorMode.type === 'uniform' && uniformColorHex ? `Color ${uniformColorHex}` : 'Colors Sorted';
+    context.fillText(modeLabel, statsRight, layout.stats.y + layout.stats.height * 0.68);
+    context.restore();
+
+    drawButton(layout.opacityMinus, '–', !channelId);
+    drawButton(layout.opacityPlus, '+', !channelId);
+    drawButton(layout.lineWidthMinus, '–', !channelId);
+    drawButton(layout.lineWidthPlus, '+', !channelId);
+
+    // Color presets
+    drawBox(layout.color, 'rgba(255, 255, 255, 0.04)');
+    context.save();
+    context.fillStyle = 'rgba(255, 255, 255, 0.78)';
+    context.font = '500 28px sans-serif';
+    context.textAlign = 'left';
+    context.textBaseline = 'top';
+    context.fillText('Preset colors', layout.color.x + 12, layout.color.y + 12);
+    context.restore();
+    TRACK_COLOR_SWATCHES.forEach((swatch, index) => {
+      const rect = layout.swatches[index];
+      const normalized = normalizeTrackColorHex(swatch.value);
+      const selected = uniformColorHex ? uniformColorHex === normalized : false;
+      drawSwatch(rect, swatch.value, selected, !hasTracks);
+    });
+    drawButton(layout.sortedButton, 'Sorted', !hasTracks, colorMode.type === 'random');
+
+    // Master controls
+    drawBox(layout.master, 'rgba(255, 255, 255, 0.04)');
+    const toggleLabel = summary.visible === summary.total && summary.total > 0 ? 'Hide all' : 'Show all';
+    drawButton(layout.toggleAll, toggleLabel, !hasTracks);
+    drawButton(layout.stopFollow, 'Stop tracking', !followedTrackForChannel, !!followedTrackForChannel);
+
+    // Track list
+    drawBox(layout.list, 'rgba(255, 255, 255, 0.03)');
+    if (!hasChannels) {
+      context.save();
+      context.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      context.font = '500 28px sans-serif';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillText('Add a channel to manage tracks.', layout.list.x + layout.list.width / 2, layout.list.y + layout.list.height / 2);
+      context.restore();
+    } else if (!hasTracks) {
+      context.save();
+      context.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      context.font = '500 28px sans-serif';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillText('No tracks loaded for this channel.', layout.list.x + layout.list.width / 2, layout.list.y + layout.list.height / 2);
+      context.restore();
+    } else {
+      layout.rows.forEach((row, index) => {
+        const track = channelTracks[startIndex + index] ?? null;
+        if (!track) {
+          drawBox(row.container, index % 2 === 0 ? 'rgba(255, 255, 255, 0.03)' : 'rgba(255, 255, 255, 0.02)');
+          return;
+        }
+        const isFollowed = track.id === followedTrackForChannel;
+        const isVisible = trackVisibility[track.id] ?? true;
+        const rowFill = isFollowed ? 'rgba(91, 140, 255, 0.18)' : index % 2 === 0 ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.03)';
+        drawBox(row.container, rowFill);
+        drawCheckbox(row.toggle, isVisible, false);
+        const labelX = row.toggle.x + row.toggle.width + 26;
+        const labelY = row.container.y + row.container.height / 2;
+        const colorHex =
+          colorMode.type === 'uniform' && uniformColorHex
+            ? uniformColorHex
+            : `#${resolveTrackColor(track).getHexString()}`;
+        context.save();
+        context.fillStyle = colorHex;
+        context.fillRect(labelX - 6, labelY - 12, 24, 24);
+        context.restore();
+        context.save();
+        context.fillStyle = 'rgba(255, 255, 255, 0.88)';
+        context.font = '500 28px sans-serif';
+        context.textAlign = 'left';
+        context.textBaseline = 'middle';
+        context.fillText(`Track #${track.trackNumber}`, labelX + 26, labelY);
+        context.restore();
+        drawFollowButton(row.follow, isFollowed, false);
+      });
+    }
+
+    // Pagination
+    drawBox(layout.pagination, 'rgba(255, 255, 255, 0.04)');
+    drawArrow(layout.pagePrev, 'left', vrTrackPageIndex <= 0 || !hasTracks);
+    drawArrow(layout.pageNext, 'right', vrTrackPageIndex >= pageCount - 1 || !hasTracks);
+    context.save();
+    context.fillStyle = 'rgba(255, 255, 255, 0.78)';
+    context.font = '500 26px sans-serif';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    const paginationLabel = hasTracks
+      ? `Page ${currentPage} / ${Math.max(pageCount, 1)}`
+      : 'Page 0 / 0';
+    context.fillText(
+      paginationLabel,
+      layout.pagination.x + layout.pagination.width / 2,
+      layout.pagination.y + layout.pagination.height / 2
+    );
+    context.restore();
+
+    texture.needsUpdate = true;
+  }, [
+    channelTrackColorModes,
+    followedTrackChannelId,
+    followedTrackId,
+    orderedTrackChannels,
+    resolveTrackColor,
+    trackLineWidthByChannel,
+    trackOpacityByChannel,
+    trackSummaryByChannel,
+    trackVisibility,
+    tracksByChannel,
+    vrTrackActiveChannelId,
+    vrTrackPageIndex
+  ]);
 
   const resolveTrackColor = useCallback(
     (track: TrackDefinition) => {
@@ -459,6 +1192,140 @@ function VolumeViewer({
         return;
       }
 
+      if (action === 'track-prev-channel') {
+        if (orderedTrackChannels.length === 0) {
+          return;
+        }
+        const currentId = vrTrackActiveChannelId ?? orderedTrackChannels[0].id;
+        const currentIndex = orderedTrackChannels.findIndex((channel) => channel.id === currentId);
+        const nextIndex = currentIndex <= 0
+          ? orderedTrackChannels.length - 1
+          : currentIndex - 1;
+        const nextChannel = orderedTrackChannels[nextIndex] ?? orderedTrackChannels[0];
+        setVrTrackActiveChannelId(nextChannel.id);
+        setVrTrackPageIndex(0);
+        applyVrHoverTarget(null);
+        return;
+      }
+
+      if (action === 'track-next-channel') {
+        if (orderedTrackChannels.length === 0) {
+          return;
+        }
+        const currentId = vrTrackActiveChannelId ?? orderedTrackChannels[0].id;
+        const currentIndex = orderedTrackChannels.findIndex((channel) => channel.id === currentId);
+        const nextIndex = currentIndex < 0
+          ? 0
+          : (currentIndex + 1) % orderedTrackChannels.length;
+        const nextChannel = orderedTrackChannels[nextIndex] ?? orderedTrackChannels[0];
+        setVrTrackActiveChannelId(nextChannel.id);
+        setVrTrackPageIndex(0);
+        applyVrHoverTarget(null);
+        return;
+      }
+
+      if (action === 'track-toggle-all') {
+        if (!vrTrackActiveChannelId || !onTrackVisibilityAllChange) {
+          return;
+        }
+        const summary = trackSummaryByChannel.get(vrTrackActiveChannelId) ?? { total: 0, visible: 0 };
+        if (summary.total === 0) {
+          return;
+        }
+        const shouldShowAll = summary.visible !== summary.total;
+        onTrackVisibilityAllChange(vrTrackActiveChannelId, shouldShowAll);
+        return;
+      }
+
+      if (action === 'track-stop-follow') {
+        if (onTrackFollowStop) {
+          onTrackFollowStop(vrTrackActiveChannelId ?? null);
+        }
+        return;
+      }
+
+      if (action === 'track-opacity-decrement' || action === 'track-opacity-increment') {
+        if (!vrTrackActiveChannelId || !onTrackOpacityChange) {
+          return;
+        }
+        const current = trackOpacityByChannel[vrTrackActiveChannelId] ?? DEFAULT_TRACK_OPACITY;
+        const delta = action === 'track-opacity-increment' ? 0.05 : -0.05;
+        const next = Math.min(1, Math.max(0, current + delta));
+        const rounded = Math.round(next * 100) / 100;
+        if (rounded !== current) {
+          onTrackOpacityChange(vrTrackActiveChannelId, rounded);
+        }
+        return;
+      }
+
+      if (action === 'track-linewidth-decrement' || action === 'track-linewidth-increment') {
+        if (!vrTrackActiveChannelId || !onTrackLineWidthChange) {
+          return;
+        }
+        const current = trackLineWidthByChannel[vrTrackActiveChannelId] ?? DEFAULT_TRACK_LINE_WIDTH;
+        const delta = action === 'track-linewidth-increment' ? 0.1 : -0.1;
+        const next = Math.min(5, Math.max(0.5, current + delta));
+        const rounded = Math.round(next * 100) / 100;
+        if (rounded !== current) {
+          onTrackLineWidthChange(vrTrackActiveChannelId, rounded);
+        }
+        return;
+      }
+
+      if (action === 'track-color-sorted') {
+        if (vrTrackActiveChannelId && onTrackColorReset) {
+          onTrackColorReset(vrTrackActiveChannelId);
+        }
+        return;
+      }
+
+      if (action === 'track-color-swatch') {
+        if (!vrTrackActiveChannelId || !onTrackColorSelect) {
+          return;
+        }
+        const color = typeof object.userData.color === 'string' ? object.userData.color : null;
+        if (color) {
+          onTrackColorSelect(vrTrackActiveChannelId, color);
+        }
+        return;
+      }
+
+      if (action === 'track-page-prev') {
+        if (vrTrackPageIndex > 0) {
+          setVrTrackPageIndex(vrTrackPageIndex - 1);
+          applyVrHoverTarget(null);
+        }
+        return;
+      }
+
+      if (action === 'track-page-next') {
+        if (vrTrackActiveChannelId) {
+          const channelTracks = tracksByChannel.get(vrTrackActiveChannelId) ?? [];
+          const maxPage = Math.max(0, Math.ceil(channelTracks.length / VR_TRACK_VISIBLE_ROWS) - 1);
+          if (vrTrackPageIndex < maxPage) {
+            setVrTrackPageIndex(vrTrackPageIndex + 1);
+            applyVrHoverTarget(null);
+          }
+        }
+        return;
+      }
+
+      if (action === 'track-toggle') {
+        const trackId = typeof object.userData.trackId === 'string' ? object.userData.trackId : null;
+        if (trackId && onTrackVisibilityToggle) {
+          onTrackVisibilityToggle(trackId);
+        }
+        return;
+      }
+
+      if (action === 'track-follow') {
+        const trackId = typeof object.userData.trackId === 'string' ? object.userData.trackId : null;
+        if (trackId && onTrackFollowToggle) {
+          onTrackFollowToggle(trackId);
+        }
+        return;
+      }
+
       if (!Number.isFinite(totalTimepoints) || totalTimepoints <= 0) {
         return;
       }
@@ -485,7 +1352,27 @@ function VolumeViewer({
         }
       }
     },
-    [onTimeIndexChange, onTogglePlayback, totalTimepoints]
+    [
+      applyVrHoverTarget,
+      onTimeIndexChange,
+      onTogglePlayback,
+      onTrackColorReset,
+      onTrackColorSelect,
+      onTrackFollowToggle,
+      onTrackFollowStop,
+      onTrackLineWidthChange,
+      onTrackOpacityChange,
+      onTrackVisibilityAllChange,
+      onTrackVisibilityToggle,
+      orderedTrackChannels,
+      totalTimepoints,
+      trackLineWidthByChannel,
+      trackOpacityByChannel,
+      trackSummaryByChannel,
+      tracksByChannel,
+      vrTrackActiveChannelId,
+      vrTrackPageIndex
+    ]
   );
 
   const applyVolumeRootTransform = useCallback(
@@ -1296,6 +2183,159 @@ function VolumeViewer({
     vrUiGroup.add(stepForwardIcon);
     vrUiElements.stepForwardIcon = stepForwardIcon;
 
+    const trackUi = vrTrackUiRef.current;
+    trackUi.group = new THREE.Group();
+    trackUi.group.name = 'VrTrackPanel';
+    trackUi.group.position.set(0.68, -0.02, 0);
+    vrUiGroup.add(trackUi.group);
+
+    const trackBackgroundMaterial = new THREE.MeshBasicMaterial({
+      color: 0x0c1018,
+      transparent: true,
+      opacity: 0.82,
+      side: THREE.DoubleSide
+    });
+    const trackBackgroundGeometry = new THREE.PlaneGeometry(
+      VR_TRACK_PANEL_WIDTH,
+      VR_TRACK_PANEL_HEIGHT
+    );
+    trackBackgroundGeometry.rotateY(Math.PI);
+    const trackBackground = new THREE.Mesh(trackBackgroundGeometry, trackBackgroundMaterial);
+    trackBackground.renderOrder = 4;
+    trackUi.group.add(trackBackground);
+    trackUi.background = trackBackground;
+
+    const trackCanvas = document.createElement('canvas');
+    trackCanvas.width = VR_TRACK_TEXTURE_WIDTH;
+    trackCanvas.height = VR_TRACK_TEXTURE_HEIGHT;
+    const trackContext = trackCanvas.getContext('2d');
+    const trackTexture = new THREE.CanvasTexture(trackCanvas);
+    trackTexture.colorSpace = THREE.SRGBColorSpace;
+    const trackCanvasMaterial = new THREE.MeshBasicMaterial({
+      map: trackTexture,
+      transparent: true,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    const trackCanvasGeometry = new THREE.PlaneGeometry(
+      VR_TRACK_PANEL_WIDTH,
+      VR_TRACK_PANEL_HEIGHT
+    );
+    trackCanvasGeometry.rotateY(Math.PI);
+    const trackCanvasMesh = new THREE.Mesh(trackCanvasGeometry, trackCanvasMaterial);
+    trackCanvasMesh.position.set(0, 0, 0.01);
+    trackCanvasMesh.renderOrder = 12;
+    trackUi.group.add(trackCanvasMesh);
+    trackUi.canvasMesh = trackCanvasMesh;
+    trackUi.canvas = trackCanvas;
+    trackUi.context = trackContext;
+    trackUi.texture = trackTexture;
+    if (!trackContext) {
+      console.warn('Failed to initialize VR track canvas context.');
+    }
+
+    const toPanelCoordinates = (x: number, y: number) => ({
+      x: (x / VR_TRACK_TEXTURE_WIDTH - 0.5) * VR_TRACK_PANEL_WIDTH,
+      y: (0.5 - y / VR_TRACK_TEXTURE_HEIGHT) * VR_TRACK_PANEL_HEIGHT
+    });
+
+    const createInteractiveRegion = (
+      rect: Rect,
+      action: string,
+      extraUserData: Record<string, unknown> = {},
+      baseOpacity = 0,
+      hoverOpacity = 0.18,
+      zOffset = 0.02
+    ) => {
+      const geometry = new THREE.PlaneGeometry(
+        (rect.width / VR_TRACK_TEXTURE_WIDTH) * VR_TRACK_PANEL_WIDTH,
+        (rect.height / VR_TRACK_TEXTURE_HEIGHT) * VR_TRACK_PANEL_HEIGHT
+      );
+      geometry.rotateY(Math.PI);
+      const material = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: baseOpacity,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      const centerX = rect.x + rect.width / 2;
+      const centerY = rect.y + rect.height / 2;
+      const panelPosition = toPanelCoordinates(centerX, centerY);
+      mesh.position.set(panelPosition.x, panelPosition.y, 0.01 + zOffset);
+      mesh.renderOrder = 40;
+      mesh.userData = {
+        action,
+        baseColor: 0xffffff,
+        hoverColor: 0xffffff,
+        baseOpacity,
+        hoverOpacity,
+        ...extraUserData
+      };
+      trackUi.group.add(mesh);
+      vrUiInteractablesRef.current.push(mesh);
+      return mesh;
+    };
+
+    trackUi.interactive.colorSwatches = [];
+    trackUi.interactive.trackRows = [];
+
+    trackUi.interactive.prevChannel = createInteractiveRegion(
+      VR_TRACK_LAYOUT.prevChannel,
+      'track-prev-channel'
+    );
+    trackUi.interactive.nextChannel = createInteractiveRegion(
+      VR_TRACK_LAYOUT.nextChannel,
+      'track-next-channel'
+    );
+    trackUi.interactive.toggleAll = createInteractiveRegion(
+      VR_TRACK_LAYOUT.toggleAll,
+      'track-toggle-all'
+    );
+    trackUi.interactive.stopFollow = createInteractiveRegion(
+      VR_TRACK_LAYOUT.stopFollow,
+      'track-stop-follow'
+    );
+    trackUi.interactive.opacityMinus = createInteractiveRegion(
+      VR_TRACK_LAYOUT.opacityMinus,
+      'track-opacity-decrement'
+    );
+    trackUi.interactive.opacityPlus = createInteractiveRegion(
+      VR_TRACK_LAYOUT.opacityPlus,
+      'track-opacity-increment'
+    );
+    trackUi.interactive.lineWidthMinus = createInteractiveRegion(
+      VR_TRACK_LAYOUT.lineWidthMinus,
+      'track-linewidth-decrement'
+    );
+    trackUi.interactive.lineWidthPlus = createInteractiveRegion(
+      VR_TRACK_LAYOUT.lineWidthPlus,
+      'track-linewidth-increment'
+    );
+    trackUi.interactive.sortedButton = createInteractiveRegion(
+      VR_TRACK_LAYOUT.sortedButton,
+      'track-color-sorted'
+    );
+    trackUi.interactive.colorSwatches = TRACK_COLOR_SWATCHES.map((swatch, index) => ({
+      mesh: createInteractiveRegion(VR_TRACK_LAYOUT.swatches[index], 'track-color-swatch', {
+        color: swatch.value
+      }),
+      color: swatch.value
+    }));
+    trackUi.interactive.pagePrev = createInteractiveRegion(
+      VR_TRACK_LAYOUT.pagePrev,
+      'track-page-prev'
+    );
+    trackUi.interactive.pageNext = createInteractiveRegion(
+      VR_TRACK_LAYOUT.pageNext,
+      'track-page-next'
+    );
+    trackUi.interactive.trackRows = VR_TRACK_LAYOUT.rows.map((row) => ({
+      toggle: createInteractiveRegion(row.toggle, 'track-toggle', { trackId: null }, 0, 0.22),
+      follow: createInteractiveRegion(row.follow, 'track-follow', { trackId: null }, 0, 0.22)
+    }));
+
     // If the volume dimensions were already resolved (e.g., when toggling
     // between 2D and 3D views), make sure the tracking overlay immediately
     // adopts the normalized transform. Otherwise the tracks momentarily render
@@ -1922,6 +2962,41 @@ function VolumeViewer({
       vrUiResources.playIconTexture = null;
       vrUiResources.stepBackTexture = null;
       vrUiResources.stepForwardTexture = null;
+
+      const trackUiState = vrTrackUiRef.current;
+      if (trackUiState.texture) {
+        trackUiState.texture.dispose();
+      }
+      if (trackUiState.canvasMesh) {
+        disposeObject(trackUiState.canvasMesh);
+      }
+      if (trackUiState.background) {
+        disposeObject(trackUiState.background);
+      }
+      if (trackUiState.group && trackUiState.group.parent) {
+        trackUiState.group.parent.remove(trackUiState.group);
+      }
+      trackUiState.group = null;
+      trackUiState.background = null;
+      trackUiState.canvasMesh = null;
+      trackUiState.canvas = null;
+      trackUiState.context = null;
+      trackUiState.texture = null;
+      trackUiState.interactive = {
+        prevChannel: null,
+        nextChannel: null,
+        stopFollow: null,
+        toggleAll: null,
+        opacityMinus: null,
+        opacityPlus: null,
+        lineWidthMinus: null,
+        lineWidthPlus: null,
+        sortedButton: null,
+        colorSwatches: [],
+        pagePrev: null,
+        pageNext: null,
+        trackRows: []
+      };
 
       const trackGroup = trackGroupRef.current;
       if (trackGroup) {

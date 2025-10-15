@@ -1,3 +1,6 @@
+# VR track panel playback wiring
+- Passed the playback toggle and scrubber callbacks into the WebXR volume viewer so the VR track window and transport panel can control time navigation without throwing runtime errors when interacted with.
+
 # VR state guard for viewer bootstrap
 - Restored the VR UI refs and presentation state bookkeeping so the volume viewer no longer throws `isVrPresenting`/`vrUiGroupRef` reference errors when datasets load, fixing the black screen regression that occurred after integrating the WebXR controls.
 

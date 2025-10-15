@@ -9,6 +9,12 @@ import FloatingWindow from './components/FloatingWindow';
 import type { TrackColorMode, TrackDefinition, TrackPoint } from './types/tracks';
 import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from './layerColors';
 import { getTrackColorHex } from './trackColors';
+import type { TrackColorOption } from './trackSwatches';
+import {
+  DEFAULT_TRACK_COLOR,
+  TRACK_COLOR_SWATCHES,
+  normalizeTrackColorHex
+} from './trackSwatches';
 import './App.css';
 
 const DEFAULT_CONTRAST = 1;
@@ -22,25 +28,6 @@ const TRACK_WINDOW_WIDTH = 340;
 const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
 const MAX_CHANNELS = 3;
 const MAX_CHANNELS_MESSAGE = 'Maximum of 3 channels reached. Remove a channel before adding a new one.';
-
-type TrackColorOption = {
-  value: string;
-  label: string;
-};
-
-const TRACK_COLOR_SWATCHES: TrackColorOption[] = [
-  { value: '#FF6B6B', label: 'Red' },
-  { value: '#FF9F40', label: 'Orange' },
-  { value: '#FFD93D', label: 'Yellow' },
-  { value: '#6BCB77', label: 'Green' },
-  { value: '#4D96FF', label: 'Blue' },
-  { value: '#8E94F2', label: 'Indigo' },
-  { value: '#FF6BF1', label: 'Magenta' }
-];
-
-const DEFAULT_TRACK_COLOR = TRACK_COLOR_SWATCHES[0].value;
-
-const normalizeTrackColor = (color: string) => normalizeHexColor(color, DEFAULT_TRACK_COLOR).toUpperCase();
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 
@@ -864,6 +851,10 @@ function App() {
     }
     return map;
   }, [channels]);
+  const trackChannelsForViewer = useMemo(
+    () => channels.map((channel) => ({ id: channel.id, name: channel.name.trim() || 'Untitled channel' })),
+    [channels]
+  );
   const channelLayersMap = useMemo(() => {
     const map = new Map<string, LoadedLayer[]>();
     for (const layer of layers) {
@@ -1859,7 +1850,7 @@ function App() {
   }, []);
 
   const handleTrackColorSelect = useCallback((channelId: string, color: string) => {
-    const normalized = normalizeTrackColor(color);
+    const normalized = normalizeTrackColorHex(color);
     setChannelTrackStates((current) => {
       const existing = current[channelId] ?? createDefaultChannelTrackState();
       if (existing.colorMode.type === 'uniform' && existing.colorMode.color === normalized) {
@@ -2462,7 +2453,11 @@ function App() {
               expectedVolumes={expectedVolumeCount}
               timeIndex={selectedIndex}
               totalTimepoints={volumeTimepointCount}
+              isPlaying={isPlaying}
+              onTogglePlayback={handleTogglePlayback}
+              onTimeIndexChange={handleTimeIndexChange}
               onRegisterReset={handleRegisterReset}
+              trackChannels={trackChannelsForViewer}
               tracks={parsedTracks}
               trackVisibility={trackVisibility}
               trackOpacityByChannel={trackOpacityByChannel}
@@ -2471,6 +2466,14 @@ function App() {
               channelTrackOffsets={channelTrackOffsets}
               followedTrackId={followedTrackId}
               onTrackFollowRequest={handleTrackFollowFromViewer}
+              onTrackVisibilityToggle={handleTrackVisibilityToggle}
+              onTrackVisibilityAllChange={handleTrackVisibilityAllChange}
+              onTrackOpacityChange={handleTrackOpacityChange}
+              onTrackLineWidthChange={handleTrackLineWidthChange}
+              onTrackColorSelect={handleTrackColorSelect}
+              onTrackColorReset={handleTrackColorReset}
+              onTrackFollowToggle={handleTrackFollow}
+              onTrackFollowStop={handleStopTrackFollow}
             />
           ) : (
             <PlanarViewer
@@ -2911,7 +2914,9 @@ function App() {
                   const allChecked = summary.total > 0 && summary.visible === summary.total;
                   const channelFollowedId = followedTrackChannelId === channel.id ? followedTrackId : null;
                   const colorLabel =
-                    colorMode.type === 'uniform' ? normalizeTrackColor(colorMode.color) : 'Sorted';
+                    colorMode.type === 'uniform'
+                      ? normalizeTrackColorHex(colorMode.color)
+                      : 'Sorted';
 
                   return (
                     <div
@@ -2982,10 +2987,10 @@ function App() {
                             aria-labelledby={`track-color-label-${channel.id}`}
                           >
                             {TRACK_COLOR_SWATCHES.map((swatch) => {
-                              const normalized = normalizeTrackColor(swatch.value);
+                              const normalized = normalizeTrackColorHex(swatch.value);
                               const isSelected =
                                 colorMode.type === 'uniform' &&
-                                normalizeTrackColor(colorMode.color) === normalized;
+                                normalizeTrackColorHex(colorMode.color) === normalized;
                               return (
                                 <button
                                   key={swatch.value}
@@ -3043,7 +3048,7 @@ function App() {
                             const isChecked = isFollowed || (trackVisibility[track.id] ?? true);
                             const trackColor =
                               colorMode.type === 'uniform'
-                                ? normalizeTrackColor(colorMode.color)
+                                ? normalizeTrackColorHex(colorMode.color)
                                 : getTrackColorHex(track.id);
                             return (
                               <div
