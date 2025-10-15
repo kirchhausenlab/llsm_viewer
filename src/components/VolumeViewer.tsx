@@ -455,7 +455,7 @@ const DEFAULT_TRACK_OPACITY = 0.9;
 const DEFAULT_TRACK_LINE_WIDTH = 1;
 
 const VR_PLAYBACK_PANEL_WIDTH = 0.54;
-const VR_PLAYBACK_PANEL_HEIGHT = 0.3;
+const VR_PLAYBACK_PANEL_HEIGHT = 0.36;
 const VR_PLAYBACK_VERTICAL_OFFSET = 0;
 const VR_PLAYBACK_CAMERA_ANCHOR_OFFSET = new THREE.Vector3(0, -0.18, -0.65);
 const VR_CHANNELS_PANEL_WIDTH = 0.52;
@@ -498,13 +498,16 @@ const VR_HUD_MIN_HEIGHT = 0;
 const VR_HUD_FRONT_MARGIN = 0.24;
 const VR_HUD_LATERAL_MARGIN = 0.1;
 const VR_VOLUME_BASE_OFFSET = new THREE.Vector3(0, 1.2, -0.3);
-const VR_UI_TOUCH_DISTANCE = 0.05;
-const VR_UI_TOUCH_SURFACE_MARGIN = 0.02;
+const VR_UI_TOUCH_DISTANCE = 0.08;
+const VR_UI_TOUCH_SURFACE_MARGIN = 0.04;
 const VR_CONTROLLER_TOUCH_RADIUS = 0.015;
 const VR_TRANSLATION_HANDLE_RADIUS = 0.06;
 const VR_TRANSLATION_HANDLE_OFFSET = 0.04;
 const VR_ROTATION_HANDLE_RADIUS = 0.045;
 const VR_ROTATION_HANDLE_OFFSET = 0.03;
+const VR_HUD_GRAB_HANDLE_HEIGHT = 0.06;
+const VR_HUD_GRAB_HANDLE_OFFSET = 0.0015;
+const VR_HUD_SURFACE_OFFSET = 0.0015;
 
 function setVrPlaybackSliderFraction(hud: VrPlaybackHud, fraction: number) {
   const clamped = Math.min(Math.max(fraction, 0), 1);
@@ -1538,7 +1541,7 @@ function VolumeViewer({
         return;
       }
       hud.group.position.copy(placement.position);
-      const quaternion = getHudQuaternionFromYaw(placement.yaw);
+      const quaternion = getHudQuaternionFromYaw(placement.yaw + Math.PI);
       hud.group.quaternion.copy(quaternion);
       hud.group.updateMatrixWorld(true);
     },
@@ -1940,6 +1943,11 @@ function VolumeViewer({
     panel.userData.vrUiTarget = { type: 'playback-panel' } satisfies { type: VrUiTargetType };
     group.add(panel);
 
+    const buttonRowY = 0.085;
+    const mainRowY = -0.02;
+    const sliderRowY = -0.085;
+    const labelRowY = -0.155;
+
     const panelGrabMaterial = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       opacity: 0.01,
@@ -1948,10 +1956,14 @@ function VolumeViewer({
       side: THREE.DoubleSide
     });
     const panelGrabHandle = new THREE.Mesh(
-      new THREE.PlaneGeometry(VR_PLAYBACK_PANEL_WIDTH, 0.06),
+      new THREE.PlaneGeometry(VR_PLAYBACK_PANEL_WIDTH, VR_HUD_GRAB_HANDLE_HEIGHT),
       panelGrabMaterial
     );
-    panelGrabHandle.position.set(0, VR_PLAYBACK_PANEL_HEIGHT / 2 - 0.03, 0.0025);
+    panelGrabHandle.position.set(
+      0,
+      VR_PLAYBACK_PANEL_HEIGHT / 2 - VR_HUD_GRAB_HANDLE_HEIGHT / 2,
+      VR_HUD_GRAB_HANDLE_OFFSET
+    );
     panelGrabHandle.userData.vrUiTarget = { type: 'playback-panel-grab' } satisfies {
       type: VrUiTargetType;
     };
@@ -1963,7 +1975,7 @@ function VolumeViewer({
 
     const resetButtonMaterial = new THREE.MeshBasicMaterial({ color: 0x2b3340, side: THREE.DoubleSide });
     const resetButton = new THREE.Mesh(new THREE.CircleGeometry(sideButtonRadius, 48), resetButtonMaterial);
-    resetButton.position.set(-sideButtonX, 0, 0.01);
+    resetButton.position.set(-sideButtonX, buttonRowY, VR_HUD_SURFACE_OFFSET);
     resetButton.userData.vrUiTarget = { type: 'playback-reset-view' } satisfies {
       type: VrUiTargetType;
     };
@@ -1973,14 +1985,14 @@ function VolumeViewer({
       new THREE.RingGeometry(0.012, 0.02, 24, 1, Math.PI * 0.25, Math.PI * 1.4),
       resetIconMaterial
     );
-    resetArc.position.set(0, 0, 0.002);
+    resetArc.position.set(0, 0, 0.0006);
     const resetArrowShape = new THREE.Shape();
     resetArrowShape.moveTo(0.014, 0.01);
     resetArrowShape.lineTo(0.028, 0.002);
     resetArrowShape.lineTo(0.014, -0.006);
     resetArrowShape.lineTo(0.014, 0.01);
     const resetArrow = new THREE.Mesh(new THREE.ShapeGeometry(resetArrowShape), resetIconMaterial.clone());
-    resetArrow.position.set(0, 0, 0.0025);
+    resetArrow.position.set(0, 0, 0.001);
     resetIconGroup.add(resetArc);
     resetIconGroup.add(resetArrow);
     resetButton.add(resetIconGroup);
@@ -1988,7 +2000,7 @@ function VolumeViewer({
 
     const playButtonMaterial = new THREE.MeshBasicMaterial({ color: 0x2b3340, side: THREE.DoubleSide });
     const playButton = new THREE.Mesh(new THREE.CircleGeometry(0.045, 48), playButtonMaterial);
-    playButton.position.set(-VR_PLAYBACK_PANEL_WIDTH * 0.24, 0, 0.01);
+    playButton.position.set(-VR_PLAYBACK_PANEL_WIDTH * 0.24, mainRowY, VR_HUD_SURFACE_OFFSET);
     playButton.userData.vrUiTarget = { type: 'playback-play-toggle' } satisfies {
       type: VrUiTargetType;
     };
@@ -2003,16 +2015,16 @@ function VolumeViewer({
       new THREE.ShapeGeometry(playShape),
       new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide })
     );
-    playIcon.position.set(0, 0, 0.002);
+    playIcon.position.set(0, 0, 0.0008);
     playButton.add(playIcon);
 
     const pauseGroup = new THREE.Group();
     const pauseMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
     const pauseGeom = new THREE.PlaneGeometry(0.014, 0.045);
     const pauseLeft = new THREE.Mesh(pauseGeom, pauseMaterial);
-    pauseLeft.position.set(-0.012, 0, 0.002);
+    pauseLeft.position.set(-0.012, 0, 0.0008);
     const pauseRight = new THREE.Mesh(pauseGeom.clone(), pauseMaterial.clone());
-    pauseRight.position.set(0.012, 0, 0.002);
+    pauseRight.position.set(0.012, 0, 0.0008);
     pauseGroup.add(pauseLeft);
     pauseGroup.add(pauseRight);
     pauseGroup.visible = false;
@@ -2021,35 +2033,35 @@ function VolumeViewer({
     const modeButtonMaterial = new THREE.MeshBasicMaterial({ color: 0x2b3340, side: THREE.DoubleSide });
     const modeButton = new THREE.Mesh(new THREE.CircleGeometry(sideButtonRadius, 48), modeButtonMaterial);
     const modeButtonX = sideButtonX - (sideButtonRadius * 2 + sideButtonMargin * 1.5);
-    modeButton.position.set(modeButtonX, 0, 0.01);
+    modeButton.position.set(modeButtonX, buttonRowY, VR_HUD_SURFACE_OFFSET);
     modeButton.userData.vrUiTarget = { type: 'playback-toggle-mode' } satisfies {
       type: VrUiTargetType;
     };
     const modeIconMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
     const modeVrIcon = new THREE.Group();
     const vrStrap = new THREE.Mesh(new THREE.PlaneGeometry(0.048, 0.006), modeIconMaterial.clone());
-    vrStrap.position.set(0, 0.016, 0.002);
+    vrStrap.position.set(0, 0.016, 0.0008);
     const vrLeftLens = new THREE.Mesh(new THREE.CircleGeometry(0.012, 32), modeIconMaterial.clone());
-    vrLeftLens.position.set(-0.014, -0.002, 0.0025);
+    vrLeftLens.position.set(-0.014, -0.002, 0.001);
     const vrRightLens = new THREE.Mesh(new THREE.CircleGeometry(0.012, 32), modeIconMaterial.clone());
-    vrRightLens.position.set(0.014, -0.002, 0.0025);
+    vrRightLens.position.set(0.014, -0.002, 0.001);
     modeVrIcon.add(vrStrap);
     modeVrIcon.add(vrLeftLens);
     modeVrIcon.add(vrRightLens);
     modeButton.add(modeVrIcon);
     const modeArIcon = new THREE.Group();
     const arOuter = new THREE.Mesh(new THREE.PlaneGeometry(0.048, 0.032), modeIconMaterial.clone());
-    arOuter.position.set(0, 0, 0.002);
+    arOuter.position.set(0, 0, 0.0008);
     const arInner = new THREE.Mesh(
       new THREE.PlaneGeometry(0.042, 0.026),
       new THREE.MeshBasicMaterial({ color: 0x10161d, side: THREE.DoubleSide })
     );
-    arInner.position.set(0, 0, 0.0025);
+    arInner.position.set(0, 0, 0.001);
     const arSlash = new THREE.Mesh(new THREE.PlaneGeometry(0.006, 0.036), modeIconMaterial.clone());
-    arSlash.position.set(0, 0, 0.003);
+    arSlash.position.set(0, 0, 0.0012);
     arSlash.rotation.z = Math.PI / 6;
     const arFocus = new THREE.Mesh(new THREE.CircleGeometry(0.006, 24), modeIconMaterial.clone());
-    arFocus.position.set(0.012, -0.004, 0.0035);
+    arFocus.position.set(0.012, -0.004, 0.0014);
     modeArIcon.add(arOuter);
     modeArIcon.add(arInner);
     modeArIcon.add(arSlash);
@@ -2060,7 +2072,7 @@ function VolumeViewer({
 
     const exitButtonMaterial = new THREE.MeshBasicMaterial({ color: 0x512b2b, side: THREE.DoubleSide });
     const exitButton = new THREE.Mesh(new THREE.CircleGeometry(sideButtonRadius, 48), exitButtonMaterial);
-    exitButton.position.set(sideButtonX, 0, 0.01);
+    exitButton.position.set(sideButtonX, buttonRowY, VR_HUD_SURFACE_OFFSET);
     exitButton.userData.vrUiTarget = { type: 'playback-exit-vr' } satisfies {
       type: VrUiTargetType;
     };
@@ -2068,10 +2080,10 @@ function VolumeViewer({
     const exitIconGroup = new THREE.Group();
     const exitBarGeometry = new THREE.PlaneGeometry(0.03, 0.006);
     const exitBarA = new THREE.Mesh(exitBarGeometry, exitIconMaterial);
-    exitBarA.position.set(0, 0, 0.0025);
+    exitBarA.position.set(0, 0, 0.001);
     exitBarA.rotation.z = Math.PI / 4;
     const exitBarB = new THREE.Mesh(exitBarGeometry.clone(), exitIconMaterial.clone());
-    exitBarB.position.set(0, 0, 0.0025);
+    exitBarB.position.set(0, 0, 0.001);
     exitBarB.rotation.z = -Math.PI / 4;
     exitIconGroup.add(exitBarA);
     exitIconGroup.add(exitBarB);
@@ -2079,7 +2091,7 @@ function VolumeViewer({
     group.add(exitButton);
 
     const sliderGroup = new THREE.Group();
-    sliderGroup.position.set(0.08, -0.06, 0.01);
+    sliderGroup.position.set(0.08, sliderRowY, VR_HUD_SURFACE_OFFSET);
     group.add(sliderGroup);
 
     const sliderWidth = 0.32;
@@ -2095,12 +2107,12 @@ function VolumeViewer({
       side: THREE.DoubleSide
     });
     const sliderFill = new THREE.Mesh(new THREE.PlaneGeometry(sliderWidth, 0.012), sliderFillMaterial);
-    sliderFill.position.set(0, 0, 0.0015);
+    sliderFill.position.set(0, 0, 0.0005);
     sliderGroup.add(sliderFill);
 
     const sliderKnobMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
     const sliderKnob = new THREE.Mesh(new THREE.CircleGeometry(0.017, 32), sliderKnobMaterial);
-    sliderKnob.position.set(-sliderWidth / 2, 0, 0.003);
+    sliderKnob.position.set(-sliderWidth / 2, 0, 0.001);
     sliderKnob.userData.vrUiTarget = { type: 'playback-slider' } satisfies {
       type: VrUiTargetType;
     };
@@ -2117,7 +2129,7 @@ function VolumeViewer({
       new THREE.PlaneGeometry(sliderWidth + 0.04, 0.08),
       sliderHitMaterial
     );
-    sliderHitArea.position.set(0, 0, 0.0005);
+    sliderHitArea.position.set(0, 0, 0.0002);
     sliderHitArea.userData.vrUiTarget = { type: 'playback-slider' } satisfies {
       type: VrUiTargetType;
     };
@@ -2138,7 +2150,7 @@ function VolumeViewer({
       side: THREE.DoubleSide
     });
     const labelMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.06), labelMaterial);
-    labelMesh.position.set(0.08, -0.12, 0.002);
+    labelMesh.position.set(0.08, labelRowY, VR_HUD_SURFACE_OFFSET + 0.0005);
     group.add(labelMesh);
 
     const hud: VrPlaybackHud = {
@@ -2255,10 +2267,14 @@ function VolumeViewer({
       side: THREE.DoubleSide
     });
     const panelGrabHandle = new THREE.Mesh(
-      new THREE.PlaneGeometry(VR_CHANNELS_PANEL_WIDTH, 0.06),
+      new THREE.PlaneGeometry(VR_CHANNELS_PANEL_WIDTH, VR_HUD_GRAB_HANDLE_HEIGHT),
       panelGrabMaterial
     );
-    panelGrabHandle.position.set(0, VR_CHANNELS_PANEL_HEIGHT / 2 - 0.03, 0.0025);
+    panelGrabHandle.position.set(
+      0,
+      VR_CHANNELS_PANEL_HEIGHT / 2 - VR_HUD_GRAB_HANDLE_HEIGHT / 2,
+      VR_HUD_GRAB_HANDLE_OFFSET
+    );
     panelGrabHandle.userData.vrUiTarget = { type: 'channels-panel-grab' } satisfies {
       type: VrUiTargetType;
     };
@@ -2342,10 +2358,14 @@ function VolumeViewer({
       side: THREE.DoubleSide
     });
     const panelGrabHandle = new THREE.Mesh(
-      new THREE.PlaneGeometry(VR_TRACKS_PANEL_WIDTH, 0.06),
+      new THREE.PlaneGeometry(VR_TRACKS_PANEL_WIDTH, VR_HUD_GRAB_HANDLE_HEIGHT),
       panelGrabMaterial
     );
-    panelGrabHandle.position.set(0, VR_TRACKS_PANEL_HEIGHT / 2 - 0.03, 0.0025);
+    panelGrabHandle.position.set(
+      0,
+      VR_TRACKS_PANEL_HEIGHT / 2 - VR_HUD_GRAB_HANDLE_HEIGHT / 2,
+      VR_HUD_GRAB_HANDLE_OFFSET
+    );
     panelGrabHandle.userData.vrUiTarget = { type: 'tracks-panel-grab' } satisfies { type: VrUiTargetType };
     group.add(panelGrabHandle);
 
@@ -5165,7 +5185,8 @@ function VolumeViewer({
                   const rawDistance = distanceAlongRay;
                   const clampedDistance = Math.max(0.12, Math.min(rawDistance, 8));
                   const panelGrabActive = activeType === 'playback-panel-grab';
-                  const handleMinY = VR_PLAYBACK_PANEL_HEIGHT / 2 - 0.06 - surfaceMargin;
+                  const handleMinY =
+                    VR_PLAYBACK_PANEL_HEIGHT / 2 - VR_HUD_GRAB_HANDLE_HEIGHT - surfaceMargin;
                   const handleMaxY = VR_PLAYBACK_PANEL_HEIGHT / 2 + surfaceMargin;
                   const inHandleBand =
                     playbackLocalPoint.y >= handleMinY && playbackLocalPoint.y <= handleMaxY;
@@ -5325,7 +5346,8 @@ function VolumeViewer({
                   const rawDistance = distanceAlongRay;
                   const clampedDistance = Math.max(0.12, Math.min(rawDistance, 8));
                   const panelGrabActive = activeType === 'channels-panel-grab';
-                  const handleMinY = channelsHudInstance.height / 2 - 0.06 - surfaceMargin;
+                  const handleMinY =
+                    channelsHudInstance.height / 2 - VR_HUD_GRAB_HANDLE_HEIGHT - surfaceMargin;
                   const handleMaxY = channelsHudInstance.height / 2 + surfaceMargin;
                   const inHandleBand =
                     channelsLocalPoint.y >= handleMinY && channelsLocalPoint.y <= handleMaxY;
@@ -5433,7 +5455,8 @@ function VolumeViewer({
                   const rawDistance = distanceAlongRay;
                   const clampedDistance = Math.max(0.12, Math.min(rawDistance, 8));
                   const panelGrabActive = activeType === 'tracks-panel-grab';
-                  const handleMinY = tracksHudInstance.height / 2 - 0.06 - surfaceMargin;
+                  const handleMinY =
+                    tracksHudInstance.height / 2 - VR_HUD_GRAB_HANDLE_HEIGHT - surfaceMargin;
                   const handleMaxY = tracksHudInstance.height / 2 + surfaceMargin;
                   const inHandleBand =
                     tracksLocalPoint.y >= handleMinY && tracksLocalPoint.y <= handleMaxY;

@@ -1,5 +1,10 @@
 # Progress Log
 
+## VR HUD ergonomics refinement
+- Thickened the VR HUD grab handles and widened controller hover margins so panels are easier to seize while moving.
+- Flipped the default HUD orientation to face the viewer when sessions start, keeping user-driven yaw adjustments intact.
+- Repositioned the playback HUD layout with a taller panel, surface-flush controls, and a dedicated top row for reset/mode/exit buttons.
+
 ## WebXR passthrough toggle
 - Detected `immersive-ar` support alongside `immersive-vr` so the viewer can expose passthrough capabilities when available while
   retaining an optimistic fallback when WebXR probing is incomplete.
@@ -309,3 +314,6 @@ d centered the front-page card in the viewport.
 ## Embedded Dropbox configuration
 - Embedded the Dropbox app key `1abfsrk62dy855r` directly into the front-end integration so every deployment loads the chooser without manual setup.
 - Documented the bundled key in the README and noted how to override it via `VITE_DROPBOX_APP_KEY` if needed.
+
+## VR HUD grab handle tuning
+- Restored the playback, channels, and tracks HUD grab handle height to its pre-regression size while retaining the deeper grab tolerance.
