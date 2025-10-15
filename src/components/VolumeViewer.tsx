@@ -3887,6 +3887,24 @@ function VolumeViewer({
   ]);
 
   const handleResetView = useCallback(() => {
+    const renderer = rendererRef.current;
+    const isVrPresenting = renderer?.xr?.isPresenting ?? false;
+    if (isVrPresenting) {
+      volumeRootBaseOffsetRef.current.copy(VR_VOLUME_BASE_OFFSET);
+    } else {
+      volumeRootBaseOffsetRef.current.set(0, 0, 0);
+    }
+    const volumeRootGroup = volumeRootGroupRef.current;
+    if (volumeRootGroup) {
+      volumeRootGroup.quaternion.identity();
+    }
+    applyVolumeRootTransform(currentDimensionsRef.current);
+    if (isVrPresenting) {
+      resetVrPlaybackHudPlacement();
+      resetVrChannelsHudPlacement();
+      resetVrTracksHudPlacement();
+    }
+
     const controls = controlsRef.current;
     if (!controls) {
       return;
@@ -3904,7 +3922,12 @@ function VolumeViewer({
     controls.reset();
     controls.target.copy(rotationTargetRef.current);
     controls.update();
-  }, []);
+  }, [
+    applyVolumeRootTransform,
+    resetVrChannelsHudPlacement,
+    resetVrPlaybackHudPlacement,
+    resetVrTracksHudPlacement
+  ]);
 
   useEffect(() => {
     onRegisterReset(hasRenderableLayer ? handleResetView : null);
