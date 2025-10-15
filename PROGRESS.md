@@ -1,5 +1,10 @@
 # Progress Log
 
+## VR HUD ergonomics refinement
+- Thickened the VR HUD grab handles and widened controller hover margins so panels are easier to seize while moving.
+- Flipped the default HUD orientation to face the viewer when sessions start, keeping user-driven yaw adjustments intact.
+- Repositioned the playback HUD layout with a taller panel, surface-flush controls, and a dedicated top row for reset/mode/exit buttons.
+
 ## WebXR passthrough toggle
 - Detected `immersive-ar` support alongside `immersive-vr` so the viewer can expose passthrough capabilities when available while
   retaining an optimistic fallback when WebXR probing is incomplete.
