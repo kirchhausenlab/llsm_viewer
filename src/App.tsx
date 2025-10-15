@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ChangeEvent, DragEvent } from 'react';
+import type { ChangeEvent, DragEvent, FormEvent } from 'react';
 import { loadVolumesFromFiles } from './loaders/volumeLoader';
 import VolumeViewer from './components/VolumeViewer';
 import PlanarViewer from './components/PlanarViewer';
@@ -9,7 +9,13 @@ import FloatingWindow from './components/FloatingWindow';
 import type { TrackColorMode, TrackDefinition, TrackPoint } from './types/tracks';
 import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from './layerColors';
 import { getTrackColorHex } from './trackColors';
-import { chooseDropboxFiles } from './integrations/dropbox';
+import {
+  chooseDropboxFiles,
+  DropboxConfigurationError,
+  getDropboxAppKeyInfo,
+  setDropboxAppKey,
+  type DropboxAppKeySource
+} from './integrations/dropbox';
 import './App.css';
 
 const DEFAULT_CONTRAST = 1;
@@ -436,6 +442,16 @@ function ChannelCard({
   const [isTrackDragging, setIsTrackDragging] = useState(false);
   const [isDropboxImporting, setIsDropboxImporting] = useState(false);
   const [dropboxError, setDropboxError] = useState<string | null>(null);
+  const [dropboxInfo, setDropboxInfo] = useState<string | null>(null);
+  const [isDropboxConfigOpen, setIsDropboxConfigOpen] = useState(false);
+  const [dropboxAppKeyInput, setDropboxAppKeyInput] = useState('');
+  const [dropboxAppKeySource, setDropboxAppKeySource] = useState<DropboxAppKeySource | null>(null);
+
+  const syncDropboxConfigState = useCallback(() => {
+    const info = getDropboxAppKeyInfo();
+    setDropboxAppKeyInput(info.appKey ?? '');
+    setDropboxAppKeySource(info.source);
+  }, []);
 
   useEffect(() => {
     const input = layerInputRef.current;
@@ -448,13 +464,70 @@ function ChannelCard({
   }, []);
 
   useEffect(() => {
+    syncDropboxConfigState();
+  }, [syncDropboxConfigState]);
+
+  useEffect(() => {
     if (isDisabled) {
       setIsLayerDragging(false);
       setIsTrackDragging(false);
       setIsDropboxImporting(false);
       setDropboxError(null);
+      setDropboxInfo(null);
+      setIsDropboxConfigOpen(false);
     }
   }, [isDisabled]);
+
+  const openDropboxConfig = useCallback(() => {
+    if (isDisabled) {
+      return;
+    }
+    syncDropboxConfigState();
+    setIsDropboxConfigOpen(true);
+    setDropboxInfo(null);
+  }, [isDisabled, syncDropboxConfigState]);
+
+  const handleDropboxConfigCancel = useCallback(() => {
+    setIsDropboxConfigOpen(false);
+  }, []);
+
+  const handleDropboxConfigInputChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      setDropboxAppKeyInput(event.target.value);
+      if (dropboxInfo) {
+        setDropboxInfo(null);
+      }
+    },
+    [dropboxInfo]
+  );
+
+  const handleDropboxConfigSubmit = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (dropboxAppKeySource === 'env') {
+        setIsDropboxConfigOpen(false);
+        return;
+      }
+      const trimmed = dropboxAppKeyInput.trim();
+      setDropboxAppKey(trimmed ? trimmed : null);
+      syncDropboxConfigState();
+      setIsDropboxConfigOpen(false);
+      setDropboxError(null);
+      setDropboxInfo(
+        trimmed
+          ? 'Dropbox app key saved. Try importing from Dropbox again.'
+          : 'Saved Dropbox app key cleared.'
+      );
+    },
+    [dropboxAppKeyInput, dropboxAppKeySource, syncDropboxConfigState]
+  );
+
+  const handleDropboxConfigClear = useCallback(() => {
+    setDropboxAppKey(null);
+    syncDropboxConfigState();
+    setDropboxInfo('Saved Dropbox app key cleared.');
+    setDropboxError(null);
+  }, [syncDropboxConfigState]);
 
   const handleLayerBrowse = useCallback(() => {
     if (isDisabled) {
@@ -535,6 +608,7 @@ function ChannelCard({
       return;
     }
     setDropboxError(null);
+    setDropboxInfo(null);
     setIsDropboxImporting(true);
     try {
       const files = await chooseDropboxFiles({
@@ -546,12 +620,26 @@ function ChannelCard({
       }
     } catch (error) {
       console.error('Failed to import from Dropbox', error);
-      const message = error instanceof Error ? error.message : 'Failed to import files from Dropbox.';
-      setDropboxError(message);
+      if (error instanceof DropboxConfigurationError) {
+        syncDropboxConfigState();
+        setIsDropboxConfigOpen(true);
+        setDropboxError(
+          'Dropbox is not configured yet. Add your Dropbox app key below to connect your account.'
+        );
+      } else {
+        const message = error instanceof Error ? error.message : 'Failed to import files from Dropbox.';
+        setDropboxError(message);
+      }
     } finally {
       setIsDropboxImporting(false);
     }
-  }, [channel.id, isDisabled, isDropboxImporting, onLayerFilesAdded]);
+  }, [
+    channel.id,
+    isDisabled,
+    isDropboxImporting,
+    onLayerFilesAdded,
+    syncDropboxConfigState
+  ]);
 
   const handleTrackBrowse = useCallback(() => {
     if (isDisabled) {
@@ -667,12 +755,77 @@ function ChannelCard({
           >
             {isDropboxImporting ? 'Importing…' : 'Import from Dropbox'}
           </button>
+          {!isDropboxConfigOpen ? (
+            <button
+              type="button"
+              className="channel-layer-drop-link"
+              onClick={openDropboxConfig}
+              disabled={isDisabled}
+            >
+              Configure Dropbox
+            </button>
+          ) : null}
           <p className="channel-layer-drop-subtitle">Drop folders or TIFF sequences to add layers.</p>
         </div>
         {isDropboxImporting ? (
           <p className="channel-layer-drop-status">Importing from Dropbox…</p>
         ) : null}
+        {dropboxInfo ? <p className="channel-layer-drop-info">{dropboxInfo}</p> : null}
         {dropboxError ? <p className="channel-layer-drop-error">{dropboxError}</p> : null}
+        {isDropboxConfigOpen ? (
+          <form className="channel-dropbox-config" onSubmit={handleDropboxConfigSubmit} noValidate>
+            <label className="channel-dropbox-config-label" htmlFor={`dropbox-app-key-${channel.id}`}>
+              Dropbox app key
+            </label>
+            <input
+              id={`dropbox-app-key-${channel.id}`}
+              type="text"
+              className="channel-dropbox-config-input"
+              placeholder="slate-your-app-key"
+              value={dropboxAppKeyInput}
+              onChange={handleDropboxConfigInputChange}
+              disabled={isDisabled || dropboxAppKeySource === 'env'}
+              autoComplete="off"
+            />
+            <p className="channel-dropbox-config-hint">
+              Generate an app key in the{' '}
+              <a href="https://www.dropbox.com/developers/apps" target="_blank" rel="noreferrer">
+                Dropbox App Console
+              </a>{' '}
+              (Scoped app with Dropbox Chooser enabled) and paste it here.
+            </p>
+            {dropboxAppKeySource === 'env' ? (
+              <p className="channel-dropbox-config-note">
+                This deployment provides a Dropbox app key. Contact your administrator to change it.
+              </p>
+            ) : null}
+            <div className="channel-dropbox-config-actions">
+              <button
+                type="submit"
+                className="channel-dropbox-config-save"
+                disabled={isDisabled}
+              >
+                {dropboxAppKeySource === 'env' ? 'Close' : 'Save app key'}
+              </button>
+              <button
+                type="button"
+                className="channel-dropbox-config-cancel"
+                onClick={handleDropboxConfigCancel}
+              >
+                Cancel
+              </button>
+              {dropboxAppKeySource === 'local' ? (
+                <button
+                  type="button"
+                  className="channel-dropbox-config-clear"
+                  onClick={handleDropboxConfigClear}
+                >
+                  Remove saved key
+                </button>
+              ) : null}
+            </div>
+          </form>
+        ) : null}
       </div>
       {channel.layers.length > 0 ? (
         <ul className="channel-layer-list">

@@ -37,6 +37,10 @@
 - Added a lazy-loaded Dropbox Dropins helper that injects the SDK with the configured app key and converts selections into `File` instances while preserving folder structure metadata.
 - Hooked the channel layer picker into the Dropbox chooser with loading/error states, letting users import multi-file TIFF stacks directly from their Dropbox account.
 
+## Dropbox chooser UX improvements
+- Added an inline Dropbox configuration panel that stores app keys in the browser, guiding users toward the Dropbox App Console when no build-time key is present.
+- Upgraded the Dropbox import flow with clearer messaging so missing keys prompt configuration instead of surfacing a generic error.
+
 ## Per-channel track organization
 - Added per-channel tabs to the tracks window so each channel exposes independent visibility, opacity, thickness, and follow controls.
 - Persisted track color schemes per channel with preset swatches and a "Sorted" option that restores the rainbow palette.
