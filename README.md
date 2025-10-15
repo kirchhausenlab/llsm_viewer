@@ -18,8 +18,8 @@ two different ways:
 
 1. **Build-time configuration** – Add a `.env.local` file next to `package.json` that defines `VITE_DROPBOX_APP_KEY=your_app_key`.
    Restart the dev server after editing the environment file.
-2. **In-app configuration** – Click **Import from Dropbox** inside any channel card and use the **Configure Dropbox** button to
-   paste your app key. The viewer stores the key in `localStorage` so you only need to enter it once per browser profile.
+2. **Runtime prompt** – If no key is bundled, the viewer asks for one the first time you try importing from Dropbox and stores
+   it in `localStorage` so you only need to enter it once per browser profile.
 
 This repository embeds the Dropbox app key `1abfsrk62dy855r` so the chooser is ready to use out of the box. You can override it by
 setting `VITE_DROPBOX_APP_KEY` at build time or replacing the embedded key in `src/integrations/dropbox.ts`.
