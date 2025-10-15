@@ -1690,6 +1690,41 @@ function App() {
     return map;
   }, [channelTrackStates, channels]);
 
+  const vrChannelPanels = useMemo(() => {
+    return loadedChannelIds.map((channelId) => {
+      const channelLayers = channelLayersMap.get(channelId) ?? [];
+      const name = channelNameMap.get(channelId) ?? 'Untitled channel';
+      const visible = channelVisibility[channelId] ?? true;
+      const activeLayerKey = channelActiveLayer[channelId] ?? channelLayers[0]?.key ?? null;
+      const layersInfo = channelLayers.map((layer) => {
+        const settings = layerSettings[layer.key] ?? createDefaultLayerSettings();
+        const firstVolume = layer.volumes[0] ?? null;
+        const isGrayscale = Boolean(firstVolume && firstVolume.channels === 1);
+        return {
+          key: layer.key,
+          label: layer.label,
+          hasData: layer.volumes.length > 0,
+          isGrayscale,
+          settings
+        };
+      });
+      return {
+        id: channelId,
+        name,
+        visible,
+        activeLayerKey,
+        layers: layersInfo
+      };
+    });
+  }, [
+    channelActiveLayer,
+    channelLayersMap,
+    channelNameMap,
+    channelVisibility,
+    layerSettings,
+    loadedChannelIds
+  ]);
+
   const channelTrackColorModes = useMemo(() => {
     const map: Record<string, TrackColorMode> = {};
     for (const channel of channels) {
@@ -2839,6 +2874,16 @@ function App() {
               trackLineWidthByChannel={trackLineWidthByChannel}
               channelTrackColorModes={channelTrackColorModes}
               channelTrackOffsets={channelTrackOffsets}
+              channelPanels={vrChannelPanels}
+              activeChannelPanelId={activeChannelTabId}
+              onChannelPanelSelect={setActiveChannelTabId}
+              onChannelVisibilityToggle={handleChannelVisibilityToggle}
+              onChannelReset={handleChannelSliderReset}
+              onChannelLayerSelect={handleChannelLayerSelectionChange}
+              onLayerContrastChange={handleLayerContrastChange}
+              onLayerBrightnessChange={handleLayerBrightnessChange}
+              onLayerOffsetChange={handleLayerOffsetChange}
+              onLayerColorChange={handleLayerColorChange}
               followedTrackId={followedTrackId}
               onTrackFollowRequest={handleTrackFollowFromViewer}
               onRegisterVrSession={handleRegisterVrSession}

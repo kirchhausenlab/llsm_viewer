@@ -271,3 +271,9 @@ d centered the front-page card in the viewport.
 - Constrained the draggable VR playback HUD to a 1.5 m radius cylinder spanning floor to 2 m, clamping controller drags onto that surface.
 - Reoriented the HUD so it always faces the world origin irrespective of head movement while preserving upright alignment.
 - Updated default placement logic to project the initial HUD position onto the cylinder when entering immersive mode.
+
+## VR channels HUD
+- Added a VR-native channels control window that mirrors the desktop channels panel, including tabs, layer selection, visibility, per-layer sliders, and grayscale tint swatches.
+- Reused the playback HUD's cylindrical positioning and drag constraints so both windows can be grabbed and moved independently in immersive mode.
+- Wired controller interactions to the existing React state pipeline so VR adjustments immediately sync with the desktop UI and underlying rendering state.
+- Raised the VR channels canvas fidelity by rendering at headset pixel ratios, enlarging typography, and brightening hover cues so controls remain legible inside WebXR headsets.
