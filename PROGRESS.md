@@ -1,5 +1,9 @@
 # Progress Log
 
+## VR reset view behavior
+- Updated the immersive playback "Reset view" control to restore the normalized volume pose, recentering the dataset and VR HUD
+  panels instead of only touching the orbit camera.
+
 ## VR HUD ergonomics refinement
 - Thickened the VR HUD grab handles and widened controller hover margins so panels are easier to seize while moving.
 - Flipped the default HUD orientation to face the viewer when sessions start, keeping user-driven yaw adjustments intact.
