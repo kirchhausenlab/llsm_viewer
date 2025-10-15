@@ -440,12 +440,15 @@ function ChannelCard({
   const trackDragCounterRef = useRef(0);
   const [isLayerDragging, setIsLayerDragging] = useState(false);
   const [isTrackDragging, setIsTrackDragging] = useState(false);
-  const [isDropboxImporting, setIsDropboxImporting] = useState(false);
+  const [dropboxImportTarget, setDropboxImportTarget] = useState<'layers' | 'tracks' | null>(null);
   const [dropboxError, setDropboxError] = useState<string | null>(null);
+  const [dropboxErrorContext, setDropboxErrorContext] = useState<'layers' | 'tracks' | null>(null);
   const [dropboxInfo, setDropboxInfo] = useState<string | null>(null);
   const [isDropboxConfigOpen, setIsDropboxConfigOpen] = useState(false);
   const [dropboxAppKeyInput, setDropboxAppKeyInput] = useState('');
   const [dropboxAppKeySource, setDropboxAppKeySource] = useState<DropboxAppKeySource | null>(null);
+
+  const isDropboxImporting = dropboxImportTarget !== null;
 
   const syncDropboxConfigState = useCallback(() => {
     const info = getDropboxAppKeyInfo();
@@ -471,8 +474,9 @@ function ChannelCard({
     if (isDisabled) {
       setIsLayerDragging(false);
       setIsTrackDragging(false);
-      setIsDropboxImporting(false);
+      setDropboxImportTarget(null);
       setDropboxError(null);
+      setDropboxErrorContext(null);
       setDropboxInfo(null);
       setIsDropboxConfigOpen(false);
     }
@@ -513,6 +517,7 @@ function ChannelCard({
       syncDropboxConfigState();
       setIsDropboxConfigOpen(false);
       setDropboxError(null);
+      setDropboxErrorContext(null);
       setDropboxInfo(
         trimmed
           ? 'Dropbox app key saved. Try importing from Dropbox again.'
@@ -527,18 +532,19 @@ function ChannelCard({
     syncDropboxConfigState();
     setDropboxInfo('Saved Dropbox app key cleared.');
     setDropboxError(null);
+    setDropboxErrorContext(null);
   }, [syncDropboxConfigState]);
 
   const handleLayerBrowse = useCallback(() => {
-    if (isDisabled) {
+    if (isDisabled || isDropboxImporting) {
       return;
     }
     layerInputRef.current?.click();
-  }, [isDisabled]);
+  }, [isDisabled, isDropboxImporting]);
 
   const handleLayerInputChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
-      if (isDisabled) {
+      if (isDisabled || isDropboxImporting) {
         event.target.value = '';
         return;
       }
@@ -548,34 +554,34 @@ function ChannelCard({
       }
       event.target.value = '';
     },
-    [channel.id, isDisabled, onLayerFilesAdded]
+    [channel.id, isDisabled, isDropboxImporting, onLayerFilesAdded]
   );
 
   const handleLayerDragEnter = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault();
-      if (isDisabled) {
+      if (isDisabled || isDropboxImporting) {
         return;
       }
       dragCounterRef.current += 1;
       setIsLayerDragging(true);
     },
-    [isDisabled]
+    [isDisabled, isDropboxImporting]
   );
 
   const handleLayerDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
-    if (isDisabled) {
+    if (isDisabled || isDropboxImporting) {
       event.dataTransfer.dropEffect = 'none';
       return;
     }
     event.dataTransfer.dropEffect = 'copy';
-  }, [isDisabled]);
+  }, [isDisabled, isDropboxImporting]);
 
   const handleLayerDragLeave = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault();
-      if (isDisabled) {
+      if (isDisabled || isDropboxImporting) {
         return;
       }
       dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
@@ -583,7 +589,7 @@ function ChannelCard({
         setIsLayerDragging(false);
       }
     },
-    [isDisabled]
+    [isDisabled, isDropboxImporting]
   );
 
   const handleLayerDrop = useCallback(
@@ -591,7 +597,7 @@ function ChannelCard({
       event.preventDefault();
       dragCounterRef.current = 0;
       setIsLayerDragging(false);
-      if (isDisabled) {
+      if (isDisabled || isDropboxImporting) {
         return;
       }
       const { dataTransfer } = event;
@@ -600,7 +606,7 @@ function ChannelCard({
       }
       onLayerDrop(channel.id, dataTransfer);
     },
-    [channel.id, isDisabled, onLayerDrop]
+    [channel.id, isDisabled, isDropboxImporting, onLayerDrop]
   );
 
   const handleDropboxImport = useCallback(async () => {
@@ -608,8 +614,9 @@ function ChannelCard({
       return;
     }
     setDropboxError(null);
+    setDropboxErrorContext(null);
     setDropboxInfo(null);
-    setIsDropboxImporting(true);
+    setDropboxImportTarget('layers');
     try {
       const files = await chooseDropboxFiles({
         extensions: ['.tif', '.tiff'],
@@ -620,6 +627,7 @@ function ChannelCard({
       }
     } catch (error) {
       console.error('Failed to import from Dropbox', error);
+      setDropboxErrorContext('layers');
       if (error instanceof DropboxConfigurationError) {
         syncDropboxConfigState();
         setIsDropboxConfigOpen(true);
@@ -631,7 +639,7 @@ function ChannelCard({
         setDropboxError(message);
       }
     } finally {
-      setIsDropboxImporting(false);
+      setDropboxImportTarget(null);
     }
   }, [
     channel.id,
@@ -641,16 +649,57 @@ function ChannelCard({
     syncDropboxConfigState
   ]);
 
+  const handleTrackDropboxImport = useCallback(async () => {
+    if (isDisabled || isDropboxImporting) {
+      return;
+    }
+    setDropboxError(null);
+    setDropboxErrorContext(null);
+    setDropboxInfo(null);
+    setDropboxImportTarget('tracks');
+    try {
+      const files = await chooseDropboxFiles({
+        extensions: ['.csv'],
+        multiselect: false
+      });
+      const [file] = files;
+      if (file) {
+        onTrackFileSelected(channel.id, file);
+      }
+    } catch (error) {
+      console.error('Failed to import tracks from Dropbox', error);
+      setDropboxErrorContext('tracks');
+      if (error instanceof DropboxConfigurationError) {
+        syncDropboxConfigState();
+        setIsDropboxConfigOpen(true);
+        setDropboxError(
+          'Dropbox is not configured yet. Add your Dropbox app key below to connect your account.'
+        );
+      } else {
+        const message = error instanceof Error ? error.message : 'Failed to import tracks from Dropbox.';
+        setDropboxError(message);
+      }
+    } finally {
+      setDropboxImportTarget(null);
+    }
+  }, [
+    channel.id,
+    isDisabled,
+    isDropboxImporting,
+    onTrackFileSelected,
+    syncDropboxConfigState
+  ]);
+
   const handleTrackBrowse = useCallback(() => {
-    if (isDisabled) {
+    if (isDisabled || isDropboxImporting) {
       return;
     }
     trackInputRef.current?.click();
-  }, [isDisabled]);
+  }, [isDisabled, isDropboxImporting]);
 
   const handleTrackInputChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
-      if (isDisabled) {
+      if (isDisabled || isDropboxImporting) {
         event.target.value = '';
         return;
       }
@@ -660,25 +709,25 @@ function ChannelCard({
       }
       event.target.value = '';
     },
-    [channel.id, isDisabled, onTrackFileSelected]
+    [channel.id, isDisabled, isDropboxImporting, onTrackFileSelected]
   );
 
   const handleTrackDragEnter = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault();
-      if (isDisabled) {
+      if (isDisabled || isDropboxImporting) {
         return;
       }
       trackDragCounterRef.current += 1;
       setIsTrackDragging(true);
     },
-    [isDisabled]
+    [isDisabled, isDropboxImporting]
   );
 
   const handleTrackDragLeave = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault();
-      if (isDisabled) {
+      if (isDisabled || isDropboxImporting) {
         return;
       }
       trackDragCounterRef.current = Math.max(0, trackDragCounterRef.current - 1);
@@ -686,7 +735,7 @@ function ChannelCard({
         setIsTrackDragging(false);
       }
     },
-    [isDisabled]
+    [isDisabled, isDropboxImporting]
   );
 
   const handleTrackDrop = useCallback(
@@ -694,7 +743,7 @@ function ChannelCard({
       event.preventDefault();
       trackDragCounterRef.current = 0;
       setIsTrackDragging(false);
-      if (isDisabled) {
+      if (isDisabled || isDropboxImporting) {
         return;
       }
       const { dataTransfer } = event;
@@ -703,7 +752,7 @@ function ChannelCard({
       }
       onTrackDrop(channel.id, dataTransfer);
     },
-    [channel.id, isDisabled, onTrackDrop]
+    [channel.id, isDisabled, isDropboxImporting, onTrackDrop]
   );
 
   return (
@@ -736,14 +785,14 @@ function ChannelCard({
           accept=".tif,.tiff,.TIF,.TIFF"
           multiple
           onChange={handleLayerInputChange}
-          disabled={isDisabled}
+          disabled={isDisabled || isDropboxImporting}
         />
         <div className="channel-layer-drop-content">
           <button
             type="button"
             className="channel-layer-drop-button"
             onClick={handleLayerBrowse}
-            disabled={isDisabled}
+            disabled={isDisabled || isDropboxImporting}
           >
             Add layers
           </button>
@@ -753,7 +802,7 @@ function ChannelCard({
             onClick={handleDropboxImport}
             disabled={isDisabled || isDropboxImporting}
           >
-            {isDropboxImporting ? 'Importing…' : 'Import from Dropbox'}
+            {dropboxImportTarget === 'layers' ? 'Importing…' : 'Import from Dropbox'}
           </button>
           {!isDropboxConfigOpen ? (
             <button
@@ -767,11 +816,13 @@ function ChannelCard({
           ) : null}
           <p className="channel-layer-drop-subtitle">Drop folders or TIFF sequences to add layers.</p>
         </div>
-        {isDropboxImporting ? (
+        {dropboxImportTarget === 'layers' ? (
           <p className="channel-layer-drop-status">Importing from Dropbox…</p>
         ) : null}
         {dropboxInfo ? <p className="channel-layer-drop-info">{dropboxInfo}</p> : null}
-        {dropboxError ? <p className="channel-layer-drop-error">{dropboxError}</p> : null}
+        {dropboxError && dropboxErrorContext === 'layers' ? (
+          <p className="channel-layer-drop-error">{dropboxError}</p>
+        ) : null}
         {isDropboxConfigOpen ? (
           <form className="channel-dropbox-config" onSubmit={handleDropboxConfigSubmit} noValidate>
             <label className="channel-dropbox-config-label" htmlFor={`dropbox-app-key-${channel.id}`}>
@@ -873,7 +924,7 @@ function ChannelCard({
           type="file"
           accept=".csv"
           onChange={handleTrackInputChange}
-          disabled={isDisabled}
+          disabled={isDisabled || isDropboxImporting}
         />
         <div className="channel-tracks-content">
           <div className="channel-tracks-row">
@@ -882,10 +933,28 @@ function ChannelCard({
                 type="button"
                 className="channel-tracks-button"
                 onClick={handleTrackBrowse}
-                disabled={isDisabled}
+                disabled={isDisabled || isDropboxImporting}
               >
                 Add tracks (optional)
               </button>
+              <button
+                type="button"
+                className="channel-tracks-button"
+                onClick={handleTrackDropboxImport}
+                disabled={isDisabled || isDropboxImporting}
+              >
+                {dropboxImportTarget === 'tracks' ? 'Importing…' : 'Import from Dropbox'}
+              </button>
+              {!isDropboxConfigOpen ? (
+                <button
+                  type="button"
+                  className="channel-tracks-link"
+                  onClick={openDropboxConfig}
+                  disabled={isDisabled || isDropboxImporting}
+                >
+                  Configure Dropbox
+                </button>
+              ) : null}
               <p className="channel-tracks-subtitle">Drop or browse for a CSV to attach tracks.</p>
             </div>
             {channel.trackFile ? (
@@ -893,12 +962,18 @@ function ChannelCard({
                 type="button"
                 onClick={() => onTrackClear(channel.id)}
                 className="channel-track-clear"
-                disabled={isDisabled}
+                disabled={isDisabled || isDropboxImporting}
               >
                 Clear
               </button>
             ) : null}
           </div>
+          {dropboxImportTarget === 'tracks' ? (
+            <p className="channel-tracks-status">Importing from Dropbox…</p>
+          ) : null}
+          {dropboxError && dropboxErrorContext === 'tracks' ? (
+            <p className="channel-tracks-error">{dropboxError}</p>
+          ) : null}
           {channel.trackError ? <p className="channel-tracks-error">{channel.trackError}</p> : null}
           {channel.trackStatus === 'loading' ? <p className="channel-tracks-status">Loading tracks…</p> : null}
           {channel.trackStatus === 'loaded' ? (
