@@ -257,3 +257,8 @@ d centered the front-page card in the viewport.
 ## Layer alignment slider
 - Added a per-layer X displacement slider in the layers window that only affects the active layer, allowing subpixel alignment checks against other layers in both 3D and planar viewers.
 - Expanded the alignment controls to include matching ±10 px ranges on side-by-side X and Y displacement sliders without growing the panel footprint, updating both planar resampling and 3D mesh offsets to respect the new axis.
+
+## VR playback HUD relocation
+- Raised the VR volume anchor height to 1.2 meters so datasets sit closer to eye level when a session begins.
+- Repositioned the VR playback controls so they snap to the volume's left edge (with sensible fallbacks before data loads) instead of floating in front of the viewer.
+- Switched the playback panel materials to double-sided rendering so the controls remain visible when viewed from behind.
