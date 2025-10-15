@@ -271,3 +271,7 @@ d centered the front-page card in the viewport.
 - Constrained the draggable VR playback HUD to a 1.5 m radius cylinder spanning floor to 2 m, clamping controller drags onto that surface.
 - Reoriented the HUD so it always faces the world origin irrespective of head movement while preserving upright alignment.
 - Updated default placement logic to project the initial HUD position onto the cylinder when entering immersive mode.
+
+## Embedded Dropbox configuration
+- Embedded the Dropbox app key `1abfsrk62dy855r` directly into the front-end integration so every deployment loads the chooser without manual setup.
+- Documented the bundled key in the README and noted how to override it via `VITE_DROPBOX_APP_KEY` if needed.
