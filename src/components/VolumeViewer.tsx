@@ -208,7 +208,8 @@ type TrackLineResource = {
 type VrUiTargetType =
   | 'playback-play-toggle'
   | 'playback-slider'
-  | 'playback-reset-view'
+  | 'playback-reset-volume'
+  | 'playback-reset-hud'
   | 'playback-exit-vr'
   | 'playback-toggle-mode'
   | 'playback-panel'
@@ -243,7 +244,8 @@ type VrPlaybackHud = {
   group: THREE.Group;
   panel: THREE.Mesh;
   panelGrabHandle: THREE.Mesh;
-  resetButton: THREE.Mesh;
+  resetVolumeButton: THREE.Mesh;
+  resetHudButton: THREE.Mesh;
   playButton: THREE.Mesh;
   playIcon: THREE.Object3D;
   pauseGroup: THREE.Object3D;
@@ -264,7 +266,8 @@ type VrPlaybackHud = {
   labelContext: CanvasRenderingContext2D | null;
   labelText: string;
   interactables: THREE.Object3D[];
-  resetButtonBaseColor: THREE.Color;
+  resetVolumeButtonBaseColor: THREE.Color;
+  resetHudButtonBaseColor: THREE.Color;
   playButtonBaseColor: THREE.Color;
   sliderTrackBaseColor: THREE.Color;
   sliderKnobBaseColor: THREE.Color;
@@ -273,7 +276,8 @@ type VrPlaybackHud = {
   modeButtonActiveColor: THREE.Color;
   modeButtonDisabledColor: THREE.Color;
   hoverHighlightColor: THREE.Color;
-  resetButtonRadius: number;
+  resetVolumeButtonRadius: number;
+  resetHudButtonRadius: number;
   exitButtonRadius: number;
   modeButtonRadius: number;
 };
@@ -550,7 +554,8 @@ function resolveVrUiTarget(object: THREE.Object3D | null): VrUiTarget | null {
         target &&
         (target.type === 'playback-play-toggle' ||
           target.type === 'playback-slider' ||
-          target.type === 'playback-reset-view' ||
+          target.type === 'playback-reset-volume' ||
+          target.type === 'playback-reset-hud' ||
           target.type === 'playback-exit-vr' ||
           target.type === 'playback-panel' ||
           target.type === 'playback-panel-grab' ||
@@ -816,7 +821,8 @@ function VolumeViewer({
     play: false,
     slider: false,
     sliderActive: false,
-    reset: false,
+    resetVolume: false,
+    resetHud: false,
     exit: false,
     mode: false
   });
@@ -1697,7 +1703,8 @@ function VolumeViewer({
       playHovered: boolean,
       sliderHovered: boolean,
       sliderActive: boolean,
-      resetHovered: boolean,
+      resetVolumeHovered: boolean,
+      resetHudHovered: boolean,
       exitHovered: boolean,
       modeHovered: boolean
     ) => {
@@ -1705,7 +1712,8 @@ function VolumeViewer({
         play: playHovered,
         slider: sliderHovered,
         sliderActive,
-        reset: resetHovered,
+        resetVolume: resetVolumeHovered,
+        resetHud: resetHudHovered,
         exit: exitHovered,
         mode: modeHovered
       };
@@ -1729,10 +1737,15 @@ function VolumeViewer({
       if ((sliderHovered || sliderActive) && !state.playbackDisabled) {
         knobMaterial.color.lerp(hud.hoverHighlightColor, 0.35);
       }
-      const resetMaterial = hud.resetButton.material as THREE.MeshBasicMaterial;
-      resetMaterial.color.copy(hud.resetButtonBaseColor);
-      if (resetHovered) {
-        resetMaterial.color.lerp(hud.hoverHighlightColor, 0.35);
+      const resetVolumeMaterial = hud.resetVolumeButton.material as THREE.MeshBasicMaterial;
+      resetVolumeMaterial.color.copy(hud.resetVolumeButtonBaseColor);
+      if (resetVolumeHovered) {
+        resetVolumeMaterial.color.lerp(hud.hoverHighlightColor, 0.35);
+      }
+      const resetHudMaterial = hud.resetHudButton.material as THREE.MeshBasicMaterial;
+      resetHudMaterial.color.copy(hud.resetHudButtonBaseColor);
+      if (resetHudHovered) {
+        resetHudMaterial.color.lerp(hud.hoverHighlightColor, 0.35);
       }
       const exitMaterial = hud.exitButton.material as THREE.MeshBasicMaterial;
       exitMaterial.color.copy(hud.exitButtonBaseColor);
@@ -1815,14 +1828,15 @@ function VolumeViewer({
     const fraction = maxIndex > 0 ? Math.min(Math.max(state.timeIndex / maxIndex, 0), 1) : 0;
     setVrPlaybackSliderFraction(hud, fraction);
     setVrPlaybackLabel(hud, state.playbackLabel ?? '');
-    applyVrPlaybackHoverState(
-      vrHoverStateRef.current.play,
-      vrHoverStateRef.current.slider,
-      vrHoverStateRef.current.sliderActive,
-      vrHoverStateRef.current.reset,
-      vrHoverStateRef.current.exit,
-      vrHoverStateRef.current.mode
-    );
+      applyVrPlaybackHoverState(
+        vrHoverStateRef.current.play,
+        vrHoverStateRef.current.slider,
+        vrHoverStateRef.current.sliderActive,
+        vrHoverStateRef.current.resetVolume,
+        vrHoverStateRef.current.resetHud,
+        vrHoverStateRef.current.exit,
+        vrHoverStateRef.current.mode
+      );
   }, [applyVrPlaybackHoverState]);
 
   const setVrPlaybackHudVisible = useCallback(
@@ -1833,7 +1847,7 @@ function VolumeViewer({
       }
       hud.group.visible = visible;
       if (!visible) {
-        applyVrPlaybackHoverState(false, false, false, false, false, false);
+        applyVrPlaybackHoverState(false, false, false, false, false, false, false);
       }
     },
     [applyVrPlaybackHoverState]
@@ -1973,17 +1987,20 @@ function VolumeViewer({
     const sideButtonMargin = 0.02;
     const sideButtonX = VR_PLAYBACK_PANEL_WIDTH / 2 - (sideButtonMargin + sideButtonRadius);
 
-    const resetButtonMaterial = new THREE.MeshBasicMaterial({ color: 0x2b3340, side: THREE.DoubleSide });
-    const resetButton = new THREE.Mesh(new THREE.CircleGeometry(sideButtonRadius, 48), resetButtonMaterial);
-    resetButton.position.set(-sideButtonX, buttonRowY, VR_HUD_SURFACE_OFFSET);
-    resetButton.userData.vrUiTarget = { type: 'playback-reset-view' } satisfies {
+    const resetVolumeButtonMaterial = new THREE.MeshBasicMaterial({ color: 0x2b3340, side: THREE.DoubleSide });
+    const resetVolumeButton = new THREE.Mesh(
+      new THREE.CircleGeometry(sideButtonRadius, 48),
+      resetVolumeButtonMaterial
+    );
+    resetVolumeButton.position.set(-sideButtonX, buttonRowY, VR_HUD_SURFACE_OFFSET);
+    resetVolumeButton.userData.vrUiTarget = { type: 'playback-reset-volume' } satisfies {
       type: VrUiTargetType;
     };
-    const resetIconMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
-    const resetIconGroup = new THREE.Group();
+    const resetVolumeIconMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+    const resetVolumeIconGroup = new THREE.Group();
     const resetArc = new THREE.Mesh(
       new THREE.RingGeometry(0.012, 0.02, 24, 1, Math.PI * 0.25, Math.PI * 1.4),
-      resetIconMaterial
+      resetVolumeIconMaterial
     );
     resetArc.position.set(0, 0, 0.0006);
     const resetArrowShape = new THREE.Shape();
@@ -1991,12 +2008,54 @@ function VolumeViewer({
     resetArrowShape.lineTo(0.028, 0.002);
     resetArrowShape.lineTo(0.014, -0.006);
     resetArrowShape.lineTo(0.014, 0.01);
-    const resetArrow = new THREE.Mesh(new THREE.ShapeGeometry(resetArrowShape), resetIconMaterial.clone());
+    const resetArrow = new THREE.Mesh(
+      new THREE.ShapeGeometry(resetArrowShape),
+      resetVolumeIconMaterial.clone()
+    );
     resetArrow.position.set(0, 0, 0.001);
-    resetIconGroup.add(resetArc);
-    resetIconGroup.add(resetArrow);
-    resetButton.add(resetIconGroup);
-    group.add(resetButton);
+    resetVolumeIconGroup.add(resetArc);
+    resetVolumeIconGroup.add(resetArrow);
+    resetVolumeButton.add(resetVolumeIconGroup);
+    group.add(resetVolumeButton);
+
+    const resetHudButtonMaterial = new THREE.MeshBasicMaterial({ color: 0x2b3340, side: THREE.DoubleSide });
+    const resetHudButton = new THREE.Mesh(
+      new THREE.CircleGeometry(sideButtonRadius, 48),
+      resetHudButtonMaterial
+    );
+    const resetHudOffsetX = sideButtonRadius * 2 + sideButtonMargin;
+    resetHudButton.position.set(-sideButtonX + resetHudOffsetX, buttonRowY, VR_HUD_SURFACE_OFFSET);
+    resetHudButton.userData.vrUiTarget = { type: 'playback-reset-hud' } satisfies {
+      type: VrUiTargetType;
+    };
+    const resetHudIconMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+    const resetHudIconGroup = new THREE.Group();
+    const windowPrimaryOuter = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.048, 0.034),
+      resetHudIconMaterial.clone()
+    );
+    windowPrimaryOuter.position.set(-0.01, 0.008, 0.0006);
+    const windowPrimaryInner = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.036, 0.024),
+      new THREE.MeshBasicMaterial({ color: 0x10161d, side: THREE.DoubleSide })
+    );
+    windowPrimaryInner.position.set(-0.01, 0.008, 0.0008);
+    const windowSecondaryOuter = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.034, 0.026),
+      resetHudIconMaterial.clone()
+    );
+    windowSecondaryOuter.position.set(0.015, -0.012, 0.0006);
+    const windowSecondaryInner = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.024, 0.018),
+      new THREE.MeshBasicMaterial({ color: 0x10161d, side: THREE.DoubleSide })
+    );
+    windowSecondaryInner.position.set(0.015, -0.012, 0.0008);
+    resetHudIconGroup.add(windowPrimaryOuter);
+    resetHudIconGroup.add(windowPrimaryInner);
+    resetHudIconGroup.add(windowSecondaryOuter);
+    resetHudIconGroup.add(windowSecondaryInner);
+    resetHudButton.add(resetHudIconGroup);
+    group.add(resetHudButton);
 
     const playButtonMaterial = new THREE.MeshBasicMaterial({ color: 0x2b3340, side: THREE.DoubleSide });
     const playButton = new THREE.Mesh(new THREE.CircleGeometry(0.045, 48), playButtonMaterial);
@@ -2157,7 +2216,8 @@ function VolumeViewer({
       group,
       panel,
       panelGrabHandle,
-      resetButton,
+      resetVolumeButton,
+      resetHudButton,
       playButton,
       playIcon,
       pauseGroup,
@@ -2176,14 +2236,16 @@ function VolumeViewer({
       labelText: '',
       interactables: [
         panelGrabHandle,
-        resetButton,
+        resetVolumeButton,
+        resetHudButton,
         playButton,
         modeButton,
         exitButton,
         sliderHitArea,
         sliderKnob
       ],
-      resetButtonBaseColor: new THREE.Color(0x2b3340),
+      resetVolumeButtonBaseColor: new THREE.Color(0x2b3340),
+      resetHudButtonBaseColor: new THREE.Color(0x2b3340),
       playButtonBaseColor: new THREE.Color(0x2b3340),
       sliderTrackBaseColor: new THREE.Color(0x3b414d),
       sliderKnobBaseColor: new THREE.Color(0xffffff),
@@ -2192,7 +2254,8 @@ function VolumeViewer({
       modeButtonActiveColor: new THREE.Color(0x1f6f3f),
       modeButtonDisabledColor: new THREE.Color(0x3a414d),
       hoverHighlightColor: new THREE.Color(0xffffff),
-      resetButtonRadius: sideButtonRadius,
+      resetVolumeButtonRadius: sideButtonRadius,
+      resetHudButtonRadius: sideButtonRadius,
       exitButtonRadius: sideButtonRadius,
       modeButtonRadius: sideButtonRadius,
       modeButton,
@@ -3886,7 +3949,22 @@ function VolumeViewer({
     primaryVolume
   ]);
 
-  const handleResetView = useCallback(() => {
+  const handleResetHudPlacement = useCallback(() => {
+    const renderer = rendererRef.current;
+    const isVrPresenting = renderer?.xr?.isPresenting ?? false;
+    if (!isVrPresenting) {
+      return;
+    }
+    resetVrPlaybackHudPlacement();
+    resetVrChannelsHudPlacement();
+    resetVrTracksHudPlacement();
+  }, [
+    resetVrChannelsHudPlacement,
+    resetVrPlaybackHudPlacement,
+    resetVrTracksHudPlacement
+  ]);
+
+  const handleResetVolume = useCallback(() => {
     const renderer = rendererRef.current;
     const isVrPresenting = renderer?.xr?.isPresenting ?? false;
     if (isVrPresenting) {
@@ -3899,11 +3977,6 @@ function VolumeViewer({
       volumeRootGroup.quaternion.identity();
     }
     applyVolumeRootTransform(currentDimensionsRef.current);
-    if (isVrPresenting) {
-      resetVrPlaybackHudPlacement();
-      resetVrChannelsHudPlacement();
-      resetVrTracksHudPlacement();
-    }
 
     const controls = controlsRef.current;
     if (!controls) {
@@ -3922,12 +3995,12 @@ function VolumeViewer({
     controls.reset();
     controls.target.copy(rotationTargetRef.current);
     controls.update();
-  }, [
-    applyVolumeRootTransform,
-    resetVrChannelsHudPlacement,
-    resetVrPlaybackHudPlacement,
-    resetVrTracksHudPlacement
-  ]);
+  }, [applyVolumeRootTransform]);
+
+  const handleResetView = useCallback(() => {
+    handleResetVolume();
+    handleResetHudPlacement();
+  }, [handleResetHudPlacement, handleResetVolume]);
 
   useEffect(() => {
     onRegisterReset(hasRenderableLayer ? handleResetView : null);
@@ -4060,7 +4133,7 @@ function VolumeViewer({
       }
       if (!anyVisible) {
         clearHoverState('controller');
-        applyVrPlaybackHoverState(false, false, false, false, false, false);
+        applyVrPlaybackHoverState(false, false, false, false, false, false, false);
       }
     };
 
@@ -4366,8 +4439,10 @@ function VolumeViewer({
           if (!playbackState.playbackDisabled) {
             playbackState.onTogglePlayback?.();
           }
-        } else if (activeTarget?.type === 'playback-reset-view') {
-          handleResetView();
+        } else if (activeTarget?.type === 'playback-reset-volume') {
+          handleResetVolume();
+        } else if (activeTarget?.type === 'playback-reset-hud') {
+          handleResetHudPlacement();
         } else if (activeTarget?.type === 'playback-exit-vr') {
           void endVrSession();
         } else if (activeTarget?.type === 'playback-toggle-mode') {
@@ -4717,7 +4792,7 @@ function VolumeViewer({
       vrPlaybackHudRef.current = hud;
       resetVrPlaybackHudPlacement();
       updateVrPlaybackHud();
-      applyVrPlaybackHoverState(false, false, false, false, false, false);
+      applyVrPlaybackHoverState(false, false, false, false, false, false, false);
     } else {
       vrPlaybackHudRef.current = null;
     }
@@ -4971,7 +5046,7 @@ function VolumeViewer({
           hoverTrackIds: controllersRef.current.map((entry) => entry.hoverTrackId)
         };
         clearHoverState('controller');
-        applyVrPlaybackHoverState(false, false, false, false, false, false);
+        applyVrPlaybackHoverState(false, false, false, false, false, false, false);
         return;
       }
 
@@ -4992,7 +5067,8 @@ function VolumeViewer({
       let playHoveredAny = false;
       let sliderHoveredAny = false;
       let sliderActiveAny = false;
-      let resetHoveredAny = false;
+      let resetVolumeHoveredAny = false;
+      let resetHudHoveredAny = false;
       let exitHoveredAny = false;
       let modeHoveredAny = false;
       let nextChannelsHoverRegion: VrChannelsInteractiveRegion | null = null;
@@ -5235,12 +5311,23 @@ function VolumeViewer({
                   const inPlayButton =
                     playDeltaX * playDeltaX + playDeltaY * playDeltaY <= playRadius * playRadius;
 
-                  const resetCenter = playbackHudInstance.resetButton.position;
-                  const resetRadius = playbackHudInstance.resetButtonRadius + surfaceMargin;
-                  const resetDeltaX = playbackLocalPoint.x - resetCenter.x;
-                  const resetDeltaY = playbackLocalPoint.y - resetCenter.y;
-                  const inResetButton =
-                    resetDeltaX * resetDeltaX + resetDeltaY * resetDeltaY <= resetRadius * resetRadius;
+                  const resetVolumeCenter = playbackHudInstance.resetVolumeButton.position;
+                  const resetVolumeRadius =
+                    playbackHudInstance.resetVolumeButtonRadius + surfaceMargin;
+                  const resetVolumeDeltaX = playbackLocalPoint.x - resetVolumeCenter.x;
+                  const resetVolumeDeltaY = playbackLocalPoint.y - resetVolumeCenter.y;
+                  const inResetVolumeButton =
+                    resetVolumeDeltaX * resetVolumeDeltaX +
+                      resetVolumeDeltaY * resetVolumeDeltaY <=
+                    resetVolumeRadius * resetVolumeRadius;
+
+                  const resetHudCenter = playbackHudInstance.resetHudButton.position;
+                  const resetHudRadius = playbackHudInstance.resetHudButtonRadius + surfaceMargin;
+                  const resetHudDeltaX = playbackLocalPoint.x - resetHudCenter.x;
+                  const resetHudDeltaY = playbackLocalPoint.y - resetHudCenter.y;
+                  const inResetHudButton =
+                    resetHudDeltaX * resetHudDeltaX + resetHudDeltaY * resetHudDeltaY <=
+                    resetHudRadius * resetHudRadius;
 
                   const exitCenter = playbackHudInstance.exitButton.position;
                   const exitRadius = playbackHudInstance.exitButtonRadius + surfaceMargin;
@@ -5257,9 +5344,18 @@ function VolumeViewer({
                     playbackHudInstance.modeButton.visible &&
                     modeDeltaX * modeDeltaX + modeDeltaY * modeDeltaY <= modeRadius * modeRadius;
 
-                  if (inResetButton) {
+                  if (inResetVolumeButton) {
                     playbackCandidate = {
-                      target: { type: 'playback-reset-view', object: playbackHudInstance.resetButton },
+                      target: { type: 'playback-reset-volume', object: playbackHudInstance.resetVolumeButton },
+                      point: playbackTouchPoint.clone(),
+                      distance: rawDistance,
+                      region: null
+                    };
+                    uiRayLength =
+                      uiRayLength === null ? clampedDistance : Math.min(uiRayLength, clampedDistance);
+                  } else if (inResetHudButton) {
+                    playbackCandidate = {
+                      target: { type: 'playback-reset-hud', object: playbackHudInstance.resetHudButton },
                       point: playbackTouchPoint.clone(),
                       distance: rawDistance,
                       region: null
@@ -5612,8 +5708,11 @@ function VolumeViewer({
           uiType === 'playback-panel-yaw'
         ) {
           hoverTrackId = null;
-        } else if (uiType === 'playback-reset-view') {
-          resetHoveredAny = true;
+        } else if (uiType === 'playback-reset-volume') {
+          resetVolumeHoveredAny = true;
+          hoverTrackId = null;
+        } else if (uiType === 'playback-reset-hud') {
+          resetHudHoveredAny = true;
           hoverTrackId = null;
         } else if (uiType === 'playback-exit-vr') {
           exitHoveredAny = true;
@@ -5629,8 +5728,11 @@ function VolumeViewer({
         if (entry.activeUiTarget?.type === 'playback-slider') {
           sliderActiveAny = true;
           hoverTrackId = null;
-        } else if (entry.activeUiTarget?.type === 'playback-reset-view') {
-          resetHoveredAny = true;
+        } else if (entry.activeUiTarget?.type === 'playback-reset-volume') {
+          resetVolumeHoveredAny = true;
+          hoverTrackId = null;
+        } else if (entry.activeUiTarget?.type === 'playback-reset-hud') {
+          resetHudHoveredAny = true;
           hoverTrackId = null;
         } else if (entry.activeUiTarget?.type === 'playback-exit-vr') {
           exitHoveredAny = true;
@@ -5805,7 +5907,8 @@ function VolumeViewer({
         playHoveredAny,
         sliderHoveredAny,
         sliderActiveAny,
-        resetHoveredAny,
+        resetVolumeHoveredAny,
+        resetHudHoveredAny,
         exitHoveredAny,
         modeHoveredAny
       );
@@ -5955,7 +6058,7 @@ function VolumeViewer({
       setVrPlaybackHudVisible(false);
       setVrChannelsHudVisible(false);
       setVrTracksHudVisible(false);
-      applyVrPlaybackHoverState(false, false, false, false, false, false);
+      applyVrPlaybackHoverState(false, false, false, false, false, false, false);
       for (const entry of controllersRef.current) {
         entry.ray.scale.set(1, 1, 1);
         entry.hudGrabOffsets.playback = null;
