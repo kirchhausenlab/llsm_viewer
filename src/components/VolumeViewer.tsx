@@ -219,8 +219,12 @@ const DEFAULT_TRACK_LINE_WIDTH = 1;
 
 const VR_PLAYBACK_PANEL_WIDTH = 0.54;
 const VR_PLAYBACK_PANEL_HEIGHT = 0.24;
-const VR_PLAYBACK_OFFSET = { x: 0, y: -0.18, z: -0.65 };
-const VR_VOLUME_BASE_OFFSET = new THREE.Vector3(0, 0.8, -0.3);
+const VR_PLAYBACK_VOLUME_MARGIN = 0.12;
+const VR_PLAYBACK_FALLBACK_HORIZONTAL_OFFSET = -0.6;
+const VR_PLAYBACK_VERTICAL_OFFSET = 0;
+const VR_PLAYBACK_DEPTH_OFFSET = 0;
+const VR_PLAYBACK_CAMERA_ANCHOR_OFFSET = new THREE.Vector3(0, -0.18, -0.65);
+const VR_VOLUME_BASE_OFFSET = new THREE.Vector3(0, 1.2, -0.3);
 
 function setVrPlaybackSliderFraction(hud: VrPlaybackHud, fraction: number) {
   const clamped = Math.min(Math.max(fraction, 0), 1);
@@ -570,7 +574,8 @@ function VolumeViewer({
     const panelMaterial = new THREE.MeshBasicMaterial({
       color: 0x10161d,
       transparent: true,
-      opacity: 0.85
+      opacity: 0.85,
+      side: THREE.DoubleSide
     });
     const panel = new THREE.Mesh(
       new THREE.PlaneGeometry(VR_PLAYBACK_PANEL_WIDTH, VR_PLAYBACK_PANEL_HEIGHT),
@@ -583,7 +588,8 @@ function VolumeViewer({
       color: 0xffffff,
       opacity: 0.01,
       transparent: true,
-      depthWrite: false
+      depthWrite: false,
+      side: THREE.DoubleSide
     });
     const panelGrabHandle = new THREE.Mesh(
       new THREE.PlaneGeometry(VR_PLAYBACK_PANEL_WIDTH, 0.06),
@@ -593,7 +599,7 @@ function VolumeViewer({
     panelGrabHandle.userData.vrUiTarget = { type: 'panel-grab' } satisfies { type: VrUiTargetType };
     group.add(panelGrabHandle);
 
-    const playButtonMaterial = new THREE.MeshBasicMaterial({ color: 0x2b3340 });
+    const playButtonMaterial = new THREE.MeshBasicMaterial({ color: 0x2b3340, side: THREE.DoubleSide });
     const playButton = new THREE.Mesh(new THREE.CircleGeometry(0.045, 48), playButtonMaterial);
     playButton.position.set(-VR_PLAYBACK_PANEL_WIDTH * 0.28, 0, 0.01);
     playButton.userData.vrUiTarget = { type: 'play-toggle' };
@@ -606,13 +612,13 @@ function VolumeViewer({
     playShape.lineTo(-0.018, -0.022);
     const playIcon = new THREE.Mesh(
       new THREE.ShapeGeometry(playShape),
-      new THREE.MeshBasicMaterial({ color: 0xffffff })
+      new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide })
     );
     playIcon.position.set(0, 0, 0.002);
     playButton.add(playIcon);
 
     const pauseGroup = new THREE.Group();
-    const pauseMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const pauseMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
     const pauseGeom = new THREE.PlaneGeometry(0.014, 0.045);
     const pauseLeft = new THREE.Mesh(pauseGeom, pauseMaterial);
     pauseLeft.position.set(-0.012, 0, 0.002);
@@ -628,7 +634,7 @@ function VolumeViewer({
     group.add(sliderGroup);
 
     const sliderWidth = 0.32;
-    const sliderTrackMaterial = new THREE.MeshBasicMaterial({ color: 0x3b414d });
+    const sliderTrackMaterial = new THREE.MeshBasicMaterial({ color: 0x3b414d, side: THREE.DoubleSide });
     const sliderTrack = new THREE.Mesh(new THREE.PlaneGeometry(sliderWidth, 0.012), sliderTrackMaterial);
     sliderTrack.position.set(0, 0, 0);
     sliderGroup.add(sliderTrack);
@@ -636,13 +642,14 @@ function VolumeViewer({
     const sliderFillMaterial = new THREE.MeshBasicMaterial({
       color: 0x68a7ff,
       transparent: true,
-      opacity: 0.85
+      opacity: 0.85,
+      side: THREE.DoubleSide
     });
     const sliderFill = new THREE.Mesh(new THREE.PlaneGeometry(sliderWidth, 0.012), sliderFillMaterial);
     sliderFill.position.set(0, 0, 0.0015);
     sliderGroup.add(sliderFill);
 
-    const sliderKnobMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const sliderKnobMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
     const sliderKnob = new THREE.Mesh(new THREE.CircleGeometry(0.017, 32), sliderKnobMaterial);
     sliderKnob.position.set(-sliderWidth / 2, 0, 0.003);
     sliderKnob.userData.vrUiTarget = { type: 'slider' };
@@ -652,7 +659,8 @@ function VolumeViewer({
       color: 0xffffff,
       opacity: 0.01,
       transparent: true,
-      depthWrite: false
+      depthWrite: false,
+      side: THREE.DoubleSide
     });
     const sliderHitArea = new THREE.Mesh(
       new THREE.PlaneGeometry(sliderWidth + 0.04, 0.08),
@@ -670,7 +678,12 @@ function VolumeViewer({
     labelTexture.colorSpace = THREE.SRGBColorSpace;
     labelTexture.minFilter = THREE.LinearFilter;
     labelTexture.magFilter = THREE.LinearFilter;
-    const labelMaterial = new THREE.MeshBasicMaterial({ map: labelTexture, transparent: true, opacity: 0.95 });
+    const labelMaterial = new THREE.MeshBasicMaterial({
+      map: labelTexture,
+      transparent: true,
+      opacity: 0.95,
+      side: THREE.DoubleSide
+    });
     const labelMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.06), labelMaterial);
     labelMesh.position.set(0.08, -0.085, 0.002);
     group.add(labelMesh);
@@ -801,10 +814,30 @@ function VolumeViewer({
     }
     const yawQuaternion = getCameraYawQuaternion();
     const offset = vrHudOffsetTempRef.current;
-    offset.set(VR_PLAYBACK_OFFSET.x, VR_PLAYBACK_OFFSET.y, VR_PLAYBACK_OFFSET.z);
-    offset.applyQuaternion(yawQuaternion);
     const target = vrHudDragTargetRef.current;
-    target.copy(camera.position).add(offset);
+    const baseOffset = volumeRootBaseOffsetRef.current;
+    const dimensions = currentDimensionsRef.current;
+    if (baseOffset.lengthSq() > 1e-6) {
+      let horizontalOffset = VR_PLAYBACK_FALLBACK_HORIZONTAL_OFFSET;
+      if (dimensions) {
+        const { width, height, depth } = dimensions;
+        const maxDimension = Math.max(width, height, depth);
+        if (Number.isFinite(maxDimension) && maxDimension > 0) {
+          const scale = 1 / maxDimension;
+          horizontalOffset = -(width * scale) / 2 - VR_PLAYBACK_VOLUME_MARGIN;
+        }
+      }
+      offset.set(horizontalOffset, VR_PLAYBACK_VERTICAL_OFFSET, VR_PLAYBACK_DEPTH_OFFSET);
+      target.set(
+        baseOffset.x + offset.x,
+        baseOffset.y + offset.y,
+        baseOffset.z + offset.z
+      );
+    } else {
+      offset.copy(VR_PLAYBACK_CAMERA_ANCHOR_OFFSET);
+      offset.applyQuaternion(yawQuaternion);
+      target.copy(camera.position).add(offset);
+    }
     if (vrHudPlacementRef.current) {
       vrHudPlacementRef.current.position.copy(target);
     } else {
