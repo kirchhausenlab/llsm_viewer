@@ -41,6 +41,10 @@
 - Added an inline Dropbox configuration panel that stores app keys in the browser, guiding users toward the Dropbox App Console when no build-time key is present.
 - Upgraded the Dropbox import flow with clearer messaging so missing keys prompt configuration instead of surfacing a generic error.
 
+## Dropbox track imports
+- Wired the per-channel track dropzone into the Dropbox chooser with its own import button, mirroring the TIFF workflow for CSV uploads.
+- Shared the Dropbox status, error messaging, and configuration entry points between layers and tracks so progress and missing-key prompts surface where the user interacts.
+
 ## Per-channel track organization
 - Added per-channel tabs to the tracks window so each channel exposes independent visibility, opacity, thickness, and follow controls.
 - Persisted track color schemes per channel with preset swatches and a "Sorted" option that restores the rainbow palette.

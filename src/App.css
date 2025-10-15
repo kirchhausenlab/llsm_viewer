@@ -332,7 +332,8 @@
   transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
-.channel-layer-drop-link {
+.channel-layer-drop-link,
+.channel-tracks-link {
   border: none;
   background: rgba(91, 140, 255, 0.12);
   color: rgba(173, 204, 255, 0.95);
@@ -343,12 +344,14 @@
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-.channel-layer-drop-link:hover {
+.channel-layer-drop-link:hover,
+.channel-tracks-link:hover {
   background: rgba(91, 140, 255, 0.22);
   color: rgba(205, 224, 255, 0.98);
 }
 
-.channel-layer-drop-link:disabled {
+.channel-layer-drop-link:disabled,
+.channel-tracks-link:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
