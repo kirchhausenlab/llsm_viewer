@@ -2716,6 +2716,19 @@ function VolumeViewer({
     updateVrChannelsHud();
   }, [activeChannelPanelId, channelPanels, updateVrChannelsHud]);
 
+  const tracksByChannel = useMemo(() => {
+    const map = new Map<string, TrackDefinition[]>();
+    for (const track of tracks) {
+      const existing = map.get(track.channelId);
+      if (existing) {
+        existing.push(track);
+      } else {
+        map.set(track.channelId, [track]);
+      }
+    }
+    return map;
+  }, [tracks]);
+
   useEffect(() => {
     const nextChannels = trackChannels.map((channel) => {
       const tracksForChannel = tracksByChannel.get(channel.id) ?? [];
@@ -2781,19 +2794,6 @@ function VolumeViewer({
     const map = new Map<string, TrackDefinition>();
     for (const track of tracks) {
       map.set(track.id, track);
-    }
-    return map;
-  }, [tracks]);
-
-  const tracksByChannel = useMemo(() => {
-    const map = new Map<string, TrackDefinition[]>();
-    for (const track of tracks) {
-      const existing = map.get(track.channelId);
-      if (existing) {
-        existing.push(track);
-      } else {
-        map.set(track.channelId, [track]);
-      }
     }
     return map;
   }, [tracks]);

@@ -1,5 +1,9 @@
 # Progress Log
 
+## VR tracks window regression fix
+- Passed the channel catalog and track control callbacks down to the 3D viewer so the immersive tracks HUD no longer dereference
+  undefined handlers and blank the canvas when initialized.
+
 ## VR session stability fixes
 - Refresh controller visibility whenever the WebXR manager reports session lifecycle changes so headset controllers reliably
   appear with their rays when entering immersive mode.
