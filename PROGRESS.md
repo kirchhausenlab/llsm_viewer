@@ -4,6 +4,10 @@
 - Updated the immersive playback "Reset view" control to restore the normalized volume pose, recentering the dataset and VR HUD
   panels instead of only touching the orbit camera.
 
+## VR tracks HUD scrollbar
+- Added a vertical scrollbar to the immersive tracks list so every trajectory remains accessible when channels contain dozens of tracks.
+- Snapped scroll interactions to row increments and highlighted the grab handle on hover to mirror the existing VR HUD affordances.
+
 ## VR HUD handle redesign
 - Replaced the flat grab bands on the playback, channels, and tracks HUDs with sphere handles that mirror the volume translation
   grip, simplifying panel dragging to the proven mechanism.
