@@ -27,6 +27,7 @@ type ViewerLayer = {
   volume: NormalizedVolume | null;
   visible: boolean;
   contrast: number;
+  gamma: number;
   brightness: number;
   color: string;
   offsetX: number;
@@ -78,6 +79,7 @@ type VolumeViewerProps = {
       isGrayscale: boolean;
       settings: {
         contrast: number;
+        gamma: number;
         brightness: number;
         color: string;
         xOffset: number;
@@ -91,6 +93,7 @@ type VolumeViewerProps = {
   onChannelReset: (channelId: string) => void;
   onChannelLayerSelect: (channelId: string, layerKey: string) => void;
   onLayerContrastChange: (layerKey: string, value: number) => void;
+  onLayerGammaChange: (layerKey: string, value: number) => void;
   onLayerBrightnessChange: (layerKey: string, value: number) => void;
   onLayerOffsetChange: (layerKey: string, axis: 'x' | 'y', value: number) => void;
   onLayerColorChange: (layerKey: string, color: string) => void;
@@ -289,7 +292,7 @@ type VrPlaybackHud = {
   modeButtonRadius: number;
 };
 
-type VrChannelsSliderKey = 'contrast' | 'brightness' | 'xOffset' | 'yOffset';
+type VrChannelsSliderKey = 'contrast' | 'gamma' | 'brightness' | 'xOffset' | 'yOffset';
 
 type VrChannelsInteractiveRegion = {
   targetType:
@@ -344,6 +347,7 @@ type VrChannelsState = {
       isGrayscale: boolean;
       settings: {
         contrast: number;
+        gamma: number;
         brightness: number;
         color: string;
         xOffset: number;
@@ -805,6 +809,7 @@ function VolumeViewer({
   onChannelReset,
   onChannelLayerSelect,
   onLayerContrastChange,
+  onLayerGammaChange,
   onLayerBrightnessChange,
   onLayerOffsetChange,
   onLayerColorChange,
@@ -3060,6 +3065,16 @@ function VolumeViewer({
           disabled: !selectedLayer.hasData
         },
         {
+          key: 'gamma',
+          label: 'Gamma',
+          value: selectedLayer.settings.gamma,
+          min: 0.2,
+          max: 3,
+          step: 0.05,
+          formatter: (value: number) => value.toFixed(2),
+          disabled: !selectedLayer.hasData
+        },
+        {
           key: 'brightness',
           label: 'Brightness',
           value: selectedLayer.settings.brightness,
@@ -3363,6 +3378,9 @@ function VolumeViewer({
       if (region.sliderKey === 'contrast') {
         layerState.settings.contrast = snappedValue;
         onLayerContrastChange(region.layerKey, snappedValue);
+      } else if (region.sliderKey === 'gamma') {
+        layerState.settings.gamma = snappedValue;
+        onLayerGammaChange(region.layerKey, snappedValue);
       } else if (region.sliderKey === 'brightness') {
         layerState.settings.brightness = snappedValue;
         onLayerBrightnessChange(region.layerKey, snappedValue);
@@ -3376,7 +3394,13 @@ function VolumeViewer({
 
       renderVrChannelsHud(hud, state);
     },
-    [onLayerBrightnessChange, onLayerContrastChange, onLayerOffsetChange, renderVrChannelsHud]
+    [
+      onLayerBrightnessChange,
+      onLayerContrastChange,
+      onLayerGammaChange,
+      onLayerOffsetChange,
+      renderVrChannelsHud
+    ]
   );
 
   const applyVrTracksSliderFromPoint = useCallback(
@@ -3528,6 +3552,7 @@ function VolumeViewer({
         isGrayscale: layer.isGrayscale,
         settings: {
           contrast: layer.settings.contrast,
+          gamma: layer.settings.gamma,
           brightness: layer.settings.brightness,
           color: normalizeHexColor(layer.settings.color, DEFAULT_LAYER_COLOR),
           xOffset: layer.settings.xOffset,
@@ -4971,6 +4996,7 @@ function VolumeViewer({
               if (channelState) {
                 for (const layer of channelState.layers) {
                   layer.settings.contrast = 1;
+                  layer.settings.gamma = 1;
                   layer.settings.brightness = 0;
                   layer.settings.xOffset = 0;
                   layer.settings.yOffset = 0;
@@ -7554,6 +7580,7 @@ function VolumeViewer({
           uniforms.u_cmdata.value = colormapTexture;
           uniforms.u_channels.value = volume.channels;
           uniforms.u_contrast.value = layer.contrast;
+          uniforms.u_gamma.value = layer.gamma;
           uniforms.u_brightness.value = layer.brightness;
 
           const material = new THREE.ShaderMaterial({
@@ -7648,6 +7675,7 @@ function VolumeViewer({
           uniforms.u_cmdata.value = colormapTexture;
           uniforms.u_channels.value = volume.channels;
           uniforms.u_contrast.value = layer.contrast;
+          uniforms.u_gamma.value = layer.gamma;
           uniforms.u_brightness.value = layer.brightness;
 
           const material = new THREE.ShaderMaterial({
@@ -7697,6 +7725,7 @@ function VolumeViewer({
         const materialUniforms = (mesh.material as THREE.ShaderMaterial).uniforms;
         materialUniforms.u_channels.value = volume.channels;
         materialUniforms.u_contrast.value = layer.contrast;
+        materialUniforms.u_gamma.value = layer.gamma;
         materialUniforms.u_brightness.value = layer.brightness;
         materialUniforms.u_cmdata.value = colormapTexture;
 

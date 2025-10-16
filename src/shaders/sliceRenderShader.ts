@@ -5,6 +5,7 @@ type SliceUniforms = {
   u_cmdata: { value: DataTexture | null };
   u_channels: { value: number };
   u_contrast: { value: number };
+  u_gamma: { value: number };
   u_brightness: { value: number };
 };
 
@@ -13,6 +14,7 @@ const uniforms = {
   u_cmdata: { value: null as DataTexture | null },
   u_channels: { value: 1 },
   u_contrast: { value: 1 },
+  u_gamma: { value: 1 },
   u_brightness: { value: 0 }
 } satisfies SliceUniforms;
 
@@ -32,6 +34,7 @@ export const SliceRenderShader = {
 
     uniform int u_channels;
     uniform float u_contrast;
+    uniform float u_gamma;
     uniform float u_brightness;
 
     uniform sampler2D u_cmdata;
@@ -48,8 +51,15 @@ export const SliceRenderShader = {
       return clamp(centered * u_contrast + 0.5, 0.0, 1.0);
     }
 
+    float apply_gamma(float value) {
+      float safeGamma = max(u_gamma, 1e-3);
+      return clamp(pow(max(value, 0.0), 1.0 / safeGamma), 0.0, 1.0);
+    }
+
     float adjust_intensity(float value) {
-      return apply_contrast(apply_brightness(value));
+      float brightened = apply_brightness(value);
+      float contrasted = apply_contrast(brightened);
+      return apply_gamma(contrasted);
     }
 
     float luminance(vec4 colorSample) {
@@ -84,10 +94,16 @@ export const SliceRenderShader = {
         vec4 tinted = apply_colormap(adjusted);
         gl_FragColor = vec4(tinted.rgb, max(adjusted, 0.05));
       } else {
-        vec3 adjustedColor = clamp(sample.rgb + vec3(u_brightness), 0.0, 1.0);
+        vec3 brightenedColor = clamp(sample.rgb + vec3(u_brightness), 0.0, 1.0);
+        float safeGamma = max(u_gamma, 1e-3);
+        vec3 gammaCorrectedColor = clamp(
+          pow(max(brightenedColor, vec3(0.0)), vec3(1.0 / safeGamma)),
+          0.0,
+          1.0
+        );
         float alpha = clamp(adjusted, 0.0, 1.0);
         alpha = max(alpha, 0.05);
-        gl_FragColor = vec4(adjustedColor, alpha);
+        gl_FragColor = vec4(gammaCorrectedColor, alpha);
       }
     }
   `

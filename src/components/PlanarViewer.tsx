@@ -10,6 +10,7 @@ type ViewerLayer = {
   volume: NormalizedVolume | null;
   visible: boolean;
   contrast: number;
+  gamma: number;
   brightness: number;
   color: string;
   offsetX: number;
@@ -324,6 +325,10 @@ function PlanarViewer({
       const data = volume.normalized;
       const brightness = layer.brightness ?? 0;
       const contrast = layer.contrast ?? 1;
+      const gamma = layer.gamma ?? 1;
+      const safeGamma = Math.max(gamma, 1e-3);
+      const invGamma = 1 / safeGamma;
+      const applyGamma = (value: number) => clamp(Math.pow(Math.max(value, 0), invGamma), 0, 1);
       const tint = channels === 1 ? getColor(layer.color) : null;
 
       const offsetX = layer.offsetX ?? 0;
@@ -409,11 +414,12 @@ function PlanarViewer({
           if (channels === 1) {
             const brightened = clamp(r + brightness, 0, 1);
             const contrasted = clamp((brightened - 0.5) * contrast + 0.5, 0, 1);
-            const layerAlpha = Math.max(contrasted, MIN_ALPHA);
+            const corrected = applyGamma(contrasted);
+            const layerAlpha = Math.max(corrected, MIN_ALPHA);
             const color = tint ?? getColor('#ffffff');
-            srcR = color.r * contrasted;
-            srcG = color.g * contrasted;
-            srcB = color.b * contrasted;
+            srcR = color.r * corrected;
+            srcG = color.g * corrected;
+            srcB = color.b * corrected;
             alpha = layerAlpha;
           } else {
             const intensity =
@@ -424,13 +430,17 @@ function PlanarViewer({
                 : Math.max(r, g, Math.max(b, a));
             const brightIntensity = clamp(intensity + brightness, 0, 1);
             const contrasted = clamp((brightIntensity - 0.5) * contrast + 0.5, 0, 1);
-            alpha = Math.max(contrasted, MIN_ALPHA);
+            const correctedIntensity = applyGamma(contrasted);
+            alpha = Math.max(correctedIntensity, MIN_ALPHA);
             const brightR = clamp(r + brightness, 0, 1);
             const brightG = clamp(g + brightness, 0, 1);
             const brightB = clamp(b + brightness, 0, 1);
-            srcR = brightR;
-            srcG = channels > 1 ? brightG : brightR;
-            srcB = channels > 2 ? brightB : 0;
+            const correctedR = applyGamma(brightR);
+            const correctedG = channels > 1 ? applyGamma(brightG) : correctedR;
+            const correctedB = channels > 2 ? applyGamma(brightB) : channels === 2 ? 0 : correctedG;
+            srcR = correctedR;
+            srcG = correctedG;
+            srcB = correctedB;
           }
 
           const srcA = clamp(alpha, 0, 1);

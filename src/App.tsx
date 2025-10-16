@@ -25,6 +25,7 @@ import {
 import './App.css';
 
 const DEFAULT_CONTRAST = 1;
+const DEFAULT_GAMMA = 1;
 const DEFAULT_BRIGHTNESS = 0;
 const DEFAULT_FPS = 12;
 const DEFAULT_TRACK_OPACITY = 0.9;
@@ -50,6 +51,7 @@ type LoadedLayer = LayerTarget & {
 
 type LayerSettings = {
   contrast: number;
+  gamma: number;
   brightness: number;
   color: string;
   xOffset: number;
@@ -58,6 +60,7 @@ type LayerSettings = {
 
 const createDefaultLayerSettings = (): LayerSettings => ({
   contrast: DEFAULT_CONTRAST,
+  gamma: DEFAULT_GAMMA,
   brightness: DEFAULT_BRIGHTNESS,
   color: DEFAULT_LAYER_COLOR,
   xOffset: 0,
@@ -2513,6 +2516,22 @@ function App() {
     });
   }, []);
 
+  const handleLayerGammaChange = useCallback((key: string, value: number) => {
+    setLayerSettings((current) => {
+      const previous = current[key] ?? createDefaultLayerSettings();
+      if (previous.gamma === value) {
+        return current;
+      }
+      return {
+        ...current,
+        [key]: {
+          ...previous,
+          gamma: value
+        }
+      };
+    });
+  }, []);
+
   const handleLayerBrightnessChange = useCallback((key: string, value: number) => {
     setLayerSettings((current) => {
       const previous = current[key] ?? createDefaultLayerSettings();
@@ -2590,12 +2609,14 @@ function App() {
           const updated: LayerSettings = {
             ...previous,
             contrast: DEFAULT_CONTRAST,
+            gamma: DEFAULT_GAMMA,
             brightness: DEFAULT_BRIGHTNESS,
             xOffset: 0,
             yOffset: 0
           };
           if (
             previous.contrast !== updated.contrast ||
+            previous.gamma !== updated.gamma ||
             previous.brightness !== updated.brightness ||
             previous.xOffset !== updated.xOffset ||
             previous.yOffset !== updated.yOffset
@@ -2629,6 +2650,7 @@ function App() {
         volume: layer.volumes[selectedIndex] ?? null,
         visible: channelVisible ?? true,
         contrast: settings.contrast,
+        gamma: settings.gamma,
         brightness: settings.brightness,
         color: normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR),
         offsetX: isActiveChannel ? settings.xOffset : 0,
@@ -2950,6 +2972,7 @@ function App() {
               onChannelReset={handleChannelSliderReset}
               onChannelLayerSelect={handleChannelLayerSelectionChange}
               onLayerContrastChange={handleLayerContrastChange}
+              onLayerGammaChange={handleLayerGammaChange}
               onLayerBrightnessChange={handleLayerBrightnessChange}
               onLayerOffsetChange={handleLayerOffsetChange}
               onLayerColorChange={handleLayerColorChange}
@@ -3245,6 +3268,23 @@ function App() {
                                 value={settings.brightness}
                                 onChange={(event) =>
                                   handleLayerBrightnessChange(selectedLayer.key, Number(event.target.value))
+                                }
+                                disabled={sliderDisabled}
+                              />
+                            </div>
+                            <div className="slider-control slider-control--inline">
+                              <label htmlFor={`layer-gamma-${selectedLayer.key}`}>
+                                Gamma <span>{settings.gamma.toFixed(2)}</span>
+                              </label>
+                              <input
+                                id={`layer-gamma-${selectedLayer.key}`}
+                                type="range"
+                                min={0.2}
+                                max={3}
+                                step={0.05}
+                                value={settings.gamma}
+                                onChange={(event) =>
+                                  handleLayerGammaChange(selectedLayer.key, Number(event.target.value))
                                 }
                                 disabled={sliderDisabled}
                               />
