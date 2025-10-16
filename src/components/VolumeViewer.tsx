@@ -544,6 +544,7 @@ const VR_TRANSLATION_HANDLE_RADIUS = 0.03;
 const VR_TRANSLATION_HANDLE_OFFSET = 0.04;
 const VR_ROTATION_HANDLE_RADIUS = VR_TRANSLATION_HANDLE_RADIUS;
 const VR_ROTATION_HANDLE_OFFSET = 0.03;
+const VR_PITCH_HANDLE_FORWARD_OFFSET = VR_ROTATION_HANDLE_OFFSET;
 const VR_HUD_TRANSLATE_HANDLE_RADIUS = 0.018;
 const VR_HUD_TRANSLATE_HANDLE_OFFSET = VR_HUD_TRANSLATE_HANDLE_RADIUS;
 const VR_HUD_YAW_HANDLE_RADIUS = 0.016;
@@ -987,6 +988,7 @@ function VolumeViewer({
 
     const lateralOffset = (halfExtents.x + VR_ROTATION_HANDLE_OFFSET) / scale;
     const verticalOffset = -(halfExtents.y + VR_ROTATION_HANDLE_OFFSET) / scale;
+    const forwardOffset = (halfExtents.z + VR_PITCH_HANDLE_FORWARD_OFFSET) / scale;
     const handleScale = VR_ROTATION_HANDLE_RADIUS / scale;
 
     yawHandles.forEach((handle, index) => {
@@ -1007,7 +1009,7 @@ function VolumeViewer({
       pitchHandle.position.set(
         centerUnscaled.x,
         centerUnscaled.y + verticalOffset,
-        centerUnscaled.z
+        centerUnscaled.z - forwardOffset
       );
       pitchHandle.scale.setScalar(handleScale);
       pitchHandle.visible = true;
