@@ -32,6 +32,7 @@ type ViewerLayer = {
   color: string;
   offsetX: number;
   offsetY: number;
+  renderStyle: 0 | 1;
   mode?: '3d' | 'slice';
   sliceIndex?: number;
 };
@@ -84,6 +85,7 @@ type VolumeViewerProps = {
         color: string;
         xOffset: number;
         yOffset: number;
+        renderStyle: 0 | 1;
       };
     }>;
   }>;
@@ -97,6 +99,7 @@ type VolumeViewerProps = {
   onLayerBrightnessChange: (layerKey: string, value: number) => void;
   onLayerOffsetChange: (layerKey: string, axis: 'x' | 'y', value: number) => void;
   onLayerColorChange: (layerKey: string, color: string) => void;
+  onLayerRenderStyleToggle: (layerKey: string) => void;
   followedTrackId: string | null;
   onTrackFollowRequest: (trackId: string) => void;
   onRegisterVrSession?: (
@@ -302,7 +305,8 @@ type VrChannelsInteractiveRegion = {
     | 'channels-reset'
     | 'channels-layer'
     | 'channels-slider'
-    | 'channels-color';
+    | 'channels-color'
+    | 'channels-render-style';
   channelId: string;
   layerKey?: string;
   sliderKey?: VrChannelsSliderKey;
@@ -353,6 +357,7 @@ type VrChannelsState = {
         color: string;
         xOffset: number;
         yOffset: number;
+        renderStyle: 0 | 1;
       };
     }>;
   }>;
@@ -825,6 +830,7 @@ function VolumeViewer({
   onLayerBrightnessChange,
   onLayerOffsetChange,
   onLayerColorChange,
+  onLayerRenderStyleToggle,
   followedTrackId,
   onTrackFollowRequest,
   onRegisterVrSession,
@@ -3077,9 +3083,79 @@ function VolumeViewer({
       currentY += layerButtonHeight + 18;
     }
 
-    const selectedLayer = activeChannel.layers.find((layer) => layer.key === activeChannel.activeLayerKey) ?? activeChannel.layers[0] ?? null;
+    const selectedLayer =
+      activeChannel.layers.find((layer) => layer.key === activeChannel.activeLayerKey) ??
+      activeChannel.layers[0] ??
+      null;
 
     if (selectedLayer) {
+      const renderStyleDisabled = !selectedLayer.hasData;
+      const currentStyleLabel =
+        selectedLayer.settings.renderStyle === 1 ? 'Iso surface' : 'Maximum intensity';
+      const toggleLabel =
+        selectedLayer.settings.renderStyle === 1
+          ? 'Switch to maximum intensity'
+          : 'Switch to iso surface';
+      const renderStyleBoxWidth = canvasWidth - paddingX * 2;
+      const renderStyleBoxHeight = 78;
+      const renderStyleX = paddingX;
+      const renderStyleY = currentY;
+
+      drawRoundedRect(ctx, renderStyleX, renderStyleY, renderStyleBoxWidth, renderStyleBoxHeight, 16);
+      ctx.fillStyle = '#1f2735';
+      ctx.fill();
+
+      if (
+        hud.hoverRegion &&
+        hud.hoverRegion.targetType === 'channels-render-style' &&
+        hud.hoverRegion.channelId === activeChannel.id &&
+        hud.hoverRegion.layerKey === selectedLayer.key
+      ) {
+        ctx.save();
+        drawRoundedRect(ctx, renderStyleX, renderStyleY, renderStyleBoxWidth, renderStyleBoxHeight, 16);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+        ctx.fill();
+        ctx.restore();
+      }
+
+      ctx.fillStyle = '#9fb2c8';
+      ctx.font = vrChannelsFont('500', VR_CHANNELS_FONT_SIZES.body);
+      ctx.fillText('Render style', renderStyleX + 24, renderStyleY + 18);
+      ctx.fillStyle = '#f3f6fc';
+      ctx.font = vrChannelsFont('600', VR_CHANNELS_FONT_SIZES.value);
+      ctx.fillText(currentStyleLabel, renderStyleX + 24, renderStyleY + 44);
+
+      const pillWidth = 240;
+      const pillHeight = 44;
+      const pillX = renderStyleX + renderStyleBoxWidth - pillWidth - 24;
+      const pillY = renderStyleY + (renderStyleBoxHeight - pillHeight) / 2;
+      drawRoundedRect(ctx, pillX, pillY, pillWidth, pillHeight, 22);
+      ctx.fillStyle = renderStyleDisabled ? 'rgba(45, 60, 74, 0.65)' : '#2b5fa6';
+      ctx.fill();
+      ctx.fillStyle = renderStyleDisabled ? '#7b8795' : '#f3f6fc';
+      ctx.font = vrChannelsFont('600', VR_CHANNELS_FONT_SIZES.small);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(toggleLabel, pillX + pillWidth / 2, pillY + pillHeight / 2);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+
+      const renderStyleBounds = {
+        minX: toPanelX(renderStyleX),
+        maxX: toPanelX(renderStyleX + renderStyleBoxWidth),
+        minY: Math.min(toPanelY(renderStyleY), toPanelY(renderStyleY + renderStyleBoxHeight)),
+        maxY: Math.max(toPanelY(renderStyleY), toPanelY(renderStyleY + renderStyleBoxHeight))
+      };
+      regions.push({
+        targetType: 'channels-render-style',
+        channelId: activeChannel.id,
+        layerKey: selectedLayer.key,
+        bounds: renderStyleBounds,
+        disabled: renderStyleDisabled
+      });
+
+      currentY += renderStyleBoxHeight + 28;
+
       const sliderDefs: Array<{
         key: VrChannelsSliderKey;
         label: string;
@@ -3593,7 +3669,8 @@ function VolumeViewer({
           brightness: layer.settings.brightness,
           color: normalizeHexColor(layer.settings.color, DEFAULT_LAYER_COLOR),
           xOffset: layer.settings.xOffset,
-          yOffset: layer.settings.yOffset
+          yOffset: layer.settings.yOffset,
+          renderStyle: layer.settings.renderStyle
         }
       }))
     }));
@@ -5099,6 +5176,7 @@ function VolumeViewer({
                   layer.settings.brightness = 0;
                   layer.settings.xOffset = 0;
                   layer.settings.yOffset = 0;
+                  layer.settings.renderStyle = 0;
                 }
               }
               onChannelReset(region.channelId);
@@ -5108,6 +5186,15 @@ function VolumeViewer({
                 channelState.activeLayerKey = region.layerKey;
               }
               onChannelLayerSelect(region.channelId, region.layerKey);
+            } else if (activeTarget.type === 'channels-render-style' && region.layerKey) {
+              if (!region.disabled) {
+                const channelState = state.channels.find((channel) => channel.id === region.channelId);
+                const layerState = channelState?.layers.find((layer) => layer.key === region.layerKey);
+                if (layerState) {
+                  layerState.settings.renderStyle = layerState.settings.renderStyle === 1 ? 0 : 1;
+                }
+                onLayerRenderStyleToggle(region.layerKey);
+              }
             } else if (activeTarget.type === 'channels-color' && region.layerKey && region.color) {
               const channelState = state.channels.find((channel) => channel.id === region.channelId);
               const layerState = channelState?.layers.find((layer) => layer.key === region.layerKey);
@@ -7787,7 +7874,7 @@ function VolumeViewer({
           uniforms.u_data.value = texture;
           uniforms.u_size.value.set(volume.width, volume.height, volume.depth);
           uniforms.u_clim.value.set(0, 1);
-          uniforms.u_renderstyle.value = 0;
+          uniforms.u_renderstyle.value = layer.renderStyle;
           uniforms.u_renderthreshold.value = 0.5;
           uniforms.u_cmdata.value = colormapTexture;
           uniforms.u_channels.value = volume.channels;
@@ -7948,6 +8035,9 @@ function VolumeViewer({
           dataTexture.format = preparation.format;
           dataTexture.needsUpdate = true;
           materialUniforms.u_data.value = dataTexture;
+          if (materialUniforms.u_renderstyle) {
+            materialUniforms.u_renderstyle.value = layer.renderStyle;
+          }
 
           const desiredX = layer.offsetX;
           const desiredY = layer.offsetY;

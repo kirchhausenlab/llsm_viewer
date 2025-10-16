@@ -27,6 +27,7 @@ import './App.css';
 const DEFAULT_CONTRAST = 1;
 const DEFAULT_GAMMA = 1;
 const DEFAULT_BRIGHTNESS = 0;
+const DEFAULT_RENDER_STYLE = 0;
 const DEFAULT_FPS = 12;
 const DEFAULT_TRACK_OPACITY = 0.9;
 const DEFAULT_TRACK_LINE_WIDTH = 1;
@@ -56,6 +57,7 @@ type LayerSettings = {
   color: string;
   xOffset: number;
   yOffset: number;
+  renderStyle: 0 | 1;
 };
 
 const createDefaultLayerSettings = (): LayerSettings => ({
@@ -64,7 +66,8 @@ const createDefaultLayerSettings = (): LayerSettings => ({
   brightness: DEFAULT_BRIGHTNESS,
   color: DEFAULT_LAYER_COLOR,
   xOffset: 0,
-  yOffset: 0
+  yOffset: 0,
+  renderStyle: DEFAULT_RENDER_STYLE
 });
 
 type ChannelTrackState = {
@@ -2582,6 +2585,23 @@ function App() {
     });
   }, []);
 
+  const handleLayerRenderStyleToggle = useCallback((key: string) => {
+    setLayerSettings((current) => {
+      const previous = current[key] ?? createDefaultLayerSettings();
+      const nextStyle: 0 | 1 = previous.renderStyle === 1 ? 0 : 1;
+      if (previous.renderStyle === nextStyle) {
+        return current;
+      }
+      return {
+        ...current,
+        [key]: {
+          ...previous,
+          renderStyle: nextStyle
+        }
+      };
+    });
+  }, []);
+
   const handleChannelLayerSelectionChange = useCallback((channelId: string, layerKey: string) => {
     setChannelActiveLayer((current) => {
       if (current[channelId] === layerKey) {
@@ -2612,14 +2632,16 @@ function App() {
             gamma: DEFAULT_GAMMA,
             brightness: DEFAULT_BRIGHTNESS,
             xOffset: 0,
-            yOffset: 0
+            yOffset: 0,
+            renderStyle: DEFAULT_RENDER_STYLE
           };
           if (
             previous.contrast !== updated.contrast ||
             previous.gamma !== updated.gamma ||
             previous.brightness !== updated.brightness ||
             previous.xOffset !== updated.xOffset ||
-            previous.yOffset !== updated.yOffset
+            previous.yOffset !== updated.yOffset ||
+            previous.renderStyle !== updated.renderStyle
           ) {
             next[layer.key] = updated;
             changed = true;
@@ -2654,7 +2676,8 @@ function App() {
         brightness: settings.brightness,
         color: normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR),
         offsetX: isActiveChannel ? settings.xOffset : 0,
-        offsetY: isActiveChannel ? settings.yOffset : 0
+        offsetY: isActiveChannel ? settings.yOffset : 0,
+        renderStyle: settings.renderStyle
       };
     });
   }, [activeChannelTabId, channelActiveLayer, channelVisibility, layerSettings, layers, selectedIndex]);
@@ -2976,6 +2999,7 @@ function App() {
               onLayerBrightnessChange={handleLayerBrightnessChange}
               onLayerOffsetChange={handleLayerOffsetChange}
               onLayerColorChange={handleLayerColorChange}
+              onLayerRenderStyleToggle={handleLayerRenderStyleToggle}
               followedTrackId={followedTrackId}
               onTrackFollowRequest={handleTrackFollowFromViewer}
               onStopTrackFollow={handleStopTrackFollow}
@@ -3177,6 +3201,12 @@ function App() {
                   const displayColor = normalizedColor.toUpperCase();
                   const isActive = channelId === activeChannelTabId;
                   const isVisible = channelVisibility[channelId] ?? true;
+                  const renderStyleLabel =
+                    settings.renderStyle === 1 ? 'Iso surface' : 'Maximum intensity';
+                  const renderStyleToggleLabel =
+                    settings.renderStyle === 1
+                      ? 'Switch to maximum intensity'
+                      : 'Switch to iso surface';
 
                   return (
                     <div
@@ -3233,6 +3263,21 @@ function App() {
                       )}
                       {selectedLayer ? (
                         <>
+                          <div className="channel-render-style">
+                            <div className="channel-render-style-label">
+                              <span>Render style</span>
+                              <span>{renderStyleLabel}</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="channel-render-style-button"
+                              onClick={() => handleLayerRenderStyleToggle(selectedLayer.key)}
+                              disabled={sliderDisabled}
+                              aria-pressed={settings.renderStyle === 1}
+                            >
+                              {renderStyleToggleLabel}
+                            </button>
+                          </div>
                           <div className="slider-control slider-control--pair">
                             <div className="slider-control slider-control--inline">
                               <label htmlFor={`layer-contrast-${selectedLayer.key}`}>

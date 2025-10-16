@@ -15,6 +15,7 @@ type ViewerLayer = {
   color: string;
   offsetX: number;
   offsetY: number;
+  renderStyle: 0 | 1;
 };
 
 type PlanarViewerProps = {

@@ -347,3 +347,8 @@ d centered the front-page card in the viewport.
 
 ## VR HUD grab handle tuning
 - Restored the playback, channels, and tracks HUD grab handle height to its pre-regression size while retaining the deeper grab tolerance.
+
+## Per-channel render style toggle
+- Added a per-channel "Render style" toggle to the desktop channels window that flips 3D layers between maximum-intensity projection and iso-surface shading.
+- Mirrored the control inside the VR channels HUD with a dedicated canvas button and hooked it into the existing state pipeline.
+- Propagated the new setting into the Three.js volume materials so the shader's `u_renderstyle` uniform updates immediately without rebuilding textures.
