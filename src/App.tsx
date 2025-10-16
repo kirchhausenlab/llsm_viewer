@@ -313,55 +313,6 @@ function groupFilesIntoLayers(files: File[]): File[][] {
     .map(([, value]) => value);
 }
 
-function inferLayerLabel(
-  files: File[],
-  fallbackIndex: number,
-  existingLabels: Set<string>
-) {
-  let baseLabel: string | null = null;
-  const first = files[0];
-  if (first) {
-    const relative = first.webkitRelativePath;
-    if (relative) {
-      const segments = relative.split('/').filter(Boolean);
-      if (segments.length > 1) {
-        baseLabel = segments[segments.length - 2] ?? null;
-      }
-    }
-    if (!baseLabel) {
-      const nameWithoutExtension = first.name.replace(/\.[^.]+$/, '');
-      baseLabel = nameWithoutExtension || null;
-    }
-  }
-
-  if (!baseLabel) {
-    baseLabel = `Layer ${fallbackIndex + 1}`;
-  }
-
-  let candidate = baseLabel;
-  let counter = 2;
-  while (existingLabels.has(candidate)) {
-    candidate = `${baseLabel} (${counter})`;
-    counter += 1;
-  }
-  return candidate;
-}
-
-function makeUniqueName(baseName: string, existingNames: Set<string>) {
-  const trimmed = baseName.trim() || 'Untitled';
-  if (!existingNames.has(trimmed)) {
-    return trimmed;
-  }
-
-  let counter = 2;
-  let candidate = `${trimmed} (${counter})`;
-  while (existingNames.has(candidate)) {
-    counter += 1;
-    candidate = `${trimmed} (${counter})`;
-  }
-  return candidate;
-}
-
 async function parseTrackCsvFile(file: File): Promise<string[][]> {
   const contents = await file.text();
   const lines = contents.split(/\r?\n/);
@@ -760,7 +711,7 @@ function ChannelCard({
             onClick={handleLayerBrowse}
             disabled={isDisabled || isDropboxImporting}
           >
-            from Files
+            From Files
           </button>
           <button
             type="button"
@@ -768,9 +719,9 @@ function ChannelCard({
             onClick={handleDropboxImport}
             disabled={isDisabled || isDropboxImporting}
           >
-            {dropboxImportTarget === 'layers' ? 'Importing…' : 'from Dropbox'}
+            {dropboxImportTarget === 'layers' ? 'Importing…' : 'From Dropbox'}
           </button>
-          <p className="channel-layer-drop-subtitle">Drop folders or TIFF sequences to add layers.</p>
+          <p className="channel-layer-drop-subtitle">Drop TIFF sequences to add layers.</p>
         </div>
         {dropboxImportTarget === 'layers' ? (
           <p className="channel-layer-drop-status">Importing from Dropbox…</p>
@@ -853,7 +804,7 @@ function ChannelCard({
                     type="button"
                     className="channel-layer-remove"
                     onClick={() => onLayerRemove(channel.id, layer.id)}
-                    aria-label={`Remove ${layer.name}`}
+                    aria-label={layer.name.trim() ? `Remove ${layer.name.trim()}` : 'Remove layer'}
                     disabled={isDisabled}
                   >
                     Remove
@@ -886,23 +837,23 @@ function ChannelCard({
         <div className="channel-tracks-content">
           <div className="channel-tracks-row">
             <div className="channel-tracks-description">
-              <button
-                type="button"
-                className="channel-tracks-button"
-                onClick={handleTrackBrowse}
-                disabled={isDisabled || isDropboxImporting}
-              >
-                from Files
-              </button>
-              <button
-                type="button"
-                className="channel-tracks-button"
-                onClick={handleTrackDropboxImport}
-                disabled={isDisabled || isDropboxImporting}
-              >
-                {dropboxImportTarget === 'tracks' ? 'Importing…' : 'from Dropbox'}
-              </button>
-              <p className="channel-tracks-subtitle">Drop a CSV file to attach tracks</p>
+                <button
+                  type="button"
+                  className="channel-tracks-button"
+                  onClick={handleTrackBrowse}
+                  disabled={isDisabled || isDropboxImporting}
+                >
+                  From Files
+                </button>
+                <button
+                  type="button"
+                  className="channel-tracks-button"
+                  onClick={handleTrackDropboxImport}
+                  disabled={isDisabled || isDropboxImporting}
+                >
+                  {dropboxImportTarget === 'tracks' ? 'Importing…' : 'From Dropbox'}
+                </button>
+                <p className="channel-tracks-subtitle">Drop a CSV file to attach tracks.</p>
             </div>
             {channel.trackFile ? (
               <button
@@ -1846,29 +1797,26 @@ function App() {
   );
 
   const handleAddChannel = useCallback(() => {
-    let createdChannelMeta: { id: string; name: string } | null = null;
+    let createdChannel: ChannelSource | null = null;
     let blocked = false;
     setChannels((current) => {
       if (current.length >= MAX_CHANNELS) {
         blocked = true;
         return current;
       }
-      const existingNames = new Set(current.map((channel) => channel.name));
-      const defaultName = makeUniqueName(`Channel ${current.length + 1}`, existingNames);
-      const newChannel = createChannelSource(defaultName);
-      createdChannelMeta = { id: newChannel.id, name: newChannel.name };
+      const newChannel = createChannelSource('');
+      createdChannel = newChannel;
       return [...current, newChannel];
     });
     if (blocked) {
       setDatasetError(MAX_CHANNELS_MESSAGE);
       return;
     }
-    if (createdChannelMeta) {
-      const { id, name } = createdChannelMeta;
-      pendingChannelFocusIdRef.current = id;
-      setActiveChannelId(id);
-      editingChannelOriginalNameRef.current = name;
-      setEditingChannelId(id);
+    if (createdChannel) {
+      pendingChannelFocusIdRef.current = createdChannel.id;
+      setActiveChannelId(createdChannel.id);
+      editingChannelOriginalNameRef.current = createdChannel.name;
+      setEditingChannelId(createdChannel.id);
       setDatasetError(null);
     }
   }, [createChannelSource]);
@@ -1919,16 +1867,13 @@ function App() {
           if (grouped.length === 0) {
             return channel;
           }
-          const existingLabels = new Set(channel.layers.map((layer) => layer.name));
           const newLayers: ChannelLayerSource[] = [];
           for (const group of grouped) {
             const sorted = sortVolumeFiles(group);
             if (sorted.length === 0) {
               continue;
             }
-            const label = inferLayerLabel(sorted, channel.layers.length + newLayers.length, existingLabels);
-            existingLabels.add(label);
-            newLayers.push(createLayerSource(label, sorted));
+            newLayers.push(createLayerSource('', sorted));
           }
           if (newLayers.length === 0) {
             return channel;
@@ -2091,15 +2036,26 @@ function App() {
       const errors: string[] = [];
       const warnings: string[] = [];
 
+      if (!channel.name.trim()) {
+        errors.push('Name this channel.');
+      }
+
       if (channel.layers.length === 0) {
         errors.push('Add at least one layer to this channel.');
       } else {
         const timepointCounts = new Set<number>();
+        let hasUnnamedLayer = false;
         for (const layer of channel.layers) {
           if (layer.files.length === 0) {
             errors.push(`Layer "${layer.name || 'Untitled layer'}" has no files.`);
           }
+          if (!layer.name.trim()) {
+            hasUnnamedLayer = true;
+          }
           timepointCounts.add(layer.files.length);
+        }
+        if (hasUnnamedLayer) {
+          errors.push('Name all layers in this channel.');
         }
         if (timepointCounts.size > 1) {
           errors.push('Layers have mismatched timepoint counts.');
@@ -2178,7 +2134,8 @@ function App() {
 
     const blockingChannel = channelValidationList.find((entry) => entry.errors.length > 0);
     if (blockingChannel) {
-      const channelName = channels.find((channel) => channel.id === blockingChannel.channelId)?.name ?? 'a channel';
+      const rawName = channels.find((channel) => channel.id === blockingChannel.channelId)?.name ?? '';
+      const channelName = rawName.trim() || 'this channel';
       setDatasetError(`Resolve the errors in ${channelName} before launching.`);
       return;
     }
@@ -2727,10 +2684,12 @@ function App() {
               {channels.length > 0 ? (
                 <>
                   <div className="channel-tabs" role="tablist" aria-label="Configured channels">
-                    {channels.map((channel, index) => {
+                    {channels.map((channel) => {
                       const validation = channelValidationMap.get(channel.id) ?? { errors: [], warnings: [] };
                       const isActive = channel.id === activeChannelId;
                       const isEditing = editingChannelId === channel.id;
+                      const trimmedChannelName = channel.name.trim();
+                      const removeLabel = trimmedChannelName ? `Remove ${trimmedChannelName}` : 'Remove channel';
                       const tabClassName = [
                         'channel-tab',
                         isActive ? 'is-active' : '',
@@ -2777,6 +2736,7 @@ function App() {
                                 className="channel-tab-name-input"
                                 value={channel.name}
                                 onChange={(event) => handleChannelNameChange(channel.id, event.target.value)}
+                                placeholder="Insert channel name here"
                                 onBlur={() => {
                                   editingChannelInputRef.current = null;
                                   setEditingChannelId(null);
@@ -2807,7 +2767,7 @@ function App() {
                             <button
                               type="button"
                               className="channel-tab-remove"
-                              aria-label={`Remove ${channel.name || `Channel ${index + 1}`}`}
+                              aria-label={removeLabel}
                               onClick={(event) => {
                                 event.preventDefault();
                                 event.stopPropagation();
@@ -2865,13 +2825,19 @@ function App() {
                           }}
                         >
                           <span className="channel-tab-text">
-                            <span className="channel-tab-name">{channel.name || `Channel ${index + 1}`}</span>
+                            <span className="channel-tab-name">
+                              {trimmedChannelName ? (
+                                trimmedChannelName
+                              ) : (
+                                <span className="channel-tab-placeholder">Insert channel name here</span>
+                              )}
+                            </span>
                             <span className="channel-tab-meta">{tabMeta}</span>
                           </span>
                           <button
                             type="button"
                             className="channel-tab-remove"
-                            aria-label={`Remove ${channel.name || `Channel ${index + 1}`}`}
+                            aria-label={removeLabel}
                             onClick={(event) => {
                               event.preventDefault();
                               event.stopPropagation();
@@ -3301,23 +3267,23 @@ function App() {
                                 disabled={sliderDisabled}
                               />
                             </div>
-                            <div className="slider-control slider-control--inline">
-                              <label htmlFor={`layer-gamma-${selectedLayer.key}`}>
-                                Gamma <span>{settings.gamma.toFixed(2)}</span>
-                              </label>
-                              <input
-                                id={`layer-gamma-${selectedLayer.key}`}
-                                type="range"
-                                min={0.2}
-                                max={3}
-                                step={0.05}
-                                value={settings.gamma}
-                                onChange={(event) =>
-                                  handleLayerGammaChange(selectedLayer.key, Number(event.target.value))
-                                }
-                                disabled={sliderDisabled}
-                              />
-                            </div>
+                          </div>
+                          <div className="slider-control">
+                            <label htmlFor={`layer-gamma-${selectedLayer.key}`}>
+                              Gamma <span>{settings.gamma.toFixed(2)}</span>
+                            </label>
+                            <input
+                              id={`layer-gamma-${selectedLayer.key}`}
+                              type="range"
+                              min={0.2}
+                              max={3}
+                              step={0.05}
+                              value={settings.gamma}
+                              onChange={(event) =>
+                                handleLayerGammaChange(selectedLayer.key, Number(event.target.value))
+                              }
+                              disabled={sliderDisabled}
+                            />
                           </div>
                           <div className="slider-control slider-control--pair">
                             <div className="slider-control slider-control--inline">

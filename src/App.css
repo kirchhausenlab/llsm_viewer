@@ -154,6 +154,12 @@
   text-overflow: ellipsis;
 }
 
+.channel-tab-placeholder {
+  color: rgba(255, 255, 255, 0.55);
+  font-style: italic;
+  font-weight: 500;
+}
+
 .channel-tab-name-input {
   width: 100%;
   background: rgba(0, 0, 0, 0.35);
@@ -163,6 +169,11 @@
   color: rgba(255, 255, 255, 0.95);
   font-weight: 600;
   font-size: 0.95rem;
+}
+
+.channel-tab-name-input::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 500;
 }
 
 .channel-tab-name-input:focus {
@@ -263,7 +274,7 @@
 
 .channel-layer-drop-title,
 .channel-tracks-title {
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.85);
 }
