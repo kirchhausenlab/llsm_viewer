@@ -455,16 +455,6 @@ function ChannelCard({
   }, []);
 
   useEffect(() => {
-    const input = layerInputRef.current;
-    if (!input) {
-      return;
-    }
-    input.setAttribute('directory', '');
-    input.setAttribute('webkitdirectory', '');
-    input.setAttribute('mozdirectory', '');
-  }, []);
-
-  useEffect(() => {
     syncDropboxConfigState();
   }, [syncDropboxConfigState]);
 
