@@ -6366,7 +6366,12 @@ function VolumeViewer({
                   if (region?.disabled) {
                     region = null;
                   }
-                  if (region && (!channelsSliderLocked || region.targetType === 'channels-slider')) {
+                  const isActiveSliderRegion =
+                    region &&
+                    activeChannelsSliderRegion &&
+                    region.targetType === 'channels-slider' &&
+                    region === activeChannelsSliderRegion;
+                  if (region && (!channelsSliderLocked || isActiveSliderRegion)) {
                     const replaced = considerChannelsCandidate(
                       {
                         target: { type: region.targetType, object: channelsHudInstance.panel, data: region },
@@ -6379,7 +6384,7 @@ function VolumeViewer({
                     if (replaced) {
                       nextChannelsHoverRegion = region;
                     }
-                    if (channelsSliderActive && region.targetType === 'channels-slider') {
+                    if (channelsSliderActive && region.targetType === 'channels-slider' && isActiveSliderRegion) {
                       applyVrChannelsSliderFromPoint(region, channelsTouchPoint);
                     }
                   }
@@ -6539,7 +6544,12 @@ function VolumeViewer({
                 ) {
                   const rawDistance = distanceAlongRay;
                   const region = resolveTracksRegionFromPoint(tracksHudInstance, tracksTouchPoint);
-                  if (region && (!tracksSliderLocked || region.targetType === 'tracks-slider')) {
+                  const isActiveSliderRegion =
+                    region &&
+                    activeTracksSliderRegion &&
+                    region.targetType === 'tracks-slider' &&
+                    region === activeTracksSliderRegion;
+                  if (region && (!tracksSliderLocked || isActiveSliderRegion)) {
                     const replaced = considerTracksCandidate(
                       {
                         target: { type: region.targetType, object: tracksHudInstance.panel, data: region },
@@ -6555,7 +6565,8 @@ function VolumeViewer({
                     if (entry.isSelecting && entry.activeUiTarget) {
                       if (
                         entry.activeUiTarget.type === 'tracks-slider' &&
-                        region.targetType === 'tracks-slider'
+                        region.targetType === 'tracks-slider' &&
+                        isActiveSliderRegion
                       ) {
                         applyVrTracksSliderFromPoint(region, tracksTouchPoint);
                       } else if (
