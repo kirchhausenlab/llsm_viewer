@@ -1079,7 +1079,7 @@ function VolumeViewer({
     ctx.clearRect(0, 0, hud.panelCanvas.width, hud.panelCanvas.height);
     ctx.save();
     ctx.scale(pixelRatio, pixelRatio);
-    ctx.fillStyle = 'rgba(16, 22, 29, 0.95)';
+    ctx.fillStyle = 'rgba(16, 22, 29, 1)';
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
     const toPanelX = (x: number) => (x / canvasWidth - 0.5) * hud.width;
@@ -2163,8 +2163,8 @@ function VolumeViewer({
 
     const panelMaterial = new THREE.MeshBasicMaterial({
       color: 0x10161d,
-      transparent: true,
-      opacity: 0.85,
+      transparent: false,
+      opacity: 1,
       side: THREE.DoubleSide
     });
     const panel = new THREE.Mesh(
@@ -2543,8 +2543,8 @@ function VolumeViewer({
 
     const backgroundMaterial = new THREE.MeshBasicMaterial({
       color: 0x10161d,
-      transparent: true,
-      opacity: 0.9,
+      transparent: false,
+      opacity: 1,
       side: THREE.DoubleSide
     });
     const background = new THREE.Mesh(
@@ -2675,8 +2675,8 @@ function VolumeViewer({
 
     const backgroundMaterial = new THREE.MeshBasicMaterial({
       color: 0x10161d,
-      transparent: true,
-      opacity: 0.9,
+      transparent: false,
+      opacity: 1,
       side: THREE.DoubleSide
     });
     const background = new THREE.Mesh(
@@ -2814,7 +2814,7 @@ function VolumeViewer({
     ctx.clearRect(0, 0, hud.panelCanvas.width, hud.panelCanvas.height);
     ctx.save();
     ctx.scale(pixelRatio, pixelRatio);
-    ctx.fillStyle = 'rgba(16, 22, 29, 0.95)';
+    ctx.fillStyle = 'rgba(16, 22, 29, 1)';
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
     const toPanelX = (x: number) => (x / canvasWidth - 0.5) * hud.width;
@@ -5686,7 +5686,7 @@ function VolumeViewer({
                 } else if (delta < -Math.PI) {
                   delta += tau;
                 }
-                const nextYaw = rotationState.initialYaw + delta;
+                const nextYaw = rotationState.initialYaw - delta;
                 applyVolumeYawPitch(nextYaw, volumePitchRef.current);
               }
             } else if (rotationState.mode === 'pitch') {
@@ -6601,7 +6601,7 @@ function VolumeViewer({
                   } else if (delta < -Math.PI) {
                     delta += tau;
                   }
-                  const nextYaw = rotationState.initialYaw + delta;
+                  const nextYaw = rotationState.initialYaw - delta;
                   applyYaw(nextYaw);
                 }
               } else if (rotationState.mode === 'pitch' && applyPitch) {
