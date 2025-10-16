@@ -468,6 +468,7 @@ type ControllerEntry = {
         mode: 'pitch';
         initialPitch: number;
         initialAngle: number;
+        basisForward: THREE.Vector3;
       }
     | null;
   hudRotationState:
@@ -484,6 +485,7 @@ type ControllerEntry = {
         mode: 'pitch';
         initialPitch: number;
         initialAngle: number;
+        basisForward: THREE.Vector3;
       }
     | null;
 };
@@ -4707,14 +4709,19 @@ function VolumeViewer({
               pitchVector.copy(entry.rayOrigin).sub(placement.position);
               pitchVector.x = 0;
               let initialAngle = placement.pitch ?? 0;
+              const pitchBasisForward = new THREE.Vector3();
+              const pitchBasisRight = new THREE.Vector3();
+              computeViewerYawBasis(renderer, camera, pitchBasisForward, pitchBasisRight);
               if (pitchVector.lengthSq() > 1e-6) {
-                initialAngle = Math.atan2(pitchVector.y, -pitchVector.z);
+                const forwardComponent = pitchVector.dot(pitchBasisForward);
+                initialAngle = Math.atan2(pitchVector.y, forwardComponent);
               }
               entry.hudRotationState = {
                 hud: hudCategory,
                 mode: 'pitch',
                 initialPitch: placement.pitch ?? 0,
-                initialAngle
+                initialAngle,
+                basisForward: pitchBasisForward
               };
             }
           } else {
@@ -4847,13 +4854,18 @@ function VolumeViewer({
             } else {
               rotationDirectionTemp.x = 0;
               let initialAngle = volumePitchRef.current;
+              const pitchBasisForward = new THREE.Vector3();
+              const pitchBasisRight = new THREE.Vector3();
+              computeViewerYawBasis(renderer, camera, pitchBasisForward, pitchBasisRight);
               if (rotationDirectionTemp.lengthSq() > 1e-6) {
-                initialAngle = Math.atan2(rotationDirectionTemp.y, -rotationDirectionTemp.z);
+                const forwardComponent = rotationDirectionTemp.dot(pitchBasisForward);
+                initialAngle = Math.atan2(rotationDirectionTemp.y, forwardComponent);
               }
               entry.volumeRotationState = {
                 mode: 'pitch',
                 initialPitch: volumePitchRef.current,
-                initialAngle
+                initialAngle,
+                basisForward: pitchBasisForward
               };
             }
           } else {
@@ -5694,7 +5706,8 @@ function VolumeViewer({
             } else if (rotationState.mode === 'pitch') {
               rotationDirectionTemp.x = 0;
               if (rotationDirectionTemp.lengthSq() > 1e-8) {
-                const currentAngle = Math.atan2(rotationDirectionTemp.y, -rotationDirectionTemp.z);
+                const forwardComponent = rotationDirectionTemp.dot(rotationState.basisForward);
+                const currentAngle = Math.atan2(rotationDirectionTemp.y, forwardComponent);
                 let delta = currentAngle - rotationState.initialAngle;
                 if (delta > Math.PI) {
                   delta -= tau;
@@ -6611,7 +6624,8 @@ function VolumeViewer({
                 pitchVector.copy(entry.rayOrigin).sub(placement.position);
                 pitchVector.x = 0;
                 if (pitchVector.lengthSq() > 1e-6) {
-                  const currentAngle = Math.atan2(pitchVector.y, -pitchVector.z);
+                  const forwardComponent = pitchVector.dot(rotationState.basisForward);
+                  const currentAngle = Math.atan2(pitchVector.y, forwardComponent);
                   let delta = currentAngle - rotationState.initialAngle;
                   const tau = Math.PI * 2;
                   if (delta > Math.PI) {
