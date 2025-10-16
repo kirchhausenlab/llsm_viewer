@@ -394,10 +394,15 @@ const buildChannelTabMeta = (channel: ChannelSource, validation: ChannelValidati
   } else if (channel.trackStatus === 'loading') {
     parts.push('Tracks loading');
   }
-  if (validation.errors.length > 0) {
+  if (channel.layers.length === 0) {
+    parts.push('add at least one layer');
+  } else if (validation.errors.length > 0) {
     parts.push('Needs attention');
   } else if (validation.warnings.length > 0) {
-    parts.push('Warnings');
+    const hasNoTracksWarning = validation.warnings.some(
+      (warning) => warning === 'No tracks attached to this channel.'
+    );
+    parts.push(hasNoTracksWarning ? 'no tracks attached' : 'Warnings');
   }
   return parts.join(' · ');
 };
@@ -741,20 +746,7 @@ function ChannelCard({
 
   return (
     <section className={`channel-card${isDisabled ? ' is-disabled' : ''}`} aria-disabled={isDisabled}>
-      {validation.errors.length > 0 || validation.warnings.length > 0 ? (
-        <ul className="channel-validation">
-          {validation.errors.map((error, errorIndex) => (
-            <li key={`error-${errorIndex}`} className="channel-validation-error">
-              {error}
-            </li>
-          ))}
-          {validation.warnings.map((warning, warningIndex) => (
-            <li key={`warning-${warningIndex}`} className="channel-validation-warning">
-              {warning}
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      <p className="channel-layer-drop-title">Upload layers</p>
       <div
         className={`channel-layer-drop${isLayerDragging ? ' is-active' : ''}`}
         onDragEnter={handleLayerDragEnter}
@@ -778,7 +770,7 @@ function ChannelCard({
             onClick={handleLayerBrowse}
             disabled={isDisabled || isDropboxImporting}
           >
-            Add layers
+            from Files
           </button>
           <button
             type="button"
@@ -786,7 +778,7 @@ function ChannelCard({
             onClick={handleDropboxImport}
             disabled={isDisabled || isDropboxImporting}
           >
-            {dropboxImportTarget === 'layers' ? 'Importing…' : 'Import from Dropbox'}
+            {dropboxImportTarget === 'layers' ? 'Importing…' : 'from Dropbox'}
           </button>
           <p className="channel-layer-drop-subtitle">Drop folders or TIFF sequences to add layers.</p>
         </div>
@@ -885,6 +877,7 @@ function ChannelCard({
           })}
         </ul>
       ) : null}
+      <p className="channel-tracks-title">Upload tracks (optional)</p>
       <div
         className={`channel-tracks-drop${isTrackDragging ? ' is-active' : ''}`}
         onDragEnter={handleTrackDragEnter}
@@ -909,7 +902,7 @@ function ChannelCard({
                 onClick={handleTrackBrowse}
                 disabled={isDisabled || isDropboxImporting}
               >
-                Add tracks (optional)
+                from Files
               </button>
               <button
                 type="button"
@@ -917,9 +910,9 @@ function ChannelCard({
                 onClick={handleTrackDropboxImport}
                 disabled={isDisabled || isDropboxImporting}
               >
-                {dropboxImportTarget === 'tracks' ? 'Importing…' : 'Import from Dropbox'}
+                {dropboxImportTarget === 'tracks' ? 'Importing…' : 'from Dropbox'}
               </button>
-              <p className="channel-tracks-subtitle">Drop or browse for a CSV to attach tracks.</p>
+              <p className="channel-tracks-subtitle">Drop a CSV file to attach tracks</p>
             </div>
             {channel.trackFile ? (
               <button
@@ -2816,6 +2809,7 @@ function App() {
                                 }}
                                 aria-label="Channel name"
                                 autoComplete="off"
+                                autoFocus
                                 disabled={isFrontPageLocked}
                               />
                               <span className="channel-tab-meta">{tabMeta}</span>
