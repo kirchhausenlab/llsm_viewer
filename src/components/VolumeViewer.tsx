@@ -461,6 +461,8 @@ type ControllerEntry = {
         mode: 'yaw';
         initialYaw: number;
         initialAngle: number;
+        basisForward: THREE.Vector3;
+        basisRight: THREE.Vector3;
       }
     | {
         mode: 'pitch';
@@ -474,6 +476,8 @@ type ControllerEntry = {
         mode: 'yaw';
         initialYaw: number;
         initialAngle: number;
+        basisForward: THREE.Vector3;
+        basisRight: THREE.Vector3;
       }
     | {
         hud: 'playback' | 'channels' | 'tracks';
@@ -536,17 +540,69 @@ const VR_VOLUME_BASE_OFFSET = new THREE.Vector3(0, 1.2, -0.3);
 const VR_UI_TOUCH_DISTANCE = 0.08;
 const VR_UI_TOUCH_SURFACE_MARGIN = 0.04;
 const VR_CONTROLLER_TOUCH_RADIUS = 0.015;
-const VR_TRANSLATION_HANDLE_RADIUS = 0.06;
+const VR_TRANSLATION_HANDLE_RADIUS = 0.03;
 const VR_TRANSLATION_HANDLE_OFFSET = 0.04;
-const VR_ROTATION_HANDLE_RADIUS = 0.045;
+const VR_ROTATION_HANDLE_RADIUS = VR_TRANSLATION_HANDLE_RADIUS;
 const VR_ROTATION_HANDLE_OFFSET = 0.03;
 const VR_HUD_TRANSLATE_HANDLE_RADIUS = 0.018;
-const VR_HUD_TRANSLATE_HANDLE_OFFSET = 0.03;
+const VR_HUD_TRANSLATE_HANDLE_OFFSET = VR_HUD_TRANSLATE_HANDLE_RADIUS;
 const VR_HUD_YAW_HANDLE_RADIUS = 0.016;
 const VR_HUD_YAW_HANDLE_OFFSET = 0.03;
 const VR_HUD_TRANSLATE_HANDLE_COLOR = 0x4d9dff;
 const VR_HUD_YAW_HANDLE_COLOR = 0xffb347;
 const VR_HUD_SURFACE_OFFSET = 0.0015;
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+const VIEWER_YAW_FORWARD_REFERENCE = new THREE.Vector3(0, 0, -1);
+const VIEWER_YAW_RIGHT_REFERENCE = new THREE.Vector3(1, 0, 0);
+const viewerYawQuaternionTemp = new THREE.Quaternion();
+const viewerYawForwardTemp = new THREE.Vector3();
+
+function computeViewerYawBasis(
+  renderer: THREE.WebGLRenderer | null,
+  camera: THREE.PerspectiveCamera | null,
+  outForward: THREE.Vector3,
+  outRight: THREE.Vector3
+) {
+  outForward.copy(VIEWER_YAW_FORWARD_REFERENCE);
+  outRight.copy(VIEWER_YAW_RIGHT_REFERENCE);
+  if (!camera) {
+    return;
+  }
+
+  const isPresenting = !!renderer?.xr?.isPresenting;
+  const referenceCamera = isPresenting ? (renderer?.xr.getCamera(camera) as THREE.Camera) : camera;
+  referenceCamera.getWorldQuaternion(viewerYawQuaternionTemp);
+
+  viewerYawForwardTemp.set(0, 0, -1).applyQuaternion(viewerYawQuaternionTemp);
+  viewerYawForwardTemp.y = 0;
+
+  if (viewerYawForwardTemp.lengthSq() < 1e-6) {
+    return;
+  }
+
+  viewerYawForwardTemp.normalize();
+  outForward.copy(viewerYawForwardTemp);
+  outRight.crossVectors(outForward, WORLD_UP);
+
+  if (outRight.lengthSq() < 1e-6) {
+    outForward.copy(VIEWER_YAW_FORWARD_REFERENCE);
+    outRight.copy(VIEWER_YAW_RIGHT_REFERENCE);
+    return;
+  }
+
+  outRight.normalize();
+  outForward.copy(WORLD_UP).cross(outRight).normalize();
+}
+
+function computeYawAngleForBasis(
+  vector: THREE.Vector3,
+  basisForward: THREE.Vector3,
+  basisRight: THREE.Vector3
+) {
+  const forwardComponent = vector.dot(basisForward);
+  const rightComponent = vector.dot(basisRight);
+  return Math.atan2(rightComponent, forwardComponent);
+}
 
 function setVrPlaybackSliderFraction(hud: VrPlaybackHud, fraction: number) {
   const clamped = Math.min(Math.max(fraction, 0), 1);
@@ -929,7 +985,6 @@ function VolumeViewer({
       translationHandle.visible = true;
     }
 
-    const frontOffset = -(halfExtents.z + VR_ROTATION_HANDLE_OFFSET) / scale;
     const lateralOffset = (halfExtents.x + VR_ROTATION_HANDLE_OFFSET) / scale;
     const verticalOffset = -(halfExtents.y + VR_ROTATION_HANDLE_OFFSET) / scale;
     const handleScale = VR_ROTATION_HANDLE_RADIUS / scale;
@@ -942,7 +997,7 @@ function VolumeViewer({
       handle.position.set(
         centerUnscaled.x + direction * lateralOffset,
         centerUnscaled.y,
-        centerUnscaled.z + frontOffset
+        centerUnscaled.z
       );
       handle.scale.setScalar(handleScale);
       handle.visible = true;
@@ -952,7 +1007,7 @@ function VolumeViewer({
       pitchHandle.position.set(
         centerUnscaled.x,
         centerUnscaled.y + verticalOffset,
-        centerUnscaled.z + frontOffset
+        centerUnscaled.z
       );
       pitchHandle.scale.setScalar(handleScale);
       pitchHandle.visible = true;
@@ -4603,6 +4658,8 @@ function VolumeViewer({
         entry.volumeRotationState = null;
         const activeType = entry.activeUiTarget?.type ?? null;
         const hudCategory = getHudCategoryFromTarget(activeType);
+        const renderer = rendererRef.current;
+        const camera = cameraRef.current;
         if (
           activeType === 'playback-panel-yaw' ||
           activeType === 'channels-panel-yaw' ||
@@ -4629,14 +4686,19 @@ function VolumeViewer({
               yawVector.copy(entry.rayOrigin).sub(placement.position);
               yawVector.y = 0;
               let initialAngle = placement.yaw;
+              const yawBasisForward = new THREE.Vector3();
+              const yawBasisRight = new THREE.Vector3();
+              computeViewerYawBasis(renderer, camera, yawBasisForward, yawBasisRight);
               if (yawVector.lengthSq() > 1e-6) {
-                initialAngle = Math.atan2(yawVector.x, yawVector.z);
+                initialAngle = computeYawAngleForBasis(yawVector, yawBasisForward, yawBasisRight);
               }
               entry.hudRotationState = {
                 hud: hudCategory,
                 mode: 'yaw',
                 initialYaw: placement.yaw,
-                initialAngle
+                initialAngle,
+                basisForward: yawBasisForward,
+                basisRight: yawBasisRight
               };
             } else {
               const pitchVector = vrHudPitchVectorRef.current;
@@ -4763,13 +4825,22 @@ function VolumeViewer({
             if (entry.activeUiTarget.type === 'volume-yaw-handle') {
               rotationDirectionTemp.y = 0;
               let initialAngle = volumeYawRef.current;
+              const yawBasisForward = new THREE.Vector3();
+              const yawBasisRight = new THREE.Vector3();
+              computeViewerYawBasis(renderer, camera, yawBasisForward, yawBasisRight);
               if (rotationDirectionTemp.lengthSq() > 1e-6) {
-                initialAngle = Math.atan2(rotationDirectionTemp.x, rotationDirectionTemp.z);
+                initialAngle = computeYawAngleForBasis(
+                  rotationDirectionTemp,
+                  yawBasisForward,
+                  yawBasisRight
+                );
               }
               entry.volumeRotationState = {
                 mode: 'yaw',
                 initialYaw: volumeYawRef.current,
-                initialAngle
+                initialAngle,
+                basisForward: yawBasisForward,
+                basisRight: yawBasisRight
               };
             } else {
               rotationDirectionTemp.x = 0;
@@ -5604,7 +5675,11 @@ function VolumeViewer({
             if (rotationState.mode === 'yaw') {
               rotationDirectionTemp.y = 0;
               if (rotationDirectionTemp.lengthSq() > 1e-8) {
-                const currentAngle = Math.atan2(rotationDirectionTemp.x, rotationDirectionTemp.z);
+                const currentAngle = computeYawAngleForBasis(
+                  rotationDirectionTemp,
+                  rotationState.basisForward,
+                  rotationState.basisRight
+                );
                 let delta = currentAngle - rotationState.initialAngle;
                 if (delta > Math.PI) {
                   delta -= tau;
@@ -6514,7 +6589,11 @@ function VolumeViewer({
                 yawVector.copy(entry.rayOrigin).sub(placement.position);
                 yawVector.y = 0;
                 if (yawVector.lengthSq() > 1e-6) {
-                  const currentAngle = Math.atan2(yawVector.x, yawVector.z);
+                  const currentAngle = computeYawAngleForBasis(
+                    yawVector,
+                    rotationState.basisForward,
+                    rotationState.basisRight
+                  );
                   let delta = currentAngle - rotationState.initialAngle;
                   const tau = Math.PI * 2;
                   if (delta > Math.PI) {

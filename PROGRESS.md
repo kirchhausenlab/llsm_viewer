@@ -1,5 +1,13 @@
 # Progress Log
 
+## VR volume & HUD handle alignment
+- Reworked yaw handle math to project controller positions into the viewer's horizontal basis, keeping yaw adjustments intuitiv
+  e whether the volume or HUD panels are grabbed from the front or the back.
+- Centered the immersive volume rotation spheres along the dataset's depth axis and matched their radius to the translation han
+  dle before shrinking both, keeping the grips consistent while freeing up surrounding space.
+- Tightened the HUD translation handle offset so the grab spheres now rest directly against their panels without leaving a visib
+  le gap.
+
 ## VR reset view behavior
 - Updated the immersive playback "Reset view" control to restore the normalized volume pose, recentering the dataset and VR HUD
   panels instead of only touching the orbit camera.
