@@ -1,5 +1,8 @@
 # Progress Log
 
+## VR channels HUD layout expansion
+- Enlarged the immersive channels HUD panel and backing canvas so the grayscale color buttons have enough vertical room to render without being clipped.
+
 ## VR yaw handle direction and HUD opacity
 - Inverted the yaw drag delta for volume and HUD rotation handles so spinning the side spheres now turns panels in the expected direction.
 - Made the playback, channels, and tracks HUD backgrounds fully opaque by updating the Three.js materials and canvas fills.
