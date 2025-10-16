@@ -1,5 +1,9 @@
 # Progress Log
 
+## VR yaw handle direction and HUD opacity
+- Inverted the yaw drag delta for volume and HUD rotation handles so spinning the side spheres now turns panels in the expected direction.
+- Made the playback, channels, and tracks HUD backgrounds fully opaque by updating the Three.js materials and canvas fills.
+
 ## VR volume & HUD handle alignment
 - Reworked yaw handle math to project controller positions into the viewer's horizontal basis, keeping yaw adjustments intuitiv
   e whether the volume or HUD panels are grabbed from the front or the back.
