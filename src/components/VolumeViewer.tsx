@@ -243,6 +243,7 @@ type VrUiTargetType =
   | 'tracks-toggle'
   | 'tracks-follow'
   | 'volume-translate-handle'
+  | 'volume-scale-handle'
   | 'volume-yaw-handle'
   | 'volume-pitch-handle';
 
@@ -460,6 +461,8 @@ type ControllerEntry = {
   isSelecting: boolean;
   hudGrabOffsets: { playback: THREE.Vector3 | null; channels: THREE.Vector3 | null; tracks: THREE.Vector3 | null };
   translateGrabOffset: THREE.Vector3 | null;
+  scaleGrabOffset: THREE.Vector3 | null;
+  volumeScaleState: VolumeScaleState | null;
   volumeRotationState:
     | {
         mode: 'yaw';
@@ -492,6 +495,11 @@ type ControllerEntry = {
         basisForward: THREE.Vector3;
       }
     | null;
+};
+
+type VolumeScaleState = {
+  baseLength: number;
+  direction: THREE.Vector3;
 };
 
 type VrHudPlacement = { position: THREE.Vector3; yaw: number; pitch: number };
@@ -547,10 +555,14 @@ const VR_UI_TOUCH_DISTANCE = 0.08;
 const VR_UI_TOUCH_SURFACE_MARGIN = 0.04;
 const VR_CONTROLLER_TOUCH_RADIUS = 0.015;
 const VR_TRANSLATION_HANDLE_RADIUS = 0.03;
+const VR_SCALE_HANDLE_RADIUS = VR_TRANSLATION_HANDLE_RADIUS;
 const VR_TRANSLATION_HANDLE_OFFSET = 0.04;
 const VR_ROTATION_HANDLE_RADIUS = VR_TRANSLATION_HANDLE_RADIUS;
 const VR_ROTATION_HANDLE_OFFSET = 0.03;
 const VR_PITCH_HANDLE_FORWARD_OFFSET = VR_ROTATION_HANDLE_OFFSET;
+const VR_SCALE_HANDLE_OFFSET = 0.04;
+const VR_VOLUME_MIN_SCALE = 0.2;
+const VR_VOLUME_MAX_SCALE = 5;
 const VR_HUD_TRANSLATE_HANDLE_RADIUS = 0.018;
 const VR_HUD_TRANSLATE_HANDLE_OFFSET = VR_HUD_TRANSLATE_HANDLE_RADIUS;
 const VR_HUD_YAW_HANDLE_RADIUS = 0.016;
@@ -852,6 +864,8 @@ function VolumeViewer({
   const volumeRootCenterOffsetRef = useRef(new THREE.Vector3());
   const volumeRootCenterUnscaledRef = useRef(new THREE.Vector3());
   const volumeRootHalfExtentsRef = useRef(new THREE.Vector3());
+  const volumeNormalizationScaleRef = useRef(1);
+  const volumeUserScaleRef = useRef(1);
   const volumeYawRef = useRef(0);
   const volumePitchRef = useRef(0);
   const volumeRootRotatedCenterTempRef = useRef(new THREE.Vector3());
@@ -872,6 +886,7 @@ function VolumeViewer({
   } | null>(null);
   const hasActive3DLayerRef = useRef(false);
   const vrTranslationHandleRef = useRef<THREE.Mesh | null>(null);
+  const vrVolumeScaleHandleRef = useRef<THREE.Mesh | null>(null);
   const vrVolumeYawHandlesRef = useRef<THREE.Mesh[]>([]);
   const vrVolumePitchHandleRef = useRef<THREE.Mesh | null>(null);
   const vrHandleLocalPointRef = useRef(new THREE.Vector3());
@@ -941,9 +956,10 @@ function VolumeViewer({
 
   const updateVolumeHandles = useCallback(() => {
     const translationHandle = vrTranslationHandleRef.current;
+    const scaleHandle = vrVolumeScaleHandleRef.current;
     const yawHandles = vrVolumeYawHandlesRef.current;
     const pitchHandle = vrVolumePitchHandleRef.current;
-    if (!translationHandle && yawHandles.length === 0 && !pitchHandle) {
+    if (!translationHandle && !scaleHandle && yawHandles.length === 0 && !pitchHandle) {
       return;
     }
 
@@ -956,6 +972,9 @@ function VolumeViewer({
     const hideHandles = () => {
       if (translationHandle) {
         translationHandle.visible = false;
+      }
+      if (scaleHandle) {
+        scaleHandle.visible = false;
       }
       yawHandles.forEach((handle) => {
         handle.visible = false;
@@ -978,6 +997,9 @@ function VolumeViewer({
     }
 
     const scale = 1 / maxDimension;
+    const userScale = volumeUserScaleRef.current;
+    const totalScale = scale * userScale;
+    const safeScale = totalScale > 1e-6 ? totalScale : 1e-6;
     const centerUnscaled = volumeRootCenterUnscaledRef.current;
     const halfExtents = volumeRootHalfExtentsRef.current;
     const translationLocal = vrHandleLocalPointRef.current;
@@ -989,14 +1011,14 @@ function VolumeViewer({
     );
     if (translationHandle) {
       translationHandle.position.copy(translationLocal);
-      translationHandle.scale.setScalar(VR_TRANSLATION_HANDLE_RADIUS / scale);
+      translationHandle.scale.setScalar(VR_TRANSLATION_HANDLE_RADIUS / safeScale);
       translationHandle.visible = true;
     }
 
     const lateralOffset = (halfExtents.x + VR_ROTATION_HANDLE_OFFSET) / scale;
     const verticalOffset = -(halfExtents.y + VR_ROTATION_HANDLE_OFFSET) / scale;
     const forwardOffset = (halfExtents.z + VR_PITCH_HANDLE_FORWARD_OFFSET) / scale;
-    const handleScale = VR_ROTATION_HANDLE_RADIUS / scale;
+    const handleScale = VR_ROTATION_HANDLE_RADIUS / safeScale;
 
     yawHandles.forEach((handle, index) => {
       if (!handle) {
@@ -1021,11 +1043,22 @@ function VolumeViewer({
       pitchHandle.scale.setScalar(handleScale);
       pitchHandle.visible = true;
     }
+
+    if (scaleHandle) {
+      scaleHandle.position.set(
+        centerUnscaled.x + (halfExtents.x + VR_SCALE_HANDLE_OFFSET) / scale,
+        centerUnscaled.y + (halfExtents.y + VR_SCALE_HANDLE_OFFSET) / scale,
+        centerUnscaled.z
+      );
+      scaleHandle.scale.setScalar(VR_SCALE_HANDLE_RADIUS / safeScale);
+      scaleHandle.visible = true;
+    }
   }, [
     currentDimensionsRef,
     hasActive3DLayerRef,
     rendererRef,
     vrHandleLocalPointRef,
+    vrVolumeScaleHandleRef,
     vrTranslationHandleRef,
     vrVolumePitchHandleRef,
     vrVolumeYawHandlesRef,
@@ -1050,7 +1083,11 @@ function VolumeViewer({
       const baseOffset = volumeRootBaseOffsetRef.current;
       const centerOffset = volumeRootCenterOffsetRef.current;
       const rotatedCenter = volumeRootRotatedCenterTempRef.current;
-      rotatedCenter.copy(centerOffset).applyQuaternion(volumeRootGroup.quaternion);
+      const userScale = volumeUserScaleRef.current;
+      rotatedCenter
+        .copy(centerOffset)
+        .multiplyScalar(userScale)
+        .applyQuaternion(volumeRootGroup.quaternion);
       volumeRootGroup.position.set(
         baseOffset.x - rotatedCenter.x,
         baseOffset.y - rotatedCenter.y,
@@ -3869,6 +3906,8 @@ function VolumeViewer({
         volumeRootCenterOffsetRef.current.set(0, 0, 0);
         volumeRootCenterUnscaledRef.current.set(0, 0, 0);
         volumeRootHalfExtentsRef.current.set(0, 0, 0);
+        volumeNormalizationScaleRef.current = 1;
+        volumeUserScaleRef.current = 1;
         volumeRootGroup.scale.set(1, 1, 1);
         volumeYawRef.current = 0;
         volumePitchRef.current = 0;
@@ -3882,6 +3921,8 @@ function VolumeViewer({
         volumeRootCenterOffsetRef.current.set(0, 0, 0);
         volumeRootCenterUnscaledRef.current.set(0, 0, 0);
         volumeRootHalfExtentsRef.current.set(0, 0, 0);
+        volumeNormalizationScaleRef.current = 1;
+        volumeUserScaleRef.current = 1;
         volumeRootGroup.scale.set(1, 1, 1);
         volumeYawRef.current = 0;
         volumePitchRef.current = 0;
@@ -3890,6 +3931,12 @@ function VolumeViewer({
       }
 
       const scale = 1 / maxDimension;
+      volumeNormalizationScaleRef.current = scale;
+      const clampedUserScale = Math.min(
+        VR_VOLUME_MAX_SCALE,
+        Math.max(VR_VOLUME_MIN_SCALE, volumeUserScaleRef.current)
+      );
+      volumeUserScaleRef.current = clampedUserScale;
       const centerUnscaled = volumeRootCenterUnscaledRef.current;
       centerUnscaled.set(width / 2 - 0.5, height / 2 - 0.5, depth / 2 - 0.5);
       const centerOffset = volumeRootCenterOffsetRef.current;
@@ -3901,10 +3948,10 @@ function VolumeViewer({
         ((depth - 1) / 2) * scale
       );
 
-      volumeRootGroup.scale.setScalar(scale);
+      volumeRootGroup.scale.setScalar(scale * clampedUserScale);
       applyVolumeYawPitch(volumeYawRef.current, volumePitchRef.current);
     },
-    [applyVolumeYawPitch]
+    [applyVolumeYawPitch, volumeNormalizationScaleRef]
   );
 
   const applyTrackGroupTransform = useCallback(
@@ -4396,6 +4443,7 @@ function VolumeViewer({
     }
     volumeYawRef.current = 0;
     volumePitchRef.current = 0;
+    volumeUserScaleRef.current = 1;
     applyVolumeRootTransform(currentDimensionsRef.current);
 
     const controls = controlsRef.current;
@@ -4465,6 +4513,19 @@ function VolumeViewer({
     translationHandle.visible = false;
     volumeRootGroup.add(translationHandle);
     vrTranslationHandleRef.current = translationHandle;
+
+    const scaleHandleMaterial = new THREE.MeshBasicMaterial({
+      color: 0xc84dff,
+      transparent: true,
+      opacity: 0.8,
+      depthWrite: false
+    });
+    scaleHandleMaterial.depthTest = false;
+    const scaleHandle = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), scaleHandleMaterial);
+    scaleHandle.name = 'VolumeScaleHandle';
+    scaleHandle.visible = false;
+    volumeRootGroup.add(scaleHandle);
+    vrVolumeScaleHandleRef.current = scaleHandle;
 
     const rotationHandleMaterial = new THREE.MeshBasicMaterial({
       color: 0xffb347,
@@ -4631,6 +4692,8 @@ function VolumeViewer({
         isSelecting: false,
         hudGrabOffsets: { playback: null, channels: null, tracks: null },
         translateGrabOffset: null,
+        scaleGrabOffset: null,
+        volumeScaleState: null,
         volumeRotationState: null,
         hudRotationState: null
       };
@@ -4647,6 +4710,8 @@ function VolumeViewer({
         entry.hudGrabOffsets.channels = null;
         entry.hudGrabOffsets.tracks = null;
         entry.translateGrabOffset = null;
+        entry.scaleGrabOffset = null;
+        entry.volumeScaleState = null;
         entry.volumeRotationState = null;
         entry.hudRotationState = null;
         entry.rayLength = 3;
@@ -4672,6 +4737,8 @@ function VolumeViewer({
         entry.hudGrabOffsets.channels = null;
         entry.hudGrabOffsets.tracks = null;
         entry.translateGrabOffset = null;
+        entry.scaleGrabOffset = null;
+        entry.volumeScaleState = null;
         entry.volumeRotationState = null;
         entry.hudRotationState = null;
         entry.touchIndicator.visible = false;
@@ -4846,6 +4913,35 @@ function VolumeViewer({
             }
             entry.translateGrabOffset.copy(translationHandleWorldPoint).sub(entry.rayOrigin);
           }
+        } else if (entry.activeUiTarget?.type === 'volume-scale-handle') {
+          const handle = vrVolumeScaleHandleRef.current;
+          const volumeRootGroup = volumeRootGroupRef.current;
+          if (handle && volumeRootGroup) {
+            handle.getWorldPosition(scaleHandleWorldPoint);
+            if (!entry.scaleGrabOffset) {
+              entry.scaleGrabOffset = new THREE.Vector3();
+            }
+            entry.scaleGrabOffset.copy(scaleHandleWorldPoint).sub(entry.rayOrigin);
+            rotationCenterWorldPoint.copy(volumeRootCenterUnscaledRef.current);
+            volumeRootGroup.localToWorld(rotationCenterWorldPoint);
+            scaleDirectionTemp.copy(scaleHandleWorldPoint).sub(rotationCenterWorldPoint);
+            const directionLength = scaleDirectionTemp.length();
+            if (directionLength > 1e-6) {
+              scaleDirectionTemp.divideScalar(directionLength);
+              const userScale = Math.max(volumeUserScaleRef.current, 1e-6);
+              const baseLength = directionLength / userScale;
+              entry.volumeScaleState = {
+                direction: scaleDirectionTemp.clone(),
+                baseLength
+              };
+            } else {
+              entry.volumeScaleState = null;
+              entry.activeUiTarget = null;
+            }
+          } else {
+            entry.volumeScaleState = null;
+            entry.activeUiTarget = null;
+          }
         }
         if (
           entry.activeUiTarget?.type === 'volume-yaw-handle' ||
@@ -4950,6 +5046,9 @@ function VolumeViewer({
           entry.hudRotationState = null;
         } else if (activeTarget?.type === 'volume-translate-handle') {
           entry.translateGrabOffset = null;
+        } else if (activeTarget?.type === 'volume-scale-handle') {
+          entry.scaleGrabOffset = null;
+          entry.volumeScaleState = null;
         } else if (
           activeTarget?.type === 'volume-yaw-handle' ||
           activeTarget?.type === 'volume-pitch-handle'
@@ -5515,6 +5614,9 @@ function VolumeViewer({
     const rotationCenterWorldPoint = new THREE.Vector3();
     const rotationDirectionTemp = new THREE.Vector3();
     const rotationHandleWorldPoint = new THREE.Vector3();
+    const scaleHandleWorldPoint = new THREE.Vector3();
+    const scaleDirectionTemp = new THREE.Vector3();
+    const scaleTargetWorldPoint = new THREE.Vector3();
 
     let lastControllerRaySummary:
       | {
@@ -5599,10 +5701,12 @@ function VolumeViewer({
         const channelsHudInstance = vrChannelsHudRef.current;
         const tracksHudInstance = vrTracksHudRef.current;
         const translationHandleInstance = vrTranslationHandleRef.current;
+        const scaleHandleInstance = vrVolumeScaleHandleRef.current;
         const yawHandleInstances = vrVolumeYawHandlesRef.current;
         const pitchHandleInstance = vrVolumePitchHandleRef.current;
 
         const isActiveTranslate = entry.activeUiTarget?.type === 'volume-translate-handle';
+        const isActiveScale = entry.activeUiTarget?.type === 'volume-scale-handle';
         const isActiveYaw = entry.activeUiTarget?.type === 'volume-yaw-handle';
         const isActivePitch = entry.activeUiTarget?.type === 'volume-pitch-handle';
         if (isActiveYaw || isActivePitch) {
@@ -5626,6 +5730,18 @@ function VolumeViewer({
             considerHandleCandidate({
               target: { type: 'volume-translate-handle', object: translationHandleInstance },
               point: translationHandleWorldPoint.clone(),
+              distance
+            });
+          }
+        }
+
+        if (scaleHandleInstance && scaleHandleInstance.visible) {
+          scaleHandleInstance.getWorldPosition(scaleHandleWorldPoint);
+          const distance = scaleHandleWorldPoint.distanceTo(entry.rayOrigin);
+          if (isActiveScale || distance <= VR_UI_TOUCH_DISTANCE) {
+            considerHandleCandidate({
+              target: { type: 'volume-scale-handle', object: scaleHandleInstance },
+              point: scaleHandleWorldPoint.clone(),
               distance
             });
           }
@@ -5697,6 +5813,47 @@ function VolumeViewer({
             rayLength = Math.min(rayLength, Math.max(0.12, Math.min(distance, 8)));
             if (handleCandidate?.target.type === 'volume-translate-handle') {
               handleCandidate.point = translationHandleWorldPoint.clone();
+              handleCandidate.distance = distance;
+            }
+          }
+        }
+
+        if (entry.isSelecting && isActiveScale) {
+          const handle = vrVolumeScaleHandleRef.current;
+          const volumeRootGroup = volumeRootGroupRef.current;
+          const scaleState = entry.volumeScaleState;
+          if (!handle || !volumeRootGroup || !scaleState) {
+            entry.volumeScaleState = null;
+          } else {
+            const desiredPosition = scaleTargetWorldPoint;
+            desiredPosition.copy(entry.rayOrigin);
+            if (entry.scaleGrabOffset) {
+              desiredPosition.add(entry.scaleGrabOffset);
+            }
+            rotationCenterWorldPoint.copy(volumeRootCenterUnscaledRef.current);
+            volumeRootGroup.localToWorld(rotationCenterWorldPoint);
+            scaleDirectionTemp.copy(desiredPosition).sub(rotationCenterWorldPoint);
+            const projection = scaleDirectionTemp.dot(scaleState.direction);
+            const minLength = scaleState.baseLength * VR_VOLUME_MIN_SCALE;
+            const maxLength = scaleState.baseLength * VR_VOLUME_MAX_SCALE;
+            const clampedLength = Math.min(Math.max(projection, minLength), maxLength);
+            const safeBaseLength = Math.max(scaleState.baseLength, 1e-6);
+            const unclampedScale = clampedLength / safeBaseLength;
+            const nextUserScale = Math.min(
+              VR_VOLUME_MAX_SCALE,
+              Math.max(VR_VOLUME_MIN_SCALE, unclampedScale)
+            );
+            volumeUserScaleRef.current = nextUserScale;
+            const baseScale = volumeNormalizationScaleRef.current;
+            volumeRootGroup.scale.setScalar(baseScale * nextUserScale);
+            applyVolumeYawPitch(volumeYawRef.current, volumePitchRef.current);
+            handle.getWorldPosition(scaleHandleWorldPoint);
+            entry.hoverUiPoint.copy(scaleHandleWorldPoint);
+            entry.hasHoverUiPoint = true;
+            const distance = entry.rayOrigin.distanceTo(scaleHandleWorldPoint);
+            rayLength = Math.min(rayLength, Math.max(0.12, Math.min(distance, 8)));
+            if (handleCandidate?.target.type === 'volume-scale-handle') {
+              handleCandidate.point = scaleHandleWorldPoint.clone();
               handleCandidate.distance = distance;
             }
           }
@@ -6510,6 +6667,7 @@ function VolumeViewer({
           hoverTrackId = null;
         } else if (
           uiType === 'volume-translate-handle' ||
+          uiType === 'volume-scale-handle' ||
           uiType === 'volume-yaw-handle' ||
           uiType === 'volume-pitch-handle'
         ) {
@@ -6882,6 +7040,9 @@ function VolumeViewer({
         entry.hudGrabOffsets.playback = null;
         entry.hudGrabOffsets.channels = null;
         entry.hudGrabOffsets.tracks = null;
+        entry.translateGrabOffset = null;
+        entry.scaleGrabOffset = null;
+        entry.volumeScaleState = null;
       }
       const controlsInstance = controlsRef.current;
       if (controlsInstance) {
@@ -7319,6 +7480,7 @@ function VolumeViewer({
         }
       }
       vrTranslationHandleRef.current = null;
+      vrVolumeScaleHandleRef.current = null;
       vrVolumeYawHandlesRef.current = [];
       vrVolumePitchHandleRef.current = null;
       volumeRootGroupRef.current = null;
@@ -7487,6 +7649,7 @@ function VolumeViewer({
     if (dimensionsChanged) {
       removeAllResources();
       currentDimensionsRef.current = { width, height, depth };
+      volumeUserScaleRef.current = 1;
 
       const maxDimension = Math.max(width, height, depth);
       const scale = 1 / maxDimension;
