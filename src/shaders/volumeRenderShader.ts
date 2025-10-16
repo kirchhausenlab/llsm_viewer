@@ -11,6 +11,7 @@ type VolumeUniforms = {
   u_channels: { value: number };
   u_cameraPos: { value: Vector3 };
   u_contrast: { value: number };
+  u_gamma: { value: number };
   u_brightness: { value: number };
 };
 
@@ -24,6 +25,7 @@ const uniforms = {
   u_channels: { value: 1 },
   u_cameraPos: { value: new Vector3() },
   u_contrast: { value: 1 },
+  u_gamma: { value: 1 },
   u_brightness: { value: 0 }
 } satisfies VolumeUniforms;
 
@@ -61,6 +63,7 @@ export const VolumeRenderShader = {
     uniform vec2 u_clim;
     uniform int u_channels;
     uniform float u_contrast;
+    uniform float u_gamma;
     uniform float u_brightness;
 
     uniform sampler3D u_data;
@@ -98,9 +101,15 @@ export const VolumeRenderShader = {
       return clamp(centered * u_contrast + 0.5, 0.0, 1.0);
     }
 
+    float apply_gamma(float value) {
+      float safeGamma = max(u_gamma, 1e-3);
+      return clamp(pow(max(value, 0.0), 1.0 / safeGamma), 0.0, 1.0);
+    }
+
     float adjust_intensity(float value) {
       float brightened = apply_brightness(value);
-      return apply_contrast(brightened);
+      float contrasted = apply_contrast(brightened);
+      return apply_gamma(contrasted);
     }
 
     float luminance(vec4 colorSample) {
@@ -132,9 +141,15 @@ export const VolumeRenderShader = {
       if (u_channels == 1) {
         return apply_colormap(adjustedIntensity);
       }
-      vec3 adjustedColor = clamp(colorSample.rgb + vec3(u_brightness), 0.0, 1.0);
+      vec3 brightenedColor = clamp(colorSample.rgb + vec3(u_brightness), 0.0, 1.0);
+      float safeGamma = max(u_gamma, 1e-3);
+      vec3 gammaCorrectedColor = clamp(
+        pow(max(brightenedColor, vec3(0.0)), vec3(1.0 / safeGamma)),
+        0.0,
+        1.0
+      );
       float alpha = clamp(adjustedIntensity, 0.0, 1.0);
-      return vec4(adjustedColor, alpha);
+      return vec4(gammaCorrectedColor, alpha);
     }
 
     void main() {
