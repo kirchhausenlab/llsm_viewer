@@ -352,3 +352,7 @@ d centered the front-page card in the viewport.
 - Added a per-channel "Render style" toggle to the desktop channels window that flips 3D layers between maximum-intensity projection and iso-surface shading.
 - Mirrored the control inside the VR channels HUD with a dedicated canvas button and hooked it into the existing state pipeline.
 - Propagated the new setting into the Three.js volume materials so the shader's `u_renderstyle` uniform updates immediately without rebuilding textures.
+
+## Layer file picker flexibility
+- Updated the channel layer file picker so the "from Files" button opens a standard multi-file dialog instead of forcing directory selection.
+- Kept drag-and-drop and Dropbox imports intact, ensuring folders and TIFF sequences can still be added without altering any existing UI messaging.
