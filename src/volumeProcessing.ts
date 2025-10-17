@@ -20,6 +20,77 @@ export type NormalizationParameters = {
   max: number;
 };
 
+const createDeterministicRng = (seed: number): (() => number) => {
+  let state = seed >>> 0;
+  if (state === 0) {
+    state = 0x6d2b79f5;
+  }
+  return () => {
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
+const createSegmentationColorTable = (maxLabel: number, seed: number): Uint8Array => {
+  const table = new Uint8Array((maxLabel + 1) * 3);
+  if (maxLabel === 0) {
+    return table;
+  }
+  const rng = createDeterministicRng(seed);
+  for (let label = 1; label <= maxLabel; label++) {
+    let r = Math.floor(rng() * 256);
+    let g = Math.floor(rng() * 256);
+    let b = Math.floor(rng() * 256);
+    if (r === 0 && g === 0 && b === 0) {
+      r = 255;
+    }
+    const index = label * 3;
+    table[index] = r;
+    table[index + 1] = g;
+    table[index + 2] = b;
+  }
+  return table;
+};
+
+export function colorizeSegmentationVolume(volume: VolumePayload, seed: number): NormalizedVolume {
+  const { width, height, depth, dataType } = volume;
+  const source = createSourceArray(volume.data, dataType);
+
+  const voxelCount = source.length;
+  let maxLabel = 0;
+  for (let i = 0; i < voxelCount; i++) {
+    const value = Math.trunc(source[i]);
+    if (value > maxLabel) {
+      maxLabel = value;
+    }
+  }
+
+  const colorTable = createSegmentationColorTable(maxLabel, seed);
+  const normalized = new Uint8Array(voxelCount * 3);
+
+  for (let i = 0; i < voxelCount; i++) {
+    const raw = Math.trunc(source[i]);
+    const label = raw <= 0 ? 0 : raw > maxLabel ? maxLabel : raw;
+    const tableIndex = label * 3;
+    const destIndex = i * 3;
+    normalized[destIndex] = colorTable[tableIndex];
+    normalized[destIndex + 1] = colorTable[tableIndex + 1];
+    normalized[destIndex + 2] = colorTable[tableIndex + 2];
+  }
+
+  return {
+    width,
+    height,
+    depth,
+    channels: 3,
+    normalized,
+    min: 0,
+    max: 255
+  };
+}
+
 export function computeNormalizationParameters(volumes: VolumePayload[]): NormalizationParameters {
   if (volumes.length === 0) {
     return { min: 0, max: 1 };

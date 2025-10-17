@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { normalizeVolume } from '../src/volumeProcessing.ts';
+import { colorizeSegmentationVolume, normalizeVolume } from '../src/volumeProcessing.ts';
 import type { VolumePayload } from '../src/types/volume.ts';
 
 console.log('Starting volumeProcessing normalization tests');
@@ -52,6 +52,35 @@ try {
   const normalizedFloat = normalizeVolume(floatVolume, { min: 0, max: 1 });
   assert.notStrictEqual(normalizedFloat.normalized.buffer, floats.buffer);
   assert.deepEqual(Array.from(normalizedFloat.normalized), [0, 0, 128, 255]);
+
+  const segmentation = new Uint8Array([0, 1, 1, 2]);
+  const segmentationVolume: VolumePayload = {
+    width: 4,
+    height: 1,
+    depth: 1,
+    channels: 1,
+    dataType: 'uint8',
+    data: segmentation.buffer,
+    min: 0,
+    max: 2
+  };
+
+  const seed = 12345;
+  const colorized = colorizeSegmentationVolume(segmentationVolume, seed);
+  assert.strictEqual(colorized.channels, 3);
+  assert.strictEqual(colorized.normalized.length, segmentation.length * 3);
+  assert.deepEqual(Array.from(colorized.normalized.slice(0, 3)), [0, 0, 0]);
+
+  const firstLabelColor = Array.from(colorized.normalized.slice(3, 6));
+  const repeatedLabelColor = Array.from(colorized.normalized.slice(6, 9));
+  assert.deepEqual(firstLabelColor, repeatedLabelColor);
+
+  const secondLabelColor = Array.from(colorized.normalized.slice(9, 12));
+  assert.notDeepStrictEqual(firstLabelColor, secondLabelColor);
+  assert.ok(secondLabelColor.some((value) => value !== 0));
+
+  const rerun = colorizeSegmentationVolume(segmentationVolume, seed);
+  assert.deepEqual(Array.from(rerun.normalized), Array.from(colorized.normalized));
 
   console.log('volumeProcessing normalization tests passed');
 } catch (error) {
