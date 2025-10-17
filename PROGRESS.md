@@ -1,6 +1,9 @@
 # Progress Log
 
 ## VR channels HUD layout expansion
+- Added a segmentation layer toggle on the channel loader so instance masks can be marked during dataset setup.
+- Precolor segmentation volumes during preprocessing using deterministic random palettes so the renderer keeps leveraging cached textures.
+- Introduced automated coverage for the segmentation colorization helper to guarantee consistent colors per label and seed.
 - Enlarged the immersive channels HUD panel and backing canvas so the grayscale color buttons have enough vertical room to render without being clipped.
 
 ## VR yaw handle direction and HUD opacity

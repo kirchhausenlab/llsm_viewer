@@ -3,7 +3,12 @@ import type { ChangeEvent, DragEvent, FormEvent } from 'react';
 import { loadVolumesFromFiles } from './loaders/volumeLoader';
 import VolumeViewer from './components/VolumeViewer';
 import PlanarViewer from './components/PlanarViewer';
-import { computeNormalizationParameters, normalizeVolume, NormalizedVolume } from './volumeProcessing';
+import {
+  colorizeSegmentationVolume,
+  computeNormalizationParameters,
+  normalizeVolume,
+  NormalizedVolume
+} from './volumeProcessing';
 import { clearTextureCache } from './textureCache';
 import FloatingWindow from './components/FloatingWindow';
 import type { TrackColorMode, TrackDefinition, TrackPoint } from './types/tracks';
@@ -37,6 +42,16 @@ const TRACK_WINDOW_WIDTH = 340;
 const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
 const MAX_CHANNELS = 3;
 const MAX_CHANNELS_MESSAGE = 'Maximum of 3 channels reached. Remove a channel before adding a new one.';
+
+const createSegmentationSeed = (layerKey: string, volumeIndex: number): number => {
+  let hash = 2166136261;
+  for (let i = 0; i < layerKey.length; i++) {
+    hash ^= layerKey.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  const mixed = (hash ^ Math.imul(volumeIndex + 1, 0x9e3779b1)) >>> 0;
+  return mixed === 0 ? 0xdeadbeef : mixed;
+};
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 
@@ -93,6 +108,7 @@ type ChannelLayerSource = {
   id: string;
   name: string;
   files: File[];
+  isSegmentation: boolean;
 };
 
 type ChannelSource = {
@@ -365,6 +381,7 @@ type ChannelCardProps = {
   onLayerFilesAdded: (id: string, files: File[]) => void;
   onLayerDrop: (id: string, dataTransfer: DataTransfer) => void;
   onLayerNameChange: (channelId: string, layerId: string, value: string) => void;
+  onLayerSegmentationToggle: (channelId: string, layerId: string, value: boolean) => void;
   onLayerRemove: (channelId: string, layerId: string) => void;
   onTrackFileSelected: (channelId: string, file: File | null) => void;
   onTrackDrop: (channelId: string, dataTransfer: DataTransfer) => void;
@@ -378,6 +395,7 @@ function ChannelCard({
   onLayerFilesAdded,
   onLayerDrop,
   onLayerNameChange,
+  onLayerSegmentationToggle,
   onLayerRemove,
   onTrackFileSelected,
   onTrackDrop,
@@ -813,6 +831,17 @@ function ChannelCard({
                 <p className="channel-layer-meta">
                   {layer.files.length === 1 ? '1 file' : `${layer.files.length} files`}
                 </p>
+                <label className="channel-layer-flag">
+                  <input
+                    type="checkbox"
+                    checked={layer.isSegmentation}
+                    onChange={(event) =>
+                      onLayerSegmentationToggle(channel.id, layer.id, event.target.checked)
+                    }
+                    disabled={isDisabled}
+                  />
+                  <span>Segmentation layer</span>
+                </label>
               </li>
             );
           })}
@@ -978,7 +1007,8 @@ function App() {
     return {
       id: `layer-${nextId}`,
       name,
-      files
+      files,
+      isSegmentation: false
     };
   }, []);
 
@@ -1417,7 +1447,8 @@ function App() {
           channelId: channel.id,
           key: layer.id,
           label: layer.name.trim() || 'Untitled layer',
-          files: sortVolumeFiles(layer.files)
+          files: sortVolumeFiles(layer.files),
+          isSegmentation: layer.isSegmentation
         }))
       )
       .filter((entry) => entry.files.length > 0);
@@ -1511,8 +1542,14 @@ function App() {
       }
 
       const normalizedLayers: LoadedLayer[] = rawLayers.map(({ layer, volumes }) => {
-        const normalizationParameters = computeNormalizationParameters(volumes);
-        const normalizedVolumes = volumes.map((rawVolume) => normalizeVolume(rawVolume, normalizationParameters));
+        const normalizedVolumes = layer.isSegmentation
+          ? volumes.map((rawVolume, volumeIndex) =>
+              colorizeSegmentationVolume(rawVolume, createSegmentationSeed(layer.key, volumeIndex))
+            )
+          : (() => {
+              const normalizationParameters = computeNormalizationParameters(volumes);
+              return volumes.map((rawVolume) => normalizeVolume(rawVolume, normalizationParameters));
+            })();
         return {
           key: layer.key,
           label: layer.label,
@@ -1804,7 +1841,7 @@ function App() {
         blocked = true;
         return current;
       }
-      const newChannel = createChannelSource('');
+      const newChannel: ChannelSource = createChannelSource('');
       createdChannel = newChannel;
       return [...current, newChannel];
     });
@@ -1812,13 +1849,15 @@ function App() {
       setDatasetError(MAX_CHANNELS_MESSAGE);
       return;
     }
-    if (createdChannel) {
-      pendingChannelFocusIdRef.current = createdChannel.id;
-      setActiveChannelId(createdChannel.id);
-      editingChannelOriginalNameRef.current = createdChannel.name;
-      setEditingChannelId(createdChannel.id);
-      setDatasetError(null);
+    if (createdChannel === null) {
+      return;
     }
+    const channel = createdChannel as ChannelSource;
+    pendingChannelFocusIdRef.current = channel.id;
+    setActiveChannelId(channel.id);
+    editingChannelOriginalNameRef.current = channel.name;
+    setEditingChannelId(channel.id);
+    setDatasetError(null);
   }, [createChannelSource]);
 
   const handleChannelNameChange = useCallback((channelId: string, value: string) => {
@@ -1914,6 +1953,25 @@ function App() {
           return {
             ...channel,
             layers: channel.layers.map((layer) => (layer.id === layerId ? { ...layer, name: value } : layer))
+          };
+        })
+      );
+    },
+    []
+  );
+
+  const handleChannelLayerSegmentationToggle = useCallback(
+    (channelId: string, layerId: string, value: boolean) => {
+      setChannels((current) =>
+        current.map((channel) => {
+          if (channel.id !== channelId) {
+            return channel;
+          }
+          return {
+            ...channel,
+            layers: channel.layers.map((layer) =>
+              layer.id === layerId ? { ...layer, isSegmentation: value } : layer
+            )
           };
         })
       );
@@ -2869,6 +2927,7 @@ function App() {
                         onLayerFilesAdded={handleChannelLayerFilesAdded}
                         onLayerDrop={handleChannelLayerDrop}
                         onLayerNameChange={handleChannelLayerNameChange}
+                        onLayerSegmentationToggle={handleChannelLayerSegmentationToggle}
                         onLayerRemove={handleChannelLayerRemove}
                         onTrackFileSelected={handleChannelTrackFileSelected}
                         onTrackDrop={handleChannelTrackDrop}
