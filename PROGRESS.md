@@ -1,5 +1,10 @@
 # Progress Log
 
+## Track CSV alignment update
+- Adjusted track CSV parsing to treat the time column as `initial time + t`, ensuring trajectories align with staggered starts.
+- Flipped imported track depths to account for the negative Z convention in source CSVs.
+- Summarized CSV load confirmations using unique track IDs so sparse numbering still reports accurate totals.
+
 ## VR channels HUD layout expansion
 - Added a segmentation layer toggle on the channel loader so instance masks can be marked during dataset setup.
 - Precolor segmentation volumes during preprocessing using deterministic random palettes so the renderer keeps leveraging cached textures.
