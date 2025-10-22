@@ -703,6 +703,36 @@ function ChannelCard({
     [channel.id, isDisabled, isDropboxImporting, onTrackDrop]
   );
 
+  const trackEntryCount = channel.trackEntries.length;
+  const uniqueTrackCount = useMemo(() => {
+    const identifiers = new Set<string>();
+    for (const row of channel.trackEntries) {
+      const trackId = row[0];
+      if (trackId) {
+        identifiers.add(trackId);
+      }
+    }
+    return identifiers.size;
+  }, [channel.trackEntries]);
+
+  const loadedTrackSummary = useMemo(() => {
+    if (trackEntryCount === 0) {
+      return 'Loaded 0 track entries.';
+    }
+    if (uniqueTrackCount > 0) {
+      const trackLabel = uniqueTrackCount === 1 ? '1 track' : `${uniqueTrackCount} tracks`;
+      if (uniqueTrackCount === trackEntryCount) {
+        return `Loaded ${trackLabel}.`;
+      }
+      const entryLabel =
+        trackEntryCount === 1 ? '1 track entry' : `${trackEntryCount} track entries`;
+      return `Loaded ${trackLabel} across ${entryLabel}.`;
+    }
+    return trackEntryCount === 1
+      ? 'Loaded 1 track entry.'
+      : `Loaded ${trackEntryCount} track entries.`;
+  }, [trackEntryCount, uniqueTrackCount]);
+
   return (
     <section className={`channel-card${isDisabled ? ' is-disabled' : ''}`} aria-disabled={isDisabled}>
       <p className="channel-layer-drop-title">Upload layers</p>
@@ -904,11 +934,7 @@ function ChannelCard({
           {channel.trackError ? <p className="channel-tracks-error">{channel.trackError}</p> : null}
           {channel.trackStatus === 'loading' ? <p className="channel-tracks-status">Loading tracks…</p> : null}
           {channel.trackStatus === 'loaded' ? (
-            <p className="channel-tracks-status">
-              {channel.trackEntries.length === 1
-                ? 'Loaded 1 track entry.'
-                : `Loaded ${channel.trackEntries.length} track entries.`}
-            </p>
+            <p className="channel-tracks-status">{loadedTrackSummary}</p>
           ) : null}
         </div>
       </div>
@@ -1266,14 +1292,16 @@ function App() {
         }
 
         const rawId = Number(row[0]);
-        const time = Number(row[2]);
+        const initialTime = Number(row[1]);
+        const deltaTime = Number(row[2]);
         const x = Number(row[3]);
         const y = Number(row[4]);
         const z = Number(row[5]);
 
         if (
           !Number.isFinite(rawId) ||
-          !Number.isFinite(time) ||
+          !Number.isFinite(initialTime) ||
+          !Number.isFinite(deltaTime) ||
           !Number.isFinite(x) ||
           !Number.isFinite(y) ||
           !Number.isFinite(z)
@@ -1282,12 +1310,13 @@ function App() {
         }
 
         const id = Math.trunc(rawId);
+        const time = initialTime + deltaTime;
         if (time > maxTimeValue) {
           maxTimeValue = time;
         }
 
         const normalizedTime = Math.max(0, time - 1);
-        const point: TrackPoint = { time: normalizedTime, x, y, z };
+        const point: TrackPoint = { time: normalizedTime, x, y, z: -z };
         const existing = trackMap.get(id);
         if (existing) {
           existing.push(point);
