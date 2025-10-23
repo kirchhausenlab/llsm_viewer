@@ -965,6 +965,7 @@ function App() {
   const [isVrActive, setIsVrActive] = useState(false);
   const [isVrRequesting, setIsVrRequesting] = useState(false);
   const [hasVrSessionHandlers, setHasVrSessionHandlers] = useState(false);
+  const [isHelpMenuOpen, setIsHelpMenuOpen] = useState(false);
   const controlWindowInitialPosition = useMemo(
     () => ({ x: WINDOW_MARGIN, y: WINDOW_MARGIN }),
     []
@@ -992,6 +993,7 @@ function App() {
   const editingChannelOriginalNameRef = useRef('');
   const editingChannelInputRef = useRef<HTMLInputElement | null>(null);
   const pendingChannelFocusIdRef = useRef<string | null>(null);
+  const helpMenuRef = useRef<HTMLDivElement | null>(null);
   const vrSessionControlsRef = useRef<
     | {
         requestSession: () => Promise<XRSession | null>;
@@ -1097,6 +1099,43 @@ function App() {
       setEditingChannelId(null);
     }
   }, [activeChannelId, editingChannelId]);
+
+  useEffect(() => {
+    if (!isViewerLaunched) {
+      setIsHelpMenuOpen(false);
+    }
+  }, [isViewerLaunched]);
+
+  useEffect(() => {
+    if (!isHelpMenuOpen) {
+      return;
+    }
+
+    const handleDocumentClick = (event: MouseEvent) => {
+      const container = helpMenuRef.current;
+      if (!container) {
+        return;
+      }
+
+      if (!container.contains(event.target as Node)) {
+        setIsHelpMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsHelpMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleDocumentClick);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handleDocumentClick);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isHelpMenuOpen]);
 
   useEffect(() => {
     if (datasetError) {
@@ -3137,6 +3176,46 @@ function App() {
             >
               Reset layout
             </button>
+            <div className="viewer-top-menu-help" ref={helpMenuRef}>
+              <button
+                type="button"
+                className="viewer-top-menu-button"
+                onClick={() => setIsHelpMenuOpen((previous) => !previous)}
+                aria-expanded={isHelpMenuOpen}
+                aria-controls="viewer-help-popover"
+              >
+                Help
+              </button>
+              {isHelpMenuOpen ? (
+                <div
+                  id="viewer-help-popover"
+                  className="viewer-top-menu-popover"
+                  role="dialog"
+                  aria-modal="false"
+                  aria-labelledby="viewer-help-popover-title"
+                >
+                  <h3 id="viewer-help-popover-title" className="viewer-top-menu-popover-title">
+                    Viewer tips
+                  </h3>
+                  <div className="viewer-top-menu-popover-section">
+                    <h4>3D volume view</h4>
+                    <ul>
+                      <li>Use WASDQE to move forward, back, strafe, and rise or descend.</li>
+                      <li>Drag to orbit the dataset. Hold Shift while dragging to pan; hold Ctrl to dolly along your view.</li>
+                      <li>Click a track line to follow that object in time.</li>
+                    </ul>
+                  </div>
+                  <div className="viewer-top-menu-popover-section">
+                    <h4>2D slice view</h4>
+                    <ul>
+                      <li>Press W/S to step through slices (hold Shift to skip 10 at a time).</li>
+                      <li>Drag to pan the slice, and scroll to zoom.</li>
+                      <li>Press Q/E to rotate the slice around its center.</li>
+                    </ul>
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
         <FloatingWindow
