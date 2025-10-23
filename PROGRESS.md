@@ -382,3 +382,6 @@ d centered the front-page card in the viewport.
 - Wrapped the desktop track window tabs after every three channels so large projects no longer overflow the available width.
 - Mirrored the three-per-row layout in the VR channels and tracks HUDs, centering partial rows and preserving hover interactions.
 - Ensured narrow layouts gracefully collapse to two and one column variants to maintain readability on smaller displays.
+
+## GitHub Pages artifact reliability
+- Updated the `Deploy static site` workflow to configure Pages before uploading, explicitly name the artifact, and fail fast when the build output is missing so deployments always provide the `github-pages` package required by `actions/deploy-pages@v4`.
