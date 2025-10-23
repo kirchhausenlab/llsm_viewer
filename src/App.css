@@ -866,6 +866,74 @@
   display: none;
 }
 
+.floating-window--warning {
+  z-index: 40;
+  background: rgba(42, 16, 22, 0.92);
+  border-color: rgba(255, 145, 145, 0.45);
+  box-shadow: 0 28px 70px rgba(255, 86, 86, 0.25);
+}
+
+.warning-window-body {
+  gap: 1rem;
+}
+
+.warning-window-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.warning-window-intro {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: rgba(255, 212, 212, 0.95);
+}
+
+.warning-window-message {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: rgba(255, 230, 230, 0.9);
+}
+
+.warning-window-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.warning-window-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.warning-window-action-button {
+  border: none;
+  border-radius: 0.6rem;
+  padding: 0.55rem 1.25rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #26140f;
+  background: linear-gradient(135deg, #ffd77a, #ff9d7a);
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.warning-window-action-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(255, 157, 122, 0.4);
+}
+
+.warning-window-action-button:active {
+  transform: translateY(0);
+}
+
+.warning-window-action-button:focus-visible {
+  outline: 2px solid rgba(255, 215, 130, 0.9);
+  outline-offset: 2px;
+}
+
 .sidebar-header {
   display: flex;
   flex-direction: column;
