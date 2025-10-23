@@ -40,8 +40,6 @@ const WINDOW_MARGIN = 24;
 const CONTROL_WINDOW_WIDTH = 360;
 const TRACK_WINDOW_WIDTH = 340;
 const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
-const MAX_CHANNELS = 3;
-const MAX_CHANNELS_MESSAGE = 'Maximum of 3 channels reached. Remove a channel before adding a new one.';
 
 const createSegmentationSeed = (layerKey: string, volumeIndex: number): number => {
   let hash = 2166136261;
@@ -123,12 +121,12 @@ type ChannelSource = {
 
 const getChannelLayerSummary = (channel: ChannelSource): string => {
   if (channel.layers.length === 0) {
-    return '0 layers';
+    return 'No volume selected';
   }
-  const totalFiles = channel.layers.reduce((acc, layer) => acc + layer.files.length, 0);
-  const layerLabel = channel.layers.length === 1 ? 'layer' : 'layers';
+  const primaryLayer = channel.layers[0];
+  const totalFiles = primaryLayer.files.length;
   const fileLabel = totalFiles === 1 ? 'file' : 'files';
-  return `${channel.layers.length} ${layerLabel} · ${totalFiles} ${fileLabel}`;
+  return `${totalFiles} ${fileLabel}`;
 };
 
 function hasTiffExtension(name: string) {
@@ -362,7 +360,7 @@ const buildChannelTabMeta = (channel: ChannelSource, validation: ChannelValidati
     parts.push('Tracks loading');
   }
   if (channel.layers.length === 0) {
-    parts.push('add at least one layer');
+    parts.push('add a volume');
   } else if (validation.errors.length > 0) {
     parts.push('Needs attention');
   } else if (validation.warnings.length > 0) {
@@ -735,7 +733,7 @@ function ChannelCard({
 
   return (
     <section className={`channel-card${isDisabled ? ' is-disabled' : ''}`} aria-disabled={isDisabled}>
-      <p className="channel-layer-drop-title">Upload layers</p>
+      <p className="channel-layer-drop-title">Upload volume</p>
       <div
         className={`channel-layer-drop${isLayerDragging ? ' is-active' : ''}`}
         onDragEnter={handleLayerDragEnter}
@@ -769,7 +767,7 @@ function ChannelCard({
           >
             {dropboxImportTarget === 'layers' ? 'Importing…' : 'From Dropbox'}
           </button>
-          <p className="channel-layer-drop-subtitle">Drop TIFF sequences to add layers.</p>
+          <p className="channel-layer-drop-subtitle">Drop a TIFF sequence to set the channel volume.</p>
         </div>
         {dropboxImportTarget === 'layers' ? (
           <p className="channel-layer-drop-status">Importing from Dropbox…</p>
@@ -842,7 +840,7 @@ function ChannelCard({
                   <input
                     type="text"
                     value={layer.name}
-                    placeholder="Layer name"
+                    placeholder="Volume name"
                     onChange={(event) => onLayerNameChange(channel.id, layer.id, event.target.value)}
                     className="channel-layer-name"
                     autoComplete="off"
@@ -852,7 +850,7 @@ function ChannelCard({
                     type="button"
                     className="channel-layer-remove"
                     onClick={() => onLayerRemove(channel.id, layer.id)}
-                    aria-label={layer.name.trim() ? `Remove ${layer.name.trim()}` : 'Remove layer'}
+                    aria-label={layer.name.trim() ? `Remove ${layer.name.trim()}` : 'Remove volume'}
                     disabled={isDisabled}
                   >
                     Remove
@@ -870,7 +868,7 @@ function ChannelCard({
                     }
                     disabled={isDisabled}
                   />
-                  <span>Segmentation layer</span>
+                  <span>Segmentation volume</span>
                 </label>
               </li>
             );
@@ -1475,7 +1473,7 @@ function App() {
         channel.layers.map((layer) => ({
           channelId: channel.id,
           key: layer.id,
-          label: layer.name.trim() || 'Untitled layer',
+          label: layer.name.trim() || 'Untitled volume',
           files: sortVolumeFiles(layer.files),
           isSegmentation: layer.isSegmentation
         }))
@@ -1483,7 +1481,7 @@ function App() {
       .filter((entry) => entry.files.length > 0);
 
     if (flatLayerSources.length === 0) {
-      const message = 'Add at least one layer before launching the viewer.';
+      const message = 'Add a volume before launching the viewer.';
       setDatasetError(message);
       return false;
     }
@@ -1521,7 +1519,7 @@ function App() {
       for (const layer of flatLayerSources) {
         if (layer.files.length !== referenceFiles.length) {
           throw new Error(
-            `Layer "${layer.label}" has a different number of timepoints (${layer.files.length}) than the first layer (${referenceFiles.length}).`
+            `Volume "${layer.label}" has a different number of timepoints (${layer.files.length}) than the first volume (${referenceFiles.length}).`
           );
         }
       }
@@ -1548,7 +1546,7 @@ function App() {
                 volume.depth !== referenceShape.depth
               ) {
                 throw new Error(
-                  `Layer "${layer.label}" has volume dimensions ${volume.width}×${volume.height}×${volume.depth} that do not match the reference shape ${referenceShape.width}×${referenceShape.height}×${referenceShape.depth}.`
+                  `Volume "${layer.label}" has volume dimensions ${volume.width}×${volume.height}×${volume.depth} that do not match the reference shape ${referenceShape.width}×${referenceShape.height}×${referenceShape.depth}.`
                 );
               }
 
@@ -1864,20 +1862,11 @@ function App() {
 
   const handleAddChannel = useCallback(() => {
     let createdChannel: ChannelSource | null = null;
-    let blocked = false;
     setChannels((current) => {
-      if (current.length >= MAX_CHANNELS) {
-        blocked = true;
-        return current;
-      }
       const newChannel: ChannelSource = createChannelSource('');
       createdChannel = newChannel;
       return [...current, newChannel];
     });
-    if (blocked) {
-      setDatasetError(MAX_CHANNELS_MESSAGE);
-      return;
-    }
     if (createdChannel === null) {
       return;
     }
@@ -1926,6 +1915,8 @@ function App() {
       }
 
       let addedAny = false;
+      let ignoredExtraGroups = false;
+      const replacedLayerIds: string[] = [];
       setChannels((current) =>
         current.map((channel) => {
           if (channel.id !== channelId) {
@@ -1935,26 +1926,43 @@ function App() {
           if (grouped.length === 0) {
             return channel;
           }
-          const newLayers: ChannelLayerSource[] = [];
-          for (const group of grouped) {
-            const sorted = sortVolumeFiles(group);
-            if (sorted.length === 0) {
-              continue;
-            }
-            newLayers.push(createLayerSource('', sorted));
+          if (grouped.length > 1) {
+            ignoredExtraGroups = true;
           }
-          if (newLayers.length === 0) {
+          const sorted = sortVolumeFiles(grouped[0]);
+          if (sorted.length === 0) {
             return channel;
           }
           addedAny = true;
-          return { ...channel, layers: [...channel.layers, ...newLayers] };
+          if (channel.layers.length > 0) {
+            replacedLayerIds.push(channel.layers[0].id);
+          }
+          const nextLayer = createLayerSource('', sorted);
+          return { ...channel, layers: [nextLayer] };
         })
       );
 
       if (addedAny) {
-        setDatasetError(null);
+        if (replacedLayerIds.length > 0) {
+          setLayerSettings((current) => {
+            let changed = false;
+            const next = { ...current };
+            for (const layerId of replacedLayerIds) {
+              if (layerId in next) {
+                delete next[layerId];
+                changed = true;
+              }
+            }
+            return changed ? next : current;
+          });
+        }
+        if (ignoredExtraGroups) {
+          setDatasetError('Only the first TIFF sequence was added. Additional sequences were ignored.');
+        } else {
+          setDatasetError(null);
+        }
       } else {
-        setDatasetError('No new layers were added from that drop.');
+        setDatasetError('No volume was added from that drop.');
       }
     },
     [createLayerSource]
@@ -2009,17 +2017,34 @@ function App() {
   );
 
   const handleChannelLayerRemove = useCallback((channelId: string, layerId: string) => {
+    let removed = false;
     setChannels((current) =>
       current.map((channel) => {
         if (channel.id !== channelId) {
           return channel;
         }
+        const filtered = channel.layers.filter((layer) => layer.id !== layerId);
+        if (filtered.length === channel.layers.length) {
+          return channel;
+        }
+        removed = true;
         return {
           ...channel,
-          layers: channel.layers.filter((layer) => layer.id !== layerId)
+          layers: filtered
         };
       })
     );
+    if (removed) {
+      setLayerSettings((current) => {
+        if (!(layerId in current)) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[layerId];
+        return next;
+      });
+      setDatasetError(null);
+    }
   }, []);
 
   const handleChannelTrackFileSelected = useCallback((channelId: string, file: File | null) => {
@@ -2128,24 +2153,14 @@ function App() {
       }
 
       if (channel.layers.length === 0) {
-        errors.push('Add at least one layer to this channel.');
+        errors.push('Add a volume to this channel.');
       } else {
-        const timepointCounts = new Set<number>();
-        let hasUnnamedLayer = false;
-        for (const layer of channel.layers) {
-          if (layer.files.length === 0) {
-            errors.push(`Layer "${layer.name || 'Untitled layer'}" has no files.`);
-          }
-          if (!layer.name.trim()) {
-            hasUnnamedLayer = true;
-          }
-          timepointCounts.add(layer.files.length);
+        const layer = channel.layers[0];
+        if (layer.files.length === 0) {
+          errors.push(`Volume "${layer.name || 'Untitled volume'}" has no files.`);
         }
-        if (hasUnnamedLayer) {
-          errors.push('Name all layers in this channel.');
-        }
-        if (timepointCounts.size > 1) {
-          errors.push('Layers have mismatched timepoint counts.');
+        if (!layer.name.trim()) {
+          errors.push('Name the volume in this channel.');
         }
       }
 
@@ -2215,7 +2230,7 @@ function App() {
       channel.layers.some((layer) => layer.files.length > 0)
     );
     if (!hasAnyLayers) {
-      setDatasetError('Add at least one layer before launching the viewer.');
+      setDatasetError('Add a volume before launching the viewer.');
       return;
     }
 
@@ -2737,7 +2752,6 @@ function App() {
   const backgroundVideoSrc = `${import.meta.env.BASE_URL}media/background.mp4`;
 
   if (!isViewerLaunched) {
-    const canAddMoreChannels = channels.length < MAX_CHANNELS;
     const isFrontPageLocked = isLaunchingViewer;
     return (
       <div className="app front-page-mode">
@@ -2762,7 +2776,7 @@ function App() {
                 type="button"
                 className="channel-add-button"
                 onClick={handleAddChannel}
-                disabled={!canAddMoreChannels || isFrontPageLocked}
+                disabled={isFrontPageLocked}
               >
                 Add channel
               </button>
@@ -3277,7 +3291,7 @@ function App() {
                         <div
                           className="channel-layer-selector"
                           role="radiogroup"
-                          aria-label={`${channelNameMap.get(channelId) ?? 'Channel'} layers`}
+                          aria-label={`${channelNameMap.get(channelId) ?? 'Channel'} volume`}
                         >
                           {channelLayers.map((layer) => {
                             const isSelected = Boolean(selectedLayer && selectedLayer.key === layer.key);
@@ -3297,7 +3311,7 @@ function App() {
                           })}
                         </div>
                       ) : (
-                        <p className="channel-empty-hint">No layers available for this channel.</p>
+                        <p className="channel-empty-hint">No volume available for this channel.</p>
                       )}
                       {selectedLayer ? (
                         <>

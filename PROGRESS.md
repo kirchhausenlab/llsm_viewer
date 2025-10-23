@@ -372,3 +372,8 @@ d centered the front-page card in the viewport.
 ## Layer file picker flexibility
 - Updated the channel layer file picker so the "from Files" button opens a standard multi-file dialog instead of forcing directory selection.
 - Kept drag-and-drop and Dropbox imports intact, ensuring folders and TIFF sequences can still be added without altering any existing UI messaging.
+
+## Single-volume channels and unlimited channel count
+- Replaced the multi-layer channel model with a single-volume workflow, updating launcher messaging, validation, and viewer prompts to talk about channel volumes instead of layers.
+- Added safeguards so a new drop replaces the existing volume while clearing any prior display settings, preventing stale configuration from lingering across swaps.
+- Removed the three-channel cap so datasets can define as many channels as needed without surfacing the old limit warning.
