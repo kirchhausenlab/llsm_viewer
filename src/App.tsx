@@ -61,6 +61,7 @@ type LayerTarget = {
 type LoadedLayer = LayerTarget & {
   channelId: string;
   volumes: NormalizedVolume[];
+  isSegmentation: boolean;
 };
 
 type LayerSettings = {
@@ -71,6 +72,7 @@ type LayerSettings = {
   xOffset: number;
   yOffset: number;
   renderStyle: 0 | 1;
+  invert: boolean;
 };
 
 const createDefaultLayerSettings = (): LayerSettings => ({
@@ -80,7 +82,8 @@ const createDefaultLayerSettings = (): LayerSettings => ({
   color: DEFAULT_LAYER_COLOR,
   xOffset: 0,
   yOffset: 0,
-  renderStyle: DEFAULT_RENDER_STYLE
+  renderStyle: DEFAULT_RENDER_STYLE,
+  invert: false
 });
 
 type ChannelTrackState = {
@@ -1568,7 +1571,8 @@ function App() {
           key: layer.key,
           label: layer.label,
           channelId: layer.channelId,
-          volumes: normalizedVolumes
+          volumes: normalizedVolumes,
+          isSegmentation: layer.isSegmentation
         };
       });
 
@@ -1751,6 +1755,7 @@ function App() {
           label: layer.label,
           hasData: layer.volumes.length > 0,
           isGrayscale,
+          isSegmentation: layer.isSegmentation,
           settings
         };
       });
@@ -2611,6 +2616,23 @@ function App() {
     });
   }, []);
 
+  const handleLayerInvertToggle = useCallback((key: string) => {
+    setLayerSettings((current) => {
+      const previous = current[key] ?? createDefaultLayerSettings();
+      const nextInvert = !previous.invert;
+      if (previous.invert === nextInvert) {
+        return current;
+      }
+      return {
+        ...current,
+        [key]: {
+          ...previous,
+          invert: nextInvert
+        }
+      };
+    });
+  }, []);
+
   const handleChannelLayerSelectionChange = useCallback((channelId: string, layerKey: string) => {
     setChannelActiveLayer((current) => {
       if (current[channelId] === layerKey) {
@@ -2642,7 +2664,8 @@ function App() {
             brightness: DEFAULT_BRIGHTNESS,
             xOffset: 0,
             yOffset: 0,
-            renderStyle: DEFAULT_RENDER_STYLE
+            renderStyle: DEFAULT_RENDER_STYLE,
+            invert: false
           };
           if (
             previous.contrast !== updated.contrast ||
@@ -2650,7 +2673,8 @@ function App() {
             previous.brightness !== updated.brightness ||
             previous.xOffset !== updated.xOffset ||
             previous.yOffset !== updated.yOffset ||
-            previous.renderStyle !== updated.renderStyle
+            previous.renderStyle !== updated.renderStyle ||
+            previous.invert !== updated.invert
           ) {
             next[layer.key] = updated;
             changed = true;
@@ -2686,7 +2710,9 @@ function App() {
         color: normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR),
         offsetX: isActiveChannel ? settings.xOffset : 0,
         offsetY: isActiveChannel ? settings.yOffset : 0,
-        renderStyle: settings.renderStyle
+        renderStyle: settings.renderStyle,
+        invert: settings.invert,
+        isSegmentation: layer.isSegmentation
       };
     });
   }, [activeChannelTabId, channelActiveLayer, channelVisibility, layerSettings, layers, selectedIndex]);
@@ -3019,6 +3045,7 @@ function App() {
               onLayerOffsetChange={handleLayerOffsetChange}
               onLayerColorChange={handleLayerColorChange}
               onLayerRenderStyleToggle={handleLayerRenderStyleToggle}
+              onLayerInvertToggle={handleLayerInvertToggle}
               followedTrackId={followedTrackId}
               onTrackFollowRequest={handleTrackFollowFromViewer}
               onStopTrackFollow={handleStopTrackFollow}
@@ -3226,6 +3253,12 @@ function App() {
                     settings.renderStyle === 1
                       ? 'Switch to maximum intensity'
                       : 'Switch to iso surface';
+                  const invertDisabled = sliderDisabled || selectedLayer.isSegmentation;
+                  const invertStatusLabel = settings.invert ? 'Enabled' : 'Disabled';
+                  const invertToggleLabel = settings.invert ? 'Show original LUT' : 'Invert LUT';
+                  const invertTitle = selectedLayer.isSegmentation
+                    ? 'Invert LUT is unavailable for segmentation volumes.'
+                    : undefined;
 
                   return (
                     <div
@@ -3295,6 +3328,22 @@ function App() {
                               aria-pressed={settings.renderStyle === 1}
                             >
                               {renderStyleToggleLabel}
+                            </button>
+                          </div>
+                          <div className="channel-invert-toggle">
+                            <div className="channel-invert-toggle-label">
+                              <span>Invert LUT</span>
+                              <span>{invertStatusLabel}</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="channel-invert-toggle-button"
+                              onClick={() => handleLayerInvertToggle(selectedLayer.key)}
+                              disabled={invertDisabled}
+                              aria-pressed={settings.invert}
+                              title={invertTitle}
+                            >
+                              {invertToggleLabel}
                             </button>
                           </div>
                           <div className="slider-control slider-control--pair">
