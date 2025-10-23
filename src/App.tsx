@@ -361,7 +361,8 @@ const buildChannelTabMeta = (channel: ChannelSource, validation: ChannelValidati
   if (channel.layers.length === 0) {
     parts.push('add a volume');
   } else if (validation.errors.length > 0) {
-    parts.push('Needs attention');
+    const hasNameError = validation.errors.includes('Name this channel.');
+    parts.push(hasNameError ? 'Insert channel name' : 'Needs attention');
   } else if (validation.warnings.length > 0) {
     const hasNoTracksWarning = validation.warnings.some(
       (warning) => warning === 'No tracks attached to this channel.'
@@ -731,7 +732,7 @@ function ChannelCard({
 
   return (
     <section className={`channel-card${isDisabled ? ' is-disabled' : ''}`} aria-disabled={isDisabled}>
-      <p className="channel-layer-drop-title">Upload volume</p>
+      <p className="channel-layer-drop-title">Upload volume (.tif/.tiff sequence)</p>
       <div
         className={`channel-layer-drop${isLayerDragging ? ' is-active' : ''}`}
         onDragEnter={handleLayerDragEnter}
@@ -765,7 +766,7 @@ function ChannelCard({
           >
             {dropboxImportTarget === 'layers' ? 'Importing…' : 'From Dropbox'}
           </button>
-          <p className="channel-layer-drop-subtitle">Drop a TIFF sequence to set the channel volume.</p>
+          <p className="channel-layer-drop-subtitle">Or drop sequence folder here</p>
         </div>
         {dropboxImportTarget === 'layers' ? (
           <p className="channel-layer-drop-status">Importing from Dropbox…</p>
@@ -861,7 +862,7 @@ function ChannelCard({
           </li>
         </ul>
       ) : null}
-      <p className="channel-tracks-title">Upload tracks (optional)</p>
+      <p className="channel-tracks-title">Upload tracks (optional, .csv file)</p>
       <div
         className={`channel-tracks-drop${isTrackDragging ? ' is-active' : ''}`}
         onDragEnter={handleTrackDragEnter}
@@ -896,7 +897,7 @@ function ChannelCard({
                 >
                   {dropboxImportTarget === 'tracks' ? 'Importing…' : 'From Dropbox'}
                 </button>
-                <p className="channel-tracks-subtitle">Drop a CSV file to attach tracks.</p>
+                <p className="channel-tracks-subtitle">Or drop the tracks file here</p>
             </div>
             {channel.trackFile ? (
               <button
@@ -2744,7 +2745,7 @@ function App() {
                 onClick={handleAddChannel}
                 disabled={isFrontPageLocked}
               >
-                Add channel
+                Add new channel
               </button>
             </div>
             <div className="channel-board">
@@ -2767,6 +2768,13 @@ function App() {
                         .filter(Boolean)
                         .join(' ');
                       const tabMeta = buildChannelTabMeta(channel, validation);
+                      const startEditingChannelName = () => {
+                        if (isFrontPageLocked || editingChannelId === channel.id) {
+                          return;
+                        }
+                        editingChannelOriginalNameRef.current = channel.name;
+                        setEditingChannelId(channel.id);
+                      };
                       if (isEditing) {
                         return (
                           <div
@@ -2864,21 +2872,11 @@ function App() {
                             if (isFrontPageLocked) {
                               return;
                             }
-                            setActiveChannelId(channel.id);
-                          }}
-                          onDoubleClick={(event) => {
-                            if (isFrontPageLocked) {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              return;
-                            }
                             if (!isActive) {
+                              setActiveChannelId(channel.id);
                               return;
                             }
-                            event.preventDefault();
-                            event.stopPropagation();
-                            editingChannelOriginalNameRef.current = channel.name;
-                            setEditingChannelId(channel.id);
+                            startEditingChannelName();
                           }}
                           onKeyDown={(event) => {
                             if (isFrontPageLocked) {
@@ -2887,7 +2885,11 @@ function App() {
                             }
                             if (event.key === 'Enter' || event.key === ' ') {
                               event.preventDefault();
-                              setActiveChannelId(channel.id);
+                              if (!isActive) {
+                                setActiveChannelId(channel.id);
+                              } else {
+                                startEditingChannelName();
+                              }
                             }
                           }}
                         >

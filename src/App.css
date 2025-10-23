@@ -56,6 +56,10 @@
   margin: 0 auto;
   position: relative;
   z-index: 1;
+  max-height: calc(100dvh - 4rem);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
 }
 
 .front-page-card.is-loading {
@@ -95,6 +99,24 @@
   gap: 0.75rem;
   justify-content: center;
   width: 100%;
+}
+
+.front-page-card .channel-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  justify-content: stretch;
+}
+
+@media (max-width: 1024px) {
+  .front-page-card .channel-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .front-page-card .channel-tabs {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .channel-tab {
@@ -290,11 +312,12 @@
 .channel-layer-drop,
 .channel-tracks-drop {
   position: relative;
-  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border: 1px dashed rgba(118, 180, 255, 0.45);
   border-radius: 0.9rem;
   padding: 0.8rem 1rem;
-  background: rgba(10, 12, 20, 0.6);
-  transition: border-color 0.2s ease, background-color 0.2s ease;
+  background: linear-gradient(135deg, rgba(64, 120, 255, 0.22), rgba(143, 92, 255, 0.28));
+  box-shadow: 0 12px 32px rgba(26, 54, 122, 0.28);
+  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .file-drop-input {
@@ -303,8 +326,9 @@
 
 .channel-layer-drop.is-active,
 .channel-tracks-drop.is-active {
-  border-color: rgba(91, 140, 255, 0.8);
-  background: rgba(91, 140, 255, 0.12);
+  border-color: rgba(166, 216, 255, 0.95);
+  background: linear-gradient(135deg, rgba(76, 134, 255, 0.32), rgba(169, 107, 255, 0.42));
+  box-shadow: 0 18px 40px rgba(24, 52, 122, 0.38);
 }
 
 .channel-layer-drop-content,
@@ -325,6 +349,13 @@
 
 .channel-layer-drop-subtitle {
   flex: 1 1 auto;
+  color: rgba(235, 241, 255, 0.96);
+  font-weight: 500;
+}
+
+.channel-tracks-subtitle {
+  color: rgba(235, 241, 255, 0.96);
+  font-weight: 500;
 }
 
 .channel-layer-drop-button,
