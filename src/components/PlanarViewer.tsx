@@ -16,6 +16,8 @@ type ViewerLayer = {
   offsetX: number;
   offsetY: number;
   renderStyle: 0 | 1;
+  invert: boolean;
+  isSegmentation: boolean;
 };
 
 type PlanarViewerProps = {
@@ -331,6 +333,7 @@ function PlanarViewer({
       const invGamma = 1 / safeGamma;
       const applyGamma = (value: number) => clamp(Math.pow(Math.max(value, 0), invGamma), 0, 1);
       const tint = channels === 1 ? getColor(layer.color) : null;
+      const invert = layer.invert ?? false;
 
       const offsetX = layer.offsetX ?? 0;
       const offsetY = layer.offsetY ?? 0;
@@ -407,13 +410,32 @@ function PlanarViewer({
           const b = sourceB / 255;
           const a = sourceA / 255;
 
+          let channelR = r;
+          let channelG = channels > 1 ? g : channelR;
+          let channelB = channels > 2 ? b : channels === 2 ? 0 : channelG;
+          const channelA = channels > 3 ? a : 0;
+
+          if (invert) {
+            channelR = 1 - channelR;
+            if (channels > 1) {
+              channelG = 1 - channelG;
+            } else {
+              channelG = channelR;
+            }
+            if (channels > 2) {
+              channelB = 1 - channelB;
+            } else if (channels === 1) {
+              channelB = channelG;
+            }
+          }
+
           let srcR = 0;
           let srcG = 0;
           let srcB = 0;
           let alpha = 0;
 
           if (channels === 1) {
-            const brightened = clamp(r + brightness, 0, 1);
+            const brightened = clamp(channelR + brightness, 0, 1);
             const contrasted = clamp((brightened - 0.5) * contrast + 0.5, 0, 1);
             const corrected = applyGamma(contrasted);
             const layerAlpha = Math.max(corrected, MIN_ALPHA);
@@ -425,17 +447,18 @@ function PlanarViewer({
           } else {
             const intensity =
               channels === 2
-                ? 0.5 * (r + g)
+                ? 0.5 * (channelR + channelG)
                 : channels === 3
-                ? r * 0.2126 + g * 0.7152 + b * 0.0722
-                : Math.max(r, g, Math.max(b, a));
+                ? channelR * 0.2126 + channelG * 0.7152 + channelB * 0.0722
+                : Math.max(channelR, channelG, Math.max(channelB, channelA));
             const brightIntensity = clamp(intensity + brightness, 0, 1);
             const contrasted = clamp((brightIntensity - 0.5) * contrast + 0.5, 0, 1);
             const correctedIntensity = applyGamma(contrasted);
             alpha = Math.max(correctedIntensity, MIN_ALPHA);
-            const brightR = clamp(r + brightness, 0, 1);
-            const brightG = clamp(g + brightness, 0, 1);
-            const brightB = clamp(b + brightness, 0, 1);
+            const brightR = clamp(channelR + brightness, 0, 1);
+            const brightG = channels > 1 ? clamp(channelG + brightness, 0, 1) : brightR;
+            const brightB =
+              channels > 2 ? clamp(channelB + brightness, 0, 1) : channels === 2 ? 0 : brightG;
             const correctedR = applyGamma(brightR);
             const correctedG = channels > 1 ? applyGamma(brightG) : correctedR;
             const correctedB = channels > 2 ? applyGamma(brightB) : channels === 2 ? 0 : correctedG;

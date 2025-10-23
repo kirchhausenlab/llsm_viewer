@@ -33,6 +33,8 @@ type ViewerLayer = {
   offsetX: number;
   offsetY: number;
   renderStyle: 0 | 1;
+  invert: boolean;
+  isSegmentation?: boolean;
   mode?: '3d' | 'slice';
   sliceIndex?: number;
 };
@@ -78,6 +80,7 @@ type VolumeViewerProps = {
       label: string;
       hasData: boolean;
       isGrayscale: boolean;
+      isSegmentation: boolean;
       settings: {
         contrast: number;
         gamma: number;
@@ -86,6 +89,7 @@ type VolumeViewerProps = {
         xOffset: number;
         yOffset: number;
         renderStyle: 0 | 1;
+        invert: boolean;
       };
     }>;
   }>;
@@ -100,6 +104,7 @@ type VolumeViewerProps = {
   onLayerOffsetChange: (layerKey: string, axis: 'x' | 'y', value: number) => void;
   onLayerColorChange: (layerKey: string, color: string) => void;
   onLayerRenderStyleToggle: (layerKey: string) => void;
+  onLayerInvertToggle: (layerKey: string) => void;
   followedTrackId: string | null;
   onTrackFollowRequest: (trackId: string) => void;
   onRegisterVrSession?: (
@@ -306,7 +311,8 @@ type VrChannelsInteractiveRegion = {
     | 'channels-layer'
     | 'channels-slider'
     | 'channels-color'
-    | 'channels-render-style';
+    | 'channels-render-style'
+    | 'channels-invert';
   channelId: string;
   layerKey?: string;
   sliderKey?: VrChannelsSliderKey;
@@ -350,6 +356,7 @@ type VrChannelsState = {
       label: string;
       hasData: boolean;
       isGrayscale: boolean;
+      isSegmentation: boolean;
       settings: {
         contrast: number;
         gamma: number;
@@ -358,6 +365,7 @@ type VrChannelsState = {
         xOffset: number;
         yOffset: number;
         renderStyle: 0 | 1;
+        invert: boolean;
       };
     }>;
   }>;
@@ -831,6 +839,7 @@ function VolumeViewer({
   onLayerOffsetChange,
   onLayerColorChange,
   onLayerRenderStyleToggle,
+  onLayerInvertToggle,
   followedTrackId,
   onTrackFollowRequest,
   onRegisterVrSession,
@@ -3156,6 +3165,71 @@ function VolumeViewer({
 
       currentY += renderStyleBoxHeight + 28;
 
+      const invertDisabled = !selectedLayer.hasData || selectedLayer.isSegmentation;
+      const invertBoxWidth = canvasWidth - paddingX * 2;
+      const invertBoxHeight = 78;
+      const invertX = paddingX;
+      const invertY = currentY;
+      drawRoundedRect(ctx, invertX, invertY, invertBoxWidth, invertBoxHeight, 16);
+      ctx.fillStyle = '#1f2735';
+      ctx.fill();
+
+      if (
+        hud.hoverRegion &&
+        hud.hoverRegion.targetType === 'channels-invert' &&
+        hud.hoverRegion.channelId === activeChannel.id &&
+        hud.hoverRegion.layerKey === selectedLayer.key
+      ) {
+        ctx.save();
+        drawRoundedRect(ctx, invertX, invertY, invertBoxWidth, invertBoxHeight, 16);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+        ctx.fill();
+        ctx.restore();
+      }
+
+      ctx.fillStyle = '#9fb2c8';
+      ctx.font = vrChannelsFont('500', VR_CHANNELS_FONT_SIZES.body);
+      ctx.fillText('Invert LUT', invertX + 24, invertY + 18);
+      ctx.fillStyle = '#f3f6fc';
+      ctx.font = vrChannelsFont('600', VR_CHANNELS_FONT_SIZES.value);
+      ctx.fillText(selectedLayer.settings.invert ? 'Enabled' : 'Disabled', invertX + 24, invertY + 44);
+
+      const invertPillWidth = 240;
+      const invertPillHeight = 44;
+      const invertPillX = invertX + invertBoxWidth - invertPillWidth - 24;
+      const invertPillY = invertY + (invertBoxHeight - invertPillHeight) / 2;
+      drawRoundedRect(ctx, invertPillX, invertPillY, invertPillWidth, invertPillHeight, 22);
+      const invertActive = selectedLayer.settings.invert;
+      ctx.fillStyle = invertDisabled
+        ? 'rgba(45, 60, 74, 0.65)'
+        : invertActive
+        ? '#2b5fa6'
+        : '#1f6fbf';
+      ctx.fill();
+      ctx.fillStyle = invertDisabled ? '#7b8795' : '#f3f6fc';
+      ctx.font = vrChannelsFont('600', VR_CHANNELS_FONT_SIZES.small);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(invertActive ? 'Show normal LUT' : 'Invert LUT', invertPillX + invertPillWidth / 2, invertPillY + invertPillHeight / 2);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+
+      const invertBounds = {
+        minX: toPanelX(invertX),
+        maxX: toPanelX(invertX + invertBoxWidth),
+        minY: Math.min(toPanelY(invertY), toPanelY(invertY + invertBoxHeight)),
+        maxY: Math.max(toPanelY(invertY), toPanelY(invertY + invertBoxHeight))
+      };
+      regions.push({
+        targetType: 'channels-invert',
+        channelId: activeChannel.id,
+        layerKey: selectedLayer.key,
+        bounds: invertBounds,
+        disabled: invertDisabled
+      });
+
+      currentY += invertBoxHeight + 28;
+
       const sliderDefs: Array<{
         key: VrChannelsSliderKey;
         label: string;
@@ -3663,6 +3737,7 @@ function VolumeViewer({
         label: layer.label,
         hasData: layer.hasData,
         isGrayscale: layer.isGrayscale,
+        isSegmentation: layer.isSegmentation,
         settings: {
           contrast: layer.settings.contrast,
           gamma: layer.settings.gamma,
@@ -3670,7 +3745,8 @@ function VolumeViewer({
           color: normalizeHexColor(layer.settings.color, DEFAULT_LAYER_COLOR),
           xOffset: layer.settings.xOffset,
           yOffset: layer.settings.yOffset,
-          renderStyle: layer.settings.renderStyle
+          renderStyle: layer.settings.renderStyle,
+          invert: layer.settings.invert
         }
       }))
     }));
@@ -5177,6 +5253,7 @@ function VolumeViewer({
                   layer.settings.xOffset = 0;
                   layer.settings.yOffset = 0;
                   layer.settings.renderStyle = 0;
+                  layer.settings.invert = false;
                 }
               }
               onChannelReset(region.channelId);
@@ -5194,6 +5271,15 @@ function VolumeViewer({
                   layerState.settings.renderStyle = layerState.settings.renderStyle === 1 ? 0 : 1;
                 }
                 onLayerRenderStyleToggle(region.layerKey);
+              }
+            } else if (activeTarget.type === 'channels-invert' && region.layerKey) {
+              if (!region.disabled) {
+                const channelState = state.channels.find((channel) => channel.id === region.channelId);
+                const layerState = channelState?.layers.find((layer) => layer.key === region.layerKey);
+                if (layerState) {
+                  layerState.settings.invert = !layerState.settings.invert;
+                }
+                onLayerInvertToggle(region.layerKey);
               }
             } else if (activeTarget.type === 'channels-color' && region.layerKey && region.color) {
               const channelState = state.channels.find((channel) => channel.id === region.channelId);
@@ -7881,6 +7967,7 @@ function VolumeViewer({
           uniforms.u_contrast.value = layer.contrast;
           uniforms.u_gamma.value = layer.gamma;
           uniforms.u_brightness.value = layer.brightness;
+          uniforms.u_invert.value = layer.invert ? 1 : 0;
 
           const material = new THREE.ShaderMaterial({
             uniforms,
@@ -8026,6 +8113,7 @@ function VolumeViewer({
         materialUniforms.u_contrast.value = layer.contrast;
         materialUniforms.u_gamma.value = layer.gamma;
         materialUniforms.u_brightness.value = layer.brightness;
+        materialUniforms.u_invert.value = layer.invert ? 1 : 0;
         materialUniforms.u_cmdata.value = colormapTexture;
 
         if (resources.mode === '3d') {
