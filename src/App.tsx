@@ -38,6 +38,7 @@ const DEFAULT_TRACK_OPACITY = 0.9;
 const DEFAULT_TRACK_LINE_WIDTH = 1;
 const WINDOW_MARGIN = 24;
 const CONTROL_WINDOW_WIDTH = 360;
+const PLAYBACK_WINDOW_WIDTH = 420;
 const TRACK_WINDOW_WIDTH = 340;
 const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
 const WARNING_WINDOW_WIDTH = 360;
@@ -3221,7 +3222,7 @@ function App() {
         <FloatingWindow
           title="Playback controls"
           initialPosition={controlWindowInitialPosition}
-          width={`min(${CONTROL_WINDOW_WIDTH}px, calc(100vw - ${WINDOW_MARGIN * 2}px))`}
+          width={`min(${PLAYBACK_WINDOW_WIDTH}px, calc(100vw - ${WINDOW_MARGIN * 2}px))`}
           className="floating-window--playback"
           resetSignal={layoutResetToken}
         >
