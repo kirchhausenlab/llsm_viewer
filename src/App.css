@@ -1891,6 +1891,74 @@
   transform: translateY(0);
 }
 
+.viewer-top-menu-help {
+  position: relative;
+  display: flex;
+}
+
+.viewer-top-menu-popover {
+  position: absolute;
+  top: calc(100% + 0.6rem);
+  right: 0;
+  width: min(320px, 80vw);
+  padding: 1rem 1.1rem;
+  border-radius: 0.85rem;
+  background: rgba(10, 14, 22, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: rgba(240, 245, 255, 0.92);
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(18px);
+  pointer-events: auto;
+  z-index: 210;
+}
+
+.viewer-top-menu-popover::before {
+  content: '';
+  position: absolute;
+  top: -0.45rem;
+  right: 1.75rem;
+  width: 0.9rem;
+  height: 0.9rem;
+  background: inherit;
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+  transform: rotate(45deg);
+}
+
+.viewer-top-menu-popover-title {
+  margin: 0 0 0.6rem;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.viewer-top-menu-popover-section + .viewer-top-menu-popover-section {
+  margin-top: 0.9rem;
+}
+
+.viewer-top-menu-popover-section h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(174, 197, 255, 0.95);
+}
+
+.viewer-top-menu-popover-section ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
+.viewer-top-menu-popover-section li {
+  margin: 0;
+}
+
 .viewer-toolbar {
   display: flex;
   align-items: center;
