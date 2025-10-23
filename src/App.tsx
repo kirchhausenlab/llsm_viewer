@@ -40,6 +40,7 @@ const WINDOW_MARGIN = 24;
 const CONTROL_WINDOW_WIDTH = 360;
 const TRACK_WINDOW_WIDTH = 340;
 const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
+const WARNING_WINDOW_WIDTH = 360;
 
 const createSegmentationSeed = (layerKey: string, volumeIndex: number): number => {
   let hash = 2166136261;
@@ -935,6 +936,7 @@ function App() {
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [datasetError, setDatasetError] = useState<string | null>(null);
+  const [datasetErrorResetSignal, setDatasetErrorResetSignal] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [layers, setLayers] = useState<LoadedLayer[]>([]);
   const [channelVisibility, setChannelVisibility] = useState<Record<string, boolean>>({});
@@ -1095,6 +1097,12 @@ function App() {
       setEditingChannelId(null);
     }
   }, [activeChannelId, editingChannelId]);
+
+  useEffect(() => {
+    if (datasetError) {
+      setDatasetErrorResetSignal((value) => value + 1);
+    }
+  }, [datasetError]);
 
   useEffect(() => {
     const pendingChannelId = pendingChannelFocusIdRef.current;
@@ -2687,6 +2695,10 @@ function App() {
     [layers]
   );
 
+  const handleDatasetErrorDismiss = useCallback(() => {
+    setDatasetError(null);
+  }, []);
+
   const viewerLayers = useMemo(() => {
     const activeLayers: LoadedLayer[] = [];
     for (const layer of layers) {
@@ -2746,6 +2758,13 @@ function App() {
 
   if (!isViewerLaunched) {
     const isFrontPageLocked = isLaunchingViewer;
+    const warningWindowInitialPosition =
+      typeof window === 'undefined'
+        ? { x: WINDOW_MARGIN, y: WINDOW_MARGIN }
+        : {
+            x: Math.max(WINDOW_MARGIN, Math.round(window.innerWidth / 2 - WARNING_WINDOW_WIDTH / 2)),
+            y: WINDOW_MARGIN + 16
+          };
     return (
       <div className="app front-page-mode">
         <video
@@ -2993,6 +3012,31 @@ function App() {
               </button>
             </div>
           </div>
+          {datasetError ? (
+            <FloatingWindow
+              title="Cannot launch viewer"
+              className="floating-window--warning"
+              bodyClassName="warning-window-body"
+              width={WARNING_WINDOW_WIDTH}
+              initialPosition={warningWindowInitialPosition}
+              resetSignal={datasetErrorResetSignal}
+            >
+              <div className="warning-window-content">
+                <p className="warning-window-intro">The viewer could not be launched.</p>
+                <p className="warning-window-message">{datasetError}</p>
+                <p className="warning-window-hint">Review the dataset configuration and try again.</p>
+                <div className="warning-window-actions">
+                  <button
+                    type="button"
+                    className="warning-window-action-button"
+                    onClick={handleDatasetErrorDismiss}
+                  >
+                    Got it
+                  </button>
+                </div>
+              </div>
+            </FloatingWindow>
+          ) : null}
         </div>
       </div>
     );
