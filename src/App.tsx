@@ -104,7 +104,6 @@ type FollowedTrackState = {
 
 type ChannelLayerSource = {
   id: string;
-  name: string;
   files: File[];
   isSegmentation: boolean;
 };
@@ -378,7 +377,6 @@ type ChannelCardProps = {
   isDisabled: boolean;
   onLayerFilesAdded: (id: string, files: File[]) => void;
   onLayerDrop: (id: string, dataTransfer: DataTransfer) => void;
-  onLayerNameChange: (channelId: string, layerId: string, value: string) => void;
   onLayerSegmentationToggle: (channelId: string, layerId: string, value: boolean) => void;
   onLayerRemove: (channelId: string, layerId: string) => void;
   onTrackFileSelected: (channelId: string, file: File | null) => void;
@@ -392,7 +390,6 @@ function ChannelCard({
   isDisabled,
   onLayerFilesAdded,
   onLayerDrop,
-  onLayerNameChange,
   onLayerSegmentationToggle,
   onLayerRemove,
   onTrackFileSelected,
@@ -414,6 +411,7 @@ function ChannelCard({
   const [dropboxAppKeySource, setDropboxAppKeySource] = useState<DropboxAppKeySource | null>(null);
 
   const isDropboxImporting = dropboxImportTarget !== null;
+  const primaryLayer = channel.layers[0] ?? null;
 
   const syncDropboxConfigState = useCallback(() => {
     const info = getDropboxAppKeyInfo();
@@ -831,48 +829,36 @@ function ChannelCard({
           </form>
         ) : null}
       </div>
-      {channel.layers.length > 0 ? (
+      {primaryLayer ? (
         <ul className="channel-layer-list">
-          {channel.layers.map((layer) => {
-            return (
-              <li key={layer.id} className="channel-layer-item">
-                <div className="channel-layer-header">
-                  <input
-                    type="text"
-                    value={layer.name}
-                    placeholder="Volume name"
-                    onChange={(event) => onLayerNameChange(channel.id, layer.id, event.target.value)}
-                    className="channel-layer-name"
-                    autoComplete="off"
-                    disabled={isDisabled}
-                  />
-                  <button
-                    type="button"
-                    className="channel-layer-remove"
-                    onClick={() => onLayerRemove(channel.id, layer.id)}
-                    aria-label={layer.name.trim() ? `Remove ${layer.name.trim()}` : 'Remove volume'}
-                    disabled={isDisabled}
-                  >
-                    Remove
-                  </button>
-                </div>
-                <p className="channel-layer-meta">
-                  {layer.files.length === 1 ? '1 file' : `${layer.files.length} files`}
-                </p>
-                <label className="channel-layer-flag">
-                  <input
-                    type="checkbox"
-                    checked={layer.isSegmentation}
-                    onChange={(event) =>
-                      onLayerSegmentationToggle(channel.id, layer.id, event.target.checked)
-                    }
-                    disabled={isDisabled}
-                  />
-                  <span>Segmentation volume</span>
-                </label>
-              </li>
-            );
-          })}
+          <li key={primaryLayer.id} className="channel-layer-item">
+            <div className="channel-layer-header">
+              <span className="channel-layer-title">Volume</span>
+              <button
+                type="button"
+                className="channel-layer-remove"
+                onClick={() => onLayerRemove(channel.id, primaryLayer.id)}
+                aria-label="Remove volume"
+                disabled={isDisabled}
+              >
+                Remove
+              </button>
+            </div>
+            <p className="channel-layer-meta">
+              {primaryLayer.files.length === 1 ? '1 file' : `${primaryLayer.files.length} files`}
+            </p>
+            <label className="channel-layer-flag">
+              <input
+                type="checkbox"
+                checked={primaryLayer.isSegmentation}
+                onChange={(event) =>
+                  onLayerSegmentationToggle(channel.id, primaryLayer.id, event.target.checked)
+                }
+                disabled={isDisabled}
+              />
+              <span>Segmentation volume</span>
+            </label>
+          </li>
         </ul>
       ) : null}
       <p className="channel-tracks-title">Upload tracks (optional)</p>
@@ -1025,12 +1011,11 @@ function App() {
     []
   );
 
-  const createLayerSource = useCallback((name: string, files: File[]): ChannelLayerSource => {
+  const createLayerSource = useCallback((files: File[]): ChannelLayerSource => {
     const nextId = layerIdRef.current + 1;
     layerIdRef.current = nextId;
     return {
       id: `layer-${nextId}`,
-      name,
       files,
       isSegmentation: false
     };
@@ -1472,8 +1457,9 @@ function App() {
       .flatMap((channel) =>
         channel.layers.map((layer) => ({
           channelId: channel.id,
+          channelLabel: channel.name.trim() || 'Untitled channel',
           key: layer.id,
-          label: layer.name.trim() || 'Untitled volume',
+          label: 'Volume',
           files: sortVolumeFiles(layer.files),
           isSegmentation: layer.isSegmentation
         }))
@@ -1519,7 +1505,7 @@ function App() {
       for (const layer of flatLayerSources) {
         if (layer.files.length !== referenceFiles.length) {
           throw new Error(
-            `Volume "${layer.label}" has a different number of timepoints (${layer.files.length}) than the first volume (${referenceFiles.length}).`
+            `Channel "${layer.channelLabel}" has ${layer.files.length} timepoints, but the first channel has ${referenceFiles.length}.`
           );
         }
       }
@@ -1546,7 +1532,7 @@ function App() {
                 volume.depth !== referenceShape.depth
               ) {
                 throw new Error(
-                  `Volume "${layer.label}" has volume dimensions ${volume.width}×${volume.height}×${volume.depth} that do not match the reference shape ${referenceShape.width}×${referenceShape.height}×${referenceShape.depth}.`
+                  `Channel "${layer.channelLabel}" has volume dimensions ${volume.width}×${volume.height}×${volume.depth} that do not match the reference shape ${referenceShape.width}×${referenceShape.height}×${referenceShape.depth}.`
                 );
               }
 
@@ -1937,7 +1923,7 @@ function App() {
           if (channel.layers.length > 0) {
             replacedLayerIds.push(channel.layers[0].id);
           }
-          const nextLayer = createLayerSource('', sorted);
+          const nextLayer = createLayerSource(sorted);
           return { ...channel, layers: [nextLayer] };
         })
       );
@@ -1978,23 +1964,6 @@ function App() {
       handleChannelLayerFilesAdded(channelId, files);
     },
     [handleChannelLayerFilesAdded]
-  );
-
-  const handleChannelLayerNameChange = useCallback(
-    (channelId: string, layerId: string, value: string) => {
-      setChannels((current) =>
-        current.map((channel) => {
-          if (channel.id !== channelId) {
-            return channel;
-          }
-          return {
-            ...channel,
-            layers: channel.layers.map((layer) => (layer.id === layerId ? { ...layer, name: value } : layer))
-          };
-        })
-      );
-    },
-    []
   );
 
   const handleChannelLayerSegmentationToggle = useCallback(
@@ -2156,11 +2125,8 @@ function App() {
         errors.push('Add a volume to this channel.');
       } else {
         const layer = channel.layers[0];
-        if (layer.files.length === 0) {
-          errors.push(`Volume "${layer.name || 'Untitled volume'}" has no files.`);
-        }
-        if (!layer.name.trim()) {
-          errors.push('Name the volume in this channel.');
+        if (!layer || layer.files.length === 0) {
+          errors.push('Add files to the volume in this channel.');
         }
       }
 
@@ -2969,7 +2935,6 @@ function App() {
                         isDisabled={isFrontPageLocked}
                         onLayerFilesAdded={handleChannelLayerFilesAdded}
                         onLayerDrop={handleChannelLayerDrop}
-                        onLayerNameChange={handleChannelLayerNameChange}
                         onLayerSegmentationToggle={handleChannelLayerSegmentationToggle}
                         onLayerRemove={handleChannelLayerRemove}
                         onTrackFileSelected={handleChannelTrackFileSelected}
@@ -3287,7 +3252,7 @@ function App() {
                           reset sliders
                         </button>
                       </div>
-                      {channelLayers.length > 0 ? (
+                      {channelLayers.length > 1 ? (
                         <div
                           className="channel-layer-selector"
                           role="radiogroup"
@@ -3310,9 +3275,9 @@ function App() {
                             );
                           })}
                         </div>
-                      ) : (
+                      ) : channelLayers.length === 0 ? (
                         <p className="channel-empty-hint">No volume available for this channel.</p>
-                      )}
+                      ) : null}
                       {selectedLayer ? (
                         <>
                           <div className="channel-render-style">
