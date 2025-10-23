@@ -1,5 +1,10 @@
 # Progress Log
 
+## Bundled Inter webfont
+- Added the `@fontsource/inter` package and imported its stylesheet during app bootstrap so the viewer consistently renders in Inter even on systems without the font installed.
+
+- Adjusted the entrypoint imports to load the bundled Inter files ahead of the existing global stylesheet.
+
 ## Track CSV alignment update
 - Adjusted track CSV parsing to treat the time column as `initial time + t`, ensuring trajectories align with staggered starts.
 - Flipped imported track depths to account for the negative Z convention in source CSVs.
