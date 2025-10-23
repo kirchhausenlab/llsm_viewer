@@ -377,3 +377,8 @@ d centered the front-page card in the viewport.
 - Replaced the multi-layer channel model with a single-volume workflow, updating launcher messaging, validation, and viewer prompts to talk about channel volumes instead of layers.
 - Added safeguards so a new drop replaces the existing volume while clearing any prior display settings, preventing stale configuration from lingering across swaps.
 - Removed the three-channel cap so datasets can define as many channels as needed without surfacing the old limit warning.
+
+## Tab layout consistency across desktop and VR
+- Wrapped the desktop track window tabs after every three channels so large projects no longer overflow the available width.
+- Mirrored the three-per-row layout in the VR channels and tracks HUDs, centering partial rows and preserving hover interactions.
+- Ensured narrow layouts gracefully collapse to two and one column variants to maintain readability on smaller displays.

@@ -1725,8 +1725,31 @@
 
 .track-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.4rem;
   margin-bottom: 0.75rem;
+}
+
+.track-tabs > .track-tab {
+  flex: 1 1 calc((100% - 0.8rem) / 3);
+  min-width: calc((100% - 0.8rem) / 3);
+  max-width: calc((100% - 0.8rem) / 3);
+}
+
+@media (max-width: 1024px) {
+  .track-tabs > .track-tab {
+    flex: 1 1 calc((100% - 0.4rem) / 2);
+    min-width: calc((100% - 0.4rem) / 2);
+    max-width: calc((100% - 0.4rem) / 2);
+  }
+}
+
+@media (max-width: 640px) {
+  .track-tabs > .track-tab {
+    flex: 1 1 100%;
+    min-width: 100%;
+    max-width: 100%;
+  }
 }
 
 .track-tab {
