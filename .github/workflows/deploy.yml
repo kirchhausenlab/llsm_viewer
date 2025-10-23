@@ -30,10 +30,14 @@ jobs:
         run: npm ci
       - name: Build
         run: npm run build
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
+          artifact-name: github-pages
+          if-no-files-found: error
 
   deploy:
     needs: build
@@ -45,3 +49,5 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages
