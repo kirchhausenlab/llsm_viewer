@@ -59,6 +59,7 @@ const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
 const WARNING_WINDOW_WIDTH = 360;
 const COLLAB_DISPLAY_NAME_KEY = 'llsm-viewer:collab-name';
 const DEFAULT_DISPLAY_NAME = 'Researcher';
+const VR_INITIALIZING_ERROR_MESSAGE = 'Viewer is still initializing. Try again in a moment.';
 
 const createSegmentationSeed = (layerKey: string, volumeIndex: number): number => {
   let hash = 2166136261;
@@ -1080,6 +1081,7 @@ function App() {
       }
     | null
   >(null);
+  const pendingVrSessionRequestRef = useRef(false);
 
   const createChannelSource = useCallback(
     (name: string): ChannelSource => {
@@ -1140,8 +1142,14 @@ function App() {
     }
     const controls = vrSessionControlsRef.current;
     if (!controls) {
+      pendingVrSessionRequestRef.current = true;
+      setError((previous) =>
+        previous === VR_INITIALIZING_ERROR_MESSAGE ? previous : VR_INITIALIZING_ERROR_MESSAGE
+      );
       return;
     }
+    pendingVrSessionRequestRef.current = false;
+    setError((previous) => (previous === VR_INITIALIZING_ERROR_MESSAGE ? null : previous));
     setIsVrRequesting(true);
     setFollowedTrack(null);
     try {
@@ -2176,9 +2184,7 @@ useEffect(() => {
   const playbackDisabled = isLoading || volumeTimepointCount <= 1;
   const vrButtonLabel = isVrActive ? 'Exit VR' : isVrRequesting ? 'Entering VR…' : 'Enter VR';
   const isVrAvailable = viewerMode === '3d' && isVrSupportChecked && isVrSupported;
-  const vrButtonDisabled = isVrActive
-    ? false
-    : !isVrAvailable || !hasVrSessionHandlers || isVrRequesting;
+  const vrButtonDisabled = isVrActive ? false : !isVrAvailable || isVrRequesting;
   const vrButtonTitle = isVrActive
     ? 'Exit immersive VR session.'
     : !isVrSupportChecked
@@ -2188,10 +2194,34 @@ useEffect(() => {
     : viewerMode !== '3d'
     ? 'Switch to the 3D view to enable VR.'
     : !hasVrSessionHandlers
-    ? 'Viewer is still initializing.'
+    ? 'Viewer is still initializing. VR will start automatically once ready.'
     : isVrRequesting
     ? 'Starting VR session…'
     : undefined;
+  useEffect(() => {
+    if (
+      !pendingVrSessionRequestRef.current ||
+      isVrActive ||
+      isVrRequesting ||
+      !isVrAvailable ||
+      !hasVrSessionHandlers
+    ) {
+      return;
+    }
+    const controls = vrSessionControlsRef.current;
+    if (!controls) {
+      return;
+    }
+    pendingVrSessionRequestRef.current = false;
+    void enterVr();
+  }, [enterVr, hasVrSessionHandlers, isVrActive, isVrAvailable, isVrRequesting]);
+  useEffect(() => {
+    if (isVrAvailable) {
+      return;
+    }
+    pendingVrSessionRequestRef.current = false;
+    setError((previous) => (previous === VR_INITIALIZING_ERROR_MESSAGE ? null : previous));
+  }, [isVrAvailable]);
   const playbackLabel = useMemo(() => {
     if (volumeTimepointCount === 0) {
       return '0 / 0';

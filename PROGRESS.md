@@ -1,5 +1,9 @@
 # Progress Log
 
+## VR session request queueing
+- Enabled the Enter VR button as soon as WebXR support is detected by queuing pending requests while the Three.js viewer finishes wiring its session handlers and automatically retrying once they're ready.
+- Cleared the temporary initialization warning whenever handlers register or VR support becomes unavailable so transient guidance disappears as soon as immersive mode can start.
+
 ## Bundled Inter webfont
 - Added the `@fontsource/inter` package and imported its stylesheet during app bootstrap so the viewer consistently renders in Inter even on systems without the font installed.
 
