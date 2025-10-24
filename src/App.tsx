@@ -3349,7 +3349,25 @@ function App() {
                         aria-selected={isActive}
                         aria-controls={`channel-panel-${channelId}`}
                       >
-                        <span className={labelClassName}>{label}</span>
+                        <span
+                          className={labelClassName}
+                          role="switch"
+                          aria-checked={isVisible}
+                          tabIndex={0}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleChannelVisibilityToggle(channelId);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              handleChannelVisibilityToggle(channelId);
+                            }
+                          }}
+                        >
+                          {label}
+                        </span>
                       </button>
                     );
                   })}
@@ -3370,16 +3388,7 @@ function App() {
                   const normalizedColor = normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR);
                   const displayColor = normalizedColor.toUpperCase();
                   const isActive = channelId === activeChannelTabId;
-                  const isVisible = channelVisibility[channelId] ?? true;
-                  const renderStyleLabel =
-                    settings.renderStyle === 1 ? 'Iso surface' : 'Maximum intensity';
-                  const renderStyleToggleLabel =
-                    settings.renderStyle === 1
-                      ? 'Switch to maximum intensity'
-                      : 'Switch to iso surface';
                   const invertDisabled = sliderDisabled || selectedLayer.isSegmentation;
-                  const invertStatusLabel = settings.invert ? 'Enabled' : 'Disabled';
-                  const invertToggleLabel = settings.invert ? 'Show original LUT' : 'Invert LUT';
                   const invertTitle = selectedLayer.isSegmentation
                     ? 'Invert LUT is unavailable for segmentation volumes.'
                     : undefined;
@@ -3393,18 +3402,10 @@ function App() {
                       className={isActive ? 'channel-panel is-active' : 'channel-panel'}
                       hidden={!isActive}
                     >
-                      <div className="channel-visibility-row">
-                        <label className="channel-visibility">
-                          <input
-                            type="checkbox"
-                            checked={isVisible}
-                            onChange={() => handleChannelVisibilityToggle(channelId)}
-                          />
-                          <span>Show channel</span>
-                        </label>
+                      <div className="channel-action-row">
                         <button
                           type="button"
-                          className="channel-reset"
+                          className="channel-action-button channel-action-button--compact"
                           onClick={() => handleChannelSliderReset(channelId)}
                           disabled={channelLayers.length === 0}
                         >
@@ -3439,35 +3440,25 @@ function App() {
                       ) : null}
                       {selectedLayer ? (
                         <>
-                          <div className="channel-render-style">
-                            <div className="channel-render-style-label">
-                              <span>Render style</span>
-                              <span>{renderStyleLabel}</span>
-                            </div>
+                          <div className="channel-primary-actions">
                             <button
                               type="button"
-                              className="channel-render-style-button"
+                              className="channel-action-button"
                               onClick={() => handleLayerRenderStyleToggle(selectedLayer.key)}
                               disabled={sliderDisabled}
                               aria-pressed={settings.renderStyle === 1}
                             >
-                              {renderStyleToggleLabel}
+                              Switch render style
                             </button>
-                          </div>
-                          <div className="channel-invert-toggle">
-                            <div className="channel-invert-toggle-label">
-                              <span>Invert LUT</span>
-                              <span>{invertStatusLabel}</span>
-                            </div>
                             <button
                               type="button"
-                              className="channel-invert-toggle-button"
+                              className="channel-action-button"
                               onClick={() => handleLayerInvertToggle(selectedLayer.key)}
                               disabled={invertDisabled}
                               aria-pressed={settings.invert}
                               title={invertTitle}
                             >
-                              {invertToggleLabel}
+                              Invert LUT
                             </button>
                           </div>
                           <div className="slider-control slider-control--pair">
@@ -3499,8 +3490,8 @@ function App() {
                               <input
                                 id={`layer-brightness-${selectedLayer.key}`}
                                 type="range"
-                                min={-0.5}
-                                max={0.5}
+                                min={-1}
+                                max={1}
                                 step={0.01}
                                 value={settings.brightness}
                                 onChange={(event) =>
