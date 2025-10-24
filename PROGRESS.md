@@ -385,7 +385,17 @@ d centered the front-page card in the viewport.
 
 ## GitHub Pages artifact reliability
 - Updated the `Deploy static site` workflow to configure Pages before uploading, explicitly name the artifact, and fail fast when the build output is missing so deployments always provide the `github-pages` package required by `actions/deploy-pages@v4`.
+## Collaborative LAN VR sessions
+- Detected LAN deployments with a runtime heuristic and optional override so collaborative controls only surface when running locally.
+- Added host/guest controls, status messaging, and participant lists to the launcher, along with persistent display names.
+- Implemented a LAN collaboration server with REST dataset transfer, WebSocket state/pose sync, and room codes for sharing sessions.
+- Serialized normalized volumes, layer settings, and track configurations for hosts to share, then hydrated guests directly into the viewer.
+- Wired a collaboration client that uploads datasets, streams viewer playback state, and broadcasts VR pose updates.
+- Rendered remote participants as simple avatars inside the Three.js scene and streamed the local headset/controller pose back to peers.
 
-## Collaborative track state hydration
-- Added shared helpers to derive per-channel track visibility summaries, opacity, and line width so hydrated datasets honor saved settings even without local channel metadata.
-- Extended the automated test suite with a collaboration-focused regression that hydrates non-default track settings and verifies the derived guest state matches the persisted values.
+## Collaboration regression tests
+- Refactored the collaboration server into a reusable factory so tests can spin up and tear down instances without leaving listeners behind.
+- Added dataset serialization/deserialization regression tests to guarantee normalized volume payloads round-trip correctly.
+- Exercised the REST and WebSocket collaboration flow with both raw `ws` sockets and the browser client wrapper, verifying viewer state, pose updates, and dataset requests.
+- Exported reusable avatar helpers from the Three.js viewer and added tests that confirm remote participant poses toggle visibility and transforms as expected.
+

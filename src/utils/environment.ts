@@ -1,111 +1,101 @@
-export type EnvironmentMode = 'lan' | 'wan';
+export type EnvironmentMode = 'external' | 'lan';
 
-interface EnvironmentSources {
-  location?: Pick<Location, 'hostname' | 'protocol'>;
-  navigator?: Pick<Navigator, 'connection'>;
-}
+const LOCAL_OVERRIDE_KEY = 'llsm-viewer:env-override';
 
-const RFC1918_IPV4_PATTERNS = [
+type DetectionResult = {
+  mode: EnvironmentMode;
+  reason: string;
+  overridden: boolean;
+};
+
+const RFC1918_PATTERNS = [
   /^10\./,
   /^192\.168\./,
   /^172\.(1[6-9]|2[0-9]|3[0-1])\./
 ];
 
-const LOOPBACK_IPV4_PATTERN = /^127\./;
-const LINK_LOCAL_IPV4_PATTERN = /^169\.254\./;
+const LOOPBACK_PATTERNS = [/^127\./, /^0\.0\.0\.0$/];
 
-function normalizeHostname(hostname: string): string {
-  const trimmed = hostname.trim();
-  if (!trimmed) {
-    return '';
-  }
-
-  // Strip IPv6 brackets and zone identifiers (e.g. "[fe80::1%eth0]").
-  const withoutBrackets = trimmed.replace(/^\[/, '').replace(/\]$/, '');
-  const [withoutZone] = withoutBrackets.split('%', 1);
-  return withoutZone.toLowerCase();
-}
-
-function isLanHostname(hostname: string): boolean {
-  const normalized = normalizeHostname(hostname);
-  if (!normalized) {
+function isLikelyLanHost(hostname: string): boolean {
+  if (!hostname) {
     return false;
   }
-
-  if (normalized === 'localhost' || normalized === 'localhost.localdomain') {
+  const normalized = hostname.toLowerCase();
+  if (normalized === 'localhost') {
     return true;
   }
-
   if (normalized.endsWith('.local')) {
     return true;
   }
+  if (RFC1918_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    return true;
+  }
+  if (LOOPBACK_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    return true;
+  }
+  return false;
+}
 
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(normalized)) {
-    if (LOOPBACK_IPV4_PATTERN.test(normalized) || LINK_LOCAL_IPV4_PATTERN.test(normalized)) {
-      return true;
+function getStoredOverride(): EnvironmentMode | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  try {
+    const raw = window.localStorage.getItem(LOCAL_OVERRIDE_KEY);
+    if (!raw) {
+      return null;
     }
-
-    return RFC1918_IPV4_PATTERNS.some((pattern) => pattern.test(normalized));
+    if (raw === 'lan' || raw === 'external') {
+      return raw;
+    }
+  } catch (error) {
+    console.warn('Failed to read environment override', error);
   }
-
-  if (normalized === '::1') {
-    return true;
-  }
-
-  if (/^fc[0-9a-f]{2}:/i.test(normalized) || /^fd[0-9a-f]{2}:/i.test(normalized)) {
-    return true;
-  }
-
-  if (/^fe80:/i.test(normalized)) {
-    return true;
-  }
-
-  return false;
+  return null;
 }
 
-const LAN_CONNECTION_TYPES = new Set(['wifi', 'ethernet']);
-const LAN_EFFECTIVE_TYPES = new Set(['4g', '5g']);
-
-function connectionIndicatesLan(connection: NetworkInformation): boolean {
-  const type = connection.type?.toLowerCase();
-  if (type && LAN_CONNECTION_TYPES.has(type)) {
-    return true;
+export function setEnvironmentOverride(mode: EnvironmentMode | null): void {
+  if (typeof window === 'undefined') {
+    return;
   }
-
-  const effectiveType = connection.effectiveType?.toLowerCase();
-  if (effectiveType && LAN_EFFECTIVE_TYPES.has(effectiveType)) {
-    return true;
+  try {
+    if (!mode) {
+      window.localStorage.removeItem(LOCAL_OVERRIDE_KEY);
+    } else {
+      window.localStorage.setItem(LOCAL_OVERRIDE_KEY, mode);
+    }
+  } catch (error) {
+    console.warn('Failed to write environment override', error);
   }
-
-  return false;
 }
 
-export function detectEnvironmentMode(sources: EnvironmentSources = {}): EnvironmentMode {
-  const location =
-    sources.location ?? (typeof window !== 'undefined' ? window.location : undefined);
-  const navigatorRef =
-    sources.navigator ?? (typeof window !== 'undefined' ? window.navigator : undefined);
+export function detectEnvironmentMode(): DetectionResult {
+  if (typeof window === 'undefined') {
+    return { mode: 'external', reason: 'server', overridden: false };
+  }
 
-  const hostname = location?.hostname ?? '';
-  const protocol = location?.protocol ?? '';
+  const override = getStoredOverride();
+  if (override) {
+    return { mode: override, reason: 'override', overridden: true };
+  }
 
+  const { hostname, protocol } = window.location;
   if (protocol === 'file:') {
-    return 'lan';
+    return { mode: 'lan', reason: 'file-protocol', overridden: false };
+  }
+  if (isLikelyLanHost(hostname)) {
+    return { mode: 'lan', reason: 'hostname', overridden: false };
   }
 
-  const hostLooksLan = isLanHostname(hostname);
-  if (hostLooksLan) {
-    return 'lan';
+  const connection = (navigator as any)?.connection;
+  const effectiveType: string | undefined = connection?.effectiveType;
+  if (effectiveType === 'wifi' || effectiveType === 'ethernet') {
+    return { mode: 'lan', reason: 'connection', overridden: false };
   }
 
-  if (hostname && !hostLooksLan) {
-    return 'wan';
-  }
+  return { mode: 'external', reason: 'fallback', overridden: false };
+}
 
-  const connection = navigatorRef?.connection as NetworkInformation | undefined;
-  if (connection && connectionIndicatesLan(connection)) {
-    return 'lan';
-  }
-
-  return 'wan';
+export function getEnvironmentMode(): EnvironmentMode {
+  return detectEnvironmentMode().mode;
 }
