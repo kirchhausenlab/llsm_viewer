@@ -9,7 +9,10 @@ npm install
 npm run dev
 ```
 
-The development setup runs the Vite front-end (http://localhost:5173).
+The development setup runs the Vite front-end over HTTPS (https://localhost:5173).
+Accept the self-signed certificate the first time you visit so browsers expose
+WebXR APIs during local testing. Set the `DEV_USE_HTTPS=false` environment
+variable before `npm run dev` if you need to fall back to HTTP.
 Requests to `/api/collaboration` (including the `/ws` WebSocket endpoint) are
 proxied to the collaboration server on http://localhost:8080 so REST calls and
 socket upgrades share the browser origin during development. Keep `npm run

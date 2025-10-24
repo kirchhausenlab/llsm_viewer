@@ -60,6 +60,9 @@ const WARNING_WINDOW_WIDTH = 360;
 const COLLAB_DISPLAY_NAME_KEY = 'llsm-viewer:collab-name';
 const DEFAULT_DISPLAY_NAME = 'Researcher';
 const VR_INITIALIZING_ERROR_MESSAGE = 'Viewer is still initializing. Try again in a moment.';
+const VR_SECURE_CONTEXT_WARNING =
+  'WebXR requires HTTPS. Open the viewer using an https:// URL to enable VR.';
+const VR_UNSUPPORTED_BROWSER_MESSAGE = 'WebXR immersive VR is not supported in this browser.';
 
 const createSegmentationSeed = (layerKey: string, volumeIndex: number): number => {
   let hash = 2166136261;
@@ -1013,6 +1016,7 @@ function App() {
   const [isVrSupported, setIsVrSupported] = useState(false);
   const [isVrPassthroughSupported, setIsVrPassthroughSupported] = useState(false);
   const [isVrSupportChecked, setIsVrSupportChecked] = useState(false);
+  const [vrSupportWarning, setVrSupportWarning] = useState<string | null>(null);
   const [isVrActive, setIsVrActive] = useState(false);
   const [isVrRequesting, setIsVrRequesting] = useState(false);
   const [hasVrSessionHandlers, setHasVrSessionHandlers] = useState(false);
@@ -1281,12 +1285,27 @@ function App() {
     let isCancelled = false;
 
     const detectVrSupport = async () => {
+      const secureContext = typeof window !== 'undefined' ? Boolean(window.isSecureContext) : false;
+      if (!isCancelled && !secureContext) {
+        setIsVrSupported(false);
+        setIsVrPassthroughSupported(false);
+        setIsVrSupportChecked(true);
+        setVrSupportWarning(VR_SECURE_CONTEXT_WARNING);
+        return;
+      }
+
       if (typeof navigator === 'undefined' || !navigator.xr) {
         if (!isCancelled) {
           setIsVrSupported(false);
+          setIsVrPassthroughSupported(false);
           setIsVrSupportChecked(true);
+          setVrSupportWarning(VR_UNSUPPORTED_BROWSER_MESSAGE);
         }
         return;
+      }
+
+      if (!isCancelled) {
+        setVrSupportWarning(null);
       }
 
       const xr = navigator.xr as { requestSession?: unknown; isSessionSupported?: unknown } | undefined;
@@ -1305,6 +1324,11 @@ function App() {
           setIsVrSupported(supported);
           setIsVrPassthroughSupported(passthrough);
           setIsVrSupportChecked(true);
+          if (supported) {
+            setVrSupportWarning(null);
+          } else {
+            setVrSupportWarning((current) => current ?? VR_UNSUPPORTED_BROWSER_MESSAGE);
+          }
         }
       };
 
@@ -2190,7 +2214,7 @@ useEffect(() => {
     : !isVrSupportChecked
     ? 'Checking WebXR capabilities…'
     : !isVrSupported
-    ? 'WebXR immersive VR is not supported in this browser.'
+    ? vrSupportWarning ?? VR_UNSUPPORTED_BROWSER_MESSAGE
     : viewerMode !== '3d'
     ? 'Switch to the 3D view to enable VR.'
     : !hasVrSessionHandlers
