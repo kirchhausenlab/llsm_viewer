@@ -1,5 +1,11 @@
 # Progress Log
 
+## WebXR secure context guidance
+- Switched the dev and preview servers to HTTPS with automatic self-signed
+  certificates so VR headsets connecting over LAN receive WebXR capabilities.
+- Surface a dedicated tooltip when the viewer runs on HTTP, explaining that
+  WebXR requires an `https://` URL before the Enter VR button can be used.
+
 ## VR session request queueing
 - Enabled the Enter VR button as soon as WebXR support is detected by queuing pending requests while the Three.js viewer finishes wiring its session handlers and automatically retrying once they're ready.
 - Cleared the temporary initialization warning whenever handlers register or VR support becomes unavailable so transient guidance disappears as soon as immersive mode can start.
