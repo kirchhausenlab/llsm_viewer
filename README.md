@@ -10,6 +10,11 @@ npm run dev
 ```
 
 The development setup runs the Vite front-end (http://localhost:5173).
+Requests to `/api/collaboration` (including the `/ws` WebSocket endpoint) are
+proxied to the collaboration server on http://localhost:8080 so REST calls and
+socket upgrades share the browser origin during development. Keep `npm run
+collab-server` running in a separate terminal while the Vite dev server is
+active.
 
 ### Dropbox Chooser configuration
 
