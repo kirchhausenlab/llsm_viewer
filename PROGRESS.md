@@ -6,6 +6,10 @@
 - Surface a dedicated tooltip when the viewer runs on HTTP, explaining that
   WebXR requires an `https://` URL before the Enter VR button can be used.
 
+## Configurable dev HTTPS certificates
+- Let developers override the dev server TLS certificate/key via environment
+  variables so HTTPS stays active (and WebXR enabled) when testing across a LAN.
+
 ## VR session request queueing
 - Enabled the Enter VR button as soon as WebXR support is detected by queuing pending requests while the Three.js viewer finishes wiring its session handlers and automatically retrying once they're ready.
 - Cleared the temporary initialization warning whenever handlers register or VR support becomes unavailable so transient guidance disappears as soon as immersive mode can start.
