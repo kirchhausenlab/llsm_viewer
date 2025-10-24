@@ -21,6 +21,19 @@ import {
   type TrackColorOption
 } from './trackColors';
 import {
+  DEFAULT_TRACK_LINE_WIDTH,
+  DEFAULT_TRACK_OPACITY,
+  createDefaultChannelTrackState,
+  type ChannelTrackState
+} from './channelTrackState';
+import {
+  computeTrackLineWidthByChannel,
+  computeTrackOpacityByChannel,
+  computeTrackSummaryByChannel,
+  computeTrackVisibility,
+  deriveTrackChannelIds
+} from './trackSelectors';
+import {
   chooseDropboxFiles,
   DropboxConfigurationError,
   getDropboxAppKeyInfo,
@@ -38,8 +51,6 @@ const DEFAULT_GAMMA = 1;
 const DEFAULT_BRIGHTNESS = 0;
 const DEFAULT_RENDER_STYLE = 0;
 const DEFAULT_FPS = 12;
-const DEFAULT_TRACK_OPACITY = 0.9;
-const DEFAULT_TRACK_LINE_WIDTH = 1;
 const WINDOW_MARGIN = 24;
 const CONTROL_WINDOW_WIDTH = 360;
 const PLAYBACK_WINDOW_WIDTH = 420;
@@ -92,20 +103,6 @@ const createDefaultLayerSettings = (): LayerSettings => ({
   yOffset: 0,
   renderStyle: DEFAULT_RENDER_STYLE,
   invert: false
-});
-
-type ChannelTrackState = {
-  opacity: number;
-  lineWidth: number;
-  visibility: Record<string, boolean>;
-  colorMode: TrackColorMode;
-};
-
-const createDefaultChannelTrackState = (): ChannelTrackState => ({
-  opacity: DEFAULT_TRACK_OPACITY,
-  lineWidth: DEFAULT_TRACK_LINE_WIDTH,
-  visibility: {},
-  colorMode: { type: 'random' }
 });
 
 type FollowedTrackState = {
@@ -2219,51 +2216,31 @@ useEffect(() => {
     return `${currentFrame} / ${volumeTimepointCount}`;
   }, [selectedIndex, volumeTimepointCount]);
 
-  const trackSummaryByChannel = useMemo(() => {
-    const summary = new Map<string, { total: number; visible: number }>();
-    for (const channel of channels) {
-      const tracksForChannel = parsedTracksByChannel.get(channel.id) ?? [];
-      const state = channelTrackStates[channel.id] ?? createDefaultChannelTrackState();
-      let visible = 0;
-      for (const track of tracksForChannel) {
-        if (state.visibility[track.id] ?? true) {
-          visible += 1;
-        }
-      }
-      summary.set(channel.id, { total: tracksForChannel.length, visible });
-    }
-    return summary;
-  }, [channels, channelTrackStates, parsedTracksByChannel]);
+  const trackChannelIds = useMemo(
+    () => deriveTrackChannelIds(channels, loadedChannelIds, channelTrackStates),
+    [channels, channelTrackStates, loadedChannelIds]
+  );
 
-  const trackVisibility = useMemo(() => {
-    const visibility: Record<string, boolean> = {};
-    for (const channel of channels) {
-      const tracksForChannel = parsedTracksByChannel.get(channel.id) ?? [];
-      const state = channelTrackStates[channel.id] ?? createDefaultChannelTrackState();
-      for (const track of tracksForChannel) {
-        visibility[track.id] = state.visibility[track.id] ?? true;
-      }
-    }
-    return visibility;
-  }, [channelTrackStates, channels, parsedTracksByChannel]);
+  const trackSummaryByChannel = useMemo(
+    () =>
+      computeTrackSummaryByChannel(trackChannelIds, parsedTracksByChannel, channelTrackStates),
+    [channelTrackStates, parsedTracksByChannel, trackChannelIds]
+  );
 
-  const trackOpacityByChannel = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const channel of channels) {
-      const state = channelTrackStates[channel.id] ?? createDefaultChannelTrackState();
-      map[channel.id] = state.opacity;
-    }
-    return map;
-  }, [channelTrackStates, channels]);
+  const trackVisibility = useMemo(
+    () => computeTrackVisibility(trackChannelIds, parsedTracksByChannel, channelTrackStates),
+    [channelTrackStates, parsedTracksByChannel, trackChannelIds]
+  );
 
-  const trackLineWidthByChannel = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const channel of channels) {
-      const state = channelTrackStates[channel.id] ?? createDefaultChannelTrackState();
-      map[channel.id] = state.lineWidth;
-    }
-    return map;
-  }, [channelTrackStates, channels]);
+  const trackOpacityByChannel = useMemo(
+    () => computeTrackOpacityByChannel(trackChannelIds, channelTrackStates),
+    [channelTrackStates, trackChannelIds]
+  );
+
+  const trackLineWidthByChannel = useMemo(
+    () => computeTrackLineWidthByChannel(trackChannelIds, channelTrackStates),
+    [channelTrackStates, trackChannelIds]
+  );
 
   const trackChannels = useMemo(() => {
     return loadedChannelIds.map((channelId) => ({
