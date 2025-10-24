@@ -11,8 +11,52 @@ npm run dev
 
 The development setup runs the Vite front-end over HTTPS (https://localhost:5173).
 Accept the self-signed certificate the first time you visit so browsers expose
-WebXR APIs during local testing. Set the `DEV_USE_HTTPS=false` environment
-variable before `npm run dev` if you need to fall back to HTTP.
+WebXR APIs during local testing.
+
+### HTTPS in development
+
+WebXR support requires a secure context. By default the dev server relies on
+`@vitejs/plugin-basic-ssl`, which generates a localhost-only certificate when
+`DEV_USE_HTTPS` is not set to `false`.
+
+If you need to access the viewer from another device on your LAN, provide your
+own certificate so that the browser trusts the HTTPS origin you use (for
+example `https://192.168.0.3:5173`). Point the dev server at your credentials
+with the following environment variables:
+
+| Variable | Description |
+| --- | --- |
+| `DEV_HTTPS_CERT_PATH` | Absolute or relative path to the certificate (`.crt` / `.pem`). |
+| `DEV_HTTPS_KEY_PATH` | Path to the matching private key file. |
+| `DEV_HTTPS_CA_PATH` | Optional bundle of intermediate CAs to serve (if required). |
+| `DEV_HTTPS_PASSPHRASE` | Optional passphrase for the private key. |
+
+Only the certificate and key paths are required. When both are provided the dev
+server uses them instead of the self-signed localhost certificate.
+
+#### Generating a LAN-friendly certificate with `mkcert`
+
+```bash
+mkcert -install
+mkcert 192.168.0.3 my-dev-box.local
+
+# On macOS / Linux shells
+DEV_HTTPS_CERT_PATH=./192.168.0.3+1.pem \
+DEV_HTTPS_KEY_PATH=./192.168.0.3+1-key.pem \
+npm run dev
+
+# On PowerShell (Windows)
+$env:DEV_HTTPS_CERT_PATH = ".\192.168.0.3+1.pem"
+$env:DEV_HTTPS_KEY_PATH = ".\192.168.0.3+1-key.pem"
+npm run dev
+```
+
+Trust the generated certificate on every device that will connect to the dev
+server. Browsers will then treat the origin as secure and unlock WebXR APIs.
+
+Set the `DEV_USE_HTTPS=false` environment variable before `npm run dev` only if
+you explicitly need to fall back to HTTP (for example when debugging a
+non-secure dependency that refuses HTTPS).
 Requests to `/api/collaboration` (including the `/ws` WebSocket endpoint) are
 proxied to the collaboration server on http://localhost:8080 so REST calls and
 socket upgrades share the browser origin during development. Keep `npm run
