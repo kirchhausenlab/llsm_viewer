@@ -43,7 +43,7 @@
 .front-page-card {
   width: 100%;
   max-width: min(1120px, 100%);
-  padding: 2.25rem 2.75rem;
+  padding: 2.25rem 2.75rem 3.5rem;
   border-radius: 1.25rem;
   background-color: rgba(12, 16, 24, 0.78);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -700,6 +700,7 @@
 .front-page-actions {
   display: flex;
   justify-content: center;
+  margin-top: 1.25rem;
 }
 
 .launch-viewer-button {
