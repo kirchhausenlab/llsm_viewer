@@ -2988,9 +2988,37 @@ function VolumeViewer({
       ctx.beginPath();
       ctx.rect(x + 12, y + 12, tabWidth - 24, tabHeight - 24);
       ctx.clip();
-      ctx.fillStyle = '#f3f6fc';
-      ctx.fillText(channel.name, x + tabWidth / 2, y + tabHeight / 2);
+      const labelMetrics = ctx.measureText(channel.name);
+      const labelWidth = Math.min(labelMetrics.width + 20, tabWidth - 24);
+      const labelHeight = VR_CHANNELS_FONT_SIZES.tab * 1.25;
+      const labelCenterX = x + tabWidth / 2;
+      const labelCenterY = y + tabHeight / 2;
+      const labelMinX = labelCenterX - labelWidth / 2;
+      const labelMaxX = labelCenterX + labelWidth / 2;
+      const labelMinY = labelCenterY - labelHeight / 2;
+      const labelMaxY = labelCenterY + labelHeight / 2;
+      const isLabelHover =
+        hud.hoverRegion &&
+        hud.hoverRegion.targetType === 'channels-visibility' &&
+        hud.hoverRegion.channelId === channel.id;
+
+      ctx.fillStyle = channel.visible ? '#f3f6fc' : 'rgba(243, 246, 252, 0.6)';
+      if (isLabelHover) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+      }
+      ctx.fillText(channel.name, labelCenterX, labelCenterY);
       ctx.restore();
+
+      if (!channel.visible) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(243, 246, 252, 0.7)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(labelMinX, labelCenterY);
+        ctx.lineTo(labelMaxX, labelCenterY);
+        ctx.stroke();
+        ctx.restore();
+      }
 
       const rectBounds = {
         minX: toPanelX(x),
@@ -2999,90 +3027,145 @@ function VolumeViewer({
         maxY: Math.max(toPanelY(y), toPanelY(y + tabHeight))
       };
       regions.push({ targetType: 'channels-tab', channelId: channel.id, bounds: rectBounds });
+
+      const labelBounds = {
+        minX: toPanelX(labelMinX),
+        maxX: toPanelX(labelMaxX),
+        minY: Math.min(toPanelY(labelMinY), toPanelY(labelMaxY)),
+        maxY: Math.max(toPanelY(labelMinY), toPanelY(labelMaxY))
+      };
+      regions.push({ targetType: 'channels-visibility', channelId: channel.id, bounds: labelBounds });
     }
 
     const totalTabHeight = totalRows * tabHeight + Math.max(0, totalRows - 1) * tabSpacingY;
     currentY += totalTabHeight + 36;
 
+    const selectedLayer =
+      activeChannel.layers.find((layer) => layer.key === activeChannel.activeLayerKey) ??
+      activeChannel.layers[0] ??
+      null;
+
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
 
-    const toggleSize = 44;
-    const toggleX = paddingX;
-    const toggleY = currentY;
-    drawRoundedRect(ctx, toggleX, toggleY, toggleSize, toggleSize, 10);
-    ctx.fillStyle = activeChannel.visible ? '#2b5fa6' : '#1d2734';
-    ctx.fill();
-    if (activeChannel.visible) {
-      ctx.strokeStyle = '#f3f6fc';
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.moveTo(toggleX + 10, toggleY + toggleSize / 2);
-      ctx.lineTo(toggleX + toggleSize / 2 - 4, toggleY + toggleSize - 10);
-      ctx.lineTo(toggleX + toggleSize - 8, toggleY + 12);
-      ctx.stroke();
-    }
-    if (hud.hoverRegion && hud.hoverRegion.targetType === 'channels-visibility' && hud.hoverRegion.channelId === activeChannel.id) {
-      ctx.save();
-      drawRoundedRect(ctx, toggleX, toggleY, toggleSize, toggleSize, 10);
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
+    if (selectedLayer) {
+      const renderStyleDisabled = !selectedLayer.hasData;
+      const invertDisabled = !selectedLayer.hasData || selectedLayer.isSegmentation;
+      const renderStyleActive = selectedLayer.settings.renderStyle === 1;
+      const invertActive = selectedLayer.settings.invert;
+      const actionButtonHeight = 60;
+      const actionButtonRadius = 16;
+      const actionSpacing = 24;
+      const switchWidth = 320;
+      const invertWidth = 320;
+      const resetWidth = 220;
+      const actionY = currentY;
+      const switchX = paddingX;
+      const invertX = switchX + switchWidth + actionSpacing;
+      const resetX = invertX + invertWidth + actionSpacing;
+
+      drawRoundedRect(ctx, switchX, actionY, switchWidth, actionButtonHeight, actionButtonRadius);
+      ctx.fillStyle = renderStyleDisabled ? 'rgba(45, 60, 74, 0.6)' : renderStyleActive ? '#2b5fa6' : '#2b3340';
       ctx.fill();
-      ctx.restore();
-    }
-    ctx.fillStyle = '#dce3f1';
-    ctx.font = vrChannelsFont('500', VR_CHANNELS_FONT_SIZES.label);
-    ctx.fillText('Show channel', toggleX + toggleSize + 20, toggleY + 4);
+      if (
+        hud.hoverRegion &&
+        hud.hoverRegion.targetType === 'channels-render-style' &&
+        hud.hoverRegion.channelId === activeChannel.id &&
+        hud.hoverRegion.layerKey === selectedLayer.key
+      ) {
+        ctx.save();
+        drawRoundedRect(ctx, switchX, actionY, switchWidth, actionButtonHeight, actionButtonRadius);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.fillStyle = renderStyleDisabled ? '#7b8795' : '#f3f6fc';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = vrChannelsFont('600', VR_CHANNELS_FONT_SIZES.small);
+      ctx.fillText('Switch render style', switchX + switchWidth / 2, actionY + actionButtonHeight / 2);
 
-    const visibilityBounds = {
-      minX: toPanelX(toggleX),
-      maxX: toPanelX(toggleX + toggleSize),
-      minY: Math.min(toPanelY(toggleY), toPanelY(toggleY + toggleSize)),
-      maxY: Math.max(toPanelY(toggleY), toPanelY(toggleY + toggleSize))
-    };
-    regions.push({
-      targetType: 'channels-visibility',
-      channelId: activeChannel.id,
-      bounds: visibilityBounds,
-      disabled: false
-    });
-
-    const resetWidth = 180;
-    const resetHeight = 52;
-    const resetX = canvasWidth - paddingX - resetWidth;
-    const resetY = toggleY - 4;
-    drawRoundedRect(ctx, resetX, resetY, resetWidth, resetHeight, 14);
-    const resetDisabled = activeChannel.layers.length === 0;
-    ctx.fillStyle = resetDisabled ? 'rgba(45, 60, 74, 0.6)' : '#2b3340';
-    ctx.fill();
-    if (hud.hoverRegion && hud.hoverRegion.targetType === 'channels-reset' && hud.hoverRegion.channelId === activeChannel.id) {
-      ctx.save();
-      drawRoundedRect(ctx, resetX, resetY, resetWidth, resetHeight, 14);
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+      drawRoundedRect(ctx, invertX, actionY, invertWidth, actionButtonHeight, actionButtonRadius);
+      ctx.fillStyle = invertDisabled ? 'rgba(45, 60, 74, 0.6)' : invertActive ? '#2b5fa6' : '#2b3340';
       ctx.fill();
-      ctx.restore();
+      if (
+        hud.hoverRegion &&
+        hud.hoverRegion.targetType === 'channels-invert' &&
+        hud.hoverRegion.channelId === activeChannel.id &&
+        hud.hoverRegion.layerKey === selectedLayer.key
+      ) {
+        ctx.save();
+        drawRoundedRect(ctx, invertX, actionY, invertWidth, actionButtonHeight, actionButtonRadius);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.fillStyle = invertDisabled ? '#7b8795' : '#f3f6fc';
+      ctx.fillText('Invert LUT', invertX + invertWidth / 2, actionY + actionButtonHeight / 2);
+
+      const resetDisabled = activeChannel.layers.length === 0;
+      drawRoundedRect(ctx, resetX, actionY, resetWidth, actionButtonHeight, actionButtonRadius);
+      ctx.fillStyle = resetDisabled ? 'rgba(45, 60, 74, 0.6)' : '#2b3340';
+      ctx.fill();
+      if (
+        hud.hoverRegion &&
+        hud.hoverRegion.targetType === 'channels-reset' &&
+        hud.hoverRegion.channelId === activeChannel.id
+      ) {
+        ctx.save();
+        drawRoundedRect(ctx, resetX, actionY, resetWidth, actionButtonHeight, actionButtonRadius);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.fillStyle = resetDisabled ? '#7b8795' : '#f3f6fc';
+      ctx.fillText('Reset sliders', resetX + resetWidth / 2, actionY + actionButtonHeight / 2);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+
+      const switchBounds = {
+        minX: toPanelX(switchX),
+        maxX: toPanelX(switchX + switchWidth),
+        minY: Math.min(toPanelY(actionY), toPanelY(actionY + actionButtonHeight)),
+        maxY: Math.max(toPanelY(actionY), toPanelY(actionY + actionButtonHeight))
+      };
+      regions.push({
+        targetType: 'channels-render-style',
+        channelId: activeChannel.id,
+        layerKey: selectedLayer.key,
+        bounds: switchBounds,
+        disabled: renderStyleDisabled
+      });
+
+      const invertBounds = {
+        minX: toPanelX(invertX),
+        maxX: toPanelX(invertX + invertWidth),
+        minY: Math.min(toPanelY(actionY), toPanelY(actionY + actionButtonHeight)),
+        maxY: Math.max(toPanelY(actionY), toPanelY(actionY + actionButtonHeight))
+      };
+      regions.push({
+        targetType: 'channels-invert',
+        channelId: activeChannel.id,
+        layerKey: selectedLayer.key,
+        bounds: invertBounds,
+        disabled: invertDisabled
+      });
+
+      const resetBounds = {
+        minX: toPanelX(resetX),
+        maxX: toPanelX(resetX + resetWidth),
+        minY: Math.min(toPanelY(actionY), toPanelY(actionY + actionButtonHeight)),
+        maxY: Math.max(toPanelY(actionY), toPanelY(actionButtonHeight))
+      };
+      regions.push({
+        targetType: 'channels-reset',
+        channelId: activeChannel.id,
+        bounds: resetBounds,
+        disabled: resetDisabled
+      });
+
+      currentY += actionButtonHeight + 32;
     }
-    ctx.fillStyle = resetDisabled ? '#7b8795' : '#f3f6fc';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = vrChannelsFont('600', VR_CHANNELS_FONT_SIZES.small);
-    ctx.fillText('Reset sliders', resetX + resetWidth / 2, resetY + resetHeight / 2);
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-
-    const resetBounds = {
-      minX: toPanelX(resetX),
-      maxX: toPanelX(resetX + resetWidth),
-      minY: Math.min(toPanelY(resetY), toPanelY(resetY + resetHeight)),
-      maxY: Math.max(toPanelY(resetY), toPanelY(resetY + resetHeight))
-    };
-    regions.push({
-      targetType: 'channels-reset',
-      channelId: activeChannel.id,
-      bounds: resetBounds,
-      disabled: resetDisabled
-    });
-
-    currentY += toggleSize + 32;
 
     ctx.fillStyle = '#9fb2c8';
     ctx.font = vrChannelsFont('500', VR_CHANNELS_FONT_SIZES.label);
@@ -3131,144 +3214,7 @@ function VolumeViewer({
       currentY += layerButtonHeight + 18;
     }
 
-    const selectedLayer =
-      activeChannel.layers.find((layer) => layer.key === activeChannel.activeLayerKey) ??
-      activeChannel.layers[0] ??
-      null;
-
     if (selectedLayer) {
-      const renderStyleDisabled = !selectedLayer.hasData;
-      const currentStyleLabel =
-        selectedLayer.settings.renderStyle === 1 ? 'Iso surface' : 'Maximum intensity';
-      const toggleLabel =
-        selectedLayer.settings.renderStyle === 1
-          ? 'Switch to maximum intensity'
-          : 'Switch to iso surface';
-      const renderStyleBoxWidth = canvasWidth - paddingX * 2;
-      const renderStyleBoxHeight = 78;
-      const renderStyleX = paddingX;
-      const renderStyleY = currentY;
-
-      drawRoundedRect(ctx, renderStyleX, renderStyleY, renderStyleBoxWidth, renderStyleBoxHeight, 16);
-      ctx.fillStyle = '#1f2735';
-      ctx.fill();
-
-      if (
-        hud.hoverRegion &&
-        hud.hoverRegion.targetType === 'channels-render-style' &&
-        hud.hoverRegion.channelId === activeChannel.id &&
-        hud.hoverRegion.layerKey === selectedLayer.key
-      ) {
-        ctx.save();
-        drawRoundedRect(ctx, renderStyleX, renderStyleY, renderStyleBoxWidth, renderStyleBoxHeight, 16);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
-        ctx.fill();
-        ctx.restore();
-      }
-
-      ctx.fillStyle = '#9fb2c8';
-      ctx.font = vrChannelsFont('500', VR_CHANNELS_FONT_SIZES.body);
-      ctx.fillText('Render style', renderStyleX + 24, renderStyleY + 18);
-      ctx.fillStyle = '#f3f6fc';
-      ctx.font = vrChannelsFont('600', VR_CHANNELS_FONT_SIZES.value);
-      ctx.fillText(currentStyleLabel, renderStyleX + 24, renderStyleY + 44);
-
-      const pillWidth = 240;
-      const pillHeight = 44;
-      const pillX = renderStyleX + renderStyleBoxWidth - pillWidth - 24;
-      const pillY = renderStyleY + (renderStyleBoxHeight - pillHeight) / 2;
-      drawRoundedRect(ctx, pillX, pillY, pillWidth, pillHeight, 22);
-      ctx.fillStyle = renderStyleDisabled ? 'rgba(45, 60, 74, 0.65)' : '#2b5fa6';
-      ctx.fill();
-      ctx.fillStyle = renderStyleDisabled ? '#7b8795' : '#f3f6fc';
-      ctx.font = vrChannelsFont('600', VR_CHANNELS_FONT_SIZES.small);
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(toggleLabel, pillX + pillWidth / 2, pillY + pillHeight / 2);
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-
-      const renderStyleBounds = {
-        minX: toPanelX(renderStyleX),
-        maxX: toPanelX(renderStyleX + renderStyleBoxWidth),
-        minY: Math.min(toPanelY(renderStyleY), toPanelY(renderStyleY + renderStyleBoxHeight)),
-        maxY: Math.max(toPanelY(renderStyleY), toPanelY(renderStyleY + renderStyleBoxHeight))
-      };
-      regions.push({
-        targetType: 'channels-render-style',
-        channelId: activeChannel.id,
-        layerKey: selectedLayer.key,
-        bounds: renderStyleBounds,
-        disabled: renderStyleDisabled
-      });
-
-      currentY += renderStyleBoxHeight + 28;
-
-      const invertDisabled = !selectedLayer.hasData || selectedLayer.isSegmentation;
-      const invertBoxWidth = canvasWidth - paddingX * 2;
-      const invertBoxHeight = 78;
-      const invertX = paddingX;
-      const invertY = currentY;
-      drawRoundedRect(ctx, invertX, invertY, invertBoxWidth, invertBoxHeight, 16);
-      ctx.fillStyle = '#1f2735';
-      ctx.fill();
-
-      if (
-        hud.hoverRegion &&
-        hud.hoverRegion.targetType === 'channels-invert' &&
-        hud.hoverRegion.channelId === activeChannel.id &&
-        hud.hoverRegion.layerKey === selectedLayer.key
-      ) {
-        ctx.save();
-        drawRoundedRect(ctx, invertX, invertY, invertBoxWidth, invertBoxHeight, 16);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
-        ctx.fill();
-        ctx.restore();
-      }
-
-      ctx.fillStyle = '#9fb2c8';
-      ctx.font = vrChannelsFont('500', VR_CHANNELS_FONT_SIZES.body);
-      ctx.fillText('Invert LUT', invertX + 24, invertY + 18);
-      ctx.fillStyle = '#f3f6fc';
-      ctx.font = vrChannelsFont('600', VR_CHANNELS_FONT_SIZES.value);
-      ctx.fillText(selectedLayer.settings.invert ? 'Enabled' : 'Disabled', invertX + 24, invertY + 44);
-
-      const invertPillWidth = 240;
-      const invertPillHeight = 44;
-      const invertPillX = invertX + invertBoxWidth - invertPillWidth - 24;
-      const invertPillY = invertY + (invertBoxHeight - invertPillHeight) / 2;
-      drawRoundedRect(ctx, invertPillX, invertPillY, invertPillWidth, invertPillHeight, 22);
-      const invertActive = selectedLayer.settings.invert;
-      ctx.fillStyle = invertDisabled
-        ? 'rgba(45, 60, 74, 0.65)'
-        : invertActive
-        ? '#2b5fa6'
-        : '#1f6fbf';
-      ctx.fill();
-      ctx.fillStyle = invertDisabled ? '#7b8795' : '#f3f6fc';
-      ctx.font = vrChannelsFont('600', VR_CHANNELS_FONT_SIZES.small);
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(invertActive ? 'Show normal LUT' : 'Invert LUT', invertPillX + invertPillWidth / 2, invertPillY + invertPillHeight / 2);
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-
-      const invertBounds = {
-        minX: toPanelX(invertX),
-        maxX: toPanelX(invertX + invertBoxWidth),
-        minY: Math.min(toPanelY(invertY), toPanelY(invertY + invertBoxHeight)),
-        maxY: Math.max(toPanelY(invertY), toPanelY(invertY + invertBoxHeight))
-      };
-      regions.push({
-        targetType: 'channels-invert',
-        channelId: activeChannel.id,
-        layerKey: selectedLayer.key,
-        bounds: invertBounds,
-        disabled: invertDisabled
-      });
-
-      currentY += invertBoxHeight + 28;
-
       const sliderDefs: Array<{
         key: VrChannelsSliderKey;
         label: string;
@@ -3304,8 +3250,8 @@ function VolumeViewer({
           key: 'brightness',
           label: 'Brightness',
           value: selectedLayer.settings.brightness,
-          min: -0.5,
-          max: 0.5,
+          min: -1,
+          max: 1,
           step: 0.01,
           formatter: (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(2)}`,
           disabled: !selectedLayer.hasData
