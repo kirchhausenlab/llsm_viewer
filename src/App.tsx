@@ -1601,6 +1601,11 @@ const parsedTracksByChannel = useMemo(() => {
     };
   }, [channelActiveLayer, channelNameMap, channelTrackStates, channelVisibility, followedTrack, isPlaying, layerSettings, layers, loadedChannelIds, parsedTracks, selectedIndex, sliceIndex, viewerMode, fps]);
 
+  const buildHydratedDatasetRef = useRef(buildHydratedDataset);
+  useEffect(() => {
+    buildHydratedDatasetRef.current = buildHydratedDataset;
+  }, [buildHydratedDataset]);
+
 
 const applyHydratedDataset = useCallback(
   (dataset: HydratedDataset) => {
@@ -1676,27 +1681,6 @@ const applyHydratedDataset = useCallback(
   },
   [setChannelActiveLayer, setChannelTrackStates, setChannelVisibility, setError, setFollowedTrack, setFps, setIsPlaying, setIsViewerLaunched, setIsLaunchingViewer, setLayerSettings, setLoadProgress, setLoadedCount, setSelectedIndex, setStatus, setExpectedVolumeCount, setDatasetError, setSharedChannelNameMap, setSharedTrackDefinitions, setSliceIndex, setViewerMode]
 );
-
-
-const startHostingSession = useCallback(async () => {
-  const dataset = buildHydratedDataset();
-  if (!dataset) {
-    setDatasetError('Load a dataset before starting a collaborative session.');
-    return;
-  }
-  try {
-    const client = getCollaborationClient();
-    setCollaborationState({ status: 'preparing', role: 'host' });
-    const summary = await client.createSession(dataset);
-    const room = summary.roomCode.toUpperCase();
-    setCollaborationRoomCode(room);
-    setCollaborationState({ status: 'connecting', role: 'host', roomCode: room });
-    client.connect(room, 'host');
-  } catch (error) {
-    console.error('Failed to create collaboration session', error);
-    setCollaborationState({ status: 'error', message: error instanceof Error ? error.message : 'Failed to start session.' });
-  }
-}, [buildHydratedDataset, getCollaborationClient, setDatasetError]);
 
 
 const handleCollaborationModeChange = useCallback(
@@ -2747,6 +2731,68 @@ const collaborationParticipantSnapshots = useMemo(() => {
       setIsLaunchingViewer(false);
     }
   }, [channels, channelValidationList, isLaunchingViewer, loadSelectedDataset]);
+
+  const startHostingSession = useCallback(async () => {
+    setDatasetError(null);
+
+    const hasAnyLayers = channels.some((channel) => channel.layers.some((layer) => layer.files.length > 0));
+    if (!hasAnyLayers) {
+      setDatasetError('Add a volume before starting a collaborative session.');
+      return;
+    }
+
+    const blockingChannel = channelValidationList.find((entry) => entry.errors.length > 0);
+    if (blockingChannel) {
+      const rawName = channels.find((channel) => channel.id === blockingChannel.channelId)?.name ?? '';
+      const channelName = rawName.trim() || 'this channel';
+      setDatasetError(`Resolve the errors in ${channelName} before starting a collaborative session.`);
+      return;
+    }
+
+    const hasLoadingTracks = channels.some((channel) => channel.trackStatus === 'loading');
+    if (hasLoadingTracks) {
+      setDatasetError('Wait for tracks to finish loading before starting a collaborative session.');
+      return;
+    }
+
+    if (layers.length === 0) {
+      setIsLaunchingViewer(true);
+      try {
+        const datasetLoaded = await loadSelectedDataset();
+        if (!datasetLoaded) {
+          return;
+        }
+        await new Promise<void>((resolve) => {
+          if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+            window.requestAnimationFrame(() => resolve());
+          } else {
+            setTimeout(resolve, 0);
+          }
+        });
+      } finally {
+        setIsLaunchingViewer(false);
+      }
+    }
+
+    const datasetBuilder = buildHydratedDatasetRef.current;
+    const dataset = datasetBuilder();
+    if (!dataset) {
+      setDatasetError('Load a dataset before starting a collaborative session.');
+      return;
+    }
+    try {
+      const client = getCollaborationClient();
+      setCollaborationState({ status: 'preparing', role: 'host' });
+      const summary = await client.createSession(dataset);
+      const room = summary.roomCode.toUpperCase();
+      setCollaborationRoomCode(room);
+      setCollaborationState({ status: 'connecting', role: 'host', roomCode: room });
+      client.connect(room, 'host');
+    } catch (error) {
+      console.error('Failed to create collaboration session', error);
+      setCollaborationState({ status: 'error', message: error instanceof Error ? error.message : 'Failed to start session.' });
+    }
+  }, [buildHydratedDatasetRef, channels, channelValidationList, getCollaborationClient, layers.length, loadSelectedDataset]);
 
   const handleChannelVisibilityToggle = useCallback((channelId: string) => {
     setChannelVisibility((current) => {
