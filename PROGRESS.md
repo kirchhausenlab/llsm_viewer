@@ -385,3 +385,7 @@ d centered the front-page card in the viewport.
 
 ## GitHub Pages artifact reliability
 - Updated the `Deploy static site` workflow to configure Pages before uploading, explicitly name the artifact, and fail fast when the build output is missing so deployments always provide the `github-pages` package required by `actions/deploy-pages@v4`.
+
+## Collaborative track state hydration
+- Added shared helpers to derive per-channel track visibility summaries, opacity, and line width so hydrated datasets honor saved settings even without local channel metadata.
+- Extended the automated test suite with a collaboration-focused regression that hydrates non-default track settings and verifies the derived guest state matches the persisted values.
