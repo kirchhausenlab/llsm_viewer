@@ -7,6 +7,8 @@ import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory';
 import type { NormalizedVolume } from '../volumeProcessing';
+import type { ControllerState as CollaborationControllerState, ParticipantPose, ParticipantSnapshot } from '../collaboration/types';
+import { applyParticipantPoseToAvatar, createRemoteAvatar, hashStringToHue } from './collaborationAvatars';
 import { VolumeRenderShader } from '../shaders/volumeRenderShader';
 import { SliceRenderShader } from '../shaders/sliceRenderShader';
 import { getCachedTextureData } from '../textureCache';
@@ -117,6 +119,16 @@ type VolumeViewerProps = {
   ) => void;
   onVrSessionStarted?: () => void;
   onVrSessionEnded?: () => void;
+  collaboration?: {
+    isActive: boolean;
+    participantId: string | null;
+    participants: ParticipantSnapshot[];
+    onPoseUpdate: (
+      head: ParticipantPose | null,
+      left: CollaborationControllerState | null,
+      right: CollaborationControllerState | null
+    ) => void;
+  } | null;
 };
 
 type VolumeResources = {
@@ -136,6 +148,8 @@ function getExpectedSliceBufferLength(volume: NormalizedVolume) {
   const pixelCount = volume.width * volume.height;
   return pixelCount * 4;
 }
+const tempVector = new THREE.Vector3();
+const tempQuaternion = new THREE.Quaternion();
 
 function prepareSliceTexture(volume: NormalizedVolume, sliceIndex: number, existingBuffer: Uint8Array | null) {
   const { width, height, depth, channels, normalized } = volume;
@@ -844,7 +858,8 @@ function VolumeViewer({
   onTrackFollowRequest,
   onRegisterVrSession,
   onVrSessionStarted,
-  onVrSessionEnded
+  onVrSessionEnded,
+  collaboration
 }: VolumeViewerProps) {
   const vrLog = (...args: Parameters<typeof console.debug>) => {
     if (import.meta.env?.DEV) {
@@ -854,6 +869,9 @@ function VolumeViewer({
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const remoteAvatarRootRef = useRef<THREE.Group | null>(null);
+  const remoteAvatarsRef = useRef<Map<string, THREE.Group>>(new Map());
+  const lastPoseSentRef = useRef(0);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
@@ -866,6 +884,56 @@ function VolumeViewer({
     target: THREE.Vector3;
   } | null>(null);
   const pointerStateRef = useRef<PointerState | null>(null);
+
+
+useEffect(() => {
+  const scene = sceneRef.current;
+  if (!scene) {
+    return;
+  }
+  let root = remoteAvatarRootRef.current;
+  if (!root) {
+    root = new THREE.Group();
+    root.name = 'collaboration-avatars';
+    remoteAvatarRootRef.current = root;
+    scene.add(root);
+  }
+  const avatars = remoteAvatarsRef.current;
+  const activeIds = new Set<string>();
+  const participants = collaboration?.participants ?? [];
+  for (const participant of participants) {
+    if (collaboration?.participantId && participant.id === collaboration.participantId) {
+      continue;
+    }
+    activeIds.add(participant.id);
+    if (!avatars.has(participant.id)) {
+      const color = new THREE.Color();
+      color.setHSL(hashStringToHue(participant.id) / 360, 0.6, 0.6);
+      const group = createRemoteAvatar(participant.displayName, color.getHex());
+      avatars.set(participant.id, group);
+      root.add(group);
+    }
+  }
+  for (const [participantId, group] of avatars) {
+    if (!activeIds.has(participantId)) {
+      if (group.parent) {
+        group.parent.remove(group);
+      }
+      avatars.delete(participantId);
+    }
+  }
+}, [collaboration?.participantId, collaboration?.participants, sceneRef.current]);
+
+useEffect(() => {
+  return () => {
+    const root = remoteAvatarRootRef.current;
+    if (root && root.parent) {
+      root.parent.remove(root);
+    }
+    remoteAvatarsRef.current.clear();
+  };
+}, []);
+
   const movementStateRef = useRef<MovementState>({
     moveForward: false,
     moveBackward: false,
@@ -7546,7 +7614,55 @@ function VolumeViewer({
         vrLog('[VR] render tick', renderSummary);
       }
       lastRenderTickSummary = renderSummary;
-      renderer.render(scene, camera);
+
+if (collaboration?.isActive) {
+  const participants = collaboration.participants ?? [];
+  const avatars = remoteAvatarsRef.current;
+  for (const participant of participants) {
+    if (collaboration.participantId && participant.id === collaboration.participantId) {
+      continue;
+    }
+    const avatar = avatars.get(participant.id);
+    if (!avatar) {
+      continue;
+    }
+    applyParticipantPoseToAvatar(avatar, participant);
+  }
+  const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  if (now - lastPoseSentRef.current > 33) {
+    const headPosition = camera.getWorldPosition(tempVector);
+    const headQuaternion = camera.getWorldQuaternion(tempQuaternion);
+    const headPose: ParticipantPose = {
+      position: [headPosition.x, headPosition.y, headPosition.z],
+      quaternion: [headQuaternion.x, headQuaternion.y, headQuaternion.z, headQuaternion.w]
+    };
+    const controllers = controllersRef.current;
+    const leftEntry = controllers[0];
+    const rightEntry = controllers[1];
+    const toControllerState = (
+      entry: ControllerEntry | undefined
+    ): CollaborationControllerState | null => {
+      if (!entry || !entry.isConnected) {
+        return null;
+      }
+      const source = entry.grip ?? entry.controller;
+      const position = source.getWorldPosition(new THREE.Vector3());
+      const quaternion = source.getWorldQuaternion(new THREE.Quaternion());
+      const buttons = entry.gamepad?.buttons ?? [];
+      return {
+        position: [position.x, position.y, position.z],
+        quaternion: [quaternion.x, quaternion.y, quaternion.z, quaternion.w],
+        triggerPressed: Boolean(buttons[0]?.pressed),
+        squeezePressed: Boolean(buttons[1]?.pressed)
+      };
+    };
+    const leftState = toControllerState(leftEntry);
+    const rightState = toControllerState(rightEntry);
+    collaboration.onPoseUpdate?.(headPose, leftState, rightState);
+    lastPoseSentRef.current = now;
+  }
+}
+renderer.render(scene, camera);
     };
     renderer.setAnimationLoop(renderLoop);
 

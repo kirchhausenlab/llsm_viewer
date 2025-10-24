@@ -28,6 +28,10 @@ import {
   type DropboxAppKeySource
 } from './integrations/dropbox';
 import './App.css';
+import { detectEnvironmentMode, setEnvironmentOverride, type EnvironmentMode } from './utils/environment';
+import { CollaborationClient } from './collaboration/client';
+import type { HydratedDataset } from './collaboration/serialization';
+import type { ControllerState, ParticipantPose, ParticipantSnapshot, SerializedViewerState } from './collaboration/types';
 
 const DEFAULT_CONTRAST = 1;
 const DEFAULT_GAMMA = 1;
@@ -42,6 +46,8 @@ const PLAYBACK_WINDOW_WIDTH = 420;
 const TRACK_WINDOW_WIDTH = 340;
 const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
 const WARNING_WINDOW_WIDTH = 360;
+const COLLAB_DISPLAY_NAME_KEY = 'llsm-viewer:collab-name';
+const DEFAULT_DISPLAY_NAME = 'Researcher';
 
 const createSegmentationSeed = (layerKey: string, volumeIndex: number): number => {
   let hash = 2166136261;
@@ -122,6 +128,17 @@ type ChannelSource = {
   trackError: string | null;
   trackEntries: string[][];
 };
+
+type CollaborationUiMode = 'standalone' | 'host' | 'guest';
+
+type CollaborationConnectionState =
+  | { status: 'idle' }
+  | { status: 'disabled' }
+  | { status: 'preparing'; role: 'host' | 'guest' }
+  | { status: 'connecting'; role: 'host' | 'guest'; roomCode: string }
+  | { status: 'waiting-for-dataset'; roomCode: string }
+  | { status: 'ready'; roomCode: string }
+  | { status: 'error'; message: string };
 
 const getChannelLayerSummary = (channel: ChannelSource): string => {
   if (channel.layers.length === 0) {
@@ -934,6 +951,41 @@ function ChannelCard({
 
 function App() {
   const [channels, setChannels] = useState<ChannelSource[]>([]);
+  const [environmentMode, setEnvironmentMode] = useState<EnvironmentMode>('external');
+  const [collaborationMode, setCollaborationMode] = useState<CollaborationUiMode>('standalone');
+  const [collaborationState, setCollaborationState] = useState<CollaborationConnectionState>({ status: 'idle' });
+  const [collaborationRoomCode, setCollaborationRoomCode] = useState('');
+  const [collaborationDisplayName, setCollaborationDisplayName] = useState(() => {
+    if (typeof window === 'undefined') {
+      return DEFAULT_DISPLAY_NAME;
+    }
+    try {
+      const stored = window.localStorage.getItem(COLLAB_DISPLAY_NAME_KEY);
+      return stored && stored.trim() ? stored.trim() : DEFAULT_DISPLAY_NAME;
+    } catch (error) {
+      console.warn('Failed to read collaboration display name', error);
+      return DEFAULT_DISPLAY_NAME;
+    }
+  });
+  const [collaborationParticipants, setCollaborationParticipants] = useState<ParticipantSnapshot[]>([]);
+  const [remoteParticipantPoses, setRemoteParticipantPoses] = useState<Record<string, ParticipantSnapshot>>({});
+  const [sharedTrackDefinitions, setSharedTrackDefinitions] = useState<TrackDefinition[] | null>(null);
+  const [sharedChannelNameMap, setSharedChannelNameMap] = useState<Record<string, string>>({});
+  const collaborationClientRef = useRef<CollaborationClient | null>(null);
+  const collaborationParticipantIdRef = useRef<string | null>(null);
+  const lastSentViewerStateRef = useRef<string | null>(null);
+  const isApplyingRemoteStateRef = useRef(false);
+
+  const getCollaborationClient = useCallback(() => {
+    let client = collaborationClientRef.current;
+    if (!client) {
+      client = new CollaborationClient({ displayName: collaborationDisplayName });
+      collaborationClientRef.current = client;
+    } else {
+      client.setDisplayName(collaborationDisplayName);
+    }
+    return client;
+  }, [collaborationDisplayName]);
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [datasetError, setDatasetError] = useState<string | null>(null);
@@ -978,6 +1030,35 @@ function App() {
   const [trackWindowInitialPosition, setTrackWindowInitialPosition] = useState<{ x: number; y: number }>(
     () => ({ x: WINDOW_MARGIN, y: WINDOW_MARGIN })
   );
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      window.localStorage.setItem(COLLAB_DISPLAY_NAME_KEY, collaborationDisplayName);
+    } catch (error) {
+      console.warn('Failed to persist collaboration display name', error);
+    }
+    getCollaborationClient();
+  }, [collaborationDisplayName, getCollaborationClient]);
+
+  useEffect(() => {
+    const detection = detectEnvironmentMode();
+    setEnvironmentMode(detection.mode);
+    if (detection.mode !== 'lan') {
+      setCollaborationMode('standalone');
+      setCollaborationState({ status: 'disabled' });
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      const client = collaborationClientRef.current;
+      if (client) {
+        client.disconnect();
+      }
+    };
+  }, []);
   const computeTrackWindowDefaultPosition = useCallback(() => {
     if (typeof window === 'undefined') {
       return { x: WINDOW_MARGIN, y: WINDOW_MARGIN };
@@ -1283,8 +1364,13 @@ function App() {
     for (const channel of channels) {
       map.set(channel.id, channel.name.trim() || 'Untitled channel');
     }
+    for (const [channelId, name] of Object.entries(sharedChannelNameMap)) {
+      if (!map.has(channelId)) {
+        map.set(channelId, name || 'Untitled channel');
+      }
+    }
     return map;
-  }, [channels]);
+  }, [channels, sharedChannelNameMap]);
   const channelLayersMap = useMemo(() => {
     const map = new Map<string, LoadedLayer[]>();
     for (const layer of layers) {
@@ -1308,102 +1394,118 @@ function App() {
     }
     return order;
   }, [layers]);
-  const parsedTracksByChannel = useMemo(() => {
-    const map = new Map<string, TrackDefinition[]>();
 
-    for (const channel of channels) {
-      const entries = channel.trackEntries;
-      if (entries.length === 0) {
-        map.set(channel.id, []);
+const parsedTracksByChannel = useMemo(() => {
+  const map = new Map<string, TrackDefinition[]>();
+
+  if (sharedTrackDefinitions) {
+    for (const track of sharedTrackDefinitions) {
+      const collection = map.get(track.channelId);
+      if (collection) {
+        collection.push(track);
+      } else {
+        map.set(track.channelId, [track]);
+      }
+    }
+    return map;
+  }
+
+  for (const channel of channels) {
+    const entries = channel.trackEntries;
+    if (entries.length === 0) {
+      map.set(channel.id, []);
+      continue;
+    }
+
+    const trackMap = new Map<number, TrackPoint[]>();
+    let maxTimeValue = -Infinity;
+
+    for (const row of entries) {
+      if (row.length < 6) {
         continue;
       }
 
-      const trackMap = new Map<number, TrackPoint[]>();
-      let maxTimeValue = -Infinity;
+      const rawId = Number(row[0]);
+      const initialTime = Number(row[1]);
+      const deltaTime = Number(row[2]);
+      const x = Number(row[3]);
+      const y = Number(row[4]);
+      const z = Number(row[5]);
 
-      for (const row of entries) {
-        if (row.length < 6) {
-          continue;
-        }
-
-        const rawId = Number(row[0]);
-        const initialTime = Number(row[1]);
-        const deltaTime = Number(row[2]);
-        const x = Number(row[3]);
-        const y = Number(row[4]);
-        const z = Number(row[5]);
-
-        if (
-          !Number.isFinite(rawId) ||
-          !Number.isFinite(initialTime) ||
-          !Number.isFinite(deltaTime) ||
-          !Number.isFinite(x) ||
-          !Number.isFinite(y) ||
-          !Number.isFinite(z)
-        ) {
-          continue;
-        }
-
-        const id = Math.trunc(rawId);
-        const time = initialTime + deltaTime;
-        if (time > maxTimeValue) {
-          maxTimeValue = time;
-        }
-
-        const normalizedTime = Math.max(0, time - 1);
-        const point: TrackPoint = { time: normalizedTime, x, y, z: -z };
-        const existing = trackMap.get(id);
-        if (existing) {
-          existing.push(point);
-        } else {
-          trackMap.set(id, [point]);
-        }
+      if (
+        !Number.isFinite(rawId) ||
+        !Number.isFinite(initialTime) ||
+        !Number.isFinite(deltaTime) ||
+        !Number.isFinite(x) ||
+        !Number.isFinite(y) ||
+        !Number.isFinite(z)
+      ) {
+        continue;
       }
 
-      const datasetTimepointCount = Number.isFinite(maxTimeValue) ? Math.max(0, Math.trunc(maxTimeValue)) : 0;
-      const channelName = channel.name.trim() || 'Untitled channel';
-      const parsed: TrackDefinition[] = [];
+      const id = Math.trunc(rawId);
+      const time = initialTime + deltaTime;
+      if (time > maxTimeValue) {
+        maxTimeValue = time;
+      }
 
-      const sortedEntries = Array.from(trackMap.entries()).sort((a, b) => a[0] - b[0]);
-      sortedEntries.forEach(([sourceTrackId, points], index) => {
-        if (points.length === 0) {
-          return;
-        }
-
-        const sortedPoints = [...points].sort((a, b) => a.time - b.time);
-        const uniqueTimeCount = new Set(sortedPoints.map((point) => point.time)).size;
-        const offset = Math.max(0, datasetTimepointCount - uniqueTimeCount);
-        const adjustedPoints = sortedPoints.map<TrackPoint>((point) => ({
-          time: point.time + offset,
-          x: point.x,
-          y: point.y,
-          z: point.z
-        }));
-
-        parsed.push({
-          id: `${channel.id}:${sourceTrackId}`,
-          channelId: channel.id,
-          channelName,
-          trackNumber: index + 1,
-          sourceTrackId,
-          points: adjustedPoints
-        });
-      });
-
-      map.set(channel.id, parsed);
+      const normalizedTime = Math.max(0, time - 1);
+      const point: TrackPoint = { time: normalizedTime, x, y, z: -z };
+      const existing = trackMap.get(id);
+      if (existing) {
+        existing.push(point);
+      } else {
+        trackMap.set(id, [point]);
+      }
     }
 
-    return map;
-  }, [channels]);
+    const datasetTimepointCount = Number.isFinite(maxTimeValue) ? Math.max(0, Math.trunc(maxTimeValue)) : 0;
+    const channelName = channel.name.trim() || 'Untitled channel';
+    const parsed: TrackDefinition[] = [];
+
+    const sortedEntries = Array.from(trackMap.entries()).sort((a, b) => a[0] - b[0]);
+    sortedEntries.forEach(([sourceTrackId, points], index) => {
+      if (points.length === 0) {
+        return;
+      }
+
+      const sortedPoints = [...points].sort((a, b) => a.time - b.time);
+      const uniqueTimeCount = new Set(sortedPoints.map((point) => point.time)).size;
+      const offset = Math.max(0, datasetTimepointCount - uniqueTimeCount);
+      const adjustedPoints = sortedPoints.map<TrackPoint>((point) => ({
+        time: point.time + offset,
+        x: point.x,
+        y: point.y,
+        z: point.z
+      }));
+
+      parsed.push({
+        id: `${channel.id}:${sourceTrackId}`,
+        channelId: channel.id,
+        channelName,
+        trackNumber: index + 1,
+        sourceTrackId,
+        points: adjustedPoints
+      });
+    });
+
+    map.set(channel.id, parsed);
+  }
+
+  return map;
+}, [channels, sharedTrackDefinitions]);
 
   const parsedTracks = useMemo(() => {
+    if (sharedTrackDefinitions) {
+      return sharedTrackDefinitions;
+    }
     const ordered: TrackDefinition[] = [];
     for (const channel of channels) {
       const channelTracks = parsedTracksByChannel.get(channel.id) ?? [];
       ordered.push(...channelTracks);
     }
     return ordered;
-  }, [channels, parsedTracksByChannel]);
+  }, [channels, parsedTracksByChannel, sharedTrackDefinitions]);
 
   const trackLookup = useMemo(() => {
     const map = new Map<string, TrackDefinition>();
@@ -1412,6 +1514,361 @@ function App() {
     }
     return map;
   }, [parsedTracks]);
+
+  const applyRemoteViewerState = useCallback(
+    (patch: Partial<SerializedViewerState>) => {
+      isApplyingRemoteStateRef.current = true;
+      const nextState: SerializedViewerState = {
+        selectedIndex: typeof patch.selectedIndex === 'number' ? Math.max(0, Math.trunc(patch.selectedIndex)) : selectedIndex,
+        isPlaying: typeof patch.isPlaying === 'boolean' ? patch.isPlaying : isPlaying,
+        fps: typeof patch.fps === 'number' && Number.isFinite(patch.fps) ? Math.max(1, Math.round(patch.fps)) : fps,
+        viewerMode: patch.viewerMode === '3d' || patch.viewerMode === '2d' ? patch.viewerMode : viewerMode,
+        sliceIndex:
+          typeof patch.sliceIndex === 'number' && Number.isFinite(patch.sliceIndex)
+            ? Math.max(0, Math.trunc(patch.sliceIndex))
+            : sliceIndex,
+        followedTrackId:
+          'followedTrackId' in patch
+            ? typeof patch.followedTrackId === 'string' && patch.followedTrackId
+              ? patch.followedTrackId
+              : null
+            : followedTrack?.id ?? null
+      };
+      try {
+        setSelectedIndex(nextState.selectedIndex);
+        setIsPlaying(nextState.isPlaying);
+        setFps(nextState.fps);
+        setViewerMode(nextState.viewerMode);
+        setSliceIndex(nextState.sliceIndex);
+        if ('followedTrackId' in patch) {
+          const nextId = patch.followedTrackId;
+          if (typeof nextId === 'string' && nextId) {
+            const track = trackLookup.get(nextId) ?? null;
+            setFollowedTrack(track ? { id: track.id, channelId: track.channelId } : null);
+          } else {
+            setFollowedTrack(null);
+          }
+        }
+        lastSentViewerStateRef.current = JSON.stringify(nextState);
+      } finally {
+        setTimeout(() => {
+          isApplyingRemoteStateRef.current = false;
+        }, 0);
+      }
+    },
+    [followedTrack, fps, isPlaying, selectedIndex, setFollowedTrack, setFps, setIsPlaying, setSelectedIndex, setSliceIndex, setViewerMode, sliceIndex, trackLookup, viewerMode]
+  );
+
+  const buildHydratedDataset = useCallback((): HydratedDataset | null => {
+    if (layers.length === 0) {
+      return null;
+    }
+    const hydratedLayers = layers.map((layer) => ({
+      key: layer.key,
+      label: layer.label,
+      channelId: layer.channelId,
+      channelName: channelNameMap.get(layer.channelId) ?? 'Untitled channel',
+      isSegmentation: layer.isSegmentation,
+      volumes: layer.volumes
+    }));
+    const channelsState = loadedChannelIds.map((channelId) => ({
+      channelId,
+      visibility: channelVisibility[channelId] ?? true,
+      activeLayerKey: channelActiveLayer[channelId] ?? null
+    }));
+    const trackStates = loadedChannelIds.map((channelId) => {
+      const state = channelTrackStates[channelId] ?? createDefaultChannelTrackState();
+      return {
+        channelId,
+        opacity: state.opacity,
+        lineWidth: state.lineWidth,
+        colorMode: state.colorMode,
+        visibility: state.visibility
+      };
+    });
+    return {
+      layers: hydratedLayers,
+      layerSettings,
+      channels: channelsState,
+      tracks: { definitions: parsedTracks },
+      trackStates,
+      viewerState: {
+        selectedIndex,
+        isPlaying,
+        fps,
+        viewerMode,
+        sliceIndex,
+        followedTrackId: followedTrack ? followedTrack.id : null
+      },
+      createdAt: Date.now()
+    };
+  }, [channelActiveLayer, channelNameMap, channelTrackStates, channelVisibility, followedTrack, isPlaying, layerSettings, layers, loadedChannelIds, parsedTracks, selectedIndex, sliceIndex, viewerMode, fps]);
+
+
+const applyHydratedDataset = useCallback(
+  (dataset: HydratedDataset) => {
+    const convertedLayers: LoadedLayer[] = dataset.layers.map((layer) => ({
+      key: layer.key,
+      label: layer.label,
+      channelId: layer.channelId,
+      volumes: layer.volumes,
+      isSegmentation: layer.isSegmentation
+    }));
+
+    setLayers(convertedLayers);
+    setSharedChannelNameMap(() => {
+      const map: Record<string, string> = {};
+      for (const layer of dataset.layers) {
+        if (!(layer.channelId in map)) {
+          map[layer.channelId] = layer.channelName;
+        }
+      }
+      return map;
+    });
+
+    const visibilityDefaults = dataset.channels.reduce<Record<string, boolean>>((acc, entry) => {
+      acc[entry.channelId] = entry.visibility;
+      return acc;
+    }, {});
+    setChannelVisibility(visibilityDefaults);
+
+    const activeLayerDefaults = dataset.channels.reduce<Record<string, string>>((acc, entry) => {
+      if (entry.activeLayerKey) {
+        acc[entry.channelId] = entry.activeLayerKey;
+      }
+      return acc;
+    }, {});
+    setChannelActiveLayer(activeLayerDefaults);
+
+    setLayerSettings({ ...dataset.layerSettings });
+    setSharedTrackDefinitions(dataset.tracks.definitions);
+
+    setChannelTrackStates(() => {
+      const map: Record<string, ChannelTrackState> = {};
+      for (const entry of dataset.trackStates) {
+        map[entry.channelId] = {
+          opacity: entry.opacity,
+          lineWidth: entry.lineWidth,
+          colorMode: entry.colorMode,
+          visibility: entry.visibility
+        };
+      }
+      return map;
+    });
+
+    setSelectedIndex(dataset.viewerState.selectedIndex);
+    setIsPlaying(dataset.viewerState.isPlaying);
+    setFps(dataset.viewerState.fps);
+    setViewerMode(dataset.viewerState.viewerMode);
+    setSliceIndex(dataset.viewerState.sliceIndex);
+    if (dataset.viewerState.followedTrackId) {
+      setFollowedTrack({ id: dataset.viewerState.followedTrackId, channelId: dataset.viewerState.followedTrackId.split(':')[0] ?? '' });
+    } else {
+      setFollowedTrack(null);
+    }
+
+    setStatus('loaded');
+    setError(null);
+    setDatasetError(null);
+    setIsViewerLaunched(true);
+    setIsLaunchingViewer(false);
+    setLoadProgress(1);
+    const totalVolumes = convertedLayers.reduce((acc, layer) => acc + layer.volumes.length, 0);
+    setLoadedCount(totalVolumes);
+    setExpectedVolumeCount(totalVolumes);
+  },
+  [setChannelActiveLayer, setChannelTrackStates, setChannelVisibility, setError, setFollowedTrack, setFps, setIsPlaying, setIsViewerLaunched, setIsLaunchingViewer, setLayerSettings, setLoadProgress, setLoadedCount, setSelectedIndex, setStatus, setExpectedVolumeCount, setDatasetError, setSharedChannelNameMap, setSharedTrackDefinitions, setSliceIndex, setViewerMode]
+);
+
+
+const startHostingSession = useCallback(async () => {
+  const dataset = buildHydratedDataset();
+  if (!dataset) {
+    setDatasetError('Load a dataset before starting a collaborative session.');
+    return;
+  }
+  try {
+    const client = getCollaborationClient();
+    setCollaborationState({ status: 'preparing', role: 'host' });
+    const summary = await client.createSession(dataset);
+    const room = summary.roomCode.toUpperCase();
+    setCollaborationRoomCode(room);
+    setCollaborationState({ status: 'connecting', role: 'host', roomCode: room });
+    client.connect(room, 'host');
+  } catch (error) {
+    console.error('Failed to create collaboration session', error);
+    setCollaborationState({ status: 'error', message: error instanceof Error ? error.message : 'Failed to start session.' });
+  }
+}, [buildHydratedDataset, getCollaborationClient, setDatasetError]);
+
+
+const handleCollaborationModeChange = useCallback(
+  (mode: CollaborationUiMode) => {
+    setCollaborationMode(mode);
+    if (mode === 'standalone') {
+      const client = getCollaborationClient();
+      client.disconnect();
+      setCollaborationState(environmentMode === 'lan' ? { status: 'idle' } : { status: 'disabled' });
+      setSharedTrackDefinitions(null);
+      setSharedChannelNameMap({});
+      setRemoteParticipantPoses({});
+      setCollaborationParticipants([]);
+      return;
+    }
+    if (environmentMode !== 'lan') {
+      setCollaborationState({ status: 'disabled' });
+    } else {
+      setCollaborationState({ status: 'idle' });
+    }
+  },
+  [environmentMode, getCollaborationClient]
+);
+
+const joinCollaborativeSession = useCallback(async () => {
+  const code = collaborationRoomCode.trim().toUpperCase();
+  if (!code) {
+    setCollaborationState({ status: 'error', message: 'Enter a room code to join.' });
+    return;
+  }
+  try {
+    const client = getCollaborationClient();
+    setCollaborationRoomCode(code);
+    setCollaborationState({ status: 'connecting', role: 'guest', roomCode: code });
+    const dataset = await client.fetchDataset(code);
+    applyHydratedDataset(dataset);
+    setCollaborationState({ status: 'waiting-for-dataset', roomCode: code });
+    client.connect(code, 'guest');
+  } catch (error) {
+    console.error('Failed to join collaboration session', error);
+    setCollaborationState({ status: 'error', message: error instanceof Error ? error.message : 'Failed to join session.' });
+  }
+}, [applyHydratedDataset, collaborationRoomCode, getCollaborationClient]);
+
+
+const handlePoseUpdate = useCallback(
+  (head: ParticipantPose | null, left: ControllerState | null, right: ControllerState | null) => {
+    if (collaborationState.status !== 'ready') {
+      return;
+    }
+    const client = getCollaborationClient();
+    client.sendPoseUpdate(head, left, right);
+  },
+  [collaborationState, getCollaborationClient]
+);
+
+
+const registerCollaborationListeners = useCallback(() => {
+  const client = getCollaborationClient();
+  const removeListener = client.addListener({
+    onWelcome: ({ participantId, participants, viewerState }) => {
+      collaborationParticipantIdRef.current = participantId;
+      setCollaborationParticipants(participants);
+      setRemoteParticipantPoses(() => {
+        const next: Record<string, ParticipantSnapshot> = {};
+        for (const snapshot of participants) {
+          next[snapshot.id] = snapshot;
+        }
+        return next;
+      });
+      if (viewerState) {
+        applyRemoteViewerState(viewerState);
+      }
+      setCollaborationState((state) => {
+        if (state.status === 'connecting' || state.status === 'waiting-for-dataset') {
+          return { status: 'ready', roomCode: collaborationRoomCode || (state as any).roomCode || '' };
+        }
+        return state;
+      });
+    },
+    onParticipants: (participants) => {
+      setCollaborationParticipants(participants);
+      setRemoteParticipantPoses((current) => {
+        const map = { ...current };
+        for (const participant of participants) {
+          map[participant.id] = participant;
+        }
+        return map;
+      });
+    },
+    onParticipantJoined: (participant) => {
+      setCollaborationParticipants((current) => {
+        const next = current.filter((entry) => entry.id !== participant.id);
+        next.push(participant);
+        return next;
+      });
+      setRemoteParticipantPoses((current) => ({ ...current, [participant.id]: participant }));
+    },
+    onParticipantLeft: (participantId) => {
+      setCollaborationParticipants((current) => current.filter((entry) => entry.id !== participantId));
+      setRemoteParticipantPoses((current) => {
+        const next = { ...current };
+        delete next[participantId];
+        return next;
+      });
+    },
+    onStateUpdate: (patch) => {
+      applyRemoteViewerState(patch);
+    },
+    onDatasetReady: (dataset) => {
+      applyHydratedDataset(dataset);
+      setCollaborationState((state) => {
+        if (state.status === 'waiting-for-dataset' || state.status === 'connecting') {
+          return { status: 'ready', roomCode: collaborationRoomCode || (state as any).roomCode || '' };
+        }
+        return state;
+      });
+    },
+    onPoseUpdate: ({ participantId, head, leftController, rightController }) => {
+      setRemoteParticipantPoses((current) => {
+        const base = current[participantId] ?? {
+          id: participantId,
+          displayName:
+            collaborationParticipants.find((participant) => participant.id === participantId)?.displayName ??
+            'Participant',
+          role: 'guest',
+          head: null,
+          leftController: null,
+          rightController: null,
+          lastUpdated: Date.now()
+        };
+        return {
+          ...current,
+          [participantId]: {
+            ...base,
+            head,
+            leftController,
+            rightController,
+            lastUpdated: Date.now()
+          }
+        };
+      });
+    },
+    onError: (message) => {
+      setCollaborationState({ status: 'error', message });
+    }
+  });
+  return removeListener;
+}, [
+  applyHydratedDataset,
+  applyRemoteViewerState,
+  collaborationParticipants,
+  collaborationRoomCode,
+  getCollaborationClient
+]);
+
+const collaborationListenerCleanupRef = useRef<(() => void) | null>(null);
+
+useEffect(() => {
+  if (collaborationListenerCleanupRef.current) {
+    collaborationListenerCleanupRef.current();
+    collaborationListenerCleanupRef.current = null;
+  }
+  collaborationListenerCleanupRef.current = registerCollaborationListeners();
+  return () => {
+    collaborationListenerCleanupRef.current?.();
+    collaborationListenerCleanupRef.current = null;
+  };
+}, [registerCollaborationListeners]);
 
   const hasParsedTrackData = parsedTracks.length > 0;
   const handleRegisterReset = useCallback((handler: (() => void) | null) => {
@@ -1434,6 +1891,31 @@ function App() {
     setLayoutResetToken((value) => value + 1);
     setTrackWindowInitialPosition(computeTrackWindowDefaultPosition());
   }, [computeTrackWindowDefaultPosition]);
+
+
+useEffect(() => {
+  if (collaborationState.status !== 'ready') {
+    return;
+  }
+  if (isApplyingRemoteStateRef.current) {
+    return;
+  }
+  const client = getCollaborationClient();
+  const state: SerializedViewerState = {
+    selectedIndex,
+    isPlaying,
+    fps,
+    viewerMode,
+    sliceIndex,
+    followedTrackId: followedTrack ? followedTrack.id : null
+  };
+  const snapshot = JSON.stringify(state);
+  if (lastSentViewerStateRef.current === snapshot) {
+    return;
+  }
+  lastSentViewerStateRef.current = snapshot;
+  client.sendViewerState(state);
+}, [collaborationState, followedTrack, fps, getCollaborationClient, isPlaying, selectedIndex, sliceIndex, viewerMode]);
 
   useEffect(() => {
     const defaultPosition = computeTrackWindowDefaultPosition();
@@ -1652,6 +2134,8 @@ function App() {
       setLoadedCount(totalExpectedVolumes);
       setLoadProgress(1);
       setDatasetError(null);
+      setSharedTrackDefinitions(null);
+      setSharedChannelNameMap({});
       return true;
     } catch (err) {
       if (loadRequestRef.current !== requestId) {
@@ -1835,6 +2319,11 @@ function App() {
 
   const followedTrackId = followedTrack?.id ?? null;
   const followedTrackChannelId = followedTrack?.channelId ?? null;
+
+
+const collaborationParticipantSnapshots = useMemo(() => {
+  return Object.values(remoteParticipantPoses);
+}, [remoteParticipantPoses]);
 
   const channelTrackOffsets = useMemo(() => {
     const offsets: Record<string, { x: number; y: number }> = {};
@@ -2820,9 +3309,124 @@ function App() {
         </video>
         <div className="front-page">
           <div className={`front-page-card${isFrontPageLocked ? ' is-loading' : ''}`}>
-            <header className="front-page-header">
-              <h1>4D microscopy viewer</h1>
-            </header>
+
+<header className="front-page-header">
+  <h1>4D microscopy viewer</h1>
+</header>
+<section className="collaboration-panel">
+  <h2>Collaborative VR</h2>
+  <p className="collaboration-environment">
+    Environment: {environmentMode === 'lan' ? 'Local network detected' : 'External network'}
+  </p>
+  <div className="collaboration-mode-buttons">
+    <button
+      type="button"
+      className={collaborationMode === 'standalone' ? 'is-active' : ''}
+      onClick={() => handleCollaborationModeChange('standalone')}
+      disabled={collaborationState.status === 'disabled'}
+    >
+      Standalone
+    </button>
+    <button
+      type="button"
+      className={collaborationMode === 'host' ? 'is-active' : ''}
+      onClick={() => handleCollaborationModeChange('host')}
+      disabled={environmentMode !== 'lan'}
+    >
+      Host session
+    </button>
+    <button
+      type="button"
+      className={collaborationMode === 'guest' ? 'is-active' : ''}
+      onClick={() => handleCollaborationModeChange('guest')}
+      disabled={environmentMode !== 'lan'}
+    >
+      Join session
+    </button>
+  </div>
+  <label className="collaboration-display-name">
+    Display name
+    <input
+      type="text"
+      value={collaborationDisplayName}
+      onChange={(event) => setCollaborationDisplayName(event.target.value)}
+      disabled={environmentMode !== 'lan'}
+    />
+  </label>
+  {environmentMode !== 'lan' ? (
+    <p className="collaboration-disabled-message">
+      Run the viewer on a local network to enable collaborative VR.
+    </p>
+  ) : null}
+  {environmentMode === 'lan' && collaborationMode === 'host' ? (
+    <div className="collaboration-host-controls">
+      <button
+        type="button"
+        onClick={startHostingSession}
+        disabled={collaborationState.status === 'connecting' || collaborationState.status === 'preparing'}
+      >
+        {collaborationState.status === 'connecting' || collaborationState.status === 'preparing'
+          ? 'Starting…'
+          : 'Start sharing'}
+      </button>
+      {collaborationState.status === 'ready' ? (
+        <p className="collaboration-room-code">
+          Room code: <code>{collaborationRoomCode}</code>
+        </p>
+      ) : null}
+    </div>
+  ) : null}
+  {environmentMode === 'lan' && collaborationMode === 'guest' ? (
+    <div className="collaboration-join-controls">
+      <label>
+        Room code
+        <input
+          type="text"
+          value={collaborationRoomCode}
+          onChange={(event) => setCollaborationRoomCode(event.target.value.toUpperCase())}
+          placeholder="ABC123"
+          disabled={collaborationState.status === 'connecting'}
+        />
+      </label>
+      <button
+        type="button"
+        onClick={joinCollaborativeSession}
+        disabled={collaborationState.status === 'connecting'}
+      >
+        {collaborationState.status === 'connecting' ? 'Joining…' : 'Join session'}
+      </button>
+    </div>
+  ) : null}
+  {environmentMode === 'lan' && collaborationMode === 'host' && collaborationState.status === 'idle' ? (
+    <p className="collaboration-status">Load a dataset and start the session to share it on the network.</p>
+  ) : null}
+  {environmentMode === 'lan' && collaborationMode === 'guest' && collaborationState.status === 'idle' ? (
+    <p className="collaboration-status">Enter a room code from the host to join their session.</p>
+  ) : null}
+  {collaborationState.status === 'preparing' ? (
+    <p className="collaboration-status">Preparing session…</p>
+  ) : null}
+  {collaborationState.status === 'connecting' ? (
+    <p className="collaboration-status">Connecting…</p>
+  ) : null}
+  {collaborationState.status === 'waiting-for-dataset' ? (
+    <p className="collaboration-status">Synchronizing dataset…</p>
+  ) : null}
+  {collaborationState.status === 'error' ? (
+    <p className="collaboration-error">{collaborationState.message}</p>
+  ) : null}
+  {collaborationState.status === 'ready' ? (
+    <div className="collaboration-participants">
+      <h3>Participants</h3>
+      <ul>
+        <li key="self">{collaborationDisplayName} (You)</li>
+        {collaborationParticipants.map((participant) => (
+          <li key={participant.id}>{participant.displayName}</li>
+        ))}
+      </ul>
+    </div>
+  ) : null}
+</section>
             <div className="channel-add-actions">
               <button
                 type="button"
@@ -3136,6 +3740,16 @@ function App() {
               onRegisterVrSession={handleRegisterVrSession}
               onVrSessionStarted={handleVrSessionStarted}
               onVrSessionEnded={handleVrSessionEnded}
+              collaboration={
+                collaborationState.status === 'ready'
+                  ? {
+                      isActive: true,
+                      participantId: collaborationParticipantIdRef.current,
+                      participants: collaborationParticipantSnapshots,
+                      onPoseUpdate: handlePoseUpdate
+                    }
+                  : null
+              }
             />
           ) : (
             <PlanarViewer

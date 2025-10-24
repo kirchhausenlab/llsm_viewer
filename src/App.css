@@ -1986,3 +1986,129 @@
   color: rgba(255, 255, 255, 0.85);
   border: 1px solid rgba(255, 255, 255, 0.15);
 }
+
+
+.collaboration-panel {
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 24px;
+  color: #f7f7f7;
+}
+
+.collaboration-panel h2 {
+  margin: 0 0 8px;
+  font-size: 1.2rem;
+}
+
+.collaboration-environment {
+  margin: 0 0 12px;
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
+
+.collaboration-mode-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.collaboration-mode-buttons button {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: transparent;
+  color: inherit;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.collaboration-mode-buttons button.is-active,
+.collaboration-mode-buttons button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.collaboration-mode-buttons button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.collaboration-display-name {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+
+.collaboration-display-name input,
+.collaboration-join-controls input {
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+}
+
+.collaboration-join-controls,
+.collaboration-host-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  margin-bottom: 12px;
+}
+
+.collaboration-join-controls button,
+.collaboration-host-controls button {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  background: #4c8bf5;
+  color: white;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.collaboration-join-controls button:disabled,
+.collaboration-host-controls button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.collaboration-disabled-message {
+  margin: 0 0 12px;
+  font-size: 0.9rem;
+  color: #ffd369;
+}
+
+.collaboration-room-code {
+  margin: 8px 0 0;
+  font-size: 0.95rem;
+}
+
+.collaboration-room-code code {
+  font-weight: 600;
+}
+
+.collaboration-error {
+  color: #ff6b6b;
+  margin: 8px 0;
+}
+
+.collaboration-participants ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  font-size: 0.9rem;
+}
+
+.collaboration-participants li {
+  margin: 4px 0;
+}
+.collaboration-status {
+  margin: 4px 0;
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
