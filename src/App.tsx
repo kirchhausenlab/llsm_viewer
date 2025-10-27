@@ -2252,6 +2252,7 @@ function App() {
     [channelValidationList]
   );
   const canLaunch = hasAnyLayers && allChannelsValid && !hasLoadingTracks;
+  const launchButtonLaunchable = canLaunch ? 'true' : 'false';
 
   const activeChannel = useMemo(
     () => channels.find((channel) => channel.id === activeChannelId) ?? null,
@@ -3075,7 +3076,8 @@ function App() {
                 type="button"
                 className="launch-viewer-button"
                 onClick={handleLaunchViewer}
-                disabled={!canLaunch || isLaunchingViewer}
+                disabled={isLaunchingViewer}
+                data-launchable={launchButtonLaunchable}
               >
                 {isLaunchingViewer ? 'Loading…' : 'Launch viewer'}
               </button>

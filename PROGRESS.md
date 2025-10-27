@@ -389,3 +389,7 @@ d centered the front-page card in the viewport.
 
 ## GitHub Pages artifact reliability
 - Updated the `Deploy static site` workflow to configure Pages before uploading, explicitly name the artifact, and fail fast when the build output is missing so deployments always provide the `github-pages` package required by `actions/deploy-pages@v4`.
+
+## Launch warning visibility follow-up
+- Kept the launch button clickable while dataset validation fails so users can surface actionable warnings instead of seeing nothing.
+- Dimmed the launch button when a dataset is incomplete but avoided disabling it outright, reserving the hard-disable for the actual launch cycle.
