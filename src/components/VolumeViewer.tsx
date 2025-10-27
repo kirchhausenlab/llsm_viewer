@@ -594,6 +594,8 @@ const VR_PITCH_HANDLE_FORWARD_OFFSET = VR_ROTATION_HANDLE_OFFSET;
 const VR_SCALE_HANDLE_OFFSET = 0.04;
 const VR_VOLUME_MIN_SCALE = 0.2;
 const VR_VOLUME_MAX_SCALE = 5;
+const DESKTOP_VOLUME_STEP_SCALE = 1;
+const VR_VOLUME_STEP_SCALE = 1.4;
 const VR_HUD_TRANSLATE_HANDLE_RADIUS = 0.018;
 const VR_HUD_TRANSLATE_HANDLE_OFFSET = VR_HUD_TRANSLATE_HANDLE_RADIUS;
 const VR_HUD_YAW_HANDLE_RADIUS = 0.016;
@@ -901,6 +903,7 @@ function VolumeViewer({
   const volumeRootHalfExtentsRef = useRef(new THREE.Vector3());
   const volumeNormalizationScaleRef = useRef(1);
   const volumeUserScaleRef = useRef(1);
+  const volumeStepScaleRef = useRef(DESKTOP_VOLUME_STEP_SCALE);
   const volumeYawRef = useRef(0);
   const volumePitchRef = useRef(0);
   const volumeRootRotatedCenterTempRef = useRef(new THREE.Vector3());
@@ -1103,6 +1106,30 @@ function VolumeViewer({
     volumeRootGroupRef,
     volumeRootHalfExtentsRef
   ]);
+
+  const applyVolumeStepScaleToResources = useCallback(
+    (stepScale: number) => {
+      volumeStepScaleRef.current = stepScale;
+      for (const resource of resourcesRef.current.values()) {
+        if (resource.mode !== '3d') {
+          continue;
+        }
+        const material = resource.mesh.material;
+        const materialList = Array.isArray(material) ? material : [material];
+        for (const entry of materialList) {
+          const shaderMaterial = entry as THREE.ShaderMaterial | undefined;
+          const uniforms = shaderMaterial?.uniforms as
+            | Record<string, { value: unknown }>
+            | undefined;
+          if (uniforms && 'u_stepScale' in uniforms) {
+            const stepUniform = uniforms.u_stepScale as { value: number };
+            stepUniform.value = stepScale;
+          }
+        }
+      }
+    },
+    [resourcesRef, volumeStepScaleRef]
+  );
 
   const applyVolumeYawPitch = useCallback(
     (yaw: number, pitch: number) => {
@@ -7355,6 +7382,7 @@ function VolumeViewer({
         visibilityState: xrSessionRef.current?.visibilityState ?? null
       });
       applyVrFoveation();
+      applyVolumeStepScaleToResources(VR_VOLUME_STEP_SCALE);
       volumeRootBaseOffsetRef.current.copy(VR_VOLUME_BASE_OFFSET);
       applyVolumeRootTransform(currentDimensionsRef.current);
       refreshControllerVisibility();
@@ -7378,6 +7406,7 @@ function VolumeViewer({
         visibilityState: xrSessionRef.current?.visibilityState ?? null
       });
       restoreVrFoveation();
+      applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
       volumeRootBaseOffsetRef.current.set(0, 0, 0);
       applyVolumeRootTransform(currentDimensionsRef.current);
       refreshControllerVisibility();
@@ -7404,6 +7433,7 @@ function VolumeViewer({
         visibilityState: xrSessionRef.current?.visibilityState ?? null
       });
       restoreVrFoveation();
+      applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
       sessionCleanupRef.current = null;
       xrSessionRef.current = null;
       xrCurrentSessionModeRef.current = null;
@@ -7729,6 +7759,7 @@ function VolumeViewer({
       isDisposed = true;
       onRegisterVrSession?.(null);
       restoreVrFoveation();
+      applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
       renderer.xr.removeEventListener('sessionstart', handleXrManagerSessionStart);
       renderer.xr.removeEventListener('sessionend', handleXrManagerSessionEnd);
       renderer.setAnimationLoop(null);
@@ -8129,6 +8160,7 @@ function VolumeViewer({
           uniforms.u_gamma.value = layer.gamma;
           uniforms.u_brightness.value = layer.brightness;
           uniforms.u_invert.value = layer.invert ? 1 : 0;
+          uniforms.u_stepScale.value = volumeStepScaleRef.current;
 
           const material = new THREE.ShaderMaterial({
             uniforms,
@@ -8276,6 +8308,9 @@ function VolumeViewer({
         materialUniforms.u_brightness.value = layer.brightness;
         materialUniforms.u_invert.value = layer.invert ? 1 : 0;
         materialUniforms.u_cmdata.value = colormapTexture;
+        if (materialUniforms.u_stepScale) {
+          materialUniforms.u_stepScale.value = volumeStepScaleRef.current;
+        }
 
         if (resources.mode === '3d') {
           const preparation = cachedPreparation ?? getCachedTextureData(volume);
@@ -8329,7 +8364,13 @@ function VolumeViewer({
       }
     }
 
-  }, [applyTrackGroupTransform, getColormapTexture, layers, renderContextRevision]);
+  }, [
+    applyTrackGroupTransform,
+    applyVolumeStepScaleToResources,
+    getColormapTexture,
+    layers,
+    renderContextRevision
+  ]);
 
   useEffect(() => {
     return () => {
