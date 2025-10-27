@@ -8,6 +8,9 @@
 
 # Progress Log
 
+## Track visibility regression fix
+- Removed the artificial timeline offset that pushed parsed track coordinates beyond the dataset's frame range, restoring track visibility for channels with staggered starts.
+
 ## Launch warning visibility fix
 - Added context-aware dataset error handling so the floating warning only appears after an attempted launch.
 - Kept dataset validation feedback available while preventing file picker interactions from triggering the global warning banner.
