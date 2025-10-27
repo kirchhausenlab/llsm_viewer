@@ -299,6 +299,10 @@ type VrPlaybackHud = {
   resetHudButtonRadius: number;
   exitButtonRadius: number;
   modeButtonRadius: number;
+  cachedPosition: THREE.Vector3;
+  cachedYaw: number;
+  cachedPitch: number;
+  cacheDirty: boolean;
 };
 
 type VrChannelsSliderKey = 'contrast' | 'gamma' | 'brightness' | 'xOffset' | 'yOffset';
@@ -343,6 +347,10 @@ type VrChannelsHud = {
   width: number;
   height: number;
   hoverRegion: VrChannelsInteractiveRegion | null;
+  cachedPosition: THREE.Vector3;
+  cachedYaw: number;
+  cachedPitch: number;
+  cacheDirty: boolean;
 };
 
 type VrChannelsState = {
@@ -421,6 +429,10 @@ type VrTracksHud = {
   width: number;
   height: number;
   hoverRegion: VrTracksInteractiveRegion | null;
+  cachedPosition: THREE.Vector3;
+  cachedYaw: number;
+  cachedPitch: number;
+  cacheDirty: boolean;
 };
 
 type VrTracksState = {
@@ -568,6 +580,7 @@ const VR_TRACKS_FONT_SIZES = {
 const VR_HUD_MIN_HEIGHT = 0;
 const VR_HUD_FRONT_MARGIN = 0.24;
 const VR_HUD_LATERAL_MARGIN = 0.1;
+const VR_HUD_PLACEMENT_EPSILON = 1e-4;
 const VR_VOLUME_BASE_OFFSET = new THREE.Vector3(0, 1.2, -0.3);
 const VR_UI_TOUCH_DISTANCE = 0.08;
 const VR_UI_TOUCH_SURFACE_MARGIN = 0.04;
@@ -1807,10 +1820,28 @@ function VolumeViewer({
       if (!hud || !placement) {
         return;
       }
+      const positionChanged =
+        hud.cacheDirty ||
+        Math.abs(hud.cachedPosition.x - placement.position.x) > VR_HUD_PLACEMENT_EPSILON ||
+        Math.abs(hud.cachedPosition.y - placement.position.y) > VR_HUD_PLACEMENT_EPSILON ||
+        Math.abs(hud.cachedPosition.z - placement.position.z) > VR_HUD_PLACEMENT_EPSILON;
+      const yawChanged =
+        hud.cacheDirty || Math.abs(hud.cachedYaw - placement.yaw) > VR_HUD_PLACEMENT_EPSILON;
+      const pitchChanged =
+        hud.cacheDirty || Math.abs(hud.cachedPitch - placement.pitch) > VR_HUD_PLACEMENT_EPSILON;
+      if (!positionChanged && !yawChanged && !pitchChanged) {
+        return;
+      }
       hud.group.position.copy(placement.position);
-      const quaternion = getHudQuaternionFromAngles(placement.yaw + Math.PI, placement.pitch);
-      hud.group.quaternion.copy(quaternion);
+      if (yawChanged || pitchChanged || hud.cacheDirty) {
+        const quaternion = getHudQuaternionFromAngles(placement.yaw + Math.PI, placement.pitch);
+        hud.group.quaternion.copy(quaternion);
+      }
       hud.group.updateMatrixWorld(true);
+      hud.cachedPosition.copy(placement.position);
+      hud.cachedYaw = placement.yaw;
+      hud.cachedPitch = placement.pitch;
+      hud.cacheDirty = false;
     },
     [getHudQuaternionFromAngles]
   );
@@ -1820,10 +1851,20 @@ function VolumeViewer({
       const placement =
         vrPlaybackHudPlacementRef.current ??
         ({ position: new THREE.Vector3(), yaw: 0, pitch: 0 } satisfies VrHudPlacement);
+      const prevX = placement.position.x;
+      const prevY = placement.position.y;
+      const prevZ = placement.position.z;
       placement.position.copy(nextPosition);
       constrainHudPlacementPosition(placement.position);
+      const positionChanged =
+        Math.abs(prevX - placement.position.x) > VR_HUD_PLACEMENT_EPSILON ||
+        Math.abs(prevY - placement.position.y) > VR_HUD_PLACEMENT_EPSILON ||
+        Math.abs(prevZ - placement.position.z) > VR_HUD_PLACEMENT_EPSILON;
       vrPlaybackHudPlacementRef.current = placement;
       vrPlaybackHudDragTargetRef.current.copy(placement.position);
+      if (positionChanged && vrPlaybackHudRef.current) {
+        vrPlaybackHudRef.current.cacheDirty = true;
+      }
       updateHudGroupFromPlacement(vrPlaybackHudRef.current, placement);
     },
     [constrainHudPlacementPosition, updateHudGroupFromPlacement]
@@ -1834,10 +1875,20 @@ function VolumeViewer({
       const placement =
         vrChannelsHudPlacementRef.current ??
         ({ position: new THREE.Vector3(), yaw: 0, pitch: 0 } satisfies VrHudPlacement);
+      const prevX = placement.position.x;
+      const prevY = placement.position.y;
+      const prevZ = placement.position.z;
       placement.position.copy(nextPosition);
       constrainHudPlacementPosition(placement.position);
+      const positionChanged =
+        Math.abs(prevX - placement.position.x) > VR_HUD_PLACEMENT_EPSILON ||
+        Math.abs(prevY - placement.position.y) > VR_HUD_PLACEMENT_EPSILON ||
+        Math.abs(prevZ - placement.position.z) > VR_HUD_PLACEMENT_EPSILON;
       vrChannelsHudPlacementRef.current = placement;
       vrChannelsHudDragTargetRef.current.copy(placement.position);
+      if (positionChanged && vrChannelsHudRef.current) {
+        vrChannelsHudRef.current.cacheDirty = true;
+      }
       updateHudGroupFromPlacement(vrChannelsHudRef.current, placement);
     },
     [constrainHudPlacementPosition, updateHudGroupFromPlacement]
@@ -1848,10 +1899,20 @@ function VolumeViewer({
       const placement =
         vrTracksHudPlacementRef.current ??
         ({ position: new THREE.Vector3(), yaw: 0, pitch: 0 } satisfies VrHudPlacement);
+      const prevX = placement.position.x;
+      const prevY = placement.position.y;
+      const prevZ = placement.position.z;
       placement.position.copy(nextPosition);
       constrainHudPlacementPosition(placement.position);
+      const positionChanged =
+        Math.abs(prevX - placement.position.x) > VR_HUD_PLACEMENT_EPSILON ||
+        Math.abs(prevY - placement.position.y) > VR_HUD_PLACEMENT_EPSILON ||
+        Math.abs(prevZ - placement.position.z) > VR_HUD_PLACEMENT_EPSILON;
       vrTracksHudPlacementRef.current = placement;
       vrTracksHudDragTargetRef.current.copy(placement.position);
+      if (positionChanged && vrTracksHudRef.current) {
+        vrTracksHudRef.current.cacheDirty = true;
+      }
       updateHudGroupFromPlacement(vrTracksHudRef.current, placement);
     },
     [constrainHudPlacementPosition, updateHudGroupFromPlacement]
@@ -1862,8 +1923,13 @@ function VolumeViewer({
       const placement =
         vrPlaybackHudPlacementRef.current ??
         ({ position: new THREE.Vector3(), yaw: 0, pitch: 0 } satisfies VrHudPlacement);
+      const prevYaw = placement.yaw;
       placement.yaw = nextYaw;
+      const yawChanged = Math.abs(prevYaw - placement.yaw) > VR_HUD_PLACEMENT_EPSILON;
       vrPlaybackHudPlacementRef.current = placement;
+      if (yawChanged && vrPlaybackHudRef.current) {
+        vrPlaybackHudRef.current.cacheDirty = true;
+      }
       updateHudGroupFromPlacement(vrPlaybackHudRef.current, placement);
     },
     [updateHudGroupFromPlacement]
@@ -1874,8 +1940,13 @@ function VolumeViewer({
       const placement =
         vrChannelsHudPlacementRef.current ??
         ({ position: new THREE.Vector3(), yaw: 0, pitch: 0 } satisfies VrHudPlacement);
+      const prevYaw = placement.yaw;
       placement.yaw = nextYaw;
+      const yawChanged = Math.abs(prevYaw - placement.yaw) > VR_HUD_PLACEMENT_EPSILON;
       vrChannelsHudPlacementRef.current = placement;
+      if (yawChanged && vrChannelsHudRef.current) {
+        vrChannelsHudRef.current.cacheDirty = true;
+      }
       updateHudGroupFromPlacement(vrChannelsHudRef.current, placement);
     },
     [updateHudGroupFromPlacement]
@@ -1886,8 +1957,13 @@ function VolumeViewer({
       const placement =
         vrTracksHudPlacementRef.current ??
         ({ position: new THREE.Vector3(), yaw: 0, pitch: 0 } satisfies VrHudPlacement);
+      const prevYaw = placement.yaw;
       placement.yaw = nextYaw;
+      const yawChanged = Math.abs(prevYaw - placement.yaw) > VR_HUD_PLACEMENT_EPSILON;
       vrTracksHudPlacementRef.current = placement;
+      if (yawChanged && vrTracksHudRef.current) {
+        vrTracksHudRef.current.cacheDirty = true;
+      }
       updateHudGroupFromPlacement(vrTracksHudRef.current, placement);
     },
     [updateHudGroupFromPlacement]
@@ -1898,8 +1974,13 @@ function VolumeViewer({
       const placement =
         vrPlaybackHudPlacementRef.current ??
         ({ position: new THREE.Vector3(), yaw: 0, pitch: 0 } satisfies VrHudPlacement);
+      const prevPitch = placement.pitch;
       placement.pitch = nextPitch;
+      const pitchChanged = Math.abs(prevPitch - placement.pitch) > VR_HUD_PLACEMENT_EPSILON;
       vrPlaybackHudPlacementRef.current = placement;
+      if (pitchChanged && vrPlaybackHudRef.current) {
+        vrPlaybackHudRef.current.cacheDirty = true;
+      }
       updateHudGroupFromPlacement(vrPlaybackHudRef.current, placement);
     },
     [updateHudGroupFromPlacement]
@@ -1910,8 +1991,13 @@ function VolumeViewer({
       const placement =
         vrChannelsHudPlacementRef.current ??
         ({ position: new THREE.Vector3(), yaw: 0, pitch: 0 } satisfies VrHudPlacement);
+      const prevPitch = placement.pitch;
       placement.pitch = nextPitch;
+      const pitchChanged = Math.abs(prevPitch - placement.pitch) > VR_HUD_PLACEMENT_EPSILON;
       vrChannelsHudPlacementRef.current = placement;
+      if (pitchChanged && vrChannelsHudRef.current) {
+        vrChannelsHudRef.current.cacheDirty = true;
+      }
       updateHudGroupFromPlacement(vrChannelsHudRef.current, placement);
     },
     [updateHudGroupFromPlacement]
@@ -1922,8 +2008,13 @@ function VolumeViewer({
       const placement =
         vrTracksHudPlacementRef.current ??
         ({ position: new THREE.Vector3(), yaw: 0, pitch: 0 } satisfies VrHudPlacement);
+      const prevPitch = placement.pitch;
       placement.pitch = nextPitch;
+      const pitchChanged = Math.abs(prevPitch - placement.pitch) > VR_HUD_PLACEMENT_EPSILON;
       vrTracksHudPlacementRef.current = placement;
+      if (pitchChanged && vrTracksHudRef.current) {
+        vrTracksHudRef.current.cacheDirty = true;
+      }
       updateHudGroupFromPlacement(vrTracksHudRef.current, placement);
     },
     [updateHudGroupFromPlacement]
@@ -1940,13 +2031,28 @@ function VolumeViewer({
     ) => {
       const placement =
         placementRef.current ?? ({ position: new THREE.Vector3(), yaw: 0, pitch: 0 } satisfies VrHudPlacement);
+      const prevX = placement.position.x;
+      const prevY = placement.position.y;
+      const prevZ = placement.position.z;
+      const prevYaw = placement.yaw;
+      const prevPitch = placement.pitch;
       placement.position.copy(position);
       constrainHudPlacementPosition(placement.position);
       placement.yaw = yaw;
       placement.pitch = pitch;
+      const positionChanged =
+        Math.abs(prevX - placement.position.x) > VR_HUD_PLACEMENT_EPSILON ||
+        Math.abs(prevY - placement.position.y) > VR_HUD_PLACEMENT_EPSILON ||
+        Math.abs(prevZ - placement.position.z) > VR_HUD_PLACEMENT_EPSILON;
+      const yawChanged = Math.abs(prevYaw - placement.yaw) > VR_HUD_PLACEMENT_EPSILON;
+      const pitchChanged = Math.abs(prevPitch - placement.pitch) > VR_HUD_PLACEMENT_EPSILON;
       placementRef.current = placement;
       dragTargetRef.current.copy(placement.position);
-      updateHudGroupFromPlacement(hudRef.current, placement);
+      const hud = hudRef.current;
+      if (hud && (positionChanged || yawChanged || pitchChanged)) {
+        hud.cacheDirty = true;
+      }
+      updateHudGroupFromPlacement(hud, placement);
     },
     [constrainHudPlacementPosition, updateHudGroupFromPlacement]
   );
@@ -2610,7 +2716,11 @@ function VolumeViewer({
       modeButtonRadius: sideButtonRadius,
       modeButton,
       modeVrIcon,
-      modeArIcon
+      modeArIcon,
+      cachedPosition: new THREE.Vector3(NaN, NaN, NaN),
+      cachedYaw: NaN,
+      cachedPitch: NaN,
+      cacheDirty: true
     };
 
     const state = playbackStateRef.current;
@@ -2748,7 +2858,11 @@ function VolumeViewer({
       regions: [],
       width: VR_CHANNELS_PANEL_WIDTH,
       height: VR_CHANNELS_PANEL_HEIGHT,
-      hoverRegion: null
+      hoverRegion: null,
+      cachedPosition: new THREE.Vector3(NaN, NaN, NaN),
+      cachedYaw: NaN,
+      cachedPitch: NaN,
+      cacheDirty: true
     };
 
     return hud;
@@ -2874,7 +2988,11 @@ function VolumeViewer({
       regions: [],
       width: VR_TRACKS_PANEL_WIDTH,
       height: VR_TRACKS_PANEL_HEIGHT,
-      hoverRegion: null
+      hoverRegion: null,
+      cachedPosition: new THREE.Vector3(NaN, NaN, NaN),
+      cachedYaw: NaN,
+      cachedPitch: NaN,
+      cacheDirty: true
     };
 
     return hud;
