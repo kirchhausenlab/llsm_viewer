@@ -1116,26 +1116,21 @@
   display: flex;
 }
 
-.channel-controls .channel-action-row {
+.channel-controls .channel-primary-actions {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
-.channel-controls .channel-primary-actions {
+.channel-controls .channel-primary-actions-row {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
 }
 
-.channel-controls .channel-primary-actions-stack {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 11rem;
-  gap: 0.5rem;
-}
-
-.channel-controls .channel-primary-actions .channel-action-button {
-  flex: 1 1 11rem;
+.channel-controls .channel-primary-actions-row .channel-action-button {
+  flex: 1 1 9rem;
+  min-width: 0;
 }
 
 .channel-controls .channel-action-button {
@@ -1148,11 +1143,6 @@
   font-weight: 600;
   cursor: pointer;
   transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
-}
-
-.channel-controls .channel-action-button--compact {
-  padding: 0.4rem 0.7rem;
-  font-size: 0.78rem;
 }
 
 .channel-controls .channel-action-button:not(:disabled):hover,

@@ -3219,56 +3219,38 @@ function VolumeViewer({
       const actionButtonHeight = 60;
       const actionButtonRadius = 16;
       const actionSpacing = 24;
-      const switchWidth = 320;
-      const invertWidth = 320;
-      const resetWidth = 220;
-      const actionY = currentY;
-      const switchX = paddingX;
-      const invertX = switchX + switchWidth + actionSpacing;
-      const resetX = invertX + invertWidth + actionSpacing;
-      const stackSpacing = 18;
-      const samplingY = actionY + actionButtonHeight + stackSpacing;
+      const rowSpacing = 18;
+      const availableRowWidth = canvasWidth - paddingX * 2;
+      const buttonWidth = Math.max(0, Math.min(280, (availableRowWidth - actionSpacing) / 2));
+      const firstRowY = currentY;
+      const secondRowY = firstRowY + actionButtonHeight + rowSpacing;
+      const resetX = paddingX;
+      const invertX = resetX + buttonWidth + actionSpacing;
+      const renderX = paddingX;
+      const samplingX = renderX + buttonWidth + actionSpacing;
 
-      drawRoundedRect(ctx, switchX, actionY, switchWidth, actionButtonHeight, actionButtonRadius);
-      ctx.fillStyle = renderStyleDisabled ? 'rgba(45, 60, 74, 0.6)' : renderStyleActive ? '#2b5fa6' : '#2b3340';
+      drawRoundedRect(ctx, resetX, firstRowY, buttonWidth, actionButtonHeight, actionButtonRadius);
+      const resetDisabled = activeChannel.layers.length === 0;
+      ctx.fillStyle = resetDisabled ? 'rgba(45, 60, 74, 0.6)' : '#2b3340';
       ctx.fill();
       if (
         hud.hoverRegion &&
-        hud.hoverRegion.targetType === 'channels-render-style' &&
-        hud.hoverRegion.channelId === activeChannel.id &&
-        hud.hoverRegion.layerKey === selectedLayer.key
+        hud.hoverRegion.targetType === 'channels-reset' &&
+        hud.hoverRegion.channelId === activeChannel.id
       ) {
         ctx.save();
-        drawRoundedRect(ctx, switchX, actionY, switchWidth, actionButtonHeight, actionButtonRadius);
+        drawRoundedRect(ctx, resetX, firstRowY, buttonWidth, actionButtonHeight, actionButtonRadius);
         ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
         ctx.fill();
         ctx.restore();
       }
-      ctx.fillStyle = renderStyleDisabled ? '#7b8795' : '#f3f6fc';
+      ctx.fillStyle = resetDisabled ? '#7b8795' : '#f3f6fc';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.font = vrChannelsFont('600', VR_CHANNELS_FONT_SIZES.small);
-      ctx.fillText('Switch render style', switchX + switchWidth / 2, actionY + actionButtonHeight / 2);
+      ctx.fillText('Reset sliders', resetX + buttonWidth / 2, firstRowY + actionButtonHeight / 2);
 
-      drawRoundedRect(ctx, switchX, samplingY, switchWidth, actionButtonHeight, actionButtonRadius);
-      ctx.fillStyle = samplingDisabled ? 'rgba(45, 60, 74, 0.6)' : samplingActive ? '#2b5fa6' : '#2b3340';
-      ctx.fill();
-      if (
-        hud.hoverRegion &&
-        hud.hoverRegion.targetType === 'channels-sampling' &&
-        hud.hoverRegion.channelId === activeChannel.id &&
-        hud.hoverRegion.layerKey === selectedLayer.key
-      ) {
-        ctx.save();
-        drawRoundedRect(ctx, switchX, samplingY, switchWidth, actionButtonHeight, actionButtonRadius);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
-        ctx.fill();
-        ctx.restore();
-      }
-      ctx.fillStyle = samplingDisabled ? '#7b8795' : '#f3f6fc';
-      ctx.fillText('Switch sampling mode', switchX + switchWidth / 2, samplingY + actionButtonHeight / 2);
-
-      drawRoundedRect(ctx, invertX, actionY, invertWidth, actionButtonHeight, actionButtonRadius);
+      drawRoundedRect(ctx, invertX, firstRowY, buttonWidth, actionButtonHeight, actionButtonRadius);
       ctx.fillStyle = invertDisabled ? 'rgba(45, 60, 74, 0.6)' : invertActive ? '#2b5fa6' : '#2b3340';
       ctx.fill();
       if (
@@ -3278,67 +3260,70 @@ function VolumeViewer({
         hud.hoverRegion.layerKey === selectedLayer.key
       ) {
         ctx.save();
-        drawRoundedRect(ctx, invertX, actionY, invertWidth, actionButtonHeight, actionButtonRadius);
+        drawRoundedRect(ctx, invertX, firstRowY, buttonWidth, actionButtonHeight, actionButtonRadius);
         ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
         ctx.fill();
         ctx.restore();
       }
       ctx.fillStyle = invertDisabled ? '#7b8795' : '#f3f6fc';
-      ctx.fillText('Invert LUT', invertX + invertWidth / 2, actionY + actionButtonHeight / 2);
+      ctx.fillText('Invert LUT', invertX + buttonWidth / 2, firstRowY + actionButtonHeight / 2);
 
-      const resetDisabled = activeChannel.layers.length === 0;
-      drawRoundedRect(ctx, resetX, actionY, resetWidth, actionButtonHeight, actionButtonRadius);
-      ctx.fillStyle = resetDisabled ? 'rgba(45, 60, 74, 0.6)' : '#2b3340';
+      drawRoundedRect(ctx, renderX, secondRowY, buttonWidth, actionButtonHeight, actionButtonRadius);
+      ctx.fillStyle = renderStyleDisabled ? 'rgba(45, 60, 74, 0.6)' : renderStyleActive ? '#2b5fa6' : '#2b3340';
       ctx.fill();
       if (
         hud.hoverRegion &&
-        hud.hoverRegion.targetType === 'channels-reset' &&
-        hud.hoverRegion.channelId === activeChannel.id
+        hud.hoverRegion.targetType === 'channels-render-style' &&
+        hud.hoverRegion.channelId === activeChannel.id &&
+        hud.hoverRegion.layerKey === selectedLayer.key
       ) {
         ctx.save();
-        drawRoundedRect(ctx, resetX, actionY, resetWidth, actionButtonHeight, actionButtonRadius);
+        drawRoundedRect(ctx, renderX, secondRowY, buttonWidth, actionButtonHeight, actionButtonRadius);
         ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
         ctx.fill();
         ctx.restore();
       }
-      ctx.fillStyle = resetDisabled ? '#7b8795' : '#f3f6fc';
-      ctx.fillText('Reset sliders', resetX + resetWidth / 2, actionY + actionButtonHeight / 2);
+      ctx.fillStyle = renderStyleDisabled ? '#7b8795' : '#f3f6fc';
+      ctx.fillText('Render style', renderX + buttonWidth / 2, secondRowY + actionButtonHeight / 2);
+
+      drawRoundedRect(ctx, samplingX, secondRowY, buttonWidth, actionButtonHeight, actionButtonRadius);
+      ctx.fillStyle = samplingDisabled ? 'rgba(45, 60, 74, 0.6)' : samplingActive ? '#2b5fa6' : '#2b3340';
+      ctx.fill();
+      if (
+        hud.hoverRegion &&
+        hud.hoverRegion.targetType === 'channels-sampling' &&
+        hud.hoverRegion.channelId === activeChannel.id &&
+        hud.hoverRegion.layerKey === selectedLayer.key
+      ) {
+        ctx.save();
+        drawRoundedRect(ctx, samplingX, secondRowY, buttonWidth, actionButtonHeight, actionButtonRadius);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.fillStyle = samplingDisabled ? '#7b8795' : '#f3f6fc';
+      ctx.fillText('Sampling mode', samplingX + buttonWidth / 2, secondRowY + actionButtonHeight / 2);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
 
-      const switchBounds = {
-        minX: toPanelX(switchX),
-        maxX: toPanelX(switchX + switchWidth),
-        minY: Math.min(toPanelY(actionY), toPanelY(actionY + actionButtonHeight)),
-        maxY: Math.max(toPanelY(actionY), toPanelY(actionY + actionButtonHeight))
+      const resetBounds = {
+        minX: toPanelX(resetX),
+        maxX: toPanelX(resetX + buttonWidth),
+        minY: Math.min(toPanelY(firstRowY), toPanelY(firstRowY + actionButtonHeight)),
+        maxY: Math.max(toPanelY(firstRowY), toPanelY(firstRowY + actionButtonHeight))
       };
       regions.push({
-        targetType: 'channels-render-style',
+        targetType: 'channels-reset',
         channelId: activeChannel.id,
-        layerKey: selectedLayer.key,
-        bounds: switchBounds,
-        disabled: renderStyleDisabled
-      });
-
-      const samplingBounds = {
-        minX: toPanelX(switchX),
-        maxX: toPanelX(switchX + switchWidth),
-        minY: Math.min(toPanelY(samplingY), toPanelY(samplingY + actionButtonHeight)),
-        maxY: Math.max(toPanelY(samplingY), toPanelY(samplingY + actionButtonHeight))
-      };
-      regions.push({
-        targetType: 'channels-sampling',
-        channelId: activeChannel.id,
-        layerKey: selectedLayer.key,
-        bounds: samplingBounds,
-        disabled: samplingDisabled
+        bounds: resetBounds,
+        disabled: resetDisabled
       });
 
       const invertBounds = {
         minX: toPanelX(invertX),
-        maxX: toPanelX(invertX + invertWidth),
-        minY: Math.min(toPanelY(actionY), toPanelY(actionY + actionButtonHeight)),
-        maxY: Math.max(toPanelY(actionY), toPanelY(actionY + actionButtonHeight))
+        maxX: toPanelX(invertX + buttonWidth),
+        minY: Math.min(toPanelY(firstRowY), toPanelY(firstRowY + actionButtonHeight)),
+        maxY: Math.max(toPanelY(firstRowY), toPanelY(firstRowY + actionButtonHeight))
       };
       regions.push({
         targetType: 'channels-invert',
@@ -3348,25 +3333,38 @@ function VolumeViewer({
         disabled: invertDisabled
       });
 
-      const resetBounds = {
-        minX: toPanelX(resetX),
-        maxX: toPanelX(resetX + resetWidth),
-        minY: Math.min(toPanelY(actionY), toPanelY(actionY + actionButtonHeight)),
-        maxY: Math.max(toPanelY(actionY), toPanelY(actionButtonHeight))
+      const renderBounds = {
+        minX: toPanelX(renderX),
+        maxX: toPanelX(renderX + buttonWidth),
+        minY: Math.min(toPanelY(secondRowY), toPanelY(secondRowY + actionButtonHeight)),
+        maxY: Math.max(toPanelY(secondRowY), toPanelY(secondRowY + actionButtonHeight))
       };
       regions.push({
-        targetType: 'channels-reset',
+        targetType: 'channels-render-style',
         channelId: activeChannel.id,
-        bounds: resetBounds,
-        disabled: resetDisabled
+        layerKey: selectedLayer.key,
+        bounds: renderBounds,
+        disabled: renderStyleDisabled
       });
 
-      const actionsBottom = Math.max(
-        samplingY + actionButtonHeight,
-        actionY + actionButtonHeight,
-        actionY + actionButtonHeight
-      );
+      const samplingBounds = {
+        minX: toPanelX(samplingX),
+        maxX: toPanelX(samplingX + buttonWidth),
+        minY: Math.min(toPanelY(secondRowY), toPanelY(secondRowY + actionButtonHeight)),
+        maxY: Math.max(toPanelY(secondRowY), toPanelY(secondRowY + actionButtonHeight))
+      };
+      regions.push({
+        targetType: 'channels-sampling',
+        channelId: activeChannel.id,
+        layerKey: selectedLayer.key,
+        bounds: samplingBounds,
+        disabled: samplingDisabled
+      });
+
+      const actionsBottom = secondRowY + actionButtonHeight;
       currentY = actionsBottom + 32;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
     }
 
     ctx.fillStyle = '#9fb2c8';
