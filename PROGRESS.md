@@ -1,5 +1,9 @@
 # Progress Log
 
+## Launch warning visibility fix
+- Added context-aware dataset error handling so the floating warning only appears after an attempted launch.
+- Kept dataset validation feedback available while preventing file picker interactions from triggering the global warning banner.
+
 ## Bundled Inter webfont
 - Added the `@fontsource/inter` package and imported its stylesheet during app bootstrap so the viewer consistently renders in Inter even on systems without the font installed.
 
