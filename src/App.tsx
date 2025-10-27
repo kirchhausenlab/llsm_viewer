@@ -32,7 +32,10 @@ import './App.css';
 const DEFAULT_CONTRAST = 1;
 const DEFAULT_GAMMA = 1;
 const DEFAULT_BRIGHTNESS = 0;
+type SamplingMode = 'linear' | 'nearest';
+
 const DEFAULT_RENDER_STYLE = 0;
+const DEFAULT_SAMPLING_MODE: SamplingMode = 'linear';
 const DEFAULT_FPS = 12;
 const DEFAULT_TRACK_OPACITY = 0.9;
 const DEFAULT_TRACK_LINE_WIDTH = 1;
@@ -75,6 +78,7 @@ type LayerSettings = {
   yOffset: number;
   renderStyle: 0 | 1;
   invert: boolean;
+  samplingMode: SamplingMode;
 };
 
 const createDefaultLayerSettings = (): LayerSettings => ({
@@ -85,7 +89,8 @@ const createDefaultLayerSettings = (): LayerSettings => ({
   xOffset: 0,
   yOffset: 0,
   renderStyle: DEFAULT_RENDER_STYLE,
-  invert: false
+  invert: false,
+  samplingMode: DEFAULT_SAMPLING_MODE
 });
 
 type ChannelTrackState = {
@@ -2692,6 +2697,23 @@ function App() {
     });
   }, []);
 
+  const handleLayerSamplingModeToggle = useCallback((key: string) => {
+    setLayerSettings((current) => {
+      const previous = current[key] ?? createDefaultLayerSettings();
+      const nextMode: SamplingMode = previous.samplingMode === 'nearest' ? 'linear' : 'nearest';
+      if (previous.samplingMode === nextMode) {
+        return current;
+      }
+      return {
+        ...current,
+        [key]: {
+          ...previous,
+          samplingMode: nextMode
+        }
+      };
+    });
+  }, []);
+
   const handleLayerInvertToggle = useCallback((key: string) => {
     setLayerSettings((current) => {
       const previous = current[key] ?? createDefaultLayerSettings();
@@ -2741,7 +2763,8 @@ function App() {
             xOffset: 0,
             yOffset: 0,
             renderStyle: DEFAULT_RENDER_STYLE,
-            invert: false
+            invert: false,
+            samplingMode: DEFAULT_SAMPLING_MODE
           };
           if (
             previous.contrast !== updated.contrast ||
@@ -2750,7 +2773,8 @@ function App() {
             previous.xOffset !== updated.xOffset ||
             previous.yOffset !== updated.yOffset ||
             previous.renderStyle !== updated.renderStyle ||
-            previous.invert !== updated.invert
+            previous.invert !== updated.invert ||
+            previous.samplingMode !== updated.samplingMode
           ) {
             next[layer.key] = updated;
             changed = true;
@@ -2792,6 +2816,7 @@ function App() {
         offsetY: isActiveChannel ? settings.yOffset : 0,
         renderStyle: settings.renderStyle,
         invert: settings.invert,
+        samplingMode: settings.samplingMode,
         isSegmentation: layer.isSegmentation
       };
     });
@@ -3160,6 +3185,7 @@ function App() {
               onLayerOffsetChange={handleLayerOffsetChange}
               onLayerColorChange={handleLayerColorChange}
               onLayerRenderStyleToggle={handleLayerRenderStyleToggle}
+              onLayerSamplingModeToggle={handleLayerSamplingModeToggle}
               onLayerInvertToggle={handleLayerInvertToggle}
               followedTrackId={followedTrackId}
               onTrackFollowRequest={handleTrackFollowFromViewer}
@@ -3472,15 +3498,38 @@ function App() {
                       {selectedLayer ? (
                         <>
                           <div className="channel-primary-actions">
-                            <button
-                              type="button"
-                              className="channel-action-button"
-                              onClick={() => handleLayerRenderStyleToggle(selectedLayer.key)}
-                              disabled={sliderDisabled}
-                              aria-pressed={settings.renderStyle === 1}
-                            >
-                              Switch render style
-                            </button>
+                            {viewerMode === '3d' ? (
+                              <div className="channel-primary-actions-stack">
+                                <button
+                                  type="button"
+                                  className="channel-action-button"
+                                  onClick={() => handleLayerRenderStyleToggle(selectedLayer.key)}
+                                  disabled={sliderDisabled}
+                                  aria-pressed={settings.renderStyle === 1}
+                                >
+                                  Switch render style
+                                </button>
+                                <button
+                                  type="button"
+                                  className="channel-action-button"
+                                  onClick={() => handleLayerSamplingModeToggle(selectedLayer.key)}
+                                  disabled={sliderDisabled}
+                                  aria-pressed={settings.samplingMode === 'nearest'}
+                                >
+                                  Switch sampling mode
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                className="channel-action-button"
+                                onClick={() => handleLayerRenderStyleToggle(selectedLayer.key)}
+                                disabled={sliderDisabled}
+                                aria-pressed={settings.renderStyle === 1}
+                              >
+                                Switch render style
+                              </button>
+                            )}
                             <button
                               type="button"
                               className="channel-action-button"

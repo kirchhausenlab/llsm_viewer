@@ -1127,6 +1127,13 @@
   gap: 0.5rem;
 }
 
+.channel-controls .channel-primary-actions-stack {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 11rem;
+  gap: 0.5rem;
+}
+
 .channel-controls .channel-primary-actions .channel-action-button {
   flex: 1 1 11rem;
 }
