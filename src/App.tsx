@@ -1354,7 +1354,7 @@ function App() {
         const id = Math.trunc(rawId);
         const time = initialTime + deltaTime;
         const normalizedTime = Math.max(0, time - 1);
-        const point: TrackPoint = { time: normalizedTime, x, y, z: -z };
+        const point: TrackPoint = { time: normalizedTime, x, y, z };
         const existing = trackMap.get(id);
         if (existing) {
           existing.push(point);
