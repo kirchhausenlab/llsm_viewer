@@ -401,3 +401,8 @@ d centered the front-page card in the viewport.
 ## Launch warning visibility follow-up
 - Kept the launch button clickable while dataset validation fails so users can surface actionable warnings instead of seeing nothing.
 - Dimmed the launch button when a dataset is incomplete but avoided disabling it outright, reserving the hard-disable for the actual launch cycle.
+
+## Channel action button layout tweaks
+- Reworked the desktop channel action area so reset/invert share the first row and render/sampling share the second, matching requested ordering.
+- Gave all four buttons the wider styling from the invert control, reducing the label text and clamping widths so they fit cleanly in the sidebar.
+- Mirrored the same two-row, equal-width layout in the VR HUD so both viewing modes present consistent controls and hover regions.

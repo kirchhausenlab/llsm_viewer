@@ -3459,16 +3459,6 @@ function App() {
                       className={isActive ? 'channel-panel is-active' : 'channel-panel'}
                       hidden={!isActive}
                     >
-                      <div className="channel-action-row">
-                        <button
-                          type="button"
-                          className="channel-action-button channel-action-button--compact"
-                          onClick={() => handleChannelSliderReset(channelId)}
-                          disabled={channelLayers.length === 0}
-                        >
-                          reset sliders
-                        </button>
-                      </div>
                       {channelLayers.length > 1 ? (
                         <div
                           className="channel-layer-selector"
@@ -3498,28 +3488,27 @@ function App() {
                       {selectedLayer ? (
                         <>
                           <div className="channel-primary-actions">
-                            {viewerMode === '3d' ? (
-                              <div className="channel-primary-actions-stack">
-                                <button
-                                  type="button"
-                                  className="channel-action-button"
-                                  onClick={() => handleLayerRenderStyleToggle(selectedLayer.key)}
-                                  disabled={sliderDisabled}
-                                  aria-pressed={settings.renderStyle === 1}
-                                >
-                                  Switch render style
-                                </button>
-                                <button
-                                  type="button"
-                                  className="channel-action-button"
-                                  onClick={() => handleLayerSamplingModeToggle(selectedLayer.key)}
-                                  disabled={sliderDisabled}
-                                  aria-pressed={settings.samplingMode === 'nearest'}
-                                >
-                                  Switch sampling mode
-                                </button>
-                              </div>
-                            ) : (
+                            <div className="channel-primary-actions-row">
+                              <button
+                                type="button"
+                                className="channel-action-button"
+                                onClick={() => handleChannelSliderReset(channelId)}
+                                disabled={channelLayers.length === 0}
+                              >
+                                Reset sliders
+                              </button>
+                              <button
+                                type="button"
+                                className="channel-action-button"
+                                onClick={() => handleLayerInvertToggle(selectedLayer.key)}
+                                disabled={invertDisabled}
+                                aria-pressed={settings.invert}
+                                title={invertTitle}
+                              >
+                                Invert LUT
+                              </button>
+                            </div>
+                            <div className="channel-primary-actions-row">
                               <button
                                 type="button"
                                 className="channel-action-button"
@@ -3527,19 +3516,20 @@ function App() {
                                 disabled={sliderDisabled}
                                 aria-pressed={settings.renderStyle === 1}
                               >
-                                Switch render style
+                                Render style
                               </button>
-                            )}
-                            <button
-                              type="button"
-                              className="channel-action-button"
-                              onClick={() => handleLayerInvertToggle(selectedLayer.key)}
-                              disabled={invertDisabled}
-                              aria-pressed={settings.invert}
-                              title={invertTitle}
-                            >
-                              Invert LUT
-                            </button>
+                              {viewerMode === '3d' ? (
+                                <button
+                                  type="button"
+                                  className="channel-action-button"
+                                  onClick={() => handleLayerSamplingModeToggle(selectedLayer.key)}
+                                  disabled={sliderDisabled}
+                                  aria-pressed={settings.samplingMode === 'nearest'}
+                                >
+                                  Sampling mode
+                                </button>
+                              ) : null}
+                            </div>
                           </div>
                           <div className="slider-control slider-control--pair">
                             <div className="slider-control slider-control--inline">
