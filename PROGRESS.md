@@ -8,6 +8,12 @@
 
 # Progress Log
 
+## Volume streaming guardrails
+- Added a configurable `MAX_VOLUME_BYTES` limit so the worker bails out before allocating buffers for oversized datasets.
+- Streamed TIFF slices from the worker instead of concatenating them, emitting per-slice messages with transferable buffers.
+- Reassembled streamed slices in the main thread via a preallocated (Shared)ArrayBuffer and surfaced structured `VolumeTooLargeError` failures.
+- Updated the React consumer to rebuild `VolumePayload` objects from streamed data and to present a friendlier error when a dataset exceeds the current limit.
+
 ## Track visibility regression fix
 - Removed the artificial timeline offset that pushed parsed track coordinates beyond the dataset's frame range, restoring track visibility for channels with staggered starts.
 

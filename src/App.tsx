@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent, FormEvent } from 'react';
 import { loadVolumesFromFiles } from './loaders/volumeLoader';
+import { VolumeTooLargeError, formatBytes } from './errors';
 import VolumeViewer from './components/VolumeViewer';
 import PlanarViewer from './components/PlanarViewer';
 import {
@@ -1685,7 +1686,17 @@ function App() {
       setLoadedCount(0);
       setExpectedVolumeCount(0);
       setIsPlaying(false);
-      const message = err instanceof Error ? err.message : 'Failed to load volumes.';
+      const message =
+        err instanceof VolumeTooLargeError
+          ? (() => {
+              const size = formatBytes(err.requiredBytes);
+              const limit = formatBytes(err.maxBytes);
+              const name = err.fileName ? ` "${err.fileName}"` : '';
+              return `The dataset${name} requires ${size}, which exceeds the current browser limit of ${limit}. Reduce the dataset size or enable chunked uploads before trying again.`;
+            })()
+          : err instanceof Error
+            ? err.message
+            : 'Failed to load volumes.';
       showLaunchError(message);
       setError(message);
       return false;

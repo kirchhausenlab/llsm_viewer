@@ -1,16 +1,18 @@
 /// <reference lib="webworker" />
 import { fromBlob } from 'geotiff';
-import type { VolumeDataType, VolumePayload } from '../types/volume';
+import { MAX_VOLUME_BYTES } from '../constants/volumeLimits';
+import { VolumeTooLargeError } from '../errors';
+import type { VolumeDataType, VolumeTypedArray } from '../types/volume';
+import { getBytesPerValue } from '../types/volume';
+import type {
+  VolumeLoadedMessage,
+  VolumeSliceMessage,
+  VolumeStartMessage,
+  VolumeWorkerCompleteMessage,
+  VolumeWorkerErrorMessage
+} from './volumeLoaderMessages';
 
-type SupportedTypedArray =
-  | Uint8Array
-  | Int8Array
-  | Uint16Array
-  | Int16Array
-  | Uint32Array
-  | Int32Array
-  | Float32Array
-  | Float64Array;
+type SupportedTypedArray = VolumeTypedArray;
 
 type LoadVolumesMessage = {
   type: 'load-volumes';
@@ -19,24 +21,6 @@ type LoadVolumesMessage = {
 };
 
 type WorkerMessage = LoadVolumesMessage;
-
-type VolumeLoadedMessage = {
-  type: 'volume-loaded';
-  requestId: number;
-  index: number;
-  payload: VolumePayload;
-};
-
-type LoadCompleteMessage = {
-  type: 'complete';
-  requestId: number;
-};
-
-type LoadErrorMessage = {
-  type: 'error';
-  requestId: number;
-  message: string;
-};
 
 const ctx: DedicatedWorkerGlobalScope = self as unknown as DedicatedWorkerGlobalScope;
 
@@ -58,18 +42,18 @@ ctx.onmessage = async (event: MessageEvent<WorkerMessage>) => {
           {
             type: 'complete',
             requestId
-          } satisfies LoadCompleteMessage
+          } satisfies VolumeWorkerCompleteMessage
         );
       } catch (error) {
+        const serialized = serializeErrorDetails(error);
         ctx.postMessage(
           {
             type: 'error',
             requestId,
-            message:
-              error instanceof Error
-                ? error.message
-                : 'An unexpected error occurred while loading volumes.'
-          } satisfies LoadErrorMessage
+            message: serialized.message,
+            code: serialized.code,
+            details: serialized.details
+          } satisfies VolumeWorkerErrorMessage
         );
       }
       break;
@@ -119,21 +103,10 @@ async function loadVolumesConcurrently(
       const file = files[index];
 
       try {
-        const payload = await loadVolumeFromFile(file);
+        await loadVolumeFromFile(file, requestId, index);
         if (errorRef.value) {
           return;
         }
-
-        const transferable = payload.data;
-        ctx.postMessage(
-          {
-            type: 'volume-loaded',
-            requestId,
-            index,
-            payload
-          } satisfies VolumeLoadedMessage,
-          [transferable]
-        );
       } catch (error) {
         if (!errorRef.value) {
           errorRef.value = error;
@@ -149,7 +122,11 @@ async function loadVolumesConcurrently(
   return { error: errorRef.value };
 }
 
-async function loadVolumeFromFile(file: File): Promise<VolumePayload> {
+async function loadVolumeFromFile(
+  file: File,
+  requestId: number,
+  index: number
+): Promise<void> {
   const tiff = await fromBlob(file);
   const imageCount = await tiff.getImageCount();
   if (imageCount === 0) {
@@ -171,31 +148,33 @@ async function loadVolumeFromFile(file: File): Promise<VolumePayload> {
 
   const typedFirstRaster = firstRasterRaw as SupportedTypedArray;
   const dataType = detectDataType(typedFirstRaster);
-  const combined = createTypedArray(dataType, totalValues) as SupportedTypedArray & {
-    [index: number]: number;
+  const bytesPerValue = getBytesPerValue(dataType);
+  const totalBytes = totalValues * bytesPerValue;
+  if (totalBytes > MAX_VOLUME_BYTES) {
+    throw new VolumeTooLargeError({
+      requiredBytes: totalBytes,
+      maxBytes: MAX_VOLUME_BYTES,
+      dimensions: { width, height, depth: imageCount, channels, dataType },
+      fileName: file.name
+    });
+  }
+
+  const startMessage: VolumeStartMessage = {
+    type: 'volume-start',
+    requestId,
+    index,
+    metadata: { width, height, depth: imageCount, channels, dataType, bytesPerValue }
   };
+  ctx.postMessage(startMessage);
 
   let globalMin = Number.POSITIVE_INFINITY;
   let globalMax = Number.NEGATIVE_INFINITY;
-
-  const copySlice = (source: SupportedTypedArray, offset: number) => {
-    for (let i = 0; i < source.length; i += 1) {
-      const value = source[i] as number;
-      if (value < globalMin) {
-        globalMin = value;
-      }
-      if (value > globalMax) {
-        globalMax = value;
-      }
-      combined[offset + i] = value;
-    }
-  };
 
   if (typedFirstRaster.length !== sliceLength) {
     throw new Error(`File "${file.name}" returned an unexpected slice length.`);
   }
 
-  copySlice(typedFirstRaster, 0);
+  scanAndPostSlice(typedFirstRaster, 0);
 
   for (let index = 1; index < imageCount; index += 1) {
     const image = await tiff.getImage(index);
@@ -216,7 +195,7 @@ async function loadVolumeFromFile(file: File): Promise<VolumePayload> {
       throw new Error(`Slice ${index + 1} in file "${file.name}" returned an unexpected slice length.`);
     }
 
-    copySlice(raster, index * sliceLength);
+    scanAndPostSlice(raster, index);
   }
 
   if (!Number.isFinite(globalMin) || globalMin === Number.POSITIVE_INFINITY) {
@@ -228,25 +207,57 @@ async function loadVolumeFromFile(file: File): Promise<VolumePayload> {
   if (globalMin === globalMax) {
     globalMax = globalMin + 1;
   }
+  const loadedMessage: VolumeLoadedMessage = {
+    type: 'volume-loaded',
+    requestId,
+    index,
+    metadata: {
+      width,
+      height,
+      depth: imageCount,
+      channels,
+      dataType,
+      min: globalMin,
+      max: globalMax
+    }
+  };
+  ctx.postMessage(loadedMessage);
 
-  const sourceBuffer = combined.buffer;
-  const buffer: ArrayBuffer =
-    sourceBuffer instanceof ArrayBuffer &&
-    combined.byteOffset === 0 &&
-    combined.byteLength === sourceBuffer.byteLength
-      ? sourceBuffer
-      : new Uint8Array(sourceBuffer, combined.byteOffset, combined.byteLength).slice().buffer;
+  function scanAndPostSlice(array: SupportedTypedArray, sliceIndex: number) {
+    let sliceMin = Number.POSITIVE_INFINITY;
+    let sliceMax = Number.NEGATIVE_INFINITY;
 
-  return {
-    width,
-    height,
-    depth: imageCount,
-    channels,
-    dataType,
-    min: globalMin,
-    max: globalMax,
-    data: buffer
-  } satisfies VolumePayload;
+    for (let i = 0; i < array.length; i += 1) {
+      const rawValue = array[i] as number;
+      if (Number.isNaN(rawValue)) {
+        continue;
+      }
+      if (rawValue < sliceMin) {
+        sliceMin = rawValue;
+      }
+      if (rawValue > sliceMax) {
+        sliceMax = rawValue;
+      }
+    }
+
+    if (Number.isFinite(sliceMin) && sliceMin < globalMin) {
+      globalMin = sliceMin;
+    }
+    if (Number.isFinite(sliceMax) && sliceMax > globalMax) {
+      globalMax = sliceMax;
+    }
+
+    const transferable = toTransferableBuffer(array);
+    const message: VolumeSliceMessage = {
+      type: 'volume-slice',
+      requestId,
+      index,
+      sliceIndex,
+      sliceCount: imageCount,
+      buffer: transferable
+    };
+    ctx.postMessage(message, [transferable]);
+  }
 }
 
 function detectDataType(array: SupportedTypedArray): VolumeDataType {
@@ -275,31 +286,6 @@ function detectDataType(array: SupportedTypedArray): VolumeDataType {
     return 'float64';
   }
   throw new Error('Unsupported raster data type.');
-}
-
-function createTypedArray(type: VolumeDataType, length: number): SupportedTypedArray {
-  switch (type) {
-    case 'uint8':
-      return new Uint8Array(length);
-    case 'int8':
-      return new Int8Array(length);
-    case 'uint16':
-      return new Uint16Array(length);
-    case 'int16':
-      return new Int16Array(length);
-    case 'uint32':
-      return new Uint32Array(length);
-    case 'int32':
-      return new Int32Array(length);
-    case 'float32':
-      return new Float32Array(length);
-    case 'float64':
-      return new Float64Array(length);
-    default: {
-      const exhaustiveCheck: never = type;
-      throw new Error(`Unsupported volume data type: ${exhaustiveCheck}`);
-    }
-  }
 }
 
 function ensureTypedArray(
@@ -354,6 +340,43 @@ function ensureTypedArray(
       throw new Error(`Unsupported volume data type: ${exhaustiveCheck}`);
     }
   }
+}
+
+function toTransferableBuffer(array: SupportedTypedArray): ArrayBuffer {
+  const { buffer, byteOffset, byteLength } = array;
+  if (
+    buffer instanceof ArrayBuffer &&
+    byteOffset === 0 &&
+    byteLength === buffer.byteLength
+  ) {
+    return buffer;
+  }
+  return new Uint8Array(buffer, byteOffset, byteLength).slice().buffer;
+}
+
+function serializeErrorDetails(error: unknown): {
+  message: string;
+  code?: string;
+  details?: unknown;
+} {
+  if (error instanceof VolumeTooLargeError) {
+    return {
+      message: error.message,
+      code: 'volume-too-large',
+      details: {
+        requiredBytes: error.requiredBytes,
+        maxBytes: error.maxBytes,
+        dimensions: error.dimensions,
+        fileName: error.fileName
+      }
+    };
+  }
+
+  if (error instanceof Error) {
+    return { message: error.message };
+  }
+
+  return { message: 'An unexpected error occurred while loading volumes.' };
 }
 
 export {};
