@@ -34,6 +34,7 @@ type ViewerLayer = {
   offsetY: number;
   renderStyle: 0 | 1;
   invert: boolean;
+  samplingMode: 'linear' | 'nearest';
   isSegmentation?: boolean;
   mode?: '3d' | 'slice';
   sliceIndex?: number;
@@ -90,6 +91,7 @@ type VolumeViewerProps = {
         yOffset: number;
         renderStyle: 0 | 1;
         invert: boolean;
+        samplingMode: 'linear' | 'nearest';
       };
     }>;
   }>;
@@ -104,6 +106,7 @@ type VolumeViewerProps = {
   onLayerOffsetChange: (layerKey: string, axis: 'x' | 'y', value: number) => void;
   onLayerColorChange: (layerKey: string, color: string) => void;
   onLayerRenderStyleToggle: (layerKey: string) => void;
+  onLayerSamplingModeToggle: (layerKey: string) => void;
   onLayerInvertToggle: (layerKey: string) => void;
   followedTrackId: string | null;
   onTrackFollowRequest: (trackId: string) => void;
@@ -129,6 +132,7 @@ type VolumeResources = {
   };
   channels: number;
   mode: '3d' | 'slice';
+  samplingMode: 'linear' | 'nearest';
   sliceBuffer?: Uint8Array | null;
 };
 
@@ -316,6 +320,7 @@ type VrChannelsInteractiveRegion = {
     | 'channels-slider'
     | 'channels-color'
     | 'channels-render-style'
+    | 'channels-sampling'
     | 'channels-invert';
   channelId: string;
   layerKey?: string;
@@ -374,6 +379,7 @@ type VrChannelsState = {
         yOffset: number;
         renderStyle: 0 | 1;
         invert: boolean;
+        samplingMode: 'linear' | 'nearest';
       };
     }>;
   }>;
@@ -861,6 +867,7 @@ function VolumeViewer({
   onLayerOffsetChange,
   onLayerColorChange,
   onLayerRenderStyleToggle,
+  onLayerSamplingModeToggle,
   onLayerInvertToggle,
   followedTrackId,
   onTrackFollowRequest,
@@ -3206,6 +3213,8 @@ function VolumeViewer({
       const renderStyleDisabled = !selectedLayer.hasData;
       const invertDisabled = !selectedLayer.hasData || selectedLayer.isSegmentation;
       const renderStyleActive = selectedLayer.settings.renderStyle === 1;
+      const samplingDisabled = renderStyleDisabled;
+      const samplingActive = selectedLayer.settings.samplingMode === 'nearest';
       const invertActive = selectedLayer.settings.invert;
       const actionButtonHeight = 60;
       const actionButtonRadius = 16;
@@ -3217,6 +3226,8 @@ function VolumeViewer({
       const switchX = paddingX;
       const invertX = switchX + switchWidth + actionSpacing;
       const resetX = invertX + invertWidth + actionSpacing;
+      const stackSpacing = 18;
+      const samplingY = actionY + actionButtonHeight + stackSpacing;
 
       drawRoundedRect(ctx, switchX, actionY, switchWidth, actionButtonHeight, actionButtonRadius);
       ctx.fillStyle = renderStyleDisabled ? 'rgba(45, 60, 74, 0.6)' : renderStyleActive ? '#2b5fa6' : '#2b3340';
@@ -3238,6 +3249,24 @@ function VolumeViewer({
       ctx.textBaseline = 'middle';
       ctx.font = vrChannelsFont('600', VR_CHANNELS_FONT_SIZES.small);
       ctx.fillText('Switch render style', switchX + switchWidth / 2, actionY + actionButtonHeight / 2);
+
+      drawRoundedRect(ctx, switchX, samplingY, switchWidth, actionButtonHeight, actionButtonRadius);
+      ctx.fillStyle = samplingDisabled ? 'rgba(45, 60, 74, 0.6)' : samplingActive ? '#2b5fa6' : '#2b3340';
+      ctx.fill();
+      if (
+        hud.hoverRegion &&
+        hud.hoverRegion.targetType === 'channels-sampling' &&
+        hud.hoverRegion.channelId === activeChannel.id &&
+        hud.hoverRegion.layerKey === selectedLayer.key
+      ) {
+        ctx.save();
+        drawRoundedRect(ctx, switchX, samplingY, switchWidth, actionButtonHeight, actionButtonRadius);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.fillStyle = samplingDisabled ? '#7b8795' : '#f3f6fc';
+      ctx.fillText('Switch sampling mode', switchX + switchWidth / 2, samplingY + actionButtonHeight / 2);
 
       drawRoundedRect(ctx, invertX, actionY, invertWidth, actionButtonHeight, actionButtonRadius);
       ctx.fillStyle = invertDisabled ? 'rgba(45, 60, 74, 0.6)' : invertActive ? '#2b5fa6' : '#2b3340';
@@ -3291,6 +3320,20 @@ function VolumeViewer({
         disabled: renderStyleDisabled
       });
 
+      const samplingBounds = {
+        minX: toPanelX(switchX),
+        maxX: toPanelX(switchX + switchWidth),
+        minY: Math.min(toPanelY(samplingY), toPanelY(samplingY + actionButtonHeight)),
+        maxY: Math.max(toPanelY(samplingY), toPanelY(samplingY + actionButtonHeight))
+      };
+      regions.push({
+        targetType: 'channels-sampling',
+        channelId: activeChannel.id,
+        layerKey: selectedLayer.key,
+        bounds: samplingBounds,
+        disabled: samplingDisabled
+      });
+
       const invertBounds = {
         minX: toPanelX(invertX),
         maxX: toPanelX(invertX + invertWidth),
@@ -3318,7 +3361,12 @@ function VolumeViewer({
         disabled: resetDisabled
       });
 
-      currentY += actionButtonHeight + 32;
+      const actionsBottom = Math.max(
+        samplingY + actionButtonHeight,
+        actionY + actionButtonHeight,
+        actionY + actionButtonHeight
+      );
+      currentY = actionsBottom + 32;
     }
 
     ctx.fillStyle = '#9fb2c8';
@@ -3885,7 +3933,8 @@ function VolumeViewer({
           xOffset: layer.settings.xOffset,
           yOffset: layer.settings.yOffset,
           renderStyle: layer.settings.renderStyle,
-          invert: layer.settings.invert
+          invert: layer.settings.invert,
+          samplingMode: layer.settings.samplingMode ?? 'linear'
         }
       }))
     }));
@@ -5437,6 +5486,7 @@ function VolumeViewer({
                   layer.settings.yOffset = 0;
                   layer.settings.renderStyle = 0;
                   layer.settings.invert = false;
+                  layer.settings.samplingMode = 'linear';
                 }
               }
               onChannelReset(region.channelId);
@@ -5454,6 +5504,16 @@ function VolumeViewer({
                   layerState.settings.renderStyle = layerState.settings.renderStyle === 1 ? 0 : 1;
                 }
                 onLayerRenderStyleToggle(region.layerKey);
+              }
+            } else if (activeTarget.type === 'channels-sampling' && region.layerKey) {
+              if (!region.disabled) {
+                const channelState = state.channels.find((channel) => channel.id === region.channelId);
+                const layerState = channelState?.layers.find((layer) => layer.key === region.layerKey);
+                if (layerState) {
+                  layerState.settings.samplingMode =
+                    layerState.settings.samplingMode === 'nearest' ? 'linear' : 'nearest';
+                }
+                onLayerSamplingModeToggle(region.layerKey);
               }
             } else if (activeTarget.type === 'channels-invert' && region.layerKey) {
               if (!region.disabled) {
@@ -8141,8 +8201,10 @@ function VolumeViewer({
           const texture = new THREE.Data3DTexture(textureData, volume.width, volume.height, volume.depth);
           texture.format = textureFormat;
           texture.type = THREE.UnsignedByteType;
-          texture.minFilter = THREE.LinearFilter;
-          texture.magFilter = THREE.LinearFilter;
+          const samplingFilter =
+            layer.samplingMode === 'nearest' ? THREE.NearestFilter : THREE.LinearFilter;
+          texture.minFilter = samplingFilter;
+          texture.magFilter = samplingFilter;
           texture.unpackAlignment = 1;
           texture.colorSpace = THREE.LinearSRGBColorSpace;
           texture.needsUpdate = true;
@@ -8211,7 +8273,8 @@ function VolumeViewer({
             texture,
             dimensions: { width: volume.width, height: volume.height, depth: volume.depth },
             channels: volume.channels,
-            mode: viewerMode
+            mode: viewerMode,
+            samplingMode: layer.samplingMode
           });
         }
 
@@ -8288,6 +8351,7 @@ function VolumeViewer({
             dimensions: { width: volume.width, height: volume.height, depth: volume.depth },
             channels: volume.channels,
             mode: viewerMode,
+            samplingMode: layer.samplingMode,
             sliceBuffer: sliceInfo.data
           });
         }
@@ -8315,6 +8379,14 @@ function VolumeViewer({
         if (resources.mode === '3d') {
           const preparation = cachedPreparation ?? getCachedTextureData(volume);
           const dataTexture = resources.texture as THREE.Data3DTexture;
+          if (resources.samplingMode !== layer.samplingMode) {
+            const samplingFilter =
+              layer.samplingMode === 'nearest' ? THREE.NearestFilter : THREE.LinearFilter;
+            dataTexture.minFilter = samplingFilter;
+            dataTexture.magFilter = samplingFilter;
+            dataTexture.needsUpdate = true;
+            resources.samplingMode = layer.samplingMode;
+          }
           dataTexture.image.data = preparation.data;
           dataTexture.format = preparation.format;
           dataTexture.needsUpdate = true;
