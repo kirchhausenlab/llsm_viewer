@@ -1,3 +1,7 @@
+# VR performance tuning
+- Requested the WebGL renderer to prefer the high-performance GPU and clamped its pixel ratio to 2× to avoid unnecessary supersampling spikes.
+- Applied fixed foveated rendering when immersive sessions begin and restored the previous setting on exit, trading peripheral detail for noticeably smoother headset frame rates while keeping central fidelity intact.
+
 # Progress Log
 
 ## Launch warning visibility fix

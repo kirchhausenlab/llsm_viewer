@@ -517,6 +517,11 @@ type VolumeScaleState = {
 
 type VrHudPlacement = { position: THREE.Vector3; yaw: number; pitch: number };
 
+type WebXRFoveationManager = THREE.WebXRManager & {
+  getFoveation?: () => number | undefined;
+  setFoveation?: (value: number) => void;
+};
+
 const DEFAULT_TRACK_OPACITY = 0.9;
 const DEFAULT_TRACK_LINE_WIDTH = 1;
 
@@ -583,6 +588,8 @@ const VR_HUD_YAW_HANDLE_OFFSET = 0.03;
 const VR_HUD_TRANSLATE_HANDLE_COLOR = 0x4d9dff;
 const VR_HUD_YAW_HANDLE_COLOR = 0xffb347;
 const VR_HUD_SURFACE_OFFSET = 0.0015;
+const MAX_RENDERER_PIXEL_RATIO = 2;
+const XR_TARGET_FOVEATION = 0.6;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const VIEWER_YAW_FORWARD_REFERENCE = new THREE.Vector3(0, 0, -1);
 const VIEWER_YAW_RIGHT_REFERENCE = new THREE.Vector3(1, 0, 0);
@@ -944,6 +951,8 @@ function VolumeViewer({
   const xrCurrentSessionModeRef = useRef<'immersive-vr' | 'immersive-ar' | null>(null);
   const xrPendingModeSwitchRef = useRef<'immersive-vr' | 'immersive-ar' | null>(null);
   const xrPassthroughSupportedRef = useRef(isVrPassthroughSupported);
+  const xrFoveationAppliedRef = useRef(false);
+  const xrPreviousFoveationRef = useRef<number | undefined>(undefined);
   const playbackStateRef = useRef({
     isPlaying,
     playbackDisabled,
@@ -4622,14 +4631,58 @@ function VolumeViewer({
     }
 
     let isDisposed = false;
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: true,
+      powerPreference: 'high-performance'
+    });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.setPixelRatio(window.devicePixelRatio);
+    const pixelRatio =
+      typeof window === 'undefined'
+        ? 1
+        : Math.min(window.devicePixelRatio ?? 1, MAX_RENDERER_PIXEL_RATIO);
+    renderer.setPixelRatio(pixelRatio);
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setClearColor(0x000000, 0);
     renderer.domElement.style.background = 'transparent';
     renderer.xr.enabled = true;
     renderer.xr.setReferenceSpaceType?.('local-floor');
+
+    const applyVrFoveation = (target: number = XR_TARGET_FOVEATION) => {
+      const xrManager = renderer.xr as WebXRFoveationManager;
+      const setFoveation = xrManager.setFoveation;
+      if (typeof setFoveation !== 'function') {
+        return;
+      }
+      if (!xrFoveationAppliedRef.current) {
+        const getFoveation = xrManager.getFoveation;
+        xrPreviousFoveationRef.current =
+          typeof getFoveation === 'function' ? getFoveation() : undefined;
+      }
+      setFoveation(target);
+      xrFoveationAppliedRef.current = true;
+    };
+
+    const restoreVrFoveation = () => {
+      if (!xrFoveationAppliedRef.current) {
+        return;
+      }
+      const xrManager = renderer.xr as WebXRFoveationManager;
+      const setFoveation = xrManager.setFoveation;
+      if (typeof setFoveation !== 'function') {
+        xrFoveationAppliedRef.current = false;
+        xrPreviousFoveationRef.current = undefined;
+        return;
+      }
+      const previous = xrPreviousFoveationRef.current;
+      xrFoveationAppliedRef.current = false;
+      xrPreviousFoveationRef.current = undefined;
+      if (typeof previous === 'number') {
+        setFoveation(previous);
+      } else {
+        setFoveation(0);
+      }
+    };
 
     container.appendChild(renderer.domElement);
 
@@ -7183,6 +7236,7 @@ function VolumeViewer({
         presenting: renderer.xr.isPresenting,
         visibilityState: xrSessionRef.current?.visibilityState ?? null
       });
+      applyVrFoveation();
       volumeRootBaseOffsetRef.current.copy(VR_VOLUME_BASE_OFFSET);
       applyVolumeRootTransform(currentDimensionsRef.current);
       refreshControllerVisibility();
@@ -7205,6 +7259,7 @@ function VolumeViewer({
         presenting: renderer.xr.isPresenting,
         visibilityState: xrSessionRef.current?.visibilityState ?? null
       });
+      restoreVrFoveation();
       volumeRootBaseOffsetRef.current.set(0, 0, 0);
       applyVolumeRootTransform(currentDimensionsRef.current);
       refreshControllerVisibility();
@@ -7230,6 +7285,7 @@ function VolumeViewer({
         presenting: renderer.xr.isPresenting,
         visibilityState: xrSessionRef.current?.visibilityState ?? null
       });
+      restoreVrFoveation();
       sessionCleanupRef.current = null;
       xrSessionRef.current = null;
       xrCurrentSessionModeRef.current = null;
@@ -7369,6 +7425,7 @@ function VolumeViewer({
         presenting: renderer.xr.isPresenting,
         visibilityState: session.visibilityState
       });
+      applyVrFoveation();
       volumeRootBaseOffsetRef.current.copy(VR_VOLUME_BASE_OFFSET);
       applyVolumeRootTransform(currentDimensionsRef.current);
       setVrPlaybackHudVisible(true);
@@ -7553,6 +7610,7 @@ function VolumeViewer({
     return () => {
       isDisposed = true;
       onRegisterVrSession?.(null);
+      restoreVrFoveation();
       renderer.xr.removeEventListener('sessionstart', handleXrManagerSessionStart);
       renderer.xr.removeEventListener('sessionend', handleXrManagerSessionEnd);
       renderer.setAnimationLoop(null);
