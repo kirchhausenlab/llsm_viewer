@@ -3029,14 +3029,6 @@ function VolumeViewer({
         ctx.restore();
       }
 
-      const rectBounds = {
-        minX: toPanelX(x),
-        maxX: toPanelX(x + tabWidth),
-        minY: Math.min(toPanelY(y), toPanelY(y + tabHeight)),
-        maxY: Math.max(toPanelY(y), toPanelY(y + tabHeight))
-      };
-      regions.push({ targetType: 'channels-tab', channelId: channel.id, bounds: rectBounds });
-
       const labelBounds = {
         minX: toPanelX(labelMinX),
         maxX: toPanelX(labelMaxX),
@@ -3044,6 +3036,14 @@ function VolumeViewer({
         maxY: Math.max(toPanelY(labelMinY), toPanelY(labelMaxY))
       };
       regions.push({ targetType: 'channels-visibility', channelId: channel.id, bounds: labelBounds });
+
+      const rectBounds = {
+        minX: toPanelX(x),
+        maxX: toPanelX(x + tabWidth),
+        minY: Math.min(toPanelY(y), toPanelY(y + tabHeight)),
+        maxY: Math.max(toPanelY(y), toPanelY(y + tabHeight))
+      };
+      regions.push({ targetType: 'channels-tab', channelId: channel.id, bounds: rectBounds });
     }
 
     const totalTabHeight = totalRows * tabHeight + Math.max(0, totalRows - 1) * tabSpacingY;
