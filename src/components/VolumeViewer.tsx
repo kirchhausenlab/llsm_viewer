@@ -590,6 +590,7 @@ const VR_HUD_YAW_HANDLE_COLOR = 0xffb347;
 const VR_HUD_SURFACE_OFFSET = 0.0015;
 const MAX_RENDERER_PIXEL_RATIO = 2;
 const XR_TARGET_FOVEATION = 0.6;
+const XR_FRAMEBUFFER_SCALE = 0.7;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const VIEWER_YAW_FORWARD_REFERENCE = new THREE.Vector3(0, 0, -1);
 const VIEWER_YAW_RIGHT_REFERENCE = new THREE.Vector3(1, 0, 0);
@@ -952,6 +953,7 @@ function VolumeViewer({
   const xrPendingModeSwitchRef = useRef<'immersive-vr' | 'immersive-ar' | null>(null);
   const xrPassthroughSupportedRef = useRef(isVrPassthroughSupported);
   const xrFoveationAppliedRef = useRef(false);
+  const xrFramebufferScaleAppliedRef = useRef(false);
   const xrPreviousFoveationRef = useRef<number | undefined>(undefined);
   const playbackStateRef = useRef({
     isPlaying,
@@ -7237,6 +7239,10 @@ function VolumeViewer({
         visibilityState: xrSessionRef.current?.visibilityState ?? null
       });
       applyVrFoveation();
+      if (typeof renderer.xr.setFramebufferScaleFactor === 'function') {
+        renderer.xr.setFramebufferScaleFactor?.(XR_FRAMEBUFFER_SCALE);
+        xrFramebufferScaleAppliedRef.current = true;
+      }
       volumeRootBaseOffsetRef.current.copy(VR_VOLUME_BASE_OFFSET);
       applyVolumeRootTransform(currentDimensionsRef.current);
       refreshControllerVisibility();
@@ -7260,6 +7266,10 @@ function VolumeViewer({
         visibilityState: xrSessionRef.current?.visibilityState ?? null
       });
       restoreVrFoveation();
+      if (xrFramebufferScaleAppliedRef.current) {
+        renderer.xr.setFramebufferScaleFactor?.(1);
+        xrFramebufferScaleAppliedRef.current = false;
+      }
       volumeRootBaseOffsetRef.current.set(0, 0, 0);
       applyVolumeRootTransform(currentDimensionsRef.current);
       refreshControllerVisibility();
@@ -7286,6 +7296,10 @@ function VolumeViewer({
         visibilityState: xrSessionRef.current?.visibilityState ?? null
       });
       restoreVrFoveation();
+      if (xrFramebufferScaleAppliedRef.current) {
+        renderer.xr.setFramebufferScaleFactor?.(1);
+        xrFramebufferScaleAppliedRef.current = false;
+      }
       sessionCleanupRef.current = null;
       xrSessionRef.current = null;
       xrCurrentSessionModeRef.current = null;
