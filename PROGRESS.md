@@ -1,4 +1,8 @@
 # VR performance tuning
+- Added a configurable `u_stepScale` ray-march uniform so headset sessions can trade sampling density for performance without
+  recompiling shaders.
+- Defaulted the step scale to 1.0 on desktop and raised it to 1.4 whenever immersive WebXR sessions start, then restored the
+  desktop value on exit to keep monitor rendering untouched.
 - Requested the WebGL renderer to prefer the high-performance GPU and clamped its pixel ratio to 2× to avoid unnecessary supersampling spikes.
 - Applied fixed foveated rendering when immersive sessions begin and restored the previous setting on exit, trading peripheral detail for noticeably smoother headset frame rates while keeping central fidelity intact.
 

@@ -14,6 +14,7 @@ type VolumeUniforms = {
   u_gamma: { value: number };
   u_brightness: { value: number };
   u_invert: { value: number };
+  u_stepScale: { value: number };
 };
 
 const uniforms = {
@@ -28,7 +29,8 @@ const uniforms = {
   u_contrast: { value: 1 },
   u_gamma: { value: 1 },
   u_brightness: { value: 0 },
-  u_invert: { value: 0 }
+  u_invert: { value: 0 },
+  u_stepScale: { value: 1 }
 } satisfies VolumeUniforms;
 
 export const VolumeRenderShader = {
@@ -68,6 +70,7 @@ export const VolumeRenderShader = {
     uniform float u_gamma;
     uniform float u_brightness;
     uniform float u_invert;
+    uniform float u_stepScale;
 
     uniform sampler3D u_data;
     uniform sampler2D u_cmdata;
@@ -79,7 +82,7 @@ export const VolumeRenderShader = {
 
     const int MAX_STEPS = 887;
     const int REFINEMENT_STEPS = 4;
-    const float relative_step_size = 1.0;
+    const float BASE_STEP_SIZE = 1.0;
     const float EPSILON = 1e-6;
     const float LARGE = 1e20;
     const float shininess = 40.0;
@@ -232,10 +235,10 @@ export const VolumeRenderShader = {
       vec3 back = rayOrigin + rayDir * tEnd;
 
       float rayLength = tEnd - tStart;
-      int nsteps = int(rayLength / relative_step_size + 0.5);
-      if (nsteps < 1) {
-        discard;
-      }
+      float safeStepScale = max(u_stepScale, 1e-3);
+      float scaledStepSize = BASE_STEP_SIZE * safeStepScale;
+      int nsteps = int(rayLength / scaledStepSize + 0.5);
+      nsteps = clamp(nsteps, 1, MAX_STEPS);
 
       vec3 step = ((back - front) / u_size) / float(nsteps);
       vec3 start_loc = front / u_size;
