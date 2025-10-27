@@ -107,6 +107,8 @@ type FollowedTrackState = {
   channelId: string;
 } | null;
 
+type DatasetErrorContext = 'launch' | 'interaction';
+
 type ChannelLayerSource = {
   id: string;
   files: File[];
@@ -937,6 +939,7 @@ function App() {
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [datasetError, setDatasetError] = useState<string | null>(null);
+  const [datasetErrorContext, setDatasetErrorContext] = useState<DatasetErrorContext | null>(null);
   const [datasetErrorResetSignal, setDatasetErrorResetSignal] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [layers, setLayers] = useState<LoadedLayer[]>([]);
@@ -1139,10 +1142,10 @@ function App() {
   }, [isHelpMenuOpen]);
 
   useEffect(() => {
-    if (datasetError) {
+    if (datasetError && datasetErrorContext === 'launch') {
       setDatasetErrorResetSignal((value) => value + 1);
     }
-  }, [datasetError]);
+  }, [datasetError, datasetErrorContext]);
 
   useEffect(() => {
     const pendingChannelId = pendingChannelFocusIdRef.current;
@@ -1503,8 +1506,23 @@ function App() {
     });
   }, [trackLookup]);
 
-  const loadSelectedDataset = useCallback(async () => {
+  const showLaunchError = useCallback((message: string) => {
+    setDatasetError(message);
+    setDatasetErrorContext('launch');
+  }, []);
+
+  const showInteractionWarning = useCallback((message: string) => {
+    setDatasetError(message);
+    setDatasetErrorContext('interaction');
+  }, []);
+
+  const clearDatasetError = useCallback(() => {
     setDatasetError(null);
+    setDatasetErrorContext(null);
+  }, []);
+
+  const loadSelectedDataset = useCallback(async () => {
+    clearDatasetError();
     const flatLayerSources = channels
       .flatMap((channel) =>
         channel.layers.map((layer) => ({
@@ -1520,7 +1538,7 @@ function App() {
 
     if (flatLayerSources.length === 0) {
       const message = 'Add a volume before launching the viewer.';
-      setDatasetError(message);
+      showLaunchError(message);
       return false;
     }
 
@@ -1545,7 +1563,7 @@ function App() {
     const totalExpectedVolumes = referenceFiles.length * flatLayerSources.length;
     if (totalExpectedVolumes === 0) {
       const message = 'The selected dataset does not contain any TIFF files.';
-      setDatasetError(message);
+      showLaunchError(message);
       setStatus('error');
       setError(message);
       return false;
@@ -1651,7 +1669,7 @@ function App() {
       setStatus('loaded');
       setLoadedCount(totalExpectedVolumes);
       setLoadProgress(1);
-      setDatasetError(null);
+      clearDatasetError();
       return true;
     } catch (err) {
       if (loadRequestRef.current !== requestId) {
@@ -1671,11 +1689,11 @@ function App() {
       setExpectedVolumeCount(0);
       setIsPlaying(false);
       const message = err instanceof Error ? err.message : 'Failed to load volumes.';
-      setDatasetError(message);
+      showLaunchError(message);
       setError(message);
       return false;
     }
-  }, [channels]);
+  }, [channels, clearDatasetError, showLaunchError]);
 
   useEffect(() => {
     if (!isPlaying || volumeTimepointCount <= 1) {
@@ -1915,8 +1933,8 @@ function App() {
     setActiveChannelId(channel.id);
     editingChannelOriginalNameRef.current = channel.name;
     setEditingChannelId(channel.id);
-    setDatasetError(null);
-  }, [createChannelSource]);
+    clearDatasetError();
+  }, [clearDatasetError, createChannelSource]);
 
   const handleChannelNameChange = useCallback((channelId: string, value: string) => {
     setChannels((current) =>
@@ -1943,14 +1961,14 @@ function App() {
       });
       return filtered;
     });
-    setDatasetError(null);
-  }, []);
+    clearDatasetError();
+  }, [clearDatasetError]);
 
   const handleChannelLayerFilesAdded = useCallback(
     (channelId: string, incomingFiles: File[]) => {
       const tiffFiles = dedupeFiles(incomingFiles.filter((file) => hasTiffExtension(file.name)));
       if (tiffFiles.length === 0) {
-        setDatasetError('No TIFF files detected in the dropped selection.');
+        showInteractionWarning('No TIFF files detected in the dropped selection.');
         return;
       }
 
@@ -1997,27 +2015,27 @@ function App() {
           });
         }
         if (ignoredExtraGroups) {
-          setDatasetError('Only the first TIFF sequence was added. Additional sequences were ignored.');
+          showInteractionWarning('Only the first TIFF sequence was added. Additional sequences were ignored.');
         } else {
-          setDatasetError(null);
+          clearDatasetError();
         }
       } else {
-        setDatasetError('No volume was added from that drop.');
+        showInteractionWarning('No volume was added from that drop.');
       }
     },
-    [createLayerSource]
+    [clearDatasetError, createLayerSource, showInteractionWarning]
   );
 
   const handleChannelLayerDrop = useCallback(
     async (channelId: string, dataTransfer: DataTransfer) => {
       const files = await collectFilesFromDataTransfer(dataTransfer);
       if (files.length === 0) {
-        setDatasetError('No TIFF files detected in the dropped selection.');
+        showInteractionWarning('No TIFF files detected in the dropped selection.');
         return;
       }
       handleChannelLayerFilesAdded(channelId, files);
     },
-    [handleChannelLayerFilesAdded]
+    [handleChannelLayerFilesAdded, showInteractionWarning]
   );
 
   const handleChannelLayerSegmentationToggle = useCallback(
@@ -2066,9 +2084,9 @@ function App() {
         delete next[layerId];
         return next;
       });
-      setDatasetError(null);
+      clearDatasetError();
     }
-  }, []);
+  }, [clearDatasetError]);
 
   const handleChannelTrackFileSelected = useCallback((channelId: string, file: File | null) => {
     if (!file) {
@@ -2234,11 +2252,14 @@ function App() {
     [channelValidationList]
   );
   const canLaunch = hasAnyLayers && allChannelsValid && !hasLoadingTracks;
+  const launchButtonLaunchable = canLaunch ? 'true' : 'false';
 
   const activeChannel = useMemo(
     () => channels.find((channel) => channel.id === activeChannelId) ?? null,
     [activeChannelId, channels]
   );
+
+  const launchErrorMessage = datasetErrorContext === 'launch' ? datasetError : null;
 
 
   const handleLaunchViewer = useCallback(async () => {
@@ -2250,7 +2271,7 @@ function App() {
       channel.layers.some((layer) => layer.files.length > 0)
     );
     if (!hasAnyLayers) {
-      setDatasetError('Add a volume before launching the viewer.');
+      showLaunchError('Add a volume before launching the viewer.');
       return;
     }
 
@@ -2258,17 +2279,17 @@ function App() {
     if (blockingChannel) {
       const rawName = channels.find((channel) => channel.id === blockingChannel.channelId)?.name ?? '';
       const channelName = rawName.trim() || 'this channel';
-      setDatasetError(`Resolve the errors in ${channelName} before launching.`);
+      showLaunchError(`Resolve the errors in ${channelName} before launching.`);
       return;
     }
 
     const hasLoadingTracks = channels.some((channel) => channel.trackStatus === 'loading');
     if (hasLoadingTracks) {
-      setDatasetError('Wait for tracks to finish loading before launching.');
+      showLaunchError('Wait for tracks to finish loading before launching.');
       return;
     }
 
-    setDatasetError(null);
+    clearDatasetError();
     setIsLaunchingViewer(true);
     try {
       const datasetLoaded = await loadSelectedDataset();
@@ -2280,7 +2301,14 @@ function App() {
     } finally {
       setIsLaunchingViewer(false);
     }
-  }, [channels, channelValidationList, isLaunchingViewer, loadSelectedDataset]);
+  }, [
+    channels,
+    channelValidationList,
+    clearDatasetError,
+    isLaunchingViewer,
+    loadSelectedDataset,
+    showLaunchError
+  ]);
 
   const handleChannelVisibilityToggle = useCallback((channelId: string) => {
     setChannelVisibility((current) => {
@@ -2736,8 +2764,8 @@ function App() {
   );
 
   const handleDatasetErrorDismiss = useCallback(() => {
-    setDatasetError(null);
-  }, []);
+    clearDatasetError();
+  }, [clearDatasetError]);
 
   const viewerLayers = useMemo(() => {
     const activeLayers: LoadedLayer[] = [];
@@ -3040,19 +3068,22 @@ function App() {
                 Timepoint counts differ across channels. Align them before launching.
               </p>
             ) : null}
-            {datasetError ? <p className="launch-feedback launch-feedback-error">{datasetError}</p> : null}
+            {launchErrorMessage ? (
+              <p className="launch-feedback launch-feedback-error">{launchErrorMessage}</p>
+            ) : null}
             <div className="front-page-actions">
               <button
                 type="button"
                 className="launch-viewer-button"
                 onClick={handleLaunchViewer}
-                disabled={!canLaunch || isLaunchingViewer}
+                disabled={isLaunchingViewer}
+                data-launchable={launchButtonLaunchable}
               >
                 {isLaunchingViewer ? 'Loading…' : 'Launch viewer'}
               </button>
             </div>
           </div>
-          {datasetError ? (
+          {launchErrorMessage ? (
             <FloatingWindow
               title="Cannot launch viewer"
               className="floating-window--warning"
@@ -3063,7 +3094,7 @@ function App() {
             >
               <div className="warning-window-content">
                 <p className="warning-window-intro">The viewer could not be launched.</p>
-                <p className="warning-window-message">{datasetError}</p>
+                <p className="warning-window-message">{launchErrorMessage}</p>
                 <p className="warning-window-hint">Review the dataset configuration and try again.</p>
                 <div className="warning-window-actions">
                   <button

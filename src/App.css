@@ -715,6 +715,19 @@
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
+.launch-viewer-button[data-launchable='false'] {
+  opacity: 0.6;
+  box-shadow: none;
+  transform: none;
+}
+
+.launch-viewer-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
 .launch-viewer-button:hover {
   transform: translateY(-1px);
   box-shadow: 0 15px 35px rgba(91, 140, 255, 0.35);
@@ -722,6 +735,12 @@
 
 .launch-viewer-button:active {
   transform: translateY(0);
+}
+
+.launch-viewer-button[data-launchable='false']:hover,
+.launch-viewer-button[data-launchable='false']:active {
+  box-shadow: none;
+  transform: none;
 }
 
 .sidebar {
