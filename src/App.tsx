@@ -1327,7 +1327,6 @@ function App() {
       }
 
       const trackMap = new Map<number, TrackPoint[]>();
-      let maxTimeValue = -Infinity;
 
       for (const row of entries) {
         if (row.length < 6) {
@@ -1354,10 +1353,6 @@ function App() {
 
         const id = Math.trunc(rawId);
         const time = initialTime + deltaTime;
-        if (time > maxTimeValue) {
-          maxTimeValue = time;
-        }
-
         const normalizedTime = Math.max(0, time - 1);
         const point: TrackPoint = { time: normalizedTime, x, y, z: -z };
         const existing = trackMap.get(id);
@@ -1368,7 +1363,6 @@ function App() {
         }
       }
 
-      const datasetTimepointCount = Number.isFinite(maxTimeValue) ? Math.max(0, Math.trunc(maxTimeValue)) : 0;
       const channelName = channel.name.trim() || 'Untitled channel';
       const parsed: TrackDefinition[] = [];
 
@@ -1379,10 +1373,8 @@ function App() {
         }
 
         const sortedPoints = [...points].sort((a, b) => a.time - b.time);
-        const uniqueTimeCount = new Set(sortedPoints.map((point) => point.time)).size;
-        const offset = Math.max(0, datasetTimepointCount - uniqueTimeCount);
         const adjustedPoints = sortedPoints.map<TrackPoint>((point) => ({
-          time: point.time + offset,
+          time: point.time,
           x: point.x,
           y: point.y,
           z: point.z
