@@ -8318,6 +8318,7 @@ function VolumeViewer({
           uniforms.u_channels.value = volume.channels;
           uniforms.u_windowMin.value = layer.windowMin;
           uniforms.u_windowMax.value = layer.windowMax;
+          uniforms.u_invert.value = layer.invert ? 1 : 0;
 
           const material = new THREE.ShaderMaterial({
             uniforms,
