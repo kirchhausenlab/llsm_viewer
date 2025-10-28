@@ -7,8 +7,7 @@ import PlanarViewer from './components/PlanarViewer';
 import {
   colorizeSegmentationVolume,
   computeNormalizationParameters,
-  normalizeVolume,
-  NormalizedVolume
+  normalizeVolume
 } from './volumeProcessing';
 import { clearTextureCache } from './textureCache';
 import FloatingWindow from './components/FloatingWindow';
@@ -28,15 +27,20 @@ import {
   setDropboxAppKey,
   type DropboxAppKeySource
 } from './integrations/dropbox';
+import {
+  createDefaultLayerSettings,
+  DEFAULT_BRIGHTNESS,
+  DEFAULT_CONTRAST,
+  DEFAULT_GAMMA,
+  DEFAULT_RENDER_STYLE,
+  DEFAULT_SAMPLING_MODE,
+  type LayerSettings,
+  type SamplingMode
+} from './state/layerSettings';
+import { deriveChannelTrackOffsets } from './state/channelTrackOffsets';
+import type { LoadedLayer } from './types/layers';
 import './App.css';
 
-const DEFAULT_CONTRAST = 1;
-const DEFAULT_GAMMA = 1;
-const DEFAULT_BRIGHTNESS = 0;
-type SamplingMode = 'linear' | 'nearest';
-
-const DEFAULT_RENDER_STYLE = 0;
-const DEFAULT_SAMPLING_MODE: SamplingMode = 'linear';
 const DEFAULT_FPS = 12;
 const DEFAULT_TRACK_OPACITY = 0.9;
 const DEFAULT_TRACK_LINE_WIDTH = 1;
@@ -59,41 +63,6 @@ const createSegmentationSeed = (layerKey: string, volumeIndex: number): number =
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 
-type LayerTarget = {
-  key: string;
-  label: string;
-};
-
-type LoadedLayer = LayerTarget & {
-  channelId: string;
-  volumes: NormalizedVolume[];
-  isSegmentation: boolean;
-};
-
-type LayerSettings = {
-  contrast: number;
-  gamma: number;
-  brightness: number;
-  color: string;
-  xOffset: number;
-  yOffset: number;
-  renderStyle: 0 | 1;
-  invert: boolean;
-  samplingMode: SamplingMode;
-};
-
-const createDefaultLayerSettings = (): LayerSettings => ({
-  contrast: DEFAULT_CONTRAST,
-  gamma: DEFAULT_GAMMA,
-  brightness: DEFAULT_BRIGHTNESS,
-  color: DEFAULT_LAYER_COLOR,
-  xOffset: 0,
-  yOffset: 0,
-  renderStyle: DEFAULT_RENDER_STYLE,
-  invert: false,
-  samplingMode: DEFAULT_SAMPLING_MODE
-});
-
 type ChannelTrackState = {
   opacity: number;
   lineWidth: number;
@@ -107,6 +76,7 @@ const createDefaultChannelTrackState = (): ChannelTrackState => ({
   visibility: {},
   colorMode: { type: 'random' }
 });
+
 
 type FollowedTrackState = {
   id: string;
@@ -1862,24 +1832,16 @@ function App() {
   const followedTrackId = followedTrack?.id ?? null;
   const followedTrackChannelId = followedTrack?.channelId ?? null;
 
-  const channelTrackOffsets = useMemo(() => {
-    const offsets: Record<string, { x: number; y: number }> = {};
-    for (const channel of channels) {
-      const channelLayers = channelLayersMap.get(channel.id) ?? [];
-      const activeLayerKey = channelActiveLayer[channel.id] ?? channelLayers[0]?.key ?? null;
-      if (!activeLayerKey) {
-        offsets[channel.id] = { x: 0, y: 0 };
-        continue;
-      }
-      const settings = layerSettings[activeLayerKey] ?? createDefaultLayerSettings();
-      const isActive = channel.id === activeChannelTabId;
-      offsets[channel.id] = {
-        x: isActive ? settings.xOffset : 0,
-        y: isActive ? settings.yOffset : 0
-      };
-    }
-    return offsets;
-  }, [activeChannelTabId, channelActiveLayer, channelLayersMap, channels, layerSettings]);
+  const channelTrackOffsets = useMemo(
+    () =>
+      deriveChannelTrackOffsets({
+        channels,
+        channelLayersMap,
+        channelActiveLayer,
+        layerSettings
+      }),
+    [channelActiveLayer, channelLayersMap, channels, layerSettings]
+  );
 
   useEffect(() => {
     for (const channel of channels) {
