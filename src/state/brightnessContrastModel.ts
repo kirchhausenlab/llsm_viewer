@@ -211,9 +211,28 @@ export class BrightnessContrastModel {
     return clamp(rounded, 0, this.sliderRange);
   }
 
-  private clampWindow(windowMin: number, windowMax: number): WindowBounds {
+  private clampWindow(
+    windowMin: number,
+    windowMax: number,
+    options?: { clampToDefaults?: boolean }
+  ): WindowBounds {
+    const clampToDefaults = options?.clampToDefaults ?? true;
     let min = Math.min(windowMin, windowMax);
     let max = Math.max(windowMin, windowMax);
+    const span = Math.max(this.defaultMax - this.defaultMin, 0);
+    const baseMinimumWidth = Math.max(MIN_WINDOW_WIDTH, 0);
+    const minimumWidth = clampToDefaults ? Math.min(baseMinimumWidth, span) : baseMinimumWidth;
+
+    if (!clampToDefaults) {
+      if (minimumWidth > 0 && max - min < minimumWidth) {
+        const center = (min + max) / 2;
+        const halfWidth = minimumWidth / 2;
+        min = center - halfWidth;
+        max = center + halfWidth;
+      }
+      return { windowMin: min, windowMax: max };
+    }
+
     if (min < this.defaultMin) {
       min = this.defaultMin;
     }
@@ -222,11 +241,7 @@ export class BrightnessContrastModel {
     }
     min = clamp(min, this.defaultMin, this.defaultMax);
     max = clamp(max, this.defaultMin, this.defaultMax);
-    const minimumWidth = Math.min(
-      Math.max(MIN_WINDOW_WIDTH, 0),
-      Math.max(this.defaultMax - this.defaultMin, 0)
-    );
-    if (max - min < minimumWidth) {
+    if (minimumWidth > 0 && max - min < minimumWidth) {
       const center = clamp((min + max) / 2, this.defaultMin, this.defaultMax);
       const halfWidth = minimumWidth / 2;
       min = center - halfWidth;
@@ -243,31 +258,27 @@ export class BrightnessContrastModel {
       }
       min = clamp(min, this.defaultMin, this.defaultMax);
       max = clamp(max, this.defaultMin, this.defaultMax);
-      if (minimumWidth > 0) {
-        const width = max - min;
-        const tolerance = Math.max(minimumWidth * 1e-6, Number.EPSILON * 16);
-        if (width + tolerance < minimumWidth) {
-          const span = Math.max(this.defaultMax - this.defaultMin, 0);
-          if (span <= 0) {
-            min = this.defaultMin;
-            max = this.defaultMin;
-          } else if (span <= minimumWidth) {
-            min = this.defaultMin;
-            max = this.defaultMax;
-          } else {
-            const clampedMin = clamp(
-              center - minimumWidth / 2,
-              this.defaultMin,
-              this.defaultMax - minimumWidth
-            );
-            min = clampedMin;
-            max = clampedMin + minimumWidth;
-          }
-        } else if (width < minimumWidth) {
-          const clampedMax = Math.min(this.defaultMax, min + minimumWidth);
-          min = Math.max(this.defaultMin, clampedMax - minimumWidth);
-          max = clampedMax;
+      const tolerance = Math.max(minimumWidth * 1e-6, Number.EPSILON * 16);
+      if (max - min + tolerance < minimumWidth) {
+        if (span <= 0) {
+          min = this.defaultMin;
+          max = this.defaultMin;
+        } else if (span <= minimumWidth) {
+          min = this.defaultMin;
+          max = this.defaultMax;
+        } else {
+          const clampedMin = clamp(
+            center - minimumWidth / 2,
+            this.defaultMin,
+            this.defaultMax - minimumWidth
+          );
+          min = clampedMin;
+          max = clampedMin + minimumWidth;
         }
+      } else if (max - min < minimumWidth) {
+        const clampedMax = Math.min(this.defaultMax, min + minimumWidth);
+        min = Math.max(this.defaultMin, clampedMax - minimumWidth);
+        max = clampedMax;
       }
     }
     return { windowMin: min, windowMax: max };
@@ -277,13 +288,15 @@ export class BrightnessContrastModel {
     bounds: WindowBounds,
     sliderOverrides?: Partial<SliderIndices>
   ): BrightnessContrastState {
-    const clamped = this.clampWindow(bounds.windowMin, bounds.windowMax);
-    const sliders = this.computeSliderIndices(clamped.windowMin, clamped.windowMax);
+    const preserved = this.clampWindow(bounds.windowMin, bounds.windowMax, {
+      clampToDefaults: false
+    });
+    const sliders = this.computeSliderIndices(preserved.windowMin, preserved.windowMax);
     const overrides = this.sanitizeSliderOverrides(sliderOverrides);
     return {
       sliderRange: this.sliderRange,
-      windowMin: clamped.windowMin,
-      windowMax: clamped.windowMax,
+      windowMin: preserved.windowMin,
+      windowMax: preserved.windowMax,
       ...sliders,
       ...overrides
     };
