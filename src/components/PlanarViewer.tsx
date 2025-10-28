@@ -9,8 +9,11 @@ type ViewerLayer = {
   label: string;
   volume: NormalizedVolume | null;
   visible: boolean;
-  contrastPosition: number;
-  brightnessPosition: number;
+  sliderRange: number;
+  minSliderIndex: number;
+  maxSliderIndex: number;
+  brightnessSliderIndex: number;
+  contrastSliderIndex: number;
   windowMin: number;
   windowMax: number;
   color: string;

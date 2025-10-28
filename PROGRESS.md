@@ -8,6 +8,14 @@
 
 # Progress Log
 
+## ImageJ brightness/contrast model
+- Introduced a dedicated windowing model that mirrors ImageJ slider behavior, including the 256-step integer slider range and
+  piecewise contrast slope calculations.
+- Updated layer settings to track min/max slider indices alongside normalized window bounds so React and VR controls stay
+  synchronized.
+- Replaced the desktop and VR brightness/contrast handlers with helpers from the new model, clamping to [0,1] and formatting
+  labels from normalized window centers.
+
 ## Volume streaming guardrails
 - Added a configurable `MAX_VOLUME_BYTES` limit so the worker bails out before allocating buffers for oversized datasets.
 - Streamed TIFF slices from the worker instead of concatenating them, emitting per-slice messages with transferable buffers.
