@@ -71,47 +71,51 @@ const createMappingPath = (
   windowMax: number,
   defaultMin: number,
   defaultMax: number,
-  sliderRange: number
+  _sliderRange: number
 ): string => {
   const defaultRange = defaultMax - defaultMin;
-  if (!(defaultRange > 0) || !(sliderRange > 0)) {
+  const windowWidth = windowMax - windowMin;
+  if (!(defaultRange > 0) || !(windowWidth > 0)) {
     return '';
   }
 
-  const denom = Math.max(Math.round(sliderRange) - 1, 1);
-  const quantize = (value: number) => {
-    const normalized = (value - defaultMin) / defaultRange;
-    const index = Math.round(normalized * denom);
-    const clampedIndex = clamp(index, 0, denom);
-    return denom > 0 ? clampedIndex / denom : 0;
-  };
+  const lowerFraction = (windowMin - defaultMin) / defaultRange;
+  const upperFraction = (windowMax - defaultMin) / defaultRange;
+  const fractions: number[] = [0, 1];
 
-  const safeMin = Math.min(windowMin, windowMax);
-  const safeMax = Math.max(windowMin, windowMax);
+  if (lowerFraction > 0 && lowerFraction < 1) {
+    fractions.push(lowerFraction);
+  }
+  if (upperFraction > 0 && upperFraction < 1) {
+    fractions.push(upperFraction);
+  }
 
-  let minFraction = quantize(safeMin);
-  let maxFraction = quantize(safeMax);
-
-  if (minFraction > maxFraction) {
-    const temp = minFraction;
-    minFraction = maxFraction;
-    maxFraction = temp;
+  fractions.sort((a, b) => a - b);
+  const uniqueFractions: number[] = [];
+  for (const fraction of fractions) {
+    if (
+      uniqueFractions.length === 0 ||
+      Math.abs(fraction - uniqueFractions[uniqueFractions.length - 1]) > 1e-6
+    ) {
+      uniqueFractions.push(fraction);
+    }
   }
 
   const toX = (fraction: number) => clamp(fraction, 0, 1) * HISTOGRAM_WIDTH;
-  const minX = toX(minFraction);
-  const maxX = toX(maxFraction);
-  const parts: string[] = [`M0 ${HISTOGRAM_HEIGHT}`, `L${minX.toFixed(2)} ${HISTOGRAM_HEIGHT}`];
+  const toY = (fraction: number) => {
+    const clampedFraction = clamp(fraction, 0, 1);
+    const value = defaultMin + clampedFraction * defaultRange;
+    const normalized = clamp((value - windowMin) / windowWidth, 0, 1);
+    return (1 - normalized) * HISTOGRAM_HEIGHT;
+  };
 
-  if (maxX <= minX) {
-    parts.push(`L${minX.toFixed(2)} 0`);
-  } else {
-    parts.push(`L${maxX.toFixed(2)} 0`);
-  }
+  const commands: string[] = [];
+  uniqueFractions.forEach((fraction, index) => {
+    const command = index === 0 ? 'M' : 'L';
+    commands.push(`${command}${toX(fraction).toFixed(2)} ${toY(fraction).toFixed(2)}`);
+  });
 
-  parts.push(`L${HISTOGRAM_WIDTH} 0`);
-
-  return parts.join(' ');
+  return commands.join(' ');
 };
 
 function BrightnessContrastHistogram({
