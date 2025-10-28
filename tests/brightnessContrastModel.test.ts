@@ -20,8 +20,22 @@ try {
   );
 
   assert.equal(brightnessResult.brightnessSliderIndex, expectedBrightness);
+  const initialWidth = initialState.windowMax - initialState.windowMin;
+  const expectedWindowMaxAfterDarken = Math.min(
+    DEFAULT_WINDOW_MAX,
+    DEFAULT_WINDOW_MIN + initialWidth / 2
+  );
   assert.equal(brightnessResult.windowMin, DEFAULT_WINDOW_MIN);
-  assert.equal(brightnessResult.windowMax, DEFAULT_WINDOW_MAX);
+  assert.equal(brightnessResult.windowMax, expectedWindowMaxAfterDarken);
+
+  const brightenResult = model.applyBrightness(initialState, 0);
+  assert.equal(brightenResult.brightnessSliderIndex, 0);
+  const expectedWindowMinAfterBrighten = Math.max(
+    DEFAULT_WINDOW_MIN,
+    DEFAULT_WINDOW_MAX - initialWidth / 2
+  );
+  assert.equal(brightenResult.windowMin, expectedWindowMinAfterBrighten);
+  assert.equal(brightenResult.windowMax, DEFAULT_WINDOW_MAX);
 
   const contrastTarget = model.sliderRange + 50;
   const contrastResult = model.applyContrast(initialState, contrastTarget);

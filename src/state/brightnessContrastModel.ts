@@ -215,14 +215,10 @@ export class BrightnessContrastModel {
     let min = Math.min(windowMin, windowMax);
     let max = Math.max(windowMin, windowMax);
     if (min < this.defaultMin) {
-      const shift = this.defaultMin - min;
-      min += shift;
-      max += shift;
+      min = this.defaultMin;
     }
     if (max > this.defaultMax) {
-      const shift = max - this.defaultMax;
-      min -= shift;
-      max -= shift;
+      max = this.defaultMax;
     }
     min = clamp(min, this.defaultMin, this.defaultMax);
     max = clamp(max, this.defaultMin, this.defaultMax);
