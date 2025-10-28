@@ -12,13 +12,19 @@ function computeTextureData(volume: NormalizedVolume): PreparedTexture {
   const { normalized, width, height, depth, channels } = volume;
   const voxelCount = width * height * depth;
 
+  const isTightlyPacked =
+    normalized.byteOffset === 0 &&
+    normalized.byteLength === normalized.buffer.byteLength;
+
   if (channels <= 2) {
-    const isTightlyPacked =
-      normalized.byteOffset === 0 &&
-      normalized.byteLength === normalized.buffer.byteLength;
     const data = isTightlyPacked ? normalized : normalized.slice();
     const format = channels === 1 ? THREE.RedFormat : THREE.RGFormat;
     return { data, format };
+  }
+
+  if (channels === 3) {
+    const data = isTightlyPacked ? normalized : normalized.slice();
+    return { data, format: THREE.RGBFormat };
   }
 
   const packed = new Uint8Array(voxelCount * 4);
