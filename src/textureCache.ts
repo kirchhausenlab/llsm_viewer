@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { clearHistogramCache } from './autoContrast';
 import type { NormalizedVolume } from './volumeProcessing';
 
 export type PreparedTexture = {
@@ -68,4 +69,5 @@ export function getCachedTextureData(volume: NormalizedVolume): PreparedTexture 
 
 export function clearTextureCache() {
   cache = new WeakMap<NormalizedVolume, PreparedTexture>();
+  clearHistogramCache();
 }
