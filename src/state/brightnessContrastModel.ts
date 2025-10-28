@@ -104,7 +104,10 @@ export class BrightnessContrastModel {
     const halfWidth = width / 2;
     const windowMin = center - halfWidth;
     const windowMax = center + halfWidth;
-    return this.syncState({ windowMin, windowMax });
+    return this.syncState(
+      { windowMin, windowMax },
+      { brightnessSliderIndex: clampedIndex }
+    );
   }
 
   applyContrast(
@@ -123,12 +126,18 @@ export class BrightnessContrastModel {
       slope = denom === 0 ? Number.POSITIVE_INFINITY : mid / denom;
     }
     if (!(slope > 0) || !Number.isFinite(slope)) {
-      return this.syncState({ windowMin: state.windowMin, windowMax: state.windowMax });
+      return this.syncState(
+        { windowMin: state.windowMin, windowMax: state.windowMax },
+        { contrastSliderIndex: clampedIndex }
+      );
     }
     const halfRange = (0.5 * range) / slope;
     const windowMin = center - halfRange;
     const windowMax = center + halfRange;
-    return this.syncState({ windowMin, windowMax });
+    return this.syncState(
+      { windowMin, windowMax },
+      { contrastSliderIndex: clampedIndex }
+    );
   }
 
   computeSliderIndices(windowMin: number, windowMax: number): SliderIndices {
@@ -250,15 +259,48 @@ export class BrightnessContrastModel {
     return { windowMin: min, windowMax: max };
   }
 
-  private syncState(bounds: WindowBounds): BrightnessContrastState {
+  private syncState(
+    bounds: WindowBounds,
+    sliderOverrides?: Partial<SliderIndices>
+  ): BrightnessContrastState {
     const clamped = this.clampWindow(bounds.windowMin, bounds.windowMax);
     const sliders = this.computeSliderIndices(clamped.windowMin, clamped.windowMax);
+    const overrides = this.sanitizeSliderOverrides(sliderOverrides);
     return {
       sliderRange: this.sliderRange,
       windowMin: clamped.windowMin,
       windowMax: clamped.windowMax,
-      ...sliders
+      ...sliders,
+      ...overrides
     };
+  }
+
+  private sanitizeSliderOverrides(
+    overrides?: Partial<SliderIndices>
+  ): Partial<SliderIndices> | undefined {
+    if (!overrides) {
+      return undefined;
+    }
+    const sanitized: Partial<SliderIndices> = {};
+    if (overrides.minSliderIndex !== undefined) {
+      sanitized.minSliderIndex = this.clampSliderIndex(overrides.minSliderIndex, 'min');
+    }
+    if (overrides.maxSliderIndex !== undefined) {
+      sanitized.maxSliderIndex = this.clampSliderIndex(overrides.maxSliderIndex, 'max');
+    }
+    if (overrides.brightnessSliderIndex !== undefined) {
+      sanitized.brightnessSliderIndex = this.clampSliderIndex(
+        overrides.brightnessSliderIndex,
+        'brightness'
+      );
+    }
+    if (overrides.contrastSliderIndex !== undefined) {
+      sanitized.contrastSliderIndex = this.clampSliderIndex(
+        overrides.contrastSliderIndex,
+        'contrast'
+      );
+    }
+    return sanitized;
   }
 }
 
