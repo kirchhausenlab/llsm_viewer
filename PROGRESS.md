@@ -415,3 +415,8 @@ d centered the front-page card in the viewport.
 - Reworked the desktop channel action area so reset/invert share the first row and render/sampling share the second, matching requested ordering.
 - Gave all four buttons the wider styling from the invert control, reducing the label text and clamping widths so they fit cleanly in the sidebar.
 - Mirrored the same two-row, equal-width layout in the VR HUD so both viewing modes present consistent controls and hover regions.
+
+## Auto window histogram caching
+- Added an auto-contrast module that builds Fiji-style histograms for normalized volumes and computes automatic window ranges.
+- Hooked histogram cache invalidation into the texture cache reset so cleared textures also drop stale intensity data.
+- Guarded cached histograms against shape changes to ensure volume updates trigger a fresh computation.
