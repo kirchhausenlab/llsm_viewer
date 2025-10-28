@@ -6,10 +6,11 @@ export const DEFAULT_CONTRAST_POSITION = 1;
 export const DEFAULT_BRIGHTNESS_POSITION = 0;
 export const DEFAULT_WINDOW_MIN = 0;
 export const DEFAULT_WINDOW_MAX = 1;
+export const DEFAULT_WINDOW_RANGE = DEFAULT_WINDOW_MAX - DEFAULT_WINDOW_MIN;
 export const DEFAULT_RENDER_STYLE = 0;
 export const DEFAULT_SAMPLING_MODE: SamplingMode = 'linear';
-export const MIN_WINDOW_WIDTH = 0.01;
-export const MAX_CONTRAST_POSITION = 1 / MIN_WINDOW_WIDTH;
+export const MIN_WINDOW_WIDTH = 0.0001;
+export const MAX_CONTRAST_POSITION = DEFAULT_WINDOW_RANGE / MIN_WINDOW_WIDTH;
 export const CONTRAST_SLIDER_MIN = Math.log(DEFAULT_CONTRAST_POSITION);
 export const CONTRAST_SLIDER_MAX = Math.log(MAX_CONTRAST_POSITION);
 export const CONTRAST_SLIDER_STEP = 0.02;
@@ -61,19 +62,29 @@ export const createDefaultLayerSettings = (): LayerSettings => ({
   samplingMode: DEFAULT_SAMPLING_MODE
 });
 
+const clampWindowValue = (value: number): number =>
+  Math.max(DEFAULT_WINDOW_MIN, Math.min(DEFAULT_WINDOW_MAX, value));
+
 export const clampWindowBounds = (
   windowMin: number,
   windowMax: number
 ): { windowMin: number; windowMax: number } => {
-  const clampedMin = Math.max(
-    DEFAULT_WINDOW_MIN,
-    Math.min(windowMin, DEFAULT_WINDOW_MAX - MIN_WINDOW_WIDTH)
+  const orderedMin = Math.min(windowMin, windowMax);
+  const orderedMax = Math.max(windowMin, windowMax);
+  const clampedMin = clampWindowValue(orderedMin);
+  const clampedMax = clampWindowValue(orderedMax);
+  const span = clampedMax - clampedMin;
+  if (span >= MIN_WINDOW_WIDTH) {
+    return { windowMin: clampedMin, windowMax: clampedMax };
+  }
+  const halfWidth = MIN_WINDOW_WIDTH / 2;
+  const minCenter = DEFAULT_WINDOW_MIN + halfWidth;
+  const maxCenter = DEFAULT_WINDOW_MAX - halfWidth;
+  const center = Math.max(
+    minCenter,
+    Math.min(maxCenter, (clampedMin + clampedMax) / 2)
   );
-  const clampedMax = Math.max(
-    clampedMin + MIN_WINDOW_WIDTH,
-    Math.min(windowMax, DEFAULT_WINDOW_MAX)
-  );
-  return { windowMin: clampedMin, windowMax: clampedMax };
+  return { windowMin: center - halfWidth, windowMax: center + halfWidth };
 };
 
 export const computeWindowBounds = (
@@ -81,33 +92,46 @@ export const computeWindowBounds = (
   contrastPosition: number
 ): { windowMin: number; windowMax: number } => {
   const clampedBrightness = Math.max(-1, Math.min(1, brightnessPosition));
-  const slope = Math.max(contrastPosition, 1e-3);
-  const defaultCenter = (DEFAULT_WINDOW_MAX + DEFAULT_WINDOW_MIN) / 2;
-  const defaultHalfRange = (DEFAULT_WINDOW_MAX - DEFAULT_WINDOW_MIN) / 2;
-  const center = Math.max(
-    DEFAULT_WINDOW_MIN,
-    Math.min(DEFAULT_WINDOW_MAX, defaultCenter - clampedBrightness * defaultHalfRange)
-  );
-  const halfWidth = Math.max(MIN_WINDOW_WIDTH / 2, Math.min(defaultHalfRange, defaultHalfRange / slope));
-  const preliminaryMin = center - halfWidth;
-  const preliminaryMax = center + halfWidth;
-  return clampWindowBounds(preliminaryMin, preliminaryMax);
+  const clampedContrast = Math.max(1, Math.min(MAX_CONTRAST_POSITION, contrastPosition));
+  const width = Math.max(MIN_WINDOW_WIDTH, DEFAULT_WINDOW_RANGE / clampedContrast);
+  const halfWidth = width / 2;
+  const minCenter = DEFAULT_WINDOW_MIN + halfWidth;
+  const maxCenter = DEFAULT_WINDOW_MAX - halfWidth;
+  const normalizedBrightness = (clampedBrightness + 1) / 2;
+  const center = minCenter + normalizedBrightness * (maxCenter - minCenter);
+  const windowMin = center - halfWidth;
+  const windowMax = center + halfWidth;
+  return {
+    windowMin,
+    windowMax
+  };
 };
 
 export const computeControlPositionsFromWindow = (
   windowMin: number,
   windowMax: number
 ): { brightnessPosition: number; contrastPosition: number } => {
-  const { windowMin: clampedMin, windowMax: clampedMax } = clampWindowBounds(windowMin, windowMax);
+  const orderedMin = Math.min(windowMin, windowMax);
+  const orderedMax = Math.max(windowMin, windowMax);
+  const clampedMin = clampWindowValue(orderedMin);
+  const clampedMax = clampWindowValue(orderedMax);
   const windowWidth = clampedMax - clampedMin;
-  const center = clampedMin + windowWidth / 2;
-  const defaultCenter = (DEFAULT_WINDOW_MAX + DEFAULT_WINDOW_MIN) / 2;
-  const defaultHalfRange = (DEFAULT_WINDOW_MAX - DEFAULT_WINDOW_MIN) / 2;
-  const brightnessPosition = Math.max(
-    -1,
-    Math.min(1, (defaultCenter - center) / defaultHalfRange)
+  const effectiveWidth = Math.max(windowWidth, MIN_WINDOW_WIDTH);
+  const halfWidth = effectiveWidth / 2;
+  const minCenter = DEFAULT_WINDOW_MIN + halfWidth;
+  const maxCenter = DEFAULT_WINDOW_MAX - halfWidth;
+  const rawCenter = clampedMin + windowWidth / 2;
+  const center = Math.max(minCenter, Math.min(maxCenter, rawCenter));
+  const brightnessPosition =
+    maxCenter > minCenter
+      ? Math.max(
+          -1,
+          Math.min(1, ((center - minCenter) / (maxCenter - minCenter)) * 2 - 1)
+        )
+      : 0;
+  const contrastPosition = Math.max(
+    1,
+    Math.min(MAX_CONTRAST_POSITION, DEFAULT_WINDOW_RANGE / effectiveWidth)
   );
-  const slope = Math.max(1, 1 / windowWidth);
-  const contrastPosition = Math.max(1, Math.min(MAX_CONTRAST_POSITION, slope));
   return { brightnessPosition, contrastPosition };
 };
