@@ -1,0 +1,39 @@
+import assert from 'node:assert/strict';
+
+import {
+  BrightnessContrastModel,
+  DEFAULT_WINDOW_MAX,
+  DEFAULT_WINDOW_MIN
+} from '../src/state/brightnessContrastModel.ts';
+
+console.log('Starting brightness/contrast model tests');
+
+try {
+  const model = new BrightnessContrastModel(DEFAULT_WINDOW_MIN, DEFAULT_WINDOW_MAX);
+  const initialState = model.createState();
+
+  const brightnessTarget = model.sliderRange + 50;
+  const brightnessResult = model.applyBrightness(initialState, brightnessTarget);
+  const expectedBrightness = Math.min(
+    Math.max(Math.round(brightnessTarget), 0),
+    model.sliderRange
+  );
+
+  assert.equal(brightnessResult.brightnessSliderIndex, expectedBrightness);
+  assert.equal(brightnessResult.windowMin, DEFAULT_WINDOW_MIN);
+  assert.equal(brightnessResult.windowMax, DEFAULT_WINDOW_MAX);
+
+  const contrastTarget = model.sliderRange + 50;
+  const contrastResult = model.applyContrast(initialState, contrastTarget);
+  const expectedContrast = Math.min(Math.max(Math.round(contrastTarget), 0), model.sliderRange);
+
+  assert.equal(contrastResult.contrastSliderIndex, expectedContrast);
+  assert.equal(contrastResult.windowMin, DEFAULT_WINDOW_MIN);
+  assert.equal(contrastResult.windowMax, DEFAULT_WINDOW_MAX);
+
+  console.log('brightness/contrast model tests passed');
+} catch (error) {
+  console.error('brightness/contrast model tests failed');
+  console.error(error instanceof Error ? error.stack ?? error.message : error);
+  process.exitCode = 1;
+}
