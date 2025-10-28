@@ -3717,7 +3717,7 @@ function App() {
                                 id={`layer-window-min-${selectedLayer.key}`}
                                 type="range"
                                 min={DEFAULT_WINDOW_MIN}
-                                max={settings.windowMax}
+                                max={DEFAULT_WINDOW_MAX}
                                 step={0.001}
                                 value={settings.windowMin}
                                 onChange={(event) =>
@@ -3733,7 +3733,7 @@ function App() {
                               <input
                                 id={`layer-window-max-${selectedLayer.key}`}
                                 type="range"
-                                min={settings.windowMin}
+                                min={DEFAULT_WINDOW_MIN}
                                 max={DEFAULT_WINDOW_MAX}
                                 step={0.001}
                                 value={settings.windowMax}
