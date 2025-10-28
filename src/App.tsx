@@ -44,6 +44,7 @@ import { deriveChannelTrackOffsets } from './state/channelTrackOffsets';
 import type { LoadedLayer } from './types/layers';
 import './App.css';
 import { computeAutoWindow } from './autoContrast';
+import BrightnessContrastHistogram from './components/BrightnessContrastHistogram';
 
 const DEFAULT_FPS = 12;
 const DEFAULT_TRACK_OPACITY = 0.9;
@@ -3673,6 +3674,15 @@ function App() {
                               </button>
                             </div>
                           </div>
+                          <BrightnessContrastHistogram
+                            className="channel-histogram"
+                            volume={firstVolume}
+                            windowMin={settings.windowMin}
+                            windowMax={settings.windowMax}
+                            defaultMin={DEFAULT_WINDOW_MIN}
+                            defaultMax={DEFAULT_WINDOW_MAX}
+                            sliderRange={settings.sliderRange}
+                          />
                           <div className="slider-control slider-control--pair">
                             <div className="slider-control slider-control--inline">
                               <label htmlFor={`layer-brightness-${selectedLayer.key}`}>
