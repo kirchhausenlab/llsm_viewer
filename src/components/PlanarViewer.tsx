@@ -9,9 +9,10 @@ type ViewerLayer = {
   label: string;
   volume: NormalizedVolume | null;
   visible: boolean;
-  contrast: number;
-  gamma: number;
-  brightness: number;
+  contrastPosition: number;
+  brightnessPosition: number;
+  windowMin: number;
+  windowMax: number;
   color: string;
   offsetX: number;
   offsetY: number;
@@ -326,14 +327,16 @@ function PlanarViewer({
       const sliceOffset = slice * sliceStride;
       const rowStride = width * channels;
       const data = volume.normalized;
-      const brightness = layer.brightness ?? 0;
-      const contrast = layer.contrast ?? 1;
-      const gamma = layer.gamma ?? 1;
-      const safeGamma = Math.max(gamma, 1e-3);
-      const invGamma = 1 / safeGamma;
-      const applyGamma = (value: number) => clamp(Math.pow(Math.max(value, 0), invGamma), 0, 1);
-      const tint = channels === 1 ? getColor(layer.color) : null;
       const invert = layer.invert ?? false;
+      const windowMin = layer.windowMin ?? 0;
+      const windowMax = layer.windowMax ?? 1;
+      const windowRange = Math.max(windowMax - windowMin, 1e-5);
+      const adjustScalar = (value: number) => {
+        const normalized = (value - windowMin) / windowRange;
+        const clamped = clamp(normalized, 0, 1);
+        return invert ? 1 - clamped : clamped;
+      };
+      const tint = channels === 1 ? getColor(layer.color) : null;
 
       const offsetX = layer.offsetX ?? 0;
       const offsetY = layer.offsetY ?? 0;
@@ -415,34 +418,18 @@ function PlanarViewer({
           let channelB = channels > 2 ? b : channels === 2 ? 0 : channelG;
           const channelA = channels > 3 ? a : 0;
 
-          if (invert) {
-            channelR = 1 - channelR;
-            if (channels > 1) {
-              channelG = 1 - channelG;
-            } else {
-              channelG = channelR;
-            }
-            if (channels > 2) {
-              channelB = 1 - channelB;
-            } else if (channels === 1) {
-              channelB = channelG;
-            }
-          }
-
           let srcR = 0;
           let srcG = 0;
           let srcB = 0;
           let alpha = 0;
 
           if (channels === 1) {
-            const brightened = clamp(channelR + brightness, 0, 1);
-            const contrasted = clamp((brightened - 0.5) * contrast + 0.5, 0, 1);
-            const corrected = applyGamma(contrasted);
-            const layerAlpha = Math.max(corrected, MIN_ALPHA);
+            const adjusted = adjustScalar(channelR);
+            const layerAlpha = Math.max(adjusted, MIN_ALPHA);
             const color = tint ?? getColor('#ffffff');
-            srcR = color.r * corrected;
-            srcG = color.g * corrected;
-            srcB = color.b * corrected;
+            srcR = color.r * adjusted;
+            srcG = color.g * adjusted;
+            srcB = color.b * adjusted;
             alpha = layerAlpha;
           } else {
             const intensity =
@@ -451,20 +438,15 @@ function PlanarViewer({
                 : channels === 3
                 ? channelR * 0.2126 + channelG * 0.7152 + channelB * 0.0722
                 : Math.max(channelR, channelG, Math.max(channelB, channelA));
-            const brightIntensity = clamp(intensity + brightness, 0, 1);
-            const contrasted = clamp((brightIntensity - 0.5) * contrast + 0.5, 0, 1);
-            const correctedIntensity = applyGamma(contrasted);
-            alpha = Math.max(correctedIntensity, MIN_ALPHA);
-            const brightR = clamp(channelR + brightness, 0, 1);
-            const brightG = channels > 1 ? clamp(channelG + brightness, 0, 1) : brightR;
-            const brightB =
-              channels > 2 ? clamp(channelB + brightness, 0, 1) : channels === 2 ? 0 : brightG;
-            const correctedR = applyGamma(brightR);
-            const correctedG = channels > 1 ? applyGamma(brightG) : correctedR;
-            const correctedB = channels > 2 ? applyGamma(brightB) : channels === 2 ? 0 : correctedG;
-            srcR = correctedR;
-            srcG = correctedG;
-            srcB = correctedB;
+            const adjustedIntensity = adjustScalar(intensity);
+            alpha = Math.max(adjustedIntensity, MIN_ALPHA);
+            const adjustedR = adjustScalar(channelR);
+            const adjustedG = channels > 1 ? adjustScalar(channelG) : adjustedR;
+            const adjustedB =
+              channels > 2 ? adjustScalar(channelB) : channels === 2 ? 0 : adjustedG;
+            srcR = adjustedR;
+            srcG = adjustedG;
+            srcB = adjustedB;
           }
 
           const srcA = clamp(alpha, 0, 1);
