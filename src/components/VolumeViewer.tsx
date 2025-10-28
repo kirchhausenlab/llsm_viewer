@@ -4457,7 +4457,7 @@ function VolumeViewer({
 
       if (!resource) {
         const geometry = new LineGeometry();
-        geometry.setPositions(Array.from(positions));
+        geometry.setPositions(positions);
         geometry.instanceCount = 0;
         const material = new LineMaterial({
           color: baseColor.clone(),
@@ -4514,7 +4514,7 @@ function VolumeViewer({
         trackLines.set(track.id, resource);
       } else {
         const { geometry, line, outline } = resource;
-        geometry.setPositions(Array.from(positions));
+        geometry.setPositions(positions);
         line.computeLineDistances();
         outline.computeLineDistances();
         resource.times = times;
