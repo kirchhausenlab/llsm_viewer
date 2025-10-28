@@ -20,15 +20,17 @@ import {
   normalizeTrackColor,
   TRACK_COLOR_SWATCHES
 } from '../trackColors';
+import { computeWindowBounds } from '../state/layerSettings';
 
 type ViewerLayer = {
   key: string;
   label: string;
   volume: NormalizedVolume | null;
   visible: boolean;
-  contrast: number;
-  gamma: number;
-  brightness: number;
+  contrastPosition: number;
+  brightnessPosition: number;
+  windowMin: number;
+  windowMax: number;
   color: string;
   offsetX: number;
   offsetY: number;
@@ -83,9 +85,10 @@ type VolumeViewerProps = {
       isGrayscale: boolean;
       isSegmentation: boolean;
       settings: {
-        contrast: number;
-        gamma: number;
-        brightness: number;
+        contrastPosition: number;
+        brightnessPosition: number;
+        windowMin: number;
+        windowMax: number;
         color: string;
         xOffset: number;
         yOffset: number;
@@ -101,7 +104,6 @@ type VolumeViewerProps = {
   onChannelReset: (channelId: string) => void;
   onChannelLayerSelect: (channelId: string, layerKey: string) => void;
   onLayerContrastChange: (layerKey: string, value: number) => void;
-  onLayerGammaChange: (layerKey: string, value: number) => void;
   onLayerBrightnessChange: (layerKey: string, value: number) => void;
   onLayerOffsetChange: (layerKey: string, axis: 'x' | 'y', value: number) => void;
   onLayerColorChange: (layerKey: string, color: string) => void;
@@ -309,7 +311,7 @@ type VrPlaybackHud = {
   cacheDirty: boolean;
 };
 
-type VrChannelsSliderKey = 'contrast' | 'gamma' | 'brightness' | 'xOffset' | 'yOffset';
+type VrChannelsSliderKey = 'contrastPosition' | 'brightnessPosition' | 'xOffset' | 'yOffset';
 
 type VrChannelsInteractiveRegion = {
   targetType:
@@ -371,9 +373,10 @@ type VrChannelsState = {
       isGrayscale: boolean;
       isSegmentation: boolean;
       settings: {
-        contrast: number;
-        gamma: number;
-        brightness: number;
+        contrastPosition: number;
+        brightnessPosition: number;
+        windowMin: number;
+        windowMax: number;
         color: string;
         xOffset: number;
         yOffset: number;
@@ -862,7 +865,6 @@ function VolumeViewer({
   onChannelReset,
   onChannelLayerSelect,
   onLayerContrastChange,
-  onLayerGammaChange,
   onLayerBrightnessChange,
   onLayerOffsetChange,
   onLayerColorChange,
@@ -3427,9 +3429,9 @@ function VolumeViewer({
         axis?: 'x' | 'y';
       }> = [
         {
-          key: 'contrast',
+          key: 'contrastPosition',
           label: 'Contrast',
-          value: selectedLayer.settings.contrast,
+          value: selectedLayer.settings.contrastPosition,
           min: 0.2,
           max: 3,
           step: 0.05,
@@ -3437,19 +3439,9 @@ function VolumeViewer({
           disabled: !selectedLayer.hasData
         },
         {
-          key: 'gamma',
-          label: 'Gamma',
-          value: selectedLayer.settings.gamma,
-          min: 0.2,
-          max: 3,
-          step: 0.05,
-          formatter: (value: number) => value.toFixed(2),
-          disabled: !selectedLayer.hasData
-        },
-        {
-          key: 'brightness',
+          key: 'brightnessPosition',
           label: 'Brightness',
-          value: selectedLayer.settings.brightness,
+          value: selectedLayer.settings.brightnessPosition,
           min: -1,
           max: 1,
           step: 0.01,
@@ -3747,14 +3739,23 @@ function VolumeViewer({
         return;
       }
 
-      if (region.sliderKey === 'contrast') {
-        layerState.settings.contrast = snappedValue;
+      if (region.sliderKey === 'contrastPosition') {
+        layerState.settings.contrastPosition = snappedValue;
+        const { windowMin, windowMax } = computeWindowBounds(
+          layerState.settings.brightnessPosition,
+          snappedValue
+        );
+        layerState.settings.windowMin = windowMin;
+        layerState.settings.windowMax = windowMax;
         onLayerContrastChange(region.layerKey, snappedValue);
-      } else if (region.sliderKey === 'gamma') {
-        layerState.settings.gamma = snappedValue;
-        onLayerGammaChange(region.layerKey, snappedValue);
-      } else if (region.sliderKey === 'brightness') {
-        layerState.settings.brightness = snappedValue;
+      } else if (region.sliderKey === 'brightnessPosition') {
+        layerState.settings.brightnessPosition = snappedValue;
+        const { windowMin, windowMax } = computeWindowBounds(
+          snappedValue,
+          layerState.settings.contrastPosition
+        );
+        layerState.settings.windowMin = windowMin;
+        layerState.settings.windowMax = windowMax;
         onLayerBrightnessChange(region.layerKey, snappedValue);
       } else if (region.sliderKey === 'xOffset') {
         layerState.settings.xOffset = snappedValue;
@@ -3767,9 +3768,8 @@ function VolumeViewer({
       renderVrChannelsHud(hud, state);
     },
     [
-      onLayerBrightnessChange,
       onLayerContrastChange,
-      onLayerGammaChange,
+      onLayerBrightnessChange,
       onLayerOffsetChange,
       renderVrChannelsHud
     ]
@@ -3924,9 +3924,10 @@ function VolumeViewer({
         isGrayscale: layer.isGrayscale,
         isSegmentation: layer.isSegmentation,
         settings: {
-          contrast: layer.settings.contrast,
-          gamma: layer.settings.gamma,
-          brightness: layer.settings.brightness,
+          contrastPosition: layer.settings.contrastPosition,
+          brightnessPosition: layer.settings.brightnessPosition,
+          windowMin: layer.settings.windowMin,
+          windowMax: layer.settings.windowMax,
           color: normalizeHexColor(layer.settings.color, DEFAULT_LAYER_COLOR),
           xOffset: layer.settings.xOffset,
           yOffset: layer.settings.yOffset,
@@ -5477,9 +5478,11 @@ function VolumeViewer({
               const channelState = state.channels.find((channel) => channel.id === region.channelId);
               if (channelState) {
                 for (const layer of channelState.layers) {
-                  layer.settings.contrast = 1;
-                  layer.settings.gamma = 1;
-                  layer.settings.brightness = 0;
+                  layer.settings.contrastPosition = 1;
+                  layer.settings.brightnessPosition = 0;
+                  const { windowMin, windowMax } = computeWindowBounds(0, 1);
+                  layer.settings.windowMin = windowMin;
+                  layer.settings.windowMax = windowMax;
                   layer.settings.xOffset = 0;
                   layer.settings.yOffset = 0;
                   layer.settings.renderStyle = 0;
@@ -8216,9 +8219,8 @@ function VolumeViewer({
           uniforms.u_renderthreshold.value = 0.5;
           uniforms.u_cmdata.value = colormapTexture;
           uniforms.u_channels.value = volume.channels;
-          uniforms.u_contrast.value = layer.contrast;
-          uniforms.u_gamma.value = layer.gamma;
-          uniforms.u_brightness.value = layer.brightness;
+          uniforms.u_windowMin.value = layer.windowMin;
+          uniforms.u_windowMax.value = layer.windowMax;
           uniforms.u_invert.value = layer.invert ? 1 : 0;
           uniforms.u_stepScale.value = volumeStepScaleRef.current;
 
@@ -8314,9 +8316,8 @@ function VolumeViewer({
           uniforms.u_slice.value = texture;
           uniforms.u_cmdata.value = colormapTexture;
           uniforms.u_channels.value = volume.channels;
-          uniforms.u_contrast.value = layer.contrast;
-          uniforms.u_gamma.value = layer.gamma;
-          uniforms.u_brightness.value = layer.brightness;
+          uniforms.u_windowMin.value = layer.windowMin;
+          uniforms.u_windowMax.value = layer.windowMax;
 
           const material = new THREE.ShaderMaterial({
             uniforms,
@@ -8365,9 +8366,8 @@ function VolumeViewer({
 
         const materialUniforms = (mesh.material as THREE.ShaderMaterial).uniforms;
         materialUniforms.u_channels.value = volume.channels;
-        materialUniforms.u_contrast.value = layer.contrast;
-        materialUniforms.u_gamma.value = layer.gamma;
-        materialUniforms.u_brightness.value = layer.brightness;
+        materialUniforms.u_windowMin.value = layer.windowMin;
+        materialUniforms.u_windowMax.value = layer.windowMax;
         materialUniforms.u_invert.value = layer.invert ? 1 : 0;
         materialUniforms.u_cmdata.value = colormapTexture;
         if (materialUniforms.u_stepScale) {

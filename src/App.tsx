@@ -29,9 +29,9 @@ import {
 } from './integrations/dropbox';
 import {
   createDefaultLayerSettings,
-  DEFAULT_BRIGHTNESS,
-  DEFAULT_CONTRAST,
-  DEFAULT_GAMMA,
+  computeWindowBounds,
+  DEFAULT_BRIGHTNESS_POSITION,
+  DEFAULT_CONTRAST_POSITION,
   DEFAULT_RENDER_STYLE,
   DEFAULT_SAMPLING_MODE,
   type LayerSettings,
@@ -2566,30 +2566,17 @@ function App() {
   const handleLayerContrastChange = useCallback((key: string, value: number) => {
     setLayerSettings((current) => {
       const previous = current[key] ?? createDefaultLayerSettings();
-      if (previous.contrast === value) {
+      if (previous.contrastPosition === value) {
         return current;
       }
+      const { windowMin, windowMax } = computeWindowBounds(previous.brightnessPosition, value);
       return {
         ...current,
         [key]: {
           ...previous,
-          contrast: value
-        }
-      };
-    });
-  }, []);
-
-  const handleLayerGammaChange = useCallback((key: string, value: number) => {
-    setLayerSettings((current) => {
-      const previous = current[key] ?? createDefaultLayerSettings();
-      if (previous.gamma === value) {
-        return current;
-      }
-      return {
-        ...current,
-        [key]: {
-          ...previous,
-          gamma: value
+          contrastPosition: value,
+          windowMin,
+          windowMax
         }
       };
     });
@@ -2598,14 +2585,17 @@ function App() {
   const handleLayerBrightnessChange = useCallback((key: string, value: number) => {
     setLayerSettings((current) => {
       const previous = current[key] ?? createDefaultLayerSettings();
-      if (previous.brightness === value) {
+      if (previous.brightnessPosition === value) {
         return current;
       }
+      const { windowMin, windowMax } = computeWindowBounds(value, previous.contrastPosition);
       return {
         ...current,
         [key]: {
           ...previous,
-          brightness: value
+          brightnessPosition: value,
+          windowMin,
+          windowMax
         }
       };
     });
@@ -2720,11 +2710,16 @@ function App() {
         const next: Record<string, LayerSettings> = { ...current };
         for (const layer of relevantLayers) {
           const previous = current[layer.key] ?? createDefaultLayerSettings();
+          const { windowMin, windowMax } = computeWindowBounds(
+            DEFAULT_BRIGHTNESS_POSITION,
+            DEFAULT_CONTRAST_POSITION
+          );
           const updated: LayerSettings = {
             ...previous,
-            contrast: DEFAULT_CONTRAST,
-            gamma: DEFAULT_GAMMA,
-            brightness: DEFAULT_BRIGHTNESS,
+            contrastPosition: DEFAULT_CONTRAST_POSITION,
+            brightnessPosition: DEFAULT_BRIGHTNESS_POSITION,
+            windowMin,
+            windowMax,
             xOffset: 0,
             yOffset: 0,
             renderStyle: DEFAULT_RENDER_STYLE,
@@ -2732,9 +2727,10 @@ function App() {
             samplingMode: DEFAULT_SAMPLING_MODE
           };
           if (
-            previous.contrast !== updated.contrast ||
-            previous.gamma !== updated.gamma ||
-            previous.brightness !== updated.brightness ||
+            previous.contrastPosition !== updated.contrastPosition ||
+            previous.brightnessPosition !== updated.brightnessPosition ||
+            previous.windowMin !== updated.windowMin ||
+            previous.windowMax !== updated.windowMax ||
             previous.xOffset !== updated.xOffset ||
             previous.yOffset !== updated.yOffset ||
             previous.renderStyle !== updated.renderStyle ||
@@ -2773,9 +2769,10 @@ function App() {
         label: layer.label,
         volume: layer.volumes[selectedIndex] ?? null,
         visible: channelVisible ?? true,
-        contrast: settings.contrast,
-        gamma: settings.gamma,
-        brightness: settings.brightness,
+        contrastPosition: settings.contrastPosition,
+        brightnessPosition: settings.brightnessPosition,
+        windowMin: settings.windowMin,
+        windowMax: settings.windowMax,
         color: normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR),
         offsetX: isActiveChannel ? settings.xOffset : 0,
         offsetY: isActiveChannel ? settings.yOffset : 0,
@@ -3145,7 +3142,6 @@ function App() {
               onChannelReset={handleChannelSliderReset}
               onChannelLayerSelect={handleChannelLayerSelectionChange}
               onLayerContrastChange={handleLayerContrastChange}
-              onLayerGammaChange={handleLayerGammaChange}
               onLayerBrightnessChange={handleLayerBrightnessChange}
               onLayerOffsetChange={handleLayerOffsetChange}
               onLayerColorChange={handleLayerColorChange}
@@ -3499,7 +3495,7 @@ function App() {
                           <div className="slider-control slider-control--pair">
                             <div className="slider-control slider-control--inline">
                               <label htmlFor={`layer-contrast-${selectedLayer.key}`}>
-                                Contrast <span>{settings.contrast.toFixed(2)}×</span>
+                                Contrast <span>{settings.contrastPosition.toFixed(2)}×</span>
                               </label>
                               <input
                                 id={`layer-contrast-${selectedLayer.key}`}
@@ -3507,7 +3503,7 @@ function App() {
                                 min={0.2}
                                 max={3}
                                 step={0.05}
-                                value={settings.contrast}
+                                value={settings.contrastPosition}
                                 onChange={(event) =>
                                   handleLayerContrastChange(selectedLayer.key, Number(event.target.value))
                                 }
@@ -3518,8 +3514,8 @@ function App() {
                               <label htmlFor={`layer-brightness-${selectedLayer.key}`}>
                                 Brightness{' '}
                                 <span>
-                                  {settings.brightness >= 0 ? '+' : ''}
-                                  {settings.brightness.toFixed(2)}
+                                  {settings.brightnessPosition >= 0 ? '+' : ''}
+                                  {settings.brightnessPosition.toFixed(2)}
                                 </span>
                               </label>
                               <input
@@ -3528,30 +3524,13 @@ function App() {
                                 min={-1}
                                 max={1}
                                 step={0.01}
-                                value={settings.brightness}
+                                value={settings.brightnessPosition}
                                 onChange={(event) =>
                                   handleLayerBrightnessChange(selectedLayer.key, Number(event.target.value))
                                 }
                                 disabled={sliderDisabled}
                               />
                             </div>
-                          </div>
-                          <div className="slider-control">
-                            <label htmlFor={`layer-gamma-${selectedLayer.key}`}>
-                              Gamma <span>{settings.gamma.toFixed(2)}</span>
-                            </label>
-                            <input
-                              id={`layer-gamma-${selectedLayer.key}`}
-                              type="range"
-                              min={0.2}
-                              max={3}
-                              step={0.05}
-                              value={settings.gamma}
-                              onChange={(event) =>
-                                handleLayerGammaChange(selectedLayer.key, Number(event.target.value))
-                              }
-                              disabled={sliderDisabled}
-                            />
                           </div>
                           <div className="slider-control slider-control--pair">
                             <div className="slider-control slider-control--inline">
