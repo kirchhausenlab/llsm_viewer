@@ -92,6 +92,7 @@ const TRACK_EPSILON = 1e-3;
 const TRACK_HIT_TEST_MIN_DISTANCE = 6;
 const DEFAULT_TRACK_OPACITY = 0.9;
 const DEFAULT_TRACK_LINE_WIDTH = 1;
+const WINDOW_EPSILON = 1e-5;
 
 function clamp(value: number, min: number, max: number) {
   if (value < min) {
@@ -330,11 +331,12 @@ function PlanarViewer({
       const invert = layer.invert ?? false;
       const windowMin = layer.windowMin ?? 0;
       const windowMax = layer.windowMax ?? 1;
-      const windowRange = Math.max(windowMax - windowMin, 1e-5);
-      const adjustScalar = (value: number) => {
-        const normalized = (value - windowMin) / windowRange;
-        const clamped = clamp(normalized, 0, 1);
-        return invert ? 1 - clamped : clamped;
+      const windowRange = Math.max(windowMax - windowMin, WINDOW_EPSILON);
+      const normalizeScalar = (value: number) =>
+        clamp((value - windowMin) / windowRange, 0, 1);
+      const applyWindow = (value: number) => {
+        const normalized = normalizeScalar(value);
+        return invert ? 1 - normalized : normalized;
       };
       const tint = channels === 1 ? getColor(layer.color) : null;
 
@@ -424,12 +426,12 @@ function PlanarViewer({
           let alpha = 0;
 
           if (channels === 1) {
-            const adjusted = adjustScalar(channelR);
-            const layerAlpha = Math.max(adjusted, MIN_ALPHA);
+            const normalizedIntensity = applyWindow(channelR);
+            const layerAlpha = Math.max(normalizedIntensity, MIN_ALPHA);
             const color = tint ?? getColor('#ffffff');
-            srcR = color.r * adjusted;
-            srcG = color.g * adjusted;
-            srcB = color.b * adjusted;
+            srcR = color.r * normalizedIntensity;
+            srcG = color.g * normalizedIntensity;
+            srcB = color.b * normalizedIntensity;
             alpha = layerAlpha;
           } else {
             const intensity =
@@ -438,15 +440,19 @@ function PlanarViewer({
                 : channels === 3
                 ? channelR * 0.2126 + channelG * 0.7152 + channelB * 0.0722
                 : Math.max(channelR, channelG, Math.max(channelB, channelA));
-            const adjustedIntensity = adjustScalar(intensity);
-            alpha = Math.max(adjustedIntensity, MIN_ALPHA);
-            const adjustedR = adjustScalar(channelR);
-            const adjustedG = channels > 1 ? adjustScalar(channelG) : adjustedR;
-            const adjustedB =
-              channels > 2 ? adjustScalar(channelB) : channels === 2 ? 0 : adjustedG;
-            srcR = adjustedR;
-            srcG = adjustedG;
-            srcB = adjustedB;
+            const normalizedIntensity = applyWindow(intensity);
+            alpha = Math.max(normalizedIntensity, MIN_ALPHA);
+            const normalizedR = applyWindow(channelR);
+            const normalizedG = channels > 1 ? applyWindow(channelG) : normalizedR;
+            const normalizedB =
+              channels > 2
+                ? applyWindow(channelB)
+                : channels === 2
+                ? 0
+                : normalizedG;
+            srcR = normalizedR;
+            srcG = normalizedG;
+            srcB = normalizedB;
           }
 
           const srcA = clamp(alpha, 0, 1);
