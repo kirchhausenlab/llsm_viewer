@@ -2,9 +2,7 @@ import type { NormalizedVolume } from './volumeProcessing';
 import { MIN_WINDOW_WIDTH } from './state/layerSettings';
 
 const HISTOGRAM_BINS = 256;
-const LOWER_QUANTILE = 0.0005;
-const UPPER_QUANTILE = 0.9995;
-const RANGE_PADDING_FRACTION = 0.1;
+const DEFAULT_AUTO_THRESHOLD = 5000;
 
 export type AutoWindowResult = {
   windowMin: number;
@@ -101,79 +99,64 @@ export function computeAutoWindow(
     totalCount += histogram[i];
   }
 
-  const defaultResult = {
+  const nextThreshold =
+    previousThreshold < 10
+      ? DEFAULT_AUTO_THRESHOLD
+      : Math.max(1, Math.floor(previousThreshold / 2));
+
+  const defaultResult: AutoWindowResult = {
     windowMin: 0,
     windowMax: 1,
-    nextThreshold: previousThreshold > 0 ? previousThreshold : 1
-  } satisfies AutoWindowResult;
+    nextThreshold
+  };
 
   if (totalCount === 0) {
     return defaultResult;
   }
 
-  const lowerTarget = Math.max(0, totalCount * LOWER_QUANTILE);
-  const upperTarget = Math.min(totalCount, totalCount * UPPER_QUANTILE);
+  const threshold = nextThreshold > 0 ? totalCount / nextThreshold : totalCount;
+  const limit = totalCount / 10;
 
-  let cumulative = 0;
-  let hmin = 0;
-  for (let i = 0; i < bins; i++) {
-    cumulative += histogram[i];
-    if (cumulative >= lowerTarget) {
-      hmin = i;
-      break;
+  let i = -1;
+  let found = false;
+  while (!found && i < bins - 1) {
+    i++;
+    let count = histogram[i];
+    if (count > limit) {
+      count = 0;
     }
+    found = count > threshold;
   }
+  const hmin = i;
 
-  cumulative = 0;
-  let hmax = bins - 1;
-  for (let i = 0; i < bins; i++) {
-    cumulative += histogram[i];
-    if (cumulative >= upperTarget) {
-      hmax = i;
-      break;
+  i = bins;
+  found = false;
+  while (!found && i > 0) {
+    i--;
+    let count = histogram[i];
+    if (count > limit) {
+      count = 0;
     }
+    found = count > threshold;
   }
+  const hmax = i;
 
-  if (hmax <= hmin) {
-    let firstNonZero = -1;
-    let lastNonZero = -1;
-    for (let i = 0; i < bins; i++) {
-      if (histogram[i] > 0) {
-        firstNonZero = i;
-        break;
-      }
-    }
-    for (let i = bins - 1; i >= 0; i--) {
-      if (histogram[i] > 0) {
-        lastNonZero = i;
-        break;
-      }
-    }
-    if (firstNonZero === -1 || lastNonZero === -1 || lastNonZero <= firstNonZero) {
-      return defaultResult;
-    }
-    hmin = firstNonZero;
-    hmax = lastNonZero;
+  if (hmax < hmin) {
+    return defaultResult;
   }
 
   const scale = bins > 1 ? 1 / (bins - 1) : 0;
   let windowMin = hmin * scale;
   let windowMax = hmax * scale;
 
-  if (windowMax <= windowMin) {
-    windowMax = Math.min(1, windowMin + MIN_WINDOW_WIDTH);
-  }
-
-  const baseRange = Math.max(windowMax - windowMin, MIN_WINDOW_WIDTH);
-  const padding = Math.max(MIN_WINDOW_WIDTH * 0.5, baseRange * RANGE_PADDING_FRACTION);
-  windowMin = Math.max(0, windowMin - padding);
-  windowMax = Math.min(1, windowMax + padding);
-
   if (windowMax - windowMin < MIN_WINDOW_WIDTH) {
-    const center = (windowMin + windowMax) * 0.5;
-    const halfWidth = Math.max(MIN_WINDOW_WIDTH / 2, (windowMax - windowMin) / 2);
-    windowMin = Math.max(0, center - halfWidth);
-    windowMax = Math.min(1, center + halfWidth);
+    if (windowMax <= windowMin) {
+      windowMax = Math.min(1, windowMin + MIN_WINDOW_WIDTH);
+    } else {
+      const center = (windowMin + windowMax) * 0.5;
+      windowMin = Math.max(0, center - MIN_WINDOW_WIDTH / 2);
+      windowMax = Math.min(1, center + MIN_WINDOW_WIDTH / 2);
+    }
     if (windowMax - windowMin < MIN_WINDOW_WIDTH) {
       if (windowMin === 0) {
         windowMax = Math.min(1, windowMin + MIN_WINDOW_WIDTH);
@@ -186,7 +169,7 @@ export function computeAutoWindow(
   return {
     windowMin,
     windowMax,
-    nextThreshold: defaultResult.nextThreshold
+    nextThreshold
   };
 }
 
