@@ -42,7 +42,6 @@ import {
   CONTRAST_SLIDER_MIN,
   CONTRAST_SLIDER_STEP,
   MAX_CONTRAST_POSITION,
-  MIN_WINDOW_WIDTH,
   formatContrastMultiplier,
   fromContrastSliderValue,
   toContrastSliderValue,
@@ -2652,20 +2651,20 @@ function App() {
   const handleLayerWindowMinChange = useCallback((key: string, value: number) => {
     setLayerSettings((current) => {
       const previous = current[key] ?? createDefaultLayerSettings();
-      const { windowMin, windowMax } = clampWindowBounds(value, previous.windowMax);
-      if (previous.windowMin === windowMin && previous.windowMax === windowMax) {
+      const clampedValue = Math.max(DEFAULT_WINDOW_MIN, Math.min(DEFAULT_WINDOW_MAX, value));
+      const windowMin = Math.min(clampedValue, previous.windowMax);
+      if (previous.windowMin === windowMin) {
         return current;
       }
       const { brightnessPosition, contrastPosition } = computeControlPositionsFromWindow(
         windowMin,
-        windowMax
+        previous.windowMax
       );
       return {
         ...current,
         [key]: {
           ...previous,
           windowMin,
-          windowMax,
           brightnessPosition,
           contrastPosition
         }
@@ -2676,19 +2675,19 @@ function App() {
   const handleLayerWindowMaxChange = useCallback((key: string, value: number) => {
     setLayerSettings((current) => {
       const previous = current[key] ?? createDefaultLayerSettings();
-      const { windowMin, windowMax } = clampWindowBounds(previous.windowMin, value);
-      if (previous.windowMin === windowMin && previous.windowMax === windowMax) {
+      const clampedValue = Math.max(DEFAULT_WINDOW_MIN, Math.min(DEFAULT_WINDOW_MAX, value));
+      const windowMax = Math.max(clampedValue, previous.windowMin);
+      if (previous.windowMax === windowMax) {
         return current;
       }
       const { brightnessPosition, contrastPosition } = computeControlPositionsFromWindow(
-        windowMin,
+        previous.windowMin,
         windowMax
       );
       return {
         ...current,
         [key]: {
           ...previous,
-          windowMin,
           windowMax,
           brightnessPosition,
           contrastPosition
@@ -3718,7 +3717,7 @@ function App() {
                                 id={`layer-window-min-${selectedLayer.key}`}
                                 type="range"
                                 min={DEFAULT_WINDOW_MIN}
-                                max={Math.max(DEFAULT_WINDOW_MIN, settings.windowMax - MIN_WINDOW_WIDTH)}
+                                max={settings.windowMax}
                                 step={0.001}
                                 value={settings.windowMin}
                                 onChange={(event) =>
@@ -3734,7 +3733,7 @@ function App() {
                               <input
                                 id={`layer-window-max-${selectedLayer.key}`}
                                 type="range"
-                                min={Math.min(DEFAULT_WINDOW_MAX, settings.windowMin + MIN_WINDOW_WIDTH)}
+                                min={settings.windowMin}
                                 max={DEFAULT_WINDOW_MAX}
                                 step={0.001}
                                 value={settings.windowMax}
