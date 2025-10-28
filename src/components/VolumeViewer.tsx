@@ -105,6 +105,7 @@ type VolumeViewerProps = {
   onChannelLayerSelect: (channelId: string, layerKey: string) => void;
   onLayerContrastChange: (layerKey: string, value: number) => void;
   onLayerBrightnessChange: (layerKey: string, value: number) => void;
+  onLayerAutoContrast: (layerKey: string) => void;
   onLayerOffsetChange: (layerKey: string, axis: 'x' | 'y', value: number) => void;
   onLayerColorChange: (layerKey: string, color: string) => void;
   onLayerRenderStyleToggle: (layerKey: string) => void;
@@ -243,6 +244,7 @@ type VrUiTargetType =
   | 'channels-layer'
   | 'channels-slider'
   | 'channels-color'
+  | 'channels-auto-contrast'
   | 'tracks-panel'
   | 'tracks-panel-grab'
   | 'tracks-panel-yaw'
@@ -323,7 +325,8 @@ type VrChannelsInteractiveRegion = {
     | 'channels-color'
     | 'channels-render-style'
     | 'channels-sampling'
-    | 'channels-invert';
+    | 'channels-invert'
+    | 'channels-auto-contrast';
   channelId: string;
   layerKey?: string;
   sliderKey?: VrChannelsSliderKey;
@@ -866,6 +869,7 @@ function VolumeViewer({
   onChannelLayerSelect,
   onLayerContrastChange,
   onLayerBrightnessChange,
+  onLayerAutoContrast,
   onLayerOffsetChange,
   onLayerColorChange,
   onLayerRenderStyleToggle,
@@ -3218,6 +3222,7 @@ function VolumeViewer({
       const samplingDisabled = renderStyleDisabled;
       const samplingActive = selectedLayer.settings.samplingMode === 'nearest';
       const invertActive = selectedLayer.settings.invert;
+      const autoContrastDisabled = !selectedLayer.hasData;
       const actionButtonHeight = 60;
       const actionButtonRadius = 16;
       const actionSpacing = 24;
@@ -3226,10 +3231,13 @@ function VolumeViewer({
       const buttonWidth = Math.max(0, Math.min(280, (availableRowWidth - actionSpacing) / 2));
       const firstRowY = currentY;
       const secondRowY = firstRowY + actionButtonHeight + rowSpacing;
+      const thirdRowY = secondRowY + actionButtonHeight + rowSpacing;
       const resetX = paddingX;
       const invertX = resetX + buttonWidth + actionSpacing;
       const renderX = paddingX;
       const samplingX = renderX + buttonWidth + actionSpacing;
+      const autoContrastX = paddingX;
+      const autoContrastWidth = availableRowWidth;
 
       drawRoundedRect(ctx, resetX, firstRowY, buttonWidth, actionButtonHeight, actionButtonRadius);
       const resetDisabled = activeChannel.layers.length === 0;
@@ -3305,6 +3313,42 @@ function VolumeViewer({
       }
       ctx.fillStyle = samplingDisabled ? '#7b8795' : '#f3f6fc';
       ctx.fillText('Sampling mode', samplingX + buttonWidth / 2, secondRowY + actionButtonHeight / 2);
+
+      drawRoundedRect(
+        ctx,
+        autoContrastX,
+        thirdRowY,
+        autoContrastWidth,
+        actionButtonHeight,
+        actionButtonRadius
+      );
+      ctx.fillStyle = autoContrastDisabled ? 'rgba(45, 60, 74, 0.6)' : '#2b3340';
+      ctx.fill();
+      if (
+        hud.hoverRegion &&
+        hud.hoverRegion.targetType === 'channels-auto-contrast' &&
+        hud.hoverRegion.channelId === activeChannel.id &&
+        hud.hoverRegion.layerKey === selectedLayer.key
+      ) {
+        ctx.save();
+        drawRoundedRect(
+          ctx,
+          autoContrastX,
+          thirdRowY,
+          autoContrastWidth,
+          actionButtonHeight,
+          actionButtonRadius
+        );
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.fillStyle = autoContrastDisabled ? '#7b8795' : '#f3f6fc';
+      ctx.fillText(
+        'Auto contrast',
+        autoContrastX + autoContrastWidth / 2,
+        thirdRowY + actionButtonHeight / 2
+      );
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
 
@@ -3363,7 +3407,21 @@ function VolumeViewer({
         disabled: samplingDisabled
       });
 
-      const actionsBottom = secondRowY + actionButtonHeight;
+      const autoContrastBounds = {
+        minX: toPanelX(autoContrastX),
+        maxX: toPanelX(autoContrastX + autoContrastWidth),
+        minY: Math.min(toPanelY(thirdRowY), toPanelY(thirdRowY + actionButtonHeight)),
+        maxY: Math.max(toPanelY(thirdRowY), toPanelY(thirdRowY + actionButtonHeight))
+      };
+      regions.push({
+        targetType: 'channels-auto-contrast',
+        channelId: activeChannel.id,
+        layerKey: selectedLayer.key,
+        bounds: autoContrastBounds,
+        disabled: autoContrastDisabled
+      });
+
+      const actionsBottom = thirdRowY + actionButtonHeight;
       currentY = actionsBottom + 32;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
@@ -5524,6 +5582,10 @@ function VolumeViewer({
                   layerState.settings.invert = !layerState.settings.invert;
                 }
                 onLayerInvertToggle(region.layerKey);
+              }
+            } else if (activeTarget.type === 'channels-auto-contrast' && region.layerKey) {
+              if (!region.disabled) {
+                onLayerAutoContrast(region.layerKey);
               }
             } else if (activeTarget.type === 'channels-color' && region.layerKey && region.color) {
               const channelState = state.channels.find((channel) => channel.id === region.channelId);

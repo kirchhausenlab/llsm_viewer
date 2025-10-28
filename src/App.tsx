@@ -46,6 +46,7 @@ import {
 import { deriveChannelTrackOffsets } from './state/channelTrackOffsets';
 import type { LoadedLayer } from './types/layers';
 import './App.css';
+import { computeAutoWindow } from './autoContrast';
 
 const DEFAULT_FPS = 12;
 const DEFAULT_TRACK_OPACITY = 0.9;
@@ -933,6 +934,7 @@ function App() {
   const [channelVisibility, setChannelVisibility] = useState<Record<string, boolean>>({});
   const [channelActiveLayer, setChannelActiveLayer] = useState<Record<string, string>>({});
   const [layerSettings, setLayerSettings] = useState<Record<string, LayerSettings>>({});
+  const [layerAutoThresholds, setLayerAutoThresholds] = useState<Record<string, number>>({});
   const [status, setStatus] = useState<LoadState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [loadProgress, setLoadProgress] = useState(0);
@@ -1531,6 +1533,7 @@ function App() {
     setChannelVisibility({});
     setChannelActiveLayer({});
     setLayerSettings({});
+    setLayerAutoThresholds({});
     setSelectedIndex(0);
     setIsPlaying(false);
     setLoadProgress(0);
@@ -1643,6 +1646,12 @@ function App() {
           return acc;
         }, {})
       );
+      setLayerAutoThresholds(
+        normalizedLayers.reduce<Record<string, number>>((acc, layer) => {
+          acc[layer.key] = 0;
+          return acc;
+        }, {})
+      );
       setSelectedIndex(0);
       setActiveChannelTabId(Object.keys(activeLayerDefaults)[0] ?? null);
       setStatus('loaded');
@@ -1661,6 +1670,7 @@ function App() {
       setChannelVisibility({});
       setChannelActiveLayer({});
       setLayerSettings({});
+      setLayerAutoThresholds({});
       setSelectedIndex(0);
       setActiveChannelTabId(null);
       setLoadProgress(0);
@@ -1994,6 +2004,17 @@ function App() {
             }
             return changed ? next : current;
           });
+          setLayerAutoThresholds((current) => {
+            let changed = false;
+            const next = { ...current };
+            for (const layerId of replacedLayerIds) {
+              if (layerId in next) {
+                delete next[layerId];
+                changed = true;
+              }
+            }
+            return changed ? next : current;
+          });
         }
         if (ignoredExtraGroups) {
           showInteractionWarning('Only the first TIFF sequence was added. Additional sequences were ignored.');
@@ -2058,6 +2079,14 @@ function App() {
     );
     if (removed) {
       setLayerSettings((current) => {
+        if (!(layerId in current)) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[layerId];
+        return next;
+      });
+      setLayerAutoThresholds((current) => {
         if (!(layerId in current)) {
           return current;
         }
@@ -2662,6 +2691,60 @@ function App() {
     });
   }, []);
 
+  const handleLayerAutoContrast = useCallback(
+    (key: string) => {
+      const layer = layers.find((entry) => entry.key === key);
+      if (!layer) {
+        return;
+      }
+      const volume = layer.volumes[selectedIndex] ?? null;
+      if (!volume) {
+        return;
+      }
+
+      const previousThreshold = layerAutoThresholds[key] ?? 0;
+      const { windowMin, windowMax, nextThreshold } = computeAutoWindow(volume, previousThreshold);
+      const { windowMin: clampedMin, windowMax: clampedMax } = clampWindowBounds(windowMin, windowMax);
+      const { brightnessPosition, contrastPosition } = computeControlPositionsFromWindow(
+        clampedMin,
+        clampedMax
+      );
+
+      setLayerAutoThresholds((current) => {
+        if (current[key] === nextThreshold) {
+          return current;
+        }
+        return {
+          ...current,
+          [key]: nextThreshold
+        };
+      });
+
+      setLayerSettings((current) => {
+        const previous = current[key] ?? createDefaultLayerSettings();
+        if (
+          previous.windowMin === clampedMin &&
+          previous.windowMax === clampedMax &&
+          previous.brightnessPosition === brightnessPosition &&
+          previous.contrastPosition === contrastPosition
+        ) {
+          return current;
+        }
+        return {
+          ...current,
+          [key]: {
+            ...previous,
+            windowMin: clampedMin,
+            windowMax: clampedMax,
+            brightnessPosition,
+            contrastPosition
+          }
+        };
+      });
+    },
+    [layerAutoThresholds, layers, selectedIndex]
+  );
+
   const handleLayerOffsetChange = useCallback((key: string, axis: 'x' | 'y', value: number) => {
     setLayerSettings((current) => {
       const previous = current[key] ?? createDefaultLayerSettings();
@@ -2761,12 +2844,12 @@ function App() {
 
   const handleChannelSliderReset = useCallback(
     (channelId: string) => {
-      setLayerSettings((current) => {
-        const relevantLayers = layers.filter((layer) => layer.channelId === channelId);
-        if (relevantLayers.length === 0) {
-          return current;
-        }
+      const relevantLayers = layers.filter((layer) => layer.channelId === channelId);
+      if (relevantLayers.length === 0) {
+        return;
+      }
 
+      setLayerSettings((current) => {
         let changed = false;
         const next: Record<string, LayerSettings> = { ...current };
         for (const layer of relevantLayers) {
@@ -2803,6 +2886,18 @@ function App() {
           }
         }
 
+        return changed ? next : current;
+      });
+
+      setLayerAutoThresholds((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const layer of relevantLayers) {
+          if (next[layer.key] !== 0) {
+            next[layer.key] = 0;
+            changed = true;
+          }
+        }
         return changed ? next : current;
       });
     },
@@ -3204,6 +3299,7 @@ function App() {
               onChannelLayerSelect={handleChannelLayerSelectionChange}
               onLayerContrastChange={handleLayerContrastChange}
               onLayerBrightnessChange={handleLayerBrightnessChange}
+              onLayerAutoContrast={handleLayerAutoContrast}
               onLayerOffsetChange={handleLayerOffsetChange}
               onLayerColorChange={handleLayerColorChange}
               onLayerRenderStyleToggle={handleLayerRenderStyleToggle}
@@ -3551,6 +3647,16 @@ function App() {
                                   Sampling mode
                                 </button>
                               ) : null}
+                            </div>
+                            <div className="channel-primary-actions-row">
+                              <button
+                                type="button"
+                                className="channel-action-button"
+                                onClick={() => handleLayerAutoContrast(selectedLayer.key)}
+                                disabled={sliderDisabled}
+                              >
+                                Auto contrast
+                              </button>
                             </div>
                           </div>
                           <div className="slider-control slider-control--pair">
