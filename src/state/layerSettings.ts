@@ -10,6 +10,30 @@ export const DEFAULT_RENDER_STYLE = 0;
 export const DEFAULT_SAMPLING_MODE: SamplingMode = 'linear';
 export const MIN_WINDOW_WIDTH = 0.01;
 export const MAX_CONTRAST_POSITION = 1 / MIN_WINDOW_WIDTH;
+export const CONTRAST_SLIDER_MIN = Math.log(DEFAULT_CONTRAST_POSITION);
+export const CONTRAST_SLIDER_MAX = Math.log(MAX_CONTRAST_POSITION);
+export const CONTRAST_SLIDER_STEP = 0.02;
+
+export const toContrastSliderValue = (contrastPosition: number): number => {
+  const clamped = Math.max(1, Math.min(MAX_CONTRAST_POSITION, contrastPosition));
+  return Math.log(clamped);
+};
+
+export const fromContrastSliderValue = (sliderValue: number): number => {
+  const clamped = Math.max(CONTRAST_SLIDER_MIN, Math.min(CONTRAST_SLIDER_MAX, sliderValue));
+  return Math.exp(clamped);
+};
+
+export const formatContrastMultiplier = (value: number): string => {
+  const clamped = Math.max(1, Math.min(MAX_CONTRAST_POSITION, value));
+  if (clamped >= 100) {
+    return clamped.toFixed(0);
+  }
+  if (clamped >= 10) {
+    return clamped.toFixed(1);
+  }
+  return clamped.toFixed(2);
+};
 
 export type LayerSettings = {
   contrastPosition: number;
@@ -62,7 +86,7 @@ export const computeWindowBounds = (
   const defaultHalfRange = (DEFAULT_WINDOW_MAX - DEFAULT_WINDOW_MIN) / 2;
   const center = Math.max(
     DEFAULT_WINDOW_MIN,
-    Math.min(DEFAULT_WINDOW_MAX, defaultCenter + clampedBrightness * defaultHalfRange)
+    Math.min(DEFAULT_WINDOW_MAX, defaultCenter - clampedBrightness * defaultHalfRange)
   );
   const halfWidth = Math.max(MIN_WINDOW_WIDTH / 2, Math.min(defaultHalfRange, defaultHalfRange / slope));
   const preliminaryMin = center - halfWidth;
@@ -81,7 +105,7 @@ export const computeControlPositionsFromWindow = (
   const defaultHalfRange = (DEFAULT_WINDOW_MAX - DEFAULT_WINDOW_MIN) / 2;
   const brightnessPosition = Math.max(
     -1,
-    Math.min(1, (center - defaultCenter) / defaultHalfRange)
+    Math.min(1, (defaultCenter - center) / defaultHalfRange)
   );
   const slope = Math.max(1, 1 / windowWidth);
   const contrastPosition = Math.max(1, Math.min(MAX_CONTRAST_POSITION, slope));

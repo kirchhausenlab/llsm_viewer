@@ -20,7 +20,15 @@ import {
   normalizeTrackColor,
   TRACK_COLOR_SWATCHES
 } from '../trackColors';
-import { computeWindowBounds } from '../state/layerSettings';
+import {
+  CONTRAST_SLIDER_MAX,
+  CONTRAST_SLIDER_MIN,
+  CONTRAST_SLIDER_STEP,
+  computeWindowBounds,
+  formatContrastMultiplier,
+  fromContrastSliderValue,
+  toContrastSliderValue
+} from '../state/layerSettings';
 
 type ViewerLayer = {
   key: string;
@@ -3489,11 +3497,12 @@ function VolumeViewer({
         {
           key: 'contrastPosition',
           label: 'Contrast',
-          value: selectedLayer.settings.contrastPosition,
-          min: 0.2,
-          max: 3,
-          step: 0.05,
-          formatter: (value: number) => `${value.toFixed(2)}×`,
+          value: toContrastSliderValue(selectedLayer.settings.contrastPosition),
+          min: CONTRAST_SLIDER_MIN,
+          max: CONTRAST_SLIDER_MAX,
+          step: CONTRAST_SLIDER_STEP,
+          formatter: (value: number) =>
+            `${formatContrastMultiplier(fromContrastSliderValue(value))}×`,
           disabled: !selectedLayer.hasData
         },
         {
@@ -3798,14 +3807,15 @@ function VolumeViewer({
       }
 
       if (region.sliderKey === 'contrastPosition') {
-        layerState.settings.contrastPosition = snappedValue;
+        const contrastValue = fromContrastSliderValue(snappedValue);
+        layerState.settings.contrastPosition = contrastValue;
         const { windowMin, windowMax } = computeWindowBounds(
           layerState.settings.brightnessPosition,
-          snappedValue
+          contrastValue
         );
         layerState.settings.windowMin = windowMin;
         layerState.settings.windowMax = windowMax;
-        onLayerContrastChange(region.layerKey, snappedValue);
+        onLayerContrastChange(region.layerKey, contrastValue);
       } else if (region.sliderKey === 'brightnessPosition') {
         layerState.settings.brightnessPosition = snappedValue;
         const { windowMin, windowMax } = computeWindowBounds(
