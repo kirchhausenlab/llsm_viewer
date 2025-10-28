@@ -243,12 +243,30 @@ export class BrightnessContrastModel {
       }
       min = clamp(min, this.defaultMin, this.defaultMax);
       max = clamp(max, this.defaultMin, this.defaultMax);
-      if (max - min < minimumWidth && minimumWidth > 0) {
-        min = this.defaultMin;
-        max = this.defaultMin + minimumWidth;
-        if (max > this.defaultMax) {
-          min = this.defaultMax - minimumWidth;
-          max = this.defaultMax;
+      if (minimumWidth > 0) {
+        const width = max - min;
+        const tolerance = Math.max(minimumWidth * 1e-6, Number.EPSILON * 16);
+        if (width + tolerance < minimumWidth) {
+          const span = Math.max(this.defaultMax - this.defaultMin, 0);
+          if (span <= 0) {
+            min = this.defaultMin;
+            max = this.defaultMin;
+          } else if (span <= minimumWidth) {
+            min = this.defaultMin;
+            max = this.defaultMax;
+          } else {
+            const clampedMin = clamp(
+              center - minimumWidth / 2,
+              this.defaultMin,
+              this.defaultMax - minimumWidth
+            );
+            min = clampedMin;
+            max = clampedMin + minimumWidth;
+          }
+        } else if (width < minimumWidth) {
+          const clampedMax = Math.min(this.defaultMax, min + minimumWidth);
+          min = Math.max(this.defaultMin, clampedMax - minimumWidth);
+          max = clampedMax;
         }
       }
     }
