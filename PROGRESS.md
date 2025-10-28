@@ -420,3 +420,8 @@ d centered the front-page card in the viewport.
 - Added an auto-contrast module that builds Fiji-style histograms for normalized volumes and computes automatic window ranges.
 - Hooked histogram cache invalidation into the texture cache reset so cleared textures also drop stale intensity data.
 - Guarded cached histograms against shape changes to ensure volume updates trigger a fresh computation.
+
+## Brightness and contrast control overhaul
+- Flipped the brightness slider polarity so increasing the control lowers the window center and brightens the rendered volume, matching user expectations.
+- Swapped the contrast slider to a logarithmic scale with better formatting, keeping fine control near 1× while retaining access to higher contrast boosts.
+- Replaced the auto-contrast heuristic with percentile-based histogram bounds that add a safety margin, producing balanced windows that remain compatible with LUT inversion.

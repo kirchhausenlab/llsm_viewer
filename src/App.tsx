@@ -38,8 +38,14 @@ import {
   DEFAULT_WINDOW_MIN,
   DEFAULT_RENDER_STYLE,
   DEFAULT_SAMPLING_MODE,
+  CONTRAST_SLIDER_MAX,
+  CONTRAST_SLIDER_MIN,
+  CONTRAST_SLIDER_STEP,
   MAX_CONTRAST_POSITION,
   MIN_WINDOW_WIDTH,
+  formatContrastMultiplier,
+  fromContrastSliderValue,
+  toContrastSliderValue,
   type LayerSettings,
   type SamplingMode
 } from './state/layerSettings';
@@ -3683,17 +3689,21 @@ function App() {
                             </div>
                             <div className="slider-control slider-control--inline">
                               <label htmlFor={`layer-contrast-${selectedLayer.key}`}>
-                                Contrast <span>{settings.contrastPosition.toFixed(2)}×</span>
+                                Contrast{' '}
+                                <span>{formatContrastMultiplier(settings.contrastPosition)}×</span>
                               </label>
                               <input
                                 id={`layer-contrast-${selectedLayer.key}`}
                                 type="range"
-                                min={1}
-                                max={MAX_CONTRAST_POSITION}
-                                step={0.1}
-                                value={settings.contrastPosition}
+                                min={CONTRAST_SLIDER_MIN}
+                                max={CONTRAST_SLIDER_MAX}
+                                step={CONTRAST_SLIDER_STEP}
+                                value={toContrastSliderValue(settings.contrastPosition)}
                                 onChange={(event) =>
-                                  handleLayerContrastChange(selectedLayer.key, Number(event.target.value))
+                                  handleLayerContrastChange(
+                                    selectedLayer.key,
+                                    fromContrastSliderValue(Number(event.target.value))
+                                  )
                                 }
                                 disabled={sliderDisabled}
                               />
