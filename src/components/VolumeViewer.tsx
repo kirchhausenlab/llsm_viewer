@@ -21,13 +21,9 @@ import {
   TRACK_COLOR_SWATCHES
 } from '../trackColors';
 import {
-  CONTRAST_SLIDER_MAX,
-  CONTRAST_SLIDER_MIN,
-  CONTRAST_SLIDER_STEP,
-  computeWindowBounds,
-  formatContrastMultiplier,
-  fromContrastSliderValue,
-  toContrastSliderValue
+  brightnessContrastModel,
+  computeContrastMultiplier,
+  formatContrastMultiplier
 } from '../state/layerSettings';
 
 type ViewerLayer = {
@@ -35,8 +31,11 @@ type ViewerLayer = {
   label: string;
   volume: NormalizedVolume | null;
   visible: boolean;
-  contrastPosition: number;
-  brightnessPosition: number;
+  sliderRange: number;
+  minSliderIndex: number;
+  maxSliderIndex: number;
+  brightnessSliderIndex: number;
+  contrastSliderIndex: number;
   windowMin: number;
   windowMax: number;
   color: string;
@@ -86,15 +85,18 @@ type VolumeViewerProps = {
     name: string;
     visible: boolean;
     activeLayerKey: string | null;
-    layers: Array<{
-      key: string;
-      label: string;
-      hasData: boolean;
-      isGrayscale: boolean;
-      isSegmentation: boolean;
-      settings: {
-        contrastPosition: number;
-        brightnessPosition: number;
+      layers: Array<{
+        key: string;
+        label: string;
+        hasData: boolean;
+        isGrayscale: boolean;
+        isSegmentation: boolean;
+        settings: {
+        sliderRange: number;
+        minSliderIndex: number;
+        maxSliderIndex: number;
+        brightnessSliderIndex: number;
+        contrastSliderIndex: number;
         windowMin: number;
         windowMax: number;
         color: string;
@@ -151,6 +153,11 @@ function getExpectedSliceBufferLength(volume: NormalizedVolume) {
   const pixelCount = volume.width * volume.height;
   return pixelCount * 4;
 }
+
+const formatNormalizedIntensity = (value: number): string => {
+  const fixed = value.toFixed(3);
+  return fixed.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
+};
 
 function prepareSliceTexture(volume: NormalizedVolume, sliceIndex: number, existingBuffer: Uint8Array | null) {
   const { width, height, depth, channels, normalized } = volume;
@@ -321,7 +328,7 @@ type VrPlaybackHud = {
   cacheDirty: boolean;
 };
 
-type VrChannelsSliderKey = 'contrastPosition' | 'brightnessPosition' | 'xOffset' | 'yOffset';
+type VrChannelsSliderKey = 'contrast' | 'brightness' | 'xOffset' | 'yOffset';
 
 type VrChannelsInteractiveRegion = {
   targetType:
@@ -377,15 +384,18 @@ type VrChannelsState = {
     name: string;
     visible: boolean;
     activeLayerKey: string | null;
-    layers: Array<{
-      key: string;
-      label: string;
-      hasData: boolean;
-      isGrayscale: boolean;
-      isSegmentation: boolean;
-      settings: {
-        contrastPosition: number;
-        brightnessPosition: number;
+      layers: Array<{
+        key: string;
+        label: string;
+        hasData: boolean;
+        isGrayscale: boolean;
+        isSegmentation: boolean;
+        settings: {
+        sliderRange: number;
+        minSliderIndex: number;
+        maxSliderIndex: number;
+        brightnessSliderIndex: number;
+        contrastSliderIndex: number;
         windowMin: number;
         windowMax: number;
         color: string;
@@ -3495,24 +3505,40 @@ function VolumeViewer({
         axis?: 'x' | 'y';
       }> = [
         {
-          key: 'contrastPosition',
+          key: 'contrast',
           label: 'Contrast',
-          value: toContrastSliderValue(selectedLayer.settings.contrastPosition),
-          min: CONTRAST_SLIDER_MIN,
-          max: CONTRAST_SLIDER_MAX,
-          step: CONTRAST_SLIDER_STEP,
-          formatter: (value: number) =>
-            `${formatContrastMultiplier(fromContrastSliderValue(value))}×`,
+          value: selectedLayer.settings.contrastSliderIndex,
+          min: 0,
+          max: selectedLayer.settings.sliderRange,
+          step: 1,
+          formatter: (value: number) => {
+            const preview = brightnessContrastModel.applyContrast(
+              selectedLayer.settings,
+              value
+            );
+            const multiplier = computeContrastMultiplier(
+              preview.windowMin,
+              preview.windowMax
+            );
+            return `${formatContrastMultiplier(multiplier)}×`;
+          },
           disabled: !selectedLayer.hasData
         },
         {
-          key: 'brightnessPosition',
+          key: 'brightness',
           label: 'Brightness',
-          value: selectedLayer.settings.brightnessPosition,
-          min: -1,
-          max: 1,
-          step: 0.01,
-          formatter: (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(2)}`,
+          value: selectedLayer.settings.brightnessSliderIndex,
+          min: 0,
+          max: selectedLayer.settings.sliderRange,
+          step: 1,
+          formatter: (value: number) => {
+            const preview = brightnessContrastModel.applyBrightness(
+              selectedLayer.settings,
+              value
+            );
+            const center = preview.windowMin + (preview.windowMax - preview.windowMin) / 2;
+            return formatNormalizedIntensity(center);
+          },
           disabled: !selectedLayer.hasData
         },
         {
@@ -3806,25 +3832,28 @@ function VolumeViewer({
         return;
       }
 
-      if (region.sliderKey === 'contrastPosition') {
-        const contrastValue = fromContrastSliderValue(snappedValue);
-        layerState.settings.contrastPosition = contrastValue;
-        const { windowMin, windowMax } = computeWindowBounds(
-          layerState.settings.brightnessPosition,
-          contrastValue
-        );
-        layerState.settings.windowMin = windowMin;
-        layerState.settings.windowMax = windowMax;
-        onLayerContrastChange(region.layerKey, contrastValue);
-      } else if (region.sliderKey === 'brightnessPosition') {
-        layerState.settings.brightnessPosition = snappedValue;
-        const { windowMin, windowMax } = computeWindowBounds(
-          snappedValue,
-          layerState.settings.contrastPosition
-        );
-        layerState.settings.windowMin = windowMin;
-        layerState.settings.windowMax = windowMax;
-        onLayerBrightnessChange(region.layerKey, snappedValue);
+      const sliderIndex = Math.round(snappedValue);
+
+      if (region.sliderKey === 'contrast') {
+        const updated = brightnessContrastModel.applyContrast(layerState.settings, sliderIndex);
+        layerState.settings.windowMin = updated.windowMin;
+        layerState.settings.windowMax = updated.windowMax;
+        layerState.settings.sliderRange = updated.sliderRange;
+        layerState.settings.minSliderIndex = updated.minSliderIndex;
+        layerState.settings.maxSliderIndex = updated.maxSliderIndex;
+        layerState.settings.brightnessSliderIndex = updated.brightnessSliderIndex;
+        layerState.settings.contrastSliderIndex = updated.contrastSliderIndex;
+        onLayerContrastChange(region.layerKey, updated.contrastSliderIndex);
+      } else if (region.sliderKey === 'brightness') {
+        const updated = brightnessContrastModel.applyBrightness(layerState.settings, sliderIndex);
+        layerState.settings.windowMin = updated.windowMin;
+        layerState.settings.windowMax = updated.windowMax;
+        layerState.settings.sliderRange = updated.sliderRange;
+        layerState.settings.minSliderIndex = updated.minSliderIndex;
+        layerState.settings.maxSliderIndex = updated.maxSliderIndex;
+        layerState.settings.brightnessSliderIndex = updated.brightnessSliderIndex;
+        layerState.settings.contrastSliderIndex = updated.contrastSliderIndex;
+        onLayerBrightnessChange(region.layerKey, updated.brightnessSliderIndex);
       } else if (region.sliderKey === 'xOffset') {
         layerState.settings.xOffset = snappedValue;
         onLayerOffsetChange(region.layerKey, 'x', snappedValue);
@@ -3992,8 +4021,11 @@ function VolumeViewer({
         isGrayscale: layer.isGrayscale,
         isSegmentation: layer.isSegmentation,
         settings: {
-          contrastPosition: layer.settings.contrastPosition,
-          brightnessPosition: layer.settings.brightnessPosition,
+          sliderRange: layer.settings.sliderRange,
+          minSliderIndex: layer.settings.minSliderIndex,
+          maxSliderIndex: layer.settings.maxSliderIndex,
+          brightnessSliderIndex: layer.settings.brightnessSliderIndex,
+          contrastSliderIndex: layer.settings.contrastSliderIndex,
           windowMin: layer.settings.windowMin,
           windowMax: layer.settings.windowMax,
           color: normalizeHexColor(layer.settings.color, DEFAULT_LAYER_COLOR),
@@ -5546,11 +5578,14 @@ function VolumeViewer({
               const channelState = state.channels.find((channel) => channel.id === region.channelId);
               if (channelState) {
                 for (const layer of channelState.layers) {
-                  layer.settings.contrastPosition = 1;
-                  layer.settings.brightnessPosition = 0;
-                  const { windowMin, windowMax } = computeWindowBounds(0, 1);
-                  layer.settings.windowMin = windowMin;
-                  layer.settings.windowMax = windowMax;
+                  const defaultState = brightnessContrastModel.createState();
+                  layer.settings.sliderRange = defaultState.sliderRange;
+                  layer.settings.minSliderIndex = defaultState.minSliderIndex;
+                  layer.settings.maxSliderIndex = defaultState.maxSliderIndex;
+                  layer.settings.brightnessSliderIndex = defaultState.brightnessSliderIndex;
+                  layer.settings.contrastSliderIndex = defaultState.contrastSliderIndex;
+                  layer.settings.windowMin = defaultState.windowMin;
+                  layer.settings.windowMax = defaultState.windowMax;
                   layer.settings.xOffset = 0;
                   layer.settings.yOffset = 0;
                   layer.settings.renderStyle = 0;
