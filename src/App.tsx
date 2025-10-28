@@ -28,12 +28,18 @@ import {
   type DropboxAppKeySource
 } from './integrations/dropbox';
 import {
+  clampWindowBounds,
+  computeControlPositionsFromWindow,
   createDefaultLayerSettings,
   computeWindowBounds,
   DEFAULT_BRIGHTNESS_POSITION,
   DEFAULT_CONTRAST_POSITION,
+  DEFAULT_WINDOW_MAX,
+  DEFAULT_WINDOW_MIN,
   DEFAULT_RENDER_STYLE,
   DEFAULT_SAMPLING_MODE,
+  MAX_CONTRAST_POSITION,
+  MIN_WINDOW_WIDTH,
   type LayerSettings,
   type SamplingMode
 } from './state/layerSettings';
@@ -50,6 +56,11 @@ const PLAYBACK_WINDOW_WIDTH = 420;
 const TRACK_WINDOW_WIDTH = 340;
 const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
 const WARNING_WINDOW_WIDTH = 360;
+
+const formatNormalizedIntensity = (value: number): string => {
+  const fixed = value.toFixed(3);
+  return fixed.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
+};
 
 const createSegmentationSeed = (layerKey: string, volumeIndex: number): number => {
   let hash = 2166136261;
@@ -2566,15 +2577,16 @@ function App() {
   const handleLayerContrastChange = useCallback((key: string, value: number) => {
     setLayerSettings((current) => {
       const previous = current[key] ?? createDefaultLayerSettings();
-      if (previous.contrastPosition === value) {
+      const safeValue = Math.max(1, Math.min(MAX_CONTRAST_POSITION, value));
+      if (previous.contrastPosition === safeValue) {
         return current;
       }
-      const { windowMin, windowMax } = computeWindowBounds(previous.brightnessPosition, value);
+      const { windowMin, windowMax } = computeWindowBounds(previous.brightnessPosition, safeValue);
       return {
         ...current,
         [key]: {
           ...previous,
-          contrastPosition: value,
+          contrastPosition: safeValue,
           windowMin,
           windowMax
         }
@@ -2585,17 +2597,66 @@ function App() {
   const handleLayerBrightnessChange = useCallback((key: string, value: number) => {
     setLayerSettings((current) => {
       const previous = current[key] ?? createDefaultLayerSettings();
-      if (previous.brightnessPosition === value) {
+      const safeValue = Math.max(-1, Math.min(1, value));
+      if (previous.brightnessPosition === safeValue) {
         return current;
       }
-      const { windowMin, windowMax } = computeWindowBounds(value, previous.contrastPosition);
+      const { windowMin, windowMax } = computeWindowBounds(safeValue, previous.contrastPosition);
       return {
         ...current,
         [key]: {
           ...previous,
-          brightnessPosition: value,
+          brightnessPosition: safeValue,
           windowMin,
           windowMax
+        }
+      };
+    });
+  }, []);
+
+  const handleLayerWindowMinChange = useCallback((key: string, value: number) => {
+    setLayerSettings((current) => {
+      const previous = current[key] ?? createDefaultLayerSettings();
+      const { windowMin, windowMax } = clampWindowBounds(value, previous.windowMax);
+      if (previous.windowMin === windowMin && previous.windowMax === windowMax) {
+        return current;
+      }
+      const { brightnessPosition, contrastPosition } = computeControlPositionsFromWindow(
+        windowMin,
+        windowMax
+      );
+      return {
+        ...current,
+        [key]: {
+          ...previous,
+          windowMin,
+          windowMax,
+          brightnessPosition,
+          contrastPosition
+        }
+      };
+    });
+  }, []);
+
+  const handleLayerWindowMaxChange = useCallback((key: string, value: number) => {
+    setLayerSettings((current) => {
+      const previous = current[key] ?? createDefaultLayerSettings();
+      const { windowMin, windowMax } = clampWindowBounds(previous.windowMin, value);
+      if (previous.windowMin === windowMin && previous.windowMax === windowMax) {
+        return current;
+      }
+      const { brightnessPosition, contrastPosition } = computeControlPositionsFromWindow(
+        windowMin,
+        windowMax
+      );
+      return {
+        ...current,
+        [key]: {
+          ...previous,
+          windowMin,
+          windowMax,
+          brightnessPosition,
+          contrastPosition
         }
       };
     });
@@ -3494,23 +3555,6 @@ function App() {
                           </div>
                           <div className="slider-control slider-control--pair">
                             <div className="slider-control slider-control--inline">
-                              <label htmlFor={`layer-contrast-${selectedLayer.key}`}>
-                                Contrast <span>{settings.contrastPosition.toFixed(2)}×</span>
-                              </label>
-                              <input
-                                id={`layer-contrast-${selectedLayer.key}`}
-                                type="range"
-                                min={0.2}
-                                max={3}
-                                step={0.05}
-                                value={settings.contrastPosition}
-                                onChange={(event) =>
-                                  handleLayerContrastChange(selectedLayer.key, Number(event.target.value))
-                                }
-                                disabled={sliderDisabled}
-                              />
-                            </div>
-                            <div className="slider-control slider-control--inline">
                               <label htmlFor={`layer-brightness-${selectedLayer.key}`}>
                                 Brightness{' '}
                                 <span>
@@ -3527,6 +3571,59 @@ function App() {
                                 value={settings.brightnessPosition}
                                 onChange={(event) =>
                                   handleLayerBrightnessChange(selectedLayer.key, Number(event.target.value))
+                                }
+                                disabled={sliderDisabled}
+                              />
+                            </div>
+                            <div className="slider-control slider-control--inline">
+                              <label htmlFor={`layer-contrast-${selectedLayer.key}`}>
+                                Contrast <span>{settings.contrastPosition.toFixed(2)}×</span>
+                              </label>
+                              <input
+                                id={`layer-contrast-${selectedLayer.key}`}
+                                type="range"
+                                min={1}
+                                max={MAX_CONTRAST_POSITION}
+                                step={0.1}
+                                value={settings.contrastPosition}
+                                onChange={(event) =>
+                                  handleLayerContrastChange(selectedLayer.key, Number(event.target.value))
+                                }
+                                disabled={sliderDisabled}
+                              />
+                            </div>
+                          </div>
+                          <div className="slider-control slider-control--pair">
+                            <div className="slider-control slider-control--inline">
+                              <label htmlFor={`layer-window-min-${selectedLayer.key}`}>
+                                Minimum <span>{formatNormalizedIntensity(settings.windowMin)}</span>
+                              </label>
+                              <input
+                                id={`layer-window-min-${selectedLayer.key}`}
+                                type="range"
+                                min={DEFAULT_WINDOW_MIN}
+                                max={Math.max(DEFAULT_WINDOW_MIN, settings.windowMax - MIN_WINDOW_WIDTH)}
+                                step={0.001}
+                                value={settings.windowMin}
+                                onChange={(event) =>
+                                  handleLayerWindowMinChange(selectedLayer.key, Number(event.target.value))
+                                }
+                                disabled={sliderDisabled}
+                              />
+                            </div>
+                            <div className="slider-control slider-control--inline">
+                              <label htmlFor={`layer-window-max-${selectedLayer.key}`}>
+                                Maximum <span>{formatNormalizedIntensity(settings.windowMax)}</span>
+                              </label>
+                              <input
+                                id={`layer-window-max-${selectedLayer.key}`}
+                                type="range"
+                                min={Math.min(DEFAULT_WINDOW_MAX, settings.windowMin + MIN_WINDOW_WIDTH)}
+                                max={DEFAULT_WINDOW_MAX}
+                                step={0.001}
+                                value={settings.windowMax}
+                                onChange={(event) =>
+                                  handleLayerWindowMaxChange(selectedLayer.key, Number(event.target.value))
                                 }
                                 disabled={sliderDisabled}
                               />
