@@ -5,6 +5,8 @@ const HISTOGRAM_BINS = 256;
 const DEFAULT_AUTO_THRESHOLD = 5000;
 const DEFAULT_LOWER_QUANTILE = 0.005;
 const DEFAULT_UPPER_QUANTILE = 0.995;
+const MIP_LOWER_QUANTILE = DEFAULT_LOWER_QUANTILE;
+const MIP_UPPER_QUANTILE = DEFAULT_UPPER_QUANTILE;
 
 export type AutoWindowResult = {
   windowMin: number;
@@ -90,10 +92,16 @@ export function clearHistogramCache() {
   histogramCache = new WeakMap<NormalizedVolume, CachedHistogram>();
 }
 
+export type ComputeAutoWindowOptions = {
+  mode?: 'default' | 'mip';
+};
+
 export function computeAutoWindow(
   volume: NormalizedVolume,
-  previousThreshold = 0
+  previousThreshold = 0,
+  options?: ComputeAutoWindowOptions
 ): AutoWindowResult {
+  const mode = options?.mode ?? 'default';
   const histogram = getCachedHistogram(volume);
   const bins = histogram.length;
   let totalCount = 0;
@@ -114,6 +122,21 @@ export function computeAutoWindow(
 
   if (totalCount === 0) {
     return defaultResult;
+  }
+
+  if (mode === 'mip') {
+    const quantileWindow = computeHistogramQuantileWindow(
+      volume,
+      MIP_LOWER_QUANTILE,
+      MIP_UPPER_QUANTILE
+    );
+    if (quantileWindow) {
+      return {
+        windowMin: quantileWindow.windowMin,
+        windowMax: quantileWindow.windowMax,
+        nextThreshold
+      };
+    }
   }
 
   const threshold = nextThreshold > 0 ? totalCount / nextThreshold : totalCount;
