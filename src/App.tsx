@@ -3655,7 +3655,7 @@ function App() {
                                 onClick={() => handleChannelSliderReset(channelId)}
                                 disabled={channelLayers.length === 0}
                               >
-                                Reset sliders
+                                Reset
                               </button>
                               <button
                                 type="button"
@@ -3665,7 +3665,15 @@ function App() {
                                 aria-pressed={settings.invert}
                                 title={invertTitle}
                               >
-                                Invert LUT
+                                Invert
+                              </button>
+                              <button
+                                type="button"
+                                className="channel-action-button"
+                                onClick={() => handleLayerAutoContrast(selectedLayer.key)}
+                                disabled={sliderDisabled}
+                              >
+                                Auto
                               </button>
                             </div>
                             <div className="channel-primary-actions-row">
@@ -3690,16 +3698,6 @@ function App() {
                                 </button>
                               ) : null}
                             </div>
-                            <div className="channel-primary-actions-row">
-                              <button
-                                type="button"
-                                className="channel-action-button"
-                                onClick={() => handleLayerAutoContrast(selectedLayer.key)}
-                                disabled={sliderDisabled}
-                              >
-                                Auto contrast
-                              </button>
-                            </div>
                           </div>
                           <BrightnessContrastHistogram
                             className="channel-histogram"
@@ -3710,59 +3708,6 @@ function App() {
                             defaultMax={DEFAULT_WINDOW_MAX}
                             sliderRange={settings.sliderRange}
                           />
-                          <div className="slider-control slider-control--pair">
-                            <div className="slider-control slider-control--inline">
-                              <label htmlFor={`layer-brightness-${selectedLayer.key}`}>
-                                Brightness{' '}
-                                <span>
-                                  {formatNormalizedIntensity(
-                                    settings.windowMin + (settings.windowMax - settings.windowMin) / 2
-                                  )}
-                                </span>
-                              </label>
-                              <input
-                                id={`layer-brightness-${selectedLayer.key}`}
-                                type="range"
-                                min={0}
-                                max={settings.sliderRange}
-                                step={1}
-                                value={settings.brightnessSliderIndex}
-                                onChange={(event) =>
-                                  handleLayerBrightnessChange(
-                                    selectedLayer.key,
-                                    Number.parseInt(event.target.value, 10)
-                                  )
-                                }
-                                disabled={sliderDisabled}
-                              />
-                            </div>
-                            <div className="slider-control slider-control--inline">
-                              <label htmlFor={`layer-contrast-${selectedLayer.key}`}>
-                                Contrast{' '}
-                                <span>
-                                  {formatContrastMultiplier(
-                                    computeContrastMultiplier(settings.windowMin, settings.windowMax)
-                                  )}
-                                  ×
-                                </span>
-                              </label>
-                              <input
-                                id={`layer-contrast-${selectedLayer.key}`}
-                                type="range"
-                                min={0}
-                                max={settings.sliderRange}
-                                step={1}
-                                value={settings.contrastSliderIndex}
-                                onChange={(event) =>
-                                  handleLayerContrastChange(
-                                    selectedLayer.key,
-                                    Number.parseInt(event.target.value, 10)
-                                  )
-                                }
-                                disabled={sliderDisabled}
-                              />
-                            </div>
-                          </div>
                           <div className="slider-control slider-control--pair">
                             <div className="slider-control slider-control--inline">
                               <label htmlFor={`layer-window-min-${selectedLayer.key}`}>
@@ -3794,6 +3739,48 @@ function App() {
                                 value={settings.windowMax}
                                 onChange={(event) =>
                                   handleLayerWindowMaxChange(selectedLayer.key, Number(event.target.value))
+                                }
+                                disabled={sliderDisabled}
+                              />
+                            </div>
+                          </div>
+                          <div className="slider-control slider-control--pair">
+                            <div className="slider-control slider-control--inline">
+                              <label htmlFor={`layer-brightness-${selectedLayer.key}`}>
+                                Brightness
+                              </label>
+                              <input
+                                id={`layer-brightness-${selectedLayer.key}`}
+                                type="range"
+                                min={0}
+                                max={settings.sliderRange}
+                                step={1}
+                                value={settings.brightnessSliderIndex}
+                                onChange={(event) =>
+                                  handleLayerBrightnessChange(
+                                    selectedLayer.key,
+                                    Number.parseInt(event.target.value, 10)
+                                  )
+                                }
+                                disabled={sliderDisabled}
+                              />
+                            </div>
+                            <div className="slider-control slider-control--inline">
+                              <label htmlFor={`layer-contrast-${selectedLayer.key}`}>
+                                Contrast
+                              </label>
+                              <input
+                                id={`layer-contrast-${selectedLayer.key}`}
+                                type="range"
+                                min={0}
+                                max={settings.sliderRange}
+                                step={1}
+                                value={settings.contrastSliderIndex}
+                                onChange={(event) =>
+                                  handleLayerContrastChange(
+                                    selectedLayer.key,
+                                    Number.parseInt(event.target.value, 10)
+                                  )
                                 }
                                 disabled={sliderDisabled}
                               />
