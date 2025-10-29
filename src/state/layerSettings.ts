@@ -4,7 +4,8 @@ import {
   DEFAULT_WINDOW_MAX,
   DEFAULT_WINDOW_MIN,
   MIN_WINDOW_WIDTH,
-  type BrightnessContrastState
+  type BrightnessContrastState,
+  type WindowBounds
 } from './brightnessContrastModel';
 
 export type { BrightnessContrastState } from './brightnessContrastModel';
@@ -24,8 +25,11 @@ export type LayerSettings = BrightnessContrastState & {
   samplingMode: SamplingMode;
 };
 
-export const createDefaultLayerSettings = (): LayerSettings => ({
-  ...DEFAULT_BRIGHTNESS_CONTRAST_MODEL.createState(),
+export const createDefaultLayerSettings = (initialWindow?: WindowBounds | null): LayerSettings => ({
+  ...DEFAULT_BRIGHTNESS_CONTRAST_MODEL.createState(
+    initialWindow?.windowMin,
+    initialWindow?.windowMax
+  ),
   color: DEFAULT_LAYER_COLOR,
   xOffset: 0,
   yOffset: 0,

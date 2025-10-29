@@ -8,6 +8,12 @@
 
 # Progress Log
 
+## Float volume default windowing
+- Compute per-layer default brightness/contrast windows for float volumes using histogram quantiles, keeping uint8 data on the
+  existing 0–1 range.
+- Propagate the computed defaults through desktop and VR state so resets restore the histogram-derived window instead of the
+  full range.
+
 ## ImageJ brightness/contrast model
 - Introduced a dedicated windowing model that mirrors ImageJ slider behavior, including the 256-step integer slider range and
   piecewise contrast slope calculations.

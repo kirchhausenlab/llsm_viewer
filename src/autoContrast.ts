@@ -3,6 +3,8 @@ import { MIN_WINDOW_WIDTH } from './state/layerSettings';
 
 const HISTOGRAM_BINS = 256;
 const DEFAULT_AUTO_THRESHOLD = 5000;
+const DEFAULT_LOWER_QUANTILE = 0.005;
+const DEFAULT_UPPER_QUANTILE = 0.995;
 
 export type AutoWindowResult = {
   windowMin: number;
@@ -179,4 +181,81 @@ export function getVolumeHistogram(volume: NormalizedVolume): Uint32Array {
 
 export function invalidateVolumeHistogram(volume: NormalizedVolume) {
   histogramCache.delete(volume);
+}
+
+const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
+
+export function computeHistogramQuantileWindow(
+  volume: NormalizedVolume,
+  lowerQuantile = DEFAULT_LOWER_QUANTILE,
+  upperQuantile = DEFAULT_UPPER_QUANTILE
+): { windowMin: number; windowMax: number } | null {
+  const histogram = getCachedHistogram(volume);
+  const bins = histogram.length;
+
+  let totalCount = 0;
+  for (let i = 0; i < bins; i++) {
+    totalCount += histogram[i];
+  }
+
+  if (totalCount === 0) {
+    return null;
+  }
+
+  const safeLower = clamp01(lowerQuantile);
+  const safeUpper = clamp01(upperQuantile);
+  const targetLower = Math.min(safeLower, safeUpper) * totalCount;
+  const targetUpper = Math.max(safeLower, safeUpper) * totalCount;
+
+  let cumulative = 0;
+  let lowerBin = 0;
+  for (let i = 0; i < bins; i++) {
+    cumulative += histogram[i];
+    if (cumulative >= targetLower) {
+      lowerBin = i;
+      break;
+    }
+  }
+
+  cumulative = 0;
+  let upperBin = bins - 1;
+  for (let i = 0; i < bins; i++) {
+    cumulative += histogram[i];
+    if (cumulative >= targetUpper) {
+      upperBin = i;
+      break;
+    }
+  }
+
+  if (upperBin < lowerBin) {
+    const swap = upperBin;
+    upperBin = lowerBin;
+    lowerBin = swap;
+  }
+
+  const scale = bins > 1 ? 1 / (bins - 1) : 0;
+  let windowMin = lowerBin * scale;
+  let windowMax = upperBin * scale;
+
+  windowMin = clamp01(windowMin);
+  windowMax = clamp01(windowMax);
+
+  if (windowMax - windowMin < MIN_WINDOW_WIDTH) {
+    if (windowMax <= windowMin) {
+      windowMax = Math.min(1, windowMin + MIN_WINDOW_WIDTH);
+    } else {
+      const center = (windowMin + windowMax) * 0.5;
+      windowMin = Math.max(0, center - MIN_WINDOW_WIDTH / 2);
+      windowMax = Math.min(1, center + MIN_WINDOW_WIDTH / 2);
+    }
+    if (windowMax - windowMin < MIN_WINDOW_WIDTH) {
+      if (windowMin === 0) {
+        windowMax = Math.min(1, windowMin + MIN_WINDOW_WIDTH);
+      } else {
+        windowMin = Math.max(0, windowMax - MIN_WINDOW_WIDTH);
+      }
+    }
+  }
+
+  return { windowMin, windowMax };
 }

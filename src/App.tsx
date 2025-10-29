@@ -44,6 +44,7 @@ import { deriveChannelTrackOffsets } from './state/channelTrackOffsets';
 import type { LoadedLayer } from './types/layers';
 import './App.css';
 import { computeAutoWindow } from './autoContrast';
+import { getDefaultWindowForVolume } from './utils/volumeWindow';
 import BrightnessContrastHistogram from './components/BrightnessContrastHistogram';
 
 const DEFAULT_FPS = 12;
@@ -929,9 +930,32 @@ function App() {
   const [datasetErrorResetSignal, setDatasetErrorResetSignal] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [layers, setLayers] = useState<LoadedLayer[]>([]);
+  const layersRef = useRef<LoadedLayer[]>([]);
+  useEffect(() => {
+    layersRef.current = layers;
+  }, [layers]);
   const [channelVisibility, setChannelVisibility] = useState<Record<string, boolean>>({});
   const [channelActiveLayer, setChannelActiveLayer] = useState<Record<string, string>>({});
   const [layerSettings, setLayerSettings] = useState<Record<string, LayerSettings>>({});
+  const createLayerDefaultSettings = useCallback(
+    (layerKey: string): LayerSettings => {
+      const layer = layersRef.current.find((entry) => entry.key === layerKey) ?? null;
+      const defaultWindow = getDefaultWindowForVolume(layer?.volumes[0]);
+      return createDefaultLayerSettings(defaultWindow);
+    },
+    []
+  );
+  const createLayerDefaultBrightnessState = useCallback(
+    (layerKey: string) => {
+      const layer = layersRef.current.find((entry) => entry.key === layerKey) ?? null;
+      const defaultWindow = getDefaultWindowForVolume(layer?.volumes[0]);
+      return brightnessContrastModel.createState(
+        defaultWindow?.windowMin,
+        defaultWindow?.windowMax
+      );
+    },
+    []
+  );
   const [layerAutoThresholds, setLayerAutoThresholds] = useState<Record<string, number>>({});
   const [status, setStatus] = useState<LoadState>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -1640,7 +1664,8 @@ function App() {
       setChannelActiveLayer(activeLayerDefaults);
       setLayerSettings(
         normalizedLayers.reduce<Record<string, LayerSettings>>((acc, layer) => {
-          acc[layer.key] = createDefaultLayerSettings();
+          const defaultWindow = getDefaultWindowForVolume(layer.volumes[0]);
+          acc[layer.key] = createDefaultLayerSettings(defaultWindow);
           return acc;
         }, {})
       );
@@ -1810,7 +1835,8 @@ function App() {
       const visible = channelVisibility[channelId] ?? true;
       const activeLayerKey = channelActiveLayer[channelId] ?? channelLayers[0]?.key ?? null;
       const layersInfo = channelLayers.map((layer) => {
-        const settings = layerSettings[layer.key] ?? createDefaultLayerSettings();
+        const defaultWindow = getDefaultWindowForVolume(layer.volumes[0]);
+        const settings = layerSettings[layer.key] ?? createLayerDefaultSettings(layer.key);
         const firstVolume = layer.volumes[0] ?? null;
         const isGrayscale = Boolean(firstVolume && firstVolume.channels === 1);
         return {
@@ -1819,6 +1845,7 @@ function App() {
           hasData: layer.volumes.length > 0,
           isGrayscale,
           isSegmentation: layer.isSegmentation,
+          defaultWindow,
           settings
         };
       });
@@ -2603,7 +2630,7 @@ function App() {
 
   const handleLayerContrastChange = useCallback((key: string, sliderIndex: number) => {
     setLayerSettings((current) => {
-      const previous = current[key] ?? createDefaultLayerSettings();
+      const previous = current[key] ?? createLayerDefaultSettings(key);
       if (previous.contrastSliderIndex === sliderIndex) {
         return current;
       }
@@ -2626,11 +2653,11 @@ function App() {
         }
       };
     });
-  }, []);
+  }, [createLayerDefaultSettings]);
 
   const handleLayerBrightnessChange = useCallback((key: string, sliderIndex: number) => {
     setLayerSettings((current) => {
-      const previous = current[key] ?? createDefaultLayerSettings();
+      const previous = current[key] ?? createLayerDefaultSettings(key);
       if (previous.brightnessSliderIndex === sliderIndex) {
         return current;
       }
@@ -2653,11 +2680,11 @@ function App() {
         }
       };
     });
-  }, []);
+  }, [createLayerDefaultSettings]);
 
   const handleLayerWindowMinChange = useCallback((key: string, value: number) => {
     setLayerSettings((current) => {
-      const previous = current[key] ?? createDefaultLayerSettings();
+      const previous = current[key] ?? createLayerDefaultSettings(key);
       const clampedValue = Math.max(DEFAULT_WINDOW_MIN, Math.min(DEFAULT_WINDOW_MAX, value));
       if (previous.windowMin === clampedValue) {
         return current;
@@ -2681,11 +2708,11 @@ function App() {
         }
       };
     });
-  }, []);
+  }, [createLayerDefaultSettings]);
 
   const handleLayerWindowMaxChange = useCallback((key: string, value: number) => {
     setLayerSettings((current) => {
-      const previous = current[key] ?? createDefaultLayerSettings();
+      const previous = current[key] ?? createLayerDefaultSettings(key);
       const clampedValue = Math.max(DEFAULT_WINDOW_MIN, Math.min(DEFAULT_WINDOW_MAX, value));
       if (previous.windowMax === clampedValue) {
         return current;
@@ -2709,7 +2736,7 @@ function App() {
         }
       };
     });
-  }, []);
+  }, [createLayerDefaultSettings]);
 
   const handleLayerAutoContrast = useCallback(
     (key: string) => {
@@ -2738,7 +2765,7 @@ function App() {
       });
 
       setLayerSettings((current) => {
-        const previous = current[key] ?? createDefaultLayerSettings();
+        const previous = current[key] ?? createLayerDefaultSettings(key);
         if (
           previous.windowMin === updatedState.windowMin &&
           previous.windowMax === updatedState.windowMax &&
@@ -2758,12 +2785,12 @@ function App() {
         };
       });
     },
-    [layerAutoThresholds, layers, selectedIndex]
+    [createLayerDefaultSettings, layerAutoThresholds, layers, selectedIndex]
   );
 
   const handleLayerOffsetChange = useCallback((key: string, axis: 'x' | 'y', value: number) => {
     setLayerSettings((current) => {
-      const previous = current[key] ?? createDefaultLayerSettings();
+      const previous = current[key] ?? createLayerDefaultSettings(key);
       const property = axis === 'x' ? 'xOffset' : 'yOffset';
       if (previous[property] === value) {
         return current;
@@ -2776,11 +2803,11 @@ function App() {
         }
       };
     });
-  }, []);
+  }, [createLayerDefaultSettings]);
 
   const handleLayerColorChange = useCallback((key: string, value: string) => {
     setLayerSettings((current) => {
-      const previous = current[key] ?? createDefaultLayerSettings();
+      const previous = current[key] ?? createLayerDefaultSettings(key);
       const normalized = normalizeHexColor(value, DEFAULT_LAYER_COLOR);
       if (previous.color === normalized) {
         return current;
@@ -2793,11 +2820,11 @@ function App() {
         }
       };
     });
-  }, []);
+  }, [createLayerDefaultSettings]);
 
   const handleLayerRenderStyleToggle = useCallback((key: string) => {
     setLayerSettings((current) => {
-      const previous = current[key] ?? createDefaultLayerSettings();
+      const previous = current[key] ?? createLayerDefaultSettings(key);
       const nextStyle: 0 | 1 = previous.renderStyle === 1 ? 0 : 1;
       if (previous.renderStyle === nextStyle) {
         return current;
@@ -2810,11 +2837,11 @@ function App() {
         }
       };
     });
-  }, []);
+  }, [createLayerDefaultSettings]);
 
   const handleLayerSamplingModeToggle = useCallback((key: string) => {
     setLayerSettings((current) => {
-      const previous = current[key] ?? createDefaultLayerSettings();
+      const previous = current[key] ?? createLayerDefaultSettings(key);
       const nextMode: SamplingMode = previous.samplingMode === 'nearest' ? 'linear' : 'nearest';
       if (previous.samplingMode === nextMode) {
         return current;
@@ -2827,11 +2854,11 @@ function App() {
         }
       };
     });
-  }, []);
+  }, [createLayerDefaultSettings]);
 
   const handleLayerInvertToggle = useCallback((key: string) => {
     setLayerSettings((current) => {
-      const previous = current[key] ?? createDefaultLayerSettings();
+      const previous = current[key] ?? createLayerDefaultSettings(key);
       const nextInvert = !previous.invert;
       if (previous.invert === nextInvert) {
         return current;
@@ -2844,7 +2871,7 @@ function App() {
         }
       };
     });
-  }, []);
+  }, [createLayerDefaultSettings]);
 
   const handleChannelLayerSelectionChange = useCallback((channelId: string, layerKey: string) => {
     setChannelActiveLayer((current) => {
@@ -2869,8 +2896,8 @@ function App() {
         let changed = false;
         const next: Record<string, LayerSettings> = { ...current };
         for (const layer of relevantLayers) {
-          const previous = current[layer.key] ?? createDefaultLayerSettings();
-          const defaultState = brightnessContrastModel.createState();
+          const previous = current[layer.key] ?? createLayerDefaultSettings(layer.key);
+          const defaultState = createLayerDefaultBrightnessState(layer.key);
           const updated: LayerSettings = {
             ...previous,
             ...defaultState,
@@ -2913,7 +2940,7 @@ function App() {
         return changed ? next : current;
       });
     },
-    [layers]
+    [createLayerDefaultBrightnessState, createLayerDefaultSettings, layers]
   );
 
   const handleDatasetErrorDismiss = useCallback(() => {
@@ -2929,7 +2956,7 @@ function App() {
     }
 
     return activeLayers.map((layer) => {
-      const settings = layerSettings[layer.key] ?? createDefaultLayerSettings();
+      const settings = layerSettings[layer.key] ?? createLayerDefaultSettings(layer.key);
       const isActiveChannel = layer.channelId === activeChannelTabId;
       const channelVisible = channelVisibility[layer.channelId];
       return {
@@ -3569,7 +3596,7 @@ function App() {
                     channelLayers.find((layer) => layer.key === selectedLayerKey) ?? channelLayers[0] ?? null;
                   const settings =
                     selectedLayer
-                      ? layerSettings[selectedLayer.key] ?? createDefaultLayerSettings()
+                      ? layerSettings[selectedLayer.key] ?? createLayerDefaultSettings(selectedLayer.key)
                       : createDefaultLayerSettings();
                   const sliderDisabled = !selectedLayer || selectedLayer.volumes.length === 0;
                   const offsetDisabled = sliderDisabled || channelId !== activeChannelTabId;

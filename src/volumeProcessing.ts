@@ -10,6 +10,7 @@ export type NormalizedVolume = {
   height: number;
   depth: number;
   channels: number;
+  dataType: VolumeDataType;
   /**
    * Normalized voxel data. This view must be treated as read-only because it
    * can share the underlying buffer with the source volume when normalization
@@ -90,6 +91,7 @@ export function colorizeSegmentationVolume(volume: VolumePayload, seed: number):
     height,
     depth,
     channels: 3,
+    dataType: 'uint8',
     normalized,
     min: 0,
     max: 255
@@ -156,6 +158,7 @@ export function normalizeVolume(
       height,
       depth,
       channels,
+      dataType,
       normalized: source,
       min,
       max
@@ -177,6 +180,7 @@ export function normalizeVolume(
     height,
     depth,
     channels,
+    dataType,
     normalized,
     min,
     max

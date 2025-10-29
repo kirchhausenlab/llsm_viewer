@@ -91,6 +91,7 @@ type VolumeViewerProps = {
         hasData: boolean;
         isGrayscale: boolean;
         isSegmentation: boolean;
+        defaultWindow: { windowMin: number; windowMax: number } | null;
         settings: {
         sliderRange: number;
         minSliderIndex: number;
@@ -390,6 +391,7 @@ type VrChannelsState = {
         hasData: boolean;
         isGrayscale: boolean;
         isSegmentation: boolean;
+        defaultWindow: { windowMin: number; windowMax: number } | null;
         settings: {
         sliderRange: number;
         minSliderIndex: number;
@@ -4020,6 +4022,7 @@ function VolumeViewer({
         hasData: layer.hasData,
         isGrayscale: layer.isGrayscale,
         isSegmentation: layer.isSegmentation,
+        defaultWindow: layer.defaultWindow,
         settings: {
           sliderRange: layer.settings.sliderRange,
           minSliderIndex: layer.settings.minSliderIndex,
@@ -5578,7 +5581,10 @@ function VolumeViewer({
               const channelState = state.channels.find((channel) => channel.id === region.channelId);
               if (channelState) {
                 for (const layer of channelState.layers) {
-                  const defaultState = brightnessContrastModel.createState();
+                  const defaultState = brightnessContrastModel.createState(
+                    layer.defaultWindow?.windowMin,
+                    layer.defaultWindow?.windowMax
+                  );
                   layer.settings.sliderRange = defaultState.sliderRange;
                   layer.settings.minSliderIndex = defaultState.minSliderIndex;
                   layer.settings.maxSliderIndex = defaultState.maxSliderIndex;
