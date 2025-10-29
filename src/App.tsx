@@ -2749,15 +2749,8 @@ function App() {
         return;
       }
 
-      const settings = layerSettings[key] ?? createLayerDefaultSettings(key);
-      const autoWindowOptions = settings.renderStyle === 0 ? { mode: 'mip' as const } : undefined;
-
       const previousThreshold = layerAutoThresholds[key] ?? 0;
-      const { windowMin, windowMax, nextThreshold } = computeAutoWindow(
-        volume,
-        previousThreshold,
-        autoWindowOptions
-      );
+      const { windowMin, windowMax, nextThreshold } = computeAutoWindow(volume, previousThreshold);
       const { windowMin: clampedMin, windowMax: clampedMax } = clampWindowBounds(windowMin, windowMax);
       const updatedState = brightnessContrastModel.applyWindow(clampedMin, clampedMax);
 
@@ -2792,7 +2785,7 @@ function App() {
         };
       });
     },
-    [createLayerDefaultSettings, layerAutoThresholds, layerSettings, layers, selectedIndex]
+    [createLayerDefaultSettings, layerAutoThresholds, layers, selectedIndex]
   );
 
   const handleLayerOffsetChange = useCallback((key: string, axis: 'x' | 'y', value: number) => {
