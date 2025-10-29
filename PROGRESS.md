@@ -439,6 +439,10 @@ d centered the front-page card in the viewport.
 - Hooked histogram cache invalidation into the texture cache reset so cleared textures also drop stale intensity data.
 - Guarded cached histograms against shape changes to ensure volume updates trigger a fresh computation.
 
+## Auto window threshold scaling
+- Switched the auto-contrast default threshold to use 1% of the volume's voxel count so larger datasets no longer start overly strict.
+- Kept the halving behavior by treating the stored threshold as a denominator applied to the total voxels for each subsequent auto pass.
+
 ## Brightness and contrast control overhaul
 - Flipped the brightness slider polarity so increasing the control lowers the window center and brightens the rendered volume, matching user expectations.
 - Swapped the contrast slider to a logarithmic scale with better formatting, keeping fine control near 1× while retaining access to higher contrast boosts.
