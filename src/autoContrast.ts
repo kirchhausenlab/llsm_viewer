@@ -2,6 +2,7 @@ import type { NormalizedVolume } from './volumeProcessing';
 import { MIN_WINDOW_WIDTH } from './state/layerSettings';
 
 const HISTOGRAM_BINS = 256;
+export const HISTOGRAM_FIRST_VALID_BIN = 1;
 const DEFAULT_AUTO_THRESHOLD = 5000;
 const DEFAULT_LOWER_QUANTILE = 0.005;
 const DEFAULT_UPPER_QUANTILE = 0.995;
@@ -97,7 +98,7 @@ export function computeAutoWindow(
   const histogram = getCachedHistogram(volume);
   const bins = histogram.length;
   let totalCount = 0;
-  for (let i = 0; i < bins; i++) {
+  for (let i = HISTOGRAM_FIRST_VALID_BIN; i < bins; i++) {
     totalCount += histogram[i];
   }
 
@@ -119,7 +120,7 @@ export function computeAutoWindow(
   const threshold = nextThreshold > 0 ? totalCount / nextThreshold : totalCount;
   const limit = totalCount / 10;
 
-  let i = -1;
+  let i = HISTOGRAM_FIRST_VALID_BIN - 1;
   let found = false;
   while (!found && i < bins - 1) {
     i++;
@@ -133,7 +134,7 @@ export function computeAutoWindow(
 
   i = bins;
   found = false;
-  while (!found && i > 0) {
+  while (!found && i > HISTOGRAM_FIRST_VALID_BIN) {
     i--;
     let count = histogram[i];
     if (count > limit) {
@@ -141,7 +142,7 @@ export function computeAutoWindow(
     }
     found = count > threshold;
   }
-  const hmax = i;
+  const hmax = Math.max(i, HISTOGRAM_FIRST_VALID_BIN);
 
   if (hmax < hmin) {
     return defaultResult;
@@ -194,7 +195,7 @@ export function computeHistogramQuantileWindow(
   const bins = histogram.length;
 
   let totalCount = 0;
-  for (let i = 0; i < bins; i++) {
+  for (let i = HISTOGRAM_FIRST_VALID_BIN; i < bins; i++) {
     totalCount += histogram[i];
   }
 
@@ -208,8 +209,8 @@ export function computeHistogramQuantileWindow(
   const targetUpper = Math.max(safeLower, safeUpper) * totalCount;
 
   let cumulative = 0;
-  let lowerBin = 0;
-  for (let i = 0; i < bins; i++) {
+  let lowerBin = HISTOGRAM_FIRST_VALID_BIN;
+  for (let i = HISTOGRAM_FIRST_VALID_BIN; i < bins; i++) {
     cumulative += histogram[i];
     if (cumulative >= targetLower) {
       lowerBin = i;
@@ -219,7 +220,7 @@ export function computeHistogramQuantileWindow(
 
   cumulative = 0;
   let upperBin = bins - 1;
-  for (let i = 0; i < bins; i++) {
+  for (let i = HISTOGRAM_FIRST_VALID_BIN; i < bins; i++) {
     cumulative += histogram[i];
     if (cumulative >= targetUpper) {
       upperBin = i;

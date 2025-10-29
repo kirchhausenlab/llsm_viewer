@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { getVolumeHistogram } from '../autoContrast';
+import { getVolumeHistogram, HISTOGRAM_FIRST_VALID_BIN } from '../autoContrast';
 import type { NormalizedVolume } from '../volumeProcessing';
 
 const HISTOGRAM_WIDTH = 255;
@@ -36,7 +36,7 @@ const createHistogramPath = (histogram: Uint32Array | null): HistogramShape => {
   }
 
   let maxCount = 0;
-  for (let i = 0; i < histogram.length; i++) {
+  for (let i = HISTOGRAM_FIRST_VALID_BIN; i < histogram.length; i++) {
     const value = histogram[i];
     if (value > maxCount) {
       maxCount = value;
@@ -52,7 +52,7 @@ const createHistogramPath = (histogram: Uint32Array | null): HistogramShape => {
   const step = width > 0 ? HISTOGRAM_WIDTH / width : HISTOGRAM_WIDTH;
   const commands: string[] = [`M0 ${HISTOGRAM_HEIGHT}`];
 
-  for (let i = 0; i < bins; i++) {
+  for (let i = HISTOGRAM_FIRST_VALID_BIN; i < bins; i++) {
     const count = histogram[i];
     const x = step * i;
     const normalized = count / maxCount;
