@@ -442,6 +442,7 @@ d centered the front-page card in the viewport.
 ## Auto window threshold scaling
 - Switched the auto-contrast default threshold to use 5% of the volume's voxel count so the first pass stays even closer to the raw histogram.
 - Kept the halving behavior by treating the stored threshold as a denominator applied to the total voxels for each subsequent auto pass.
+- Further reduced the baseline by setting the denominator to 1000 (0.1% of voxels) so the initial auto window preserves even more of the histogram tails before subsequent halvings.
 
 ## Brightness and contrast control overhaul
 - Flipped the brightness slider polarity so increasing the control lowers the window center and brightens the rendered volume, matching user expectations.
