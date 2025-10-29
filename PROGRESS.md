@@ -440,7 +440,7 @@ d centered the front-page card in the viewport.
 - Guarded cached histograms against shape changes to ensure volume updates trigger a fresh computation.
 
 ## Auto window threshold scaling
-- Switched the auto-contrast default threshold to use 1% of the volume's voxel count so larger datasets no longer start overly strict.
+- Switched the auto-contrast default threshold to use 5% of the volume's voxel count so the first pass stays even closer to the raw histogram.
 - Kept the halving behavior by treating the stored threshold as a denominator applied to the total voxels for each subsequent auto pass.
 
 ## Brightness and contrast control overhaul
