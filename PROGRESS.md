@@ -8,6 +8,10 @@
 
 # Progress Log
 
+## Auto contrast initial threshold adjustment
+- Raised the default auto window threshold from 5,000 to 50,000 so the first "Auto" press now keeps a broader histogram range
+  before subsequent presses tighten it.
+
 ## Float volume default windowing
 - Compute per-layer default brightness/contrast windows for float volumes using histogram quantiles, keeping uint8 data on the
   existing 0–1 range.
@@ -434,6 +438,11 @@ d centered the front-page card in the viewport.
 - Added an auto-contrast module that builds Fiji-style histograms for normalized volumes and computes automatic window ranges.
 - Hooked histogram cache invalidation into the texture cache reset so cleared textures also drop stale intensity data.
 - Guarded cached histograms against shape changes to ensure volume updates trigger a fresh computation.
+
+## Auto window threshold scaling
+- Switched the auto-contrast default threshold to use 5% of the volume's voxel count so the first pass stays even closer to the raw histogram.
+- Kept the halving behavior by treating the stored threshold as a denominator applied to the total voxels for each subsequent auto pass.
+- Further reduced the baseline by setting the denominator to 1000 (0.1% of voxels) so the initial auto window preserves even more of the histogram tails before subsequent halvings.
 
 ## Brightness and contrast control overhaul
 - Flipped the brightness slider polarity so increasing the control lowers the window center and brightens the rendered volume, matching user expectations.
