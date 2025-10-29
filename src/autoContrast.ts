@@ -3,7 +3,7 @@ import { MIN_WINDOW_WIDTH } from './state/layerSettings';
 
 const HISTOGRAM_BINS = 256;
 export const HISTOGRAM_FIRST_VALID_BIN = 1;
-const DEFAULT_AUTO_THRESHOLD = 5000;
+const DEFAULT_AUTO_THRESHOLD_DENOMINATOR = 10000;
 const DEFAULT_LOWER_QUANTILE = 0.005;
 const DEFAULT_UPPER_QUANTILE = 0.995;
 
@@ -104,7 +104,7 @@ export function computeAutoWindow(
 
   const nextThreshold =
     previousThreshold < 10
-      ? DEFAULT_AUTO_THRESHOLD
+      ? DEFAULT_AUTO_THRESHOLD_DENOMINATOR
       : Math.max(1, Math.floor(previousThreshold / 2));
 
   const defaultResult: AutoWindowResult = {
@@ -113,11 +113,13 @@ export function computeAutoWindow(
     nextThreshold
   };
 
-  if (totalCount === 0) {
+  const totalVoxelCount = volume.width * volume.height * volume.depth;
+
+  if (totalCount === 0 || totalVoxelCount === 0) {
     return defaultResult;
   }
 
-  const threshold = nextThreshold > 0 ? totalCount / nextThreshold : totalCount;
+  const threshold = totalVoxelCount / nextThreshold;
   const limit = totalCount / 10;
 
   let i = HISTOGRAM_FIRST_VALID_BIN - 1;
