@@ -700,8 +700,6 @@ const VR_CHANNELS_PANEL_WIDTH = 0.6;
 const VR_CHANNELS_PANEL_HEIGHT = 0.6;
 const VR_CHANNELS_VERTICAL_OFFSET = 0;
 const VR_CHANNELS_CAMERA_ANCHOR_OFFSET = new THREE.Vector3(0.4, -0.18, -0.65);
-const VR_CHANNELS_CANVAS_WIDTH = 1184;
-const VR_CHANNELS_CANVAS_HEIGHT = 1184;
 const VR_CHANNELS_FONT_FAMILY = '"Inter", "Helvetica Neue", Arial, sans-serif';
 const vrChannelsFont = (weight: string, size: number) => `${weight} ${size}px ${VR_CHANNELS_FONT_FAMILY}`;
 const VR_CHANNELS_FONT_SIZES = {
@@ -717,8 +715,6 @@ const VR_TRACKS_PANEL_WIDTH = 0.58;
 const VR_TRACKS_PANEL_HEIGHT = 0.64;
 const VR_TRACKS_VERTICAL_OFFSET = -0.12;
 const VR_TRACKS_CAMERA_ANCHOR_OFFSET = new THREE.Vector3(0.7, -0.22, -0.7);
-const VR_TRACKS_CANVAS_WIDTH = 1180;
-const VR_TRACKS_CANVAS_HEIGHT = 1320;
 const VR_TRACKS_FONT_FAMILY = VR_CHANNELS_FONT_FAMILY;
 const vrTracksFont = (weight: string, size: number) => `${weight} ${size}px ${VR_TRACKS_FONT_FAMILY}`;
 const VR_TRACKS_FONT_SIZES = {
@@ -732,6 +728,14 @@ const VR_TRACKS_FONT_SIZES = {
   track: 30,
   small: 26
 } as const;
+const VR_CANVAS_BASE_PIXELS_PER_METER = 2048;
+const VR_CANVAS_MAX_PIXEL_DENSITY_SCALE = 1.2;
+const VR_CANVAS_MIN_PIXEL_DENSITY_SCALE = 0.5;
+const VR_CANVAS_QUALITY = 1;
+const VR_CANVAS_DEFAULT_PIXEL_RATIO = Math.min(
+  VR_CANVAS_MAX_PIXEL_DENSITY_SCALE,
+  Math.max(VR_CANVAS_MIN_PIXEL_DENSITY_SCALE, VR_CANVAS_QUALITY)
+);
 const VR_HUD_MIN_HEIGHT = 0;
 const VR_HUD_FRONT_MARGIN = 0.24;
 const VR_HUD_LATERAL_MARGIN = 0.1;
@@ -766,6 +770,26 @@ const VIEWER_YAW_FORWARD_REFERENCE = new THREE.Vector3(0, 0, -1);
 const VIEWER_YAW_RIGHT_REFERENCE = new THREE.Vector3(1, 0, 0);
 const viewerYawQuaternionTemp = new THREE.Quaternion();
 const viewerYawForwardTemp = new THREE.Vector3();
+
+function computeVrPanelDisplayDimensions(width: number, height: number) {
+  const pixelsPerMeter = VR_CANVAS_BASE_PIXELS_PER_METER;
+  return {
+    width: Math.max(1, Math.round(width * pixelsPerMeter)),
+    height: Math.max(1, Math.round(height * pixelsPerMeter))
+  };
+}
+
+function getVrCanvasPixelRatio() {
+  if (typeof window === 'undefined') {
+    return VR_CANVAS_DEFAULT_PIXEL_RATIO;
+  }
+  const devicePixelRatio = window.devicePixelRatio || 1;
+  const scaled = devicePixelRatio * VR_CANVAS_QUALITY;
+  return Math.min(
+    VR_CANVAS_MAX_PIXEL_DENSITY_SCALE,
+    Math.max(VR_CANVAS_MIN_PIXEL_DENSITY_SCALE, scaled)
+  );
+}
 
 function computeViewerYawBasis(
   renderer: THREE.WebGLRenderer | null,
@@ -1334,8 +1358,7 @@ function VolumeViewer({
     const ctx = hud.panelContext;
     const canvasWidth = hud.panelDisplayWidth;
     const canvasHeight = hud.panelDisplayHeight;
-    const targetPixelRatio =
-      typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : hud.pixelRatio;
+    const targetPixelRatio = getVrCanvasPixelRatio();
     if (targetPixelRatio && Math.abs(targetPixelRatio - hud.pixelRatio) > 0.01 && hud.panelCanvas) {
       hud.pixelRatio = targetPixelRatio;
       hud.panelCanvas.width = Math.round(canvasWidth * hud.pixelRatio);
@@ -2939,11 +2962,13 @@ function VolumeViewer({
     group.add(background);
 
     const panelCanvas = document.createElement('canvas');
-    const panelDisplayWidth = VR_CHANNELS_CANVAS_WIDTH;
-    const panelDisplayHeight = VR_CHANNELS_CANVAS_HEIGHT;
-    const pixelRatio = typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : 1;
-    panelCanvas.width = Math.round(panelDisplayWidth * pixelRatio);
-    panelCanvas.height = Math.round(panelDisplayHeight * pixelRatio);
+    const { width: panelDisplayWidth, height: panelDisplayHeight } = computeVrPanelDisplayDimensions(
+      VR_CHANNELS_PANEL_WIDTH,
+      VR_CHANNELS_PANEL_HEIGHT
+    );
+    const pixelRatio = getVrCanvasPixelRatio();
+    panelCanvas.width = Math.max(1, Math.round(panelDisplayWidth * pixelRatio));
+    panelCanvas.height = Math.max(1, Math.round(panelDisplayHeight * pixelRatio));
     const panelContext = panelCanvas.getContext('2d');
     if (!panelContext) {
       return null;
@@ -3075,11 +3100,13 @@ function VolumeViewer({
     group.add(background);
 
     const panelCanvas = document.createElement('canvas');
-    const panelDisplayWidth = VR_TRACKS_CANVAS_WIDTH;
-    const panelDisplayHeight = VR_TRACKS_CANVAS_HEIGHT;
-    const pixelRatio = typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : 1;
-    panelCanvas.width = Math.round(panelDisplayWidth * pixelRatio);
-    panelCanvas.height = Math.round(panelDisplayHeight * pixelRatio);
+    const { width: panelDisplayWidth, height: panelDisplayHeight } = computeVrPanelDisplayDimensions(
+      VR_TRACKS_PANEL_WIDTH,
+      VR_TRACKS_PANEL_HEIGHT
+    );
+    const pixelRatio = getVrCanvasPixelRatio();
+    panelCanvas.width = Math.max(1, Math.round(panelDisplayWidth * pixelRatio));
+    panelCanvas.height = Math.max(1, Math.round(panelDisplayHeight * pixelRatio));
     const panelContext = panelCanvas.getContext('2d');
     if (!panelContext) {
       return null;
@@ -3192,8 +3219,7 @@ function VolumeViewer({
     const ctx = hud.panelContext;
     const canvasWidth = hud.panelDisplayWidth;
     const canvasHeight = hud.panelDisplayHeight;
-    const targetPixelRatio =
-      typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : hud.pixelRatio;
+    const targetPixelRatio = getVrCanvasPixelRatio();
     if (targetPixelRatio && Math.abs(targetPixelRatio - hud.pixelRatio) > 0.01 && hud.panelCanvas) {
       hud.pixelRatio = targetPixelRatio;
       hud.panelCanvas.width = Math.round(canvasWidth * hud.pixelRatio);

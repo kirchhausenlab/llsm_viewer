@@ -449,3 +449,8 @@ d centered the front-page card in the viewport.
 - Flipped the brightness slider polarity so increasing the control lowers the window center and brightens the rendered volume, matching user expectations.
 - Swapped the contrast slider to a logarithmic scale with better formatting, keeping fine control near 1× while retaining access to higher contrast boosts.
 - Replaced the auto-contrast heuristic with percentile-based histogram bounds that add a safety margin, producing balanced windows that remain compatible with LUT inversion.
+
+## VR HUD canvas scaling
+- Derived the VR channels and tracks HUD canvas resolutions from their physical panel sizes using a shared pixels-per-meter baseline instead of fixed pixel constants.
+- Limited the actual backing pixel density to a configurable, capped scale factor so high-DPI headsets render smaller textures without impacting layout fidelity.
+- Updated the HUD renderers to reuse the new scale helper each frame so slider, histogram, and tab positions stay aligned after resolution changes.
