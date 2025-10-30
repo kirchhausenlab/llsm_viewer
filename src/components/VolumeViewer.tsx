@@ -2304,8 +2304,24 @@ function VolumeViewer({
       resetVolumeHovered: boolean,
       resetHudHovered: boolean,
       exitHovered: boolean,
-      modeHovered: boolean
+      modeHovered: boolean,
+      options?: { force?: boolean }
     ) => {
+      const previousState = vrHoverStateRef.current;
+      const changed =
+        options?.force === true ||
+        previousState.play !== playHovered ||
+        previousState.slider !== sliderHovered ||
+        previousState.sliderActive !== sliderActive ||
+        previousState.resetVolume !== resetVolumeHovered ||
+        previousState.resetHud !== resetHudHovered ||
+        previousState.exit !== exitHovered ||
+        previousState.mode !== modeHovered;
+
+      if (!changed) {
+        return;
+      }
+
       vrHoverStateRef.current = {
         play: playHovered,
         slider: sliderHovered,
@@ -2315,6 +2331,7 @@ function VolumeViewer({
         exit: exitHovered,
         mode: modeHovered
       };
+
       const hud = vrPlaybackHudRef.current;
       if (!hud) {
         return;
@@ -2426,15 +2443,18 @@ function VolumeViewer({
     const fraction = maxIndex > 0 ? Math.min(Math.max(state.timeIndex / maxIndex, 0), 1) : 0;
     setVrPlaybackSliderFraction(hud, fraction);
     setVrPlaybackLabel(hud, state.playbackLabel ?? '');
-      applyVrPlaybackHoverState(
-        vrHoverStateRef.current.play,
-        vrHoverStateRef.current.slider,
-        vrHoverStateRef.current.sliderActive,
-        vrHoverStateRef.current.resetVolume,
-        vrHoverStateRef.current.resetHud,
-        vrHoverStateRef.current.exit,
-        vrHoverStateRef.current.mode
-      );
+
+    const hoverState = vrHoverStateRef.current;
+    applyVrPlaybackHoverState(
+      hoverState.play,
+      hoverState.slider,
+      hoverState.sliderActive,
+      hoverState.resetVolume,
+      hoverState.resetHud,
+      hoverState.exit,
+      hoverState.mode,
+      { force: true }
+    );
   }, [applyVrPlaybackHoverState]);
 
   const setVrPlaybackHudVisible = useCallback(
