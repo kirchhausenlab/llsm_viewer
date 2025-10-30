@@ -10,6 +10,7 @@ import type { NormalizedVolume } from '../volumeProcessing';
 import { VolumeRenderShader } from '../shaders/volumeRenderShader';
 import { SliceRenderShader } from '../shaders/sliceRenderShader';
 import { getCachedTextureData } from '../textureCache';
+import type { PreparedTexture } from '../textureCache';
 import './VolumeViewer.css';
 import type { TrackColorMode, TrackDefinition } from '../types/tracks';
 import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from '../layerColors';
@@ -154,6 +155,7 @@ type VolumeResources = {
   mode: '3d' | 'slice';
   samplingMode: 'linear' | 'nearest';
   sliceBuffer?: Uint8Array | null;
+  last3dUpload?: { data: PreparedTexture['data']; format: PreparedTexture['format'] } | null;
 };
 
 function getExpectedSliceBufferLength(volume: NormalizedVolume) {
@@ -8630,7 +8632,8 @@ function VolumeViewer({
             dimensions: { width: volume.width, height: volume.height, depth: volume.depth },
             channels: volume.channels,
             mode: viewerMode,
-            samplingMode: layer.samplingMode
+            samplingMode: layer.samplingMode,
+            last3dUpload: { data: textureData, format: textureFormat }
           });
         }
 
@@ -8708,7 +8711,8 @@ function VolumeViewer({
             channels: volume.channels,
             mode: viewerMode,
             samplingMode: layer.samplingMode,
-            sliceBuffer: sliceInfo.data
+            sliceBuffer: sliceInfo.data,
+            last3dUpload: null
           });
         }
 
@@ -8742,9 +8746,21 @@ function VolumeViewer({
             dataTexture.needsUpdate = true;
             resources.samplingMode = layer.samplingMode;
           }
-          dataTexture.image.data = preparation.data;
-          dataTexture.format = preparation.format;
-          dataTexture.needsUpdate = true;
+          const previousPayload = resources.last3dUpload ?? null;
+          const dataChanged =
+            !previousPayload ||
+            previousPayload.data !== preparation.data ||
+            previousPayload.format !== preparation.format;
+
+          if (dataChanged) {
+            dataTexture.image.data = preparation.data;
+            dataTexture.format = preparation.format;
+            dataTexture.needsUpdate = true;
+            resources.last3dUpload = {
+              data: preparation.data,
+              format: preparation.format
+            };
+          }
           materialUniforms.u_data.value = dataTexture;
           if (materialUniforms.u_renderstyle) {
             materialUniforms.u_renderstyle.value = layer.renderStyle;
