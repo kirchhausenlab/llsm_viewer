@@ -258,6 +258,9 @@ export const VolumeRenderShader = {
       vec4 max_color = vec4(0.0);
       vec3 loc = start_loc;
 
+      const float HIGH_WATER_NON_INVERTED = 0.999;
+      const float HIGH_WATER_INVERTED = 0.001;
+
       for (int iter = 0; iter < MAX_STEPS; iter++) {
         if (iter >= nsteps) {
           break;
@@ -269,6 +272,17 @@ export const VolumeRenderShader = {
           max_val = val;
           max_i = iter;
           max_color = colorSample;
+
+          bool reachedHighWaterMark;
+          if (u_invert > 0.5) {
+            reachedHighWaterMark = max_val <= HIGH_WATER_INVERTED;
+          } else {
+            reachedHighWaterMark = max_val >= HIGH_WATER_NON_INVERTED;
+          }
+
+          if (reachedHighWaterMark) {
+            break;
+          }
         }
         loc += step;
       }
