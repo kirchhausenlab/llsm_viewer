@@ -8343,9 +8343,7 @@ function VolumeViewer({
       const resources = resourcesRef.current;
       for (const resource of resources.values()) {
         const { mesh } = resource;
-        if (mesh.matrixWorldNeedsUpdate) {
-          mesh.updateMatrixWorld();
-        }
+        mesh.updateMatrixWorld();
       }
 
       refreshVrHudPlacements();
