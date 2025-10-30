@@ -1934,6 +1934,20 @@ function App() {
     [volumeTimepointCount]
   );
 
+  const handleJumpToStart = useCallback(() => {
+    if (volumeTimepointCount === 0) {
+      return;
+    }
+    handleTimeIndexChange(0);
+  }, [handleTimeIndexChange, volumeTimepointCount]);
+
+  const handleJumpToEnd = useCallback(() => {
+    if (volumeTimepointCount === 0) {
+      return;
+    }
+    handleTimeIndexChange(volumeTimepointCount - 1);
+  }, [handleTimeIndexChange, volumeTimepointCount]);
+
   const handleAddChannel = useCallback(() => {
     let createdChannel: ChannelSource | null = null;
     setChannels((current) => {
@@ -3437,7 +3451,7 @@ function App() {
           </div>
         </div>
         <FloatingWindow
-          title="Playback controls"
+          title="Viewer controls"
           initialPosition={controlWindowInitialPosition}
           width={`min(${PLAYBACK_WINDOW_WIDTH}px, calc(100vw - ${WINDOW_MARGIN * 2}px))`}
           className="floating-window--playback"
@@ -3450,12 +3464,17 @@ function App() {
                   <button
                     type="button"
                     onClick={handleToggleViewerMode}
-                    className={viewerMode === '3d' ? 'viewer-mode-button' : 'viewer-mode-button is-active'}
+                    className={viewerMode === '3d' ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
                     disabled={isVrActive || isVrRequesting}
                   >
-                    {viewerMode === '3d' ? 'Go to 2D view' : 'Go to 3D view'}
+                    {viewerMode === '3d' ? '3D view' : '2D view'}
                   </button>
-                  <button type="button" onClick={() => resetViewHandler?.()} disabled={!resetViewHandler}>
+                  <button
+                    type="button"
+                    className="viewer-mode-button"
+                    onClick={() => resetViewHandler?.()}
+                    disabled={!resetViewHandler}
+                  >
                     Reset view
                   </button>
                   <button
@@ -3504,29 +3523,85 @@ function App() {
                 </div>
               ) : null}
               <div className="playback-controls">
-                <div className="playback-highlight">
-                  <div className="playback-controls-row">
-                    <button
-                      type="button"
-                      onClick={handleTogglePlayback}
-                      disabled={playbackDisabled}
-                      className={isPlaying ? 'playback-toggle playing' : 'playback-toggle'}
-                      aria-label={isPlaying ? 'Pause playback' : 'Start playback'}
+                <div className="control-group playback-progress">
+                  <label htmlFor="playback-slider">
+                    {isPlaying ? 'Playing' : 'Stopped'} <span>{playbackLabel}</span>
+                  </label>
+                  <input
+                    id="playback-slider"
+                    className="playback-slider"
+                    type="range"
+                    min={0}
+                    max={Math.max(0, volumeTimepointCount - 1)}
+                    value={Math.min(selectedIndex, Math.max(0, volumeTimepointCount - 1))}
+                    onChange={(event) => handleTimeIndexChange(Number(event.target.value))}
+                    disabled={playbackDisabled}
+                  />
+                </div>
+                <div className="playback-button-row">
+                  <button
+                    type="button"
+                    className="playback-button playback-button--skip"
+                    onClick={handleJumpToStart}
+                    disabled={playbackDisabled}
+                    aria-label="Go to first frame"
+                  >
+                    <svg
+                      className="playback-button-icon"
+                      viewBox="0 0 24 24"
+                      role="img"
+                      aria-hidden="true"
+                      focusable="false"
                     >
-                      {isPlaying ? '⏸' : '▶'}
-                    </button>
-                    <div className="playback-slider-group">
-                      <input
-                        type="range"
-                        min={0}
-                        max={Math.max(0, volumeTimepointCount - 1)}
-                        value={Math.min(selectedIndex, Math.max(0, volumeTimepointCount - 1))}
-                        onChange={(event) => handleTimeIndexChange(Number(event.target.value))}
-                        disabled={playbackDisabled}
-                      />
-                      <span className="playback-time-label">{playbackLabel}</span>
-                    </div>
-                  </div>
+                      <path d="M6.25 4c.414 0 .75.336.75.75v5.69l9.088-6.143A1.5 1.5 0 0 1 18.5 5.61v12.78a1.5 1.5 0 0 1-2.412 1.313L7 13.56v5.69a.75.75 0 0 1-1.5 0V4.75c0-.414.336-.75.75-.75Z" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleTogglePlayback}
+                    disabled={playbackDisabled}
+                    className={isPlaying ? 'playback-button playback-toggle playing' : 'playback-button playback-toggle'}
+                    aria-label={isPlaying ? 'Pause playback' : 'Start playback'}
+                  >
+                    {isPlaying ? (
+                      <svg
+                        className="playback-button-icon"
+                        viewBox="0 0 24 24"
+                        role="img"
+                        aria-hidden="true"
+                        focusable="false"
+                      >
+                        <path d="M9 5a1 1 0 0 1 1 1v12a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Zm6 0a1 1 0 0 1 1 1v12a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Z" />
+                      </svg>
+                    ) : (
+                      <svg
+                        className="playback-button-icon"
+                        viewBox="0 0 24 24"
+                        role="img"
+                        aria-hidden="true"
+                        focusable="false"
+                      >
+                        <path d="M8.5 5.636a1 1 0 0 1 1.53-.848l8.01 5.363a1 1 0 0 1 0 1.698l-8.01 5.363A1 1 0 0 1 8 16.364V7.636a1 1 0 0 1 .5-.868Z" />
+                      </svg>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    className="playback-button playback-button--skip"
+                    onClick={handleJumpToEnd}
+                    disabled={playbackDisabled}
+                    aria-label="Go to last frame"
+                  >
+                    <svg
+                      className="playback-button-icon"
+                      viewBox="0 0 24 24"
+                      role="img"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path d="M17.75 4a.75.75 0 0 1 .75.75v13.5a.75.75 0 0 1-1.5 0v-5.69l-9.088 6.143A1.5 1.5 0 0 1 5.5 18.39V5.61a1.5 1.5 0 0 1 2.412-1.313L17 10.44V4.75c0-.414.336-.75.75-.75Z" />
+                    </svg>
+                  </button>
                 </div>
               </div>
             </div>
