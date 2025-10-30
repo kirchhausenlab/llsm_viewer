@@ -1481,6 +1481,10 @@
   accent-color: #c0c0c0;
 }
 
+.global-controls input[type='range'].playback-slider {
+  accent-color: #c0c0c0;
+}
+
 .playback-button-row {
   display: flex;
   justify-content: center;
