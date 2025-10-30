@@ -626,6 +626,7 @@ type ControllerEntry = {
   targetRayMode: string | null;
   gamepad: Gamepad | null;
   hoverTrackId: string | null;
+  hoverScreenPosition: { x: number; y: number } | null;
   hoverUiTarget: VrUiTarget | null;
   activeUiTarget: VrUiTarget | null;
   hoverUiPoint: THREE.Vector3;
@@ -633,6 +634,9 @@ type ControllerEntry = {
   hoverPoint: THREE.Vector3;
   rayOrigin: THREE.Vector3;
   rayDirection: THREE.Vector3;
+  lastRayOrigin: THREE.Vector3;
+  lastRayDirection: THREE.Vector3;
+  needsRayUpdate: boolean;
   rayLength: number;
   isSelecting: boolean;
   hudGrabOffsets: { playback: THREE.Vector3 | null; channels: THREE.Vector3 | null; tracks: THREE.Vector3 | null };
@@ -736,6 +740,7 @@ const VR_VOLUME_BASE_OFFSET = new THREE.Vector3(0, 1.2, -0.3);
 const VR_UI_TOUCH_DISTANCE = 0.08;
 const VR_UI_TOUCH_SURFACE_MARGIN = 0.04;
 const VR_CONTROLLER_TOUCH_RADIUS = 0.015;
+const VR_CONTROLLER_RAY_EPSILON = 1e-5;
 const VR_TRANSLATION_HANDLE_RADIUS = 0.03;
 const VR_SCALE_HANDLE_RADIUS = VR_TRANSLATION_HANDLE_RADIUS;
 const VR_TRANSLATION_HANDLE_OFFSET = 0.04;
@@ -5319,10 +5324,15 @@ function VolumeViewer({
       }> = [];
       controllersRef.current.forEach((entry, index) => {
         const visible = shouldShow && entry.isConnected && entry.targetRayMode !== 'tracked-hand';
+        const previousControllerVisible = entry.controller.visible;
+        const previousGripVisible = entry.grip.visible;
         entry.controller.visible = visible;
         entry.grip.visible = visible;
         entry.ray.visible = visible;
         entry.touchIndicator.visible = visible;
+        if (previousControllerVisible !== entry.controller.visible || previousGripVisible !== entry.grip.visible) {
+          entry.needsRayUpdate = true;
+        }
         visibilitySnapshot.push({
           index,
           visible,
@@ -5331,6 +5341,7 @@ function VolumeViewer({
         });
         if (!visible) {
           entry.hoverTrackId = null;
+          entry.hoverScreenPosition = null;
           entry.hoverUiTarget = null;
           entry.activeUiTarget = null;
           entry.hasHoverUiPoint = false;
@@ -5340,6 +5351,8 @@ function VolumeViewer({
           entry.translateGrabOffset = null;
           entry.volumeRotationState = null;
           entry.hudRotationState = null;
+          entry.rayLength = 3;
+          entry.needsRayUpdate = true;
         } else {
           anyVisible = true;
         }
@@ -5349,7 +5362,18 @@ function VolumeViewer({
       }
       if (!anyVisible) {
         clearHoverState('controller');
-        applyVrPlaybackHoverState(false, false, false, false, false, false, false);
+        const currentHoverState = vrHoverStateRef.current;
+        if (
+          currentHoverState.play ||
+          currentHoverState.slider ||
+          currentHoverState.sliderActive ||
+          currentHoverState.resetVolume ||
+          currentHoverState.resetHud ||
+          currentHoverState.exit ||
+          currentHoverState.mode
+        ) {
+          applyVrPlaybackHoverState(false, false, false, false, false, false, false);
+        }
       }
     };
 
@@ -5413,6 +5437,7 @@ function VolumeViewer({
         targetRayMode: null,
         gamepad: null,
         hoverTrackId: null,
+        hoverScreenPosition: null,
         hoverUiTarget: null,
         activeUiTarget: null,
         hoverUiPoint: new THREE.Vector3(),
@@ -5420,6 +5445,9 @@ function VolumeViewer({
         hoverPoint: new THREE.Vector3(),
         rayOrigin: new THREE.Vector3(),
         rayDirection: new THREE.Vector3(0, 0, -1),
+        lastRayOrigin: new THREE.Vector3(),
+        lastRayDirection: new THREE.Vector3(0, 0, -1),
+        needsRayUpdate: true,
         rayLength: 3,
         isSelecting: false,
         hudGrabOffsets: { playback: null, channels: null, tracks: null },
@@ -5435,6 +5463,7 @@ function VolumeViewer({
         entry.targetRayMode = event?.data?.targetRayMode ?? null;
         entry.gamepad = event?.data?.gamepad ?? null;
         entry.hoverTrackId = null;
+        entry.hoverScreenPosition = null;
         entry.hoverUiTarget = null;
         entry.activeUiTarget = null;
         entry.hasHoverUiPoint = false;
@@ -5446,6 +5475,7 @@ function VolumeViewer({
         entry.volumeScaleState = null;
         entry.volumeRotationState = null;
         entry.hudRotationState = null;
+        entry.needsRayUpdate = true;
         entry.rayLength = 3;
         vrLog('[VR] controller connected', index, {
           targetRayMode: entry.targetRayMode,
@@ -5459,6 +5489,7 @@ function VolumeViewer({
         entry.targetRayMode = null;
         entry.gamepad = null;
         entry.hoverTrackId = null;
+        entry.hoverScreenPosition = null;
         entry.hoverUiTarget = null;
         entry.activeUiTarget = null;
         entry.hasHoverUiPoint = false;
@@ -5474,6 +5505,7 @@ function VolumeViewer({
         entry.volumeRotationState = null;
         entry.hudRotationState = null;
         entry.touchIndicator.visible = false;
+        entry.needsRayUpdate = true;
         vrLog('[VR] controller disconnected', index);
         refreshControllerVisibility();
         clearHoverState('controller');
@@ -5481,6 +5513,7 @@ function VolumeViewer({
 
       entry.onSelectStart = () => {
         entry.isSelecting = true;
+        entry.needsRayUpdate = true;
         entry.activeUiTarget = entry.hoverUiTarget;
         entry.hudRotationState = null;
         entry.volumeRotationState = null;
@@ -5733,6 +5766,7 @@ function VolumeViewer({
 
       entry.onSelectEnd = () => {
         entry.isSelecting = false;
+        entry.needsRayUpdate = true;
         const activeTarget = entry.activeUiTarget;
         entry.activeUiTarget = null;
         const playbackState = playbackStateRef.current;
@@ -6412,7 +6446,18 @@ function VolumeViewer({
           hoverTrackIds: controllersRef.current.map((entry) => entry.hoverTrackId)
         };
         clearHoverState('controller');
-        applyVrPlaybackHoverState(false, false, false, false, false, false, false);
+        const hoverState = vrHoverStateRef.current;
+        if (
+          hoverState.play ||
+          hoverState.slider ||
+          hoverState.sliderActive ||
+          hoverState.resetVolume ||
+          hoverState.resetHud ||
+          hoverState.exit ||
+          hoverState.mode
+        ) {
+          applyVrPlaybackHoverState(false, false, false, false, false, false, false);
+        }
         return;
       }
 
@@ -6441,6 +6486,7 @@ function VolumeViewer({
       let nextTracksHoverRegion: VrTracksInteractiveRegion | null = null;
       let rotationHandleHovered = false;
       let rotationHandleActive = false;
+      const rayEpsilonSquared = VR_CONTROLLER_RAY_EPSILON * VR_CONTROLLER_RAY_EPSILON;
 
       for (let index = 0; index < controllersRef.current.length; index++) {
         const entry = controllersRef.current[index];
@@ -6462,28 +6508,49 @@ function VolumeViewer({
         controllerTempMatrix.identity().extractRotation(entry.controller.matrixWorld);
         entry.rayOrigin.setFromMatrixPosition(entry.controller.matrixWorld);
         entry.rayDirection.set(0, 0, -1).applyMatrix4(controllerTempMatrix).normalize();
-        entry.raycaster.ray.origin.copy(entry.rayOrigin);
-        entry.raycaster.ray.direction.copy(entry.rayDirection);
 
-        let rayLength = 3;
-        let hoverTrackId: string | null = null;
-        let hoverPosition: { x: number; y: number } | null = null;
-        entry.hoverUiTarget = null;
-        entry.hasHoverUiPoint = false;
+        const originChanged = entry.lastRayOrigin.distanceToSquared(entry.rayOrigin) > rayEpsilonSquared;
+        const directionChanged =
+          entry.lastRayDirection.distanceToSquared(entry.rayDirection) > rayEpsilonSquared;
+        const shouldUpdate =
+          entry.needsRayUpdate ||
+          originChanged ||
+          directionChanged ||
+          entry.isSelecting ||
+          Boolean(entry.activeUiTarget);
 
-        let uiRayLength: number | null = null;
-        const playbackHudInstance = vrPlaybackHudRef.current;
-        const channelsHudInstance = vrChannelsHudRef.current;
-        const tracksHudInstance = vrTracksHudRef.current;
-        const translationHandleInstance = vrTranslationHandleRef.current;
-        const scaleHandleInstance = vrVolumeScaleHandleRef.current;
-        const yawHandleInstances = vrVolumeYawHandlesRef.current;
-        const pitchHandleInstance = vrVolumePitchHandleRef.current;
+        let rayLength = entry.rayLength;
+        let hoverTrackId: string | null = entry.hoverTrackId;
+        let hoverPosition: { x: number; y: number } | null = entry.hoverScreenPosition
+          ? { x: entry.hoverScreenPosition.x, y: entry.hoverScreenPosition.y }
+          : null;
 
-        const isActiveTranslate = entry.activeUiTarget?.type === 'volume-translate-handle';
-        const isActiveScale = entry.activeUiTarget?.type === 'volume-scale-handle';
-        const isActiveYaw = entry.activeUiTarget?.type === 'volume-yaw-handle';
-        const isActivePitch = entry.activeUiTarget?.type === 'volume-pitch-handle';
+        if (shouldUpdate) {
+          entry.needsRayUpdate = false;
+          entry.lastRayOrigin.copy(entry.rayOrigin);
+          entry.lastRayDirection.copy(entry.rayDirection);
+          entry.raycaster.ray.origin.copy(entry.rayOrigin);
+          entry.raycaster.ray.direction.copy(entry.rayDirection);
+
+          rayLength = 3;
+          hoverTrackId = null;
+          hoverPosition = null;
+          entry.hoverUiTarget = null;
+          entry.hasHoverUiPoint = false;
+
+          let uiRayLength: number | null = null;
+          const playbackHudInstance = vrPlaybackHudRef.current;
+          const channelsHudInstance = vrChannelsHudRef.current;
+          const tracksHudInstance = vrTracksHudRef.current;
+          const translationHandleInstance = vrTranslationHandleRef.current;
+          const scaleHandleInstance = vrVolumeScaleHandleRef.current;
+          const yawHandleInstances = vrVolumeYawHandlesRef.current;
+          const pitchHandleInstance = vrVolumePitchHandleRef.current;
+
+          const isActiveTranslate = entry.activeUiTarget?.type === 'volume-translate-handle';
+          const isActiveScale = entry.activeUiTarget?.type === 'volume-scale-handle';
+          const isActiveYaw = entry.activeUiTarget?.type === 'volume-yaw-handle';
+          const isActivePitch = entry.activeUiTarget?.type === 'volume-pitch-handle';
         if (isActiveYaw || isActivePitch) {
           rotationHandleActive = true;
         }
@@ -7464,6 +7531,11 @@ function VolumeViewer({
           }
         }
 
+        } else {
+          entry.raycaster.ray.origin.copy(entry.rayOrigin);
+          entry.raycaster.ray.direction.copy(entry.rayDirection);
+        }
+
         const uiType = entry.hoverUiTarget ? entry.hoverUiTarget.type : null;
         if (uiType === 'playback-play-toggle') {
           playHoveredAny = true;
@@ -7699,6 +7771,7 @@ function VolumeViewer({
         }
 
         entry.hoverTrackId = hoverTrackId;
+        entry.hoverScreenPosition = hoverPosition ? { x: hoverPosition.x, y: hoverPosition.y } : null;
         const currentUiType = entry.hoverUiTarget ? entry.hoverUiTarget.type : null;
         if (previousHoverTrackId !== hoverTrackId || previousUiType !== currentUiType) {
           vrLog('[VR] controller hover update', index, {
@@ -7715,15 +7788,26 @@ function VolumeViewer({
         }
       }
 
-      applyVrPlaybackHoverState(
-        playHoveredAny,
-        sliderHoveredAny,
-        sliderActiveAny,
-        resetVolumeHoveredAny,
-        resetHudHoveredAny,
-        exitHoveredAny,
-        modeHoveredAny
-      );
+      const currentHoverState = vrHoverStateRef.current;
+      if (
+        currentHoverState.play !== playHoveredAny ||
+        currentHoverState.slider !== sliderHoveredAny ||
+        currentHoverState.sliderActive !== sliderActiveAny ||
+        currentHoverState.resetVolume !== resetVolumeHoveredAny ||
+        currentHoverState.resetHud !== resetHudHoveredAny ||
+        currentHoverState.exit !== exitHoveredAny ||
+        currentHoverState.mode !== modeHoveredAny
+      ) {
+        applyVrPlaybackHoverState(
+          playHoveredAny,
+          sliderHoveredAny,
+          sliderActiveAny,
+          resetVolumeHoveredAny,
+          resetHudHoveredAny,
+          exitHoveredAny,
+          modeHoveredAny
+        );
+      }
 
       const channelsHudInstance = vrChannelsHudRef.current;
       const isSameRegion = (
@@ -7873,6 +7957,8 @@ function VolumeViewer({
         entry.translateGrabOffset = null;
         entry.scaleGrabOffset = null;
         entry.volumeScaleState = null;
+        entry.hoverScreenPosition = null;
+        entry.needsRayUpdate = true;
       }
       const controlsInstance = controlsRef.current;
       if (controlsInstance) {
