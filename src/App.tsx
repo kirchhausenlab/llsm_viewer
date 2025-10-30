@@ -43,7 +43,7 @@ import {
 import { deriveChannelTrackOffsets } from './state/channelTrackOffsets';
 import type { LoadedLayer } from './types/layers';
 import './App.css';
-import { computeAutoWindow } from './autoContrast';
+import { computeAutoWindow, getVolumeHistogram } from './autoContrast';
 import { getDefaultWindowForVolume } from './utils/volumeWindow';
 import BrightnessContrastHistogram from './components/BrightnessContrastHistogram';
 
@@ -1839,6 +1839,7 @@ function App() {
         const settings = layerSettings[layer.key] ?? createLayerDefaultSettings(layer.key);
         const firstVolume = layer.volumes[0] ?? null;
         const isGrayscale = Boolean(firstVolume && firstVolume.channels === 1);
+        const histogram = firstVolume ? getVolumeHistogram(firstVolume) : null;
         return {
           key: layer.key,
           label: layer.label,
@@ -1846,6 +1847,7 @@ function App() {
           isGrayscale,
           isSegmentation: layer.isSegmentation,
           defaultWindow,
+          histogram,
           settings
         };
       });
@@ -3355,6 +3357,8 @@ function App() {
               onChannelLayerSelect={handleChannelLayerSelectionChange}
               onLayerContrastChange={handleLayerContrastChange}
               onLayerBrightnessChange={handleLayerBrightnessChange}
+              onLayerWindowMinChange={handleLayerWindowMinChange}
+              onLayerWindowMaxChange={handleLayerWindowMaxChange}
               onLayerAutoContrast={handleLayerAutoContrast}
               onLayerOffsetChange={handleLayerOffsetChange}
               onLayerColorChange={handleLayerColorChange}

@@ -23,8 +23,11 @@ import {
 import {
   brightnessContrastModel,
   computeContrastMultiplier,
-  formatContrastMultiplier
+  formatContrastMultiplier,
+  DEFAULT_WINDOW_MIN,
+  DEFAULT_WINDOW_MAX
 } from '../state/layerSettings';
+import { HISTOGRAM_FIRST_VALID_BIN } from '../autoContrast';
 
 type ViewerLayer = {
   key: string;
@@ -92,6 +95,7 @@ type VolumeViewerProps = {
         isGrayscale: boolean;
         isSegmentation: boolean;
         defaultWindow: { windowMin: number; windowMax: number } | null;
+        histogram: Uint32Array | null;
         settings: {
         sliderRange: number;
         minSliderIndex: number;
@@ -116,6 +120,8 @@ type VolumeViewerProps = {
   onChannelLayerSelect: (channelId: string, layerKey: string) => void;
   onLayerContrastChange: (layerKey: string, value: number) => void;
   onLayerBrightnessChange: (layerKey: string, value: number) => void;
+  onLayerWindowMinChange: (layerKey: string, value: number) => void;
+  onLayerWindowMaxChange: (layerKey: string, value: number) => void;
   onLayerAutoContrast: (layerKey: string) => void;
   onLayerOffsetChange: (layerKey: string, axis: 'x' | 'y', value: number) => void;
   onLayerColorChange: (layerKey: string, color: string) => void;
@@ -158,6 +164,110 @@ function getExpectedSliceBufferLength(volume: NormalizedVolume) {
 const formatNormalizedIntensity = (value: number): string => {
   const fixed = value.toFixed(3);
   return fixed.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
+};
+
+const clampValue = (value: number, min: number, max: number): number => {
+  if (value < min) {
+    return min;
+  }
+  if (value > max) {
+    return max;
+  }
+  return value;
+};
+
+const VR_CHANNELS_HISTOGRAM_HEIGHT = 160;
+const VR_CHANNELS_HISTOGRAM_RADIUS = 18;
+
+type VrHistogramShape = {
+  points: Array<{ x: number; y: number }>;
+  isEmpty: boolean;
+};
+
+const computeHistogramShape = (
+  histogram: Uint32Array | null,
+  width: number,
+  height: number
+): VrHistogramShape => {
+  if (!histogram || histogram.length === 0) {
+    return { points: [], isEmpty: true };
+  }
+
+  let maxCount = 0;
+  for (let i = HISTOGRAM_FIRST_VALID_BIN; i < histogram.length; i++) {
+    const value = histogram[i];
+    if (value > maxCount) {
+      maxCount = value;
+    }
+  }
+
+  if (maxCount === 0) {
+    return { points: [], isEmpty: true };
+  }
+
+  const bins = histogram.length;
+  const span = bins > 1 ? bins - 1 : bins;
+  const step = span > 0 ? width / span : width;
+  const points: Array<{ x: number; y: number }> = [];
+
+  for (let i = HISTOGRAM_FIRST_VALID_BIN; i < bins; i++) {
+    const count = histogram[i];
+    const normalized = count / maxCount;
+    const x = step * i;
+    const y = height - normalized * height;
+    points.push({ x, y });
+  }
+
+  return { points, isEmpty: false };
+};
+
+const computeHistogramMappingPoints = (
+  windowMin: number,
+  windowMax: number,
+  defaultMin: number,
+  defaultMax: number,
+  width: number,
+  height: number
+): Array<{ x: number; y: number }> => {
+  const defaultRange = defaultMax - defaultMin;
+  const windowWidth = windowMax - windowMin;
+
+  if (!(defaultRange > 0) || !(windowWidth > 0)) {
+    return [];
+  }
+
+  const lowerFraction = (windowMin - defaultMin) / defaultRange;
+  const upperFraction = (windowMax - defaultMin) / defaultRange;
+  const fractions: number[] = [0, 1];
+
+  if (lowerFraction > 0 && lowerFraction < 1) {
+    fractions.push(lowerFraction);
+  }
+
+  if (upperFraction > 0 && upperFraction < 1) {
+    fractions.push(upperFraction);
+  }
+
+  fractions.sort((a, b) => a - b);
+
+  const uniqueFractions: number[] = [];
+  for (const fraction of fractions) {
+    if (
+      uniqueFractions.length === 0 ||
+      Math.abs(fraction - uniqueFractions[uniqueFractions.length - 1]) > 1e-6
+    ) {
+      uniqueFractions.push(fraction);
+    }
+  }
+
+  return uniqueFractions.map((fraction) => {
+    const clampedFraction = clampValue(fraction, 0, 1);
+    const x = clampedFraction * width;
+    const value = defaultMin + clampedFraction * defaultRange;
+    const normalized = clampValue((value - windowMin) / windowWidth, 0, 1);
+    const y = (1 - normalized) * height;
+    return { x, y };
+  });
 };
 
 function prepareSliceTexture(volume: NormalizedVolume, sliceIndex: number, existingBuffer: Uint8Array | null) {
@@ -329,7 +439,13 @@ type VrPlaybackHud = {
   cacheDirty: boolean;
 };
 
-type VrChannelsSliderKey = 'contrast' | 'brightness' | 'xOffset' | 'yOffset';
+type VrChannelsSliderKey =
+  | 'windowMin'
+  | 'windowMax'
+  | 'contrast'
+  | 'brightness'
+  | 'xOffset'
+  | 'yOffset';
 
 type VrChannelsInteractiveRegion = {
   targetType:
@@ -392,6 +508,7 @@ type VrChannelsState = {
         isGrayscale: boolean;
         isSegmentation: boolean;
         defaultWindow: { windowMin: number; windowMax: number } | null;
+        histogram: Uint32Array | null;
         settings: {
         sliderRange: number;
         minSliderIndex: number;
@@ -889,6 +1006,8 @@ function VolumeViewer({
   onChannelLayerSelect,
   onLayerContrastChange,
   onLayerBrightnessChange,
+  onLayerWindowMinChange,
+  onLayerWindowMaxChange,
   onLayerAutoContrast,
   onLayerOffsetChange,
   onLayerColorChange,
@@ -3443,6 +3562,81 @@ function VolumeViewer({
 
       const actionsBottom = thirdRowY + actionButtonHeight;
       currentY = actionsBottom + 32;
+
+      const histogramWidth = canvasWidth - paddingX * 2;
+      const histogramHeight = VR_CHANNELS_HISTOGRAM_HEIGHT;
+      const histogramX = paddingX;
+      const histogramY = currentY;
+      const histogramShape = computeHistogramShape(
+        selectedLayer.histogram ?? null,
+        histogramWidth,
+        histogramHeight
+      );
+
+      ctx.save();
+      drawRoundedRect(ctx, histogramX, histogramY, histogramWidth, histogramHeight, VR_CHANNELS_HISTOGRAM_RADIUS);
+      ctx.fillStyle = histogramShape.isEmpty ? 'rgba(17, 23, 34, 0.55)' : 'rgba(17, 23, 34, 0.85)';
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+      ctx.stroke();
+      ctx.restore();
+
+      if (!histogramShape.isEmpty) {
+        ctx.save();
+        drawRoundedRect(
+          ctx,
+          histogramX,
+          histogramY,
+          histogramWidth,
+          histogramHeight,
+          VR_CHANNELS_HISTOGRAM_RADIUS
+        );
+        ctx.clip();
+        ctx.beginPath();
+        ctx.moveTo(histogramX, histogramY + histogramHeight);
+        for (const point of histogramShape.points) {
+          ctx.lineTo(histogramX + point.x, histogramY + point.y);
+        }
+        ctx.lineTo(histogramX + histogramWidth, histogramY + histogramHeight);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(91, 140, 255, 0.35)';
+        ctx.strokeStyle = 'rgba(91, 140, 255, 0.9)';
+        ctx.lineWidth = 2.4;
+        ctx.fill();
+        ctx.stroke();
+
+        const mappingPoints = computeHistogramMappingPoints(
+          selectedLayer.settings.windowMin,
+          selectedLayer.settings.windowMax,
+          DEFAULT_WINDOW_MIN,
+          DEFAULT_WINDOW_MAX,
+          histogramWidth,
+          histogramHeight
+        );
+
+        if (mappingPoints.length > 1) {
+          ctx.beginPath();
+          mappingPoints.forEach((point, index) => {
+            const px = histogramX + point.x;
+            const py = histogramY + point.y;
+            if (index === 0) {
+              ctx.moveTo(px, py);
+            } else {
+              ctx.lineTo(px, py);
+            }
+          });
+          ctx.strokeStyle = '#f5f7ff';
+          ctx.lineWidth = 3;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.stroke();
+        }
+
+        ctx.restore();
+      }
+
+      currentY += histogramHeight + 48;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
     }
@@ -3506,6 +3700,26 @@ function VolumeViewer({
         disabled: boolean;
         axis?: 'x' | 'y';
       }> = [
+        {
+          key: 'windowMin',
+          label: 'Minimum',
+          value: selectedLayer.settings.windowMin,
+          min: DEFAULT_WINDOW_MIN,
+          max: DEFAULT_WINDOW_MAX,
+          step: 0.001,
+          formatter: (value: number) => formatNormalizedIntensity(value),
+          disabled: !selectedLayer.hasData
+        },
+        {
+          key: 'windowMax',
+          label: 'Maximum',
+          value: selectedLayer.settings.windowMax,
+          min: DEFAULT_WINDOW_MIN,
+          max: DEFAULT_WINDOW_MAX,
+          step: 0.001,
+          formatter: (value: number) => formatNormalizedIntensity(value),
+          disabled: !selectedLayer.hasData
+        },
         {
           key: 'contrast',
           label: 'Contrast',
@@ -3834,9 +4048,34 @@ function VolumeViewer({
         return;
       }
 
-      const sliderIndex = Math.round(snappedValue);
-
-      if (region.sliderKey === 'contrast') {
+      if (region.sliderKey === 'windowMin') {
+        const updated = brightnessContrastModel.applyWindow(
+          snappedValue,
+          layerState.settings.windowMax
+        );
+        layerState.settings.windowMin = updated.windowMin;
+        layerState.settings.windowMax = updated.windowMax;
+        layerState.settings.sliderRange = updated.sliderRange;
+        layerState.settings.minSliderIndex = updated.minSliderIndex;
+        layerState.settings.maxSliderIndex = updated.maxSliderIndex;
+        layerState.settings.brightnessSliderIndex = updated.brightnessSliderIndex;
+        layerState.settings.contrastSliderIndex = updated.contrastSliderIndex;
+        onLayerWindowMinChange(region.layerKey, updated.windowMin);
+      } else if (region.sliderKey === 'windowMax') {
+        const updated = brightnessContrastModel.applyWindow(
+          layerState.settings.windowMin,
+          snappedValue
+        );
+        layerState.settings.windowMin = updated.windowMin;
+        layerState.settings.windowMax = updated.windowMax;
+        layerState.settings.sliderRange = updated.sliderRange;
+        layerState.settings.minSliderIndex = updated.minSliderIndex;
+        layerState.settings.maxSliderIndex = updated.maxSliderIndex;
+        layerState.settings.brightnessSliderIndex = updated.brightnessSliderIndex;
+        layerState.settings.contrastSliderIndex = updated.contrastSliderIndex;
+        onLayerWindowMaxChange(region.layerKey, updated.windowMax);
+      } else if (region.sliderKey === 'contrast') {
+        const sliderIndex = Math.round(snappedValue);
         const updated = brightnessContrastModel.applyContrast(layerState.settings, sliderIndex);
         layerState.settings.windowMin = updated.windowMin;
         layerState.settings.windowMax = updated.windowMax;
@@ -3847,6 +4086,7 @@ function VolumeViewer({
         layerState.settings.contrastSliderIndex = updated.contrastSliderIndex;
         onLayerContrastChange(region.layerKey, updated.contrastSliderIndex);
       } else if (region.sliderKey === 'brightness') {
+        const sliderIndex = Math.round(snappedValue);
         const updated = brightnessContrastModel.applyBrightness(layerState.settings, sliderIndex);
         layerState.settings.windowMin = updated.windowMin;
         layerState.settings.windowMax = updated.windowMax;
@@ -3867,6 +4107,8 @@ function VolumeViewer({
       renderVrChannelsHud(hud, state);
     },
     [
+      onLayerWindowMinChange,
+      onLayerWindowMaxChange,
       onLayerContrastChange,
       onLayerBrightnessChange,
       onLayerOffsetChange,
@@ -4023,6 +4265,7 @@ function VolumeViewer({
         isGrayscale: layer.isGrayscale,
         isSegmentation: layer.isSegmentation,
         defaultWindow: layer.defaultWindow,
+        histogram: layer.histogram ?? null,
         settings: {
           sliderRange: layer.settings.sliderRange,
           minSliderIndex: layer.settings.minSliderIndex,
