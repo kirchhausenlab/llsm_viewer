@@ -1458,75 +1458,71 @@
 .playback-controls {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.65rem;
 }
 
-.playback-highlight {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  width: 100%;
-  padding: 0.75rem 0.9rem;
-  border-radius: 0.85rem;
-  background: rgba(53, 80, 126, 0.28);
-  border: 1px solid rgba(91, 140, 255, 0.35);
-  box-shadow: inset 0 0 0 1px rgba(91, 140, 255, 0.12);
+.playback-progress span {
+  font-variant-numeric: tabular-nums;
 }
 
-.playback-controls-row {
+.playback-slider {
+  accent-color: #f59e0b;
+}
+
+.playback-button-row {
   display: flex;
+  justify-content: center;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
-.playback-slider-group {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
+.playback-button {
+  display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-}
-
-.playback-slider-group input[type='range'] {
-  width: 100%;
-  min-width: 0;
-  accent-color: #5b8cff;
-}
-
-.playback-toggle {
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
   border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 0.5rem;
-  padding: 0.45rem 1.1rem;
-  background: rgba(91, 140, 255, 0.2);
+  border-radius: 0.65rem;
+  background: rgba(12, 16, 24, 0.8);
   color: rgba(255, 255, 255, 0.95);
-  font-weight: 600;
   cursor: pointer;
   transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+  text-align: center;
 }
 
-.playback-toggle:hover:not(:disabled) {
+.playback-button:hover:not(:disabled) {
   transform: translateY(-1px);
   border-color: rgba(91, 140, 255, 0.65);
-  background: rgba(91, 140, 255, 0.32);
+  background: rgba(91, 140, 255, 0.25);
 }
 
-.playback-toggle:disabled {
+.playback-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.playback-toggle.playing {
-  background: rgba(91, 255, 182, 0.25);
-  border-color: rgba(91, 255, 182, 0.5);
+.playback-button--skip {
+  width: 2.5rem;
+  background: rgba(12, 16, 24, 0.7);
 }
 
-.playback-time-label {
-  align-self: center;
-  font-size: 0.8rem;
+.playback-toggle {
+  width: 3rem;
+  background: rgba(91, 140, 255, 0.2);
+  border-color: rgba(91, 140, 255, 0.45);
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.05em;
-  color: rgba(255, 255, 255, 0.7);
+}
+
+.playback-toggle.playing {
+  background: rgba(91, 255, 182, 0.28);
+  border-color: rgba(91, 255, 182, 0.55);
+}
+
+.playback-button-icon {
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: currentColor;
 }
 
 .track-controls {
