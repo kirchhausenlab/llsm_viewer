@@ -3525,7 +3525,16 @@ function App() {
               <div className="playback-controls">
                 <div className="control-group playback-progress">
                   <label htmlFor="playback-slider">
-                    {isPlaying ? 'Playing' : 'Stopped'} <span>{playbackLabel}</span>
+                    <span
+                      className={
+                        isPlaying
+                          ? 'playback-status playback-status--playing'
+                          : 'playback-status playback-status--stopped'
+                      }
+                    >
+                      {isPlaying ? 'Playing' : 'Stopped'}
+                    </span>{' '}
+                    <span>{playbackLabel}</span>
                   </label>
                   <input
                     id="playback-slider"

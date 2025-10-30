@@ -1465,8 +1465,24 @@
   font-variant-numeric: tabular-nums;
 }
 
+.playback-status {
+  font-weight: 600;
+}
+
+.playback-status--playing {
+  color: #22c55e;
+}
+
+.playback-status--stopped {
+  color: #ef4444;
+}
+
 .playback-slider {
-  accent-color: #f59e0b;
+  accent-color: #c0c0c0;
+}
+
+.global-controls input[type='range'].playback-slider {
+  accent-color: #c0c0c0;
 }
 
 .playback-button-row {
@@ -1520,8 +1536,8 @@
 }
 
 .playback-button-icon {
-  width: 1.15rem;
-  height: 1.15rem;
+  width: 1.45rem;
+  height: 1.45rem;
   fill: currentColor;
 }
 
