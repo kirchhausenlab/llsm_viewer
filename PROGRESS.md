@@ -458,3 +458,7 @@ d centered the front-page card in the viewport.
 - Derived the VR channels and tracks HUD canvas resolutions from their physical panel sizes using a shared pixels-per-meter baseline instead of fixed pixel constants.
 - Limited the actual backing pixel density to a configurable, capped scale factor so high-DPI headsets render smaller textures without impacting layout fidelity.
 - Updated the HUD renderers to reuse the new scale helper each frame so slider, histogram, and tab positions stay aligned after resolution changes.
+
+## VR world matrix refresh regression fix
+- Restored the unconditional `mesh.updateMatrixWorld()` call inside the render loop so XR view poses propagate to volume meshes every frame.
+- Verified that volume layers no longer stick to the headset and that controller rays/huds regain their expected world-space alignment when presenting in VR.
