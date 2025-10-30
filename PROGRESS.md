@@ -8,6 +8,10 @@
 
 # Progress Log
 
+## VR passthrough clear alpha regression fix
+- Restored an opaque WebGL clear when immersive VR sessions start so headset compositors receive non-transparent frames and the volume, HUD, and controllers render again instead of a black view.
+- Preserved transparent clears for passthrough `immersive-ar` sessions and automatically revert to the desktop clear state whenever an XR session ends or the viewer unmounts.
+
 ## Auto contrast initial threshold adjustment
 - Raised the default auto window threshold from 5,000 to 50,000 so the first "Auto" press now keeps a broader histogram range
   before subsequent presses tighten it.

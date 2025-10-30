@@ -765,6 +765,12 @@ const VR_HUD_YAW_HANDLE_COLOR = 0xffb347;
 const VR_HUD_SURFACE_OFFSET = 0.0015;
 const MAX_RENDERER_PIXEL_RATIO = 2;
 const XR_TARGET_FOVEATION = 0.6;
+const RENDERER_CLEAR_COLOR = 0x000000;
+const DESKTOP_CLEAR_ALPHA = 0;
+const AR_CLEAR_ALPHA = 0;
+const VR_CLEAR_ALPHA = 1;
+const DESKTOP_CANVAS_BACKGROUND = 'transparent';
+const VR_CANVAS_BACKGROUND = '#000000';
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const VIEWER_YAW_FORWARD_REFERENCE = new THREE.Vector3(0, 0, -1);
 const VIEWER_YAW_RIGHT_REFERENCE = new THREE.Vector3(1, 0, 0);
@@ -5235,10 +5241,30 @@ function VolumeViewer({
         : Math.min(window.devicePixelRatio ?? 1, MAX_RENDERER_PIXEL_RATIO);
     renderer.setPixelRatio(pixelRatio);
     renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setClearColor(0x000000, 0);
-    renderer.domElement.style.background = 'transparent';
+    const rendererClearColor = new THREE.Color(RENDERER_CLEAR_COLOR);
+    renderer.setClearColor(rendererClearColor, DESKTOP_CLEAR_ALPHA);
+    renderer.domElement.style.background = DESKTOP_CANVAS_BACKGROUND;
     renderer.xr.enabled = true;
     renderer.xr.setReferenceSpaceType?.('local-floor');
+
+    let rendererClearMode: 'desktop' | 'immersive-vr' | 'immersive-ar' = 'desktop';
+    const applyRendererClearMode = (mode: 'immersive-vr' | 'immersive-ar' | null) => {
+      const targetMode = mode ?? 'desktop';
+      if (rendererClearMode === targetMode) {
+        return;
+      }
+      rendererClearMode = targetMode;
+      if (targetMode === 'immersive-vr') {
+        renderer.setClearColor(rendererClearColor, VR_CLEAR_ALPHA);
+        renderer.domElement.style.background = VR_CANVAS_BACKGROUND;
+      } else if (targetMode === 'immersive-ar') {
+        renderer.setClearColor(rendererClearColor, AR_CLEAR_ALPHA);
+        renderer.domElement.style.background = DESKTOP_CANVAS_BACKGROUND;
+      } else {
+        renderer.setClearColor(rendererClearColor, DESKTOP_CLEAR_ALPHA);
+        renderer.domElement.style.background = DESKTOP_CANVAS_BACKGROUND;
+      }
+    };
 
     const applyVrFoveation = (target: number = XR_TARGET_FOVEATION) => {
       const xrManager = renderer.xr as WebXRFoveationManager;
@@ -7960,6 +7986,7 @@ function VolumeViewer({
         presenting: renderer.xr.isPresenting,
         visibilityState: xrSessionRef.current?.visibilityState ?? null
       });
+      applyRendererClearMode(xrCurrentSessionModeRef.current);
       applyVrFoveation();
       applyVolumeStepScaleToResources(VR_VOLUME_STEP_SCALE);
       volumeRootBaseOffsetRef.current.copy(VR_VOLUME_BASE_OFFSET);
@@ -7984,6 +8011,7 @@ function VolumeViewer({
         presenting: renderer.xr.isPresenting,
         visibilityState: xrSessionRef.current?.visibilityState ?? null
       });
+      applyRendererClearMode(null);
       restoreVrFoveation();
       applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
       volumeRootBaseOffsetRef.current.set(0, 0, 0);
@@ -8011,6 +8039,7 @@ function VolumeViewer({
         presenting: renderer.xr.isPresenting,
         visibilityState: xrSessionRef.current?.visibilityState ?? null
       });
+      applyRendererClearMode(null);
       restoreVrFoveation();
       applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
       sessionCleanupRef.current = null;
@@ -8124,6 +8153,7 @@ function VolumeViewer({
         updateVrPlaybackHud();
       }
       xrPendingModeSwitchRef.current = null;
+      applyRendererClearMode(resolvedMode);
 
       const controlsInstance = controlsRef.current;
       if (controlsInstance) {
@@ -8340,6 +8370,7 @@ function VolumeViewer({
 
     return () => {
       isDisposed = true;
+      applyRendererClearMode(null);
       onRegisterVrSession?.(null);
       restoreVrFoveation();
       applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
