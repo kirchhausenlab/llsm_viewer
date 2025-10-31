@@ -90,8 +90,34 @@ console.log('Starting preprocessed dataset import/export tests');
     assert.strictEqual(manifest.dataset.channels[0].layers.length, 2);
     assert.strictEqual(manifest.dataset.channels[0].trackEntries.length, 2);
 
-    const archiveBuffer = await blob.arrayBuffer();
-    const imported = await importPreprocessedDataset(archiveBuffer);
+    const archiveBytes = new Uint8Array(await blob.arrayBuffer());
+    assert.strictEqual(archiveBytes.byteLength, blob.size);
+
+    const filesInArchive = unzipSync(archiveBytes);
+    assert.ok(filesInArchive['manifest.json']);
+    const manifestFromArchive = JSON.parse(
+      decoder.decode(filesInArchive['manifest.json'])
+    ) as PreprocessedManifest;
+    assert.deepEqual(manifestFromArchive, manifest);
+
+    const expectedVolumeEntries: Record<string, Uint8Array> = {
+      'volumes/channel-a/structural/timepoint-0000.bin': structuralData,
+      'volumes/channel-a/labels/timepoint-0000.bin': segmentationA,
+      'volumes/channel-a/labels/timepoint-0001.bin': segmentationB
+    };
+
+    assert.deepEqual(
+      Object.keys(filesInArchive).sort(),
+      [...Object.keys(expectedVolumeEntries), 'manifest.json'].sort()
+    );
+
+    for (const [path, expected] of Object.entries(expectedVolumeEntries)) {
+      const entry = filesInArchive[path];
+      assert.ok(entry, `missing archive entry for ${path}`);
+      assert.deepEqual(Array.from(entry), Array.from(expected));
+    }
+
+    const imported = await importPreprocessedDataset(archiveBytes);
 
     assert.strictEqual(imported.totalVolumeCount, 3);
     assert.strictEqual(imported.layers.length, 2);
@@ -123,7 +149,7 @@ console.log('Starting preprocessed dataset import/export tests');
     assert.strictEqual(summary.layers[1].volumeCount, 2);
     assert.deepEqual(summary.trackEntries, channels[0].trackEntries);
 
-    const tamperedFiles = unzipSync(new Uint8Array(archiveBuffer));
+    const tamperedFiles = unzipSync(new Uint8Array(archiveBytes));
     const tamperedManifest = JSON.parse(
       decoder.decode(tamperedFiles['manifest.json'])
     ) as PreprocessedManifest;
