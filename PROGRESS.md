@@ -8,6 +8,11 @@
 
 # Progress Log
 
+## Export save picker activation fix
+- Requested the File System Access API handle as soon as the export button is clicked so the browser still considers the call a
+  user gesture, preventing `showSaveFilePicker` from throwing activation errors.
+- Reused the selected handle when streaming the ZIP, falling back to blob downloads when the API is unavailable.
+
 ## Preprocessed dataset import/export workflow
 - Added a `utils/preprocessedDataset` module that serializes normalized volumes plus manifest metadata into a ZIP archive with SHA-256 digests for authenticity and channel track CSV payloads.
 - Reworked the launcher flow with "Set up new experiment"/"Load preprocessed experiment" entry points, a read-only summary card for imported archives, and a gated "Export preprocessed experiment" action that shares the launch readiness checks.

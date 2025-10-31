@@ -40,11 +40,11 @@ type SaveFilePickerOptions = {
   types?: FilePickerAcceptType[];
 };
 
-type FileSystemWritableFileStreamLike = WritableStream<Uint8Array> & {
+export type FileSystemWritableFileStreamLike = WritableStream<Uint8Array> & {
   abort?: (reason?: unknown) => Promise<void>;
 };
 
-type FileSystemFileHandleLike = {
+export type FileSystemFileHandleLike = {
   createWritable(): Promise<FileSystemWritableFileStreamLike>;
 };
 
@@ -309,19 +309,23 @@ export function canUseFileSystemSavePicker(): boolean {
   return typeof getShowSaveFilePicker() === 'function';
 }
 
-export async function saveStreamWithFilePicker(
-  stream: ReadableStream<Uint8Array>,
+export function requestFileSystemSaveHandle(
   suggestedName: string
-): Promise<void> {
+): Promise<FileSystemFileHandleLike> {
   const showSaveFilePicker = getShowSaveFilePicker();
   if (!showSaveFilePicker) {
     throw new Error('File System Access API is not available in this browser.');
   }
-
-  const handle = await showSaveFilePicker({
+  return showSaveFilePicker({
     suggestedName,
     types: [ZIP_ACCEPT]
   });
+}
+
+export async function writeStreamToFileHandle(
+  stream: ReadableStream<Uint8Array>,
+  handle: FileSystemFileHandleLike
+): Promise<void> {
   const writable = await handle.createWritable();
   try {
     await stream.pipeTo(writable);
@@ -331,6 +335,14 @@ export async function saveStreamWithFilePicker(
     }
     throw error;
   }
+}
+
+export async function saveStreamWithFilePicker(
+  stream: ReadableStream<Uint8Array>,
+  suggestedName: string
+): Promise<void> {
+  const handle = await requestFileSystemSaveHandle(suggestedName);
+  await writeStreamToFileHandle(stream, handle);
 }
 
 export async function collectStreamToBlob(
