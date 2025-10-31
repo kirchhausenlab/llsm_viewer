@@ -1,4 +1,4 @@
-import { zipSync, unzipSync } from 'fflate';
+import { Zip, ZipDeflate, unzipSync } from 'fflate';
 import type { LoadedLayer } from '../types/layers';
 import type { NormalizedVolume } from '../volumeProcessing';
 import type { VolumeDataType } from '../types/volume';
@@ -119,10 +119,38 @@ export async function exportPreprocessedDataset({
   layers,
   channels
 }: ExportPreprocessedDatasetOptions): Promise<ExportPreprocessedDatasetResult> {
-  const zipEntries: Record<string, Uint8Array> = {};
   const manifestChannels: PreprocessedChannelManifest[] = [];
   const groupedLayers = new Map<string, LoadedLayer[]>();
   let totalVolumeCount = 0;
+
+  const zipChunks: Uint8Array[] = [];
+  let isZipComplete = false;
+
+  let resolveZip!: () => void;
+  let rejectZip!: (error: Error) => void;
+  const zipCompleted = new Promise<void>((resolve, reject) => {
+    resolveZip = resolve;
+    rejectZip = reject;
+  });
+
+  const zip = new Zip((err, chunk, final) => {
+    if (err) {
+      if (!isZipComplete) {
+        isZipComplete = true;
+        rejectZip(err instanceof Error ? err : new Error(String(err)));
+      }
+      return;
+    }
+
+    if (chunk) {
+      zipChunks.push(chunk);
+    }
+
+    if (final && !isZipComplete) {
+      isZipComplete = true;
+      resolveZip();
+    }
+  });
 
   for (const layer of layers) {
     const bucket = groupedLayers.get(layer.channelId);
@@ -133,57 +161,73 @@ export async function exportPreprocessedDataset({
     }
   }
 
-  for (const channel of channels) {
-    const associatedLayers = groupedLayers.get(channel.id) ?? [];
-    const manifestLayers: PreprocessedLayerManifestEntry[] = [];
+  try {
+    for (const channel of channels) {
+      const associatedLayers = groupedLayers.get(channel.id) ?? [];
+      const manifestLayers: PreprocessedLayerManifestEntry[] = [];
 
-    for (const layer of associatedLayers) {
-      const manifestVolumes: PreprocessedVolumeManifestEntry[] = [];
-      layer.volumes.forEach((volume, index) => {
-        const path = createVolumePath(layer, index);
-        const buffer = new Uint8Array(volume.normalized.buffer, volume.normalized.byteOffset, volume.normalized.byteLength);
-        const copy = new Uint8Array(buffer); // ensure the archive owns the buffer
-        zipEntries[path] = copy;
-        manifestVolumes.push({
-          path,
-          timepoint: index,
-          width: volume.width,
-          height: volume.height,
-          depth: volume.depth,
-          channels: volume.channels,
-          dataType: volume.dataType,
-          min: volume.min,
-          max: volume.max,
-          byteLength: copy.byteLength,
-          digest: ''
+      for (const layer of associatedLayers) {
+        const manifestVolumes: PreprocessedVolumeManifestEntry[] = [];
+        for (let index = 0; index < layer.volumes.length; index += 1) {
+          const volume = layer.volumes[index];
+          const path = createVolumePath(layer, index);
+          let volumeBytes = new Uint8Array(
+            volume.normalized.buffer,
+            volume.normalized.byteOffset,
+            volume.normalized.byteLength
+          );
+          volumeBytes = new Uint8Array(volumeBytes); // ensure the archive owns the buffer
+
+          const manifestEntry: PreprocessedVolumeManifestEntry = {
+            path,
+            timepoint: index,
+            width: volume.width,
+            height: volume.height,
+            depth: volume.depth,
+            channels: volume.channels,
+            dataType: volume.dataType,
+            min: volume.min,
+            max: volume.max,
+            byteLength: volumeBytes.byteLength,
+            digest: await computeSha256Hex(volumeBytes)
+          };
+
+          manifestVolumes.push(manifestEntry);
+
+          const deflater = new ZipDeflate(path, { level: 9 });
+          zip.add(deflater);
+          deflater.push(volumeBytes, true);
+
+          // Release the reference once the chunk has been queued
+          volumeBytes = new Uint8Array(0);
+        }
+        manifestLayers.push({
+          key: layer.key,
+          label: layer.label,
+          channelId: layer.channelId,
+          isSegmentation: layer.isSegmentation,
+          volumes: manifestVolumes
         });
-      });
-      manifestLayers.push({
-        key: layer.key,
-        label: layer.label,
-        channelId: layer.channelId,
-        isSegmentation: layer.isSegmentation,
-        volumes: manifestVolumes
+      }
+
+      manifestChannels.push({
+        id: channel.id,
+        name: channel.name,
+        layers: manifestLayers,
+        trackEntries: channel.trackEntries
       });
     }
-
-    manifestChannels.push({
-      id: channel.id,
-      name: channel.name,
-      layers: manifestLayers,
-      trackEntries: channel.trackEntries
-    });
+  } catch (error) {
+    zip.terminate();
+    throw error instanceof Error ? error : new Error(String(error));
   }
 
-  // Compute digests after manifest skeleton is built
   for (const channel of manifestChannels) {
     for (const layer of channel.layers) {
       for (const volume of layer.volumes) {
-        const data = zipEntries[volume.path];
-        if (!data) {
-          throw new Error(`Missing volume bytes for ${volume.path}`);
+        if (!volume.digest) {
+          throw new Error(`Failed to compute digest for ${volume.path}`);
         }
-        volume.digest = await computeSha256Hex(data);
         totalVolumeCount += 1;
       }
     }
@@ -199,15 +243,21 @@ export async function exportPreprocessedDataset({
     }
   };
 
-  const manifestBytes = textEncoder.encode(JSON.stringify(manifest));
-  zipEntries[MANIFEST_FILE_NAME] = manifestBytes;
+  try {
+    let manifestBytes = textEncoder.encode(JSON.stringify(manifest));
+    const manifestEntry = new ZipDeflate(MANIFEST_FILE_NAME, { level: 9 });
+    zip.add(manifestEntry);
+    manifestEntry.push(manifestBytes, true);
+    manifestBytes = new Uint8Array(0);
 
-  const archive = zipSync(zipEntries, { level: 9 });
-  const archiveBuffer =
-    archive.byteOffset === 0 && archive.byteLength === archive.buffer.byteLength
-      ? (archive.buffer as ArrayBuffer)
-      : (archive.buffer.slice(archive.byteOffset, archive.byteOffset + archive.byteLength) as ArrayBuffer);
-  const blob = new Blob([archiveBuffer], { type: 'application/zip' });
+    zip.end();
+    await zipCompleted;
+  } catch (error) {
+    zip.terminate();
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+
+  const blob = new Blob(zipChunks, { type: 'application/zip' });
 
   return { blob, manifest };
 }

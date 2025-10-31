@@ -29,11 +29,11 @@ import {
   type DropboxAppKeySource
 } from './integrations/dropbox';
 import {
-  exportPreprocessedDataset,
   importPreprocessedDataset,
   type ChannelExportMetadata,
   type ImportPreprocessedDatasetResult
 } from './utils/preprocessedDataset';
+import { exportPreprocessedDatasetInWorker } from './workers/exportPreprocessedDatasetClient';
 import {
   brightnessContrastModel,
   clampWindowBounds,
@@ -2907,7 +2907,7 @@ function App() {
         return;
       }
 
-      const { blob, manifest } = await exportPreprocessedDataset({
+      const { blob, manifest } = await exportPreprocessedDatasetInWorker({
         layers: layersToExport,
         channels: channelsMetadata
       });
