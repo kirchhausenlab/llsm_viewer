@@ -101,6 +101,8 @@ const WINDOW_EPSILON = 1e-5;
 const SELECTED_TRACK_BLINK_PERIOD_MS = 1600;
 const SELECTED_TRACK_BLINK_BASE = 0.85;
 const SELECTED_TRACK_BLINK_RANGE = 0.15;
+const FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER = 1.35;
+const SELECTED_TRACK_LINE_WIDTH_MULTIPLIER = 1.5;
 
 function clamp(value: number, min: number, max: number) {
   if (value < min) {
@@ -724,10 +726,16 @@ function PlanarViewer({
         const sanitizedLineWidth = Math.max(0.1, Math.min(10, channelLineWidth));
         const baseLineWidth = sanitizedLineWidth / scale;
         const outlineWidthBoost = Math.max(sanitizedLineWidth * 0.75, OUTLINE_MIN_WIDTH) / scale;
-        const widthMultiplier = isFollowed || isSelected ? 1.35 : 1;
+        let widthMultiplier = 1;
+        if (isFollowed) {
+          widthMultiplier = Math.max(widthMultiplier, FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER);
+        }
+        if (isSelected) {
+          widthMultiplier = Math.max(widthMultiplier, SELECTED_TRACK_LINE_WIDTH_MULTIPLIER);
+        }
         const strokeWidth = Math.max(0.1, baseLineWidth * widthMultiplier);
         const strokeColor = isFollowed || isSelected ? track.highlightColor : track.baseColor;
-        const blinkMultiplier = isSelected && !isFollowed ? blinkScale : 1;
+        const blinkMultiplier = isSelected ? blinkScale : 1;
 
         if (points.length >= 2 && (isFollowed || isSelected)) {
           context.save();
@@ -891,7 +899,13 @@ function PlanarViewer({
 
         const channelLineWidth = trackLineWidthByChannel[track.channelId] ?? DEFAULT_TRACK_LINE_WIDTH;
         const sanitizedLineWidth = Math.max(0.1, Math.min(10, channelLineWidth));
-        const widthMultiplier = isFollowed ? 1.35 : 1;
+        let widthMultiplier = 1;
+        if (isFollowed) {
+          widthMultiplier = Math.max(widthMultiplier, FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER);
+        }
+        if (isSelected) {
+          widthMultiplier = Math.max(widthMultiplier, SELECTED_TRACK_LINE_WIDTH_MULTIPLIER);
+        }
         const strokeScreenWidth = Math.max(0.1, (sanitizedLineWidth / scale) * widthMultiplier);
         const endpointRadius = Math.max(strokeScreenWidth * 0.6, 1.2 / scale);
         const hitThreshold = Math.max(

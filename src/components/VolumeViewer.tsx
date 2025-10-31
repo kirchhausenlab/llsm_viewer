@@ -702,6 +702,9 @@ const DEFAULT_TRACK_LINE_WIDTH = 1;
 const SELECTED_TRACK_BLINK_PERIOD_MS = 1600;
 const SELECTED_TRACK_BLINK_BASE = 0.85;
 const SELECTED_TRACK_BLINK_RANGE = 0.15;
+const FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER = 1.35;
+const SELECTED_TRACK_LINE_WIDTH_MULTIPLIER = 1.5;
+const HOVERED_TRACK_LINE_WIDTH_MULTIPLIER = 1.2;
 
 const VR_PLAYBACK_PANEL_WIDTH = 0.54;
 const VR_PLAYBACK_PANEL_HEIGHT = 0.36;
@@ -4964,7 +4967,16 @@ function VolumeViewer({
       const channelLineWidth = trackLineWidthByChannel[track.channelId] ?? DEFAULT_TRACK_LINE_WIDTH;
       const sanitizedLineWidth = Math.max(0.1, Math.min(10, channelLineWidth));
       resource.baseLineWidth = sanitizedLineWidth;
-      const widthMultiplier = isFollowed || isSelected ? 1.35 : isHovered ? 1.2 : 1;
+      let widthMultiplier = 1;
+      if (isHovered) {
+        widthMultiplier = Math.max(widthMultiplier, HOVERED_TRACK_LINE_WIDTH_MULTIPLIER);
+      }
+      if (isFollowed) {
+        widthMultiplier = Math.max(widthMultiplier, FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER);
+      }
+      if (isSelected) {
+        widthMultiplier = Math.max(widthMultiplier, SELECTED_TRACK_LINE_WIDTH_MULTIPLIER);
+      }
       resource.targetLineWidth = sanitizedLineWidth * widthMultiplier;
       resource.outlineExtraWidth = Math.max(sanitizedLineWidth * 0.75, 0.4);
 
@@ -8183,7 +8195,7 @@ function VolumeViewer({
           }
         }
 
-        const blinkMultiplier = resource.isSelected && !resource.isFollowed ? blinkScale : 1;
+        const blinkMultiplier = resource.isSelected ? blinkScale : 1;
         const targetOpacity = resource.targetOpacity * blinkMultiplier;
         if (material.opacity !== targetOpacity) {
           material.opacity = targetOpacity;
@@ -8195,7 +8207,7 @@ function VolumeViewer({
           material.needsUpdate = true;
         }
 
-        const outlineBlinkMultiplier = resource.isSelected && !resource.isFollowed ? blinkScale : 1;
+        const outlineBlinkMultiplier = resource.isSelected ? blinkScale : 1;
         const targetOutlineOpacity = resource.outlineBaseOpacity * outlineBlinkMultiplier;
         if (outlineMaterial.opacity !== targetOutlineOpacity) {
           outlineMaterial.opacity = targetOutlineOpacity;
