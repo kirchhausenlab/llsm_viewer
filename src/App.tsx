@@ -3837,7 +3837,7 @@ function App() {
                       ? 'channel-tab-label'
                       : 'channel-tab-label channel-tab-label--hidden';
                     const tintColor = channelTintMap.get(channelId) ?? DEFAULT_LAYER_COLOR;
-                    const tabStyle: CSSProperties = {
+                    const tabStyle: CSSProperties & Record<string, string> = {
                       '--channel-tab-background': applyAlphaToHex(tintColor, 0.18),
                       '--channel-tab-background-active': applyAlphaToHex(tintColor, 0.35),
                       '--channel-tab-border': 'rgba(255, 255, 255, 0.15)',
@@ -4218,7 +4218,7 @@ function App() {
                       colorMode.type === 'uniform' ? 'rgba(11, 18, 32, 0.22)' : 'rgba(15, 23, 42, 0.18)';
                     const activeBorderColor =
                       colorMode.type === 'uniform' ? 'rgba(11, 18, 32, 0.35)' : 'rgba(15, 23, 42, 0.28)';
-                    const tabStyle: CSSProperties = {
+                    const tabStyle: CSSProperties & Record<string, string> = {
                       '--track-tab-background': baseColor,
                       '--track-tab-background-active': baseColor,
                       '--track-tab-border': borderColor,
