@@ -33,7 +33,12 @@ import {
   type ChannelExportMetadata,
   type ImportPreprocessedDatasetResult
 } from './utils/preprocessedDataset';
-import { exportPreprocessedDatasetInWorker } from './workers/exportPreprocessedDatasetClient';
+import {
+  exportPreprocessedDatasetInWorker,
+  canUseFileSystemSavePicker,
+  saveStreamWithFilePicker,
+  collectStreamToBlob
+} from './workers/exportPreprocessedDatasetClient';
 import {
   brightnessContrastModel,
   clampWindowBounds,
@@ -407,6 +412,16 @@ const downloadBlob = (blob: Blob, fileName: string) => {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+};
+
+const downloadStream = async (stream: ReadableStream<Uint8Array>, fileName: string) => {
+  if (canUseFileSystemSavePicker()) {
+    await saveStreamWithFilePicker(stream, fileName);
+    return;
+  }
+
+  const blob = await collectStreamToBlob(stream);
+  downloadBlob(blob, fileName);
 };
 
 const sanitizeExportFileName = (value: string): string => {
@@ -2907,7 +2922,7 @@ function App() {
         return;
       }
 
-      const { blob, manifest } = await exportPreprocessedDatasetInWorker({
+      const { manifest, stream } = await exportPreprocessedDatasetInWorker({
         layers: layersToExport,
         channels: channelsMetadata
       });
@@ -2918,13 +2933,17 @@ function App() {
       const timestamp = manifest.generatedAt.replace(/[:.]/g, '-');
       const fileName = `${fileBase}-${timestamp}.zip`;
 
-      downloadBlob(blob, fileName);
+      await downloadStream(stream, fileName);
       clearDatasetError();
     } catch (error) {
-      console.error('Failed to export preprocessed dataset', error);
-      const message =
-        error instanceof Error ? error.message : 'Failed to export preprocessed dataset.';
-      showInteractionWarning(message);
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        console.info('Preprocessed dataset export cancelled by user');
+      } else {
+        console.error('Failed to export preprocessed dataset', error);
+        const message =
+          error instanceof Error ? error.message : 'Failed to export preprocessed dataset.';
+        showInteractionWarning(message);
+      }
     } finally {
       setIsExportingPreprocessed(false);
     }
