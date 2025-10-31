@@ -65,11 +65,22 @@ export function colorizeSegmentationVolume(volume: VolumePayload, seed: number):
   const source = createSourceArray(volume.data, dataType);
 
   const voxelCount = source.length;
+  const toLabelId = (value: number): number => {
+    if (!Number.isFinite(value)) {
+      return 0;
+    }
+    if (value <= 0) {
+      return 0;
+    }
+    const rounded = Math.round(value);
+    return rounded <= 0 ? 0 : rounded;
+  };
+
   let maxLabel = 0;
   for (let i = 0; i < voxelCount; i++) {
-    const value = Math.trunc(source[i]);
-    if (value > maxLabel) {
-      maxLabel = value;
+    const label = toLabelId(source[i]);
+    if (label > maxLabel) {
+      maxLabel = label;
     }
   }
 
@@ -77,8 +88,8 @@ export function colorizeSegmentationVolume(volume: VolumePayload, seed: number):
   const normalized = new Uint8Array(voxelCount * 3);
 
   for (let i = 0; i < voxelCount; i++) {
-    const raw = Math.trunc(source[i]);
-    const label = raw <= 0 ? 0 : raw > maxLabel ? maxLabel : raw;
+    const rawLabel = toLabelId(source[i]);
+    const label = rawLabel > maxLabel ? maxLabel : rawLabel;
     const tableIndex = label * 3;
     const destIndex = i * 3;
     normalized[destIndex] = colorTable[tableIndex];

@@ -82,6 +82,39 @@ try {
   const rerun = colorizeSegmentationVolume(segmentationVolume, seed);
   assert.deepEqual(Array.from(rerun.normalized), Array.from(colorized.normalized));
 
+  const fractionalSegmentation = new Float32Array([0, 0.2, 0.8, 1.2, 1.6]);
+  const fractionalVolume: VolumePayload = {
+    width: fractionalSegmentation.length,
+    height: 1,
+    depth: 1,
+    channels: 1,
+    dataType: 'float32',
+    data: fractionalSegmentation.buffer,
+    min: 0,
+    max: 2
+  };
+
+  const fractionalColorized = colorizeSegmentationVolume(fractionalVolume, seed);
+  assert.strictEqual(
+    fractionalColorized.normalized.length,
+    fractionalSegmentation.length * 3
+  );
+
+  const zeroLabelColor = Array.from(fractionalColorized.normalized.slice(0, 3));
+  assert.deepEqual(zeroLabelColor, [0, 0, 0]);
+
+  const roundedLabelColor = Array.from(fractionalColorized.normalized.slice(6, 9));
+  assert.ok(roundedLabelColor.some((value) => value !== 0));
+
+  const repeatedRoundedLabelColor = Array.from(
+    fractionalColorized.normalized.slice(9, 12)
+  );
+  assert.deepEqual(roundedLabelColor, repeatedRoundedLabelColor);
+
+  const higherLabelColor = Array.from(fractionalColorized.normalized.slice(12, 15));
+  assert.ok(higherLabelColor.some((value) => value !== 0));
+  assert.notDeepStrictEqual(roundedLabelColor, higherLabelColor);
+
   console.log('volumeProcessing normalization tests passed');
 } catch (error) {
   console.error('volumeProcessing normalization tests failed');
