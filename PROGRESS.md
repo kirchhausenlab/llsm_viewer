@@ -8,14 +8,14 @@
 
 # Progress Log
 
+## VR rendering rollback
+- Reverted VR optimization pull requests (#289-#297) to restore the previously stable immersive rendering path.
+- Confirmed the headset pipeline again relies on the legacy volume upload and controller interaction code that had proven reliable.
+
 ## Selected track amplitude overlay
 - Parse the sixth "Amplitude" column from track CSV files and store it on each track point so downstream views can access it.
 - Added a bottom-centered "Selected Tracks" overlay that plots amplitudes for highlighted tracks, scaling axes to the movie's
   timepoints and global amplitude maxima while providing a color-coded legend.
-
-## VR passthrough clear alpha regression fix
-- Restored an opaque WebGL clear when immersive VR sessions start so headset compositors receive non-transparent frames and the volume, HUD, and controllers render again instead of a black view.
-- Preserved transparent clears for passthrough `immersive-ar` sessions and automatically revert to the desktop clear state whenever an XR session ends or the viewer unmounts.
 
 ## Auto contrast initial threshold adjustment
 - Raised the default auto window threshold from 5,000 to 50,000 so the first "Auto" press now keeps a broader histogram range
@@ -43,11 +43,6 @@
 
 ## Track visibility regression fix
 - Removed the artificial timeline offset that pushed parsed track coordinates beyond the dataset's frame range, restoring track visibility for channels with staggered starts.
-
-## Track selection and follow workflow update
-- Decoupled desktop track clicks from camera follow so the pointer now toggles selection only, allowing multiple highlighted tracks at once while reserving follow for the Tracks window button.
-- Persist selection state across both 3D and planar viewers, forcing visibility and rendering a subtle blink on selected trajectories to keep them easy to spot.
-- Surfaced selection state in the Tracks window with a new animated highlight and kept master visibility counters in sync so UI checkboxes reflect the effective visibility.
 
 ## Launch warning visibility fix
 - Added context-aware dataset error handling so the floating warning only appears after an attempted launch.
@@ -463,12 +458,3 @@ d centered the front-page card in the viewport.
 - Flipped the brightness slider polarity so increasing the control lowers the window center and brightens the rendered volume, matching user expectations.
 - Swapped the contrast slider to a logarithmic scale with better formatting, keeping fine control near 1× while retaining access to higher contrast boosts.
 - Replaced the auto-contrast heuristic with percentile-based histogram bounds that add a safety margin, producing balanced windows that remain compatible with LUT inversion.
-
-## VR HUD canvas scaling
-- Derived the VR channels and tracks HUD canvas resolutions from their physical panel sizes using a shared pixels-per-meter baseline instead of fixed pixel constants.
-- Limited the actual backing pixel density to a configurable, capped scale factor so high-DPI headsets render smaller textures without impacting layout fidelity.
-- Updated the HUD renderers to reuse the new scale helper each frame so slider, histogram, and tab positions stay aligned after resolution changes.
-
-## VR world matrix refresh regression fix
-- Restored the unconditional `mesh.updateMatrixWorld()` call inside the render loop so XR view poses propagate to volume meshes every frame.
-- Verified that volume layers no longer stick to the headset and that controller rays/huds regain their expected world-space alignment when presenting in VR.
