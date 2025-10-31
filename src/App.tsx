@@ -980,6 +980,7 @@ function App() {
   const [activeChannelTabId, setActiveChannelTabId] = useState<string | null>(null);
   const [activeTrackChannelId, setActiveTrackChannelId] = useState<string | null>(null);
   const [channelTrackStates, setChannelTrackStates] = useState<Record<string, ChannelTrackState>>({});
+  const [trackOrderModeByChannel, setTrackOrderModeByChannel] = useState<Record<string, 'id' | 'length'>>({});
   const [selectedTrackIds, setSelectedTrackIds] = useState<ReadonlySet<string>>(new Set());
   const [followedTrack, setFollowedTrack] = useState<FollowedTrackState>(null);
   const [viewerMode, setViewerMode] = useState<'3d' | '2d'>('3d');
@@ -1422,7 +1423,7 @@ function App() {
       const parsed: TrackDefinition[] = [];
 
       const sortedEntries = Array.from(trackMap.entries()).sort((a, b) => a[0] - b[0]);
-      sortedEntries.forEach(([sourceTrackId, points], index) => {
+      sortedEntries.forEach(([sourceTrackId, points]) => {
         if (points.length === 0) {
           return;
         }
@@ -1440,7 +1441,7 @@ function App() {
           id: `${channel.id}:${sourceTrackId}`,
           channelId: channel.id,
           channelName,
-          trackNumber: index + 1,
+          trackNumber: sourceTrackId,
           sourceTrackId,
           points: adjustedPoints
         });
@@ -2542,6 +2543,20 @@ function App() {
     },
     [parsedTracksByChannel]
   );
+
+  const handleTrackOrderToggle = useCallback((channelId: string) => {
+    setTrackOrderModeByChannel((current) => {
+      const previous = current[channelId] ?? 'id';
+      const nextMode = previous === 'id' ? 'length' : 'id';
+      if (current[channelId] === nextMode) {
+        return current;
+      }
+      return {
+        ...current,
+        [channelId]: nextMode
+      };
+    });
+  }, []);
 
   const handleTrackOpacityChange = useCallback((channelId: string, value: number) => {
     setChannelTrackStates((current) => {
@@ -4219,6 +4234,17 @@ function App() {
                   const summary = trackSummaryByChannel.get(channel.id) ?? { total: 0, visible: 0 };
                   const allChecked = summary.total > 0 && summary.visible === summary.total;
                   const channelFollowedId = followedTrackChannelId === channel.id ? followedTrackId : null;
+                  const orderMode = trackOrderModeByChannel[channel.id] ?? 'id';
+                  const orderedTracks =
+                    orderMode === 'length'
+                      ? [...tracksForChannel].sort((a, b) => {
+                          const lengthDelta = b.points.length - a.points.length;
+                          if (lengthDelta !== 0) {
+                            return lengthDelta;
+                          }
+                          return a.trackNumber - b.trackNumber;
+                        })
+                      : tracksForChannel;
                   const colorLabel =
                     colorMode.type === 'uniform' ? normalizeTrackColor(colorMode.color) : 'Sorted';
 
@@ -4340,6 +4366,19 @@ function App() {
                           />
                           <span>Show all tracks</span>
                         </label>
+                        <button
+                          type="button"
+                          className={
+                            orderMode === 'length'
+                              ? 'track-order-toggle is-active'
+                              : 'track-order-toggle'
+                          }
+                          onClick={() => handleTrackOrderToggle(channel.id)}
+                          disabled={tracksForChannel.length === 0}
+                          aria-pressed={orderMode === 'length'}
+                        >
+                          {orderMode === 'length' ? 'Order by ID' : 'Order by length'}
+                        </button>
                       </div>
                       {tracksForChannel.length > 0 ? (
                         <div
@@ -4347,7 +4386,7 @@ function App() {
                           role="group"
                           aria-label={`${channelName} track visibility`}
                         >
-                          {tracksForChannel.map((track) => {
+                          {orderedTracks.map((track) => {
                             const isFollowed = followedTrackId === track.id;
                             const isSelected = selectedTrackIds.has(track.id);
                             const isChecked = isFollowed || isSelected || (trackVisibility[track.id] ?? true);

@@ -8,6 +8,11 @@
 
 # Progress Log
 
+## Track naming and ordering enhancements
+- Display imported trajectories using their CSV `track_id` values (truncating any stray decimals) so UI labels match source data.
+- Added an "Order by length" toggle beside the master visibility checkbox to sort per-channel track lists by descending timepoint count, falling back to ID order.
+- Amplified selection cues by making highlighted trajectories blink and render at 1.5× thickness in both planar and 3D views.
+
 ## VR rendering rollback
 - Reverted VR optimization pull requests (#289-#297) to restore the previously stable immersive rendering path.
 - Confirmed the headset pipeline again relies on the legacy volume upload and controller interaction code that had proven reliable.
