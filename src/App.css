@@ -1606,6 +1606,16 @@
   background: rgba(12, 16, 24, 0.55);
 }
 
+@keyframes track-selection-blink {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(53, 201, 145, 0);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(53, 201, 145, 0.45);
+  }
+}
+
 .track-controls .track-item {
   display: flex;
   align-items: center;
@@ -1637,15 +1647,29 @@
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35);
 }
 
-.track-controls .track-item.is-following {
+.track-controls .track-item.is-selected {
   background: rgba(53, 201, 145, 0.22);
   border-left: 3px solid rgba(61, 201, 145, 0.85);
   padding-left: 0.55rem;
+  box-shadow: 0 0 0 rgba(53, 201, 145, 0);
+}
+
+.track-controls .track-item.is-selected .track-name {
+  color: #e9fff5;
+  font-weight: 600;
+}
+
+.track-controls .track-item.is-selected:not(.is-following) {
+  animation: track-selection-blink 1.6s ease-in-out infinite;
+}
+
+.track-controls .track-item.is-following {
+  background: linear-gradient(135deg, rgba(53, 201, 145, 0.32), rgba(31, 150, 110, 0.38));
+  box-shadow: 0 0 18px rgba(53, 201, 145, 0.45);
 }
 
 .track-controls .track-item.is-following .track-name {
-  color: #e9fff5;
-  font-weight: 600;
+  color: #eafff6;
 }
 
 .track-controls .track-item input[type='checkbox'] {

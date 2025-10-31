@@ -39,6 +39,11 @@
 ## Track visibility regression fix
 - Removed the artificial timeline offset that pushed parsed track coordinates beyond the dataset's frame range, restoring track visibility for channels with staggered starts.
 
+## Track selection and follow workflow update
+- Decoupled desktop track clicks from camera follow so the pointer now toggles selection only, allowing multiple highlighted tracks at once while reserving follow for the Tracks window button.
+- Persist selection state across both 3D and planar viewers, forcing visibility and rendering a subtle blink on selected trajectories to keep them easy to spot.
+- Surfaced selection state in the Tracks window with a new animated highlight and kept master visibility counters in sync so UI checkboxes reflect the effective visibility.
+
 ## Launch warning visibility fix
 - Added context-aware dataset error handling so the floating warning only appears after an attempted launch.
 - Kept dataset validation feedback available while preventing file picker interactions from triggering the global warning banner.
