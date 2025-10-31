@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ChangeEvent, DragEvent, FormEvent } from 'react';
+import type { ChangeEvent, CSSProperties, DragEvent, FormEvent } from 'react';
 import { loadVolumesFromFiles } from './loaders/volumeLoader';
 import { VolumeTooLargeError, formatBytes } from './errors';
 import VolumeViewer from './components/VolumeViewer';
@@ -63,6 +63,15 @@ const WARNING_WINDOW_WIDTH = 360;
 const formatNormalizedIntensity = (value: number): string => {
   const fixed = value.toFixed(3);
   return fixed.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
+};
+
+const applyAlphaToHex = (hexColor: string, alpha: number): string => {
+  const normalized = normalizeHexColor(hexColor, DEFAULT_LAYER_COLOR);
+  const clampedAlpha = Number.isFinite(alpha) ? Math.min(Math.max(alpha, 0), 1) : 1;
+  const r = Number.parseInt(normalized.slice(1, 3), 16);
+  const g = Number.parseInt(normalized.slice(3, 5), 16);
+  const b = Number.parseInt(normalized.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${clampedAlpha})`;
 };
 
 const createSegmentationSeed = (layerKey: string, volumeIndex: number): number => {
@@ -1333,6 +1342,21 @@ function App() {
     }
     return map;
   }, [layers]);
+  const channelTintMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const channel of channels) {
+      const channelLayers = channelLayersMap.get(channel.id) ?? [];
+      const activeLayerKey = channelActiveLayer[channel.id] ?? channelLayers[0]?.key ?? null;
+      if (activeLayerKey) {
+        const settings = layerSettings[activeLayerKey];
+        const normalized = normalizeHexColor(settings?.color ?? DEFAULT_LAYER_COLOR, DEFAULT_LAYER_COLOR);
+        map.set(channel.id, normalized);
+      } else {
+        map.set(channel.id, DEFAULT_LAYER_COLOR);
+      }
+    }
+    return map;
+  }, [channelActiveLayer, channelLayersMap, channels, layerSettings]);
   const loadedChannelIds = useMemo(() => {
     const seen = new Set<string>();
     const order: string[] = [];
@@ -3788,11 +3812,19 @@ function App() {
                     const labelClassName = isVisible
                       ? 'channel-tab-label'
                       : 'channel-tab-label channel-tab-label--hidden';
+                    const tintColor = channelTintMap.get(channelId) ?? DEFAULT_LAYER_COLOR;
+                    const tabStyle: CSSProperties = {
+                      '--channel-tab-background': applyAlphaToHex(tintColor, 0.18),
+                      '--channel-tab-background-active': applyAlphaToHex(tintColor, 0.35),
+                      '--channel-tab-border': 'rgba(255, 255, 255, 0.15)',
+                      '--channel-tab-border-active': applyAlphaToHex(tintColor, 0.55)
+                    };
                     return (
                       <button
                         key={channelId}
                         type="button"
                         className={tabClassName}
+                        style={tabStyle}
                         onClick={() => setActiveChannelTabId(channelId)}
                         role="tab"
                         id={`channel-tab-${channelId}`}
@@ -3881,34 +3913,6 @@ function App() {
                       {selectedLayer ? (
                         <>
                           <div className="channel-primary-actions">
-                            <div className="channel-primary-actions-row">
-                              <button
-                                type="button"
-                                className="channel-action-button"
-                                onClick={() => handleChannelSliderReset(channelId)}
-                                disabled={channelLayers.length === 0}
-                              >
-                                Reset
-                              </button>
-                              <button
-                                type="button"
-                                className="channel-action-button"
-                                onClick={() => handleLayerInvertToggle(selectedLayer.key)}
-                                disabled={invertDisabled}
-                                aria-pressed={settings.invert}
-                                title={invertTitle}
-                              >
-                                Invert
-                              </button>
-                              <button
-                                type="button"
-                                className="channel-action-button"
-                                onClick={() => handleLayerAutoContrast(selectedLayer.key)}
-                                disabled={sliderDisabled}
-                              >
-                                Auto
-                              </button>
-                            </div>
                             <div className="channel-primary-actions-row">
                               <button
                                 type="button"
@@ -4017,6 +4021,36 @@ function App() {
                                 }
                                 disabled={sliderDisabled}
                               />
+                            </div>
+                          </div>
+                          <div className="channel-primary-actions">
+                            <div className="channel-primary-actions-row">
+                              <button
+                                type="button"
+                                className="channel-action-button"
+                                onClick={() => handleChannelSliderReset(channelId)}
+                                disabled={channelLayers.length === 0}
+                              >
+                                Reset
+                              </button>
+                              <button
+                                type="button"
+                                className="channel-action-button"
+                                onClick={() => handleLayerInvertToggle(selectedLayer.key)}
+                                disabled={invertDisabled}
+                                aria-pressed={settings.invert}
+                                title={invertTitle}
+                              >
+                                Invert
+                              </button>
+                              <button
+                                type="button"
+                                className="channel-action-button"
+                                onClick={() => handleLayerAutoContrast(selectedLayer.key)}
+                                disabled={sliderDisabled}
+                              >
+                                Auto
+                              </button>
                             </div>
                           </div>
                           <div className="slider-control slider-control--pair">
@@ -4151,11 +4185,19 @@ function App() {
                     const tabClassName = ['track-tab', isActive ? 'is-active' : '', !hasTracks ? 'is-empty' : '']
                       .filter(Boolean)
                       .join(' ');
+                    const tintColor = channelTintMap.get(channel.id) ?? DEFAULT_LAYER_COLOR;
+                    const tabStyle: CSSProperties = {
+                      '--track-tab-background': applyAlphaToHex(tintColor, 0.18),
+                      '--track-tab-background-active': applyAlphaToHex(tintColor, 0.32),
+                      '--track-tab-border': 'rgba(255, 255, 255, 0.18)',
+                      '--track-tab-border-active': applyAlphaToHex(tintColor, 0.6)
+                    };
                     return (
                       <button
                         key={channel.id}
                         type="button"
                         className={tabClassName}
+                        style={tabStyle}
                         onClick={() => setActiveTrackChannelId(channel.id)}
                         role="tab"
                         id={`track-tab-${channel.id}`}

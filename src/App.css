@@ -1082,10 +1082,10 @@
 .channel-controls .channel-tab {
   width: 100%;
   min-width: 0;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--channel-tab-border, rgba(255, 255, 255, 0.15));
   border-radius: 0.5rem;
   padding: 0.45rem 0.75rem;
-  background: rgba(12, 16, 24, 0.65);
+  background: var(--channel-tab-background, rgba(12, 16, 24, 0.65));
   color: rgba(255, 255, 255, 0.75);
   font-weight: 600;
   cursor: pointer;
@@ -1095,12 +1095,12 @@
 
 .channel-controls .channel-tab:hover,
 .channel-controls .channel-tab.is-active {
-  border-color: rgba(91, 140, 255, 0.65);
+  border-color: var(--channel-tab-border-active, rgba(91, 140, 255, 0.65));
   color: rgba(255, 255, 255, 0.95);
+  background: var(--channel-tab-background-active, rgba(91, 140, 255, 0.2));
 }
 
 .channel-controls .channel-tab.is-active {
-  background: rgba(91, 140, 255, 0.2);
   transform: translateY(-1px);
 }
 
@@ -1879,8 +1879,8 @@
 }
 
 .track-tab {
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(12, 16, 24, 0.6);
+  border: 1px solid var(--track-tab-border, rgba(255, 255, 255, 0.18));
+  background: var(--track-tab-background, rgba(12, 16, 24, 0.6));
   color: rgba(255, 255, 255, 0.72);
   border-radius: 0.6rem;
   padding: 0.35rem 0.85rem;
@@ -1891,13 +1891,14 @@
 }
 
 .track-tab:hover {
-  border-color: rgba(91, 140, 255, 0.6);
+  border-color: var(--track-tab-border-active, rgba(91, 140, 255, 0.6));
+  background: var(--track-tab-background-active, rgba(91, 140, 255, 0.32));
   color: #ffffff;
 }
 
 .track-tab.is-active {
-  background: linear-gradient(135deg, rgba(91, 140, 255, 0.32), rgba(44, 93, 212, 0.38));
-  border-color: rgba(91, 140, 255, 0.75);
+  background: var(--track-tab-background-active, rgba(91, 140, 255, 0.32));
+  border-color: var(--track-tab-border-active, rgba(91, 140, 255, 0.75));
   color: #ffffff;
 }
 
@@ -1952,9 +1953,9 @@
 }
 
 .track-controls .color-swatch-button {
-  width: 5.25rem;
-  height: 5.25rem;
-  border-radius: 1.35rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.45rem;
   border: 2px solid rgba(255, 255, 255, 0.25);
   background: transparent;
   padding: 0;
