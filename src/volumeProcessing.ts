@@ -39,19 +39,61 @@ const createDeterministicRng = (seed: number): (() => number) => {
   };
 };
 
+const hsvToRgb = (h: number, s: number, v: number): [number, number, number] => {
+  const hue = ((h % 360) + 360) % 360;
+  const chroma = v * s;
+  const hueSector = hue / 60;
+  const intermediate = chroma * (1 - Math.abs((hueSector % 2) - 1));
+
+  let r1 = 0;
+  let g1 = 0;
+  let b1 = 0;
+
+  if (hueSector >= 0 && hueSector < 1) {
+    r1 = chroma;
+    g1 = intermediate;
+  } else if (hueSector >= 1 && hueSector < 2) {
+    r1 = intermediate;
+    g1 = chroma;
+  } else if (hueSector >= 2 && hueSector < 3) {
+    g1 = chroma;
+    b1 = intermediate;
+  } else if (hueSector >= 3 && hueSector < 4) {
+    g1 = intermediate;
+    b1 = chroma;
+  } else if (hueSector >= 4 && hueSector < 5) {
+    r1 = intermediate;
+    b1 = chroma;
+  } else {
+    r1 = chroma;
+    b1 = intermediate;
+  }
+
+  const match = v - chroma;
+
+  const toByte = (value: number): number => {
+    const adjusted = value + match;
+    const clamped = Math.min(1, Math.max(0, adjusted));
+    return Math.round(clamped * 255);
+  };
+
+  return [toByte(r1), toByte(g1), toByte(b1)];
+};
+
 const createSegmentationColorTable = (maxLabel: number, seed: number): Uint8Array => {
   const table = new Uint8Array((maxLabel + 1) * 3);
+  // Ensure label 0 is always mapped to black so it renders transparent.
+  table[0] = 0;
+  table[1] = 0;
+  table[2] = 0;
+
   if (maxLabel === 0) {
     return table;
   }
   const rng = createDeterministicRng(seed);
   for (let label = 1; label <= maxLabel; label++) {
-    let r = Math.floor(rng() * 256);
-    let g = Math.floor(rng() * 256);
-    let b = Math.floor(rng() * 256);
-    if (r === 0 && g === 0 && b === 0) {
-      r = 255;
-    }
+    const hue = rng() * 360;
+    const [r, g, b] = hsvToRgb(hue, 1, 1);
     const index = label * 3;
     table[index] = r;
     table[index + 1] = g;
