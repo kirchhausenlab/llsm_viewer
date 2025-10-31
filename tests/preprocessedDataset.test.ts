@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 
 import { zipSync, unzipSync } from 'fflate';
 
@@ -197,6 +198,53 @@ console.log('Starting preprocessed dataset import/export tests');
       assert.ok(entry, `missing streamed archive entry for ${path}`);
       assert.deepEqual(Array.from(entry), Array.from(expected));
     }
+    const paddedBuffer = new Uint8Array(16);
+    const offsetPayload = new Uint8Array([5, 15, 25, 35, 45, 55, 65, 75]);
+    paddedBuffer.set(offsetPayload, 4);
+    const offsetView = new Uint8Array(paddedBuffer.buffer, 4, offsetPayload.length);
+
+    const offsetLayer: LoadedLayer = {
+      key: 'offset-layer',
+      label: 'Offset Layer',
+      channelId: 'offset-channel',
+      volumes: [
+        {
+          width: 2,
+          height: 2,
+          depth: 2,
+          channels: 1,
+          dataType: 'uint8',
+          normalized: offsetView,
+          min: 0,
+          max: 255
+        }
+      ],
+      isSegmentation: false
+    };
+
+    const offsetChannel: ChannelExportMetadata = {
+      id: 'offset-channel',
+      name: 'Offset Channel',
+      trackEntries: []
+    };
+
+    const { blob: offsetBlob, manifest: offsetManifest } = await exportPreprocessedDataset({
+      layers: [offsetLayer],
+      channels: [offsetChannel]
+    });
+
+    const offsetBytes = new Uint8Array(await offsetBlob.arrayBuffer());
+    const offsetFiles = unzipSync(offsetBytes);
+
+    const offsetEntryPath = 'volumes/offset-channel/offset-layer/timepoint-0000.bin';
+    const offsetEntry = offsetFiles[offsetEntryPath];
+    assert.ok(offsetEntry, 'missing archive entry for offset volume');
+    assert.deepEqual(Array.from(offsetEntry), Array.from(offsetPayload));
+
+    const manifestVolume = offsetManifest.dataset.channels[0].layers[0].volumes[0];
+    const expectedDigest = createHash('sha256').update(offsetPayload).digest('hex');
+    assert.strictEqual(manifestVolume.digest, expectedDigest);
+    assert.strictEqual(manifestVolume.byteLength, offsetPayload.byteLength);
 
     const tamperedFiles = unzipSync(new Uint8Array(archiveBytes));
     const tamperedManifest = JSON.parse(
