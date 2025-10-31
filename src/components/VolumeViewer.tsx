@@ -487,6 +487,7 @@ type VrChannelsInteractiveRegion = {
 
 type VrChannelsHud = {
   group: THREE.Group;
+  background: THREE.Mesh;
   panel: THREE.Mesh;
   panelTranslateHandle: THREE.Mesh;
   panelYawHandles: THREE.Mesh[];
@@ -715,7 +716,7 @@ const VR_CHANNELS_PANEL_HEIGHT = 0.6;
 const VR_CHANNELS_VERTICAL_OFFSET = 0;
 const VR_CHANNELS_CAMERA_ANCHOR_OFFSET = new THREE.Vector3(0.4, -0.18, -0.65);
 const VR_CHANNELS_CANVAS_WIDTH = 1184;
-const VR_CHANNELS_CANVAS_HEIGHT = 1184;
+const VR_CHANNELS_CANVAS_MIN_HEIGHT = 1184;
 const VR_CHANNELS_FONT_FAMILY = '"Inter", "Helvetica Neue", Arial, sans-serif';
 const vrChannelsFont = (weight: string, size: number) => `${weight} ${size}px ${VR_CHANNELS_FONT_FAMILY}`;
 const VR_CHANNELS_FONT_SIZES = {
@@ -2955,7 +2956,7 @@ function VolumeViewer({
 
     const panelCanvas = document.createElement('canvas');
     const panelDisplayWidth = VR_CHANNELS_CANVAS_WIDTH;
-    const panelDisplayHeight = VR_CHANNELS_CANVAS_HEIGHT;
+    const panelDisplayHeight = VR_CHANNELS_CANVAS_MIN_HEIGHT;
     const pixelRatio = typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : 1;
     panelCanvas.width = Math.round(panelDisplayWidth * pixelRatio);
     panelCanvas.height = Math.round(panelDisplayHeight * pixelRatio);
@@ -3045,6 +3046,7 @@ function VolumeViewer({
 
     const hud: VrChannelsHud = {
       group,
+      background,
       panel,
       panelTranslateHandle,
       panelYawHandles,
@@ -3067,6 +3069,36 @@ function VolumeViewer({
     };
 
     return hud;
+  }, []);
+
+  const resizeVrChannelsHud = useCallback((hud: VrChannelsHud, displayHeight: number) => {
+    if (!hud.panelCanvas) {
+      return;
+    }
+
+    const pixelRatio = hud.pixelRatio || 1;
+    hud.panelDisplayHeight = displayHeight;
+    hud.panelCanvas.width = Math.round(hud.panelDisplayWidth * pixelRatio);
+    hud.panelCanvas.height = Math.round(displayHeight * pixelRatio);
+
+    const newPanelHeight = (hud.width / hud.panelDisplayWidth) * displayHeight;
+    hud.height = newPanelHeight;
+
+    const panelGeometry = new THREE.PlaneGeometry(hud.width, newPanelHeight);
+    hud.panel.geometry.dispose();
+    hud.panel.geometry = panelGeometry;
+
+    const backgroundGeometry = new THREE.PlaneGeometry(hud.width, newPanelHeight);
+    hud.background.geometry.dispose();
+    hud.background.geometry = backgroundGeometry;
+
+    const halfHeight = newPanelHeight / 2;
+    hud.panelTranslateHandle.position.setY(halfHeight + VR_HUD_TRANSLATE_HANDLE_OFFSET);
+    hud.panelPitchHandle.position.setY(-(halfHeight + VR_HUD_YAW_HANDLE_OFFSET));
+    hud.panelTranslateHandle.updateMatrixWorld();
+    hud.panelPitchHandle.updateMatrixWorld();
+
+    hud.cacheDirty = true;
   }, []);
 
   const createVrTracksHud = useCallback(() => {
@@ -3253,7 +3285,17 @@ function VolumeViewer({
       ctx.fillText('Load a volume to configure channel properties.', paddingX, currentY + 20);
       hud.regions = [];
       hud.hoverRegion = null;
+
+      const contentBottom = Math.ceil(currentY + 140);
       ctx.restore();
+
+      const desiredDisplayHeight = Math.max(VR_CHANNELS_CANVAS_MIN_HEIGHT, contentBottom);
+      if (Math.abs(desiredDisplayHeight - hud.panelDisplayHeight) > 1) {
+        resizeVrChannelsHud(hud, desiredDisplayHeight);
+        renderVrChannelsHud(hud, state);
+        return;
+      }
+
       hud.panelTexture.needsUpdate = true;
       return;
     }
@@ -3965,9 +4007,20 @@ function VolumeViewer({
     }
 
     hud.regions = regions;
+
+    const paddingBottom = 72;
+    const contentBottom = Math.ceil(currentY + paddingBottom);
     ctx.restore();
+
+    const desiredDisplayHeight = Math.max(VR_CHANNELS_CANVAS_MIN_HEIGHT, contentBottom);
+    if (Math.abs(desiredDisplayHeight - hud.panelDisplayHeight) > 1) {
+      resizeVrChannelsHud(hud, desiredDisplayHeight);
+      renderVrChannelsHud(hud, state);
+      return;
+    }
+
     hud.panelTexture.needsUpdate = true;
-  }, []);
+  }, [resizeVrChannelsHud]);
 
   const updateVrTracksHud = useCallback(() => {
     const hud = vrTracksHudRef.current;
