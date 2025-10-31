@@ -127,23 +127,27 @@ export function colorizeSegmentationVolume(volume: VolumePayload, seed: number):
   }
 
   const colorTable = createSegmentationColorTable(maxLabel, seed);
-  const normalized = new Uint8Array(voxelCount * 3);
+  const normalized = new Uint8Array(voxelCount * 4);
 
   for (let i = 0; i < voxelCount; i++) {
     const rawLabel = toLabelId(source[i]);
     const label = rawLabel > maxLabel ? maxLabel : rawLabel;
     const tableIndex = label * 3;
-    const destIndex = i * 3;
-    normalized[destIndex] = colorTable[tableIndex];
-    normalized[destIndex + 1] = colorTable[tableIndex + 1];
-    normalized[destIndex + 2] = colorTable[tableIndex + 2];
+    const destIndex = i * 4;
+    const red = colorTable[tableIndex];
+    const green = colorTable[tableIndex + 1];
+    const blue = colorTable[tableIndex + 2];
+    normalized[destIndex] = red;
+    normalized[destIndex + 1] = green;
+    normalized[destIndex + 2] = blue;
+    normalized[destIndex + 3] = label === 0 ? 0 : 255;
   }
 
   return {
     width,
     height,
     depth,
-    channels: 3,
+    channels: 4,
     dataType: 'uint8',
     normalized,
     min: 0,

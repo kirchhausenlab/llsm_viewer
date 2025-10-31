@@ -74,6 +74,10 @@
 ## Segmentation background color handling
 - Forced label 0 in the segmentation color lookup table to remain pitch black so transparent voxels never inherit a random hue.
 
+## Segmentation opacity correction
+- Packed segmentation colors with an explicit alpha channel so every non-zero label renders fully opaque while keeping the
+  background transparent.
+
 ## VR yaw handle direction and HUD opacity
 - Inverted the yaw drag delta for volume and HUD rotation handles so spinning the side spheres now turns panels in the expected direction.
 - Made the playback, channels, and tracks HUD backgrounds fully opaque by updating the Three.js materials and canvas fills.
