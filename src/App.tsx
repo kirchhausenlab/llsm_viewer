@@ -29,6 +29,12 @@ import {
   type DropboxAppKeySource
 } from './integrations/dropbox';
 import {
+  exportPreprocessedDataset,
+  importPreprocessedDataset,
+  type ChannelExportMetadata,
+  type ImportPreprocessedDatasetResult
+} from './utils/preprocessedDataset';
+import {
   brightnessContrastModel,
   clampWindowBounds,
   computeContrastMultiplier,
@@ -131,6 +137,11 @@ type ChannelSource = {
   trackStatus: LoadState;
   trackError: string | null;
   trackEntries: string[][];
+};
+
+type StagedPreprocessedExperiment = ImportPreprocessedDatasetResult & {
+  sourceName: string | null;
+  sourceSize: number | null;
 };
 
 const getChannelLayerSummary = (channel: ChannelSource): string => {
@@ -385,6 +396,44 @@ const buildChannelTabMeta = (channel: ChannelSource, validation: ChannelValidati
     parts.push(hasNoTracksWarning ? 'no tracks attached' : 'Warnings');
   }
   return parts.join(' · ');
+};
+
+const downloadBlob = (blob: Blob, fileName: string) => {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
+const sanitizeExportFileName = (value: string): string => {
+  const withoutExtension = value.replace(/\.[^/.]+$/, '').trim();
+  const fallback = withoutExtension || 'preprocessed-experiment';
+  const sanitized = fallback
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  return sanitized || 'preprocessed-experiment';
+};
+
+const computeTrackSummary = (entries: string[][]): { totalRows: number; uniqueTracks: number } => {
+  if (entries.length === 0) {
+    return { totalRows: 0, uniqueTracks: 0 };
+  }
+  const identifiers = new Set<string>();
+  for (const row of entries) {
+    if (row.length === 0) {
+      continue;
+    }
+    identifiers.add(row[0] ?? '');
+  }
+  return {
+    totalRows: entries.length,
+    uniqueTracks: identifiers.size
+  };
 };
 
 type ChannelCardProps = {
@@ -944,6 +993,21 @@ function ChannelCard({
 
 function App() {
   const [channels, setChannels] = useState<ChannelSource[]>([]);
+  const [isExperimentSetupStarted, setIsExperimentSetupStarted] = useState(false);
+  const [preprocessedExperiment, setPreprocessedExperiment] = useState<StagedPreprocessedExperiment | null>(null);
+  const [isPreprocessedLoaderOpen, setIsPreprocessedLoaderOpen] = useState(false);
+  const [isPreprocessedImporting, setIsPreprocessedImporting] = useState(false);
+  const [preprocessedImportError, setPreprocessedImportError] = useState<string | null>(null);
+  const [isPreprocessedDragActive, setIsPreprocessedDragActive] = useState(false);
+  const [isExportingPreprocessed, setIsExportingPreprocessed] = useState(false);
+  const [preprocessedDropboxImporting, setPreprocessedDropboxImporting] = useState(false);
+  const [preprocessedDropboxError, setPreprocessedDropboxError] = useState<string | null>(null);
+  const [preprocessedDropboxInfo, setPreprocessedDropboxInfo] = useState<string | null>(null);
+  const [isPreprocessedDropboxConfigOpen, setIsPreprocessedDropboxConfigOpen] = useState(false);
+  const [preprocessedDropboxAppKeyInput, setPreprocessedDropboxAppKeyInput] = useState('');
+  const [preprocessedDropboxAppKeySource, setPreprocessedDropboxAppKeySource] = useState<DropboxAppKeySource | null>(
+    null
+  );
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [datasetError, setDatasetError] = useState<string | null>(null);
@@ -1049,6 +1113,8 @@ function App() {
   const editingChannelOriginalNameRef = useRef('');
   const editingChannelInputRef = useRef<HTMLInputElement | null>(null);
   const pendingChannelFocusIdRef = useRef<string | null>(null);
+  const preprocessedFileInputRef = useRef<HTMLInputElement | null>(null);
+  const preprocessedDropCounterRef = useRef(0);
   const helpMenuRef = useRef<HTMLDivElement | null>(null);
   const vrSessionControlsRef = useRef<
     | {
@@ -1084,6 +1150,52 @@ function App() {
       isSegmentation: false
     };
   }, []);
+
+  const updateChannelIdCounter = useCallback((sources: ChannelSource[]) => {
+    let maxId = channelIdRef.current;
+    for (const source of sources) {
+      const match = /([0-9]+)$/.exec(source.id);
+      if (!match) {
+        continue;
+      }
+      const value = Number.parseInt(match[1], 10);
+      if (Number.isFinite(value) && value > maxId) {
+        maxId = value;
+      }
+    }
+    channelIdRef.current = maxId;
+  }, []);
+
+  const syncPreprocessedDropboxConfig = useCallback(() => {
+    const info = getDropboxAppKeyInfo();
+    setPreprocessedDropboxAppKeyInput(info.appKey ?? '');
+    setPreprocessedDropboxAppKeySource(info.source);
+  }, []);
+
+  const resetPreprocessedLoader = useCallback(() => {
+    setPreprocessedImportError(null);
+    setPreprocessedDropboxError(null);
+    setPreprocessedDropboxInfo(null);
+    setIsPreprocessedDropboxConfigOpen(false);
+    setIsPreprocessedDragActive(false);
+    preprocessedDropCounterRef.current = 0;
+  }, []);
+
+  useEffect(() => {
+    if (isPreprocessedLoaderOpen) {
+      syncPreprocessedDropboxConfig();
+      resetPreprocessedLoader();
+    }
+  }, [isPreprocessedLoaderOpen, resetPreprocessedLoader, syncPreprocessedDropboxConfig]);
+
+  useEffect(() => {
+    if (preprocessedExperiment) {
+      return;
+    }
+    if (channels.length === 0) {
+      setIsExperimentSetupStarted(false);
+    }
+  }, [channels, preprocessedExperiment]);
 
   const handleRegisterVrSession = useCallback(
     (
@@ -1628,7 +1740,51 @@ function App() {
     setDatasetErrorContext(null);
   }, []);
 
-  const loadSelectedDataset = useCallback(async () => {
+  const applyLoadedLayers = useCallback(
+    (normalizedLayers: LoadedLayer[], expectedVolumeCount: number) => {
+      clearTextureCache();
+      setLayers(normalizedLayers);
+      const visibilityDefaults = normalizedLayers.reduce<Record<string, boolean>>((acc, layer) => {
+        if (!(layer.channelId in acc)) {
+          acc[layer.channelId] = true;
+        }
+        return acc;
+      }, {});
+      const activeLayerDefaults = normalizedLayers.reduce<Record<string, string>>((acc, layer) => {
+        if (!(layer.channelId in acc)) {
+          acc[layer.channelId] = layer.key;
+        }
+        return acc;
+      }, {});
+      setChannelVisibility(visibilityDefaults);
+      setChannelActiveLayer(activeLayerDefaults);
+      setLayerSettings(
+        normalizedLayers.reduce<Record<string, LayerSettings>>((acc, layer) => {
+          const defaultWindow = getDefaultWindowForVolume(layer.volumes[0]);
+          acc[layer.key] = createDefaultLayerSettings(defaultWindow);
+          return acc;
+        }, {})
+      );
+      setLayerAutoThresholds(
+        normalizedLayers.reduce<Record<string, number>>((acc, layer) => {
+          acc[layer.key] = 0;
+          return acc;
+        }, {})
+      );
+      setSelectedIndex(0);
+      setActiveChannelTabId(Object.keys(activeLayerDefaults)[0] ?? null);
+      setStatus('loaded');
+      setLoadedCount(expectedVolumeCount);
+      setExpectedVolumeCount(expectedVolumeCount);
+      setLoadProgress(expectedVolumeCount > 0 ? 1 : 0);
+      setIsPlaying(false);
+      clearDatasetError();
+      setError(null);
+    },
+    [clearDatasetError]
+  );
+
+  const loadSelectedDataset = useCallback(async (): Promise<LoadedLayer[] | null> => {
     clearDatasetError();
     const flatLayerSources = channels
       .flatMap((channel) =>
@@ -1646,7 +1802,7 @@ function App() {
     if (flatLayerSources.length === 0) {
       const message = 'Add a volume before launching the viewer.';
       showLaunchError(message);
-      return false;
+      return null;
     }
 
     const requestId = loadRequestRef.current + 1;
@@ -1674,7 +1830,7 @@ function App() {
       showLaunchError(message);
       setStatus('error');
       setError(message);
-      return false;
+      return null;
     }
 
     setExpectedVolumeCount(totalExpectedVolumes);
@@ -1718,8 +1874,9 @@ function App() {
                 if (loadRequestRef.current !== requestId) {
                   return current;
                 }
+
                 const next = current + 1;
-                setLoadProgress(next / totalExpectedVolumes);
+                setLoadProgress(totalExpectedVolumes === 0 ? 0 : next / totalExpectedVolumes);
                 return next;
               });
             }
@@ -1729,7 +1886,7 @@ function App() {
       );
 
       if (loadRequestRef.current !== requestId) {
-        return false;
+        return null;
       }
 
       const normalizedLayers: LoadedLayer[] = rawLayers.map(({ layer, volumes }) => {
@@ -1750,45 +1907,11 @@ function App() {
         };
       });
 
-      clearTextureCache();
-      setLayers(normalizedLayers);
-      const visibilityDefaults = normalizedLayers.reduce<Record<string, boolean>>((acc, layer) => {
-        if (!(layer.channelId in acc)) {
-          acc[layer.channelId] = true;
-        }
-        return acc;
-      }, {});
-      const activeLayerDefaults = normalizedLayers.reduce<Record<string, string>>((acc, layer) => {
-        if (!(layer.channelId in acc)) {
-          acc[layer.channelId] = layer.key;
-        }
-        return acc;
-      }, {});
-      setChannelVisibility(visibilityDefaults);
-      setChannelActiveLayer(activeLayerDefaults);
-      setLayerSettings(
-        normalizedLayers.reduce<Record<string, LayerSettings>>((acc, layer) => {
-          const defaultWindow = getDefaultWindowForVolume(layer.volumes[0]);
-          acc[layer.key] = createDefaultLayerSettings(defaultWindow);
-          return acc;
-        }, {})
-      );
-      setLayerAutoThresholds(
-        normalizedLayers.reduce<Record<string, number>>((acc, layer) => {
-          acc[layer.key] = 0;
-          return acc;
-        }, {})
-      );
-      setSelectedIndex(0);
-      setActiveChannelTabId(Object.keys(activeLayerDefaults)[0] ?? null);
-      setStatus('loaded');
-      setLoadedCount(totalExpectedVolumes);
-      setLoadProgress(1);
-      clearDatasetError();
-      return true;
+      applyLoadedLayers(normalizedLayers, totalExpectedVolumes);
+      return normalizedLayers;
     } catch (err) {
       if (loadRequestRef.current !== requestId) {
-        return false;
+        return null;
       }
       console.error(err);
       setStatus('error');
@@ -1817,47 +1940,24 @@ function App() {
             : 'Failed to load volumes.';
       showLaunchError(message);
       setError(message);
-      return false;
+      return null;
     }
-  }, [channels, clearDatasetError, showLaunchError]);
-
-  useEffect(() => {
-    if (!isPlaying || volumeTimepointCount <= 1) {
-      return;
-    }
-
-    const safeFps = Math.max(1, fps);
-    const interval = window.setInterval(() => {
-      setSelectedIndex((prev) => {
-        if (volumeTimepointCount === 0) {
-          return prev;
-        }
-        const next = (prev + 1) % volumeTimepointCount;
-        return next;
-      });
-    }, 1000 / safeFps);
-
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [fps, isPlaying, volumeTimepointCount]);
-
-  useEffect(() => {
-    if (volumeTimepointCount <= 1 && isPlaying) {
-      setIsPlaying(false);
-    }
-    if (selectedIndex >= volumeTimepointCount && volumeTimepointCount > 0) {
-      setSelectedIndex(0);
-    }
-  }, [isPlaying, selectedIndex, volumeTimepointCount]);
+  }, [
+    applyLoadedLayers,
+    channels,
+    clearDatasetError,
+    colorizeSegmentationVolume,
+    computeNormalizationParameters,
+    createSegmentationSeed,
+    normalizeVolume,
+    showLaunchError
+  ]);
 
   const isLoading = status === 'loading';
   const playbackDisabled = isLoading || volumeTimepointCount <= 1;
   const vrButtonLabel = isVrActive ? 'Exit VR' : isVrRequesting ? 'Entering VR…' : 'Enter VR';
   const isVrAvailable = viewerMode === '3d' && isVrSupportChecked && isVrSupported;
-  const vrButtonDisabled = isVrActive
-    ? false
-    : !isVrAvailable || !hasVrSessionHandlers || isVrRequesting;
+  const vrButtonDisabled = isVrActive ? false : !isVrAvailable || !hasVrSessionHandlers || isVrRequesting;
   const vrButtonTitle = isVrActive
     ? 'Exit immersive VR session.'
     : !isVrSupportChecked
@@ -1871,6 +1971,7 @@ function App() {
     : isVrRequesting
     ? 'Starting VR session…'
     : undefined;
+
   const playbackLabel = useMemo(() => {
     if (volumeTimepointCount === 0) {
       return '0 / 0';
@@ -1887,9 +1988,9 @@ function App() {
       let visible = 0;
       for (const track of tracksForChannel) {
         const explicitVisible = state.visibility[track.id] ?? true;
-        const isFollowed = followedTrack?.id === track.id;
-        const isSelected = selectedTrackIds.has(track.id);
-        if (explicitVisible || isFollowed || isSelected) {
+        const isFollowedTrack = followedTrack?.id === track.id;
+        const isSelectedTrack = selectedTrackIds.has(track.id);
+        if (explicitVisible || isFollowedTrack || isSelectedTrack) {
           visible += 1;
         }
       }
@@ -2058,6 +2159,14 @@ function App() {
   }, [handleTimeIndexChange, volumeTimepointCount]);
 
   const handleAddChannel = useCallback(() => {
+    setPreprocessedExperiment(null);
+    setIsPreprocessedLoaderOpen(false);
+    setIsExperimentSetupStarted(true);
+    setPreprocessedImportError(null);
+    setPreprocessedDropboxError(null);
+    setPreprocessedDropboxInfo(null);
+    setIsPreprocessedDropboxConfigOpen(false);
+
     let createdChannel: ChannelSource | null = null;
     setChannels((current) => {
       const newChannel: ChannelSource = createChannelSource('');
@@ -2342,6 +2451,285 @@ function App() {
     [handleChannelTrackFileSelected]
   );
 
+  const handlePreprocessedLoaderOpen = useCallback(() => {
+    if (isPreprocessedImporting || preprocessedDropboxImporting) {
+      return;
+    }
+    setIsPreprocessedLoaderOpen(true);
+    resetPreprocessedLoader();
+  }, [isPreprocessedImporting, preprocessedDropboxImporting, resetPreprocessedLoader]);
+
+  const handlePreprocessedLoaderClose = useCallback(() => {
+    if (isPreprocessedImporting) {
+      return;
+    }
+    setIsPreprocessedLoaderOpen(false);
+    resetPreprocessedLoader();
+  }, [isPreprocessedImporting, resetPreprocessedLoader]);
+
+  const importPreprocessedFile = useCallback(
+    async (file: File) => {
+      if (isPreprocessedImporting) {
+        return;
+      }
+      setIsPreprocessedImporting(true);
+      setPreprocessedImportError(null);
+      setPreprocessedDropboxError(null);
+      setPreprocessedDropboxInfo(null);
+      try {
+        const buffer = await file.arrayBuffer();
+        const result = await importPreprocessedDataset(buffer);
+        const staged: StagedPreprocessedExperiment = {
+          ...result,
+          sourceName: file.name ?? null,
+          sourceSize: Number.isFinite(file.size) ? file.size : null
+        };
+        const nextChannels = result.channelSummaries.map<ChannelSource>((summary) => ({
+          id: summary.id,
+          name: summary.name,
+          layers: [],
+          trackFile: null,
+          trackStatus: 'loaded',
+          trackError: null,
+          trackEntries: summary.trackEntries
+        }));
+        setChannels(nextChannels);
+        updateChannelIdCounter(nextChannels);
+        setActiveChannelId(null);
+        setEditingChannelId(null);
+        setChannelTrackStates({});
+        setTrackOrderModeByChannel({});
+        setSelectedTrackIds(new Set());
+        setFollowedTrack(null);
+        setPreprocessedExperiment(staged);
+        setIsExperimentSetupStarted(false);
+        setIsPreprocessedLoaderOpen(false);
+        resetPreprocessedLoader();
+        clearDatasetError();
+      } catch (error) {
+        console.error('Failed to import preprocessed dataset', error);
+        const message = error instanceof Error ? error.message : 'Failed to import preprocessed dataset.';
+        setPreprocessedImportError(message);
+        setPreprocessedExperiment(null);
+        setChannels([]);
+        setIsExperimentSetupStarted(false);
+      } finally {
+        setIsPreprocessedImporting(false);
+      }
+    },
+    [
+      clearDatasetError,
+      isPreprocessedImporting,
+      resetPreprocessedLoader,
+      updateChannelIdCounter
+    ]
+  );
+
+  const handlePreprocessedFileInputChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      if (isPreprocessedImporting || preprocessedDropboxImporting) {
+        event.target.value = '';
+        return;
+      }
+      const fileList = event.target.files;
+      if (fileList && fileList.length > 0) {
+        importPreprocessedFile(fileList[0]);
+      }
+      event.target.value = '';
+    },
+    [importPreprocessedFile, isPreprocessedImporting, preprocessedDropboxImporting]
+  );
+
+  const handlePreprocessedBrowse = useCallback(() => {
+    if (isPreprocessedImporting || preprocessedDropboxImporting) {
+      return;
+    }
+    preprocessedFileInputRef.current?.click();
+  }, [isPreprocessedImporting, preprocessedDropboxImporting]);
+
+  const handlePreprocessedDragEnter = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      if (isPreprocessedImporting || preprocessedDropboxImporting) {
+        return;
+      }
+      preprocessedDropCounterRef.current += 1;
+      setIsPreprocessedDragActive(true);
+    },
+    [isPreprocessedImporting, preprocessedDropboxImporting]
+  );
+
+  const handlePreprocessedDragLeave = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      if (isPreprocessedImporting || preprocessedDropboxImporting) {
+        return;
+      }
+      preprocessedDropCounterRef.current = Math.max(0, preprocessedDropCounterRef.current - 1);
+      if (preprocessedDropCounterRef.current === 0) {
+        setIsPreprocessedDragActive(false);
+      }
+    },
+    [isPreprocessedImporting, preprocessedDropboxImporting]
+  );
+
+  const handlePreprocessedDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+  }, []);
+
+  const handlePreprocessedDrop = useCallback(
+    async (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      preprocessedDropCounterRef.current = 0;
+      setIsPreprocessedDragActive(false);
+      if (isPreprocessedImporting || preprocessedDropboxImporting) {
+        return;
+      }
+      const { dataTransfer } = event;
+      if (!dataTransfer) {
+        return;
+      }
+      const files = await collectFilesFromDataTransfer(dataTransfer);
+      const [first] = files;
+      if (first) {
+        await importPreprocessedFile(first);
+      } else {
+        setPreprocessedImportError('Drop a file to import the preprocessed experiment.');
+      }
+    },
+    [importPreprocessedFile, isPreprocessedImporting, preprocessedDropboxImporting]
+  );
+
+  const handlePreprocessedDropboxConfigInputChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      setPreprocessedDropboxAppKeyInput(event.target.value);
+      if (preprocessedDropboxInfo) {
+        setPreprocessedDropboxInfo(null);
+      }
+    },
+    [preprocessedDropboxInfo]
+  );
+
+  const handlePreprocessedDropboxConfigSubmit = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (preprocessedDropboxAppKeySource === 'env') {
+        setIsPreprocessedDropboxConfigOpen(false);
+        return;
+      }
+      const trimmed = preprocessedDropboxAppKeyInput.trim();
+      setDropboxAppKey(trimmed ? trimmed : null);
+      syncPreprocessedDropboxConfig();
+      setIsPreprocessedDropboxConfigOpen(false);
+      setPreprocessedDropboxError(null);
+      setPreprocessedDropboxInfo(
+        trimmed
+          ? 'Dropbox app key saved. Try importing from Dropbox again.'
+          : 'Saved Dropbox app key cleared.'
+      );
+    },
+    [preprocessedDropboxAppKeyInput, preprocessedDropboxAppKeySource, syncPreprocessedDropboxConfig]
+  );
+
+  const handlePreprocessedDropboxConfigClear = useCallback(() => {
+    setDropboxAppKey(null);
+    syncPreprocessedDropboxConfig();
+    setPreprocessedDropboxInfo('Saved Dropbox app key cleared.');
+    setPreprocessedDropboxError(null);
+  }, [syncPreprocessedDropboxConfig]);
+
+  const handlePreprocessedDropboxConfigCancel = useCallback(() => {
+    setIsPreprocessedDropboxConfigOpen(false);
+  }, []);
+
+  const handlePreprocessedDropboxImport = useCallback(
+    async () => {
+      if (isPreprocessedImporting || preprocessedDropboxImporting) {
+        return;
+      }
+      setPreprocessedDropboxError(null);
+      setPreprocessedDropboxInfo(null);
+      setPreprocessedDropboxImporting(true);
+      try {
+        const files = await chooseDropboxFiles({
+          extensions: ['.zip', '.llsm', '.llsmz', '.json'],
+          multiselect: false
+        });
+        const [file] = files;
+        if (file) {
+          await importPreprocessedFile(file);
+        }
+      } catch (error) {
+        console.error('Failed to import preprocessed experiment from Dropbox', error);
+        if (error instanceof DropboxConfigurationError) {
+          syncPreprocessedDropboxConfig();
+          setIsPreprocessedDropboxConfigOpen(true);
+          setPreprocessedDropboxError(
+            'Dropbox is not configured yet. Add your Dropbox app key below to connect your account.'
+          );
+        } else {
+          const message = error instanceof Error ? error.message : 'Failed to import from Dropbox.';
+          setPreprocessedDropboxError(message);
+        }
+      } finally {
+        setPreprocessedDropboxImporting(false);
+      }
+    },
+    [
+      importPreprocessedFile,
+      isPreprocessedImporting,
+      preprocessedDropboxImporting,
+      syncPreprocessedDropboxConfig
+    ]
+  );
+
+  const handleDiscardPreprocessedExperiment = useCallback(() => {
+    setPreprocessedExperiment(null);
+    setChannels([]);
+    setChannelVisibility({});
+    setChannelActiveLayer({});
+    setLayerSettings({});
+    setLayerAutoThresholds({});
+    setLayers([]);
+    setSelectedIndex(0);
+    setActiveChannelId(null);
+    setEditingChannelId(null);
+    setActiveChannelTabId(null);
+    setChannelTrackStates({});
+    setTrackOrderModeByChannel({});
+    setSelectedTrackIds(new Set());
+    setFollowedTrack(null);
+    setStatus('idle');
+    setError(null);
+    setLoadProgress(0);
+    setLoadedCount(0);
+    setExpectedVolumeCount(0);
+    setIsPlaying(false);
+    setIsViewerLaunched(false);
+    setIsExperimentSetupStarted(false);
+    setPreprocessedImportError(null);
+    setPreprocessedDropboxError(null);
+    setPreprocessedDropboxInfo(null);
+    setIsPreprocessedLoaderOpen(false);
+    resetPreprocessedLoader();
+    channelIdRef.current = 0;
+    layerIdRef.current = 0;
+    clearTextureCache();
+    clearDatasetError();
+  }, [clearDatasetError, resetPreprocessedLoader]);
+
+
+
+  const frontPageMode = useMemo<'initial' | 'configuring' | 'preprocessed'>(() => {
+    if (preprocessedExperiment) {
+      return 'preprocessed';
+    }
+    if (channels.length > 0 || isExperimentSetupStarted) {
+      return 'configuring';
+    }
+    return 'initial';
+  }, [channels, isExperimentSetupStarted, preprocessedExperiment]);
+
   const channelValidationList = useMemo(() => {
     return channels.map((channel) => {
       const errors: string[] = [];
@@ -2410,7 +2798,8 @@ function App() {
     [channelValidationList]
   );
   const canLaunch = hasAnyLayers && allChannelsValid && !hasLoadingTracks;
-  const launchButtonLaunchable = canLaunch ? 'true' : 'false';
+  const launchButtonEnabled = frontPageMode === 'preprocessed' ? preprocessedExperiment !== null : canLaunch;
+  const launchButtonLaunchable = launchButtonEnabled ? 'true' : 'false';
 
   const activeChannel = useMemo(
     () => channels.find((channel) => channel.id === activeChannelId) ?? null,
@@ -2418,6 +2807,7 @@ function App() {
   );
 
   const launchErrorMessage = datasetErrorContext === 'launch' ? datasetError : null;
+  const interactionErrorMessage = datasetErrorContext === 'interaction' ? datasetError : null;
 
 
   const handleLaunchViewer = useCallback(async () => {
@@ -2425,10 +2815,22 @@ function App() {
       return;
     }
 
-    const hasAnyLayers = channels.some((channel) =>
+    if (preprocessedExperiment) {
+      clearDatasetError();
+      setIsLaunchingViewer(true);
+      try {
+        applyLoadedLayers(preprocessedExperiment.layers, preprocessedExperiment.totalVolumeCount);
+        setIsViewerLaunched(true);
+      } finally {
+        setIsLaunchingViewer(false);
+      }
+      return;
+    }
+
+    const hasAnyLayersConfigured = channels.some((channel) =>
       channel.layers.some((layer) => layer.files.length > 0)
     );
-    if (!hasAnyLayers) {
+    if (!hasAnyLayersConfigured) {
       showLaunchError('Add a volume before launching the viewer.');
       return;
     }
@@ -2441,8 +2843,8 @@ function App() {
       return;
     }
 
-    const hasLoadingTracks = channels.some((channel) => channel.trackStatus === 'loading');
-    if (hasLoadingTracks) {
+    const hasPendingTracks = channels.some((channel) => channel.trackStatus === 'loading');
+    if (hasPendingTracks) {
       showLaunchError('Wait for tracks to finish loading before launching.');
       return;
     }
@@ -2450,8 +2852,8 @@ function App() {
     clearDatasetError();
     setIsLaunchingViewer(true);
     try {
-      const datasetLoaded = await loadSelectedDataset();
-      if (!datasetLoaded) {
+      const normalizedLayers = await loadSelectedDataset();
+      if (!normalizedLayers) {
         return;
       }
 
@@ -2460,12 +2862,80 @@ function App() {
       setIsLaunchingViewer(false);
     }
   }, [
-    channels,
+    applyLoadedLayers,
     channelValidationList,
+    channels,
     clearDatasetError,
     isLaunchingViewer,
     loadSelectedDataset,
+    preprocessedExperiment,
     showLaunchError
+  ]);
+
+  const handleExportPreprocessedExperiment = useCallback(async () => {
+    if (isExportingPreprocessed || isLaunchingViewer) {
+      return;
+    }
+
+    setIsExportingPreprocessed(true);
+    try {
+      let layersToExport: LoadedLayer[];
+      let channelsMetadata: ChannelExportMetadata[];
+
+      if (preprocessedExperiment) {
+        layersToExport = preprocessedExperiment.layers;
+        channelsMetadata = preprocessedExperiment.channelSummaries.map((summary) => ({
+          id: summary.id,
+          name: summary.name.trim() || 'Untitled channel',
+          trackEntries: summary.trackEntries
+        }));
+      } else {
+        const normalizedLayers = await loadSelectedDataset();
+        if (!normalizedLayers) {
+          return;
+        }
+        layersToExport = normalizedLayers;
+        channelsMetadata = channels.map<ChannelExportMetadata>((channel) => ({
+          id: channel.id,
+          name: channel.name.trim() || 'Untitled channel',
+          trackEntries: channel.trackEntries
+        }));
+      }
+
+      if (layersToExport.length === 0) {
+        showInteractionWarning('There are no volumes available to export.');
+        return;
+      }
+
+      const { blob, manifest } = await exportPreprocessedDataset({
+        layers: layersToExport,
+        channels: channelsMetadata
+      });
+
+      const baseNameSource =
+        preprocessedExperiment?.sourceName ?? channelsMetadata[0]?.name ?? 'preprocessed-experiment';
+      const fileBase = sanitizeExportFileName(baseNameSource);
+      const timestamp = manifest.generatedAt.replace(/[:.]/g, '-');
+      const fileName = `${fileBase}-${timestamp}.zip`;
+
+      downloadBlob(blob, fileName);
+      clearDatasetError();
+    } catch (error) {
+      console.error('Failed to export preprocessed dataset', error);
+      const message =
+        error instanceof Error ? error.message : 'Failed to export preprocessed dataset.';
+      showInteractionWarning(message);
+    } finally {
+      setIsExportingPreprocessed(false);
+    }
+  }, [
+    channels,
+    clearDatasetError,
+    isExportingPreprocessed,
+    isLaunchingViewer,
+    loadSelectedDataset,
+    preprocessedExperiment,
+    showInteractionWarning
   ]);
 
   const handleChannelVisibilityToggle = useCallback((channelId: string) => {
@@ -3212,7 +3682,8 @@ function App() {
   const backgroundVideoSrc = `${import.meta.env.BASE_URL}media/background.mp4`;
 
   if (!isViewerLaunched) {
-    const isFrontPageLocked = isLaunchingViewer;
+    const isFrontPageLocked =
+      isLaunchingViewer || isExportingPreprocessed || isPreprocessedImporting || preprocessedDropboxImporting;
     const warningWindowInitialPosition =
       typeof window === 'undefined'
         ? { x: WINDOW_MARGIN, y: WINDOW_MARGIN }
@@ -3238,49 +3709,256 @@ function App() {
             <header className="front-page-header">
               <h1>4D microscopy viewer</h1>
             </header>
-            <div className="channel-add-actions">
-              <button
-                type="button"
-                className="channel-add-button"
-                onClick={handleAddChannel}
-                disabled={isFrontPageLocked}
+            {frontPageMode !== 'preprocessed' ? (
+              <div className="channel-add-actions">
+                {frontPageMode === 'initial' ? (
+                  <div className="channel-add-initial">
+                    <button
+                      type="button"
+                      className="channel-add-button"
+                      onClick={handleAddChannel}
+                      disabled={isFrontPageLocked}
+                    >
+                      Set up new experiment
+                    </button>
+                    <button
+                      type="button"
+                      className="channel-add-button"
+                      onClick={handlePreprocessedLoaderOpen}
+                      disabled={
+                        isFrontPageLocked || isPreprocessedImporting || preprocessedDropboxImporting
+                      }
+                    >
+                      Load preprocessed experiment
+                    </button>
+                  </div>
+                ) : (
+                  <div className="channel-add-configuring">
+                    <button
+                      type="button"
+                      className="channel-add-button"
+                      onClick={handleAddChannel}
+                      disabled={isFrontPageLocked}
+                    >
+                      Add new channel
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : null}
+            {frontPageMode !== 'preprocessed' && isPreprocessedLoaderOpen ? (
+              <div
+                className={`preprocessed-loader${isPreprocessedDragActive ? ' is-active' : ''}`}
+                onDragEnter={handlePreprocessedDragEnter}
+                onDragLeave={handlePreprocessedDragLeave}
+                onDragOver={handlePreprocessedDragOver}
+                onDrop={handlePreprocessedDrop}
               >
-                Add new channel
-              </button>
-            </div>
-            <div className="channel-board">
-              {channels.length > 0 ? (
-                <>
-                  <div className="channel-tabs" role="tablist" aria-label="Configured channels">
-                    {channels.map((channel) => {
-                      const validation = channelValidationMap.get(channel.id) ?? { errors: [], warnings: [] };
-                      const isActive = channel.id === activeChannelId;
-                      const isEditing = editingChannelId === channel.id;
-                      const trimmedChannelName = channel.name.trim();
-                      const removeLabel = trimmedChannelName ? `Remove ${trimmedChannelName}` : 'Remove channel';
-                      const tabClassName = [
-                        'channel-tab',
-                        isActive ? 'is-active' : '',
-                        validation.errors.length > 0 ? 'has-error' : '',
-                        validation.errors.length === 0 && validation.warnings.length > 0 ? 'has-warning' : '',
-                        isFrontPageLocked ? 'is-disabled' : ''
-                      ]
-                        .filter(Boolean)
-                        .join(' ');
-                      const tabMeta = buildChannelTabMeta(channel, validation);
-                      const startEditingChannelName = () => {
-                        if (isFrontPageLocked || editingChannelId === channel.id) {
-                          return;
+                <input
+                  ref={preprocessedFileInputRef}
+                  className="file-drop-input"
+                  type="file"
+                  accept=".zip,.llsm,.llsmz,.json"
+                  onChange={handlePreprocessedFileInputChange}
+                  disabled={isPreprocessedImporting || preprocessedDropboxImporting}
+                />
+                <div className="preprocessed-loader-content">
+                  <div className="preprocessed-loader-row">
+                    <div className="preprocessed-loader-buttons">
+                      <button
+                        type="button"
+                        className="channel-add-button"
+                        onClick={handlePreprocessedBrowse}
+                        disabled={isPreprocessedImporting || preprocessedDropboxImporting}
+                      >
+                        From files
+                      </button>
+                      <button
+                        type="button"
+                        className="channel-add-button"
+                        onClick={handlePreprocessedDropboxImport}
+                        disabled={isPreprocessedImporting || preprocessedDropboxImporting}
+                      >
+                        {preprocessedDropboxImporting ? 'Importing…' : 'From Dropbox'}
+                      </button>
+                      <p className="preprocessed-loader-subtitle">Or drop file here</p>
+                    </div>
+                  <button
+                    type="button"
+                    className="preprocessed-loader-cancel"
+                    onClick={handlePreprocessedLoaderClose}
+                    disabled={isPreprocessedImporting || preprocessedDropboxImporting}
+                  >
+                    Cancel
+                  </button>
+                  </div>
+                  {isPreprocessedImporting ? (
+                    <p className="preprocessed-loader-status">Loading preprocessed dataset…</p>
+                  ) : null}
+                  {preprocessedImportError ? (
+                    <p className="preprocessed-loader-error">{preprocessedImportError}</p>
+                  ) : null}
+                  {preprocessedDropboxError ? (
+                    <p className="preprocessed-loader-error">{preprocessedDropboxError}</p>
+                  ) : null}
+                  {preprocessedDropboxInfo ? (
+                    <p className="preprocessed-loader-info">{preprocessedDropboxInfo}</p>
+                  ) : null}
+                  {isPreprocessedDropboxConfigOpen ? (
+                    <form className="preprocessed-dropbox-config" onSubmit={handlePreprocessedDropboxConfigSubmit} noValidate>
+                      <label className="preprocessed-dropbox-config-label">
+                        Dropbox app key
+                        <input
+                          value={preprocessedDropboxAppKeyInput}
+                          onChange={handlePreprocessedDropboxConfigInputChange}
+                          disabled={preprocessedDropboxAppKeySource === 'env'}
+                        />
+                      </label>
+                      <p className="preprocessed-dropbox-config-hint">
+                        Add your Dropbox app key to enable imports.
+                      </p>
+                      <div className="preprocessed-dropbox-config-actions">
+                        <button type="submit" className="preprocessed-dropbox-config-save">
+                          {preprocessedDropboxAppKeySource === 'env' ? 'Close' : 'Save app key'}
+                        </button>
+                        <button
+                          type="button"
+                          className="preprocessed-dropbox-config-cancel"
+                          onClick={handlePreprocessedDropboxConfigCancel}
+                        >
+                          Cancel
+                        </button>
+                        {preprocessedDropboxAppKeySource === 'local' ? (
+                          <button
+                            type="button"
+                            className="preprocessed-dropbox-config-clear"
+                            onClick={handlePreprocessedDropboxConfigClear}
+                          >
+                            Remove saved key
+                          </button>
+                        ) : null}
+                      </div>
+                    </form>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+            {frontPageMode === 'configuring' ? (
+              <div className="channel-board">
+                {channels.length > 0 ? (
+                  <>
+                    <div className="channel-tabs" role="tablist" aria-label="Configured channels">
+                      {channels.map((channel) => {
+                        const validation = channelValidationMap.get(channel.id) ?? { errors: [], warnings: [] };
+                        const isActive = channel.id === activeChannelId;
+                        const isEditing = editingChannelId === channel.id;
+                        const trimmedChannelName = channel.name.trim();
+                        const removeLabel = trimmedChannelName ? `Remove ${trimmedChannelName}` : 'Remove channel';
+                        const tabClassName = [
+                          'channel-tab',
+                          isActive ? 'is-active' : '',
+                          validation.errors.length > 0 ? 'has-error' : '',
+                          validation.errors.length === 0 && validation.warnings.length > 0 ? 'has-warning' : '',
+                          isFrontPageLocked ? 'is-disabled' : ''
+                        ]
+                          .filter(Boolean)
+                          .join(' ');
+                        const tabMeta = buildChannelTabMeta(channel, validation);
+                        const startEditingChannelName = () => {
+                          if (isFrontPageLocked || editingChannelId === channel.id) {
+                            return;
+                          }
+                          editingChannelOriginalNameRef.current = channel.name;
+                          setEditingChannelId(channel.id);
+                        };
+                        if (isEditing) {
+                          return (
+                            <div
+                              key={channel.id}
+                              id={`${channel.id}-tab`}
+                              className={`${tabClassName} is-editing`}
+                              role="tab"
+                              aria-selected={isActive}
+                              aria-controls="channel-detail-panel"
+                              tabIndex={isFrontPageLocked ? -1 : 0}
+                              aria-disabled={isFrontPageLocked}
+                              onClick={() => {
+                                if (isFrontPageLocked) {
+                                  return;
+                                }
+                                setActiveChannelId(channel.id);
+                              }}
+                              onKeyDown={(event) => {
+                                if (isFrontPageLocked) {
+                                  event.preventDefault();
+                                  return;
+                                }
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                  event.preventDefault();
+                                  setActiveChannelId(channel.id);
+                                }
+                              }}
+                            >
+                              <span className="channel-tab-text">
+                                <input
+                                  ref={(node) => {
+                                    editingChannelInputRef.current = node;
+                                  }}
+                                  className="channel-tab-name-input"
+                                  value={channel.name}
+                                  onChange={(event) => handleChannelNameChange(channel.id, event.target.value)}
+                                  placeholder="Insert channel name here"
+                                  onBlur={() => {
+                                    editingChannelInputRef.current = null;
+                                    setEditingChannelId(null);
+                                  }}
+                                  onKeyDown={(event) => {
+                                    if (isFrontPageLocked) {
+                                      event.preventDefault();
+                                      return;
+                                    }
+                                    if (event.key === 'Enter') {
+                                      event.preventDefault();
+                                      editingChannelInputRef.current = null;
+                                      setEditingChannelId(null);
+                                    } else if (event.key === 'Escape') {
+                                      event.preventDefault();
+                                      handleChannelNameChange(channel.id, editingChannelOriginalNameRef.current);
+                                      editingChannelInputRef.current = null;
+                                      setEditingChannelId(null);
+                                    }
+                                  }}
+                                  aria-label="Channel name"
+                                  autoComplete="off"
+                                  autoFocus
+                                  disabled={isFrontPageLocked}
+                                />
+                                <span className="channel-tab-meta">{tabMeta}</span>
+                              </span>
+                              <button
+                                type="button"
+                                className="channel-tab-remove"
+                                aria-label={removeLabel}
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  if (isFrontPageLocked) {
+                                    return;
+                                  }
+                                  handleRemoveChannel(channel.id);
+                                }}
+                                disabled={isFrontPageLocked}
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          );
                         }
-                        editingChannelOriginalNameRef.current = channel.name;
-                        setEditingChannelId(channel.id);
-                      };
-                      if (isEditing) {
                         return (
                           <div
                             key={channel.id}
                             id={`${channel.id}-tab`}
-                            className={`${tabClassName} is-editing`}
+                            className={tabClassName}
                             role="tab"
                             aria-selected={isActive}
                             aria-controls="channel-detail-panel"
@@ -3290,7 +3968,11 @@ function App() {
                               if (isFrontPageLocked) {
                                 return;
                               }
-                              setActiveChannelId(channel.id);
+                              if (!isActive) {
+                                setActiveChannelId(channel.id);
+                                return;
+                              }
+                              startEditingChannelName();
                             }}
                             onKeyDown={(event) => {
                               if (isFrontPageLocked) {
@@ -3299,44 +3981,22 @@ function App() {
                               }
                               if (event.key === 'Enter' || event.key === ' ') {
                                 event.preventDefault();
-                                setActiveChannelId(channel.id);
+                                if (!isActive) {
+                                  setActiveChannelId(channel.id);
+                                } else {
+                                  startEditingChannelName();
+                                }
                               }
                             }}
                           >
                             <span className="channel-tab-text">
-                              <input
-                                ref={(node) => {
-                                  editingChannelInputRef.current = node;
-                                }}
-                                className="channel-tab-name-input"
-                                value={channel.name}
-                                onChange={(event) => handleChannelNameChange(channel.id, event.target.value)}
-                                placeholder="Insert channel name here"
-                                onBlur={() => {
-                                  editingChannelInputRef.current = null;
-                                  setEditingChannelId(null);
-                                }}
-                                onKeyDown={(event) => {
-                                  if (isFrontPageLocked) {
-                                    event.preventDefault();
-                                    return;
-                                  }
-                                  if (event.key === 'Enter') {
-                                    event.preventDefault();
-                                    editingChannelInputRef.current = null;
-                                    setEditingChannelId(null);
-                                  } else if (event.key === 'Escape') {
-                                    event.preventDefault();
-                                    handleChannelNameChange(channel.id, editingChannelOriginalNameRef.current);
-                                    editingChannelInputRef.current = null;
-                                    setEditingChannelId(null);
-                                  }
-                                }}
-                                aria-label="Channel name"
-                                autoComplete="off"
-                                autoFocus
-                                disabled={isFrontPageLocked}
-                              />
+                              <span className="channel-tab-name">
+                                {trimmedChannelName ? (
+                                  trimmedChannelName
+                                ) : (
+                                  <span className="channel-tab-placeholder">Insert channel name here</span>
+                                )}
+                              </span>
                               <span className="channel-tab-meta">{tabMeta}</span>
                             </span>
                             <button
@@ -3357,103 +4017,104 @@ function App() {
                             </button>
                           </div>
                         );
-                      }
-                      return (
-                        <div
-                          key={channel.id}
-                          id={`${channel.id}-tab`}
-                          className={tabClassName}
-                          role="tab"
-                          aria-selected={isActive}
-                          aria-controls="channel-detail-panel"
-                          tabIndex={isFrontPageLocked ? -1 : 0}
-                          aria-disabled={isFrontPageLocked}
-                          onClick={() => {
-                            if (isFrontPageLocked) {
-                              return;
-                            }
-                            if (!isActive) {
-                              setActiveChannelId(channel.id);
-                              return;
-                            }
-                            startEditingChannelName();
-                          }}
-                          onKeyDown={(event) => {
-                            if (isFrontPageLocked) {
-                              event.preventDefault();
-                              return;
-                            }
-                            if (event.key === 'Enter' || event.key === ' ') {
-                              event.preventDefault();
-                              if (!isActive) {
-                                setActiveChannelId(channel.id);
-                              } else {
-                                startEditingChannelName();
-                              }
-                            }
-                          }}
-                        >
-                          <span className="channel-tab-text">
-                            <span className="channel-tab-name">
-                              {trimmedChannelName ? (
-                                trimmedChannelName
-                              ) : (
-                                <span className="channel-tab-placeholder">Insert channel name here</span>
-                              )}
-                            </span>
-                            <span className="channel-tab-meta">{tabMeta}</span>
-                          </span>
-                          <button
-                            type="button"
-                            className="channel-tab-remove"
-                            aria-label={removeLabel}
-                            onClick={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              if (isFrontPageLocked) {
-                                return;
-                              }
-                              handleRemoveChannel(channel.id);
-                            }}
-                            disabled={isFrontPageLocked}
-                          >
-                            🗑️
-                          </button>
+                      })}
+                    </div>
+                    <div
+                      className="channel-panel"
+                      role="tabpanel"
+                      id="channel-detail-panel"
+                      aria-labelledby={activeChannel ? `${activeChannel.id}-tab` : undefined}
+                    >
+                      {activeChannel ? (
+                        <ChannelCard
+                          key={activeChannel.id}
+                          channel={activeChannel}
+                          validation={channelValidationMap.get(activeChannel.id) ?? { errors: [], warnings: [] }}
+                          isDisabled={isFrontPageLocked}
+                          onLayerFilesAdded={handleChannelLayerFilesAdded}
+                          onLayerDrop={handleChannelLayerDrop}
+                          onLayerSegmentationToggle={handleChannelLayerSegmentationToggle}
+                          onLayerRemove={handleChannelLayerRemove}
+                          onTrackFileSelected={handleChannelTrackFileSelected}
+                          onTrackDrop={handleChannelTrackDrop}
+                          onTrackClear={handleChannelTrackClear}
+                        />
+                      ) : (
+                        <p className="channel-panel-placeholder">Select a channel to edit it.</p>
+                      )}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+            {frontPageMode === 'preprocessed' && preprocessedExperiment ? (
+              <div className="preprocessed-summary">
+                <div className="preprocessed-summary-header">
+                  <h2>Loaded preprocessed experiment</h2>
+                  <p className="preprocessed-summary-meta">
+                    {preprocessedExperiment.sourceName ?? 'Imported dataset'}
+                    {typeof preprocessedExperiment.sourceSize === 'number'
+                      ? ` · ${formatBytes(preprocessedExperiment.sourceSize)}`
+                      : ''}
+                    {preprocessedExperiment.totalVolumeCount > 0
+                      ? ` · ${preprocessedExperiment.totalVolumeCount} volumes`
+                      : ''}
+                  </p>
+                </div>
+                <ul className="preprocessed-summary-list">
+                  {preprocessedExperiment.channelSummaries.map((summary) => {
+                    const trackSummary = computeTrackSummary(summary.trackEntries);
+                    return (
+                      <li key={summary.id} className="preprocessed-summary-item">
+                        <div className="preprocessed-summary-channel">
+                          <h3>{summary.name}</h3>
+                          <ul className="preprocessed-summary-layer-list">
+                            {summary.layers.map((layer) => (
+                              <li key={layer.key} className="preprocessed-summary-layer">
+                                <span className="preprocessed-summary-layer-title">
+                                  {layer.label}
+                                  {layer.isSegmentation ? (
+                                    <span className="preprocessed-summary-layer-flag">Segmentation</span>
+                                  ) : null}
+                                </span>
+                                <span className="preprocessed-summary-layer-meta">
+                                  {layer.volumeCount} timepoints · {layer.width}×{layer.height}×{layer.depth} · {layer.channels} channels
+                                </span>
+                                <span className="preprocessed-summary-layer-range">
+                                  Range: {layer.min}–{layer.max}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                          <p className="preprocessed-summary-tracks">
+                            {trackSummary.uniqueTracks > 0
+                              ? `${trackSummary.uniqueTracks} tracks (${trackSummary.totalRows} rows)`
+                              : 'No tracks attached'}
+                          </p>
                         </div>
-                      );
-                    })}
-                  </div>
-                  <div
-                    className="channel-panel"
-                    role="tabpanel"
-                    id="channel-detail-panel"
-                    aria-labelledby={activeChannel ? `${activeChannel.id}-tab` : undefined}
+                      </li>
+                    );
+                  })}
+                </ul>
+                <div className="preprocessed-summary-actions">
+                  <button
+                    type="button"
+                    className="preprocessed-summary-button"
+                    onClick={handleDiscardPreprocessedExperiment}
+                    disabled={isExportingPreprocessed}
                   >
-                    {activeChannel ? (
-                      <ChannelCard
-                        key={activeChannel.id}
-                        channel={activeChannel}
-                        validation={channelValidationMap.get(activeChannel.id) ?? { errors: [], warnings: [] }}
-                        isDisabled={isFrontPageLocked}
-                        onLayerFilesAdded={handleChannelLayerFilesAdded}
-                        onLayerDrop={handleChannelLayerDrop}
-                        onLayerSegmentationToggle={handleChannelLayerSegmentationToggle}
-                        onLayerRemove={handleChannelLayerRemove}
-                        onTrackFileSelected={handleChannelTrackFileSelected}
-                        onTrackDrop={handleChannelTrackDrop}
-                        onTrackClear={handleChannelTrackClear}
-                      />
-                    ) : (
-                      <p className="channel-panel-placeholder">Select a channel to edit it.</p>
-                    )}
-                  </div>
-                </>
-              ) : null}
-            </div>
-            {hasGlobalTimepointMismatch ? (
+                    Discard preprocessed experiment
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            {frontPageMode === 'configuring' && hasGlobalTimepointMismatch ? (
               <p className="launch-feedback launch-feedback-warning">
                 Timepoint counts differ across channels. Align them before launching.
               </p>
+            ) : null}
+            {interactionErrorMessage ? (
+              <p className="launch-feedback launch-feedback-error">{interactionErrorMessage}</p>
             ) : null}
             {launchErrorMessage ? (
               <p className="launch-feedback launch-feedback-error">{launchErrorMessage}</p>
@@ -3463,11 +4124,25 @@ function App() {
                 type="button"
                 className="launch-viewer-button"
                 onClick={handleLaunchViewer}
-                disabled={isLaunchingViewer}
+                disabled={isLaunchingViewer || !launchButtonEnabled}
                 data-launchable={launchButtonLaunchable}
               >
                 {isLaunchingViewer ? 'Loading…' : 'Launch viewer'}
               </button>
+              {frontPageMode !== 'initial' ? (
+                <button
+                  type="button"
+                  className="export-preprocessed-button"
+                  onClick={handleExportPreprocessedExperiment}
+                  disabled={
+                    isExportingPreprocessed ||
+                    isLaunchingViewer ||
+                    (frontPageMode === 'configuring' && !canLaunch)
+                  }
+                >
+                  {isExportingPreprocessed ? 'Exporting…' : 'Export preprocessed experiment'}
+                </button>
+              ) : null}
             </div>
           </div>
           {launchErrorMessage ? (

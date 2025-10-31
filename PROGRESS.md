@@ -8,6 +8,12 @@
 
 # Progress Log
 
+## Preprocessed dataset import/export workflow
+- Added a `utils/preprocessedDataset` module that serializes normalized volumes plus manifest metadata into a ZIP archive with SHA-256 digests for authenticity and channel track CSV payloads.
+- Reworked the launcher flow with "Set up new experiment"/"Load preprocessed experiment" entry points, a read-only summary card for imported archives, and a gated "Export preprocessed experiment" action that shares the launch readiness checks.
+- Wired the new export/import states into `App.tsx`, including Dropbox picker reuse, staged dataset clearing, and UI state locking, and introduced matching front-page styles for the loader and summary views.
+- Added automated coverage that round-trips preprocessed archives and rejects tampered digests.
+
 ## Track naming and ordering enhancements
 - Display imported trajectories using their CSV `track_id` values (truncating any stray decimals) so UI labels match source data.
 - Added an "Order by length" toggle beside the master visibility checkbox to sort per-channel track lists by descending timepoint count, falling back to ID order.
