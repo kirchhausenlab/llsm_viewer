@@ -7,13 +7,12 @@ export type TrackColorOption = {
 };
 
 export const TRACK_COLOR_SWATCHES: readonly TrackColorOption[] = [
-  { value: '#FF6B6B', label: 'Red' },
-  { value: '#FF9F40', label: 'Orange' },
-  { value: '#FFD93D', label: 'Yellow' },
-  { value: '#6BCB77', label: 'Green' },
-  { value: '#4D96FF', label: 'Blue' },
-  { value: '#8E94F2', label: 'Indigo' },
-  { value: '#FF6BF1', label: 'Magenta' }
+  { value: '#3B82F6', label: 'Blue' },
+  { value: '#22C55E', label: 'Green' },
+  { value: '#EF4444', label: 'Red' },
+  { value: '#D946EF', label: 'Purple' },
+  { value: '#06B6D4', label: 'Cyan' },
+  { value: '#FACC15', label: 'Gold' }
 ] as const;
 
 export const DEFAULT_TRACK_COLOR = TRACK_COLOR_SWATCHES[0].value;

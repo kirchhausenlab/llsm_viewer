@@ -1512,7 +1512,7 @@ function VolumeViewer({
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.font = vrTracksFont('600', VR_TRACKS_FONT_SIZES.button);
-    ctx.fillText('Stop tracking', stopX + stopWidth / 2, stopY + stopHeight / 2);
+    ctx.fillText('Stop following', stopX + stopWidth / 2, stopY + stopHeight / 2);
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
 
