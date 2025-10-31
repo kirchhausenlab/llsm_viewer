@@ -100,11 +100,7 @@ async function computeSha256Hex(data: Uint8Array): Promise<string> {
   if (!subtle) {
     throw new Error('Web Crypto API is not available in this environment.');
   }
-  const source =
-    data.byteOffset === 0 && data.byteLength === data.buffer.byteLength
-      ? (data.buffer as ArrayBuffer)
-      : (data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer);
-  const digest = await subtle.digest('SHA-256', source);
+  const digest = await subtle.digest('SHA-256', data);
   const bytes = new Uint8Array(digest);
   return Array.from(bytes)
     .map((value) => value.toString(16).padStart(2, '0'))
@@ -171,12 +167,13 @@ export async function exportPreprocessedDataset({
         for (let index = 0; index < layer.volumes.length; index += 1) {
           const volume = layer.volumes[index];
           const path = createVolumePath(layer, index);
-          let volumeBytes = new Uint8Array(
-            volume.normalized.buffer,
-            volume.normalized.byteOffset,
-            volume.normalized.byteLength
-          );
-          volumeBytes = new Uint8Array(volumeBytes); // ensure the archive owns the buffer
+          let volumeBytes = volume.normalized;
+          if (
+            volumeBytes.byteOffset !== 0 ||
+            volumeBytes.byteLength !== volumeBytes.buffer.byteLength
+          ) {
+            volumeBytes = volumeBytes.slice();
+          }
 
           const manifestEntry: PreprocessedVolumeManifestEntry = {
             path,
@@ -196,6 +193,7 @@ export async function exportPreprocessedDataset({
 
           const deflater = new ZipDeflate(path, { level: 9 });
           zip.add(deflater);
+          // NormalizedVolume.normalized is treated as immutable, so sharing the underlying buffer is safe.
           deflater.push(volumeBytes, true);
 
           // Release the reference once the chunk has been queued
