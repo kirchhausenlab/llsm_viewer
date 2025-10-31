@@ -53,8 +53,10 @@ export type ExportPreprocessedDatasetOptions = {
   channels: ChannelExportMetadata[];
 };
 
+export type ExportPreprocessedDatasetChunkHandler = (chunk: Uint8Array, final: boolean) => void;
+
 export type ExportPreprocessedDatasetResult = {
-  blob: Blob;
+  blob?: Blob;
   manifest: PreprocessedManifest;
 };
 
@@ -115,15 +117,15 @@ function createVolumePath(layer: LoadedLayer, timepoint: number): string {
   return `volumes/${layer.channelId}/${layer.key}/timepoint-${timepoint.toString().padStart(4, '0')}.bin`;
 }
 
-export async function exportPreprocessedDataset({
-  layers,
-  channels
-}: ExportPreprocessedDatasetOptions): Promise<ExportPreprocessedDatasetResult> {
+export async function exportPreprocessedDataset(
+  { layers, channels }: ExportPreprocessedDatasetOptions,
+  onChunk?: ExportPreprocessedDatasetChunkHandler
+): Promise<ExportPreprocessedDatasetResult> {
   const manifestChannels: PreprocessedChannelManifest[] = [];
   const groupedLayers = new Map<string, LoadedLayer[]>();
   let totalVolumeCount = 0;
 
-  const zipChunks: Uint8Array[] = [];
+  const zipChunks: Uint8Array[] | null = onChunk ? null : [];
   let isZipComplete = false;
 
   let resolveZip!: () => void;
@@ -143,7 +145,20 @@ export async function exportPreprocessedDataset({
     }
 
     if (chunk) {
-      zipChunks.push(chunk);
+      if (onChunk) {
+        try {
+          onChunk(chunk, final);
+        } catch (error) {
+          if (!isZipComplete) {
+            isZipComplete = true;
+            rejectZip(error instanceof Error ? error : new Error(String(error)));
+          }
+          zip.terminate();
+          return;
+        }
+      } else {
+        zipChunks!.push(chunk);
+      }
     }
 
     if (final && !isZipComplete) {
@@ -257,9 +272,12 @@ export async function exportPreprocessedDataset({
     throw error instanceof Error ? error : new Error(String(error));
   }
 
-  const blob = new Blob(zipChunks, { type: 'application/zip' });
+  if (zipChunks) {
+    const blob = new Blob(zipChunks, { type: 'application/zip' });
+    return { blob, manifest };
+  }
 
-  return { blob, manifest };
+  return { manifest };
 }
 
 function validateManifest(manifest: PreprocessedManifest): void {

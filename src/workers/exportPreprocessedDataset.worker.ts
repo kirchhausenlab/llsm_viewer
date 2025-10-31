@@ -3,7 +3,7 @@
 import {
   exportPreprocessedDataset,
   type ExportPreprocessedDatasetOptions,
-  type ExportPreprocessedDatasetResult
+  type PreprocessedManifest
 } from '../utils/preprocessedDataset';
 
 type WorkerRequest = {
@@ -12,10 +12,16 @@ type WorkerRequest = {
   payload: ExportPreprocessedDatasetOptions;
 };
 
-type WorkerSuccess = {
+type WorkerChunk = {
   id: number;
-  type: 'success';
-  payload: ExportPreprocessedDatasetResult;
+  type: 'chunk';
+  buffer: ArrayBuffer;
+};
+
+type WorkerDone = {
+  id: number;
+  type: 'done';
+  manifest: PreprocessedManifest;
 };
 
 type WorkerError = {
@@ -34,11 +40,22 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   }
 
   try {
-    const result = await exportPreprocessedDataset(message.payload);
-    const response: WorkerSuccess = {
+    const result = await exportPreprocessedDataset(message.payload, (chunk) => {
+      const transferable =
+        chunk.byteOffset === 0 && chunk.byteLength === chunk.buffer.byteLength
+          ? chunk.buffer
+          : chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength);
+      const chunkMessage: WorkerChunk = {
+        id: message.id,
+        type: 'chunk',
+        buffer: transferable
+      };
+      ctx.postMessage(chunkMessage, [transferable]);
+    });
+    const response: WorkerDone = {
       id: message.id,
-      type: 'success',
-      payload: result
+      type: 'done',
+      manifest: result.manifest
     };
     ctx.postMessage(response);
   } catch (error) {

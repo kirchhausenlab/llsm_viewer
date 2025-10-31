@@ -83,7 +83,12 @@ console.log('Starting preprocessed dataset import/export tests');
       }
     ];
 
-    const { blob, manifest } = await exportPreprocessedDataset({ layers, channels });
+    const exportResult = await exportPreprocessedDataset({ layers, channels });
+    const { blob, manifest } = exportResult;
+
+    if (!blob) {
+      throw new Error('Expected export without onChunk callback to produce a Blob.');
+    }
 
     assert.strictEqual(manifest.dataset.totalVolumeCount, 3);
     assert.strictEqual(manifest.dataset.channels.length, 1);
@@ -148,6 +153,50 @@ console.log('Starting preprocessed dataset import/export tests');
     assert.strictEqual(summary.layers[0].volumeCount, 1);
     assert.strictEqual(summary.layers[1].volumeCount, 2);
     assert.deepEqual(summary.trackEntries, channels[0].trackEntries);
+
+    const chunkCollector: Uint8Array[] = [];
+    const streamedResult = await exportPreprocessedDataset({ layers, channels }, (chunk) => {
+      chunkCollector.push(chunk.slice());
+    });
+
+    assert.strictEqual(streamedResult.blob, undefined);
+    const alignedStreamedManifest = {
+      ...streamedResult.manifest,
+      generatedAt: manifest.generatedAt
+    } as PreprocessedManifest;
+    assert.deepEqual(alignedStreamedManifest, manifest);
+    assert.ok(chunkCollector.length > 0, 'expected streamed export to emit chunks');
+
+    const streamedSize = chunkCollector.reduce((total, chunk) => total + chunk.byteLength, 0);
+    assert.ok(streamedSize > 0);
+
+    const reconstructed = new Uint8Array(streamedSize);
+    let offset = 0;
+    for (const chunk of chunkCollector) {
+      reconstructed.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+
+    const streamedFiles = unzipSync(reconstructed);
+    assert.deepEqual(
+      Object.keys(streamedFiles).sort(),
+      [...Object.keys(expectedVolumeEntries), 'manifest.json'].sort()
+    );
+
+    const streamedManifestFromArchive = JSON.parse(
+      decoder.decode(streamedFiles['manifest.json'])
+    ) as PreprocessedManifest;
+    const normalizedStreamedManifestFromArchive = {
+      ...streamedManifestFromArchive,
+      generatedAt: manifest.generatedAt
+    } as PreprocessedManifest;
+    assert.deepEqual(normalizedStreamedManifestFromArchive, manifest);
+
+    for (const [path, expected] of Object.entries(expectedVolumeEntries)) {
+      const entry = streamedFiles[path];
+      assert.ok(entry, `missing streamed archive entry for ${path}`);
+      assert.deepEqual(Array.from(entry), Array.from(expected));
+    }
 
     const tamperedFiles = unzipSync(new Uint8Array(archiveBytes));
     const tamperedManifest = JSON.parse(
