@@ -3516,8 +3516,10 @@ function App() {
               isPlaying={isPlaying}
               playbackDisabled={playbackDisabled}
               playbackLabel={playbackLabel}
+              fps={fps}
               onTogglePlayback={handleTogglePlayback}
               onTimeIndexChange={handleTimeIndexChange}
+              onFpsChange={setFps}
               onRegisterReset={handleRegisterReset}
               isVrPassthroughSupported={isVrPassthroughSupported}
               tracks={parsedTracks}
