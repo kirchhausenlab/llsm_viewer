@@ -3,6 +3,7 @@ export type TrackPoint = {
   x: number;
   y: number;
   z: number;
+  amplitude: number;
 };
 
 export type TrackColorMode =

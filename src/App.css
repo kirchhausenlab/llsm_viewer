@@ -778,6 +778,10 @@
   z-index: 10;
 }
 
+.floating-window--selected-tracks {
+  z-index: 15;
+}
+
 .floating-window--channels {
   z-index: 20;
 }
@@ -863,6 +867,11 @@
   padding: 1.25rem;
   overflow: hidden;
   min-width: 0;
+}
+
+.floating-window-body--selected-tracks {
+  gap: 1rem;
+  padding: 1rem 1.5rem 1.25rem;
 }
 
 .floating-window-body > .sidebar {
@@ -1714,6 +1723,105 @@
   margin: 0;
   font-size: 0.85rem;
   color: rgba(255, 255, 255, 0.65);
+}
+
+.selected-tracks-window {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.selected-tracks-chart {
+  position: relative;
+  width: 100%;
+  height: 180px;
+}
+
+.selected-tracks-chart-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.selected-tracks-chart-background {
+  fill: rgba(18, 24, 36, 0.72);
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 1;
+}
+
+.selected-tracks-chart-grid line {
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.selected-tracks-chart-series path {
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  mix-blend-mode: screen;
+  opacity: 0.85;
+}
+
+.selected-tracks-chart-axis-labels text {
+  fill: rgba(255, 255, 255, 0.68);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.selected-tracks-axis-caption {
+  fill: rgba(255, 255, 255, 0.6);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.selected-tracks-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.6);
+  pointer-events: none;
+  text-align: center;
+  padding: 0 1rem;
+}
+
+.selected-tracks-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.selected-tracks-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.selected-tracks-legend-swatch {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
+  flex-shrink: 0;
+}
+
+.selected-tracks-legend-label {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.82);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .track-tabs {

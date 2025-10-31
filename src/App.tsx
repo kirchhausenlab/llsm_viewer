@@ -11,6 +11,7 @@ import {
 } from './volumeProcessing';
 import { clearTextureCache } from './textureCache';
 import FloatingWindow from './components/FloatingWindow';
+import SelectedTracksWindow from './components/SelectedTracksWindow';
 import type { TrackColorMode, TrackDefinition, TrackPoint } from './types/tracks';
 import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from './layerColors';
 import {
@@ -54,6 +55,8 @@ const WINDOW_MARGIN = 24;
 const CONTROL_WINDOW_WIDTH = 360;
 const PLAYBACK_WINDOW_WIDTH = 420;
 const TRACK_WINDOW_WIDTH = 340;
+const SELECTED_TRACKS_WINDOW_WIDTH = 960;
+const SELECTED_TRACKS_WINDOW_HEIGHT = 220;
 const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
 const WARNING_WINDOW_WIDTH = 360;
 
@@ -1001,6 +1004,24 @@ function App() {
     const nextX = Math.max(WINDOW_MARGIN, window.innerWidth - trackWidth - WINDOW_MARGIN);
     return { x: nextX, y: WINDOW_MARGIN };
   }, []);
+  const computeSelectedTracksWindowDefaultPosition = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return { x: WINDOW_MARGIN, y: WINDOW_MARGIN };
+    }
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const windowWidth = Math.min(SELECTED_TRACKS_WINDOW_WIDTH, viewportWidth - WINDOW_MARGIN * 2);
+    const x = Math.max(WINDOW_MARGIN, Math.round((viewportWidth - windowWidth) / 2));
+    const y = Math.max(
+      WINDOW_MARGIN,
+      viewportHeight - SELECTED_TRACKS_WINDOW_HEIGHT - WINDOW_MARGIN
+    );
+    return { x, y };
+  }, []);
+  const [selectedTracksWindowInitialPosition, setSelectedTracksWindowInitialPosition] = useState<{
+    x: number;
+    y: number;
+  }>(() => computeSelectedTracksWindowDefaultPosition());
 
   const loadRequestRef = useRef(0);
   const trackMasterCheckboxRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -1336,7 +1357,7 @@ function App() {
       const trackMap = new Map<number, TrackPoint[]>();
 
       for (const row of entries) {
-        if (row.length < 6) {
+        if (row.length < 7) {
           continue;
         }
 
@@ -1346,6 +1367,7 @@ function App() {
         const x = Number(row[3]);
         const y = Number(row[4]);
         const z = Number(row[5]);
+        const amplitudeRaw = Number(row[6]);
 
         if (
           !Number.isFinite(rawId) ||
@@ -1353,7 +1375,8 @@ function App() {
           !Number.isFinite(deltaTime) ||
           !Number.isFinite(x) ||
           !Number.isFinite(y) ||
-          !Number.isFinite(z)
+          !Number.isFinite(z) ||
+          !Number.isFinite(amplitudeRaw)
         ) {
           continue;
         }
@@ -1361,7 +1384,8 @@ function App() {
         const id = Math.trunc(rawId);
         const time = initialTime + deltaTime;
         const normalizedTime = Math.max(0, time - 1);
-        const point: TrackPoint = { time: normalizedTime, x, y, z };
+        const amplitude = Math.max(0, amplitudeRaw);
+        const point: TrackPoint = { time: normalizedTime, x, y, z, amplitude };
         const existing = trackMap.get(id);
         if (existing) {
           existing.push(point);
@@ -1384,7 +1408,8 @@ function App() {
           time: point.time,
           x: point.x,
           y: point.y,
-          z: point.z
+          z: point.z,
+          amplitude: point.amplitude
         }));
 
         parsed.push({
@@ -1419,6 +1444,31 @@ function App() {
     }
     return map;
   }, [parsedTracks]);
+
+  const maxTrackAmplitude = useMemo(() => {
+    let maxAmplitude = 0;
+    for (const track of parsedTracks) {
+      for (const point of track.points) {
+        if (point.amplitude > maxAmplitude) {
+          maxAmplitude = point.amplitude;
+        }
+      }
+    }
+    return maxAmplitude;
+  }, [parsedTracks]);
+
+  const selectedTrackSeries = useMemo(
+    () =>
+      parsedTracks
+        .filter((track) => selectedTrackIds.has(track.id))
+        .map((track) => ({
+          id: track.id,
+          label: `${track.channelName} · Track #${track.trackNumber}`,
+          color: getTrackColorHex(track.id),
+          points: track.points
+        })),
+    [parsedTracks, selectedTrackIds]
+  );
 
   useEffect(() => {
     setSelectedTrackIds((current) => {
@@ -1457,7 +1507,11 @@ function App() {
   const handleResetWindowLayout = useCallback(() => {
     setLayoutResetToken((value) => value + 1);
     setTrackWindowInitialPosition(computeTrackWindowDefaultPosition());
-  }, [computeTrackWindowDefaultPosition]);
+    setSelectedTracksWindowInitialPosition(computeSelectedTracksWindowDefaultPosition());
+  }, [
+    computeSelectedTracksWindowDefaultPosition,
+    computeTrackWindowDefaultPosition
+  ]);
 
   useEffect(() => {
     const defaultPosition = computeTrackWindowDefaultPosition();
@@ -1468,6 +1522,16 @@ function App() {
       return defaultPosition;
     });
   }, [computeTrackWindowDefaultPosition]);
+
+  useEffect(() => {
+    const defaultPosition = computeSelectedTracksWindowDefaultPosition();
+    setSelectedTracksWindowInitialPosition((current) => {
+      if (current.x === defaultPosition.x && current.y === defaultPosition.y) {
+        return current;
+      }
+      return defaultPosition;
+    });
+  }, [computeSelectedTracksWindowDefaultPosition]);
 
   useEffect(() => {
     setChannelTrackStates((current) => {
@@ -4313,6 +4377,22 @@ function App() {
             )}
           </div>
       </FloatingWindow>
+      {!isVrActive && hasParsedTrackData ? (
+        <FloatingWindow
+          title="Selected Tracks"
+          initialPosition={selectedTracksWindowInitialPosition}
+          width={`min(${SELECTED_TRACKS_WINDOW_WIDTH}px, calc(100vw - ${WINDOW_MARGIN * 2}px))`}
+          className="floating-window--selected-tracks"
+          bodyClassName="floating-window-body--selected-tracks"
+          resetSignal={layoutResetToken}
+        >
+          <SelectedTracksWindow
+            series={selectedTrackSeries}
+            totalTimepoints={volumeTimepointCount}
+            maxAmplitude={maxTrackAmplitude}
+          />
+        </FloatingWindow>
+      ) : null}
       </div>
     </>
   );

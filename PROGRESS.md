@@ -8,6 +8,11 @@
 
 # Progress Log
 
+## Selected track amplitude overlay
+- Parse the sixth "Amplitude" column from track CSV files and store it on each track point so downstream views can access it.
+- Added a bottom-centered "Selected Tracks" overlay that plots amplitudes for highlighted tracks, scaling axes to the movie's
+  timepoints and global amplitude maxima while providing a color-coded legend.
+
 ## VR passthrough clear alpha regression fix
 - Restored an opaque WebGL clear when immersive VR sessions start so headset compositors receive non-transparent frames and the volume, HUD, and controllers render again instead of a black view.
 - Preserved transparent clears for passthrough `immersive-ar` sessions and automatically revert to the desktop clear state whenever an XR session ends or the viewer unmounts.
