@@ -59,12 +59,14 @@ type VolumeViewerProps = {
   isPlaying: boolean;
   playbackDisabled: boolean;
   playbackLabel: string;
+  fps: number;
   isLoading: boolean;
   loadingProgress: number;
   loadedVolumes: number;
   expectedVolumes: number;
   onTogglePlayback: () => void;
   onTimeIndexChange: (nextIndex: number) => void;
+  onFpsChange: (value: number) => void;
   onRegisterReset: (handler: (() => void) | null) => void;
   isVrPassthroughSupported: boolean;
   tracks: TrackDefinition[];
@@ -365,6 +367,7 @@ type TrackLineResource = {
 type VrUiTargetType =
   | 'playback-play-toggle'
   | 'playback-slider'
+  | 'playback-fps-slider'
   | 'playback-reset-volume'
   | 'playback-reset-hud'
   | 'playback-exit-vr'
@@ -420,23 +423,36 @@ type VrPlaybackHud = {
   modeButton: THREE.Mesh;
   modeVrIcon: THREE.Object3D;
   modeArIcon: THREE.Object3D;
-  sliderGroup: THREE.Group;
-  sliderTrack: THREE.Mesh;
-  sliderFill: THREE.Mesh;
-  sliderKnob: THREE.Mesh;
-  sliderHitArea: THREE.Mesh;
-  sliderWidth: number;
+  playbackSliderGroup: THREE.Group;
+  playbackSliderTrack: THREE.Mesh;
+  playbackSliderFill: THREE.Mesh;
+  playbackSliderKnob: THREE.Mesh;
+  playbackSliderHitArea: THREE.Mesh;
+  playbackSliderWidth: number;
+  fpsSliderGroup: THREE.Group;
+  fpsSliderTrack: THREE.Mesh;
+  fpsSliderFill: THREE.Mesh;
+  fpsSliderKnob: THREE.Mesh;
+  fpsSliderHitArea: THREE.Mesh;
+  fpsSliderWidth: number;
   labelMesh: THREE.Mesh;
   labelTexture: THREE.CanvasTexture;
   labelCanvas: HTMLCanvasElement | null;
   labelContext: CanvasRenderingContext2D | null;
   labelText: string;
+  fpsLabelMesh: THREE.Mesh;
+  fpsLabelTexture: THREE.CanvasTexture;
+  fpsLabelCanvas: HTMLCanvasElement | null;
+  fpsLabelContext: CanvasRenderingContext2D | null;
+  fpsLabelText: string;
   interactables: THREE.Object3D[];
   resetVolumeButtonBaseColor: THREE.Color;
   resetHudButtonBaseColor: THREE.Color;
   playButtonBaseColor: THREE.Color;
-  sliderTrackBaseColor: THREE.Color;
-  sliderKnobBaseColor: THREE.Color;
+  playbackSliderTrackBaseColor: THREE.Color;
+  playbackSliderKnobBaseColor: THREE.Color;
+  fpsSliderTrackBaseColor: THREE.Color;
+  fpsSliderKnobBaseColor: THREE.Color;
   exitButtonBaseColor: THREE.Color;
   modeButtonBaseColor: THREE.Color;
   modeButtonActiveColor: THREE.Color;
@@ -459,6 +475,18 @@ type VrChannelsSliderKey =
   | 'brightness'
   | 'xOffset'
   | 'yOffset';
+
+type VrChannelsSliderDefinition = {
+  key: VrChannelsSliderKey;
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  formatter: (value: number) => string;
+  disabled: boolean;
+  axis?: 'x' | 'y';
+};
 
 type VrChannelsInteractiveRegion = {
   targetType:
@@ -487,6 +515,7 @@ type VrChannelsInteractiveRegion = {
 
 type VrChannelsHud = {
   group: THREE.Group;
+  background: THREE.Mesh;
   panel: THREE.Mesh;
   panelTranslateHandle: THREE.Mesh;
   panelYawHandles: THREE.Mesh[];
@@ -708,6 +737,8 @@ const HOVERED_TRACK_LINE_WIDTH_MULTIPLIER = 1.2;
 
 const VR_PLAYBACK_PANEL_WIDTH = 0.54;
 const VR_PLAYBACK_PANEL_HEIGHT = 0.36;
+const VR_PLAYBACK_MIN_FPS = 1;
+const VR_PLAYBACK_MAX_FPS = 60;
 const VR_PLAYBACK_VERTICAL_OFFSET = 0;
 const VR_PLAYBACK_CAMERA_ANCHOR_OFFSET = new THREE.Vector3(0, -0.18, -0.65);
 const VR_CHANNELS_PANEL_WIDTH = 0.6;
@@ -715,7 +746,7 @@ const VR_CHANNELS_PANEL_HEIGHT = 0.6;
 const VR_CHANNELS_VERTICAL_OFFSET = 0;
 const VR_CHANNELS_CAMERA_ANCHOR_OFFSET = new THREE.Vector3(0.4, -0.18, -0.65);
 const VR_CHANNELS_CANVAS_WIDTH = 1184;
-const VR_CHANNELS_CANVAS_HEIGHT = 1184;
+const VR_CHANNELS_CANVAS_MIN_HEIGHT = 1184;
 const VR_CHANNELS_FONT_FAMILY = '"Inter", "Helvetica Neue", Arial, sans-serif';
 const vrChannelsFont = (weight: string, size: number) => `${weight} ${size}px ${VR_CHANNELS_FONT_FAMILY}`;
 const VR_CHANNELS_FONT_SIZES = {
@@ -827,12 +858,13 @@ function computeYawAngleForBasis(
   return Math.atan2(rightComponent, forwardComponent);
 }
 
-function setVrPlaybackSliderFraction(hud: VrPlaybackHud, fraction: number) {
+function setVrPlaybackProgressFraction(hud: VrPlaybackHud, fraction: number) {
   const clamped = Math.min(Math.max(fraction, 0), 1);
-  const knobX = -hud.sliderWidth / 2 + clamped * hud.sliderWidth;
-  hud.sliderKnob.position.x = knobX;
-  hud.sliderFill.scale.x = Math.max(clamped, 0.0001);
-  hud.sliderFill.position.x = -hud.sliderWidth / 2 + (hud.sliderWidth * Math.max(clamped, 0.0001)) / 2;
+  const knobX = -hud.playbackSliderWidth / 2 + clamped * hud.playbackSliderWidth;
+  hud.playbackSliderKnob.position.x = knobX;
+  hud.playbackSliderFill.scale.x = Math.max(clamped, 0.0001);
+  hud.playbackSliderFill.position.x =
+    -hud.playbackSliderWidth / 2 + (hud.playbackSliderWidth * Math.max(clamped, 0.0001)) / 2;
 }
 
 function setVrPlaybackLabel(hud: VrPlaybackHud, text: string) {
@@ -856,6 +888,38 @@ function setVrPlaybackLabel(hud: VrPlaybackHud, text: string) {
   ctx.fillStyle = '#ffffff';
   ctx.fillText(text, width / 2, height / 2 + 4);
   hud.labelTexture.needsUpdate = true;
+}
+
+function setVrPlaybackFpsFraction(hud: VrPlaybackHud, fraction: number) {
+  const clamped = Math.min(Math.max(fraction, 0), 1);
+  const knobX = -hud.fpsSliderWidth / 2 + clamped * hud.fpsSliderWidth;
+  hud.fpsSliderKnob.position.x = knobX;
+  hud.fpsSliderFill.scale.x = Math.max(clamped, 0.0001);
+  hud.fpsSliderFill.position.x =
+    -hud.fpsSliderWidth / 2 + (hud.fpsSliderWidth * Math.max(clamped, 0.0001)) / 2;
+}
+
+function setVrPlaybackFpsLabel(hud: VrPlaybackHud, text: string) {
+  if (!hud.fpsLabelCanvas || !hud.fpsLabelContext) {
+    hud.fpsLabelText = text;
+    return;
+  }
+  if (hud.fpsLabelText === text) {
+    return;
+  }
+  hud.fpsLabelText = text;
+  const ctx = hud.fpsLabelContext;
+  const width = hud.fpsLabelCanvas.width;
+  const height = hud.fpsLabelCanvas.height;
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0)';
+  ctx.fillRect(0, 0, width, height);
+  ctx.font = '500 32px "Inter", "Helvetica Neue", Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(text, width / 2, height / 2 + 4);
+  hud.fpsLabelTexture.needsUpdate = true;
 }
 
 function resolveVrUiTarget(object: THREE.Object3D | null): VrUiTarget | null {
@@ -998,8 +1062,10 @@ function VolumeViewer({
   isPlaying,
   playbackDisabled,
   playbackLabel,
+  fps,
   onTogglePlayback,
   onTimeIndexChange,
+  onFpsChange,
   onRegisterReset,
   isVrPassthroughSupported,
   tracks,
@@ -1147,18 +1213,22 @@ function VolumeViewer({
     isPlaying,
     playbackDisabled,
     playbackLabel,
+    fps,
     timeIndex,
     totalTimepoints,
     onTogglePlayback,
     onTimeIndexChange,
+    onFpsChange,
     passthroughSupported: isVrPassthroughSupported,
     preferredSessionMode: 'immersive-vr',
     currentSessionMode: null
   });
   const vrHoverStateRef = useRef({
     play: false,
-    slider: false,
-    sliderActive: false,
+    playbackSlider: false,
+    playbackSliderActive: false,
+    fpsSlider: false,
+    fpsSliderActive: false,
     resetVolume: false,
     resetHud: false,
     exit: false,
@@ -2314,8 +2384,10 @@ function VolumeViewer({
   const applyVrPlaybackHoverState = useCallback(
     (
       playHovered: boolean,
-      sliderHovered: boolean,
-      sliderActive: boolean,
+      playbackSliderHovered: boolean,
+      playbackSliderActive: boolean,
+      fpsSliderHovered: boolean,
+      fpsSliderActive: boolean,
       resetVolumeHovered: boolean,
       resetHudHovered: boolean,
       exitHovered: boolean,
@@ -2323,8 +2395,10 @@ function VolumeViewer({
     ) => {
       vrHoverStateRef.current = {
         play: playHovered,
-        slider: sliderHovered,
-        sliderActive,
+        playbackSlider: playbackSliderHovered,
+        playbackSliderActive,
+        fpsSlider: fpsSliderHovered,
+        fpsSliderActive,
         resetVolume: resetVolumeHovered,
         resetHud: resetHudHovered,
         exit: exitHovered,
@@ -2340,15 +2414,27 @@ function VolumeViewer({
       if (playHovered && !state.playbackDisabled) {
         playMaterial.color.lerp(hud.hoverHighlightColor, 0.35);
       }
-      const sliderTrackMaterial = hud.sliderTrack.material as THREE.MeshBasicMaterial;
-      sliderTrackMaterial.color.copy(hud.sliderTrackBaseColor);
-      if ((sliderHovered || sliderActive) && !state.playbackDisabled) {
-        sliderTrackMaterial.color.lerp(hud.hoverHighlightColor, 0.22);
+      const playbackSliderTrackMaterial = hud.playbackSliderTrack
+        .material as THREE.MeshBasicMaterial;
+      playbackSliderTrackMaterial.color.copy(hud.playbackSliderTrackBaseColor);
+      if ((playbackSliderHovered || playbackSliderActive) && !state.playbackDisabled) {
+        playbackSliderTrackMaterial.color.lerp(hud.hoverHighlightColor, 0.22);
       }
-      const knobMaterial = hud.sliderKnob.material as THREE.MeshBasicMaterial;
-      knobMaterial.color.copy(hud.sliderKnobBaseColor);
-      if ((sliderHovered || sliderActive) && !state.playbackDisabled) {
-        knobMaterial.color.lerp(hud.hoverHighlightColor, 0.35);
+      const playbackKnobMaterial = hud.playbackSliderKnob.material as THREE.MeshBasicMaterial;
+      playbackKnobMaterial.color.copy(hud.playbackSliderKnobBaseColor);
+      if ((playbackSliderHovered || playbackSliderActive) && !state.playbackDisabled) {
+        playbackKnobMaterial.color.lerp(hud.hoverHighlightColor, 0.35);
+      }
+      const fpsDisabled = state.totalTimepoints <= 1;
+      const fpsSliderTrackMaterial = hud.fpsSliderTrack.material as THREE.MeshBasicMaterial;
+      fpsSliderTrackMaterial.color.copy(hud.fpsSliderTrackBaseColor);
+      if ((fpsSliderHovered || fpsSliderActive) && !fpsDisabled) {
+        fpsSliderTrackMaterial.color.lerp(hud.hoverHighlightColor, 0.22);
+      }
+      const fpsKnobMaterial = hud.fpsSliderKnob.material as THREE.MeshBasicMaterial;
+      fpsKnobMaterial.color.copy(hud.fpsSliderKnobBaseColor);
+      if ((fpsSliderHovered || fpsSliderActive) && !fpsDisabled) {
+        fpsKnobMaterial.color.lerp(hud.hoverHighlightColor, 0.35);
       }
       const resetVolumeMaterial = hud.resetVolumeButton.material as THREE.MeshBasicMaterial;
       resetVolumeMaterial.color.copy(hud.resetVolumeButtonBaseColor);
@@ -2383,34 +2469,53 @@ function VolumeViewer({
     }
     const state = playbackStateRef.current;
     const playMaterial = hud.playButton.material as THREE.MeshBasicMaterial;
-    const sliderTrackMaterial = hud.sliderTrack.material as THREE.MeshBasicMaterial;
-    const sliderFillMaterial = hud.sliderFill.material as THREE.MeshBasicMaterial;
-    const knobMaterial = hud.sliderKnob.material as THREE.MeshBasicMaterial;
+    const playbackSliderTrackMaterial = hud.playbackSliderTrack.material as THREE.MeshBasicMaterial;
+    const playbackSliderFillMaterial = hud.playbackSliderFill.material as THREE.MeshBasicMaterial;
+    const playbackKnobMaterial = hud.playbackSliderKnob.material as THREE.MeshBasicMaterial;
+    const fpsSliderTrackMaterial = hud.fpsSliderTrack.material as THREE.MeshBasicMaterial;
+    const fpsSliderFillMaterial = hud.fpsSliderFill.material as THREE.MeshBasicMaterial;
+    const fpsKnobMaterial = hud.fpsSliderKnob.material as THREE.MeshBasicMaterial;
     const modeMaterial = hud.modeButton.material as THREE.MeshBasicMaterial;
 
     if (state.playbackDisabled) {
       hud.playButtonBaseColor.set(0x3a414d);
-      hud.sliderTrackBaseColor.set(0x2f333b);
-      hud.sliderKnobBaseColor.set(0xcad0da);
-      sliderFillMaterial.color.set(0x5a6473);
-      sliderFillMaterial.opacity = 0.35;
+      hud.playbackSliderTrackBaseColor.set(0x2f333b);
+      hud.playbackSliderKnobBaseColor.set(0xcad0da);
+      playbackSliderFillMaterial.color.set(0x5a6473);
+      playbackSliderFillMaterial.opacity = 0.35;
     } else if (state.isPlaying) {
       hud.playButtonBaseColor.set(0x1f6f3f);
-      hud.sliderTrackBaseColor.set(0x3b414d);
-      hud.sliderKnobBaseColor.set(0xffffff);
-      sliderFillMaterial.color.set(0x45c16b);
-      sliderFillMaterial.opacity = 0.85;
+      hud.playbackSliderTrackBaseColor.set(0x3b414d);
+      hud.playbackSliderKnobBaseColor.set(0xffffff);
+      playbackSliderFillMaterial.color.set(0x45c16b);
+      playbackSliderFillMaterial.opacity = 0.85;
     } else {
       hud.playButtonBaseColor.set(0x2b5fa6);
-      hud.sliderTrackBaseColor.set(0x3b414d);
-      hud.sliderKnobBaseColor.set(0xffffff);
-      sliderFillMaterial.color.set(0x68a7ff);
-      sliderFillMaterial.opacity = 0.85;
+      hud.playbackSliderTrackBaseColor.set(0x3b414d);
+      hud.playbackSliderKnobBaseColor.set(0xffffff);
+      playbackSliderFillMaterial.color.set(0x68a7ff);
+      playbackSliderFillMaterial.opacity = 0.85;
     }
 
     playMaterial.color.copy(hud.playButtonBaseColor);
-    sliderTrackMaterial.color.copy(hud.sliderTrackBaseColor);
-    knobMaterial.color.copy(hud.sliderKnobBaseColor);
+    playbackSliderTrackMaterial.color.copy(hud.playbackSliderTrackBaseColor);
+    playbackKnobMaterial.color.copy(hud.playbackSliderKnobBaseColor);
+
+    const fpsDisabled = state.totalTimepoints <= 1;
+    if (fpsDisabled) {
+      hud.fpsSliderTrackBaseColor.set(0x2f333b);
+      hud.fpsSliderKnobBaseColor.set(0xcad0da);
+      fpsSliderFillMaterial.color.set(0x5a6473);
+      fpsSliderFillMaterial.opacity = 0.35;
+    } else {
+      hud.fpsSliderTrackBaseColor.set(0x3b414d);
+      hud.fpsSliderKnobBaseColor.set(0xffffff);
+      fpsSliderFillMaterial.color.set(0x68a7ff);
+      fpsSliderFillMaterial.opacity = 0.85;
+    }
+
+    fpsSliderTrackMaterial.color.copy(hud.fpsSliderTrackBaseColor);
+    fpsKnobMaterial.color.copy(hud.fpsSliderKnobBaseColor);
 
     const passthroughSupported = Boolean(state.passthroughSupported);
     if (!passthroughSupported) {
@@ -2439,17 +2544,32 @@ function VolumeViewer({
 
     const maxIndex = Math.max(0, state.totalTimepoints - 1);
     const fraction = maxIndex > 0 ? Math.min(Math.max(state.timeIndex / maxIndex, 0), 1) : 0;
-    setVrPlaybackSliderFraction(hud, fraction);
+    setVrPlaybackProgressFraction(hud, fraction);
     setVrPlaybackLabel(hud, state.playbackLabel ?? '');
-      applyVrPlaybackHoverState(
-        vrHoverStateRef.current.play,
-        vrHoverStateRef.current.slider,
-        vrHoverStateRef.current.sliderActive,
-        vrHoverStateRef.current.resetVolume,
-        vrHoverStateRef.current.resetHud,
-        vrHoverStateRef.current.exit,
-        vrHoverStateRef.current.mode
-      );
+    const fpsRange = VR_PLAYBACK_MAX_FPS - VR_PLAYBACK_MIN_FPS;
+    const fpsValue = Math.min(
+      VR_PLAYBACK_MAX_FPS,
+      Math.max(VR_PLAYBACK_MIN_FPS, state.fps ?? VR_PLAYBACK_MIN_FPS)
+    );
+    const fpsFraction =
+      fpsRange > 0
+        ? (Math.min(Math.max(fpsValue, VR_PLAYBACK_MIN_FPS), VR_PLAYBACK_MAX_FPS) - VR_PLAYBACK_MIN_FPS) /
+          fpsRange
+        : 0;
+    setVrPlaybackFpsFraction(hud, fpsFraction);
+    const fpsLabelText = fpsDisabled ? 'frames per second —' : `frames per second ${fpsValue}`;
+    setVrPlaybackFpsLabel(hud, fpsLabelText);
+    applyVrPlaybackHoverState(
+      vrHoverStateRef.current.play,
+      vrHoverStateRef.current.playbackSlider,
+      vrHoverStateRef.current.playbackSliderActive,
+      vrHoverStateRef.current.fpsSlider,
+      vrHoverStateRef.current.fpsSliderActive,
+      vrHoverStateRef.current.resetVolume,
+      vrHoverStateRef.current.resetHud,
+      vrHoverStateRef.current.exit,
+      vrHoverStateRef.current.mode
+    );
   }, [applyVrPlaybackHoverState]);
 
   const setVrPlaybackHudVisible = useCallback(
@@ -2460,7 +2580,7 @@ function VolumeViewer({
       }
       hud.group.visible = visible;
       if (!visible) {
-        applyVrPlaybackHoverState(false, false, false, false, false, false, false);
+        applyVrPlaybackHoverState(false, false, false, false, false, false, false, false, false);
       }
     },
     [applyVrPlaybackHoverState]
@@ -2516,7 +2636,7 @@ function VolumeViewer({
     }
   }, [setPreferredXrSessionMode]);
 
-  const applySliderFromWorldPoint = useCallback(
+  const applyPlaybackSliderFromWorldPoint = useCallback(
     (worldPoint: THREE.Vector3) => {
       const hud = vrPlaybackHudRef.current;
       if (!hud) {
@@ -2527,9 +2647,10 @@ function VolumeViewer({
         return;
       }
       sliderLocalPointRef.current.copy(worldPoint);
-      hud.sliderTrack.worldToLocal(sliderLocalPointRef.current);
+      hud.playbackSliderTrack.worldToLocal(sliderLocalPointRef.current);
       const rawRatio =
-        (sliderLocalPointRef.current.x + hud.sliderWidth / 2) / Math.max(hud.sliderWidth, 1e-5);
+        (sliderLocalPointRef.current.x + hud.playbackSliderWidth / 2) /
+        Math.max(hud.playbackSliderWidth, 1e-5);
       const clampedRatio = Math.min(Math.max(rawRatio, 0), 1);
       const maxIndex = Math.max(0, state.totalTimepoints - 1);
       const tentativeIndex = Math.round(clampedRatio * maxIndex);
@@ -2543,8 +2664,45 @@ function VolumeViewer({
       const labelCurrent = total > 0 ? Math.min(boundedIndex + 1, total) : 0;
       const label = `${labelCurrent} / ${total}`;
       state.playbackLabel = label;
-      setVrPlaybackSliderFraction(hud, fraction);
+      setVrPlaybackProgressFraction(hud, fraction);
       setVrPlaybackLabel(hud, label);
+    },
+    []
+  );
+
+  const applyFpsSliderFromWorldPoint = useCallback(
+    (worldPoint: THREE.Vector3) => {
+      const hud = vrPlaybackHudRef.current;
+      if (!hud) {
+        return;
+      }
+      const state = playbackStateRef.current;
+      if (state.totalTimepoints <= 1) {
+        return;
+      }
+      sliderLocalPointRef.current.copy(worldPoint);
+      hud.fpsSliderTrack.worldToLocal(sliderLocalPointRef.current);
+      const rawRatio =
+        (sliderLocalPointRef.current.x + hud.fpsSliderWidth / 2) / Math.max(hud.fpsSliderWidth, 1e-5);
+      const clampedRatio = Math.min(Math.max(rawRatio, 0), 1);
+      const fpsRange = VR_PLAYBACK_MAX_FPS - VR_PLAYBACK_MIN_FPS;
+      const tentativeFps = Math.round(VR_PLAYBACK_MIN_FPS + clampedRatio * fpsRange);
+      const boundedFps = Math.min(
+        VR_PLAYBACK_MAX_FPS,
+        Math.max(VR_PLAYBACK_MIN_FPS, tentativeFps)
+      );
+      if (boundedFps !== state.fps) {
+        state.onFpsChange?.(boundedFps);
+        state.fps = boundedFps;
+      }
+      const fpsFraction =
+        fpsRange > 0
+          ? (Math.min(Math.max(boundedFps, VR_PLAYBACK_MIN_FPS), VR_PLAYBACK_MAX_FPS) - VR_PLAYBACK_MIN_FPS) /
+            fpsRange
+          : 0;
+      setVrPlaybackFpsFraction(hud, fpsFraction);
+      const fpsLabelText = `frames per second ${boundedFps}`;
+      setVrPlaybackFpsLabel(hud, fpsLabelText);
     },
     []
   );
@@ -2570,10 +2728,13 @@ function VolumeViewer({
     panel.userData.vrUiTarget = { type: 'playback-panel' } satisfies { type: VrUiTargetType };
     group.add(panel);
 
-    const buttonRowY = 0.085;
-    const mainRowY = -0.02;
-    const sliderRowY = -0.085;
-    const labelRowY = -0.155;
+    const buttonRowY = 0.11;
+    const fpsLabelRowY = 0.07;
+    const fpsSliderRowY = 0.025;
+    const playbackLabelRowY = -0.03;
+    const playbackSliderRowY = -0.075;
+    const playButtonRowY = -0.14;
+    const topButtons: THREE.Mesh[] = [];
 
     const translateHandleMaterial = new THREE.MeshBasicMaterial({
       color: VR_HUD_TRANSLATE_HANDLE_COLOR,
@@ -2638,17 +2799,16 @@ function VolumeViewer({
 
     const sideButtonRadius = 0.032;
     const sideButtonMargin = 0.02;
-    const sideButtonX = VR_PLAYBACK_PANEL_WIDTH / 2 - (sideButtonMargin + sideButtonRadius);
 
     const resetVolumeButtonMaterial = new THREE.MeshBasicMaterial({ color: 0x2b3340, side: THREE.DoubleSide });
     const resetVolumeButton = new THREE.Mesh(
       new THREE.CircleGeometry(sideButtonRadius, 48),
       resetVolumeButtonMaterial
     );
-    resetVolumeButton.position.set(-sideButtonX, buttonRowY, VR_HUD_SURFACE_OFFSET);
     resetVolumeButton.userData.vrUiTarget = { type: 'playback-reset-volume' } satisfies {
       type: VrUiTargetType;
     };
+    topButtons.push(resetVolumeButton);
     const resetVolumeIconMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
     const resetVolumeIconGroup = new THREE.Group();
     const resetArc = new THREE.Mesh(
@@ -2676,11 +2836,10 @@ function VolumeViewer({
       new THREE.CircleGeometry(sideButtonRadius, 48),
       resetHudButtonMaterial
     );
-    const resetHudOffsetX = sideButtonRadius * 2 + sideButtonMargin;
-    resetHudButton.position.set(-sideButtonX + resetHudOffsetX, buttonRowY, VR_HUD_SURFACE_OFFSET);
     resetHudButton.userData.vrUiTarget = { type: 'playback-reset-hud' } satisfies {
       type: VrUiTargetType;
     };
+    topButtons.push(resetHudButton);
     const resetHudIconMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
     const resetHudIconGroup = new THREE.Group();
     const windowPrimaryOuter = new THREE.Mesh(
@@ -2712,7 +2871,7 @@ function VolumeViewer({
 
     const playButtonMaterial = new THREE.MeshBasicMaterial({ color: 0x2b3340, side: THREE.DoubleSide });
     const playButton = new THREE.Mesh(new THREE.CircleGeometry(0.045, 48), playButtonMaterial);
-    playButton.position.set(-VR_PLAYBACK_PANEL_WIDTH * 0.24, mainRowY, VR_HUD_SURFACE_OFFSET);
+    playButton.position.set(0, playButtonRowY, VR_HUD_SURFACE_OFFSET);
     playButton.userData.vrUiTarget = { type: 'playback-play-toggle' } satisfies {
       type: VrUiTargetType;
     };
@@ -2744,11 +2903,10 @@ function VolumeViewer({
 
     const modeButtonMaterial = new THREE.MeshBasicMaterial({ color: 0x2b3340, side: THREE.DoubleSide });
     const modeButton = new THREE.Mesh(new THREE.CircleGeometry(sideButtonRadius, 48), modeButtonMaterial);
-    const modeButtonX = sideButtonX - (sideButtonRadius * 2 + sideButtonMargin * 1.5);
-    modeButton.position.set(modeButtonX, buttonRowY, VR_HUD_SURFACE_OFFSET);
     modeButton.userData.vrUiTarget = { type: 'playback-toggle-mode' } satisfies {
       type: VrUiTargetType;
     };
+    topButtons.push(modeButton);
     const modeIconMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
     const modeVrIcon = new THREE.Group();
     const vrStrap = new THREE.Mesh(new THREE.PlaneGeometry(0.048, 0.006), modeIconMaterial.clone());
@@ -2784,10 +2942,10 @@ function VolumeViewer({
 
     const exitButtonMaterial = new THREE.MeshBasicMaterial({ color: 0x512b2b, side: THREE.DoubleSide });
     const exitButton = new THREE.Mesh(new THREE.CircleGeometry(sideButtonRadius, 48), exitButtonMaterial);
-    exitButton.position.set(sideButtonX, buttonRowY, VR_HUD_SURFACE_OFFSET);
     exitButton.userData.vrUiTarget = { type: 'playback-exit-vr' } satisfies {
       type: VrUiTargetType;
     };
+    topButtons.push(exitButton);
     const exitIconMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
     const exitIconGroup = new THREE.Group();
     const exitBarGeometry = new THREE.PlaneGeometry(0.03, 0.006);
@@ -2802,50 +2960,131 @@ function VolumeViewer({
     exitButton.add(exitIconGroup);
     group.add(exitButton);
 
-    const sliderGroup = new THREE.Group();
-    sliderGroup.position.set(0.08, sliderRowY, VR_HUD_SURFACE_OFFSET);
-    group.add(sliderGroup);
+    const buttonSpacing = sideButtonRadius * 2 + sideButtonMargin;
+    const firstButtonX = -((topButtons.length - 1) * buttonSpacing) / 2;
+    topButtons.forEach((button, index) => {
+      button.position.set(firstButtonX + index * buttonSpacing, buttonRowY, VR_HUD_SURFACE_OFFSET);
+    });
 
-    const sliderWidth = 0.32;
-    const sliderTrackMaterial = new THREE.MeshBasicMaterial({ color: 0x3b414d, side: THREE.DoubleSide });
-    const sliderTrack = new THREE.Mesh(new THREE.PlaneGeometry(sliderWidth, 0.012), sliderTrackMaterial);
-    sliderTrack.position.set(0, 0, 0);
-    sliderGroup.add(sliderTrack);
+    const fpsSliderGroup = new THREE.Group();
+    fpsSliderGroup.position.set(0, fpsSliderRowY, VR_HUD_SURFACE_OFFSET);
+    group.add(fpsSliderGroup);
 
-    const sliderFillMaterial = new THREE.MeshBasicMaterial({
+    const fpsSliderWidth = 0.32;
+    const fpsSliderTrackMaterial = new THREE.MeshBasicMaterial({ color: 0x3b414d, side: THREE.DoubleSide });
+    const fpsSliderTrack = new THREE.Mesh(new THREE.PlaneGeometry(fpsSliderWidth, 0.012), fpsSliderTrackMaterial);
+    fpsSliderTrack.position.set(0, 0, 0);
+    fpsSliderGroup.add(fpsSliderTrack);
+
+    const fpsSliderFillMaterial = new THREE.MeshBasicMaterial({
       color: 0x68a7ff,
       transparent: true,
       opacity: 0.85,
       side: THREE.DoubleSide
     });
-    const sliderFill = new THREE.Mesh(new THREE.PlaneGeometry(sliderWidth, 0.012), sliderFillMaterial);
-    sliderFill.position.set(0, 0, 0.0005);
-    sliderGroup.add(sliderFill);
+    const fpsSliderFill = new THREE.Mesh(new THREE.PlaneGeometry(fpsSliderWidth, 0.012), fpsSliderFillMaterial);
+    fpsSliderFill.position.set(0, 0, 0.0005);
+    fpsSliderGroup.add(fpsSliderFill);
 
-    const sliderKnobMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
-    const sliderKnob = new THREE.Mesh(new THREE.CircleGeometry(0.017, 32), sliderKnobMaterial);
-    sliderKnob.position.set(-sliderWidth / 2, 0, 0.001);
-    sliderKnob.userData.vrUiTarget = { type: 'playback-slider' } satisfies {
+    const fpsSliderKnobMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+    const fpsSliderKnob = new THREE.Mesh(new THREE.CircleGeometry(0.017, 32), fpsSliderKnobMaterial);
+    fpsSliderKnob.position.set(-fpsSliderWidth / 2, 0, 0.001);
+    fpsSliderKnob.userData.vrUiTarget = { type: 'playback-fps-slider' } satisfies {
       type: VrUiTargetType;
     };
-    sliderGroup.add(sliderKnob);
+    fpsSliderGroup.add(fpsSliderKnob);
 
-    const sliderHitMaterial = new THREE.MeshBasicMaterial({
+    const fpsSliderHitMaterial = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       opacity: 0.01,
       transparent: true,
       depthWrite: false,
       side: THREE.DoubleSide
     });
-    const sliderHitArea = new THREE.Mesh(
-      new THREE.PlaneGeometry(sliderWidth + 0.04, 0.08),
-      sliderHitMaterial
+    const fpsSliderHitArea = new THREE.Mesh(
+      new THREE.PlaneGeometry(fpsSliderWidth + 0.04, 0.08),
+      fpsSliderHitMaterial
     );
-    sliderHitArea.position.set(0, 0, 0.0002);
-    sliderHitArea.userData.vrUiTarget = { type: 'playback-slider' } satisfies {
+    fpsSliderHitArea.position.set(0, 0, 0.0002);
+    fpsSliderHitArea.userData.vrUiTarget = { type: 'playback-fps-slider' } satisfies {
       type: VrUiTargetType;
     };
-    sliderGroup.add(sliderHitArea);
+    fpsSliderGroup.add(fpsSliderHitArea);
+
+    const fpsLabelCanvas = document.createElement('canvas');
+    fpsLabelCanvas.width = 256;
+    fpsLabelCanvas.height = 64;
+    const fpsLabelContext = fpsLabelCanvas.getContext('2d');
+    const fpsLabelTexture = new THREE.CanvasTexture(fpsLabelCanvas);
+    fpsLabelTexture.colorSpace = THREE.SRGBColorSpace;
+    fpsLabelTexture.minFilter = THREE.LinearFilter;
+    fpsLabelTexture.magFilter = THREE.LinearFilter;
+    const fpsLabelMaterial = new THREE.MeshBasicMaterial({
+      map: fpsLabelTexture,
+      transparent: true,
+      opacity: 0.95,
+      side: THREE.DoubleSide
+    });
+    const fpsLabelMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.05), fpsLabelMaterial);
+    fpsLabelMesh.position.set(0, fpsLabelRowY, VR_HUD_SURFACE_OFFSET + 0.0005);
+    group.add(fpsLabelMesh);
+
+    const playbackSliderGroup = new THREE.Group();
+    playbackSliderGroup.position.set(0, playbackSliderRowY, VR_HUD_SURFACE_OFFSET);
+    group.add(playbackSliderGroup);
+
+    const playbackSliderWidth = 0.32;
+    const playbackSliderTrackMaterial = new THREE.MeshBasicMaterial({
+      color: 0x3b414d,
+      side: THREE.DoubleSide
+    });
+    const playbackSliderTrack = new THREE.Mesh(
+      new THREE.PlaneGeometry(playbackSliderWidth, 0.012),
+      playbackSliderTrackMaterial
+    );
+    playbackSliderTrack.position.set(0, 0, 0);
+    playbackSliderGroup.add(playbackSliderTrack);
+
+    const playbackSliderFillMaterial = new THREE.MeshBasicMaterial({
+      color: 0x68a7ff,
+      transparent: true,
+      opacity: 0.85,
+      side: THREE.DoubleSide
+    });
+    const playbackSliderFill = new THREE.Mesh(
+      new THREE.PlaneGeometry(playbackSliderWidth, 0.012),
+      playbackSliderFillMaterial
+    );
+    playbackSliderFill.position.set(0, 0, 0.0005);
+    playbackSliderGroup.add(playbackSliderFill);
+
+    const playbackSliderKnobMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+    const playbackSliderKnob = new THREE.Mesh(
+      new THREE.CircleGeometry(0.017, 32),
+      playbackSliderKnobMaterial
+    );
+    playbackSliderKnob.position.set(-playbackSliderWidth / 2, 0, 0.001);
+    playbackSliderKnob.userData.vrUiTarget = { type: 'playback-slider' } satisfies {
+      type: VrUiTargetType;
+    };
+    playbackSliderGroup.add(playbackSliderKnob);
+
+    const playbackSliderHitMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      opacity: 0.01,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    const playbackSliderHitArea = new THREE.Mesh(
+      new THREE.PlaneGeometry(playbackSliderWidth + 0.04, 0.08),
+      playbackSliderHitMaterial
+    );
+    playbackSliderHitArea.position.set(0, 0, 0.0002);
+    playbackSliderHitArea.userData.vrUiTarget = { type: 'playback-slider' } satisfies {
+      type: VrUiTargetType;
+    };
+    playbackSliderGroup.add(playbackSliderHitArea);
 
     const labelCanvas = document.createElement('canvas');
     labelCanvas.width = 256;
@@ -2862,7 +3101,7 @@ function VolumeViewer({
       side: THREE.DoubleSide
     });
     const labelMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.06), labelMaterial);
-    labelMesh.position.set(0.08, labelRowY, VR_HUD_SURFACE_OFFSET + 0.0005);
+    labelMesh.position.set(0, playbackLabelRowY, VR_HUD_SURFACE_OFFSET + 0.0005);
     group.add(labelMesh);
 
     const hud: VrPlaybackHud = {
@@ -2878,17 +3117,28 @@ function VolumeViewer({
       pauseGroup,
       exitButton,
       exitIcon: exitIconGroup,
-      sliderGroup,
-      sliderTrack,
-      sliderFill,
-      sliderKnob,
-      sliderHitArea,
-      sliderWidth,
+      playbackSliderGroup,
+      playbackSliderTrack,
+      playbackSliderFill,
+      playbackSliderKnob,
+      playbackSliderHitArea,
+      playbackSliderWidth,
+      fpsSliderGroup,
+      fpsSliderTrack,
+      fpsSliderFill,
+      fpsSliderKnob,
+      fpsSliderHitArea,
+      fpsSliderWidth,
       labelMesh,
       labelTexture,
       labelCanvas,
       labelContext,
       labelText: '',
+      fpsLabelMesh,
+      fpsLabelTexture,
+      fpsLabelCanvas,
+      fpsLabelContext,
+      fpsLabelText: '',
       interactables: [
         panelTranslateHandle,
         ...panelYawHandles,
@@ -2898,14 +3148,18 @@ function VolumeViewer({
         playButton,
         modeButton,
         exitButton,
-        sliderHitArea,
-        sliderKnob
+        playbackSliderHitArea,
+        playbackSliderKnob,
+        fpsSliderHitArea,
+        fpsSliderKnob
       ],
       resetVolumeButtonBaseColor: new THREE.Color(0x2b3340),
       resetHudButtonBaseColor: new THREE.Color(0x2b3340),
       playButtonBaseColor: new THREE.Color(0x2b3340),
-      sliderTrackBaseColor: new THREE.Color(0x3b414d),
-      sliderKnobBaseColor: new THREE.Color(0xffffff),
+      playbackSliderTrackBaseColor: new THREE.Color(0x3b414d),
+      playbackSliderKnobBaseColor: new THREE.Color(0xffffff),
+      fpsSliderTrackBaseColor: new THREE.Color(0x3b414d),
+      fpsSliderKnobBaseColor: new THREE.Color(0xffffff),
       exitButtonBaseColor: new THREE.Color(0x512b2b),
       modeButtonBaseColor: new THREE.Color(0x2b3340),
       modeButtonActiveColor: new THREE.Color(0x1f6f3f),
@@ -2927,7 +3181,7 @@ function VolumeViewer({
     const state = playbackStateRef.current;
     const maxIndex = Math.max(0, state.totalTimepoints - 1);
     const fraction = maxIndex > 0 ? Math.min(Math.max(state.timeIndex / maxIndex, 0), 1) : 0;
-    setVrPlaybackSliderFraction(hud, fraction);
+    setVrPlaybackProgressFraction(hud, fraction);
     setVrPlaybackLabel(hud, state.playbackLabel ?? '');
 
     return hud;
@@ -2955,7 +3209,7 @@ function VolumeViewer({
 
     const panelCanvas = document.createElement('canvas');
     const panelDisplayWidth = VR_CHANNELS_CANVAS_WIDTH;
-    const panelDisplayHeight = VR_CHANNELS_CANVAS_HEIGHT;
+    const panelDisplayHeight = VR_CHANNELS_CANVAS_MIN_HEIGHT;
     const pixelRatio = typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : 1;
     panelCanvas.width = Math.round(panelDisplayWidth * pixelRatio);
     panelCanvas.height = Math.round(panelDisplayHeight * pixelRatio);
@@ -3045,6 +3299,7 @@ function VolumeViewer({
 
     const hud: VrChannelsHud = {
       group,
+      background,
       panel,
       panelTranslateHandle,
       panelYawHandles,
@@ -3067,6 +3322,36 @@ function VolumeViewer({
     };
 
     return hud;
+  }, []);
+
+  const resizeVrChannelsHud = useCallback((hud: VrChannelsHud, displayHeight: number) => {
+    if (!hud.panelCanvas) {
+      return;
+    }
+
+    const pixelRatio = hud.pixelRatio || 1;
+    hud.panelDisplayHeight = displayHeight;
+    hud.panelCanvas.width = Math.round(hud.panelDisplayWidth * pixelRatio);
+    hud.panelCanvas.height = Math.round(displayHeight * pixelRatio);
+
+    const newPanelHeight = (hud.width / hud.panelDisplayWidth) * displayHeight;
+    hud.height = newPanelHeight;
+
+    const panelGeometry = new THREE.PlaneGeometry(hud.width, newPanelHeight);
+    hud.panel.geometry.dispose();
+    hud.panel.geometry = panelGeometry;
+
+    const backgroundGeometry = new THREE.PlaneGeometry(hud.width, newPanelHeight);
+    hud.background.geometry.dispose();
+    hud.background.geometry = backgroundGeometry;
+
+    const halfHeight = newPanelHeight / 2;
+    hud.panelTranslateHandle.position.setY(halfHeight + VR_HUD_TRANSLATE_HANDLE_OFFSET);
+    hud.panelPitchHandle.position.setY(-(halfHeight + VR_HUD_YAW_HANDLE_OFFSET));
+    hud.panelTranslateHandle.updateMatrixWorld();
+    hud.panelPitchHandle.updateMatrixWorld();
+
+    hud.cacheDirty = true;
   }, []);
 
   const createVrTracksHud = useCallback(() => {
@@ -3253,7 +3538,17 @@ function VolumeViewer({
       ctx.fillText('Load a volume to configure channel properties.', paddingX, currentY + 20);
       hud.regions = [];
       hud.hoverRegion = null;
+
+      const contentBottom = Math.ceil(currentY + 140);
       ctx.restore();
+
+      const desiredDisplayHeight = Math.max(VR_CHANNELS_CANVAS_MIN_HEIGHT, contentBottom);
+      if (Math.abs(desiredDisplayHeight - hud.panelDisplayHeight) > 1) {
+        resizeVrChannelsHud(hud, desiredDisplayHeight);
+        renderVrChannelsHud(hud, state);
+        return;
+      }
+
       hud.panelTexture.needsUpdate = true;
       return;
     }
@@ -3384,62 +3679,21 @@ function VolumeViewer({
       const samplingActive = selectedLayer.settings.samplingMode === 'nearest';
       const invertActive = selectedLayer.settings.invert;
       const autoContrastDisabled = !selectedLayer.hasData;
+      const resetDisabled = activeChannel.layers.length === 0;
       const actionButtonHeight = 60;
       const actionButtonRadius = 16;
       const actionSpacing = 24;
-      const rowSpacing = 18;
       const availableRowWidth = canvasWidth - paddingX * 2;
-      const buttonWidth = Math.max(0, Math.min(280, (availableRowWidth - actionSpacing) / 2));
-      const firstRowY = currentY;
-      const secondRowY = firstRowY + actionButtonHeight + rowSpacing;
-      const thirdRowY = secondRowY + actionButtonHeight + rowSpacing;
-      const resetX = paddingX;
-      const invertX = resetX + buttonWidth + actionSpacing;
+      const maxActionButtonWidth = 280;
+      const renderSamplingWidth = Math.max(
+        0,
+        Math.min(maxActionButtonWidth, (availableRowWidth - actionSpacing) / 2)
+      );
+      const renderRowY = currentY;
       const renderX = paddingX;
-      const samplingX = renderX + buttonWidth + actionSpacing;
-      const autoContrastX = paddingX;
-      const autoContrastWidth = availableRowWidth;
+      const samplingX = renderX + renderSamplingWidth + actionSpacing;
 
-      drawRoundedRect(ctx, resetX, firstRowY, buttonWidth, actionButtonHeight, actionButtonRadius);
-      const resetDisabled = activeChannel.layers.length === 0;
-      ctx.fillStyle = resetDisabled ? 'rgba(45, 60, 74, 0.6)' : '#2b3340';
-      ctx.fill();
-      if (
-        hud.hoverRegion &&
-        hud.hoverRegion.targetType === 'channels-reset' &&
-        hud.hoverRegion.channelId === activeChannel.id
-      ) {
-        ctx.save();
-        drawRoundedRect(ctx, resetX, firstRowY, buttonWidth, actionButtonHeight, actionButtonRadius);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
-        ctx.fill();
-        ctx.restore();
-      }
-      ctx.fillStyle = resetDisabled ? '#7b8795' : '#f3f6fc';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.font = vrChannelsFont('600', VR_CHANNELS_FONT_SIZES.small);
-      ctx.fillText('Reset sliders', resetX + buttonWidth / 2, firstRowY + actionButtonHeight / 2);
-
-      drawRoundedRect(ctx, invertX, firstRowY, buttonWidth, actionButtonHeight, actionButtonRadius);
-      ctx.fillStyle = invertDisabled ? 'rgba(45, 60, 74, 0.6)' : invertActive ? '#2b5fa6' : '#2b3340';
-      ctx.fill();
-      if (
-        hud.hoverRegion &&
-        hud.hoverRegion.targetType === 'channels-invert' &&
-        hud.hoverRegion.channelId === activeChannel.id &&
-        hud.hoverRegion.layerKey === selectedLayer.key
-      ) {
-        ctx.save();
-        drawRoundedRect(ctx, invertX, firstRowY, buttonWidth, actionButtonHeight, actionButtonRadius);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
-        ctx.fill();
-        ctx.restore();
-      }
-      ctx.fillStyle = invertDisabled ? '#7b8795' : '#f3f6fc';
-      ctx.fillText('Invert LUT', invertX + buttonWidth / 2, firstRowY + actionButtonHeight / 2);
-
-      drawRoundedRect(ctx, renderX, secondRowY, buttonWidth, actionButtonHeight, actionButtonRadius);
+      drawRoundedRect(ctx, renderX, renderRowY, renderSamplingWidth, actionButtonHeight, actionButtonRadius);
       ctx.fillStyle = renderStyleDisabled ? 'rgba(45, 60, 74, 0.6)' : renderStyleActive ? '#2b5fa6' : '#2b3340';
       ctx.fill();
       if (
@@ -3449,15 +3703,13 @@ function VolumeViewer({
         hud.hoverRegion.layerKey === selectedLayer.key
       ) {
         ctx.save();
-        drawRoundedRect(ctx, renderX, secondRowY, buttonWidth, actionButtonHeight, actionButtonRadius);
+        drawRoundedRect(ctx, renderX, renderRowY, renderSamplingWidth, actionButtonHeight, actionButtonRadius);
         ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
         ctx.fill();
         ctx.restore();
       }
-      ctx.fillStyle = renderStyleDisabled ? '#7b8795' : '#f3f6fc';
-      ctx.fillText('Render style', renderX + buttonWidth / 2, secondRowY + actionButtonHeight / 2);
 
-      drawRoundedRect(ctx, samplingX, secondRowY, buttonWidth, actionButtonHeight, actionButtonRadius);
+      drawRoundedRect(ctx, samplingX, renderRowY, renderSamplingWidth, actionButtonHeight, actionButtonRadius);
       ctx.fillStyle = samplingDisabled ? 'rgba(45, 60, 74, 0.6)' : samplingActive ? '#2b5fa6' : '#2b3340';
       ctx.fill();
       if (
@@ -3467,84 +3719,27 @@ function VolumeViewer({
         hud.hoverRegion.layerKey === selectedLayer.key
       ) {
         ctx.save();
-        drawRoundedRect(ctx, samplingX, secondRowY, buttonWidth, actionButtonHeight, actionButtonRadius);
+        drawRoundedRect(ctx, samplingX, renderRowY, renderSamplingWidth, actionButtonHeight, actionButtonRadius);
         ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
         ctx.fill();
         ctx.restore();
       }
-      ctx.fillStyle = samplingDisabled ? '#7b8795' : '#f3f6fc';
-      ctx.fillText('Sampling mode', samplingX + buttonWidth / 2, secondRowY + actionButtonHeight / 2);
 
-      drawRoundedRect(
-        ctx,
-        autoContrastX,
-        thirdRowY,
-        autoContrastWidth,
-        actionButtonHeight,
-        actionButtonRadius
-      );
-      ctx.fillStyle = autoContrastDisabled ? 'rgba(45, 60, 74, 0.6)' : '#2b3340';
-      ctx.fill();
-      if (
-        hud.hoverRegion &&
-        hud.hoverRegion.targetType === 'channels-auto-contrast' &&
-        hud.hoverRegion.channelId === activeChannel.id &&
-        hud.hoverRegion.layerKey === selectedLayer.key
-      ) {
-        ctx.save();
-        drawRoundedRect(
-          ctx,
-          autoContrastX,
-          thirdRowY,
-          autoContrastWidth,
-          actionButtonHeight,
-          actionButtonRadius
-        );
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
-        ctx.fill();
-        ctx.restore();
-      }
-      ctx.fillStyle = autoContrastDisabled ? '#7b8795' : '#f3f6fc';
-      ctx.fillText(
-        'Auto contrast',
-        autoContrastX + autoContrastWidth / 2,
-        thirdRowY + actionButtonHeight / 2
-      );
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = vrChannelsFont('600', VR_CHANNELS_FONT_SIZES.small);
+      ctx.fillStyle = renderStyleDisabled ? '#7b8795' : '#f3f6fc';
+      ctx.fillText('Render style', renderX + renderSamplingWidth / 2, renderRowY + actionButtonHeight / 2);
+      ctx.fillStyle = samplingDisabled ? '#7b8795' : '#f3f6fc';
+      ctx.fillText('Sampling mode', samplingX + renderSamplingWidth / 2, renderRowY + actionButtonHeight / 2);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
 
-      const resetBounds = {
-        minX: toPanelX(resetX),
-        maxX: toPanelX(resetX + buttonWidth),
-        minY: Math.min(toPanelY(firstRowY), toPanelY(firstRowY + actionButtonHeight)),
-        maxY: Math.max(toPanelY(firstRowY), toPanelY(firstRowY + actionButtonHeight))
-      };
-      regions.push({
-        targetType: 'channels-reset',
-        channelId: activeChannel.id,
-        bounds: resetBounds,
-        disabled: resetDisabled
-      });
-
-      const invertBounds = {
-        minX: toPanelX(invertX),
-        maxX: toPanelX(invertX + buttonWidth),
-        minY: Math.min(toPanelY(firstRowY), toPanelY(firstRowY + actionButtonHeight)),
-        maxY: Math.max(toPanelY(firstRowY), toPanelY(firstRowY + actionButtonHeight))
-      };
-      regions.push({
-        targetType: 'channels-invert',
-        channelId: activeChannel.id,
-        layerKey: selectedLayer.key,
-        bounds: invertBounds,
-        disabled: invertDisabled
-      });
-
       const renderBounds = {
         minX: toPanelX(renderX),
-        maxX: toPanelX(renderX + buttonWidth),
-        minY: Math.min(toPanelY(secondRowY), toPanelY(secondRowY + actionButtonHeight)),
-        maxY: Math.max(toPanelY(secondRowY), toPanelY(secondRowY + actionButtonHeight))
+        maxX: toPanelX(renderX + renderSamplingWidth),
+        minY: Math.min(toPanelY(renderRowY), toPanelY(renderRowY + actionButtonHeight)),
+        maxY: Math.max(toPanelY(renderRowY), toPanelY(renderRowY + actionButtonHeight))
       };
       regions.push({
         targetType: 'channels-render-style',
@@ -3556,9 +3751,9 @@ function VolumeViewer({
 
       const samplingBounds = {
         minX: toPanelX(samplingX),
-        maxX: toPanelX(samplingX + buttonWidth),
-        minY: Math.min(toPanelY(secondRowY), toPanelY(secondRowY + actionButtonHeight)),
-        maxY: Math.max(toPanelY(secondRowY), toPanelY(secondRowY + actionButtonHeight))
+        maxX: toPanelX(samplingX + renderSamplingWidth),
+        minY: Math.min(toPanelY(renderRowY), toPanelY(renderRowY + actionButtonHeight)),
+        maxY: Math.max(toPanelY(renderRowY), toPanelY(renderRowY + actionButtonHeight))
       };
       regions.push({
         targetType: 'channels-sampling',
@@ -3568,22 +3763,8 @@ function VolumeViewer({
         disabled: samplingDisabled
       });
 
-      const autoContrastBounds = {
-        minX: toPanelX(autoContrastX),
-        maxX: toPanelX(autoContrastX + autoContrastWidth),
-        minY: Math.min(toPanelY(thirdRowY), toPanelY(thirdRowY + actionButtonHeight)),
-        maxY: Math.max(toPanelY(thirdRowY), toPanelY(thirdRowY + actionButtonHeight))
-      };
-      regions.push({
-        targetType: 'channels-auto-contrast',
-        channelId: activeChannel.id,
-        layerKey: selectedLayer.key,
-        bounds: autoContrastBounds,
-        disabled: autoContrastDisabled
-      });
-
-      const actionsBottom = thirdRowY + actionButtonHeight;
-      currentY = actionsBottom + 32;
+      const renderRowBottom = renderRowY + actionButtonHeight;
+      currentY = renderRowBottom + 32;
 
       const histogramWidth = canvasWidth - paddingX * 2;
       const histogramHeight = VR_CHANNELS_HISTOGRAM_HEIGHT;
@@ -3661,67 +3842,8 @@ function VolumeViewer({
       currentY += histogramHeight + 48;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
-    }
 
-    ctx.fillStyle = '#9fb2c8';
-    ctx.font = vrChannelsFont('500', VR_CHANNELS_FONT_SIZES.label);
-    ctx.fillText('Layers', paddingX, currentY);
-    currentY += 40;
-
-    const layerButtonHeight = 60;
-    const layerButtonWidth = canvasWidth - paddingX * 2;
-    ctx.font = vrChannelsFont('600', VR_CHANNELS_FONT_SIZES.label);
-
-    for (const layer of activeChannel.layers) {
-      const isSelected = layer.key === (activeChannel.activeLayerKey ?? layer.key);
-      const x = paddingX;
-      const y = currentY;
-      drawRoundedRect(ctx, x, y, layerButtonWidth, layerButtonHeight, 16);
-      ctx.fillStyle = isSelected ? '#2b5fa6' : '#1f2735';
-      ctx.fill();
-      if (hud.hoverRegion && hud.hoverRegion.targetType === 'channels-layer' && hud.hoverRegion.layerKey === layer.key) {
-        ctx.save();
-        drawRoundedRect(ctx, x, y, layerButtonWidth, layerButtonHeight, 16);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
-        ctx.fill();
-        ctx.restore();
-      }
-      ctx.fillStyle = '#f3f6fc';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(layer.label, x + 24, y + layerButtonHeight / 2);
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-
-      const layerBounds = {
-        minX: toPanelX(x),
-        maxX: toPanelX(x + layerButtonWidth),
-        minY: Math.min(toPanelY(y), toPanelY(y + layerButtonHeight)),
-        maxY: Math.max(toPanelY(y), toPanelY(y + layerButtonHeight))
-      };
-      regions.push({
-        targetType: 'channels-layer',
-        channelId: activeChannel.id,
-        layerKey: layer.key,
-        bounds: layerBounds,
-        disabled: false
-      });
-
-      currentY += layerButtonHeight + 18;
-    }
-
-    if (selectedLayer) {
-      const sliderDefs: Array<{
-        key: VrChannelsSliderKey;
-        label: string;
-        value: number;
-        min: number;
-        max: number;
-        step: number;
-        formatter: (value: number) => string;
-        disabled: boolean;
-        axis?: 'x' | 'y';
-      }> = [
+      const sliderDefs: VrChannelsSliderDefinition[] = [
         {
           key: 'windowMin',
           label: 'Minimum',
@@ -3750,14 +3872,8 @@ function VolumeViewer({
           max: selectedLayer.settings.sliderRange,
           step: 1,
           formatter: (value: number) => {
-            const preview = brightnessContrastModel.applyContrast(
-              selectedLayer.settings,
-              value
-            );
-            const multiplier = computeContrastMultiplier(
-              preview.windowMin,
-              preview.windowMax
-            );
+            const preview = brightnessContrastModel.applyContrast(selectedLayer.settings, value);
+            const multiplier = computeContrastMultiplier(preview.windowMin, preview.windowMax);
             return `${formatContrastMultiplier(multiplier)}×`;
           },
           disabled: !selectedLayer.hasData
@@ -3770,10 +3886,7 @@ function VolumeViewer({
           max: selectedLayer.settings.sliderRange,
           step: 1,
           formatter: (value: number) => {
-            const preview = brightnessContrastModel.applyBrightness(
-              selectedLayer.settings,
-              value
-            );
+            const preview = brightnessContrastModel.applyBrightness(selectedLayer.settings, value);
             const center = preview.windowMin + (preview.windowMax - preview.windowMin) / 2;
             return formatNormalizedIntensity(center);
           },
@@ -3803,29 +3916,39 @@ function VolumeViewer({
         }
       ];
 
-      ctx.font = vrChannelsFont('500', VR_CHANNELS_FONT_SIZES.body);
-      for (const slider of sliderDefs) {
-        const labelY = currentY;
+      const sliderByKey = new Map(sliderDefs.map((entry) => [entry.key, entry]));
+
+      const drawSliderControl = (
+        slider: VrChannelsSliderDefinition,
+        x: number,
+        width: number,
+        top: number
+      ): number => {
+        ctx.font = vrChannelsFont('500', VR_CHANNELS_FONT_SIZES.body);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
         ctx.fillStyle = '#9fb2c8';
-        ctx.fillText(slider.label, paddingX, labelY);
+        ctx.fillText(slider.label, x, top);
+        const valueLabel = slider.formatter(slider.value);
+        ctx.textAlign = 'right';
         ctx.fillStyle = '#dce3f1';
         ctx.font = vrChannelsFont('600', VR_CHANNELS_FONT_SIZES.value);
-        ctx.fillText(slider.formatter(slider.value), paddingX + 220, labelY);
+        ctx.fillText(valueLabel, x + width, top);
+        ctx.textAlign = 'left';
         ctx.font = vrChannelsFont('500', VR_CHANNELS_FONT_SIZES.body);
+        ctx.fillStyle = '#9fb2c8';
 
-        const sliderX = paddingX;
-        const sliderY = labelY + 36;
-        const sliderWidth = canvasWidth - paddingX * 2;
+        const sliderY = top + 36;
         const sliderHeight = 26;
         const sliderRadius = 14;
-
-        drawRoundedRect(ctx, sliderX, sliderY, sliderWidth, sliderHeight, sliderRadius);
+        drawRoundedRect(ctx, x, sliderY, width, sliderHeight, sliderRadius);
         ctx.fillStyle = slider.disabled ? 'rgba(45, 60, 74, 0.6)' : '#1f2733';
         ctx.fill();
 
-        const knobFraction = (slider.value - slider.min) / (slider.max - slider.min);
+        const rangeSpan = slider.max - slider.min;
+        const knobFraction = rangeSpan <= 1e-5 ? 0 : (slider.value - slider.min) / rangeSpan;
         const clampedFraction = Math.min(Math.max(knobFraction, 0), 1);
-        const knobX = sliderX + clampedFraction * sliderWidth;
+        const knobX = x + clampedFraction * width;
         const knobY = sliderY + sliderHeight / 2;
         ctx.beginPath();
         ctx.arc(knobX, knobY, 18, 0, Math.PI * 2);
@@ -3845,15 +3968,15 @@ function VolumeViewer({
           hud.hoverRegion.sliderKey === slider.key
         ) {
           ctx.save();
-          drawRoundedRect(ctx, sliderX, sliderY, sliderWidth, sliderHeight, sliderRadius);
+          drawRoundedRect(ctx, x, sliderY, width, sliderHeight, sliderRadius);
           ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
           ctx.fill();
           ctx.restore();
         }
 
         const sliderBounds = {
-          minX: toPanelX(sliderX),
-          maxX: toPanelX(sliderX + sliderWidth),
+          minX: toPanelX(x),
+          maxX: toPanelX(x + width),
           minY: Math.min(toPanelY(sliderY - 10), toPanelY(sliderY + sliderHeight + 10)),
           maxY: Math.max(toPanelY(sliderY - 10), toPanelY(sliderY + sliderHeight + 10))
         };
@@ -3868,14 +3991,178 @@ function VolumeViewer({
           axis: slider.axis,
           bounds: sliderBounds,
           sliderTrack: {
-            minX: toPanelX(sliderX),
-            maxX: toPanelX(sliderX + sliderWidth),
+            minX: toPanelX(x),
+            maxX: toPanelX(x + width),
             y: toPanelY(sliderY + sliderHeight / 2)
           },
           disabled: slider.disabled
         });
 
-        currentY += sliderHeight + 64;
+        return sliderY + sliderHeight;
+      };
+
+      const sliderColumnSpacing = 24;
+      const sliderColumnWidth = Math.max(
+        0,
+        (availableRowWidth - sliderColumnSpacing) / 2
+      );
+
+      const minSlider = sliderByKey.get('windowMin');
+      const maxSlider = sliderByKey.get('windowMax');
+      if (minSlider && maxSlider) {
+        const rowTop = currentY;
+        const minBottom = drawSliderControl(minSlider, paddingX, sliderColumnWidth, rowTop);
+        const maxBottom = drawSliderControl(
+          maxSlider,
+          paddingX + sliderColumnWidth + sliderColumnSpacing,
+          sliderColumnWidth,
+          rowTop
+        );
+        currentY = Math.max(minBottom, maxBottom) + 64;
+      }
+
+      const brightnessSlider = sliderByKey.get('brightness');
+      const contrastSlider = sliderByKey.get('contrast');
+      if (brightnessSlider && contrastSlider) {
+        const rowTop = currentY;
+        const brightnessBottom = drawSliderControl(
+          brightnessSlider,
+          paddingX,
+          sliderColumnWidth,
+          rowTop
+        );
+        const contrastBottom = drawSliderControl(
+          contrastSlider,
+          paddingX + sliderColumnWidth + sliderColumnSpacing,
+          sliderColumnWidth,
+          rowTop
+        );
+        currentY = Math.max(brightnessBottom, contrastBottom) + 64;
+      }
+
+      const tripleButtonSpacing = actionSpacing;
+      const tripleButtonWidth = Math.max(
+        0,
+        Math.min(maxActionButtonWidth, (availableRowWidth - tripleButtonSpacing * 2) / 3)
+      );
+      const resetRowY = currentY;
+      const resetX = paddingX;
+      const invertX = resetX + tripleButtonWidth + tripleButtonSpacing;
+      const autoX = invertX + tripleButtonWidth + tripleButtonSpacing;
+
+      drawRoundedRect(ctx, resetX, resetRowY, tripleButtonWidth, actionButtonHeight, actionButtonRadius);
+      ctx.fillStyle = resetDisabled ? 'rgba(45, 60, 74, 0.6)' : '#2b3340';
+      ctx.fill();
+      if (
+        hud.hoverRegion &&
+        hud.hoverRegion.targetType === 'channels-reset' &&
+        hud.hoverRegion.channelId === activeChannel.id
+      ) {
+        ctx.save();
+        drawRoundedRect(ctx, resetX, resetRowY, tripleButtonWidth, actionButtonHeight, actionButtonRadius);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+        ctx.fill();
+        ctx.restore();
+      }
+
+      drawRoundedRect(ctx, invertX, resetRowY, tripleButtonWidth, actionButtonHeight, actionButtonRadius);
+      ctx.fillStyle = invertDisabled ? 'rgba(45, 60, 74, 0.6)' : invertActive ? '#2b5fa6' : '#2b3340';
+      ctx.fill();
+      if (
+        hud.hoverRegion &&
+        hud.hoverRegion.targetType === 'channels-invert' &&
+        hud.hoverRegion.channelId === activeChannel.id &&
+        hud.hoverRegion.layerKey === selectedLayer.key
+      ) {
+        ctx.save();
+        drawRoundedRect(ctx, invertX, resetRowY, tripleButtonWidth, actionButtonHeight, actionButtonRadius);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+        ctx.fill();
+        ctx.restore();
+      }
+
+      drawRoundedRect(ctx, autoX, resetRowY, tripleButtonWidth, actionButtonHeight, actionButtonRadius);
+      ctx.fillStyle = autoContrastDisabled ? 'rgba(45, 60, 74, 0.6)' : '#2b3340';
+      ctx.fill();
+      if (
+        hud.hoverRegion &&
+        hud.hoverRegion.targetType === 'channels-auto-contrast' &&
+        hud.hoverRegion.channelId === activeChannel.id &&
+        hud.hoverRegion.layerKey === selectedLayer.key
+      ) {
+        ctx.save();
+        drawRoundedRect(ctx, autoX, resetRowY, tripleButtonWidth, actionButtonHeight, actionButtonRadius);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+        ctx.fill();
+        ctx.restore();
+      }
+
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = vrChannelsFont('600', VR_CHANNELS_FONT_SIZES.small);
+      ctx.fillStyle = resetDisabled ? '#7b8795' : '#f3f6fc';
+      ctx.fillText('Reset', resetX + tripleButtonWidth / 2, resetRowY + actionButtonHeight / 2);
+      ctx.fillStyle = invertDisabled ? '#7b8795' : '#f3f6fc';
+      ctx.fillText('Invert', invertX + tripleButtonWidth / 2, resetRowY + actionButtonHeight / 2);
+      ctx.fillStyle = autoContrastDisabled ? '#7b8795' : '#f3f6fc';
+      ctx.fillText('Auto', autoX + tripleButtonWidth / 2, resetRowY + actionButtonHeight / 2);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+
+      const resetBounds = {
+        minX: toPanelX(resetX),
+        maxX: toPanelX(resetX + tripleButtonWidth),
+        minY: Math.min(toPanelY(resetRowY), toPanelY(resetRowY + actionButtonHeight)),
+        maxY: Math.max(toPanelY(resetRowY), toPanelY(resetRowY + actionButtonHeight))
+      };
+      regions.push({
+        targetType: 'channels-reset',
+        channelId: activeChannel.id,
+        bounds: resetBounds,
+        disabled: resetDisabled
+      });
+
+      const invertBounds = {
+        minX: toPanelX(invertX),
+        maxX: toPanelX(invertX + tripleButtonWidth),
+        minY: Math.min(toPanelY(resetRowY), toPanelY(resetRowY + actionButtonHeight)),
+        maxY: Math.max(toPanelY(resetRowY), toPanelY(resetRowY + actionButtonHeight))
+      };
+      regions.push({
+        targetType: 'channels-invert',
+        channelId: activeChannel.id,
+        layerKey: selectedLayer.key,
+        bounds: invertBounds,
+        disabled: invertDisabled
+      });
+
+      const autoContrastBounds = {
+        minX: toPanelX(autoX),
+        maxX: toPanelX(autoX + tripleButtonWidth),
+        minY: Math.min(toPanelY(resetRowY), toPanelY(resetRowY + actionButtonHeight)),
+        maxY: Math.max(toPanelY(resetRowY), toPanelY(resetRowY + actionButtonHeight))
+      };
+      regions.push({
+        targetType: 'channels-auto-contrast',
+        channelId: activeChannel.id,
+        layerKey: selectedLayer.key,
+        bounds: autoContrastBounds,
+        disabled: autoContrastDisabled
+      });
+
+      const resetRowBottom = resetRowY + actionButtonHeight;
+      currentY = resetRowBottom + 48;
+
+      const xOffsetSlider = sliderByKey.get('xOffset');
+      if (xOffsetSlider) {
+        const sliderBottom = drawSliderControl(xOffsetSlider, paddingX, availableRowWidth, currentY);
+        currentY = sliderBottom + 64;
+      }
+
+      const yOffsetSlider = sliderByKey.get('yOffset');
+      if (yOffsetSlider) {
+        const sliderBottom = drawSliderControl(yOffsetSlider, paddingX, availableRowWidth, currentY);
+        currentY = sliderBottom + 64;
       }
 
       if (selectedLayer.isGrayscale) {
@@ -3940,6 +4227,53 @@ function VolumeViewer({
       }
     }
 
+    ctx.fillStyle = '#9fb2c8';
+    ctx.font = vrChannelsFont('500', VR_CHANNELS_FONT_SIZES.label);
+    ctx.fillText('Layers', paddingX, currentY);
+    currentY += 40;
+
+    const layerButtonHeight = 60;
+    const layerButtonWidth = canvasWidth - paddingX * 2;
+    ctx.font = vrChannelsFont('600', VR_CHANNELS_FONT_SIZES.label);
+
+    for (const layer of activeChannel.layers) {
+      const isSelected = layer.key === (activeChannel.activeLayerKey ?? layer.key);
+      const x = paddingX;
+      const y = currentY;
+      drawRoundedRect(ctx, x, y, layerButtonWidth, layerButtonHeight, 16);
+      ctx.fillStyle = isSelected ? '#2b5fa6' : '#1f2735';
+      ctx.fill();
+      if (hud.hoverRegion && hud.hoverRegion.targetType === 'channels-layer' && hud.hoverRegion.layerKey === layer.key) {
+        ctx.save();
+        drawRoundedRect(ctx, x, y, layerButtonWidth, layerButtonHeight, 16);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.fillStyle = '#f3f6fc';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(layer.label, x + 24, y + layerButtonHeight / 2);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+
+      const layerBounds = {
+        minX: toPanelX(x),
+        maxX: toPanelX(x + layerButtonWidth),
+        minY: Math.min(toPanelY(y), toPanelY(y + layerButtonHeight)),
+        maxY: Math.max(toPanelY(y), toPanelY(y + layerButtonHeight))
+      };
+      regions.push({
+        targetType: 'channels-layer',
+        channelId: activeChannel.id,
+        layerKey: layer.key,
+        bounds: layerBounds,
+        disabled: false
+      });
+
+      currentY += layerButtonHeight + 18;
+    }
+
     if (hud.hoverRegion) {
       const stillValid = regions.some((region) => {
         if (region.targetType !== hud.hoverRegion?.targetType) {
@@ -3965,9 +4299,20 @@ function VolumeViewer({
     }
 
     hud.regions = regions;
+
+    const paddingBottom = 72;
+    const contentBottom = Math.ceil(currentY + paddingBottom);
     ctx.restore();
+
+    const desiredDisplayHeight = Math.max(VR_CHANNELS_CANVAS_MIN_HEIGHT, contentBottom);
+    if (Math.abs(desiredDisplayHeight - hud.panelDisplayHeight) > 1) {
+      resizeVrChannelsHud(hud, desiredDisplayHeight);
+      renderVrChannelsHud(hud, state);
+      return;
+    }
+
     hud.panelTexture.needsUpdate = true;
-  }, []);
+  }, [resizeVrChannelsHud]);
 
   const updateVrTracksHud = useCallback(() => {
     const hud = vrTracksHudRef.current;
@@ -4246,16 +4591,20 @@ function VolumeViewer({
     playbackStateRef.current.isPlaying = isPlaying;
     playbackStateRef.current.playbackDisabled = playbackDisabled;
     playbackStateRef.current.playbackLabel = playbackLabel;
+    playbackStateRef.current.fps = fps;
     playbackStateRef.current.timeIndex = timeIndex;
     playbackStateRef.current.totalTimepoints = totalTimepoints;
     playbackStateRef.current.onTogglePlayback = onTogglePlayback;
     playbackStateRef.current.onTimeIndexChange = onTimeIndexChange;
+    playbackStateRef.current.onFpsChange = onFpsChange;
     playbackStateRef.current.passthroughSupported = isVrPassthroughSupported;
     updateVrPlaybackHud();
   }, [
     isPlaying,
+    fps,
     onTimeIndexChange,
     onTogglePlayback,
+    onFpsChange,
     playbackDisabled,
     playbackLabel,
     timeIndex,
@@ -5382,7 +5731,7 @@ function VolumeViewer({
       }
       if (!anyVisible) {
         clearHoverState('controller');
-        applyVrPlaybackHoverState(false, false, false, false, false, false, false);
+        applyVrPlaybackHoverState(false, false, false, false, false, false, false, false, false);
       }
     };
 
@@ -5594,7 +5943,14 @@ function VolumeViewer({
           entry.hasHoverUiPoint &&
           !playbackState.playbackDisabled
         ) {
-          applySliderFromWorldPoint(entry.hoverUiPoint);
+          applyPlaybackSliderFromWorldPoint(entry.hoverUiPoint);
+        }
+        if (
+          entry.activeUiTarget?.type === 'playback-fps-slider' &&
+          entry.hasHoverUiPoint &&
+          playbackState.totalTimepoints > 1
+        ) {
+          applyFpsSliderFromWorldPoint(entry.hoverUiPoint);
         }
         if (entry.activeUiTarget?.type === 'playback-panel-grab') {
           const hud = vrPlaybackHudRef.current;
@@ -5783,7 +6139,11 @@ function VolumeViewer({
           toggleXrSessionMode();
         } else if (activeTarget?.type === 'playback-slider') {
           if (entry.hasHoverUiPoint && !playbackState.playbackDisabled) {
-            applySliderFromWorldPoint(entry.hoverUiPoint);
+            applyPlaybackSliderFromWorldPoint(entry.hoverUiPoint);
+          }
+        } else if (activeTarget?.type === 'playback-fps-slider') {
+          if (entry.hasHoverUiPoint && playbackState.totalTimepoints > 1) {
+            applyFpsSliderFromWorldPoint(entry.hoverUiPoint);
           }
         } else if (activeTarget?.type === 'playback-panel-grab') {
           entry.hudGrabOffsets.playback = null;
@@ -6188,7 +6548,7 @@ function VolumeViewer({
       vrPlaybackHudRef.current = hud;
       resetVrPlaybackHudPlacement();
       updateVrPlaybackHud();
-      applyVrPlaybackHoverState(false, false, false, false, false, false, false);
+      applyVrPlaybackHoverState(false, false, false, false, false, false, false, false, false);
     } else {
       vrPlaybackHudRef.current = null;
     }
@@ -6414,6 +6774,7 @@ function VolumeViewer({
     const playbackLocalPoint = new THREE.Vector3();
     const playbackPlaneNormal = new THREE.Vector3();
     const playbackSliderPoint = new THREE.Vector3();
+    const fpsSliderPoint = new THREE.Vector3();
     const channelsTouchPoint = new THREE.Vector3();
     const channelsLocalPoint = new THREE.Vector3();
     const tracksTouchPoint = new THREE.Vector3();
@@ -6445,7 +6806,7 @@ function VolumeViewer({
           hoverTrackIds: controllersRef.current.map((entry) => entry.hoverTrackId)
         };
         clearHoverState('controller');
-        applyVrPlaybackHoverState(false, false, false, false, false, false, false);
+        applyVrPlaybackHoverState(false, false, false, false, false, false, false, false, false);
         return;
       }
 
@@ -6464,8 +6825,10 @@ function VolumeViewer({
 
       let hoveredByController: { trackId: string; position: { x: number; y: number } | null } | null = null;
       let playHoveredAny = false;
-      let sliderHoveredAny = false;
-      let sliderActiveAny = false;
+      let playbackSliderHoveredAny = false;
+      let playbackSliderActiveAny = false;
+      let fpsSliderHoveredAny = false;
+      let fpsSliderActiveAny = false;
       let resetVolumeHoveredAny = false;
       let resetHudHoveredAny = false;
       let exitHoveredAny = false;
@@ -6824,14 +7187,16 @@ function VolumeViewer({
             const activeType = entry.activeUiTarget?.type ?? null;
             const activePlayback = activeType ? activeType.startsWith('playback-') : false;
             const playbackSliderActive = activeType === 'playback-slider';
+            const fpsSliderActive = activeType === 'playback-fps-slider';
             const playbackSliderLocked = playbackSliderActive && entry.isSelecting;
+            const fpsSliderLocked = fpsSliderActive && entry.isSelecting;
             const translateHandle = playbackHudInstance.panelTranslateHandle;
             const yawHandles = playbackHudInstance.panelYawHandles;
             const pitchHandle = playbackHudInstance.panelPitchHandle;
             const handleWorldPoint = vrHandleWorldPointRef.current;
             const handleSecondaryPoint = vrHandleSecondaryPointRef.current;
 
-            if (translateHandle && !playbackSliderLocked) {
+            if (translateHandle && !playbackSliderLocked && !fpsSliderLocked) {
               translateHandle.getWorldPosition(handleWorldPoint);
               const distance = handleWorldPoint.distanceTo(entry.rayOrigin);
               if (activeType === 'playback-panel-grab' || distance <= VR_UI_TOUCH_DISTANCE) {
@@ -6847,7 +7212,7 @@ function VolumeViewer({
               }
             }
 
-            if (yawHandles.length > 0 && !playbackSliderLocked) {
+            if (yawHandles.length > 0 && !playbackSliderLocked && !fpsSliderLocked) {
               const activeYawObject =
                 activeType === 'playback-panel-yaw' ? (entry.activeUiTarget?.object as THREE.Object3D | null) : null;
               for (const yawHandle of yawHandles) {
@@ -6871,7 +7236,7 @@ function VolumeViewer({
               }
             }
 
-            if (pitchHandle && !playbackSliderLocked) {
+            if (pitchHandle && !playbackSliderLocked && !fpsSliderLocked) {
               pitchHandle.getWorldPosition(handleSecondaryPoint);
               const distance = handleSecondaryPoint.distanceTo(entry.rayOrigin);
               if (
@@ -6914,19 +7279,40 @@ function VolumeViewer({
                   playbackLocalPoint.y <= halfHeight
                 ) {
                   const rawDistance = distanceAlongRay;
-                  const sliderActive = activeType === 'playback-slider';
-                  const sliderMargin = sliderActive
+                  const playbackSliderActive = activeType === 'playback-slider';
+                  const fpsSliderActive = activeType === 'playback-fps-slider';
+                  const playbackSliderLocked = playbackSliderActive && entry.isSelecting;
+                  const fpsSliderLocked = fpsSliderActive && entry.isSelecting;
+                  const playbackSliderMargin = playbackSliderActive
                     ? VR_UI_TOUCH_SURFACE_MARGIN * 1.5
                     : VR_UI_TOUCH_SURFACE_MARGIN;
-                  const sliderHalfWidth = (playbackHudInstance.sliderWidth + 0.04) / 2 + sliderMargin;
-                  const sliderHalfHeight = 0.08 / 2 + sliderMargin;
-                  const sliderLocalX = playbackLocalPoint.x - playbackHudInstance.sliderGroup.position.x;
-                  const sliderLocalY = playbackLocalPoint.y - playbackHudInstance.sliderGroup.position.y;
-                  const inSliderArea =
-                    sliderLocalX >= -sliderHalfWidth &&
-                    sliderLocalX <= sliderHalfWidth &&
-                    sliderLocalY >= -sliderHalfHeight &&
-                    sliderLocalY <= sliderHalfHeight;
+                  const fpsSliderMargin = fpsSliderActive
+                    ? VR_UI_TOUCH_SURFACE_MARGIN * 1.5
+                    : VR_UI_TOUCH_SURFACE_MARGIN;
+                  const playbackSliderHalfWidth =
+                    (playbackHudInstance.playbackSliderWidth + 0.04) / 2 + playbackSliderMargin;
+                  const playbackSliderHalfHeight = 0.08 / 2 + playbackSliderMargin;
+                  const playbackSliderLocalX =
+                    playbackLocalPoint.x - playbackHudInstance.playbackSliderGroup.position.x;
+                  const playbackSliderLocalY =
+                    playbackLocalPoint.y - playbackHudInstance.playbackSliderGroup.position.y;
+                  const inPlaybackSliderArea =
+                    playbackSliderLocalX >= -playbackSliderHalfWidth &&
+                    playbackSliderLocalX <= playbackSliderHalfWidth &&
+                    playbackSliderLocalY >= -playbackSliderHalfHeight &&
+                    playbackSliderLocalY <= playbackSliderHalfHeight;
+
+                  const fpsSliderHalfWidth =
+                    (playbackHudInstance.fpsSliderWidth + 0.04) / 2 + fpsSliderMargin;
+                  const fpsSliderHalfHeight = 0.08 / 2 + fpsSliderMargin;
+                  const fpsSliderLocalX = playbackLocalPoint.x - playbackHudInstance.fpsSliderGroup.position.x;
+                  const fpsSliderLocalY = playbackLocalPoint.y - playbackHudInstance.fpsSliderGroup.position.y;
+                  const inFpsSliderArea =
+                    fpsSliderLocalX >= -fpsSliderHalfWidth &&
+                    fpsSliderLocalX <= fpsSliderHalfWidth &&
+                    fpsSliderLocalY >= -fpsSliderHalfHeight &&
+                    fpsSliderLocalY <= fpsSliderHalfHeight;
+                  const fpsSliderEnabled = playbackStateRef.current.totalTimepoints > 1;
 
                   const playCenter = playbackHudInstance.playButton.position;
                   const playRadius = 0.045 + surfaceMargin;
@@ -6967,7 +7353,7 @@ function VolumeViewer({
                     playbackHudInstance.modeButton.visible &&
                     modeDeltaX * modeDeltaX + modeDeltaY * modeDeltaY <= modeRadius * modeRadius;
 
-                  if (!playbackSliderLocked && inResetVolumeButton) {
+                  if (!playbackSliderLocked && !fpsSliderLocked && inResetVolumeButton) {
                     considerPlaybackCandidate(
                       {
                         target: { type: 'playback-reset-volume', object: playbackHudInstance.resetVolumeButton },
@@ -6977,7 +7363,7 @@ function VolumeViewer({
                       },
                       rawDistance
                     );
-                  } else if (!playbackSliderLocked && inResetHudButton) {
+                  } else if (!playbackSliderLocked && !fpsSliderLocked && inResetHudButton) {
                     considerPlaybackCandidate(
                       {
                         target: { type: 'playback-reset-hud', object: playbackHudInstance.resetHudButton },
@@ -6987,7 +7373,7 @@ function VolumeViewer({
                       },
                       rawDistance
                     );
-                  } else if (!playbackSliderLocked && inExitButton) {
+                  } else if (!playbackSliderLocked && !fpsSliderLocked && inExitButton) {
                     considerPlaybackCandidate(
                       {
                         target: { type: 'playback-exit-vr', object: playbackHudInstance.exitButton },
@@ -6997,7 +7383,7 @@ function VolumeViewer({
                       },
                       rawDistance
                     );
-                  } else if (!playbackSliderLocked && inModeButton) {
+                  } else if (!playbackSliderLocked && !fpsSliderLocked && inModeButton) {
                     considerPlaybackCandidate(
                       {
                         target: { type: 'playback-toggle-mode', object: playbackHudInstance.modeButton },
@@ -7007,7 +7393,7 @@ function VolumeViewer({
                       },
                       rawDistance
                     );
-                  } else if (!playbackSliderLocked && inPlayButton) {
+                  } else if (!playbackSliderLocked && !fpsSliderLocked && inPlayButton) {
                     considerPlaybackCandidate(
                       {
                         target: { type: 'playback-play-toggle', object: playbackHudInstance.playButton },
@@ -7019,15 +7405,19 @@ function VolumeViewer({
                     );
                   }
 
-                  if (playbackSliderLocked || inSliderArea) {
+                  if (playbackSliderLocked || inPlaybackSliderArea) {
                     const sliderDepth =
-                      playbackHudInstance.sliderGroup.position.z + playbackHudInstance.sliderHitArea.position.z;
+                      playbackHudInstance.playbackSliderGroup.position.z +
+                      playbackHudInstance.playbackSliderHitArea.position.z;
                     playbackSliderPoint
                       .copy(playbackTouchPoint)
                       .addScaledVector(playbackPlaneNormal, sliderDepth);
                     considerPlaybackCandidate(
                       {
-                        target: { type: 'playback-slider', object: playbackHudInstance.sliderHitArea },
+                        target: {
+                          type: 'playback-slider',
+                          object: playbackHudInstance.playbackSliderHitArea
+                        },
                         point: playbackSliderPoint.clone(),
                         distance: rawDistance,
                         region: null
@@ -7035,7 +7425,28 @@ function VolumeViewer({
                       rawDistance
                     );
                     if (playbackSliderActive && !playbackStateRef.current.playbackDisabled) {
-                      applySliderFromWorldPoint(playbackSliderPoint);
+                      applyPlaybackSliderFromWorldPoint(playbackSliderPoint);
+                    }
+                  }
+
+                  if (fpsSliderEnabled && (fpsSliderLocked || inFpsSliderArea)) {
+                    const fpsDepth =
+                      playbackHudInstance.fpsSliderGroup.position.z +
+                      playbackHudInstance.fpsSliderHitArea.position.z;
+                    fpsSliderPoint
+                      .copy(playbackTouchPoint)
+                      .addScaledVector(playbackPlaneNormal, fpsDepth);
+                    considerPlaybackCandidate(
+                      {
+                        target: { type: 'playback-fps-slider', object: playbackHudInstance.fpsSliderHitArea },
+                        point: fpsSliderPoint.clone(),
+                        distance: rawDistance,
+                        region: null
+                      },
+                      rawDistance
+                    );
+                    if (fpsSliderActive) {
+                      applyFpsSliderFromWorldPoint(fpsSliderPoint);
                     }
                   }
 
@@ -7502,7 +7913,9 @@ function VolumeViewer({
           playHoveredAny = true;
           hoverTrackId = null;
         } else if (uiType === 'playback-slider') {
-          sliderHoveredAny = true;
+          playbackSliderHoveredAny = true;
+        } else if (uiType === 'playback-fps-slider') {
+          fpsSliderHoveredAny = true;
         } else if (
           uiType === 'playback-panel-grab' ||
           uiType === 'playback-panel' ||
@@ -7533,7 +7946,10 @@ function VolumeViewer({
           hoverTrackId = null;
         }
         if (entry.activeUiTarget?.type === 'playback-slider') {
-          sliderActiveAny = true;
+          playbackSliderActiveAny = true;
+          hoverTrackId = null;
+        } else if (entry.activeUiTarget?.type === 'playback-fps-slider') {
+          fpsSliderActiveAny = true;
           hoverTrackId = null;
         } else if (entry.activeUiTarget?.type === 'playback-reset-volume') {
           resetVolumeHoveredAny = true;
@@ -7750,8 +8166,10 @@ function VolumeViewer({
 
       applyVrPlaybackHoverState(
         playHoveredAny,
-        sliderHoveredAny,
-        sliderActiveAny,
+        playbackSliderHoveredAny,
+        playbackSliderActiveAny,
+        fpsSliderHoveredAny,
+        fpsSliderActiveAny,
         resetVolumeHoveredAny,
         resetHudHoveredAny,
         exitHoveredAny,
@@ -7897,7 +8315,7 @@ function VolumeViewer({
       setVrPlaybackHudVisible(false);
       setVrChannelsHudVisible(false);
       setVrTracksHudVisible(false);
-      applyVrPlaybackHoverState(false, false, false, false, false, false, false);
+      applyVrPlaybackHoverState(false, false, false, false, false, false, false, false, false);
       for (const entry of controllersRef.current) {
         entry.ray.scale.set(1, 1, 1);
         entry.hudGrabOffsets.playback = null;

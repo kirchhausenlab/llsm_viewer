@@ -233,8 +233,8 @@ export const VolumeRenderShader = {
       vec3 back = rayOrigin + rayDir * tEnd;
 
       float safeStepScale = max(u_stepScale, 1e-3);
-      float maxDimension = max(u_size.x, max(u_size.y, u_size.z));
-      int nsteps = int(maxDimension * safeStepScale + 0.5);
+      float travelDistance = tEnd - tStart;
+      int nsteps = int(travelDistance * safeStepScale + 0.5);
       nsteps = clamp(nsteps, 1, MAX_STEPS);
 
       vec3 step = ((back - front) / u_size) / float(nsteps);
