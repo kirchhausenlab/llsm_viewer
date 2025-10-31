@@ -1556,16 +1556,39 @@
   gap: 0.85rem;
 }
 
+.track-follow-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: flex-start;
+}
+
 .track-controls .control-group {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
 }
 
+.track-slider-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.track-slider-row .slider-control {
+  flex: 1 1 calc(50% - 0.375rem);
+  min-width: 10.5rem;
+}
+
 .track-controls .slider-control {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+}
+
+.track-controls .slider-control input[type='range'] {
+  width: 100%;
 }
 
 .track-controls .slider-control label {
@@ -1594,6 +1617,12 @@
   font-size: 0.85rem;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.8);
+}
+
+.track-list-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
 }
 
 .track-controls .track-master-toggle input[type='checkbox'] {
@@ -1921,25 +1950,27 @@
 .track-tab {
   border: 1px solid var(--track-tab-border, rgba(255, 255, 255, 0.18));
   background: var(--track-tab-background, rgba(12, 16, 24, 0.6));
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--track-tab-text, rgba(255, 255, 255, 0.72));
   border-radius: 0.6rem;
   padding: 0.35rem 0.85rem;
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .track-tab:hover {
   border-color: var(--track-tab-border-active, rgba(91, 140, 255, 0.6));
   background: var(--track-tab-background-active, rgba(91, 140, 255, 0.32));
-  color: #ffffff;
+  color: var(--track-tab-text-active, #ffffff);
+  box-shadow: 0 6px 16px rgba(12, 18, 32, 0.18);
 }
 
 .track-tab.is-active {
   background: var(--track-tab-background-active, rgba(91, 140, 255, 0.32));
   border-color: var(--track-tab-border-active, rgba(91, 140, 255, 0.75));
-  color: #ffffff;
+  color: var(--track-tab-text-active, #ffffff);
+  box-shadow: 0 6px 16px rgba(12, 18, 32, 0.2);
 }
 
 .track-tab.is-empty {
