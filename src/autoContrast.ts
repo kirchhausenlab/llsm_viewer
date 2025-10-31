@@ -6,9 +6,9 @@ export const HISTOGRAM_FIRST_VALID_BIN = 1;
 const DEFAULT_AUTO_THRESHOLD_DENOMINATOR = 10000;
 const DEFAULT_LOWER_QUANTILE = 0.005;
 const DEFAULT_UPPER_QUANTILE = 0.995;
-// Use a gentler count threshold on the first auto pass so the maximum stays near the
-// histogram tail even when high-intensity voxels are sparse.
-const INITIAL_MAX_THRESHOLD_MULTIPLIER = 0.1;
+// Use a very gentle count threshold on the first auto pass so the maximum stays near the
+// histogram tail even when high-intensity voxels are extremely sparse.
+const INITIAL_MAX_THRESHOLD_MULTIPLIER = 0.02;
 
 export type AutoWindowResult = {
   windowMin: number;
