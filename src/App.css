@@ -1570,19 +1570,21 @@
 }
 
 .track-slider-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  display: flex;
   gap: 0.65rem;
   width: 100%;
-  align-items: end;
+  align-items: flex-end;
+  flex-wrap: nowrap;
 }
 
 .track-slider-row .slider-control {
+  flex: 1 1 0;
   min-width: 0;
+  max-width: 9rem;
 }
 
 .track-slider-row .slider-control input[type='range'] {
-  width: min(8.75rem, 100%);
+  width: 100%;
 }
 
 .track-controls .slider-control {
