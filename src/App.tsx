@@ -36,8 +36,10 @@ import {
 import {
   exportPreprocessedDatasetInWorker,
   canUseFileSystemSavePicker,
-  saveStreamWithFilePicker,
-  collectStreamToBlob
+  collectStreamToBlob,
+  requestFileSystemSaveHandle,
+  writeStreamToFileHandle,
+  type FileSystemFileHandleLike
 } from './workers/exportPreprocessedDatasetClient';
 import {
   brightnessContrastModel,
@@ -414,9 +416,13 @@ const downloadBlob = (blob: Blob, fileName: string) => {
   URL.revokeObjectURL(url);
 };
 
-const downloadStream = async (stream: ReadableStream<Uint8Array>, fileName: string) => {
-  if (canUseFileSystemSavePicker()) {
-    await saveStreamWithFilePicker(stream, fileName);
+const downloadStream = async (
+  stream: ReadableStream<Uint8Array>,
+  fileName: string,
+  fileHandle: FileSystemFileHandleLike | null
+) => {
+  if (fileHandle) {
+    await writeStreamToFileHandle(stream, fileHandle);
     return;
   }
 
@@ -2892,8 +2898,36 @@ function App() {
       return;
     }
 
+    const hasAnyLayers = preprocessedExperiment
+      ? preprocessedExperiment.layers.length > 0
+      : channels.some((channel) => channel.layers.length > 0);
+
+    if (!hasAnyLayers) {
+      showInteractionWarning('There are no volumes available to export.');
+      return;
+    }
+
     setIsExportingPreprocessed(true);
     try {
+      const suggestionSource =
+        preprocessedExperiment?.sourceName ?? channels[0]?.name ?? 'preprocessed-experiment';
+      const suggestionTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const suggestionBase = sanitizeExportFileName(suggestionSource);
+      const suggestedFileName = `${suggestionBase}-${suggestionTimestamp}.zip`;
+
+      let fileHandle: FileSystemFileHandleLike | null = null;
+      if (canUseFileSystemSavePicker()) {
+        try {
+          fileHandle = await requestFileSystemSaveHandle(suggestedFileName);
+        } catch (error) {
+          if (error instanceof DOMException && error.name === 'AbortError') {
+            console.info('Preprocessed dataset export cancelled by user');
+            return;
+          }
+          throw error;
+        }
+      }
+
       let layersToExport: LoadedLayer[];
       let channelsMetadata: ChannelExportMetadata[];
 
@@ -2933,7 +2967,7 @@ function App() {
       const timestamp = manifest.generatedAt.replace(/[:.]/g, '-');
       const fileName = `${fileBase}-${timestamp}.zip`;
 
-      await downloadStream(stream, fileName);
+      await downloadStream(stream, fileName, fileHandle);
       clearDatasetError();
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
