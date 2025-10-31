@@ -6,6 +6,9 @@ export const HISTOGRAM_FIRST_VALID_BIN = 1;
 const DEFAULT_AUTO_THRESHOLD_DENOMINATOR = 10000;
 const DEFAULT_LOWER_QUANTILE = 0.005;
 const DEFAULT_UPPER_QUANTILE = 0.995;
+// Use a very gentle count threshold on the first auto pass so the maximum stays near the
+// histogram tail even when high-intensity voxels are extremely sparse.
+const INITIAL_MAX_THRESHOLD_MULTIPLIER = 0.02;
 
 export type AutoWindowResult = {
   windowMin: number;
@@ -119,7 +122,11 @@ export function computeAutoWindow(
     return defaultResult;
   }
 
-  const threshold = totalVoxelCount / nextThreshold;
+  const minThreshold = totalVoxelCount / nextThreshold;
+  const maxThreshold =
+    previousThreshold < 10
+      ? minThreshold * INITIAL_MAX_THRESHOLD_MULTIPLIER
+      : minThreshold;
   const limit = totalCount / 10;
 
   let i = HISTOGRAM_FIRST_VALID_BIN - 1;
@@ -130,7 +137,7 @@ export function computeAutoWindow(
     if (count > limit) {
       count = 0;
     }
-    found = count > threshold;
+    found = count > minThreshold;
   }
   const hmin = i;
 
@@ -142,7 +149,7 @@ export function computeAutoWindow(
     if (count > limit) {
       count = 0;
     }
-    found = count > threshold;
+    found = count > maxThreshold;
   }
   const hmax = Math.max(i, HISTOGRAM_FIRST_VALID_BIN);
 

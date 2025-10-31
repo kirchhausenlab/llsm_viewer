@@ -25,6 +25,10 @@
 ## Auto contrast initial threshold adjustment
 - Raised the default auto window threshold from 5,000 to 50,000 so the first "Auto" press now keeps a broader histogram range
   before subsequent presses tighten it.
+- Relaxed the initial auto-contrast maximum threshold by using one tenth of the minimum-side threshold, keeping first-use window
+  maxima closer to the raw histogram peak while preserving later halving behavior.
+- Further softened the first auto-contrast maximum cutoff by reducing the histogram count threshold to just two percent of the
+  minimum-side value so initial windows retain even brighter highlights before later refinements.
 
 ## Float volume default windowing
 - Compute per-layer default brightness/contrast windows for float volumes using histogram quantiles, keeping uint8 data on the
