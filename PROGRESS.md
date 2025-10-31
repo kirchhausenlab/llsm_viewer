@@ -480,3 +480,4 @@ d centered the front-page card in the viewport.
 - Flipped the brightness slider polarity so increasing the control lowers the window center and brightens the rendered volume, matching user expectations.
 - Swapped the contrast slider to a logarithmic scale with better formatting, keeping fine control near 1× while retaining access to higher contrast boosts.
 - Replaced the auto-contrast heuristic with percentile-based histogram bounds that add a safety margin, producing balanced windows that remain compatible with LUT inversion.
+- Added a VR playback loop that advances timepoints using the configured FPS whenever play is active and no slider drag is in progress, keeping the immersive play/pause control in sync with the desktop timeline.

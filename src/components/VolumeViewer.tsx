@@ -1223,6 +1223,12 @@ function VolumeViewer({
     preferredSessionMode: 'immersive-vr',
     currentSessionMode: null
   });
+  const playbackLoopRef = useRef<{ lastTimestamp: number | null; accumulator: number }>(
+    {
+      lastTimestamp: null,
+      accumulator: 0
+    }
+  );
   const vrHoverStateRef = useRef({
     play: false,
     playbackSlider: false,
@@ -8657,6 +8663,65 @@ function VolumeViewer({
       for (const resource of resources.values()) {
         const { mesh } = resource;
         mesh.updateMatrixWorld();
+      }
+
+      const playbackLoopState = playbackLoopRef.current;
+      const playbackState = playbackStateRef.current;
+      const playbackSliderActive = vrHoverStateRef.current.playbackSliderActive;
+      const shouldAdvancePlayback =
+        playbackState.isPlaying &&
+        !playbackState.playbackDisabled &&
+        playbackState.totalTimepoints > 1 &&
+        !playbackSliderActive &&
+        typeof playbackState.onTimeIndexChange === 'function';
+
+      if (shouldAdvancePlayback) {
+        const minFps = VR_PLAYBACK_MIN_FPS;
+        const maxFps = VR_PLAYBACK_MAX_FPS;
+        const requestedFps = playbackState.fps ?? minFps;
+        const clampedFps = Math.min(Math.max(requestedFps, minFps), maxFps);
+        const frameDuration = clampedFps > 0 ? 1000 / clampedFps : 0;
+
+        if (frameDuration > 0) {
+          if (playbackLoopState.lastTimestamp === null) {
+            playbackLoopState.lastTimestamp = timestamp;
+            playbackLoopState.accumulator = 0;
+          } else {
+            const delta = Math.max(0, Math.min(timestamp - playbackLoopState.lastTimestamp, 1000));
+            playbackLoopState.accumulator += delta;
+            playbackLoopState.lastTimestamp = timestamp;
+
+            const maxIndex = Math.max(0, playbackState.totalTimepoints - 1);
+            let didAdvance = false;
+
+            while (playbackLoopState.accumulator >= frameDuration) {
+              playbackLoopState.accumulator -= frameDuration;
+              let nextIndex = playbackState.timeIndex + 1;
+              if (nextIndex > maxIndex) {
+                nextIndex = 0;
+              }
+              if (nextIndex === playbackState.timeIndex) {
+                break;
+              }
+
+              playbackState.timeIndex = nextIndex;
+              timeIndexRef.current = nextIndex;
+
+              const total = Math.max(0, playbackState.totalTimepoints);
+              const labelCurrent = total > 0 ? Math.min(nextIndex + 1, total) : 0;
+              playbackState.playbackLabel = `${labelCurrent} / ${total}`;
+              playbackState.onTimeIndexChange?.(nextIndex);
+              didAdvance = true;
+            }
+
+            if (didAdvance) {
+              updateVrPlaybackHud();
+            }
+          }
+        }
+      } else {
+        playbackLoopState.lastTimestamp = null;
+        playbackLoopState.accumulator = 0;
       }
 
       refreshVrHudPlacements();
