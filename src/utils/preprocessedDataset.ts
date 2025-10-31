@@ -93,6 +93,8 @@ const MANIFEST_FILE_NAME = 'manifest.json';
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
+const ZIP_INPUT_CHUNK_SIZE = 8 * 1024 * 1024; // 8 MiB per push keeps memory bounded for large volumes.
+
 function toUint8Array(data: ArrayBuffer | Uint8Array): Uint8Array {
   return data instanceof Uint8Array ? data : new Uint8Array(data);
 }
@@ -190,6 +192,8 @@ export async function exportPreprocessedDataset(
             volumeBytes = volumeBytes.slice();
           }
 
+          const digest = await computeSha256Hex(volumeBytes);
+
           const manifestEntry: PreprocessedVolumeManifestEntry = {
             path,
             timepoint: index,
@@ -201,7 +205,7 @@ export async function exportPreprocessedDataset(
             min: volume.min,
             max: volume.max,
             byteLength: volumeBytes.byteLength,
-            digest: await computeSha256Hex(volumeBytes)
+            digest
           };
 
           manifestVolumes.push(manifestEntry);
@@ -209,7 +213,19 @@ export async function exportPreprocessedDataset(
           const deflater = new ZipDeflate(path, { level: 9 });
           zip.add(deflater);
           // NormalizedVolume.normalized is treated as immutable, so sharing the underlying buffer is safe.
-          deflater.push(volumeBytes, true);
+          if (volumeBytes.byteLength === 0) {
+            deflater.push(volumeBytes, true);
+          } else {
+            for (
+              let offset = 0;
+              offset < volumeBytes.byteLength;
+              offset += ZIP_INPUT_CHUNK_SIZE
+            ) {
+              const end = Math.min(offset + ZIP_INPUT_CHUNK_SIZE, volumeBytes.byteLength);
+              const chunk = volumeBytes.subarray(offset, end);
+              deflater.push(chunk, end === volumeBytes.byteLength);
+            }
+          }
 
           // Release the reference once the chunk has been queued
           volumeBytes = new Uint8Array(0);
