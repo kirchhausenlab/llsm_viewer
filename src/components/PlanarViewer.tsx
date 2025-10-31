@@ -209,34 +209,6 @@ function PlanarViewer({
     selectedTrackIdsRef.current = selectedTrackIds;
   }, [selectedTrackIds]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    let frameId: number | null = null;
-    let isRunning = true;
-
-    const animate = () => {
-      if (!isRunning) {
-        return;
-      }
-      drawSlice();
-      frameId = window.requestAnimationFrame(animate);
-    };
-
-    if (selectedTrackIds.size > 0) {
-      frameId = window.requestAnimationFrame(animate);
-    }
-
-    return () => {
-      isRunning = false;
-      if (frameId !== null) {
-        window.cancelAnimationFrame(frameId);
-      }
-    };
-  }, [drawSlice, selectedTrackIds]);
-
   const trackLookup = useMemo(() => {
     const map = new Map<string, TrackDefinition>();
     for (const track of tracks) {
@@ -793,6 +765,34 @@ function PlanarViewer({
     selectedTrackIds,
     viewState
   ]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    let frameId: number | null = null;
+    let isRunning = true;
+
+    const animate = () => {
+      if (!isRunning) {
+        return;
+      }
+      drawSlice();
+      frameId = window.requestAnimationFrame(animate);
+    };
+
+    if (selectedTrackIds.size > 0) {
+      frameId = window.requestAnimationFrame(animate);
+    }
+
+    return () => {
+      isRunning = false;
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+    };
+  }, [drawSlice, selectedTrackIds]);
 
   const performTrackHitTest = useCallback(
     (event: PointerEvent): TrackHitTestResult => {
