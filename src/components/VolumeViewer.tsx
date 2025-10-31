@@ -10,7 +10,6 @@ import type { NormalizedVolume } from '../volumeProcessing';
 import { VolumeRenderShader } from '../shaders/volumeRenderShader';
 import { SliceRenderShader } from '../shaders/sliceRenderShader';
 import { getCachedTextureData } from '../textureCache';
-import type { PreparedTexture } from '../textureCache';
 import './VolumeViewer.css';
 import type { TrackColorMode, TrackDefinition } from '../types/tracks';
 import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from '../layerColors';
@@ -157,7 +156,6 @@ type VolumeResources = {
   mode: '3d' | 'slice';
   samplingMode: 'linear' | 'nearest';
   sliceBuffer?: Uint8Array | null;
-  last3dUpload?: { data: PreparedTexture['data']; format: PreparedTexture['format'] } | null;
 };
 
 function getExpectedSliceBufferLength(volume: NormalizedVolume) {
@@ -640,7 +638,6 @@ type ControllerEntry = {
   targetRayMode: string | null;
   gamepad: Gamepad | null;
   hoverTrackId: string | null;
-  hoverScreenPosition: { x: number; y: number } | null;
   hoverUiTarget: VrUiTarget | null;
   activeUiTarget: VrUiTarget | null;
   hoverUiPoint: THREE.Vector3;
@@ -648,9 +645,6 @@ type ControllerEntry = {
   hoverPoint: THREE.Vector3;
   rayOrigin: THREE.Vector3;
   rayDirection: THREE.Vector3;
-  lastRayOrigin: THREE.Vector3;
-  lastRayDirection: THREE.Vector3;
-  needsRayUpdate: boolean;
   rayLength: number;
   isSelecting: boolean;
   hudGrabOffsets: { playback: THREE.Vector3 | null; channels: THREE.Vector3 | null; tracks: THREE.Vector3 | null };
@@ -717,6 +711,8 @@ const VR_CHANNELS_PANEL_WIDTH = 0.6;
 const VR_CHANNELS_PANEL_HEIGHT = 0.6;
 const VR_CHANNELS_VERTICAL_OFFSET = 0;
 const VR_CHANNELS_CAMERA_ANCHOR_OFFSET = new THREE.Vector3(0.4, -0.18, -0.65);
+const VR_CHANNELS_CANVAS_WIDTH = 1184;
+const VR_CHANNELS_CANVAS_HEIGHT = 1184;
 const VR_CHANNELS_FONT_FAMILY = '"Inter", "Helvetica Neue", Arial, sans-serif';
 const vrChannelsFont = (weight: string, size: number) => `${weight} ${size}px ${VR_CHANNELS_FONT_FAMILY}`;
 const VR_CHANNELS_FONT_SIZES = {
@@ -732,6 +728,8 @@ const VR_TRACKS_PANEL_WIDTH = 0.58;
 const VR_TRACKS_PANEL_HEIGHT = 0.64;
 const VR_TRACKS_VERTICAL_OFFSET = -0.12;
 const VR_TRACKS_CAMERA_ANCHOR_OFFSET = new THREE.Vector3(0.7, -0.22, -0.7);
+const VR_TRACKS_CANVAS_WIDTH = 1180;
+const VR_TRACKS_CANVAS_HEIGHT = 1320;
 const VR_TRACKS_FONT_FAMILY = VR_CHANNELS_FONT_FAMILY;
 const vrTracksFont = (weight: string, size: number) => `${weight} ${size}px ${VR_TRACKS_FONT_FAMILY}`;
 const VR_TRACKS_FONT_SIZES = {
@@ -745,14 +743,6 @@ const VR_TRACKS_FONT_SIZES = {
   track: 30,
   small: 26
 } as const;
-const VR_CANVAS_BASE_PIXELS_PER_METER = 2048;
-const VR_CANVAS_MAX_PIXEL_DENSITY_SCALE = 1.2;
-const VR_CANVAS_MIN_PIXEL_DENSITY_SCALE = 0.5;
-const VR_CANVAS_QUALITY = 1;
-const VR_CANVAS_DEFAULT_PIXEL_RATIO = Math.min(
-  VR_CANVAS_MAX_PIXEL_DENSITY_SCALE,
-  Math.max(VR_CANVAS_MIN_PIXEL_DENSITY_SCALE, VR_CANVAS_QUALITY)
-);
 const VR_HUD_MIN_HEIGHT = 0;
 const VR_HUD_FRONT_MARGIN = 0.24;
 const VR_HUD_LATERAL_MARGIN = 0.1;
@@ -761,7 +751,6 @@ const VR_VOLUME_BASE_OFFSET = new THREE.Vector3(0, 1.2, -0.3);
 const VR_UI_TOUCH_DISTANCE = 0.08;
 const VR_UI_TOUCH_SURFACE_MARGIN = 0.04;
 const VR_CONTROLLER_TOUCH_RADIUS = 0.015;
-const VR_CONTROLLER_RAY_EPSILON = 1e-5;
 const VR_TRANSLATION_HANDLE_RADIUS = 0.03;
 const VR_SCALE_HANDLE_RADIUS = VR_TRANSLATION_HANDLE_RADIUS;
 const VR_TRANSLATION_HANDLE_OFFSET = 0.04;
@@ -782,37 +771,11 @@ const VR_HUD_YAW_HANDLE_COLOR = 0xffb347;
 const VR_HUD_SURFACE_OFFSET = 0.0015;
 const MAX_RENDERER_PIXEL_RATIO = 2;
 const XR_TARGET_FOVEATION = 0.6;
-const RENDERER_CLEAR_COLOR = 0x000000;
-const DESKTOP_CLEAR_ALPHA = 0;
-const AR_CLEAR_ALPHA = 0;
-const VR_CLEAR_ALPHA = 1;
-const DESKTOP_CANVAS_BACKGROUND = 'transparent';
-const VR_CANVAS_BACKGROUND = '#000000';
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const VIEWER_YAW_FORWARD_REFERENCE = new THREE.Vector3(0, 0, -1);
 const VIEWER_YAW_RIGHT_REFERENCE = new THREE.Vector3(1, 0, 0);
 const viewerYawQuaternionTemp = new THREE.Quaternion();
 const viewerYawForwardTemp = new THREE.Vector3();
-
-function computeVrPanelDisplayDimensions(width: number, height: number) {
-  const pixelsPerMeter = VR_CANVAS_BASE_PIXELS_PER_METER;
-  return {
-    width: Math.max(1, Math.round(width * pixelsPerMeter)),
-    height: Math.max(1, Math.round(height * pixelsPerMeter))
-  };
-}
-
-function getVrCanvasPixelRatio() {
-  if (typeof window === 'undefined') {
-    return VR_CANVAS_DEFAULT_PIXEL_RATIO;
-  }
-  const devicePixelRatio = window.devicePixelRatio || 1;
-  const scaled = devicePixelRatio * VR_CANVAS_QUALITY;
-  return Math.min(
-    VR_CANVAS_MAX_PIXEL_DENSITY_SCALE,
-    Math.max(VR_CANVAS_MIN_PIXEL_DENSITY_SCALE, scaled)
-  );
-}
 
 function computeViewerYawBasis(
   renderer: THREE.WebGLRenderer | null,
@@ -1383,7 +1346,8 @@ function VolumeViewer({
     const ctx = hud.panelContext;
     const canvasWidth = hud.panelDisplayWidth;
     const canvasHeight = hud.panelDisplayHeight;
-    const targetPixelRatio = getVrCanvasPixelRatio();
+    const targetPixelRatio =
+      typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : hud.pixelRatio;
     if (targetPixelRatio && Math.abs(targetPixelRatio - hud.pixelRatio) > 0.01 && hud.panelCanvas) {
       hud.pixelRatio = targetPixelRatio;
       hud.panelCanvas.width = Math.round(canvasWidth * hud.pixelRatio);
@@ -2352,24 +2316,8 @@ function VolumeViewer({
       resetVolumeHovered: boolean,
       resetHudHovered: boolean,
       exitHovered: boolean,
-      modeHovered: boolean,
-      options?: { force?: boolean }
+      modeHovered: boolean
     ) => {
-      const previousState = vrHoverStateRef.current;
-      const changed =
-        options?.force === true ||
-        previousState.play !== playHovered ||
-        previousState.slider !== sliderHovered ||
-        previousState.sliderActive !== sliderActive ||
-        previousState.resetVolume !== resetVolumeHovered ||
-        previousState.resetHud !== resetHudHovered ||
-        previousState.exit !== exitHovered ||
-        previousState.mode !== modeHovered;
-
-      if (!changed) {
-        return;
-      }
-
       vrHoverStateRef.current = {
         play: playHovered,
         slider: sliderHovered,
@@ -2379,7 +2327,6 @@ function VolumeViewer({
         exit: exitHovered,
         mode: modeHovered
       };
-
       const hud = vrPlaybackHudRef.current;
       if (!hud) {
         return;
@@ -2491,18 +2438,15 @@ function VolumeViewer({
     const fraction = maxIndex > 0 ? Math.min(Math.max(state.timeIndex / maxIndex, 0), 1) : 0;
     setVrPlaybackSliderFraction(hud, fraction);
     setVrPlaybackLabel(hud, state.playbackLabel ?? '');
-
-    const hoverState = vrHoverStateRef.current;
-    applyVrPlaybackHoverState(
-      hoverState.play,
-      hoverState.slider,
-      hoverState.sliderActive,
-      hoverState.resetVolume,
-      hoverState.resetHud,
-      hoverState.exit,
-      hoverState.mode,
-      { force: true }
-    );
+      applyVrPlaybackHoverState(
+        vrHoverStateRef.current.play,
+        vrHoverStateRef.current.slider,
+        vrHoverStateRef.current.sliderActive,
+        vrHoverStateRef.current.resetVolume,
+        vrHoverStateRef.current.resetHud,
+        vrHoverStateRef.current.exit,
+        vrHoverStateRef.current.mode
+      );
   }, [applyVrPlaybackHoverState]);
 
   const setVrPlaybackHudVisible = useCallback(
@@ -3007,13 +2951,11 @@ function VolumeViewer({
     group.add(background);
 
     const panelCanvas = document.createElement('canvas');
-    const { width: panelDisplayWidth, height: panelDisplayHeight } = computeVrPanelDisplayDimensions(
-      VR_CHANNELS_PANEL_WIDTH,
-      VR_CHANNELS_PANEL_HEIGHT
-    );
-    const pixelRatio = getVrCanvasPixelRatio();
-    panelCanvas.width = Math.max(1, Math.round(panelDisplayWidth * pixelRatio));
-    panelCanvas.height = Math.max(1, Math.round(panelDisplayHeight * pixelRatio));
+    const panelDisplayWidth = VR_CHANNELS_CANVAS_WIDTH;
+    const panelDisplayHeight = VR_CHANNELS_CANVAS_HEIGHT;
+    const pixelRatio = typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : 1;
+    panelCanvas.width = Math.round(panelDisplayWidth * pixelRatio);
+    panelCanvas.height = Math.round(panelDisplayHeight * pixelRatio);
     const panelContext = panelCanvas.getContext('2d');
     if (!panelContext) {
       return null;
@@ -3145,13 +3087,11 @@ function VolumeViewer({
     group.add(background);
 
     const panelCanvas = document.createElement('canvas');
-    const { width: panelDisplayWidth, height: panelDisplayHeight } = computeVrPanelDisplayDimensions(
-      VR_TRACKS_PANEL_WIDTH,
-      VR_TRACKS_PANEL_HEIGHT
-    );
-    const pixelRatio = getVrCanvasPixelRatio();
-    panelCanvas.width = Math.max(1, Math.round(panelDisplayWidth * pixelRatio));
-    panelCanvas.height = Math.max(1, Math.round(panelDisplayHeight * pixelRatio));
+    const panelDisplayWidth = VR_TRACKS_CANVAS_WIDTH;
+    const panelDisplayHeight = VR_TRACKS_CANVAS_HEIGHT;
+    const pixelRatio = typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : 1;
+    panelCanvas.width = Math.round(panelDisplayWidth * pixelRatio);
+    panelCanvas.height = Math.round(panelDisplayHeight * pixelRatio);
     const panelContext = panelCanvas.getContext('2d');
     if (!panelContext) {
       return null;
@@ -3264,7 +3204,8 @@ function VolumeViewer({
     const ctx = hud.panelContext;
     const canvasWidth = hud.panelDisplayWidth;
     const canvasHeight = hud.panelDisplayHeight;
-    const targetPixelRatio = getVrCanvasPixelRatio();
+    const targetPixelRatio =
+      typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : hud.pixelRatio;
     if (targetPixelRatio && Math.abs(targetPixelRatio - hud.pixelRatio) > 0.01 && hud.panelCanvas) {
       hud.pixelRatio = targetPixelRatio;
       hud.panelCanvas.width = Math.round(canvasWidth * hud.pixelRatio);
@@ -5264,30 +5205,10 @@ function VolumeViewer({
         : Math.min(window.devicePixelRatio ?? 1, MAX_RENDERER_PIXEL_RATIO);
     renderer.setPixelRatio(pixelRatio);
     renderer.setSize(container.clientWidth, container.clientHeight);
-    const rendererClearColor = new THREE.Color(RENDERER_CLEAR_COLOR);
-    renderer.setClearColor(rendererClearColor, DESKTOP_CLEAR_ALPHA);
-    renderer.domElement.style.background = DESKTOP_CANVAS_BACKGROUND;
+    renderer.setClearColor(0x000000, 0);
+    renderer.domElement.style.background = 'transparent';
     renderer.xr.enabled = true;
     renderer.xr.setReferenceSpaceType?.('local-floor');
-
-    let rendererClearMode: 'desktop' | 'immersive-vr' | 'immersive-ar' = 'desktop';
-    const applyRendererClearMode = (mode: 'immersive-vr' | 'immersive-ar' | null) => {
-      const targetMode = mode ?? 'desktop';
-      if (rendererClearMode === targetMode) {
-        return;
-      }
-      rendererClearMode = targetMode;
-      if (targetMode === 'immersive-vr') {
-        renderer.setClearColor(rendererClearColor, VR_CLEAR_ALPHA);
-        renderer.domElement.style.background = VR_CANVAS_BACKGROUND;
-      } else if (targetMode === 'immersive-ar') {
-        renderer.setClearColor(rendererClearColor, AR_CLEAR_ALPHA);
-        renderer.domElement.style.background = DESKTOP_CANVAS_BACKGROUND;
-      } else {
-        renderer.setClearColor(rendererClearColor, DESKTOP_CLEAR_ALPHA);
-        renderer.domElement.style.background = DESKTOP_CANVAS_BACKGROUND;
-      }
-    };
 
     const applyVrFoveation = (target: number = XR_TARGET_FOVEATION) => {
       const xrManager = renderer.xr as WebXRFoveationManager;
@@ -5419,15 +5340,10 @@ function VolumeViewer({
       }> = [];
       controllersRef.current.forEach((entry, index) => {
         const visible = shouldShow && entry.isConnected && entry.targetRayMode !== 'tracked-hand';
-        const previousControllerVisible = entry.controller.visible;
-        const previousGripVisible = entry.grip.visible;
         entry.controller.visible = visible;
         entry.grip.visible = visible;
         entry.ray.visible = visible;
         entry.touchIndicator.visible = visible;
-        if (previousControllerVisible !== entry.controller.visible || previousGripVisible !== entry.grip.visible) {
-          entry.needsRayUpdate = true;
-        }
         visibilitySnapshot.push({
           index,
           visible,
@@ -5436,7 +5352,6 @@ function VolumeViewer({
         });
         if (!visible) {
           entry.hoverTrackId = null;
-          entry.hoverScreenPosition = null;
           entry.hoverUiTarget = null;
           entry.activeUiTarget = null;
           entry.hasHoverUiPoint = false;
@@ -5446,8 +5361,6 @@ function VolumeViewer({
           entry.translateGrabOffset = null;
           entry.volumeRotationState = null;
           entry.hudRotationState = null;
-          entry.rayLength = 3;
-          entry.needsRayUpdate = true;
         } else {
           anyVisible = true;
         }
@@ -5457,18 +5370,7 @@ function VolumeViewer({
       }
       if (!anyVisible) {
         clearHoverState('controller');
-        const currentHoverState = vrHoverStateRef.current;
-        if (
-          currentHoverState.play ||
-          currentHoverState.slider ||
-          currentHoverState.sliderActive ||
-          currentHoverState.resetVolume ||
-          currentHoverState.resetHud ||
-          currentHoverState.exit ||
-          currentHoverState.mode
-        ) {
-          applyVrPlaybackHoverState(false, false, false, false, false, false, false);
-        }
+        applyVrPlaybackHoverState(false, false, false, false, false, false, false);
       }
     };
 
@@ -5532,7 +5434,6 @@ function VolumeViewer({
         targetRayMode: null,
         gamepad: null,
         hoverTrackId: null,
-        hoverScreenPosition: null,
         hoverUiTarget: null,
         activeUiTarget: null,
         hoverUiPoint: new THREE.Vector3(),
@@ -5540,9 +5441,6 @@ function VolumeViewer({
         hoverPoint: new THREE.Vector3(),
         rayOrigin: new THREE.Vector3(),
         rayDirection: new THREE.Vector3(0, 0, -1),
-        lastRayOrigin: new THREE.Vector3(),
-        lastRayDirection: new THREE.Vector3(0, 0, -1),
-        needsRayUpdate: true,
         rayLength: 3,
         isSelecting: false,
         hudGrabOffsets: { playback: null, channels: null, tracks: null },
@@ -5558,7 +5456,6 @@ function VolumeViewer({
         entry.targetRayMode = event?.data?.targetRayMode ?? null;
         entry.gamepad = event?.data?.gamepad ?? null;
         entry.hoverTrackId = null;
-        entry.hoverScreenPosition = null;
         entry.hoverUiTarget = null;
         entry.activeUiTarget = null;
         entry.hasHoverUiPoint = false;
@@ -5570,7 +5467,6 @@ function VolumeViewer({
         entry.volumeScaleState = null;
         entry.volumeRotationState = null;
         entry.hudRotationState = null;
-        entry.needsRayUpdate = true;
         entry.rayLength = 3;
         vrLog('[VR] controller connected', index, {
           targetRayMode: entry.targetRayMode,
@@ -5584,7 +5480,6 @@ function VolumeViewer({
         entry.targetRayMode = null;
         entry.gamepad = null;
         entry.hoverTrackId = null;
-        entry.hoverScreenPosition = null;
         entry.hoverUiTarget = null;
         entry.activeUiTarget = null;
         entry.hasHoverUiPoint = false;
@@ -5600,7 +5495,6 @@ function VolumeViewer({
         entry.volumeRotationState = null;
         entry.hudRotationState = null;
         entry.touchIndicator.visible = false;
-        entry.needsRayUpdate = true;
         vrLog('[VR] controller disconnected', index);
         refreshControllerVisibility();
         clearHoverState('controller');
@@ -5608,7 +5502,6 @@ function VolumeViewer({
 
       entry.onSelectStart = () => {
         entry.isSelecting = true;
-        entry.needsRayUpdate = true;
         entry.activeUiTarget = entry.hoverUiTarget;
         entry.hudRotationState = null;
         entry.volumeRotationState = null;
@@ -5861,7 +5754,6 @@ function VolumeViewer({
 
       entry.onSelectEnd = () => {
         entry.isSelecting = false;
-        entry.needsRayUpdate = true;
         const activeTarget = entry.activeUiTarget;
         entry.activeUiTarget = null;
         const playbackState = playbackStateRef.current;
@@ -6521,10 +6413,6 @@ function VolumeViewer({
     const scaleHandleWorldPoint = new THREE.Vector3();
     const scaleDirectionTemp = new THREE.Vector3();
     const scaleTargetWorldPoint = new THREE.Vector3();
-    const handleCandidatePoint = new THREE.Vector3();
-    const playbackCandidatePoint = new THREE.Vector3();
-    const channelsCandidatePoint = new THREE.Vector3();
-    const tracksCandidatePoint = new THREE.Vector3();
 
     let lastControllerRaySummary:
       | {
@@ -6545,18 +6433,7 @@ function VolumeViewer({
           hoverTrackIds: controllersRef.current.map((entry) => entry.hoverTrackId)
         };
         clearHoverState('controller');
-        const hoverState = vrHoverStateRef.current;
-        if (
-          hoverState.play ||
-          hoverState.slider ||
-          hoverState.sliderActive ||
-          hoverState.resetVolume ||
-          hoverState.resetHud ||
-          hoverState.exit ||
-          hoverState.mode
-        ) {
-          applyVrPlaybackHoverState(false, false, false, false, false, false, false);
-        }
+        applyVrPlaybackHoverState(false, false, false, false, false, false, false);
         return;
       }
 
@@ -6585,7 +6462,6 @@ function VolumeViewer({
       let nextTracksHoverRegion: VrTracksInteractiveRegion | null = null;
       let rotationHandleHovered = false;
       let rotationHandleActive = false;
-      const rayEpsilonSquared = VR_CONTROLLER_RAY_EPSILON * VR_CONTROLLER_RAY_EPSILON;
 
       for (let index = 0; index < controllersRef.current.length; index++) {
         const entry = controllersRef.current[index];
@@ -6607,70 +6483,39 @@ function VolumeViewer({
         controllerTempMatrix.identity().extractRotation(entry.controller.matrixWorld);
         entry.rayOrigin.setFromMatrixPosition(entry.controller.matrixWorld);
         entry.rayDirection.set(0, 0, -1).applyMatrix4(controllerTempMatrix).normalize();
+        entry.raycaster.ray.origin.copy(entry.rayOrigin);
+        entry.raycaster.ray.direction.copy(entry.rayDirection);
 
-        const originChanged = entry.lastRayOrigin.distanceToSquared(entry.rayOrigin) > rayEpsilonSquared;
-        const directionChanged =
-          entry.lastRayDirection.distanceToSquared(entry.rayDirection) > rayEpsilonSquared;
-        const shouldUpdate =
-          entry.needsRayUpdate ||
-          originChanged ||
-          directionChanged ||
-          entry.isSelecting ||
-          Boolean(entry.activeUiTarget);
+        let rayLength = 3;
+        let hoverTrackId: string | null = null;
+        let hoverPosition: { x: number; y: number } | null = null;
+        entry.hoverUiTarget = null;
+        entry.hasHoverUiPoint = false;
 
-        let rayLength = entry.rayLength;
-        let hoverTrackId: string | null = entry.hoverTrackId;
-        let hoverPosition: { x: number; y: number } | null = entry.hoverScreenPosition
-          ? { x: entry.hoverScreenPosition.x, y: entry.hoverScreenPosition.y }
-          : null;
+        let uiRayLength: number | null = null;
+        const playbackHudInstance = vrPlaybackHudRef.current;
+        const channelsHudInstance = vrChannelsHudRef.current;
+        const tracksHudInstance = vrTracksHudRef.current;
+        const translationHandleInstance = vrTranslationHandleRef.current;
+        const scaleHandleInstance = vrVolumeScaleHandleRef.current;
+        const yawHandleInstances = vrVolumeYawHandlesRef.current;
+        const pitchHandleInstance = vrVolumePitchHandleRef.current;
 
-        if (shouldUpdate) {
-          entry.needsRayUpdate = false;
-          entry.lastRayOrigin.copy(entry.rayOrigin);
-          entry.lastRayDirection.copy(entry.rayDirection);
-          entry.raycaster.ray.origin.copy(entry.rayOrigin);
-          entry.raycaster.ray.direction.copy(entry.rayDirection);
-
-          rayLength = 3;
-          hoverTrackId = null;
-          hoverPosition = null;
-          entry.hoverUiTarget = null;
-          entry.hasHoverUiPoint = false;
-
-          let uiRayLength: number | null = null;
-          const playbackHudInstance = vrPlaybackHudRef.current;
-          const channelsHudInstance = vrChannelsHudRef.current;
-          const tracksHudInstance = vrTracksHudRef.current;
-          const translationHandleInstance = vrTranslationHandleRef.current;
-          const scaleHandleInstance = vrVolumeScaleHandleRef.current;
-          const yawHandleInstances = vrVolumeYawHandlesRef.current;
-          const pitchHandleInstance = vrVolumePitchHandleRef.current;
-
-          const isActiveTranslate = entry.activeUiTarget?.type === 'volume-translate-handle';
-          const isActiveScale = entry.activeUiTarget?.type === 'volume-scale-handle';
-          const isActiveYaw = entry.activeUiTarget?.type === 'volume-yaw-handle';
-          const isActivePitch = entry.activeUiTarget?.type === 'volume-pitch-handle';
+        const isActiveTranslate = entry.activeUiTarget?.type === 'volume-translate-handle';
+        const isActiveScale = entry.activeUiTarget?.type === 'volume-scale-handle';
+        const isActiveYaw = entry.activeUiTarget?.type === 'volume-yaw-handle';
+        const isActivePitch = entry.activeUiTarget?.type === 'volume-pitch-handle';
         if (isActiveYaw || isActivePitch) {
           rotationHandleActive = true;
         }
 
         let handleCandidate: { target: VrUiTarget; point: THREE.Vector3; distance: number } | null = null;
 
-        const setHandleCandidate = (target: VrUiTarget, point: THREE.Vector3, distance: number) => {
-          if (!handleCandidate) {
-            handleCandidate = { target, point: handleCandidatePoint, distance };
-          } else {
-            handleCandidate.target = target;
-            handleCandidate.distance = distance;
-          }
-          handleCandidatePoint.copy(point);
-        };
-
-        const considerHandleCandidate = (target: VrUiTarget, point: THREE.Vector3, distance: number) => {
-          if (!handleCandidate || distance < handleCandidate.distance) {
-            setHandleCandidate(target, point, distance);
-          } else if (handleCandidate.target === target) {
-            setHandleCandidate(target, point, distance);
+        const considerHandleCandidate = (
+          candidate: { target: VrUiTarget; point: THREE.Vector3; distance: number }
+        ) => {
+          if (!handleCandidate || candidate.distance < handleCandidate.distance) {
+            handleCandidate = candidate;
           }
         };
 
@@ -6678,11 +6523,11 @@ function VolumeViewer({
           translationHandleInstance.getWorldPosition(translationHandleWorldPoint);
           const distance = translationHandleWorldPoint.distanceTo(entry.rayOrigin);
           if (isActiveTranslate || distance <= VR_UI_TOUCH_DISTANCE) {
-            considerHandleCandidate(
-              { type: 'volume-translate-handle', object: translationHandleInstance },
-              translationHandleWorldPoint,
+            considerHandleCandidate({
+              target: { type: 'volume-translate-handle', object: translationHandleInstance },
+              point: translationHandleWorldPoint.clone(),
               distance
-            );
+            });
           }
         }
 
@@ -6690,11 +6535,11 @@ function VolumeViewer({
           scaleHandleInstance.getWorldPosition(scaleHandleWorldPoint);
           const distance = scaleHandleWorldPoint.distanceTo(entry.rayOrigin);
           if (isActiveScale || distance <= VR_UI_TOUCH_DISTANCE) {
-            considerHandleCandidate(
-              { type: 'volume-scale-handle', object: scaleHandleInstance },
-              scaleHandleWorldPoint,
+            considerHandleCandidate({
+              target: { type: 'volume-scale-handle', object: scaleHandleInstance },
+              point: scaleHandleWorldPoint.clone(),
               distance
-            );
+            });
           }
         }
 
@@ -6716,11 +6561,11 @@ function VolumeViewer({
               rotationHandleHovered = true;
             }
             if (isActiveHandle || distance <= VR_UI_TOUCH_DISTANCE) {
-              considerHandleCandidate(
-                { type: 'volume-yaw-handle', object: yawHandle },
-                rotationHandleWorldPoint,
+              considerHandleCandidate({
+                target: { type: 'volume-yaw-handle', object: yawHandle },
+                point: rotationHandleWorldPoint.clone(),
                 distance
-              );
+              });
             }
           }
         }
@@ -6733,11 +6578,11 @@ function VolumeViewer({
           }
           const isActiveHandle = isActivePitch && entry.activeUiTarget?.object === pitchHandleInstance;
           if (isActiveHandle || (!isActivePitch && distance <= VR_UI_TOUCH_DISTANCE)) {
-            considerHandleCandidate(
-              { type: 'volume-pitch-handle', object: pitchHandleInstance },
-              rotationHandleWorldPoint,
+            considerHandleCandidate({
+              target: { type: 'volume-pitch-handle', object: pitchHandleInstance },
+              point: rotationHandleWorldPoint.clone(),
               distance
-            );
+            });
           }
         }
 
@@ -6763,8 +6608,8 @@ function VolumeViewer({
             const distance = entry.rayOrigin.distanceTo(translationHandleWorldPoint);
             rayLength = Math.min(rayLength, Math.max(0.12, Math.min(distance, 8)));
             if (handleCandidate?.target.type === 'volume-translate-handle') {
+              handleCandidate.point = translationHandleWorldPoint.clone();
               handleCandidate.distance = distance;
-              handleCandidatePoint.copy(translationHandleWorldPoint);
             }
           }
         }
@@ -6804,8 +6649,8 @@ function VolumeViewer({
             const distance = entry.rayOrigin.distanceTo(scaleHandleWorldPoint);
             rayLength = Math.min(rayLength, Math.max(0.12, Math.min(distance, 8)));
             if (handleCandidate?.target.type === 'volume-scale-handle') {
+              handleCandidate.point = scaleHandleWorldPoint.clone();
               handleCandidate.distance = distance;
-              handleCandidatePoint.copy(scaleHandleWorldPoint);
             }
           }
         }
@@ -6867,8 +6712,8 @@ function VolumeViewer({
                 handleCandidate?.target.type === 'volume-yaw-handle' ||
                 handleCandidate?.target.type === 'volume-pitch-handle'
               ) {
+                handleCandidate.point = rotationHandleWorldPoint.clone();
                 handleCandidate.distance = distance;
-                handleCandidatePoint.copy(rotationHandleWorldPoint);
               }
             }
           }
@@ -6893,7 +6738,7 @@ function VolumeViewer({
             target: VrUiTarget;
             point: THREE.Vector3;
             distance: number;
-            region: null;
+            region?: null;
           } | null = null;
           let channelsCandidate: {
             target: VrUiTarget;
@@ -6908,125 +6753,53 @@ function VolumeViewer({
             region: VrTracksInteractiveRegion | null;
           } | null = null;
 
-          const setPlaybackCandidate = (
-            target: VrUiTarget,
-            point: THREE.Vector3,
-            distance: number
-          ) => {
-            if (!playbackCandidate) {
-              playbackCandidate = {
-                target,
-                point: playbackCandidatePoint,
-                distance,
-                region: null
-              };
-            } else {
-              playbackCandidate.target = target;
-              playbackCandidate.distance = distance;
-              playbackCandidate.region = null;
-            }
-            playbackCandidatePoint.copy(point);
-          };
-
           const considerPlaybackCandidate = (
-            target: VrUiTarget,
-            point: THREE.Vector3,
-            distance: number,
+            candidate: { target: VrUiTarget; point: THREE.Vector3; distance: number; region?: null },
             rayDistance: number
           ) => {
             const clampedDistance = Math.max(0.12, Math.min(rayDistance, 8));
-            const shouldReplace = !playbackCandidate || distance < playbackCandidate.distance;
+            const shouldReplace = !playbackCandidate || candidate.distance < playbackCandidate.distance;
             if (shouldReplace) {
-              setPlaybackCandidate(target, point, distance);
+              playbackCandidate = candidate;
               uiRayLength = uiRayLength === null ? clampedDistance : Math.min(uiRayLength, clampedDistance);
-              return true;
             }
-            if (playbackCandidate?.target === target) {
-              setPlaybackCandidate(target, point, distance);
-            }
-            return false;
-          };
-
-          const setChannelsCandidate = (
-            target: VrUiTarget,
-            point: THREE.Vector3,
-            distance: number,
-            region: VrChannelsInteractiveRegion | null
-          ) => {
-            if (!channelsCandidate) {
-              channelsCandidate = {
-                target,
-                point: channelsCandidatePoint,
-                distance,
-                region
-              };
-            } else {
-              channelsCandidate.target = target;
-              channelsCandidate.distance = distance;
-              channelsCandidate.region = region;
-            }
-            channelsCandidatePoint.copy(point);
+            return shouldReplace;
           };
 
           const considerChannelsCandidate = (
-            target: VrUiTarget,
-            point: THREE.Vector3,
-            distance: number,
-            region: VrChannelsInteractiveRegion | null,
+            candidate: {
+              target: VrUiTarget;
+              point: THREE.Vector3;
+              distance: number;
+              region: VrChannelsInteractiveRegion | null;
+            },
             rayDistance: number
           ) => {
             const clampedDistance = Math.max(0.12, Math.min(rayDistance, 8));
-            const shouldReplace = !channelsCandidate || distance < channelsCandidate.distance;
+            const shouldReplace = !channelsCandidate || candidate.distance < channelsCandidate.distance;
             if (shouldReplace) {
-              setChannelsCandidate(target, point, distance, region);
+              channelsCandidate = candidate;
               uiRayLength = uiRayLength === null ? clampedDistance : Math.min(uiRayLength, clampedDistance);
-              return true;
             }
-            if (channelsCandidate?.target === target) {
-              setChannelsCandidate(target, point, distance, region);
-            }
-            return false;
-          };
-
-          const setTracksCandidate = (
-            target: VrUiTarget,
-            point: THREE.Vector3,
-            distance: number,
-            region: VrTracksInteractiveRegion | null
-          ) => {
-            if (!tracksCandidate) {
-              tracksCandidate = {
-                target,
-                point: tracksCandidatePoint,
-                distance,
-                region
-              };
-            } else {
-              tracksCandidate.target = target;
-              tracksCandidate.distance = distance;
-              tracksCandidate.region = region;
-            }
-            tracksCandidatePoint.copy(point);
+            return shouldReplace;
           };
 
           const considerTracksCandidate = (
-            target: VrUiTarget,
-            point: THREE.Vector3,
-            distance: number,
-            region: VrTracksInteractiveRegion | null,
+            candidate: {
+              target: VrUiTarget;
+              point: THREE.Vector3;
+              distance: number;
+              region: VrTracksInteractiveRegion | null;
+            },
             rayDistance: number
           ) => {
             const clampedDistance = Math.max(0.12, Math.min(rayDistance, 8));
-            const shouldReplace = !tracksCandidate || distance < tracksCandidate.distance;
+            const shouldReplace = !tracksCandidate || candidate.distance < tracksCandidate.distance;
             if (shouldReplace) {
-              setTracksCandidate(target, point, distance, region);
+              tracksCandidate = candidate;
               uiRayLength = uiRayLength === null ? clampedDistance : Math.min(uiRayLength, clampedDistance);
-              return true;
             }
-            if (tracksCandidate?.target === target) {
-              setTracksCandidate(target, point, distance, region);
-            }
-            return false;
+            return shouldReplace;
           };
 
           if (playbackHudInstance && playbackHudInstance.group.visible) {
@@ -7051,9 +6824,12 @@ function VolumeViewer({
               const distance = handleWorldPoint.distanceTo(entry.rayOrigin);
               if (activeType === 'playback-panel-grab' || distance <= VR_UI_TOUCH_DISTANCE) {
                 considerPlaybackCandidate(
-                  { type: 'playback-panel-grab', object: translateHandle },
-                  handleWorldPoint,
-                  distance,
+                  {
+                    target: { type: 'playback-panel-grab', object: translateHandle },
+                    point: handleWorldPoint.clone(),
+                    distance,
+                    region: null
+                  },
                   distance
                 );
               }
@@ -7071,9 +6847,12 @@ function VolumeViewer({
                 const distance = handleSecondaryPoint.distanceTo(entry.rayOrigin);
                 if (isActiveHandle || distance <= VR_UI_TOUCH_DISTANCE) {
                   considerPlaybackCandidate(
-                    { type: 'playback-panel-yaw', object: yawHandle },
-                    handleSecondaryPoint,
-                    distance,
+                    {
+                      target: { type: 'playback-panel-yaw', object: yawHandle },
+                      point: handleSecondaryPoint.clone(),
+                      distance,
+                      region: null
+                    },
                     distance
                   );
                 }
@@ -7088,9 +6867,12 @@ function VolumeViewer({
                 (activeType !== 'playback-panel-pitch' && distance <= VR_UI_TOUCH_DISTANCE)
               ) {
                 considerPlaybackCandidate(
-                  { type: 'playback-panel-pitch', object: pitchHandle },
-                  handleSecondaryPoint,
-                  distance,
+                  {
+                    target: { type: 'playback-panel-pitch', object: pitchHandle },
+                    point: handleSecondaryPoint.clone(),
+                    distance,
+                    region: null
+                  },
                   distance
                 );
               }
@@ -7175,37 +6957,52 @@ function VolumeViewer({
 
                   if (!playbackSliderLocked && inResetVolumeButton) {
                     considerPlaybackCandidate(
-                      { type: 'playback-reset-volume', object: playbackHudInstance.resetVolumeButton },
-                      playbackTouchPoint,
-                      rawDistance,
+                      {
+                        target: { type: 'playback-reset-volume', object: playbackHudInstance.resetVolumeButton },
+                        point: playbackTouchPoint.clone(),
+                        distance: rawDistance,
+                        region: null
+                      },
                       rawDistance
                     );
                   } else if (!playbackSliderLocked && inResetHudButton) {
                     considerPlaybackCandidate(
-                      { type: 'playback-reset-hud', object: playbackHudInstance.resetHudButton },
-                      playbackTouchPoint,
-                      rawDistance,
+                      {
+                        target: { type: 'playback-reset-hud', object: playbackHudInstance.resetHudButton },
+                        point: playbackTouchPoint.clone(),
+                        distance: rawDistance,
+                        region: null
+                      },
                       rawDistance
                     );
                   } else if (!playbackSliderLocked && inExitButton) {
                     considerPlaybackCandidate(
-                      { type: 'playback-exit-vr', object: playbackHudInstance.exitButton },
-                      playbackTouchPoint,
-                      rawDistance,
+                      {
+                        target: { type: 'playback-exit-vr', object: playbackHudInstance.exitButton },
+                        point: playbackTouchPoint.clone(),
+                        distance: rawDistance,
+                        region: null
+                      },
                       rawDistance
                     );
                   } else if (!playbackSliderLocked && inModeButton) {
                     considerPlaybackCandidate(
-                      { type: 'playback-toggle-mode', object: playbackHudInstance.modeButton },
-                      playbackTouchPoint,
-                      rawDistance,
+                      {
+                        target: { type: 'playback-toggle-mode', object: playbackHudInstance.modeButton },
+                        point: playbackTouchPoint.clone(),
+                        distance: rawDistance,
+                        region: null
+                      },
                       rawDistance
                     );
                   } else if (!playbackSliderLocked && inPlayButton) {
                     considerPlaybackCandidate(
-                      { type: 'playback-play-toggle', object: playbackHudInstance.playButton },
-                      playbackTouchPoint,
-                      rawDistance,
+                      {
+                        target: { type: 'playback-play-toggle', object: playbackHudInstance.playButton },
+                        point: playbackTouchPoint.clone(),
+                        distance: rawDistance,
+                        region: null
+                      },
                       rawDistance
                     );
                   }
@@ -7217,9 +7014,12 @@ function VolumeViewer({
                       .copy(playbackTouchPoint)
                       .addScaledVector(playbackPlaneNormal, sliderDepth);
                     considerPlaybackCandidate(
-                      { type: 'playback-slider', object: playbackHudInstance.sliderHitArea },
-                      playbackSliderPoint,
-                      rawDistance,
+                      {
+                        target: { type: 'playback-slider', object: playbackHudInstance.sliderHitArea },
+                        point: playbackSliderPoint.clone(),
+                        distance: rawDistance,
+                        region: null
+                      },
                       rawDistance
                     );
                     if (playbackSliderActive && !playbackStateRef.current.playbackDisabled) {
@@ -7229,9 +7029,12 @@ function VolumeViewer({
 
                   if (!playbackSliderLocked) {
                     considerPlaybackCandidate(
-                      { type: 'playback-panel', object: playbackHudInstance.panel },
-                      playbackTouchPoint,
-                      rawDistance,
+                      {
+                        target: { type: 'playback-panel', object: playbackHudInstance.panel },
+                        point: playbackTouchPoint.clone(),
+                        distance: rawDistance,
+                        region: null
+                      },
                       rawDistance
                     );
                   }
@@ -7270,10 +7073,12 @@ function VolumeViewer({
               const distance = handleWorldPoint.distanceTo(entry.rayOrigin);
               if (activeType === 'channels-panel-grab' || distance <= VR_UI_TOUCH_DISTANCE) {
                 const replaced = considerChannelsCandidate(
-                  { type: 'channels-panel-grab', object: translateHandle },
-                  handleWorldPoint,
-                  distance,
-                  null,
+                  {
+                    target: { type: 'channels-panel-grab', object: translateHandle },
+                    point: handleWorldPoint.clone(),
+                    distance,
+                    region: null
+                  },
                   distance
                 );
                 if (replaced) {
@@ -7294,10 +7099,12 @@ function VolumeViewer({
                 const distance = handleSecondaryPoint.distanceTo(entry.rayOrigin);
                 if (isActiveHandle || distance <= VR_UI_TOUCH_DISTANCE) {
                   const replaced = considerChannelsCandidate(
-                    { type: 'channels-panel-yaw', object: yawHandle },
-                    handleSecondaryPoint,
-                    distance,
-                    null,
+                    {
+                      target: { type: 'channels-panel-yaw', object: yawHandle },
+                      point: handleSecondaryPoint.clone(),
+                      distance,
+                      region: null
+                    },
                     distance
                   );
                   if (replaced) {
@@ -7314,10 +7121,12 @@ function VolumeViewer({
                 activeType === 'channels-panel-pitch' && entry.activeUiTarget?.object === pitchHandle;
               if (isActivePitch || (activeType !== 'channels-panel-pitch' && distance <= VR_UI_TOUCH_DISTANCE)) {
                 const replaced = considerChannelsCandidate(
-                  { type: 'channels-panel-pitch', object: pitchHandle },
-                  handleSecondaryPoint,
-                  distance,
-                  null,
+                  {
+                    target: { type: 'channels-panel-pitch', object: pitchHandle },
+                    point: handleSecondaryPoint.clone(),
+                    distance,
+                    region: null
+                  },
                   distance
                 );
                 if (replaced) {
@@ -7360,10 +7169,12 @@ function VolumeViewer({
                     region === activeChannelsSliderRegion;
                   if (region && (!channelsSliderLocked || isActiveSliderRegion)) {
                     const replaced = considerChannelsCandidate(
-                      { type: region.targetType, object: channelsHudInstance.panel, data: region },
-                      channelsTouchPoint,
-                      rawDistance,
-                      region,
+                      {
+                        target: { type: region.targetType, object: channelsHudInstance.panel, data: region },
+                        point: channelsTouchPoint.clone(),
+                        distance: rawDistance,
+                        region
+                      },
                       rawDistance
                     );
                     if (replaced) {
@@ -7377,13 +7188,15 @@ function VolumeViewer({
                   if (channelsSliderLocked && activeChannelsSliderRegion) {
                     const replaced = considerChannelsCandidate(
                       {
-                        type: 'channels-slider',
-                        object: channelsHudInstance.panel,
-                        data: activeChannelsSliderRegion
+                        target: {
+                          type: 'channels-slider',
+                          object: channelsHudInstance.panel,
+                          data: activeChannelsSliderRegion
+                        },
+                        point: channelsTouchPoint.clone(),
+                        distance: rawDistance,
+                        region: activeChannelsSliderRegion
                       },
-                      channelsTouchPoint,
-                      rawDistance,
-                      activeChannelsSliderRegion,
                       rawDistance
                     );
                     if (replaced) {
@@ -7394,10 +7207,12 @@ function VolumeViewer({
 
                   if (!channelsSliderLocked) {
                     const replacedPanel = considerChannelsCandidate(
-                      { type: 'channels-panel', object: channelsHudInstance.panel },
-                      channelsTouchPoint,
-                      rawDistance,
-                      null,
+                      {
+                        target: { type: 'channels-panel', object: channelsHudInstance.panel },
+                        point: channelsTouchPoint.clone(),
+                        distance: rawDistance,
+                        region: null
+                      },
                       rawDistance
                     );
                     if (replacedPanel) {
@@ -7439,10 +7254,12 @@ function VolumeViewer({
               const distance = handleWorldPoint.distanceTo(entry.rayOrigin);
               if (activeType === 'tracks-panel-grab' || distance <= VR_UI_TOUCH_DISTANCE) {
                 const replaced = considerTracksCandidate(
-                  { type: 'tracks-panel-grab', object: translateHandle },
-                  handleWorldPoint,
-                  distance,
-                  null,
+                  {
+                    target: { type: 'tracks-panel-grab', object: translateHandle },
+                    point: handleWorldPoint.clone(),
+                    distance,
+                    region: null
+                  },
                   distance
                 );
                 if (replaced) {
@@ -7463,10 +7280,12 @@ function VolumeViewer({
                 const distance = handleSecondaryPoint.distanceTo(entry.rayOrigin);
                 if (isActiveHandle || distance <= VR_UI_TOUCH_DISTANCE) {
                   const replaced = considerTracksCandidate(
-                    { type: 'tracks-panel-yaw', object: yawHandle },
-                    handleSecondaryPoint,
-                    distance,
-                    null,
+                    {
+                      target: { type: 'tracks-panel-yaw', object: yawHandle },
+                      point: handleSecondaryPoint.clone(),
+                      distance,
+                      region: null
+                    },
                     distance
                   );
                   if (replaced) {
@@ -7483,10 +7302,12 @@ function VolumeViewer({
                 activeType === 'tracks-panel-pitch' && entry.activeUiTarget?.object === pitchHandle;
               if (isActivePitch || (activeType !== 'tracks-panel-pitch' && distance <= VR_UI_TOUCH_DISTANCE)) {
                 const replaced = considerTracksCandidate(
-                  { type: 'tracks-panel-pitch', object: pitchHandle },
-                  handleSecondaryPoint,
-                  distance,
-                  null,
+                  {
+                    target: { type: 'tracks-panel-pitch', object: pitchHandle },
+                    point: handleSecondaryPoint.clone(),
+                    distance,
+                    region: null
+                  },
                   distance
                 );
                 if (replaced) {
@@ -7526,10 +7347,12 @@ function VolumeViewer({
                     region === activeTracksSliderRegion;
                   if (region && (!tracksSliderLocked || isActiveSliderRegion)) {
                     const replaced = considerTracksCandidate(
-                      { type: region.targetType, object: tracksHudInstance.panel, data: region },
-                      tracksTouchPoint,
-                      rawDistance,
-                      region,
+                      {
+                        target: { type: region.targetType, object: tracksHudInstance.panel, data: region },
+                        point: tracksTouchPoint.clone(),
+                        distance: rawDistance,
+                        region
+                      },
                       rawDistance
                     );
                     if (replaced) {
@@ -7554,13 +7377,15 @@ function VolumeViewer({
                   if (tracksSliderLocked && activeTracksSliderRegion) {
                     const replaced = considerTracksCandidate(
                       {
-                        type: 'tracks-slider',
-                        object: tracksHudInstance.panel,
-                        data: activeTracksSliderRegion
+                        target: {
+                          type: 'tracks-slider',
+                          object: tracksHudInstance.panel,
+                          data: activeTracksSliderRegion
+                        },
+                        point: tracksTouchPoint.clone(),
+                        distance: rawDistance,
+                        region: activeTracksSliderRegion
                       },
-                      tracksTouchPoint,
-                      rawDistance,
-                      activeTracksSliderRegion,
                       rawDistance
                     );
                     if (replaced) {
@@ -7576,13 +7401,15 @@ function VolumeViewer({
                     const activeRegion = entry.activeUiTarget.data as VrTracksInteractiveRegion;
                     const replaced = considerTracksCandidate(
                       {
-                        type: 'tracks-scroll',
-                        object: tracksHudInstance.panel,
-                        data: activeRegion
+                        target: {
+                          type: 'tracks-scroll',
+                          object: tracksHudInstance.panel,
+                          data: activeRegion
+                        },
+                        point: tracksTouchPoint.clone(),
+                        distance: rawDistance,
+                        region: activeRegion
                       },
-                      tracksTouchPoint,
-                      rawDistance,
-                      activeRegion,
                       rawDistance
                     );
                     if (replaced) {
@@ -7593,10 +7420,12 @@ function VolumeViewer({
 
                   if (!tracksSliderLocked) {
                     const replacedPanel = considerTracksCandidate(
-                      { type: 'tracks-panel', object: tracksHudInstance.panel },
-                      tracksTouchPoint,
-                      rawDistance,
-                      null,
+                      {
+                        target: { type: 'tracks-panel', object: tracksHudInstance.panel },
+                        point: tracksTouchPoint.clone(),
+                        distance: rawDistance,
+                        region: null
+                      },
                       rawDistance
                     );
                     if (replacedPanel) {
@@ -7654,11 +7483,6 @@ function VolumeViewer({
               nextTracksHoverRegion = chosenCandidate.region as VrTracksInteractiveRegion;
             }
           }
-        }
-
-        } else {
-          entry.raycaster.ray.origin.copy(entry.rayOrigin);
-          entry.raycaster.ray.direction.copy(entry.rayDirection);
         }
 
         const uiType = entry.hoverUiTarget ? entry.hoverUiTarget.type : null;
@@ -7896,7 +7720,6 @@ function VolumeViewer({
         }
 
         entry.hoverTrackId = hoverTrackId;
-        entry.hoverScreenPosition = hoverPosition ? { x: hoverPosition.x, y: hoverPosition.y } : null;
         const currentUiType = entry.hoverUiTarget ? entry.hoverUiTarget.type : null;
         if (previousHoverTrackId !== hoverTrackId || previousUiType !== currentUiType) {
           vrLog('[VR] controller hover update', index, {
@@ -7913,26 +7736,15 @@ function VolumeViewer({
         }
       }
 
-      const currentHoverState = vrHoverStateRef.current;
-      if (
-        currentHoverState.play !== playHoveredAny ||
-        currentHoverState.slider !== sliderHoveredAny ||
-        currentHoverState.sliderActive !== sliderActiveAny ||
-        currentHoverState.resetVolume !== resetVolumeHoveredAny ||
-        currentHoverState.resetHud !== resetHudHoveredAny ||
-        currentHoverState.exit !== exitHoveredAny ||
-        currentHoverState.mode !== modeHoveredAny
-      ) {
-        applyVrPlaybackHoverState(
-          playHoveredAny,
-          sliderHoveredAny,
-          sliderActiveAny,
-          resetVolumeHoveredAny,
-          resetHudHoveredAny,
-          exitHoveredAny,
-          modeHoveredAny
-        );
-      }
+      applyVrPlaybackHoverState(
+        playHoveredAny,
+        sliderHoveredAny,
+        sliderActiveAny,
+        resetVolumeHoveredAny,
+        resetHudHoveredAny,
+        exitHoveredAny,
+        modeHoveredAny
+      );
 
       const channelsHudInstance = vrChannelsHudRef.current;
       const isSameRegion = (
@@ -8009,7 +7821,6 @@ function VolumeViewer({
         presenting: renderer.xr.isPresenting,
         visibilityState: xrSessionRef.current?.visibilityState ?? null
       });
-      applyRendererClearMode(xrCurrentSessionModeRef.current);
       applyVrFoveation();
       applyVolumeStepScaleToResources(VR_VOLUME_STEP_SCALE);
       volumeRootBaseOffsetRef.current.copy(VR_VOLUME_BASE_OFFSET);
@@ -8034,7 +7845,6 @@ function VolumeViewer({
         presenting: renderer.xr.isPresenting,
         visibilityState: xrSessionRef.current?.visibilityState ?? null
       });
-      applyRendererClearMode(null);
       restoreVrFoveation();
       applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
       volumeRootBaseOffsetRef.current.set(0, 0, 0);
@@ -8062,7 +7872,6 @@ function VolumeViewer({
         presenting: renderer.xr.isPresenting,
         visibilityState: xrSessionRef.current?.visibilityState ?? null
       });
-      applyRendererClearMode(null);
       restoreVrFoveation();
       applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
       sessionCleanupRef.current = null;
@@ -8085,8 +7894,6 @@ function VolumeViewer({
         entry.translateGrabOffset = null;
         entry.scaleGrabOffset = null;
         entry.volumeScaleState = null;
-        entry.hoverScreenPosition = null;
-        entry.needsRayUpdate = true;
       }
       const controlsInstance = controlsRef.current;
       if (controlsInstance) {
@@ -8176,7 +7983,6 @@ function VolumeViewer({
         updateVrPlaybackHud();
       }
       xrPendingModeSwitchRef.current = null;
-      applyRendererClearMode(resolvedMode);
 
       const controlsInstance = controlsRef.current;
       if (controlsInstance) {
@@ -8445,7 +8251,6 @@ function VolumeViewer({
 
     return () => {
       isDisposed = true;
-      applyRendererClearMode(null);
       onRegisterVrSession?.(null);
       restoreVrFoveation();
       applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
@@ -8902,8 +8707,7 @@ function VolumeViewer({
             dimensions: { width: volume.width, height: volume.height, depth: volume.depth },
             channels: volume.channels,
             mode: viewerMode,
-            samplingMode: layer.samplingMode,
-            last3dUpload: { data: textureData, format: textureFormat }
+            samplingMode: layer.samplingMode
           });
         }
 
@@ -8981,8 +8785,7 @@ function VolumeViewer({
             channels: volume.channels,
             mode: viewerMode,
             samplingMode: layer.samplingMode,
-            sliceBuffer: sliceInfo.data,
-            last3dUpload: null
+            sliceBuffer: sliceInfo.data
           });
         }
 
@@ -9016,21 +8819,9 @@ function VolumeViewer({
             dataTexture.needsUpdate = true;
             resources.samplingMode = layer.samplingMode;
           }
-          const previousPayload = resources.last3dUpload ?? null;
-          const dataChanged =
-            !previousPayload ||
-            previousPayload.data !== preparation.data ||
-            previousPayload.format !== preparation.format;
-
-          if (dataChanged) {
-            dataTexture.image.data = preparation.data;
-            dataTexture.format = preparation.format;
-            dataTexture.needsUpdate = true;
-            resources.last3dUpload = {
-              data: preparation.data,
-              format: preparation.format
-            };
-          }
+          dataTexture.image.data = preparation.data;
+          dataTexture.format = preparation.format;
+          dataTexture.needsUpdate = true;
           materialUniforms.u_data.value = dataTexture;
           if (materialUniforms.u_renderstyle) {
             materialUniforms.u_renderstyle.value = layer.renderStyle;
