@@ -42,7 +42,9 @@ type PlanarViewerProps = {
   trackLineWidthByChannel: Record<string, number>;
   channelTrackColorModes: Record<string, TrackColorMode>;
   channelTrackOffsets: Record<string, { x: number; y: number }>;
+  selectedTrackIds: ReadonlySet<string>;
   followedTrackId: string | null;
+  onTrackSelectionToggle: (trackId: string) => void;
   onTrackFollowRequest: (trackId: string) => void;
 };
 
@@ -96,6 +98,9 @@ const TRACK_HIT_TEST_MIN_DISTANCE = 6;
 const DEFAULT_TRACK_OPACITY = 0.9;
 const DEFAULT_TRACK_LINE_WIDTH = 1;
 const WINDOW_EPSILON = 1e-5;
+const SELECTED_TRACK_BLINK_PERIOD_MS = 1600;
+const SELECTED_TRACK_BLINK_BASE = 0.85;
+const SELECTED_TRACK_BLINK_RANGE = 0.15;
 
 function clamp(value: number, min: number, max: number) {
   if (value < min) {
@@ -161,7 +166,9 @@ function PlanarViewer({
   trackLineWidthByChannel,
   channelTrackColorModes,
   channelTrackOffsets,
+  selectedTrackIds,
   followedTrackId,
+  onTrackSelectionToggle,
   onTrackFollowRequest
 }: PlanarViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -174,6 +181,7 @@ function PlanarViewer({
   const pointerStateRef = useRef<PointerState | null>(null);
   const followedTrackIdRef = useRef<string | null>(followedTrackId);
   const hoveredTrackIdRef = useRef<string | null>(null);
+  const selectedTrackIdsRef = useRef<ReadonlySet<string>>(selectedTrackIds);
 
   const [hasMeasured, setHasMeasured] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
@@ -194,6 +202,38 @@ function PlanarViewer({
   useEffect(() => {
     followedTrackIdRef.current = followedTrackId;
   }, [followedTrackId]);
+
+  useEffect(() => {
+    selectedTrackIdsRef.current = selectedTrackIds;
+  }, [selectedTrackIds]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    let frameId: number | null = null;
+    let isRunning = true;
+
+    const animate = () => {
+      if (!isRunning) {
+        return;
+      }
+      drawSlice();
+      frameId = window.requestAnimationFrame(animate);
+    };
+
+    if (selectedTrackIds.size > 0) {
+      frameId = window.requestAnimationFrame(animate);
+    }
+
+    return () => {
+      isRunning = false;
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+    };
+  }, [drawSlice, selectedTrackIds]);
 
   const trackLookup = useMemo(() => {
     const map = new Map<string, TrackDefinition>();
@@ -656,11 +696,16 @@ function PlanarViewer({
 
     if (trackRenderData.length > 0) {
       const scale = Math.max(viewState.scale, 1e-6);
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const blinkPhase = (now % SELECTED_TRACK_BLINK_PERIOD_MS) / SELECTED_TRACK_BLINK_PERIOD_MS;
+      const blinkScale =
+        SELECTED_TRACK_BLINK_BASE + SELECTED_TRACK_BLINK_RANGE * Math.sin(blinkPhase * Math.PI * 2);
 
       for (const track of trackRenderData) {
         const isFollowed = followedTrackId === track.id;
+        const isSelected = selectedTrackIds.has(track.id);
         const isExplicitlyVisible = trackVisibility[track.id] ?? true;
-        const shouldShow = isFollowed || isExplicitlyVisible;
+        const shouldShow = isFollowed || isSelected || isExplicitlyVisible;
         if (!shouldShow) {
           continue;
         }
@@ -672,22 +717,23 @@ function PlanarViewer({
 
         const channelOpacity = trackOpacityByChannel[track.channelId] ?? DEFAULT_TRACK_OPACITY;
         const sanitizedOpacity = Math.min(1, Math.max(0, channelOpacity));
-        const opacityBoost = isFollowed ? 0.15 : 0;
+        const opacityBoost = isFollowed || isSelected ? 0.15 : 0;
         const targetOpacity = Math.min(1, sanitizedOpacity + opacityBoost);
 
         const channelLineWidth = trackLineWidthByChannel[track.channelId] ?? DEFAULT_TRACK_LINE_WIDTH;
         const sanitizedLineWidth = Math.max(0.1, Math.min(10, channelLineWidth));
         const baseLineWidth = sanitizedLineWidth / scale;
         const outlineWidthBoost = Math.max(sanitizedLineWidth * 0.75, OUTLINE_MIN_WIDTH) / scale;
-        const widthMultiplier = isFollowed ? 1.35 : 1;
+        const widthMultiplier = isFollowed || isSelected ? 1.35 : 1;
         const strokeWidth = Math.max(0.1, baseLineWidth * widthMultiplier);
-        const strokeColor = isFollowed ? track.highlightColor : track.baseColor;
+        const strokeColor = isFollowed || isSelected ? track.highlightColor : track.baseColor;
+        const blinkMultiplier = isSelected && !isFollowed ? blinkScale : 1;
 
-        if (points.length >= 2 && isFollowed) {
+        if (points.length >= 2 && (isFollowed || isSelected)) {
           context.save();
           context.lineCap = 'round';
           context.lineJoin = 'round';
-          context.globalAlpha = Math.min(1, targetOpacity * OUTLINE_OPACITY);
+          context.globalAlpha = Math.min(1, targetOpacity * OUTLINE_OPACITY * blinkMultiplier);
           context.strokeStyle = 'rgb(255, 255, 255)';
           context.lineWidth = strokeWidth + outlineWidthBoost;
           context.beginPath();
@@ -703,7 +749,7 @@ function PlanarViewer({
           context.save();
           context.lineCap = 'round';
           context.lineJoin = 'round';
-          context.globalAlpha = targetOpacity;
+          context.globalAlpha = targetOpacity * blinkMultiplier;
           context.strokeStyle = componentsToCss(strokeColor);
           context.lineWidth = strokeWidth;
           context.beginPath();
@@ -718,7 +764,7 @@ function PlanarViewer({
         const endPoint = points[points.length - 1];
         const pointRadius = Math.max(strokeWidth * 0.6, 1.2 / scale);
         context.save();
-        context.globalAlpha = targetOpacity;
+        context.globalAlpha = targetOpacity * blinkMultiplier;
         context.fillStyle = componentsToCss(strokeColor);
         context.beginPath();
         context.arc(endPoint.x, endPoint.y, pointRadius, 0, Math.PI * 2);
@@ -736,6 +782,7 @@ function PlanarViewer({
     trackOpacityByChannel,
     trackRenderData,
     trackVisibility,
+    selectedTrackIds,
     viewState
   ]);
 
@@ -806,7 +853,8 @@ function PlanarViewer({
       for (const track of trackRenderData) {
         const isFollowed = followedTrackIdRef.current === track.id;
         const isExplicitlyVisible = trackVisibility[track.id] ?? true;
-        if (!isFollowed && !isExplicitlyVisible) {
+        const isSelected = selectedTrackIdsRef.current.has(track.id);
+        if (!isFollowed && !isExplicitlyVisible && !isSelected) {
           continue;
         }
 
@@ -1052,7 +1100,7 @@ function PlanarViewer({
       const { trackId, pointer } = performTrackHitTest(event);
       if (trackId !== null) {
         pointerStateRef.current = null;
-        onTrackFollowRequest(trackId);
+        onTrackSelectionToggle(trackId);
         if (pointer) {
           updateHoverState(trackId, pointer);
         }

@@ -968,6 +968,7 @@ function App() {
   const [activeChannelTabId, setActiveChannelTabId] = useState<string | null>(null);
   const [activeTrackChannelId, setActiveTrackChannelId] = useState<string | null>(null);
   const [channelTrackStates, setChannelTrackStates] = useState<Record<string, ChannelTrackState>>({});
+  const [selectedTrackIds, setSelectedTrackIds] = useState<ReadonlySet<string>>(new Set());
   const [followedTrack, setFollowedTrack] = useState<FollowedTrackState>(null);
   const [viewerMode, setViewerMode] = useState<'3d' | '2d'>('3d');
   const [sliceIndex, setSliceIndex] = useState(0);
@@ -1419,6 +1420,23 @@ function App() {
     return map;
   }, [parsedTracks]);
 
+  useEffect(() => {
+    setSelectedTrackIds((current) => {
+      if (current.size === 0) {
+        return current;
+      }
+
+      const next = new Set<string>();
+      for (const track of parsedTracks) {
+        if (current.has(track.id)) {
+          next.add(track.id);
+        }
+      }
+
+      return next.size === current.size ? current : next;
+    });
+  }, [parsedTracks]);
+
   const hasParsedTrackData = parsedTracks.length > 0;
   const handleRegisterReset = useCallback((handler: (() => void) | null) => {
     setResetViewHandler(() => handler);
@@ -1782,14 +1800,17 @@ function App() {
       const state = channelTrackStates[channel.id] ?? createDefaultChannelTrackState();
       let visible = 0;
       for (const track of tracksForChannel) {
-        if (state.visibility[track.id] ?? true) {
+        const explicitVisible = state.visibility[track.id] ?? true;
+        const isFollowed = followedTrack?.id === track.id;
+        const isSelected = selectedTrackIds.has(track.id);
+        if (explicitVisible || isFollowed || isSelected) {
           visible += 1;
         }
       }
       summary.set(channel.id, { total: tracksForChannel.length, visible });
     }
     return summary;
-  }, [channels, channelTrackStates, parsedTracksByChannel]);
+  }, [channels, channelTrackStates, followedTrack, parsedTracksByChannel, selectedTrackIds]);
 
   const trackVisibility = useMemo(() => {
     const visibility: Record<string, boolean> = {};
@@ -2398,6 +2419,14 @@ function App() {
 
       if (!nextVisible) {
         setFollowedTrack((current) => (current && current.id === trackId ? null : current));
+        setSelectedTrackIds((current) => {
+          if (!current.has(trackId)) {
+            return current;
+          }
+          const next = new Set(current);
+          next.delete(trackId);
+          return next;
+        });
       }
     },
     [trackLookup]
@@ -2423,6 +2452,16 @@ function App() {
 
       if (!isChecked) {
         setFollowedTrack((current) => (current && current.channelId === channelId ? null : current));
+        setSelectedTrackIds((current) => {
+          if (current.size === 0) {
+            return current;
+          }
+          const next = new Set(current);
+          for (const track of tracksForChannel) {
+            next.delete(track.id);
+          }
+          return next.size === current.size ? current : next;
+        });
       }
     },
     [parsedTracksByChannel]
@@ -2520,6 +2559,33 @@ function App() {
     [trackLookup]
   );
 
+  const handleTrackSelectionToggle = useCallback(
+    (trackId: string) => {
+      const track = trackLookup.get(trackId);
+      if (!track) {
+        return;
+      }
+
+      let didSelect = false;
+      setSelectedTrackIds((current) => {
+        if (current.has(trackId)) {
+          const next = new Set(current);
+          next.delete(trackId);
+          return next;
+        }
+        const next = new Set(current);
+        next.add(trackId);
+        didSelect = true;
+        return next;
+      });
+
+      if (didSelect) {
+        ensureTrackIsVisible(trackId);
+      }
+    },
+    [ensureTrackIsVisible, trackLookup]
+  );
+
   const handleTrackFollow = useCallback(
     (trackId: string) => {
       const track = trackLookup.get(trackId);
@@ -2527,10 +2593,21 @@ function App() {
         return;
       }
 
+      if (followedTrack?.id !== trackId) {
+        setSelectedTrackIds((current) => {
+          if (current.has(trackId)) {
+            return current;
+          }
+          const next = new Set(current);
+          next.add(trackId);
+          return next;
+        });
+      }
+
       setFollowedTrack((current) => (current && current.id === trackId ? null : { id: trackId, channelId: track.channelId }));
       ensureTrackIsVisible(trackId);
     },
-    [ensureTrackIsVisible, trackLookup]
+    [ensureTrackIsVisible, followedTrack, trackLookup]
   );
 
   const handleTrackFollowFromViewer = useCallback(
@@ -2539,6 +2616,15 @@ function App() {
       if (!track) {
         return;
       }
+
+      setSelectedTrackIds((current) => {
+        if (current.has(trackId)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.add(trackId);
+        return next;
+      });
 
       setFollowedTrack((current) => (current && current.id === trackId ? current : { id: trackId, channelId: track.channelId }));
       ensureTrackIsVisible(trackId);
@@ -3341,6 +3427,7 @@ function App() {
               trackLineWidthByChannel={trackLineWidthByChannel}
               channelTrackColorModes={channelTrackColorModes}
               channelTrackOffsets={channelTrackOffsets}
+              selectedTrackIds={selectedTrackIds}
               activeTrackChannelId={activeTrackChannelId}
               onTrackChannelSelect={handleTrackChannelSelect}
               onTrackVisibilityToggle={handleTrackVisibilityToggle}
@@ -3366,6 +3453,7 @@ function App() {
               onLayerSamplingModeToggle={handleLayerSamplingModeToggle}
               onLayerInvertToggle={handleLayerInvertToggle}
               followedTrackId={followedTrackId}
+              onTrackSelectionToggle={handleTrackSelectionToggle}
               onTrackFollowRequest={handleTrackFollowFromViewer}
               onStopTrackFollow={handleStopTrackFollow}
               onRegisterVrSession={handleRegisterVrSession}
@@ -3392,6 +3480,8 @@ function App() {
               channelTrackColorModes={channelTrackColorModes}
               channelTrackOffsets={channelTrackOffsets}
               followedTrackId={followedTrackId}
+              selectedTrackIds={selectedTrackIds}
+              onTrackSelectionToggle={handleTrackSelectionToggle}
               onTrackFollowRequest={handleTrackFollowFromViewer}
             />
           )}
@@ -3438,7 +3528,10 @@ function App() {
                     <ul>
                       <li>Use WASDQE to move forward, back, strafe, and rise or descend.</li>
                       <li>Drag to orbit the dataset. Hold Shift while dragging to pan; hold Ctrl to dolly along your view.</li>
-                      <li>Click a track line to follow that object in time.</li>
+                      <li>
+                        Click a track line to select and highlight it. Use the Follow button in the Tracks window to
+                        follow that object in time.
+                      </li>
                     </ul>
                   </div>
                   <div className="viewer-top-menu-popover-section">
@@ -4162,15 +4255,19 @@ function App() {
                         >
                           {tracksForChannel.map((track) => {
                             const isFollowed = followedTrackId === track.id;
-                            const isChecked = isFollowed || (trackVisibility[track.id] ?? true);
+                            const isSelected = selectedTrackIds.has(track.id);
+                            const isChecked = isFollowed || isSelected || (trackVisibility[track.id] ?? true);
                             const trackColor =
                               colorMode.type === 'uniform'
                                 ? normalizeTrackColor(colorMode.color)
                                 : getTrackColorHex(track.id);
+                            const itemClassName = ['track-item', isSelected ? 'is-selected' : '', isFollowed ? 'is-following' : '']
+                              .filter(Boolean)
+                              .join(' ');
                             return (
                               <div
                                 key={track.id}
-                                className={isFollowed ? 'track-item is-following' : 'track-item'}
+                                className={itemClassName}
                                 title={`${track.channelName} · Track #${track.trackNumber}`}
                               >
                                 <label className="track-toggle">

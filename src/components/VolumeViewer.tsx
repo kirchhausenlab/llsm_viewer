@@ -75,6 +75,7 @@ type VolumeViewerProps = {
   trackLineWidthByChannel: Record<string, number>;
   channelTrackColorModes: Record<string, TrackColorMode>;
   channelTrackOffsets: Record<string, { x: number; y: number }>;
+  selectedTrackIds: ReadonlySet<string>;
   activeTrackChannelId: string | null;
   onTrackChannelSelect: (channelId: string) => void;
   onTrackVisibilityToggle: (trackId: string) => void;
@@ -130,6 +131,7 @@ type VolumeViewerProps = {
   onLayerSamplingModeToggle: (layerKey: string) => void;
   onLayerInvertToggle: (layerKey: string) => void;
   followedTrackId: string | null;
+  onTrackSelectionToggle: (trackId: string) => void;
   onTrackFollowRequest: (trackId: string) => void;
   onRegisterVrSession?: (
     handlers:
@@ -349,6 +351,17 @@ type TrackLineResource = {
   times: number[];
   baseColor: THREE.Color;
   highlightColor: THREE.Color;
+  channelId: string;
+  baseLineWidth: number;
+  targetLineWidth: number;
+  outlineExtraWidth: number;
+  targetOpacity: number;
+  outlineBaseOpacity: number;
+  isFollowed: boolean;
+  isSelected: boolean;
+  isHovered: boolean;
+  shouldShow: boolean;
+  needsAppearanceUpdate: boolean;
 };
 
 type VrUiTargetType =
@@ -605,6 +618,7 @@ type VrTracksState = {
       explicitVisible: boolean;
       visible: boolean;
       isFollowed: boolean;
+      isSelected: boolean;
     }>;
   }>;
   activeChannelId: string | null;
@@ -691,6 +705,9 @@ type WebXRFoveationManager = THREE.WebXRManager & {
 
 const DEFAULT_TRACK_OPACITY = 0.9;
 const DEFAULT_TRACK_LINE_WIDTH = 1;
+const SELECTED_TRACK_BLINK_PERIOD_MS = 1600;
+const SELECTED_TRACK_BLINK_BASE = 0.85;
+const SELECTED_TRACK_BLINK_RANGE = 0.15;
 
 const VR_PLAYBACK_PANEL_WIDTH = 0.54;
 const VR_PLAYBACK_PANEL_HEIGHT = 0.36;
@@ -1026,6 +1043,7 @@ function VolumeViewer({
   trackLineWidthByChannel,
   channelTrackColorModes,
   channelTrackOffsets,
+  selectedTrackIds,
   activeTrackChannelId,
   onTrackChannelSelect,
   onTrackVisibilityToggle,
@@ -1052,6 +1070,7 @@ function VolumeViewer({
   onLayerSamplingModeToggle,
   onLayerInvertToggle,
   followedTrackId,
+  onTrackSelectionToggle,
   onTrackFollowRequest,
   onRegisterVrSession,
   onVrSessionStarted,
@@ -4372,10 +4391,11 @@ function VolumeViewer({
       let visibleTracks = 0;
       const trackEntries = tracksForChannel.map((track) => {
         const explicitVisible = trackVisibility[track.id] ?? true;
-        if (explicitVisible) {
+        const isFollowed = followedTrackId === track.id;
+        const isSelected = selectedTrackIds.has(track.id);
+        if (explicitVisible || isFollowed || isSelected) {
           visibleTracks += 1;
         }
-        const isFollowed = followedTrackId === track.id;
         const color =
           colorMode.type === 'uniform'
             ? normalizeTrackColor(colorMode.color, DEFAULT_TRACK_COLOR)
@@ -4386,8 +4406,9 @@ function VolumeViewer({
           label: `Track #${track.trackNumber}`,
           color,
           explicitVisible,
-          visible: isFollowed || explicitVisible,
-          isFollowed
+          visible: isFollowed || explicitVisible || isSelected,
+          isFollowed,
+          isSelected
         };
       });
       const followedEntry = trackEntries.find((entry) => entry.isFollowed) ?? null;
@@ -4423,6 +4444,7 @@ function VolumeViewer({
     trackVisibility,
     tracksByChannel,
     followedTrackId,
+    selectedTrackIds,
     updateVrTracksHud
   ]);
 
@@ -4915,7 +4937,18 @@ function VolumeViewer({
           outlineMaterial,
           times,
           baseColor: baseColor.clone(),
-          highlightColor: highlightColor.clone()
+          highlightColor: highlightColor.clone(),
+          channelId: track.channelId,
+          baseLineWidth: DEFAULT_TRACK_LINE_WIDTH,
+          targetLineWidth: DEFAULT_TRACK_LINE_WIDTH,
+          outlineExtraWidth: Math.max(DEFAULT_TRACK_LINE_WIDTH * 0.75, 0.4),
+          targetOpacity: DEFAULT_TRACK_OPACITY,
+          outlineBaseOpacity: 0,
+          isFollowed: false,
+          isSelected: false,
+          isHovered: false,
+          shouldShow: false,
+          needsAppearanceUpdate: true
         };
         trackLines.set(track.id, resource);
       } else {
@@ -4926,6 +4959,8 @@ function VolumeViewer({
         resource.times = times;
         resource.baseColor.copy(baseColor);
         resource.highlightColor.copy(highlightColor);
+        resource.channelId = track.channelId;
+        resource.needsAppearanceUpdate = true;
       }
     }
 
@@ -4958,54 +4993,41 @@ function VolumeViewer({
         continue;
       }
 
-      const { line, outline, material, outlineMaterial, baseColor, highlightColor } = resource;
+      const { line, outline } = resource;
 
       const isExplicitlyVisible = trackVisibility[track.id] ?? true;
       const isFollowed = followedTrackId === track.id;
       const isHovered = hoveredTrackId === track.id;
-      const isHighlighted = isFollowed || isHovered;
-      const shouldShow = isFollowed || isExplicitlyVisible;
+      const isSelected = selectedTrackIds.has(track.id);
+      const isHighlighted = isFollowed || isHovered || isSelected;
+      const shouldShow = isFollowed || isExplicitlyVisible || isSelected;
+
+      resource.channelId = track.channelId;
+      resource.isFollowed = isFollowed;
+      resource.isHovered = isHovered;
+      resource.isSelected = isSelected;
+      resource.shouldShow = shouldShow;
+      resource.needsAppearanceUpdate = true;
+
       line.visible = shouldShow;
       outline.visible = shouldShow && isHighlighted;
       if (shouldShow) {
         visibleCount += 1;
       }
 
-      const targetColor = isHighlighted ? highlightColor : baseColor;
-      if (!material.color.equals(targetColor)) {
-        material.color.copy(targetColor);
-        material.needsUpdate = true;
-      }
-
       const channelOpacity = trackOpacityByChannel[track.channelId] ?? DEFAULT_TRACK_OPACITY;
       const sanitizedOpacity = Math.min(1, Math.max(0, channelOpacity));
-      const opacityBoost = isFollowed ? 0.15 : isHovered ? 0.12 : 0;
-      const targetOpacity = Math.min(1, sanitizedOpacity + opacityBoost);
-      if (material.opacity !== targetOpacity) {
-        material.opacity = targetOpacity;
-        material.needsUpdate = true;
-      }
+      const opacityBoost = isFollowed || isSelected ? 0.15 : isHovered ? 0.12 : 0;
+      resource.targetOpacity = Math.min(1, sanitizedOpacity + opacityBoost);
 
       const channelLineWidth = trackLineWidthByChannel[track.channelId] ?? DEFAULT_TRACK_LINE_WIDTH;
       const sanitizedLineWidth = Math.max(0.1, Math.min(10, channelLineWidth));
-      const widthMultiplier = isFollowed ? 1.35 : isHovered ? 1.2 : 1;
-      const targetWidth = sanitizedLineWidth * widthMultiplier;
-      if (material.linewidth !== targetWidth) {
-        material.linewidth = targetWidth;
-        material.needsUpdate = true;
-      }
+      resource.baseLineWidth = sanitizedLineWidth;
+      const widthMultiplier = isFollowed || isSelected ? 1.35 : isHovered ? 1.2 : 1;
+      resource.targetLineWidth = sanitizedLineWidth * widthMultiplier;
+      resource.outlineExtraWidth = Math.max(sanitizedLineWidth * 0.75, 0.4);
 
-      const outlineOpacity = isFollowed ? 0.75 : isHovered ? 0.9 : 0;
-      if (outlineMaterial.opacity !== outlineOpacity) {
-        outlineMaterial.opacity = outlineOpacity;
-        outlineMaterial.needsUpdate = true;
-      }
-
-      const outlineWidth = targetWidth + Math.max(sanitizedLineWidth * 0.75, 0.4);
-      if (outlineMaterial.linewidth !== outlineWidth) {
-        outlineMaterial.linewidth = outlineWidth;
-        outlineMaterial.needsUpdate = true;
-      }
+      resource.outlineBaseOpacity = isFollowed || isSelected ? 0.75 : isHovered ? 0.9 : 0;
     }
 
     const followedTrackExists = followedTrackId !== null && trackLinesRef.current.has(followedTrackId);
@@ -5023,6 +5045,7 @@ function VolumeViewer({
     trackOverlayRevision,
     followedTrackId,
     hoveredTrackId,
+    selectedTrackIds,
     trackLineWidthByChannel,
     trackOpacityByChannel,
     trackVisibility,
@@ -6374,7 +6397,7 @@ function VolumeViewer({
       if (!mode) {
         const hitTrackId = performHoverHitTest(event);
         if (hitTrackId !== null) {
-          onTrackFollowRequest(hitTrackId);
+          onTrackSelectionToggle(hitTrackId);
         }
         return;
       }
@@ -8326,9 +8349,63 @@ function VolumeViewer({
 
     let lastRenderTickSummary: { presenting: boolean; hoveredByController: string | null } | null = null;
 
-    const renderLoop = () => {
+    const renderLoop = (timestamp: number) => {
       applyKeyboardMovement();
       controls.update();
+
+      const blinkPhase = (timestamp % SELECTED_TRACK_BLINK_PERIOD_MS) / SELECTED_TRACK_BLINK_PERIOD_MS;
+      const blinkScale =
+        SELECTED_TRACK_BLINK_BASE + SELECTED_TRACK_BLINK_RANGE * Math.sin(blinkPhase * Math.PI * 2);
+
+      for (const resource of trackLinesRef.current.values()) {
+        const { line, outline, material, outlineMaterial, baseColor, highlightColor } = resource;
+        const shouldShow = resource.shouldShow;
+        if (line.visible !== shouldShow) {
+          line.visible = shouldShow;
+        }
+        const isHighlighted = resource.isFollowed || resource.isHovered || resource.isSelected;
+        const outlineVisible = shouldShow && isHighlighted;
+        if (outline.visible !== outlineVisible) {
+          outline.visible = outlineVisible;
+        }
+
+        if (resource.needsAppearanceUpdate) {
+          const targetColor = isHighlighted ? highlightColor : baseColor;
+          if (!material.color.equals(targetColor)) {
+            material.color.copy(targetColor);
+            material.needsUpdate = true;
+          }
+        }
+
+        const blinkMultiplier = resource.isSelected && !resource.isFollowed ? blinkScale : 1;
+        const targetOpacity = resource.targetOpacity * blinkMultiplier;
+        if (material.opacity !== targetOpacity) {
+          material.opacity = targetOpacity;
+          material.needsUpdate = true;
+        }
+
+        if (material.linewidth !== resource.targetLineWidth) {
+          material.linewidth = resource.targetLineWidth;
+          material.needsUpdate = true;
+        }
+
+        const outlineBlinkMultiplier = resource.isSelected && !resource.isFollowed ? blinkScale : 1;
+        const targetOutlineOpacity = resource.outlineBaseOpacity * outlineBlinkMultiplier;
+        if (outlineMaterial.opacity !== targetOutlineOpacity) {
+          outlineMaterial.opacity = targetOutlineOpacity;
+          outlineMaterial.needsUpdate = true;
+        }
+
+        const outlineWidth = resource.targetLineWidth + resource.outlineExtraWidth;
+        if (outlineMaterial.linewidth !== outlineWidth) {
+          outlineMaterial.linewidth = outlineWidth;
+          outlineMaterial.needsUpdate = true;
+        }
+
+        if (resource.needsAppearanceUpdate) {
+          resource.needsAppearanceUpdate = false;
+        }
+      }
 
       if (followedTrackIdRef.current !== null) {
         const rotationTarget = rotationTargetRef.current;
