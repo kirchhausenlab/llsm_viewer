@@ -11,7 +11,6 @@ type SelectedTrackSeries = {
 type SelectedTracksWindowProps = {
   series: SelectedTrackSeries[];
   totalTimepoints: number;
-  maxAmplitude: number;
 };
 
 const SVG_WIDTH = 900;
@@ -27,12 +26,12 @@ type ChartSeries = SelectedTrackSeries & {
   path: string;
 };
 
-const clampToDomain = (value: number, max: number) => {
-  if (!Number.isFinite(value) || max <= 0) {
-    return 0;
+const clampToRange = (value: number, min: number, max: number) => {
+  if (!Number.isFinite(value)) {
+    return min;
   }
-  if (value < 0) {
-    return 0;
+  if (value < min) {
+    return min;
   }
   if (value > max) {
     return max;
@@ -43,13 +42,39 @@ const clampToDomain = (value: number, max: number) => {
 const formatAxisValue = (value: number) =>
   value.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
-function SelectedTracksWindow({
-  series,
-  totalTimepoints,
-  maxAmplitude
-}: SelectedTracksWindowProps) {
+function SelectedTracksWindow({ series, totalTimepoints }: SelectedTracksWindowProps) {
   const domainXMax = Math.max(totalTimepoints - 1, 1);
-  const domainYMax = Math.max(maxAmplitude, 1);
+  const amplitudeDomain = useMemo(() => {
+    let min = Number.POSITIVE_INFINITY;
+    let max = Number.NEGATIVE_INFINITY;
+
+    for (const entry of series) {
+      for (const point of entry.points) {
+        if (!Number.isFinite(point.amplitude)) {
+          continue;
+        }
+        if (point.amplitude < min) {
+          min = point.amplitude;
+        }
+        if (point.amplitude > max) {
+          max = point.amplitude;
+        }
+      }
+    }
+
+    if (!Number.isFinite(min) || !Number.isFinite(max)) {
+      return { min: 0, max: 1 } as const;
+    }
+
+    if (min === max) {
+      return { min, max } as const;
+    }
+
+    return { min, max } as const;
+  }, [series]);
+  const domainYMin = amplitudeDomain.min;
+  const domainYMax = amplitudeDomain.max;
+  const domainYSpan = domainYMax - domainYMin;
   const chartWidth = SVG_WIDTH - PADDING.left - PADDING.right;
   const chartHeight = SVG_HEIGHT - PADDING.top - PADDING.bottom;
 
@@ -62,15 +87,16 @@ function SelectedTracksWindow({
       if (domainXMax === 0) {
         return PADDING.left;
       }
-      const normalized = clampToDomain(time, domainXMax) / domainXMax;
+      const normalized = clampToRange(time, 0, domainXMax) / domainXMax;
       return PADDING.left + normalized * chartWidth;
     };
 
     const scaleY = (amplitude: number) => {
-      if (domainYMax === 0) {
-        return PADDING.top + chartHeight;
+      if (domainYSpan === 0) {
+        return PADDING.top + chartHeight / 2;
       }
-      const normalized = clampToDomain(amplitude, domainYMax) / domainYMax;
+      const clamped = clampToRange(amplitude, domainYMin, domainYMax);
+      const normalized = (clamped - domainYMin) / domainYSpan;
       return PADDING.top + chartHeight - normalized * chartHeight;
     };
 
@@ -96,11 +122,20 @@ function SelectedTracksWindow({
         path
       };
     });
-  }, [chartHeight, chartWidth, domainXMax, domainYMax, series]);
+  }, [
+    chartHeight,
+    chartWidth,
+    domainXMax,
+    domainYMin,
+    domainYMax,
+    domainYSpan,
+    series
+  ]);
 
   const xAxisEnd = PADDING.left + chartWidth;
   const yAxisEnd = PADDING.top + chartHeight;
-  const maxAmplitudeLabel = formatAxisValue(maxAmplitude);
+  const domainYMinLabel = formatAxisValue(domainYMin);
+  const domainYMaxLabel = formatAxisValue(domainYMax);
   const totalTimepointsLabel = totalTimepoints.toLocaleString();
 
   const hasSeries = resolvedSeries.some((entry) => entry.path);
@@ -143,10 +178,10 @@ function SelectedTracksWindow({
               {totalTimepointsLabel}
             </text>
             <text x={PADDING.left - 12} y={yAxisEnd} textAnchor="end" dominantBaseline="middle">
-              0
+              {domainYMinLabel}
             </text>
             <text x={PADDING.left - 12} y={PADDING.top} textAnchor="end" dominantBaseline="middle">
-              {maxAmplitudeLabel}
+              {domainYMaxLabel}
             </text>
             <text
               x={PADDING.left + chartWidth / 2}

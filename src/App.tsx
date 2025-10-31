@@ -1445,18 +1445,6 @@ function App() {
     return map;
   }, [parsedTracks]);
 
-  const maxTrackAmplitude = useMemo(() => {
-    let maxAmplitude = 0;
-    for (const track of parsedTracks) {
-      for (const point of track.points) {
-        if (point.amplitude > maxAmplitude) {
-          maxAmplitude = point.amplitude;
-        }
-      }
-    }
-    return maxAmplitude;
-  }, [parsedTracks]);
-
   const selectedTrackSeries = useMemo(
     () =>
       parsedTracks
@@ -4334,12 +4322,20 @@ function App() {
                                 className={itemClassName}
                                 title={`${track.channelName} · Track #${track.trackNumber}`}
                               >
-                                <label className="track-toggle">
+                                <div className="track-toggle">
                                   <input
                                     type="checkbox"
                                     checked={isChecked}
                                     onChange={() => handleTrackVisibilityToggle(track.id)}
+                                    aria-label={`Toggle visibility for Track #${track.trackNumber}`}
                                   />
+                                </div>
+                                <button
+                                  type="button"
+                                  className="track-label-button"
+                                  onClick={() => handleTrackSelectionToggle(track.id)}
+                                  aria-pressed={isSelected}
+                                >
                                   <span className="track-label">
                                     <span
                                       className="track-color-swatch"
@@ -4348,7 +4344,7 @@ function App() {
                                     />
                                     <span className="track-name">Track #{track.trackNumber}</span>
                                   </span>
-                                </label>
+                                </button>
                                 <button
                                   type="button"
                                   className={
@@ -4386,11 +4382,7 @@ function App() {
           bodyClassName="floating-window-body--selected-tracks"
           resetSignal={layoutResetToken}
         >
-          <SelectedTracksWindow
-            series={selectedTrackSeries}
-            totalTimepoints={volumeTimepointCount}
-            maxAmplitude={maxTrackAmplitude}
-          />
+          <SelectedTracksWindow series={selectedTrackSeries} totalTimepoints={volumeTimepointCount} />
         </FloatingWindow>
       ) : null}
       </div>
