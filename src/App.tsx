@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, CSSProperties, DragEvent, FormEvent } from 'react';
 import { loadVolumesFromFiles } from './loaders/volumeLoader';
 import { VolumeTooLargeError, formatBytes } from './errors';
-import VolumeViewer from './components/VolumeViewer';
+import VolumeScene from './renderer/VolumeScene';
 import PlanarViewer from './components/PlanarViewer';
 import {
   colorizeSegmentationVolume,
@@ -4255,7 +4255,7 @@ function App() {
       <div className="app">
         <main className="viewer">
           {viewerMode === '3d' ? (
-            <VolumeViewer
+            <VolumeScene
               layers={viewerLayers}
               isLoading={isLoading}
               loadingProgress={loadProgress}

@@ -5,7 +5,7 @@ import type { ViewerLayer, VolumeResources } from './types';
 import type { NormalizedVolume } from '../volumeProcessing';
 import { getCachedTextureData } from '../textureCache';
 import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../layerColors';
-import { useRayMarchMaterial } from './useRayMarchMaterial';
+import { useRayMarchMaterial, type UseRayMarchMaterialResult } from './useRayMarchMaterial';
 
 type VolumeDimensions = { width: number; height: number; depth: number };
 
@@ -13,6 +13,7 @@ type UseVolumeTexturesParams = {
   scene: THREE.Scene | null;
   volumeRoot: THREE.Group | null;
   volumeStepScaleRef: MutableRefObject<number>;
+  rayMarchMaterial?: UseRayMarchMaterialResult;
 };
 
 type UpsertLayerParams = {
@@ -107,7 +108,8 @@ function prepareSliceTexture(
 export function useVolumeTextures({
   scene,
   volumeRoot,
-  volumeStepScaleRef
+  volumeStepScaleRef,
+  rayMarchMaterial
 }: UseVolumeTexturesParams): UseVolumeTexturesResult {
   const resourcesRef = useRef<Map<string, VolumeResources>>(new Map());
   const currentDimensionsRef = useRef<VolumeDimensions | null>(null);
@@ -116,7 +118,11 @@ export function useVolumeTextures({
   const volumeRootRef = useRef<THREE.Group | null>(volumeRoot);
   const samplingModeRef = useRef<Map<string, 'linear' | 'nearest'>>(new Map());
   const invalidationListenersRef = useRef<Set<VolumeTextureInvalidationListener>>(new Set());
-  const { createRayMarchMaterial, getColormapTexture, clearColormap } = useRayMarchMaterial();
+  const {
+    createRayMarchMaterial,
+    getColormapTexture,
+    clearColormap
+  } = rayMarchMaterial ?? useRayMarchMaterial();
 
   useEffect(() => {
     sceneRef.current = scene;
