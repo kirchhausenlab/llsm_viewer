@@ -1,6 +1,6 @@
 import { Vector3 } from 'three';
 
-import { normalizeTrackColor, TRACK_COLOR_SWATCHES } from '../trackColors';
+import { normalizeTrackColor, TRACK_COLOR_SWATCHES } from '../../trackColors';
 import type {
   VrTracksHud,
   VrTracksInteractiveRegion,

@@ -1,6 +1,6 @@
 import { PlaneGeometry, Vector3 } from 'three';
 
-import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from '../layerColors';
+import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from '../../layerColors';
 import type { VrChannelsHud, VrChannelsInteractiveRegion, VrChannelsState } from './types';
 import { computeHistogramMappingPoints, computeHistogramShape, drawRoundedRect, formatNormalizedIntensity } from './utils';
 
@@ -889,3 +889,4 @@ export function renderVrChannelsHud(hud: VrChannelsHud, state: VrChannelsState, 
     }
 
     hud.panelTexture.needsUpdate = true;
+}
