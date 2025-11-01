@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import type { Data3DTexture, DataTexture } from 'three';
 import { VolumeRenderShader } from '../shaders/volumeRenderShader';
 import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../layerColors';
-import { useTransferFunctionCache } from './useTransferFunction';
+import { useTransferFunctionCache, type TransferFunctionCacheResult } from './useTransferFunction';
 
 type RayMarchUniforms = typeof VolumeRenderShader.uniforms;
 
@@ -45,8 +45,11 @@ type UseRayMarchMaterialResult = {
   clearColormap: (color?: string) => void;
 };
 
-export function useRayMarchMaterial(): UseRayMarchMaterialResult {
-  const { getColormapTexture, clearColormap } = useTransferFunctionCache();
+export function useRayMarchMaterial(
+  transferFunctionCache?: TransferFunctionCacheResult
+): UseRayMarchMaterialResult {
+  const { getColormapTexture, clearColormap } =
+    transferFunctionCache ?? useTransferFunctionCache();
 
   const createRayMarchMaterial = useCallback(
     (params: RayMarchMaterialParams): RayMarchMaterialControls => {
