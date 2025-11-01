@@ -1,28 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { TrackColorMode, TrackDefinition } from '../types/tracks';
 import { getTrackColorHex } from '../trackColors';
-import type { NormalizedVolume } from '../volumeProcessing';
 import './PlanarViewer.css';
-
-type ViewerLayer = {
-  key: string;
-  label: string;
-  volume: NormalizedVolume | null;
-  visible: boolean;
-  sliderRange: number;
-  minSliderIndex: number;
-  maxSliderIndex: number;
-  brightnessSliderIndex: number;
-  contrastSliderIndex: number;
-  windowMin: number;
-  windowMax: number;
-  color: string;
-  offsetX: number;
-  offsetY: number;
-  renderStyle: 0 | 1;
-  invert: boolean;
-  isSegmentation: boolean;
-};
+import type { ViewerLayer } from './VolumeViewer/types';
 
 type PlanarViewerProps = {
   layers: ViewerLayer[];
