@@ -19,12 +19,14 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "types": [
-      "node"
+      "node",
+      "vitest/globals"
     ]
   },
   "include": [
     "src",
     "vite.config.ts",
-    "environment.d.ts"
+    "environment.d.ts",
+    "tests"
   ]
 }
