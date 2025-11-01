@@ -6,7 +6,7 @@ import {
   type UseRendererCanvasResult,
   type TrackMaterialPair
 } from './useRendererCanvas';
-import type { VolumeViewerProps } from './types';
+import type { VolumeResources, VolumeViewerProps } from './types';
 import { useVolumeTextures } from './useVolumeTextures';
 import { useTransferFunctionCache } from './useTransferFunction';
 import { useRayMarchMaterial } from './useRayMarchMaterial';
@@ -45,6 +45,152 @@ type VolumeSceneTooltip = {
   hoveredTrackLabel: string | null;
   tooltipPosition: TooltipPosition;
 };
+
+type VolumeBounds = {
+  minX: number;
+  minY: number;
+  minZ: number;
+  maxX: number;
+  maxY: number;
+  maxZ: number;
+  centerX: number;
+  centerY: number;
+  centerZ: number;
+  extentX: number;
+  extentY: number;
+  extentZ: number;
+  radius: number;
+  scale: number;
+};
+
+function createBoundsFromExtents(box: THREE.Box3): VolumeBounds {
+  const min = box.min;
+  const max = box.max;
+  const extentX = Math.max(max.x - min.x, 0);
+  const extentY = Math.max(max.y - min.y, 0);
+  const extentZ = Math.max(max.z - min.z, 0);
+  const maxExtent = Math.max(extentX, extentY, extentZ);
+  const safeExtent = Math.max(maxExtent, 1);
+  const scale = 1 / safeExtent;
+  const centerX = min.x + extentX * 0.5;
+  const centerY = min.y + extentY * 0.5;
+  const centerZ = min.z + extentZ * 0.5;
+  const halfX = extentX * 0.5;
+  const halfY = extentY * 0.5;
+  const halfZ = extentZ * 0.5;
+  const radius = Math.sqrt(halfX * halfX + halfY * halfY + halfZ * halfZ);
+
+  return {
+    minX: min.x,
+    minY: min.y,
+    minZ: min.z,
+    maxX: max.x,
+    maxY: max.y,
+    maxZ: max.z,
+    centerX,
+    centerY,
+    centerZ,
+    extentX,
+    extentY,
+    extentZ,
+    radius,
+    scale
+  };
+}
+
+function accumulateLayerBounds(
+  box: THREE.Box3,
+  target: THREE.Box3,
+  layer: VolumeViewerProps['layers'][number]
+) {
+  const volume = layer.volume;
+  if (!volume) {
+    return false;
+  }
+
+  const offsetX = layer.offsetX ?? 0;
+  const offsetY = layer.offsetY ?? 0;
+  target.min.set(offsetX - 0.5, offsetY - 0.5, -0.5);
+  target.max.set(offsetX + volume.width - 0.5, offsetY + volume.height - 0.5, volume.depth - 0.5);
+
+  if (!Number.isFinite(target.min.x) || !Number.isFinite(target.max.x)) {
+    return false;
+  }
+
+  if (box.isEmpty()) {
+    box.copy(target);
+  } else {
+    box.union(target);
+  }
+  return true;
+}
+
+function accumulateResourceBounds(
+  box: THREE.Box3,
+  target: THREE.Box3,
+  matrix: THREE.Matrix4,
+  resource: VolumeResources
+) {
+  const mesh = resource.mesh;
+  if (!mesh) {
+    return false;
+  }
+
+  const geometry = mesh.geometry as THREE.BufferGeometry & {
+    boundingBox: THREE.Box3 | null;
+  };
+  if (!geometry.boundingBox) {
+    geometry.computeBoundingBox();
+  }
+  const localBounds = geometry.boundingBox;
+  if (!localBounds) {
+    return false;
+  }
+
+  mesh.updateMatrix();
+  target.copy(localBounds);
+  target.applyMatrix4(matrix.copy(mesh.matrix));
+
+  if (!Number.isFinite(target.min.x) || !Number.isFinite(target.max.x)) {
+    return false;
+  }
+
+  if (box.isEmpty()) {
+    box.copy(target);
+  } else {
+    box.union(target);
+  }
+  return true;
+}
+
+function computeVolumeBounds(
+  layers: VolumeViewerProps['layers'],
+  resources: Map<string, VolumeResources>
+): VolumeBounds | null {
+  const aggregate = new THREE.Box3();
+  const scratch = new THREE.Box3();
+  const matrix = new THREE.Matrix4();
+
+  let hasBounds = false;
+
+  for (const resource of resources.values()) {
+    if (accumulateResourceBounds(aggregate, scratch, matrix, resource)) {
+      hasBounds = true;
+    }
+  }
+
+  for (const layer of layers) {
+    if (accumulateLayerBounds(aggregate, scratch, layer)) {
+      hasBounds = true;
+    }
+  }
+
+  if (!hasBounds || aggregate.isEmpty()) {
+    return null;
+  }
+
+  return createBoundsFromExtents(aggregate);
+}
 
 export function useVolumeSceneContainer(
   _props: VolumeViewerProps,
@@ -136,6 +282,7 @@ export function VolumeScene(props: VolumeViewerProps) {
   const hoveredTrackIdRef = useRef<string | null>(null);
   const [hoveredTrackId, setHoveredTrackId] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<TooltipPosition>(null);
+  const [volumeBounds, setVolumeBounds] = useState<VolumeBounds | null>(null);
 
   const clearMovementState = useCallback(() => {
     const movementState = movementStateRef.current;
@@ -240,6 +387,7 @@ export function VolumeScene(props: VolumeViewerProps) {
     const scene = rendererCanvas.scene;
     if (!scene) {
       removeAllLayers();
+      setVolumeBounds(null);
       return;
     }
 
@@ -256,6 +404,8 @@ export function VolumeScene(props: VolumeViewerProps) {
         removeLayer(key);
       }
     }
+
+    setVolumeBounds(computeVolumeBounds(props.layers, resourcesRef.current));
   }, [props.layers, removeAllLayers, removeLayer, rendererCanvas.scene, resourcesRef, upsertLayer]);
 
   useEffect(() => {
@@ -310,24 +460,13 @@ export function VolumeScene(props: VolumeViewerProps) {
     };
   }, [props.onRegisterVrSession, xrSession.endSession, xrSession.requestSession]);
 
-  const primaryLayer = useMemo(() => {
-    for (const layer of props.layers) {
-      if (layer.volume) {
-        return layer;
-      }
-    }
-    return null;
-  }, [props.layers]);
-
-  const primaryVolume = primaryLayer?.volume ?? null;
-
   useEffect(() => {
     const volumeRoot = volumeRootGroupRef.current;
     if (!volumeRoot) {
       return;
     }
 
-    if (!primaryVolume) {
+    if (!volumeBounds) {
       volumeRoot.position.set(0, 0, 0);
       volumeRoot.scale.set(1, 1, 1);
       volumeRoot.rotation.set(0, 0, 0);
@@ -348,29 +487,20 @@ export function VolumeScene(props: VolumeViewerProps) {
       return;
     }
 
-    const { width, height, depth } = primaryVolume;
-    const maxDimension = Math.max(width, height, depth);
-    const scale = maxDimension > 0 ? 1 / maxDimension : 1;
+    const scale = volumeBounds.scale;
     volumeRoot.scale.setScalar(scale);
     volumeRoot.position.set(0, 0, 0);
     volumeRoot.rotation.set(0, 0, 0);
     volumeRoot.updateMatrixWorld(true);
 
-    const offsetX = primaryLayer?.offsetX ?? 0;
-    const offsetY = primaryLayer?.offsetY ?? 0;
-    const centerX = (width > 0 ? width / 2 - 0.5 : 0) + offsetX;
-    const centerY = (height > 0 ? height / 2 - 0.5 : 0) + offsetY;
-    const centerZ = depth > 0 ? depth / 2 - 0.5 : 0;
-    datasetCenterRef.current.set(centerX * scale, centerY * scale, centerZ * scale);
-
-    const halfWidth = Math.max(width, 1) * 0.5;
-    const halfHeight = Math.max(height, 1) * 0.5;
-    const halfDepth = Math.max(depth, 1) * 0.5;
-    const radiusLocal = Math.sqrt(
-      halfWidth * halfWidth + halfHeight * halfHeight + halfDepth * halfDepth
+    datasetCenterRef.current.set(
+      volumeBounds.centerX * scale,
+      volumeBounds.centerY * scale,
+      volumeBounds.centerZ * scale
     );
-    const radiusWorld = radiusLocal * scale;
-    datasetRadiusRef.current = Math.max(radiusWorld, 0.1);
+
+    const radiusWorld = Math.max(volumeBounds.radius * scale, 0.1);
+    datasetRadiusRef.current = radiusWorld;
 
     if (!props.followedTrackId && rendererCanvas.controls) {
       rotationTargetRef.current.copy(datasetCenterRef.current);
@@ -387,11 +517,11 @@ export function VolumeScene(props: VolumeViewerProps) {
       camera.updateProjectionMatrix();
     }
   }, [
-    primaryLayer?.offsetX,
-    primaryLayer?.offsetY,
-    primaryVolume?.width,
-    primaryVolume?.height,
-    primaryVolume?.depth,
+    volumeBounds?.centerX,
+    volumeBounds?.centerY,
+    volumeBounds?.centerZ,
+    volumeBounds?.scale,
+    volumeBounds?.radius,
     props.followedTrackId,
     rendererCanvas.camera,
     rendererCanvas.controls
@@ -457,11 +587,11 @@ export function VolumeScene(props: VolumeViewerProps) {
     resetView,
     rendererCanvas.camera,
     rendererCanvas.controls,
-    primaryLayer?.offsetX,
-    primaryLayer?.offsetY,
-    primaryVolume?.width,
-    primaryVolume?.height,
-    primaryVolume?.depth
+    volumeBounds?.centerX,
+    volumeBounds?.centerY,
+    volumeBounds?.centerZ,
+    volumeBounds?.radius,
+    volumeBounds?.scale
   ]);
 
   const resolveTrackColor = useCallback(
