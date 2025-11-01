@@ -11,6 +11,16 @@ npm run dev
 
 The development setup runs the Vite front-end (http://localhost:5173).
 
+### Browser requirements
+
+- Chromium browsers (Chrome, Edge, Brave) provide the File System Access API used for direct, zero-buffer ZIP exports.
+- Browsers without `window.showSaveFilePicker` (for example, Firefox or embedded WebViews) transparently fall back to a
+  streaming download route powered by the bundled service worker. No large in-memory buffers are allocated in this path, but it
+  does require service worker support and an HTTPS origin (such as GitHub Pages).
+- To verify the fallback, deploy or preview the static site over HTTPS and trigger an export in a browser that lacks the File
+  System Access API. The download should start immediately and the browser's memory usage should remain stable while the ZIP is
+  written to disk.
+
 ### Dropbox Chooser configuration
 
 Importing files directly from Dropbox requires a Dropbox app key with the Chooser permission enabled. You can provide the key in

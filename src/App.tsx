@@ -60,6 +60,7 @@ import './App.css';
 import { computeAutoWindow, getVolumeHistogram } from './autoContrast';
 import { getDefaultWindowForVolume } from './utils/volumeWindow';
 import BrightnessContrastHistogram from './components/BrightnessContrastHistogram';
+import { streamDownloadWithServiceWorker } from './utils/exportServiceWorker';
 
 const DEFAULT_FPS = 12;
 const DEFAULT_TRACK_OPACITY = 0.9;
@@ -405,15 +406,22 @@ const buildChannelTabMeta = (channel: ChannelSource, validation: ChannelValidati
   return parts.join(' · ');
 };
 
-const downloadBlob = (blob: Blob, fileName: string) => {
-  const url = URL.createObjectURL(blob);
+const triggerDownloadLink = (href: string, fileName: string) => {
   const link = document.createElement('a');
-  link.href = url;
+  link.href = href;
   link.download = fileName;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+};
+
+const downloadBlob = (blob: Blob, fileName: string) => {
+  const url = URL.createObjectURL(blob);
+  try {
+    triggerDownloadLink(url, fileName);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 };
 
 const downloadStream = async (
@@ -424,6 +432,20 @@ const downloadStream = async (
   if (fileHandle) {
     await writeStreamToFileHandle(stream, fileHandle);
     return;
+  }
+
+  if (!canUseFileSystemSavePicker()) {
+    const serviceWorkerDownload = await streamDownloadWithServiceWorker({
+      stream,
+      fileName,
+      contentType: 'application/zip'
+    });
+
+    if (serviceWorkerDownload) {
+      triggerDownloadLink(serviceWorkerDownload.downloadUrl, fileName);
+      await serviceWorkerDownload.completion;
+      return;
+    }
   }
 
   const blob = await collectStreamToBlob(stream);

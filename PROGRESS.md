@@ -13,6 +13,14 @@
   user gesture, preventing `showSaveFilePicker` from throwing activation errors.
 - Reused the selected handle when streaming the ZIP, falling back to blob downloads when the API is unavailable.
 
+## Streaming export fallback
+- Added an `export-sw.js` service worker that queues ZIP chunks and serves them through a streaming `fetch` response so browsers
+  without the File System Access API can write archives directly to disk.
+- Registered the worker during app bootstrap and taught `downloadStream` to post export streams to it whenever
+  `showSaveFilePicker` is unavailable, returning a direct download URL instead of buffering the entire archive in memory.
+- Documented the HTTPS/service worker requirements for this path and outlined the GitHub Pages verification flow to confirm the
+  fallback completes without large memory spikes.
+
 ## Preprocessed dataset import/export workflow
 - Added a `utils/preprocessedDataset` module that serializes normalized volumes plus manifest metadata into a ZIP archive with SHA-256 digests for authenticity and channel track CSV payloads.
 - Reworked the launcher flow with "Set up new experiment"/"Load preprocessed experiment" entry points, a read-only summary card for imported archives, and a gated "Export preprocessed experiment" action that shares the launch readiness checks.
