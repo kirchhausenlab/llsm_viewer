@@ -3,9 +3,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import type { Line2 } from 'three/examples/jsm/lines/Line2';
-import type { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
-import type { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
+import type { TrackLineResource } from './useTrackOverlay';
 import type { VolumeResources } from './types';
 
 export type MovementState = {
@@ -15,28 +13,6 @@ export type MovementState = {
   moveRight: boolean;
   moveUp: boolean;
   moveDown: boolean;
-};
-
-export type TrackLineResource = {
-  line: Line2;
-  outline: Line2;
-  geometry: LineGeometry;
-  material: LineMaterial;
-  outlineMaterial: LineMaterial;
-  times: number[];
-  baseColor: THREE.Color;
-  highlightColor: THREE.Color;
-  channelId: string;
-  baseLineWidth: number;
-  targetLineWidth: number;
-  outlineExtraWidth: number;
-  targetOpacity: number;
-  outlineBaseOpacity: number;
-  isFollowed: boolean;
-  isSelected: boolean;
-  isHovered: boolean;
-  shouldShow: boolean;
-  needsAppearanceUpdate: boolean;
 };
 
 type PlaybackLoopState = { lastTimestamp: number | null; accumulator: number };
@@ -79,6 +55,8 @@ export type UseRayMarchLoopParams = {
   trackBlinkSettings: { periodMs: number; base: number; range: number };
   revision?: number;
   onEarlyTerminationChange?: (enabled: boolean) => void;
+  updateTrackOverlayDrawRanges?: (timeIndex: number) => void;
+  updateTrackOverlayState?: () => void;
 };
 
 export type RayMarchLoopControls = {
@@ -110,7 +88,9 @@ export function useRayMarchLoop({
   playbackFpsLimits,
   trackBlinkSettings,
   revision,
-  onEarlyTerminationChange
+  onEarlyTerminationChange,
+  updateTrackOverlayDrawRanges,
+  updateTrackOverlayState
 }: UseRayMarchLoopParams): RayMarchLoopControls {
   const renderLoopRef = useRef<((timestamp: number) => void) | null>(null);
   const earlyTerminationEnabledRef = useRef(true);
@@ -210,6 +190,7 @@ export function useRayMarchLoop({
       }
 
       applyKeyboardMovement();
+      updateTrackOverlayState?.();
       controls.update();
 
       const { periodMs, base, range } = trackBlinkSettings;
@@ -323,6 +304,7 @@ export function useRayMarchLoop({
 
               playbackState.timeIndex = nextIndex;
               timeIndexRef.current = nextIndex;
+              updateTrackOverlayDrawRanges?.(nextIndex);
 
               const total = Math.max(0, playbackState.totalTimepoints);
               const labelCurrent = total > 0 ? Math.min(nextIndex + 1, total) : 0;
@@ -384,6 +366,8 @@ export function useRayMarchLoop({
     trackBlinkSettings.periodMs,
     trackBlinkSettings.range,
     updateControllerRays,
+    updateTrackOverlayDrawRanges,
+    updateTrackOverlayState,
     updateVrPlaybackHud,
     vrLog,
     revision
