@@ -178,14 +178,21 @@ vi.mock('three', async () => {
 vi.mock('three/examples/jsm/controls/OrbitControls.js', async () => {
   const actual = await vi.importActual<typeof import('three')>('three');
   class MockOrbitControls {
+    public static instances: MockOrbitControls[] = [];
     public readonly target = new actual.Vector3();
     public enabled = true;
     public enableDamping = false;
     public enablePan = false;
     public readonly update = vi.fn();
     public readonly dispose = vi.fn();
+    public readonly camera: unknown;
+    public readonly domElement: unknown;
 
-    constructor(_camera: unknown, _domElement: unknown) {}
+    constructor(camera: unknown, domElement: unknown) {
+      this.camera = camera;
+      this.domElement = domElement;
+      MockOrbitControls.instances.push(this);
+    }
   }
 
   return { OrbitControls: MockOrbitControls };
