@@ -8,6 +8,11 @@
 
 # Progress Log
 
+## Volume ray-march entry fix
+- Replaced the camera-origin slab intersection with a near/far clip segment clipper so rays now start exactly on the volume bounds regardless of camera placement.
+- Normalized entry/exit coordinates explicitly and clamped texture lookups to [0, 1] to eliminate out-of-bounds samples that produced smeared, streaky renders.
+- Guarded zero-length traversals to avoid NaNs and derived the lighting direction from the clipped segment, restoring coherent volume shading.
+
 ## Export save picker activation fix
 - Requested the File System Access API handle as soon as the export button is clicked so the browser still considers the call a
   user gesture, preventing `showSaveFilePicker` from throwing activation errors.

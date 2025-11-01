@@ -91,7 +91,8 @@ export const VolumeRenderShader = {
     void cast_iso(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
 
     vec4 sample_color(vec3 texcoords) {
-      return texture(u_data, texcoords.xyz);
+      vec3 clamped = clamp(texcoords, vec3(0.0), vec3(1.0));
+      return texture(u_data, clamped);
     }
 
     float normalize_window(float value) {
@@ -159,87 +160,88 @@ export const VolumeRenderShader = {
     }
 
     void main() {
-      vec3 farpos = v_farpos.xyz / v_farpos.w;
       vec3 nearpos = v_nearpos.xyz / v_nearpos.w;
-
-      vec3 rayOrigin = u_cameraPos;
-      vec3 rawDir = v_position - rayOrigin;
-      float rawDirLength = length(rawDir);
-      if (rawDirLength < EPSILON) {
-        discard;
-      }
-      vec3 rayDir = rawDir / rawDirLength;
+      vec3 farpos = v_farpos.xyz / v_farpos.w;
+      vec3 rayDir = farpos - nearpos;
 
       vec3 boxMin = vec3(-0.5);
       vec3 boxMax = u_size - 0.5;
+      vec3 boxSize = max(boxMax - boxMin, vec3(1e-5));
+      vec3 invBoxSize = 1.0 / boxSize;
 
-      vec3 tLower;
-      vec3 tUpper;
+      float tMin = 0.0;
+      float tMax = 1.0;
 
-      if (abs(rayDir.x) < EPSILON) {
-        if (rayOrigin.x < boxMin.x || rayOrigin.x > boxMax.x) {
+      float origin = nearpos.x;
+      float direction = rayDir.x;
+      if (abs(direction) < EPSILON) {
+        if (origin < boxMin.x || origin > boxMax.x) {
           discard;
         }
-        tLower.x = -LARGE;
-        tUpper.x = LARGE;
       } else {
-        float tx1 = (boxMin.x - rayOrigin.x) / rayDir.x;
-        float tx2 = (boxMax.x - rayOrigin.x) / rayDir.x;
-        tLower.x = min(tx1, tx2);
-        tUpper.x = max(tx1, tx2);
+        float invDir = 1.0 / direction;
+        float t1 = (boxMin.x - origin) * invDir;
+        float t2 = (boxMax.x - origin) * invDir;
+        float tNear = min(t1, t2);
+        float tFar = max(t1, t2);
+        tMin = max(tMin, tNear);
+        tMax = min(tMax, tFar);
       }
 
-      if (abs(rayDir.y) < EPSILON) {
-        if (rayOrigin.y < boxMin.y || rayOrigin.y > boxMax.y) {
+      origin = nearpos.y;
+      direction = rayDir.y;
+      if (abs(direction) < EPSILON) {
+        if (origin < boxMin.y || origin > boxMax.y) {
           discard;
         }
-        tLower.y = -LARGE;
-        tUpper.y = LARGE;
       } else {
-        float ty1 = (boxMin.y - rayOrigin.y) / rayDir.y;
-        float ty2 = (boxMax.y - rayOrigin.y) / rayDir.y;
-        tLower.y = min(ty1, ty2);
-        tUpper.y = max(ty1, ty2);
+        float invDir = 1.0 / direction;
+        float t1 = (boxMin.y - origin) * invDir;
+        float t2 = (boxMax.y - origin) * invDir;
+        float tNear = min(t1, t2);
+        float tFar = max(t1, t2);
+        tMin = max(tMin, tNear);
+        tMax = min(tMax, tFar);
       }
 
-      if (abs(rayDir.z) < EPSILON) {
-        if (rayOrigin.z < boxMin.z || rayOrigin.z > boxMax.z) {
+      origin = nearpos.z;
+      direction = rayDir.z;
+      if (abs(direction) < EPSILON) {
+        if (origin < boxMin.z || origin > boxMax.z) {
           discard;
         }
-        tLower.z = -LARGE;
-        tUpper.z = LARGE;
       } else {
-        float tz1 = (boxMin.z - rayOrigin.z) / rayDir.z;
-        float tz2 = (boxMax.z - rayOrigin.z) / rayDir.z;
-        tLower.z = min(tz1, tz2);
-        tUpper.z = max(tz1, tz2);
+        float invDir = 1.0 / direction;
+        float t1 = (boxMin.z - origin) * invDir;
+        float t2 = (boxMax.z - origin) * invDir;
+        float tNear = min(t1, t2);
+        float tFar = max(t1, t2);
+        tMin = max(tMin, tNear);
+        tMax = min(tMax, tFar);
       }
 
-      float entry = max(max(tLower.x, tLower.y), tLower.z);
-      float exit = min(min(tUpper.x, tUpper.y), tUpper.z);
-
-      if (exit <= entry) {
+      if (tMax <= tMin) {
         discard;
       }
 
-      float tStart = max(entry, 0.0);
-      float tEnd = exit;
+      vec3 front = nearpos + rayDir * tMin;
+      vec3 back = nearpos + rayDir * tMax;
 
-      if (tEnd <= tStart) {
+      float travelDistance = length(back - front);
+      if (travelDistance < EPSILON) {
         discard;
       }
-
-      vec3 front = rayOrigin + rayDir * tStart;
-      vec3 back = rayOrigin + rayDir * tEnd;
 
       float safeStepScale = max(u_stepScale, 1e-3);
-      float travelDistance = tEnd - tStart;
       int nsteps = int(travelDistance * safeStepScale + 0.5);
       nsteps = clamp(nsteps, 1, MAX_STEPS);
 
-      vec3 step = ((back - front) / u_size) / float(nsteps);
-      vec3 start_loc = front / u_size;
-      vec3 view_ray = -rayDir;
+      vec3 frontTex = clamp((front - boxMin) * invBoxSize, 0.0, 1.0);
+      vec3 backTex = clamp((back - boxMin) * invBoxSize, 0.0, 1.0);
+      vec3 step = (backTex - frontTex) / float(nsteps);
+      vec3 start_loc = frontTex;
+
+      vec3 view_ray = -normalize(back - front);
 
       if (u_renderstyle == 0) {
         cast_mip(start_loc, step, nsteps, view_ray);
