@@ -3,8 +3,6 @@ import { MutableRefObject, useCallback, useEffect, useMemo, useRef, useState } f
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { Line2 } from 'three/examples/jsm/lines/Line2';
-import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
-import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory';
 import type { NormalizedVolume } from '../volumeProcessing';
 import type {
@@ -16,7 +14,8 @@ import type {
 import './VolumeViewer.css';
 export { VolumeScene } from '../renderer/VolumeScene';
 import { useVolumeTextures } from '../renderer/useVolumeTextures';
-import { MovementState, TrackLineResource, useRayMarchLoop } from '../renderer/useRayMarchLoop';
+import { MovementState, useRayMarchLoop } from '../renderer/useRayMarchLoop';
+import { TrackLineResource, useTrackOverlay } from '../renderer/useTrackOverlay';
 import type { TrackColorMode, TrackDefinition } from '../types/tracks';
 import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from '../layerColors';
 import {
@@ -932,6 +931,7 @@ function VolumeViewer({
   const vrHandleLocalPointRef = useRef(new THREE.Vector3());
   const [hasMeasured, setHasMeasured] = useState(false);
   const [trackOverlayRevision, setTrackOverlayRevision] = useState(0);
+  const [rendererSize, setRendererSize] = useState<{ width: number; height: number } | null>(null);
   const [renderContextRevision, setRenderContextRevision] = useState(0);
   const hoveredTrackIdRef = useRef<string | null>(null);
   const [hoveredTrackId, setHoveredTrackId] = useState<string | null>(null);
@@ -4801,27 +4801,6 @@ function VolumeViewer({
     []
   );
 
-  const updateTrackDrawRanges = useCallback((targetTimeIndex: number) => {
-    const lines = trackLinesRef.current;
-    const maxVisibleTime = targetTimeIndex;
-
-    for (const resource of lines.values()) {
-      const { geometry, times } = resource;
-      let visiblePoints = 0;
-      for (let index = 0; index < times.length; index++) {
-        if (times[index] <= maxVisibleTime) {
-          visiblePoints = index + 1;
-        } else {
-          break;
-        }
-      }
-
-      const totalSegments = Math.max(times.length - 1, 0);
-      const visibleSegments = Math.min(Math.max(visiblePoints - 1, 0), totalSegments);
-      geometry.instanceCount = visibleSegments;
-    }
-  }, []);
-
   const safeProgress = Math.min(1, Math.max(0, loadingProgress));
   const clampedLoadedVolumes = Math.max(0, loadedVolumes);
   const clampedExpectedVolumes = Math.max(0, expectedVolumes);
@@ -4835,6 +4814,42 @@ function VolumeViewer({
   const showLoadingOverlay = isLoading || (hasStartedLoading && !hasFinishedLoading);
   const clampedTimeIndex = totalTimepoints === 0 ? 0 : Math.min(timeIndex, totalTimepoints - 1);
   timeIndexRef.current = clampedTimeIndex;
+  const { updateTrackDrawRanges, updateTrackInteractionState } = useTrackOverlay({
+    trackGroup: trackGroupRef.current,
+    trackLinesRef,
+    tracks,
+    trackOverlayRevision,
+    rendererSize,
+    channelTrackOffsets,
+    resolveTrackColor,
+    hoveredTrackIdRef,
+    clearHoverState,
+    timeIndexRef,
+    defaultTrackOpacity: DEFAULT_TRACK_OPACITY,
+    defaultTrackLineWidth: DEFAULT_TRACK_LINE_WIDTH,
+    hoverLineWidthMultiplier: HOVERED_TRACK_LINE_WIDTH_MULTIPLIER,
+    followLineWidthMultiplier: FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER,
+    selectedLineWidthMultiplier: SELECTED_TRACK_LINE_WIDTH_MULTIPLIER,
+    trackVisibility,
+    selectedTrackIds,
+    hoveredTrackId,
+    followedTrackId,
+    trackOpacityByChannel,
+    trackLineWidthByChannel
+  });
+
+  useEffect(() => {
+    updateTrackInteractionState();
+  }, [
+    updateTrackInteractionState,
+    trackOverlayRevision,
+    trackVisibility,
+    selectedTrackIds,
+    hoveredTrackId,
+    followedTrackId,
+    trackOpacityByChannel,
+    trackLineWidthByChannel
+  ]);
   const primaryVolume = useMemo(() => {
     for (const layer of layers) {
       if (layer.volume) {
@@ -4891,244 +4906,15 @@ function VolumeViewer({
       base: SELECTED_TRACK_BLINK_BASE,
       range: SELECTED_TRACK_BLINK_RANGE
     },
-    revision: renderContextRevision
+    revision: renderContextRevision,
+    updateTrackOverlayDrawRanges: updateTrackDrawRanges,
+    updateTrackOverlayState: updateTrackInteractionState
   });
   useEffect(() => {
     hasActive3DLayerRef.current = hasActive3DLayer;
     updateVolumeHandles();
   }, [hasActive3DLayer, updateVolumeHandles]);
   const previouslyHad3DLayerRef = useRef(false);
-
-  useEffect(() => {
-    if (trackOverlayRevision === 0) {
-      return;
-    }
-
-    const trackGroup = trackGroupRef.current;
-    if (!trackGroup) {
-      return;
-    }
-
-    const trackLines = trackLinesRef.current;
-    const activeIds = new Set<string>();
-    tracks.forEach((track) => {
-      if (track.points.length > 0) {
-        activeIds.add(track.id);
-      }
-    });
-
-    for (const [id, resource] of Array.from(trackLines.entries())) {
-      if (!activeIds.has(id)) {
-        trackGroup.remove(resource.line);
-        trackGroup.remove(resource.outline);
-        resource.geometry.dispose();
-        resource.material.dispose();
-        resource.outlineMaterial.dispose();
-        if (hoveredTrackIdRef.current === id) {
-          clearHoverState();
-        }
-        trackLines.delete(id);
-      }
-    }
-
-    for (const track of tracks) {
-      if (track.points.length === 0) {
-        continue;
-      }
-
-      let resource = trackLines.get(track.id) ?? null;
-      const positions = new Float32Array(track.points.length * 3);
-      const times = new Array<number>(track.points.length);
-      const offset = channelTrackOffsets[track.channelId] ?? { x: 0, y: 0 };
-
-      for (let index = 0; index < track.points.length; index++) {
-        const point = track.points[index];
-        positions[index * 3 + 0] = point.x + offset.x;
-        positions[index * 3 + 1] = point.y + offset.y;
-        positions[index * 3 + 2] = point.z;
-        times[index] = point.time;
-      }
-
-      const baseColor = resolveTrackColor(track);
-      const highlightColor = baseColor.clone().lerp(new THREE.Color(0xffffff), 0.4);
-
-      if (!resource) {
-        const geometry = new LineGeometry();
-        geometry.setPositions(positions);
-        geometry.instanceCount = 0;
-        const material = new LineMaterial({
-          color: baseColor.clone(),
-          linewidth: 1,
-          transparent: true,
-          opacity: 0.9,
-          depthTest: false,
-          depthWrite: false
-        });
-        const outlineMaterial = new LineMaterial({
-          color: new THREE.Color(0xffffff),
-          linewidth: 1,
-          transparent: true,
-          opacity: 0,
-          depthTest: false,
-          depthWrite: false
-        });
-        const containerNode = containerRef.current;
-        if (containerNode) {
-          const width = Math.max(containerNode.clientWidth, 1);
-          const height = Math.max(containerNode.clientHeight, 1);
-          material.resolution.set(width, height);
-          outlineMaterial.resolution.set(width, height);
-        } else {
-          material.resolution.set(1, 1);
-          outlineMaterial.resolution.set(1, 1);
-        }
-
-        const outline = new Line2(geometry, outlineMaterial);
-        outline.computeLineDistances();
-        outline.renderOrder = 999;
-        outline.frustumCulled = false;
-        outline.visible = false;
-
-        const line = new Line2(geometry, material);
-        line.computeLineDistances();
-        line.renderOrder = 1000;
-        line.frustumCulled = false;
-        const lineWithUserData = line as unknown as { userData: Record<string, unknown> };
-        lineWithUserData.userData.trackId = track.id;
-
-        trackGroup.add(outline);
-        trackGroup.add(line);
-        resource = {
-          line,
-          outline,
-          geometry,
-          material,
-          outlineMaterial,
-          times,
-          baseColor: baseColor.clone(),
-          highlightColor: highlightColor.clone(),
-          channelId: track.channelId,
-          baseLineWidth: DEFAULT_TRACK_LINE_WIDTH,
-          targetLineWidth: DEFAULT_TRACK_LINE_WIDTH,
-          outlineExtraWidth: Math.max(DEFAULT_TRACK_LINE_WIDTH * 0.75, 0.4),
-          targetOpacity: DEFAULT_TRACK_OPACITY,
-          outlineBaseOpacity: 0,
-          isFollowed: false,
-          isSelected: false,
-          isHovered: false,
-          shouldShow: false,
-          needsAppearanceUpdate: true
-        };
-        trackLines.set(track.id, resource);
-      } else {
-        const { geometry, line, outline } = resource;
-        geometry.setPositions(positions);
-        line.computeLineDistances();
-        outline.computeLineDistances();
-        resource.times = times;
-        resource.baseColor.copy(baseColor);
-        resource.highlightColor.copy(highlightColor);
-        resource.channelId = track.channelId;
-        resource.needsAppearanceUpdate = true;
-      }
-    }
-
-    updateTrackDrawRanges(timeIndexRef.current);
-  }, [
-    channelTrackColorModes,
-    channelTrackOffsets,
-    clearHoverState,
-    resolveTrackColor,
-    trackOverlayRevision,
-    tracks,
-    updateTrackDrawRanges
-  ]);
-
-  useEffect(() => {
-    if (trackOverlayRevision === 0) {
-      return;
-    }
-
-    const trackGroup = trackGroupRef.current;
-    if (!trackGroup) {
-      return;
-    }
-
-    let visibleCount = 0;
-
-    for (const track of tracks) {
-      const resource = trackLinesRef.current.get(track.id);
-      if (!resource) {
-        continue;
-      }
-
-      const { line, outline } = resource;
-
-      const isExplicitlyVisible = trackVisibility[track.id] ?? true;
-      const isFollowed = followedTrackId === track.id;
-      const isHovered = hoveredTrackId === track.id;
-      const isSelected = selectedTrackIds.has(track.id);
-      const isHighlighted = isFollowed || isHovered || isSelected;
-      const shouldShow = isFollowed || isExplicitlyVisible || isSelected;
-
-      resource.channelId = track.channelId;
-      resource.isFollowed = isFollowed;
-      resource.isHovered = isHovered;
-      resource.isSelected = isSelected;
-      resource.shouldShow = shouldShow;
-      resource.needsAppearanceUpdate = true;
-
-      line.visible = shouldShow;
-      outline.visible = shouldShow && isHighlighted;
-      if (shouldShow) {
-        visibleCount += 1;
-      }
-
-      const channelOpacity = trackOpacityByChannel[track.channelId] ?? DEFAULT_TRACK_OPACITY;
-      const sanitizedOpacity = Math.min(1, Math.max(0, channelOpacity));
-      const opacityBoost = isFollowed || isSelected ? 0.15 : isHovered ? 0.12 : 0;
-      resource.targetOpacity = Math.min(1, sanitizedOpacity + opacityBoost);
-
-      const channelLineWidth = trackLineWidthByChannel[track.channelId] ?? DEFAULT_TRACK_LINE_WIDTH;
-      const sanitizedLineWidth = Math.max(0.1, Math.min(10, channelLineWidth));
-      resource.baseLineWidth = sanitizedLineWidth;
-      let widthMultiplier = 1;
-      if (isHovered) {
-        widthMultiplier = Math.max(widthMultiplier, HOVERED_TRACK_LINE_WIDTH_MULTIPLIER);
-      }
-      if (isFollowed) {
-        widthMultiplier = Math.max(widthMultiplier, FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER);
-      }
-      if (isSelected) {
-        widthMultiplier = Math.max(widthMultiplier, SELECTED_TRACK_LINE_WIDTH_MULTIPLIER);
-      }
-      resource.targetLineWidth = sanitizedLineWidth * widthMultiplier;
-      resource.outlineExtraWidth = Math.max(sanitizedLineWidth * 0.75, 0.4);
-
-      resource.outlineBaseOpacity = isFollowed || isSelected ? 0.75 : isHovered ? 0.9 : 0;
-    }
-
-    const followedTrackExists = followedTrackId !== null && trackLinesRef.current.has(followedTrackId);
-
-    trackGroup.visible = visibleCount > 0 || followedTrackExists;
-
-    if (hoveredTrackId !== null) {
-      const hoveredResource = trackLinesRef.current.get(hoveredTrackId);
-      if (!hoveredResource || !hoveredResource.line.visible) {
-        clearHoverState();
-      }
-    }
-  }, [
-    clearHoverState,
-    trackOverlayRevision,
-    followedTrackId,
-    hoveredTrackId,
-    selectedTrackIds,
-    trackLineWidthByChannel,
-    trackOpacityByChannel,
-    trackVisibility,
-    tracks
-  ]);
 
   useEffect(() => {
     updateTrackDrawRanges(clampedTimeIndex);
@@ -8267,6 +8053,14 @@ function VolumeViewer({
       const height = target.clientHeight;
       if (width > 0 && height > 0) {
         setHasMeasured(true);
+        setRendererSize((previous) => {
+          if (previous && previous.width === width && previous.height === height) {
+            return previous;
+          }
+          return { width, height };
+        });
+      } else {
+        setRendererSize((previous) => (previous === null ? previous : null));
       }
       rendererInstance.setSize(width, height);
       if (width > 0 && height > 0) {
