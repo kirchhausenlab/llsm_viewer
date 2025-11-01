@@ -4,10 +4,9 @@ export {
   useVolumeSceneLoadingOverlay,
   useVolumeSceneTooltip
 } from './VolumeScene';
-export {
-  useRendererCanvas
-} from './useRendererCanvas';
+export { useRendererCanvas } from './useRendererCanvas';
 export { useRayMarchLoop } from './useRayMarchLoop';
+export { useXRSession } from './useXRSession';
 export type {
   UseRendererCanvasParams,
   UseRendererCanvasResult,
@@ -15,6 +14,7 @@ export type {
   TrackMaterialResolutionTarget
 } from './useRendererCanvas';
 export type { MovementState, TrackLineResource, RayMarchLoopControls } from './useRayMarchLoop';
+export type { UseXRSessionParams, UseXRSessionResult } from './useXRSession';
 export type {
   ViewerLayer,
   VolumeViewerProps,
