@@ -7,12 +7,14 @@ export {
 export {
   useRendererCanvas
 } from './useRendererCanvas';
+export { useRayMarchLoop } from './useRayMarchLoop';
 export type {
   UseRendererCanvasParams,
   UseRendererCanvasResult,
   TrackMaterialPair,
   TrackMaterialResolutionTarget
 } from './useRendererCanvas';
+export type { MovementState, TrackLineResource, RayMarchLoopControls } from './useRayMarchLoop';
 export type {
   ViewerLayer,
   VolumeViewerProps,

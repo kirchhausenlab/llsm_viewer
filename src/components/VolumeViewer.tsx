@@ -16,6 +16,7 @@ import type {
 import './VolumeViewer.css';
 export { VolumeScene } from '../renderer/VolumeScene';
 import { useVolumeTextures } from '../renderer/useVolumeTextures';
+import { MovementState, TrackLineResource, useRayMarchLoop } from '../renderer/useRayMarchLoop';
 import type { TrackColorMode, TrackDefinition } from '../types/tracks';
 import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from '../layerColors';
 import {
@@ -145,37 +146,6 @@ type PointerState = {
   lastY: number;
   previousControlsEnabled: boolean;
   previousEnablePan: boolean | null;
-};
-
-type MovementState = {
-  moveForward: boolean;
-  moveBackward: boolean;
-  moveLeft: boolean;
-  moveRight: boolean;
-  moveUp: boolean;
-  moveDown: boolean;
-};
-
-type TrackLineResource = {
-  line: Line2;
-  outline: Line2;
-  geometry: LineGeometry;
-  material: LineMaterial;
-  outlineMaterial: LineMaterial;
-  times: number[];
-  baseColor: THREE.Color;
-  highlightColor: THREE.Color;
-  channelId: string;
-  baseLineWidth: number;
-  targetLineWidth: number;
-  outlineExtraWidth: number;
-  targetOpacity: number;
-  outlineBaseOpacity: number;
-  isFollowed: boolean;
-  isSelected: boolean;
-  isHovered: boolean;
-  shouldShow: boolean;
-  needsAppearanceUpdate: boolean;
 };
 
 type VrUiTargetType =
@@ -941,6 +911,7 @@ function VolumeViewer({
   const trackGroupRef = useRef<THREE.Group | null>(null);
   const trackLinesRef = useRef<Map<string, TrackLineResource>>(new Map());
   const controllersRef = useRef<ControllerEntry[]>([]);
+  const updateControllerRaysRef = useRef<() => void>(() => {});
   const raycasterRef = useRef<RaycasterLike | null>(null);
   const timeIndexRef = useRef(0);
   const followedTrackIdRef = useRef<string | null>(null);
@@ -4889,6 +4860,39 @@ function VolumeViewer({
       }),
     [layers]
   );
+
+  const invokeControllerRays = useCallback(() => {
+    updateControllerRaysRef.current();
+  }, []);
+
+  const rayMarchLoop = useRayMarchLoop({
+    renderer: rendererRef.current,
+    controls: controlsRef.current,
+    scene: sceneRef.current,
+    camera: cameraRef.current,
+    rotationTargetRef,
+    movementStateRef,
+    followedTrackIdRef,
+    trackFollowOffsetRef,
+    trackLinesRef,
+    resourcesRef,
+    playbackLoopRef,
+    playbackStateRef,
+    vrHoverStateRef,
+    controllersRef,
+    timeIndexRef,
+    updateVrPlaybackHud,
+    refreshVrHudPlacements,
+    updateControllerRays: invokeControllerRays,
+    vrLog,
+    playbackFpsLimits: { min: VR_PLAYBACK_MIN_FPS, max: VR_PLAYBACK_MAX_FPS },
+    trackBlinkSettings: {
+      periodMs: SELECTED_TRACK_BLINK_PERIOD_MS,
+      base: SELECTED_TRACK_BLINK_BASE,
+      range: SELECTED_TRACK_BLINK_RANGE
+    },
+    revision: renderContextRevision
+  });
   useEffect(() => {
     hasActive3DLayerRef.current = hasActive3DLayer;
     updateVolumeHandles();
@@ -8018,6 +8022,8 @@ function VolumeViewer({
       }
     };
 
+    updateControllerRaysRef.current = updateControllerRays;
+
     const handleXrManagerSessionStart = () => {
       vrLog('[VR] sessionstart event', {
         presenting: renderer.xr.isPresenting,
@@ -8113,7 +8119,7 @@ function VolumeViewer({
       preVrCameraStateRef.current = null;
       refreshControllerVisibility();
       handleResize();
-      renderer.setAnimationLoop(renderLoop);
+      rayMarchLoop.startLoop();
       const pendingMode = xrPendingModeSwitchRef.current;
       xrPendingModeSwitchRef.current = null;
       if (!isDisposed) {
@@ -8279,236 +8285,7 @@ function VolumeViewer({
     resizeObserver.observe(container);
     handleResize();
 
-    const worldUp = new THREE.Vector3(0, 1, 0);
-    const forwardVector = new THREE.Vector3();
-    const horizontalForward = new THREE.Vector3();
-    const rightVector = new THREE.Vector3();
-    const movementVector = new THREE.Vector3();
     const dollyDirection = new THREE.Vector3();
-
-    const applyKeyboardMovement = () => {
-      if (renderer.xr.isPresenting) {
-        return;
-      }
-      if (followedTrackIdRef.current !== null) {
-        return;
-      }
-      const movementState = movementStateRef.current;
-      if (
-        !movementState ||
-        (!movementState.moveForward &&
-          !movementState.moveBackward &&
-          !movementState.moveLeft &&
-          !movementState.moveRight &&
-          !movementState.moveUp &&
-          !movementState.moveDown)
-      ) {
-        return;
-      }
-
-      const rotationTarget = rotationTargetRef.current;
-      const distance = rotationTarget.distanceTo(camera.position);
-      const movementScale = Math.max(distance * 0.0025, 0.0006);
-
-      camera.getWorldDirection(forwardVector).normalize();
-      horizontalForward.copy(forwardVector).projectOnPlane(worldUp);
-      if (horizontalForward.lengthSq() < 1e-8) {
-        horizontalForward.set(0, 0, forwardVector.z >= 0 ? 1 : -1);
-      } else {
-        horizontalForward.normalize();
-      }
-
-      rightVector.crossVectors(horizontalForward, worldUp);
-      if (rightVector.lengthSq() < 1e-8) {
-        rightVector.set(1, 0, 0);
-      } else {
-        rightVector.normalize();
-      }
-
-      movementVector.set(0, 0, 0);
-
-      if (movementState.moveForward) {
-        movementVector.addScaledVector(horizontalForward, movementScale);
-      }
-      if (movementState.moveBackward) {
-        movementVector.addScaledVector(horizontalForward, -movementScale);
-      }
-      if (movementState.moveLeft) {
-        movementVector.addScaledVector(rightVector, -movementScale);
-      }
-      if (movementState.moveRight) {
-        movementVector.addScaledVector(rightVector, movementScale);
-      }
-      if (movementState.moveUp) {
-        movementVector.addScaledVector(worldUp, movementScale);
-      }
-      if (movementState.moveDown) {
-        movementVector.addScaledVector(worldUp, -movementScale);
-      }
-
-      if (movementVector.lengthSq() === 0) {
-        return;
-      }
-
-      camera.position.add(movementVector);
-      rotationTarget.add(movementVector);
-      controls.target.copy(rotationTarget);
-    };
-
-    let lastRenderTickSummary: { presenting: boolean; hoveredByController: string | null } | null = null;
-
-    const renderLoop = (timestamp: number) => {
-      applyKeyboardMovement();
-      controls.update();
-
-      const blinkPhase = (timestamp % SELECTED_TRACK_BLINK_PERIOD_MS) / SELECTED_TRACK_BLINK_PERIOD_MS;
-      const blinkScale =
-        SELECTED_TRACK_BLINK_BASE + SELECTED_TRACK_BLINK_RANGE * Math.sin(blinkPhase * Math.PI * 2);
-
-      for (const resource of trackLinesRef.current.values()) {
-        const { line, outline, material, outlineMaterial, baseColor, highlightColor } = resource;
-        const shouldShow = resource.shouldShow;
-        if (line.visible !== shouldShow) {
-          line.visible = shouldShow;
-        }
-        const isHighlighted = resource.isFollowed || resource.isHovered || resource.isSelected;
-        const outlineVisible = shouldShow && isHighlighted;
-        if (outline.visible !== outlineVisible) {
-          outline.visible = outlineVisible;
-        }
-
-        if (resource.needsAppearanceUpdate) {
-          const targetColor = isHighlighted ? highlightColor : baseColor;
-          if (!material.color.equals(targetColor)) {
-            material.color.copy(targetColor);
-            material.needsUpdate = true;
-          }
-        }
-
-        const blinkMultiplier = resource.isSelected ? blinkScale : 1;
-        const targetOpacity = resource.targetOpacity * blinkMultiplier;
-        if (material.opacity !== targetOpacity) {
-          material.opacity = targetOpacity;
-          material.needsUpdate = true;
-        }
-
-        if (material.linewidth !== resource.targetLineWidth) {
-          material.linewidth = resource.targetLineWidth;
-          material.needsUpdate = true;
-        }
-
-        const outlineBlinkMultiplier = resource.isSelected ? blinkScale : 1;
-        const targetOutlineOpacity = resource.outlineBaseOpacity * outlineBlinkMultiplier;
-        if (outlineMaterial.opacity !== targetOutlineOpacity) {
-          outlineMaterial.opacity = targetOutlineOpacity;
-          outlineMaterial.needsUpdate = true;
-        }
-
-        const outlineWidth = resource.targetLineWidth + resource.outlineExtraWidth;
-        if (outlineMaterial.linewidth !== outlineWidth) {
-          outlineMaterial.linewidth = outlineWidth;
-          outlineMaterial.needsUpdate = true;
-        }
-
-        if (resource.needsAppearanceUpdate) {
-          resource.needsAppearanceUpdate = false;
-        }
-      }
-
-      if (followedTrackIdRef.current !== null) {
-        const rotationTarget = rotationTargetRef.current;
-        if (rotationTarget) {
-          if (!trackFollowOffsetRef.current) {
-            trackFollowOffsetRef.current = new THREE.Vector3();
-          }
-          trackFollowOffsetRef.current.copy(camera.position).sub(rotationTarget);
-        }
-      }
-
-      const resources = resourcesRef.current;
-      for (const resource of resources.values()) {
-        const { mesh } = resource;
-        mesh.updateMatrixWorld();
-      }
-
-      const playbackLoopState = playbackLoopRef.current;
-      const playbackState = playbackStateRef.current;
-      const playbackSliderActive = vrHoverStateRef.current.playbackSliderActive;
-      const shouldAdvancePlayback =
-        playbackState.isPlaying &&
-        !playbackState.playbackDisabled &&
-        playbackState.totalTimepoints > 1 &&
-        !playbackSliderActive &&
-        typeof playbackState.onTimeIndexChange === 'function';
-
-      if (shouldAdvancePlayback) {
-        const minFps = VR_PLAYBACK_MIN_FPS;
-        const maxFps = VR_PLAYBACK_MAX_FPS;
-        const requestedFps = playbackState.fps ?? minFps;
-        const clampedFps = Math.min(Math.max(requestedFps, minFps), maxFps);
-        const frameDuration = clampedFps > 0 ? 1000 / clampedFps : 0;
-
-        if (frameDuration > 0) {
-          if (playbackLoopState.lastTimestamp === null) {
-            playbackLoopState.lastTimestamp = timestamp;
-            playbackLoopState.accumulator = 0;
-          } else {
-            const delta = Math.max(0, Math.min(timestamp - playbackLoopState.lastTimestamp, 1000));
-            playbackLoopState.accumulator += delta;
-            playbackLoopState.lastTimestamp = timestamp;
-
-            const maxIndex = Math.max(0, playbackState.totalTimepoints - 1);
-            let didAdvance = false;
-
-            while (playbackLoopState.accumulator >= frameDuration) {
-              playbackLoopState.accumulator -= frameDuration;
-              let nextIndex = playbackState.timeIndex + 1;
-              if (nextIndex > maxIndex) {
-                nextIndex = 0;
-              }
-              if (nextIndex === playbackState.timeIndex) {
-                break;
-              }
-
-              playbackState.timeIndex = nextIndex;
-              timeIndexRef.current = nextIndex;
-
-              const total = Math.max(0, playbackState.totalTimepoints);
-              const labelCurrent = total > 0 ? Math.min(nextIndex + 1, total) : 0;
-              playbackState.playbackLabel = `${labelCurrent} / ${total}`;
-              playbackState.onTimeIndexChange?.(nextIndex);
-              didAdvance = true;
-            }
-
-            if (didAdvance) {
-              updateVrPlaybackHud();
-            }
-          }
-        }
-      } else {
-        playbackLoopState.lastTimestamp = null;
-        playbackLoopState.accumulator = 0;
-      }
-
-      refreshVrHudPlacements();
-
-      updateControllerRays();
-      const hoveredEntry = controllersRef.current.find((entry) => entry.hoverTrackId);
-      const renderSummary = {
-        presenting: renderer.xr.isPresenting,
-        hoveredByController: hoveredEntry?.hoverTrackId ?? null
-      };
-      if (
-        !lastRenderTickSummary ||
-        renderSummary.presenting !== lastRenderTickSummary.presenting ||
-        renderSummary.hoveredByController !== lastRenderTickSummary.hoveredByController
-      ) {
-        vrLog('[VR] render tick', renderSummary);
-      }
-      lastRenderTickSummary = renderSummary;
-      renderer.render(scene, camera);
-    };
-    renderer.setAnimationLoop(renderLoop);
 
     return () => {
       isDisposed = true;
@@ -8517,7 +8294,8 @@ function VolumeViewer({
       applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
       renderer.xr.removeEventListener('sessionstart', handleXrManagerSessionStart);
       renderer.xr.removeEventListener('sessionend', handleXrManagerSessionEnd);
-      renderer.setAnimationLoop(null);
+      rayMarchLoop.stopLoop();
+      updateControllerRaysRef.current = () => {};
 
       const activeSession = xrSessionRef.current;
       if (activeSession) {
@@ -8691,7 +8469,9 @@ function VolumeViewer({
     onVrSessionStarted,
     updateVolumeHandles,
     refreshVrHudPlacements,
-    toggleXrSessionMode
+    toggleXrSessionMode,
+    rayMarchLoop.startLoop,
+    rayMarchLoop.stopLoop
   ]);
 
   useEffect(() => {
