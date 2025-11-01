@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, waitFor } from '@testing-library/react';
+import * as THREE from 'three';
 
 import VolumeScene from '../../src/renderer/VolumeScene.tsx';
 import type { VolumeViewerProps } from '../../src/renderer/types.ts';
@@ -131,5 +132,140 @@ describe('VolumeScene integration', () => {
 
     unmount();
     expect(props.onRegisterVrSession).toHaveBeenLastCalledWith(null);
+  });
+
+  it('updates hover and selection state through volume pointer interactions', async () => {
+    const props = createProps();
+    const track = {
+      id: 'track-1',
+      channelId: 'channel-1',
+      channelName: 'Channel 1',
+      trackNumber: 1,
+      sourceTrackId: 101,
+      points: [
+        { time: 0, x: 0, y: 0, z: 0, amplitude: 1 },
+        { time: 1, x: 1, y: 1, z: 1, amplitude: 1 }
+      ]
+    };
+
+    props.tracks = [track];
+    props.onTrackSelectionToggle = vi.fn();
+
+    const intersectSpy = vi
+      .spyOn(THREE.Raycaster.prototype, 'intersectObjects')
+      .mockImplementation(function (objects: THREE.Object3D[]) {
+        const target = objects.find((object) => {
+          const userData = (object as { userData?: { trackId?: string } }).userData;
+          return userData?.trackId === track.id;
+        });
+        return target ? [{ object: target }] : [];
+      });
+
+    const createPointerEvent = (type: string, init: PointerEventInit): PointerEvent => {
+      const options: PointerEventInit = { bubbles: true, cancelable: true, ...init };
+      if (typeof window.PointerEvent === 'function') {
+        return new window.PointerEvent(type, options);
+      }
+      const fallback = new window.MouseEvent(type, options);
+      Object.defineProperty(fallback, 'pointerId', {
+        value: options.pointerId ?? 1,
+        configurable: true
+      });
+      Object.defineProperty(fallback, 'ctrlKey', {
+        value: !!options.ctrlKey,
+        configurable: true
+      });
+      Object.defineProperty(fallback, 'metaKey', {
+        value: !!options.metaKey,
+        configurable: true
+      });
+      Object.defineProperty(fallback, 'altKey', {
+        value: !!options.altKey,
+        configurable: true
+      });
+      Object.defineProperty(fallback, 'shiftKey', {
+        value: !!options.shiftKey,
+        configurable: true
+      });
+      return fallback as unknown as PointerEvent;
+    };
+
+    try {
+      const { container } = render(<VolumeScene {...props} />);
+      const surface = container.querySelector('.render-surface') as HTMLDivElement;
+      expect(surface).toBeTruthy();
+
+      Object.defineProperty(surface, 'clientWidth', { value: 640, configurable: true });
+      Object.defineProperty(surface, 'clientHeight', { value: 480, configurable: true });
+
+      act(() => {
+        triggerResize(surface);
+      });
+
+      await waitFor(() => {
+        expect(surface.classList.contains('is-ready')).toBe(true);
+      });
+
+      const canvas = surface.querySelector('canvas') as HTMLCanvasElement;
+      expect(canvas).toBeTruthy();
+
+      Object.defineProperty(canvas, 'getBoundingClientRect', {
+        value: () => ({ left: 0, top: 0, width: 640, height: 480, right: 640, bottom: 480 }),
+        configurable: true
+      });
+      Object.defineProperty(canvas, 'setPointerCapture', {
+        value: vi.fn(),
+        configurable: true
+      });
+      Object.defineProperty(canvas, 'releasePointerCapture', {
+        value: vi.fn(),
+        configurable: true
+      });
+
+      await act(async () => {
+        canvas.dispatchEvent(
+          createPointerEvent('pointermove', {
+            clientX: 160,
+            clientY: 120,
+            pointerId: 1
+          })
+        );
+      });
+
+      await waitFor(() => {
+        const tooltip = container.querySelector('.track-tooltip');
+        expect(tooltip?.textContent).toBe('Channel 1 · track-1');
+      });
+
+      expect(props.onTrackSelectionToggle).not.toHaveBeenCalled();
+
+      await act(async () => {
+        canvas.dispatchEvent(
+          createPointerEvent('pointerdown', {
+            clientX: 160,
+            clientY: 120,
+            pointerId: 2,
+            button: 0
+          })
+        );
+      });
+
+      await act(async () => {
+        canvas.dispatchEvent(
+          createPointerEvent('pointerup', {
+            clientX: 160,
+            clientY: 120,
+            pointerId: 2,
+            button: 0
+          })
+        );
+      });
+
+      await waitFor(() => {
+        expect(props.onTrackSelectionToggle).toHaveBeenCalledWith('track-1');
+      });
+    } finally {
+      intersectSpy.mockRestore();
+    }
   });
 });

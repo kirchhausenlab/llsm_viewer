@@ -13,6 +13,7 @@ import { useRayMarchMaterial } from './useRayMarchMaterial';
 import { useRayMarchLoop, type MovementState } from './useRayMarchLoop';
 import { useXRSession } from './useXRSession';
 import { useTrackOverlay, type TrackLineResource } from './useTrackOverlay';
+import { useVolumePointerInteractions } from './useVolumePointerInteractions';
 import { createTrackColor } from '../trackColors';
 import '../components/VolumeViewer.css';
 
@@ -524,6 +525,17 @@ export function VolumeScene(props: VolumeViewerProps) {
   useEffect(() => {
     updateTrackInteractionState();
   }, [updateTrackInteractionState]);
+
+  useVolumePointerInteractions({
+    rendererCanvas,
+    rotationTargetRef,
+    movementStateRef,
+    trackLinesRef,
+    hoveredTrackIdRef,
+    setHoveredTrackId,
+    setTooltipPosition,
+    onTrackSelectionToggle: props.onTrackSelectionToggle
+  });
 
   useEffect(() => {
     timeIndexRef.current = props.timeIndex;
