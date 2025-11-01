@@ -4,7 +4,6 @@ import * as THREE from 'three';
 import { useRendererCanvas, type UseRendererCanvasResult } from './useRendererCanvas';
 import type { VolumeViewerProps } from './types';
 import { useVolumeTextures } from './useVolumeTextures';
-import { useTransferFunctionCache } from './useTransferFunction';
 
 type TooltipPosition = { x: number; y: number } | null;
 
@@ -79,7 +78,6 @@ export function VolumeScene(props: VolumeViewerProps) {
 
   const volumeRootGroupRef = useRef<THREE.Group | null>(null);
   const volumeStepScaleRef = useRef(1);
-  const { getColormapTexture, clearColormap } = useTransferFunctionCache();
 
   useEffect(() => {
     const scene = rendererCanvas.scene;
@@ -105,12 +103,11 @@ export function VolumeScene(props: VolumeViewerProps) {
     resourcesRef,
     upsertLayer,
     removeLayer,
-    removeAllLayers
+    removeAllLayers,
+    clearColormap
   } = useVolumeTextures({
     scene: rendererCanvas.scene,
     volumeRoot: volumeRootGroupRef.current,
-    getColormapTexture,
-    clearColormap,
     volumeStepScaleRef
   });
 

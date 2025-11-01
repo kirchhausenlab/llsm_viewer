@@ -16,7 +16,6 @@ import type {
 import './VolumeViewer.css';
 export { VolumeScene } from '../renderer/VolumeScene';
 import { useVolumeTextures } from '../renderer/useVolumeTextures';
-import { useTransferFunctionCache } from '../renderer/useTransferFunction';
 import type { TrackColorMode, TrackDefinition } from '../types/tracks';
 import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from '../layerColors';
 import {
@@ -902,18 +901,16 @@ function VolumeViewer({
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
-  const { getColormapTexture, clearColormap } = useTransferFunctionCache();
   const {
     resourcesRef,
     currentDimensionsRef,
     upsertLayer: upsertVolumeLayer,
     removeLayer: removeVolumeLayer,
-    removeAllLayers: removeAllVolumeLayers
+    removeAllLayers: removeAllVolumeLayers,
+    clearColormap
   } = useVolumeTextures({
     scene: sceneRef.current,
     volumeRoot: volumeRootGroupRef.current,
-    getColormapTexture,
-    clearColormap,
     volumeStepScaleRef
   });
   const rotationTargetRef = useRef(new THREE.Vector3());
@@ -1155,21 +1152,7 @@ function VolumeViewer({
     (stepScale: number) => {
       volumeStepScaleRef.current = stepScale;
       for (const resource of resourcesRef.current.values()) {
-        if (resource.mode !== '3d') {
-          continue;
-        }
-        const material = resource.mesh.material;
-        const materialList = Array.isArray(material) ? material : [material];
-        for (const entry of materialList) {
-          const shaderMaterial = entry as THREE.ShaderMaterial | undefined;
-          const uniforms = shaderMaterial?.uniforms as
-            | Record<string, { value: unknown }>
-            | undefined;
-          if (uniforms && 'u_stepScale' in uniforms) {
-            const stepUniform = uniforms.u_stepScale as { value: number };
-            stepUniform.value = stepScale;
-          }
-        }
+        resource.rayMarchMaterial?.setStepScale(stepScale);
       }
     },
     [resourcesRef, volumeStepScaleRef]
@@ -8857,7 +8840,6 @@ function VolumeViewer({
   }, [
     applyTrackGroupTransform,
     applyVolumeStepScaleToResources,
-    getColormapTexture,
     removeAllVolumeLayers,
     removeVolumeLayer,
     upsertVolumeLayer,
