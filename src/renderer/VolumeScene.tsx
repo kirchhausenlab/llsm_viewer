@@ -46,6 +46,23 @@ type VolumeSceneTooltip = {
   tooltipPosition: TooltipPosition;
 };
 
+type VolumeBounds = {
+  minX: number;
+  minY: number;
+  minZ: number;
+  maxX: number;
+  maxY: number;
+  maxZ: number;
+  centerX: number;
+  centerY: number;
+  centerZ: number;
+  extentX: number;
+  extentY: number;
+  extentZ: number;
+  radius: number;
+  scale: number;
+};
+
 export function useVolumeSceneContainer(
   _props: VolumeViewerProps,
   rendererCanvas: UseRendererCanvasResult,
@@ -310,16 +327,87 @@ export function VolumeScene(props: VolumeViewerProps) {
     };
   }, [props.onRegisterVrSession, xrSession.endSession, xrSession.requestSession]);
 
-  const primaryLayer = useMemo(() => {
+  const volumeBounds = useMemo<VolumeBounds | null>(() => {
+    let hasVolume = false;
+    let minX = Infinity;
+    let minY = Infinity;
+    let minZ = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    let maxZ = -Infinity;
+
     for (const layer of props.layers) {
-      if (layer.volume) {
-        return layer;
+      const volume = layer.volume;
+      if (!volume) {
+        continue;
+      }
+
+      hasVolume = true;
+
+      const offsetX = layer.offsetX ?? 0;
+      const offsetY = layer.offsetY ?? 0;
+      const localMinX = offsetX - 0.5;
+      const localMaxX = offsetX + volume.width - 0.5;
+      const localMinY = offsetY - 0.5;
+      const localMaxY = offsetY + volume.height - 0.5;
+      const localMinZ = -0.5;
+      const localMaxZ = volume.depth - 0.5;
+
+      if (localMinX < minX) {
+        minX = localMinX;
+      }
+      if (localMaxX > maxX) {
+        maxX = localMaxX;
+      }
+      if (localMinY < minY) {
+        minY = localMinY;
+      }
+      if (localMaxY > maxY) {
+        maxY = localMaxY;
+      }
+      if (localMinZ < minZ) {
+        minZ = localMinZ;
+      }
+      if (localMaxZ > maxZ) {
+        maxZ = localMaxZ;
       }
     }
-    return null;
-  }, [props.layers]);
 
-  const primaryVolume = primaryLayer?.volume ?? null;
+    if (!hasVolume) {
+      return null;
+    }
+
+    const extentX = Math.max(maxX - minX, 0);
+    const extentY = Math.max(maxY - minY, 0);
+    const extentZ = Math.max(maxZ - minZ, 0);
+    const maxExtent = Math.max(extentX, extentY, extentZ);
+    const safeExtent = Math.max(maxExtent, 1);
+    const scale = 1 / safeExtent;
+    const centerX = minX + extentX * 0.5;
+    const centerY = minY + extentY * 0.5;
+    const centerZ = minZ + extentZ * 0.5;
+    const halfX = extentX * 0.5;
+    const halfY = extentY * 0.5;
+    const halfZ = extentZ * 0.5;
+    const radius = Math.sqrt(halfX * halfX + halfY * halfY + halfZ * halfZ);
+
+    return {
+      minX,
+      minY,
+      minZ,
+      maxX,
+      maxY,
+      maxZ,
+      centerX,
+      centerY,
+      centerZ,
+      extentX,
+      extentY,
+      extentZ,
+      radius,
+      scale
+    };
+  }, [props.layers]);
 
   useEffect(() => {
     const volumeRoot = volumeRootGroupRef.current;
@@ -327,7 +415,7 @@ export function VolumeScene(props: VolumeViewerProps) {
       return;
     }
 
-    if (!primaryVolume) {
+    if (!volumeBounds) {
       volumeRoot.position.set(0, 0, 0);
       volumeRoot.scale.set(1, 1, 1);
       volumeRoot.rotation.set(0, 0, 0);
@@ -348,29 +436,20 @@ export function VolumeScene(props: VolumeViewerProps) {
       return;
     }
 
-    const { width, height, depth } = primaryVolume;
-    const maxDimension = Math.max(width, height, depth);
-    const scale = maxDimension > 0 ? 1 / maxDimension : 1;
+    const scale = volumeBounds.scale;
     volumeRoot.scale.setScalar(scale);
     volumeRoot.position.set(0, 0, 0);
     volumeRoot.rotation.set(0, 0, 0);
     volumeRoot.updateMatrixWorld(true);
 
-    const offsetX = primaryLayer?.offsetX ?? 0;
-    const offsetY = primaryLayer?.offsetY ?? 0;
-    const centerX = (width > 0 ? width / 2 - 0.5 : 0) + offsetX;
-    const centerY = (height > 0 ? height / 2 - 0.5 : 0) + offsetY;
-    const centerZ = depth > 0 ? depth / 2 - 0.5 : 0;
-    datasetCenterRef.current.set(centerX * scale, centerY * scale, centerZ * scale);
-
-    const halfWidth = Math.max(width, 1) * 0.5;
-    const halfHeight = Math.max(height, 1) * 0.5;
-    const halfDepth = Math.max(depth, 1) * 0.5;
-    const radiusLocal = Math.sqrt(
-      halfWidth * halfWidth + halfHeight * halfHeight + halfDepth * halfDepth
+    datasetCenterRef.current.set(
+      volumeBounds.centerX * scale,
+      volumeBounds.centerY * scale,
+      volumeBounds.centerZ * scale
     );
-    const radiusWorld = radiusLocal * scale;
-    datasetRadiusRef.current = Math.max(radiusWorld, 0.1);
+
+    const radiusWorld = Math.max(volumeBounds.radius * scale, 0.1);
+    datasetRadiusRef.current = radiusWorld;
 
     if (!props.followedTrackId && rendererCanvas.controls) {
       rotationTargetRef.current.copy(datasetCenterRef.current);
@@ -387,11 +466,11 @@ export function VolumeScene(props: VolumeViewerProps) {
       camera.updateProjectionMatrix();
     }
   }, [
-    primaryLayer?.offsetX,
-    primaryLayer?.offsetY,
-    primaryVolume?.width,
-    primaryVolume?.height,
-    primaryVolume?.depth,
+    volumeBounds?.centerX,
+    volumeBounds?.centerY,
+    volumeBounds?.centerZ,
+    volumeBounds?.scale,
+    volumeBounds?.radius,
     props.followedTrackId,
     rendererCanvas.camera,
     rendererCanvas.controls
@@ -457,11 +536,11 @@ export function VolumeScene(props: VolumeViewerProps) {
     resetView,
     rendererCanvas.camera,
     rendererCanvas.controls,
-    primaryLayer?.offsetX,
-    primaryLayer?.offsetY,
-    primaryVolume?.width,
-    primaryVolume?.height,
-    primaryVolume?.depth
+    volumeBounds?.centerX,
+    volumeBounds?.centerY,
+    volumeBounds?.centerZ,
+    volumeBounds?.radius,
+    volumeBounds?.scale
   ]);
 
   const resolveTrackColor = useCallback(

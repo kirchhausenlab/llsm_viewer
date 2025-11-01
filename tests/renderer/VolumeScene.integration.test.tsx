@@ -6,6 +6,7 @@ import VolumeScene from '../../src/renderer/VolumeScene.tsx';
 import type { VolumeViewerProps } from '../../src/renderer/types.ts';
 import type { NormalizedVolume } from '../../src/volumeProcessing.ts';
 import { triggerResize } from '../utils/resizeObserver.ts';
+import { OrbitControls as MockOrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 afterEach(() => {
   cleanup();
@@ -132,6 +133,127 @@ describe('VolumeScene integration', () => {
 
     unmount();
     expect(props.onRegisterVrSession).toHaveBeenLastCalledWith(null);
+  });
+
+  it('centers the camera using the combined bounds of all volumes', async () => {
+    const props = createProps();
+
+    const wideVolume: NormalizedVolume = {
+      width: 6,
+      height: 4,
+      depth: 3,
+      channels: 1,
+      dataType: 'uint8',
+      normalized: new Uint8Array(6 * 4 * 3).fill(90),
+      min: 0,
+      max: 255
+    };
+
+    props.layers = [
+      createLayer(),
+      {
+        ...createLayer(),
+        key: 'layer-2',
+        label: 'Layer 2',
+        volume: wideVolume,
+        offsetX: 10,
+        offsetY: -4
+      }
+    ];
+
+    const controlsClass = MockOrbitControls as unknown as {
+      instances: Array<{
+        target: THREE.Vector3;
+        camera: THREE.PerspectiveCamera;
+      }>;
+    };
+    controlsClass.instances.length = 0;
+
+    const { container } = render(<VolumeScene {...props} />);
+    const surface = container.querySelector('.render-surface') as HTMLDivElement;
+    expect(surface).toBeTruthy();
+
+    Object.defineProperty(surface, 'clientWidth', { value: 800, configurable: true });
+    Object.defineProperty(surface, 'clientHeight', { value: 600, configurable: true });
+
+    act(() => {
+      triggerResize(surface);
+    });
+
+    await waitFor(() => {
+      expect(surface.classList.contains('is-ready')).toBe(true);
+    });
+
+    const resetHandler = props.onRegisterReset.mock.calls[0]?.[0];
+    expect(resetHandler).toBeTypeOf('function');
+
+    const computeBounds = (layers: VolumeViewerProps['layers']) => {
+      let minX = Infinity;
+      let minY = Infinity;
+      let minZ = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      let maxZ = -Infinity;
+
+      for (const layer of layers) {
+        const vol = layer.volume;
+        if (!vol) {
+          continue;
+        }
+        const offsetX = layer.offsetX ?? 0;
+        const offsetY = layer.offsetY ?? 0;
+        minX = Math.min(minX, offsetX - 0.5);
+        maxX = Math.max(maxX, offsetX + vol.width - 0.5);
+        minY = Math.min(minY, offsetY - 0.5);
+        maxY = Math.max(maxY, offsetY + vol.height - 0.5);
+        minZ = Math.min(minZ, -0.5);
+        maxZ = Math.max(maxZ, vol.depth - 0.5);
+      }
+
+      const extentX = Math.max(maxX - minX, 0);
+      const extentY = Math.max(maxY - minY, 0);
+      const extentZ = Math.max(maxZ - minZ, 0);
+      const maxExtent = Math.max(extentX, extentY, extentZ);
+      const scale = 1 / Math.max(maxExtent, 1);
+      const centerX = minX + extentX * 0.5;
+      const centerY = minY + extentY * 0.5;
+      const centerZ = minZ + extentZ * 0.5;
+      const halfX = extentX * 0.5;
+      const halfY = extentY * 0.5;
+      const halfZ = extentZ * 0.5;
+      const radius = Math.sqrt(halfX * halfX + halfY * halfY + halfZ * halfZ);
+      return { centerX, centerY, centerZ, scale, radius };
+    };
+
+    const expected = computeBounds(props.layers);
+    const expectedCenter = {
+      x: expected.centerX * expected.scale,
+      y: expected.centerY * expected.scale,
+      z: expected.centerZ * expected.scale
+    };
+    const expectedRadiusWorld = Math.max(expected.radius * expected.scale, 0.1);
+    const expectedNear = Math.max(expectedRadiusWorld * 0.02, 0.001);
+    const offsetDistance = expectedRadiusWorld * 2.4 + 0.4;
+    const expectedFar = Math.max(offsetDistance * 4, expectedRadiusWorld * 8, expectedNear + 5);
+
+    act(() => {
+      resetHandler?.();
+    });
+
+    const controlsInstance = controlsClass.instances[0];
+    expect(controlsInstance).toBeDefined();
+
+    const target = controlsInstance.target;
+    expect(target.x).toBeCloseTo(expectedCenter.x, 5);
+    expect(target.y).toBeCloseTo(expectedCenter.y, 5);
+    expect(target.z).toBeCloseTo(expectedCenter.z, 5);
+
+    const camera = controlsInstance.camera as THREE.PerspectiveCamera;
+    expect(camera.position.x).toBeCloseTo(expectedCenter.x, 5);
+    expect(camera.position.y).toBeCloseTo(expectedCenter.y, 5);
+    expect(camera.position.z).toBeCloseTo(expectedCenter.z + offsetDistance, 5);
+    expect(camera.near).toBeCloseTo(expectedNear, 5);
+    expect(camera.far).toBeCloseTo(expectedFar, 5);
   });
 
   it('updates hover and selection state through volume pointer interactions', async () => {

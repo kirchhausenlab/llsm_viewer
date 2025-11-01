@@ -13,6 +13,11 @@
 - Normalized entry/exit coordinates explicitly and clamped texture lookups to [0, 1] to eliminate out-of-bounds samples that produced smeared, streaky renders.
 - Guarded zero-length traversals to avoid NaNs and derived the lighting direction from the clipped segment, restoring coherent volume shading.
 
+## Multi-volume camera centering
+- Compute the aggregate bounds of every visible volume (including per-layer offsets) before normalizing the Three.js scene so the orbit pivot and camera standoff are based on the full dataset extents rather than the first layer.
+- Update the dataset center/radius references and reset-view logic to use the combined bounding sphere, keeping multi-channel and segmentation volumes framed correctly on load and when resetting the camera.
+- Extend the integration suite with a multi-layer scenario that asserts the reset handler positions the camera and clipping planes using the merged bounds.
+
 ## Export save picker activation fix
 - Requested the File System Access API handle as soon as the export button is clicked so the browser still considers the call a
   user gesture, preventing `showSaveFilePicker` from throwing activation errors.
