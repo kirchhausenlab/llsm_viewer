@@ -939,7 +939,7 @@ function PlanarViewer({
       return;
     }
 
-    const observer = new ResizeObserver(() => {
+    const applyResize = () => {
       const width = container.clientWidth;
       const height = container.clientHeight;
       if (width > 0 && height > 0) {
@@ -951,15 +951,32 @@ function PlanarViewer({
         }
         return { width, height };
       });
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
       canvas.width = Math.max(1, Math.round(width * dpr));
       canvas.height = Math.max(1, Math.round(height * dpr));
       needsAutoFitRef.current = true;
-    });
+    };
 
-    observer.observe(container);
+    const hasWindow = typeof window !== 'undefined';
+    const supportsResizeObserver = hasWindow && 'ResizeObserver' in window;
+    let resizeObserver: ResizeObserver | null = null;
+    let resizeListenerCleanup: (() => void) | null = null;
+
+    if (supportsResizeObserver) {
+      resizeObserver = new ResizeObserver(applyResize);
+      resizeObserver.observe(container);
+    } else if (hasWindow) {
+      window.addEventListener('resize', applyResize);
+      resizeListenerCleanup = () => {
+        window.removeEventListener('resize', applyResize);
+      };
+    }
+
+    applyResize();
+
     return () => {
-      observer.disconnect();
+      resizeObserver?.disconnect();
+      resizeListenerCleanup?.();
     };
   }, []);
 

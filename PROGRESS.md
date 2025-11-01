@@ -13,6 +13,10 @@
 - Normalized buffer handling in the preprocessing helpers to pass `ArrayBuffer` instances to Web Crypto, Blob, and worker transfer APIs without type errors.
 - Tightened the export stream controller logic so close/error calls remain type-safe while continuing to buffer and enqueue ZIP chunks correctly.
 
+## Resize observer fallback
+- Added a `ResizeObserver` feature detection guard so browsers without the API still measure the render surface via `resize` events, preventing the 3D canvas from staying hidden behind a black screen at launch.
+- Mirrored the fallback in the planar viewer so both rendering modes remain visible on environments that only expose window resize notifications.
+
 ## Export save picker activation fix
 - Requested the File System Access API handle as soon as the export button is clicked so the browser still considers the call a
   user gesture, preventing `showSaveFilePicker` from throwing activation errors.

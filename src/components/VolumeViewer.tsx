@@ -6208,8 +6208,22 @@ function VolumeViewer({
       cameraInstance.updateProjectionMatrix();
     };
 
-    const resizeObserver = new ResizeObserver((entries) => handleResize(entries));
-    resizeObserver.observe(container);
+    const hasWindow = typeof window !== 'undefined';
+    const supportsResizeObserver = hasWindow && 'ResizeObserver' in window;
+    let resizeObserver: ResizeObserver | null = null;
+    let resizeListenerCleanup: (() => void) | null = null;
+
+    if (supportsResizeObserver) {
+      resizeObserver = new ResizeObserver(() => handleResize());
+      resizeObserver.observe(container);
+    } else if (hasWindow) {
+      const handleWindowResize = () => handleResize();
+      window.addEventListener('resize', handleWindowResize);
+      resizeListenerCleanup = () => {
+        window.removeEventListener('resize', handleWindowResize);
+      };
+    }
+
     handleResize();
 
     const worldUp = new THREE.Vector3(0, 1, 0);
@@ -6604,7 +6618,8 @@ function VolumeViewer({
       pointerStateRef.current = null;
 
       raycasterRef.current = null;
-      resizeObserver.disconnect();
+      resizeObserver?.disconnect();
+      resizeListenerCleanup?.();
       controls.dispose();
       renderer.dispose();
       if (renderer.domElement.parentNode) {
