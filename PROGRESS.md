@@ -512,3 +512,7 @@ d centered the front-page card in the viewport.
 - Revived track following by caching polyline positions, converting them to world space each frame, and maintaining camera offsets relative to the tracked target.
 - Tightened camera near/far planes to avoid depth fighting and flicker during translations.
 - Added a standalone planar playback loop so 2D mode honors the global play button and advances time using the configured FPS.
+
+## Multi-volume normalization fixes
+- Derived camera centering bounds from every loaded volume mesh instead of the first available layer, unifying scaling across per-channel offsets.
+- Synced the aggregate bounds computation with texture resource updates so the orbit target, reset handler, and clipping planes react as soon as layers stream in or out.

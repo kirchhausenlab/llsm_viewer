@@ -6,7 +6,7 @@ import {
   type UseRendererCanvasResult,
   type TrackMaterialPair
 } from './useRendererCanvas';
-import type { VolumeViewerProps } from './types';
+import type { VolumeResources, VolumeViewerProps } from './types';
 import { useVolumeTextures } from './useVolumeTextures';
 import { useTransferFunctionCache } from './useTransferFunction';
 import { useRayMarchMaterial } from './useRayMarchMaterial';
@@ -62,6 +62,135 @@ type VolumeBounds = {
   radius: number;
   scale: number;
 };
+
+function createBoundsFromExtents(box: THREE.Box3): VolumeBounds {
+  const min = box.min;
+  const max = box.max;
+  const extentX = Math.max(max.x - min.x, 0);
+  const extentY = Math.max(max.y - min.y, 0);
+  const extentZ = Math.max(max.z - min.z, 0);
+  const maxExtent = Math.max(extentX, extentY, extentZ);
+  const safeExtent = Math.max(maxExtent, 1);
+  const scale = 1 / safeExtent;
+  const centerX = min.x + extentX * 0.5;
+  const centerY = min.y + extentY * 0.5;
+  const centerZ = min.z + extentZ * 0.5;
+  const halfX = extentX * 0.5;
+  const halfY = extentY * 0.5;
+  const halfZ = extentZ * 0.5;
+  const radius = Math.sqrt(halfX * halfX + halfY * halfY + halfZ * halfZ);
+
+  return {
+    minX: min.x,
+    minY: min.y,
+    minZ: min.z,
+    maxX: max.x,
+    maxY: max.y,
+    maxZ: max.z,
+    centerX,
+    centerY,
+    centerZ,
+    extentX,
+    extentY,
+    extentZ,
+    radius,
+    scale
+  };
+}
+
+function accumulateLayerBounds(
+  box: THREE.Box3,
+  target: THREE.Box3,
+  layer: VolumeViewerProps['layers'][number]
+) {
+  const volume = layer.volume;
+  if (!volume) {
+    return false;
+  }
+
+  const offsetX = layer.offsetX ?? 0;
+  const offsetY = layer.offsetY ?? 0;
+  target.min.set(offsetX - 0.5, offsetY - 0.5, -0.5);
+  target.max.set(offsetX + volume.width - 0.5, offsetY + volume.height - 0.5, volume.depth - 0.5);
+
+  if (!Number.isFinite(target.min.x) || !Number.isFinite(target.max.x)) {
+    return false;
+  }
+
+  if (box.isEmpty()) {
+    box.copy(target);
+  } else {
+    box.union(target);
+  }
+  return true;
+}
+
+function accumulateResourceBounds(
+  box: THREE.Box3,
+  target: THREE.Box3,
+  matrix: THREE.Matrix4,
+  resource: VolumeResources
+) {
+  const mesh = resource.mesh;
+  if (!mesh) {
+    return false;
+  }
+
+  const geometry = mesh.geometry as THREE.BufferGeometry & {
+    boundingBox: THREE.Box3 | null;
+  };
+  if (!geometry.boundingBox) {
+    geometry.computeBoundingBox();
+  }
+  const localBounds = geometry.boundingBox;
+  if (!localBounds) {
+    return false;
+  }
+
+  mesh.updateMatrix();
+  target.copy(localBounds);
+  target.applyMatrix4(matrix.copy(mesh.matrix));
+
+  if (!Number.isFinite(target.min.x) || !Number.isFinite(target.max.x)) {
+    return false;
+  }
+
+  if (box.isEmpty()) {
+    box.copy(target);
+  } else {
+    box.union(target);
+  }
+  return true;
+}
+
+function computeVolumeBounds(
+  layers: VolumeViewerProps['layers'],
+  resources: Map<string, VolumeResources>
+): VolumeBounds | null {
+  const aggregate = new THREE.Box3();
+  const scratch = new THREE.Box3();
+  const matrix = new THREE.Matrix4();
+
+  let hasBounds = false;
+
+  for (const resource of resources.values()) {
+    if (accumulateResourceBounds(aggregate, scratch, matrix, resource)) {
+      hasBounds = true;
+    }
+  }
+
+  for (const layer of layers) {
+    if (accumulateLayerBounds(aggregate, scratch, layer)) {
+      hasBounds = true;
+    }
+  }
+
+  if (!hasBounds || aggregate.isEmpty()) {
+    return null;
+  }
+
+  return createBoundsFromExtents(aggregate);
+}
 
 export function useVolumeSceneContainer(
   _props: VolumeViewerProps,
@@ -153,6 +282,7 @@ export function VolumeScene(props: VolumeViewerProps) {
   const hoveredTrackIdRef = useRef<string | null>(null);
   const [hoveredTrackId, setHoveredTrackId] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<TooltipPosition>(null);
+  const [volumeBounds, setVolumeBounds] = useState<VolumeBounds | null>(null);
 
   const clearMovementState = useCallback(() => {
     const movementState = movementStateRef.current;
@@ -257,6 +387,7 @@ export function VolumeScene(props: VolumeViewerProps) {
     const scene = rendererCanvas.scene;
     if (!scene) {
       removeAllLayers();
+      setVolumeBounds(null);
       return;
     }
 
@@ -273,6 +404,8 @@ export function VolumeScene(props: VolumeViewerProps) {
         removeLayer(key);
       }
     }
+
+    setVolumeBounds(computeVolumeBounds(props.layers, resourcesRef.current));
   }, [props.layers, removeAllLayers, removeLayer, rendererCanvas.scene, resourcesRef, upsertLayer]);
 
   useEffect(() => {
@@ -326,88 +459,6 @@ export function VolumeScene(props: VolumeViewerProps) {
       props.onRegisterVrSession?.(null);
     };
   }, [props.onRegisterVrSession, xrSession.endSession, xrSession.requestSession]);
-
-  const volumeBounds = useMemo<VolumeBounds | null>(() => {
-    let hasVolume = false;
-    let minX = Infinity;
-    let minY = Infinity;
-    let minZ = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    let maxZ = -Infinity;
-
-    for (const layer of props.layers) {
-      const volume = layer.volume;
-      if (!volume) {
-        continue;
-      }
-
-      hasVolume = true;
-
-      const offsetX = layer.offsetX ?? 0;
-      const offsetY = layer.offsetY ?? 0;
-      const localMinX = offsetX - 0.5;
-      const localMaxX = offsetX + volume.width - 0.5;
-      const localMinY = offsetY - 0.5;
-      const localMaxY = offsetY + volume.height - 0.5;
-      const localMinZ = -0.5;
-      const localMaxZ = volume.depth - 0.5;
-
-      if (localMinX < minX) {
-        minX = localMinX;
-      }
-      if (localMaxX > maxX) {
-        maxX = localMaxX;
-      }
-      if (localMinY < minY) {
-        minY = localMinY;
-      }
-      if (localMaxY > maxY) {
-        maxY = localMaxY;
-      }
-      if (localMinZ < minZ) {
-        minZ = localMinZ;
-      }
-      if (localMaxZ > maxZ) {
-        maxZ = localMaxZ;
-      }
-    }
-
-    if (!hasVolume) {
-      return null;
-    }
-
-    const extentX = Math.max(maxX - minX, 0);
-    const extentY = Math.max(maxY - minY, 0);
-    const extentZ = Math.max(maxZ - minZ, 0);
-    const maxExtent = Math.max(extentX, extentY, extentZ);
-    const safeExtent = Math.max(maxExtent, 1);
-    const scale = 1 / safeExtent;
-    const centerX = minX + extentX * 0.5;
-    const centerY = minY + extentY * 0.5;
-    const centerZ = minZ + extentZ * 0.5;
-    const halfX = extentX * 0.5;
-    const halfY = extentY * 0.5;
-    const halfZ = extentZ * 0.5;
-    const radius = Math.sqrt(halfX * halfX + halfY * halfY + halfZ * halfZ);
-
-    return {
-      minX,
-      minY,
-      minZ,
-      maxX,
-      maxY,
-      maxZ,
-      centerX,
-      centerY,
-      centerZ,
-      extentX,
-      extentY,
-      extentZ,
-      radius,
-      scale
-    };
-  }, [props.layers]);
 
   useEffect(() => {
     const volumeRoot = volumeRootGroupRef.current;
