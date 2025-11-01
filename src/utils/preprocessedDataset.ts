@@ -2,6 +2,7 @@ import { Zip, ZipDeflate, unzipSync } from 'fflate';
 import type { LoadedLayer } from '../types/layers';
 import type { NormalizedVolume } from '../volumeProcessing';
 import type { VolumeDataType } from '../types/volume';
+import { ensureArrayBuffer } from './buffer';
 
 export type ChannelExportMetadata = {
   id: string;
@@ -104,7 +105,7 @@ async function computeSha256Hex(data: Uint8Array): Promise<string> {
   if (!subtle) {
     throw new Error('Web Crypto API is not available in this environment.');
   }
-  const digest = await subtle.digest('SHA-256', data);
+  const digest = await subtle.digest('SHA-256', ensureArrayBuffer(data));
   const bytes = new Uint8Array(digest);
   return Array.from(bytes)
     .map((value) => value.toString(16).padStart(2, '0'))
@@ -123,7 +124,7 @@ export async function exportPreprocessedDataset(
   const groupedLayers = new Map<string, LoadedLayer[]>();
   let totalVolumeCount = 0;
 
-  const zipChunks: Uint8Array[] | null = onChunk ? null : [];
+  const zipChunks: BlobPart[] | null = onChunk ? null : [];
   let isZipComplete = false;
 
   let resolveZip!: () => void;
@@ -155,7 +156,7 @@ export async function exportPreprocessedDataset(
           return;
         }
       } else {
-        zipChunks!.push(chunk);
+        zipChunks!.push(ensureArrayBuffer(chunk));
       }
     }
 

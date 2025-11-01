@@ -8,6 +8,10 @@
 
 # Progress Log
 
+## Legacy type cleanup
+- Removed the handcrafted `three.d.ts` shim now that the project consumes the official `@types/three` definitions.
+- Added shared buffer helpers and refactored the preprocessed export/import helpers and worker messaging to rely on canonical `ArrayBuffer` values when hashing, streaming, and constructing blobs.
+
 ## Export save picker activation fix
 - Requested the File System Access API handle as soon as the export button is clicked so the browser still considers the call a
   user gesture, preventing `showSaveFilePicker` from throwing activation errors.
