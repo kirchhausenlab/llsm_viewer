@@ -351,7 +351,6 @@ export async function collectStreamToBlob(
 ): Promise<Blob> {
   const reader = stream.getReader();
   const chunks: Uint8Array[] = [];
-  let totalLength = 0;
 
   try {
     while (true) {
@@ -361,20 +360,15 @@ export async function collectStreamToBlob(
       }
       if (value) {
         chunks.push(value);
-        totalLength += value.byteLength;
       }
     }
   } finally {
     reader.releaseLock();
   }
 
-  const combined = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    combined.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
+  const blob = new Blob(chunks, { type });
+  chunks.length = 0;
 
-  return new Blob([combined], { type });
+  return blob;
 }
 
