@@ -99,12 +99,30 @@ function toUint8Array(data: ArrayBuffer | Uint8Array): Uint8Array {
   return data instanceof Uint8Array ? data : new Uint8Array(data);
 }
 
+export function toArrayBuffer(view: Uint8Array): ArrayBuffer {
+  if (view.byteLength === 0) {
+    return new ArrayBuffer(0);
+  }
+
+  const { buffer, byteOffset, byteLength } = view;
+  if (buffer instanceof ArrayBuffer) {
+    if (byteOffset === 0 && byteLength === buffer.byteLength) {
+      return buffer;
+    }
+    return buffer.slice(byteOffset, byteOffset + byteLength);
+  }
+
+  const copy = new Uint8Array(byteLength);
+  copy.set(view);
+  return copy.buffer;
+}
+
 async function computeSha256Hex(data: Uint8Array): Promise<string> {
   const subtle = typeof crypto !== 'undefined' ? crypto.subtle : undefined;
   if (!subtle) {
     throw new Error('Web Crypto API is not available in this environment.');
   }
-  const digest = await subtle.digest('SHA-256', data);
+  const digest = await subtle.digest('SHA-256', toArrayBuffer(data));
   const bytes = new Uint8Array(digest);
   return Array.from(bytes)
     .map((value) => value.toString(16).padStart(2, '0'))
@@ -123,7 +141,7 @@ export async function exportPreprocessedDataset(
   const groupedLayers = new Map<string, LoadedLayer[]>();
   let totalVolumeCount = 0;
 
-  const zipChunks: Uint8Array[] | null = onChunk ? null : [];
+  const zipChunks: ArrayBuffer[] | null = onChunk ? null : [];
   let isZipComplete = false;
 
   let resolveZip!: () => void;
@@ -155,7 +173,7 @@ export async function exportPreprocessedDataset(
           return;
         }
       } else {
-        zipChunks!.push(chunk);
+        zipChunks!.push(toArrayBuffer(chunk));
       }
     }
 

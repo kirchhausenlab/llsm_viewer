@@ -1,5 +1,6 @@
 import {
   exportPreprocessedDataset,
+  toArrayBuffer,
   type ExportPreprocessedDatasetOptions,
   type PreprocessedManifest
 } from '../utils/preprocessedDataset';
@@ -272,14 +273,14 @@ async function exportPreprocessedDatasetOnMainThread(
       enqueue(chunk.slice());
     });
     if (!isCancelled && controller) {
-      controller.close();
+      (controller as ReadableStreamDefaultController<Uint8Array>).close();
     }
     controller = null;
     bufferedChunks.length = 0;
     return { manifest, stream };
   } catch (error) {
     if (!isCancelled && controller) {
-      controller.error(error);
+      (controller as ReadableStreamDefaultController<Uint8Array>).error(error);
     }
     controller = null;
     bufferedChunks.length = 0;
@@ -366,7 +367,8 @@ export async function collectStreamToBlob(
     reader.releaseLock();
   }
 
-  const blob = new Blob(chunks, { type });
+  const blobParts = chunks.map((chunk) => toArrayBuffer(chunk));
+  const blob = new Blob(blobParts, { type });
   chunks.length = 0;
 
   return blob;
