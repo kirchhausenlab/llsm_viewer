@@ -36,6 +36,7 @@ export type UseRayMarchLoopParams = {
   controls: OrbitControls | null;
   scene: THREE.Scene | null;
   camera: THREE.PerspectiveCamera | null;
+  volumeRootRef: MutableRefObject<THREE.Group | null>;
   rotationTargetRef: MutableRefObject<THREE.Vector3>;
   movementStateRef: MutableRefObject<MovementState>;
   followedTrackIdRef: MutableRefObject<string | null>;
@@ -70,6 +71,7 @@ export function useRayMarchLoop({
   controls,
   scene,
   camera,
+  volumeRootRef,
   rotationTargetRef,
   movementStateRef,
   followedTrackIdRef,
@@ -94,6 +96,8 @@ export function useRayMarchLoop({
 }: UseRayMarchLoopParams): RayMarchLoopControls {
   const renderLoopRef = useRef<((timestamp: number) => void) | null>(null);
   const earlyTerminationEnabledRef = useRef(true);
+  const trackLocalTarget = useRef(new THREE.Vector3());
+  const trackWorldTarget = useRef(new THREE.Vector3());
 
   useEffect(() => {
     if (!renderer || !controls || !scene || !camera) {
@@ -181,6 +185,72 @@ export function useRayMarchLoop({
       controls.target.copy(rotationTarget);
     };
 
+    const updateTrackFollowTarget = () => {
+      const followedId = followedTrackIdRef.current;
+      if (!followedId) {
+        trackFollowOffsetRef.current = null;
+        return;
+      }
+
+      const resource = trackLinesRef.current.get(followedId);
+      if (!resource) {
+        return;
+      }
+
+      const { times, positions } = resource;
+      if (times.length === 0 || positions.length < 3) {
+        return;
+      }
+
+      const targetTime = timeIndexRef.current;
+      let lastVisibleIndex = 0;
+      for (let index = 0; index < times.length; index++) {
+        if (times[index] <= targetTime) {
+          lastVisibleIndex = index;
+        } else {
+          break;
+        }
+      }
+
+      const positionIndex = lastVisibleIndex * 3;
+      if (positionIndex + 2 >= positions.length) {
+        return;
+      }
+
+      const localTarget = trackLocalTarget.current;
+      localTarget.set(
+        positions[positionIndex],
+        positions[positionIndex + 1],
+        positions[positionIndex + 2]
+      );
+
+      const volumeRoot = volumeRootRef.current;
+      const worldTarget = trackWorldTarget.current;
+      if (volumeRoot) {
+        worldTarget.copy(localTarget);
+        volumeRoot.localToWorld(worldTarget);
+      } else {
+        worldTarget.copy(localTarget);
+      }
+
+      const rotationTarget = rotationTargetRef.current;
+      rotationTarget.copy(worldTarget);
+      controls.target.copy(rotationTarget);
+
+      const activeCamera = camera;
+      if (!activeCamera) {
+        return;
+      }
+
+      let offsetVector = trackFollowOffsetRef.current;
+      if (!offsetVector) {
+        offsetVector = new THREE.Vector3();
+        offsetVector.copy(activeCamera.position).sub(rotationTarget);
+        trackFollowOffsetRef.current = offsetVector;
+      }
+      activeCamera.position.copy(rotationTarget).add(offsetVector);
+    };
+
     let lastRenderTickSummary: { presenting: boolean; hoveredByController: string | null } | null =
       null;
 
@@ -189,6 +259,7 @@ export function useRayMarchLoop({
         return;
       }
 
+      updateTrackFollowTarget();
       applyKeyboardMovement();
       updateTrackOverlayState?.();
       controls.update();
@@ -247,14 +318,8 @@ export function useRayMarchLoop({
         }
       }
 
-      if (followedTrackIdRef.current !== null) {
-        const rotationTarget = rotationTargetRef.current;
-        if (rotationTarget) {
-          if (!trackFollowOffsetRef.current) {
-            trackFollowOffsetRef.current = new THREE.Vector3();
-          }
-          trackFollowOffsetRef.current.copy(camera.position).sub(rotationTarget);
-        }
+      if (followedTrackIdRef.current === null && trackFollowOffsetRef.current) {
+        trackFollowOffsetRef.current = null;
       }
 
       const resources = resourcesRef.current;

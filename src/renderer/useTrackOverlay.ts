@@ -12,6 +12,7 @@ export type TrackLineResource = {
   geometry: LineGeometry;
   material: LineMaterial;
   outlineMaterial: LineMaterial;
+  positions: Float32Array;
   times: number[];
   baseColor: THREE.Color;
   highlightColor: THREE.Color;
@@ -303,6 +304,7 @@ export function useTrackOverlay({
           geometry,
           material,
           outlineMaterial,
+          positions,
           times,
           baseColor: baseColor.clone(),
           highlightColor: highlightColor.clone(),
@@ -324,6 +326,7 @@ export function useTrackOverlay({
         geometry.setPositions(positions);
         line.computeLineDistances();
         outline.computeLineDistances();
+        resource.positions = positions;
         resource.times = times;
         resource.baseColor.copy(baseColor);
         resource.highlightColor.copy(highlightColor);

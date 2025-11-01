@@ -494,3 +494,11 @@ d centered the front-page card in the viewport.
 - Swapped the contrast slider to a logarithmic scale with better formatting, keeping fine control near 1× while retaining access to higher contrast boosts.
 - Replaced the auto-contrast heuristic with percentile-based histogram bounds that add a safety margin, producing balanced windows that remain compatible with LUT inversion.
 - Added a VR playback loop that advances timepoints using the configured FPS whenever play is active and no slider drag is in progress, keeping the immersive play/pause control in sync with the desktop timeline.
+
+## Post-restructure regression fixes
+- Restored keyboard navigation by wiring WASDQE/arrow keys back into the movement state with focus-aware handlers and automatic clearing on blur/visibility changes.
+- Reintroduced reset-view plumbing that recenters the orbit target, repositions the camera at a dataset-scaled standoff, updates clipping planes, and re-enables the control panel button.
+- Corrected volume placement math to compute a scaled dataset center/radius, keeping the orbit pivot at the true center while positioning the volume slightly ahead of the viewer.
+- Revived track following by caching polyline positions, converting them to world space each frame, and maintaining camera offsets relative to the tracked target.
+- Tightened camera near/far planes to avoid depth fighting and flicker during translations.
+- Added a standalone planar playback loop so 2D mode honors the global play button and advances time using the configured FPS.
