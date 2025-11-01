@@ -3,6 +3,7 @@ import {
   type ExportPreprocessedDatasetOptions,
   type PreprocessedManifest
 } from '../utils/preprocessedDataset';
+import { cloneUint8Array, ensureArrayBuffer } from '../utils/buffer';
 
 export type ExportPreprocessedDatasetStreamResult = {
   manifest: PreprocessedManifest;
@@ -48,11 +49,17 @@ export type FileSystemFileHandleLike = {
   createWritable(): Promise<FileSystemWritableFileStreamLike>;
 };
 
+type Uint8StreamController = {
+  enqueue(chunk: Uint8Array): void;
+  close(): void;
+  error(error?: unknown): void;
+};
+
 type PendingRequest = {
   resolve: (result: ExportPreprocessedDatasetStreamResult) => void;
   reject: (error: Error) => void;
   stream: ReadableStream<Uint8Array>;
-  controller: ReadableStreamDefaultController<Uint8Array> | null;
+  controller: Uint8StreamController | null;
   bufferedChunks: Uint8Array[];
   isCancelled: boolean;
 };
@@ -157,7 +164,7 @@ class ExportPreprocessedDatasetWorkerClient {
       };
 
       pending.stream = new ReadableStream<Uint8Array>({
-        start: (controller) => {
+        start: (controller: Uint8StreamController) => {
           if (pending.isCancelled) {
             pending.controller = null;
             return;
@@ -232,11 +239,11 @@ async function exportPreprocessedDatasetOnMainThread(
   options: ExportPreprocessedDatasetOptions
 ): Promise<ExportPreprocessedDatasetStreamResult> {
   const bufferedChunks: Uint8Array[] = [];
-  let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
+  let controller: Uint8StreamController | null = null;
   let isCancelled = false;
 
   const stream = new ReadableStream<Uint8Array>({
-    start: (streamController) => {
+    start: (streamController: Uint8StreamController) => {
       if (isCancelled) {
         controller = null;
         return;
@@ -269,17 +276,23 @@ async function exportPreprocessedDatasetOnMainThread(
 
   try {
     const { manifest } = await exportPreprocessedDataset(options, (chunk) => {
-      enqueue(chunk.slice());
+      enqueue(cloneUint8Array(chunk));
     });
-    if (!isCancelled && controller) {
-      controller.close();
+    if (!isCancelled) {
+      const activeController = controller;
+      if (activeController) {
+        (activeController as Uint8StreamController).close();
+      }
     }
     controller = null;
     bufferedChunks.length = 0;
     return { manifest, stream };
   } catch (error) {
-    if (!isCancelled && controller) {
-      controller.error(error);
+    if (!isCancelled) {
+      const activeController = controller;
+      if (activeController) {
+        (activeController as Uint8StreamController).error(error);
+      }
     }
     controller = null;
     bufferedChunks.length = 0;
@@ -366,7 +379,8 @@ export async function collectStreamToBlob(
     reader.releaseLock();
   }
 
-  const blob = new Blob(chunks, { type });
+  const blobParts = chunks.map((chunk) => ensureArrayBuffer(chunk));
+  const blob = new Blob(blobParts, { type });
   chunks.length = 0;
 
   return blob;
