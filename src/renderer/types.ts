@@ -1,6 +1,7 @@
 import type * as THREE from 'three';
 import type { TrackColorMode, TrackDefinition } from '../types/tracks';
 import type { NormalizedVolume } from '../volumeProcessing';
+import type { RayMarchMaterialControls } from './useRayMarchMaterial';
 
 export type ViewerLayer = {
   key: string;
@@ -131,6 +132,7 @@ export type VolumeResources = {
   mode: '3d' | 'slice';
   samplingMode: 'linear' | 'nearest';
   colormapKey: string;
+  rayMarchMaterial?: RayMarchMaterialControls;
   sliceBuffer?: Uint8Array | null;
 };
 
