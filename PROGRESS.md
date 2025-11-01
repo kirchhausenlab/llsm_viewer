@@ -8,6 +8,11 @@
 
 # Progress Log
 
+## Typechecking cleanup
+- Removed the outdated local Three.js stub so the project uses the official typings again, restoring the missing exports that `npm run typecheck` expected.
+- Normalized buffer handling in the preprocessing helpers to pass `ArrayBuffer` instances to Web Crypto, Blob, and worker transfer APIs without type errors.
+- Tightened the export stream controller logic so close/error calls remain type-safe while continuing to buffer and enqueue ZIP chunks correctly.
+
 ## Export save picker activation fix
 - Requested the File System Access API handle as soon as the export button is clicked so the browser still considers the call a
   user gesture, preventing `showSaveFilePicker` from throwing activation errors.

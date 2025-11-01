@@ -2,6 +2,7 @@
 
 import {
   exportPreprocessedDataset,
+  toArrayBuffer,
   type ExportPreprocessedDatasetOptions,
   type PreprocessedManifest
 } from '../utils/preprocessedDataset';
@@ -41,10 +42,7 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
   try {
     const result = await exportPreprocessedDataset(message.payload, (chunk) => {
-      const transferable =
-        chunk.byteOffset === 0 && chunk.byteLength === chunk.buffer.byteLength
-          ? chunk.buffer
-          : chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength);
+      const transferable = toArrayBuffer(chunk);
       const chunkMessage: WorkerChunk = {
         id: message.id,
         type: 'chunk',
