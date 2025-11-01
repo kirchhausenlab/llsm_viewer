@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RefCallback } from 'react';
 import * as THREE from 'three';
+import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { useRendererCanvas, type UseRendererCanvasResult } from './useRendererCanvas';
 import type { VolumeViewerProps } from './types';
 import { useVolumeTextures } from './useVolumeTextures';
+import { useXRSession } from './useXRSession';
 
 type TooltipPosition = { x: number; y: number } | null;
 
@@ -78,6 +80,34 @@ export function VolumeScene(props: VolumeViewerProps) {
 
   const volumeRootGroupRef = useRef<THREE.Group | null>(null);
   const volumeStepScaleRef = useRef(1);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
+
+  const xrSession = useXRSession({
+    renderer: rendererCanvas.renderer,
+    camera: rendererCanvas.camera,
+    controls: rendererCanvas.controls,
+    rendererRef,
+    cameraRef,
+    controlsRef,
+    onSessionStarted: props.onVrSessionStarted,
+    onSessionEnded: props.onVrSessionEnded
+  });
+
+  useEffect(() => {
+    if (!props.onRegisterVrSession) {
+      return;
+    }
+    props.onRegisterVrSession({
+      requestSession: xrSession.requestSession,
+      endSession: xrSession.endSession
+    });
+
+    return () => {
+      props.onRegisterVrSession?.(null);
+    };
+  }, [props.onRegisterVrSession, xrSession.endSession, xrSession.requestSession]);
 
   useEffect(() => {
     const scene = rendererCanvas.scene;
