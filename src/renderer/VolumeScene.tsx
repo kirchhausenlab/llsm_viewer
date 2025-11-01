@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { useRendererCanvas, type UseRendererCanvasResult } from './useRendererCanvas';
 import type { VolumeViewerProps } from './types';
 import { useVolumeTextures } from './useVolumeTextures';
-import { normalizeHexColor, DEFAULT_LAYER_COLOR } from '../layerColors';
+import { useTransferFunctionCache } from './useTransferFunction';
 
 type TooltipPosition = { x: number; y: number } | null;
 
@@ -79,34 +79,7 @@ export function VolumeScene(props: VolumeViewerProps) {
 
   const volumeRootGroupRef = useRef<THREE.Group | null>(null);
   const volumeStepScaleRef = useRef(1);
-  const colormapCacheRef = useRef<Map<string, THREE.DataTexture>>(new Map());
-
-  const getColormapTexture = useCallback((color: string) => {
-    const normalized = normalizeHexColor(color, DEFAULT_LAYER_COLOR);
-    const cache = colormapCacheRef.current;
-    let texture = cache.get(normalized) ?? null;
-    if (!texture) {
-      const size = 256;
-      const data = new Uint8Array(size * 4);
-      const red = parseInt(normalized.slice(1, 3), 16) / 255;
-      const green = parseInt(normalized.slice(3, 5), 16) / 255;
-      const blue = parseInt(normalized.slice(5, 7), 16) / 255;
-      for (let i = 0; i < size; i++) {
-        const intensity = i / (size - 1);
-        data[i * 4 + 0] = Math.round(red * intensity * 255);
-        data[i * 4 + 1] = Math.round(green * intensity * 255);
-        data[i * 4 + 2] = Math.round(blue * intensity * 255);
-        data[i * 4 + 3] = Math.round(intensity * 255);
-      }
-      texture = new THREE.DataTexture(data, size, 1, THREE.RGBAFormat);
-      texture.needsUpdate = true;
-      texture.minFilter = THREE.LinearFilter;
-      texture.magFilter = THREE.LinearFilter;
-      texture.colorSpace = THREE.SRGBColorSpace;
-      cache.set(normalized, texture);
-    }
-    return texture;
-  }, []);
+  const { getColormapTexture, clearColormap } = useTransferFunctionCache();
 
   useEffect(() => {
     const scene = rendererCanvas.scene;
@@ -137,6 +110,7 @@ export function VolumeScene(props: VolumeViewerProps) {
     scene: rendererCanvas.scene,
     volumeRoot: volumeRootGroupRef.current,
     getColormapTexture,
+    clearColormap,
     volumeStepScaleRef
   });
 
@@ -164,12 +138,9 @@ export function VolumeScene(props: VolumeViewerProps) {
 
   useEffect(() => {
     return () => {
-      for (const texture of colormapCacheRef.current.values()) {
-        texture.dispose();
-      }
-      colormapCacheRef.current.clear();
+      clearColormap();
     };
-  }, []);
+  }, [clearColormap]);
 
   return (
     <div className="volume-viewer">

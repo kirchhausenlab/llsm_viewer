@@ -5,7 +5,7 @@ import { SliceRenderShader } from '../shaders/sliceRenderShader';
 import type { ViewerLayer, VolumeResources } from './types';
 import type { NormalizedVolume } from '../volumeProcessing';
 import { getCachedTextureData } from '../textureCache';
-import { DEFAULT_LAYER_COLOR } from '../layerColors';
+import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../layerColors';
 
 type VolumeDimensions = { width: number; height: number; depth: number };
 
@@ -13,6 +13,7 @@ type UseVolumeTexturesParams = {
   scene: THREE.Scene | null;
   volumeRoot: THREE.Group | null;
   getColormapTexture: (color: string) => THREE.DataTexture;
+  clearColormap: (color?: string) => void;
   volumeStepScaleRef: MutableRefObject<number>;
 };
 
@@ -27,7 +28,23 @@ type UseVolumeTexturesResult = {
   upsertLayer: (params: UpsertLayerParams) => VolumeResources | null;
   removeLayer: (key: string) => void;
   removeAllLayers: () => void;
+  addInvalidationListener: (
+    listener: VolumeTextureInvalidationListener
+  ) => () => void;
 };
+
+type VolumeTextureInvalidationEvent =
+  | { type: 'colormap'; layerKey: string; previousKey: string | null; nextKey: string }
+  | {
+      type: 'sampling';
+      layerKey: string;
+      previousMode: 'linear' | 'nearest';
+      nextMode: 'linear' | 'nearest';
+    };
+
+type VolumeTextureInvalidationListener = (
+  event: VolumeTextureInvalidationEvent
+) => void;
 
 function getExpectedSliceBufferLength(volume: NormalizedVolume) {
   const pixelCount = volume.width * volume.height;
@@ -92,6 +109,7 @@ export function useVolumeTextures({
   scene,
   volumeRoot,
   getColormapTexture,
+  clearColormap,
   volumeStepScaleRef
 }: UseVolumeTexturesParams): UseVolumeTexturesResult {
   const resourcesRef = useRef<Map<string, VolumeResources>>(new Map());
@@ -100,6 +118,10 @@ export function useVolumeTextures({
   const sceneRef = useRef<THREE.Scene | null>(scene);
   const volumeRootRef = useRef<THREE.Group | null>(volumeRoot);
   const getColormapTextureRef = useRef(getColormapTexture);
+  const clearColormapRef = useRef(clearColormap);
+  const colormapKeyRef = useRef<Map<string, string>>(new Map());
+  const samplingModeRef = useRef<Map<string, 'linear' | 'nearest'>>(new Map());
+  const invalidationListenersRef = useRef<Set<VolumeTextureInvalidationListener>>(new Set());
 
   useEffect(() => {
     sceneRef.current = scene;
@@ -112,6 +134,30 @@ export function useVolumeTextures({
   useEffect(() => {
     getColormapTextureRef.current = getColormapTexture;
   }, [getColormapTexture]);
+
+  useEffect(() => {
+    clearColormapRef.current = clearColormap;
+  }, [clearColormap]);
+
+  const notifyInvalidation = useCallback(
+    (event: VolumeTextureInvalidationEvent) => {
+      for (const listener of invalidationListenersRef.current) {
+        listener(event);
+      }
+    },
+    []
+  );
+
+  const addInvalidationListener = useCallback(
+    (listener: VolumeTextureInvalidationListener) => {
+      const listeners = invalidationListenersRef.current;
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    []
+  );
 
   const disposeMaterial = useCallback((material: THREE.Material | THREE.Material[]) => {
     if (Array.isArray(material)) {
@@ -141,12 +187,16 @@ export function useVolumeTextures({
     disposeMaterial(mesh.material);
     texture.dispose();
     resourcesRef.current.delete(key);
+    colormapKeyRef.current.delete(key);
+    samplingModeRef.current.delete(key);
   }, [disposeMaterial]);
 
   const removeAllLayers = useCallback(() => {
     for (const key of Array.from(resourcesRef.current.keys())) {
       removeLayer(key);
     }
+    colormapKeyRef.current.clear();
+    samplingModeRef.current.clear();
   }, [removeLayer]);
 
   const upsertLayer = useCallback(
@@ -164,8 +214,35 @@ export function useVolumeTextures({
       }
 
       const getColormap = getColormapTextureRef.current;
+      const clearColormapEntry = clearColormapRef.current;
+      const colormapKeys = colormapKeyRef.current;
+      const samplingModes = samplingModeRef.current;
+
       const isGrayscale = volume.channels === 1;
-      const colormapTexture = getColormap(isGrayscale ? layer.color : DEFAULT_LAYER_COLOR);
+      const requestedColor = isGrayscale ? layer.color : DEFAULT_LAYER_COLOR;
+      const colormapKey = normalizeHexColor(requestedColor, DEFAULT_LAYER_COLOR);
+      const previousColormapKey = colormapKeys.get(layer.key) ?? null;
+      if (previousColormapKey && previousColormapKey !== colormapKey) {
+        clearColormapEntry(previousColormapKey);
+        notifyInvalidation({
+          type: 'colormap',
+          layerKey: layer.key,
+          previousKey: previousColormapKey,
+          nextKey: colormapKey
+        });
+      }
+
+      const previousSamplingMode = samplingModes.get(layer.key) ?? null;
+      if (previousSamplingMode && previousSamplingMode !== layer.samplingMode) {
+        notifyInvalidation({
+          type: 'sampling',
+          layerKey: layer.key,
+          previousMode: previousSamplingMode,
+          nextMode: layer.samplingMode
+        });
+      }
+
+      const colormapTexture = getColormap(requestedColor);
 
       const resources = resourcesRef.current;
       let existing = resources.get(layer.key) ?? null;
@@ -269,7 +346,8 @@ export function useVolumeTextures({
             dimensions: { width: volume.width, height: volume.height, depth: volume.depth },
             channels: volume.channels,
             mode: viewerMode,
-            samplingMode: layer.samplingMode
+            samplingMode: layer.samplingMode,
+            colormapKey
           };
           resources.set(layer.key, existing);
         }
@@ -318,6 +396,10 @@ export function useVolumeTextures({
           mesh.position.set(desiredX, desiredY, mesh.position.z);
           mesh.updateMatrixWorld();
         }
+
+        existing.colormapKey = colormapKey;
+        colormapKeys.set(layer.key, colormapKey);
+        samplingModes.set(layer.key, layer.samplingMode);
 
         return existing;
       }
@@ -396,6 +478,7 @@ export function useVolumeTextures({
           channels: volume.channels,
           mode: viewerMode,
           samplingMode: layer.samplingMode,
+          colormapKey,
           sliceBuffer: sliceInfo.data
         };
         resources.set(layer.key, existing);
@@ -439,9 +522,13 @@ export function useVolumeTextures({
         mesh.updateMatrixWorld();
       }
 
+      existing.colormapKey = colormapKey;
+      colormapKeys.set(layer.key, colormapKey);
+      samplingModes.set(layer.key, layer.samplingMode);
+
       return existing;
     },
-    [removeLayer, volumeStepScaleRef]
+    [notifyInvalidation, removeLayer, volumeStepScaleRef]
   );
 
   useEffect(() => {
@@ -456,10 +543,15 @@ export function useVolumeTextures({
       currentDimensionsRef,
       upsertLayer,
       removeLayer,
-      removeAllLayers
+      removeAllLayers,
+      addInvalidationListener
     }),
-    [removeAllLayers, removeLayer, upsertLayer]
+    [addInvalidationListener, removeAllLayers, removeLayer, upsertLayer]
   );
 }
 
-export type { UseVolumeTexturesResult };
+export type {
+  UseVolumeTexturesResult,
+  VolumeTextureInvalidationEvent,
+  VolumeTextureInvalidationListener
+};

@@ -130,6 +130,7 @@ export type VolumeResources = {
   channels: number;
   mode: '3d' | 'slice';
   samplingMode: 'linear' | 'nearest';
+  colormapKey: string;
   sliceBuffer?: Uint8Array | null;
 };
 
