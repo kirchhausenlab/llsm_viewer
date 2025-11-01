@@ -10,15 +10,12 @@ import type { NormalizedVolume } from '../volumeProcessing';
 import type {
   RaycasterLike,
   ViewerLayer,
-  VolumeResources,
   VolumeViewerProps,
   VrHistogramShape
 } from '../renderer/types';
-import { VolumeRenderShader } from '../shaders/volumeRenderShader';
-import { SliceRenderShader } from '../shaders/sliceRenderShader';
-import { getCachedTextureData } from '../textureCache';
 import './VolumeViewer.css';
 export { VolumeScene } from '../renderer/VolumeScene';
+import { useVolumeTextures } from '../renderer/useVolumeTextures';
 import type { TrackColorMode, TrackDefinition } from '../types/tracks';
 import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from '../layerColors';
 import {
@@ -36,11 +33,6 @@ import {
   DEFAULT_WINDOW_MAX
 } from '../state/layerSettings';
 import { HISTOGRAM_FIRST_VALID_BIN } from '../autoContrast';
-
-function getExpectedSliceBufferLength(volume: NormalizedVolume) {
-  const pixelCount = volume.width * volume.height;
-  return pixelCount * 4;
-}
 
 const formatNormalizedIntensity = (value: number): string => {
   const fixed = value.toFixed(3);
@@ -145,56 +137,6 @@ const computeHistogramMappingPoints = (
     return { x, y };
   });
 };
-
-function prepareSliceTexture(volume: NormalizedVolume, sliceIndex: number, existingBuffer: Uint8Array | null) {
-  const { width, height, depth, channels, normalized } = volume;
-  const pixelCount = width * height;
-  const targetLength = pixelCount * 4;
-
-  let buffer = existingBuffer ?? null;
-  if (!buffer || buffer.length !== targetLength) {
-    buffer = new Uint8Array(targetLength);
-  }
-
-  const maxIndex = Math.max(0, depth - 1);
-  const clampedIndex = Math.min(Math.max(sliceIndex, 0), maxIndex);
-  const sliceStride = pixelCount * channels;
-  const sliceOffset = clampedIndex * sliceStride;
-
-  for (let i = 0; i < pixelCount; i++) {
-    const sourceOffset = sliceOffset + i * channels;
-    const targetOffset = i * 4;
-
-    const red = normalized[sourceOffset] ?? 0;
-    const green = channels > 1 ? normalized[sourceOffset + 1] ?? 0 : red;
-    const blue = channels > 2 ? normalized[sourceOffset + 2] ?? 0 : green;
-    const alpha = channels > 3 ? normalized[sourceOffset + 3] ?? 255 : 255;
-
-    if (channels === 1) {
-      buffer[targetOffset] = red;
-      buffer[targetOffset + 1] = red;
-      buffer[targetOffset + 2] = red;
-      buffer[targetOffset + 3] = 255;
-    } else if (channels === 2) {
-      buffer[targetOffset] = red;
-      buffer[targetOffset + 1] = green;
-      buffer[targetOffset + 2] = 0;
-      buffer[targetOffset + 3] = 255;
-    } else if (channels === 3) {
-      buffer[targetOffset] = red;
-      buffer[targetOffset + 1] = green;
-      buffer[targetOffset + 2] = blue;
-      buffer[targetOffset + 3] = 255;
-    } else {
-      buffer[targetOffset] = red;
-      buffer[targetOffset + 1] = green;
-      buffer[targetOffset + 2] = blue;
-      buffer[targetOffset + 3] = alpha;
-    }
-  }
-
-  return { data: buffer, format: THREE.RGBAFormat };
-}
 
 type PointerState = {
   mode: 'pan' | 'dolly';
@@ -982,9 +924,29 @@ function VolumeViewer({
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
-  const resourcesRef = useRef<Map<string, VolumeResources>>(new Map());
-  const currentDimensionsRef = useRef<{ width: number; height: number; depth: number } | null>(null);
   const colormapCacheRef = useRef<Map<string, THREE.DataTexture>>(new Map());
+  const getColormapTexture = useCallback((color: string) => {
+    const normalized = normalizeHexColor(color, DEFAULT_LAYER_COLOR);
+    const cache = colormapCacheRef.current;
+    let texture = cache.get(normalized) ?? null;
+    if (!texture) {
+      texture = createColormapTexture(normalized);
+      cache.set(normalized, texture);
+    }
+    return texture;
+  }, []);
+  const {
+    resourcesRef,
+    currentDimensionsRef,
+    upsertLayer: upsertVolumeLayer,
+    removeLayer: removeVolumeLayer,
+    removeAllLayers: removeAllVolumeLayers
+  } = useVolumeTextures({
+    scene: sceneRef.current,
+    volumeRoot: volumeRootGroupRef.current,
+    getColormapTexture,
+    volumeStepScaleRef
+  });
   const rotationTargetRef = useRef(new THREE.Vector3());
   const defaultViewStateRef = useRef<{
     position: THREE.Vector3;
@@ -4916,17 +4878,6 @@ function VolumeViewer({
     []
   );
 
-  const getColormapTexture = useCallback((color: string) => {
-    const normalized = normalizeHexColor(color, DEFAULT_LAYER_COLOR);
-    const cache = colormapCacheRef.current;
-    let texture = cache.get(normalized) ?? null;
-    if (!texture) {
-      texture = createColormapTexture(normalized);
-      cache.set(normalized, texture);
-    }
-    return texture;
-  }, []);
-
   const updateTrackDrawRanges = useCallback((targetTimeIndex: number) => {
     const lines = trackLinesRef.current;
     const maxVisibleTime = targetTimeIndex;
@@ -8848,37 +8799,11 @@ function VolumeViewer({
   }, []);
 
   useEffect(() => {
-    const removeResource = (key: string) => {
-      const resource = resourcesRef.current.get(key);
-      if (!resource) {
-        return;
-      }
-      const parent = resource.mesh.parent;
-      if (parent) {
-        parent.remove(resource.mesh);
-      } else {
-        const activeScene = sceneRef.current;
-        if (activeScene) {
-          activeScene.remove(resource.mesh);
-        }
-      }
-      resource.mesh.geometry.dispose();
-      resource.mesh.material.dispose();
-      resource.texture.dispose();
-      resourcesRef.current.delete(key);
-    };
-
-    const removeAllResources = () => {
-      for (const key of Array.from(resourcesRef.current.keys())) {
-        removeResource(key);
-      }
-    };
-
     const scene = sceneRef.current;
     const camera = cameraRef.current;
     const controls = controlsRef.current;
     if (!scene || !camera || !controls) {
-      removeAllResources();
+      removeAllVolumeLayers();
       currentDimensionsRef.current = null;
       applyVolumeRootTransform(null);
       return;
@@ -8887,7 +8812,7 @@ function VolumeViewer({
     const referenceVolume = primaryVolume;
 
     if (!referenceVolume) {
-      removeAllResources();
+      removeAllVolumeLayers();
       currentDimensionsRef.current = null;
       rotationTargetRef.current.set(0, 0, 0);
       controls.target.set(0, 0, 0);
@@ -8913,7 +8838,7 @@ function VolumeViewer({
       currentDimensionsRef.current.depth !== depth;
 
     if (dimensionsChanged) {
-      removeAllResources();
+      removeAllVolumeLayers();
       currentDimensionsRef.current = { width, height, depth };
       volumeUserScaleRef.current = 1;
 
@@ -8948,281 +8873,15 @@ function VolumeViewer({
     const seenKeys = new Set<string>();
 
     layers.forEach((layer, index) => {
-      const volume = layer.volume;
-      if (!volume) {
-        removeResource(layer.key);
-        return;
+      const resource = upsertVolumeLayer({ layer, index });
+      if (resource) {
+        seenKeys.add(layer.key);
       }
-
-      let cachedPreparation: ReturnType<typeof getCachedTextureData> | null = null;
-
-      const isGrayscale = volume.channels === 1;
-      const colormapTexture = getColormapTexture(
-        isGrayscale ? layer.color : DEFAULT_LAYER_COLOR
-      );
-
-      let resources: VolumeResources | null = resourcesRef.current.get(layer.key) ?? null;
-
-      const viewerMode = layer.mode === 'slice' || layer.mode === '3d'
-        ? layer.mode
-        : volume.depth > 1
-        ? '3d'
-        : 'slice';
-      const zIndex = Number.isFinite(layer.sliceIndex)
-        ? Number(layer.sliceIndex)
-        : Math.floor(volume.depth / 2);
-
-      if (viewerMode === '3d') {
-        cachedPreparation = getCachedTextureData(volume);
-        const { data: textureData, format: textureFormat } = cachedPreparation;
-
-        const needsRebuild =
-          !resources ||
-          resources.mode !== viewerMode ||
-          resources.dimensions.width !== volume.width ||
-          resources.dimensions.height !== volume.height ||
-          resources.dimensions.depth !== volume.depth ||
-          resources.channels !== volume.channels ||
-          !(resources.texture instanceof THREE.Data3DTexture) ||
-          resources.texture.image.data.length !== textureData.length ||
-          resources.texture.format !== textureFormat;
-
-        if (needsRebuild) {
-          removeResource(layer.key);
-
-          const texture = new THREE.Data3DTexture(textureData, volume.width, volume.height, volume.depth);
-          texture.format = textureFormat;
-          texture.type = THREE.UnsignedByteType;
-          const samplingFilter =
-            layer.samplingMode === 'nearest' ? THREE.NearestFilter : THREE.LinearFilter;
-          texture.minFilter = samplingFilter;
-          texture.magFilter = samplingFilter;
-          texture.unpackAlignment = 1;
-          texture.colorSpace = THREE.LinearSRGBColorSpace;
-          texture.needsUpdate = true;
-
-          const shader = VolumeRenderShader;
-          const uniforms = THREE.UniformsUtils.clone(shader.uniforms);
-          uniforms.u_data.value = texture;
-          uniforms.u_size.value.set(volume.width, volume.height, volume.depth);
-          uniforms.u_clim.value.set(0, 1);
-          uniforms.u_renderstyle.value = layer.renderStyle;
-          uniforms.u_renderthreshold.value = 0.5;
-          uniforms.u_cmdata.value = colormapTexture;
-          uniforms.u_channels.value = volume.channels;
-          uniforms.u_windowMin.value = layer.windowMin;
-          uniforms.u_windowMax.value = layer.windowMax;
-          uniforms.u_invert.value = layer.invert ? 1 : 0;
-          uniforms.u_stepScale.value = volumeStepScaleRef.current;
-
-          const material = new THREE.ShaderMaterial({
-            uniforms,
-            vertexShader: shader.vertexShader,
-            fragmentShader: shader.fragmentShader,
-            side: THREE.BackSide,
-            transparent: true
-          });
-          const baseMaterial = material as unknown as { depthWrite: boolean };
-          baseMaterial.depthWrite = false;
-
-          const geometry = new THREE.BoxGeometry(volume.width, volume.height, volume.depth);
-          geometry.translate(volume.width / 2 - 0.5, volume.height / 2 - 0.5, volume.depth / 2 - 0.5);
-
-          const mesh = new THREE.Mesh(geometry, material);
-          const meshObject = mesh as unknown as { visible: boolean; renderOrder: number };
-          meshObject.visible = layer.visible;
-          meshObject.renderOrder = index;
-          mesh.position.set(layer.offsetX, layer.offsetY, 0);
-
-          const worldCameraPosition = new THREE.Vector3();
-          const localCameraPosition = new THREE.Vector3();
-          mesh.onBeforeRender = (_renderer, _scene, renderCamera) => {
-            const shaderMaterial = mesh.material as THREE.ShaderMaterial;
-            const cameraUniform = shaderMaterial.uniforms?.u_cameraPos?.value as
-              | THREE.Vector3
-              | undefined;
-            if (!cameraUniform) {
-              return;
-            }
-
-            worldCameraPosition.setFromMatrixPosition(renderCamera.matrixWorld);
-            localCameraPosition.copy(worldCameraPosition);
-            mesh.worldToLocal(localCameraPosition);
-            cameraUniform.copy(localCameraPosition);
-          };
-
-          const volumeRootGroup = volumeRootGroupRef.current;
-          if (volumeRootGroup) {
-            volumeRootGroup.add(mesh);
-          } else {
-            scene.add(mesh);
-          }
-          mesh.updateMatrixWorld(true);
-
-          resourcesRef.current.set(layer.key, {
-            mesh,
-            texture,
-            dimensions: { width: volume.width, height: volume.height, depth: volume.depth },
-            channels: volume.channels,
-            mode: viewerMode,
-            samplingMode: layer.samplingMode
-          });
-        }
-
-        resources = resourcesRef.current.get(layer.key) ?? null;
-      } else {
-        const maxIndex = Math.max(0, volume.depth - 1);
-        const clampedIndex = Math.min(Math.max(zIndex, 0), maxIndex);
-        const expectedLength = getExpectedSliceBufferLength(volume);
-
-        const needsRebuild =
-          !resources ||
-          resources.mode !== viewerMode ||
-          resources.dimensions.width !== volume.width ||
-          resources.dimensions.height !== volume.height ||
-          resources.dimensions.depth !== volume.depth ||
-          resources.channels !== volume.channels ||
-          !(resources.texture instanceof THREE.DataTexture) ||
-          (resources.sliceBuffer?.length ?? 0) !== expectedLength;
-
-        if (needsRebuild) {
-          removeResource(layer.key);
-
-          const sliceInfo = prepareSliceTexture(volume, clampedIndex, null);
-          const texture = new THREE.DataTexture(
-            sliceInfo.data,
-            volume.width,
-            volume.height,
-            sliceInfo.format
-          );
-          texture.type = THREE.UnsignedByteType;
-          texture.minFilter = THREE.LinearFilter;
-          texture.magFilter = THREE.LinearFilter;
-          texture.unpackAlignment = 1;
-          texture.colorSpace = THREE.LinearSRGBColorSpace;
-          texture.needsUpdate = true;
-
-          const shader = SliceRenderShader;
-          const uniforms = THREE.UniformsUtils.clone(shader.uniforms);
-          uniforms.u_slice.value = texture;
-          uniforms.u_cmdata.value = colormapTexture;
-          uniforms.u_channels.value = volume.channels;
-          uniforms.u_windowMin.value = layer.windowMin;
-          uniforms.u_windowMax.value = layer.windowMax;
-          uniforms.u_invert.value = layer.invert ? 1 : 0;
-
-          const material = new THREE.ShaderMaterial({
-            uniforms,
-            vertexShader: shader.vertexShader,
-            fragmentShader: shader.fragmentShader,
-            transparent: true,
-            side: THREE.DoubleSide,
-            depthTest: false,
-            depthWrite: false
-          });
-
-          const geometry = new THREE.PlaneGeometry(volume.width, volume.height);
-          geometry.translate(volume.width / 2 - 0.5, volume.height / 2 - 0.5, 0);
-
-          const mesh = new THREE.Mesh(geometry, material);
-          mesh.position.set(layer.offsetX, layer.offsetY, clampedIndex);
-          const meshObject = mesh as unknown as { visible: boolean; renderOrder: number };
-          meshObject.visible = layer.visible;
-          meshObject.renderOrder = index;
-          const volumeRootGroup = volumeRootGroupRef.current;
-          if (volumeRootGroup) {
-            volumeRootGroup.add(mesh);
-          } else {
-            scene.add(mesh);
-          }
-
-          resourcesRef.current.set(layer.key, {
-            mesh,
-            texture,
-            dimensions: { width: volume.width, height: volume.height, depth: volume.depth },
-            channels: volume.channels,
-            mode: viewerMode,
-            samplingMode: layer.samplingMode,
-            sliceBuffer: sliceInfo.data
-          });
-        }
-
-        resources = resourcesRef.current.get(layer.key) ?? null;
-      }
-
-      if (resources) {
-        const { mesh } = resources;
-        const meshObject = mesh as unknown as { visible: boolean; renderOrder: number };
-        meshObject.visible = layer.visible;
-        meshObject.renderOrder = index;
-
-        const materialUniforms = (mesh.material as THREE.ShaderMaterial).uniforms;
-        materialUniforms.u_channels.value = volume.channels;
-        materialUniforms.u_windowMin.value = layer.windowMin;
-        materialUniforms.u_windowMax.value = layer.windowMax;
-        materialUniforms.u_invert.value = layer.invert ? 1 : 0;
-        materialUniforms.u_cmdata.value = colormapTexture;
-        if (materialUniforms.u_stepScale) {
-          materialUniforms.u_stepScale.value = volumeStepScaleRef.current;
-        }
-
-        if (resources.mode === '3d') {
-          const preparation = cachedPreparation ?? getCachedTextureData(volume);
-          const dataTexture = resources.texture as THREE.Data3DTexture;
-          if (resources.samplingMode !== layer.samplingMode) {
-            const samplingFilter =
-              layer.samplingMode === 'nearest' ? THREE.NearestFilter : THREE.LinearFilter;
-            dataTexture.minFilter = samplingFilter;
-            dataTexture.magFilter = samplingFilter;
-            dataTexture.needsUpdate = true;
-            resources.samplingMode = layer.samplingMode;
-          }
-          dataTexture.image.data = preparation.data;
-          dataTexture.format = preparation.format;
-          dataTexture.needsUpdate = true;
-          materialUniforms.u_data.value = dataTexture;
-          if (materialUniforms.u_renderstyle) {
-            materialUniforms.u_renderstyle.value = layer.renderStyle;
-          }
-
-          const desiredX = layer.offsetX;
-          const desiredY = layer.offsetY;
-          if (mesh.position.x !== desiredX || mesh.position.y !== desiredY) {
-            mesh.position.set(desiredX, desiredY, mesh.position.z);
-            mesh.updateMatrixWorld();
-          }
-        } else {
-          const maxIndex = Math.max(0, volume.depth - 1);
-          const clampedIndex = Math.min(Math.max(zIndex, 0), maxIndex);
-          const existingBuffer = resources.sliceBuffer ?? null;
-          const sliceInfo = prepareSliceTexture(volume, clampedIndex, existingBuffer);
-          resources.sliceBuffer = sliceInfo.data;
-          const dataTexture = resources.texture as THREE.DataTexture;
-          dataTexture.image.data = sliceInfo.data;
-          dataTexture.image.width = volume.width;
-          dataTexture.image.height = volume.height;
-          dataTexture.format = sliceInfo.format;
-          dataTexture.needsUpdate = true;
-          materialUniforms.u_slice.value = dataTexture;
-          const desiredX = layer.offsetX;
-          const desiredY = layer.offsetY;
-          if (
-            mesh.position.x !== desiredX ||
-            mesh.position.y !== desiredY ||
-            mesh.position.z !== clampedIndex
-          ) {
-            mesh.position.set(desiredX, desiredY, clampedIndex);
-            mesh.updateMatrixWorld();
-          }
-        }
-      }
-
-      seenKeys.add(layer.key);
     });
 
     for (const key of Array.from(resourcesRef.current.keys())) {
       if (!seenKeys.has(key)) {
-        removeResource(key);
+        removeVolumeLayer(key);
       }
     }
 
@@ -9230,6 +8889,9 @@ function VolumeViewer({
     applyTrackGroupTransform,
     applyVolumeStepScaleToResources,
     getColormapTexture,
+    removeAllVolumeLayers,
+    removeVolumeLayer,
+    upsertVolumeLayer,
     layers,
     renderContextRevision
   ]);

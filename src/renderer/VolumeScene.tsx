@@ -1,8 +1,10 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RefCallback } from 'react';
-import type * as THREE from 'three';
+import * as THREE from 'three';
 import { useRendererCanvas, type UseRendererCanvasResult } from './useRendererCanvas';
 import type { VolumeViewerProps } from './types';
+import { useVolumeTextures } from './useVolumeTextures';
+import { normalizeHexColor, DEFAULT_LAYER_COLOR } from '../layerColors';
 
 type TooltipPosition = { x: number; y: number } | null;
 
@@ -74,6 +76,100 @@ export function VolumeScene(props: VolumeViewerProps) {
   );
   const { showLoadingOverlay } = useVolumeSceneLoadingOverlay(props, rendererCanvas);
   const { hoveredTrackLabel, tooltipPosition } = useVolumeSceneTooltip(props, rendererCanvas);
+
+  const volumeRootGroupRef = useRef<THREE.Group | null>(null);
+  const volumeStepScaleRef = useRef(1);
+  const colormapCacheRef = useRef<Map<string, THREE.DataTexture>>(new Map());
+
+  const getColormapTexture = useCallback((color: string) => {
+    const normalized = normalizeHexColor(color, DEFAULT_LAYER_COLOR);
+    const cache = colormapCacheRef.current;
+    let texture = cache.get(normalized) ?? null;
+    if (!texture) {
+      const size = 256;
+      const data = new Uint8Array(size * 4);
+      const red = parseInt(normalized.slice(1, 3), 16) / 255;
+      const green = parseInt(normalized.slice(3, 5), 16) / 255;
+      const blue = parseInt(normalized.slice(5, 7), 16) / 255;
+      for (let i = 0; i < size; i++) {
+        const intensity = i / (size - 1);
+        data[i * 4 + 0] = Math.round(red * intensity * 255);
+        data[i * 4 + 1] = Math.round(green * intensity * 255);
+        data[i * 4 + 2] = Math.round(blue * intensity * 255);
+        data[i * 4 + 3] = Math.round(intensity * 255);
+      }
+      texture = new THREE.DataTexture(data, size, 1, THREE.RGBAFormat);
+      texture.needsUpdate = true;
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.colorSpace = THREE.SRGBColorSpace;
+      cache.set(normalized, texture);
+    }
+    return texture;
+  }, []);
+
+  useEffect(() => {
+    const scene = rendererCanvas.scene;
+    if (!scene) {
+      volumeRootGroupRef.current = null;
+      return;
+    }
+
+    let group = volumeRootGroupRef.current;
+    if (!group) {
+      group = new THREE.Group();
+      group.name = 'VolumeRoot';
+      volumeRootGroupRef.current = group;
+    }
+    scene.add(group);
+
+    return () => {
+      scene.remove(group);
+    };
+  }, [rendererCanvas.scene]);
+
+  const {
+    resourcesRef,
+    upsertLayer,
+    removeLayer,
+    removeAllLayers
+  } = useVolumeTextures({
+    scene: rendererCanvas.scene,
+    volumeRoot: volumeRootGroupRef.current,
+    getColormapTexture,
+    volumeStepScaleRef
+  });
+
+  useEffect(() => {
+    const scene = rendererCanvas.scene;
+    if (!scene) {
+      removeAllLayers();
+      return;
+    }
+
+    const seenKeys = new Set<string>();
+    props.layers.forEach((layer, index) => {
+      const resource = upsertLayer({ layer, index });
+      if (resource) {
+        seenKeys.add(layer.key);
+      }
+    });
+
+    for (const key of Array.from(resourcesRef.current.keys())) {
+      if (!seenKeys.has(key)) {
+        removeLayer(key);
+      }
+    }
+  }, [props.layers, removeAllLayers, removeLayer, rendererCanvas.scene, resourcesRef, upsertLayer]);
+
+  useEffect(() => {
+    return () => {
+      for (const texture of colormapCacheRef.current.values()) {
+        texture.dispose();
+      }
+      colormapCacheRef.current.clear();
+    };
+  }, []);
 
   return (
     <div className="volume-viewer">
