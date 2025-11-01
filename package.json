@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "tsx tests/runTests.ts"
+    "test": "vitest run"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
@@ -23,9 +23,12 @@
     "@types/react": "^18.2.48",
     "@types/react-dom": "^18.2.18",
     "@types/three": "^0.180.0",
+    "@testing-library/react": "^14.2.2",
     "@vitejs/plugin-react": "^4.2.1",
+    "jsdom": "^24.1.0",
     "tsx": "^4.20.6",
     "typescript": "^5.3.3",
-    "vite": "^5.0.11"
+    "vite": "^5.0.11",
+    "vitest": "^1.6.0"
   }
 }

@@ -9,6 +9,12 @@ const defaultBase = isGitHubActions && repositoryName ? `/${repositoryName}/` : 
 export default defineConfig({
   base: process.env.DEPLOY_BASE_PATH ?? defaultBase,
   plugins: [react()],
+  test: {
+    environment: 'jsdom',
+    setupFiles: 'tests/setupVitest.ts',
+    restoreMocks: true,
+    clearMocks: true
+  },
   server: {
     host: '0.0.0.0',
     port: 5173
