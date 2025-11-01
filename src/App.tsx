@@ -1057,6 +1057,14 @@ function App() {
   const [datasetErrorContext, setDatasetErrorContext] = useState<DatasetErrorContext | null>(null);
   const [datasetErrorResetSignal, setDatasetErrorResetSignal] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
+  const selectedIndexRef = useRef(selectedIndex);
+  const planarPlaybackRef = useRef<{ frameId: number | null; lastTimestamp: number | null; accumulator: number }>(
+    {
+      frameId: null,
+      lastTimestamp: null,
+      accumulator: 0
+    }
+  );
   const [layers, setLayers] = useState<LoadedLayer[]>([]);
   const layersRef = useRef<LoadedLayer[]>([]);
   useEffect(() => {
@@ -2023,6 +2031,10 @@ function App() {
     return `${currentFrame} / ${volumeTimepointCount}`;
   }, [selectedIndex, volumeTimepointCount]);
 
+  useEffect(() => {
+    selectedIndexRef.current = selectedIndex;
+  }, [selectedIndex]);
+
   const trackSummaryByChannel = useMemo(() => {
     const summary = new Map<string, { total: number; visible: number }>();
     for (const channel of channels) {
@@ -2181,6 +2193,7 @@ function App() {
           return prev;
         }
         const clamped = Math.max(0, Math.min(volumeTimepointCount - 1, nextIndex));
+        selectedIndexRef.current = clamped;
         return clamped;
       });
     },
@@ -2200,6 +2213,91 @@ function App() {
     }
     handleTimeIndexChange(volumeTimepointCount - 1);
   }, [handleTimeIndexChange, volumeTimepointCount]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const playbackState = planarPlaybackRef.current;
+    if (playbackState.frameId !== null) {
+      window.cancelAnimationFrame(playbackState.frameId);
+      playbackState.frameId = null;
+    }
+    playbackState.lastTimestamp = null;
+    playbackState.accumulator = 0;
+
+    const shouldRun =
+      viewerMode === '2d' &&
+      isPlaying &&
+      !playbackDisabled &&
+      volumeTimepointCount > 1;
+
+    if (!shouldRun) {
+      return;
+    }
+
+    let disposed = false;
+    const minFps = 1;
+    const maxFps = 60;
+    const requestedFps = typeof fps === 'number' ? fps : minFps;
+    const clampedFps = Math.min(Math.max(requestedFps, minFps), maxFps);
+    const frameDuration = clampedFps > 0 ? 1000 / clampedFps : 0;
+
+    const step = (timestamp: number) => {
+      if (disposed) {
+        return;
+      }
+
+      if (frameDuration > 0) {
+        if (playbackState.lastTimestamp === null) {
+          playbackState.lastTimestamp = timestamp;
+          playbackState.accumulator = 0;
+        } else {
+          const delta = Math.max(0, Math.min(timestamp - playbackState.lastTimestamp, 1000));
+          playbackState.accumulator += delta;
+          playbackState.lastTimestamp = timestamp;
+
+          const maxIndex = Math.max(0, volumeTimepointCount - 1);
+          while (playbackState.accumulator >= frameDuration) {
+            playbackState.accumulator -= frameDuration;
+            const currentIndex = selectedIndexRef.current;
+            let nextIndex = currentIndex + 1;
+            if (nextIndex > maxIndex) {
+              nextIndex = 0;
+            }
+            if (nextIndex === currentIndex) {
+              break;
+            }
+            selectedIndexRef.current = nextIndex;
+            handleTimeIndexChange(nextIndex);
+          }
+        }
+      }
+
+      playbackState.frameId = window.requestAnimationFrame(step);
+    };
+
+    playbackState.frameId = window.requestAnimationFrame(step);
+
+    return () => {
+      disposed = true;
+      if (playbackState.frameId !== null) {
+        window.cancelAnimationFrame(playbackState.frameId);
+        playbackState.frameId = null;
+      }
+      playbackState.lastTimestamp = null;
+      playbackState.accumulator = 0;
+    };
+  }, [
+    fps,
+    handleTimeIndexChange,
+    isPlaying,
+    planarPlaybackRef,
+    playbackDisabled,
+    viewerMode,
+    volumeTimepointCount
+  ]);
 
   const handleAddChannel = useCallback(() => {
     setPreprocessedExperiment(null);

@@ -97,6 +97,9 @@ export function VolumeScene(props: VolumeViewerProps) {
   const [rendererSize, setRendererSize] = useState<{ width: number; height: number } | null>(null);
 
   const rotationTargetRef = useRef(new THREE.Vector3());
+  const datasetCenterRef = useRef(new THREE.Vector3());
+  const datasetRadiusRef = useRef(1);
+  const resetCameraOffsetRef = useRef(new THREE.Vector3());
   const movementStateRef = useRef<MovementState>({
     moveForward: false,
     moveBackward: false,
@@ -132,6 +135,16 @@ export function VolumeScene(props: VolumeViewerProps) {
   const hoveredTrackIdRef = useRef<string | null>(null);
   const [hoveredTrackId, setHoveredTrackId] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<TooltipPosition>(null);
+
+  const clearMovementState = useCallback(() => {
+    const movementState = movementStateRef.current;
+    movementState.moveForward = false;
+    movementState.moveBackward = false;
+    movementState.moveLeft = false;
+    movementState.moveRight = false;
+    movementState.moveUp = false;
+    movementState.moveDown = false;
+  }, []);
 
   const transferFunctionCache = useTransferFunctionCache();
   const rayMarchMaterial = useRayMarchMaterial(transferFunctionCache);
@@ -296,14 +309,16 @@ export function VolumeScene(props: VolumeViewerProps) {
     };
   }, [props.onRegisterVrSession, xrSession.endSession, xrSession.requestSession]);
 
-  const primaryVolume = useMemo(() => {
+  const primaryLayer = useMemo(() => {
     for (const layer of props.layers) {
       if (layer.volume) {
-        return layer.volume;
+        return layer;
       }
     }
     return null;
   }, [props.layers]);
+
+  const primaryVolume = primaryLayer?.volume ?? null;
 
   useEffect(() => {
     const volumeRoot = volumeRootGroupRef.current;
@@ -316,6 +331,19 @@ export function VolumeScene(props: VolumeViewerProps) {
       volumeRoot.scale.set(1, 1, 1);
       volumeRoot.rotation.set(0, 0, 0);
       volumeRoot.updateMatrixWorld(true);
+      datasetCenterRef.current.set(0, 0, 0);
+      datasetRadiusRef.current = 1;
+      if (!props.followedTrackId && rendererCanvas.controls) {
+        rotationTargetRef.current.set(0, 0, 0);
+        rendererCanvas.controls.target.set(0, 0, 0);
+        rendererCanvas.controls.update();
+      }
+      const camera = rendererCanvas.camera;
+      if (camera) {
+        camera.near = 0.1;
+        camera.far = 1000;
+        camera.updateProjectionMatrix();
+      }
       return;
     }
 
@@ -326,13 +354,114 @@ export function VolumeScene(props: VolumeViewerProps) {
     volumeRoot.position.set(0, 0, 0);
     volumeRoot.rotation.set(0, 0, 0);
     volumeRoot.updateMatrixWorld(true);
-  }, [primaryVolume?.width, primaryVolume?.height, primaryVolume?.depth]);
+
+    const offsetX = primaryLayer?.offsetX ?? 0;
+    const offsetY = primaryLayer?.offsetY ?? 0;
+    const centerX = (width > 0 ? width / 2 - 0.5 : 0) + offsetX;
+    const centerY = (height > 0 ? height / 2 - 0.5 : 0) + offsetY;
+    const centerZ = depth > 0 ? depth / 2 - 0.5 : 0;
+    datasetCenterRef.current.set(centerX * scale, centerY * scale, centerZ * scale);
+
+    const halfWidth = Math.max(width, 1) * 0.5;
+    const halfHeight = Math.max(height, 1) * 0.5;
+    const halfDepth = Math.max(depth, 1) * 0.5;
+    const radiusLocal = Math.sqrt(
+      halfWidth * halfWidth + halfHeight * halfHeight + halfDepth * halfDepth
+    );
+    const radiusWorld = radiusLocal * scale;
+    datasetRadiusRef.current = Math.max(radiusWorld, 0.1);
+
+    if (!props.followedTrackId && rendererCanvas.controls) {
+      rotationTargetRef.current.copy(datasetCenterRef.current);
+      rendererCanvas.controls.target.copy(datasetCenterRef.current);
+      rendererCanvas.controls.update();
+    }
+
+    const camera = rendererCanvas.camera;
+    if (camera) {
+      const near = Math.max(datasetRadiusRef.current * 0.02, 0.001);
+      const far = Math.max(datasetRadiusRef.current * 12, near + 5);
+      camera.near = near;
+      camera.far = far;
+      camera.updateProjectionMatrix();
+    }
+  }, [
+    primaryLayer?.offsetX,
+    primaryLayer?.offsetY,
+    primaryVolume?.width,
+    primaryVolume?.height,
+    primaryVolume?.depth,
+    props.followedTrackId,
+    rendererCanvas.camera,
+    rendererCanvas.controls
+  ]);
 
   const clearHoverState = useCallback(() => {
     hoveredTrackIdRef.current = null;
     setHoveredTrackId(null);
     setTooltipPosition(null);
   }, []);
+
+  const resetView = useCallback(
+    (options?: { stopFollow?: boolean }) => {
+      const shouldStopFollow = options?.stopFollow ?? false;
+      if (shouldStopFollow && followedTrackIdRef.current) {
+        props.onStopTrackFollow();
+      }
+
+      const rotationTarget = datasetCenterRef.current;
+      rotationTargetRef.current.copy(rotationTarget);
+
+      const controlsInstance = rendererCanvas.controls;
+      if (controlsInstance) {
+        controlsInstance.target.copy(rotationTarget);
+        controlsInstance.update();
+      }
+
+      const cameraInstance = rendererCanvas.camera;
+      if (cameraInstance) {
+        const radius = Math.max(datasetRadiusRef.current, 0.1);
+        const offsetDistance = radius * 2.4 + 0.4;
+        const offsetVector = resetCameraOffsetRef.current;
+        offsetVector.set(0, 0, offsetDistance);
+        cameraInstance.position.copy(rotationTarget).add(offsetVector);
+        cameraInstance.near = Math.max(radius * 0.02, 0.001);
+        cameraInstance.far = Math.max(offsetDistance * 4, radius * 8, cameraInstance.near + 5);
+        cameraInstance.updateProjectionMatrix();
+      }
+
+      clearMovementState();
+      trackFollowOffsetRef.current = null;
+    },
+    [clearMovementState, props.onStopTrackFollow, rendererCanvas.camera, rendererCanvas.controls]
+  );
+
+  const registeredResetHandler = useCallback(() => {
+    resetView({ stopFollow: true });
+  }, [resetView]);
+
+  useEffect(() => {
+    props.onRegisterReset(registeredResetHandler);
+    return () => {
+      props.onRegisterReset(null);
+    };
+  }, [props.onRegisterReset, registeredResetHandler]);
+
+  useEffect(() => {
+    if (!rendererCanvas.camera || !rendererCanvas.controls) {
+      return;
+    }
+    resetView({ stopFollow: false });
+  }, [
+    resetView,
+    rendererCanvas.camera,
+    rendererCanvas.controls,
+    primaryLayer?.offsetX,
+    primaryLayer?.offsetY,
+    primaryVolume?.width,
+    primaryVolume?.height,
+    primaryVolume?.depth
+  ]);
 
   const resolveTrackColor = useCallback(
     (track: VolumeViewerProps['tracks'][number]) => {
@@ -403,7 +532,98 @@ export function VolumeScene(props: VolumeViewerProps) {
 
   useEffect(() => {
     followedTrackIdRef.current = props.followedTrackId;
+    if (!props.followedTrackId) {
+      trackFollowOffsetRef.current = null;
+    }
   }, [props.followedTrackId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const movementKeys: Record<string, keyof MovementState> = {
+      KeyW: 'moveForward',
+      ArrowUp: 'moveForward',
+      KeyS: 'moveBackward',
+      ArrowDown: 'moveBackward',
+      KeyA: 'moveLeft',
+      ArrowLeft: 'moveLeft',
+      KeyD: 'moveRight',
+      ArrowRight: 'moveRight',
+      KeyE: 'moveUp',
+      KeyQ: 'moveDown'
+    };
+
+    const shouldIgnoreEvent = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) {
+        return false;
+      }
+      const tagName = target.tagName;
+      if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') {
+        return true;
+      }
+      if (target.isContentEditable) {
+        return true;
+      }
+      return false;
+    };
+
+    const handleKeyChange = (event: KeyboardEvent, pressed: boolean) => {
+      const binding = movementKeys[event.code];
+      if (!binding) {
+        return;
+      }
+      if (shouldIgnoreEvent(event)) {
+        return;
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+
+      const movementState = movementStateRef.current;
+      if (movementState[binding] === pressed) {
+        return;
+      }
+      movementState[binding] = pressed;
+      event.preventDefault();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      handleKeyChange(event, true);
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      handleKeyChange(event, false);
+    };
+
+    const handleBlur = () => {
+      clearMovementState();
+    };
+
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        clearMovementState();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
+    };
+  }, [clearMovementState]);
 
   useEffect(() => {
     playbackStateRef.current = {
@@ -432,6 +652,7 @@ export function VolumeScene(props: VolumeViewerProps) {
     controls: rendererCanvas.controls,
     scene: rendererCanvas.scene,
     camera: rendererCanvas.camera,
+    volumeRootRef: volumeRootGroupRef,
     rotationTargetRef,
     movementStateRef,
     followedTrackIdRef,
