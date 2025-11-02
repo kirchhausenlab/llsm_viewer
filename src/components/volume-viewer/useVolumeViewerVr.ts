@@ -263,16 +263,6 @@ export type UseVolumeViewerVrParams = {
 };
 
 export type UseVolumeViewerVrResult = {
-  callOnRegisterVrSession: (
-    handlers:
-      | {
-          requestSession: () => Promise<XRSession | null>;
-          endSession: () => Promise<void> | void;
-        }
-      | null,
-  ) => void;
-  callOnVrSessionStarted: () => void;
-  callOnVrSessionEnded: () => void;
   requestVrSession: () => Promise<XRSession>;
   endVrSession: () => Promise<void>;
   vrPlaybackHudRef: MutableRefObject<VrPlaybackHud | null>;
@@ -498,39 +488,6 @@ export function useVolumeViewerVr({
   const requestVrSessionRef = useRef<(() => Promise<XRSession>) | null>(null);
   const vrPropsRef = useRef(vrProps ?? null);
   vrPropsRef.current = vrProps ?? null;
-
-  const callOnRegisterVrSession = useCallback(
-    (
-      handlers:
-        | {
-            requestSession: () => Promise<XRSession | null>;
-            endSession: () => Promise<void> | void;
-          }
-        | null,
-    ) => {
-      if (handlers) {
-        endVrSessionRequestRef.current = handlers.endSession;
-      } else {
-        endVrSessionRequestRef.current = null;
-      }
-      vrPropsRef.current?.onRegisterVrSession?.(handlers);
-    },
-    [endVrSessionRequestRef],
-  );
-
-  const callOnVrSessionStarted = useCallback(() => {
-    applySessionStartState();
-    if (!disposedRef.current) {
-      vrPropsRef.current?.onVrSessionStarted?.();
-    }
-  }, [applySessionStartState, disposedRef, vrPropsRef]);
-
-  const callOnVrSessionEnded = useCallback(() => {
-    applySessionEndState();
-    if (!disposedRef.current) {
-      vrPropsRef.current?.onVrSessionEnded?.();
-    }
-  }, [applySessionEndState, disposedRef, vrPropsRef]);
   const vrLogRef = useRef(vrLog);
   vrLogRef.current = vrLog;
   const onResetVolumeRef = useRef(onResetVolume);
@@ -3182,7 +3139,7 @@ export function useVolumeViewerVr({
     const pendingMode = xrPendingModeSwitchRef.current;
     xrPendingModeSwitchRef.current = null;
     if (!disposedRef.current) {
-      callOnVrSessionEnded();
+      vrPropsRef.current?.onVrSessionEnded?.();
       if (pendingMode) {
         vrLogRef.current?.('[VR] restarting session to honor pending mode switch', {
           mode: pendingMode,
@@ -3209,7 +3166,6 @@ export function useVolumeViewerVr({
     requestVrSessionRef,
     setControllerVisibility,
     updateVrPlaybackHud,
-    callOnVrSessionEnded,
     vrLogRef,
     vrPropsRef,
     xrCurrentSessionModeRef,
@@ -3312,7 +3268,10 @@ export function useVolumeViewerVr({
       visibilityState: session.visibilityState,
     });
 
-    callOnVrSessionStarted();
+    applySessionStartState();
+    if (!disposedRef.current) {
+      vrPropsRef.current?.onVrSessionStarted?.();
+    }
 
     return session;
   }, [
@@ -3326,7 +3285,6 @@ export function useVolumeViewerVr({
     rendererRef,
     setPreferredXrSessionMode,
     updateVrPlaybackHud,
-    callOnVrSessionStarted,
     vrLogRef,
     vrPropsRef,
     xrCurrentSessionModeRef,
@@ -3344,6 +3302,16 @@ export function useVolumeViewerVr({
       }
     };
   }, [requestVrSession]);
+
+  useEffect(() => {
+    vrProps?.onRegisterVrSession?.({
+      requestSession: requestVrSession,
+      endSession: endVrSession,
+    });
+    return () => {
+      vrProps?.onRegisterVrSession?.(null);
+    };
+  }, [endVrSession, requestVrSession, vrProps]);
 
   useEffect(() => {
     handleSessionEndRef.current = handleSessionEnd;
@@ -5622,9 +5590,6 @@ export function useVolumeViewerVr({
   ]);
 
   return {
-    callOnRegisterVrSession,
-    callOnVrSessionStarted,
-    callOnVrSessionEnded,
     requestVrSession,
     endVrSession,
     vrPlaybackHudRef,
