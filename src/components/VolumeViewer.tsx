@@ -100,6 +100,7 @@ import {
   setVrPlaybackLabel,
   setVrPlaybackProgressFraction,
 } from './volume-viewer/vr/hudMutators';
+import { useVolumeViewerVr } from './volume-viewer/useVolumeViewerVr';
 import {
   brightnessContrastModel,
   computeContrastMultiplier,
@@ -419,9 +420,6 @@ function VolumeViewer({
   const onLayerRenderStyleToggle = vr?.onLayerRenderStyleToggle;
   const onLayerSamplingModeToggle = vr?.onLayerSamplingModeToggle;
   const onLayerInvertToggle = vr?.onLayerInvertToggle;
-  const onRegisterVrSession = vr?.onRegisterVrSession;
-  const onVrSessionStarted = vr?.onVrSessionStarted;
-  const onVrSessionEnded = vr?.onVrSessionEnded;
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -472,11 +470,6 @@ function VolumeViewer({
     target: THREE.Vector3;
   } | null>(null);
   const hasActive3DLayerRef = useRef(false);
-  const vrTranslationHandleRef = useRef<THREE.Mesh | null>(null);
-  const vrVolumeScaleHandleRef = useRef<THREE.Mesh | null>(null);
-  const vrVolumeYawHandlesRef = useRef<THREE.Mesh[]>([]);
-  const vrVolumePitchHandleRef = useRef<THREE.Mesh | null>(null);
-  const vrHandleLocalPointRef = useRef(new THREE.Vector3());
   const [hasMeasured, setHasMeasured] = useState(false);
   const [trackOverlayRevision, setTrackOverlayRevision] = useState(0);
   const [renderContextRevision, setRenderContextRevision] = useState(0);
@@ -488,70 +481,86 @@ function VolumeViewer({
     controller: { trackId: null as string | null, position: null as { x: number; y: number } | null }
   });
   const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(null);
-  const vrPlaybackHudRef = useRef<VrPlaybackHud | null>(null);
-  const vrChannelsHudRef = useRef<VrChannelsHud | null>(null);
-  const vrTracksHudRef = useRef<VrTracksHud | null>(null);
-  const vrPlaybackHudPlacementRef = useRef<VrHudPlacement | null>(null);
-  const vrChannelsHudPlacementRef = useRef<VrHudPlacement | null>(null);
-  const vrTracksHudPlacementRef = useRef<VrHudPlacement | null>(null);
-  const vrHudPlaneRef = useRef(new THREE.Plane());
-  const vrHudPlanePointRef = useRef(new THREE.Vector3());
-  const vrPlaybackHudDragTargetRef = useRef(new THREE.Vector3());
-  const vrChannelsHudDragTargetRef = useRef(new THREE.Vector3());
-  const vrTracksHudDragTargetRef = useRef(new THREE.Vector3());
-  const vrHudOffsetTempRef = useRef(new THREE.Vector3());
-  const vrHudIntersectionRef = useRef(new THREE.Vector3());
-  const vrChannelsLocalPointRef = useRef(new THREE.Vector3());
-  const vrTracksLocalPointRef = useRef(new THREE.Vector3());
-  const vrHudForwardRef = useRef(new THREE.Vector3(0, 0, 1));
-  const vrHudYawEulerRef = useRef(new THREE.Euler(0, 0, 0, 'YXZ'));
-  const vrHudYawQuaternionRef = useRef(new THREE.Quaternion());
-  const vrHudYawVectorRef = useRef(new THREE.Vector3());
-  const vrHudPitchVectorRef = useRef(new THREE.Vector3());
-  const vrHandleWorldPointRef = useRef(new THREE.Vector3());
-  const vrHandleSecondaryPointRef = useRef(new THREE.Vector3());
-  const vrHandleQuaternionTempRef = useRef(new THREE.Quaternion());
-  const vrHandleQuaternionTemp2Ref = useRef(new THREE.Quaternion());
   const xrPreferredSessionModeRef = useRef<'immersive-vr' | 'immersive-ar'>('immersive-vr');
   const xrCurrentSessionModeRef = useRef<'immersive-vr' | 'immersive-ar' | null>(null);
   const xrPendingModeSwitchRef = useRef<'immersive-vr' | 'immersive-ar' | null>(null);
   const xrPassthroughSupportedRef = useRef(isVrPassthroughSupported);
   const xrFoveationAppliedRef = useRef(false);
   const xrPreviousFoveationRef = useRef<number | undefined>(undefined);
-  const playbackStateRef = useRef({
-    isPlaying,
-    playbackDisabled,
-    playbackLabel,
-    fps,
-    timeIndex,
-    totalTimepoints,
-    onTogglePlayback,
-    onTimeIndexChange,
-    onFpsChange,
-    passthroughSupported: isVrPassthroughSupported,
-    preferredSessionMode: 'immersive-vr',
-    currentSessionMode: null
-  });
-  const playbackLoopRef = useRef<{ lastTimestamp: number | null; accumulator: number }>(
-    {
-      lastTimestamp: null,
-      accumulator: 0
+
+  const {
+    onRegisterVrSession,
+    onVrSessionStarted,
+    onVrSessionEnded,
+    vrPlaybackHudRef,
+    vrChannelsHudRef,
+    vrTracksHudRef,
+    vrPlaybackHudPlacementRef,
+    vrChannelsHudPlacementRef,
+    vrTracksHudPlacementRef,
+    vrHudPlaneRef,
+    vrHudPlanePointRef,
+    vrPlaybackHudDragTargetRef,
+    vrChannelsHudDragTargetRef,
+    vrTracksHudDragTargetRef,
+    vrHudOffsetTempRef,
+    vrHudIntersectionRef,
+    vrChannelsLocalPointRef,
+    vrTracksLocalPointRef,
+    vrHudForwardRef,
+    vrHudYawEulerRef,
+    vrHudYawQuaternionRef,
+    vrHudYawVectorRef,
+    vrHudPitchVectorRef,
+    vrTranslationHandleRef,
+    vrVolumeScaleHandleRef,
+    vrVolumeYawHandlesRef,
+    vrVolumePitchHandleRef,
+    vrHandleLocalPointRef,
+    vrHandleWorldPointRef,
+    vrHandleSecondaryPointRef,
+    vrHandleQuaternionTempRef,
+    vrHandleQuaternionTemp2Ref,
+    sliderLocalPointRef,
+    playbackStateRef,
+    playbackLoopRef,
+    vrHoverStateRef,
+    vrChannelsStateRef,
+    vrTracksStateRef
+  } = useVolumeViewerVr({
+    vrProps: vr ?? null,
+    rendererRef,
+    cameraRef,
+    sceneRef,
+    volumeRootGroupRef,
+    trackGroupRef,
+    resourcesRef,
+    timeIndexRef,
+    controllersRef,
+    movementStateRef,
+    pointerStateRef,
+    trackLinesRef,
+    trackFollowOffsetRef,
+    raycasterRef,
+    xrSessionRef,
+    sessionCleanupRef,
+    xrPreferredSessionModeRef,
+    xrCurrentSessionModeRef,
+    xrPendingModeSwitchRef,
+    hasActive3DLayerRef,
+    playbackStateDefaults: {
+      isPlaying,
+      playbackDisabled,
+      playbackLabel,
+      fps,
+      timeIndex,
+      totalTimepoints,
+      onTogglePlayback,
+      onTimeIndexChange,
+      onFpsChange,
+      passthroughSupported: isVrPassthroughSupported
     }
-  );
-  const vrHoverStateRef = useRef({
-    play: false,
-    playbackSlider: false,
-    playbackSliderActive: false,
-    fpsSlider: false,
-    fpsSliderActive: false,
-    resetVolume: false,
-    resetHud: false,
-    exit: false,
-    mode: false
   });
-  const vrChannelsStateRef = useRef<VrChannelsState>({ channels: [], activeChannelId: null });
-  const vrTracksStateRef = useRef<VrTracksState>({ channels: [], activeChannelId: null });
-  const sliderLocalPointRef = useRef(new THREE.Vector3());
 
   const updateVolumeHandles = useCallback(() => {
     const translationHandle = vrTranslationHandleRef.current;
