@@ -539,6 +539,8 @@ function VolumeViewer({
     vrChannelsStateRef,
     vrTracksStateRef,
     controllersRef,
+    setControllerVisibility,
+    refreshControllerVisibility,
     raycasterRef,
     xrSessionRef,
     sessionCleanupRef,
@@ -1679,54 +1681,6 @@ function VolumeViewer({
 
     controllersRef.current = [];
     const controllerModelFactory = new XRControllerModelFactory();
-
-    const setControllerVisibility = (shouldShow: boolean) => {
-      let anyVisible = false;
-      const visibilitySnapshot: Array<{
-        index: number;
-        visible: boolean;
-        isConnected: boolean;
-        targetRayMode: string | null;
-      }> = [];
-      controllersRef.current.forEach((entry, index) => {
-        const visible = shouldShow && entry.isConnected && entry.targetRayMode !== 'tracked-hand';
-        entry.controller.visible = visible;
-        entry.grip.visible = visible;
-        entry.ray.visible = visible;
-        entry.touchIndicator.visible = visible;
-        visibilitySnapshot.push({
-          index,
-          visible,
-          isConnected: entry.isConnected,
-          targetRayMode: entry.targetRayMode
-        });
-        if (!visible) {
-          entry.hoverTrackId = null;
-          entry.hoverUiTarget = null;
-          entry.activeUiTarget = null;
-          entry.hasHoverUiPoint = false;
-          entry.hudGrabOffsets.playback = null;
-          entry.hudGrabOffsets.channels = null;
-          entry.hudGrabOffsets.tracks = null;
-          entry.translateGrabOffset = null;
-          entry.volumeRotationState = null;
-          entry.hudRotationState = null;
-        } else {
-          anyVisible = true;
-        }
-      });
-      if (import.meta.env?.DEV) {
-        vrLog('[VR] controller visibility', { shouldShow, visibilitySnapshot });
-      }
-      if (!anyVisible) {
-        clearHoverState('controller');
-        applyVrPlaybackHoverState(false, false, false, false, false, false, false, false, false);
-      }
-    };
-
-    const refreshControllerVisibility = () => {
-      setControllerVisibility(renderer.xr.isPresenting);
-    };
 
     for (let index = 0; index < 2; index++) {
       const controller = renderer.xr.getController(index);
