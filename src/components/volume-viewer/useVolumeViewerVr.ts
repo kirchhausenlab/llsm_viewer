@@ -28,6 +28,7 @@ import type {
   VrTracksState,
   VrUiTarget,
   VrUiTargetType,
+  WebXRFoveationManager,
 } from './vr';
 import {
   VR_CHANNELS_CAMERA_ANCHOR_OFFSET,
@@ -71,6 +72,10 @@ import {
   VR_UI_TOUCH_SURFACE_MARGIN,
   VR_VOLUME_MAX_SCALE,
   VR_VOLUME_MIN_SCALE,
+  VR_VOLUME_BASE_OFFSET,
+  VR_VOLUME_STEP_SCALE,
+  DESKTOP_VOLUME_STEP_SCALE,
+  XR_TARGET_FOVEATION,
 } from './vr';
 import {
   renderVrChannelsHud as renderVrChannelsHudContent,
@@ -394,6 +399,8 @@ export type UseVolumeViewerVrResult = {
     dimensions: { width: number; height: number; depth: number } | null,
   ) => void;
   applyVolumeStepScaleToResources: (stepScale: number) => void;
+  applyVrFoveation: (target?: number) => void;
+  restoreVrFoveation: () => void;
   onRendererInitialized: () => void;
   endVrSessionRequestRef: MutableRefObject<(() => Promise<void> | void) | null>;
   updateControllerRays: () => void;
@@ -2386,6 +2393,55 @@ export function useVolumeViewerVr({
     vrVolumeScaleHandleRef,
     vrVolumeYawHandlesRef,
   ]);
+
+  const applyVrFoveation = useCallback(
+    (target: number = XR_TARGET_FOVEATION) => {
+      const renderer = rendererRef.current;
+      if (!renderer) {
+        return;
+      }
+      const xrManager = renderer.xr as WebXRFoveationManager;
+      const setFoveation = xrManager?.setFoveation;
+      if (typeof setFoveation !== 'function') {
+        return;
+      }
+      if (!xrFoveationAppliedRef.current) {
+        const getFoveation = xrManager.getFoveation;
+        xrPreviousFoveationRef.current =
+          typeof getFoveation === 'function' ? getFoveation() : undefined;
+      }
+      setFoveation(target);
+      xrFoveationAppliedRef.current = true;
+    },
+    [rendererRef, xrFoveationAppliedRef, xrPreviousFoveationRef],
+  );
+
+  const restoreVrFoveation = useCallback(() => {
+    if (!xrFoveationAppliedRef.current) {
+      return;
+    }
+    const renderer = rendererRef.current;
+    if (!renderer) {
+      xrFoveationAppliedRef.current = false;
+      xrPreviousFoveationRef.current = undefined;
+      return;
+    }
+    const xrManager = renderer.xr as WebXRFoveationManager;
+    const setFoveation = xrManager?.setFoveation;
+    if (typeof setFoveation !== 'function') {
+      xrFoveationAppliedRef.current = false;
+      xrPreviousFoveationRef.current = undefined;
+      return;
+    }
+    const previous = xrPreviousFoveationRef.current;
+    xrFoveationAppliedRef.current = false;
+    xrPreviousFoveationRef.current = undefined;
+    if (typeof previous === 'number') {
+      setFoveation(previous);
+    } else {
+      setFoveation(0);
+    }
+  }, [rendererRef, xrFoveationAppliedRef, xrPreviousFoveationRef]);
 
   const applyVolumeStepScaleToResources = useCallback(
     (stepScale: number) => {
@@ -4498,6 +4554,96 @@ export function useVolumeViewerVr({
       return;
     }
     const renderer = rendererRef.current;
+    if (!renderer) {
+      return;
+    }
+    const xrManager = renderer.xr as
+      | (THREE.WebXRManager & {
+          addEventListener?: (event: string, handler: () => void) => void;
+          removeEventListener?: (event: string, handler: () => void) => void;
+        })
+      | undefined;
+    const addEventListener = xrManager?.addEventListener?.bind(xrManager);
+    const removeEventListener = xrManager?.removeEventListener?.bind(xrManager);
+    if (!addEventListener || !removeEventListener) {
+      return;
+    }
+
+    const handleSessionStart = () => {
+      vrLogRef.current?.('[VR] sessionstart event', {
+        presenting: renderer.xr.isPresenting,
+        visibilityState: xrSessionRef.current?.visibilityState ?? null,
+      });
+      applyVrFoveation();
+      applyVolumeStepScaleToResources(VR_VOLUME_STEP_SCALE);
+      volumeRootBaseOffsetRef.current.copy(VR_VOLUME_BASE_OFFSET);
+      applyVolumeRootTransform(currentDimensionsRef.current);
+      refreshControllerVisibility();
+      setVrPlaybackHudVisible(true);
+      setVrChannelsHudVisible(true);
+      setVrTracksHudVisible(true);
+      resetVrPlaybackHudPlacement();
+      resetVrChannelsHudPlacement();
+      resetVrTracksHudPlacement();
+      updateVrPlaybackHud();
+      updateVrChannelsHud();
+      updateVrTracksHud();
+      updateControllerRays();
+      updateVolumeHandles();
+    };
+
+    const handleSessionEnd = () => {
+      vrLogRef.current?.('[VR] sessionend event', {
+        presenting: renderer.xr.isPresenting,
+        visibilityState: xrSessionRef.current?.visibilityState ?? null,
+      });
+      restoreVrFoveation();
+      applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
+      volumeRootBaseOffsetRef.current.set(0, 0, 0);
+      applyVolumeRootTransform(currentDimensionsRef.current);
+      refreshControllerVisibility();
+      setVrPlaybackHudVisible(false);
+      setVrChannelsHudVisible(false);
+      setVrTracksHudVisible(false);
+      updateVolumeHandles();
+    };
+
+    addEventListener('sessionstart', handleSessionStart);
+    addEventListener('sessionend', handleSessionEnd);
+
+    return () => {
+      removeEventListener('sessionstart', handleSessionStart);
+      removeEventListener('sessionend', handleSessionEnd);
+    };
+  }, [
+    controllerSetupRevision,
+    rendererRef,
+    applyVrFoveation,
+    applyVolumeRootTransform,
+    applyVolumeStepScaleToResources,
+    refreshControllerVisibility,
+    resetVrChannelsHudPlacement,
+    resetVrPlaybackHudPlacement,
+    resetVrTracksHudPlacement,
+    restoreVrFoveation,
+    setVrChannelsHudVisible,
+    setVrPlaybackHudVisible,
+    setVrTracksHudVisible,
+    updateControllerRays,
+    updateVolumeHandles,
+    updateVrChannelsHud,
+    updateVrPlaybackHud,
+    updateVrTracksHud,
+    currentDimensionsRef,
+    volumeRootBaseOffsetRef,
+    xrSessionRef,
+  ]);
+
+  useEffect(() => {
+    if (controllerSetupRevision === 0) {
+      return;
+    }
+    const renderer = rendererRef.current;
     const scene = sceneRef.current;
     if (!renderer || !scene) {
       return;
@@ -5239,6 +5385,8 @@ export function useVolumeViewerVr({
     resetVrTracksHudPlacement,
     applyVolumeRootTransform,
     applyVolumeStepScaleToResources,
+    applyVrFoveation,
+    restoreVrFoveation,
     onRendererInitialized,
     endVrSessionRequestRef,
     updateControllerRays,
