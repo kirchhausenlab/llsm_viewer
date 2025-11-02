@@ -520,3 +520,13 @@ d centered the front-page card in the viewport.
 ## VR hover utilities prep work
 - Threaded the viewer container ref and hover state callbacks into the VR hook so immersive helpers can share the existing desktop hover bookkeeping in upcoming changes.
 - Moved the hover callback definitions ahead of the VR hook invocation to prevent runtime reference errors that blanked the viewer.
+
+## VR controller ray refactor
+- Moved the controller ray intersection logic and reusable math helpers into `useVolumeViewerVr`, exposing it through the hook so the viewer component can reuse the shared implementation.
+- Returned the HUD region resolvers, placement setters, and new callback from `UseVolumeViewerVrResult`, allowing `VolumeViewer` to drop its local copies and use the hook contract instead.
+- Updated `VolumeViewer` to call the hook-provided `updateControllerRays` wherever the old inline version had been invoked, keeping session start/end and the render loop behavior intact.
+
+## VR controller ray hook fixes
+- Added explicit vector caches and ref wiring inside `useVolumeViewerVr` so controller handle drags no longer mutate quaternion temps, fixing the scale and rotation updates after the refactor.
+- Reworked the controller handle candidate tracking to use explicit target/point/distance slots, clearing the lingering TypeScript errors and ensuring ray hover state updates run correctly.
+- Normalized the helper listener wiring to cast XR controller events in one place, satisfying the stricter typings while keeping runtime behavior unchanged.
