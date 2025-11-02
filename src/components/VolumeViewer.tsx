@@ -100,6 +100,7 @@ import {
   setVrPlaybackLabel,
   setVrPlaybackProgressFraction,
 } from './volume-viewer/vr/hudMutators';
+import { useVrHudRefs } from './volume-viewer/vr/useVrHudRefs';
 import {
   brightnessContrastModel,
   computeContrastMultiplier,
@@ -486,30 +487,6 @@ function VolumeViewer({
     controller: { trackId: null as string | null, position: null as { x: number; y: number } | null }
   });
   const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(null);
-  const vrPlaybackHudRef = useRef<VrPlaybackHud | null>(null);
-  const vrChannelsHudRef = useRef<VrChannelsHud | null>(null);
-  const vrTracksHudRef = useRef<VrTracksHud | null>(null);
-  const vrPlaybackHudPlacementRef = useRef<VrHudPlacement | null>(null);
-  const vrChannelsHudPlacementRef = useRef<VrHudPlacement | null>(null);
-  const vrTracksHudPlacementRef = useRef<VrHudPlacement | null>(null);
-  const vrHudPlaneRef = useRef(new THREE.Plane());
-  const vrHudPlanePointRef = useRef(new THREE.Vector3());
-  const vrPlaybackHudDragTargetRef = useRef(new THREE.Vector3());
-  const vrChannelsHudDragTargetRef = useRef(new THREE.Vector3());
-  const vrTracksHudDragTargetRef = useRef(new THREE.Vector3());
-  const vrHudOffsetTempRef = useRef(new THREE.Vector3());
-  const vrHudIntersectionRef = useRef(new THREE.Vector3());
-  const vrChannelsLocalPointRef = useRef(new THREE.Vector3());
-  const vrTracksLocalPointRef = useRef(new THREE.Vector3());
-  const vrHudForwardRef = useRef(new THREE.Vector3(0, 0, 1));
-  const vrHudYawEulerRef = useRef(new THREE.Euler(0, 0, 0, 'YXZ'));
-  const vrHudYawQuaternionRef = useRef(new THREE.Quaternion());
-  const vrHudYawVectorRef = useRef(new THREE.Vector3());
-  const vrHudPitchVectorRef = useRef(new THREE.Vector3());
-  const vrHandleWorldPointRef = useRef(new THREE.Vector3());
-  const vrHandleSecondaryPointRef = useRef(new THREE.Vector3());
-  const vrHandleQuaternionTempRef = useRef(new THREE.Quaternion());
-  const vrHandleQuaternionTemp2Ref = useRef(new THREE.Quaternion());
   const xrPreferredSessionModeRef = useRef<'immersive-vr' | 'immersive-ar'>('immersive-vr');
   const xrCurrentSessionModeRef = useRef<'immersive-vr' | 'immersive-ar' | null>(null);
   const xrPendingModeSwitchRef = useRef<'immersive-vr' | 'immersive-ar' | null>(null);
@@ -536,19 +513,7 @@ function VolumeViewer({
       accumulator: 0
     }
   );
-  const vrHoverStateRef = useRef({
-    play: false,
-    playbackSlider: false,
-    playbackSliderActive: false,
-    fpsSlider: false,
-    fpsSliderActive: false,
-    resetVolume: false,
-    resetHud: false,
-    exit: false,
-    mode: false
-  });
-  const vrChannelsStateRef = useRef<VrChannelsState>({ channels: [], activeChannelId: null });
-  const vrTracksStateRef = useRef<VrTracksState>({ channels: [], activeChannelId: null });
+  const hudRefs = useVrHudRefs();
   const sliderLocalPointRef = useRef(new THREE.Vector3());
 
   const updateVolumeHandles = useCallback(() => {
@@ -696,8 +661,8 @@ function VolumeViewer({
       }
       volumeYawRef.current = yaw;
       volumePitchRef.current = pitch;
-      const euler = vrHudYawEulerRef.current;
-      const quaternion = vrHandleQuaternionTempRef.current;
+      const euler = hudRefs.yaw.euler.current;
+      const quaternion = hudRefs.handle.quaternion.primary.current;
       euler.set(pitch, yaw, 0, 'YXZ');
       quaternion.setFromEuler(euler);
       volumeRootGroup.quaternion.copy(quaternion);
@@ -729,8 +694,8 @@ function VolumeViewer({
   }, []);
 
   const getHudQuaternionFromAngles = useCallback((yaw: number, pitch: number) => {
-    const yawQuaternion = vrHudYawQuaternionRef.current;
-    const yawEuler = vrHudYawEulerRef.current;
+    const yawQuaternion = hudRefs.yaw.quaternion.current;
+    const yawEuler = hudRefs.yaw.euler.current;
     yawEuler.set(pitch, yaw, 0, 'YXZ');
     yawQuaternion.setFromEuler(yawEuler);
     return yawQuaternion;
@@ -773,7 +738,7 @@ function VolumeViewer({
   const setVrPlaybackHudPlacementPosition = useCallback(
     (nextPosition: THREE.Vector3) => {
       const placement =
-        vrPlaybackHudPlacementRef.current ??
+        hudRefs.placements.playback.current ??
         ({ position: new THREE.Vector3(), yaw: 0, pitch: 0 } satisfies VrHudPlacement);
       const prevX = placement.position.x;
       const prevY = placement.position.y;
@@ -784,12 +749,12 @@ function VolumeViewer({
         Math.abs(prevX - placement.position.x) > VR_HUD_PLACEMENT_EPSILON ||
         Math.abs(prevY - placement.position.y) > VR_HUD_PLACEMENT_EPSILON ||
         Math.abs(prevZ - placement.position.z) > VR_HUD_PLACEMENT_EPSILON;
-      vrPlaybackHudPlacementRef.current = placement;
-      vrPlaybackHudDragTargetRef.current.copy(placement.position);
-      if (positionChanged && vrPlaybackHudRef.current) {
-        vrPlaybackHudRef.current.cacheDirty = true;
+      hudRefs.placements.playback.current = placement;
+      hudRefs.dragTargets.playback.current.copy(placement.position);
+      if (positionChanged && hudRefs.playback.current) {
+        hudRefs.playback.current.cacheDirty = true;
       }
-      updateHudGroupFromPlacement(vrPlaybackHudRef.current, placement);
+      updateHudGroupFromPlacement(hudRefs.playback.current, placement);
     },
     [constrainHudPlacementPosition, updateHudGroupFromPlacement]
   );
@@ -797,7 +762,7 @@ function VolumeViewer({
   const setVrChannelsHudPlacementPosition = useCallback(
     (nextPosition: THREE.Vector3) => {
       const placement =
-        vrChannelsHudPlacementRef.current ??
+        hudRefs.placements.channels.current ??
         ({ position: new THREE.Vector3(), yaw: 0, pitch: 0 } satisfies VrHudPlacement);
       const prevX = placement.position.x;
       const prevY = placement.position.y;
@@ -808,12 +773,12 @@ function VolumeViewer({
         Math.abs(prevX - placement.position.x) > VR_HUD_PLACEMENT_EPSILON ||
         Math.abs(prevY - placement.position.y) > VR_HUD_PLACEMENT_EPSILON ||
         Math.abs(prevZ - placement.position.z) > VR_HUD_PLACEMENT_EPSILON;
-      vrChannelsHudPlacementRef.current = placement;
-      vrChannelsHudDragTargetRef.current.copy(placement.position);
-      if (positionChanged && vrChannelsHudRef.current) {
-        vrChannelsHudRef.current.cacheDirty = true;
+      hudRefs.placements.channels.current = placement;
+      hudRefs.dragTargets.channels.current.copy(placement.position);
+      if (positionChanged && hudRefs.channels.current) {
+        hudRefs.channels.current.cacheDirty = true;
       }
-      updateHudGroupFromPlacement(vrChannelsHudRef.current, placement);
+      updateHudGroupFromPlacement(hudRefs.channels.current, placement);
     },
     [constrainHudPlacementPosition, updateHudGroupFromPlacement]
   );
@@ -821,7 +786,7 @@ function VolumeViewer({
   const setVrTracksHudPlacementPosition = useCallback(
     (nextPosition: THREE.Vector3) => {
       const placement =
-        vrTracksHudPlacementRef.current ??
+        hudRefs.placements.tracks.current ??
         ({ position: new THREE.Vector3(), yaw: 0, pitch: 0 } satisfies VrHudPlacement);
       const prevX = placement.position.x;
       const prevY = placement.position.y;
@@ -832,12 +797,12 @@ function VolumeViewer({
         Math.abs(prevX - placement.position.x) > VR_HUD_PLACEMENT_EPSILON ||
         Math.abs(prevY - placement.position.y) > VR_HUD_PLACEMENT_EPSILON ||
         Math.abs(prevZ - placement.position.z) > VR_HUD_PLACEMENT_EPSILON;
-      vrTracksHudPlacementRef.current = placement;
-      vrTracksHudDragTargetRef.current.copy(placement.position);
-      if (positionChanged && vrTracksHudRef.current) {
-        vrTracksHudRef.current.cacheDirty = true;
+      hudRefs.placements.tracks.current = placement;
+      hudRefs.dragTargets.tracks.current.copy(placement.position);
+      if (positionChanged && hudRefs.tracks.current) {
+        hudRefs.tracks.current.cacheDirty = true;
       }
-      updateHudGroupFromPlacement(vrTracksHudRef.current, placement);
+      updateHudGroupFromPlacement(hudRefs.tracks.current, placement);
     },
     [constrainHudPlacementPosition, updateHudGroupFromPlacement]
   );
@@ -845,16 +810,16 @@ function VolumeViewer({
   const setVrPlaybackHudPlacementYaw = useCallback(
     (nextYaw: number) => {
       const placement =
-        vrPlaybackHudPlacementRef.current ??
+        hudRefs.placements.playback.current ??
         ({ position: new THREE.Vector3(), yaw: 0, pitch: 0 } satisfies VrHudPlacement);
       const prevYaw = placement.yaw;
       placement.yaw = nextYaw;
       const yawChanged = Math.abs(prevYaw - placement.yaw) > VR_HUD_PLACEMENT_EPSILON;
-      vrPlaybackHudPlacementRef.current = placement;
-      if (yawChanged && vrPlaybackHudRef.current) {
-        vrPlaybackHudRef.current.cacheDirty = true;
+      hudRefs.placements.playback.current = placement;
+      if (yawChanged && hudRefs.playback.current) {
+        hudRefs.playback.current.cacheDirty = true;
       }
-      updateHudGroupFromPlacement(vrPlaybackHudRef.current, placement);
+      updateHudGroupFromPlacement(hudRefs.playback.current, placement);
     },
     [updateHudGroupFromPlacement]
   );
@@ -862,16 +827,16 @@ function VolumeViewer({
   const setVrChannelsHudPlacementYaw = useCallback(
     (nextYaw: number) => {
       const placement =
-        vrChannelsHudPlacementRef.current ??
+        hudRefs.placements.channels.current ??
         ({ position: new THREE.Vector3(), yaw: 0, pitch: 0 } satisfies VrHudPlacement);
       const prevYaw = placement.yaw;
       placement.yaw = nextYaw;
       const yawChanged = Math.abs(prevYaw - placement.yaw) > VR_HUD_PLACEMENT_EPSILON;
-      vrChannelsHudPlacementRef.current = placement;
-      if (yawChanged && vrChannelsHudRef.current) {
-        vrChannelsHudRef.current.cacheDirty = true;
+      hudRefs.placements.channels.current = placement;
+      if (yawChanged && hudRefs.channels.current) {
+        hudRefs.channels.current.cacheDirty = true;
       }
-      updateHudGroupFromPlacement(vrChannelsHudRef.current, placement);
+      updateHudGroupFromPlacement(hudRefs.channels.current, placement);
     },
     [updateHudGroupFromPlacement]
   );
@@ -879,16 +844,16 @@ function VolumeViewer({
   const setVrTracksHudPlacementYaw = useCallback(
     (nextYaw: number) => {
       const placement =
-        vrTracksHudPlacementRef.current ??
+        hudRefs.placements.tracks.current ??
         ({ position: new THREE.Vector3(), yaw: 0, pitch: 0 } satisfies VrHudPlacement);
       const prevYaw = placement.yaw;
       placement.yaw = nextYaw;
       const yawChanged = Math.abs(prevYaw - placement.yaw) > VR_HUD_PLACEMENT_EPSILON;
-      vrTracksHudPlacementRef.current = placement;
-      if (yawChanged && vrTracksHudRef.current) {
-        vrTracksHudRef.current.cacheDirty = true;
+      hudRefs.placements.tracks.current = placement;
+      if (yawChanged && hudRefs.tracks.current) {
+        hudRefs.tracks.current.cacheDirty = true;
       }
-      updateHudGroupFromPlacement(vrTracksHudRef.current, placement);
+      updateHudGroupFromPlacement(hudRefs.tracks.current, placement);
     },
     [updateHudGroupFromPlacement]
   );
@@ -896,16 +861,16 @@ function VolumeViewer({
   const setVrPlaybackHudPlacementPitch = useCallback(
     (nextPitch: number) => {
       const placement =
-        vrPlaybackHudPlacementRef.current ??
+        hudRefs.placements.playback.current ??
         ({ position: new THREE.Vector3(), yaw: 0, pitch: 0 } satisfies VrHudPlacement);
       const prevPitch = placement.pitch;
       placement.pitch = nextPitch;
       const pitchChanged = Math.abs(prevPitch - placement.pitch) > VR_HUD_PLACEMENT_EPSILON;
-      vrPlaybackHudPlacementRef.current = placement;
-      if (pitchChanged && vrPlaybackHudRef.current) {
-        vrPlaybackHudRef.current.cacheDirty = true;
+      hudRefs.placements.playback.current = placement;
+      if (pitchChanged && hudRefs.playback.current) {
+        hudRefs.playback.current.cacheDirty = true;
       }
-      updateHudGroupFromPlacement(vrPlaybackHudRef.current, placement);
+      updateHudGroupFromPlacement(hudRefs.playback.current, placement);
     },
     [updateHudGroupFromPlacement]
   );
@@ -913,16 +878,16 @@ function VolumeViewer({
   const setVrChannelsHudPlacementPitch = useCallback(
     (nextPitch: number) => {
       const placement =
-        vrChannelsHudPlacementRef.current ??
+        hudRefs.placements.channels.current ??
         ({ position: new THREE.Vector3(), yaw: 0, pitch: 0 } satisfies VrHudPlacement);
       const prevPitch = placement.pitch;
       placement.pitch = nextPitch;
       const pitchChanged = Math.abs(prevPitch - placement.pitch) > VR_HUD_PLACEMENT_EPSILON;
-      vrChannelsHudPlacementRef.current = placement;
-      if (pitchChanged && vrChannelsHudRef.current) {
-        vrChannelsHudRef.current.cacheDirty = true;
+      hudRefs.placements.channels.current = placement;
+      if (pitchChanged && hudRefs.channels.current) {
+        hudRefs.channels.current.cacheDirty = true;
       }
-      updateHudGroupFromPlacement(vrChannelsHudRef.current, placement);
+      updateHudGroupFromPlacement(hudRefs.channels.current, placement);
     },
     [updateHudGroupFromPlacement]
   );
@@ -930,16 +895,16 @@ function VolumeViewer({
   const setVrTracksHudPlacementPitch = useCallback(
     (nextPitch: number) => {
       const placement =
-        vrTracksHudPlacementRef.current ??
+        hudRefs.placements.tracks.current ??
         ({ position: new THREE.Vector3(), yaw: 0, pitch: 0 } satisfies VrHudPlacement);
       const prevPitch = placement.pitch;
       placement.pitch = nextPitch;
       const pitchChanged = Math.abs(prevPitch - placement.pitch) > VR_HUD_PLACEMENT_EPSILON;
-      vrTracksHudPlacementRef.current = placement;
-      if (pitchChanged && vrTracksHudRef.current) {
-        vrTracksHudRef.current.cacheDirty = true;
+      hudRefs.placements.tracks.current = placement;
+      if (pitchChanged && hudRefs.tracks.current) {
+        hudRefs.tracks.current.cacheDirty = true;
       }
-      updateHudGroupFromPlacement(vrTracksHudRef.current, placement);
+      updateHudGroupFromPlacement(hudRefs.tracks.current, placement);
     },
     [updateHudGroupFromPlacement]
   );
@@ -1016,16 +981,16 @@ function VolumeViewer({
 
   const refreshVrHudPlacements = useCallback(() => {
     updateHudGroupFromPlacement(
-      vrPlaybackHudRef.current,
-      vrPlaybackHudPlacementRef.current ?? null
+      hudRefs.playback.current,
+      hudRefs.placements.playback.current ?? null
     );
     updateHudGroupFromPlacement(
-      vrChannelsHudRef.current,
-      vrChannelsHudPlacementRef.current ?? null
+      hudRefs.channels.current,
+      hudRefs.placements.channels.current ?? null
     );
     updateHudGroupFromPlacement(
-      vrTracksHudRef.current,
-      vrTracksHudPlacementRef.current ?? null
+      hudRefs.tracks.current,
+      hudRefs.placements.tracks.current ?? null
     );
   }, [updateHudGroupFromPlacement]);
 
@@ -1046,7 +1011,7 @@ function VolumeViewer({
       exitHovered: boolean,
       modeHovered: boolean
     ) => {
-      vrHoverStateRef.current = {
+      hudRefs.states.hover.current = {
         play: playHovered,
         playbackSlider: playbackSliderHovered,
         playbackSliderActive,
@@ -1057,7 +1022,7 @@ function VolumeViewer({
         exit: exitHovered,
         mode: modeHovered
       };
-      const hud = vrPlaybackHudRef.current;
+      const hud = hudRefs.playback.current;
       if (!hud) {
         return;
       }
@@ -1116,7 +1081,7 @@ function VolumeViewer({
   );
 
   const updateVrPlaybackHud = useCallback(() => {
-    const hud = vrPlaybackHudRef.current;
+    const hud = hudRefs.playback.current;
     if (!hud) {
       return;
     }
@@ -1213,21 +1178,21 @@ function VolumeViewer({
     const fpsLabelText = fpsDisabled ? 'frames per second —' : `frames per second ${fpsValue}`;
     setVrPlaybackFpsLabel(hud, fpsLabelText);
     applyVrPlaybackHoverState(
-      vrHoverStateRef.current.play,
-      vrHoverStateRef.current.playbackSlider,
-      vrHoverStateRef.current.playbackSliderActive,
-      vrHoverStateRef.current.fpsSlider,
-      vrHoverStateRef.current.fpsSliderActive,
-      vrHoverStateRef.current.resetVolume,
-      vrHoverStateRef.current.resetHud,
-      vrHoverStateRef.current.exit,
-      vrHoverStateRef.current.mode
+      hudRefs.states.hover.current.play,
+      hudRefs.states.hover.current.playbackSlider,
+      hudRefs.states.hover.current.playbackSliderActive,
+      hudRefs.states.hover.current.fpsSlider,
+      hudRefs.states.hover.current.fpsSliderActive,
+      hudRefs.states.hover.current.resetVolume,
+      hudRefs.states.hover.current.resetHud,
+      hudRefs.states.hover.current.exit,
+      hudRefs.states.hover.current.mode
     );
   }, [applyVrPlaybackHoverState]);
 
   const setVrPlaybackHudVisible = useCallback(
     (visible: boolean) => {
-      const hud = vrPlaybackHudRef.current;
+      const hud = hudRefs.playback.current;
       if (!hud) {
         return;
       }
@@ -1240,7 +1205,7 @@ function VolumeViewer({
   );
 
   const setVrChannelsHudVisible = useCallback((visible: boolean) => {
-    const hud = vrChannelsHudRef.current;
+    const hud = hudRefs.channels.current;
     if (!hud) {
       return;
     }
@@ -1251,7 +1216,7 @@ function VolumeViewer({
   }, []);
 
   const setVrTracksHudVisible = useCallback((visible: boolean) => {
-    const hud = vrTracksHudRef.current;
+    const hud = hudRefs.tracks.current;
     if (!hud) {
       return;
     }
@@ -1291,7 +1256,7 @@ function VolumeViewer({
 
   const applyPlaybackSliderFromWorldPoint = useCallback(
     (worldPoint: THREE.Vector3) => {
-      const hud = vrPlaybackHudRef.current;
+      const hud = hudRefs.playback.current;
       if (!hud) {
         return;
       }
@@ -1325,7 +1290,7 @@ function VolumeViewer({
 
   const applyFpsSliderFromWorldPoint = useCallback(
     (worldPoint: THREE.Vector3) => {
-      const hud = vrPlaybackHudRef.current;
+      const hud = hudRefs.playback.current;
       if (!hud) {
         return;
       }
@@ -2146,20 +2111,20 @@ function VolumeViewer({
   }, [resizeVrChannelsHud]);
 
   const updateVrTracksHud = useCallback(() => {
-    const hud = vrTracksHudRef.current;
+    const hud = hudRefs.tracks.current;
     if (!hud) {
       return;
     }
-    const state = vrTracksStateRef.current;
+    const state = hudRefs.states.tracks.current;
     renderVrTracksHud(hud, state);
   }, [renderVrTracksHud]);
 
   const updateVrChannelsHud = useCallback(() => {
-    const hud = vrChannelsHudRef.current;
+    const hud = hudRefs.channels.current;
     if (!hud) {
       return;
     }
-    const state = vrChannelsStateRef.current;
+    const state = hudRefs.states.channels.current;
     renderVrChannelsHud(hud, state);
   }, [renderVrChannelsHud]);
 
@@ -2168,10 +2133,10 @@ function VolumeViewer({
       if (!hud || hud.regions.length === 0) {
         return null;
       }
-      vrChannelsLocalPointRef.current.copy(worldPoint);
-      hud.panel.worldToLocal(vrChannelsLocalPointRef.current);
-      const localX = vrChannelsLocalPointRef.current.x;
-      const localY = vrChannelsLocalPointRef.current.y;
+      hudRefs.localPoints.channels.current.copy(worldPoint);
+      hud.panel.worldToLocal(hudRefs.localPoints.channels.current);
+      const localX = hudRefs.localPoints.channels.current.x;
+      const localY = hudRefs.localPoints.channels.current.y;
       for (const region of hud.regions) {
         const { minX, maxX, minY, maxY } = region.bounds;
         const minBoundX = Math.min(minX, maxX);
@@ -2192,10 +2157,10 @@ function VolumeViewer({
       if (!hud || hud.regions.length === 0) {
         return null;
       }
-      vrTracksLocalPointRef.current.copy(worldPoint);
-      hud.panel.worldToLocal(vrTracksLocalPointRef.current);
-      const localX = vrTracksLocalPointRef.current.x;
-      const localY = vrTracksLocalPointRef.current.y;
+      hudRefs.localPoints.tracks.current.copy(worldPoint);
+      hud.panel.worldToLocal(hudRefs.localPoints.tracks.current);
+      const localX = hudRefs.localPoints.tracks.current.x;
+      const localY = hudRefs.localPoints.tracks.current.y;
       for (const region of hud.regions) {
         const { minX, maxX, minY, maxY } = region.bounds;
         const minBoundX = Math.min(minX, maxX);
@@ -2216,7 +2181,7 @@ function VolumeViewer({
       if (!region || region.disabled || region.targetType !== 'channels-slider' || !region.layerKey) {
         return;
       }
-      const hud = vrChannelsHudRef.current;
+      const hud = hudRefs.channels.current;
       if (!hud || !hud.panel || !region.sliderTrack) {
         return;
       }
@@ -2239,7 +2204,7 @@ function VolumeViewer({
       }
       snappedValue = Math.min(Math.max(snappedValue, minValue), maxValue);
 
-      const state = vrChannelsStateRef.current;
+      const state = hudRefs.states.channels.current;
       const channelState = state.channels.find((entry) => entry.id === region.channelId);
       const layerState = channelState?.layers.find((entry) => entry.key === region.layerKey);
       if (!layerState) {
@@ -2319,7 +2284,7 @@ function VolumeViewer({
       if (!region || region.disabled || region.targetType !== 'tracks-slider' || !region.sliderTrack) {
         return;
       }
-      const hud = vrTracksHudRef.current;
+      const hud = hudRefs.tracks.current;
       if (!hud) {
         return;
       }
@@ -2341,7 +2306,7 @@ function VolumeViewer({
       }
       snappedValue = Math.min(Math.max(snappedValue, minValue), maxValue);
 
-      const state = vrTracksStateRef.current;
+      const state = hudRefs.states.tracks.current;
       const channelState = state.channels.find((entry) => entry.id === region.channelId);
       if (!channelState) {
         return;
@@ -2370,7 +2335,7 @@ function VolumeViewer({
       ) {
         return;
       }
-      const hud = vrTracksHudRef.current;
+      const hud = hudRefs.tracks.current;
       if (!hud) {
         return;
       }
@@ -2389,7 +2354,7 @@ function VolumeViewer({
         clampedRatio = 1 - clampedRatio;
       }
 
-      const state = vrTracksStateRef.current;
+      const state = hudRefs.states.tracks.current;
       const channelState = state.channels.find((entry) => entry.id === region.channelId);
       if (!channelState) {
         return;
@@ -2485,7 +2450,7 @@ function VolumeViewer({
         }
       }))
     }));
-    vrChannelsStateRef.current = {
+    hudRefs.states.channels.current = {
       channels: nextChannels,
       activeChannelId: activeChannelPanelId
     };
@@ -2506,7 +2471,7 @@ function VolumeViewer({
   }, [tracks]);
 
   useEffect(() => {
-    const previousChannels = new Map(vrTracksStateRef.current.channels.map((channel) => [channel.id, channel]));
+    const previousChannels = new Map(hudRefs.states.tracks.current.channels.map((channel) => [channel.id, channel]));
     const nextChannels = trackChannels.map((channel) => {
       const tracksForChannel = tracksByChannel.get(channel.id) ?? [];
       const colorMode = channelTrackColorModes[channel.id] ?? { type: 'random' };
@@ -2557,7 +2522,7 @@ function VolumeViewer({
     if (!nextState.activeChannelId || !nextChannels.some((channel) => channel.id === nextState.activeChannelId)) {
       nextState.activeChannelId = nextChannels[0]?.id ?? null;
     }
-    vrTracksStateRef.current = nextState;
+    hudRefs.states.tracks.current = nextState;
     updateVrTracksHud();
   }, [
     activeTrackChannelId,
@@ -2634,18 +2599,18 @@ function VolumeViewer({
 
   const resetVrPlaybackHudPlacement = useCallback(() => {
     const camera = cameraRef.current;
-    const hud = vrPlaybackHudRef.current;
+    const hud = hudRefs.playback.current;
     if (!camera || !hud) {
       return;
     }
     const frame = computeVolumeHudFrame();
-    const target = vrHudOffsetTempRef.current;
+    const target = hudRefs.offset.current;
     if (frame) {
       target.copy(frame.center).addScaledVector(frame.up, VR_PLAYBACK_VERTICAL_OFFSET);
       setHudPlacement(
-        vrPlaybackHudPlacementRef,
-        vrPlaybackHudDragTargetRef,
-        vrPlaybackHudRef,
+        hudRefs.placements.playback,
+        hudRefs.dragTargets.playback,
+        hudRefs.playback,
         target,
         frame.yaw,
         frame.pitch
@@ -2664,9 +2629,9 @@ function VolumeViewer({
     target.set(rotatedX, target.y, rotatedZ);
     target.add(camera.position);
     setHudPlacement(
-      vrPlaybackHudPlacementRef,
-      vrPlaybackHudDragTargetRef,
-      vrPlaybackHudRef,
+      hudRefs.placements.playback,
+      hudRefs.dragTargets.playback,
+      hudRefs.playback,
       target,
       yaw,
       0
@@ -2675,19 +2640,19 @@ function VolumeViewer({
     cameraRef,
     computeVolumeHudFrame,
     setHudPlacement,
-    vrPlaybackHudDragTargetRef,
-    vrPlaybackHudPlacementRef,
-    vrPlaybackHudRef
+    hudRefs.dragTargets.playback,
+    hudRefs.placements.playback,
+    hudRefs.playback
   ]);
 
   const resetVrChannelsHudPlacement = useCallback(() => {
     const camera = cameraRef.current;
-    const hud = vrChannelsHudRef.current;
+    const hud = hudRefs.channels.current;
     if (!camera || !hud) {
       return;
     }
     const frame = computeVolumeHudFrame();
-    const target = vrHudOffsetTempRef.current;
+    const target = hudRefs.offset.current;
     if (frame) {
       const lateralDistance =
         VR_PLAYBACK_PANEL_WIDTH / 2 + VR_HUD_LATERAL_MARGIN + VR_CHANNELS_PANEL_WIDTH / 2;
@@ -2696,9 +2661,9 @@ function VolumeViewer({
         .addScaledVector(frame.right, lateralDistance)
         .addScaledVector(frame.up, VR_CHANNELS_VERTICAL_OFFSET);
       setHudPlacement(
-        vrChannelsHudPlacementRef,
-        vrChannelsHudDragTargetRef,
-        vrChannelsHudRef,
+        hudRefs.placements.channels,
+        hudRefs.dragTargets.channels,
+        hudRefs.channels,
         target,
         frame.yaw,
         frame.pitch
@@ -2717,9 +2682,9 @@ function VolumeViewer({
     target.set(rotatedX, target.y, rotatedZ);
     target.add(camera.position);
     setHudPlacement(
-      vrChannelsHudPlacementRef,
-      vrChannelsHudDragTargetRef,
-      vrChannelsHudRef,
+      hudRefs.placements.channels,
+      hudRefs.dragTargets.channels,
+      hudRefs.channels,
       target,
       yaw,
       0
@@ -2728,19 +2693,19 @@ function VolumeViewer({
     cameraRef,
     computeVolumeHudFrame,
     setHudPlacement,
-    vrChannelsHudDragTargetRef,
-    vrChannelsHudPlacementRef,
-    vrChannelsHudRef
+    hudRefs.dragTargets.channels,
+    hudRefs.placements.channels,
+    hudRefs.channels
   ]);
 
   const resetVrTracksHudPlacement = useCallback(() => {
     const camera = cameraRef.current;
-    const hud = vrTracksHudRef.current;
+    const hud = hudRefs.tracks.current;
     if (!camera || !hud) {
       return;
     }
     const frame = computeVolumeHudFrame();
-    const target = vrHudOffsetTempRef.current;
+    const target = hudRefs.offset.current;
     if (frame) {
       const lateralDistance =
         VR_PLAYBACK_PANEL_WIDTH / 2 + VR_HUD_LATERAL_MARGIN + VR_TRACKS_PANEL_WIDTH / 2;
@@ -2749,9 +2714,9 @@ function VolumeViewer({
         .addScaledVector(frame.right, -lateralDistance)
         .addScaledVector(frame.up, VR_TRACKS_VERTICAL_OFFSET);
       setHudPlacement(
-        vrTracksHudPlacementRef,
-        vrTracksHudDragTargetRef,
-        vrTracksHudRef,
+        hudRefs.placements.tracks,
+        hudRefs.dragTargets.tracks,
+        hudRefs.tracks,
         target,
         frame.yaw,
         frame.pitch
@@ -2770,9 +2735,9 @@ function VolumeViewer({
     target.set(rotatedX, target.y, rotatedZ);
     target.add(camera.position);
     setHudPlacement(
-      vrTracksHudPlacementRef,
-      vrTracksHudDragTargetRef,
-      vrTracksHudRef,
+      hudRefs.placements.tracks,
+      hudRefs.dragTargets.tracks,
+      hudRefs.tracks,
       target,
       yaw,
       0
@@ -2781,9 +2746,9 @@ function VolumeViewer({
     cameraRef,
     computeVolumeHudFrame,
     setHudPlacement,
-    vrTracksHudDragTargetRef,
-    vrTracksHudPlacementRef,
-    vrTracksHudRef
+    hudRefs.dragTargets.tracks,
+    hudRefs.placements.tracks,
+    hudRefs.tracks
   ]);
 
   const applyVolumeRootTransform = useCallback(
@@ -3711,11 +3676,11 @@ function VolumeViewer({
         ) {
           let placement: VrHudPlacement | null = null;
           if (activeType === 'playback-panel-yaw' || activeType === 'playback-panel-pitch') {
-            placement = vrPlaybackHudPlacementRef.current;
+            placement = hudRefs.placements.playback.current;
           } else if (activeType === 'channels-panel-yaw' || activeType === 'channels-panel-pitch') {
-            placement = vrChannelsHudPlacementRef.current;
+            placement = hudRefs.placements.channels.current;
           } else if (activeType === 'tracks-panel-yaw' || activeType === 'tracks-panel-pitch') {
-            placement = vrTracksHudPlacementRef.current;
+            placement = hudRefs.placements.tracks.current;
           }
           if (placement && hudCategory) {
             if (
@@ -3723,7 +3688,7 @@ function VolumeViewer({
               activeType === 'channels-panel-yaw' ||
               activeType === 'tracks-panel-yaw'
             ) {
-              const yawVector = vrHudYawVectorRef.current;
+              const yawVector = hudRefs.yaw.vector.current;
               yawVector.copy(entry.rayOrigin).sub(placement.position);
               yawVector.y = 0;
               let initialAngle = placement.yaw;
@@ -3742,7 +3707,7 @@ function VolumeViewer({
                 basisRight: yawBasisRight
               };
             } else {
-              const pitchVector = vrHudPitchVectorRef.current;
+              const pitchVector = hudRefs.pitchVector.current;
               pitchVector.copy(entry.rayOrigin).sub(placement.position);
               pitchVector.x = 0;
               let initialAngle = placement.pitch ?? 0;
@@ -3784,10 +3749,10 @@ function VolumeViewer({
           applyFpsSliderFromWorldPoint(entry.hoverUiPoint);
         }
         if (entry.activeUiTarget?.type === 'playback-panel-grab') {
-          const hud = vrPlaybackHudRef.current;
+          const hud = hudRefs.playback.current;
           if (hud) {
-            const placement = vrPlaybackHudPlacementRef.current;
-            const referencePosition = vrPlaybackHudDragTargetRef.current;
+            const placement = hudRefs.placements.playback.current;
+            const referencePosition = hudRefs.dragTargets.playback.current;
             referencePosition.copy(placement?.position ?? hud.group.position);
             if (!entry.hasHoverUiPoint) {
               entry.hoverUiPoint.copy(referencePosition);
@@ -3811,10 +3776,10 @@ function VolumeViewer({
           );
         }
         if (entry.activeUiTarget?.type === 'channels-panel-grab') {
-          const hud = vrChannelsHudRef.current;
+          const hud = hudRefs.channels.current;
           if (hud) {
-            const placement = vrChannelsHudPlacementRef.current;
-            const referencePosition = vrChannelsHudDragTargetRef.current;
+            const placement = hudRefs.placements.channels.current;
+            const referencePosition = hudRefs.dragTargets.channels.current;
             referencePosition.copy(placement?.position ?? hud.group.position);
             if (!entry.hasHoverUiPoint) {
               entry.hoverUiPoint.copy(referencePosition);
@@ -3841,10 +3806,10 @@ function VolumeViewer({
           }
         }
         if (entry.activeUiTarget?.type === 'tracks-panel-grab') {
-          const hud = vrTracksHudRef.current;
+          const hud = hudRefs.tracks.current;
           if (hud) {
-            const placement = vrTracksHudPlacementRef.current;
-            const referencePosition = vrTracksHudDragTargetRef.current;
+            const placement = hudRefs.placements.tracks.current;
+            const referencePosition = hudRefs.dragTargets.tracks.current;
             referencePosition.copy(placement?.position ?? hud.group.position);
             if (!entry.hasHoverUiPoint) {
               entry.hoverUiPoint.copy(referencePosition);
@@ -4036,7 +4001,7 @@ function VolumeViewer({
         } else if (activeTarget && activeTarget.type.startsWith('channels-')) {
           const region = activeTarget.data as VrChannelsInteractiveRegion | undefined;
           if (region) {
-            const state = vrChannelsStateRef.current;
+            const state = hudRefs.states.channels.current;
             if (activeTarget.type === 'channels-tab') {
               state.activeChannelId = region.channelId;
               onChannelPanelSelect(region.channelId);
@@ -4128,8 +4093,8 @@ function VolumeViewer({
             activeTarget.type === 'tracks-follow')
         ) {
           const region = activeTarget.data as VrTracksInteractiveRegion | undefined;
-          const hud = vrTracksHudRef.current;
-          const state = vrTracksStateRef.current;
+          const hud = hudRefs.tracks.current;
+          const state = hudRefs.states.tracks.current;
           let visibilityAllTarget: boolean | null = null;
           let didMutate = false;
           if (region && hud) {
@@ -4376,34 +4341,34 @@ function VolumeViewer({
     if (hud) {
       hud.group.visible = false;
       scene.add(hud.group);
-      vrPlaybackHudRef.current = hud;
+      hudRefs.playback.current = hud;
       resetVrPlaybackHudPlacement();
       updateVrPlaybackHud();
       applyVrPlaybackHoverState(false, false, false, false, false, false, false, false, false);
     } else {
-      vrPlaybackHudRef.current = null;
+      hudRefs.playback.current = null;
     }
 
     const channelsHud = createVrChannelsHud();
     if (channelsHud) {
       channelsHud.group.visible = false;
       scene.add(channelsHud.group);
-      vrChannelsHudRef.current = channelsHud;
+      hudRefs.channels.current = channelsHud;
       resetVrChannelsHudPlacement();
       updateVrChannelsHud();
     } else {
-      vrChannelsHudRef.current = null;
+      hudRefs.channels.current = null;
     }
 
     const tracksHud = createVrTracksHud();
     if (tracksHud) {
       tracksHud.group.visible = false;
       scene.add(tracksHud.group);
-      vrTracksHudRef.current = tracksHud;
+      hudRefs.tracks.current = tracksHud;
       resetVrTracksHudPlacement();
       updateVrTracksHud();
     } else {
-      vrTracksHudRef.current = null;
+      hudRefs.tracks.current = null;
     }
 
     const domElement = renderer.domElement;
@@ -4699,9 +4664,9 @@ function VolumeViewer({
         entry.hasHoverUiPoint = false;
 
         let uiRayLength: number | null = null;
-        const playbackHudInstance = vrPlaybackHudRef.current;
-        const channelsHudInstance = vrChannelsHudRef.current;
-        const tracksHudInstance = vrTracksHudRef.current;
+        const playbackHudInstance = hudRefs.playback.current;
+        const channelsHudInstance = hudRefs.channels.current;
+        const tracksHudInstance = hudRefs.tracks.current;
         const translationHandleInstance = vrTranslationHandleRef.current;
         const scaleHandleInstance = vrVolumeScaleHandleRef.current;
         const yawHandleInstances = vrVolumeYawHandlesRef.current;
@@ -5009,10 +4974,10 @@ function VolumeViewer({
           };
 
           if (playbackHudInstance && playbackHudInstance.group.visible) {
-            const plane = vrHudPlaneRef.current;
-            const planePoint = vrHudPlanePointRef.current;
+            const plane = hudRefs.plane.current;
+            const planePoint = hudRefs.planePoint.current;
             playbackHudInstance.panel.getWorldPosition(planePoint);
-            const planeNormal = vrHudForwardRef.current;
+            const planeNormal = hudRefs.forward.current;
             planeNormal.set(0, 0, 1).applyQuaternion(playbackHudInstance.group.quaternion).normalize();
             plane.setFromNormalAndCoplanarPoint(planeNormal, planePoint);
             const activeType = entry.activeUiTarget?.type ?? null;
@@ -5024,8 +4989,8 @@ function VolumeViewer({
             const translateHandle = playbackHudInstance.panelTranslateHandle;
             const yawHandles = playbackHudInstance.panelYawHandles;
             const pitchHandle = playbackHudInstance.panelPitchHandle;
-            const handleWorldPoint = vrHandleWorldPointRef.current;
-            const handleSecondaryPoint = vrHandleSecondaryPointRef.current;
+            const handleWorldPoint = hudRefs.handle.world.current;
+            const handleSecondaryPoint = hudRefs.handle.secondary.current;
 
             if (translateHandle && !playbackSliderLocked && !fpsSliderLocked) {
               translateHandle.getWorldPosition(handleWorldPoint);
@@ -5299,10 +5264,10 @@ function VolumeViewer({
 
           if (channelsHudInstance && channelsHudInstance.group.visible) {
             nextChannelsHoverRegion = null;
-            const plane = vrHudPlaneRef.current;
-            const planePoint = vrHudPlanePointRef.current;
+            const plane = hudRefs.plane.current;
+            const planePoint = hudRefs.planePoint.current;
             channelsHudInstance.panel.getWorldPosition(planePoint);
-            const planeNormal = vrHudForwardRef.current;
+            const planeNormal = hudRefs.forward.current;
             planeNormal.set(0, 0, 1).applyQuaternion(channelsHudInstance.group.quaternion).normalize();
             plane.setFromNormalAndCoplanarPoint(planeNormal, planePoint);
             const activeType = entry.activeUiTarget?.type ?? null;
@@ -5319,8 +5284,8 @@ function VolumeViewer({
             const translateHandle = channelsHudInstance.panelTranslateHandle;
             const yawHandles = channelsHudInstance.panelYawHandles;
             const pitchHandle = channelsHudInstance.panelPitchHandle;
-            const handleWorldPoint = vrHandleWorldPointRef.current;
-            const handleSecondaryPoint = vrHandleSecondaryPointRef.current;
+            const handleWorldPoint = hudRefs.handle.world.current;
+            const handleSecondaryPoint = hudRefs.handle.secondary.current;
 
             if (translateHandle && !channelsSliderLocked) {
               translateHandle.getWorldPosition(handleWorldPoint);
@@ -5480,10 +5445,10 @@ function VolumeViewer({
 
           if (tracksHudInstance && tracksHudInstance.group.visible) {
             nextTracksHoverRegion = null;
-            const plane = vrHudPlaneRef.current;
-            const planePoint = vrHudPlanePointRef.current;
+            const plane = hudRefs.plane.current;
+            const planePoint = hudRefs.planePoint.current;
             tracksHudInstance.panel.getWorldPosition(planePoint);
-            const planeNormal = vrHudForwardRef.current;
+            const planeNormal = hudRefs.forward.current;
             planeNormal.set(0, 0, 1).applyQuaternion(tracksHudInstance.group.quaternion).normalize();
             plane.setFromNormalAndCoplanarPoint(planeNormal, planePoint);
             const activeType = entry.activeUiTarget?.type ?? null;
@@ -5500,8 +5465,8 @@ function VolumeViewer({
             const translateHandle = tracksHudInstance.panelTranslateHandle;
             const yawHandles = tracksHudInstance.panelYawHandles;
             const pitchHandle = tracksHudInstance.panelPitchHandle;
-            const handleWorldPoint = vrHandleWorldPointRef.current;
-            const handleSecondaryPoint = vrHandleSecondaryPointRef.current;
+            const handleWorldPoint = hudRefs.handle.world.current;
+            const handleSecondaryPoint = hudRefs.handle.secondary.current;
 
             if (translateHandle && !tracksSliderLocked) {
               translateHandle.getWorldPosition(handleWorldPoint);
@@ -5819,7 +5784,7 @@ function VolumeViewer({
           playbackHudInstance &&
           entry.hasHoverUiPoint
         ) {
-          const newPosition = vrPlaybackHudDragTargetRef.current;
+          const newPosition = hudRefs.dragTargets.playback.current;
           newPosition.copy(entry.rayOrigin);
           if (entry.hudGrabOffsets.playback) {
             newPosition.add(entry.hudGrabOffsets.playback);
@@ -5833,7 +5798,7 @@ function VolumeViewer({
           channelsHudInstance &&
           entry.hasHoverUiPoint
         ) {
-          const newPosition = vrChannelsHudDragTargetRef.current;
+          const newPosition = hudRefs.dragTargets.channels.current;
           newPosition.copy(entry.rayOrigin);
           if (entry.hudGrabOffsets.channels) {
             newPosition.add(entry.hudGrabOffsets.channels);
@@ -5847,7 +5812,7 @@ function VolumeViewer({
           tracksHudInstance &&
           entry.hasHoverUiPoint
         ) {
-          const newPosition = vrTracksHudDragTargetRef.current;
+          const newPosition = hudRefs.dragTargets.tracks.current;
           newPosition.copy(entry.rayOrigin);
           if (entry.hudGrabOffsets.tracks) {
             newPosition.add(entry.hudGrabOffsets.tracks);
@@ -5865,21 +5830,21 @@ function VolumeViewer({
             let applyYaw: ((nextYaw: number) => void) | null = null;
             let applyPitch: ((nextPitch: number) => void) | null = null;
             if (rotationState.hud === 'playback') {
-              placement = vrPlaybackHudPlacementRef.current;
+              placement = hudRefs.placements.playback.current;
               if (rotationState.mode === 'yaw') {
                 applyYaw = setVrPlaybackHudPlacementYaw;
               } else {
                 applyPitch = setVrPlaybackHudPlacementPitch;
               }
             } else if (rotationState.hud === 'channels') {
-              placement = vrChannelsHudPlacementRef.current;
+              placement = hudRefs.placements.channels.current;
               if (rotationState.mode === 'yaw') {
                 applyYaw = setVrChannelsHudPlacementYaw;
               } else {
                 applyPitch = setVrChannelsHudPlacementPitch;
               }
             } else if (rotationState.hud === 'tracks') {
-              placement = vrTracksHudPlacementRef.current;
+              placement = hudRefs.placements.tracks.current;
               if (rotationState.mode === 'yaw') {
                 applyYaw = setVrTracksHudPlacementYaw;
               } else {
@@ -5888,7 +5853,7 @@ function VolumeViewer({
             }
             if (placement && (applyYaw || applyPitch)) {
               if (rotationState.mode === 'yaw' && applyYaw) {
-                const yawVector = vrHudYawVectorRef.current;
+                const yawVector = hudRefs.yaw.vector.current;
                 yawVector.copy(entry.rayOrigin).sub(placement.position);
                 yawVector.y = 0;
                 if (yawVector.lengthSq() > 1e-6) {
@@ -5908,7 +5873,7 @@ function VolumeViewer({
                   applyYaw(nextYaw);
                 }
               } else if (rotationState.mode === 'pitch' && applyPitch) {
-                const pitchVector = vrHudPitchVectorRef.current;
+                const pitchVector = hudRefs.pitchVector.current;
                 pitchVector.copy(entry.rayOrigin).sub(placement.position);
                 pitchVector.x = 0;
                 if (pitchVector.lengthSq() > 1e-6) {
@@ -6007,7 +5972,7 @@ function VolumeViewer({
         modeHoveredAny
       );
 
-      const channelsHudInstance = vrChannelsHudRef.current;
+      const channelsHudInstance = hudRefs.channels.current;
       const isSameRegion = (
         a: VrChannelsInteractiveRegion | null,
         b: VrChannelsInteractiveRegion | null
@@ -6028,10 +5993,10 @@ function VolumeViewer({
       };
       if (channelsHudInstance && !isSameRegion(channelsHudInstance.hoverRegion, nextChannelsHoverRegion)) {
         channelsHudInstance.hoverRegion = nextChannelsHoverRegion;
-        renderVrChannelsHud(channelsHudInstance, vrChannelsStateRef.current);
+        renderVrChannelsHud(channelsHudInstance, hudRefs.states.channels.current);
       }
 
-      const tracksHudInstance = vrTracksHudRef.current;
+      const tracksHudInstance = hudRefs.tracks.current;
       const isSameTracksRegion = (
         a: VrTracksInteractiveRegion | null,
         b: VrTracksInteractiveRegion | null
@@ -6052,7 +6017,7 @@ function VolumeViewer({
       };
       if (tracksHudInstance && !isSameTracksRegion(tracksHudInstance.hoverRegion, nextTracksHoverRegion)) {
         tracksHudInstance.hoverRegion = nextTracksHoverRegion;
-        renderVrTracksHud(tracksHudInstance, vrTracksStateRef.current);
+        renderVrTracksHud(tracksHudInstance, hudRefs.states.tracks.current);
       }
 
       const summary = {
@@ -6492,7 +6457,7 @@ function VolumeViewer({
 
       const playbackLoopState = playbackLoopRef.current;
       const playbackState = playbackStateRef.current;
-      const playbackSliderActive = vrHoverStateRef.current.playbackSliderActive;
+      const playbackSliderActive = hudRefs.states.hover.current.playbackSliderActive;
       const shouldAdvancePlayback =
         playbackState.isPlaying &&
         !playbackState.playbackDisabled &&
@@ -6590,7 +6555,7 @@ function VolumeViewer({
       sessionCleanupRef.current = null;
       preVrCameraStateRef.current = null;
       setControllerVisibility(false);
-      const hud = vrPlaybackHudRef.current;
+      const hud = hudRefs.playback.current;
       if (hud) {
         if (hud.group.parent) {
           hud.group.parent.remove(hud.group);
@@ -6609,11 +6574,11 @@ function VolumeViewer({
           }
         });
         hud.labelTexture.dispose();
-        vrPlaybackHudRef.current = null;
-        vrPlaybackHudPlacementRef.current = null;
+        hudRefs.playback.current = null;
+        hudRefs.placements.playback.current = null;
       }
 
-      const channelsHud = vrChannelsHudRef.current;
+      const channelsHud = hudRefs.channels.current;
       if (channelsHud) {
         if (channelsHud.group.parent) {
           channelsHud.group.parent.remove(channelsHud.group);
@@ -6632,11 +6597,11 @@ function VolumeViewer({
           }
         });
         channelsHud.panelTexture.dispose();
-        vrChannelsHudRef.current = null;
-        vrChannelsHudPlacementRef.current = null;
+        hudRefs.channels.current = null;
+        hudRefs.placements.channels.current = null;
       }
 
-      const tracksHud = vrTracksHudRef.current;
+      const tracksHud = hudRefs.tracks.current;
       if (tracksHud) {
         if (tracksHud.group.parent) {
           tracksHud.group.parent.remove(tracksHud.group);
@@ -6655,8 +6620,8 @@ function VolumeViewer({
           }
         });
         tracksHud.panelTexture.dispose();
-        vrTracksHudRef.current = null;
-        vrTracksHudPlacementRef.current = null;
+        hudRefs.tracks.current = null;
+        hudRefs.placements.tracks.current = null;
       }
 
       const resources = resourcesRef.current;
