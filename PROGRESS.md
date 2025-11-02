@@ -516,3 +516,6 @@ d centered the front-page card in the viewport.
 - Swapped the contrast slider to a logarithmic scale with better formatting, keeping fine control near 1× while retaining access to higher contrast boosts.
 - Replaced the auto-contrast heuristic with percentile-based histogram bounds that add a safety margin, producing balanced windows that remain compatible with LUT inversion.
 - Added a VR playback loop that advances timepoints using the configured FPS whenever play is active and no slider drag is in progress, keeping the immersive play/pause control in sync with the desktop timeline.
+
+## VR hover utilities prep work
+- Threaded the viewer container ref and hover state callbacks into the VR hook so immersive helpers can share the existing desktop hover bookkeeping in upcoming changes.
