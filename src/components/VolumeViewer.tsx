@@ -13,14 +13,17 @@ import { getCachedTextureData } from '../textureCache';
 import './VolumeViewer.css';
 import type { TrackColorMode, TrackDefinition } from '../types/tracks';
 import type {
-  ControllerEntry,
   MovementState,
   PointerState,
-  RaycasterLike,
   TrackLineResource,
   VolumeResources,
-  VolumeScaleState,
   VolumeViewerProps,
+  VrHistogramShape,
+} from './VolumeViewer.types';
+import type {
+  ControllerEntry,
+  RaycasterLike,
+  VolumeScaleState,
   VrChannelsHud,
   VrChannelsInteractiveRegion,
   VrChannelsSliderDefinition,
@@ -35,8 +38,7 @@ import type {
   VrUiTarget,
   VrUiTargetType,
   WebXRFoveationManager,
-  VrHistogramShape,
-} from './VolumeViewer.types';
+} from './volume-viewer/vr';
 import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from '../layerColors';
 import {
   createTrackColor,
