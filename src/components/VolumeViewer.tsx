@@ -457,6 +457,34 @@ function VolumeViewer({
   const trackFollowRequestCallbackRef = useRef<(trackId: string) => void>(() => {});
   trackFollowRequestCallbackRef.current = onTrackFollowRequest;
 
+  const handleResize = useCallback(() => {
+    const target = containerRef.current;
+    const rendererInstance = rendererRef.current;
+    const cameraInstance = cameraRef.current;
+    if (!target || !rendererInstance || !cameraInstance) {
+      return;
+    }
+    if (rendererInstance.xr?.isPresenting) {
+      return;
+    }
+    const width = target.clientWidth;
+    const height = target.clientHeight;
+    if (width > 0 && height > 0) {
+      setHasMeasured(true);
+    }
+    rendererInstance.setSize(width, height);
+    if (width > 0 && height > 0) {
+      for (const resource of trackLinesRef.current.values()) {
+        resource.material.resolution.set(width, height);
+        resource.material.needsUpdate = true;
+        resource.outlineMaterial.resolution.set(width, height);
+        resource.outlineMaterial.needsUpdate = true;
+      }
+    }
+    cameraInstance.aspect = width / height;
+    cameraInstance.updateProjectionMatrix();
+  }, [setHasMeasured]);
+
   const applyHoverState = useCallback(() => {
     const pointerState = hoverSourcesRef.current.pointer;
     const controllerState = hoverSourcesRef.current.controller;
@@ -499,9 +527,6 @@ function VolumeViewer({
   );
 
   const {
-    onRegisterVrSession,
-    onVrSessionStarted,
-    onVrSessionEnded,
     vrPlaybackHudRef,
     vrChannelsHudRef,
     vrTracksHudRef,
@@ -589,6 +614,7 @@ function VolumeViewer({
     containerRef,
     rendererRef,
     cameraRef,
+    controlsRef,
     sceneRef,
     volumeRootGroupRef,
     currentDimensionsRef,
@@ -638,7 +664,8 @@ function VolumeViewer({
     onResetVolume: () => resetVolumeCallbackRef.current?.(),
     onResetHudPlacement: () => resetHudPlacementCallbackRef.current?.(),
     onTrackFollowRequest: (trackId) => trackFollowRequestCallbackRef.current?.(trackId),
-    vrLog
+    vrLog,
+    onAfterSessionEnd: handleResize
   });
 
 
@@ -1223,24 +1250,15 @@ function VolumeViewer({
   const applyTrackGroupTransformRef = useRef(applyTrackGroupTransform);
   const updateVolumeHandlesRef = useRef(updateVolumeHandles);
   const refreshVrHudPlacementsRef = useRef(refreshVrHudPlacements);
-  const onRegisterVrSessionRef = useRef(onRegisterVrSession);
-  const onVrSessionStartedRef = useRef(onVrSessionStarted);
-  const onVrSessionEndedRef = useRef(onVrSessionEnded);
 
   useEffect(() => {
     applyVolumeRootTransformRef.current = applyVolumeRootTransform;
     applyTrackGroupTransformRef.current = applyTrackGroupTransform;
     updateVolumeHandlesRef.current = updateVolumeHandles;
     refreshVrHudPlacementsRef.current = refreshVrHudPlacements;
-    onRegisterVrSessionRef.current = onRegisterVrSession;
-    onVrSessionStartedRef.current = onVrSessionStarted;
-    onVrSessionEndedRef.current = onVrSessionEnded;
   }, [
     applyTrackGroupTransform,
     applyVolumeRootTransform,
-    onRegisterVrSession,
-    onVrSessionEnded,
-    onVrSessionStarted,
     refreshVrHudPlacements,
     updateVolumeHandles
   ]);
@@ -1251,7 +1269,6 @@ function VolumeViewer({
       return;
     }
 
-    let isDisposed = false;
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
       alpha: true,
@@ -1605,214 +1622,7 @@ function VolumeViewer({
     resetVrTracksHudPlacement();
     onRendererInitialized();
 
-    const handleSessionEnd = () => {
-      vrLog('[VR] handleSessionEnd', {
-        presenting: renderer.xr.isPresenting,
-        visibilityState: xrSessionRef.current?.visibilityState ?? null
-      });
-      restoreVrFoveation();
-      applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
-      sessionCleanupRef.current = null;
-      xrSessionRef.current = null;
-      xrCurrentSessionModeRef.current = null;
-      playbackStateRef.current.currentSessionMode = null;
-      updateVrPlaybackHud();
-      volumeRootBaseOffsetRef.current.set(0, 0, 0);
-      applyVolumeRootTransformRef.current?.(currentDimensionsRef.current);
-      setControllerVisibility(false);
-      setVrPlaybackHudVisible(false);
-      setVrChannelsHudVisible(false);
-      setVrTracksHudVisible(false);
-      applyVrPlaybackHoverState(false, false, false, false, false, false, false, false, false);
-      for (const entry of controllersRef.current) {
-        entry.ray.scale.set(1, 1, 1);
-        entry.hudGrabOffsets.playback = null;
-        entry.hudGrabOffsets.channels = null;
-        entry.hudGrabOffsets.tracks = null;
-        entry.translateGrabOffset = null;
-        entry.scaleGrabOffset = null;
-        entry.volumeScaleState = null;
-      }
-      const controlsInstance = controlsRef.current;
-      if (controlsInstance) {
-        controlsInstance.enabled = true;
-      }
-      const stored = preVrCameraStateRef.current;
-      const cameraInstance = cameraRef.current;
-      if (stored && cameraInstance && controlsInstance) {
-        cameraInstance.position.copy(stored.position);
-        cameraInstance.quaternion.copy(stored.quaternion);
-        cameraInstance.updateMatrixWorld(true);
-        controlsInstance.target.copy(stored.target);
-        controlsInstance.update();
-      }
-      preVrCameraStateRef.current = null;
-      refreshControllerVisibility();
-      handleResize();
-      renderer.setAnimationLoop(renderLoop);
-      const pendingMode = xrPendingModeSwitchRef.current;
-      xrPendingModeSwitchRef.current = null;
-      if (!isDisposed) {
-        onVrSessionEndedRef.current?.();
-        if (pendingMode) {
-          vrLog('[VR] restarting session to honor pending mode switch', { mode: pendingMode });
-          void requestVrSession().catch((error) => {
-            console.error('Failed to restart XR session after mode switch', error);
-          });
-        }
-      }
-    };
-
-    const requestVrSession = async () => {
-      if (xrSessionRef.current) {
-        return xrSessionRef.current;
-      }
-      if (typeof navigator === 'undefined' || !navigator.xr) {
-        throw new Error('WebXR not available');
-      }
-      const preferredMode = xrPreferredSessionModeRef.current;
-      const attemptedModes: Array<'immersive-vr' | 'immersive-ar'> = [];
-      if (preferredMode === 'immersive-ar' && xrPassthroughSupportedRef.current) {
-        attemptedModes.push('immersive-ar');
-      }
-      attemptedModes.push('immersive-vr');
-      if (!attemptedModes.includes('immersive-ar') && xrPassthroughSupportedRef.current) {
-        attemptedModes.push('immersive-ar');
-      }
-
-      let session: XRSession | null = null;
-      let resolvedMode: 'immersive-vr' | 'immersive-ar' | null = null;
-      let lastError: unknown = null;
-      for (const mode of attemptedModes) {
-        try {
-          vrLog('[VR] requestSession → navigator.xr.requestSession', { mode });
-          const requestedSession = await navigator.xr.requestSession(mode, {
-            optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
-          });
-          session = requestedSession;
-          resolvedMode = mode;
-          break;
-        } catch (error) {
-          lastError = error;
-          if (mode === 'immersive-ar') {
-            console.warn('Failed to start immersive-ar session; falling back to immersive-vr.', error);
-            setPreferredXrSessionMode('immersive-vr');
-          } else {
-            console.warn('Failed to start immersive-vr session', error);
-          }
-        }
-      }
-
-      if (!session || !resolvedMode) {
-        throw lastError ?? new Error('Failed to start XR session');
-      }
-
-      vrLog('[VR] requestSession resolved', {
-        presenting: renderer.xr.isPresenting,
-        visibilityState: session.visibilityState,
-        mode: resolvedMode
-      });
-      xrSessionRef.current = session;
-      xrCurrentSessionModeRef.current = resolvedMode;
-      playbackStateRef.current.currentSessionMode = resolvedMode;
-      if (resolvedMode !== xrPreferredSessionModeRef.current) {
-        setPreferredXrSessionMode(resolvedMode);
-      } else {
-        updateVrPlaybackHud();
-      }
-      xrPendingModeSwitchRef.current = null;
-
-      const controlsInstance = controlsRef.current;
-      if (controlsInstance) {
-        controlsInstance.enabled = false;
-      }
-      const cameraInstance = cameraRef.current;
-      if (cameraInstance && controlsInstance) {
-        preVrCameraStateRef.current = {
-          position: cameraInstance.position.clone(),
-          quaternion: cameraInstance.quaternion.clone(),
-          target: controlsInstance.target.clone()
-        };
-      } else {
-        preVrCameraStateRef.current = null;
-      }
-
-      const onSessionEnd = () => {
-        session.removeEventListener('end', onSessionEnd);
-        handleSessionEnd();
-      };
-      session.addEventListener('end', onSessionEnd);
-      sessionCleanupRef.current = () => {
-        session.removeEventListener('end', onSessionEnd);
-      };
-
-      renderer.xr.setSession(session);
-      vrLog('[VR] setSession', {
-        presenting: renderer.xr.isPresenting,
-        visibilityState: session.visibilityState
-      });
-      applyVrFoveation();
-      volumeRootBaseOffsetRef.current.copy(VR_VOLUME_BASE_OFFSET);
-      applyVolumeRootTransformRef.current?.(currentDimensionsRef.current);
-      setVrPlaybackHudVisible(true);
-      setVrChannelsHudVisible(true);
-      setVrTracksHudVisible(true);
-      updateVrPlaybackHud();
-      updateVrChannelsHud();
-      updateVrTracksHud();
-      refreshControllerVisibility();
-      updateControllerRays();
-
-      if (!isDisposed) {
-        onVrSessionStartedRef.current?.();
-      }
-
-      return session;
-    };
-
-    const endVrSession = async () => {
-      const session = xrSessionRef.current;
-      if (!session) {
-        return;
-      }
-      await session.end();
-    };
-    endVrSessionRequestRef.current = endVrSession;
-
-    onRegisterVrSessionRef.current?.({
-      requestSession: requestVrSession,
-      endSession: endVrSession
-    });
-
-    const handleResize = (entries?: ResizeObserverEntry[]) => {
-      const target = containerRef.current;
-      const rendererInstance = rendererRef.current;
-      const cameraInstance = cameraRef.current;
-      if (!target || !rendererInstance || !cameraInstance) {
-        return;
-      }
-      if (rendererInstance.xr?.isPresenting) {
-        return;
-      }
-      const width = target.clientWidth;
-      const height = target.clientHeight;
-      if (width > 0 && height > 0) {
-        setHasMeasured(true);
-      }
-      rendererInstance.setSize(width, height);
-      if (width > 0 && height > 0) {
-        for (const resource of trackLinesRef.current.values()) {
-          resource.material.resolution.set(width, height);
-          resource.material.needsUpdate = true;
-          resource.outlineMaterial.resolution.set(width, height);
-          resource.outlineMaterial.needsUpdate = true;
-        }
-      }
-      cameraInstance.aspect = width / height;
-      cameraInstance.updateProjectionMatrix();
-    };
-
-    const resizeObserver = new ResizeObserver((entries) => handleResize(entries));
+    const resizeObserver = new ResizeObserver(() => handleResize());
     resizeObserver.observe(container);
     handleResize();
 
@@ -2048,8 +1858,6 @@ function VolumeViewer({
     renderer.setAnimationLoop(renderLoop);
 
     return () => {
-      isDisposed = true;
-      onRegisterVrSessionRef.current?.(null);
       restoreVrFoveation();
       applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
       renderer.setAnimationLoop(null);

@@ -1,6 +1,7 @@
 import { MutableRefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Line2 } from 'three/examples/jsm/lines/Line2';
+import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory';
 
 import type {
@@ -203,6 +204,7 @@ export type UseVolumeViewerVrParams = {
   containerRef: MutableRefObject<HTMLDivElement | null>;
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
   cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
+  controlsRef: MutableRefObject<OrbitControls | null>;
   sceneRef: MutableRefObject<THREE.Scene | null>;
   volumeRootGroupRef: MutableRefObject<THREE.Group | null>;
   currentDimensionsRef: MutableRefObject<{ width: number; height: number; depth: number } | null>;
@@ -257,14 +259,12 @@ export type UseVolumeViewerVrParams = {
   onResetHudPlacement: () => void;
   onTrackFollowRequest: (trackId: string) => void;
   vrLog: (...args: Parameters<typeof console.debug>) => void;
+  onAfterSessionEnd?: () => void;
 };
 
 export type UseVolumeViewerVrResult = {
-  onRegisterVrSession: (
-    handlers: Parameters<NonNullable<VolumeViewerVrProps['onRegisterVrSession']>>[0]
-  ) => void;
-  onVrSessionStarted: () => void;
-  onVrSessionEnded: () => void;
+  requestVrSession: () => Promise<XRSession>;
+  endVrSession: () => Promise<void>;
   vrPlaybackHudRef: MutableRefObject<VrPlaybackHud | null>;
   vrChannelsHudRef: MutableRefObject<VrChannelsHud | null>;
   vrTracksHudRef: MutableRefObject<VrTracksHud | null>;
@@ -413,6 +413,7 @@ export function useVolumeViewerVr({
   containerRef,
   rendererRef,
   cameraRef,
+  controlsRef,
   sceneRef,
   volumeRootGroupRef,
   currentDimensionsRef,
@@ -453,6 +454,7 @@ export function useVolumeViewerVr({
   onResetHudPlacement,
   onTrackFollowRequest,
   vrLog,
+  onAfterSessionEnd,
 }: UseVolumeViewerVrParams): UseVolumeViewerVrResult {
   const {
     isPlaying,
@@ -481,6 +483,9 @@ export function useVolumeViewerVr({
   const xrFoveationAppliedRef = useRef(false);
   const xrPreviousFoveationRef = useRef<number | undefined>(undefined);
   const endVrSessionRequestRef = useRef<(() => Promise<void> | void) | null>(null);
+  const disposedRef = useRef(false);
+  const handleSessionEndRef = useRef<() => void>(() => {});
+  const requestVrSessionRef = useRef<(() => Promise<XRSession>) | null>(null);
   const vrPropsRef = useRef(vrProps ?? null);
   vrPropsRef.current = vrProps ?? null;
   const vrLogRef = useRef(vrLog);
@@ -493,6 +498,12 @@ export function useVolumeViewerVr({
   onTrackFollowRequestRef.current = onTrackFollowRequest;
 
   const [controllerSetupRevision, setControllerSetupRevision] = useState(0);
+
+  useEffect(() => {
+    return () => {
+      disposedRef.current = true;
+    };
+  }, []);
 
   const vrContainerRef = useRef(containerRef);
   vrContainerRef.current = containerRef;
@@ -2265,20 +2276,23 @@ export function useVolumeViewerVr({
     [vrTracksLocalPointRef],
   );
 
-  const onRegisterVrSession = useCallback<UseVolumeViewerVrResult['onRegisterVrSession']>(
-    (handlers) => {
-      vrProps?.onRegisterVrSession?.(handlers ?? null);
-    },
-    [vrProps]
-  );
 
-  const onVrSessionStarted = useCallback(() => {
-    vrProps?.onVrSessionStarted?.();
-  }, [vrProps]);
+  const endVrSession = useCallback(async () => {
+    const session = xrSessionRef.current;
+    if (!session) {
+      return;
+    }
+    await session.end();
+  }, [xrSessionRef]);
 
-  const onVrSessionEnded = useCallback(() => {
-    vrProps?.onVrSessionEnded?.();
-  }, [vrProps]);
+  useEffect(() => {
+    endVrSessionRequestRef.current = endVrSession;
+    return () => {
+      if (endVrSessionRequestRef.current === endVrSession) {
+        endVrSessionRequestRef.current = null;
+      }
+    };
+  }, [endVrSession]);
 
   const updateVolumeHandles = useCallback(() => {
     const translationHandle = vrTranslationHandleRef.current;
@@ -3023,6 +3037,286 @@ export function useVolumeViewerVr({
     ],
   );
 
+  const applySessionStartState = useCallback(() => {
+    applyVrFoveation();
+    applyVolumeStepScaleToResources(VR_VOLUME_STEP_SCALE);
+    volumeRootBaseOffsetRef.current.copy(VR_VOLUME_BASE_OFFSET);
+    applyVolumeRootTransform(currentDimensionsRef.current);
+    refreshControllerVisibility();
+    setVrPlaybackHudVisible(true);
+    setVrChannelsHudVisible(true);
+    setVrTracksHudVisible(true);
+    resetVrPlaybackHudPlacement();
+    resetVrChannelsHudPlacement();
+    resetVrTracksHudPlacement();
+    updateVrPlaybackHud();
+    updateVrChannelsHud();
+    updateVrTracksHud();
+    updateControllerRaysRef.current?.();
+    updateVolumeHandles();
+  }, [
+    applyVolumeRootTransform,
+    applyVolumeStepScaleToResources,
+    applyVrFoveation,
+    currentDimensionsRef,
+    refreshControllerVisibility,
+    resetVrChannelsHudPlacement,
+    resetVrPlaybackHudPlacement,
+    resetVrTracksHudPlacement,
+    setVrChannelsHudVisible,
+    setVrPlaybackHudVisible,
+    setVrTracksHudVisible,
+    updateVolumeHandles,
+    updateVrChannelsHud,
+    updateVrPlaybackHud,
+    updateVrTracksHud,
+    volumeRootBaseOffsetRef,
+  ]);
+
+  const applySessionEndState = useCallback(() => {
+    restoreVrFoveation();
+    applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
+    volumeRootBaseOffsetRef.current.set(0, 0, 0);
+    applyVolumeRootTransform(currentDimensionsRef.current);
+    refreshControllerVisibility();
+    setVrPlaybackHudVisible(false);
+    setVrChannelsHudVisible(false);
+    setVrTracksHudVisible(false);
+    updateVolumeHandles();
+  }, [
+    applyVolumeRootTransform,
+    applyVolumeStepScaleToResources,
+    currentDimensionsRef,
+    refreshControllerVisibility,
+    restoreVrFoveation,
+    setVrChannelsHudVisible,
+    setVrPlaybackHudVisible,
+    setVrTracksHudVisible,
+    updateVolumeHandles,
+    volumeRootBaseOffsetRef,
+  ]);
+
+  const handleSessionEnd = useCallback(() => {
+    const renderer = rendererRef.current;
+    vrLogRef.current?.('[VR] handleSessionEnd', {
+      presenting: renderer?.xr?.isPresenting ?? false,
+      visibilityState: xrSessionRef.current?.visibilityState ?? null,
+    });
+    applySessionEndState();
+    sessionCleanupRef.current = null;
+    xrSessionRef.current = null;
+    xrCurrentSessionModeRef.current = null;
+    const playbackState = playbackStateRef.current;
+    playbackState.currentSessionMode = null;
+    updateVrPlaybackHud();
+    setControllerVisibility(false);
+    applyVrPlaybackHoverState(false, false, false, false, false, false, false, false, false);
+    for (const entry of controllersRef.current) {
+      entry.ray.scale.set(1, 1, 1);
+      entry.hudGrabOffsets.playback = null;
+      entry.hudGrabOffsets.channels = null;
+      entry.hudGrabOffsets.tracks = null;
+      entry.translateGrabOffset = null;
+      entry.scaleGrabOffset = null;
+      entry.volumeScaleState = null;
+    }
+    const controls = controlsRef.current;
+    if (controls) {
+      controls.enabled = true;
+    }
+    const stored = preVrCameraStateRef.current;
+    const camera = cameraRef.current;
+    if (stored && camera && controls) {
+      camera.position.copy(stored.position);
+      camera.quaternion.copy(stored.quaternion);
+      camera.updateMatrixWorld(true);
+      controls.target.copy(stored.target);
+      controls.update();
+    }
+    preVrCameraStateRef.current = null;
+    refreshControllerVisibility();
+    onAfterSessionEnd?.();
+    const pendingMode = xrPendingModeSwitchRef.current;
+    xrPendingModeSwitchRef.current = null;
+    if (!disposedRef.current) {
+      vrPropsRef.current?.onVrSessionEnded?.();
+      if (pendingMode) {
+        vrLogRef.current?.('[VR] restarting session to honor pending mode switch', {
+          mode: pendingMode,
+        });
+        const restart = requestVrSessionRef.current;
+        if (restart) {
+          void restart().catch((error) => {
+            console.error('Failed to restart XR session after mode switch', error);
+          });
+        }
+      }
+    }
+  }, [
+    applySessionEndState,
+    applyVrPlaybackHoverState,
+    cameraRef,
+    controlsRef,
+    controllersRef,
+    disposedRef,
+    onAfterSessionEnd,
+    playbackStateRef,
+    preVrCameraStateRef,
+    refreshControllerVisibility,
+    requestVrSessionRef,
+    setControllerVisibility,
+    updateVrPlaybackHud,
+    vrLogRef,
+    vrPropsRef,
+    xrCurrentSessionModeRef,
+    xrPendingModeSwitchRef,
+  ]);
+
+  const requestVrSession = useCallback(async () => {
+    if (xrSessionRef.current) {
+      return xrSessionRef.current;
+    }
+    if (typeof navigator === 'undefined' || !navigator.xr) {
+      throw new Error('WebXR not available');
+    }
+    const renderer = rendererRef.current;
+    if (!renderer) {
+      throw new Error('Renderer not initialized');
+    }
+
+    const preferredMode = xrPreferredSessionModeRef.current;
+    const attemptedModes: Array<'immersive-vr' | 'immersive-ar'> = [];
+    if (preferredMode === 'immersive-ar' && xrPassthroughSupportedRef.current) {
+      attemptedModes.push('immersive-ar');
+    }
+    attemptedModes.push('immersive-vr');
+    if (!attemptedModes.includes('immersive-ar') && xrPassthroughSupportedRef.current) {
+      attemptedModes.push('immersive-ar');
+    }
+
+    let session: XRSession | null = null;
+    let resolvedMode: 'immersive-vr' | 'immersive-ar' | null = null;
+    let lastError: unknown = null;
+    for (const mode of attemptedModes) {
+      try {
+        vrLogRef.current?.('[VR] requestSession → navigator.xr.requestSession', { mode });
+        const requestedSession = await navigator.xr.requestSession(mode, {
+          optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'],
+        });
+        session = requestedSession;
+        resolvedMode = mode;
+        break;
+      } catch (error) {
+        lastError = error;
+        if (mode === 'immersive-ar') {
+          console.warn('Failed to start immersive-ar session; falling back to immersive-vr.', error);
+          setPreferredXrSessionMode('immersive-vr');
+        } else {
+          console.warn('Failed to start immersive-vr session', error);
+        }
+      }
+    }
+
+    if (!session || !resolvedMode) {
+      throw lastError ?? new Error('Failed to start XR session');
+    }
+
+    vrLogRef.current?.('[VR] requestSession resolved', {
+      presenting: renderer.xr.isPresenting,
+      visibilityState: session.visibilityState,
+      mode: resolvedMode,
+    });
+
+    xrSessionRef.current = session;
+    xrCurrentSessionModeRef.current = resolvedMode;
+    const playbackState = playbackStateRef.current;
+    playbackState.currentSessionMode = resolvedMode;
+    if (resolvedMode !== xrPreferredSessionModeRef.current) {
+      setPreferredXrSessionMode(resolvedMode);
+    } else {
+      updateVrPlaybackHud();
+    }
+    xrPendingModeSwitchRef.current = null;
+
+    const controls = controlsRef.current;
+    if (controls) {
+      controls.enabled = false;
+    }
+    const camera = cameraRef.current;
+    if (camera && controls) {
+      preVrCameraStateRef.current = {
+        position: camera.position.clone(),
+        quaternion: camera.quaternion.clone(),
+        target: controls.target.clone(),
+      };
+    } else {
+      preVrCameraStateRef.current = null;
+    }
+
+    const onSessionEnd = () => {
+      session.removeEventListener('end', onSessionEnd);
+      handleSessionEndRef.current?.();
+    };
+    session.addEventListener('end', onSessionEnd);
+    sessionCleanupRef.current = () => {
+      session.removeEventListener('end', onSessionEnd);
+    };
+
+    renderer.xr.setSession(session);
+    vrLogRef.current?.('[VR] setSession', {
+      presenting: renderer.xr.isPresenting,
+      visibilityState: session.visibilityState,
+    });
+
+    applySessionStartState();
+    if (!disposedRef.current) {
+      vrPropsRef.current?.onVrSessionStarted?.();
+    }
+
+    return session;
+  }, [
+    applySessionStartState,
+    cameraRef,
+    controlsRef,
+    disposedRef,
+    handleSessionEndRef,
+    playbackStateRef,
+    preVrCameraStateRef,
+    rendererRef,
+    setPreferredXrSessionMode,
+    updateVrPlaybackHud,
+    vrLogRef,
+    vrPropsRef,
+    xrCurrentSessionModeRef,
+    xrPassthroughSupportedRef,
+    xrPendingModeSwitchRef,
+    xrPreferredSessionModeRef,
+    xrSessionRef,
+  ]);
+
+  useEffect(() => {
+    requestVrSessionRef.current = requestVrSession;
+    return () => {
+      if (requestVrSessionRef.current === requestVrSession) {
+        requestVrSessionRef.current = null;
+      }
+    };
+  }, [requestVrSession]);
+
+  useEffect(() => {
+    vrProps?.onRegisterVrSession?.({
+      requestSession: requestVrSession,
+      endSession: endVrSession,
+    });
+    return () => {
+      vrProps?.onRegisterVrSession?.(null);
+    };
+  }, [endVrSession, requestVrSession, vrProps]);
+
+  useEffect(() => {
+    handleSessionEndRef.current = handleSessionEnd;
+  }, [handleSessionEnd]);
+
   const refreshControllerVisibilityRef = useRef(refreshControllerVisibility);
   refreshControllerVisibilityRef.current = refreshControllerVisibility;
   const applyPlaybackSliderFromWorldPointRef = useRef(applyPlaybackSliderFromWorldPoint);
@@ -3043,6 +3337,8 @@ export function useVolumeViewerVr({
   updateVrChannelsHudRef.current = updateVrChannelsHud;
   const updateVrTracksHudRef = useRef(updateVrTracksHud);
   updateVrTracksHudRef.current = updateVrTracksHud;
+  const updateControllerRaysRef = useRef<() => void>(() => {});
+
 
   const updateControllerRays = useCallback(() => {
     const renderer = rendererRef.current;
@@ -4544,6 +4840,7 @@ export function useVolumeViewerVr({
     setVrChannelsHudPlacementPitch,
     setVrTracksHudPlacementPitch,
   ]);
+  updateControllerRaysRef.current = updateControllerRays;
 
   const onRendererInitialized = useCallback(() => {
     setControllerSetupRevision((revision) => revision + 1);
@@ -5293,9 +5590,8 @@ export function useVolumeViewerVr({
   ]);
 
   return {
-    onRegisterVrSession,
-    onVrSessionStarted,
-    onVrSessionEnded,
+    requestVrSession,
+    endVrSession,
     vrPlaybackHudRef,
     vrChannelsHudRef,
     vrTracksHudRef,
