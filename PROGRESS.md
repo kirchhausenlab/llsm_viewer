@@ -16,6 +16,11 @@
 - Moved XR/session/controller bookkeeping refs into `useVolumeViewerVr` so immersive state is initialized in one place and the component consumes the shared instances via the hook return value.
 - Updated `VolumeViewer` to rely on the hook-supplied refs while keeping renderer, camera, and resource refs flowing through the existing parameters.
 
+## VR HUD channel/track hook migration
+- Moved the VR channels and tracks HUD factories, renderers, and slider helpers into `useVolumeViewerVr` so the immersive UI now builds off the hook's shared refs instead of ad-hoc component closures.
+- Updated `VolumeViewer` to consume the hook-provided HUD creators, visibility toggles, and interaction handlers, ensuring controller hover and placement logic still works while avoiding duplicated state.
+- Verified the refactor with `npm run typecheck` and `npm run build`, keeping immersive entry stable while consolidating the VR surface logic.
+
 ## VR prop grouping
 - Introduced a `VolumeViewerVrProps` bundle so immersive-only callbacks and HUD data flow through a single optional prop, keeping the desktop viewer boundary lean.
 - Updated `VolumeViewer` to read VR settings from the new object with safe fallbacks and guarded callbacks, ensuring non-VR usage remains unaffected.
