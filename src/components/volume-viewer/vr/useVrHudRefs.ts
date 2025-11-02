@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 
@@ -70,92 +70,78 @@ export function useVrHudRefs(): VrHudRefs {
   const channels = useRef<VrChannelsHud | null>(null);
   const tracks = useRef<VrTracksHud | null>(null);
 
-  const playbackPlacement = useRef<VrHudPlacement | null>(null);
-  const channelsPlacement = useRef<VrHudPlacement | null>(null);
-  const tracksPlacement = useRef<VrHudPlacement | null>(null);
+  const placements = {
+    playback: useRef<VrHudPlacement | null>(null),
+    channels: useRef<VrHudPlacement | null>(null),
+    tracks: useRef<VrHudPlacement | null>(null),
+  } as const;
 
-  const playbackDragTarget = useRef(new THREE.Vector3());
-  const channelsDragTarget = useRef(new THREE.Vector3());
-  const tracksDragTarget = useRef(new THREE.Vector3());
+  const dragTargets = {
+    playback: useRef(new THREE.Vector3()),
+    channels: useRef(new THREE.Vector3()),
+    tracks: useRef(new THREE.Vector3()),
+  } as const;
 
   const plane = useRef(new THREE.Plane());
   const planePoint = useRef(new THREE.Vector3());
   const forward = useRef(new THREE.Vector3(0, 0, 1));
-  const yawEuler = useRef(new THREE.Euler(0, 0, 0, 'YXZ'));
-  const yawQuaternion = useRef(new THREE.Quaternion());
-  const yawVector = useRef(new THREE.Vector3());
+  const yaw = {
+    euler: useRef(new THREE.Euler(0, 0, 0, 'YXZ')),
+    quaternion: useRef(new THREE.Quaternion()),
+    vector: useRef(new THREE.Vector3()),
+  } as const;
   const pitchVector = useRef(new THREE.Vector3());
   const offset = useRef(new THREE.Vector3());
   const intersection = useRef(new THREE.Vector3());
 
-  const channelsLocalPoint = useRef(new THREE.Vector3());
-  const tracksLocalPoint = useRef(new THREE.Vector3());
+  const localPoints = {
+    channels: useRef(new THREE.Vector3()),
+    tracks: useRef(new THREE.Vector3()),
+  } as const;
 
-  const handleWorldPoint = useRef(new THREE.Vector3());
-  const handleSecondaryPoint = useRef(new THREE.Vector3());
-  const handlePrimaryQuaternion = useRef(new THREE.Quaternion());
-  const handleSecondaryQuaternion = useRef(new THREE.Quaternion());
+  const handle = {
+    world: useRef(new THREE.Vector3()),
+    secondary: useRef(new THREE.Vector3()),
+    quaternion: {
+      primary: useRef(new THREE.Quaternion()),
+      secondary: useRef(new THREE.Quaternion()),
+    },
+  } as const;
 
-  const hoverState = useRef({
-    play: false,
-    playbackSlider: false,
-    playbackSliderActive: false,
-    fpsSlider: false,
-    fpsSliderActive: false,
-    resetVolume: false,
-    resetHud: false,
-    exit: false,
-    mode: false,
-  });
-  const channelsState = useRef<VrChannelsState>({ channels: [], activeChannelId: null });
-  const tracksState = useRef<VrTracksState>({ channels: [], activeChannelId: null });
+  const states = {
+    hover: useRef({
+      play: false,
+      playbackSlider: false,
+      playbackSliderActive: false,
+      fpsSlider: false,
+      fpsSliderActive: false,
+      resetVolume: false,
+      resetHud: false,
+      exit: false,
+      mode: false,
+    }),
+    channels: useRef<VrChannelsState>({ channels: [], activeChannelId: null }),
+    tracks: useRef<VrTracksState>({ channels: [], activeChannelId: null }),
+  } as const;
 
-  const refs = useRef<VrHudRefs | null>(null);
-  if (!refs.current) {
-    refs.current = {
+  return useMemo(
+    () => ({
       playback,
       channels,
       tracks,
-      placements: {
-        playback: playbackPlacement,
-        channels: channelsPlacement,
-        tracks: tracksPlacement,
-      },
-      dragTargets: {
-        playback: playbackDragTarget,
-        channels: channelsDragTarget,
-        tracks: tracksDragTarget,
-      },
+      placements,
+      dragTargets,
       plane,
       planePoint,
       forward,
-      yaw: {
-        euler: yawEuler,
-        quaternion: yawQuaternion,
-        vector: yawVector,
-      },
+      yaw,
       pitchVector,
       offset,
       intersection,
-      localPoints: {
-        channels: channelsLocalPoint,
-        tracks: tracksLocalPoint,
-      },
-      handle: {
-        world: handleWorldPoint,
-        secondary: handleSecondaryPoint,
-        quaternion: {
-          primary: handlePrimaryQuaternion,
-          secondary: handleSecondaryQuaternion,
-        },
-      },
-      states: {
-        hover: hoverState,
-        channels: channelsState,
-        tracks: tracksState,
-      },
-    };
-  }
-
-  return refs.current!;
+      localPoints,
+      handle,
+      states,
+    }),
+    []
+  );
 }
