@@ -116,6 +116,7 @@ export type VrHoverState = {
 
 export type UseVolumeViewerVrParams = {
   vrProps?: VolumeViewerVrProps | null;
+  containerRef: MutableRefObject<HTMLDivElement | null>;
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
   cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
   sceneRef: MutableRefObject<THREE.Scene | null>;
@@ -162,6 +163,12 @@ export type UseVolumeViewerVrParams = {
   channelTrackColorModes: Record<string, TrackColorMode>;
   selectedTrackIds: ReadonlySet<string>;
   followedTrackId: string | null;
+  updateHoverState: (
+    trackId: string | null,
+    position: { x: number; y: number } | null,
+    source?: 'pointer' | 'controller'
+  ) => void;
+  clearHoverState: (source?: 'pointer' | 'controller') => void;
 };
 
 export type UseVolumeViewerVrResult = {
@@ -287,6 +294,7 @@ export type UseVolumeViewerVrResult = {
 
 export function useVolumeViewerVr({
   vrProps,
+  containerRef,
   rendererRef,
   cameraRef,
   sceneRef,
@@ -323,6 +331,8 @@ export function useVolumeViewerVr({
   channelTrackColorModes,
   selectedTrackIds,
   followedTrackId,
+  updateHoverState,
+  clearHoverState,
 }: UseVolumeViewerVrParams): UseVolumeViewerVrResult {
   const {
     isPlaying,
@@ -350,6 +360,13 @@ export function useVolumeViewerVr({
   const xrPassthroughSupportedRef = useRef(isVrPassthroughSupported);
   const xrFoveationAppliedRef = useRef(false);
   const xrPreviousFoveationRef = useRef<number | undefined>(undefined);
+
+  const vrContainerRef = useRef(containerRef);
+  vrContainerRef.current = containerRef;
+  const vrUpdateHoverStateRef = useRef(updateHoverState);
+  vrUpdateHoverStateRef.current = updateHoverState;
+  const vrClearHoverStateRef = useRef(clearHoverState);
+  vrClearHoverStateRef.current = clearHoverState;
 
   const vrPlaybackHudRef = useRef<VrPlaybackHud | null>(null);
   const vrChannelsHudRef = useRef<VrChannelsHud | null>(null);

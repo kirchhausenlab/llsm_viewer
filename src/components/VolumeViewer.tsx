@@ -458,6 +458,47 @@ function VolumeViewer({
   });
   const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(null);
 
+  const applyHoverState = useCallback(() => {
+    const pointerState = hoverSourcesRef.current.pointer;
+    const controllerState = hoverSourcesRef.current.controller;
+    const nextState =
+      pointerState.trackId !== null
+        ? pointerState
+        : controllerState.trackId !== null
+        ? controllerState
+        : { trackId: null as string | null, position: null as { x: number; y: number } | null };
+    if (hoveredTrackIdRef.current !== nextState.trackId) {
+      hoveredTrackIdRef.current = nextState.trackId;
+      setHoveredTrackId(nextState.trackId);
+    }
+    setTooltipPosition(nextState.position);
+  }, []);
+
+  const updateHoverState = useCallback(
+    (
+      trackId: string | null,
+      position: { x: number; y: number } | null,
+      source: 'pointer' | 'controller' = 'pointer'
+    ) => {
+      hoverSourcesRef.current[source] = { trackId, position };
+      applyHoverState();
+    },
+    [applyHoverState]
+  );
+
+  const clearHoverState = useCallback(
+    (source?: 'pointer' | 'controller') => {
+      if (source) {
+        hoverSourcesRef.current[source] = { trackId: null, position: null };
+      } else {
+        hoverSourcesRef.current.pointer = { trackId: null, position: null };
+        hoverSourcesRef.current.controller = { trackId: null, position: null };
+      }
+      applyHoverState();
+    },
+    [applyHoverState]
+  );
+
   const {
     onRegisterVrSession,
     onVrSessionStarted,
@@ -538,6 +579,7 @@ function VolumeViewer({
     applyVolumeStepScaleToResources
   } = useVolumeViewerVr({
     vrProps: vr ?? null,
+    containerRef,
     rendererRef,
     cameraRef,
     sceneRef,
@@ -583,7 +625,9 @@ function VolumeViewer({
     trackLineWidthByChannel,
     channelTrackColorModes,
     selectedTrackIds,
-    followedTrackId
+    followedTrackId,
+    updateHoverState,
+    clearHoverState
   });
 
 
@@ -928,47 +972,6 @@ function VolumeViewer({
       return createTrackColor(track.id);
     },
     [channelTrackColorModes]
-  );
-
-  const applyHoverState = useCallback(() => {
-    const pointerState = hoverSourcesRef.current.pointer;
-    const controllerState = hoverSourcesRef.current.controller;
-    const nextState =
-      pointerState.trackId !== null
-        ? pointerState
-        : controllerState.trackId !== null
-        ? controllerState
-        : { trackId: null as string | null, position: null as { x: number; y: number } | null };
-    if (hoveredTrackIdRef.current !== nextState.trackId) {
-      hoveredTrackIdRef.current = nextState.trackId;
-      setHoveredTrackId(nextState.trackId);
-    }
-    setTooltipPosition(nextState.position);
-  }, []);
-
-  const updateHoverState = useCallback(
-    (
-      trackId: string | null,
-      position: { x: number; y: number } | null,
-      source: 'pointer' | 'controller' = 'pointer'
-    ) => {
-      hoverSourcesRef.current[source] = { trackId, position };
-      applyHoverState();
-    },
-    [applyHoverState]
-  );
-
-  const clearHoverState = useCallback(
-    (source?: 'pointer' | 'controller') => {
-      if (source) {
-        hoverSourcesRef.current[source] = { trackId: null, position: null };
-      } else {
-        hoverSourcesRef.current.pointer = { trackId: null, position: null };
-        hoverSourcesRef.current.controller = { trackId: null, position: null };
-      }
-      applyHoverState();
-    },
-    [applyHoverState]
   );
 
   const applyTrackGroupTransform = useCallback(
