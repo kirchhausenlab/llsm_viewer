@@ -216,6 +216,7 @@ export type VrTracksInteractiveRegion = {
     | 'tracks-tab'
     | 'tracks-stop-follow'
     | 'tracks-slider'
+    | 'tracks-scroll'
     | 'tracks-color'
     | 'tracks-color-mode'
     | 'tracks-master-toggle'
