@@ -8,6 +8,11 @@
 
 # Progress Log
 
+## VR prop grouping
+- Introduced a `VolumeViewerVrProps` bundle so immersive-only callbacks and HUD data flow through a single optional prop, keeping the desktop viewer boundary lean.
+- Updated `VolumeViewer` to read VR settings from the new object with safe fallbacks and guarded callbacks, ensuring non-VR usage remains unaffected.
+- Adjusted `App.tsx` to pass the consolidated VR configuration when rendering the 3D viewer while leaving planar mode unchanged.
+
 ## Legacy type cleanup
 - Removed the handcrafted `three.d.ts` shim now that the project consumes the official `@types/three` definitions.
 - Added shared buffer helpers and refactored the preprocessed export/import helpers and worker messaging to rely on canonical `ArrayBuffer` values when hashing, streaming, and constructing blobs.
