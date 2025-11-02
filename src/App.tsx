@@ -4271,46 +4271,48 @@ function App() {
               onTimeIndexChange={handleTimeIndexChange}
               onFpsChange={setFps}
               onRegisterReset={handleRegisterReset}
-              isVrPassthroughSupported={isVrPassthroughSupported}
               tracks={parsedTracks}
-              trackChannels={trackChannels}
               trackVisibility={trackVisibility}
               trackOpacityByChannel={trackOpacityByChannel}
               trackLineWidthByChannel={trackLineWidthByChannel}
               channelTrackColorModes={channelTrackColorModes}
               channelTrackOffsets={channelTrackOffsets}
               selectedTrackIds={selectedTrackIds}
-              activeTrackChannelId={activeTrackChannelId}
-              onTrackChannelSelect={handleTrackChannelSelect}
-              onTrackVisibilityToggle={handleTrackVisibilityToggle}
-              onTrackVisibilityAllChange={handleTrackVisibilityAllChange}
-              onTrackOpacityChange={handleTrackOpacityChange}
-              onTrackLineWidthChange={handleTrackLineWidthChange}
-              onTrackColorSelect={handleTrackColorSelect}
-              onTrackColorReset={handleTrackColorReset}
-              channelPanels={vrChannelPanels}
-              activeChannelPanelId={activeChannelTabId}
-              onChannelPanelSelect={setActiveChannelTabId}
-              onChannelVisibilityToggle={handleChannelVisibilityToggle}
-              onChannelReset={handleChannelSliderReset}
-              onChannelLayerSelect={handleChannelLayerSelectionChange}
-              onLayerContrastChange={handleLayerContrastChange}
-              onLayerBrightnessChange={handleLayerBrightnessChange}
-              onLayerWindowMinChange={handleLayerWindowMinChange}
-              onLayerWindowMaxChange={handleLayerWindowMaxChange}
-              onLayerAutoContrast={handleLayerAutoContrast}
-              onLayerOffsetChange={handleLayerOffsetChange}
-              onLayerColorChange={handleLayerColorChange}
-              onLayerRenderStyleToggle={handleLayerRenderStyleToggle}
-              onLayerSamplingModeToggle={handleLayerSamplingModeToggle}
-              onLayerInvertToggle={handleLayerInvertToggle}
               followedTrackId={followedTrackId}
               onTrackSelectionToggle={handleTrackSelectionToggle}
               onTrackFollowRequest={handleTrackFollowFromViewer}
-              onStopTrackFollow={handleStopTrackFollow}
-              onRegisterVrSession={handleRegisterVrSession}
-              onVrSessionStarted={handleVrSessionStarted}
-              onVrSessionEnded={handleVrSessionEnded}
+              vr={{
+                isVrPassthroughSupported,
+                trackChannels,
+                activeTrackChannelId,
+                onTrackChannelSelect: handleTrackChannelSelect,
+                onTrackVisibilityToggle: handleTrackVisibilityToggle,
+                onTrackVisibilityAllChange: handleTrackVisibilityAllChange,
+                onTrackOpacityChange: handleTrackOpacityChange,
+                onTrackLineWidthChange: handleTrackLineWidthChange,
+                onTrackColorSelect: handleTrackColorSelect,
+                onTrackColorReset: handleTrackColorReset,
+                onStopTrackFollow: handleStopTrackFollow,
+                channelPanels: vrChannelPanels,
+                activeChannelPanelId: activeChannelTabId,
+                onChannelPanelSelect: setActiveChannelTabId,
+                onChannelVisibilityToggle: handleChannelVisibilityToggle,
+                onChannelReset: handleChannelSliderReset,
+                onChannelLayerSelect: handleChannelLayerSelectionChange,
+                onLayerContrastChange: handleLayerContrastChange,
+                onLayerBrightnessChange: handleLayerBrightnessChange,
+                onLayerWindowMinChange: handleLayerWindowMinChange,
+                onLayerWindowMaxChange: handleLayerWindowMaxChange,
+                onLayerAutoContrast: handleLayerAutoContrast,
+                onLayerOffsetChange: handleLayerOffsetChange,
+                onLayerColorChange: handleLayerColorChange,
+                onLayerRenderStyleToggle: handleLayerRenderStyleToggle,
+                onLayerSamplingModeToggle: handleLayerSamplingModeToggle,
+                onLayerInvertToggle: handleLayerInvertToggle,
+                onRegisterVrSession: handleRegisterVrSession,
+                onVrSessionStarted: handleVrSessionStarted,
+                onVrSessionEnded: handleVrSessionEnded
+              }}
             />
           ) : (
             <PlanarViewer

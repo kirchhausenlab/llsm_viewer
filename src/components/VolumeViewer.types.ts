@@ -29,6 +29,81 @@ export type ViewerLayer = {
   sliceIndex?: number;
 };
 
+export type VolumeViewerVrPanelLayerSettings = {
+  sliderRange: number;
+  minSliderIndex: number;
+  maxSliderIndex: number;
+  brightnessSliderIndex: number;
+  contrastSliderIndex: number;
+  windowMin: number;
+  windowMax: number;
+  color: string;
+  xOffset: number;
+  yOffset: number;
+  renderStyle: 0 | 1;
+  invert: boolean;
+  samplingMode: 'linear' | 'nearest';
+};
+
+export type VolumeViewerVrPanelLayer = {
+  key: string;
+  label: string;
+  hasData: boolean;
+  isGrayscale: boolean;
+  isSegmentation: boolean;
+  defaultWindow: { windowMin: number; windowMax: number } | null;
+  histogram: Uint32Array | null;
+  settings: VolumeViewerVrPanelLayerSettings;
+};
+
+export type VolumeViewerVrChannelPanel = {
+  id: string;
+  name: string;
+  visible: boolean;
+  activeLayerKey: string | null;
+  layers: VolumeViewerVrPanelLayer[];
+};
+
+export type VolumeViewerVrProps = {
+  isVrPassthroughSupported: boolean;
+  trackChannels: Array<{ id: string; name: string }>;
+  activeTrackChannelId: string | null;
+  onTrackChannelSelect: (channelId: string) => void;
+  onTrackVisibilityToggle: (trackId: string) => void;
+  onTrackVisibilityAllChange: (channelId: string, visible: boolean) => void;
+  onTrackOpacityChange: (channelId: string, value: number) => void;
+  onTrackLineWidthChange: (channelId: string, value: number) => void;
+  onTrackColorSelect: (channelId: string, color: string) => void;
+  onTrackColorReset: (channelId: string) => void;
+  onStopTrackFollow: (channelId?: string) => void;
+  channelPanels: VolumeViewerVrChannelPanel[];
+  activeChannelPanelId: string | null;
+  onChannelPanelSelect: (channelId: string) => void;
+  onChannelVisibilityToggle: (channelId: string) => void;
+  onChannelReset: (channelId: string) => void;
+  onChannelLayerSelect: (channelId: string, layerKey: string) => void;
+  onLayerContrastChange: (layerKey: string, value: number) => void;
+  onLayerBrightnessChange: (layerKey: string, value: number) => void;
+  onLayerWindowMinChange: (layerKey: string, value: number) => void;
+  onLayerWindowMaxChange: (layerKey: string, value: number) => void;
+  onLayerAutoContrast: (layerKey: string) => void;
+  onLayerOffsetChange: (layerKey: string, axis: 'x' | 'y', value: number) => void;
+  onLayerColorChange: (layerKey: string, color: string) => void;
+  onLayerRenderStyleToggle: (layerKey: string) => void;
+  onLayerSamplingModeToggle: (layerKey: string) => void;
+  onLayerInvertToggle: (layerKey: string) => void;
+  onRegisterVrSession?: (
+    handlers:
+      | {
+          requestSession: () => Promise<XRSession | null>;
+          endSession: () => Promise<void> | void;
+        }
+      | null
+  ) => void;
+  onVrSessionStarted?: () => void;
+  onVrSessionEnded?: () => void;
+};
+
 export type VolumeViewerProps = {
   layers: ViewerLayer[];
   timeIndex: number;
@@ -45,82 +120,17 @@ export type VolumeViewerProps = {
   onTimeIndexChange: (nextIndex: number) => void;
   onFpsChange: (value: number) => void;
   onRegisterReset: (handler: (() => void) | null) => void;
-  isVrPassthroughSupported: boolean;
   tracks: TrackDefinition[];
-  trackChannels: Array<{ id: string; name: string }>;
   trackVisibility: Record<string, boolean>;
   trackOpacityByChannel: Record<string, number>;
   trackLineWidthByChannel: Record<string, number>;
   channelTrackColorModes: Record<string, TrackColorMode>;
   channelTrackOffsets: Record<string, { x: number; y: number }>;
   selectedTrackIds: ReadonlySet<string>;
-  activeTrackChannelId: string | null;
-  onTrackChannelSelect: (channelId: string) => void;
-  onTrackVisibilityToggle: (trackId: string) => void;
-  onTrackVisibilityAllChange: (channelId: string, visible: boolean) => void;
-  onTrackOpacityChange: (channelId: string, value: number) => void;
-  onTrackLineWidthChange: (channelId: string, value: number) => void;
-  onTrackColorSelect: (channelId: string, color: string) => void;
-  onTrackColorReset: (channelId: string) => void;
-  onStopTrackFollow: (channelId?: string) => void;
-  channelPanels: Array<{
-    id: string;
-    name: string;
-    visible: boolean;
-    activeLayerKey: string | null;
-    layers: Array<{
-      key: string;
-      label: string;
-      hasData: boolean;
-      isGrayscale: boolean;
-      isSegmentation: boolean;
-      defaultWindow: { windowMin: number; windowMax: number } | null;
-      histogram: Uint32Array | null;
-      settings: {
-        sliderRange: number;
-        minSliderIndex: number;
-        maxSliderIndex: number;
-        brightnessSliderIndex: number;
-        contrastSliderIndex: number;
-        windowMin: number;
-        windowMax: number;
-        color: string;
-        xOffset: number;
-        yOffset: number;
-        renderStyle: 0 | 1;
-        invert: boolean;
-        samplingMode: 'linear' | 'nearest';
-      };
-    }>;
-  }>;
-  activeChannelPanelId: string | null;
-  onChannelPanelSelect: (channelId: string) => void;
-  onChannelVisibilityToggle: (channelId: string) => void;
-  onChannelReset: (channelId: string) => void;
-  onChannelLayerSelect: (channelId: string, layerKey: string) => void;
-  onLayerContrastChange: (layerKey: string, value: number) => void;
-  onLayerBrightnessChange: (layerKey: string, value: number) => void;
-  onLayerWindowMinChange: (layerKey: string, value: number) => void;
-  onLayerWindowMaxChange: (layerKey: string, value: number) => void;
-  onLayerAutoContrast: (layerKey: string) => void;
-  onLayerOffsetChange: (layerKey: string, axis: 'x' | 'y', value: number) => void;
-  onLayerColorChange: (layerKey: string, color: string) => void;
-  onLayerRenderStyleToggle: (layerKey: string) => void;
-  onLayerSamplingModeToggle: (layerKey: string) => void;
-  onLayerInvertToggle: (layerKey: string) => void;
   followedTrackId: string | null;
   onTrackSelectionToggle: (trackId: string) => void;
   onTrackFollowRequest: (trackId: string) => void;
-  onRegisterVrSession?: (
-    handlers:
-      | {
-          requestSession: () => Promise<XRSession | null>;
-          endSession: () => Promise<void> | void;
-        }
-      | null
-  ) => void;
-  onVrSessionStarted?: () => void;
-  onVrSessionEnded?: () => void;
+  vr?: VolumeViewerVrProps;
 };
 
 export type VolumeResources = {

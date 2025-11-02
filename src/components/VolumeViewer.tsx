@@ -374,52 +374,54 @@ function VolumeViewer({
   onTimeIndexChange,
   onFpsChange,
   onRegisterReset,
-  isVrPassthroughSupported,
   tracks,
-  trackChannels,
   trackVisibility,
   trackOpacityByChannel,
   trackLineWidthByChannel,
   channelTrackColorModes,
   channelTrackOffsets,
   selectedTrackIds,
-  activeTrackChannelId,
-  onTrackChannelSelect,
-  onTrackVisibilityToggle,
-  onTrackVisibilityAllChange,
-  onTrackOpacityChange,
-  onTrackLineWidthChange,
-  onTrackColorSelect,
-  onTrackColorReset,
-  onStopTrackFollow,
-  channelPanels,
-  activeChannelPanelId,
-  onChannelPanelSelect,
-  onChannelVisibilityToggle,
-  onChannelReset,
-  onChannelLayerSelect,
-  onLayerContrastChange,
-  onLayerBrightnessChange,
-  onLayerWindowMinChange,
-  onLayerWindowMaxChange,
-  onLayerAutoContrast,
-  onLayerOffsetChange,
-  onLayerColorChange,
-  onLayerRenderStyleToggle,
-  onLayerSamplingModeToggle,
-  onLayerInvertToggle,
   followedTrackId,
   onTrackSelectionToggle,
   onTrackFollowRequest,
-  onRegisterVrSession,
-  onVrSessionStarted,
-  onVrSessionEnded
+  vr
 }: VolumeViewerProps) {
   const vrLog = (...args: Parameters<typeof console.debug>) => {
     if (import.meta.env?.DEV) {
       console.debug(...args);
     }
   };
+
+  const isVrPassthroughSupported = vr?.isVrPassthroughSupported ?? false;
+  const trackChannels = vr?.trackChannels ?? [];
+  const activeTrackChannelId = vr?.activeTrackChannelId ?? null;
+  const channelPanels = vr?.channelPanels ?? [];
+  const activeChannelPanelId = vr?.activeChannelPanelId ?? null;
+  const onTrackChannelSelect = vr?.onTrackChannelSelect;
+  const onTrackVisibilityToggle = vr?.onTrackVisibilityToggle;
+  const onTrackVisibilityAllChange = vr?.onTrackVisibilityAllChange;
+  const onTrackOpacityChange = vr?.onTrackOpacityChange;
+  const onTrackLineWidthChange = vr?.onTrackLineWidthChange;
+  const onTrackColorSelect = vr?.onTrackColorSelect;
+  const onTrackColorReset = vr?.onTrackColorReset;
+  const onStopTrackFollow = vr?.onStopTrackFollow;
+  const onChannelPanelSelect = vr?.onChannelPanelSelect;
+  const onChannelVisibilityToggle = vr?.onChannelVisibilityToggle;
+  const onChannelReset = vr?.onChannelReset;
+  const onChannelLayerSelect = vr?.onChannelLayerSelect;
+  const onLayerContrastChange = vr?.onLayerContrastChange;
+  const onLayerBrightnessChange = vr?.onLayerBrightnessChange;
+  const onLayerWindowMinChange = vr?.onLayerWindowMinChange;
+  const onLayerWindowMaxChange = vr?.onLayerWindowMaxChange;
+  const onLayerAutoContrast = vr?.onLayerAutoContrast;
+  const onLayerOffsetChange = vr?.onLayerOffsetChange;
+  const onLayerColorChange = vr?.onLayerColorChange;
+  const onLayerRenderStyleToggle = vr?.onLayerRenderStyleToggle;
+  const onLayerSamplingModeToggle = vr?.onLayerSamplingModeToggle;
+  const onLayerInvertToggle = vr?.onLayerInvertToggle;
+  const onRegisterVrSession = vr?.onRegisterVrSession;
+  const onVrSessionStarted = vr?.onVrSessionStarted;
+  const onVrSessionEnded = vr?.onVrSessionEnded;
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -2258,7 +2260,7 @@ function VolumeViewer({
         layerState.settings.maxSliderIndex = updated.maxSliderIndex;
         layerState.settings.brightnessSliderIndex = updated.brightnessSliderIndex;
         layerState.settings.contrastSliderIndex = updated.contrastSliderIndex;
-        onLayerWindowMinChange(region.layerKey, updated.windowMin);
+        onLayerWindowMinChange?.(region.layerKey, updated.windowMin);
       } else if (region.sliderKey === 'windowMax') {
         const updated = brightnessContrastModel.applyWindow(
           layerState.settings.windowMin,
@@ -2271,7 +2273,7 @@ function VolumeViewer({
         layerState.settings.maxSliderIndex = updated.maxSliderIndex;
         layerState.settings.brightnessSliderIndex = updated.brightnessSliderIndex;
         layerState.settings.contrastSliderIndex = updated.contrastSliderIndex;
-        onLayerWindowMaxChange(region.layerKey, updated.windowMax);
+        onLayerWindowMaxChange?.(region.layerKey, updated.windowMax);
       } else if (region.sliderKey === 'contrast') {
         const sliderIndex = Math.round(snappedValue);
         const updated = brightnessContrastModel.applyContrast(layerState.settings, sliderIndex);
@@ -2282,7 +2284,7 @@ function VolumeViewer({
         layerState.settings.maxSliderIndex = updated.maxSliderIndex;
         layerState.settings.brightnessSliderIndex = updated.brightnessSliderIndex;
         layerState.settings.contrastSliderIndex = updated.contrastSliderIndex;
-        onLayerContrastChange(region.layerKey, updated.contrastSliderIndex);
+        onLayerContrastChange?.(region.layerKey, updated.contrastSliderIndex);
       } else if (region.sliderKey === 'brightness') {
         const sliderIndex = Math.round(snappedValue);
         const updated = brightnessContrastModel.applyBrightness(layerState.settings, sliderIndex);
@@ -2293,13 +2295,13 @@ function VolumeViewer({
         layerState.settings.maxSliderIndex = updated.maxSliderIndex;
         layerState.settings.brightnessSliderIndex = updated.brightnessSliderIndex;
         layerState.settings.contrastSliderIndex = updated.contrastSliderIndex;
-        onLayerBrightnessChange(region.layerKey, updated.brightnessSliderIndex);
+        onLayerBrightnessChange?.(region.layerKey, updated.brightnessSliderIndex);
       } else if (region.sliderKey === 'xOffset') {
         layerState.settings.xOffset = snappedValue;
-        onLayerOffsetChange(region.layerKey, 'x', snappedValue);
+        onLayerOffsetChange?.(region.layerKey, 'x', snappedValue);
       } else if (region.sliderKey === 'yOffset') {
         layerState.settings.yOffset = snappedValue;
-        onLayerOffsetChange(region.layerKey, 'y', snappedValue);
+        onLayerOffsetChange?.(region.layerKey, 'y', snappedValue);
       }
 
       renderVrChannelsHud(hud, state);
@@ -2349,10 +2351,10 @@ function VolumeViewer({
 
       if (region.sliderKey === 'opacity') {
         channelState.opacity = snappedValue;
-        onTrackOpacityChange(region.channelId, snappedValue);
+        onTrackOpacityChange?.(region.channelId, snappedValue);
       } else if (region.sliderKey === 'lineWidth') {
         channelState.lineWidth = snappedValue;
-        onTrackLineWidthChange(region.channelId, snappedValue);
+        onTrackLineWidthChange?.(region.channelId, snappedValue);
       }
 
       renderVrTracksHud(hud, state);
@@ -4039,13 +4041,13 @@ function VolumeViewer({
             const state = vrChannelsStateRef.current;
             if (activeTarget.type === 'channels-tab') {
               state.activeChannelId = region.channelId;
-              onChannelPanelSelect(region.channelId);
+              onChannelPanelSelect?.(region.channelId);
             } else if (activeTarget.type === 'channels-visibility') {
               const channelState = state.channels.find((channel) => channel.id === region.channelId);
               if (channelState) {
                 channelState.visible = !channelState.visible;
               }
-              onChannelVisibilityToggle(region.channelId);
+              onChannelVisibilityToggle?.(region.channelId);
             } else if (activeTarget.type === 'channels-reset') {
               const channelState = state.channels.find((channel) => channel.id === region.channelId);
               if (channelState) {
@@ -4068,13 +4070,13 @@ function VolumeViewer({
                   layer.settings.samplingMode = 'linear';
                 }
               }
-              onChannelReset(region.channelId);
+              onChannelReset?.(region.channelId);
             } else if (activeTarget.type === 'channels-layer' && region.layerKey) {
               const channelState = state.channels.find((channel) => channel.id === region.channelId);
               if (channelState) {
                 channelState.activeLayerKey = region.layerKey;
               }
-              onChannelLayerSelect(region.channelId, region.layerKey);
+              onChannelLayerSelect?.(region.channelId, region.layerKey);
             } else if (activeTarget.type === 'channels-render-style' && region.layerKey) {
               if (!region.disabled) {
                 const channelState = state.channels.find((channel) => channel.id === region.channelId);
@@ -4082,7 +4084,7 @@ function VolumeViewer({
                 if (layerState) {
                   layerState.settings.renderStyle = layerState.settings.renderStyle === 1 ? 0 : 1;
                 }
-                onLayerRenderStyleToggle(region.layerKey);
+                onLayerRenderStyleToggle?.(region.layerKey);
               }
             } else if (activeTarget.type === 'channels-sampling' && region.layerKey) {
               if (!region.disabled) {
@@ -4092,7 +4094,7 @@ function VolumeViewer({
                   layerState.settings.samplingMode =
                     layerState.settings.samplingMode === 'nearest' ? 'linear' : 'nearest';
                 }
-                onLayerSamplingModeToggle(region.layerKey);
+                onLayerSamplingModeToggle?.(region.layerKey);
               }
             } else if (activeTarget.type === 'channels-invert' && region.layerKey) {
               if (!region.disabled) {
@@ -4101,11 +4103,11 @@ function VolumeViewer({
                 if (layerState) {
                   layerState.settings.invert = !layerState.settings.invert;
                 }
-                onLayerInvertToggle(region.layerKey);
+                onLayerInvertToggle?.(region.layerKey);
               }
             } else if (activeTarget.type === 'channels-auto-contrast' && region.layerKey) {
               if (!region.disabled) {
-                onLayerAutoContrast(region.layerKey);
+                onLayerAutoContrast?.(region.layerKey);
               }
             } else if (activeTarget.type === 'channels-color' && region.layerKey && region.color) {
               const channelState = state.channels.find((channel) => channel.id === region.channelId);
@@ -4113,7 +4115,7 @@ function VolumeViewer({
               if (layerState) {
                 layerState.settings.color = region.color;
               }
-              onLayerColorChange(region.layerKey, region.color);
+              onLayerColorChange?.(region.layerKey, region.color);
             }
             updateVrChannelsHud();
           }
@@ -4295,31 +4297,31 @@ function VolumeViewer({
             }
             switch (activeTarget.type) {
               case 'tracks-tab':
-                onTrackChannelSelect(region.channelId);
+                onTrackChannelSelect?.(region.channelId);
                 break;
               case 'tracks-stop-follow':
                 if (!region.disabled) {
-                  onStopTrackFollow(region.channelId);
+                  onStopTrackFollow?.(region.channelId);
                 }
                 break;
               case 'tracks-color':
                 if (!region.disabled && region.color) {
-                  onTrackColorSelect(region.channelId, region.color);
+                  onTrackColorSelect?.(region.channelId, region.color);
                 }
                 break;
               case 'tracks-color-mode':
                 if (!region.disabled) {
-                  onTrackColorReset(region.channelId);
+                  onTrackColorReset?.(region.channelId);
                 }
                 break;
               case 'tracks-master-toggle':
                 if (visibilityAllTarget !== null) {
-                  onTrackVisibilityAllChange(region.channelId, visibilityAllTarget);
+                  onTrackVisibilityAllChange?.(region.channelId, visibilityAllTarget);
                 }
                 break;
               case 'tracks-toggle':
                 if (region.trackId) {
-                  onTrackVisibilityToggle(region.trackId);
+                  onTrackVisibilityToggle?.(region.trackId);
                 }
                 break;
               case 'tracks-follow':
