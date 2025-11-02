@@ -57,17 +57,10 @@ export type UseVolumeViewerVrParams = {
   trackGroupRef: MutableRefObject<THREE.Group | null>;
   resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
   timeIndexRef: MutableRefObject<number>;
-  controllersRef: MutableRefObject<ControllerEntry[]>;
   movementStateRef: MutableRefObject<MovementState>;
   pointerStateRef: MutableRefObject<PointerState | null>;
   trackLinesRef: MutableRefObject<Map<string, TrackLineResource>>;
   trackFollowOffsetRef: MutableRefObject<THREE.Vector3 | null>;
-  raycasterRef: MutableRefObject<RaycasterLike | null>;
-  xrSessionRef: MutableRefObject<XRSession | null>;
-  sessionCleanupRef: MutableRefObject<(() => void) | null>;
-  xrPreferredSessionModeRef: MutableRefObject<'immersive-vr' | 'immersive-ar'>;
-  xrCurrentSessionModeRef: MutableRefObject<'immersive-vr' | 'immersive-ar' | null>;
-  xrPendingModeSwitchRef: MutableRefObject<'immersive-vr' | 'immersive-ar' | null>;
   hasActive3DLayerRef: MutableRefObject<boolean>;
   playbackStateDefaults: {
     isPlaying: boolean;
@@ -124,6 +117,24 @@ export type UseVolumeViewerVrResult = {
   vrHoverStateRef: MutableRefObject<VrHoverState>;
   vrChannelsStateRef: MutableRefObject<VrChannelsState>;
   vrTracksStateRef: MutableRefObject<VrTracksState>;
+  controllersRef: MutableRefObject<ControllerEntry[]>;
+  raycasterRef: MutableRefObject<RaycasterLike | null>;
+  xrSessionRef: MutableRefObject<XRSession | null>;
+  sessionCleanupRef: MutableRefObject<(() => void) | null>;
+  preVrCameraStateRef: MutableRefObject<
+    | {
+        position: THREE.Vector3;
+        quaternion: THREE.Quaternion;
+        target: THREE.Vector3;
+      }
+    | null
+  >;
+  xrPreferredSessionModeRef: MutableRefObject<'immersive-vr' | 'immersive-ar'>;
+  xrCurrentSessionModeRef: MutableRefObject<'immersive-vr' | 'immersive-ar' | null>;
+  xrPendingModeSwitchRef: MutableRefObject<'immersive-vr' | 'immersive-ar' | null>;
+  xrPassthroughSupportedRef: MutableRefObject<boolean>;
+  xrFoveationAppliedRef: MutableRefObject<boolean>;
+  xrPreviousFoveationRef: MutableRefObject<number | undefined>;
 };
 
 export function useVolumeViewerVr({
@@ -135,17 +146,10 @@ export function useVolumeViewerVr({
   trackGroupRef,
   resourcesRef,
   timeIndexRef,
-  controllersRef,
   movementStateRef,
   pointerStateRef,
   trackLinesRef,
   trackFollowOffsetRef,
-  raycasterRef,
-  xrSessionRef,
-  sessionCleanupRef,
-  xrPreferredSessionModeRef,
-  xrCurrentSessionModeRef,
-  xrPendingModeSwitchRef,
   hasActive3DLayerRef,
   playbackStateDefaults,
 }: UseVolumeViewerVrParams): UseVolumeViewerVrResult {
@@ -156,18 +160,27 @@ export function useVolumeViewerVr({
   void trackGroupRef;
   void resourcesRef;
   void timeIndexRef;
-  void controllersRef;
   void movementStateRef;
   void pointerStateRef;
   void trackLinesRef;
   void trackFollowOffsetRef;
-  void raycasterRef;
-  void xrSessionRef;
-  void sessionCleanupRef;
-  void xrPreferredSessionModeRef;
-  void xrCurrentSessionModeRef;
-  void xrPendingModeSwitchRef;
   void hasActive3DLayerRef;
+
+  const controllersRef = useRef<ControllerEntry[]>([]);
+  const raycasterRef = useRef<RaycasterLike | null>(null);
+  const xrSessionRef = useRef<XRSession | null>(null);
+  const sessionCleanupRef = useRef<(() => void) | null>(null);
+  const preVrCameraStateRef = useRef<{
+    position: THREE.Vector3;
+    quaternion: THREE.Quaternion;
+    target: THREE.Vector3;
+  } | null>(null);
+  const xrPreferredSessionModeRef = useRef<'immersive-vr' | 'immersive-ar'>('immersive-vr');
+  const xrCurrentSessionModeRef = useRef<'immersive-vr' | 'immersive-ar' | null>(null);
+  const xrPendingModeSwitchRef = useRef<'immersive-vr' | 'immersive-ar' | null>(null);
+  const xrPassthroughSupportedRef = useRef(playbackStateDefaults.passthroughSupported);
+  const xrFoveationAppliedRef = useRef(false);
+  const xrPreviousFoveationRef = useRef<number | undefined>(undefined);
 
   const vrPlaybackHudRef = useRef<VrPlaybackHud | null>(null);
   const vrChannelsHudRef = useRef<VrChannelsHud | null>(null);
@@ -282,5 +295,16 @@ export function useVolumeViewerVr({
     vrHoverStateRef,
     vrChannelsStateRef,
     vrTracksStateRef,
+    controllersRef,
+    raycasterRef,
+    xrSessionRef,
+    sessionCleanupRef,
+    preVrCameraStateRef,
+    xrPreferredSessionModeRef,
+    xrCurrentSessionModeRef,
+    xrPendingModeSwitchRef,
+    xrPassthroughSupportedRef,
+    xrFoveationAppliedRef,
+    xrPreviousFoveationRef,
   };
 }

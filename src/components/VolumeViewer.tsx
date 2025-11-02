@@ -456,19 +456,10 @@ function VolumeViewer({
   const volumeRootRotatedCenterTempRef = useRef(new THREE.Vector3());
   const trackGroupRef = useRef<THREE.Group | null>(null);
   const trackLinesRef = useRef<Map<string, TrackLineResource>>(new Map());
-  const controllersRef = useRef<ControllerEntry[]>([]);
-  const raycasterRef = useRef<RaycasterLike | null>(null);
   const timeIndexRef = useRef(0);
   const followedTrackIdRef = useRef<string | null>(null);
   const trackFollowOffsetRef = useRef<THREE.Vector3 | null>(null);
   const previousFollowedTrackIdRef = useRef<string | null>(null);
-  const xrSessionRef = useRef<XRSession | null>(null);
-  const sessionCleanupRef = useRef<(() => void) | null>(null);
-  const preVrCameraStateRef = useRef<{
-    position: THREE.Vector3;
-    quaternion: THREE.Quaternion;
-    target: THREE.Vector3;
-  } | null>(null);
   const hasActive3DLayerRef = useRef(false);
   const [hasMeasured, setHasMeasured] = useState(false);
   const [trackOverlayRevision, setTrackOverlayRevision] = useState(0);
@@ -481,12 +472,6 @@ function VolumeViewer({
     controller: { trackId: null as string | null, position: null as { x: number; y: number } | null }
   });
   const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(null);
-  const xrPreferredSessionModeRef = useRef<'immersive-vr' | 'immersive-ar'>('immersive-vr');
-  const xrCurrentSessionModeRef = useRef<'immersive-vr' | 'immersive-ar' | null>(null);
-  const xrPendingModeSwitchRef = useRef<'immersive-vr' | 'immersive-ar' | null>(null);
-  const xrPassthroughSupportedRef = useRef(isVrPassthroughSupported);
-  const xrFoveationAppliedRef = useRef(false);
-  const xrPreviousFoveationRef = useRef<number | undefined>(undefined);
 
   const {
     onRegisterVrSession,
@@ -526,7 +511,18 @@ function VolumeViewer({
     playbackLoopRef,
     vrHoverStateRef,
     vrChannelsStateRef,
-    vrTracksStateRef
+    vrTracksStateRef,
+    controllersRef,
+    raycasterRef,
+    xrSessionRef,
+    sessionCleanupRef,
+    preVrCameraStateRef,
+    xrPreferredSessionModeRef,
+    xrCurrentSessionModeRef,
+    xrPendingModeSwitchRef,
+    xrPassthroughSupportedRef,
+    xrFoveationAppliedRef,
+    xrPreviousFoveationRef
   } = useVolumeViewerVr({
     vrProps: vr ?? null,
     rendererRef,
@@ -536,17 +532,10 @@ function VolumeViewer({
     trackGroupRef,
     resourcesRef,
     timeIndexRef,
-    controllersRef,
     movementStateRef,
     pointerStateRef,
     trackLinesRef,
     trackFollowOffsetRef,
-    raycasterRef,
-    xrSessionRef,
-    sessionCleanupRef,
-    xrPreferredSessionModeRef,
-    xrCurrentSessionModeRef,
-    xrPendingModeSwitchRef,
     hasActive3DLayerRef,
     playbackStateDefaults: {
       isPlaying,
