@@ -538,6 +538,7 @@ function VolumeViewer({
     applyVolumeStepScaleToResources
   } = useVolumeViewerVr({
     vrProps: vr ?? null,
+    containerRef,
     rendererRef,
     cameraRef,
     sceneRef,
@@ -583,7 +584,9 @@ function VolumeViewer({
     trackLineWidthByChannel,
     channelTrackColorModes,
     selectedTrackIds,
-    followedTrackId
+    followedTrackId,
+    updateHoverState,
+    clearHoverState
   });
 
 
