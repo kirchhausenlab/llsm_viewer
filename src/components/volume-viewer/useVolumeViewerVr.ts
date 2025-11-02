@@ -12,15 +12,20 @@ import type {
   ControllerEntry,
   RaycasterLike,
   VrChannelsHud,
+  VrChannelsInteractiveRegion,
   VrChannelsState,
   VrHudPlacement,
   VrPlaybackHud,
   VrTracksHud,
+  VrTracksInteractiveRegion,
   VrTracksState,
   VrUiTargetType,
 } from './vr';
 import {
+  VR_CHANNELS_CANVAS_MIN_HEIGHT,
+  VR_CHANNELS_CANVAS_WIDTH,
   VR_CHANNELS_CAMERA_ANCHOR_OFFSET,
+  VR_CHANNELS_PANEL_HEIGHT,
   VR_CHANNELS_PANEL_WIDTH,
   VR_CHANNELS_VERTICAL_OFFSET,
   VR_HUD_FRONT_MARGIN,
@@ -46,6 +51,9 @@ import {
   VR_SCALE_HANDLE_OFFSET,
   VR_SCALE_HANDLE_RADIUS,
   VR_TRACKS_CAMERA_ANCHOR_OFFSET,
+  VR_TRACKS_CANVAS_HEIGHT,
+  VR_TRACKS_CANVAS_WIDTH,
+  VR_TRACKS_PANEL_HEIGHT,
   VR_TRACKS_PANEL_WIDTH,
   VR_TRACKS_VERTICAL_OFFSET,
   VR_TRANSLATION_HANDLE_OFFSET,
@@ -59,6 +67,11 @@ import {
   setVrPlaybackLabel,
   setVrPlaybackProgressFraction,
 } from './vr/hudMutators';
+import {
+  renderVrChannelsHud as renderVrChannelsHudContent,
+  renderVrTracksHud as renderVrTracksHudContent,
+} from './vr/hudRenderers';
+import { brightnessContrastModel } from '../../state/layerSettings';
 
 export type PlaybackState = {
   isPlaying: boolean;
@@ -203,6 +216,24 @@ export type UseVolumeViewerVrResult = {
   applyPlaybackSliderFromWorldPoint: (worldPoint: THREE.Vector3) => void;
   applyFpsSliderFromWorldPoint: (worldPoint: THREE.Vector3) => void;
   createVrPlaybackHud: () => VrPlaybackHud | null;
+  setVrChannelsHudVisible: (visible: boolean) => void;
+  setVrTracksHudVisible: (visible: boolean) => void;
+  createVrChannelsHud: () => VrChannelsHud | null;
+  createVrTracksHud: () => VrTracksHud | null;
+  renderVrChannelsHud: (hud: VrChannelsHud, state: VrChannelsState) => void;
+  renderVrTracksHud: (hud: VrTracksHud, state: VrTracksState) => void;
+  applyVrChannelsSliderFromPoint: (
+    region: VrChannelsInteractiveRegion,
+    worldPoint: THREE.Vector3,
+  ) => void;
+  applyVrTracksSliderFromPoint: (
+    region: VrTracksInteractiveRegion,
+    worldPoint: THREE.Vector3,
+  ) => void;
+  applyVrTracksScrollFromPoint: (
+    region: VrTracksInteractiveRegion,
+    worldPoint: THREE.Vector3,
+  ) => void;
   updateVolumeHandles: () => void;
   applyVolumeYawPitch: (yaw: number, pitch: number) => void;
   updateHudGroupFromPlacement: (
@@ -261,6 +292,8 @@ export function useVolumeViewerVr({
   hasActive3DLayerRef,
   playbackStateDefaults,
 }: UseVolumeViewerVrParams): UseVolumeViewerVrResult {
+  const vrPropsRef = useRef<VolumeViewerVrProps | null>(vrProps ?? null);
+  vrPropsRef.current = vrProps ?? null;
   const controllersRef = useRef<ControllerEntry[]>([]);
   const raycasterRef = useRef<RaycasterLike | null>(null);
   const xrSessionRef = useRef<XRSession | null>(null);
@@ -335,6 +368,551 @@ export function useVolumeViewerVr({
   });
   const vrChannelsStateRef = useRef<VrChannelsState>({ channels: [], activeChannelId: null });
   const vrTracksStateRef = useRef<VrTracksState>({ channels: [], activeChannelId: null });
+
+  const setVrChannelsHudVisible = useCallback<
+    UseVolumeViewerVrResult['setVrChannelsHudVisible']
+  >((visible) => {
+    const hud = vrChannelsHudRef.current;
+    if (!hud) {
+      return;
+    }
+    hud.group.visible = visible;
+    if (!visible) {
+      hud.hoverRegion = null;
+    }
+  }, []);
+
+  const setVrTracksHudVisible = useCallback<UseVolumeViewerVrResult['setVrTracksHudVisible']>(
+    (visible) => {
+      const hud = vrTracksHudRef.current;
+      if (!hud) {
+        return;
+      }
+      hud.group.visible = visible;
+      if (!visible) {
+        hud.hoverRegion = null;
+      }
+    },
+    [],
+  );
+
+  const createVrChannelsHud = useCallback<UseVolumeViewerVrResult['createVrChannelsHud']>(() => {
+    if (typeof document === 'undefined') {
+      return null;
+    }
+    const group = new THREE.Group();
+    group.name = 'VrChannelsHud';
+
+    const backgroundMaterial = new THREE.MeshBasicMaterial({
+      color: 0x10161d,
+      transparent: false,
+      opacity: 1,
+      side: THREE.DoubleSide,
+    });
+    const background = new THREE.Mesh(
+      new THREE.PlaneGeometry(VR_CHANNELS_PANEL_WIDTH, VR_CHANNELS_PANEL_HEIGHT),
+      backgroundMaterial,
+    );
+    background.position.set(0, 0, 0);
+    group.add(background);
+
+    const panelCanvas = document.createElement('canvas');
+    const panelDisplayWidth = VR_CHANNELS_CANVAS_WIDTH;
+    const panelDisplayHeight = VR_CHANNELS_CANVAS_MIN_HEIGHT;
+    const pixelRatio = typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : 1;
+    panelCanvas.width = Math.round(panelDisplayWidth * pixelRatio);
+    panelCanvas.height = Math.round(panelDisplayHeight * pixelRatio);
+    const panelContext = panelCanvas.getContext('2d');
+    if (!panelContext) {
+      return null;
+    }
+    panelContext.imageSmoothingEnabled = true;
+    panelContext.imageSmoothingQuality = 'high';
+    const panelTexture = new THREE.CanvasTexture(panelCanvas);
+    panelTexture.colorSpace = THREE.SRGBColorSpace;
+    panelTexture.minFilter = THREE.LinearFilter;
+    panelTexture.magFilter = THREE.LinearFilter;
+    const panelMaterial = new THREE.MeshBasicMaterial({
+      map: panelTexture,
+      transparent: true,
+      opacity: 1,
+      side: THREE.DoubleSide,
+    });
+    const panel = new THREE.Mesh(
+      new THREE.PlaneGeometry(VR_CHANNELS_PANEL_WIDTH, VR_CHANNELS_PANEL_HEIGHT),
+      panelMaterial,
+    );
+    panel.position.set(0, 0, 0.001);
+    panel.userData.vrUiTarget = { type: 'channels-panel' } satisfies { type: VrUiTargetType };
+    group.add(panel);
+
+    const channelsTranslateMaterial = new THREE.MeshBasicMaterial({
+      color: VR_HUD_TRANSLATE_HANDLE_COLOR,
+      transparent: true,
+      opacity: 0.75,
+      depthWrite: false,
+    });
+    channelsTranslateMaterial.depthTest = false;
+    const panelTranslateHandle = new THREE.Mesh(
+      new THREE.SphereGeometry(VR_HUD_TRANSLATE_HANDLE_RADIUS, 32, 32),
+      channelsTranslateMaterial,
+    );
+    panelTranslateHandle.position.set(
+      0,
+      VR_CHANNELS_PANEL_HEIGHT / 2 + VR_HUD_TRANSLATE_HANDLE_OFFSET,
+      0,
+    );
+    panelTranslateHandle.userData.vrUiTarget = { type: 'channels-panel-grab' } satisfies {
+      type: VrUiTargetType;
+    };
+    group.add(panelTranslateHandle);
+
+    const channelsYawMaterial = new THREE.MeshBasicMaterial({
+      color: VR_HUD_YAW_HANDLE_COLOR,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+    });
+    channelsYawMaterial.depthTest = false;
+    const panelYawHandles: THREE.Mesh[] = [];
+    for (const direction of [1, -1] as const) {
+      const handle = new THREE.Mesh(
+        new THREE.SphereGeometry(VR_HUD_YAW_HANDLE_RADIUS, 32, 32),
+        channelsYawMaterial.clone(),
+      );
+      handle.position.set(
+        direction * (VR_CHANNELS_PANEL_WIDTH / 2 + VR_HUD_YAW_HANDLE_OFFSET),
+        0,
+        0,
+      );
+      handle.userData.vrUiTarget = { type: 'channels-panel-yaw' } satisfies {
+        type: VrUiTargetType;
+      };
+      group.add(handle);
+      panelYawHandles.push(handle);
+    }
+
+    const panelPitchHandle = new THREE.Mesh(
+      new THREE.SphereGeometry(VR_HUD_YAW_HANDLE_RADIUS, 32, 32),
+      channelsYawMaterial.clone(),
+    );
+    panelPitchHandle.position.set(
+      0,
+      -(VR_CHANNELS_PANEL_HEIGHT / 2 + VR_HUD_YAW_HANDLE_OFFSET),
+      0,
+    );
+    panelPitchHandle.userData.vrUiTarget = { type: 'channels-panel-pitch' } satisfies {
+      type: VrUiTargetType;
+    };
+    group.add(panelPitchHandle);
+
+    const hud: VrChannelsHud = {
+      group,
+      background,
+      panel,
+      panelTranslateHandle,
+      panelYawHandles,
+      panelPitchHandle,
+      panelTexture,
+      panelCanvas,
+      panelContext,
+      panelDisplayWidth,
+      panelDisplayHeight,
+      pixelRatio,
+      interactables: [panelTranslateHandle, ...panelYawHandles, panelPitchHandle, panel],
+      regions: [],
+      width: VR_CHANNELS_PANEL_WIDTH,
+      height: VR_CHANNELS_PANEL_HEIGHT,
+      hoverRegion: null,
+      cachedPosition: new THREE.Vector3(NaN, NaN, NaN),
+      cachedYaw: NaN,
+      cachedPitch: NaN,
+      cacheDirty: true,
+    };
+
+    return hud;
+  }, []);
+
+  const resizeVrChannelsHud = useCallback((hud: VrChannelsHud, displayHeight: number) => {
+    if (!hud.panelCanvas) {
+      return;
+    }
+
+    const pixelRatio = hud.pixelRatio || 1;
+    hud.panelDisplayHeight = displayHeight;
+    hud.panelCanvas.width = Math.round(hud.panelDisplayWidth * pixelRatio);
+    hud.panelCanvas.height = Math.round(displayHeight * pixelRatio);
+
+    const newPanelHeight = (hud.width / hud.panelDisplayWidth) * displayHeight;
+    hud.height = newPanelHeight;
+
+    const panelGeometry = new THREE.PlaneGeometry(hud.width, newPanelHeight);
+    hud.panel.geometry.dispose();
+    hud.panel.geometry = panelGeometry;
+
+    const backgroundGeometry = new THREE.PlaneGeometry(hud.width, newPanelHeight);
+    hud.background.geometry.dispose();
+    hud.background.geometry = backgroundGeometry;
+
+    const halfHeight = newPanelHeight / 2;
+    hud.panelTranslateHandle.position.setY(halfHeight + VR_HUD_TRANSLATE_HANDLE_OFFSET);
+    hud.panelPitchHandle.position.setY(-(halfHeight + VR_HUD_YAW_HANDLE_OFFSET));
+    hud.panelTranslateHandle.updateMatrixWorld();
+    hud.panelPitchHandle.updateMatrixWorld();
+
+    hud.cacheDirty = true;
+  }, []);
+
+  const createVrTracksHud = useCallback<UseVolumeViewerVrResult['createVrTracksHud']>(() => {
+    if (typeof document === 'undefined') {
+      return null;
+    }
+    const group = new THREE.Group();
+    group.name = 'VrTracksHud';
+
+    const backgroundMaterial = new THREE.MeshBasicMaterial({
+      color: 0x10161d,
+      transparent: false,
+      opacity: 1,
+      side: THREE.DoubleSide,
+    });
+    const background = new THREE.Mesh(
+      new THREE.PlaneGeometry(VR_TRACKS_PANEL_WIDTH, VR_TRACKS_PANEL_HEIGHT),
+      backgroundMaterial,
+    );
+    background.position.set(0, 0, 0);
+    group.add(background);
+
+    const panelCanvas = document.createElement('canvas');
+    const panelDisplayWidth = VR_TRACKS_CANVAS_WIDTH;
+    const panelDisplayHeight = VR_TRACKS_CANVAS_HEIGHT;
+    const pixelRatio = typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : 1;
+    panelCanvas.width = Math.round(panelDisplayWidth * pixelRatio);
+    panelCanvas.height = Math.round(panelDisplayHeight * pixelRatio);
+    const panelContext = panelCanvas.getContext('2d');
+    if (!panelContext) {
+      return null;
+    }
+    panelContext.imageSmoothingEnabled = true;
+    panelContext.imageSmoothingQuality = 'high';
+    const panelTexture = new THREE.CanvasTexture(panelCanvas);
+    panelTexture.colorSpace = THREE.SRGBColorSpace;
+    panelTexture.minFilter = THREE.LinearFilter;
+    panelTexture.magFilter = THREE.LinearFilter;
+    const panelMaterial = new THREE.MeshBasicMaterial({
+      map: panelTexture,
+      transparent: true,
+      opacity: 1,
+      side: THREE.DoubleSide,
+    });
+    const panel = new THREE.Mesh(
+      new THREE.PlaneGeometry(VR_TRACKS_PANEL_WIDTH, VR_TRACKS_PANEL_HEIGHT),
+      panelMaterial,
+    );
+    panel.position.set(0, 0, 0.001);
+    panel.userData.vrUiTarget = { type: 'tracks-panel' } satisfies { type: VrUiTargetType };
+    group.add(panel);
+
+    const tracksTranslateMaterial = new THREE.MeshBasicMaterial({
+      color: VR_HUD_TRANSLATE_HANDLE_COLOR,
+      transparent: true,
+      opacity: 0.75,
+      depthWrite: false,
+    });
+    tracksTranslateMaterial.depthTest = false;
+    const panelTranslateHandle = new THREE.Mesh(
+      new THREE.SphereGeometry(VR_HUD_TRANSLATE_HANDLE_RADIUS, 32, 32),
+      tracksTranslateMaterial,
+    );
+    panelTranslateHandle.position.set(
+      0,
+      VR_TRACKS_PANEL_HEIGHT / 2 + VR_HUD_TRANSLATE_HANDLE_OFFSET,
+      0,
+    );
+    panelTranslateHandle.userData.vrUiTarget = { type: 'tracks-panel-grab' } satisfies {
+      type: VrUiTargetType;
+    };
+    group.add(panelTranslateHandle);
+
+    const tracksYawMaterial = new THREE.MeshBasicMaterial({
+      color: VR_HUD_YAW_HANDLE_COLOR,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+    });
+    tracksYawMaterial.depthTest = false;
+    const panelYawHandles: THREE.Mesh[] = [];
+    for (const direction of [1, -1] as const) {
+      const handle = new THREE.Mesh(
+        new THREE.SphereGeometry(VR_HUD_YAW_HANDLE_RADIUS, 32, 32),
+        tracksYawMaterial.clone(),
+      );
+      handle.position.set(
+        direction * (VR_TRACKS_PANEL_WIDTH / 2 + VR_HUD_YAW_HANDLE_OFFSET),
+        0,
+        0,
+      );
+      handle.userData.vrUiTarget = { type: 'tracks-panel-yaw' } satisfies {
+        type: VrUiTargetType;
+      };
+      group.add(handle);
+      panelYawHandles.push(handle);
+    }
+
+    const panelPitchHandle = new THREE.Mesh(
+      new THREE.SphereGeometry(VR_HUD_YAW_HANDLE_RADIUS, 32, 32),
+      tracksYawMaterial.clone(),
+    );
+    panelPitchHandle.position.set(
+      0,
+      -(VR_TRACKS_PANEL_HEIGHT / 2 + VR_HUD_YAW_HANDLE_OFFSET),
+      0,
+    );
+    panelPitchHandle.userData.vrUiTarget = { type: 'tracks-panel-pitch' } satisfies {
+      type: VrUiTargetType;
+    };
+    group.add(panelPitchHandle);
+
+    const hud: VrTracksHud = {
+      group,
+      panel,
+      panelTranslateHandle,
+      panelYawHandles,
+      panelPitchHandle,
+      panelTexture,
+      panelCanvas,
+      panelContext,
+      panelDisplayWidth,
+      panelDisplayHeight,
+      pixelRatio,
+      interactables: [panelTranslateHandle, ...panelYawHandles, panelPitchHandle, panel],
+      regions: [],
+      width: VR_TRACKS_PANEL_WIDTH,
+      height: VR_TRACKS_PANEL_HEIGHT,
+      hoverRegion: null,
+      cachedPosition: new THREE.Vector3(NaN, NaN, NaN),
+      cachedYaw: NaN,
+      cachedPitch: NaN,
+      cacheDirty: true,
+    };
+
+    return hud;
+  }, []);
+
+  const renderVrChannelsHud = useCallback<UseVolumeViewerVrResult['renderVrChannelsHud']>(
+    (hud, state) => {
+      const desiredDisplayHeight = renderVrChannelsHudContent(hud, state);
+      if (desiredDisplayHeight != null) {
+        resizeVrChannelsHud(hud, desiredDisplayHeight);
+        renderVrChannelsHudContent(hud, state);
+      }
+    },
+    [resizeVrChannelsHud],
+  );
+
+  const renderVrTracksHud = useCallback<UseVolumeViewerVrResult['renderVrTracksHud']>(
+    (hud, state) => {
+      renderVrTracksHudContent(hud, state);
+    },
+    [],
+  );
+
+  const applyVrChannelsSliderFromPoint = useCallback<
+    UseVolumeViewerVrResult['applyVrChannelsSliderFromPoint']
+  >((region, worldPoint) => {
+    if (!region || region.disabled || region.targetType !== 'channels-slider' || !region.layerKey) {
+      return;
+    }
+    const hud = vrChannelsHudRef.current;
+    if (!hud || !hud.panel || !region.sliderTrack) {
+      return;
+    }
+    sliderLocalPointRef.current.copy(worldPoint);
+    hud.panel.worldToLocal(sliderLocalPointRef.current);
+    const localX = sliderLocalPointRef.current.x;
+    const trackMin = region.sliderTrack.minX;
+    const trackMax = region.sliderTrack.maxX;
+    const trackSpan = Math.max(trackMax - trackMin, 1e-5);
+    const ratio = (localX - trackMin) / trackSpan;
+    const clampedRatio = Math.min(Math.max(ratio, 0), 1);
+    const minValue = region.min ?? 0;
+    const maxValue = region.max ?? 1;
+    const rawValue = minValue + clampedRatio * (maxValue - minValue);
+    const step = region.step ?? 0;
+    let snappedValue = rawValue;
+    if (step > 0) {
+      const steps = Math.round((rawValue - minValue) / step);
+      snappedValue = minValue + steps * step;
+    }
+    snappedValue = Math.min(Math.max(snappedValue, minValue), maxValue);
+
+    const state = vrChannelsStateRef.current;
+    const channelState = state.channels.find((entry) => entry.id === region.channelId);
+    const layerState = channelState?.layers.find((entry) => entry.key === region.layerKey);
+    if (!layerState) {
+      return;
+    }
+
+    const callbacks = vrPropsRef.current;
+    if (region.sliderKey === 'windowMin') {
+      const updated = brightnessContrastModel.applyWindow(
+        snappedValue,
+        layerState.settings.windowMax,
+      );
+      layerState.settings.windowMin = updated.windowMin;
+      layerState.settings.windowMax = updated.windowMax;
+      layerState.settings.sliderRange = updated.sliderRange;
+      layerState.settings.minSliderIndex = updated.minSliderIndex;
+      layerState.settings.maxSliderIndex = updated.maxSliderIndex;
+      layerState.settings.brightnessSliderIndex = updated.brightnessSliderIndex;
+      layerState.settings.contrastSliderIndex = updated.contrastSliderIndex;
+      callbacks?.onLayerWindowMinChange?.(region.layerKey, updated.windowMin);
+    } else if (region.sliderKey === 'windowMax') {
+      const updated = brightnessContrastModel.applyWindow(
+        layerState.settings.windowMin,
+        snappedValue,
+      );
+      layerState.settings.windowMin = updated.windowMin;
+      layerState.settings.windowMax = updated.windowMax;
+      layerState.settings.sliderRange = updated.sliderRange;
+      layerState.settings.minSliderIndex = updated.minSliderIndex;
+      layerState.settings.maxSliderIndex = updated.maxSliderIndex;
+      layerState.settings.brightnessSliderIndex = updated.brightnessSliderIndex;
+      layerState.settings.contrastSliderIndex = updated.contrastSliderIndex;
+      callbacks?.onLayerWindowMaxChange?.(region.layerKey, updated.windowMax);
+    } else if (region.sliderKey === 'contrast') {
+      const sliderIndex = Math.round(snappedValue);
+      const updated = brightnessContrastModel.applyContrast(layerState.settings, sliderIndex);
+      layerState.settings.windowMin = updated.windowMin;
+      layerState.settings.windowMax = updated.windowMax;
+      layerState.settings.sliderRange = updated.sliderRange;
+      layerState.settings.minSliderIndex = updated.minSliderIndex;
+      layerState.settings.maxSliderIndex = updated.maxSliderIndex;
+      layerState.settings.brightnessSliderIndex = updated.brightnessSliderIndex;
+      layerState.settings.contrastSliderIndex = updated.contrastSliderIndex;
+      callbacks?.onLayerContrastChange?.(region.layerKey, updated.contrastSliderIndex);
+    } else if (region.sliderKey === 'brightness') {
+      const sliderIndex = Math.round(snappedValue);
+      const updated = brightnessContrastModel.applyBrightness(layerState.settings, sliderIndex);
+      layerState.settings.windowMin = updated.windowMin;
+      layerState.settings.windowMax = updated.windowMax;
+      layerState.settings.sliderRange = updated.sliderRange;
+      layerState.settings.minSliderIndex = updated.minSliderIndex;
+      layerState.settings.maxSliderIndex = updated.maxSliderIndex;
+      layerState.settings.brightnessSliderIndex = updated.brightnessSliderIndex;
+      layerState.settings.contrastSliderIndex = updated.contrastSliderIndex;
+      callbacks?.onLayerBrightnessChange?.(region.layerKey, updated.brightnessSliderIndex);
+    } else if (region.sliderKey === 'xOffset') {
+      layerState.settings.xOffset = snappedValue;
+      callbacks?.onLayerOffsetChange?.(region.layerKey, 'x', snappedValue);
+    } else if (region.sliderKey === 'yOffset') {
+      layerState.settings.yOffset = snappedValue;
+      callbacks?.onLayerOffsetChange?.(region.layerKey, 'y', snappedValue);
+    }
+
+    renderVrChannelsHud(hud, state);
+  }, [renderVrChannelsHud, sliderLocalPointRef, vrChannelsHudRef, vrChannelsStateRef, vrPropsRef]);
+
+  const applyVrTracksSliderFromPoint = useCallback<
+    UseVolumeViewerVrResult['applyVrTracksSliderFromPoint']
+  >((region, worldPoint) => {
+    if (!region || region.disabled || region.targetType !== 'tracks-slider' || !region.sliderTrack) {
+      return;
+    }
+    const hud = vrTracksHudRef.current;
+    if (!hud) {
+      return;
+    }
+    sliderLocalPointRef.current.copy(worldPoint);
+    hud.panel.worldToLocal(sliderLocalPointRef.current);
+    const localX = sliderLocalPointRef.current.x;
+    const trackMin = region.sliderTrack.minX;
+    const trackMax = region.sliderTrack.maxX;
+    const ratio = (localX - trackMin) / Math.max(trackMax - trackMin, 1e-5);
+    const clampedRatio = Math.min(Math.max(ratio, 0), 1);
+    const minValue = region.min ?? 0;
+    const maxValue = region.max ?? 1;
+    const rawValue = minValue + clampedRatio * (maxValue - minValue);
+    const step = region.step ?? 0;
+    let snappedValue = rawValue;
+    if (step > 0) {
+      const steps = Math.round((rawValue - minValue) / step);
+      snappedValue = minValue + steps * step;
+    }
+    snappedValue = Math.min(Math.max(snappedValue, minValue), maxValue);
+
+    const state = vrTracksStateRef.current;
+    const channelState = state.channels.find((entry) => entry.id === region.channelId);
+    if (!channelState) {
+      return;
+    }
+
+    const callbacks = vrPropsRef.current;
+    if (region.sliderKey === 'opacity') {
+      channelState.opacity = snappedValue;
+      callbacks?.onTrackOpacityChange?.(region.channelId, snappedValue);
+    } else if (region.sliderKey === 'lineWidth') {
+      channelState.lineWidth = snappedValue;
+      callbacks?.onTrackLineWidthChange?.(region.channelId, snappedValue);
+    }
+
+    renderVrTracksHud(hud, state);
+  }, [renderVrTracksHud, sliderLocalPointRef, vrPropsRef, vrTracksHudRef, vrTracksStateRef]);
+
+  const applyVrTracksScrollFromPoint = useCallback<
+    UseVolumeViewerVrResult['applyVrTracksScrollFromPoint']
+  >((region, worldPoint) => {
+    if (
+      !region ||
+      region.disabled ||
+      region.targetType !== 'tracks-scroll' ||
+      !region.verticalSliderTrack
+    ) {
+      return;
+    }
+    const hud = vrTracksHudRef.current;
+    if (!hud) {
+      return;
+    }
+    sliderLocalPointRef.current.copy(worldPoint);
+    hud.panel.worldToLocal(sliderLocalPointRef.current);
+    const localY = sliderLocalPointRef.current.y;
+    const track = region.verticalSliderTrack;
+    const trackMin = Math.min(track.minY, track.maxY);
+    const trackMax = Math.max(track.minY, track.maxY);
+    if (trackMax - trackMin <= 1e-5) {
+      return;
+    }
+    const rawRatio = (localY - trackMin) / (trackMax - trackMin);
+    let clampedRatio = Math.min(Math.max(rawRatio, 0), 1);
+    if (track.inverted) {
+      clampedRatio = 1 - clampedRatio;
+    }
+
+    const state = vrTracksStateRef.current;
+    const channelState = state.channels.find((entry) => entry.id === region.channelId);
+    if (!channelState) {
+      return;
+    }
+
+    const visibleRows = Math.max(track.visibleRows ?? 0, 1);
+    const totalRows = Math.max(track.totalRows ?? 0, 0);
+    const maxScrollIndex = Math.max(totalRows - visibleRows, 0);
+    let snappedRatio = clampedRatio;
+    if (maxScrollIndex > 0) {
+      const step = 1 / maxScrollIndex;
+      snappedRatio = Math.round(clampedRatio / step) * step;
+      snappedRatio = Math.min(Math.max(snappedRatio, 0), 1);
+    } else {
+      snappedRatio = 0;
+    }
+
+    if (Math.abs((channelState.scrollOffset ?? 0) - snappedRatio) <= 1e-4) {
+      return;
+    }
+    channelState.scrollOffset = snappedRatio;
+    renderVrTracksHud(hud, state);
+  }, [renderVrTracksHud, sliderLocalPointRef, vrTracksHudRef, vrTracksStateRef]);
 
   const applyVrPlaybackHoverState = useCallback<
     UseVolumeViewerVrResult['applyVrPlaybackHoverState']
@@ -1112,18 +1690,18 @@ export function useVolumeViewerVr({
 
   const onRegisterVrSession = useCallback<UseVolumeViewerVrResult['onRegisterVrSession']>(
     (handlers) => {
-      vrProps?.onRegisterVrSession?.(handlers ?? null);
+      vrPropsRef.current?.onRegisterVrSession?.(handlers ?? null);
     },
-    [vrProps]
+    [vrPropsRef],
   );
 
   const onVrSessionStarted = useCallback(() => {
-    vrProps?.onVrSessionStarted?.();
-  }, [vrProps]);
+    vrPropsRef.current?.onVrSessionStarted?.();
+  }, [vrPropsRef]);
 
   const onVrSessionEnded = useCallback(() => {
-    vrProps?.onVrSessionEnded?.();
-  }, [vrProps]);
+    vrPropsRef.current?.onVrSessionEnded?.();
+  }, [vrPropsRef]);
 
   const updateVolumeHandles = useCallback(() => {
     const translationHandle = vrTranslationHandleRef.current;
@@ -1625,6 +2203,15 @@ export function useVolumeViewerVr({
     applyPlaybackSliderFromWorldPoint,
     applyFpsSliderFromWorldPoint,
     createVrPlaybackHud,
+    setVrChannelsHudVisible,
+    setVrTracksHudVisible,
+    createVrChannelsHud,
+    createVrTracksHud,
+    renderVrChannelsHud,
+    renderVrTracksHud,
+    applyVrChannelsSliderFromPoint,
+    applyVrTracksSliderFromPoint,
+    applyVrTracksScrollFromPoint,
     updateVolumeHandles,
     applyVolumeYawPitch,
     updateHudGroupFromPlacement,
