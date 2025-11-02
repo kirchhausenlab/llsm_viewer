@@ -8,6 +8,10 @@
 
 # Progress Log
 
+## VR session persistence fix
+- Prevented React StrictMode ref churn from clearing the renderer container and tearing down active WebXR sessions as soon as
+  they started by only reacting to non-null container attachments.
+
 ## XR ref relocation
 - Moved XR/session/controller bookkeeping refs into `useVolumeViewerVr` so immersive state is initialized in one place and the component consumes the shared instances via the hook return value.
 - Updated `VolumeViewer` to rely on the hook-supplied refs while keeping renderer, camera, and resource refs flowing through the existing parameters.

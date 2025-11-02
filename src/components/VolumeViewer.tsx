@@ -1031,7 +1031,10 @@ function VolumeViewer({
 
   const handleContainerRef = useCallback((node: HTMLDivElement | null) => {
     containerRef.current = node;
-    setContainerNode(node);
+    if (!node) {
+      return;
+    }
+    setContainerNode((current) => (current === node ? current : node));
   }, []);
 
   const applyVrPlaybackHoverState = useCallback(
