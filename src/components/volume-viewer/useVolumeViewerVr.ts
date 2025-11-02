@@ -1,4 +1,4 @@
-import { MutableRefObject, useCallback, useRef } from 'react';
+import { MutableRefObject, useCallback, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 
 import type {
@@ -6,8 +6,10 @@ import type {
   PointerState,
   TrackLineResource,
   VolumeResources,
+  VolumeViewerVrChannelPanel,
   VolumeViewerVrProps,
 } from '../VolumeViewer.types';
+import type { TrackColorMode, TrackDefinition } from '../../types/tracks';
 import type {
   ControllerEntry,
   RaycasterLike,
@@ -74,7 +76,14 @@ import {
   setVrPlaybackLabel,
   setVrPlaybackProgressFraction,
 } from './vr/hudMutators';
+import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../../layerColors';
+import {
+  DEFAULT_TRACK_COLOR,
+  getTrackColorHex,
+  normalizeTrackColor,
+} from '../../trackColors';
 import { brightnessContrastModel } from '../../state/layerSettings';
+import { DEFAULT_TRACK_LINE_WIDTH, DEFAULT_TRACK_OPACITY } from './constants';
 
 export type PlaybackState = {
   isPlaying: boolean;
@@ -130,7 +139,7 @@ export type UseVolumeViewerVrParams = {
   trackLinesRef: MutableRefObject<Map<string, TrackLineResource>>;
   trackFollowOffsetRef: MutableRefObject<THREE.Vector3 | null>;
   hasActive3DLayerRef: MutableRefObject<boolean>;
-  playbackStateDefaults: {
+  playbackState: {
     isPlaying: boolean;
     playbackDisabled: boolean;
     playbackLabel: string;
@@ -140,8 +149,19 @@ export type UseVolumeViewerVrParams = {
     onTogglePlayback: () => void;
     onTimeIndexChange: (nextIndex: number) => void;
     onFpsChange: (value: number) => void;
-    passthroughSupported: boolean;
   };
+  isVrPassthroughSupported: boolean;
+  channelPanels: VolumeViewerVrChannelPanel[];
+  activeChannelPanelId: string | null;
+  trackChannels: Array<{ id: string; name: string }>;
+  activeTrackChannelId: string | null;
+  tracks: TrackDefinition[];
+  trackVisibility: Record<string, boolean>;
+  trackOpacityByChannel: Record<string, number>;
+  trackLineWidthByChannel: Record<string, number>;
+  channelTrackColorModes: Record<string, TrackColorMode>;
+  selectedTrackIds: ReadonlySet<string>;
+  followedTrackId: string | null;
 };
 
 export type UseVolumeViewerVrResult = {
@@ -218,6 +238,7 @@ export type UseVolumeViewerVrResult = {
   setVrPlaybackHudVisible: (visible: boolean) => void;
   setVrChannelsHudVisible: (visible: boolean) => void;
   setVrTracksHudVisible: (visible: boolean) => void;
+  setPreferredXrSessionMode: (mode: 'immersive-vr' | 'immersive-ar') => void;
   applyPlaybackSliderFromWorldPoint: (worldPoint: THREE.Vector3) => void;
   applyFpsSliderFromWorldPoint: (worldPoint: THREE.Vector3) => void;
   createVrPlaybackHud: () => VrPlaybackHud | null;
@@ -289,8 +310,31 @@ export function useVolumeViewerVr({
   trackLinesRef,
   trackFollowOffsetRef,
   hasActive3DLayerRef,
-  playbackStateDefaults,
+  playbackState,
+  isVrPassthroughSupported,
+  channelPanels,
+  activeChannelPanelId,
+  trackChannels,
+  activeTrackChannelId,
+  tracks,
+  trackVisibility,
+  trackOpacityByChannel,
+  trackLineWidthByChannel,
+  channelTrackColorModes,
+  selectedTrackIds,
+  followedTrackId,
 }: UseVolumeViewerVrParams): UseVolumeViewerVrResult {
+  const {
+    isPlaying,
+    playbackDisabled,
+    playbackLabel,
+    fps,
+    timeIndex,
+    totalTimepoints,
+    onTogglePlayback,
+    onTimeIndexChange,
+    onFpsChange,
+  } = playbackState;
   const controllersRef = useRef<ControllerEntry[]>([]);
   const raycasterRef = useRef<RaycasterLike | null>(null);
   const xrSessionRef = useRef<XRSession | null>(null);
@@ -303,7 +347,7 @@ export function useVolumeViewerVr({
   const xrPreferredSessionModeRef = useRef<'immersive-vr' | 'immersive-ar'>('immersive-vr');
   const xrCurrentSessionModeRef = useRef<'immersive-vr' | 'immersive-ar' | null>(null);
   const xrPendingModeSwitchRef = useRef<'immersive-vr' | 'immersive-ar' | null>(null);
-  const xrPassthroughSupportedRef = useRef(playbackStateDefaults.passthroughSupported);
+  const xrPassthroughSupportedRef = useRef(isVrPassthroughSupported);
   const xrFoveationAppliedRef = useRef(false);
   const xrPreviousFoveationRef = useRef<number | undefined>(undefined);
 
@@ -338,16 +382,16 @@ export function useVolumeViewerVr({
   const vrHandleQuaternionTemp2Ref = useRef(new THREE.Quaternion());
   const sliderLocalPointRef = useRef(new THREE.Vector3());
   const playbackStateRef = useRef<PlaybackState>({
-    isPlaying: playbackStateDefaults.isPlaying,
-    playbackDisabled: playbackStateDefaults.playbackDisabled,
-    playbackLabel: playbackStateDefaults.playbackLabel,
-    fps: playbackStateDefaults.fps,
-    timeIndex: playbackStateDefaults.timeIndex,
-    totalTimepoints: playbackStateDefaults.totalTimepoints,
-    onTogglePlayback: playbackStateDefaults.onTogglePlayback,
-    onTimeIndexChange: playbackStateDefaults.onTimeIndexChange,
-    onFpsChange: playbackStateDefaults.onFpsChange,
-    passthroughSupported: playbackStateDefaults.passthroughSupported,
+    isPlaying,
+    playbackDisabled,
+    playbackLabel,
+    fps,
+    timeIndex,
+    totalTimepoints,
+    onTogglePlayback,
+    onTimeIndexChange,
+    onFpsChange,
+    passthroughSupported: isVrPassthroughSupported,
     preferredSessionMode: 'immersive-vr',
     currentSessionMode: null,
   });
@@ -567,6 +611,54 @@ export function useVolumeViewerVr({
       vrHoverStateRef.current.mode,
     );
   }, [applyVrPlaybackHoverState, playbackStateRef, vrHoverStateRef, vrPlaybackHudRef]);
+
+  const setPreferredXrSessionMode = useCallback<
+    UseVolumeViewerVrResult['setPreferredXrSessionMode']
+  >(
+    (mode) => {
+      xrPreferredSessionModeRef.current = mode;
+      playbackStateRef.current.preferredSessionMode = mode;
+      updateVrPlaybackHud();
+    },
+    [updateVrPlaybackHud]
+  );
+
+  useEffect(() => {
+    const state = playbackStateRef.current;
+    state.isPlaying = isPlaying;
+    state.playbackDisabled = playbackDisabled;
+    state.playbackLabel = playbackLabel;
+    state.fps = fps;
+    state.timeIndex = timeIndex;
+    state.totalTimepoints = totalTimepoints;
+    state.onTogglePlayback = onTogglePlayback;
+    state.onTimeIndexChange = onTimeIndexChange;
+    state.onFpsChange = onFpsChange;
+    state.passthroughSupported = isVrPassthroughSupported;
+    updateVrPlaybackHud();
+  }, [
+    isPlaying,
+    playbackDisabled,
+    playbackLabel,
+    fps,
+    timeIndex,
+    totalTimepoints,
+    onTogglePlayback,
+    onTimeIndexChange,
+    onFpsChange,
+    isVrPassthroughSupported,
+    updateVrPlaybackHud
+  ]);
+
+  useEffect(() => {
+    xrPassthroughSupportedRef.current = isVrPassthroughSupported;
+    playbackStateRef.current.passthroughSupported = isVrPassthroughSupported;
+    if (!isVrPassthroughSupported && xrPreferredSessionModeRef.current === 'immersive-ar') {
+      setPreferredXrSessionMode('immersive-vr');
+    } else {
+      updateVrPlaybackHud();
+    }
+  }, [isVrPassthroughSupported, setPreferredXrSessionMode, updateVrPlaybackHud]);
 
   const setVrPlaybackHudVisible = useCallback<UseVolumeViewerVrResult['setVrPlaybackHudVisible']>(
     (visible) => {
@@ -1516,6 +1608,129 @@ export function useVolumeViewerVr({
     renderVrTracksHud(hud, state);
   }, [renderVrTracksHud]);
 
+  const tracksByChannel = useMemo(() => {
+    const map = new Map<string, TrackDefinition[]>();
+    for (const track of tracks) {
+      const existing = map.get(track.channelId);
+      if (existing) {
+        existing.push(track);
+      } else {
+        map.set(track.channelId, [track]);
+      }
+    }
+    return map;
+  }, [tracks]);
+
+  useEffect(() => {
+    const nextChannels = channelPanels.map((panel) => ({
+      id: panel.id,
+      name: panel.name,
+      visible: panel.visible,
+      activeLayerKey: panel.activeLayerKey,
+      layers: panel.layers.map((layer) => ({
+        key: layer.key,
+        label: layer.label,
+        hasData: layer.hasData,
+        isGrayscale: layer.isGrayscale,
+        isSegmentation: layer.isSegmentation,
+        defaultWindow: layer.defaultWindow,
+        histogram: layer.histogram ?? null,
+        settings: {
+          sliderRange: layer.settings.sliderRange,
+          minSliderIndex: layer.settings.minSliderIndex,
+          maxSliderIndex: layer.settings.maxSliderIndex,
+          brightnessSliderIndex: layer.settings.brightnessSliderIndex,
+          contrastSliderIndex: layer.settings.contrastSliderIndex,
+          windowMin: layer.settings.windowMin,
+          windowMax: layer.settings.windowMax,
+          color: normalizeHexColor(layer.settings.color, DEFAULT_LAYER_COLOR),
+          xOffset: layer.settings.xOffset,
+          yOffset: layer.settings.yOffset,
+          renderStyle: layer.settings.renderStyle,
+          invert: layer.settings.invert,
+          samplingMode: layer.settings.samplingMode ?? 'linear',
+        },
+      })),
+    }));
+    vrChannelsStateRef.current = {
+      channels: nextChannels,
+      activeChannelId: activeChannelPanelId,
+    };
+    updateVrChannelsHud();
+  }, [activeChannelPanelId, channelPanels, updateVrChannelsHud]);
+
+  useEffect(() => {
+    const previousChannels = new Map(
+      vrTracksStateRef.current.channels.map((channel) => [channel.id, channel] as const),
+    );
+    const nextChannels = trackChannels.map((channel) => {
+      const tracksForChannel = tracksByChannel.get(channel.id) ?? [];
+      const colorMode = channelTrackColorModes[channel.id] ?? { type: 'random' };
+      const opacity = trackOpacityByChannel[channel.id] ?? DEFAULT_TRACK_OPACITY;
+      const lineWidth = trackLineWidthByChannel[channel.id] ?? DEFAULT_TRACK_LINE_WIDTH;
+      let visibleTracks = 0;
+      const trackEntries = tracksForChannel.map((track) => {
+        const explicitVisible = trackVisibility[track.id] ?? true;
+        const isFollowed = followedTrackId === track.id;
+        const isSelected = selectedTrackIds.has(track.id);
+        if (explicitVisible || isFollowed || isSelected) {
+          visibleTracks += 1;
+        }
+        const color =
+          colorMode.type === 'uniform'
+            ? normalizeTrackColor(colorMode.color, DEFAULT_TRACK_COLOR)
+            : getTrackColorHex(track.id);
+        return {
+          id: track.id,
+          trackNumber: track.trackNumber,
+          label: `Track #${track.trackNumber}`,
+          color,
+          explicitVisible,
+          visible: isFollowed || explicitVisible || isSelected,
+          isFollowed,
+          isSelected,
+        };
+      });
+      const followedEntry = trackEntries.find((entry) => entry.isFollowed) ?? null;
+      const previous = previousChannels.get(channel.id);
+      return {
+        id: channel.id,
+        name: channel.name,
+        opacity,
+        lineWidth,
+        colorMode,
+        totalTracks: tracksForChannel.length,
+        visibleTracks,
+        followedTrackId: followedEntry ? followedEntry.id : null,
+        scrollOffset: Math.min(Math.max(previous?.scrollOffset ?? 0, 0), 1),
+        tracks: trackEntries,
+      };
+    });
+    const nextState: VrTracksState = {
+      channels: nextChannels,
+      activeChannelId: activeTrackChannelId,
+    };
+    if (
+      !nextState.activeChannelId ||
+      !nextChannels.some((channel) => channel.id === nextState.activeChannelId)
+    ) {
+      nextState.activeChannelId = nextChannels[0]?.id ?? null;
+    }
+    vrTracksStateRef.current = nextState;
+    updateVrTracksHud();
+  }, [
+    activeTrackChannelId,
+    channelTrackColorModes,
+    trackChannels,
+    trackLineWidthByChannel,
+    trackOpacityByChannel,
+    trackVisibility,
+    tracksByChannel,
+    followedTrackId,
+    selectedTrackIds,
+    updateVrTracksHud,
+  ]);
+
   const applyVrChannelsSliderFromPoint = useCallback<
     UseVolumeViewerVrResult['applyVrChannelsSliderFromPoint']
   >(
@@ -2247,6 +2462,7 @@ export function useVolumeViewerVr({
     setVrPlaybackHudVisible,
     setVrChannelsHudVisible,
     setVrTracksHudVisible,
+    setPreferredXrSessionMode,
     applyPlaybackSliderFromWorldPoint,
     applyFpsSliderFromWorldPoint,
     createVrPlaybackHud,

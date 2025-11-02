@@ -94,6 +94,7 @@ import {
   DEFAULT_WINDOW_MIN,
   DEFAULT_WINDOW_MAX
 } from '../state/layerSettings';
+import { DEFAULT_TRACK_LINE_WIDTH, DEFAULT_TRACK_OPACITY } from './volume-viewer/constants';
 function getExpectedSliceBufferLength(volume: NormalizedVolume) {
   const pixelCount = volume.width * volume.height;
   return pixelCount * 4;
@@ -160,8 +161,6 @@ function prepareSliceTexture(volume: NormalizedVolume, sliceIndex: number, exist
 }
 
 
-const DEFAULT_TRACK_OPACITY = 0.9;
-const DEFAULT_TRACK_LINE_WIDTH = 1;
 const SELECTED_TRACK_BLINK_PERIOD_MS = 1600;
 const SELECTED_TRACK_BLINK_BASE = 0.85;
 const SELECTED_TRACK_BLINK_RANGE = 0.15;
@@ -514,6 +513,7 @@ function VolumeViewer({
     setVrPlaybackHudVisible,
     setVrChannelsHudVisible,
     setVrTracksHudVisible,
+    setPreferredXrSessionMode,
     applyPlaybackSliderFromWorldPoint,
     applyFpsSliderFromWorldPoint,
     createVrPlaybackHud,
@@ -561,7 +561,7 @@ function VolumeViewer({
     trackLinesRef,
     trackFollowOffsetRef,
     hasActive3DLayerRef,
-    playbackStateDefaults: {
+    playbackState: {
       isPlaying,
       playbackDisabled,
       playbackLabel,
@@ -570,9 +570,20 @@ function VolumeViewer({
       totalTimepoints,
       onTogglePlayback,
       onTimeIndexChange,
-      onFpsChange,
-      passthroughSupported: isVrPassthroughSupported
-    }
+      onFpsChange
+    },
+    isVrPassthroughSupported,
+    channelPanels,
+    activeChannelPanelId,
+    trackChannels,
+    activeTrackChannelId,
+    tracks,
+    trackVisibility,
+    trackOpacityByChannel,
+    trackLineWidthByChannel,
+    channelTrackColorModes,
+    selectedTrackIds,
+    followedTrackId
   });
 
 
@@ -831,15 +842,6 @@ function VolumeViewer({
     setContainerNode((current) => (current === node ? current : node));
   }, []);
 
-  const setPreferredXrSessionMode = useCallback(
-    (mode: 'immersive-vr' | 'immersive-ar') => {
-      xrPreferredSessionModeRef.current = mode;
-      playbackStateRef.current.preferredSessionMode = mode;
-      updateVrPlaybackHud();
-    },
-    [updateVrPlaybackHud]
-  );
-
   const toggleXrSessionMode = useCallback(() => {
     if (!xrPassthroughSupportedRef.current) {
       return;
@@ -908,160 +910,6 @@ function VolumeViewer({
   );
 
   followedTrackIdRef.current = followedTrackId;
-
-  useEffect(() => {
-    playbackStateRef.current.isPlaying = isPlaying;
-    playbackStateRef.current.playbackDisabled = playbackDisabled;
-    playbackStateRef.current.playbackLabel = playbackLabel;
-    playbackStateRef.current.fps = fps;
-    playbackStateRef.current.timeIndex = timeIndex;
-    playbackStateRef.current.totalTimepoints = totalTimepoints;
-    playbackStateRef.current.onTogglePlayback = onTogglePlayback;
-    playbackStateRef.current.onTimeIndexChange = onTimeIndexChange;
-    playbackStateRef.current.onFpsChange = onFpsChange;
-    playbackStateRef.current.passthroughSupported = isVrPassthroughSupported;
-    updateVrPlaybackHud();
-  }, [
-    isPlaying,
-    fps,
-    onTimeIndexChange,
-    onTogglePlayback,
-    onFpsChange,
-    playbackDisabled,
-    playbackLabel,
-    timeIndex,
-    totalTimepoints,
-    isVrPassthroughSupported,
-    updateVrPlaybackHud
-  ]);
-
-  useEffect(() => {
-    xrPassthroughSupportedRef.current = isVrPassthroughSupported;
-    playbackStateRef.current.passthroughSupported = isVrPassthroughSupported;
-    if (!isVrPassthroughSupported && xrPreferredSessionModeRef.current === 'immersive-ar') {
-      setPreferredXrSessionMode('immersive-vr');
-    } else {
-      updateVrPlaybackHud();
-    }
-  }, [isVrPassthroughSupported, setPreferredXrSessionMode, updateVrPlaybackHud]);
-
-  useEffect(() => {
-    const nextChannels = channelPanels.map((panel) => ({
-      id: panel.id,
-      name: panel.name,
-      visible: panel.visible,
-      activeLayerKey: panel.activeLayerKey,
-      layers: panel.layers.map((layer) => ({
-        key: layer.key,
-        label: layer.label,
-        hasData: layer.hasData,
-        isGrayscale: layer.isGrayscale,
-        isSegmentation: layer.isSegmentation,
-        defaultWindow: layer.defaultWindow,
-        histogram: layer.histogram ?? null,
-        settings: {
-          sliderRange: layer.settings.sliderRange,
-          minSliderIndex: layer.settings.minSliderIndex,
-          maxSliderIndex: layer.settings.maxSliderIndex,
-          brightnessSliderIndex: layer.settings.brightnessSliderIndex,
-          contrastSliderIndex: layer.settings.contrastSliderIndex,
-          windowMin: layer.settings.windowMin,
-          windowMax: layer.settings.windowMax,
-          color: normalizeHexColor(layer.settings.color, DEFAULT_LAYER_COLOR),
-          xOffset: layer.settings.xOffset,
-          yOffset: layer.settings.yOffset,
-          renderStyle: layer.settings.renderStyle,
-          invert: layer.settings.invert,
-          samplingMode: layer.settings.samplingMode ?? 'linear'
-        }
-      }))
-    }));
-    vrChannelsStateRef.current = {
-      channels: nextChannels,
-      activeChannelId: activeChannelPanelId
-    };
-    updateVrChannelsHud();
-  }, [activeChannelPanelId, channelPanels, updateVrChannelsHud]);
-
-  const tracksByChannel = useMemo(() => {
-    const map = new Map<string, TrackDefinition[]>();
-    for (const track of tracks) {
-      const existing = map.get(track.channelId);
-      if (existing) {
-        existing.push(track);
-      } else {
-        map.set(track.channelId, [track]);
-      }
-    }
-    return map;
-  }, [tracks]);
-
-  useEffect(() => {
-    const previousChannels = new Map(vrTracksStateRef.current.channels.map((channel) => [channel.id, channel]));
-    const nextChannels = trackChannels.map((channel) => {
-      const tracksForChannel = tracksByChannel.get(channel.id) ?? [];
-      const colorMode = channelTrackColorModes[channel.id] ?? { type: 'random' };
-      const opacity = trackOpacityByChannel[channel.id] ?? DEFAULT_TRACK_OPACITY;
-      const lineWidth = trackLineWidthByChannel[channel.id] ?? DEFAULT_TRACK_LINE_WIDTH;
-      let visibleTracks = 0;
-      const trackEntries = tracksForChannel.map((track) => {
-        const explicitVisible = trackVisibility[track.id] ?? true;
-        const isFollowed = followedTrackId === track.id;
-        const isSelected = selectedTrackIds.has(track.id);
-        if (explicitVisible || isFollowed || isSelected) {
-          visibleTracks += 1;
-        }
-        const color =
-          colorMode.type === 'uniform'
-            ? normalizeTrackColor(colorMode.color, DEFAULT_TRACK_COLOR)
-            : getTrackColorHex(track.id);
-        return {
-          id: track.id,
-          trackNumber: track.trackNumber,
-          label: `Track #${track.trackNumber}`,
-          color,
-          explicitVisible,
-          visible: isFollowed || explicitVisible || isSelected,
-          isFollowed,
-          isSelected
-        };
-      });
-      const followedEntry = trackEntries.find((entry) => entry.isFollowed) ?? null;
-      const previous = previousChannels.get(channel.id);
-      return {
-        id: channel.id,
-        name: channel.name,
-        opacity,
-        lineWidth,
-        colorMode,
-        totalTracks: tracksForChannel.length,
-        visibleTracks,
-        followedTrackId: followedEntry ? followedEntry.id : null,
-        scrollOffset: Math.min(Math.max(previous?.scrollOffset ?? 0, 0), 1),
-        tracks: trackEntries
-      };
-    });
-    const nextState: VrTracksState = {
-      channels: nextChannels,
-      activeChannelId: activeTrackChannelId
-    };
-    if (!nextState.activeChannelId || !nextChannels.some((channel) => channel.id === nextState.activeChannelId)) {
-      nextState.activeChannelId = nextChannels[0]?.id ?? null;
-    }
-    vrTracksStateRef.current = nextState;
-    updateVrTracksHud();
-  }, [
-    activeTrackChannelId,
-    channelTrackColorModes,
-    trackChannels,
-    trackLineWidthByChannel,
-    trackOpacityByChannel,
-    trackVisibility,
-    tracksByChannel,
-    followedTrackId,
-    selectedTrackIds,
-    updateVrTracksHud
-  ]);
 
   const trackLookup = useMemo(() => {
     const map = new Map<string, TrackDefinition>();

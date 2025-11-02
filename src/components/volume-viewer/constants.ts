@@ -1,0 +1,2 @@
+export const DEFAULT_TRACK_OPACITY = 0.9;
+export const DEFAULT_TRACK_LINE_WIDTH = 1;
