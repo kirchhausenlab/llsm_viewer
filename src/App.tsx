@@ -61,6 +61,7 @@ import { computeAutoWindow, getVolumeHistogram } from './autoContrast';
 import { getDefaultWindowForVolume } from './utils/volumeWindow';
 import BrightnessContrastHistogram from './components/BrightnessContrastHistogram';
 import { streamDownloadWithServiceWorker } from './utils/exportServiceWorker';
+import useVrLifecycle from './hooks/useVrLifecycle';
 
 const DEFAULT_FPS = 12;
 const DEFAULT_TRACK_OPACITY = 0.9;
@@ -1104,12 +1105,6 @@ function App() {
   const [isViewerLaunched, setIsViewerLaunched] = useState(false);
   const [isLaunchingViewer, setIsLaunchingViewer] = useState(false);
   const [layoutResetToken, setLayoutResetToken] = useState(0);
-  const [isVrSupported, setIsVrSupported] = useState(false);
-  const [isVrPassthroughSupported, setIsVrPassthroughSupported] = useState(false);
-  const [isVrSupportChecked, setIsVrSupportChecked] = useState(false);
-  const [isVrActive, setIsVrActive] = useState(false);
-  const [isVrRequesting, setIsVrRequesting] = useState(false);
-  const [hasVrSessionHandlers, setHasVrSessionHandlers] = useState(false);
   const [isHelpMenuOpen, setIsHelpMenuOpen] = useState(false);
   const controlWindowInitialPosition = useMemo(
     () => ({ x: WINDOW_MARGIN, y: WINDOW_MARGIN }),
@@ -1159,13 +1154,6 @@ function App() {
   const preprocessedFileInputRef = useRef<HTMLInputElement | null>(null);
   const preprocessedDropCounterRef = useRef(0);
   const helpMenuRef = useRef<HTMLDivElement | null>(null);
-  const vrSessionControlsRef = useRef<
-    | {
-        requestSession: () => Promise<XRSession | null>;
-        endSession: () => Promise<void> | void;
-      }
-    | null
-  >(null);
 
   const createChannelSource = useCallback(
     (name: string): ChannelSource => {
@@ -1240,62 +1228,28 @@ function App() {
     }
   }, [channels, preprocessedExperiment]);
 
-  const handleRegisterVrSession = useCallback(
-    (
-      handlers:
-        | {
-            requestSession: () => Promise<XRSession | null>;
-            endSession: () => Promise<void> | void;
-          }
-        | null
-    ) => {
-      vrSessionControlsRef.current = handlers;
-      setHasVrSessionHandlers(Boolean(handlers));
-    },
-    []
-  );
-
-  const handleVrSessionStarted = useCallback(() => {
-    setIsVrActive(true);
-  }, []);
-
-  const handleVrSessionEnded = useCallback(() => {
-    setIsVrActive(false);
-  }, []);
-
-  const enterVr = useCallback(async () => {
-    if (viewerMode !== '3d') {
-      return;
-    }
-    if (!isVrSupportChecked || !isVrSupported) {
-      return;
-    }
-    const controls = vrSessionControlsRef.current;
-    if (!controls) {
-      return;
-    }
-    setIsVrRequesting(true);
+  const handleBeforeEnterVr = useCallback(() => {
     setFollowedTrack(null);
-    try {
-      await controls.requestSession();
-    } catch (error) {
-      console.error('Failed to start VR session', error);
-    } finally {
-      setIsVrRequesting(false);
-    }
-  }, [isVrSupportChecked, isVrSupported, setFollowedTrack, viewerMode]);
+  }, [setFollowedTrack]);
 
-  const exitVr = useCallback(async () => {
-    const controls = vrSessionControlsRef.current;
-    if (!controls) {
-      return;
-    }
-    try {
-      await Promise.resolve(controls.endSession());
-    } catch (error) {
-      console.error('Failed to end VR session', error);
-    }
-  }, []);
+  const {
+    isVrSupportChecked,
+    isVrSupported,
+    isVrPassthroughSupported,
+    isVrActive,
+    isVrRequesting,
+    hasVrSessionHandlers,
+    isVrAvailable,
+    vrButtonLabel,
+    enterVr,
+    exitVr,
+    registerSessionHandlers,
+    handleSessionStarted,
+    handleSessionEnded
+  } = useVrLifecycle({
+    viewerMode,
+    onBeforeEnter: handleBeforeEnterVr
+  });
 
   const handleVrButtonClick = useCallback(() => {
     if (isVrActive) {
@@ -1400,92 +1354,6 @@ function App() {
       setActiveChannelId(channels[0].id);
     }
   }, [activeChannelId, channels]);
-
-  useEffect(() => {
-    let isCancelled = false;
-
-    const detectVrSupport = async () => {
-      if (typeof navigator === 'undefined' || !navigator.xr) {
-        if (!isCancelled) {
-          setIsVrSupported(false);
-          setIsVrSupportChecked(true);
-        }
-        return;
-      }
-
-      const xr = navigator.xr as { requestSession?: unknown; isSessionSupported?: unknown } | undefined;
-      const requestSession =
-        xr && typeof xr.requestSession === 'function'
-          ? (xr.requestSession as (mode: string, options?: unknown) => Promise<XRSession>)
-          : null;
-      const isSessionSupportedFn =
-        xr && typeof xr.isSessionSupported === 'function'
-          ? (xr.isSessionSupported as (mode: string) => Promise<boolean>)
-          : null;
-      const hasRequestSession = Boolean(requestSession);
-
-      const markSupport = (supported: boolean, passthrough: boolean) => {
-        if (!isCancelled) {
-          setIsVrSupported(supported);
-          setIsVrPassthroughSupported(passthrough);
-          setIsVrSupportChecked(true);
-        }
-      };
-
-      if (!xr || !isSessionSupportedFn) {
-        if (hasRequestSession) {
-          console.warn('WebXR isSessionSupported unavailable; falling back to optimistic VR enablement.');
-          markSupport(true, false);
-        } else {
-          markSupport(false, false);
-        }
-        return;
-      }
-
-      try {
-        let immersiveVrSupported = false;
-        let immersiveArSupported = false;
-        try {
-          immersiveVrSupported = await isSessionSupportedFn.call(navigator.xr!, 'immersive-vr');
-        } catch (error) {
-          console.warn('Failed to detect immersive-vr support', error);
-        }
-
-        try {
-          immersiveArSupported = await isSessionSupportedFn.call(navigator.xr!, 'immersive-ar');
-        } catch (error) {
-          console.warn('Failed to detect immersive-ar support', error);
-        }
-
-        if (immersiveVrSupported || immersiveArSupported) {
-          markSupport(true, immersiveArSupported);
-          return;
-        }
-
-        if (hasRequestSession) {
-          console.warn(
-            'WebXR immersive session probe reported unsupported; falling back to optimistic VR enablement.'
-          );
-          markSupport(true, immersiveArSupported);
-        } else {
-          markSupport(false, immersiveArSupported);
-        }
-      } catch (error) {
-        console.warn('Failed to detect WebXR support', error);
-        if (hasRequestSession) {
-          markSupport(true, false);
-        } else {
-          markSupport(false, false);
-        }
-      }
-    };
-
-    detectVrSupport();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, []);
 
   const volumeTimepointCount = layers.length > 0 ? layers[0].volumes.length : 0;
   const channelNameMap = useMemo(() => {
@@ -1998,8 +1866,6 @@ function App() {
 
   const isLoading = status === 'loading';
   const playbackDisabled = isLoading || volumeTimepointCount <= 1;
-  const vrButtonLabel = isVrActive ? 'Exit VR' : isVrRequesting ? 'Entering VR…' : 'Enter VR';
-  const isVrAvailable = viewerMode === '3d' && isVrSupportChecked && isVrSupported;
   const vrButtonDisabled = isVrActive ? false : !isVrAvailable || !hasVrSessionHandlers || isVrRequesting;
   const vrButtonTitle = isVrActive
     ? 'Exit immersive VR session.'
@@ -4309,9 +4175,9 @@ function App() {
                 onLayerRenderStyleToggle: handleLayerRenderStyleToggle,
                 onLayerSamplingModeToggle: handleLayerSamplingModeToggle,
                 onLayerInvertToggle: handleLayerInvertToggle,
-                onRegisterVrSession: handleRegisterVrSession,
-                onVrSessionStarted: handleVrSessionStarted,
-                onVrSessionEnded: handleVrSessionEnded
+                onRegisterVrSession: registerSessionHandlers,
+                onVrSessionStarted: handleSessionStarted,
+                onVrSessionEnded: handleSessionEnded
               }}
             />
           ) : (
