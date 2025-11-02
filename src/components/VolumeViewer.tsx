@@ -457,7 +457,6 @@ function VolumeViewer({
   const resetVolumeCallbackRef = useRef<() => void>(() => {});
   const resetHudPlacementCallbackRef = useRef<() => void>(() => {});
   const trackFollowRequestCallbackRef = useRef<(trackId: string) => void>(() => {});
-  const toggleXrSessionModeCallbackRef = useRef<() => void>(() => {});
   trackFollowRequestCallbackRef.current = onTrackFollowRequest;
 
   const applyHoverState = useCallback(() => {
@@ -559,6 +558,7 @@ function VolumeViewer({
     setVrChannelsHudVisible,
     setVrTracksHudVisible,
     setPreferredXrSessionMode,
+    toggleXrSessionMode,
     applyPlaybackSliderFromWorldPoint,
     applyFpsSliderFromWorldPoint,
     createVrPlaybackHud,
@@ -638,7 +638,6 @@ function VolumeViewer({
     onResetVolume: () => resetVolumeCallbackRef.current?.(),
     onResetHudPlacement: () => resetHudPlacementCallbackRef.current?.(),
     onTrackFollowRequest: (trackId) => trackFollowRequestCallbackRef.current?.(trackId),
-    onToggleXrSessionMode: () => toggleXrSessionModeCallbackRef.current?.(),
     vrLog
   });
 
@@ -665,27 +664,6 @@ function VolumeViewer({
     }
     setContainerNode((current) => (current === node ? current : node));
   }, []);
-
-  const toggleXrSessionMode = useCallback(() => {
-    if (!xrPassthroughSupportedRef.current) {
-      return;
-    }
-    const nextMode =
-      xrPreferredSessionModeRef.current === 'immersive-ar' ? 'immersive-vr' : 'immersive-ar';
-    setPreferredXrSessionMode(nextMode);
-    const session = xrSessionRef.current;
-    if (session) {
-      if (xrCurrentSessionModeRef.current === nextMode) {
-        return;
-      }
-      xrPendingModeSwitchRef.current = nextMode;
-      session.end().catch((error) => {
-        console.warn('Failed to switch XR session mode', error);
-        xrPendingModeSwitchRef.current = null;
-      });
-    }
-  }, [setPreferredXrSessionMode]);
-  toggleXrSessionModeCallbackRef.current = toggleXrSessionMode;
 
   const trackLookup = useMemo(() => {
     const map = new Map<string, TrackDefinition>();
@@ -1245,7 +1223,6 @@ function VolumeViewer({
   const applyTrackGroupTransformRef = useRef(applyTrackGroupTransform);
   const updateVolumeHandlesRef = useRef(updateVolumeHandles);
   const refreshVrHudPlacementsRef = useRef(refreshVrHudPlacements);
-  const toggleXrSessionModeRef = useRef(toggleXrSessionMode);
   const onRegisterVrSessionRef = useRef(onRegisterVrSession);
   const onVrSessionStartedRef = useRef(onVrSessionStarted);
   const onVrSessionEndedRef = useRef(onVrSessionEnded);
@@ -1255,7 +1232,6 @@ function VolumeViewer({
     applyTrackGroupTransformRef.current = applyTrackGroupTransform;
     updateVolumeHandlesRef.current = updateVolumeHandles;
     refreshVrHudPlacementsRef.current = refreshVrHudPlacements;
-    toggleXrSessionModeRef.current = toggleXrSessionMode;
     onRegisterVrSessionRef.current = onRegisterVrSession;
     onVrSessionStartedRef.current = onVrSessionStarted;
     onVrSessionEndedRef.current = onVrSessionEnded;
@@ -1266,7 +1242,6 @@ function VolumeViewer({
     onVrSessionEnded,
     onVrSessionStarted,
     refreshVrHudPlacements,
-    toggleXrSessionMode,
     updateVolumeHandles
   ]);
 

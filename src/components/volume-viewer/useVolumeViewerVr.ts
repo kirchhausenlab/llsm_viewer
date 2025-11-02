@@ -251,7 +251,6 @@ export type UseVolumeViewerVrParams = {
   onResetVolume: () => void;
   onResetHudPlacement: () => void;
   onTrackFollowRequest: (trackId: string) => void;
-  onToggleXrSessionMode: () => void;
   vrLog: (...args: Parameters<typeof console.debug>) => void;
 };
 
@@ -333,6 +332,7 @@ export type UseVolumeViewerVrResult = {
   setVrChannelsHudVisible: (visible: boolean) => void;
   setVrTracksHudVisible: (visible: boolean) => void;
   setPreferredXrSessionMode: (mode: 'immersive-vr' | 'immersive-ar') => void;
+  toggleXrSessionMode: () => void;
   setVrPlaybackHudPlacementPosition: (nextPosition: THREE.Vector3) => void;
   setVrChannelsHudPlacementPosition: (nextPosition: THREE.Vector3) => void;
   setVrTracksHudPlacementPosition: (nextPosition: THREE.Vector3) => void;
@@ -445,7 +445,6 @@ export function useVolumeViewerVr({
   onResetVolume,
   onResetHudPlacement,
   onTrackFollowRequest,
-  onToggleXrSessionMode,
   vrLog,
 }: UseVolumeViewerVrParams): UseVolumeViewerVrResult {
   const {
@@ -485,8 +484,6 @@ export function useVolumeViewerVr({
   onResetHudPlacementRef.current = onResetHudPlacement;
   const onTrackFollowRequestRef = useRef(onTrackFollowRequest);
   onTrackFollowRequestRef.current = onTrackFollowRequest;
-  const onToggleXrSessionModeRef = useRef(onToggleXrSessionMode);
-  onToggleXrSessionModeRef.current = onToggleXrSessionMode;
 
   const [controllerSetupRevision, setControllerSetupRevision] = useState(0);
 
@@ -851,6 +848,26 @@ export function useVolumeViewerVr({
     },
     [updateVrPlaybackHud]
   );
+
+  const toggleXrSessionMode = useCallback(() => {
+    if (!xrPassthroughSupportedRef.current) {
+      return;
+    }
+    const nextMode =
+      xrPreferredSessionModeRef.current === 'immersive-ar' ? 'immersive-vr' : 'immersive-ar';
+    setPreferredXrSessionMode(nextMode);
+    const session = xrSessionRef.current;
+    if (session) {
+      if (xrCurrentSessionModeRef.current === nextMode) {
+        return;
+      }
+      xrPendingModeSwitchRef.current = nextMode;
+      session.end().catch((error) => {
+        console.warn('Failed to switch XR session mode', error);
+        xrPendingModeSwitchRef.current = null;
+      });
+    }
+  }, [setPreferredXrSessionMode]);
 
   useEffect(() => {
     const state = playbackStateRef.current;
@@ -4921,7 +4938,7 @@ export function useVolumeViewerVr({
         } else if (activeTarget?.type === 'playback-exit-vr') {
           void endVrSessionRequestRef.current?.();
         } else if (activeTarget?.type === 'playback-toggle-mode') {
-          onToggleXrSessionModeRef.current?.();
+          toggleXrSessionMode();
         } else if (activeTarget?.type === 'playback-slider') {
           if (entry.hasHoverUiPoint && !playbackState.playbackDisabled) {
             applyPlaybackSliderFromWorldPointRef.current?.(entry.hoverUiPoint);
@@ -5125,7 +5142,7 @@ export function useVolumeViewerVr({
     onResetVolumeRef,
     onResetHudPlacementRef,
     onTrackFollowRequestRef,
-    onToggleXrSessionModeRef,
+    toggleXrSessionMode,
     endVrSessionRequestRef,
   ]);
 
@@ -5188,6 +5205,7 @@ export function useVolumeViewerVr({
     setVrChannelsHudVisible,
     setVrTracksHudVisible,
     setPreferredXrSessionMode,
+    toggleXrSessionMode,
     setVrPlaybackHudPlacementPosition,
     setVrChannelsHudPlacementPosition,
     setVrTracksHudPlacementPosition,
