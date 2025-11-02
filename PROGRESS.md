@@ -8,6 +8,10 @@
 
 # Progress Log
 
+## XR ref relocation
+- Moved XR/session/controller bookkeeping refs into `useVolumeViewerVr` so immersive state is initialized in one place and the component consumes the shared instances via the hook return value.
+- Updated `VolumeViewer` to rely on the hook-supplied refs while keeping renderer, camera, and resource refs flowing through the existing parameters.
+
 ## VR prop grouping
 - Introduced a `VolumeViewerVrProps` bundle so immersive-only callbacks and HUD data flow through a single optional prop, keeping the desktop viewer boundary lean.
 - Updated `VolumeViewer` to read VR settings from the new object with safe fallbacks and guarded callbacks, ensuring non-VR usage remains unaffected.
