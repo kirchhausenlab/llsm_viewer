@@ -48,8 +48,6 @@ import {
   VR_CONTROLLER_TOUCH_RADIUS,
   VR_HUD_FRONT_MARGIN,
   VR_HUD_LATERAL_MARGIN,
-  VR_HUD_MIN_HEIGHT,
-  VR_HUD_PLACEMENT_EPSILON,
   VR_HUD_SURFACE_OFFSET,
   VR_HUD_TRANSLATE_HANDLE_COLOR,
   VR_HUD_TRANSLATE_HANDLE_OFFSET,
@@ -82,6 +80,7 @@ import {
   VR_VOLUME_MAX_SCALE,
   VR_VOLUME_MIN_SCALE,
   VR_VOLUME_STEP_SCALE,
+  useVrHudPlacement,
 } from './volume-viewer/vr';
 import {
   renderVrChannelsHud as renderVrChannelsHudContent,
@@ -514,6 +513,21 @@ function VolumeViewer({
     }
   );
   const hudRefs = useVrHudRefs();
+  const {
+    setVrPlaybackHudPlacementPosition,
+    setVrChannelsHudPlacementPosition,
+    setVrTracksHudPlacementPosition,
+    setVrPlaybackHudPlacementYaw,
+    setVrChannelsHudPlacementYaw,
+    setVrTracksHudPlacementYaw,
+    setVrPlaybackHudPlacementPitch,
+    setVrChannelsHudPlacementPitch,
+    setVrTracksHudPlacementPitch,
+    setHudPlacement,
+    refreshVrHudPlacements,
+    setVrChannelsHudVisible,
+    setVrTracksHudVisible,
+  } = useVrHudPlacement(hudRefs);
   const sliderLocalPointRef = useRef(new THREE.Vector3());
 
   const updateVolumeHandles = useCallback(() => {
@@ -684,10 +698,6 @@ function VolumeViewer({
     },
     [updateVolumeHandles]
   );
-
-  const constrainHudPlacementPosition = useCallback((target: THREE.Vector3) => {
-    target.y = Math.max(target.y, VR_HUD_MIN_HEIGHT);
-  }, []);
 
   const renderVrTracksHud = useCallback((hud: VrTracksHud, state: VrTracksState) => {
     renderVrTracksHudContent(hud, state);
