@@ -34,7 +34,6 @@ import type {
   VrTracksState,
   VrUiTarget,
   VrUiTargetType,
-  WebXRFoveationManager,
 } from './volume-viewer/vr';
 import {
   VR_CHANNELS_CAMERA_ANCHOR_OFFSET,
@@ -75,6 +74,7 @@ import {
   VR_VOLUME_MAX_SCALE,
   VR_VOLUME_MIN_SCALE,
   VR_VOLUME_STEP_SCALE,
+  DESKTOP_VOLUME_STEP_SCALE,
 } from './volume-viewer/vr';
 import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../layerColors';
 import {
@@ -165,9 +165,7 @@ const FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER = 1.35;
 const SELECTED_TRACK_LINE_WIDTH_MULTIPLIER = 1.5;
 const HOVERED_TRACK_LINE_WIDTH_MULTIPLIER = 1.2;
 
-const DESKTOP_VOLUME_STEP_SCALE = 1;
 const MAX_RENDERER_PIXEL_RATIO = 2;
-const XR_TARGET_FOVEATION = 0.6;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const VIEWER_YAW_FORWARD_REFERENCE = new THREE.Vector3(0, 0, -1);
 const VIEWER_YAW_RIGHT_REFERENCE = new THREE.Vector3(1, 0, 0);
@@ -581,6 +579,8 @@ function VolumeViewer({
     resetVrTracksHudPlacement,
     applyVolumeRootTransform,
     applyVolumeStepScaleToResources,
+    applyVrFoveation,
+    restoreVrFoveation,
     onRendererInitialized,
     endVrSessionRequestRef,
     updateControllerRays
@@ -1269,42 +1269,6 @@ function VolumeViewer({
     renderer.xr.enabled = true;
     renderer.xr.setReferenceSpaceType?.('local-floor');
 
-    const applyVrFoveation = (target: number = XR_TARGET_FOVEATION) => {
-      const xrManager = renderer.xr as WebXRFoveationManager;
-      const setFoveation = xrManager.setFoveation;
-      if (typeof setFoveation !== 'function') {
-        return;
-      }
-      if (!xrFoveationAppliedRef.current) {
-        const getFoveation = xrManager.getFoveation;
-        xrPreviousFoveationRef.current =
-          typeof getFoveation === 'function' ? getFoveation() : undefined;
-      }
-      setFoveation(target);
-      xrFoveationAppliedRef.current = true;
-    };
-
-    const restoreVrFoveation = () => {
-      if (!xrFoveationAppliedRef.current) {
-        return;
-      }
-      const xrManager = renderer.xr as WebXRFoveationManager;
-      const setFoveation = xrManager.setFoveation;
-      if (typeof setFoveation !== 'function') {
-        xrFoveationAppliedRef.current = false;
-        xrPreviousFoveationRef.current = undefined;
-        return;
-      }
-      const previous = xrPreviousFoveationRef.current;
-      xrFoveationAppliedRef.current = false;
-      xrPreviousFoveationRef.current = undefined;
-      if (typeof previous === 'number') {
-        setFoveation(previous);
-      } else {
-        setFoveation(0);
-      }
-    };
-
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
@@ -1632,50 +1596,6 @@ function VolumeViewer({
     domElement.addEventListener('pointerleave', handlePointerLeave);
 
 
-
-    const handleXrManagerSessionStart = () => {
-      vrLog('[VR] sessionstart event', {
-        presenting: renderer.xr.isPresenting,
-        visibilityState: xrSessionRef.current?.visibilityState ?? null
-      });
-      applyVrFoveation();
-      applyVolumeStepScaleToResources(VR_VOLUME_STEP_SCALE);
-      volumeRootBaseOffsetRef.current.copy(VR_VOLUME_BASE_OFFSET);
-      applyVolumeRootTransformRef.current?.(currentDimensionsRef.current);
-      refreshControllerVisibility();
-      setVrPlaybackHudVisible(true);
-      setVrChannelsHudVisible(true);
-      setVrTracksHudVisible(true);
-      resetVrPlaybackHudPlacement();
-      resetVrChannelsHudPlacement();
-      resetVrTracksHudPlacement();
-      updateVrPlaybackHud();
-      updateVrChannelsHud();
-      updateVrTracksHud();
-      updateControllerRays();
-      updateVolumeHandlesRef.current?.();
-      handleResize();
-    };
-
-    const handleXrManagerSessionEnd = () => {
-      vrLog('[VR] sessionend event', {
-        presenting: renderer.xr.isPresenting,
-        visibilityState: xrSessionRef.current?.visibilityState ?? null
-      });
-      restoreVrFoveation();
-      applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
-      volumeRootBaseOffsetRef.current.set(0, 0, 0);
-      applyVolumeRootTransformRef.current?.(currentDimensionsRef.current);
-      refreshControllerVisibility();
-      setVrPlaybackHudVisible(false);
-      setVrChannelsHudVisible(false);
-      setVrTracksHudVisible(false);
-      updateVolumeHandlesRef.current?.();
-      handleResize();
-    };
-
-    renderer.xr.addEventListener('sessionstart', handleXrManagerSessionStart);
-    renderer.xr.addEventListener('sessionend', handleXrManagerSessionEnd);
 
     rendererRef.current = renderer;
     sceneRef.current = scene;
@@ -2132,8 +2052,6 @@ function VolumeViewer({
       onRegisterVrSessionRef.current?.(null);
       restoreVrFoveation();
       applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
-      renderer.xr.removeEventListener('sessionstart', handleXrManagerSessionStart);
-      renderer.xr.removeEventListener('sessionend', handleXrManagerSessionEnd);
       renderer.setAnimationLoop(null);
 
       const activeSession = xrSessionRef.current;
