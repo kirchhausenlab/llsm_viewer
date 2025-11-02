@@ -400,6 +400,7 @@ function VolumeViewer({
   const onLayerRenderStyleToggle = vr?.onLayerRenderStyleToggle;
   const onLayerSamplingModeToggle = vr?.onLayerSamplingModeToggle;
   const onLayerInvertToggle = vr?.onLayerInvertToggle;
+  const onRegisterVrSession = vr?.onRegisterVrSession;
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -527,6 +528,9 @@ function VolumeViewer({
   );
 
   const {
+    callOnRegisterVrSession,
+    requestVrSession,
+    endVrSession,
     vrPlaybackHudRef,
     vrChannelsHudRef,
     vrTracksHudRef,
@@ -667,6 +671,20 @@ function VolumeViewer({
     vrLog,
     onAfterSessionEnd: handleResize
   });
+
+  useEffect(() => {
+    if (!onRegisterVrSession) {
+      callOnRegisterVrSession(null);
+      return;
+    }
+    callOnRegisterVrSession({
+      requestSession: () => requestVrSession(),
+      endSession: () => endVrSession(),
+    });
+    return () => {
+      callOnRegisterVrSession(null);
+    };
+  }, [callOnRegisterVrSession, endVrSession, onRegisterVrSession, requestVrSession]);
 
 
   const refreshVrHudPlacements = useCallback(() => {
