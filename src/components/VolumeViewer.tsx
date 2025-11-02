@@ -715,7 +715,7 @@ function VolumeViewer({
         baseOffset.z - rotatedCenter.z
       );
       volumeRootGroup.updateMatrixWorld(true);
-      updateVolumeHandles();
+      updateVolumeHandlesRef.current?.();
     },
     [updateVolumeHandles]
   );
@@ -3197,8 +3197,8 @@ function VolumeViewer({
       return;
     }
 
-    applyVolumeRootTransform(currentDimensionsRef.current);
-    applyTrackGroupTransform(currentDimensionsRef.current);
+    applyVolumeRootTransformRef.current?.(currentDimensionsRef.current);
+    applyTrackGroupTransformRef.current?.(currentDimensionsRef.current);
 
     const trackGroup = trackGroupRef.current;
     if (trackGroup) {
@@ -3345,7 +3345,7 @@ function VolumeViewer({
     volumeYawRef.current = 0;
     volumePitchRef.current = 0;
     volumeUserScaleRef.current = 1;
-    applyVolumeRootTransform(currentDimensionsRef.current);
+    applyVolumeRootTransformRef.current?.(currentDimensionsRef.current);
 
     const controls = controlsRef.current;
     if (!controls) {
@@ -3377,6 +3377,35 @@ function VolumeViewer({
       onRegisterReset(null);
     };
   }, [handleResetView, hasRenderableLayer, onRegisterReset]);
+
+  const applyVolumeRootTransformRef = useRef(applyVolumeRootTransform);
+  const applyTrackGroupTransformRef = useRef(applyTrackGroupTransform);
+  const updateVolumeHandlesRef = useRef(updateVolumeHandles);
+  const refreshVrHudPlacementsRef = useRef(refreshVrHudPlacements);
+  const toggleXrSessionModeRef = useRef(toggleXrSessionMode);
+  const onRegisterVrSessionRef = useRef(onRegisterVrSession);
+  const onVrSessionStartedRef = useRef(onVrSessionStarted);
+  const onVrSessionEndedRef = useRef(onVrSessionEnded);
+
+  useEffect(() => {
+    applyVolumeRootTransformRef.current = applyVolumeRootTransform;
+    applyTrackGroupTransformRef.current = applyTrackGroupTransform;
+    updateVolumeHandlesRef.current = updateVolumeHandles;
+    refreshVrHudPlacementsRef.current = refreshVrHudPlacements;
+    toggleXrSessionModeRef.current = toggleXrSessionMode;
+    onRegisterVrSessionRef.current = onRegisterVrSession;
+    onVrSessionStartedRef.current = onVrSessionStarted;
+    onVrSessionEndedRef.current = onVrSessionEnded;
+  }, [
+    applyTrackGroupTransform,
+    applyVolumeRootTransform,
+    onRegisterVrSession,
+    onVrSessionEnded,
+    onVrSessionStarted,
+    refreshVrHudPlacements,
+    toggleXrSessionMode,
+    updateVolumeHandles
+  ]);
 
   useEffect(() => {
     const container = containerNode;
@@ -3501,7 +3530,7 @@ function VolumeViewer({
     volumeRootGroup.add(pitchHandle);
     vrVolumePitchHandleRef.current = pitchHandle;
 
-    applyVolumeRootTransform(currentDimensionsRef.current);
+    applyVolumeRootTransformRef.current?.(currentDimensionsRef.current);
 
     const trackGroup = new THREE.Group();
     trackGroup.name = 'TrackingOverlay';
@@ -3514,7 +3543,7 @@ function VolumeViewer({
     // adopts the normalized transform. Otherwise the tracks momentarily render
     // in unnormalized dataset coordinates until another interaction triggers a
     // redraw.
-    applyTrackGroupTransform(currentDimensionsRef.current);
+    applyTrackGroupTransformRef.current?.(currentDimensionsRef.current);
 
     setTrackOverlayRevision((revision) => revision + 1);
     setRenderContextRevision((revision) => revision + 1);
@@ -3967,7 +3996,7 @@ function VolumeViewer({
         } else if (activeTarget?.type === 'playback-exit-vr') {
           void endVrSession();
         } else if (activeTarget?.type === 'playback-toggle-mode') {
-          toggleXrSessionMode();
+          toggleXrSessionModeRef.current?.();
         } else if (activeTarget?.type === 'playback-slider') {
           if (entry.hasHoverUiPoint && !playbackState.playbackDisabled) {
             applyPlaybackSliderFromWorldPoint(entry.hoverUiPoint);
@@ -6085,7 +6114,7 @@ function VolumeViewer({
       applyVrFoveation();
       applyVolumeStepScaleToResources(VR_VOLUME_STEP_SCALE);
       volumeRootBaseOffsetRef.current.copy(VR_VOLUME_BASE_OFFSET);
-      applyVolumeRootTransform(currentDimensionsRef.current);
+      applyVolumeRootTransformRef.current?.(currentDimensionsRef.current);
       refreshControllerVisibility();
       setVrPlaybackHudVisible(true);
       setVrChannelsHudVisible(true);
@@ -6097,7 +6126,7 @@ function VolumeViewer({
       updateVrChannelsHud();
       updateVrTracksHud();
       updateControllerRays();
-      updateVolumeHandles();
+      updateVolumeHandlesRef.current?.();
       handleResize();
     };
 
@@ -6109,12 +6138,12 @@ function VolumeViewer({
       restoreVrFoveation();
       applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
       volumeRootBaseOffsetRef.current.set(0, 0, 0);
-      applyVolumeRootTransform(currentDimensionsRef.current);
+      applyVolumeRootTransformRef.current?.(currentDimensionsRef.current);
       refreshControllerVisibility();
       setVrPlaybackHudVisible(false);
       setVrChannelsHudVisible(false);
       setVrTracksHudVisible(false);
-      updateVolumeHandles();
+      updateVolumeHandlesRef.current?.();
       handleResize();
     };
 
@@ -6141,7 +6170,7 @@ function VolumeViewer({
       playbackStateRef.current.currentSessionMode = null;
       updateVrPlaybackHud();
       volumeRootBaseOffsetRef.current.set(0, 0, 0);
-      applyVolumeRootTransform(currentDimensionsRef.current);
+      applyVolumeRootTransformRef.current?.(currentDimensionsRef.current);
       setControllerVisibility(false);
       setVrPlaybackHudVisible(false);
       setVrChannelsHudVisible(false);
@@ -6176,7 +6205,7 @@ function VolumeViewer({
       const pendingMode = xrPendingModeSwitchRef.current;
       xrPendingModeSwitchRef.current = null;
       if (!isDisposed) {
-        onVrSessionEnded?.();
+        onVrSessionEndedRef.current?.();
         if (pendingMode) {
           vrLog('[VR] restarting session to honor pending mode switch', { mode: pendingMode });
           void requestVrSession().catch((error) => {
@@ -6276,7 +6305,7 @@ function VolumeViewer({
       });
       applyVrFoveation();
       volumeRootBaseOffsetRef.current.copy(VR_VOLUME_BASE_OFFSET);
-      applyVolumeRootTransform(currentDimensionsRef.current);
+      applyVolumeRootTransformRef.current?.(currentDimensionsRef.current);
       setVrPlaybackHudVisible(true);
       setVrChannelsHudVisible(true);
       setVrTracksHudVisible(true);
@@ -6287,7 +6316,7 @@ function VolumeViewer({
       updateControllerRays();
 
       if (!isDisposed) {
-        onVrSessionStarted?.();
+        onVrSessionStartedRef.current?.();
       }
 
       return session;
@@ -6301,7 +6330,7 @@ function VolumeViewer({
       await session.end();
     };
 
-    onRegisterVrSession?.({
+    onRegisterVrSessionRef.current?.({
       requestSession: requestVrSession,
       endSession: endVrSession
     });
@@ -6549,7 +6578,7 @@ function VolumeViewer({
         playbackLoopState.accumulator = 0;
       }
 
-      refreshVrHudPlacements();
+      refreshVrHudPlacementsRef.current?.();
 
       updateControllerRays();
       const hoveredEntry = controllersRef.current.find((entry) => entry.hoverTrackId);
@@ -6571,7 +6600,7 @@ function VolumeViewer({
 
     return () => {
       isDisposed = true;
-      onRegisterVrSession?.(null);
+      onRegisterVrSessionRef.current?.(null);
       restoreVrFoveation();
       applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
       renderer.xr.removeEventListener('sessionstart', handleXrManagerSessionStart);
@@ -6741,17 +6770,7 @@ function VolumeViewer({
       cameraRef.current = null;
       controlsRef.current = null;
     };
-  }, [
-    applyTrackGroupTransform,
-    applyVolumeRootTransform,
-    containerNode,
-    onRegisterVrSession,
-    onVrSessionEnded,
-    onVrSessionStarted,
-    updateVolumeHandles,
-    refreshVrHudPlacements,
-    toggleXrSessionMode
-  ]);
+  }, [containerNode]);
 
   useEffect(() => {
     const handleKeyChange = (event: KeyboardEvent, isPressed: boolean) => {
