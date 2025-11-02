@@ -5,7 +5,6 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { Line2 } from 'three/examples/jsm/lines/Line2';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
-import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory';
 import type { NormalizedVolume } from '../volumeProcessing';
 import { VolumeRenderShader } from '../shaders/volumeRenderShader';
 import { SliceRenderShader } from '../shaders/sliceRenderShader';
@@ -20,7 +19,6 @@ import type {
   VolumeViewerProps,
 } from './VolumeViewer.types';
 import type {
-  ControllerEntry,
   RaycasterLike,
   VolumeScaleState,
   VrChannelsHud,
@@ -43,7 +41,6 @@ import {
   VR_CHANNELS_PANEL_HEIGHT,
   VR_CHANNELS_PANEL_WIDTH,
   VR_CHANNELS_VERTICAL_OFFSET,
-  VR_CONTROLLER_TOUCH_RADIUS,
   VR_HUD_FRONT_MARGIN,
   VR_HUD_LATERAL_MARGIN,
   VR_HUD_MIN_HEIGHT,
@@ -391,6 +388,7 @@ function VolumeViewer({
   const onTrackColorSelect = vr?.onTrackColorSelect;
   const onTrackColorReset = vr?.onTrackColorReset;
   const onStopTrackFollow = vr?.onStopTrackFollow;
+  trackFollowRequestCallbackRef.current = onTrackFollowRequest;
   const onChannelPanelSelect = vr?.onChannelPanelSelect;
   const onChannelVisibilityToggle = vr?.onChannelVisibilityToggle;
   const onChannelReset = vr?.onChannelReset;
@@ -457,6 +455,10 @@ function VolumeViewer({
     controller: { trackId: null as string | null, position: null as { x: number; y: number } | null }
   });
   const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(null);
+  const resetVolumeCallbackRef = useRef<() => void>(() => {});
+  const resetHudPlacementCallbackRef = useRef<() => void>(() => {});
+  const trackFollowRequestCallbackRef = useRef<(trackId: string) => void>(() => {});
+  const toggleXrSessionModeCallbackRef = useRef<() => void>(() => {});
 
   const applyHoverState = useCallback(() => {
     const pointerState = hoverSourcesRef.current.pointer;
@@ -578,7 +580,9 @@ function VolumeViewer({
     resetVrChannelsHudPlacement,
     resetVrTracksHudPlacement,
     applyVolumeRootTransform,
-    applyVolumeStepScaleToResources
+    applyVolumeStepScaleToResources,
+    onRendererInitialized,
+    endVrSessionRequestRef
   } = useVolumeViewerVr({
     vrProps: vr ?? null,
     containerRef,
@@ -629,7 +633,12 @@ function VolumeViewer({
     selectedTrackIds,
     followedTrackId,
     updateHoverState,
-    clearHoverState
+    clearHoverState,
+    onResetVolume: () => resetVolumeCallbackRef.current?.(),
+    onResetHudPlacement: () => resetHudPlacementCallbackRef.current?.(),
+    onTrackFollowRequest: (trackId) => trackFollowRequestCallbackRef.current?.(trackId),
+    onToggleXrSessionMode: () => toggleXrSessionModeCallbackRef.current?.(),
+    vrLog
   });
 
 
@@ -906,6 +915,7 @@ function VolumeViewer({
       });
     }
   }, [setPreferredXrSessionMode]);
+  toggleXrSessionModeCallbackRef.current = toggleXrSessionMode;
 
   const resolveChannelsRegionFromPoint = useCallback(
     (hud: VrChannelsHud, worldPoint: THREE.Vector3): VrChannelsInteractiveRegion | null => {
@@ -1464,6 +1474,7 @@ function VolumeViewer({
     resetVrPlaybackHudPlacement,
     resetVrTracksHudPlacement
   ]);
+  resetHudPlacementCallbackRef.current = handleResetHudPlacement;
 
   const handleResetVolume = useCallback(() => {
     const renderer = rendererRef.current;
@@ -1496,6 +1507,7 @@ function VolumeViewer({
     controls.target.copy(rotationTargetRef.current);
     controls.update();
   }, [applyVolumeRootTransform]);
+  resetVolumeCallbackRef.current = handleResetVolume;
 
   const handleResetView = useCallback(() => {
     handleResetVolume();
@@ -1675,795 +1687,8 @@ function VolumeViewer({
     // in unnormalized dataset coordinates until another interaction triggers a
     // redraw.
     applyTrackGroupTransformRef.current?.(currentDimensionsRef.current);
-
     setTrackOverlayRevision((revision) => revision + 1);
     setRenderContextRevision((revision) => revision + 1);
-
-    controllersRef.current = [];
-    const controllerModelFactory = new XRControllerModelFactory();
-
-    for (let index = 0; index < 2; index++) {
-      const controller = renderer.xr.getController(index);
-      controller.visible = false;
-
-      const grip = renderer.xr.getControllerGrip(index);
-      grip.visible = false;
-
-      const rayGeometry = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(0, 0, 0),
-        new THREE.Vector3(0, 0, -1)
-      ]);
-      const rayMaterial = new THREE.LineBasicMaterial({ color: 0xffffff });
-      const ray = new THREE.Line(rayGeometry, rayMaterial);
-      ray.visible = false;
-      controller.add(ray);
-
-      const touchIndicatorMaterial = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.2,
-        depthWrite: false
-      });
-      touchIndicatorMaterial.depthTest = false;
-      const touchIndicator = new THREE.Mesh(
-        new THREE.SphereGeometry(VR_CONTROLLER_TOUCH_RADIUS, 16, 16),
-        touchIndicatorMaterial
-      );
-      touchIndicator.visible = false;
-      controller.add(touchIndicator);
-
-      const model = controllerModelFactory.createControllerModel(grip);
-      grip.add(model);
-
-      const controllerRaycaster = new THREE.Raycaster();
-      controllerRaycaster.params.Line = { threshold: 0.02 };
-      (controllerRaycaster.params as unknown as { Line2?: { threshold: number } }).Line2 = {
-        threshold: 0.02
-      };
-      controllerRaycaster.far = 10;
-
-      const entry: ControllerEntry = {
-        controller,
-        grip,
-        ray,
-        rayGeometry,
-        rayMaterial,
-        touchIndicator,
-        raycaster: controllerRaycaster,
-        onConnected: () => undefined,
-        onDisconnected: () => undefined,
-        onSelectStart: () => undefined,
-        onSelectEnd: () => undefined,
-        isConnected: false,
-        targetRayMode: null,
-        gamepad: null,
-        hoverTrackId: null,
-        hoverUiTarget: null,
-        activeUiTarget: null,
-        hoverUiPoint: new THREE.Vector3(),
-        hasHoverUiPoint: false,
-        hoverPoint: new THREE.Vector3(),
-        rayOrigin: new THREE.Vector3(),
-        rayDirection: new THREE.Vector3(0, 0, -1),
-        rayLength: 3,
-        isSelecting: false,
-        hudGrabOffsets: { playback: null, channels: null, tracks: null },
-        translateGrabOffset: null,
-        scaleGrabOffset: null,
-        volumeScaleState: null,
-        volumeRotationState: null,
-        hudRotationState: null
-      };
-
-      entry.onConnected = (event) => {
-        entry.isConnected = true;
-        entry.targetRayMode = event?.data?.targetRayMode ?? null;
-        entry.gamepad = event?.data?.gamepad ?? null;
-        entry.hoverTrackId = null;
-        entry.hoverUiTarget = null;
-        entry.activeUiTarget = null;
-        entry.hasHoverUiPoint = false;
-        entry.hudGrabOffsets.playback = null;
-        entry.hudGrabOffsets.channels = null;
-        entry.hudGrabOffsets.tracks = null;
-        entry.translateGrabOffset = null;
-        entry.scaleGrabOffset = null;
-        entry.volumeScaleState = null;
-        entry.volumeRotationState = null;
-        entry.hudRotationState = null;
-        entry.rayLength = 3;
-        vrLog('[VR] controller connected', index, {
-          targetRayMode: entry.targetRayMode,
-          hasGamepad: Boolean(entry.gamepad)
-        });
-        refreshControllerVisibility();
-      };
-
-      entry.onDisconnected = () => {
-        entry.isConnected = false;
-        entry.targetRayMode = null;
-        entry.gamepad = null;
-        entry.hoverTrackId = null;
-        entry.hoverUiTarget = null;
-        entry.activeUiTarget = null;
-        entry.hasHoverUiPoint = false;
-        entry.rayLength = 3;
-        entry.isSelecting = false;
-        entry.ray.scale.set(1, 1, entry.rayLength);
-        entry.hudGrabOffsets.playback = null;
-        entry.hudGrabOffsets.channels = null;
-        entry.hudGrabOffsets.tracks = null;
-        entry.translateGrabOffset = null;
-        entry.scaleGrabOffset = null;
-        entry.volumeScaleState = null;
-        entry.volumeRotationState = null;
-        entry.hudRotationState = null;
-        entry.touchIndicator.visible = false;
-        vrLog('[VR] controller disconnected', index);
-        refreshControllerVisibility();
-        clearHoverState('controller');
-      };
-
-      entry.onSelectStart = () => {
-        entry.isSelecting = true;
-        entry.activeUiTarget = entry.hoverUiTarget;
-        entry.hudRotationState = null;
-        entry.volumeRotationState = null;
-        const activeType = entry.activeUiTarget?.type ?? null;
-        const hudCategory = getHudCategoryFromTarget(activeType);
-        const renderer = rendererRef.current;
-        const camera = cameraRef.current;
-        if (
-          activeType === 'playback-panel-yaw' ||
-          activeType === 'channels-panel-yaw' ||
-          activeType === 'tracks-panel-yaw' ||
-          activeType === 'playback-panel-pitch' ||
-          activeType === 'channels-panel-pitch' ||
-          activeType === 'tracks-panel-pitch'
-        ) {
-          let placement: VrHudPlacement | null = null;
-          if (activeType === 'playback-panel-yaw' || activeType === 'playback-panel-pitch') {
-            placement = vrPlaybackHudPlacementRef.current;
-          } else if (activeType === 'channels-panel-yaw' || activeType === 'channels-panel-pitch') {
-            placement = vrChannelsHudPlacementRef.current;
-          } else if (activeType === 'tracks-panel-yaw' || activeType === 'tracks-panel-pitch') {
-            placement = vrTracksHudPlacementRef.current;
-          }
-          if (placement && hudCategory) {
-            if (
-              activeType === 'playback-panel-yaw' ||
-              activeType === 'channels-panel-yaw' ||
-              activeType === 'tracks-panel-yaw'
-            ) {
-              const yawVector = vrHudYawVectorRef.current;
-              yawVector.copy(entry.rayOrigin).sub(placement.position);
-              yawVector.y = 0;
-              let initialAngle = placement.yaw;
-              const yawBasisForward = new THREE.Vector3();
-              const yawBasisRight = new THREE.Vector3();
-              computeViewerYawBasis(renderer, camera, yawBasisForward, yawBasisRight);
-              if (yawVector.lengthSq() > 1e-6) {
-                initialAngle = computeYawAngleForBasis(yawVector, yawBasisForward, yawBasisRight);
-              }
-              entry.hudRotationState = {
-                hud: hudCategory,
-                mode: 'yaw',
-                initialYaw: placement.yaw,
-                initialAngle,
-                basisForward: yawBasisForward,
-                basisRight: yawBasisRight
-              };
-            } else {
-              const pitchVector = vrHudPitchVectorRef.current;
-              pitchVector.copy(entry.rayOrigin).sub(placement.position);
-              pitchVector.x = 0;
-              let initialAngle = placement.pitch ?? 0;
-              const pitchBasisForward = new THREE.Vector3();
-              const pitchBasisRight = new THREE.Vector3();
-              computeViewerYawBasis(renderer, camera, pitchBasisForward, pitchBasisRight);
-              if (pitchVector.lengthSq() > 1e-6) {
-                const forwardComponent = pitchVector.dot(pitchBasisForward);
-                initialAngle = Math.atan2(pitchVector.y, forwardComponent);
-              }
-              entry.hudRotationState = {
-                hud: hudCategory,
-                mode: 'pitch',
-                initialPitch: placement.pitch ?? 0,
-                initialAngle,
-                basisForward: pitchBasisForward
-              };
-            }
-          } else {
-            entry.activeUiTarget = null;
-          }
-        }
-        const playbackState = playbackStateRef.current;
-        if (entry.activeUiTarget?.type === 'playback-play-toggle' && playbackState.playbackDisabled) {
-          entry.activeUiTarget = null;
-        }
-        if (
-          entry.activeUiTarget?.type === 'playback-slider' &&
-          entry.hasHoverUiPoint &&
-          !playbackState.playbackDisabled
-        ) {
-          applyPlaybackSliderFromWorldPoint(entry.hoverUiPoint);
-        }
-        if (
-          entry.activeUiTarget?.type === 'playback-fps-slider' &&
-          entry.hasHoverUiPoint &&
-          playbackState.totalTimepoints > 1
-        ) {
-          applyFpsSliderFromWorldPoint(entry.hoverUiPoint);
-        }
-        if (entry.activeUiTarget?.type === 'playback-panel-grab') {
-          const hud = vrPlaybackHudRef.current;
-          if (hud) {
-            const placement = vrPlaybackHudPlacementRef.current;
-            const referencePosition = vrPlaybackHudDragTargetRef.current;
-            referencePosition.copy(placement?.position ?? hud.group.position);
-            if (!entry.hasHoverUiPoint) {
-              entry.hoverUiPoint.copy(referencePosition);
-              entry.hasHoverUiPoint = true;
-            }
-            if (!entry.hudGrabOffsets.playback) {
-              entry.hudGrabOffsets.playback = new THREE.Vector3();
-            }
-            entry.hudGrabOffsets.playback.copy(referencePosition).sub(entry.rayOrigin);
-          }
-        }
-        if (
-          entry.activeUiTarget?.type === 'channels-slider' &&
-          entry.hasHoverUiPoint &&
-          entry.activeUiTarget.data &&
-          !(entry.activeUiTarget.data as VrChannelsInteractiveRegion).disabled
-        ) {
-          applyVrChannelsSliderFromPoint(
-            entry.activeUiTarget.data as VrChannelsInteractiveRegion,
-            entry.hoverUiPoint
-          );
-        }
-        if (entry.activeUiTarget?.type === 'channels-panel-grab') {
-          const hud = vrChannelsHudRef.current;
-          if (hud) {
-            const placement = vrChannelsHudPlacementRef.current;
-            const referencePosition = vrChannelsHudDragTargetRef.current;
-            referencePosition.copy(placement?.position ?? hud.group.position);
-            if (!entry.hasHoverUiPoint) {
-              entry.hoverUiPoint.copy(referencePosition);
-              entry.hasHoverUiPoint = true;
-            }
-            if (!entry.hudGrabOffsets.channels) {
-              entry.hudGrabOffsets.channels = new THREE.Vector3();
-            }
-            entry.hudGrabOffsets.channels.copy(referencePosition).sub(entry.rayOrigin);
-          }
-        }
-        if (
-          entry.activeUiTarget &&
-          (entry.activeUiTarget.type === 'tracks-slider' || entry.activeUiTarget.type === 'tracks-scroll') &&
-          entry.hasHoverUiPoint &&
-          entry.activeUiTarget.data &&
-          !(entry.activeUiTarget.data as VrTracksInteractiveRegion).disabled
-        ) {
-          const region = entry.activeUiTarget.data as VrTracksInteractiveRegion;
-          if (entry.activeUiTarget.type === 'tracks-slider') {
-            applyVrTracksSliderFromPoint(region, entry.hoverUiPoint);
-          } else {
-            applyVrTracksScrollFromPoint(region, entry.hoverUiPoint);
-          }
-        }
-        if (entry.activeUiTarget?.type === 'tracks-panel-grab') {
-          const hud = vrTracksHudRef.current;
-          if (hud) {
-            const placement = vrTracksHudPlacementRef.current;
-            const referencePosition = vrTracksHudDragTargetRef.current;
-            referencePosition.copy(placement?.position ?? hud.group.position);
-            if (!entry.hasHoverUiPoint) {
-              entry.hoverUiPoint.copy(referencePosition);
-              entry.hasHoverUiPoint = true;
-            }
-            if (!entry.hudGrabOffsets.tracks) {
-              entry.hudGrabOffsets.tracks = new THREE.Vector3();
-            }
-            entry.hudGrabOffsets.tracks.copy(referencePosition).sub(entry.rayOrigin);
-          }
-        }
-        if (entry.activeUiTarget?.type === 'volume-translate-handle') {
-          const handle = vrTranslationHandleRef.current;
-          if (handle) {
-            handle.getWorldPosition(translationHandleWorldPoint);
-            if (!entry.translateGrabOffset) {
-              entry.translateGrabOffset = new THREE.Vector3();
-            }
-            entry.translateGrabOffset.copy(translationHandleWorldPoint).sub(entry.rayOrigin);
-          }
-        } else if (entry.activeUiTarget?.type === 'volume-scale-handle') {
-          const handle = vrVolumeScaleHandleRef.current;
-          const volumeRootGroup = volumeRootGroupRef.current;
-          if (handle && volumeRootGroup) {
-            handle.getWorldPosition(scaleHandleWorldPoint);
-            if (!entry.scaleGrabOffset) {
-              entry.scaleGrabOffset = new THREE.Vector3();
-            }
-            entry.scaleGrabOffset.copy(scaleHandleWorldPoint).sub(entry.rayOrigin);
-            rotationCenterWorldPoint.copy(volumeRootCenterUnscaledRef.current);
-            volumeRootGroup.localToWorld(rotationCenterWorldPoint);
-            scaleDirectionTemp.copy(scaleHandleWorldPoint).sub(rotationCenterWorldPoint);
-            const directionLength = scaleDirectionTemp.length();
-            if (directionLength > 1e-6) {
-              scaleDirectionTemp.divideScalar(directionLength);
-              const userScale = Math.max(volumeUserScaleRef.current, 1e-6);
-              const baseLength = directionLength / userScale;
-              entry.volumeScaleState = {
-                direction: scaleDirectionTemp.clone(),
-                baseLength
-              };
-            } else {
-              entry.volumeScaleState = null;
-              entry.activeUiTarget = null;
-            }
-          } else {
-            entry.volumeScaleState = null;
-            entry.activeUiTarget = null;
-          }
-        }
-        if (
-          entry.activeUiTarget?.type === 'volume-yaw-handle' ||
-          entry.activeUiTarget?.type === 'volume-pitch-handle'
-        ) {
-          const volumeRootGroup = volumeRootGroupRef.current;
-          if (volumeRootGroup) {
-            rotationCenterWorldPoint.copy(volumeRootCenterUnscaledRef.current);
-            volumeRootGroup.localToWorld(rotationCenterWorldPoint);
-            rotationDirectionTemp.copy(entry.rayOrigin).sub(rotationCenterWorldPoint);
-            if (entry.activeUiTarget.type === 'volume-yaw-handle') {
-              rotationDirectionTemp.y = 0;
-              let initialAngle = volumeYawRef.current;
-              const yawBasisForward = new THREE.Vector3();
-              const yawBasisRight = new THREE.Vector3();
-              computeViewerYawBasis(renderer, camera, yawBasisForward, yawBasisRight);
-              if (rotationDirectionTemp.lengthSq() > 1e-6) {
-                initialAngle = computeYawAngleForBasis(
-                  rotationDirectionTemp,
-                  yawBasisForward,
-                  yawBasisRight
-                );
-              }
-              entry.volumeRotationState = {
-                mode: 'yaw',
-                initialYaw: volumeYawRef.current,
-                initialAngle,
-                basisForward: yawBasisForward,
-                basisRight: yawBasisRight
-              };
-            } else {
-              rotationDirectionTemp.x = 0;
-              let initialAngle = volumePitchRef.current;
-              const pitchBasisForward = new THREE.Vector3();
-              const pitchBasisRight = new THREE.Vector3();
-              computeViewerYawBasis(renderer, camera, pitchBasisForward, pitchBasisRight);
-              if (rotationDirectionTemp.lengthSq() > 1e-6) {
-                const forwardComponent = rotationDirectionTemp.dot(pitchBasisForward);
-                initialAngle = Math.atan2(rotationDirectionTemp.y, forwardComponent);
-              }
-              entry.volumeRotationState = {
-                mode: 'pitch',
-                initialPitch: volumePitchRef.current,
-                initialAngle,
-                basisForward: pitchBasisForward
-              };
-            }
-          } else {
-            entry.activeUiTarget = null;
-          }
-        }
-        vrLog('[VR] selectstart', index, {
-          hoverTrackId: entry.hoverTrackId,
-          uiTarget: entry.activeUiTarget?.type ?? null
-        });
-      };
-
-      entry.onSelectEnd = () => {
-        entry.isSelecting = false;
-        const activeTarget = entry.activeUiTarget;
-        entry.activeUiTarget = null;
-        const playbackState = playbackStateRef.current;
-        if (activeTarget?.type === 'playback-play-toggle') {
-          if (!playbackState.playbackDisabled) {
-            playbackState.onTogglePlayback?.();
-          }
-        } else if (activeTarget?.type === 'playback-reset-volume') {
-          handleResetVolume();
-        } else if (activeTarget?.type === 'playback-reset-hud') {
-          handleResetHudPlacement();
-        } else if (activeTarget?.type === 'playback-exit-vr') {
-          void endVrSession();
-        } else if (activeTarget?.type === 'playback-toggle-mode') {
-          toggleXrSessionModeRef.current?.();
-        } else if (activeTarget?.type === 'playback-slider') {
-          if (entry.hasHoverUiPoint && !playbackState.playbackDisabled) {
-            applyPlaybackSliderFromWorldPoint(entry.hoverUiPoint);
-          }
-        } else if (activeTarget?.type === 'playback-fps-slider') {
-          if (entry.hasHoverUiPoint && playbackState.totalTimepoints > 1) {
-            applyFpsSliderFromWorldPoint(entry.hoverUiPoint);
-          }
-        } else if (activeTarget?.type === 'playback-panel-grab') {
-          entry.hudGrabOffsets.playback = null;
-          entry.hudRotationState = null;
-        } else if (
-          activeTarget?.type === 'playback-panel-yaw' ||
-          activeTarget?.type === 'playback-panel-pitch'
-        ) {
-          entry.hudRotationState = null;
-        } else if (activeTarget?.type === 'channels-panel-grab') {
-          entry.hudGrabOffsets.channels = null;
-          entry.hudRotationState = null;
-        } else if (
-          activeTarget?.type === 'channels-panel-yaw' ||
-          activeTarget?.type === 'channels-panel-pitch'
-        ) {
-          entry.hudRotationState = null;
-        } else if (activeTarget?.type === 'tracks-panel-grab') {
-          entry.hudGrabOffsets.tracks = null;
-          entry.hudRotationState = null;
-        } else if (
-          activeTarget?.type === 'tracks-panel-yaw' ||
-          activeTarget?.type === 'tracks-panel-pitch'
-        ) {
-          entry.hudRotationState = null;
-        } else if (activeTarget?.type === 'volume-translate-handle') {
-          entry.translateGrabOffset = null;
-        } else if (activeTarget?.type === 'volume-scale-handle') {
-          entry.scaleGrabOffset = null;
-          entry.volumeScaleState = null;
-        } else if (
-          activeTarget?.type === 'volume-yaw-handle' ||
-          activeTarget?.type === 'volume-pitch-handle'
-        ) {
-          entry.volumeRotationState = null;
-        } else if (
-          activeTarget?.type === 'channels-slider' &&
-          activeTarget.data &&
-          !(activeTarget.data as VrChannelsInteractiveRegion).disabled &&
-          entry.hasHoverUiPoint
-        ) {
-          applyVrChannelsSliderFromPoint(
-            activeTarget.data as VrChannelsInteractiveRegion,
-            entry.hoverUiPoint
-          );
-        } else if (
-          activeTarget &&
-          (activeTarget.type === 'tracks-slider' || activeTarget.type === 'tracks-scroll') &&
-          activeTarget.data &&
-          !(activeTarget.data as VrTracksInteractiveRegion).disabled &&
-          entry.hasHoverUiPoint
-        ) {
-          const region = activeTarget.data as VrTracksInteractiveRegion;
-          if (activeTarget.type === 'tracks-slider') {
-            applyVrTracksSliderFromPoint(region, entry.hoverUiPoint);
-          } else {
-            applyVrTracksScrollFromPoint(region, entry.hoverUiPoint);
-          }
-        } else if (activeTarget && activeTarget.type.startsWith('channels-')) {
-          const region = activeTarget.data as VrChannelsInteractiveRegion | undefined;
-          if (region) {
-            const state = vrChannelsStateRef.current;
-            if (activeTarget.type === 'channels-tab') {
-              state.activeChannelId = region.channelId;
-              onChannelPanelSelect?.(region.channelId);
-            } else if (activeTarget.type === 'channels-visibility') {
-              const channelState = state.channels.find((channel) => channel.id === region.channelId);
-              if (channelState) {
-                channelState.visible = !channelState.visible;
-              }
-              onChannelVisibilityToggle?.(region.channelId);
-            } else if (activeTarget.type === 'channels-reset') {
-              const channelState = state.channels.find((channel) => channel.id === region.channelId);
-              if (channelState) {
-                for (const layer of channelState.layers) {
-                  const defaultState = brightnessContrastModel.createState(
-                    layer.defaultWindow?.windowMin,
-                    layer.defaultWindow?.windowMax
-                  );
-                  layer.settings.sliderRange = defaultState.sliderRange;
-                  layer.settings.minSliderIndex = defaultState.minSliderIndex;
-                  layer.settings.maxSliderIndex = defaultState.maxSliderIndex;
-                  layer.settings.brightnessSliderIndex = defaultState.brightnessSliderIndex;
-                  layer.settings.contrastSliderIndex = defaultState.contrastSliderIndex;
-                  layer.settings.windowMin = defaultState.windowMin;
-                  layer.settings.windowMax = defaultState.windowMax;
-                  layer.settings.xOffset = 0;
-                  layer.settings.yOffset = 0;
-                  layer.settings.renderStyle = 0;
-                  layer.settings.invert = false;
-                  layer.settings.samplingMode = 'linear';
-                }
-              }
-              onChannelReset?.(region.channelId);
-            } else if (activeTarget.type === 'channels-layer' && region.layerKey) {
-              const channelState = state.channels.find((channel) => channel.id === region.channelId);
-              if (channelState) {
-                channelState.activeLayerKey = region.layerKey;
-              }
-              onChannelLayerSelect?.(region.channelId, region.layerKey);
-            } else if (activeTarget.type === 'channels-render-style' && region.layerKey) {
-              if (!region.disabled) {
-                const channelState = state.channels.find((channel) => channel.id === region.channelId);
-                const layerState = channelState?.layers.find((layer) => layer.key === region.layerKey);
-                if (layerState) {
-                  layerState.settings.renderStyle = layerState.settings.renderStyle === 1 ? 0 : 1;
-                }
-                onLayerRenderStyleToggle?.(region.layerKey);
-              }
-            } else if (activeTarget.type === 'channels-sampling' && region.layerKey) {
-              if (!region.disabled) {
-                const channelState = state.channels.find((channel) => channel.id === region.channelId);
-                const layerState = channelState?.layers.find((layer) => layer.key === region.layerKey);
-                if (layerState) {
-                  layerState.settings.samplingMode =
-                    layerState.settings.samplingMode === 'nearest' ? 'linear' : 'nearest';
-                }
-                onLayerSamplingModeToggle?.(region.layerKey);
-              }
-            } else if (activeTarget.type === 'channels-invert' && region.layerKey) {
-              if (!region.disabled) {
-                const channelState = state.channels.find((channel) => channel.id === region.channelId);
-                const layerState = channelState?.layers.find((layer) => layer.key === region.layerKey);
-                if (layerState) {
-                  layerState.settings.invert = !layerState.settings.invert;
-                }
-                onLayerInvertToggle?.(region.layerKey);
-              }
-            } else if (activeTarget.type === 'channels-auto-contrast' && region.layerKey) {
-              if (!region.disabled) {
-                onLayerAutoContrast?.(region.layerKey);
-              }
-            } else if (activeTarget.type === 'channels-color' && region.layerKey && region.color) {
-              const channelState = state.channels.find((channel) => channel.id === region.channelId);
-              const layerState = channelState?.layers.find((layer) => layer.key === region.layerKey);
-              if (layerState) {
-                layerState.settings.color = region.color;
-              }
-              onLayerColorChange?.(region.layerKey, region.color);
-            }
-            updateVrChannelsHud();
-          }
-        } else if (
-          activeTarget &&
-          (activeTarget.type === 'tracks-tab' ||
-            activeTarget.type === 'tracks-stop-follow' ||
-            activeTarget.type === 'tracks-color' ||
-            activeTarget.type === 'tracks-color-mode' ||
-            activeTarget.type === 'tracks-master-toggle' ||
-            activeTarget.type === 'tracks-toggle' ||
-            activeTarget.type === 'tracks-follow')
-        ) {
-          const region = activeTarget.data as VrTracksInteractiveRegion | undefined;
-          const hud = vrTracksHudRef.current;
-          const state = vrTracksStateRef.current;
-          let visibilityAllTarget: boolean | null = null;
-          let didMutate = false;
-          if (region && hud) {
-            const channelState = state.channels.find((channel) => channel.id === region.channelId);
-            if (channelState) {
-              switch (activeTarget.type) {
-                case 'tracks-tab': {
-                  if (state.activeChannelId !== region.channelId) {
-                    state.activeChannelId = region.channelId;
-                  }
-                  didMutate = true;
-                  break;
-                }
-                case 'tracks-stop-follow': {
-                  if (!region.disabled) {
-                    let changed = channelState.followedTrackId !== null;
-                    channelState.followedTrackId = null;
-                    for (const trackEntry of channelState.tracks) {
-                      if (trackEntry.isFollowed) {
-                        changed = true;
-                      }
-                      trackEntry.isFollowed = false;
-                      const nextVisible = trackEntry.explicitVisible;
-                      if (trackEntry.visible !== nextVisible) {
-                        trackEntry.visible = nextVisible;
-                        changed = true;
-                      } else {
-                        trackEntry.visible = nextVisible;
-                      }
-                    }
-                    if (changed) {
-                      didMutate = true;
-                    }
-                  }
-                  break;
-                }
-                case 'tracks-color': {
-                  if (!region.disabled && region.color) {
-                    const normalizedColor = normalizeTrackColor(region.color, DEFAULT_TRACK_COLOR);
-                    if (
-                      channelState.colorMode.type !== 'uniform' ||
-                      normalizeTrackColor(channelState.colorMode.color, DEFAULT_TRACK_COLOR) !== normalizedColor
-                    ) {
-                      channelState.colorMode = { type: 'uniform', color: normalizedColor };
-                      didMutate = true;
-                    }
-                    for (const trackEntry of channelState.tracks) {
-                      if (trackEntry.color !== normalizedColor) {
-                        trackEntry.color = normalizedColor;
-                        didMutate = true;
-                      }
-                    }
-                  }
-                  break;
-                }
-                case 'tracks-color-mode': {
-                  if (!region.disabled) {
-                    if (channelState.colorMode.type !== 'random') {
-                      channelState.colorMode = { type: 'random' };
-                      didMutate = true;
-                    }
-                    for (const trackEntry of channelState.tracks) {
-                      const nextColor = getTrackColorHex(trackEntry.id);
-                      if (trackEntry.color !== nextColor) {
-                        trackEntry.color = nextColor;
-                        didMutate = true;
-                      }
-                    }
-                  }
-                  break;
-                }
-                case 'tracks-master-toggle': {
-                  if (!region.disabled) {
-                    const trackCount = channelState.tracks.length;
-                    const enableAll = trackCount > 0 && channelState.visibleTracks < trackCount;
-                    visibilityAllTarget = enableAll;
-                    channelState.visibleTracks = enableAll ? trackCount : 0;
-                    for (const trackEntry of channelState.tracks) {
-                      trackEntry.explicitVisible = enableAll;
-                      const nextVisible = enableAll || trackEntry.isFollowed;
-                      if (trackEntry.visible !== nextVisible) {
-                        trackEntry.visible = nextVisible;
-                        didMutate = true;
-                      } else {
-                        trackEntry.visible = nextVisible;
-                      }
-                    }
-                    didMutate = true;
-                  }
-                  break;
-                }
-                case 'tracks-toggle': {
-                  if (region.trackId) {
-                    const trackEntry = channelState.tracks.find((entry) => entry.id === region.trackId);
-                    if (trackEntry) {
-                      const nextExplicit = !trackEntry.explicitVisible;
-                      trackEntry.explicitVisible = nextExplicit;
-                      const nextVisible = nextExplicit || trackEntry.isFollowed;
-                      if (trackEntry.visible !== nextVisible) {
-                        trackEntry.visible = nextVisible;
-                      } else {
-                        trackEntry.visible = nextVisible;
-                      }
-                      channelState.visibleTracks = channelState.tracks.reduce(
-                        (count, entry) => count + (entry.explicitVisible ? 1 : 0),
-                        0
-                      );
-                      didMutate = true;
-                    }
-                  }
-                  break;
-                }
-                case 'tracks-follow': {
-                  if (region.trackId) {
-                    const targetId = region.trackId;
-                    let changed = false;
-                    for (const channelEntry of state.channels) {
-                      let channelFollow: string | null = null;
-                      for (const trackEntry of channelEntry.tracks) {
-                        const isTarget = trackEntry.id === targetId;
-                        if (trackEntry.isFollowed !== isTarget) {
-                          trackEntry.isFollowed = isTarget;
-                          changed = true;
-                        }
-                        const nextVisible = trackEntry.explicitVisible || isTarget;
-                        if (trackEntry.visible !== nextVisible) {
-                          trackEntry.visible = nextVisible;
-                          changed = true;
-                        } else {
-                          trackEntry.visible = nextVisible;
-                        }
-                        if (isTarget) {
-                          channelFollow = trackEntry.id;
-                        }
-                      }
-                      if (channelEntry.followedTrackId !== channelFollow) {
-                        channelEntry.followedTrackId = channelFollow;
-                        changed = true;
-                      }
-                    }
-                    if (state.activeChannelId !== region.channelId) {
-                      state.activeChannelId = region.channelId;
-                      changed = true;
-                    }
-                    if (changed) {
-                      didMutate = true;
-                    }
-                  }
-                  break;
-                }
-                default:
-                  break;
-              }
-              if (didMutate) {
-                renderVrTracksHud(hud, state);
-              }
-            }
-          }
-
-          const invokeTrackCallback = () => {
-            if (!region) {
-              return;
-            }
-            switch (activeTarget.type) {
-              case 'tracks-tab':
-                onTrackChannelSelect?.(region.channelId);
-                break;
-              case 'tracks-stop-follow':
-                if (!region.disabled) {
-                  onStopTrackFollow?.(region.channelId);
-                }
-                break;
-              case 'tracks-color':
-                if (!region.disabled && region.color) {
-                  onTrackColorSelect?.(region.channelId, region.color);
-                }
-                break;
-              case 'tracks-color-mode':
-                if (!region.disabled) {
-                  onTrackColorReset?.(region.channelId);
-                }
-                break;
-              case 'tracks-master-toggle':
-                if (visibilityAllTarget !== null) {
-                  onTrackVisibilityAllChange?.(region.channelId, visibilityAllTarget);
-                }
-                break;
-              case 'tracks-toggle':
-                if (region.trackId) {
-                  onTrackVisibilityToggle?.(region.trackId);
-                }
-                break;
-              case 'tracks-follow':
-                if (region.trackId) {
-                  onTrackFollowRequest(region.trackId);
-                }
-                break;
-              default:
-                break;
-            }
-          };
-
-          invokeTrackCallback();
-        } else if (entry.hoverTrackId) {
-          onTrackFollowRequest(entry.hoverTrackId);
-        }
-        vrLog('[VR] selectend', index, {
-          hoverTrackId: entry.hoverTrackId,
-          uiTarget: activeTarget?.type ?? null
-        });
-      };
-
-      controller.addEventListener('connected', entry.onConnected);
-      controller.addEventListener('disconnected', entry.onDisconnected);
-      controller.addEventListener('selectstart', entry.onSelectStart);
-      controller.addEventListener('selectend', entry.onSelectEnd);
-
-      scene.add(controller);
-      scene.add(grip);
-
-      controllersRef.current.push(entry);
-    }
 
     const camera = new THREE.PerspectiveCamera(
       38,
@@ -4239,6 +3464,7 @@ function VolumeViewer({
     resetVrPlaybackHudPlacement();
     resetVrChannelsHudPlacement();
     resetVrTracksHudPlacement();
+    onRendererInitialized();
 
     const handleSessionEnd = () => {
       vrLog('[VR] handleSessionEnd', {
@@ -4412,6 +3638,7 @@ function VolumeViewer({
       }
       await session.end();
     };
+    endVrSessionRequestRef.current = endVrSession;
 
     onRegisterVrSessionRef.current?.({
       requestSession: requestVrSession,
@@ -4780,22 +4007,6 @@ function VolumeViewer({
       }
       resources.clear();
 
-      for (const entry of controllersRef.current) {
-        entry.controller.removeEventListener('connected', entry.onConnected);
-        entry.controller.removeEventListener('disconnected', entry.onDisconnected);
-        entry.controller.removeEventListener('selectstart', entry.onSelectStart);
-        entry.controller.removeEventListener('selectend', entry.onSelectEnd);
-        entry.controller.remove(entry.ray);
-        entry.controller.remove(entry.touchIndicator);
-        entry.touchIndicator.geometry?.dispose?.();
-        (entry.touchIndicator.material as THREE.Material)?.dispose?.();
-        scene.remove(entry.controller);
-        scene.remove(entry.grip);
-        entry.rayGeometry.dispose();
-        entry.rayMaterial.dispose();
-      }
-      controllersRef.current = [];
-
       const trackGroup = trackGroupRef.current;
       if (trackGroup) {
         for (const resource of trackLinesRef.current.values()) {
@@ -4852,6 +4063,7 @@ function VolumeViewer({
       sceneRef.current = null;
       cameraRef.current = null;
       controlsRef.current = null;
+      endVrSessionRequestRef.current = null;
     };
   }, [containerNode]);
 
