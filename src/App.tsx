@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ChangeEvent, CSSProperties, DragEvent, FormEvent } from 'react';
+import type { CSSProperties } from 'react';
 import { loadVolumesFromFiles } from './loaders/volumeLoader';
 import { VolumeTooLargeError, formatBytes } from './errors';
 import VolumeViewer from './components/VolumeViewer';
@@ -23,24 +23,6 @@ import {
   type TrackColorOption
 } from './trackColors';
 import {
-  chooseDropboxFiles,
-  DropboxConfigurationError,
-  getDropboxAppKeyInfo,
-  setDropboxAppKey,
-  type DropboxAppKeySource
-} from './integrations/dropbox';
-import {
-  importPreprocessedDataset,
-  type ChannelExportMetadata,
-  type ImportPreprocessedDatasetResult
-} from './utils/preprocessedDataset';
-import {
-  exportPreprocessedDatasetInWorker,
-  canUseFileSystemSavePicker,
-  requestFileSystemSaveHandle,
-  type FileSystemFileHandleLike
-} from './workers/exportPreprocessedDatasetClient';
-import {
   brightnessContrastModel,
   clampWindowBounds,
   computeContrastMultiplier,
@@ -59,9 +41,10 @@ import './App.css';
 import { computeAutoWindow, getVolumeHistogram } from './autoContrast';
 import { getDefaultWindowForVolume } from './utils/volumeWindow';
 import BrightnessContrastHistogram from './components/BrightnessContrastHistogram';
-import { downloadStream, sanitizeExportFileName } from './utils/downloads';
+import type { ImportPreprocessedDatasetResult } from './utils/preprocessedDataset';
 import { computeTrackSummary } from './utils/trackSummary';
 import useVrLifecycle from './hooks/useVrLifecycle';
+import usePreprocessedExperiment from './hooks/usePreprocessedExperiment';
 import {
   applyAlphaToHex,
   collectFilesFromDataTransfer,
@@ -141,25 +124,17 @@ type ChannelValidation = {
   warnings: string[];
 };
 
-export type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment };
+export type {
+  ChannelSource,
+  ChannelTrackState,
+  ChannelValidation,
+  FollowedTrackState,
+  StagedPreprocessedExperiment
+};
 
 function App() {
   const [channels, setChannels] = useState<ChannelSource[]>([]);
   const [isExperimentSetupStarted, setIsExperimentSetupStarted] = useState(false);
-  const [preprocessedExperiment, setPreprocessedExperiment] = useState<StagedPreprocessedExperiment | null>(null);
-  const [isPreprocessedLoaderOpen, setIsPreprocessedLoaderOpen] = useState(false);
-  const [isPreprocessedImporting, setIsPreprocessedImporting] = useState(false);
-  const [preprocessedImportError, setPreprocessedImportError] = useState<string | null>(null);
-  const [isPreprocessedDragActive, setIsPreprocessedDragActive] = useState(false);
-  const [isExportingPreprocessed, setIsExportingPreprocessed] = useState(false);
-  const [preprocessedDropboxImporting, setPreprocessedDropboxImporting] = useState(false);
-  const [preprocessedDropboxError, setPreprocessedDropboxError] = useState<string | null>(null);
-  const [preprocessedDropboxInfo, setPreprocessedDropboxInfo] = useState<string | null>(null);
-  const [isPreprocessedDropboxConfigOpen, setIsPreprocessedDropboxConfigOpen] = useState(false);
-  const [preprocessedDropboxAppKeyInput, setPreprocessedDropboxAppKeyInput] = useState('');
-  const [preprocessedDropboxAppKeySource, setPreprocessedDropboxAppKeySource] = useState<DropboxAppKeySource | null>(
-    null
-  );
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [datasetError, setDatasetError] = useState<string | null>(null);
@@ -259,8 +234,6 @@ function App() {
   const editingChannelOriginalNameRef = useRef('');
   const editingChannelInputRef = useRef<HTMLInputElement | null>(null);
   const pendingChannelFocusIdRef = useRef<string | null>(null);
-  const preprocessedFileInputRef = useRef<HTMLInputElement | null>(null);
-  const preprocessedDropCounterRef = useRef(0);
   const helpMenuRef = useRef<HTMLDivElement | null>(null);
 
   const createChannelSource = useCallback(
@@ -304,37 +277,6 @@ function App() {
     }
     channelIdRef.current = maxId;
   }, []);
-
-  const syncPreprocessedDropboxConfig = useCallback(() => {
-    const info = getDropboxAppKeyInfo();
-    setPreprocessedDropboxAppKeyInput(info.appKey ?? '');
-    setPreprocessedDropboxAppKeySource(info.source);
-  }, []);
-
-  const resetPreprocessedLoader = useCallback(() => {
-    setPreprocessedImportError(null);
-    setPreprocessedDropboxError(null);
-    setPreprocessedDropboxInfo(null);
-    setIsPreprocessedDropboxConfigOpen(false);
-    setIsPreprocessedDragActive(false);
-    preprocessedDropCounterRef.current = 0;
-  }, []);
-
-  useEffect(() => {
-    if (isPreprocessedLoaderOpen) {
-      syncPreprocessedDropboxConfig();
-      resetPreprocessedLoader();
-    }
-  }, [isPreprocessedLoaderOpen, resetPreprocessedLoader, syncPreprocessedDropboxConfig]);
-
-  useEffect(() => {
-    if (preprocessedExperiment) {
-      return;
-    }
-    if (channels.length === 0) {
-      setIsExperimentSetupStarted(false);
-    }
-  }, [channels, preprocessedExperiment]);
 
   const handleBeforeEnterVr = useCallback(() => {
     setFollowedTrack(null);
@@ -979,6 +921,61 @@ function App() {
     showLaunchError
   ]);
 
+  const {
+    preprocessedExperiment,
+    isPreprocessedLoaderOpen,
+    isPreprocessedImporting,
+    isPreprocessedDragActive,
+    isExportingPreprocessed,
+    preprocessedDropboxImporting,
+    preprocessedImportError,
+    preprocessedDropboxError,
+    preprocessedDropboxInfo,
+    isPreprocessedDropboxConfigOpen,
+    preprocessedDropboxAppKeyInput,
+    preprocessedDropboxAppKeySource,
+    preprocessedFileInputRef,
+    handlePreprocessedLoaderOpen,
+    handlePreprocessedLoaderClose,
+    handlePreprocessedFileInputChange,
+    handlePreprocessedBrowse,
+    handlePreprocessedDragEnter,
+    handlePreprocessedDragLeave,
+    handlePreprocessedDragOver,
+    handlePreprocessedDrop,
+    handlePreprocessedDropboxImport,
+    handlePreprocessedDropboxConfigSubmit,
+    handlePreprocessedDropboxConfigInputChange,
+    handlePreprocessedDropboxConfigClear,
+    handlePreprocessedDropboxConfigCancel,
+    handleExportPreprocessedExperiment,
+    resetPreprocessedState
+  } = usePreprocessedExperiment({
+    channels,
+    setChannels,
+    setActiveChannelId,
+    setEditingChannelId,
+    setChannelTrackStates,
+    setTrackOrderModeByChannel,
+    setSelectedTrackIds,
+    setFollowedTrack,
+    setIsExperimentSetupStarted,
+    clearDatasetError,
+    updateChannelIdCounter,
+    loadSelectedDataset,
+    showInteractionWarning,
+    isLaunchingViewer
+  });
+
+  useEffect(() => {
+    if (preprocessedExperiment) {
+      return;
+    }
+    if (channels.length === 0) {
+      setIsExperimentSetupStarted(false);
+    }
+  }, [channels, preprocessedExperiment]);
+
   const isLoading = status === 'loading';
   const playbackDisabled = isLoading || volumeTimepointCount <= 1;
   const vrButtonDisabled = isVrActive ? false : !isVrAvailable || !hasVrSessionHandlers || isVrRequesting;
@@ -1183,13 +1180,8 @@ function App() {
   }, [handleTimeIndexChange, volumeTimepointCount]);
 
   const handleAddChannel = useCallback(() => {
-    setPreprocessedExperiment(null);
-    setIsPreprocessedLoaderOpen(false);
+    resetPreprocessedState();
     setIsExperimentSetupStarted(true);
-    setPreprocessedImportError(null);
-    setPreprocessedDropboxError(null);
-    setPreprocessedDropboxInfo(null);
-    setIsPreprocessedDropboxConfigOpen(false);
 
     let createdChannel: ChannelSource | null = null;
     setChannels((current) => {
@@ -1206,7 +1198,7 @@ function App() {
     editingChannelOriginalNameRef.current = channel.name;
     setEditingChannelId(channel.id);
     clearDatasetError();
-  }, [clearDatasetError, createChannelSource]);
+  }, [clearDatasetError, createChannelSource, resetPreprocessedState]);
 
   const handleChannelNameChange = useCallback((channelId: string, value: string) => {
     setChannels((current) =>
@@ -1475,240 +1467,8 @@ function App() {
     [handleChannelTrackFileSelected]
   );
 
-  const handlePreprocessedLoaderOpen = useCallback(() => {
-    if (isPreprocessedImporting || preprocessedDropboxImporting) {
-      return;
-    }
-    setIsPreprocessedLoaderOpen(true);
-    resetPreprocessedLoader();
-  }, [isPreprocessedImporting, preprocessedDropboxImporting, resetPreprocessedLoader]);
-
-  const handlePreprocessedLoaderClose = useCallback(() => {
-    if (isPreprocessedImporting) {
-      return;
-    }
-    setIsPreprocessedLoaderOpen(false);
-    resetPreprocessedLoader();
-  }, [isPreprocessedImporting, resetPreprocessedLoader]);
-
-  const importPreprocessedFile = useCallback(
-    async (file: File) => {
-      if (isPreprocessedImporting) {
-        return;
-      }
-      setIsPreprocessedImporting(true);
-      setPreprocessedImportError(null);
-      setPreprocessedDropboxError(null);
-      setPreprocessedDropboxInfo(null);
-      try {
-        const buffer = await file.arrayBuffer();
-        const result = await importPreprocessedDataset(buffer);
-        const staged: StagedPreprocessedExperiment = {
-          ...result,
-          sourceName: file.name ?? null,
-          sourceSize: Number.isFinite(file.size) ? file.size : null
-        };
-        const nextChannels = result.channelSummaries.map<ChannelSource>((summary) => ({
-          id: summary.id,
-          name: summary.name,
-          layers: [],
-          trackFile: null,
-          trackStatus: 'loaded',
-          trackError: null,
-          trackEntries: summary.trackEntries
-        }));
-        setChannels(nextChannels);
-        updateChannelIdCounter(nextChannels);
-        setActiveChannelId(null);
-        setEditingChannelId(null);
-        setChannelTrackStates({});
-        setTrackOrderModeByChannel({});
-        setSelectedTrackIds(new Set());
-        setFollowedTrack(null);
-        setPreprocessedExperiment(staged);
-        setIsExperimentSetupStarted(false);
-        setIsPreprocessedLoaderOpen(false);
-        resetPreprocessedLoader();
-        clearDatasetError();
-      } catch (error) {
-        console.error('Failed to import preprocessed dataset', error);
-        const message = error instanceof Error ? error.message : 'Failed to import preprocessed dataset.';
-        setPreprocessedImportError(message);
-        setPreprocessedExperiment(null);
-        setChannels([]);
-        setIsExperimentSetupStarted(false);
-      } finally {
-        setIsPreprocessedImporting(false);
-      }
-    },
-    [
-      clearDatasetError,
-      isPreprocessedImporting,
-      resetPreprocessedLoader,
-      updateChannelIdCounter
-    ]
-  );
-
-  const handlePreprocessedFileInputChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      if (isPreprocessedImporting || preprocessedDropboxImporting) {
-        event.target.value = '';
-        return;
-      }
-      const fileList = event.target.files;
-      if (fileList && fileList.length > 0) {
-        importPreprocessedFile(fileList[0]);
-      }
-      event.target.value = '';
-    },
-    [importPreprocessedFile, isPreprocessedImporting, preprocessedDropboxImporting]
-  );
-
-  const handlePreprocessedBrowse = useCallback(() => {
-    if (isPreprocessedImporting || preprocessedDropboxImporting) {
-      return;
-    }
-    preprocessedFileInputRef.current?.click();
-  }, [isPreprocessedImporting, preprocessedDropboxImporting]);
-
-  const handlePreprocessedDragEnter = useCallback(
-    (event: DragEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      if (isPreprocessedImporting || preprocessedDropboxImporting) {
-        return;
-      }
-      preprocessedDropCounterRef.current += 1;
-      setIsPreprocessedDragActive(true);
-    },
-    [isPreprocessedImporting, preprocessedDropboxImporting]
-  );
-
-  const handlePreprocessedDragLeave = useCallback(
-    (event: DragEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      if (isPreprocessedImporting || preprocessedDropboxImporting) {
-        return;
-      }
-      preprocessedDropCounterRef.current = Math.max(0, preprocessedDropCounterRef.current - 1);
-      if (preprocessedDropCounterRef.current === 0) {
-        setIsPreprocessedDragActive(false);
-      }
-    },
-    [isPreprocessedImporting, preprocessedDropboxImporting]
-  );
-
-  const handlePreprocessedDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-  }, []);
-
-  const handlePreprocessedDrop = useCallback(
-    async (event: DragEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      preprocessedDropCounterRef.current = 0;
-      setIsPreprocessedDragActive(false);
-      if (isPreprocessedImporting || preprocessedDropboxImporting) {
-        return;
-      }
-      const { dataTransfer } = event;
-      if (!dataTransfer) {
-        return;
-      }
-      const files = await collectFilesFromDataTransfer(dataTransfer);
-      const [first] = files;
-      if (first) {
-        await importPreprocessedFile(first);
-      } else {
-        setPreprocessedImportError('Drop a file to import the preprocessed experiment.');
-      }
-    },
-    [importPreprocessedFile, isPreprocessedImporting, preprocessedDropboxImporting]
-  );
-
-  const handlePreprocessedDropboxConfigInputChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      setPreprocessedDropboxAppKeyInput(event.target.value);
-      if (preprocessedDropboxInfo) {
-        setPreprocessedDropboxInfo(null);
-      }
-    },
-    [preprocessedDropboxInfo]
-  );
-
-  const handlePreprocessedDropboxConfigSubmit = useCallback(
-    (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      if (preprocessedDropboxAppKeySource === 'env') {
-        setIsPreprocessedDropboxConfigOpen(false);
-        return;
-      }
-      const trimmed = preprocessedDropboxAppKeyInput.trim();
-      setDropboxAppKey(trimmed ? trimmed : null);
-      syncPreprocessedDropboxConfig();
-      setIsPreprocessedDropboxConfigOpen(false);
-      setPreprocessedDropboxError(null);
-      setPreprocessedDropboxInfo(
-        trimmed
-          ? 'Dropbox app key saved. Try importing from Dropbox again.'
-          : 'Saved Dropbox app key cleared.'
-      );
-    },
-    [preprocessedDropboxAppKeyInput, preprocessedDropboxAppKeySource, syncPreprocessedDropboxConfig]
-  );
-
-  const handlePreprocessedDropboxConfigClear = useCallback(() => {
-    setDropboxAppKey(null);
-    syncPreprocessedDropboxConfig();
-    setPreprocessedDropboxInfo('Saved Dropbox app key cleared.');
-    setPreprocessedDropboxError(null);
-  }, [syncPreprocessedDropboxConfig]);
-
-  const handlePreprocessedDropboxConfigCancel = useCallback(() => {
-    setIsPreprocessedDropboxConfigOpen(false);
-  }, []);
-
-  const handlePreprocessedDropboxImport = useCallback(
-    async () => {
-      if (isPreprocessedImporting || preprocessedDropboxImporting) {
-        return;
-      }
-      setPreprocessedDropboxError(null);
-      setPreprocessedDropboxInfo(null);
-      setPreprocessedDropboxImporting(true);
-      try {
-        const files = await chooseDropboxFiles({
-          extensions: ['.zip', '.llsm', '.llsmz', '.json'],
-          multiselect: false
-        });
-        const [file] = files;
-        if (file) {
-          await importPreprocessedFile(file);
-        }
-      } catch (error) {
-        console.error('Failed to import preprocessed experiment from Dropbox', error);
-        if (error instanceof DropboxConfigurationError) {
-          syncPreprocessedDropboxConfig();
-          setIsPreprocessedDropboxConfigOpen(true);
-          setPreprocessedDropboxError(
-            'Dropbox is not configured yet. Add your Dropbox app key below to connect your account.'
-          );
-        } else {
-          const message = error instanceof Error ? error.message : 'Failed to import from Dropbox.';
-          setPreprocessedDropboxError(message);
-        }
-      } finally {
-        setPreprocessedDropboxImporting(false);
-      }
-    },
-    [
-      importPreprocessedFile,
-      isPreprocessedImporting,
-      preprocessedDropboxImporting,
-      syncPreprocessedDropboxConfig
-    ]
-  );
-
   const handleDiscardPreprocessedExperiment = useCallback(() => {
-    setPreprocessedExperiment(null);
+    resetPreprocessedState();
     setChannels([]);
     setChannelVisibility({});
     setChannelActiveLayer({});
@@ -1721,7 +1481,7 @@ function App() {
     setActiveChannelTabId(null);
     setChannelTrackStates({});
     setTrackOrderModeByChannel({});
-    setSelectedTrackIds(new Set());
+    setSelectedTrackIds(new Set<string>());
     setFollowedTrack(null);
     setStatus('idle');
     setError(null);
@@ -1731,16 +1491,11 @@ function App() {
     setIsPlaying(false);
     setIsViewerLaunched(false);
     setIsExperimentSetupStarted(false);
-    setPreprocessedImportError(null);
-    setPreprocessedDropboxError(null);
-    setPreprocessedDropboxInfo(null);
-    setIsPreprocessedLoaderOpen(false);
-    resetPreprocessedLoader();
     channelIdRef.current = 0;
     layerIdRef.current = 0;
     clearTextureCache();
     clearDatasetError();
-  }, [clearDatasetError, resetPreprocessedLoader]);
+  }, [clearDatasetError, resetPreprocessedState]);
 
 
 
@@ -1894,104 +1649,6 @@ function App() {
     loadSelectedDataset,
     preprocessedExperiment,
     showLaunchError
-  ]);
-
-  const handleExportPreprocessedExperiment = useCallback(async () => {
-    if (isExportingPreprocessed || isLaunchingViewer) {
-      return;
-    }
-
-    const hasAnyLayers = preprocessedExperiment
-      ? preprocessedExperiment.layers.length > 0
-      : channels.some((channel) => channel.layers.length > 0);
-
-    if (!hasAnyLayers) {
-      showInteractionWarning('There are no volumes available to export.');
-      return;
-    }
-
-    setIsExportingPreprocessed(true);
-    try {
-      const suggestionSource =
-        preprocessedExperiment?.sourceName ?? channels[0]?.name ?? 'preprocessed-experiment';
-      const suggestionTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const suggestionBase = sanitizeExportFileName(suggestionSource);
-      const suggestedFileName = `${suggestionBase}-${suggestionTimestamp}.zip`;
-
-      let fileHandle: FileSystemFileHandleLike | null = null;
-      if (canUseFileSystemSavePicker()) {
-        try {
-          fileHandle = await requestFileSystemSaveHandle(suggestedFileName);
-        } catch (error) {
-          if (error instanceof DOMException && error.name === 'AbortError') {
-            console.info('Preprocessed dataset export cancelled by user');
-            return;
-          }
-          throw error;
-        }
-      }
-
-      let layersToExport: LoadedLayer[];
-      let channelsMetadata: ChannelExportMetadata[];
-
-      if (preprocessedExperiment) {
-        layersToExport = preprocessedExperiment.layers;
-        channelsMetadata = preprocessedExperiment.channelSummaries.map((summary) => ({
-          id: summary.id,
-          name: summary.name.trim() || 'Untitled channel',
-          trackEntries: summary.trackEntries
-        }));
-      } else {
-        const normalizedLayers = await loadSelectedDataset();
-        if (!normalizedLayers) {
-          return;
-        }
-        layersToExport = normalizedLayers;
-        channelsMetadata = channels.map<ChannelExportMetadata>((channel) => ({
-          id: channel.id,
-          name: channel.name.trim() || 'Untitled channel',
-          trackEntries: channel.trackEntries
-        }));
-      }
-
-      if (layersToExport.length === 0) {
-        showInteractionWarning('There are no volumes available to export.');
-        return;
-      }
-
-      const { manifest, stream } = await exportPreprocessedDatasetInWorker({
-        layers: layersToExport,
-        channels: channelsMetadata
-      });
-
-      const baseNameSource =
-        preprocessedExperiment?.sourceName ?? channelsMetadata[0]?.name ?? 'preprocessed-experiment';
-      const fileBase = sanitizeExportFileName(baseNameSource);
-      const timestamp = manifest.generatedAt.replace(/[:.]/g, '-');
-      const fileName = `${fileBase}-${timestamp}.zip`;
-
-      await downloadStream(stream, fileName, fileHandle);
-      clearDatasetError();
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        console.info('Preprocessed dataset export cancelled by user');
-      } else {
-        console.error('Failed to export preprocessed dataset', error);
-        const message =
-          error instanceof Error ? error.message : 'Failed to export preprocessed dataset.';
-        showInteractionWarning(message);
-      }
-    } finally {
-      setIsExportingPreprocessed(false);
-    }
-  }, [
-    channels,
-    clearDatasetError,
-    isExportingPreprocessed,
-    isLaunchingViewer,
-    loadSelectedDataset,
-    preprocessedExperiment,
-    showInteractionWarning
   ]);
 
   const handleChannelVisibilityToggle = useCallback((channelId: string) => {
