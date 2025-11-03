@@ -356,9 +356,9 @@ export class VrSessionManager {
     const createdEntries: Array<{
       entry: ControllerEntry;
       onConnected: (event: any) => void;
-      onDisconnected: (event: any) => void;
-      onSelectStart: (event: any) => void;
-      onSelectEnd: (event: any) => void;
+      onDisconnected: (event: XRInputSourceEvent) => void;
+      onSelectStart: (event: XRInputSourceEvent) => void;
+      onSelectEnd: (event: XRInputSourceEvent) => void;
     }> = [];
 
     controllers.splice(0, controllers.length);
@@ -412,9 +412,9 @@ export class VrSessionManager {
         touchIndicator,
         raycaster: controllerRaycaster,
         onConnected: () => undefined,
-        onDisconnected: () => undefined,
-        onSelectStart: () => undefined,
-        onSelectEnd: () => undefined,
+        onDisconnected: (_event: XRInputSourceEvent) => undefined,
+        onSelectStart: (_event: XRInputSourceEvent) => undefined,
+        onSelectEnd: (_event: XRInputSourceEvent) => undefined,
         isConnected: false,
         targetRayMode: null,
         gamepad: null,
@@ -439,21 +439,21 @@ export class VrSessionManager {
       configureEntry(entry, index);
 
       const handleConnected = (event: any) => entry.onConnected(event);
-      const handleDisconnected = (event: any) => entry.onDisconnected(event);
-      const handleSelectStart = (event: any) => entry.onSelectStart(event);
-      const handleSelectEnd = (event: any) => entry.onSelectEnd(event);
+      const handleDisconnected = (event: XRInputSourceEvent) => entry.onDisconnected(event);
+      const handleSelectStart = (event: XRInputSourceEvent) => entry.onSelectStart(event);
+      const handleSelectEnd = (event: XRInputSourceEvent) => entry.onSelectEnd(event);
 
       (controller as unknown as {
         addEventListener: (type: string, handler: (event: any) => void) => void;
       }).addEventListener('connected', handleConnected);
       (controller as unknown as {
-        addEventListener: (type: string, handler: (event: any) => void) => void;
+        addEventListener: (type: string, handler: (event: XRInputSourceEvent) => void) => void;
       }).addEventListener('disconnected', handleDisconnected);
       (controller as unknown as {
-        addEventListener: (type: string, handler: (event: any) => void) => void;
+        addEventListener: (type: string, handler: (event: XRInputSourceEvent) => void) => void;
       }).addEventListener('selectstart', handleSelectStart);
       (controller as unknown as {
-        addEventListener: (type: string, handler: (event: any) => void) => void;
+        addEventListener: (type: string, handler: (event: XRInputSourceEvent) => void) => void;
       }).addEventListener('selectend', handleSelectEnd);
 
       scene.add(controller);
@@ -477,13 +477,13 @@ export class VrSessionManager {
           removeEventListener: (type: string, handler: (event: any) => void) => void;
         }).removeEventListener('connected', onConnected);
         (entry.controller as unknown as {
-          removeEventListener: (type: string, handler: (event: any) => void) => void;
+          removeEventListener: (type: string, handler: (event: XRInputSourceEvent) => void) => void;
         }).removeEventListener('disconnected', onDisconnected);
         (entry.controller as unknown as {
-          removeEventListener: (type: string, handler: (event: any) => void) => void;
+          removeEventListener: (type: string, handler: (event: XRInputSourceEvent) => void) => void;
         }).removeEventListener('selectstart', onSelectStart);
         (entry.controller as unknown as {
-          removeEventListener: (type: string, handler: (event: any) => void) => void;
+          removeEventListener: (type: string, handler: (event: XRInputSourceEvent) => void) => void;
         }).removeEventListener('selectend', onSelectEnd);
         entry.controller.remove(entry.ray);
         entry.controller.remove(entry.touchIndicator);
