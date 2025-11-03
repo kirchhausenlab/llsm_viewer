@@ -1375,6 +1375,13 @@ function App() {
     }
     return map;
   }, [layers]);
+  const layerChannelMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const layer of layers) {
+      map.set(layer.key, layer.channelId);
+    }
+    return map;
+  }, [layers]);
   const channelTintMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const channel of channels) {
@@ -3498,6 +3505,63 @@ function App() {
     });
   }, []);
 
+  const handleLayerSelect = useCallback(
+    (layerKey: string) => {
+      const channelId = layerChannelMap.get(layerKey);
+      if (!channelId) {
+        return;
+      }
+      handleChannelLayerSelectionChange(channelId, layerKey);
+      setActiveChannelTabId((current) => (current === channelId ? current : channelId));
+    },
+    [handleChannelLayerSelectionChange, layerChannelMap]
+  );
+
+  const handleLayerSoloToggle = useCallback(
+    (layerKey: string) => {
+      const channelId = layerChannelMap.get(layerKey);
+      if (!channelId || loadedChannelIds.length === 0) {
+        return;
+      }
+
+      handleLayerSelect(layerKey);
+
+      setChannelVisibility((current) => {
+        const visibleCount = loadedChannelIds.reduce(
+          (count, id) => ((current[id] ?? true) ? count + 1 : count),
+          0
+        );
+        const targetVisible = current[channelId] ?? true;
+        const isSolo = targetVisible && visibleCount === 1;
+
+        const next: Record<string, boolean> = { ...current };
+        let changed = false;
+
+        if (isSolo) {
+          for (const id of loadedChannelIds) {
+            const previous = next[id] ?? true;
+            if (previous === false) {
+              next[id] = true;
+              changed = true;
+            }
+          }
+        } else {
+          for (const id of loadedChannelIds) {
+            const desired = id === channelId;
+            const previous = next[id] ?? true;
+            if (previous !== desired) {
+              next[id] = desired;
+              changed = true;
+            }
+          }
+        }
+
+        return changed ? next : current;
+      });
+    },
+    [handleLayerSelect, layerChannelMap, loadedChannelIds]
+  );
+
   const handleChannelSliderReset = useCallback(
     (channelId: string) => {
       const relevantLayers = layers.filter((layer) => layer.channelId === channelId);
@@ -4165,6 +4229,8 @@ function App() {
                 onChannelVisibilityToggle: handleChannelVisibilityToggle,
                 onChannelReset: handleChannelSliderReset,
                 onChannelLayerSelect: handleChannelLayerSelectionChange,
+                onLayerSelect: handleLayerSelect,
+                onLayerSoloToggle: handleLayerSoloToggle,
                 onLayerContrastChange: handleLayerContrastChange,
                 onLayerBrightnessChange: handleLayerBrightnessChange,
                 onLayerWindowMinChange: handleLayerWindowMinChange,
