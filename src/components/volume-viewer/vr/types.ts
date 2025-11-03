@@ -48,6 +48,35 @@ export type VrUiTargetType =
 
 export type VrUiTarget = { type: VrUiTargetType; object: THREE.Object3D; data?: unknown };
 
+export type PlaybackState = {
+  isPlaying: boolean;
+  playbackDisabled: boolean;
+  playbackLabel: string;
+  fps: number;
+  timeIndex: number;
+  totalTimepoints: number;
+  onTogglePlayback: () => void;
+  onTimeIndexChange: (nextIndex: number) => void;
+  onFpsChange: (value: number) => void;
+  passthroughSupported: boolean;
+  preferredSessionMode: 'immersive-vr' | 'immersive-ar';
+  currentSessionMode: 'immersive-vr' | 'immersive-ar' | null;
+};
+
+export type PlaybackLoopState = { lastTimestamp: number | null; accumulator: number };
+
+export type VrHoverState = {
+  play: boolean;
+  playbackSlider: boolean;
+  playbackSliderActive: boolean;
+  fpsSlider: boolean;
+  fpsSliderActive: boolean;
+  resetVolume: boolean;
+  resetHud: boolean;
+  exit: boolean;
+  mode: boolean;
+};
+
 export type VrPlaybackHud = {
   group: THREE.Group;
   panel: THREE.Mesh;
@@ -176,6 +205,15 @@ export type VrChannelsHud = {
   cachedYaw: number;
   cachedPitch: number;
   cacheDirty: boolean;
+};
+
+export type VolumeHudFrame = {
+  center: THREE.Vector3;
+  forward: THREE.Vector3;
+  right: THREE.Vector3;
+  up: THREE.Vector3;
+  yaw: number;
+  pitch: number;
 };
 
 export type VrChannelsState = {
