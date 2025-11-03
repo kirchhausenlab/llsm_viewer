@@ -4,7 +4,7 @@ import { loadVolumesFromFiles } from './loaders/volumeLoader';
 import { VolumeTooLargeError, formatBytes } from './errors';
 import VolumeViewer from './components/VolumeViewer';
 import PlanarViewer from './components/PlanarViewer';
-import ChannelCard from './components/ChannelCard';
+import FrontPage from './components/FrontPage';
 import {
   colorizeSegmentationVolume,
   computeNormalizationParameters,
@@ -137,43 +137,12 @@ type StagedPreprocessedExperiment = ImportPreprocessedDatasetResult & {
   sourceSize: number | null;
 };
 
-const getChannelLayerSummary = (channel: ChannelSource): string => {
-  if (channel.layers.length === 0) {
-    return 'No volume selected';
-  }
-  const primaryLayer = channel.layers[0];
-  const totalFiles = primaryLayer.files.length;
-  const fileLabel = totalFiles === 1 ? 'file' : 'files';
-  return `${totalFiles} ${fileLabel}`;
-};
-
 type ChannelValidation = {
   errors: string[];
   warnings: string[];
 };
 
-export type { ChannelSource, ChannelValidation };
-
-const buildChannelTabMeta = (channel: ChannelSource, validation: ChannelValidation): string => {
-  const parts: string[] = [getChannelLayerSummary(channel)];
-  if (channel.trackEntries.length > 0) {
-    parts.push('Tracks attached');
-  } else if (channel.trackStatus === 'loading') {
-    parts.push('Tracks loading');
-  }
-  if (channel.layers.length === 0) {
-    parts.push('add a volume');
-  } else if (validation.errors.length > 0) {
-    const hasNameError = validation.errors.includes('Name this channel.');
-    parts.push(hasNameError ? 'Insert channel name' : 'Needs attention');
-  } else if (validation.warnings.length > 0) {
-    const hasNoTracksWarning = validation.warnings.some(
-      (warning) => warning === 'No tracks attached to this channel.'
-    );
-    parts.push(hasNoTracksWarning ? 'no tracks attached' : 'Warnings');
-  }
-  return parts.join(' · ');
-};
+export type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment };
 
 const triggerDownloadLink = (href: string, fileName: string) => {
   const link = document.createElement('a');
@@ -2911,486 +2880,70 @@ function App() {
             y: WINDOW_MARGIN + 16
           };
     return (
-      <div className="app front-page-mode">
-        <video
-          className="app-background-video"
-          autoPlay
-          loop
-          muted
-          playsInline
-          preload="auto"
-          aria-hidden="true"
-        >
-          <source src={backgroundVideoSrc} type="video/mp4" />
-        </video>
-        <div className="front-page">
-          <div className={`front-page-card${isFrontPageLocked ? ' is-loading' : ''}`}>
-            <header className="front-page-header">
-              <h1>4D viewer</h1>
-            </header>
-            {frontPageMode !== 'preprocessed' ? (
-              <div className="channel-add-actions">
-                {frontPageMode === 'initial' ? (
-                  <div className="channel-add-initial">
-                    <button
-                      type="button"
-                      className="channel-add-button"
-                      onClick={handleAddChannel}
-                      disabled={isFrontPageLocked}
-                    >
-                      Set up new experiment
-                    </button>
-                    <button
-                      type="button"
-                      className="channel-add-button"
-                      onClick={handlePreprocessedLoaderOpen}
-                      disabled={
-                        isFrontPageLocked || isPreprocessedImporting || preprocessedDropboxImporting
-                      }
-                    >
-                      Load preprocessed experiment
-                    </button>
-                  </div>
-                ) : (
-                  <div className="channel-add-configuring">
-                    <button
-                      type="button"
-                      className="channel-add-button"
-                      onClick={handleAddChannel}
-                      disabled={isFrontPageLocked}
-                    >
-                      Add new channel
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : null}
-            {frontPageMode !== 'preprocessed' && isPreprocessedLoaderOpen ? (
-              <div
-                className={`preprocessed-loader${isPreprocessedDragActive ? ' is-active' : ''}`}
-                onDragEnter={handlePreprocessedDragEnter}
-                onDragLeave={handlePreprocessedDragLeave}
-                onDragOver={handlePreprocessedDragOver}
-                onDrop={handlePreprocessedDrop}
-              >
-                <input
-                  ref={preprocessedFileInputRef}
-                  className="file-drop-input"
-                  type="file"
-                  accept=".zip,.llsm,.llsmz,.json"
-                  onChange={handlePreprocessedFileInputChange}
-                  disabled={isPreprocessedImporting || preprocessedDropboxImporting}
-                />
-                <div className="preprocessed-loader-content">
-                  <div className="preprocessed-loader-row">
-                    <div className="preprocessed-loader-buttons">
-                      <button
-                        type="button"
-                        className="channel-add-button"
-                        onClick={handlePreprocessedBrowse}
-                        disabled={isPreprocessedImporting || preprocessedDropboxImporting}
-                      >
-                        From files
-                      </button>
-                      <button
-                        type="button"
-                        className="channel-add-button"
-                        onClick={handlePreprocessedDropboxImport}
-                        disabled={isPreprocessedImporting || preprocessedDropboxImporting}
-                      >
-                        {preprocessedDropboxImporting ? 'Importing…' : 'From Dropbox'}
-                      </button>
-                      <p className="preprocessed-loader-subtitle">Or drop file here</p>
-                    </div>
-                  <button
-                    type="button"
-                    className="preprocessed-loader-cancel"
-                    onClick={handlePreprocessedLoaderClose}
-                    disabled={isPreprocessedImporting || preprocessedDropboxImporting}
-                  >
-                    Cancel
-                  </button>
-                  </div>
-                  {isPreprocessedImporting ? (
-                    <p className="preprocessed-loader-status">Loading preprocessed dataset…</p>
-                  ) : null}
-                  {preprocessedImportError ? (
-                    <p className="preprocessed-loader-error">{preprocessedImportError}</p>
-                  ) : null}
-                  {preprocessedDropboxError ? (
-                    <p className="preprocessed-loader-error">{preprocessedDropboxError}</p>
-                  ) : null}
-                  {preprocessedDropboxInfo ? (
-                    <p className="preprocessed-loader-info">{preprocessedDropboxInfo}</p>
-                  ) : null}
-                  {isPreprocessedDropboxConfigOpen ? (
-                    <form className="preprocessed-dropbox-config" onSubmit={handlePreprocessedDropboxConfigSubmit} noValidate>
-                      <label className="preprocessed-dropbox-config-label">
-                        Dropbox app key
-                        <input
-                          value={preprocessedDropboxAppKeyInput}
-                          onChange={handlePreprocessedDropboxConfigInputChange}
-                          disabled={preprocessedDropboxAppKeySource === 'env'}
-                        />
-                      </label>
-                      <p className="preprocessed-dropbox-config-hint">
-                        Add your Dropbox app key to enable imports.
-                      </p>
-                      <div className="preprocessed-dropbox-config-actions">
-                        <button type="submit" className="preprocessed-dropbox-config-save">
-                          {preprocessedDropboxAppKeySource === 'env' ? 'Close' : 'Save app key'}
-                        </button>
-                        <button
-                          type="button"
-                          className="preprocessed-dropbox-config-cancel"
-                          onClick={handlePreprocessedDropboxConfigCancel}
-                        >
-                          Cancel
-                        </button>
-                        {preprocessedDropboxAppKeySource === 'local' ? (
-                          <button
-                            type="button"
-                            className="preprocessed-dropbox-config-clear"
-                            onClick={handlePreprocessedDropboxConfigClear}
-                          >
-                            Remove saved key
-                          </button>
-                        ) : null}
-                      </div>
-                    </form>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-            {frontPageMode === 'configuring' ? (
-              <div className="channel-board">
-                {channels.length > 0 ? (
-                  <>
-                    <div className="channel-tabs" role="tablist" aria-label="Configured channels">
-                      {channels.map((channel) => {
-                        const validation = channelValidationMap.get(channel.id) ?? { errors: [], warnings: [] };
-                        const isActive = channel.id === activeChannelId;
-                        const isEditing = editingChannelId === channel.id;
-                        const trimmedChannelName = channel.name.trim();
-                        const removeLabel = trimmedChannelName ? `Remove ${trimmedChannelName}` : 'Remove channel';
-                        const tabClassName = [
-                          'channel-tab',
-                          isActive ? 'is-active' : '',
-                          validation.errors.length > 0 ? 'has-error' : '',
-                          validation.errors.length === 0 && validation.warnings.length > 0 ? 'has-warning' : '',
-                          isFrontPageLocked ? 'is-disabled' : ''
-                        ]
-                          .filter(Boolean)
-                          .join(' ');
-                        const tabMeta = buildChannelTabMeta(channel, validation);
-                        const startEditingChannelName = () => {
-                          if (isFrontPageLocked || editingChannelId === channel.id) {
-                            return;
-                          }
-                          editingChannelOriginalNameRef.current = channel.name;
-                          setEditingChannelId(channel.id);
-                        };
-                        if (isEditing) {
-                          return (
-                            <div
-                              key={channel.id}
-                              id={`${channel.id}-tab`}
-                              className={`${tabClassName} is-editing`}
-                              role="tab"
-                              aria-selected={isActive}
-                              aria-controls="channel-detail-panel"
-                              tabIndex={isFrontPageLocked ? -1 : 0}
-                              aria-disabled={isFrontPageLocked}
-                              onClick={() => {
-                                if (isFrontPageLocked) {
-                                  return;
-                                }
-                                setActiveChannelId(channel.id);
-                              }}
-                              onKeyDown={(event) => {
-                                if (isFrontPageLocked) {
-                                  event.preventDefault();
-                                  return;
-                                }
-                                if (event.key === 'Enter' || event.key === ' ') {
-                                  event.preventDefault();
-                                  setActiveChannelId(channel.id);
-                                }
-                              }}
-                            >
-                              <span className="channel-tab-text">
-                                <input
-                                  ref={(node) => {
-                                    editingChannelInputRef.current = node;
-                                  }}
-                                  className="channel-tab-name-input"
-                                  value={channel.name}
-                                  onChange={(event) => handleChannelNameChange(channel.id, event.target.value)}
-                                  placeholder="Insert channel name here"
-                                  onBlur={() => {
-                                    editingChannelInputRef.current = null;
-                                    setEditingChannelId(null);
-                                  }}
-                                  onKeyDown={(event) => {
-                                    if (isFrontPageLocked) {
-                                      event.preventDefault();
-                                      return;
-                                    }
-                                    if (event.key === 'Enter') {
-                                      event.preventDefault();
-                                      editingChannelInputRef.current = null;
-                                      setEditingChannelId(null);
-                                    } else if (event.key === 'Escape') {
-                                      event.preventDefault();
-                                      handleChannelNameChange(channel.id, editingChannelOriginalNameRef.current);
-                                      editingChannelInputRef.current = null;
-                                      setEditingChannelId(null);
-                                    }
-                                  }}
-                                  aria-label="Channel name"
-                                  autoComplete="off"
-                                  autoFocus
-                                  disabled={isFrontPageLocked}
-                                />
-                                <span className="channel-tab-meta">{tabMeta}</span>
-                              </span>
-                              <button
-                                type="button"
-                                className="channel-tab-remove"
-                                aria-label={removeLabel}
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  if (isFrontPageLocked) {
-                                    return;
-                                  }
-                                  handleRemoveChannel(channel.id);
-                                }}
-                                disabled={isFrontPageLocked}
-                              >
-                                🗑️
-                              </button>
-                            </div>
-                          );
-                        }
-                        return (
-                          <div
-                            key={channel.id}
-                            id={`${channel.id}-tab`}
-                            className={tabClassName}
-                            role="tab"
-                            aria-selected={isActive}
-                            aria-controls="channel-detail-panel"
-                            tabIndex={isFrontPageLocked ? -1 : 0}
-                            aria-disabled={isFrontPageLocked}
-                            onClick={() => {
-                              if (isFrontPageLocked) {
-                                return;
-                              }
-                              if (!isActive) {
-                                setActiveChannelId(channel.id);
-                                return;
-                              }
-                              startEditingChannelName();
-                            }}
-                            onKeyDown={(event) => {
-                              if (isFrontPageLocked) {
-                                event.preventDefault();
-                                return;
-                              }
-                              if (event.key === 'Enter' || event.key === ' ') {
-                                event.preventDefault();
-                                if (!isActive) {
-                                  setActiveChannelId(channel.id);
-                                } else {
-                                  startEditingChannelName();
-                                }
-                              }
-                            }}
-                          >
-                            <span className="channel-tab-text">
-                              <span className="channel-tab-name">
-                                {trimmedChannelName ? (
-                                  trimmedChannelName
-                                ) : (
-                                  <span className="channel-tab-placeholder">Insert channel name here</span>
-                                )}
-                              </span>
-                              <span className="channel-tab-meta">{tabMeta}</span>
-                            </span>
-                            <button
-                              type="button"
-                              className="channel-tab-remove"
-                              aria-label={removeLabel}
-                              onClick={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                if (isFrontPageLocked) {
-                                  return;
-                                }
-                                handleRemoveChannel(channel.id);
-                              }}
-                              disabled={isFrontPageLocked}
-                            >
-                              🗑️
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div
-                      className="channel-panel"
-                      role="tabpanel"
-                      id="channel-detail-panel"
-                      aria-labelledby={activeChannel ? `${activeChannel.id}-tab` : undefined}
-                    >
-                      {activeChannel ? (
-                        <ChannelCard
-                          key={activeChannel.id}
-                          channel={activeChannel}
-                          validation={channelValidationMap.get(activeChannel.id) ?? { errors: [], warnings: [] }}
-                          isDisabled={isFrontPageLocked}
-                          onLayerFilesAdded={handleChannelLayerFilesAdded}
-                          onLayerDrop={handleChannelLayerDrop}
-                          onLayerSegmentationToggle={handleChannelLayerSegmentationToggle}
-                          onLayerRemove={handleChannelLayerRemove}
-                          onTrackFileSelected={handleChannelTrackFileSelected}
-                          onTrackDrop={handleChannelTrackDrop}
-                          onTrackClear={handleChannelTrackClear}
-                        />
-                      ) : (
-                        <p className="channel-panel-placeholder">Select a channel to edit it.</p>
-                      )}
-                    </div>
-                  </>
-                ) : null}
-              </div>
-            ) : null}
-            {frontPageMode === 'preprocessed' && preprocessedExperiment ? (
-              <div className="preprocessed-summary">
-                <div className="preprocessed-summary-header">
-                  <h2>Loaded preprocessed experiment</h2>
-                  <p className="preprocessed-summary-meta">
-                    {preprocessedExperiment.sourceName ?? 'Imported dataset'}
-                    {typeof preprocessedExperiment.sourceSize === 'number'
-                      ? ` · ${formatBytes(preprocessedExperiment.sourceSize)}`
-                      : ''}
-                    {preprocessedExperiment.totalVolumeCount > 0
-                      ? ` · ${preprocessedExperiment.totalVolumeCount} volumes`
-                      : ''}
-                  </p>
-                </div>
-                <ul className="preprocessed-summary-list">
-                  {preprocessedExperiment.channelSummaries.map((summary) => {
-                    const trackSummary = computeTrackSummary(summary.trackEntries);
-                    return (
-                      <li key={summary.id} className="preprocessed-summary-item">
-                        <div className="preprocessed-summary-channel">
-                          <h3>{summary.name}</h3>
-                          <ul className="preprocessed-summary-layer-list">
-                            {summary.layers.map((layer) => (
-                              <li key={layer.key} className="preprocessed-summary-layer">
-                                <span className="preprocessed-summary-layer-title">
-                                  {layer.label}
-                                  {layer.isSegmentation ? (
-                                    <span className="preprocessed-summary-layer-flag">Segmentation</span>
-                                  ) : null}
-                                </span>
-                                <span className="preprocessed-summary-layer-meta">
-                                  {layer.volumeCount} timepoints · {layer.width}×{layer.height}×{layer.depth} · {layer.channels} channels
-                                </span>
-                                <span className="preprocessed-summary-layer-range">
-                                  Range: {layer.min}–{layer.max}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                          <p className="preprocessed-summary-tracks">
-                            {trackSummary.uniqueTracks > 0
-                              ? `${trackSummary.uniqueTracks} tracks (${trackSummary.totalRows} rows)`
-                              : 'No tracks attached'}
-                          </p>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-                <div className="preprocessed-summary-actions">
-                  <button
-                    type="button"
-                    className="preprocessed-summary-button"
-                    onClick={handleDiscardPreprocessedExperiment}
-                    disabled={isExportingPreprocessed}
-                  >
-                    Discard preprocessed experiment
-                  </button>
-                </div>
-              </div>
-            ) : null}
-            {frontPageMode === 'configuring' && hasGlobalTimepointMismatch ? (
-              <p className="launch-feedback launch-feedback-warning">
-                Timepoint counts differ across channels. Align them before launching.
-              </p>
-            ) : null}
-            {interactionErrorMessage ? (
-              <p className="launch-feedback launch-feedback-error">{interactionErrorMessage}</p>
-            ) : null}
-            {launchErrorMessage ? (
-              <p className="launch-feedback launch-feedback-error">{launchErrorMessage}</p>
-            ) : null}
-            <div className="front-page-actions">
-              <button
-                type="button"
-                className="launch-viewer-button"
-                onClick={handleLaunchViewer}
-                disabled={isLaunchingViewer || !launchButtonEnabled}
-                data-launchable={launchButtonLaunchable}
-              >
-                {isLaunchingViewer ? 'Loading…' : 'Launch viewer'}
-              </button>
-              {frontPageMode !== 'initial' ? (
-                <button
-                  type="button"
-                  className="export-preprocessed-button"
-                  onClick={handleExportPreprocessedExperiment}
-                  disabled={
-                    isExportingPreprocessed ||
-                    isLaunchingViewer ||
-                    (frontPageMode === 'configuring' && !canLaunch)
-                  }
-                >
-                  {isExportingPreprocessed ? 'Exporting…' : 'Export preprocessed experiment'}
-                </button>
-              ) : null}
-            </div>
-          </div>
-          {launchErrorMessage ? (
-            <FloatingWindow
-              title="Cannot launch viewer"
-              className="floating-window--warning"
-              bodyClassName="warning-window-body"
-              width={WARNING_WINDOW_WIDTH}
-              initialPosition={warningWindowInitialPosition}
-              resetSignal={datasetErrorResetSignal}
-            >
-              <div className="warning-window-content">
-                <p className="warning-window-intro">The viewer could not be launched.</p>
-                <p className="warning-window-message">{launchErrorMessage}</p>
-                <p className="warning-window-hint">Review the dataset configuration and try again.</p>
-                <div className="warning-window-actions">
-                  <button
-                    type="button"
-                    className="warning-window-action-button"
-                    onClick={handleDatasetErrorDismiss}
-                  >
-                    Got it
-                  </button>
-                </div>
-              </div>
-            </FloatingWindow>
-          ) : null}
-        </div>
-      </div>
+      <FrontPage
+        backgroundVideoSrc={backgroundVideoSrc}
+        isFrontPageLocked={isFrontPageLocked}
+        frontPageMode={frontPageMode}
+        channels={channels}
+        activeChannelId={activeChannelId}
+        activeChannel={activeChannel}
+        channelValidationMap={channelValidationMap}
+        editingChannelId={editingChannelId}
+        editingChannelInputRef={editingChannelInputRef}
+        editingChannelOriginalNameRef={editingChannelOriginalNameRef}
+        setActiveChannelId={setActiveChannelId}
+        setEditingChannelId={setEditingChannelId}
+        onAddChannel={handleAddChannel}
+        onOpenPreprocessedLoader={handlePreprocessedLoaderOpen}
+        isPreprocessedLoaderOpen={isPreprocessedLoaderOpen}
+        isPreprocessedDragActive={isPreprocessedDragActive}
+        onPreprocessedDragEnter={handlePreprocessedDragEnter}
+        onPreprocessedDragLeave={handlePreprocessedDragLeave}
+        onPreprocessedDragOver={handlePreprocessedDragOver}
+        onPreprocessedDrop={handlePreprocessedDrop}
+        preprocessedFileInputRef={preprocessedFileInputRef}
+        onPreprocessedFileInputChange={handlePreprocessedFileInputChange}
+        isPreprocessedImporting={isPreprocessedImporting}
+        preprocessedDropboxImporting={preprocessedDropboxImporting}
+        onPreprocessedBrowse={handlePreprocessedBrowse}
+        onPreprocessedDropboxImport={handlePreprocessedDropboxImport}
+        onPreprocessedLoaderClose={handlePreprocessedLoaderClose}
+        preprocessedImportError={preprocessedImportError}
+        preprocessedDropboxError={preprocessedDropboxError}
+        preprocessedDropboxInfo={preprocessedDropboxInfo}
+        isPreprocessedDropboxConfigOpen={isPreprocessedDropboxConfigOpen}
+        onPreprocessedDropboxConfigSubmit={handlePreprocessedDropboxConfigSubmit}
+        preprocessedDropboxAppKeyInput={preprocessedDropboxAppKeyInput}
+        onPreprocessedDropboxConfigInputChange={handlePreprocessedDropboxConfigInputChange}
+        preprocessedDropboxAppKeySource={preprocessedDropboxAppKeySource}
+        onPreprocessedDropboxConfigCancel={handlePreprocessedDropboxConfigCancel}
+        onPreprocessedDropboxConfigClear={handlePreprocessedDropboxConfigClear}
+        onChannelNameChange={handleChannelNameChange}
+        onRemoveChannel={handleRemoveChannel}
+        onChannelLayerFilesAdded={handleChannelLayerFilesAdded}
+        onChannelLayerDrop={handleChannelLayerDrop}
+        onChannelLayerSegmentationToggle={handleChannelLayerSegmentationToggle}
+        onChannelLayerRemove={handleChannelLayerRemove}
+        onChannelTrackFileSelected={handleChannelTrackFileSelected}
+        onChannelTrackDrop={handleChannelTrackDrop}
+        onChannelTrackClear={handleChannelTrackClear}
+        preprocessedExperiment={preprocessedExperiment}
+        computeTrackSummary={computeTrackSummary}
+        hasGlobalTimepointMismatch={hasGlobalTimepointMismatch}
+        interactionErrorMessage={interactionErrorMessage}
+        launchErrorMessage={launchErrorMessage}
+        onLaunchViewer={handleLaunchViewer}
+        isLaunchingViewer={isLaunchingViewer}
+        launchButtonEnabled={launchButtonEnabled}
+        launchButtonLaunchable={launchButtonLaunchable}
+        onExportPreprocessedExperiment={handleExportPreprocessedExperiment}
+        isExportingPreprocessed={isExportingPreprocessed}
+        canLaunch={canLaunch}
+        warningWindowInitialPosition={warningWindowInitialPosition}
+        warningWindowWidth={WARNING_WINDOW_WIDTH}
+        datasetErrorResetSignal={datasetErrorResetSignal}
+        onDatasetErrorDismiss={handleDatasetErrorDismiss}
+      />
     );
   }
 
