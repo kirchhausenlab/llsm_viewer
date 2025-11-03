@@ -3648,7 +3648,7 @@ function App() {
         <div className="front-page">
           <div className={`front-page-card${isFrontPageLocked ? ' is-loading' : ''}`}>
             <header className="front-page-header">
-              <h1>4D microscopy viewer</h1>
+              <h1>4D viewer</h1>
             </header>
             {frontPageMode !== 'preprocessed' ? (
               <div className="channel-add-actions">
