@@ -2249,7 +2249,7 @@ export function useVolumeViewerVr({
         refreshControllers();
       };
 
-      entry.onDisconnected = (_event: XRInputSourceEvent) => {
+      entry.onDisconnected = () => {
         entry.isConnected = false;
         entry.targetRayMode = null;
         entry.gamepad = null;
@@ -2274,7 +2274,7 @@ export function useVolumeViewerVr({
         vrClearHoverStateRef.current?.('controller');
       };
 
-      entry.onSelectStart = (_event: XRInputSourceEvent) => {
+      entry.onSelectStart = () => {
         entry.isSelecting = true;
         entry.activeUiTarget = entry.hoverUiTarget;
         entry.hudRotationState = null;
@@ -2535,7 +2535,7 @@ export function useVolumeViewerVr({
         });
       };
 
-      entry.onSelectEnd = (_event: XRInputSourceEvent) => {
+      entry.onSelectEnd = () => {
         entry.isSelecting = false;
         const activeTarget = entry.activeUiTarget;
         entry.activeUiTarget = null;

@@ -8,6 +8,10 @@
 
 # Progress Log
 
+## XR controller handler typing fix
+- Relaxed the VR controller event handler signatures to accept optional `XRInputSourceEvent` arguments so they satisfy the
+  WebXR type expectations without allocating unused parameters.
+
 ## VR session persistence fix
 - Prevented React StrictMode ref churn from clearing the renderer container and tearing down active WebXR sessions as soon as
   they started by only reacting to non-null container attachments.
