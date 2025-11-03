@@ -1,25 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
 import { loadVolumesFromFiles } from './loaders/volumeLoader';
 import { VolumeTooLargeError, formatBytes } from './errors';
-import VolumeViewer from './components/VolumeViewer';
-import PlanarViewer from './components/PlanarViewer';
 import FrontPage from './components/FrontPage';
+import ViewerShell, { type ViewerShellProps } from './components/ViewerShell';
 import {
   colorizeSegmentationVolume,
   computeNormalizationParameters,
   normalizeVolume
 } from './volumeProcessing';
 import { clearTextureCache } from './textureCache';
-import FloatingWindow from './components/FloatingWindow';
-import SelectedTracksWindow from './components/SelectedTracksWindow';
 import type { TrackColorMode, TrackDefinition, TrackPoint } from './types/tracks';
-import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from './layerColors';
+import { DEFAULT_LAYER_COLOR, normalizeHexColor } from './layerColors';
 import {
   DEFAULT_TRACK_COLOR,
   getTrackColorHex,
   normalizeTrackColor,
-  TRACK_COLOR_SWATCHES,
   type TrackColorOption
 } from './trackColors';
 import {
@@ -40,17 +35,14 @@ import type { LoadedLayer } from './types/layers';
 import './App.css';
 import { computeAutoWindow, getVolumeHistogram } from './autoContrast';
 import { getDefaultWindowForVolume } from './utils/volumeWindow';
-import BrightnessContrastHistogram from './components/BrightnessContrastHistogram';
 import type { ImportPreprocessedDatasetResult } from './utils/preprocessedDataset';
 import { computeTrackSummary } from './utils/trackSummary';
 import useVrLifecycle from './hooks/useVrLifecycle';
 import usePreprocessedExperiment from './hooks/usePreprocessedExperiment';
 import {
-  applyAlphaToHex,
   collectFilesFromDataTransfer,
   createSegmentationSeed,
   dedupeFiles,
-  getTrackTabTextColor,
   groupFilesIntoLayers,
   hasTiffExtension,
   parseTrackCsvFile,
@@ -68,11 +60,6 @@ const SELECTED_TRACKS_WINDOW_WIDTH = 960;
 const SELECTED_TRACKS_WINDOW_HEIGHT = 220;
 const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
 const WARNING_WINDOW_WIDTH = 360;
-
-const formatNormalizedIntensity = (value: number): string => {
-  const fixed = value.toFixed(3);
-  return fixed.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
-};
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 
@@ -189,6 +176,9 @@ function App() {
   const [isLaunchingViewer, setIsLaunchingViewer] = useState(false);
   const [layoutResetToken, setLayoutResetToken] = useState(0);
   const [isHelpMenuOpen, setIsHelpMenuOpen] = useState(false);
+  const handleHelpMenuToggle = useCallback(() => {
+    setIsHelpMenuOpen((previous) => !previous);
+  }, []);
   const controlWindowInitialPosition = useMemo(
     () => ({ x: WINDOW_MARGIN, y: WINDOW_MARGIN }),
     []
@@ -2529,1004 +2519,208 @@ function App() {
     );
   }
 
-  return (
-    <>
-      <div className="app">
-        <main className="viewer">
-          {viewerMode === '3d' ? (
-            <VolumeViewer
-              layers={viewerLayers}
-              isLoading={isLoading}
-              loadingProgress={loadProgress}
-              loadedVolumes={loadedCount}
-              expectedVolumes={expectedVolumeCount}
-              timeIndex={selectedIndex}
-              totalTimepoints={volumeTimepointCount}
-              isPlaying={isPlaying}
-              playbackDisabled={playbackDisabled}
-              playbackLabel={playbackLabel}
-              fps={fps}
-              onTogglePlayback={handleTogglePlayback}
-              onTimeIndexChange={handleTimeIndexChange}
-              onFpsChange={setFps}
-              onRegisterReset={handleRegisterReset}
-              tracks={parsedTracks}
-              trackVisibility={trackVisibility}
-              trackOpacityByChannel={trackOpacityByChannel}
-              trackLineWidthByChannel={trackLineWidthByChannel}
-              channelTrackColorModes={channelTrackColorModes}
-              channelTrackOffsets={channelTrackOffsets}
-              selectedTrackIds={selectedTrackIds}
-              followedTrackId={followedTrackId}
-              onTrackSelectionToggle={handleTrackSelectionToggle}
-              onTrackFollowRequest={handleTrackFollowFromViewer}
-              vr={{
-                isVrPassthroughSupported,
-                trackChannels,
-                activeTrackChannelId,
-                onTrackChannelSelect: handleTrackChannelSelect,
-                onTrackVisibilityToggle: handleTrackVisibilityToggle,
-                onTrackVisibilityAllChange: handleTrackVisibilityAllChange,
-                onTrackOpacityChange: handleTrackOpacityChange,
-                onTrackLineWidthChange: handleTrackLineWidthChange,
-                onTrackColorSelect: handleTrackColorSelect,
-                onTrackColorReset: handleTrackColorReset,
-                onStopTrackFollow: handleStopTrackFollow,
-                channelPanels: vrChannelPanels,
-                activeChannelPanelId: activeChannelTabId,
-                onChannelPanelSelect: setActiveChannelTabId,
-                onChannelVisibilityToggle: handleChannelVisibilityToggle,
-                onChannelReset: handleChannelSliderReset,
-                onChannelLayerSelect: handleChannelLayerSelectionChange,
-                onLayerSelect: handleLayerSelect,
-                onLayerSoloToggle: handleLayerSoloToggle,
-                onLayerContrastChange: handleLayerContrastChange,
-                onLayerBrightnessChange: handleLayerBrightnessChange,
-                onLayerWindowMinChange: handleLayerWindowMinChange,
-                onLayerWindowMaxChange: handleLayerWindowMaxChange,
-                onLayerAutoContrast: handleLayerAutoContrast,
-                onLayerOffsetChange: handleLayerOffsetChange,
-                onLayerColorChange: handleLayerColorChange,
-                onLayerRenderStyleToggle: handleLayerRenderStyleToggle,
-                onLayerSamplingModeToggle: handleLayerSamplingModeToggle,
-                onLayerInvertToggle: handleLayerInvertToggle,
-                onRegisterVrSession: registerSessionHandlers,
-                onVrSessionStarted: handleSessionStarted,
-                onVrSessionEnded: handleSessionEnded
-              }}
-            />
-          ) : (
-            <PlanarViewer
-              layers={viewerLayers}
-              isLoading={isLoading}
-              loadingProgress={loadProgress}
-              loadedVolumes={loadedCount}
-              expectedVolumes={expectedVolumeCount}
-              timeIndex={selectedIndex}
-              totalTimepoints={volumeTimepointCount}
-              onRegisterReset={handleRegisterReset}
-              sliceIndex={sliceIndex}
-              maxSlices={maxSliceDepth}
-              onSliceIndexChange={handleSliceIndexChange}
-              tracks={parsedTracks}
-              trackVisibility={trackVisibility}
-              trackOpacityByChannel={trackOpacityByChannel}
-              trackLineWidthByChannel={trackLineWidthByChannel}
-              channelTrackColorModes={channelTrackColorModes}
-              channelTrackOffsets={channelTrackOffsets}
-              followedTrackId={followedTrackId}
-              selectedTrackIds={selectedTrackIds}
-              onTrackSelectionToggle={handleTrackSelectionToggle}
-              onTrackFollowRequest={handleTrackFollowFromViewer}
-            />
-          )}
-        </main>
-        <div className="viewer-top-menu">
-          <div className="viewer-top-menu-row">
-            <button
-              type="button"
-              className="viewer-top-menu-button"
-              onClick={handleReturnToLauncher}
-            >
-              Return to Launcher
-            </button>
-            <button
-              type="button"
-              className="viewer-top-menu-button"
-              onClick={handleResetWindowLayout}
-            >
-              Reset layout
-            </button>
-            <div className="viewer-top-menu-help" ref={helpMenuRef}>
-              <button
-                type="button"
-                className="viewer-top-menu-button"
-                onClick={() => setIsHelpMenuOpen((previous) => !previous)}
-                aria-expanded={isHelpMenuOpen}
-                aria-controls="viewer-help-popover"
-              >
-                Help
-              </button>
-              {isHelpMenuOpen ? (
-                <div
-                  id="viewer-help-popover"
-                  className="viewer-top-menu-popover"
-                  role="dialog"
-                  aria-modal="false"
-                  aria-labelledby="viewer-help-popover-title"
-                >
-                  <h3 id="viewer-help-popover-title" className="viewer-top-menu-popover-title">
-                    Viewer tips
-                  </h3>
-                  <div className="viewer-top-menu-popover-section">
-                    <h4>3D volume view</h4>
-                    <ul>
-                      <li>Use WASDQE to move forward, back, strafe, and rise or descend.</li>
-                      <li>Drag to orbit the dataset. Hold Shift while dragging to pan; hold Ctrl to dolly along your view.</li>
-                      <li>
-                        Click a track line to select and highlight it. Use the Follow button in the Tracks window to
-                        follow that object in time.
-                      </li>
-                    </ul>
-                  </div>
-                  <div className="viewer-top-menu-popover-section">
-                    <h4>2D slice view</h4>
-                    <ul>
-                      <li>Press W/S to step through slices (hold Shift to skip 10 at a time).</li>
-                      <li>Drag to pan the slice, and scroll to zoom.</li>
-                      <li>Press Q/E to rotate the slice around its center.</li>
-                    </ul>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-        <FloatingWindow
-          title="Viewer controls"
-          initialPosition={controlWindowInitialPosition}
-          width={`min(${PLAYBACK_WINDOW_WIDTH}px, calc(100vw - ${WINDOW_MARGIN * 2}px))`}
-          className="floating-window--playback"
-          resetSignal={layoutResetToken}
-        >
-          <div className="sidebar sidebar-left">
-            <div className="global-controls">
-              <div className="control-group">
-                <div className="viewer-mode-row">
-                  <button
-                    type="button"
-                    onClick={handleToggleViewerMode}
-                    className={viewerMode === '3d' ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
-                    disabled={isVrActive || isVrRequesting}
-                  >
-                    {viewerMode === '3d' ? '3D view' : '2D view'}
-                  </button>
-                  <button
-                    type="button"
-                    className="viewer-mode-button"
-                    onClick={() => resetViewHandler?.()}
-                    disabled={!resetViewHandler}
-                  >
-                    Reset view
-                  </button>
-                  <button
-                    type="button"
-                    className="viewer-mode-button"
-                    onClick={handleVrButtonClick}
-                    disabled={vrButtonDisabled}
-                    title={vrButtonTitle}
-                  >
-                    {vrButtonLabel}
-                  </button>
-                </div>
-              </div>
-              <div className="control-group">
-                <label htmlFor="fps-slider">
-                  frames per second <span>{fps}</span>
-                </label>
-                <input
-                  id="fps-slider"
-                  type="range"
-                  min={1}
-                  max={60}
-                  step={1}
-                  value={fps}
-                  onChange={(event) => setFps(Number(event.target.value))}
-                  disabled={volumeTimepointCount <= 1}
-                />
-              </div>
-              {viewerMode === '2d' && maxSliceDepth > 0 ? (
-                <div className="control-group">
-                  <label htmlFor="z-plane-slider">
-                    Z plane{' '}
-                    <span>
-                      {Math.min(sliceIndex + 1, maxSliceDepth)} / {maxSliceDepth}
-                    </span>
-                  </label>
-                  <input
-                    id="z-plane-slider"
-                    type="range"
-                    min={0}
-                    max={Math.max(0, maxSliceDepth - 1)}
-                    value={Math.min(sliceIndex, Math.max(0, maxSliceDepth - 1))}
-                    onChange={(event) => handleSliceIndexChange(Number(event.target.value))}
-                    disabled={maxSliceDepth <= 1}
-                  />
-                </div>
-              ) : null}
-              <div className="playback-controls">
-                <div className="control-group playback-progress">
-                  <label htmlFor="playback-slider">
-                    <span
-                      className={
-                        isPlaying
-                          ? 'playback-status playback-status--playing'
-                          : 'playback-status playback-status--stopped'
-                      }
-                    >
-                      {isPlaying ? 'Playing' : 'Stopped'}
-                    </span>{' '}
-                    <span>{playbackLabel}</span>
-                  </label>
-                  <input
-                    id="playback-slider"
-                    className="playback-slider"
-                    type="range"
-                    min={0}
-                    max={Math.max(0, volumeTimepointCount - 1)}
-                    value={Math.min(selectedIndex, Math.max(0, volumeTimepointCount - 1))}
-                    onChange={(event) => handleTimeIndexChange(Number(event.target.value))}
-                    disabled={playbackDisabled}
-                  />
-                </div>
-                <div className="playback-button-row">
-                  <button
-                    type="button"
-                    className="playback-button playback-button--skip"
-                    onClick={handleJumpToStart}
-                    disabled={playbackDisabled}
-                    aria-label="Go to first frame"
-                  >
-                    <svg
-                      className="playback-button-icon"
-                      viewBox="0 0 24 24"
-                      role="img"
-                      aria-hidden="true"
-                      focusable="false"
-                    >
-                      <path d="M6.25 4c.414 0 .75.336.75.75v5.69l9.088-6.143A1.5 1.5 0 0 1 18.5 5.61v12.78a1.5 1.5 0 0 1-2.412 1.313L7 13.56v5.69a.75.75 0 0 1-1.5 0V4.75c0-.414.336-.75.75-.75Z" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleTogglePlayback}
-                    disabled={playbackDisabled}
-                    className={isPlaying ? 'playback-button playback-toggle playing' : 'playback-button playback-toggle'}
-                    aria-label={isPlaying ? 'Pause playback' : 'Start playback'}
-                  >
-                    {isPlaying ? (
-                      <svg
-                        className="playback-button-icon"
-                        viewBox="0 0 24 24"
-                        role="img"
-                        aria-hidden="true"
-                        focusable="false"
-                      >
-                        <path d="M9 5a1 1 0 0 1 1 1v12a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Zm6 0a1 1 0 0 1 1 1v12a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Z" />
-                      </svg>
-                    ) : (
-                      <svg
-                        className="playback-button-icon"
-                        viewBox="0 0 24 24"
-                        role="img"
-                        aria-hidden="true"
-                        focusable="false"
-                      >
-                        <path d="M8.5 5.636a1 1 0 0 1 1.53-.848l8.01 5.363a1 1 0 0 1 0 1.698l-8.01 5.363A1 1 0 0 1 8 16.364V7.636a1 1 0 0 1 .5-.868Z" />
-                      </svg>
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    className="playback-button playback-button--skip"
-                    onClick={handleJumpToEnd}
-                    disabled={playbackDisabled}
-                    aria-label="Go to last frame"
-                  >
-                    <svg
-                      className="playback-button-icon"
-                      viewBox="0 0 24 24"
-                      role="img"
-                      aria-hidden="true"
-                      focusable="false"
-                    >
-                      <path d="M17.75 4a.75.75 0 0 1 .75.75v13.5a.75.75 0 0 1-1.5 0v-5.69l-9.088 6.143A1.5 1.5 0 0 1 5.5 18.39V5.61a1.5 1.5 0 0 1 2.412-1.313L17 10.44V4.75c0-.414.336-.75.75-.75Z" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            </div>
-            {error && <p className="error">{error}</p>}
-          </div>
-        </FloatingWindow>
+  const volumeViewerProps: ViewerShellProps['volumeViewerProps'] = {
+    layers: viewerLayers,
+    isLoading,
+    loadingProgress: loadProgress,
+    loadedVolumes: loadedCount,
+    expectedVolumes: expectedVolumeCount,
+    timeIndex: selectedIndex,
+    totalTimepoints: volumeTimepointCount,
+    isPlaying,
+    playbackDisabled,
+    playbackLabel,
+    fps,
+    onTogglePlayback: handleTogglePlayback,
+    onTimeIndexChange: handleTimeIndexChange,
+    onFpsChange: setFps,
+    onRegisterReset: handleRegisterReset,
+    tracks: parsedTracks,
+    trackVisibility,
+    trackOpacityByChannel,
+    trackLineWidthByChannel,
+    channelTrackColorModes,
+    channelTrackOffsets,
+    selectedTrackIds,
+    followedTrackId,
+    onTrackSelectionToggle: handleTrackSelectionToggle,
+    onTrackFollowRequest: handleTrackFollowFromViewer,
+    vr: {
+      isVrPassthroughSupported,
+      trackChannels,
+      activeTrackChannelId,
+      onTrackChannelSelect: handleTrackChannelSelect,
+      onTrackVisibilityToggle: handleTrackVisibilityToggle,
+      onTrackVisibilityAllChange: handleTrackVisibilityAllChange,
+      onTrackOpacityChange: handleTrackOpacityChange,
+      onTrackLineWidthChange: handleTrackLineWidthChange,
+      onTrackColorSelect: handleTrackColorSelect,
+      onTrackColorReset: handleTrackColorReset,
+      onStopTrackFollow: handleStopTrackFollow,
+      channelPanels: vrChannelPanels,
+      activeChannelPanelId: activeChannelTabId,
+      onChannelPanelSelect: setActiveChannelTabId,
+      onChannelVisibilityToggle: handleChannelVisibilityToggle,
+      onChannelReset: handleChannelSliderReset,
+      onChannelLayerSelect: handleChannelLayerSelectionChange,
+      onLayerSelect: handleLayerSelect,
+      onLayerSoloToggle: handleLayerSoloToggle,
+      onLayerContrastChange: handleLayerContrastChange,
+      onLayerBrightnessChange: handleLayerBrightnessChange,
+      onLayerWindowMinChange: handleLayerWindowMinChange,
+      onLayerWindowMaxChange: handleLayerWindowMaxChange,
+      onLayerAutoContrast: handleLayerAutoContrast,
+      onLayerOffsetChange: handleLayerOffsetChange,
+      onLayerColorChange: handleLayerColorChange,
+      onLayerRenderStyleToggle: handleLayerRenderStyleToggle,
+      onLayerSamplingModeToggle: handleLayerSamplingModeToggle,
+      onLayerInvertToggle: handleLayerInvertToggle,
+      onRegisterVrSession: registerSessionHandlers,
+      onVrSessionStarted: handleSessionStarted,
+      onVrSessionEnded: handleSessionEnded
+    }
+  };
 
-        <FloatingWindow
-          title="Channels"
-          initialPosition={layersWindowInitialPosition}
-          width={`min(${CONTROL_WINDOW_WIDTH}px, calc(100vw - ${WINDOW_MARGIN * 2}px))`}
-          className="floating-window--channels"
-          resetSignal={layoutResetToken}
-        >
-          <div className="sidebar sidebar-left">
-            {loadedChannelIds.length > 0 ? (
-              <div className="channel-controls">
-                <div className="channel-tabs" role="tablist" aria-label="Volume channels">
-                  {loadedChannelIds.map((channelId) => {
-                    const label = channelNameMap.get(channelId) ?? 'Untitled channel';
-                    const isActive = channelId === activeChannelTabId;
-                    const isVisible = channelVisibility[channelId] ?? true;
-                    const tabClassName = ['channel-tab', isActive ? 'is-active' : '', !isVisible ? 'is-hidden' : '']
-                      .filter(Boolean)
-                      .join(' ');
-                    const labelClassName = isVisible
-                      ? 'channel-tab-label'
-                      : 'channel-tab-label channel-tab-label--hidden';
-                    const tintColor = channelTintMap.get(channelId) ?? DEFAULT_LAYER_COLOR;
-                    const tabStyle: CSSProperties & Record<string, string> = {
-                      '--channel-tab-background': applyAlphaToHex(tintColor, 0.18),
-                      '--channel-tab-background-active': applyAlphaToHex(tintColor, 0.35),
-                      '--channel-tab-border': 'rgba(255, 255, 255, 0.15)',
-                      '--channel-tab-border-active': applyAlphaToHex(tintColor, 0.55)
-                    };
-                    return (
-                      <button
-                        key={channelId}
-                        type="button"
-                        className={tabClassName}
-                        style={tabStyle}
-                        onClick={() => setActiveChannelTabId(channelId)}
-                        role="tab"
-                        id={`channel-tab-${channelId}`}
-                        aria-selected={isActive}
-                        aria-controls={`channel-panel-${channelId}`}
-                      >
-                        <span
-                          className={labelClassName}
-                          role="switch"
-                          aria-checked={isVisible}
-                          tabIndex={0}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            handleChannelVisibilityToggle(channelId);
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter' || event.key === ' ') {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              handleChannelVisibilityToggle(channelId);
-                            }
-                          }}
-                        >
-                          {label}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-                {loadedChannelIds.map((channelId) => {
-                  const channelLayers = channelLayersMap.get(channelId) ?? [];
-                  const selectedLayerKey = channelActiveLayer[channelId] ?? channelLayers[0]?.key ?? null;
-                  const selectedLayer =
-                    channelLayers.find((layer) => layer.key === selectedLayerKey) ?? channelLayers[0] ?? null;
-                  const settings =
-                    selectedLayer
-                      ? layerSettings[selectedLayer.key] ?? createLayerDefaultSettings(selectedLayer.key)
-                      : createDefaultLayerSettings();
-                  const sliderDisabled = !selectedLayer || selectedLayer.volumes.length === 0;
-                  const offsetDisabled = sliderDisabled || channelId !== activeChannelTabId;
-                  const firstVolume = selectedLayer?.volumes[0] ?? null;
-                  const isGrayscale = Boolean(firstVolume && firstVolume.channels === 1);
-                  const normalizedColor = normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR);
-                  const displayColor = normalizedColor.toUpperCase();
-                  const isActive = channelId === activeChannelTabId;
-                  const invertDisabled = sliderDisabled || selectedLayer.isSegmentation;
-                  const invertTitle = selectedLayer.isSegmentation
-                    ? 'Invert LUT is unavailable for segmentation volumes.'
-                    : undefined;
+  const planarViewerProps: ViewerShellProps['planarViewerProps'] = {
+    layers: viewerLayers,
+    isLoading,
+    loadingProgress: loadProgress,
+    loadedVolumes: loadedCount,
+    expectedVolumes: expectedVolumeCount,
+    timeIndex: selectedIndex,
+    totalTimepoints: volumeTimepointCount,
+    onRegisterReset: handleRegisterReset,
+    sliceIndex,
+    maxSlices: maxSliceDepth,
+    onSliceIndexChange: handleSliceIndexChange,
+    tracks: parsedTracks,
+    trackVisibility,
+    trackOpacityByChannel,
+    trackLineWidthByChannel,
+    channelTrackColorModes,
+    channelTrackOffsets,
+    followedTrackId,
+    selectedTrackIds,
+    onTrackSelectionToggle: handleTrackSelectionToggle,
+    onTrackFollowRequest: handleTrackFollowFromViewer
+  };
 
-                  return (
-                    <div
-                      key={channelId}
-                      id={`channel-panel-${channelId}`}
-                      role="tabpanel"
-                      aria-labelledby={`channel-tab-${channelId}`}
-                      className={isActive ? 'channel-panel is-active' : 'channel-panel'}
-                      hidden={!isActive}
-                    >
-                      {channelLayers.length > 1 ? (
-                        <div
-                          className="channel-layer-selector"
-                          role="radiogroup"
-                          aria-label={`${channelNameMap.get(channelId) ?? 'Channel'} volume`}
-                        >
-                          {channelLayers.map((layer) => {
-                            const isSelected = Boolean(selectedLayer && selectedLayer.key === layer.key);
-                            const inputId = `channel-${channelId}-layer-${layer.key}`;
-                            return (
-                              <label key={layer.key} className="channel-layer-option" htmlFor={inputId}>
-                                <input
-                                  type="radio"
-                                  id={inputId}
-                                  name={`channel-layer-${channelId}`}
-                                  checked={isSelected}
-                                  onChange={() => handleChannelLayerSelectionChange(channelId, layer.key)}
-                                />
-                                <span>{layer.label}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      ) : channelLayers.length === 0 ? (
-                        <p className="channel-empty-hint">No volume available for this channel.</p>
-                      ) : null}
-                      {selectedLayer ? (
-                        <>
-                          <div className="channel-primary-actions">
-                            <div className="channel-primary-actions-row">
-                              <button
-                                type="button"
-                                className="channel-action-button"
-                                onClick={() => handleLayerRenderStyleToggle(selectedLayer.key)}
-                                disabled={sliderDisabled}
-                                aria-pressed={settings.renderStyle === 1}
-                              >
-                                Render style
-                              </button>
-                              {viewerMode === '3d' ? (
-                                <button
-                                  type="button"
-                                  className="channel-action-button"
-                                  onClick={() => handleLayerSamplingModeToggle(selectedLayer.key)}
-                                  disabled={sliderDisabled}
-                                  aria-pressed={settings.samplingMode === 'nearest'}
-                                >
-                                  Sampling mode
-                                </button>
-                              ) : null}
-                            </div>
-                          </div>
-                          <BrightnessContrastHistogram
-                            className="channel-histogram"
-                            volume={firstVolume}
-                            windowMin={settings.windowMin}
-                            windowMax={settings.windowMax}
-                            defaultMin={DEFAULT_WINDOW_MIN}
-                            defaultMax={DEFAULT_WINDOW_MAX}
-                            sliderRange={settings.sliderRange}
-                          />
-                          <div className="slider-control slider-control--pair">
-                            <div className="slider-control slider-control--inline">
-                              <label htmlFor={`layer-window-min-${selectedLayer.key}`}>
-                                Minimum <span>{formatNormalizedIntensity(settings.windowMin)}</span>
-                              </label>
-                              <input
-                                id={`layer-window-min-${selectedLayer.key}`}
-                                type="range"
-                                min={DEFAULT_WINDOW_MIN}
-                                max={DEFAULT_WINDOW_MAX}
-                                step={0.001}
-                                value={settings.windowMin}
-                                onChange={(event) =>
-                                  handleLayerWindowMinChange(selectedLayer.key, Number(event.target.value))
-                                }
-                                disabled={sliderDisabled}
-                              />
-                            </div>
-                            <div className="slider-control slider-control--inline">
-                              <label htmlFor={`layer-window-max-${selectedLayer.key}`}>
-                                Maximum <span>{formatNormalizedIntensity(settings.windowMax)}</span>
-                              </label>
-                              <input
-                                id={`layer-window-max-${selectedLayer.key}`}
-                                type="range"
-                                min={DEFAULT_WINDOW_MIN}
-                                max={DEFAULT_WINDOW_MAX}
-                                step={0.001}
-                                value={settings.windowMax}
-                                onChange={(event) =>
-                                  handleLayerWindowMaxChange(selectedLayer.key, Number(event.target.value))
-                                }
-                                disabled={sliderDisabled}
-                              />
-                            </div>
-                          </div>
-                          <div className="slider-control slider-control--pair">
-                            <div className="slider-control slider-control--inline">
-                              <label htmlFor={`layer-brightness-${selectedLayer.key}`}>
-                                Brightness
-                              </label>
-                              <input
-                                id={`layer-brightness-${selectedLayer.key}`}
-                                type="range"
-                                min={0}
-                                max={settings.sliderRange}
-                                step={1}
-                                value={settings.brightnessSliderIndex}
-                                onChange={(event) =>
-                                  handleLayerBrightnessChange(
-                                    selectedLayer.key,
-                                    Number.parseInt(event.target.value, 10)
-                                  )
-                                }
-                                disabled={sliderDisabled}
-                              />
-                            </div>
-                            <div className="slider-control slider-control--inline">
-                              <label htmlFor={`layer-contrast-${selectedLayer.key}`}>
-                                Contrast
-                              </label>
-                              <input
-                                id={`layer-contrast-${selectedLayer.key}`}
-                                type="range"
-                                min={0}
-                                max={settings.sliderRange}
-                                step={1}
-                                value={settings.contrastSliderIndex}
-                                onChange={(event) =>
-                                  handleLayerContrastChange(
-                                    selectedLayer.key,
-                                    Number.parseInt(event.target.value, 10)
-                                  )
-                                }
-                                disabled={sliderDisabled}
-                              />
-                            </div>
-                          </div>
-                          <div className="channel-primary-actions">
-                            <div className="channel-primary-actions-row">
-                              <button
-                                type="button"
-                                className="channel-action-button"
-                                onClick={() => handleChannelSliderReset(channelId)}
-                                disabled={channelLayers.length === 0}
-                              >
-                                Reset
-                              </button>
-                              <button
-                                type="button"
-                                className="channel-action-button"
-                                onClick={() => handleLayerInvertToggle(selectedLayer.key)}
-                                disabled={invertDisabled}
-                                aria-pressed={settings.invert}
-                                title={invertTitle}
-                              >
-                                Invert
-                              </button>
-                              <button
-                                type="button"
-                                className="channel-action-button"
-                                onClick={() => handleLayerAutoContrast(selectedLayer.key)}
-                                disabled={sliderDisabled}
-                              >
-                                Auto
-                              </button>
-                            </div>
-                          </div>
-                          <div className="slider-control slider-control--pair">
-                            <div className="slider-control slider-control--inline">
-                              <label htmlFor={`layer-offset-x-${selectedLayer.key}`}>
-                                X shift{' '}
-                                <span>
-                                  {settings.xOffset >= 0 ? '+' : ''}
-                                  {settings.xOffset.toFixed(2)} px
-                                </span>
-                              </label>
-                              <input
-                                id={`layer-offset-x-${selectedLayer.key}`}
-                                type="range"
-                                min={-10}
-                                max={10}
-                                step={0.1}
-                                value={settings.xOffset}
-                                onChange={(event) =>
-                                  handleLayerOffsetChange(selectedLayer.key, 'x', Number(event.target.value))
-                                }
-                                disabled={offsetDisabled}
-                              />
-                            </div>
-                            <div className="slider-control slider-control--inline">
-                              <label htmlFor={`layer-offset-y-${selectedLayer.key}`}>
-                                Y shift{' '}
-                                <span>
-                                  {settings.yOffset >= 0 ? '+' : ''}
-                                  {settings.yOffset.toFixed(2)} px
-                                </span>
-                              </label>
-                              <input
-                                id={`layer-offset-y-${selectedLayer.key}`}
-                                type="range"
-                                min={-10}
-                                max={10}
-                                step={0.1}
-                                value={settings.yOffset}
-                                onChange={(event) =>
-                                  handleLayerOffsetChange(selectedLayer.key, 'y', Number(event.target.value))
-                                }
-                                disabled={offsetDisabled}
-                              />
-                            </div>
-                          </div>
-                          {isGrayscale ? (
-                            <div className="color-control">
-                              <div className="color-control-header">
-                                <span id={`layer-color-label-${selectedLayer.key}`}>Tint color</span>
-                                <span>{displayColor}</span>
-                              </div>
-                              <div className="color-swatch-row">
-                                <div
-                                  className="color-swatch-grid"
-                                  role="group"
-                                  aria-labelledby={`layer-color-label-${selectedLayer.key}`}
-                                >
-                                  {GRAYSCALE_COLOR_SWATCHES.map((swatch) => {
-                                    const swatchColor = normalizeHexColor(swatch.value, DEFAULT_LAYER_COLOR);
-                                    const isSelected = swatchColor === normalizedColor;
-                                    return (
-                                      <button
-                                        key={swatch.value}
-                                        type="button"
-                                        className={
-                                          isSelected ? 'color-swatch-button is-selected' : 'color-swatch-button'
-                                        }
-                                        style={{ backgroundColor: swatch.value }}
-                                        onClick={() => handleLayerColorChange(selectedLayer.key, swatch.value)}
-                                        disabled={sliderDisabled}
-                                        aria-pressed={isSelected}
-                                        aria-label={`${swatch.label} tint`}
-                                        title={swatch.label}
-                                      />
-                                    );
-                                  })}
-                                </div>
-                                <label
-                                  className={
-                                    sliderDisabled ? 'color-picker-trigger is-disabled' : 'color-picker-trigger'
-                                  }
-                                  htmlFor={`layer-color-custom-${selectedLayer.key}`}
-                                >
-                                  <input
-                                    id={`layer-color-custom-${selectedLayer.key}`}
-                                    type="color"
-                                    value={normalizedColor}
-                                    onChange={(event) =>
-                                      handleLayerColorChange(selectedLayer.key, event.target.value)
-                                    }
-                                    disabled={sliderDisabled}
-                                    aria-label="Choose custom tint color"
-                                    className="color-picker-input"
-                                  />
-                                  <span
-                                    className="color-picker-indicator"
-                                    style={{ backgroundColor: normalizedColor }}
-                                    aria-hidden="true"
-                                  />
-                                </label>
-                              </div>
-                            </div>
-                          ) : null}
-                        </>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="channel-empty-hint">Load a volume to configure channel properties.</p>
-            )}
-          </div>
-        </FloatingWindow>
+  const showSelectedTracksWindow = !isVrActive && hasParsedTrackData;
 
-        <FloatingWindow
-          title="Tracks"
-          initialPosition={trackWindowInitialPosition}
-          width={`min(${TRACK_WINDOW_WIDTH}px, calc(100vw - ${WINDOW_MARGIN * 2}px))`}
-          className="floating-window--tracks"
-          resetSignal={layoutResetToken}
-        >
-          <div className="sidebar sidebar-right">
-            {channels.length > 0 ? (
-              <div className="track-controls">
-                <div className="track-tabs" role="tablist" aria-label="Track channels">
-                  {channels.map((channel) => {
-                    const isActive = channel.id === activeTrackChannelId;
-                    const channelName = channelNameMap.get(channel.id) ?? 'Untitled channel';
-                    const hasTracks = (parsedTracksByChannel.get(channel.id)?.length ?? 0) > 0;
-                    const tabClassName = ['track-tab', isActive ? 'is-active' : '', !hasTracks ? 'is-empty' : '']
-                      .filter(Boolean)
-                      .join(' ');
-                    const colorMode = channelTrackColorModes[channel.id] ?? { type: 'random' };
-                    const baseColor =
-                      colorMode.type === 'uniform' ? normalizeTrackColor(colorMode.color) : '#FFFFFF';
-                    const textColor =
-                      colorMode.type === 'uniform' ? getTrackTabTextColor(baseColor) : '#0b1220';
-                    const borderColor =
-                      colorMode.type === 'uniform' ? 'rgba(11, 18, 32, 0.22)' : 'rgba(15, 23, 42, 0.18)';
-                    const activeBorderColor =
-                      colorMode.type === 'uniform' ? 'rgba(11, 18, 32, 0.35)' : 'rgba(15, 23, 42, 0.28)';
-                    const tabStyle: CSSProperties & Record<string, string> = {
-                      '--track-tab-background': baseColor,
-                      '--track-tab-background-active': baseColor,
-                      '--track-tab-border': borderColor,
-                      '--track-tab-border-active': activeBorderColor,
-                      '--track-tab-text': textColor,
-                      '--track-tab-text-active': textColor
-                    };
-                    return (
-                      <button
-                        key={channel.id}
-                        type="button"
-                        className={tabClassName}
-                        style={tabStyle}
-                        onClick={() => setActiveTrackChannelId(channel.id)}
-                        role="tab"
-                        id={`track-tab-${channel.id}`}
-                        aria-selected={isActive}
-                        aria-controls={`track-panel-${channel.id}`}
-                      >
-                        <span className="track-tab-label">{channelName}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                {channels.map((channel) => {
-                  const channelName = channelNameMap.get(channel.id) ?? 'Untitled channel';
-                  const tracksForChannel = parsedTracksByChannel.get(channel.id) ?? [];
-                  const isActive = channel.id === activeTrackChannelId;
-                  const colorMode = channelTrackColorModes[channel.id] ?? { type: 'random' };
-                  const opacity = trackOpacityByChannel[channel.id] ?? DEFAULT_TRACK_OPACITY;
-                  const lineWidth = trackLineWidthByChannel[channel.id] ?? DEFAULT_TRACK_LINE_WIDTH;
-                  const summary = trackSummaryByChannel.get(channel.id) ?? { total: 0, visible: 0 };
-                  const allChecked = summary.total > 0 && summary.visible === summary.total;
-                  const channelFollowedId = followedTrackChannelId === channel.id ? followedTrackId : null;
-                  const orderMode = trackOrderModeByChannel[channel.id] ?? 'id';
-                  const orderedTracks =
-                    orderMode === 'length'
-                      ? [...tracksForChannel].sort((a, b) => {
-                          const lengthDelta = b.points.length - a.points.length;
-                          if (lengthDelta !== 0) {
-                            return lengthDelta;
-                          }
-                          return a.trackNumber - b.trackNumber;
-                        })
-                      : tracksForChannel;
-                  const colorLabel =
-                    colorMode.type === 'uniform' ? normalizeTrackColor(colorMode.color) : 'Sorted';
+  const viewerShellProps: ViewerShellProps = {
+    viewerMode,
+    volumeViewerProps,
+    planarViewerProps,
+    topMenu: {
+      onReturnToLauncher: handleReturnToLauncher,
+      onResetLayout: handleResetWindowLayout,
+      helpMenuRef,
+      isHelpMenuOpen,
+      onHelpMenuToggle: handleHelpMenuToggle
+    },
+    layout: {
+      windowMargin: WINDOW_MARGIN,
+      playbackWindowWidth: PLAYBACK_WINDOW_WIDTH,
+      controlWindowWidth: CONTROL_WINDOW_WIDTH,
+      trackWindowWidth: TRACK_WINDOW_WIDTH,
+      selectedTracksWindowWidth: SELECTED_TRACKS_WINDOW_WIDTH,
+      resetToken: layoutResetToken,
+      controlWindowInitialPosition,
+      layersWindowInitialPosition,
+      trackWindowInitialPosition,
+      selectedTracksWindowInitialPosition
+    },
+    modeControls: {
+      isVrActive,
+      isVrRequesting,
+      resetViewHandler,
+      onToggleViewerMode: handleToggleViewerMode,
+      onVrButtonClick: handleVrButtonClick,
+      vrButtonDisabled,
+      vrButtonTitle,
+      vrButtonLabel
+    },
+    playbackControls: {
+      fps,
+      onFpsChange: setFps,
+      volumeTimepointCount,
+      sliceIndex,
+      maxSliceDepth,
+      onSliceIndexChange: handleSliceIndexChange,
+      isPlaying,
+      playbackLabel,
+      selectedIndex,
+      onTimeIndexChange: handleTimeIndexChange,
+      playbackDisabled,
+      onTogglePlayback: handleTogglePlayback,
+      onJumpToStart: handleJumpToStart,
+      onJumpToEnd: handleJumpToEnd,
+      error
+    },
+    channelsPanel: {
+      loadedChannelIds,
+      channelNameMap,
+      channelVisibility,
+      channelTintMap,
+      activeChannelId: activeChannelTabId,
+      onChannelTabSelect: setActiveChannelTabId,
+      onChannelVisibilityToggle: handleChannelVisibilityToggle,
+      channelLayersMap,
+      channelActiveLayer,
+      layerSettings,
+      getLayerDefaultSettings: createLayerDefaultSettings,
+      onChannelLayerSelect: handleChannelLayerSelectionChange,
+      onChannelReset: handleChannelSliderReset,
+      onLayerRenderStyleToggle: handleLayerRenderStyleToggle,
+      onLayerSamplingModeToggle: handleLayerSamplingModeToggle,
+      onLayerWindowMinChange: handleLayerWindowMinChange,
+      onLayerWindowMaxChange: handleLayerWindowMaxChange,
+      onLayerBrightnessChange: handleLayerBrightnessChange,
+      onLayerContrastChange: handleLayerContrastChange,
+      onLayerAutoContrast: handleLayerAutoContrast,
+      onLayerOffsetChange: handleLayerOffsetChange,
+      onLayerColorChange: handleLayerColorChange,
+      onLayerInvertToggle: handleLayerInvertToggle
+    },
+    tracksPanel: {
+      channels,
+      channelNameMap,
+      activeChannelId: activeTrackChannelId,
+      onChannelTabSelect: setActiveTrackChannelId,
+      parsedTracksByChannel,
+      channelTrackColorModes,
+      trackOpacityByChannel,
+      trackLineWidthByChannel,
+      trackSummaryByChannel,
+      followedTrackChannelId,
+      followedTrackId,
+      onTrackOrderToggle: handleTrackOrderToggle,
+      trackOrderModeByChannel,
+      registerTrackMasterCheckbox,
+      trackVisibility,
+      onTrackVisibilityToggle: handleTrackVisibilityToggle,
+      onTrackVisibilityAllChange: handleTrackVisibilityAllChange,
+      onTrackOpacityChange: handleTrackOpacityChange,
+      onTrackLineWidthChange: handleTrackLineWidthChange,
+      onTrackColorSelect: handleTrackColorSelect,
+      onTrackColorReset: handleTrackColorReset,
+      onTrackSelectionToggle: handleTrackSelectionToggle,
+      selectedTrackIds,
+      onTrackFollow: handleTrackFollow,
+      onStopTrackFollow: handleStopTrackFollow
+    },
+    selectedTracksPanel: {
+      shouldRender: showSelectedTracksWindow,
+      series: selectedTrackSeries,
+      totalTimepoints: volumeTimepointCount
+    },
+    trackDefaults: {
+      opacity: DEFAULT_TRACK_OPACITY,
+      lineWidth: DEFAULT_TRACK_LINE_WIDTH
+    }
+  };
 
-                  return (
-                    <div
-                      key={channel.id}
-                      id={`track-panel-${channel.id}`}
-                      role="tabpanel"
-                      aria-labelledby={`track-tab-${channel.id}`}
-                      className={isActive ? 'track-panel is-active' : 'track-panel'}
-                      hidden={!isActive}
-                    >
-                      <div className="track-follow-controls">
-                        <button
-                          type="button"
-                          onClick={() => handleStopTrackFollow(channel.id)}
-                          disabled={channelFollowedId === null}
-                          className={
-                            channelFollowedId !== null
-                              ? 'viewer-stop-tracking is-active'
-                              : 'viewer-stop-tracking'
-                          }
-                        >
-                          Stop following
-                        </button>
-                        <div className="track-slider-row">
-                          <div className="slider-control">
-                            <label htmlFor={`track-opacity-${channel.id}`}>
-                              Opacity <span>{Math.round(opacity * 100)}%</span>
-                            </label>
-                            <input
-                              id={`track-opacity-${channel.id}`}
-                              type="range"
-                              min={0}
-                              max={1}
-                              step={0.05}
-                              value={opacity}
-                              onChange={(event) =>
-                                handleTrackOpacityChange(channel.id, Number(event.target.value))
-                              }
-                              disabled={tracksForChannel.length === 0}
-                            />
-                          </div>
-                          <div className="slider-control">
-                            <label htmlFor={`track-linewidth-${channel.id}`}>
-                              Thickness <span>{lineWidth.toFixed(1)}</span>
-                            </label>
-                            <input
-                              id={`track-linewidth-${channel.id}`}
-                              type="range"
-                              min={0.5}
-                              max={5}
-                              step={0.1}
-                              value={lineWidth}
-                              onChange={(event) =>
-                                handleTrackLineWidthChange(channel.id, Number(event.target.value))
-                              }
-                              disabled={tracksForChannel.length === 0}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                      <div className="track-color-control">
-                        <div className="track-color-control-header">
-                          <span id={`track-color-label-${channel.id}`}>Track color</span>
-                          <span>{colorLabel}</span>
-                        </div>
-                        <div className="track-color-swatch-row">
-                          <div
-                            className="color-swatch-grid"
-                            role="group"
-                            aria-labelledby={`track-color-label-${channel.id}`}
-                          >
-                            {TRACK_COLOR_SWATCHES.map((swatch) => {
-                              const normalized = normalizeTrackColor(swatch.value);
-                              const isSelected =
-                                colorMode.type === 'uniform' &&
-                                normalizeTrackColor(colorMode.color) === normalized;
-                              return (
-                                <button
-                                  key={swatch.value}
-                                  type="button"
-                                  className={
-                                    isSelected ? 'color-swatch-button is-selected' : 'color-swatch-button'
-                                  }
-                                  style={{ backgroundColor: swatch.value }}
-                                  onClick={() => handleTrackColorSelect(channel.id, swatch.value)}
-                                  disabled={tracksForChannel.length === 0}
-                                  aria-pressed={isSelected}
-                                  aria-label={`${swatch.label} tracks color`}
-                                  title={swatch.label}
-                                />
-                              );
-                            })}
-                          </div>
-                          <button
-                            type="button"
-                            className={
-                              colorMode.type === 'random'
-                                ? 'track-color-mode-button is-active'
-                                : 'track-color-mode-button'
-                            }
-                            onClick={() => handleTrackColorReset(channel.id)}
-                            disabled={tracksForChannel.length === 0}
-                          >
-                            Sorted
-                          </button>
-                        </div>
-                      </div>
-                      <div className="track-list-section">
-                        <div className="track-list-header">
-                          <label className="track-master-toggle">
-                            <input
-                              ref={registerTrackMasterCheckbox(channel.id)}
-                              type="checkbox"
-                              checked={tracksForChannel.length > 0 && allChecked}
-                              onChange={(event) =>
-                                handleTrackVisibilityAllChange(channel.id, event.target.checked)
-                              }
-                              disabled={tracksForChannel.length === 0}
-                              aria-label={`Show all tracks for ${channelName}`}
-                            />
-                            <span>Show all tracks</span>
-                          </label>
-                          <button
-                            type="button"
-                            className={
-                              orderMode === 'length'
-                                ? 'track-order-toggle is-active'
-                                : 'track-order-toggle'
-                            }
-                            onClick={() => handleTrackOrderToggle(channel.id)}
-                            disabled={tracksForChannel.length === 0}
-                            aria-pressed={orderMode === 'length'}
-                          >
-                            {orderMode === 'length' ? 'Order by ID' : 'Order by length'}
-                          </button>
-                        </div>
-                        {tracksForChannel.length > 0 ? (
-                          <div
-                            className="track-list"
-                            role="group"
-                            aria-label={`${channelName} track visibility`}
-                          >
-                            {orderedTracks.map((track) => {
-                              const isFollowed = followedTrackId === track.id;
-                              const isSelected = selectedTrackIds.has(track.id);
-                              const isChecked = isFollowed || isSelected || (trackVisibility[track.id] ?? true);
-                              const trackColor =
-                                colorMode.type === 'uniform'
-                                  ? normalizeTrackColor(colorMode.color)
-                                  : getTrackColorHex(track.id);
-                              const itemClassName = ['track-item', isSelected ? 'is-selected' : '', isFollowed ? 'is-following' : '']
-                                .filter(Boolean)
-                                .join(' ');
-                              return (
-                                <div
-                                  key={track.id}
-                                  className={itemClassName}
-                                  title={`${track.channelName} · Track #${track.trackNumber}`}
-                                >
-                                  <div className="track-toggle">
-                                    <input
-                                      type="checkbox"
-                                      checked={isChecked}
-                                      onChange={() => handleTrackVisibilityToggle(track.id)}
-                                      aria-label={`Toggle visibility for Track #${track.trackNumber}`}
-                                    />
-                                  </div>
-                                  <button
-                                    type="button"
-                                    className="track-label-button"
-                                    onClick={() => handleTrackSelectionToggle(track.id)}
-                                    aria-pressed={isSelected}
-                                  >
-                                    <span className="track-label">
-                                      <span
-                                        className="track-color-swatch"
-                                        style={{ backgroundColor: trackColor }}
-                                        aria-hidden="true"
-                                      />
-                                      <span className="track-name">Track #{track.trackNumber}</span>
-                                    </span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className={
-                                      isFollowed ? 'track-follow-button is-active' : 'track-follow-button'
-                                    }
-                                    onClick={() => handleTrackFollow(track.id)}
-                                    aria-pressed={isFollowed}
-                                  >
-                                    {isFollowed ? 'Following' : 'Follow'}
-                                  </button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <p className="track-empty-hint">
-                            Load a tracks file to toggle individual trajectories.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="track-empty-hint">Add a channel to manage tracks.</p>
-            )}
-          </div>
-      </FloatingWindow>
-      {!isVrActive && hasParsedTrackData ? (
-        <FloatingWindow
-          title="Selected Tracks"
-          initialPosition={selectedTracksWindowInitialPosition}
-          width={`min(${SELECTED_TRACKS_WINDOW_WIDTH}px, calc(100vw - ${WINDOW_MARGIN * 2}px))`}
-          className="floating-window--selected-tracks"
-          bodyClassName="floating-window-body--selected-tracks"
-          resetSignal={layoutResetToken}
-        >
-          <SelectedTracksWindow series={selectedTrackSeries} totalTimepoints={volumeTimepointCount} />
-        </FloatingWindow>
-      ) : null}
-      </div>
-    </>
-  );
+  return <ViewerShell {...viewerShellProps} />;
 }
 
 export default App;
