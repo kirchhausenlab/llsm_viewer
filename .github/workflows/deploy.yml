@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -16,7 +19,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  ci:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -28,6 +31,10 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Type check
+        run: npm run typecheck
+      - name: Test
+        run: npm test
       - name: Build
         run: npm run build
       - name: Setup Pages
@@ -40,12 +47,15 @@ jobs:
           if-no-files-found: error
 
   deploy:
-    needs: build
+    needs: ci
+    if: github.ref == 'refs/heads/main'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
