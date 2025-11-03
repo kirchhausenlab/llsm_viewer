@@ -37,9 +37,7 @@ import {
 import {
   exportPreprocessedDatasetInWorker,
   canUseFileSystemSavePicker,
-  collectStreamToBlob,
   requestFileSystemSaveHandle,
-  writeStreamToFileHandle,
   type FileSystemFileHandleLike
 } from './workers/exportPreprocessedDatasetClient';
 import {
@@ -61,7 +59,8 @@ import './App.css';
 import { computeAutoWindow, getVolumeHistogram } from './autoContrast';
 import { getDefaultWindowForVolume } from './utils/volumeWindow';
 import BrightnessContrastHistogram from './components/BrightnessContrastHistogram';
-import { streamDownloadWithServiceWorker } from './utils/exportServiceWorker';
+import { downloadStream, sanitizeExportFileName } from './utils/downloads';
+import { computeTrackSummary } from './utils/trackSummary';
 import useVrLifecycle from './hooks/useVrLifecycle';
 import {
   applyAlphaToHex,
@@ -143,80 +142,6 @@ type ChannelValidation = {
 };
 
 export type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment };
-
-const triggerDownloadLink = (href: string, fileName: string) => {
-  const link = document.createElement('a');
-  link.href = href;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-};
-
-const downloadBlob = (blob: Blob, fileName: string) => {
-  const url = URL.createObjectURL(blob);
-  try {
-    triggerDownloadLink(url, fileName);
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-};
-
-const downloadStream = async (
-  stream: ReadableStream<Uint8Array>,
-  fileName: string,
-  fileHandle: FileSystemFileHandleLike | null
-) => {
-  if (fileHandle) {
-    await writeStreamToFileHandle(stream, fileHandle);
-    return;
-  }
-
-  if (!canUseFileSystemSavePicker()) {
-    const serviceWorkerDownload = await streamDownloadWithServiceWorker({
-      stream,
-      fileName,
-      contentType: 'application/zip'
-    });
-
-    if (serviceWorkerDownload) {
-      triggerDownloadLink(serviceWorkerDownload.downloadUrl, fileName);
-      await serviceWorkerDownload.completion;
-      return;
-    }
-  }
-
-  const blob = await collectStreamToBlob(stream);
-  downloadBlob(blob, fileName);
-};
-
-const sanitizeExportFileName = (value: string): string => {
-  const withoutExtension = value.replace(/\.[^/.]+$/, '').trim();
-  const fallback = withoutExtension || 'preprocessed-experiment';
-  const sanitized = fallback
-    .replace(/[^a-zA-Z0-9._-]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-  return sanitized || 'preprocessed-experiment';
-};
-
-const computeTrackSummary = (entries: string[][]): { totalRows: number; uniqueTracks: number } => {
-  if (entries.length === 0) {
-    return { totalRows: 0, uniqueTracks: 0 };
-  }
-  const identifiers = new Set<string>();
-  for (const row of entries) {
-    if (row.length === 0) {
-      continue;
-    }
-    identifiers.add(row[0] ?? '');
-  }
-  return {
-    totalRows: entries.length,
-    uniqueTracks: identifiers.size
-  };
-};
-
 
 function App() {
   const [channels, setChannels] = useState<ChannelSource[]>([]);
