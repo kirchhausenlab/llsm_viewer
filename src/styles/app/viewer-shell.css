@@ -1,15 +1,3 @@
-.error {
-  padding: 0.75rem 0.9rem;
-  background: rgba(255, 71, 87, 0.16);
-  border: 1px solid rgba(255, 71, 87, 0.35);
-  border-radius: 0.6rem;
-  color: #ff8c99;
-}
-
-.hint {
-  color: rgba(255, 255, 255, 0.6);
-}
-
 .viewer {
   position: absolute;
   inset: 0;
