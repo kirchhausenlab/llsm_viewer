@@ -23,6 +23,7 @@ export type VrUiTargetType =
   | 'channels-solo'
   | 'channels-reset'
   | 'channels-layer'
+  | 'channels-solo'
   | 'channels-slider'
   | 'channels-color'
   | 'channels-render-style'
@@ -166,6 +167,7 @@ export type VrChannelsInteractiveRegion = {
     | 'channels-solo'
     | 'channels-reset'
     | 'channels-layer'
+    | 'channels-solo'
     | 'channels-slider'
     | 'channels-color'
     | 'channels-render-style'
@@ -347,9 +349,9 @@ export type ControllerEntry = {
   touchIndicator: THREE.Mesh;
   raycaster: THREE.Raycaster;
   onConnected: (event: { data?: { targetRayMode?: string; gamepad?: Gamepad } }) => void;
-  onDisconnected: (event: XRInputSourceEvent) => void;
-  onSelectStart: (event: XRInputSourceEvent) => void;
-  onSelectEnd: (event: XRInputSourceEvent) => void;
+  onDisconnected: (event?: XRInputSourceEvent) => void;
+  onSelectStart: (event?: XRInputSourceEvent) => void;
+  onSelectEnd: (event?: XRInputSourceEvent) => void;
   isConnected: boolean;
   targetRayMode: string | null;
   gamepad: Gamepad | null;
