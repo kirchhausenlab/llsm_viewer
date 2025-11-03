@@ -32,7 +32,7 @@ import {
 } from './state/layerSettings';
 import { deriveChannelTrackOffsets } from './state/channelTrackOffsets';
 import type { LoadedLayer } from './types/layers';
-import './App.css';
+import './styles/app/index.css';
 import { computeAutoWindow, getVolumeHistogram } from './autoContrast';
 import { getDefaultWindowForVolume } from './utils/volumeWindow';
 import type { ImportPreprocessedDatasetResult } from './utils/preprocessedDataset';
