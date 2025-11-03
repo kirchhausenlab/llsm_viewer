@@ -11,7 +11,6 @@ import {
 } from './volumeProcessing';
 import { clearTextureCache } from './textureCache';
 import FloatingWindow from './components/FloatingWindow';
-import FrontPage from './components/FrontPage/FrontPage';
 import SelectedTracksWindow from './components/SelectedTracksWindow';
 import type { TrackColorMode, TrackDefinition, TrackPoint } from './types/tracks';
 import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from './layerColors';
@@ -57,16 +56,7 @@ import {
 } from './state/layerSettings';
 import { deriveChannelTrackOffsets } from './state/channelTrackOffsets';
 import type { LoadedLayer } from './types/layers';
-import type { ChannelLayerSource, ChannelSource, ChannelValidation } from './types/channelSources';
-import type { StagedPreprocessedExperiment } from './types/preprocessed';
-import { classNames } from './utils/classNames';
-import styles from './App.module.css';
-
-const cx = (...classList: Array<string | false | null | undefined>): string =>
-  classList
-    .filter(Boolean)
-    .map((className) => styles[className as string] ?? String(className))
-    .join(' ');
+import './App.css';
 import { computeAutoWindow, getVolumeHistogram } from './autoContrast';
 import { getDefaultWindowForVolume } from './utils/volumeWindow';
 import BrightnessContrastHistogram from './components/BrightnessContrastHistogram';
@@ -141,6 +131,27 @@ type FollowedTrackState = {
 } | null;
 
 type DatasetErrorContext = 'launch' | 'interaction';
+
+type ChannelLayerSource = {
+  id: string;
+  files: File[];
+  isSegmentation: boolean;
+};
+
+type ChannelSource = {
+  id: string;
+  name: string;
+  layers: ChannelLayerSource[];
+  trackFile: File | null;
+  trackStatus: LoadState;
+  trackError: string | null;
+  trackEntries: string[][];
+};
+
+type StagedPreprocessedExperiment = ImportPreprocessedDatasetResult & {
+  sourceName: string | null;
+  sourceSize: number | null;
+};
 
 const getChannelLayerSummary = (channel: ChannelSource): string => {
   if (channel.layers.length === 0) {
@@ -370,6 +381,11 @@ async function parseTrackCsvFile(file: File): Promise<string[][]> {
   return rows;
 }
 
+type ChannelValidation = {
+  errors: string[];
+  warnings: string[];
+};
+
 const buildChannelTabMeta = (channel: ChannelSource, validation: ChannelValidation): string => {
   const parts: string[] = [getChannelLayerSummary(channel)];
   if (channel.trackEntries.length > 0) {
@@ -446,6 +462,578 @@ const sanitizeExportFileName = (value: string): string => {
     .replace(/^-|-$/g, '');
   return sanitized || 'preprocessed-experiment';
 };
+
+const computeTrackSummary = (entries: string[][]): { totalRows: number; uniqueTracks: number } => {
+  if (entries.length === 0) {
+    return { totalRows: 0, uniqueTracks: 0 };
+  }
+  const identifiers = new Set<string>();
+  for (const row of entries) {
+    if (row.length === 0) {
+      continue;
+    }
+    identifiers.add(row[0] ?? '');
+  }
+  return {
+    totalRows: entries.length,
+    uniqueTracks: identifiers.size
+  };
+};
+
+type ChannelCardProps = {
+  channel: ChannelSource;
+  validation: ChannelValidation;
+  isDisabled: boolean;
+  onLayerFilesAdded: (id: string, files: File[]) => void;
+  onLayerDrop: (id: string, dataTransfer: DataTransfer) => void;
+  onLayerSegmentationToggle: (channelId: string, layerId: string, value: boolean) => void;
+  onLayerRemove: (channelId: string, layerId: string) => void;
+  onTrackFileSelected: (channelId: string, file: File | null) => void;
+  onTrackDrop: (channelId: string, dataTransfer: DataTransfer) => void;
+  onTrackClear: (channelId: string) => void;
+};
+
+function ChannelCard({
+  channel,
+  validation,
+  isDisabled,
+  onLayerFilesAdded,
+  onLayerDrop,
+  onLayerSegmentationToggle,
+  onLayerRemove,
+  onTrackFileSelected,
+  onTrackDrop,
+  onTrackClear
+}: ChannelCardProps) {
+  const layerInputRef = useRef<HTMLInputElement | null>(null);
+  const trackInputRef = useRef<HTMLInputElement | null>(null);
+  const dragCounterRef = useRef(0);
+  const trackDragCounterRef = useRef(0);
+  const [isLayerDragging, setIsLayerDragging] = useState(false);
+  const [isTrackDragging, setIsTrackDragging] = useState(false);
+  const [dropboxImportTarget, setDropboxImportTarget] = useState<'layers' | 'tracks' | null>(null);
+  const [dropboxError, setDropboxError] = useState<string | null>(null);
+  const [dropboxErrorContext, setDropboxErrorContext] = useState<'layers' | 'tracks' | null>(null);
+  const [dropboxInfo, setDropboxInfo] = useState<string | null>(null);
+  const [isDropboxConfigOpen, setIsDropboxConfigOpen] = useState(false);
+  const [dropboxAppKeyInput, setDropboxAppKeyInput] = useState('');
+  const [dropboxAppKeySource, setDropboxAppKeySource] = useState<DropboxAppKeySource | null>(null);
+
+  const isDropboxImporting = dropboxImportTarget !== null;
+  const primaryLayer = channel.layers[0] ?? null;
+
+  const syncDropboxConfigState = useCallback(() => {
+    const info = getDropboxAppKeyInfo();
+    setDropboxAppKeyInput(info.appKey ?? '');
+    setDropboxAppKeySource(info.source);
+  }, []);
+
+  useEffect(() => {
+    syncDropboxConfigState();
+  }, [syncDropboxConfigState]);
+
+  useEffect(() => {
+    if (isDisabled) {
+      setIsLayerDragging(false);
+      setIsTrackDragging(false);
+      setDropboxImportTarget(null);
+      setDropboxError(null);
+      setDropboxErrorContext(null);
+      setDropboxInfo(null);
+      setIsDropboxConfigOpen(false);
+    }
+  }, [isDisabled]);
+
+  const handleDropboxConfigCancel = useCallback(() => {
+    setIsDropboxConfigOpen(false);
+  }, []);
+
+  const handleDropboxConfigInputChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      setDropboxAppKeyInput(event.target.value);
+      if (dropboxInfo) {
+        setDropboxInfo(null);
+      }
+    },
+    [dropboxInfo]
+  );
+
+  const handleDropboxConfigSubmit = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (dropboxAppKeySource === 'env') {
+        setIsDropboxConfigOpen(false);
+        return;
+      }
+      const trimmed = dropboxAppKeyInput.trim();
+      setDropboxAppKey(trimmed ? trimmed : null);
+      syncDropboxConfigState();
+      setIsDropboxConfigOpen(false);
+      setDropboxError(null);
+      setDropboxErrorContext(null);
+      setDropboxInfo(
+        trimmed
+          ? 'Dropbox app key saved. Try importing from Dropbox again.'
+          : 'Saved Dropbox app key cleared.'
+      );
+    },
+    [dropboxAppKeyInput, dropboxAppKeySource, syncDropboxConfigState]
+  );
+
+  const handleDropboxConfigClear = useCallback(() => {
+    setDropboxAppKey(null);
+    syncDropboxConfigState();
+    setDropboxInfo('Saved Dropbox app key cleared.');
+    setDropboxError(null);
+    setDropboxErrorContext(null);
+  }, [syncDropboxConfigState]);
+
+  const handleLayerBrowse = useCallback(() => {
+    if (isDisabled || isDropboxImporting) {
+      return;
+    }
+    layerInputRef.current?.click();
+  }, [isDisabled, isDropboxImporting]);
+
+  const handleLayerInputChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      if (isDisabled || isDropboxImporting) {
+        event.target.value = '';
+        return;
+      }
+      const fileList = event.target.files;
+      if (fileList && fileList.length > 0) {
+        onLayerFilesAdded(channel.id, Array.from(fileList));
+      }
+      event.target.value = '';
+    },
+    [channel.id, isDisabled, isDropboxImporting, onLayerFilesAdded]
+  );
+
+  const handleLayerDragEnter = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      if (isDisabled || isDropboxImporting) {
+        return;
+      }
+      dragCounterRef.current += 1;
+      setIsLayerDragging(true);
+    },
+    [isDisabled, isDropboxImporting]
+  );
+
+  const handleLayerDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    if (isDisabled || isDropboxImporting) {
+      event.dataTransfer.dropEffect = 'none';
+      return;
+    }
+    event.dataTransfer.dropEffect = 'copy';
+  }, [isDisabled, isDropboxImporting]);
+
+  const handleLayerDragLeave = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      if (isDisabled || isDropboxImporting) {
+        return;
+      }
+      dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
+      if (dragCounterRef.current === 0) {
+        setIsLayerDragging(false);
+      }
+    },
+    [isDisabled, isDropboxImporting]
+  );
+
+  const handleLayerDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      dragCounterRef.current = 0;
+      setIsLayerDragging(false);
+      if (isDisabled || isDropboxImporting) {
+        return;
+      }
+      const { dataTransfer } = event;
+      if (!dataTransfer) {
+        return;
+      }
+      onLayerDrop(channel.id, dataTransfer);
+    },
+    [channel.id, isDisabled, isDropboxImporting, onLayerDrop]
+  );
+
+  const handleDropboxImport = useCallback(async () => {
+    if (isDisabled || isDropboxImporting) {
+      return;
+    }
+    setDropboxError(null);
+    setDropboxErrorContext(null);
+    setDropboxInfo(null);
+    setDropboxImportTarget('layers');
+    try {
+      const files = await chooseDropboxFiles({
+        extensions: ['.tif', '.tiff'],
+        multiselect: true
+      });
+      if (files.length > 0) {
+        onLayerFilesAdded(channel.id, files);
+      }
+    } catch (error) {
+      console.error('Failed to import from Dropbox', error);
+      setDropboxErrorContext('layers');
+      if (error instanceof DropboxConfigurationError) {
+        syncDropboxConfigState();
+        setIsDropboxConfigOpen(true);
+        setDropboxError(
+          'Dropbox is not configured yet. Add your Dropbox app key below to connect your account.'
+        );
+      } else {
+        const message = error instanceof Error ? error.message : 'Failed to import files from Dropbox.';
+        setDropboxError(message);
+      }
+    } finally {
+      setDropboxImportTarget(null);
+    }
+  }, [
+    channel.id,
+    isDisabled,
+    isDropboxImporting,
+    onLayerFilesAdded,
+    syncDropboxConfigState
+  ]);
+
+  const handleTrackDropboxImport = useCallback(async () => {
+    if (isDisabled || isDropboxImporting) {
+      return;
+    }
+    setDropboxError(null);
+    setDropboxErrorContext(null);
+    setDropboxInfo(null);
+    setDropboxImportTarget('tracks');
+    try {
+      const files = await chooseDropboxFiles({
+        extensions: ['.csv'],
+        multiselect: false
+      });
+      const [file] = files;
+      if (file) {
+        onTrackFileSelected(channel.id, file);
+      }
+    } catch (error) {
+      console.error('Failed to import tracks from Dropbox', error);
+      setDropboxErrorContext('tracks');
+      if (error instanceof DropboxConfigurationError) {
+        syncDropboxConfigState();
+        setIsDropboxConfigOpen(true);
+        setDropboxError(
+          'Dropbox is not configured yet. Add your Dropbox app key below to connect your account.'
+        );
+      } else {
+        const message = error instanceof Error ? error.message : 'Failed to import tracks from Dropbox.';
+        setDropboxError(message);
+      }
+    } finally {
+      setDropboxImportTarget(null);
+    }
+  }, [
+    channel.id,
+    isDisabled,
+    isDropboxImporting,
+    onTrackFileSelected,
+    syncDropboxConfigState
+  ]);
+
+  const handleTrackBrowse = useCallback(() => {
+    if (isDisabled || isDropboxImporting) {
+      return;
+    }
+    trackInputRef.current?.click();
+  }, [isDisabled, isDropboxImporting]);
+
+  const handleTrackInputChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      if (isDisabled || isDropboxImporting) {
+        event.target.value = '';
+        return;
+      }
+      const fileList = event.target.files;
+      if (fileList && fileList.length > 0) {
+        onTrackFileSelected(channel.id, fileList[0] ?? null);
+      }
+      event.target.value = '';
+    },
+    [channel.id, isDisabled, isDropboxImporting, onTrackFileSelected]
+  );
+
+  const handleTrackDragEnter = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      if (isDisabled || isDropboxImporting) {
+        return;
+      }
+      trackDragCounterRef.current += 1;
+      setIsTrackDragging(true);
+    },
+    [isDisabled, isDropboxImporting]
+  );
+
+  const handleTrackDragLeave = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      if (isDisabled || isDropboxImporting) {
+        return;
+      }
+      trackDragCounterRef.current = Math.max(0, trackDragCounterRef.current - 1);
+      if (trackDragCounterRef.current === 0) {
+        setIsTrackDragging(false);
+      }
+    },
+    [isDisabled, isDropboxImporting]
+  );
+
+  const handleTrackDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      trackDragCounterRef.current = 0;
+      setIsTrackDragging(false);
+      if (isDisabled || isDropboxImporting) {
+        return;
+      }
+      const { dataTransfer } = event;
+      if (!dataTransfer) {
+        return;
+      }
+      onTrackDrop(channel.id, dataTransfer);
+    },
+    [channel.id, isDisabled, isDropboxImporting, onTrackDrop]
+  );
+
+  const trackEntryCount = channel.trackEntries.length;
+  const uniqueTrackCount = useMemo(() => {
+    const identifiers = new Set<string>();
+    for (const row of channel.trackEntries) {
+      const trackId = row[0];
+      if (trackId) {
+        identifiers.add(trackId);
+      }
+    }
+    return identifiers.size;
+  }, [channel.trackEntries]);
+
+  const loadedTrackSummary = useMemo(() => {
+    if (trackEntryCount === 0) {
+      return 'Loaded 0 track entries.';
+    }
+    if (uniqueTrackCount > 0) {
+      const trackLabel = uniqueTrackCount === 1 ? '1 track' : `${uniqueTrackCount} tracks`;
+      if (uniqueTrackCount === trackEntryCount) {
+        return `Loaded ${trackLabel}.`;
+      }
+      const entryLabel =
+        trackEntryCount === 1 ? '1 track entry' : `${trackEntryCount} track entries`;
+      return `Loaded ${trackLabel} across ${entryLabel}.`;
+    }
+    return trackEntryCount === 1
+      ? 'Loaded 1 track entry.'
+      : `Loaded ${trackEntryCount} track entries.`;
+  }, [trackEntryCount, uniqueTrackCount]);
+
+  return (
+    <section className={`channel-card${isDisabled ? ' is-disabled' : ''}`} aria-disabled={isDisabled}>
+      <p className="channel-layer-drop-title">Upload volume (.tif/.tiff sequence)</p>
+      <div
+        className={`channel-layer-drop${isLayerDragging ? ' is-active' : ''}`}
+        onDragEnter={handleLayerDragEnter}
+        onDragOver={handleLayerDragOver}
+        onDragLeave={handleLayerDragLeave}
+        onDrop={handleLayerDrop}
+      >
+        <input
+          ref={layerInputRef}
+          className="file-drop-input"
+          type="file"
+          accept=".tif,.tiff,.TIF,.TIFF"
+          multiple
+          onChange={handleLayerInputChange}
+          disabled={isDisabled || isDropboxImporting}
+        />
+        <div className="channel-layer-drop-content">
+          <button
+            type="button"
+            className="channel-layer-drop-button"
+            onClick={handleLayerBrowse}
+            disabled={isDisabled || isDropboxImporting}
+          >
+            From Files
+          </button>
+          <button
+            type="button"
+            className="channel-layer-drop-button"
+            onClick={handleDropboxImport}
+            disabled={isDisabled || isDropboxImporting}
+          >
+            {dropboxImportTarget === 'layers' ? 'Importing…' : 'From Dropbox'}
+          </button>
+          <p className="channel-layer-drop-subtitle">Or drop sequence folder here</p>
+        </div>
+        {dropboxImportTarget === 'layers' ? (
+          <p className="channel-layer-drop-status">Importing from Dropbox…</p>
+        ) : null}
+        {dropboxInfo ? <p className="channel-layer-drop-info">{dropboxInfo}</p> : null}
+        {dropboxError && dropboxErrorContext === 'layers' ? (
+          <p className="channel-layer-drop-error">{dropboxError}</p>
+        ) : null}
+        {isDropboxConfigOpen ? (
+          <form className="channel-dropbox-config" onSubmit={handleDropboxConfigSubmit} noValidate>
+            <label className="channel-dropbox-config-label" htmlFor={`dropbox-app-key-${channel.id}`}>
+              Dropbox app key
+            </label>
+            <input
+              id={`dropbox-app-key-${channel.id}`}
+              type="text"
+              className="channel-dropbox-config-input"
+              placeholder="slate-your-app-key"
+              value={dropboxAppKeyInput}
+              onChange={handleDropboxConfigInputChange}
+              disabled={isDisabled || dropboxAppKeySource === 'env'}
+              autoComplete="off"
+            />
+            <p className="channel-dropbox-config-hint">
+              Generate an app key in the{' '}
+              <a href="https://www.dropbox.com/developers/apps" target="_blank" rel="noreferrer">
+                Dropbox App Console
+              </a>{' '}
+              (Scoped app with Dropbox Chooser enabled) and paste it here.
+            </p>
+            {dropboxAppKeySource === 'env' ? (
+              <p className="channel-dropbox-config-note">
+                This deployment provides a Dropbox app key. Contact your administrator to change it.
+              </p>
+            ) : null}
+            <div className="channel-dropbox-config-actions">
+              <button
+                type="submit"
+                className="channel-dropbox-config-save"
+                disabled={isDisabled}
+              >
+                {dropboxAppKeySource === 'env' ? 'Close' : 'Save app key'}
+              </button>
+              <button
+                type="button"
+                className="channel-dropbox-config-cancel"
+                onClick={handleDropboxConfigCancel}
+              >
+                Cancel
+              </button>
+              {dropboxAppKeySource === 'local' ? (
+                <button
+                  type="button"
+                  className="channel-dropbox-config-clear"
+                  onClick={handleDropboxConfigClear}
+                >
+                  Remove saved key
+                </button>
+              ) : null}
+            </div>
+          </form>
+        ) : null}
+      </div>
+      {primaryLayer ? (
+        <ul className="channel-layer-list">
+          <li key={primaryLayer.id} className="channel-layer-item">
+            <div className="channel-layer-header">
+              <span className="channel-layer-title">Volume</span>
+              <button
+                type="button"
+                className="channel-layer-remove"
+                onClick={() => onLayerRemove(channel.id, primaryLayer.id)}
+                aria-label="Remove volume"
+                disabled={isDisabled}
+              >
+                Remove
+              </button>
+            </div>
+            <p className="channel-layer-meta">
+              {primaryLayer.files.length === 1 ? '1 file' : `${primaryLayer.files.length} files`}
+            </p>
+            <label className="channel-layer-flag">
+              <input
+                type="checkbox"
+                checked={primaryLayer.isSegmentation}
+                onChange={(event) =>
+                  onLayerSegmentationToggle(channel.id, primaryLayer.id, event.target.checked)
+                }
+                disabled={isDisabled}
+              />
+              <span>Segmentation volume</span>
+            </label>
+          </li>
+        </ul>
+      ) : null}
+      <p className="channel-tracks-title">Upload tracks (optional, .csv file)</p>
+      <div
+        className={`channel-tracks-drop${isTrackDragging ? ' is-active' : ''}`}
+        onDragEnter={handleTrackDragEnter}
+        onDragLeave={handleTrackDragLeave}
+        onDragOver={handleLayerDragOver}
+        onDrop={handleTrackDrop}
+      >
+        <input
+          ref={trackInputRef}
+          className="file-drop-input"
+          type="file"
+          accept=".csv"
+          onChange={handleTrackInputChange}
+          disabled={isDisabled || isDropboxImporting}
+        />
+        <div className="channel-tracks-content">
+          <div className="channel-tracks-row">
+            <div className="channel-tracks-description">
+                <button
+                  type="button"
+                  className="channel-tracks-button"
+                  onClick={handleTrackBrowse}
+                  disabled={isDisabled || isDropboxImporting}
+                >
+                  From Files
+                </button>
+                <button
+                  type="button"
+                  className="channel-tracks-button"
+                  onClick={handleTrackDropboxImport}
+                  disabled={isDisabled || isDropboxImporting}
+                >
+                  {dropboxImportTarget === 'tracks' ? 'Importing…' : 'From Dropbox'}
+                </button>
+                <p className="channel-tracks-subtitle">Or drop the tracks file here</p>
+            </div>
+            {channel.trackFile ? (
+              <button
+                type="button"
+                onClick={() => onTrackClear(channel.id)}
+                className="channel-track-clear"
+                disabled={isDisabled || isDropboxImporting}
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+          {dropboxImportTarget === 'tracks' ? (
+            <p className="channel-tracks-status">Importing from Dropbox…</p>
+          ) : null}
+          {dropboxError && dropboxErrorContext === 'tracks' ? (
+            <p className="channel-tracks-error">{dropboxError}</p>
+          ) : null}
+          {channel.trackError ? <p className="channel-tracks-error">{channel.trackError}</p> : null}
+          {channel.trackStatus === 'loading' ? <p className="channel-tracks-status">Loading tracks…</p> : null}
+          {channel.trackStatus === 'loaded' ? (
+            <p className="channel-tracks-status">{loadedTrackSummary}</p>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function App() {
   const [channels, setChannels] = useState<ChannelSource[]>([]);
@@ -1510,25 +2098,6 @@ function App() {
       current.map((channel) => (channel.id === channelId ? { ...channel, name: value } : channel))
     );
   }, []);
-
-  const handleChannelNameEditStart = useCallback((channelId: string, currentName: string) => {
-    editingChannelOriginalNameRef.current = currentName;
-    setEditingChannelId(channelId);
-  }, []);
-
-  const handleChannelNameEditCommit = useCallback(() => {
-    editingChannelInputRef.current = null;
-    setEditingChannelId(null);
-  }, []);
-
-  const handleChannelNameEditCancel = useCallback(
-    (channelId: string) => {
-      handleChannelNameChange(channelId, editingChannelOriginalNameRef.current);
-      editingChannelInputRef.current = null;
-      setEditingChannelId(null);
-    },
-    [handleChannelNameChange]
-  );
 
   const handleRemoveChannel = useCallback((channelId: string) => {
     setChannels((current) => {
@@ -3063,97 +3632,494 @@ function App() {
             x: Math.max(WINDOW_MARGIN, Math.round(window.innerWidth / 2 - WARNING_WINDOW_WIDTH / 2)),
             y: WINDOW_MARGIN + 16
           };
-
     return (
-      <FrontPage
-        backgroundVideoSrc={backgroundVideoSrc}
-        frontPageMode={frontPageMode}
-        isFrontPageLocked={isFrontPageLocked}
-        channelState={{
-          channels,
-          activeChannelId,
-          editingChannelId,
-          validationMap: channelValidationMap
-        }}
-        channelHandlers={{
-          onAddChannel: handleAddChannel,
-          onRemoveChannel: handleRemoveChannel,
-          onSelectChannel: setActiveChannelId,
-          onChannelNameChange: handleChannelNameChange,
-          onChannelEditStart: handleChannelNameEditStart,
-          onChannelEditCommit: handleChannelNameEditCommit,
-          onChannelEditCancel: handleChannelNameEditCancel,
-          editingInputRef: editingChannelInputRef
-        }}
-        channelCardHandlers={{
-          onLayerFilesAdded: handleChannelLayerFilesAdded,
-          onLayerDrop: handleChannelLayerDrop,
-          onLayerSegmentationToggle: handleChannelLayerSegmentationToggle,
-          onLayerRemove: handleChannelLayerRemove,
-          onTrackFileSelected: handleChannelTrackFileSelected,
-          onTrackDrop: handleChannelTrackDrop,
-          onTrackClear: handleChannelTrackClear
-        }}
-        preprocessedState={{
-          isOpen: isPreprocessedLoaderOpen,
-          isImporting: isPreprocessedImporting,
-          isDropboxImporting: preprocessedDropboxImporting,
-          isDragActive: isPreprocessedDragActive,
-          importError: preprocessedImportError,
-          dropboxError: preprocessedDropboxError,
-          dropboxInfo: preprocessedDropboxInfo,
-          isDropboxConfigOpen: isPreprocessedDropboxConfigOpen,
-          dropboxAppKeyInput: preprocessedDropboxAppKeyInput,
-          dropboxAppKeySource: preprocessedDropboxAppKeySource
-        }}
-        preprocessedHandlers={{
-          onOpen: handlePreprocessedLoaderOpen,
-          onClose: handlePreprocessedLoaderClose,
-          onBrowse: handlePreprocessedBrowse,
-          onDropboxImport: handlePreprocessedDropboxImport,
-          onDragEnter: handlePreprocessedDragEnter,
-          onDragLeave: handlePreprocessedDragLeave,
-          onDragOver: handlePreprocessedDragOver,
-          onDrop: handlePreprocessedDrop,
-          onFileInputChange: handlePreprocessedFileInputChange,
-          fileInputRef: preprocessedFileInputRef,
-          onDropboxConfigSubmit: handlePreprocessedDropboxConfigSubmit,
-          onDropboxConfigInputChange: handlePreprocessedDropboxConfigInputChange,
-          onDropboxConfigCancel: handlePreprocessedDropboxConfigCancel,
-          onDropboxConfigClear: handlePreprocessedDropboxConfigClear
-        }}
-        preprocessedSummary={{
-          experiment: preprocessedExperiment,
-          onDiscard: handleDiscardPreprocessedExperiment,
-          isExporting: isExportingPreprocessed
-        }}
-        controls={{
-          hasGlobalTimepointMismatch,
-          interactionErrorMessage,
-          launchErrorMessage,
-          isLaunchingViewer,
-          launchButtonEnabled,
-          launchButtonLaunchable,
-          canLaunch,
-          onLaunchViewer: handleLaunchViewer,
-          onExportPreprocessedExperiment: handleExportPreprocessedExperiment
-        }}
-        warnings={{
-          warningWindowWidth: WARNING_WINDOW_WIDTH,
-          warningWindowInitialPosition,
-          datasetErrorResetSignal,
-          onDatasetErrorDismiss: handleDatasetErrorDismiss,
-          warningWindowClassName: cx('floating-window', 'floating-window--warning'),
-          warningWindowBodyClassName: cx('floating-window-body', 'warning-window-body')
-        }}
-      />
+      <div className="app front-page-mode">
+        <video
+          className="app-background-video"
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="auto"
+          aria-hidden="true"
+        >
+          <source src={backgroundVideoSrc} type="video/mp4" />
+        </video>
+        <div className="front-page">
+          <div className={`front-page-card${isFrontPageLocked ? ' is-loading' : ''}`}>
+            <header className="front-page-header">
+              <h1>4D microscopy viewer</h1>
+            </header>
+            {frontPageMode !== 'preprocessed' ? (
+              <div className="channel-add-actions">
+                {frontPageMode === 'initial' ? (
+                  <div className="channel-add-initial">
+                    <button
+                      type="button"
+                      className="channel-add-button"
+                      onClick={handleAddChannel}
+                      disabled={isFrontPageLocked}
+                    >
+                      Set up new experiment
+                    </button>
+                    <button
+                      type="button"
+                      className="channel-add-button"
+                      onClick={handlePreprocessedLoaderOpen}
+                      disabled={
+                        isFrontPageLocked || isPreprocessedImporting || preprocessedDropboxImporting
+                      }
+                    >
+                      Load preprocessed experiment
+                    </button>
+                  </div>
+                ) : (
+                  <div className="channel-add-configuring">
+                    <button
+                      type="button"
+                      className="channel-add-button"
+                      onClick={handleAddChannel}
+                      disabled={isFrontPageLocked}
+                    >
+                      Add new channel
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : null}
+            {frontPageMode !== 'preprocessed' && isPreprocessedLoaderOpen ? (
+              <div
+                className={`preprocessed-loader${isPreprocessedDragActive ? ' is-active' : ''}`}
+                onDragEnter={handlePreprocessedDragEnter}
+                onDragLeave={handlePreprocessedDragLeave}
+                onDragOver={handlePreprocessedDragOver}
+                onDrop={handlePreprocessedDrop}
+              >
+                <input
+                  ref={preprocessedFileInputRef}
+                  className="file-drop-input"
+                  type="file"
+                  accept=".zip,.llsm,.llsmz,.json"
+                  onChange={handlePreprocessedFileInputChange}
+                  disabled={isPreprocessedImporting || preprocessedDropboxImporting}
+                />
+                <div className="preprocessed-loader-content">
+                  <div className="preprocessed-loader-row">
+                    <div className="preprocessed-loader-buttons">
+                      <button
+                        type="button"
+                        className="channel-add-button"
+                        onClick={handlePreprocessedBrowse}
+                        disabled={isPreprocessedImporting || preprocessedDropboxImporting}
+                      >
+                        From files
+                      </button>
+                      <button
+                        type="button"
+                        className="channel-add-button"
+                        onClick={handlePreprocessedDropboxImport}
+                        disabled={isPreprocessedImporting || preprocessedDropboxImporting}
+                      >
+                        {preprocessedDropboxImporting ? 'Importing…' : 'From Dropbox'}
+                      </button>
+                      <p className="preprocessed-loader-subtitle">Or drop file here</p>
+                    </div>
+                  <button
+                    type="button"
+                    className="preprocessed-loader-cancel"
+                    onClick={handlePreprocessedLoaderClose}
+                    disabled={isPreprocessedImporting || preprocessedDropboxImporting}
+                  >
+                    Cancel
+                  </button>
+                  </div>
+                  {isPreprocessedImporting ? (
+                    <p className="preprocessed-loader-status">Loading preprocessed dataset…</p>
+                  ) : null}
+                  {preprocessedImportError ? (
+                    <p className="preprocessed-loader-error">{preprocessedImportError}</p>
+                  ) : null}
+                  {preprocessedDropboxError ? (
+                    <p className="preprocessed-loader-error">{preprocessedDropboxError}</p>
+                  ) : null}
+                  {preprocessedDropboxInfo ? (
+                    <p className="preprocessed-loader-info">{preprocessedDropboxInfo}</p>
+                  ) : null}
+                  {isPreprocessedDropboxConfigOpen ? (
+                    <form className="preprocessed-dropbox-config" onSubmit={handlePreprocessedDropboxConfigSubmit} noValidate>
+                      <label className="preprocessed-dropbox-config-label">
+                        Dropbox app key
+                        <input
+                          value={preprocessedDropboxAppKeyInput}
+                          onChange={handlePreprocessedDropboxConfigInputChange}
+                          disabled={preprocessedDropboxAppKeySource === 'env'}
+                        />
+                      </label>
+                      <p className="preprocessed-dropbox-config-hint">
+                        Add your Dropbox app key to enable imports.
+                      </p>
+                      <div className="preprocessed-dropbox-config-actions">
+                        <button type="submit" className="preprocessed-dropbox-config-save">
+                          {preprocessedDropboxAppKeySource === 'env' ? 'Close' : 'Save app key'}
+                        </button>
+                        <button
+                          type="button"
+                          className="preprocessed-dropbox-config-cancel"
+                          onClick={handlePreprocessedDropboxConfigCancel}
+                        >
+                          Cancel
+                        </button>
+                        {preprocessedDropboxAppKeySource === 'local' ? (
+                          <button
+                            type="button"
+                            className="preprocessed-dropbox-config-clear"
+                            onClick={handlePreprocessedDropboxConfigClear}
+                          >
+                            Remove saved key
+                          </button>
+                        ) : null}
+                      </div>
+                    </form>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+            {frontPageMode === 'configuring' ? (
+              <div className="channel-board">
+                {channels.length > 0 ? (
+                  <>
+                    <div className="channel-tabs" role="tablist" aria-label="Configured channels">
+                      {channels.map((channel) => {
+                        const validation = channelValidationMap.get(channel.id) ?? { errors: [], warnings: [] };
+                        const isActive = channel.id === activeChannelId;
+                        const isEditing = editingChannelId === channel.id;
+                        const trimmedChannelName = channel.name.trim();
+                        const removeLabel = trimmedChannelName ? `Remove ${trimmedChannelName}` : 'Remove channel';
+                        const tabClassName = [
+                          'channel-tab',
+                          isActive ? 'is-active' : '',
+                          validation.errors.length > 0 ? 'has-error' : '',
+                          validation.errors.length === 0 && validation.warnings.length > 0 ? 'has-warning' : '',
+                          isFrontPageLocked ? 'is-disabled' : ''
+                        ]
+                          .filter(Boolean)
+                          .join(' ');
+                        const tabMeta = buildChannelTabMeta(channel, validation);
+                        const startEditingChannelName = () => {
+                          if (isFrontPageLocked || editingChannelId === channel.id) {
+                            return;
+                          }
+                          editingChannelOriginalNameRef.current = channel.name;
+                          setEditingChannelId(channel.id);
+                        };
+                        if (isEditing) {
+                          return (
+                            <div
+                              key={channel.id}
+                              id={`${channel.id}-tab`}
+                              className={`${tabClassName} is-editing`}
+                              role="tab"
+                              aria-selected={isActive}
+                              aria-controls="channel-detail-panel"
+                              tabIndex={isFrontPageLocked ? -1 : 0}
+                              aria-disabled={isFrontPageLocked}
+                              onClick={() => {
+                                if (isFrontPageLocked) {
+                                  return;
+                                }
+                                setActiveChannelId(channel.id);
+                              }}
+                              onKeyDown={(event) => {
+                                if (isFrontPageLocked) {
+                                  event.preventDefault();
+                                  return;
+                                }
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                  event.preventDefault();
+                                  setActiveChannelId(channel.id);
+                                }
+                              }}
+                            >
+                              <span className="channel-tab-text">
+                                <input
+                                  ref={(node) => {
+                                    editingChannelInputRef.current = node;
+                                  }}
+                                  className="channel-tab-name-input"
+                                  value={channel.name}
+                                  onChange={(event) => handleChannelNameChange(channel.id, event.target.value)}
+                                  placeholder="Insert channel name here"
+                                  onBlur={() => {
+                                    editingChannelInputRef.current = null;
+                                    setEditingChannelId(null);
+                                  }}
+                                  onKeyDown={(event) => {
+                                    if (isFrontPageLocked) {
+                                      event.preventDefault();
+                                      return;
+                                    }
+                                    if (event.key === 'Enter') {
+                                      event.preventDefault();
+                                      editingChannelInputRef.current = null;
+                                      setEditingChannelId(null);
+                                    } else if (event.key === 'Escape') {
+                                      event.preventDefault();
+                                      handleChannelNameChange(channel.id, editingChannelOriginalNameRef.current);
+                                      editingChannelInputRef.current = null;
+                                      setEditingChannelId(null);
+                                    }
+                                  }}
+                                  aria-label="Channel name"
+                                  autoComplete="off"
+                                  autoFocus
+                                  disabled={isFrontPageLocked}
+                                />
+                                <span className="channel-tab-meta">{tabMeta}</span>
+                              </span>
+                              <button
+                                type="button"
+                                className="channel-tab-remove"
+                                aria-label={removeLabel}
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  if (isFrontPageLocked) {
+                                    return;
+                                  }
+                                  handleRemoveChannel(channel.id);
+                                }}
+                                disabled={isFrontPageLocked}
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div
+                            key={channel.id}
+                            id={`${channel.id}-tab`}
+                            className={tabClassName}
+                            role="tab"
+                            aria-selected={isActive}
+                            aria-controls="channel-detail-panel"
+                            tabIndex={isFrontPageLocked ? -1 : 0}
+                            aria-disabled={isFrontPageLocked}
+                            onClick={() => {
+                              if (isFrontPageLocked) {
+                                return;
+                              }
+                              if (!isActive) {
+                                setActiveChannelId(channel.id);
+                                return;
+                              }
+                              startEditingChannelName();
+                            }}
+                            onKeyDown={(event) => {
+                              if (isFrontPageLocked) {
+                                event.preventDefault();
+                                return;
+                              }
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                if (!isActive) {
+                                  setActiveChannelId(channel.id);
+                                } else {
+                                  startEditingChannelName();
+                                }
+                              }
+                            }}
+                          >
+                            <span className="channel-tab-text">
+                              <span className="channel-tab-name">
+                                {trimmedChannelName ? (
+                                  trimmedChannelName
+                                ) : (
+                                  <span className="channel-tab-placeholder">Insert channel name here</span>
+                                )}
+                              </span>
+                              <span className="channel-tab-meta">{tabMeta}</span>
+                            </span>
+                            <button
+                              type="button"
+                              className="channel-tab-remove"
+                              aria-label={removeLabel}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                if (isFrontPageLocked) {
+                                  return;
+                                }
+                                handleRemoveChannel(channel.id);
+                              }}
+                              disabled={isFrontPageLocked}
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div
+                      className="channel-panel"
+                      role="tabpanel"
+                      id="channel-detail-panel"
+                      aria-labelledby={activeChannel ? `${activeChannel.id}-tab` : undefined}
+                    >
+                      {activeChannel ? (
+                        <ChannelCard
+                          key={activeChannel.id}
+                          channel={activeChannel}
+                          validation={channelValidationMap.get(activeChannel.id) ?? { errors: [], warnings: [] }}
+                          isDisabled={isFrontPageLocked}
+                          onLayerFilesAdded={handleChannelLayerFilesAdded}
+                          onLayerDrop={handleChannelLayerDrop}
+                          onLayerSegmentationToggle={handleChannelLayerSegmentationToggle}
+                          onLayerRemove={handleChannelLayerRemove}
+                          onTrackFileSelected={handleChannelTrackFileSelected}
+                          onTrackDrop={handleChannelTrackDrop}
+                          onTrackClear={handleChannelTrackClear}
+                        />
+                      ) : (
+                        <p className="channel-panel-placeholder">Select a channel to edit it.</p>
+                      )}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+            {frontPageMode === 'preprocessed' && preprocessedExperiment ? (
+              <div className="preprocessed-summary">
+                <div className="preprocessed-summary-header">
+                  <h2>Loaded preprocessed experiment</h2>
+                  <p className="preprocessed-summary-meta">
+                    {preprocessedExperiment.sourceName ?? 'Imported dataset'}
+                    {typeof preprocessedExperiment.sourceSize === 'number'
+                      ? ` · ${formatBytes(preprocessedExperiment.sourceSize)}`
+                      : ''}
+                    {preprocessedExperiment.totalVolumeCount > 0
+                      ? ` · ${preprocessedExperiment.totalVolumeCount} volumes`
+                      : ''}
+                  </p>
+                </div>
+                <ul className="preprocessed-summary-list">
+                  {preprocessedExperiment.channelSummaries.map((summary) => {
+                    const trackSummary = computeTrackSummary(summary.trackEntries);
+                    return (
+                      <li key={summary.id} className="preprocessed-summary-item">
+                        <div className="preprocessed-summary-channel">
+                          <h3>{summary.name}</h3>
+                          <ul className="preprocessed-summary-layer-list">
+                            {summary.layers.map((layer) => (
+                              <li key={layer.key} className="preprocessed-summary-layer">
+                                <span className="preprocessed-summary-layer-title">
+                                  {layer.label}
+                                  {layer.isSegmentation ? (
+                                    <span className="preprocessed-summary-layer-flag">Segmentation</span>
+                                  ) : null}
+                                </span>
+                                <span className="preprocessed-summary-layer-meta">
+                                  {layer.volumeCount} timepoints · {layer.width}×{layer.height}×{layer.depth} · {layer.channels} channels
+                                </span>
+                                <span className="preprocessed-summary-layer-range">
+                                  Range: {layer.min}–{layer.max}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                          <p className="preprocessed-summary-tracks">
+                            {trackSummary.uniqueTracks > 0
+                              ? `${trackSummary.uniqueTracks} tracks (${trackSummary.totalRows} rows)`
+                              : 'No tracks attached'}
+                          </p>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <div className="preprocessed-summary-actions">
+                  <button
+                    type="button"
+                    className="preprocessed-summary-button"
+                    onClick={handleDiscardPreprocessedExperiment}
+                    disabled={isExportingPreprocessed}
+                  >
+                    Discard preprocessed experiment
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            {frontPageMode === 'configuring' && hasGlobalTimepointMismatch ? (
+              <p className="launch-feedback launch-feedback-warning">
+                Timepoint counts differ across channels. Align them before launching.
+              </p>
+            ) : null}
+            {interactionErrorMessage ? (
+              <p className="launch-feedback launch-feedback-error">{interactionErrorMessage}</p>
+            ) : null}
+            {launchErrorMessage ? (
+              <p className="launch-feedback launch-feedback-error">{launchErrorMessage}</p>
+            ) : null}
+            <div className="front-page-actions">
+              <button
+                type="button"
+                className="launch-viewer-button"
+                onClick={handleLaunchViewer}
+                disabled={isLaunchingViewer || !launchButtonEnabled}
+                data-launchable={launchButtonLaunchable}
+              >
+                {isLaunchingViewer ? 'Loading…' : 'Launch viewer'}
+              </button>
+              {frontPageMode !== 'initial' ? (
+                <button
+                  type="button"
+                  className="export-preprocessed-button"
+                  onClick={handleExportPreprocessedExperiment}
+                  disabled={
+                    isExportingPreprocessed ||
+                    isLaunchingViewer ||
+                    (frontPageMode === 'configuring' && !canLaunch)
+                  }
+                >
+                  {isExportingPreprocessed ? 'Exporting…' : 'Export preprocessed experiment'}
+                </button>
+              ) : null}
+            </div>
+          </div>
+          {launchErrorMessage ? (
+            <FloatingWindow
+              title="Cannot launch viewer"
+              className="floating-window--warning"
+              bodyClassName="warning-window-body"
+              width={WARNING_WINDOW_WIDTH}
+              initialPosition={warningWindowInitialPosition}
+              resetSignal={datasetErrorResetSignal}
+            >
+              <div className="warning-window-content">
+                <p className="warning-window-intro">The viewer could not be launched.</p>
+                <p className="warning-window-message">{launchErrorMessage}</p>
+                <p className="warning-window-hint">Review the dataset configuration and try again.</p>
+                <div className="warning-window-actions">
+                  <button
+                    type="button"
+                    className="warning-window-action-button"
+                    onClick={handleDatasetErrorDismiss}
+                  >
+                    Got it
+                  </button>
+                </div>
+              </div>
+            </FloatingWindow>
+          ) : null}
+        </div>
+      </div>
     );
   }
 
   return (
     <>
-      <div className={styles.app}>
-        <main className={styles.viewer}>
+      <div className="app">
+        <main className="viewer">
           {viewerMode === '3d' ? (
             <VolumeViewer
               layers={viewerLayers}
@@ -3240,26 +4206,26 @@ function App() {
             />
           )}
         </main>
-        <div className={styles['viewer-top-menu']}>
-          <div className={styles['viewer-top-menu-row']}>
+        <div className="viewer-top-menu">
+          <div className="viewer-top-menu-row">
             <button
               type="button"
-              className={styles['viewer-top-menu-button']}
+              className="viewer-top-menu-button"
               onClick={handleReturnToLauncher}
             >
               Return to Launcher
             </button>
             <button
               type="button"
-              className={styles['viewer-top-menu-button']}
+              className="viewer-top-menu-button"
               onClick={handleResetWindowLayout}
             >
               Reset layout
             </button>
-            <div className={styles['viewer-top-menu-help']} ref={helpMenuRef}>
+            <div className="viewer-top-menu-help" ref={helpMenuRef}>
               <button
                 type="button"
-                className={styles['viewer-top-menu-button']}
+                className="viewer-top-menu-button"
                 onClick={() => setIsHelpMenuOpen((previous) => !previous)}
                 aria-expanded={isHelpMenuOpen}
                 aria-controls="viewer-help-popover"
@@ -3269,18 +4235,15 @@ function App() {
               {isHelpMenuOpen ? (
                 <div
                   id="viewer-help-popover"
-                  className={styles['viewer-top-menu-popover']}
+                  className="viewer-top-menu-popover"
                   role="dialog"
                   aria-modal="false"
                   aria-labelledby="viewer-help-popover-title"
                 >
-                  <h3
-                    id="viewer-help-popover-title"
-                    className={styles['viewer-top-menu-popover-title']}
-                  >
+                  <h3 id="viewer-help-popover-title" className="viewer-top-menu-popover-title">
                     Viewer tips
                   </h3>
-                  <div className={styles['viewer-top-menu-popover-section']}>
+                  <div className="viewer-top-menu-popover-section">
                     <h4>3D volume view</h4>
                     <ul>
                       <li>Use WASDQE to move forward, back, strafe, and rise or descend.</li>
@@ -3291,7 +4254,7 @@ function App() {
                       </li>
                     </ul>
                   </div>
-                  <div className={styles['viewer-top-menu-popover-section']}>
+                  <div className="viewer-top-menu-popover-section">
                     <h4>2D slice view</h4>
                     <ul>
                       <li>Press W/S to step through slices (hold Shift to skip 10 at a time).</li>
@@ -3308,27 +4271,24 @@ function App() {
           title="Viewer controls"
           initialPosition={controlWindowInitialPosition}
           width={`min(${PLAYBACK_WINDOW_WIDTH}px, calc(100vw - ${WINDOW_MARGIN * 2}px))`}
-          className={cx('floating-window', 'floating-window--playback')}
+          className="floating-window--playback"
           resetSignal={layoutResetToken}
         >
-          <div className={classNames(styles.sidebar, styles['sidebar-left'])}>
-            <div className={styles['global-controls']}>
-              <div className={styles['control-group']}>
-                <div className={styles['viewer-mode-row']}>
+          <div className="sidebar sidebar-left">
+            <div className="global-controls">
+              <div className="control-group">
+                <div className="viewer-mode-row">
                   <button
                     type="button"
                     onClick={handleToggleViewerMode}
-                    className={classNames(
-                      styles['viewer-mode-button'],
-                      viewerMode === '3d' && styles['is-active']
-                    )}
+                    className={viewerMode === '3d' ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
                     disabled={isVrActive || isVrRequesting}
                   >
                     {viewerMode === '3d' ? '3D view' : '2D view'}
                   </button>
                   <button
                     type="button"
-                    className={styles['viewer-mode-button']}
+                    className="viewer-mode-button"
                     onClick={() => resetViewHandler?.()}
                     disabled={!resetViewHandler}
                   >
@@ -3336,7 +4296,7 @@ function App() {
                   </button>
                   <button
                     type="button"
-                    className={styles['viewer-mode-button']}
+                    className="viewer-mode-button"
                     onClick={handleVrButtonClick}
                     disabled={vrButtonDisabled}
                     title={vrButtonTitle}
@@ -3345,7 +4305,7 @@ function App() {
                   </button>
                 </div>
               </div>
-              <div className={styles['control-group']}>
+              <div className="control-group">
                 <label htmlFor="fps-slider">
                   frames per second <span>{fps}</span>
                 </label>
@@ -3361,7 +4321,7 @@ function App() {
                 />
               </div>
               {viewerMode === '2d' && maxSliceDepth > 0 ? (
-                <div className={styles['control-group']}>
+                <div className="control-group">
                   <label htmlFor="z-plane-slider">
                     Z plane{' '}
                     <span>
@@ -3379,16 +4339,15 @@ function App() {
                   />
                 </div>
               ) : null}
-              <div className={styles['playback-controls']}>
-                <div className={classNames(styles['control-group'], styles['playback-progress'])}>
+              <div className="playback-controls">
+                <div className="control-group playback-progress">
                   <label htmlFor="playback-slider">
                     <span
-                      className={classNames(
-                        styles['playback-status'],
+                      className={
                         isPlaying
-                          ? styles['playback-status--playing']
-                          : styles['playback-status--stopped']
-                      )}
+                          ? 'playback-status playback-status--playing'
+                          : 'playback-status playback-status--stopped'
+                      }
                     >
                       {isPlaying ? 'Playing' : 'Stopped'}
                     </span>{' '}
@@ -3396,7 +4355,7 @@ function App() {
                   </label>
                   <input
                     id="playback-slider"
-                    className={styles['playback-slider']}
+                    className="playback-slider"
                     type="range"
                     min={0}
                     max={Math.max(0, volumeTimepointCount - 1)}
@@ -3405,19 +4364,16 @@ function App() {
                     disabled={playbackDisabled}
                   />
                 </div>
-                <div className={styles['playback-button-row']}>
+                <div className="playback-button-row">
                   <button
                     type="button"
-                    className={classNames(
-                      styles['playback-button'],
-                      styles['playback-button--skip']
-                    )}
+                    className="playback-button playback-button--skip"
                     onClick={handleJumpToStart}
                     disabled={playbackDisabled}
                     aria-label="Go to first frame"
                   >
                     <svg
-                      className={styles['playback-button-icon']}
+                      className="playback-button-icon"
                       viewBox="0 0 24 24"
                       role="img"
                       aria-hidden="true"
@@ -3430,16 +4386,12 @@ function App() {
                     type="button"
                     onClick={handleTogglePlayback}
                     disabled={playbackDisabled}
-                    className={classNames(
-                      styles['playback-button'],
-                      styles['playback-toggle'],
-                      isPlaying && styles.playing
-                    )}
+                    className={isPlaying ? 'playback-button playback-toggle playing' : 'playback-button playback-toggle'}
                     aria-label={isPlaying ? 'Pause playback' : 'Start playback'}
                   >
                     {isPlaying ? (
                       <svg
-                        className={styles['playback-button-icon']}
+                        className="playback-button-icon"
                         viewBox="0 0 24 24"
                         role="img"
                         aria-hidden="true"
@@ -3449,7 +4401,7 @@ function App() {
                       </svg>
                     ) : (
                       <svg
-                        className={styles['playback-button-icon']}
+                        className="playback-button-icon"
                         viewBox="0 0 24 24"
                         role="img"
                         aria-hidden="true"
@@ -3461,16 +4413,13 @@ function App() {
                   </button>
                   <button
                     type="button"
-                    className={classNames(
-                      styles['playback-button'],
-                      styles['playback-button--skip']
-                    )}
+                    className="playback-button playback-button--skip"
                     onClick={handleJumpToEnd}
                     disabled={playbackDisabled}
                     aria-label="Go to last frame"
                   >
                     <svg
-                      className={styles['playback-button-icon']}
+                      className="playback-button-icon"
                       viewBox="0 0 24 24"
                       role="img"
                       aria-hidden="true"
@@ -3482,7 +4431,7 @@ function App() {
                 </div>
               </div>
             </div>
-            {error && <p className={styles.error}>{error}</p>}
+            {error && <p className="error">{error}</p>}
           </div>
         </FloatingWindow>
 
@@ -3490,26 +4439,23 @@ function App() {
           title="Channels"
           initialPosition={layersWindowInitialPosition}
           width={`min(${CONTROL_WINDOW_WIDTH}px, calc(100vw - ${WINDOW_MARGIN * 2}px))`}
-          className={cx('floating-window', 'floating-window--channels')}
+          className="floating-window--channels"
           resetSignal={layoutResetToken}
         >
-          <div className={cx('sidebar', 'sidebar-left')}>
+          <div className="sidebar sidebar-left">
             {loadedChannelIds.length > 0 ? (
-              <div className={cx('channel-controls')}>
-                <div className={cx('channel-tabs')} role="tablist" aria-label="Volume channels">
+              <div className="channel-controls">
+                <div className="channel-tabs" role="tablist" aria-label="Volume channels">
                   {loadedChannelIds.map((channelId) => {
                     const label = channelNameMap.get(channelId) ?? 'Untitled channel';
                     const isActive = channelId === activeChannelTabId;
                     const isVisible = channelVisibility[channelId] ?? true;
-                    const tabClassName = cx(
-                      'channel-tab',
-                      isActive && 'is-active',
-                      !isVisible && 'is-hidden'
-                    );
-                    const labelClassName = cx(
-                      'channel-tab-label',
-                      !isVisible && 'channel-tab-label--hidden'
-                    );
+                    const tabClassName = ['channel-tab', isActive ? 'is-active' : '', !isVisible ? 'is-hidden' : '']
+                      .filter(Boolean)
+                      .join(' ');
+                    const labelClassName = isVisible
+                      ? 'channel-tab-label'
+                      : 'channel-tab-label channel-tab-label--hidden';
                     const tintColor = channelTintMap.get(channelId) ?? DEFAULT_LAYER_COLOR;
                     const tabStyle: CSSProperties & Record<string, string> = {
                       '--channel-tab-background': applyAlphaToHex(tintColor, 0.18),
@@ -3579,12 +4525,12 @@ function App() {
                       id={`channel-panel-${channelId}`}
                       role="tabpanel"
                       aria-labelledby={`channel-tab-${channelId}`}
-                      className={cx('channel-panel', isActive && 'is-active')}
+                      className={isActive ? 'channel-panel is-active' : 'channel-panel'}
                       hidden={!isActive}
                     >
                       {channelLayers.length > 1 ? (
                         <div
-                          className={cx('channel-layer-selector')}
+                          className="channel-layer-selector"
                           role="radiogroup"
                           aria-label={`${channelNameMap.get(channelId) ?? 'Channel'} volume`}
                         >
@@ -3592,7 +4538,7 @@ function App() {
                             const isSelected = Boolean(selectedLayer && selectedLayer.key === layer.key);
                             const inputId = `channel-${channelId}-layer-${layer.key}`;
                             return (
-                              <label key={layer.key} className={cx('channel-layer-option')} htmlFor={inputId}>
+                              <label key={layer.key} className="channel-layer-option" htmlFor={inputId}>
                                 <input
                                   type="radio"
                                   id={inputId}
@@ -3606,17 +4552,15 @@ function App() {
                           })}
                         </div>
                       ) : channelLayers.length === 0 ? (
-                        <p className={cx('channel-empty-hint')}>
-                          No volume available for this channel.
-                        </p>
+                        <p className="channel-empty-hint">No volume available for this channel.</p>
                       ) : null}
                       {selectedLayer ? (
                         <>
-                          <div className={cx('channel-primary-actions')}>
-                            <div className={cx('channel-primary-actions-row')}>
+                          <div className="channel-primary-actions">
+                            <div className="channel-primary-actions-row">
                               <button
                                 type="button"
-                                className={cx('channel-action-button')}
+                                className="channel-action-button"
                                 onClick={() => handleLayerRenderStyleToggle(selectedLayer.key)}
                                 disabled={sliderDisabled}
                                 aria-pressed={settings.renderStyle === 1}
@@ -3624,12 +4568,12 @@ function App() {
                                 Render style
                               </button>
                               {viewerMode === '3d' ? (
-                              <button
-                                type="button"
-                                className={cx('channel-action-button')}
-                                onClick={() => handleLayerSamplingModeToggle(selectedLayer.key)}
-                                disabled={sliderDisabled}
-                                aria-pressed={settings.samplingMode === 'nearest'}
+                                <button
+                                  type="button"
+                                  className="channel-action-button"
+                                  onClick={() => handleLayerSamplingModeToggle(selectedLayer.key)}
+                                  disabled={sliderDisabled}
+                                  aria-pressed={settings.samplingMode === 'nearest'}
                                 >
                                   Sampling mode
                                 </button>
@@ -3637,7 +4581,7 @@ function App() {
                             </div>
                           </div>
                           <BrightnessContrastHistogram
-                            className={cx('channel-histogram')}
+                            className="channel-histogram"
                             volume={firstVolume}
                             windowMin={settings.windowMin}
                             windowMax={settings.windowMax}
@@ -3645,8 +4589,8 @@ function App() {
                             defaultMax={DEFAULT_WINDOW_MAX}
                             sliderRange={settings.sliderRange}
                           />
-                          <div className={cx('slider-control', 'slider-control--pair')}>
-                            <div className={cx('slider-control', 'slider-control--inline')}>
+                          <div className="slider-control slider-control--pair">
+                            <div className="slider-control slider-control--inline">
                               <label htmlFor={`layer-window-min-${selectedLayer.key}`}>
                                 Minimum <span>{formatNormalizedIntensity(settings.windowMin)}</span>
                               </label>
@@ -3663,7 +4607,7 @@ function App() {
                                 disabled={sliderDisabled}
                               />
                             </div>
-                            <div className={cx('slider-control', 'slider-control--inline')}>
+                            <div className="slider-control slider-control--inline">
                               <label htmlFor={`layer-window-max-${selectedLayer.key}`}>
                                 Maximum <span>{formatNormalizedIntensity(settings.windowMax)}</span>
                               </label>
@@ -3681,8 +4625,8 @@ function App() {
                               />
                             </div>
                           </div>
-                          <div className={cx('slider-control', 'slider-control--pair')}>
-                            <div className={cx('slider-control', 'slider-control--inline')}>
+                          <div className="slider-control slider-control--pair">
+                            <div className="slider-control slider-control--inline">
                               <label htmlFor={`layer-brightness-${selectedLayer.key}`}>
                                 Brightness
                               </label>
@@ -3702,7 +4646,7 @@ function App() {
                                 disabled={sliderDisabled}
                               />
                             </div>
-                            <div className={cx('slider-control', 'slider-control--inline')}>
+                            <div className="slider-control slider-control--inline">
                               <label htmlFor={`layer-contrast-${selectedLayer.key}`}>
                                 Contrast
                               </label>
@@ -3723,11 +4667,11 @@ function App() {
                               />
                             </div>
                           </div>
-                          <div className={cx('channel-primary-actions')}>
-                            <div className={cx('channel-primary-actions-row')}>
+                          <div className="channel-primary-actions">
+                            <div className="channel-primary-actions-row">
                               <button
                                 type="button"
-                                className={cx('channel-action-button')}
+                                className="channel-action-button"
                                 onClick={() => handleChannelSliderReset(channelId)}
                                 disabled={channelLayers.length === 0}
                               >
@@ -3735,7 +4679,7 @@ function App() {
                               </button>
                               <button
                                 type="button"
-                                className={cx('channel-action-button')}
+                                className="channel-action-button"
                                 onClick={() => handleLayerInvertToggle(selectedLayer.key)}
                                 disabled={invertDisabled}
                                 aria-pressed={settings.invert}
@@ -3745,7 +4689,7 @@ function App() {
                               </button>
                               <button
                                 type="button"
-                                className={cx('channel-action-button')}
+                                className="channel-action-button"
                                 onClick={() => handleLayerAutoContrast(selectedLayer.key)}
                                 disabled={sliderDisabled}
                               >
@@ -3753,8 +4697,8 @@ function App() {
                               </button>
                             </div>
                           </div>
-                          <div className={cx('slider-control', 'slider-control--pair')}>
-                            <div className={cx('slider-control', 'slider-control--inline')}>
+                          <div className="slider-control slider-control--pair">
+                            <div className="slider-control slider-control--inline">
                               <label htmlFor={`layer-offset-x-${selectedLayer.key}`}>
                                 X shift{' '}
                                 <span>
@@ -3775,7 +4719,7 @@ function App() {
                                 disabled={offsetDisabled}
                               />
                             </div>
-                            <div className={cx('slider-control', 'slider-control--inline')}>
+                            <div className="slider-control slider-control--inline">
                               <label htmlFor={`layer-offset-y-${selectedLayer.key}`}>
                                 Y shift{' '}
                                 <span>
@@ -3798,14 +4742,14 @@ function App() {
                             </div>
                           </div>
                           {isGrayscale ? (
-                            <div className={cx('color-control')}>
-                              <div className={cx('color-control-header')}>
+                            <div className="color-control">
+                              <div className="color-control-header">
                                 <span id={`layer-color-label-${selectedLayer.key}`}>Tint color</span>
                                 <span>{displayColor}</span>
                               </div>
-                              <div className={cx('color-swatch-row')}>
+                              <div className="color-swatch-row">
                                 <div
-                                  className={cx('color-swatch-grid')}
+                                  className="color-swatch-grid"
                                   role="group"
                                   aria-labelledby={`layer-color-label-${selectedLayer.key}`}
                                 >
@@ -3816,10 +4760,9 @@ function App() {
                                       <button
                                         key={swatch.value}
                                         type="button"
-                                        className={cx(
-                                          'color-swatch-button',
-                                          isSelected && 'is-selected'
-                                        )}
+                                        className={
+                                          isSelected ? 'color-swatch-button is-selected' : 'color-swatch-button'
+                                        }
                                         style={{ backgroundColor: swatch.value }}
                                         onClick={() => handleLayerColorChange(selectedLayer.key, swatch.value)}
                                         disabled={sliderDisabled}
@@ -3831,10 +4774,9 @@ function App() {
                                   })}
                                 </div>
                                 <label
-                                  className={cx(
-                                    'color-picker-trigger',
-                                    sliderDisabled && 'is-disabled'
-                                  )}
+                                  className={
+                                    sliderDisabled ? 'color-picker-trigger is-disabled' : 'color-picker-trigger'
+                                  }
                                   htmlFor={`layer-color-custom-${selectedLayer.key}`}
                                 >
                                   <input
@@ -3846,10 +4788,10 @@ function App() {
                                     }
                                     disabled={sliderDisabled}
                                     aria-label="Choose custom tint color"
-                                    className={cx('color-picker-input')}
+                                    className="color-picker-input"
                                   />
                                   <span
-                                    className={cx('color-picker-indicator')}
+                                    className="color-picker-indicator"
                                     style={{ backgroundColor: normalizedColor }}
                                     aria-hidden="true"
                                   />
@@ -3864,7 +4806,7 @@ function App() {
                 })}
               </div>
             ) : (
-              <p className={cx('channel-empty-hint')}>Load a volume to configure channel properties.</p>
+              <p className="channel-empty-hint">Load a volume to configure channel properties.</p>
             )}
           </div>
         </FloatingWindow>
@@ -3873,18 +4815,20 @@ function App() {
           title="Tracks"
           initialPosition={trackWindowInitialPosition}
           width={`min(${TRACK_WINDOW_WIDTH}px, calc(100vw - ${WINDOW_MARGIN * 2}px))`}
-          className={cx('floating-window', 'floating-window--tracks')}
+          className="floating-window--tracks"
           resetSignal={layoutResetToken}
         >
-          <div className={cx('sidebar', 'sidebar-right')}>
+          <div className="sidebar sidebar-right">
             {channels.length > 0 ? (
-              <div className={cx('track-controls')}>
-                <div className={cx('track-tabs')} role="tablist" aria-label="Track channels">
+              <div className="track-controls">
+                <div className="track-tabs" role="tablist" aria-label="Track channels">
                   {channels.map((channel) => {
                     const isActive = channel.id === activeTrackChannelId;
                     const channelName = channelNameMap.get(channel.id) ?? 'Untitled channel';
                     const hasTracks = (parsedTracksByChannel.get(channel.id)?.length ?? 0) > 0;
-                    const tabClassName = cx('track-tab', isActive && 'is-active', !hasTracks && 'is-empty');
+                    const tabClassName = ['track-tab', isActive ? 'is-active' : '', !hasTracks ? 'is-empty' : '']
+                      .filter(Boolean)
+                      .join(' ');
                     const colorMode = channelTrackColorModes[channel.id] ?? { type: 'random' };
                     const baseColor =
                       colorMode.type === 'uniform' ? normalizeTrackColor(colorMode.color) : '#FFFFFF';
@@ -3914,7 +4858,7 @@ function App() {
                         aria-selected={isActive}
                         aria-controls={`track-panel-${channel.id}`}
                       >
-                        <span className={cx('track-tab-label')}>{channelName}</span>
+                        <span className="track-tab-label">{channelName}</span>
                       </button>
                     );
                   })}
@@ -3949,20 +4893,24 @@ function App() {
                       id={`track-panel-${channel.id}`}
                       role="tabpanel"
                       aria-labelledby={`track-tab-${channel.id}`}
-                      className={cx('track-panel', isActive && 'is-active')}
+                      className={isActive ? 'track-panel is-active' : 'track-panel'}
                       hidden={!isActive}
                     >
-                      <div className={cx('track-follow-controls')}>
+                      <div className="track-follow-controls">
                         <button
                           type="button"
                           onClick={() => handleStopTrackFollow(channel.id)}
                           disabled={channelFollowedId === null}
-                          className={cx('viewer-stop-tracking', channelFollowedId !== null && 'is-active')}
+                          className={
+                            channelFollowedId !== null
+                              ? 'viewer-stop-tracking is-active'
+                              : 'viewer-stop-tracking'
+                          }
                         >
                           Stop following
                         </button>
-                        <div className={cx('track-slider-row')}>
-                          <div className={cx('slider-control')}>
+                        <div className="track-slider-row">
+                          <div className="slider-control">
                             <label htmlFor={`track-opacity-${channel.id}`}>
                               Opacity <span>{Math.round(opacity * 100)}%</span>
                             </label>
@@ -3979,7 +4927,7 @@ function App() {
                               disabled={tracksForChannel.length === 0}
                             />
                           </div>
-                          <div className={cx('slider-control')}>
+                          <div className="slider-control">
                             <label htmlFor={`track-linewidth-${channel.id}`}>
                               Thickness <span>{lineWidth.toFixed(1)}</span>
                             </label>
@@ -3998,14 +4946,14 @@ function App() {
                           </div>
                         </div>
                       </div>
-                      <div className={cx('track-color-control')}>
-                        <div className={cx('track-color-control-header')}>
+                      <div className="track-color-control">
+                        <div className="track-color-control-header">
                           <span id={`track-color-label-${channel.id}`}>Track color</span>
                           <span>{colorLabel}</span>
                         </div>
-                        <div className={cx('track-color-swatch-row')}>
+                        <div className="track-color-swatch-row">
                           <div
-                            className={cx('color-swatch-grid')}
+                            className="color-swatch-grid"
                             role="group"
                             aria-labelledby={`track-color-label-${channel.id}`}
                           >
@@ -4018,7 +4966,9 @@ function App() {
                                 <button
                                   key={swatch.value}
                                   type="button"
-                                  className={cx('color-swatch-button', isSelected && 'is-selected')}
+                                  className={
+                                    isSelected ? 'color-swatch-button is-selected' : 'color-swatch-button'
+                                  }
                                   style={{ backgroundColor: swatch.value }}
                                   onClick={() => handleTrackColorSelect(channel.id, swatch.value)}
                                   disabled={tracksForChannel.length === 0}
@@ -4031,7 +4981,11 @@ function App() {
                           </div>
                           <button
                             type="button"
-                            className={cx('track-color-mode-button', colorMode.type === 'random' && 'is-active')}
+                            className={
+                              colorMode.type === 'random'
+                                ? 'track-color-mode-button is-active'
+                                : 'track-color-mode-button'
+                            }
                             onClick={() => handleTrackColorReset(channel.id)}
                             disabled={tracksForChannel.length === 0}
                           >
@@ -4039,9 +4993,9 @@ function App() {
                           </button>
                         </div>
                       </div>
-                      <div className={cx('track-list-section')}>
-                        <div className={cx('track-list-header')}>
-                          <label className={cx('track-master-toggle')}>
+                      <div className="track-list-section">
+                        <div className="track-list-header">
+                          <label className="track-master-toggle">
                             <input
                               ref={registerTrackMasterCheckbox(channel.id)}
                               type="checkbox"
@@ -4056,7 +5010,11 @@ function App() {
                           </label>
                           <button
                             type="button"
-                            className={cx('track-order-toggle', orderMode === 'length' && 'is-active')}
+                            className={
+                              orderMode === 'length'
+                                ? 'track-order-toggle is-active'
+                                : 'track-order-toggle'
+                            }
                             onClick={() => handleTrackOrderToggle(channel.id)}
                             disabled={tracksForChannel.length === 0}
                             aria-pressed={orderMode === 'length'}
@@ -4066,7 +5024,7 @@ function App() {
                         </div>
                         {tracksForChannel.length > 0 ? (
                           <div
-                            className={cx('track-list')}
+                            className="track-list"
                             role="group"
                             aria-label={`${channelName} track visibility`}
                           >
@@ -4078,13 +5036,16 @@ function App() {
                                 colorMode.type === 'uniform'
                                   ? normalizeTrackColor(colorMode.color)
                                   : getTrackColorHex(track.id);
+                              const itemClassName = ['track-item', isSelected ? 'is-selected' : '', isFollowed ? 'is-following' : '']
+                                .filter(Boolean)
+                                .join(' ');
                               return (
                                 <div
                                   key={track.id}
-                                  className={cx('track-item', isSelected && 'is-selected', isFollowed && 'is-following')}
+                                  className={itemClassName}
                                   title={`${track.channelName} · Track #${track.trackNumber}`}
                                 >
-                                  <div className={cx('track-toggle')}>
+                                  <div className="track-toggle">
                                     <input
                                       type="checkbox"
                                       checked={isChecked}
@@ -4094,22 +5055,24 @@ function App() {
                                   </div>
                                   <button
                                     type="button"
-                                    className={cx('track-label-button')}
+                                    className="track-label-button"
                                     onClick={() => handleTrackSelectionToggle(track.id)}
                                     aria-pressed={isSelected}
                                   >
-                                    <span className={cx('track-label')}>
+                                    <span className="track-label">
                                       <span
-                                        className={cx('track-color-swatch')}
+                                        className="track-color-swatch"
                                         style={{ backgroundColor: trackColor }}
                                         aria-hidden="true"
                                       />
-                                      <span className={cx('track-name')}>Track #{track.trackNumber}</span>
+                                      <span className="track-name">Track #{track.trackNumber}</span>
                                     </span>
                                   </button>
                                   <button
                                     type="button"
-                                    className={cx('track-follow-button', isFollowed && 'is-active')}
+                                    className={
+                                      isFollowed ? 'track-follow-button is-active' : 'track-follow-button'
+                                    }
                                     onClick={() => handleTrackFollow(track.id)}
                                     aria-pressed={isFollowed}
                                   >
@@ -4120,7 +5083,7 @@ function App() {
                             })}
                           </div>
                         ) : (
-                          <p className={cx('track-empty-hint')}>
+                          <p className="track-empty-hint">
                             Load a tracks file to toggle individual trajectories.
                           </p>
                         )}
@@ -4130,7 +5093,7 @@ function App() {
                 })}
               </div>
             ) : (
-              <p className={cx('track-empty-hint')}>Add a channel to manage tracks.</p>
+              <p className="track-empty-hint">Add a channel to manage tracks.</p>
             )}
           </div>
       </FloatingWindow>
@@ -4139,8 +5102,8 @@ function App() {
           title="Selected Tracks"
           initialPosition={selectedTracksWindowInitialPosition}
           width={`min(${SELECTED_TRACKS_WINDOW_WIDTH}px, calc(100vw - ${WINDOW_MARGIN * 2}px))`}
-          className={cx('floating-window', 'floating-window--selected-tracks')}
-          bodyClassName={cx('floating-window-body', 'floating-window-body--selected-tracks')}
+          className="floating-window--selected-tracks"
+          bodyClassName="floating-window-body--selected-tracks"
           resetSignal={layoutResetToken}
         >
           <SelectedTracksWindow series={selectedTrackSeries} totalTimepoints={volumeTimepointCount} />
