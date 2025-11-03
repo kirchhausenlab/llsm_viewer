@@ -4,4 +4,5 @@
 @import './viewer-windows.css';
 @import './viewer-channel-controls.css';
 @import './viewer-playback-tracks.css';
-@import '../../App.css';
+@import './viewer-shell.css';
+@import './utilities.css';
