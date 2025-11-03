@@ -345,9 +345,9 @@ export type ControllerEntry = {
   touchIndicator: THREE.Mesh;
   raycaster: THREE.Raycaster;
   onConnected: (event: { data?: { targetRayMode?: string; gamepad?: Gamepad } }) => void;
-  onDisconnected: () => void;
-  onSelectStart: () => void;
-  onSelectEnd: () => void;
+  onDisconnected: (event: XRInputSourceEvent) => void;
+  onSelectStart: (event: XRInputSourceEvent) => void;
+  onSelectEnd: (event: XRInputSourceEvent) => void;
   isConnected: boolean;
   targetRayMode: string | null;
   gamepad: Gamepad | null;
