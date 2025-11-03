@@ -1,0 +1,848 @@
+import * as THREE from 'three';
+
+import {
+  VR_CHANNELS_CANVAS_MIN_HEIGHT,
+  VR_CHANNELS_CANVAS_WIDTH,
+  VR_CHANNELS_PANEL_HEIGHT,
+  VR_CHANNELS_PANEL_WIDTH,
+  VR_HUD_SURFACE_OFFSET,
+  VR_HUD_TRANSLATE_HANDLE_COLOR,
+  VR_HUD_TRANSLATE_HANDLE_OFFSET,
+  VR_HUD_TRANSLATE_HANDLE_RADIUS,
+  VR_HUD_YAW_HANDLE_COLOR,
+  VR_HUD_YAW_HANDLE_OFFSET,
+  VR_HUD_YAW_HANDLE_RADIUS,
+  VR_PLAYBACK_PANEL_HEIGHT,
+  VR_PLAYBACK_PANEL_WIDTH,
+  VR_TRACKS_CANVAS_HEIGHT,
+  VR_TRACKS_CANVAS_WIDTH,
+  VR_TRACKS_PANEL_HEIGHT,
+  VR_TRACKS_PANEL_WIDTH,
+} from './constants';
+import type {
+  PlaybackState,
+  VrChannelsHud,
+  VrPlaybackHud,
+  VrTracksHud,
+  VrUiTargetType,
+} from './types';
+import { setVrPlaybackLabel, setVrPlaybackProgressFraction } from './hudMutators';
+
+export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlaybackHud | null {
+  if (typeof document === 'undefined') {
+    return null;
+  }
+  const group = new THREE.Group();
+  group.name = 'VrPlaybackHud';
+
+  const panelMaterial = new THREE.MeshBasicMaterial({
+    color: 0x10161d,
+    transparent: false,
+    opacity: 1,
+    side: THREE.DoubleSide,
+  });
+  const panel = new THREE.Mesh(
+    new THREE.PlaneGeometry(VR_PLAYBACK_PANEL_WIDTH, VR_PLAYBACK_PANEL_HEIGHT),
+    panelMaterial,
+  );
+  panel.position.set(0, 0, 0);
+  panel.userData.vrUiTarget = { type: 'playback-panel' } satisfies { type: VrUiTargetType };
+  group.add(panel);
+
+  const buttonRowY = 0.11;
+  const fpsLabelRowY = 0.07;
+  const fpsSliderRowY = 0.025;
+  const playbackLabelRowY = -0.03;
+  const playbackSliderRowY = -0.075;
+  const playButtonRowY = -0.14;
+  const topButtons: THREE.Mesh[] = [];
+
+  const translateHandleMaterial = new THREE.MeshBasicMaterial({
+    color: VR_HUD_TRANSLATE_HANDLE_COLOR,
+    transparent: true,
+    opacity: 0.75,
+    depthWrite: false,
+  });
+  translateHandleMaterial.depthTest = false;
+  const panelTranslateHandle = new THREE.Mesh(
+    new THREE.SphereGeometry(VR_HUD_TRANSLATE_HANDLE_RADIUS, 32, 32),
+    translateHandleMaterial,
+  );
+  panelTranslateHandle.position.set(
+    0,
+    VR_PLAYBACK_PANEL_HEIGHT / 2 + VR_HUD_TRANSLATE_HANDLE_OFFSET,
+    0,
+  );
+  panelTranslateHandle.userData.vrUiTarget = { type: 'playback-panel-grab' } satisfies {
+    type: VrUiTargetType;
+  };
+  group.add(panelTranslateHandle);
+
+  const yawHandleMaterial = new THREE.MeshBasicMaterial({
+    color: VR_HUD_YAW_HANDLE_COLOR,
+    transparent: true,
+    opacity: 0.85,
+    depthWrite: false,
+  });
+  yawHandleMaterial.depthTest = false;
+  const panelYawHandles: THREE.Mesh[] = [];
+  const yawOffsets = [1, -1] as const;
+  for (const direction of yawOffsets) {
+    const handle = new THREE.Mesh(
+      new THREE.SphereGeometry(VR_HUD_YAW_HANDLE_RADIUS, 32, 32),
+      yawHandleMaterial.clone(),
+    );
+    handle.position.set(
+      direction * (VR_PLAYBACK_PANEL_WIDTH / 2 + VR_HUD_YAW_HANDLE_OFFSET),
+      0,
+      0,
+    );
+    handle.userData.vrUiTarget = { type: 'playback-panel-yaw' } satisfies {
+      type: VrUiTargetType;
+    };
+    group.add(handle);
+    panelYawHandles.push(handle);
+  }
+
+  const panelPitchHandle = new THREE.Mesh(
+    new THREE.SphereGeometry(VR_HUD_YAW_HANDLE_RADIUS, 32, 32),
+    yawHandleMaterial.clone(),
+  );
+  panelPitchHandle.position.set(
+    0,
+    -(VR_PLAYBACK_PANEL_HEIGHT / 2 + VR_HUD_YAW_HANDLE_OFFSET),
+    0,
+  );
+  panelPitchHandle.userData.vrUiTarget = { type: 'playback-panel-pitch' } satisfies {
+    type: VrUiTargetType;
+  };
+  group.add(panelPitchHandle);
+
+  const sideButtonRadius = 0.032;
+  const sideButtonMargin = 0.02;
+
+  const resetVolumeButtonMaterial = new THREE.MeshBasicMaterial({
+    color: 0x2b3340,
+    side: THREE.DoubleSide,
+  });
+  const resetVolumeButton = new THREE.Mesh(
+    new THREE.CircleGeometry(sideButtonRadius, 48),
+    resetVolumeButtonMaterial,
+  );
+  resetVolumeButton.userData.vrUiTarget = { type: 'playback-reset-volume' } satisfies {
+    type: VrUiTargetType;
+  };
+  topButtons.push(resetVolumeButton);
+  const resetVolumeIconMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    side: THREE.DoubleSide,
+  });
+  const resetVolumeIconGroup = new THREE.Group();
+  const resetArc = new THREE.Mesh(
+    new THREE.RingGeometry(0.012, 0.02, 24, 1, Math.PI * 0.25, Math.PI * 1.4),
+    resetVolumeIconMaterial,
+  );
+  resetArc.position.set(0, 0, 0.0006);
+  const resetArrowShape = new THREE.Shape();
+  resetArrowShape.moveTo(0.014, 0.01);
+  resetArrowShape.lineTo(0.028, 0.002);
+  resetArrowShape.lineTo(0.014, -0.006);
+  resetArrowShape.lineTo(0.014, 0.01);
+  const resetArrow = new THREE.Mesh(
+    new THREE.ShapeGeometry(resetArrowShape),
+    resetVolumeIconMaterial.clone(),
+  );
+  resetArrow.position.set(0, 0, 0.001);
+  resetVolumeIconGroup.add(resetArc);
+  resetVolumeIconGroup.add(resetArrow);
+  resetVolumeButton.add(resetVolumeIconGroup);
+  group.add(resetVolumeButton);
+
+  const resetHudButtonMaterial = new THREE.MeshBasicMaterial({
+    color: 0x2b3340,
+    side: THREE.DoubleSide,
+  });
+  const resetHudButton = new THREE.Mesh(
+    new THREE.CircleGeometry(sideButtonRadius, 48),
+    resetHudButtonMaterial,
+  );
+  resetHudButton.userData.vrUiTarget = { type: 'playback-reset-hud' } satisfies {
+    type: VrUiTargetType;
+  };
+  topButtons.push(resetHudButton);
+  const resetHudIconMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    side: THREE.DoubleSide,
+  });
+  const resetHudIconGroup = new THREE.Group();
+  const windowPrimaryOuter = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.048, 0.034),
+    resetHudIconMaterial.clone(),
+  );
+  windowPrimaryOuter.position.set(0, 0, 0.0008);
+  const windowPrimaryInner = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.04, 0.026),
+    resetHudIconMaterial.clone(),
+  );
+  windowPrimaryInner.material.color.set(0x10161d);
+  windowPrimaryInner.position.set(0, 0, 0.0009);
+  const windowSecondaryOuter = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.032, 0.024),
+    resetHudIconMaterial.clone(),
+  );
+  windowSecondaryOuter.position.set(0.014, 0.012, 0.0008);
+  const windowSecondaryInner = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.024, 0.016),
+    resetHudIconMaterial.clone(),
+  );
+  windowSecondaryInner.material.color.set(0x10161d);
+  windowSecondaryInner.position.set(0.014, 0.012, 0.0009);
+  const resetHudArrowShape = new THREE.Shape();
+  resetHudArrowShape.moveTo(-0.018, -0.014);
+  resetHudArrowShape.lineTo(-0.018, -0.004);
+  resetHudArrowShape.lineTo(-0.006, -0.004);
+  resetHudArrowShape.lineTo(-0.006, 0.008);
+  resetHudArrowShape.lineTo(0.004, 0.008);
+  resetHudArrowShape.lineTo(0.004, -0.014);
+  resetHudArrowShape.closePath();
+  const resetHudArrow = new THREE.Mesh(
+    new THREE.ShapeGeometry(resetHudArrowShape),
+    resetHudIconMaterial.clone(),
+  );
+  resetHudArrow.position.set(0, 0, 0.001);
+  resetHudIconGroup.add(windowPrimaryOuter);
+  resetHudIconGroup.add(windowPrimaryInner);
+  resetHudIconGroup.add(windowSecondaryOuter);
+  resetHudIconGroup.add(windowSecondaryInner);
+  resetHudIconGroup.add(resetHudArrow);
+  resetHudButton.add(resetHudIconGroup);
+  group.add(resetHudButton);
+
+  const modeButtonMaterial = new THREE.MeshBasicMaterial({
+    color: 0x2b3340,
+    side: THREE.DoubleSide,
+  });
+  const modeButton = new THREE.Mesh(
+    new THREE.CircleGeometry(sideButtonRadius, 48),
+    modeButtonMaterial,
+  );
+  modeButton.userData.vrUiTarget = { type: 'playback-toggle-mode' } satisfies {
+    type: VrUiTargetType;
+  };
+  topButtons.push(modeButton);
+  const modeIconMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    side: THREE.DoubleSide,
+  });
+  const modeVrIcon = new THREE.Group();
+  const modeVrMask = new THREE.Mesh(new THREE.PlaneGeometry(0.036, 0.024), modeIconMaterial.clone());
+  modeVrMask.position.set(0, 0, 0.0008);
+  const modeVrInset = new THREE.Mesh(new THREE.PlaneGeometry(0.026, 0.016), modeIconMaterial.clone());
+  modeVrInset.material.color.set(0x10161d);
+  modeVrInset.position.set(0, 0, 0.0009);
+  const modeVrBridge = new THREE.Mesh(new THREE.PlaneGeometry(0.014, 0.008), modeIconMaterial.clone());
+  modeVrBridge.position.set(0, -0.01, 0.00085);
+  const modeVrLeftEye = new THREE.Mesh(new THREE.CircleGeometry(0.007, 24), modeIconMaterial.clone());
+  modeVrLeftEye.material.color.set(0x10161d);
+  modeVrLeftEye.position.set(-0.01, 0.002, 0.001);
+  const modeVrRightEye = modeVrLeftEye.clone();
+  modeVrRightEye.position.x = 0.01;
+  modeVrIcon.add(modeVrMask);
+  modeVrIcon.add(modeVrInset);
+  modeVrIcon.add(modeVrBridge);
+  modeVrIcon.add(modeVrLeftEye);
+  modeVrIcon.add(modeVrRightEye);
+  modeButton.add(modeVrIcon);
+
+  const modeArIcon = new THREE.Group();
+  const modeArMask = new THREE.Mesh(new THREE.CircleGeometry(0.018, 32), modeIconMaterial.clone());
+  modeArMask.position.set(0, 0, 0.0008);
+  const modeArInner = new THREE.Mesh(new THREE.CircleGeometry(0.012, 32), modeIconMaterial.clone());
+  modeArInner.material.color.set(0x10161d);
+  modeArInner.position.set(0, 0, 0.0009);
+  const modeArLine = new THREE.Mesh(new THREE.PlaneGeometry(0.028, 0.004), modeIconMaterial.clone());
+  modeArLine.position.set(0, -0.01, 0.00085);
+  modeArIcon.add(modeArMask);
+  modeArIcon.add(modeArInner);
+  modeArIcon.add(modeArLine);
+  modeButton.add(modeArIcon);
+
+  const exitButtonMaterial = new THREE.MeshBasicMaterial({
+    color: 0x512b2b,
+    side: THREE.DoubleSide,
+  });
+  const exitButton = new THREE.Mesh(new THREE.CircleGeometry(sideButtonRadius, 48), exitButtonMaterial);
+  exitButton.userData.vrUiTarget = { type: 'playback-exit-vr' } satisfies { type: VrUiTargetType };
+  topButtons.push(exitButton);
+  const exitIconMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+  const exitIconGroup = new THREE.Group();
+  const exitDoor = new THREE.Mesh(new THREE.PlaneGeometry(0.02, 0.032), exitIconMaterial.clone());
+  exitDoor.position.set(-0.008, 0, 0.0008);
+  const exitDoorway = new THREE.Mesh(new THREE.PlaneGeometry(0.012, 0.024), exitIconMaterial.clone());
+  exitDoorway.material.color.set(0x10161d);
+  exitDoorway.position.set(-0.008, 0, 0.0009);
+  const exitPersonHead = new THREE.Mesh(new THREE.CircleGeometry(0.006, 24), exitIconMaterial.clone());
+  exitPersonHead.position.set(0.01, 0.008, 0.0009);
+  const exitPersonBody = new THREE.Mesh(new THREE.PlaneGeometry(0.012, 0.024), exitIconMaterial.clone());
+  exitPersonBody.position.set(0.01, -0.004, 0.00085);
+  exitIconGroup.add(exitDoor);
+  exitIconGroup.add(exitDoorway);
+  exitIconGroup.add(exitPersonHead);
+  exitIconGroup.add(exitPersonBody);
+  exitButton.add(exitIconGroup);
+  group.add(exitButton);
+
+  topButtons.forEach((button, index) => {
+    const offset = (index - (topButtons.length - 1) / 2) * (sideButtonRadius * 2 + sideButtonMargin);
+    button.position.set(offset, buttonRowY, VR_HUD_SURFACE_OFFSET);
+  });
+
+  const playButtonMaterial = new THREE.MeshBasicMaterial({
+    color: 0x2b5fa6,
+    side: THREE.DoubleSide,
+  });
+  const playButton = new THREE.Mesh(new THREE.CircleGeometry(0.042, 48), playButtonMaterial);
+  playButton.position.set(0, playButtonRowY, VR_HUD_SURFACE_OFFSET);
+  playButton.userData.vrUiTarget = { type: 'playback-play-toggle' } satisfies {
+    type: VrUiTargetType;
+  };
+  group.add(playButton);
+
+  const playIconMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    side: THREE.DoubleSide,
+  });
+  const playIcon = new THREE.Mesh(new THREE.CircleGeometry(0.018, 32), playIconMaterial);
+  playIcon.position.set(-0.006, 0, 0.0008);
+  const playTriangleShape = new THREE.Shape();
+  playTriangleShape.moveTo(-0.008, -0.016);
+  playTriangleShape.lineTo(0.02, 0);
+  playTriangleShape.lineTo(-0.008, 0.016);
+  playTriangleShape.lineTo(-0.008, -0.016);
+  const playTriangle = new THREE.Mesh(new THREE.ShapeGeometry(playTriangleShape), playIconMaterial.clone());
+  playTriangle.position.set(0.004, 0, 0.0009);
+  playIcon.add(playTriangle);
+  playButton.add(playIcon);
+
+  const pauseGroup = new THREE.Group();
+  const pauseLeftBar = new THREE.Mesh(new THREE.PlaneGeometry(0.014, 0.032), playIconMaterial.clone());
+  pauseLeftBar.position.set(-0.01, 0, 0.0008);
+  const pauseRightBar = new THREE.Mesh(new THREE.PlaneGeometry(0.014, 0.032), playIconMaterial.clone());
+  pauseRightBar.position.set(0.01, 0, 0.0008);
+  pauseGroup.add(pauseLeftBar);
+  pauseGroup.add(pauseRightBar);
+  playButton.add(pauseGroup);
+  pauseGroup.visible = false;
+
+  const fpsSliderGroup = new THREE.Group();
+  fpsSliderGroup.position.set(0, fpsSliderRowY, VR_HUD_SURFACE_OFFSET);
+  group.add(fpsSliderGroup);
+
+  const fpsSliderWidth = 0.24;
+  const fpsSliderTrackMaterial = new THREE.MeshBasicMaterial({
+    color: 0x3b414d,
+    side: THREE.DoubleSide,
+  });
+  const fpsSliderTrack = new THREE.Mesh(
+    new THREE.PlaneGeometry(fpsSliderWidth, 0.012),
+    fpsSliderTrackMaterial,
+  );
+  fpsSliderTrack.position.set(0, 0, 0);
+  fpsSliderGroup.add(fpsSliderTrack);
+
+  const fpsSliderFillMaterial = new THREE.MeshBasicMaterial({
+    color: 0x68a7ff,
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.DoubleSide,
+  });
+  const fpsSliderFill = new THREE.Mesh(
+    new THREE.PlaneGeometry(fpsSliderWidth, 0.012),
+    fpsSliderFillMaterial,
+  );
+  fpsSliderFill.position.set(0, 0, 0.0005);
+  fpsSliderGroup.add(fpsSliderFill);
+
+  const fpsSliderKnobMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    side: THREE.DoubleSide,
+  });
+  const fpsSliderKnob = new THREE.Mesh(new THREE.CircleGeometry(0.017, 32), fpsSliderKnobMaterial);
+  fpsSliderKnob.position.set(-fpsSliderWidth / 2, 0, 0.001);
+  fpsSliderKnob.userData.vrUiTarget = { type: 'playback-fps-slider' } satisfies {
+    type: VrUiTargetType;
+  };
+  fpsSliderGroup.add(fpsSliderKnob);
+
+  const fpsSliderHitMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    opacity: 0.01,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const fpsSliderHitArea = new THREE.Mesh(
+    new THREE.PlaneGeometry(fpsSliderWidth + 0.04, 0.08),
+    fpsSliderHitMaterial,
+  );
+  fpsSliderHitArea.position.set(0, 0, 0.0002);
+  fpsSliderHitArea.userData.vrUiTarget = { type: 'playback-fps-slider' } satisfies {
+    type: VrUiTargetType;
+  };
+  fpsSliderGroup.add(fpsSliderHitArea);
+
+  const fpsLabelCanvas = document.createElement('canvas');
+  fpsLabelCanvas.width = 256;
+  fpsLabelCanvas.height = 64;
+  const fpsLabelContext = fpsLabelCanvas.getContext('2d');
+  const fpsLabelTexture = new THREE.CanvasTexture(fpsLabelCanvas);
+  fpsLabelTexture.colorSpace = THREE.SRGBColorSpace;
+  fpsLabelTexture.minFilter = THREE.LinearFilter;
+  fpsLabelTexture.magFilter = THREE.LinearFilter;
+  const fpsLabelMaterial = new THREE.MeshBasicMaterial({
+    map: fpsLabelTexture,
+    transparent: true,
+    opacity: 0.95,
+    side: THREE.DoubleSide,
+  });
+  const fpsLabelMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.05), fpsLabelMaterial);
+  fpsLabelMesh.position.set(0, fpsLabelRowY, VR_HUD_SURFACE_OFFSET + 0.0005);
+  group.add(fpsLabelMesh);
+
+  const playbackSliderGroup = new THREE.Group();
+  playbackSliderGroup.position.set(0, playbackSliderRowY, VR_HUD_SURFACE_OFFSET);
+  group.add(playbackSliderGroup);
+
+  const playbackSliderWidth = 0.32;
+  const playbackSliderTrackMaterial = new THREE.MeshBasicMaterial({
+    color: 0x3b414d,
+    side: THREE.DoubleSide,
+  });
+  const playbackSliderTrack = new THREE.Mesh(
+    new THREE.PlaneGeometry(playbackSliderWidth, 0.012),
+    playbackSliderTrackMaterial,
+  );
+  playbackSliderTrack.position.set(0, 0, 0);
+  playbackSliderGroup.add(playbackSliderTrack);
+
+  const playbackSliderFillMaterial = new THREE.MeshBasicMaterial({
+    color: 0x68a7ff,
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.DoubleSide,
+  });
+  const playbackSliderFill = new THREE.Mesh(
+    new THREE.PlaneGeometry(playbackSliderWidth, 0.012),
+    playbackSliderFillMaterial,
+  );
+  playbackSliderFill.position.set(0, 0, 0.0005);
+  playbackSliderGroup.add(playbackSliderFill);
+
+  const playbackSliderKnobMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    side: THREE.DoubleSide,
+  });
+  const playbackSliderKnob = new THREE.Mesh(
+    new THREE.CircleGeometry(0.017, 32),
+    playbackSliderKnobMaterial,
+  );
+  playbackSliderKnob.position.set(-playbackSliderWidth / 2, 0, 0.001);
+  playbackSliderKnob.userData.vrUiTarget = { type: 'playback-slider' } satisfies {
+    type: VrUiTargetType;
+  };
+  playbackSliderGroup.add(playbackSliderKnob);
+
+  const playbackSliderHitMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    opacity: 0.01,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const playbackSliderHitArea = new THREE.Mesh(
+    new THREE.PlaneGeometry(playbackSliderWidth + 0.04, 0.08),
+    playbackSliderHitMaterial,
+  );
+  playbackSliderHitArea.position.set(0, 0, 0.0002);
+  playbackSliderHitArea.userData.vrUiTarget = { type: 'playback-slider' } satisfies {
+    type: VrUiTargetType;
+  };
+  playbackSliderGroup.add(playbackSliderHitArea);
+
+  const labelCanvas = document.createElement('canvas');
+  labelCanvas.width = 256;
+  labelCanvas.height = 64;
+  const labelContext = labelCanvas.getContext('2d');
+  const labelTexture = new THREE.CanvasTexture(labelCanvas);
+  labelTexture.colorSpace = THREE.SRGBColorSpace;
+  labelTexture.minFilter = THREE.LinearFilter;
+  labelTexture.magFilter = THREE.LinearFilter;
+  const labelMaterial = new THREE.MeshBasicMaterial({
+    map: labelTexture,
+    transparent: true,
+    opacity: 0.95,
+    side: THREE.DoubleSide,
+  });
+  const labelMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.06), labelMaterial);
+  labelMesh.position.set(0, playbackLabelRowY, VR_HUD_SURFACE_OFFSET + 0.0005);
+  group.add(labelMesh);
+
+  const hud: VrPlaybackHud = {
+    group,
+    panel,
+    panelTranslateHandle,
+    panelYawHandles,
+    panelPitchHandle,
+    resetVolumeButton,
+    resetHudButton,
+    playButton,
+    playIcon,
+    pauseGroup,
+    exitButton,
+    exitIcon: exitIconGroup,
+    modeButton,
+    modeVrIcon,
+    modeArIcon,
+    playbackSliderGroup,
+    playbackSliderTrack,
+    playbackSliderFill,
+    playbackSliderKnob,
+    playbackSliderHitArea,
+    playbackSliderWidth,
+    fpsSliderGroup,
+    fpsSliderTrack,
+    fpsSliderFill,
+    fpsSliderKnob,
+    fpsSliderHitArea,
+    fpsSliderWidth,
+    labelMesh,
+    labelTexture,
+    labelCanvas,
+    labelContext,
+    labelText: '',
+    fpsLabelMesh,
+    fpsLabelTexture,
+    fpsLabelCanvas,
+    fpsLabelContext,
+    fpsLabelText: '',
+    interactables: [
+      panelTranslateHandle,
+      ...panelYawHandles,
+      panelPitchHandle,
+      resetVolumeButton,
+      resetHudButton,
+      playButton,
+      modeButton,
+      exitButton,
+      playbackSliderHitArea,
+      playbackSliderKnob,
+      fpsSliderHitArea,
+      fpsSliderKnob,
+    ],
+    resetVolumeButtonBaseColor: new THREE.Color(0x2b3340),
+    resetHudButtonBaseColor: new THREE.Color(0x2b3340),
+    playButtonBaseColor: new THREE.Color(0x2b3340),
+    playbackSliderTrackBaseColor: new THREE.Color(0x3b414d),
+    playbackSliderKnobBaseColor: new THREE.Color(0xffffff),
+    fpsSliderTrackBaseColor: new THREE.Color(0x3b414d),
+    fpsSliderKnobBaseColor: new THREE.Color(0xffffff),
+    exitButtonBaseColor: new THREE.Color(0x512b2b),
+    modeButtonBaseColor: new THREE.Color(0x2b3340),
+    modeButtonActiveColor: new THREE.Color(0x1f6f3f),
+    modeButtonDisabledColor: new THREE.Color(0x3a414d),
+    hoverHighlightColor: new THREE.Color(0xffffff),
+    resetVolumeButtonRadius: sideButtonRadius,
+    resetHudButtonRadius: sideButtonRadius,
+    exitButtonRadius: sideButtonRadius,
+    modeButtonRadius: sideButtonRadius,
+    cachedPosition: new THREE.Vector3(NaN, NaN, NaN),
+    cachedYaw: NaN,
+    cachedPitch: NaN,
+    cacheDirty: true,
+  };
+
+  if (initialState) {
+    const maxIndex = Math.max(0, initialState.totalTimepoints - 1);
+    const fraction =
+      maxIndex > 0 ? Math.min(Math.max(initialState.timeIndex / maxIndex, 0), 1) : 0;
+    setVrPlaybackProgressFraction(hud, fraction);
+    setVrPlaybackLabel(hud, initialState.playbackLabel ?? '');
+  }
+
+  return hud;
+}
+
+export function createVrChannelsHud(): VrChannelsHud | null {
+  if (typeof document === 'undefined') {
+    return null;
+  }
+  const group = new THREE.Group();
+  group.name = 'VrChannelsHud';
+
+  const backgroundMaterial = new THREE.MeshBasicMaterial({
+    color: 0x10161d,
+    transparent: false,
+    opacity: 1,
+    side: THREE.DoubleSide,
+  });
+  const background = new THREE.Mesh(
+    new THREE.PlaneGeometry(VR_CHANNELS_PANEL_WIDTH, VR_CHANNELS_PANEL_HEIGHT),
+    backgroundMaterial,
+  );
+  background.position.set(0, 0, 0);
+  group.add(background);
+
+  const panelCanvas = document.createElement('canvas');
+  const panelDisplayWidth = VR_CHANNELS_CANVAS_WIDTH;
+  const panelDisplayHeight = VR_CHANNELS_CANVAS_MIN_HEIGHT;
+  const pixelRatio = typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : 1;
+  panelCanvas.width = Math.round(panelDisplayWidth * pixelRatio);
+  panelCanvas.height = Math.round(panelDisplayHeight * pixelRatio);
+  const panelContext = panelCanvas.getContext('2d');
+  if (!panelContext) {
+    return null;
+  }
+  panelContext.imageSmoothingEnabled = true;
+  panelContext.imageSmoothingQuality = 'high';
+  const panelTexture = new THREE.CanvasTexture(panelCanvas);
+  panelTexture.colorSpace = THREE.SRGBColorSpace;
+  panelTexture.minFilter = THREE.LinearFilter;
+  panelTexture.magFilter = THREE.LinearFilter;
+
+  const panelMaterial = new THREE.MeshBasicMaterial({
+    map: panelTexture,
+    transparent: true,
+    opacity: 1,
+    side: THREE.DoubleSide,
+  });
+  const panel = new THREE.Mesh(
+    new THREE.PlaneGeometry(VR_CHANNELS_PANEL_WIDTH, VR_CHANNELS_PANEL_HEIGHT),
+    panelMaterial,
+  );
+  panel.position.set(0, 0, VR_HUD_SURFACE_OFFSET);
+  panel.userData.vrUiTarget = { type: 'channels-panel' } satisfies { type: VrUiTargetType };
+  group.add(panel);
+
+  const translateHandleMaterial = new THREE.MeshBasicMaterial({
+    color: VR_HUD_TRANSLATE_HANDLE_COLOR,
+    transparent: true,
+    opacity: 0.75,
+    depthWrite: false,
+  });
+  translateHandleMaterial.depthTest = false;
+  const panelTranslateHandle = new THREE.Mesh(
+    new THREE.SphereGeometry(VR_HUD_TRANSLATE_HANDLE_RADIUS, 32, 32),
+    translateHandleMaterial,
+  );
+  panelTranslateHandle.position.set(
+    0,
+    VR_CHANNELS_PANEL_HEIGHT / 2 + VR_HUD_TRANSLATE_HANDLE_OFFSET,
+    0,
+  );
+  panelTranslateHandle.userData.vrUiTarget = { type: 'channels-panel-grab' } satisfies {
+    type: VrUiTargetType;
+  };
+  group.add(panelTranslateHandle);
+
+  const yawHandleMaterial = new THREE.MeshBasicMaterial({
+    color: VR_HUD_YAW_HANDLE_COLOR,
+    transparent: true,
+    opacity: 0.85,
+    depthWrite: false,
+  });
+  yawHandleMaterial.depthTest = false;
+  const panelYawHandles: THREE.Mesh[] = [];
+  for (const direction of [1, -1] as const) {
+    const handle = new THREE.Mesh(
+      new THREE.SphereGeometry(VR_HUD_YAW_HANDLE_RADIUS, 32, 32),
+      yawHandleMaterial.clone(),
+    );
+    handle.position.set(
+      direction * (VR_CHANNELS_PANEL_WIDTH / 2 + VR_HUD_YAW_HANDLE_OFFSET),
+      0,
+      0,
+    );
+    handle.userData.vrUiTarget = { type: 'channels-panel-yaw' } satisfies {
+      type: VrUiTargetType;
+    };
+    group.add(handle);
+    panelYawHandles.push(handle);
+  }
+
+  const panelPitchHandle = new THREE.Mesh(
+    new THREE.SphereGeometry(VR_HUD_YAW_HANDLE_RADIUS, 32, 32),
+    yawHandleMaterial.clone(),
+  );
+  panelPitchHandle.position.set(
+    0,
+    -(VR_CHANNELS_PANEL_HEIGHT / 2 + VR_HUD_YAW_HANDLE_OFFSET),
+    0,
+  );
+  panelPitchHandle.userData.vrUiTarget = { type: 'channels-panel-pitch' } satisfies {
+    type: VrUiTargetType;
+  };
+  group.add(panelPitchHandle);
+
+  const hud: VrChannelsHud = {
+    group,
+    background,
+    panel,
+    panelTranslateHandle,
+    panelYawHandles,
+    panelPitchHandle,
+    panelTexture,
+    panelCanvas,
+    panelContext,
+    panelDisplayWidth,
+    panelDisplayHeight,
+    pixelRatio,
+    interactables: [panelTranslateHandle, ...panelYawHandles, panelPitchHandle, panel],
+    regions: [],
+    width: VR_CHANNELS_PANEL_WIDTH,
+    height: VR_CHANNELS_PANEL_HEIGHT,
+    hoverRegion: null,
+    cachedPosition: new THREE.Vector3(NaN, NaN, NaN),
+    cachedYaw: NaN,
+    cachedPitch: NaN,
+    cacheDirty: true,
+  };
+
+  return hud;
+}
+
+export function createVrTracksHud(): VrTracksHud | null {
+  if (typeof document === 'undefined') {
+    return null;
+  }
+  const group = new THREE.Group();
+  group.name = 'VrTracksHud';
+
+  const backgroundMaterial = new THREE.MeshBasicMaterial({
+    color: 0x10161d,
+    transparent: false,
+    opacity: 1,
+    side: THREE.DoubleSide,
+  });
+  const background = new THREE.Mesh(
+    new THREE.PlaneGeometry(VR_TRACKS_PANEL_WIDTH, VR_TRACKS_PANEL_HEIGHT),
+    backgroundMaterial,
+  );
+  background.position.set(0, 0, 0);
+  group.add(background);
+
+  const panelCanvas = document.createElement('canvas');
+  const panelDisplayWidth = VR_TRACKS_CANVAS_WIDTH;
+  const panelDisplayHeight = VR_TRACKS_CANVAS_HEIGHT;
+  const pixelRatio = typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : 1;
+  panelCanvas.width = Math.round(panelDisplayWidth * pixelRatio);
+  panelCanvas.height = Math.round(panelDisplayHeight * pixelRatio);
+  const panelContext = panelCanvas.getContext('2d');
+  if (!panelContext) {
+    return null;
+  }
+  panelContext.imageSmoothingEnabled = true;
+  panelContext.imageSmoothingQuality = 'high';
+  const panelTexture = new THREE.CanvasTexture(panelCanvas);
+  panelTexture.colorSpace = THREE.SRGBColorSpace;
+  panelTexture.minFilter = THREE.LinearFilter;
+  panelTexture.magFilter = THREE.LinearFilter;
+
+  const panelMaterial = new THREE.MeshBasicMaterial({
+    map: panelTexture,
+    transparent: true,
+    opacity: 1,
+    side: THREE.DoubleSide,
+  });
+  const panel = new THREE.Mesh(
+    new THREE.PlaneGeometry(VR_TRACKS_PANEL_WIDTH, VR_TRACKS_PANEL_HEIGHT),
+    panelMaterial,
+  );
+  panel.position.set(0, 0, VR_HUD_SURFACE_OFFSET);
+  panel.userData.vrUiTarget = { type: 'tracks-panel' } satisfies { type: VrUiTargetType };
+  group.add(panel);
+
+  const translateHandleMaterial = new THREE.MeshBasicMaterial({
+    color: VR_HUD_TRANSLATE_HANDLE_COLOR,
+    transparent: true,
+    opacity: 0.75,
+    depthWrite: false,
+  });
+  translateHandleMaterial.depthTest = false;
+  const panelTranslateHandle = new THREE.Mesh(
+    new THREE.SphereGeometry(VR_HUD_TRANSLATE_HANDLE_RADIUS, 32, 32),
+    translateHandleMaterial,
+  );
+  panelTranslateHandle.position.set(
+    0,
+    VR_TRACKS_PANEL_HEIGHT / 2 + VR_HUD_TRANSLATE_HANDLE_OFFSET,
+    0,
+  );
+  panelTranslateHandle.userData.vrUiTarget = { type: 'tracks-panel-grab' } satisfies {
+    type: VrUiTargetType;
+  };
+  group.add(panelTranslateHandle);
+
+  const yawHandleMaterial = new THREE.MeshBasicMaterial({
+    color: VR_HUD_YAW_HANDLE_COLOR,
+    transparent: true,
+    opacity: 0.85,
+    depthWrite: false,
+  });
+  yawHandleMaterial.depthTest = false;
+  const panelYawHandles: THREE.Mesh[] = [];
+  for (const direction of [1, -1] as const) {
+    const handle = new THREE.Mesh(
+      new THREE.SphereGeometry(VR_HUD_YAW_HANDLE_RADIUS, 32, 32),
+      yawHandleMaterial.clone(),
+    );
+    handle.position.set(
+      direction * (VR_TRACKS_PANEL_WIDTH / 2 + VR_HUD_YAW_HANDLE_OFFSET),
+      0,
+      0,
+    );
+    handle.userData.vrUiTarget = { type: 'tracks-panel-yaw' } satisfies {
+      type: VrUiTargetType;
+    };
+    group.add(handle);
+    panelYawHandles.push(handle);
+  }
+
+  const panelPitchHandle = new THREE.Mesh(
+    new THREE.SphereGeometry(VR_HUD_YAW_HANDLE_RADIUS, 32, 32),
+    yawHandleMaterial.clone(),
+  );
+  panelPitchHandle.position.set(
+    0,
+    -(VR_TRACKS_PANEL_HEIGHT / 2 + VR_HUD_YAW_HANDLE_OFFSET),
+    0,
+  );
+  panelPitchHandle.userData.vrUiTarget = { type: 'tracks-panel-pitch' } satisfies {
+    type: VrUiTargetType;
+  };
+  group.add(panelPitchHandle);
+
+  const hud: VrTracksHud = {
+    group,
+    panel,
+    panelTranslateHandle,
+    panelYawHandles,
+    panelPitchHandle,
+    panelTexture,
+    panelCanvas,
+    panelContext,
+    panelDisplayWidth,
+    panelDisplayHeight,
+    pixelRatio,
+    interactables: [panelTranslateHandle, ...panelYawHandles, panelPitchHandle, panel],
+    regions: [],
+    width: VR_TRACKS_PANEL_WIDTH,
+    height: VR_TRACKS_PANEL_HEIGHT,
+    hoverRegion: null,
+    cachedPosition: new THREE.Vector3(NaN, NaN, NaN),
+    cachedYaw: NaN,
+    cachedPitch: NaN,
+    cacheDirty: true,
+  };
+
+  return hud;
+}
