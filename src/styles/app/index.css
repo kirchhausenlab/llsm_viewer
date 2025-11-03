@@ -2,4 +2,5 @@
 @import './front-page-channels.css';
 @import './front-page-preprocessing.css';
 @import './viewer-windows.css';
+@import './viewer-channel-controls.css';
 @import '../../App.css';
