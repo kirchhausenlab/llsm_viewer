@@ -4,6 +4,8 @@ import { Line2 } from 'three/examples/jsm/lines/Line2';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory';
 
+export * from './vr';
+
 import type {
   MovementState,
   PointerState,
