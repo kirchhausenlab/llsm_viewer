@@ -21,8 +21,15 @@ import type {
 import {
   useVolumeViewerVr,
   type UseVolumeViewerVrResult,
+  type RaycasterLike,
+  type VrChannelsHud,
+  type VrChannelsInteractiveRegion,
+  type VrChannelsState,
   type VrHudPlacement,
   type VrPlaybackHud,
+  type VrTracksHud,
+  type VrTracksInteractiveRegion,
+  type VrTracksState,
   type VrUiTarget,
   type VrUiTargetType,
   VR_PLAYBACK_MAX_FPS,
@@ -489,7 +496,6 @@ function VolumeViewer({
         controlsRef,
         sceneRef,
         volumeRootGroupRef,
-        rotationTargetRef,
         currentDimensionsRef,
         volumeRootBaseOffsetRef,
         volumeRootCenterOffsetRef,
@@ -660,10 +666,6 @@ function VolumeViewer({
       resetVrPlaybackHudPlacement: () => {},
       resetVrChannelsHudPlacement: () => {},
       resetVrTracksHudPlacement: () => {},
-      initializeVrHudScene: () => {},
-      registerDesktopPointerHandlers: () => () => {},
-      startImmersiveRenderLoop: () => {},
-      cleanupImmersivePresentation: () => {},
       applyVolumeRootTransform: () => {},
       applyVolumeStepScaleToResources: () => {},
       applyVrFoveation: () => {},
@@ -718,6 +720,7 @@ function VolumeViewer({
     controllersRef,
     setControllerVisibility,
     refreshControllerVisibility,
+    raycasterRef,
     xrSessionRef,
     sessionCleanupRef,
     preVrCameraStateRef,
@@ -745,6 +748,16 @@ function VolumeViewer({
     setVrTracksHudPlacementPitch,
     applyPlaybackSliderFromWorldPoint,
     applyFpsSliderFromWorldPoint,
+    createVrPlaybackHud,
+    createVrChannelsHud,
+    createVrTracksHud,
+    renderVrChannelsHud,
+    renderVrTracksHud,
+    updateVrChannelsHud,
+    updateVrTracksHud,
+    applyVrChannelsSliderFromPoint,
+    applyVrTracksSliderFromPoint,
+    applyVrTracksScrollFromPoint,
     updateVolumeHandles,
     applyVolumeYawPitch,
     updateHudGroupFromPlacement,
@@ -753,10 +766,6 @@ function VolumeViewer({
     resetVrPlaybackHudPlacement,
     resetVrChannelsHudPlacement,
     resetVrTracksHudPlacement,
-    initializeVrHudScene,
-    registerDesktopPointerHandlers,
-    startImmersiveRenderLoop,
-    cleanupImmersivePresentation,
     applyVolumeRootTransform,
     applyVolumeStepScaleToResources,
     applyVrFoveation,
@@ -1497,17 +1506,241 @@ function VolumeViewer({
     controls.zoomSpeed = 0.7;
     controlsRef.current = controls;
 
+    const hud = createVrPlaybackHud();
+    if (hud) {
+      hud.group.visible = false;
+      scene.add(hud.group);
+      vrPlaybackHudRef.current = hud;
+      resetVrPlaybackHudPlacement();
+      updateVrPlaybackHud();
+      applyVrPlaybackHoverState(false, false, false, false, false, false, false, false, false);
+    } else {
+      vrPlaybackHudRef.current = null;
+    }
+
+    const channelsHud = createVrChannelsHud();
+    if (channelsHud) {
+      channelsHud.group.visible = false;
+      scene.add(channelsHud.group);
+      vrChannelsHudRef.current = channelsHud;
+      resetVrChannelsHudPlacement();
+      updateVrChannelsHud();
+    } else {
+      vrChannelsHudRef.current = null;
+    }
+
+    const tracksHud = createVrTracksHud();
+    if (tracksHud) {
+      tracksHud.group.visible = false;
+      scene.add(tracksHud.group);
+      vrTracksHudRef.current = tracksHud;
+      resetVrTracksHudPlacement();
+      updateVrTracksHud();
+    } else {
+      vrTracksHudRef.current = null;
+    }
+
+    const domElement = renderer.domElement;
+
+    const pointerVector = new THREE.Vector2();
+    const raycaster = new (THREE as unknown as { Raycaster: new () => RaycasterLike }).Raycaster();
+    raycaster.params.Line = { threshold: 0.02 };
+    (raycaster.params as unknown as { Line2?: { threshold: number } }).Line2 = {
+      threshold: 0.02
+    };
+    raycasterRef.current = raycaster;
+
+    const performHoverHitTest = (event: PointerEvent): number | null => {
+      const cameraInstance = cameraRef.current;
+      const trackGroupInstance = trackGroupRef.current;
+      const raycasterInstance = raycasterRef.current;
+      if (!cameraInstance || !trackGroupInstance || !raycasterInstance || !trackGroupInstance.visible) {
+        clearHoverState('pointer');
+        return null;
+      }
+
+      const rect = domElement.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+      if (width <= 0 || height <= 0) {
+        clearHoverState('pointer');
+        return null;
+      }
+
+      const offsetX = event.clientX - rect.left;
+      const offsetY = event.clientY - rect.top;
+      if (offsetX < 0 || offsetY < 0 || offsetX > width || offsetY > height) {
+        clearHoverState('pointer');
+        return null;
+      }
+
+      pointerVector.set((offsetX / width) * 2 - 1, -(offsetY / height) * 2 + 1);
+      raycasterInstance.setFromCamera(pointerVector, cameraInstance);
+
+      const visibleLines: Line2[] = [];
+      for (const resource of trackLinesRef.current.values()) {
+        if (resource.line.visible) {
+          visibleLines.push(resource.line);
+        }
+      }
+
+      if (visibleLines.length === 0) {
+        clearHoverState('pointer');
+        return null;
+      }
+
+      const intersections = raycasterInstance.intersectObjects(visibleLines, false);
+      if (intersections.length === 0) {
+        clearHoverState('pointer');
+        return null;
+      }
+
+      const intersection = intersections[0];
+      const hitObject = intersection.object as unknown as { userData: Record<string, unknown> };
+      const trackId =
+        typeof hitObject.userData.trackId === 'string'
+          ? (hitObject.userData.trackId as string)
+          : null;
+      if (trackId === null) {
+        clearHoverState('pointer');
+        return null;
+      }
+
+      updateHoverState(trackId, { x: offsetX, y: offsetY });
+      return trackId;
+    };
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const controls = controlsRef.current;
+      const cameraInstance = cameraRef.current;
+      if (!controls || !cameraInstance) {
+        return;
+      }
+
+      if (event.button !== 0) {
+        return;
+      }
+
+      const mode = event.ctrlKey ? 'dolly' : event.shiftKey ? 'pan' : null;
+
+      if (!mode) {
+        const hitTrackId = performHoverHitTest(event);
+        if (hitTrackId !== null) {
+          onTrackSelectionToggle(hitTrackId);
+        }
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+
+      const previousEnablePan = mode === 'pan' ? controls.enablePan : null;
+      if (mode === 'pan') {
+        controls.enablePan = true;
+      }
+
+      clearHoverState('pointer');
+
+      pointerStateRef.current = {
+        mode,
+        pointerId: event.pointerId,
+        lastX: event.clientX,
+        lastY: event.clientY,
+        previousControlsEnabled: controls.enabled,
+        previousEnablePan
+      };
+      controls.enabled = false;
+
+      try {
+        domElement.setPointerCapture(event.pointerId);
+      } catch (error) {
+        // Ignore errors from unsupported pointer capture (e.g., Safari)
+      }
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const state = pointerStateRef.current;
+      if (!state || event.pointerId !== state.pointerId) {
+        performHoverHitTest(event);
+        return;
+      }
+
+      clearHoverState('pointer');
+
+      const controls = controlsRef.current;
+      const camera = cameraRef.current;
+      if (!controls || !camera) {
+        return;
+      }
+
+      const deltaX = event.clientX - state.lastX;
+      const deltaY = event.clientY - state.lastY;
+
+      if (state.mode === 'pan') {
+        (controls as unknown as { pan: (dx: number, dy: number) => void }).pan(deltaX, deltaY);
+        rotationTargetRef.current.copy(controls.target);
+      } else {
+        const rotationTarget = rotationTargetRef.current;
+        camera.getWorldDirection(dollyDirection);
+        const distance = rotationTarget.distanceTo(camera.position);
+        const depthScale = Math.max(distance * 0.0025, 0.0006);
+        const moveAmount = -deltaY * depthScale;
+        dollyDirection.multiplyScalar(moveAmount);
+        camera.position.add(dollyDirection);
+        controls.target.copy(rotationTarget);
+      }
+
+      controls.update();
+      state.lastX = event.clientX;
+      state.lastY = event.clientY;
+    };
+
+    const handlePointerUp = (event: PointerEvent) => {
+      const state = pointerStateRef.current;
+      if (!state || event.pointerId !== state.pointerId) {
+        performHoverHitTest(event);
+        return;
+      }
+
+      const controls = controlsRef.current;
+      if (controls) {
+        controls.enabled = state.previousControlsEnabled;
+        if (state.mode === 'pan' && state.previousEnablePan !== null) {
+          controls.enablePan = state.previousEnablePan;
+        }
+      }
+
+      try {
+        domElement.releasePointerCapture(event.pointerId);
+      } catch (error) {
+        // Ignore errors from unsupported pointer capture (e.g., Safari)
+      }
+
+      pointerStateRef.current = null;
+      performHoverHitTest(event);
+    };
+
+    const handlePointerLeave = () => {
+      clearHoverState('pointer');
+    };
+
+    const pointerDownOptions: AddEventListenerOptions = { capture: true };
+
+    domElement.addEventListener('pointerdown', handlePointerDown, pointerDownOptions);
+    domElement.addEventListener('pointermove', handlePointerMove);
+    domElement.addEventListener('pointerup', handlePointerUp);
+    domElement.addEventListener('pointercancel', handlePointerUp);
+    domElement.addEventListener('pointerleave', handlePointerLeave);
+
+
+
     rendererRef.current = renderer;
     sceneRef.current = scene;
-    initializeVrHudScene(scene);
-
-    const removePointerHandlers = registerDesktopPointerHandlers(
-      renderer,
-      onTrackSelectionToggle
-    );
-
-
-
+    cameraRef.current = camera;
+    resetVrPlaybackHudPlacement();
+    resetVrChannelsHudPlacement();
+    resetVrTracksHudPlacement();
     onRendererInitialized();
 
     const resizeObserver = new ResizeObserver(() => handleResize());
@@ -1743,11 +1976,93 @@ function VolumeViewer({
       lastRenderTickSummary = renderSummary;
       renderer.render(scene, camera);
     };
-    startImmersiveRenderLoop(renderer, renderLoop);
+    renderer.setAnimationLoop(renderLoop);
 
     return () => {
-      removePointerHandlers();
-      cleanupImmersivePresentation(renderer);
+      restoreVrFoveation();
+      applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
+      renderer.setAnimationLoop(null);
+
+      const activeSession = xrSessionRef.current;
+      if (activeSession) {
+        try {
+          sessionCleanupRef.current?.();
+        } finally {
+          activeSession.end().catch(() => undefined);
+        }
+      }
+      xrSessionRef.current = null;
+      sessionCleanupRef.current = null;
+      preVrCameraStateRef.current = null;
+      setControllerVisibility(false);
+      const hud = vrPlaybackHudRef.current;
+      if (hud) {
+        if (hud.group.parent) {
+          hud.group.parent.remove(hud.group);
+        }
+        hud.group.traverse((object) => {
+          if ((object as THREE.Mesh).isMesh) {
+            const mesh = object as THREE.Mesh;
+            if (mesh.geometry) {
+              mesh.geometry.dispose?.();
+            }
+            if (Array.isArray(mesh.material)) {
+              mesh.material.forEach((material) => material?.dispose?.());
+            } else if (mesh.material) {
+              mesh.material.dispose?.();
+            }
+          }
+        });
+        hud.labelTexture.dispose();
+        vrPlaybackHudRef.current = null;
+        vrPlaybackHudPlacementRef.current = null;
+      }
+
+      const channelsHud = vrChannelsHudRef.current;
+      if (channelsHud) {
+        if (channelsHud.group.parent) {
+          channelsHud.group.parent.remove(channelsHud.group);
+        }
+        channelsHud.group.traverse((object) => {
+          if ((object as THREE.Mesh).isMesh) {
+            const mesh = object as THREE.Mesh;
+            if (mesh.geometry) {
+              mesh.geometry.dispose?.();
+            }
+            if (Array.isArray(mesh.material)) {
+              mesh.material.forEach((material) => material?.dispose?.());
+            } else if (mesh.material) {
+              mesh.material.dispose?.();
+            }
+          }
+        });
+        channelsHud.panelTexture.dispose();
+        vrChannelsHudRef.current = null;
+        vrChannelsHudPlacementRef.current = null;
+      }
+
+      const tracksHud = vrTracksHudRef.current;
+      if (tracksHud) {
+        if (tracksHud.group.parent) {
+          tracksHud.group.parent.remove(tracksHud.group);
+        }
+        tracksHud.group.traverse((object) => {
+          if ((object as THREE.Mesh).isMesh) {
+            const mesh = object as THREE.Mesh;
+            if (mesh.geometry) {
+              mesh.geometry.dispose?.();
+            }
+            if (Array.isArray(mesh.material)) {
+              mesh.material.forEach((material) => material?.dispose?.());
+            } else if (mesh.material) {
+              mesh.material.dispose?.();
+            }
+          }
+        });
+        tracksHud.panelTexture.dispose();
+        vrTracksHudRef.current = null;
+        vrTracksHudPlacementRef.current = null;
+      }
 
       const resources = resourcesRef.current;
       for (const resource of resources.values()) {
@@ -1787,6 +2102,23 @@ function VolumeViewer({
       vrVolumePitchHandleRef.current = null;
       volumeRootGroupRef.current = null;
       clearHoverState();
+
+      domElement.removeEventListener('pointerdown', handlePointerDown, pointerDownOptions);
+      domElement.removeEventListener('pointermove', handlePointerMove);
+      domElement.removeEventListener('pointerup', handlePointerUp);
+      domElement.removeEventListener('pointercancel', handlePointerUp);
+      domElement.removeEventListener('pointerleave', handlePointerLeave);
+
+      const activePointerState = pointerStateRef.current;
+      if (activePointerState && controlsRef.current) {
+        controlsRef.current.enabled = activePointerState.previousControlsEnabled;
+        if (activePointerState.mode === 'pan' && activePointerState.previousEnablePan !== null) {
+          controlsRef.current.enablePan = activePointerState.previousEnablePan;
+        }
+      }
+      pointerStateRef.current = null;
+
+      raycasterRef.current = null;
       resizeObserver.disconnect();
       controls.dispose();
       renderer.dispose();
