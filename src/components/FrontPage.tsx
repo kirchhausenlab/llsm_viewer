@@ -69,7 +69,7 @@ type FrontPageProps = {
   onLaunchViewer: () => void;
   isLaunchingViewer: boolean;
   launchButtonEnabled: boolean;
-  launchButtonLaunchable: boolean;
+  launchButtonLaunchable: 'true' | 'false';
   onExportPreprocessedExperiment: () => void;
   isExportingPreprocessed: boolean;
   canLaunch: boolean;
