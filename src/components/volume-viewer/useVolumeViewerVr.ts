@@ -2,7 +2,6 @@ import { MutableRefObject, useCallback, useEffect, useMemo, useRef, useState } f
 import * as THREE from 'three';
 import { Line2 } from 'three/examples/jsm/lines/Line2';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory';
 
 export * from './vr';
 
@@ -35,8 +34,8 @@ import type {
   VrHoverState,
   VrUiTarget,
   VrUiTargetType,
-  WebXRFoveationManager,
 } from './vr';
+import { VrSessionManager } from './vr/sessionManager';
 import {
   VR_CHANNELS_CAMERA_ANCHOR_OFFSET,
   VR_CHANNELS_CANVAS_MIN_HEIGHT,
@@ -74,7 +73,6 @@ import {
   VR_TRACKS_VERTICAL_OFFSET,
   VR_TRANSLATION_HANDLE_OFFSET,
   VR_TRANSLATION_HANDLE_RADIUS,
-  VR_CONTROLLER_TOUCH_RADIUS,
   VR_UI_TOUCH_DISTANCE,
   VR_UI_TOUCH_SURFACE_MARGIN,
   VR_VOLUME_MAX_SCALE,
@@ -473,6 +471,7 @@ export function useVolumeViewerVr({
     onFpsChange,
   } = playbackState;
   const controllersRef = useRef<ControllerEntry[]>([]);
+  const sessionManagerRef = useRef<VrSessionManager | null>(null);
   const raycasterRef = useRef<RaycasterLike | null>(null);
   const xrSessionRef = useRef<XRSession | null>(null);
   const sessionCleanupRef = useRef<(() => void) | null>(null);
@@ -489,7 +488,6 @@ export function useVolumeViewerVr({
   const xrPreviousFoveationRef = useRef<number | undefined>(undefined);
   const endVrSessionRequestRef = useRef<(() => Promise<void> | void) | null>(null);
   const disposedRef = useRef(false);
-  const handleSessionEndRef = useRef<() => void>(() => {});
   const requestVrSessionRef = useRef<(() => Promise<XRSession>) | null>(null);
   const vrPropsRef = useRef(vrProps ?? null);
   vrPropsRef.current = vrProps ?? null;
@@ -718,10 +716,8 @@ export function useVolumeViewerVr({
   const refreshControllerVisibility = useCallback<
     UseVolumeViewerVrResult['refreshControllerVisibility']
   >(() => {
-    const renderer = rendererRef.current;
-    const shouldShow = Boolean(renderer?.xr.isPresenting);
-    setControllerVisibility(shouldShow);
-  }, [rendererRef, setControllerVisibility]);
+    sessionManagerRef.current?.refreshControllerVisibility();
+  }, [sessionManagerRef]);
 
   const updateVrPlaybackHud = useCallback<UseVolumeViewerVrResult['updateVrPlaybackHud']>(() => {
     const hud = vrPlaybackHudRef.current;
@@ -735,32 +731,14 @@ export function useVolumeViewerVr({
     UseVolumeViewerVrResult['setPreferredXrSessionMode']
   >(
     (mode) => {
-      xrPreferredSessionModeRef.current = mode;
-      playbackStateRef.current.preferredSessionMode = mode;
-      updateVrPlaybackHud();
+      sessionManagerRef.current?.setPreferredSessionMode(mode);
     },
-    [updateVrPlaybackHud]
+    [sessionManagerRef]
   );
 
   const toggleXrSessionMode = useCallback(() => {
-    if (!xrPassthroughSupportedRef.current) {
-      return;
-    }
-    const nextMode =
-      xrPreferredSessionModeRef.current === 'immersive-ar' ? 'immersive-vr' : 'immersive-ar';
-    setPreferredXrSessionMode(nextMode);
-    const session = xrSessionRef.current;
-    if (session) {
-      if (xrCurrentSessionModeRef.current === nextMode) {
-        return;
-      }
-      xrPendingModeSwitchRef.current = nextMode;
-      session.end().catch((error) => {
-        console.warn('Failed to switch XR session mode', error);
-        xrPendingModeSwitchRef.current = null;
-      });
-    }
-  }, [setPreferredXrSessionMode]);
+    sessionManagerRef.current?.togglePreferredSessionMode();
+  }, [sessionManagerRef]);
 
   useEffect(() => {
     const state = playbackStateRef.current;
@@ -1393,13 +1371,13 @@ export function useVolumeViewerVr({
   );
 
 
-  const endVrSession = useCallback(async () => {
-    const session = xrSessionRef.current;
-    if (!session) {
-      return;
+  const endVrSession = useCallback(() => {
+    const manager = sessionManagerRef.current;
+    if (!manager) {
+      return Promise.resolve();
     }
-    await session.end();
-  }, [xrSessionRef]);
+    return manager.endSession();
+  }, [sessionManagerRef]);
 
   useEffect(() => {
     endVrSessionRequestRef.current = endVrSession;
@@ -1526,52 +1504,14 @@ export function useVolumeViewerVr({
 
   const applyVrFoveation = useCallback(
     (target: number = XR_TARGET_FOVEATION) => {
-      const renderer = rendererRef.current;
-      if (!renderer) {
-        return;
-      }
-      const xrManager = renderer.xr as WebXRFoveationManager;
-      const setFoveation = xrManager?.setFoveation;
-      if (typeof setFoveation !== 'function') {
-        return;
-      }
-      if (!xrFoveationAppliedRef.current) {
-        const getFoveation = xrManager.getFoveation;
-        xrPreviousFoveationRef.current =
-          typeof getFoveation === 'function' ? getFoveation() : undefined;
-      }
-      setFoveation(target);
-      xrFoveationAppliedRef.current = true;
+      sessionManagerRef.current?.applyFoveation(target);
     },
-    [rendererRef, xrFoveationAppliedRef, xrPreviousFoveationRef],
+    [sessionManagerRef],
   );
 
   const restoreVrFoveation = useCallback(() => {
-    if (!xrFoveationAppliedRef.current) {
-      return;
-    }
-    const renderer = rendererRef.current;
-    if (!renderer) {
-      xrFoveationAppliedRef.current = false;
-      xrPreviousFoveationRef.current = undefined;
-      return;
-    }
-    const xrManager = renderer.xr as WebXRFoveationManager;
-    const setFoveation = xrManager?.setFoveation;
-    if (typeof setFoveation !== 'function') {
-      xrFoveationAppliedRef.current = false;
-      xrPreviousFoveationRef.current = undefined;
-      return;
-    }
-    const previous = xrPreviousFoveationRef.current;
-    xrFoveationAppliedRef.current = false;
-    xrPreviousFoveationRef.current = undefined;
-    if (typeof previous === 'number') {
-      setFoveation(previous);
-    } else {
-      setFoveation(0);
-    }
-  }, [rendererRef, xrFoveationAppliedRef, xrPreviousFoveationRef]);
+    sessionManagerRef.current?.restoreFoveation();
+  }, [sessionManagerRef]);
 
   const applyVolumeStepScaleToResources = useCallback(
     (stepScale: number) => {
@@ -2173,202 +2113,77 @@ export function useVolumeViewerVr({
     }
   }, [applySessionEndState, disposedRef, vrPropsRef]);
 
-  const handleSessionEnd = useCallback(() => {
-    const renderer = rendererRef.current;
-    vrLogRef.current?.('[VR] handleSessionEnd', {
-      presenting: renderer?.xr?.isPresenting ?? false,
-      visibilityState: xrSessionRef.current?.visibilityState ?? null,
-    });
-    applySessionEndState();
-    sessionCleanupRef.current = null;
-    xrSessionRef.current = null;
-    xrCurrentSessionModeRef.current = null;
-    const playbackState = playbackStateRef.current;
-    playbackState.currentSessionMode = null;
-    updateVrPlaybackHud();
-    setControllerVisibility(false);
-    applyVrPlaybackHoverState(false, false, false, false, false, false, false, false, false);
-    for (const entry of controllersRef.current) {
-      entry.ray.scale.set(1, 1, 1);
-      entry.hudGrabOffsets.playback = null;
-      entry.hudGrabOffsets.channels = null;
-      entry.hudGrabOffsets.tracks = null;
-      entry.translateGrabOffset = null;
-      entry.scaleGrabOffset = null;
-      entry.volumeScaleState = null;
-    }
-    const controls = controlsRef.current;
-    if (controls) {
-      controls.enabled = true;
-    }
-    const stored = preVrCameraStateRef.current;
-    const camera = cameraRef.current;
-    if (stored && camera && controls) {
-      camera.position.copy(stored.position);
-      camera.quaternion.copy(stored.quaternion);
-      camera.updateMatrixWorld(true);
-      controls.target.copy(stored.target);
-      controls.update();
-    }
-    preVrCameraStateRef.current = null;
-    refreshControllerVisibility();
-    onAfterSessionEnd?.();
-    const pendingMode = xrPendingModeSwitchRef.current;
-    xrPendingModeSwitchRef.current = null;
-    if (!disposedRef.current) {
-      callOnVrSessionEnded();
-      if (pendingMode) {
-        vrLogRef.current?.('[VR] restarting session to honor pending mode switch', {
-          mode: pendingMode,
-        });
-        const restart = requestVrSessionRef.current;
-        if (restart) {
-          void restart().catch((error) => {
-            console.error('Failed to restart XR session after mode switch', error);
-          });
-        }
+  const sessionManager = useMemo(
+    () =>
+      new VrSessionManager({
+        rendererRef,
+        cameraRef,
+        controlsRef,
+        sceneRef,
+        controllersRef,
+        playbackStateRef,
+        xrSessionRef,
+        sessionCleanupRef,
+        preVrCameraStateRef,
+        xrPreferredSessionModeRef,
+        xrCurrentSessionModeRef,
+        xrPendingModeSwitchRef,
+        xrPassthroughSupportedRef,
+        xrFoveationAppliedRef,
+        xrPreviousFoveationRef,
+        setControllerVisibility,
+        applyVrPlaybackHoverState,
+        updateVrPlaybackHud,
+        onSessionStarted: callOnVrSessionStarted,
+        onSessionEnded: callOnVrSessionEnded,
+        onAfterSessionEnd,
+        vrLogRef,
+        disposedRef,
+      }),
+    [
+      rendererRef,
+      cameraRef,
+      controlsRef,
+      sceneRef,
+      controllersRef,
+      playbackStateRef,
+      xrSessionRef,
+      sessionCleanupRef,
+      preVrCameraStateRef,
+      xrPreferredSessionModeRef,
+      xrCurrentSessionModeRef,
+      xrPendingModeSwitchRef,
+      xrPassthroughSupportedRef,
+      xrFoveationAppliedRef,
+      xrPreviousFoveationRef,
+      setControllerVisibility,
+      applyVrPlaybackHoverState,
+      updateVrPlaybackHud,
+      callOnVrSessionStarted,
+      callOnVrSessionEnded,
+      onAfterSessionEnd,
+      vrLogRef,
+      disposedRef,
+    ],
+  );
+
+  useEffect(() => {
+    sessionManagerRef.current = sessionManager;
+    return () => {
+      if (sessionManagerRef.current === sessionManager) {
+        sessionManagerRef.current = null;
       }
-    }
-  }, [
-    applySessionEndState,
-    applyVrPlaybackHoverState,
-    cameraRef,
-    controlsRef,
-    controllersRef,
-    disposedRef,
-    onAfterSessionEnd,
-    playbackStateRef,
-    preVrCameraStateRef,
-    refreshControllerVisibility,
-    requestVrSessionRef,
-    setControllerVisibility,
-    updateVrPlaybackHud,
-    callOnVrSessionEnded,
-    vrLogRef,
-    vrPropsRef,
-    xrCurrentSessionModeRef,
-    xrPendingModeSwitchRef,
-  ]);
-
-  const requestVrSession = useCallback(async () => {
-    if (xrSessionRef.current) {
-      return xrSessionRef.current;
-    }
-    if (typeof navigator === 'undefined' || !navigator.xr) {
-      throw new Error('WebXR not available');
-    }
-    const renderer = rendererRef.current;
-    if (!renderer) {
-      throw new Error('Renderer not initialized');
-    }
-
-    const preferredMode = xrPreferredSessionModeRef.current;
-    const attemptedModes: Array<'immersive-vr' | 'immersive-ar'> = [];
-    if (preferredMode === 'immersive-ar' && xrPassthroughSupportedRef.current) {
-      attemptedModes.push('immersive-ar');
-    }
-    attemptedModes.push('immersive-vr');
-    if (!attemptedModes.includes('immersive-ar') && xrPassthroughSupportedRef.current) {
-      attemptedModes.push('immersive-ar');
-    }
-
-    let session: XRSession | null = null;
-    let resolvedMode: 'immersive-vr' | 'immersive-ar' | null = null;
-    let lastError: unknown = null;
-    for (const mode of attemptedModes) {
-      try {
-        vrLogRef.current?.('[VR] requestSession → navigator.xr.requestSession', { mode });
-        const requestedSession = await navigator.xr.requestSession(mode, {
-          optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'],
-        });
-        session = requestedSession;
-        resolvedMode = mode;
-        break;
-      } catch (error) {
-        lastError = error;
-        if (mode === 'immersive-ar') {
-          console.warn('Failed to start immersive-ar session; falling back to immersive-vr.', error);
-          setPreferredXrSessionMode('immersive-vr');
-        } else {
-          console.warn('Failed to start immersive-vr session', error);
-        }
-      }
-    }
-
-    if (!session || !resolvedMode) {
-      throw lastError ?? new Error('Failed to start XR session');
-    }
-
-    vrLogRef.current?.('[VR] requestSession resolved', {
-      presenting: renderer.xr.isPresenting,
-      visibilityState: session.visibilityState,
-      mode: resolvedMode,
-    });
-
-    xrSessionRef.current = session;
-    xrCurrentSessionModeRef.current = resolvedMode;
-    const playbackState = playbackStateRef.current;
-    playbackState.currentSessionMode = resolvedMode;
-    if (resolvedMode !== xrPreferredSessionModeRef.current) {
-      setPreferredXrSessionMode(resolvedMode);
-    } else {
-      updateVrPlaybackHud();
-    }
-    xrPendingModeSwitchRef.current = null;
-
-    const controls = controlsRef.current;
-    if (controls) {
-      controls.enabled = false;
-    }
-    const camera = cameraRef.current;
-    if (camera && controls) {
-      preVrCameraStateRef.current = {
-        position: camera.position.clone(),
-        quaternion: camera.quaternion.clone(),
-        target: controls.target.clone(),
-      };
-    } else {
-      preVrCameraStateRef.current = null;
-    }
-
-    const onSessionEnd = () => {
-      session.removeEventListener('end', onSessionEnd);
-      handleSessionEndRef.current?.();
+      sessionManager.dispose();
     };
-    session.addEventListener('end', onSessionEnd);
-    sessionCleanupRef.current = () => {
-      session.removeEventListener('end', onSessionEnd);
-    };
+  }, [sessionManager]);
 
-    renderer.xr.setSession(session);
-    vrLogRef.current?.('[VR] setSession', {
-      presenting: renderer.xr.isPresenting,
-      visibilityState: session.visibilityState,
-    });
-
-    callOnVrSessionStarted();
-
-    return session;
-  }, [
-    applySessionStartState,
-    cameraRef,
-    controlsRef,
-    disposedRef,
-    handleSessionEndRef,
-    playbackStateRef,
-    preVrCameraStateRef,
-    rendererRef,
-    setPreferredXrSessionMode,
-    updateVrPlaybackHud,
-    callOnVrSessionStarted,
-    vrLogRef,
-    vrPropsRef,
-    xrCurrentSessionModeRef,
-    xrPassthroughSupportedRef,
-    xrPendingModeSwitchRef,
-    xrPreferredSessionModeRef,
-    xrSessionRef,
-  ]);
+  const requestVrSession = useCallback(() => {
+    const manager = sessionManagerRef.current;
+    if (!manager) {
+      return Promise.reject(new Error('VR session manager not initialized'));
+    }
+    return manager.requestSession();
+  }, [sessionManagerRef]);
 
   useEffect(() => {
     requestVrSessionRef.current = requestVrSession;
@@ -2378,10 +2193,6 @@ export function useVolumeViewerVr({
       }
     };
   }, [requestVrSession]);
-
-  useEffect(() => {
-    handleSessionEndRef.current = handleSessionEnd;
-  }, [handleSessionEnd]);
 
   const refreshControllerVisibilityRef = useRef(refreshControllerVisibility);
   refreshControllerVisibilityRef.current = refreshControllerVisibility;
@@ -2404,6 +2215,514 @@ export function useVolumeViewerVr({
   const updateVrTracksHudRef = useRef(updateVrTracksHud);
   updateVrTracksHudRef.current = updateVrTracksHud;
   const updateControllerRaysRef = useRef<() => void>(() => {});
+
+  const configureControllerEntry = useCallback(
+    (entry: ControllerEntry, index: number) => {
+      const log = (...args: Parameters<typeof console.debug>) => {
+        vrLogRef.current?.(...args);
+      };
+      const refreshControllers = () => {
+        refreshControllerVisibilityRef.current?.();
+      };
+
+      entry.onConnected = (event) => {
+        entry.isConnected = true;
+        entry.targetRayMode = event?.data?.targetRayMode ?? null;
+        entry.gamepad = event?.data?.gamepad ?? null;
+        entry.hoverTrackId = null;
+        entry.hoverUiTarget = null;
+        entry.activeUiTarget = null;
+        entry.hasHoverUiPoint = false;
+        entry.hudGrabOffsets.playback = null;
+        entry.hudGrabOffsets.channels = null;
+        entry.hudGrabOffsets.tracks = null;
+        entry.translateGrabOffset = null;
+        entry.scaleGrabOffset = null;
+        entry.volumeScaleState = null;
+        entry.volumeRotationState = null;
+        entry.hudRotationState = null;
+        entry.rayLength = 3;
+        log('[VR] controller connected', index, {
+          targetRayMode: entry.targetRayMode,
+          hasGamepad: Boolean(entry.gamepad),
+        });
+        refreshControllers();
+      };
+
+      entry.onDisconnected = () => {
+        entry.isConnected = false;
+        entry.targetRayMode = null;
+        entry.gamepad = null;
+        entry.hoverTrackId = null;
+        entry.hoverUiTarget = null;
+        entry.activeUiTarget = null;
+        entry.hasHoverUiPoint = false;
+        entry.rayLength = 3;
+        entry.isSelecting = false;
+        entry.ray.scale.set(1, 1, entry.rayLength);
+        entry.hudGrabOffsets.playback = null;
+        entry.hudGrabOffsets.channels = null;
+        entry.hudGrabOffsets.tracks = null;
+        entry.translateGrabOffset = null;
+        entry.scaleGrabOffset = null;
+        entry.volumeScaleState = null;
+        entry.volumeRotationState = null;
+        entry.hudRotationState = null;
+        entry.touchIndicator.visible = false;
+        log('[VR] controller disconnected', index);
+        refreshControllers();
+        vrClearHoverStateRef.current?.('controller');
+      };
+
+      entry.onSelectStart = () => {
+        entry.isSelecting = true;
+        entry.activeUiTarget = entry.hoverUiTarget;
+        entry.hudRotationState = null;
+        entry.volumeRotationState = null;
+        const activeType = entry.activeUiTarget?.type ?? null;
+        const hudCategory = getHudCategoryFromTarget(activeType);
+        const rendererInstance = rendererRef.current;
+        const camera = cameraRef.current;
+        if (
+          activeType === 'playback-panel-yaw' ||
+          activeType === 'channels-panel-yaw' ||
+          activeType === 'tracks-panel-yaw' ||
+          activeType === 'playback-panel-pitch' ||
+          activeType === 'channels-panel-pitch' ||
+          activeType === 'tracks-panel-pitch'
+        ) {
+          let placement: VrHudPlacement | null = null;
+          if (activeType === 'playback-panel-yaw' || activeType === 'playback-panel-pitch') {
+            placement = vrPlaybackHudPlacementRef.current;
+          } else if (activeType === 'channels-panel-yaw' || activeType === 'channels-panel-pitch') {
+            placement = vrChannelsHudPlacementRef.current;
+          } else if (activeType === 'tracks-panel-yaw' || activeType === 'tracks-panel-pitch') {
+            placement = vrTracksHudPlacementRef.current;
+          }
+          if (placement && hudCategory) {
+            if (
+              activeType === 'playback-panel-yaw' ||
+              activeType === 'channels-panel-yaw' ||
+              activeType === 'tracks-panel-yaw'
+            ) {
+              const yawVector = vrHudYawVectorRef.current;
+              yawVector.copy(entry.rayOrigin).sub(placement.position);
+              yawVector.y = 0;
+              let initialAngle = placement.yaw;
+              const yawBasisForward = new THREE.Vector3();
+              const yawBasisRight = new THREE.Vector3();
+              computeViewerYawBasis(rendererInstance, camera, yawBasisForward, yawBasisRight);
+              if (yawVector.lengthSq() > 1e-6) {
+                initialAngle = computeYawAngleForBasis(yawVector, yawBasisForward, yawBasisRight);
+              }
+              entry.hudRotationState = {
+                hud: hudCategory,
+                mode: 'yaw',
+                initialYaw: placement.yaw,
+                initialAngle,
+                basisForward: yawBasisForward,
+                basisRight: yawBasisRight,
+              };
+            } else {
+              const pitchVector = vrHudPitchVectorRef.current;
+              pitchVector.copy(entry.rayOrigin).sub(placement.position);
+              pitchVector.x = 0;
+              let initialAngle = placement.pitch ?? 0;
+              const pitchBasisForward = new THREE.Vector3();
+              const pitchBasisRight = new THREE.Vector3();
+              computeViewerYawBasis(rendererInstance, camera, pitchBasisForward, pitchBasisRight);
+              if (pitchVector.lengthSq() > 1e-6) {
+                const forwardComponent = pitchVector.dot(pitchBasisForward);
+                initialAngle = Math.atan2(pitchVector.y, forwardComponent);
+              }
+              entry.hudRotationState = {
+                hud: hudCategory,
+                mode: 'pitch',
+                initialPitch: placement.pitch ?? 0,
+                initialAngle,
+                basisForward: pitchBasisForward,
+              };
+            }
+          } else {
+            entry.activeUiTarget = null;
+          }
+        }
+        const playbackState = playbackStateRef.current;
+        if (entry.activeUiTarget?.type === 'playback-play-toggle' && playbackState.playbackDisabled) {
+          entry.activeUiTarget = null;
+        }
+        if (
+          entry.activeUiTarget?.type === 'playback-slider' &&
+          entry.hasHoverUiPoint &&
+          !playbackState.playbackDisabled
+        ) {
+          applyPlaybackSliderFromWorldPointRef.current?.(entry.hoverUiPoint);
+        }
+        if (
+          entry.activeUiTarget?.type === 'playback-fps-slider' &&
+          entry.hasHoverUiPoint &&
+          playbackState.totalTimepoints > 1
+        ) {
+          applyFpsSliderFromWorldPointRef.current?.(entry.hoverUiPoint);
+        }
+        if (entry.activeUiTarget?.type === 'playback-panel-grab') {
+          const hud = vrPlaybackHudRef.current;
+          if (hud) {
+            const placement = vrPlaybackHudPlacementRef.current;
+            const referencePosition = vrPlaybackHudDragTargetRef.current;
+            referencePosition.copy(placement?.position ?? hud.group.position);
+            if (!entry.hasHoverUiPoint) {
+              entry.hoverUiPoint.copy(referencePosition);
+              entry.hasHoverUiPoint = true;
+            }
+            if (!entry.hudGrabOffsets.playback) {
+              entry.hudGrabOffsets.playback = new THREE.Vector3();
+            }
+            entry.hudGrabOffsets.playback.copy(referencePosition).sub(entry.rayOrigin);
+          }
+        }
+        if (
+          entry.activeUiTarget?.type === 'channels-slider' &&
+          entry.hasHoverUiPoint &&
+          entry.activeUiTarget.data &&
+          !(entry.activeUiTarget.data as VrChannelsInteractiveRegion).disabled
+        ) {
+          applyVrChannelsSliderFromPointRef.current?.(
+            entry.activeUiTarget.data as VrChannelsInteractiveRegion,
+            entry.hoverUiPoint,
+          );
+        }
+        if (entry.activeUiTarget?.type === 'channels-panel-grab') {
+          const hud = vrChannelsHudRef.current;
+          if (hud) {
+            const placement = vrChannelsHudPlacementRef.current;
+            const referencePosition = vrChannelsHudDragTargetRef.current;
+            referencePosition.copy(placement?.position ?? hud.group.position);
+            if (!entry.hasHoverUiPoint) {
+              entry.hoverUiPoint.copy(referencePosition);
+              entry.hasHoverUiPoint = true;
+            }
+            if (!entry.hudGrabOffsets.channels) {
+              entry.hudGrabOffsets.channels = new THREE.Vector3();
+            }
+            entry.hudGrabOffsets.channels.copy(referencePosition).sub(entry.rayOrigin);
+          }
+        }
+        if (
+          entry.activeUiTarget &&
+          (entry.activeUiTarget.type === 'tracks-slider' || entry.activeUiTarget.type === 'tracks-scroll') &&
+          entry.hasHoverUiPoint &&
+          entry.activeUiTarget.data &&
+          !(entry.activeUiTarget.data as VrTracksInteractiveRegion).disabled
+        ) {
+          const region = entry.activeUiTarget.data as VrTracksInteractiveRegion;
+          if (entry.activeUiTarget.type === 'tracks-slider') {
+            applyVrTracksSliderFromPointRef.current?.(region, entry.hoverUiPoint);
+          } else {
+            applyVrTracksScrollFromPointRef.current?.(region, entry.hoverUiPoint);
+          }
+        }
+        if (entry.activeUiTarget?.type === 'tracks-panel-grab') {
+          const hud = vrTracksHudRef.current;
+          if (hud) {
+            const placement = vrTracksHudPlacementRef.current;
+            const referencePosition = vrTracksHudDragTargetRef.current;
+            referencePosition.copy(placement?.position ?? hud.group.position);
+            if (!entry.hasHoverUiPoint) {
+              entry.hoverUiPoint.copy(referencePosition);
+              entry.hasHoverUiPoint = true;
+            }
+            if (!entry.hudGrabOffsets.tracks) {
+              entry.hudGrabOffsets.tracks = new THREE.Vector3();
+            }
+            entry.hudGrabOffsets.tracks.copy(referencePosition).sub(entry.rayOrigin);
+          }
+        }
+        if (entry.activeUiTarget?.type === 'volume-translate-handle') {
+          const handle = vrTranslationHandleRef.current;
+          if (handle) {
+            handle.getWorldPosition(vrHandleWorldPointRef.current);
+            if (!entry.translateGrabOffset) {
+              entry.translateGrabOffset = new THREE.Vector3();
+            }
+            entry.translateGrabOffset.copy(vrHandleWorldPointRef.current).sub(entry.rayOrigin);
+          }
+        } else if (entry.activeUiTarget?.type === 'volume-scale-handle') {
+          const handle = vrVolumeScaleHandleRef.current;
+          const volumeRootGroup = volumeRootGroupRef.current;
+          if (handle && volumeRootGroup) {
+            handle.getWorldPosition(vrHandleWorldPointRef.current);
+            if (!entry.scaleGrabOffset) {
+              entry.scaleGrabOffset = new THREE.Vector3();
+            }
+            entry.scaleGrabOffset.copy(vrHandleWorldPointRef.current).sub(entry.rayOrigin);
+            vrHandleSecondaryPointRef.current.copy(volumeRootCenterUnscaledRef.current);
+            volumeRootGroup.localToWorld(vrHandleSecondaryPointRef.current);
+            vrHandleDirectionTempRef.current
+              .copy(vrHandleWorldPointRef.current)
+              .sub(vrHandleSecondaryPointRef.current);
+            const directionLength = vrHandleDirectionTempRef.current.length();
+            if (directionLength > 1e-6) {
+              vrHandleDirectionTempRef.current.divideScalar(directionLength);
+              const userScale = Math.max(volumeUserScaleRef.current, 1e-6);
+              const baseLength = directionLength / userScale;
+              entry.volumeScaleState = {
+                direction: vrHandleDirectionTempRef.current.clone(),
+                baseLength,
+              };
+            } else {
+              entry.volumeScaleState = null;
+              entry.activeUiTarget = null;
+            }
+          } else {
+            entry.volumeScaleState = null;
+            entry.activeUiTarget = null;
+          }
+        }
+        if (
+          entry.activeUiTarget?.type === 'volume-yaw-handle' ||
+          entry.activeUiTarget?.type === 'volume-pitch-handle'
+        ) {
+          const volumeRootGroup = volumeRootGroupRef.current;
+          if (volumeRootGroup) {
+            vrHandleSecondaryPointRef.current.copy(volumeRootCenterUnscaledRef.current);
+            volumeRootGroup.localToWorld(vrHandleSecondaryPointRef.current);
+            vrHandleDirectionTempRef.current.copy(entry.rayOrigin).sub(vrHandleSecondaryPointRef.current);
+            if (entry.activeUiTarget.type === 'volume-yaw-handle') {
+              vrHandleDirectionTempRef.current.y = 0;
+              let initialAngle = volumeYawRef.current;
+              const yawBasisForward = new THREE.Vector3();
+              const yawBasisRight = new THREE.Vector3();
+              computeViewerYawBasis(rendererInstance, camera, yawBasisForward, yawBasisRight);
+              if (vrHandleDirectionTempRef.current.lengthSq() > 1e-6) {
+                initialAngle = computeYawAngleForBasis(
+                  vrHandleDirectionTempRef.current,
+                  yawBasisForward,
+                  yawBasisRight,
+                );
+              }
+              entry.volumeRotationState = {
+                mode: 'yaw',
+                initialYaw: volumeYawRef.current,
+                initialAngle,
+                basisForward: yawBasisForward,
+                basisRight: yawBasisRight,
+              };
+            } else {
+              vrHandleDirectionTempRef.current.x = 0;
+              let initialAngle = volumePitchRef.current;
+              const pitchBasisForward = new THREE.Vector3();
+              const pitchBasisRight = new THREE.Vector3();
+              computeViewerYawBasis(rendererInstance, camera, pitchBasisForward, pitchBasisRight);
+              if (vrHandleDirectionTempRef.current.lengthSq() > 1e-6) {
+                const forwardComponent = vrHandleDirectionTempRef.current.dot(pitchBasisForward);
+                initialAngle = Math.atan2(vrHandleDirectionTempRef.current.y, forwardComponent);
+              }
+              entry.volumeRotationState = {
+                mode: 'pitch',
+                initialPitch: volumePitchRef.current,
+                initialAngle,
+                basisForward: pitchBasisForward,
+              };
+            }
+          } else {
+            entry.activeUiTarget = null;
+          }
+        }
+        log('[VR] selectstart', index, {
+          hoverTrackId: entry.hoverTrackId,
+          uiTarget: entry.activeUiTarget?.type ?? null,
+        });
+      };
+
+      entry.onSelectEnd = () => {
+        entry.isSelecting = false;
+        const activeTarget = entry.activeUiTarget;
+        entry.activeUiTarget = null;
+        const playbackState = playbackStateRef.current;
+        const vrCallbacks = vrPropsRef.current;
+        if (activeTarget?.type === 'playback-play-toggle') {
+          if (!playbackState.playbackDisabled) {
+            playbackState.onTogglePlayback?.();
+          }
+        } else if (activeTarget?.type === 'playback-reset-volume') {
+          onResetVolumeRef.current?.();
+        } else if (activeTarget?.type === 'playback-reset-hud') {
+          onResetHudPlacementRef.current?.();
+        } else if (activeTarget?.type === 'playback-exit-vr') {
+          void endVrSessionRequestRef.current?.();
+        } else if (activeTarget?.type === 'playback-toggle-mode') {
+          toggleXrSessionMode();
+        } else if (activeTarget?.type === 'playback-slider') {
+          if (entry.hasHoverUiPoint && !playbackState.playbackDisabled) {
+            applyPlaybackSliderFromWorldPointRef.current?.(entry.hoverUiPoint);
+          }
+        } else if (activeTarget?.type === 'playback-fps-slider') {
+          if (entry.hasHoverUiPoint && playbackState.totalTimepoints > 1) {
+            applyFpsSliderFromWorldPointRef.current?.(entry.hoverUiPoint);
+          }
+        } else if (activeTarget?.type === 'playback-panel-grab') {
+          entry.hudGrabOffsets.playback = null;
+          entry.hudRotationState = null;
+        } else if (
+          activeTarget?.type === 'playback-panel-yaw' ||
+          activeTarget?.type === 'playback-panel-pitch'
+        ) {
+          entry.hudRotationState = null;
+        } else if (activeTarget?.type === 'channels-panel-grab') {
+          entry.hudGrabOffsets.channels = null;
+          entry.hudRotationState = null;
+        } else if (
+          activeTarget?.type === 'channels-panel-yaw' ||
+          activeTarget?.type === 'channels-panel-pitch'
+        ) {
+          entry.hudRotationState = null;
+        } else if (activeTarget?.type === 'channels-reset' && activeTarget.data) {
+          const region = activeTarget.data as VrChannelsInteractiveRegion;
+          vrCallbacks?.onChannelReset?.(region.channelId);
+        } else if (
+          activeTarget?.type === 'channels-slider' &&
+          activeTarget.data &&
+          !(activeTarget.data as VrChannelsInteractiveRegion).disabled &&
+          entry.hasHoverUiPoint
+        ) {
+          applyVrChannelsSliderFromPointRef.current?.(
+            activeTarget.data as VrChannelsInteractiveRegion,
+            entry.hoverUiPoint,
+          );
+        } else if (activeTarget?.type === 'channels-tab' && activeTarget.data) {
+          const region = activeTarget.data as VrChannelsInteractiveRegion;
+          vrCallbacks?.onChannelPanelSelect?.(region.channelId);
+          const state = vrChannelsStateRef.current;
+          if (state.activeChannelId !== region.channelId) {
+            state.activeChannelId = region.channelId;
+            updateVrChannelsHudRef.current?.();
+          }
+        } else if (activeTarget?.type === 'channels-visibility' && activeTarget.data) {
+          const region = activeTarget.data as VrChannelsInteractiveRegion;
+          if (!region.disabled) {
+            vrCallbacks?.onChannelVisibilityToggle?.(region.channelId);
+          }
+        } else if (activeTarget?.type === 'channels-layer' && activeTarget.data) {
+          const region = activeTarget.data as VrChannelsInteractiveRegion;
+          if (region.layerKey) {
+            vrCallbacks?.onLayerSelect?.(region.layerKey);
+          }
+        } else if (activeTarget?.type === 'channels-solo' && activeTarget.data) {
+          const region = activeTarget.data as VrChannelsInteractiveRegion;
+          if (!region.disabled && region.layerKey) {
+            vrCallbacks?.onLayerSoloToggle?.(region.layerKey);
+          }
+        } else if (activeTarget?.type === 'channels-invert' && activeTarget.data) {
+          const region = activeTarget.data as VrChannelsInteractiveRegion;
+          if (!region.disabled && region.layerKey) {
+            vrCallbacks?.onLayerInvertToggle?.(region.layerKey);
+          }
+        } else if (activeTarget?.type === 'channels-auto-contrast' && activeTarget.data) {
+          const region = activeTarget.data as VrChannelsInteractiveRegion;
+          if (!region.disabled && region.layerKey) {
+            vrCallbacks?.onLayerAutoContrast?.(region.layerKey);
+          }
+        } else if (activeTarget?.type === 'tracks-panel-grab') {
+          entry.hudGrabOffsets.tracks = null;
+          entry.hudRotationState = null;
+        } else if (
+          activeTarget?.type === 'tracks-panel-yaw' ||
+          activeTarget?.type === 'tracks-panel-pitch'
+        ) {
+          entry.hudRotationState = null;
+        } else if (activeTarget?.type === 'tracks-tab' && activeTarget.data) {
+          const region = activeTarget.data as VrTracksInteractiveRegion;
+          vrCallbacks?.onTrackChannelSelect?.(region.channelId);
+        } else if (activeTarget?.type === 'tracks-stop-follow' && activeTarget.data) {
+          const region = activeTarget.data as VrTracksInteractiveRegion;
+          if (!region.disabled) {
+            vrCallbacks?.onStopTrackFollow?.(region.channelId);
+          }
+        } else if (activeTarget?.type === 'tracks-color' && activeTarget.data) {
+          const region = activeTarget.data as VrTracksInteractiveRegion;
+          if (!region.disabled && region.color) {
+            vrCallbacks?.onTrackColorSelect?.(region.channelId, region.color);
+          }
+        } else if (activeTarget?.type === 'tracks-color-mode' && activeTarget.data) {
+          const region = activeTarget.data as VrTracksInteractiveRegion;
+          if (!region.disabled) {
+            vrCallbacks?.onTrackColorReset?.(region.channelId);
+          }
+        } else if (activeTarget?.type === 'tracks-master-toggle' && activeTarget.data) {
+          const region = activeTarget.data as VrTracksInteractiveRegion;
+          if (!region.disabled) {
+            const channelState = vrTracksStateRef.current.channels.find(
+              (channel) => channel.id === region.channelId,
+            );
+            if (channelState) {
+              const trackCount = channelState.tracks.length;
+              const enableAll = trackCount > 0 && channelState.visibleTracks < trackCount;
+              vrCallbacks?.onTrackVisibilityAllChange?.(region.channelId, enableAll);
+            }
+          }
+        } else if (activeTarget?.type === 'tracks-toggle' && activeTarget.data) {
+          const region = activeTarget.data as VrTracksInteractiveRegion;
+          if (region.trackId) {
+            vrCallbacks?.onTrackVisibilityToggle?.(region.trackId);
+          }
+        } else if (activeTarget?.type === 'tracks-follow' && activeTarget.data) {
+          const region = activeTarget.data as VrTracksInteractiveRegion;
+          if (region.trackId) {
+            onTrackFollowRequestRef.current?.(region.trackId);
+          }
+        } else if (entry.hoverTrackId) {
+          onTrackFollowRequestRef.current?.(entry.hoverTrackId);
+        }
+        log('[VR] selectend', index, {
+          hoverTrackId: entry.hoverTrackId,
+          uiTarget: activeTarget?.type ?? null,
+        });
+      };
+    }, [
+      applyFpsSliderFromWorldPointRef,
+      applyPlaybackSliderFromWorldPointRef,
+      applyVrChannelsSliderFromPointRef,
+      applyVrTracksScrollFromPointRef,
+      applyVrTracksSliderFromPointRef,
+      cameraRef,
+      endVrSessionRequestRef,
+      onResetHudPlacementRef,
+      onResetVolumeRef,
+      onTrackFollowRequestRef,
+      playbackStateRef,
+      rendererRef,
+      toggleXrSessionMode,
+      vrChannelsHudDragTargetRef,
+      vrChannelsHudPlacementRef,
+      vrChannelsHudRef,
+      vrChannelsStateRef,
+      vrClearHoverStateRef,
+      vrHandleDirectionTempRef,
+      vrHandleSecondaryPointRef,
+      vrHandleWorldPointRef,
+      vrHudPitchVectorRef,
+      vrHudYawVectorRef,
+      vrLogRef,
+      vrPlaybackHudDragTargetRef,
+      vrPlaybackHudPlacementRef,
+      vrPlaybackHudRef,
+      vrTracksHudDragTargetRef,
+      vrTracksHudPlacementRef,
+      vrTracksHudRef,
+      vrTracksStateRef,
+      vrTranslationHandleRef,
+      vrVolumePitchHandleRef,
+      vrVolumeScaleHandleRef,
+      vrVolumeYawHandlesRef,
+      volumePitchRef,
+      volumeRootCenterUnscaledRef,
+      volumeRootGroupRef,
+      volumeUserScaleRef,
+      volumeYawRef,
+      refreshControllerVisibilityRef,
+      vrPropsRef,
+    ]);
 
 
   const updateControllerRays = useCallback(() => {
@@ -3916,744 +4235,23 @@ export function useVolumeViewerVr({
     if (controllerSetupRevision === 0) {
       return;
     }
-    const renderer = rendererRef.current;
-    if (!renderer) {
-      return;
-    }
-    const xrManager = renderer.xr as
-      | (THREE.WebXRManager & {
-          addEventListener?: (event: string, handler: () => void) => void;
-          removeEventListener?: (event: string, handler: () => void) => void;
-        })
-      | undefined;
-    const addEventListener = xrManager?.addEventListener?.bind(xrManager);
-    const removeEventListener = xrManager?.removeEventListener?.bind(xrManager);
-    if (!addEventListener || !removeEventListener) {
-      return;
-    }
-
-    const handleSessionStart = () => {
-      vrLogRef.current?.('[VR] sessionstart event', {
-        presenting: renderer.xr.isPresenting,
-        visibilityState: xrSessionRef.current?.visibilityState ?? null,
-      });
-      applyVrFoveation();
-      applyVolumeStepScaleToResources(VR_VOLUME_STEP_SCALE);
-      volumeRootBaseOffsetRef.current.copy(VR_VOLUME_BASE_OFFSET);
-      applyVolumeRootTransform(currentDimensionsRef.current);
-      refreshControllerVisibility();
-      setVrPlaybackHudVisible(true);
-      setVrChannelsHudVisible(true);
-      setVrTracksHudVisible(true);
-      resetVrPlaybackHudPlacement();
-      resetVrChannelsHudPlacement();
-      resetVrTracksHudPlacement();
-      updateVrPlaybackHud();
-      updateVrChannelsHud();
-      updateVrTracksHud();
-      updateControllerRays();
-      updateVolumeHandles();
-    };
-
-    const handleSessionEnd = () => {
-      vrLogRef.current?.('[VR] sessionend event', {
-        presenting: renderer.xr.isPresenting,
-        visibilityState: xrSessionRef.current?.visibilityState ?? null,
-      });
-      restoreVrFoveation();
-      applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
-      volumeRootBaseOffsetRef.current.set(0, 0, 0);
-      applyVolumeRootTransform(currentDimensionsRef.current);
-      refreshControllerVisibility();
-      setVrPlaybackHudVisible(false);
-      setVrChannelsHudVisible(false);
-      setVrTracksHudVisible(false);
-      updateVolumeHandles();
-    };
-
-    addEventListener('sessionstart', handleSessionStart);
-    addEventListener('sessionend', handleSessionEnd);
-
-    return () => {
-      removeEventListener('sessionstart', handleSessionStart);
-      removeEventListener('sessionend', handleSessionEnd);
-    };
+    return sessionManager.installSessionEventListeners({
+      onSessionStart: applySessionStartState,
+      onSessionEnd: applySessionEndState,
+    });
   }, [
     controllerSetupRevision,
-    rendererRef,
-    applyVrFoveation,
-    applyVolumeRootTransform,
-    applyVolumeStepScaleToResources,
-    refreshControllerVisibility,
-    resetVrChannelsHudPlacement,
-    resetVrPlaybackHudPlacement,
-    resetVrTracksHudPlacement,
-    restoreVrFoveation,
-    setVrChannelsHudVisible,
-    setVrPlaybackHudVisible,
-    setVrTracksHudVisible,
-    updateControllerRays,
-    updateVolumeHandles,
-    updateVrChannelsHud,
-    updateVrPlaybackHud,
-    updateVrTracksHud,
-    currentDimensionsRef,
-    volumeRootBaseOffsetRef,
-    xrSessionRef,
+    sessionManager,
+    applySessionStartState,
+    applySessionEndState,
   ]);
 
   useEffect(() => {
     if (controllerSetupRevision === 0) {
       return;
     }
-    const renderer = rendererRef.current;
-    const scene = sceneRef.current;
-    if (!renderer || !scene) {
-      return;
-    }
-
-    const log = (...args: Parameters<typeof console.debug>) => {
-      vrLogRef.current?.(...args);
-    };
-    const refreshControllers = () => {
-      refreshControllerVisibilityRef.current?.();
-    };
-
-    const addControllerEventListener = (
-      target: THREE.Object3D,
-      type: string,
-      listener: (event: any) => void,
-    ) => {
-      (target as unknown as { addEventListener: (event: string, handler: (event: any) => void) => void }).addEventListener(
-        type,
-        listener,
-      );
-    };
-
-    const removeControllerEventListener = (
-      target: THREE.Object3D,
-      type: string,
-      listener: (event: any) => void,
-    ) => {
-      (target as unknown as { removeEventListener: (event: string, handler: (event: any) => void) => void }).removeEventListener(
-        type,
-        listener,
-      );
-    };
-    const controllers = controllersRef.current;
-    const controllerModelFactory = new XRControllerModelFactory();
-    const createdEntries: ControllerEntry[] = [];
-    controllers.splice(0, controllers.length);
-
-    for (let index = 0; index < 2; index++) {
-      const controller = renderer.xr.getController(index);
-      controller.visible = false;
-
-      const grip = renderer.xr.getControllerGrip(index);
-      grip.visible = false;
-
-      const rayGeometry = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(0, 0, 0),
-        new THREE.Vector3(0, 0, -1),
-      ]);
-      const rayMaterial = new THREE.LineBasicMaterial({ color: 0xffffff });
-      const ray = new THREE.Line(rayGeometry, rayMaterial);
-      ray.visible = false;
-      controller.add(ray);
-
-      const touchIndicatorMaterial = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.2,
-        depthWrite: false,
-      });
-      touchIndicatorMaterial.depthTest = false;
-      const touchIndicator = new THREE.Mesh(
-        new THREE.SphereGeometry(VR_CONTROLLER_TOUCH_RADIUS, 16, 16),
-        touchIndicatorMaterial,
-      );
-      touchIndicator.visible = false;
-      controller.add(touchIndicator);
-
-      const model = controllerModelFactory.createControllerModel(grip);
-      grip.add(model);
-
-      const controllerRaycaster = new THREE.Raycaster();
-      controllerRaycaster.params.Line = { threshold: 0.02 };
-      (controllerRaycaster.params as unknown as { Line2?: { threshold: number } }).Line2 = {
-        threshold: 0.02,
-      };
-      controllerRaycaster.far = 10;
-
-      const entry: ControllerEntry = {
-        controller,
-        grip,
-        ray,
-        rayGeometry,
-        rayMaterial,
-        touchIndicator,
-        raycaster: controllerRaycaster,
-        onConnected: () => undefined,
-        onDisconnected: () => undefined,
-        onSelectStart: () => undefined,
-        onSelectEnd: () => undefined,
-        isConnected: false,
-        targetRayMode: null,
-        gamepad: null,
-        hoverTrackId: null,
-        hoverUiTarget: null,
-        activeUiTarget: null,
-        hoverUiPoint: new THREE.Vector3(),
-        hasHoverUiPoint: false,
-        hoverPoint: new THREE.Vector3(),
-        rayOrigin: new THREE.Vector3(),
-        rayDirection: new THREE.Vector3(0, 0, -1),
-        rayLength: 3,
-        isSelecting: false,
-        hudGrabOffsets: { playback: null, channels: null, tracks: null },
-        translateGrabOffset: null,
-        scaleGrabOffset: null,
-        volumeScaleState: null,
-        volumeRotationState: null,
-        hudRotationState: null,
-      };
-
-      entry.onConnected = (event) => {
-        entry.isConnected = true;
-        entry.targetRayMode = event?.data?.targetRayMode ?? null;
-        entry.gamepad = event?.data?.gamepad ?? null;
-        entry.hoverTrackId = null;
-        entry.hoverUiTarget = null;
-        entry.activeUiTarget = null;
-        entry.hasHoverUiPoint = false;
-        entry.hudGrabOffsets.playback = null;
-        entry.hudGrabOffsets.channels = null;
-        entry.hudGrabOffsets.tracks = null;
-        entry.translateGrabOffset = null;
-        entry.scaleGrabOffset = null;
-        entry.volumeScaleState = null;
-        entry.volumeRotationState = null;
-        entry.hudRotationState = null;
-        entry.rayLength = 3;
-        log('[VR] controller connected', index, {
-          targetRayMode: entry.targetRayMode,
-          hasGamepad: Boolean(entry.gamepad),
-        });
-        refreshControllers();
-      };
-
-      entry.onDisconnected = () => {
-        entry.isConnected = false;
-        entry.targetRayMode = null;
-        entry.gamepad = null;
-        entry.hoverTrackId = null;
-        entry.hoverUiTarget = null;
-        entry.activeUiTarget = null;
-        entry.hasHoverUiPoint = false;
-        entry.rayLength = 3;
-        entry.isSelecting = false;
-        entry.ray.scale.set(1, 1, entry.rayLength);
-        entry.hudGrabOffsets.playback = null;
-        entry.hudGrabOffsets.channels = null;
-        entry.hudGrabOffsets.tracks = null;
-        entry.translateGrabOffset = null;
-        entry.scaleGrabOffset = null;
-        entry.volumeScaleState = null;
-        entry.volumeRotationState = null;
-        entry.hudRotationState = null;
-        entry.touchIndicator.visible = false;
-        log('[VR] controller disconnected', index);
-        refreshControllers();
-        vrClearHoverStateRef.current?.('controller');
-      };
-
-      entry.onSelectStart = () => {
-        entry.isSelecting = true;
-        entry.activeUiTarget = entry.hoverUiTarget;
-        entry.hudRotationState = null;
-        entry.volumeRotationState = null;
-        const activeType = entry.activeUiTarget?.type ?? null;
-        const hudCategory = getHudCategoryFromTarget(activeType);
-        const rendererInstance = rendererRef.current;
-        const camera = cameraRef.current;
-        if (
-          activeType === 'playback-panel-yaw' ||
-          activeType === 'channels-panel-yaw' ||
-          activeType === 'tracks-panel-yaw' ||
-          activeType === 'playback-panel-pitch' ||
-          activeType === 'channels-panel-pitch' ||
-          activeType === 'tracks-panel-pitch'
-        ) {
-          let placement: VrHudPlacement | null = null;
-          if (activeType === 'playback-panel-yaw' || activeType === 'playback-panel-pitch') {
-            placement = vrPlaybackHudPlacementRef.current;
-          } else if (activeType === 'channels-panel-yaw' || activeType === 'channels-panel-pitch') {
-            placement = vrChannelsHudPlacementRef.current;
-          } else if (activeType === 'tracks-panel-yaw' || activeType === 'tracks-panel-pitch') {
-            placement = vrTracksHudPlacementRef.current;
-          }
-          if (placement && hudCategory) {
-            if (
-              activeType === 'playback-panel-yaw' ||
-              activeType === 'channels-panel-yaw' ||
-              activeType === 'tracks-panel-yaw'
-            ) {
-              const yawVector = vrHudYawVectorRef.current;
-              yawVector.copy(entry.rayOrigin).sub(placement.position);
-              yawVector.y = 0;
-              let initialAngle = placement.yaw;
-              const yawBasisForward = new THREE.Vector3();
-              const yawBasisRight = new THREE.Vector3();
-              computeViewerYawBasis(rendererInstance, camera, yawBasisForward, yawBasisRight);
-              if (yawVector.lengthSq() > 1e-6) {
-                initialAngle = computeYawAngleForBasis(yawVector, yawBasisForward, yawBasisRight);
-              }
-              entry.hudRotationState = {
-                hud: hudCategory,
-                mode: 'yaw',
-                initialYaw: placement.yaw,
-                initialAngle,
-                basisForward: yawBasisForward,
-                basisRight: yawBasisRight,
-              };
-            } else {
-              const pitchVector = vrHudPitchVectorRef.current;
-              pitchVector.copy(entry.rayOrigin).sub(placement.position);
-              pitchVector.x = 0;
-              let initialAngle = placement.pitch ?? 0;
-              const pitchBasisForward = new THREE.Vector3();
-              const pitchBasisRight = new THREE.Vector3();
-              computeViewerYawBasis(rendererInstance, camera, pitchBasisForward, pitchBasisRight);
-              if (pitchVector.lengthSq() > 1e-6) {
-                const forwardComponent = pitchVector.dot(pitchBasisForward);
-                initialAngle = Math.atan2(pitchVector.y, forwardComponent);
-              }
-              entry.hudRotationState = {
-                hud: hudCategory,
-                mode: 'pitch',
-                initialPitch: placement.pitch ?? 0,
-                initialAngle,
-                basisForward: pitchBasisForward,
-              };
-            }
-          } else {
-            entry.activeUiTarget = null;
-          }
-        }
-        const playbackState = playbackStateRef.current;
-        if (entry.activeUiTarget?.type === 'playback-play-toggle' && playbackState.playbackDisabled) {
-          entry.activeUiTarget = null;
-        }
-        if (
-          entry.activeUiTarget?.type === 'playback-slider' &&
-          entry.hasHoverUiPoint &&
-          !playbackState.playbackDisabled
-        ) {
-          applyPlaybackSliderFromWorldPointRef.current?.(entry.hoverUiPoint);
-        }
-        if (
-          entry.activeUiTarget?.type === 'playback-fps-slider' &&
-          entry.hasHoverUiPoint &&
-          playbackState.totalTimepoints > 1
-        ) {
-          applyFpsSliderFromWorldPointRef.current?.(entry.hoverUiPoint);
-        }
-        if (entry.activeUiTarget?.type === 'playback-panel-grab') {
-          const hud = vrPlaybackHudRef.current;
-          if (hud) {
-            const placement = vrPlaybackHudPlacementRef.current;
-            const referencePosition = vrPlaybackHudDragTargetRef.current;
-            referencePosition.copy(placement?.position ?? hud.group.position);
-            if (!entry.hasHoverUiPoint) {
-              entry.hoverUiPoint.copy(referencePosition);
-              entry.hasHoverUiPoint = true;
-            }
-            if (!entry.hudGrabOffsets.playback) {
-              entry.hudGrabOffsets.playback = new THREE.Vector3();
-            }
-            entry.hudGrabOffsets.playback.copy(referencePosition).sub(entry.rayOrigin);
-          }
-        }
-        if (
-          entry.activeUiTarget?.type === 'channels-slider' &&
-          entry.hasHoverUiPoint &&
-          entry.activeUiTarget.data &&
-          !(entry.activeUiTarget.data as VrChannelsInteractiveRegion).disabled
-        ) {
-          applyVrChannelsSliderFromPointRef.current?.(
-            entry.activeUiTarget.data as VrChannelsInteractiveRegion,
-            entry.hoverUiPoint,
-          );
-        }
-        if (entry.activeUiTarget?.type === 'channels-panel-grab') {
-          const hud = vrChannelsHudRef.current;
-          if (hud) {
-            const placement = vrChannelsHudPlacementRef.current;
-            const referencePosition = vrChannelsHudDragTargetRef.current;
-            referencePosition.copy(placement?.position ?? hud.group.position);
-            if (!entry.hasHoverUiPoint) {
-              entry.hoverUiPoint.copy(referencePosition);
-              entry.hasHoverUiPoint = true;
-            }
-            if (!entry.hudGrabOffsets.channels) {
-              entry.hudGrabOffsets.channels = new THREE.Vector3();
-            }
-            entry.hudGrabOffsets.channels.copy(referencePosition).sub(entry.rayOrigin);
-          }
-        }
-        if (
-          entry.activeUiTarget &&
-          (entry.activeUiTarget.type === 'tracks-slider' || entry.activeUiTarget.type === 'tracks-scroll') &&
-          entry.hasHoverUiPoint &&
-          entry.activeUiTarget.data &&
-          !(entry.activeUiTarget.data as VrTracksInteractiveRegion).disabled
-        ) {
-          const region = entry.activeUiTarget.data as VrTracksInteractiveRegion;
-          if (entry.activeUiTarget.type === 'tracks-slider') {
-            applyVrTracksSliderFromPointRef.current?.(region, entry.hoverUiPoint);
-          } else {
-            applyVrTracksScrollFromPointRef.current?.(region, entry.hoverUiPoint);
-          }
-        }
-        if (entry.activeUiTarget?.type === 'tracks-panel-grab') {
-          const hud = vrTracksHudRef.current;
-          if (hud) {
-            const placement = vrTracksHudPlacementRef.current;
-            const referencePosition = vrTracksHudDragTargetRef.current;
-            referencePosition.copy(placement?.position ?? hud.group.position);
-            if (!entry.hasHoverUiPoint) {
-              entry.hoverUiPoint.copy(referencePosition);
-              entry.hasHoverUiPoint = true;
-            }
-            if (!entry.hudGrabOffsets.tracks) {
-              entry.hudGrabOffsets.tracks = new THREE.Vector3();
-            }
-            entry.hudGrabOffsets.tracks.copy(referencePosition).sub(entry.rayOrigin);
-          }
-        }
-        if (entry.activeUiTarget?.type === 'volume-translate-handle') {
-          const handle = vrTranslationHandleRef.current;
-          if (handle) {
-            handle.getWorldPosition(vrHandleWorldPointRef.current);
-            if (!entry.translateGrabOffset) {
-              entry.translateGrabOffset = new THREE.Vector3();
-            }
-            entry.translateGrabOffset
-              .copy(vrHandleWorldPointRef.current)
-              .sub(entry.rayOrigin);
-          }
-        } else if (entry.activeUiTarget?.type === 'volume-scale-handle') {
-          const handle = vrVolumeScaleHandleRef.current;
-          const volumeRootGroup = volumeRootGroupRef.current;
-          if (handle && volumeRootGroup) {
-            handle.getWorldPosition(vrHandleWorldPointRef.current);
-            if (!entry.scaleGrabOffset) {
-              entry.scaleGrabOffset = new THREE.Vector3();
-            }
-            entry.scaleGrabOffset.copy(vrHandleWorldPointRef.current).sub(entry.rayOrigin);
-            vrHandleSecondaryPointRef.current.copy(volumeRootCenterUnscaledRef.current);
-            volumeRootGroup.localToWorld(vrHandleSecondaryPointRef.current);
-            vrHandleDirectionTempRef.current
-              .copy(vrHandleWorldPointRef.current)
-              .sub(vrHandleSecondaryPointRef.current);
-            const directionLength = vrHandleDirectionTempRef.current.length();
-            if (directionLength > 1e-6) {
-              vrHandleDirectionTempRef.current.divideScalar(directionLength);
-              const userScale = Math.max(volumeUserScaleRef.current, 1e-6);
-              const baseLength = directionLength / userScale;
-              entry.volumeScaleState = {
-                direction: vrHandleDirectionTempRef.current.clone(),
-                baseLength,
-              };
-            } else {
-              entry.volumeScaleState = null;
-              entry.activeUiTarget = null;
-            }
-          } else {
-            entry.volumeScaleState = null;
-            entry.activeUiTarget = null;
-          }
-        }
-        if (
-          entry.activeUiTarget?.type === 'volume-yaw-handle' ||
-          entry.activeUiTarget?.type === 'volume-pitch-handle'
-        ) {
-          const volumeRootGroup = volumeRootGroupRef.current;
-          if (volumeRootGroup) {
-            vrHandleSecondaryPointRef.current.copy(volumeRootCenterUnscaledRef.current);
-            volumeRootGroup.localToWorld(vrHandleSecondaryPointRef.current);
-            vrHandleDirectionTempRef.current.copy(entry.rayOrigin).sub(vrHandleSecondaryPointRef.current);
-            if (entry.activeUiTarget.type === 'volume-yaw-handle') {
-              vrHandleDirectionTempRef.current.y = 0;
-              let initialAngle = volumeYawRef.current;
-              const yawBasisForward = new THREE.Vector3();
-              const yawBasisRight = new THREE.Vector3();
-              computeViewerYawBasis(rendererInstance, camera, yawBasisForward, yawBasisRight);
-              if (vrHandleDirectionTempRef.current.lengthSq() > 1e-6) {
-                initialAngle = computeYawAngleForBasis(
-                  vrHandleDirectionTempRef.current,
-                  yawBasisForward,
-                  yawBasisRight,
-                );
-              }
-              entry.volumeRotationState = {
-                mode: 'yaw',
-                initialYaw: volumeYawRef.current,
-                initialAngle,
-                basisForward: yawBasisForward,
-                basisRight: yawBasisRight,
-              };
-            } else {
-              vrHandleDirectionTempRef.current.x = 0;
-              let initialAngle = volumePitchRef.current;
-              const pitchBasisForward = new THREE.Vector3();
-              const pitchBasisRight = new THREE.Vector3();
-              computeViewerYawBasis(rendererInstance, camera, pitchBasisForward, pitchBasisRight);
-              if (vrHandleDirectionTempRef.current.lengthSq() > 1e-6) {
-                const forwardComponent = vrHandleDirectionTempRef.current.dot(pitchBasisForward);
-                initialAngle = Math.atan2(vrHandleDirectionTempRef.current.y, forwardComponent);
-              }
-              entry.volumeRotationState = {
-                mode: 'pitch',
-                initialPitch: volumePitchRef.current,
-                initialAngle,
-                basisForward: pitchBasisForward,
-              };
-            }
-          } else {
-            entry.activeUiTarget = null;
-          }
-        }
-        log('[VR] selectstart', index, {
-          hoverTrackId: entry.hoverTrackId,
-          uiTarget: entry.activeUiTarget?.type ?? null,
-        });
-      };
-
-      entry.onSelectEnd = () => {
-        entry.isSelecting = false;
-        const activeTarget = entry.activeUiTarget;
-        entry.activeUiTarget = null;
-        const playbackState = playbackStateRef.current;
-        const vrCallbacks = vrPropsRef.current;
-        if (activeTarget?.type === 'playback-play-toggle') {
-          if (!playbackState.playbackDisabled) {
-            playbackState.onTogglePlayback?.();
-          }
-        } else if (activeTarget?.type === 'playback-reset-volume') {
-          onResetVolumeRef.current?.();
-        } else if (activeTarget?.type === 'playback-reset-hud') {
-          onResetHudPlacementRef.current?.();
-        } else if (activeTarget?.type === 'playback-exit-vr') {
-          void endVrSessionRequestRef.current?.();
-        } else if (activeTarget?.type === 'playback-toggle-mode') {
-          toggleXrSessionMode();
-        } else if (activeTarget?.type === 'playback-slider') {
-          if (entry.hasHoverUiPoint && !playbackState.playbackDisabled) {
-            applyPlaybackSliderFromWorldPointRef.current?.(entry.hoverUiPoint);
-          }
-        } else if (activeTarget?.type === 'playback-fps-slider') {
-          if (entry.hasHoverUiPoint && playbackState.totalTimepoints > 1) {
-            applyFpsSliderFromWorldPointRef.current?.(entry.hoverUiPoint);
-          }
-        } else if (activeTarget?.type === 'playback-panel-grab') {
-          entry.hudGrabOffsets.playback = null;
-          entry.hudRotationState = null;
-        } else if (
-          activeTarget?.type === 'playback-panel-yaw' ||
-          activeTarget?.type === 'playback-panel-pitch'
-        ) {
-          entry.hudRotationState = null;
-        } else if (activeTarget?.type === 'channels-panel-grab') {
-          entry.hudGrabOffsets.channels = null;
-          entry.hudRotationState = null;
-        } else if (
-          activeTarget?.type === 'channels-panel-yaw' ||
-          activeTarget?.type === 'channels-panel-pitch'
-        ) {
-          entry.hudRotationState = null;
-        } else if (activeTarget?.type === 'channels-reset' && activeTarget.data) {
-          const region = activeTarget.data as VrChannelsInteractiveRegion;
-          vrCallbacks?.onChannelReset?.(region.channelId);
-        } else if (
-          activeTarget?.type === 'channels-slider' &&
-          activeTarget.data &&
-          !(activeTarget.data as VrChannelsInteractiveRegion).disabled &&
-          entry.hasHoverUiPoint
-        ) {
-          applyVrChannelsSliderFromPointRef.current?.(
-            activeTarget.data as VrChannelsInteractiveRegion,
-            entry.hoverUiPoint,
-          );
-        } else if (activeTarget?.type === 'channels-tab' && activeTarget.data) {
-          const region = activeTarget.data as VrChannelsInteractiveRegion;
-          vrCallbacks?.onChannelPanelSelect?.(region.channelId);
-          const state = vrChannelsStateRef.current;
-          if (state.activeChannelId !== region.channelId) {
-            state.activeChannelId = region.channelId;
-            updateVrChannelsHudRef.current?.();
-          }
-        } else if (activeTarget?.type === 'channels-visibility' && activeTarget.data) {
-          const region = activeTarget.data as VrChannelsInteractiveRegion;
-          if (!region.disabled) {
-            vrCallbacks?.onChannelVisibilityToggle?.(region.channelId);
-          }
-        } else if (activeTarget?.type === 'channels-layer' && activeTarget.data) {
-          const region = activeTarget.data as VrChannelsInteractiveRegion;
-          if (region.layerKey) {
-            vrCallbacks?.onChannelLayerSelect?.(region.channelId, region.layerKey);
-          }
-        } else if (activeTarget?.type === 'channels-color' && activeTarget.data) {
-          const region = activeTarget.data as VrChannelsInteractiveRegion;
-          if (region.layerKey && region.color) {
-            vrCallbacks?.onLayerColorChange?.(region.layerKey, region.color);
-          }
-        } else if (activeTarget?.type === 'channels-render-style' && activeTarget.data) {
-          const region = activeTarget.data as VrChannelsInteractiveRegion;
-          if (!region.disabled && region.layerKey) {
-            vrCallbacks?.onLayerRenderStyleToggle?.(region.layerKey);
-          }
-        } else if (activeTarget?.type === 'channels-sampling' && activeTarget.data) {
-          const region = activeTarget.data as VrChannelsInteractiveRegion;
-          if (!region.disabled && region.layerKey) {
-            vrCallbacks?.onLayerSamplingModeToggle?.(region.layerKey);
-          }
-        } else if (activeTarget?.type === 'channels-invert' && activeTarget.data) {
-          const region = activeTarget.data as VrChannelsInteractiveRegion;
-          if (!region.disabled && region.layerKey) {
-            vrCallbacks?.onLayerInvertToggle?.(region.layerKey);
-          }
-        } else if (activeTarget?.type === 'channels-auto-contrast' && activeTarget.data) {
-          const region = activeTarget.data as VrChannelsInteractiveRegion;
-          if (!region.disabled && region.layerKey) {
-            vrCallbacks?.onLayerAutoContrast?.(region.layerKey);
-          }
-        } else if (activeTarget?.type === 'tracks-panel-grab') {
-          entry.hudGrabOffsets.tracks = null;
-          entry.hudRotationState = null;
-        } else if (
-          activeTarget?.type === 'tracks-panel-yaw' ||
-          activeTarget?.type === 'tracks-panel-pitch'
-        ) {
-          entry.hudRotationState = null;
-        } else if (activeTarget?.type === 'tracks-tab' && activeTarget.data) {
-          const region = activeTarget.data as VrTracksInteractiveRegion;
-          vrCallbacks?.onTrackChannelSelect?.(region.channelId);
-        } else if (activeTarget?.type === 'tracks-stop-follow' && activeTarget.data) {
-          const region = activeTarget.data as VrTracksInteractiveRegion;
-          if (!region.disabled) {
-            vrCallbacks?.onStopTrackFollow?.(region.channelId);
-          }
-        } else if (activeTarget?.type === 'tracks-color' && activeTarget.data) {
-          const region = activeTarget.data as VrTracksInteractiveRegion;
-          if (!region.disabled && region.color) {
-            vrCallbacks?.onTrackColorSelect?.(region.channelId, region.color);
-          }
-        } else if (activeTarget?.type === 'tracks-color-mode' && activeTarget.data) {
-          const region = activeTarget.data as VrTracksInteractiveRegion;
-          if (!region.disabled) {
-            vrCallbacks?.onTrackColorReset?.(region.channelId);
-          }
-        } else if (activeTarget?.type === 'tracks-master-toggle' && activeTarget.data) {
-          const region = activeTarget.data as VrTracksInteractiveRegion;
-          if (!region.disabled) {
-            const channelState = vrTracksStateRef.current.channels.find(
-              (channel) => channel.id === region.channelId,
-            );
-            if (channelState) {
-              const trackCount = channelState.tracks.length;
-              const enableAll = trackCount > 0 && channelState.visibleTracks < trackCount;
-              vrCallbacks?.onTrackVisibilityAllChange?.(region.channelId, enableAll);
-            }
-          }
-        } else if (activeTarget?.type === 'tracks-toggle' && activeTarget.data) {
-          const region = activeTarget.data as VrTracksInteractiveRegion;
-          if (region.trackId) {
-            vrCallbacks?.onTrackVisibilityToggle?.(region.trackId);
-          }
-        } else if (activeTarget?.type === 'tracks-follow' && activeTarget.data) {
-          const region = activeTarget.data as VrTracksInteractiveRegion;
-          if (region.trackId) {
-            onTrackFollowRequestRef.current?.(region.trackId);
-          }
-        } else if (entry.hoverTrackId) {
-          onTrackFollowRequestRef.current?.(entry.hoverTrackId);
-        }
-        log('[VR] selectend', index, {
-          hoverTrackId: entry.hoverTrackId,
-          uiTarget: activeTarget?.type ?? null,
-        });
-      };
-
-      addControllerEventListener(controller, 'connected', entry.onConnected);
-      addControllerEventListener(controller, 'disconnected', entry.onDisconnected);
-      addControllerEventListener(controller, 'selectstart', entry.onSelectStart);
-      addControllerEventListener(controller, 'selectend', entry.onSelectEnd);
-
-      scene.add(controller);
-      scene.add(grip);
-
-      createdEntries.push(entry);
-    }
-
-    controllers.push(...createdEntries);
-
-    return () => {
-      for (const entry of createdEntries) {
-        removeControllerEventListener(entry.controller, 'connected', entry.onConnected);
-        removeControllerEventListener(entry.controller, 'disconnected', entry.onDisconnected);
-        removeControllerEventListener(entry.controller, 'selectstart', entry.onSelectStart);
-        removeControllerEventListener(entry.controller, 'selectend', entry.onSelectEnd);
-        entry.controller.remove(entry.ray);
-        entry.controller.remove(entry.touchIndicator);
-        entry.touchIndicator.geometry?.dispose?.();
-        (entry.touchIndicator.material as THREE.Material | undefined)?.dispose?.();
-        scene.remove(entry.controller);
-        scene.remove(entry.grip);
-        entry.rayGeometry.dispose();
-        entry.rayMaterial.dispose();
-      }
-      controllers.splice(0, controllers.length);
-    };
-  }, [
-    controllerSetupRevision,
-    controllersRef,
-    rendererRef,
-    sceneRef,
-    vrClearHoverStateRef,
-    vrPlaybackHudPlacementRef,
-    vrChannelsHudPlacementRef,
-    vrTracksHudPlacementRef,
-    vrPlaybackHudDragTargetRef,
-    vrChannelsHudDragTargetRef,
-    vrTracksHudDragTargetRef,
-    vrPlaybackHudRef,
-    vrChannelsHudRef,
-    vrTracksHudRef,
-    vrHudYawVectorRef,
-    vrHudPitchVectorRef,
-    volumeRootGroupRef,
-    volumeRootCenterUnscaledRef,
-    volumeUserScaleRef,
-    volumeYawRef,
-    volumePitchRef,
-    playbackStateRef,
-    vrChannelsStateRef,
-    vrTracksStateRef,
-    vrTranslationHandleRef,
-    vrVolumeScaleHandleRef,
-    vrVolumeYawHandlesRef,
-    vrVolumePitchHandleRef,
-    vrHandleWorldPointRef,
-    vrHandleSecondaryPointRef,
-    vrHandleDirectionTempRef,
-    vrHandleQuaternionTempRef,
-    onResetVolumeRef,
-    onResetHudPlacementRef,
-    onTrackFollowRequestRef,
-    toggleXrSessionMode,
-    endVrSessionRequestRef,
-  ]);
+    return sessionManager.setupControllers(configureControllerEntry);
+  }, [controllerSetupRevision, sessionManager, configureControllerEntry]);
 
   return {
     callOnRegisterVrSession,
