@@ -903,6 +903,33 @@ function VolumeViewer({
   const showLoadingOverlay = isLoading || (hasStartedLoading && !hasFinishedLoading);
   const clampedTimeIndex = totalTimepoints === 0 ? 0 : Math.min(timeIndex, totalTimepoints - 1);
   timeIndexRef.current = clampedTimeIndex;
+  useEffect(() => {
+    if (vrIntegration) {
+      return;
+    }
+    const state = playbackStateRef.current;
+    state.isPlaying = isPlaying;
+    state.playbackDisabled = playbackDisabled;
+    state.playbackLabel = playbackLabel;
+    state.fps = fps;
+    state.timeIndex = clampedTimeIndex;
+    state.totalTimepoints = totalTimepoints;
+    state.onTogglePlayback = onTogglePlayback;
+    state.onTimeIndexChange = onTimeIndexChange;
+    state.onFpsChange = onFpsChange;
+  }, [
+    clampedTimeIndex,
+    fps,
+    isPlaying,
+    onFpsChange,
+    onTimeIndexChange,
+    onTogglePlayback,
+    playbackDisabled,
+    playbackLabel,
+    playbackStateRef,
+    totalTimepoints,
+    vrIntegration,
+  ]);
   const primaryVolume = useMemo(() => {
     for (const layer of layers) {
       if (layer.volume) {
@@ -1375,6 +1402,11 @@ function VolumeViewer({
     refreshVrHudPlacements,
     updateVolumeHandles
   ]);
+
+  useEffect(() => {
+    applyVolumeRootTransformRef.current?.(currentDimensionsRef.current);
+    applyTrackGroupTransformRef.current?.(currentDimensionsRef.current);
+  }, [applyTrackGroupTransform, applyVolumeRootTransform]);
 
   useEffect(() => {
     const container = containerNode;
@@ -2105,7 +2137,42 @@ function VolumeViewer({
       controlsRef.current = null;
       endVrSessionRequestRef.current = null;
     };
-  }, [containerNode]);
+  }, [
+    applyVrPlaybackHoverState,
+    applyVolumeStepScaleToResources,
+    containerNode,
+    controllersRef,
+    createVrChannelsHud,
+    createVrPlaybackHud,
+    createVrTracksHud,
+    endVrSessionRequestRef,
+    onRendererInitialized,
+    playbackLoopRef,
+    playbackStateRef,
+    raycasterRef,
+    resetVrChannelsHudPlacement,
+    resetVrPlaybackHudPlacement,
+    resetVrTracksHudPlacement,
+    restoreVrFoveation,
+    sessionCleanupRef,
+    setControllerVisibility,
+    updateControllerRays,
+    updateVrChannelsHud,
+    updateVrPlaybackHud,
+    updateVrTracksHud,
+    vrChannelsHudPlacementRef,
+    vrChannelsHudRef,
+    vrHoverStateRef,
+    vrPlaybackHudPlacementRef,
+    vrPlaybackHudRef,
+    vrTracksHudPlacementRef,
+    vrTracksHudRef,
+    vrTranslationHandleRef,
+    vrVolumePitchHandleRef,
+    vrVolumeScaleHandleRef,
+    vrVolumeYawHandlesRef,
+    xrSessionRef,
+  ]);
 
   useEffect(() => {
     const handleKeyChange = (event: KeyboardEvent, isPressed: boolean) => {
