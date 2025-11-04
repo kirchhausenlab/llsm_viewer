@@ -411,7 +411,7 @@ export type WebXRFoveationManager = THREE.WebXRManager & {
 };
 
 export type RaycasterLike = {
-  params: { Line?: { threshold: number } } & Record<string, unknown>;
+  params: THREE.RaycasterParameters;
   setFromCamera: (coords: THREE.Vector2, camera: THREE.PerspectiveCamera) => void;
   intersectObjects: (objects: THREE.Object3D[], recursive?: boolean) => Array<{ object: THREE.Object3D }>;
 };

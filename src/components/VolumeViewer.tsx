@@ -1,5 +1,5 @@
-// @ts-nocheck
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { Line2 } from 'three/examples/jsm/lines/Line2';
@@ -52,6 +52,48 @@ import {
   DEFAULT_WINDOW_MAX
 } from '../state/layerSettings';
 import { DEFAULT_TRACK_LINE_WIDTH, DEFAULT_TRACK_OPACITY } from './volume-viewer/constants';
+
+type VrUiTargetDescriptor = { type: VrUiTargetType; data?: unknown };
+
+function isVrUiTargetType(value: unknown): value is VrUiTargetType {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  return (
+    value.startsWith('playback-') ||
+    value.startsWith('channels-') ||
+    value.startsWith('tracks-') ||
+    value.startsWith('volume-')
+  );
+}
+
+function isVrUiTargetDescriptor(value: unknown): value is VrUiTargetDescriptor {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const descriptor = value as { type?: unknown };
+  return isVrUiTargetType(descriptor.type);
+}
+
+function getTrackIdFromObject(object: THREE.Object3D): string | null {
+  const trackId = object.userData?.trackId;
+  return typeof trackId === 'string' ? trackId : null;
+}
+
+const getOrbitControlsPan = (
+  controls: OrbitControls,
+): ((deltaX: number, deltaY: number) => void) | null => {
+  const candidate = (controls as { pan?: (dx: number, dy: number) => void }).pan;
+  return typeof candidate === 'function' ? candidate.bind(controls) : null;
+};
+
+function disposeMaterial(material: THREE.Material | THREE.Material[] | null | undefined) {
+  if (Array.isArray(material)) {
+    material.forEach((entry) => entry?.dispose?.());
+    return;
+  }
+  material?.dispose?.();
+}
 function getExpectedSliceBufferLength(volume: NormalizedVolume) {
   const pixelCount = volume.width * volume.height;
   return pixelCount * 4;
@@ -145,7 +187,7 @@ function computeViewerYawBasis(
   }
 
   const isPresenting = !!renderer?.xr?.isPresenting;
-  const referenceCamera = isPresenting ? (renderer?.xr.getCamera(camera) as THREE.Camera) : camera;
+  const referenceCamera = isPresenting ? (renderer?.xr.getCamera() ?? camera) : camera;
   referenceCamera.getWorldQuaternion(viewerYawQuaternionTemp);
 
   viewerYawForwardTemp.set(0, 0, -1).applyQuaternion(viewerYawQuaternionTemp);
@@ -182,47 +224,9 @@ function computeYawAngleForBasis(
 function resolveVrUiTarget(object: THREE.Object3D | null): VrUiTarget | null {
   let current: THREE.Object3D | null = object;
   while (current) {
-    const userData = current.userData ?? {};
-    if (userData && typeof userData.vrUiTarget === 'object' && userData.vrUiTarget) {
-      const target = userData.vrUiTarget as { type?: VrUiTargetType; data?: unknown };
-      if (
-        target &&
-        (target.type === 'playback-play-toggle' ||
-          target.type === 'playback-slider' ||
-          target.type === 'playback-reset-volume' ||
-          target.type === 'playback-reset-hud' ||
-          target.type === 'playback-exit-vr' ||
-          target.type === 'playback-panel' ||
-          target.type === 'playback-panel-grab' ||
-          target.type === 'playback-panel-yaw' ||
-          target.type === 'playback-panel-pitch' ||
-          target.type === 'channels-panel' ||
-          target.type === 'channels-panel-grab' ||
-          target.type === 'channels-panel-yaw' ||
-          target.type === 'channels-panel-pitch' ||
-          target.type === 'channels-tab' ||
-          target.type === 'channels-visibility' ||
-          target.type === 'channels-reset' ||
-          target.type === 'channels-layer' ||
-          target.type === 'channels-slider' ||
-          target.type === 'channels-color' ||
-          target.type === 'tracks-panel' ||
-          target.type === 'tracks-panel-grab' ||
-          target.type === 'tracks-panel-yaw' ||
-          target.type === 'tracks-panel-pitch' ||
-          target.type === 'tracks-tab' ||
-          target.type === 'tracks-stop-follow' ||
-          target.type === 'tracks-slider' ||
-          target.type === 'tracks-color' ||
-          target.type === 'tracks-color-mode' ||
-          target.type === 'tracks-master-toggle' ||
-          target.type === 'tracks-toggle' ||
-          target.type === 'tracks-follow' ||
-          target.type === 'volume-yaw-handle' ||
-          target.type === 'volume-pitch-handle')
-      ) {
-        return { type: target.type, object: current, data: target.data };
-      }
+    const target = current.userData?.vrUiTarget;
+    if (isVrUiTargetDescriptor(target)) {
+      return { type: target.type, object: current, data: target.data };
     }
     current = current.parent ?? null;
   }
@@ -547,7 +551,7 @@ function VolumeViewer({
         onAfterSessionEnd: handleResize
       })
     : null;
-  const createMutableRef = (value: any) => ({ current: value });
+  const createMutableRef = <T,>(value: T): MutableRefObject<T> => ({ current: value });
   const vrFallback = useMemo<UseVolumeViewerVrResult>(() => {
     const rejectSession = async () => {
       throw new Error('VR session is not available.');
@@ -658,6 +662,8 @@ function VolumeViewer({
       applyVrChannelsSliderFromPoint: () => {},
       applyVrTracksSliderFromPoint: () => {},
       applyVrTracksScrollFromPoint: () => {},
+      resolveChannelsRegionFromPoint: () => null,
+      resolveTracksRegionFromPoint: () => null,
       updateVolumeHandles: () => {},
       applyVolumeYawPitch: () => {},
       updateHudGroupFromPlacement: () => {},
@@ -1035,8 +1041,7 @@ function VolumeViewer({
         line.computeLineDistances();
         line.renderOrder = 1000;
         line.frustumCulled = false;
-        const lineWithUserData = line as unknown as { userData: Record<string, unknown> };
-        lineWithUserData.userData.trackId = track.id;
+        line.userData.trackId = track.id;
 
         trackGroup.add(outline);
         trackGroup.add(line);
@@ -1543,14 +1548,12 @@ function VolumeViewer({
     const domElement = renderer.domElement;
 
     const pointerVector = new THREE.Vector2();
-    const raycaster = new (THREE as unknown as { Raycaster: new () => RaycasterLike }).Raycaster();
+    const raycaster = new THREE.Raycaster();
     raycaster.params.Line = { threshold: 0.02 };
-    (raycaster.params as unknown as { Line2?: { threshold: number } }).Line2 = {
-      threshold: 0.02
-    };
+    raycaster.params.Line2 = { threshold: 0.02 };
     raycasterRef.current = raycaster;
 
-    const performHoverHitTest = (event: PointerEvent): number | null => {
+    const performHoverHitTest = (event: PointerEvent): string | null => {
       const cameraInstance = cameraRef.current;
       const trackGroupInstance = trackGroupRef.current;
       const raycasterInstance = raycasterRef.current;
@@ -1596,11 +1599,7 @@ function VolumeViewer({
       }
 
       const intersection = intersections[0];
-      const hitObject = intersection.object as unknown as { userData: Record<string, unknown> };
-      const trackId =
-        typeof hitObject.userData.trackId === 'string'
-          ? (hitObject.userData.trackId as string)
-          : null;
+      const trackId = getTrackIdFromObject(intersection.object);
       if (trackId === null) {
         clearHoverState('pointer');
         return null;
@@ -1678,7 +1677,8 @@ function VolumeViewer({
       const deltaY = event.clientY - state.lastY;
 
       if (state.mode === 'pan') {
-        (controls as unknown as { pan: (dx: number, dy: number) => void }).pan(deltaX, deltaY);
+        const panControls = getOrbitControlsPan(controls);
+        panControls?.(deltaX, deltaY);
         rotationTargetRef.current.copy(controls.target);
       } else {
         const rotationTarget = rotationTargetRef.current;
@@ -2006,11 +2006,7 @@ function VolumeViewer({
             if (mesh.geometry) {
               mesh.geometry.dispose?.();
             }
-            if (Array.isArray(mesh.material)) {
-              mesh.material.forEach((material) => material?.dispose?.());
-            } else if (mesh.material) {
-              mesh.material.dispose?.();
-            }
+            disposeMaterial(mesh.material);
           }
         });
         hud.labelTexture.dispose();
@@ -2029,11 +2025,7 @@ function VolumeViewer({
             if (mesh.geometry) {
               mesh.geometry.dispose?.();
             }
-            if (Array.isArray(mesh.material)) {
-              mesh.material.forEach((material) => material?.dispose?.());
-            } else if (mesh.material) {
-              mesh.material.dispose?.();
-            }
+            disposeMaterial(mesh.material);
           }
         });
         channelsHud.panelTexture.dispose();
@@ -2052,11 +2044,7 @@ function VolumeViewer({
             if (mesh.geometry) {
               mesh.geometry.dispose?.();
             }
-            if (Array.isArray(mesh.material)) {
-              mesh.material.forEach((material) => material?.dispose?.());
-            } else if (mesh.material) {
-              mesh.material.dispose?.();
-            }
+            disposeMaterial(mesh.material);
           }
         });
         tracksHud.panelTexture.dispose();
@@ -2068,7 +2056,7 @@ function VolumeViewer({
       for (const resource of resources.values()) {
         scene.remove(resource.mesh);
         resource.mesh.geometry.dispose();
-        resource.mesh.material.dispose();
+        disposeMaterial(resource.mesh.material);
         resource.texture.dispose();
       }
       resources.clear();
@@ -2205,7 +2193,7 @@ function VolumeViewer({
         }
       }
       resource.mesh.geometry.dispose();
-      resource.mesh.material.dispose();
+      disposeMaterial(resource.mesh.material);
       resource.texture.dispose();
       resourcesRef.current.delete(key);
     };
@@ -2364,16 +2352,14 @@ function VolumeViewer({
             side: THREE.BackSide,
             transparent: true
           });
-          const baseMaterial = material as unknown as { depthWrite: boolean };
-          baseMaterial.depthWrite = false;
+          material.depthWrite = false;
 
           const geometry = new THREE.BoxGeometry(volume.width, volume.height, volume.depth);
           geometry.translate(volume.width / 2 - 0.5, volume.height / 2 - 0.5, volume.depth / 2 - 0.5);
 
           const mesh = new THREE.Mesh(geometry, material);
-          const meshObject = mesh as unknown as { visible: boolean; renderOrder: number };
-          meshObject.visible = layer.visible;
-          meshObject.renderOrder = index;
+          mesh.visible = layer.visible;
+          mesh.renderOrder = index;
           mesh.position.set(layer.offsetX, layer.offsetY, 0);
 
           const worldCameraPosition = new THREE.Vector3();
@@ -2468,9 +2454,8 @@ function VolumeViewer({
 
           const mesh = new THREE.Mesh(geometry, material);
           mesh.position.set(layer.offsetX, layer.offsetY, clampedIndex);
-          const meshObject = mesh as unknown as { visible: boolean; renderOrder: number };
-          meshObject.visible = layer.visible;
-          meshObject.renderOrder = index;
+          mesh.visible = layer.visible;
+          mesh.renderOrder = index;
           const volumeRootGroup = volumeRootGroupRef.current;
           if (volumeRootGroup) {
             volumeRootGroup.add(mesh);
@@ -2494,9 +2479,8 @@ function VolumeViewer({
 
       if (resources) {
         const { mesh } = resources;
-        const meshObject = mesh as unknown as { visible: boolean; renderOrder: number };
-        meshObject.visible = layer.visible;
-        meshObject.renderOrder = index;
+        mesh.visible = layer.visible;
+        mesh.renderOrder = index;
 
         const materialUniforms = (mesh.material as THREE.ShaderMaterial).uniforms;
         materialUniforms.u_channels.value = volume.channels;
