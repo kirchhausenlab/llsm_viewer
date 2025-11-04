@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { MutableRefObject } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { Line2 } from 'three/examples/jsm/lines/Line2';
@@ -18,16 +18,18 @@ import type {
   VolumeResources,
   VolumeViewerProps,
 } from './VolumeViewer.types';
+import type {
+  UseVolumeViewerVrParams,
+  UseVolumeViewerVrResult,
+  VrUiTarget,
+  VrUiTargetType,
+} from './volume-viewer/useVolumeViewerVr';
 import {
-  useVolumeViewerVr,
-  type UseVolumeViewerVrResult,
-  type VrUiTarget,
-  type VrUiTargetType,
+  DESKTOP_VOLUME_STEP_SCALE,
   VR_PLAYBACK_MAX_FPS,
   VR_PLAYBACK_MIN_FPS,
   VR_VOLUME_BASE_OFFSET,
-  DESKTOP_VOLUME_STEP_SCALE,
-} from './volume-viewer/useVolumeViewerVr';
+} from './volume-viewer/vr/constants';
 import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../layerColors';
 import {
   createTrackColor,
@@ -149,6 +151,31 @@ function prepareSliceTexture(volume: NormalizedVolume, sliceIndex: number, exist
 
   return { data: buffer, format: THREE.RGBAFormat };
 }
+
+type UseVolumeViewerVrBridgeProps = {
+  params: UseVolumeViewerVrParams;
+  onValue: Dispatch<SetStateAction<UseVolumeViewerVrResult | null>>;
+};
+
+const UseVolumeViewerVrBridge = lazy(async () => {
+  const module = await import('./volume-viewer/useVolumeViewerVr');
+  const Bridge = ({ params, onValue }: UseVolumeViewerVrBridgeProps) => {
+    const api = module.useVolumeViewerVr(params);
+    useEffect(() => {
+      onValue((previous) =>
+        previous?.playbackLoopRef === api.playbackLoopRef ? previous : api,
+      );
+    }, [api, onValue]);
+    useEffect(
+      () => () => {
+        onValue(null);
+      },
+      [onValue],
+    );
+    return null;
+  };
+  return { default: Bridge };
+});
 
 
 const SELECTED_TRACK_BLINK_PERIOD_MS = 1600;
@@ -413,6 +440,26 @@ function VolumeViewer({
   const trackFollowRequestCallbackRef = useRef<(trackId: string) => void>(() => {});
   trackFollowRequestCallbackRef.current = onTrackFollowRequest;
 
+  const [vrIntegration, setVrIntegration] = useState<UseVolumeViewerVrResult | null>(null);
+
+  useEffect(() => {
+    if (!vr) {
+      setVrIntegration(null);
+    }
+  }, [vr]);
+
+  const requestVolumeReset = useCallback(() => {
+    resetVolumeCallbackRef.current?.();
+  }, []);
+
+  const requestHudPlacementReset = useCallback(() => {
+    resetHudPlacementCallbackRef.current?.();
+  }, []);
+
+  const handleTrackFollowRequest = useCallback((trackId: string) => {
+    trackFollowRequestCallbackRef.current?.(trackId);
+  }, []);
+
   const handleResize = useCallback(() => {
     const target = containerRef.current;
     const rendererInstance = rendererRef.current;
@@ -482,66 +529,132 @@ function VolumeViewer({
     [applyHoverState]
   );
 
-  const vrIntegration = vr
-    ? useVolumeViewerVr({
-        vrProps: vr,
-        containerRef,
-        rendererRef,
-        cameraRef,
-        controlsRef,
-        sceneRef,
-        volumeRootGroupRef,
-        currentDimensionsRef,
-        volumeRootBaseOffsetRef,
-        volumeRootCenterOffsetRef,
-        volumeRootCenterUnscaledRef,
-        volumeRootHalfExtentsRef,
-        volumeNormalizationScaleRef,
-        volumeUserScaleRef,
-        volumeRootRotatedCenterTempRef,
-        volumeStepScaleRef,
-        volumeYawRef,
-        volumePitchRef,
-        trackGroupRef,
-        resourcesRef,
-        timeIndexRef,
-        movementStateRef,
-        pointerStateRef,
-        trackLinesRef,
-        trackFollowOffsetRef,
-        hasActive3DLayerRef,
-        playbackState: {
-          isPlaying,
-          playbackDisabled,
-          playbackLabel,
-          fps,
-          timeIndex,
-          totalTimepoints,
-          onTogglePlayback,
-          onTimeIndexChange,
-          onFpsChange
-        },
-        isVrPassthroughSupported,
-        channelPanels,
-        activeChannelPanelId,
-        trackChannels,
-        activeTrackChannelId,
-        tracks,
-        trackVisibility,
-        trackOpacityByChannel,
-        trackLineWidthByChannel,
-        channelTrackColorModes,
-        selectedTrackIds,
-        followedTrackId,
-        updateHoverState,
-        clearHoverState,
-        onResetVolume: () => resetVolumeCallbackRef.current?.(),
-        onResetHudPlacement: () => resetHudPlacementCallbackRef.current?.(),
-        onTrackFollowRequest: (trackId) => trackFollowRequestCallbackRef.current?.(trackId),
-        vrLog,
-        onAfterSessionEnd: handleResize
-      })
-    : null;
+  const playbackStateForVr = useMemo(
+    () => ({
+      isPlaying,
+      playbackDisabled,
+      playbackLabel,
+      fps,
+      timeIndex,
+      totalTimepoints,
+      onTogglePlayback,
+      onTimeIndexChange,
+      onFpsChange,
+    }),
+    [
+      isPlaying,
+      playbackDisabled,
+      playbackLabel,
+      fps,
+      timeIndex,
+      totalTimepoints,
+      onTogglePlayback,
+      onTimeIndexChange,
+      onFpsChange,
+    ],
+  );
+
+  const vrParams = useMemo<UseVolumeViewerVrParams | null>(
+    () =>
+      vr
+        ? {
+            vrProps: vr,
+            containerRef,
+            rendererRef,
+            cameraRef,
+            controlsRef,
+            sceneRef,
+            volumeRootGroupRef,
+            currentDimensionsRef,
+            volumeRootBaseOffsetRef,
+            volumeRootCenterOffsetRef,
+            volumeRootCenterUnscaledRef,
+            volumeRootHalfExtentsRef,
+            volumeNormalizationScaleRef,
+            volumeUserScaleRef,
+            volumeRootRotatedCenterTempRef,
+            volumeStepScaleRef,
+            volumeYawRef,
+            volumePitchRef,
+            trackGroupRef,
+            resourcesRef,
+            timeIndexRef,
+            movementStateRef,
+            pointerStateRef,
+            trackLinesRef,
+            trackFollowOffsetRef,
+            hasActive3DLayerRef,
+            playbackState: playbackStateForVr,
+            isVrPassthroughSupported,
+            channelPanels,
+            activeChannelPanelId,
+            trackChannels,
+            activeTrackChannelId,
+            tracks,
+            trackVisibility,
+            trackOpacityByChannel,
+            trackLineWidthByChannel,
+            channelTrackColorModes,
+            selectedTrackIds,
+            followedTrackId,
+            updateHoverState,
+            clearHoverState,
+            onResetVolume: requestVolumeReset,
+            onResetHudPlacement: requestHudPlacementReset,
+            onTrackFollowRequest: handleTrackFollowRequest,
+            vrLog,
+            onAfterSessionEnd: handleResize,
+          }
+        : null,
+    [
+      vr,
+      containerRef,
+      rendererRef,
+      cameraRef,
+      controlsRef,
+      sceneRef,
+      volumeRootGroupRef,
+      currentDimensionsRef,
+      volumeRootBaseOffsetRef,
+      volumeRootCenterOffsetRef,
+      volumeRootCenterUnscaledRef,
+      volumeRootHalfExtentsRef,
+      volumeNormalizationScaleRef,
+      volumeUserScaleRef,
+      volumeRootRotatedCenterTempRef,
+      volumeStepScaleRef,
+      volumeYawRef,
+      volumePitchRef,
+      trackGroupRef,
+      resourcesRef,
+      timeIndexRef,
+      movementStateRef,
+      pointerStateRef,
+      trackLinesRef,
+      trackFollowOffsetRef,
+      hasActive3DLayerRef,
+      playbackStateForVr,
+      isVrPassthroughSupported,
+      channelPanels,
+      activeChannelPanelId,
+      trackChannels,
+      activeTrackChannelId,
+      tracks,
+      trackVisibility,
+      trackOpacityByChannel,
+      trackLineWidthByChannel,
+      channelTrackColorModes,
+      selectedTrackIds,
+      followedTrackId,
+      updateHoverState,
+      clearHoverState,
+      requestVolumeReset,
+      requestHudPlacementReset,
+      handleTrackFollowRequest,
+      vrLog,
+      handleResize,
+    ],
+  );
   const createMutableRef = <T,>(value: T): MutableRefObject<T> => ({ current: value });
   const vrFallback = useMemo<UseVolumeViewerVrResult>(() => {
     const rejectSession = async () => {
@@ -2449,6 +2562,11 @@ function VolumeViewer({
 
   return (
     <div className="volume-viewer">
+      {vrParams ? (
+        <Suspense fallback={null}>
+          <UseVolumeViewerVrBridge params={vrParams} onValue={setVrIntegration} />
+        </Suspense>
+      ) : null}
       <section className="viewer-surface">
         {showLoadingOverlay && (
           <div className="overlay">
