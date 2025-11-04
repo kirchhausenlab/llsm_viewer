@@ -554,3 +554,8 @@ d centered the front-page card in the viewport.
 ## VR hook helper extraction
 - Split the HUD, volume, session, and input wiring inside `useVolumeViewerVr` into dedicated helper factories so the hook composes preconfigured callbacks instead of defining them inline.
 - Updated the hook to consume the helper outputs, removed duplicate inline implementations, and adjusted the session/input creation order to keep the ref wiring intact during the refactor.
+
+## VR hook surface cleanup
+- Trimmed `UseVolumeViewerVrResult` to the viewer's active refs and callbacks, keeping the HUD math and XR session switches encapsulated inside the hook helpers.
+- Updated `useVolumeViewerVr` and its helpers to forward only the supported handles while leaving internal slider/placement routines private.
+- Simplified the viewer's VR fallback/destructuring to match the reduced contract and removed the now-unused imports and cleanup branches.

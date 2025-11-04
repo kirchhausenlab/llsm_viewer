@@ -12,14 +12,15 @@ import {
 import type {
   PlaybackState,
   VrChannelsHud,
+  VrChannelsInteractiveRegion,
   VrChannelsState,
   VrHoverState,
   VrHudPlacement,
   VrPlaybackHud,
   VrTracksHud,
+  VrTracksInteractiveRegion,
   VrTracksState,
 } from '../../vr';
-import type { UseVolumeViewerVrResult } from '../../useVolumeViewerVr.types';
 
 export type CreateHudHelpersParams = {
   cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
@@ -49,10 +50,16 @@ export type CreateHudHelpersParams = {
 
 export type CreateHudHelpersResult = {
   computeVolumeHudFrame: () => ReturnType<typeof computeHudFrameFromVolume>;
-  applyPlaybackSliderFromWorldPoint: UseVolumeViewerVrResult['applyPlaybackSliderFromWorldPoint'];
-  applyFpsSliderFromWorldPoint: UseVolumeViewerVrResult['applyFpsSliderFromWorldPoint'];
-  resolveChannelsRegionFromPoint: UseVolumeViewerVrResult['resolveChannelsRegionFromPoint'];
-  resolveTracksRegionFromPoint: UseVolumeViewerVrResult['resolveTracksRegionFromPoint'];
+  applyPlaybackSliderFromWorldPoint: (worldPoint: THREE.Vector3) => void;
+  applyFpsSliderFromWorldPoint: (worldPoint: THREE.Vector3) => void;
+  resolveChannelsRegionFromPoint: (
+    hud: VrChannelsHud | null,
+    worldPoint: THREE.Vector3,
+  ) => VrChannelsInteractiveRegion | null;
+  resolveTracksRegionFromPoint: (
+    hud: VrTracksHud | null,
+    worldPoint: THREE.Vector3,
+  ) => VrTracksInteractiveRegion | null;
 } & ReturnType<typeof createHudController>;
 
 export function createHudHelpers({
@@ -108,9 +115,7 @@ export function createHudHelpers({
     cameraRef,
   });
 
-  const applyPlaybackSliderFromWorldPoint: UseVolumeViewerVrResult['applyPlaybackSliderFromWorldPoint'] = (
-    worldPoint,
-  ) => {
+  const applyPlaybackSliderFromWorldPoint = (worldPoint: THREE.Vector3) => {
     const hud = vrPlaybackHudRef.current;
     if (!hud) {
       return;
@@ -141,9 +146,7 @@ export function createHudHelpers({
     setVrPlaybackLabel(hud, label);
   };
 
-  const applyFpsSliderFromWorldPoint: UseVolumeViewerVrResult['applyFpsSliderFromWorldPoint'] = (
-    worldPoint,
-  ) => {
+  const applyFpsSliderFromWorldPoint = (worldPoint: THREE.Vector3) => {
     const hud = vrPlaybackHudRef.current;
     if (!hud) {
       return;
@@ -179,10 +182,10 @@ export function createHudHelpers({
     setVrPlaybackFpsLabel(hud, fpsLabelText);
   };
 
-  const resolveChannelsRegionFromPoint: UseVolumeViewerVrResult['resolveChannelsRegionFromPoint'] = (
-    hud,
-    worldPoint,
-  ) => {
+  const resolveChannelsRegionFromPoint = (
+    hud: VrChannelsHud | null,
+    worldPoint: THREE.Vector3,
+  ): VrChannelsInteractiveRegion | null => {
     if (!hud) {
       return null;
     }
@@ -204,10 +207,10 @@ export function createHudHelpers({
     return null;
   };
 
-  const resolveTracksRegionFromPoint: UseVolumeViewerVrResult['resolveTracksRegionFromPoint'] = (
-    hud,
-    worldPoint,
-  ) => {
+  const resolveTracksRegionFromPoint = (
+    hud: VrTracksHud | null,
+    worldPoint: THREE.Vector3,
+  ): VrTracksInteractiveRegion | null => {
     if (!hud) {
       return null;
     }

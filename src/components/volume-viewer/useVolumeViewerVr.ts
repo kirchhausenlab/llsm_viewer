@@ -366,19 +366,15 @@ export function useVolumeViewerVr({
     [applyVrPlaybackHoverState, controllersRef, vrClearHoverStateRef],
   );
 
-  const refreshControllerVisibility = useCallback<
-    UseVolumeViewerVrResult['refreshControllerVisibility']
-  >(() => {
+  const refreshControllerVisibility = useCallback(() => {
     sessionManagerRef.current?.refreshControllerVisibility();
   }, [sessionManagerRef]);
 
-  const setPreferredXrSessionMode = useCallback<
-    UseVolumeViewerVrResult['setPreferredXrSessionMode']
-  >(
-    (mode) => {
+  const setPreferredXrSessionMode = useCallback(
+    (mode: 'immersive-vr' | 'immersive-ar') => {
       sessionManagerRef.current?.setPreferredSessionMode(mode);
     },
-    [sessionManagerRef]
+    [sessionManagerRef],
   );
 
   const toggleXrSessionMode = useCallback(() => {
@@ -546,10 +542,8 @@ export function useVolumeViewerVr({
     updateVrTracksHud,
   ]);
 
-  const applyVrChannelsSliderFromPoint = useCallback<
-    UseVolumeViewerVrResult['applyVrChannelsSliderFromPoint']
-  >(
-    (region, worldPoint) => {
+  const applyVrChannelsSliderFromPoint = useCallback(
+    (region: VrChannelsInteractiveRegion | null, worldPoint: THREE.Vector3) => {
       if (
         !region ||
         region.disabled ||
@@ -657,10 +651,8 @@ export function useVolumeViewerVr({
     ],
   );
 
-  const applyVrTracksSliderFromPoint = useCallback<
-    UseVolumeViewerVrResult['applyVrTracksSliderFromPoint']
-  >(
-    (region, worldPoint) => {
+  const applyVrTracksSliderFromPoint = useCallback(
+    (region: VrTracksInteractiveRegion | null, worldPoint: THREE.Vector3) => {
       if (!region || region.disabled || region.targetType !== 'tracks-slider' || !region.sliderTrack) {
         return;
       }
@@ -705,10 +697,8 @@ export function useVolumeViewerVr({
     [onTrackLineWidthChange, onTrackOpacityChange, renderVrTracksHud],
   );
 
-  const applyVrTracksScrollFromPoint = useCallback<
-    UseVolumeViewerVrResult['applyVrTracksScrollFromPoint']
-  >(
-    (region, worldPoint) => {
+  const applyVrTracksScrollFromPoint = useCallback(
+    (region: VrTracksInteractiveRegion | null, worldPoint: THREE.Vector3) => {
       if (
         !region ||
         region.disabled ||
@@ -1125,8 +1115,6 @@ export function useVolumeViewerVr({
 
   return {
     callOnRegisterVrSession,
-    callOnVrSessionStarted,
-    callOnVrSessionEnded,
     requestVrSession,
     endVrSession,
     vrPlaybackHudRef,
@@ -1135,90 +1123,32 @@ export function useVolumeViewerVr({
     vrPlaybackHudPlacementRef,
     vrChannelsHudPlacementRef,
     vrTracksHudPlacementRef,
-    vrHudPlaneRef,
-    vrHudPlanePointRef,
-    vrPlaybackHudDragTargetRef,
-    vrChannelsHudDragTargetRef,
-    vrTracksHudDragTargetRef,
-    vrHudOffsetTempRef,
-    vrHudIntersectionRef,
-    vrChannelsLocalPointRef,
-    vrTracksLocalPointRef,
-    vrHudForwardRef,
-    vrHudYawEulerRef,
-    vrHudYawQuaternionRef,
-    vrHudYawVectorRef,
-    vrHudPitchVectorRef,
     vrTranslationHandleRef,
     vrVolumeScaleHandleRef,
     vrVolumeYawHandlesRef,
     vrVolumePitchHandleRef,
-    vrHandleLocalPointRef,
-    vrHandleWorldPointRef,
-    vrHandleSecondaryPointRef,
-    vrHandleDirectionTempRef,
-    vrHandleQuaternionTempRef,
-    vrHandleQuaternionTemp2Ref,
-    sliderLocalPointRef,
     playbackStateRef,
     playbackLoopRef,
     vrHoverStateRef,
-    vrChannelsStateRef,
-    vrTracksStateRef,
     controllersRef,
     setControllerVisibility,
-    refreshControllerVisibility,
     raycasterRef,
     xrSessionRef,
     sessionCleanupRef,
-    preVrCameraStateRef,
-    xrPreferredSessionModeRef,
-    xrCurrentSessionModeRef,
-    xrPendingModeSwitchRef,
-    xrPassthroughSupportedRef,
-    xrFoveationAppliedRef,
-    xrPreviousFoveationRef,
     applyVrPlaybackHoverState,
     updateVrPlaybackHud,
-    setVrPlaybackHudVisible,
-    setVrChannelsHudVisible,
-    setVrTracksHudVisible,
-    setPreferredXrSessionMode,
-    toggleXrSessionMode,
-    setVrPlaybackHudPlacementPosition,
-    setVrChannelsHudPlacementPosition,
-    setVrTracksHudPlacementPosition,
-    setVrPlaybackHudPlacementYaw,
-    setVrChannelsHudPlacementYaw,
-    setVrTracksHudPlacementYaw,
-    setVrPlaybackHudPlacementPitch,
-    setVrChannelsHudPlacementPitch,
-    setVrTracksHudPlacementPitch,
-    applyPlaybackSliderFromWorldPoint,
-    applyFpsSliderFromWorldPoint,
     createVrPlaybackHud,
     createVrChannelsHud,
     createVrTracksHud,
-    renderVrChannelsHud,
-    renderVrTracksHud,
     updateVrChannelsHud,
     updateVrTracksHud,
-    applyVrChannelsSliderFromPoint,
-    applyVrTracksSliderFromPoint,
-    applyVrTracksScrollFromPoint,
-    resolveChannelsRegionFromPoint,
-    resolveTracksRegionFromPoint,
     updateVolumeHandles,
-    applyVolumeYawPitch,
     updateHudGroupFromPlacement,
-    setHudPlacement,
-    computeVolumeHudFrame,
     resetVrPlaybackHudPlacement,
     resetVrChannelsHudPlacement,
     resetVrTracksHudPlacement,
     applyVolumeRootTransform,
     applyVolumeStepScaleToResources,
-    applyVrFoveation,
     restoreVrFoveation,
     onRendererInitialized,
     endVrSessionRequestRef,
