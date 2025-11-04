@@ -16,6 +16,8 @@ import type {
   VrTracksHud,
   VrTracksInteractiveRegion,
   VrTracksState,
+  VrUiTarget,
+  VrUiTargetType,
 } from './types';
 import type { VolumeHandleCandidate } from '../useVolumeViewerVr.types';
 import {
