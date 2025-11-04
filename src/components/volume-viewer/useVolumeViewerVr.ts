@@ -6,6 +6,7 @@ export * from './vr';
 export type { UseVolumeViewerVrParams, UseVolumeViewerVrResult, VolumeHandleCandidate } from './useVolumeViewerVr.types';
 
 import type { UseVolumeViewerVrParams, UseVolumeViewerVrResult } from './useVolumeViewerVr.types';
+import type { VolumeDimensions } from './vr';
 
 import type {
   MovementState,
@@ -56,6 +57,9 @@ import {
   VR_VOLUME_STEP_SCALE,
   DESKTOP_VOLUME_STEP_SCALE,
   XR_TARGET_FOVEATION,
+  applyVolumeRootTransform as applyVolumeRootTransformWithRefs,
+  applyVolumeYawPitch as applyVolumeYawPitchWithRefs,
+  updateVolumeHandles as updateVolumeHandlesWithRefs,
 } from './vr';
 import {
   setVrPlaybackFpsFraction,
@@ -920,104 +924,20 @@ export function useVolumeViewerVr({
 
 
   const updateVolumeHandles = useCallback(() => {
-    const translationHandle = vrTranslationHandleRef.current;
-    const scaleHandle = vrVolumeScaleHandleRef.current;
-    const yawHandles = vrVolumeYawHandlesRef.current;
-    const pitchHandle = vrVolumePitchHandleRef.current;
-    if (!translationHandle && !scaleHandle && yawHandles.length === 0 && !pitchHandle) {
-      return;
-    }
-
-    const renderer = rendererRef.current;
-    const volumeRootGroup = volumeRootGroupRef.current;
-    const dimensions = currentDimensionsRef.current;
-    const has3D = hasActive3DLayerRef.current;
-    const presenting = renderer?.xr?.isPresenting ?? false;
-
-    const hideHandles = () => {
-      if (translationHandle) {
-        translationHandle.visible = false;
-      }
-      if (scaleHandle) {
-        scaleHandle.visible = false;
-      }
-      yawHandles.forEach((handle) => {
-        handle.visible = false;
-      });
-      if (pitchHandle) {
-        pitchHandle.visible = false;
-      }
-    };
-
-    if (!presenting || !has3D || !dimensions || !volumeRootGroup || dimensions.depth <= 1) {
-      hideHandles();
-      return;
-    }
-
-    const { width, height, depth } = dimensions;
-    const maxDimension = Math.max(width, height, depth);
-    if (!Number.isFinite(maxDimension) || maxDimension <= 0) {
-      hideHandles();
-      return;
-    }
-
-    const scale = 1 / maxDimension;
-    const userScale = volumeUserScaleRef.current;
-    const totalScale = scale * userScale;
-    const safeScale = totalScale > 1e-6 ? totalScale : 1e-6;
-    const centerUnscaled = volumeRootCenterUnscaledRef.current;
-    const halfExtents = volumeRootHalfExtentsRef.current;
-    const translationLocal = vrHandleLocalPointRef.current;
-
-    translationLocal.set(
-      centerUnscaled.x,
-      centerUnscaled.y + (halfExtents.y + VR_TRANSLATION_HANDLE_OFFSET) / scale,
-      centerUnscaled.z,
-    );
-    if (translationHandle) {
-      translationHandle.position.copy(translationLocal);
-      translationHandle.scale.setScalar(VR_TRANSLATION_HANDLE_RADIUS / safeScale);
-      translationHandle.visible = true;
-    }
-
-    const lateralOffset = (halfExtents.x + VR_ROTATION_HANDLE_OFFSET) / scale;
-    const verticalOffset = -(halfExtents.y + VR_ROTATION_HANDLE_OFFSET) / scale;
-    const forwardOffset = (halfExtents.z + VR_PITCH_HANDLE_FORWARD_OFFSET) / scale;
-    const handleScale = VR_ROTATION_HANDLE_RADIUS / safeScale;
-
-    yawHandles.forEach((handle, index) => {
-      if (!handle) {
-        return;
-      }
-      const direction = index === 0 ? 1 : -1;
-      handle.position.set(
-        centerUnscaled.x + direction * lateralOffset,
-        centerUnscaled.y,
-        centerUnscaled.z,
-      );
-      handle.scale.setScalar(handleScale);
-      handle.visible = true;
+    updateVolumeHandlesWithRefs({
+      rendererRef,
+      volumeRootGroupRef,
+      currentDimensionsRef,
+      hasActive3DLayerRef,
+      volumeUserScaleRef,
+      volumeRootCenterUnscaledRef,
+      volumeRootHalfExtentsRef,
+      vrHandleLocalPointRef,
+      vrTranslationHandleRef,
+      vrVolumeScaleHandleRef,
+      vrVolumeYawHandlesRef,
+      vrVolumePitchHandleRef,
     });
-
-    if (pitchHandle) {
-      pitchHandle.position.set(
-        centerUnscaled.x,
-        centerUnscaled.y + verticalOffset,
-        centerUnscaled.z - forwardOffset,
-      );
-      pitchHandle.scale.setScalar(handleScale);
-      pitchHandle.visible = true;
-    }
-
-    if (scaleHandle) {
-      scaleHandle.position.set(
-        centerUnscaled.x + (halfExtents.x + VR_SCALE_HANDLE_OFFSET) / scale,
-        centerUnscaled.y + (halfExtents.y + VR_SCALE_HANDLE_OFFSET) / scale,
-        centerUnscaled.z,
-      );
-      scaleHandle.scale.setScalar(VR_SCALE_HANDLE_RADIUS / safeScale);
-      scaleHandle.visible = true;
-    }
   }, [
     currentDimensionsRef,
     hasActive3DLayerRef,
@@ -1070,113 +990,104 @@ export function useVolumeViewerVr({
 
   const applyVolumeYawPitch = useCallback(
     (yaw: number, pitch: number) => {
-      const volumeRootGroup = volumeRootGroupRef.current;
-      if (!volumeRootGroup) {
-        return;
-      }
-      volumeYawRef.current = yaw;
-      volumePitchRef.current = pitch;
-      const euler = vrHudYawEulerRef.current;
-      const quaternion = vrHandleQuaternionTempRef.current;
-      euler.set(pitch, yaw, 0, 'YXZ');
-      quaternion.setFromEuler(euler);
-      volumeRootGroup.quaternion.copy(quaternion);
-      const baseOffset = volumeRootBaseOffsetRef.current;
-      const centerOffset = volumeRootCenterOffsetRef.current;
-      const rotatedCenter = volumeRootRotatedCenterTempRef.current;
-      const userScale = volumeUserScaleRef.current;
-      rotatedCenter
-        .copy(centerOffset)
-        .multiplyScalar(userScale)
-        .applyQuaternion(volumeRootGroup.quaternion);
-      volumeRootGroup.position.set(
-        baseOffset.x - rotatedCenter.x,
-        baseOffset.y - rotatedCenter.y,
-        baseOffset.z - rotatedCenter.z,
+      applyVolumeYawPitchWithRefs(
+        {
+          rendererRef,
+          volumeRootGroupRef,
+          currentDimensionsRef,
+          hasActive3DLayerRef,
+          volumeUserScaleRef,
+          volumeRootCenterUnscaledRef,
+          volumeRootHalfExtentsRef,
+          vrHandleLocalPointRef,
+          vrTranslationHandleRef,
+          vrVolumeScaleHandleRef,
+          vrVolumeYawHandlesRef,
+          vrVolumePitchHandleRef,
+          volumeRootBaseOffsetRef,
+          volumeRootCenterOffsetRef,
+          volumeRootRotatedCenterTempRef,
+          volumeYawRef,
+          volumePitchRef,
+          vrHudYawEulerRef,
+          vrHandleQuaternionTempRef,
+        },
+        yaw,
+        pitch,
       );
-      volumeRootGroup.updateMatrixWorld(true);
-      updateVolumeHandles();
     },
     [
-      updateVolumeHandles,
+      currentDimensionsRef,
+      hasActive3DLayerRef,
+      rendererRef,
       volumePitchRef,
       volumeRootBaseOffsetRef,
-      volumeRootCenterOffsetRef,
-      volumeRootGroupRef,
-      volumeRootRotatedCenterTempRef,
-      volumeUserScaleRef,
-      volumeYawRef,
-      vrHandleQuaternionTempRef,
-      vrHudYawEulerRef,
-    ],
-  );
-
-  const applyVolumeRootTransform = useCallback(
-    (dimensions: { width: number; height: number; depth: number } | null) => {
-      const volumeRootGroup = volumeRootGroupRef.current;
-      if (!volumeRootGroup) {
-        return;
-      }
-
-      if (!dimensions) {
-        volumeRootCenterOffsetRef.current.set(0, 0, 0);
-        volumeRootCenterUnscaledRef.current.set(0, 0, 0);
-        volumeRootHalfExtentsRef.current.set(0, 0, 0);
-        volumeNormalizationScaleRef.current = 1;
-        volumeUserScaleRef.current = 1;
-        volumeRootGroup.scale.set(1, 1, 1);
-        volumeYawRef.current = 0;
-        volumePitchRef.current = 0;
-        applyVolumeYawPitch(0, 0);
-        return;
-      }
-
-      const { width, height, depth } = dimensions;
-      const maxDimension = Math.max(width, height, depth);
-      if (!Number.isFinite(maxDimension) || maxDimension <= 0) {
-        volumeRootCenterOffsetRef.current.set(0, 0, 0);
-        volumeRootCenterUnscaledRef.current.set(0, 0, 0);
-        volumeRootHalfExtentsRef.current.set(0, 0, 0);
-        volumeNormalizationScaleRef.current = 1;
-        volumeUserScaleRef.current = 1;
-        volumeRootGroup.scale.set(1, 1, 1);
-        volumeYawRef.current = 0;
-        volumePitchRef.current = 0;
-        applyVolumeYawPitch(0, 0);
-        return;
-      }
-
-      const scale = 1 / maxDimension;
-      volumeNormalizationScaleRef.current = scale;
-      const clampedUserScale = Math.min(
-        VR_VOLUME_MAX_SCALE,
-        Math.max(VR_VOLUME_MIN_SCALE, volumeUserScaleRef.current),
-      );
-      volumeUserScaleRef.current = clampedUserScale;
-      const centerUnscaled = volumeRootCenterUnscaledRef.current;
-      centerUnscaled.set(width / 2 - 0.5, height / 2 - 0.5, depth / 2 - 0.5);
-      const centerOffset = volumeRootCenterOffsetRef.current;
-      centerOffset.copy(centerUnscaled).multiplyScalar(scale);
-      const halfExtents = volumeRootHalfExtentsRef.current;
-      halfExtents.set(
-        ((width - 1) / 2) * scale,
-        ((height - 1) / 2) * scale,
-        ((depth - 1) / 2) * scale,
-      );
-
-      volumeRootGroup.scale.setScalar(scale * clampedUserScale);
-      applyVolumeYawPitch(volumeYawRef.current, volumePitchRef.current);
-    },
-    [
-      applyVolumeYawPitch,
-      volumeNormalizationScaleRef,
-      volumePitchRef,
       volumeRootCenterOffsetRef,
       volumeRootCenterUnscaledRef,
       volumeRootGroupRef,
       volumeRootHalfExtentsRef,
+      volumeRootRotatedCenterTempRef,
       volumeUserScaleRef,
       volumeYawRef,
+      vrHandleLocalPointRef,
+      vrHandleQuaternionTempRef,
+      vrHudYawEulerRef,
+      vrTranslationHandleRef,
+      vrVolumePitchHandleRef,
+      vrVolumeScaleHandleRef,
+      vrVolumeYawHandlesRef,
+    ],
+  );
+
+  const applyVolumeRootTransform = useCallback(
+    (dimensions: VolumeDimensions | null) => {
+      applyVolumeRootTransformWithRefs(
+        {
+          rendererRef,
+          volumeRootGroupRef,
+          currentDimensionsRef,
+          hasActive3DLayerRef,
+          volumeUserScaleRef,
+          volumeRootCenterUnscaledRef,
+          volumeRootHalfExtentsRef,
+          vrHandleLocalPointRef,
+          vrTranslationHandleRef,
+          vrVolumeScaleHandleRef,
+          vrVolumeYawHandlesRef,
+          vrVolumePitchHandleRef,
+          volumeRootBaseOffsetRef,
+          volumeRootCenterOffsetRef,
+          volumeRootRotatedCenterTempRef,
+          volumeYawRef,
+          volumePitchRef,
+          vrHudYawEulerRef,
+          vrHandleQuaternionTempRef,
+          volumeNormalizationScaleRef,
+        },
+        dimensions,
+      );
+    },
+    [
+      currentDimensionsRef,
+      hasActive3DLayerRef,
+      rendererRef,
+      volumeNormalizationScaleRef,
+      volumePitchRef,
+      volumeRootBaseOffsetRef,
+      volumeRootCenterOffsetRef,
+      volumeRootCenterUnscaledRef,
+      volumeRootGroupRef,
+      volumeRootHalfExtentsRef,
+      volumeRootRotatedCenterTempRef,
+      volumeUserScaleRef,
+      volumeYawRef,
+      vrHandleLocalPointRef,
+      vrHandleQuaternionTempRef,
+      vrHudYawEulerRef,
+      vrTranslationHandleRef,
+      vrVolumePitchHandleRef,
+      vrVolumeScaleHandleRef,
+      vrVolumeYawHandlesRef,
     ],
   );
 
