@@ -8,7 +8,7 @@ import {
   importPreprocessedDataset,
   type ChannelExportMetadata,
   type PreprocessedManifest
-} from '../src/utils/preprocessedDataset.ts';
+} from '../src/utils/preprocessedDataset/index.ts';
 import type { LoadedLayer } from '../src/types/layers.ts';
 import type { NormalizedVolume } from '../src/volumeProcessing.ts';
 
