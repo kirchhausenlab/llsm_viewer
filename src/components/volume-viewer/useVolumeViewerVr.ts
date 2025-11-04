@@ -42,6 +42,7 @@ import type {
 } from './vr';
 import { computeViewerYawBasis, computeYawAngleForBasis } from './vr/viewerYaw';
 import { getHudCategoryFromTarget } from './vr/hudTargets';
+import { bindSessionRequests, createSessionLifecycle } from './vr/session';
 import { VrSessionManager } from './vr/sessionManager';
 import {
   VR_CHANNELS_CAMERA_ANCHOR_OFFSET,
@@ -206,25 +207,6 @@ export function useVolumeViewerVr({
   const requestVrSessionRef = useRef<(() => Promise<XRSession>) | null>(null);
   const vrPropsRef = useRef(vrProps ?? null);
   vrPropsRef.current = vrProps ?? null;
-
-  const callOnRegisterVrSession = useCallback(
-    (
-      handlers:
-        | {
-            requestSession: () => Promise<XRSession | null>;
-            endSession: () => Promise<void> | void;
-          }
-        | null,
-    ) => {
-      if (handlers) {
-        endVrSessionRequestRef.current = handlers.endSession;
-      } else {
-        endVrSessionRequestRef.current = null;
-      }
-      vrPropsRef.current?.onRegisterVrSession?.(handlers);
-    },
-    [endVrSessionRequestRef],
-  );
 
   const vrLogRef = useRef(vrLog);
   vrLogRef.current = vrLog;
@@ -1086,23 +1068,6 @@ export function useVolumeViewerVr({
   );
 
 
-  const endVrSession = useCallback(() => {
-    const manager = sessionManagerRef.current;
-    if (!manager) {
-      return Promise.resolve();
-    }
-    return manager.endSession();
-  }, [sessionManagerRef]);
-
-  useEffect(() => {
-    endVrSessionRequestRef.current = endVrSession;
-    return () => {
-      if (endVrSessionRequestRef.current === endVrSession) {
-        endVrSessionRequestRef.current = null;
-      }
-    };
-  }, [endVrSession]);
-
   const updateVolumeHandles = useCallback(() => {
     const translationHandle = vrTranslationHandleRef.current;
     const scaleHandle = vrVolumeScaleHandleRef.current;
@@ -1814,46 +1779,45 @@ export function useVolumeViewerVr({
     volumeRootBaseOffsetRef,
   ]);
 
-  const callOnVrSessionStarted = useCallback(() => {
-    applySessionStartState();
-    if (!disposedRef.current) {
-      vrPropsRef.current?.onVrSessionStarted?.();
-    }
-  }, [applySessionStartState, disposedRef, vrPropsRef]);
-
-  const callOnVrSessionEnded = useCallback(() => {
-    applySessionEndState();
-    if (!disposedRef.current) {
-      vrPropsRef.current?.onVrSessionEnded?.();
-    }
-  }, [applySessionEndState, disposedRef, vrPropsRef]);
-
-  const sessionManager = useMemo(
+  const {
+    sessionManager,
+    callOnVrSessionStarted,
+    callOnVrSessionEnded,
+    attachSessionManager,
+  } = useMemo(
     () =>
-      new VrSessionManager({
-        rendererRef,
-        cameraRef,
-        controlsRef,
-        sceneRef,
-        controllersRef,
-        playbackStateRef,
-        xrSessionRef,
-        sessionCleanupRef,
-        preVrCameraStateRef,
-        xrPreferredSessionModeRef,
-        xrCurrentSessionModeRef,
-        xrPendingModeSwitchRef,
-        xrPassthroughSupportedRef,
-        xrFoveationAppliedRef,
-        xrPreviousFoveationRef,
-        setControllerVisibility,
-        applyVrPlaybackHoverState,
-        updateVrPlaybackHud,
-        onSessionStarted: callOnVrSessionStarted,
-        onSessionEnded: callOnVrSessionEnded,
-        onAfterSessionEnd,
-        vrLogRef,
+      createSessionLifecycle({
+        createManager: (handlers) =>
+          new VrSessionManager({
+            rendererRef,
+            cameraRef,
+            controlsRef,
+            sceneRef,
+            controllersRef,
+            playbackStateRef,
+            xrSessionRef,
+            sessionCleanupRef,
+            preVrCameraStateRef,
+            xrPreferredSessionModeRef,
+            xrCurrentSessionModeRef,
+            xrPendingModeSwitchRef,
+            xrPassthroughSupportedRef,
+            xrFoveationAppliedRef,
+            xrPreviousFoveationRef,
+            setControllerVisibility,
+            applyVrPlaybackHoverState,
+            updateVrPlaybackHud,
+            onSessionStarted: handlers.onSessionStarted,
+            onSessionEnded: handlers.onSessionEnded,
+            onAfterSessionEnd,
+            vrLogRef,
+            disposedRef,
+          }),
+        sessionManagerRef,
+        applySessionStartState,
+        applySessionEndState,
         disposedRef,
+        vrPropsRef,
       }),
     [
       rendererRef,
@@ -1874,40 +1838,37 @@ export function useVolumeViewerVr({
       setControllerVisibility,
       applyVrPlaybackHoverState,
       updateVrPlaybackHud,
-      callOnVrSessionStarted,
-      callOnVrSessionEnded,
       onAfterSessionEnd,
       vrLogRef,
       disposedRef,
+      applySessionStartState,
+      applySessionEndState,
+      sessionManagerRef,
+      vrPropsRef,
     ],
   );
 
-  useEffect(() => {
-    sessionManagerRef.current = sessionManager;
-    return () => {
-      if (sessionManagerRef.current === sessionManager) {
-        sessionManagerRef.current = null;
-      }
-      sessionManager.dispose();
-    };
-  }, [sessionManager]);
+  useEffect(() => attachSessionManager(), [attachSessionManager, sessionManager]);
 
-  const requestVrSession = useCallback(() => {
-    const manager = sessionManagerRef.current;
-    if (!manager) {
-      return Promise.reject(new Error('VR session manager not initialized'));
-    }
-    return manager.requestSession();
-  }, [sessionManagerRef]);
+  const {
+    requestVrSession,
+    endVrSession,
+    callOnRegisterVrSession,
+    attachRequestRef,
+    attachEndRef,
+  } = useMemo(
+    () =>
+      bindSessionRequests({
+        sessionManagerRef,
+        requestSessionRef: requestVrSessionRef,
+        endSessionRequestRef: endVrSessionRequestRef,
+        vrPropsRef,
+      }),
+    [sessionManagerRef, requestVrSessionRef, endVrSessionRequestRef, vrPropsRef],
+  );
 
-  useEffect(() => {
-    requestVrSessionRef.current = requestVrSession;
-    return () => {
-      if (requestVrSessionRef.current === requestVrSession) {
-        requestVrSessionRef.current = null;
-      }
-    };
-  }, [requestVrSession]);
+  useEffect(() => attachRequestRef(), [attachRequestRef]);
+  useEffect(() => attachEndRef(), [attachEndRef]);
 
   const refreshControllerVisibilityRef = useRef(refreshControllerVisibility);
   refreshControllerVisibilityRef.current = refreshControllerVisibility;
