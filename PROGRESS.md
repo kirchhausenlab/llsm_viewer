@@ -534,3 +534,7 @@ d centered the front-page card in the viewport.
 - Added explicit vector caches and ref wiring inside `useVolumeViewerVr` so controller handle drags no longer mutate quaternion temps, fixing the scale and rotation updates after the refactor.
 - Reworked the controller handle candidate tracking to use explicit target/point/distance slots, clearing the lingering TypeScript errors and ensuring ray hover state updates run correctly.
 - Normalized the helper listener wiring to cast XR controller events in one place, satisfying the stricter typings while keeping runtime behavior unchanged.
+
+## VR controller module staging
+- Extracted the full `updateControllerRays` workflow into a dedicated `controllerRays` module that mirrors the hook implementation and accepts all required refs and callbacks as parameters.
+- Wired the module export to return a callable identical to the hook's `updateControllerRaysRef` target, keeping behavior intact while the new structure undergoes review before integration.
