@@ -8,6 +8,14 @@
 
 # Progress Log
 
+## Playback and VR HUD recovery
+- Synced the desktop playback loop with the viewer props even when the WebXR bundle is still loading so play/pause works
+  immediately instead of waiting for the VR module to hydrate.
+- Re-ran the renderer initialization whenever the VR hook delivers fresh refs, restoring the immersive HUDs and controller
+  interactions that disappeared after the lazy import swap.
+- Forced a transform reapply when the shared VR helpers become available so volumes start centered without needing a manual
+  reset.
+
 ## VR volume helper module
 - Extracted the volume transform/update helpers into a dedicated `vr/volume.ts` module so the hook and controller code share the
   same implementations without relying on circular imports.
