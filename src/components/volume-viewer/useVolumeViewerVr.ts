@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import type { VrSessionManager } from './vr/sessionManager';
 
 export * from './vr';
 export type { UseVolumeViewerVrParams, UseVolumeViewerVrResult, VolumeHandleCandidate } from './useVolumeViewerVr.types';
 
 import type { UseVolumeViewerVrParams, UseVolumeViewerVrResult } from './useVolumeViewerVr.types';
-import type { VolumeDimensions } from './vr';
 
 import type {
   MovementState,
@@ -31,43 +31,12 @@ import type {
   VrTracksInteractiveRegion,
   VrTracksState,
   VrHoverState,
-  VrUiTarget,
-  VrUiTargetType,
 } from './vr';
-import { createControllerEntryConfigurator, createControllerRayUpdater } from './vr/input';
-import { bindSessionRequests, createSessionLifecycle } from './vr/session';
-import { VrSessionManager } from './vr/sessionManager';
-import {
-  VR_PITCH_HANDLE_FORWARD_OFFSET,
-  VR_PLAYBACK_MAX_FPS,
-  VR_PLAYBACK_MIN_FPS,
-  VR_PLAYBACK_PANEL_HEIGHT,
-  VR_PLAYBACK_PANEL_WIDTH,
-  VR_ROTATION_HANDLE_OFFSET,
-  VR_ROTATION_HANDLE_RADIUS,
-  VR_SCALE_HANDLE_OFFSET,
-  VR_SCALE_HANDLE_RADIUS,
-  VR_TRANSLATION_HANDLE_OFFSET,
-  VR_TRANSLATION_HANDLE_RADIUS,
-  VR_UI_TOUCH_DISTANCE,
-  VR_UI_TOUCH_SURFACE_MARGIN,
-  VR_VOLUME_MAX_SCALE,
-  VR_VOLUME_MIN_SCALE,
-  VR_VOLUME_BASE_OFFSET,
-  VR_VOLUME_STEP_SCALE,
-  DESKTOP_VOLUME_STEP_SCALE,
-  XR_TARGET_FOVEATION,
-  applyVolumeRootTransform as applyVolumeRootTransformWithRefs,
-  applyVolumeYawPitch as applyVolumeYawPitchWithRefs,
-  updateVolumeHandles as updateVolumeHandlesWithRefs,
-} from './vr';
-import {
-  setVrPlaybackFpsFraction,
-  setVrPlaybackFpsLabel,
-  setVrPlaybackLabel,
-  setVrPlaybackProgressFraction,
-} from './vr/hudMutators';
-import { createHudController, computeHudFrameFromVolume } from './vr/hud';
+import { XR_TARGET_FOVEATION } from './vr';
+import { createHudHelpers } from './useVolumeViewerVr/helpers/hud';
+import { createVolumeHelpers } from './useVolumeViewerVr/helpers/volume';
+import { createSessionHelpers } from './useVolumeViewerVr/helpers/session';
+import { createInputHelpers } from './useVolumeViewerVr/helpers/input';
 import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../../layerColors';
 import {
   DEFAULT_TRACK_COLOR,
@@ -190,6 +159,7 @@ export function useVolumeViewerVr({
       }
     | null
   >(null);
+  const updateControllerRaysRef = useRef<() => void>(() => {});
 
   const vrPlaybackHudRef = useRef<VrPlaybackHud | null>(null);
   const vrChannelsHudRef = useRef<VrChannelsHud | null>(null);
@@ -251,48 +221,45 @@ export function useVolumeViewerVr({
   const vrChannelsStateRef = useRef<VrChannelsState>({ channels: [], activeChannelId: null });
   const vrTracksStateRef = useRef<VrTracksState>({ channels: [], activeChannelId: null });
 
-  const computeVolumeHudFrame = useCallback(
+  const hudHelpers = useMemo(
     () =>
-      computeHudFrameFromVolume({
-        baseOffset: volumeRootBaseOffsetRef.current,
-        volumeRootGroup: volumeRootGroupRef.current,
-        halfExtents: volumeRootHalfExtentsRef.current,
-      }),
-    [volumeRootBaseOffsetRef, volumeRootGroupRef, volumeRootHalfExtentsRef],
-  );
-
-  const hudController = useMemo(
-    () =>
-      createHudController({
-        playbackHudRef: vrPlaybackHudRef,
-        channelsHudRef: vrChannelsHudRef,
-        tracksHudRef: vrTracksHudRef,
-        playbackStateRef,
-        hoverStateRef: vrHoverStateRef,
-        channelsStateRef: vrChannelsStateRef,
-        tracksStateRef: vrTracksStateRef,
-        playbackHudPlacementRef: vrPlaybackHudPlacementRef,
-        channelsHudPlacementRef: vrChannelsHudPlacementRef,
-        tracksHudPlacementRef: vrTracksHudPlacementRef,
-        playbackHudDragTargetRef: vrPlaybackHudDragTargetRef,
-        channelsHudDragTargetRef: vrChannelsHudDragTargetRef,
-        tracksHudDragTargetRef: vrTracksHudDragTargetRef,
-        hudOffsetTempRef: vrHudOffsetTempRef,
-        hudYawEulerRef: vrHudYawEulerRef,
-        hudYawQuaternionRef: vrHudYawQuaternionRef,
-        computeHudFrame: computeVolumeHudFrame,
+      createHudHelpers({
         cameraRef,
+        volumeRootGroupRef,
+        volumeRootBaseOffsetRef,
+        volumeRootHalfExtentsRef,
+        playbackStateRef,
+        vrHoverStateRef,
+        vrChannelsStateRef,
+        vrTracksStateRef,
+        vrPlaybackHudRef,
+        vrChannelsHudRef,
+        vrTracksHudRef,
+        vrPlaybackHudPlacementRef,
+        vrChannelsHudPlacementRef,
+        vrTracksHudPlacementRef,
+        vrPlaybackHudDragTargetRef,
+        vrChannelsHudDragTargetRef,
+        vrTracksHudDragTargetRef,
+        vrHudOffsetTempRef,
+        vrHudYawEulerRef,
+        vrHudYawQuaternionRef,
+        sliderLocalPointRef,
+        vrChannelsLocalPointRef,
+        vrTracksLocalPointRef,
       }),
     [
       cameraRef,
-      computeVolumeHudFrame,
-      vrPlaybackHudRef,
-      vrChannelsHudRef,
-      vrTracksHudRef,
+      volumeRootGroupRef,
+      volumeRootBaseOffsetRef,
+      volumeRootHalfExtentsRef,
       playbackStateRef,
       vrHoverStateRef,
       vrChannelsStateRef,
       vrTracksStateRef,
+      vrPlaybackHudRef,
+      vrChannelsHudRef,
+      vrTracksHudRef,
       vrPlaybackHudPlacementRef,
       vrChannelsHudPlacementRef,
       vrTracksHudPlacementRef,
@@ -302,10 +269,18 @@ export function useVolumeViewerVr({
       vrHudOffsetTempRef,
       vrHudYawEulerRef,
       vrHudYawQuaternionRef,
+      sliderLocalPointRef,
+      vrChannelsLocalPointRef,
+      vrTracksLocalPointRef,
     ],
   );
 
   const {
+    computeVolumeHudFrame,
+    applyPlaybackSliderFromWorldPoint,
+    applyFpsSliderFromWorldPoint,
+    resolveChannelsRegionFromPoint,
+    resolveTracksRegionFromPoint,
     applyPlaybackHoverState: applyVrPlaybackHoverState,
     setPlaybackHudVisible: setVrPlaybackHudVisible,
     setChannelsHudVisible: setVrChannelsHudVisible,
@@ -318,8 +293,6 @@ export function useVolumeViewerVr({
     updatePlaybackHud: updateVrPlaybackHud,
     updateChannelsHud: updateVrChannelsHud,
     updateTracksHud: updateVrTracksHud,
-    constrainPlacementPosition: constrainHudPlacementPosition,
-    getHudQuaternionFromAngles,
     setPlaybackPlacementPosition: setVrPlaybackHudPlacementPosition,
     setChannelsPlacementPosition: setVrChannelsHudPlacementPosition,
     setTracksPlacementPosition: setVrTracksHudPlacementPosition,
@@ -334,7 +307,7 @@ export function useVolumeViewerVr({
     resetTracksPlacement: resetVrTracksHudPlacement,
     updateHudGroupFromPlacement,
     setHudPlacement,
-  } = hudController;
+  } = hudHelpers;
 
   const onLayerWindowMinChange = vrProps?.onLayerWindowMinChange;
   const onLayerWindowMaxChange = vrProps?.onLayerWindowMaxChange;
@@ -449,74 +422,6 @@ export function useVolumeViewerVr({
     }
   }, [isVrPassthroughSupported, setPreferredXrSessionMode, updateVrPlaybackHud]);
 
-  const applyPlaybackSliderFromWorldPoint =
-    useCallback<UseVolumeViewerVrResult['applyPlaybackSliderFromWorldPoint']>((worldPoint) => {
-      const hud = vrPlaybackHudRef.current;
-      if (!hud) {
-        return;
-      }
-      const state = playbackStateRef.current;
-      if (state.totalTimepoints <= 0 || state.playbackDisabled) {
-        return;
-      }
-      sliderLocalPointRef.current.copy(worldPoint);
-      hud.playbackSliderTrack.worldToLocal(sliderLocalPointRef.current);
-      const rawRatio =
-        (sliderLocalPointRef.current.x + hud.playbackSliderWidth / 2) /
-        Math.max(hud.playbackSliderWidth, 1e-5);
-      const clampedRatio = Math.min(Math.max(rawRatio, 0), 1);
-      const maxIndex = Math.max(0, state.totalTimepoints - 1);
-      const tentativeIndex = Math.round(clampedRatio * maxIndex);
-      const boundedIndex = Math.min(Math.max(tentativeIndex, 0), maxIndex);
-      const fraction = maxIndex > 0 ? boundedIndex / maxIndex : 0;
-      if (boundedIndex !== state.timeIndex) {
-        state.onTimeIndexChange?.(boundedIndex);
-        state.timeIndex = boundedIndex;
-      }
-      const total = Math.max(0, state.totalTimepoints);
-      const labelCurrent = total > 0 ? Math.min(boundedIndex + 1, total) : 0;
-      const label = `${labelCurrent} / ${total}`;
-      state.playbackLabel = label;
-      setVrPlaybackProgressFraction(hud, fraction);
-      setVrPlaybackLabel(hud, label);
-    }, [playbackStateRef, sliderLocalPointRef, vrPlaybackHudRef]);
-
-  const applyFpsSliderFromWorldPoint =
-    useCallback<UseVolumeViewerVrResult['applyFpsSliderFromWorldPoint']>((worldPoint) => {
-      const hud = vrPlaybackHudRef.current;
-      if (!hud) {
-        return;
-      }
-      const state = playbackStateRef.current;
-      if (state.totalTimepoints <= 1) {
-        return;
-      }
-      sliderLocalPointRef.current.copy(worldPoint);
-      hud.fpsSliderTrack.worldToLocal(sliderLocalPointRef.current);
-      const rawRatio =
-        (sliderLocalPointRef.current.x + hud.fpsSliderWidth / 2) /
-        Math.max(hud.fpsSliderWidth, 1e-5);
-      const clampedRatio = Math.min(Math.max(rawRatio, 0), 1);
-      const fpsRange = VR_PLAYBACK_MAX_FPS - VR_PLAYBACK_MIN_FPS;
-      const tentativeFps = Math.round(VR_PLAYBACK_MIN_FPS + clampedRatio * fpsRange);
-      const boundedFps = Math.min(
-        VR_PLAYBACK_MAX_FPS,
-        Math.max(VR_PLAYBACK_MIN_FPS, tentativeFps),
-      );
-      if (boundedFps !== state.fps) {
-        state.onFpsChange?.(boundedFps);
-        state.fps = boundedFps;
-      }
-      const fpsFraction =
-        fpsRange > 0
-          ? (Math.min(Math.max(boundedFps, VR_PLAYBACK_MIN_FPS), VR_PLAYBACK_MAX_FPS) -
-              VR_PLAYBACK_MIN_FPS) /
-            fpsRange
-          : 0;
-      setVrPlaybackFpsFraction(hud, fpsFraction);
-      const fpsLabelText = `frames per second ${boundedFps}`;
-      setVrPlaybackFpsLabel(hud, fpsLabelText);
-    }, [playbackStateRef, sliderLocalPointRef, vrPlaybackHudRef]);
 
   const tracksByChannel = useMemo(() => {
     const map = new Map<string, TrackDefinition[]>();
@@ -858,73 +763,33 @@ export function useVolumeViewerVr({
     [renderVrTracksHud],
   );
 
-  const resolveChannelsRegionFromPoint = useCallback<
-    UseVolumeViewerVrResult['resolveChannelsRegionFromPoint']
-  >(
-    (hud, worldPoint) => {
-      if (!hud || hud.regions.length === 0) {
-        return null;
-      }
-      const localPoint = vrChannelsLocalPointRef.current;
-      localPoint.copy(worldPoint);
-      hud.panel.worldToLocal(localPoint);
-      const localX = localPoint.x;
-      const localY = localPoint.y;
-      for (const region of hud.regions) {
-        const { minX, maxX, minY, maxY } = region.bounds;
-        const minBoundX = Math.min(minX, maxX);
-        const maxBoundX = Math.max(minX, maxX);
-        const minBoundY = Math.min(minY, maxY);
-        const maxBoundY = Math.max(minY, maxY);
-        if (
-          localX >= minBoundX &&
-          localX <= maxBoundX &&
-          localY >= minBoundY &&
-          localY <= maxBoundY
-        ) {
-          return region;
-        }
-      }
-      return null;
-    },
-    [vrChannelsLocalPointRef],
-  );
-
-  const resolveTracksRegionFromPoint = useCallback<
-    UseVolumeViewerVrResult['resolveTracksRegionFromPoint']
-  >(
-    (hud, worldPoint) => {
-      if (!hud || hud.regions.length === 0) {
-        return null;
-      }
-      const localPoint = vrTracksLocalPointRef.current;
-      localPoint.copy(worldPoint);
-      hud.panel.worldToLocal(localPoint);
-      const localX = localPoint.x;
-      const localY = localPoint.y;
-      for (const region of hud.regions) {
-        const { minX, maxX, minY, maxY } = region.bounds;
-        const minBoundX = Math.min(minX, maxX);
-        const maxBoundX = Math.max(minX, maxX);
-        const minBoundY = Math.min(minY, maxY);
-        const maxBoundY = Math.max(minY, maxY);
-        if (
-          localX >= minBoundX &&
-          localX <= maxBoundX &&
-          localY >= minBoundY &&
-          localY <= maxBoundY
-        ) {
-          return region;
-        }
-      }
-      return null;
-    },
-    [vrTracksLocalPointRef],
-  );
-
-
-  const updateVolumeHandles = useCallback(() => {
-    updateVolumeHandlesWithRefs({
+  const volumeHelpers = useMemo(
+    () =>
+      createVolumeHelpers({
+        rendererRef,
+        volumeRootGroupRef,
+        currentDimensionsRef,
+        hasActive3DLayerRef,
+        volumeUserScaleRef,
+        volumeRootCenterUnscaledRef,
+        volumeRootHalfExtentsRef,
+        vrHandleLocalPointRef,
+        vrTranslationHandleRef,
+        vrVolumeScaleHandleRef,
+        vrVolumeYawHandlesRef,
+        vrVolumePitchHandleRef,
+        volumeRootBaseOffsetRef,
+        volumeRootCenterOffsetRef,
+        volumeRootRotatedCenterTempRef,
+        volumeYawRef,
+        volumePitchRef,
+        vrHudYawEulerRef,
+        vrHandleQuaternionTempRef,
+        volumeNormalizationScaleRef,
+        volumeStepScaleRef,
+        resourcesRef,
+      }),
+    [
       rendererRef,
       volumeRootGroupRef,
       currentDimensionsRef,
@@ -937,21 +802,25 @@ export function useVolumeViewerVr({
       vrVolumeScaleHandleRef,
       vrVolumeYawHandlesRef,
       vrVolumePitchHandleRef,
-    });
-  }, [
-    currentDimensionsRef,
-    hasActive3DLayerRef,
-    rendererRef,
-    volumeRootCenterUnscaledRef,
-    volumeRootGroupRef,
-    volumeRootHalfExtentsRef,
-    volumeUserScaleRef,
-    vrHandleLocalPointRef,
-    vrTranslationHandleRef,
-    vrVolumePitchHandleRef,
-    vrVolumeScaleHandleRef,
-    vrVolumeYawHandlesRef,
-  ]);
+      volumeRootBaseOffsetRef,
+      volumeRootCenterOffsetRef,
+      volumeRootRotatedCenterTempRef,
+      volumeYawRef,
+      volumePitchRef,
+      vrHudYawEulerRef,
+      vrHandleQuaternionTempRef,
+      volumeNormalizationScaleRef,
+      volumeStepScaleRef,
+      resourcesRef,
+    ],
+  );
+
+  const {
+    updateVolumeHandles,
+    applyVolumeYawPitch,
+    applyVolumeRootTransform,
+    applyVolumeStepScaleToResources,
+  } = volumeHelpers;
 
   const applyVrFoveation = useCallback(
     (target: number = XR_TARGET_FOVEATION) => {
@@ -963,232 +832,51 @@ export function useVolumeViewerVr({
   const restoreVrFoveation = useCallback(() => {
     sessionManagerRef.current?.restoreFoveation();
   }, [sessionManagerRef]);
-
-  const applyVolumeStepScaleToResources = useCallback(
-    (stepScale: number) => {
-      volumeStepScaleRef.current = stepScale;
-      for (const resource of resourcesRef.current.values()) {
-        if (resource.mode !== '3d') {
-          continue;
-        }
-        const material = resource.mesh.material;
-        const materialList = Array.isArray(material) ? material : [material];
-        for (const entry of materialList) {
-          const shaderMaterial = entry as THREE.ShaderMaterial | undefined;
-          const uniforms = shaderMaterial?.uniforms as
-            | Record<string, { value: unknown }>
-            | undefined;
-          if (uniforms && 'u_stepScale' in uniforms) {
-            const stepUniform = uniforms.u_stepScale as { value: number };
-            stepUniform.value = stepScale;
-          }
-        }
-      }
-    },
-    [resourcesRef, volumeStepScaleRef],
-  );
-
-  const applyVolumeYawPitch = useCallback(
-    (yaw: number, pitch: number) => {
-      applyVolumeYawPitchWithRefs(
-        {
-          rendererRef,
-          volumeRootGroupRef,
-          currentDimensionsRef,
-          hasActive3DLayerRef,
-          volumeUserScaleRef,
-          volumeRootCenterUnscaledRef,
-          volumeRootHalfExtentsRef,
-          vrHandleLocalPointRef,
-          vrTranslationHandleRef,
-          vrVolumeScaleHandleRef,
-          vrVolumeYawHandlesRef,
-          vrVolumePitchHandleRef,
-          volumeRootBaseOffsetRef,
-          volumeRootCenterOffsetRef,
-          volumeRootRotatedCenterTempRef,
-          volumeYawRef,
-          volumePitchRef,
-          vrHudYawEulerRef,
-          vrHandleQuaternionTempRef,
-        },
-        yaw,
-        pitch,
-      );
-    },
-    [
-      currentDimensionsRef,
-      hasActive3DLayerRef,
-      rendererRef,
-      volumePitchRef,
-      volumeRootBaseOffsetRef,
-      volumeRootCenterOffsetRef,
-      volumeRootCenterUnscaledRef,
-      volumeRootGroupRef,
-      volumeRootHalfExtentsRef,
-      volumeRootRotatedCenterTempRef,
-      volumeUserScaleRef,
-      volumeYawRef,
-      vrHandleLocalPointRef,
-      vrHandleQuaternionTempRef,
-      vrHudYawEulerRef,
-      vrTranslationHandleRef,
-      vrVolumePitchHandleRef,
-      vrVolumeScaleHandleRef,
-      vrVolumeYawHandlesRef,
-    ],
-  );
-
-  const applyVolumeRootTransform = useCallback(
-    (dimensions: VolumeDimensions | null) => {
-      applyVolumeRootTransformWithRefs(
-        {
-          rendererRef,
-          volumeRootGroupRef,
-          currentDimensionsRef,
-          hasActive3DLayerRef,
-          volumeUserScaleRef,
-          volumeRootCenterUnscaledRef,
-          volumeRootHalfExtentsRef,
-          vrHandleLocalPointRef,
-          vrTranslationHandleRef,
-          vrVolumeScaleHandleRef,
-          vrVolumeYawHandlesRef,
-          vrVolumePitchHandleRef,
-          volumeRootBaseOffsetRef,
-          volumeRootCenterOffsetRef,
-          volumeRootRotatedCenterTempRef,
-          volumeYawRef,
-          volumePitchRef,
-          vrHudYawEulerRef,
-          vrHandleQuaternionTempRef,
-          volumeNormalizationScaleRef,
-        },
-        dimensions,
-      );
-    },
-    [
-      currentDimensionsRef,
-      hasActive3DLayerRef,
-      rendererRef,
-      volumeNormalizationScaleRef,
-      volumePitchRef,
-      volumeRootBaseOffsetRef,
-      volumeRootCenterOffsetRef,
-      volumeRootCenterUnscaledRef,
-      volumeRootGroupRef,
-      volumeRootHalfExtentsRef,
-      volumeRootRotatedCenterTempRef,
-      volumeUserScaleRef,
-      volumeYawRef,
-      vrHandleLocalPointRef,
-      vrHandleQuaternionTempRef,
-      vrHudYawEulerRef,
-      vrTranslationHandleRef,
-      vrVolumePitchHandleRef,
-      vrVolumeScaleHandleRef,
-      vrVolumeYawHandlesRef,
-    ],
-  );
-
-  const applySessionStartState = useCallback(() => {
-    applyVrFoveation();
-    applyVolumeStepScaleToResources(VR_VOLUME_STEP_SCALE);
-    volumeRootBaseOffsetRef.current.copy(VR_VOLUME_BASE_OFFSET);
-    applyVolumeRootTransform(currentDimensionsRef.current);
-    refreshControllerVisibility();
-    setVrPlaybackHudVisible(true);
-    setVrChannelsHudVisible(true);
-    setVrTracksHudVisible(true);
-    resetVrPlaybackHudPlacement();
-    resetVrChannelsHudPlacement();
-    resetVrTracksHudPlacement();
-    updateVrPlaybackHud();
-    updateVrChannelsHud();
-    updateVrTracksHud();
-    updateControllerRaysRef.current?.();
-    updateVolumeHandles();
-  }, [
-    applyVolumeRootTransform,
-    applyVolumeStepScaleToResources,
-    applyVrFoveation,
-    currentDimensionsRef,
-    refreshControllerVisibility,
-    resetVrChannelsHudPlacement,
-    resetVrPlaybackHudPlacement,
-    resetVrTracksHudPlacement,
-    setVrChannelsHudVisible,
-    setVrPlaybackHudVisible,
-    setVrTracksHudVisible,
-    updateVolumeHandles,
-    updateVrChannelsHud,
-    updateVrPlaybackHud,
-    updateVrTracksHud,
-    volumeRootBaseOffsetRef,
-  ]);
-
-  const applySessionEndState = useCallback(() => {
-    restoreVrFoveation();
-    applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
-    volumeRootBaseOffsetRef.current.set(0, 0, 0);
-    applyVolumeRootTransform(currentDimensionsRef.current);
-    refreshControllerVisibility();
-    setVrPlaybackHudVisible(false);
-    setVrChannelsHudVisible(false);
-    setVrTracksHudVisible(false);
-    updateVolumeHandles();
-  }, [
-    applyVolumeRootTransform,
-    applyVolumeStepScaleToResources,
-    currentDimensionsRef,
-    refreshControllerVisibility,
-    restoreVrFoveation,
-    setVrChannelsHudVisible,
-    setVrPlaybackHudVisible,
-    setVrTracksHudVisible,
-    updateVolumeHandles,
-    volumeRootBaseOffsetRef,
-  ]);
-
-  const {
-    sessionManager,
-    callOnVrSessionStarted,
-    callOnVrSessionEnded,
-    attachSessionManager,
-  } = useMemo(
+  const sessionHelpers = useMemo(
     () =>
-      createSessionLifecycle({
-        createManager: (handlers) =>
-          new VrSessionManager({
-            rendererRef,
-            cameraRef,
-            controlsRef,
-            sceneRef,
-            controllersRef,
-            playbackStateRef,
-            xrSessionRef,
-            sessionCleanupRef,
-            preVrCameraStateRef,
-            xrPreferredSessionModeRef,
-            xrCurrentSessionModeRef,
-            xrPendingModeSwitchRef,
-            xrPassthroughSupportedRef,
-            xrFoveationAppliedRef,
-            xrPreviousFoveationRef,
-            setControllerVisibility,
-            applyVrPlaybackHoverState,
-            updateVrPlaybackHud,
-            onSessionStarted: handlers.onSessionStarted,
-            onSessionEnded: handlers.onSessionEnded,
-            onAfterSessionEnd,
-            vrLogRef,
-            disposedRef,
-          }),
-        sessionManagerRef,
-        applySessionStartState,
-        applySessionEndState,
+      createSessionHelpers({
+        rendererRef,
+        cameraRef,
+        controlsRef,
+        sceneRef,
+        controllersRef,
+        playbackStateRef,
+        xrSessionRef,
+        sessionCleanupRef,
+        preVrCameraStateRef,
+        xrPreferredSessionModeRef,
+        xrCurrentSessionModeRef,
+        xrPendingModeSwitchRef,
+        xrPassthroughSupportedRef,
+        xrFoveationAppliedRef,
+        xrPreviousFoveationRef,
+        setControllerVisibility,
+        applyVrPlaybackHoverState,
+        updateVrPlaybackHud,
+        onAfterSessionEnd,
+        vrLogRef,
         disposedRef,
+        applyVrFoveation,
+        restoreVrFoveation,
+        applyVolumeStepScaleToResources,
+        volumeRootBaseOffsetRef,
+        applyVolumeRootTransform,
+        currentDimensionsRef,
+        refreshControllerVisibility,
+        setVrPlaybackHudVisible,
+        setVrChannelsHudVisible,
+        setVrTracksHudVisible,
+        resetVrPlaybackHudPlacement,
+        resetVrChannelsHudPlacement,
+        resetVrTracksHudPlacement,
+        updateVrChannelsHud,
+        updateVrTracksHud,
+        updateControllerRaysRef,
+        updateVolumeHandles,
+        sessionManagerRef,
         vrPropsRef,
+        requestVrSessionRef,
+        endVrSessionRequestRef,
       }),
     [
       rendererRef,
@@ -1212,31 +900,46 @@ export function useVolumeViewerVr({
       onAfterSessionEnd,
       vrLogRef,
       disposedRef,
-      applySessionStartState,
-      applySessionEndState,
+      applyVrFoveation,
+      restoreVrFoveation,
+      applyVolumeStepScaleToResources,
+      volumeRootBaseOffsetRef,
+      applyVolumeRootTransform,
+      currentDimensionsRef,
+      refreshControllerVisibility,
+      setVrPlaybackHudVisible,
+      setVrChannelsHudVisible,
+      setVrTracksHudVisible,
+      resetVrPlaybackHudPlacement,
+      resetVrChannelsHudPlacement,
+      resetVrTracksHudPlacement,
+      updateVrPlaybackHud,
+      updateVrChannelsHud,
+      updateVrTracksHud,
+      updateControllerRaysRef,
+      updateVolumeHandles,
       sessionManagerRef,
       vrPropsRef,
+      requestVrSessionRef,
+      endVrSessionRequestRef,
     ],
   );
 
-  useEffect(() => attachSessionManager(), [attachSessionManager, sessionManager]);
-
   const {
+    applySessionStartState,
+    applySessionEndState,
+    sessionManager,
+    callOnVrSessionStarted,
+    callOnVrSessionEnded,
+    attachSessionManager,
     requestVrSession,
     endVrSession,
     callOnRegisterVrSession,
     attachRequestRef,
     attachEndRef,
-  } = useMemo(
-    () =>
-      bindSessionRequests({
-        sessionManagerRef,
-        requestSessionRef: requestVrSessionRef,
-        endSessionRequestRef: endVrSessionRequestRef,
-        vrPropsRef,
-      }),
-    [sessionManagerRef, requestVrSessionRef, endVrSessionRequestRef, vrPropsRef],
-  );
+  } = sessionHelpers;
+
+  useEffect(() => attachSessionManager(), [attachSessionManager, sessionManager]);
 
   useEffect(() => attachRequestRef(), [attachRequestRef]);
   useEffect(() => attachEndRef(), [attachEndRef]);
@@ -1262,121 +965,120 @@ export function useVolumeViewerVr({
   const updateVrTracksHudRef = useRef(updateVrTracksHud);
   updateVrTracksHudRef.current = updateVrTracksHud;
 
-  const configureControllerEntry = useMemo(
+  const inputHelpers = useMemo(
     () =>
-      createControllerEntryConfigurator({
-        vrLogRef,
-        refreshControllerVisibilityRef,
-        rendererRef,
-        cameraRef,
-        playbackStateRef,
-        applyPlaybackSliderFromWorldPointRef,
-        applyFpsSliderFromWorldPointRef,
-        vrPlaybackHudRef,
-        vrPlaybackHudPlacementRef,
-        vrPlaybackHudDragTargetRef,
-        vrChannelsHudRef,
-        vrChannelsHudPlacementRef,
-        vrChannelsHudDragTargetRef,
-        vrTracksHudRef,
-        vrTracksHudPlacementRef,
-        vrTracksHudDragTargetRef,
-        applyVrChannelsSliderFromPointRef,
-        applyVrTracksSliderFromPointRef,
-        applyVrTracksScrollFromPointRef,
-        vrTranslationHandleRef,
-        vrVolumeScaleHandleRef,
-        vrHandleWorldPointRef,
-        vrHandleSecondaryPointRef,
-        vrHandleDirectionTempRef,
-        volumeRootGroupRef,
-        volumeRootCenterUnscaledRef,
-        volumeUserScaleRef,
-        volumeYawRef,
-        volumePitchRef,
-        vrHudYawVectorRef,
-        vrHudPitchVectorRef,
-        onResetVolumeRef,
-        onResetHudPlacementRef,
-        endVrSessionRequestRef,
-        toggleXrSessionMode,
-        vrChannelsStateRef,
-        vrTracksStateRef,
-        updateVrChannelsHudRef,
-        onTrackFollowRequestRef,
-        vrPropsRef,
-        vrClearHoverStateRef,
-      }),
-    [toggleXrSessionMode],
-  );
-
-  const updateControllerRays = useMemo(
-    () =>
-      createControllerRayUpdater({
-        rendererRef,
-        cameraRef,
-        containerRef,
-        controllersRef,
-        trackGroupRef,
-        trackLinesRef,
-        playbackStateRef,
-        vrLogRef,
-        lastControllerRaySummaryRef,
-        applyVrPlaybackHoverState,
-        applyVolumeYawPitch,
-        resolveChannelsRegionFromPoint,
-        resolveTracksRegionFromPoint,
-        setVrPlaybackHudPlacementPosition,
-        setVrChannelsHudPlacementPosition,
-        setVrTracksHudPlacementPosition,
-        setVrPlaybackHudPlacementYaw,
-        setVrChannelsHudPlacementYaw,
-        setVrTracksHudPlacementYaw,
-        setVrPlaybackHudPlacementPitch,
-        setVrChannelsHudPlacementPitch,
-        setVrTracksHudPlacementPitch,
-        applyPlaybackSliderFromWorldPointRef,
-        applyFpsSliderFromWorldPointRef,
-        vrPlaybackHudRef,
-        vrPlaybackHudPlacementRef,
-        vrPlaybackHudDragTargetRef,
-        vrChannelsHudRef,
-        vrChannelsHudPlacementRef,
-        vrChannelsHudDragTargetRef,
-        vrTracksHudRef,
-        vrTracksHudPlacementRef,
-        vrTracksHudDragTargetRef,
-        applyVrChannelsSliderFromPointRef,
-        applyVrTracksSliderFromPointRef,
-        applyVrTracksScrollFromPointRef,
-        vrTranslationHandleRef,
-        vrVolumeScaleHandleRef,
-        vrVolumeYawHandlesRef,
-        vrVolumePitchHandleRef,
-        vrHandleWorldPointRef,
-        vrHandleSecondaryPointRef,
-        vrHudYawVectorRef,
-        vrHudPitchVectorRef,
-        vrHudForwardRef,
-        vrHudPlaneRef,
-        vrHudPlanePointRef,
-        vrChannelsLocalPointRef,
-        vrTracksLocalPointRef,
-        renderVrChannelsHudRef,
-        renderVrTracksHudRef,
-        vrChannelsStateRef,
-        vrTracksStateRef,
-        volumeRootGroupRef,
-        volumeRootCenterUnscaledRef,
-        volumeRootBaseOffsetRef,
-        volumeNormalizationScaleRef,
-        volumeUserScaleRef,
-        volumeYawRef,
-        volumePitchRef,
-        vrUpdateHoverStateRef,
-        vrClearHoverStateRef,
+      createInputHelpers({
+        controllerDeps: {
+          vrLogRef,
+          refreshControllerVisibilityRef,
+          rendererRef,
+          cameraRef,
+          playbackStateRef,
+          applyPlaybackSliderFromWorldPointRef,
+          applyFpsSliderFromWorldPointRef,
+          vrPlaybackHudRef,
+          vrPlaybackHudPlacementRef,
+          vrPlaybackHudDragTargetRef,
+          vrChannelsHudRef,
+          vrChannelsHudPlacementRef,
+          vrChannelsHudDragTargetRef,
+          vrTracksHudRef,
+          vrTracksHudPlacementRef,
+          vrTracksHudDragTargetRef,
+          applyVrChannelsSliderFromPointRef,
+          applyVrTracksSliderFromPointRef,
+          applyVrTracksScrollFromPointRef,
+          vrTranslationHandleRef,
+          vrVolumeScaleHandleRef,
+          vrHandleWorldPointRef,
+          vrHandleSecondaryPointRef,
+          vrHandleDirectionTempRef,
+          volumeRootGroupRef,
+          volumeRootCenterUnscaledRef,
+          volumeUserScaleRef,
+          volumeYawRef,
+          volumePitchRef,
+          vrHudYawVectorRef,
+          vrHudPitchVectorRef,
+          onResetVolumeRef,
+          onResetHudPlacementRef,
+          endVrSessionRequestRef,
+          toggleXrSessionMode,
+          vrChannelsStateRef,
+          vrTracksStateRef,
+          updateVrChannelsHudRef,
+          onTrackFollowRequestRef,
+          vrPropsRef,
+          vrClearHoverStateRef,
+        },
+        rayDeps: {
+          rendererRef,
+          cameraRef,
+          containerRef,
+          controllersRef,
+          trackGroupRef,
+          trackLinesRef,
+          playbackStateRef,
+          vrLogRef,
+          lastControllerRaySummaryRef,
+          applyVrPlaybackHoverState,
+          applyVolumeYawPitch,
+          resolveChannelsRegionFromPoint,
+          resolveTracksRegionFromPoint,
+          setVrPlaybackHudPlacementPosition,
+          setVrChannelsHudPlacementPosition,
+          setVrTracksHudPlacementPosition,
+          setVrPlaybackHudPlacementYaw,
+          setVrChannelsHudPlacementYaw,
+          setVrTracksHudPlacementYaw,
+          setVrPlaybackHudPlacementPitch,
+          setVrChannelsHudPlacementPitch,
+          setVrTracksHudPlacementPitch,
+          applyPlaybackSliderFromWorldPointRef,
+          applyFpsSliderFromWorldPointRef,
+          vrPlaybackHudRef,
+          vrPlaybackHudPlacementRef,
+          vrPlaybackHudDragTargetRef,
+          vrChannelsHudRef,
+          vrChannelsHudPlacementRef,
+          vrChannelsHudDragTargetRef,
+          vrTracksHudRef,
+          vrTracksHudPlacementRef,
+          vrTracksHudDragTargetRef,
+          applyVrChannelsSliderFromPointRef,
+          applyVrTracksSliderFromPointRef,
+          applyVrTracksScrollFromPointRef,
+          vrTranslationHandleRef,
+          vrVolumeScaleHandleRef,
+          vrVolumeYawHandlesRef,
+          vrVolumePitchHandleRef,
+          vrHandleWorldPointRef,
+          vrHandleSecondaryPointRef,
+          vrHudYawVectorRef,
+          vrHudPitchVectorRef,
+          vrHudForwardRef,
+          vrHudPlaneRef,
+          vrHudPlanePointRef,
+          vrChannelsLocalPointRef,
+          vrTracksLocalPointRef,
+          renderVrChannelsHudRef,
+          renderVrTracksHudRef,
+          vrChannelsStateRef,
+          vrTracksStateRef,
+          volumeRootGroupRef,
+          volumeRootCenterUnscaledRef,
+          volumeRootBaseOffsetRef,
+          volumeNormalizationScaleRef,
+          volumeUserScaleRef,
+          volumeYawRef,
+          volumePitchRef,
+          vrUpdateHoverStateRef,
+          vrClearHoverStateRef,
+        },
+        updateControllerRaysRef,
       }),
     [
+      toggleXrSessionMode,
       applyVrPlaybackHoverState,
       applyVolumeYawPitch,
       resolveChannelsRegionFromPoint,
@@ -1392,11 +1094,8 @@ export function useVolumeViewerVr({
       setVrTracksHudPlacementPitch,
     ],
   );
-  const updateControllerRaysRef = useRef<() => void>(() => {});
 
-
-
-  updateControllerRaysRef.current = updateControllerRays;
+  const { configureControllerEntry, updateControllerRays } = inputHelpers;
 
   const onRendererInitialized = useCallback(() => {
     setControllerSetupRevision((revision) => revision + 1);
