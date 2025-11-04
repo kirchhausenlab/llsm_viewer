@@ -7,7 +7,6 @@ import {
   updateVolumeHandles as updateVolumeHandlesWithRefs,
 } from '../../vr';
 import type { VolumeDimensions } from '../../vr';
-import type { UseVolumeViewerVrResult } from '../../useVolumeViewerVr.types';
 import type { VolumeResources } from '../../../VolumeViewer.types';
 
 export type CreateVolumeHelpersParams = {
@@ -36,10 +35,10 @@ export type CreateVolumeHelpersParams = {
 };
 
 export type CreateVolumeHelpersResult = {
-  updateVolumeHandles: UseVolumeViewerVrResult['updateVolumeHandles'];
-  applyVolumeYawPitch: UseVolumeViewerVrResult['applyVolumeYawPitch'];
-  applyVolumeRootTransform: UseVolumeViewerVrResult['applyVolumeRootTransform'];
-  applyVolumeStepScaleToResources: UseVolumeViewerVrResult['applyVolumeStepScaleToResources'];
+  updateVolumeHandles: () => void;
+  applyVolumeYawPitch: (yaw: number, pitch: number) => void;
+  applyVolumeRootTransform: (dimensions: VolumeDimensions | null) => void;
+  applyVolumeStepScaleToResources: (stepScale: number) => void;
 };
 
 export function createVolumeHelpers({
@@ -66,7 +65,7 @@ export function createVolumeHelpers({
   volumeStepScaleRef,
   resourcesRef,
 }: CreateVolumeHelpersParams): CreateVolumeHelpersResult {
-  const updateVolumeHandles: UseVolumeViewerVrResult['updateVolumeHandles'] = () => {
+  const updateVolumeHandles = () => {
     updateVolumeHandlesWithRefs({
       rendererRef,
       volumeRootGroupRef,
@@ -83,10 +82,7 @@ export function createVolumeHelpers({
     });
   };
 
-  const applyVolumeYawPitch: UseVolumeViewerVrResult['applyVolumeYawPitch'] = (
-    yaw,
-    pitch,
-  ) => {
+  const applyVolumeYawPitch = (yaw: number, pitch: number) => {
     applyVolumeYawPitchWithRefs(
       {
         rendererRef,
@@ -114,9 +110,7 @@ export function createVolumeHelpers({
     );
   };
 
-  const applyVolumeRootTransform: UseVolumeViewerVrResult['applyVolumeRootTransform'] = (
-    dimensions,
-  ) => {
+  const applyVolumeRootTransform = (dimensions: VolumeDimensions | null) => {
     applyVolumeRootTransformWithRefs(
       {
         rendererRef,
@@ -144,9 +138,7 @@ export function createVolumeHelpers({
     );
   };
 
-  const applyVolumeStepScaleToResources: UseVolumeViewerVrResult['applyVolumeStepScaleToResources'] = (
-    stepScale,
-  ) => {
+  const applyVolumeStepScaleToResources = (stepScale: number) => {
     volumeStepScaleRef.current = stepScale;
     for (const resource of resourcesRef.current.values()) {
       if (resource.mode !== '3d') {
