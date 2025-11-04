@@ -8,6 +8,13 @@
 
 # Progress Log
 
+## VR volume helper module
+- Extracted the volume transform/update helpers into a dedicated `vr/volume.ts` module so the hook and controller code share the
+  same implementations without relying on circular imports.
+- Updated the VR hook to consume the shared helpers and confirmed the immersive handle placement logic still updates the yaw,
+  pitch, and scale grips correctly.
+- Ran `npm run typecheck` and launched the dev server for a quick smoke check after the refactor.
+
 ## XR controller handler typing fix
 - Relaxed the VR controller event handler signatures to accept optional `XRInputSourceEvent` arguments so they satisfy the
   WebXR type expectations without allocating unused parameters.
