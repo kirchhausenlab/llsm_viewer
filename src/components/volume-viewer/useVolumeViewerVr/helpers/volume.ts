@@ -1,0 +1,176 @@
+import type { MutableRefObject } from 'react';
+import * as THREE from 'three';
+
+import {
+  applyVolumeRootTransform as applyVolumeRootTransformWithRefs,
+  applyVolumeYawPitch as applyVolumeYawPitchWithRefs,
+  updateVolumeHandles as updateVolumeHandlesWithRefs,
+} from '../../vr';
+import type { VolumeDimensions } from '../../vr';
+import type { UseVolumeViewerVrResult } from '../../useVolumeViewerVr.types';
+import type { VolumeResources } from '../../../VolumeViewer.types';
+
+export type CreateVolumeHelpersParams = {
+  rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
+  volumeRootGroupRef: MutableRefObject<THREE.Group | null>;
+  currentDimensionsRef: MutableRefObject<VolumeDimensions | null>;
+  hasActive3DLayerRef: MutableRefObject<boolean>;
+  volumeUserScaleRef: MutableRefObject<number>;
+  volumeRootCenterUnscaledRef: MutableRefObject<THREE.Vector3>;
+  volumeRootHalfExtentsRef: MutableRefObject<THREE.Vector3>;
+  vrHandleLocalPointRef: MutableRefObject<THREE.Vector3>;
+  vrTranslationHandleRef: MutableRefObject<THREE.Mesh | null>;
+  vrVolumeScaleHandleRef: MutableRefObject<THREE.Mesh | null>;
+  vrVolumeYawHandlesRef: MutableRefObject<THREE.Mesh[]>;
+  vrVolumePitchHandleRef: MutableRefObject<THREE.Mesh | null>;
+  volumeRootBaseOffsetRef: MutableRefObject<THREE.Vector3>;
+  volumeRootCenterOffsetRef: MutableRefObject<THREE.Vector3>;
+  volumeRootRotatedCenterTempRef: MutableRefObject<THREE.Vector3>;
+  volumeYawRef: MutableRefObject<number>;
+  volumePitchRef: MutableRefObject<number>;
+  vrHudYawEulerRef: MutableRefObject<THREE.Euler>;
+  vrHandleQuaternionTempRef: MutableRefObject<THREE.Quaternion>;
+  volumeNormalizationScaleRef: MutableRefObject<number>;
+  volumeStepScaleRef: MutableRefObject<number>;
+  resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
+};
+
+export type CreateVolumeHelpersResult = {
+  updateVolumeHandles: UseVolumeViewerVrResult['updateVolumeHandles'];
+  applyVolumeYawPitch: UseVolumeViewerVrResult['applyVolumeYawPitch'];
+  applyVolumeRootTransform: UseVolumeViewerVrResult['applyVolumeRootTransform'];
+  applyVolumeStepScaleToResources: UseVolumeViewerVrResult['applyVolumeStepScaleToResources'];
+};
+
+export function createVolumeHelpers({
+  rendererRef,
+  volumeRootGroupRef,
+  currentDimensionsRef,
+  hasActive3DLayerRef,
+  volumeUserScaleRef,
+  volumeRootCenterUnscaledRef,
+  volumeRootHalfExtentsRef,
+  vrHandleLocalPointRef,
+  vrTranslationHandleRef,
+  vrVolumeScaleHandleRef,
+  vrVolumeYawHandlesRef,
+  vrVolumePitchHandleRef,
+  volumeRootBaseOffsetRef,
+  volumeRootCenterOffsetRef,
+  volumeRootRotatedCenterTempRef,
+  volumeYawRef,
+  volumePitchRef,
+  vrHudYawEulerRef,
+  vrHandleQuaternionTempRef,
+  volumeNormalizationScaleRef,
+  volumeStepScaleRef,
+  resourcesRef,
+}: CreateVolumeHelpersParams): CreateVolumeHelpersResult {
+  const updateVolumeHandles: UseVolumeViewerVrResult['updateVolumeHandles'] = () => {
+    updateVolumeHandlesWithRefs({
+      rendererRef,
+      volumeRootGroupRef,
+      currentDimensionsRef,
+      hasActive3DLayerRef,
+      volumeUserScaleRef,
+      volumeRootCenterUnscaledRef,
+      volumeRootHalfExtentsRef,
+      vrHandleLocalPointRef,
+      vrTranslationHandleRef,
+      vrVolumeScaleHandleRef,
+      vrVolumeYawHandlesRef,
+      vrVolumePitchHandleRef,
+    });
+  };
+
+  const applyVolumeYawPitch: UseVolumeViewerVrResult['applyVolumeYawPitch'] = (
+    yaw,
+    pitch,
+  ) => {
+    applyVolumeYawPitchWithRefs(
+      {
+        rendererRef,
+        volumeRootGroupRef,
+        currentDimensionsRef,
+        hasActive3DLayerRef,
+        volumeUserScaleRef,
+        volumeRootCenterUnscaledRef,
+        volumeRootHalfExtentsRef,
+        vrHandleLocalPointRef,
+        vrTranslationHandleRef,
+        vrVolumeScaleHandleRef,
+        vrVolumeYawHandlesRef,
+        vrVolumePitchHandleRef,
+        volumeRootBaseOffsetRef,
+        volumeRootCenterOffsetRef,
+        volumeRootRotatedCenterTempRef,
+        volumeYawRef,
+        volumePitchRef,
+        vrHudYawEulerRef,
+        vrHandleQuaternionTempRef,
+      },
+      yaw,
+      pitch,
+    );
+  };
+
+  const applyVolumeRootTransform: UseVolumeViewerVrResult['applyVolumeRootTransform'] = (
+    dimensions,
+  ) => {
+    applyVolumeRootTransformWithRefs(
+      {
+        rendererRef,
+        volumeRootGroupRef,
+        currentDimensionsRef,
+        hasActive3DLayerRef,
+        volumeUserScaleRef,
+        volumeRootCenterUnscaledRef,
+        volumeRootHalfExtentsRef,
+        vrHandleLocalPointRef,
+        vrTranslationHandleRef,
+        vrVolumeScaleHandleRef,
+        vrVolumeYawHandlesRef,
+        vrVolumePitchHandleRef,
+        volumeRootBaseOffsetRef,
+        volumeRootCenterOffsetRef,
+        volumeRootRotatedCenterTempRef,
+        volumeYawRef,
+        volumePitchRef,
+        vrHudYawEulerRef,
+        vrHandleQuaternionTempRef,
+        volumeNormalizationScaleRef,
+      },
+      dimensions,
+    );
+  };
+
+  const applyVolumeStepScaleToResources: UseVolumeViewerVrResult['applyVolumeStepScaleToResources'] = (
+    stepScale,
+  ) => {
+    volumeStepScaleRef.current = stepScale;
+    for (const resource of resourcesRef.current.values()) {
+      if (resource.mode !== '3d') {
+        continue;
+      }
+      const material = resource.mesh.material;
+      const materialList = Array.isArray(material) ? material : [material];
+      for (const entry of materialList) {
+        const shaderMaterial = entry as THREE.ShaderMaterial | undefined;
+        const uniforms = shaderMaterial?.uniforms as
+          | Record<string, { value: unknown }>
+          | undefined;
+        if (uniforms && 'u_stepScale' in uniforms) {
+          const stepUniform = uniforms.u_stepScale as { value: number };
+          stepUniform.value = stepScale;
+        }
+      }
+    }
+  };
+
+  return {
+    updateVolumeHandles,
+    applyVolumeYawPitch,
+    applyVolumeRootTransform,
+    applyVolumeStepScaleToResources,
+  };
+}

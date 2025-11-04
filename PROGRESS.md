@@ -545,3 +545,7 @@ d centered the front-page card in the viewport.
 ## VR controller module staging
 - Extracted the full `updateControllerRays` workflow into a dedicated `controllerRays` module that mirrors the hook implementation and accepts all required refs and callbacks as parameters.
 - Wired the module export to return a callable identical to the hook's `updateControllerRaysRef` target, keeping behavior intact while the new structure undergoes review before integration.
+
+## VR hook helper extraction
+- Split the HUD, volume, session, and input wiring inside `useVolumeViewerVr` into dedicated helper factories so the hook composes preconfigured callbacks instead of defining them inline.
+- Updated the hook to consume the helper outputs, removed duplicate inline implementations, and adjusted the session/input creation order to keep the ref wiring intact during the refactor.
