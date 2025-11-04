@@ -1,4 +1,4 @@
-import type { VrUiTargetType } from './vr';
+import type { VrUiTargetType } from './types';
 
 export function getHudCategoryFromTarget(
   type: VrUiTargetType | null,
