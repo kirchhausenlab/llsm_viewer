@@ -559,3 +559,7 @@ d centered the front-page card in the viewport.
 - Trimmed `UseVolumeViewerVrResult` to the viewer's active refs and callbacks, keeping the HUD math and XR session switches encapsulated inside the hook helpers.
 - Updated `useVolumeViewerVr` and its helpers to forward only the supported handles while leaving internal slider/placement routines private.
 - Simplified the viewer's VR fallback/destructuring to match the reduced contract and removed the now-unused imports and cleanup branches.
+
+## Type and test verification
+- Ran `npm run typecheck` to confirm the helper module and hook signature changes pass the TypeScript build without errors.
+- Ran `npm run test` to validate runtime behavior, confirming all suites complete successfully.
