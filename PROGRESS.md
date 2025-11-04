@@ -37,6 +37,11 @@
 - Updated `VolumeViewer` to read VR settings from the new object with safe fallbacks and guarded callbacks, ensuring non-VR usage remains unaffected.
 - Adjusted `App.tsx` to pass the consolidated VR configuration when rendering the 3D viewer while leaving planar mode unchanged.
 
+## VolumeViewer VR API audit
+- Confirmed `VolumeViewer` only relies on the following pieces of the VR hook surface while the component is mounted: `callOnRegisterVrSession`, `requestVrSession`, `endVrSession`, HUD refs and placement refs (`vrPlaybackHudRef`, `vrChannelsHudRef`, `vrTracksHudRef`, and their placement refs), HUD placement math (`updateHudGroupFromPlacement`, `resetVrPlaybackHudPlacement`, `resetVrChannelsHudPlacement`, `resetVrTracksHudPlacement`, `createVrPlaybackHud`, `createVrChannelsHud`, `createVrTracksHud`, `updateVrPlaybackHud`, `updateVrChannelsHud`, `updateVrTracksHud`, `applyVrPlaybackHoverState`), volume handle refs (`vrTranslationHandleRef`, `vrVolumeScaleHandleRef`, `vrVolumeYawHandlesRef`, `vrVolumePitchHandleRef`), render-loop state (`playbackLoopRef`, `playbackStateRef`, `vrHoverStateRef`, `controllersRef`, `updateControllerRays`), resource transforms (`updateVolumeHandles`, `applyVolumeRootTransform`, `applyVolumeStepScaleToResources`), renderer/session lifecycle (`onRendererInitialized`, `restoreVrFoveation`, `xrSessionRef`, `sessionCleanupRef`, `preVrCameraStateRef`, `endVrSessionRequestRef`, `setControllerVisibility`, `raycasterRef`).
+- Any new modules that replace pieces of `useVolumeViewerVr` need to continue exposing those helpers and refs so HUD initialization, playback, controller hover, and volume transforms keep functioning.
+- Verified the remaining hook exports (`callOnVrSessionStarted`, HUD drag handle refs, slider helpers, XR mode toggles, etc.) are not consumed by other React components or tests, clearing them for removal once the hook surface is trimmed.
+
 ## Legacy type cleanup
 - Removed the handcrafted `three.d.ts` shim now that the project consumes the official `@types/three` definitions.
 - Added shared buffer helpers and refactored the preprocessed export/import helpers and worker messaging to rely on canonical `ArrayBuffer` values when hashing, streaming, and constructing blobs.
