@@ -63,6 +63,16 @@ const formatNormalizedIntensity = (value: number): string => {
   return fixed.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
 };
 
+const clamp = (value: number, min: number, max: number): number => {
+  if (value < min) {
+    return min;
+  }
+  if (value > max) {
+    return max;
+  }
+  return value;
+};
+
 const computeHistogramShape = (
   histogram: Uint32Array | null,
   width: number,
@@ -129,10 +139,23 @@ const computeHistogramMappingPoints = (
 
   fractions.sort((a, b) => a - b);
 
-  const points: Array<{ x: number; y: number }> = [];
+  const uniqueFractions: number[] = [];
   for (const fraction of fractions) {
-    const x = fraction * width;
-    const y = height - fraction * height;
+    if (
+      uniqueFractions.length === 0 ||
+      Math.abs(fraction - uniqueFractions[uniqueFractions.length - 1]) > 1e-6
+    ) {
+      uniqueFractions.push(fraction);
+    }
+  }
+
+  const points: Array<{ x: number; y: number }> = [];
+  for (const fraction of uniqueFractions) {
+    const clampedFraction = clamp(fraction, 0, 1);
+    const x = clampedFraction * width;
+    const value = defaultMin + clampedFraction * defaultRange;
+    const normalized = clamp((value - windowMin) / windowWidth, 0, 1);
+    const y = (1 - normalized) * height;
     points.push({ x, y });
   }
 
@@ -225,6 +248,8 @@ export function renderVrTracksHud(hud: VrTracksHud, state: VrTracksState) {
   );
   const tabHeight = 82;
   const totalRows = Math.ceil(channels.length / columns);
+  const tabLabelPaddingX = 12;
+  const tabLabelPaddingY = 12;
 
   ctx.font = vrTracksFont('600', VR_TRACKS_FONT_SIZES.tab);
   ctx.textAlign = 'center';
@@ -899,6 +924,8 @@ export function renderVrChannelsHud(hud: VrChannelsHud, state: VrChannelsState):
   );
   const tabHeight = 82;
   const totalRows = Math.ceil(channels.length / columns);
+  const tabLabelPaddingX = 12;
+  const tabLabelPaddingY = 12;
 
   ctx.font = vrChannelsFont('600', VR_CHANNELS_FONT_SIZES.tab);
   ctx.textAlign = 'center';
@@ -919,11 +946,12 @@ export function renderVrChannelsHud(hud: VrChannelsHud, state: VrChannelsState):
     drawRoundedRect(ctx, x, y, tabWidth, tabHeight, 20);
     ctx.fillStyle = channel.visible ? (isActive ? '#2b5fa6' : '#1d2734') : '#1a202b';
     ctx.fill();
-    if (
+    const isTabHovered =
       hud.hoverRegion &&
-      hud.hoverRegion.targetType === 'channels-tab' &&
-      hud.hoverRegion.channelId === channel.id
-    ) {
+      hud.hoverRegion.channelId === channel.id &&
+      (hud.hoverRegion.targetType === 'channels-tab' ||
+        hud.hoverRegion.targetType === 'channels-tab-toggle');
+    if (isTabHovered) {
       ctx.save();
       drawRoundedRect(ctx, x, y, tabWidth, tabHeight, 20);
       ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
@@ -933,9 +961,21 @@ export function renderVrChannelsHud(hud: VrChannelsHud, state: VrChannelsState):
 
     ctx.save();
     ctx.beginPath();
-    ctx.rect(x + 12, y + 12, tabWidth - 24, tabHeight - 24);
+    ctx.rect(
+      x + tabLabelPaddingX,
+      y + tabLabelPaddingY,
+      tabWidth - tabLabelPaddingX * 2,
+      tabHeight - tabLabelPaddingY * 2,
+    );
     ctx.clip();
-    ctx.fillStyle = '#f3f6fc';
+    const isToggleHovered =
+      hud.hoverRegion &&
+      hud.hoverRegion.targetType === 'channels-tab-toggle' &&
+      hud.hoverRegion.channelId === channel.id;
+    ctx.fillStyle = channel.visible ? '#f3f6fc' : 'rgba(243, 246, 252, 0.55)';
+    if (isToggleHovered) {
+      ctx.fillStyle = '#ffffff';
+    }
     ctx.fillText(channel.name, x + tabWidth / 2, y + tabHeight / 2);
     ctx.restore();
 
@@ -946,72 +986,24 @@ export function renderVrChannelsHud(hud: VrChannelsHud, state: VrChannelsState):
       maxY: Math.max(toPanelY(y), toPanelY(y + tabHeight)),
     };
     regions.push({ targetType: 'channels-tab', channelId: channel.id, bounds: rectBounds });
+
+    const labelBounds = {
+      minX: toPanelX(x + tabLabelPaddingX),
+      maxX: toPanelX(x + tabWidth - tabLabelPaddingX),
+      minY: Math.min(toPanelY(y + tabLabelPaddingY), toPanelY(y + tabHeight - tabLabelPaddingY)),
+      maxY: Math.max(toPanelY(y + tabLabelPaddingY), toPanelY(y + tabHeight - tabLabelPaddingY)),
+    };
+    regions.push({
+      targetType: 'channels-tab-toggle',
+      channelId: channel.id,
+      bounds: labelBounds,
+    });
   }
 
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   const totalTabHeight = totalRows * tabHeight + Math.max(0, totalRows - 1) * tabSpacingY;
-  currentY += totalTabHeight + 36;
-
-  const visibilityToggleX = paddingX;
-  const visibilityToggleY = currentY;
-  const visibilityToggleSize = 46;
-  drawRoundedRect(
-    ctx,
-    visibilityToggleX,
-    visibilityToggleY,
-    visibilityToggleSize,
-    visibilityToggleSize,
-    12,
-  );
-  ctx.fillStyle = activeChannel.visible ? '#2b5fa6' : '#2a313c';
-  ctx.fill();
-  if (
-    hud.hoverRegion &&
-    hud.hoverRegion.targetType === 'channels-visibility' &&
-    hud.hoverRegion.channelId === activeChannel.id
-  ) {
-    ctx.save();
-    drawRoundedRect(
-      ctx,
-      visibilityToggleX,
-      visibilityToggleY,
-      visibilityToggleSize,
-      visibilityToggleSize,
-      12,
-    );
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
-    ctx.fill();
-    ctx.restore();
-  }
-  ctx.beginPath();
-  ctx.moveTo(visibilityToggleX + 12, visibilityToggleY + visibilityToggleSize / 2);
-  ctx.lineTo(visibilityToggleX + visibilityToggleSize / 2 - 3, visibilityToggleY + visibilityToggleSize - 10);
-  ctx.lineTo(visibilityToggleX + visibilityToggleSize - 10, visibilityToggleY + 12);
-  ctx.strokeStyle = '#f3f6fc';
-  ctx.lineWidth = activeChannel.visible ? 4 : 4;
-  if (!activeChannel.visible) {
-    ctx.strokeStyle = 'rgba(243, 246, 252, 0.4)';
-  }
-  ctx.stroke();
-
-  ctx.fillStyle = '#9fb2c8';
-  ctx.font = vrChannelsFont('500', VR_CHANNELS_FONT_SIZES.body);
-  ctx.fillText('Channel visibility', paddingX + visibilityToggleSize + 24, currentY + 6);
-  currentY += visibilityToggleSize + 36;
-
-  const visibilityBounds = {
-    minX: toPanelX(visibilityToggleX),
-    maxX: toPanelX(visibilityToggleX + visibilityToggleSize),
-    minY: Math.min(toPanelY(visibilityToggleY), toPanelY(visibilityToggleY + visibilityToggleSize)),
-    maxY: Math.max(toPanelY(visibilityToggleY), toPanelY(visibilityToggleY + visibilityToggleSize)),
-  };
-  regions.push({
-    targetType: 'channels-visibility',
-    channelId: activeChannel.id,
-    bounds: visibilityBounds,
-    disabled: false,
-  });
+  currentY += totalTabHeight + 48;
 
   ctx.fillStyle = '#9fb2c8';
   ctx.font = vrChannelsFont('500', VR_CHANNELS_FONT_SIZES.body);
@@ -1288,15 +1280,18 @@ export function renderVrChannelsHud(hud: VrChannelsHud, state: VrChannelsState):
       const knobRadius = 18;
       const disabled = slider.disabled;
 
+      ctx.save();
       ctx.fillStyle = '#9fb2c8';
       ctx.font = vrChannelsFont('500', VR_CHANNELS_FONT_SIZES.label);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
       ctx.fillText(slider.label, x, y);
+
       ctx.fillStyle = '#dce3f1';
       ctx.font = vrChannelsFont('600', VR_CHANNELS_FONT_SIZES.value);
-      ctx.fillText(slider.formatter(slider.value), x + width - 20, y);
       ctx.textAlign = 'right';
-      ctx.textBaseline = 'top';
-      ctx.textAlign = 'left';
+      ctx.fillText(slider.formatter(slider.value), x + width, y);
+      ctx.restore();
 
       const sliderY = y + 38;
       drawRoundedRect(ctx, x, sliderY, width, sliderHeight, sliderRadius);
@@ -1576,53 +1571,6 @@ export function renderVrChannelsHud(hud: VrChannelsHud, state: VrChannelsState):
       }
       currentY += swatchSize + 30;
     }
-  }
-
-  ctx.fillStyle = '#9fb2c8';
-  ctx.font = vrChannelsFont('500', VR_CHANNELS_FONT_SIZES.label);
-  ctx.fillText('Layers', paddingX, currentY);
-  currentY += 40;
-
-  const layerButtonHeight = 60;
-  const layerButtonWidth = canvasWidth - paddingX * 2;
-  ctx.font = vrChannelsFont('600', VR_CHANNELS_FONT_SIZES.label);
-
-  for (const layer of activeChannel.layers) {
-    const isSelected = layer.key === (activeChannel.activeLayerKey ?? layer.key);
-    const x = paddingX;
-    const y = currentY;
-    drawRoundedRect(ctx, x, y, layerButtonWidth, layerButtonHeight, 16);
-    ctx.fillStyle = isSelected ? '#2b5fa6' : '#1f2735';
-    ctx.fill();
-    if (hud.hoverRegion && hud.hoverRegion.targetType === 'channels-layer' && hud.hoverRegion.layerKey === layer.key) {
-      ctx.save();
-      drawRoundedRect(ctx, x, y, layerButtonWidth, layerButtonHeight, 16);
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
-      ctx.fill();
-      ctx.restore();
-    }
-    ctx.fillStyle = '#f3f6fc';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(layer.label, x + 24, y + layerButtonHeight / 2);
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-
-    const layerBounds = {
-      minX: toPanelX(x),
-      maxX: toPanelX(x + layerButtonWidth),
-      minY: Math.min(toPanelY(y), toPanelY(y + layerButtonHeight)),
-      maxY: Math.max(toPanelY(y), toPanelY(y + layerButtonHeight)),
-    };
-    regions.push({
-      targetType: 'channels-layer',
-      channelId: activeChannel.id,
-      layerKey: layer.key,
-      bounds: layerBounds,
-      disabled: false,
-    });
-
-    currentY += layerButtonHeight + 18;
   }
 
   if (hud.hoverRegion) {

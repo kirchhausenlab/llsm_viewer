@@ -19,7 +19,7 @@ export type VrUiTargetType =
   | 'channels-panel-yaw'
   | 'channels-panel-pitch'
   | 'channels-tab'
-  | 'channels-visibility'
+  | 'channels-tab-toggle'
   | 'channels-solo'
   | 'channels-reset'
   | 'channels-layer'
@@ -168,7 +168,7 @@ export type VrChannelsSliderDefinition = {
 export type VrChannelsInteractiveRegion = {
   targetType:
     | 'channels-tab'
-    | 'channels-visibility'
+    | 'channels-tab-toggle'
     | 'channels-solo'
     | 'channels-reset'
     | 'channels-layer'

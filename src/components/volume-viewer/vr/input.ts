@@ -513,11 +513,9 @@ export function createControllerEntryConfigurator(
           state.activeChannelId = region.channelId;
           updateVrChannelsHudRef.current?.();
         }
-      } else if (activeTarget?.type === 'channels-visibility' && activeTarget.data) {
+      } else if (activeTarget?.type === 'channels-tab-toggle' && activeTarget.data) {
         const region = activeTarget.data as VrChannelsInteractiveRegion;
-        if (!region.disabled) {
-          vrCallbacks?.onChannelVisibilityToggle?.(region.channelId);
-        }
+        vrCallbacks?.onChannelVisibilityToggle?.(region.channelId);
       } else if (activeTarget?.type === 'channels-layer' && activeTarget.data) {
         const region = activeTarget.data as VrChannelsInteractiveRegion;
         if (region.layerKey) {
