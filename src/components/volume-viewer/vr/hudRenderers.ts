@@ -924,6 +924,8 @@ export function renderVrChannelsHud(hud: VrChannelsHud, state: VrChannelsState):
   );
   const tabHeight = 82;
   const totalRows = Math.ceil(channels.length / columns);
+  const tabLabelPaddingX = 12;
+  const tabLabelPaddingY = 12;
 
   ctx.font = vrChannelsFont('600', VR_CHANNELS_FONT_SIZES.tab);
   ctx.textAlign = 'center';
