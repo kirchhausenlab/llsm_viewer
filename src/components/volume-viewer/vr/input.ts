@@ -523,6 +523,16 @@ export function createControllerEntryConfigurator(
         if (region.layerKey) {
           vrCallbacks?.onLayerSelect?.(region.layerKey);
         }
+      } else if (activeTarget?.type === 'channels-render-style' && activeTarget.data) {
+        const region = activeTarget.data as VrChannelsInteractiveRegion;
+        if (!region.disabled && region.layerKey) {
+          vrCallbacks?.onLayerRenderStyleToggle?.(region.layerKey);
+        }
+      } else if (activeTarget?.type === 'channels-sampling' && activeTarget.data) {
+        const region = activeTarget.data as VrChannelsInteractiveRegion;
+        if (!region.disabled && region.layerKey) {
+          vrCallbacks?.onLayerSamplingModeToggle?.(region.layerKey);
+        }
       } else if (activeTarget?.type === 'channels-solo' && activeTarget.data) {
         const region = activeTarget.data as VrChannelsInteractiveRegion;
         if (!region.disabled && region.layerKey) {
@@ -537,6 +547,11 @@ export function createControllerEntryConfigurator(
         const region = activeTarget.data as VrChannelsInteractiveRegion;
         if (!region.disabled && region.layerKey) {
           vrCallbacks?.onLayerAutoContrast?.(region.layerKey);
+        }
+      } else if (activeTarget?.type === 'channels-color' && activeTarget.data) {
+        const region = activeTarget.data as VrChannelsInteractiveRegion;
+        if (!region.disabled && region.layerKey && region.color) {
+          vrCallbacks?.onLayerColorChange?.(region.layerKey, region.color);
         }
       } else if (activeTarget?.type === 'tracks-panel-grab') {
         entry.hudGrabOffsets.tracks = null;
