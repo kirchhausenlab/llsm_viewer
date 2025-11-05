@@ -759,36 +759,44 @@ export function createUpdateControllerRays(params: CreateUpdateControllerRaysPar
                   playDeltaX * playDeltaX + playDeltaY * playDeltaY <= playRadius * playRadius;
 
                 const resetVolumeCenter = playbackHudInstance.resetVolumeButton.position;
-                const resetVolumeRadius = playbackHudInstance.resetVolumeButtonRadius + surfaceMargin;
+                const resetVolumeHalfWidth =
+                  playbackHudInstance.resetVolumeButtonHalfWidth + surfaceMargin;
+                const resetVolumeHalfHeight =
+                  playbackHudInstance.resetVolumeButtonHalfHeight + surfaceMargin;
                 const resetVolumeDeltaX = playbackLocalPoint.x - resetVolumeCenter.x;
                 const resetVolumeDeltaY = playbackLocalPoint.y - resetVolumeCenter.y;
                 const inResetVolumeButton =
-                  resetVolumeDeltaX * resetVolumeDeltaX +
-                    resetVolumeDeltaY * resetVolumeDeltaY <=
-                  resetVolumeRadius * resetVolumeRadius;
+                  Math.abs(resetVolumeDeltaX) <= resetVolumeHalfWidth &&
+                  Math.abs(resetVolumeDeltaY) <= resetVolumeHalfHeight;
 
                 const resetHudCenter = playbackHudInstance.resetHudButton.position;
-                const resetHudRadius = playbackHudInstance.resetHudButtonRadius + surfaceMargin;
+                const resetHudHalfWidth =
+                  playbackHudInstance.resetHudButtonHalfWidth + surfaceMargin;
+                const resetHudHalfHeight =
+                  playbackHudInstance.resetHudButtonHalfHeight + surfaceMargin;
                 const resetHudDeltaX = playbackLocalPoint.x - resetHudCenter.x;
                 const resetHudDeltaY = playbackLocalPoint.y - resetHudCenter.y;
                 const inResetHudButton =
-                  resetHudDeltaX * resetHudDeltaX + resetHudDeltaY * resetHudDeltaY <=
-                  resetHudRadius * resetHudRadius;
+                  Math.abs(resetHudDeltaX) <= resetHudHalfWidth &&
+                  Math.abs(resetHudDeltaY) <= resetHudHalfHeight;
 
                 const exitCenter = playbackHudInstance.exitButton.position;
-                const exitRadius = playbackHudInstance.exitButtonRadius + surfaceMargin;
+                const exitHalfWidth = playbackHudInstance.exitButtonHalfWidth + surfaceMargin;
+                const exitHalfHeight = playbackHudInstance.exitButtonHalfHeight + surfaceMargin;
                 const exitDeltaX = playbackLocalPoint.x - exitCenter.x;
                 const exitDeltaY = playbackLocalPoint.y - exitCenter.y;
                 const inExitButton =
-                  exitDeltaX * exitDeltaX + exitDeltaY * exitDeltaY <= exitRadius * exitRadius;
+                  Math.abs(exitDeltaX) <= exitHalfWidth && Math.abs(exitDeltaY) <= exitHalfHeight;
 
                 const modeCenter = playbackHudInstance.modeButton.position;
-                const modeRadius = playbackHudInstance.modeButtonRadius + surfaceMargin;
+                const modeHalfWidth = playbackHudInstance.modeButtonHalfWidth + surfaceMargin;
+                const modeHalfHeight = playbackHudInstance.modeButtonHalfHeight + surfaceMargin;
                 const modeDeltaX = playbackLocalPoint.x - modeCenter.x;
                 const modeDeltaY = playbackLocalPoint.y - modeCenter.y;
                 const inModeButton =
                   playbackHudInstance.modeButton.visible &&
-                  modeDeltaX * modeDeltaX + modeDeltaY * modeDeltaY <= modeRadius * modeRadius;
+                  Math.abs(modeDeltaX) <= modeHalfWidth &&
+                  Math.abs(modeDeltaY) <= modeHalfHeight;
 
                 if (!playbackSliderLocked && !fpsSliderLocked && inResetVolumeButton) {
                   considerPlaybackCandidate(

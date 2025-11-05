@@ -63,3 +63,26 @@ export function setVrPlaybackFpsLabel(hud: VrPlaybackHud, text: string) {
   ctx.fillText(text, width / 2, height / 2 + 4);
   hud.fpsLabelTexture.needsUpdate = true;
 }
+
+export function setVrPlaybackModeLabel(hud: VrPlaybackHud, text: string) {
+  if (!hud.modeLabelCanvas || !hud.modeLabelContext) {
+    hud.modeLabelText = text;
+    return;
+  }
+  if (hud.modeLabelText === text) {
+    return;
+  }
+  hud.modeLabelText = text;
+  const ctx = hud.modeLabelContext;
+  const width = hud.modeLabelCanvas.width;
+  const height = hud.modeLabelCanvas.height;
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0)';
+  ctx.fillRect(0, 0, width, height);
+  ctx.font = '600 60px "Inter", "Helvetica Neue", Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(text, width / 2, height / 2 + 6);
+  hud.modeLabelTexture.needsUpdate = true;
+}
