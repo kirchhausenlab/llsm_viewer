@@ -921,6 +921,8 @@ function App() {
     preprocessedImportError,
     preprocessedDropboxError,
     preprocessedDropboxInfo,
+    preprocessedImportBytesProcessed,
+    preprocessedImportTotalBytes,
     isPreprocessedDropboxConfigOpen,
     preprocessedDropboxAppKeyInput,
     preprocessedDropboxAppKeySource,
@@ -2537,6 +2539,8 @@ function App() {
         preprocessedFileInputRef={preprocessedFileInputRef}
         onPreprocessedFileInputChange={handlePreprocessedFileInputChange}
         isPreprocessedImporting={isPreprocessedImporting}
+        preprocessedImportBytesProcessed={preprocessedImportBytesProcessed}
+        preprocessedImportTotalBytes={preprocessedImportTotalBytes}
         preprocessedDropboxImporting={preprocessedDropboxImporting}
         onPreprocessedBrowse={handlePreprocessedBrowse}
         onPreprocessedDropboxImport={handlePreprocessedDropboxImport}

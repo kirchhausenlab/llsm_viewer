@@ -7,7 +7,7 @@ import type {
   SetStateAction
 } from 'react';
 import { collectFilesFromDataTransfer } from '../../utils/appHelpers';
-import { importPreprocessedDataset } from '../../utils/preprocessedDataset';
+import { importPreprocessedDatasetWithWorker } from '../../workers/importPreprocessedDatasetClient';
 import type { ChannelSource, ChannelTrackState, FollowedTrackState, StagedPreprocessedExperiment } from '../../App';
 import type { PreprocessedDropboxCallbacksRef } from './shared';
 
@@ -34,6 +34,8 @@ export type UsePreprocessedImportResult = {
   isPreprocessedImporting: boolean;
   isPreprocessedDragActive: boolean;
   preprocessedImportError: string | null;
+  preprocessedImportBytesProcessed: number;
+  preprocessedImportTotalBytes: number | null;
   preprocessedFileInputRef: MutableRefObject<HTMLInputElement | null>;
   handlePreprocessedLoaderOpen: () => void;
   handlePreprocessedLoaderClose: () => void;
@@ -69,9 +71,13 @@ export function usePreprocessedImport({
   const [isPreprocessedImporting, setIsPreprocessedImporting] = useState(false);
   const [preprocessedImportError, setPreprocessedImportError] = useState<string | null>(null);
   const [isPreprocessedDragActive, setIsPreprocessedDragActive] = useState(false);
+  const [preprocessedImportBytesProcessed, setPreprocessedImportBytesProcessed] = useState(0);
+  const [preprocessedImportTotalBytes, setPreprocessedImportTotalBytes] = useState<number | null>(null);
 
   const resetPreprocessedLoader = useCallback(() => {
     setPreprocessedImportError(null);
+    setPreprocessedImportBytesProcessed(0);
+    setPreprocessedImportTotalBytes(null);
     dropboxCallbacksRef.current.onResetLoader();
     setIsPreprocessedDragActive(false);
     preprocessedDropCounterRef.current = 0;
@@ -86,8 +92,17 @@ export function usePreprocessedImport({
       setPreprocessedImportError(null);
       dropboxCallbacksRef.current.onImportStart();
       try {
-        const buffer = await file.arrayBuffer();
-        const result = await importPreprocessedDataset(buffer);
+        const totalBytes = Number.isFinite(file.size) ? file.size : null;
+        setPreprocessedImportBytesProcessed(0);
+        setPreprocessedImportTotalBytes(totalBytes);
+        const result = await importPreprocessedDatasetWithWorker({
+          stream: file.stream(),
+          totalBytes,
+          onProgress: (bytesProcessed, total) => {
+            setPreprocessedImportBytesProcessed(bytesProcessed);
+            setPreprocessedImportTotalBytes(total);
+          }
+        });
         const staged: StagedPreprocessedExperiment = {
           ...result,
           sourceName: file.name ?? null,
@@ -122,6 +137,8 @@ export function usePreprocessedImport({
         setPreprocessedExperiment(null);
         setChannels([]);
         setIsExperimentSetupStarted(false);
+        setPreprocessedImportBytesProcessed(0);
+        setPreprocessedImportTotalBytes(null);
       } finally {
         setIsPreprocessedImporting(false);
       }
@@ -246,6 +263,8 @@ export function usePreprocessedImport({
     isPreprocessedImporting,
     isPreprocessedDragActive,
     preprocessedImportError,
+    preprocessedImportBytesProcessed,
+    preprocessedImportTotalBytes,
     preprocessedFileInputRef,
     handlePreprocessedLoaderOpen,
     handlePreprocessedLoaderClose,
