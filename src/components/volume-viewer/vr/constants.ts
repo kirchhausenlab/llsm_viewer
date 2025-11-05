@@ -3,7 +3,7 @@ import * as THREE from 'three';
 export const VR_CHANNELS_HISTOGRAM_HEIGHT = 160;
 export const VR_CHANNELS_HISTOGRAM_RADIUS = 18;
 
-export const VR_PLAYBACK_PANEL_WIDTH = 0.54;
+export const VR_PLAYBACK_PANEL_WIDTH = 0.6;
 export const VR_PLAYBACK_PANEL_HEIGHT = 0.36;
 export const VR_PLAYBACK_MIN_FPS = 1;
 export const VR_PLAYBACK_MAX_FPS = 60;

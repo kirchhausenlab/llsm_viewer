@@ -40,6 +40,7 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
     transparent: false,
     opacity: 1,
     side: THREE.DoubleSide,
+    blending: THREE.NoBlending,
   });
   const panel = new THREE.Mesh(
     new THREE.PlaneGeometry(VR_PLAYBACK_PANEL_WIDTH, VR_PLAYBACK_PANEL_HEIGHT),
@@ -54,7 +55,7 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
   const fpsSliderRowY = 0.01;
   const playbackLabelRowY = -0.035;
   const playbackSliderRowY = -0.08;
-  const playButtonRowY = -0.125;
+  const playButtonRowY = -0.135;
   const topButtons: THREE.Mesh[] = [];
   const topButtonWidth = 0.11;
   const topButtonHeight = 0.05;
@@ -253,7 +254,7 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
   fpsSliderGroup.position.set(0, fpsSliderRowY, VR_HUD_SURFACE_OFFSET);
   group.add(fpsSliderGroup);
 
-  const fpsSliderWidth = 0.38;
+  const fpsSliderWidth = 0.42;
   const fpsSliderTrackMaterial = new THREE.MeshBasicMaterial({
     color: 0x3b414d,
     side: THREE.DoubleSide,
@@ -320,7 +321,7 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
     opacity: 0.95,
     side: THREE.DoubleSide,
   });
-  const fpsLabelMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.05), fpsLabelMaterial);
+  const fpsLabelMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.44, 0.05), fpsLabelMaterial);
   fpsLabelMesh.position.set(0, fpsLabelRowY, VR_HUD_SURFACE_OFFSET + 0.0005);
   group.add(fpsLabelMesh);
 
@@ -328,7 +329,7 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
   playbackSliderGroup.position.set(0, playbackSliderRowY, VR_HUD_SURFACE_OFFSET);
   group.add(playbackSliderGroup);
 
-  const playbackSliderWidth = 0.42;
+  const playbackSliderWidth = 0.46;
   const playbackSliderTrackMaterial = new THREE.MeshBasicMaterial({
     color: 0x3b414d,
     side: THREE.DoubleSide,
