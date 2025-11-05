@@ -49,13 +49,83 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
   panel.userData.vrUiTarget = { type: 'playback-panel' } satisfies { type: VrUiTargetType };
   group.add(panel);
 
-  const buttonRowY = 0.11;
-  const fpsLabelRowY = 0.07;
-  const fpsSliderRowY = 0.025;
-  const playbackLabelRowY = -0.03;
-  const playbackSliderRowY = -0.075;
-  const playButtonRowY = -0.14;
+  const buttonRowY = 0.105;
+  const fpsLabelRowY = 0.055;
+  const fpsSliderRowY = 0.01;
+  const playbackLabelRowY = -0.035;
+  const playbackSliderRowY = -0.08;
+  const playButtonRowY = -0.125;
   const topButtons: THREE.Mesh[] = [];
+  const topButtonWidth = 0.11;
+  const topButtonHeight = 0.05;
+  const topButtonMargin = 0.035;
+
+  const drawButtonLabel = (
+    canvas: HTMLCanvasElement | null,
+    context: CanvasRenderingContext2D | null,
+    texture: THREE.CanvasTexture,
+    text: string,
+  ) => {
+    if (!canvas || !context) {
+      return;
+    }
+    const width = canvas.width;
+    const height = canvas.height;
+    context.clearRect(0, 0, width, height);
+    context.fillStyle = 'rgba(0, 0, 0, 0)';
+    context.fillRect(0, 0, width, height);
+    context.font = '600 60px "Inter", "Helvetica Neue", Arial, sans-serif';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillStyle = '#ffffff';
+    context.fillText(text, width / 2, height / 2 + 6);
+    texture.needsUpdate = true;
+  };
+
+  const createLabeledButton = (
+    label: string,
+    color: number,
+    target: VrUiTargetType,
+  ): {
+    button: THREE.Mesh;
+    labelTexture: THREE.CanvasTexture;
+    labelCanvas: HTMLCanvasElement | null;
+    labelContext: CanvasRenderingContext2D | null;
+  } => {
+    const material = new THREE.MeshBasicMaterial({
+      color,
+      side: THREE.DoubleSide,
+    });
+    const button = new THREE.Mesh(new THREE.PlaneGeometry(topButtonWidth, topButtonHeight), material);
+    button.userData.vrUiTarget = { type: target } satisfies { type: VrUiTargetType };
+
+    const labelCanvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
+    const labelContext = labelCanvas ? labelCanvas.getContext('2d') : null;
+    if (labelCanvas) {
+      labelCanvas.width = 512;
+      labelCanvas.height = 256;
+    }
+    const labelTexture = new THREE.CanvasTexture(labelCanvas ?? undefined);
+    labelTexture.colorSpace = THREE.SRGBColorSpace;
+    labelTexture.minFilter = THREE.LinearFilter;
+    labelTexture.magFilter = THREE.LinearFilter;
+    drawButtonLabel(labelCanvas, labelContext, labelTexture, label);
+
+    const labelMaterial = new THREE.MeshBasicMaterial({
+      map: labelTexture,
+      transparent: true,
+      opacity: 0.95,
+      side: THREE.DoubleSide,
+    });
+    const labelMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(Math.max(0.01, topButtonWidth - 0.01), Math.max(0.01, topButtonHeight - 0.01)),
+      labelMaterial,
+    );
+    labelMesh.position.set(0, 0, 0.0005);
+    button.add(labelMesh);
+
+    return { button, labelTexture, labelCanvas, labelContext };
+  };
 
   const translateHandleMaterial = new THREE.MeshBasicMaterial({
     color: VR_HUD_TRANSLATE_HANDLE_COLOR,
@@ -118,182 +188,28 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
   };
   group.add(panelPitchHandle);
 
-  const sideButtonRadius = 0.032;
-  const sideButtonMargin = 0.02;
-
-  const resetVolumeButtonMaterial = new THREE.MeshBasicMaterial({
-    color: 0x2b3340,
-    side: THREE.DoubleSide,
-  });
-  const resetVolumeButton = new THREE.Mesh(
-    new THREE.CircleGeometry(sideButtonRadius, 48),
-    resetVolumeButtonMaterial,
-  );
-  resetVolumeButton.userData.vrUiTarget = { type: 'playback-reset-volume' } satisfies {
-    type: VrUiTargetType;
-  };
+  const resetVolumeButtonDefinition = createLabeledButton('Reset Volume', 0x2b3340, 'playback-reset-volume');
+  const resetVolumeButton = resetVolumeButtonDefinition.button;
   topButtons.push(resetVolumeButton);
-  const resetVolumeIconMaterial = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
-    side: THREE.DoubleSide,
-  });
-  const resetVolumeIconGroup = new THREE.Group();
-  const resetArc = new THREE.Mesh(
-    new THREE.RingGeometry(0.012, 0.02, 24, 1, Math.PI * 0.25, Math.PI * 1.4),
-    resetVolumeIconMaterial,
-  );
-  resetArc.position.set(0, 0, 0.0006);
-  const resetArrowShape = new THREE.Shape();
-  resetArrowShape.moveTo(0.014, 0.01);
-  resetArrowShape.lineTo(0.028, 0.002);
-  resetArrowShape.lineTo(0.014, -0.006);
-  resetArrowShape.lineTo(0.014, 0.01);
-  const resetArrow = new THREE.Mesh(
-    new THREE.ShapeGeometry(resetArrowShape),
-    resetVolumeIconMaterial.clone(),
-  );
-  resetArrow.position.set(0, 0, 0.001);
-  resetVolumeIconGroup.add(resetArc);
-  resetVolumeIconGroup.add(resetArrow);
-  resetVolumeButton.add(resetVolumeIconGroup);
   group.add(resetVolumeButton);
 
-  const resetHudButtonMaterial = new THREE.MeshBasicMaterial({
-    color: 0x2b3340,
-    side: THREE.DoubleSide,
-  });
-  const resetHudButton = new THREE.Mesh(
-    new THREE.CircleGeometry(sideButtonRadius, 48),
-    resetHudButtonMaterial,
-  );
-  resetHudButton.userData.vrUiTarget = { type: 'playback-reset-hud' } satisfies {
-    type: VrUiTargetType;
-  };
+  const resetHudButtonDefinition = createLabeledButton('Reset HUD', 0x2b3340, 'playback-reset-hud');
+  const resetHudButton = resetHudButtonDefinition.button;
   topButtons.push(resetHudButton);
-  const resetHudIconMaterial = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
-    side: THREE.DoubleSide,
-  });
-  const resetHudIconGroup = new THREE.Group();
-  const windowPrimaryOuter = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.048, 0.034),
-    resetHudIconMaterial.clone(),
-  );
-  windowPrimaryOuter.position.set(0, 0, 0.0008);
-  const windowPrimaryInner = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.04, 0.026),
-    resetHudIconMaterial.clone(),
-  );
-  windowPrimaryInner.material.color.set(0x10161d);
-  windowPrimaryInner.position.set(0, 0, 0.0009);
-  const windowSecondaryOuter = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.032, 0.024),
-    resetHudIconMaterial.clone(),
-  );
-  windowSecondaryOuter.position.set(0.014, 0.012, 0.0008);
-  const windowSecondaryInner = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.024, 0.016),
-    resetHudIconMaterial.clone(),
-  );
-  windowSecondaryInner.material.color.set(0x10161d);
-  windowSecondaryInner.position.set(0.014, 0.012, 0.0009);
-  const resetHudArrowShape = new THREE.Shape();
-  resetHudArrowShape.moveTo(-0.018, -0.014);
-  resetHudArrowShape.lineTo(-0.018, -0.004);
-  resetHudArrowShape.lineTo(-0.006, -0.004);
-  resetHudArrowShape.lineTo(-0.006, 0.008);
-  resetHudArrowShape.lineTo(0.004, 0.008);
-  resetHudArrowShape.lineTo(0.004, -0.014);
-  resetHudArrowShape.closePath();
-  const resetHudArrow = new THREE.Mesh(
-    new THREE.ShapeGeometry(resetHudArrowShape),
-    resetHudIconMaterial.clone(),
-  );
-  resetHudArrow.position.set(0, 0, 0.001);
-  resetHudIconGroup.add(windowPrimaryOuter);
-  resetHudIconGroup.add(windowPrimaryInner);
-  resetHudIconGroup.add(windowSecondaryOuter);
-  resetHudIconGroup.add(windowSecondaryInner);
-  resetHudIconGroup.add(resetHudArrow);
-  resetHudButton.add(resetHudIconGroup);
   group.add(resetHudButton);
 
-  const modeButtonMaterial = new THREE.MeshBasicMaterial({
-    color: 0x2b3340,
-    side: THREE.DoubleSide,
-  });
-  const modeButton = new THREE.Mesh(
-    new THREE.CircleGeometry(sideButtonRadius, 48),
-    modeButtonMaterial,
-  );
-  modeButton.userData.vrUiTarget = { type: 'playback-toggle-mode' } satisfies {
-    type: VrUiTargetType;
-  };
+  const modeButtonDefinition = createLabeledButton('Mode: VR', 0x2b3340, 'playback-toggle-mode');
+  const modeButton = modeButtonDefinition.button;
   topButtons.push(modeButton);
-  const modeIconMaterial = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
-    side: THREE.DoubleSide,
-  });
-  const modeVrIcon = new THREE.Group();
-  const modeVrMask = new THREE.Mesh(new THREE.PlaneGeometry(0.036, 0.024), modeIconMaterial.clone());
-  modeVrMask.position.set(0, 0, 0.0008);
-  const modeVrInset = new THREE.Mesh(new THREE.PlaneGeometry(0.026, 0.016), modeIconMaterial.clone());
-  modeVrInset.material.color.set(0x10161d);
-  modeVrInset.position.set(0, 0, 0.0009);
-  const modeVrBridge = new THREE.Mesh(new THREE.PlaneGeometry(0.014, 0.008), modeIconMaterial.clone());
-  modeVrBridge.position.set(0, -0.01, 0.00085);
-  const modeVrLeftEye = new THREE.Mesh(new THREE.CircleGeometry(0.007, 24), modeIconMaterial.clone());
-  modeVrLeftEye.material.color.set(0x10161d);
-  modeVrLeftEye.position.set(-0.01, 0.002, 0.001);
-  const modeVrRightEye = modeVrLeftEye.clone();
-  modeVrRightEye.position.x = 0.01;
-  modeVrIcon.add(modeVrMask);
-  modeVrIcon.add(modeVrInset);
-  modeVrIcon.add(modeVrBridge);
-  modeVrIcon.add(modeVrLeftEye);
-  modeVrIcon.add(modeVrRightEye);
-  modeButton.add(modeVrIcon);
+  group.add(modeButton);
 
-  const modeArIcon = new THREE.Group();
-  const modeArMask = new THREE.Mesh(new THREE.CircleGeometry(0.018, 32), modeIconMaterial.clone());
-  modeArMask.position.set(0, 0, 0.0008);
-  const modeArInner = new THREE.Mesh(new THREE.CircleGeometry(0.012, 32), modeIconMaterial.clone());
-  modeArInner.material.color.set(0x10161d);
-  modeArInner.position.set(0, 0, 0.0009);
-  const modeArLine = new THREE.Mesh(new THREE.PlaneGeometry(0.028, 0.004), modeIconMaterial.clone());
-  modeArLine.position.set(0, -0.01, 0.00085);
-  modeArIcon.add(modeArMask);
-  modeArIcon.add(modeArInner);
-  modeArIcon.add(modeArLine);
-  modeButton.add(modeArIcon);
-
-  const exitButtonMaterial = new THREE.MeshBasicMaterial({
-    color: 0x512b2b,
-    side: THREE.DoubleSide,
-  });
-  const exitButton = new THREE.Mesh(new THREE.CircleGeometry(sideButtonRadius, 48), exitButtonMaterial);
-  exitButton.userData.vrUiTarget = { type: 'playback-exit-vr' } satisfies { type: VrUiTargetType };
+  const exitButtonDefinition = createLabeledButton('Exit VR', 0x512b2b, 'playback-exit-vr');
+  const exitButton = exitButtonDefinition.button;
   topButtons.push(exitButton);
-  const exitIconMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
-  const exitIconGroup = new THREE.Group();
-  const exitDoor = new THREE.Mesh(new THREE.PlaneGeometry(0.02, 0.032), exitIconMaterial.clone());
-  exitDoor.position.set(-0.008, 0, 0.0008);
-  const exitDoorway = new THREE.Mesh(new THREE.PlaneGeometry(0.012, 0.024), exitIconMaterial.clone());
-  exitDoorway.material.color.set(0x10161d);
-  exitDoorway.position.set(-0.008, 0, 0.0009);
-  const exitPersonHead = new THREE.Mesh(new THREE.CircleGeometry(0.006, 24), exitIconMaterial.clone());
-  exitPersonHead.position.set(0.01, 0.008, 0.0009);
-  const exitPersonBody = new THREE.Mesh(new THREE.PlaneGeometry(0.012, 0.024), exitIconMaterial.clone());
-  exitPersonBody.position.set(0.01, -0.004, 0.00085);
-  exitIconGroup.add(exitDoor);
-  exitIconGroup.add(exitDoorway);
-  exitIconGroup.add(exitPersonHead);
-  exitIconGroup.add(exitPersonBody);
-  exitButton.add(exitIconGroup);
   group.add(exitButton);
 
   topButtons.forEach((button, index) => {
-    const offset = (index - (topButtons.length - 1) / 2) * (sideButtonRadius * 2 + sideButtonMargin);
+    const offset = (index - (topButtons.length - 1) / 2) * (topButtonWidth + topButtonMargin);
     button.position.set(offset, buttonRowY, VR_HUD_SURFACE_OFFSET);
   });
 
@@ -312,13 +228,12 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
     color: 0xffffff,
     side: THREE.DoubleSide,
   });
-  const playIcon = new THREE.Mesh(new THREE.CircleGeometry(0.018, 32), playIconMaterial);
-  playIcon.position.set(-0.006, 0, 0.0008);
+  const playIcon = new THREE.Group();
   const playTriangleShape = new THREE.Shape();
-  playTriangleShape.moveTo(-0.008, -0.016);
-  playTriangleShape.lineTo(0.02, 0);
-  playTriangleShape.lineTo(-0.008, 0.016);
-  playTriangleShape.lineTo(-0.008, -0.016);
+  playTriangleShape.moveTo(-0.014, -0.018);
+  playTriangleShape.lineTo(0.022, 0);
+  playTriangleShape.lineTo(-0.014, 0.018);
+  playTriangleShape.closePath();
   const playTriangle = new THREE.Mesh(new THREE.ShapeGeometry(playTriangleShape), playIconMaterial.clone());
   playTriangle.position.set(0.004, 0, 0.0009);
   playIcon.add(playTriangle);
@@ -338,7 +253,7 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
   fpsSliderGroup.position.set(0, fpsSliderRowY, VR_HUD_SURFACE_OFFSET);
   group.add(fpsSliderGroup);
 
-  const fpsSliderWidth = 0.24;
+  const fpsSliderWidth = 0.38;
   const fpsSliderTrackMaterial = new THREE.MeshBasicMaterial({
     color: 0x3b414d,
     side: THREE.DoubleSide,
@@ -367,7 +282,7 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
     color: 0xffffff,
     side: THREE.DoubleSide,
   });
-  const fpsSliderKnob = new THREE.Mesh(new THREE.CircleGeometry(0.017, 32), fpsSliderKnobMaterial);
+  const fpsSliderKnob = new THREE.Mesh(new THREE.CircleGeometry(0.02, 32), fpsSliderKnobMaterial);
   fpsSliderKnob.position.set(-fpsSliderWidth / 2, 0, 0.001);
   fpsSliderKnob.userData.vrUiTarget = { type: 'playback-fps-slider' } satisfies {
     type: VrUiTargetType;
@@ -392,8 +307,8 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
   fpsSliderGroup.add(fpsSliderHitArea);
 
   const fpsLabelCanvas = document.createElement('canvas');
-  fpsLabelCanvas.width = 256;
-  fpsLabelCanvas.height = 64;
+  fpsLabelCanvas.width = 1024;
+  fpsLabelCanvas.height = 128;
   const fpsLabelContext = fpsLabelCanvas.getContext('2d');
   const fpsLabelTexture = new THREE.CanvasTexture(fpsLabelCanvas);
   fpsLabelTexture.colorSpace = THREE.SRGBColorSpace;
@@ -405,7 +320,7 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
     opacity: 0.95,
     side: THREE.DoubleSide,
   });
-  const fpsLabelMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.05), fpsLabelMaterial);
+  const fpsLabelMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.05), fpsLabelMaterial);
   fpsLabelMesh.position.set(0, fpsLabelRowY, VR_HUD_SURFACE_OFFSET + 0.0005);
   group.add(fpsLabelMesh);
 
@@ -413,7 +328,7 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
   playbackSliderGroup.position.set(0, playbackSliderRowY, VR_HUD_SURFACE_OFFSET);
   group.add(playbackSliderGroup);
 
-  const playbackSliderWidth = 0.32;
+  const playbackSliderWidth = 0.42;
   const playbackSliderTrackMaterial = new THREE.MeshBasicMaterial({
     color: 0x3b414d,
     side: THREE.DoubleSide,
@@ -442,10 +357,7 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
     color: 0xffffff,
     side: THREE.DoubleSide,
   });
-  const playbackSliderKnob = new THREE.Mesh(
-    new THREE.CircleGeometry(0.017, 32),
-    playbackSliderKnobMaterial,
-  );
+  const playbackSliderKnob = new THREE.Mesh(new THREE.CircleGeometry(0.02, 32), playbackSliderKnobMaterial);
   playbackSliderKnob.position.set(-playbackSliderWidth / 2, 0, 0.001);
   playbackSliderKnob.userData.vrUiTarget = { type: 'playback-slider' } satisfies {
     type: VrUiTargetType;
@@ -470,8 +382,8 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
   playbackSliderGroup.add(playbackSliderHitArea);
 
   const labelCanvas = document.createElement('canvas');
-  labelCanvas.width = 256;
-  labelCanvas.height = 64;
+  labelCanvas.width = 1024;
+  labelCanvas.height = 128;
   const labelContext = labelCanvas.getContext('2d');
   const labelTexture = new THREE.CanvasTexture(labelCanvas);
   labelTexture.colorSpace = THREE.SRGBColorSpace;
@@ -483,7 +395,7 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
     opacity: 0.95,
     side: THREE.DoubleSide,
   });
-  const labelMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.06), labelMaterial);
+  const labelMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.06), labelMaterial);
   labelMesh.position.set(0, playbackLabelRowY, VR_HUD_SURFACE_OFFSET + 0.0005);
   group.add(labelMesh);
 
@@ -499,10 +411,7 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
     playIcon,
     pauseGroup,
     exitButton,
-    exitIcon: exitIconGroup,
     modeButton,
-    modeVrIcon,
-    modeArIcon,
     playbackSliderGroup,
     playbackSliderTrack,
     playbackSliderFill,
@@ -515,6 +424,10 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
     fpsSliderKnob,
     fpsSliderHitArea,
     fpsSliderWidth,
+    modeLabelTexture: modeButtonDefinition.labelTexture,
+    modeLabelCanvas: modeButtonDefinition.labelCanvas,
+    modeLabelContext: modeButtonDefinition.labelContext,
+    modeLabelText: 'Mode: VR',
     labelMesh,
     labelTexture,
     labelCanvas,
@@ -541,7 +454,7 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
     ],
     resetVolumeButtonBaseColor: new THREE.Color(0x2b3340),
     resetHudButtonBaseColor: new THREE.Color(0x2b3340),
-    playButtonBaseColor: new THREE.Color(0x2b3340),
+    playButtonBaseColor: new THREE.Color(0x2b5fa6),
     playbackSliderTrackBaseColor: new THREE.Color(0x3b414d),
     playbackSliderKnobBaseColor: new THREE.Color(0xffffff),
     fpsSliderTrackBaseColor: new THREE.Color(0x3b414d),
@@ -551,10 +464,14 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
     modeButtonActiveColor: new THREE.Color(0x1f6f3f),
     modeButtonDisabledColor: new THREE.Color(0x3a414d),
     hoverHighlightColor: new THREE.Color(0xffffff),
-    resetVolumeButtonRadius: sideButtonRadius,
-    resetHudButtonRadius: sideButtonRadius,
-    exitButtonRadius: sideButtonRadius,
-    modeButtonRadius: sideButtonRadius,
+    resetVolumeButtonHalfWidth: topButtonWidth / 2,
+    resetVolumeButtonHalfHeight: topButtonHeight / 2,
+    resetHudButtonHalfWidth: topButtonWidth / 2,
+    resetHudButtonHalfHeight: topButtonHeight / 2,
+    exitButtonHalfWidth: topButtonWidth / 2,
+    exitButtonHalfHeight: topButtonHeight / 2,
+    modeButtonHalfWidth: topButtonWidth / 2,
+    modeButtonHalfHeight: topButtonHeight / 2,
     cachedPosition: new THREE.Vector3(NaN, NaN, NaN),
     cachedYaw: NaN,
     cachedPitch: NaN,

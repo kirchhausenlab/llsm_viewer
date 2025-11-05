@@ -6,6 +6,7 @@ import {
   setVrPlaybackFpsFraction,
   setVrPlaybackFpsLabel,
   setVrPlaybackLabel,
+  setVrPlaybackModeLabel,
   setVrPlaybackProgressFraction,
 } from './hudMutators';
 import { renderVrChannelsHud, renderVrTracksHud } from './hudRenderers';
@@ -80,24 +81,21 @@ export function updateVrPlaybackHud(
   const passthroughSupported = Boolean(playbackState.passthroughSupported);
   if (!passthroughSupported) {
     hud.modeButton.visible = false;
-    hud.modeVrIcon.visible = false;
-    hud.modeArIcon.visible = false;
     hud.modeButtonBaseColor.copy(hud.modeButtonDisabledColor);
     modeMaterial.color.copy(hud.modeButtonBaseColor);
+    setVrPlaybackModeLabel(hud, 'Mode: VR');
   } else {
     hud.modeButton.visible = true;
     const preferredMode =
       playbackState.preferredSessionMode === 'immersive-ar' ? 'immersive-ar' : 'immersive-vr';
+    const modeLabel = preferredMode === 'immersive-ar' ? 'Mode: AR' : 'Mode: VR';
     if (preferredMode === 'immersive-ar') {
       hud.modeButtonBaseColor.copy(hud.modeButtonActiveColor);
-      hud.modeVrIcon.visible = false;
-      hud.modeArIcon.visible = true;
     } else {
       hud.modeButtonBaseColor.set(0x2b3340);
-      hud.modeVrIcon.visible = true;
-      hud.modeArIcon.visible = false;
     }
     modeMaterial.color.copy(hud.modeButtonBaseColor);
+    setVrPlaybackModeLabel(hud, modeLabel);
   }
 
   hud.playIcon.visible = !playbackState.isPlaying;
