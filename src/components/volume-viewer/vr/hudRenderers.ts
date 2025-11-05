@@ -1359,6 +1359,20 @@ export function renderVrChannelsHud(hud: VrChannelsHud, state: VrChannelsState):
       return sliderY + sliderHeight;
     };
 
+    const windowMinSlider = sliderByKey.get('windowMin');
+    const windowMaxSlider = sliderByKey.get('windowMax');
+    if (windowMinSlider && windowMaxSlider) {
+      const rowTop = currentY;
+      const minBottom = drawSliderControl(windowMinSlider, paddingX, sliderColumnWidth, rowTop);
+      const maxBottom = drawSliderControl(
+        windowMaxSlider,
+        paddingX + sliderColumnWidth + sliderColumnSpacing,
+        sliderColumnWidth,
+        rowTop,
+      );
+      currentY = Math.max(minBottom, maxBottom) + 64;
+    }
+
     const brightnessSlider = sliderByKey.get('brightness');
     const contrastSlider = sliderByKey.get('contrast');
     if (brightnessSlider && contrastSlider) {
