@@ -38,6 +38,8 @@ type FrontPageProps = {
   preprocessedFileInputRef: MutableRefObject<HTMLInputElement | null>;
   onPreprocessedFileInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
   isPreprocessedImporting: boolean;
+  preprocessedImportBytesProcessed: number;
+  preprocessedImportTotalBytes: number | null;
   preprocessedDropboxImporting: boolean;
   onPreprocessedBrowse: () => void;
   onPreprocessedDropboxImport: () => void;
@@ -134,6 +136,8 @@ export default function FrontPage({
   preprocessedFileInputRef,
   onPreprocessedFileInputChange,
   isPreprocessedImporting,
+  preprocessedImportBytesProcessed,
+  preprocessedImportTotalBytes,
   preprocessedDropboxImporting,
   onPreprocessedBrowse,
   onPreprocessedDropboxImport,
@@ -274,7 +278,31 @@ export default function FrontPage({
                   </button>
                 </div>
                 {isPreprocessedImporting ? (
-                  <p className="preprocessed-loader-status">Loading preprocessed dataset…</p>
+                  <p className="preprocessed-loader-status">
+                    Loading preprocessed dataset…
+                    {preprocessedImportBytesProcessed > 0 ? (
+                      <>
+                        {' '}
+                        {preprocessedImportTotalBytes ? (
+                          <>
+                            {formatBytes(preprocessedImportBytesProcessed)} of{' '}
+                            {formatBytes(preprocessedImportTotalBytes)} (
+                            {preprocessedImportTotalBytes > 0
+                              ? Math.min(
+                                  100,
+                                  Math.round(
+                                    (preprocessedImportBytesProcessed / preprocessedImportTotalBytes) * 100
+                                  )
+                                )
+                              : 100}
+                            %)
+                          </>
+                        ) : (
+                          <>{formatBytes(preprocessedImportBytesProcessed)} processed</>
+                        )}
+                      </>
+                    ) : null}
+                  </p>
                 ) : null}
                 {preprocessedImportError ? (
                   <p className="preprocessed-loader-error">{preprocessedImportError}</p>

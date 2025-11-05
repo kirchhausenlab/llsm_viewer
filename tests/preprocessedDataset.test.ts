@@ -155,6 +155,46 @@ console.log('Starting preprocessed dataset import/export tests');
     assert.strictEqual(summary.layers[1].volumeCount, 2);
     assert.deepEqual(summary.trackEntries, channels[0].trackEntries);
 
+    const streamedImportProgress: number[] = [];
+    const streamedImport = await importPreprocessedDataset(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          const chunkSize = 5;
+          for (let offset = 0; offset < archiveBytes.byteLength; offset += chunkSize) {
+            const end = Math.min(offset + chunkSize, archiveBytes.byteLength);
+            controller.enqueue(archiveBytes.subarray(offset, end));
+          }
+          controller.close();
+        }
+      }),
+      {
+        onProgress: (bytesProcessed) => {
+          streamedImportProgress.push(bytesProcessed);
+        }
+      }
+    );
+
+    assert.strictEqual(streamedImport.totalVolumeCount, imported.totalVolumeCount);
+    assert.deepEqual(streamedImport.channelSummaries, imported.channelSummaries);
+    assert.strictEqual(streamedImport.layers.length, imported.layers.length);
+    for (let index = 0; index < streamedImport.layers.length; index += 1) {
+      const expectedLayer = imported.layers[index];
+      const actualLayer = streamedImport.layers[index];
+      assert.strictEqual(actualLayer.volumes.length, expectedLayer.volumes.length);
+      for (let volumeIndex = 0; volumeIndex < actualLayer.volumes.length; volumeIndex += 1) {
+        assert.deepEqual(
+          Array.from(actualLayer.volumes[volumeIndex].normalized),
+          Array.from(expectedLayer.volumes[volumeIndex].normalized)
+        );
+      }
+    }
+
+    assert.ok(
+      streamedImportProgress.length > 0 &&
+        streamedImportProgress[streamedImportProgress.length - 1] === archiveBytes.byteLength,
+      'expected streaming import to report progress up to the archive size'
+    );
+
     const chunkCollector: Uint8Array[] = [];
     const streamedResult = await exportPreprocessedDataset({ layers, channels }, (chunk) => {
       chunkCollector.push(chunk.slice());
