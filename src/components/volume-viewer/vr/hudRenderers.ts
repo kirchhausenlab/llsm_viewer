@@ -979,14 +979,6 @@ export function renderVrChannelsHud(hud: VrChannelsHud, state: VrChannelsState):
     ctx.fillText(channel.name, x + tabWidth / 2, y + tabHeight / 2);
     ctx.restore();
 
-    const rectBounds = {
-      minX: toPanelX(x),
-      maxX: toPanelX(x + tabWidth),
-      minY: Math.min(toPanelY(y), toPanelY(y + tabHeight)),
-      maxY: Math.max(toPanelY(y), toPanelY(y + tabHeight)),
-    };
-    regions.push({ targetType: 'channels-tab', channelId: channel.id, bounds: rectBounds });
-
     const labelBounds = {
       minX: toPanelX(x + tabLabelPaddingX),
       maxX: toPanelX(x + tabWidth - tabLabelPaddingX),
@@ -998,6 +990,14 @@ export function renderVrChannelsHud(hud: VrChannelsHud, state: VrChannelsState):
       channelId: channel.id,
       bounds: labelBounds,
     });
+
+    const rectBounds = {
+      minX: toPanelX(x),
+      maxX: toPanelX(x + tabWidth),
+      minY: Math.min(toPanelY(y), toPanelY(y + tabHeight)),
+      maxY: Math.max(toPanelY(y), toPanelY(y + tabHeight)),
+    };
+    regions.push({ targetType: 'channels-tab', channelId: channel.id, bounds: rectBounds });
   }
 
   ctx.textAlign = 'left';
