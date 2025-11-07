@@ -1,4 +1,4 @@
-import { Zip, ZipDeflate } from 'fflate';
+import { BlobWriter, Uint8ArrayReader, ZipWriter } from '@zip.js/zip.js';
 
 import type { LoadedLayer } from '../../types/layers';
 
@@ -13,11 +13,10 @@ import {
   MANIFEST_FILE_NAME
 } from './types';
 import { computeSha256Hex } from './hash';
-import { ensureArrayBuffer } from '../buffer';
 
 const textEncoder = new TextEncoder();
 
-const ZIP_INPUT_CHUNK_SIZE = 8 * 1024 * 1024; // 8 MiB per push keeps memory bounded for large volumes.
+const ZIP_COMPRESSION_LEVEL = 9;
 
 function createVolumePath(layer: LoadedLayer, timepoint: number): string {
   return `volumes/${layer.channelId}/${layer.key}/timepoint-${timepoint
@@ -32,48 +31,26 @@ export async function exportPreprocessedDataset(
   const manifestChannels: PreprocessedChannelManifest[] = [];
   const groupedLayers = new Map<string, LoadedLayer[]>();
   let totalVolumeCount = 0;
+  let zipWriter: ZipWriter<unknown> | null = null;
+  let blobWriter: BlobWriter | null = null;
 
-  const zipChunks: BlobPart[] | null = onChunk ? null : [];
-  let isZipComplete = false;
-
-  let resolveZip!: () => void;
-  let rejectZip!: (error: Error) => void;
-  const zipCompleted = new Promise<void>((resolve, reject) => {
-    resolveZip = resolve;
-    rejectZip = reject;
-  });
-
-  const zip = new Zip((err, chunk, final) => {
-    if (err) {
-      if (!isZipComplete) {
-        isZipComplete = true;
-        rejectZip(err instanceof Error ? err : new Error(String(err)));
-      }
-      return;
-    }
-
-    if (chunk) {
-      if (onChunk) {
-        try {
-          onChunk(chunk, final);
-        } catch (error) {
-          if (!isZipComplete) {
-            isZipComplete = true;
-            rejectZip(error instanceof Error ? error : new Error(String(error)));
-          }
-          zip.terminate();
-          return;
+  const writable = onChunk
+    ? new WritableStream<Uint8Array>({
+        write(chunk) {
+          onChunk(chunk, false);
+        },
+        close() {
+          onChunk(new Uint8Array(0), true);
         }
-      } else {
-        zipChunks!.push(ensureArrayBuffer(chunk));
-      }
-    }
+      })
+    : null;
 
-    if (final && !isZipComplete) {
-      isZipComplete = true;
-      resolveZip();
-    }
-  });
+  if (writable) {
+    zipWriter = new ZipWriter(writable, { zip64: true });
+  } else {
+    blobWriter = new BlobWriter('application/zip');
+    zipWriter = new ZipWriter(blobWriter, { zip64: true });
+  }
 
   for (const layer of layers) {
     const bucket = groupedLayers.get(layer.channelId);
@@ -120,24 +97,12 @@ export async function exportPreprocessedDataset(
 
           manifestVolumes.push(manifestEntry);
 
-          const deflater = new ZipDeflate(path, { level: 9 });
-          zip.add(deflater);
-          // NormalizedVolume.normalized is treated as immutable, so sharing the underlying buffer is safe.
-          if (volumeBytes.byteLength === 0) {
-            deflater.push(volumeBytes, true);
-          } else {
-            for (
-              let offset = 0;
-              offset < volumeBytes.byteLength;
-              offset += ZIP_INPUT_CHUNK_SIZE
-            ) {
-              const end = Math.min(offset + ZIP_INPUT_CHUNK_SIZE, volumeBytes.byteLength);
-              const chunk = volumeBytes.subarray(offset, end);
-              deflater.push(chunk, end === volumeBytes.byteLength);
-            }
-          }
+          await zipWriter!.add(
+            path,
+            new Uint8ArrayReader(volumeBytes),
+            { level: ZIP_COMPRESSION_LEVEL, zip64: true }
+          );
 
-          // Release the reference once the chunk has been queued
           volumeBytes = new Uint8Array(0);
         }
         manifestLayers.push({
@@ -157,7 +122,11 @@ export async function exportPreprocessedDataset(
       });
     }
   } catch (error) {
-    zip.terminate();
+    try {
+      await zipWriter?.close();
+    } catch {
+      // Ignore close failures when recovering from an earlier error.
+    }
     throw error instanceof Error ? error : new Error(String(error));
   }
 
@@ -183,21 +152,24 @@ export async function exportPreprocessedDataset(
   };
 
   try {
-    let manifestBytes = textEncoder.encode(JSON.stringify(manifest));
-    const manifestEntry = new ZipDeflate(MANIFEST_FILE_NAME, { level: 9 });
-    zip.add(manifestEntry);
-    manifestEntry.push(manifestBytes, true);
-    manifestBytes = new Uint8Array(0);
-
-    zip.end();
-    await zipCompleted;
+    const manifestBytes = textEncoder.encode(JSON.stringify(manifest));
+    await zipWriter!.add(
+      MANIFEST_FILE_NAME,
+      new Uint8ArrayReader(manifestBytes),
+      { level: ZIP_COMPRESSION_LEVEL, zip64: true }
+    );
+    await zipWriter!.close(undefined, { zip64: true });
   } catch (error) {
-    zip.terminate();
+    try {
+      await zipWriter!.close();
+    } catch {
+      // Ignore close failures when handling the primary error.
+    }
     throw error instanceof Error ? error : new Error(String(error));
   }
 
-  if (zipChunks) {
-    const blob = new Blob(zipChunks, { type: 'application/zip' });
+  if (blobWriter) {
+    const blob = await blobWriter.getData();
     return { blob, manifest };
   }
 

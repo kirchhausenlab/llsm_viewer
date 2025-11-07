@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 
-import { zipSync, unzipSync } from 'fflate';
+import {
+  Uint8ArrayReader,
+  Uint8ArrayWriter,
+  ZipReader,
+  ZipWriter
+} from '@zip.js/zip.js';
 
 import {
   exportPreprocessedDataset,
@@ -14,6 +19,44 @@ import type { NormalizedVolume } from '../src/volumeProcessing.ts';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+
+async function unzipToMap(data: Uint8Array): Promise<Record<string, Uint8Array>> {
+  const reader = new ZipReader(new Uint8ArrayReader(data));
+  try {
+    const entries = await reader.getEntries();
+    const files: Record<string, Uint8Array> = {};
+    for (const entry of entries) {
+      if (entry.directory) {
+        continue;
+      }
+      const content = await entry.getData(new Uint8ArrayWriter());
+      files[entry.filename] = content;
+    }
+    return files;
+  } finally {
+    await reader.close();
+  }
+}
+
+async function zipFromMap(files: Record<string, Uint8Array>): Promise<Uint8Array> {
+  const arrayWriter = new Uint8ArrayWriter();
+  const writer = new ZipWriter(arrayWriter, { zip64: true });
+  let isClosed = false;
+  try {
+    for (const [path, content] of Object.entries(files)) {
+      await writer.add(path, new Uint8ArrayReader(content), { zip64: true });
+    }
+    const result = (await writer.close(undefined, { zip64: true })) as Uint8Array;
+    isClosed = true;
+    return result;
+  } finally {
+    if (!isClosed) {
+      await writer.close().catch(() => {
+        // Ignore errors when attempting to close an already-failed writer.
+      });
+    }
+  }
+}
 
 console.log('Starting preprocessed dataset import/export tests');
 
@@ -99,7 +142,7 @@ console.log('Starting preprocessed dataset import/export tests');
     const archiveBytes = new Uint8Array(await blob.arrayBuffer());
     assert.strictEqual(archiveBytes.byteLength, blob.size);
 
-    const filesInArchive = unzipSync(archiveBytes);
+    const filesInArchive = await unzipToMap(archiveBytes);
     assert.ok(filesInArchive['manifest.json']);
     const manifestFromArchive = JSON.parse(
       decoder.decode(filesInArchive['manifest.json'])
@@ -218,7 +261,7 @@ console.log('Starting preprocessed dataset import/export tests');
       offset += chunk.byteLength;
     }
 
-    const streamedFiles = unzipSync(reconstructed);
+    const streamedFiles = await unzipToMap(reconstructed);
     assert.deepEqual(
       Object.keys(streamedFiles).sort(),
       [...Object.keys(expectedVolumeEntries), 'manifest.json'].sort()
@@ -274,7 +317,7 @@ console.log('Starting preprocessed dataset import/export tests');
     });
 
     const offsetBytes = new Uint8Array(await offsetBlob.arrayBuffer());
-    const offsetFiles = unzipSync(offsetBytes);
+    const offsetFiles = await unzipToMap(offsetBytes);
 
     const offsetEntryPath = 'volumes/offset-channel/offset-layer/timepoint-0000.bin';
     const offsetEntry = offsetFiles[offsetEntryPath];
@@ -286,14 +329,14 @@ console.log('Starting preprocessed dataset import/export tests');
     assert.strictEqual(manifestVolume.digest, expectedDigest);
     assert.strictEqual(manifestVolume.byteLength, offsetPayload.byteLength);
 
-    const tamperedFiles = unzipSync(new Uint8Array(archiveBytes));
+    const tamperedFiles = await unzipToMap(new Uint8Array(archiveBytes));
     const tamperedManifest = JSON.parse(
       decoder.decode(tamperedFiles['manifest.json'])
     ) as PreprocessedManifest;
     tamperedManifest.dataset.channels[0].layers[0].volumes[0].digest = '0'.repeat(64);
     tamperedFiles['manifest.json'] = encoder.encode(JSON.stringify(tamperedManifest));
 
-    const tamperedArchive = zipSync(tamperedFiles);
+    const tamperedArchive = await zipFromMap(tamperedFiles);
 
     await assert.rejects(() => importPreprocessedDataset(tamperedArchive), /Digest mismatch/);
 

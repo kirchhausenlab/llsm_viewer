@@ -1,4 +1,5 @@
-import { AsyncUnzipInflate, Unzip } from 'fflate';
+import { Uint8ArrayWriter, ZipReader } from '@zip.js/zip.js';
+import type { FileEntry } from '@zip.js/zip.js';
 
 import type { LoadedLayer } from '../../types/layers';
 import type { NormalizedVolume } from '../../volumeProcessing';
@@ -24,64 +25,71 @@ type VolumeData = {
   digest: string;
 };
 
-type ChunkQueueEntry = {
-  chunk: Uint8Array;
-  byteLength: number;
-};
-
 function isReadableStream(value: unknown): value is ReadableStream<Uint8Array> {
   return typeof value === 'object' && value !== null && typeof (value as ReadableStream).getReader === 'function';
 }
 
-function toAsyncChunkSource(
+function toReadableStream(
   source: ArrayBuffer | Uint8Array | ReadableStream<Uint8Array>
-): AsyncIterable<Uint8Array> {
+): { stream: ReadableStream<Uint8Array>; totalBytes: number | null } {
   if (isReadableStream(source)) {
-    return streamToAsyncIterable(source);
+    return { stream: source, totalBytes: null };
   }
-  return arrayLikeToAsyncIterable(source);
-}
 
-function arrayLikeToAsyncIterable(data: ArrayBuffer | Uint8Array): AsyncIterable<Uint8Array> {
-  const view = data instanceof Uint8Array ? data : new Uint8Array(data);
-  return {
-    async *[Symbol.asyncIterator]() {
-      yield view;
-    }
-  };
-}
-
-async function* streamToAsyncIterable(stream: ReadableStream<Uint8Array>): AsyncIterable<Uint8Array> {
-  const reader = stream.getReader();
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) {
-        break;
+  const view = source instanceof Uint8Array ? source : new Uint8Array(source);
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      if (view.byteLength > 0) {
+        controller.enqueue(view);
       }
-      if (value) {
-        yield value;
-      }
+      controller.close();
     }
-  } finally {
-    reader.releaseLock();
-  }
+  });
+
+  return { stream, totalBytes: view.byteLength };
 }
 
-function concatChunks(chunks: ChunkQueueEntry[], totalLength: number): Uint8Array {
-  if (totalLength === 0) {
-    return new Uint8Array(0);
+function createProgressReportingStream(
+  stream: ReadableStream<Uint8Array>,
+  onChunk?: (delta: number) => void
+): ReadableStream<Uint8Array> {
+  if (!onChunk) {
+    return stream;
   }
-  if (chunks.length === 1 && chunks[0].byteLength === totalLength) {
-    return chunks[0].chunk;
-  }
-  const result = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const entry of chunks) {
-    result.set(entry.chunk, offset);
-    offset += entry.byteLength;
-  }
-  return result;
+
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      const reader = stream.getReader();
+
+      const pump = async (): Promise<void> => {
+        try {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) {
+              controller.close();
+              break;
+            }
+            if (value && value.byteLength > 0) {
+              onChunk(value.byteLength);
+              controller.enqueue(value);
+            }
+          }
+        } catch (error) {
+          controller.error(error);
+        } finally {
+          reader.releaseLock();
+        }
+      };
+
+      void pump();
+    },
+    cancel(reason) {
+      if (typeof stream.cancel === 'function') {
+        return stream.cancel(reason);
+      }
+      return undefined;
+    }
+  });
 }
 
 function parseManifest(bytes: Uint8Array): PreprocessedManifest {
@@ -198,88 +206,63 @@ export async function importPreprocessedDataset(
   source: ArrayBuffer | Uint8Array | ReadableStream<Uint8Array>,
   options?: ImportPreprocessedDatasetOptions
 ): Promise<ImportPreprocessedDatasetResult> {
-  const chunkSource = toAsyncChunkSource(source);
-  const unzip = new Unzip();
-  unzip.register(AsyncUnzipInflate);
-
-  let manifest: PreprocessedManifest | null = null;
-  const volumeBuffers = new Map<string, VolumeData>();
-  const pendingEntries: Promise<void>[] = [];
-
-  unzip.onfile = (file) => {
-    if (!file || file.name.endsWith('/')) {
-      return;
-    }
-
-    const entryPromise = new Promise<void>((resolveEntry, rejectEntry) => {
-      const collected: ChunkQueueEntry[] = [];
-      let totalLength = 0;
-
-      file.ondata = (err, chunk, final) => {
-        if (err) {
-          rejectEntry(err instanceof Error ? err : new Error(String(err)));
-          return;
-        }
-        if (chunk) {
-          const owned =
-            chunk.byteOffset === 0 && chunk.byteLength === chunk.buffer.byteLength
-              ? chunk
-              : chunk.slice();
-          collected.push({ chunk: owned, byteLength: owned.byteLength });
-          totalLength += owned.byteLength;
-        }
-        if (final) {
-          try {
-            const data = concatChunks(collected, totalLength);
-            if (file.name === MANIFEST_FILE_NAME) {
-              manifest = parseManifest(data);
-            } else {
-              const digestPromise = computeSha256Hex(data);
-              void digestPromise.then((digest) => {
-                collected.length = 0;
-                volumeBuffers.set(file.name, { data, digest });
-                resolveEntry();
-              }, rejectEntry);
-              return;
-            }
-            collected.length = 0;
-            resolveEntry();
-          } catch (error) {
-            rejectEntry(error instanceof Error ? error : new Error(String(error)));
-          }
-        }
-      };
-
-      try {
-        file.start();
-      } catch (error) {
-        rejectEntry(error instanceof Error ? error : new Error(String(error)));
-      }
-    });
-
-    pendingEntries.push(entryPromise);
-  };
-
+  const { stream, totalBytes } = toReadableStream(source);
   let bytesProcessed = 0;
+  const reportingStream = createProgressReportingStream(stream, (delta) => {
+    bytesProcessed += delta;
+    options?.onProgress?.(bytesProcessed);
+  });
+
+  const reader = new ZipReader(reportingStream);
 
   try {
-    for await (const chunk of chunkSource) {
-      bytesProcessed += chunk.byteLength;
-      if (options?.onProgress) {
-        options.onProgress(bytesProcessed);
+    const entries = await reader.getEntries();
+    const fileEntries = new Map<string, FileEntry>();
+
+    for (const entry of entries) {
+      if (entry.directory) {
+        continue;
       }
-      unzip.push(chunk, false);
+      fileEntries.set(entry.filename, entry as FileEntry);
     }
-    unzip.push(new Uint8Array(0), true);
+
+    const manifestEntry = fileEntries.get(MANIFEST_FILE_NAME);
+    if (!manifestEntry) {
+      throw new Error('The archive does not contain a manifest.json file.');
+    }
+
+    const manifestBytes = await manifestEntry.getData(new Uint8ArrayWriter());
+    const manifest = parseManifest(manifestBytes);
+    fileEntries.delete(MANIFEST_FILE_NAME);
+
+    const volumes = new Map<string, VolumeData>();
+
+    for (const channel of manifest.dataset.channels) {
+      for (const layer of channel.layers) {
+        for (const volume of layer.volumes) {
+          const entry = fileEntries.get(volume.path);
+          if (!entry) {
+            throw new Error(`Archive is missing volume data at ${volume.path}.`);
+          }
+          const volumeData = await entry.getData(new Uint8ArrayWriter());
+          const digest = await computeSha256Hex(volumeData);
+          volumes.set(volume.path, { data: volumeData, digest });
+          fileEntries.delete(volume.path);
+        }
+      }
+    }
+
+    return buildImportResult(manifest, volumes);
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
+  } finally {
+    try {
+      await reader.close();
+    } catch (closeError) {
+      console.warn('Failed to close zip reader', closeError);
+    }
+    if (totalBytes !== null && bytesProcessed < totalBytes) {
+      options?.onProgress?.(totalBytes);
+    }
   }
-
-  await Promise.all(pendingEntries);
-
-  if (!manifest) {
-    throw new Error('The archive does not contain a manifest.json file.');
-  }
-
-  return buildImportResult(manifest, volumeBuffers);
 }
