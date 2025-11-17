@@ -40,6 +40,8 @@ type FrontPageProps = {
   isPreprocessedImporting: boolean;
   preprocessedImportBytesProcessed: number;
   preprocessedImportTotalBytes: number | null;
+  preprocessedImportVolumesDecoded: number;
+  preprocessedImportTotalVolumeCount: number | null;
   preprocessedDropboxImporting: boolean;
   onPreprocessedBrowse: () => void;
   onPreprocessedDropboxImport: () => void;
@@ -138,6 +140,8 @@ export default function FrontPage({
   isPreprocessedImporting,
   preprocessedImportBytesProcessed,
   preprocessedImportTotalBytes,
+  preprocessedImportVolumesDecoded,
+  preprocessedImportTotalVolumeCount,
   preprocessedDropboxImporting,
   onPreprocessedBrowse,
   onPreprocessedDropboxImport,
@@ -280,6 +284,32 @@ export default function FrontPage({
                 {isPreprocessedImporting ? (
                   <p className="preprocessed-loader-status">
                     Loading preprocessed dataset…
+                    {preprocessedImportTotalVolumeCount !== null || preprocessedImportVolumesDecoded > 0 ? (
+                      <>
+                        {' '}
+                        {preprocessedImportTotalVolumeCount ? (
+                          <>
+                            Decoded {preprocessedImportVolumesDecoded} of {preprocessedImportTotalVolumeCount} volumes (
+                            {preprocessedImportTotalVolumeCount > 0
+                              ? Math.min(
+                                  100,
+                                  Math.round(
+                                    (preprocessedImportVolumesDecoded /
+                                      preprocessedImportTotalVolumeCount) *
+                                      100
+                                  )
+                                )
+                              : 100}
+                            %)
+                          </>
+                        ) : (
+                          <>
+                            Decoded {preprocessedImportVolumesDecoded} volume
+                            {preprocessedImportVolumesDecoded === 1 ? '' : 's'}
+                          </>
+                        )}
+                      </>
+                    ) : null}
                     {preprocessedImportBytesProcessed > 0 ? (
                       <>
                         {' '}

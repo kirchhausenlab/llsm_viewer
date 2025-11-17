@@ -923,6 +923,8 @@ function App() {
     preprocessedDropboxInfo,
     preprocessedImportBytesProcessed,
     preprocessedImportTotalBytes,
+    preprocessedImportVolumesDecoded,
+    preprocessedImportTotalVolumeCount,
     isPreprocessedDropboxConfigOpen,
     preprocessedDropboxAppKeyInput,
     preprocessedDropboxAppKeySource,
@@ -2541,6 +2543,8 @@ function App() {
         isPreprocessedImporting={isPreprocessedImporting}
         preprocessedImportBytesProcessed={preprocessedImportBytesProcessed}
         preprocessedImportTotalBytes={preprocessedImportTotalBytes}
+        preprocessedImportVolumesDecoded={preprocessedImportVolumesDecoded}
+        preprocessedImportTotalVolumeCount={preprocessedImportTotalVolumeCount}
         preprocessedDropboxImporting={preprocessedDropboxImporting}
         onPreprocessedBrowse={handlePreprocessedBrowse}
         onPreprocessedDropboxImport={handlePreprocessedDropboxImport}

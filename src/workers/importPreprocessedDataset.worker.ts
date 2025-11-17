@@ -25,6 +25,8 @@ type WorkerProgress = {
   type: 'progress';
   bytesProcessed: number;
   totalBytes: number | null;
+  volumesDecoded: number;
+  totalVolumeCount: number | null;
 };
 
 type WorkerDone = {
@@ -72,18 +74,34 @@ function handleImport(request: ImportWorkerRequest): void {
 
   let cancelled = false;
 
+  let latestBytesProcessed = 0;
+  let latestVolumesDecoded = 0;
+  let totalVolumeCount: number | null = null;
+
+  const postProgress = () => {
+    if (cancelled) {
+      return;
+    }
+    const progressMessage: WorkerProgress = {
+      id,
+      type: 'progress',
+      bytesProcessed: latestBytesProcessed,
+      totalBytes,
+      volumesDecoded: latestVolumesDecoded,
+      totalVolumeCount
+    };
+    ctx.postMessage(progressMessage);
+  };
+
   const options: ImportPreprocessedDatasetOptions = {
     onProgress: (bytesProcessed) => {
-      if (cancelled) {
-        return;
-      }
-      const progressMessage: WorkerProgress = {
-        id,
-        type: 'progress',
-        bytesProcessed,
-        totalBytes
-      };
-      ctx.postMessage(progressMessage);
+      latestBytesProcessed = bytesProcessed;
+      postProgress();
+    },
+    onVolumeDecoded: (volumesDecoded, total) => {
+      latestVolumesDecoded = volumesDecoded;
+      totalVolumeCount = total;
+      postProgress();
     }
   };
 

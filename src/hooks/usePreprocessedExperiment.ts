@@ -49,6 +49,8 @@ export type UsePreprocessedExperimentResult = {
   preprocessedDropboxInfo: string | null;
   preprocessedImportBytesProcessed: number;
   preprocessedImportTotalBytes: number | null;
+  preprocessedImportVolumesDecoded: number;
+  preprocessedImportTotalVolumeCount: number | null;
   isPreprocessedDropboxConfigOpen: boolean;
   preprocessedDropboxAppKeyInput: string;
   preprocessedDropboxAppKeySource: DropboxAppKeySource | null;
@@ -138,6 +140,8 @@ export default function usePreprocessedExperiment({
     preprocessedImportError: importState.preprocessedImportError,
     preprocessedImportBytesProcessed: importState.preprocessedImportBytesProcessed,
     preprocessedImportTotalBytes: importState.preprocessedImportTotalBytes,
+    preprocessedImportVolumesDecoded: importState.preprocessedImportVolumesDecoded,
+    preprocessedImportTotalVolumeCount: importState.preprocessedImportTotalVolumeCount,
     preprocessedDropboxError: dropboxState.preprocessedDropboxError,
     preprocessedDropboxInfo: dropboxState.preprocessedDropboxInfo,
     isPreprocessedDropboxConfigOpen: dropboxState.isPreprocessedDropboxConfigOpen,

@@ -1,6 +1,7 @@
 import {
   getImportPreprocessedDatasetWorker,
-  type ImportPreprocessedDatasetWorkerOptions
+  type ImportPreprocessedDatasetWorkerOptions,
+  type PreprocessedImportProgress
 } from './importPreprocessedDataset/workerClient';
 import {
   importPreprocessedDataset,
@@ -16,9 +17,34 @@ export async function importPreprocessedDatasetWithWorker(
   const worker = getImportPreprocessedDatasetWorker();
   if (!worker) {
     console.warn('Import worker is not available. Falling back to main thread import.');
-    const fallbackOptions: ImportPreprocessedDatasetOptions | undefined = options.onProgress
-      ? { onProgress: (bytesProcessed) => options.onProgress?.(bytesProcessed, options.totalBytes) }
-      : undefined;
+
+    if (!options.onProgress) {
+      return importPreprocessedDataset(options.stream);
+    }
+
+    const progress: PreprocessedImportProgress = {
+      bytesProcessed: 0,
+      totalBytes: options.totalBytes,
+      volumesDecoded: 0,
+      totalVolumeCount: null
+    };
+
+    const emitProgress = () => {
+      options.onProgress?.({ ...progress });
+    };
+
+    const fallbackOptions: ImportPreprocessedDatasetOptions = {
+      onProgress: (bytesProcessed) => {
+        progress.bytesProcessed = bytesProcessed;
+        emitProgress();
+      },
+      onVolumeDecoded: (volumesDecoded, totalVolumeCount) => {
+        progress.volumesDecoded = volumesDecoded;
+        progress.totalVolumeCount = totalVolumeCount;
+        emitProgress();
+      }
+    };
+
     return importPreprocessedDataset(options.stream, fallbackOptions);
   }
 

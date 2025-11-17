@@ -18,6 +18,7 @@ const textDecoder = new TextDecoder();
 
 export type ImportPreprocessedDatasetOptions = {
   onProgress?: (bytesProcessed: number) => void;
+  onVolumeDecoded?: (volumesDecoded: number, totalVolumeCount: number) => void;
 };
 
 type VolumeData = {
@@ -236,6 +237,8 @@ export async function importPreprocessedDataset(
     fileEntries.delete(MANIFEST_FILE_NAME);
 
     const volumes = new Map<string, VolumeData>();
+    const totalVolumeCount = manifest.dataset.totalVolumeCount;
+    let volumesDecoded = 0;
 
     for (const channel of manifest.dataset.channels) {
       for (const layer of channel.layers) {
@@ -248,6 +251,8 @@ export async function importPreprocessedDataset(
           const digest = await computeSha256Hex(volumeData);
           volumes.set(volume.path, { data: volumeData, digest });
           fileEntries.delete(volume.path);
+          volumesDecoded += 1;
+          options?.onVolumeDecoded?.(volumesDecoded, totalVolumeCount);
         }
       }
     }

@@ -1,8 +1,15 @@
 import type { ImportPreprocessedDatasetResult } from '../../utils/preprocessedDataset';
 import WorkerScript from '../importPreprocessedDataset.worker?worker';
 
+export type PreprocessedImportProgress = {
+  bytesProcessed: number;
+  totalBytes: number | null;
+  volumesDecoded: number;
+  totalVolumeCount: number | null;
+};
+
 type WorkerResponse =
-  | { id: number; type: 'progress'; bytesProcessed: number; totalBytes: number | null }
+  | { id: number; type: 'progress' } & PreprocessedImportProgress
   | { id: number; type: 'done'; result: ImportPreprocessedDatasetResult }
   | { id: number; type: 'error'; message: string; stack?: string }
   | { id: number; type: 'cancelled' };
@@ -14,7 +21,7 @@ type WorkerRequest =
 type PendingRequest = {
   resolve: (result: ImportPreprocessedDatasetResult) => void;
   reject: (error: Error) => void;
-  onProgress?: (bytesProcessed: number, totalBytes: number | null) => void;
+  onProgress?: (progress: PreprocessedImportProgress) => void;
   abortController: AbortController;
   abortListener?: () => void;
 };
@@ -22,7 +29,7 @@ type PendingRequest = {
 export type ImportPreprocessedDatasetWorkerOptions = {
   stream: ReadableStream<Uint8Array>;
   totalBytes: number | null;
-  onProgress?: (bytesProcessed: number, totalBytes: number | null) => void;
+  onProgress?: (progress: PreprocessedImportProgress) => void;
   signal?: AbortSignal;
 };
 
@@ -135,7 +142,12 @@ export class ImportPreprocessedDatasetWorkerClient {
 
     switch (message.type) {
       case 'progress': {
-        request.onProgress?.(message.bytesProcessed, message.totalBytes);
+        request.onProgress?.({
+          bytesProcessed: message.bytesProcessed,
+          totalBytes: message.totalBytes,
+          volumesDecoded: message.volumesDecoded,
+          totalVolumeCount: message.totalVolumeCount
+        });
         break;
       }
       case 'done': {
