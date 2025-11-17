@@ -151,6 +151,7 @@ console.log('Starting preprocessed dataset import/export tests');
     assert.strictEqual(manifest.dataset.channels[0].layers.length, 2);
     assert.strictEqual(manifest.dataset.channels[0].trackEntries.length, 2);
     assert.deepEqual(manifest.dataset.voxelResolution, voxelResolution);
+    assert.strictEqual(manifest.dataset.anisotropyCorrection, null);
 
     const archiveBytes = new Uint8Array(await blob.arrayBuffer());
     assert.strictEqual(archiveBytes.byteLength, blob.size);
@@ -185,6 +186,7 @@ console.log('Starting preprocessed dataset import/export tests');
     assert.strictEqual(imported.layers.length, 2);
     assert.strictEqual(imported.channelSummaries.length, 1);
     assert.deepEqual(imported.manifest.dataset.voxelResolution, voxelResolution);
+    assert.strictEqual(imported.manifest.dataset.anisotropyCorrection, null);
 
     const importedStructural = imported.layers[0];
     assert.strictEqual(importedStructural.isSegmentation, false);
@@ -354,6 +356,32 @@ console.log('Starting preprocessed dataset import/export tests');
     const tamperedArchive = await zipFromMap(tamperedFiles);
 
     await assert.rejects(() => importPreprocessedDataset(tamperedArchive), /Digest mismatch/);
+
+    const anisotropicVoxelResolution = {
+      x: 5,
+      y: 3.6,
+      z: 2.1,
+      unit: 'μm' as const,
+      correctAnisotropy: true
+    };
+    const anisotropicExport = await exportPreprocessedDataset({
+      layers,
+      channels,
+      voxelResolution: anisotropicVoxelResolution
+    });
+    const anisotropicManifest = anisotropicExport.manifest;
+    assert.ok(anisotropicManifest.dataset.anisotropyCorrection);
+    const minSpacing = Math.min(
+      anisotropicVoxelResolution.x,
+      anisotropicVoxelResolution.y,
+      anisotropicVoxelResolution.z
+    );
+    const expectedScale = {
+      x: anisotropicVoxelResolution.x / minSpacing,
+      y: anisotropicVoxelResolution.y / minSpacing,
+      z: anisotropicVoxelResolution.z / minSpacing
+    };
+    assert.deepEqual(anisotropicManifest.dataset.anisotropyCorrection?.scale, expectedScale);
 
     console.log('preprocessed dataset import/export tests passed');
   } catch (error) {

@@ -1,6 +1,10 @@
 import type { LoadedLayer } from '../../types/layers';
 import type { VolumeDataType } from '../../types/volume';
-import type { VoxelResolutionValues } from '../../types/voxelResolution';
+import type { AnisotropyScaleFactors, VoxelResolutionValues } from '../../types/voxelResolution';
+
+export type AnisotropyCorrectionMetadata = {
+  scale: AnisotropyScaleFactors;
+};
 
 export type ChannelExportMetadata = {
   id: string;
@@ -45,6 +49,7 @@ export type PreprocessedManifest = {
     totalVolumeCount: number;
     channels: PreprocessedChannelManifest[];
     voxelResolution?: VoxelResolutionValues | null;
+    anisotropyCorrection?: AnisotropyCorrectionMetadata | null;
   };
 };
 

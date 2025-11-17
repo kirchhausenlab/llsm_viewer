@@ -8,6 +8,14 @@
 
 # Progress Log
 
+## Volume anisotropy correction
+- Added a resampling utility that computes voxel spacing ratios, skips identity scales, and upsamples volumes with trilinear
+  interpolation or nearest-neighbor for segmentation datasets while preserving their integer data types.
+- Threaded the anisotropy correction through the dataset loader so raw TIFF volumes are normalized to isotropic voxels before
+  normalization or export, ensuring saved preprocessed archives include the upsampled data.
+- Extended the preprocessed manifest format with anisotropy metadata, validated it on import, and expanded the test suite to
+  cover the new metadata along with unit tests for the correction helper.
+
 ## Voxel resolution controls on front page
 - Added a "Voxel resolution" row with numeric X/Y/Z inputs, a unit dropdown, and a "Correct anisotropy?" checkbox beneath the channel add button so experiments capture spatial sampling metadata before preprocessing.
 - Threaded the parsed values through the launch/export preprocessing pipeline, embedding them into the preprocessed manifest and validating them on import for future workflows.
