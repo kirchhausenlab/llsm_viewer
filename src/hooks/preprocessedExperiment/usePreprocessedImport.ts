@@ -36,6 +36,8 @@ export type UsePreprocessedImportResult = {
   preprocessedImportError: string | null;
   preprocessedImportBytesProcessed: number;
   preprocessedImportTotalBytes: number | null;
+  preprocessedImportVolumesDecoded: number;
+  preprocessedImportTotalVolumeCount: number | null;
   preprocessedFileInputRef: MutableRefObject<HTMLInputElement | null>;
   handlePreprocessedLoaderOpen: () => void;
   handlePreprocessedLoaderClose: () => void;
@@ -73,11 +75,16 @@ export function usePreprocessedImport({
   const [isPreprocessedDragActive, setIsPreprocessedDragActive] = useState(false);
   const [preprocessedImportBytesProcessed, setPreprocessedImportBytesProcessed] = useState(0);
   const [preprocessedImportTotalBytes, setPreprocessedImportTotalBytes] = useState<number | null>(null);
+  const [preprocessedImportVolumesDecoded, setPreprocessedImportVolumesDecoded] = useState(0);
+  const [preprocessedImportTotalVolumeCount, setPreprocessedImportTotalVolumeCount] =
+    useState<number | null>(null);
 
   const resetPreprocessedLoader = useCallback(() => {
     setPreprocessedImportError(null);
     setPreprocessedImportBytesProcessed(0);
     setPreprocessedImportTotalBytes(null);
+    setPreprocessedImportVolumesDecoded(0);
+    setPreprocessedImportTotalVolumeCount(null);
     dropboxCallbacksRef.current.onResetLoader();
     setIsPreprocessedDragActive(false);
     preprocessedDropCounterRef.current = 0;
@@ -95,12 +102,16 @@ export function usePreprocessedImport({
         const totalBytes = Number.isFinite(file.size) ? file.size : null;
         setPreprocessedImportBytesProcessed(0);
         setPreprocessedImportTotalBytes(totalBytes);
+        setPreprocessedImportVolumesDecoded(0);
+        setPreprocessedImportTotalVolumeCount(null);
         const result = await importPreprocessedDatasetWithWorker({
           stream: file.stream(),
           totalBytes,
-          onProgress: (bytesProcessed, total) => {
-            setPreprocessedImportBytesProcessed(bytesProcessed);
-            setPreprocessedImportTotalBytes(total);
+          onProgress: (progress) => {
+            setPreprocessedImportBytesProcessed(progress.bytesProcessed);
+            setPreprocessedImportTotalBytes(progress.totalBytes);
+            setPreprocessedImportVolumesDecoded(progress.volumesDecoded);
+            setPreprocessedImportTotalVolumeCount(progress.totalVolumeCount);
           }
         });
         const staged: StagedPreprocessedExperiment = {
@@ -139,6 +150,8 @@ export function usePreprocessedImport({
         setIsExperimentSetupStarted(false);
         setPreprocessedImportBytesProcessed(0);
         setPreprocessedImportTotalBytes(null);
+        setPreprocessedImportVolumesDecoded(0);
+        setPreprocessedImportTotalVolumeCount(null);
       } finally {
         setIsPreprocessedImporting(false);
       }
@@ -265,6 +278,8 @@ export function usePreprocessedImport({
     preprocessedImportError,
     preprocessedImportBytesProcessed,
     preprocessedImportTotalBytes,
+    preprocessedImportVolumesDecoded,
+    preprocessedImportTotalVolumeCount,
     preprocessedFileInputRef,
     handlePreprocessedLoaderOpen,
     handlePreprocessedLoaderClose,
