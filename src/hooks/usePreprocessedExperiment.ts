@@ -19,6 +19,7 @@ import type { PreprocessedDropboxCallbacks } from './preprocessedExperiment/shar
 import { usePreprocessedImport } from './preprocessedExperiment/usePreprocessedImport';
 import { useDropboxPreprocessed } from './preprocessedExperiment/useDropboxPreprocessed';
 import { usePreprocessedExport } from './preprocessedExperiment/usePreprocessedExport';
+import type { VoxelResolutionValues } from '../types/voxelResolution';
 
 export type UsePreprocessedExperimentOptions = {
   channels: ChannelSource[];
@@ -35,6 +36,7 @@ export type UsePreprocessedExperimentOptions = {
   loadSelectedDataset: () => Promise<LoadedLayer[] | null>;
   showInteractionWarning: (message: string) => void;
   isLaunchingViewer: boolean;
+  voxelResolution: VoxelResolutionValues | null;
 };
 
 export type UsePreprocessedExperimentResult = {
@@ -86,7 +88,8 @@ export default function usePreprocessedExperiment({
   updateChannelIdCounter,
   loadSelectedDataset,
   showInteractionWarning,
-  isLaunchingViewer
+  isLaunchingViewer,
+  voxelResolution
 }: UsePreprocessedExperimentOptions): UsePreprocessedExperimentResult {
   const preprocessedFileInputRef = useRef<HTMLInputElement | null>(null);
   const preprocessedDropCounterRef = useRef(0);
@@ -127,7 +130,8 @@ export default function usePreprocessedExperiment({
     loadSelectedDataset,
     clearDatasetError,
     showInteractionWarning,
-    isLaunchingViewer
+    isLaunchingViewer,
+    voxelResolution
   });
 
   return {

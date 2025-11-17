@@ -1,5 +1,6 @@
 import type { LoadedLayer } from '../../types/layers';
 import type { VolumeDataType } from '../../types/volume';
+import type { VoxelResolutionValues } from '../../types/voxelResolution';
 
 export type ChannelExportMetadata = {
   id: string;
@@ -43,12 +44,14 @@ export type PreprocessedManifest = {
   dataset: {
     totalVolumeCount: number;
     channels: PreprocessedChannelManifest[];
+    voxelResolution?: VoxelResolutionValues | null;
   };
 };
 
 export type ExportPreprocessedDatasetOptions = {
   layers: LoadedLayer[];
   channels: ChannelExportMetadata[];
+  voxelResolution: VoxelResolutionValues;
 };
 
 export type ExportPreprocessedDatasetChunkHandler = (

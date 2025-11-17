@@ -567,3 +567,66 @@
   gap: 1rem;
   flex-wrap: wrap;
 }
+
+.voxel-resolution-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0 0 1.25rem;
+  font-size: 0.9rem;
+}
+
+.voxel-resolution-title {
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.voxel-resolution-field,
+.voxel-resolution-unit {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.voxel-resolution-field-label {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 0.85rem;
+}
+
+.voxel-resolution-field input,
+.voxel-resolution-unit select {
+  width: 5rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 0.35rem;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background-color: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 0.9rem;
+}
+
+.voxel-resolution-unit select {
+  width: auto;
+  min-width: 4rem;
+}
+
+.voxel-resolution-field input:disabled,
+.voxel-resolution-unit select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.voxel-resolution-anisotropy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.8);
+  user-select: none;
+}
+
+.voxel-resolution-anisotropy input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: rgba(91, 140, 255, 0.9);
+}

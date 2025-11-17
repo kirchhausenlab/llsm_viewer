@@ -25,7 +25,7 @@ function createVolumePath(layer: LoadedLayer, timepoint: number): string {
 }
 
 export async function exportPreprocessedDataset(
-  { layers, channels }: ExportPreprocessedDatasetOptions,
+  { layers, channels, voxelResolution }: ExportPreprocessedDatasetOptions,
   onChunk?: ExportPreprocessedDatasetChunkHandler
 ): Promise<ExportPreprocessedDatasetResult> {
   const manifestChannels: PreprocessedChannelManifest[] = [];
@@ -147,7 +147,8 @@ export async function exportPreprocessedDataset(
     generatedAt: new Date().toISOString(),
     dataset: {
       totalVolumeCount,
-      channels: manifestChannels
+      channels: manifestChannels,
+      voxelResolution
     }
   };
 

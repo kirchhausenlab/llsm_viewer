@@ -8,6 +8,11 @@
 
 # Progress Log
 
+## Voxel resolution controls on front page
+- Added a "Voxel resolution" row with numeric X/Y/Z inputs, a unit dropdown, and a "Correct anisotropy?" checkbox beneath the channel add button so experiments capture spatial sampling metadata before preprocessing.
+- Threaded the parsed values through the launch/export preprocessing pipeline, embedding them into the preprocessed manifest and validating them on import for future workflows.
+- Expanded the preprocessed dataset tests and front-page styles to cover the new metadata and layout changes.
+
 ## Playback and VR HUD recovery
 - Synced the desktop playback loop with the viewer props even when the WebXR bundle is still loading so play/pause works
   immediately instead of waiting for the VR module to hydrate.

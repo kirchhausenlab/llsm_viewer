@@ -39,6 +39,11 @@ import type { ImportPreprocessedDatasetResult } from './utils/preprocessedDatase
 import { computeTrackSummary } from './utils/trackSummary';
 import useVrLifecycle from './hooks/useVrLifecycle';
 import usePreprocessedExperiment from './hooks/usePreprocessedExperiment';
+import type {
+  VoxelResolutionInput,
+  VoxelResolutionUnit,
+  VoxelResolutionValues
+} from './types/voxelResolution';
 import {
   collectFilesFromDataTransfer,
   createSegmentationSeed,
@@ -60,6 +65,14 @@ const SELECTED_TRACKS_WINDOW_WIDTH = 960;
 const SELECTED_TRACKS_WINDOW_HEIGHT = 220;
 const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
 const WARNING_WINDOW_WIDTH = 360;
+
+const DEFAULT_VOXEL_RESOLUTION: VoxelResolutionInput = {
+  x: '1.0',
+  y: '1.0',
+  z: '1.0',
+  unit: 'μm',
+  correctAnisotropy: false
+};
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 
@@ -111,6 +124,8 @@ type ChannelValidation = {
   warnings: string[];
 };
 
+type VoxelResolutionAxis = 'x' | 'y' | 'z';
+
 export type {
   ChannelSource,
   ChannelTrackState,
@@ -124,6 +139,8 @@ function App() {
   const [isExperimentSetupStarted, setIsExperimentSetupStarted] = useState(false);
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
+  const [voxelResolutionInput, setVoxelResolutionInput] =
+    useState<VoxelResolutionInput>(DEFAULT_VOXEL_RESOLUTION);
   const [datasetError, setDatasetError] = useState<string | null>(null);
   const [datasetErrorContext, setDatasetErrorContext] = useState<DatasetErrorContext | null>(null);
   const [datasetErrorResetSignal, setDatasetErrorResetSignal] = useState(0);
@@ -136,6 +153,7 @@ function App() {
   const [channelVisibility, setChannelVisibility] = useState<Record<string, boolean>>({});
   const [channelActiveLayer, setChannelActiveLayer] = useState<Record<string, string>>({});
   const [layerSettings, setLayerSettings] = useState<Record<string, LayerSettings>>({});
+  const preprocessingSettingsRef = useRef<VoxelResolutionValues | null>(null);
   const createLayerDefaultSettings = useCallback(
     (layerKey: string): LayerSettings => {
       const layer = layersRef.current.find((entry) => entry.key === layerKey) ?? null;
@@ -156,6 +174,28 @@ function App() {
     []
   );
   const [layerAutoThresholds, setLayerAutoThresholds] = useState<Record<string, number>>({});
+  const voxelResolution = useMemo<VoxelResolutionValues | null>(() => {
+    const axes: VoxelResolutionAxis[] = ['x', 'y', 'z'];
+    const parsed: Partial<Record<VoxelResolutionAxis, number>> = {};
+    for (const axis of axes) {
+      const rawValue = voxelResolutionInput[axis].trim();
+      if (!rawValue) {
+        return null;
+      }
+      const numericValue = Number(rawValue);
+      if (!Number.isFinite(numericValue)) {
+        return null;
+      }
+      parsed[axis] = numericValue;
+    }
+    return {
+      x: parsed.x ?? 0,
+      y: parsed.y ?? 0,
+      z: parsed.z ?? 0,
+      unit: voxelResolutionInput.unit,
+      correctAnisotropy: voxelResolutionInput.correctAnisotropy
+    };
+  }, [voxelResolutionInput]);
   const [status, setStatus] = useState<LoadState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [loadProgress, setLoadProgress] = useState(0);
@@ -178,6 +218,33 @@ function App() {
   const [isHelpMenuOpen, setIsHelpMenuOpen] = useState(false);
   const handleHelpMenuToggle = useCallback(() => {
     setIsHelpMenuOpen((previous) => !previous);
+  }, []);
+  const handleVoxelResolutionAxisChange = useCallback(
+    (axis: VoxelResolutionAxis, value: string) => {
+      setVoxelResolutionInput((current) => {
+        if (current[axis] === value) {
+          return current;
+        }
+        return { ...current, [axis]: value };
+      });
+    },
+    []
+  );
+  const handleVoxelResolutionUnitChange = useCallback((unit: VoxelResolutionUnit) => {
+    setVoxelResolutionInput((current) => {
+      if (current.unit === unit) {
+        return current;
+      }
+      return { ...current, unit };
+    });
+  }, []);
+  const handleVoxelResolutionAnisotropyToggle = useCallback((value: boolean) => {
+    setVoxelResolutionInput((current) => {
+      if (current.correctAnisotropy === value) {
+        return current;
+      }
+      return { ...current, correctAnisotropy: value };
+    });
   }, []);
   const controlWindowInitialPosition = useMemo(
     () => ({ x: WINDOW_MARGIN, y: WINDOW_MARGIN }),
@@ -744,6 +811,7 @@ function App() {
 
   const loadSelectedDataset = useCallback(async (): Promise<LoadedLayer[] | null> => {
     clearDatasetError();
+    preprocessingSettingsRef.current = voxelResolution;
     const flatLayerSources = channels
       .flatMap((channel) =>
         channel.layers.map((layer) => ({
@@ -908,7 +976,8 @@ function App() {
     computeNormalizationParameters,
     createSegmentationSeed,
     normalizeVolume,
-    showLaunchError
+    showLaunchError,
+    voxelResolution
   ]);
 
   const {
@@ -958,7 +1027,8 @@ function App() {
     updateChannelIdCounter,
     loadSelectedDataset,
     showInteractionWarning,
-    isLaunchingViewer
+    isLaunchingViewer,
+    voxelResolution
   });
 
   useEffect(() => {
@@ -1631,7 +1701,7 @@ function App() {
     () => channelValidationList.every((entry) => entry.errors.length === 0),
     [channelValidationList]
   );
-  const canLaunch = hasAnyLayers && allChannelsValid && !hasLoadingTracks;
+  const canLaunch = hasAnyLayers && allChannelsValid && !hasLoadingTracks && voxelResolution !== null;
   const launchButtonEnabled = frontPageMode === 'preprocessed' ? preprocessedExperiment !== null : canLaunch;
   const launchButtonLaunchable = launchButtonEnabled ? 'true' : 'false';
 
@@ -1649,10 +1719,18 @@ function App() {
       return;
     }
 
+    if (!preprocessedExperiment && !voxelResolution) {
+      showLaunchError('Fill in all voxel resolution fields before launching.');
+      return;
+    }
+
     if (preprocessedExperiment) {
       clearDatasetError();
       setIsLaunchingViewer(true);
       try {
+        const manifestVoxelResolution =
+          preprocessedExperiment.manifest.dataset.voxelResolution ?? voxelResolution ?? null;
+        preprocessingSettingsRef.current = manifestVoxelResolution;
         applyLoadedLayers(preprocessedExperiment.layers, preprocessedExperiment.totalVolumeCount);
         setIsViewerLaunched(true);
       } finally {
@@ -1684,6 +1762,7 @@ function App() {
     }
 
     clearDatasetError();
+    preprocessingSettingsRef.current = voxelResolution;
     setIsLaunchingViewer(true);
     try {
       const normalizedLayers = await loadSelectedDataset();
@@ -1703,7 +1782,8 @@ function App() {
     isLaunchingViewer,
     loadSelectedDataset,
     preprocessedExperiment,
-    showLaunchError
+    showLaunchError,
+    voxelResolution
   ]);
 
   const handleChannelVisibilityToggle = useCallback((channelId: string) => {
@@ -2532,6 +2612,10 @@ function App() {
         setEditingChannelId={setEditingChannelId}
         onAddChannel={handleAddChannel}
         onOpenPreprocessedLoader={handlePreprocessedLoaderOpen}
+        voxelResolution={voxelResolutionInput}
+        onVoxelResolutionAxisChange={handleVoxelResolutionAxisChange}
+        onVoxelResolutionUnitChange={handleVoxelResolutionUnitChange}
+        onVoxelResolutionAnisotropyToggle={handleVoxelResolutionAnisotropyToggle}
         isPreprocessedLoaderOpen={isPreprocessedLoaderOpen}
         isPreprocessedDragActive={isPreprocessedDragActive}
         onPreprocessedDragEnter={handlePreprocessedDragEnter}
