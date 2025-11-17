@@ -11,8 +11,18 @@ import FloatingWindow from './FloatingWindow';
 import { formatBytes } from '../errors';
 import type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment } from '../App';
 import type { DropboxAppKeySource } from '../integrations/dropbox';
+import type { VoxelResolutionInput, VoxelResolutionUnit } from '../types/voxelResolution';
+import { VOXEL_RESOLUTION_UNITS } from '../types/voxelResolution';
 
 type TrackSummary = { totalRows: number; uniqueTracks: number };
+
+type VoxelResolutionAxis = 'x' | 'y' | 'z';
+
+const VOXEL_RESOLUTION_AXES: ReadonlyArray<{ axis: VoxelResolutionAxis; label: string }> = [
+  { axis: 'x', label: 'X' },
+  { axis: 'y', label: 'Y' },
+  { axis: 'z', label: 'Z' }
+];
 
 type FrontPageProps = {
   backgroundVideoSrc: string;
@@ -29,6 +39,10 @@ type FrontPageProps = {
   setEditingChannelId: Dispatch<SetStateAction<string | null>>;
   onAddChannel: () => void;
   onOpenPreprocessedLoader: () => void;
+  voxelResolution: VoxelResolutionInput;
+  onVoxelResolutionAxisChange: (axis: VoxelResolutionAxis, value: string) => void;
+  onVoxelResolutionUnitChange: (unit: VoxelResolutionUnit) => void;
+  onVoxelResolutionAnisotropyToggle: (value: boolean) => void;
   isPreprocessedLoaderOpen: boolean;
   isPreprocessedDragActive: boolean;
   onPreprocessedDragEnter: (event: DragEvent<HTMLDivElement>) => void;
@@ -129,6 +143,10 @@ export default function FrontPage({
   setEditingChannelId,
   onAddChannel,
   onOpenPreprocessedLoader,
+  voxelResolution,
+  onVoxelResolutionAxisChange,
+  onVoxelResolutionUnitChange,
+  onVoxelResolutionAnisotropyToggle,
   isPreprocessedLoaderOpen,
   isPreprocessedDragActive,
   onPreprocessedDragEnter,
@@ -233,6 +251,49 @@ export default function FrontPage({
                   </button>
                 </div>
               )}
+            </div>
+          ) : null}
+          {frontPageMode === 'configuring' ? (
+            <div className="voxel-resolution-row">
+              <span className="voxel-resolution-title">Voxel resolution:</span>
+              {VOXEL_RESOLUTION_AXES.map(({ axis, label }) => (
+                <label key={axis} className="voxel-resolution-field">
+                  <span className="voxel-resolution-field-label">{label}:</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="any"
+                    value={voxelResolution[axis]}
+                    onChange={(event) => onVoxelResolutionAxisChange(axis, event.target.value)}
+                    disabled={isFrontPageLocked}
+                  />
+                </label>
+              ))}
+              <label className="voxel-resolution-unit">
+                <span className="voxel-resolution-field-label">Unit</span>
+                <select
+                  value={voxelResolution.unit}
+                  onChange={(event) =>
+                    onVoxelResolutionUnitChange(event.target.value as VoxelResolutionUnit)
+                  }
+                  disabled={isFrontPageLocked}
+                >
+                  {VOXEL_RESOLUTION_UNITS.map((unit) => (
+                    <option key={unit} value={unit}>
+                      {unit}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="voxel-resolution-anisotropy">
+                <input
+                  type="checkbox"
+                  checked={voxelResolution.correctAnisotropy}
+                  onChange={(event) => onVoxelResolutionAnisotropyToggle(event.target.checked)}
+                  disabled={isFrontPageLocked}
+                />
+                Correct anisotropy?
+              </label>
             </div>
           ) : null}
           {frontPageMode !== 'preprocessed' && isPreprocessedLoaderOpen ? (

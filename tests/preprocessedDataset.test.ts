@@ -127,7 +127,19 @@ console.log('Starting preprocessed dataset import/export tests');
       }
     ];
 
-    const exportResult = await exportPreprocessedDataset({ layers, channels });
+    const voxelResolution = {
+      x: 1,
+      y: 1,
+      z: 1,
+      unit: 'μm' as const,
+      correctAnisotropy: false
+    };
+
+    const exportResult = await exportPreprocessedDataset({
+      layers,
+      channels,
+      voxelResolution
+    });
     const { blob, manifest } = exportResult;
 
     if (!blob) {
@@ -138,6 +150,7 @@ console.log('Starting preprocessed dataset import/export tests');
     assert.strictEqual(manifest.dataset.channels.length, 1);
     assert.strictEqual(manifest.dataset.channels[0].layers.length, 2);
     assert.strictEqual(manifest.dataset.channels[0].trackEntries.length, 2);
+    assert.deepEqual(manifest.dataset.voxelResolution, voxelResolution);
 
     const archiveBytes = new Uint8Array(await blob.arrayBuffer());
     assert.strictEqual(archiveBytes.byteLength, blob.size);
@@ -171,6 +184,7 @@ console.log('Starting preprocessed dataset import/export tests');
     assert.strictEqual(imported.totalVolumeCount, 3);
     assert.strictEqual(imported.layers.length, 2);
     assert.strictEqual(imported.channelSummaries.length, 1);
+    assert.deepEqual(imported.manifest.dataset.voxelResolution, voxelResolution);
 
     const importedStructural = imported.layers[0];
     assert.strictEqual(importedStructural.isSegmentation, false);
@@ -239,7 +253,7 @@ console.log('Starting preprocessed dataset import/export tests');
     );
 
     const chunkCollector: Uint8Array[] = [];
-    const streamedResult = await exportPreprocessedDataset({ layers, channels }, (chunk) => {
+    const streamedResult = await exportPreprocessedDataset({ layers, channels, voxelResolution }, (chunk) => {
       chunkCollector.push(chunk.slice());
     });
 
@@ -313,7 +327,8 @@ console.log('Starting preprocessed dataset import/export tests');
 
     const { blob: offsetBlob, manifest: offsetManifest } = await exportPreprocessedDataset({
       layers: [offsetLayer],
-      channels: [offsetChannel]
+      channels: [offsetChannel],
+      voxelResolution
     });
 
     const offsetBytes = new Uint8Array(await offsetBlob.arrayBuffer());

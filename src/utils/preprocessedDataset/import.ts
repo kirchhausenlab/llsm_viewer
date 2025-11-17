@@ -3,6 +3,7 @@ import type { FileEntry } from '@zip.js/zip.js';
 
 import type { LoadedLayer } from '../../types/layers';
 import type { NormalizedVolume } from '../../volumeProcessing';
+import { VOXEL_RESOLUTION_UNITS } from '../../types/voxelResolution';
 
 import { computeSha256Hex } from './hash';
 import {
@@ -110,6 +111,22 @@ function validateManifest(manifest: PreprocessedManifest): void {
   }
   if (manifest.version !== 1) {
     throw new Error(`Unsupported preprocessed dataset version: ${manifest.version}`);
+  }
+  const { voxelResolution } = manifest.dataset;
+  if (voxelResolution !== undefined && voxelResolution !== null) {
+    const axes: Array<'x' | 'y' | 'z'> = ['x', 'y', 'z'];
+    for (const axis of axes) {
+      const value = voxelResolution[axis];
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw new Error('Manifest voxel resolution values are invalid.');
+      }
+    }
+    if (!VOXEL_RESOLUTION_UNITS.includes(voxelResolution.unit)) {
+      throw new Error('Manifest voxel resolution unit is invalid.');
+    }
+    if (typeof voxelResolution.correctAnisotropy !== 'boolean') {
+      throw new Error('Manifest voxel resolution metadata is invalid.');
+    }
   }
 }
 

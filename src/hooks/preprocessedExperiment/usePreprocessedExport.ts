@@ -9,6 +9,7 @@ import {
 import type { ChannelExportMetadata } from '../../utils/preprocessedDataset';
 import type { LoadedLayer } from '../../types/layers';
 import type { ChannelSource, StagedPreprocessedExperiment } from '../../App';
+import type { VoxelResolutionValues } from '../../types/voxelResolution';
 
 export type UsePreprocessedExportOptions = {
   channels: ChannelSource[];
@@ -17,6 +18,7 @@ export type UsePreprocessedExportOptions = {
   clearDatasetError: () => void;
   showInteractionWarning: (message: string) => void;
   isLaunchingViewer: boolean;
+  voxelResolution: VoxelResolutionValues | null;
 };
 
 export type UsePreprocessedExportResult = {
@@ -30,7 +32,8 @@ export function usePreprocessedExport({
   loadSelectedDataset,
   clearDatasetError,
   showInteractionWarning,
-  isLaunchingViewer
+  isLaunchingViewer,
+  voxelResolution
 }: UsePreprocessedExportOptions): UsePreprocessedExportResult {
   const [isExportingPreprocessed, setIsExportingPreprocessed] = useState(false);
 
@@ -45,6 +48,14 @@ export function usePreprocessedExport({
 
     if (!hasAnyLayers) {
       showInteractionWarning('There are no volumes available to export.');
+      return;
+    }
+
+    const resolvedVoxelResolution =
+      preprocessedExperiment?.manifest.dataset.voxelResolution ?? voxelResolution;
+
+    if (!resolvedVoxelResolution) {
+      showInteractionWarning('Fill in all voxel resolution fields before exporting.');
       return;
     }
 
@@ -99,7 +110,8 @@ export function usePreprocessedExport({
 
       const { manifest, stream } = await exportPreprocessedDatasetInWorker({
         layers: layersToExport,
-        channels: channelsMetadata
+        channels: channelsMetadata,
+        voxelResolution: resolvedVoxelResolution
       });
 
       const baseNameSource =
@@ -128,7 +140,8 @@ export function usePreprocessedExport({
     isLaunchingViewer,
     loadSelectedDataset,
     preprocessedExperiment,
-    showInteractionWarning
+    showInteractionWarning,
+    voxelResolution
   ]);
 
   return {
