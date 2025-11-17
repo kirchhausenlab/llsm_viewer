@@ -1838,7 +1838,6 @@ function VolumeViewer({
       }
 
       camera.position.add(movementVector);
-      rotationTarget.add(movementVector);
       controls.target.copy(rotationTarget);
     };
 
