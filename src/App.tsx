@@ -44,6 +44,7 @@ import type {
   VoxelResolutionUnit,
   VoxelResolutionValues
 } from './types/voxelResolution';
+import { computeAnisotropyScale, resampleVolume } from './utils/anisotropyCorrection';
 import {
   collectFilesFromDataTransfer,
   createSegmentationSeed,
@@ -812,6 +813,7 @@ function App() {
   const loadSelectedDataset = useCallback(async (): Promise<LoadedLayer[] | null> => {
     clearDatasetError();
     preprocessingSettingsRef.current = voxelResolution;
+    const anisotropyScale = computeAnisotropyScale(voxelResolution);
     const flatLayerSources = channels
       .flatMap((channel) =>
         channel.layers.map((layer) => ({
@@ -916,13 +918,22 @@ function App() {
       }
 
       const normalizedLayers: LoadedLayer[] = rawLayers.map(({ layer, volumes }) => {
+        const correctedVolumes = anisotropyScale
+          ? volumes.map((rawVolume) =>
+              resampleVolume(rawVolume, {
+                scale: anisotropyScale,
+                interpolation: layer.isSegmentation ? 'nearest' : 'linear',
+                targetDataType: layer.isSegmentation ? rawVolume.dataType : 'float32'
+              })
+            )
+          : volumes;
         const normalizedVolumes = layer.isSegmentation
-          ? volumes.map((rawVolume, volumeIndex) =>
+          ? correctedVolumes.map((rawVolume, volumeIndex) =>
               colorizeSegmentationVolume(rawVolume, createSegmentationSeed(layer.key, volumeIndex))
             )
           : (() => {
-              const normalizationParameters = computeNormalizationParameters(volumes);
-              return volumes.map((rawVolume) => normalizeVolume(rawVolume, normalizationParameters));
+              const normalizationParameters = computeNormalizationParameters(correctedVolumes);
+              return correctedVolumes.map((rawVolume) => normalizeVolume(rawVolume, normalizationParameters));
             })();
         return {
           key: layer.key,

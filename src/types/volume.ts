@@ -83,3 +83,28 @@ export function createVolumeTypedArray(
     }
   }
 }
+
+export function createWritableVolumeArray(type: VolumeDataType, length: number): VolumeTypedArray {
+  switch (type) {
+    case 'uint8':
+      return new Uint8Array(length);
+    case 'int8':
+      return new Int8Array(length);
+    case 'uint16':
+      return new Uint16Array(length);
+    case 'int16':
+      return new Int16Array(length);
+    case 'uint32':
+      return new Uint32Array(length);
+    case 'int32':
+      return new Int32Array(length);
+    case 'float32':
+      return new Float32Array(length);
+    case 'float64':
+      return new Float64Array(length);
+    default: {
+      const exhaustive: never = type;
+      throw new Error(`Unsupported volume data type: ${exhaustive}`);
+    }
+  }
+}

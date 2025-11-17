@@ -1,5 +1,11 @@
 export type VoxelResolutionUnit = 'Å' | 'nm' | 'μm' | 'mm';
 
+export type AnisotropyScaleFactors = {
+  x: number;
+  y: number;
+  z: number;
+};
+
 export type VoxelResolutionInput = {
   x: string;
   y: string;

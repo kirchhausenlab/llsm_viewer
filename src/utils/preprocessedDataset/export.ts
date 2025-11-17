@@ -3,6 +3,7 @@ import { BlobWriter, Uint8ArrayReader, ZipWriter } from '@zip.js/zip.js';
 import type { LoadedLayer } from '../../types/layers';
 
 import {
+  type AnisotropyCorrectionMetadata,
   type ExportPreprocessedDatasetChunkHandler,
   type ExportPreprocessedDatasetOptions,
   type ExportPreprocessedDatasetResult,
@@ -13,6 +14,7 @@ import {
   MANIFEST_FILE_NAME
 } from './types';
 import { computeSha256Hex } from './hash';
+import { computeAnisotropyScale } from '../anisotropyCorrection';
 
 const textEncoder = new TextEncoder();
 
@@ -141,6 +143,11 @@ export async function exportPreprocessedDataset(
     }
   }
 
+  const anisotropyScale = computeAnisotropyScale(voxelResolution);
+  const anisotropyCorrection: AnisotropyCorrectionMetadata | null = anisotropyScale
+    ? { scale: anisotropyScale }
+    : null;
+
   const manifest: PreprocessedManifest = {
     format: 'llsm-viewer-preprocessed',
     version: 1,
@@ -148,7 +155,8 @@ export async function exportPreprocessedDataset(
     dataset: {
       totalVolumeCount,
       channels: manifestChannels,
-      voxelResolution
+      voxelResolution,
+      anisotropyCorrection
     }
   };
 

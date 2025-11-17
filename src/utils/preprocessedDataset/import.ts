@@ -128,6 +128,23 @@ function validateManifest(manifest: PreprocessedManifest): void {
       throw new Error('Manifest voxel resolution metadata is invalid.');
     }
   }
+  const { anisotropyCorrection } = manifest.dataset;
+  if (anisotropyCorrection !== undefined && anisotropyCorrection !== null) {
+    if (typeof anisotropyCorrection !== 'object' || anisotropyCorrection === null) {
+      throw new Error('Manifest anisotropy correction metadata is invalid.');
+    }
+    const { scale } = anisotropyCorrection as { scale?: Partial<Record<'x' | 'y' | 'z', number>> };
+    if (!scale) {
+      throw new Error('Manifest anisotropy correction metadata is invalid.');
+    }
+    const axes: Array<'x' | 'y' | 'z'> = ['x', 'y', 'z'];
+    for (const axis of axes) {
+      const value = scale[axis];
+      if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+        throw new Error('Manifest anisotropy correction metadata is invalid.');
+      }
+    }
+  }
 }
 
 function createNormalizedVolume(
