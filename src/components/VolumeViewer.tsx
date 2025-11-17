@@ -393,6 +393,8 @@ function VolumeViewer({
   const currentDimensionsRef = useRef<{ width: number; height: number; depth: number } | null>(null);
   const colormapCacheRef = useRef<Map<string, THREE.DataTexture>>(new Map());
   const rotationTargetRef = useRef(new THREE.Vector3());
+  const rotationAnchorRef = useRef(new THREE.Vector3());
+  const defaultRotationAnchorRef = useRef(new THREE.Vector3());
   const defaultViewStateRef = useRef<{
     position: THREE.Vector3;
     target: THREE.Vector3;
@@ -1276,6 +1278,7 @@ function VolumeViewer({
     if (followedTrackId === null) {
       trackFollowOffsetRef.current = null;
       previousFollowedTrackIdRef.current = null;
+      rotationAnchorRef.current.copy(defaultRotationAnchorRef.current);
       return;
     }
 
@@ -1316,6 +1319,8 @@ function VolumeViewer({
     controls.target.copy(centroid);
     camera.position.copy(centroid).add(offset);
     controls.update();
+
+    rotationAnchorRef.current.copy(centroid);
 
     trackFollowOffsetRef.current = camera.position.clone().sub(rotationTarget);
   }, [
@@ -1364,6 +1369,8 @@ function VolumeViewer({
       camera.position.copy(defaultViewState.position);
       controls.target.copy(defaultViewState.target);
       rotationTargetRef.current.copy(defaultViewState.target);
+      rotationAnchorRef.current.copy(defaultViewState.target);
+      defaultRotationAnchorRef.current.copy(defaultViewState.target);
       controls.update();
       return;
     }
@@ -1371,6 +1378,8 @@ function VolumeViewer({
     controls.reset();
     controls.target.copy(rotationTargetRef.current);
     controls.update();
+    rotationAnchorRef.current.copy(rotationTargetRef.current);
+    defaultRotationAnchorRef.current.copy(rotationTargetRef.current);
   }, [applyVolumeRootTransform]);
   resetVolumeCallbackRef.current = handleResetVolume;
 
@@ -1526,6 +1535,7 @@ function VolumeViewer({
     controls.enableDamping = false;
     controls.dampingFactor = 0;
     controls.enablePan = false;
+    controls.enableRotate = false;
     controls.rotateSpeed = 0.65;
     controls.zoomSpeed = 0.7;
     controlsRef.current = controls;
@@ -1635,18 +1645,25 @@ function VolumeViewer({
         return;
       }
 
-      if (event.button !== 0) {
+      if (event.button !== 0 || !event.isPrimary) {
         return;
       }
 
-      const mode = event.ctrlKey ? 'dolly' : event.shiftKey ? 'pan' : null;
+      let mode: PointerState['mode'] | null = null;
+      if (event.ctrlKey) {
+        mode = 'dolly';
+      } else if (event.shiftKey) {
+        mode = 'pan';
+      } else {
+        mode = 'rotate';
+      }
 
-      if (!mode) {
+      if (mode === 'rotate') {
         const hitTrackId = performHoverHitTest(event);
         if (hitTrackId !== null) {
           onTrackSelectionToggle(hitTrackId);
+          return;
         }
-        return;
       }
 
       event.preventDefault();
@@ -1699,7 +1716,7 @@ function VolumeViewer({
         const panControls = getOrbitControlsPan(controls);
         panControls?.(deltaX, deltaY);
         rotationTargetRef.current.copy(controls.target);
-      } else {
+      } else if (state.mode === 'dolly') {
         const rotationTarget = rotationTargetRef.current;
         camera.getWorldDirection(dollyDirection);
         const distance = rotationTarget.distanceTo(camera.position);
@@ -1708,6 +1725,8 @@ function VolumeViewer({
         dollyDirection.multiplyScalar(moveAmount);
         camera.position.add(dollyDirection);
         controls.target.copy(rotationTarget);
+      } else {
+        rotateCameraAroundAnchor(deltaX, deltaY);
       }
 
       controls.update();
@@ -1772,6 +1791,52 @@ function VolumeViewer({
     const rightVector = new THREE.Vector3();
     const movementVector = new THREE.Vector3();
     const dollyDirection = new THREE.Vector3();
+    const orbitRotationOffset = new THREE.Vector3();
+    const orbitTranslationOffset = new THREE.Vector3();
+    const orbitSpherical = new THREE.Spherical();
+
+    const rotateCameraAroundAnchor = (deltaX: number, deltaY: number) => {
+      const cameraInstance = cameraRef.current;
+      const controlsInstance = controlsRef.current;
+      if (!cameraInstance || !controlsInstance) {
+        return;
+      }
+
+      const rotationTarget = rotationTargetRef.current;
+      const rotationAnchor = rotationAnchorRef.current;
+      if (!rotationTarget || !rotationAnchor) {
+        return;
+      }
+
+      const elementWidth = domElement.clientWidth;
+      const elementHeight = domElement.clientHeight;
+      const minDimension = Math.min(elementWidth, elementHeight);
+      const safeDimension = minDimension > 0 ? minDimension : 1;
+      const rotationSpeed = controlsInstance.rotateSpeed ?? 1;
+
+      orbitTranslationOffset.copy(rotationTarget).sub(rotationAnchor);
+      orbitRotationOffset.copy(cameraInstance.position).sub(rotationTarget);
+      orbitSpherical.setFromVector3(orbitRotationOffset);
+
+      const azimuthDelta = (2 * Math.PI * deltaX * rotationSpeed) / safeDimension;
+      const polarDelta = (Math.PI * deltaY * rotationSpeed) / safeDimension;
+
+      orbitSpherical.theta -= azimuthDelta;
+      orbitSpherical.phi -= polarDelta;
+
+      const EPS = 1e-4;
+      orbitSpherical.phi = Math.max(EPS, Math.min(Math.PI - EPS, orbitSpherical.phi));
+      orbitSpherical.makeSafe();
+
+      orbitRotationOffset.setFromSpherical(orbitSpherical);
+
+      cameraInstance.position
+        .copy(rotationAnchor)
+        .add(orbitTranslationOffset)
+        .add(orbitRotationOffset);
+
+      controlsInstance.target.copy(rotationTarget);
+    };
 
     const applyKeyboardMovement = () => {
       if (renderer.xr.isPresenting) {
@@ -2275,6 +2340,8 @@ function VolumeViewer({
       rotationTargetRef.current.set(0, 0, 0);
       controls.target.set(0, 0, 0);
       controls.update();
+      rotationAnchorRef.current.set(0, 0, 0);
+      defaultRotationAnchorRef.current.set(0, 0, 0);
       defaultViewStateRef.current = {
         position: camera.position.clone(),
         target: controls.target.clone()
@@ -2318,6 +2385,8 @@ function VolumeViewer({
       rotationTarget.set(0, 0, 0);
       controls.target.copy(rotationTarget);
       controls.update();
+      rotationAnchorRef.current.copy(rotationTarget);
+      defaultRotationAnchorRef.current.copy(rotationTarget);
       defaultViewStateRef.current = {
         position: camera.position.clone(),
         target: controls.target.clone()

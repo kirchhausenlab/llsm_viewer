@@ -8,6 +8,14 @@
 
 # Progress Log
 
+## Desktop rotation pivot fix
+- Restored the keyboard translation handler so WASDQE inputs once again move the camera and view target together instead of
+  spinning around the dataset.
+- Added a dedicated rotation anchor for the non-VR viewer and replaced the OrbitControls-based rotation with a custom handler
+  that orbits the camera around the volume center regardless of prior translations.
+- Hooked the new anchor into the reset and track-follow flows so intentional target changes continue to redefine the pivot
+  while casual pans leave it untouched.
+
 ## Playback and VR HUD recovery
 - Synced the desktop playback loop with the viewer props even when the WebXR bundle is still loading so play/pause works
   immediately instead of waiting for the VR module to hydrate.

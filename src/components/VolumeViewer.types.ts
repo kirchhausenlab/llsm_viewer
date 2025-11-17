@@ -155,7 +155,7 @@ export type VrHistogramShape = {
 };
 
 export type PointerState = {
-  mode: 'pan' | 'dolly';
+  mode: 'pan' | 'dolly' | 'rotate';
   pointerId: number;
   lastX: number;
   lastY: number;
