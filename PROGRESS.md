@@ -4,6 +4,10 @@
 - Highlighted the hovered voxel directly inside the MIP shader with a subtle pulse so users can see which 3D location the tooltip
   refers to, while keeping the feature disabled for isosurface rendering and VR sessions.
 
+# 3D hover target selection
+- Let voxel hover sampling target any visible 3D volume instead of only DVR render styles so tooltips appear across render modes
+  while still clearing the hover state when no 3D layers are present.
+
 # VR performance tuning
 - Added a configurable `u_stepScale` ray-march uniform so headset sessions can trade sampling density for performance without
   recompiling shaders.
