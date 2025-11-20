@@ -456,7 +456,7 @@ function VolumeViewer({
     controller: { trackId: null as string | null, position: null as { x: number; y: number } | null }
   });
   const layersRef = useRef(layers);
-  const [hoveredVoxelInfo, setHoveredVoxelInfo] = useState<string | null>(null);
+  const hoverIntensityRef = useRef<string | null>(null);
   const hoveredVoxelRef = useRef<{ layerKey: string | null; normalizedPosition: THREE.Vector3 | null }>(
     {
       layerKey: null,
@@ -588,11 +588,22 @@ function VolumeViewer({
     }
   }, []);
 
+  const emitHoverIntensity = useCallback(
+    (value: string | null) => {
+      if (value === hoverIntensityRef.current) {
+        return;
+      }
+      hoverIntensityRef.current = value;
+      onHoverIntensityChange?.(value);
+    },
+    [onHoverIntensityChange]
+  );
+
   const clearVoxelHover = useCallback(() => {
-    setHoveredVoxelInfo(null);
+    emitHoverIntensity(null);
     hoveredVoxelRef.current = { layerKey: null, normalizedPosition: null };
     applyHoverHighlightToResources();
-  }, [applyHoverHighlightToResources]);
+  }, [applyHoverHighlightToResources, emitHoverIntensity]);
 
   const playbackStateForVr = useMemo(
     () => ({
@@ -1632,11 +1643,11 @@ function VolumeViewer({
         return;
       }
 
-      setHoveredVoxelInfo(parts.join(' · '));
+      emitHoverIntensity(parts.join(' · '));
       hoveredVoxelRef.current = { layerKey: targetLayer.key, normalizedPosition: hoverMaxPosition.clone() };
       applyHoverHighlightToResources();
     },
-    [applyHoverHighlightToResources, clearVoxelHover],
+    [applyHoverHighlightToResources, clearVoxelHover, emitHoverIntensity],
   );
 
   useEffect(() => {
@@ -3018,14 +3029,10 @@ function VolumeViewer({
     : null;
 
   useEffect(() => {
-    onHoverIntensityChange?.(hoveredVoxelInfo);
-  }, [hoveredVoxelInfo, onHoverIntensityChange]);
-
-  useEffect(() => {
     return () => {
-      onHoverIntensityChange?.(null);
+      emitHoverIntensity(null);
     };
-  }, [onHoverIntensityChange]);
+  }, [emitHoverIntensity]);
 
   return (
     <div className="volume-viewer">

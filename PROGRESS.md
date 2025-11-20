@@ -609,3 +609,7 @@ d centered the front-page card in the viewport.
 ## 3D hover readout relocation
 - Removed the 3D viewer's intensity hover tooltip and routed the sampled voxel text into the top menu for a persistent, distraction-free readout.
 - Added a right-aligned hover intensity slot to the top menu, providing breathing room between existing controls and the hover text while updating live as the pointer moves.
+
+## 3D hover intensity fix
+- Emitted hover intensity changes directly from the 3D viewer as the hover target updates, ensuring the top menu readout reflects the current voxel instead of staying blank.
+- Cleared the shared hover intensity emitter during unmount and hover resets so stale values no longer persist between interactions.
