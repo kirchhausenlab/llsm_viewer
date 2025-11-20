@@ -455,6 +455,7 @@ function VolumeViewer({
     pointer: { trackId: null as string | null, position: null as { x: number; y: number } | null },
     controller: { trackId: null as string | null, position: null as { x: number; y: number } | null }
   });
+  const layersRef = useRef(layers);
   const [hoveredVoxelInfo, setHoveredVoxelInfo] = useState<string | null>(null);
   const hoveredVoxelRef = useRef<{ layerKey: string | null; normalizedPosition: THREE.Vector3 | null }>(
     {
@@ -556,6 +557,10 @@ function VolumeViewer({
     },
     [applyHoverState]
   );
+
+  useEffect(() => {
+    layersRef.current = layers;
+  }, [layers]);
 
   const applyHoverHighlightToResources = useCallback(() => {
     const { layerKey, normalizedPosition } = hoveredVoxelRef.current;
@@ -1362,12 +1367,13 @@ function VolumeViewer({
         return;
       }
 
-      let targetLayer: (typeof layers)[number] | null = null;
+      const layersSnapshot = layersRef.current;
+      let targetLayer: (typeof layersSnapshot)[number] | null = null;
       let resource: VolumeResources | null = null;
-      let fallbackLayer: (typeof layers)[number] | null = null;
+      let fallbackLayer: (typeof layersSnapshot)[number] | null = null;
       let fallbackResource: VolumeResources | null = null;
 
-      for (const layer of layers) {
+      for (const layer of layersSnapshot) {
         const volume = layer.volume;
         if (!volume || !layer.visible) {
           continue;
@@ -1630,7 +1636,7 @@ function VolumeViewer({
       hoveredVoxelRef.current = { layerKey: targetLayer.key, normalizedPosition: hoverMaxPosition.clone() };
       applyHoverHighlightToResources();
     },
-    [applyHoverHighlightToResources, clearVoxelHover, layers],
+    [applyHoverHighlightToResources, clearVoxelHover],
   );
 
   useEffect(() => {
