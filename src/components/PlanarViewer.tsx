@@ -8,6 +8,8 @@ import './PlanarViewer.css';
 type ViewerLayer = {
   key: string;
   label: string;
+  channelId: string;
+  channelName: string;
   volume: NormalizedVolume | null;
   visible: boolean;
   sliderRange: number;
@@ -180,16 +182,25 @@ function formatIntensityValue(value: number, type: VolumeDataType) {
   return value.toPrecision(4);
 }
 
-function formatChannelValues(values: number[], type: VolumeDataType) {
+function formatChannelValues(
+  values: number[],
+  type: VolumeDataType,
+  channelLabel: string | null,
+  includeLabel: boolean
+) {
   if (values.length === 0) {
-    return null;
+    return [];
   }
+
   if (values.length === 1) {
-    return formatIntensityValue(values[0], type);
+    const prefix = includeLabel && channelLabel ? `${channelLabel} ` : '';
+    return [`${prefix}${formatIntensityValue(values[0], type)}`.trim()];
   }
-  return values
-    .map((value, index) => `C${index + 1} ${formatIntensityValue(value, type)}`)
-    .join(' · ');
+
+  return values.map((value, index) => {
+    const prefix = includeLabel && channelLabel ? `${channelLabel} C${index + 1}` : `C${index + 1}`;
+    return `${prefix} ${formatIntensityValue(value, type)}`;
+  });
 }
 
 function createInitialViewState(): ViewState {
@@ -569,6 +580,8 @@ function PlanarViewer({
         return null;
       }
 
+      const samples: Array<{ values: number[]; type: VolumeDataType; label: string | null }> = [];
+
       for (const layer of layers) {
         const volume = layer.volume;
         if (!volume || !layer.visible) {
@@ -627,15 +640,25 @@ function PlanarViewer({
           channelValues.push(denormalizeValue(sampleChannel(channelIndex), volume));
         }
 
-        const formatted = formatChannelValues(channelValues, volume.dataType);
-        if (!formatted) {
-          return null;
-        }
-
-        return formatted;
+        const channelLabel = layer.channelName?.trim() || layer.label?.trim() || null;
+        samples.push({ values: channelValues, type: volume.dataType, label: channelLabel });
       }
 
-      return null;
+      const totalValues = samples.reduce((sum, sample) => sum + sample.values.length, 0);
+      if (totalValues === 0) {
+        return null;
+      }
+
+      const includeLabel = totalValues > 1;
+      const parts = samples.flatMap((sample) =>
+        formatChannelValues(sample.values, sample.type, sample.label, includeLabel)
+      );
+
+      if (parts.length === 0) {
+        return null;
+      }
+
+      return parts.join(' · ');
     },
     [clampedSliceIndex, layers, sliceData]
   );

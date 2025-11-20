@@ -2550,6 +2550,8 @@ function App() {
       return {
         key: layer.key,
         label: layer.label,
+        channelId: layer.channelId,
+        channelName: channelNameMap.get(layer.channelId) ?? 'Untitled channel',
         volume: layer.volumes[selectedIndex] ?? null,
         visible: channelVisible ?? true,
         sliderRange: settings.sliderRange,
@@ -2568,7 +2570,15 @@ function App() {
         isSegmentation: layer.isSegmentation
       };
     });
-  }, [activeChannelTabId, channelActiveLayer, channelVisibility, layerSettings, layers, selectedIndex]);
+  }, [
+    activeChannelTabId,
+    channelActiveLayer,
+    channelNameMap,
+    channelVisibility,
+    layerSettings,
+    layers,
+    selectedIndex
+  ]);
 
   const maxSliceDepth = useMemo(() => {
     let depth = 0;
