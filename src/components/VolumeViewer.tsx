@@ -210,6 +210,9 @@ const hoverEntryPoint = new THREE.Vector3();
 const hoverExitPoint = new THREE.Vector3();
 const hoverLocalRay = new THREE.Ray();
 const hoverReverseRay = new THREE.Ray();
+const hoverBoundingBox = new THREE.Box3();
+const hoverLayerMatrix = new THREE.Matrix4();
+const hoverLayerOffsetMatrix = new THREE.Matrix4();
 
 function computeViewerYawBasis(
   renderer: THREE.WebGLRenderer | null,
@@ -1380,8 +1383,7 @@ function VolumeViewer({
       const layersSnapshot = layersRef.current;
       let targetLayer: (typeof layersSnapshot)[number] | null = null;
       let resource: VolumeResources | null = null;
-      let fallbackLayer: (typeof layersSnapshot)[number] | null = null;
-      let fallbackResource: VolumeResources | null = null;
+      let cpuFallbackLayer: (typeof layersSnapshot)[number] | null = null;
 
       for (const layer of layersSnapshot) {
         const volume = layer.volume;
@@ -1400,31 +1402,24 @@ function VolumeViewer({
           continue;
         }
 
-        const candidate = resourcesRef.current.get(layer.key);
-        if (!candidate) {
-          continue;
+        const candidate = resourcesRef.current.get(layer.key) ?? null;
+        if (candidate?.mode === '3d') {
+          targetLayer = layer;
+          resource = candidate;
+          break;
         }
 
-        if (!fallbackLayer) {
-          fallbackLayer = layer;
-          fallbackResource = candidate;
+        if (!cpuFallbackLayer) {
+          cpuFallbackLayer = layer;
         }
-
-        if (candidate.mode !== '3d') {
-          continue;
-        }
-
-        targetLayer = layer;
-        resource = candidate;
-        break;
       }
 
-      if (!targetLayer && !resource && fallbackLayer && fallbackResource) {
-        targetLayer = fallbackLayer;
-        resource = fallbackResource;
+      if (!targetLayer && cpuFallbackLayer) {
+        targetLayer = cpuFallbackLayer;
       }
 
-      if (!targetLayer || !targetLayer.volume || !resource) {
+      if (!targetLayer || !targetLayer.volume) {
+        console.debug('Voxel hover unavailable: no visible 3D volume layers to sample.');
         clearVoxelHover();
         return;
       }
@@ -1432,23 +1427,49 @@ function VolumeViewer({
       const volume = targetLayer.volume;
       hoverVolumeSize.set(volume.width, volume.height, volume.depth);
 
-      const geometry = resource.mesh.geometry as THREE.BufferGeometry;
-      if (!geometry.boundingBox) {
-        geometry.computeBoundingBox();
+      const useGpuHover = resource?.mode === '3d';
+      let boundingBox: THREE.Box3 | null = null;
+
+      if (useGpuHover) {
+        const geometry = resource.mesh.geometry as THREE.BufferGeometry;
+        if (!geometry.boundingBox) {
+          geometry.computeBoundingBox();
+        }
+
+        boundingBox = geometry.boundingBox ?? null;
+        resource.mesh.updateMatrixWorld(true);
+      } else {
+        hoverBoundingBox.min.set(-0.5, -0.5, -0.5);
+        hoverBoundingBox.max.set(
+          volume.width - 0.5,
+          volume.height - 0.5,
+          volume.depth - 0.5,
+        );
+        boundingBox = hoverBoundingBox;
       }
 
-      const boundingBox = geometry.boundingBox;
       if (!boundingBox) {
+        console.debug('Voxel hover unavailable: could not compute a bounding box for sampling.');
         clearVoxelHover();
         return;
       }
 
-      resource.mesh.updateMatrixWorld(true);
-
       hoverPointerVector.set((offsetX / width) * 2 - 1, -(offsetY / height) * 2 + 1);
       raycasterInstance.setFromCamera(hoverPointerVector, cameraInstance);
 
-      hoverInverseMatrix.copy(resource.mesh.matrixWorld).invert();
+      if (useGpuHover && resource) {
+        hoverInverseMatrix.copy(resource.mesh.matrixWorld).invert();
+      } else {
+        const volumeRootGroup = volumeRootGroupRef.current;
+        hoverLayerMatrix.identity();
+        if (volumeRootGroup) {
+          volumeRootGroup.updateMatrixWorld(true);
+          hoverLayerMatrix.copy(volumeRootGroup.matrixWorld);
+        }
+        hoverLayerOffsetMatrix.makeTranslation(targetLayer.offsetX, targetLayer.offsetY, 0);
+        hoverLayerMatrix.multiply(hoverLayerOffsetMatrix);
+        hoverInverseMatrix.copy(hoverLayerMatrix).invert();
+      }
       hoverLocalRay.copy(raycasterInstance.ray).applyMatrix4(hoverInverseMatrix);
 
       const hasEntry = hoverLocalRay.intersectBox(boundingBox, hoverEntryPoint);
