@@ -419,4 +419,5 @@ export type RaycasterLike = {
   params: THREE.RaycasterParameters;
   setFromCamera: (coords: THREE.Vector2, camera: THREE.PerspectiveCamera) => void;
   intersectObjects: (objects: THREE.Object3D[], recursive?: boolean) => Array<{ object: THREE.Object3D }>;
+  ray: THREE.Ray;
 };
