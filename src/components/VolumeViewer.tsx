@@ -206,9 +206,9 @@ const hoverRefineStep = new THREE.Vector3();
 const hoverMaxPosition = new THREE.Vector3();
 const hoverStartNormalized = new THREE.Vector3();
 const hoverVolumeSize = new THREE.Vector3();
-const hoverBoundingBox = new THREE.Box3();
 const hoverEntryPoint = new THREE.Vector3();
 const hoverExitPoint = new THREE.Vector3();
+const hoverLocalRay = new THREE.Ray();
 const hoverReverseRay = new THREE.Ray();
 
 function computeViewerYawBasis(
@@ -1444,29 +1444,27 @@ function VolumeViewer({
       }
 
       resource.mesh.updateMatrixWorld(true);
-      hoverBoundingBox.copy(boundingBox).applyMatrix4(resource.mesh.matrixWorld);
 
       hoverPointerVector.set((offsetX / width) * 2 - 1, -(offsetY / height) * 2 + 1);
       raycasterInstance.setFromCamera(hoverPointerVector, cameraInstance);
 
-      const hasEntry = raycasterInstance.ray.intersectBox(hoverBoundingBox, hoverEntryPoint);
-      hoverReverseRay.copy(raycasterInstance.ray);
+      hoverInverseMatrix.copy(resource.mesh.matrixWorld).invert();
+      hoverLocalRay.copy(raycasterInstance.ray).applyMatrix4(hoverInverseMatrix);
+
+      const hasEntry = hoverLocalRay.intersectBox(boundingBox, hoverEntryPoint);
+      hoverReverseRay.copy(hoverLocalRay);
       hoverReverseRay.direction.multiplyScalar(-1);
-      const hasExit = hoverReverseRay.intersectBox(hoverBoundingBox, hoverExitPoint);
+      const hasExit = hoverReverseRay.intersectBox(boundingBox, hoverExitPoint);
 
       if (!hasEntry || !hasExit) {
         clearVoxelHover();
         return;
       }
 
-      const entryDistance = raycasterInstance.ray.origin.distanceTo(hoverEntryPoint);
-      const exitDistance = raycasterInstance.ray.origin.distanceTo(hoverExitPoint);
-      const worldStart = entryDistance <= exitDistance ? hoverEntryPoint : hoverExitPoint;
-      const worldEnd = entryDistance <= exitDistance ? hoverExitPoint : hoverEntryPoint;
-
-      hoverInverseMatrix.copy(resource.mesh.matrixWorld).invert();
-      hoverStart.copy(worldStart).applyMatrix4(hoverInverseMatrix);
-      hoverEnd.copy(worldEnd).applyMatrix4(hoverInverseMatrix);
+      const entryDistance = hoverLocalRay.origin.distanceTo(hoverEntryPoint);
+      const exitDistance = hoverLocalRay.origin.distanceTo(hoverExitPoint);
+      hoverStart.copy(entryDistance <= exitDistance ? hoverEntryPoint : hoverExitPoint);
+      hoverEnd.copy(entryDistance <= exitDistance ? hoverExitPoint : hoverEntryPoint);
 
       const safeStepScale = Math.max(volumeStepScaleRef.current, 1e-3);
       const travelDistance = hoverEnd.distanceTo(hoverStart);

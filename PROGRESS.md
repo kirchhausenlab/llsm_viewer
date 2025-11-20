@@ -621,3 +621,7 @@ d centered the front-page card in the viewport.
 ## 3D hover intensity reliability
 - Replaced the manual slab intersection with bounding-box ray checks when sampling hovered voxels so the intensity readout can always find an entry and exit point through the volume, even when transforms or offsets change.
 - Kept the hover sampling pipeline intact so the top-menu readout updates without impacting the 2D slice hover behavior.
+
+## 3D hover intensity robustness follow-up
+- Shifted hover ray computations into volume-local space before intersecting the bounding box, ensuring rotations and group transforms no longer prevent entry/exit hits.
+- Left the sampling and formatting logic intact so 2D hover readouts remain unaffected.
