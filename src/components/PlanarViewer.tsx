@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { TrackColorMode, TrackDefinition } from '../types/tracks';
 import { getTrackColorHex } from '../trackColors';
 import type { NormalizedVolume } from '../volumeProcessing';
+import type { VolumeDataType } from '../types/volume';
 import './PlanarViewer.css';
 
 type ViewerLayer = {
@@ -85,6 +86,11 @@ type TrackRenderEntry = {
   highlightColor: { r: number; g: number; b: number };
 };
 
+type HoveredPixelInfo = {
+  text: string;
+  position: { x: number; y: number };
+};
+
 const MIN_ALPHA = 0.05;
 const ROTATION_KEY_STEP = 0.1;
 const PAN_STEP = 40;
@@ -146,6 +152,46 @@ function componentsToCss({ r, g, b }: { r: number; g: number; b: number }) {
   return `rgb(${red}, ${green}, ${blue})`;
 }
 
+function isIntegerDataType(type: VolumeDataType) {
+  return type.startsWith('uint') || type.startsWith('int');
+}
+
+function denormalizeValue(value: number, volume: NormalizedVolume) {
+  const ratio = value / 255;
+  return volume.min + ratio * (volume.max - volume.min);
+}
+
+function formatIntensityValue(value: number, type: VolumeDataType) {
+  if (!Number.isFinite(value)) {
+    return 'N/A';
+  }
+
+  if (isIntegerDataType(type)) {
+    return Math.round(value).toString();
+  }
+
+  const magnitude = Math.abs(value);
+  if (magnitude >= 1000) {
+    return value.toFixed(1);
+  }
+  if (magnitude >= 1) {
+    return value.toFixed(3);
+  }
+  return value.toPrecision(4);
+}
+
+function formatChannelValues(values: number[], type: VolumeDataType) {
+  if (values.length === 0) {
+    return null;
+  }
+  if (values.length === 1) {
+    return formatIntensityValue(values[0], type);
+  }
+  return values
+    .map((value, index) => `C${index + 1} ${formatIntensityValue(value, type)}`)
+    .join(' · ');
+}
+
 function createInitialViewState(): ViewState {
   return { scale: 1, offsetX: 0, offsetY: 0, rotation: 0 };
 }
@@ -192,6 +238,7 @@ function PlanarViewer({
   const [sliceRevision, setSliceRevision] = useState(0);
   const [hoveredTrackId, setHoveredTrackId] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
+  const [hoveredPixelInfo, setHoveredPixelInfo] = useState<HoveredPixelInfo | null>(null);
 
   const effectiveMaxSlices = Math.max(0, maxSlices);
   const clampedSliceIndex =
@@ -516,6 +563,83 @@ function PlanarViewer({
     return { width, height, buffer: output, hasLayer };
   }, [layers, primaryVolume, clampedSliceIndex]);
 
+  const samplePixelValue = useCallback(
+    (sliceX: number, sliceY: number) => {
+      if (!sliceData || !sliceData.hasLayer) {
+        return null;
+      }
+
+      for (const layer of layers) {
+        const volume = layer.volume;
+        if (!volume || !layer.visible) {
+          continue;
+        }
+        if (volume.width !== sliceData.width || volume.height !== sliceData.height) {
+          continue;
+        }
+        if (volume.depth <= 0) {
+          continue;
+        }
+
+        const channels = Math.max(1, volume.channels);
+        const slice = clamp(clampedSliceIndex, 0, Math.max(0, volume.depth - 1));
+        const sliceStride = volume.width * volume.height * channels;
+        const rowStride = volume.width * channels;
+        const sliceOffset = slice * sliceStride;
+
+        const offsetX = layer.offsetX ?? 0;
+        const offsetY = layer.offsetY ?? 0;
+        const sampleX = sliceX - offsetX;
+        const sampleY = sliceY - offsetY;
+
+        const clampedX = clamp(sampleX, 0, volume.width - 1);
+        const clampedY = clamp(sampleY, 0, volume.height - 1);
+        const leftX = Math.floor(clampedX);
+        const rightX = Math.min(volume.width - 1, leftX + 1);
+        const topY = Math.floor(clampedY);
+        const bottomY = Math.min(volume.height - 1, topY + 1);
+        const tX = clampedX - leftX;
+        const tY = clampedY - topY;
+
+        const weightTopLeft = (1 - tX) * (1 - tY);
+        const weightTopRight = tX * (1 - tY);
+        const weightBottomLeft = (1 - tX) * tY;
+        const weightBottomRight = tX * tY;
+
+        const topRowOffset = sliceOffset + topY * rowStride;
+        const bottomRowOffset = sliceOffset + bottomY * rowStride;
+
+        const sampleChannel = (channelIndex: number) => {
+          const topLeftOffset = topRowOffset + leftX * channels + channelIndex;
+          const topRightOffset = topRowOffset + rightX * channels + channelIndex;
+          const bottomLeftOffset = bottomRowOffset + leftX * channels + channelIndex;
+          const bottomRightOffset = bottomRowOffset + rightX * channels + channelIndex;
+          return (
+            (volume.normalized[topLeftOffset] ?? 0) * weightTopLeft +
+            (volume.normalized[topRightOffset] ?? 0) * weightTopRight +
+            (volume.normalized[bottomLeftOffset] ?? 0) * weightBottomLeft +
+            (volume.normalized[bottomRightOffset] ?? 0) * weightBottomRight
+          );
+        };
+
+        const channelValues: number[] = [];
+        for (let channelIndex = 0; channelIndex < channels; channelIndex++) {
+          channelValues.push(denormalizeValue(sampleChannel(channelIndex), volume));
+        }
+
+        const formatted = formatChannelValues(channelValues, volume.dataType);
+        if (!formatted) {
+          return null;
+        }
+
+        return formatted;
+      }
+
+      return null;
+    },
+    [clampedSliceIndex, layers, sliceData]
+  );
+
   const trackRenderData = useMemo(() => {
     if (!primaryVolume) {
       return [] as TrackRenderEntry[];
@@ -572,6 +696,71 @@ function PlanarViewer({
     resolveTrackHexColor,
     tracks
   ]);
+
+  const clearPixelInfo = useCallback(() => {
+    setHoveredPixelInfo(null);
+  }, []);
+
+  const updatePixelHover = useCallback(
+    (event: PointerEvent) => {
+      if (!sliceData || !sliceData.hasLayer) {
+        clearPixelInfo();
+        return;
+      }
+
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        clearPixelInfo();
+        return;
+      }
+
+      const rect = canvas.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+      if (width <= 0 || height <= 0) {
+        clearPixelInfo();
+        return;
+      }
+
+      const pointerX = event.clientX - rect.left;
+      const pointerY = event.clientY - rect.top;
+      if (pointerX < 0 || pointerY < 0 || pointerX > width || pointerY > height) {
+        clearPixelInfo();
+        return;
+      }
+
+      const currentView = viewStateRef.current;
+      const scale = Math.max(currentView.scale, 1e-6);
+      const rotation = currentView.rotation;
+      const cos = Math.cos(rotation);
+      const sin = Math.sin(rotation);
+      const centerX = width / 2 + currentView.offsetX;
+      const centerY = height / 2 + currentView.offsetY;
+      const dx = pointerX - centerX;
+      const dy = pointerY - centerY;
+      const rotatedX = dx * cos + dy * sin;
+      const rotatedY = -dx * sin + dy * cos;
+      const sliceX = rotatedX / scale + sliceData.width / 2;
+      const sliceY = rotatedY / scale + sliceData.height / 2;
+
+      if (sliceX < 0 || sliceY < 0 || sliceX >= sliceData.width || sliceY >= sliceData.height) {
+        clearPixelInfo();
+        return;
+      }
+
+      const text = samplePixelValue(sliceX, sliceY);
+      if (!text) {
+        clearPixelInfo();
+        return;
+      }
+
+      setHoveredPixelInfo({
+        text,
+        position: { x: pointerX, y: pointerY }
+      });
+    },
+    [clearPixelInfo, samplePixelValue, sliceData]
+  );
 
   const computeTrackCentroid = useCallback(
     (trackId: string, targetTimeIndex: number) => {
@@ -1029,6 +1218,12 @@ function PlanarViewer({
   }, [drawSlice, sliceData]);
 
   useEffect(() => {
+    if (!sliceData || !sliceData.hasLayer) {
+      setHoveredPixelInfo(null);
+    }
+  }, [sliceData]);
+
+  useEffect(() => {
     if (needsAutoFitRef.current) {
       needsAutoFitRef.current = false;
       resetView();
@@ -1157,6 +1352,7 @@ function PlanarViewer({
           };
         });
         clearHoverState();
+        updatePixelHover(event);
         return;
       }
 
@@ -1166,6 +1362,7 @@ function PlanarViewer({
       } else {
         clearHoverState();
       }
+      updatePixelHover(event);
     };
 
     const handlePointerEnd = (event: PointerEvent) => {
@@ -1184,6 +1381,7 @@ function PlanarViewer({
       } else {
         clearHoverState();
       }
+      updatePixelHover(event);
     };
 
     const handleWheel = (event: WheelEvent) => {
@@ -1218,6 +1416,7 @@ function PlanarViewer({
     onTrackFollowRequest,
     performTrackHitTest,
     updateHoverState,
+    updatePixelHover,
     updateViewState
   ]);
 
@@ -1330,6 +1529,16 @@ function PlanarViewer({
           ref={containerRef}
         >
           <canvas ref={canvasRef} className="planar-canvas" />
+          {hoveredPixelInfo ? (
+            <div
+              className="intensity-tooltip"
+              style={{ left: `${hoveredPixelInfo.position.x}px`, top: `${hoveredPixelInfo.position.y}px` }}
+              role="status"
+              aria-live="polite"
+            >
+              {hoveredPixelInfo.text}
+            </div>
+          ) : null}
           {hoveredTrackLabel && tooltipPosition ? (
             <div
               className="track-tooltip"
