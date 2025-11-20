@@ -625,3 +625,7 @@ d centered the front-page card in the viewport.
 ## 3D hover intensity robustness follow-up
 - Shifted hover ray computations into volume-local space before intersecting the bounding box, ensuring rotations and group transforms no longer prevent entry/exit hits.
 - Left the sampling and formatting logic intact so 2D hover readouts remain unaffected.
+
+## 3D hover hover capture reliability
+- Routed pointer move/leave/up listeners through the render container so hover sampling keeps working even when overlays or helper elements sit above the canvas.
+- Preserved existing pointerdown handling on the canvas to keep orbit controls behavior unchanged while expanding the hover readout coverage area.
