@@ -605,3 +605,7 @@ d centered the front-page card in the viewport.
 ## Planar viewer hover details refinements
 - Adjusted the pixel hover formatter to collect values from all visible layers, allowing multi-channel datasets to display one entry per channel instead of stopping at the first layer.
 - Prefixed hover readouts with channel names only when multiple values are present so single-channel tooltips no longer show the generic "Volume" label while multi-channel data remains identifiable.
+
+## 3D hover readout relocation
+- Removed the 3D viewer's intensity hover tooltip and routed the sampled voxel text into the top menu for a persistent, distraction-free readout.
+- Added a right-aligned hover intensity slot to the top menu, providing breathing room between existing controls and the hover text while updating live as the pointer moves.

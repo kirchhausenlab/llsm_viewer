@@ -132,6 +132,7 @@ export type VolumeViewerProps = {
   followedTrackId: string | null;
   onTrackSelectionToggle: (trackId: string) => void;
   onTrackFollowRequest: (trackId: string) => void;
+  onHoverIntensityChange?: (value: string | null) => void;
   vr?: VolumeViewerVrProps;
 };
 

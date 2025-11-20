@@ -158,11 +158,6 @@ type UseVolumeViewerVrBridgeProps = {
   onValue: Dispatch<SetStateAction<UseVolumeViewerVrResult | null>>;
 };
 
-type HoveredVoxelInfo = {
-  text: string;
-  position: { x: number; y: number };
-};
-
 const UseVolumeViewerVrBridge = lazy(async () => {
   const module = await import('./volume-viewer/useVolumeViewerVr');
   const Bridge = ({ params, onValue }: UseVolumeViewerVrBridgeProps) => {
@@ -372,6 +367,7 @@ function VolumeViewer({
   followedTrackId,
   onTrackSelectionToggle,
   onTrackFollowRequest,
+  onHoverIntensityChange,
   vr
 }: VolumeViewerProps) {
   const vrLog = (...args: Parameters<typeof console.debug>) => {
@@ -459,7 +455,7 @@ function VolumeViewer({
     pointer: { trackId: null as string | null, position: null as { x: number; y: number } | null },
     controller: { trackId: null as string | null, position: null as { x: number; y: number } | null }
   });
-  const [hoveredVoxelInfo, setHoveredVoxelInfo] = useState<HoveredVoxelInfo | null>(null);
+  const [hoveredVoxelInfo, setHoveredVoxelInfo] = useState<string | null>(null);
   const hoveredVoxelRef = useRef<{ layerKey: string | null; normalizedPosition: THREE.Vector3 | null }>(
     {
       layerKey: null,
@@ -1630,10 +1626,7 @@ function VolumeViewer({
         return;
       }
 
-      setHoveredVoxelInfo({
-        text: parts.join(' · '),
-        position: { x: offsetX, y: offsetY },
-      });
+      setHoveredVoxelInfo(parts.join(' · '));
       hoveredVoxelRef.current = { layerKey: targetLayer.key, normalizedPosition: hoverMaxPosition.clone() };
       applyHoverHighlightToResources();
     },
@@ -3018,6 +3011,16 @@ function VolumeViewer({
     ? `${hoveredTrackDefinition.channelName} · Track #${hoveredTrackDefinition.trackNumber}`
     : null;
 
+  useEffect(() => {
+    onHoverIntensityChange?.(hoveredVoxelInfo);
+  }, [hoveredVoxelInfo, onHoverIntensityChange]);
+
+  useEffect(() => {
+    return () => {
+      onHoverIntensityChange?.(null);
+    };
+  }, [onHoverIntensityChange]);
+
   return (
     <div className="volume-viewer">
       {vrParams ? (
@@ -3034,16 +3037,6 @@ function VolumeViewer({
           </div>
         )}
         <div className={`render-surface${hasMeasured ? ' is-ready' : ''}`} ref={handleContainerRef}>
-          {hoveredVoxelInfo ? (
-            <div
-              className="intensity-tooltip"
-              style={{ left: `${hoveredVoxelInfo.position.x}px`, top: `${hoveredVoxelInfo.position.y}px` }}
-              role="status"
-              aria-live="polite"
-            >
-              {hoveredVoxelInfo.text}
-            </div>
-          ) : null}
           {hoveredTrackLabel && tooltipPosition ? (
             <div
               className="track-tooltip"
