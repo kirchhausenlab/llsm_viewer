@@ -1991,6 +1991,10 @@ function VolumeViewer({
     const raycaster = new THREE.Raycaster();
     raycaster.params.Line = { threshold: 0.02 };
     raycaster.params.Line2 = { threshold: 0.02 };
+
+    rendererRef.current = renderer;
+    sceneRef.current = scene;
+    cameraRef.current = camera;
     raycasterRef.current = raycaster;
 
     const performHoverHitTest = (event: PointerEvent): string | null => {
@@ -2181,11 +2185,6 @@ function VolumeViewer({
     pointerTarget.addEventListener('pointercancel', handlePointerUp);
     pointerTarget.addEventListener('pointerleave', handlePointerLeave);
 
-
-
-    rendererRef.current = renderer;
-    sceneRef.current = scene;
-    cameraRef.current = camera;
     resetVrPlaybackHudPlacement();
     resetVrChannelsHudPlacement();
     resetVrTracksHudPlacement();
