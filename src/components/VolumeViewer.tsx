@@ -189,7 +189,6 @@ const MIP_MAX_STEPS = 887;
 const MIP_REFINEMENT_STEPS = 4;
 const HOVER_HIGHLIGHT_RADIUS_VOXELS = 1.5;
 const HOVER_PULSE_SPEED = 0.006;
-const RAY_EPSILON = 1e-6;
 
 const MAX_RENDERER_PIXEL_RATIO = 2;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
@@ -199,10 +198,6 @@ const viewerYawQuaternionTemp = new THREE.Quaternion();
 const viewerYawForwardTemp = new THREE.Vector3();
 const hoverPointerVector = new THREE.Vector2();
 const hoverInverseMatrix = new THREE.Matrix4();
-const hoverLocalOrigin = new THREE.Vector3();
-const hoverLocalDirection = new THREE.Vector3();
-const hoverBoundsMin = new THREE.Vector3();
-const hoverBoundsMax = new THREE.Vector3();
 const hoverStart = new THREE.Vector3();
 const hoverEnd = new THREE.Vector3();
 const hoverStep = new THREE.Vector3();
@@ -211,6 +206,10 @@ const hoverRefineStep = new THREE.Vector3();
 const hoverMaxPosition = new THREE.Vector3();
 const hoverStartNormalized = new THREE.Vector3();
 const hoverVolumeSize = new THREE.Vector3();
+const hoverEntryPoint = new THREE.Vector3();
+const hoverExitPoint = new THREE.Vector3();
+const hoverLocalRay = new THREE.Ray();
+const hoverReverseRay = new THREE.Ray();
 
 function computeViewerYawBasis(
   renderer: THREE.WebGLRenderer | null,
@@ -1432,61 +1431,43 @@ function VolumeViewer({
 
       const volume = targetLayer.volume;
       hoverVolumeSize.set(volume.width, volume.height, volume.depth);
-      hoverBoundsMin.set(-0.5, -0.5, -0.5);
-      hoverBoundsMax.set(volume.width - 0.5, volume.height - 0.5, volume.depth - 0.5);
+
+      const geometry = resource.mesh.geometry as THREE.BufferGeometry;
+      if (!geometry.boundingBox) {
+        geometry.computeBoundingBox();
+      }
+
+      const boundingBox = geometry.boundingBox;
+      if (!boundingBox) {
+        clearVoxelHover();
+        return;
+      }
+
+      resource.mesh.updateMatrixWorld(true);
 
       hoverPointerVector.set((offsetX / width) * 2 - 1, -(offsetY / height) * 2 + 1);
       raycasterInstance.setFromCamera(hoverPointerVector, cameraInstance);
 
       hoverInverseMatrix.copy(resource.mesh.matrixWorld).invert();
-      hoverLocalOrigin.copy(raycasterInstance.ray.origin).applyMatrix4(hoverInverseMatrix);
-      hoverLocalDirection
-        .copy(raycasterInstance.ray.direction)
-        .transformDirection(hoverInverseMatrix)
-        .normalize();
+      hoverLocalRay.copy(raycasterInstance.ray).applyMatrix4(hoverInverseMatrix);
 
-      let tMin = -Infinity;
-      let tMax = Infinity;
+      const hasEntry = hoverLocalRay.intersectBox(boundingBox, hoverEntryPoint);
+      hoverReverseRay.copy(hoverLocalRay);
+      hoverReverseRay.direction.multiplyScalar(-1);
+      const hasExit = hoverReverseRay.intersectBox(boundingBox, hoverExitPoint);
 
-      const updateInterval = (origin: number, direction: number, min: number, max: number) => {
-        if (Math.abs(direction) < RAY_EPSILON) {
-          return origin >= min && origin <= max;
-        }
-        const t1 = (min - origin) / direction;
-        const t2 = (max - origin) / direction;
-        const lower = Math.min(t1, t2);
-        const upper = Math.max(t1, t2);
-        if (lower > tMin) {
-          tMin = lower;
-        }
-        if (upper < tMax) {
-          tMax = upper;
-        }
-        return tMax > tMin;
-      };
-
-      const intersectsBox =
-        updateInterval(hoverLocalOrigin.x, hoverLocalDirection.x, hoverBoundsMin.x, hoverBoundsMax.x) &&
-        updateInterval(hoverLocalOrigin.y, hoverLocalDirection.y, hoverBoundsMin.y, hoverBoundsMax.y) &&
-        updateInterval(hoverLocalOrigin.z, hoverLocalDirection.z, hoverBoundsMin.z, hoverBoundsMax.z);
-
-      if (!intersectsBox) {
+      if (!hasEntry || !hasExit) {
         clearVoxelHover();
         return;
       }
 
-      const tStart = Math.max(tMin, 0);
-      const tEnd = tMax;
-      if (tEnd <= tStart) {
-        clearVoxelHover();
-        return;
-      }
-
-      hoverStart.copy(hoverLocalOrigin).addScaledVector(hoverLocalDirection, tStart);
-      hoverEnd.copy(hoverLocalOrigin).addScaledVector(hoverLocalDirection, tEnd);
+      const entryDistance = hoverLocalRay.origin.distanceTo(hoverEntryPoint);
+      const exitDistance = hoverLocalRay.origin.distanceTo(hoverExitPoint);
+      hoverStart.copy(entryDistance <= exitDistance ? hoverEntryPoint : hoverExitPoint);
+      hoverEnd.copy(entryDistance <= exitDistance ? hoverExitPoint : hoverEntryPoint);
 
       const safeStepScale = Math.max(volumeStepScaleRef.current, 1e-3);
-      const travelDistance = tEnd - tStart;
+      const travelDistance = hoverEnd.distanceTo(hoverStart);
       let nsteps = Math.round(travelDistance * safeStepScale);
       nsteps = clampValue(nsteps, 1, MIP_MAX_STEPS);
 
