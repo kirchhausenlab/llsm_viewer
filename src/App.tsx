@@ -216,6 +216,7 @@ function App() {
   const [isViewerLaunched, setIsViewerLaunched] = useState(false);
   const [isLaunchingViewer, setIsLaunchingViewer] = useState(false);
   const [layoutResetToken, setLayoutResetToken] = useState(0);
+  const [hoveredVolumeIntensity, setHoveredVolumeIntensity] = useState<string | null>(null);
   const [isHelpMenuOpen, setIsHelpMenuOpen] = useState(false);
   const handleHelpMenuToggle = useCallback(() => {
     setIsHelpMenuOpen((previous) => !previous);
@@ -2719,6 +2720,7 @@ function App() {
     followedTrackId,
     onTrackSelectionToggle: handleTrackSelectionToggle,
     onTrackFollowRequest: handleTrackFollowFromViewer,
+    onHoverIntensityChange: setHoveredVolumeIntensity,
     vr: {
       isVrPassthroughSupported,
       trackChannels,
@@ -2790,7 +2792,8 @@ function App() {
       onResetLayout: handleResetWindowLayout,
       helpMenuRef,
       isHelpMenuOpen,
-      onHelpMenuToggle: handleHelpMenuToggle
+      onHelpMenuToggle: handleHelpMenuToggle,
+      hoveredIntensity: hoveredVolumeIntensity
     },
     layout: {
       windowMargin: WINDOW_MARGIN,

@@ -37,6 +37,12 @@
   flex-wrap: wrap;
 }
 
+.viewer-top-menu-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 .viewer-top-menu-button {
   border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 0.6rem;
@@ -63,6 +69,19 @@
 
 .viewer-top-menu-button:active {
   transform: translateY(0);
+}
+
+.viewer-top-menu-intensity {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: 0.5rem;
+  padding-left: 1rem;
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(230, 238, 255, 0.9);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 
 .viewer-top-menu-help {
