@@ -591,3 +591,7 @@ d centered the front-page card in the viewport.
 ## Planar viewer intensity tooltip
 - Added an on-canvas hover tooltip in the 2D planar viewer that reports the denormalized pixel intensity at the pointer location, respecting layer offsets and channel counts.
 - Styled the tooltip to sit beside the pointer without interfering with existing track hover badges and ensured it clears when the slice or pointer position changes.
+
+## Planar viewer hover details refinements
+- Adjusted the pixel hover formatter to collect values from all visible layers, allowing multi-channel datasets to display one entry per channel instead of stopping at the first layer.
+- Prefixed hover readouts with channel names only when multiple values are present so single-channel tooltips no longer show the generic "Volume" label while multi-channel data remains identifiable.
