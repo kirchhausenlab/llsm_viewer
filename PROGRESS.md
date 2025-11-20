@@ -1,3 +1,8 @@
+# Front page layout tweaks
+- Updated the landing header to mirror whether users are setting up a new experiment or loading a preprocessed one, resetting to "4D viewer" after returning home.
+- Moved the return action beside the launch button with matching styling, keeping it available after loading preprocessed datasets while dropping the old discard control.
+- Left-aligned the preprocessed loader drop targets to match the experiment setup layout.
+
 # 3D MIP hover tooltip and highlight
 - Added a non-VR MIP hover tooltip that traces the camera ray through the active volume, finds the displayed max-intensity voxel,
   and reports each channel's original raw intensity at the pointer location.

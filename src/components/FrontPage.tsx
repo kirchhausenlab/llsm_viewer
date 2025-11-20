@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import type {
   ChangeEvent,
   Dispatch,
@@ -200,6 +201,21 @@ export default function FrontPage({
   datasetErrorResetSignal,
   onDatasetErrorDismiss
 }: FrontPageProps) {
+  const headerTitle = useMemo(() => {
+    if (frontPageMode === 'preprocessed') {
+      return 'Loaded preprocessed experiment';
+    }
+    if (frontPageMode === 'configuring') {
+      return 'Set up new experiment';
+    }
+    if (isPreprocessedLoaderOpen) {
+      return 'Load preprocessed experiment';
+    }
+    return '4D viewer';
+  }, [frontPageMode, isPreprocessedLoaderOpen]);
+
+  const showReturnButton = frontPageMode !== 'initial' || isPreprocessedLoaderOpen;
+
   return (
     <div className="app front-page-mode">
       <video
@@ -216,56 +232,30 @@ export default function FrontPage({
       <div className="front-page">
         <div className={`front-page-card${isFrontPageLocked ? ' is-loading' : ''}`}>
           <header className="front-page-header">
-            <h1>4D viewer</h1>
+            <h1>{headerTitle}</h1>
           </header>
           {frontPageMode !== 'preprocessed' ? (
             <div className="channel-add-actions">
               {frontPageMode === 'initial' ? (
                 <div className="channel-add-initial">
-                  {isPreprocessedLoaderOpen ? (
-                    <button
-                      type="button"
-                      className="channel-add-button channel-return-button"
-                      onClick={onReturnToStart}
-                      disabled={isFrontPageLocked || isPreprocessedImporting || preprocessedDropboxImporting}
-                    >
-                      ↩ Return
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        className="channel-add-button"
-                        onClick={onAddChannel}
-                        disabled={isFrontPageLocked}
-                      >
-                        Set up new experiment
-                      </button>
-                      <button
-                        type="button"
-                        className="channel-add-button"
-                        onClick={onOpenPreprocessedLoader}
-                        disabled={
-                          isFrontPageLocked || isPreprocessedImporting || preprocessedDropboxImporting
-                        }
-                      >
-                        Load preprocessed experiment
-                      </button>
-                    </>
-                  )}
-                </div>
-              ) : (
-                <div className="channel-add-configuring">
                   <button
                     type="button"
-                    className="channel-add-button channel-return-button"
-                    onClick={onReturnToStart}
+                    className="channel-add-button"
+                    onClick={onAddChannel}
                     disabled={isFrontPageLocked}
                   >
-                    ↩ Return
+                    Set up new experiment
+                  </button>
+                  <button
+                    type="button"
+                    className="channel-add-button"
+                    onClick={onOpenPreprocessedLoader}
+                    disabled={isFrontPageLocked || isPreprocessedImporting || preprocessedDropboxImporting}
+                  >
+                    Load preprocessed experiment
                   </button>
                 </div>
-              )}
+              ) : null}
             </div>
           ) : null}
           {frontPageMode === 'configuring' ? (
@@ -711,16 +701,6 @@ export default function FrontPage({
                   );
                 })}
               </ul>
-              <div className="preprocessed-summary-actions">
-                <button
-                  type="button"
-                  className="preprocessed-summary-button"
-                  onClick={onExportPreprocessedExperiment}
-                  disabled={isExportingPreprocessed}
-                >
-                  Discard preprocessed experiment
-                </button>
-              </div>
             </div>
           ) : null}
           {frontPageMode === 'configuring' && hasGlobalTimepointMismatch ? (
@@ -735,6 +715,16 @@ export default function FrontPage({
             <p className="launch-feedback launch-feedback-error">{launchErrorMessage}</p>
           ) : null}
           <div className="front-page-actions">
+            {showReturnButton ? (
+              <button
+                type="button"
+                className="launch-viewer-button"
+                onClick={onReturnToStart}
+                disabled={isFrontPageLocked}
+              >
+                ↩ Return
+              </button>
+            ) : null}
             <button
               type="button"
               className="launch-viewer-button"
