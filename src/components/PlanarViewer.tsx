@@ -632,11 +632,7 @@ function PlanarViewer({
           return null;
         }
 
-        if (layer.label.trim().length === 0) {
-          return formatted;
-        }
-
-        return `${layer.label}: ${formatted}`;
+        return formatted;
       }
 
       return null;
