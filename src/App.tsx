@@ -1011,7 +1011,6 @@ function App() {
     preprocessedDropboxAppKeySource,
     preprocessedFileInputRef,
     handlePreprocessedLoaderOpen,
-    handlePreprocessedLoaderClose,
     handlePreprocessedFileInputChange,
     handlePreprocessedBrowse,
     handlePreprocessedDragEnter,
@@ -1633,6 +1632,10 @@ function App() {
     clearTextureCache();
     clearDatasetError();
   }, [clearDatasetError, resetPreprocessedState]);
+
+  const handleReturnToFrontPage = useCallback(() => {
+    handleDiscardPreprocessedExperiment();
+  }, [handleDiscardPreprocessedExperiment]);
 
 
 
@@ -2634,6 +2637,7 @@ function App() {
         setEditingChannelId={setEditingChannelId}
         onAddChannel={handleAddChannel}
         onOpenPreprocessedLoader={handlePreprocessedLoaderOpen}
+        onReturnToStart={handleReturnToFrontPage}
         voxelResolution={voxelResolutionInput}
         onVoxelResolutionAxisChange={handleVoxelResolutionAxisChange}
         onVoxelResolutionUnitChange={handleVoxelResolutionUnitChange}
@@ -2654,7 +2658,6 @@ function App() {
         preprocessedDropboxImporting={preprocessedDropboxImporting}
         onPreprocessedBrowse={handlePreprocessedBrowse}
         onPreprocessedDropboxImport={handlePreprocessedDropboxImport}
-        onPreprocessedLoaderClose={handlePreprocessedLoaderClose}
         preprocessedImportError={preprocessedImportError}
         preprocessedDropboxError={preprocessedDropboxError}
         preprocessedDropboxInfo={preprocessedDropboxInfo}

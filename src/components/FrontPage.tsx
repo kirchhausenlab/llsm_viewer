@@ -39,6 +39,7 @@ type FrontPageProps = {
   setEditingChannelId: Dispatch<SetStateAction<string | null>>;
   onAddChannel: () => void;
   onOpenPreprocessedLoader: () => void;
+  onReturnToStart: () => void;
   voxelResolution: VoxelResolutionInput;
   onVoxelResolutionAxisChange: (axis: VoxelResolutionAxis, value: string) => void;
   onVoxelResolutionUnitChange: (unit: VoxelResolutionUnit) => void;
@@ -59,7 +60,6 @@ type FrontPageProps = {
   preprocessedDropboxImporting: boolean;
   onPreprocessedBrowse: () => void;
   onPreprocessedDropboxImport: () => void;
-  onPreprocessedLoaderClose: () => void;
   preprocessedImportError: string | null;
   preprocessedDropboxError: string | null;
   preprocessedDropboxInfo: string | null;
@@ -143,6 +143,7 @@ export default function FrontPage({
   setEditingChannelId,
   onAddChannel,
   onOpenPreprocessedLoader,
+  onReturnToStart,
   voxelResolution,
   onVoxelResolutionAxisChange,
   onVoxelResolutionUnitChange,
@@ -163,7 +164,6 @@ export default function FrontPage({
   preprocessedDropboxImporting,
   onPreprocessedBrowse,
   onPreprocessedDropboxImport,
-  onPreprocessedLoaderClose,
   preprocessedImportError,
   preprocessedDropboxError,
   preprocessedDropboxInfo,
@@ -222,32 +222,47 @@ export default function FrontPage({
             <div className="channel-add-actions">
               {frontPageMode === 'initial' ? (
                 <div className="channel-add-initial">
-                  <button
-                    type="button"
-                    className="channel-add-button"
-                    onClick={onAddChannel}
-                    disabled={isFrontPageLocked}
-                  >
-                    Set up new experiment
-                  </button>
-                  <button
-                    type="button"
-                    className="channel-add-button"
-                    onClick={onOpenPreprocessedLoader}
-                    disabled={isFrontPageLocked || isPreprocessedImporting || preprocessedDropboxImporting}
-                  >
-                    Load preprocessed experiment
-                  </button>
+                  {isPreprocessedLoaderOpen ? (
+                    <button
+                      type="button"
+                      className="channel-add-button channel-return-button"
+                      onClick={onReturnToStart}
+                      disabled={isFrontPageLocked || isPreprocessedImporting || preprocessedDropboxImporting}
+                    >
+                      ↩ Return
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className="channel-add-button"
+                        onClick={onAddChannel}
+                        disabled={isFrontPageLocked}
+                      >
+                        Set up new experiment
+                      </button>
+                      <button
+                        type="button"
+                        className="channel-add-button"
+                        onClick={onOpenPreprocessedLoader}
+                        disabled={
+                          isFrontPageLocked || isPreprocessedImporting || preprocessedDropboxImporting
+                        }
+                      >
+                        Load preprocessed experiment
+                      </button>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="channel-add-configuring">
                   <button
                     type="button"
-                    className="channel-add-button"
-                    onClick={onAddChannel}
+                    className="channel-add-button channel-return-button"
+                    onClick={onReturnToStart}
                     disabled={isFrontPageLocked}
                   >
-                    Add new channel
+                    ↩ Return
                   </button>
                 </div>
               )}
@@ -292,7 +307,7 @@ export default function FrontPage({
                   onChange={(event) => onVoxelResolutionAnisotropyToggle(event.target.checked)}
                   disabled={isFrontPageLocked}
                 />
-                Correct anisotropy?
+                <strong>Correct anisotropy</strong>
               </label>
             </div>
           ) : null}
@@ -333,14 +348,6 @@ export default function FrontPage({
                     </button>
                     <p className="preprocessed-loader-subtitle">Or drop file here</p>
                   </div>
-                  <button
-                    type="button"
-                    className="preprocessed-loader-cancel"
-                    onClick={onPreprocessedLoaderClose}
-                    disabled={isPreprocessedImporting || preprocessedDropboxImporting}
-                  >
-                    Cancel
-                  </button>
                 </div>
                 {isPreprocessedImporting ? (
                   <p className="preprocessed-loader-status">
@@ -445,10 +452,8 @@ export default function FrontPage({
           ) : null}
           {frontPageMode === 'configuring' ? (
             <div className="channel-board">
-              {channels.length > 0 ? (
-                <>
-                  <div className="channel-tabs" role="tablist" aria-label="Configured channels">
-                    {channels.map((channel) => {
+              <div className="channel-tabs" role="tablist" aria-label="Configured channels">
+                {channels.map((channel) => {
                       const validation = channelValidationMap.get(channel.id) ?? { errors: [], warnings: [] };
                       const isActive = channel.id === activeChannelId;
                       const isEditing = editingChannelId === channel.id;
@@ -618,33 +623,43 @@ export default function FrontPage({
                         </div>
                       );
                     })}
-                  </div>
-                  <div
-                    className="channel-panel"
-                    role="tabpanel"
-                    id="channel-detail-panel"
-                    aria-labelledby={activeChannel ? `${activeChannel.id}-tab` : undefined}
-                  >
-                    {activeChannel ? (
-                      <ChannelCard
-                        key={activeChannel.id}
-                        channel={activeChannel}
-                        validation={channelValidationMap.get(activeChannel.id) ?? { errors: [], warnings: [] }}
-                        isDisabled={isFrontPageLocked}
-                        onLayerFilesAdded={onChannelLayerFilesAdded}
-                        onLayerDrop={onChannelLayerDrop}
-                        onLayerSegmentationToggle={onChannelLayerSegmentationToggle}
-                        onLayerRemove={onChannelLayerRemove}
-                        onTrackFileSelected={onChannelTrackFileSelected}
-                        onTrackDrop={onChannelTrackDrop}
-                        onTrackClear={onChannelTrackClear}
-                      />
-                    ) : (
-                      <p className="channel-panel-placeholder">Select a channel to edit it.</p>
-                    )}
-                  </div>
-                </>
-              ) : null}
+                    <button
+                      type="button"
+                      className="channel-tab channel-tab--add"
+                      onClick={onAddChannel}
+                      disabled={isFrontPageLocked}
+                      aria-label="Add new channel"
+                    >
+                      <span className="channel-tab-add-icon">＋</span>
+                      <span className="channel-tab-add-text">Add new channel</span>
+                    </button>
+              </div>
+              <div
+                className="channel-panel"
+                role="tabpanel"
+                id="channel-detail-panel"
+                aria-labelledby={activeChannel ? `${activeChannel.id}-tab` : undefined}
+              >
+                {activeChannel ? (
+                  <ChannelCard
+                    key={activeChannel.id}
+                    channel={activeChannel}
+                    validation={channelValidationMap.get(activeChannel.id) ?? { errors: [], warnings: [] }}
+                    isDisabled={isFrontPageLocked}
+                    onLayerFilesAdded={onChannelLayerFilesAdded}
+                    onLayerDrop={onChannelLayerDrop}
+                    onLayerSegmentationToggle={onChannelLayerSegmentationToggle}
+                    onLayerRemove={onChannelLayerRemove}
+                    onTrackFileSelected={onChannelTrackFileSelected}
+                    onTrackDrop={onChannelTrackDrop}
+                    onTrackClear={onChannelTrackClear}
+                  />
+                ) : (
+                  <p className="channel-panel-placeholder">
+                    {channels.length === 0 ? 'Add a channel to configure it.' : 'Select a channel to edit it.'}
+                  </p>
+                )}
+              </div>
             </div>
           ) : null}
           {frontPageMode === 'preprocessed' && preprocessedExperiment ? (

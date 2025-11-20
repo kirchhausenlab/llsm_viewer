@@ -2,19 +2,20 @@
   margin: 1.75rem 0 0;
   padding: 1.75rem;
   border-radius: 1rem;
-  border: 1px dashed rgba(255, 255, 255, 0.18);
-  background: rgba(12, 16, 24, 0.65);
+  border: 1px dashed rgba(118, 180, 255, 0.45);
+  background: linear-gradient(135deg, rgba(64, 120, 255, 0.22), rgba(143, 92, 255, 0.28));
   display: flex;
   flex-direction: column;
   gap: 1rem;
   align-items: stretch;
-  text-align: center;
+  text-align: left;
+  box-shadow: 0 12px 32px rgba(26, 54, 122, 0.28);
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
 }
 
 .preprocessed-loader.is-active {
   border-color: rgba(166, 216, 255, 0.95);
-  background: linear-gradient(135deg, rgba(76, 134, 255, 0.28), rgba(169, 107, 255, 0.35));
+  background: linear-gradient(135deg, rgba(76, 134, 255, 0.32), rgba(169, 107, 255, 0.42));
   box-shadow: 0 18px 40px rgba(24, 52, 122, 0.38);
 }
 
@@ -29,13 +30,14 @@
   flex-direction: column;
   gap: 1rem;
   align-items: stretch;
+  text-align: left;
 }
 
 @media (min-width: 640px) {
   .preprocessed-loader-row {
     flex-direction: row;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
   }
 }
 
@@ -43,6 +45,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  align-items: center;
 }
 
 @media (min-width: 480px) {
@@ -53,7 +56,7 @@
 
 .preprocessed-loader-subtitle {
   margin: 0;
-  color: rgba(235, 241, 255, 0.92);
+  color: rgba(235, 241, 255, 0.96);
   font-weight: 500;
 }
 
@@ -73,29 +76,6 @@
   margin: 0;
   font-size: 0.85rem;
   color: rgba(173, 204, 255, 0.95);
-}
-
-.preprocessed-loader-cancel {
-  padding: 0.55rem 1.1rem;
-  border-radius: 0.6rem;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.88);
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease;
-}
-
-.preprocessed-loader-cancel:hover:not(:disabled) {
-  border-color: rgba(91, 140, 255, 0.65);
-  background: rgba(91, 140, 255, 0.2);
-}
-
-.preprocessed-loader-cancel:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.14);
 }
 
 .preprocessed-dropbox-config {
@@ -281,6 +261,7 @@
   flex-direction: row;
   flex-wrap: wrap;
   gap: 0.75rem;
+  justify-content: center;
 }
 
 .preprocessed-summary-button {
