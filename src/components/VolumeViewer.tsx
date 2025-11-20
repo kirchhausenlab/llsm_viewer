@@ -465,6 +465,8 @@ function VolumeViewer({
       normalizedPosition: null
     }
   );
+  const voxelHoverDebugRef = useRef<string | null>(null);
+  const [voxelHoverDebug, setVoxelHoverDebug] = useState<string | null>(null);
   const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(null);
   const resetVolumeCallbackRef = useRef<() => void>(() => {});
   const resetHudPlacementCallbackRef = useRef<() => void>(() => {});
@@ -606,6 +608,23 @@ function VolumeViewer({
     hoveredVoxelRef.current = { layerKey: null, normalizedPosition: null };
     applyHoverHighlightToResources();
   }, [applyHoverHighlightToResources, emitHoverIntensity]);
+
+  const reportVoxelHoverAbort = useCallback(
+    (reason: string) => {
+      if (voxelHoverDebugRef.current !== reason && import.meta.env?.DEV) {
+        console.debug('[voxel-hover]', reason);
+      }
+      voxelHoverDebugRef.current = reason;
+      setVoxelHoverDebug(reason);
+      clearVoxelHover();
+    },
+    [clearVoxelHover],
+  );
+
+  const clearVoxelHoverDebug = useCallback(() => {
+    voxelHoverDebugRef.current = null;
+    setVoxelHoverDebug(null);
+  }, []);
 
   const playbackStateForVr = useMemo(
     () => ({
@@ -1355,12 +1374,12 @@ function VolumeViewer({
       const cameraInstance = cameraRef.current;
       const raycasterInstance = raycasterRef.current;
       if (!renderer || !cameraInstance || !raycasterInstance) {
-        clearVoxelHover();
+        reportVoxelHoverAbort('Renderer, camera, or raycaster unavailable.');
         return;
       }
 
       if (renderer.xr?.isPresenting) {
-        clearVoxelHover();
+        reportVoxelHoverAbort('Hover sampling disabled while XR session is active.');
         return;
       }
 
@@ -1369,14 +1388,14 @@ function VolumeViewer({
       const width = rect.width;
       const height = rect.height;
       if (width <= 0 || height <= 0) {
-        clearVoxelHover();
+        reportVoxelHoverAbort('Render surface has no measurable area.');
         return;
       }
 
       const offsetX = event.clientX - rect.left;
       const offsetY = event.clientY - rect.top;
       if (offsetX < 0 || offsetY < 0 || offsetX > width || offsetY > height) {
-        clearVoxelHover();
+        reportVoxelHoverAbort('Pointer is outside the render surface.');
         return;
       }
 
@@ -1430,8 +1449,7 @@ function VolumeViewer({
       }
 
       if (!targetLayer || !targetLayer.volume) {
-        console.debug('Voxel hover unavailable: no visible 3D volume layers to sample.');
-        clearVoxelHover();
+        reportVoxelHoverAbort('No visible 3D-capable volume layer is available.');
         return;
       }
 
@@ -1461,8 +1479,7 @@ function VolumeViewer({
       }
 
       if (!boundingBox) {
-        console.debug('Voxel hover unavailable: could not compute a bounding box for sampling.');
-        clearVoxelHover();
+        reportVoxelHoverAbort('Unable to compute a bounding box for hover sampling.');
         return;
       }
 
@@ -1493,7 +1510,7 @@ function VolumeViewer({
       const hasExit = hoverReverseRay.intersectBox(boundingBox, hoverExitPoint);
 
       if (!hasEntry || !hasExit) {
-        clearVoxelHover();
+        reportVoxelHoverAbort('Ray does not intersect the target volume.');
         return;
       }
 
@@ -1642,7 +1659,7 @@ function VolumeViewer({
       }
 
       if (!Number.isFinite(maxValue) || maxRawValues.length === 0) {
-        clearVoxelHover();
+        reportVoxelHoverAbort('No finite intensity was found along the hover ray.');
         return;
       }
 
@@ -1656,15 +1673,22 @@ function VolumeViewer({
       const label = targetLayer.label?.trim() || null;
       const parts = formatChannelValues(maxRawValues, volume.dataType, label, includeLabel);
       if (parts.length === 0) {
-        clearVoxelHover();
+        reportVoxelHoverAbort('Unable to format hover intensity for display.');
         return;
       }
 
+      clearVoxelHoverDebug();
       emitHoverIntensity(parts.join(' · '));
       hoveredVoxelRef.current = { layerKey: targetLayer.key, normalizedPosition: hoverMaxPosition.clone() };
       applyHoverHighlightToResources();
     },
-    [applyHoverHighlightToResources, clearVoxelHover, emitHoverIntensity],
+    [
+      applyHoverHighlightToResources,
+      clearVoxelHover,
+      clearVoxelHoverDebug,
+      emitHoverIntensity,
+      reportVoxelHoverAbort
+    ],
   );
 
   useEffect(() => {
@@ -3076,6 +3100,11 @@ function VolumeViewer({
               aria-live="polite"
             >
               {hoveredTrackLabel}
+            </div>
+          ) : null}
+          {voxelHoverDebug ? (
+            <div className="hover-debug" role="status" aria-live="polite">
+              Hover sampling unavailable: {voxelHoverDebug}
             </div>
           ) : null}
         </div>
