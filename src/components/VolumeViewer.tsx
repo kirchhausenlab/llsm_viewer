@@ -1427,10 +1427,10 @@ function VolumeViewer({
       const volume = targetLayer.volume;
       hoverVolumeSize.set(volume.width, volume.height, volume.depth);
 
-      const useGpuHover = resource?.mode === '3d';
+      const useGpuHover = resource !== null && resource.mode === '3d';
       let boundingBox: THREE.Box3 | null = null;
 
-      if (useGpuHover) {
+      if (useGpuHover && resource) {
         const geometry = resource.mesh.geometry as THREE.BufferGeometry;
         if (!geometry.boundingBox) {
           geometry.computeBoundingBox();
@@ -1438,6 +1438,10 @@ function VolumeViewer({
 
         boundingBox = geometry.boundingBox ?? null;
         resource.mesh.updateMatrixWorld(true);
+      } else if (useGpuHover) {
+        console.debug('Voxel hover unavailable: 3D resource missing for GPU hover sampling.');
+        clearVoxelHover();
+        return;
       } else {
         hoverBoundingBox.min.set(-0.5, -0.5, -0.5);
         hoverBoundingBox.max.set(

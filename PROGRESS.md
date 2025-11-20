@@ -629,3 +629,6 @@ d centered the front-page card in the viewport.
 ## 3D hover hover capture reliability
 - Routed pointer move/leave/up listeners through the render container so hover sampling keeps working even when overlays or helper elements sit above the canvas.
 - Preserved existing pointerdown handling on the canvas to keep orbit controls behavior unchanged while expanding the hover readout coverage area.
+
+## GPU hover null guard
+- Added explicit guarding around the GPU hover sampling path so null volume resources no longer trigger TypeScript errors and hover handling can bail out cleanly when 3D resources are unavailable.
