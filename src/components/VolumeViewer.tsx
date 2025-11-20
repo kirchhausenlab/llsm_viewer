@@ -631,6 +631,14 @@ function VolumeViewer({
     setVoxelHoverDebug(null);
   }, []);
 
+  const setHoverNotReady = useCallback(
+    (reason: string) => {
+      hoverSystemReadyRef.current = false;
+      reportVoxelHoverAbort(reason);
+    },
+    [reportVoxelHoverAbort],
+  );
+
   const playbackStateForVr = useMemo(
     () => ({
       isPlaying,
@@ -907,6 +915,17 @@ function VolumeViewer({
     }
     setContainerNode((current) => (current === node ? current : node));
   }, []);
+
+  useEffect(() => {
+    const activeContainer = containerNode ?? containerRef.current;
+    if (!activeContainer) {
+      setHoverNotReady('Hover inactive: viewer container unavailable.');
+      return;
+    }
+    if (!containerNode && activeContainer) {
+      setContainerNode(activeContainer);
+    }
+  }, [containerNode, setHoverNotReady]);
 
   const trackLookup = useMemo(() => {
     const map = new Map<string, TrackDefinition>();
@@ -1384,12 +1403,18 @@ function VolumeViewer({
       return;
     }
 
-    const hasHoverRefs =
-      rendererRef.current !== null &&
-      cameraRef.current !== null &&
-      raycasterRef.current !== null;
+    const renderer = rendererRef.current;
+    const cameraInstance = cameraRef.current;
+    const raycasterInstance = raycasterRef.current;
+    const hasHoverRefs = renderer !== null && cameraInstance !== null && raycasterInstance !== null;
 
     if (!hoverSystemReadyRef.current || !hasHoverRefs) {
+      if (!hoverSystemReadyRef.current) {
+        setHoverNotReady('Hover inactive: renderer not initialized.');
+      } else if (!hasHoverRefs) {
+        setHoverNotReady('Hover inactive: hover dependencies missing.');
+      }
+
       if (hoverRetryFrameRef.current !== null) {
         cancelAnimationFrame(hoverRetryFrameRef.current);
       }
@@ -1404,25 +1429,14 @@ function VolumeViewer({
       return;
     }
 
-    pendingHoverEventRef.current = null;
-
     if (hoverRetryFrameRef.current !== null) {
       cancelAnimationFrame(hoverRetryFrameRef.current);
+      hoverRetryFrameRef.current = null;
     }
 
-    hoverRetryFrameRef.current = requestAnimationFrame(() => {
-      hoverRetryFrameRef.current = null;
-      if (hoverTeardownRef.current) {
-        pendingHoverEventRef.current = null;
-        return;
-      }
-      if (!hoverSystemReadyRef.current) {
-        pendingHoverEventRef.current = pendingEvent;
-        return;
-      }
-      updateVoxelHoverRef.current(pendingEvent);
-    });
-  }, []);
+    pendingHoverEventRef.current = null;
+    updateVoxelHoverRef.current(pendingEvent);
+  }, [setHoverNotReady]);
 
   const updateVoxelHover = useCallback(
     (event: PointerEvent) => {
@@ -1433,6 +1447,7 @@ function VolumeViewer({
 
       if (!hoverSystemReadyRef.current) {
         pendingHoverEventRef.current = event;
+        setHoverNotReady('Hover inactive: renderer not initialized.');
         retryPendingVoxelHover();
         return;
       }
@@ -1442,6 +1457,7 @@ function VolumeViewer({
       const raycasterInstance = raycasterRef.current;
       if (!renderer || !cameraInstance || !raycasterInstance) {
         pendingHoverEventRef.current = event;
+        setHoverNotReady('Hover inactive: hover dependencies missing.');
         retryPendingVoxelHover();
         return;
       }
@@ -1755,6 +1771,7 @@ function VolumeViewer({
       clearVoxelHover,
       clearVoxelHoverDebug,
       emitHoverIntensity,
+      setHoverNotReady,
       retryPendingVoxelHover,
       reportVoxelHoverAbort
     ],
@@ -1899,12 +1916,14 @@ function VolumeViewer({
   }, [applyTrackGroupTransform, applyVolumeRootTransform]);
 
   useEffect(() => {
+    hoverTeardownRef.current = false;
+    hoverSystemReadyRef.current = false;
+    setHoverNotReady('Hover inactive: renderer not initialized.');
+
     const container = containerNode;
     if (!container) {
       return;
     }
-
-    hoverTeardownRef.current = false;
 
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -2068,6 +2087,7 @@ function VolumeViewer({
     sceneRef.current = scene;
     cameraRef.current = camera;
     raycasterRef.current = raycaster;
+    clearVoxelHoverDebug();
     hoverSystemReadyRef.current = true;
     retryPendingVoxelHover();
 
@@ -2691,6 +2711,7 @@ function VolumeViewer({
     createVrChannelsHud,
     createVrPlaybackHud,
     createVrTracksHud,
+    clearVoxelHoverDebug,
     endVrSessionRequestRef,
     onRendererInitialized,
     playbackLoopRef,
@@ -2702,6 +2723,7 @@ function VolumeViewer({
     retryPendingVoxelHover,
     restoreVrFoveation,
     sessionCleanupRef,
+    setHoverNotReady,
     setControllerVisibility,
     updateControllerRays,
     updateVrChannelsHud,
