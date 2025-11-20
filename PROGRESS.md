@@ -632,3 +632,6 @@ d centered the front-page card in the viewport.
 
 ## GPU hover null guard
 - Added explicit guarding around the GPU hover sampling path so null volume resources no longer trigger TypeScript errors and hover handling can bail out cleanly when 3D resources are unavailable.
+
+## 2D view default slice centering
+- Initialize the first 2D viewer session on the central Z plane instead of Z=0 while preserving the existing behavior of returning to the last viewed plane on subsequent openings.

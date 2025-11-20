@@ -213,6 +213,7 @@ function App() {
   const [followedTrack, setFollowedTrack] = useState<FollowedTrackState>(null);
   const [viewerMode, setViewerMode] = useState<'3d' | '2d'>('3d');
   const [sliceIndex, setSliceIndex] = useState(0);
+  const hasInitializedSliceIndexRef = useRef(false);
   const [isViewerLaunched, setIsViewerLaunched] = useState(false);
   const [isLaunchingViewer, setIsLaunchingViewer] = useState(false);
   const [layoutResetToken, setLayoutResetToken] = useState(0);
@@ -2597,6 +2598,17 @@ function App() {
     }
     return depth;
   }, [viewerLayers]);
+
+  useEffect(() => {
+    if (hasInitializedSliceIndexRef.current) {
+      return;
+    }
+    if (maxSliceDepth > 0) {
+      const middleIndex = Math.floor(maxSliceDepth / 2);
+      setSliceIndex(middleIndex);
+      hasInitializedSliceIndexRef.current = true;
+    }
+  }, [maxSliceDepth]);
 
   useEffect(() => {
     if (maxSliceDepth <= 0) {
