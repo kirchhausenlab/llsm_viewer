@@ -36,7 +36,7 @@
 @media (min-width: 640px) {
   .preprocessed-loader-row {
     flex-direction: row;
-    align-items: flex-start;
+    align-items: center;
     justify-content: flex-start;
   }
 }
@@ -51,6 +51,7 @@
 @media (min-width: 480px) {
   .preprocessed-loader-buttons {
     flex-direction: row;
+    align-items: center;
   }
 }
 
