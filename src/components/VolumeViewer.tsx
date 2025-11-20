@@ -1925,6 +1925,7 @@ function VolumeViewer({
     }
 
     const domElement = renderer.domElement;
+    const pointerTarget = domElement.parentElement ?? domElement;
 
     const pointerVector = new THREE.Vector2();
     const raycaster = new THREE.Raycaster();
@@ -2115,10 +2116,10 @@ function VolumeViewer({
     const pointerDownOptions: AddEventListenerOptions = { capture: true };
 
     domElement.addEventListener('pointerdown', handlePointerDown, pointerDownOptions);
-    domElement.addEventListener('pointermove', handlePointerMove);
-    domElement.addEventListener('pointerup', handlePointerUp);
-    domElement.addEventListener('pointercancel', handlePointerUp);
-    domElement.addEventListener('pointerleave', handlePointerLeave);
+    pointerTarget.addEventListener('pointermove', handlePointerMove);
+    pointerTarget.addEventListener('pointerup', handlePointerUp);
+    pointerTarget.addEventListener('pointercancel', handlePointerUp);
+    pointerTarget.addEventListener('pointerleave', handlePointerLeave);
 
 
 
@@ -2489,10 +2490,10 @@ function VolumeViewer({
       clearHoverState();
 
       domElement.removeEventListener('pointerdown', handlePointerDown, pointerDownOptions);
-      domElement.removeEventListener('pointermove', handlePointerMove);
-      domElement.removeEventListener('pointerup', handlePointerUp);
-      domElement.removeEventListener('pointercancel', handlePointerUp);
-      domElement.removeEventListener('pointerleave', handlePointerLeave);
+      pointerTarget.removeEventListener('pointermove', handlePointerMove);
+      pointerTarget.removeEventListener('pointerup', handlePointerUp);
+      pointerTarget.removeEventListener('pointercancel', handlePointerUp);
+      pointerTarget.removeEventListener('pointerleave', handlePointerLeave);
 
       const activePointerState = pointerStateRef.current;
       if (activePointerState && controlsRef.current) {
