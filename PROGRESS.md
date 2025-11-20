@@ -640,3 +640,7 @@ d centered the front-page card in the viewport.
 
 ## 2D view default slice centering
 - Initialize the first 2D viewer session on the central Z plane instead of Z=0 while preserving the existing behavior of returning to the last viewed plane on subsequent openings.
+
+## Slice-mode hover sampling fallback
+- Allow volumetric layers with depth to participate in CPU hover sampling even when displayed in slice mode so intensity readouts stay available without a 3D resource.
+- Reuse slice mesh transforms to derive bounding boxes when no 3D volume resources exist, keeping hover rays aligned with the rendered slice geometry.

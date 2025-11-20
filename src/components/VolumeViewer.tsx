@@ -1494,15 +1494,15 @@ function VolumeViewer({
           continue;
         }
 
+        const hasVolumeDepth = volume.depth > 1;
         const viewerMode =
           layer.mode === 'slice' || layer.mode === '3d'
             ? layer.mode
-            : volume.depth > 1
+            : hasVolumeDepth
             ? '3d'
             : 'slice';
 
-        const hasVolumeDepth = volume.depth > 1;
-        const canSampleLayer = viewerMode === '3d' || (viewerMode === 'slice' && hasVolumeDepth);
+        const canSampleLayer = viewerMode === '3d' || hasVolumeDepth;
 
         if (!canSampleLayer) {
           continue;
@@ -1541,7 +1541,7 @@ function VolumeViewer({
       hoverVolumeSize.set(volume.width, volume.height, volume.depth);
 
       const useGpuHover = resource?.mode === '3d';
-      const useSliceTransform = resource?.mode === 'slice' && volume.depth > 1;
+      const useSliceResource = resource?.mode === 'slice' && volume.depth > 1;
       let boundingBox: THREE.Box3 | null = null;
 
       if (useGpuHover && resource) {
@@ -1552,6 +1552,16 @@ function VolumeViewer({
 
         boundingBox = geometry.boundingBox ?? null;
         resource.mesh.updateMatrixWorld(true);
+        hoverInverseMatrix.copy(resource.mesh.matrixWorld).invert();
+      } else if (useSliceResource && resource) {
+        const geometry = resource.mesh.geometry as THREE.BufferGeometry;
+        if (!geometry.boundingBox) {
+          geometry.computeBoundingBox();
+        }
+
+        boundingBox = geometry.boundingBox ?? null;
+        resource.mesh.updateMatrixWorld(true);
+        hoverInverseMatrix.copy(resource.mesh.matrixWorld).invert();
       } else {
         hoverBoundingBox.min.set(-0.5, -0.5, -0.5);
         hoverBoundingBox.max.set(
@@ -1560,22 +1570,7 @@ function VolumeViewer({
           volume.depth - 0.5,
         );
         boundingBox = hoverBoundingBox;
-      }
 
-      if (!boundingBox) {
-        reportVoxelHoverAbort('Unable to compute a bounding box for hover sampling.');
-        return;
-      }
-
-      hoverPointerVector.set((offsetX / width) * 2 - 1, -(offsetY / height) * 2 + 1);
-      raycasterInstance.setFromCamera(hoverPointerVector, cameraInstance);
-
-      if (useGpuHover && resource) {
-        hoverInverseMatrix.copy(resource.mesh.matrixWorld).invert();
-      } else if (useSliceTransform && resource) {
-        resource.mesh.updateMatrixWorld(true);
-        hoverInverseMatrix.copy(resource.mesh.matrixWorld).invert();
-      } else {
         const volumeRootGroup = volumeRootGroupRef.current;
         hoverLayerMatrix.identity();
         if (volumeRootGroup) {
@@ -1586,6 +1581,14 @@ function VolumeViewer({
         hoverLayerMatrix.multiply(hoverLayerOffsetMatrix);
         hoverInverseMatrix.copy(hoverLayerMatrix).invert();
       }
+
+      if (!boundingBox) {
+        reportVoxelHoverAbort('Unable to compute a bounding box for hover sampling.');
+        return;
+      }
+
+      hoverPointerVector.set((offsetX / width) * 2 - 1, -(offsetY / height) * 2 + 1);
+      raycasterInstance.setFromCamera(hoverPointerVector, cameraInstance);
       hoverLocalRay.copy(raycasterInstance.ray).applyMatrix4(hoverInverseMatrix);
 
       const hasEntry = hoverLocalRay.intersectBox(boundingBox, hoverEntryPoint);
