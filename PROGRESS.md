@@ -584,3 +584,6 @@ d centered the front-page card in the viewport.
 ## Type and test verification
 - Ran `npm run typecheck` to confirm the helper module and hook signature changes pass the TypeScript build without errors.
 - Ran `npm run test` to validate runtime behavior, confirming all suites complete successfully.
+
+## Keyboard navigation corrections
+- Fixed the WASDQE keyboard movement handler to translate both the camera and its rotation target together, stopping the unintended orbital rotation and preserving forward/strafe/up-down navigation.
