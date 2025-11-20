@@ -3,6 +3,7 @@ import type { TrackColorMode, TrackDefinition } from '../types/tracks';
 import { getTrackColorHex } from '../trackColors';
 import type { NormalizedVolume } from '../volumeProcessing';
 import type { VolumeDataType } from '../types/volume';
+import { denormalizeValue, formatChannelValues } from '../utils/intensityFormatting';
 import './PlanarViewer.css';
 
 type ViewerLayer = {
@@ -152,55 +153,6 @@ function componentsToCss({ r, g, b }: { r: number; g: number; b: number }) {
   const green = Math.round(clamp(g, 0, 1) * 255);
   const blue = Math.round(clamp(b, 0, 1) * 255);
   return `rgb(${red}, ${green}, ${blue})`;
-}
-
-function isIntegerDataType(type: VolumeDataType) {
-  return type.startsWith('uint') || type.startsWith('int');
-}
-
-function denormalizeValue(value: number, volume: NormalizedVolume) {
-  const ratio = value / 255;
-  return volume.min + ratio * (volume.max - volume.min);
-}
-
-function formatIntensityValue(value: number, type: VolumeDataType) {
-  if (!Number.isFinite(value)) {
-    return 'N/A';
-  }
-
-  if (isIntegerDataType(type)) {
-    return Math.round(value).toString();
-  }
-
-  const magnitude = Math.abs(value);
-  if (magnitude >= 1000) {
-    return value.toFixed(1);
-  }
-  if (magnitude >= 1) {
-    return value.toFixed(3);
-  }
-  return value.toPrecision(4);
-}
-
-function formatChannelValues(
-  values: number[],
-  type: VolumeDataType,
-  channelLabel: string | null,
-  includeLabel: boolean
-) {
-  if (values.length === 0) {
-    return [];
-  }
-
-  if (values.length === 1) {
-    const prefix = includeLabel && channelLabel ? `${channelLabel} ` : '';
-    return [`${prefix}${formatIntensityValue(values[0], type)}`.trim()];
-  }
-
-  return values.map((value, index) => {
-    const prefix = includeLabel && channelLabel ? `${channelLabel} C${index + 1}` : `C${index + 1}`;
-    return `${prefix} ${formatIntensityValue(value, type)}`;
-  });
 }
 
 function createInitialViewState(): ViewState {

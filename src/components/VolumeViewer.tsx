@@ -45,6 +45,7 @@ import {
   DEFAULT_WINDOW_MAX
 } from '../state/layerSettings';
 import { DEFAULT_TRACK_LINE_WIDTH, DEFAULT_TRACK_OPACITY } from './volume-viewer/constants';
+import { denormalizeValue, formatChannelValues } from '../utils/intensityFormatting';
 
 type VrUiTargetDescriptor = { type: VrUiTargetType; data?: unknown };
 
@@ -157,6 +158,11 @@ type UseVolumeViewerVrBridgeProps = {
   onValue: Dispatch<SetStateAction<UseVolumeViewerVrResult | null>>;
 };
 
+type HoveredVoxelInfo = {
+  text: string;
+  position: { x: number; y: number };
+};
+
 const UseVolumeViewerVrBridge = lazy(async () => {
   const module = await import('./volume-viewer/useVolumeViewerVr');
   const Bridge = ({ params, onValue }: UseVolumeViewerVrBridgeProps) => {
@@ -184,6 +190,11 @@ const SELECTED_TRACK_BLINK_RANGE = 0.15;
 const FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER = 1.35;
 const SELECTED_TRACK_LINE_WIDTH_MULTIPLIER = 1.5;
 const HOVERED_TRACK_LINE_WIDTH_MULTIPLIER = 1.2;
+const MIP_MAX_STEPS = 887;
+const MIP_REFINEMENT_STEPS = 4;
+const HOVER_HIGHLIGHT_RADIUS_VOXELS = 1.5;
+const HOVER_PULSE_SPEED = 0.006;
+const RAY_EPSILON = 1e-6;
 
 const MAX_RENDERER_PIXEL_RATIO = 2;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
@@ -191,6 +202,20 @@ const VIEWER_YAW_FORWARD_REFERENCE = new THREE.Vector3(0, 0, -1);
 const VIEWER_YAW_RIGHT_REFERENCE = new THREE.Vector3(1, 0, 0);
 const viewerYawQuaternionTemp = new THREE.Quaternion();
 const viewerYawForwardTemp = new THREE.Vector3();
+const hoverPointerVector = new THREE.Vector2();
+const hoverInverseMatrix = new THREE.Matrix4();
+const hoverLocalOrigin = new THREE.Vector3();
+const hoverLocalDirection = new THREE.Vector3();
+const hoverBoundsMin = new THREE.Vector3();
+const hoverBoundsMax = new THREE.Vector3();
+const hoverStart = new THREE.Vector3();
+const hoverEnd = new THREE.Vector3();
+const hoverStep = new THREE.Vector3();
+const hoverSample = new THREE.Vector3();
+const hoverRefineStep = new THREE.Vector3();
+const hoverMaxPosition = new THREE.Vector3();
+const hoverStartNormalized = new THREE.Vector3();
+const hoverVolumeSize = new THREE.Vector3();
 
 function computeViewerYawBasis(
   renderer: THREE.WebGLRenderer | null,
@@ -434,6 +459,13 @@ function VolumeViewer({
     pointer: { trackId: null as string | null, position: null as { x: number; y: number } | null },
     controller: { trackId: null as string | null, position: null as { x: number; y: number } | null }
   });
+  const [hoveredVoxelInfo, setHoveredVoxelInfo] = useState<HoveredVoxelInfo | null>(null);
+  const hoveredVoxelRef = useRef<{ layerKey: string | null; normalizedPosition: THREE.Vector3 | null }>(
+    {
+      layerKey: null,
+      normalizedPosition: null
+    }
+  );
   const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(null);
   const resetVolumeCallbackRef = useRef<() => void>(() => {});
   const resetHudPlacementCallbackRef = useRef<() => void>(() => {});
@@ -528,6 +560,38 @@ function VolumeViewer({
     },
     [applyHoverState]
   );
+
+  const applyHoverHighlightToResources = useCallback(() => {
+    const { layerKey, normalizedPosition } = hoveredVoxelRef.current;
+    for (const [key, resource] of resourcesRef.current.entries()) {
+      if (resource.mode !== '3d') {
+        continue;
+      }
+      const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms;
+      const isActive = Boolean(layerKey && normalizedPosition && layerKey === key);
+      if (uniforms.u_hoverActive) {
+        uniforms.u_hoverActive.value = isActive ? 1 : 0;
+      }
+      if (isActive && normalizedPosition && uniforms.u_hoverPos && uniforms.u_hoverRadius) {
+        uniforms.u_hoverPos.value.copy(normalizedPosition);
+        const maxExtent = Math.max(
+          resource.dimensions.width,
+          resource.dimensions.height,
+          resource.dimensions.depth,
+        );
+        uniforms.u_hoverRadius.value =
+          HOVER_HIGHLIGHT_RADIUS_VOXELS / Math.max(maxExtent, Number.EPSILON);
+      } else if (uniforms.u_hoverRadius) {
+        uniforms.u_hoverRadius.value = 0;
+      }
+    }
+  }, []);
+
+  const clearVoxelHover = useCallback(() => {
+    setHoveredVoxelInfo(null);
+    hoveredVoxelRef.current = { layerKey: null, normalizedPosition: null };
+    applyHoverHighlightToResources();
+  }, [applyHoverHighlightToResources]);
 
   const playbackStateForVr = useMemo(
     () => ({
@@ -1271,6 +1335,290 @@ function VolumeViewer({
     [channelTrackOffsets, trackLookup]
   );
 
+  const updateVoxelHover = useCallback(
+    (event: PointerEvent) => {
+      const renderer = rendererRef.current;
+      const cameraInstance = cameraRef.current;
+      const raycasterInstance = raycasterRef.current;
+      if (!renderer || !cameraInstance || !raycasterInstance) {
+        clearVoxelHover();
+        return;
+      }
+
+      if (renderer.xr?.isPresenting) {
+        clearVoxelHover();
+        return;
+      }
+
+      if (pointerStateRef.current) {
+        clearVoxelHover();
+        return;
+      }
+
+      const domElement = renderer.domElement;
+      const rect = domElement.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+      if (width <= 0 || height <= 0) {
+        clearVoxelHover();
+        return;
+      }
+
+      const offsetX = event.clientX - rect.left;
+      const offsetY = event.clientY - rect.top;
+      if (offsetX < 0 || offsetY < 0 || offsetX > width || offsetY > height) {
+        clearVoxelHover();
+        return;
+      }
+
+      const targetLayer = layers.find((layer) => {
+        const volume = layer.volume;
+        if (!volume || !layer.visible) {
+          return false;
+        }
+        const viewerMode =
+          layer.mode === 'slice' || layer.mode === '3d'
+            ? layer.mode
+            : volume.depth > 1
+            ? '3d'
+            : 'slice';
+        return viewerMode === '3d' && layer.renderStyle === 0;
+      });
+
+      if (!targetLayer || !targetLayer.volume) {
+        clearVoxelHover();
+        return;
+      }
+
+      const resource = resourcesRef.current.get(targetLayer.key);
+      if (!resource || resource.mode !== '3d') {
+        clearVoxelHover();
+        return;
+      }
+
+      const volume = targetLayer.volume;
+      hoverVolumeSize.set(volume.width, volume.height, volume.depth);
+      hoverBoundsMin.set(-0.5, -0.5, -0.5);
+      hoverBoundsMax.set(volume.width - 0.5, volume.height - 0.5, volume.depth - 0.5);
+
+      hoverPointerVector.set((offsetX / width) * 2 - 1, -(offsetY / height) * 2 + 1);
+      raycasterInstance.setFromCamera(hoverPointerVector, cameraInstance);
+
+      hoverInverseMatrix.copy(resource.mesh.matrixWorld).invert();
+      hoverLocalOrigin.copy(raycasterInstance.ray.origin).applyMatrix4(hoverInverseMatrix);
+      hoverLocalDirection
+        .copy(raycasterInstance.ray.direction)
+        .transformDirection(hoverInverseMatrix)
+        .normalize();
+
+      let tMin = -Infinity;
+      let tMax = Infinity;
+
+      const updateInterval = (origin: number, direction: number, min: number, max: number) => {
+        if (Math.abs(direction) < RAY_EPSILON) {
+          return origin >= min && origin <= max;
+        }
+        const t1 = (min - origin) / direction;
+        const t2 = (max - origin) / direction;
+        const lower = Math.min(t1, t2);
+        const upper = Math.max(t1, t2);
+        if (lower > tMin) {
+          tMin = lower;
+        }
+        if (upper < tMax) {
+          tMax = upper;
+        }
+        return tMax > tMin;
+      };
+
+      const intersectsBox =
+        updateInterval(hoverLocalOrigin.x, hoverLocalDirection.x, hoverBoundsMin.x, hoverBoundsMax.x) &&
+        updateInterval(hoverLocalOrigin.y, hoverLocalDirection.y, hoverBoundsMin.y, hoverBoundsMax.y) &&
+        updateInterval(hoverLocalOrigin.z, hoverLocalDirection.z, hoverBoundsMin.z, hoverBoundsMax.z);
+
+      if (!intersectsBox) {
+        clearVoxelHover();
+        return;
+      }
+
+      const tStart = Math.max(tMin, 0);
+      const tEnd = tMax;
+      if (tEnd <= tStart) {
+        clearVoxelHover();
+        return;
+      }
+
+      hoverStart.copy(hoverLocalOrigin).addScaledVector(hoverLocalDirection, tStart);
+      hoverEnd.copy(hoverLocalOrigin).addScaledVector(hoverLocalDirection, tEnd);
+
+      const safeStepScale = Math.max(volumeStepScaleRef.current, 1e-3);
+      const travelDistance = tEnd - tStart;
+      let nsteps = Math.round(travelDistance * safeStepScale);
+      nsteps = clampValue(nsteps, 1, MIP_MAX_STEPS);
+
+      hoverStartNormalized.copy(hoverStart).divide(hoverVolumeSize);
+      hoverStep.copy(hoverEnd).sub(hoverStart).divide(hoverVolumeSize).divideScalar(nsteps);
+      hoverSample.copy(hoverStartNormalized);
+
+      const channels = Math.max(1, volume.channels);
+      const sliceStride = volume.width * volume.height * channels;
+      const rowStride = volume.width * channels;
+
+      const sampleVolume = (coords: THREE.Vector3) => {
+        const x = clampValue(coords.x * volume.width, 0, volume.width - 1);
+        const y = clampValue(coords.y * volume.height, 0, volume.height - 1);
+        const z = clampValue(coords.z * volume.depth, 0, volume.depth - 1);
+
+        const leftX = Math.floor(x);
+        const rightX = Math.min(volume.width - 1, leftX + 1);
+        const topY = Math.floor(y);
+        const bottomY = Math.min(volume.height - 1, topY + 1);
+        const frontZ = Math.floor(z);
+        const backZ = Math.min(volume.depth - 1, frontZ + 1);
+
+        const tX = x - leftX;
+        const tY = y - topY;
+        const tZ = z - frontZ;
+        const invTX = 1 - tX;
+        const invTY = 1 - tY;
+        const invTZ = 1 - tZ;
+
+        const weight000 = invTX * invTY * invTZ;
+        const weight100 = tX * invTY * invTZ;
+        const weight010 = invTX * tY * invTZ;
+        const weight110 = tX * tY * invTZ;
+        const weight001 = invTX * invTY * tZ;
+        const weight101 = tX * invTY * tZ;
+        const weight011 = invTX * tY * tZ;
+        const weight111 = tX * tY * tZ;
+
+        const frontOffset = frontZ * sliceStride;
+        const backOffset = backZ * sliceStride;
+        const topFrontOffset = frontOffset + topY * rowStride;
+        const bottomFrontOffset = frontOffset + bottomY * rowStride;
+        const topBackOffset = backOffset + topY * rowStride;
+        const bottomBackOffset = backOffset + bottomY * rowStride;
+
+        const normalizedValues: number[] = [];
+        const rawValues: number[] = [];
+
+        for (let channelIndex = 0; channelIndex < channels; channelIndex++) {
+          const baseChannelOffset = channelIndex;
+          const topLeftFront = volume.normalized[topFrontOffset + leftX * channels + baseChannelOffset] ?? 0;
+          const topRightFront = volume.normalized[topFrontOffset + rightX * channels + baseChannelOffset] ?? 0;
+          const bottomLeftFront = volume.normalized[bottomFrontOffset + leftX * channels + baseChannelOffset] ?? 0;
+          const bottomRightFront = volume.normalized[bottomFrontOffset + rightX * channels + baseChannelOffset] ?? 0;
+
+          const topLeftBack = volume.normalized[topBackOffset + leftX * channels + baseChannelOffset] ?? 0;
+          const topRightBack = volume.normalized[topBackOffset + rightX * channels + baseChannelOffset] ?? 0;
+          const bottomLeftBack = volume.normalized[bottomBackOffset + leftX * channels + baseChannelOffset] ?? 0;
+          const bottomRightBack = volume.normalized[bottomBackOffset + rightX * channels + baseChannelOffset] ?? 0;
+
+          const interpolated =
+            topLeftFront * weight000 +
+            topRightFront * weight100 +
+            bottomLeftFront * weight010 +
+            bottomRightFront * weight110 +
+            topLeftBack * weight001 +
+            topRightBack * weight101 +
+            bottomLeftBack * weight011 +
+            bottomRightBack * weight111;
+
+          normalizedValues.push(interpolated / 255);
+          rawValues.push(denormalizeValue(interpolated, volume));
+        }
+
+        return { normalizedValues, rawValues };
+      };
+
+      const computeLuminance = (values: number[]) => {
+        if (channels === 1) {
+          return values[0] ?? 0;
+        }
+        if (channels === 2) {
+          return 0.5 * ((values[0] ?? 0) + (values[1] ?? 0));
+        }
+        if (channels === 3) {
+          return 0.2126 * (values[0] ?? 0) + 0.7152 * (values[1] ?? 0) + 0.0722 * (values[2] ?? 0);
+        }
+        return Math.max(...values, 0);
+      };
+
+      const adjustIntensity = (value: number) => {
+        const range = Math.max(targetLayer.windowMax - targetLayer.windowMin, 1e-5);
+        const normalized = clampValue((value - targetLayer.windowMin) / range, 0, 1);
+        return targetLayer.invert ? 1 - normalized : normalized;
+      };
+
+      let maxValue = -Infinity;
+      let maxIndex = 0;
+      hoverMaxPosition.copy(hoverSample);
+      let maxRawValues: number[] = [];
+
+      const highWaterMark = targetLayer.invert ? 0.001 : 0.999;
+
+      for (let i = 0; i < nsteps; i++) {
+        const sample = sampleVolume(hoverSample);
+        const luminance = computeLuminance(sample.normalizedValues);
+        const adjusted = adjustIntensity(luminance);
+        if (adjusted > maxValue) {
+          maxValue = adjusted;
+          maxIndex = i;
+          hoverMaxPosition.copy(hoverSample);
+          maxRawValues = sample.rawValues;
+
+          if ((!targetLayer.invert && maxValue >= highWaterMark) || (targetLayer.invert && maxValue <= highWaterMark)) {
+            break;
+          }
+        }
+
+        hoverSample.add(hoverStep);
+      }
+
+      hoverSample.copy(hoverStartNormalized).addScaledVector(hoverStep, maxIndex - 0.5);
+      hoverRefineStep.copy(hoverStep).divideScalar(MIP_REFINEMENT_STEPS);
+
+      for (let i = 0; i < MIP_REFINEMENT_STEPS; i++) {
+        const sample = sampleVolume(hoverSample);
+        const luminance = computeLuminance(sample.normalizedValues);
+        const adjusted = adjustIntensity(luminance);
+        if (adjusted > maxValue) {
+          maxValue = adjusted;
+          hoverMaxPosition.copy(hoverSample);
+          maxRawValues = sample.rawValues;
+        }
+        hoverSample.add(hoverRefineStep);
+      }
+
+      if (!Number.isFinite(maxValue) || maxRawValues.length === 0) {
+        clearVoxelHover();
+        return;
+      }
+
+      hoverMaxPosition.set(
+        clampValue(hoverMaxPosition.x, 0, 1),
+        clampValue(hoverMaxPosition.y, 0, 1),
+        clampValue(hoverMaxPosition.z, 0, 1),
+      );
+
+      const includeLabel = maxRawValues.length > 1;
+      const label = targetLayer.label?.trim() || null;
+      const parts = formatChannelValues(maxRawValues, volume.dataType, label, includeLabel);
+      if (parts.length === 0) {
+        clearVoxelHover();
+        return;
+      }
+
+      setHoveredVoxelInfo({
+        text: parts.join(' · '),
+        position: { x: offsetX, y: offsetY },
+      });
+      hoveredVoxelRef.current = { layerKey: targetLayer.key, normalizedPosition: hoverMaxPosition.clone() };
+      applyHoverHighlightToResources();
+    },
+    [applyHoverHighlightToResources, clearVoxelHover, layers],
+  );
+
   useEffect(() => {
     followedTrackIdRef.current = followedTrackId;
     if (followedTrackId === null) {
@@ -1576,6 +1924,7 @@ function VolumeViewer({
       const cameraInstance = cameraRef.current;
       const trackGroupInstance = trackGroupRef.current;
       const raycasterInstance = raycasterRef.current;
+      updateVoxelHover(event);
       if (!cameraInstance || !trackGroupInstance || !raycasterInstance || !trackGroupInstance.visible) {
         clearHoverState('pointer');
         return null;
@@ -1659,6 +2008,7 @@ function VolumeViewer({
       }
 
       clearHoverState('pointer');
+      clearVoxelHover();
 
       pointerStateRef.current = {
         mode,
@@ -1742,6 +2092,7 @@ function VolumeViewer({
 
     const handlePointerLeave = () => {
       clearHoverState('pointer');
+      clearVoxelHover();
     };
 
     const pointerDownOptions: AddEventListenerOptions = { capture: true };
@@ -1916,6 +2267,17 @@ function VolumeViewer({
       for (const resource of resources.values()) {
         const { mesh } = resource;
         mesh.updateMatrixWorld();
+      }
+
+      const hoverPulse = 0.65 + 0.35 * Math.sin(timestamp * HOVER_PULSE_SPEED);
+      for (const resource of resources.values()) {
+        if (resource.mode !== '3d') {
+          continue;
+        }
+        const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms;
+        if (uniforms.u_hoverPulse) {
+          uniforms.u_hoverPulse.value = hoverPulse;
+        }
       }
 
       const playbackLoopState = playbackLoopRef.current;
@@ -2605,12 +2967,15 @@ function VolumeViewer({
       }
     }
 
+    applyHoverHighlightToResources();
+
   }, [
     applyTrackGroupTransform,
     applyVolumeStepScaleToResources,
     getColormapTexture,
     layers,
-    renderContextRevision
+    renderContextRevision,
+    applyHoverHighlightToResources
   ]);
 
   useEffect(() => {
@@ -2643,6 +3008,16 @@ function VolumeViewer({
           </div>
         )}
         <div className={`render-surface${hasMeasured ? ' is-ready' : ''}`} ref={handleContainerRef}>
+          {hoveredVoxelInfo ? (
+            <div
+              className="intensity-tooltip"
+              style={{ left: `${hoveredVoxelInfo.position.x}px`, top: `${hoveredVoxelInfo.position.y}px` }}
+              role="status"
+              aria-live="polite"
+            >
+              {hoveredVoxelInfo.text}
+            </div>
+          ) : null}
           {hoveredTrackLabel && tooltipPosition ? (
             <div
               className="track-tooltip"

@@ -14,6 +14,10 @@ type VolumeUniforms = {
   u_windowMax: { value: number };
   u_invert: { value: number };
   u_stepScale: { value: number };
+  u_hoverPos: { value: Vector3 };
+  u_hoverRadius: { value: number };
+  u_hoverActive: { value: number };
+  u_hoverPulse: { value: number };
 };
 
 const uniforms = {
@@ -28,7 +32,11 @@ const uniforms = {
   u_windowMin: { value: 0 },
   u_windowMax: { value: 1 },
   u_invert: { value: 0 },
-  u_stepScale: { value: 1 }
+  u_stepScale: { value: 1 },
+  u_hoverPos: { value: new Vector3() },
+  u_hoverRadius: { value: 0 },
+  u_hoverActive: { value: 0 },
+  u_hoverPulse: { value: 0 }
 } satisfies VolumeUniforms;
 
 export const VolumeRenderShader = {
@@ -68,6 +76,10 @@ export const VolumeRenderShader = {
     uniform float u_windowMax;
     uniform float u_invert;
     uniform float u_stepScale;
+    uniform vec3 u_hoverPos;
+    uniform float u_hoverRadius;
+    uniform float u_hoverActive;
+    uniform float u_hoverPulse;
 
     uniform sampler3D u_data;
     uniform sampler2D u_cmdata;
@@ -257,6 +269,7 @@ export const VolumeRenderShader = {
       int max_i = 100;
       vec4 max_color = vec4(0.0);
       vec3 loc = start_loc;
+      vec3 max_loc = start_loc;
 
       const float HIGH_WATER_NON_INVERTED = 0.999;
       const float HIGH_WATER_INVERTED = 0.001;
@@ -272,6 +285,7 @@ export const VolumeRenderShader = {
           max_val = val;
           max_i = iter;
           max_color = colorSample;
+          max_loc = loc;
 
           bool reachedHighWaterMark;
           if (u_invert > 0.5) {
@@ -296,11 +310,21 @@ export const VolumeRenderShader = {
         if (refined > max_val) {
           max_val = refined;
           max_color = colorSample;
+          max_loc = iloc;
         }
         iloc += istep;
       }
 
-      gl_FragColor = compose_color(max_val, max_color);
+      vec4 color = compose_color(max_val, max_color);
+
+      if (u_hoverActive > 0.5 && u_hoverRadius > 0.0) {
+        float falloff = smoothstep(0.0, u_hoverRadius, length(max_loc - u_hoverPos));
+        float pulse = 0.65 + 0.35 * u_hoverPulse;
+        float highlight = (1.0 - falloff) * pulse;
+        color.rgb = mix(color.rgb, vec3(1.0), highlight * 0.35);
+      }
+
+      gl_FragColor = color;
     }
 
     void cast_iso(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray) {

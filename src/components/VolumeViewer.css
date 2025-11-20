@@ -116,6 +116,22 @@
   z-index: 2;
 }
 
+.intensity-tooltip {
+  position: absolute;
+  transform: translate(12px, 12px);
+  padding: 0.35rem 0.55rem;
+  border-radius: 0.45rem;
+  background: rgba(12, 16, 24, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 0.75rem;
+  letter-spacing: 0.03em;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
+  z-index: 2;
+}
+
 .viewer-meta {
   display: flex;
   flex-direction: column;

@@ -1,3 +1,9 @@
+# 3D MIP hover tooltip and highlight
+- Added a non-VR MIP hover tooltip that traces the camera ray through the active volume, finds the displayed max-intensity voxel,
+  and reports each channel's original raw intensity at the pointer location.
+- Highlighted the hovered voxel directly inside the MIP shader with a subtle pulse so users can see which 3D location the tooltip
+  refers to, while keeping the feature disabled for isosurface rendering and VR sessions.
+
 # VR performance tuning
 - Added a configurable `u_stepScale` ray-march uniform so headset sessions can trade sampling density for performance without
   recompiling shaders.
