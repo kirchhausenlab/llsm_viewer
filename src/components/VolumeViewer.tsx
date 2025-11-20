@@ -413,6 +413,10 @@ function VolumeViewer({
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const resourcesRef = useRef<Map<string, VolumeResources>>(new Map());
+  const hoverSystemReadyRef = useRef(false);
+  const pendingHoverEventRef = useRef<PointerEvent | null>(null);
+  const hoverRetryFrameRef = useRef<number | null>(null);
+  const updateVoxelHoverRef = useRef<(event: PointerEvent) => void>(() => {});
   const currentDimensionsRef = useRef<{ width: number; height: number; depth: number } | null>(null);
   const colormapCacheRef = useRef<Map<string, THREE.DataTexture>>(new Map());
   const rotationTargetRef = useRef(new THREE.Vector3());
@@ -1368,8 +1372,40 @@ function VolumeViewer({
     [channelTrackOffsets, trackLookup]
   );
 
+  const retryPendingVoxelHover = useCallback(() => {
+    if (!hoverSystemReadyRef.current) {
+      return;
+    }
+
+    const pendingEvent = pendingHoverEventRef.current;
+    if (!pendingEvent) {
+      return;
+    }
+
+    pendingHoverEventRef.current = null;
+
+    if (hoverRetryFrameRef.current !== null) {
+      cancelAnimationFrame(hoverRetryFrameRef.current);
+    }
+
+    hoverRetryFrameRef.current = requestAnimationFrame(() => {
+      hoverRetryFrameRef.current = null;
+      if (!hoverSystemReadyRef.current) {
+        pendingHoverEventRef.current = pendingEvent;
+        return;
+      }
+      updateVoxelHoverRef.current(pendingEvent);
+    });
+  }, []);
+
   const updateVoxelHover = useCallback(
     (event: PointerEvent) => {
+      if (!hoverSystemReadyRef.current) {
+        pendingHoverEventRef.current = event;
+        retryPendingVoxelHover();
+        return;
+      }
+
       const renderer = rendererRef.current;
       const cameraInstance = cameraRef.current;
       const raycasterInstance = raycasterRef.current;
@@ -1687,9 +1723,11 @@ function VolumeViewer({
       clearVoxelHover,
       clearVoxelHoverDebug,
       emitHoverIntensity,
+      retryPendingVoxelHover,
       reportVoxelHoverAbort
     ],
   );
+  updateVoxelHoverRef.current = updateVoxelHover;
 
   useEffect(() => {
     followedTrackIdRef.current = followedTrackId;
@@ -1996,6 +2034,8 @@ function VolumeViewer({
     sceneRef.current = scene;
     cameraRef.current = camera;
     raycasterRef.current = raycaster;
+    hoverSystemReadyRef.current = true;
+    retryPendingVoxelHover();
 
     const performHoverHitTest = (event: PointerEvent): string | null => {
       const cameraInstance = cameraRef.current;
@@ -2067,7 +2107,12 @@ function VolumeViewer({
       const mode = event.ctrlKey ? 'dolly' : event.shiftKey ? 'pan' : null;
 
       if (!mode) {
-        updateVoxelHover(event);
+        if (hoverSystemReadyRef.current) {
+          updateVoxelHover(event);
+        } else {
+          pendingHoverEventRef.current = event;
+          retryPendingVoxelHover();
+        }
         const hitTrackId = performHoverHitTest(event);
         if (hitTrackId !== null) {
           onTrackSelectionToggle(hitTrackId);
@@ -2107,7 +2152,12 @@ function VolumeViewer({
     const handlePointerMove = (event: PointerEvent) => {
       const state = pointerStateRef.current;
       if (!state || event.pointerId !== state.pointerId) {
-        updateVoxelHover(event);
+        if (hoverSystemReadyRef.current) {
+          updateVoxelHover(event);
+        } else {
+          pendingHoverEventRef.current = event;
+          retryPendingVoxelHover();
+        }
         performHoverHitTest(event);
         return;
       }
@@ -2142,13 +2192,23 @@ function VolumeViewer({
       state.lastX = event.clientX;
       state.lastY = event.clientY;
 
-      updateVoxelHover(event);
+      if (hoverSystemReadyRef.current) {
+        updateVoxelHover(event);
+      } else {
+        pendingHoverEventRef.current = event;
+        retryPendingVoxelHover();
+      }
     };
 
     const handlePointerUp = (event: PointerEvent) => {
       const state = pointerStateRef.current;
       if (!state || event.pointerId !== state.pointerId) {
-        updateVoxelHover(event);
+        if (hoverSystemReadyRef.current) {
+          updateVoxelHover(event);
+        } else {
+          pendingHoverEventRef.current = event;
+          retryPendingVoxelHover();
+        }
         performHoverHitTest(event);
         return;
       }
@@ -2168,7 +2228,12 @@ function VolumeViewer({
       }
 
       pointerStateRef.current = null;
-      updateVoxelHover(event);
+      if (hoverSystemReadyRef.current) {
+        updateVoxelHover(event);
+      } else {
+        pendingHoverEventRef.current = event;
+        retryPendingVoxelHover();
+      }
       performHoverHitTest(event);
     };
 
@@ -2574,6 +2639,12 @@ function VolumeViewer({
       sceneRef.current = null;
       cameraRef.current = null;
       controlsRef.current = null;
+      hoverSystemReadyRef.current = false;
+      pendingHoverEventRef.current = null;
+      if (hoverRetryFrameRef.current !== null) {
+        cancelAnimationFrame(hoverRetryFrameRef.current);
+        hoverRetryFrameRef.current = null;
+      }
       endVrSessionRequestRef.current = null;
     };
   }, [
@@ -2592,6 +2663,7 @@ function VolumeViewer({
     resetVrChannelsHudPlacement,
     resetVrPlaybackHudPlacement,
     resetVrTracksHudPlacement,
+    retryPendingVoxelHover,
     restoreVrFoveation,
     sessionCleanupRef,
     setControllerVisibility,
