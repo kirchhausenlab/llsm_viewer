@@ -118,6 +118,10 @@
 - Further softened the first auto-contrast maximum cutoff by reducing the histogram count threshold to just two percent of the
   minimum-side value so initial windows retain even brighter highlights before later refinements.
 
+## Planar hover intensity reset fix
+- Cleared the shared hover intensity callback whenever planar slice data is missing so header hover readouts stay in sync and
+  typechecking succeeds without referencing removed tooltip state.
+
 ## Float volume default windowing
 - Compute per-layer default brightness/contrast windows for float volumes using histogram quantiles, keeping uint8 data on the
   existing 0–1 range.
