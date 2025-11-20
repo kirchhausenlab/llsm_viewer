@@ -234,28 +234,26 @@ export default function FrontPage({
           <header className="front-page-header">
             <h1>{headerTitle}</h1>
           </header>
-          {frontPageMode !== 'preprocessed' ? (
+          {frontPageMode === 'initial' && !isPreprocessedLoaderOpen ? (
             <div className="channel-add-actions">
-              {frontPageMode === 'initial' ? (
-                <div className="channel-add-initial">
-                  <button
-                    type="button"
-                    className="channel-add-button"
-                    onClick={onAddChannel}
-                    disabled={isFrontPageLocked}
-                  >
-                    Set up new experiment
-                  </button>
-                  <button
-                    type="button"
-                    className="channel-add-button"
-                    onClick={onOpenPreprocessedLoader}
-                    disabled={isFrontPageLocked || isPreprocessedImporting || preprocessedDropboxImporting}
-                  >
-                    Load preprocessed experiment
-                  </button>
-                </div>
-              ) : null}
+              <div className="channel-add-initial">
+                <button
+                  type="button"
+                  className="channel-add-button"
+                  onClick={onAddChannel}
+                  disabled={isFrontPageLocked}
+                >
+                  Set up new experiment
+                </button>
+                <button
+                  type="button"
+                  className="channel-add-button"
+                  onClick={onOpenPreprocessedLoader}
+                  disabled={isFrontPageLocked || isPreprocessedImporting || preprocessedDropboxImporting}
+                >
+                  Load preprocessed experiment
+                </button>
+              </div>
             </div>
           ) : null}
           {frontPageMode === 'configuring' ? (
