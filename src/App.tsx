@@ -218,6 +218,10 @@ function App() {
   const [layoutResetToken, setLayoutResetToken] = useState(0);
   const [hoveredVolumeIntensity, setHoveredVolumeIntensity] = useState<string | null>(null);
   const [isHelpMenuOpen, setIsHelpMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setHoveredVolumeIntensity(null);
+  }, [viewerMode]);
   const handleHelpMenuToggle = useCallback(() => {
     setIsHelpMenuOpen((previous) => !previous);
   }, []);
@@ -2781,7 +2785,8 @@ function App() {
     followedTrackId,
     selectedTrackIds,
     onTrackSelectionToggle: handleTrackSelectionToggle,
-    onTrackFollowRequest: handleTrackFollowFromViewer
+    onTrackFollowRequest: handleTrackFollowFromViewer,
+    onHoverIntensityChange: setHoveredVolumeIntensity
   };
 
   const showSelectedTracksWindow = !isVrActive && hasParsedTrackData;

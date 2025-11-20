@@ -50,6 +50,7 @@ type PlanarViewerProps = {
   followedTrackId: string | null;
   onTrackSelectionToggle: (trackId: string) => void;
   onTrackFollowRequest: (trackId: string) => void;
+  onHoverIntensityChange?: (value: string | null) => void;
 };
 
 type SliceData = {
@@ -87,11 +88,6 @@ type TrackRenderEntry = {
   points: { x: number; y: number; z: number }[];
   baseColor: { r: number; g: number; b: number };
   highlightColor: { r: number; g: number; b: number };
-};
-
-type HoveredPixelInfo = {
-  text: string;
-  position: { x: number; y: number };
 };
 
 const MIN_ALPHA = 0.05;
@@ -180,7 +176,8 @@ function PlanarViewer({
   selectedTrackIds,
   followedTrackId,
   onTrackSelectionToggle,
-  onTrackFollowRequest
+  onTrackFollowRequest,
+  onHoverIntensityChange
 }: PlanarViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -201,7 +198,6 @@ function PlanarViewer({
   const [sliceRevision, setSliceRevision] = useState(0);
   const [hoveredTrackId, setHoveredTrackId] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
-  const [hoveredPixelInfo, setHoveredPixelInfo] = useState<HoveredPixelInfo | null>(null);
 
   const effectiveMaxSlices = Math.max(0, maxSlices);
   const clampedSliceIndex =
@@ -672,9 +668,16 @@ function PlanarViewer({
     tracks
   ]);
 
+  const emitHoverIntensity = useCallback(
+    (value: string | null) => {
+      onHoverIntensityChange?.(value);
+    },
+    [onHoverIntensityChange]
+  );
+
   const clearPixelInfo = useCallback(() => {
-    setHoveredPixelInfo(null);
-  }, []);
+    emitHoverIntensity(null);
+  }, [emitHoverIntensity]);
 
   const updatePixelHover = useCallback(
     (event: PointerEvent) => {
@@ -729,13 +732,16 @@ function PlanarViewer({
         return;
       }
 
-      setHoveredPixelInfo({
-        text,
-        position: { x: pointerX, y: pointerY }
-      });
+      emitHoverIntensity(text);
     },
-    [clearPixelInfo, samplePixelValue, sliceData]
+    [clearPixelInfo, emitHoverIntensity, samplePixelValue, sliceData]
   );
+
+  useEffect(() => {
+    return () => {
+      emitHoverIntensity(null);
+    };
+  }, [emitHoverIntensity]);
 
   const computeTrackCentroid = useCallback(
     (trackId: string, targetTimeIndex: number) => {
@@ -1504,16 +1510,6 @@ function PlanarViewer({
           ref={containerRef}
         >
           <canvas ref={canvasRef} className="planar-canvas" />
-          {hoveredPixelInfo ? (
-            <div
-              className="intensity-tooltip"
-              style={{ left: `${hoveredPixelInfo.position.x}px`, top: `${hoveredPixelInfo.position.y}px` }}
-              role="status"
-              aria-live="polite"
-            >
-              {hoveredPixelInfo.text}
-            </div>
-          ) : null}
           {hoveredTrackLabel && tooltipPosition ? (
             <div
               className="track-tooltip"
