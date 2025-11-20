@@ -2502,6 +2502,9 @@ function VolumeViewer({
     renderer.setAnimationLoop(renderLoop);
 
     return () => {
+      hoverSystemReadyRef.current = false;
+      pendingHoverEventRef.current = null;
+
       restoreVrFoveation();
       applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
       renderer.setAnimationLoop(null);
@@ -2639,8 +2642,6 @@ function VolumeViewer({
       sceneRef.current = null;
       cameraRef.current = null;
       controlsRef.current = null;
-      hoverSystemReadyRef.current = false;
-      pendingHoverEventRef.current = null;
       if (hoverRetryFrameRef.current !== null) {
         cancelAnimationFrame(hoverRetryFrameRef.current);
         hoverRetryFrameRef.current = null;
