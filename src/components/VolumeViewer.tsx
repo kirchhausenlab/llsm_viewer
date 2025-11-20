@@ -1373,12 +1373,25 @@ function VolumeViewer({
   );
 
   const retryPendingVoxelHover = useCallback(() => {
-    if (!hoverSystemReadyRef.current) {
+    const pendingEvent = pendingHoverEventRef.current;
+    if (!pendingEvent) {
       return;
     }
 
-    const pendingEvent = pendingHoverEventRef.current;
-    if (!pendingEvent) {
+    const hasHoverRefs =
+      rendererRef.current !== null &&
+      cameraRef.current !== null &&
+      raycasterRef.current !== null;
+
+    if (!hoverSystemReadyRef.current || !hasHoverRefs) {
+      if (hoverRetryFrameRef.current !== null) {
+        cancelAnimationFrame(hoverRetryFrameRef.current);
+      }
+
+      hoverRetryFrameRef.current = requestAnimationFrame(() => {
+        hoverRetryFrameRef.current = null;
+        retryPendingVoxelHover();
+      });
       return;
     }
 
@@ -1410,7 +1423,9 @@ function VolumeViewer({
       const cameraInstance = cameraRef.current;
       const raycasterInstance = raycasterRef.current;
       if (!renderer || !cameraInstance || !raycasterInstance) {
-        reportVoxelHoverAbort('Renderer, camera, or raycaster unavailable.');
+        hoverSystemReadyRef.current = false;
+        pendingHoverEventRef.current = event;
+        retryPendingVoxelHover();
         return;
       }
 
