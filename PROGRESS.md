@@ -617,3 +617,7 @@ d centered the front-page card in the viewport.
 ## 3D hover intensity fix
 - Emitted hover intensity changes directly from the 3D viewer as the hover target updates, ensuring the top menu readout reflects the current voxel instead of staying blank.
 - Cleared the shared hover intensity emitter during unmount and hover resets so stale values no longer persist between interactions.
+
+## 3D hover intensity reliability
+- Replaced the manual slab intersection with bounding-box ray checks when sampling hovered voxels so the intensity readout can always find an entry and exit point through the volume, even when transforms or offsets change.
+- Kept the hover sampling pipeline intact so the top-menu readout updates without impacting the 2D slice hover behavior.
