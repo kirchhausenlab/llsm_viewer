@@ -191,6 +191,22 @@
   z-index: 2;
 }
 
+.intensity-tooltip {
+  position: absolute;
+  transform: translate(10px, -10px);
+  padding: 0.3rem 0.5rem;
+  border-radius: 0.4rem;
+  background: rgba(8, 10, 13, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+  z-index: 3;
+}
+
 .axis-controls {
   display: flex;
   flex-direction: column;

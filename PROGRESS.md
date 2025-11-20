@@ -587,3 +587,7 @@ d centered the front-page card in the viewport.
 
 ## Keyboard navigation corrections
 - Fixed the WASDQE keyboard movement handler to translate both the camera and its rotation target together, stopping the unintended orbital rotation and preserving forward/strafe/up-down navigation.
+
+## Planar viewer intensity tooltip
+- Added an on-canvas hover tooltip in the 2D planar viewer that reports the denormalized pixel intensity at the pointer location, respecting layer offsets and channel counts.
+- Styled the tooltip to sit beside the pointer without interfering with existing track hover badges and ensured it clears when the slice or pointer position changes.
