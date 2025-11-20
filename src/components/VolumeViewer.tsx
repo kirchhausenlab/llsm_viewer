@@ -1945,7 +1945,6 @@ function VolumeViewer({
       const cameraInstance = cameraRef.current;
       const trackGroupInstance = trackGroupRef.current;
       const raycasterInstance = raycasterRef.current;
-      updateVoxelHover(event);
       if (!cameraInstance || !trackGroupInstance || !raycasterInstance || !trackGroupInstance.visible) {
         clearHoverState('pointer');
         return null;
@@ -2012,6 +2011,7 @@ function VolumeViewer({
       const mode = event.ctrlKey ? 'dolly' : event.shiftKey ? 'pan' : null;
 
       if (!mode) {
+        updateVoxelHover(event);
         const hitTrackId = performHoverHitTest(event);
         if (hitTrackId !== null) {
           onTrackSelectionToggle(hitTrackId);
@@ -2051,6 +2051,7 @@ function VolumeViewer({
     const handlePointerMove = (event: PointerEvent) => {
       const state = pointerStateRef.current;
       if (!state || event.pointerId !== state.pointerId) {
+        updateVoxelHover(event);
         performHoverHitTest(event);
         return;
       }
@@ -2091,6 +2092,7 @@ function VolumeViewer({
     const handlePointerUp = (event: PointerEvent) => {
       const state = pointerStateRef.current;
       if (!state || event.pointerId !== state.pointerId) {
+        updateVoxelHover(event);
         performHoverHitTest(event);
         return;
       }
@@ -2110,6 +2112,7 @@ function VolumeViewer({
       }
 
       pointerStateRef.current = null;
+      updateVoxelHover(event);
       performHoverHitTest(event);
     };
 
