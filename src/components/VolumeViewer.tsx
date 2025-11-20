@@ -1350,11 +1350,6 @@ function VolumeViewer({
         return;
       }
 
-      if (pointerStateRef.current) {
-        clearVoxelHover();
-        return;
-      }
-
       const domElement = renderer.domElement;
       const rect = domElement.getBoundingClientRect();
       const width = rect.width;
@@ -1373,6 +1368,8 @@ function VolumeViewer({
 
       let targetLayer: (typeof layers)[number] | null = null;
       let resource: VolumeResources | null = null;
+      let fallbackLayer: (typeof layers)[number] | null = null;
+      let fallbackResource: VolumeResources | null = null;
 
       for (const layer of layers) {
         const volume = layer.volume;
@@ -1392,13 +1389,27 @@ function VolumeViewer({
         }
 
         const candidate = resourcesRef.current.get(layer.key);
-        if (candidate?.mode !== '3d') {
+        if (!candidate) {
+          continue;
+        }
+
+        if (!fallbackLayer) {
+          fallbackLayer = layer;
+          fallbackResource = candidate;
+        }
+
+        if (candidate.mode !== '3d') {
           continue;
         }
 
         targetLayer = layer;
         resource = candidate;
         break;
+      }
+
+      if (!targetLayer && !resource && fallbackLayer && fallbackResource) {
+        targetLayer = fallbackLayer;
+        resource = fallbackResource;
       }
 
       if (!targetLayer || !targetLayer.volume || !resource) {
@@ -2073,6 +2084,8 @@ function VolumeViewer({
       controls.update();
       state.lastX = event.clientX;
       state.lastY = event.clientY;
+
+      updateVoxelHover(event);
     };
 
     const handlePointerUp = (event: PointerEvent) => {
