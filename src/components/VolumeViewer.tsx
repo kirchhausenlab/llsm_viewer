@@ -413,6 +413,7 @@ function VolumeViewer({
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const resourcesRef = useRef<Map<string, VolumeResources>>(new Map());
+  const hoverTeardownRef = useRef(false);
   const hoverSystemReadyRef = useRef(false);
   const pendingHoverEventRef = useRef<PointerEvent | null>(null);
   const hoverRetryFrameRef = useRef<number | null>(null);
@@ -1378,6 +1379,11 @@ function VolumeViewer({
       return;
     }
 
+    if (hoverTeardownRef.current) {
+      pendingHoverEventRef.current = null;
+      return;
+    }
+
     const hasHoverRefs =
       rendererRef.current !== null &&
       cameraRef.current !== null &&
@@ -1390,6 +1396,9 @@ function VolumeViewer({
 
       hoverRetryFrameRef.current = requestAnimationFrame(() => {
         hoverRetryFrameRef.current = null;
+        if (hoverTeardownRef.current) {
+          return;
+        }
         retryPendingVoxelHover();
       });
       return;
@@ -1403,6 +1412,10 @@ function VolumeViewer({
 
     hoverRetryFrameRef.current = requestAnimationFrame(() => {
       hoverRetryFrameRef.current = null;
+      if (hoverTeardownRef.current) {
+        pendingHoverEventRef.current = null;
+        return;
+      }
       if (!hoverSystemReadyRef.current) {
         pendingHoverEventRef.current = pendingEvent;
         return;
@@ -1413,6 +1426,11 @@ function VolumeViewer({
 
   const updateVoxelHover = useCallback(
     (event: PointerEvent) => {
+      if (hoverTeardownRef.current) {
+        pendingHoverEventRef.current = null;
+        return;
+      }
+
       if (!hoverSystemReadyRef.current) {
         pendingHoverEventRef.current = event;
         retryPendingVoxelHover();
@@ -1423,7 +1441,6 @@ function VolumeViewer({
       const cameraInstance = cameraRef.current;
       const raycasterInstance = raycasterRef.current;
       if (!renderer || !cameraInstance || !raycasterInstance) {
-        hoverSystemReadyRef.current = false;
         pendingHoverEventRef.current = event;
         retryPendingVoxelHover();
         return;
@@ -1886,6 +1903,8 @@ function VolumeViewer({
     if (!container) {
       return;
     }
+
+    hoverTeardownRef.current = false;
 
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -2517,6 +2536,7 @@ function VolumeViewer({
     renderer.setAnimationLoop(renderLoop);
 
     return () => {
+      hoverTeardownRef.current = true;
       hoverSystemReadyRef.current = false;
       pendingHoverEventRef.current = null;
 
