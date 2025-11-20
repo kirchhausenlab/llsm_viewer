@@ -1200,9 +1200,9 @@ function PlanarViewer({
 
   useEffect(() => {
     if (!sliceData || !sliceData.hasLayer) {
-      setHoveredPixelInfo(null);
+      emitHoverIntensity(null);
     }
-  }, [sliceData]);
+  }, [emitHoverIntensity, sliceData]);
 
   useEffect(() => {
     if (needsAutoFitRef.current) {
