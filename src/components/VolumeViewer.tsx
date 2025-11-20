@@ -1398,15 +1398,26 @@ function VolumeViewer({
             ? '3d'
             : 'slice';
 
-        if (viewerMode !== '3d') {
+        const hasVolumeDepth = volume.depth > 1;
+        const canSampleLayer = viewerMode === '3d' || (viewerMode === 'slice' && hasVolumeDepth);
+
+        if (!canSampleLayer) {
           continue;
         }
 
         const candidate = resourcesRef.current.get(layer.key) ?? null;
+        const isSliceResource = candidate?.mode === 'slice' && hasVolumeDepth;
+
         if (candidate?.mode === '3d') {
           targetLayer = layer;
           resource = candidate;
           break;
+        }
+
+        if (isSliceResource && !targetLayer) {
+          targetLayer = layer;
+          resource = candidate;
+          continue;
         }
 
         if (!cpuFallbackLayer) {
@@ -1427,7 +1438,8 @@ function VolumeViewer({
       const volume = targetLayer.volume;
       hoverVolumeSize.set(volume.width, volume.height, volume.depth);
 
-      const useGpuHover = resource !== null && resource.mode === '3d';
+      const useGpuHover = resource?.mode === '3d';
+      const useSliceTransform = resource?.mode === 'slice' && volume.depth > 1;
       let boundingBox: THREE.Box3 | null = null;
 
       if (useGpuHover && resource) {
@@ -1438,10 +1450,6 @@ function VolumeViewer({
 
         boundingBox = geometry.boundingBox ?? null;
         resource.mesh.updateMatrixWorld(true);
-      } else if (useGpuHover) {
-        console.debug('Voxel hover unavailable: 3D resource missing for GPU hover sampling.');
-        clearVoxelHover();
-        return;
       } else {
         hoverBoundingBox.min.set(-0.5, -0.5, -0.5);
         hoverBoundingBox.max.set(
@@ -1462,6 +1470,9 @@ function VolumeViewer({
       raycasterInstance.setFromCamera(hoverPointerVector, cameraInstance);
 
       if (useGpuHover && resource) {
+        hoverInverseMatrix.copy(resource.mesh.matrixWorld).invert();
+      } else if (useSliceTransform && resource) {
+        resource.mesh.updateMatrixWorld(true);
         hoverInverseMatrix.copy(resource.mesh.matrixWorld).invert();
       } else {
         const volumeRootGroup = volumeRootGroupRef.current;
