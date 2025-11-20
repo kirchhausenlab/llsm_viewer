@@ -1371,27 +1371,37 @@ function VolumeViewer({
         return;
       }
 
-      const targetLayer = layers.find((layer) => {
+      let targetLayer: (typeof layers)[number] | null = null;
+      let resource: VolumeResources | null = null;
+
+      for (const layer of layers) {
         const volume = layer.volume;
         if (!volume || !layer.visible) {
-          return false;
+          continue;
         }
+
         const viewerMode =
           layer.mode === 'slice' || layer.mode === '3d'
             ? layer.mode
             : volume.depth > 1
             ? '3d'
             : 'slice';
-        return viewerMode === '3d' && layer.renderStyle === 0;
-      });
 
-      if (!targetLayer || !targetLayer.volume) {
-        clearVoxelHover();
-        return;
+        if (viewerMode !== '3d') {
+          continue;
+        }
+
+        const candidate = resourcesRef.current.get(layer.key);
+        if (candidate?.mode !== '3d') {
+          continue;
+        }
+
+        targetLayer = layer;
+        resource = candidate;
+        break;
       }
 
-      const resource = resourcesRef.current.get(targetLayer.key);
-      if (!resource || resource.mode !== '3d') {
+      if (!targetLayer || !targetLayer.volume || !resource) {
         clearVoxelHover();
         return;
       }
