@@ -3008,6 +3008,7 @@ function VolumeViewer({
           uniforms.u_windowMax.value = layer.windowMax;
           uniforms.u_invert.value = layer.invert ? 1 : 0;
           uniforms.u_stepScale.value = volumeStepScaleRef.current;
+          uniforms.u_nearestSampling.value = layer.samplingMode === 'nearest' ? 1 : 0;
 
           const material = new THREE.ShaderMaterial({
             uniforms,
@@ -3154,6 +3155,10 @@ function VolumeViewer({
         materialUniforms.u_cmdata.value = colormapTexture;
         if (materialUniforms.u_stepScale) {
           materialUniforms.u_stepScale.value = volumeStepScaleRef.current;
+        }
+        if (materialUniforms.u_nearestSampling) {
+          materialUniforms.u_nearestSampling.value =
+            layer.samplingMode === 'nearest' ? 1 : 0;
         }
 
         if (resources.mode === '3d') {
