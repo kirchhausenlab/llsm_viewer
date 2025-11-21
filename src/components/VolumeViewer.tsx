@@ -1151,9 +1151,10 @@ function VolumeViewer({
 
       for (let index = 0; index < track.points.length; index++) {
         const point = track.points[index];
+        const resolvedZ = Number.isFinite(point.z) ? point.z : 0;
         positions[index * 3 + 0] = point.x + offset.x;
         positions[index * 3 + 1] = point.y + offset.y;
-        positions[index * 3 + 2] = point.z;
+        positions[index * 3 + 2] = resolvedZ;
         times[index] = point.time;
       }
 
@@ -1392,12 +1393,12 @@ function VolumeViewer({
           count = 1;
           sumX = point.x + offset.x;
           sumY = point.y + offset.y;
-          sumZ = point.z;
+          sumZ = Number.isFinite(point.z) ? point.z : 0;
         } else if (Math.abs(point.time - latestTime) <= epsilon) {
           count += 1;
           sumX += point.x + offset.x;
           sumY += point.y + offset.y;
-          sumZ += point.z;
+          sumZ += Number.isFinite(point.z) ? point.z : 0;
         }
       }
 

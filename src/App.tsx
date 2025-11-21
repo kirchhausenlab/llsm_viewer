@@ -503,7 +503,7 @@ function App() {
       map.set(channel.id, channel.name.trim() || 'Untitled channel');
     }
     return map;
-  }, [channels]);
+  }, [channels, experimentDimension]);
   const channelLayersMap = useMemo(() => {
     const map = new Map<string, LoadedLayer[]>();
     for (const layer of layers) {
@@ -551,6 +551,8 @@ function App() {
   }, [layers]);
   const parsedTracksByChannel = useMemo(() => {
     const map = new Map<string, TrackDefinition[]>();
+    const is2dExperiment = experimentDimension === '2d';
+    const minimumColumns = is2dExperiment ? 6 : 7;
 
     for (const channel of channels) {
       const entries = channel.trackEntries;
@@ -562,7 +564,7 @@ function App() {
       const trackMap = new Map<number, TrackPoint[]>();
 
       for (const row of entries) {
-        if (row.length < 7) {
+        if (row.length < minimumColumns) {
           continue;
         }
 
@@ -571,8 +573,11 @@ function App() {
         const deltaTime = Number(row[2]);
         const x = Number(row[3]);
         const y = Number(row[4]);
-        const z = Number(row[5]);
-        const amplitudeRaw = Number(row[6]);
+        const amplitudeIndex = is2dExperiment && row.length < 7 ? 5 : 6;
+        const rawZ = is2dExperiment ? (row.length >= 7 ? Number(row[5]) : 0) : Number(row[5]);
+        const amplitudeRaw = Number(row[amplitudeIndex]);
+        const hasValidZ = Number.isFinite(rawZ);
+        const z = is2dExperiment ? (hasValidZ ? rawZ : 0) : rawZ;
 
         if (
           !Number.isFinite(rawId) ||
@@ -580,8 +585,8 @@ function App() {
           !Number.isFinite(deltaTime) ||
           !Number.isFinite(x) ||
           !Number.isFinite(y) ||
-          !Number.isFinite(z) ||
-          !Number.isFinite(amplitudeRaw)
+          !Number.isFinite(amplitudeRaw) ||
+          (!is2dExperiment && !hasValidZ)
         ) {
           continue;
         }
@@ -631,7 +636,7 @@ function App() {
     }
 
     return map;
-  }, [channels]);
+  }, [channels, experimentDimension]);
 
   const parsedTracks = useMemo(() => {
     const ordered: TrackDefinition[] = [];

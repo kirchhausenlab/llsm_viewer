@@ -638,10 +638,11 @@ function PlanarViewer({
           if (point.time - maxVisibleTime > TRACK_EPSILON) {
             break;
           }
+          const resolvedZ = Number.isFinite(point.z) ? point.z : 0;
           visiblePoints.push({
             x: point.x + offset.x - centerX,
             y: point.y + offset.y - centerY,
-            z: point.z
+            z: resolvedZ
           });
         }
 
@@ -778,12 +779,12 @@ function PlanarViewer({
           count = 1;
           sumX = point.x + offset.x;
           sumY = point.y + offset.y;
-          sumZ = point.z;
+          sumZ = Number.isFinite(point.z) ? point.z : 0;
         } else if (Math.abs(point.time - latestTime) <= TRACK_EPSILON) {
           count += 1;
           sumX += point.x + offset.x;
           sumY += point.y + offset.y;
-          sumZ += point.z;
+          sumZ += Number.isFinite(point.z) ? point.z : 0;
         }
       }
 
