@@ -10,7 +10,12 @@ import type {
 import ChannelCard from './ChannelCard';
 import FloatingWindow from './FloatingWindow';
 import { formatBytes } from '../errors';
-import type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment } from '../App';
+import type {
+  ChannelSource,
+  ChannelValidation,
+  ExperimentDimension,
+  StagedPreprocessedExperiment
+} from '../App';
 import type { DropboxAppKeySource } from '../integrations/dropbox';
 import type { VoxelResolutionInput, VoxelResolutionUnit } from '../types/voxelResolution';
 import { VOXEL_RESOLUTION_UNITS } from '../types/voxelResolution';
@@ -41,6 +46,8 @@ type FrontPageProps = {
   onAddChannel: () => void;
   onOpenPreprocessedLoader: () => void;
   onReturnToStart: () => void;
+  experimentDimension: ExperimentDimension;
+  onExperimentDimensionChange: (dimension: ExperimentDimension) => void;
   voxelResolution: VoxelResolutionInput;
   onVoxelResolutionAxisChange: (axis: VoxelResolutionAxis, value: string) => void;
   onVoxelResolutionUnitChange: (unit: VoxelResolutionUnit) => void;
@@ -145,6 +152,8 @@ export default function FrontPage({
   onAddChannel,
   onOpenPreprocessedLoader,
   onReturnToStart,
+  experimentDimension,
+  onExperimentDimensionChange,
   voxelResolution,
   onVoxelResolutionAxisChange,
   onVoxelResolutionUnitChange,
@@ -215,6 +224,11 @@ export default function FrontPage({
   }, [frontPageMode, isPreprocessedLoaderOpen]);
 
   const showReturnButton = frontPageMode !== 'initial' || isPreprocessedLoaderOpen;
+  const voxelResolutionAxes = useMemo(() => {
+    return experimentDimension === '2d'
+      ? VOXEL_RESOLUTION_AXES.filter(({ axis }) => axis !== 'z')
+      : VOXEL_RESOLUTION_AXES;
+  }, [experimentDimension]);
 
   return (
     <div className="app front-page-mode">
@@ -248,7 +262,26 @@ export default function FrontPage({
           {frontPageMode === 'configuring' ? (
             <div className="voxel-resolution-row">
               <span className="voxel-resolution-title">Voxel resolution:</span>
-              {VOXEL_RESOLUTION_AXES.map(({ axis, label }) => (
+              <div className="voxel-resolution-mode-toggle" role="group" aria-label="Movie dimension">
+                {['3d', '2d'].map((mode) => (
+                  <label
+                    key={mode}
+                    className={`voxel-resolution-mode${
+                      experimentDimension === mode ? ' is-selected' : ''
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      value={mode}
+                      checked={experimentDimension === mode}
+                      onChange={() => onExperimentDimensionChange(mode as ExperimentDimension)}
+                      disabled={isFrontPageLocked}
+                    />
+                    {mode === '3d' ? '3D movie' : '2D movie'}
+                  </label>
+                ))}
+              </div>
+              {voxelResolutionAxes.map(({ axis, label }) => (
                 <label key={axis} className="voxel-resolution-field">
                   <span className="voxel-resolution-field-label">{label}:</span>
                   <input
