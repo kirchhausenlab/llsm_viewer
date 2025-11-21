@@ -20,6 +20,7 @@ type VolumeUniforms = {
   u_hoverRadius: { value: number };
   u_hoverActive: { value: number };
   u_hoverPulse: { value: number };
+  u_depthOpacityThreshold: { value: number };
 };
 
 const uniforms = {
@@ -40,7 +41,8 @@ const uniforms = {
   u_hoverScale: { value: new Vector3() },
   u_hoverRadius: { value: 0 },
   u_hoverActive: { value: 0 },
-  u_hoverPulse: { value: 0 }
+  u_hoverPulse: { value: 0 },
+  u_depthOpacityThreshold: { value: 0.6 }
 } satisfies VolumeUniforms;
 
 export const VolumeRenderShader = {
@@ -86,6 +88,7 @@ export const VolumeRenderShader = {
     uniform float u_hoverRadius;
     uniform float u_hoverActive;
     uniform float u_hoverPulse;
+    uniform float u_depthOpacityThreshold;
 
     uniform sampler3D u_data;
     uniform sampler2D u_cmdata;
@@ -104,9 +107,16 @@ export const VolumeRenderShader = {
     const float diffuseStrength = 0.8;
     const vec3 specularColor = vec3(1.0);
 
+    float accumulatedAlpha = 0.0;
+    float depthValue = 1.0;
+    int depthFound = 0;
+
     vec4 add_lighting(float val, vec3 loc, vec3 step, vec3 view_ray, vec4 sampleColor);
     void cast_mip(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
     void cast_iso(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
+    float compute_depth(vec3 modelPosition);
+    vec3 sample_to_model(vec3 texcoords);
+    void accumulate_depth(vec3 loc, float sampleAlpha);
 
     vec4 sample_color(vec3 texcoords) {
       return texture(u_data, texcoords.xyz);
@@ -174,6 +184,29 @@ export const VolumeRenderShader = {
       }
       float alpha = clamp(adjustedIntensity, 0.0, 1.0);
       return vec4(adjustedColor, alpha);
+    }
+
+    float compute_depth(vec3 modelPosition) {
+      vec4 viewPosition = modelViewMatrix * vec4(modelPosition, 1.0);
+      vec4 clipPosition = projectionMatrix * viewPosition;
+      float ndcDepth = clipPosition.z / clipPosition.w;
+      return 0.5 * ndcDepth + 0.5;
+    }
+
+    vec3 sample_to_model(vec3 texcoords) {
+      return texcoords * u_size - vec3(0.5);
+    }
+
+    void accumulate_depth(vec3 loc, float sampleAlpha) {
+      if (depthFound == 1) {
+        return;
+      }
+      accumulatedAlpha += (1.0 - accumulatedAlpha) * clamp(sampleAlpha, 0.0, 1.0);
+      if (accumulatedAlpha >= u_depthOpacityThreshold) {
+        vec3 modelPosition = sample_to_model(loc);
+        depthValue = compute_depth(modelPosition);
+        depthFound = 1;
+      }
     }
 
     void main() {
@@ -278,6 +311,8 @@ export const VolumeRenderShader = {
       if (gl_FragColor.a < 0.05) {
         discard;
       }
+
+      gl_FragDepth = depthFound == 1 ? depthValue : gl_FragCoord.z;
     }
 
     void cast_mip(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray) {
@@ -297,6 +332,7 @@ export const VolumeRenderShader = {
         vec4 colorSample = sample_color(loc);
         float rawVal = luminance(colorSample);
         float val = adjust_intensity(rawVal);
+        accumulate_depth(loc, val);
         if (val > max_val) {
           max_val = val;
           max_i = iter;
@@ -323,6 +359,7 @@ export const VolumeRenderShader = {
         vec4 colorSample = sample_color(iloc);
         float refinedRaw = luminance(colorSample);
         float refined = adjust_intensity(refinedRaw);
+        accumulate_depth(iloc, refined);
         if (refined > max_val) {
           max_val = refined;
           max_color = colorSample;
@@ -357,6 +394,7 @@ export const VolumeRenderShader = {
         }
 
         float val = sample1(loc);
+        accumulate_depth(loc, val);
 
         if (val > low_threshold) {
           vec3 iloc = loc - 0.5 * step;
@@ -364,6 +402,7 @@ export const VolumeRenderShader = {
           for (int i = 0; i < REFINEMENT_STEPS; i++) {
             vec4 colorSample = sample_color(iloc);
             float refined = adjust_intensity(luminance(colorSample));
+            accumulate_depth(iloc, refined);
             if (refined > u_renderthreshold) {
               gl_FragColor = add_lighting(refined, iloc, dstep, view_ray, colorSample);
               return;
