@@ -657,3 +657,6 @@ d centered the front-page card in the viewport.
 
 ## Grid overlay cleanup follow-up
 - Removed lingering grid window position reset hooks after the overlay deletion so the viewer layout reset no longer references missing handlers.
+
+## Front page background cleanup
+- Removed the looping background video from the landing page and replaced it with a simple solid-color backdrop so the UI loads without media assets.

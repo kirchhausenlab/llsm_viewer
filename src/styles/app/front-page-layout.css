@@ -7,19 +7,8 @@
 }
 
 .app.front-page-mode {
-  background: transparent;
+  background: #0a0f18;
   color: rgba(255, 255, 255, 0.95);
-}
-
-.app-background-video {
-  position: fixed;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  z-index: -2;
-  pointer-events: none;
-  filter: saturate(1.05);
 }
 
 .front-page {

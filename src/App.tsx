@@ -2639,8 +2639,6 @@ function App() {
     }
   }, [maxSliceDepth, sliceIndex]);
 
-  const backgroundVideoSrc = `${import.meta.env.BASE_URL}media/background.mp4`;
-
   if (!isViewerLaunched) {
     const isFrontPageLocked =
       isLaunchingViewer || isExportingPreprocessed || isPreprocessedImporting || preprocessedDropboxImporting;
@@ -2653,7 +2651,6 @@ function App() {
           };
     return (
       <FrontPage
-        backgroundVideoSrc={backgroundVideoSrc}
         isFrontPageLocked={isFrontPageLocked}
         frontPageMode={frontPageMode}
         channels={channels}
