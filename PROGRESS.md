@@ -672,3 +672,6 @@ d centered the front-page card in the viewport.
 - Added an opacity-thresholded depth write path to the ray-marched volume shader so high-intensity regions populate the depth buffer at their first substantial sample.
 - Enabled depth-aware volume rendering and reused the new depth mask to let the 3D grid respect occlusion from dense volume areas.
 - Fixed volume raymarch depth mask to keep depth writes aligned with the volume cube and fall back to default depth when no opacity threshold is reached.
+
+## Depth mask stability follow-up
+- Clamped the shader depth calculation and restored the far-plane fallback when the opacity threshold is never met so volume color output renders reliably even without qualifying depth samples.
