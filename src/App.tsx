@@ -244,9 +244,16 @@ function App() {
   const [hoveredVolumeVoxel, setHoveredVolumeVoxel] = useState<HoveredVoxelInfo | null>(null);
   const [isHelpMenuOpen, setIsHelpMenuOpen] = useState(false);
 
+  const is3dViewerAvailable = experimentDimension === '3d';
+
   useEffect(() => {
     setHoveredVolumeVoxel(null);
   }, [viewerMode]);
+  useEffect(() => {
+    if (!is3dViewerAvailable) {
+      setViewerMode('2d');
+    }
+  }, [is3dViewerAvailable]);
   const handleHelpMenuToggle = useCallback(() => {
     setIsHelpMenuOpen((previous) => !previous);
   }, []);
@@ -1097,8 +1104,14 @@ function App() {
 
   const isLoading = status === 'loading';
   const playbackDisabled = isLoading || volumeTimepointCount <= 1;
-  const vrButtonDisabled = isVrActive ? false : !isVrAvailable || !hasVrSessionHandlers || isVrRequesting;
-  const vrButtonTitle = isVrActive
+  const vrButtonDisabled = !is3dViewerAvailable
+    ? !isVrActive
+    : isVrActive
+    ? false
+    : !isVrAvailable || !hasVrSessionHandlers || isVrRequesting;
+  const vrButtonTitle = !is3dViewerAvailable
+    ? 'VR is only available for 3D datasets.'
+    : isVrActive
     ? 'Exit immersive VR session.'
     : !isVrSupportChecked
     ? 'Checking WebXR capabilities…'
@@ -2141,10 +2154,13 @@ function App() {
   );
 
   const handleToggleViewerMode = useCallback(() => {
+    if (!is3dViewerAvailable) {
+      return;
+    }
     setViewerMode((current) => (current === '3d' ? '2d' : '3d'));
     setResetViewHandler(null);
     handleStopTrackFollow();
-  }, [handleStopTrackFollow]);
+  }, [handleStopTrackFollow, is3dViewerAvailable]);
 
   const handleSliceIndexChange = useCallback((index: number) => {
     setSliceIndex(index);
@@ -2792,40 +2808,42 @@ function App() {
     onTrackSelectionToggle: handleTrackSelectionToggle,
     onTrackFollowRequest: handleTrackFollowFromViewer,
     onHoverVoxelChange: setHoveredVolumeVoxel,
-    vr: {
-      isVrPassthroughSupported,
-      trackChannels,
-      activeTrackChannelId,
-      onTrackChannelSelect: handleTrackChannelSelect,
-      onTrackVisibilityToggle: handleTrackVisibilityToggle,
-      onTrackVisibilityAllChange: handleTrackVisibilityAllChange,
-      onTrackOpacityChange: handleTrackOpacityChange,
-      onTrackLineWidthChange: handleTrackLineWidthChange,
-      onTrackColorSelect: handleTrackColorSelect,
-      onTrackColorReset: handleTrackColorReset,
-      onStopTrackFollow: handleStopTrackFollow,
-      channelPanels: vrChannelPanels,
-      activeChannelPanelId: activeChannelTabId,
-      onChannelPanelSelect: setActiveChannelTabId,
-      onChannelVisibilityToggle: handleChannelVisibilityToggle,
-      onChannelReset: handleChannelSliderReset,
-      onChannelLayerSelect: handleChannelLayerSelectionChange,
-      onLayerSelect: handleLayerSelect,
-      onLayerSoloToggle: handleLayerSoloToggle,
-      onLayerContrastChange: handleLayerContrastChange,
-      onLayerBrightnessChange: handleLayerBrightnessChange,
-      onLayerWindowMinChange: handleLayerWindowMinChange,
-      onLayerWindowMaxChange: handleLayerWindowMaxChange,
-      onLayerAutoContrast: handleLayerAutoContrast,
-      onLayerOffsetChange: handleLayerOffsetChange,
-      onLayerColorChange: handleLayerColorChange,
-      onLayerRenderStyleToggle: handleLayerRenderStyleToggle,
-      onLayerSamplingModeToggle: handleLayerSamplingModeToggle,
-      onLayerInvertToggle: handleLayerInvertToggle,
-      onRegisterVrSession: registerSessionHandlers,
-      onVrSessionStarted: handleSessionStarted,
-      onVrSessionEnded: handleSessionEnded
-    }
+    vr: is3dViewerAvailable
+      ? {
+          isVrPassthroughSupported,
+          trackChannels,
+          activeTrackChannelId,
+          onTrackChannelSelect: handleTrackChannelSelect,
+          onTrackVisibilityToggle: handleTrackVisibilityToggle,
+          onTrackVisibilityAllChange: handleTrackVisibilityAllChange,
+          onTrackOpacityChange: handleTrackOpacityChange,
+          onTrackLineWidthChange: handleTrackLineWidthChange,
+          onTrackColorSelect: handleTrackColorSelect,
+          onTrackColorReset: handleTrackColorReset,
+          onStopTrackFollow: handleStopTrackFollow,
+          channelPanels: vrChannelPanels,
+          activeChannelPanelId: activeChannelTabId,
+          onChannelPanelSelect: setActiveChannelTabId,
+          onChannelVisibilityToggle: handleChannelVisibilityToggle,
+          onChannelReset: handleChannelSliderReset,
+          onChannelLayerSelect: handleChannelLayerSelectionChange,
+          onLayerSelect: handleLayerSelect,
+          onLayerSoloToggle: handleLayerSoloToggle,
+          onLayerContrastChange: handleLayerContrastChange,
+          onLayerBrightnessChange: handleLayerBrightnessChange,
+          onLayerWindowMinChange: handleLayerWindowMinChange,
+          onLayerWindowMaxChange: handleLayerWindowMaxChange,
+          onLayerAutoContrast: handleLayerAutoContrast,
+          onLayerOffsetChange: handleLayerOffsetChange,
+          onLayerColorChange: handleLayerColorChange,
+          onLayerRenderStyleToggle: handleLayerRenderStyleToggle,
+          onLayerSamplingModeToggle: handleLayerSamplingModeToggle,
+          onLayerInvertToggle: handleLayerInvertToggle,
+          onRegisterVrSession: registerSessionHandlers,
+          onVrSessionStarted: handleSessionStarted,
+          onVrSessionEnded: handleSessionEnded
+        }
+      : undefined
   };
 
   const planarViewerProps: ViewerShellProps['planarViewerProps'] = {
@@ -2880,6 +2898,7 @@ function App() {
       selectedTracksWindowInitialPosition
     },
     modeControls: {
+      is3dModeAvailable: is3dViewerAvailable,
       isVrActive,
       isVrRequesting,
       resetViewHandler,

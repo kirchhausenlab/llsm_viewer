@@ -43,6 +43,7 @@ type TopMenuProps = {
 };
 
 type ModeControlsProps = {
+  is3dModeAvailable: boolean;
   isVrActive: boolean;
   isVrRequesting: boolean;
   resetViewHandler: (() => void) | null;
@@ -199,6 +200,7 @@ function ViewerShell({
     selectedTracksWindowInitialPosition
   } = layout;
   const {
+    is3dModeAvailable,
     isVrActive,
     isVrRequesting,
     resetViewHandler,
@@ -380,7 +382,7 @@ function ViewerShell({
                     type="button"
                     onClick={onToggleViewerMode}
                     className={viewerMode === '3d' ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
-                    disabled={isVrActive || isVrRequesting}
+                    disabled={isVrActive || isVrRequesting || !is3dModeAvailable}
                   >
                     {viewerMode === '3d' ? '3D view' : '2D view'}
                   </button>
@@ -392,31 +394,35 @@ function ViewerShell({
                   >
                     Reset view
                   </button>
-                  <button
-                    type="button"
-                    className="viewer-mode-button"
-                    onClick={onVrButtonClick}
-                    disabled={vrButtonDisabled}
-                    title={vrButtonTitle}
-                  >
-                    {vrButtonLabel}
-                  </button>
+                  {is3dModeAvailable ? (
+                    <button
+                      type="button"
+                      className="viewer-mode-button"
+                      onClick={onVrButtonClick}
+                      disabled={vrButtonDisabled}
+                      title={vrButtonTitle}
+                    >
+                      {vrButtonLabel}
+                    </button>
+                  ) : null}
                 </div>
               </div>
-              <div className="control-group">
-                <label htmlFor="rendering-quality-slider">
-                  Rendering quality <span>{renderingQuality.toFixed(2)}</span>
-                </label>
-                <input
-                  id="rendering-quality-slider"
-                  type="range"
-                  min={0.5}
-                  max={2}
-                  step={0.01}
-                  value={renderingQuality}
-                  onChange={(event) => handleRenderingQualityChange(Number(event.target.value))}
-                />
-              </div>
+              {is3dModeAvailable ? (
+                <div className="control-group">
+                  <label htmlFor="rendering-quality-slider">
+                    Rendering quality <span>{renderingQuality.toFixed(2)}</span>
+                  </label>
+                  <input
+                    id="rendering-quality-slider"
+                    type="range"
+                    min={0.5}
+                    max={2}
+                    step={0.01}
+                    value={renderingQuality}
+                    onChange={(event) => handleRenderingQualityChange(Number(event.target.value))}
+                  />
+                </div>
+              ) : null}
               <div className="control-group">
                 <label htmlFor="fps-slider">
                   frames per second <span>{fps}</span>
