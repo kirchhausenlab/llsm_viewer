@@ -1061,15 +1061,6 @@ function App() {
     voxelResolution
   });
 
-  useEffect(() => {
-    if (preprocessedExperiment) {
-      return;
-    }
-    if (channels.length === 0) {
-      setIsExperimentSetupStarted(false);
-    }
-  }, [channels, preprocessedExperiment]);
-
   const isLoading = status === 'loading';
   const playbackDisabled = isLoading || volumeTimepointCount <= 1;
   const vrButtonDisabled = isVrActive ? false : !isVrAvailable || !hasVrSessionHandlers || isVrRequesting;
@@ -1333,6 +1324,15 @@ function App() {
       }
     };
   }, [fps, isPlaying, playbackDisabled, viewerMode, volumeTimepointCount]);
+
+  const handleStartExperimentSetup = useCallback(() => {
+    resetPreprocessedState();
+    setIsExperimentSetupStarted(true);
+    setActiveChannelId(null);
+    setEditingChannelId(null);
+    pendingChannelFocusIdRef.current = null;
+    clearDatasetError();
+  }, [clearDatasetError, resetPreprocessedState]);
 
   const handleAddChannel = useCallback(() => {
     resetPreprocessedState();
@@ -2665,6 +2665,7 @@ function App() {
         editingChannelOriginalNameRef={editingChannelOriginalNameRef}
         setActiveChannelId={setActiveChannelId}
         setEditingChannelId={setEditingChannelId}
+        onStartExperimentSetup={handleStartExperimentSetup}
         onAddChannel={handleAddChannel}
         onOpenPreprocessedLoader={handlePreprocessedLoaderOpen}
         onReturnToStart={handleReturnToFrontPage}

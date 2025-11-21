@@ -38,6 +38,7 @@ type FrontPageProps = {
   editingChannelOriginalNameRef: MutableRefObject<string>;
   setActiveChannelId: Dispatch<SetStateAction<string | null>>;
   setEditingChannelId: Dispatch<SetStateAction<string | null>>;
+  onStartExperimentSetup: () => void;
   onAddChannel: () => void;
   onOpenPreprocessedLoader: () => void;
   onReturnToStart: () => void;
@@ -142,6 +143,7 @@ export default function FrontPage({
   editingChannelOriginalNameRef,
   setActiveChannelId,
   setEditingChannelId,
+  onStartExperimentSetup,
   onAddChannel,
   onOpenPreprocessedLoader,
   onReturnToStart,
@@ -240,7 +242,7 @@ export default function FrontPage({
                 <button
                   type="button"
                   className="channel-add-button"
-                  onClick={onAddChannel}
+                  onClick={onStartExperimentSetup}
                   disabled={isFrontPageLocked}
                 >
                   Set up new experiment
