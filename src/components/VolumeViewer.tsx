@@ -3272,7 +3272,8 @@ function VolumeViewer({
             transparent: true,
             depthWrite: true,
             depthTest: true,
-            extensions: { fragDepth: true }
+            // Allow manual depth writes in the volume fragment shader.
+            extensions: { fragDepth: true } as unknown as THREE.ShaderMaterialParameters['extensions']
           });
 
           const geometry = new THREE.BoxGeometry(volume.width, volume.height, volume.depth);
