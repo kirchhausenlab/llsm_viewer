@@ -664,3 +664,6 @@ d centered the front-page card in the viewport.
 
 ## 3D grid coverage update
 - Rebuilt grid generation to create full X/Y/Z-aligned lines through the entire volume, producing a complete lattice instead of only outlining faces.
+
+## Hovered voxel clear guard
+- Corrected the planar viewer hover reset effect to call the shared hover emitter so hover state clears without TypeScript errors when slice data is unavailable.
