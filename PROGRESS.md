@@ -660,3 +660,7 @@ d centered the front-page card in the viewport.
 
 ## Front page background cleanup
 - Removed the looping background video from the landing page and replaced it with a simple solid-color backdrop so the UI loads without media assets.
+
+## Preprocessed movie mode metadata
+- Added a dataset-level movie mode flag to preprocessed manifests, exporting the selected viewing dimension and defaulting older
+  manifests to 3D while feeding the parsed mode back into the app state.
