@@ -3,9 +3,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { Line2 } from 'three/examples/jsm/lines/Line2';
-import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
-import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
 import type { NormalizedVolume } from '../volumeProcessing';
 import type { HoveredVoxelInfo } from '../types/hover';
@@ -105,73 +103,6 @@ const clampValue = (value: number, min: number, max: number): number => {
   }
   return value;
 };
-
-function buildGridPositions(
-  dimensions: { width: number; height: number; depth: number },
-  spacing: number,
-): Float32Array {
-  const { width, height, depth } = dimensions;
-  const safeSpacing = Math.max(spacing, 1e-6);
-
-  const generateStops = (size: number) => {
-    const stops = new Set<number>();
-    stops.add(0);
-    stops.add(size);
-
-    const stepCount = Math.ceil(size / safeSpacing);
-    for (let step = 1; step < stepCount; step++) {
-      const value = step * safeSpacing;
-      if (value > 0 && value < size) {
-        stops.add(Math.min(value, size));
-      }
-    }
-
-    return Array.from(stops).sort((a, b) => a - b);
-  };
-
-  const widthStops = generateStops(width);
-  const heightStops = generateStops(height);
-  const depthStops = generateStops(depth);
-  const positions: number[] = [];
-
-  const minX = -0.5;
-  const minY = -0.5;
-  const minZ = -0.5;
-  const maxX = width - 0.5;
-  const maxY = height - 0.5;
-  const maxZ = depth - 0.5;
-
-  const addLine = (x1: number, y1: number, z1: number, x2: number, y2: number, z2: number) => {
-    positions.push(x1, y1, z1, x2, y2, z2);
-  };
-
-  const xStops = widthStops.map((stop) => Math.min(minX + stop, maxX));
-  const yStops = heightStops.map((stop) => Math.min(minY + stop, maxY));
-  const zStops = depthStops.map((stop) => Math.min(minZ + stop, maxZ));
-
-  // Lines parallel to the X axis (varying Y and Z)
-  for (const y of yStops) {
-    for (const z of zStops) {
-      addLine(minX, y, z, maxX, y, z);
-    }
-  }
-
-  // Lines parallel to the Y axis (varying X and Z)
-  for (const x of xStops) {
-    for (const z of zStops) {
-      addLine(x, minY, z, x, maxY, z);
-    }
-  }
-
-  // Lines parallel to the Z axis (varying X and Y)
-  for (const x of xStops) {
-    for (const y of yStops) {
-      addLine(x, y, minZ, x, y, maxZ);
-    }
-  }
-
-  return new Float32Array(positions);
-}
 
 function prepareSliceTexture(volume: NormalizedVolume, sliceIndex: number, existingBuffer: Uint8Array | null) {
   const { width, height, depth, channels, normalized } = volume;
@@ -514,10 +445,7 @@ function VolumeViewer({
     moveDown: false
   });
   const volumeRootGroupRef = useRef<THREE.Group | null>(null);
-  const gridGroupRef = useRef<THREE.Group | null>(null);
-  const gridLineRef = useRef<LineSegments2 | null>(null);
-  const gridGeometryRef = useRef<LineSegmentsGeometry | null>(null);
-  const gridMaterialRef = useRef<LineMaterial | null>(null);
+  const gridColorRef = useRef(new THREE.Color(0xffffff));
   const volumeRootBaseOffsetRef = useRef(new THREE.Vector3());
   const volumeRootCenterOffsetRef = useRef(new THREE.Vector3());
   const volumeRootCenterUnscaledRef = useRef(new THREE.Vector3());
@@ -604,10 +532,6 @@ function VolumeViewer({
         resource.outlineMaterial.resolution.set(width, height);
         resource.outlineMaterial.needsUpdate = true;
       }
-      if (gridMaterialRef.current) {
-        gridMaterialRef.current.resolution.set(width, height);
-        gridMaterialRef.current.needsUpdate = true;
-      }
     }
     cameraInstance.aspect = width / height;
     cameraInstance.updateProjectionMatrix();
@@ -629,111 +553,41 @@ function VolumeViewer({
     setTooltipPosition(nextState.position);
   }, []);
 
-  const applyGridAppearance = useCallback(() => {
-    const gridGroup = gridGroupRef.current;
-    const gridLine = gridLineRef.current;
-    const gridMaterial = gridMaterialRef.current;
-    const hasVolume = !!currentDimensionsRef.current;
-    const hasValidSpacing = Number.isFinite(gridSpacing) && gridSpacing > 0;
-    const shouldShow = gridEnabled && hasVolume && !!gridLine && hasValidSpacing;
+  const applyGridUniformsToResources = useCallback(() => {
+    const safeSpacing = Number.isFinite(gridSpacing) ? gridSpacing : 0;
+    const safeThickness = Number.isFinite(gridThickness) ? gridThickness : 0;
+    const safeOpacity = clampValue(gridOpacity, 0, 1);
+    const gridEnabledFlag =
+      gridEnabled && safeSpacing > 0 && safeThickness > 0 && safeOpacity > 0 ? 1 : 0;
+    const gridColor = gridColorRef.current;
 
-    if (gridGroup) {
-      gridGroup.visible = shouldShow;
-    }
-    if (gridLine) {
-      gridLine.visible = shouldShow;
-    }
-    if (gridMaterial) {
-      gridMaterial.opacity = gridOpacity;
-      gridMaterial.linewidth = Math.max(gridThickness, 0);
-      gridMaterial.needsUpdate = true;
+    for (const resource of resourcesRef.current.values()) {
+      if (resource.mode !== '3d') {
+        continue;
+      }
+      const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms;
+      if (uniforms.u_gridEnabled) {
+        uniforms.u_gridEnabled.value = gridEnabledFlag;
+      }
+      if (uniforms.u_gridSpacing) {
+        uniforms.u_gridSpacing.value = safeSpacing;
+      }
+      if (uniforms.u_gridThickness) {
+        uniforms.u_gridThickness.value = safeThickness;
+      }
+      if (uniforms.u_gridOpacity) {
+        uniforms.u_gridOpacity.value = safeOpacity;
+      }
+      const gridColorUniform = uniforms.u_gridColor?.value as THREE.Vector3 | undefined;
+      if (gridColorUniform) {
+        gridColorUniform.set(gridColor.r, gridColor.g, gridColor.b);
+      }
     }
   }, [gridEnabled, gridOpacity, gridSpacing, gridThickness]);
 
-  const rebuildGridLines = useCallback(
-    (dimensions: { width: number; height: number; depth: number } | null) => {
-      const gridGroup = gridGroupRef.current;
-      if (!gridGroup) {
-        return;
-      }
-
-      if (!dimensions || !Number.isFinite(gridSpacing) || gridSpacing <= 0) {
-        applyGridAppearance();
-        return;
-      }
-
-      const positions = buildGridPositions(dimensions, gridSpacing);
-      if (positions.length === 0) {
-        applyGridAppearance();
-        return;
-      }
-
-      let geometry = gridGeometryRef.current;
-      if (!geometry) {
-        geometry = new LineSegmentsGeometry();
-        gridGeometryRef.current = geometry;
-      }
-      geometry.setPositions(positions);
-      geometry.instanceCount = Math.max(positions.length / 6, 1);
-
-      let material = gridMaterialRef.current;
-      if (!material) {
-        material = new LineMaterial({
-          color: new THREE.Color(0xffffff),
-          linewidth: Math.max(gridThickness, 0),
-          transparent: true,
-          opacity: gridOpacity,
-          depthWrite: false,
-        });
-        material.depthTest = true;
-        const renderer = rendererRef.current;
-        if (renderer) {
-          const size = renderer.getSize(new THREE.Vector2());
-          material.resolution.set(Math.max(size.x, 1), Math.max(size.y, 1));
-        } else {
-          material.resolution.set(1, 1);
-        }
-        gridMaterialRef.current = material;
-      }
-
-      let line = gridLineRef.current;
-      if (!line) {
-        line = new LineSegments2(geometry, material);
-        line.frustumCulled = false;
-        line.renderOrder = 5;
-        gridGroup.add(line);
-        gridLineRef.current = line;
-      } else {
-        line.geometry = geometry;
-        line.material = material;
-      }
-
-      line.computeLineDistances();
-      applyGridAppearance();
-    },
-    [applyGridAppearance, gridOpacity, gridSpacing, gridThickness],
-  );
-
-  const disposeGrid = useCallback(() => {
-    const gridGroup = gridGroupRef.current;
-    const gridLine = gridLineRef.current;
-    if (gridGroup && gridLine) {
-      gridGroup.remove(gridLine);
-    }
-    gridGeometryRef.current?.dispose();
-    gridMaterialRef.current?.dispose();
-    gridLineRef.current = null;
-    gridGeometryRef.current = null;
-    gridMaterialRef.current = null;
-  }, []);
-
   useEffect(() => {
-    applyGridAppearance();
-  }, [applyGridAppearance]);
-
-  useEffect(() => {
-    rebuildGridLines(currentDimensionsRef.current);
-  }, [gridSpacing, rebuildGridLines]);
+    applyGridUniformsToResources();
+  }, [applyGridUniformsToResources]);
 
   const updateHoverState = useCallback(
     (
@@ -2228,11 +2082,6 @@ function VolumeViewer({
     volumeRootGroup.name = 'VolumeRoot';
     scene.add(volumeRootGroup);
     volumeRootGroupRef.current = volumeRootGroup;
-    const gridGroup = new THREE.Group();
-    gridGroup.name = 'VolumeGrid';
-    gridGroup.visible = false;
-    volumeRootGroup.add(gridGroup);
-    gridGroupRef.current = gridGroup;
     const translationHandleMaterial = new THREE.MeshBasicMaterial({
       color: 0x4d9dff,
       transparent: true,
@@ -2938,14 +2787,8 @@ function VolumeViewer({
       }
       trackGroupRef.current = null;
 
-      disposeGrid();
-
       const volumeRootGroup = volumeRootGroupRef.current;
       if (volumeRootGroup) {
-        const gridGroup = gridGroupRef.current;
-        if (gridGroup && gridGroup.parent === volumeRootGroup) {
-          volumeRootGroup.remove(gridGroup);
-        }
         if (trackGroup && trackGroup.parent === volumeRootGroup) {
           volumeRootGroup.remove(trackGroup);
         }
@@ -2954,7 +2797,6 @@ function VolumeViewer({
           volumeRootGroup.parent.remove(volumeRootGroup);
         }
       }
-      gridGroupRef.current = null;
       vrTranslationHandleRef.current = null;
       vrVolumeScaleHandleRef.current = null;
       vrVolumeYawHandlesRef.current = [];
@@ -3126,7 +2968,6 @@ function VolumeViewer({
       removeAllResources();
       currentDimensionsRef.current = null;
       applyVolumeRootTransform(null);
-      rebuildGridLines(null);
       return;
     }
 
@@ -3148,7 +2989,6 @@ function VolumeViewer({
       }
       applyTrackGroupTransform(null);
       applyVolumeRootTransform(null);
-      rebuildGridLines(null);
       return;
     }
 
@@ -3190,7 +3030,6 @@ function VolumeViewer({
 
       applyTrackGroupTransform({ width, height, depth });
       applyVolumeRootTransform({ width, height, depth });
-      rebuildGridLines({ width, height, depth });
     }
 
     const seenKeys = new Set<string>();
@@ -3263,6 +3102,20 @@ function VolumeViewer({
           uniforms.u_invert.value = layer.invert ? 1 : 0;
           uniforms.u_stepScale.value = volumeStepScaleRef.current;
           uniforms.u_nearestSampling.value = layer.samplingMode === 'nearest' ? 1 : 0;
+          const safeGridSpacing = Number.isFinite(gridSpacing) ? gridSpacing : 0;
+          const safeGridThickness = Number.isFinite(gridThickness) ? gridThickness : 0;
+          const safeGridOpacity = clampValue(gridOpacity, 0, 1);
+          const gridEnabledFlag =
+            gridEnabled && safeGridSpacing > 0 && safeGridThickness > 0 && safeGridOpacity > 0 ? 1 : 0;
+          uniforms.u_gridEnabled.value = gridEnabledFlag;
+          uniforms.u_gridSpacing.value = safeGridSpacing;
+          uniforms.u_gridThickness.value = safeGridThickness;
+          uniforms.u_gridOpacity.value = safeGridOpacity;
+          uniforms.u_gridColor.value.set(
+            gridColorRef.current.r,
+            gridColorRef.current.g,
+            gridColorRef.current.b
+          );
 
           const material = new THREE.ShaderMaterial({
             uniforms,
@@ -3483,8 +3336,7 @@ function VolumeViewer({
     getColormapTexture,
     layers,
     renderContextRevision,
-    applyHoverHighlightToResources,
-    rebuildGridLines
+    applyHoverHighlightToResources
   ]);
 
   useEffect(() => {

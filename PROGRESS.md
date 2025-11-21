@@ -1,3 +1,7 @@
+# Shader-based grid overlay
+- Moved the volume grid overlay into the raymarch shader with uniforms for enable, spacing, thickness, opacity, and color,
+  letting the grid fade behind opaque volume regions without relying on separate line geometry.
+
 # Hover coordinate readout
 - Added voxel XYZ coordinates alongside the hover intensity in the top menu, pulling the hovered sample positions from both the
   3D MIP ray-marcher and 2D slice hover sampler so the readout always shows which voxel the intensity belongs to.

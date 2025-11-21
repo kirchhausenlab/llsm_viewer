@@ -20,6 +20,11 @@ type VolumeUniforms = {
   u_hoverRadius: { value: number };
   u_hoverActive: { value: number };
   u_hoverPulse: { value: number };
+  u_gridEnabled: { value: number };
+  u_gridSpacing: { value: number };
+  u_gridThickness: { value: number };
+  u_gridOpacity: { value: number };
+  u_gridColor: { value: Vector3 };
 };
 
 const uniforms = {
@@ -40,7 +45,12 @@ const uniforms = {
   u_hoverScale: { value: new Vector3() },
   u_hoverRadius: { value: 0 },
   u_hoverActive: { value: 0 },
-  u_hoverPulse: { value: 0 }
+  u_hoverPulse: { value: 0 },
+  u_gridEnabled: { value: 0 },
+  u_gridSpacing: { value: 10 },
+  u_gridThickness: { value: 1 },
+  u_gridOpacity: { value: 0.5 },
+  u_gridColor: { value: new Vector3(1, 1, 1) }
 } satisfies VolumeUniforms;
 
 export const VolumeRenderShader = {
@@ -86,6 +96,11 @@ export const VolumeRenderShader = {
     uniform float u_hoverRadius;
     uniform float u_hoverActive;
     uniform float u_hoverPulse;
+    uniform float u_gridEnabled;
+    uniform float u_gridSpacing;
+    uniform float u_gridThickness;
+    uniform float u_gridOpacity;
+    uniform vec3 u_gridColor;
 
     uniform sampler3D u_data;
     uniform sampler2D u_cmdata;
@@ -155,6 +170,59 @@ export const VolumeRenderShader = {
     vec4 apply_colormap(float val) {
       float normalized = (val - u_clim[0]) / (u_clim[1] - u_clim[0]);
       return texture2D(u_cmdata, vec2(normalized, 0.5));
+    }
+
+    float grid_mask(vec3 worldPos) {
+      if (u_gridEnabled < 0.5 || u_gridOpacity <= 0.0) {
+        return 0.0;
+      }
+
+      float spacing = max(u_gridSpacing, 1e-4);
+      float thickness = max(u_gridThickness, 0.0);
+      if (thickness <= 0.0) {
+        return 0.0;
+      }
+
+      vec3 shifted = worldPos + vec3(0.5);
+      vec3 modPos = mod(shifted, spacing);
+      vec3 distToGrid = min(modPos, spacing - modPos);
+      float minDist = min(distToGrid.x, min(distToGrid.y, distToGrid.z));
+
+      float halfThickness = thickness * 0.5;
+      float feather = max(halfThickness * 0.5, 1e-4);
+      return 1.0 - smoothstep(halfThickness, halfThickness + feather, minDist);
+    }
+
+    float accumulate_alpha(float accumAlpha, float sampleAlpha) {
+      float clampedSample = clamp(sampleAlpha, 0.0, 1.0);
+      return 1.0 - (1.0 - accumAlpha) * (1.0 - clampedSample);
+    }
+
+    void accumulate_grid(
+      vec3 worldPos,
+      inout vec3 gridColorAccum,
+      inout float gridAlphaAccum,
+      float volumeAlpha
+    ) {
+      float mask = grid_mask(worldPos);
+      if (mask <= 0.0 || gridAlphaAccum >= 0.999) {
+        return;
+      }
+
+      float remainingVolume = 1.0 - clamp(volumeAlpha, 0.0, 1.0);
+      if (remainingVolume <= 1e-4) {
+        return;
+      }
+
+      float gridAlpha = u_gridOpacity * mask * remainingVolume;
+      float available = 1.0 - gridAlphaAccum;
+      float applied = min(gridAlpha, available);
+      if (applied <= 0.0) {
+        return;
+      }
+
+      gridColorAccum += u_gridColor * applied;
+      gridAlphaAccum += applied;
     }
 
     vec4 compose_color(float intensity, vec4 colorSample) {
@@ -287,6 +355,10 @@ export const VolumeRenderShader = {
       vec3 loc = start_loc;
       vec3 max_loc = start_loc;
 
+      float volumeAlpha = 0.0;
+      vec3 gridColorAccum = vec3(0.0);
+      float gridAlphaAccum = 0.0;
+
       const float HIGH_WATER_NON_INVERTED = 0.999;
       const float HIGH_WATER_INVERTED = 0.001;
 
@@ -294,9 +366,12 @@ export const VolumeRenderShader = {
         if (iter >= nsteps) {
           break;
         }
+        vec3 worldPos = loc * u_size;
+        accumulate_grid(worldPos, gridColorAccum, gridAlphaAccum, volumeAlpha);
         vec4 colorSample = sample_color(loc);
         float rawVal = luminance(colorSample);
         float val = adjust_intensity(rawVal);
+        volumeAlpha = accumulate_alpha(volumeAlpha, val);
         if (val > max_val) {
           max_val = val;
           max_i = iter;
@@ -341,39 +416,66 @@ export const VolumeRenderShader = {
         color.rgb = mix(color.rgb, vec3(1.0), highlight * 0.6);
       }
 
+      float gridBlend = clamp(gridAlphaAccum, 0.0, 1.0);
+      if (gridBlend > 0.0) {
+        color.rgb = mix(color.rgb, gridColorAccum, gridBlend);
+        color.a = max(color.a, gridBlend);
+      }
+
       gl_FragColor = color;
     }
 
     void cast_iso(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray) {
-      gl_FragColor = vec4(0.0);
+      vec4 hitColor = vec4(0.0);
       vec3 dstep = 1.5 / u_size;
       vec3 loc = start_loc;
 
       float low_threshold = u_renderthreshold - 0.02 * (u_clim[1] - u_clim[0]);
+      float volumeAlpha = 0.0;
+      vec3 gridColorAccum = vec3(0.0);
+      float gridAlphaAccum = 0.0;
+      bool hasHit = false;
 
       for (int iter = 0; iter < MAX_STEPS; iter++) {
         if (iter >= nsteps) {
           break;
         }
 
-        float val = sample1(loc);
+        vec3 worldPos = loc * u_size;
+        accumulate_grid(worldPos, gridColorAccum, gridAlphaAccum, volumeAlpha);
 
-        if (val > low_threshold) {
+        float val = sample1(loc);
+        volumeAlpha = accumulate_alpha(volumeAlpha, val);
+
+        if (!hasHit && val > low_threshold) {
           vec3 iloc = loc - 0.5 * step;
           vec3 istep = step / float(REFINEMENT_STEPS);
           for (int i = 0; i < REFINEMENT_STEPS; i++) {
             vec4 colorSample = sample_color(iloc);
             float refined = adjust_intensity(luminance(colorSample));
+            volumeAlpha = accumulate_alpha(volumeAlpha, refined);
             if (refined > u_renderthreshold) {
-              gl_FragColor = add_lighting(refined, iloc, dstep, view_ray, colorSample);
-              return;
+              hitColor = add_lighting(refined, iloc, dstep, view_ray, colorSample);
+              hasHit = true;
+              break;
             }
             iloc += istep;
+          }
+          if (hasHit) {
+            break;
           }
         }
 
         loc += step;
       }
+
+      float gridBlend = clamp(gridAlphaAccum, 0.0, 1.0);
+      if (gridBlend > 0.0) {
+        hitColor.rgb = mix(hitColor.rgb, gridColorAccum, gridBlend);
+        hitColor.a = max(hitColor.a, gridBlend);
+      }
+
+      gl_FragColor = hitColor;
     }
 
     vec4 add_lighting(float val, vec3 loc, vec3 step, vec3 view_ray, vec4 colorSample) {
