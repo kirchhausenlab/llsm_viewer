@@ -125,10 +125,6 @@ export type VolumeViewerProps = {
   onVolumeStepScaleChange?: (value: number) => void;
   onRegisterVolumeStepScaleChange?: (handler: ((value: number) => void) | null) => void;
   onRegisterReset: (handler: (() => void) | null) => void;
-  gridEnabled: boolean;
-  gridOpacity: number;
-  gridThickness: number;
-  gridSpacing: number;
   tracks: TrackDefinition[];
   trackVisibility: Record<string, boolean>;
   trackOpacityByChannel: Record<string, number>;

@@ -363,10 +363,6 @@ function VolumeViewer({
   onFpsChange,
   onRegisterVolumeStepScaleChange,
   onRegisterReset,
-  gridEnabled,
-  gridOpacity,
-  gridThickness,
-  gridSpacing,
   tracks,
   trackVisibility,
   trackOpacityByChannel,
@@ -445,7 +441,6 @@ function VolumeViewer({
     moveDown: false
   });
   const volumeRootGroupRef = useRef<THREE.Group | null>(null);
-  const gridColorRef = useRef(new THREE.Color(0xffffff));
   const volumeRootBaseOffsetRef = useRef(new THREE.Vector3());
   const volumeRootCenterOffsetRef = useRef(new THREE.Vector3());
   const volumeRootCenterUnscaledRef = useRef(new THREE.Vector3());
@@ -552,42 +547,6 @@ function VolumeViewer({
     }
     setTooltipPosition(nextState.position);
   }, []);
-
-  const applyGridUniformsToResources = useCallback(() => {
-    const safeSpacing = Number.isFinite(gridSpacing) ? gridSpacing : 0;
-    const safeThickness = Number.isFinite(gridThickness) ? gridThickness : 0;
-    const safeOpacity = clampValue(gridOpacity, 0, 1);
-    const gridEnabledFlag =
-      gridEnabled && safeSpacing > 0 && safeThickness > 0 && safeOpacity > 0 ? 1 : 0;
-    const gridColor = gridColorRef.current;
-
-    for (const resource of resourcesRef.current.values()) {
-      if (resource.mode !== '3d') {
-        continue;
-      }
-      const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms;
-      if (uniforms.u_gridEnabled) {
-        uniforms.u_gridEnabled.value = gridEnabledFlag;
-      }
-      if (uniforms.u_gridSpacing) {
-        uniforms.u_gridSpacing.value = safeSpacing;
-      }
-      if (uniforms.u_gridThickness) {
-        uniforms.u_gridThickness.value = safeThickness;
-      }
-      if (uniforms.u_gridOpacity) {
-        uniforms.u_gridOpacity.value = safeOpacity;
-      }
-      const gridColorUniform = uniforms.u_gridColor?.value as THREE.Vector3 | undefined;
-      if (gridColorUniform) {
-        gridColorUniform.set(gridColor.r, gridColor.g, gridColor.b);
-      }
-    }
-  }, [gridEnabled, gridOpacity, gridSpacing, gridThickness]);
-
-  useEffect(() => {
-    applyGridUniformsToResources();
-  }, [applyGridUniformsToResources]);
 
   const updateHoverState = useCallback(
     (
@@ -3102,20 +3061,6 @@ function VolumeViewer({
           uniforms.u_invert.value = layer.invert ? 1 : 0;
           uniforms.u_stepScale.value = volumeStepScaleRef.current;
           uniforms.u_nearestSampling.value = layer.samplingMode === 'nearest' ? 1 : 0;
-          const safeGridSpacing = Number.isFinite(gridSpacing) ? gridSpacing : 0;
-          const safeGridThickness = Number.isFinite(gridThickness) ? gridThickness : 0;
-          const safeGridOpacity = clampValue(gridOpacity, 0, 1);
-          const gridEnabledFlag =
-            gridEnabled && safeGridSpacing > 0 && safeGridThickness > 0 && safeGridOpacity > 0 ? 1 : 0;
-          uniforms.u_gridEnabled.value = gridEnabledFlag;
-          uniforms.u_gridSpacing.value = safeGridSpacing;
-          uniforms.u_gridThickness.value = safeGridThickness;
-          uniforms.u_gridOpacity.value = safeGridOpacity;
-          uniforms.u_gridColor.value.set(
-            gridColorRef.current.r,
-            gridColorRef.current.g,
-            gridColorRef.current.b
-          );
 
           const material = new THREE.ShaderMaterial({
             uniforms,

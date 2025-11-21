@@ -66,9 +66,7 @@ const TRACK_WINDOW_WIDTH = 340;
 const SELECTED_TRACKS_WINDOW_WIDTH = 960;
 const SELECTED_TRACKS_WINDOW_HEIGHT = 220;
 const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
-const GRID_WINDOW_VERTICAL_OFFSET = 420;
 const WARNING_WINDOW_WIDTH = 360;
-const GRID_WINDOW_WIDTH = 340;
 
 const DEFAULT_VOXEL_RESOLUTION: VoxelResolutionInput = {
   x: '1.0',
@@ -222,29 +220,12 @@ function App() {
   const [layoutResetToken, setLayoutResetToken] = useState(0);
   const [hoveredVolumeVoxel, setHoveredVolumeVoxel] = useState<HoveredVoxelInfo | null>(null);
   const [isHelpMenuOpen, setIsHelpMenuOpen] = useState(false);
-  const [gridEnabled, setGridEnabled] = useState(false);
-  const [gridOpacity, setGridOpacity] = useState(0.35);
-  const [gridThickness, setGridThickness] = useState(DEFAULT_TRACK_LINE_WIDTH);
-  const [gridSpacing, setGridSpacing] = useState(10);
 
   useEffect(() => {
     setHoveredVolumeVoxel(null);
   }, [viewerMode]);
   const handleHelpMenuToggle = useCallback(() => {
     setIsHelpMenuOpen((previous) => !previous);
-  }, []);
-  const handleGridEnabledChange = useCallback((value: boolean) => {
-    setGridEnabled(value);
-  }, []);
-  const handleGridOpacityChange = useCallback((value: number) => {
-    setGridOpacity(Math.max(0, Math.min(1, value)));
-  }, []);
-  const handleGridThicknessChange = useCallback((value: number) => {
-    setGridThickness(Math.max(0.5, Math.min(5, value)));
-  }, []);
-  const handleGridSpacingChange = useCallback((value: number) => {
-    const nextSpacing = Number.isFinite(value) ? Math.max(1, Math.round(value)) : 1;
-    setGridSpacing(nextSpacing);
   }, []);
   const handleVoxelResolutionAxisChange = useCallback(
     (axis: VoxelResolutionAxis, value: string) => {
@@ -306,22 +287,10 @@ function App() {
     );
     return { x, y };
   }, []);
-  const computeGridWindowDefaultPosition = useCallback(() => {
-    if (typeof window === 'undefined') {
-      return { x: WINDOW_MARGIN, y: WINDOW_MARGIN + GRID_WINDOW_VERTICAL_OFFSET };
-    }
-    const gridWidth = Math.min(GRID_WINDOW_WIDTH, window.innerWidth - WINDOW_MARGIN * 2);
-    const x = Math.max(WINDOW_MARGIN, window.innerWidth - gridWidth - WINDOW_MARGIN);
-    const y = Math.max(WINDOW_MARGIN, WINDOW_MARGIN + GRID_WINDOW_VERTICAL_OFFSET);
-    return { x, y };
-  }, []);
   const [selectedTracksWindowInitialPosition, setSelectedTracksWindowInitialPosition] = useState<{
     x: number;
     y: number;
   }>(() => computeSelectedTracksWindowDefaultPosition());
-  const [gridWindowInitialPosition, setGridWindowInitialPosition] = useState<{ x: number; y: number }>(
-    () => computeGridWindowDefaultPosition()
-  );
 
   const loadRequestRef = useRef(0);
   const trackMasterCheckboxRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -719,9 +688,7 @@ function App() {
     setLayoutResetToken((value) => value + 1);
     setTrackWindowInitialPosition(computeTrackWindowDefaultPosition());
     setSelectedTracksWindowInitialPosition(computeSelectedTracksWindowDefaultPosition());
-    setGridWindowInitialPosition(computeGridWindowDefaultPosition());
   }, [
-    computeGridWindowDefaultPosition,
     computeSelectedTracksWindowDefaultPosition,
     computeTrackWindowDefaultPosition
   ]);
@@ -745,16 +712,6 @@ function App() {
       return defaultPosition;
     });
   }, [computeSelectedTracksWindowDefaultPosition]);
-
-  useEffect(() => {
-    const defaultPosition = computeGridWindowDefaultPosition();
-    setGridWindowInitialPosition((current) => {
-      if (current.x === defaultPosition.x && current.y === defaultPosition.y) {
-        return current;
-      }
-      return defaultPosition;
-    });
-  }, [computeGridWindowDefaultPosition]);
 
   useEffect(() => {
     setChannelTrackStates((current) => {
@@ -2788,10 +2745,6 @@ function App() {
     onVolumeStepScaleChange: handleVolumeStepScaleChange,
     onRegisterVolumeStepScaleChange: handleRegisterVolumeStepScaleChange,
     onRegisterReset: handleRegisterReset,
-    gridEnabled,
-    gridOpacity,
-    gridThickness,
-    gridSpacing,
     tracks: parsedTracks,
     trackVisibility,
     trackOpacityByChannel,
@@ -2883,13 +2836,11 @@ function App() {
       playbackWindowWidth: PLAYBACK_WINDOW_WIDTH,
       controlWindowWidth: CONTROL_WINDOW_WIDTH,
       trackWindowWidth: TRACK_WINDOW_WIDTH,
-      gridWindowWidth: GRID_WINDOW_WIDTH,
       selectedTracksWindowWidth: SELECTED_TRACKS_WINDOW_WIDTH,
       resetToken: layoutResetToken,
       controlWindowInitialPosition,
       layersWindowInitialPosition,
       trackWindowInitialPosition,
-      gridWindowInitialPosition,
       selectedTracksWindowInitialPosition
     },
     modeControls: {
@@ -2970,16 +2921,6 @@ function App() {
       selectedTrackIds,
       onTrackFollow: handleTrackFollow,
       onStopTrackFollow: handleStopTrackFollow
-    },
-    gridPanel: {
-      gridEnabled,
-      gridOpacity,
-      gridThickness,
-      gridSpacing,
-      onGridEnabledChange: handleGridEnabledChange,
-      onGridOpacityChange: handleGridOpacityChange,
-      onGridThicknessChange: handleGridThicknessChange,
-      onGridSpacingChange: handleGridSpacingChange
     },
     selectedTracksPanel: {
       shouldRender: showSelectedTracksWindow,

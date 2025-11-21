@@ -1,16 +1,5 @@
-# Shader-based grid overlay
-- Moved the volume grid overlay into the raymarch shader with uniforms for enable, spacing, thickness, opacity, and color,
-  letting the grid fade behind opaque volume regions without relying on separate line geometry.
-
-# Hover coordinate readout
-- Added voxel XYZ coordinates alongside the hover intensity in the top menu, pulling the hovered sample positions from both the
-  3D MIP ray-marcher and 2D slice hover sampler so the readout always shows which voxel the intensity belongs to.
-
-# Grid overlay controls
-- Added a dedicated grid floating window beneath the Tracks panel with enable/disable, opacity, thickness, and spacing controls wired through the viewer props so VolumeViewer can read the settings.
-
-## Volume face grid helper
-- Attached a dedicated grid group to the volume root so face-aligned lines inherit transforms/resets, generate once per volume load at the configured spacing, and respond to visibility/opacity/width tweaks without rebuilding geometry.
+# Grid overlay removal
+- Removed the shader-based 3D grid overlay, associated uniforms, and floating window controls so the viewer no longer exposes grid settings in the UI or shader pipeline.
 
 # Front page layout tweaks
 - Updated the landing header to mirror whether users are setting up a new experiment or loading a preprocessed one, resetting to "4D viewer" after returning home.
@@ -663,11 +652,8 @@ d centered the front-page card in the viewport.
 - Increased the hover pulse rate and normalized the pulse scale so the brightness oscillates between the original color and a stronger highlight.
 - Raised the peak highlight mix toward white to make hovered voxels stand out more clearly while preserving the existing falloff behavior.
 
-## Grid rendering fix
-- Set the grid line geometry instance count to match the generated segment count so populated positions are rendered when the grid toggle is enabled.
-
-## 3D grid coverage update
-- Rebuilt grid generation to create full X/Y/Z-aligned lines through the entire volume, producing a complete lattice instead of only outlining faces.
-
 ## Hovered voxel clear guard
 - Corrected the planar viewer hover reset effect to call the shared hover emitter so hover state clears without TypeScript errors when slice data is unavailable.
+
+## Grid overlay cleanup follow-up
+- Removed lingering grid window position reset hooks after the overlay deletion so the viewer layout reset no longer references missing handlers.
