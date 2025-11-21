@@ -418,7 +418,6 @@ function VolumeViewer({
   const hoverSystemReadyRef = useRef(false);
   const pendingHoverEventRef = useRef<PointerEvent | null>(null);
   const hoverRetryFrameRef = useRef<number | null>(null);
-  const rendererSetupRequestedRef = useRef(false);
   const updateVoxelHoverRef = useRef<(event: PointerEvent) => void>(() => {});
   const currentDimensionsRef = useRef<{ width: number; height: number; depth: number } | null>(null);
   const colormapCacheRef = useRef<Map<string, THREE.DataTexture>>(new Map());
@@ -455,7 +454,6 @@ function VolumeViewer({
   const previousFollowedTrackIdRef = useRef<string | null>(null);
   const hasActive3DLayerRef = useRef(false);
   const [hasMeasured, setHasMeasured] = useState(false);
-  const [rendererSetupRevision, setRendererSetupRevision] = useState(0);
   const [trackOverlayRevision, setTrackOverlayRevision] = useState(0);
   const [renderContextRevision, setRenderContextRevision] = useState(0);
   const hoveredTrackIdRef = useRef<string | null>(null);
@@ -948,23 +946,6 @@ function VolumeViewer({
     [channelTrackColorModes]
   );
 
-  const requestRendererSetup = useCallback(
-    (reason: string) => {
-      if (hoverTeardownRef.current) {
-        return;
-      }
-      hoverSystemReadyRef.current = false;
-      hoverInitializationFailedRef.current = false;
-      setHoverNotReady(reason);
-      if (rendererSetupRequestedRef.current) {
-        return;
-      }
-      rendererSetupRequestedRef.current = true;
-      setRendererSetupRevision((revision) => revision + 1);
-    },
-    [setHoverNotReady]
-  );
-
   const applyTrackGroupTransform = useCallback(
     (dimensions: { width: number; height: number; depth: number } | null) => {
       const trackGroup = trackGroupRef.current;
@@ -1436,9 +1417,8 @@ function VolumeViewer({
     if (!hoverSystemReadyRef.current || !hasHoverRefs) {
       if (!hoverSystemReadyRef.current) {
         setHoverNotReady('Hover inactive: renderer not initialized.');
-      }
-      if (!hasHoverRefs) {
-        requestRendererSetup('Hover reinitializing: hover dependencies missing.');
+      } else if (!hasHoverRefs) {
+        setHoverNotReady('Hover inactive: hover dependencies missing.');
       }
 
       if (hoverRetryFrameRef.current !== null) {
@@ -1462,7 +1442,7 @@ function VolumeViewer({
 
     pendingHoverEventRef.current = null;
     updateVoxelHoverRef.current(pendingEvent);
-  }, [requestRendererSetup, setHoverNotReady]);
+  }, [setHoverNotReady]);
 
   const updateVoxelHover = useCallback(
     (event: PointerEvent) => {
@@ -1488,7 +1468,7 @@ function VolumeViewer({
       const raycasterInstance = raycasterRef.current;
       if (!renderer || !cameraInstance || !raycasterInstance) {
         pendingHoverEventRef.current = event;
-        requestRendererSetup('Hover reinitializing: hover dependencies missing.');
+        setHoverNotReady('Hover inactive: hover dependencies missing.');
         retryPendingVoxelHover();
         return;
       }
@@ -1805,7 +1785,6 @@ function VolumeViewer({
       clearVoxelHover,
       clearVoxelHoverDebug,
       emitHoverIntensity,
-      requestRendererSetup,
       setHoverNotReady,
       retryPendingVoxelHover,
       reportVoxelHoverAbort
@@ -1954,12 +1933,10 @@ function VolumeViewer({
     hoverTeardownRef.current = false;
     hoverInitializationFailedRef.current = false;
     hoverSystemReadyRef.current = false;
-    rendererSetupRequestedRef.current = false;
     setHoverNotReady('Hover inactive: renderer not initialized.');
 
     const container = containerNode;
     if (!container) {
-      hoverSystemReadyRef.current = false;
       hoverInitializationFailedRef.current = true;
       return;
     }
@@ -1973,7 +1950,6 @@ function VolumeViewer({
       });
     } catch (error) {
       hoverInitializationFailedRef.current = true;
-      hoverSystemReadyRef.current = false;
       setHoverNotReady('Hover inactive: renderer not initialized.');
       return;
     }
@@ -2605,9 +2581,7 @@ function VolumeViewer({
     return () => {
       hoverTeardownRef.current = true;
       hoverSystemReadyRef.current = false;
-      hoverInitializationFailedRef.current = false;
       pendingHoverEventRef.current = null;
-      rendererSetupRequestedRef.current = false;
 
       restoreVrFoveation();
       applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
@@ -2756,7 +2730,6 @@ function VolumeViewer({
     applyVrPlaybackHoverState,
     applyVolumeStepScaleToResources,
     containerNode,
-    rendererSetupRevision,
     controllersRef,
     createVrChannelsHud,
     createVrPlaybackHud,
