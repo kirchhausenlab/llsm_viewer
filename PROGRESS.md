@@ -671,3 +671,6 @@ d centered the front-page card in the viewport.
 
 ## Hovered voxel clear guard
 - Corrected the planar viewer hover reset effect to call the shared hover emitter so hover state clears without TypeScript errors when slice data is unavailable.
+
+## Volume depth buffer regression fix
+- Enabled the `fragDepth` shader extension on the 3D volume material so writing `gl_FragDepth` no longer prevents the volume from rendering when the depth buffer is active.
