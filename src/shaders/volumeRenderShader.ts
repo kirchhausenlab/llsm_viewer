@@ -265,7 +265,7 @@ export const VolumeRenderShader = {
 
       if (u_nearestSampling > 0.5) {
         vec3 frontCenter = floor(front) + vec3(0.5);
-        start_loc = frontCenter / u_size;
+        start_loc = (frontCenter + vec3(0.5)) / u_size;
         step = rayDir / u_size;
         nsteps = clamp(int(travelDistance) + 1, 1, MAX_STEPS);
       } else {
@@ -273,7 +273,7 @@ export const VolumeRenderShader = {
         nsteps = int(travelDistance * safeStepScale + 0.5);
         nsteps = clamp(nsteps, 1, MAX_STEPS);
         step = ((back - front) / u_size) / float(nsteps);
-        start_loc = front / u_size;
+        start_loc = (front + vec3(0.5)) / u_size;
       }
       vec3 view_ray = -rayDir;
 

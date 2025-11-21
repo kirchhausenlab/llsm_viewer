@@ -677,3 +677,6 @@ d centered the front-page card in the viewport.
 
 ## Depth-correct volume sampling
 - Adjusted depth calculation in the volume fragment shader to convert normalized sampling coordinates back into model space before projection, so manual depth writes align with the actual geometry and the 3D volume renders again with depth testing.
+
+## Volume sampling coordinate alignment
+- Normalized the volume ray entry point to voxel space by accounting for the half-voxel offset, keeping sampling inside the [0,1] bounds and ensuring the depth writes line up with the rendered box so the volume becomes visible again in 3D mode.
