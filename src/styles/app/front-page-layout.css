@@ -2,12 +2,18 @@
   position: relative;
   width: 100%;
   min-height: 100vh;
-  background: #080a0d;
+  background:
+    radial-gradient(120% 120% at 20% 20%, rgba(91, 140, 255, 0.08), transparent 45%),
+    radial-gradient(110% 140% at 80% 5%, rgba(143, 92, 255, 0.08), transparent 40%),
+    linear-gradient(165deg, #0f1726 0%, #0b101c 60%, #090c14 100%);
   overflow: hidden;
 }
 
 .app.front-page-mode {
-  background: #0a0f18;
+  background:
+    radial-gradient(120% 120% at 18% 18%, rgba(91, 140, 255, 0.12), transparent 40%),
+    radial-gradient(110% 140% at 82% 8%, rgba(143, 92, 255, 0.12), transparent 36%),
+    linear-gradient(160deg, #131c2d 0%, #0d1422 55%, #0a0f19 100%);
   color: rgba(255, 255, 255, 0.95);
 }
 
@@ -32,7 +38,7 @@
 .front-page-card {
   width: 100%;
   max-width: min(1120px, 100%);
-  padding: 2.25rem 2.75rem 3.5rem;
+  padding: 5rem 2.75rem 6.25rem;
   border-radius: 1.25rem;
   background-color: rgba(12, 16, 24, 0.78);
   border: 1px solid rgba(255, 255, 255, 0.08);
