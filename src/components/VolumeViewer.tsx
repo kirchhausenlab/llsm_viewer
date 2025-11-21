@@ -3,7 +3,9 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { Line2 } from 'three/examples/jsm/lines/Line2';
+import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
+import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
 import type { NormalizedVolume } from '../volumeProcessing';
 import { VolumeRenderShader } from '../shaders/volumeRenderShader';
@@ -511,8 +513,8 @@ function VolumeViewer({
   });
   const volumeRootGroupRef = useRef<THREE.Group | null>(null);
   const gridGroupRef = useRef<THREE.Group | null>(null);
-  const gridLineRef = useRef<Line2 | null>(null);
-  const gridGeometryRef = useRef<LineGeometry | null>(null);
+  const gridLineRef = useRef<LineSegments2 | null>(null);
+  const gridGeometryRef = useRef<LineSegmentsGeometry | null>(null);
   const gridMaterialRef = useRef<LineMaterial | null>(null);
   const volumeRootBaseOffsetRef = useRef(new THREE.Vector3());
   const volumeRootCenterOffsetRef = useRef(new THREE.Vector3());
@@ -666,7 +668,7 @@ function VolumeViewer({
 
       let geometry = gridGeometryRef.current;
       if (!geometry) {
-        geometry = new LineGeometry();
+        geometry = new LineSegmentsGeometry();
         gridGeometryRef.current = geometry;
       }
       geometry.setPositions(positions);
@@ -694,7 +696,7 @@ function VolumeViewer({
 
       let line = gridLineRef.current;
       if (!line) {
-        line = new Line2(geometry, material);
+        line = new LineSegments2(geometry, material);
         line.frustumCulled = false;
         line.renderOrder = 5;
         gridGroup.add(line);
