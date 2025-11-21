@@ -14,6 +14,7 @@ type VolumeUniforms = {
   u_windowMax: { value: number };
   u_invert: { value: number };
   u_stepScale: { value: number };
+  u_nearestSampling: { value: number };
   u_hoverPos: { value: Vector3 };
   u_hoverRadius: { value: number };
   u_hoverActive: { value: number };
@@ -33,6 +34,7 @@ const uniforms = {
   u_windowMax: { value: 1 },
   u_invert: { value: 0 },
   u_stepScale: { value: 1 },
+  u_nearestSampling: { value: 0 },
   u_hoverPos: { value: new Vector3() },
   u_hoverRadius: { value: 0 },
   u_hoverActive: { value: 0 },
@@ -76,6 +78,7 @@ export const VolumeRenderShader = {
     uniform float u_windowMax;
     uniform float u_invert;
     uniform float u_stepScale;
+    uniform float u_nearestSampling;
     uniform vec3 u_hoverPos;
     uniform float u_hoverRadius;
     uniform float u_hoverActive;
@@ -244,13 +247,23 @@ export const VolumeRenderShader = {
       vec3 front = rayOrigin + rayDir * tStart;
       vec3 back = rayOrigin + rayDir * tEnd;
 
-      float safeStepScale = max(u_stepScale, 1e-3);
       float travelDistance = tEnd - tStart;
-      int nsteps = int(travelDistance * safeStepScale + 0.5);
-      nsteps = clamp(nsteps, 1, MAX_STEPS);
+      int nsteps;
+      vec3 step;
+      vec3 start_loc;
 
-      vec3 step = ((back - front) / u_size) / float(nsteps);
-      vec3 start_loc = front / u_size;
+      if (u_nearestSampling > 0.5) {
+        vec3 frontCenter = floor(front) + vec3(0.5);
+        start_loc = frontCenter / u_size;
+        step = rayDir / u_size;
+        nsteps = clamp(int(travelDistance) + 1, 1, MAX_STEPS);
+      } else {
+        float safeStepScale = max(u_stepScale, 1e-3);
+        nsteps = int(travelDistance * safeStepScale + 0.5);
+        nsteps = clamp(nsteps, 1, MAX_STEPS);
+        step = ((back - front) / u_size) / float(nsteps);
+        start_loc = front / u_size;
+      }
       vec3 view_ray = -rayDir;
 
       if (u_renderstyle == 0) {
