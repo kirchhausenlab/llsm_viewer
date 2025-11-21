@@ -1079,12 +1079,15 @@ function App() {
     setSelectedTrackIds,
     setFollowedTrack,
     setIsExperimentSetupStarted,
+    setExperimentDimension,
+    setViewerMode,
     clearDatasetError,
     updateChannelIdCounter,
     loadSelectedDataset,
     showInteractionWarning,
     isLaunchingViewer,
-    voxelResolution
+    voxelResolution,
+    experimentDimension
   });
 
   const isLoading = status === 'loading';

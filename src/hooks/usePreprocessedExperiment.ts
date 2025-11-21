@@ -31,12 +31,15 @@ export type UsePreprocessedExperimentOptions = {
   setSelectedTrackIds: Dispatch<SetStateAction<ReadonlySet<string>>>;
   setFollowedTrack: Dispatch<SetStateAction<FollowedTrackState>>;
   setIsExperimentSetupStarted: Dispatch<SetStateAction<boolean>>;
+  setExperimentDimension: Dispatch<SetStateAction<ExperimentDimension>>;
+  setViewerMode: Dispatch<SetStateAction<'3d' | '2d'>>;
   clearDatasetError: () => void;
   updateChannelIdCounter: (sources: ChannelSource[]) => void;
   loadSelectedDataset: () => Promise<LoadedLayer[] | null>;
   showInteractionWarning: (message: string) => void;
   isLaunchingViewer: boolean;
   voxelResolution: VoxelResolutionValues | null;
+  experimentDimension: ExperimentDimension;
 };
 
 export type UsePreprocessedExperimentResult = {
@@ -84,12 +87,15 @@ export default function usePreprocessedExperiment({
   setSelectedTrackIds,
   setFollowedTrack,
   setIsExperimentSetupStarted,
+  setExperimentDimension,
+  setViewerMode,
   clearDatasetError,
   updateChannelIdCounter,
   loadSelectedDataset,
   showInteractionWarning,
   isLaunchingViewer,
-  voxelResolution
+  voxelResolution,
+  experimentDimension
 }: UsePreprocessedExperimentOptions): UsePreprocessedExperimentResult {
   const preprocessedFileInputRef = useRef<HTMLInputElement | null>(null);
   const preprocessedDropCounterRef = useRef(0);
@@ -108,6 +114,8 @@ export default function usePreprocessedExperiment({
     setSelectedTrackIds,
     setFollowedTrack,
     setIsExperimentSetupStarted,
+    setExperimentDimension,
+    setViewerMode,
     clearDatasetError,
     updateChannelIdCounter,
     dropboxImportingRef: preprocessedDropboxImportingRef,
@@ -131,7 +139,8 @@ export default function usePreprocessedExperiment({
     clearDatasetError,
     showInteractionWarning,
     isLaunchingViewer,
-    voxelResolution
+    voxelResolution,
+    experimentDimension
   });
 
   return {

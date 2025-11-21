@@ -8,6 +8,7 @@ import { VOXEL_RESOLUTION_UNITS } from '../../types/voxelResolution';
 import { computeSha256Hex } from './hash';
 import {
   type ImportPreprocessedDatasetResult,
+  type PreprocessedMovieMode,
   type PreprocessedChannelSummary,
   type PreprocessedLayerSummary,
   type PreprocessedManifest,
@@ -97,7 +98,12 @@ function createProgressReportingStream(
 function parseManifest(bytes: Uint8Array): PreprocessedManifest {
   const manifestText = textDecoder.decode(bytes);
   try {
-    const parsed = JSON.parse(manifestText) as PreprocessedManifest;
+    const parsed = JSON.parse(manifestText) as PreprocessedManifest & {
+      dataset: PreprocessedManifest['dataset'] & { movieMode?: PreprocessedMovieMode };
+    };
+    if (!parsed.dataset.movieMode) {
+      parsed.dataset.movieMode = '3d';
+    }
     validateManifest(parsed);
     return parsed;
   } catch (error) {
@@ -111,6 +117,9 @@ function validateManifest(manifest: PreprocessedManifest): void {
   }
   if (manifest.version !== 1) {
     throw new Error(`Unsupported preprocessed dataset version: ${manifest.version}`);
+  }
+  if (manifest.dataset.movieMode !== '2d' && manifest.dataset.movieMode !== '3d') {
+    throw new Error('Manifest movie mode is invalid.');
   }
   const { voxelResolution } = manifest.dataset;
   if (voxelResolution !== undefined && voxelResolution !== null) {

@@ -8,7 +8,7 @@ import {
 } from '../../workers/exportPreprocessedDatasetClient';
 import type { ChannelExportMetadata } from '../../utils/preprocessedDataset';
 import type { LoadedLayer } from '../../types/layers';
-import type { ChannelSource, StagedPreprocessedExperiment } from '../../App';
+import type { ChannelSource, ExperimentDimension, StagedPreprocessedExperiment } from '../../App';
 import type { VoxelResolutionValues } from '../../types/voxelResolution';
 
 export type UsePreprocessedExportOptions = {
@@ -19,6 +19,7 @@ export type UsePreprocessedExportOptions = {
   showInteractionWarning: (message: string) => void;
   isLaunchingViewer: boolean;
   voxelResolution: VoxelResolutionValues | null;
+  experimentDimension: ExperimentDimension;
 };
 
 export type UsePreprocessedExportResult = {
@@ -33,7 +34,8 @@ export function usePreprocessedExport({
   clearDatasetError,
   showInteractionWarning,
   isLaunchingViewer,
-  voxelResolution
+  voxelResolution,
+  experimentDimension
 }: UsePreprocessedExportOptions): UsePreprocessedExportResult {
   const [isExportingPreprocessed, setIsExportingPreprocessed] = useState(false);
 
@@ -111,7 +113,8 @@ export function usePreprocessedExport({
       const { manifest, stream } = await exportPreprocessedDatasetInWorker({
         layers: layersToExport,
         channels: channelsMetadata,
-        voxelResolution: resolvedVoxelResolution
+        voxelResolution: resolvedVoxelResolution,
+        movieMode: preprocessedExperiment?.manifest.dataset.movieMode ?? experimentDimension
       });
 
       const baseNameSource =
@@ -141,7 +144,8 @@ export function usePreprocessedExport({
     loadSelectedDataset,
     preprocessedExperiment,
     showInteractionWarning,
-    voxelResolution
+    voxelResolution,
+    experimentDimension
   ]);
 
   return {

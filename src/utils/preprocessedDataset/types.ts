@@ -12,6 +12,8 @@ export type ChannelExportMetadata = {
   trackEntries: string[][];
 };
 
+export type PreprocessedMovieMode = '2d' | '3d';
+
 export type PreprocessedVolumeManifestEntry = {
   path: string;
   timepoint: number;
@@ -46,6 +48,7 @@ export type PreprocessedManifest = {
   version: 1;
   generatedAt: string;
   dataset: {
+    movieMode: PreprocessedMovieMode;
     totalVolumeCount: number;
     channels: PreprocessedChannelManifest[];
     voxelResolution?: VoxelResolutionValues | null;
@@ -57,6 +60,7 @@ export type ExportPreprocessedDatasetOptions = {
   layers: LoadedLayer[];
   channels: ChannelExportMetadata[];
   voxelResolution: VoxelResolutionValues;
+  movieMode: PreprocessedMovieMode;
 };
 
 export type ExportPreprocessedDatasetChunkHandler = (

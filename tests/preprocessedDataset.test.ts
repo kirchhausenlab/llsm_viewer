@@ -12,6 +12,7 @@ import {
   exportPreprocessedDataset,
   importPreprocessedDataset,
   type ChannelExportMetadata,
+  type PreprocessedMovieMode,
   type PreprocessedManifest
 } from '../src/utils/preprocessedDataset/index.ts';
 import type { LoadedLayer } from '../src/types/layers.ts';
@@ -134,11 +135,13 @@ console.log('Starting preprocessed dataset import/export tests');
       unit: 'μm' as const,
       correctAnisotropy: false
     };
+    const movieMode: PreprocessedMovieMode = '3d';
 
     const exportResult = await exportPreprocessedDataset({
       layers,
       channels,
-      voxelResolution
+      voxelResolution,
+      movieMode
     });
     const { blob, manifest } = exportResult;
 
@@ -150,6 +153,7 @@ console.log('Starting preprocessed dataset import/export tests');
     assert.strictEqual(manifest.dataset.channels.length, 1);
     assert.strictEqual(manifest.dataset.channels[0].layers.length, 2);
     assert.strictEqual(manifest.dataset.channels[0].trackEntries.length, 2);
+    assert.strictEqual(manifest.dataset.movieMode, movieMode);
     assert.deepEqual(manifest.dataset.voxelResolution, voxelResolution);
     assert.strictEqual(manifest.dataset.anisotropyCorrection, null);
 
@@ -185,6 +189,7 @@ console.log('Starting preprocessed dataset import/export tests');
     assert.strictEqual(imported.totalVolumeCount, 3);
     assert.strictEqual(imported.layers.length, 2);
     assert.strictEqual(imported.channelSummaries.length, 1);
+    assert.strictEqual(imported.manifest.dataset.movieMode, movieMode);
     assert.deepEqual(imported.manifest.dataset.voxelResolution, voxelResolution);
     assert.strictEqual(imported.manifest.dataset.anisotropyCorrection, null);
 
@@ -255,7 +260,12 @@ console.log('Starting preprocessed dataset import/export tests');
     );
 
     const chunkCollector: Uint8Array[] = [];
-    const streamedResult = await exportPreprocessedDataset({ layers, channels, voxelResolution }, (chunk) => {
+    const streamedResult = await exportPreprocessedDataset({
+      layers,
+      channels,
+      voxelResolution,
+      movieMode
+    }, (chunk) => {
       chunkCollector.push(chunk.slice());
     });
 
@@ -330,7 +340,8 @@ console.log('Starting preprocessed dataset import/export tests');
     const { blob: offsetBlob, manifest: offsetManifest } = await exportPreprocessedDataset({
       layers: [offsetLayer],
       channels: [offsetChannel],
-      voxelResolution
+      voxelResolution,
+      movieMode
     });
 
     const offsetBytes = new Uint8Array(await offsetBlob.arrayBuffer());
@@ -367,7 +378,8 @@ console.log('Starting preprocessed dataset import/export tests');
     const anisotropicExport = await exportPreprocessedDataset({
       layers,
       channels,
-      voxelResolution: anisotropicVoxelResolution
+      voxelResolution: anisotropicVoxelResolution,
+      movieMode
     });
     const anisotropicManifest = anisotropicExport.manifest;
     assert.ok(anisotropicManifest.dataset.anisotropyCorrection);

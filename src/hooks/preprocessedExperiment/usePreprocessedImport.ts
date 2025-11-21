@@ -8,7 +8,13 @@ import type {
 } from 'react';
 import { collectFilesFromDataTransfer } from '../../utils/appHelpers';
 import { importPreprocessedDatasetWithWorker } from '../../workers/importPreprocessedDatasetClient';
-import type { ChannelSource, ChannelTrackState, FollowedTrackState, StagedPreprocessedExperiment } from '../../App';
+import type {
+  ChannelSource,
+  ChannelTrackState,
+  ExperimentDimension,
+  FollowedTrackState,
+  StagedPreprocessedExperiment
+} from '../../App';
 import type { PreprocessedDropboxCallbacksRef } from './shared';
 
 export type UsePreprocessedImportOptions = {
@@ -20,6 +26,8 @@ export type UsePreprocessedImportOptions = {
   setSelectedTrackIds: Dispatch<SetStateAction<ReadonlySet<string>>>;
   setFollowedTrack: Dispatch<SetStateAction<FollowedTrackState>>;
   setIsExperimentSetupStarted: Dispatch<SetStateAction<boolean>>;
+  setExperimentDimension: Dispatch<SetStateAction<ExperimentDimension>>;
+  setViewerMode: Dispatch<SetStateAction<'3d' | '2d'>>;
   clearDatasetError: () => void;
   updateChannelIdCounter: (sources: ChannelSource[]) => void;
   dropboxImportingRef: MutableRefObject<boolean>;
@@ -60,6 +68,8 @@ export function usePreprocessedImport({
   setSelectedTrackIds,
   setFollowedTrack,
   setIsExperimentSetupStarted,
+  setExperimentDimension,
+  setViewerMode,
   clearDatasetError,
   updateChannelIdCounter,
   dropboxImportingRef,
@@ -119,6 +129,9 @@ export function usePreprocessedImport({
           sourceName: file.name ?? null,
           sourceSize: Number.isFinite(file.size) ? file.size : null
         };
+        const movieMode = result.manifest.dataset.movieMode;
+        setExperimentDimension(movieMode);
+        setViewerMode(movieMode);
         const nextChannels = result.channelSummaries.map<ChannelSource>((summary) => ({
           id: summary.id,
           name: summary.name,
@@ -169,7 +182,9 @@ export function usePreprocessedImport({
       setTrackOrderModeByChannel,
       setChannelTrackStates,
       updateChannelIdCounter,
-      dropboxCallbacksRef
+      dropboxCallbacksRef,
+      setExperimentDimension,
+      setViewerMode
     ]
   );
 
