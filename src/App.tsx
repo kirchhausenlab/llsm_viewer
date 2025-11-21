@@ -32,6 +32,7 @@ import {
 } from './state/layerSettings';
 import { deriveChannelTrackOffsets } from './state/channelTrackOffsets';
 import type { LoadedLayer } from './types/layers';
+import type { HoveredVoxelInfo } from './types/hover';
 import './styles/app/index.css';
 import { computeAutoWindow, getVolumeHistogram } from './autoContrast';
 import { getDefaultWindowForVolume } from './utils/volumeWindow';
@@ -219,7 +220,7 @@ function App() {
   const [isViewerLaunched, setIsViewerLaunched] = useState(false);
   const [isLaunchingViewer, setIsLaunchingViewer] = useState(false);
   const [layoutResetToken, setLayoutResetToken] = useState(0);
-  const [hoveredVolumeIntensity, setHoveredVolumeIntensity] = useState<string | null>(null);
+  const [hoveredVolumeVoxel, setHoveredVolumeVoxel] = useState<HoveredVoxelInfo | null>(null);
   const [isHelpMenuOpen, setIsHelpMenuOpen] = useState(false);
   const [gridEnabled, setGridEnabled] = useState(false);
   const [gridOpacity, setGridOpacity] = useState(0.35);
@@ -227,7 +228,7 @@ function App() {
   const [gridSpacing, setGridSpacing] = useState(10);
 
   useEffect(() => {
-    setHoveredVolumeIntensity(null);
+    setHoveredVolumeVoxel(null);
   }, [viewerMode]);
   const handleHelpMenuToggle = useCallback(() => {
     setIsHelpMenuOpen((previous) => !previous);
@@ -2801,7 +2802,7 @@ function App() {
     followedTrackId,
     onTrackSelectionToggle: handleTrackSelectionToggle,
     onTrackFollowRequest: handleTrackFollowFromViewer,
-    onHoverIntensityChange: setHoveredVolumeIntensity,
+    onHoverVoxelChange: setHoveredVolumeVoxel,
     vr: {
       isVrPassthroughSupported,
       trackChannels,
@@ -2860,7 +2861,7 @@ function App() {
     selectedTrackIds,
     onTrackSelectionToggle: handleTrackSelectionToggle,
     onTrackFollowRequest: handleTrackFollowFromViewer,
-    onHoverIntensityChange: setHoveredVolumeIntensity
+    onHoverVoxelChange: setHoveredVolumeVoxel
   };
 
   const showSelectedTracksWindow = !isVrActive && hasParsedTrackData;
@@ -2875,7 +2876,7 @@ function App() {
       helpMenuRef,
       isHelpMenuOpen,
       onHelpMenuToggle: handleHelpMenuToggle,
-      hoveredIntensity: hoveredVolumeIntensity
+      hoveredVoxel: hoveredVolumeVoxel
     },
     layout: {
       windowMargin: WINDOW_MARGIN,

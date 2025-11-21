@@ -3,6 +3,7 @@ import type { TrackColorMode, TrackDefinition } from '../types/tracks';
 import { getTrackColorHex } from '../trackColors';
 import type { NormalizedVolume } from '../volumeProcessing';
 import type { VolumeDataType } from '../types/volume';
+import type { HoveredVoxelInfo } from '../types/hover';
 import { denormalizeValue, formatChannelValues } from '../utils/intensityFormatting';
 import './PlanarViewer.css';
 
@@ -50,7 +51,7 @@ type PlanarViewerProps = {
   followedTrackId: string | null;
   onTrackSelectionToggle: (trackId: string) => void;
   onTrackFollowRequest: (trackId: string) => void;
-  onHoverIntensityChange?: (value: string | null) => void;
+  onHoverVoxelChange?: (value: HoveredVoxelInfo | null) => void;
 };
 
 type SliceData = {
@@ -177,7 +178,7 @@ function PlanarViewer({
   followedTrackId,
   onTrackSelectionToggle,
   onTrackFollowRequest,
-  onHoverIntensityChange
+  onHoverVoxelChange
 }: PlanarViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -668,16 +669,16 @@ function PlanarViewer({
     tracks
   ]);
 
-  const emitHoverIntensity = useCallback(
-    (value: string | null) => {
-      onHoverIntensityChange?.(value);
+  const emitHoverVoxel = useCallback(
+    (value: HoveredVoxelInfo | null) => {
+      onHoverVoxelChange?.(value);
     },
-    [onHoverIntensityChange]
+    [onHoverVoxelChange]
   );
 
   const clearPixelInfo = useCallback(() => {
-    emitHoverIntensity(null);
-  }, [emitHoverIntensity]);
+    emitHoverVoxel(null);
+  }, [emitHoverVoxel]);
 
   const updatePixelHover = useCallback(
     (event: PointerEvent) => {
@@ -732,16 +733,25 @@ function PlanarViewer({
         return;
       }
 
-      emitHoverIntensity(text);
+      const voxelX = Math.round(clamp(sliceX, 0, Math.max(0, sliceData.width - 1)));
+      const voxelY = Math.round(clamp(sliceY, 0, Math.max(0, sliceData.height - 1)));
+      emitHoverVoxel({
+        intensity: text,
+        coordinates: {
+          x: voxelX,
+          y: voxelY,
+          z: clampedSliceIndex
+        }
+      });
     },
-    [clearPixelInfo, emitHoverIntensity, samplePixelValue, sliceData]
+    [clampedSliceIndex, clearPixelInfo, emitHoverVoxel, samplePixelValue, sliceData]
   );
 
   useEffect(() => {
     return () => {
-      emitHoverIntensity(null);
+      emitHoverVoxel(null);
     };
-  }, [emitHoverIntensity]);
+  }, [emitHoverVoxel]);
 
   const computeTrackCentroid = useCallback(
     (trackId: string, targetTimeIndex: number) => {
@@ -1200,9 +1210,9 @@ function PlanarViewer({
 
   useEffect(() => {
     if (!sliceData || !sliceData.hasLayer) {
-      emitHoverIntensity(null);
+      emitHoverVoxel(null);
     }
-  }, [emitHoverIntensity, sliceData]);
+  }, [emitHoverVoxel, sliceData]);
 
   useEffect(() => {
     if (needsAutoFitRef.current) {

@@ -84,6 +84,16 @@
   white-space: nowrap;
 }
 
+.viewer-top-menu-intensity-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.viewer-top-menu-coordinates {
+  color: rgba(230, 238, 255, 0.7);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 .viewer-top-menu-help {
   position: relative;
   display: flex;

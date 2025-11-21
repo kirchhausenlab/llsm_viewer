@@ -1,3 +1,7 @@
+# Hover coordinate readout
+- Added voxel XYZ coordinates alongside the hover intensity in the top menu, pulling the hovered sample positions from both the
+  3D MIP ray-marcher and 2D slice hover sampler so the readout always shows which voxel the intensity belongs to.
+
 # Grid overlay controls
 - Added a dedicated grid floating window beneath the Tracks panel with enable/disable, opacity, thickness, and spacing controls wired through the viewer props so VolumeViewer can read the settings.
 
@@ -660,3 +664,6 @@ d centered the front-page card in the viewport.
 
 ## 3D grid coverage update
 - Rebuilt grid generation to create full X/Y/Z-aligned lines through the entire volume, producing a complete lattice instead of only outlining faces.
+
+## Hovered voxel clear guard
+- Corrected the planar viewer hover reset effect to call the shared hover emitter so hover state clears without TypeScript errors when slice data is unavailable.

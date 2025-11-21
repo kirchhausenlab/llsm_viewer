@@ -4,6 +4,7 @@ import type { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
 import type { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
 
 import type { NormalizedVolume } from '../volumeProcessing';
+import type { HoveredVoxelInfo } from '../types/hover';
 import type { TrackColorMode, TrackDefinition } from '../types/tracks';
 
 export type ViewerLayer = {
@@ -138,7 +139,7 @@ export type VolumeViewerProps = {
   followedTrackId: string | null;
   onTrackSelectionToggle: (trackId: string) => void;
   onTrackFollowRequest: (trackId: string) => void;
-  onHoverIntensityChange?: (value: string | null) => void;
+  onHoverVoxelChange?: (value: HoveredVoxelInfo | null) => void;
   vr?: VolumeViewerVrProps;
 };
 
