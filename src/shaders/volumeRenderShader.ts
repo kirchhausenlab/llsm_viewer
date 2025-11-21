@@ -189,8 +189,15 @@ export const VolumeRenderShader = {
     float compute_depth(vec3 modelPosition) {
       vec4 viewPosition = modelViewMatrix * vec4(modelPosition, 1.0);
       vec4 clipPosition = projectionMatrix * viewPosition;
-      float ndcDepth = clipPosition.z / clipPosition.w;
-      return 0.5 * ndcDepth + 0.5;
+
+      float w = clipPosition.w;
+      if (abs(w) < EPSILON) {
+        return gl_FragCoord.z;
+      }
+
+      float ndcDepth = clipPosition.z / w;
+      float depth01 = 0.5 * ndcDepth + 0.5;
+      return clamp(depth01, 0.0, 1.0);
     }
 
     vec3 sample_to_model(vec3 texcoords) {
@@ -312,7 +319,7 @@ export const VolumeRenderShader = {
         discard;
       }
 
-      gl_FragDepth = depthFound == 1 ? depthValue : gl_FragCoord.z;
+      gl_FragDepth = depthFound == 1 ? depthValue : 1.0;
     }
 
     void cast_mip(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray) {
