@@ -13,6 +13,7 @@ import type {
   ChannelSource,
   ChannelTrackState,
   FollowedTrackState,
+  ExperimentDimension,
   StagedPreprocessedExperiment
 } from '../App';
 import type { PreprocessedDropboxCallbacks } from './preprocessedExperiment/shared';
