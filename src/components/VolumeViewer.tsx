@@ -103,6 +103,88 @@ const clampValue = (value: number, min: number, max: number): number => {
   return value;
 };
 
+function buildGridPositions(
+  dimensions: { width: number; height: number; depth: number },
+  spacing: number,
+): Float32Array {
+  const { width, height, depth } = dimensions;
+  const safeSpacing = Math.max(spacing, 1e-6);
+
+  const generateStops = (size: number) => {
+    const stops = new Set<number>();
+    stops.add(0);
+    stops.add(size);
+
+    const stepCount = Math.ceil(size / safeSpacing);
+    for (let step = 1; step < stepCount; step++) {
+      const value = step * safeSpacing;
+      if (value > 0 && value < size) {
+        stops.add(Math.min(value, size));
+      }
+    }
+
+    return Array.from(stops).sort((a, b) => a - b);
+  };
+
+  const widthStops = generateStops(width);
+  const heightStops = generateStops(height);
+  const depthStops = generateStops(depth);
+  const positions: number[] = [];
+
+  const minX = -0.5;
+  const minY = -0.5;
+  const minZ = -0.5;
+  const maxX = width - 0.5;
+  const maxY = height - 0.5;
+  const maxZ = depth - 0.5;
+
+  const addLine = (x1: number, y1: number, z1: number, x2: number, y2: number, z2: number) => {
+    positions.push(x1, y1, z1, x2, y2, z2);
+  };
+
+  const addZPlane = (z: number) => {
+    for (const x of widthStops) {
+      const worldX = Math.min(minX + x, maxX);
+      addLine(worldX, minY, z, worldX, maxY, z);
+    }
+    for (const y of heightStops) {
+      const worldY = Math.min(minY + y, maxY);
+      addLine(minX, worldY, z, maxX, worldY, z);
+    }
+  };
+
+  const addXPlane = (x: number) => {
+    for (const y of heightStops) {
+      const worldY = Math.min(minY + y, maxY);
+      addLine(x, worldY, minZ, x, worldY, maxZ);
+    }
+    for (const z of depthStops) {
+      const worldZ = Math.min(minZ + z, maxZ);
+      addLine(x, minY, worldZ, x, maxY, worldZ);
+    }
+  };
+
+  const addYPlane = (y: number) => {
+    for (const x of widthStops) {
+      const worldX = Math.min(minX + x, maxX);
+      addLine(worldX, y, minZ, worldX, y, maxZ);
+    }
+    for (const z of depthStops) {
+      const worldZ = Math.min(minZ + z, maxZ);
+      addLine(minX, y, worldZ, maxX, y, worldZ);
+    }
+  };
+
+  addZPlane(minZ);
+  addZPlane(maxZ);
+  addXPlane(minX);
+  addXPlane(maxX);
+  addYPlane(minY);
+  addYPlane(maxY);
+
+  return new Float32Array(positions);
+}
+
 function prepareSliceTexture(volume: NormalizedVolume, sliceIndex: number, existingBuffer: Uint8Array | null) {
   const { width, height, depth, channels, normalized } = volume;
   const pixelCount = width * height;
@@ -443,6 +525,10 @@ function VolumeViewer({
     moveDown: false
   });
   const volumeRootGroupRef = useRef<THREE.Group | null>(null);
+  const gridGroupRef = useRef<THREE.Group | null>(null);
+  const gridLineRef = useRef<Line2 | null>(null);
+  const gridGeometryRef = useRef<LineGeometry | null>(null);
+  const gridMaterialRef = useRef<LineMaterial | null>(null);
   const volumeRootBaseOffsetRef = useRef(new THREE.Vector3());
   const volumeRootCenterOffsetRef = useRef(new THREE.Vector3());
   const volumeRootCenterUnscaledRef = useRef(new THREE.Vector3());
@@ -529,6 +615,10 @@ function VolumeViewer({
         resource.outlineMaterial.resolution.set(width, height);
         resource.outlineMaterial.needsUpdate = true;
       }
+      if (gridMaterialRef.current) {
+        gridMaterialRef.current.resolution.set(width, height);
+        gridMaterialRef.current.needsUpdate = true;
+      }
     }
     cameraInstance.aspect = width / height;
     cameraInstance.updateProjectionMatrix();
@@ -549,6 +639,112 @@ function VolumeViewer({
     }
     setTooltipPosition(nextState.position);
   }, []);
+
+  const applyGridAppearance = useCallback(() => {
+    const gridGroup = gridGroupRef.current;
+    const gridLine = gridLineRef.current;
+    const gridMaterial = gridMaterialRef.current;
+    const hasVolume = !!currentDimensionsRef.current;
+    const hasValidSpacing = Number.isFinite(gridSpacing) && gridSpacing > 0;
+    const shouldShow = gridEnabled && hasVolume && !!gridLine && hasValidSpacing;
+
+    if (gridGroup) {
+      gridGroup.visible = shouldShow;
+    }
+    if (gridLine) {
+      gridLine.visible = shouldShow;
+    }
+    if (gridMaterial) {
+      gridMaterial.opacity = gridOpacity;
+      gridMaterial.linewidth = Math.max(gridThickness, 0);
+      gridMaterial.needsUpdate = true;
+    }
+  }, [gridEnabled, gridOpacity, gridSpacing, gridThickness]);
+
+  const rebuildGridLines = useCallback(
+    (dimensions: { width: number; height: number; depth: number } | null) => {
+      const gridGroup = gridGroupRef.current;
+      if (!gridGroup) {
+        return;
+      }
+
+      if (!dimensions || !Number.isFinite(gridSpacing) || gridSpacing <= 0) {
+        applyGridAppearance();
+        return;
+      }
+
+      const positions = buildGridPositions(dimensions, gridSpacing);
+      if (positions.length === 0) {
+        applyGridAppearance();
+        return;
+      }
+
+      let geometry = gridGeometryRef.current;
+      if (!geometry) {
+        geometry = new LineGeometry();
+        gridGeometryRef.current = geometry;
+      }
+      geometry.setPositions(positions);
+      geometry.instanceCount = 0;
+
+      let material = gridMaterialRef.current;
+      if (!material) {
+        material = new LineMaterial({
+          color: new THREE.Color(0xffffff),
+          linewidth: Math.max(gridThickness, 0),
+          transparent: true,
+          opacity: gridOpacity,
+          depthWrite: false,
+        });
+        material.depthTest = true;
+        const renderer = rendererRef.current;
+        if (renderer) {
+          const size = renderer.getSize(new THREE.Vector2());
+          material.resolution.set(Math.max(size.x, 1), Math.max(size.y, 1));
+        } else {
+          material.resolution.set(1, 1);
+        }
+        gridMaterialRef.current = material;
+      }
+
+      let line = gridLineRef.current;
+      if (!line) {
+        line = new Line2(geometry, material);
+        line.frustumCulled = false;
+        line.renderOrder = 5;
+        gridGroup.add(line);
+        gridLineRef.current = line;
+      } else {
+        line.geometry = geometry;
+        line.material = material;
+      }
+
+      line.computeLineDistances();
+      applyGridAppearance();
+    },
+    [applyGridAppearance, gridOpacity, gridSpacing, gridThickness],
+  );
+
+  const disposeGrid = useCallback(() => {
+    const gridGroup = gridGroupRef.current;
+    const gridLine = gridLineRef.current;
+    if (gridGroup && gridLine) {
+      gridGroup.remove(gridLine);
+    }
+    gridGeometryRef.current?.dispose();
+    gridMaterialRef.current?.dispose();
+    gridLineRef.current = null;
+    gridGeometryRef.current = null;
+    gridMaterialRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    applyGridAppearance();
+  }, [applyGridAppearance]);
+
+  useEffect(() => {
+    rebuildGridLines(currentDimensionsRef.current);
+  }, [gridSpacing, rebuildGridLines]);
 
   const updateHoverState = useCallback(
     (
@@ -2003,6 +2199,11 @@ function VolumeViewer({
     volumeRootGroup.name = 'VolumeRoot';
     scene.add(volumeRootGroup);
     volumeRootGroupRef.current = volumeRootGroup;
+    const gridGroup = new THREE.Group();
+    gridGroup.name = 'VolumeGrid';
+    gridGroup.visible = false;
+    volumeRootGroup.add(gridGroup);
+    gridGroupRef.current = gridGroup;
     const translationHandleMaterial = new THREE.MeshBasicMaterial({
       color: 0x4d9dff,
       transparent: true,
@@ -2708,8 +2909,14 @@ function VolumeViewer({
       }
       trackGroupRef.current = null;
 
+      disposeGrid();
+
       const volumeRootGroup = volumeRootGroupRef.current;
       if (volumeRootGroup) {
+        const gridGroup = gridGroupRef.current;
+        if (gridGroup && gridGroup.parent === volumeRootGroup) {
+          volumeRootGroup.remove(gridGroup);
+        }
         if (trackGroup && trackGroup.parent === volumeRootGroup) {
           volumeRootGroup.remove(trackGroup);
         }
@@ -2718,6 +2925,7 @@ function VolumeViewer({
           volumeRootGroup.parent.remove(volumeRootGroup);
         }
       }
+      gridGroupRef.current = null;
       vrTranslationHandleRef.current = null;
       vrVolumeScaleHandleRef.current = null;
       vrVolumeYawHandlesRef.current = [];
@@ -2889,6 +3097,7 @@ function VolumeViewer({
       removeAllResources();
       currentDimensionsRef.current = null;
       applyVolumeRootTransform(null);
+      rebuildGridLines(null);
       return;
     }
 
@@ -2910,6 +3119,7 @@ function VolumeViewer({
       }
       applyTrackGroupTransform(null);
       applyVolumeRootTransform(null);
+      rebuildGridLines(null);
       return;
     }
 
@@ -2951,6 +3161,7 @@ function VolumeViewer({
 
       applyTrackGroupTransform({ width, height, depth });
       applyVolumeRootTransform({ width, height, depth });
+      rebuildGridLines({ width, height, depth });
     }
 
     const seenKeys = new Set<string>();
@@ -3243,7 +3454,8 @@ function VolumeViewer({
     getColormapTexture,
     layers,
     renderContextRevision,
-    applyHoverHighlightToResources
+    applyHoverHighlightToResources,
+    rebuildGridLines
   ]);
 
   useEffect(() => {
