@@ -26,7 +26,6 @@ const VOXEL_RESOLUTION_AXES: ReadonlyArray<{ axis: VoxelResolutionAxis; label: s
 ];
 
 type FrontPageProps = {
-  backgroundVideoSrc: string;
   isFrontPageLocked: boolean;
   frontPageMode: 'initial' | 'configuring' | 'preprocessed';
   channels: ChannelSource[];
@@ -131,7 +130,6 @@ const buildChannelTabMeta = (channel: ChannelSource, validation: ChannelValidati
 };
 
 export default function FrontPage({
-  backgroundVideoSrc,
   isFrontPageLocked,
   frontPageMode,
   channels,
@@ -220,17 +218,6 @@ export default function FrontPage({
 
   return (
     <div className="app front-page-mode">
-      <video
-        className="app-background-video"
-        autoPlay
-        loop
-        muted
-        playsInline
-        preload="auto"
-        aria-hidden="true"
-      >
-        <source src={backgroundVideoSrc} type="video/mp4" />
-      </video>
       <div className="front-page">
         <div className={`front-page-card${isFrontPageLocked ? ' is-loading' : ''}`}>
           <header className="front-page-header">
