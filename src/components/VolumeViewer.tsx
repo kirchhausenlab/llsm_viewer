@@ -586,17 +586,27 @@ function VolumeViewer({
       if (uniforms.u_hoverActive) {
         uniforms.u_hoverActive.value = isActive ? 1 : 0;
       }
-      if (isActive && normalizedPosition && uniforms.u_hoverPos && uniforms.u_hoverRadius) {
+      if (
+        isActive &&
+        normalizedPosition &&
+        uniforms.u_hoverPos &&
+        uniforms.u_hoverRadius &&
+        uniforms.u_hoverScale
+      ) {
         uniforms.u_hoverPos.value.copy(normalizedPosition);
-        const maxExtent = Math.max(
+        uniforms.u_hoverScale.value.set(
           resource.dimensions.width,
           resource.dimensions.height,
           resource.dimensions.depth,
         );
-        uniforms.u_hoverRadius.value =
-          HOVER_HIGHLIGHT_RADIUS_VOXELS / Math.max(maxExtent, Number.EPSILON);
-      } else if (uniforms.u_hoverRadius) {
-        uniforms.u_hoverRadius.value = 0;
+        uniforms.u_hoverRadius.value = HOVER_HIGHLIGHT_RADIUS_VOXELS;
+      } else {
+        if (uniforms.u_hoverRadius) {
+          uniforms.u_hoverRadius.value = 0;
+        }
+        if (uniforms.u_hoverScale) {
+          uniforms.u_hoverScale.value.set(0, 0, 0);
+        }
       }
     }
   }, []);

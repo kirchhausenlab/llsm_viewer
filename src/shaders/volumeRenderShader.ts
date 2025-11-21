@@ -16,6 +16,7 @@ type VolumeUniforms = {
   u_stepScale: { value: number };
   u_nearestSampling: { value: number };
   u_hoverPos: { value: Vector3 };
+  u_hoverScale: { value: Vector3 };
   u_hoverRadius: { value: number };
   u_hoverActive: { value: number };
   u_hoverPulse: { value: number };
@@ -36,6 +37,7 @@ const uniforms = {
   u_stepScale: { value: 1 },
   u_nearestSampling: { value: 0 },
   u_hoverPos: { value: new Vector3() },
+  u_hoverScale: { value: new Vector3() },
   u_hoverRadius: { value: 0 },
   u_hoverActive: { value: 0 },
   u_hoverPulse: { value: 0 }
@@ -80,6 +82,7 @@ export const VolumeRenderShader = {
     uniform float u_stepScale;
     uniform float u_nearestSampling;
     uniform vec3 u_hoverPos;
+    uniform vec3 u_hoverScale;
     uniform float u_hoverRadius;
     uniform float u_hoverActive;
     uniform float u_hoverPulse;
@@ -330,8 +333,9 @@ export const VolumeRenderShader = {
 
       vec4 color = compose_color(max_val, max_color);
 
-      if (u_hoverActive > 0.5 && u_hoverRadius > 0.0) {
-        float falloff = smoothstep(0.0, u_hoverRadius, length(max_loc - u_hoverPos));
+      if (u_hoverActive > 0.5 && u_hoverRadius > 0.0 && length(u_hoverScale) > 0.0) {
+        vec3 delta = (max_loc - u_hoverPos) * u_hoverScale;
+        float falloff = smoothstep(0.0, u_hoverRadius, length(delta));
         float pulse = clamp(u_hoverPulse, 0.0, 1.0);
         float highlight = (1.0 - falloff) * pulse;
         color.rgb = mix(color.rgb, vec3(1.0), highlight * 0.6);
