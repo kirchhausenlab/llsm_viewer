@@ -1,3 +1,7 @@
+# 3D volume texture format fix
+- Packed 3-channel volumes into RGBA textures now that `RGBFormat` is absent in the current three.js build, restoring WebGL 3D rendering for multi-channel datasets.
+- Added a texture cache test to lock in the RGBA packing behavior and verify cached reuse with the new format.
+
 # Hover coordinate readout
 - Added voxel XYZ coordinates alongside the hover intensity in the top menu, pulling the hovered sample positions from both the
   3D MIP ray-marcher and 2D slice hover sampler so the readout always shows which voxel the intensity belongs to.

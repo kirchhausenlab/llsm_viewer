@@ -23,11 +23,6 @@ function computeTextureData(volume: NormalizedVolume): PreparedTexture {
     return { data, format };
   }
 
-  if (channels === 3) {
-    const data = isTightlyPacked ? normalized : normalized.slice();
-    return { data, format: THREE.RGBFormat };
-  }
-
   const packed = new Uint8Array(voxelCount * 4);
   const alphaChannels = Math.min(channels, 3);
 
