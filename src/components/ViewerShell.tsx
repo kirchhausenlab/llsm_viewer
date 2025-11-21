@@ -130,6 +130,17 @@ type SelectedTracksPanelProps = {
   totalTimepoints: number;
 };
 
+type GridPanelProps = {
+  gridEnabled: boolean;
+  gridOpacity: number;
+  gridThickness: number;
+  gridSpacing: number;
+  onGridEnabledChange: (value: boolean) => void;
+  onGridOpacityChange: (value: number) => void;
+  onGridThicknessChange: (value: number) => void;
+  onGridSpacingChange: (value: number) => void;
+};
+
 type Position = { x: number; y: number };
 
 type LayoutProps = {
@@ -137,11 +148,13 @@ type LayoutProps = {
   playbackWindowWidth: number;
   controlWindowWidth: number;
   trackWindowWidth: number;
+  gridWindowWidth: number;
   selectedTracksWindowWidth: number;
   resetToken: number;
   controlWindowInitialPosition: Position;
   layersWindowInitialPosition: Position;
   trackWindowInitialPosition: Position;
+  gridWindowInitialPosition: Position;
   selectedTracksWindowInitialPosition: Position;
 };
 
@@ -160,6 +173,7 @@ export type ViewerShellProps = {
   playbackControls: PlaybackControlsProps;
   channelsPanel: ChannelsPanelProps;
   tracksPanel: TracksPanelProps;
+  gridPanel: GridPanelProps;
   selectedTracksPanel: SelectedTracksPanelProps;
   trackDefaults: TrackDefaults;
 };
@@ -174,6 +188,7 @@ function ViewerShell({
   playbackControls,
   channelsPanel,
   tracksPanel,
+  gridPanel,
   selectedTracksPanel,
   trackDefaults
 }: ViewerShellProps) {
@@ -190,11 +205,13 @@ function ViewerShell({
     playbackWindowWidth,
     controlWindowWidth,
     trackWindowWidth,
+    gridWindowWidth,
     selectedTracksWindowWidth,
     resetToken,
     controlWindowInitialPosition,
     layersWindowInitialPosition,
     trackWindowInitialPosition,
+    gridWindowInitialPosition,
     selectedTracksWindowInitialPosition
   } = layout;
   const {
@@ -275,6 +292,16 @@ function ViewerShell({
     onTrackFollow,
     onStopTrackFollow
   } = tracksPanel;
+  const {
+    gridEnabled,
+    gridOpacity,
+    gridThickness,
+    gridSpacing,
+    onGridEnabledChange,
+    onGridOpacityChange,
+    onGridThicknessChange,
+    onGridSpacingChange
+  } = gridPanel;
   const { shouldRender, series, totalTimepoints } = selectedTracksPanel;
 
   return (
@@ -1165,6 +1192,70 @@ function ViewerShell({
             ) : (
               <p className="track-empty-hint">Add a channel to manage tracks.</p>
             )}
+          </div>
+        </FloatingWindow>
+        <FloatingWindow
+          title="Grid"
+          initialPosition={gridWindowInitialPosition}
+          width={`min(${gridWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
+          className="floating-window--grid"
+          resetSignal={resetToken}
+        >
+          <div className="sidebar sidebar-right">
+            <div className="control-group">
+              <button
+                type="button"
+                className={gridEnabled ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
+                onClick={() => onGridEnabledChange(!gridEnabled)}
+                aria-pressed={gridEnabled}
+              >
+                {gridEnabled ? 'Hide grid' : 'Show grid'}
+              </button>
+            </div>
+            <div className="slider-control">
+              <label htmlFor="grid-opacity">
+                Opacity <span>{Math.round(gridOpacity * 100)}%</span>
+              </label>
+              <input
+                id="grid-opacity"
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={gridOpacity}
+                onChange={(event) => onGridOpacityChange(Number(event.target.value))}
+                disabled={!gridEnabled}
+              />
+            </div>
+            <div className="slider-control">
+              <label htmlFor="grid-thickness">
+                Thickness <span>{gridThickness.toFixed(1)}</span>
+              </label>
+              <input
+                id="grid-thickness"
+                type="range"
+                min={0.5}
+                max={5}
+                step={0.1}
+                value={gridThickness}
+                onChange={(event) => onGridThicknessChange(Number(event.target.value))}
+                disabled={!gridEnabled}
+              />
+            </div>
+            <div className="control-group">
+              <label htmlFor="grid-spacing">
+                Spacing <span>{gridSpacing} px</span>
+              </label>
+              <input
+                id="grid-spacing"
+                type="number"
+                min={1}
+                step={1}
+                value={gridSpacing}
+                onChange={(event) => onGridSpacingChange(Number(event.target.value))}
+                disabled={!gridEnabled}
+              />
+            </div>
           </div>
         </FloatingWindow>
         {!isVrActive && shouldRender ? (

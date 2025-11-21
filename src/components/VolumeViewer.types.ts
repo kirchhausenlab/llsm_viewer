@@ -122,6 +122,10 @@ export type VolumeViewerProps = {
   onTimeIndexChange: (nextIndex: number) => void;
   onFpsChange: (value: number) => void;
   onRegisterReset: (handler: (() => void) | null) => void;
+  gridEnabled: boolean;
+  gridOpacity: number;
+  gridThickness: number;
+  gridSpacing: number;
   tracks: TrackDefinition[];
   trackVisibility: Record<string, boolean>;
   trackOpacityByChannel: Record<string, number>;
