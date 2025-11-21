@@ -414,6 +414,7 @@ function VolumeViewer({
   const controlsRef = useRef<OrbitControls | null>(null);
   const resourcesRef = useRef<Map<string, VolumeResources>>(new Map());
   const hoverTeardownRef = useRef(false);
+  const hoverInitializationFailedRef = useRef(false);
   const hoverSystemReadyRef = useRef(false);
   const pendingHoverEventRef = useRef<PointerEvent | null>(null);
   const hoverRetryFrameRef = useRef<number | null>(null);
@@ -633,7 +634,6 @@ function VolumeViewer({
 
   const setHoverNotReady = useCallback(
     (reason: string) => {
-      hoverSystemReadyRef.current = false;
       reportVoxelHoverAbort(reason);
     },
     [reportVoxelHoverAbort],
@@ -1403,6 +1403,12 @@ function VolumeViewer({
       return;
     }
 
+    if (hoverInitializationFailedRef.current) {
+      pendingHoverEventRef.current = null;
+      setHoverNotReady('Hover inactive: renderer not initialized.');
+      return;
+    }
+
     const renderer = rendererRef.current;
     const cameraInstance = cameraRef.current;
     const raycasterInstance = raycasterRef.current;
@@ -1446,9 +1452,14 @@ function VolumeViewer({
       }
 
       if (!hoverSystemReadyRef.current) {
-        pendingHoverEventRef.current = event;
-        setHoverNotReady('Hover inactive: renderer not initialized.');
-        retryPendingVoxelHover();
+        if (hoverInitializationFailedRef.current) {
+          pendingHoverEventRef.current = null;
+          setHoverNotReady('Hover inactive: renderer not initialized.');
+        } else {
+          pendingHoverEventRef.current = event;
+          setHoverNotReady('Hover inactive: renderer not initialized.');
+          retryPendingVoxelHover();
+        }
         return;
       }
 
@@ -1920,19 +1931,28 @@ function VolumeViewer({
 
   useEffect(() => {
     hoverTeardownRef.current = false;
+    hoverInitializationFailedRef.current = false;
     hoverSystemReadyRef.current = false;
     setHoverNotReady('Hover inactive: renderer not initialized.');
 
     const container = containerNode;
     if (!container) {
+      hoverInitializationFailedRef.current = true;
       return;
     }
 
-    const renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      alpha: true,
-      powerPreference: 'high-performance'
-    });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true,
+        powerPreference: 'high-performance'
+      });
+    } catch (error) {
+      hoverInitializationFailedRef.current = true;
+      setHoverNotReady('Hover inactive: renderer not initialized.');
+      return;
+    }
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     const pixelRatio =
       typeof window === 'undefined'
