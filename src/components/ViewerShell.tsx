@@ -20,6 +20,7 @@ import {
   normalizeTrackColor
 } from '../trackColors';
 import type { LoadedLayer } from '../types/layers';
+import type { HoveredVoxelInfo } from '../types/hover';
 import type { TrackColorMode, TrackDefinition, TrackPoint } from '../types/tracks';
 import type { ChannelSource } from '../App';
 
@@ -38,7 +39,7 @@ type TopMenuProps = {
   helpMenuRef: RefObject<HTMLDivElement>;
   isHelpMenuOpen: boolean;
   onHelpMenuToggle: () => void;
-  hoveredIntensity: string | null;
+  hoveredVoxel: HoveredVoxelInfo | null;
 };
 
 type ModeControlsProps = {
@@ -198,7 +199,7 @@ function ViewerShell({
     helpMenuRef,
     isHelpMenuOpen,
     onHelpMenuToggle,
-    hoveredIntensity
+    hoveredVoxel
   } = topMenu;
   const {
     windowMargin,
@@ -371,7 +372,16 @@ function ViewerShell({
             </div>
             <div className="viewer-top-menu-intensity" role="status" aria-live="polite">
               <span>Hover:</span>
-              <span>{hoveredIntensity ?? '—'}</span>
+              {hoveredVoxel ? (
+                <>
+                  <span className="viewer-top-menu-intensity-value">{hoveredVoxel.intensity}</span>
+                  <span className="viewer-top-menu-coordinates">
+                    ({hoveredVoxel.coordinates.x}, {hoveredVoxel.coordinates.y}, {hoveredVoxel.coordinates.z})
+                  </span>
+                </>
+              ) : (
+                <span>—</span>
+              )}
             </div>
           </div>
         </div>

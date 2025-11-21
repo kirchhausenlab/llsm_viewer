@@ -1,3 +1,7 @@
+# Hover coordinate readout
+- Added voxel XYZ coordinates alongside the hover intensity in the top menu, pulling the hovered sample positions from both the
+  3D MIP ray-marcher and 2D slice hover sampler so the readout always shows which voxel the intensity belongs to.
+
 # Grid overlay controls
 - Added a dedicated grid floating window beneath the Tracks panel with enable/disable, opacity, thickness, and spacing controls wired through the viewer props so VolumeViewer can read the settings.
 
