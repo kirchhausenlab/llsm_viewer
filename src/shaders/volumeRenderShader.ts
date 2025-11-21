@@ -257,10 +257,9 @@ export const VolumeRenderShader = {
 
       if (u_nearestSampling > 0.5) {
         vec3 frontCenter = floor(front) + vec3(0.5);
-        float centerToBack = max(dot(back - frontCenter, rayDir), 0.0);
-        nsteps = clamp(int(centerToBack) + 1, 1, MAX_STEPS);
         start_loc = frontCenter / u_size;
-        step = ((back - frontCenter) / u_size) / float(nsteps);
+        step = rayDir / u_size;
+        nsteps = clamp(int(travelDistance) + 1, 1, MAX_STEPS);
       } else {
         float safeStepScale = max(u_stepScale, 1e-3);
         nsteps = int(travelDistance * safeStepScale + 0.5);
