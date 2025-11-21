@@ -106,6 +106,8 @@ const clampValue = (value: number, min: number, max: number): number => {
   return value;
 };
 
+const DEPTH_MASK_OPACITY_THRESHOLD = 0.6;
+
 function buildGridPositions(
   dimensions: { width: number; height: number; depth: number },
   spacing: number,
@@ -3263,6 +3265,7 @@ function VolumeViewer({
           uniforms.u_invert.value = layer.invert ? 1 : 0;
           uniforms.u_stepScale.value = volumeStepScaleRef.current;
           uniforms.u_nearestSampling.value = layer.samplingMode === 'nearest' ? 1 : 0;
+          uniforms.u_depthOpacityThreshold.value = DEPTH_MASK_OPACITY_THRESHOLD;
 
           const material = new THREE.ShaderMaterial({
             uniforms,
@@ -3271,7 +3274,7 @@ function VolumeViewer({
             side: THREE.BackSide,
             transparent: true
           });
-          material.depthWrite = false;
+          material.depthWrite = true;
 
           const geometry = new THREE.BoxGeometry(volume.width, volume.height, volume.depth);
           geometry.translate(volume.width / 2 - 0.5, volume.height / 2 - 0.5, volume.depth / 2 - 0.5);
@@ -3413,6 +3416,9 @@ function VolumeViewer({
         if (materialUniforms.u_nearestSampling) {
           materialUniforms.u_nearestSampling.value =
             layer.samplingMode === 'nearest' ? 1 : 0;
+        }
+        if (materialUniforms.u_depthOpacityThreshold) {
+          materialUniforms.u_depthOpacityThreshold.value = DEPTH_MASK_OPACITY_THRESHOLD;
         }
 
         if (resources.mode === '3d') {
