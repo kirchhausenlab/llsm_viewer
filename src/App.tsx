@@ -1568,11 +1568,14 @@ function App() {
 
       if (addedAny) {
         if (addedLayer) {
-          const layerForCounts = addedLayer;
+          const layerForCounts: ChannelLayerSource = addedLayer;
           try {
             const timepointCount = await computeLayerTimepointCount(layerForCounts.files);
             setLayerTimepointCounts((current) => {
-              const next = { ...current, [layerForCounts.id]: timepointCount };
+              const next: Record<string, number> = {
+                ...current,
+                [layerForCounts.id]: timepointCount
+              };
               for (const layerId of replacedLayerIds) {
                 if (layerId in next) {
                   delete next[layerId];
@@ -1583,7 +1586,10 @@ function App() {
           } catch (error) {
             console.error('Failed to compute timepoint count for layer', error);
             setLayerTimepointCounts((current) => {
-              const next = { ...current, [layerForCounts.id]: layerForCounts.files.length };
+              const next: Record<string, number> = {
+                ...current,
+                [layerForCounts.id]: layerForCounts.files.length
+              };
               for (const layerId of replacedLayerIds) {
                 if (layerId in next) {
                   delete next[layerId];
