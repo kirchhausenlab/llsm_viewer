@@ -168,10 +168,6 @@
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
 }
 
-.channel-tab.has-error {
-  border-color: rgba(255, 130, 130, 0.9);
-}
-
 .channel-tab.has-error .channel-tab-meta {
   color: #ff9a9a;
 }
