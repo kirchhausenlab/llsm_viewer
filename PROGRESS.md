@@ -1,3 +1,7 @@
+# Volume depth output
+- Injected fragment depth writes at the first accumulated sample in the volume ray-marcher and enabled depth testing/writing on
+  the shader material to improve compositing without breaking single-volume transparency.
+
 # Hover coordinate readout
 - Added voxel XYZ coordinates alongside the hover intensity in the top menu, pulling the hovered sample positions from both the
   3D MIP ray-marcher and 2D slice hover sampler so the readout always shows which voxel the intensity belongs to.

@@ -176,6 +176,11 @@ export const VolumeRenderShader = {
       return vec4(adjustedColor, alpha);
     }
 
+    float compute_depth(vec3 loc) {
+      vec4 clipPos = projectionMatrix * modelViewMatrix * vec4(loc * u_size, 1.0);
+      return 0.5 * (clipPos.z / clipPos.w) + 0.5;
+    }
+
     void main() {
       vec3 farpos = v_farpos.xyz / v_farpos.w;
       vec3 nearpos = v_nearpos.xyz / v_nearpos.w;
@@ -341,6 +346,7 @@ export const VolumeRenderShader = {
         color.rgb = mix(color.rgb, vec3(1.0), highlight * 0.6);
       }
 
+      gl_FragDepth = compute_depth(max_loc);
       gl_FragColor = color;
     }
 
@@ -366,6 +372,7 @@ export const VolumeRenderShader = {
             float refined = adjust_intensity(luminance(colorSample));
             if (refined > u_renderthreshold) {
               gl_FragColor = add_lighting(refined, iloc, dstep, view_ray, colorSample);
+              gl_FragDepth = compute_depth(iloc);
               return;
             }
             iloc += istep;
