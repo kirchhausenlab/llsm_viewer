@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { loadVolumesFromFiles } from './loaders/volumeLoader';
+import { expandVolumesForMovieMode, loadVolumesFromFiles } from './loaders/volumeLoader';
 import { VolumeTooLargeError, formatBytes } from './errors';
 import FrontPage from './components/FrontPage';
 import ViewerShell, { type ViewerShellProps } from './components/ViewerShell';
@@ -55,6 +55,7 @@ import {
   parseTrackCsvFile,
   sortVolumeFiles
 } from './utils/appHelpers';
+import { fromBlob } from 'geotiff';
 
 const DEFAULT_FPS = 12;
 const DEFAULT_TRACK_OPACITY = 0.9;
@@ -179,6 +180,7 @@ function App() {
     []
   );
   const [layerAutoThresholds, setLayerAutoThresholds] = useState<Record<string, number>>({});
+  const [layerTimepointCounts, setLayerTimepointCounts] = useState<Record<string, number>>({});
   const voxelResolution = useMemo<VoxelResolutionValues | null>(() => {
     const axes: VoxelResolutionAxis[] =
       experimentDimension === '2d' ? ['x', 'y'] : ['x', 'y', 'z'];
@@ -360,6 +362,32 @@ function App() {
       isSegmentation: false
     };
   }, []);
+
+  const computeLayerTimepointCount = useCallback(
+    async (files: File[]): Promise<number> => {
+      if (experimentDimension !== '2d') {
+        return files.length;
+      }
+
+      let totalSlices = 0;
+      for (const file of files) {
+        const tiff = await fromBlob(file);
+        totalSlices += await tiff.getImageCount();
+      }
+      return totalSlices;
+    },
+    [experimentDimension]
+  );
+
+  const getLayerTimepointCount = useCallback(
+    (layer: Pick<ChannelLayerSource, 'id' | 'files'> | null | undefined): number => {
+      if (!layer) {
+        return 0;
+      }
+      return layerTimepointCounts[layer.id] ?? layer.files.length;
+    },
+    [layerTimepointCounts]
+  );
 
   const updateChannelIdCounter = useCallback((sources: ChannelSource[]) => {
     let maxId = channelIdRef.current;
@@ -909,8 +937,19 @@ function App() {
     setExpectedVolumeCount(0);
     setActiveChannelTabId(null);
 
-    const referenceFiles = flatLayerSources[0]?.files ?? [];
-    const totalExpectedVolumes = referenceFiles.length * flatLayerSources.length;
+    const referenceLayer = flatLayerSources[0] ?? null;
+    const referenceFiles = referenceLayer?.files ?? [];
+    const referenceTimepointsHint = referenceLayer
+      ? getLayerTimepointCount({ id: referenceLayer.key, files: referenceLayer.files })
+      : 0;
+    const referenceTimepoints =
+      experimentDimension === '2d'
+        ? referenceTimepointsHint || referenceFiles.length
+        : referenceFiles.length;
+    const totalExpectedVolumes =
+      experimentDimension === '2d'
+        ? referenceTimepoints * flatLayerSources.length
+        : referenceFiles.length * flatLayerSources.length;
     if (totalExpectedVolumes === 0) {
       const message = 'The selected dataset does not contain any TIFF files.';
       showLaunchError(message);
@@ -923,14 +962,23 @@ function App() {
 
     try {
       for (const layer of flatLayerSources) {
-        if (layer.files.length !== referenceFiles.length) {
+        const layerTimepoints = getLayerTimepointCount({ id: layer.key, files: layer.files });
+        if (
+          (experimentDimension === '2d' && layerTimepoints !== referenceTimepoints) ||
+          (experimentDimension === '3d' && layer.files.length !== referenceFiles.length)
+        ) {
           throw new Error(
-            `Channel "${layer.channelLabel}" has ${layer.files.length} timepoints, but the first channel has ${referenceFiles.length}.`
+            `Channel "${layer.channelLabel}" has ${
+              experimentDimension === '2d' ? layerTimepoints : layer.files.length
+            } timepoints, but the first channel has ${
+              experimentDimension === '2d' ? referenceTimepoints : referenceFiles.length
+            }.`
           );
         }
       }
 
       let referenceShape: { width: number; height: number; depth: number } | null = null;
+      let referencePlanarShape: { width: number; height: number } | null = null;
 
       const rawLayers = await Promise.all(
         flatLayerSources.map(async (layer) => {
@@ -940,34 +988,61 @@ function App() {
                 return;
               }
 
-              if (!referenceShape) {
-                referenceShape = {
-                  width: volume.width,
-                  height: volume.height,
-                  depth: volume.depth
-                };
-              } else if (
-                volume.width !== referenceShape.width ||
-                volume.height !== referenceShape.height ||
-                volume.depth !== referenceShape.depth
-              ) {
-                throw new Error(
-                  `Channel "${layer.channelLabel}" has volume dimensions ${volume.width}×${volume.height}×${volume.depth} that do not match the reference shape ${referenceShape.width}×${referenceShape.height}×${referenceShape.depth}.`
-                );
-              }
+              const timepointIncrement = experimentDimension === '2d' ? volume.depth : 1;
 
               setLoadedCount((current) => {
                 if (loadRequestRef.current !== requestId) {
                   return current;
                 }
 
-                const next = current + 1;
+                const next = current + timepointIncrement;
                 setLoadProgress(totalExpectedVolumes === 0 ? 0 : next / totalExpectedVolumes);
                 return next;
               });
             }
           });
-          return { layer, volumes };
+          const expandedVolumes = expandVolumesForMovieMode(volumes, experimentDimension);
+
+          if (experimentDimension === '2d') {
+            const primaryVolume = expandedVolumes[0] ?? null;
+            if (!referencePlanarShape && primaryVolume) {
+              referencePlanarShape = { width: primaryVolume.width, height: primaryVolume.height };
+            } else if (
+              primaryVolume &&
+              referencePlanarShape &&
+              (primaryVolume.width !== referencePlanarShape.width ||
+                primaryVolume.height !== referencePlanarShape.height)
+            ) {
+              throw new Error(
+                `Channel "${layer.channelLabel}" has volume dimensions ${primaryVolume.width}×${primaryVolume.height}×${primaryVolume.depth} that do not match the reference shape ${referencePlanarShape.width}×${referencePlanarShape.height}×1.`
+              );
+            }
+          } else {
+            if (!referenceShape) {
+              referenceShape = {
+                width: volumes[0]?.width ?? 0,
+                height: volumes[0]?.height ?? 0,
+                depth: volumes[0]?.depth ?? 0
+              };
+            } else if (
+              volumes[0] &&
+              (volumes[0].width !== referenceShape.width ||
+                volumes[0].height !== referenceShape.height ||
+                volumes[0].depth !== referenceShape.depth)
+            ) {
+              throw new Error(
+                `Channel "${layer.channelLabel}" has volume dimensions ${volumes[0].width}×${volumes[0].height}×${volumes[0].depth} that do not match the reference shape ${referenceShape.width}×${referenceShape.height}×${referenceShape.depth}.`
+              );
+            }
+          }
+
+          if (referenceTimepoints > 0 && expandedVolumes.length !== referenceTimepoints) {
+            throw new Error(
+              `Channel "${layer.channelLabel}" has ${expandedVolumes.length} timepoints, but the first channel has ${referenceTimepoints}.`
+            );
+          }
+
+          return { layer, volumes: expandedVolumes };
         })
       );
 
@@ -1002,7 +1077,10 @@ function App() {
         };
       });
 
-      applyLoadedLayers(normalizedLayers, totalExpectedVolumes);
+      const resolvedExpectedVolumes =
+        rawLayers.length > 0 ? rawLayers[0].volumes.length * flatLayerSources.length : totalExpectedVolumes;
+
+      applyLoadedLayers(normalizedLayers, resolvedExpectedVolumes);
       return normalizedLayers;
     } catch (err) {
       if (loadRequestRef.current !== requestId) {
@@ -1043,7 +1121,9 @@ function App() {
     clearDatasetError,
     colorizeSegmentationVolume,
     computeNormalizationParameters,
+    experimentDimension,
     createSegmentationSeed,
+    getLayerTimepointCount,
     normalizeVolume,
     showLaunchError,
     voxelResolution
@@ -1409,8 +1489,13 @@ function App() {
   }, []);
 
   const handleRemoveChannel = useCallback((channelId: string) => {
+    let removedLayerIds: string[] = [];
     setChannels((current) => {
       const filtered = current.filter((channel) => channel.id !== channelId);
+      const removedChannel = current.find((channel) => channel.id === channelId);
+      if (removedChannel) {
+        removedLayerIds = removedChannel.layers.map((layer) => layer.id);
+      }
       setActiveChannelId((previous) => {
         if (filtered.length === 0) {
           return null;
@@ -1427,11 +1512,24 @@ function App() {
       });
       return filtered;
     });
+    if (removedLayerIds.length > 0) {
+      setLayerTimepointCounts((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const layerId of removedLayerIds) {
+          if (layerId in next) {
+            delete next[layerId];
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+    }
     clearDatasetError();
   }, [clearDatasetError]);
 
   const handleChannelLayerFilesAdded = useCallback(
-    (channelId: string, incomingFiles: File[]) => {
+    async (channelId: string, incomingFiles: File[]) => {
       const tiffFiles = dedupeFiles(incomingFiles.filter((file) => hasTiffExtension(file.name)));
       if (tiffFiles.length === 0) {
         showInteractionWarning('No TIFF files detected in the dropped selection.');
@@ -1440,6 +1538,7 @@ function App() {
 
       let addedAny = false;
       let ignoredExtraGroups = false;
+      let addedLayer: ChannelLayerSource | null = null;
       const replacedLayerIds: string[] = [];
       setChannels((current) =>
         current.map((channel) => {
@@ -1462,11 +1561,38 @@ function App() {
             replacedLayerIds.push(channel.layers[0].id);
           }
           const nextLayer = createLayerSource(sorted);
+          addedLayer = nextLayer;
           return { ...channel, layers: [nextLayer] };
         })
       );
 
       if (addedAny) {
+        if (addedLayer) {
+          const layerForCounts = addedLayer;
+          try {
+            const timepointCount = await computeLayerTimepointCount(layerForCounts.files);
+            setLayerTimepointCounts((current) => {
+              const next = { ...current, [layerForCounts.id]: timepointCount };
+              for (const layerId of replacedLayerIds) {
+                if (layerId in next) {
+                  delete next[layerId];
+                }
+              }
+              return next;
+            });
+          } catch (error) {
+            console.error('Failed to compute timepoint count for layer', error);
+            setLayerTimepointCounts((current) => {
+              const next = { ...current, [layerForCounts.id]: layerForCounts.files.length };
+              for (const layerId of replacedLayerIds) {
+                if (layerId in next) {
+                  delete next[layerId];
+                }
+              }
+              return next;
+            });
+          }
+        }
         if (replacedLayerIds.length > 0) {
           setLayerSettings((current) => {
             let changed = false;
@@ -1500,7 +1626,7 @@ function App() {
         showInteractionWarning('No volume was added from that drop.');
       }
     },
-    [clearDatasetError, createLayerSource, showInteractionWarning]
+    [clearDatasetError, computeLayerTimepointCount, createLayerSource, showInteractionWarning]
   );
 
   const handleChannelLayerDrop = useCallback(
@@ -1562,6 +1688,14 @@ function App() {
         return next;
       });
       setLayerAutoThresholds((current) => {
+        if (!(layerId in current)) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[layerId];
+        return next;
+      });
+      setLayerTimepointCounts((current) => {
         if (!(layerId in current)) {
           return current;
         }
@@ -1724,13 +1858,11 @@ function App() {
         errors.push('Name this channel.');
       }
 
-      if (channel.layers.length === 0) {
+      const primaryLayer = channel.layers[0] ?? null;
+      if (!primaryLayer) {
         errors.push('Add a volume to this channel.');
-      } else {
-        const layer = channel.layers[0];
-        if (!layer || layer.files.length === 0) {
-          errors.push('Add files to the volume in this channel.');
-        }
+      } else if (primaryLayer.files.length === 0) {
+        errors.push('Add files to the volume in this channel.');
       }
 
       if (channel.trackStatus === 'error' && channel.trackError) {
@@ -1746,10 +1878,10 @@ function App() {
         errors,
         warnings,
         layerCount: channel.layers.length,
-        timepointCount: channel.layers[0]?.files.length ?? 0
+        timepointCount: getLayerTimepointCount(primaryLayer)
       };
     });
-  }, [channels]);
+  }, [channels, getLayerTimepointCount]);
 
   const channelValidationMap = useMemo(() => {
     const map = new Map<string, ChannelValidation>();
@@ -1763,13 +1895,14 @@ function App() {
     const timepointCounts = new Set<number>();
     for (const channel of channels) {
       for (const layer of channel.layers) {
-        if (layer.files.length > 0) {
-          timepointCounts.add(layer.files.length);
+        const count = getLayerTimepointCount(layer);
+        if (count > 0) {
+          timepointCounts.add(count);
         }
       }
     }
     return timepointCounts.size > 1;
-  }, [channels]);
+  }, [channels, getLayerTimepointCount]);
   const hasAnyLayers = useMemo(
     () => channels.some((channel) => channel.layers.some((layer) => layer.files.length > 0)),
     [channels]

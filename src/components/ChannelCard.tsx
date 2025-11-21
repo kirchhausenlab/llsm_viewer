@@ -13,7 +13,7 @@ export type ChannelCardProps = {
   channel: ChannelSource;
   validation: ChannelValidation;
   isDisabled: boolean;
-  onLayerFilesAdded: (id: string, files: File[]) => void;
+  onLayerFilesAdded: (id: string, files: File[]) => void | Promise<void>;
   onLayerDrop: (id: string, dataTransfer: DataTransfer) => void;
   onLayerSegmentationToggle: (channelId: string, layerId: string, value: boolean) => void;
   onLayerRemove: (channelId: string, layerId: string) => void;
