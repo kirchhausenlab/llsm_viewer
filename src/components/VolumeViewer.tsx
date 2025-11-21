@@ -3269,9 +3269,10 @@ function VolumeViewer({
             vertexShader: shader.vertexShader,
             fragmentShader: shader.fragmentShader,
             side: THREE.BackSide,
-            transparent: true
+            transparent: true,
+            depthWrite: true,
+            depthTest: true
           });
-          material.depthWrite = false;
 
           const geometry = new THREE.BoxGeometry(volume.width, volume.height, volume.depth);
           geometry.translate(volume.width / 2 - 0.5, volume.height / 2 - 0.5, volume.depth / 2 - 0.5);
