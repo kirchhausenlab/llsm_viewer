@@ -657,3 +657,6 @@ d centered the front-page card in the viewport.
 
 ## Grid rendering fix
 - Set the grid line geometry instance count to match the generated segment count so populated positions are rendered when the grid toggle is enabled.
+
+## 3D grid coverage update
+- Rebuilt grid generation to create full X/Y/Z-aligned lines through the entire volume, producing a complete lattice instead of only outlining faces.
