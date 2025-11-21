@@ -142,45 +142,30 @@ function buildGridPositions(
     positions.push(x1, y1, z1, x2, y2, z2);
   };
 
-  const addZPlane = (z: number) => {
-    for (const x of widthStops) {
-      const worldX = Math.min(minX + x, maxX);
-      addLine(worldX, minY, z, worldX, maxY, z);
-    }
-    for (const y of heightStops) {
-      const worldY = Math.min(minY + y, maxY);
-      addLine(minX, worldY, z, maxX, worldY, z);
-    }
-  };
+  const xStops = widthStops.map((stop) => Math.min(minX + stop, maxX));
+  const yStops = heightStops.map((stop) => Math.min(minY + stop, maxY));
+  const zStops = depthStops.map((stop) => Math.min(minZ + stop, maxZ));
 
-  const addXPlane = (x: number) => {
-    for (const y of heightStops) {
-      const worldY = Math.min(minY + y, maxY);
-      addLine(x, worldY, minZ, x, worldY, maxZ);
+  // Lines parallel to the X axis (varying Y and Z)
+  for (const y of yStops) {
+    for (const z of zStops) {
+      addLine(minX, y, z, maxX, y, z);
     }
-    for (const z of depthStops) {
-      const worldZ = Math.min(minZ + z, maxZ);
-      addLine(x, minY, worldZ, x, maxY, worldZ);
-    }
-  };
+  }
 
-  const addYPlane = (y: number) => {
-    for (const x of widthStops) {
-      const worldX = Math.min(minX + x, maxX);
-      addLine(worldX, y, minZ, worldX, y, maxZ);
+  // Lines parallel to the Y axis (varying X and Z)
+  for (const x of xStops) {
+    for (const z of zStops) {
+      addLine(x, minY, z, x, maxY, z);
     }
-    for (const z of depthStops) {
-      const worldZ = Math.min(minZ + z, maxZ);
-      addLine(minX, y, worldZ, maxX, y, worldZ);
-    }
-  };
+  }
 
-  addZPlane(minZ);
-  addZPlane(maxZ);
-  addXPlane(minX);
-  addXPlane(maxX);
-  addYPlane(minY);
-  addYPlane(maxY);
+  // Lines parallel to the Z axis (varying X and Y)
+  for (const x of xStops) {
+    for (const y of yStops) {
+      addLine(x, y, minZ, x, y, maxZ);
+    }
+  }
 
   return new Float32Array(positions);
 }
