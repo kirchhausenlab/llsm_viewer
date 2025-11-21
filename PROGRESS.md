@@ -644,3 +644,7 @@ d centered the front-page card in the viewport.
 ## Slice-mode hover sampling fallback
 - Allow volumetric layers with depth to participate in CPU hover sampling even when displayed in slice mode so intensity readouts stay available without a 3D resource.
 - Reuse slice mesh transforms to derive bounding boxes when no 3D volume resources exist, keeping hover rays aligned with the rendered slice geometry.
+
+## Hover highlight tuning
+- Increased the hover pulse rate and normalized the pulse scale so the brightness oscillates between the original color and a stronger highlight.
+- Raised the peak highlight mix toward white to make hovered voxels stand out more clearly while preserving the existing falloff behavior.
