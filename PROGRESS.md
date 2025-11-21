@@ -674,3 +674,6 @@ d centered the front-page card in the viewport.
 
 ## Volume depth buffer regression fix
 - Enabled the `fragDepth` shader extension on the 3D volume material so writing `gl_FragDepth` no longer prevents the volume from rendering when the depth buffer is active.
+
+## Depth-correct volume sampling
+- Adjusted depth calculation in the volume fragment shader to convert normalized sampling coordinates back into model space before projection, so manual depth writes align with the actual geometry and the 3D volume renders again with depth testing.
