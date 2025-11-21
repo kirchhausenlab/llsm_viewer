@@ -337,10 +337,8 @@ export const VolumeRenderShader = {
         vec3 delta = (max_loc - u_hoverPos) * u_hoverScale;
         float falloff = smoothstep(0.0, u_hoverRadius, length(delta));
         float pulse = clamp(u_hoverPulse, 0.0, 1.0);
-        float pulseCentered = pulse * 2.0 - 1.0;
-        float highlight = (1.0 - falloff) * 0.6 * abs(pulseCentered);
-        vec3 targetColor = mix(vec3(0.0), vec3(1.0), step(0.0, pulseCentered));
-        color.rgb = mix(color.rgb, targetColor, highlight);
+        float highlight = (1.0 - falloff) * pulse;
+        color.rgb = mix(color.rgb, vec3(1.0), highlight * 0.6);
       }
 
       gl_FragColor = color;
