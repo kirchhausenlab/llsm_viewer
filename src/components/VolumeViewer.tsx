@@ -429,6 +429,7 @@ function VolumeViewer({
   onTogglePlayback,
   onTimeIndexChange,
   onFpsChange,
+  onRegisterVolumeStepScaleChange,
   onRegisterReset,
   gridEnabled,
   gridOpacity,
@@ -2112,6 +2113,26 @@ function VolumeViewer({
     handleResetVolume();
     handleResetHudPlacement();
   }, [handleResetHudPlacement, handleResetVolume]);
+
+  const handleVolumeStepScaleChange = useCallback(
+    (stepScale: number) => {
+      const clampedStepScale = Math.max(stepScale, 1e-3);
+      volumeStepScaleRef.current = clampedStepScale;
+      applyVolumeStepScaleToResources(clampedStepScale);
+    },
+    [applyVolumeStepScaleToResources],
+  );
+
+  useEffect(() => {
+    if (!onRegisterVolumeStepScaleChange) {
+      return undefined;
+    }
+
+    onRegisterVolumeStepScaleChange(handleVolumeStepScaleChange);
+    return () => {
+      onRegisterVolumeStepScaleChange(null);
+    };
+  }, [handleVolumeStepScaleChange, onRegisterVolumeStepScaleChange]);
 
   useEffect(() => {
     onRegisterReset(hasRenderableLayer ? handleResetView : null);

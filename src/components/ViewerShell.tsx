@@ -1,4 +1,4 @@
-import type { ComponentProps, CSSProperties, RefObject } from 'react';
+import { useState, type ComponentProps, type CSSProperties, type RefObject } from 'react';
 
 import FloatingWindow from './FloatingWindow';
 import PlanarViewer from './PlanarViewer';
@@ -304,6 +304,13 @@ function ViewerShell({
   } = gridPanel;
   const { shouldRender, series, totalTimepoints } = selectedTracksPanel;
 
+  const [renderingQuality, setRenderingQuality] = useState(1);
+
+  const handleRenderingQualityChange = (value: number) => {
+    setRenderingQuality(value);
+    volumeViewerProps.onVolumeStepScaleChange?.(value);
+  };
+
   return (
     <>
       <div className="app">
@@ -412,6 +419,20 @@ function ViewerShell({
                     {vrButtonLabel}
                   </button>
                 </div>
+              </div>
+              <div className="control-group">
+                <label htmlFor="rendering-quality-slider">
+                  Rendering quality <span>{renderingQuality.toFixed(2)}</span>
+                </label>
+                <input
+                  id="rendering-quality-slider"
+                  type="range"
+                  min={0.5}
+                  max={2}
+                  step={0.01}
+                  value={renderingQuality}
+                  onChange={(event) => handleRenderingQualityChange(Number(event.target.value))}
+                />
               </div>
               <div className="control-group">
                 <label htmlFor="fps-slider">

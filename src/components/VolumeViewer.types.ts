@@ -121,6 +121,8 @@ export type VolumeViewerProps = {
   onTogglePlayback: () => void;
   onTimeIndexChange: (nextIndex: number) => void;
   onFpsChange: (value: number) => void;
+  onVolumeStepScaleChange?: (value: number) => void;
+  onRegisterVolumeStepScaleChange?: (handler: ((value: number) => void) | null) => void;
   onRegisterReset: (handler: (() => void) | null) => void;
   gridEnabled: boolean;
   gridOpacity: number;
