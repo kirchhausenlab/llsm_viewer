@@ -622,6 +622,39 @@
   color: rgba(255, 255, 255, 0.85);
 }
 
+.voxel-resolution-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem;
+  border-radius: 0.5rem;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.voxel-resolution-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.7rem;
+  border-radius: 0.35rem;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.9rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.voxel-resolution-mode input {
+  accent-color: rgba(91, 140, 255, 0.9);
+}
+
+.voxel-resolution-mode.is-selected {
+  border-color: rgba(91, 140, 255, 0.8);
+  background: rgba(91, 140, 255, 0.2);
+  color: rgba(255, 255, 255, 0.95);
+}
+
 .voxel-resolution-field,
 .voxel-resolution-unit {
   display: flex;

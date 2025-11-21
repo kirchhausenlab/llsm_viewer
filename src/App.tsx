@@ -127,11 +127,13 @@ type ChannelValidation = {
 };
 
 type VoxelResolutionAxis = 'x' | 'y' | 'z';
+type ExperimentDimension = '3d' | '2d';
 
 export type {
   ChannelSource,
   ChannelTrackState,
   ChannelValidation,
+  ExperimentDimension,
   FollowedTrackState,
   StagedPreprocessedExperiment
 };
@@ -143,6 +145,7 @@ function App() {
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [voxelResolutionInput, setVoxelResolutionInput] =
     useState<VoxelResolutionInput>(DEFAULT_VOXEL_RESOLUTION);
+  const [experimentDimension, setExperimentDimension] = useState<ExperimentDimension>('3d');
   const [datasetError, setDatasetError] = useState<string | null>(null);
   const [datasetErrorContext, setDatasetErrorContext] = useState<DatasetErrorContext | null>(null);
   const [datasetErrorResetSignal, setDatasetErrorResetSignal] = useState(0);
@@ -177,7 +180,8 @@ function App() {
   );
   const [layerAutoThresholds, setLayerAutoThresholds] = useState<Record<string, number>>({});
   const voxelResolution = useMemo<VoxelResolutionValues | null>(() => {
-    const axes: VoxelResolutionAxis[] = ['x', 'y', 'z'];
+    const axes: VoxelResolutionAxis[] =
+      experimentDimension === '2d' ? ['x', 'y'] : ['x', 'y', 'z'];
     const parsed: Partial<Record<VoxelResolutionAxis, number>> = {};
     for (const axis of axes) {
       const rawValue = voxelResolutionInput[axis].trim();
@@ -190,14 +194,33 @@ function App() {
       }
       parsed[axis] = numericValue;
     }
+
+    let resolvedZ: number | undefined = parsed.z;
+    if (experimentDimension === '2d') {
+      const rawZ = voxelResolutionInput.z.trim();
+      if (rawZ) {
+        const numericZ = Number(rawZ);
+        if (!Number.isFinite(numericZ)) {
+          return null;
+        }
+        resolvedZ = numericZ;
+      } else {
+        resolvedZ = parsed.y ?? parsed.x;
+      }
+    }
+
+    if (resolvedZ === undefined) {
+      return null;
+    }
+
     return {
       x: parsed.x ?? 0,
       y: parsed.y ?? 0,
-      z: parsed.z ?? 0,
+      z: resolvedZ,
       unit: voxelResolutionInput.unit,
       correctAnisotropy: voxelResolutionInput.correctAnisotropy
     };
-  }, [voxelResolutionInput]);
+  }, [experimentDimension, voxelResolutionInput]);
   const [status, setStatus] = useState<LoadState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [loadProgress, setLoadProgress] = useState(0);
@@ -253,6 +276,9 @@ function App() {
       }
       return { ...current, correctAnisotropy: value };
     });
+  }, []);
+  const handleExperimentDimensionChange = useCallback((dimension: ExperimentDimension) => {
+    setExperimentDimension((current) => (current === dimension ? current : dimension));
   }, []);
   const controlWindowInitialPosition = useMemo(
     () => ({ x: WINDOW_MARGIN, y: WINDOW_MARGIN }),
@@ -1797,6 +1823,7 @@ function App() {
 
     clearDatasetError();
     preprocessingSettingsRef.current = voxelResolution;
+    setViewerMode(experimentDimension);
     setIsLaunchingViewer(true);
     try {
       const normalizedLayers = await loadSelectedDataset();
@@ -1817,6 +1844,7 @@ function App() {
     loadSelectedDataset,
     preprocessedExperiment,
     showLaunchError,
+    experimentDimension,
     voxelResolution
   ]);
 
@@ -2666,6 +2694,8 @@ function App() {
         onAddChannel={handleAddChannel}
         onOpenPreprocessedLoader={handlePreprocessedLoaderOpen}
         onReturnToStart={handleReturnToFrontPage}
+        experimentDimension={experimentDimension}
+        onExperimentDimensionChange={handleExperimentDimensionChange}
         voxelResolution={voxelResolutionInput}
         onVoxelResolutionAxisChange={handleVoxelResolutionAxisChange}
         onVoxelResolutionUnitChange={handleVoxelResolutionUnitChange}
