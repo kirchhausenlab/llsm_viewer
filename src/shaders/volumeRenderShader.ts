@@ -177,7 +177,10 @@ export const VolumeRenderShader = {
     }
 
     float compute_depth(vec3 loc) {
-      vec4 clipPos = projectionMatrix * modelViewMatrix * vec4(loc * u_size, 1.0);
+      // Convert the normalized coordinates used for sampling back into the model's
+      // local space before projecting so depth testing matches the rendered volume.
+      vec3 modelPos = loc * u_size - vec3(0.5);
+      vec4 clipPos = projectionMatrix * modelViewMatrix * vec4(modelPos, 1.0);
       return 0.5 * (clipPos.z / clipPos.w) + 0.5;
     }
 
