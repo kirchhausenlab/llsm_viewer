@@ -654,3 +654,6 @@ d centered the front-page card in the viewport.
 ## Hover highlight tuning
 - Increased the hover pulse rate and normalized the pulse scale so the brightness oscillates between the original color and a stronger highlight.
 - Raised the peak highlight mix toward white to make hovered voxels stand out more clearly while preserving the existing falloff behavior.
+
+## Grid rendering fix
+- Set the grid line geometry instance count to match the generated segment count so populated positions are rendered when the grid toggle is enabled.

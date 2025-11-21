@@ -685,7 +685,7 @@ function VolumeViewer({
         gridGeometryRef.current = geometry;
       }
       geometry.setPositions(positions);
-      geometry.instanceCount = 0;
+      geometry.instanceCount = Math.max(positions.length / 6, 1);
 
       let material = gridMaterialRef.current;
       if (!material) {
