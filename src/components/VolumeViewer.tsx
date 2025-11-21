@@ -208,8 +208,10 @@ const hoverStartNormalized = new THREE.Vector3();
 const hoverVolumeSize = new THREE.Vector3();
 const hoverEntryPoint = new THREE.Vector3();
 const hoverExitPoint = new THREE.Vector3();
+const hoverEntryOffset = new THREE.Vector3();
+const hoverRayDirection = new THREE.Vector3();
 const hoverLocalRay = new THREE.Ray();
-const hoverReverseRay = new THREE.Ray();
+const hoverExitRay = new THREE.Ray();
 const hoverBoundingBox = new THREE.Box3();
 const hoverLayerMatrix = new THREE.Matrix4();
 const hoverLayerOffsetMatrix = new THREE.Matrix4();
@@ -1603,10 +1605,21 @@ function VolumeViewer({
       raycasterInstance.setFromCamera(hoverPointerVector, cameraInstance);
       hoverLocalRay.copy(raycasterInstance.ray).applyMatrix4(hoverInverseMatrix);
 
-      const hasEntry = hoverLocalRay.intersectBox(boundingBox, hoverEntryPoint);
-      hoverReverseRay.copy(hoverLocalRay);
-      hoverReverseRay.direction.multiplyScalar(-1);
-      const hasExit = hoverReverseRay.intersectBox(boundingBox, hoverExitPoint);
+      const isInsideBoundingBox = boundingBox.containsPoint(hoverLocalRay.origin);
+      let hasEntry = false;
+      if (isInsideBoundingBox) {
+        hoverEntryPoint.copy(hoverLocalRay.origin);
+        hasEntry = true;
+      } else {
+        hasEntry = hoverLocalRay.intersectBox(boundingBox, hoverEntryPoint);
+      }
+
+      hoverRayDirection.copy(hoverLocalRay.direction).normalize();
+      hoverEntryOffset.copy(hoverRayDirection).multiplyScalar(1e-4);
+      hoverExitRay.origin.copy(isInsideBoundingBox ? hoverLocalRay.origin : hoverEntryPoint);
+      hoverExitRay.origin.add(hoverEntryOffset);
+      hoverExitRay.direction.copy(hoverRayDirection);
+      const hasExit = hoverExitRay.intersectBox(boundingBox, hoverExitPoint);
 
       if (!hasEntry || !hasExit) {
         reportVoxelHoverAbort('Ray does not intersect the target volume.');
