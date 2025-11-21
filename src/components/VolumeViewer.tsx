@@ -8,6 +8,7 @@ import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
 import type { NormalizedVolume } from '../volumeProcessing';
+import type { HoveredVoxelInfo } from '../types/hover';
 import { VolumeRenderShader } from '../shaders/volumeRenderShader';
 import { SliceRenderShader } from '../shaders/sliceRenderShader';
 import { getCachedTextureData } from '../textureCache';
@@ -444,7 +445,7 @@ function VolumeViewer({
   followedTrackId,
   onTrackSelectionToggle,
   onTrackFollowRequest,
-  onHoverIntensityChange,
+  onHoverVoxelChange,
   vr
 }: VolumeViewerProps) {
   const vrLog = (...args: Parameters<typeof console.debug>) => {
@@ -544,7 +545,7 @@ function VolumeViewer({
     controller: { trackId: null as string | null, position: null as { x: number; y: number } | null }
   });
   const layersRef = useRef(layers);
-  const hoverIntensityRef = useRef<string | null>(null);
+  const hoverIntensityRef = useRef<HoveredVoxelInfo | null>(null);
   const hoveredVoxelRef = useRef<{ layerKey: string | null; normalizedPosition: THREE.Vector3 | null }>(
     {
       layerKey: null,
@@ -798,22 +799,32 @@ function VolumeViewer({
     }
   }, []);
 
-  const emitHoverIntensity = useCallback(
-    (value: string | null) => {
-      if (value === hoverIntensityRef.current) {
+  const emitHoverVoxel = useCallback(
+    (value: HoveredVoxelInfo | null) => {
+      const previous = hoverIntensityRef.current;
+      const isSame =
+        (previous === null && value === null) ||
+        (previous !== null &&
+          value !== null &&
+          previous.intensity === value.intensity &&
+          previous.coordinates.x === value.coordinates.x &&
+          previous.coordinates.y === value.coordinates.y &&
+          previous.coordinates.z === value.coordinates.z);
+
+      if (isSame) {
         return;
       }
       hoverIntensityRef.current = value;
-      onHoverIntensityChange?.(value);
+      onHoverVoxelChange?.(value);
     },
-    [onHoverIntensityChange]
+    [onHoverVoxelChange]
   );
 
   const clearVoxelHover = useCallback(() => {
-    emitHoverIntensity(null);
+    emitHoverVoxel(null);
     hoveredVoxelRef.current = { layerKey: null, normalizedPosition: null };
     applyHoverHighlightToResources();
-  }, [applyHoverHighlightToResources, emitHoverIntensity]);
+  }, [applyHoverHighlightToResources, emitHoverVoxel]);
 
   const reportVoxelHoverAbort = useCallback(
     (reason: string) => {
@@ -1989,7 +2000,17 @@ function VolumeViewer({
       }
 
       clearVoxelHoverDebug();
-      emitHoverIntensity(parts.join(' · '));
+
+      const hoveredVoxel = {
+        intensity: parts.join(' · '),
+        coordinates: {
+          x: Math.round(clampValue(hoverMaxPosition.x * volume.width, 0, volume.width - 1)),
+          y: Math.round(clampValue(hoverMaxPosition.y * volume.height, 0, volume.height - 1)),
+          z: Math.round(clampValue(hoverMaxPosition.z * volume.depth, 0, volume.depth - 1))
+        }
+      } satisfies HoveredVoxelInfo;
+
+      emitHoverVoxel(hoveredVoxel);
       hoveredVoxelRef.current = { layerKey: targetLayer.key, normalizedPosition: hoverMaxPosition.clone() };
       applyHoverHighlightToResources();
     },
@@ -1997,7 +2018,7 @@ function VolumeViewer({
       applyHoverHighlightToResources,
       clearVoxelHover,
       clearVoxelHoverDebug,
-      emitHoverIntensity,
+      emitHoverVoxel,
       setHoverNotReady,
       retryPendingVoxelHover,
       reportVoxelHoverAbort
@@ -3461,9 +3482,9 @@ function VolumeViewer({
 
   useEffect(() => {
     return () => {
-      emitHoverIntensity(null);
+      emitHoverVoxel(null);
     };
-  }, [emitHoverIntensity]);
+  }, [emitHoverVoxel]);
 
   return (
     <div className="volume-viewer">
