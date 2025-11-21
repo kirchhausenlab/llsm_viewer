@@ -411,6 +411,7 @@ function VolumeViewer({
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const hoverRaycasterRef = useRef<THREE.Raycaster | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const resourcesRef = useRef<Map<string, VolumeResources>>(new Map());
   const hoverTeardownRef = useRef(false);
@@ -1411,7 +1412,7 @@ function VolumeViewer({
 
     const renderer = rendererRef.current;
     const cameraInstance = cameraRef.current;
-    const raycasterInstance = raycasterRef.current;
+    const raycasterInstance = hoverRaycasterRef.current;
     const hasHoverRefs = renderer !== null && cameraInstance !== null && raycasterInstance !== null;
 
     if (!hoverSystemReadyRef.current || !hasHoverRefs) {
@@ -1465,7 +1466,7 @@ function VolumeViewer({
 
       const renderer = rendererRef.current;
       const cameraInstance = cameraRef.current;
-      const raycasterInstance = raycasterRef.current;
+      const raycasterInstance = hoverRaycasterRef.current;
       if (!renderer || !cameraInstance || !raycasterInstance) {
         pendingHoverEventRef.current = event;
         setHoverNotReady('Hover inactive: hover dependencies missing.');
@@ -2110,6 +2111,7 @@ function VolumeViewer({
     sceneRef.current = scene;
     cameraRef.current = camera;
     raycasterRef.current = raycaster;
+    hoverRaycasterRef.current = raycaster;
     clearVoxelHoverDebug();
     hoverSystemReadyRef.current = true;
     retryPendingVoxelHover();
@@ -2117,7 +2119,7 @@ function VolumeViewer({
     const performHoverHitTest = (event: PointerEvent): string | null => {
       const cameraInstance = cameraRef.current;
       const trackGroupInstance = trackGroupRef.current;
-      const raycasterInstance = raycasterRef.current;
+      const raycasterInstance = hoverRaycasterRef.current;
       if (!cameraInstance || !trackGroupInstance || !raycasterInstance || !trackGroupInstance.visible) {
         clearHoverState('pointer');
         return null;
@@ -2710,6 +2712,7 @@ function VolumeViewer({
       pointerStateRef.current = null;
 
       raycasterRef.current = null;
+      hoverRaycasterRef.current = null;
       resizeObserver.disconnect();
       controls.dispose();
       renderer.dispose();
@@ -2740,6 +2743,7 @@ function VolumeViewer({
     playbackLoopRef,
     playbackStateRef,
     raycasterRef,
+    hoverRaycasterRef,
     resetVrChannelsHudPlacement,
     resetVrPlaybackHudPlacement,
     resetVrTracksHudPlacement,
