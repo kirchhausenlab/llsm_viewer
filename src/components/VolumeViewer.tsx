@@ -188,7 +188,7 @@ const HOVERED_TRACK_LINE_WIDTH_MULTIPLIER = 1.2;
 const MIP_MAX_STEPS = 887;
 const MIP_REFINEMENT_STEPS = 4;
 const HOVER_HIGHLIGHT_RADIUS_VOXELS = 1.5;
-const HOVER_PULSE_SPEED = 0.006;
+const HOVER_PULSE_SPEED = 0.009;
 
 const MAX_RENDERER_PIXEL_RATIO = 2;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
@@ -2505,7 +2505,7 @@ function VolumeViewer({
         mesh.updateMatrixWorld();
       }
 
-      const hoverPulse = 0.65 + 0.35 * Math.sin(timestamp * HOVER_PULSE_SPEED);
+      const hoverPulse = 0.5 + 0.5 * Math.sin(timestamp * HOVER_PULSE_SPEED);
       for (const resource of resources.values()) {
         if (resource.mode !== '3d') {
           continue;
