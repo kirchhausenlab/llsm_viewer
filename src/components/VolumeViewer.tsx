@@ -3271,7 +3271,8 @@ function VolumeViewer({
             side: THREE.BackSide,
             transparent: true,
             depthWrite: true,
-            depthTest: true
+            depthTest: true,
+            extensions: { fragDepth: true }
           });
 
           const geometry = new THREE.BoxGeometry(volume.width, volume.height, volume.depth);
