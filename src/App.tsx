@@ -685,8 +685,21 @@ function App() {
   }, [parsedTracks]);
 
   const hasParsedTrackData = parsedTracks.length > 0;
+  const volumeStepScaleChangeRef = useRef<((value: number) => void) | null>(null);
+
   const handleRegisterReset = useCallback((handler: (() => void) | null) => {
     setResetViewHandler(() => handler);
+  }, []);
+
+  const handleRegisterVolumeStepScaleChange = useCallback(
+    (handler: ((value: number) => void) | null) => {
+      volumeStepScaleChangeRef.current = handler;
+    },
+    [],
+  );
+
+  const handleVolumeStepScaleChange = useCallback((value: number) => {
+    volumeStepScaleChangeRef.current?.(value);
   }, []);
 
   const handleReturnToLauncher = useCallback(() => {
@@ -2771,6 +2784,8 @@ function App() {
     onTogglePlayback: handleTogglePlayback,
     onTimeIndexChange: handleTimeIndexChange,
     onFpsChange: setFps,
+    onVolumeStepScaleChange: handleVolumeStepScaleChange,
+    onRegisterVolumeStepScaleChange: handleRegisterVolumeStepScaleChange,
     onRegisterReset: handleRegisterReset,
     gridEnabled,
     gridOpacity,

@@ -42,6 +42,7 @@ export type CreateSessionHelpersParams = {
   disposedRef: MutableRefObject<boolean>;
   applyVrFoveation: (target?: number) => void;
   restoreVrFoveation: UseVolumeViewerVrResult['restoreVrFoveation'];
+  volumeStepScaleRef: MutableRefObject<number>;
   applyVolumeStepScaleToResources: UseVolumeViewerVrResult['applyVolumeStepScaleToResources'];
   volumeRootBaseOffsetRef: MutableRefObject<THREE.Vector3>;
   applyVolumeRootTransform: UseVolumeViewerVrResult['applyVolumeRootTransform'];
@@ -101,6 +102,7 @@ export function createSessionHelpers({
   disposedRef,
   applyVrFoveation,
   restoreVrFoveation,
+  volumeStepScaleRef,
   applyVolumeStepScaleToResources,
   volumeRootBaseOffsetRef,
   applyVolumeRootTransform,
@@ -121,7 +123,10 @@ export function createSessionHelpers({
   requestVrSessionRef,
   endVrSessionRequestRef,
 }: CreateSessionHelpersParams): CreateSessionHelpersResult {
+  let previousVolumeStepScale = DESKTOP_VOLUME_STEP_SCALE;
+
   const applySessionStartState = () => {
+    previousVolumeStepScale = volumeStepScaleRef.current;
     applyVrFoveation();
     applyVolumeStepScaleToResources(VR_VOLUME_STEP_SCALE);
     volumeRootBaseOffsetRef.current.copy(VR_VOLUME_BASE_OFFSET);
@@ -142,7 +147,10 @@ export function createSessionHelpers({
 
   const applySessionEndState = () => {
     restoreVrFoveation();
-    applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
+    const currentStepScale = volumeStepScaleRef.current;
+    const restoredStepScale =
+      currentStepScale === VR_VOLUME_STEP_SCALE ? previousVolumeStepScale : currentStepScale;
+    applyVolumeStepScaleToResources(restoredStepScale);
     volumeRootBaseOffsetRef.current.set(0, 0, 0);
     applyVolumeRootTransform(currentDimensionsRef.current);
     refreshControllerVisibility();
