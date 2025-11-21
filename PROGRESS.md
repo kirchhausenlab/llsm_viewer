@@ -654,3 +654,6 @@ d centered the front-page card in the viewport.
 
 ## Hovered voxel clear guard
 - Corrected the planar viewer hover reset effect to call the shared hover emitter so hover state clears without TypeScript errors when slice data is unavailable.
+
+## Grid overlay cleanup follow-up
+- Removed lingering grid window position reset hooks after the overlay deletion so the viewer layout reset no longer references missing handlers.

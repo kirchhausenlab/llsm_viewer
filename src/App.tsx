@@ -688,9 +688,7 @@ function App() {
     setLayoutResetToken((value) => value + 1);
     setTrackWindowInitialPosition(computeTrackWindowDefaultPosition());
     setSelectedTracksWindowInitialPosition(computeSelectedTracksWindowDefaultPosition());
-    setGridWindowInitialPosition(computeGridWindowDefaultPosition());
   }, [
-    computeGridWindowDefaultPosition,
     computeSelectedTracksWindowDefaultPosition,
     computeTrackWindowDefaultPosition
   ]);
@@ -714,16 +712,6 @@ function App() {
       return defaultPosition;
     });
   }, [computeSelectedTracksWindowDefaultPosition]);
-
-  useEffect(() => {
-    const defaultPosition = computeGridWindowDefaultPosition();
-    setGridWindowInitialPosition((current) => {
-      if (current.x === defaultPosition.x && current.y === defaultPosition.y) {
-        return current;
-      }
-      return defaultPosition;
-    });
-  }, [computeGridWindowDefaultPosition]);
 
   useEffect(() => {
     setChannelTrackStates((current) => {
