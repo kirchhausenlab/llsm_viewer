@@ -115,6 +115,7 @@ export const VolumeRenderShader = {
     void cast_mip(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
     void cast_iso(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
     float compute_depth(vec3 modelPosition);
+    vec3 sample_to_model(vec3 texcoords);
     void accumulate_depth(vec3 loc, float sampleAlpha);
 
     vec4 sample_color(vec3 texcoords) {
@@ -192,13 +193,17 @@ export const VolumeRenderShader = {
       return 0.5 * ndcDepth + 0.5;
     }
 
+    vec3 sample_to_model(vec3 texcoords) {
+      return texcoords * u_size - vec3(0.5);
+    }
+
     void accumulate_depth(vec3 loc, float sampleAlpha) {
       if (depthFound == 1) {
         return;
       }
       accumulatedAlpha += (1.0 - accumulatedAlpha) * clamp(sampleAlpha, 0.0, 1.0);
       if (accumulatedAlpha >= u_depthOpacityThreshold) {
-        vec3 modelPosition = loc * u_size;
+        vec3 modelPosition = sample_to_model(loc);
         depthValue = compute_depth(modelPosition);
         depthFound = 1;
       }
@@ -307,7 +312,7 @@ export const VolumeRenderShader = {
         discard;
       }
 
-      gl_FragDepth = depthFound == 1 ? depthValue : 1.0;
+      gl_FragDepth = depthFound == 1 ? depthValue : gl_FragCoord.z;
     }
 
     void cast_mip(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray) {
