@@ -1611,7 +1611,8 @@ function VolumeViewer({
         hoverEntryPoint.copy(hoverLocalRay.origin);
         hasEntry = true;
       } else {
-        hasEntry = hoverLocalRay.intersectBox(boundingBox, hoverEntryPoint);
+        const entryHit = hoverLocalRay.intersectBox(boundingBox, hoverEntryPoint);
+        hasEntry = entryHit !== null;
       }
 
       hoverRayDirection.copy(hoverLocalRay.direction).normalize();
@@ -1619,7 +1620,8 @@ function VolumeViewer({
       hoverExitRay.origin.copy(isInsideBoundingBox ? hoverLocalRay.origin : hoverEntryPoint);
       hoverExitRay.origin.add(hoverEntryOffset);
       hoverExitRay.direction.copy(hoverRayDirection);
-      const hasExit = hoverExitRay.intersectBox(boundingBox, hoverExitPoint);
+      const exitHit = hoverExitRay.intersectBox(boundingBox, hoverExitPoint);
+      const hasExit = exitHit !== null;
 
       if (!hasEntry || !hasExit) {
         reportVoxelHoverAbort('Ray does not intersect the target volume.');
