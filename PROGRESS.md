@@ -1,3 +1,6 @@
+# Grid overlay controls
+- Added a dedicated grid floating window beneath the Tracks panel with enable/disable, opacity, thickness, and spacing controls wired through the viewer props so VolumeViewer can read the settings.
+
 # Front page layout tweaks
 - Updated the landing header to mirror whether users are setting up a new experiment or loading a preprocessed one, resetting to "4D viewer" after returning home.
 - Moved the return action beside the launch button with matching styling, keeping it available after loading preprocessed datasets while dropping the old discard control.
