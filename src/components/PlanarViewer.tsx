@@ -199,6 +199,8 @@ function PlanarViewer({
   const [sliceRevision, setSliceRevision] = useState(0);
   const [hoveredTrackId, setHoveredTrackId] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
+  const hoveredPixelRef = useRef<{ x: number; y: number } | null>(null);
+  const [hoveredPixel, setHoveredPixel] = useState<{ x: number; y: number } | null>(null);
 
   const effectiveMaxSlices = Math.max(0, maxSlices);
   const clampedSliceIndex =
@@ -677,9 +679,23 @@ function PlanarViewer({
     [onHoverVoxelChange]
   );
 
+  const updateHoveredPixel = useCallback((value: { x: number; y: number } | null) => {
+    const previous = hoveredPixelRef.current;
+    if (
+      (previous === null && value === null) ||
+      (previous && value && previous.x === value.x && previous.y === value.y)
+    ) {
+      return;
+    }
+
+    hoveredPixelRef.current = value;
+    setHoveredPixel(value);
+  }, []);
+
   const clearPixelInfo = useCallback(() => {
+    updateHoveredPixel(null);
     emitHoverVoxel(null);
-  }, [emitHoverVoxel]);
+  }, [emitHoverVoxel, updateHoveredPixel]);
 
   const updatePixelHover = useCallback(
     (event: PointerEvent) => {
@@ -736,6 +752,7 @@ function PlanarViewer({
 
       const voxelX = Math.round(clamp(sliceX, 0, Math.max(0, sliceData.width - 1)));
       const voxelY = Math.round(clamp(sliceY, 0, Math.max(0, sliceData.height - 1)));
+      updateHoveredPixel({ x: voxelX, y: voxelY });
       emitHoverVoxel({
         intensity: text,
         coordinates: {
@@ -745,7 +762,14 @@ function PlanarViewer({
         }
       });
     },
-    [clampedSliceIndex, clearPixelInfo, emitHoverVoxel, samplePixelValue, sliceData]
+    [
+      clampedSliceIndex,
+      clearPixelInfo,
+      emitHoverVoxel,
+      samplePixelValue,
+      sliceData,
+      updateHoveredPixel
+    ]
   );
 
   useEffect(() => {
@@ -849,12 +873,13 @@ function PlanarViewer({
     context.scale(viewState.scale, viewState.scale);
     context.drawImage(sliceCanvas, -sliceCanvas.width / 2, -sliceCanvas.height / 2);
 
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const blinkPhase = (now % SELECTED_TRACK_BLINK_PERIOD_MS) / SELECTED_TRACK_BLINK_PERIOD_MS;
+    const blinkScale =
+      SELECTED_TRACK_BLINK_BASE + SELECTED_TRACK_BLINK_RANGE * Math.sin(blinkPhase * Math.PI * 2);
+
     if (trackRenderData.length > 0) {
       const scale = Math.max(viewState.scale, 1e-6);
-      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-      const blinkPhase = (now % SELECTED_TRACK_BLINK_PERIOD_MS) / SELECTED_TRACK_BLINK_PERIOD_MS;
-      const blinkScale =
-        SELECTED_TRACK_BLINK_BASE + SELECTED_TRACK_BLINK_RANGE * Math.sin(blinkPhase * Math.PI * 2);
 
       for (const track of trackRenderData) {
         const isFollowed = followedTrackId === track.id;
@@ -934,11 +959,28 @@ function PlanarViewer({
       }
     }
 
+    if (hoveredPixel && sliceCanvas) {
+      const pixelX = hoveredPixel.x - sliceCanvas.width / 2;
+      const pixelY = hoveredPixel.y - sliceCanvas.height / 2;
+      const inverseScale = 1 / Math.max(viewState.scale, 1e-6);
+      const baseStrokeWidth = inverseScale;
+
+      context.save();
+      context.globalAlpha = Math.min(1, 0.8 * blinkScale);
+      context.fillStyle = 'rgba(255, 255, 255, 0.2)';
+      context.fillRect(pixelX, pixelY, 1, 1);
+      context.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      context.lineWidth = baseStrokeWidth;
+      context.strokeRect(pixelX, pixelY, 1, 1);
+      context.restore();
+    }
+
     context.restore();
   }, [
     canvasSize.height,
     canvasSize.width,
     followedTrackId,
+    hoveredPixel,
     trackLineWidthByChannel,
     trackOpacityByChannel,
     trackRenderData,
@@ -963,7 +1005,8 @@ function PlanarViewer({
       frameId = window.requestAnimationFrame(animate);
     };
 
-    if (selectedTrackIds.size > 0) {
+    const shouldAnimate = selectedTrackIds.size > 0 || hoveredPixel !== null;
+    if (shouldAnimate) {
       frameId = window.requestAnimationFrame(animate);
     }
 
@@ -973,7 +1016,7 @@ function PlanarViewer({
         window.cancelAnimationFrame(frameId);
       }
     };
-  }, [drawSlice, selectedTrackIds]);
+  }, [drawSlice, hoveredPixel, selectedTrackIds]);
 
   const performTrackHitTest = useCallback(
     (event: PointerEvent): TrackHitTestResult => {
@@ -1211,9 +1254,10 @@ function PlanarViewer({
 
   useEffect(() => {
     if (!sliceData || !sliceData.hasLayer) {
+      updateHoveredPixel(null);
       emitHoverVoxel(null);
     }
-  }, [emitHoverVoxel, sliceData]);
+  }, [emitHoverVoxel, sliceData, updateHoveredPixel]);
 
   useEffect(() => {
     if (needsAutoFitRef.current) {

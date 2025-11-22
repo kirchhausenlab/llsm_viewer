@@ -407,7 +407,7 @@ function ViewerShell({
                   ) : null}
                 </div>
               </div>
-              {is3dModeAvailable ? (
+              {is3dModeAvailable && viewerMode === '3d' ? (
                 <div className="control-group">
                   <label htmlFor="rendering-quality-slider">
                     Rendering quality <span>{renderingQuality.toFixed(2)}</span>
@@ -441,7 +441,10 @@ function ViewerShell({
               {viewerMode === '2d' && maxSliceDepth > 0 ? (
                 <div className="control-group">
                   <label htmlFor="z-plane-slider">
-                    Z plane <span>{Math.min(sliceIndex + 1, maxSliceDepth)} / {maxSliceDepth}</span>
+                    Z plane{' '}
+                    <span>
+                      {Math.min(sliceIndex, Math.max(0, maxSliceDepth - 1))} / {Math.max(0, maxSliceDepth - 1)}
+                    </span>
                   </label>
                   <input
                     id="z-plane-slider"
@@ -674,18 +677,18 @@ function ViewerShell({
                       ) : null}
                       {selectedLayer ? (
                         <>
-                          <div className="channel-primary-actions">
-                            <div className="channel-primary-actions-row">
-                              <button
-                                type="button"
-                                className="channel-action-button"
-                                onClick={() => onLayerRenderStyleToggle(selectedLayer.key)}
-                                disabled={sliderDisabled}
-                                aria-pressed={settings.renderStyle === 1}
-                              >
-                                Render style
-                              </button>
-                              {viewerMode === '3d' ? (
+                          {viewerMode === '3d' ? (
+                            <div className="channel-primary-actions">
+                              <div className="channel-primary-actions-row">
+                                <button
+                                  type="button"
+                                  className="channel-action-button"
+                                  onClick={() => onLayerRenderStyleToggle(selectedLayer.key)}
+                                  disabled={sliderDisabled}
+                                  aria-pressed={settings.renderStyle === 1}
+                                >
+                                  Render style
+                                </button>
                                 <button
                                   type="button"
                                   className="channel-action-button"
@@ -695,9 +698,9 @@ function ViewerShell({
                                 >
                                   Sampling mode
                                 </button>
-                              ) : null}
+                              </div>
                             </div>
-                          </div>
+                          ) : null}
                           <BrightnessContrastHistogram
                             className="channel-histogram"
                             volume={firstVolume}

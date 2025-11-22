@@ -664,3 +664,8 @@ d centered the front-page card in the viewport.
 ## Preprocessed movie mode metadata
 - Added a dataset-level movie mode flag to preprocessed manifests, exporting the selected viewing dimension and defaulting older
   manifests to 3D while feeding the parsed mode back into the app state.
+
+## 2D view hover polish and control cleanup
+- Switched the 2D Z-plane counter to zero-based indexing to match pixel coordinates and avoid off-by-one confusion when stepping slices.
+- Hid 3D-only affordances (rendering quality slider and render style controls) while in 2D view to keep the sidebar focused on relevant options.
+- Added a blinking pixel overlay that follows the hovered voxel in slice view, matching the 3D hover pulse while constraining the highlight to the single pixel under the cursor.
