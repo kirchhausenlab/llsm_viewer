@@ -6,7 +6,7 @@
     radial-gradient(120% 120% at 20% 20%, rgba(91, 140, 255, 0.08), transparent 45%),
     radial-gradient(110% 140% at 80% 5%, rgba(143, 92, 255, 0.08), transparent 40%),
     linear-gradient(165deg, #0f1726 0%, #0b101c 60%, #090c14 100%);
-  overflow: hidden;
+  overflow-x: hidden;
 }
 
 .app.front-page-mode {
@@ -15,6 +15,7 @@
     radial-gradient(110% 140% at 82% 8%, rgba(143, 92, 255, 0.12), transparent 36%),
     linear-gradient(160deg, #131c2d 0%, #0d1422 55%, #0a0f19 100%);
   color: rgba(255, 255, 255, 0.95);
+  overflow-y: auto;
 }
 
 .front-page {
@@ -26,7 +27,7 @@
   flex: 1 1 auto;
   align-items: center;
   justify-content: center;
-  padding: 3.5rem 2rem;
+  padding: 0.875rem 1.5rem;
   box-sizing: border-box;
   width: 100%;
 }
@@ -38,7 +39,7 @@
 .front-page-card {
   width: 100%;
   max-width: min(1120px, 100%);
-  padding: 5rem 2.75rem 6.25rem;
+  padding: 1.5rem 2.5rem 1.625rem;
   border-radius: 1.25rem;
   background-color: rgba(12, 16, 24, 0.78);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -51,10 +52,6 @@
   margin: 0 auto;
   position: relative;
   z-index: 1;
-  max-height: calc(100dvh - 4rem);
-  overflow-y: auto;
-  scrollbar-gutter: stable;
-  -webkit-overflow-scrolling: touch;
 }
 
 .front-page-card.is-loading {
@@ -67,6 +64,36 @@
   gap: 0.5rem;
   align-items: center;
   text-align: center;
+  width: 100%;
+}
+
+.front-page-title-row {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.front-page-return-button {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #0b0f18;
+  border-color: rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.92);
+  padding: 0.6rem 1.15rem;
+}
+
+.front-page-return-button:hover:not(:disabled) {
+  background: #11192a;
+  border-color: rgba(91, 140, 255, 0.6);
+}
+
+.front-page-return-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .front-page-header h1 {
