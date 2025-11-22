@@ -7,12 +7,13 @@ import {
   setDropboxAppKey,
   type DropboxAppKeySource
 } from '../integrations/dropbox';
-import type { ChannelSource, ChannelValidation } from '../App';
+import type { ChannelSource, ChannelValidation, ExperimentDimension } from '../App';
 
 export type ChannelCardProps = {
   channel: ChannelSource;
   validation: ChannelValidation;
   isDisabled: boolean;
+  experimentDimension: ExperimentDimension;
   onLayerFilesAdded: (id: string, files: File[]) => void | Promise<void>;
   onLayerDrop: (id: string, dataTransfer: DataTransfer) => void;
   onLayerSegmentationToggle: (channelId: string, layerId: string, value: boolean) => void;
@@ -26,6 +27,7 @@ export default function ChannelCard({
   channel,
   validation,
   isDisabled,
+  experimentDimension,
   onLayerFilesAdded,
   onLayerDrop,
   onLayerSegmentationToggle,
@@ -50,6 +52,21 @@ export default function ChannelCard({
 
   const isDropboxImporting = dropboxImportTarget !== null;
   const primaryLayer = channel.layers[0] ?? null;
+  const uploadTitle = useMemo(
+    () =>
+      experimentDimension === '2d'
+        ? 'Upload single 3D file or sequence of 2D files (.tif/.tiff)'
+        : 'Upload sequence of 3D files (.tif/.tiff)',
+    [experimentDimension]
+  );
+
+  const volumeStatus = useMemo(() => {
+    if (!primaryLayer) {
+      return '0 files';
+    }
+    const totalFiles = primaryLayer.files.length;
+    return totalFiles === 1 ? '1 file' : `${totalFiles} files`;
+  }, [primaryLayer]);
 
   const syncDropboxConfigState = useCallback(() => {
     const info = getDropboxAppKeyInfo();
@@ -369,7 +386,22 @@ export default function ChannelCard({
 
   return (
     <section className={`channel-card${isDisabled ? ' is-disabled' : ''}`} aria-disabled={isDisabled}>
-      <p className="channel-layer-drop-title">Upload volume (.tif/.tiff sequence)</p>
+      <div className="channel-layer-drop-header">
+        <p className="channel-layer-drop-title">{uploadTitle}</p>
+        {primaryLayer ? (
+          <label className="channel-layer-segmentation">
+            <input
+              type="checkbox"
+              checked={primaryLayer.isSegmentation}
+              onChange={(event) =>
+                onLayerSegmentationToggle(channel.id, primaryLayer.id, event.target.checked)
+              }
+              disabled={isDisabled}
+            />
+            <span>Segmentation volume</span>
+          </label>
+        ) : null}
+      </div>
       <div
         className={`channel-layer-drop${isLayerDragging ? ' is-active' : ''}`}
         onDragEnter={handleLayerDragEnter}
@@ -387,118 +419,102 @@ export default function ChannelCard({
           disabled={isDisabled || isDropboxImporting}
         />
         <div className="channel-layer-drop-content">
-          <button
-            type="button"
-            className="channel-layer-drop-button"
-            onClick={handleLayerBrowse}
-            disabled={isDisabled || isDropboxImporting}
-          >
-            From Files
-          </button>
-          <button
-            type="button"
-            className="channel-layer-drop-button"
-            onClick={handleDropboxImport}
-            disabled={isDisabled || isDropboxImporting}
-          >
-            {dropboxImportTarget === 'layers' ? 'Importing…' : 'From Dropbox'}
-          </button>
-          <p className="channel-layer-drop-subtitle">Or drop sequence folder here</p>
-        </div>
-        {dropboxImportTarget === 'layers' ? (
-          <p className="channel-layer-drop-status">Importing from Dropbox…</p>
-        ) : null}
-        {dropboxInfo ? <p className="channel-layer-drop-info">{dropboxInfo}</p> : null}
-        {dropboxError && dropboxErrorContext === 'layers' ? (
-          <p className="channel-layer-drop-error">{dropboxError}</p>
-        ) : null}
-        {isDropboxConfigOpen ? (
-          <form className="channel-dropbox-config" onSubmit={handleDropboxConfigSubmit} noValidate>
-            <label className="channel-dropbox-config-label" htmlFor={`dropbox-app-key-${channel.id}`}>
-              Dropbox app key
-            </label>
-            <input
-              id={`dropbox-app-key-${channel.id}`}
-              type="text"
-              className="channel-dropbox-config-input"
-              placeholder="slate-your-app-key"
-              value={dropboxAppKeyInput}
-              onChange={handleDropboxConfigInputChange}
-              disabled={isDisabled || dropboxAppKeySource === 'env'}
-              autoComplete="off"
-            />
-            <p className="channel-dropbox-config-hint">
-              Generate an app key in the{' '}
-              <a href="https://www.dropbox.com/developers/apps" target="_blank" rel="noreferrer">
-                Dropbox App Console
-              </a>{' '}
-              (Scoped app with Dropbox Chooser enabled) and paste it here.
-            </p>
-            {dropboxAppKeySource === 'env' ? (
-              <p className="channel-dropbox-config-note">
-                This deployment provides a Dropbox app key. Contact your administrator to change it.
-              </p>
-            ) : null}
-            <div className="channel-dropbox-config-actions">
+          <div className="channel-layer-row">
+            <div className="channel-layer-description">
               <button
-                type="submit"
-                className="channel-dropbox-config-save"
-                disabled={isDisabled}
+                type="button"
+                className="channel-layer-drop-button"
+                onClick={handleLayerBrowse}
+                disabled={isDisabled || isDropboxImporting}
               >
-                {dropboxAppKeySource === 'env' ? 'Close' : 'Save app key'}
+                From Files
               </button>
               <button
                 type="button"
-                className="channel-dropbox-config-cancel"
-                onClick={handleDropboxConfigCancel}
+                className="channel-layer-drop-button"
+                onClick={handleDropboxImport}
+                disabled={isDisabled || isDropboxImporting}
               >
-                Cancel
+                {dropboxImportTarget === 'layers' ? 'Importing…' : 'From Dropbox'}
               </button>
-              {dropboxAppKeySource === 'local' ? (
+              <p className="channel-layer-drop-subtitle">Or drop sequence folder here</p>
+            </div>
+            {primaryLayer ? (
+              <button
+                type="button"
+                className="channel-track-clear channel-layer-clear"
+                onClick={() => onLayerRemove(channel.id, primaryLayer.id)}
+                aria-label="Clear volume"
+                disabled={isDisabled}
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+          {dropboxImportTarget === 'layers' ? (
+            <p className="channel-layer-drop-status">Importing from Dropbox…</p>
+          ) : null}
+          {dropboxInfo ? <p className="channel-layer-drop-info">{dropboxInfo}</p> : null}
+          {dropboxError && dropboxErrorContext === 'layers' ? (
+            <p className="channel-layer-drop-error">{dropboxError}</p>
+          ) : null}
+          {isDropboxConfigOpen ? (
+            <form className="channel-dropbox-config" onSubmit={handleDropboxConfigSubmit} noValidate>
+              <label className="channel-dropbox-config-label" htmlFor={`dropbox-app-key-${channel.id}`}>
+                Dropbox app key
+              </label>
+              <input
+                id={`dropbox-app-key-${channel.id}`}
+                type="text"
+                className="channel-dropbox-config-input"
+                placeholder="slate-your-app-key"
+                value={dropboxAppKeyInput}
+                onChange={handleDropboxConfigInputChange}
+                disabled={isDisabled || dropboxAppKeySource === 'env'}
+                autoComplete="off"
+              />
+              <p className="channel-dropbox-config-hint">
+                Generate an app key in the{' '}
+                <a href="https://www.dropbox.com/developers/apps" target="_blank" rel="noreferrer">
+                  Dropbox App Console
+                </a>{' '}
+                (Scoped app with Dropbox Chooser enabled) and paste it here.
+              </p>
+              {dropboxAppKeySource === 'env' ? (
+                <p className="channel-dropbox-config-note">
+                  This deployment provides a Dropbox app key. Contact your administrator to change it.
+                </p>
+              ) : null}
+              <div className="channel-dropbox-config-actions">
+                <button
+                  type="submit"
+                  className="channel-dropbox-config-save"
+                  disabled={isDisabled}
+                >
+                  {dropboxAppKeySource === 'env' ? 'Close' : 'Save app key'}
+                </button>
                 <button
                   type="button"
-                  className="channel-dropbox-config-clear"
-                  onClick={handleDropboxConfigClear}
+                  className="channel-dropbox-config-cancel"
+                  onClick={handleDropboxConfigCancel}
                 >
-                  Remove saved key
+                  Cancel
                 </button>
-              ) : null}
-            </div>
-          </form>
-        ) : null}
+                {dropboxAppKeySource === 'local' ? (
+                  <button
+                    type="button"
+                    className="channel-dropbox-config-clear"
+                    onClick={handleDropboxConfigClear}
+                  >
+                    Remove saved key
+                  </button>
+                ) : null}
+              </div>
+            </form>
+          ) : null}
+          <p className="channel-layer-status">{volumeStatus}</p>
+        </div>
       </div>
-      {primaryLayer ? (
-        <ul className="channel-layer-list">
-          <li key={primaryLayer.id} className="channel-layer-item">
-            <div className="channel-layer-header">
-              <span className="channel-layer-title">Volume</span>
-              <button
-                type="button"
-                className="channel-layer-remove"
-                onClick={() => onLayerRemove(channel.id, primaryLayer.id)}
-                aria-label="Remove volume"
-                disabled={isDisabled}
-              >
-                Remove
-              </button>
-            </div>
-            <p className="channel-layer-meta">
-              {primaryLayer.files.length === 1 ? '1 file' : `${primaryLayer.files.length} files`}
-            </p>
-            <label className="channel-layer-flag">
-              <input
-                type="checkbox"
-                checked={primaryLayer.isSegmentation}
-                onChange={(event) =>
-                  onLayerSegmentationToggle(channel.id, primaryLayer.id, event.target.checked)
-                }
-                disabled={isDisabled}
-              />
-              <span>Segmentation volume</span>
-            </label>
-          </li>
-        </ul>
-      ) : null}
       <p className="channel-tracks-title">Upload tracks (optional, .csv file)</p>
       <div
         className={`channel-tracks-drop${isTrackDragging ? ' is-active' : ''}`}
