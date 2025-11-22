@@ -1628,8 +1628,6 @@ function App() {
         } else {
           clearDatasetError();
         }
-      } else {
-        showInteractionWarning('No volume was added from that drop.');
       }
     },
     [clearDatasetError, computeLayerTimepointCount, createLayerSource, showInteractionWarning]

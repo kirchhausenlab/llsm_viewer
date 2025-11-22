@@ -196,7 +196,7 @@ export async function chooseDropboxFiles(options: DropboxChooserRequestOptions):
         }
       },
       cancel: () => {
-        reject(new Error('Dropbox chooser was closed without selecting files.'));
+        resolve([]);
       }
     });
   });

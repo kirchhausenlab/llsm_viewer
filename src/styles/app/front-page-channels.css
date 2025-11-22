@@ -164,8 +164,8 @@
 
 .channel-tab.is-active {
   border-color: rgba(255, 255, 255, 0.95);
-  background: rgba(91, 140, 255, 0.16);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+  background: rgba(12, 16, 24, 0.7);
+  box-shadow: none;
 }
 
 .channel-tab.has-error .channel-tab-meta {
@@ -213,8 +213,16 @@
   color: rgba(255, 255, 255, 0.85);
 }
 
-.channel-layer-drop-title {
+.channel-layer-drop-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
   margin: 0 0 0.5rem;
+}
+
+.channel-layer-drop-title {
+  margin: 0;
 }
 
 .channel-tracks-title {
@@ -251,8 +259,7 @@
 }
 
 .channel-layer-drop-subtitle,
-.channel-tracks-subtitle,
-.channel-layer-drop-content {
+.channel-tracks-subtitle {
   flex-direction: row;
   align-items: center;
   gap: 0.75rem;
@@ -480,6 +487,21 @@
   flex: 1 1 auto;
 }
 
+.channel-layer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.channel-layer-description {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
 .channel-layer-list {
   list-style: none;
   margin: 0;
@@ -559,6 +581,27 @@
   accent-color: rgba(91, 140, 255, 0.9);
 }
 
+.channel-layer-segmentation {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.95rem;
+  color: #ffd84d;
+  user-select: none;
+}
+
+.channel-layer-segmentation input[type='checkbox'] {
+  width: 1rem;
+  height: 1rem;
+  accent-color: rgba(91, 140, 255, 0.9);
+}
+
+.channel-layer-status {
+  margin: 0;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
 .channel-tracks-header {
   display: flex;
   align-items: center;
@@ -615,6 +658,20 @@
   margin: 0 0 1.25rem;
   font-size: 0.9rem;
   justify-content: center;
+}
+
+.movie-mode-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+}
+
+.movie-mode-label {
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .voxel-resolution-title {
@@ -694,7 +751,7 @@
   align-items: center;
   gap: 0.35rem;
   font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.8);
+  color: #ffd84d;
   user-select: none;
 }
 
