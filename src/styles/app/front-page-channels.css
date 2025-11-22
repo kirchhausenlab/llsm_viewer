@@ -625,15 +625,17 @@
   display: flex;
   justify-content: center;
   margin: 1.5rem 0 1.25rem;
+  width: 100%;
 }
 
 .channel-add-initial,
 .channel-add-configuring {
-  display: flex;
+  display: grid;
+  width: min(100%, 720px);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  justify-items: center;
   align-items: center;
-  justify-content: center;
   gap: 1rem;
-  flex-wrap: wrap;
 }
 
 .channel-return-button {

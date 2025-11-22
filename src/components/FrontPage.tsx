@@ -235,7 +235,19 @@ export default function FrontPage({
       <div className="front-page">
         <div className={`front-page-card${isFrontPageLocked ? ' is-loading' : ''}`}>
           <header className="front-page-header">
-            <h1>{headerTitle}</h1>
+            <div className="front-page-title-row">
+              <h1>{headerTitle}</h1>
+              {showReturnButton ? (
+                <button
+                  type="button"
+                  className="channel-add-button front-page-return-button"
+                  onClick={onReturnToStart}
+                  disabled={isFrontPageLocked}
+                >
+                  ↩ Return
+                </button>
+              ) : null}
+            </div>
           </header>
           {frontPageMode === 'initial' && !isPreprocessedLoaderOpen ? (
             <div className="channel-add-actions">
@@ -741,16 +753,6 @@ export default function FrontPage({
             <p className="launch-feedback launch-feedback-error">{launchErrorMessage}</p>
           ) : null}
           <div className="front-page-actions">
-            {showReturnButton ? (
-              <button
-                type="button"
-                className="launch-viewer-button"
-                onClick={onReturnToStart}
-                disabled={isFrontPageLocked}
-              >
-                ↩ Return
-              </button>
-            ) : null}
             <button
               type="button"
               className="launch-viewer-button"
