@@ -6,7 +6,8 @@ import ViewerShell, { type ViewerShellProps } from './components/ViewerShell';
 import {
   colorizeSegmentationVolume,
   computeNormalizationParameters,
-  normalizeVolume
+  normalizeVolume,
+  type NormalizedVolume
 } from './volumeProcessing';
 import { clearTextureCache } from './textureCache';
 import type { TrackColorMode, TrackDefinition, TrackPoint } from './types/tracks';
@@ -35,7 +36,6 @@ import type { LoadedLayer } from './types/layers';
 import type { HoveredVoxelInfo } from './types/hover';
 import './styles/app/index.css';
 import { computeAutoWindow, getVolumeHistogram } from './autoContrast';
-import { getDefaultWindowForVolume } from './utils/volumeWindow';
 import type { ImportPreprocessedDatasetResult } from './utils/preprocessedDataset';
 import { computeTrackSummary } from './utils/trackSummary';
 import useVrLifecycle from './hooks/useVrLifecycle';
@@ -68,6 +68,7 @@ const SELECTED_TRACKS_WINDOW_WIDTH = 960;
 const SELECTED_TRACKS_WINDOW_HEIGHT = 220;
 const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
 const WARNING_WINDOW_WIDTH = 360;
+const DEFAULT_RESET_WINDOW = { windowMin: DEFAULT_WINDOW_MIN, windowMax: DEFAULT_WINDOW_MAX };
 
 const DEFAULT_VOXEL_RESOLUTION: VoxelResolutionInput = {
   x: '1.0',
@@ -75,6 +76,23 @@ const DEFAULT_VOXEL_RESOLUTION: VoxelResolutionInput = {
   z: '1.0',
   unit: 'μm',
   correctAnisotropy: false
+};
+
+const computeInitialWindowForVolume = (
+  volume: NormalizedVolume | null | undefined
+): { windowMin: number; windowMax: number; autoThreshold: number } => {
+  if (!volume) {
+    return { ...DEFAULT_RESET_WINDOW, autoThreshold: 0 };
+  }
+
+  const { windowMin, windowMax, nextThreshold } = computeAutoWindow(volume);
+  const { windowMin: clampedMin, windowMax: clampedMax } = clampWindowBounds(windowMin, windowMax);
+
+  return {
+    windowMin: clampedMin,
+    windowMax: clampedMax,
+    autoThreshold: nextThreshold
+  };
 };
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
@@ -166,9 +184,9 @@ function App() {
   const createLayerDefaultSettings = useCallback(
     (layerKey: string): LayerSettings => {
       const layer = layersRef.current.find((entry) => entry.key === layerKey) ?? null;
-      const defaultWindow = getDefaultWindowForVolume(layer?.volumes[0]);
+      const { windowMin, windowMax } = computeInitialWindowForVolume(layer?.volumes[0]);
       return {
-        ...createDefaultLayerSettings(defaultWindow),
+        ...createDefaultLayerSettings({ windowMin, windowMax }),
         renderStyle: globalRenderStyle,
         samplingMode: globalSamplingMode
       };
@@ -176,13 +194,8 @@ function App() {
     [globalRenderStyle, globalSamplingMode]
   );
   const createLayerDefaultBrightnessState = useCallback(
-    (layerKey: string) => {
-      const layer = layersRef.current.find((entry) => entry.key === layerKey) ?? null;
-      const defaultWindow = getDefaultWindowForVolume(layer?.volumes[0]);
-      return brightnessContrastModel.createState(
-        defaultWindow?.windowMin,
-        defaultWindow?.windowMax
-      );
+    (_layerKey: string) => {
+      return brightnessContrastModel.createState(DEFAULT_WINDOW_MIN, DEFAULT_WINDOW_MAX);
     },
     []
   );
@@ -875,13 +888,19 @@ function App() {
         }
         return acc;
       }, {});
+      const initialWindows = normalizedLayers.reduce<
+        Record<string, ReturnType<typeof computeInitialWindowForVolume>>
+      >((acc, layer) => {
+        acc[layer.key] = computeInitialWindowForVolume(layer.volumes[0]);
+        return acc;
+      }, {});
       setChannelVisibility(visibilityDefaults);
       setChannelActiveLayer(activeLayerDefaults);
       setLayerSettings(
         normalizedLayers.reduce<Record<string, LayerSettings>>((acc, layer) => {
-          const defaultWindow = getDefaultWindowForVolume(layer.volumes[0]);
+          const { windowMin, windowMax } = initialWindows[layer.key];
           acc[layer.key] = {
-            ...createDefaultLayerSettings(defaultWindow),
+            ...createDefaultLayerSettings({ windowMin, windowMax }),
             renderStyle: globalRenderStyle,
             samplingMode: globalSamplingMode
           };
@@ -890,7 +909,7 @@ function App() {
       );
       setLayerAutoThresholds(
         normalizedLayers.reduce<Record<string, number>>((acc, layer) => {
-          acc[layer.key] = 0;
+          acc[layer.key] = initialWindows[layer.key]?.autoThreshold ?? 0;
           return acc;
         }, {})
       );
@@ -1287,7 +1306,7 @@ function App() {
       const visible = channelVisibility[channelId] ?? true;
       const activeLayerKey = channelActiveLayer[channelId] ?? channelLayers[0]?.key ?? null;
       const layersInfo = channelLayers.map((layer) => {
-        const defaultWindow = getDefaultWindowForVolume(layer.volumes[0]);
+        const defaultWindow = DEFAULT_RESET_WINDOW;
         const settings = layerSettings[layer.key] ?? createLayerDefaultSettings(layer.key);
         const firstVolume = layer.volumes[0] ?? null;
         const isGrayscale = Boolean(firstVolume && firstVolume.channels === 1);
