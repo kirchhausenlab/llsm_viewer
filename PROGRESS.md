@@ -678,3 +678,6 @@ d centered the front-page card in the viewport.
 ## Channel tab interactions and tint updates
 - Matched channel slider accent colors to each channel's tint so the histogram and controls share a consistent hue.
 - Changed channel tabs to toggle visibility only on Ctrl+click anywhere on the tab, keeping normal clicks focused on tab selection.
+
+## Auto contrast defaults on load
+- Switched initial layer windows to use the first auto-contrast pass while keeping Reset returning to the full 0–1 range and leaving subsequent Auto clicks to continue refining from the precomputed threshold.
