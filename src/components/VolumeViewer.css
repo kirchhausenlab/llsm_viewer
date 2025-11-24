@@ -133,6 +133,58 @@
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
 }
 
+.blending-toggle {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.65rem;
+  background: rgba(12, 16, 24, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.35);
+  z-index: 3;
+  max-width: min(420px, 90vw);
+}
+
+.blending-toggle__label {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.85rem;
+}
+
+.blending-toggle select {
+  background: rgba(28, 34, 44, 0.95);
+  color: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.45rem;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.85rem;
+  min-width: 190px;
+}
+
+.blending-toggle select:focus {
+  outline: none;
+  border-color: rgba(91, 140, 255, 0.7);
+  box-shadow: 0 0 0 2px rgba(91, 140, 255, 0.25);
+}
+
+.blending-toggle__title {
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.blending-toggle__hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.78);
+  line-height: 1.35;
+}
+
 .viewer-meta {
   display: flex;
   flex-direction: column;

@@ -1,6 +1,11 @@
 # Grid overlay removal
 - Removed the shader-based 3D grid overlay, associated uniforms, and floating window controls so the viewer no longer exposes grid settings in the UI or shader pipeline.
 
+# Additive blending toggle for channel overlays
+- Added a viewer-side blending switch so operators can choose between alpha compositing and additive overlays when combining channels.
+- Updated both the volume and slice shaders to honor the selected mode by scaling RGB contributions and normalizing alpha so bright overlaps glow without clobbering neighboring layers.
+- Documented the visual trade-offs in the UI helper text, noting that additive accumulation can wash out dense backgrounds while alpha keeps occlusion cues intact.
+
 # Front page layout tweaks
 - Updated the landing header to mirror whether users are setting up a new experiment or loading a preprocessed one, resetting to "4D viewer" after returning home.
 - Moved the return action beside the launch button with matching styling, keeping it available after loading preprocessed datasets while dropping the old discard control.

@@ -461,6 +461,7 @@ function VolumeViewer({
   const [hasMeasured, setHasMeasured] = useState(false);
   const [trackOverlayRevision, setTrackOverlayRevision] = useState(0);
   const [renderContextRevision, setRenderContextRevision] = useState(0);
+  const [blendingMode, setBlendingMode] = useState<'alpha' | 'additive'>('alpha');
   const hoveredTrackIdRef = useRef<string | null>(null);
   const [hoveredTrackId, setHoveredTrackId] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
@@ -503,6 +504,8 @@ function VolumeViewer({
   const handleTrackFollowRequest = useCallback((trackId: string) => {
     trackFollowRequestCallbackRef.current?.(trackId);
   }, []);
+
+  const isAdditiveBlending = blendingMode === 'additive';
 
   const handleResize = useCallback(() => {
     const target = containerRef.current;
@@ -2993,6 +2996,7 @@ function VolumeViewer({
     }
 
     const seenKeys = new Set<string>();
+    const materialBlending = isAdditiveBlending ? THREE.AdditiveBlending : THREE.NormalBlending;
 
     layers.forEach((layer, index) => {
       const volume = layer.volume;
@@ -3062,13 +3066,17 @@ function VolumeViewer({
           uniforms.u_invert.value = layer.invert ? 1 : 0;
           uniforms.u_stepScale.value = volumeStepScaleRef.current;
           uniforms.u_nearestSampling.value = layer.samplingMode === 'nearest' ? 1 : 0;
+          if (uniforms.u_additive) {
+            uniforms.u_additive.value = isAdditiveBlending ? 1 : 0;
+          }
 
           const material = new THREE.ShaderMaterial({
             uniforms,
             vertexShader: shader.vertexShader,
             fragmentShader: shader.fragmentShader,
             side: THREE.BackSide,
-            transparent: true
+            transparent: true,
+            blending: materialBlending
           });
           material.depthWrite = false;
 
@@ -3156,6 +3164,9 @@ function VolumeViewer({
           uniforms.u_windowMin.value = layer.windowMin;
           uniforms.u_windowMax.value = layer.windowMax;
           uniforms.u_invert.value = layer.invert ? 1 : 0;
+          if (uniforms.u_additive) {
+            uniforms.u_additive.value = isAdditiveBlending ? 1 : 0;
+          }
 
           const material = new THREE.ShaderMaterial({
             uniforms,
@@ -3164,7 +3175,8 @@ function VolumeViewer({
             transparent: true,
             side: THREE.DoubleSide,
             depthTest: false,
-            depthWrite: false
+            depthWrite: false,
+            blending: materialBlending
           });
 
           const geometry = new THREE.PlaneGeometry(volume.width, volume.height);
@@ -3206,6 +3218,15 @@ function VolumeViewer({
         materialUniforms.u_windowMax.value = layer.windowMax;
         materialUniforms.u_invert.value = layer.invert ? 1 : 0;
         materialUniforms.u_cmdata.value = colormapTexture;
+        if (materialUniforms.u_additive) {
+          materialUniforms.u_additive.value = isAdditiveBlending ? 1 : 0;
+        }
+        const shaderMaterial = mesh.material as THREE.ShaderMaterial;
+        const desiredBlending = materialBlending;
+        if (shaderMaterial.blending !== desiredBlending) {
+          shaderMaterial.blending = desiredBlending;
+          shaderMaterial.needsUpdate = true;
+        }
         if (materialUniforms.u_stepScale) {
           materialUniforms.u_stepScale.value = volumeStepScaleRef.current;
         }
@@ -3282,7 +3303,8 @@ function VolumeViewer({
     getColormapTexture,
     layers,
     renderContextRevision,
-    applyHoverHighlightToResources
+    applyHoverHighlightToResources,
+    isAdditiveBlending
   ]);
 
   useEffect(() => {
@@ -3313,6 +3335,22 @@ function VolumeViewer({
         </Suspense>
       ) : null}
       <section className="viewer-surface">
+        <div className="blending-toggle" role="group" aria-label="Channel blending mode">
+          <label className="blending-toggle__label">
+            <span className="blending-toggle__title">Channel blending</span>
+            <select
+              value={blendingMode}
+              onChange={(event) => setBlendingMode(event.target.value as 'alpha' | 'additive')}
+            >
+              <option value="alpha">Alpha (preserves occlusion)</option>
+              <option value="additive">Additive (accumulates light)</option>
+            </select>
+          </label>
+          <p className="blending-toggle__hint">
+            Alpha blending keeps nearer voxels opaque; additive blending makes overlapping channels glow together but can wash
+            out backgrounds in dense regions.
+          </p>
+        </div>
         {showLoadingOverlay && (
           <div className="overlay">
             <div className="loading-panel">

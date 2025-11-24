@@ -4,6 +4,7 @@ type SliceUniforms = {
   u_slice: { value: DataTexture | null };
   u_cmdata: { value: DataTexture | null };
   u_channels: { value: number };
+  u_additive: { value: number };
   u_windowMin: { value: number };
   u_windowMax: { value: number };
   u_invert: { value: number };
@@ -13,6 +14,7 @@ const uniforms = {
   u_slice: { value: null as DataTexture | null },
   u_cmdata: { value: null as DataTexture | null },
   u_channels: { value: 1 },
+  u_additive: { value: 0 },
   u_windowMin: { value: 0 },
   u_windowMax: { value: 1 },
   u_invert: { value: 0 }
@@ -33,6 +35,7 @@ export const SliceRenderShader = {
     precision mediump sampler2D;
 
     uniform int u_channels;
+    uniform float u_additive;
     uniform float u_windowMin;
     uniform float u_windowMax;
     uniform float u_invert;
@@ -86,6 +89,14 @@ export const SliceRenderShader = {
       return texture2D(u_cmdata, vec2(normalized, 0.5));
     }
 
+    vec4 apply_blending_mode(vec4 color) {
+      if (u_additive > 0.5) {
+        color.rgb *= color.a;
+        color.a = color.a > 0.0 ? 1.0 : 0.0;
+      }
+      return color;
+    }
+
     void main() {
       vec4 sample = sample_slice(v_uv);
       float intensity = luminance(sample);
@@ -93,7 +104,8 @@ export const SliceRenderShader = {
 
       if (u_channels == 1) {
         vec4 tinted = apply_colormap(adjusted);
-        gl_FragColor = vec4(tinted.rgb, max(adjusted, 0.05));
+        vec4 color = vec4(tinted.rgb, max(adjusted, 0.05));
+        gl_FragColor = apply_blending_mode(color);
       } else {
         vec3 baseColor;
         if (u_channels == 2) {
@@ -107,7 +119,7 @@ export const SliceRenderShader = {
         }
         float alpha = clamp(adjusted, 0.0, 1.0);
         alpha = max(alpha, 0.05);
-        gl_FragColor = vec4(adjustedColor, alpha);
+        gl_FragColor = apply_blending_mode(vec4(adjustedColor, alpha));
       }
     }
   `
