@@ -1,6 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, type CSSProperties } from 'react';
 import { getVolumeHistogram, HISTOGRAM_FIRST_VALID_BIN } from '../autoContrast';
 import type { NormalizedVolume } from '../volumeProcessing';
+import { applyAlphaToHex } from '../utils/appHelpers';
 
 const HISTOGRAM_WIDTH = 255;
 const HISTOGRAM_HEIGHT = 100;
@@ -23,6 +24,7 @@ type BrightnessContrastHistogramProps = {
   defaultMax: number;
   sliderRange: number;
   className?: string;
+  tintColor?: string;
 };
 
 type HistogramShape = {
@@ -125,7 +127,8 @@ function BrightnessContrastHistogram({
   defaultMin,
   defaultMax,
   sliderRange,
-  className
+  className,
+  tintColor
 }: BrightnessContrastHistogramProps) {
   const histogram = volume ? getVolumeHistogram(volume) : null;
 
@@ -142,6 +145,12 @@ function BrightnessContrastHistogram({
   const figureClassName = histogramShape.isEmpty
     ? 'brightness-contrast-histogram__figure is-empty'
     : 'brightness-contrast-histogram__figure';
+  const style: CSSProperties | undefined = tintColor
+    ? {
+        '--histogram-color': tintColor,
+        '--histogram-fill': applyAlphaToHex(tintColor, 0.35)
+      }
+    : undefined;
 
   return (
     <div className={containerClassName} aria-hidden={histogramShape.isEmpty}>
@@ -150,6 +159,7 @@ function BrightnessContrastHistogram({
         viewBox={`0 0 ${HISTOGRAM_WIDTH} ${HISTOGRAM_HEIGHT}`}
         preserveAspectRatio="none"
         role="presentation"
+        style={style}
       >
         <rect
           className="brightness-contrast-histogram__background"

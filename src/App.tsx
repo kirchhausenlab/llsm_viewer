@@ -159,14 +159,20 @@ function App() {
   const [channelVisibility, setChannelVisibility] = useState<Record<string, boolean>>({});
   const [channelActiveLayer, setChannelActiveLayer] = useState<Record<string, string>>({});
   const [layerSettings, setLayerSettings] = useState<Record<string, LayerSettings>>({});
+  const [globalRenderStyle, setGlobalRenderStyle] = useState<0 | 1>(DEFAULT_RENDER_STYLE);
+  const [globalSamplingMode, setGlobalSamplingMode] = useState<SamplingMode>(DEFAULT_SAMPLING_MODE);
   const preprocessingSettingsRef = useRef<VoxelResolutionValues | null>(null);
   const createLayerDefaultSettings = useCallback(
     (layerKey: string): LayerSettings => {
       const layer = layersRef.current.find((entry) => entry.key === layerKey) ?? null;
       const defaultWindow = getDefaultWindowForVolume(layer?.volumes[0]);
-      return createDefaultLayerSettings(defaultWindow);
+      return {
+        ...createDefaultLayerSettings(defaultWindow),
+        renderStyle: globalRenderStyle,
+        samplingMode: globalSamplingMode
+      };
     },
-    []
+    [globalRenderStyle, globalSamplingMode]
   );
   const createLayerDefaultBrightnessState = useCallback(
     (layerKey: string) => {
@@ -873,7 +879,11 @@ function App() {
       setLayerSettings(
         normalizedLayers.reduce<Record<string, LayerSettings>>((acc, layer) => {
           const defaultWindow = getDefaultWindowForVolume(layer.volumes[0]);
-          acc[layer.key] = createDefaultLayerSettings(defaultWindow);
+          acc[layer.key] = {
+            ...createDefaultLayerSettings(defaultWindow),
+            renderStyle: globalRenderStyle,
+            samplingMode: globalSamplingMode
+          };
           return acc;
         }, {})
       );
@@ -893,7 +903,7 @@ function App() {
       clearDatasetError();
       setError(null);
     },
-    [clearDatasetError]
+    [clearDatasetError, globalRenderStyle, globalSamplingMode]
   );
 
   const loadSelectedDataset = useCallback(async (): Promise<LoadedLayer[] | null> => {
@@ -2565,39 +2575,47 @@ function App() {
     });
   }, [createLayerDefaultSettings]);
 
-  const handleLayerRenderStyleToggle = useCallback((key: string) => {
-    setLayerSettings((current) => {
-      const previous = current[key] ?? createLayerDefaultSettings(key);
-      const nextStyle: 0 | 1 = previous.renderStyle === 1 ? 0 : 1;
-      if (previous.renderStyle === nextStyle) {
-        return current;
-      }
-      return {
-        ...current,
-        [key]: {
-          ...previous,
-          renderStyle: nextStyle
-        }
-      };
-    });
-  }, [createLayerDefaultSettings]);
+  const handleLayerRenderStyleToggle = useCallback(
+    (_key?: string) => {
+      setGlobalRenderStyle((current) => {
+        const nextStyle: 0 | 1 = current === 1 ? 0 : 1;
+        setLayerSettings((settings) => {
+          let changed = false;
+          const nextSettings: Record<string, LayerSettings> = { ...settings };
+          for (const [layerKey, previous] of Object.entries(settings)) {
+            if (previous.renderStyle !== nextStyle) {
+              nextSettings[layerKey] = { ...previous, renderStyle: nextStyle };
+              changed = true;
+            }
+          }
+          return changed ? nextSettings : settings;
+        });
+        return nextStyle;
+      });
+    },
+    []
+  );
 
-  const handleLayerSamplingModeToggle = useCallback((key: string) => {
-    setLayerSettings((current) => {
-      const previous = current[key] ?? createLayerDefaultSettings(key);
-      const nextMode: SamplingMode = previous.samplingMode === 'nearest' ? 'linear' : 'nearest';
-      if (previous.samplingMode === nextMode) {
-        return current;
-      }
-      return {
-        ...current,
-        [key]: {
-          ...previous,
-          samplingMode: nextMode
-        }
-      };
-    });
-  }, [createLayerDefaultSettings]);
+  const handleLayerSamplingModeToggle = useCallback(
+    (_key?: string) => {
+      setGlobalSamplingMode((current) => {
+        const nextMode: SamplingMode = current === 'nearest' ? 'linear' : 'nearest';
+        setLayerSettings((settings) => {
+          let changed = false;
+          const nextSettings: Record<string, LayerSettings> = { ...settings };
+          for (const [layerKey, previous] of Object.entries(settings)) {
+            if (previous.samplingMode !== nextMode) {
+              nextSettings[layerKey] = { ...previous, samplingMode: nextMode };
+              changed = true;
+            }
+          }
+          return changed ? nextSettings : settings;
+        });
+        return nextMode;
+      });
+    },
+    []
+  );
 
   const handleLayerInvertToggle = useCallback((key: string) => {
     setLayerSettings((current) => {
@@ -2703,9 +2721,9 @@ function App() {
             ...defaultState,
             xOffset: 0,
             yOffset: 0,
-            renderStyle: DEFAULT_RENDER_STYLE,
+            renderStyle: previous.renderStyle,
             invert: false,
-            samplingMode: DEFAULT_SAMPLING_MODE
+            samplingMode: previous.samplingMode
           };
           if (
             previous.windowMin !== updated.windowMin ||
@@ -3043,7 +3061,11 @@ function App() {
       onVrButtonClick: handleVrButtonClick,
       vrButtonDisabled,
       vrButtonTitle,
-      vrButtonLabel
+      vrButtonLabel,
+      renderStyle: globalRenderStyle,
+      samplingMode: globalSamplingMode,
+      onRenderStyleToggle: () => handleLayerRenderStyleToggle(),
+      onSamplingModeToggle: () => handleLayerSamplingModeToggle()
     },
     playbackControls: {
       fps,
@@ -3076,8 +3098,6 @@ function App() {
       getLayerDefaultSettings: createLayerDefaultSettings,
       onChannelLayerSelect: handleChannelLayerSelectionChange,
       onChannelReset: handleChannelSliderReset,
-      onLayerRenderStyleToggle: handleLayerRenderStyleToggle,
-      onLayerSamplingModeToggle: handleLayerSamplingModeToggle,
       onLayerWindowMinChange: handleLayerWindowMinChange,
       onLayerWindowMaxChange: handleLayerWindowMaxChange,
       onLayerBrightnessChange: handleLayerBrightnessChange,

@@ -92,8 +92,8 @@ export type VolumeViewerVrProps = {
   onLayerAutoContrast: (layerKey: string) => void;
   onLayerOffsetChange: (layerKey: string, axis: 'x' | 'y', value: number) => void;
   onLayerColorChange: (layerKey: string, color: string) => void;
-  onLayerRenderStyleToggle: (layerKey: string) => void;
-  onLayerSamplingModeToggle: (layerKey: string) => void;
+  onLayerRenderStyleToggle: (layerKey?: string) => void;
+  onLayerSamplingModeToggle: (layerKey?: string) => void;
   onLayerInvertToggle: (layerKey: string) => void;
   onRegisterVrSession?: (
     handlers:
