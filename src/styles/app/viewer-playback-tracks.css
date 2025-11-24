@@ -10,6 +10,17 @@
   gap: 0.4rem;
 }
 
+.global-controls .control-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.global-controls .control-row .control-group--slider {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .global-controls .viewer-mode-row {
   display: flex;
   gap: 0.5rem;
