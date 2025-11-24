@@ -161,6 +161,7 @@ function App() {
   const [layerSettings, setLayerSettings] = useState<Record<string, LayerSettings>>({});
   const [globalRenderStyle, setGlobalRenderStyle] = useState<0 | 1>(DEFAULT_RENDER_STYLE);
   const [globalSamplingMode, setGlobalSamplingMode] = useState<SamplingMode>(DEFAULT_SAMPLING_MODE);
+  const [blendingMode, setBlendingMode] = useState<'alpha' | 'additive'>('additive');
   const preprocessingSettingsRef = useRef<VoxelResolutionValues | null>(null);
   const createLayerDefaultSettings = useCallback(
     (layerKey: string): LayerSettings => {
@@ -2617,6 +2618,10 @@ function App() {
     []
   );
 
+  const handleBlendingModeToggle = useCallback(() => {
+    setBlendingMode((current) => (current === 'additive' ? 'alpha' : 'additive'));
+  }, []);
+
   const handleLayerInvertToggle = useCallback((key: string) => {
     setLayerSettings((current) => {
       const previous = current[key] ?? createLayerDefaultSettings(key);
@@ -2946,6 +2951,7 @@ function App() {
     playbackDisabled,
     playbackLabel,
     fps,
+    blendingMode,
     onTogglePlayback: handleTogglePlayback,
     onTimeIndexChange: handleTimeIndexChange,
     onFpsChange: setFps,
@@ -3065,7 +3071,9 @@ function App() {
       renderStyle: globalRenderStyle,
       samplingMode: globalSamplingMode,
       onRenderStyleToggle: () => handleLayerRenderStyleToggle(),
-      onSamplingModeToggle: () => handleLayerSamplingModeToggle()
+      onSamplingModeToggle: () => handleLayerSamplingModeToggle(),
+      blendingMode,
+      onBlendingModeToggle: handleBlendingModeToggle
     },
     playbackControls: {
       fps,

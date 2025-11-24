@@ -115,6 +115,7 @@ export type VolumeViewerProps = {
   playbackDisabled: boolean;
   playbackLabel: string;
   fps: number;
+  blendingMode: 'alpha' | 'additive';
   isLoading: boolean;
   loadingProgress: number;
   loadedVolumes: number;
