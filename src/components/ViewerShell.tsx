@@ -1,4 +1,4 @@
-import { useState, type ComponentProps, type CSSProperties, type RefObject } from 'react';
+import { useState, type ComponentProps, type CSSProperties, type MouseEvent, type RefObject } from 'react';
 
 import FloatingWindow from './FloatingWindow';
 import PlanarViewer from './PlanarViewer';
@@ -101,6 +101,8 @@ type ChannelsPanelProps = {
   onLayerColorChange: (layerKey: string, color: string) => void;
   onLayerInvertToggle: (layerKey: string) => void;
 };
+
+type ChannelPanelStyle = CSSProperties & { '--channel-slider-color'?: string };
 
 type TracksPanelProps = {
   channels: ChannelSource[];
@@ -651,37 +653,32 @@ function ViewerShell({
                       '--channel-tab-border': 'rgba(255, 255, 255, 0.15)',
                       '--channel-tab-border-active': applyAlphaToHex(tintColor, 0.55)
                     };
+                    const handleChannelTabClick = (event: MouseEvent<HTMLButtonElement>) => {
+                      if (event.ctrlKey) {
+                        event.preventDefault();
+                        onChannelVisibilityToggle(channelId);
+                        return;
+                      }
+                      onChannelTabSelect(channelId);
+                    };
                     return (
                       <button
                         key={channelId}
                         type="button"
                         className={tabClassName}
                         style={tabStyle}
-                        onClick={() => onChannelTabSelect(channelId)}
+                        onClick={handleChannelTabClick}
+                        title={
+                          isVisible
+                            ? 'Ctrl + click to hide this channel'
+                            : 'Ctrl + click to show this channel'
+                        }
                         role="tab"
                         id={`channel-tab-${channelId}`}
                         aria-selected={isActive}
                         aria-controls={`channel-panel-${channelId}`}
                       >
-                        <span
-                          className={labelClassName}
-                          role="switch"
-                          aria-checked={isVisible}
-                          tabIndex={0}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onChannelVisibilityToggle(channelId);
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter' || event.key === ' ') {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              onChannelVisibilityToggle(channelId);
-                            }
-                          }}
-                        >
-                          {label}
-                        </span>
+                        <span className={labelClassName}>{label}</span>
                       </button>
                     );
                   })}
@@ -706,6 +703,9 @@ function ViewerShell({
                     ? 'Invert LUT is unavailable for segmentation volumes.'
                     : undefined;
                   const channelTint = channelTintMap.get(channelId) ?? DEFAULT_LAYER_COLOR;
+                  const channelPanelStyle: ChannelPanelStyle = {
+                    '--channel-slider-color': channelTint
+                  };
 
                   return (
                     <div
@@ -715,6 +715,7 @@ function ViewerShell({
                       aria-labelledby={`channel-tab-${channelId}`}
                       className={isActive ? 'channel-panel is-active' : 'channel-panel'}
                       hidden={!isActive}
+                      style={channelPanelStyle}
                     >
                       {channelLayers.length > 1 ? (
                         <div

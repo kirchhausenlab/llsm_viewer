@@ -674,3 +674,7 @@ d centered the front-page card in the viewport.
 - Switched the 2D Z-plane counter to zero-based indexing to match pixel coordinates and avoid off-by-one confusion when stepping slices.
 - Hid 3D-only affordances (rendering quality slider and render style controls) while in 2D view to keep the sidebar focused on relevant options.
 - Added a blinking pixel overlay that follows the hovered voxel in slice view, matching the 3D hover pulse while constraining the highlight to the single pixel under the cursor.
+
+## Channel tab interactions and tint updates
+- Matched channel slider accent colors to each channel's tint so the histogram and controls share a consistent hue.
+- Changed channel tabs to toggle visibility only on Ctrl+click anywhere on the tab, keeping normal clicks focused on tab selection.

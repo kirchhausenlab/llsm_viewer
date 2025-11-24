@@ -185,7 +185,7 @@
 }
 
 .channel-controls .slider-control input[type='range'] {
-  accent-color: #5b8cff;
+  accent-color: var(--channel-slider-color, #5b8cff);
 }
 
 .channel-controls .channel-histogram {
