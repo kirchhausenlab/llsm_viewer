@@ -193,11 +193,12 @@ function App() {
       return new Map<string, string>();
     }
 
-    const presetCount = GRAYSCALE_COLOR_SWATCHES.length;
+    const fallbackSwatch = GRAYSCALE_COLOR_SWATCHES[0];
+    const shiftedSwatches = GRAYSCALE_COLOR_SWATCHES.slice(1);
+
     const map = new Map<string, string>();
     colorableChannels.forEach((channel, index) => {
-      const paletteIndex = (index + 1) % presetCount;
-      const swatch = GRAYSCALE_COLOR_SWATCHES[paletteIndex];
+      const swatch = index < shiftedSwatches.length ? shiftedSwatches[index] : fallbackSwatch;
       map.set(channel.id, normalizeHexColor(swatch?.value, DEFAULT_LAYER_COLOR));
     });
     return map;
