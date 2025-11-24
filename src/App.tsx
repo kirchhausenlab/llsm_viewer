@@ -2834,7 +2834,6 @@ function App() {
 
     return activeLayers.map((layer) => {
       const settings = layerSettings[layer.key] ?? createLayerDefaultSettings(layer.key);
-      const isActiveChannel = layer.channelId === activeChannelTabId;
       const channelVisible = channelVisibility[layer.channelId];
       return {
         key: layer.key,
@@ -2851,8 +2850,8 @@ function App() {
         windowMin: settings.windowMin,
         windowMax: settings.windowMax,
         color: normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR),
-        offsetX: isActiveChannel ? settings.xOffset : 0,
-        offsetY: isActiveChannel ? settings.yOffset : 0,
+        offsetX: settings.xOffset,
+        offsetY: settings.yOffset,
         renderStyle: settings.renderStyle,
         invert: settings.invert,
         samplingMode: settings.samplingMode,
@@ -2860,7 +2859,6 @@ function App() {
       };
     });
   }, [
-    activeChannelTabId,
     channelActiveLayer,
     channelNameMap,
     channelVisibility,
