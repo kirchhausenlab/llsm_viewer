@@ -9,6 +9,7 @@ type VolumeUniforms = {
   u_data: { value: Data3DTexture | null };
   u_cmdata: { value: DataTexture | null };
   u_channels: { value: number };
+  u_additive: { value: number };
   u_cameraPos: { value: Vector3 };
   u_windowMin: { value: number };
   u_windowMax: { value: number };
@@ -30,6 +31,7 @@ const uniforms = {
   u_data: { value: null as Data3DTexture | null },
   u_cmdata: { value: null as DataTexture | null },
   u_channels: { value: 1 },
+  u_additive: { value: 0 },
   u_cameraPos: { value: new Vector3() },
   u_windowMin: { value: 0 },
   u_windowMax: { value: 1 },
@@ -76,6 +78,7 @@ export const VolumeRenderShader = {
     uniform float u_renderthreshold;
     uniform vec2 u_clim;
     uniform int u_channels;
+    uniform float u_additive;
     uniform float u_windowMin;
     uniform float u_windowMax;
     uniform float u_invert;
@@ -174,6 +177,14 @@ export const VolumeRenderShader = {
       }
       float alpha = clamp(adjustedIntensity, 0.0, 1.0);
       return vec4(adjustedColor, alpha);
+    }
+
+    vec4 apply_blending_mode(vec4 color) {
+      if (u_additive > 0.5) {
+        color.rgb *= color.a;
+        color.a = color.a > 0.0 ? 1.0 : 0.0;
+      }
+      return color;
     }
 
     void main() {
@@ -341,7 +352,7 @@ export const VolumeRenderShader = {
         color.rgb = mix(color.rgb, vec3(1.0), highlight * 0.6);
       }
 
-      gl_FragColor = color;
+      gl_FragColor = apply_blending_mode(color);
     }
 
     void cast_iso(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray) {
@@ -380,7 +391,7 @@ export const VolumeRenderShader = {
         loc += step;
       }
 
-      gl_FragColor = hitColor;
+      gl_FragColor = apply_blending_mode(hitColor);
     }
 
     vec4 add_lighting(float val, vec3 loc, vec3 step, vec3 view_ray, vec4 colorSample) {
