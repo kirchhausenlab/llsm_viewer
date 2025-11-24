@@ -11,7 +11,11 @@ import {
 } from './volumeProcessing';
 import { clearTextureCache } from './textureCache';
 import type { TrackColorMode, TrackDefinition, TrackPoint } from './types/tracks';
-import { DEFAULT_LAYER_COLOR, normalizeHexColor } from './layerColors';
+import {
+  DEFAULT_LAYER_COLOR,
+  GRAYSCALE_COLOR_SWATCHES,
+  normalizeHexColor
+} from './layerColors';
 import {
   DEFAULT_TRACK_COLOR,
   getTrackColorHex,
@@ -181,17 +185,43 @@ function App() {
   const [globalSamplingMode, setGlobalSamplingMode] = useState<SamplingMode>(DEFAULT_SAMPLING_MODE);
   const [blendingMode, setBlendingMode] = useState<'alpha' | 'additive'>('additive');
   const preprocessingSettingsRef = useRef<VoxelResolutionValues | null>(null);
+  const channelDefaultColorMap = useMemo(() => {
+    const colorableChannels = channels.filter((channel) =>
+      channel.layers.some((layer) => !layer.isSegmentation)
+    );
+    if (colorableChannels.length <= 1) {
+      return new Map<string, string>();
+    }
+
+    const presetCount = GRAYSCALE_COLOR_SWATCHES.length;
+    const map = new Map<string, string>();
+    colorableChannels.forEach((channel, index) => {
+      const paletteIndex = (index + 1) % presetCount;
+      const swatch = GRAYSCALE_COLOR_SWATCHES[paletteIndex];
+      map.set(channel.id, normalizeHexColor(swatch?.value, DEFAULT_LAYER_COLOR));
+    });
+    return map;
+  }, [channels]);
+  const getChannelDefaultColor = useCallback(
+    (channelId: string): string => channelDefaultColorMap.get(channelId) ?? DEFAULT_LAYER_COLOR,
+    [channelDefaultColorMap]
+  );
   const createLayerDefaultSettings = useCallback(
     (layerKey: string): LayerSettings => {
       const layer = layersRef.current.find((entry) => entry.key === layerKey) ?? null;
       const { windowMin, windowMax } = computeInitialWindowForVolume(layer?.volumes[0]);
+      const defaultColor =
+        layer?.isSegmentation === true
+          ? DEFAULT_LAYER_COLOR
+          : getChannelDefaultColor(layer?.channelId ?? '');
       return {
         ...createDefaultLayerSettings({ windowMin, windowMax }),
+        color: defaultColor,
         renderStyle: globalRenderStyle,
         samplingMode: globalSamplingMode
       };
     },
-    [globalRenderStyle, globalSamplingMode]
+    [getChannelDefaultColor, globalRenderStyle, globalSamplingMode]
   );
   const createLayerDefaultBrightnessState = useCallback(
     (_layerKey: string) => {
@@ -899,8 +929,12 @@ function App() {
       setLayerSettings(
         normalizedLayers.reduce<Record<string, LayerSettings>>((acc, layer) => {
           const { windowMin, windowMax } = initialWindows[layer.key];
+          const defaultColor = layer.isSegmentation
+            ? DEFAULT_LAYER_COLOR
+            : getChannelDefaultColor(layer.channelId);
           acc[layer.key] = {
             ...createDefaultLayerSettings({ windowMin, windowMax }),
+            color: defaultColor,
             renderStyle: globalRenderStyle,
             samplingMode: globalSamplingMode
           };
@@ -923,7 +957,7 @@ function App() {
       clearDatasetError();
       setError(null);
     },
-    [clearDatasetError, globalRenderStyle, globalSamplingMode]
+    [clearDatasetError, getChannelDefaultColor, globalRenderStyle, globalSamplingMode]
   );
 
   const loadSelectedDataset = useCallback(async (): Promise<LoadedLayer[] | null> => {
