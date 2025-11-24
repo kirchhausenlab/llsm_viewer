@@ -209,8 +209,8 @@
 }
 
 .brightness-contrast-histogram__area {
-  fill: rgba(91, 140, 255, 0.35);
-  stroke: rgba(91, 140, 255, 0.9);
+  fill: var(--histogram-fill, rgba(91, 140, 255, 0.35));
+  stroke: var(--histogram-color, rgba(91, 140, 255, 0.9));
   stroke-width: 1.2;
 }
 

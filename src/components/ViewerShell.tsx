@@ -52,6 +52,10 @@ type ModeControlsProps = {
   vrButtonDisabled: boolean;
   vrButtonTitle?: string;
   vrButtonLabel: string;
+  renderStyle: 0 | 1;
+  samplingMode: 'linear' | 'nearest';
+  onRenderStyleToggle: () => void;
+  onSamplingModeToggle: () => void;
 };
 
 type PlaybackControlsProps = {
@@ -86,8 +90,6 @@ type ChannelsPanelProps = {
   getLayerDefaultSettings: (layerKey: string) => LayerSettings;
   onChannelLayerSelect: (channelId: string, layerKey: string) => void;
   onChannelReset: (channelId: string) => void;
-  onLayerRenderStyleToggle: (layerKey: string) => void;
-  onLayerSamplingModeToggle: (layerKey: string) => void;
   onLayerWindowMinChange: (layerKey: string, value: number) => void;
   onLayerWindowMaxChange: (layerKey: string, value: number) => void;
   onLayerBrightnessChange: (layerKey: string, value: number) => void;
@@ -208,7 +210,11 @@ function ViewerShell({
     onVrButtonClick,
     vrButtonDisabled,
     vrButtonTitle,
-    vrButtonLabel
+    vrButtonLabel,
+    renderStyle,
+    samplingMode,
+    onRenderStyleToggle,
+    onSamplingModeToggle
   } = modeControls;
   const {
     fps,
@@ -241,8 +247,6 @@ function ViewerShell({
     getLayerDefaultSettings,
     onChannelLayerSelect,
     onChannelReset,
-    onLayerRenderStyleToggle,
-    onLayerSamplingModeToggle,
     onLayerWindowMinChange,
     onLayerWindowMaxChange,
     onLayerBrightnessChange,
@@ -279,6 +283,9 @@ function ViewerShell({
     onStopTrackFollow
   } = tracksPanel;
   const { shouldRender, series, totalTimepoints } = selectedTracksPanel;
+  const hasVolumeData = loadedChannelIds.some((channelId) =>
+    (channelLayersMap.get(channelId) ?? []).some((layer) => layer.volumes.length > 0)
+  );
 
   const [renderingQuality, setRenderingQuality] = useState(1);
 
@@ -407,6 +414,32 @@ function ViewerShell({
                   ) : null}
                 </div>
               </div>
+              {is3dModeAvailable ? (
+                <div className="control-group">
+                  <div className="viewer-mode-row">
+                    <button
+                      type="button"
+                      className={renderStyle === 1 ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
+                      onClick={onRenderStyleToggle}
+                      disabled={!hasVolumeData || viewerMode !== '3d'}
+                      aria-pressed={renderStyle === 1}
+                    >
+                      Render style
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        samplingMode === 'nearest' ? 'viewer-mode-button is-active' : 'viewer-mode-button'
+                      }
+                      onClick={onSamplingModeToggle}
+                      disabled={!hasVolumeData || viewerMode !== '3d'}
+                      aria-pressed={samplingMode === 'nearest'}
+                    >
+                      Sampling mode
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               {is3dModeAvailable && viewerMode === '3d' ? (
                 <div className="control-row">
                   <div className="control-group control-group--slider">
@@ -657,6 +690,7 @@ function ViewerShell({
                   const invertTitle = selectedLayer?.isSegmentation
                     ? 'Invert LUT is unavailable for segmentation volumes.'
                     : undefined;
+                  const channelTint = channelTintMap.get(channelId) ?? DEFAULT_LAYER_COLOR;
 
                   return (
                     <div
@@ -695,30 +729,36 @@ function ViewerShell({
                       ) : null}
                       {selectedLayer ? (
                         <>
-                          {viewerMode === '3d' ? (
-                            <div className="channel-primary-actions">
-                              <div className="channel-primary-actions-row">
-                                <button
-                                  type="button"
-                                  className="channel-action-button"
-                                  onClick={() => onLayerRenderStyleToggle(selectedLayer.key)}
-                                  disabled={sliderDisabled}
-                                  aria-pressed={settings.renderStyle === 1}
-                                >
-                                  Render style
-                                </button>
-                                <button
-                                  type="button"
-                                  className="channel-action-button"
-                                  onClick={() => onLayerSamplingModeToggle(selectedLayer.key)}
-                                  disabled={sliderDisabled}
-                                  aria-pressed={settings.samplingMode === 'nearest'}
-                                >
-                                  Sampling mode
-                                </button>
-                              </div>
+                          <div className="channel-primary-actions">
+                            <div className="channel-primary-actions-row">
+                              <button
+                                type="button"
+                                className="channel-action-button"
+                                onClick={() => onChannelReset(channelId)}
+                                disabled={channelLayers.length === 0}
+                              >
+                                Reset
+                              </button>
+                              <button
+                                type="button"
+                                className="channel-action-button"
+                                onClick={() => onLayerInvertToggle(selectedLayer.key)}
+                                disabled={invertDisabled}
+                                aria-pressed={settings.invert}
+                                title={invertTitle}
+                              >
+                                Invert
+                              </button>
+                              <button
+                                type="button"
+                                className="channel-action-button"
+                                onClick={() => onLayerAutoContrast(selectedLayer.key)}
+                                disabled={sliderDisabled}
+                              >
+                                Auto
+                              </button>
                             </div>
-                          ) : null}
+                          </div>
                           <BrightnessContrastHistogram
                             className="channel-histogram"
                             volume={firstVolume}
@@ -727,6 +767,7 @@ function ViewerShell({
                             defaultMin={DEFAULT_WINDOW_MIN}
                             defaultMax={DEFAULT_WINDOW_MAX}
                             sliderRange={settings.sliderRange}
+                            tintColor={channelTint}
                           />
                           <div className="slider-control slider-control--pair">
                             <div className="slider-control slider-control--inline">
@@ -794,36 +835,6 @@ function ViewerShell({
                                 }
                                 disabled={sliderDisabled}
                               />
-                            </div>
-                          </div>
-                          <div className="channel-primary-actions">
-                            <div className="channel-primary-actions-row">
-                              <button
-                                type="button"
-                                className="channel-action-button"
-                                onClick={() => onChannelReset(channelId)}
-                                disabled={channelLayers.length === 0}
-                              >
-                                Reset
-                              </button>
-                              <button
-                                type="button"
-                                className="channel-action-button"
-                                onClick={() => onLayerInvertToggle(selectedLayer.key)}
-                                disabled={invertDisabled}
-                                aria-pressed={settings.invert}
-                                title={invertTitle}
-                              >
-                                Invert
-                              </button>
-                              <button
-                                type="button"
-                                className="channel-action-button"
-                                onClick={() => onLayerAutoContrast(selectedLayer.key)}
-                                disabled={sliderDisabled}
-                              >
-                                Auto
-                              </button>
                             </div>
                           </div>
                           <div className="slider-control slider-control--pair">
