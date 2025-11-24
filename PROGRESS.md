@@ -118,6 +118,9 @@
 - Reverted VR optimization pull requests (#289-#297) to restore the previously stable immersive rendering path.
 - Confirmed the headset pipeline again relies on the legacy volume upload and controller interaction code that had proven reliable.
 
+## Default channel tint reassignment
+- Adjusted the initial channel color mapping so multi-channel datasets start at the second preset swatch and progress through the palette once, reserving white for single-channel experiments and any channels beyond the sixth non-segmentation entry.
+
 ## Selected track amplitude overlay
 - Parse the sixth "Amplitude" column from track CSV files and store it on each track point so downstream views can access it.
 - Added a bottom-centered "Selected Tracks" overlay that plots amplitudes for highlighted tracks, scaling axes to the movie's
