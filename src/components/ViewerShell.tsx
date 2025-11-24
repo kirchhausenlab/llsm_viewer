@@ -408,36 +408,54 @@ function ViewerShell({
                 </div>
               </div>
               {is3dModeAvailable && viewerMode === '3d' ? (
+                <div className="control-row">
+                  <div className="control-group control-group--slider">
+                    <label htmlFor="rendering-quality-slider">
+                      Trilinear quality <span>{renderingQuality.toFixed(2)}</span>
+                    </label>
+                    <input
+                      id="rendering-quality-slider"
+                      type="range"
+                      min={0.5}
+                      max={2}
+                      step={0.01}
+                      value={renderingQuality}
+                      onChange={(event) => handleRenderingQualityChange(Number(event.target.value))}
+                    />
+                  </div>
+                  <div className="control-group control-group--slider">
+                    <label htmlFor="fps-slider">
+                      frames per second <span>{fps}</span>
+                    </label>
+                    <input
+                      id="fps-slider"
+                      type="range"
+                      min={1}
+                      max={60}
+                      step={1}
+                      value={fps}
+                      onChange={(event) => onFpsChange(Number(event.target.value))}
+                      disabled={volumeTimepointCount <= 1}
+                    />
+                  </div>
+                </div>
+              ) : (
                 <div className="control-group">
-                  <label htmlFor="rendering-quality-slider">
-                    Rendering quality <span>{renderingQuality.toFixed(2)}</span>
+                  <label htmlFor="fps-slider">
+                    frames per second <span>{fps}</span>
                   </label>
                   <input
-                    id="rendering-quality-slider"
+                    id="fps-slider"
                     type="range"
-                    min={0.5}
-                    max={2}
-                    step={0.01}
-                    value={renderingQuality}
-                    onChange={(event) => handleRenderingQualityChange(Number(event.target.value))}
+                    min={1}
+                    max={60}
+                    step={1}
+                    value={fps}
+                    onChange={(event) => onFpsChange(Number(event.target.value))}
+                    disabled={volumeTimepointCount <= 1}
                   />
                 </div>
-              ) : null}
-              <div className="control-group">
-                <label htmlFor="fps-slider">
-                  frames per second <span>{fps}</span>
-                </label>
-                <input
-                  id="fps-slider"
-                  type="range"
-                  min={1}
-                  max={60}
-                  step={1}
-                  value={fps}
-                  onChange={(event) => onFpsChange(Number(event.target.value))}
-                  disabled={volumeTimepointCount <= 1}
-                />
-              </div>
+              )}
               {viewerMode === '2d' && maxSliceDepth > 0 ? (
                 <div className="control-group">
                   <label htmlFor="z-plane-slider">
@@ -467,7 +485,7 @@ function ViewerShell({
                           : 'playback-status playback-status--stopped'
                       }
                     >
-                      {isPlaying ? 'Playing' : 'Stopped'}
+                      {isPlaying ? 'Playing' : ''}
                     </span>{' '}
                     <span>{playbackLabel}</span>
                   </label>
