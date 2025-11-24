@@ -358,6 +358,7 @@ function VolumeViewer({
   playbackDisabled,
   playbackLabel,
   fps,
+  blendingMode,
   onTogglePlayback,
   onTimeIndexChange,
   onFpsChange,
@@ -461,7 +462,6 @@ function VolumeViewer({
   const [hasMeasured, setHasMeasured] = useState(false);
   const [trackOverlayRevision, setTrackOverlayRevision] = useState(0);
   const [renderContextRevision, setRenderContextRevision] = useState(0);
-  const [blendingMode, setBlendingMode] = useState<'alpha' | 'additive'>('alpha');
   const hoveredTrackIdRef = useRef<string | null>(null);
   const [hoveredTrackId, setHoveredTrackId] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
@@ -3335,22 +3335,6 @@ function VolumeViewer({
         </Suspense>
       ) : null}
       <section className="viewer-surface">
-        <div className="blending-toggle" role="group" aria-label="Channel blending mode">
-          <label className="blending-toggle__label">
-            <span className="blending-toggle__title">Channel blending</span>
-            <select
-              value={blendingMode}
-              onChange={(event) => setBlendingMode(event.target.value as 'alpha' | 'additive')}
-            >
-              <option value="alpha">Alpha (preserves occlusion)</option>
-              <option value="additive">Additive (accumulates light)</option>
-            </select>
-          </label>
-          <p className="blending-toggle__hint">
-            Alpha blending keeps nearer voxels opaque; additive blending makes overlapping channels glow together but can wash
-            out backgrounds in dense regions.
-          </p>
-        </div>
         {showLoadingOverlay && (
           <div className="overlay">
             <div className="loading-panel">

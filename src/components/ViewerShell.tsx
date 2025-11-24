@@ -56,6 +56,8 @@ type ModeControlsProps = {
   samplingMode: 'linear' | 'nearest';
   onRenderStyleToggle: () => void;
   onSamplingModeToggle: () => void;
+  blendingMode: 'alpha' | 'additive';
+  onBlendingModeToggle: () => void;
 };
 
 type PlaybackControlsProps = {
@@ -214,7 +216,9 @@ function ViewerShell({
     renderStyle,
     samplingMode,
     onRenderStyleToggle,
-    onSamplingModeToggle
+    onSamplingModeToggle,
+    blendingMode,
+    onBlendingModeToggle
   } = modeControls;
   const {
     fps,
@@ -424,7 +428,7 @@ function ViewerShell({
                       disabled={!hasVolumeData || viewerMode !== '3d'}
                       aria-pressed={renderStyle === 1}
                     >
-                      Render style
+                      Rendering
                     </button>
                     <button
                       type="button"
@@ -435,7 +439,18 @@ function ViewerShell({
                       disabled={!hasVolumeData || viewerMode !== '3d'}
                       aria-pressed={samplingMode === 'nearest'}
                     >
-                      Sampling mode
+                      Sampling
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        blendingMode === 'alpha' ? 'viewer-mode-button is-active' : 'viewer-mode-button'
+                      }
+                      onClick={onBlendingModeToggle}
+                      disabled={!hasVolumeData || viewerMode !== '3d'}
+                      aria-pressed={blendingMode === 'alpha'}
+                    >
+                      Blending
                     </button>
                   </div>
                 </div>
