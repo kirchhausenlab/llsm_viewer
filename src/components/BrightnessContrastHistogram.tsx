@@ -145,7 +145,11 @@ function BrightnessContrastHistogram({
   const figureClassName = histogramShape.isEmpty
     ? 'brightness-contrast-histogram__figure is-empty'
     : 'brightness-contrast-histogram__figure';
-  const style: CSSProperties | undefined = tintColor
+  type HistogramStyle = CSSProperties & {
+    '--histogram-color'?: string;
+    '--histogram-fill'?: string;
+  };
+  const style: HistogramStyle | undefined = tintColor
     ? {
         '--histogram-color': tintColor,
         '--histogram-fill': applyAlphaToHex(tintColor, 0.35)
