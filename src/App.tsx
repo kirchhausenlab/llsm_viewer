@@ -10,7 +10,7 @@ import {
   type NormalizedVolume
 } from './volumeProcessing';
 import { clearTextureCache } from './textureCache';
-import type { TrackColorMode, TrackDefinition, TrackPoint } from './types/tracks';
+import type { NumericRange, TrackColorMode, TrackDefinition, TrackPoint } from './types/tracks';
 import {
   DEFAULT_LAYER_COLOR,
   GRAYSCALE_COLOR_SWATCHES,
@@ -120,6 +120,12 @@ type FollowedTrackState = {
   id: string;
   channelId: string;
 } | null;
+
+const clampRangeToBounds = (range: NumericRange, bounds: NumericRange): NumericRange => {
+  const min = Math.min(Math.max(range.min, bounds.min), bounds.max);
+  const max = Math.max(Math.min(range.max, bounds.max), min);
+  return { min, max };
+};
 
 type DatasetErrorContext = 'launch' | 'interaction';
 
@@ -287,6 +293,9 @@ function App() {
   const [channelTrackStates, setChannelTrackStates] = useState<Record<string, ChannelTrackState>>({});
   const [trackOrderModeByChannel, setTrackOrderModeByChannel] = useState<Record<string, 'id' | 'length'>>({});
   const [selectedTrackIds, setSelectedTrackIds] = useState<ReadonlySet<string>>(new Set());
+  const [selectedTracksAmplitudeLimits, setSelectedTracksAmplitudeLimits] =
+    useState<NumericRange | null>(null);
+  const [selectedTracksTimeLimits, setSelectedTracksTimeLimits] = useState<NumericRange | null>(null);
   const [followedTrack, setFollowedTrack] = useState<FollowedTrackState>(null);
   const [viewerMode, setViewerMode] = useState<'3d' | '2d'>('3d');
   const [sliceIndex, setSliceIndex] = useState(0);
@@ -753,6 +762,81 @@ function App() {
         })),
     [parsedTracks, selectedTrackIds]
   );
+
+  const trackExtents = useMemo(() => {
+    let amplitudeMin = Number.POSITIVE_INFINITY;
+    let amplitudeMax = Number.NEGATIVE_INFINITY;
+    let timeMin = Number.POSITIVE_INFINITY;
+    let timeMax = Number.NEGATIVE_INFINITY;
+
+    for (const track of parsedTracks) {
+      for (const point of track.points) {
+        if (Number.isFinite(point.amplitude)) {
+          amplitudeMin = Math.min(amplitudeMin, point.amplitude);
+          amplitudeMax = Math.max(amplitudeMax, point.amplitude);
+        }
+
+        if (Number.isFinite(point.time)) {
+          timeMin = Math.min(timeMin, point.time);
+          timeMax = Math.max(timeMax, point.time);
+        }
+      }
+    }
+
+    const hasAmplitude = Number.isFinite(amplitudeMin) && Number.isFinite(amplitudeMax);
+    const hasTime = Number.isFinite(timeMin) && Number.isFinite(timeMax);
+    const fallbackTimeMax = Math.max(volumeTimepointCount - 1, 0);
+
+    return {
+      amplitude: hasAmplitude ? { min: amplitudeMin, max: amplitudeMax } : { min: 0, max: 1 },
+      time: hasTime ? { min: timeMin, max: timeMax } : { min: 0, max: fallbackTimeMax }
+    };
+  }, [parsedTracks, volumeTimepointCount]);
+
+  const selectedTrackExtents = useMemo(() => {
+    let amplitudeMin = Number.POSITIVE_INFINITY;
+    let amplitudeMax = Number.NEGATIVE_INFINITY;
+    let timeMin = Number.POSITIVE_INFINITY;
+    let timeMax = Number.NEGATIVE_INFINITY;
+
+    for (const entry of selectedTrackSeries) {
+      for (const point of entry.points) {
+        if (Number.isFinite(point.amplitude)) {
+          amplitudeMin = Math.min(amplitudeMin, point.amplitude);
+          amplitudeMax = Math.max(amplitudeMax, point.amplitude);
+        }
+
+        if (Number.isFinite(point.time)) {
+          timeMin = Math.min(timeMin, point.time);
+          timeMax = Math.max(timeMax, point.time);
+        }
+      }
+    }
+
+    const hasAmplitude = Number.isFinite(amplitudeMin) && Number.isFinite(amplitudeMax);
+    const hasTime = Number.isFinite(timeMin) && Number.isFinite(timeMax);
+
+    return {
+      amplitude: hasAmplitude ? { min: amplitudeMin, max: amplitudeMax } : null,
+      time: hasTime ? { min: timeMin, max: timeMax } : null
+    } as const;
+  }, [selectedTrackSeries]);
+
+  const amplitudeExtent = trackExtents.amplitude;
+  const timeExtent = trackExtents.time;
+
+  useEffect(() => {
+    setSelectedTracksAmplitudeLimits((current) =>
+      clampRangeToBounds(current ?? amplitudeExtent, amplitudeExtent)
+    );
+  }, [amplitudeExtent.max, amplitudeExtent.min]);
+
+  useEffect(() => {
+    setSelectedTracksTimeLimits((current) => clampRangeToBounds(current ?? timeExtent, timeExtent));
+  }, [timeExtent.max, timeExtent.min]);
+
+  const resolvedAmplitudeLimits = selectedTracksAmplitudeLimits ?? amplitudeExtent;
+  const resolvedTimeLimits = selectedTracksTimeLimits ?? timeExtent;
 
   useEffect(() => {
     setSelectedTrackIds((current) => {
@@ -2348,6 +2432,33 @@ function App() {
     setFollowedTrack((current) => (current && current.channelId === channelId ? null : current));
   }, []);
 
+  const handleSelectedTracksAmplitudeLimitsChange = useCallback(
+    (next: NumericRange) => {
+      setSelectedTracksAmplitudeLimits(clampRangeToBounds(next, amplitudeExtent));
+    },
+    [amplitudeExtent]
+  );
+
+  const handleSelectedTracksTimeLimitsChange = useCallback(
+    (next: NumericRange) => {
+      setSelectedTracksTimeLimits(clampRangeToBounds(next, timeExtent));
+    },
+    [timeExtent]
+  );
+
+  const handleSelectedTracksAutoRange = useCallback(() => {
+    const nextAmplitude = selectedTrackExtents.amplitude ?? amplitudeExtent;
+    const nextTime = selectedTrackExtents.time ?? timeExtent;
+
+    setSelectedTracksAmplitudeLimits(clampRangeToBounds(nextAmplitude, amplitudeExtent));
+    setSelectedTracksTimeLimits(clampRangeToBounds(nextTime, timeExtent));
+  }, [amplitudeExtent, selectedTrackExtents, timeExtent]);
+
+  const handleClearSelectedTracks = useCallback(() => {
+    setSelectedTrackIds(new Set());
+    setFollowedTrack(null);
+  }, []);
+
   const registerTrackMasterCheckbox = useCallback(
     (channelId: string) => (element: HTMLInputElement | null) => {
       trackMasterCheckboxRefs.current[channelId] = element;
@@ -3197,7 +3308,16 @@ function App() {
     selectedTracksPanel: {
       shouldRender: showSelectedTracksWindow,
       series: selectedTrackSeries,
-      totalTimepoints: volumeTimepointCount
+      totalTimepoints: volumeTimepointCount,
+      amplitudeExtent,
+      amplitudeLimits: resolvedAmplitudeLimits,
+      timeExtent,
+      timeLimits: resolvedTimeLimits,
+      onAmplitudeLimitsChange: handleSelectedTracksAmplitudeLimitsChange,
+      onTimeLimitsChange: handleSelectedTracksTimeLimitsChange,
+      onAutoRange: handleSelectedTracksAutoRange,
+      onClearSelection: handleClearSelectedTracks,
+      currentTimepoint: selectedIndex
     },
     trackDefaults: {
       opacity: DEFAULT_TRACK_OPACITY,
