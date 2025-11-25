@@ -490,6 +490,22 @@
   stroke: #ff6b6b;
 }
 
+.selected-tracks-hover line {
+  stroke: rgba(192, 198, 207, 0.95);
+  stroke-width: 2;
+}
+
+.selected-tracks-hover-tick {
+  stroke-width: 2.5;
+}
+
+.selected-tracks-hover text {
+  fill: rgba(255, 255, 255, 0.88);
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 .selected-tracks-chart-series path {
   fill: none;
   stroke-width: 2.5;

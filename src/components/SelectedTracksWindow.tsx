@@ -1,4 +1,4 @@
-import { useMemo, type ChangeEvent } from 'react';
+import { useCallback, useMemo, useState, type ChangeEvent, type MouseEvent } from 'react';
 import type { NumericRange, TrackPoint } from '../types/tracks';
 
 type SelectedTrackSeries = {
@@ -201,6 +201,8 @@ function SelectedTracksWindow({
   onClearSelection,
   currentTimepoint
 }: SelectedTracksWindowProps) {
+  const [hoverTimepoint, setHoverTimepoint] = useState<number | null>(null);
+
   const xBounds = useMemo(
     () => computeNiceBounds(timeLimits.min, timeLimits.max, 8),
     [timeLimits.max, timeLimits.min]
@@ -312,6 +314,48 @@ function SelectedTracksWindow({
   const playheadX = useMemo(() => {
     return scaleX(currentTimepoint);
   }, [currentTimepoint, scaleX]);
+  const hoverX = useMemo(() => {
+    if (hoverTimepoint === null) {
+      return null;
+    }
+    return scaleX(hoverTimepoint);
+  }, [hoverTimepoint, scaleX]);
+
+  const amplitudeByTrack = useMemo(() => {
+    const map = new Map<string, Map<number, number>>();
+    for (const entry of series) {
+      const timeMap = new Map<number, number>();
+      for (const point of entry.points) {
+        timeMap.set(point.time, point.amplitude);
+      }
+      map.set(entry.id, timeMap);
+    }
+    return map;
+  }, [series]);
+
+  const handleMouseMove = useCallback(
+    (event: MouseEvent<SVGSVGElement>) => {
+      const svgRect = event.currentTarget.getBoundingClientRect();
+      if (svgRect.width === 0 || chartWidth <= 0) {
+        return;
+      }
+
+      const relativeX = ((event.clientX - svgRect.left) / svgRect.width) * SVG_WIDTH;
+      const clampedX = clampToRange(relativeX, PADDING.left, PADDING.left + chartWidth);
+      const normalizedX = (clampedX - PADDING.left) / chartWidth;
+      const domainX = domainXMin + normalizedX * domainXSpan;
+      const snappedTimepoint = Math.round(domainX);
+      const clampedTimepoint = clampToRange(snappedTimepoint, timeLimits.min, timeLimits.max);
+      setHoverTimepoint(clampedTimepoint);
+    },
+    [chartWidth, domainXMin, domainXSpan, timeLimits.max, timeLimits.min]
+  );
+
+  const handleMouseLeave = useCallback(() => {
+    setHoverTimepoint(null);
+  }, []);
+
+  const hoverLabel = hoverTimepoint === null ? null : formatAxisValue(hoverTimepoint);
 
   return (
     <div className="selected-tracks-window">
@@ -327,6 +371,8 @@ function SelectedTracksWindow({
             viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
             preserveAspectRatio="none"
             className="selected-tracks-chart-svg"
+            onMouseMove={handleMouseMove}
+            onMouseLeave={handleMouseLeave}
           >
             <g className="selected-tracks-chart-grid">
               <line x1={PADDING.left} y1={yAxisEnd} x2={xAxisEnd} y2={yAxisEnd} />
@@ -376,6 +422,23 @@ function SelectedTracksWindow({
             >
               <line x1={playheadX} y1={PADDING.top} x2={playheadX} y2={yAxisEnd} />
             </g>
+            {hoverX !== null ? (
+              <g className="selected-tracks-hover">
+                <line x1={hoverX} y1={PADDING.top} x2={hoverX} y2={yAxisEnd} />
+                <line
+                  className="selected-tracks-hover-tick"
+                  x1={hoverX}
+                  y1={PADDING.top}
+                  x2={hoverX}
+                  y2={PADDING.top - 8}
+                />
+                {hoverLabel ? (
+                  <text x={hoverX} y={PADDING.top - 12} textAnchor="middle">
+                    {hoverLabel}
+                  </text>
+                ) : null}
+              </g>
+            ) : null}
             <g className="selected-tracks-chart-axis-labels">
               {xAxisLabels.map((value) => {
                 const x = scaleX(value);
@@ -446,7 +509,15 @@ function SelectedTracksWindow({
                     style={{ backgroundColor: entry.color }}
                     aria-hidden="true"
                   />
-                  <span className="selected-tracks-legend-label">{entry.label}</span>
+                  <span className="selected-tracks-legend-label">
+                    {entry.label}
+                    {hoverTimepoint !== null
+                      ? (() => {
+                          const value = amplitudeByTrack.get(entry.id)?.get(hoverTimepoint);
+                          return value === undefined ? null : `: ${formatAxisValue(value)}`;
+                        })()
+                      : null}
+                  </span>
                 </li>
               ))}
             </ul>
