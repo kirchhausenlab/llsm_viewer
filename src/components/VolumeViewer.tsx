@@ -1911,13 +1911,8 @@ function VolumeViewer({
       );
 
       const displayLayers = isAdditiveBlending && hoverableLayers.length > 0 ? hoverableLayers : [targetLayer];
-      const includeLayerLabels = isAdditiveBlending && displayLayers.length > 1;
-      const intensityParts: string[] = [];
-      let hoveredSegmentationLabel: number | null = null;
-
-      if (targetLayer.isSegmentation && targetLayer.volume?.segmentationLabels) {
-        hoveredSegmentationLabel = sampleSegmentationLabel(targetLayer.volume, hoverMaxPosition);
-      }
+      const useLayerLabels = isAdditiveBlending && displayLayers.length > 1;
+      const samples: Array<{ values: number[]; type: NormalizedVolume['dataType']; label: string | null }> = [];
 
       for (const layer of displayLayers) {
         const layerVolume = layer.volume;
@@ -1928,9 +1923,7 @@ function VolumeViewer({
         let displayValues: number[] | null = null;
 
         if (layer.isSegmentation && layerVolume.segmentationLabels) {
-          const labelValue = layer.key === targetLayer.key
-            ? hoveredSegmentationLabel
-            : sampleSegmentationLabel(layerVolume, hoverMaxPosition);
+          const labelValue = sampleSegmentationLabel(layerVolume, hoverMaxPosition);
           if (labelValue !== null) {
             displayValues = [labelValue];
           }
@@ -1946,18 +1939,23 @@ function VolumeViewer({
           continue;
         }
 
-        const channelLabel = includeLayerLabels ? layer.label?.trim() || null : layer.label?.trim() || null;
-        const formatted = formatChannelValues(
-          displayValues,
-          layerVolume.dataType,
-          channelLabel,
-          includeLayerLabels || displayValues.length > 1
-        );
-
-        if (formatted.length > 0) {
-          intensityParts.push(formatted.join(' · '));
-        }
+        samples.push({
+          values: displayValues,
+          type: layerVolume.dataType,
+          label: useLayerLabels ? layer.label?.trim() || null : layer.label?.trim() || null
+        });
       }
+
+      const totalValues = samples.reduce((sum, sample) => sum + sample.values.length, 0);
+      if (totalValues === 0) {
+        reportVoxelHoverAbort('Unable to format hover intensity for display.');
+        return;
+      }
+
+      const includeLabel = totalValues > 1;
+      const intensityParts = samples.flatMap((sample) =>
+        formatChannelValues(sample.values, sample.type, sample.label, includeLabel)
+      );
 
       if (intensityParts.length === 0) {
         reportVoxelHoverAbort('Unable to format hover intensity for display.');
@@ -1967,7 +1965,7 @@ function VolumeViewer({
       clearVoxelHoverDebug();
 
       const hoveredVoxel = {
-        intensity: intensityParts.join(' | '),
+        intensity: intensityParts.join(' · '),
         coordinates: {
           x: Math.round(clampValue(hoverMaxPosition.x * volume.width, 0, volume.width - 1)),
           y: Math.round(clampValue(hoverMaxPosition.y * volume.height, 0, volume.height - 1)),

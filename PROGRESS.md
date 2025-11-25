@@ -703,3 +703,6 @@ d centered the front-page card in the viewport.
 
 ## Additive blending hover readouts in 3D view
 - Collected all hoverable layers before choosing a sampling target so additive blending now reports per-channel hover intensities in the 3D viewer, matching the 2D view behavior.
+
+## Additive hover formatting refinement
+- Flattened 3D hover readouts using the same per-channel formatting path as the 2D viewer so additive blending now lists every visible channel's intensity instead of collapsing to a single value.
