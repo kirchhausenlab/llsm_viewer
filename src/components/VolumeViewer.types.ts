@@ -143,6 +143,7 @@ export type VolumeViewerProps = {
 export type VolumeResources = {
   mesh: THREE.Mesh;
   texture: THREE.Data3DTexture | THREE.DataTexture;
+  labelTexture?: THREE.Data3DTexture | null;
   dimensions: {
     width: number;
     height: number;

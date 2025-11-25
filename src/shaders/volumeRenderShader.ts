@@ -1,4 +1,4 @@
-import { Vector2, Vector3, Vector4 } from 'three';
+import { Vector2, Vector3 } from 'three';
 import type { Data3DTexture, DataTexture } from 'three';
 
 type VolumeUniforms = {
@@ -21,8 +21,9 @@ type VolumeUniforms = {
   u_hoverRadius: { value: number };
   u_hoverActive: { value: number };
   u_hoverPulse: { value: number };
-  u_hoverColor: { value: Vector4 };
+  u_hoverLabel: { value: number };
   u_hoverSegmentationMode: { value: number };
+  u_segmentationLabels: { value: Data3DTexture | null };
 };
 
 const uniforms = {
@@ -45,8 +46,9 @@ const uniforms = {
   u_hoverRadius: { value: 0 },
   u_hoverActive: { value: 0 },
   u_hoverPulse: { value: 0 },
-  u_hoverColor: { value: new Vector4(0, 0, 0, 0) },
-  u_hoverSegmentationMode: { value: 0 }
+  u_hoverLabel: { value: 0 },
+  u_hoverSegmentationMode: { value: 0 },
+  u_segmentationLabels: { value: null as Data3DTexture | null }
 } satisfies VolumeUniforms;
 
 export const VolumeRenderShader = {
@@ -93,8 +95,9 @@ export const VolumeRenderShader = {
     uniform float u_hoverRadius;
     uniform float u_hoverActive;
     uniform float u_hoverPulse;
-    uniform vec4 u_hoverColor;
+    uniform float u_hoverLabel;
     uniform float u_hoverSegmentationMode;
+    uniform sampler3D u_segmentationLabels;
 
     uniform sampler3D u_data;
     uniform sampler2D u_cmdata;
@@ -112,7 +115,6 @@ export const VolumeRenderShader = {
     const float ambientStrength = 0.2;
     const float diffuseStrength = 0.8;
     const vec3 specularColor = vec3(1.0);
-    const float HOVER_COLOR_TOLERANCE = 1.5;
 
     vec4 add_lighting(float val, vec3 loc, vec3 step, vec3 view_ray, vec4 sampleColor);
     void cast_mip(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
@@ -355,19 +357,9 @@ export const VolumeRenderShader = {
         float pulse = clamp(u_hoverPulse, 0.0, 1.0);
         bool segmentationHover = u_hoverSegmentationMode > 0.5;
         if (segmentationHover) {
-          bool hasHoverColor = u_hoverColor.a > 0.0;
-          vec4 sampleRawColor = max_color * 255.0;
-          bool hasSampleAlpha = sampleRawColor.a > 0.0;
-          if (hasHoverColor && hasSampleAlpha) {
-            vec4 diff = abs(sampleRawColor - u_hoverColor);
-            bool matches =
-              diff.r <= HOVER_COLOR_TOLERANCE &&
-              diff.g <= HOVER_COLOR_TOLERANCE &&
-              diff.b <= HOVER_COLOR_TOLERANCE &&
-              diff.a <= HOVER_COLOR_TOLERANCE;
-            if (matches) {
-              color.rgb = mix(color.rgb, vec3(1.0), pulse * 0.6);
-            }
+          float sampleLabel = texture(u_segmentationLabels, max_loc).r;
+          if (abs(sampleLabel - u_hoverLabel) <= 0.5) {
+            color.rgb = mix(color.rgb, vec3(1.0), pulse * 0.6);
           }
         } else if (u_hoverRadius > 0.0) {
           vec3 delta = (max_loc - u_hoverPos) * u_hoverScale;
