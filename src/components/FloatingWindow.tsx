@@ -184,10 +184,6 @@ function FloatingWindow({
     setIsMinimized((value) => !value);
   }, []);
 
-  const handleHeaderDoubleClick = useCallback(() => {
-    toggleMinimize();
-  }, [toggleMinimize]);
-
   const resolvedWidth = useMemo(() => {
     if (typeof width === 'number') {
       return `${width}px`;
@@ -220,7 +216,6 @@ function FloatingWindow({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerEnd}
       onPointerCancel={handlePointerEnd}
-      onDoubleClick={handleHeaderDoubleClick}
     >
       <div className="floating-window-header-main">
         <h2 className="floating-window-title">{title}</h2>
