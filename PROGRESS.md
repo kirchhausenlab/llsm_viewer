@@ -1,3 +1,11 @@
+# Hover readout cleanup
+- Removed the "Hover:" label and out-of-bounds warning from the viewer top bar so the hover status only shows live intensity
+  and coordinates.
+- Replaced segmentation hover readouts with the original label ID values and reused them in both 2D and 3D viewers instead of
+  the generated RGBA colors.
+- Reported hover intensities for every visible channel when additive blending is active, while keeping alpha blending behavior
+  unchanged.
+
 # Segmentation hover highlighting
 - Captured hovered segmentation voxels' normalized RGBA values (when alpha is present) alongside positions so hover uniforms
   can differentiate label picks from background.
