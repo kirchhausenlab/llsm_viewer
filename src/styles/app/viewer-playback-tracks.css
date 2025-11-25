@@ -460,9 +460,9 @@
   min-height: 180px;
   flex: 1 1 0;
   min-width: 0;
-  background: rgba(18, 24, 36, 0.72);
+  background: transparent;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: none;
   overflow: hidden;
 }
 
@@ -474,6 +474,12 @@
 
 .selected-tracks-chart-grid line {
   stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.selected-tracks-chart-subgrid {
+  stroke: rgba(255, 255, 255, 0.08);
   stroke-width: 1;
   shape-rendering: crispEdges;
 }
@@ -498,16 +504,25 @@
 }
 
 .selected-tracks-chart-axis-labels text {
-  fill: rgba(255, 255, 255, 0.68);
-  font-size: 0.75rem;
-  font-weight: 500;
+  fill: rgba(255, 255, 255, 0.78);
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
 }
 
 .selected-tracks-axis-caption {
-  fill: rgba(255, 255, 255, 0.6);
-  font-size: 0.72rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  fill: rgba(255, 255, 255, 0.7);
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  font-weight: 700;
+}
+
+.selected-tracks-axis-tick-mark {
+  stroke: rgba(255, 255, 255, 0.16);
+  stroke-width: 1.5;
+  shape-rendering: crispEdges;
 }
 
 .selected-tracks-empty {

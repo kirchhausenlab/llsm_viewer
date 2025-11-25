@@ -728,3 +728,8 @@ d centered the front-page card in the viewport.
 
 ## Channels window tabs stay visible when minimized
 - Moved the per-channel tab bar into the floating window header so it remains accessible while the controls are collapsed.
+
+## Selected tracks window polish
+- Removed the inner chart container styling so the amplitude plot blends with the surrounding card without a nested outline.
+- Kept the selected tracks window footer anchored in place while minimized by hiding the body content without collapsing its space.
+- Matched axis fonts to the global typography, added intermediate tick marks/gridlines, and titled the amplitude plot axes for clearer reading.
