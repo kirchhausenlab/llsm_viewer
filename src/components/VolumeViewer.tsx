@@ -471,12 +471,15 @@ function VolumeViewer({
   });
   const layersRef = useRef(layers);
   const hoverIntensityRef = useRef<HoveredVoxelInfo | null>(null);
-  const hoveredVoxelRef = useRef<{ layerKey: string | null; normalizedPosition: THREE.Vector3 | null }>(
-    {
-      layerKey: null,
-      normalizedPosition: null
-    }
-  );
+  const hoveredVoxelRef = useRef<{
+    layerKey: string | null;
+    normalizedPosition: THREE.Vector3 | null;
+    color: THREE.Vector4 | null;
+  }>({
+    layerKey: null,
+    normalizedPosition: null,
+    color: null
+  });
   const voxelHoverDebugRef = useRef<string | null>(null);
   const [voxelHoverDebug, setVoxelHoverDebug] = useState<string | null>(null);
   const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(null);
@@ -581,15 +584,34 @@ function VolumeViewer({
   }, [layers]);
 
   const applyHoverHighlightToResources = useCallback(() => {
-    const { layerKey, normalizedPosition } = hoveredVoxelRef.current;
+    const { layerKey, normalizedPosition, color } = hoveredVoxelRef.current;
+    const layersByKey = new Map(layersRef.current.map((layer) => [layer.key, layer]));
     for (const [key, resource] of resourcesRef.current.entries()) {
       if (resource.mode !== '3d') {
         continue;
       }
       const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms;
-      const isActive = Boolean(layerKey && normalizedPosition && layerKey === key);
+      const layer = layersByKey.get(key);
+      const isSegmentationLayer = Boolean(layer?.isSegmentation);
+      const hasHoverColor = Boolean(color && color.w > 0);
+      const isActive = Boolean(
+        layerKey &&
+        normalizedPosition &&
+        layerKey === key &&
+        (!isSegmentationLayer || hasHoverColor),
+      );
       if (uniforms.u_hoverActive) {
         uniforms.u_hoverActive.value = isActive ? 1 : 0;
+      }
+      if (uniforms.u_hoverSegmentationMode) {
+        uniforms.u_hoverSegmentationMode.value = isActive && isSegmentationLayer && hasHoverColor ? 1 : 0;
+      }
+      if (uniforms.u_hoverColor) {
+        if (color && hasHoverColor) {
+          uniforms.u_hoverColor.value.copy(color);
+        } else {
+          uniforms.u_hoverColor.value.set(0, 0, 0, 0);
+        }
       }
       if (
         isActive &&
@@ -639,7 +661,7 @@ function VolumeViewer({
 
   const clearVoxelHover = useCallback(() => {
     emitHoverVoxel(null);
-    hoveredVoxelRef.current = { layerKey: null, normalizedPosition: null };
+    hoveredVoxelRef.current = { layerKey: null, normalizedPosition: null, color: null };
     applyHoverHighlightToResources();
   }, [applyHoverHighlightToResources, emitHoverVoxel]);
 
@@ -1762,6 +1784,7 @@ function VolumeViewer({
       let maxIndex = 0;
       hoverMaxPosition.copy(hoverSample);
       let maxRawValues: number[] = [];
+      let maxNormalizedValues: number[] = [];
 
       const highWaterMark = targetLayer.invert ? 0.001 : 0.999;
 
@@ -1774,6 +1797,7 @@ function VolumeViewer({
           maxIndex = i;
           hoverMaxPosition.copy(hoverSample);
           maxRawValues = sample.rawValues;
+          maxNormalizedValues = sample.normalizedValues;
 
           if ((!targetLayer.invert && maxValue >= highWaterMark) || (targetLayer.invert && maxValue <= highWaterMark)) {
             break;
@@ -1794,6 +1818,7 @@ function VolumeViewer({
           maxValue = adjusted;
           hoverMaxPosition.copy(hoverSample);
           maxRawValues = sample.rawValues;
+          maxNormalizedValues = sample.normalizedValues;
         }
         hoverSample.add(hoverRefineStep);
       }
@@ -1829,7 +1854,24 @@ function VolumeViewer({
       } satisfies HoveredVoxelInfo;
 
       emitHoverVoxel(hoveredVoxel);
-      hoveredVoxelRef.current = { layerKey: targetLayer.key, normalizedPosition: hoverMaxPosition.clone() };
+      let hoveredColor: THREE.Vector4 | null = null;
+      if (targetLayer.isSegmentation && maxNormalizedValues.length >= 4) {
+        const alpha = maxNormalizedValues[3];
+        if (alpha > 0) {
+          hoveredColor = new THREE.Vector4(
+            maxNormalizedValues[0],
+            maxNormalizedValues[1],
+            maxNormalizedValues[2],
+            alpha,
+          );
+        }
+      }
+
+      hoveredVoxelRef.current = {
+        layerKey: targetLayer.key,
+        normalizedPosition: hoverMaxPosition.clone(),
+        color: hoveredColor,
+      };
       applyHoverHighlightToResources();
     },
     [
