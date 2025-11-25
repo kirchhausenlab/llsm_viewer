@@ -120,6 +120,20 @@ function clamp(value: number, min: number, max: number) {
   return value;
 }
 
+function sampleSegmentationLabel2d(volume: NormalizedVolume, x: number, y: number, z: number) {
+  if (!volume.segmentationLabels) {
+    return null;
+  }
+
+  const safeX = Math.round(clamp(x, 0, volume.width - 1));
+  const safeY = Math.round(clamp(y, 0, volume.height - 1));
+  const safeZ = Math.round(clamp(z, 0, volume.depth - 1));
+
+  const sliceStride = volume.width * volume.height;
+  const index = safeZ * sliceStride + safeY * volume.width + safeX;
+  return volume.segmentationLabels[index] ?? null;
+}
+
 function getColorComponents(color: string) {
   const hex = color.startsWith('#') ? color.slice(1) : color;
   const normalized =
@@ -556,6 +570,16 @@ function PlanarViewer({
         const sampleX = sliceX - offsetX;
         const sampleY = sliceY - offsetY;
 
+        const channelLabel = layer.channelName?.trim() || layer.label?.trim() || null;
+
+        if (layer.isSegmentation && volume.segmentationLabels) {
+          const labelValue = sampleSegmentationLabel2d(volume, sampleX, sampleY, slice);
+          if (labelValue !== null) {
+            samples.push({ values: [labelValue], type: volume.dataType, label: channelLabel });
+          }
+          continue;
+        }
+
         const clampedX = clamp(sampleX, 0, volume.width - 1);
         const clampedY = clamp(sampleY, 0, volume.height - 1);
         const leftX = Math.floor(clampedX);
@@ -591,7 +615,6 @@ function PlanarViewer({
           channelValues.push(denormalizeValue(sampleChannel(channelIndex), volume));
         }
 
-        const channelLabel = layer.channelName?.trim() || layer.label?.trim() || null;
         samples.push({ values: channelValues, type: volume.dataType, label: channelLabel });
       }
 
