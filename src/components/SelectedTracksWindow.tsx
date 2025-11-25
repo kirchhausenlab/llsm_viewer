@@ -61,6 +61,11 @@ type RangeSliderProps = {
 const RangeSlider = ({ label, bounds, value, onChange }: RangeSliderProps) => {
   const clampValue = (raw: number) => clampToRange(raw, bounds.min, bounds.max);
 
+  const span = bounds.max - bounds.min;
+  const normalizedSpan = span === 0 ? 1 : span;
+  const minPercent = ((value.min - bounds.min) / normalizedSpan) * 100;
+  const maxPercent = ((value.max - bounds.min) / normalizedSpan) * 100;
+
   const handleMinChange = (event: ChangeEvent<HTMLInputElement>) => {
     const nextValue = clampValue(Number(event.target.value));
     if (!Number.isFinite(nextValue)) {
@@ -88,26 +93,35 @@ const RangeSlider = ({ label, bounds, value, onChange }: RangeSliderProps) => {
         </span>
       </div>
       <div className="selected-tracks-slider__inputs">
-        <input
-          type="range"
-          min={bounds.min}
-          max={bounds.max}
-          step="any"
-          value={value.min}
-          onChange={handleMinChange}
-          aria-label={`${label} minimum`}
-          disabled={disabled}
-        />
-        <input
-          type="range"
-          min={bounds.min}
-          max={bounds.max}
-          step="any"
-          value={value.max}
-          onChange={handleMaxChange}
-          aria-label={`${label} maximum`}
-          disabled={disabled}
-        />
+        <div className="selected-tracks-slider__range" aria-hidden={disabled}>
+          <div className="selected-tracks-slider__track" />
+          <div
+            className="selected-tracks-slider__fill"
+            style={{ left: `${minPercent}%`, width: `${Math.max(maxPercent - minPercent, 0)}%` }}
+          />
+          <input
+            type="range"
+            min={bounds.min}
+            max={bounds.max}
+            step="any"
+            value={value.min}
+            onChange={handleMinChange}
+            aria-label={`${label} minimum`}
+            className="selected-tracks-slider__handle selected-tracks-slider__handle--min"
+            disabled={disabled}
+          />
+          <input
+            type="range"
+            min={bounds.min}
+            max={bounds.max}
+            step="any"
+            value={value.max}
+            onChange={handleMaxChange}
+            aria-label={`${label} maximum`}
+            className="selected-tracks-slider__handle selected-tracks-slider__handle--max"
+            disabled={disabled}
+          />
+        </div>
       </div>
     </div>
   );
