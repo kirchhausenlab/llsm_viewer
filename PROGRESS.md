@@ -1,3 +1,11 @@
+# Segmentation hover highlighting
+- Captured hovered segmentation voxels' normalized RGBA values (when alpha is present) alongside positions so hover uniforms
+  can differentiate label picks from background.
+- Extended the volume shader hover uniforms with a segmentation mode toggle and hovered color, enabling color-based highlighting
+  with a tolerance for interpolated samples while skipping transparent voxels.
+- Preserved the positional pulse for non-segmentation layers and disabled segmentation highlighting when no label color is
+  available.
+
 # Grid overlay removal
 - Removed the shader-based 3D grid overlay, associated uniforms, and floating window controls so the viewer no longer exposes grid settings in the UI or shader pipeline.
 
