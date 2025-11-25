@@ -733,3 +733,6 @@ d centered the front-page card in the viewport.
 - Removed the inner chart container styling so the amplitude plot blends with the surrounding card without a nested outline.
 - Kept the selected tracks window footer anchored in place while minimized by hiding the body content without collapsing its space.
 - Matched axis fonts to the global typography, added intermediate tick marks/gridlines, and titled the amplitude plot axes for clearer reading.
+
+## Selected tracks window minimize anchoring
+- Preserve the footer position for the bottom-anchored header when minimizing while still collapsing the body so the minimized window no longer blocks content with empty space.

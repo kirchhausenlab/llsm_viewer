@@ -41,6 +41,7 @@ function FloatingWindow({
   const [position, setPosition] = useState(() => resolvedInitialPosition);
   const [isDragging, setIsDragging] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
+  const lastExpandedHeightRef = useRef<number | null>(null);
   const lastInitialPositionRef = useRef(resolvedInitialPosition);
   const lastResetSignalRef = useRef(resetSignal);
 
@@ -181,8 +182,31 @@ function FloatingWindow({
   );
 
   const toggleMinimize = useCallback(() => {
-    setIsMinimized((value) => !value);
-  }, []);
+    const container = containerRef.current;
+    const header = headerRef.current;
+
+    if (!container || !header || headerPosition !== 'bottom') {
+      setIsMinimized((value) => !value);
+      return;
+    }
+
+    const rect = container.getBoundingClientRect();
+    const headerHeight = header.getBoundingClientRect().height;
+
+    setIsMinimized((current) => {
+      if (!current) {
+        lastExpandedHeightRef.current = rect.height;
+        const shift = rect.height - headerHeight;
+        setPosition((pos) => clampPosition(pos.x, pos.y + shift));
+        return true;
+      }
+
+      const expandedHeight = lastExpandedHeightRef.current ?? rect.height;
+      const shift = expandedHeight - headerHeight;
+      setPosition((pos) => clampPosition(pos.x, pos.y - shift));
+      return false;
+    });
+  }, [clampPosition, headerPosition]);
 
   const resolvedWidth = useMemo(() => {
     if (typeof width === 'number') {
