@@ -43,8 +43,7 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
-          artifact-name: github-pages
-          if-no-files-found: error
+          name: github-pages
 
   deploy:
     needs: ci

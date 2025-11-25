@@ -51,6 +51,10 @@
 
 # Progress Log
 
+## GitHub Pages artifact input fix
+- Swapped the deprecated `artifact-name` input for the supported `name` field in the GitHub Pages upload step and removed the
+  unsupported `if-no-files-found` flag so the deployment workflow runs without input validation errors.
+
 ## Volume anisotropy correction
 - Added a resampling utility that computes voxel spacing ratios, skips identity scales, and upsamples volumes with trilinear
   interpolation or nearest-neighbor for segmentation datasets while preserving their integer data types.
