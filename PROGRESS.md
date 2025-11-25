@@ -1,3 +1,7 @@
+# Hover debug silencing
+- Hid the hover sampling debug banner unless the app is running in development mode so routine ray-miss warnings no longer
+  surface during normal viewing.
+
 # Hover readout cleanup
 - Removed the "Hover:" label and out-of-bounds warning from the viewer top bar so the hover status only shows live intensity
   and coordinates.
