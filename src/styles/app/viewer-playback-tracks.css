@@ -438,7 +438,7 @@
 
 .selected-tracks-chart-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 230px;
   gap: 0.9rem;
   align-items: stretch;
   background: linear-gradient(180deg, rgba(18, 24, 36, 0.82), rgba(12, 18, 28, 0.85));
@@ -447,10 +447,6 @@
   padding: 0.9rem 1rem;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
   min-height: 180px;
-}
-
-.selected-tracks-chart-card.has-legend {
-  grid-template-columns: minmax(0, 1fr) 230px;
 }
 
 .selected-tracks-chart {
