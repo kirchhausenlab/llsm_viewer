@@ -46,7 +46,7 @@ import {
   DEFAULT_WINDOW_MAX
 } from '../state/layerSettings';
 import { DEFAULT_TRACK_LINE_WIDTH, DEFAULT_TRACK_OPACITY } from './volume-viewer/constants';
-import { denormalizeValue, formatChannelValues } from '../utils/intensityFormatting';
+import { denormalizeValue, formatChannelValuesDetailed } from '../utils/intensityFormatting';
 
 type VrUiTargetDescriptor = { type: VrUiTargetType; data?: unknown };
 
@@ -716,6 +716,26 @@ function VolumeViewer({
     }
   }, []);
 
+  const areHoverComponentsEqual = useCallback(
+    (
+      a: HoveredVoxelInfo['components'] | undefined,
+      b: HoveredVoxelInfo['components'] | undefined,
+    ) => {
+      const left = a ?? [];
+      const right = b ?? [];
+      if (left.length !== right.length) {
+        return false;
+      }
+      for (let i = 0; i < left.length; i++) {
+        if (left[i].text !== right[i].text || left[i].color !== right[i].color) {
+          return false;
+        }
+      }
+      return true;
+    },
+    [],
+  );
+
   const emitHoverVoxel = useCallback(
     (value: HoveredVoxelInfo | null) => {
       const previous = hoverIntensityRef.current;
@@ -726,7 +746,8 @@ function VolumeViewer({
           previous.intensity === value.intensity &&
           previous.coordinates.x === value.coordinates.x &&
           previous.coordinates.y === value.coordinates.y &&
-          previous.coordinates.z === value.coordinates.z);
+          previous.coordinates.z === value.coordinates.z &&
+          areHoverComponentsEqual(previous.components, value.components));
 
       if (isSame) {
         return;
@@ -734,7 +755,7 @@ function VolumeViewer({
       hoverIntensityRef.current = value;
       onHoverVoxelChange?.(value);
     },
-    [onHoverVoxelChange]
+    [areHoverComponentsEqual, onHoverVoxelChange]
   );
 
   const clearVoxelHover = useCallback(() => {
@@ -1925,7 +1946,12 @@ function VolumeViewer({
 
       const displayLayers = isAdditiveBlending && hoverableLayers.length > 0 ? hoverableLayers : [targetLayer];
       const useLayerLabels = isAdditiveBlending && displayLayers.length > 1;
-      const samples: Array<{ values: number[]; type: NormalizedVolume['dataType']; label: string | null }> = [];
+      const samples: Array<{
+        values: number[];
+        type: NormalizedVolume['dataType'];
+        label: string | null;
+        color: string;
+      }> = [];
 
       for (const layer of displayLayers) {
         const layerVolume = layer.volume;
@@ -1955,10 +1981,12 @@ function VolumeViewer({
           continue;
         }
 
+        const channelLabel = layer.channelName?.trim() || layer.label?.trim() || null;
         samples.push({
           values: displayValues,
           type: layerVolume.dataType,
-          label: useLayerLabels ? layer.label?.trim() || null : null
+          label: useLayerLabels ? channelLabel : null,
+          color: layer.color,
         });
       }
 
@@ -1970,7 +1998,10 @@ function VolumeViewer({
 
       const includeLabel = totalValues > 1;
       const intensityParts = samples.flatMap((sample) =>
-        formatChannelValues(sample.values, sample.type, sample.label, includeLabel)
+        formatChannelValuesDetailed(sample.values, sample.type, sample.label, includeLabel).map((entry) => ({
+          text: entry.text,
+          color: sample.color,
+        })),
       );
 
       if (intensityParts.length === 0) {
@@ -1981,7 +2012,8 @@ function VolumeViewer({
       clearVoxelHoverDebug();
 
       const hoveredVoxel = {
-        intensity: intensityParts.join(' · '),
+        intensity: intensityParts.map((entry) => entry.text).join(' · '),
+        components: intensityParts.map((entry) => ({ text: entry.text, color: entry.color })),
         coordinates: {
           x: Math.round(clampValue(hoverMaxPosition.x * volume.width, 0, volume.width - 1)),
           y: Math.round(clampValue(hoverMaxPosition.y * volume.height, 0, volume.height - 1)),

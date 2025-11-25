@@ -10,6 +10,7 @@ import type { TrackColorMode, TrackDefinition } from '../types/tracks';
 export type ViewerLayer = {
   key: string;
   label: string;
+  channelName: string;
   volume: NormalizedVolume | null;
   visible: boolean;
   sliderRange: number;

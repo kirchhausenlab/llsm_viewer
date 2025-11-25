@@ -4,7 +4,7 @@ import { getTrackColorHex } from '../trackColors';
 import type { NormalizedVolume } from '../volumeProcessing';
 import type { VolumeDataType } from '../types/volume';
 import type { HoveredVoxelInfo } from '../types/hover';
-import { denormalizeValue, formatChannelValues } from '../utils/intensityFormatting';
+import { denormalizeValue, formatChannelValuesDetailed } from '../utils/intensityFormatting';
 import './PlanarViewer.css';
 
 type ViewerLayer = {
@@ -90,6 +90,8 @@ type TrackRenderEntry = {
   baseColor: { r: number; g: number; b: number };
   highlightColor: { r: number; g: number; b: number };
 };
+
+type HoveredIntensityInfo = Pick<HoveredVoxelInfo, 'intensity' | 'components'>;
 
 const MIN_ALPHA = 0.05;
 const ROTATION_KEY_STEP = 0.1;
@@ -540,12 +542,17 @@ function PlanarViewer({
   }, [layers, primaryVolume, clampedSliceIndex]);
 
   const samplePixelValue = useCallback(
-    (sliceX: number, sliceY: number) => {
+    (sliceX: number, sliceY: number): HoveredIntensityInfo | null => {
       if (!sliceData || !sliceData.hasLayer) {
         return null;
       }
 
-      const samples: Array<{ values: number[]; type: VolumeDataType; label: string | null }> = [];
+      const samples: Array<{
+        values: number[];
+        type: VolumeDataType;
+        label: string | null;
+        color: string;
+      }> = [];
 
       for (const layer of layers) {
         const volume = layer.volume;
@@ -571,11 +578,12 @@ function PlanarViewer({
         const sampleY = sliceY - offsetY;
 
         const channelLabel = layer.channelName?.trim() || layer.label?.trim() || null;
+        const channelColor = layer.color;
 
         if (layer.isSegmentation && volume.segmentationLabels) {
           const labelValue = sampleSegmentationLabel2d(volume, sampleX, sampleY, slice);
           if (labelValue !== null) {
-            samples.push({ values: [labelValue], type: volume.dataType, label: channelLabel });
+            samples.push({ values: [labelValue], type: volume.dataType, label: channelLabel, color: channelColor });
           }
           continue;
         }
@@ -615,7 +623,12 @@ function PlanarViewer({
           channelValues.push(denormalizeValue(sampleChannel(channelIndex), volume));
         }
 
-        samples.push({ values: channelValues, type: volume.dataType, label: channelLabel });
+        samples.push({
+          values: channelValues,
+          type: volume.dataType,
+          label: channelLabel,
+          color: channelColor,
+        });
       }
 
       const totalValues = samples.reduce((sum, sample) => sum + sample.values.length, 0);
@@ -625,14 +638,20 @@ function PlanarViewer({
 
       const includeLabel = totalValues > 1;
       const parts = samples.flatMap((sample) =>
-        formatChannelValues(sample.values, sample.type, sample.label, includeLabel)
+        formatChannelValuesDetailed(sample.values, sample.type, sample.label, includeLabel).map((entry) => ({
+          text: entry.text,
+          color: sample.color,
+        })),
       );
 
       if (parts.length === 0) {
         return null;
       }
 
-      return parts.join(' · ');
+      return {
+        intensity: parts.map((entry) => entry.text).join(' · '),
+        components: parts.map((entry) => ({ text: entry.text, color: entry.color })),
+      };
     },
     [clampedSliceIndex, layers, sliceData]
   );
@@ -767,8 +786,8 @@ function PlanarViewer({
         return;
       }
 
-      const text = samplePixelValue(sliceX, sliceY);
-      if (!text) {
+      const intensity = samplePixelValue(sliceX, sliceY);
+      if (!intensity) {
         clearPixelInfo();
         return;
       }
@@ -777,7 +796,8 @@ function PlanarViewer({
       const voxelY = Math.round(clamp(sliceY, 0, Math.max(0, sliceData.height - 1)));
       updateHoveredPixel({ x: voxelX, y: voxelY });
       emitHoverVoxel({
-        intensity: text,
+        intensity: intensity.intensity,
+        components: intensity.components,
         coordinates: {
           x: voxelX,
           y: voxelY,

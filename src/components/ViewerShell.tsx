@@ -300,6 +300,13 @@ function ViewerShell({
     volumeViewerProps.onVolumeStepScaleChange?.(value);
   };
 
+  const intensityComponents =
+    hoveredVoxel && hoveredVoxel.components.length > 0
+      ? hoveredVoxel.components
+      : hoveredVoxel
+      ? [{ text: hoveredVoxel.intensity, color: null }]
+      : [];
+
   return (
     <>
       <div className="app">
@@ -368,7 +375,23 @@ function ViewerShell({
             <div className="viewer-top-menu-intensity" role="status" aria-live="polite">
               {hoveredVoxel ? (
                 <>
-                  <span className="viewer-top-menu-intensity-value">{hoveredVoxel.intensity}</span>
+                  <span className="viewer-top-menu-intensity-value">
+                    {intensityComponents.map((component, index) => (
+                      <span
+                        key={`${component.text}-${index}`}
+                        className="viewer-top-menu-intensity-part"
+                      >
+                        <span style={component.color ? { color: component.color } : undefined}>
+                          {component.text}
+                        </span>
+                        {index < intensityComponents.length - 1 ? (
+                          <span className="viewer-top-menu-intensity-separator" aria-hidden="true">
+                            ·
+                          </span>
+                        ) : null}
+                      </span>
+                    ))}
+                  </span>
                   <span className="viewer-top-menu-coordinates">
                     ({hoveredVoxel.coordinates.x}, {hoveredVoxel.coordinates.y}, {hoveredVoxel.coordinates.z})
                   </span>
