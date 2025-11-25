@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import type { TrackPoint } from '../types/tracks';
+import { useMemo, type ChangeEvent } from 'react';
+import type { NumericRange, TrackPoint } from '../types/tracks';
 
 type SelectedTrackSeries = {
   id: string;
@@ -11,6 +11,15 @@ type SelectedTrackSeries = {
 type SelectedTracksWindowProps = {
   series: SelectedTrackSeries[];
   totalTimepoints: number;
+  amplitudeExtent: NumericRange;
+  amplitudeLimits: NumericRange;
+  timeExtent: NumericRange;
+  timeLimits: NumericRange;
+  onAmplitudeLimitsChange: (limits: NumericRange) => void;
+  onTimeLimitsChange: (limits: NumericRange) => void;
+  onAutoRange: () => void;
+  onClearSelection: () => void;
+  currentTimepoint: number;
 };
 
 const SVG_WIDTH = 900;
@@ -42,38 +51,86 @@ const clampToRange = (value: number, min: number, max: number) => {
 const formatAxisValue = (value: number) =>
   value.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
-function SelectedTracksWindow({ series, totalTimepoints }: SelectedTracksWindowProps) {
-  const domainXMax = Math.max(totalTimepoints - 1, 1);
-  const amplitudeDomain = useMemo(() => {
-    let min = Number.POSITIVE_INFINITY;
-    let max = Number.NEGATIVE_INFINITY;
+type RangeSliderProps = {
+  label: string;
+  bounds: NumericRange;
+  value: NumericRange;
+  onChange: (limits: NumericRange) => void;
+};
 
-    for (const entry of series) {
-      for (const point of entry.points) {
-        if (!Number.isFinite(point.amplitude)) {
-          continue;
-        }
-        if (point.amplitude < min) {
-          min = point.amplitude;
-        }
-        if (point.amplitude > max) {
-          max = point.amplitude;
-        }
-      }
+const RangeSlider = ({ label, bounds, value, onChange }: RangeSliderProps) => {
+  const clampValue = (raw: number) => clampToRange(raw, bounds.min, bounds.max);
+
+  const handleMinChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const nextValue = clampValue(Number(event.target.value));
+    if (!Number.isFinite(nextValue)) {
+      return;
     }
+    onChange({ min: Math.min(nextValue, value.max), max: value.max });
+  };
 
-    if (!Number.isFinite(min) || !Number.isFinite(max)) {
-      return { min: 0, max: 1 } as const;
+  const handleMaxChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const nextValue = clampValue(Number(event.target.value));
+    if (!Number.isFinite(nextValue)) {
+      return;
     }
+    onChange({ min: value.min, max: Math.max(nextValue, value.min) });
+  };
 
-    if (min === max) {
-      return { min, max } as const;
-    }
+  const disabled = bounds.max <= bounds.min;
 
-    return { min, max } as const;
-  }, [series]);
-  const domainYMin = amplitudeDomain.min;
-  const domainYMax = amplitudeDomain.max;
+  return (
+    <div className="selected-tracks-slider">
+      <div className="selected-tracks-slider__header">
+        <span className="selected-tracks-slider__label">{label}</span>
+        <span className="selected-tracks-slider__value">
+          {`${formatAxisValue(value.min)} – ${formatAxisValue(value.max)}`}
+        </span>
+      </div>
+      <div className="selected-tracks-slider__inputs">
+        <input
+          type="range"
+          min={bounds.min}
+          max={bounds.max}
+          step="any"
+          value={value.min}
+          onChange={handleMinChange}
+          aria-label={`${label} minimum`}
+          disabled={disabled}
+        />
+        <input
+          type="range"
+          min={bounds.min}
+          max={bounds.max}
+          step="any"
+          value={value.max}
+          onChange={handleMaxChange}
+          aria-label={`${label} maximum`}
+          disabled={disabled}
+        />
+      </div>
+    </div>
+  );
+};
+
+function SelectedTracksWindow({
+  series,
+  totalTimepoints,
+  amplitudeExtent,
+  amplitudeLimits,
+  timeExtent,
+  timeLimits,
+  onAmplitudeLimitsChange,
+  onTimeLimitsChange,
+  onAutoRange,
+  onClearSelection,
+  currentTimepoint
+}: SelectedTracksWindowProps) {
+  const domainXMin = timeLimits.min;
+  const domainXMax = timeLimits.max;
+  const domainXSpan = domainXMax - domainXMin;
+  const domainYMin = amplitudeLimits.min;
+  const domainYMax = amplitudeLimits.max;
   const domainYSpan = domainYMax - domainYMin;
   const chartWidth = SVG_WIDTH - PADDING.left - PADDING.right;
   const chartHeight = SVG_HEIGHT - PADDING.top - PADDING.bottom;
@@ -84,10 +141,11 @@ function SelectedTracksWindow({ series, totalTimepoints }: SelectedTracksWindowP
     }
 
     const scaleX = (time: number) => {
-      if (domainXMax === 0) {
-        return PADDING.left;
+      if (domainXSpan === 0) {
+        return PADDING.left + chartWidth / 2;
       }
-      const normalized = clampToRange(time, 0, domainXMax) / domainXMax;
+      const clampedTime = clampToRange(time, domainXMin, domainXMax);
+      const normalized = (clampedTime - domainXMin) / domainXSpan;
       return PADDING.left + normalized * chartWidth;
     };
 
@@ -126,8 +184,10 @@ function SelectedTracksWindow({ series, totalTimepoints }: SelectedTracksWindowP
     chartHeight,
     chartWidth,
     domainXMax,
-    domainYMin,
+    domainXMin,
+    domainXSpan,
     domainYMax,
+    domainYMin,
     domainYSpan,
     series
   ]);
@@ -136,75 +196,119 @@ function SelectedTracksWindow({ series, totalTimepoints }: SelectedTracksWindowP
   const yAxisEnd = PADDING.top + chartHeight;
   const domainYMinLabel = formatAxisValue(domainYMin);
   const domainYMaxLabel = formatAxisValue(domainYMax);
+  const domainXMinLabel = formatAxisValue(domainXMin);
+  const domainXMaxLabel = formatAxisValue(domainXMax);
   const totalTimepointsLabel = totalTimepoints.toLocaleString();
 
   const hasSeries = resolvedSeries.some((entry) => entry.path);
+  const playheadX = useMemo(() => {
+    if (chartWidth <= 0) {
+      return PADDING.left;
+    }
+    if (domainXSpan === 0) {
+      return PADDING.left + chartWidth / 2;
+    }
+    const clampedTime = clampToRange(currentTimepoint, domainXMin, domainXMax);
+    const normalized = (clampedTime - domainXMin) / domainXSpan;
+    return PADDING.left + normalized * chartWidth;
+  }, [chartWidth, currentTimepoint, domainXMax, domainXMin, domainXSpan]);
 
   return (
     <div className="selected-tracks-window">
-      <div className="selected-tracks-chart" role="img" aria-label="Track amplitudes over time">
-        <svg
-          viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
-          preserveAspectRatio="none"
-          className="selected-tracks-chart-svg"
+      <div className="selected-tracks-main">
+        <div
+          className="selected-tracks-chart"
+          role="img"
+          aria-label={`Track amplitudes over ${totalTimepointsLabel} timepoints`}
         >
-          <rect
-            className="selected-tracks-chart-background"
-            x={0}
-            y={0}
-            width={SVG_WIDTH}
-            height={SVG_HEIGHT}
-            rx={16}
-            ry={16}
+          <svg
+            viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
+            preserveAspectRatio="none"
+            className="selected-tracks-chart-svg"
+          >
+            <rect
+              className="selected-tracks-chart-background"
+              x={0}
+              y={0}
+              width={SVG_WIDTH}
+              height={SVG_HEIGHT}
+              rx={16}
+              ry={16}
+            />
+            <g className="selected-tracks-chart-grid">
+              <line x1={PADDING.left} y1={yAxisEnd} x2={xAxisEnd} y2={yAxisEnd} />
+              <line x1={PADDING.left} y1={PADDING.top} x2={PADDING.left} y2={yAxisEnd} />
+              <line x1={PADDING.left} y1={PADDING.top} x2={xAxisEnd} y2={PADDING.top} />
+              <line x1={xAxisEnd} y1={PADDING.top} x2={xAxisEnd} y2={yAxisEnd} />
+            </g>
+            <g className="selected-tracks-chart-series">
+              {resolvedSeries.map((entry) =>
+                entry.path ? (
+                  <path key={entry.id} d={entry.path} stroke={entry.color} />
+                ) : null
+              )}
+            </g>
+            <g className="selected-tracks-playhead">
+              <line x1={playheadX} y1={PADDING.top} x2={playheadX} y2={yAxisEnd} />
+            </g>
+            <g className="selected-tracks-chart-axis-labels">
+              <text x={PADDING.left} y={yAxisEnd + 24}>
+                {domainXMinLabel}
+              </text>
+              <text x={xAxisEnd} y={yAxisEnd + 24} textAnchor="end">
+                {domainXMaxLabel}
+              </text>
+              <text x={PADDING.left - 12} y={yAxisEnd} textAnchor="end" dominantBaseline="middle">
+                {domainYMinLabel}
+              </text>
+              <text x={PADDING.left - 12} y={PADDING.top} textAnchor="end" dominantBaseline="middle">
+                {domainYMaxLabel}
+              </text>
+              <text
+                x={PADDING.left + chartWidth / 2}
+                y={SVG_HEIGHT - 4}
+                textAnchor="middle"
+                className="selected-tracks-axis-caption"
+              >
+                Timepoint
+              </text>
+              <text
+                x={PADDING.left - 40}
+                y={PADDING.top + chartHeight / 2}
+                textAnchor="middle"
+                className="selected-tracks-axis-caption"
+                transform={`rotate(-90 ${PADDING.left - 40} ${PADDING.top + chartHeight / 2})`}
+              >
+                Amplitude
+              </text>
+            </g>
+          </svg>
+          {!hasSeries ? (
+            <p className="selected-tracks-empty">Select tracks to plot their amplitudes.</p>
+          ) : null}
+        </div>
+        <div className="selected-tracks-controls" aria-label="Track plot limits">
+          <RangeSlider
+            label="Amplitude limits"
+            bounds={amplitudeExtent}
+            value={amplitudeLimits}
+            onChange={onAmplitudeLimitsChange}
           />
-          <g className="selected-tracks-chart-grid">
-            <line x1={PADDING.left} y1={yAxisEnd} x2={xAxisEnd} y2={yAxisEnd} />
-            <line x1={PADDING.left} y1={PADDING.top} x2={PADDING.left} y2={yAxisEnd} />
-            <line x1={PADDING.left} y1={PADDING.top} x2={xAxisEnd} y2={PADDING.top} />
-            <line x1={xAxisEnd} y1={PADDING.top} x2={xAxisEnd} y2={yAxisEnd} />
-          </g>
-          <g className="selected-tracks-chart-series">
-            {resolvedSeries.map((entry) =>
-              entry.path ? (
-                <path key={entry.id} d={entry.path} stroke={entry.color} />
-              ) : null
-            )}
-          </g>
-          <g className="selected-tracks-chart-axis-labels">
-            <text x={PADDING.left} y={yAxisEnd + 24}>
-              0
-            </text>
-            <text x={xAxisEnd} y={yAxisEnd + 24} textAnchor="end">
-              {totalTimepointsLabel}
-            </text>
-            <text x={PADDING.left - 12} y={yAxisEnd} textAnchor="end" dominantBaseline="middle">
-              {domainYMinLabel}
-            </text>
-            <text x={PADDING.left - 12} y={PADDING.top} textAnchor="end" dominantBaseline="middle">
-              {domainYMaxLabel}
-            </text>
-            <text
-              x={PADDING.left + chartWidth / 2}
-              y={SVG_HEIGHT - 4}
-              textAnchor="middle"
-              className="selected-tracks-axis-caption"
-            >
-              Timepoint
-            </text>
-            <text
-              x={PADDING.left - 40}
-              y={PADDING.top + chartHeight / 2}
-              textAnchor="middle"
-              className="selected-tracks-axis-caption"
-              transform={`rotate(-90 ${PADDING.left - 40} ${PADDING.top + chartHeight / 2})`}
-            >
-              Amplitude
-            </text>
-          </g>
-        </svg>
-        {!hasSeries ? (
-          <p className="selected-tracks-empty">Select tracks to plot their amplitudes.</p>
-        ) : null}
+          <RangeSlider
+            label="Time limits"
+            bounds={timeExtent}
+            value={timeLimits}
+            onChange={onTimeLimitsChange}
+          />
+          <div className="selected-tracks-actions">
+            <button type="button" className="selected-tracks-button" onClick={onAutoRange}>
+              Auto
+            </button>
+            <button type="button" className="selected-tracks-button" onClick={onClearSelection}>
+              Clear
+            </button>
+          </div>
+        </div>
       </div>
       {resolvedSeries.length > 0 ? (
         <ul className="selected-tracks-legend">

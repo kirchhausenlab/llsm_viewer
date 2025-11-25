@@ -21,7 +21,7 @@ import {
 } from '../trackColors';
 import type { LoadedLayer } from '../types/layers';
 import type { HoveredVoxelInfo } from '../types/hover';
-import type { TrackColorMode, TrackDefinition, TrackPoint } from '../types/tracks';
+import type { NumericRange, TrackColorMode, TrackDefinition, TrackPoint } from '../types/tracks';
 import type { ChannelSource } from '../App';
 
 const formatNormalizedIntensity = (value: number): string => {
@@ -136,6 +136,15 @@ type SelectedTracksPanelProps = {
   shouldRender: boolean;
   series: Array<{ id: string; label: string; color: string; points: TrackPoint[] }>;
   totalTimepoints: number;
+  amplitudeExtent: NumericRange;
+  amplitudeLimits: NumericRange;
+  timeExtent: NumericRange;
+  timeLimits: NumericRange;
+  onAmplitudeLimitsChange: (limits: NumericRange) => void;
+  onTimeLimitsChange: (limits: NumericRange) => void;
+  onAutoRange: () => void;
+  onClearSelection: () => void;
+  currentTimepoint: number;
 };
 
 type Position = { x: number; y: number };
@@ -288,7 +297,20 @@ function ViewerShell({
     onTrackFollow,
     onStopTrackFollow
   } = tracksPanel;
-  const { shouldRender, series, totalTimepoints } = selectedTracksPanel;
+  const {
+    shouldRender,
+    series,
+    totalTimepoints,
+    amplitudeExtent,
+    amplitudeLimits,
+    timeExtent,
+    timeLimits,
+    onAmplitudeLimitsChange,
+    onTimeLimitsChange,
+    onAutoRange,
+    onClearSelection,
+    currentTimepoint
+  } = selectedTracksPanel;
   const hasVolumeData = loadedChannelIds.some((channelId) =>
     (channelLayersMap.get(channelId) ?? []).some((layer) => layer.volumes.length > 0)
   );
@@ -1285,7 +1307,19 @@ function ViewerShell({
             bodyClassName="floating-window-body--selected-tracks"
             resetSignal={resetToken}
           >
-            <SelectedTracksWindow series={series} totalTimepoints={totalTimepoints} />
+            <SelectedTracksWindow
+              series={series}
+              totalTimepoints={totalTimepoints}
+              amplitudeExtent={amplitudeExtent}
+              amplitudeLimits={amplitudeLimits}
+              timeExtent={timeExtent}
+              timeLimits={timeLimits}
+              onAmplitudeLimitsChange={onAmplitudeLimitsChange}
+              onTimeLimitsChange={onTimeLimitsChange}
+              onAutoRange={onAutoRange}
+              onClearSelection={onClearSelection}
+              currentTimepoint={currentTimepoint}
+            />
           </FloatingWindow>
         ) : null}
       </div>

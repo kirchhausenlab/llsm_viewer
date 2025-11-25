@@ -21,3 +21,8 @@ export type TrackDefinition = {
   sourceTrackId: number;
   points: TrackPoint[];
 };
+
+export type NumericRange = {
+  min: number;
+  max: number;
+};
