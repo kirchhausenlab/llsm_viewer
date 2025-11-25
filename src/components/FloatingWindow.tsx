@@ -46,7 +46,11 @@ function FloatingWindow({
   const lastResetSignalRef = useRef(resetSignal);
 
   const clampPosition = useCallback(
-    (x: number, y: number) => {
+    (
+      x: number,
+      y: number,
+      options?: { anchorOffset?: { x: number; y: number }; width?: number; height?: number }
+    ) => {
       if (typeof window === 'undefined') {
         return { x, y };
       }
@@ -59,10 +63,29 @@ function FloatingWindow({
 
       const rect = container.getBoundingClientRect();
       const headerHeight = header?.getBoundingClientRect().height ?? rect.height;
-      const width = rect.width;
-      const height = isMinimized ? headerHeight : rect.height;
+      const width = options?.width ?? rect.width;
+      const height = options?.height ?? (isMinimized ? headerHeight : rect.height);
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
+
+      if (options?.anchorOffset) {
+        const anchorX = x + options.anchorOffset.x;
+        const anchorY = y + options.anchorOffset.y;
+
+        const clampedAnchorX = Math.min(
+          Math.max(WINDOW_MARGIN, anchorX),
+          viewportWidth - WINDOW_MARGIN
+        );
+        const clampedAnchorY = Math.min(
+          Math.max(WINDOW_MARGIN, anchorY),
+          viewportHeight - WINDOW_MARGIN
+        );
+
+        return {
+          x: clampedAnchorX - options.anchorOffset.x,
+          y: clampedAnchorY - options.anchorOffset.y
+        };
+      }
 
       const minX = Math.min(WINDOW_MARGIN, Math.max(0, viewportWidth - width));
       const minY = Math.min(WINDOW_MARGIN, Math.max(0, viewportHeight - height));
@@ -192,18 +215,28 @@ function FloatingWindow({
 
     const rect = container.getBoundingClientRect();
     const headerHeight = header.getBoundingClientRect().height;
+    const anchorY = rect.top + rect.height;
 
     setIsMinimized((current) => {
       if (!current) {
+        const minimizedHeight = headerHeight;
         lastExpandedHeightRef.current = rect.height;
-        const shift = rect.height - headerHeight;
-        setPosition((pos) => clampPosition(pos.x, pos.y + shift));
+        setPosition((pos) =>
+          clampPosition(pos.x, anchorY - minimizedHeight, {
+            anchorOffset: { x: 0, y: minimizedHeight },
+            height: minimizedHeight
+          })
+        );
         return true;
       }
 
       const expandedHeight = lastExpandedHeightRef.current ?? rect.height;
-      const shift = expandedHeight - headerHeight;
-      setPosition((pos) => clampPosition(pos.x, pos.y - shift));
+      setPosition((pos) =>
+        clampPosition(pos.x, anchorY - expandedHeight, {
+          anchorOffset: { x: 0, y: expandedHeight },
+          height: expandedHeight
+        })
+      );
       return false;
     });
   }, [clampPosition, headerPosition]);
