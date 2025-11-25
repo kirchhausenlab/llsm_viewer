@@ -61,6 +61,11 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.floating-window--header-bottom .floating-window-header {
+  border-bottom: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
 .floating-window.is-dragging .floating-window-header {
   cursor: grabbing;
 }
