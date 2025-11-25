@@ -565,6 +565,7 @@ function VolumeViewer({
   });
   const voxelHoverDebugRef = useRef<string | null>(null);
   const [voxelHoverDebug, setVoxelHoverDebug] = useState<string | null>(null);
+  const isDevMode = Boolean(import.meta.env?.DEV);
   const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(null);
   const resetVolumeCallbackRef = useRef<() => void>(() => {});
   const resetHudPlacementCallbackRef = useRef<() => void>(() => {});
@@ -744,20 +745,27 @@ function VolumeViewer({
 
   const reportVoxelHoverAbort = useCallback(
     (reason: string) => {
-      if (voxelHoverDebugRef.current !== reason && import.meta.env?.DEV) {
+      if (voxelHoverDebugRef.current !== reason && isDevMode) {
         console.debug('[voxel-hover]', reason);
       }
-      voxelHoverDebugRef.current = reason;
-      setVoxelHoverDebug(reason);
+      if (isDevMode) {
+        voxelHoverDebugRef.current = reason;
+        setVoxelHoverDebug(reason);
+      } else {
+        voxelHoverDebugRef.current = null;
+        setVoxelHoverDebug(null);
+      }
       clearVoxelHover();
     },
-    [clearVoxelHover],
+    [clearVoxelHover, isDevMode],
   );
 
   const clearVoxelHoverDebug = useCallback(() => {
     voxelHoverDebugRef.current = null;
-    setVoxelHoverDebug(null);
-  }, []);
+    if (isDevMode) {
+      setVoxelHoverDebug(null);
+    }
+  }, [isDevMode]);
 
   const setHoverNotReady = useCallback(
     (reason: string) => {
@@ -3570,7 +3578,7 @@ function VolumeViewer({
               {hoveredTrackLabel}
             </div>
           ) : null}
-          {voxelHoverDebug ? (
+          {isDevMode && voxelHoverDebug ? (
             <div className="hover-debug" role="status" aria-live="polite">
               Hover sampling unavailable: {voxelHoverDebug}
             </div>
