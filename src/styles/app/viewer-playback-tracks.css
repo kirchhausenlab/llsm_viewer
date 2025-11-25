@@ -437,8 +437,8 @@
 
 .selected-tracks-main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
-  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 1.25rem;
   align-items: start;
 }
 
@@ -472,6 +472,10 @@
   stroke: rgba(255, 255, 255, 0.95);
   stroke-width: 2;
   stroke-dasharray: 6 6;
+}
+
+.selected-tracks-playhead--out-of-range line {
+  stroke: #ff6b6b;
 }
 
 .selected-tracks-chart-series path {
@@ -561,7 +565,9 @@
   position: absolute;
   left: 0;
   right: 0;
+  top: 50%;
   height: 8px;
+  transform: translateY(-50%);
   border-radius: 999px;
   background: linear-gradient(90deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06));
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
@@ -579,8 +585,12 @@
 
 .selected-tracks-slider__handle {
   position: absolute;
-  inset: 0;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
   width: 100%;
+  height: 36px;
   margin: 0;
   background: none;
   pointer-events: none;
@@ -590,13 +600,13 @@
 
 .selected-tracks-slider__handle::-webkit-slider-runnable-track {
   width: 100%;
-  height: 100%;
+  height: 8px;
   background: transparent;
 }
 
 .selected-tracks-slider__handle::-moz-range-track {
   width: 100%;
-  height: 100%;
+  height: 8px;
   background: transparent;
 }
 

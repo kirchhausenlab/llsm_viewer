@@ -22,7 +22,7 @@ type SelectedTracksWindowProps = {
   currentTimepoint: number;
 };
 
-const SVG_WIDTH = 900;
+const SVG_WIDTH = 1040;
 const SVG_HEIGHT = 180;
 const PADDING = {
   top: 20,
@@ -56,9 +56,10 @@ type RangeSliderProps = {
   bounds: NumericRange;
   value: NumericRange;
   onChange: (limits: NumericRange) => void;
+  step?: number | 'any';
 };
 
-const RangeSlider = ({ label, bounds, value, onChange }: RangeSliderProps) => {
+const RangeSlider = ({ label, bounds, value, onChange, step = 'any' }: RangeSliderProps) => {
   const clampValue = (raw: number) => clampToRange(raw, bounds.min, bounds.max);
 
   const span = bounds.max - bounds.min;
@@ -103,7 +104,7 @@ const RangeSlider = ({ label, bounds, value, onChange }: RangeSliderProps) => {
             type="range"
             min={bounds.min}
             max={bounds.max}
-            step="any"
+            step={step}
             value={value.min}
             onChange={handleMinChange}
             aria-label={`${label} minimum`}
@@ -114,7 +115,7 @@ const RangeSlider = ({ label, bounds, value, onChange }: RangeSliderProps) => {
             type="range"
             min={bounds.min}
             max={bounds.max}
-            step="any"
+            step={step}
             value={value.max}
             onChange={handleMaxChange}
             aria-label={`${label} maximum`}
@@ -262,7 +263,13 @@ function SelectedTracksWindow({
                 ) : null
               )}
             </g>
-            <g className="selected-tracks-playhead">
+            <g
+              className={`selected-tracks-playhead${
+                currentTimepoint < timeLimits.min || currentTimepoint > timeLimits.max
+                  ? ' selected-tracks-playhead--out-of-range'
+                  : ''
+              }`}
+            >
               <line x1={playheadX} y1={PADDING.top} x2={playheadX} y2={yAxisEnd} />
             </g>
             <g className="selected-tracks-chart-axis-labels">
@@ -303,16 +310,17 @@ function SelectedTracksWindow({
         </div>
         <div className="selected-tracks-controls" aria-label="Track plot limits">
           <RangeSlider
-            label="Amplitude limits"
+            label="Amplitude range"
             bounds={amplitudeExtent}
             value={amplitudeLimits}
             onChange={onAmplitudeLimitsChange}
           />
           <RangeSlider
-            label="Time limits"
+            label="Time range"
             bounds={timeExtent}
             value={timeLimits}
             onChange={onTimeLimitsChange}
+            step={1}
           />
           <div className="selected-tracks-actions">
             <button type="button" className="selected-tracks-button" onClick={onAutoRange}>

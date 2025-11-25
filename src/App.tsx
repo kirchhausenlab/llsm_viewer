@@ -68,7 +68,7 @@ const WINDOW_MARGIN = 24;
 const CONTROL_WINDOW_WIDTH = 360;
 const PLAYBACK_WINDOW_WIDTH = 420;
 const TRACK_WINDOW_WIDTH = 340;
-const SELECTED_TRACKS_WINDOW_WIDTH = 960;
+const SELECTED_TRACKS_WINDOW_WIDTH = 1040;
 const SELECTED_TRACKS_WINDOW_HEIGHT = 220;
 const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
 const WARNING_WINDOW_WIDTH = 360;
@@ -824,15 +824,50 @@ function App() {
 
   const amplitudeExtent = trackExtents.amplitude;
   const timeExtent = trackExtents.time;
+  const previousAmplitudeExtentRef = useRef<NumericRange | null>(null);
+  const previousTimeExtentRef = useRef<NumericRange | null>(null);
 
   useEffect(() => {
-    setSelectedTracksAmplitudeLimits((current) =>
-      clampRangeToBounds(current ?? amplitudeExtent, amplitudeExtent)
-    );
+    setSelectedTracksAmplitudeLimits((current) => {
+      const previousBounds = previousAmplitudeExtentRef.current;
+      previousAmplitudeExtentRef.current = amplitudeExtent;
+
+      if (!current) {
+        return amplitudeExtent;
+      }
+
+      const clamped = clampRangeToBounds(current, amplitudeExtent);
+      const boundsChanged =
+        !!previousBounds &&
+        (previousBounds.min !== amplitudeExtent.min || previousBounds.max !== amplitudeExtent.max);
+
+      if (boundsChanged && current.min === previousBounds.min && current.max === previousBounds.max) {
+        return amplitudeExtent;
+      }
+
+      return clamped;
+    });
   }, [amplitudeExtent.max, amplitudeExtent.min]);
 
   useEffect(() => {
-    setSelectedTracksTimeLimits((current) => clampRangeToBounds(current ?? timeExtent, timeExtent));
+    setSelectedTracksTimeLimits((current) => {
+      const previousBounds = previousTimeExtentRef.current;
+      previousTimeExtentRef.current = timeExtent;
+
+      if (!current) {
+        return timeExtent;
+      }
+
+      const clamped = clampRangeToBounds(current, timeExtent);
+      const boundsChanged =
+        !!previousBounds && (previousBounds.min !== timeExtent.min || previousBounds.max !== timeExtent.max);
+
+      if (boundsChanged && current.min === previousBounds.min && current.max === previousBounds.max) {
+        return timeExtent;
+      }
+
+      return clamped;
+    });
   }, [timeExtent.max, timeExtent.min]);
 
   const resolvedAmplitudeLimits = selectedTracksAmplitudeLimits ?? amplitudeExtent;
