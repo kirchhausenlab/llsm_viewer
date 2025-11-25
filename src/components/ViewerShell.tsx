@@ -366,7 +366,6 @@ function ViewerShell({
               </div>
             </div>
             <div className="viewer-top-menu-intensity" role="status" aria-live="polite">
-              <span>Hover:</span>
               {hoveredVoxel ? (
                 <>
                   <span className="viewer-top-menu-intensity-value">{hoveredVoxel.intensity}</span>

@@ -19,6 +19,8 @@ export type NormalizedVolume = {
   readonly normalized: Uint8Array;
   min: number;
   max: number;
+  segmentationLabels?: Uint32Array;
+  segmentationLabelDataType?: VolumeDataType;
 };
 
 export type NormalizationParameters = {
@@ -128,10 +130,12 @@ export function colorizeSegmentationVolume(volume: VolumePayload, seed: number):
 
   const colorTable = createSegmentationColorTable(maxLabel, seed);
   const normalized = new Uint8Array(voxelCount * 4);
+  const segmentationLabels = new Uint32Array(voxelCount);
 
   for (let i = 0; i < voxelCount; i++) {
     const rawLabel = toLabelId(source[i]);
     const label = rawLabel > maxLabel ? maxLabel : rawLabel;
+    segmentationLabels[i] = label;
     const tableIndex = label * 3;
     const destIndex = i * 4;
     const red = colorTable[tableIndex];
@@ -151,7 +155,9 @@ export function colorizeSegmentationVolume(volume: VolumePayload, seed: number):
     dataType: 'uint8',
     normalized,
     min: 0,
-    max: 255
+    max: 255,
+    segmentationLabels,
+    segmentationLabelDataType: dataType
   };
 }
 
