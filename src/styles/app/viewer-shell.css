@@ -85,7 +85,20 @@
 }
 
 .viewer-top-menu-intensity-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
   font-variant-numeric: tabular-nums;
+}
+
+.viewer-top-menu-intensity-part {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+}
+
+.viewer-top-menu-intensity-separator {
+  color: rgba(230, 238, 255, 0.65);
 }
 
 .viewer-top-menu-coordinates {

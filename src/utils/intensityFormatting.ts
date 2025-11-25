@@ -1,6 +1,8 @@
 import type { NormalizedVolume } from '../volumeProcessing';
 import type { VolumeDataType } from '../types/volume';
 
+export type FormattedChannelValue = { text: string; channelLabel: string | null };
+
 const INTEGER_PREFIXES = ['uint', 'int'];
 
 const isIntegerDataType = (type: VolumeDataType) =>
@@ -30,19 +32,20 @@ export function formatIntensityValue(value: number, type: VolumeDataType) {
   return value.toPrecision(4);
 }
 
-export function formatChannelValues(
+export function formatChannelValuesDetailed(
   values: number[],
   type: VolumeDataType,
   channelLabel: string | null,
-  includeLabel: boolean
-) {
+  includeLabel: boolean,
+): FormattedChannelValue[] {
   if (values.length === 0) {
-    return [] as string[];
+    return [] as FormattedChannelValue[];
   }
 
   if (values.length === 1) {
     const prefix = includeLabel && channelLabel ? `${channelLabel} ` : '';
-    return [`${prefix}${formatIntensityValue(values[0], type)}`.trim()];
+    const text = `${prefix}${formatIntensityValue(values[0], type)}`.trim();
+    return [{ text, channelLabel }];
   }
 
   return values.map((value, index) => {
@@ -52,6 +55,15 @@ export function formatChannelValues(
         : `C${index + 1}`
       : null;
     const formatted = formatIntensityValue(value, type);
-    return prefix ? `${prefix} ${formatted}` : formatted;
+    return { text: prefix ? `${prefix} ${formatted}` : formatted, channelLabel };
   });
+}
+
+export function formatChannelValues(
+  values: number[],
+  type: VolumeDataType,
+  channelLabel: string | null,
+  includeLabel: boolean,
+) {
+  return formatChannelValuesDetailed(values, type, channelLabel, includeLabel).map((entry) => entry.text);
 }
