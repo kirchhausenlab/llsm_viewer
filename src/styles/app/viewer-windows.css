@@ -168,10 +168,7 @@
 }
 
 .floating-window--header-bottom.is-minimized .floating-window-body {
-  display: flex;
-  visibility: hidden;
-  opacity: 0;
-  pointer-events: none;
+  display: none;
 }
 
 .floating-window--warning {

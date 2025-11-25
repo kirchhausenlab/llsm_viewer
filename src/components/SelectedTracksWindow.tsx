@@ -84,6 +84,33 @@ const generateNiceTicks = (min: number, max: number, maxTicks: number) => {
   return ticks;
 };
 
+const computeNiceBounds = (min: number, max: number, maxTicks: number) => {
+  if (!Number.isFinite(min) || !Number.isFinite(max)) {
+    return { min, max };
+  }
+
+  if (min === max) {
+    const padding = Math.max(1, Math.abs(min) * 0.05);
+    return { min: min - padding, max: max + padding };
+  }
+
+  const span = max - min;
+  const step = computeNiceStep(span, maxTicks);
+
+  if (step <= 0 || !Number.isFinite(step)) {
+    return { min, max };
+  }
+
+  const niceMin = Math.floor(min / step) * step;
+  const niceMax = Math.ceil(max / step) * step;
+
+  if (niceMin === niceMax) {
+    return { min: min - step, max: max + step };
+  }
+
+  return { min: niceMin, max: niceMax };
+};
+
 type RangeSliderProps = {
   label: string;
   bounds: NumericRange;
@@ -174,11 +201,20 @@ function SelectedTracksWindow({
   onClearSelection,
   currentTimepoint
 }: SelectedTracksWindowProps) {
-  const domainXMin = timeLimits.min;
-  const domainXMax = timeLimits.max;
+  const xBounds = useMemo(
+    () => computeNiceBounds(timeLimits.min, timeLimits.max, 8),
+    [timeLimits.max, timeLimits.min]
+  );
+  const yBounds = useMemo(
+    () => computeNiceBounds(amplitudeLimits.min, amplitudeLimits.max, 4),
+    [amplitudeLimits.max, amplitudeLimits.min]
+  );
+
+  const domainXMin = xBounds.min;
+  const domainXMax = xBounds.max;
   const domainXSpan = domainXMax - domainXMin;
-  const domainYMin = amplitudeLimits.min;
-  const domainYMax = amplitudeLimits.max;
+  const domainYMin = yBounds.min;
+  const domainYMax = yBounds.max;
   const domainYSpan = domainYMax - domainYMin;
   const chartWidth = SVG_WIDTH - PADDING.left - PADDING.right;
   const chartHeight = SVG_HEIGHT - PADDING.top - PADDING.bottom;
@@ -216,7 +252,7 @@ function SelectedTracksWindow({
   }, [chartHeight, domainYMax, domainYMin, domainYSpan]);
 
   const xTicks = useMemo(
-    () => generateNiceTicks(domainXMin, domainXMax, 4),
+    () => generateNiceTicks(domainXMin, domainXMax, 8),
     [domainXMax, domainXMin]
   );
   const yTicks = useMemo(
