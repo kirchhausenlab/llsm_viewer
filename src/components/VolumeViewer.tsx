@@ -1910,6 +1910,11 @@ function VolumeViewer({
         clampValue(hoverMaxPosition.z, 0, 1),
       );
 
+      const hoveredSegmentationLabel =
+        targetLayer.isSegmentation && targetLayer.volume?.segmentationLabels
+          ? sampleSegmentationLabel(targetLayer.volume, hoverMaxPosition)
+          : null;
+
       const displayLayers = isAdditiveBlending && hoverableLayers.length > 0 ? hoverableLayers : [targetLayer];
       const useLayerLabels = isAdditiveBlending && displayLayers.length > 1;
       const samples: Array<{ values: number[]; type: NormalizedVolume['dataType']; label: string | null }> = [];
@@ -1923,7 +1928,10 @@ function VolumeViewer({
         let displayValues: number[] | null = null;
 
         if (layer.isSegmentation && layerVolume.segmentationLabels) {
-          const labelValue = sampleSegmentationLabel(layerVolume, hoverMaxPosition);
+          const labelValue =
+            layer.key === targetLayer.key && hoveredSegmentationLabel !== null
+              ? hoveredSegmentationLabel
+              : sampleSegmentationLabel(layerVolume, hoverMaxPosition);
           if (labelValue !== null) {
             displayValues = [labelValue];
           }
@@ -1942,7 +1950,7 @@ function VolumeViewer({
         samples.push({
           values: displayValues,
           type: layerVolume.dataType,
-          label: useLayerLabels ? layer.label?.trim() || null : layer.label?.trim() || null
+          label: useLayerLabels ? layer.label?.trim() || null : null
         });
       }
 

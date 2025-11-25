@@ -706,3 +706,6 @@ d centered the front-page card in the viewport.
 
 ## Additive hover formatting refinement
 - Flattened 3D hover readouts using the same per-channel formatting path as the 2D viewer so additive blending now lists every visible channel's intensity instead of collapsing to a single value.
+
+## Additive hover segmentation fix
+- Reused sampled segmentation labels for the target layer while collecting additive hover values so the hover formatter no longer references undefined segmentation label state and layer prefixes stay additive-only.
