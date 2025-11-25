@@ -1306,6 +1306,7 @@ function ViewerShell({
             className="floating-window--selected-tracks"
             bodyClassName="floating-window-body--selected-tracks"
             resetSignal={resetToken}
+            headerPosition="bottom"
           >
             <SelectedTracksWindow
               series={series}

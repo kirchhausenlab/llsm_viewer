@@ -12,6 +12,7 @@ type FloatingWindowProps = {
   className?: string;
   bodyClassName?: string;
   resetSignal?: number;
+  headerPosition?: 'top' | 'bottom';
 };
 
 const combineClassNames = (...values: Array<string | false | null | undefined>) =>
@@ -26,7 +27,8 @@ function FloatingWindow({
   children,
   className,
   bodyClassName,
-  resetSignal
+  resetSignal,
+  headerPosition = 'top'
 }: FloatingWindowProps) {
   const resolvedInitialPosition = useMemo(
     () => initialPosition ?? { x: WINDOW_MARGIN, y: WINDOW_MARGIN },
@@ -205,9 +207,45 @@ function FloatingWindow({
     'floating-window',
     isDragging && 'is-dragging',
     isMinimized && 'is-minimized',
+    headerPosition === 'bottom' && 'floating-window--header-bottom',
     className
   );
   const bodyClassNameResolved = combineClassNames('floating-window-body', bodyClassName);
+
+  const header = (
+    <div
+      ref={headerRef}
+      className="floating-window-header"
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerEnd}
+      onPointerCancel={handlePointerEnd}
+      onDoubleClick={handleHeaderDoubleClick}
+    >
+      <div className="floating-window-header-main">
+        <h2 className="floating-window-title">{title}</h2>
+        {headerContent ? (
+          <div className="floating-window-header-content" data-no-drag>
+            {headerContent}
+          </div>
+        ) : null}
+      </div>
+      <div className="floating-window-header-actions" data-no-drag>
+        {headerActions ? <div className="floating-window-extra-actions">{headerActions}</div> : null}
+        <button
+          type="button"
+          className="floating-window-toggle"
+          onClick={toggleMinimize}
+          aria-label={isMinimized ? `Restore ${title}` : `Minimize ${title}`}
+          data-no-drag
+        >
+          <span aria-hidden="true">{isMinimized ? '▢' : '–'}</span>
+        </button>
+      </div>
+    </div>
+  );
+
+  const body = <div className={bodyClassNameResolved}>{children}</div>;
 
   return (
     <div
@@ -217,37 +255,17 @@ function FloatingWindow({
       aria-expanded={!isMinimized}
       role="region"
     >
-      <div
-        ref={headerRef}
-        className="floating-window-header"
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerEnd}
-        onPointerCancel={handlePointerEnd}
-        onDoubleClick={handleHeaderDoubleClick}
-      >
-        <div className="floating-window-header-main">
-          <h2 className="floating-window-title">{title}</h2>
-          {headerContent ? (
-            <div className="floating-window-header-content" data-no-drag>
-              {headerContent}
-            </div>
-          ) : null}
-        </div>
-        <div className="floating-window-header-actions" data-no-drag>
-          {headerActions ? <div className="floating-window-extra-actions">{headerActions}</div> : null}
-          <button
-            type="button"
-            className="floating-window-toggle"
-            onClick={toggleMinimize}
-            aria-label={isMinimized ? `Restore ${title}` : `Minimize ${title}`}
-            data-no-drag
-          >
-            <span aria-hidden="true">{isMinimized ? '▢' : '–'}</span>
-          </button>
-        </div>
-      </div>
-      <div className={bodyClassNameResolved}>{children}</div>
+      {headerPosition === 'bottom' ? (
+        <>
+          {body}
+          {header}
+        </>
+      ) : (
+        <>
+          {header}
+          {body}
+        </>
+      )}
     </div>
   );
 }

@@ -230,7 +230,9 @@ function SelectedTracksWindow({
 
   return (
     <div className="selected-tracks-window">
-      <div className="selected-tracks-main">
+      <div
+        className={`selected-tracks-chart-card${resolvedSeries.length > 0 ? ' has-legend' : ''}`}
+      >
         <div
           className="selected-tracks-chart"
           role="img"
@@ -241,15 +243,6 @@ function SelectedTracksWindow({
             preserveAspectRatio="none"
             className="selected-tracks-chart-svg"
           >
-            <rect
-              className="selected-tracks-chart-background"
-              x={0}
-              y={0}
-              width={SVG_WIDTH}
-              height={SVG_HEIGHT}
-              rx={16}
-              ry={16}
-            />
             <g className="selected-tracks-chart-grid">
               <line x1={PADDING.left} y1={yAxisEnd} x2={xAxisEnd} y2={yAxisEnd} />
               <line x1={PADDING.left} y1={PADDING.top} x2={PADDING.left} y2={yAxisEnd} />
@@ -308,44 +301,46 @@ function SelectedTracksWindow({
             <p className="selected-tracks-empty">Select tracks to plot their amplitudes.</p>
           ) : null}
         </div>
-        <div className="selected-tracks-controls" aria-label="Track plot limits">
-          <RangeSlider
-            label="Amplitude range"
-            bounds={amplitudeExtent}
-            value={amplitudeLimits}
-            onChange={onAmplitudeLimitsChange}
-          />
-          <RangeSlider
-            label="Time range"
-            bounds={timeExtent}
-            value={timeLimits}
-            onChange={onTimeLimitsChange}
-            step={1}
-          />
-          <div className="selected-tracks-actions">
-            <button type="button" className="selected-tracks-button" onClick={onAutoRange}>
-              Auto
-            </button>
-            <button type="button" className="selected-tracks-button" onClick={onClearSelection}>
-              Clear
-            </button>
+        {resolvedSeries.length > 0 ? (
+          <div className="selected-tracks-legend-panel" aria-label="Track legend">
+            <ul className="selected-tracks-legend">
+              {resolvedSeries.map((entry) => (
+                <li key={entry.id} className="selected-tracks-legend-item">
+                  <span
+                    className="selected-tracks-legend-swatch"
+                    style={{ backgroundColor: entry.color }}
+                    aria-hidden="true"
+                  />
+                  <span className="selected-tracks-legend-label">{entry.label}</span>
+                </li>
+              ))}
+            </ul>
           </div>
+        ) : null}
+      </div>
+      <div className="selected-tracks-controls" aria-label="Track plot limits">
+        <RangeSlider
+          label="Amplitude range"
+          bounds={amplitudeExtent}
+          value={amplitudeLimits}
+          onChange={onAmplitudeLimitsChange}
+        />
+        <RangeSlider
+          label="Time range"
+          bounds={timeExtent}
+          value={timeLimits}
+          onChange={onTimeLimitsChange}
+          step={1}
+        />
+        <div className="selected-tracks-actions">
+          <button type="button" className="selected-tracks-button" onClick={onAutoRange}>
+            Auto
+          </button>
+          <button type="button" className="selected-tracks-button" onClick={onClearSelection}>
+            Clear
+          </button>
         </div>
       </div>
-      {resolvedSeries.length > 0 ? (
-        <ul className="selected-tracks-legend">
-          {resolvedSeries.map((entry) => (
-            <li key={entry.id} className="selected-tracks-legend-item">
-              <span
-                className="selected-tracks-legend-swatch"
-                style={{ backgroundColor: entry.color }}
-                aria-hidden="true"
-              />
-              <span className="selected-tracks-legend-label">{entry.label}</span>
-            </li>
-          ))}
-        </ul>
-      ) : null}
     </div>
   );
 }

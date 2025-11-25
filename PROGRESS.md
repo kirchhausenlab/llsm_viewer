@@ -158,6 +158,14 @@
 - Further softened the first auto-contrast maximum cutoff by reducing the histogram count threshold to just two percent of the
   minimum-side value so initial windows retain even brighter highlights before later refinements.
 
+## Selected tracks window layout
+- Inverted the selected tracks window so the header anchors to the bottom and the plot/controls expand upward from it, keeping
+  the default placement aligned with the previous overall footprint.
+- Moved the amplitude and time sliders beneath the plot on a single row alongside the Auto and Clear actions, and recentered the
+  dual slider thumbs to the track midline.
+- Embedded the color-coded legend inside the plot card to the right of the amplitude graph with its own scroll region that leaves
+  the plot untouched.
+
 ## Planar hover intensity reset fix
 - Cleared the shared hover intensity callback whenever planar slice data is missing so header hover readouts stay in sync and
   typechecking succeeds without referencing removed tooltip state.
