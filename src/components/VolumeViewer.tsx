@@ -104,6 +104,89 @@ const clampValue = (value: number, min: number, max: number): number => {
   return value;
 };
 
+const sampleSegmentationLabel = (volume: NormalizedVolume, normalizedPosition: THREE.Vector3) => {
+  if (!volume.segmentationLabels) {
+    return null;
+  }
+
+  const x = Math.round(clampValue(normalizedPosition.x * volume.width, 0, volume.width - 1));
+  const y = Math.round(clampValue(normalizedPosition.y * volume.height, 0, volume.height - 1));
+  const z = Math.round(clampValue(normalizedPosition.z * volume.depth, 0, volume.depth - 1));
+
+  const sliceStride = volume.width * volume.height;
+  const index = z * sliceStride + y * volume.width + x;
+  return volume.segmentationLabels[index] ?? null;
+};
+
+const sampleRawValuesAtPosition = (volume: NormalizedVolume, normalizedPosition: THREE.Vector3) => {
+  const channels = Math.max(1, volume.channels);
+  const sliceStride = volume.width * volume.height * channels;
+  const rowStride = volume.width * channels;
+
+  const x = clampValue(normalizedPosition.x * volume.width, 0, volume.width - 1);
+  const y = clampValue(normalizedPosition.y * volume.height, 0, volume.height - 1);
+  const z = clampValue(normalizedPosition.z * volume.depth, 0, volume.depth - 1);
+
+  const leftX = Math.floor(x);
+  const rightX = Math.min(volume.width - 1, leftX + 1);
+  const topY = Math.floor(y);
+  const bottomY = Math.min(volume.height - 1, topY + 1);
+  const frontZ = Math.floor(z);
+  const backZ = Math.min(volume.depth - 1, frontZ + 1);
+
+  const tX = x - leftX;
+  const tY = y - topY;
+  const tZ = z - frontZ;
+  const invTX = 1 - tX;
+  const invTY = 1 - tY;
+  const invTZ = 1 - tZ;
+
+  const weight000 = invTX * invTY * invTZ;
+  const weight100 = tX * invTY * invTZ;
+  const weight010 = invTX * tY * invTZ;
+  const weight110 = tX * tY * invTZ;
+  const weight001 = invTX * invTY * tZ;
+  const weight101 = tX * invTY * tZ;
+  const weight011 = invTX * tY * tZ;
+  const weight111 = tX * tY * tZ;
+
+  const frontOffset = frontZ * sliceStride;
+  const backOffset = backZ * sliceStride;
+  const topFrontOffset = frontOffset + topY * rowStride;
+  const bottomFrontOffset = frontOffset + bottomY * rowStride;
+  const topBackOffset = backOffset + topY * rowStride;
+  const bottomBackOffset = backOffset + bottomY * rowStride;
+
+  const rawValues: number[] = [];
+
+  for (let channelIndex = 0; channelIndex < channels; channelIndex++) {
+    const baseChannelOffset = channelIndex;
+    const topLeftFront = volume.normalized[topFrontOffset + leftX * channels + baseChannelOffset] ?? 0;
+    const topRightFront = volume.normalized[topFrontOffset + rightX * channels + baseChannelOffset] ?? 0;
+    const bottomLeftFront = volume.normalized[bottomFrontOffset + leftX * channels + baseChannelOffset] ?? 0;
+    const bottomRightFront = volume.normalized[bottomFrontOffset + rightX * channels + baseChannelOffset] ?? 0;
+
+    const topLeftBack = volume.normalized[topBackOffset + leftX * channels + baseChannelOffset] ?? 0;
+    const topRightBack = volume.normalized[topBackOffset + rightX * channels + baseChannelOffset] ?? 0;
+    const bottomLeftBack = volume.normalized[bottomBackOffset + leftX * channels + baseChannelOffset] ?? 0;
+    const bottomRightBack = volume.normalized[bottomBackOffset + rightX * channels + baseChannelOffset] ?? 0;
+
+    const interpolated =
+      topLeftFront * weight000 +
+      topRightFront * weight100 +
+      bottomLeftFront * weight010 +
+      bottomRightFront * weight110 +
+      topLeftBack * weight001 +
+      topRightBack * weight101 +
+      bottomLeftBack * weight011 +
+      bottomRightBack * weight111;
+
+    rawValues.push(denormalizeValue(interpolated, volume));
+  }
+
+  return rawValues;
+};
+
 function prepareSliceTexture(volume: NormalizedVolume, sliceIndex: number, existingBuffer: Uint8Array | null) {
   const { width, height, depth, channels, normalized } = volume;
   const pixelCount = width * height;
@@ -1541,11 +1624,13 @@ function VolumeViewer({
       const offsetX = event.clientX - rect.left;
       const offsetY = event.clientY - rect.top;
       if (offsetX < 0 || offsetY < 0 || offsetX > width || offsetY > height) {
-        reportVoxelHoverAbort('Pointer is outside the render surface.');
+        clearVoxelHoverDebug();
+        clearVoxelHover();
         return;
       }
 
       const layersSnapshot = layersRef.current;
+      const hoverableLayers: (typeof layersSnapshot)[number][] = [];
       let targetLayer: (typeof layersSnapshot)[number] | null = null;
       let resource: VolumeResources | null = null;
       let cpuFallbackLayer: (typeof layersSnapshot)[number] | null = null;
@@ -1570,22 +1655,19 @@ function VolumeViewer({
           continue;
         }
 
+        hoverableLayers.push(layer);
+
         const candidate = resourcesRef.current.get(layer.key) ?? null;
         const isSliceResource = candidate?.mode === 'slice' && hasVolumeDepth;
+        const has3dResource = candidate?.mode === '3d';
 
-        if (candidate?.mode === '3d') {
+        if (has3dResource && (!resource || resource.mode !== '3d')) {
           targetLayer = layer;
           resource = candidate;
-          break;
-        }
-
-        if (isSliceResource && !targetLayer) {
+        } else if (isSliceResource && (!resource || resource.mode !== '3d') && !targetLayer) {
           targetLayer = layer;
           resource = candidate;
-          continue;
-        }
-
-        if (!cpuFallbackLayer) {
+        } else if (!cpuFallbackLayer) {
           cpuFallbackLayer = layer;
         }
       }
@@ -1834,10 +1916,54 @@ function VolumeViewer({
         clampValue(hoverMaxPosition.z, 0, 1),
       );
 
-      const includeLabel = maxRawValues.length > 1;
-      const label = targetLayer.label?.trim() || null;
-      const parts = formatChannelValues(maxRawValues, volume.dataType, label, includeLabel);
-      if (parts.length === 0) {
+      const displayLayers = isAdditiveBlending && hoverableLayers.length > 0 ? hoverableLayers : [targetLayer];
+      const useLayerLabels = isAdditiveBlending && displayLayers.length > 1;
+      const samples: Array<{ values: number[]; type: NormalizedVolume['dataType']; label: string | null }> = [];
+
+      for (const layer of displayLayers) {
+        const layerVolume = layer.volume;
+        if (!layerVolume) {
+          continue;
+        }
+
+        let displayValues: number[] | null = null;
+
+        if (layer.isSegmentation && layerVolume.segmentationLabels) {
+          const labelValue = sampleSegmentationLabel(layerVolume, hoverMaxPosition);
+          if (labelValue !== null) {
+            displayValues = [labelValue];
+          }
+        }
+
+        if (!displayValues) {
+          displayValues = layer.key === targetLayer.key
+            ? maxRawValues
+            : sampleRawValuesAtPosition(layerVolume, hoverMaxPosition);
+        }
+
+        if (!displayValues || displayValues.length === 0) {
+          continue;
+        }
+
+        samples.push({
+          values: displayValues,
+          type: layerVolume.dataType,
+          label: useLayerLabels ? layer.label?.trim() || null : layer.label?.trim() || null
+        });
+      }
+
+      const totalValues = samples.reduce((sum, sample) => sum + sample.values.length, 0);
+      if (totalValues === 0) {
+        reportVoxelHoverAbort('Unable to format hover intensity for display.');
+        return;
+      }
+
+      const includeLabel = totalValues > 1;
+      const intensityParts = samples.flatMap((sample) =>
+        formatChannelValues(sample.values, sample.type, sample.label, includeLabel)
+      );
+
+      if (intensityParts.length === 0) {
         reportVoxelHoverAbort('Unable to format hover intensity for display.');
         return;
       }
@@ -1845,7 +1971,7 @@ function VolumeViewer({
       clearVoxelHoverDebug();
 
       const hoveredVoxel = {
-        intensity: parts.join(' · '),
+        intensity: intensityParts.join(' · '),
         coordinates: {
           x: Math.round(clampValue(hoverMaxPosition.x * volume.width, 0, volume.width - 1)),
           y: Math.round(clampValue(hoverMaxPosition.y * volume.height, 0, volume.height - 1)),

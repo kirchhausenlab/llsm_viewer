@@ -1,3 +1,11 @@
+# Hover readout cleanup
+- Removed the "Hover:" label and out-of-bounds warning from the viewer top bar so the hover status only shows live intensity
+  and coordinates.
+- Replaced segmentation hover readouts with the original label ID values and reused them in both 2D and 3D viewers instead of
+  the generated RGBA colors.
+- Reported hover intensities for every visible channel when additive blending is active, while keeping alpha blending behavior
+  unchanged.
+
 # Segmentation hover highlighting
 - Captured hovered segmentation voxels' normalized RGBA values (when alpha is present) alongside positions so hover uniforms
   can differentiate label picks from background.
@@ -692,3 +700,9 @@ d centered the front-page card in the viewport.
 
 ## Auto contrast defaults on load
 - Switched initial layer windows to use the first auto-contrast pass while keeping Reset returning to the full 0–1 range and leaving subsequent Auto clicks to continue refining from the precomputed threshold.
+
+## Additive blending hover readouts in 3D view
+- Collected all hoverable layers before choosing a sampling target so additive blending now reports per-channel hover intensities in the 3D viewer, matching the 2D view behavior.
+
+## Additive hover formatting refinement
+- Flattened 3D hover readouts using the same per-channel formatting path as the 2D viewer so additive blending now lists every visible channel's intensity instead of collapsing to a single value.
