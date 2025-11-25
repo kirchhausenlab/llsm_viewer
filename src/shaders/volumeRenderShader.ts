@@ -112,7 +112,7 @@ export const VolumeRenderShader = {
     const float ambientStrength = 0.2;
     const float diffuseStrength = 0.8;
     const vec3 specularColor = vec3(1.0);
-    const float HOVER_COLOR_TOLERANCE = 1.5 / 255.0;
+    const float HOVER_COLOR_TOLERANCE = 1.5;
 
     vec4 add_lighting(float val, vec3 loc, vec3 step, vec3 view_ray, vec4 sampleColor);
     void cast_mip(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
@@ -356,9 +356,10 @@ export const VolumeRenderShader = {
         bool segmentationHover = u_hoverSegmentationMode > 0.5;
         if (segmentationHover) {
           bool hasHoverColor = u_hoverColor.a > 0.0;
-          bool hasSampleAlpha = max_color.a > 0.0;
+          vec4 sampleRawColor = max_color * 255.0;
+          bool hasSampleAlpha = sampleRawColor.a > 0.0;
           if (hasHoverColor && hasSampleAlpha) {
-            vec4 diff = abs(max_color - u_hoverColor);
+            vec4 diff = abs(sampleRawColor - u_hoverColor);
             bool matches =
               diff.r <= HOVER_COLOR_TOLERANCE &&
               diff.g <= HOVER_COLOR_TOLERANCE &&

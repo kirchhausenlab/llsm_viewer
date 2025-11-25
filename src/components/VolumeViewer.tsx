@@ -1855,13 +1855,13 @@ function VolumeViewer({
 
       emitHoverVoxel(hoveredVoxel);
       let hoveredColor: THREE.Vector4 | null = null;
-      if (targetLayer.isSegmentation && maxNormalizedValues.length >= 4) {
-        const alpha = maxNormalizedValues[3];
+      if (targetLayer.isSegmentation && maxRawValues.length >= 4) {
+        const alpha = Math.round(maxRawValues[3]);
         if (alpha > 0) {
           hoveredColor = new THREE.Vector4(
-            maxNormalizedValues[0],
-            maxNormalizedValues[1],
-            maxNormalizedValues[2],
+            Math.round(maxRawValues[0]),
+            Math.round(maxRawValues[1]),
+            Math.round(maxRawValues[2]),
             alpha,
           );
         }
