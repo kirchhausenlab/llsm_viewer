@@ -700,3 +700,6 @@ d centered the front-page card in the viewport.
 
 ## Auto contrast defaults on load
 - Switched initial layer windows to use the first auto-contrast pass while keeping Reset returning to the full 0–1 range and leaving subsequent Auto clicks to continue refining from the precomputed threshold.
+
+## Additive blending hover readouts in 3D view
+- Collected all hoverable layers before choosing a sampling target so additive blending now reports per-channel hover intensities in the 3D viewer, matching the 2D view behavior.

@@ -1659,20 +1659,15 @@ function VolumeViewer({
 
         const candidate = resourcesRef.current.get(layer.key) ?? null;
         const isSliceResource = candidate?.mode === 'slice' && hasVolumeDepth;
+        const has3dResource = candidate?.mode === '3d';
 
-        if (candidate?.mode === '3d') {
+        if (has3dResource && (!resource || resource.mode !== '3d')) {
           targetLayer = layer;
           resource = candidate;
-          break;
-        }
-
-        if (isSliceResource && !targetLayer) {
+        } else if (isSliceResource && (!resource || resource.mode !== '3d') && !targetLayer) {
           targetLayer = layer;
           resource = candidate;
-          continue;
-        }
-
-        if (!cpuFallbackLayer) {
+        } else if (!cpuFallbackLayer) {
           cpuFallbackLayer = layer;
         }
       }
