@@ -557,11 +557,11 @@ function VolumeViewer({
   const hoveredVoxelRef = useRef<{
     layerKey: string | null;
     normalizedPosition: THREE.Vector3 | null;
-    color: THREE.Vector4 | null;
+    segmentationLabel: number | null;
   }>({
     layerKey: null,
     normalizedPosition: null,
-    color: null
+    segmentationLabel: null
   });
   const voxelHoverDebugRef = useRef<string | null>(null);
   const [voxelHoverDebug, setVoxelHoverDebug] = useState<string | null>(null);
@@ -667,7 +667,7 @@ function VolumeViewer({
   }, [layers]);
 
   const applyHoverHighlightToResources = useCallback(() => {
-    const { layerKey, normalizedPosition, color } = hoveredVoxelRef.current;
+    const { layerKey, normalizedPosition, segmentationLabel } = hoveredVoxelRef.current;
     const layersByKey = new Map(layersRef.current.map((layer) => [layer.key, layer]));
     for (const [key, resource] of resourcesRef.current.entries()) {
       if (resource.mode !== '3d') {
@@ -676,25 +676,19 @@ function VolumeViewer({
       const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms;
       const layer = layersByKey.get(key);
       const isSegmentationLayer = Boolean(layer?.isSegmentation);
-      const hasHoverColor = Boolean(color && color.w > 0);
-      const isActive = Boolean(
-        layerKey &&
-        normalizedPosition &&
-        layerKey === key &&
-        (!isSegmentationLayer || hasHoverColor),
-      );
+      const hasHoverLabel = Number.isFinite(segmentationLabel);
+      const isActive = Boolean(layerKey && normalizedPosition && layerKey === key);
       if (uniforms.u_hoverActive) {
         uniforms.u_hoverActive.value = isActive ? 1 : 0;
       }
       if (uniforms.u_hoverSegmentationMode) {
-        uniforms.u_hoverSegmentationMode.value = isActive && isSegmentationLayer && hasHoverColor ? 1 : 0;
+        uniforms.u_hoverSegmentationMode.value = isActive && isSegmentationLayer && hasHoverLabel ? 1 : 0;
       }
-      if (uniforms.u_hoverColor) {
-        if (color && hasHoverColor) {
-          uniforms.u_hoverColor.value.copy(color);
-        } else {
-          uniforms.u_hoverColor.value.set(0, 0, 0, 0);
-        }
+      if (uniforms.u_hoverLabel) {
+        uniforms.u_hoverLabel.value = hasHoverLabel ? (segmentationLabel as number) : 0;
+      }
+      if (uniforms.u_segmentationLabels) {
+        uniforms.u_segmentationLabels.value = resource.labelTexture ?? null;
       }
       if (
         isActive &&
@@ -744,7 +738,7 @@ function VolumeViewer({
 
   const clearVoxelHover = useCallback(() => {
     emitHoverVoxel(null);
-    hoveredVoxelRef.current = { layerKey: null, normalizedPosition: null, color: null };
+    hoveredVoxelRef.current = { layerKey: null, normalizedPosition: null, segmentationLabel: null };
     applyHoverHighlightToResources();
   }, [applyHoverHighlightToResources, emitHoverVoxel]);
 
@@ -1980,23 +1974,10 @@ function VolumeViewer({
       } satisfies HoveredVoxelInfo;
 
       emitHoverVoxel(hoveredVoxel);
-      let hoveredColor: THREE.Vector4 | null = null;
-      if (targetLayer.isSegmentation && maxRawValues.length >= 4) {
-        const alpha = Math.round(maxRawValues[3]);
-        if (alpha > 0) {
-          hoveredColor = new THREE.Vector4(
-            Math.round(maxRawValues[0]),
-            Math.round(maxRawValues[1]),
-            Math.round(maxRawValues[2]),
-            alpha,
-          );
-        }
-      }
-
       hoveredVoxelRef.current = {
         layerKey: targetLayer.key,
         normalizedPosition: hoverMaxPosition.clone(),
-        color: hoveredColor,
+        segmentationLabel: hoveredSegmentationLabel,
       };
       applyHoverHighlightToResources();
     },
@@ -3083,6 +3064,7 @@ function VolumeViewer({
       resource.mesh.geometry.dispose();
       disposeMaterial(resource.mesh.material);
       resource.texture.dispose();
+      resource.labelTexture?.dispose();
       resourcesRef.current.delete(key);
     };
 
@@ -3195,6 +3177,24 @@ function VolumeViewer({
         cachedPreparation = getCachedTextureData(volume);
         const { data: textureData, format: textureFormat } = cachedPreparation;
 
+        let labelTexture: THREE.Data3DTexture | null = null;
+        if (layer.isSegmentation && volume.segmentationLabels) {
+          const labelData = new Float32Array(volume.segmentationLabels.length);
+          labelData.set(volume.segmentationLabels);
+          labelTexture = new THREE.Data3DTexture(
+            labelData,
+            volume.width,
+            volume.height,
+            volume.depth
+          );
+          labelTexture.format = THREE.RedFormat;
+          labelTexture.type = THREE.FloatType;
+          labelTexture.minFilter = THREE.NearestFilter;
+          labelTexture.magFilter = THREE.NearestFilter;
+          labelTexture.unpackAlignment = 1;
+          labelTexture.needsUpdate = true;
+        }
+
         const needsRebuild =
           !resources ||
           resources.mode !== viewerMode ||
@@ -3234,6 +3234,9 @@ function VolumeViewer({
           uniforms.u_invert.value = layer.invert ? 1 : 0;
           uniforms.u_stepScale.value = volumeStepScaleRef.current;
           uniforms.u_nearestSampling.value = layer.samplingMode === 'nearest' ? 1 : 0;
+          if (uniforms.u_segmentationLabels) {
+            uniforms.u_segmentationLabels.value = labelTexture;
+          }
           if (uniforms.u_additive) {
             uniforms.u_additive.value = isAdditiveBlending ? 1 : 0;
           }
@@ -3284,6 +3287,7 @@ function VolumeViewer({
           resourcesRef.current.set(layer.key, {
             mesh,
             texture,
+            labelTexture,
             dimensions: { width: volume.width, height: volume.height, depth: volume.depth },
             channels: volume.channels,
             mode: viewerMode,
@@ -3418,6 +3422,43 @@ function VolumeViewer({
           dataTexture.format = preparation.format;
           dataTexture.needsUpdate = true;
           materialUniforms.u_data.value = dataTexture;
+          if (layer.isSegmentation && volume.segmentationLabels) {
+            const expectedLength = volume.segmentationLabels.length;
+            let labelTexture = resources.labelTexture ?? null;
+            const needsLabelTextureRebuild =
+              !labelTexture ||
+              !(labelTexture.image?.data instanceof Float32Array) ||
+              labelTexture.image.data.length !== expectedLength;
+
+            if (needsLabelTextureRebuild) {
+              labelTexture?.dispose();
+              const labelData = new Float32Array(volume.segmentationLabels.length);
+              labelData.set(volume.segmentationLabels);
+              labelTexture = new THREE.Data3DTexture(
+                labelData,
+                volume.width,
+                volume.height,
+                volume.depth
+              );
+              labelTexture.format = THREE.RedFormat;
+              labelTexture.type = THREE.FloatType;
+              labelTexture.minFilter = THREE.NearestFilter;
+              labelTexture.magFilter = THREE.NearestFilter;
+              labelTexture.unpackAlignment = 1;
+              labelTexture.needsUpdate = true;
+            } else if (labelTexture) {
+              const labelData = labelTexture.image.data as Float32Array;
+              labelData.set(volume.segmentationLabels);
+              labelTexture.needsUpdate = true;
+            }
+            resources.labelTexture = labelTexture;
+            if (materialUniforms.u_segmentationLabels) {
+              materialUniforms.u_segmentationLabels.value = labelTexture;
+            }
+          } else if (materialUniforms.u_segmentationLabels) {
+            materialUniforms.u_segmentationLabels.value = null;
+            resources.labelTexture = null;
+          }
           if (materialUniforms.u_renderstyle) {
             materialUniforms.u_renderstyle.value = layer.renderStyle;
           }
