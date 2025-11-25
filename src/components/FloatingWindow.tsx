@@ -7,6 +7,7 @@ type FloatingWindowProps = {
   initialPosition?: { x: number; y: number };
   width?: number | string;
   headerActions?: ReactNode;
+  headerContent?: ReactNode;
   children: ReactNode;
   className?: string;
   bodyClassName?: string;
@@ -21,6 +22,7 @@ function FloatingWindow({
   initialPosition,
   width,
   headerActions,
+  headerContent,
   children,
   className,
   bodyClassName,
@@ -224,7 +226,14 @@ function FloatingWindow({
         onPointerCancel={handlePointerEnd}
         onDoubleClick={handleHeaderDoubleClick}
       >
-        <h2 className="floating-window-title">{title}</h2>
+        <div className="floating-window-header-main">
+          <h2 className="floating-window-title">{title}</h2>
+          {headerContent ? (
+            <div className="floating-window-header-content" data-no-drag>
+              {headerContent}
+            </div>
+          ) : null}
+        </div>
         <div className="floating-window-header-actions" data-no-drag>
           {headerActions ? <div className="floating-window-extra-actions">{headerActions}</div> : null}
           <button

@@ -630,58 +630,60 @@ function ViewerShell({
           width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
           className="floating-window--channels"
           resetSignal={resetToken}
+          headerContent={
+            loadedChannelIds.length > 0 ? (
+              <div className="channel-tabs channel-tabs--header" role="tablist" aria-label="Volume channels">
+                {loadedChannelIds.map((channelId) => {
+                  const label = channelNameMap.get(channelId) ?? 'Untitled channel';
+                  const isActive = channelId === activeChannelId;
+                  const isVisible = channelVisibility[channelId] ?? true;
+                  const tabClassName = ['channel-tab', isActive ? 'is-active' : '', !isVisible ? 'is-hidden' : '']
+                    .filter(Boolean)
+                    .join(' ');
+                  const labelClassName = isVisible
+                    ? 'channel-tab-label'
+                    : 'channel-tab-label channel-tab-label--hidden';
+                  const tintColor = channelTintMap.get(channelId) ?? DEFAULT_LAYER_COLOR;
+                  const tabStyle: CSSProperties & Record<string, string> = {
+                    '--channel-tab-background': applyAlphaToHex(tintColor, 0.18),
+                    '--channel-tab-background-active': applyAlphaToHex(tintColor, 0.35),
+                    '--channel-tab-border': 'rgba(255, 255, 255, 0.15)',
+                    '--channel-tab-border-active': applyAlphaToHex(tintColor, 0.55)
+                  };
+                  const handleChannelTabClick = (event: MouseEvent<HTMLButtonElement>) => {
+                    if (event.ctrlKey) {
+                      event.preventDefault();
+                      onChannelVisibilityToggle(channelId);
+                      return;
+                    }
+                    onChannelTabSelect(channelId);
+                  };
+                  return (
+                    <button
+                      key={channelId}
+                      type="button"
+                      className={tabClassName}
+                      style={tabStyle}
+                      onClick={handleChannelTabClick}
+                      title={
+                        isVisible ? 'Ctrl + click to hide this channel' : 'Ctrl + click to show this channel'
+                      }
+                      role="tab"
+                      id={`channel-tab-${channelId}`}
+                      aria-selected={isActive}
+                      aria-controls={`channel-panel-${channelId}`}
+                    >
+                      <span className={labelClassName}>{label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null
+          }
         >
           <div className="sidebar sidebar-left">
             {loadedChannelIds.length > 0 ? (
               <div className="channel-controls">
-                <div className="channel-tabs" role="tablist" aria-label="Volume channels">
-                  {loadedChannelIds.map((channelId) => {
-                    const label = channelNameMap.get(channelId) ?? 'Untitled channel';
-                    const isActive = channelId === activeChannelId;
-                    const isVisible = channelVisibility[channelId] ?? true;
-                    const tabClassName = ['channel-tab', isActive ? 'is-active' : '', !isVisible ? 'is-hidden' : '']
-                      .filter(Boolean)
-                      .join(' ');
-                    const labelClassName = isVisible
-                      ? 'channel-tab-label'
-                      : 'channel-tab-label channel-tab-label--hidden';
-                    const tintColor = channelTintMap.get(channelId) ?? DEFAULT_LAYER_COLOR;
-                    const tabStyle: CSSProperties & Record<string, string> = {
-                      '--channel-tab-background': applyAlphaToHex(tintColor, 0.18),
-                      '--channel-tab-background-active': applyAlphaToHex(tintColor, 0.35),
-                      '--channel-tab-border': 'rgba(255, 255, 255, 0.15)',
-                      '--channel-tab-border-active': applyAlphaToHex(tintColor, 0.55)
-                    };
-                    const handleChannelTabClick = (event: MouseEvent<HTMLButtonElement>) => {
-                      if (event.ctrlKey) {
-                        event.preventDefault();
-                        onChannelVisibilityToggle(channelId);
-                        return;
-                      }
-                      onChannelTabSelect(channelId);
-                    };
-                    return (
-                      <button
-                        key={channelId}
-                        type="button"
-                        className={tabClassName}
-                        style={tabStyle}
-                        onClick={handleChannelTabClick}
-                        title={
-                          isVisible
-                            ? 'Ctrl + click to hide this channel'
-                            : 'Ctrl + click to show this channel'
-                        }
-                        role="tab"
-                        id={`channel-tab-${channelId}`}
-                        aria-selected={isActive}
-                        aria-controls={`channel-panel-${channelId}`}
-                      >
-                        <span className={labelClassName}>{label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
                 {loadedChannelIds.map((channelId) => {
                   const channelLayers = channelLayersMap.get(channelId) ?? [];
                   const selectedLayerKey = channelActiveLayer[channelId] ?? channelLayers[0]?.key ?? null;

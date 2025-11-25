@@ -713,3 +713,6 @@ d centered the front-page card in the viewport.
 
 ## Additive hover segmentation fix
 - Reused sampled segmentation labels for the target layer while collecting additive hover values so the hover formatter no longer references undefined segmentation label state and layer prefixes stay additive-only.
+
+## Channels window tabs stay visible when minimized
+- Moved the per-channel tab bar into the floating window header so it remains accessible while the controls are collapsed.
