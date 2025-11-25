@@ -167,6 +167,13 @@
   display: none;
 }
 
+.floating-window--header-bottom.is-minimized .floating-window-body {
+  display: flex;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .floating-window--warning {
   z-index: 40;
   background: rgba(42, 16, 22, 0.92);

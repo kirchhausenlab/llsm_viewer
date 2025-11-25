@@ -51,6 +51,39 @@ const clampToRange = (value: number, min: number, max: number) => {
 const formatAxisValue = (value: number) =>
   value.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
+const computeNiceStep = (span: number, maxTicks: number) => {
+  if (!Number.isFinite(span) || span <= 0 || maxTicks <= 0) {
+    return 0;
+  }
+
+  const roughStep = span / maxTicks;
+  const exponent = Math.pow(10, Math.floor(Math.log10(roughStep)));
+  const fraction = roughStep / exponent;
+
+  const niceFraction = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10;
+  return niceFraction * exponent;
+};
+
+const generateNiceTicks = (min: number, max: number, maxTicks: number) => {
+  const span = max - min;
+  const step = computeNiceStep(span, maxTicks);
+
+  if (step <= 0 || !Number.isFinite(step)) {
+    return [] as number[];
+  }
+
+  const ticks: number[] = [];
+  const start = Math.ceil(min / step) * step;
+
+  for (let value = start; value < max; value += step) {
+    if (value > min && value < max) {
+      ticks.push(value);
+    }
+  }
+
+  return ticks;
+};
+
 type RangeSliderProps = {
   label: string;
   bounds: NumericRange;
@@ -150,28 +183,60 @@ function SelectedTracksWindow({
   const chartWidth = SVG_WIDTH - PADDING.left - PADDING.right;
   const chartHeight = SVG_HEIGHT - PADDING.top - PADDING.bottom;
 
-  const resolvedSeries = useMemo<ChartSeries[]>(() => {
-    if (chartWidth <= 0 || chartHeight <= 0) {
-      return [];
+  const scaleX = useMemo(() => {
+    if (chartWidth <= 0) {
+      return () => PADDING.left;
+    }
+    if (domainXSpan === 0) {
+      const center = PADDING.left + chartWidth / 2;
+      return () => center;
     }
 
-    const scaleX = (time: number) => {
-      if (domainXSpan === 0) {
-        return PADDING.left + chartWidth / 2;
-      }
+    return (time: number) => {
       const clampedTime = clampToRange(time, domainXMin, domainXMax);
       const normalized = (clampedTime - domainXMin) / domainXSpan;
       return PADDING.left + normalized * chartWidth;
     };
+  }, [chartWidth, domainXMax, domainXMin, domainXSpan]);
 
-    const scaleY = (amplitude: number) => {
-      if (domainYSpan === 0) {
-        return PADDING.top + chartHeight / 2;
-      }
+  const scaleY = useMemo(() => {
+    if (chartHeight <= 0) {
+      return () => PADDING.top;
+    }
+    if (domainYSpan === 0) {
+      const center = PADDING.top + chartHeight / 2;
+      return () => center;
+    }
+
+    return (amplitude: number) => {
       const clamped = clampToRange(amplitude, domainYMin, domainYMax);
       const normalized = (clamped - domainYMin) / domainYSpan;
       return PADDING.top + chartHeight - normalized * chartHeight;
     };
+  }, [chartHeight, domainYMax, domainYMin, domainYSpan]);
+
+  const xTicks = useMemo(
+    () => generateNiceTicks(domainXMin, domainXMax, 4),
+    [domainXMax, domainXMin]
+  );
+  const yTicks = useMemo(
+    () => generateNiceTicks(domainYMin, domainYMax, 4),
+    [domainYMax, domainYMin]
+  );
+
+  const xAxisLabels = useMemo(
+    () => [domainXMin, ...xTicks, domainXMax],
+    [domainXMax, domainXMin, xTicks]
+  );
+  const yAxisLabels = useMemo(
+    () => [domainYMin, ...yTicks, domainYMax],
+    [domainYMax, domainYMin, yTicks]
+  );
+
+  const resolvedSeries = useMemo<ChartSeries[]>(() => {
+    if (chartWidth <= 0 || chartHeight <= 0) {
+      return [];
+    }
 
     return series.map((entry) => {
       const sortedPoints = [...entry.points].sort((a, b) => a.time - b.time);
@@ -198,35 +263,19 @@ function SelectedTracksWindow({
   }, [
     chartHeight,
     chartWidth,
-    domainXMax,
-    domainXMin,
-    domainXSpan,
-    domainYMax,
-    domainYMin,
-    domainYSpan,
+    scaleX,
+    scaleY,
     series
   ]);
 
   const xAxisEnd = PADDING.left + chartWidth;
   const yAxisEnd = PADDING.top + chartHeight;
-  const domainYMinLabel = formatAxisValue(domainYMin);
-  const domainYMaxLabel = formatAxisValue(domainYMax);
-  const domainXMinLabel = formatAxisValue(domainXMin);
-  const domainXMaxLabel = formatAxisValue(domainXMax);
   const totalTimepointsLabel = totalTimepoints.toLocaleString();
 
   const hasSeries = resolvedSeries.some((entry) => entry.path);
   const playheadX = useMemo(() => {
-    if (chartWidth <= 0) {
-      return PADDING.left;
-    }
-    if (domainXSpan === 0) {
-      return PADDING.left + chartWidth / 2;
-    }
-    const clampedTime = clampToRange(currentTimepoint, domainXMin, domainXMax);
-    const normalized = (clampedTime - domainXMin) / domainXSpan;
-    return PADDING.left + normalized * chartWidth;
-  }, [chartWidth, currentTimepoint, domainXMax, domainXMin, domainXSpan]);
+    return scaleX(currentTimepoint);
+  }, [currentTimepoint, scaleX]);
 
   return (
     <div className="selected-tracks-window">
@@ -248,6 +297,32 @@ function SelectedTracksWindow({
               <line x1={PADDING.left} y1={PADDING.top} x2={PADDING.left} y2={yAxisEnd} />
               <line x1={PADDING.left} y1={PADDING.top} x2={xAxisEnd} y2={PADDING.top} />
               <line x1={xAxisEnd} y1={PADDING.top} x2={xAxisEnd} y2={yAxisEnd} />
+              {xTicks.map((value) => {
+                const x = scaleX(value);
+                return (
+                  <line
+                    key={`grid-x-${value}`}
+                    className="selected-tracks-chart-subgrid"
+                    x1={x}
+                    y1={PADDING.top}
+                    x2={x}
+                    y2={yAxisEnd}
+                  />
+                );
+              })}
+              {yTicks.map((value) => {
+                const y = scaleY(value);
+                return (
+                  <line
+                    key={`grid-y-${value}`}
+                    className="selected-tracks-chart-subgrid"
+                    x1={PADDING.left}
+                    y1={y}
+                    x2={xAxisEnd}
+                    y2={y}
+                  />
+                );
+              })}
             </g>
             <g className="selected-tracks-chart-series">
               {resolvedSeries.map((entry) =>
@@ -266,18 +341,42 @@ function SelectedTracksWindow({
               <line x1={playheadX} y1={PADDING.top} x2={playheadX} y2={yAxisEnd} />
             </g>
             <g className="selected-tracks-chart-axis-labels">
-              <text x={PADDING.left} y={yAxisEnd + 24}>
-                {domainXMinLabel}
-              </text>
-              <text x={xAxisEnd} y={yAxisEnd + 24} textAnchor="end">
-                {domainXMaxLabel}
-              </text>
-              <text x={PADDING.left - 12} y={yAxisEnd} textAnchor="end" dominantBaseline="middle">
-                {domainYMinLabel}
-              </text>
-              <text x={PADDING.left - 12} y={PADDING.top} textAnchor="end" dominantBaseline="middle">
-                {domainYMaxLabel}
-              </text>
+              {xAxisLabels.map((value) => {
+                const x = scaleX(value);
+                const label = formatAxisValue(value);
+                return (
+                  <g key={`x-label-${value}`}>
+                    <line
+                      className="selected-tracks-axis-tick-mark"
+                      x1={x}
+                      y1={yAxisEnd}
+                      x2={x}
+                      y2={yAxisEnd - 6}
+                    />
+                    <text x={x} y={yAxisEnd + 20} textAnchor="middle">
+                      {label}
+                    </text>
+                  </g>
+                );
+              })}
+              {yAxisLabels.map((value) => {
+                const y = scaleY(value);
+                const label = formatAxisValue(value);
+                return (
+                  <g key={`y-label-${value}`}>
+                    <line
+                      className="selected-tracks-axis-tick-mark"
+                      x1={PADDING.left}
+                      y1={y}
+                      x2={PADDING.left + 6}
+                      y2={y}
+                    />
+                    <text x={PADDING.left - 10} y={y} textAnchor="end" dominantBaseline="middle">
+                      {label}
+                    </text>
+                  </g>
+                );
+              })}
               <text
                 x={PADDING.left + chartWidth / 2}
                 y={SVG_HEIGHT - 4}
