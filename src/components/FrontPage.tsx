@@ -224,6 +224,7 @@ export default function FrontPage({
   }, [frontPageMode, isPreprocessedLoaderOpen]);
 
   const showReturnButton = frontPageMode !== 'initial' || isPreprocessedLoaderOpen;
+  const showLaunchViewerButton = frontPageMode !== 'initial' || isPreprocessedLoaderOpen;
   const voxelResolutionAxes = useMemo(() => {
     return experimentDimension === '2d'
       ? VOXEL_RESOLUTION_AXES.filter(({ axis }) => axis !== 'z')
@@ -752,31 +753,33 @@ export default function FrontPage({
           {launchErrorMessage ? (
             <p className="launch-feedback launch-feedback-error">{launchErrorMessage}</p>
           ) : null}
-          <div className="front-page-actions">
-            <button
-              type="button"
-              className="launch-viewer-button"
-              onClick={onLaunchViewer}
-              disabled={isLaunchingViewer || !launchButtonEnabled}
-              data-launchable={launchButtonLaunchable}
-            >
-              {isLaunchingViewer ? 'Loading…' : 'Launch viewer'}
-            </button>
-            {frontPageMode !== 'initial' ? (
+          {showLaunchViewerButton ? (
+            <div className="front-page-actions">
               <button
                 type="button"
-                className="export-preprocessed-button"
-                onClick={onExportPreprocessedExperiment}
-                disabled={
-                  isExportingPreprocessed ||
-                  isLaunchingViewer ||
-                  (frontPageMode === 'configuring' && !canLaunch)
-                }
+                className="launch-viewer-button"
+                onClick={onLaunchViewer}
+                disabled={isLaunchingViewer || !launchButtonEnabled}
+                data-launchable={launchButtonLaunchable}
               >
-                {isExportingPreprocessed ? 'Exporting…' : 'Export preprocessed experiment'}
+                {isLaunchingViewer ? 'Loading…' : 'Launch viewer'}
               </button>
-            ) : null}
-          </div>
+              {frontPageMode !== 'initial' ? (
+                <button
+                  type="button"
+                  className="export-preprocessed-button"
+                  onClick={onExportPreprocessedExperiment}
+                  disabled={
+                    isExportingPreprocessed ||
+                    isLaunchingViewer ||
+                    (frontPageMode === 'configuring' && !canLaunch)
+                  }
+                >
+                  {isExportingPreprocessed ? 'Exporting…' : 'Export preprocessed experiment'}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
         {launchErrorMessage ? (
           <FloatingWindow
