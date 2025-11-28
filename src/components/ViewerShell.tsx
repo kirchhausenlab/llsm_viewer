@@ -13,7 +13,7 @@ import {
   createDefaultLayerSettings,
   type LayerSettings
 } from '../state/layerSettings';
-import { applyAlphaToHex, getTrackTabTextColor } from '../utils/appHelpers';
+import { applyAlphaToHex } from '../utils/appHelpers';
 import {
   TRACK_COLOR_SWATCHES,
   getTrackColorHex,
@@ -118,7 +118,6 @@ type TracksPanelProps = {
   followedTrackId: string | null;
   onTrackOrderToggle: (channelId: string) => void;
   trackOrderModeByChannel: Record<string, 'id' | 'length'>;
-  registerTrackMasterCheckbox: (channelId: string) => (element: HTMLInputElement | null) => void;
   trackVisibility: Record<string, boolean>;
   onTrackVisibilityToggle: (trackId: string) => void;
   onTrackVisibilityAllChange: (channelId: string, visible: boolean) => void;
@@ -282,7 +281,6 @@ function ViewerShell({
     followedTrackId,
     onTrackOrderToggle,
     trackOrderModeByChannel,
-    registerTrackMasterCheckbox,
     trackVisibility,
     onTrackVisibilityToggle,
     onTrackVisibilityAllChange,
@@ -311,6 +309,10 @@ function ViewerShell({
   } = selectedTracksPanel;
   const hasVolumeData = loadedChannelIds.some((channelId) =>
     (channelLayersMap.get(channelId) ?? []).some((layer) => layer.volumes.length > 0)
+  );
+
+  const hasTrackData = channels.some(
+    (channel) => (parsedTracksByChannel.get(channel.id)?.length ?? 0) > 0
   );
 
   const [renderingQuality, setRenderingQuality] = useState(1);
@@ -1028,67 +1030,93 @@ function ViewerShell({
           </div>
         </FloatingWindow>
 
-        <FloatingWindow
-          title="Tracks"
-          initialPosition={trackWindowInitialPosition}
-          width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
-          className="floating-window--tracks"
-          resetSignal={resetToken}
-        >
-          <div className="sidebar sidebar-right">
-            {channels.length > 0 ? (
-              <div className="track-controls">
-                <div className="track-tabs" role="tablist" aria-label="Track channels">
-                  {channels.map((channel) => {
-                    const isActive = channel.id === activeTrackChannelId;
-                    const channelName = channelNameMap.get(channel.id) ?? 'Untitled channel';
-                    const hasTracks = (parsedTracksByChannel.get(channel.id)?.length ?? 0) > 0;
-                    const tabClassName = ['track-tab', isActive ? 'is-active' : '', !hasTracks ? 'is-empty' : '']
-                      .filter(Boolean)
-                      .join(' ');
-                    const colorMode = channelTrackColorModes[channel.id] ?? { type: 'random' };
-                    const baseColor =
-                      colorMode.type === 'uniform' ? normalizeTrackColor(colorMode.color) : '#FFFFFF';
-                    const textColor =
-                      colorMode.type === 'uniform' ? getTrackTabTextColor(baseColor) : '#0b1220';
-                    const borderColor =
-                      colorMode.type === 'uniform' ? 'rgba(11, 18, 32, 0.22)' : 'rgba(15, 23, 42, 0.18)';
-                    const activeBorderColor =
-                      colorMode.type === 'uniform' ? 'rgba(11, 18, 32, 0.35)' : 'rgba(15, 23, 42, 0.28)';
-                    const tabStyle: CSSProperties & Record<string, string> = {
-                      '--track-tab-background': baseColor,
-                      '--track-tab-background-active': baseColor,
-                      '--track-tab-border': borderColor,
-                      '--track-tab-border-active': activeBorderColor,
-                      '--track-tab-text': textColor,
-                      '--track-tab-text-active': textColor
-                    };
-                    return (
-                      <button
-                        key={channel.id}
-                        type="button"
-                        className={tabClassName}
-                        style={tabStyle}
-                        onClick={() => onTrackChannelTabSelect(channel.id)}
-                        role="tab"
-                        id={`track-tab-${channel.id}`}
-                        aria-selected={isActive}
-                        aria-controls={`track-panel-${channel.id}`}
-                      >
-                        <span className="track-tab-label">{channelName}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+        {hasTrackData ? (
+          <FloatingWindow
+            title="Tracks"
+            initialPosition={trackWindowInitialPosition}
+            width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
+            className="floating-window--tracks"
+            resetSignal={resetToken}
+            headerContent={
+              <div className="channel-tabs channel-tabs--header" role="tablist" aria-label="Track channels">
                 {channels.map((channel) => {
+                  const label = channelNameMap.get(channel.id) ?? 'Untitled channel';
+                  const displayLabel = label.length > 9 ? `${label.slice(0, 6)}...` : label;
+                  const isActive = channel.id === activeTrackChannelId;
+                  const summary = trackSummaryByChannel.get(channel.id) ?? { total: 0, visible: 0 };
+                  const hasVisibleTracks = summary.visible > 0;
+                  const tabClassName = ['channel-tab', isActive ? 'is-active' : '', !hasVisibleTracks ? 'is-hidden' : '']
+                    .filter(Boolean)
+                    .join(' ');
+                  const labelClassName = hasVisibleTracks
+                    ? 'channel-tab-label'
+                    : 'channel-tab-label channel-tab-label--crossed';
+                  const colorMode = channelTrackColorModes[channel.id] ?? { type: 'random' };
+                  const tabStyle: CSSProperties & Record<string, string> | undefined =
+                    colorMode.type === 'uniform'
+                      ? {
+                          '--channel-tab-background': applyAlphaToHex(
+                            normalizeTrackColor(colorMode.color),
+                            0.18
+                          ),
+                          '--channel-tab-background-active': applyAlphaToHex(
+                            normalizeTrackColor(colorMode.color),
+                            0.35
+                          ),
+                          '--channel-tab-border': 'rgba(255, 255, 255, 0.15)',
+                          '--channel-tab-border-active': applyAlphaToHex(
+                            normalizeTrackColor(colorMode.color),
+                            0.55
+                          )
+                        }
+                      : undefined;
+
+                  const handleTrackTabClick = (event: MouseEvent<HTMLButtonElement>) => {
+                    const currentSummary = trackSummaryByChannel.get(channel.id) ?? { total: 0, visible: 0 };
+                    const nextHasVisibleTracks = currentSummary.visible > 0;
+                    if (event.ctrlKey) {
+                      event.preventDefault();
+                      onTrackVisibilityAllChange(channel.id, !nextHasVisibleTracks);
+                      return;
+                    }
+                    onTrackChannelTabSelect(channel.id);
+                  };
+
+                  const tabTitle = hasVisibleTracks
+                    ? 'Ctrl + click to hide all tracks for this channel'
+                    : 'Ctrl + click to show all tracks for this channel';
+
+                  return (
+                    <button
+                      key={channel.id}
+                      type="button"
+                      className={tabClassName}
+                      style={tabStyle}
+                      onClick={handleTrackTabClick}
+                      role="tab"
+                      id={`track-tab-${channel.id}`}
+                      aria-label={label}
+                      aria-selected={isActive}
+                      aria-controls={`track-panel-${channel.id}`}
+                      title={tabTitle}
+                    >
+                      <span className={labelClassName}>{displayLabel}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            }
+          >
+            <div className="sidebar sidebar-right">
+              {channels.length > 0 ? (
+                <div className="track-controls">
+                  {channels.map((channel) => {
                   const channelName = channelNameMap.get(channel.id) ?? 'Untitled channel';
                   const tracksForChannel = parsedTracksByChannel.get(channel.id) ?? [];
                   const isActive = channel.id === activeTrackChannelId;
                   const colorMode = channelTrackColorModes[channel.id] ?? { type: 'random' };
                   const opacity = trackOpacityByChannel[channel.id] ?? trackDefaults.opacity;
                   const lineWidth = trackLineWidthByChannel[channel.id] ?? trackDefaults.lineWidth;
-                  const summary = trackSummaryByChannel.get(channel.id) ?? { total: 0, visible: 0 };
-                  const allChecked = summary.total > 0 && summary.visible === summary.total;
                   const channelFollowedId = followedTrackChannelId === channel.id ? followedTrackId : null;
                   const orderMode = trackOrderModeByChannel[channel.id] ?? 'id';
                   const orderedTracks =
@@ -1204,25 +1232,12 @@ function ViewerShell({
                             onClick={() => onTrackColorReset(channel.id)}
                             disabled={tracksForChannel.length === 0}
                           >
-                            Randomize
+                            Sorted
                           </button>
                         </div>
                       </div>
                       <div className="track-list-section">
                         <div className="track-list-header">
-                          <label className="track-master-toggle">
-                            <input
-                              ref={registerTrackMasterCheckbox(channel.id)}
-                              type="checkbox"
-                              checked={tracksForChannel.length > 0 && allChecked}
-                              onChange={(event) =>
-                                onTrackVisibilityAllChange(channel.id, event.target.checked)
-                              }
-                              disabled={tracksForChannel.length === 0}
-                              aria-label={`Show all tracks for ${channelName}`}
-                            />
-                            <span>Show all tracks</span>
-                          </label>
                           <button
                             type="button"
                             className={
@@ -1315,6 +1330,7 @@ function ViewerShell({
             )}
           </div>
         </FloatingWindow>
+        ) : null}
         {!isVrActive && shouldRender ? (
           <FloatingWindow
             title="Selected Tracks"

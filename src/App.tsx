@@ -416,7 +416,6 @@ function App() {
   }>(() => computeSelectedTracksWindowDefaultPosition());
 
   const loadRequestRef = useRef(0);
-  const trackMasterCheckboxRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const channelIdRef = useRef(0);
   const layerIdRef = useRef(0);
   const editingChannelOriginalNameRef = useRef('');
@@ -1562,29 +1561,6 @@ function App() {
     [channelActiveLayer, channelLayersMap, channels, layerSettings]
   );
 
-  useEffect(() => {
-    for (const channel of channels) {
-      const checkbox = trackMasterCheckboxRefs.current[channel.id];
-      if (!checkbox) {
-        continue;
-      }
-      const summary = trackSummaryByChannel.get(channel.id) ?? { total: 0, visible: 0 };
-      const allChecked = summary.total > 0 && summary.visible === summary.total;
-      const someChecked =
-        summary.total > 0 && summary.visible > 0 && summary.visible < summary.total;
-      checkbox.indeterminate = someChecked && !allChecked;
-    }
-  }, [channels, trackSummaryByChannel]);
-
-  useEffect(() => {
-    const validIds = new Set(channels.map((channel) => channel.id));
-    for (const key of Object.keys(trackMasterCheckboxRefs.current)) {
-      if (!validIds.has(key)) {
-        delete trackMasterCheckboxRefs.current[key];
-      }
-    }
-  }, [channels]);
-
   const handleTogglePlayback = useCallback(() => {
     setIsPlaying((current) => {
       if (!current && volumeTimepointCount <= 1) {
@@ -2540,13 +2516,6 @@ function App() {
     setFollowedTrack(null);
   }, []);
 
-  const registerTrackMasterCheckbox = useCallback(
-    (channelId: string) => (element: HTMLInputElement | null) => {
-      trackMasterCheckboxRefs.current[channelId] = element;
-    },
-    []
-  );
-
   const handleToggleViewerMode = useCallback(() => {
     if (!is3dViewerAvailable) {
       return;
@@ -3372,7 +3341,6 @@ function App() {
       followedTrackId,
       onTrackOrderToggle: handleTrackOrderToggle,
       trackOrderModeByChannel,
-      registerTrackMasterCheckbox,
       trackVisibility,
       onTrackVisibilityToggle: handleTrackVisibilityToggle,
       onTrackVisibilityAllChange: handleTrackVisibilityAllChange,

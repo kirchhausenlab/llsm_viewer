@@ -180,7 +180,8 @@
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  align-items: flex-start;
+  align-items: center;
+  width: 100%;
 }
 
 .track-controls .control-group {
@@ -233,28 +234,13 @@
 .track-controls .track-list-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-}
-
-.track-controls .track-master-toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.8);
+  justify-content: flex-end;
 }
 
 .track-list-section {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-}
-
-.track-controls .track-master-toggle input[type='checkbox'] {
-  width: 1.1rem;
-  height: 1.1rem;
-  accent-color: #5b8cff;
 }
 
 .track-controls .track-order-toggle {
