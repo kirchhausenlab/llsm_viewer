@@ -746,3 +746,11 @@ d centered the front-page card in the viewport.
 ## Top menu hover readout tweaks
 - Renamed the in-viewer return affordance to match the front page's "↩ Return" label.
 - Matched the hover readout typography to the surrounding buttons and reordered coordinates ahead of intensity values for quicker spatial scanning.
+
+## Front page input and layout polish
+- Added extra breathing room between the initial setup and preprocessed dataset buttons on the landing screen.
+- Normalized voxel resolution inputs to convert comma decimal separators into dots for consistent parsing.
+- Simplified the movie type toggle by removing the surrounding outline and selection indicators for the radio buttons.
+
+## Voxel resolution normalization compatibility
+- Updated the comma-to-dot normalization to avoid using String.prototype.replaceAll so type-checking passes with the current TypeScript lib target.

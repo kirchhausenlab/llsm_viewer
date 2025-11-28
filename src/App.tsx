@@ -320,11 +320,12 @@ function App() {
   }, []);
   const handleVoxelResolutionAxisChange = useCallback(
     (axis: VoxelResolutionAxis, value: string) => {
+      const normalizedValue = value.replace(/,/g, '.');
       setVoxelResolutionInput((current) => {
-        if (current[axis] === value) {
+        if (current[axis] === normalizedValue) {
           return current;
         }
-        return { ...current, [axis]: value };
+        return { ...current, [axis]: normalizedValue };
       });
     },
     []
