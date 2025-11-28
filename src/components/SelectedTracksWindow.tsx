@@ -24,7 +24,7 @@ type SelectedTracksWindowProps = {
 };
 
 const SVG_WIDTH = 1040;
-const SVG_HEIGHT = 180;
+const SVG_HEIGHT = 260;
 const PADDING = {
   top: 20,
   right: 28,
