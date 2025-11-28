@@ -756,3 +756,6 @@ d centered the front-page card in the viewport.
 
 ## Voxel resolution normalization compatibility
 - Updated the comma-to-dot normalization to avoid using String.prototype.replaceAll so type-checking passes with the current TypeScript lib target.
+
+## Playback and slice slider layout fixes
+- Restyled the Z plane and playback sliders to span the full control window width with compact labels stacked above them for clearer alignment.
