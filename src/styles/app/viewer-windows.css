@@ -62,6 +62,15 @@
   padding-top: 0.2rem;
 }
 
+.floating-window--tracks .floating-window-header-main {
+  gap: 0.55rem;
+}
+
+.floating-window--tracks .floating-window-header-content {
+  margin-top: 0.35rem;
+  padding-top: 0.2rem;
+}
+
 .floating-window--playback {
   z-index: 30;
 }

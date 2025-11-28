@@ -18,6 +18,7 @@ import {
 } from './layerColors';
 import {
   DEFAULT_TRACK_COLOR,
+  TRACK_COLOR_SWATCHES,
   getTrackColorHex,
   normalizeTrackColor,
   type TrackColorOption
@@ -305,6 +306,7 @@ function App() {
   const [layoutResetToken, setLayoutResetToken] = useState(0);
   const [hoveredVolumeVoxel, setHoveredVolumeVoxel] = useState<HoveredVoxelInfo | null>(null);
   const [isHelpMenuOpen, setIsHelpMenuOpen] = useState(false);
+  const hasInitializedTrackColorsRef = useRef(false);
 
   const is3dViewerAvailable = experimentDimension === '3d';
 
@@ -339,6 +341,12 @@ function App() {
       return { ...current, unit };
     });
   }, []);
+
+  useEffect(() => {
+    if (channels.length === 0) {
+      hasInitializedTrackColorsRef.current = false;
+    }
+  }, [channels.length]);
   const handleVoxelResolutionAnisotropyToggle = useCallback((value: boolean) => {
     setVoxelResolutionInput((current) => {
       if (current.correctAnisotropy === value) {
@@ -922,6 +930,63 @@ function App() {
       return next.size === current.size ? current : next;
     });
   }, [parsedTracks]);
+
+  useEffect(() => {
+    if (hasInitializedTrackColorsRef.current) {
+      return;
+    }
+
+    const channelsWithTracks = channels.filter(
+      (channel) => (parsedTracksByChannel.get(channel.id)?.length ?? 0) > 0
+    );
+
+    if (channelsWithTracks.length === 0) {
+      return;
+    }
+
+    setChannelTrackStates((current) => {
+      const next: Record<string, ChannelTrackState> = { ...current };
+      let changed = false;
+
+      const ensureState = (channelId: string) => {
+        const existing = next[channelId];
+        if (existing) {
+          return existing;
+        }
+        const fallback = createDefaultChannelTrackState();
+        next[channelId] = fallback;
+        changed = true;
+        return fallback;
+      };
+
+      if (channelsWithTracks.length === 1) {
+        const channelId = channelsWithTracks[0].id;
+        const state = ensureState(channelId);
+        if (state.colorMode.type !== 'random') {
+          next[channelId] = { ...state, colorMode: { type: 'random' } };
+          changed = true;
+        }
+      } else {
+        channelsWithTracks.forEach((channel, index) => {
+          const state = ensureState(channel.id);
+          if (index < TRACK_COLOR_SWATCHES.length) {
+            const color = normalizeTrackColor(TRACK_COLOR_SWATCHES[index].value);
+            if (state.colorMode.type !== 'uniform' || state.colorMode.color !== color) {
+              next[channel.id] = { ...state, colorMode: { type: 'uniform', color } };
+              changed = true;
+            }
+          } else if (state.colorMode.type !== 'random') {
+            next[channel.id] = { ...state, colorMode: { type: 'random' } };
+            changed = true;
+          }
+        });
+      }
+
+      return changed ? next : current;
+    });
+
+    hasInitializedTrackColorsRef.current = true;
+  }, [channels, parsedTracksByChannel]);
 
   const hasParsedTrackData = parsedTracks.length > 0;
   const volumeStepScaleChangeRef = useRef<((value: number) => void) | null>(null);
@@ -2029,6 +2094,7 @@ function App() {
     setTrackOrderModeByChannel({});
     setSelectedTrackIds(new Set<string>());
     setFollowedTrack(null);
+    hasInitializedTrackColorsRef.current = false;
     setStatus('idle');
     setError(null);
     setLoadProgress(0);
