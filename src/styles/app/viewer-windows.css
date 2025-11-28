@@ -71,10 +71,12 @@
 }
 
 .floating-window-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 0.75rem;
+  row-gap: 0.35rem;
   padding: 0.85rem 1.1rem;
   cursor: grab;
   user-select: none;
@@ -101,13 +103,13 @@
 
 .floating-window-header-main {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 0.4rem;
-  flex: 1 1 auto;
   min-width: 0;
 }
 
 .floating-window-header-content {
+  grid-column: 1 / -1;
   width: 100%;
 }
 
@@ -115,6 +117,7 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  justify-self: end;
 }
 
 .floating-window-extra-actions {
