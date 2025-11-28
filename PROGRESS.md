@@ -747,6 +747,8 @@ d centered the front-page card in the viewport.
 - Renamed the in-viewer return affordance to match the front page's "↩ Return" label.
 - Matched the hover readout typography to the surrounding buttons and reordered coordinates ahead of intensity values for quicker spatial scanning.
 
+## Track anisotropy alignment
+- Rescaled imported track coordinates using the same anisotropy correction factors applied to the volumes so isotropic preprocessing keeps tracks aligned with the resampled data.
 ## Front page input and layout polish
 - Added extra breathing room between the initial setup and preprocessed dataset buttons on the landing screen.
 - Normalized voxel resolution inputs to convert comma decimal separators into dots for consistent parsing.
