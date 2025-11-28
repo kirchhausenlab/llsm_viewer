@@ -784,3 +784,7 @@ d centered the front-page card in the viewport.
 
 ## Selected tracks chart auto sizing
 - Let the selected tracks chart card and legend size to their content instead of stretching to fill the window so the amplitude plot hugs the rounded container without tall blank bands or empty legend space below the labels.
+
+## Track length cutoff filter
+- Added a shared range slider component and reused it in the Tracks window to expose a "Length cutoff" control that matches the Selected Tracks dual-handle sliders.
+- Filtered the track lists, selections, and rendering payloads by the cutoff while clearing followed/selected tracks that fall outside the active bounds.

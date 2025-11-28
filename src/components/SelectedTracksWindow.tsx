@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+
+import RangeSlider from './RangeSlider';
 import type { NumericRange, TrackPoint } from '../types/tracks';
 
 type SelectedTrackSeries = {
@@ -110,83 +112,6 @@ const computeNiceBounds = (min: number, max: number, maxTicks: number) => {
   }
 
   return { min: niceMin, max: niceMax };
-};
-
-type RangeSliderProps = {
-  label: string;
-  bounds: NumericRange;
-  value: NumericRange;
-  onChange: (limits: NumericRange) => void;
-  step?: number | 'any';
-};
-
-const RangeSlider = ({ label, bounds, value, onChange, step = 'any' }: RangeSliderProps) => {
-  const clampValue = (raw: number) => clampToRange(raw, bounds.min, bounds.max);
-
-  const span = bounds.max - bounds.min;
-  const normalizedSpan = span === 0 ? 1 : span;
-  const minPercent = ((value.min - bounds.min) / normalizedSpan) * 100;
-  const maxPercent = ((value.max - bounds.min) / normalizedSpan) * 100;
-
-  const handleMinChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const nextValue = clampValue(Number(event.target.value));
-    if (!Number.isFinite(nextValue)) {
-      return;
-    }
-    onChange({ min: Math.min(nextValue, value.max), max: value.max });
-  };
-
-  const handleMaxChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const nextValue = clampValue(Number(event.target.value));
-    if (!Number.isFinite(nextValue)) {
-      return;
-    }
-    onChange({ min: value.min, max: Math.max(nextValue, value.min) });
-  };
-
-  const disabled = bounds.max <= bounds.min;
-
-  return (
-    <div className="selected-tracks-slider">
-      <div className="selected-tracks-slider__header">
-        <span className="selected-tracks-slider__label">{label}</span>
-        <span className="selected-tracks-slider__value">
-          {`${formatAxisValue(value.min)} – ${formatAxisValue(value.max)}`}
-        </span>
-      </div>
-      <div className="selected-tracks-slider__inputs">
-        <div className="selected-tracks-slider__range" aria-hidden={disabled}>
-          <div className="selected-tracks-slider__track" />
-          <div
-            className="selected-tracks-slider__fill"
-            style={{ left: `${minPercent}%`, width: `${Math.max(maxPercent - minPercent, 0)}%` }}
-          />
-          <input
-            type="range"
-            min={bounds.min}
-            max={bounds.max}
-            step={step}
-            value={value.min}
-            onChange={handleMinChange}
-            aria-label={`${label} minimum`}
-            className="selected-tracks-slider__handle selected-tracks-slider__handle--min"
-            disabled={disabled}
-          />
-          <input
-            type="range"
-            min={bounds.min}
-            max={bounds.max}
-            step={step}
-            value={value.max}
-            onChange={handleMaxChange}
-            aria-label={`${label} maximum`}
-            className="selected-tracks-slider__handle selected-tracks-slider__handle--max"
-            disabled={disabled}
-          />
-        </div>
-      </div>
-    </div>
-  );
 };
 
 function SelectedTracksWindow({
@@ -563,6 +488,7 @@ function SelectedTracksWindow({
           bounds={amplitudeExtent}
           value={amplitudeLimits}
           onChange={onAmplitudeLimitsChange}
+          step="any"
         />
         <RangeSlider
           label="Time range"
