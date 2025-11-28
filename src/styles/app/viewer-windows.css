@@ -58,7 +58,8 @@
 }
 
 .floating-window--channels .floating-window-header-content {
-  margin-top: 0.15rem;
+  margin-top: 0.35rem;
+  padding-top: 0.2rem;
 }
 
 .floating-window--playback {
