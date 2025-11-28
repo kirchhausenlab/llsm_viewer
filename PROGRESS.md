@@ -778,3 +778,6 @@ d centered the front-page card in the viewport.
 ## Track end caps and selection blink
 - Added end-cap spheres at the latest timepoint of each trajectory that inherit the track's color, opacity, and highlight state so users can more easily spot track tips in 3D.
 - Changed selected tracks to pulse their brightness over time (including the new end caps) instead of using a static highlight.
+
+## Selected tracks plot margin cleanup
+- Rolled back the extra minimum heights on the selected tracks chart card and plot container so the enlarged amplitude plot sits snugly inside its rounded frame without wide top and bottom gutters.
