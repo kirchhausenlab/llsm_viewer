@@ -66,12 +66,10 @@ const DEFAULT_TRACK_OPACITY = 0.9;
 const DEFAULT_TRACK_LINE_WIDTH = 1;
 const WINDOW_MARGIN = 24;
 const CONTROL_WINDOW_WIDTH = 360;
-const PLAYBACK_WINDOW_WIDTH = 420;
-const TRACK_WINDOW_WIDTH = 340;
 const SELECTED_TRACKS_WINDOW_WIDTH = 1040;
 const SELECTED_TRACKS_WINDOW_HEIGHT = 220;
 const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
-const VIEWER_SETTINGS_WINDOW_VERTICAL_OFFSET = 520;
+const TRACK_WINDOW_VERTICAL_OFFSET = 520;
 const WARNING_WINDOW_WIDTH = 360;
 const DEFAULT_RESET_WINDOW = { windowMin: DEFAULT_WINDOW_MIN, windowMax: DEFAULT_WINDOW_MAX };
 
@@ -358,28 +356,40 @@ function App() {
     () => ({ x: WINDOW_MARGIN, y: WINDOW_MARGIN + LAYERS_WINDOW_VERTICAL_OFFSET }),
     []
   );
-  const [trackWindowInitialPosition, setTrackWindowInitialPosition] = useState<{ x: number; y: number }>(
-    () => ({ x: WINDOW_MARGIN, y: WINDOW_MARGIN })
-  );
-  const computeTrackWindowDefaultPosition = useCallback(() => {
+  const computeRightColumnX = useCallback(() => {
     if (typeof window === 'undefined') {
-      return { x: WINDOW_MARGIN, y: WINDOW_MARGIN };
+      return WINDOW_MARGIN;
     }
-    const trackWidth = Math.min(TRACK_WINDOW_WIDTH, window.innerWidth - WINDOW_MARGIN * 2);
-    const nextX = Math.max(WINDOW_MARGIN, window.innerWidth - trackWidth - WINDOW_MARGIN);
-    return { x: nextX, y: WINDOW_MARGIN };
+    const windowWidth = Math.min(CONTROL_WINDOW_WIDTH, window.innerWidth - WINDOW_MARGIN * 2);
+    return Math.max(WINDOW_MARGIN, window.innerWidth - windowWidth - WINDOW_MARGIN);
   }, []);
   const computeViewerSettingsWindowDefaultPosition = useCallback(() => {
-    const trackPosition = computeTrackWindowDefaultPosition();
+    const x = computeRightColumnX();
     if (typeof window === 'undefined') {
-      return { x: trackPosition.x, y: trackPosition.y + VIEWER_SETTINGS_WINDOW_VERTICAL_OFFSET };
+      return { x, y: WINDOW_MARGIN };
     }
     const viewportHeight = window.innerHeight;
-    const desiredY = trackPosition.y + VIEWER_SETTINGS_WINDOW_VERTICAL_OFFSET;
     const estimatedHeight = 320;
     const maxY = Math.max(WINDOW_MARGIN, viewportHeight - estimatedHeight - WINDOW_MARGIN);
-    return { x: trackPosition.x, y: Math.min(desiredY, maxY) };
-  }, [computeTrackWindowDefaultPosition]);
+    return { x, y: Math.min(WINDOW_MARGIN, maxY) };
+  }, [computeRightColumnX]);
+  const computeTrackWindowDefaultPosition = useCallback(() => {
+    const viewerSettingsPosition = computeViewerSettingsWindowDefaultPosition();
+    if (typeof window === 'undefined') {
+      return {
+        x: viewerSettingsPosition.x,
+        y: viewerSettingsPosition.y + TRACK_WINDOW_VERTICAL_OFFSET
+      };
+    }
+    const viewportHeight = window.innerHeight;
+    const desiredY = viewerSettingsPosition.y + TRACK_WINDOW_VERTICAL_OFFSET;
+    const estimatedHeight = 360;
+    const maxY = Math.max(WINDOW_MARGIN, viewportHeight - estimatedHeight - WINDOW_MARGIN);
+    return { x: viewerSettingsPosition.x, y: Math.min(desiredY, maxY) };
+  }, [computeViewerSettingsWindowDefaultPosition]);
+  const [trackWindowInitialPosition, setTrackWindowInitialPosition] = useState<{ x: number; y: number }>(
+    () => computeTrackWindowDefaultPosition()
+  );
   const computeSelectedTracksWindowDefaultPosition = useCallback(() => {
     if (typeof window === 'undefined') {
       return { x: WINDOW_MARGIN, y: WINDOW_MARGIN };
@@ -3274,9 +3284,7 @@ function App() {
     },
     layout: {
       windowMargin: WINDOW_MARGIN,
-      playbackWindowWidth: PLAYBACK_WINDOW_WIDTH,
       controlWindowWidth: CONTROL_WINDOW_WIDTH,
-      trackWindowWidth: TRACK_WINDOW_WIDTH,
       selectedTracksWindowWidth: SELECTED_TRACKS_WINDOW_WIDTH,
       resetToken: layoutResetToken,
       controlWindowInitialPosition,

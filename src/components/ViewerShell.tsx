@@ -151,9 +151,7 @@ type Position = { x: number; y: number };
 
 type LayoutProps = {
   windowMargin: number;
-  playbackWindowWidth: number;
   controlWindowWidth: number;
-  trackWindowWidth: number;
   selectedTracksWindowWidth: number;
   resetToken: number;
   controlWindowInitialPosition: Position;
@@ -205,9 +203,7 @@ function ViewerShell({
   } = topMenu;
   const {
     windowMargin,
-    playbackWindowWidth,
     controlWindowWidth,
-    trackWindowWidth,
     selectedTracksWindowWidth,
     resetToken,
     controlWindowInitialPosition,
@@ -429,45 +425,11 @@ function ViewerShell({
         <FloatingWindow
           title="Viewer controls"
           initialPosition={controlWindowInitialPosition}
-          width={`min(${playbackWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
+          width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
           className="floating-window--playback"
           resetSignal={resetToken}
         >
           <div className="sidebar sidebar-left">
-            <div className="global-controls">
-              <div className="control-group">
-                <div className="viewer-mode-row">
-                  <button
-                    type="button"
-                    onClick={onToggleViewerMode}
-                    className={viewerMode === '3d' ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
-                    disabled={isVrActive || isVrRequesting || !is3dModeAvailable}
-                  >
-                    {viewerMode === '3d' ? '3D view' : '2D view'}
-                  </button>
-                  <button
-                    type="button"
-                    className="viewer-mode-button"
-                    onClick={() => resetViewHandler?.()}
-                    disabled={!resetViewHandler}
-                  >
-                    Reset view
-                  </button>
-                  {is3dModeAvailable ? (
-                    <button
-                      type="button"
-                      className="viewer-mode-button"
-                      onClick={onVrButtonClick}
-                      disabled={vrButtonDisabled}
-                      title={vrButtonTitle}
-                    >
-                      {vrButtonLabel}
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-
             {viewerMode === '2d' && maxSliceDepth > 0 ? (
               <div className="control-group">
                 <label htmlFor="z-plane-slider">
@@ -597,6 +559,37 @@ function ViewerShell({
         >
           <div className="sidebar sidebar-right">
             <div className="global-controls">
+              <div className="control-group">
+                <div className="viewer-mode-row">
+                  <button
+                    type="button"
+                    onClick={onToggleViewerMode}
+                    className={viewerMode === '3d' ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
+                    disabled={isVrActive || isVrRequesting || !is3dModeAvailable}
+                  >
+                    {viewerMode === '3d' ? '3D view' : '2D view'}
+                  </button>
+                  <button
+                    type="button"
+                    className="viewer-mode-button"
+                    onClick={() => resetViewHandler?.()}
+                    disabled={!resetViewHandler}
+                  >
+                    Reset view
+                  </button>
+                  {is3dModeAvailable ? (
+                    <button
+                      type="button"
+                      className="viewer-mode-button"
+                      onClick={onVrButtonClick}
+                      disabled={vrButtonDisabled}
+                      title={vrButtonTitle}
+                    >
+                      {vrButtonLabel}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
               {is3dModeAvailable ? (
                 <div className="control-group">
                   <div className="viewer-mode-row">
@@ -1033,7 +1026,7 @@ function ViewerShell({
         <FloatingWindow
           title="Tracks"
           initialPosition={trackWindowInitialPosition}
-          width={`min(${trackWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
+          width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
           className="floating-window--tracks"
           resetSignal={resetToken}
         >
