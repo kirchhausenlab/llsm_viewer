@@ -276,11 +276,6 @@ function FloatingWindow({
     >
       <div className="floating-window-header-main">
         <h2 className="floating-window-title">{title}</h2>
-        {headerContent ? (
-          <div className="floating-window-header-content" data-no-drag>
-            {headerContent}
-          </div>
-        ) : null}
       </div>
       <div className="floating-window-header-actions" data-no-drag>
         {headerActions ? <div className="floating-window-extra-actions">{headerActions}</div> : null}
@@ -294,6 +289,11 @@ function FloatingWindow({
           <span aria-hidden="true">{isMinimized ? '▢' : '–'}</span>
         </button>
       </div>
+      {headerContent ? (
+        <div className="floating-window-header-content" data-no-drag>
+          {headerContent}
+        </div>
+      ) : null}
     </div>
   );
 
