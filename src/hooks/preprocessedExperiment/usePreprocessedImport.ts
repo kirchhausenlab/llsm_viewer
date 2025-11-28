@@ -135,7 +135,11 @@ export function usePreprocessedImport({
         const nextChannels = result.channelSummaries.map<ChannelSource>((summary) => ({
           id: summary.id,
           name: summary.name,
-          layers: [],
+          layers: summary.layers.map((layer) => ({
+            id: layer.key,
+            files: [],
+            isSegmentation: layer.isSegmentation
+          })),
           trackFile: null,
           trackStatus: 'loaded',
           trackError: null,
