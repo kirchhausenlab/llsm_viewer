@@ -71,6 +71,7 @@ const TRACK_WINDOW_WIDTH = 340;
 const SELECTED_TRACKS_WINDOW_WIDTH = 1040;
 const SELECTED_TRACKS_WINDOW_HEIGHT = 220;
 const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
+const VIEWER_SETTINGS_WINDOW_VERTICAL_OFFSET = 520;
 const WARNING_WINDOW_WIDTH = 360;
 const DEFAULT_RESET_WINDOW = { windowMin: DEFAULT_WINDOW_MIN, windowMax: DEFAULT_WINDOW_MAX };
 
@@ -368,6 +369,17 @@ function App() {
     const nextX = Math.max(WINDOW_MARGIN, window.innerWidth - trackWidth - WINDOW_MARGIN);
     return { x: nextX, y: WINDOW_MARGIN };
   }, []);
+  const computeViewerSettingsWindowDefaultPosition = useCallback(() => {
+    const trackPosition = computeTrackWindowDefaultPosition();
+    if (typeof window === 'undefined') {
+      return { x: trackPosition.x, y: trackPosition.y + VIEWER_SETTINGS_WINDOW_VERTICAL_OFFSET };
+    }
+    const viewportHeight = window.innerHeight;
+    const desiredY = trackPosition.y + VIEWER_SETTINGS_WINDOW_VERTICAL_OFFSET;
+    const estimatedHeight = 320;
+    const maxY = Math.max(WINDOW_MARGIN, viewportHeight - estimatedHeight - WINDOW_MARGIN);
+    return { x: trackPosition.x, y: Math.min(desiredY, maxY) };
+  }, [computeTrackWindowDefaultPosition]);
   const computeSelectedTracksWindowDefaultPosition = useCallback(() => {
     if (typeof window === 'undefined') {
       return { x: WINDOW_MARGIN, y: WINDOW_MARGIN };
@@ -382,6 +394,10 @@ function App() {
     );
     return { x, y };
   }, []);
+  const [viewerSettingsWindowInitialPosition, setViewerSettingsWindowInitialPosition] = useState<{
+    x: number;
+    y: number;
+  }>(() => computeViewerSettingsWindowDefaultPosition());
   const [selectedTracksWindowInitialPosition, setSelectedTracksWindowInitialPosition] = useState<{
     x: number;
     y: number;
@@ -923,9 +939,11 @@ function App() {
   const handleResetWindowLayout = useCallback(() => {
     setLayoutResetToken((value) => value + 1);
     setTrackWindowInitialPosition(computeTrackWindowDefaultPosition());
+    setViewerSettingsWindowInitialPosition(computeViewerSettingsWindowDefaultPosition());
     setSelectedTracksWindowInitialPosition(computeSelectedTracksWindowDefaultPosition());
   }, [
     computeSelectedTracksWindowDefaultPosition,
+    computeViewerSettingsWindowDefaultPosition,
     computeTrackWindowDefaultPosition
   ]);
 
@@ -938,6 +956,16 @@ function App() {
       return defaultPosition;
     });
   }, [computeTrackWindowDefaultPosition]);
+
+  useEffect(() => {
+    const defaultPosition = computeViewerSettingsWindowDefaultPosition();
+    setViewerSettingsWindowInitialPosition((current) => {
+      if (current.x === defaultPosition.x && current.y === defaultPosition.y) {
+        return current;
+      }
+      return defaultPosition;
+    });
+  }, [computeViewerSettingsWindowDefaultPosition]);
 
   useEffect(() => {
     const defaultPosition = computeSelectedTracksWindowDefaultPosition();
@@ -3252,6 +3280,7 @@ function App() {
       selectedTracksWindowWidth: SELECTED_TRACKS_WINDOW_WIDTH,
       resetToken: layoutResetToken,
       controlWindowInitialPosition,
+      viewerSettingsWindowInitialPosition,
       layersWindowInitialPosition,
       trackWindowInitialPosition,
       selectedTracksWindowInitialPosition
