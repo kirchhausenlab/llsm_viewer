@@ -861,7 +861,6 @@ export function renderVrChannelsHud(hud: VrChannelsHud, state: VrChannelsState):
 
   const paddingX = 68;
   const paddingTop = 48;
-  const headerToTabsSpacing = 96;
 
   ctx.save();
   ctx.fillStyle = '#dce7f7';
@@ -876,7 +875,7 @@ export function renderVrChannelsHud(hud: VrChannelsHud, state: VrChannelsState):
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
 
-  let currentY = paddingTop + headerToTabsSpacing;
+  let currentY = paddingTop + 84;
 
   const channels = state.channels ?? [];
   if (channels.length === 0) {
@@ -973,13 +972,11 @@ export function renderVrChannelsHud(hud: VrChannelsHud, state: VrChannelsState):
       hud.hoverRegion &&
       hud.hoverRegion.targetType === 'channels-tab-toggle' &&
       hud.hoverRegion.channelId === channel.id;
-    const tabLabel = channel.name.length > 9 ? `${channel.name.slice(0, 6)}...` : channel.name;
-
     ctx.fillStyle = channel.visible ? '#f3f6fc' : 'rgba(243, 246, 252, 0.55)';
     if (isToggleHovered) {
       ctx.fillStyle = '#ffffff';
     }
-    ctx.fillText(tabLabel, x + tabWidth / 2, y + tabHeight / 2);
+    ctx.fillText(channel.name, x + tabWidth / 2, y + tabHeight / 2);
     ctx.restore();
 
     const labelBounds = {
@@ -1373,7 +1370,6 @@ export function renderVrChannelsHud(hud: VrChannelsHud, state: VrChannelsState):
 
     const brightnessSlider = sliderByKey.get('brightness');
     const contrastSlider = sliderByKey.get('contrast');
-    const collapsibleFooterSpacing = 40;
     if (brightnessSlider && contrastSlider) {
       const rowTop = currentY;
       const brightnessBottom = drawSliderControl(brightnessSlider, paddingX, sliderColumnWidth, rowTop);
@@ -1383,7 +1379,7 @@ export function renderVrChannelsHud(hud: VrChannelsHud, state: VrChannelsState):
         sliderColumnWidth,
         rowTop,
       );
-      currentY = Math.max(brightnessBottom, contrastBottom) + collapsibleFooterSpacing;
+      currentY = Math.max(brightnessBottom, contrastBottom) + 64;
     }
 
     const tripleButtonSpacing = actionSpacing;
