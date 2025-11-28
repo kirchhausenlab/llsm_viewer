@@ -342,14 +342,14 @@ function ViewerShell({
           )}
         </main>
         <div className="viewer-top-menu">
-          <div className="viewer-top-menu-row">
-            <div className="viewer-top-menu-actions">
-              <button type="button" className="viewer-top-menu-button" onClick={onReturnToLauncher}>
-                Return to Launcher
-              </button>
-              <button type="button" className="viewer-top-menu-button" onClick={onResetLayout}>
-                Reset layout
-              </button>
+            <div className="viewer-top-menu-row">
+              <div className="viewer-top-menu-actions">
+                <button type="button" className="viewer-top-menu-button" onClick={onReturnToLauncher}>
+                  ↩ Return
+                </button>
+                <button type="button" className="viewer-top-menu-button" onClick={onResetLayout}>
+                  Reset layout
+                </button>
               <div className="viewer-top-menu-help" ref={helpMenuRef}>
                 <button
                   type="button"
@@ -399,6 +399,9 @@ function ViewerShell({
             <div className="viewer-top-menu-intensity" role="status" aria-live="polite">
               {hoveredVoxel ? (
                 <>
+                  <span className="viewer-top-menu-coordinates">
+                    ({hoveredVoxel.coordinates.x}, {hoveredVoxel.coordinates.y}, {hoveredVoxel.coordinates.z})
+                  </span>
                   <span className="viewer-top-menu-intensity-value">
                     {intensityComponents.map((component, index) => (
                       <span
@@ -415,9 +418,6 @@ function ViewerShell({
                         ) : null}
                       </span>
                     ))}
-                  </span>
-                  <span className="viewer-top-menu-coordinates">
-                    ({hoveredVoxel.coordinates.x}, {hoveredVoxel.coordinates.y}, {hoveredVoxel.coordinates.z})
                   </span>
                 </>
               ) : (

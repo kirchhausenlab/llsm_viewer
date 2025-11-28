@@ -742,3 +742,7 @@ d centered the front-page card in the viewport.
 
 ## Selected tracks amplitude plot sizing
 - Matched the amplitude chart's intrinsic aspect ratio to its rendered size by giving the SVG a viewBox and letting the container share the same ratio, preventing the plot from being horizontally squished in the selected tracks window.
+
+## Top menu hover readout tweaks
+- Renamed the in-viewer return affordance to match the front page's "↩ Return" label.
+- Matched the hover readout typography to the surrounding buttons and reordered coordinates ahead of intensity values for quicker spatial scanning.
