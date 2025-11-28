@@ -762,3 +762,7 @@ d centered the front-page card in the viewport.
 
 ## Channels window spacing tweaks
 - Added breathing room between the Channels title and tab bar, shortened long tab labels to a 6-character prefix with an ellipsis, and tightened the panel padding above the reset/invert/auto controls so the collapsible section feels more compact.
+
+## Tracks window tab updates
+- Hid the non-VR Tracks window whenever no tracks are loaded, moved the channel tabs into the floating header to match the Channels window styling, and added Ctrl+click toggles that show or hide all tracks for the selected channel while crossing out hidden tabs.
+- Centered the stop-following button, renamed the track color reset button to "Sorted," and removed the redundant "Show all tracks" master toggle in favor of the tab shortcut.
