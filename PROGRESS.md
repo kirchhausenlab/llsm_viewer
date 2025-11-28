@@ -51,6 +51,10 @@
 
 # Progress Log
 
+## Viewer settings sampling toggle
+- Hid the Trilinear quality slider whenever nearest-neighbor sampling is selected so only the FPS control remains visible until
+  trilinear sampling is active again.
+
 ## Channel tab layout alignment
 - Swapped the floating window channel tab header to a fixed three-column grid so volume/track tabs align without wrapping.
 - Trimmed the header tab padding and width constraints to prevent overflow while keeping the controls centered.

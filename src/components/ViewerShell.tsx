@@ -334,6 +334,9 @@ function ViewerShell({
     volumeViewerProps.onVolumeStepScaleChange?.(value);
   };
 
+  const showRenderingQualityControl =
+    is3dModeAvailable && viewerMode === '3d' && samplingMode === 'linear';
+
   const intensityComponents =
     hoveredVoxel && hoveredVoxel.components.length > 0
       ? hoveredVoxel.components
@@ -646,21 +649,39 @@ function ViewerShell({
               ) : null}
 
               {is3dModeAvailable && viewerMode === '3d' ? (
-                <div className="control-row">
-                  <div className="control-group control-group--slider">
-                    <label htmlFor="rendering-quality-slider">
-                      Trilinear quality <span>{renderingQuality.toFixed(2)}</span>
-                    </label>
-                    <input
-                      id="rendering-quality-slider"
-                      type="range"
-                      min={0.1}
-                      max={3}
-                      step={0.01}
-                      value={renderingQuality}
-                      onChange={(event) => handleRenderingQualityChange(Number(event.target.value))}
-                    />
+                showRenderingQualityControl ? (
+                  <div className="control-row">
+                    <div className="control-group control-group--slider">
+                      <label htmlFor="rendering-quality-slider">
+                        Trilinear quality <span>{renderingQuality.toFixed(2)}</span>
+                      </label>
+                      <input
+                        id="rendering-quality-slider"
+                        type="range"
+                        min={0.1}
+                        max={3}
+                        step={0.01}
+                        value={renderingQuality}
+                        onChange={(event) => handleRenderingQualityChange(Number(event.target.value))}
+                      />
+                    </div>
+                    <div className="control-group control-group--slider">
+                      <label htmlFor="fps-slider">
+                        frames per second <span>{fps}</span>
+                      </label>
+                      <input
+                        id="fps-slider"
+                        type="range"
+                        min={1}
+                        max={60}
+                        step={1}
+                        value={fps}
+                        onChange={(event) => onFpsChange(Number(event.target.value))}
+                        disabled={volumeTimepointCount <= 1}
+                      />
+                    </div>
                   </div>
+                ) : (
                   <div className="control-group control-group--slider">
                     <label htmlFor="fps-slider">
                       frames per second <span>{fps}</span>
@@ -676,7 +697,7 @@ function ViewerShell({
                       disabled={volumeTimepointCount <= 1}
                     />
                   </div>
-                </div>
+                )
               ) : (
                 <div className="control-group">
                   <label htmlFor="fps-slider">
