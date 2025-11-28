@@ -185,7 +185,10 @@ export type TrackLineResource = {
   geometry: LineGeometry;
   material: LineMaterial;
   outlineMaterial: LineMaterial;
+  endCap: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>;
+  endCapMaterial: THREE.MeshBasicMaterial;
   times: number[];
+  positions: Float32Array;
   baseColor: THREE.Color;
   highlightColor: THREE.Color;
   channelId: string;
@@ -194,6 +197,8 @@ export type TrackLineResource = {
   outlineExtraWidth: number;
   targetOpacity: number;
   outlineBaseOpacity: number;
+  endCapRadius: number;
+  hasVisiblePoints: boolean;
   isFollowed: boolean;
   isSelected: boolean;
   isHovered: boolean;

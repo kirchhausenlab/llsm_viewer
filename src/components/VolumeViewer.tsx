@@ -266,6 +266,8 @@ const UseVolumeViewerVrBridge = lazy(async () => {
 const SELECTED_TRACK_BLINK_PERIOD_MS = 1600;
 const SELECTED_TRACK_BLINK_BASE = 0.85;
 const SELECTED_TRACK_BLINK_RANGE = 0.15;
+const TRACK_END_CAP_RADIUS_MULTIPLIER = 0.35;
+const TRACK_END_CAP_MIN_RADIUS = 0.12;
 const FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER = 1.35;
 const SELECTED_TRACK_LINE_WIDTH_MULTIPLIER = 1.5;
 const HOVERED_TRACK_LINE_WIDTH_MULTIPLIER = 1.2;
@@ -299,6 +301,8 @@ const hoverExitRay = new THREE.Ray();
 const hoverBoundingBox = new THREE.Box3();
 const hoverLayerMatrix = new THREE.Matrix4();
 const hoverLayerOffsetMatrix = new THREE.Matrix4();
+const trackColorTemp = new THREE.Color();
+const trackBlinkColorTemp = new THREE.Color();
 
 function computeViewerYawBasis(
   renderer: THREE.WebGLRenderer | null,
@@ -1151,7 +1155,7 @@ function VolumeViewer({
     const maxVisibleTime = targetTimeIndex;
 
     for (const resource of lines.values()) {
-      const { geometry, times } = resource;
+      const { geometry, times, positions, endCap } = resource;
       let visiblePoints = 0;
       for (let index = 0; index < times.length; index++) {
         if (times[index] <= maxVisibleTime) {
@@ -1163,6 +1167,18 @@ function VolumeViewer({
 
       const totalSegments = Math.max(times.length - 1, 0);
       const visibleSegments = Math.min(Math.max(visiblePoints - 1, 0), totalSegments);
+      const hasVisiblePoints = visiblePoints > 0;
+      resource.hasVisiblePoints = hasVisiblePoints;
+      if (hasVisiblePoints) {
+        const lastPointIndex = visiblePoints - 1;
+        const baseIndex = lastPointIndex * 3;
+        endCap.position.set(
+          positions[baseIndex] ?? 0,
+          positions[baseIndex + 1] ?? 0,
+          positions[baseIndex + 2] ?? 0
+        );
+      }
+      endCap.visible = resource.shouldShow && hasVisiblePoints;
       geometry.instanceCount = visibleSegments;
     }
   }, []);
@@ -1260,9 +1276,12 @@ function VolumeViewer({
       if (!activeIds.has(id)) {
         trackGroup.remove(resource.line);
         trackGroup.remove(resource.outline);
+        trackGroup.remove(resource.endCap);
         resource.geometry.dispose();
         resource.material.dispose();
         resource.outlineMaterial.dispose();
+        resource.endCap.geometry.dispose();
+        resource.endCapMaterial.dispose();
         if (hoveredTrackIdRef.current === id) {
           clearHoverState();
         }
@@ -1337,13 +1356,31 @@ function VolumeViewer({
 
         trackGroup.add(outline);
         trackGroup.add(line);
+
+        const endCapMaterial = new THREE.MeshBasicMaterial({
+          color: baseColor.clone(),
+          transparent: true,
+          opacity: DEFAULT_TRACK_OPACITY,
+          depthTest: false,
+          depthWrite: false
+        });
+        const endCapGeometry = new THREE.SphereGeometry(1, 18, 14);
+        const endCap = new THREE.Mesh(endCapGeometry, endCapMaterial);
+        endCap.renderOrder = 1001;
+        endCap.frustumCulled = false;
+        endCap.visible = false;
+
+        trackGroup.add(endCap);
         resource = {
           line,
           outline,
           geometry,
           material,
           outlineMaterial,
+          endCap,
+          endCapMaterial,
           times,
+          positions,
           baseColor: baseColor.clone(),
           highlightColor: highlightColor.clone(),
           channelId: track.channelId,
@@ -1352,6 +1389,11 @@ function VolumeViewer({
           outlineExtraWidth: Math.max(DEFAULT_TRACK_LINE_WIDTH * 0.75, 0.4),
           targetOpacity: DEFAULT_TRACK_OPACITY,
           outlineBaseOpacity: 0,
+          endCapRadius: Math.max(
+            DEFAULT_TRACK_LINE_WIDTH * TRACK_END_CAP_RADIUS_MULTIPLIER,
+            TRACK_END_CAP_MIN_RADIUS
+          ),
+          hasVisiblePoints: false,
           isFollowed: false,
           isSelected: false,
           isHovered: false,
@@ -1365,8 +1407,14 @@ function VolumeViewer({
         line.computeLineDistances();
         outline.computeLineDistances();
         resource.times = times;
+        resource.positions = positions;
         resource.baseColor.copy(baseColor);
         resource.highlightColor.copy(highlightColor);
+        resource.endCapMaterial.color.copy(baseColor);
+        resource.endCapRadius = Math.max(
+          resource.baseLineWidth * TRACK_END_CAP_RADIUS_MULTIPLIER,
+          TRACK_END_CAP_MIN_RADIUS
+        );
         resource.channelId = track.channelId;
         resource.needsAppearanceUpdate = true;
       }
@@ -1401,7 +1449,7 @@ function VolumeViewer({
         continue;
       }
 
-      const { line, outline } = resource;
+      const { line, outline, endCap } = resource;
 
       const isExplicitlyVisible = trackVisibility[track.id] ?? true;
       const isFollowed = followedTrackId === track.id;
@@ -1419,6 +1467,7 @@ function VolumeViewer({
 
       line.visible = shouldShow;
       outline.visible = shouldShow && isHighlighted;
+      endCap.visible = shouldShow && resource.hasVisiblePoints;
       if (shouldShow) {
         visibleCount += 1;
       }
@@ -1443,6 +1492,11 @@ function VolumeViewer({
       }
       resource.targetLineWidth = sanitizedLineWidth * widthMultiplier;
       resource.outlineExtraWidth = Math.max(sanitizedLineWidth * 0.75, 0.4);
+
+      resource.endCapRadius = Math.max(
+        resource.targetLineWidth * TRACK_END_CAP_RADIUS_MULTIPLIER,
+        TRACK_END_CAP_MIN_RADIUS
+      );
 
       resource.outlineBaseOpacity = isFollowed || isSelected ? 0.75 : isHovered ? 0.9 : 0;
     }
@@ -2689,11 +2743,22 @@ function VolumeViewer({
       controls.update();
 
       const blinkPhase = (timestamp % SELECTED_TRACK_BLINK_PERIOD_MS) / SELECTED_TRACK_BLINK_PERIOD_MS;
-      const blinkScale =
-        SELECTED_TRACK_BLINK_BASE + SELECTED_TRACK_BLINK_RANGE * Math.sin(blinkPhase * Math.PI * 2);
+      const blinkAngle = blinkPhase * Math.PI * 2;
+      const blinkWave = Math.sin(blinkAngle);
+      const blinkScale = SELECTED_TRACK_BLINK_BASE + SELECTED_TRACK_BLINK_RANGE * blinkWave;
+      const blinkColorMix = 0.5 + 0.5 * blinkWave;
 
       for (const resource of trackLinesRef.current.values()) {
-        const { line, outline, material, outlineMaterial, baseColor, highlightColor } = resource;
+        const {
+          line,
+          outline,
+          endCap,
+          material,
+          outlineMaterial,
+          endCapMaterial,
+          baseColor,
+          highlightColor
+        } = resource;
         const shouldShow = resource.shouldShow;
         if (line.visible !== shouldShow) {
           line.visible = shouldShow;
@@ -2704,12 +2769,23 @@ function VolumeViewer({
           outline.visible = outlineVisible;
         }
 
-        if (resource.needsAppearanceUpdate) {
-          const targetColor = isHighlighted ? highlightColor : baseColor;
-          if (!material.color.equals(targetColor)) {
-            material.color.copy(targetColor);
-            material.needsUpdate = true;
-          }
+        const endCapVisible = shouldShow && resource.hasVisiblePoints;
+        if (endCap.visible !== endCapVisible) {
+          endCap.visible = endCapVisible;
+        }
+
+        const targetColor = resource.isSelected
+          ? trackBlinkColorTemp.copy(baseColor).lerp(highlightColor, blinkColorMix)
+          : isHighlighted
+            ? highlightColor
+            : baseColor;
+        if (!material.color.equals(targetColor)) {
+          material.color.copy(targetColor);
+          material.needsUpdate = true;
+        }
+        if (!endCapMaterial.color.equals(targetColor)) {
+          endCapMaterial.color.copy(targetColor);
+          endCapMaterial.needsUpdate = true;
         }
 
         const blinkMultiplier = resource.isSelected ? blinkScale : 1;
@@ -2717,6 +2793,10 @@ function VolumeViewer({
         if (material.opacity !== targetOpacity) {
           material.opacity = targetOpacity;
           material.needsUpdate = true;
+        }
+        if (endCapMaterial.opacity !== targetOpacity) {
+          endCapMaterial.opacity = targetOpacity;
+          endCapMaterial.needsUpdate = true;
         }
 
         if (material.linewidth !== resource.targetLineWidth) {
@@ -2735,6 +2815,13 @@ function VolumeViewer({
         if (outlineMaterial.linewidth !== outlineWidth) {
           outlineMaterial.linewidth = outlineWidth;
           outlineMaterial.needsUpdate = true;
+        }
+
+        if (resource.needsAppearanceUpdate) {
+          const currentCapScale = endCap.scale.x;
+          if (currentCapScale !== resource.endCapRadius) {
+            endCap.scale.setScalar(resource.endCapRadius);
+          }
         }
 
         if (resource.needsAppearanceUpdate) {
@@ -2939,9 +3026,12 @@ function VolumeViewer({
         for (const resource of trackLinesRef.current.values()) {
           trackGroup.remove(resource.line);
           trackGroup.remove(resource.outline);
+          trackGroup.remove(resource.endCap);
           resource.geometry.dispose();
           resource.material.dispose();
           resource.outlineMaterial.dispose();
+          resource.endCap.geometry.dispose();
+          resource.endCapMaterial.dispose();
         }
         trackLinesRef.current.clear();
       }
