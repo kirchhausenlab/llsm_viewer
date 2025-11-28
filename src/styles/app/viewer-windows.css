@@ -1,3 +1,7 @@
+:root {
+  --overlay-button-font-size: 0.85rem;
+}
+
 .sidebar {
   display: flex;
   flex-direction: column;
@@ -27,6 +31,10 @@
   overflow: hidden;
   z-index: 10;
   transition: box-shadow 0.2s ease;
+}
+
+.floating-window button {
+  font-size: var(--overlay-button-font-size);
 }
 
 .floating-window--tracks {
