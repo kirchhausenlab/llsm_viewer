@@ -29,7 +29,7 @@ export type UsePreprocessedExperimentOptions = {
   setEditingChannelId: Dispatch<SetStateAction<string | null>>;
   setChannelTrackStates: Dispatch<SetStateAction<Record<string, ChannelTrackState>>>;
   setTrackOrderModeByChannel: Dispatch<SetStateAction<Record<string, 'id' | 'length'>>>;
-  setSelectedTrackIds: Dispatch<SetStateAction<ReadonlySet<string>>>;
+  setSelectedTrackOrder: Dispatch<SetStateAction<string[]>>;
   setFollowedTrack: Dispatch<SetStateAction<FollowedTrackState>>;
   setIsExperimentSetupStarted: Dispatch<SetStateAction<boolean>>;
   setExperimentDimension: Dispatch<SetStateAction<ExperimentDimension>>;
@@ -85,7 +85,7 @@ export default function usePreprocessedExperiment({
   setEditingChannelId,
   setChannelTrackStates,
   setTrackOrderModeByChannel,
-  setSelectedTrackIds,
+  setSelectedTrackOrder,
   setFollowedTrack,
   setIsExperimentSetupStarted,
   setExperimentDimension,
@@ -112,7 +112,7 @@ export default function usePreprocessedExperiment({
     setEditingChannelId,
     setChannelTrackStates,
     setTrackOrderModeByChannel,
-    setSelectedTrackIds,
+    setSelectedTrackOrder,
     setFollowedTrack,
     setIsExperimentSetupStarted,
     setExperimentDimension,

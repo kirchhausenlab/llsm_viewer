@@ -23,7 +23,7 @@ export type UsePreprocessedImportOptions = {
   setEditingChannelId: Dispatch<SetStateAction<string | null>>;
   setChannelTrackStates: Dispatch<SetStateAction<Record<string, ChannelTrackState>>>;
   setTrackOrderModeByChannel: Dispatch<SetStateAction<Record<string, 'id' | 'length'>>>;
-  setSelectedTrackIds: Dispatch<SetStateAction<ReadonlySet<string>>>;
+  setSelectedTrackOrder: Dispatch<SetStateAction<string[]>>;
   setFollowedTrack: Dispatch<SetStateAction<FollowedTrackState>>;
   setIsExperimentSetupStarted: Dispatch<SetStateAction<boolean>>;
   setExperimentDimension: Dispatch<SetStateAction<ExperimentDimension>>;
@@ -65,7 +65,7 @@ export function usePreprocessedImport({
   setEditingChannelId,
   setChannelTrackStates,
   setTrackOrderModeByChannel,
-  setSelectedTrackIds,
+  setSelectedTrackOrder,
   setFollowedTrack,
   setIsExperimentSetupStarted,
   setExperimentDimension,
@@ -151,7 +151,7 @@ export function usePreprocessedImport({
         setEditingChannelId(null);
         setChannelTrackStates({});
         setTrackOrderModeByChannel({});
-        setSelectedTrackIds(new Set<string>());
+        setSelectedTrackOrder([]);
         setFollowedTrack(null);
         setPreprocessedExperiment(staged);
         setIsExperimentSetupStarted(false);
@@ -182,7 +182,7 @@ export function usePreprocessedImport({
       setEditingChannelId,
       setFollowedTrack,
       setIsExperimentSetupStarted,
-      setSelectedTrackIds,
+      setSelectedTrackOrder,
       setTrackOrderModeByChannel,
       setChannelTrackStates,
       updateChannelIdCounter,

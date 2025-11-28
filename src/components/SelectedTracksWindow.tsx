@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ChangeEvent, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent } from 'react';
 import type { NumericRange, TrackPoint } from '../types/tracks';
 
 type SelectedTrackSeries = {
@@ -20,6 +20,7 @@ type SelectedTracksWindowProps = {
   onAutoRange: () => void;
   onClearSelection: () => void;
   currentTimepoint: number;
+  onTrackSelectionToggle: (trackId: string) => void;
 };
 
 const SVG_WIDTH = 1040;
@@ -199,9 +200,12 @@ function SelectedTracksWindow({
   onTimeLimitsChange,
   onAutoRange,
   onClearSelection,
-  currentTimepoint
+  currentTimepoint,
+  onTrackSelectionToggle
 }: SelectedTracksWindowProps) {
   const [hoverTimepoint, setHoverTimepoint] = useState<number | null>(null);
+  const legendRef = useRef<HTMLDivElement | null>(null);
+  const previousLegendLengthRef = useRef(0);
 
   const xBounds = useMemo(
     () => computeNiceBounds(timeLimits.min, timeLimits.max, 8),
@@ -357,6 +361,24 @@ function SelectedTracksWindow({
 
   const hoverLabel = hoverTimepoint === null ? null : formatAxisValue(hoverTimepoint);
 
+  useEffect(() => {
+    const legendNode = legendRef.current;
+    if (!legendNode) {
+      previousLegendLengthRef.current = resolvedSeries.length;
+      return;
+    }
+
+    const previousLength = previousLegendLengthRef.current;
+    if (
+      resolvedSeries.length > previousLength &&
+      legendNode.scrollHeight > legendNode.clientHeight
+    ) {
+      legendNode.scrollTop = legendNode.scrollHeight;
+    }
+
+    previousLegendLengthRef.current = resolvedSeries.length;
+  }, [resolvedSeries.length]);
+
   return (
     <div className="selected-tracks-window">
       <div
@@ -500,24 +522,35 @@ function SelectedTracksWindow({
           ) : null}
         </div>
         {resolvedSeries.length > 0 ? (
-          <div className="selected-tracks-legend-panel" aria-label="Track legend">
+          <div
+            className="selected-tracks-legend-panel"
+            aria-label="Track legend"
+            ref={legendRef}
+          >
             <ul className="selected-tracks-legend">
               {resolvedSeries.map((entry) => (
                 <li key={entry.id} className="selected-tracks-legend-item">
-                  <span
-                    className="selected-tracks-legend-swatch"
-                    style={{ backgroundColor: entry.color }}
-                    aria-hidden="true"
-                  />
-                  <span className="selected-tracks-legend-label">
-                    {entry.label}
-                    {hoverTimepoint !== null
-                      ? (() => {
-                          const value = amplitudeByTrack.get(entry.id)?.get(hoverTimepoint);
-                          return value === undefined ? null : `: ${formatAxisValue(value)}`;
-                        })()
-                      : null}
-                  </span>
+                  <button
+                    type="button"
+                    className="selected-tracks-legend-button"
+                    onClick={() => onTrackSelectionToggle(entry.id)}
+                    aria-label={`Deselect ${entry.label}`}
+                  >
+                    <span
+                      className="selected-tracks-legend-swatch"
+                      style={{ backgroundColor: entry.color }}
+                      aria-hidden="true"
+                    />
+                    <span className="selected-tracks-legend-label">
+                      {entry.label}
+                      {hoverTimepoint !== null
+                        ? (() => {
+                            const value = amplitudeByTrack.get(entry.id)?.get(hoverTimepoint);
+                            return value === undefined ? null : `: ${formatAxisValue(value)}`;
+                          })()
+                        : null}
+                    </span>
+                  </button>
                 </li>
               ))}
             </ul>

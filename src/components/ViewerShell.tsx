@@ -156,6 +156,7 @@ type SelectedTracksPanelProps = {
   onAutoRange: () => void;
   onClearSelection: () => void;
   currentTimepoint: number;
+  onTrackSelectionToggle: (trackId: string) => void;
 };
 
 type Position = { x: number; y: number };
@@ -201,7 +202,7 @@ function ViewerShell({
   playbackControls,
   channelsPanel,
   tracksPanel,
-  selectedTracksPanel,
+    selectedTracksPanel,
   trackDefaults
 }: ViewerShellProps) {
   const {
@@ -317,7 +318,8 @@ function ViewerShell({
     onTimeLimitsChange,
     onAutoRange,
     onClearSelection,
-    currentTimepoint
+    currentTimepoint,
+    onTrackSelectionToggle: onSelectedTrackToggle
   } = selectedTracksPanel;
   const hasVolumeData = loadedChannelIds.some((channelId) =>
     (channelLayersMap.get(channelId) ?? []).some((layer) => layer.volumes.length > 0)
@@ -1374,21 +1376,22 @@ function ViewerShell({
             resetSignal={resetToken}
             headerPosition="bottom"
           >
-            <SelectedTracksWindow
-              series={series}
-              totalTimepoints={totalTimepoints}
-              amplitudeExtent={amplitudeExtent}
-              amplitudeLimits={amplitudeLimits}
-              timeExtent={timeExtent}
-              timeLimits={timeLimits}
-              onAmplitudeLimitsChange={onAmplitudeLimitsChange}
-              onTimeLimitsChange={onTimeLimitsChange}
-              onAutoRange={onAutoRange}
-              onClearSelection={onClearSelection}
-              currentTimepoint={currentTimepoint}
-            />
-          </FloatingWindow>
-        ) : null}
+          <SelectedTracksWindow
+            series={series}
+            totalTimepoints={totalTimepoints}
+            amplitudeExtent={amplitudeExtent}
+            amplitudeLimits={amplitudeLimits}
+            timeExtent={timeExtent}
+            timeLimits={timeLimits}
+            onAmplitudeLimitsChange={onAmplitudeLimitsChange}
+            onTimeLimitsChange={onTimeLimitsChange}
+            onAutoRange={onAutoRange}
+            onClearSelection={onClearSelection}
+            currentTimepoint={currentTimepoint}
+            onTrackSelectionToggle={onSelectedTrackToggle}
+          />
+        </FloatingWindow>
+      ) : null}
       </div>
     </>
   );
