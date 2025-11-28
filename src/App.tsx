@@ -279,6 +279,7 @@ function App() {
       correctAnisotropy: voxelResolutionInput.correctAnisotropy
     };
   }, [experimentDimension, voxelResolutionInput]);
+  const anisotropyScale = useMemo(() => computeAnisotropyScale(voxelResolution), [voxelResolution]);
   const [status, setStatus] = useState<LoadState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [loadProgress, setLoadProgress] = useState(0);
@@ -716,7 +717,13 @@ function App() {
         const time = initialTime + deltaTime;
         const normalizedTime = Math.max(0, time - 1);
         const amplitude = Math.max(0, amplitudeRaw);
-        const point: TrackPoint = { time: normalizedTime, x, y, z, amplitude };
+        const point: TrackPoint = {
+          time: normalizedTime,
+          x: anisotropyScale ? x * anisotropyScale.x : x,
+          y: anisotropyScale ? y * anisotropyScale.y : y,
+          z: anisotropyScale ? z * anisotropyScale.z : z,
+          amplitude
+        };
         const existing = trackMap.get(id);
         if (existing) {
           existing.push(point);
@@ -757,7 +764,7 @@ function App() {
     }
 
     return map;
-  }, [channels, experimentDimension]);
+  }, [anisotropyScale, channels, experimentDimension]);
 
   const parsedTracks = useMemo(() => {
     const ordered: TrackDefinition[] = [];
@@ -1121,7 +1128,6 @@ function App() {
   const loadSelectedDataset = useCallback(async (): Promise<LoadedLayer[] | null> => {
     clearDatasetError();
     preprocessingSettingsRef.current = voxelResolution;
-    const anisotropyScale = computeAnisotropyScale(voxelResolution);
     const flatLayerSources = channels
       .flatMap((channel) =>
         channel.layers.map((layer) => ({
@@ -1343,6 +1349,7 @@ function App() {
     clearDatasetError,
     colorizeSegmentationVolume,
     computeNormalizationParameters,
+    anisotropyScale,
     experimentDimension,
     createSegmentationSeed,
     getLayerTimepointCount,

@@ -746,3 +746,6 @@ d centered the front-page card in the viewport.
 ## Top menu hover readout tweaks
 - Renamed the in-viewer return affordance to match the front page's "↩ Return" label.
 - Matched the hover readout typography to the surrounding buttons and reordered coordinates ahead of intensity values for quicker spatial scanning.
+
+## Track anisotropy alignment
+- Rescaled imported track coordinates using the same anisotropy correction factors applied to the volumes so isotropic preprocessing keeps tracks aligned with the resampled data.
