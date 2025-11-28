@@ -157,6 +157,7 @@ type LayoutProps = {
   selectedTracksWindowWidth: number;
   resetToken: number;
   controlWindowInitialPosition: Position;
+  viewerSettingsWindowInitialPosition: Position;
   layersWindowInitialPosition: Position;
   trackWindowInitialPosition: Position;
   selectedTracksWindowInitialPosition: Position;
@@ -210,6 +211,7 @@ function ViewerShell({
     selectedTracksWindowWidth,
     resetToken,
     controlWindowInitialPosition,
+    viewerSettingsWindowInitialPosition,
     layersWindowInitialPosition,
     trackWindowInitialPosition,
     selectedTracksWindowInitialPosition
@@ -464,6 +466,137 @@ function ViewerShell({
                   ) : null}
                 </div>
               </div>
+            </div>
+
+            {viewerMode === '2d' && maxSliceDepth > 0 ? (
+              <div className="control-group">
+                <label htmlFor="z-plane-slider">
+                  Z plane{' '}
+                  <span>
+                    {Math.min(sliceIndex, Math.max(0, maxSliceDepth - 1))} / {Math.max(0, maxSliceDepth - 1)}
+                  </span>
+                </label>
+                <input
+                  id="z-plane-slider"
+                  type="range"
+                  min={0}
+                  max={Math.max(0, maxSliceDepth - 1)}
+                  value={Math.min(sliceIndex, Math.max(0, maxSliceDepth - 1))}
+                  onChange={(event) => onSliceIndexChange(Number(event.target.value))}
+                  disabled={maxSliceDepth <= 1}
+                />
+              </div>
+            ) : null}
+
+            <div className="playback-controls">
+              <div className="control-group playback-progress">
+                <label htmlFor="playback-slider">
+                  <span
+                    className={
+                      isPlaying
+                        ? 'playback-status playback-status--playing'
+                        : 'playback-status playback-status--stopped'
+                    }
+                  >
+                    {isPlaying ? 'Playing' : ''}
+                  </span>{' '}
+                  <span>{playbackLabel}</span>
+                </label>
+                <input
+                  id="playback-slider"
+                  className="playback-slider"
+                  type="range"
+                  min={0}
+                  max={Math.max(0, volumeTimepointCount - 1)}
+                  value={Math.min(selectedIndex, Math.max(0, volumeTimepointCount - 1))}
+                  onChange={(event) => onTimeIndexChange(Number(event.target.value))}
+                  disabled={playbackDisabled}
+                />
+              </div>
+              <div className="playback-button-row">
+                <button
+                  type="button"
+                  className="playback-button playback-button--skip"
+                  onClick={onJumpToStart}
+                  disabled={playbackDisabled}
+                  aria-label="Go to first frame"
+                >
+                  <svg
+                    className="playback-button-icon"
+                    viewBox="0 0 24 24"
+                    role="img"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path d="M6.25 4c.414 0 .75.336.75.75v5.69l9.088-6.143A1.5 1.5 0 0 1 18.5 5.61v12.78a1.5 1.5 0 0 1-2.412 1.313L7 13.56v5.69a.75.75 0 0 1-1.5 0V4.75c0-.414.336-.75.75-.75Z" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={onTogglePlayback}
+                  disabled={playbackDisabled}
+                  className={
+                    isPlaying
+                      ? 'playback-button playback-toggle playing'
+                      : 'playback-button playback-toggle'
+                  }
+                  aria-label={isPlaying ? 'Pause playback' : 'Start playback'}
+                >
+                  {isPlaying ? (
+                    <svg
+                      className="playback-button-icon"
+                      viewBox="0 0 24 24"
+                      role="img"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path d="M9 5a1 1 0 0 1 1 1v12a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Zm6 0a1 1 0 0 1 1 1v12a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Z" />
+                    </svg>
+                  ) : (
+                    <svg
+                      className="playback-button-icon"
+                      viewBox="0 0 24 24"
+                      role="img"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path d="M8.5 5.636a1 1 0 0 1 1.53-.848l8.01 5.363a1 1 0 0 1 0 1.698l-8.01 5.363A1 1 0 0 1 8 16.364V7.636a1 1 0 0 1 .5-.868Z" />
+                    </svg>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="playback-button playback-button--skip"
+                  onClick={onJumpToEnd}
+                  disabled={playbackDisabled}
+                  aria-label="Go to last frame"
+                >
+                  <svg
+                    className="playback-button-icon"
+                    viewBox="0 0 24 24"
+                    role="img"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path d="M17.75 4a.75.75 0 0 1 .75.75v13.5a.75.75 0 0 1-1.5 0v-5.69l-9.088 6.143A1.5 1.5 0 0 1 5.5 18.39V5.61a1.5 1.5 0 0 1 2.412-1.313L17 10.44V4.75c0-.414.336-.75.75-.75Z" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {error && <p className="error">{error}</p>}
+          </div>
+        </FloatingWindow>
+
+        <FloatingWindow
+          title="Viewer settings"
+          initialPosition={viewerSettingsWindowInitialPosition}
+          width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
+          className="floating-window--viewer-settings"
+          resetSignal={resetToken}
+        >
+          <div className="sidebar sidebar-right">
+            <div className="global-controls">
               {is3dModeAvailable ? (
                 <div className="control-group">
                   <div className="viewer-mode-row">
@@ -501,6 +634,7 @@ function ViewerShell({
                   </div>
                 </div>
               ) : null}
+
               {is3dModeAvailable && viewerMode === '3d' ? (
                 <div className="control-row">
                   <div className="control-group control-group--slider">
@@ -510,8 +644,8 @@ function ViewerShell({
                     <input
                       id="rendering-quality-slider"
                       type="range"
-                      min={0.5}
-                      max={2}
+                      min={0.1}
+                      max={3}
                       step={0.01}
                       value={renderingQuality}
                       onChange={(event) => handleRenderingQualityChange(Number(event.target.value))}
@@ -550,122 +684,7 @@ function ViewerShell({
                   />
                 </div>
               )}
-              {viewerMode === '2d' && maxSliceDepth > 0 ? (
-                <div className="control-group">
-                  <label htmlFor="z-plane-slider">
-                    Z plane{' '}
-                    <span>
-                      {Math.min(sliceIndex, Math.max(0, maxSliceDepth - 1))} / {Math.max(0, maxSliceDepth - 1)}
-                    </span>
-                  </label>
-                  <input
-                    id="z-plane-slider"
-                    type="range"
-                    min={0}
-                    max={Math.max(0, maxSliceDepth - 1)}
-                    value={Math.min(sliceIndex, Math.max(0, maxSliceDepth - 1))}
-                    onChange={(event) => onSliceIndexChange(Number(event.target.value))}
-                    disabled={maxSliceDepth <= 1}
-                  />
-                </div>
-              ) : null}
-              <div className="playback-controls">
-                <div className="control-group playback-progress">
-                  <label htmlFor="playback-slider">
-                    <span
-                      className={
-                        isPlaying
-                          ? 'playback-status playback-status--playing'
-                          : 'playback-status playback-status--stopped'
-                      }
-                    >
-                      {isPlaying ? 'Playing' : ''}
-                    </span>{' '}
-                    <span>{playbackLabel}</span>
-                  </label>
-                  <input
-                    id="playback-slider"
-                    className="playback-slider"
-                    type="range"
-                    min={0}
-                    max={Math.max(0, volumeTimepointCount - 1)}
-                    value={Math.min(selectedIndex, Math.max(0, volumeTimepointCount - 1))}
-                    onChange={(event) => onTimeIndexChange(Number(event.target.value))}
-                    disabled={playbackDisabled}
-                  />
-                </div>
-                <div className="playback-button-row">
-                  <button
-                    type="button"
-                    className="playback-button playback-button--skip"
-                    onClick={onJumpToStart}
-                    disabled={playbackDisabled}
-                    aria-label="Go to first frame"
-                  >
-                    <svg
-                      className="playback-button-icon"
-                      viewBox="0 0 24 24"
-                      role="img"
-                      aria-hidden="true"
-                      focusable="false"
-                    >
-                      <path d="M6.25 4c.414 0 .75.336.75.75v5.69l9.088-6.143A1.5 1.5 0 0 1 18.5 5.61v12.78a1.5 1.5 0 0 1-2.412 1.313L7 13.56v5.69a.75.75 0 0 1-1.5 0V4.75c0-.414.336-.75.75-.75Z" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onTogglePlayback}
-                    disabled={playbackDisabled}
-                    className={
-                      isPlaying
-                        ? 'playback-button playback-toggle playing'
-                        : 'playback-button playback-toggle'
-                    }
-                    aria-label={isPlaying ? 'Pause playback' : 'Start playback'}
-                  >
-                    {isPlaying ? (
-                      <svg
-                        className="playback-button-icon"
-                        viewBox="0 0 24 24"
-                        role="img"
-                        aria-hidden="true"
-                        focusable="false"
-                      >
-                        <path d="M9 5a1 1 0 0 1 1 1v12a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Zm6 0a1 1 0 0 1 1 1v12a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Z" />
-                      </svg>
-                    ) : (
-                      <svg
-                        className="playback-button-icon"
-                        viewBox="0 0 24 24"
-                        role="img"
-                        aria-hidden="true"
-                        focusable="false"
-                      >
-                        <path d="M8.5 5.636a1 1 0 0 1 1.53-.848l8.01 5.363a1 1 0 0 1 0 1.698l-8.01 5.363A1 1 0 0 1 8 16.364V7.636a1 1 0 0 1 .5-.868Z" />
-                      </svg>
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    className="playback-button playback-button--skip"
-                    onClick={onJumpToEnd}
-                    disabled={playbackDisabled}
-                    aria-label="Go to last frame"
-                  >
-                    <svg
-                      className="playback-button-icon"
-                      viewBox="0 0 24 24"
-                      role="img"
-                      aria-hidden="true"
-                      focusable="false"
-                    >
-                      <path d="M17.75 4a.75.75 0 0 1 .75.75v13.5a.75.75 0 0 1-1.5 0v-5.69l-9.088 6.143A1.5 1.5 0 0 1 5.5 18.39V5.61a1.5 1.5 0 0 1 2.412-1.313L17 10.44V4.75c0-.414.336-.75.75-.75Z" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
             </div>
-            {error && <p className="error">{error}</p>}
           </div>
         </FloatingWindow>
 

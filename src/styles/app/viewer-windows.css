@@ -41,6 +41,10 @@
   z-index: 10;
 }
 
+.floating-window--viewer-settings {
+  z-index: 18;
+}
+
 .floating-window--selected-tracks {
   z-index: 15;
 }
