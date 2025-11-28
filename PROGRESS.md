@@ -736,3 +736,6 @@ d centered the front-page card in the viewport.
 
 ## Selected tracks window minimize anchoring
 - Preserve the footer position for the bottom-anchored header when minimizing while still collapsing the body so the minimized window no longer blocks content with empty space.
+
+## Preprocessed channel tint defaults
+- Propagated layer summaries from preprocessed datasets into the channel list so default channel tints follow the same multi-channel color rotation when opening preprocessed experiments.
