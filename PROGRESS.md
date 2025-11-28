@@ -51,6 +51,10 @@
 
 # Progress Log
 
+## Channel tab layout alignment
+- Swapped the floating window channel tab header to a fixed three-column grid so volume/track tabs align without wrapping.
+- Trimmed the header tab padding and width constraints to prevent overflow while keeping the controls centered.
+
 ## GitHub Pages artifact input fix
 - Swapped the deprecated `artifact-name` input for the supported `name` field in the GitHub Pages upload step and removed the
   unsupported `if-no-files-found` flag so the deployment workflow runs without input validation errors.
