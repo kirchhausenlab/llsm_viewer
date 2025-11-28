@@ -369,7 +369,7 @@ function SelectedTracksWindow({
         >
           <svg
             viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
-            preserveAspectRatio="none"
+            preserveAspectRatio="xMidYMid meet"
             className="selected-tracks-chart-svg"
             onMouseMove={handleMouseMove}
             onMouseLeave={handleMouseLeave}

@@ -739,3 +739,6 @@ d centered the front-page card in the viewport.
 
 ## Preprocessed channel tint defaults
 - Propagated layer summaries from preprocessed datasets into the channel list so default channel tints follow the same multi-channel color rotation when opening preprocessed experiments.
+
+## Selected tracks amplitude plot sizing
+- Matched the amplitude chart's intrinsic aspect ratio to its rendered size by giving the SVG a viewBox and letting the container share the same ratio, preventing the plot from being horizontally squished in the selected tracks window.
