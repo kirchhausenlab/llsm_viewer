@@ -759,3 +759,6 @@ d centered the front-page card in the viewport.
 
 ## Playback and slice slider layout fixes
 - Restyled the Z plane and playback sliders to span the full control window width with compact labels stacked above them for clearer alignment.
+
+## Channels window spacing tweaks
+- Added breathing room between the Channels title and tab bar, shortened long tab labels to a 6-character prefix with an ellipsis, and tightened the panel padding above the reset/invert/auto controls so the collapsible section feels more compact.
