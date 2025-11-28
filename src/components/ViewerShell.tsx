@@ -15,6 +15,7 @@ import {
 } from '../state/layerSettings';
 import { applyAlphaToHex } from '../utils/appHelpers';
 import {
+  DEFAULT_TRACK_COLOR,
   TRACK_COLOR_SWATCHES,
   getTrackColorHex,
   normalizeTrackColor
@@ -103,6 +104,17 @@ type ChannelsPanelProps = {
 };
 
 type ChannelPanelStyle = CSSProperties & { '--channel-slider-color'?: string };
+
+type TrackPanelStyle = CSSProperties & {
+  '--track-accent-color'?: string;
+  '--track-accent-border'?: string;
+  '--track-accent-strong-border'?: string;
+  '--track-accent-soft'?: string;
+  '--track-accent-strong'?: string;
+  '--track-accent-hover'?: string;
+  '--track-accent-focus'?: string;
+  '--track-accent-glow'?: string;
+};
 
 type TracksPanelProps = {
   channels: ChannelSource[];
@@ -1131,6 +1143,26 @@ function ViewerShell({
                       : tracksForChannel;
                   const colorLabel =
                     colorMode.type === 'uniform' ? normalizeTrackColor(colorMode.color) : 'Sorted';
+                  const trackAccentColor =
+                    colorMode.type === 'uniform'
+                      ? normalizeTrackColor(colorMode.color)
+                      : DEFAULT_TRACK_COLOR;
+                  const trackPanelStyle: TrackPanelStyle = {
+                    '--track-accent-color': trackAccentColor,
+                    '--track-accent-border': applyAlphaToHex(trackAccentColor, 0.55),
+                    '--track-accent-strong-border': applyAlphaToHex(trackAccentColor, 0.85),
+                    '--track-accent-soft': applyAlphaToHex(trackAccentColor, 0.18),
+                    '--track-accent-strong': applyAlphaToHex(trackAccentColor, 0.32),
+                    '--track-accent-hover': applyAlphaToHex(trackAccentColor, 0.3),
+                    '--track-accent-focus': applyAlphaToHex(trackAccentColor, 0.65),
+                    '--track-accent-glow': applyAlphaToHex(trackAccentColor, 0.35)
+                  };
+                  const prioritizedTracks = orderedTracks.filter((track) =>
+                    selectedTrackIds.has(track.id)
+                  );
+                  const remainingTracks = orderedTracks.filter((track) => !selectedTrackIds.has(track.id));
+                  const displayTracks =
+                    prioritizedTracks.length > 0 ? [...prioritizedTracks, ...remainingTracks] : orderedTracks;
 
                   return (
                     <div
@@ -1140,6 +1172,7 @@ function ViewerShell({
                       aria-labelledby={`track-tab-${channel.id}`}
                       className={isActive ? 'track-panel is-active' : 'track-panel'}
                       hidden={!isActive}
+                      style={trackPanelStyle}
                     >
                       <div className="track-follow-controls">
                         <button
@@ -1258,7 +1291,7 @@ function ViewerShell({
                             role="group"
                             aria-label={`${channelName} track visibility`}
                           >
-                            {orderedTracks.map((track) => {
+                            {displayTracks.map((track) => {
                               const isFollowed = followedTrackId === track.id;
                               const isSelected = selectedTrackIds.has(track.id);
                               const isChecked =

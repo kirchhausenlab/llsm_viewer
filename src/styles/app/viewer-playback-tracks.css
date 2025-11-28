@@ -228,7 +228,7 @@
 }
 
 .track-controls .slider-control input[type='range'] {
-  accent-color: #5b8cff;
+  accent-color: var(--track-accent-color, #5b8cff);
 }
 
 .track-controls .track-list-header {
@@ -250,8 +250,8 @@
   height: 1.1rem;
   padding: 0 0.75rem;
   border-radius: 999px;
-  border: 1px solid rgba(91, 140, 255, 0.55);
-  background: rgba(91, 140, 255, 0.18);
+  border: 1px solid var(--track-accent-border, rgba(91, 140, 255, 0.55));
+  background: var(--track-accent-soft, rgba(91, 140, 255, 0.18));
   color: rgba(255, 255, 255, 0.9);
   font-size: var(--overlay-button-font-size);
   font-weight: 600;
@@ -261,19 +261,19 @@
 }
 
 .track-controls .track-order-toggle.is-active {
-  background: rgba(91, 140, 255, 0.32);
-  border-color: rgba(91, 140, 255, 0.85);
+  background: var(--track-accent-strong, rgba(91, 140, 255, 0.32));
+  border-color: var(--track-accent-strong-border, rgba(91, 140, 255, 0.85));
   color: #f2f6ff;
 }
 
 .track-controls .track-order-toggle:hover:not(:disabled) {
-  background: rgba(91, 140, 255, 0.3);
-  border-color: rgba(91, 140, 255, 0.75);
+  background: var(--track-accent-hover, rgba(91, 140, 255, 0.3));
+  border-color: var(--track-accent-strong-border, rgba(91, 140, 255, 0.75));
   transform: translateY(-1px);
 }
 
 .track-controls .track-order-toggle:focus-visible {
-  outline: 2px solid rgba(91, 140, 255, 0.65);
+  outline: 2px solid var(--track-accent-focus, rgba(91, 140, 255, 0.65));
   outline-offset: 2px;
 }
 
@@ -348,11 +348,11 @@
 }
 
 .track-controls .track-label-button:is(:hover, :focus-visible) {
-  background: rgba(91, 140, 255, 0.18);
+  background: var(--track-accent-soft, rgba(91, 140, 255, 0.18));
 }
 
 .track-controls .track-label-button:focus-visible {
-  outline: 2px solid rgba(91, 140, 255, 0.65);
+  outline: 2px solid var(--track-accent-focus, rgba(91, 140, 255, 0.65));
   outline-offset: 2px;
 }
 
@@ -391,12 +391,12 @@
 .track-controls .track-item input[type='checkbox'] {
   width: 1.1rem;
   height: 1.1rem;
-  accent-color: #5b8cff;
+  accent-color: var(--track-accent-color, #5b8cff);
 }
 
 .track-controls .track-follow-button {
-  border: 1px solid rgba(91, 140, 255, 0.55);
-  background: rgba(91, 140, 255, 0.18);
+  border: 1px solid var(--track-accent-border, rgba(91, 140, 255, 0.55));
+  background: var(--track-accent-soft, rgba(91, 140, 255, 0.18));
   color: rgba(255, 255, 255, 0.95);
   border-radius: 999px;
   padding: 0.2rem 0.75rem;
@@ -409,8 +409,8 @@
 }
 
 .track-controls .track-follow-button:hover:not(:disabled) {
-  background: rgba(91, 140, 255, 0.3);
-  border-color: rgba(91, 140, 255, 0.75);
+  background: var(--track-accent-hover, rgba(91, 140, 255, 0.3));
+  border-color: var(--track-accent-strong-border, rgba(91, 140, 255, 0.75));
   transform: translateY(-1px);
 }
 
@@ -420,10 +420,14 @@
 }
 
 .track-controls .track-follow-button.is-active {
-  background: linear-gradient(135deg, rgba(48, 190, 136, 0.32), rgba(31, 150, 110, 0.42));
-  border-color: rgba(48, 190, 136, 0.75);
-  color: #eafff6;
-  box-shadow: 0 0 12px rgba(48, 190, 136, 0.35);
+  background: linear-gradient(
+    135deg,
+    var(--track-accent-soft, rgba(91, 140, 255, 0.18)),
+    var(--track-accent-strong, rgba(91, 140, 255, 0.32))
+  );
+  border-color: var(--track-accent-strong-border, rgba(91, 140, 255, 0.75));
+  color: #f0f6ff;
+  box-shadow: 0 0 12px var(--track-accent-glow, rgba(91, 140, 255, 0.35));
 }
 
 .track-empty-hint {
