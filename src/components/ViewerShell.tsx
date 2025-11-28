@@ -429,10 +429,10 @@ function ViewerShell({
           className="floating-window--playback"
           resetSignal={resetToken}
         >
-          <div className="sidebar sidebar-left">
+          <div className="sidebar sidebar-left global-controls">
             {viewerMode === '2d' && maxSliceDepth > 0 ? (
               <div className="control-group">
-                <label htmlFor="z-plane-slider">
+                <label htmlFor="z-plane-slider" className="control-label control-label--compact">
                   Z plane{' '}
                   <span>
                     {Math.min(sliceIndex, Math.max(0, maxSliceDepth - 1))} / {Math.max(0, maxSliceDepth - 1)}
@@ -452,7 +452,10 @@ function ViewerShell({
 
             <div className="playback-controls">
               <div className="control-group playback-progress">
-                <label htmlFor="playback-slider">
+                <label
+                  htmlFor="playback-slider"
+                  className="control-label control-label--compact playback-progress__label"
+                >
                   <span
                     className={
                       isPlaying
