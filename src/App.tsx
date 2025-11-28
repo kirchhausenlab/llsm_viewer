@@ -293,7 +293,8 @@ function App() {
   const [activeTrackChannelId, setActiveTrackChannelId] = useState<string | null>(null);
   const [channelTrackStates, setChannelTrackStates] = useState<Record<string, ChannelTrackState>>({});
   const [trackOrderModeByChannel, setTrackOrderModeByChannel] = useState<Record<string, 'id' | 'length'>>({});
-  const [selectedTrackIds, setSelectedTrackIds] = useState<ReadonlySet<string>>(new Set());
+  const [selectedTrackOrder, setSelectedTrackOrder] = useState<string[]>([]);
+  const selectedTrackIds = useMemo(() => new Set(selectedTrackOrder), [selectedTrackOrder]);
   const [selectedTracksAmplitudeLimits, setSelectedTracksAmplitudeLimits] =
     useState<NumericRange | null>(null);
   const [selectedTracksTimeLimits, setSelectedTracksTimeLimits] = useState<NumericRange | null>(null);
@@ -791,18 +792,22 @@ function App() {
     return map;
   }, [parsedTracks]);
 
-  const selectedTrackSeries = useMemo(
-    () =>
-      parsedTracks
-        .filter((track) => selectedTrackIds.has(track.id))
-        .map((track) => ({
-          id: track.id,
-          label: `${track.channelName} · Track #${track.trackNumber}`,
-          color: getTrackColorHex(track.id),
-          points: track.points
-        })),
-    [parsedTracks, selectedTrackIds]
-  );
+  const selectedTrackSeries = useMemo(() => {
+    const series: Array<{ id: string; label: string; color: string; points: TrackPoint[] }> = [];
+    for (const trackId of selectedTrackOrder) {
+      const track = trackLookup.get(trackId);
+      if (!track) {
+        continue;
+      }
+      series.push({
+        id: track.id,
+        label: `${track.channelName} · Track #${track.trackNumber}`,
+        color: getTrackColorHex(track.id),
+        points: track.points
+      });
+    }
+    return series;
+  }, [selectedTrackOrder, trackLookup]);
 
   const trackExtents = useMemo(() => {
     let amplitudeMin = Number.POSITIVE_INFINITY;
@@ -915,21 +920,15 @@ function App() {
   const resolvedTimeLimits = selectedTracksTimeLimits ?? timeExtent;
 
   useEffect(() => {
-    setSelectedTrackIds((current) => {
-      if (current.size === 0) {
-        return current;
-      }
-
-      const next = new Set<string>();
-      for (const track of parsedTracks) {
-        if (current.has(track.id)) {
-          next.add(track.id);
-        }
-      }
-
-      return next.size === current.size ? current : next;
+    if (selectedTrackOrder.length === 0) {
+      return;
+    }
+    const available = new Set(parsedTracks.map((track) => track.id));
+    setSelectedTrackOrder((current) => {
+      const filtered = current.filter((id) => available.has(id));
+      return filtered.length === current.length ? current : filtered;
     });
-  }, [parsedTracks]);
+  }, [parsedTracks, selectedTrackOrder.length]);
 
   useEffect(() => {
     if (hasInitializedTrackColorsRef.current) {
@@ -1462,7 +1461,7 @@ function App() {
     setEditingChannelId,
     setChannelTrackStates,
     setTrackOrderModeByChannel,
-    setSelectedTrackIds,
+    setSelectedTrackOrder,
     setFollowedTrack,
     setIsExperimentSetupStarted,
     setExperimentDimension,
@@ -2092,7 +2091,7 @@ function App() {
     setActiveChannelTabId(null);
     setChannelTrackStates({});
     setTrackOrderModeByChannel({});
-    setSelectedTrackIds(new Set<string>());
+    setSelectedTrackOrder([]);
     setFollowedTrack(null);
     hasInitializedTrackColorsRef.current = false;
     setStatus('idle');
@@ -2315,14 +2314,9 @@ function App() {
 
       if (!nextVisible) {
         setFollowedTrack((current) => (current && current.id === trackId ? null : current));
-        setSelectedTrackIds((current) => {
-          if (!current.has(trackId)) {
-            return current;
-          }
-          const next = new Set(current);
-          next.delete(trackId);
-          return next;
-        });
+        setSelectedTrackOrder((current) =>
+          current.includes(trackId) ? current.filter((id) => id !== trackId) : current
+        );
       }
     },
     [trackLookup]
@@ -2348,15 +2342,13 @@ function App() {
 
       if (!isChecked) {
         setFollowedTrack((current) => (current && current.channelId === channelId ? null : current));
-        setSelectedTrackIds((current) => {
-          if (current.size === 0) {
+        const trackIdsForChannel = new Set(tracksForChannel.map((track) => track.id));
+        setSelectedTrackOrder((current) => {
+          if (current.length === 0) {
             return current;
           }
-          const next = new Set(current);
-          for (const track of tracksForChannel) {
-            next.delete(track.id);
-          }
-          return next.size === current.size ? current : next;
+          const filtered = current.filter((id) => !trackIdsForChannel.has(id));
+          return filtered.length === current.length ? current : filtered;
         });
       }
     },
@@ -2477,16 +2469,12 @@ function App() {
       }
 
       let didSelect = false;
-      setSelectedTrackIds((current) => {
-        if (current.has(trackId)) {
-          const next = new Set(current);
-          next.delete(trackId);
-          return next;
+      setSelectedTrackOrder((current) => {
+        if (current.includes(trackId)) {
+          return current.filter((id) => id !== trackId);
         }
-        const next = new Set(current);
-        next.add(trackId);
         didSelect = true;
-        return next;
+        return [...current, trackId];
       });
 
       if (didSelect) {
@@ -2504,14 +2492,9 @@ function App() {
       }
 
       if (followedTrack?.id !== trackId) {
-        setSelectedTrackIds((current) => {
-          if (current.has(trackId)) {
-            return current;
-          }
-          const next = new Set(current);
-          next.add(trackId);
-          return next;
-        });
+        setSelectedTrackOrder((current) =>
+          current.includes(trackId) ? current : [...current, trackId]
+        );
       }
 
       setFollowedTrack((current) => (current && current.id === trackId ? null : { id: trackId, channelId: track.channelId }));
@@ -2527,14 +2510,9 @@ function App() {
         return;
       }
 
-      setSelectedTrackIds((current) => {
-        if (current.has(trackId)) {
-          return current;
-        }
-        const next = new Set(current);
-        next.add(trackId);
-        return next;
-      });
+      setSelectedTrackOrder((current) =>
+        current.includes(trackId) ? current : [...current, trackId]
+      );
 
       setFollowedTrack((current) => (current && current.id === trackId ? current : { id: trackId, channelId: track.channelId }));
       ensureTrackIsVisible(trackId);
@@ -2578,7 +2556,7 @@ function App() {
   }, [amplitudeExtent, selectedTrackExtents, timeExtent]);
 
   const handleClearSelectedTracks = useCallback(() => {
-    setSelectedTrackIds(new Set());
+    setSelectedTrackOrder([]);
     setFollowedTrack(null);
   }, []);
 
@@ -3431,7 +3409,8 @@ function App() {
       onTimeLimitsChange: handleSelectedTracksTimeLimitsChange,
       onAutoRange: handleSelectedTracksAutoRange,
       onClearSelection: handleClearSelectedTracks,
-      currentTimepoint: selectedIndex
+      currentTimepoint: selectedIndex,
+      onTrackSelectionToggle: handleTrackSelectionToggle
     },
     trackDefaults: {
       opacity: DEFAULT_TRACK_OPACITY,

@@ -441,6 +441,8 @@
   flex-direction: column;
   gap: 0.75rem;
   min-width: 0;
+  flex: 1;
+  min-height: 0;
 }
 
 
@@ -454,17 +456,18 @@
   border-radius: 16px;
   padding: 0.9rem 1rem;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
-  min-height: 180px;
+  min-height: 220px;
+  flex: 1;
 }
 
 .selected-tracks-chart {
   position: relative;
   width: 100%;
-  height: auto;
-  aspect-ratio: 1040 / 180;
+  height: 100%;
   flex: 1 1 0;
   min-width: 0;
-  align-self: start;
+  min-height: 200px;
+  align-self: stretch;
   background: transparent;
   border-radius: 12px;
   border: none;
@@ -587,6 +590,7 @@
 }
 
 .selected-tracks-slider__label {
+  font-size: 0.85rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   color: rgba(255, 255, 255, 0.9);
@@ -767,10 +771,29 @@
 }
 
 .selected-tracks-legend-item {
+  min-width: 0;
+}
+
+.selected-tracks-legend-button {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  min-width: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  padding: 0.2rem 0.25rem;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.selected-tracks-legend-button:hover,
+.selected-tracks-legend-button:focus-visible {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.92);
+  outline: none;
 }
 
 .selected-tracks-legend-swatch {

@@ -1369,6 +1369,7 @@ function VolumeViewer({
         endCap.renderOrder = 1001;
         endCap.frustumCulled = false;
         endCap.visible = false;
+        endCap.userData.trackId = track.id;
 
         trackGroup.add(endCap);
         resource = {
@@ -1411,6 +1412,7 @@ function VolumeViewer({
         resource.baseColor.copy(baseColor);
         resource.highlightColor.copy(highlightColor);
         resource.endCapMaterial.color.copy(baseColor);
+        resource.endCap.userData.trackId = track.id;
         resource.endCapRadius = Math.max(
           resource.baseLineWidth * TRACK_END_CAP_RADIUS_MULTIPLIER,
           TRACK_END_CAP_MIN_RADIUS
@@ -2465,19 +2467,22 @@ function VolumeViewer({
       pointerVector.set((offsetX / width) * 2 - 1, -(offsetY / height) * 2 + 1);
       raycasterInstance.setFromCamera(pointerVector, cameraInstance);
 
-      const visibleLines: Line2[] = [];
+      const visibleObjects: THREE.Object3D[] = [];
       for (const resource of trackLinesRef.current.values()) {
         if (resource.line.visible) {
-          visibleLines.push(resource.line);
+          visibleObjects.push(resource.line);
+        }
+        if (resource.endCap.visible) {
+          visibleObjects.push(resource.endCap);
         }
       }
 
-      if (visibleLines.length === 0) {
+      if (visibleObjects.length === 0) {
         clearHoverState('pointer');
         return null;
       }
 
-      const intersections = raycasterInstance.intersectObjects(visibleLines, false);
+      const intersections = raycasterInstance.intersectObjects(visibleObjects, false);
       if (intersections.length === 0) {
         clearHoverState('pointer');
         return null;
