@@ -53,6 +53,14 @@
   z-index: 20;
 }
 
+.floating-window--channels .floating-window-header-main {
+  gap: 0.55rem;
+}
+
+.floating-window--channels .floating-window-header-content {
+  margin-top: 0.15rem;
+}
+
 .floating-window--playback {
   z-index: 30;
 }

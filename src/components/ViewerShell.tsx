@@ -695,6 +695,7 @@ function ViewerShell({
               <div className="channel-tabs channel-tabs--header" role="tablist" aria-label="Volume channels">
                 {loadedChannelIds.map((channelId) => {
                   const label = channelNameMap.get(channelId) ?? 'Untitled channel';
+                  const displayLabel = label.length > 9 ? `${label.slice(0, 6)}...` : label;
                   const isActive = channelId === activeChannelId;
                   const isVisible = channelVisibility[channelId] ?? true;
                   const tabClassName = ['channel-tab', isActive ? 'is-active' : '', !isVisible ? 'is-hidden' : '']
@@ -730,10 +731,11 @@ function ViewerShell({
                       }
                       role="tab"
                       id={`channel-tab-${channelId}`}
+                      aria-label={label}
                       aria-selected={isActive}
                       aria-controls={`channel-panel-${channelId}`}
                     >
-                      <span className={labelClassName}>{label}</span>
+                      <span className={labelClassName}>{displayLabel}</span>
                     </button>
                   );
                 })}
