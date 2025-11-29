@@ -2,7 +2,6 @@ import { useState, type ComponentProps, type CSSProperties, type MouseEvent, typ
 
 import FloatingWindow from './FloatingWindow';
 import PlanarViewer from './PlanarViewer';
-import RangeSlider from './RangeSlider';
 import SelectedTracksWindow from './SelectedTracksWindow';
 import VolumeViewer from './VolumeViewer';
 import type { VolumeViewerProps } from './VolumeViewer.types';
@@ -122,11 +121,7 @@ type TracksPanelProps = {
   channelNameMap: Map<string, string>;
   activeChannelId: string | null;
   onChannelTabSelect: (channelId: string) => void;
-  tracksByChannel: Map<string, TrackDefinition[]>;
-  hasTrackData: boolean;
-  trackLengthBounds: NumericRange;
-  trackLengthLimits: NumericRange;
-  onTrackLengthLimitsChange: (limits: NumericRange) => void;
+  parsedTracksByChannel: Map<string, TrackDefinition[]>;
   channelTrackColorModes: Record<string, TrackColorMode>;
   trackOpacityByChannel: Record<string, number>;
   trackLineWidthByChannel: Record<string, number>;
@@ -290,11 +285,7 @@ function ViewerShell({
     channels,
     activeChannelId: activeTrackChannelId,
     onChannelTabSelect: onTrackChannelTabSelect,
-    tracksByChannel,
-    hasTrackData,
-    trackLengthBounds,
-    trackLengthLimits,
-    onTrackLengthLimitsChange,
+    parsedTracksByChannel,
     channelTrackColorModes,
     trackOpacityByChannel,
     trackLineWidthByChannel,
@@ -332,6 +323,10 @@ function ViewerShell({
   } = selectedTracksPanel;
   const hasVolumeData = loadedChannelIds.some((channelId) =>
     (channelLayersMap.get(channelId) ?? []).some((layer) => layer.volumes.length > 0)
+  );
+
+  const hasTrackData = channels.some(
+    (channel) => (parsedTracksByChannel.get(channel.id)?.length ?? 0) > 0
   );
 
   const [renderingQuality, setRenderingQuality] = useState(1);
@@ -1152,7 +1147,7 @@ function ViewerShell({
                 <div className="track-controls">
                   {channels.map((channel) => {
                   const channelName = channelNameMap.get(channel.id) ?? 'Untitled channel';
-                  const tracksForChannel = tracksByChannel.get(channel.id) ?? [];
+                  const tracksForChannel = parsedTracksByChannel.get(channel.id) ?? [];
                   const isActive = channel.id === activeTrackChannelId;
                   const colorMode = channelTrackColorModes[channel.id] ?? { type: 'random' };
                   const opacity = trackOpacityByChannel[channel.id] ?? trackDefaults.opacity;
@@ -1213,14 +1208,6 @@ function ViewerShell({
                         >
                           Stop following
                         </button>
-                        <RangeSlider
-                          label="Length cutoff"
-                          bounds={trackLengthBounds}
-                          value={trackLengthLimits}
-                          onChange={onTrackLengthLimitsChange}
-                          step={1}
-                          disabled={!hasTrackData}
-                        />
                         <div className="track-slider-row">
                           <div className="slider-control">
                             <label htmlFor={`track-opacity-${channel.id}`}>
