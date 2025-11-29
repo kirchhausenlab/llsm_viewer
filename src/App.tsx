@@ -298,7 +298,6 @@ function App() {
   const [selectedTracksAmplitudeLimits, setSelectedTracksAmplitudeLimits] =
     useState<NumericRange | null>(null);
   const [selectedTracksTimeLimits, setSelectedTracksTimeLimits] = useState<NumericRange | null>(null);
-  const [trackLengthLimits, setTrackLengthLimits] = useState<NumericRange | null>(null);
   const [followedTrack, setFollowedTrack] = useState<FollowedTrackState>(null);
   const [viewerMode, setViewerMode] = useState<'3d' | '2d'>('3d');
   const [sliceIndex, setSliceIndex] = useState(0);
@@ -785,79 +784,6 @@ function App() {
     return ordered;
   }, [channels, parsedTracksByChannel]);
 
-  const trackLengthExtent = useMemo(() => {
-    if (parsedTracks.length === 0) {
-      return { min: 0, max: 0 };
-    }
-
-    let minLength = Number.POSITIVE_INFINITY;
-    let maxLength = 0;
-
-    for (const track of parsedTracks) {
-      const length = track.points.length;
-      if (length === 0) {
-        continue;
-      }
-      minLength = Math.min(minLength, length);
-      maxLength = Math.max(maxLength, length);
-    }
-
-    const resolvedMin = Number.isFinite(minLength) ? Math.min(minLength, 1) : 0;
-    const resolvedMax = Math.max(maxLength, volumeTimepointCount, resolvedMin);
-
-    return { min: resolvedMin, max: resolvedMax };
-  }, [parsedTracks, volumeTimepointCount]);
-
-  useEffect(() => {
-    setTrackLengthLimits((current) => {
-      if (!current) {
-        return trackLengthExtent;
-      }
-
-      const clamped = clampRangeToBounds(current, trackLengthExtent);
-      if (clamped.min === current.min && clamped.max === current.max) {
-        return current;
-      }
-      return clamped;
-    });
-  }, [trackLengthExtent.max, trackLengthExtent.min]);
-
-  const resolvedTrackLengthLimits = trackLengthLimits ?? trackLengthExtent;
-
-  const filteredTracksByChannel = useMemo(() => {
-    const map = new Map<string, TrackDefinition[]>();
-
-    for (const channel of channels) {
-      const tracks = parsedTracksByChannel.get(channel.id) ?? [];
-      const filtered = tracks.filter((track) => {
-        const length = track.points.length;
-        return length >= resolvedTrackLengthLimits.min && length <= resolvedTrackLengthLimits.max;
-      });
-      map.set(channel.id, filtered);
-    }
-
-    return map;
-  }, [channels, parsedTracksByChannel, resolvedTrackLengthLimits.max, resolvedTrackLengthLimits.min]);
-
-  const filteredTracks = useMemo(() => {
-    const ordered: TrackDefinition[] = [];
-    for (const channel of channels) {
-      const channelTracks = filteredTracksByChannel.get(channel.id) ?? [];
-      ordered.push(...channelTracks);
-    }
-    return ordered;
-  }, [channels, filteredTracksByChannel]);
-
-  const filteredTrackLookup = useMemo(() => {
-    const map = new Map<string, TrackDefinition>();
-    for (const track of filteredTracks) {
-      map.set(track.id, track);
-    }
-    return map;
-  }, [filteredTracks]);
-
-  const filteredTrackIds = useMemo(() => new Set(filteredTracks.map((track) => track.id)), [filteredTracks]);
-
   const trackLookup = useMemo(() => {
     const map = new Map<string, TrackDefinition>();
     for (const track of parsedTracks) {
@@ -869,7 +795,7 @@ function App() {
   const selectedTrackSeries = useMemo(() => {
     const series: Array<{ id: string; label: string; color: string; points: TrackPoint[] }> = [];
     for (const trackId of selectedTrackOrder) {
-      const track = filteredTrackLookup.get(trackId);
+      const track = trackLookup.get(trackId);
       if (!track) {
         continue;
       }
@@ -881,7 +807,7 @@ function App() {
       });
     }
     return series;
-  }, [filteredTrackLookup, selectedTrackOrder]);
+  }, [selectedTrackOrder, trackLookup]);
 
   const trackExtents = useMemo(() => {
     let amplitudeMin = Number.POSITIVE_INFINITY;
@@ -889,7 +815,7 @@ function App() {
     let timeMin = Number.POSITIVE_INFINITY;
     let timeMax = Number.NEGATIVE_INFINITY;
 
-    for (const track of filteredTracks) {
+    for (const track of parsedTracks) {
       for (const point of track.points) {
         if (Number.isFinite(point.amplitude)) {
           amplitudeMin = Math.min(amplitudeMin, point.amplitude);
@@ -911,7 +837,7 @@ function App() {
       amplitude: hasAmplitude ? { min: amplitudeMin, max: amplitudeMax } : { min: 0, max: 1 },
       time: hasTime ? { min: timeMin, max: timeMax } : { min: 0, max: fallbackTimeMax }
     };
-  }, [filteredTracks, volumeTimepointCount]);
+  }, [parsedTracks, volumeTimepointCount]);
 
   const selectedTrackExtents = useMemo(() => {
     let amplitudeMin = Number.POSITIVE_INFINITY;
@@ -994,22 +920,15 @@ function App() {
   const resolvedTimeLimits = selectedTracksTimeLimits ?? timeExtent;
 
   useEffect(() => {
-    if (selectedTrackOrder.length === 0 && !followedTrack) {
+    if (selectedTrackOrder.length === 0) {
       return;
     }
-
+    const available = new Set(parsedTracks.map((track) => track.id));
     setSelectedTrackOrder((current) => {
-      const filtered = current.filter((id) => filteredTrackIds.has(id));
+      const filtered = current.filter((id) => available.has(id));
       return filtered.length === current.length ? current : filtered;
     });
-
-    setFollowedTrack((current) => {
-      if (current && !filteredTrackIds.has(current.id)) {
-        return null;
-      }
-      return current;
-    });
-  }, [filteredTrackIds, followedTrack, selectedTrackOrder.length]);
+  }, [parsedTracks, selectedTrackOrder.length]);
 
   useEffect(() => {
     if (hasInitializedTrackColorsRef.current) {
@@ -1590,7 +1509,7 @@ function App() {
   const trackSummaryByChannel = useMemo(() => {
     const summary = new Map<string, { total: number; visible: number }>();
     for (const channel of channels) {
-      const tracksForChannel = filteredTracksByChannel.get(channel.id) ?? [];
+      const tracksForChannel = parsedTracksByChannel.get(channel.id) ?? [];
       const state = channelTrackStates[channel.id] ?? createDefaultChannelTrackState();
       let visible = 0;
       for (const track of tracksForChannel) {
@@ -1604,7 +1523,7 @@ function App() {
       summary.set(channel.id, { total: tracksForChannel.length, visible });
     }
     return summary;
-  }, [channels, channelTrackStates, filteredTracksByChannel, followedTrack, selectedTrackIds]);
+  }, [channels, channelTrackStates, followedTrack, parsedTracksByChannel, selectedTrackIds]);
 
   const trackVisibility = useMemo(() => {
     const visibility: Record<string, boolean> = {};
@@ -2405,7 +2324,7 @@ function App() {
 
   const handleTrackVisibilityAllChange = useCallback(
     (channelId: string, isChecked: boolean) => {
-      const tracksForChannel = filteredTracksByChannel.get(channelId) ?? [];
+      const tracksForChannel = parsedTracksByChannel.get(channelId) ?? [];
       setChannelTrackStates((current) => {
         const existing = current[channelId] ?? createDefaultChannelTrackState();
         const visibility: Record<string, boolean> = {};
@@ -2433,14 +2352,7 @@ function App() {
         });
       }
     },
-    [filteredTracksByChannel]
-  );
-
-  const handleTrackLengthLimitsChange = useCallback(
-    (limits: NumericRange) => {
-      setTrackLengthLimits(clampRangeToBounds(limits, trackLengthExtent));
-    },
-    [trackLengthExtent]
+    [parsedTracksByChannel]
   );
 
   const handleTrackOrderToggle = useCallback((channelId: string) => {
@@ -3303,7 +3215,7 @@ function App() {
     onVolumeStepScaleChange: handleVolumeStepScaleChange,
     onRegisterVolumeStepScaleChange: handleRegisterVolumeStepScaleChange,
     onRegisterReset: handleRegisterReset,
-    tracks: filteredTracks,
+    tracks: parsedTracks,
     trackVisibility,
     trackOpacityByChannel,
     trackLineWidthByChannel,
@@ -3364,7 +3276,7 @@ function App() {
     sliceIndex,
     maxSlices: maxSliceDepth,
     onSliceIndexChange: handleSliceIndexChange,
-    tracks: filteredTracks,
+    tracks: parsedTracks,
     trackVisibility,
     trackOpacityByChannel,
     trackLineWidthByChannel,
@@ -3464,11 +3376,7 @@ function App() {
       channelNameMap,
       activeChannelId: activeTrackChannelId,
       onChannelTabSelect: setActiveTrackChannelId,
-      tracksByChannel: filteredTracksByChannel,
-      hasTrackData: hasParsedTrackData,
-      trackLengthBounds: trackLengthExtent,
-      trackLengthLimits: resolvedTrackLengthLimits,
-      onTrackLengthLimitsChange: handleTrackLengthLimitsChange,
+      parsedTracksByChannel,
       channelTrackColorModes,
       trackOpacityByChannel,
       trackLineWidthByChannel,
