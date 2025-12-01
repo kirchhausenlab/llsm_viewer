@@ -512,26 +512,6 @@ function ViewerShell({
           resetSignal={resetToken}
         >
           <div className="sidebar sidebar-left global-controls">
-            {viewerMode === '2d' && maxSliceDepth > 0 ? (
-              <div className="control-group">
-                <label htmlFor="z-plane-slider" className="control-label control-label--compact">
-                  Z plane{' '}
-                  <span>
-                    {Math.min(sliceIndex, Math.max(0, maxSliceDepth - 1))} / {Math.max(0, maxSliceDepth - 1)}
-                  </span>
-                </label>
-                <input
-                  id="z-plane-slider"
-                  type="range"
-                  min={0}
-                  max={Math.max(0, maxSliceDepth - 1)}
-                  value={Math.min(sliceIndex, Math.max(0, maxSliceDepth - 1))}
-                  onChange={(event) => onSliceIndexChange(Number(event.target.value))}
-                  disabled={maxSliceDepth <= 1}
-                />
-              </div>
-            ) : null}
-
             <div className="control-group">
               <div className="viewer-mode-row">
                 <button
@@ -661,6 +641,26 @@ function ViewerShell({
                   </svg>
                 </button>
               </div>
+
+              {viewerMode === '2d' && maxSliceDepth > 0 ? (
+                <div className="control-group">
+                  <label htmlFor="z-plane-slider" className="control-label control-label--compact">
+                    Z plane{' '}
+                    <span>
+                      {Math.min(sliceIndex, Math.max(0, maxSliceDepth - 1))} / {Math.max(0, maxSliceDepth - 1)}
+                    </span>
+                  </label>
+                  <input
+                    id="z-plane-slider"
+                    type="range"
+                    min={0}
+                    max={Math.max(0, maxSliceDepth - 1)}
+                    value={Math.min(sliceIndex, Math.max(0, maxSliceDepth - 1))}
+                    onChange={(event) => onSliceIndexChange(Number(event.target.value))}
+                    disabled={maxSliceDepth <= 1}
+                  />
+                </div>
+              ) : null}
             </div>
 
             {error && <p className="error">{error}</p>}
