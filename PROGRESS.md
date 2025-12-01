@@ -810,3 +810,7 @@ d centered the front-page card in the viewport.
 - Preserved zoom, rotation, and pan state across orthogonal toggle changes while still triggering auto-fit when the underlying volume dimensions change.
 ## Track overlay anisotropy rescaling
 - Threaded the anisotropy correction scale into both the 3D and 2D viewers when building track geometry, offsets, and follow centroids so overlays stay aligned with anisotropy-corrected volumes across all views.
+
+## Plot settings window sizing cleanup
+- Stopped the plot settings sliders from stretching vertically so the window shrinks to its content instead of filling the screen.
+- Let the plot settings body scroll when needed so the Auto and Clear buttons remain visible on smaller viewports.
