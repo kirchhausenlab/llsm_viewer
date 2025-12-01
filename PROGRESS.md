@@ -800,3 +800,8 @@ d centered the front-page card in the viewport.
 - Added a viewer settings toggle for orthogonal views (2D mode only) that enables side-by-side XZ and ZY projections alongside the primary XY slice for 3D volumes.
 - Rendered orthogonal slices anchored to the hovered XY position or the followed track centroid, with synchronized pan/zoom/rotation across all three views.
 - Projected track overlays into each orthogonal plane (along the appropriate axis) and kept hover tracking limited to the XY view.
+
+## Track plot settings and smoothing
+- Renamed the Selected Tracks overlay to "Track plots" and added a header gear button that opens a dedicated Plot settings window aligned with the viewer settings layout.
+- Moved amplitude/time range controls into the new window, introduced a Gaussian smoothing slider (0–5 range, fine step), and applied smoothing to track data used across plots and overlays.
+- Updated the legend styling so each channel name text inherits its channel tint while keeping track numbers and values in the default palette.
