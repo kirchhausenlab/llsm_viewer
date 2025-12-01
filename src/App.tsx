@@ -280,6 +280,10 @@ function App() {
     };
   }, [experimentDimension, voxelResolutionInput]);
   const anisotropyScale = useMemo(() => computeAnisotropyScale(voxelResolution), [voxelResolution]);
+  const trackScale = useMemo(
+    () => anisotropyScale ?? { x: 1, y: 1, z: 1 },
+    [anisotropyScale]
+  );
   const [status, setStatus] = useState<LoadState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [loadProgress, setLoadProgress] = useState(0);
@@ -734,13 +738,7 @@ function App() {
         const time = initialTime + deltaTime;
         const normalizedTime = Math.max(0, time - 1);
         const amplitude = Math.max(0, amplitudeRaw);
-        const point: TrackPoint = {
-          time: normalizedTime,
-          x: anisotropyScale ? x * anisotropyScale.x : x,
-          y: anisotropyScale ? y * anisotropyScale.y : y,
-          z: anisotropyScale ? z * anisotropyScale.z : z,
-          amplitude
-        };
+        const point: TrackPoint = { time: normalizedTime, x, y, z, amplitude };
         const existing = trackMap.get(id);
         if (existing) {
           existing.push(point);
@@ -3292,6 +3290,7 @@ function App() {
     onVolumeStepScaleChange: handleVolumeStepScaleChange,
     onRegisterVolumeStepScaleChange: handleRegisterVolumeStepScaleChange,
     onRegisterReset: handleRegisterReset,
+    trackScale,
     tracks: filteredTracks,
     trackVisibility,
     trackOpacityByChannel,
@@ -3355,6 +3354,7 @@ function App() {
     sliceIndex,
     maxSlices: maxSliceDepth,
     onSliceIndexChange: handleSliceIndexChange,
+    trackScale,
     tracks: filteredTracks,
     trackVisibility,
     trackOpacityByChannel,
