@@ -637,6 +637,10 @@
   gap: 0.85rem;
 }
 
+.plot-settings-window .selected-tracks-slider {
+  flex: 0 0 auto;
+}
+
 .selected-tracks-slider {
   display: flex;
   flex-direction: column;
