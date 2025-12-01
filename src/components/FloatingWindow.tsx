@@ -7,6 +7,7 @@ type FloatingWindowProps = {
   initialPosition?: { x: number; y: number };
   width?: number | string;
   headerActions?: ReactNode;
+  headerEndActions?: ReactNode;
   headerContent?: ReactNode;
   children: ReactNode;
   className?: string;
@@ -23,6 +24,7 @@ function FloatingWindow({
   initialPosition,
   width,
   headerActions,
+  headerEndActions,
   headerContent,
   children,
   className,
@@ -288,6 +290,7 @@ function FloatingWindow({
         >
           <span aria-hidden="true">{isMinimized ? '▢' : '–'}</span>
         </button>
+        {headerEndActions ? <div className="floating-window-extra-actions">{headerEndActions}</div> : null}
       </div>
       {headerContent ? (
         <div className="floating-window-header-content" data-no-drag>
