@@ -71,6 +71,7 @@ const SELECTED_TRACKS_WINDOW_WIDTH = 1040;
 const SELECTED_TRACKS_WINDOW_HEIGHT = 220;
 const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
 const WARNING_WINDOW_WIDTH = 360;
+const TRACK_SMOOTHING_RANGE: NumericRange = { min: 0, max: 5 };
 const DEFAULT_RESET_WINDOW = { windowMin: DEFAULT_WINDOW_MIN, windowMax: DEFAULT_WINDOW_MAX };
 
 const DEFAULT_VOXEL_RESOLUTION: VoxelResolutionInput = {
@@ -114,6 +115,66 @@ const createDefaultChannelTrackState = (): ChannelTrackState => ({
   colorMode: { type: 'random' }
 });
 
+
+const smoothTrackPoints = (points: TrackPoint[], sigma: number) => {
+  if (!Number.isFinite(sigma) || sigma <= 0 || points.length === 0) {
+    return points;
+  }
+
+  const radius = Math.max(1, Math.ceil(sigma * 3));
+  const varianceFactor = 2 * sigma * sigma;
+  const weights: number[] = [];
+
+  for (let offset = -radius; offset <= radius; offset++) {
+    const weight = Math.exp(-(offset * offset) / varianceFactor);
+    weights.push(weight);
+  }
+
+  return points.map((point, index) => {
+    let weightedSumX = 0;
+    let weightedSumY = 0;
+    let weightedSumZ = 0;
+    let weightedAmplitude = 0;
+    let weightTotal = 0;
+
+    for (let offset = -radius; offset <= radius; offset++) {
+      const neighborIndex = index + offset;
+      if (neighborIndex < 0 || neighborIndex >= points.length) {
+        continue;
+      }
+      const weight = weights[offset + radius];
+      weightTotal += weight;
+      const neighbor = points[neighborIndex];
+      weightedSumX += neighbor.x * weight;
+      weightedSumY += neighbor.y * weight;
+      weightedSumZ += neighbor.z * weight;
+      weightedAmplitude += neighbor.amplitude * weight;
+    }
+
+    if (weightTotal === 0) {
+      return point;
+    }
+
+    return {
+      time: point.time,
+      x: weightedSumX / weightTotal,
+      y: weightedSumY / weightTotal,
+      z: weightedSumZ / weightTotal,
+      amplitude: weightedAmplitude / weightTotal
+    };
+  });
+};
+
+const applyGaussianSmoothing = (tracks: TrackDefinition[], sigma: number) => {
+  if (!Number.isFinite(sigma) || sigma <= 0) {
+    return tracks;
+  }
+
+  return tracks.map((track) => ({
+    ...track,
+    points: smoothTrackPoints(track.points, sigma)
+  }));
+};
 
 type FollowedTrackState = {
   id: string;
@@ -301,6 +362,7 @@ function App() {
   const [selectedTracksAmplitudeLimits, setSelectedTracksAmplitudeLimits] =
     useState<NumericRange | null>(null);
   const [selectedTracksTimeLimits, setSelectedTracksTimeLimits] = useState<NumericRange | null>(null);
+  const [trackSmoothing, setTrackSmoothing] = useState(0);
   const [pendingMinimumTrackLength, setPendingMinimumTrackLength] = useState(1);
   const [minimumTrackLength, setMinimumTrackLength] = useState(1);
   const [followedTrack, setFollowedTrack] = useState<FollowedTrackState>(null);
@@ -427,6 +489,20 @@ function App() {
     );
     return { x, y };
   }, []);
+  const computePlotSettingsWindowDefaultPosition = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return { x: WINDOW_MARGIN, y: WINDOW_MARGIN };
+    }
+
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const windowWidth = Math.min(CONTROL_WINDOW_WIDTH, viewportWidth - WINDOW_MARGIN * 2);
+    const estimatedHeight = 260;
+    const x = Math.max(WINDOW_MARGIN, Math.round((viewportWidth - windowWidth) / 2));
+    const anchorY = viewportHeight - SELECTED_TRACKS_WINDOW_HEIGHT - WINDOW_MARGIN;
+    const y = Math.max(WINDOW_MARGIN, Math.round(anchorY - estimatedHeight - 16));
+    return { x, y };
+  }, []);
   const [viewerSettingsWindowInitialPosition, setViewerSettingsWindowInitialPosition] = useState<{
     x: number;
     y: number;
@@ -435,6 +511,10 @@ function App() {
     x: number;
     y: number;
   }>(() => computeSelectedTracksWindowDefaultPosition());
+  const [plotSettingsWindowInitialPosition, setPlotSettingsWindowInitialPosition] = useState<{
+    x: number;
+    y: number;
+  }>(() => computePlotSettingsWindowDefaultPosition());
 
   const loadRequestRef = useRef(0);
   const channelIdRef = useRef(0);
@@ -692,7 +772,7 @@ function App() {
     }
     return order;
   }, [layers]);
-  const parsedTracksByChannel = useMemo(() => {
+  const rawTracksByChannel = useMemo(() => {
     const map = new Map<string, TrackDefinition[]>();
     const is2dExperiment = experimentDimension === '2d';
     const minimumColumns = is2dExperiment ? 6 : 7;
@@ -781,6 +861,18 @@ function App() {
     return map;
   }, [anisotropyScale, channels, experimentDimension]);
 
+  const parsedTracksByChannel = useMemo(() => {
+    if (!Number.isFinite(trackSmoothing) || trackSmoothing <= 0) {
+      return rawTracksByChannel;
+    }
+
+    const map = new Map<string, TrackDefinition[]>();
+    for (const [channelId, tracks] of rawTracksByChannel.entries()) {
+      map.set(channelId, applyGaussianSmoothing(tracks, trackSmoothing));
+    }
+    return map;
+  }, [rawTracksByChannel, trackSmoothing]);
+
   const parsedTracks = useMemo(() => {
     const ordered: TrackDefinition[] = [];
     for (const channel of channels) {
@@ -828,7 +920,14 @@ function App() {
   }, [filteredTracks]);
 
   const selectedTrackSeries = useMemo(() => {
-    const series: Array<{ id: string; label: string; color: string; points: TrackPoint[] }> = [];
+    const series: Array<{
+      id: string;
+      channelId: string;
+      channelName: string;
+      trackNumber: number;
+      color: string;
+      points: TrackPoint[];
+    }> = [];
     for (const trackId of selectedTrackOrder) {
       const track = filteredTrackLookup.get(trackId);
       if (!track) {
@@ -836,7 +935,9 @@ function App() {
       }
       series.push({
         id: track.id,
-        label: `${track.channelName} · Track #${track.trackNumber}`,
+        channelId: track.channelId,
+        channelName: track.channelName,
+        trackNumber: track.trackNumber,
         color: getTrackColorHex(track.id),
         points: track.points
       });
@@ -1073,8 +1174,10 @@ function App() {
     setTrackWindowInitialPosition(computeTrackWindowDefaultPosition());
     setViewerSettingsWindowInitialPosition(computeViewerSettingsWindowDefaultPosition());
     setSelectedTracksWindowInitialPosition(computeSelectedTracksWindowDefaultPosition());
+    setPlotSettingsWindowInitialPosition(computePlotSettingsWindowDefaultPosition());
   }, [
     computeSelectedTracksWindowDefaultPosition,
+    computePlotSettingsWindowDefaultPosition,
     computeViewerSettingsWindowDefaultPosition,
     computeTrackWindowDefaultPosition
   ]);
@@ -1108,6 +1211,16 @@ function App() {
       return defaultPosition;
     });
   }, [computeSelectedTracksWindowDefaultPosition]);
+
+  useEffect(() => {
+    const defaultPosition = computePlotSettingsWindowDefaultPosition();
+    setPlotSettingsWindowInitialPosition((current) => {
+      if (current.x === defaultPosition.x && current.y === defaultPosition.y) {
+        return current;
+      }
+      return defaultPosition;
+    });
+  }, [computePlotSettingsWindowDefaultPosition]);
 
   useEffect(() => {
     setChannelTrackStates((current) => {
@@ -2620,6 +2733,11 @@ function App() {
     setSelectedTracksTimeLimits(clampRangeToBounds(nextTime, timeExtent));
   }, [amplitudeExtent, selectedTrackExtents, timeExtent]);
 
+  const handleTrackSmoothingChange = useCallback((value: number) => {
+    const clamped = Math.min(Math.max(value, TRACK_SMOOTHING_RANGE.min), TRACK_SMOOTHING_RANGE.max);
+    setTrackSmoothing(clamped);
+  }, []);
+
   const handleClearSelectedTracks = useCallback(() => {
     setSelectedTrackOrder([]);
     setFollowedTrack(null);
@@ -3400,7 +3518,8 @@ function App() {
       viewerSettingsWindowInitialPosition,
       layersWindowInitialPosition,
       trackWindowInitialPosition,
-      selectedTracksWindowInitialPosition
+      selectedTracksWindowInitialPosition,
+      plotSettingsWindowInitialPosition
     },
     modeControls: {
       is3dModeAvailable: is3dViewerAvailable,
@@ -3494,16 +3613,24 @@ function App() {
       shouldRender: showSelectedTracksWindow,
       series: selectedTrackSeries,
       totalTimepoints: volumeTimepointCount,
+      amplitudeLimits: resolvedAmplitudeLimits,
+      timeLimits: resolvedTimeLimits,
+      currentTimepoint: selectedIndex,
+      channelTintMap,
+      onTrackSelectionToggle: handleTrackSelectionToggle
+    },
+    plotSettings: {
       amplitudeExtent,
       amplitudeLimits: resolvedAmplitudeLimits,
       timeExtent,
       timeLimits: resolvedTimeLimits,
+      smoothing: trackSmoothing,
+      smoothingExtent: TRACK_SMOOTHING_RANGE,
       onAmplitudeLimitsChange: handleSelectedTracksAmplitudeLimitsChange,
       onTimeLimitsChange: handleSelectedTracksTimeLimitsChange,
+      onSmoothingChange: handleTrackSmoothingChange,
       onAutoRange: handleSelectedTracksAutoRange,
-      onClearSelection: handleClearSelectedTracks,
-      currentTimepoint: selectedIndex,
-      onTrackSelectionToggle: handleTrackSelectionToggle
+      onClearSelection: handleClearSelectedTracks
     },
     trackDefaults: {
       opacity: DEFAULT_TRACK_OPACITY,

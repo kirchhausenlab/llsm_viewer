@@ -10,6 +10,7 @@ import {
 import FloatingWindow from './FloatingWindow';
 import PlanarViewer from './PlanarViewer';
 import SelectedTracksWindow from './SelectedTracksWindow';
+import PlotSettingsWindow from './PlotSettingsWindow';
 import VolumeViewer from './VolumeViewer';
 import type { VolumeViewerProps } from './VolumeViewer.types';
 import BrightnessContrastHistogram from './BrightnessContrastHistogram';
@@ -166,18 +167,34 @@ type TracksPanelProps = {
 
 type SelectedTracksPanelProps = {
   shouldRender: boolean;
-  series: Array<{ id: string; label: string; color: string; points: TrackPoint[] }>;
+  series: Array<{
+    id: string;
+    channelId: string;
+    channelName: string;
+    trackNumber: number;
+    color: string;
+    points: TrackPoint[];
+  }>;
   totalTimepoints: number;
+  amplitudeLimits: NumericRange;
+  timeLimits: NumericRange;
+  currentTimepoint: number;
+  channelTintMap: Map<string, string>;
+  onTrackSelectionToggle: (trackId: string) => void;
+};
+
+type PlotSettingsProps = {
   amplitudeExtent: NumericRange;
   amplitudeLimits: NumericRange;
   timeExtent: NumericRange;
   timeLimits: NumericRange;
+  smoothing: number;
+  smoothingExtent: NumericRange;
   onAmplitudeLimitsChange: (limits: NumericRange) => void;
   onTimeLimitsChange: (limits: NumericRange) => void;
+  onSmoothingChange: (value: number) => void;
   onAutoRange: () => void;
   onClearSelection: () => void;
-  currentTimepoint: number;
-  onTrackSelectionToggle: (trackId: string) => void;
 };
 
 type Position = { x: number; y: number };
@@ -192,6 +209,7 @@ type LayoutProps = {
   layersWindowInitialPosition: Position;
   trackWindowInitialPosition: Position;
   selectedTracksWindowInitialPosition: Position;
+  plotSettingsWindowInitialPosition: Position;
 };
 
 type TrackDefaults = {
@@ -211,6 +229,7 @@ export type ViewerShellProps = {
   channelsPanel: ChannelsPanelProps;
   tracksPanel: TracksPanelProps;
   selectedTracksPanel: SelectedTracksPanelProps;
+  plotSettings: PlotSettingsProps;
   trackDefaults: TrackDefaults;
 };
 
@@ -226,6 +245,7 @@ function ViewerShell({
   channelsPanel,
   tracksPanel,
   selectedTracksPanel,
+  plotSettings,
   trackDefaults
 }: ViewerShellProps) {
   const {
@@ -248,7 +268,8 @@ function ViewerShell({
     viewerSettingsWindowInitialPosition,
     layersWindowInitialPosition,
     trackWindowInitialPosition,
-    selectedTracksWindowInitialPosition
+    selectedTracksWindowInitialPosition,
+    plotSettingsWindowInitialPosition
   } = layout;
   const { orthogonalViewsAvailable, orthogonalViewsEnabled, onOrthogonalViewsToggle } = planarSettings;
   const {
@@ -342,17 +363,23 @@ function ViewerShell({
     shouldRender,
     series,
     totalTimepoints,
-    amplitudeExtent,
     amplitudeLimits,
-    timeExtent,
     timeLimits,
-    onAmplitudeLimitsChange,
-    onTimeLimitsChange,
-    onAutoRange,
-    onClearSelection,
     currentTimepoint,
+    channelTintMap: selectedTracksChannelTintMap,
     onTrackSelectionToggle: onSelectedTrackToggle
   } = selectedTracksPanel;
+  const {
+    amplitudeExtent,
+    timeExtent,
+    smoothing,
+    smoothingExtent,
+    onAmplitudeLimitsChange,
+    onTimeLimitsChange,
+    onSmoothingChange,
+    onAutoRange,
+    onClearSelection
+  } = plotSettings;
   const hasVolumeData = loadedChannelIds.some((channelId) =>
     (channelLayersMap.get(channelId) ?? []).some((layer) => layer.volumes.length > 0)
   );
@@ -363,6 +390,7 @@ function ViewerShell({
 
   const [renderingQuality, setRenderingQuality] = useState(1);
   const [isViewerSettingsOpen, setIsViewerSettingsOpen] = useState(false);
+  const [isPlotSettingsOpen, setIsPlotSettingsOpen] = useState(false);
 
   const handleRenderingQualityChange = (value: number) => {
     setRenderingQuality(value);
@@ -380,6 +408,24 @@ function ViewerShell({
   useEffect(() => {
     setIsViewerSettingsOpen(false);
   }, [resetToken]);
+
+  const togglePlotSettingsVisibility = () => {
+    setIsPlotSettingsOpen((current) => !current);
+  };
+
+  const closePlotSettings = () => {
+    setIsPlotSettingsOpen(false);
+  };
+
+  useEffect(() => {
+    setIsPlotSettingsOpen(false);
+  }, [resetToken]);
+
+  useEffect(() => {
+    if (!shouldRender) {
+      setIsPlotSettingsOpen(false);
+    }
+  }, [shouldRender]);
 
   const showRenderingQualityControl =
     is3dModeAvailable && viewerMode === '3d' && samplingMode === 'linear';
@@ -1517,31 +1563,81 @@ function ViewerShell({
         </FloatingWindow>
         ) : null}
         {!isVrActive && shouldRender ? (
-          <FloatingWindow
-            title="Selected Tracks"
-            initialPosition={selectedTracksWindowInitialPosition}
-            width={`min(${selectedTracksWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
-            className="floating-window--selected-tracks"
-            bodyClassName="floating-window-body--selected-tracks"
-            resetSignal={resetToken}
-            headerPosition="bottom"
-          >
-          <SelectedTracksWindow
-            series={series}
-            totalTimepoints={totalTimepoints}
-            amplitudeExtent={amplitudeExtent}
-            amplitudeLimits={amplitudeLimits}
-            timeExtent={timeExtent}
-            timeLimits={timeLimits}
-            onAmplitudeLimitsChange={onAmplitudeLimitsChange}
-            onTimeLimitsChange={onTimeLimitsChange}
-            onAutoRange={onAutoRange}
-            onClearSelection={onClearSelection}
-            currentTimepoint={currentTimepoint}
-            onTrackSelectionToggle={onSelectedTrackToggle}
-          />
-        </FloatingWindow>
-      ) : null}
+          <>
+            <FloatingWindow
+              title="Track plots"
+              initialPosition={selectedTracksWindowInitialPosition}
+              width={`min(${selectedTracksWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
+              className="floating-window--selected-tracks"
+              bodyClassName="floating-window-body--selected-tracks"
+              resetSignal={resetToken}
+              headerPosition="bottom"
+              headerActions={
+                <button
+                  type="button"
+                  className="floating-window-toggle"
+                  onClick={togglePlotSettingsVisibility}
+                  aria-label={
+                    isPlotSettingsOpen ? 'Hide plot settings window' : 'Show plot settings window'
+                  }
+                  aria-pressed={isPlotSettingsOpen}
+                  data-no-drag
+                  title="Settings"
+                >
+                  <span aria-hidden="true">⚙</span>
+                </button>
+              }
+            >
+              <SelectedTracksWindow
+                series={series}
+                totalTimepoints={totalTimepoints}
+                amplitudeLimits={amplitudeLimits}
+                timeLimits={timeLimits}
+                currentTimepoint={currentTimepoint}
+                channelTintMap={selectedTracksChannelTintMap}
+                onTrackSelectionToggle={onSelectedTrackToggle}
+              />
+            </FloatingWindow>
+            <div
+              style={{ display: isPlotSettingsOpen ? undefined : 'none' }}
+              aria-hidden={!isPlotSettingsOpen}
+            >
+              <FloatingWindow
+                title="Plot settings"
+                initialPosition={plotSettingsWindowInitialPosition}
+                width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
+                className="floating-window--plot-settings"
+                resetSignal={resetToken}
+                headerEndActions={
+                  <button
+                    type="button"
+                    className="floating-window-toggle"
+                    onClick={closePlotSettings}
+                    aria-label="Close plot settings window"
+                    data-no-drag
+                    title="Close"
+                  >
+                    <span aria-hidden="true">×</span>
+                  </button>
+                }
+              >
+                <PlotSettingsWindow
+                  amplitudeExtent={amplitudeExtent}
+                  amplitudeLimits={amplitudeLimits}
+                  timeExtent={timeExtent}
+                  timeLimits={timeLimits}
+                  smoothing={smoothing}
+                  smoothingExtent={smoothingExtent}
+                  onAmplitudeLimitsChange={onAmplitudeLimitsChange}
+                  onTimeLimitsChange={onTimeLimitsChange}
+                  onSmoothingChange={onSmoothingChange}
+                  onAutoRange={onAutoRange}
+                  onClearSelection={onClearSelection}
+                />
+              </FloatingWindow>
+            </div>
+          </>
+        ) : null}
       </div>
     </>
   );
