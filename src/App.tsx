@@ -3367,7 +3367,10 @@ function App() {
       helpMenuRef,
       isHelpMenuOpen,
       onHelpMenuToggle: handleHelpMenuToggle,
-      hoveredVoxel: hoveredVolumeVoxel
+      hoveredVoxel: hoveredVolumeVoxel,
+      followedTrackChannelId,
+      followedTrackId,
+      onStopTrackFollow: handleStopTrackFollow
     },
     layout: {
       windowMargin: WINDOW_MARGIN,
@@ -3466,8 +3469,7 @@ function App() {
       onTrackColorReset: handleTrackColorReset,
       onTrackSelectionToggle: handleTrackSelectionToggle,
       selectedTrackIds,
-      onTrackFollow: handleTrackFollow,
-      onStopTrackFollow: handleStopTrackFollow
+      onTrackFollow: handleTrackFollow
     },
     selectedTracksPanel: {
       shouldRender: showSelectedTracksWindow,

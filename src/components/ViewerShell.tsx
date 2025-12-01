@@ -47,6 +47,9 @@ type TopMenuProps = {
   helpMenuRef: RefObject<HTMLDivElement>;
   isHelpMenuOpen: boolean;
   onHelpMenuToggle: () => void;
+  followedTrackChannelId: string | null;
+  followedTrackId: string | null;
+  onStopTrackFollow: (channelId?: string) => void;
   hoveredVoxel: HoveredVoxelInfo | null;
 };
 
@@ -153,7 +156,6 @@ type TracksPanelProps = {
   onTrackSelectionToggle: (trackId: string) => void;
   selectedTrackIds: ReadonlySet<string>;
   onTrackFollow: (trackId: string) => void;
-  onStopTrackFollow: (channelId?: string) => void;
 };
 
 type SelectedTracksPanelProps = {
@@ -224,6 +226,9 @@ function ViewerShell({
     helpMenuRef,
     isHelpMenuOpen,
     onHelpMenuToggle,
+    followedTrackChannelId: topMenuFollowedTrackChannelId,
+    followedTrackId: topMenuFollowedTrackId,
+    onStopTrackFollow,
     hoveredVoxel
   } = topMenu;
   const {
@@ -309,8 +314,8 @@ function ViewerShell({
     trackOpacityByChannel,
     trackLineWidthByChannel,
     trackSummaryByChannel,
-    followedTrackChannelId,
-    followedTrackId,
+    followedTrackChannelId: tracksPanelFollowedTrackChannelId,
+    followedTrackId: tracksPanelFollowedTrackId,
     onTrackOrderToggle,
     trackOrderModeByChannel,
     trackVisibility,
@@ -322,8 +327,7 @@ function ViewerShell({
     onTrackColorReset,
     onTrackSelectionToggle,
     selectedTrackIds,
-    onTrackFollow,
-    onStopTrackFollow
+    onTrackFollow
   } = tracksPanel;
   const {
     shouldRender,
@@ -378,6 +382,9 @@ function ViewerShell({
       ? [{ text: hoveredVoxel.intensity, color: null }]
       : [];
 
+  const isTrackFollowActive =
+    topMenuFollowedTrackChannelId !== null && topMenuFollowedTrackId !== null;
+
   return (
     <>
       <div className="app">
@@ -389,14 +396,14 @@ function ViewerShell({
           )}
         </main>
         <div className="viewer-top-menu">
-            <div className="viewer-top-menu-row">
-              <div className="viewer-top-menu-actions">
-                <button type="button" className="viewer-top-menu-button" onClick={onReturnToLauncher}>
-                  ↩ Return
-                </button>
-                <button type="button" className="viewer-top-menu-button" onClick={onResetLayout}>
-                  Reset layout
-                </button>
+          <div className="viewer-top-menu-row">
+            <div className="viewer-top-menu-actions">
+              <button type="button" className="viewer-top-menu-button" onClick={onReturnToLauncher}>
+                ↩ Return
+              </button>
+              <button type="button" className="viewer-top-menu-button" onClick={onResetLayout}>
+                Reset layout
+              </button>
               <div className="viewer-top-menu-help" ref={helpMenuRef}>
                 <button
                   type="button"
@@ -442,6 +449,15 @@ function ViewerShell({
                   </div>
                 ) : null}
               </div>
+              {isTrackFollowActive ? (
+                <button
+                  type="button"
+                  className="viewer-top-menu-button viewer-top-menu-button--danger"
+                  onClick={() => onStopTrackFollow(topMenuFollowedTrackChannelId ?? undefined)}
+                >
+                  Stop following
+                </button>
+              ) : null}
             </div>
             <div className="viewer-top-menu-intensity" role="status" aria-live="polite">
               {hoveredVoxel ? (
@@ -1220,7 +1236,6 @@ function ViewerShell({
                   const colorMode = channelTrackColorModes[channel.id] ?? { type: 'random' };
                   const opacity = trackOpacityByChannel[channel.id] ?? trackDefaults.opacity;
                   const lineWidth = trackLineWidthByChannel[channel.id] ?? trackDefaults.lineWidth;
-                  const channelFollowedId = followedTrackChannelId === channel.id ? followedTrackId : null;
                   const orderMode = trackOrderModeByChannel[channel.id] ?? 'id';
                   const orderedTracks =
                     orderMode === 'length'
@@ -1261,21 +1276,11 @@ function ViewerShell({
                       id={`track-panel-${channel.id}`}
                       role="tabpanel"
                       aria-labelledby={`track-tab-${channel.id}`}
-                      className={isActive ? 'track-panel is-active' : 'track-panel'}
-                      hidden={!isActive}
-                      style={trackPanelStyle}
-                    >
-                      <div className="track-follow-controls">
-                        <button
-                          type="button"
-                          onClick={() => onStopTrackFollow(channel.id)}
-                          disabled={channelFollowedId === null}
-                          className={
-                            channelFollowedId !== null ? 'viewer-stop-tracking is-active' : 'viewer-stop-tracking'
-                          }
-                        >
-                          Stop following
-                        </button>
+                    className={isActive ? 'track-panel is-active' : 'track-panel'}
+                    hidden={!isActive}
+                    style={trackPanelStyle}
+                  >
+                    <div className="track-follow-controls">
                         <div className="track-length-controls">
                           <label htmlFor={`track-minimum-length-${channel.id}`}>
                             Minimum length <span>{Math.round(pendingMinimumTrackLength)}</span>
@@ -1412,7 +1417,7 @@ function ViewerShell({
                             aria-label={`${channelName} track visibility`}
                           >
                             {displayTracks.map((track) => {
-                              const isFollowed = followedTrackId === track.id;
+                              const isFollowed = tracksPanelFollowedTrackId === track.id;
                               const isSelected = selectedTrackIds.has(track.id);
                               const isChecked =
                                 isFollowed || isSelected || (trackVisibility[track.id] ?? true);

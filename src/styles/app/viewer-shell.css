@@ -72,6 +72,23 @@
   transform: translateY(0);
 }
 
+.viewer-top-menu-button--danger {
+  background: #dc2626;
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #ffffff;
+  box-shadow: 0 12px 24px rgba(220, 38, 38, 0.28);
+}
+
+.viewer-top-menu-button--danger:hover {
+  background: #b91c1c;
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+.viewer-top-menu-button--danger:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.9);
+  outline-offset: 2px;
+}
+
 .viewer-top-menu-intensity {
   display: flex;
   align-items: center;
