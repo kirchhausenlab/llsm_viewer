@@ -1,3 +1,9 @@
+# Track follow menu relocation
+- Moved the stop-follow control to the viewer top bar beside Help and hide it when no track
+  is being followed so the control only appears when it is actionable.
+- Removed the per-channel stop button from the Tracks pane while keeping the stop action
+  available globally.
+
 # Hover debug silencing
 - Hid the hover sampling debug banner unless the app is running in development mode so routine ray-miss warnings no longer
   surface during normal viewing.
