@@ -801,5 +801,8 @@ d centered the front-page card in the viewport.
 - Rendered orthogonal slices anchored to the hovered XY position or the followed track centroid, with synchronized pan/zoom/rotation across all three views.
 - Projected track overlays into each orthogonal plane (along the appropriate axis) and kept hover tracking limited to the XY view.
 
+## Planar orthogonal toggle persistence
+- Kept the XY camera anchored when enabling or disabling orthogonal slices by compensating for the layout center shift instead of resetting the view.
+- Preserved zoom, rotation, and pan state across orthogonal toggle changes while still triggering auto-fit when the underlying volume dimensions change.
 ## Track overlay anisotropy rescaling
 - Threaded the anisotropy correction scale into both the 3D and 2D viewers when building track geometry, offsets, and follow centroids so overlays stay aligned with anisotropy-corrected volumes across all views.
