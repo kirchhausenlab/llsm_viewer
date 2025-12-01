@@ -122,6 +122,12 @@ type TracksPanelProps = {
   activeChannelId: string | null;
   onChannelTabSelect: (channelId: string) => void;
   parsedTracksByChannel: Map<string, TrackDefinition[]>;
+  filteredTracksByChannel: Map<string, TrackDefinition[]>;
+  minimumTrackLength: number;
+  pendingMinimumTrackLength: number;
+  trackLengthBounds: NumericRange;
+  onMinimumTrackLengthChange: (value: number) => void;
+  onMinimumTrackLengthApply: () => void;
   channelTrackColorModes: Record<string, TrackColorMode>;
   trackOpacityByChannel: Record<string, number>;
   trackLineWidthByChannel: Record<string, number>;
@@ -286,6 +292,12 @@ function ViewerShell({
     activeChannelId: activeTrackChannelId,
     onChannelTabSelect: onTrackChannelTabSelect,
     parsedTracksByChannel,
+    filteredTracksByChannel,
+    minimumTrackLength,
+    pendingMinimumTrackLength,
+    trackLengthBounds,
+    onMinimumTrackLengthChange,
+    onMinimumTrackLengthApply,
     channelTrackColorModes,
     trackOpacityByChannel,
     trackLineWidthByChannel,
@@ -1079,8 +1091,9 @@ function ViewerShell({
                   const displayLabel = label.length > 9 ? `${label.slice(0, 6)}...` : label;
                   const isActive = channel.id === activeTrackChannelId;
                   const summary = trackSummaryByChannel.get(channel.id) ?? { total: 0, visible: 0 };
+                  const hasTracksForChannel = (parsedTracksByChannel.get(channel.id)?.length ?? 0) > 0;
                   const hasVisibleTracks = summary.visible > 0;
-                  const tabClassName = ['channel-tab', isActive ? 'is-active' : '', !hasVisibleTracks ? 'is-hidden' : '']
+                  const tabClassName = ['channel-tab', isActive ? 'is-active' : '', !hasTracksForChannel ? 'is-hidden' : '']
                     .filter(Boolean)
                     .join(' ');
                   const labelClassName = hasVisibleTracks
@@ -1147,7 +1160,8 @@ function ViewerShell({
                 <div className="track-controls">
                   {channels.map((channel) => {
                   const channelName = channelNameMap.get(channel.id) ?? 'Untitled channel';
-                  const tracksForChannel = parsedTracksByChannel.get(channel.id) ?? [];
+                  const tracksForChannel = filteredTracksByChannel.get(channel.id) ?? [];
+                  const hasChannelTracks = (parsedTracksByChannel.get(channel.id)?.length ?? 0) > 0;
                   const isActive = channel.id === activeTrackChannelId;
                   const colorMode = channelTrackColorModes[channel.id] ?? { type: 'random' };
                   const opacity = trackOpacityByChannel[channel.id] ?? trackDefaults.opacity;
@@ -1208,6 +1222,35 @@ function ViewerShell({
                         >
                           Stop following
                         </button>
+                        <div className="track-length-controls">
+                          <label htmlFor={`track-minimum-length-${channel.id}`}>
+                            Minimum length <span>{Math.round(pendingMinimumTrackLength)}</span>
+                          </label>
+                          <div className="track-length-row">
+                            <input
+                              id={`track-minimum-length-${channel.id}`}
+                              type="range"
+                              min={trackLengthBounds.min}
+                              max={trackLengthBounds.max}
+                              step={1}
+                              value={pendingMinimumTrackLength}
+                              onChange={(event) =>
+                                onMinimumTrackLengthChange(Number(event.target.value))
+                              }
+                              disabled={!hasChannelTracks}
+                            />
+                            <button
+                              type="button"
+                              className="track-length-apply"
+                              onClick={onMinimumTrackLengthApply}
+                              disabled={
+                                !hasChannelTracks || pendingMinimumTrackLength === minimumTrackLength
+                              }
+                            >
+                              Apply
+                            </button>
+                          </div>
+                        </div>
                         <div className="track-slider-row">
                           <div className="slider-control">
                             <label htmlFor={`track-opacity-${channel.id}`}>

@@ -784,3 +784,8 @@ d centered the front-page card in the viewport.
 
 ## Selected tracks chart auto sizing
 - Let the selected tracks chart card and legend size to their content instead of stretching to fill the window so the amplitude plot hugs the rounded container without tall blank bands or empty legend space below the labels.
+
+## Minimum track length filter
+- Added a deferred "Minimum length" slider with an Apply control above the track sliders to hide trajectories shorter than the chosen cutoff while keeping the underlying data intact for later adjustments.
+- Filtered track selections, follow state, rendering, and summaries to respect the applied cutoff and clear hidden tracks automatically.
+- Styled the new controls to match the track accent colors and align with the existing slider layout.

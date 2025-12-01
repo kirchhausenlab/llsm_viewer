@@ -298,6 +298,8 @@ function App() {
   const [selectedTracksAmplitudeLimits, setSelectedTracksAmplitudeLimits] =
     useState<NumericRange | null>(null);
   const [selectedTracksTimeLimits, setSelectedTracksTimeLimits] = useState<NumericRange | null>(null);
+  const [pendingMinimumTrackLength, setPendingMinimumTrackLength] = useState(1);
+  const [minimumTrackLength, setMinimumTrackLength] = useState(1);
   const [followedTrack, setFollowedTrack] = useState<FollowedTrackState>(null);
   const [viewerMode, setViewerMode] = useState<'3d' | '2d'>('3d');
   const [sliceIndex, setSliceIndex] = useState(0);
@@ -792,10 +794,39 @@ function App() {
     return map;
   }, [parsedTracks]);
 
+  const filteredTracksByChannel = useMemo(() => {
+    const map = new Map<string, TrackDefinition[]>();
+
+    for (const channel of channels) {
+      const tracksForChannel = parsedTracksByChannel.get(channel.id) ?? [];
+      const filtered = tracksForChannel.filter((track) => track.points.length >= minimumTrackLength);
+      map.set(channel.id, filtered);
+    }
+
+    return map;
+  }, [channels, minimumTrackLength, parsedTracksByChannel]);
+
+  const filteredTracks = useMemo(() => {
+    const ordered: TrackDefinition[] = [];
+    for (const channel of channels) {
+      const channelTracks = filteredTracksByChannel.get(channel.id) ?? [];
+      ordered.push(...channelTracks);
+    }
+    return ordered;
+  }, [channels, filteredTracksByChannel]);
+
+  const filteredTrackLookup = useMemo(() => {
+    const map = new Map<string, TrackDefinition>();
+    for (const track of filteredTracks) {
+      map.set(track.id, track);
+    }
+    return map;
+  }, [filteredTracks]);
+
   const selectedTrackSeries = useMemo(() => {
     const series: Array<{ id: string; label: string; color: string; points: TrackPoint[] }> = [];
     for (const trackId of selectedTrackOrder) {
-      const track = trackLookup.get(trackId);
+      const track = filteredTrackLookup.get(trackId);
       if (!track) {
         continue;
       }
@@ -807,7 +838,7 @@ function App() {
       });
     }
     return series;
-  }, [selectedTrackOrder, trackLookup]);
+  }, [filteredTrackLookup, selectedTrackOrder]);
 
   const trackExtents = useMemo(() => {
     let amplitudeMin = Number.POSITIVE_INFINITY;
@@ -815,7 +846,7 @@ function App() {
     let timeMin = Number.POSITIVE_INFINITY;
     let timeMax = Number.NEGATIVE_INFINITY;
 
-    for (const track of parsedTracks) {
+    for (const track of filteredTracks) {
       for (const point of track.points) {
         if (Number.isFinite(point.amplitude)) {
           amplitudeMin = Math.min(amplitudeMin, point.amplitude);
@@ -837,7 +868,7 @@ function App() {
       amplitude: hasAmplitude ? { min: amplitudeMin, max: amplitudeMax } : { min: 0, max: 1 },
       time: hasTime ? { min: timeMin, max: timeMax } : { min: 0, max: fallbackTimeMax }
     };
-  }, [parsedTracks, volumeTimepointCount]);
+  }, [filteredTracks, volumeTimepointCount]);
 
   const selectedTrackExtents = useMemo(() => {
     let amplitudeMin = Number.POSITIVE_INFINITY;
@@ -919,16 +950,32 @@ function App() {
   const resolvedAmplitudeLimits = selectedTracksAmplitudeLimits ?? amplitudeExtent;
   const resolvedTimeLimits = selectedTracksTimeLimits ?? timeExtent;
 
+  const trackLengthBounds = useMemo(() => {
+    const min = Math.max(0, Math.floor(timeExtent.min));
+    const max = Math.max(Math.ceil(timeExtent.max), min + 1);
+    return { min, max } as const;
+  }, [timeExtent.max, timeExtent.min]);
+
+  const clampTrackLength = useCallback(
+    (value: number) => Math.min(Math.max(value, trackLengthBounds.min), trackLengthBounds.max),
+    [trackLengthBounds.max, trackLengthBounds.min]
+  );
+
   useEffect(() => {
-    if (selectedTrackOrder.length === 0) {
-      return;
+    setPendingMinimumTrackLength((current) => clampTrackLength(current));
+    setMinimumTrackLength((current) => clampTrackLength(current));
+  }, [clampTrackLength]);
+
+  useEffect(() => {
+    const available = new Set(filteredTracks.map((track) => track.id));
+    if (selectedTrackOrder.length > 0) {
+      setSelectedTrackOrder((current) => {
+        const filtered = current.filter((id) => available.has(id));
+        return filtered.length === current.length ? current : filtered;
+      });
     }
-    const available = new Set(parsedTracks.map((track) => track.id));
-    setSelectedTrackOrder((current) => {
-      const filtered = current.filter((id) => available.has(id));
-      return filtered.length === current.length ? current : filtered;
-    });
-  }, [parsedTracks, selectedTrackOrder.length]);
+    setFollowedTrack((current) => (current && !available.has(current.id) ? null : current));
+  }, [filteredTracks, selectedTrackOrder.length]);
 
   useEffect(() => {
     if (hasInitializedTrackColorsRef.current) {
@@ -1509,7 +1556,7 @@ function App() {
   const trackSummaryByChannel = useMemo(() => {
     const summary = new Map<string, { total: number; visible: number }>();
     for (const channel of channels) {
-      const tracksForChannel = parsedTracksByChannel.get(channel.id) ?? [];
+      const tracksForChannel = filteredTracksByChannel.get(channel.id) ?? [];
       const state = channelTrackStates[channel.id] ?? createDefaultChannelTrackState();
       let visible = 0;
       for (const track of tracksForChannel) {
@@ -1523,19 +1570,19 @@ function App() {
       summary.set(channel.id, { total: tracksForChannel.length, visible });
     }
     return summary;
-  }, [channels, channelTrackStates, followedTrack, parsedTracksByChannel, selectedTrackIds]);
+  }, [channels, channelTrackStates, filteredTracksByChannel, followedTrack, selectedTrackIds]);
 
   const trackVisibility = useMemo(() => {
     const visibility: Record<string, boolean> = {};
     for (const channel of channels) {
-      const tracksForChannel = parsedTracksByChannel.get(channel.id) ?? [];
+      const tracksForChannel = filteredTracksByChannel.get(channel.id) ?? [];
       const state = channelTrackStates[channel.id] ?? createDefaultChannelTrackState();
       for (const track of tracksForChannel) {
         visibility[track.id] = state.visibility[track.id] ?? true;
       }
     }
     return visibility;
-  }, [channelTrackStates, channels, parsedTracksByChannel]);
+  }, [channelTrackStates, channels, filteredTracksByChannel]);
 
   const trackOpacityByChannel = useMemo(() => {
     const map: Record<string, number> = {};
@@ -2354,6 +2401,20 @@ function App() {
     },
     [parsedTracksByChannel]
   );
+
+  const handleMinimumTrackLengthChange = useCallback(
+    (value: number) => {
+      setPendingMinimumTrackLength((current) => {
+        const clamped = clampTrackLength(value);
+        return clamped === current ? current : clamped;
+      });
+    },
+    [clampTrackLength]
+  );
+
+  const handleMinimumTrackLengthApply = useCallback(() => {
+    setMinimumTrackLength(clampTrackLength(pendingMinimumTrackLength));
+  }, [clampTrackLength, pendingMinimumTrackLength]);
 
   const handleTrackOrderToggle = useCallback((channelId: string) => {
     setTrackOrderModeByChannel((current) => {
@@ -3215,7 +3276,7 @@ function App() {
     onVolumeStepScaleChange: handleVolumeStepScaleChange,
     onRegisterVolumeStepScaleChange: handleRegisterVolumeStepScaleChange,
     onRegisterReset: handleRegisterReset,
-    tracks: parsedTracks,
+    tracks: filteredTracks,
     trackVisibility,
     trackOpacityByChannel,
     trackLineWidthByChannel,
@@ -3276,7 +3337,7 @@ function App() {
     sliceIndex,
     maxSlices: maxSliceDepth,
     onSliceIndexChange: handleSliceIndexChange,
-    tracks: parsedTracks,
+    tracks: filteredTracks,
     trackVisibility,
     trackOpacityByChannel,
     trackLineWidthByChannel,
@@ -3377,6 +3438,12 @@ function App() {
       activeChannelId: activeTrackChannelId,
       onChannelTabSelect: setActiveTrackChannelId,
       parsedTracksByChannel,
+      filteredTracksByChannel,
+      minimumTrackLength,
+      pendingMinimumTrackLength,
+      trackLengthBounds,
+      onMinimumTrackLengthChange: handleMinimumTrackLengthChange,
+      onMinimumTrackLengthApply: handleMinimumTrackLengthApply,
       channelTrackColorModes,
       trackOpacityByChannel,
       trackLineWidthByChannel,
