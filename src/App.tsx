@@ -70,7 +70,6 @@ const CONTROL_WINDOW_WIDTH = 360;
 const SELECTED_TRACKS_WINDOW_WIDTH = 1040;
 const SELECTED_TRACKS_WINDOW_HEIGHT = 220;
 const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
-const TRACK_WINDOW_VERTICAL_OFFSET = 520;
 const WARNING_WINDOW_WIDTH = 360;
 const DEFAULT_RESET_WINDOW = { windowMin: DEFAULT_WINDOW_MIN, windowMax: DEFAULT_WINDOW_MAX };
 
@@ -377,29 +376,35 @@ function App() {
     return Math.max(WINDOW_MARGIN, window.innerWidth - windowWidth - WINDOW_MARGIN);
   }, []);
   const computeViewerSettingsWindowDefaultPosition = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return { x: WINDOW_MARGIN, y: WINDOW_MARGIN };
+    }
+
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const windowWidth = Math.min(CONTROL_WINDOW_WIDTH, viewportWidth - WINDOW_MARGIN * 2);
+    const estimatedHeight = 320;
+    const centeredX = Math.max(WINDOW_MARGIN, Math.round((viewportWidth - windowWidth) / 2));
+    const centeredY = Math.max(
+      WINDOW_MARGIN,
+      Math.round((viewportHeight - estimatedHeight) / 2)
+    );
+
+    return { x: centeredX, y: centeredY };
+  }, []);
+  const computeTrackWindowDefaultPosition = useCallback(() => {
     const x = computeRightColumnX();
+
     if (typeof window === 'undefined') {
       return { x, y: WINDOW_MARGIN };
     }
+
     const viewportHeight = window.innerHeight;
-    const estimatedHeight = 320;
-    const maxY = Math.max(WINDOW_MARGIN, viewportHeight - estimatedHeight - WINDOW_MARGIN);
-    return { x, y: Math.min(WINDOW_MARGIN, maxY) };
-  }, [computeRightColumnX]);
-  const computeTrackWindowDefaultPosition = useCallback(() => {
-    const viewerSettingsPosition = computeViewerSettingsWindowDefaultPosition();
-    if (typeof window === 'undefined') {
-      return {
-        x: viewerSettingsPosition.x,
-        y: viewerSettingsPosition.y + TRACK_WINDOW_VERTICAL_OFFSET
-      };
-    }
-    const viewportHeight = window.innerHeight;
-    const desiredY = viewerSettingsPosition.y + TRACK_WINDOW_VERTICAL_OFFSET;
     const estimatedHeight = 360;
     const maxY = Math.max(WINDOW_MARGIN, viewportHeight - estimatedHeight - WINDOW_MARGIN);
-    return { x: viewerSettingsPosition.x, y: Math.min(desiredY, maxY) };
-  }, [computeViewerSettingsWindowDefaultPosition]);
+
+    return { x, y: Math.min(WINDOW_MARGIN, maxY) };
+  }, [computeRightColumnX]);
   const [trackWindowInitialPosition, setTrackWindowInitialPosition] = useState<{ x: number; y: number }>(
     () => computeTrackWindowDefaultPosition()
   );

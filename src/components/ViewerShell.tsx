@@ -1,4 +1,11 @@
-import { useState, type ComponentProps, type CSSProperties, type MouseEvent, type RefObject } from 'react';
+import {
+  useEffect,
+  useState,
+  type ComponentProps,
+  type CSSProperties,
+  type MouseEvent,
+  type RefObject
+} from 'react';
 
 import FloatingWindow from './FloatingWindow';
 import PlanarViewer from './PlanarViewer';
@@ -342,11 +349,24 @@ function ViewerShell({
   );
 
   const [renderingQuality, setRenderingQuality] = useState(1);
+  const [isViewerSettingsOpen, setIsViewerSettingsOpen] = useState(false);
 
   const handleRenderingQualityChange = (value: number) => {
     setRenderingQuality(value);
     volumeViewerProps.onVolumeStepScaleChange?.(value);
   };
+
+  const toggleViewerSettingsVisibility = () => {
+    setIsViewerSettingsOpen((current) => !current);
+  };
+
+  const closeViewerSettings = () => {
+    setIsViewerSettingsOpen(false);
+  };
+
+  useEffect(() => {
+    setIsViewerSettingsOpen(false);
+  }, [resetToken]);
 
   const showRenderingQualityControl =
     is3dModeAvailable && viewerMode === '3d' && samplingMode === 'linear';
@@ -457,6 +477,21 @@ function ViewerShell({
           title="Viewer controls"
           initialPosition={controlWindowInitialPosition}
           width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
+          headerActions={
+            <button
+              type="button"
+              className="floating-window-toggle"
+              onClick={toggleViewerSettingsVisibility}
+              aria-label={
+                isViewerSettingsOpen ? 'Hide viewer settings window' : 'Show viewer settings window'
+              }
+              aria-pressed={isViewerSettingsOpen}
+              data-no-drag
+              title="Settings"
+            >
+              <span aria-hidden="true">⚙</span>
+            </button>
+          }
           className="floating-window--playback"
           resetSignal={resetToken}
         >
@@ -480,6 +515,38 @@ function ViewerShell({
                 />
               </div>
             ) : null}
+
+            <div className="control-group">
+              <div className="viewer-mode-row">
+                <button
+                  type="button"
+                  onClick={onToggleViewerMode}
+                  className={viewerMode === '3d' ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
+                  disabled={isVrActive || isVrRequesting || !is3dModeAvailable}
+                >
+                  {viewerMode === '3d' ? '3D view' : '2D view'}
+                </button>
+                <button
+                  type="button"
+                  className="viewer-mode-button"
+                  onClick={() => resetViewHandler?.()}
+                  disabled={!resetViewHandler}
+                >
+                  Reset view
+                </button>
+                {is3dModeAvailable ? (
+                  <button
+                    type="button"
+                    className="viewer-mode-button"
+                    onClick={onVrButtonClick}
+                    disabled={vrButtonDisabled}
+                    title={vrButtonTitle}
+                  >
+                    {vrButtonLabel}
+                  </button>
+                ) : null}
+              </div>
+            </div>
 
             <div className="playback-controls">
               <div className="control-group playback-progress">
@@ -584,83 +651,68 @@ function ViewerShell({
           </div>
         </FloatingWindow>
 
-        <FloatingWindow
-          title="Viewer settings"
-          initialPosition={viewerSettingsWindowInitialPosition}
-          width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
-          className="floating-window--viewer-settings"
-          resetSignal={resetToken}
+        <div
+          style={{ display: isViewerSettingsOpen ? undefined : 'none' }}
+          aria-hidden={!isViewerSettingsOpen}
         >
-          <div className="sidebar sidebar-right">
-            <div className="global-controls">
-              <div className="control-group">
-                <div className="viewer-mode-row">
-                  <button
-                    type="button"
-                    onClick={onToggleViewerMode}
-                    className={viewerMode === '3d' ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
-                    disabled={isVrActive || isVrRequesting || !is3dModeAvailable}
-                  >
-                    {viewerMode === '3d' ? '3D view' : '2D view'}
-                  </button>
-                  <button
-                    type="button"
-                    className="viewer-mode-button"
-                    onClick={() => resetViewHandler?.()}
-                    disabled={!resetViewHandler}
-                  >
-                    Reset view
-                  </button>
-                  {is3dModeAvailable ? (
-                    <button
-                      type="button"
-                      className="viewer-mode-button"
-                      onClick={onVrButtonClick}
-                      disabled={vrButtonDisabled}
-                      title={vrButtonTitle}
-                    >
-                      {vrButtonLabel}
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-              {is3dModeAvailable ? (
-                <div className="control-group">
-                  <div className="viewer-mode-row">
-                    <button
-                      type="button"
-                      className={renderStyle === 1 ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
-                      onClick={onRenderStyleToggle}
-                      disabled={!hasVolumeData || viewerMode !== '3d'}
-                      aria-pressed={renderStyle === 1}
-                    >
-                      Rendering
-                    </button>
-                    <button
-                      type="button"
-                      className={
-                        samplingMode === 'nearest' ? 'viewer-mode-button is-active' : 'viewer-mode-button'
-                      }
-                      onClick={onSamplingModeToggle}
-                      disabled={!hasVolumeData || viewerMode !== '3d'}
-                      aria-pressed={samplingMode === 'nearest'}
-                    >
-                      Sampling
-                    </button>
-                    <button
-                      type="button"
-                      className={
-                        blendingMode === 'alpha' ? 'viewer-mode-button is-active' : 'viewer-mode-button'
-                      }
-                      onClick={onBlendingModeToggle}
-                      disabled={!hasVolumeData || viewerMode !== '3d'}
-                      aria-pressed={blendingMode === 'alpha'}
-                    >
-                      Blending
-                    </button>
+          <FloatingWindow
+            title="Viewer settings"
+            initialPosition={viewerSettingsWindowInitialPosition}
+            width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
+            className="floating-window--viewer-settings"
+            resetSignal={resetToken}
+            headerEndActions={
+              <button
+                type="button"
+                className="floating-window-toggle"
+                onClick={closeViewerSettings}
+                aria-label="Close viewer settings window"
+                data-no-drag
+                title="Close"
+              >
+                <span aria-hidden="true">×</span>
+              </button>
+            }
+          >
+            <div className="sidebar sidebar-right">
+              <div className="global-controls">
+                {is3dModeAvailable ? (
+                  <div className="control-group">
+                    <div className="viewer-mode-row">
+                      <button
+                        type="button"
+                        className={renderStyle === 1 ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
+                        onClick={onRenderStyleToggle}
+                        disabled={!hasVolumeData || viewerMode !== '3d'}
+                        aria-pressed={renderStyle === 1}
+                      >
+                        Rendering
+                      </button>
+                      <button
+                        type="button"
+                        className={
+                          samplingMode === 'nearest' ? 'viewer-mode-button is-active' : 'viewer-mode-button'
+                        }
+                        onClick={onSamplingModeToggle}
+                        disabled={!hasVolumeData || viewerMode !== '3d'}
+                        aria-pressed={samplingMode === 'nearest'}
+                      >
+                        Sampling
+                      </button>
+                      <button
+                        type="button"
+                        className={
+                          blendingMode === 'alpha' ? 'viewer-mode-button is-active' : 'viewer-mode-button'
+                        }
+                        onClick={onBlendingModeToggle}
+                        disabled={!hasVolumeData || viewerMode !== '3d'}
+                        aria-pressed={blendingMode === 'alpha'}
+                      >
+                        Blending
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ) : null}
+                ) : null}
 
               {is3dModeAvailable && viewerMode === '3d' ? (
                 showRenderingQualityControl ? (
@@ -732,6 +784,8 @@ function ViewerShell({
             </div>
           </div>
         </FloatingWindow>
+
+        </div>
 
         <FloatingWindow
           title="Channels"
