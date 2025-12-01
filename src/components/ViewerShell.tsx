@@ -226,8 +226,8 @@ function ViewerShell({
     helpMenuRef,
     isHelpMenuOpen,
     onHelpMenuToggle,
-    followedTrackChannelId,
-    followedTrackId,
+    followedTrackChannelId: topMenuFollowedTrackChannelId,
+    followedTrackId: topMenuFollowedTrackId,
     onStopTrackFollow,
     hoveredVoxel
   } = topMenu;
@@ -314,8 +314,8 @@ function ViewerShell({
     trackOpacityByChannel,
     trackLineWidthByChannel,
     trackSummaryByChannel,
-    followedTrackChannelId,
-    followedTrackId,
+    followedTrackChannelId: tracksPanelFollowedTrackChannelId,
+    followedTrackId: tracksPanelFollowedTrackId,
     onTrackOrderToggle,
     trackOrderModeByChannel,
     trackVisibility,
@@ -382,7 +382,8 @@ function ViewerShell({
       ? [{ text: hoveredVoxel.intensity, color: null }]
       : [];
 
-  const isTrackFollowActive = followedTrackChannelId !== null && followedTrackId !== null;
+  const isTrackFollowActive =
+    topMenuFollowedTrackChannelId !== null && topMenuFollowedTrackId !== null;
 
   return (
     <>
@@ -452,7 +453,7 @@ function ViewerShell({
                 <button
                   type="button"
                   className="viewer-top-menu-button viewer-top-menu-button--danger"
-                  onClick={() => onStopTrackFollow(followedTrackChannelId ?? undefined)}
+                  onClick={() => onStopTrackFollow(topMenuFollowedTrackChannelId ?? undefined)}
                 >
                   Stop following
                 </button>
@@ -1416,7 +1417,7 @@ function ViewerShell({
                             aria-label={`${channelName} track visibility`}
                           >
                             {displayTracks.map((track) => {
-                              const isFollowed = followedTrackId === track.id;
+                              const isFollowed = tracksPanelFollowedTrackId === track.id;
                               const isSelected = selectedTrackIds.has(track.id);
                               const isChecked =
                                 isFollowed || isSelected || (trackVisibility[track.id] ?? true);
