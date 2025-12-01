@@ -89,6 +89,12 @@ type PlaybackControlsProps = {
   error: string | null;
 };
 
+type PlanarSettingsProps = {
+  orthogonalViewsEnabled: boolean;
+  orthogonalViewsAvailable: boolean;
+  onOrthogonalViewsToggle: () => void;
+};
+
 type ChannelsPanelProps = {
   loadedChannelIds: string[];
   channelNameMap: Map<string, string>;
@@ -197,6 +203,7 @@ export type ViewerShellProps = {
   viewerMode: '3d' | '2d';
   volumeViewerProps: VolumeViewerProps;
   planarViewerProps: PlanarViewerProps;
+  planarSettings: PlanarSettingsProps;
   topMenu: TopMenuProps;
   layout: LayoutProps;
   modeControls: ModeControlsProps;
@@ -211,13 +218,14 @@ function ViewerShell({
   viewerMode,
   volumeViewerProps,
   planarViewerProps,
+  planarSettings,
   topMenu,
   layout,
   modeControls,
   playbackControls,
   channelsPanel,
   tracksPanel,
-    selectedTracksPanel,
+  selectedTracksPanel,
   trackDefaults
 }: ViewerShellProps) {
   const {
@@ -242,6 +250,7 @@ function ViewerShell({
     trackWindowInitialPosition,
     selectedTracksWindowInitialPosition
   } = layout;
+  const { orthogonalViewsAvailable, orthogonalViewsEnabled, onOrthogonalViewsToggle } = planarSettings;
   const {
     is3dModeAvailable,
     isVrActive,
@@ -725,6 +734,24 @@ function ViewerShell({
                         aria-pressed={blendingMode === 'alpha'}
                       >
                         Blending
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {viewerMode === '2d' ? (
+                  <div className="control-group">
+                    <div className="viewer-mode-row">
+                      <button
+                        type="button"
+                        className={
+                          orthogonalViewsEnabled ? 'viewer-mode-button is-active' : 'viewer-mode-button'
+                        }
+                        onClick={onOrthogonalViewsToggle}
+                        disabled={!orthogonalViewsAvailable || !hasVolumeData}
+                        aria-pressed={orthogonalViewsEnabled}
+                      >
+                        Orthogonal views
                       </button>
                     </div>
                   </div>

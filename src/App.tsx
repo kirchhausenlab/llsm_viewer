@@ -302,6 +302,7 @@ function App() {
   const [followedTrack, setFollowedTrack] = useState<FollowedTrackState>(null);
   const [viewerMode, setViewerMode] = useState<'3d' | '2d'>('3d');
   const [sliceIndex, setSliceIndex] = useState(0);
+  const [orthogonalViewsEnabled, setOrthogonalViewsEnabled] = useState(false);
   const hasInitializedSliceIndexRef = useRef(false);
   const [isViewerLaunched, setIsViewerLaunched] = useState(false);
   const [isLaunchingViewer, setIsLaunchingViewer] = useState(false);
@@ -2639,6 +2640,10 @@ function App() {
     setSliceIndex(index);
   }, []);
 
+  const handleOrthogonalViewsToggle = useCallback(() => {
+    setOrthogonalViewsEnabled((current) => !current);
+  }, []);
+
   useEffect(() => {
     if (layers.length === 0) {
       setActiveChannelTabId(null);
@@ -3174,6 +3179,12 @@ function App() {
     }
   }, [maxSliceDepth, sliceIndex]);
 
+  useEffect(() => {
+    if (maxSliceDepth <= 1 && orthogonalViewsEnabled) {
+      setOrthogonalViewsEnabled(false);
+    }
+  }, [maxSliceDepth, orthogonalViewsEnabled]);
+
   if (!isViewerLaunched) {
     const isFrontPageLocked =
       isLaunchingViewer || isExportingPreprocessed || isPreprocessedImporting || preprocessedDropboxImporting;
@@ -3330,6 +3341,8 @@ function App() {
       : undefined
   };
 
+  const orthogonalViewsAvailable = viewerMode === '2d' && maxSliceDepth > 1;
+
   const planarViewerProps: ViewerShellProps['planarViewerProps'] = {
     layers: viewerLayers,
     isLoading,
@@ -3352,7 +3365,8 @@ function App() {
     selectedTrackIds,
     onTrackSelectionToggle: handleTrackSelectionToggle,
     onTrackFollowRequest: handleTrackFollowFromViewer,
-    onHoverVoxelChange: setHoveredVolumeVoxel
+    onHoverVoxelChange: setHoveredVolumeVoxel,
+    orthogonalViewsEnabled: viewerMode === '2d' && maxSliceDepth > 1 && orthogonalViewsEnabled
   };
 
   const showSelectedTracksWindow = !isVrActive && hasParsedTrackData;
@@ -3361,6 +3375,11 @@ function App() {
     viewerMode,
     volumeViewerProps,
     planarViewerProps,
+    planarSettings: {
+      orthogonalViewsAvailable,
+      orthogonalViewsEnabled,
+      onOrthogonalViewsToggle: handleOrthogonalViewsToggle
+    },
     topMenu: {
       onReturnToLauncher: handleReturnToLauncher,
       onResetLayout: handleResetWindowLayout,
