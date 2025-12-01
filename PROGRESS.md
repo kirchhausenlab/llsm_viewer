@@ -795,3 +795,8 @@ d centered the front-page card in the viewport.
 - Added a deferred "Minimum length" slider with an Apply control above the track sliders to hide trajectories shorter than the chosen cutoff while keeping the underlying data intact for later adjustments.
 - Filtered track selections, follow state, rendering, and summaries to respect the applied cutoff and clear hidden tracks automatically.
 - Styled the new controls to match the track accent colors and align with the existing slider layout.
+
+## Planar orthogonal views
+- Added a viewer settings toggle for orthogonal views (2D mode only) that enables side-by-side XZ and ZY projections alongside the primary XY slice for 3D volumes.
+- Rendered orthogonal slices anchored to the hovered XY position or the followed track centroid, with synchronized pan/zoom/rotation across all three views.
+- Projected track overlays into each orthogonal plane (along the appropriate axis) and kept hover tracking limited to the XY view.

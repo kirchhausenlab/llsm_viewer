@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import type { TrackColorMode, TrackDefinition } from '../types/tracks';
 import { getTrackColorHex } from '../trackColors';
 import type { NormalizedVolume } from '../volumeProcessing';
@@ -52,6 +52,7 @@ type PlanarViewerProps = {
   onTrackSelectionToggle: (trackId: string) => void;
   onTrackFollowRequest: (trackId: string) => void;
   onHoverVoxelChange?: (value: HoveredVoxelInfo | null) => void;
+  orthogonalViewsEnabled: boolean;
 };
 
 type SliceData = {
@@ -93,6 +94,26 @@ type TrackRenderEntry = {
 
 type HoveredIntensityInfo = Pick<HoveredVoxelInfo, 'intensity' | 'components'>;
 
+type SliceSampler = (x: number, y: number) => number[] | null;
+
+type PlanarLayoutView = {
+  width: number;
+  height: number;
+  originX: number;
+  originY: number;
+  centerX: number;
+  centerY: number;
+};
+
+type PlanarLayout = {
+  blockWidth: number;
+  blockHeight: number;
+  gap: number;
+  xy: PlanarLayoutView | null;
+  xz: PlanarLayoutView | null;
+  zy: PlanarLayoutView | null;
+};
+
 const MIN_ALPHA = 0.05;
 const ROTATION_KEY_STEP = 0.1;
 const PAN_STEP = 40;
@@ -111,6 +132,7 @@ const SELECTED_TRACK_BLINK_BASE = 0.85;
 const SELECTED_TRACK_BLINK_RANGE = 0.15;
 const FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER = 1.35;
 const SELECTED_TRACK_LINE_WIDTH_MULTIPLIER = 1.5;
+const ORTHOGONAL_GAP = 16;
 
 function clamp(value: number, min: number, max: number) {
   if (value < min) {
@@ -172,6 +194,190 @@ function createInitialViewState(): ViewState {
   return { scale: 1, offsetX: 0, offsetY: 0, rotation: 0 };
 }
 
+function createSliceWithSampler(
+  width: number,
+  height: number,
+  layers: ViewerLayer[],
+  samplerFactory: (layer: ViewerLayer) => SliceSampler | null
+): SliceData | null {
+  if (width === 0 || height === 0) {
+    return { width, height, buffer: new Uint8ClampedArray(0), hasLayer: false };
+  }
+
+  const pixelCount = width * height;
+  const accumR = new Float32Array(pixelCount);
+  const accumG = new Float32Array(pixelCount);
+  const accumB = new Float32Array(pixelCount);
+  const accumA = new Float32Array(pixelCount);
+  let hasLayer = false;
+
+  const colorCache = new Map<string, { r: number; g: number; b: number }>();
+
+  const getColor = (hex: string) => {
+    if (!colorCache.has(hex)) {
+      colorCache.set(hex, getColorComponents(hex));
+    }
+    return colorCache.get(hex)!;
+  };
+
+  layers.forEach((layer) => {
+    const sampler = samplerFactory(layer);
+    if (!sampler) {
+      return;
+    }
+
+    const volume = layer.volume!;
+    const channels = Math.max(1, volume.channels);
+    const invert = layer.invert ?? false;
+    const windowMin = layer.windowMin ?? 0;
+    const windowMax = layer.windowMax ?? 1;
+    const windowRange = Math.max(windowMax - windowMin, WINDOW_EPSILON);
+    const normalizeScalar = (value: number) => clamp((value - windowMin) / windowRange, 0, 1);
+    const applyWindow = (value: number) => {
+      const normalized = normalizeScalar(value);
+      return invert ? 1 - normalized : normalized;
+    };
+    const tint = channels === 1 ? getColor(layer.color) : null;
+    const channelValues = new Array<number>(channels);
+
+    for (let y = 0; y < height; y++) {
+      const rowIndex = y * width;
+      for (let x = 0; x < width; x++) {
+        const pixelIndex = rowIndex + x;
+        const sampled = sampler(x, y);
+        if (!sampled) {
+          continue;
+        }
+
+        for (let channelIndex = 0; channelIndex < channels; channelIndex++) {
+          channelValues[channelIndex] = sampled[channelIndex] ?? 0;
+        }
+
+        const channelR = channelValues[0] / 255;
+        const channelG = channels > 1 ? channelValues[1] / 255 : channelR;
+        const channelB =
+          channels > 2 ? channelValues[2] / 255 : channels === 2 ? 0 : channelG;
+        const channelA = channels > 3 ? channelValues[3] / 255 : 0;
+
+        let srcR = 0;
+        let srcG = 0;
+        let srcB = 0;
+        let alpha = 0;
+
+        if (channels === 1) {
+          const normalizedIntensity = applyWindow(channelR);
+          const layerAlpha = Math.max(normalizedIntensity, MIN_ALPHA);
+          const color = tint ?? getColor('#ffffff');
+          srcR = color.r * normalizedIntensity;
+          srcG = color.g * normalizedIntensity;
+          srcB = color.b * normalizedIntensity;
+          alpha = layerAlpha;
+        } else {
+          const intensity =
+            channels === 2
+              ? 0.5 * (channelR + channelG)
+              : channels === 3
+              ? channelR * 0.2126 + channelG * 0.7152 + channelB * 0.0722
+              : Math.max(channelR, channelG, Math.max(channelB, channelA));
+          const normalizedIntensity = applyWindow(intensity);
+          alpha = Math.max(normalizedIntensity, MIN_ALPHA);
+          const normalizedR = applyWindow(channelR);
+          const normalizedG = channels > 1 ? applyWindow(channelG) : normalizedR;
+          const normalizedB =
+            channels > 2 ? applyWindow(channelB) : channels === 2 ? 0 : normalizedG;
+          srcR = normalizedR;
+          srcG = normalizedG;
+          srcB = normalizedB;
+        }
+
+        const srcA = clamp(alpha, 0, 1);
+        const srcRPremult = srcR * srcA;
+        const srcGPremult = srcG * srcA;
+        const srcBPremult = srcB * srcA;
+
+        const prevR = accumR[pixelIndex];
+        const prevG = accumG[pixelIndex];
+        const prevB = accumB[pixelIndex];
+        const prevA = accumA[pixelIndex];
+        const oneMinusSrcA = 1 - srcA;
+
+        accumR[pixelIndex] = srcRPremult + prevR * oneMinusSrcA;
+        accumG[pixelIndex] = srcGPremult + prevG * oneMinusSrcA;
+        accumB[pixelIndex] = srcBPremult + prevB * oneMinusSrcA;
+        accumA[pixelIndex] = srcA + prevA * oneMinusSrcA;
+
+        if (!hasLayer && srcA > 0) {
+          hasLayer = true;
+        }
+      }
+    }
+  });
+
+  const output = new Uint8ClampedArray(pixelCount * 4);
+  for (let i = 0; i < pixelCount; i++) {
+    const alpha = clamp(accumA[i], 0, 1);
+    const index = i * 4;
+    if (alpha > 1e-6) {
+      const invAlpha = 1 / alpha;
+      output[index] = Math.round(clamp(accumR[i] * invAlpha, 0, 1) * 255);
+      output[index + 1] = Math.round(clamp(accumG[i] * invAlpha, 0, 1) * 255);
+      output[index + 2] = Math.round(clamp(accumB[i] * invAlpha, 0, 1) * 255);
+      output[index + 3] = Math.round(alpha * 255);
+    } else {
+      output[index] = 0;
+      output[index + 1] = 0;
+      output[index + 2] = 0;
+      output[index + 3] = 0;
+    }
+  }
+
+  return { width, height, buffer: output, hasLayer };
+}
+
+function updateOffscreenCanvas(
+  slice: SliceData | null,
+  canvasRef: MutableRefObject<HTMLCanvasElement | null>,
+  contextRef: MutableRefObject<CanvasRenderingContext2D | null>
+): boolean {
+  const previousCanvas = canvasRef.current;
+  const previousContext = contextRef.current;
+
+  if (!slice || slice.width === 0 || slice.height === 0) {
+    const hadContent = Boolean(previousCanvas && previousContext);
+    canvasRef.current = null;
+    contextRef.current = null;
+    return hadContent;
+  }
+
+  let canvas = previousCanvas;
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+  }
+
+  if (canvas.width !== slice.width || canvas.height !== slice.height) {
+    canvas.width = slice.width;
+    canvas.height = slice.height;
+    contextRef.current = null;
+  }
+
+  let context = contextRef.current;
+  if (!context) {
+    context = canvas.getContext('2d');
+    if (!context) {
+      canvasRef.current = null;
+      contextRef.current = null;
+      return Boolean(previousCanvas && previousContext);
+    }
+    contextRef.current = context;
+  }
+
+  const image = new ImageData(slice.buffer as unknown as ImageDataArray, slice.width, slice.height);
+  context.putImageData(image, 0, 0);
+  canvasRef.current = canvas;
+
+  return true;
+}
+
 function PlanarViewer({
   layers,
   isLoading,
@@ -194,14 +400,18 @@ function PlanarViewer({
   followedTrackId,
   onTrackSelectionToggle,
   onTrackFollowRequest,
-  onHoverVoxelChange
+  onHoverVoxelChange,
+  orthogonalViewsEnabled
 }: PlanarViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const sliceCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const offscreenContextRef = useRef<CanvasRenderingContext2D | null>(null);
-  const previousSliceSizeRef = useRef<{ width: number; height: number } | null>(null);
+  const xyCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const xzCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const zyCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const xyContextRef = useRef<CanvasRenderingContext2D | null>(null);
+  const xzContextRef = useRef<CanvasRenderingContext2D | null>(null);
+  const zyContextRef = useRef<CanvasRenderingContext2D | null>(null);
+  const previousLayoutRef = useRef<{ width: number; height: number } | null>(null);
   const needsAutoFitRef = useRef(false);
   const pointerStateRef = useRef<PointerState | null>(null);
   const followedTrackIdRef = useRef<string | null>(followedTrackId);
@@ -267,32 +477,6 @@ function PlanarViewer({
     []
   );
 
-  const resetView = useCallback(() => {
-    const container = containerRef.current;
-    const sliceCanvas = sliceCanvasRef.current;
-    if (!container || !sliceCanvas) {
-      updateViewState(createInitialViewState());
-      return;
-    }
-    const width = container.clientWidth;
-    const height = container.clientHeight;
-    if (width <= 0 || height <= 0) {
-      updateViewState(createInitialViewState());
-      return;
-    }
-    const scaleX = width / sliceCanvas.width;
-    const scaleY = height / sliceCanvas.height;
-    const fitScale = clamp(Math.min(scaleX, scaleY) || 1, MIN_SCALE, MAX_SCALE);
-    updateViewState({ scale: fitScale, offsetX: 0, offsetY: 0, rotation: 0 });
-  }, [updateViewState]);
-
-  useEffect(() => {
-    onRegisterReset(resetView);
-    return () => {
-      onRegisterReset(null);
-    };
-  }, [onRegisterReset, resetView]);
-
   const safeProgress = clamp(loadingProgress, 0, 1);
   const clampedLoadedVolumes = Math.max(0, loadedVolumes);
   const clampedExpectedVolumes = Math.max(0, expectedVolumes);
@@ -319,6 +503,82 @@ function PlanarViewer({
     return null;
   }, [layers]);
 
+  const layout = useMemo<PlanarLayout>(() => {
+    if (!primaryVolume) {
+      return {
+        blockWidth: 0,
+        blockHeight: 0,
+        gap: ORTHOGONAL_GAP,
+        xy: null,
+        xz: null,
+        zy: null
+      };
+    }
+
+    const xyWidth = primaryVolume.width;
+    const xyHeight = primaryVolume.height;
+
+    const xy: PlanarLayoutView = {
+      width: xyWidth,
+      height: xyHeight,
+      originX: 0,
+      originY: 0,
+      centerX: xyWidth / 2,
+      centerY: xyHeight / 2
+    };
+
+    if (!orthogonalViewsEnabled || primaryVolume.depth <= 1) {
+      return {
+        blockWidth: xyWidth,
+        blockHeight: xyHeight,
+        gap: ORTHOGONAL_GAP,
+        xy,
+        xz: null,
+        zy: null
+      };
+    }
+
+    const xzWidth = primaryVolume.width;
+    const xzHeight = primaryVolume.depth;
+    const zyWidth = primaryVolume.depth;
+    const zyHeight = primaryVolume.height;
+
+    return {
+      blockWidth: xyWidth + ORTHOGONAL_GAP + zyWidth,
+      blockHeight: xyHeight + ORTHOGONAL_GAP + xzHeight,
+      gap: ORTHOGONAL_GAP,
+      xy,
+      xz: {
+        width: xzWidth,
+        height: xzHeight,
+        originX: 0,
+        originY: xyHeight + ORTHOGONAL_GAP,
+        centerX: xzWidth / 2,
+        centerY: xyHeight + ORTHOGONAL_GAP + xzHeight / 2
+      },
+      zy: {
+        width: zyWidth,
+        height: zyHeight,
+        originX: xyWidth + ORTHOGONAL_GAP,
+        originY: 0,
+        centerX: xyWidth + ORTHOGONAL_GAP + zyWidth / 2,
+        centerY: zyHeight / 2
+      }
+    };
+  }, [orthogonalViewsEnabled, primaryVolume]);
+
+  useEffect(() => {
+    const previous = previousLayoutRef.current;
+    if (
+      !previous ||
+      previous.width !== layout.blockWidth ||
+      previous.height !== layout.blockHeight
+    ) {
+      previousLayoutRef.current = { width: layout.blockWidth, height: layout.blockHeight };
+      needsAutoFitRef.current = true;
+    }
+  }, [layout.blockHeight, layout.blockWidth]);
+
   const sliceData = useMemo<SliceData | null>(() => {
     if (!primaryVolume) {
       return null;
@@ -326,220 +586,102 @@ function PlanarViewer({
 
     const width = primaryVolume.width;
     const height = primaryVolume.height;
-    const pixelCount = width * height;
 
-    if (pixelCount === 0) {
-      return {
-        width,
-        height,
-        buffer: new Uint8ClampedArray(0),
-        hasLayer: false
-      };
-    }
-
-    const accumR = new Float32Array(pixelCount);
-    const accumG = new Float32Array(pixelCount);
-    const accumB = new Float32Array(pixelCount);
-    const accumA = new Float32Array(pixelCount);
-    let hasLayer = false;
-
-    const colorCache = new Map<string, { r: number; g: number; b: number }>();
-
-    const getColor = (hex: string) => {
-      if (!colorCache.has(hex)) {
-        colorCache.set(hex, getColorComponents(hex));
-      }
-      return colorCache.get(hex)!;
-    };
-
-    layers.forEach((layer) => {
+    return createSliceWithSampler(width, height, layers, (layer) => {
       const volume = layer.volume;
       if (!volume || !layer.visible) {
-        return;
+        return null;
       }
-      if (volume.width !== width || volume.height !== height) {
-        return;
+      if (
+        volume.width !== width ||
+        volume.height !== height ||
+        volume.depth <= 0
+      ) {
+        return null;
       }
-      if (volume.depth <= 0) {
-        return;
-      }
-      const channels = Math.max(1, volume.channels);
-      const maxIndex = Math.max(0, volume.depth - 1);
-      const slice = clamp(clampedSliceIndex, 0, maxIndex);
-      const sliceStride = width * height * channels;
-      const sliceOffset = slice * sliceStride;
-      const rowStride = width * channels;
-      const data = volume.normalized;
-      const invert = layer.invert ?? false;
-      const windowMin = layer.windowMin ?? 0;
-      const windowMax = layer.windowMax ?? 1;
-      const windowRange = Math.max(windowMax - windowMin, WINDOW_EPSILON);
-      const normalizeScalar = (value: number) =>
-        clamp((value - windowMin) / windowRange, 0, 1);
-      const applyWindow = (value: number) => {
-        const normalized = normalizeScalar(value);
-        return invert ? 1 - normalized : normalized;
-      };
-      const tint = channels === 1 ? getColor(layer.color) : null;
 
+      const channels = Math.max(1, volume.channels);
+      const slice = clamp(clampedSliceIndex, 0, Math.max(0, volume.depth - 1));
+      const sliceStride = width * height * channels;
+      const rowStride = width * channels;
+      const sliceOffset = slice * sliceStride;
       const offsetX = layer.offsetX ?? 0;
       const offsetY = layer.offsetY ?? 0;
       const hasOffset = Math.abs(offsetX) > 1e-3 || Math.abs(offsetY) > 1e-3;
+      const values = new Array<number>(channels);
 
-      for (let y = 0; y < height; y++) {
-        const rowIndex = y * width;
-        const rowSliceOffset = sliceOffset + rowIndex * channels;
-
-        for (let x = 0; x < width; x++) {
-          const pixelIndex = rowIndex + x;
-          let sourceR = 0;
-          let sourceG = 0;
-          let sourceB = 0;
-          let sourceA = 0;
-
-          if (hasOffset) {
-            const sampleX = x - offsetX;
-            const sampleY = y - offsetY;
-            const clampedX = clamp(sampleX, 0, width - 1);
-            const clampedY = clamp(sampleY, 0, height - 1);
-            const leftX = Math.floor(clampedX);
-            const rightX = Math.min(width - 1, leftX + 1);
-            const topY = Math.floor(clampedY);
-            const bottomY = Math.min(height - 1, topY + 1);
-            const tX = clampedX - leftX;
-            const tY = clampedY - topY;
-
-            const topRowOffset = sliceOffset + topY * rowStride;
-            const bottomRowOffset = sliceOffset + bottomY * rowStride;
-
-            const topLeftOffset = topRowOffset + leftX * channels;
-            const topRightOffset = topRowOffset + rightX * channels;
-            const bottomLeftOffset = bottomRowOffset + leftX * channels;
-            const bottomRightOffset = bottomRowOffset + rightX * channels;
-
-            const weightTopLeft = (1 - tX) * (1 - tY);
-            const weightTopRight = tX * (1 - tY);
-            const weightBottomLeft = (1 - tX) * tY;
-            const weightBottomRight = tX * tY;
-
-            const sampleChannel = (channelIndex: number) =>
-              (data[topLeftOffset + channelIndex] ?? 0) * weightTopLeft +
-              (data[topRightOffset + channelIndex] ?? 0) * weightTopRight +
-              (data[bottomLeftOffset + channelIndex] ?? 0) * weightBottomLeft +
-              (data[bottomRightOffset + channelIndex] ?? 0) * weightBottomRight;
-
-            sourceR = sampleChannel(0);
-            if (channels > 1) {
-              sourceG = sampleChannel(1);
-            } else {
-              sourceG = sourceR;
-            }
-            if (channels > 2) {
-              sourceB = sampleChannel(2);
-            } else if (channels === 2) {
-              sourceB = 0;
-            } else {
-              sourceB = sourceG;
-            }
-            if (channels > 3) {
-              sourceA = sampleChannel(3);
-            }
-          } else {
-            const pixelOffset = rowSliceOffset + x * channels;
-            sourceR = data[pixelOffset] ?? 0;
-            sourceG = channels > 1 ? data[pixelOffset + 1] ?? 0 : sourceR;
-            sourceB = channels > 2 ? data[pixelOffset + 2] ?? 0 : sourceG;
-            sourceA = channels > 3 ? data[pixelOffset + 3] ?? 0 : 0;
+      if (!hasOffset) {
+        return (x, y) => {
+          const pixelOffset = sliceOffset + (y * width + x) * channels;
+          for (let channelIndex = 0; channelIndex < channels; channelIndex += 1) {
+            values[channelIndex] = volume.normalized[pixelOffset + channelIndex] ?? 0;
           }
+          return values;
+        };
+      }
 
-          const r = sourceR / 255;
-          const g = sourceG / 255;
-          const b = sourceB / 255;
-          const a = sourceA / 255;
+      return (x, y) => {
+        const sampleX = x - offsetX;
+        const sampleY = y - offsetY;
+        const clampedX = clamp(sampleX, 0, width - 1);
+        const clampedY = clamp(sampleY, 0, height - 1);
+        const leftX = Math.floor(clampedX);
+        const rightX = Math.min(width - 1, leftX + 1);
+        const topY = Math.floor(clampedY);
+        const bottomY = Math.min(height - 1, topY + 1);
+        const tX = clampedX - leftX;
+        const tY = clampedY - topY;
 
-          let channelR = r;
-          let channelG = channels > 1 ? g : channelR;
-          let channelB = channels > 2 ? b : channels === 2 ? 0 : channelG;
-          const channelA = channels > 3 ? a : 0;
+        const topRowOffset = sliceOffset + topY * rowStride;
+        const bottomRowOffset = sliceOffset + bottomY * rowStride;
 
-          let srcR = 0;
-          let srcG = 0;
-          let srcB = 0;
-          let alpha = 0;
+        const topLeftOffset = topRowOffset + leftX * channels;
+        const topRightOffset = topRowOffset + rightX * channels;
+        const bottomLeftOffset = bottomRowOffset + leftX * channels;
+        const bottomRightOffset = bottomRowOffset + rightX * channels;
 
-          if (channels === 1) {
-            const normalizedIntensity = applyWindow(channelR);
-            const layerAlpha = Math.max(normalizedIntensity, MIN_ALPHA);
-            const color = tint ?? getColor('#ffffff');
-            srcR = color.r * normalizedIntensity;
-            srcG = color.g * normalizedIntensity;
-            srcB = color.b * normalizedIntensity;
-            alpha = layerAlpha;
-          } else {
-            const intensity =
-              channels === 2
-                ? 0.5 * (channelR + channelG)
-                : channels === 3
-                ? channelR * 0.2126 + channelG * 0.7152 + channelB * 0.0722
-                : Math.max(channelR, channelG, Math.max(channelB, channelA));
-            const normalizedIntensity = applyWindow(intensity);
-            alpha = Math.max(normalizedIntensity, MIN_ALPHA);
-            const normalizedR = applyWindow(channelR);
-            const normalizedG = channels > 1 ? applyWindow(channelG) : normalizedR;
-            const normalizedB =
-              channels > 2
-                ? applyWindow(channelB)
-                : channels === 2
-                ? 0
-                : normalizedG;
-            srcR = normalizedR;
-            srcG = normalizedG;
-            srcB = normalizedB;
-          }
+        const weightTopLeft = (1 - tX) * (1 - tY);
+        const weightTopRight = tX * (1 - tY);
+        const weightBottomLeft = (1 - tX) * tY;
+        const weightBottomRight = tX * tY;
 
-          const srcA = clamp(alpha, 0, 1);
-          const srcRPremult = srcR * srcA;
-          const srcGPremult = srcG * srcA;
-          const srcBPremult = srcB * srcA;
-
-          const prevR = accumR[pixelIndex];
-          const prevG = accumG[pixelIndex];
-          const prevB = accumB[pixelIndex];
-          const prevA = accumA[pixelIndex];
-          const oneMinusSrcA = 1 - srcA;
-
-          accumR[pixelIndex] = srcRPremult + prevR * oneMinusSrcA;
-          accumG[pixelIndex] = srcGPremult + prevG * oneMinusSrcA;
-          accumB[pixelIndex] = srcBPremult + prevB * oneMinusSrcA;
-          accumA[pixelIndex] = srcA + prevA * oneMinusSrcA;
-
-          if (!hasLayer && srcA > 0) {
-            hasLayer = true;
-          }
+        for (let channelIndex = 0; channelIndex < channels; channelIndex += 1) {
+          values[channelIndex] =
+            (volume.normalized[topLeftOffset + channelIndex] ?? 0) * weightTopLeft +
+            (volume.normalized[topRightOffset + channelIndex] ?? 0) * weightTopRight +
+            (volume.normalized[bottomLeftOffset + channelIndex] ?? 0) * weightBottomLeft +
+            (volume.normalized[bottomRightOffset + channelIndex] ?? 0) * weightBottomRight;
         }
-      }
+
+        return values;
+      };
     });
+  }, [clampedSliceIndex, layers, primaryVolume]);
 
-    const output = new Uint8ClampedArray(pixelCount * 4);
-    for (let i = 0; i < pixelCount; i++) {
-      const alpha = clamp(accumA[i], 0, 1);
-      const index = i * 4;
-      if (alpha > 1e-6) {
-        const invAlpha = 1 / alpha;
-        output[index] = Math.round(clamp(accumR[i] * invAlpha, 0, 1) * 255);
-        output[index + 1] = Math.round(clamp(accumG[i] * invAlpha, 0, 1) * 255);
-        output[index + 2] = Math.round(clamp(accumB[i] * invAlpha, 0, 1) * 255);
-        output[index + 3] = Math.round(alpha * 255);
-      } else {
-        output[index] = 0;
-        output[index + 1] = 0;
-        output[index + 2] = 0;
-        output[index + 3] = 0;
-      }
+  const resetView = useCallback(() => {
+    const container = containerRef.current;
+    if (!container || layout.blockWidth <= 0 || layout.blockHeight <= 0) {
+      updateViewState(createInitialViewState());
+      return;
     }
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    if (width <= 0 || height <= 0) {
+      updateViewState(createInitialViewState());
+      return;
+    }
+    const scaleX = width / layout.blockWidth;
+    const scaleY = height / layout.blockHeight;
+    const fitScale = clamp(Math.min(scaleX, scaleY) || 1, MIN_SCALE, MAX_SCALE);
+    updateViewState({ scale: fitScale, offsetX: 0, offsetY: 0, rotation: 0 });
+  }, [layout.blockHeight, layout.blockWidth, updateViewState]);
 
-    return { width, height, buffer: output, hasLayer };
-  }, [layers, primaryVolume, clampedSliceIndex]);
+  useEffect(() => {
+    onRegisterReset(resetView);
+    return () => {
+      onRegisterReset(null);
+    };
+  }, [onRegisterReset, resetView]);
 
   const samplePixelValue = useCallback(
     (sliceX: number, sliceY: number): HoveredIntensityInfo | null => {
@@ -665,6 +807,7 @@ function PlanarViewer({
     const height = primaryVolume.height;
     const centerX = width / 2 - 0.5;
     const centerY = height / 2 - 0.5;
+    const centerZ = primaryVolume.depth > 0 ? primaryVolume.depth / 2 - 0.5 : 0;
     const maxVisibleTime = clampedTimeIndex;
 
     return tracks
@@ -686,7 +829,7 @@ function PlanarViewer({
           visiblePoints.push({
             x: point.x + offset.x - centerX,
             y: point.y + offset.y - centerY,
-            z: resolvedZ
+            z: resolvedZ - centerZ
           });
         }
 
@@ -741,7 +884,7 @@ function PlanarViewer({
 
   const updatePixelHover = useCallback(
     (event: PointerEvent) => {
-      if (!sliceData || !sliceData.hasLayer) {
+      if (!sliceData || !sliceData.hasLayer || !layout.xy) {
         clearPixelInfo();
         return;
       }
@@ -778,13 +921,23 @@ function PlanarViewer({
       const dy = pointerY - centerY;
       const rotatedX = dx * cos + dy * sin;
       const rotatedY = -dx * sin + dy * cos;
-      const sliceX = rotatedX / scale + sliceData.width / 2;
-      const sliceY = rotatedY / scale + sliceData.height / 2;
+      const blockX = rotatedX / scale + layout.blockWidth / 2;
+      const blockY = rotatedY / scale + layout.blockHeight / 2;
 
-      if (sliceX < 0 || sliceY < 0 || sliceX >= sliceData.width || sliceY >= sliceData.height) {
+      const xyView = layout.xy;
+      if (
+        !xyView ||
+        blockX < xyView.originX ||
+        blockY < xyView.originY ||
+        blockX >= xyView.originX + xyView.width ||
+        blockY >= xyView.originY + xyView.height
+      ) {
         clearPixelInfo();
         return;
       }
+
+      const sliceX = blockX - xyView.originX;
+      const sliceY = blockY - xyView.originY;
 
       const intensity = samplePixelValue(sliceX, sliceY);
       if (!intensity) {
@@ -811,6 +964,7 @@ function PlanarViewer({
       emitHoverVoxel,
       samplePixelValue,
       sliceData,
+      layout,
       updateHoveredPixel
     ]
   );
@@ -887,6 +1041,176 @@ function PlanarViewer({
     setTooltipPosition(null);
   }, []);
 
+  const orthogonalAnchor = useMemo(() => {
+    if (!primaryVolume) {
+      return null;
+    }
+
+    const fallbackAnchor = {
+      x: Math.max(0, primaryVolume.width / 2 - 0.5),
+      y: Math.max(0, primaryVolume.height / 2 - 0.5)
+    };
+
+    if (followedTrackId) {
+      const centroid = computeTrackCentroid(followedTrackId, clampedTimeIndex);
+      if (centroid) {
+        return {
+          x: clamp(centroid.x, 0, Math.max(0, primaryVolume.width - 1)),
+          y: clamp(centroid.y, 0, Math.max(0, primaryVolume.height - 1))
+        };
+      }
+    }
+
+    if (hoveredPixel) {
+      return {
+        x: clamp(hoveredPixel.x, 0, Math.max(0, primaryVolume.width - 1)),
+        y: clamp(hoveredPixel.y, 0, Math.max(0, primaryVolume.height - 1))
+      };
+    }
+
+    return fallbackAnchor;
+  }, [clampedTimeIndex, computeTrackCentroid, followedTrackId, hoveredPixel, primaryVolume]);
+
+  const xzSliceData = useMemo<SliceData | null>(() => {
+    if (!primaryVolume || !orthogonalViewsEnabled || primaryVolume.depth <= 1) {
+      return null;
+    }
+
+    const anchorY = orthogonalAnchor?.y ?? Math.max(0, primaryVolume.height / 2 - 0.5);
+    const width = primaryVolume.width;
+    const depth = primaryVolume.depth;
+
+    return createSliceWithSampler(width, depth, layers, (layer) => {
+      const volume = layer.volume;
+      if (!volume || !layer.visible) {
+        return null;
+      }
+      if (
+        volume.width !== primaryVolume.width ||
+        volume.height !== primaryVolume.height ||
+        volume.depth !== primaryVolume.depth
+      ) {
+        return null;
+      }
+
+      const channels = Math.max(1, volume.channels);
+      const sliceStride = volume.width * volume.height * channels;
+      const rowStride = volume.width * channels;
+      const offsetX = layer.offsetX ?? 0;
+      const offsetY = layer.offsetY ?? 0;
+      const values = new Array<number>(channels);
+
+      return (x, z) => {
+        const clampedZ = Math.round(clamp(z, 0, volume.depth - 1));
+        const sliceOffset = clampedZ * sliceStride;
+        const sampleX = x - offsetX;
+        const sampleY = anchorY - offsetY;
+
+        const clampedX = clamp(sampleX, 0, volume.width - 1);
+        const clampedY = clamp(sampleY, 0, volume.height - 1);
+        const leftX = Math.floor(clampedX);
+        const rightX = Math.min(volume.width - 1, leftX + 1);
+        const topY = Math.floor(clampedY);
+        const bottomY = Math.min(volume.height - 1, topY + 1);
+        const tX = clampedX - leftX;
+        const tY = clampedY - topY;
+
+        const topRowOffset = sliceOffset + topY * rowStride;
+        const bottomRowOffset = sliceOffset + bottomY * rowStride;
+
+        const topLeftOffset = topRowOffset + leftX * channels;
+        const topRightOffset = topRowOffset + rightX * channels;
+        const bottomLeftOffset = bottomRowOffset + leftX * channels;
+        const bottomRightOffset = bottomRowOffset + rightX * channels;
+
+        const weightTopLeft = (1 - tX) * (1 - tY);
+        const weightTopRight = tX * (1 - tY);
+        const weightBottomLeft = (1 - tX) * tY;
+        const weightBottomRight = tX * tY;
+
+        for (let channelIndex = 0; channelIndex < channels; channelIndex += 1) {
+          values[channelIndex] =
+            (volume.normalized[topLeftOffset + channelIndex] ?? 0) * weightTopLeft +
+            (volume.normalized[topRightOffset + channelIndex] ?? 0) * weightTopRight +
+            (volume.normalized[bottomLeftOffset + channelIndex] ?? 0) * weightBottomLeft +
+            (volume.normalized[bottomRightOffset + channelIndex] ?? 0) * weightBottomRight;
+        }
+
+        return values;
+      };
+    });
+  }, [layers, orthogonalAnchor, orthogonalViewsEnabled, primaryVolume]);
+
+  const zySliceData = useMemo<SliceData | null>(() => {
+    if (!primaryVolume || !orthogonalViewsEnabled || primaryVolume.depth <= 1) {
+      return null;
+    }
+
+    const anchorX = orthogonalAnchor?.x ?? Math.max(0, primaryVolume.width / 2 - 0.5);
+    const height = primaryVolume.height;
+    const depth = primaryVolume.depth;
+
+    return createSliceWithSampler(depth, height, layers, (layer) => {
+      const volume = layer.volume;
+      if (!volume || !layer.visible) {
+        return null;
+      }
+      if (
+        volume.width !== primaryVolume.width ||
+        volume.height !== primaryVolume.height ||
+        volume.depth !== primaryVolume.depth
+      ) {
+        return null;
+      }
+
+      const channels = Math.max(1, volume.channels);
+      const sliceStride = volume.width * volume.height * channels;
+      const rowStride = volume.width * channels;
+      const offsetX = layer.offsetX ?? 0;
+      const offsetY = layer.offsetY ?? 0;
+      const values = new Array<number>(channels);
+
+      return (z, y) => {
+        const clampedZ = Math.round(clamp(z, 0, volume.depth - 1));
+        const sliceOffset = clampedZ * sliceStride;
+        const sampleX = anchorX - offsetX;
+        const sampleY = y - offsetY;
+
+        const clampedX = clamp(sampleX, 0, volume.width - 1);
+        const clampedY = clamp(sampleY, 0, volume.height - 1);
+        const leftX = Math.floor(clampedX);
+        const rightX = Math.min(volume.width - 1, leftX + 1);
+        const topY = Math.floor(clampedY);
+        const bottomY = Math.min(volume.height - 1, topY + 1);
+        const tX = clampedX - leftX;
+        const tY = clampedY - topY;
+
+        const topRowOffset = sliceOffset + topY * rowStride;
+        const bottomRowOffset = sliceOffset + bottomY * rowStride;
+
+        const topLeftOffset = topRowOffset + leftX * channels;
+        const topRightOffset = topRowOffset + rightX * channels;
+        const bottomLeftOffset = bottomRowOffset + leftX * channels;
+        const bottomRightOffset = bottomRowOffset + rightX * channels;
+
+        const weightTopLeft = (1 - tX) * (1 - tY);
+        const weightTopRight = tX * (1 - tY);
+        const weightBottomLeft = (1 - tX) * tY;
+        const weightBottomRight = tX * tY;
+
+        for (let channelIndex = 0; channelIndex < channels; channelIndex += 1) {
+          values[channelIndex] =
+            (volume.normalized[topLeftOffset + channelIndex] ?? 0) * weightTopLeft +
+            (volume.normalized[topRightOffset + channelIndex] ?? 0) * weightTopRight +
+            (volume.normalized[bottomLeftOffset + channelIndex] ?? 0) * weightBottomLeft +
+            (volume.normalized[bottomRightOffset + channelIndex] ?? 0) * weightBottomRight;
+        }
+
+        return values;
+      };
+    });
+  }, [layers, orthogonalAnchor, orthogonalViewsEnabled, primaryVolume]);
+
   const drawSlice = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) {
@@ -897,7 +1221,7 @@ function PlanarViewer({
       return;
     }
 
-    const sliceCanvas = sliceCanvasRef.current;
+    const xyCanvas = xyCanvasRef.current;
     const dpr = window.devicePixelRatio || 1;
     const width = canvasSize.width;
     const height = canvasSize.height;
@@ -905,24 +1229,39 @@ function PlanarViewer({
     context.setTransform(dpr, 0, 0, dpr, 0, 0);
     context.clearRect(0, 0, width, height);
 
-    if (!sliceCanvas) {
+    if (!layout.xy || !xyCanvas || layout.blockWidth <= 0 || layout.blockHeight <= 0) {
       return;
     }
 
+    const xzCanvas = layout.xz && xzSliceData ? xzCanvasRef.current : null;
+    const zyCanvas = layout.zy && zySliceData ? zyCanvasRef.current : null;
     context.save();
     context.imageSmoothingEnabled = false;
-    context.translate(width / 2 + viewState.offsetX, height / 2 + viewState.offsetY);
+    const centerX = width / 2 + viewState.offsetX;
+    const centerY = height / 2 + viewState.offsetY;
+    context.translate(centerX, centerY);
     context.rotate(viewState.rotation);
     context.scale(viewState.scale, viewState.scale);
-    context.drawImage(sliceCanvas, -sliceCanvas.width / 2, -sliceCanvas.height / 2);
+
+    const originX = -layout.blockWidth / 2;
+    const originY = -layout.blockHeight / 2;
+    const xyCenterX = originX + layout.xy.centerX;
+    const xyCenterY = originY + layout.xy.centerY;
+    const normalizedScale = Math.max(viewState.scale, 1e-6);
+    const inverseScale = 1 / normalizedScale;
 
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
     const blinkPhase = (now % SELECTED_TRACK_BLINK_PERIOD_MS) / SELECTED_TRACK_BLINK_PERIOD_MS;
     const blinkScale =
       SELECTED_TRACK_BLINK_BASE + SELECTED_TRACK_BLINK_RANGE * Math.sin(blinkPhase * Math.PI * 2);
 
-    if (trackRenderData.length > 0) {
-      const scale = Math.max(viewState.scale, 1e-6);
+    const drawTracksForView = (
+      viewCenter: { x: number; y: number },
+      projectPoint: (point: { x: number; y: number; z: number }) => { x: number; y: number }
+    ) => {
+      if (trackRenderData.length === 0) {
+        return;
+      }
 
       for (const track of trackRenderData) {
         const isFollowed = followedTrackId === track.id;
@@ -945,8 +1284,8 @@ function PlanarViewer({
 
         const channelLineWidth = trackLineWidthByChannel[track.channelId] ?? DEFAULT_TRACK_LINE_WIDTH;
         const sanitizedLineWidth = Math.max(0.1, Math.min(10, channelLineWidth));
-        const baseLineWidth = sanitizedLineWidth / scale;
-        const outlineWidthBoost = Math.max(sanitizedLineWidth * 0.75, OUTLINE_MIN_WIDTH) / scale;
+        const baseLineWidth = sanitizedLineWidth / normalizedScale;
+        const outlineWidthBoost = Math.max(sanitizedLineWidth * 0.75, OUTLINE_MIN_WIDTH) / normalizedScale;
         let widthMultiplier = 1;
         if (isFollowed) {
           widthMultiplier = Math.max(widthMultiplier, FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER);
@@ -958,7 +1297,9 @@ function PlanarViewer({
         const strokeColor = isFollowed || isSelected ? track.highlightColor : track.baseColor;
         const blinkMultiplier = isSelected ? blinkScale : 1;
 
-        if (points.length >= 2 && (isFollowed || isSelected)) {
+        const projectedPoints = points.map(projectPoint);
+
+        if (projectedPoints.length >= 2 && (isFollowed || isSelected)) {
           context.save();
           context.lineCap = 'round';
           context.lineJoin = 'round';
@@ -966,15 +1307,15 @@ function PlanarViewer({
           context.strokeStyle = 'rgb(255, 255, 255)';
           context.lineWidth = strokeWidth + outlineWidthBoost;
           context.beginPath();
-          context.moveTo(points[0].x, points[0].y);
-          for (let i = 1; i < points.length; i++) {
-            context.lineTo(points[i].x, points[i].y);
+          context.moveTo(viewCenter.x + projectedPoints[0].x, viewCenter.y + projectedPoints[0].y);
+          for (let i = 1; i < projectedPoints.length; i++) {
+            context.lineTo(viewCenter.x + projectedPoints[i].x, viewCenter.y + projectedPoints[i].y);
           }
           context.stroke();
           context.restore();
         }
 
-        if (points.length >= 2) {
+        if (projectedPoints.length >= 2) {
           context.save();
           context.lineCap = 'round';
           context.lineJoin = 'round';
@@ -982,54 +1323,81 @@ function PlanarViewer({
           context.strokeStyle = componentsToCss(strokeColor);
           context.lineWidth = strokeWidth;
           context.beginPath();
-          context.moveTo(points[0].x, points[0].y);
-          for (let i = 1; i < points.length; i++) {
-            context.lineTo(points[i].x, points[i].y);
+          context.moveTo(viewCenter.x + projectedPoints[0].x, viewCenter.y + projectedPoints[0].y);
+          for (let i = 1; i < projectedPoints.length; i++) {
+            context.lineTo(viewCenter.x + projectedPoints[i].x, viewCenter.y + projectedPoints[i].y);
           }
           context.stroke();
           context.restore();
         }
 
-        const endPoint = points[points.length - 1];
-        const pointRadius = Math.max(strokeWidth * 0.6, 1.2 / scale);
+        const endPoint = projectedPoints[projectedPoints.length - 1];
+        const pointRadius = Math.max(strokeWidth * 0.6, 1.2 / normalizedScale);
         context.save();
         context.globalAlpha = targetOpacity * blinkMultiplier;
         context.fillStyle = componentsToCss(strokeColor);
         context.beginPath();
-        context.arc(endPoint.x, endPoint.y, pointRadius, 0, Math.PI * 2);
+        context.arc(viewCenter.x + endPoint.x, viewCenter.y + endPoint.y, pointRadius, 0, Math.PI * 2);
         context.fill();
         context.restore();
       }
+    };
+
+    context.drawImage(xyCanvas, originX + layout.xy.originX, originY + layout.xy.originY);
+    drawTracksForView(
+      { x: xyCenterX, y: xyCenterY },
+      (point) => ({ x: point.x, y: point.y })
+    );
+
+    if (layout.zy && zyCanvas) {
+      const zyCenterX = originX + layout.zy.centerX;
+      const zyCenterY = originY + layout.zy.centerY;
+      context.drawImage(zyCanvas, originX + layout.zy.originX, originY + layout.zy.originY);
+      drawTracksForView(
+        { x: zyCenterX, y: zyCenterY },
+        (point) => ({ x: point.z, y: point.y })
+      );
     }
 
-    if (hoveredPixel && sliceCanvas) {
-      const pixelX = hoveredPixel.x - sliceCanvas.width / 2;
-      const pixelY = hoveredPixel.y - sliceCanvas.height / 2;
-      const inverseScale = 1 / Math.max(viewState.scale, 1e-6);
+    if (layout.xz && xzCanvas) {
+      const xzCenterX = originX + layout.xz.centerX;
+      const xzCenterY = originY + layout.xz.centerY;
+      context.drawImage(xzCanvas, originX + layout.xz.originX, originY + layout.xz.originY);
+      drawTracksForView(
+        { x: xzCenterX, y: xzCenterY },
+        (point) => ({ x: point.x, y: point.z })
+      );
+    }
+
+    if (hoveredPixel && xyCanvas) {
+      const pixelX = hoveredPixel.x - xyCanvas.width / 2;
+      const pixelY = hoveredPixel.y - xyCanvas.height / 2;
       const baseStrokeWidth = inverseScale;
 
       context.save();
       context.globalAlpha = Math.min(1, 0.8 * blinkScale);
       context.fillStyle = 'rgba(255, 255, 255, 0.2)';
-      context.fillRect(pixelX, pixelY, 1, 1);
+      context.fillRect(xyCenterX + pixelX, xyCenterY + pixelY, 1, 1);
       context.strokeStyle = 'rgba(255, 255, 255, 0.9)';
       context.lineWidth = baseStrokeWidth;
-      context.strokeRect(pixelX, pixelY, 1, 1);
+      context.strokeRect(xyCenterX + pixelX, xyCenterY + pixelY, 1, 1);
       context.restore();
     }
 
     context.restore();
   }, [
-    canvasSize.height,
-    canvasSize.width,
+    canvasSize,
     followedTrackId,
     hoveredPixel,
+    layout,
     trackLineWidthByChannel,
     trackOpacityByChannel,
     trackRenderData,
     trackVisibility,
     selectedTrackIds,
-    viewState
+    viewState,
+    xzSliceData,
+    zySliceData
   ]);
 
   useEffect(() => {
@@ -1079,6 +1447,10 @@ function PlanarViewer({
         return { trackId: null, pointer: null };
       }
 
+      if (!layout.xy || layout.blockWidth <= 0 || layout.blockHeight <= 0) {
+        return { trackId: null, pointer: null };
+      }
+
       const pointerX = event.clientX - rect.left;
       const pointerY = event.clientY - rect.top;
       if (pointerX < 0 || pointerY < 0 || pointerX > width || pointerY > height) {
@@ -1092,13 +1464,21 @@ function PlanarViewer({
       const sin = Math.sin(rotation);
       const centerX = width / 2 + currentView.offsetX;
       const centerY = height / 2 + currentView.offsetY;
+      const halfBlockWidth = layout.blockWidth / 2;
+      const halfBlockHeight = layout.blockHeight / 2;
+      const xyCenterX = layout.xy.centerX;
+      const xyCenterY = layout.xy.centerY;
 
       let closestTrackId: string | null = null;
       let closestDistance = Infinity;
 
       const computeScreenPosition = (pointX: number, pointY: number) => {
-        const rotatedX = pointX * cos - pointY * sin;
-        const rotatedY = pointX * sin + pointY * cos;
+        const blockX = xyCenterX + pointX;
+        const blockY = xyCenterY + pointY;
+        const relX = blockX - halfBlockWidth;
+        const relY = blockY - halfBlockHeight;
+        const rotatedX = relX * cos - relY * sin;
+        const rotatedY = relX * sin + relY * cos;
         return {
           x: centerX + rotatedX * scale,
           y: centerY + rotatedY * scale
@@ -1193,7 +1573,7 @@ function PlanarViewer({
 
       return { trackId: closestTrackId, pointer: { x: pointerX, y: pointerY } };
     },
-    [trackLineWidthByChannel, trackRenderData, trackVisibility]
+    [layout, trackLineWidthByChannel, trackRenderData, trackVisibility]
   );
 
   useEffect(() => {
@@ -1251,49 +1631,14 @@ function PlanarViewer({
   }, []);
 
   useEffect(() => {
-    if (!sliceData) {
-      sliceCanvasRef.current = null;
-      previousSliceSizeRef.current = null;
-      drawSlice();
-      return;
-    }
+    const updatedXY = updateOffscreenCanvas(sliceData, xyCanvasRef, xyContextRef);
+    const updatedXZ = updateOffscreenCanvas(xzSliceData, xzCanvasRef, xzContextRef);
+    const updatedZY = updateOffscreenCanvas(zySliceData, zyCanvasRef, zyContextRef);
 
-    const { width, height, buffer } = sliceData;
-    let offscreen = offscreenCanvasRef.current;
-    if (!offscreen) {
-      offscreen = document.createElement('canvas');
-      offscreenCanvasRef.current = offscreen;
-      offscreenContextRef.current = null;
+    if (updatedXY || updatedXZ || updatedZY) {
+      setSliceRevision((value) => value + 1);
     }
-
-    if (offscreen.width !== width || offscreen.height !== height) {
-      offscreen.width = width;
-      offscreen.height = height;
-      offscreenContextRef.current = null;
-    }
-
-    let context = offscreenContextRef.current;
-    if (!context) {
-      context = offscreen.getContext('2d');
-      if (!context) {
-        sliceCanvasRef.current = null;
-        previousSliceSizeRef.current = null;
-        drawSlice();
-        return;
-      }
-      offscreenContextRef.current = context;
-    }
-
-    const image = new ImageData(buffer as unknown as ImageDataArray, width, height);
-    context.putImageData(image, 0, 0);
-    sliceCanvasRef.current = offscreen;
-    const previousSize = previousSliceSizeRef.current;
-    if (!previousSize || previousSize.width !== width || previousSize.height !== height) {
-      needsAutoFitRef.current = true;
-    }
-    previousSliceSizeRef.current = { width, height };
-    setSliceRevision((value) => value + 1);
-  }, [drawSlice, sliceData]);
+  }, [drawSlice, sliceData, xzSliceData, zySliceData]);
 
   useEffect(() => {
     if (!sliceData || !sliceData.hasLayer) {
@@ -1307,7 +1652,7 @@ function PlanarViewer({
       needsAutoFitRef.current = false;
       resetView();
     }
-  }, [canvasSize, resetView, sliceRevision]);
+  }, [canvasSize, layout.blockHeight, layout.blockWidth, resetView, sliceRevision]);
 
   useEffect(() => {
     drawSlice();
