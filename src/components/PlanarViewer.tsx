@@ -411,8 +411,13 @@ function PlanarViewer({
   const xyContextRef = useRef<CanvasRenderingContext2D | null>(null);
   const xzContextRef = useRef<CanvasRenderingContext2D | null>(null);
   const zyContextRef = useRef<CanvasRenderingContext2D | null>(null);
-  const previousLayoutRef = useRef<{ width: number; height: number } | null>(null);
+  const previousLayoutRef = useRef<PlanarLayout | null>(null);
   const needsAutoFitRef = useRef(false);
+  const previousPrimaryVolumeRef = useRef<{
+    width: number;
+    height: number;
+    depth: number;
+  } | null>(null);
   const pointerStateRef = useRef<PointerState | null>(null);
   const followedTrackIdRef = useRef<string | null>(followedTrackId);
   const hoveredTrackIdRef = useRef<string | null>(null);
@@ -503,6 +508,33 @@ function PlanarViewer({
     return null;
   }, [layers]);
 
+  useEffect(() => {
+    const previous = previousPrimaryVolumeRef.current;
+
+    if (!primaryVolume) {
+      previousPrimaryVolumeRef.current = null;
+      needsAutoFitRef.current = true;
+      return;
+    }
+
+    const current = {
+      width: primaryVolume.width,
+      height: primaryVolume.height,
+      depth: primaryVolume.depth
+    };
+
+    previousPrimaryVolumeRef.current = current;
+
+    if (
+      !previous ||
+      previous.width !== current.width ||
+      previous.height !== current.height ||
+      previous.depth !== current.depth
+    ) {
+      needsAutoFitRef.current = true;
+    }
+  }, [primaryVolume]);
+
   const layout = useMemo<PlanarLayout>(() => {
     if (!primaryVolume) {
       return {
@@ -569,15 +601,54 @@ function PlanarViewer({
 
   useEffect(() => {
     const previous = previousLayoutRef.current;
-    if (
-      !previous ||
-      previous.width !== layout.blockWidth ||
-      previous.height !== layout.blockHeight
-    ) {
-      previousLayoutRef.current = { width: layout.blockWidth, height: layout.blockHeight };
-      needsAutoFitRef.current = true;
+    previousLayoutRef.current = layout;
+
+    if (!previous || !previous.xy || !layout.xy) {
+      return;
     }
-  }, [layout.blockHeight, layout.blockWidth]);
+
+    const previousOffsetFromCenter = {
+      x: previous.xy.centerX - previous.blockWidth / 2,
+      y: previous.xy.centerY - previous.blockHeight / 2
+    };
+
+    const nextOffsetFromCenter = {
+      x: layout.xy.centerX - layout.blockWidth / 2,
+      y: layout.xy.centerY - layout.blockHeight / 2
+    };
+
+    const deltaX = previousOffsetFromCenter.x - nextOffsetFromCenter.x;
+    const deltaY = previousOffsetFromCenter.y - nextOffsetFromCenter.y;
+
+    if (Math.abs(deltaX) < 1e-6 && Math.abs(deltaY) < 1e-6) {
+      return;
+    }
+
+    updateViewState((previousView) => {
+      const scale = Math.max(previousView.scale, 1e-6);
+      const rotation = previousView.rotation;
+      const cos = Math.cos(rotation);
+      const sin = Math.sin(rotation);
+
+      const scaledX = deltaX * scale;
+      const scaledY = deltaY * scale;
+
+      const rotatedX = scaledX * cos - scaledY * sin;
+      const rotatedY = scaledX * sin + scaledY * cos;
+
+      const nextOffsetX = previousView.offsetX + rotatedX;
+      const nextOffsetY = previousView.offsetY + rotatedY;
+
+      if (
+        Math.abs(nextOffsetX - previousView.offsetX) < 1e-3 &&
+        Math.abs(nextOffsetY - previousView.offsetY) < 1e-3
+      ) {
+        return previousView;
+      }
+
+      return { ...previousView, offsetX: nextOffsetX, offsetY: nextOffsetY };
+    });
+  }, [layout, updateViewState]);
 
   const sliceData = useMemo<SliceData | null>(() => {
     if (!primaryVolume) {
