@@ -451,6 +451,7 @@ function VolumeViewer({
   onFpsChange,
   onRegisterVolumeStepScaleChange,
   onRegisterReset,
+  trackScale,
   tracks,
   trackVisibility,
   trackOpacityByChannel,
@@ -498,6 +499,10 @@ function VolumeViewer({
   const onLayerSamplingModeToggle = vr?.onLayerSamplingModeToggle;
   const onLayerInvertToggle = vr?.onLayerInvertToggle;
   const onRegisterVrSession = vr?.onRegisterVrSession;
+
+  const trackScaleX = trackScale.x ?? 1;
+  const trackScaleY = trackScale.y ?? 1;
+  const trackScaleZ = trackScale.z ?? 1;
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -1298,13 +1303,15 @@ function VolumeViewer({
       const positions = new Float32Array(track.points.length * 3);
       const times = new Array<number>(track.points.length);
       const offset = channelTrackOffsets[track.channelId] ?? { x: 0, y: 0 };
+      const scaledOffsetX = offset.x * trackScaleX;
+      const scaledOffsetY = offset.y * trackScaleY;
 
       for (let index = 0; index < track.points.length; index++) {
         const point = track.points[index];
         const resolvedZ = Number.isFinite(point.z) ? point.z : 0;
-        positions[index * 3 + 0] = point.x + offset.x;
-        positions[index * 3 + 1] = point.y + offset.y;
-        positions[index * 3 + 2] = resolvedZ;
+        positions[index * 3 + 0] = point.x * trackScaleX + scaledOffsetX;
+        positions[index * 3 + 1] = point.y * trackScaleY + scaledOffsetY;
+        positions[index * 3 + 2] = resolvedZ * trackScaleZ;
         times[index] = point.time;
       }
 
@@ -1428,6 +1435,9 @@ function VolumeViewer({
     channelTrackOffsets,
     clearHoverState,
     resolveTrackColor,
+    trackScaleX,
+    trackScaleY,
+    trackScaleZ,
     trackOverlayRevision,
     tracks,
     updateTrackDrawRanges
@@ -1569,6 +1579,8 @@ function VolumeViewer({
       let sumY = 0;
       let sumZ = 0;
       const offset = channelTrackOffsets[track.channelId] ?? { x: 0, y: 0 };
+      const scaledOffsetX = offset.x * trackScaleX;
+      const scaledOffsetY = offset.y * trackScaleY;
 
       for (const point of track.points) {
         if (point.time - maxVisibleTime > epsilon) {
@@ -1578,14 +1590,14 @@ function VolumeViewer({
         if (point.time > latestTime + epsilon) {
           latestTime = point.time;
           count = 1;
-          sumX = point.x + offset.x;
-          sumY = point.y + offset.y;
-          sumZ = Number.isFinite(point.z) ? point.z : 0;
+          sumX = point.x * trackScaleX + scaledOffsetX;
+          sumY = point.y * trackScaleY + scaledOffsetY;
+          sumZ = (Number.isFinite(point.z) ? point.z : 0) * trackScaleZ;
         } else if (Math.abs(point.time - latestTime) <= epsilon) {
           count += 1;
-          sumX += point.x + offset.x;
-          sumY += point.y + offset.y;
-          sumZ += Number.isFinite(point.z) ? point.z : 0;
+          sumX += point.x * trackScaleX + scaledOffsetX;
+          sumY += point.y * trackScaleY + scaledOffsetY;
+          sumZ += (Number.isFinite(point.z) ? point.z : 0) * trackScaleZ;
         }
       }
 
@@ -1602,7 +1614,7 @@ function VolumeViewer({
       trackGroup.updateMatrixWorld(true);
       return trackGroup.localToWorld(centroidLocal);
     },
-    [channelTrackOffsets, trackLookup]
+    [channelTrackOffsets, trackLookup, trackScaleX, trackScaleY, trackScaleZ]
   );
 
   const retryPendingVoxelHover = useCallback(() => {

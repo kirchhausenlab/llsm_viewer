@@ -41,6 +41,7 @@ type PlanarViewerProps = {
   sliceIndex: number;
   maxSlices: number;
   onSliceIndexChange: (index: number) => void;
+  trackScale: { x: number; y: number; z: number };
   tracks: TrackDefinition[];
   trackVisibility: Record<string, boolean>;
   trackOpacityByChannel: Record<string, number>;
@@ -390,6 +391,7 @@ function PlanarViewer({
   sliceIndex,
   maxSlices,
   onSliceIndexChange,
+  trackScale,
   tracks,
   trackVisibility,
   trackOpacityByChannel,
@@ -422,6 +424,10 @@ function PlanarViewer({
   const followedTrackIdRef = useRef<string | null>(followedTrackId);
   const hoveredTrackIdRef = useRef<string | null>(null);
   const selectedTrackIdsRef = useRef<ReadonlySet<string>>(selectedTrackIds);
+
+  const trackScaleX = trackScale.x ?? 1;
+  const trackScaleY = trackScale.y ?? 1;
+  const trackScaleZ = trackScale.z ?? 1;
 
   const [hasMeasured, setHasMeasured] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
@@ -888,6 +894,8 @@ function PlanarViewer({
         }
 
         const offset = channelTrackOffsets[track.channelId] ?? { x: 0, y: 0 };
+        const scaledOffsetX = offset.x * trackScaleX;
+        const scaledOffsetY = offset.y * trackScaleY;
         const baseColor = getColorComponents(resolveTrackHexColor(track));
         const highlightColor = mixWithWhite(baseColor, TRACK_HIGHLIGHT_BOOST);
 
@@ -898,9 +906,9 @@ function PlanarViewer({
           }
           const resolvedZ = Number.isFinite(point.z) ? point.z : 0;
           visiblePoints.push({
-            x: point.x + offset.x - centerX,
-            y: point.y + offset.y - centerY,
-            z: resolvedZ - centerZ
+            x: point.x * trackScaleX + scaledOffsetX - centerX,
+            y: point.y * trackScaleY + scaledOffsetY - centerY,
+            z: resolvedZ * trackScaleZ - centerZ
           });
         }
 
@@ -925,6 +933,9 @@ function PlanarViewer({
     clampedTimeIndex,
     primaryVolume,
     resolveTrackHexColor,
+    trackScaleX,
+    trackScaleY,
+    trackScaleZ,
     tracks
   ]);
 
@@ -1060,6 +1071,8 @@ function PlanarViewer({
       let sumY = 0;
       let sumZ = 0;
       const offset = channelTrackOffsets[track.channelId] ?? { x: 0, y: 0 };
+      const scaledOffsetX = offset.x * trackScaleX;
+      const scaledOffsetY = offset.y * trackScaleY;
 
       for (const point of track.points) {
         if (point.time - maxVisibleTime > TRACK_EPSILON) {
@@ -1069,14 +1082,14 @@ function PlanarViewer({
         if (point.time > latestTime + TRACK_EPSILON) {
           latestTime = point.time;
           count = 1;
-          sumX = point.x + offset.x;
-          sumY = point.y + offset.y;
-          sumZ = Number.isFinite(point.z) ? point.z : 0;
+          sumX = point.x * trackScaleX + scaledOffsetX;
+          sumY = point.y * trackScaleY + scaledOffsetY;
+          sumZ = (Number.isFinite(point.z) ? point.z : 0) * trackScaleZ;
         } else if (Math.abs(point.time - latestTime) <= TRACK_EPSILON) {
           count += 1;
-          sumX += point.x + offset.x;
-          sumY += point.y + offset.y;
-          sumZ += Number.isFinite(point.z) ? point.z : 0;
+          sumX += point.x * trackScaleX + scaledOffsetX;
+          sumY += point.y * trackScaleY + scaledOffsetY;
+          sumZ += (Number.isFinite(point.z) ? point.z : 0) * trackScaleZ;
         }
       }
 
@@ -1090,7 +1103,7 @@ function PlanarViewer({
         z: sumZ / count
       };
     },
-    [channelTrackOffsets, trackLookup]
+    [channelTrackOffsets, trackLookup, trackScaleX, trackScaleY, trackScaleZ]
   );
 
   const updateHoverState = useCallback(
