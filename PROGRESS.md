@@ -805,3 +805,8 @@ d centered the front-page card in the viewport.
 - Renamed the Selected Tracks overlay to "Track plots" and added a header gear button that opens a dedicated Plot settings window aligned with the viewer settings layout.
 - Moved amplitude/time range controls into the new window, introduced a Gaussian smoothing slider (0–5 range, fine step), and applied smoothing to track data used across plots and overlays.
 - Updated the legend styling so each channel name text inherits its channel tint while keeping track numbers and values in the default palette.
+## Planar orthogonal toggle persistence
+- Kept the XY camera anchored when enabling or disabling orthogonal slices by compensating for the layout center shift instead of resetting the view.
+- Preserved zoom, rotation, and pan state across orthogonal toggle changes while still triggering auto-fit when the underlying volume dimensions change.
+## Track overlay anisotropy rescaling
+- Threaded the anisotropy correction scale into both the 3D and 2D viewers when building track geometry, offsets, and follow centroids so overlays stay aligned with anisotropy-corrected volumes across all views.
