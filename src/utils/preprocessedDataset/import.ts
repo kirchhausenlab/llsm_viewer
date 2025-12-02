@@ -4,6 +4,7 @@ import type { FileEntry } from '@zip.js/zip.js';
 import type { LoadedLayer } from '../../types/layers';
 import type { NormalizedVolume } from '../../volumeProcessing';
 import { VOXEL_RESOLUTION_UNITS } from '../../types/voxelResolution';
+import { getBytesPerValue, type VolumeDataType } from '../../types/volume';
 
 import { computeSha256Hex } from './hash';
 import {
@@ -154,16 +155,81 @@ function validateManifest(manifest: PreprocessedManifest): void {
       }
     }
   }
+
+  for (const channel of manifest.dataset.channels) {
+    for (const layer of channel.layers) {
+      for (const volume of layer.volumes) {
+        const { segmentationLabels } = volume;
+        if (!segmentationLabels) {
+          continue;
+        }
+
+        if (layer.isSegmentation !== true) {
+          throw new Error('Segmentation labels are only allowed on segmentation layers.');
+        }
+
+        const { path, byteLength, digest, dataType } = segmentationLabels as {
+          path?: unknown;
+          byteLength?: unknown;
+          digest?: unknown;
+          dataType?: unknown;
+        };
+
+        if (typeof path !== 'string' || path.length === 0) {
+          throw new Error('Manifest segmentation label path is invalid.');
+        }
+        if (typeof byteLength !== 'number' || !Number.isFinite(byteLength) || byteLength < 0) {
+          throw new Error('Manifest segmentation label byte length is invalid.');
+        }
+        if (typeof digest !== 'string' || digest.length === 0) {
+          throw new Error('Manifest segmentation label digest is invalid.');
+        }
+        try {
+          getBytesPerValue(dataType as typeof dataType);
+        } catch (error) {
+          throw new Error('Manifest segmentation label data type is invalid.');
+        }
+      }
+    }
+  }
 }
 
 function createNormalizedVolume(
   entry: PreprocessedVolumeManifestEntry,
-  data: Uint8Array
+  data: Uint8Array,
+  segmentationLabels?: { manifest: NonNullable<PreprocessedVolumeManifestEntry['segmentationLabels']>; data: VolumeData }
 ): NormalizedVolume {
   if (data.byteLength !== entry.byteLength) {
     throw new Error(
       `Volume size mismatch for ${entry.path}. Expected ${entry.byteLength} bytes, received ${data.byteLength}.`
     );
+  }
+
+  let labelArray: Uint32Array | undefined;
+  let segmentationLabelDataType: VolumeDataType | undefined;
+
+  if (segmentationLabels) {
+    const bytesPerValue = getBytesPerValue(segmentationLabels.manifest.dataType);
+    if (segmentationLabels.data.data.byteLength !== segmentationLabels.manifest.byteLength) {
+      throw new Error(
+        `Segmentation label size mismatch for ${entry.path}. Expected ${segmentationLabels.manifest.byteLength} bytes, received ${segmentationLabels.data.data.byteLength}.`
+      );
+    }
+
+    if (segmentationLabels.manifest.dataType !== 'uint32') {
+      throw new Error('Unsupported segmentation label data type in manifest.');
+    }
+
+    if (segmentationLabels.data.data.byteLength % bytesPerValue !== 0) {
+      throw new Error('Segmentation label buffer length is not aligned to the declared data type.');
+    }
+
+    labelArray = new Uint32Array(
+      segmentationLabels.data.data.buffer,
+      segmentationLabels.data.data.byteOffset,
+      segmentationLabels.data.data.byteLength / Uint32Array.BYTES_PER_ELEMENT
+    );
+    segmentationLabelDataType = segmentationLabels.manifest.dataType;
   }
 
   return {
@@ -174,13 +240,16 @@ function createNormalizedVolume(
     dataType: entry.dataType,
     normalized: data,
     min: entry.min,
-    max: entry.max
+    max: entry.max,
+    segmentationLabels: labelArray,
+    segmentationLabelDataType
   };
 }
 
 function buildImportResult(
   manifest: PreprocessedManifest,
-  volumes: Map<string, VolumeData>
+  volumes: Map<string, VolumeData>,
+  segmentationLabels: Map<string, VolumeData>
 ): ImportPreprocessedDatasetResult {
   const layers: LoadedLayer[] = [];
   const channelSummaries: PreprocessedChannelSummary[] = [];
@@ -198,8 +267,32 @@ function buildImportResult(
         if (data.digest !== volume.digest) {
           throw new Error(`Digest mismatch for ${volume.path}. The file may be corrupted.`);
         }
-        normalizedVolumes.push(createNormalizedVolume(volume, data.data));
+        const segmentationManifest = volume.segmentationLabels;
+        const segmentationData = segmentationManifest
+          ? segmentationLabels.get(segmentationManifest.path)
+          : undefined;
+
+        if (segmentationManifest && !segmentationData) {
+          throw new Error(`Archive is missing segmentation labels at ${segmentationManifest.path}.`);
+        }
+
+        if (segmentationManifest && segmentationData?.digest !== segmentationManifest.digest) {
+          throw new Error(`Digest mismatch for ${segmentationManifest.path}. The file may be corrupted.`);
+        }
+
+        normalizedVolumes.push(
+          createNormalizedVolume(
+            volume,
+            data.data,
+            segmentationManifest && segmentationData
+              ? { manifest: segmentationManifest, data: segmentationData }
+              : undefined
+          )
+        );
         volumes.delete(volume.path);
+        if (segmentationManifest && segmentationData) {
+          segmentationLabels.delete(segmentationManifest.path);
+        }
         actualVolumeCount += 1;
       }
       layers.push({
@@ -280,6 +373,7 @@ export async function importPreprocessedDataset(
     fileEntries.delete(MANIFEST_FILE_NAME);
 
     const volumes = new Map<string, VolumeData>();
+    const segmentationLabelVolumes = new Map<string, VolumeData>();
     const totalVolumeCount = manifest.dataset.totalVolumeCount;
     let volumesDecoded = 0;
 
@@ -296,11 +390,25 @@ export async function importPreprocessedDataset(
           fileEntries.delete(volume.path);
           volumesDecoded += 1;
           options?.onVolumeDecoded?.(volumesDecoded, totalVolumeCount);
+
+          if (volume.segmentationLabels) {
+            const segmentationEntry = fileEntries.get(volume.segmentationLabels.path);
+            if (!segmentationEntry) {
+              throw new Error(`Archive is missing segmentation labels at ${volume.segmentationLabels.path}.`);
+            }
+            const segmentationData = await segmentationEntry.getData(new Uint8ArrayWriter());
+            const segmentationDigest = await computeSha256Hex(segmentationData);
+            segmentationLabelVolumes.set(volume.segmentationLabels.path, {
+              data: segmentationData,
+              digest: segmentationDigest
+            });
+            fileEntries.delete(volume.segmentationLabels.path);
+          }
         }
       }
     }
 
-    return buildImportResult(manifest, volumes);
+    return buildImportResult(manifest, volumes, segmentationLabelVolumes);
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   } finally {

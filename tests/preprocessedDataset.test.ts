@@ -77,6 +77,8 @@ console.log('Starting preprocessed dataset import/export tests');
 
     const segmentationA = new Uint8Array([0, 0, 0, 0, 255, 128, 64, 255]);
     const segmentationB = new Uint8Array([10, 20, 30, 255, 40, 50, 60, 255]);
+    const segmentationLabelsA = new Uint32Array([0, 1, 2, 3]);
+    const segmentationLabelsB = new Uint32Array([0, 1, 2, 2]);
     const segmentationVolumes: NormalizedVolume[] = [
       {
         width: 2,
@@ -86,7 +88,9 @@ console.log('Starting preprocessed dataset import/export tests');
         dataType: 'uint8',
         normalized: segmentationA,
         min: 0,
-        max: 1
+        max: 1,
+        segmentationLabels: segmentationLabelsA,
+        segmentationLabelDataType: 'uint32'
       },
       {
         width: 2,
@@ -96,7 +100,9 @@ console.log('Starting preprocessed dataset import/export tests');
         dataType: 'uint8',
         normalized: segmentationB,
         min: 0,
-        max: 1
+        max: 1,
+        segmentationLabels: segmentationLabelsB,
+        segmentationLabelDataType: 'uint32'
       }
     ];
 
@@ -170,7 +176,17 @@ console.log('Starting preprocessed dataset import/export tests');
     const expectedVolumeEntries: Record<string, Uint8Array> = {
       'volumes/channel-a/structural/timepoint-0000.bin': structuralData,
       'volumes/channel-a/labels/timepoint-0000.bin': segmentationA,
-      'volumes/channel-a/labels/timepoint-0001.bin': segmentationB
+      'volumes/channel-a/labels/timepoint-0001.bin': segmentationB,
+      'volumes/channel-a/labels/timepoint-0000.labels': new Uint8Array(
+        segmentationLabelsA.buffer,
+        segmentationLabelsA.byteOffset,
+        segmentationLabelsA.byteLength
+      ),
+      'volumes/channel-a/labels/timepoint-0001.labels': new Uint8Array(
+        segmentationLabelsB.buffer,
+        segmentationLabelsB.byteOffset,
+        segmentationLabelsB.byteLength
+      )
     };
 
     assert.deepEqual(
@@ -211,6 +227,16 @@ console.log('Starting preprocessed dataset import/export tests');
     assert.deepEqual(
       Array.from(importedLabels.volumes[1].normalized),
       Array.from(segmentationB)
+    );
+    assert.ok(importedLabels.volumes[0].segmentationLabels);
+    assert.ok(importedLabels.volumes[1].segmentationLabels);
+    assert.deepEqual(
+      Array.from(importedLabels.volumes[0].segmentationLabels ?? []),
+      Array.from(segmentationLabelsA)
+    );
+    assert.deepEqual(
+      Array.from(importedLabels.volumes[1].segmentationLabels ?? []),
+      Array.from(segmentationLabelsB)
     );
 
     const summary = imported.channelSummaries[0];
