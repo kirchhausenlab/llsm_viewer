@@ -28,6 +28,7 @@ export type VoxelResolutionActions = {
   handleVoxelResolutionUnitChange: (unit: VoxelResolutionUnit) => void;
   handleVoxelResolutionAnisotropyToggle: (value: boolean) => void;
   handleExperimentDimensionChange: (dimension: ExperimentDimension) => void;
+  setExperimentDimension: React.Dispatch<React.SetStateAction<ExperimentDimension>>;
   setVoxelResolutionInput: React.Dispatch<React.SetStateAction<VoxelResolutionInput>>;
 };
 
@@ -128,6 +129,7 @@ export function useVoxelResolution(
     handleVoxelResolutionUnitChange,
     handleVoxelResolutionAnisotropyToggle,
     handleExperimentDimensionChange,
+    setExperimentDimension,
     setVoxelResolutionInput
   };
 }

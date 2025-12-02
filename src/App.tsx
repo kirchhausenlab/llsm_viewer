@@ -167,6 +167,7 @@ function App() {
     handleVoxelResolutionUnitChange,
     handleVoxelResolutionAnisotropyToggle,
     handleExperimentDimensionChange,
+    setExperimentDimension,
     setVoxelResolutionInput
   } = useVoxelResolution();
   const {
