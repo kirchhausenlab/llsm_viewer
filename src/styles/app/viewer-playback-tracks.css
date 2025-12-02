@@ -41,17 +41,6 @@
   gap: 0.5rem;
 }
 
-.global-controls .viewer-mode-row--projection {
-  align-items: center;
-}
-
-.viewer-mode-row__label {
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.9);
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
-
 .global-controls .viewer-mode-row button {
   flex: 1 1 0;
   text-align: center;
