@@ -8,13 +8,11 @@ type SelectedTrackSeries = {
   channelName: string;
   trackNumber: number;
   color: string;
-  rawPoints: TrackPoint[];
-  smoothedPoints: TrackPoint[];
+  points: TrackPoint[];
 };
 
 type SelectedTracksWindowProps = {
   series: SelectedTrackSeries[];
-  smoothing: number;
   totalTimepoints: number;
   amplitudeLimits: NumericRange;
   timeLimits: NumericRange;
@@ -33,8 +31,7 @@ const PADDING = {
 };
 
 type ChartSeries = SelectedTrackSeries & {
-  rawPath: string;
-  smoothedPath: string;
+  path: string;
 };
 
 const clampToRange = (value: number, min: number, max: number) => {
@@ -115,7 +112,6 @@ const computeNiceBounds = (min: number, max: number, maxTicks: number) => {
 
 function SelectedTracksWindow({
   series,
-  smoothing,
   totalTimepoints,
   amplitudeLimits,
   timeLimits,
@@ -195,11 +191,16 @@ function SelectedTracksWindow({
     [domainYMax, domainYMin, yTicks]
   );
 
-  const buildPath = useCallback(
-    (points: TrackPoint[]) => {
+  const resolvedSeries = useMemo<ChartSeries[]>(() => {
+    if (chartWidth <= 0 || chartHeight <= 0) {
+      return [];
+    }
+
+    return series.map((entry) => {
+      const sortedPoints = [...entry.points].sort((a, b) => a.time - b.time);
       let path = '';
 
-      for (const point of points) {
+      for (const point of sortedPoints) {
         const x = scaleX(point.time);
         const y = scaleY(point.amplitude);
         if (!Number.isFinite(x) || !Number.isFinite(y)) {
@@ -212,30 +213,16 @@ function SelectedTracksWindow({
         }
       }
 
-      return path;
-    },
-    [scaleX, scaleY]
-  );
-
-  const resolvedSeries = useMemo<ChartSeries[]>(() => {
-    if (chartWidth <= 0 || chartHeight <= 0) {
-      return [];
-    }
-
-    return series.map((entry) => {
-      const sortedRawPoints = [...entry.rawPoints].sort((a, b) => a.time - b.time);
-      const sortedSmoothedPoints = [...entry.smoothedPoints].sort((a, b) => a.time - b.time);
-
       return {
         ...entry,
-        rawPath: buildPath(sortedRawPoints),
-        smoothedPath: buildPath(sortedSmoothedPoints)
+        path
       };
     });
   }, [
     chartHeight,
     chartWidth,
-    buildPath,
+    scaleX,
+    scaleY,
     series
   ]);
 
@@ -243,7 +230,7 @@ function SelectedTracksWindow({
   const yAxisEnd = PADDING.top + chartHeight;
   const totalTimepointsLabel = totalTimepoints.toLocaleString();
 
-  const hasSeries = resolvedSeries.some((entry) => entry.smoothedPath || entry.rawPath);
+  const hasSeries = resolvedSeries.some((entry) => entry.path);
   const playheadX = useMemo(() => {
     return scaleX(currentTimepoint);
   }, [currentTimepoint, scaleX]);
@@ -255,22 +242,15 @@ function SelectedTracksWindow({
   }, [hoverTimepoint, scaleX]);
 
   const amplitudeByTrack = useMemo(() => {
-    const rawMap = new Map<string, Map<number, number>>();
-    const smoothedMap = new Map<string, Map<number, number>>();
+    const map = new Map<string, Map<number, number>>();
     for (const entry of series) {
-      const rawTimeMap = new Map<number, number>();
-      for (const point of entry.rawPoints) {
-        rawTimeMap.set(point.time, point.amplitude);
+      const timeMap = new Map<number, number>();
+      for (const point of entry.points) {
+        timeMap.set(point.time, point.amplitude);
       }
-      rawMap.set(entry.id, rawTimeMap);
-
-      const smoothedTimeMap = new Map<number, number>();
-      for (const point of entry.smoothedPoints) {
-        smoothedTimeMap.set(point.time, point.amplitude);
-      }
-      smoothedMap.set(entry.id, smoothedTimeMap);
+      map.set(entry.id, timeMap);
     }
-    return { rawMap, smoothedMap };
+    return map;
   }, [series]);
 
   const handleMouseMove = useCallback(
@@ -365,18 +345,11 @@ function SelectedTracksWindow({
               })}
             </g>
             <g className="selected-tracks-chart-series">
-              {resolvedSeries.map((entry) => (
-                <g key={entry.id}>
-                  {entry.rawPath ? (
-                    <path
-                      className="selected-tracks-chart-series-raw"
-                      d={entry.rawPath}
-                      stroke={entry.color}
-                    />
-                  ) : null}
-                  {entry.smoothedPath ? <path d={entry.smoothedPath} stroke={entry.color} /> : null}
-                </g>
-              ))}
+              {resolvedSeries.map((entry) =>
+                entry.path ? (
+                  <path key={entry.id} d={entry.path} stroke={entry.color} />
+                ) : null
+              )}
             </g>
             <g
               className={`selected-tracks-playhead${
@@ -474,25 +447,14 @@ function SelectedTracksWindow({
               {resolvedSeries.map((entry) => {
                 const legendLabel = `${entry.channelName} · Track #${entry.trackNumber}`;
                 const channelTint = channelTintMap.get(entry.channelId) ?? DEFAULT_LAYER_COLOR;
-                const hoverRawValue =
+                const hoverValue =
                   hoverTimepoint !== null
-                    ? amplitudeByTrack.rawMap.get(entry.id)?.get(hoverTimepoint)
+                    ? amplitudeByTrack.get(entry.id)?.get(hoverTimepoint)
                     : null;
-                const hoverSmoothedValue =
-                  hoverTimepoint !== null
-                    ? amplitudeByTrack.smoothedMap.get(entry.id)?.get(hoverTimepoint)
-                    : null;
-                const hoverRawLabel =
-                  hoverRawValue === undefined || hoverRawValue === null
+                const hoverLabel =
+                  hoverValue === undefined || hoverValue === null
                     ? null
-                    : formatAxisValue(hoverRawValue);
-                const hoverSmoothedLabel =
-                  smoothing > 0 && hoverSmoothedValue !== undefined && hoverSmoothedValue !== null
-                    ? formatAxisValue(hoverSmoothedValue)
-                    : null;
-                const hoverLabel = hoverRawLabel
-                  ? `: ${hoverRawLabel}${hoverSmoothedLabel ? ` (${hoverSmoothedLabel})` : ''}`
-                  : null;
+                    : formatAxisValue(hoverValue);
 
                 return (
                   <li key={entry.id} className="selected-tracks-legend-item">
@@ -519,7 +481,7 @@ function SelectedTracksWindow({
                         </span>
                         <span className="selected-tracks-legend-track">Track #{entry.trackNumber}</span>
                         {hoverLabel ? (
-                          <span className="selected-tracks-legend-value">{hoverLabel}</span>
+                          <span className="selected-tracks-legend-value">: {hoverLabel}</span>
                         ) : null}
                       </span>
                     </button>
