@@ -1677,6 +1677,7 @@ function App() {
         const manifestVoxelResolution =
           preprocessedExperiment.manifest.dataset.voxelResolution ?? voxelResolution ?? null;
         preprocessingSettingsRef.current = manifestVoxelResolution;
+        setLayers(preprocessedExperiment.layers);
         applyLoadedLayers(preprocessedExperiment.layers, preprocessedExperiment.totalVolumeCount, {
           setChannelVisibility,
           setChannelActiveLayer,
