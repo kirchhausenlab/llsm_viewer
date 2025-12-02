@@ -524,7 +524,7 @@
 
 .selected-tracks-chart-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 230px;
+  grid-template-columns: minmax(0, 1fr) 300px;
   gap: 0.9rem;
   align-items: start;
   background: linear-gradient(180deg, rgba(18, 24, 36, 0.82), rgba(12, 18, 28, 0.85));
