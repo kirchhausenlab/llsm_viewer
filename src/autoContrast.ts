@@ -57,7 +57,16 @@ function computeHistogram(volume: NormalizedVolume): CachedHistogram {
   const { normalized, width, height, depth } = volume;
   const channels = Math.max(1, volume.channels);
   const voxelCount = width * height * depth;
+  const expectedLength = voxelCount * channels;
   const histogram = new Uint32Array(HISTOGRAM_BINS);
+
+  if (normalized.length < expectedLength) {
+    const error = new Error(
+      `Normalized volume length (${normalized.length}) is less than expected (${expectedLength}) for ${width}x${height}x${depth} with ${channels} channel(s).`
+    );
+    console.error(error);
+    throw error;
+  }
 
   if (voxelCount === 0 || normalized.length === 0) {
     return { histogram, width, height, depth, channels, length: normalized.length };
