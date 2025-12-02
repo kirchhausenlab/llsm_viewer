@@ -43,12 +43,14 @@ function computeIntensity(
   }
 
   const sourceB = data[offset + 2] ?? 0;
+  const luminance = Math.round(sourceR * 0.2126 + sourceG * 0.7152 + sourceB * 0.0722);
   if (channels === 3) {
-    return Math.round(sourceR * 0.2126 + sourceG * 0.7152 + sourceB * 0.0722);
+    return luminance;
   }
 
-  const sourceA = data[offset + 3] ?? 0;
-  return Math.max(sourceR, sourceG, sourceB, sourceA);
+  // For RGBA or higher channel counts, derive intensity from RGB only so alpha does not skew
+  // histogram tails or auto windowing.
+  return luminance;
 }
 
 function computeHistogram(volume: NormalizedVolume): CachedHistogram {
