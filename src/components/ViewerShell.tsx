@@ -1305,259 +1305,263 @@ function ViewerShell({
               {channels.length > 0 ? (
                 <div className="track-controls">
                   {channels.map((channel) => {
-                  const channelName = channelNameMap.get(channel.id) ?? 'Untitled channel';
-                  const tracksForChannel = filteredTracksByChannel.get(channel.id) ?? [];
-                  const hasChannelTracks = (parsedTracksByChannel.get(channel.id)?.length ?? 0) > 0;
-                  const isActive = channel.id === activeTrackChannelId;
-                  const colorMode = channelTrackColorModes[channel.id] ?? { type: 'random' };
-                  const opacity = trackOpacityByChannel[channel.id] ?? trackDefaults.opacity;
-                  const lineWidth = trackLineWidthByChannel[channel.id] ?? trackDefaults.lineWidth;
-                  const orderMode = trackOrderModeByChannel[channel.id] ?? 'id';
-                  const orderedTracks =
-                    orderMode === 'length'
-                      ? [...tracksForChannel].sort((a, b) => {
-                          const lengthDelta = b.points.length - a.points.length;
-                          if (lengthDelta !== 0) {
-                            return lengthDelta;
-                          }
-                          return a.trackNumber - b.trackNumber;
-                        })
-                      : tracksForChannel;
-                  const colorLabel =
-                    colorMode.type === 'uniform' ? normalizeTrackColor(colorMode.color) : 'Sorted';
-                  const trackAccentColor =
-                    colorMode.type === 'uniform'
-                      ? normalizeTrackColor(colorMode.color)
-                      : DEFAULT_TRACK_COLOR;
-                  const trackPanelStyle: TrackPanelStyle = {
-                    '--track-accent-color': trackAccentColor,
-                    '--track-accent-border': applyAlphaToHex(trackAccentColor, 0.55),
-                    '--track-accent-strong-border': applyAlphaToHex(trackAccentColor, 0.85),
-                    '--track-accent-soft': applyAlphaToHex(trackAccentColor, 0.18),
-                    '--track-accent-strong': applyAlphaToHex(trackAccentColor, 0.32),
-                    '--track-accent-hover': applyAlphaToHex(trackAccentColor, 0.3),
-                    '--track-accent-focus': applyAlphaToHex(trackAccentColor, 0.65),
-                    '--track-accent-glow': applyAlphaToHex(trackAccentColor, 0.35)
-                  };
-                  const prioritizedTracks = orderedTracks.filter((track) =>
-                    selectedTrackIds.has(track.id)
-                  );
-                  const remainingTracks = orderedTracks.filter((track) => !selectedTrackIds.has(track.id));
-                  const displayTracks =
-                    prioritizedTracks.length > 0 ? [...prioritizedTracks, ...remainingTracks] : orderedTracks;
+                    const channelName = channelNameMap.get(channel.id) ?? 'Untitled channel';
+                    const tracksForChannel = filteredTracksByChannel.get(channel.id) ?? [];
+                    const hasChannelTracks = (parsedTracksByChannel.get(channel.id)?.length ?? 0) > 0;
+                    const isActive = channel.id === activeTrackChannelId;
+                    const colorMode = channelTrackColorModes[channel.id] ?? { type: 'random' };
+                    const opacity = trackOpacityByChannel[channel.id] ?? trackDefaults.opacity;
+                    const lineWidth = trackLineWidthByChannel[channel.id] ?? trackDefaults.lineWidth;
+                    const summary = trackSummaryByChannel.get(channel.id) ?? { total: 0, visible: 0 };
+                    const orderMode = trackOrderModeByChannel[channel.id] ?? 'id';
+                    const orderedTracks =
+                      orderMode === 'length'
+                        ? [...tracksForChannel].sort((a, b) => {
+                            const lengthDelta = b.points.length - a.points.length;
+                            if (lengthDelta !== 0) {
+                              return lengthDelta;
+                            }
+                            return a.trackNumber - b.trackNumber;
+                          })
+                        : tracksForChannel;
+                    const colorLabel =
+                      colorMode.type === 'uniform' ? normalizeTrackColor(colorMode.color) : 'Sorted';
+                    const trackAccentColor =
+                      colorMode.type === 'uniform'
+                        ? normalizeTrackColor(colorMode.color)
+                        : DEFAULT_TRACK_COLOR;
+                    const trackPanelStyle: TrackPanelStyle = {
+                      '--track-accent-color': trackAccentColor,
+                      '--track-accent-border': applyAlphaToHex(trackAccentColor, 0.55),
+                      '--track-accent-strong-border': applyAlphaToHex(trackAccentColor, 0.85),
+                      '--track-accent-soft': applyAlphaToHex(trackAccentColor, 0.18),
+                      '--track-accent-strong': applyAlphaToHex(trackAccentColor, 0.32),
+                      '--track-accent-hover': applyAlphaToHex(trackAccentColor, 0.3),
+                      '--track-accent-focus': applyAlphaToHex(trackAccentColor, 0.65),
+                      '--track-accent-glow': applyAlphaToHex(trackAccentColor, 0.35)
+                    };
+                    const prioritizedTracks = orderedTracks.filter((track) =>
+                      selectedTrackIds.has(track.id)
+                    );
+                    const remainingTracks = orderedTracks.filter((track) => !selectedTrackIds.has(track.id));
+                    const displayTracks =
+                      prioritizedTracks.length > 0 ? [...prioritizedTracks, ...remainingTracks] : orderedTracks;
 
-                  return (
-                    <div
-                      key={channel.id}
-                      id={`track-panel-${channel.id}`}
-                      role="tabpanel"
-                      aria-labelledby={`track-tab-${channel.id}`}
-                    className={isActive ? 'track-panel is-active' : 'track-panel'}
-                    hidden={!isActive}
-                    style={trackPanelStyle}
-                  >
-                    <div className="track-follow-controls">
-                        <div className="track-length-controls">
-                          <label htmlFor={`track-minimum-length-${channel.id}`}>
-                            Minimum length <span>{Math.round(pendingMinimumTrackLength)}</span>
-                          </label>
-                          <div className="track-length-row">
-                            <input
-                              id={`track-minimum-length-${channel.id}`}
-                              type="range"
-                              min={trackLengthBounds.min}
-                              max={trackLengthBounds.max}
-                              step={1}
-                              value={pendingMinimumTrackLength}
-                              onChange={(event) =>
-                                onMinimumTrackLengthChange(Number(event.target.value))
-                              }
-                              disabled={!hasChannelTracks}
-                            />
+                    return (
+                      <div
+                        key={channel.id}
+                        id={`track-panel-${channel.id}`}
+                        role="tabpanel"
+                        aria-labelledby={`track-tab-${channel.id}`}
+                        className={isActive ? 'track-panel is-active' : 'track-panel'}
+                        hidden={!isActive}
+                        style={trackPanelStyle}
+                      >
+                        <div className="track-follow-controls">
+                          <div className="track-length-controls">
+                            <label htmlFor={`track-minimum-length-${channel.id}`}>
+                              Minimum length <span>{Math.round(pendingMinimumTrackLength)}</span>
+                            </label>
+                            <div className="track-length-row">
+                              <input
+                                id={`track-minimum-length-${channel.id}`}
+                                type="range"
+                                min={trackLengthBounds.min}
+                                max={trackLengthBounds.max}
+                                step={1}
+                                value={pendingMinimumTrackLength}
+                                onChange={(event) =>
+                                  onMinimumTrackLengthChange(Number(event.target.value))
+                                }
+                                disabled={!hasChannelTracks}
+                              />
+                              <button
+                                type="button"
+                                className="track-length-apply"
+                                onClick={onMinimumTrackLengthApply}
+                                disabled={
+                                  !hasChannelTracks || pendingMinimumTrackLength === minimumTrackLength
+                                }
+                              >
+                                Apply
+                              </button>
+                            </div>
+                          </div>
+                          <div className="track-slider-row">
+                            <div className="slider-control">
+                              <label htmlFor={`track-opacity-${channel.id}`}>
+                                Opacity <span>{Math.round(opacity * 100)}%</span>
+                              </label>
+                              <input
+                                id={`track-opacity-${channel.id}`}
+                                type="range"
+                                min={0}
+                                max={1}
+                                step={0.05}
+                                value={opacity}
+                                onChange={(event) =>
+                                  onTrackOpacityChange(channel.id, Number(event.target.value))
+                                }
+                                disabled={tracksForChannel.length === 0}
+                              />
+                            </div>
+                            <div className="slider-control">
+                              <label htmlFor={`track-linewidth-${channel.id}`}>
+                                Thickness <span>{lineWidth.toFixed(1)}</span>
+                              </label>
+                              <input
+                                id={`track-linewidth-${channel.id}`}
+                                type="range"
+                                min={0.5}
+                                max={5}
+                                step={0.1}
+                                value={lineWidth}
+                                onChange={(event) =>
+                                  onTrackLineWidthChange(channel.id, Number(event.target.value))
+                                }
+                                disabled={tracksForChannel.length === 0}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                        <div className="track-color-control">
+                          <div className="track-color-control-header">
+                            <span id={`track-color-label-${channel.id}`}>Track color</span>
+                            <span>{colorLabel}</span>
+                          </div>
+                          <div className="track-color-swatch-row">
+                            <div
+                              className="color-swatch-grid"
+                              role="group"
+                              aria-labelledby={`track-color-label-${channel.id}`}
+                            >
+                              {TRACK_COLOR_SWATCHES.map((swatch) => {
+                                const normalized = normalizeTrackColor(swatch.value);
+                                const isSelected =
+                                  colorMode.type === 'uniform' &&
+                                  normalizeTrackColor(colorMode.color) === normalized;
+                                return (
+                                  <button
+                                    key={swatch.value}
+                                    type="button"
+                                    className={
+                                      isSelected ? 'color-swatch-button is-selected' : 'color-swatch-button'
+                                    }
+                                    style={{ backgroundColor: swatch.value }}
+                                    onClick={() => onTrackColorSelect(channel.id, swatch.value)}
+                                    disabled={tracksForChannel.length === 0}
+                                    aria-pressed={isSelected}
+                                    aria-label={`${swatch.label} tracks color`}
+                                    title={swatch.label}
+                                  />
+                                );
+                              })}
+                            </div>
                             <button
                               type="button"
-                              className="track-length-apply"
-                              onClick={onMinimumTrackLengthApply}
-                              disabled={
-                                !hasChannelTracks || pendingMinimumTrackLength === minimumTrackLength
+                              className={
+                                colorMode.type === 'random'
+                                  ? 'track-color-randomizer'
+                                  : 'track-color-randomizer is-active'
                               }
+                              onClick={() => onTrackColorReset(channel.id)}
+                              disabled={tracksForChannel.length === 0}
                             >
-                              Apply
+                              Sorted
                             </button>
                           </div>
                         </div>
-                        <div className="track-slider-row">
-                          <div className="slider-control">
-                            <label htmlFor={`track-opacity-${channel.id}`}>
-                              Opacity <span>{Math.round(opacity * 100)}%</span>
-                            </label>
-                            <input
-                              id={`track-opacity-${channel.id}`}
-                              type="range"
-                              min={0}
-                              max={1}
-                              step={0.05}
-                              value={opacity}
-                              onChange={(event) =>
-                                onTrackOpacityChange(channel.id, Number(event.target.value))
+                        <div className="track-list-section">
+                          <div className="track-list-header">
+                            <span className="track-list-summary">
+                              Shown tracks: <strong>{summary.visible}</strong>
+                            </span>
+                            <button
+                              type="button"
+                              className={
+                                orderMode === 'length'
+                                  ? 'track-order-toggle is-active'
+                                  : 'track-order-toggle'
                               }
+                              onClick={() => onTrackOrderToggle(channel.id)}
                               disabled={tracksForChannel.length === 0}
-                            />
+                              aria-pressed={orderMode === 'length'}
+                            >
+                              {orderMode === 'length' ? 'Order by ID' : 'Order by length'}
+                            </button>
                           </div>
-                          <div className="slider-control">
-                            <label htmlFor={`track-linewidth-${channel.id}`}>
-                              Thickness <span>{lineWidth.toFixed(1)}</span>
-                            </label>
-                            <input
-                              id={`track-linewidth-${channel.id}`}
-                              type="range"
-                              min={0.5}
-                              max={5}
-                              step={0.1}
-                              value={lineWidth}
-                              onChange={(event) =>
-                                onTrackLineWidthChange(channel.id, Number(event.target.value))
-                              }
-                              disabled={tracksForChannel.length === 0}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                      <div className="track-color-control">
-                        <div className="track-color-control-header">
-                          <span id={`track-color-label-${channel.id}`}>Track color</span>
-                          <span>{colorLabel}</span>
-                        </div>
-                        <div className="track-color-swatch-row">
-                          <div
-                            className="color-swatch-grid"
-                            role="group"
-                            aria-labelledby={`track-color-label-${channel.id}`}
-                          >
-                            {TRACK_COLOR_SWATCHES.map((swatch) => {
-                              const normalized = normalizeTrackColor(swatch.value);
-                              const isSelected =
-                                colorMode.type === 'uniform' &&
-                                normalizeTrackColor(colorMode.color) === normalized;
-                              return (
-                                <button
-                                  key={swatch.value}
-                                  type="button"
-                                  className={
-                                    isSelected ? 'color-swatch-button is-selected' : 'color-swatch-button'
-                                  }
-                                  style={{ backgroundColor: swatch.value }}
-                                  onClick={() => onTrackColorSelect(channel.id, swatch.value)}
-                                  disabled={tracksForChannel.length === 0}
-                                  aria-pressed={isSelected}
-                                  aria-label={`${swatch.label} tracks color`}
-                                  title={swatch.label}
-                                />
-                              );
-                            })}
-                          </div>
-                          <button
-                            type="button"
-                            className={
-                              colorMode.type === 'random'
-                                ? 'track-color-randomizer'
-                                : 'track-color-randomizer is-active'
-                            }
-                            onClick={() => onTrackColorReset(channel.id)}
-                            disabled={tracksForChannel.length === 0}
-                          >
-                            Sorted
-                          </button>
-                        </div>
-                      </div>
-                      <div className="track-list-section">
-                        <div className="track-list-header">
-                          <button
-                            type="button"
-                            className={
-                              orderMode === 'length'
-                                ? 'track-order-toggle is-active'
-                                : 'track-order-toggle'
-                            }
-                            onClick={() => onTrackOrderToggle(channel.id)}
-                            disabled={tracksForChannel.length === 0}
-                            aria-pressed={orderMode === 'length'}
-                          >
-                            {orderMode === 'length' ? 'Order by ID' : 'Order by length'}
-                          </button>
-                        </div>
-                        {tracksForChannel.length > 0 ? (
-                          <div
-                            className="track-list"
-                            role="group"
-                            aria-label={`${channelName} track visibility`}
-                          >
-                            {displayTracks.map((track) => {
-                              const isFollowed = tracksPanelFollowedTrackId === track.id;
-                              const isSelected = selectedTrackIds.has(track.id);
-                              const isChecked =
-                                isFollowed || isSelected || (trackVisibility[track.id] ?? true);
-                              const trackColor =
-                                colorMode.type === 'uniform'
-                                  ? normalizeTrackColor(colorMode.color)
-                                  : getTrackColorHex(track.id);
-                              const itemClassName = [
-                                'track-item',
-                                isSelected ? 'is-selected' : '',
-                                isFollowed ? 'is-following' : ''
-                              ]
-                                .filter(Boolean)
-                                .join(' ');
-                              return (
-                                <div
-                                  key={track.id}
-                                  className={itemClassName}
-                                  title={`${track.channelName} · Track #${track.trackNumber}`}
-                                >
-                                  <div className="track-toggle">
-                                    <input
-                                      type="checkbox"
-                                      checked={isChecked}
-                                      onChange={() => onTrackVisibilityToggle(track.id)}
-                                      aria-label={`Toggle visibility for Track #${track.trackNumber}`}
-                                    />
-                                  </div>
-                                  <button
-                                    type="button"
-                                    className="track-label-button"
-                                    onClick={() => onTrackSelectionToggle(track.id)}
-                                    aria-pressed={isSelected}
+                          {tracksForChannel.length > 0 ? (
+                            <div
+                              className="track-list"
+                              role="group"
+                              aria-label={`${channelName} track visibility`}
+                            >
+                              {displayTracks.map((track) => {
+                                const isFollowed = tracksPanelFollowedTrackId === track.id;
+                                const isSelected = selectedTrackIds.has(track.id);
+                                const isChecked =
+                                  isFollowed || isSelected || (trackVisibility[track.id] ?? true);
+                                const trackColor =
+                                  colorMode.type === 'uniform'
+                                    ? normalizeTrackColor(colorMode.color)
+                                    : getTrackColorHex(track.id);
+                                const itemClassName = [
+                                  'track-item',
+                                  isSelected ? 'is-selected' : '',
+                                  isFollowed ? 'is-following' : ''
+                                ]
+                                  .filter(Boolean)
+                                  .join(' ');
+                                return (
+                                  <div
+                                    key={track.id}
+                                    className={itemClassName}
+                                    title={`${track.channelName} · Track #${track.trackNumber}`}
                                   >
-                                    <span className="track-label">
-                                      <span
-                                        className="track-color-swatch"
-                                        style={{ backgroundColor: trackColor }}
-                                        aria-hidden="true"
+                                    <div className="track-toggle">
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={() => onTrackVisibilityToggle(track.id)}
+                                        aria-label={`Toggle visibility for Track #${track.trackNumber}`}
                                       />
-                                      <span className="track-name">Track #{track.trackNumber}</span>
-                                    </span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className={
-                                      isFollowed ? 'track-follow-button is-active' : 'track-follow-button'
-                                    }
-                                    onClick={() => onTrackFollow(track.id)}
-                                    aria-pressed={isFollowed}
-                                  >
-                                    {isFollowed ? 'Following' : 'Follow'}
-                                  </button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <p className="track-empty-hint">Load a tracks file to toggle individual trajectories.</p>
-                        )}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className="track-label-button"
+                                      onClick={() => onTrackSelectionToggle(track.id)}
+                                      aria-pressed={isSelected}
+                                    >
+                                      <span className="track-label">
+                                        <span
+                                          className="track-color-swatch"
+                                          style={{ backgroundColor: trackColor }}
+                                          aria-hidden="true"
+                                        />
+                                        <span className="track-name">Track #{track.trackNumber}</span>
+                                      </span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className={
+                                        isFollowed ? 'track-follow-button is-active' : 'track-follow-button'
+                                      }
+                                      onClick={() => onTrackFollow(track.id)}
+                                      aria-pressed={isFollowed}
+                                    >
+                                      {isFollowed ? 'Following' : 'Follow'}
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <p className="track-empty-hint">Load a tracks file to toggle individual trajectories.</p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
               </div>
             ) : (
               <p className="track-empty-hint">Add a channel to manage tracks.</p>
