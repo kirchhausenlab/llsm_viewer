@@ -4,7 +4,6 @@ import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
 import type {
   MovementState,
-  PointerState,
   TrackLineResource,
   VolumeResources,
   VolumeViewerVrChannelPanel,
@@ -47,7 +46,6 @@ export type UseVolumeViewerVrParams = {
   resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
   timeIndexRef: MutableRefObject<number>;
   movementStateRef: MutableRefObject<MovementState>;
-  pointerStateRef: MutableRefObject<PointerState | null>;
   trackLinesRef: MutableRefObject<Map<string, TrackLineResource>>;
   trackFollowOffsetRef: MutableRefObject<THREE.Vector3 | null>;
   hasActive3DLayerRef: MutableRefObject<boolean>;

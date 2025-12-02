@@ -822,3 +822,6 @@ d centered the front-page card in the viewport.
 - Added a visible "Shown tracks" count beside the track ordering toggle so each channel displays how many trajectories are currently rendered.
 - Added a small top margin above the track list section to give the controls a bit more breathing room.
 - Adjusted 3D track end-cap radius scaling to keep the minimum thickness looking the same while halving the maximum sphere size for thick tracks.
+
+## Drag gesture simplification
+- Removed the Shift+drag panning and Ctrl+drag dolly gestures from the 3D viewer so mouse drags are dedicated to orbiting and selection without altering camera position.

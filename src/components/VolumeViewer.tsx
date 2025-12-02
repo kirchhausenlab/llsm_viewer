@@ -14,7 +14,6 @@ import './VolumeViewer.css';
 import type { TrackColorMode, TrackDefinition } from '../types/tracks';
 import type {
   MovementState,
-  PointerState,
   TrackLineResource,
   VolumeResources,
   VolumeViewerProps,
@@ -74,13 +73,6 @@ function getTrackIdFromObject(object: THREE.Object3D): string | null {
   const trackId = object.userData?.trackId;
   return typeof trackId === 'string' ? trackId : null;
 }
-
-const getOrbitControlsPan = (
-  controls: OrbitControls,
-): ((deltaX: number, deltaY: number) => void) | null => {
-  const candidate = (controls as { pan?: (dx: number, dy: number) => void }).pan;
-  return typeof candidate === 'function' ? candidate.bind(controls) : null;
-};
 
 function disposeMaterial(material: THREE.Material | THREE.Material[] | null | undefined) {
   if (Array.isArray(material)) {
@@ -539,7 +531,6 @@ function VolumeViewer({
     position: THREE.Vector3;
     target: THREE.Vector3;
   } | null>(null);
-  const pointerStateRef = useRef<PointerState | null>(null);
   const movementStateRef = useRef<MovementState>({
     moveForward: false,
     moveBackward: false,
@@ -870,7 +861,6 @@ function VolumeViewer({
             resourcesRef,
             timeIndexRef,
             movementStateRef,
-            pointerStateRef,
             trackLinesRef,
             trackFollowOffsetRef,
             hasActive3DLayerRef,
@@ -919,7 +909,6 @@ function VolumeViewer({
       resourcesRef,
       timeIndexRef,
       movementStateRef,
-      pointerStateRef,
       trackLinesRef,
       trackFollowOffsetRef,
       hasActive3DLayerRef,
@@ -2518,103 +2507,9 @@ function VolumeViewer({
     };
 
     const handlePointerDown = (event: PointerEvent) => {
-      const controls = controlsRef.current;
-      const cameraInstance = cameraRef.current;
-      if (!controls || !cameraInstance) {
-        return;
-      }
-
       if (event.button !== 0) {
         return;
       }
-
-      const mode = event.ctrlKey ? 'dolly' : event.shiftKey ? 'pan' : null;
-
-      if (!mode) {
-        if (hoverSystemReadyRef.current) {
-          updateVoxelHover(event);
-        } else {
-          pendingHoverEventRef.current = event;
-          retryPendingVoxelHover();
-        }
-        const hitTrackId = performHoverHitTest(event);
-        if (hitTrackId !== null) {
-          onTrackSelectionToggle(hitTrackId);
-        }
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-
-      const previousEnablePan = mode === 'pan' ? controls.enablePan : null;
-      if (mode === 'pan') {
-        controls.enablePan = true;
-      }
-
-      clearHoverState('pointer');
-      clearVoxelHover();
-
-      pointerStateRef.current = {
-        mode,
-        pointerId: event.pointerId,
-        lastX: event.clientX,
-        lastY: event.clientY,
-        previousControlsEnabled: controls.enabled,
-        previousEnablePan
-      };
-      controls.enabled = false;
-
-      try {
-        domElement.setPointerCapture(event.pointerId);
-      } catch (error) {
-        // Ignore errors from unsupported pointer capture (e.g., Safari)
-      }
-    };
-
-    const handlePointerMove = (event: PointerEvent) => {
-      const state = pointerStateRef.current;
-      if (!state || event.pointerId !== state.pointerId) {
-        if (hoverSystemReadyRef.current) {
-          updateVoxelHover(event);
-        } else {
-          pendingHoverEventRef.current = event;
-          retryPendingVoxelHover();
-        }
-        performHoverHitTest(event);
-        return;
-      }
-
-      clearHoverState('pointer');
-
-      const controls = controlsRef.current;
-      const camera = cameraRef.current;
-      if (!controls || !camera) {
-        return;
-      }
-
-      const deltaX = event.clientX - state.lastX;
-      const deltaY = event.clientY - state.lastY;
-
-      if (state.mode === 'pan') {
-        const panControls = getOrbitControlsPan(controls);
-        panControls?.(deltaX, deltaY);
-        rotationTargetRef.current.copy(controls.target);
-      } else {
-        const rotationTarget = rotationTargetRef.current;
-        camera.getWorldDirection(dollyDirection);
-        const distance = rotationTarget.distanceTo(camera.position);
-        const depthScale = Math.max(distance * 0.0025, 0.0006);
-        const moveAmount = -deltaY * depthScale;
-        dollyDirection.multiplyScalar(moveAmount);
-        camera.position.add(dollyDirection);
-        controls.target.copy(rotationTarget);
-      }
-
-      controls.update();
-      state.lastX = event.clientX;
-      state.lastY = event.clientY;
 
       if (hoverSystemReadyRef.current) {
         updateVoxelHover(event);
@@ -2622,36 +2517,23 @@ function VolumeViewer({
         pendingHoverEventRef.current = event;
         retryPendingVoxelHover();
       }
+      const hitTrackId = performHoverHitTest(event);
+      if (hitTrackId !== null) {
+        onTrackSelectionToggle(hitTrackId);
+      }
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (hoverSystemReadyRef.current) {
+        updateVoxelHover(event);
+      } else {
+        pendingHoverEventRef.current = event;
+        retryPendingVoxelHover();
+      }
+      performHoverHitTest(event);
     };
 
     const handlePointerUp = (event: PointerEvent) => {
-      const state = pointerStateRef.current;
-      if (!state || event.pointerId !== state.pointerId) {
-        if (hoverSystemReadyRef.current) {
-          updateVoxelHover(event);
-        } else {
-          pendingHoverEventRef.current = event;
-          retryPendingVoxelHover();
-        }
-        performHoverHitTest(event);
-        return;
-      }
-
-      const controls = controlsRef.current;
-      if (controls) {
-        controls.enabled = state.previousControlsEnabled;
-        if (state.mode === 'pan' && state.previousEnablePan !== null) {
-          controls.enablePan = state.previousEnablePan;
-        }
-      }
-
-      try {
-        domElement.releasePointerCapture(event.pointerId);
-      } catch (error) {
-        // Ignore errors from unsupported pointer capture (e.g., Safari)
-      }
-
-      pointerStateRef.current = null;
       if (hoverSystemReadyRef.current) {
         updateVoxelHover(event);
       } else {
@@ -2688,7 +2570,6 @@ function VolumeViewer({
     const horizontalForward = new THREE.Vector3();
     const rightVector = new THREE.Vector3();
     const movementVector = new THREE.Vector3();
-    const dollyDirection = new THREE.Vector3();
 
     const applyKeyboardMovement = () => {
       if (renderer.xr.isPresenting) {
@@ -3082,15 +2963,6 @@ function VolumeViewer({
       pointerTarget.removeEventListener('pointerup', handlePointerUp);
       pointerTarget.removeEventListener('pointercancel', handlePointerUp);
       pointerTarget.removeEventListener('pointerleave', handlePointerLeave);
-
-      const activePointerState = pointerStateRef.current;
-      if (activePointerState && controlsRef.current) {
-        controlsRef.current.enabled = activePointerState.previousControlsEnabled;
-        if (activePointerState.mode === 'pan' && activePointerState.previousEnablePan !== null) {
-          controlsRef.current.enablePan = activePointerState.previousEnablePan;
-        }
-      }
-      pointerStateRef.current = null;
 
       raycasterRef.current = null;
       hoverRaycasterRef.current = null;
