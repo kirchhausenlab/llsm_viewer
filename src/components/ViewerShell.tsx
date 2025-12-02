@@ -1512,6 +1512,8 @@ function ViewerShell({
                                 ]
                                   .filter(Boolean)
                                   .join(' ');
+                                const shouldShowFollowButton = isSelected || isFollowed;
+
                                 return (
                                   <div
                                     key={track.id}
@@ -1541,16 +1543,20 @@ function ViewerShell({
                                         <span className="track-name">Track #{track.trackNumber}</span>
                                       </span>
                                     </button>
-                                    <button
-                                      type="button"
-                                      className={
-                                        isFollowed ? 'track-follow-button is-active' : 'track-follow-button'
-                                      }
-                                      onClick={() => onTrackFollow(track.id)}
-                                      aria-pressed={isFollowed}
-                                    >
-                                      {isFollowed ? 'Following' : 'Follow'}
-                                    </button>
+                                    {shouldShowFollowButton ? (
+                                      <button
+                                        type="button"
+                                        className={
+                                          isFollowed ? 'track-follow-button is-active' : 'track-follow-button'
+                                        }
+                                        onClick={() => onTrackFollow(track.id)}
+                                        aria-pressed={isFollowed}
+                                      >
+                                        {isFollowed ? 'Following' : 'Follow'}
+                                      </button>
+                                    ) : (
+                                      <span className="track-follow-placeholder" aria-hidden="true" />
+                                    )}
                                   </div>
                                 );
                               })}
