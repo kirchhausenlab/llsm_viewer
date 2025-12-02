@@ -829,3 +829,7 @@ d centered the front-page card in the viewport.
 
 ## Drag gesture simplification
 - Removed the Shift+drag panning and Ctrl+drag dolly gestures from the 3D viewer so mouse drags are dedicated to orbiting and selection without altering camera position.
+
+## First-person drag look
+- Swapped orbit-style drag rotation for a first-person look mechanic that pivots the camera in place while keeping zoom and movement controls intact.
+- Kept the rotation target synchronized with the camera’s forward vector so scroll zooms and keyboard navigation continue to work with the new look-around behavior.
