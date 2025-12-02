@@ -1,3 +1,9 @@
+# 2D projection controls
+- Added a four-option projection selector to the 2D viewer settings that persists between sessions and only appears in planar
+  mode.
+- Rendered XY and orthogonal slices as max/min/mean projections when selected, while disabling Z navigation controls and
+  matching hover readouts to the projected data.
+
 # Track follow menu relocation
 - Moved the stop-follow control to the viewer top bar beside Help and hide it when no track
   is being followed so the control only appears when it is actionable.
