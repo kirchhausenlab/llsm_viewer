@@ -23,3 +23,5 @@ export type VoxelResolutionValues = {
 };
 
 export const VOXEL_RESOLUTION_UNITS: readonly VoxelResolutionUnit[] = ['Å', 'nm', 'μm', 'mm'];
+
+export type VoxelResolutionAxis = 'x' | 'y' | 'z';
