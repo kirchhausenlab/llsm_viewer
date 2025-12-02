@@ -173,8 +173,10 @@ type SelectedTracksPanelProps = {
     channelName: string;
     trackNumber: number;
     color: string;
-    points: TrackPoint[];
+    rawPoints: TrackPoint[];
+    smoothedPoints: TrackPoint[];
   }>;
+  smoothing: number;
   totalTimepoints: number;
   amplitudeLimits: NumericRange;
   timeLimits: NumericRange;
@@ -362,6 +364,7 @@ function ViewerShell({
   const {
     shouldRender,
     series,
+    smoothing: selectedTracksSmoothing,
     totalTimepoints,
     amplitudeLimits,
     timeLimits,
@@ -1590,6 +1593,7 @@ function ViewerShell({
             >
               <SelectedTracksWindow
                 series={series}
+                smoothing={selectedTracksSmoothing}
                 totalTimepoints={totalTimepoints}
                 amplitudeLimits={amplitudeLimits}
                 timeLimits={timeLimits}

@@ -583,6 +583,14 @@
   opacity: 0.85;
 }
 
+.selected-tracks-chart-series-raw {
+  fill: none;
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.35;
+}
+
 .selected-tracks-chart-axis-labels text {
   fill: rgba(255, 255, 255, 0.78);
   font-size: 0.8rem;
