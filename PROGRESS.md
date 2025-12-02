@@ -31,6 +31,7 @@
 - Added per-channel track tabs with independent visibility/opacity/thickness settings and preserved color schemes, plus blinking/thickened highlights for selected tracks.
 - Introduced a "Selected Tracks" overlay plotting per-track amplitude over time with a color-coded legend.
 - Consolidated Gaussian smoothing into a shared utility with guards for non-finite inputs and coverage for edge cases via unit tests.
+- Extracted shared track filtering/smoothing selectors into a reusable hook to simplify testing and reduce memo boilerplate.
 
 ## Rendering and interaction foundations
 - Established the Vite + React frontend, Three.js volume renderer, and playback pipeline with keyboard/mouse navigation and responsive resource reuse.
