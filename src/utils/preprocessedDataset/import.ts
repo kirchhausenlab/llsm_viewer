@@ -18,6 +18,20 @@ import {
 } from './types';
 
 const textDecoder = new TextDecoder();
+const VALID_VOLUME_DATA_TYPES: VolumeDataType[] = [
+  'uint8',
+  'int8',
+  'uint16',
+  'int16',
+  'uint32',
+  'int32',
+  'float32',
+  'float64'
+];
+
+function isVolumeDataType(value: unknown): value is VolumeDataType {
+  return typeof value === 'string' && VALID_VOLUME_DATA_TYPES.includes(value as VolumeDataType);
+}
 
 export type ImportPreprocessedDatasetOptions = {
   onProgress?: (bytesProcessed: number) => void;
@@ -184,11 +198,10 @@ function validateManifest(manifest: PreprocessedManifest): void {
         if (typeof digest !== 'string' || digest.length === 0) {
           throw new Error('Manifest segmentation label digest is invalid.');
         }
-        try {
-          getBytesPerValue(dataType as typeof dataType);
-        } catch (error) {
+        if (!isVolumeDataType(dataType)) {
           throw new Error('Manifest segmentation label data type is invalid.');
         }
+        getBytesPerValue(dataType);
       }
     }
   }
