@@ -173,6 +173,7 @@ type SelectedTracksPanelProps = {
     channelName: string;
     trackNumber: number;
     color: string;
+    rawPoints: TrackPoint[];
     points: TrackPoint[];
   }>;
   totalTimepoints: number;
@@ -180,6 +181,7 @@ type SelectedTracksPanelProps = {
   timeLimits: NumericRange;
   currentTimepoint: number;
   channelTintMap: Map<string, string>;
+  smoothing: number;
   onTrackSelectionToggle: (trackId: string) => void;
 };
 
@@ -367,6 +369,7 @@ function ViewerShell({
     timeLimits,
     currentTimepoint,
     channelTintMap: selectedTracksChannelTintMap,
+    smoothing: selectedTracksSmoothing,
     onTrackSelectionToggle: onSelectedTrackToggle
   } = selectedTracksPanel;
   const {
@@ -1595,6 +1598,7 @@ function ViewerShell({
                 timeLimits={timeLimits}
                 currentTimepoint={currentTimepoint}
                 channelTintMap={selectedTracksChannelTintMap}
+                smoothing={selectedTracksSmoothing}
                 onTrackSelectionToggle={onSelectedTrackToggle}
               />
             </FloatingWindow>
