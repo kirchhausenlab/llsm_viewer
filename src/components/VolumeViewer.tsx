@@ -2392,6 +2392,7 @@ function VolumeViewer({
     controls.enableDamping = false;
     controls.dampingFactor = 0;
     controls.enablePan = false;
+    controls.enableRotate = false;
     controls.rotateSpeed = 0.65;
     controls.zoomSpeed = 0.7;
     controlsRef.current = controls;
@@ -2437,6 +2438,72 @@ function VolumeViewer({
     const raycaster = new THREE.Raycaster();
     raycaster.params.Line = { threshold: 0.02 };
     raycaster.params.Line2 = { threshold: 0.02 };
+
+    const pointerLookState = {
+      activePointerId: null as number | null,
+      yaw: 0,
+      pitch: 0,
+      lastClientX: 0,
+      lastClientY: 0
+    };
+    const cameraEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+    const lookDirection = new THREE.Vector3();
+
+    const LOOK_SENSITIVITY = 0.0025;
+    const MAX_LOOK_PITCH = Math.PI / 2 - 0.001;
+
+    const beginPointerLook = (event: PointerEvent) => {
+      if (renderer.xr.isPresenting) {
+        return;
+      }
+
+      pointerLookState.activePointerId = event.pointerId;
+      pointerLookState.lastClientX = event.clientX;
+      pointerLookState.lastClientY = event.clientY;
+
+      cameraEuler.setFromQuaternion(camera.quaternion, 'YXZ');
+      pointerLookState.yaw = cameraEuler.y;
+      pointerLookState.pitch = cameraEuler.x;
+
+      domElement.setPointerCapture(event.pointerId);
+    };
+
+    const updatePointerLook = (event: PointerEvent) => {
+      if (pointerLookState.activePointerId !== event.pointerId) {
+        return;
+      }
+
+      const deltaX = event.clientX - pointerLookState.lastClientX;
+      const deltaY = event.clientY - pointerLookState.lastClientY;
+      pointerLookState.lastClientX = event.clientX;
+      pointerLookState.lastClientY = event.clientY;
+
+      pointerLookState.yaw -= deltaX * LOOK_SENSITIVITY;
+      pointerLookState.pitch -= deltaY * LOOK_SENSITIVITY;
+      pointerLookState.pitch = THREE.MathUtils.clamp(pointerLookState.pitch, -MAX_LOOK_PITCH, MAX_LOOK_PITCH);
+
+      cameraEuler.set(pointerLookState.pitch, pointerLookState.yaw, 0, 'YXZ');
+      camera.quaternion.setFromEuler(cameraEuler);
+
+      const targetDistance = Math.max(camera.position.distanceTo(rotationTargetRef.current), 0.0001);
+      lookDirection.set(0, 0, -1).applyQuaternion(camera.quaternion);
+      rotationTargetRef.current.copy(camera.position).addScaledVector(lookDirection, targetDistance);
+      controls.target.copy(rotationTargetRef.current);
+      controls.update();
+    };
+
+    const endPointerLook = (event?: PointerEvent) => {
+      const activePointerId = pointerLookState.activePointerId;
+      if (activePointerId === null) {
+        return;
+      }
+
+      pointerLookState.activePointerId = null;
+
+      if (event && domElement.hasPointerCapture(activePointerId)) {
+        domElement.releasePointerCapture(activePointerId);
+      }
+    };
 
     rendererRef.current = renderer;
     sceneRef.current = scene;
@@ -2511,6 +2578,8 @@ function VolumeViewer({
         return;
       }
 
+      beginPointerLook(event);
+
       if (hoverSystemReadyRef.current) {
         updateVoxelHover(event);
       } else {
@@ -2524,6 +2593,8 @@ function VolumeViewer({
     };
 
     const handlePointerMove = (event: PointerEvent) => {
+      updatePointerLook(event);
+
       if (hoverSystemReadyRef.current) {
         updateVoxelHover(event);
       } else {
@@ -2541,11 +2612,14 @@ function VolumeViewer({
         retryPendingVoxelHover();
       }
       performHoverHitTest(event);
+
+      endPointerLook(event);
     };
 
-    const handlePointerLeave = () => {
+    const handlePointerLeave = (event: PointerEvent) => {
       clearHoverState('pointer');
       clearVoxelHover();
+      endPointerLook(event);
     };
 
     const pointerDownOptions: AddEventListenerOptions = { capture: true };
@@ -2645,6 +2719,7 @@ function VolumeViewer({
     const renderLoop = (timestamp: number) => {
       applyKeyboardMovement();
       controls.update();
+      rotationTargetRef.current.copy(controls.target);
 
       const blinkPhase = (timestamp % SELECTED_TRACK_BLINK_PERIOD_MS) / SELECTED_TRACK_BLINK_PERIOD_MS;
       const blinkAngle = blinkPhase * Math.PI * 2;

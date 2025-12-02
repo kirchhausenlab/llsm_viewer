@@ -832,3 +832,6 @@ d centered the front-page card in the viewport.
 
 ## Amplitude plot legend width tweak
 - Widened the amplitude plot window and its legend column so track labels and hover readouts stay on a single line instead of wrapping.
+## First-person drag look
+- Swapped orbit-style drag rotation for a first-person look mechanic that pivots the camera in place while keeping zoom and movement controls intact.
+- Kept the rotation target synchronized with the camera’s forward vector so scroll zooms and keyboard navigation continue to work with the new look-around behavior.
