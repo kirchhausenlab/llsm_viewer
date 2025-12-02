@@ -61,6 +61,15 @@ The workflow automatically infers the correct base path for project sites (e.g.,
 - `public/` – Static assets served by Vite.
 - `PROGRESS.md` – Running log of milestones and upcoming tasks.
 
+### Track smoothing utilities
+
+Gaussian smoothing helpers for track rendering live in `src/utils/trackSmoothing.ts`.
+`smoothTrackPoints` applies a configurable kernel while ignoring non-finite point values so
+`NaN` inputs do not contaminate neighboring samples. `applyGaussianAmplitudeSmoothing`
+reuses that logic for amplitude-only smoothing and preserves all other metadata on each
+track point. Both utilities return the original references when given non-positive or
+non-finite sigma values, allowing callers to short-circuit without extra allocations.
+
 ## Next steps
 
 - Implement the WebGPU direct-volume renderer with transfer function controls.

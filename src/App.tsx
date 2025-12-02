@@ -51,6 +51,7 @@ import type {
   VoxelResolutionValues
 } from './types/voxelResolution';
 import { computeAnisotropyScale, resampleVolume } from './utils/anisotropyCorrection';
+import { applyGaussianAmplitudeSmoothing, smoothTrackPoints } from './utils/trackSmoothing';
 import {
   collectFilesFromDataTransfer,
   createSegmentationSeed,
@@ -114,73 +115,6 @@ const createDefaultChannelTrackState = (): ChannelTrackState => ({
   visibility: {},
   colorMode: { type: 'random' }
 });
-
-
-const smoothTrackPoints = (points: TrackPoint[], sigma: number) => {
-  if (!Number.isFinite(sigma) || sigma <= 0 || points.length === 0) {
-    return points;
-  }
-
-  const radius = Math.max(1, Math.ceil(sigma * 3));
-  const varianceFactor = 2 * sigma * sigma;
-  const weights: number[] = [];
-
-  for (let offset = -radius; offset <= radius; offset++) {
-    const weight = Math.exp(-(offset * offset) / varianceFactor);
-    weights.push(weight);
-  }
-
-  return points.map((point, index) => {
-    let weightedSumX = 0;
-    let weightedSumY = 0;
-    let weightedSumZ = 0;
-    let weightedAmplitude = 0;
-    let weightTotal = 0;
-
-    for (let offset = -radius; offset <= radius; offset++) {
-      const neighborIndex = index + offset;
-      if (neighborIndex < 0 || neighborIndex >= points.length) {
-        continue;
-      }
-      const weight = weights[offset + radius];
-      weightTotal += weight;
-      const neighbor = points[neighborIndex];
-      weightedSumX += neighbor.x * weight;
-      weightedSumY += neighbor.y * weight;
-      weightedSumZ += neighbor.z * weight;
-      weightedAmplitude += neighbor.amplitude * weight;
-    }
-
-    if (weightTotal === 0) {
-      return point;
-    }
-
-    return {
-      time: point.time,
-      x: weightedSumX / weightTotal,
-      y: weightedSumY / weightTotal,
-      z: weightedSumZ / weightTotal,
-      amplitude: weightedAmplitude / weightTotal
-    };
-  });
-};
-
-const applyGaussianAmplitudeSmoothing = (tracks: TrackDefinition[], sigma: number) => {
-  if (!Number.isFinite(sigma) || sigma <= 0) {
-    return tracks;
-  }
-
-  return tracks.map((track) => {
-    const smoothedPoints = smoothTrackPoints(track.points, sigma);
-    return {
-      ...track,
-      points: smoothedPoints.map((point, index) => ({
-        ...track.points[index],
-        amplitude: point.amplitude
-      }))
-    };
-  });
-};
 
 type FollowedTrackState = {
   id: string;
