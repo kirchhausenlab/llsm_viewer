@@ -165,15 +165,21 @@ const smoothTrackPoints = (points: TrackPoint[], sigma: number) => {
   });
 };
 
-const applyGaussianSmoothing = (tracks: TrackDefinition[], sigma: number) => {
+const applyGaussianAmplitudeSmoothing = (tracks: TrackDefinition[], sigma: number) => {
   if (!Number.isFinite(sigma) || sigma <= 0) {
     return tracks;
   }
 
-  return tracks.map((track) => ({
-    ...track,
-    points: smoothTrackPoints(track.points, sigma)
-  }));
+  return tracks.map((track) => {
+    const smoothedPoints = smoothTrackPoints(track.points, sigma);
+    return {
+      ...track,
+      points: smoothedPoints.map((point, index) => ({
+        ...track.points[index],
+        amplitude: point.amplitude
+      }))
+    };
+  });
 };
 
 type FollowedTrackState = {
@@ -861,14 +867,19 @@ function App() {
     return map;
   }, [anisotropyScale, channels, experimentDimension]);
 
-  const parsedTracksByChannel = useMemo(() => {
+  const parsedTracksByChannel = useMemo(
+    () => rawTracksByChannel,
+    [rawTracksByChannel]
+  );
+
+  const plotTracksByChannel = useMemo(() => {
     if (!Number.isFinite(trackSmoothing) || trackSmoothing <= 0) {
       return rawTracksByChannel;
     }
 
     const map = new Map<string, TrackDefinition[]>();
     for (const [channelId, tracks] of rawTracksByChannel.entries()) {
-      map.set(channelId, applyGaussianSmoothing(tracks, trackSmoothing));
+      map.set(channelId, applyGaussianAmplitudeSmoothing(tracks, trackSmoothing));
     }
     return map;
   }, [rawTracksByChannel, trackSmoothing]);
@@ -919,6 +930,35 @@ function App() {
     return map;
   }, [filteredTracks]);
 
+  const plotFilteredTracksByChannel = useMemo(() => {
+    const map = new Map<string, TrackDefinition[]>();
+
+    for (const channel of channels) {
+      const tracksForChannel = plotTracksByChannel.get(channel.id) ?? [];
+      const filtered = tracksForChannel.filter((track) => track.points.length >= minimumTrackLength);
+      map.set(channel.id, filtered);
+    }
+
+    return map;
+  }, [channels, minimumTrackLength, plotTracksByChannel]);
+
+  const plotFilteredTracks = useMemo(() => {
+    const ordered: TrackDefinition[] = [];
+    for (const channel of channels) {
+      const channelTracks = plotFilteredTracksByChannel.get(channel.id) ?? [];
+      ordered.push(...channelTracks);
+    }
+    return ordered;
+  }, [channels, plotFilteredTracksByChannel]);
+
+  const plotFilteredTrackLookup = useMemo(() => {
+    const map = new Map<string, TrackDefinition>();
+    for (const track of plotFilteredTracks) {
+      map.set(track.id, track);
+    }
+    return map;
+  }, [plotFilteredTracks]);
+
   const selectedTrackSeries = useMemo(() => {
     const series: Array<{
       id: string;
@@ -929,7 +969,7 @@ function App() {
       points: TrackPoint[];
     }> = [];
     for (const trackId of selectedTrackOrder) {
-      const track = filteredTrackLookup.get(trackId);
+      const track = plotFilteredTrackLookup.get(trackId);
       if (!track) {
         continue;
       }
@@ -943,7 +983,7 @@ function App() {
       });
     }
     return series;
-  }, [filteredTrackLookup, selectedTrackOrder]);
+  }, [plotFilteredTrackLookup, selectedTrackOrder]);
 
   const trackExtents = useMemo(() => {
     let amplitudeMin = Number.POSITIVE_INFINITY;
@@ -951,7 +991,7 @@ function App() {
     let timeMin = Number.POSITIVE_INFINITY;
     let timeMax = Number.NEGATIVE_INFINITY;
 
-    for (const track of filteredTracks) {
+    for (const track of plotFilteredTracks) {
       for (const point of track.points) {
         if (Number.isFinite(point.amplitude)) {
           amplitudeMin = Math.min(amplitudeMin, point.amplitude);
@@ -973,7 +1013,7 @@ function App() {
       amplitude: hasAmplitude ? { min: amplitudeMin, max: amplitudeMax } : { min: 0, max: 1 },
       time: hasTime ? { min: timeMin, max: timeMax } : { min: 0, max: fallbackTimeMax }
     };
-  }, [filteredTracks, volumeTimepointCount]);
+  }, [plotFilteredTracks, volumeTimepointCount]);
 
   const selectedTrackExtents = useMemo(() => {
     let amplitudeMin = Number.POSITIVE_INFINITY;
