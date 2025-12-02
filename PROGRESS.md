@@ -840,3 +840,7 @@ d centered the front-page card in the viewport.
 
 ## MIP inversion handling
 - Kept maximum-intensity projection selection based on normalized luminance while deferring inversion to the final color mapping so bright structures remain targeted even when inverted.
+
+## Track follow pointer look stabilization
+- Split the track-follow effect so camera recenters on time changes without repeatedly cancelling first-person drag look while
+  not following a trajectory.

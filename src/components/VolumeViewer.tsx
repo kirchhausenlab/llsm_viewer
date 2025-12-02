@@ -2106,16 +2106,25 @@ function VolumeViewer({
   updateVoxelHoverRef.current = updateVoxelHover;
 
   useEffect(() => {
-    followedTrackIdRef.current = followedTrackId;
     const controls = controlsRef.current;
     if (controls) {
       controls.enableRotate = followedTrackId !== null;
     }
 
+    const wasFollowingTrack = followedTrackIdRef.current !== null;
+    followedTrackIdRef.current = followedTrackId;
+
     if (followedTrackId === null) {
       trackFollowOffsetRef.current = null;
       previousFollowedTrackIdRef.current = null;
-      endPointerLookRef.current?.();
+      if (wasFollowingTrack) {
+        endPointerLookRef.current?.();
+      }
+    }
+  }, [followedTrackId]);
+
+  useEffect(() => {
+    if (followedTrackId === null) {
       return;
     }
 
@@ -2129,6 +2138,7 @@ function VolumeViewer({
       movementState.moveDown = false;
     }
 
+    const controls = controlsRef.current;
     const camera = cameraRef.current;
     const rotationTarget = rotationTargetRef.current;
 
@@ -2157,12 +2167,7 @@ function VolumeViewer({
     controls.update();
 
     trackFollowOffsetRef.current = camera.position.clone().sub(rotationTarget);
-  }, [
-    clampedTimeIndex,
-    computeTrackCentroid,
-    followedTrackId,
-    primaryVolume
-  ]);
+  }, [clampedTimeIndex, computeTrackCentroid, followedTrackId, primaryVolume]);
 
   const handleResetHudPlacement = useCallback(() => {
     const renderer = rendererRef.current;
