@@ -966,24 +966,27 @@ function App() {
       channelName: string;
       trackNumber: number;
       color: string;
+      rawPoints: TrackPoint[];
       points: TrackPoint[];
     }> = [];
     for (const trackId of selectedTrackOrder) {
-      const track = plotFilteredTrackLookup.get(trackId);
-      if (!track) {
+      const rawTrack = filteredTrackLookup.get(trackId);
+      const plotTrack = plotFilteredTrackLookup.get(trackId) ?? rawTrack;
+      if (!rawTrack || !plotTrack) {
         continue;
       }
       series.push({
-        id: track.id,
-        channelId: track.channelId,
-        channelName: track.channelName,
-        trackNumber: track.trackNumber,
-        color: getTrackColorHex(track.id),
-        points: track.points
+        id: plotTrack.id,
+        channelId: plotTrack.channelId,
+        channelName: plotTrack.channelName,
+        trackNumber: plotTrack.trackNumber,
+        color: getTrackColorHex(plotTrack.id),
+        rawPoints: rawTrack.points,
+        points: plotTrack.points
       });
     }
     return series;
-  }, [plotFilteredTrackLookup, selectedTrackOrder]);
+  }, [filteredTrackLookup, plotFilteredTrackLookup, selectedTrackOrder]);
 
   const trackExtents = useMemo(() => {
     let amplitudeMin = Number.POSITIVE_INFINITY;
@@ -991,7 +994,12 @@ function App() {
     let timeMin = Number.POSITIVE_INFINITY;
     let timeMax = Number.NEGATIVE_INFINITY;
 
-    for (const track of plotFilteredTracks) {
+    const extentTracks =
+      Number.isFinite(trackSmoothing) && trackSmoothing > 0
+        ? [...plotFilteredTracks, ...filteredTracks]
+        : plotFilteredTracks;
+
+    for (const track of extentTracks) {
       for (const point of track.points) {
         if (Number.isFinite(point.amplitude)) {
           amplitudeMin = Math.min(amplitudeMin, point.amplitude);
@@ -1013,7 +1021,7 @@ function App() {
       amplitude: hasAmplitude ? { min: amplitudeMin, max: amplitudeMax } : { min: 0, max: 1 },
       time: hasTime ? { min: timeMin, max: timeMax } : { min: 0, max: fallbackTimeMax }
     };
-  }, [plotFilteredTracks, volumeTimepointCount]);
+  }, [filteredTracks, plotFilteredTracks, trackSmoothing, volumeTimepointCount]);
 
   const selectedTrackExtents = useMemo(() => {
     let amplitudeMin = Number.POSITIVE_INFINITY;
@@ -1022,15 +1030,21 @@ function App() {
     let timeMax = Number.NEGATIVE_INFINITY;
 
     for (const entry of selectedTrackSeries) {
-      for (const point of entry.points) {
-        if (Number.isFinite(point.amplitude)) {
-          amplitudeMin = Math.min(amplitudeMin, point.amplitude);
-          amplitudeMax = Math.max(amplitudeMax, point.amplitude);
-        }
+      const pointSources =
+        Number.isFinite(trackSmoothing) && trackSmoothing > 0
+          ? [entry.points, entry.rawPoints]
+          : [entry.points];
+      for (const source of pointSources) {
+        for (const point of source) {
+          if (Number.isFinite(point.amplitude)) {
+            amplitudeMin = Math.min(amplitudeMin, point.amplitude);
+            amplitudeMax = Math.max(amplitudeMax, point.amplitude);
+          }
 
-        if (Number.isFinite(point.time)) {
-          timeMin = Math.min(timeMin, point.time);
-          timeMax = Math.max(timeMax, point.time);
+          if (Number.isFinite(point.time)) {
+            timeMin = Math.min(timeMin, point.time);
+            timeMax = Math.max(timeMax, point.time);
+          }
         }
       }
     }
@@ -1042,7 +1056,7 @@ function App() {
       amplitude: hasAmplitude ? { min: amplitudeMin, max: amplitudeMax } : null,
       time: hasTime ? { min: timeMin, max: timeMax } : null
     } as const;
-  }, [selectedTrackSeries]);
+  }, [selectedTrackSeries, trackSmoothing]);
 
   const amplitudeExtent = trackExtents.amplitude;
   const timeExtent = trackExtents.time;
@@ -3657,6 +3671,7 @@ function App() {
       timeLimits: resolvedTimeLimits,
       currentTimepoint: selectedIndex,
       channelTintMap,
+      smoothing: trackSmoothing,
       onTrackSelectionToggle: handleTrackSelectionToggle
     },
     plotSettings: {
