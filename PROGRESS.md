@@ -22,6 +22,7 @@
 
 ## Import/export and Dropbox workflow
 - Built a preprocessed dataset export/import pipeline with manifest hashing, ZIP streaming (including service worker fallback), and guarded launcher states.
+- Captured segmentation label buffers in the preprocessed manifest, exporting/importing per-volume label digests to keep segmentation rendering consistent after archive round-trips.
 - Fixed GitHub Pages artifact inputs and activation handling for the file save picker.
 - Added Dropbox chooser support for TIFF stacks and per-channel track CSVs, with inline configuration, progress/error messaging, and folder-aware file construction.
 

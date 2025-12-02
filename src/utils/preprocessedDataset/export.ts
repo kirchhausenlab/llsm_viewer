@@ -26,6 +26,12 @@ function createVolumePath(layer: LoadedLayer, timepoint: number): string {
     .padStart(4, '0')}.bin`;
 }
 
+function createSegmentationLabelPath(layer: LoadedLayer, timepoint: number): string {
+  return `volumes/${layer.channelId}/${layer.key}/timepoint-${timepoint
+    .toString()
+    .padStart(4, '0')}.labels`;
+}
+
 export async function exportPreprocessedDataset(
   { layers, channels, voxelResolution, movieMode }: ExportPreprocessedDatasetOptions,
   onChunk?: ExportPreprocessedDatasetChunkHandler
@@ -83,6 +89,36 @@ export async function exportPreprocessedDataset(
 
           const digest = await computeSha256Hex(volumeBytes);
 
+          let segmentationLabelsManifest: PreprocessedVolumeManifestEntry['segmentationLabels'];
+          if (layer.isSegmentation && volume.segmentationLabels) {
+            const labelPath = createSegmentationLabelPath(layer, index);
+            let labelBytes = new Uint8Array(
+              volume.segmentationLabels.buffer,
+              volume.segmentationLabels.byteOffset,
+              volume.segmentationLabels.byteLength
+            );
+
+            if (labelBytes.byteOffset !== 0 || labelBytes.byteLength !== labelBytes.buffer.byteLength) {
+              labelBytes = labelBytes.slice();
+            }
+
+            const labelDigest = await computeSha256Hex(labelBytes);
+
+            segmentationLabelsManifest = {
+              path: labelPath,
+              byteLength: labelBytes.byteLength,
+              digest: labelDigest,
+              dataType: 'uint32'
+            };
+
+            await zipWriter!.add(labelPath, new Uint8ArrayReader(labelBytes), {
+              level: ZIP_COMPRESSION_LEVEL,
+              zip64: true
+            });
+
+            labelBytes = new Uint8Array(0);
+          }
+
           const manifestEntry: PreprocessedVolumeManifestEntry = {
             path,
             timepoint: index,
@@ -94,7 +130,8 @@ export async function exportPreprocessedDataset(
             min: volume.min,
             max: volume.max,
             byteLength: volumeBytes.byteLength,
-            digest
+            digest,
+            ...(segmentationLabelsManifest ? { segmentationLabels: segmentationLabelsManifest } : {})
           };
 
           manifestVolumes.push(manifestEntry);

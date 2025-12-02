@@ -26,6 +26,12 @@ export type PreprocessedVolumeManifestEntry = {
   max: number;
   byteLength: number;
   digest: string;
+  segmentationLabels?: {
+    path: string;
+    byteLength: number;
+    digest: string;
+    dataType: VolumeDataType;
+  };
 };
 
 export type PreprocessedLayerManifestEntry = {
