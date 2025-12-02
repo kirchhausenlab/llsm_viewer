@@ -9,13 +9,9 @@ import type {
 } from 'react';
 import type { DropboxAppKeySource } from '../integrations/dropbox';
 import type { LoadedLayer } from '../types/layers';
-import type {
-  ChannelSource,
-  ChannelTrackState,
-  FollowedTrackState,
-  ExperimentDimension,
-  StagedPreprocessedExperiment
-} from '../App';
+import type { ChannelTrackState, FollowedTrackState } from '../types/channelTracks';
+import type { ChannelSource, StagedPreprocessedExperiment } from './useChannelSources';
+import type { ExperimentDimension } from './useVoxelResolution';
 import type { PreprocessedDropboxCallbacks } from './preprocessedExperiment/shared';
 import { usePreprocessedImport } from './preprocessedExperiment/usePreprocessedImport';
 import { useDropboxPreprocessed } from './preprocessedExperiment/useDropboxPreprocessed';

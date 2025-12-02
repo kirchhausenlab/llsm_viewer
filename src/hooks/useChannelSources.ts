@@ -131,7 +131,7 @@ export type ChannelSourcesApi = {
       setSelectedIndex: (index: number) => void;
       setActiveChannelTabId: (id: string | null) => void;
       setStatus: (state: LoadState) => void;
-      setLoadedCount: (count: number) => void;
+      setLoadedCount: Dispatch<SetStateAction<number>>;
       setExpectedVolumeCount: (count: number) => void;
       setLoadProgress: (progress: number) => void;
       setIsPlaying: (value: boolean) => void;
@@ -159,7 +159,7 @@ export type ChannelSourcesApi = {
     setSelectedIndex: (index: number) => void;
     setIsPlaying: (value: boolean) => void;
     setLoadProgress: (value: number) => void;
-    setLoadedCount: (value: number) => void;
+    setLoadedCount: Dispatch<SetStateAction<number>>;
     setExpectedVolumeCount: (value: number) => void;
     setActiveChannelTabId: (value: string | null) => void;
     showLaunchError: (message: string) => void;
@@ -386,7 +386,7 @@ export function useChannelSources(): ChannelSourcesApi {
   );
 
   const createLayerDefaultSettings = useCallback(
-    (layerKey: string) => {
+    (layerKey: string): LayerSettings => {
       const { windowMin, windowMax } = computeInitialWindowForVolume(null);
       return {
         ...createDefaultLayerSettings({ windowMin, windowMax }),

@@ -8,13 +8,9 @@ import type {
 } from 'react';
 import { collectFilesFromDataTransfer } from '../../utils/appHelpers';
 import { importPreprocessedDatasetWithWorker } from '../../workers/importPreprocessedDatasetClient';
-import type {
-  ChannelSource,
-  ChannelTrackState,
-  ExperimentDimension,
-  FollowedTrackState,
-  StagedPreprocessedExperiment
-} from '../../App';
+import type { ChannelTrackState, FollowedTrackState } from '../../types/channelTracks';
+import type { ChannelSource, StagedPreprocessedExperiment } from '../useChannelSources';
+import type { ExperimentDimension } from '../useVoxelResolution';
 import type { PreprocessedDropboxCallbacksRef } from './shared';
 
 export type UsePreprocessedImportOptions = {

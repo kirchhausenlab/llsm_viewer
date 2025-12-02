@@ -7,7 +7,8 @@ import {
   setDropboxAppKey,
   type DropboxAppKeySource
 } from '../integrations/dropbox';
-import type { ChannelSource, ChannelValidation, ExperimentDimension } from '../App';
+import type { ChannelSource, ChannelValidation } from '../hooks/useChannelSources';
+import type { ExperimentDimension } from '../hooks/useVoxelResolution';
 
 export type ChannelCardProps = {
   channel: ChannelSource;
