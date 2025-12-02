@@ -50,7 +50,6 @@ import type {
   VoxelResolutionUnit,
   VoxelResolutionValues
 } from './types/voxelResolution';
-import type { ProjectionMode } from './types/viewer';
 import { computeAnisotropyScale, resampleVolume } from './utils/anisotropyCorrection';
 import {
   collectFilesFromDataTransfer,
@@ -74,7 +73,6 @@ const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
 const WARNING_WINDOW_WIDTH = 360;
 const TRACK_SMOOTHING_RANGE: NumericRange = { min: 0, max: 5 };
 const DEFAULT_RESET_WINDOW = { windowMin: DEFAULT_WINDOW_MIN, windowMax: DEFAULT_WINDOW_MAX };
-const PROJECTION_MODE_STORAGE_KEY = 'viewer-projection-mode';
 
 const DEFAULT_VOXEL_RESOLUTION: VoxelResolutionInput = {
   x: '1.0',
@@ -377,18 +375,6 @@ function App() {
   const [viewerMode, setViewerMode] = useState<'3d' | '2d'>('3d');
   const [sliceIndex, setSliceIndex] = useState(0);
   const [orthogonalViewsEnabled, setOrthogonalViewsEnabled] = useState(false);
-  const [projectionMode, setProjectionMode] = useState<ProjectionMode>(() => {
-    if (typeof window === 'undefined') {
-      return 'none';
-    }
-
-    const stored = window.localStorage.getItem(PROJECTION_MODE_STORAGE_KEY);
-    if (stored === 'max' || stored === 'min' || stored === 'mean') {
-      return stored;
-    }
-
-    return 'none';
-  });
   const hasInitializedSliceIndexRef = useRef(false);
   const [isViewerLaunched, setIsViewerLaunched] = useState(false);
   const [isLaunchingViewer, setIsLaunchingViewer] = useState(false);
@@ -402,13 +388,6 @@ function App() {
   useEffect(() => {
     setHoveredVolumeVoxel(null);
   }, [viewerMode]);
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    window.localStorage.setItem(PROJECTION_MODE_STORAGE_KEY, projectionMode);
-  }, [projectionMode]);
   useEffect(() => {
     if (!is3dViewerAvailable) {
       setViewerMode('2d');
@@ -2835,10 +2814,6 @@ function App() {
     setOrthogonalViewsEnabled((current) => !current);
   }, []);
 
-  const handleProjectionModeChange = useCallback((mode: ProjectionMode) => {
-    setProjectionMode(mode);
-  }, []);
-
   useEffect(() => {
     if (layers.length === 0) {
       setActiveChannelTabId(null);
@@ -3563,8 +3538,7 @@ function App() {
     onTrackSelectionToggle: handleTrackSelectionToggle,
     onTrackFollowRequest: handleTrackFollowFromViewer,
     onHoverVoxelChange: setHoveredVolumeVoxel,
-    orthogonalViewsEnabled: viewerMode === '2d' && maxSliceDepth > 1 && orthogonalViewsEnabled,
-    projectionMode
+    orthogonalViewsEnabled: viewerMode === '2d' && maxSliceDepth > 1 && orthogonalViewsEnabled
   };
 
   const showSelectedTracksWindow = !isVrActive && hasParsedTrackData;
@@ -3576,9 +3550,7 @@ function App() {
     planarSettings: {
       orthogonalViewsAvailable,
       orthogonalViewsEnabled,
-      onOrthogonalViewsToggle: handleOrthogonalViewsToggle,
-      projectionMode,
-      onProjectionModeChange: handleProjectionModeChange
+      onOrthogonalViewsToggle: handleOrthogonalViewsToggle
     },
     topMenu: {
       onReturnToLauncher: handleReturnToLauncher,
@@ -3635,8 +3607,7 @@ function App() {
       onTogglePlayback: handleTogglePlayback,
       onJumpToStart: handleJumpToStart,
       onJumpToEnd: handleJumpToEnd,
-      error,
-      projectionMode
+      error
     },
     channelsPanel: {
       loadedChannelIds,

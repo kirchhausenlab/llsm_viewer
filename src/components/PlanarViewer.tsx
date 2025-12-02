@@ -5,7 +5,6 @@ import type { NormalizedVolume } from '../volumeProcessing';
 import type { VolumeDataType } from '../types/volume';
 import type { HoveredVoxelInfo } from '../types/hover';
 import { denormalizeValue, formatChannelValuesDetailed } from '../utils/intensityFormatting';
-import type { ProjectionMode } from '../types/viewer';
 import './PlanarViewer.css';
 
 type ViewerLayer = {
@@ -55,7 +54,6 @@ type PlanarViewerProps = {
   onTrackFollowRequest: (trackId: string) => void;
   onHoverVoxelChange?: (value: HoveredVoxelInfo | null) => void;
   orthogonalViewsEnabled: boolean;
-  projectionMode: ProjectionMode;
 };
 
 type SliceData = {
@@ -136,91 +134,6 @@ const SELECTED_TRACK_BLINK_RANGE = 0.15;
 const FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER = 1.35;
 const SELECTED_TRACK_LINE_WIDTH_MULTIPLIER = 1.5;
 const ORTHOGONAL_GAP = 16;
-
-function initializeProjectionAccumulator(mode: ProjectionMode, target: number[]) {
-  switch (mode) {
-    case 'max':
-      target.fill(-Infinity);
-      break;
-    case 'min':
-      target.fill(Infinity);
-      break;
-    default:
-      target.fill(0);
-      break;
-  }
-}
-
-function accumulateProjectionSample(mode: ProjectionMode, target: number[], sample: number[]) {
-  for (let index = 0; index < target.length; index += 1) {
-    const value = sample[index] ?? 0;
-    if (mode === 'max') {
-      if (value > target[index]) {
-        target[index] = value;
-      }
-    } else if (mode === 'min') {
-      if (value < target[index]) {
-        target[index] = value;
-      }
-    } else {
-      target[index] += value;
-    }
-  }
-}
-
-function finalizeProjectionAccumulator(mode: ProjectionMode, divisor: number, target: number[]) {
-  if (mode === 'mean' && divisor > 0) {
-    for (let index = 0; index < target.length; index += 1) {
-      target[index] /= divisor;
-    }
-  }
-}
-
-function sampleVolumeChannels(
-  volume: NormalizedVolume,
-  sampleX: number,
-  sampleY: number,
-  slice: number,
-  channels: number,
-  out: number[]
-) {
-  const clampedZ = Math.round(clamp(slice, 0, volume.depth - 1));
-  const sliceStride = volume.width * volume.height * channels;
-  const rowStride = volume.width * channels;
-  const sliceOffset = clampedZ * sliceStride;
-
-  const clampedX = clamp(sampleX, 0, volume.width - 1);
-  const clampedY = clamp(sampleY, 0, volume.height - 1);
-  const leftX = Math.floor(clampedX);
-  const rightX = Math.min(volume.width - 1, leftX + 1);
-  const topY = Math.floor(clampedY);
-  const bottomY = Math.min(volume.height - 1, topY + 1);
-  const tX = clampedX - leftX;
-  const tY = clampedY - topY;
-
-  const topRowOffset = sliceOffset + topY * rowStride;
-  const bottomRowOffset = sliceOffset + bottomY * rowStride;
-
-  const weightTopLeft = (1 - tX) * (1 - tY);
-  const weightTopRight = tX * (1 - tY);
-  const weightBottomLeft = (1 - tX) * tY;
-  const weightBottomRight = tX * tY;
-
-  for (let channelIndex = 0; channelIndex < channels; channelIndex += 1) {
-    const topLeftOffset = topRowOffset + leftX * channels + channelIndex;
-    const topRightOffset = topRowOffset + rightX * channels + channelIndex;
-    const bottomLeftOffset = bottomRowOffset + leftX * channels + channelIndex;
-    const bottomRightOffset = bottomRowOffset + rightX * channels + channelIndex;
-
-    out[channelIndex] =
-      (volume.normalized[topLeftOffset] ?? 0) * weightTopLeft +
-      (volume.normalized[topRightOffset] ?? 0) * weightTopRight +
-      (volume.normalized[bottomLeftOffset] ?? 0) * weightBottomLeft +
-      (volume.normalized[bottomRightOffset] ?? 0) * weightBottomRight;
-  }
-
-  return out;
-}
 
 function clamp(value: number, min: number, max: number) {
   if (value < min) {
@@ -490,8 +403,7 @@ function PlanarViewer({
   onTrackSelectionToggle,
   onTrackFollowRequest,
   onHoverVoxelChange,
-  orthogonalViewsEnabled,
-  projectionMode
+  orthogonalViewsEnabled
 }: PlanarViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -527,7 +439,7 @@ function PlanarViewer({
   const hoveredPixelRef = useRef<{ x: number; y: number } | null>(null);
   const [hoveredPixel, setHoveredPixel] = useState<{ x: number; y: number } | null>(null);
 
-  const effectiveMaxSlices = projectionMode === 'none' ? Math.max(0, maxSlices) : 1;
+  const effectiveMaxSlices = Math.max(0, maxSlices);
   const clampedSliceIndex =
     effectiveMaxSlices > 0 ? clamp(sliceIndex, 0, effectiveMaxSlices - 1) : 0;
 
@@ -766,33 +678,13 @@ function PlanarViewer({
       }
 
       const channels = Math.max(1, volume.channels);
-      const offsetX = layer.offsetX ?? 0;
-      const offsetY = layer.offsetY ?? 0;
-      const hasOffset = Math.abs(offsetX) > 1e-3 || Math.abs(offsetY) > 1e-3;
-
-      if (projectionMode !== 'none') {
-        const accumulator = new Array<number>(channels);
-        const scratch = new Array<number>(channels);
-
-        return (x, y) => {
-          const sampleX = x - offsetX;
-          const sampleY = y - offsetY;
-
-          initializeProjectionAccumulator(projectionMode, accumulator);
-          for (let z = 0; z < volume.depth; z += 1) {
-            sampleVolumeChannels(volume, sampleX, sampleY, z, channels, scratch);
-            accumulateProjectionSample(projectionMode, accumulator, scratch);
-          }
-          finalizeProjectionAccumulator(projectionMode, volume.depth, accumulator);
-
-          return accumulator;
-        };
-      }
-
       const slice = clamp(clampedSliceIndex, 0, Math.max(0, volume.depth - 1));
       const sliceStride = width * height * channels;
       const rowStride = width * channels;
       const sliceOffset = slice * sliceStride;
+      const offsetX = layer.offsetX ?? 0;
+      const offsetY = layer.offsetY ?? 0;
+      const hasOffset = Math.abs(offsetX) > 1e-3 || Math.abs(offsetY) > 1e-3;
       const values = new Array<number>(channels);
 
       if (!hasOffset) {
@@ -841,7 +733,7 @@ function PlanarViewer({
         return values;
       };
     });
-  }, [clampedSliceIndex, layers, primaryVolume, projectionMode]);
+  }, [clampedSliceIndex, layers, primaryVolume]);
 
   const resetView = useCallback(() => {
     const container = containerRef.current;
@@ -894,86 +786,67 @@ function PlanarViewer({
         }
 
         const channels = Math.max(1, volume.channels);
+        const slice = clamp(clampedSliceIndex, 0, Math.max(0, volume.depth - 1));
+        const sliceStride = volume.width * volume.height * channels;
+        const rowStride = volume.width * channels;
+        const sliceOffset = slice * sliceStride;
+
         const offsetX = layer.offsetX ?? 0;
         const offsetY = layer.offsetY ?? 0;
         const sampleX = sliceX - offsetX;
         const sampleY = sliceY - offsetY;
 
-        const slice = clamp(clampedSliceIndex, 0, Math.max(0, volume.depth - 1));
-
         const channelLabel = layer.channelName?.trim() || layer.label?.trim() || null;
         const channelColor = layer.color;
 
         if (layer.isSegmentation && volume.segmentationLabels) {
-          if (projectionMode !== 'none') {
-            const labelCounts = new Map<number, number>();
-            for (let z = 0; z < volume.depth; z += 1) {
-              const labelValue = sampleSegmentationLabel2d(volume, sampleX, sampleY, z);
-              if (labelValue !== null) {
-                labelCounts.set(labelValue, (labelCounts.get(labelValue) ?? 0) + 1);
-              }
-            }
-
-            let dominantLabel: number | null = null;
-            let dominantCount = 0;
-
-            for (const [label, count] of labelCounts) {
-              if (count > dominantCount) {
-                dominantLabel = label;
-                dominantCount = count;
-              }
-            }
-
-            if (dominantLabel !== null) {
-              samples.push({
-                values: [dominantLabel],
-                type: volume.dataType,
-                label: channelLabel,
-                color: channelColor
-              });
-            }
-          } else {
-            const labelValue = sampleSegmentationLabel2d(volume, sampleX, sampleY, slice);
-            if (labelValue !== null) {
-              samples.push({
-                values: [labelValue],
-                type: volume.dataType,
-                label: channelLabel,
-                color: channelColor
-              });
-            }
+          const labelValue = sampleSegmentationLabel2d(volume, sampleX, sampleY, slice);
+          if (labelValue !== null) {
+            samples.push({ values: [labelValue], type: volume.dataType, label: channelLabel, color: channelColor });
           }
           continue;
         }
 
-        const normalizedValues = new Array<number>(channels);
+        const clampedX = clamp(sampleX, 0, volume.width - 1);
+        const clampedY = clamp(sampleY, 0, volume.height - 1);
+        const leftX = Math.floor(clampedX);
+        const rightX = Math.min(volume.width - 1, leftX + 1);
+        const topY = Math.floor(clampedY);
+        const bottomY = Math.min(volume.height - 1, topY + 1);
+        const tX = clampedX - leftX;
+        const tY = clampedY - topY;
+
+        const weightTopLeft = (1 - tX) * (1 - tY);
+        const weightTopRight = tX * (1 - tY);
+        const weightBottomLeft = (1 - tX) * tY;
+        const weightBottomRight = tX * tY;
+
+        const topRowOffset = sliceOffset + topY * rowStride;
+        const bottomRowOffset = sliceOffset + bottomY * rowStride;
+
+        const sampleChannel = (channelIndex: number) => {
+          const topLeftOffset = topRowOffset + leftX * channels + channelIndex;
+          const topRightOffset = topRowOffset + rightX * channels + channelIndex;
+          const bottomLeftOffset = bottomRowOffset + leftX * channels + channelIndex;
+          const bottomRightOffset = bottomRowOffset + rightX * channels + channelIndex;
+          return (
+            (volume.normalized[topLeftOffset] ?? 0) * weightTopLeft +
+            (volume.normalized[topRightOffset] ?? 0) * weightTopRight +
+            (volume.normalized[bottomLeftOffset] ?? 0) * weightBottomLeft +
+            (volume.normalized[bottomRightOffset] ?? 0) * weightBottomRight
+          );
+        };
+
         const channelValues: number[] = [];
-
-        if (projectionMode !== 'none') {
-          const accumulator = new Array<number>(channels);
-          initializeProjectionAccumulator(projectionMode, accumulator);
-
-          for (let z = 0; z < volume.depth; z += 1) {
-            sampleVolumeChannels(volume, sampleX, sampleY, z, channels, normalizedValues);
-            accumulateProjectionSample(projectionMode, accumulator, normalizedValues);
-          }
-          finalizeProjectionAccumulator(projectionMode, volume.depth, accumulator);
-
-          for (let channelIndex = 0; channelIndex < channels; channelIndex += 1) {
-            channelValues.push(denormalizeValue(accumulator[channelIndex], volume));
-          }
-        } else {
-          sampleVolumeChannels(volume, sampleX, sampleY, slice, channels, normalizedValues);
-          for (let channelIndex = 0; channelIndex < channels; channelIndex += 1) {
-            channelValues.push(denormalizeValue(normalizedValues[channelIndex], volume));
-          }
+        for (let channelIndex = 0; channelIndex < channels; channelIndex++) {
+          channelValues.push(denormalizeValue(sampleChannel(channelIndex), volume));
         }
 
         samples.push({
           values: channelValues,
           type: volume.dataType,
           label: channelLabel,
-          color: channelColor
+          color: channelColor,
         });
       }
 
@@ -999,7 +872,7 @@ function PlanarViewer({
         components: parts.map((entry) => ({ text: entry.text, color: entry.color })),
       };
     },
-    [clampedSliceIndex, layers, projectionMode, sliceData]
+    [clampedSliceIndex, layers, sliceData]
   );
 
   const trackRenderData = useMemo(() => {
@@ -1157,14 +1030,13 @@ function PlanarViewer({
       const voxelX = Math.round(clamp(sliceX, 0, Math.max(0, sliceData.width - 1)));
       const voxelY = Math.round(clamp(sliceY, 0, Math.max(0, sliceData.height - 1)));
       updateHoveredPixel({ x: voxelX, y: voxelY });
-      const hoveredZ = projectionMode === 'none' ? clampedSliceIndex : 0;
       emitHoverVoxel({
         intensity: intensity.intensity,
         components: intensity.components,
         coordinates: {
           x: voxelX,
           y: voxelY,
-          z: hoveredZ
+          z: clampedSliceIndex
         }
       });
     },
@@ -1172,7 +1044,6 @@ function PlanarViewer({
       clampedSliceIndex,
       clearPixelInfo,
       emitHoverVoxel,
-      projectionMode,
       samplePixelValue,
       sliceData,
       layout,
@@ -1313,25 +1184,6 @@ function PlanarViewer({
       const offsetY = layer.offsetY ?? 0;
       const values = new Array<number>(channels);
 
-      if (projectionMode !== 'none') {
-        const accumulator = new Array<number>(channels);
-
-        return (x, z) => {
-          const clampedZ = Math.round(clamp(z, 0, volume.depth - 1));
-          const sampleX = x - offsetX;
-
-          initializeProjectionAccumulator(projectionMode, accumulator);
-          for (let y = 0; y < volume.height; y += 1) {
-            const sampleY = y - offsetY;
-            sampleVolumeChannels(volume, sampleX, sampleY, clampedZ, channels, values);
-            accumulateProjectionSample(projectionMode, accumulator, values);
-          }
-          finalizeProjectionAccumulator(projectionMode, volume.height, accumulator);
-
-          return accumulator;
-        };
-      }
-
       return (x, z) => {
         const clampedZ = Math.round(clamp(z, 0, volume.depth - 1));
         const sliceOffset = clampedZ * sliceStride;
@@ -1371,7 +1223,7 @@ function PlanarViewer({
         return values;
       };
     });
-  }, [layers, orthogonalAnchor, orthogonalViewsEnabled, primaryVolume, projectionMode]);
+  }, [layers, orthogonalAnchor, orthogonalViewsEnabled, primaryVolume]);
 
   const zySliceData = useMemo<SliceData | null>(() => {
     if (!primaryVolume || !orthogonalViewsEnabled || primaryVolume.depth <= 1) {
@@ -1401,25 +1253,6 @@ function PlanarViewer({
       const offsetX = layer.offsetX ?? 0;
       const offsetY = layer.offsetY ?? 0;
       const values = new Array<number>(channels);
-
-      if (projectionMode !== 'none') {
-        const accumulator = new Array<number>(channels);
-
-        return (z, y) => {
-          const clampedZ = Math.round(clamp(z, 0, volume.depth - 1));
-          const sampleY = y - offsetY;
-
-          initializeProjectionAccumulator(projectionMode, accumulator);
-          for (let x = 0; x < volume.width; x += 1) {
-            const sampleX = x - offsetX;
-            sampleVolumeChannels(volume, sampleX, sampleY, clampedZ, channels, values);
-            accumulateProjectionSample(projectionMode, accumulator, values);
-          }
-          finalizeProjectionAccumulator(projectionMode, volume.width, accumulator);
-
-          return accumulator;
-        };
-      }
 
       return (z, y) => {
         const clampedZ = Math.round(clamp(z, 0, volume.depth - 1));
@@ -1460,7 +1293,7 @@ function PlanarViewer({
         return values;
       };
     });
-  }, [layers, orthogonalAnchor, orthogonalViewsEnabled, primaryVolume, projectionMode]);
+  }, [layers, orthogonalAnchor, orthogonalViewsEnabled, primaryVolume]);
 
   const drawSlice = useCallback(() => {
     const canvas = canvasRef.current;
@@ -1913,9 +1746,6 @@ function PlanarViewer({
     if (followedTrackId === null) {
       return;
     }
-    if (projectionMode !== 'none') {
-      return;
-    }
     if (!primaryVolume) {
       return;
     }
@@ -1968,7 +1798,6 @@ function PlanarViewer({
     followedTrackId,
     onSliceIndexChange,
     primaryVolume,
-    projectionMode,
     updateViewState,
     viewState.rotation,
     viewState.scale
@@ -2111,7 +1940,7 @@ function PlanarViewer({
 
       switch (event.code) {
         case 'KeyW': {
-          if (projectionMode === 'none' && effectiveMaxSlices > 0) {
+          if (effectiveMaxSlices > 0) {
             const step = event.shiftKey ? 10 : 1;
             const nextIndex = clamp(
               clampedSliceIndex + step,
@@ -2126,7 +1955,7 @@ function PlanarViewer({
           break;
         }
         case 'KeyS': {
-          if (projectionMode === 'none' && effectiveMaxSlices > 0) {
+          if (effectiveMaxSlices > 0) {
             const step = event.shiftKey ? 10 : 1;
             const nextIndex = clamp(
               clampedSliceIndex - step,
@@ -2181,7 +2010,7 @@ function PlanarViewer({
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [clampedSliceIndex, effectiveMaxSlices, onSliceIndexChange, projectionMode, updateViewState]);
+  }, [clampedSliceIndex, effectiveMaxSlices, onSliceIndexChange, updateViewState]);
 
   const hoveredTrackDefinition = hoveredTrackId ? trackLookup.get(hoveredTrackId) ?? null : null;
   const hoveredTrackLabel = hoveredTrackDefinition

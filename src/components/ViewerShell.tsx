@@ -32,7 +32,6 @@ import type { LoadedLayer } from '../types/layers';
 import type { HoveredVoxelInfo } from '../types/hover';
 import type { NumericRange, TrackColorMode, TrackDefinition, TrackPoint } from '../types/tracks';
 import type { ChannelSource } from '../App';
-import type { ProjectionMode } from '../types/viewer';
 
 const formatNormalizedIntensity = (value: number): string => {
   const fixed = value.toFixed(3);
@@ -89,15 +88,12 @@ type PlaybackControlsProps = {
   onJumpToStart: () => void;
   onJumpToEnd: () => void;
   error: string | null;
-  projectionMode: ProjectionMode;
 };
 
 type PlanarSettingsProps = {
   orthogonalViewsEnabled: boolean;
   orthogonalViewsAvailable: boolean;
   onOrthogonalViewsToggle: () => void;
-  projectionMode: ProjectionMode;
-  onProjectionModeChange: (mode: ProjectionMode) => void;
 };
 
 type ChannelsPanelProps = {
@@ -277,13 +273,7 @@ function ViewerShell({
     selectedTracksWindowInitialPosition,
     plotSettingsWindowInitialPosition
   } = layout;
-  const {
-    orthogonalViewsAvailable,
-    orthogonalViewsEnabled,
-    onOrthogonalViewsToggle,
-    projectionMode,
-    onProjectionModeChange
-  } = planarSettings;
+  const { orthogonalViewsAvailable, orthogonalViewsEnabled, onOrthogonalViewsToggle } = planarSettings;
   const {
     is3dModeAvailable,
     isVrActive,
@@ -316,8 +306,7 @@ function ViewerShell({
     onTogglePlayback,
     onJumpToStart,
     onJumpToEnd,
-    error,
-    projectionMode: playbackProjectionMode
+    error
   } = playbackControls;
   const {
     loadedChannelIds,
@@ -726,7 +715,7 @@ function ViewerShell({
                     max={Math.max(0, maxSliceDepth - 1)}
                     value={Math.min(sliceIndex, Math.max(0, maxSliceDepth - 1))}
                     onChange={(event) => onSliceIndexChange(Number(event.target.value))}
-                    disabled={maxSliceDepth <= 1 || playbackProjectionMode !== 'none'}
+                    disabled={maxSliceDepth <= 1}
                   />
                 </div>
               ) : null}
@@ -812,58 +801,6 @@ function ViewerShell({
                         aria-pressed={orthogonalViewsEnabled}
                       >
                         Orthogonal views
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-
-                {viewerMode === '2d' ? (
-                  <div className="control-group">
-                    <div className="viewer-mode-row viewer-mode-row--projection">
-                      <span className="viewer-mode-row__label">Projection:</span>
-                      <button
-                        type="button"
-                        className={
-                          projectionMode === 'none' ? 'viewer-mode-button is-active' : 'viewer-mode-button'
-                        }
-                        onClick={() => onProjectionModeChange('none')}
-                        disabled={!hasVolumeData || maxSliceDepth <= 0}
-                        aria-pressed={projectionMode === 'none'}
-                      >
-                        None
-                      </button>
-                      <button
-                        type="button"
-                        className={
-                          projectionMode === 'max' ? 'viewer-mode-button is-active' : 'viewer-mode-button'
-                        }
-                        onClick={() => onProjectionModeChange('max')}
-                        disabled={!hasVolumeData || maxSliceDepth <= 0}
-                        aria-pressed={projectionMode === 'max'}
-                      >
-                        Max
-                      </button>
-                      <button
-                        type="button"
-                        className={
-                          projectionMode === 'min' ? 'viewer-mode-button is-active' : 'viewer-mode-button'
-                        }
-                        onClick={() => onProjectionModeChange('min')}
-                        disabled={!hasVolumeData || maxSliceDepth <= 0}
-                        aria-pressed={projectionMode === 'min'}
-                      >
-                        Min
-                      </button>
-                      <button
-                        type="button"
-                        className={
-                          projectionMode === 'mean' ? 'viewer-mode-button is-active' : 'viewer-mode-button'
-                        }
-                        onClick={() => onProjectionModeChange('mean')}
-                        disabled={!hasVolumeData || maxSliceDepth <= 0}
-                        aria-pressed={projectionMode === 'mean'}
-                      >
-                        Mean
                       </button>
                     </div>
                   </div>
