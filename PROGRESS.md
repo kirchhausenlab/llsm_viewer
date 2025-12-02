@@ -817,3 +817,8 @@ d centered the front-page card in the viewport.
 
 ## Track smoothing scope fix
 - Limited the smoothing slider to the amplitude plot data while keeping rendered track geometry untouched.
+
+## Track list polish and end-cap radius tuning
+- Added a visible "Shown tracks" count beside the track ordering toggle so each channel displays how many trajectories are currently rendered.
+- Added a small top margin above the track list section to give the controls a bit more breathing room.
+- Adjusted 3D track end-cap radius scaling to keep the minimum thickness looking the same while halving the maximum sphere size for thick tracks.

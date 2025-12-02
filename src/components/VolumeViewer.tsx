@@ -268,6 +268,16 @@ const SELECTED_TRACK_BLINK_BASE = 0.85;
 const SELECTED_TRACK_BLINK_RANGE = 0.15;
 const TRACK_END_CAP_RADIUS_MULTIPLIER = 0.35;
 const TRACK_END_CAP_MIN_RADIUS = 0.12;
+const TRACK_LINE_WIDTH_MIN = 0.5;
+const TRACK_LINE_WIDTH_MAX = 5;
+const TRACK_END_CAP_RADIUS_AT_MIN_WIDTH = TRACK_LINE_WIDTH_MIN * TRACK_END_CAP_RADIUS_MULTIPLIER;
+const TRACK_END_CAP_RADIUS_AT_MAX_WIDTH =
+  TRACK_LINE_WIDTH_MAX * TRACK_END_CAP_RADIUS_MULTIPLIER * 0.5;
+const TRACK_END_CAP_RADIUS_SLOPE =
+  (TRACK_END_CAP_RADIUS_AT_MAX_WIDTH - TRACK_END_CAP_RADIUS_AT_MIN_WIDTH) /
+  (TRACK_LINE_WIDTH_MAX - TRACK_LINE_WIDTH_MIN);
+const TRACK_END_CAP_RADIUS_INTERCEPT =
+  TRACK_END_CAP_RADIUS_AT_MIN_WIDTH - TRACK_END_CAP_RADIUS_SLOPE * TRACK_LINE_WIDTH_MIN;
 const FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER = 1.35;
 const SELECTED_TRACK_LINE_WIDTH_MULTIPLIER = 1.5;
 const HOVERED_TRACK_LINE_WIDTH_MULTIPLIER = 1.2;
@@ -303,6 +313,11 @@ const hoverLayerMatrix = new THREE.Matrix4();
 const hoverLayerOffsetMatrix = new THREE.Matrix4();
 const trackColorTemp = new THREE.Color();
 const trackBlinkColorTemp = new THREE.Color();
+
+function computeTrackEndCapRadius(lineWidth: number) {
+  const linearRadius = TRACK_END_CAP_RADIUS_INTERCEPT + TRACK_END_CAP_RADIUS_SLOPE * lineWidth;
+  return Math.max(linearRadius, TRACK_END_CAP_MIN_RADIUS);
+}
 
 function computeViewerYawBasis(
   renderer: THREE.WebGLRenderer | null,
@@ -1397,10 +1412,7 @@ function VolumeViewer({
           outlineExtraWidth: Math.max(DEFAULT_TRACK_LINE_WIDTH * 0.75, 0.4),
           targetOpacity: DEFAULT_TRACK_OPACITY,
           outlineBaseOpacity: 0,
-          endCapRadius: Math.max(
-            DEFAULT_TRACK_LINE_WIDTH * TRACK_END_CAP_RADIUS_MULTIPLIER,
-            TRACK_END_CAP_MIN_RADIUS
-          ),
+          endCapRadius: computeTrackEndCapRadius(DEFAULT_TRACK_LINE_WIDTH),
           hasVisiblePoints: false,
           isFollowed: false,
           isSelected: false,
@@ -1420,10 +1432,7 @@ function VolumeViewer({
         resource.highlightColor.copy(highlightColor);
         resource.endCapMaterial.color.copy(baseColor);
         resource.endCap.userData.trackId = track.id;
-        resource.endCapRadius = Math.max(
-          resource.baseLineWidth * TRACK_END_CAP_RADIUS_MULTIPLIER,
-          TRACK_END_CAP_MIN_RADIUS
-        );
+        resource.endCapRadius = computeTrackEndCapRadius(resource.baseLineWidth);
         resource.channelId = track.channelId;
         resource.needsAppearanceUpdate = true;
       }
@@ -1505,10 +1514,7 @@ function VolumeViewer({
       resource.targetLineWidth = sanitizedLineWidth * widthMultiplier;
       resource.outlineExtraWidth = Math.max(sanitizedLineWidth * 0.75, 0.4);
 
-      resource.endCapRadius = Math.max(
-        resource.targetLineWidth * TRACK_END_CAP_RADIUS_MULTIPLIER,
-        TRACK_END_CAP_MIN_RADIUS
-      );
+      resource.endCapRadius = computeTrackEndCapRadius(resource.targetLineWidth);
 
       resource.outlineBaseOpacity = isFollowed || isSelected ? 0.75 : isHovered ? 0.9 : 0;
     }
