@@ -525,7 +525,6 @@ function VolumeViewer({
   const hoverRetryFrameRef = useRef<number | null>(null);
   const updateVoxelHoverRef = useRef<(event: PointerEvent) => void>(() => {});
   const endPointerLookRef = useRef<(event?: PointerEvent) => void>(() => {});
-  const pointerLookActiveRef = useRef(false);
   const currentDimensionsRef = useRef<{ width: number; height: number; depth: number } | null>(null);
   const colormapCacheRef = useRef<Map<string, THREE.DataTexture>>(new Map());
   const rotationTargetRef = useRef(new THREE.Vector3());
@@ -558,7 +557,6 @@ function VolumeViewer({
   const followedTrackIdRef = useRef<string | null>(null);
   const trackFollowOffsetRef = useRef<THREE.Vector3 | null>(null);
   const previousFollowedTrackIdRef = useRef<string | null>(null);
-  const pendingTrackFollowUpdateRef = useRef<{ trackId: string; timeIndex: number } | null>(null);
   const hasActive3DLayerRef = useRef(false);
   const [hasMeasured, setHasMeasured] = useState(false);
   const [trackOverlayRevision, setTrackOverlayRevision] = useState(0);
@@ -1615,42 +1613,6 @@ function VolumeViewer({
     [channelTrackOffsets, trackLookup, trackScaleX, trackScaleY, trackScaleZ]
   );
 
-  const applyTrackFollowReposition = useCallback(
-    (trackId: string, targetTimeIndex: number) => {
-      const controls = controlsRef.current;
-      const camera = cameraRef.current;
-      const rotationTarget = rotationTargetRef.current;
-
-      if (!controls || !camera || !rotationTarget) {
-        return false;
-      }
-
-      const centroid = computeTrackCentroid(trackId, targetTimeIndex);
-      if (!centroid) {
-        return false;
-      }
-
-      const previousTrackId = previousFollowedTrackIdRef.current;
-      previousFollowedTrackIdRef.current = trackId;
-
-      const offset =
-        previousTrackId === trackId && trackFollowOffsetRef.current
-          ? trackFollowOffsetRef.current.clone()
-          : camera.position.clone().sub(rotationTarget);
-
-      rotationTarget.copy(centroid);
-      controls.target.copy(centroid);
-      camera.position.copy(centroid).add(offset);
-      controls.update();
-
-      trackFollowOffsetRef.current = camera.position.clone().sub(rotationTarget);
-      pendingTrackFollowUpdateRef.current = null;
-
-      return true;
-    },
-    [computeTrackCentroid, primaryVolume],
-  );
-
   const retryPendingVoxelHover = useCallback(() => {
     const pendingEvent = pendingHoverEventRef.current;
     if (!pendingEvent) {
@@ -2153,7 +2115,6 @@ function VolumeViewer({
     if (followedTrackId === null) {
       trackFollowOffsetRef.current = null;
       previousFollowedTrackIdRef.current = null;
-      pendingTrackFollowUpdateRef.current = null;
       endPointerLookRef.current?.();
       return;
     }
@@ -2175,18 +2136,30 @@ function VolumeViewer({
       return;
     }
 
-    if (pointerLookActiveRef.current) {
-      pendingTrackFollowUpdateRef.current = {
-        trackId: followedTrackId,
-        timeIndex: clampedTimeIndex
-      };
+    const centroid = computeTrackCentroid(followedTrackId, clampedTimeIndex);
+    if (!centroid) {
       return;
     }
 
-    applyTrackFollowReposition(followedTrackId, clampedTimeIndex);
+    const previousTrackId = previousFollowedTrackIdRef.current;
+    previousFollowedTrackIdRef.current = followedTrackId;
+
+    let offset: THREE.Vector3;
+    if (previousTrackId === followedTrackId && trackFollowOffsetRef.current) {
+      offset = trackFollowOffsetRef.current.clone();
+    } else {
+      offset = camera.position.clone().sub(rotationTarget);
+    }
+
+    rotationTarget.copy(centroid);
+    controls.target.copy(centroid);
+    camera.position.copy(centroid).add(offset);
+    controls.update();
+
+    trackFollowOffsetRef.current = camera.position.clone().sub(rotationTarget);
   }, [
-    applyTrackFollowReposition,
     clampedTimeIndex,
+    computeTrackCentroid,
     followedTrackId,
     primaryVolume
   ]);
@@ -2490,7 +2463,6 @@ function VolumeViewer({
         return;
       }
 
-      pointerLookActiveRef.current = true;
       pointerLookState.activePointerId = event.pointerId;
       pointerLookState.lastClientX = event.clientX;
       pointerLookState.lastClientY = event.clientY;
@@ -2533,15 +2505,9 @@ function VolumeViewer({
       }
 
       pointerLookState.activePointerId = null;
-      pointerLookActiveRef.current = false;
 
       if (event && domElement.hasPointerCapture(activePointerId)) {
         domElement.releasePointerCapture(activePointerId);
-      }
-
-      const pendingUpdate = pendingTrackFollowUpdateRef.current;
-      if (pendingUpdate && pendingUpdate.trackId === followedTrackIdRef.current) {
-        applyTrackFollowReposition(pendingUpdate.trackId, pendingUpdate.timeIndex);
       }
     };
 
@@ -3107,7 +3073,6 @@ function VolumeViewer({
       endVrSessionRequestRef.current = null;
     };
   }, [
-    applyTrackFollowReposition,
     applyVrPlaybackHoverState,
     applyVolumeStepScaleToResources,
     containerNode,
