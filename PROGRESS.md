@@ -837,3 +837,6 @@ d centered the front-page card in the viewport.
 ## Track-follow drag rotation
 - Restored OrbitControls rotation while following a track so click-and-drag orbits around the path instead of using the free-look camera pivot.
 - Kept the first-person drag look for normal navigation by disabling OrbitControls rotation when not following a trajectory.
+
+## MIP inversion handling
+- Kept maximum-intensity projection selection based on normalized luminance while deferring inversion to the final color mapping so bright structures remain targeted even when inverted.
