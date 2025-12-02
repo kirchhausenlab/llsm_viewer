@@ -829,3 +829,6 @@ d centered the front-page card in the viewport.
 
 ## Drag gesture simplification
 - Removed the Shift+drag panning and Ctrl+drag dolly gestures from the 3D viewer so mouse drags are dedicated to orbiting and selection without altering camera position.
+
+## Amplitude plot legend width tweak
+- Widened the amplitude plot window and its legend column so track labels and hover readouts stay on a single line instead of wrapping.
