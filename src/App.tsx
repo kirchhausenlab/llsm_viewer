@@ -861,7 +861,7 @@ function App() {
     return map;
   }, [anisotropyScale, channels, experimentDimension]);
 
-  const smoothedTracksByChannel = useMemo(() => {
+  const parsedTracksByChannel = useMemo(() => {
     if (!Number.isFinite(trackSmoothing) || trackSmoothing <= 0) {
       return rawTracksByChannel;
     }
@@ -876,11 +876,11 @@ function App() {
   const parsedTracks = useMemo(() => {
     const ordered: TrackDefinition[] = [];
     for (const channel of channels) {
-      const channelTracks = smoothedTracksByChannel.get(channel.id) ?? [];
+      const channelTracks = parsedTracksByChannel.get(channel.id) ?? [];
       ordered.push(...channelTracks);
     }
     return ordered;
-  }, [channels, smoothedTracksByChannel]);
+  }, [channels, parsedTracksByChannel]);
 
   const trackLookup = useMemo(() => {
     const map = new Map<string, TrackDefinition>();
@@ -890,28 +890,17 @@ function App() {
     return map;
   }, [parsedTracks]);
 
-  const rawTrackLookup = useMemo(() => {
-    const map = new Map<string, TrackDefinition>();
-    for (const channel of channels) {
-      const channelTracks = rawTracksByChannel.get(channel.id) ?? [];
-      for (const track of channelTracks) {
-        map.set(track.id, track);
-      }
-    }
-    return map;
-  }, [channels, rawTracksByChannel]);
-
   const filteredTracksByChannel = useMemo(() => {
     const map = new Map<string, TrackDefinition[]>();
 
     for (const channel of channels) {
-      const tracksForChannel = smoothedTracksByChannel.get(channel.id) ?? [];
+      const tracksForChannel = parsedTracksByChannel.get(channel.id) ?? [];
       const filtered = tracksForChannel.filter((track) => track.points.length >= minimumTrackLength);
       map.set(channel.id, filtered);
     }
 
     return map;
-  }, [channels, minimumTrackLength, smoothedTracksByChannel]);
+  }, [channels, minimumTrackLength, parsedTracksByChannel]);
 
   const filteredTracks = useMemo(() => {
     const ordered: TrackDefinition[] = [];
@@ -937,27 +926,24 @@ function App() {
       channelName: string;
       trackNumber: number;
       color: string;
-      rawPoints: TrackPoint[];
-      smoothedPoints: TrackPoint[];
+      points: TrackPoint[];
     }> = [];
     for (const trackId of selectedTrackOrder) {
       const track = filteredTrackLookup.get(trackId);
       if (!track) {
         continue;
       }
-      const rawTrack = rawTrackLookup.get(trackId);
       series.push({
         id: track.id,
         channelId: track.channelId,
         channelName: track.channelName,
         trackNumber: track.trackNumber,
         color: getTrackColorHex(track.id),
-        rawPoints: rawTrack?.points ?? track.points,
-        smoothedPoints: track.points
+        points: track.points
       });
     }
     return series;
-  }, [filteredTrackLookup, rawTrackLookup, selectedTrackOrder]);
+  }, [filteredTrackLookup, selectedTrackOrder]);
 
   const trackExtents = useMemo(() => {
     let amplitudeMin = Number.POSITIVE_INFINITY;
@@ -966,9 +952,7 @@ function App() {
     let timeMax = Number.NEGATIVE_INFINITY;
 
     for (const track of filteredTracks) {
-      const candidates = rawTrackLookup.get(track.id)?.points ?? track.points;
-      const combinedPoints = candidates === track.points ? track.points : [...track.points, ...candidates];
-      for (const point of combinedPoints) {
+      for (const point of track.points) {
         if (Number.isFinite(point.amplitude)) {
           amplitudeMin = Math.min(amplitudeMin, point.amplitude);
           amplitudeMax = Math.max(amplitudeMax, point.amplitude);
@@ -989,7 +973,7 @@ function App() {
       amplitude: hasAmplitude ? { min: amplitudeMin, max: amplitudeMax } : { min: 0, max: 1 },
       time: hasTime ? { min: timeMin, max: timeMax } : { min: 0, max: fallbackTimeMax }
     };
-  }, [filteredTracks, rawTrackLookup, volumeTimepointCount]);
+  }, [filteredTracks, volumeTimepointCount]);
 
   const selectedTrackExtents = useMemo(() => {
     let amplitudeMin = Number.POSITIVE_INFINITY;
@@ -998,8 +982,7 @@ function App() {
     let timeMax = Number.NEGATIVE_INFINITY;
 
     for (const entry of selectedTrackSeries) {
-      const allPoints = [...entry.rawPoints, ...entry.smoothedPoints];
-      for (const point of allPoints) {
+      for (const point of entry.points) {
         if (Number.isFinite(point.amplitude)) {
           amplitudeMin = Math.min(amplitudeMin, point.amplitude);
           amplitudeMax = Math.max(amplitudeMax, point.amplitude);
@@ -1105,7 +1088,7 @@ function App() {
     }
 
     const channelsWithTracks = channels.filter(
-      (channel) => (smoothedTracksByChannel.get(channel.id)?.length ?? 0) > 0
+      (channel) => (parsedTracksByChannel.get(channel.id)?.length ?? 0) > 0
     );
 
     if (channelsWithTracks.length === 0) {
@@ -1154,7 +1137,7 @@ function App() {
     });
 
     hasInitializedTrackColorsRef.current = true;
-  }, [channels, smoothedTracksByChannel]);
+  }, [channels, parsedTracksByChannel]);
 
   const hasParsedTrackData = parsedTracks.length > 0;
   const volumeStepScaleChangeRef = useRef<((value: number) => void) | null>(null);
@@ -1247,7 +1230,7 @@ function App() {
       for (const channel of channels) {
         const channelId = channel.id;
         const existing = current[channelId] ?? createDefaultChannelTrackState();
-        const tracks = smoothedTracksByChannel.get(channelId) ?? [];
+        const tracks = parsedTracksByChannel.get(channelId) ?? [];
 
         const visibility: Record<string, boolean> = {};
         let visibilityChanged = false;
@@ -1283,7 +1266,7 @@ function App() {
 
       return changed ? next : current;
     });
-  }, [channels, smoothedTracksByChannel]);
+  }, [channels, parsedTracksByChannel]);
 
   useEffect(() => {
     setFollowedTrack((current) => {
@@ -2505,7 +2488,7 @@ function App() {
 
   const handleTrackVisibilityAllChange = useCallback(
     (channelId: string, isChecked: boolean) => {
-      const tracksForChannel = smoothedTracksByChannel.get(channelId) ?? [];
+      const tracksForChannel = parsedTracksByChannel.get(channelId) ?? [];
       setChannelTrackStates((current) => {
         const existing = current[channelId] ?? createDefaultChannelTrackState();
         const visibility: Record<string, boolean> = {};
@@ -2533,7 +2516,7 @@ function App() {
         });
       }
     },
-    [smoothedTracksByChannel]
+    [parsedTracksByChannel]
   );
 
   const handleMinimumTrackLengthChange = useCallback(
@@ -3600,7 +3583,7 @@ function App() {
       channelNameMap,
       activeChannelId: activeTrackChannelId,
       onChannelTabSelect: setActiveTrackChannelId,
-      parsedTracksByChannel: smoothedTracksByChannel,
+      parsedTracksByChannel,
       filteredTracksByChannel,
       minimumTrackLength,
       pendingMinimumTrackLength,
@@ -3629,7 +3612,6 @@ function App() {
     selectedTracksPanel: {
       shouldRender: showSelectedTracksWindow,
       series: selectedTrackSeries,
-      smoothing: trackSmoothing,
       totalTimepoints: volumeTimepointCount,
       amplitudeLimits: resolvedAmplitudeLimits,
       timeLimits: resolvedTimeLimits,
