@@ -524,6 +524,7 @@ function VolumeViewer({
   const pendingHoverEventRef = useRef<PointerEvent | null>(null);
   const hoverRetryFrameRef = useRef<number | null>(null);
   const updateVoxelHoverRef = useRef<(event: PointerEvent) => void>(() => {});
+  const endPointerLookRef = useRef<(event?: PointerEvent) => void>(() => {});
   const currentDimensionsRef = useRef<{ width: number; height: number; depth: number } | null>(null);
   const colormapCacheRef = useRef<Map<string, THREE.DataTexture>>(new Map());
   const rotationTargetRef = useRef(new THREE.Vector3());
@@ -2106,9 +2107,15 @@ function VolumeViewer({
 
   useEffect(() => {
     followedTrackIdRef.current = followedTrackId;
+    const controls = controlsRef.current;
+    if (controls) {
+      controls.enableRotate = followedTrackId !== null;
+    }
+
     if (followedTrackId === null) {
       trackFollowOffsetRef.current = null;
       previousFollowedTrackIdRef.current = null;
+      endPointerLookRef.current?.();
       return;
     }
 
@@ -2123,7 +2130,6 @@ function VolumeViewer({
     }
 
     const camera = cameraRef.current;
-    const controls = controlsRef.current;
     const rotationTarget = rotationTargetRef.current;
 
     if (!camera || !controls || !rotationTarget) {
@@ -2505,6 +2511,8 @@ function VolumeViewer({
       }
     };
 
+    endPointerLookRef.current = endPointerLook;
+
     rendererRef.current = renderer;
     sceneRef.current = scene;
     cameraRef.current = camera;
@@ -2578,7 +2586,12 @@ function VolumeViewer({
         return;
       }
 
-      beginPointerLook(event);
+      const shouldUsePointerLook = followedTrackIdRef.current === null;
+      if (shouldUsePointerLook) {
+        beginPointerLook(event);
+      } else {
+        endPointerLook();
+      }
 
       if (hoverSystemReadyRef.current) {
         updateVoxelHover(event);
@@ -2593,7 +2606,9 @@ function VolumeViewer({
     };
 
     const handlePointerMove = (event: PointerEvent) => {
-      updatePointerLook(event);
+      if (followedTrackIdRef.current === null) {
+        updatePointerLook(event);
+      }
 
       if (hoverSystemReadyRef.current) {
         updateVoxelHover(event);

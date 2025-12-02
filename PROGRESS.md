@@ -830,8 +830,10 @@ d centered the front-page card in the viewport.
 ## Drag gesture simplification
 - Removed the Shift+drag panning and Ctrl+drag dolly gestures from the 3D viewer so mouse drags are dedicated to orbiting and selection without altering camera position.
 
-## Amplitude plot legend width tweak
-- Widened the amplitude plot window and its legend column so track labels and hover readouts stay on a single line instead of wrapping.
 ## First-person drag look
 - Swapped orbit-style drag rotation for a first-person look mechanic that pivots the camera in place while keeping zoom and movement controls intact.
 - Kept the rotation target synchronized with the camera’s forward vector so scroll zooms and keyboard navigation continue to work with the new look-around behavior.
+
+## Track-follow drag rotation
+- Restored OrbitControls rotation while following a track so click-and-drag orbits around the path instead of using the free-look camera pivot.
+- Kept the first-person drag look for normal navigation by disabling OrbitControls rotation when not following a trajectory.
