@@ -488,7 +488,7 @@ function ViewerShell({
                       <ul>
                         <li>Use WASDQE to move forward, back, strafe, and rise or descend.</li>
                         <li>
-                          Drag to orbit the dataset. Hold Shift while dragging to pan; hold Ctrl to dolly along your view.
+                          Drag to orbit the dataset.
                         </li>
                         <li>
                           Click a track line to select and highlight it. Use the Follow button in the Tracks window to follow

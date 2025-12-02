@@ -10,7 +10,6 @@ import type { UseVolumeViewerVrParams, UseVolumeViewerVrResult } from './useVolu
 
 import type {
   MovementState,
-  PointerState,
   TrackLineResource,
   VolumeResources,
   VolumeViewerVrChannelPanel,
@@ -69,7 +68,6 @@ export function useVolumeViewerVr({
   resourcesRef,
   timeIndexRef,
   movementStateRef,
-  pointerStateRef,
   trackLinesRef,
   trackFollowOffsetRef,
   hasActive3DLayerRef,

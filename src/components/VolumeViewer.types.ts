@@ -162,15 +162,6 @@ export type VrHistogramShape = {
   isEmpty: boolean;
 };
 
-export type PointerState = {
-  mode: 'pan' | 'dolly';
-  pointerId: number;
-  lastX: number;
-  lastY: number;
-  previousControlsEnabled: boolean;
-  previousEnablePan: boolean | null;
-};
-
 export type MovementState = {
   moveForward: boolean;
   moveBackward: boolean;
