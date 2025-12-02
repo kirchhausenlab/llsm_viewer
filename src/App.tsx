@@ -30,6 +30,8 @@ import {
 import { deriveChannelTrackOffsets } from './state/channelTrackOffsets';
 import type { LoadedLayer } from './types/layers';
 import type { HoveredVoxelInfo } from './types/hover';
+import type { ChannelTrackState, FollowedTrackState } from './types/channelTracks';
+import type { NormalizedVolume } from './volumeProcessing';
 import './styles/app/index.css';
 import { computeAutoWindow, getVolumeHistogram } from './autoContrast';
 import { computeTrackSummary } from './utils/trackSummary';
@@ -84,24 +86,12 @@ const computeInitialWindowForVolume = (
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 
-type ChannelTrackState = {
-  opacity: number;
-  lineWidth: number;
-  visibility: Record<string, boolean>;
-  colorMode: TrackColorMode;
-};
-
 const createDefaultChannelTrackState = (): ChannelTrackState => ({
   opacity: DEFAULT_TRACK_OPACITY,
   lineWidth: DEFAULT_TRACK_LINE_WIDTH,
   visibility: {},
   colorMode: { type: 'random' }
 });
-
-type FollowedTrackState = {
-  id: string;
-  channelId: string;
-} | null;
 
 const clampRangeToBounds = (range: NumericRange, bounds: NumericRange): NumericRange => {
   const min = Math.min(Math.max(range.min, bounds.min), bounds.max);

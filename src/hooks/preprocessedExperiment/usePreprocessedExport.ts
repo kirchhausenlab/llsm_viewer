@@ -8,7 +8,8 @@ import {
 } from '../../workers/exportPreprocessedDatasetClient';
 import type { ChannelExportMetadata } from '../../utils/preprocessedDataset';
 import type { LoadedLayer } from '../../types/layers';
-import type { ChannelSource, ExperimentDimension, StagedPreprocessedExperiment } from '../../App';
+import type { ChannelSource, StagedPreprocessedExperiment } from '../useChannelSources';
+import type { ExperimentDimension } from '../useVoxelResolution';
 import type { VoxelResolutionValues } from '../../types/voxelResolution';
 
 export type UsePreprocessedExportOptions = {

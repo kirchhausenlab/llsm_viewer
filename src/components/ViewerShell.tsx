@@ -31,7 +31,7 @@ import {
 import type { LoadedLayer } from '../types/layers';
 import type { HoveredVoxelInfo } from '../types/hover';
 import type { NumericRange, TrackColorMode, TrackDefinition, TrackPoint } from '../types/tracks';
-import type { ChannelSource } from '../App';
+import type { ChannelSource } from '../hooks/useChannelSources';
 
 const formatNormalizedIntensity = (value: number): string => {
   const fixed = value.toFixed(3);
