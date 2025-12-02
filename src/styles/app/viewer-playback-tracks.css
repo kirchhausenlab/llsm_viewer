@@ -478,6 +478,12 @@
   white-space: nowrap;
 }
 
+.track-controls .track-follow-placeholder {
+  display: inline-block;
+  min-width: 5.25rem;
+  height: 1.85rem;
+}
+
 .track-controls .track-follow-button:hover:not(:disabled) {
   background: var(--track-accent-hover, rgba(91, 140, 255, 0.3));
   border-color: var(--track-accent-strong-border, rgba(91, 140, 255, 0.75));
