@@ -1,21 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { expandVolumesForMovieMode, loadVolumesFromFiles } from './loaders/volumeLoader';
-import { VolumeTooLargeError, formatBytes } from './errors';
 import FrontPage from './components/FrontPage';
 import ViewerShell, { type ViewerShellProps } from './components/ViewerShell';
-import {
-  colorizeSegmentationVolume,
-  computeNormalizationParameters,
-  normalizeVolume,
-  type NormalizedVolume
-} from './volumeProcessing';
-import { clearTextureCache } from './textureCache';
 import type { NumericRange, TrackColorMode, TrackDefinition, TrackPoint } from './types/tracks';
 import {
   DEFAULT_LAYER_COLOR,
   GRAYSCALE_COLOR_SWATCHES,
   normalizeHexColor
 } from './layerColors';
+import { clearTextureCache } from './textureCache';
 import {
   DEFAULT_TRACK_COLOR,
   TRACK_COLOR_SWATCHES,
@@ -40,26 +32,27 @@ import type { LoadedLayer } from './types/layers';
 import type { HoveredVoxelInfo } from './types/hover';
 import './styles/app/index.css';
 import { computeAutoWindow, getVolumeHistogram } from './autoContrast';
-import type { ImportPreprocessedDatasetResult } from './utils/preprocessedDataset';
 import { computeTrackSummary } from './utils/trackSummary';
-import useVrLifecycle from './hooks/useVrLifecycle';
 import usePreprocessedExperiment from './hooks/usePreprocessedExperiment';
 import type { VoxelResolutionInput, VoxelResolutionUnit, VoxelResolutionValues } from './types/voxelResolution';
-import { resampleVolume } from './utils/anisotropyCorrection';
 import {
   collectFilesFromDataTransfer,
-  createSegmentationSeed,
   dedupeFiles,
   groupFilesIntoLayers,
   hasTiffExtension,
   parseTrackCsvFile,
   sortVolumeFiles
 } from './utils/appHelpers';
-import { fromBlob } from 'geotiff';
 import { useVoxelResolution, type ExperimentDimension } from './hooks/useVoxelResolution';
 import { useDatasetErrors, type DatasetErrorContext } from './hooks/useDatasetErrors';
-import { useViewerPlayback } from './hooks/useViewerPlayback';
 import { useTracksForDisplay } from './hooks/useTracksForDisplay';
+import {
+  type ChannelLayerSource,
+  type ChannelSource,
+  type ChannelValidation,
+  useChannelSources
+} from './hooks/useChannelSources';
+import { useViewerControls } from './hooks/useViewerControls';
 
 const DEFAULT_TRACK_OPACITY = 0.9;
 const DEFAULT_TRACK_LINE_WIDTH = 1;
@@ -116,43 +109,28 @@ const clampRangeToBounds = (range: NumericRange, bounds: NumericRange): NumericR
   return { min, max };
 };
 
-type ChannelLayerSource = {
-  id: string;
-  files: File[];
-  isSegmentation: boolean;
-};
-
-type ChannelSource = {
-  id: string;
-  name: string;
-  layers: ChannelLayerSource[];
-  trackFile: File | null;
-  trackStatus: LoadState;
-  trackError: string | null;
-  trackEntries: string[][];
-};
-
-type StagedPreprocessedExperiment = ImportPreprocessedDatasetResult & {
-  sourceName: string | null;
-  sourceSize: number | null;
-};
-
-type ChannelValidation = {
-  errors: string[];
-  warnings: string[];
-};
-
-export type {
-  ChannelSource,
-  ChannelTrackState,
-  ChannelValidation,
-  ExperimentDimension,
-  FollowedTrackState,
-  StagedPreprocessedExperiment
-};
-
 function App() {
-  const [channels, setChannels] = useState<ChannelSource[]>([]);
+  const {
+    channels,
+    setChannels,
+    layerTimepointCounts,
+    setLayerTimepointCounts,
+    channelIdRef,
+    layerIdRef,
+    computeLayerTimepointCount,
+    getLayerTimepointCount,
+    createChannelSource,
+    createLayerSource,
+    updateChannelIdCounter,
+    channelValidationList,
+    channelValidationMap,
+    hasGlobalTimepointMismatch,
+    hasAnyLayers,
+    hasLoadingTracks,
+    allChannelsValid,
+    applyLoadedLayers,
+    loadSelectedDataset
+  } = useChannelSources();
   const [isExperimentSetupStarted, setIsExperimentSetupStarted] = useState(false);
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
@@ -177,16 +155,6 @@ function App() {
     clearDatasetError,
     bumpDatasetErrorResetSignal
   } = useDatasetErrors();
-  const {
-    selectedIndex,
-    setSelectedIndex,
-    isPlaying,
-    fps,
-    togglePlayback,
-    setFps,
-    stopPlayback,
-    setIsPlaying
-  } = useViewerPlayback();
   const [layers, setLayers] = useState<LoadedLayer[]>([]);
   const layersRef = useRef<LoadedLayer[]>([]);
   useEffect(() => {
@@ -245,7 +213,6 @@ function App() {
     []
   );
   const [layerAutoThresholds, setLayerAutoThresholds] = useState<Record<string, number>>({});
-  const [layerTimepointCounts, setLayerTimepointCounts] = useState<Record<string, number>>({});
   const [status, setStatus] = useState<LoadState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [loadProgress, setLoadProgress] = useState(0);
@@ -383,113 +350,40 @@ function App() {
     x: number;
     y: number;
   }>(() => computePlotSettingsWindowDefaultPosition());
-
-  const loadRequestRef = useRef(0);
-  const channelIdRef = useRef(0);
-  const layerIdRef = useRef(0);
   const editingChannelOriginalNameRef = useRef('');
   const editingChannelInputRef = useRef<HTMLInputElement | null>(null);
   const pendingChannelFocusIdRef = useRef<string | null>(null);
   const helpMenuRef = useRef<HTMLDivElement | null>(null);
-
-  const createChannelSource = useCallback(
-    (name: string): ChannelSource => {
-      const nextId = channelIdRef.current + 1;
-      channelIdRef.current = nextId;
-      return {
-        id: `channel-${nextId}`,
-        name,
-        layers: [],
-        trackFile: null,
-        trackStatus: 'idle',
-        trackError: null,
-        trackEntries: []
-      };
-    },
-    []
-  );
-
-  const createLayerSource = useCallback((files: File[]): ChannelLayerSource => {
-    const nextId = layerIdRef.current + 1;
-    layerIdRef.current = nextId;
-    return {
-      id: `layer-${nextId}`,
-      files,
-      isSegmentation: false
-    };
-  }, []);
-
-  const computeLayerTimepointCount = useCallback(
-    async (files: File[]): Promise<number> => {
-      if (experimentDimension !== '2d') {
-        return files.length;
-      }
-
-      let totalSlices = 0;
-      for (const file of files) {
-        const tiff = await fromBlob(file);
-        totalSlices += await tiff.getImageCount();
-      }
-      return totalSlices;
-    },
-    [experimentDimension]
-  );
-
-  const getLayerTimepointCount = useCallback(
-    (layer: Pick<ChannelLayerSource, 'id' | 'files'> | null | undefined): number => {
-      if (!layer) {
-        return 0;
-      }
-      return layerTimepointCounts[layer.id] ?? layer.files.length;
-    },
-    [layerTimepointCounts]
-  );
-
-  const updateChannelIdCounter = useCallback((sources: ChannelSource[]) => {
-    let maxId = channelIdRef.current;
-    for (const source of sources) {
-      const match = /([0-9]+)$/.exec(source.id);
-      if (!match) {
-        continue;
-      }
-      const value = Number.parseInt(match[1], 10);
-      if (Number.isFinite(value) && value > maxId) {
-        maxId = value;
-      }
-    }
-    channelIdRef.current = maxId;
-  }, []);
 
   const handleBeforeEnterVr = useCallback(() => {
     setFollowedTrack(null);
   }, [setFollowedTrack]);
 
   const {
-    isVrSupportChecked,
-    isVrSupported,
-    isVrPassthroughSupported,
-    isVrActive,
-    isVrRequesting,
-    hasVrSessionHandlers,
-    isVrAvailable,
-    vrButtonLabel,
-    enterVr,
-    exitVr,
-    registerSessionHandlers,
-    handleSessionStarted,
-    handleSessionEnded
-  } = useVrLifecycle({
-    viewerMode,
-    onBeforeEnter: handleBeforeEnterVr
-  });
-
-  const handleVrButtonClick = useCallback(() => {
-    if (isVrActive) {
-      void exitVr();
-    } else {
-      void enterVr();
+    playback: { selectedIndex, setSelectedIndex, isPlaying, fps, togglePlayback, setFps, stopPlayback, setIsPlaying },
+    vr: {
+      isVrSupportChecked,
+      isVrSupported,
+      isVrPassthroughSupported,
+      isVrActive,
+      isVrRequesting,
+      hasVrSessionHandlers,
+      isVrAvailable,
+      vrButtonLabel,
+      enterVr,
+      exitVr,
+      registerSessionHandlers,
+      handleSessionStarted,
+      handleSessionEnded,
+      vrButtonDisabled,
+      vrButtonTitle,
+      handleVrButtonClick
     }
-  }, [enterVr, exitVr, isVrActive]);
+  } = useViewerControls({
+    viewerMode,
+    is3dViewerAvailable,
+    onBeforeEnterVr: handleBeforeEnterVr
+  });
 
   useEffect(() => {
     if (editingChannelId && editingChannelId !== activeChannelId) {
@@ -1036,296 +930,51 @@ function App() {
     reportDatasetError(message, 'interaction');
   }, [reportDatasetError]);
 
-  const applyLoadedLayers = useCallback(
-    (normalizedLayers: LoadedLayer[], expectedVolumeCount: number) => {
-      clearTextureCache();
-      setLayers(normalizedLayers);
-      const visibilityDefaults = normalizedLayers.reduce<Record<string, boolean>>((acc, layer) => {
-        if (!(layer.channelId in acc)) {
-          acc[layer.channelId] = true;
-        }
-        return acc;
-      }, {});
-      const activeLayerDefaults = normalizedLayers.reduce<Record<string, string>>((acc, layer) => {
-        if (!(layer.channelId in acc)) {
-          acc[layer.channelId] = layer.key;
-        }
-        return acc;
-      }, {});
-      const initialWindows = normalizedLayers.reduce<
-        Record<string, ReturnType<typeof computeInitialWindowForVolume>>
-      >((acc, layer) => {
-        acc[layer.key] = computeInitialWindowForVolume(layer.volumes[0]);
-        return acc;
-      }, {});
-      setChannelVisibility(visibilityDefaults);
-      setChannelActiveLayer(activeLayerDefaults);
-      setLayerSettings(
-        normalizedLayers.reduce<Record<string, LayerSettings>>((acc, layer) => {
-          const { windowMin, windowMax } = initialWindows[layer.key];
-          const defaultColor = layer.isSegmentation
-            ? DEFAULT_LAYER_COLOR
-            : getChannelDefaultColor(layer.channelId);
-          acc[layer.key] = {
-            ...createDefaultLayerSettings({ windowMin, windowMax }),
-            color: defaultColor,
-            renderStyle: globalRenderStyle,
-            samplingMode: globalSamplingMode
-          };
-          return acc;
-        }, {})
-      );
-      setLayerAutoThresholds(
-        normalizedLayers.reduce<Record<string, number>>((acc, layer) => {
-          acc[layer.key] = initialWindows[layer.key]?.autoThreshold ?? 0;
-          return acc;
-        }, {})
-      );
-      setSelectedIndex(0);
-      setActiveChannelTabId(Object.keys(activeLayerDefaults)[0] ?? null);
-      setStatus('loaded');
-      setLoadedCount(expectedVolumeCount);
-      setExpectedVolumeCount(expectedVolumeCount);
-      setLoadProgress(expectedVolumeCount > 0 ? 1 : 0);
-      setIsPlaying(false);
-      clearDatasetError();
-      setError(null);
-    },
-    [clearDatasetError, getChannelDefaultColor, globalRenderStyle, globalSamplingMode]
+  const loadDataset = useCallback(
+    () =>
+      loadSelectedDataset({
+        voxelResolution,
+        anisotropyScale,
+        channels,
+        experimentDimension,
+        preprocessingSettingsRef,
+        setStatus,
+        setError,
+        clearDatasetError,
+        setLayers,
+        setChannelVisibility,
+        setChannelActiveLayer,
+        setLayerSettings,
+        setLayerAutoThresholds,
+        setSelectedIndex,
+        setIsPlaying,
+        setLoadProgress,
+        setLoadedCount,
+        setExpectedVolumeCount,
+        setActiveChannelTabId,
+        showLaunchError,
+        getChannelDefaultColor,
+        globalRenderStyle,
+        globalSamplingMode
+      }),
+    [
+      anisotropyScale,
+      channels,
+      clearDatasetError,
+      experimentDimension,
+      getChannelDefaultColor,
+      globalRenderStyle,
+      globalSamplingMode,
+      loadSelectedDataset,
+      setActiveChannelTabId,
+      setChannelActiveLayer,
+      setChannelVisibility,
+      setExpectedVolumeCount,
+      setIsPlaying,
+      setLayerSettings,
+      voxelResolution
+    ]
   );
-
-  const loadSelectedDataset = useCallback(async (): Promise<LoadedLayer[] | null> => {
-    clearDatasetError();
-    preprocessingSettingsRef.current = voxelResolution;
-    const flatLayerSources = channels
-      .flatMap((channel) =>
-        channel.layers.map((layer) => ({
-          channelId: channel.id,
-          channelLabel: channel.name.trim() || 'Untitled channel',
-          key: layer.id,
-          label: 'Volume',
-          files: sortVolumeFiles(layer.files),
-          isSegmentation: layer.isSegmentation
-        }))
-      )
-      .filter((entry) => entry.files.length > 0);
-
-    if (flatLayerSources.length === 0) {
-      const message = 'Add a volume before launching the viewer.';
-      showLaunchError(message);
-      return null;
-    }
-
-    const requestId = loadRequestRef.current + 1;
-    loadRequestRef.current = requestId;
-
-    setStatus('loading');
-    setError(null);
-    clearTextureCache();
-    setLayers([]);
-    setChannelVisibility({});
-    setChannelActiveLayer({});
-    setLayerSettings({});
-    setLayerAutoThresholds({});
-    setSelectedIndex(0);
-    setIsPlaying(false);
-    setLoadProgress(0);
-    setLoadedCount(0);
-    setExpectedVolumeCount(0);
-    setActiveChannelTabId(null);
-
-    const referenceLayer = flatLayerSources[0] ?? null;
-    const referenceFiles = referenceLayer?.files ?? [];
-    const referenceTimepointsHint = referenceLayer
-      ? getLayerTimepointCount({ id: referenceLayer.key, files: referenceLayer.files })
-      : 0;
-    const referenceTimepoints =
-      experimentDimension === '2d'
-        ? referenceTimepointsHint || referenceFiles.length
-        : referenceFiles.length;
-    const totalExpectedVolumes =
-      experimentDimension === '2d'
-        ? referenceTimepoints * flatLayerSources.length
-        : referenceFiles.length * flatLayerSources.length;
-    if (totalExpectedVolumes === 0) {
-      const message = 'The selected dataset does not contain any TIFF files.';
-      showLaunchError(message);
-      setStatus('error');
-      setError(message);
-      return null;
-    }
-
-    setExpectedVolumeCount(totalExpectedVolumes);
-
-    try {
-      for (const layer of flatLayerSources) {
-        const layerTimepoints = getLayerTimepointCount({ id: layer.key, files: layer.files });
-        if (
-          (experimentDimension === '2d' && layerTimepoints !== referenceTimepoints) ||
-          (experimentDimension === '3d' && layer.files.length !== referenceFiles.length)
-        ) {
-          throw new Error(
-            `Channel "${layer.channelLabel}" has ${
-              experimentDimension === '2d' ? layerTimepoints : layer.files.length
-            } timepoints, but the first channel has ${
-              experimentDimension === '2d' ? referenceTimepoints : referenceFiles.length
-            }.`
-          );
-        }
-      }
-
-      let referenceShape: { width: number; height: number; depth: number } | null = null;
-      let referencePlanarShape: { width: number; height: number } | null = null;
-
-      const rawLayers = await Promise.all(
-        flatLayerSources.map(async (layer) => {
-          const volumes = await loadVolumesFromFiles(layer.files, {
-            onVolumeLoaded: (_index, volume) => {
-              if (loadRequestRef.current !== requestId) {
-                return;
-              }
-
-              const timepointIncrement = experimentDimension === '2d' ? volume.depth : 1;
-
-              setLoadedCount((current) => {
-                if (loadRequestRef.current !== requestId) {
-                  return current;
-                }
-
-                const next = current + timepointIncrement;
-                setLoadProgress(totalExpectedVolumes === 0 ? 0 : next / totalExpectedVolumes);
-                return next;
-              });
-            }
-          });
-          const expandedVolumes = expandVolumesForMovieMode(volumes, experimentDimension);
-
-          if (experimentDimension === '2d') {
-            const primaryVolume = expandedVolumes[0] ?? null;
-            if (!referencePlanarShape && primaryVolume) {
-              referencePlanarShape = { width: primaryVolume.width, height: primaryVolume.height };
-            } else if (
-              primaryVolume &&
-              referencePlanarShape &&
-              (primaryVolume.width !== referencePlanarShape.width ||
-                primaryVolume.height !== referencePlanarShape.height)
-            ) {
-              throw new Error(
-                `Channel "${layer.channelLabel}" has volume dimensions ${primaryVolume.width}×${primaryVolume.height}×${primaryVolume.depth} that do not match the reference shape ${referencePlanarShape.width}×${referencePlanarShape.height}×1.`
-              );
-            }
-          } else {
-            if (!referenceShape) {
-              referenceShape = {
-                width: volumes[0]?.width ?? 0,
-                height: volumes[0]?.height ?? 0,
-                depth: volumes[0]?.depth ?? 0
-              };
-            } else if (
-              volumes[0] &&
-              (volumes[0].width !== referenceShape.width ||
-                volumes[0].height !== referenceShape.height ||
-                volumes[0].depth !== referenceShape.depth)
-            ) {
-              throw new Error(
-                `Channel "${layer.channelLabel}" has volume dimensions ${volumes[0].width}×${volumes[0].height}×${volumes[0].depth} that do not match the reference shape ${referenceShape.width}×${referenceShape.height}×${referenceShape.depth}.`
-              );
-            }
-          }
-
-          if (referenceTimepoints > 0 && expandedVolumes.length !== referenceTimepoints) {
-            throw new Error(
-              `Channel "${layer.channelLabel}" has ${expandedVolumes.length} timepoints, but the first channel has ${referenceTimepoints}.`
-            );
-          }
-
-          return { layer, volumes: expandedVolumes };
-        })
-      );
-
-      if (loadRequestRef.current !== requestId) {
-        return null;
-      }
-
-      const normalizedLayers: LoadedLayer[] = rawLayers.map(({ layer, volumes }) => {
-        const correctedVolumes = anisotropyScale
-          ? volumes.map((rawVolume) =>
-              resampleVolume(rawVolume, {
-                scale: anisotropyScale,
-                interpolation: layer.isSegmentation ? 'nearest' : 'linear',
-                targetDataType: layer.isSegmentation ? rawVolume.dataType : 'float32'
-              })
-            )
-          : volumes;
-        const normalizedVolumes = layer.isSegmentation
-          ? correctedVolumes.map((rawVolume, volumeIndex) =>
-              colorizeSegmentationVolume(rawVolume, createSegmentationSeed(layer.key, volumeIndex))
-            )
-          : (() => {
-              const normalizationParameters = computeNormalizationParameters(correctedVolumes);
-              return correctedVolumes.map((rawVolume) => normalizeVolume(rawVolume, normalizationParameters));
-            })();
-        return {
-          key: layer.key,
-          label: layer.label,
-          channelId: layer.channelId,
-          volumes: normalizedVolumes,
-          isSegmentation: layer.isSegmentation
-        };
-      });
-
-      const resolvedExpectedVolumes =
-        rawLayers.length > 0 ? rawLayers[0].volumes.length * flatLayerSources.length : totalExpectedVolumes;
-
-      applyLoadedLayers(normalizedLayers, resolvedExpectedVolumes);
-      return normalizedLayers;
-    } catch (err) {
-      if (loadRequestRef.current !== requestId) {
-        return null;
-      }
-      console.error(err);
-      setStatus('error');
-      clearTextureCache();
-      setLayers([]);
-      setChannelVisibility({});
-      setChannelActiveLayer({});
-      setLayerSettings({});
-      setLayerAutoThresholds({});
-      setSelectedIndex(0);
-      setActiveChannelTabId(null);
-      setLoadProgress(0);
-      setLoadedCount(0);
-      setExpectedVolumeCount(0);
-      setIsPlaying(false);
-      const message =
-        err instanceof VolumeTooLargeError
-          ? (() => {
-              const size = formatBytes(err.requiredBytes);
-              const limit = formatBytes(err.maxBytes);
-              const name = err.fileName ? ` "${err.fileName}"` : '';
-              return `The dataset${name} requires ${size}, which exceeds the current browser limit of ${limit}. Reduce the dataset size or enable chunked uploads before trying again.`;
-            })()
-          : err instanceof Error
-            ? err.message
-            : 'Failed to load volumes.';
-      showLaunchError(message);
-      setError(message);
-      return null;
-    }
-  }, [
-    applyLoadedLayers,
-    channels,
-    clearDatasetError,
-    colorizeSegmentationVolume,
-    computeNormalizationParameters,
-    anisotropyScale,
-    experimentDimension,
-    createSegmentationSeed,
-    getLayerTimepointCount,
-    normalizeVolume,
-    showLaunchError,
-    voxelResolution
-  ]);
 
   const {
     preprocessedExperiment,
@@ -1373,7 +1022,7 @@ function App() {
     setViewerMode,
     clearDatasetError,
     updateChannelIdCounter,
-    loadSelectedDataset,
+    loadSelectedDataset: loadDataset,
     showInteractionWarning,
     isLaunchingViewer,
     voxelResolution,
@@ -1382,26 +1031,6 @@ function App() {
 
   const isLoading = status === 'loading';
   const playbackDisabled = isLoading || volumeTimepointCount <= 1;
-  const vrButtonDisabled = !is3dViewerAvailable
-    ? !isVrActive
-    : isVrActive
-    ? false
-    : !isVrAvailable || !hasVrSessionHandlers || isVrRequesting;
-  const vrButtonTitle = !is3dViewerAvailable
-    ? 'VR is only available for 3D datasets.'
-    : isVrActive
-    ? 'Exit immersive VR session.'
-    : !isVrSupportChecked
-    ? 'Checking WebXR capabilities…'
-    : !isVrSupported
-    ? 'WebXR immersive VR is not supported in this browser.'
-    : viewerMode !== '3d'
-    ? 'Switch to the 3D view to enable VR.'
-    : !hasVrSessionHandlers
-    ? 'Viewer is still initializing.'
-    : isVrRequesting
-    ? 'Starting VR session…'
-    : undefined;
 
   const playbackLabel = useMemo(() => {
     if (volumeTimepointCount === 0) {
@@ -2028,73 +1657,6 @@ function App() {
     }
     return 'initial';
   }, [channels, isExperimentSetupStarted, preprocessedExperiment]);
-
-  const channelValidationList = useMemo(() => {
-    return channels.map((channel) => {
-      const errors: string[] = [];
-      const warnings: string[] = [];
-
-      if (!channel.name.trim()) {
-        errors.push('Name this channel.');
-      }
-
-      const primaryLayer = channel.layers[0] ?? null;
-      if (!primaryLayer) {
-        errors.push('Add a volume to this channel.');
-      } else if (primaryLayer.files.length === 0) {
-        errors.push('Add files to the volume in this channel.');
-      }
-
-      if (channel.trackStatus === 'error' && channel.trackError) {
-        errors.push(channel.trackError);
-      } else if (channel.trackStatus === 'loading') {
-        warnings.push('Tracks are still loading.');
-      } else if (channel.layers.length > 0 && !channel.trackFile) {
-        warnings.push('No tracks attached to this channel.');
-      }
-
-      return {
-        channelId: channel.id,
-        errors,
-        warnings,
-        layerCount: channel.layers.length,
-        timepointCount: getLayerTimepointCount(primaryLayer)
-      };
-    });
-  }, [channels, getLayerTimepointCount]);
-
-  const channelValidationMap = useMemo(() => {
-    const map = new Map<string, ChannelValidation>();
-    for (const entry of channelValidationList) {
-      map.set(entry.channelId, { errors: entry.errors, warnings: entry.warnings });
-    }
-    return map;
-  }, [channelValidationList]);
-
-  const hasGlobalTimepointMismatch = useMemo(() => {
-    const timepointCounts = new Set<number>();
-    for (const channel of channels) {
-      for (const layer of channel.layers) {
-        const count = getLayerTimepointCount(layer);
-        if (count > 0) {
-          timepointCounts.add(count);
-        }
-      }
-    }
-    return timepointCounts.size > 1;
-  }, [channels, getLayerTimepointCount]);
-  const hasAnyLayers = useMemo(
-    () => channels.some((channel) => channel.layers.some((layer) => layer.files.length > 0)),
-    [channels]
-  );
-  const hasLoadingTracks = useMemo(
-    () => channels.some((channel) => channel.trackStatus === 'loading'),
-    [channels]
-  );
-  const allChannelsValid = useMemo(
-    () => channelValidationList.every((entry) => entry.errors.length === 0),
-    [channelValidationList]
-  );
   const canLaunch = hasAnyLayers && allChannelsValid && !hasLoadingTracks && voxelResolution !== null;
   const launchButtonEnabled = frontPageMode === 'preprocessed' ? preprocessedExperiment !== null : canLaunch;
   const launchButtonLaunchable = launchButtonEnabled ? 'true' : 'false';
@@ -2125,7 +1687,24 @@ function App() {
         const manifestVoxelResolution =
           preprocessedExperiment.manifest.dataset.voxelResolution ?? voxelResolution ?? null;
         preprocessingSettingsRef.current = manifestVoxelResolution;
-        applyLoadedLayers(preprocessedExperiment.layers, preprocessedExperiment.totalVolumeCount);
+        applyLoadedLayers(preprocessedExperiment.layers, preprocessedExperiment.totalVolumeCount, {
+          setChannelVisibility,
+          setChannelActiveLayer,
+          setLayerSettings,
+          setLayerAutoThresholds,
+          setSelectedIndex,
+          setActiveChannelTabId,
+          setStatus,
+          setLoadedCount,
+          setExpectedVolumeCount,
+          setLoadProgress,
+          setIsPlaying,
+          clearDatasetError,
+          setError,
+          globalRenderStyle,
+          globalSamplingMode,
+          getChannelDefaultColor
+        });
         setIsViewerLaunched(true);
       } finally {
         setIsLaunchingViewer(false);
@@ -2160,7 +1739,7 @@ function App() {
     setViewerMode(experimentDimension);
     setIsLaunchingViewer(true);
     try {
-      const normalizedLayers = await loadSelectedDataset();
+      const normalizedLayers = await loadDataset();
       if (!normalizedLayers) {
         return;
       }
@@ -2170,12 +1749,11 @@ function App() {
       setIsLaunchingViewer(false);
     }
   }, [
-    applyLoadedLayers,
     channelValidationList,
     channels,
     clearDatasetError,
     isLaunchingViewer,
-    loadSelectedDataset,
+    loadDataset,
     preprocessedExperiment,
     showLaunchError,
     experimentDimension,
