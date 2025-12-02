@@ -25,6 +25,7 @@
 - Captured segmentation label buffers in the preprocessed manifest, exporting/importing per-volume label digests to keep segmentation rendering consistent after archive round-trips.
 - Fixed GitHub Pages artifact inputs and activation handling for the file save picker.
 - Added Dropbox chooser support for TIFF stacks and per-channel track CSVs, with inline configuration, progress/error messaging, and folder-aware file construction.
+- Ensured preprocessed dataset launches push imported layers into the viewer state so the volumes appear immediately after opening.
 
 ## Track visualization
 - Respected CSV `track_id` ordering and staggered starts, with optional sorting by trajectory length.
