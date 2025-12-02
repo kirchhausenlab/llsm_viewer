@@ -130,9 +130,16 @@ export const VolumeRenderShader = {
       return clamp(normalized, 0.0, 1.0);
     }
 
-    float adjust_intensity(float value) {
-      float normalized = normalize_window(value);
+    float apply_inversion(float normalized) {
       return u_invert > 0.5 ? 1.0 - normalized : normalized;
+    }
+
+    float normalize_intensity(float value) {
+      return normalize_window(value);
+    }
+
+    float adjust_intensity(float value) {
+      return apply_inversion(normalize_intensity(value));
     }
 
     vec3 adjust_color(vec3 value) {
@@ -169,8 +176,8 @@ export const VolumeRenderShader = {
       return texture2D(u_cmdata, vec2(normalized, 0.5));
     }
 
-    vec4 compose_color(float intensity, vec4 colorSample) {
-      float adjustedIntensity = adjust_intensity(intensity);
+    vec4 compose_color(float normalizedIntensity, vec4 colorSample) {
+      float adjustedIntensity = apply_inversion(normalizedIntensity);
       if (u_channels == 1) {
         return apply_colormap(adjustedIntensity);
       }
@@ -307,8 +314,7 @@ export const VolumeRenderShader = {
       vec3 loc = start_loc;
       vec3 max_loc = start_loc;
 
-      const float HIGH_WATER_NON_INVERTED = 0.999;
-      const float HIGH_WATER_INVERTED = 0.001;
+      const float HIGH_WATER_MARK = 0.999;
 
       for (int iter = 0; iter < MAX_STEPS; iter++) {
         if (iter >= nsteps) {
@@ -316,21 +322,14 @@ export const VolumeRenderShader = {
         }
         vec4 colorSample = sample_color(loc);
         float rawVal = luminance(colorSample);
-        float val = adjust_intensity(rawVal);
-        if (val > max_val) {
-          max_val = val;
+        float normalizedVal = normalize_intensity(rawVal);
+        if (normalizedVal > max_val) {
+          max_val = normalizedVal;
           max_i = iter;
           max_color = colorSample;
           max_loc = loc;
 
-          bool reachedHighWaterMark;
-          if (u_invert > 0.5) {
-            reachedHighWaterMark = max_val <= HIGH_WATER_INVERTED;
-          } else {
-            reachedHighWaterMark = max_val >= HIGH_WATER_NON_INVERTED;
-          }
-
-          if (reachedHighWaterMark) {
+          if (max_val >= HIGH_WATER_MARK) {
             break;
           }
         }
@@ -342,7 +341,7 @@ export const VolumeRenderShader = {
       for (int i = 0; i < REFINEMENT_STEPS; i++) {
         vec4 colorSample = sample_color(iloc);
         float refinedRaw = luminance(colorSample);
-        float refined = adjust_intensity(refinedRaw);
+        float refined = normalize_intensity(refinedRaw);
         if (refined > max_val) {
           max_val = refined;
           max_color = colorSample;
@@ -392,8 +391,10 @@ export const VolumeRenderShader = {
           vec3 istep = step / float(REFINEMENT_STEPS);
           for (int i = 0; i < REFINEMENT_STEPS; i++) {
             vec4 colorSample = sample_color(iloc);
-            float refined = adjust_intensity(luminance(colorSample));
-            if (refined > u_renderthreshold) {
+            float refinedRaw = luminance(colorSample);
+            float refined = normalize_intensity(refinedRaw);
+            float adjustedRefined = apply_inversion(refined);
+            if (adjustedRefined > u_renderthreshold) {
               hitColor = add_lighting(refined, iloc, dstep, view_ray, colorSample);
               hasHit = true;
               break;
@@ -415,16 +416,16 @@ export const VolumeRenderShader = {
       vec3 V = normalize(view_ray);
 
       vec3 N;
-      float val1 = adjust_intensity(luminance(sample_color(loc + vec3(-step[0], 0.0, 0.0))));
-      float val2 = adjust_intensity(luminance(sample_color(loc + vec3(+step[0], 0.0, 0.0))));
+      float val1 = normalize_intensity(luminance(sample_color(loc + vec3(-step[0], 0.0, 0.0))));
+      float val2 = normalize_intensity(luminance(sample_color(loc + vec3(+step[0], 0.0, 0.0))));
       N[0] = val1 - val2;
       val = max(max(val1, val2), val);
-      val1 = adjust_intensity(luminance(sample_color(loc + vec3(0.0, -step[1], 0.0))));
-      val2 = adjust_intensity(luminance(sample_color(loc + vec3(0.0, +step[1], 0.0))));
+      val1 = normalize_intensity(luminance(sample_color(loc + vec3(0.0, -step[1], 0.0))));
+      val2 = normalize_intensity(luminance(sample_color(loc + vec3(0.0, +step[1], 0.0))));
       N[1] = val1 - val2;
       val = max(max(val1, val2), val);
-      val1 = adjust_intensity(luminance(sample_color(loc + vec3(0.0, 0.0, -step[2]))));
-      val2 = adjust_intensity(luminance(sample_color(loc + vec3(0.0, 0.0, +step[2]))));
+      val1 = normalize_intensity(luminance(sample_color(loc + vec3(0.0, 0.0, -step[2]))));
+      val2 = normalize_intensity(luminance(sample_color(loc + vec3(0.0, 0.0, +step[2]))));
       N[2] = val1 - val2;
       val = max(max(val1, val2), val);
 
