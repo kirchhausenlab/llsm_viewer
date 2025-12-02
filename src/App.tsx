@@ -19,7 +19,6 @@ import {
 import {
   DEFAULT_TRACK_COLOR,
   TRACK_COLOR_SWATCHES,
-  getTrackColorHex,
   normalizeTrackColor,
   type TrackColorOption
 } from './trackColors';
@@ -47,7 +46,6 @@ import useVrLifecycle from './hooks/useVrLifecycle';
 import usePreprocessedExperiment from './hooks/usePreprocessedExperiment';
 import type { VoxelResolutionInput, VoxelResolutionUnit, VoxelResolutionValues } from './types/voxelResolution';
 import { resampleVolume } from './utils/anisotropyCorrection';
-import { applyGaussianAmplitudeSmoothing, smoothTrackPoints } from './utils/trackSmoothing';
 import {
   collectFilesFromDataTransfer,
   createSegmentationSeed,
@@ -61,6 +59,7 @@ import { fromBlob } from 'geotiff';
 import { useVoxelResolution, type ExperimentDimension } from './hooks/useVoxelResolution';
 import { useDatasetErrors, type DatasetErrorContext } from './hooks/useDatasetErrors';
 import { useViewerPlayback } from './hooks/useViewerPlayback';
+import { useTracksForDisplay } from './hooks/useTracksForDisplay';
 
 const DEFAULT_TRACK_OPACITY = 0.9;
 const DEFAULT_TRACK_LINE_WIDTH = 1;
@@ -730,196 +729,28 @@ function App() {
     return map;
   }, [anisotropyScale, channels, experimentDimension]);
 
-  const parsedTracksByChannel = useMemo(
-    () => rawTracksByChannel,
-    [rawTracksByChannel]
-  );
-
-  const plotTracksByChannel = useMemo(() => {
-    if (!Number.isFinite(trackSmoothing) || trackSmoothing <= 0) {
-      return rawTracksByChannel;
-    }
-
-    const map = new Map<string, TrackDefinition[]>();
-    for (const [channelId, tracks] of rawTracksByChannel.entries()) {
-      map.set(channelId, applyGaussianAmplitudeSmoothing(tracks, trackSmoothing));
-    }
-    return map;
-  }, [rawTracksByChannel, trackSmoothing]);
-
-  const parsedTracks = useMemo(() => {
-    const ordered: TrackDefinition[] = [];
-    for (const channel of channels) {
-      const channelTracks = parsedTracksByChannel.get(channel.id) ?? [];
-      ordered.push(...channelTracks);
-    }
-    return ordered;
-  }, [channels, parsedTracksByChannel]);
-
-  const trackLookup = useMemo(() => {
-    const map = new Map<string, TrackDefinition>();
-    for (const track of parsedTracks) {
-      map.set(track.id, track);
-    }
-    return map;
-  }, [parsedTracks]);
-
-  const filteredTracksByChannel = useMemo(() => {
-    const map = new Map<string, TrackDefinition[]>();
-
-    for (const channel of channels) {
-      const tracksForChannel = parsedTracksByChannel.get(channel.id) ?? [];
-      const filtered = tracksForChannel.filter((track) => track.points.length >= minimumTrackLength);
-      map.set(channel.id, filtered);
-    }
-
-    return map;
-  }, [channels, minimumTrackLength, parsedTracksByChannel]);
-
-  const filteredTracks = useMemo(() => {
-    const ordered: TrackDefinition[] = [];
-    for (const channel of channels) {
-      const channelTracks = filteredTracksByChannel.get(channel.id) ?? [];
-      ordered.push(...channelTracks);
-    }
-    return ordered;
-  }, [channels, filteredTracksByChannel]);
-
-  const filteredTrackLookup = useMemo(() => {
-    const map = new Map<string, TrackDefinition>();
-    for (const track of filteredTracks) {
-      map.set(track.id, track);
-    }
-    return map;
-  }, [filteredTracks]);
-
-  const plotFilteredTracksByChannel = useMemo(() => {
-    const map = new Map<string, TrackDefinition[]>();
-
-    for (const channel of channels) {
-      const tracksForChannel = plotTracksByChannel.get(channel.id) ?? [];
-      const filtered = tracksForChannel.filter((track) => track.points.length >= minimumTrackLength);
-      map.set(channel.id, filtered);
-    }
-
-    return map;
-  }, [channels, minimumTrackLength, plotTracksByChannel]);
-
-  const plotFilteredTracks = useMemo(() => {
-    const ordered: TrackDefinition[] = [];
-    for (const channel of channels) {
-      const channelTracks = plotFilteredTracksByChannel.get(channel.id) ?? [];
-      ordered.push(...channelTracks);
-    }
-    return ordered;
-  }, [channels, plotFilteredTracksByChannel]);
-
-  const plotFilteredTrackLookup = useMemo(() => {
-    const map = new Map<string, TrackDefinition>();
-    for (const track of plotFilteredTracks) {
-      map.set(track.id, track);
-    }
-    return map;
-  }, [plotFilteredTracks]);
-
-  const selectedTrackSeries = useMemo(() => {
-    const series: Array<{
-      id: string;
-      channelId: string;
-      channelName: string;
-      trackNumber: number;
-      color: string;
-      rawPoints: TrackPoint[];
-      points: TrackPoint[];
-    }> = [];
-    for (const trackId of selectedTrackOrder) {
-      const rawTrack = filteredTrackLookup.get(trackId);
-      const plotTrack = plotFilteredTrackLookup.get(trackId) ?? rawTrack;
-      if (!rawTrack || !plotTrack) {
-        continue;
-      }
-      series.push({
-        id: plotTrack.id,
-        channelId: plotTrack.channelId,
-        channelName: plotTrack.channelName,
-        trackNumber: plotTrack.trackNumber,
-        color: getTrackColorHex(plotTrack.id),
-        rawPoints: rawTrack.points,
-        points: plotTrack.points
-      });
-    }
-    return series;
-  }, [filteredTrackLookup, plotFilteredTrackLookup, selectedTrackOrder]);
-
-  const trackExtents = useMemo(() => {
-    let amplitudeMin = Number.POSITIVE_INFINITY;
-    let amplitudeMax = Number.NEGATIVE_INFINITY;
-    let timeMin = Number.POSITIVE_INFINITY;
-    let timeMax = Number.NEGATIVE_INFINITY;
-
-    const extentTracks =
-      Number.isFinite(trackSmoothing) && trackSmoothing > 0
-        ? [...plotFilteredTracks, ...filteredTracks]
-        : plotFilteredTracks;
-
-    for (const track of extentTracks) {
-      for (const point of track.points) {
-        if (Number.isFinite(point.amplitude)) {
-          amplitudeMin = Math.min(amplitudeMin, point.amplitude);
-          amplitudeMax = Math.max(amplitudeMax, point.amplitude);
-        }
-
-        if (Number.isFinite(point.time)) {
-          timeMin = Math.min(timeMin, point.time);
-          timeMax = Math.max(timeMax, point.time);
-        }
-      }
-    }
-
-    const hasAmplitude = Number.isFinite(amplitudeMin) && Number.isFinite(amplitudeMax);
-    const hasTime = Number.isFinite(timeMin) && Number.isFinite(timeMax);
-    const fallbackTimeMax = Math.max(volumeTimepointCount - 1, 0);
-
-    return {
-      amplitude: hasAmplitude ? { min: amplitudeMin, max: amplitudeMax } : { min: 0, max: 1 },
-      time: hasTime ? { min: timeMin, max: timeMax } : { min: 0, max: fallbackTimeMax }
-    };
-  }, [filteredTracks, plotFilteredTracks, trackSmoothing, volumeTimepointCount]);
-
-  const selectedTrackExtents = useMemo(() => {
-    let amplitudeMin = Number.POSITIVE_INFINITY;
-    let amplitudeMax = Number.NEGATIVE_INFINITY;
-    let timeMin = Number.POSITIVE_INFINITY;
-    let timeMax = Number.NEGATIVE_INFINITY;
-
-    for (const entry of selectedTrackSeries) {
-      const pointSources =
-        Number.isFinite(trackSmoothing) && trackSmoothing > 0
-          ? [entry.points, entry.rawPoints]
-          : [entry.points];
-      for (const source of pointSources) {
-        for (const point of source) {
-          if (Number.isFinite(point.amplitude)) {
-            amplitudeMin = Math.min(amplitudeMin, point.amplitude);
-            amplitudeMax = Math.max(amplitudeMax, point.amplitude);
-          }
-
-          if (Number.isFinite(point.time)) {
-            timeMin = Math.min(timeMin, point.time);
-            timeMax = Math.max(timeMax, point.time);
-          }
-        }
-      }
-    }
-
-    const hasAmplitude = Number.isFinite(amplitudeMin) && Number.isFinite(amplitudeMax);
-    const hasTime = Number.isFinite(timeMin) && Number.isFinite(timeMax);
-
-    return {
-      amplitude: hasAmplitude ? { min: amplitudeMin, max: amplitudeMax } : null,
-      time: hasTime ? { min: timeMin, max: timeMax } : null
-    } as const;
-  }, [selectedTrackSeries, trackSmoothing]);
+  const {
+    parsedTracksByChannel,
+    plotTracksByChannel,
+    parsedTracks,
+    trackLookup,
+    filteredTracksByChannel,
+    filteredTracks,
+    filteredTrackLookup,
+    plotFilteredTracksByChannel,
+    plotFilteredTracks,
+    plotFilteredTrackLookup,
+    selectedTrackSeries,
+    trackExtents,
+    selectedTrackExtents
+  } = useTracksForDisplay({
+    rawTracksByChannel,
+    channels,
+    selectedTrackOrder,
+    minimumTrackLength,
+    trackSmoothing,
+    volumeTimepointCount
+  });
 
   const amplitudeExtent = trackExtents.amplitude;
   const timeExtent = trackExtents.time;
