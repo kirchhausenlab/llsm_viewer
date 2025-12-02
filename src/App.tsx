@@ -45,12 +45,8 @@ import type { ImportPreprocessedDatasetResult } from './utils/preprocessedDatase
 import { computeTrackSummary } from './utils/trackSummary';
 import useVrLifecycle from './hooks/useVrLifecycle';
 import usePreprocessedExperiment from './hooks/usePreprocessedExperiment';
-import type {
-  VoxelResolutionInput,
-  VoxelResolutionUnit,
-  VoxelResolutionValues
-} from './types/voxelResolution';
-import { computeAnisotropyScale, resampleVolume } from './utils/anisotropyCorrection';
+import type { VoxelResolutionInput, VoxelResolutionUnit, VoxelResolutionValues } from './types/voxelResolution';
+import { resampleVolume } from './utils/anisotropyCorrection';
 import { applyGaussianAmplitudeSmoothing, smoothTrackPoints } from './utils/trackSmoothing';
 import {
   collectFilesFromDataTransfer,
@@ -62,8 +58,10 @@ import {
   sortVolumeFiles
 } from './utils/appHelpers';
 import { fromBlob } from 'geotiff';
+import { useVoxelResolution, type ExperimentDimension } from './hooks/useVoxelResolution';
+import { useDatasetErrors, type DatasetErrorContext } from './hooks/useDatasetErrors';
+import { useViewerPlayback } from './hooks/useViewerPlayback';
 
-const DEFAULT_FPS = 12;
 const DEFAULT_TRACK_OPACITY = 0.9;
 const DEFAULT_TRACK_LINE_WIDTH = 1;
 const WINDOW_MARGIN = 24;
@@ -74,14 +72,6 @@ const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
 const WARNING_WINDOW_WIDTH = 360;
 const TRACK_SMOOTHING_RANGE: NumericRange = { min: 0, max: 5 };
 const DEFAULT_RESET_WINDOW = { windowMin: DEFAULT_WINDOW_MIN, windowMax: DEFAULT_WINDOW_MAX };
-
-const DEFAULT_VOXEL_RESOLUTION: VoxelResolutionInput = {
-  x: '1.0',
-  y: '1.0',
-  z: '1.0',
-  unit: 'μm',
-  correctAnisotropy: false
-};
 
 const computeInitialWindowForVolume = (
   volume: NormalizedVolume | null | undefined
@@ -127,8 +117,6 @@ const clampRangeToBounds = (range: NumericRange, bounds: NumericRange): NumericR
   return { min, max };
 };
 
-type DatasetErrorContext = 'launch' | 'interaction';
-
 type ChannelLayerSource = {
   id: string;
   files: File[];
@@ -155,9 +143,6 @@ type ChannelValidation = {
   warnings: string[];
 };
 
-type VoxelResolutionAxis = 'x' | 'y' | 'z';
-type ExperimentDimension = '3d' | '2d';
-
 export type {
   ChannelSource,
   ChannelTrackState,
@@ -172,13 +157,37 @@ function App() {
   const [isExperimentSetupStarted, setIsExperimentSetupStarted] = useState(false);
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
-  const [voxelResolutionInput, setVoxelResolutionInput] =
-    useState<VoxelResolutionInput>(DEFAULT_VOXEL_RESOLUTION);
-  const [experimentDimension, setExperimentDimension] = useState<ExperimentDimension>('3d');
-  const [datasetError, setDatasetError] = useState<string | null>(null);
-  const [datasetErrorContext, setDatasetErrorContext] = useState<DatasetErrorContext | null>(null);
-  const [datasetErrorResetSignal, setDatasetErrorResetSignal] = useState(0);
-  const [selectedIndex, setSelectedIndex] = useState<number>(0);
+  const {
+    voxelResolutionInput,
+    voxelResolution,
+    anisotropyScale,
+    trackScale,
+    experimentDimension,
+    handleVoxelResolutionAxisChange,
+    handleVoxelResolutionUnitChange,
+    handleVoxelResolutionAnisotropyToggle,
+    handleExperimentDimensionChange,
+    setExperimentDimension,
+    setVoxelResolutionInput
+  } = useVoxelResolution();
+  const {
+    datasetError,
+    datasetErrorContext,
+    datasetErrorResetSignal,
+    reportDatasetError,
+    clearDatasetError,
+    bumpDatasetErrorResetSignal
+  } = useDatasetErrors();
+  const {
+    selectedIndex,
+    setSelectedIndex,
+    isPlaying,
+    fps,
+    togglePlayback,
+    setFps,
+    stopPlayback,
+    setIsPlaying
+  } = useViewerPlayback();
   const [layers, setLayers] = useState<LoadedLayer[]>([]);
   const layersRef = useRef<LoadedLayer[]>([]);
   useEffect(() => {
@@ -238,60 +247,11 @@ function App() {
   );
   const [layerAutoThresholds, setLayerAutoThresholds] = useState<Record<string, number>>({});
   const [layerTimepointCounts, setLayerTimepointCounts] = useState<Record<string, number>>({});
-  const voxelResolution = useMemo<VoxelResolutionValues | null>(() => {
-    const axes: VoxelResolutionAxis[] =
-      experimentDimension === '2d' ? ['x', 'y'] : ['x', 'y', 'z'];
-    const parsed: Partial<Record<VoxelResolutionAxis, number>> = {};
-    for (const axis of axes) {
-      const rawValue = voxelResolutionInput[axis].trim();
-      if (!rawValue) {
-        return null;
-      }
-      const numericValue = Number(rawValue);
-      if (!Number.isFinite(numericValue)) {
-        return null;
-      }
-      parsed[axis] = numericValue;
-    }
-
-    let resolvedZ: number | undefined = parsed.z;
-    if (experimentDimension === '2d') {
-      const rawZ = voxelResolutionInput.z.trim();
-      if (rawZ) {
-        const numericZ = Number(rawZ);
-        if (!Number.isFinite(numericZ)) {
-          return null;
-        }
-        resolvedZ = numericZ;
-      } else {
-        resolvedZ = parsed.y ?? parsed.x;
-      }
-    }
-
-    if (resolvedZ === undefined) {
-      return null;
-    }
-
-    return {
-      x: parsed.x ?? 0,
-      y: parsed.y ?? 0,
-      z: resolvedZ,
-      unit: voxelResolutionInput.unit,
-      correctAnisotropy: voxelResolutionInput.correctAnisotropy
-    };
-  }, [experimentDimension, voxelResolutionInput]);
-  const anisotropyScale = useMemo(() => computeAnisotropyScale(voxelResolution), [voxelResolution]);
-  const trackScale = useMemo(
-    () => anisotropyScale ?? { x: 1, y: 1, z: 1 },
-    [anisotropyScale]
-  );
   const [status, setStatus] = useState<LoadState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [loadProgress, setLoadProgress] = useState(0);
   const [loadedCount, setLoadedCount] = useState(0);
   const [expectedVolumeCount, setExpectedVolumeCount] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [fps, setFps] = useState(DEFAULT_FPS);
   const [resetViewHandler, setResetViewHandler] = useState<(() => void) | null>(null);
   const [activeChannelTabId, setActiveChannelTabId] = useState<string | null>(null);
   const [activeTrackChannelId, setActiveTrackChannelId] = useState<string | null>(null);
@@ -330,43 +290,12 @@ function App() {
   const handleHelpMenuToggle = useCallback(() => {
     setIsHelpMenuOpen((previous) => !previous);
   }, []);
-  const handleVoxelResolutionAxisChange = useCallback(
-    (axis: VoxelResolutionAxis, value: string) => {
-      const normalizedValue = value.replace(/,/g, '.');
-      setVoxelResolutionInput((current) => {
-        if (current[axis] === normalizedValue) {
-          return current;
-        }
-        return { ...current, [axis]: normalizedValue };
-      });
-    },
-    []
-  );
-  const handleVoxelResolutionUnitChange = useCallback((unit: VoxelResolutionUnit) => {
-    setVoxelResolutionInput((current) => {
-      if (current.unit === unit) {
-        return current;
-      }
-      return { ...current, unit };
-    });
-  }, []);
 
   useEffect(() => {
     if (channels.length === 0) {
       hasInitializedTrackColorsRef.current = false;
     }
   }, [channels.length]);
-  const handleVoxelResolutionAnisotropyToggle = useCallback((value: boolean) => {
-    setVoxelResolutionInput((current) => {
-      if (current.correctAnisotropy === value) {
-        return current;
-      }
-      return { ...current, correctAnisotropy: value };
-    });
-  }, []);
-  const handleExperimentDimensionChange = useCallback((dimension: ExperimentDimension) => {
-    setExperimentDimension((current) => (current === dimension ? current : dimension));
-  }, []);
   const controlWindowInitialPosition = useMemo(
     () => ({ x: WINDOW_MARGIN, y: WINDOW_MARGIN }),
     []
@@ -608,9 +537,9 @@ function App() {
 
   useEffect(() => {
     if (datasetError && datasetErrorContext === 'launch') {
-      setDatasetErrorResetSignal((value) => value + 1);
+      bumpDatasetErrorResetSignal();
     }
-  }, [datasetError, datasetErrorContext]);
+  }, [bumpDatasetErrorResetSignal, datasetError, datasetErrorContext]);
 
   useEffect(() => {
     const pendingChannelId = pendingChannelFocusIdRef.current;
@@ -1269,19 +1198,12 @@ function App() {
   }, [trackLookup]);
 
   const showLaunchError = useCallback((message: string) => {
-    setDatasetError(message);
-    setDatasetErrorContext('launch');
-  }, []);
+    reportDatasetError(message, 'launch');
+  }, [reportDatasetError]);
 
   const showInteractionWarning = useCallback((message: string) => {
-    setDatasetError(message);
-    setDatasetErrorContext('interaction');
-  }, []);
-
-  const clearDatasetError = useCallback(() => {
-    setDatasetError(null);
-    setDatasetErrorContext(null);
-  }, []);
+    reportDatasetError(message, 'interaction');
+  }, [reportDatasetError]);
 
   const applyLoadedLayers = useCallback(
     (normalizedLayers: LoadedLayer[], expectedVolumeCount: number) => {
