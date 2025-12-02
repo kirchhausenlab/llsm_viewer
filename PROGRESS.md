@@ -814,3 +814,6 @@ d centered the front-page card in the viewport.
 ## Plot settings window sizing cleanup
 - Stopped the plot settings sliders from stretching vertically so the window shrinks to its content instead of filling the screen.
 - Let the plot settings body scroll when needed so the Auto and Clear buttons remain visible on smaller viewports.
+
+## Selected tracks window title refresh
+- Renamed the Selected Tracks floating window title from "Track plots" to "Amplitude plot" to better match the displayed content while keeping the associated controls intact.
