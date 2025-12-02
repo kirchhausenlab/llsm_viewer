@@ -1565,7 +1565,7 @@ function ViewerShell({
         {!isVrActive && shouldRender ? (
           <>
             <FloatingWindow
-              title="Track plots"
+              title="Amplitude plot"
               initialPosition={selectedTracksWindowInitialPosition}
               width={`min(${selectedTracksWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
               className="floating-window--selected-tracks"
