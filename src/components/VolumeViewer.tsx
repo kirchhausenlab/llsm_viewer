@@ -18,14 +18,13 @@ import type {
   VolumeResources,
   VolumeViewerProps,
 } from './VolumeViewer.types';
-import type { VrUiTarget, VrUiTargetType } from './volume-viewer/useVolumeViewerVr';
 import { VolumeViewerVrBridge } from './volume-viewer/VolumeViewerVrBridge';
 import {
   DESKTOP_VOLUME_STEP_SCALE,
   VR_PLAYBACK_MAX_FPS,
   VR_PLAYBACK_MIN_FPS,
   VR_VOLUME_BASE_OFFSET,
-} from './volume-viewer/vr/constants';
+} from './volume-viewer/vr';
 import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../layerColors';
 import {
   createTrackColor,
@@ -47,169 +46,43 @@ import {
   disposeMaterial,
   getExpectedSliceBufferLength,
   prepareSliceTexture,
-} from './volume-viewer/renderingUtils';
+  createColormapTexture,
+  HOVER_HIGHLIGHT_RADIUS_VOXELS,
+  HOVER_PULSE_SPEED,
+  hoverBoundingBox,
+  hoverEntryOffset,
+  hoverEntryPoint,
+  hoverExitPoint,
+  hoverExitRay,
+  hoverInverseMatrix,
+  hoverLayerMatrix,
+  hoverLayerOffsetMatrix,
+  hoverLocalRay,
+  hoverMaxPosition,
+  hoverPointerVector,
+  hoverRayDirection,
+  hoverRefineStep,
+  hoverSample,
+  hoverStart,
+  hoverStartNormalized,
+  hoverStep,
+  hoverVolumeSize,
+  MIP_MAX_STEPS,
+  MIP_REFINEMENT_STEPS,
+  computeTrackEndCapRadius,
+  FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER,
+  getTrackIdFromObject,
+  HOVERED_TRACK_LINE_WIDTH_MULTIPLIER,
+  SELECTED_TRACK_BLINK_BASE,
+  SELECTED_TRACK_BLINK_PERIOD_MS,
+  SELECTED_TRACK_BLINK_RANGE,
+  SELECTED_TRACK_LINE_WIDTH_MULTIPLIER,
+  trackBlinkColorTemp,
+} from './volume-viewer/rendering';
 import { LoadingOverlay } from './volume-viewer/LoadingOverlay';
 import { TrackTooltip } from './volume-viewer/TrackTooltip';
 import { HoverDebug } from './volume-viewer/HoverDebug';
 import { useVolumeViewerVrBridge } from './volume-viewer/useVolumeViewerVrBridge';
-
-type VrUiTargetDescriptor = { type: VrUiTargetType; data?: unknown };
-
-function isVrUiTargetType(value: unknown): value is VrUiTargetType {
-  if (typeof value !== 'string') {
-    return false;
-  }
-  return (
-    value.startsWith('playback-') ||
-    value.startsWith('channels-') ||
-    value.startsWith('tracks-') ||
-    value.startsWith('volume-')
-  );
-}
-
-function isVrUiTargetDescriptor(value: unknown): value is VrUiTargetDescriptor {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-  const descriptor = value as { type?: unknown };
-  return isVrUiTargetType(descriptor.type);
-}
-
-function getTrackIdFromObject(object: THREE.Object3D): string | null {
-  const trackId = object.userData?.trackId;
-  return typeof trackId === 'string' ? trackId : null;
-}
-
-const SELECTED_TRACK_BLINK_PERIOD_MS = 1600;
-const SELECTED_TRACK_BLINK_BASE = 0.85;
-const SELECTED_TRACK_BLINK_RANGE = 0.15;
-const TRACK_END_CAP_RADIUS_MULTIPLIER = 0.35;
-const TRACK_END_CAP_MIN_RADIUS = 0.12;
-const TRACK_LINE_WIDTH_MIN = 0.5;
-const TRACK_LINE_WIDTH_MAX = 5;
-const TRACK_END_CAP_RADIUS_AT_MIN_WIDTH = TRACK_LINE_WIDTH_MIN * TRACK_END_CAP_RADIUS_MULTIPLIER;
-const TRACK_END_CAP_RADIUS_AT_MAX_WIDTH =
-  TRACK_LINE_WIDTH_MAX * TRACK_END_CAP_RADIUS_MULTIPLIER * 0.5;
-const TRACK_END_CAP_RADIUS_SLOPE =
-  (TRACK_END_CAP_RADIUS_AT_MAX_WIDTH - TRACK_END_CAP_RADIUS_AT_MIN_WIDTH) /
-  (TRACK_LINE_WIDTH_MAX - TRACK_LINE_WIDTH_MIN);
-const TRACK_END_CAP_RADIUS_INTERCEPT =
-  TRACK_END_CAP_RADIUS_AT_MIN_WIDTH - TRACK_END_CAP_RADIUS_SLOPE * TRACK_LINE_WIDTH_MIN;
-const FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER = 1.35;
-const SELECTED_TRACK_LINE_WIDTH_MULTIPLIER = 1.5;
-const HOVERED_TRACK_LINE_WIDTH_MULTIPLIER = 1.2;
-const MIP_MAX_STEPS = 887;
-const MIP_REFINEMENT_STEPS = 4;
-const HOVER_HIGHLIGHT_RADIUS_VOXELS = 1.5;
-const HOVER_PULSE_SPEED = 0.009;
-
-const WORLD_UP = new THREE.Vector3(0, 1, 0);
-const VIEWER_YAW_FORWARD_REFERENCE = new THREE.Vector3(0, 0, -1);
-const VIEWER_YAW_RIGHT_REFERENCE = new THREE.Vector3(1, 0, 0);
-const viewerYawQuaternionTemp = new THREE.Quaternion();
-const viewerYawForwardTemp = new THREE.Vector3();
-const hoverPointerVector = new THREE.Vector2();
-const hoverInverseMatrix = new THREE.Matrix4();
-const hoverStart = new THREE.Vector3();
-const hoverEnd = new THREE.Vector3();
-const hoverStep = new THREE.Vector3();
-const hoverSample = new THREE.Vector3();
-const hoverRefineStep = new THREE.Vector3();
-const hoverMaxPosition = new THREE.Vector3();
-const hoverStartNormalized = new THREE.Vector3();
-const hoverVolumeSize = new THREE.Vector3();
-const hoverEntryPoint = new THREE.Vector3();
-const hoverExitPoint = new THREE.Vector3();
-const hoverEntryOffset = new THREE.Vector3();
-const hoverRayDirection = new THREE.Vector3();
-const hoverLocalRay = new THREE.Ray();
-const hoverExitRay = new THREE.Ray();
-const hoverBoundingBox = new THREE.Box3();
-const hoverLayerMatrix = new THREE.Matrix4();
-const hoverLayerOffsetMatrix = new THREE.Matrix4();
-const trackColorTemp = new THREE.Color();
-const trackBlinkColorTemp = new THREE.Color();
-
-function computeTrackEndCapRadius(lineWidth: number) {
-  const linearRadius = TRACK_END_CAP_RADIUS_INTERCEPT + TRACK_END_CAP_RADIUS_SLOPE * lineWidth;
-  return Math.max(linearRadius, TRACK_END_CAP_MIN_RADIUS);
-}
-
-function computeViewerYawBasis(
-  renderer: THREE.WebGLRenderer | null,
-  camera: THREE.PerspectiveCamera | null,
-  outForward: THREE.Vector3,
-  outRight: THREE.Vector3
-) {
-  outForward.copy(VIEWER_YAW_FORWARD_REFERENCE);
-  outRight.copy(VIEWER_YAW_RIGHT_REFERENCE);
-  if (!camera) {
-    return;
-  }
-
-  const isPresenting = !!renderer?.xr?.isPresenting;
-  const referenceCamera = isPresenting ? (renderer?.xr.getCamera() ?? camera) : camera;
-  referenceCamera.getWorldQuaternion(viewerYawQuaternionTemp);
-
-  viewerYawForwardTemp.set(0, 0, -1).applyQuaternion(viewerYawQuaternionTemp);
-  viewerYawForwardTemp.y = 0;
-
-  if (viewerYawForwardTemp.lengthSq() < 1e-6) {
-    return;
-  }
-
-  viewerYawForwardTemp.normalize();
-  outForward.copy(viewerYawForwardTemp);
-  outRight.crossVectors(outForward, WORLD_UP);
-
-  if (outRight.lengthSq() < 1e-6) {
-    outForward.copy(VIEWER_YAW_FORWARD_REFERENCE);
-    outRight.copy(VIEWER_YAW_RIGHT_REFERENCE);
-    return;
-  }
-
-  outRight.normalize();
-  outForward.copy(WORLD_UP).cross(outRight).normalize();
-}
-
-function computeYawAngleForBasis(
-  vector: THREE.Vector3,
-  basisForward: THREE.Vector3,
-  basisRight: THREE.Vector3
-) {
-  const forwardComponent = vector.dot(basisForward);
-  const rightComponent = vector.dot(basisRight);
-  return Math.atan2(rightComponent, forwardComponent);
-}
-
-function resolveVrUiTarget(object: THREE.Object3D | null): VrUiTarget | null {
-  let current: THREE.Object3D | null = object;
-  while (current) {
-    const target = current.userData?.vrUiTarget;
-    if (isVrUiTargetDescriptor(target)) {
-      return { type: target.type, object: current, data: target.data };
-    }
-    current = current.parent ?? null;
-  }
-  return null;
-}
-
-function getHudCategoryFromTarget(type: VrUiTargetType | null): 'playback' | 'channels' | 'tracks' | null {
-  if (!type) {
-    return null;
-  }
-  if (type.startsWith('playback-')) {
-    return 'playback';
-  }
-  if (type.startsWith('channels-')) {
-    return 'channels';
-  }
-  if (type.startsWith('tracks-')) {
-    return 'tracks';
-  }
-  return null;
-}
-
 const MOVEMENT_KEY_MAP: Record<string, keyof MovementState> = {
   KeyW: 'moveForward',
   KeyS: 'moveBackward',
@@ -218,51 +91,6 @@ const MOVEMENT_KEY_MAP: Record<string, keyof MovementState> = {
   KeyE: 'moveUp',
   KeyQ: 'moveDown'
 };
-
-function createColormapTexture(hexColor: string) {
-  const normalized = normalizeHexColor(hexColor, DEFAULT_LAYER_COLOR);
-  const red = parseInt(normalized.slice(1, 3), 16) / 255;
-  const green = parseInt(normalized.slice(3, 5), 16) / 255;
-  const blue = parseInt(normalized.slice(5, 7), 16) / 255;
-
-  const size = 256;
-  const data = new Uint8Array(size * 4);
-  for (let i = 0; i < size; i++) {
-    const intensity = i / (size - 1);
-    data[i * 4 + 0] = Math.round(red * intensity * 255);
-    data[i * 4 + 1] = Math.round(green * intensity * 255);
-    data[i * 4 + 2] = Math.round(blue * intensity * 255);
-    data[i * 4 + 3] = Math.round(intensity * 255);
-  }
-  const texture = new THREE.DataTexture(data, size, 1, THREE.RGBAFormat);
-  texture.needsUpdate = true;
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-
-function drawRoundedRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number
-) {
-  const r = Math.min(radius, width / 2, height / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + width - r, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
-  ctx.lineTo(x + width, y + height - r);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
-  ctx.lineTo(x + r, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
 
 function VolumeViewer({
   layers,
