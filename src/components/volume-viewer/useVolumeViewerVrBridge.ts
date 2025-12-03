@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
+import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
 import type { TrackColorMode, TrackDefinition } from '../../types/tracks';
 import type {
@@ -24,7 +25,7 @@ export type VolumeViewerVrBridgeOptions = {
   containerRef: MutableRefObject<HTMLDivElement | null>;
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
   cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
-  controlsRef: MutableRefObject<THREE.OrbitControls | null>;
+  controlsRef: MutableRefObject<OrbitControls | null>;
   sceneRef: MutableRefObject<THREE.Scene | null>;
   volumeRootGroupRef: MutableRefObject<THREE.Group | null>;
   currentDimensionsRef: MutableRefObject<{ width: number; height: number; depth: number } | null>;
@@ -294,9 +295,9 @@ export function useVolumeViewerVrBridge(options: VolumeViewerVrBridgeOptions) {
       sessionCleanupRef: createMutableRef<(() => void) | null>(null),
       applyVrPlaybackHoverState: () => {},
       updateVrPlaybackHud: () => {},
-      createVrPlaybackHud: () => {},
-      createVrChannelsHud: () => {},
-      createVrTracksHud: () => {},
+      createVrPlaybackHud: () => null,
+      createVrChannelsHud: () => null,
+      createVrTracksHud: () => null,
       updateVrChannelsHud: () => {},
       updateVrTracksHud: () => {},
       updateVolumeHandles: () => {},
