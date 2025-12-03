@@ -1,5 +1,8 @@
 # Progress
 
+## Latest changes
+- Extracted viewer shell prop assembly into `ViewerShellContainer`/`useViewerShellProps`, keeping `App` focused on state orchestration and adding targeted wiring tests to cover VR layout defaults and panel callbacks.
+
 ## Recent UI and hover improvements
 - Consolidated track follow controls into the viewer top bar and hid them when inactive.
 - Simplified hover readouts by removing debug banners/labels, reporting per-channel intensities (including segmentation IDs), and adding a 3D MIP tooltip with inline highlight.
