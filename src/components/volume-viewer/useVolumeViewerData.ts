@@ -1,10 +1,9 @@
 import { useMemo } from 'react';
 import type * as THREE from 'three';
-import type { RefObject } from 'react';
+import type { MutableRefObject } from 'react';
 import { useLoadingOverlay } from './useLoadingOverlay';
 import { useVolumeResources } from './useVolumeResources';
 import type { VolumeResources, VolumeViewerProps } from '../VolumeViewer.types';
-import type { HoveredVoxelInfo } from '../../types/hover';
 
 export function useVolumeViewerDataState({
   layers,
@@ -91,30 +90,30 @@ export function useVolumeViewerResources({
   primaryVolume: ReturnType<typeof useVolumeViewerDataState>['primaryVolume'];
   isAdditiveBlending: boolean;
   renderContextRevision: number;
-  sceneRef: RefObject<THREE.Scene | null>;
-  cameraRef: RefObject<THREE.PerspectiveCamera | null>;
-  controlsRef: RefObject<any>;
-  rotationTargetRef: RefObject<THREE.Vector3 | null>;
-  defaultViewStateRef: RefObject<any>;
-  trackGroupRef: RefObject<THREE.Group | null>;
-  resourcesRef: RefObject<Map<string, VolumeResources>>;
-  currentDimensionsRef: RefObject<{ width: number; height: number; depth: number } | null>;
-  colormapCacheRef: RefObject<Map<string, THREE.DataTexture>>;
-  volumeRootGroupRef: RefObject<THREE.Group | null>;
-  volumeRootBaseOffsetRef: RefObject<THREE.Vector3>;
-  volumeRootCenterOffsetRef: RefObject<THREE.Vector3>;
-  volumeRootCenterUnscaledRef: RefObject<THREE.Vector3>;
-  volumeRootHalfExtentsRef: RefObject<THREE.Vector3>;
-  volumeNormalizationScaleRef: RefObject<number>;
-  volumeUserScaleRef: RefObject<number>;
-  volumeStepScaleRef: RefObject<number>;
-  volumeYawRef: RefObject<number>;
-  volumePitchRef: RefObject<number>;
-  volumeRootRotatedCenterTempRef: RefObject<THREE.Vector3>;
-  applyTrackGroupTransform: (dimensions: { width: number; height: number; depth: number }) => void;
-  applyVolumeRootTransform: () => void;
+  sceneRef: MutableRefObject<THREE.Scene | null>;
+  cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
+  controlsRef: MutableRefObject<any>;
+  rotationTargetRef: MutableRefObject<THREE.Vector3>;
+  defaultViewStateRef: MutableRefObject<any>;
+  trackGroupRef: MutableRefObject<THREE.Group | null>;
+  resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
+  currentDimensionsRef: MutableRefObject<{ width: number; height: number; depth: number } | null>;
+  colormapCacheRef: MutableRefObject<Map<string, THREE.DataTexture>>;
+  volumeRootGroupRef: MutableRefObject<THREE.Group | null>;
+  volumeRootBaseOffsetRef: MutableRefObject<THREE.Vector3>;
+  volumeRootCenterOffsetRef: MutableRefObject<THREE.Vector3>;
+  volumeRootCenterUnscaledRef: MutableRefObject<THREE.Vector3>;
+  volumeRootHalfExtentsRef: MutableRefObject<THREE.Vector3>;
+  volumeNormalizationScaleRef: MutableRefObject<number>;
+  volumeUserScaleRef: MutableRefObject<number>;
+  volumeStepScaleRef: MutableRefObject<number>;
+  volumeYawRef: MutableRefObject<number>;
+  volumePitchRef: MutableRefObject<number>;
+  volumeRootRotatedCenterTempRef: MutableRefObject<THREE.Vector3>;
+  applyTrackGroupTransform: (dimensions: { width: number; height: number; depth: number } | null) => void;
+  applyVolumeRootTransform: (dimensions: { width: number; height: number; depth: number } | null) => void;
   applyVolumeStepScaleToResources: (value: number) => void;
-  applyHoverHighlightToResources: (value?: HoveredVoxelInfo | null) => void;
+  applyHoverHighlightToResources: () => void;
 }) {
   const { getColormapTexture } = useVolumeResources({
     layers,

@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import * as THREE from 'three';
-import type { RefObject } from 'react';
+import type { MutableRefObject } from 'react';
 import { HOVER_HIGHLIGHT_RADIUS_VOXELS } from './rendering';
 import type { HoveredVoxelInfo } from '../../types/hover';
 import type { VolumeResources, VolumeViewerProps } from '../VolumeViewer.types';
@@ -15,20 +15,20 @@ export function useVolumeViewerInteractions({
   isDevMode,
   onHoverVoxelChange,
 }: {
-  layersRef: RefObject<VolumeViewerProps['layers']>;
-  resourcesRef: RefObject<Map<string, VolumeResources>>;
-  hoveredVoxelRef: RefObject<{
+  layersRef: MutableRefObject<VolumeViewerProps['layers']>;
+  resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
+  hoveredVoxelRef: MutableRefObject<{
     layerKey: string | null;
     normalizedPosition: THREE.Vector3 | null;
     segmentationLabel: number | null;
   }>;
-  hoverIntensityRef: RefObject<HoveredVoxelInfo | null>;
-  voxelHoverDebugRef: RefObject<string | null>;
+  hoverIntensityRef: MutableRefObject<HoveredVoxelInfo | null>;
+  voxelHoverDebugRef: MutableRefObject<string | null>;
   setVoxelHoverDebug: (value: string | null) => void;
   isDevMode: boolean;
   onHoverVoxelChange?: (value: HoveredVoxelInfo | null) => void;
 }) {
-  const applyHoverHighlightToResources = useCallback((_: HoveredVoxelInfo | null = null) => {
+  const applyHoverHighlightToResources = useCallback(() => {
     const { layerKey, normalizedPosition, segmentationLabel } = hoveredVoxelRef.current ?? {};
     const layers = layersRef.current ?? [];
     const layersByKey = new Map(layers.map((layer) => [layer.key, layer]));
