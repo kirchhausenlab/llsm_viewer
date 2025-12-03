@@ -3,13 +3,13 @@ import { useEffect, useMemo } from 'react';
 import type { MutableRefObject } from 'react';
 
 import { DEFAULT_TRACK_LINE_WIDTH, DEFAULT_TRACK_OPACITY } from '../constants';
-import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../../layerColors';
+import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../../../layerColors';
 import {
   DEFAULT_TRACK_COLOR,
   getTrackColorHex,
   normalizeTrackColor,
-} from '../../trackColors';
-import type { TrackDefinition } from '../../types/tracks';
+} from '../../../trackColors';
+import type { TrackDefinition } from '../../../types/tracks';
 import type { UseVolumeViewerVrParams } from '../useVolumeViewerVr.types';
 import type { VrChannelsState, VrTracksState } from '../vr';
 
