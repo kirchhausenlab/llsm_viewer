@@ -34,6 +34,9 @@
 - Consolidated Gaussian smoothing into a shared utility with guards for non-finite inputs and coverage for edge cases via unit tests.
 - Extracted shared track filtering/smoothing selectors into a reusable hook to simplify testing and reduce memo boilerplate.
 
+## Recent fixes
+- Reordered the track-state hook initialization in `App` so VR entry reset handlers access the track follow setter after it is defined, resolving the type-check failure.
+
 ## Rendering and interaction foundations
 - Established the Vite + React frontend, Three.js volume renderer, and playback pipeline with keyboard/mouse navigation and responsive resource reuse.
 - Added brightness/contrast controls (including ImageJ-like windowing for float volumes), playback speed/looping, and robust loading overlays.

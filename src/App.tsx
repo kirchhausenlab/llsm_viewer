@@ -250,6 +250,70 @@ function AppContent() {
   const pendingChannelFocusIdRef = useRef<string | null>(null);
   const helpMenuRef = useRef<HTMLDivElement | null>(null);
 
+  const volumeTimepointCount = layers.length > 0 ? layers[0].volumes.length : 0;
+  const {
+    channelTrackStates,
+    setChannelTrackStates,
+    trackOrderModeByChannel,
+    setTrackOrderModeByChannel,
+    setSelectedTrackOrder,
+    selectedTrackIds,
+    trackSmoothing,
+    pendingMinimumTrackLength,
+    minimumTrackLength,
+    followedTrack,
+    setFollowedTrack,
+    activeTrackChannelId,
+    setActiveTrackChannelId,
+    parsedTracksByChannel,
+    parsedTracks,
+    trackLookup,
+    filteredTracksByChannel,
+    filteredTracks,
+    selectedTrackSeries,
+    amplitudeExtent,
+    timeExtent,
+    resolvedAmplitudeLimits,
+    resolvedTimeLimits,
+    trackLengthBounds,
+    trackSummaryByChannel,
+    trackVisibility,
+    trackOpacityByChannel,
+    trackLineWidthByChannel,
+    channelTrackColorModes,
+    followedTrackId,
+    followedTrackChannelId,
+    handleChannelTrackFileSelected,
+    handleChannelTrackDrop,
+    handleChannelTrackClear,
+    handleTrackVisibilityToggle,
+    handleTrackVisibilityAllChange,
+    handleMinimumTrackLengthChange,
+    handleMinimumTrackLengthApply,
+    handleTrackOrderToggle,
+    handleTrackOpacityChange,
+    handleTrackLineWidthChange,
+    handleTrackColorSelect,
+    handleTrackColorReset,
+    handleTrackSelectionToggle,
+    handleTrackFollow,
+    handleTrackFollowFromViewer,
+    handleTrackChannelSelect,
+    handleStopTrackFollow,
+    handleSelectedTracksAmplitudeLimitsChange,
+    handleSelectedTracksTimeLimitsChange,
+    handleSelectedTracksAutoRange,
+    handleTrackSmoothingChange,
+    handleClearSelectedTracks,
+    resetTrackState,
+    hasParsedTrackData
+  } = useTrackState({
+    channels,
+    setChannels,
+    experimentDimension,
+    volumeTimepointCount
+  });
+
   const handleBeforeEnterVr = useCallback(() => {
     setFollowedTrack(null);
   }, [setFollowedTrack]);
@@ -376,7 +440,6 @@ function AppContent() {
     }
   }, [activeChannelId, channels]);
 
-  const volumeTimepointCount = layers.length > 0 ? layers[0].volumes.length : 0;
   const channelNameMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const channel of channels) {
@@ -429,68 +492,6 @@ function AppContent() {
     }
     return order;
   }, [layers]);
-  const {
-    channelTrackStates,
-    setChannelTrackStates,
-    trackOrderModeByChannel,
-    setTrackOrderModeByChannel,
-    setSelectedTrackOrder,
-    selectedTrackIds,
-    trackSmoothing,
-    pendingMinimumTrackLength,
-    minimumTrackLength,
-    followedTrack,
-    setFollowedTrack,
-    activeTrackChannelId,
-    setActiveTrackChannelId,
-    parsedTracksByChannel,
-    parsedTracks,
-    trackLookup,
-    filteredTracksByChannel,
-    filteredTracks,
-    selectedTrackSeries,
-    amplitudeExtent,
-    timeExtent,
-    resolvedAmplitudeLimits,
-    resolvedTimeLimits,
-    trackLengthBounds,
-    trackSummaryByChannel,
-    trackVisibility,
-    trackOpacityByChannel,
-    trackLineWidthByChannel,
-    channelTrackColorModes,
-    followedTrackId,
-    followedTrackChannelId,
-    handleChannelTrackFileSelected,
-    handleChannelTrackDrop,
-    handleChannelTrackClear,
-    handleTrackVisibilityToggle,
-    handleTrackVisibilityAllChange,
-    handleMinimumTrackLengthChange,
-    handleMinimumTrackLengthApply,
-    handleTrackOrderToggle,
-    handleTrackOpacityChange,
-    handleTrackLineWidthChange,
-    handleTrackColorSelect,
-    handleTrackColorReset,
-    handleTrackSelectionToggle,
-    handleTrackFollow,
-    handleTrackFollowFromViewer,
-    handleTrackChannelSelect,
-    handleStopTrackFollow,
-    handleSelectedTracksAmplitudeLimitsChange,
-    handleSelectedTracksTimeLimitsChange,
-    handleSelectedTracksAutoRange,
-    handleTrackSmoothingChange,
-    handleClearSelectedTracks,
-    resetTrackState,
-    hasParsedTrackData
-  } = useTrackState({
-    channels,
-    setChannels,
-    experimentDimension,
-    volumeTimepointCount
-  });
   const volumeStepScaleChangeRef = useRef<((value: number) => void) | null>(null);
 
   const handleRegisterReset = useCallback((handler: (() => void) | null) => {
