@@ -1,4 +1,4 @@
-import type { ExportPreprocessedDatasetOptions } from '../utils/preprocessedDataset';
+import type { ExportPreprocessedDatasetOptions } from '../shared/utils/preprocessedDataset';
 import {
   exportPreprocessedDatasetOnMainThread,
   type ExportPreprocessedDatasetStreamResult

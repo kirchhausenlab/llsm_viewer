@@ -4,8 +4,8 @@ import {
   exportPreprocessedDataset,
   type ExportPreprocessedDatasetOptions,
   type PreprocessedManifest
-} from '../utils/preprocessedDataset';
-import { ensureArrayBuffer } from '../utils/buffer';
+} from '../shared/utils/preprocessedDataset';
+import { ensureArrayBuffer } from '../shared/utils/buffer';
 
 type WorkerRequest = {
   id: number;

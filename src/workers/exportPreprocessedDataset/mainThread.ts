@@ -2,8 +2,8 @@ import {
   exportPreprocessedDataset,
   type ExportPreprocessedDatasetOptions,
   type PreprocessedManifest
-} from '../../utils/preprocessedDataset';
-import { cloneUint8Array } from '../../utils/buffer';
+} from '../../shared/utils/preprocessedDataset';
+import { cloneUint8Array } from '../../shared/utils/buffer';
 
 export type ExportPreprocessedDatasetStreamResult = {
   manifest: PreprocessedManifest;

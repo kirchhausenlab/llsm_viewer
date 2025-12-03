@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback, type Dispatch, type SetStateAction } from 'react';
-import { TRACK_COLOR_SWATCHES, normalizeTrackColor, type TrackColorOption } from '../../trackColors';
+import { TRACK_COLOR_SWATCHES, normalizeTrackColor, type TrackColorOption } from '../../shared/colorMaps/trackColors';
 import type { ChannelTrackState } from '../../types/channelTracks';
 import type { TrackColorMode, TrackDefinition } from '../../types/tracks';
 import type { ChannelSource } from '../useChannelSources';

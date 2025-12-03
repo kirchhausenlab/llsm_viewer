@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { colorizeSegmentationVolume, normalizeVolume } from '../src/volumeProcessing.ts';
+import { colorizeSegmentationVolume, normalizeVolume } from '../src/core/volumeProcessing.ts';
 import type { VolumePayload } from '../src/types/volume.ts';
 
 console.log('Starting volumeProcessing normalization tests');

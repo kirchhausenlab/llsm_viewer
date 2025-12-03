@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { useRef, useState } from 'react';
 
-import { useDatasetLaunch } from '../../../src/app/hooks/useDatasetLaunch.ts';
+import { useDatasetLaunch } from '../../../src/ui/app/hooks/useDatasetLaunch.ts';
 import type { DatasetErrorContext } from '../../../src/hooks/useDatasetErrors.ts';
 import { renderHook } from '../../hooks/renderHook.ts';
 

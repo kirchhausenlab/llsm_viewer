@@ -1,7 +1,7 @@
 import type {
   ExportPreprocessedDatasetOptions,
   PreprocessedManifest
-} from '../../utils/preprocessedDataset';
+} from '../../shared/utils/preprocessedDataset';
 import {
   createBufferedUint8Stream,
   type BufferedUint8Stream,

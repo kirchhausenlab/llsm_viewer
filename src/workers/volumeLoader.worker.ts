@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 import { fromBlob } from 'geotiff';
-import { MAX_VOLUME_BYTES } from '../constants/volumeLimits';
+import { MAX_VOLUME_BYTES } from '../shared/constants/volumeLimits';
 import { VolumeTooLargeError } from '../errors';
 import type { VolumeDataType, VolumeTypedArray } from '../types/volume';
 import { getBytesPerValue } from '../types/volume';

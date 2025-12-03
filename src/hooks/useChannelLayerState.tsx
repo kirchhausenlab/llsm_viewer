@@ -16,7 +16,7 @@ import {
   DEFAULT_LAYER_COLOR,
   GRAYSCALE_COLOR_SWATCHES,
   normalizeHexColor
-} from '../layerColors';
+} from '../shared/colorMaps/layerColors';
 import {
   brightnessContrastModel,
   clampWindowBounds,

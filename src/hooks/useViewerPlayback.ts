@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 
-import { DEFAULT_FPS } from '../utils/viewerPlayback';
+import { DEFAULT_FPS } from '../shared/utils/viewerPlayback';
 
 export type ViewerPlaybackState = {
   selectedIndex: number;

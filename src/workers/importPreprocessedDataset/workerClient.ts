@@ -1,4 +1,4 @@
-import type { ImportPreprocessedDatasetResult } from '../../utils/preprocessedDataset';
+import type { ImportPreprocessedDatasetResult } from '../../shared/utils/preprocessedDataset';
 import WorkerScript from '../importPreprocessedDataset.worker?worker';
 
 export type PreprocessedImportProgress = {

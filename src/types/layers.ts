@@ -1,4 +1,4 @@
-import type { NormalizedVolume } from '../volumeProcessing';
+import type { NormalizedVolume } from '../core/volumeProcessing';
 
 export type LoadedLayer = {
   key: string;

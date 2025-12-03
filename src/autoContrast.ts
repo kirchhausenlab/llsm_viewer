@@ -1,4 +1,4 @@
-import type { NormalizedVolume } from './volumeProcessing';
+import type { NormalizedVolume } from './core/volumeProcessing';
 import { MIN_WINDOW_WIDTH } from './state/layerSettings';
 
 const HISTOGRAM_BINS = 256;

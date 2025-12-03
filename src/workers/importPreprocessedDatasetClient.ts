@@ -7,7 +7,7 @@ import {
   importPreprocessedDataset,
   type ImportPreprocessedDatasetOptions,
   type ImportPreprocessedDatasetResult
-} from '../utils/preprocessedDataset';
+} from '../shared/utils/preprocessedDataset';
 
 export type ImportPreprocessedDatasetClientOptions = ImportPreprocessedDatasetWorkerOptions;
 

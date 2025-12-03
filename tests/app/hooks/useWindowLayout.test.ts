@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { useWindowLayout } from '../../../src/app/hooks/useWindowLayout.ts';
+import { useWindowLayout } from '../../../src/ui/app/hooks/useWindowLayout.ts';
 import {
   computeControlWindowDefaultPosition,
   computeLayersWindowDefaultPosition,
@@ -8,7 +8,7 @@ import {
   computeSelectedTracksWindowDefaultPosition,
   computeTrackWindowDefaultPosition,
   computeViewerSettingsWindowDefaultPosition
-} from '../../../src/utils/windowLayout.ts';
+} from '../../../src/shared/utils/windowLayout.ts';
 import { renderHook } from '../../hooks/renderHook.ts';
 
 console.log('Starting useWindowLayout tests');
