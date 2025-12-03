@@ -17,22 +17,6 @@ If you are new to this repo:
 
 ---
 
-## How to update this document (agents + humans)
-
-When you make structural changes (new major components, new directories, large refactors):
-
-- **Keep edits short and factual.**
-  - 1–2 lines per file or group of files is usually enough.
-- **Update the relevant section instead of adding random notes.**
-  - If you add a new viewer, extend the “UI + rendering” section.
-  - If you add a new worker, extend “Data pipeline” or “Export/import”.
-- **Remove or fix stale descriptions** when they no longer match reality.
-- If you introduce a new major flow (e.g. “new ingest pipeline” or “new renderer”), add a short bullet for it in **Key flows**.
-
-Do **not** describe fine-grained implementation details here; put those in comments, docstrings, or in more specific docs if needed.
-
----
-
 ## High-level overview
 
 This repo is a **Vite + React + TypeScript** single-page app (no backend). Most code lives in `src/`, with heavy work offloaded to **Web Workers** and rendering done with **Three.js + custom shaders**.
