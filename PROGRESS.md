@@ -46,3 +46,7 @@
 
 ## Viewer shell refactor
 - Broke the monolithic viewer shell into focused components for top navigation, playback, channels, tracks, and plot settings, with hooks to keep state wiring tidy.
+
+## Volume viewer cleanup
+- Moved renderer/camera/scene initialization into a reusable helper to simplify viewer setup effects.
+- Extracted hover sampling math into a shared utility and isolated VR bridge wiring into its own component.
