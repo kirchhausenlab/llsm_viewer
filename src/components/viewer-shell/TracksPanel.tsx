@@ -138,7 +138,7 @@ export default function TracksPanel({
                 if (orderMode === 'length') {
                   return b.points.length - a.points.length;
                 }
-                return a.id.localeCompare(b.id);
+                return a.trackNumber - b.trackNumber;
               });
 
               return (
