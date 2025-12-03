@@ -1,19 +1,9 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { Line2 } from 'three/examples/jsm/lines/Line2';
-import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
-import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
 import type { NormalizedVolume } from '../volumeProcessing';
 import type { HoveredVoxelInfo } from '../types/hover';
-import { VolumeRenderShader } from '../shaders/volumeRenderShader';
-import { SliceRenderShader } from '../shaders/sliceRenderShader';
-import { getCachedTextureData } from '../textureCache';
 import './VolumeViewer.css';
-import type { TrackColorMode, TrackDefinition } from '../types/tracks';
-import { createVolumeRenderContext } from '../hooks/useVolumeRenderSetup';
 import type {
-  MovementState,
   TrackLineResource,
   VolumeResources,
   VolumeViewerProps,
@@ -21,17 +11,8 @@ import type {
 import { VolumeViewerVrBridge } from './volume-viewer/VolumeViewerVrBridge';
 import {
   DESKTOP_VOLUME_STEP_SCALE,
-  VR_PLAYBACK_MAX_FPS,
-  VR_PLAYBACK_MIN_FPS,
   VR_VOLUME_BASE_OFFSET,
 } from './volume-viewer/vr';
-import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../layerColors';
-import {
-  createTrackColor,
-  DEFAULT_TRACK_COLOR,
-  getTrackColorHex,
-  normalizeTrackColor,
-} from '../trackColors';
 import {
   brightnessContrastModel,
   computeContrastMultiplier,
@@ -39,19 +20,16 @@ import {
   DEFAULT_WINDOW_MIN,
   DEFAULT_WINDOW_MAX
 } from '../state/layerSettings';
-import { DEFAULT_TRACK_LINE_WIDTH, DEFAULT_TRACK_OPACITY } from './volume-viewer/constants';
 import { denormalizeValue, formatChannelValuesDetailed } from '../utils/intensityFormatting';
 import { clampValue, sampleRawValuesAtPosition, sampleSegmentationLabel } from '../utils/hoverSampling';
 import {
   disposeMaterial,
-  getExpectedSliceBufferLength,
-  prepareSliceTexture,
-  createColormapTexture,
   HOVER_HIGHLIGHT_RADIUS_VOXELS,
   HOVER_PULSE_SPEED,
   hoverBoundingBox,
   hoverEntryOffset,
   hoverEntryPoint,
+  hoverEnd,
   hoverExitPoint,
   hoverExitRay,
   hoverInverseMatrix,
@@ -69,28 +47,15 @@ import {
   hoverVolumeSize,
   MIP_MAX_STEPS,
   MIP_REFINEMENT_STEPS,
-  computeTrackEndCapRadius,
-  FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER,
-  getTrackIdFromObject,
-  HOVERED_TRACK_LINE_WIDTH_MULTIPLIER,
-  SELECTED_TRACK_BLINK_BASE,
-  SELECTED_TRACK_BLINK_PERIOD_MS,
-  SELECTED_TRACK_BLINK_RANGE,
-  SELECTED_TRACK_LINE_WIDTH_MULTIPLIER,
-  trackBlinkColorTemp,
 } from './volume-viewer/rendering';
 import { LoadingOverlay } from './volume-viewer/LoadingOverlay';
 import { TrackTooltip } from './volume-viewer/TrackTooltip';
 import { HoverDebug } from './volume-viewer/HoverDebug';
 import { useVolumeViewerVrBridge } from './volume-viewer/useVolumeViewerVrBridge';
-const MOVEMENT_KEY_MAP: Record<string, keyof MovementState> = {
-  KeyW: 'moveForward',
-  KeyS: 'moveBackward',
-  KeyA: 'moveLeft',
-  KeyD: 'moveRight',
-  KeyE: 'moveUp',
-  KeyQ: 'moveDown'
-};
+import { useCameraControls } from './volume-viewer/useCameraControls';
+import { useVolumeResources } from './volume-viewer/useVolumeResources';
+import { useTrackRendering } from './volume-viewer/useTrackRendering';
+import { usePlaybackControls } from './volume-viewer/usePlaybackControls';
 
 function VolumeViewer({
   layers,
@@ -159,16 +124,7 @@ function VolumeViewer({
   const onLayerInvertToggle = vr?.onLayerInvertToggle;
   const onRegisterVrSession = vr?.onRegisterVrSession;
 
-  const trackScaleX = trackScale.x ?? 1;
-  const trackScaleY = trackScale.y ?? 1;
-  const trackScaleZ = trackScale.z ?? 1;
-
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const sceneRef = useRef<THREE.Scene | null>(null);
-  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const hoverRaycasterRef = useRef<THREE.Raycaster | null>(null);
-  const controlsRef = useRef<OrbitControls | null>(null);
   const resourcesRef = useRef<Map<string, VolumeResources>>(new Map());
   const hoverTeardownRef = useRef(false);
   const hoverInitializationFailedRef = useRef(false);
@@ -176,22 +132,8 @@ function VolumeViewer({
   const pendingHoverEventRef = useRef<PointerEvent | null>(null);
   const hoverRetryFrameRef = useRef<number | null>(null);
   const updateVoxelHoverRef = useRef<(event: PointerEvent) => void>(() => {});
-  const endPointerLookRef = useRef<(event?: PointerEvent) => void>(() => {});
   const currentDimensionsRef = useRef<{ width: number; height: number; depth: number } | null>(null);
   const colormapCacheRef = useRef<Map<string, THREE.DataTexture>>(new Map());
-  const rotationTargetRef = useRef(new THREE.Vector3());
-  const defaultViewStateRef = useRef<{
-    position: THREE.Vector3;
-    target: THREE.Vector3;
-  } | null>(null);
-  const movementStateRef = useRef<MovementState>({
-    moveForward: false,
-    moveBackward: false,
-    moveLeft: false,
-    moveRight: false,
-    moveUp: false,
-    moveDown: false
-  });
   const volumeRootGroupRef = useRef<THREE.Group | null>(null);
   const volumeRootBaseOffsetRef = useRef(new THREE.Vector3());
   const volumeRootCenterOffsetRef = useRef(new THREE.Vector3());
@@ -205,21 +147,27 @@ function VolumeViewer({
   const volumeRootRotatedCenterTempRef = useRef(new THREE.Vector3());
   const trackGroupRef = useRef<THREE.Group | null>(null);
   const trackLinesRef = useRef<Map<string, TrackLineResource>>(new Map());
-  const timeIndexRef = useRef(0);
   const followedTrackIdRef = useRef<string | null>(null);
   const trackFollowOffsetRef = useRef<THREE.Vector3 | null>(null);
   const previousFollowedTrackIdRef = useRef<string | null>(null);
   const hasActive3DLayerRef = useRef(false);
   const [hasMeasured, setHasMeasured] = useState(false);
-  const [trackOverlayRevision, setTrackOverlayRevision] = useState(0);
+  const {
+    containerRef,
+    rendererRef,
+    sceneRef,
+    cameraRef,
+    controlsRef,
+    rotationTargetRef,
+    defaultViewStateRef,
+    movementStateRef,
+    endPointerLookRef,
+    handleResize,
+    applyKeyboardMovement,
+    createPointerLookHandlers,
+    initializeRenderContext,
+  } = useCameraControls({ trackLinesRef, followedTrackIdRef, setHasMeasured });
   const [renderContextRevision, setRenderContextRevision] = useState(0);
-  const hoveredTrackIdRef = useRef<string | null>(null);
-  const [hoveredTrackId, setHoveredTrackId] = useState<string | null>(null);
-  const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
-  const hoverSourcesRef = useRef({
-    pointer: { trackId: null as string | null, position: null as { x: number; y: number } | null },
-    controller: { trackId: null as string | null, position: null as { x: number; y: number } | null }
-  });
   const layersRef = useRef(layers);
   const hoverIntensityRef = useRef<HoveredVoxelInfo | null>(null);
   const hoveredVoxelRef = useRef<{
@@ -252,76 +200,25 @@ function VolumeViewer({
     trackFollowRequestCallbackRef.current?.(trackId);
   }, []);
 
+  const {
+    playbackState,
+    clampedTimeIndex,
+    timeIndexRef,
+    registerPlaybackRefs,
+    advancePlaybackFrame,
+  } = usePlaybackControls({
+    isPlaying,
+    playbackDisabled,
+    playbackLabel,
+    fps,
+    timeIndex,
+    totalTimepoints,
+    onTogglePlayback,
+    onTimeIndexChange,
+    onFpsChange,
+  });
+
   const isAdditiveBlending = blendingMode === 'additive';
-
-  const handleResize = useCallback(() => {
-    const target = containerRef.current;
-    const rendererInstance = rendererRef.current;
-    const cameraInstance = cameraRef.current;
-    if (!target || !rendererInstance || !cameraInstance) {
-      return;
-    }
-    if (rendererInstance.xr?.isPresenting) {
-      return;
-    }
-    const width = target.clientWidth;
-    const height = target.clientHeight;
-    if (width > 0 && height > 0) {
-      setHasMeasured(true);
-    }
-    rendererInstance.setSize(width, height);
-    if (width > 0 && height > 0) {
-      for (const resource of trackLinesRef.current.values()) {
-        resource.material.resolution.set(width, height);
-        resource.material.needsUpdate = true;
-        resource.outlineMaterial.resolution.set(width, height);
-        resource.outlineMaterial.needsUpdate = true;
-      }
-    }
-    cameraInstance.aspect = width / height;
-    cameraInstance.updateProjectionMatrix();
-  }, [setHasMeasured]);
-
-  const applyHoverState = useCallback(() => {
-    const pointerState = hoverSourcesRef.current.pointer;
-    const controllerState = hoverSourcesRef.current.controller;
-    const nextState =
-      pointerState.trackId !== null
-        ? pointerState
-        : controllerState.trackId !== null
-        ? controllerState
-        : { trackId: null as string | null, position: null as { x: number; y: number } | null };
-    if (hoveredTrackIdRef.current !== nextState.trackId) {
-      hoveredTrackIdRef.current = nextState.trackId;
-      setHoveredTrackId(nextState.trackId);
-    }
-    setTooltipPosition(nextState.position);
-  }, []);
-
-  const updateHoverState = useCallback(
-    (
-      trackId: string | null,
-      position: { x: number; y: number } | null,
-      source: 'pointer' | 'controller' = 'pointer'
-    ) => {
-      hoverSourcesRef.current[source] = { trackId, position };
-      applyHoverState();
-    },
-    [applyHoverState]
-  );
-
-  const clearHoverState = useCallback(
-    (source?: 'pointer' | 'controller') => {
-      if (source) {
-        hoverSourcesRef.current[source] = { trackId: null, position: null };
-      } else {
-        hoverSourcesRef.current.pointer = { trackId: null, position: null };
-        hoverSourcesRef.current.controller = { trackId: null, position: null };
-      }
-      applyHoverState();
-    },
-    [applyHoverState]
-  );
 
   useEffect(() => {
     layersRef.current = layers;
@@ -455,30 +352,76 @@ function VolumeViewer({
     [reportVoxelHoverAbort],
   );
 
-  const playbackState = useMemo(
-    () => ({
-      isPlaying,
-      playbackDisabled,
-      playbackLabel,
-      fps,
-      timeIndex,
-      totalTimepoints,
-      onTogglePlayback,
-      onTimeIndexChange,
-      onFpsChange,
-    }),
-    [
-      isPlaying,
-      playbackDisabled,
-      playbackLabel,
-      fps,
-      timeIndex,
-      totalTimepoints,
-      onTogglePlayback,
-      onTimeIndexChange,
-      onFpsChange,
-    ],
+  const safeProgress = Math.min(1, Math.max(0, loadingProgress));
+  const clampedLoadedVolumes = Math.max(0, loadedVolumes);
+  const clampedExpectedVolumes = Math.max(0, expectedVolumes);
+  const normalizedProgress =
+    clampedExpectedVolumes > 0
+      ? Math.min(1, clampedLoadedVolumes / clampedExpectedVolumes)
+      : safeProgress;
+  const hasStartedLoading = normalizedProgress > 0 || clampedLoadedVolumes > 0 || safeProgress > 0;
+  const hasFinishedLoading =
+    clampedExpectedVolumes > 0 ? clampedLoadedVolumes >= clampedExpectedVolumes : safeProgress >= 1;
+  const showLoadingOverlay = isLoading || (hasStartedLoading && !hasFinishedLoading);
+  const primaryVolume = useMemo(() => {
+    for (const layer of layers) {
+      if (layer.volume) {
+        return layer.volume;
+      }
+    }
+    return null;
+  }, [layers]);
+
+  const hasRenderableLayer = Boolean(primaryVolume);
+  const hasActive3DLayer = useMemo(
+    () =>
+      layers.some((layer) => {
+        if (!layer.volume) {
+          return false;
+        }
+        const viewerMode =
+          layer.mode === 'slice' || layer.mode === '3d'
+            ? layer.mode
+            : layer.volume.depth > 1
+            ? '3d'
+            : 'slice';
+        return viewerMode === '3d';
+      }),
+    [layers],
   );
+
+  const {
+    hoveredTrackId,
+    tooltipPosition,
+    trackLookup,
+    applyTrackGroupTransform,
+    performHoverHitTest,
+    updateHoverState,
+    clearHoverState,
+    updateTrackAppearance,
+    computeTrackCentroid,
+    refreshTrackOverlay,
+    disposeTrackResources,
+  } = useTrackRendering({
+    tracks,
+    trackVisibility,
+    trackOpacityByChannel,
+    trackLineWidthByChannel,
+    channelTrackColorModes,
+    channelTrackOffsets,
+    trackScale,
+    selectedTrackIds,
+    followedTrackId,
+    clampedTimeIndex,
+    trackGroupRef,
+    trackLinesRef,
+    containerRef,
+    rendererRef,
+    cameraRef,
+    hoverRaycasterRef,
+    currentDimensionsRef,
+    hasActive3DLayer,
+  });
 
   const { vrApi, vrParams, vrIntegration, setVrIntegration } = useVolumeViewerVrBridge({
     vr,
@@ -570,6 +513,23 @@ function VolumeViewer({
   } = vrApi;
 
   useEffect(() => {
+    registerPlaybackRefs({
+      playbackStateRef,
+      playbackLoopRef,
+      vrHoverStateRef,
+      updateVrPlaybackHud,
+      vrIntegration,
+    });
+  }, [
+    playbackLoopRef,
+    playbackStateRef,
+    registerPlaybackRefs,
+    updateVrPlaybackHud,
+    vrHoverStateRef,
+    vrIntegration,
+  ]);
+
+  useEffect(() => {
     if (!onRegisterVrSession) {
       callOnRegisterVrSession(null);
       return;
@@ -618,521 +578,41 @@ function VolumeViewer({
     }
   }, [containerNode, setHoverNotReady]);
 
-  const trackLookup = useMemo(() => {
-    const map = new Map<string, TrackDefinition>();
-    for (const track of tracks) {
-      map.set(track.id, track);
-    }
-    return map;
-  }, [tracks]);
-
-  const resolveTrackColor = useCallback(
-    (track: TrackDefinition) => {
-      const mode = channelTrackColorModes[track.channelId];
-      if (mode && mode.type === 'uniform') {
-        return new THREE.Color(mode.color);
-      }
-      return createTrackColor(track.id);
-    },
-    [channelTrackColorModes]
-  );
-
-  const applyTrackGroupTransform = useCallback(
-    (dimensions: { width: number; height: number; depth: number } | null) => {
-      const trackGroup = trackGroupRef.current;
-      if (!trackGroup) {
-        return;
-      }
-
-      if (!dimensions) {
-        trackGroup.position.set(0, 0, 0);
-        trackGroup.scale.set(1, 1, 1);
-        trackGroup.matrixWorldNeedsUpdate = true;
-        return;
-      }
-
-      const { width, height, depth } = dimensions;
-      const maxDimension = Math.max(width, height, depth);
-      if (!Number.isFinite(maxDimension) || maxDimension <= 0) {
-        trackGroup.position.set(0, 0, 0);
-        trackGroup.scale.set(1, 1, 1);
-        trackGroup.matrixWorldNeedsUpdate = true;
-        return;
-      }
-
-      // The volume root group already normalizes scale/position for all children,
-      // so the track overlay should keep an identity transform to match the
-      // volume data coordinates.
-      trackGroup.position.set(0, 0, 0);
-      trackGroup.scale.set(1, 1, 1);
-      trackGroup.matrixWorldNeedsUpdate = true;
-    },
-    []
-  );
-
-  const getColormapTexture = useCallback((color: string) => {
-    const normalized = normalizeHexColor(color, DEFAULT_LAYER_COLOR);
-    const cache = colormapCacheRef.current;
-    let texture = cache.get(normalized) ?? null;
-    if (!texture) {
-      texture = createColormapTexture(normalized);
-      cache.set(normalized, texture);
-    }
-    return texture;
-  }, []);
-
-  const updateTrackDrawRanges = useCallback((targetTimeIndex: number) => {
-    const lines = trackLinesRef.current;
-    const maxVisibleTime = targetTimeIndex;
-
-    for (const resource of lines.values()) {
-      const { geometry, times, positions, endCap } = resource;
-      let visiblePoints = 0;
-      for (let index = 0; index < times.length; index++) {
-        if (times[index] <= maxVisibleTime) {
-          visiblePoints = index + 1;
-        } else {
-          break;
-        }
-      }
-
-      const totalSegments = Math.max(times.length - 1, 0);
-      const visibleSegments = Math.min(Math.max(visiblePoints - 1, 0), totalSegments);
-      const hasVisiblePoints = visiblePoints > 0;
-      resource.hasVisiblePoints = hasVisiblePoints;
-      if (hasVisiblePoints) {
-        const lastPointIndex = visiblePoints - 1;
-        const baseIndex = lastPointIndex * 3;
-        endCap.position.set(
-          positions[baseIndex] ?? 0,
-          positions[baseIndex + 1] ?? 0,
-          positions[baseIndex + 2] ?? 0
-        );
-      }
-      endCap.visible = resource.shouldShow && hasVisiblePoints;
-      geometry.instanceCount = visibleSegments;
-    }
-  }, []);
-
-  const safeProgress = Math.min(1, Math.max(0, loadingProgress));
-  const clampedLoadedVolumes = Math.max(0, loadedVolumes);
-  const clampedExpectedVolumes = Math.max(0, expectedVolumes);
-  const normalizedProgress =
-    clampedExpectedVolumes > 0
-      ? Math.min(1, clampedLoadedVolumes / clampedExpectedVolumes)
-      : safeProgress;
-  const hasStartedLoading = normalizedProgress > 0 || clampedLoadedVolumes > 0 || safeProgress > 0;
-  const hasFinishedLoading =
-    clampedExpectedVolumes > 0 ? clampedLoadedVolumes >= clampedExpectedVolumes : safeProgress >= 1;
-  const showLoadingOverlay = isLoading || (hasStartedLoading && !hasFinishedLoading);
-  const clampedTimeIndex = totalTimepoints === 0 ? 0 : Math.min(timeIndex, totalTimepoints - 1);
-  timeIndexRef.current = clampedTimeIndex;
-  useEffect(() => {
-    if (vrIntegration) {
-      return;
-    }
-    const state = playbackStateRef.current;
-    state.isPlaying = isPlaying;
-    state.playbackDisabled = playbackDisabled;
-    state.playbackLabel = playbackLabel;
-    state.fps = fps;
-    state.timeIndex = clampedTimeIndex;
-    state.totalTimepoints = totalTimepoints;
-    state.onTogglePlayback = onTogglePlayback;
-    state.onTimeIndexChange = onTimeIndexChange;
-    state.onFpsChange = onFpsChange;
-  }, [
-    clampedTimeIndex,
-    fps,
-    isPlaying,
-    onFpsChange,
-    onTimeIndexChange,
-    onTogglePlayback,
-    playbackDisabled,
-    playbackLabel,
-    playbackStateRef,
-    totalTimepoints,
-    vrIntegration,
-  ]);
-  const primaryVolume = useMemo(() => {
-    for (const layer of layers) {
-      if (layer.volume) {
-        return layer.volume;
-      }
-    }
-    return null;
-  }, [layers]);
-  const hasRenderableLayer = Boolean(primaryVolume);
-  const hasActive3DLayer = useMemo(
-    () =>
-      layers.some((layer) => {
-        if (!layer.volume) {
-          return false;
-        }
-        const viewerMode =
-          layer.mode === 'slice' || layer.mode === '3d'
-            ? layer.mode
-            : layer.volume.depth > 1
-            ? '3d'
-            : 'slice';
-        return viewerMode === '3d';
-      }),
-    [layers]
-  );
   useEffect(() => {
     hasActive3DLayerRef.current = hasActive3DLayer;
     updateVolumeHandles();
   }, [hasActive3DLayer, updateVolumeHandles]);
-  const previouslyHad3DLayerRef = useRef(false);
 
-  useEffect(() => {
-    if (trackOverlayRevision === 0) {
-      return;
-    }
-
-    const trackGroup = trackGroupRef.current;
-    if (!trackGroup) {
-      return;
-    }
-
-    const trackLines = trackLinesRef.current;
-    const activeIds = new Set<string>();
-    tracks.forEach((track) => {
-      if (track.points.length > 0) {
-        activeIds.add(track.id);
-      }
-    });
-
-    for (const [id, resource] of Array.from(trackLines.entries())) {
-      if (!activeIds.has(id)) {
-        trackGroup.remove(resource.line);
-        trackGroup.remove(resource.outline);
-        trackGroup.remove(resource.endCap);
-        resource.geometry.dispose();
-        resource.material.dispose();
-        resource.outlineMaterial.dispose();
-        resource.endCap.geometry.dispose();
-        resource.endCapMaterial.dispose();
-        if (hoveredTrackIdRef.current === id) {
-          clearHoverState();
-        }
-        trackLines.delete(id);
-      }
-    }
-
-    for (const track of tracks) {
-      if (track.points.length === 0) {
-        continue;
-      }
-
-      let resource = trackLines.get(track.id) ?? null;
-      const positions = new Float32Array(track.points.length * 3);
-      const times = new Array<number>(track.points.length);
-      const offset = channelTrackOffsets[track.channelId] ?? { x: 0, y: 0 };
-      const scaledOffsetX = offset.x * trackScaleX;
-      const scaledOffsetY = offset.y * trackScaleY;
-
-      for (let index = 0; index < track.points.length; index++) {
-        const point = track.points[index];
-        const resolvedZ = Number.isFinite(point.z) ? point.z : 0;
-        positions[index * 3 + 0] = point.x * trackScaleX + scaledOffsetX;
-        positions[index * 3 + 1] = point.y * trackScaleY + scaledOffsetY;
-        positions[index * 3 + 2] = resolvedZ * trackScaleZ;
-        times[index] = point.time;
-      }
-
-      const baseColor = resolveTrackColor(track);
-      const highlightColor = baseColor.clone().lerp(new THREE.Color(0xffffff), 0.4);
-
-      if (!resource) {
-        const geometry = new LineGeometry();
-        geometry.setPositions(positions);
-        geometry.instanceCount = 0;
-        const material = new LineMaterial({
-          color: baseColor.clone(),
-          linewidth: 1,
-          transparent: true,
-          opacity: 0.9,
-          depthTest: false,
-          depthWrite: false
-        });
-        const outlineMaterial = new LineMaterial({
-          color: new THREE.Color(0xffffff),
-          linewidth: 1,
-          transparent: true,
-          opacity: 0,
-          depthTest: false,
-          depthWrite: false
-        });
-        const containerNode = containerRef.current;
-        if (containerNode) {
-          const width = Math.max(containerNode.clientWidth, 1);
-          const height = Math.max(containerNode.clientHeight, 1);
-          material.resolution.set(width, height);
-          outlineMaterial.resolution.set(width, height);
-        } else {
-          material.resolution.set(1, 1);
-          outlineMaterial.resolution.set(1, 1);
-        }
-
-        const outline = new Line2(geometry, outlineMaterial);
-        outline.computeLineDistances();
-        outline.renderOrder = 999;
-        outline.frustumCulled = false;
-        outline.visible = false;
-
-        const line = new Line2(geometry, material);
-        line.computeLineDistances();
-        line.renderOrder = 1000;
-        line.frustumCulled = false;
-        line.userData.trackId = track.id;
-
-        trackGroup.add(outline);
-        trackGroup.add(line);
-
-        const endCapMaterial = new THREE.MeshBasicMaterial({
-          color: baseColor.clone(),
-          transparent: true,
-          opacity: DEFAULT_TRACK_OPACITY,
-          depthTest: false,
-          depthWrite: false
-        });
-        const endCapGeometry = new THREE.SphereGeometry(1, 18, 14);
-        const endCap = new THREE.Mesh(endCapGeometry, endCapMaterial);
-        endCap.renderOrder = 1001;
-        endCap.frustumCulled = false;
-        endCap.visible = false;
-        endCap.userData.trackId = track.id;
-
-        trackGroup.add(endCap);
-        resource = {
-          line,
-          outline,
-          geometry,
-          material,
-          outlineMaterial,
-          endCap,
-          endCapMaterial,
-          times,
-          positions,
-          baseColor: baseColor.clone(),
-          highlightColor: highlightColor.clone(),
-          channelId: track.channelId,
-          baseLineWidth: DEFAULT_TRACK_LINE_WIDTH,
-          targetLineWidth: DEFAULT_TRACK_LINE_WIDTH,
-          outlineExtraWidth: Math.max(DEFAULT_TRACK_LINE_WIDTH * 0.75, 0.4),
-          targetOpacity: DEFAULT_TRACK_OPACITY,
-          outlineBaseOpacity: 0,
-          endCapRadius: computeTrackEndCapRadius(DEFAULT_TRACK_LINE_WIDTH),
-          hasVisiblePoints: false,
-          isFollowed: false,
-          isSelected: false,
-          isHovered: false,
-          shouldShow: false,
-          needsAppearanceUpdate: true
-        };
-        trackLines.set(track.id, resource);
-      } else {
-        const { geometry, line, outline } = resource;
-        geometry.setPositions(positions);
-        line.computeLineDistances();
-        outline.computeLineDistances();
-        resource.times = times;
-        resource.positions = positions;
-        resource.baseColor.copy(baseColor);
-        resource.highlightColor.copy(highlightColor);
-        resource.endCapMaterial.color.copy(baseColor);
-        resource.endCap.userData.trackId = track.id;
-        resource.endCapRadius = computeTrackEndCapRadius(resource.baseLineWidth);
-        resource.channelId = track.channelId;
-        resource.needsAppearanceUpdate = true;
-      }
-    }
-
-    updateTrackDrawRanges(timeIndexRef.current);
-  }, [
-    channelTrackColorModes,
-    channelTrackOffsets,
-    clearHoverState,
-    resolveTrackColor,
-    trackScaleX,
-    trackScaleY,
-    trackScaleZ,
-    trackOverlayRevision,
-    tracks,
-    updateTrackDrawRanges
-  ]);
-
-  useEffect(() => {
-    if (trackOverlayRevision === 0) {
-      return;
-    }
-
-    const trackGroup = trackGroupRef.current;
-    if (!trackGroup) {
-      return;
-    }
-
-    let visibleCount = 0;
-
-    for (const track of tracks) {
-      const resource = trackLinesRef.current.get(track.id);
-      if (!resource) {
-        continue;
-      }
-
-      const { line, outline, endCap } = resource;
-
-      const isExplicitlyVisible = trackVisibility[track.id] ?? true;
-      const isFollowed = followedTrackId === track.id;
-      const isHovered = hoveredTrackId === track.id;
-      const isSelected = selectedTrackIds.has(track.id);
-      const isHighlighted = isFollowed || isHovered || isSelected;
-      const shouldShow = isFollowed || isExplicitlyVisible || isSelected;
-
-      resource.channelId = track.channelId;
-      resource.isFollowed = isFollowed;
-      resource.isHovered = isHovered;
-      resource.isSelected = isSelected;
-      resource.shouldShow = shouldShow;
-      resource.needsAppearanceUpdate = true;
-
-      line.visible = shouldShow;
-      outline.visible = shouldShow && isHighlighted;
-      endCap.visible = shouldShow && resource.hasVisiblePoints;
-      if (shouldShow) {
-        visibleCount += 1;
-      }
-
-      const channelOpacity = trackOpacityByChannel[track.channelId] ?? DEFAULT_TRACK_OPACITY;
-      const sanitizedOpacity = Math.min(1, Math.max(0, channelOpacity));
-      const opacityBoost = isFollowed || isSelected ? 0.15 : isHovered ? 0.12 : 0;
-      resource.targetOpacity = Math.min(1, sanitizedOpacity + opacityBoost);
-
-      const channelLineWidth = trackLineWidthByChannel[track.channelId] ?? DEFAULT_TRACK_LINE_WIDTH;
-      const sanitizedLineWidth = Math.max(0.1, Math.min(10, channelLineWidth));
-      resource.baseLineWidth = sanitizedLineWidth;
-      let widthMultiplier = 1;
-      if (isHovered) {
-        widthMultiplier = Math.max(widthMultiplier, HOVERED_TRACK_LINE_WIDTH_MULTIPLIER);
-      }
-      if (isFollowed) {
-        widthMultiplier = Math.max(widthMultiplier, FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER);
-      }
-      if (isSelected) {
-        widthMultiplier = Math.max(widthMultiplier, SELECTED_TRACK_LINE_WIDTH_MULTIPLIER);
-      }
-      resource.targetLineWidth = sanitizedLineWidth * widthMultiplier;
-      resource.outlineExtraWidth = Math.max(sanitizedLineWidth * 0.75, 0.4);
-
-      resource.endCapRadius = computeTrackEndCapRadius(resource.targetLineWidth);
-
-      resource.outlineBaseOpacity = isFollowed || isSelected ? 0.75 : isHovered ? 0.9 : 0;
-    }
-
-    const followedTrackExists = followedTrackId !== null && trackLinesRef.current.has(followedTrackId);
-
-    trackGroup.visible = visibleCount > 0 || followedTrackExists;
-
-    if (hoveredTrackId !== null) {
-      const hoveredResource = trackLinesRef.current.get(hoveredTrackId);
-      if (!hoveredResource || !hoveredResource.line.visible) {
-        clearHoverState();
-      }
-    }
-  }, [
-    clearHoverState,
-    trackOverlayRevision,
-    followedTrackId,
-    hoveredTrackId,
-    selectedTrackIds,
-    trackLineWidthByChannel,
-    trackOpacityByChannel,
-    trackVisibility,
-    tracks
-  ]);
-
-  useEffect(() => {
-    updateTrackDrawRanges(clampedTimeIndex);
-  }, [clampedTimeIndex, updateTrackDrawRanges]);
-
-  useEffect(() => {
-    const previouslyHad3DLayer = previouslyHad3DLayerRef.current;
-    previouslyHad3DLayerRef.current = hasActive3DLayer;
-
-    if (!hasActive3DLayer || previouslyHad3DLayer === hasActive3DLayer) {
-      return;
-    }
-
-    applyVolumeRootTransformRef.current?.(currentDimensionsRef.current);
-    applyTrackGroupTransformRef.current?.(currentDimensionsRef.current);
-
-    const trackGroup = trackGroupRef.current;
-    if (trackGroup) {
-      trackGroup.updateMatrixWorld(true);
-    }
-
-    setTrackOverlayRevision((revision) => revision + 1);
-    updateTrackDrawRanges(timeIndexRef.current);
-  }, [
+  const { getColormapTexture } = useVolumeResources({
+    layers,
+    primaryVolume,
+    isAdditiveBlending,
+    renderContextRevision,
+    sceneRef,
+    cameraRef,
+    controlsRef,
+    rotationTargetRef,
+    defaultViewStateRef,
+    trackGroupRef,
+    resourcesRef,
+    currentDimensionsRef,
+    colormapCacheRef,
+    volumeRootGroupRef,
+    volumeRootBaseOffsetRef,
+    volumeRootCenterOffsetRef,
+    volumeRootCenterUnscaledRef,
+    volumeRootHalfExtentsRef,
+    volumeNormalizationScaleRef,
+    volumeUserScaleRef,
+    volumeStepScaleRef,
+    volumeYawRef,
+    volumePitchRef,
+    volumeRootRotatedCenterTempRef,
     applyTrackGroupTransform,
     applyVolumeRootTransform,
-    hasActive3DLayer,
-    updateTrackDrawRanges
-  ]);
-
-  const computeTrackCentroid = useCallback(
-    (trackId: string, targetTimeIndex: number) => {
-      const track = trackLookup.get(trackId);
-      if (!track || track.points.length === 0) {
-        return null;
-      }
-
-      const maxVisibleTime = targetTimeIndex + 1;
-      const epsilon = 1e-3;
-      let latestTime = -Infinity;
-      let count = 0;
-      let sumX = 0;
-      let sumY = 0;
-      let sumZ = 0;
-      const offset = channelTrackOffsets[track.channelId] ?? { x: 0, y: 0 };
-      const scaledOffsetX = offset.x * trackScaleX;
-      const scaledOffsetY = offset.y * trackScaleY;
-
-      for (const point of track.points) {
-        if (point.time - maxVisibleTime > epsilon) {
-          break;
-        }
-
-        if (point.time > latestTime + epsilon) {
-          latestTime = point.time;
-          count = 1;
-          sumX = point.x * trackScaleX + scaledOffsetX;
-          sumY = point.y * trackScaleY + scaledOffsetY;
-          sumZ = (Number.isFinite(point.z) ? point.z : 0) * trackScaleZ;
-        } else if (Math.abs(point.time - latestTime) <= epsilon) {
-          count += 1;
-          sumX += point.x * trackScaleX + scaledOffsetX;
-          sumY += point.y * trackScaleY + scaledOffsetY;
-          sumZ += (Number.isFinite(point.z) ? point.z : 0) * trackScaleZ;
-        }
-      }
-
-      if (count === 0) {
-        return null;
-      }
-
-      const trackGroup = trackGroupRef.current;
-      if (!trackGroup) {
-        return null;
-      }
-
-      const centroidLocal = new THREE.Vector3(sumX / count, sumY / count, sumZ / count);
-      trackGroup.updateMatrixWorld(true);
-      return trackGroup.localToWorld(centroidLocal);
-    },
-    [channelTrackOffsets, trackLookup, trackScaleX, trackScaleY, trackScaleZ]
-  );
+    applyVolumeStepScaleToResources,
+    applyHoverHighlightToResources,
+  });
 
   const retryPendingVoxelHover = useCallback(() => {
     const pendingEvent = pendingHoverEventRef.current;
@@ -1805,9 +1285,9 @@ function VolumeViewer({
       return;
     }
 
-    let renderContext: ReturnType<typeof createVolumeRenderContext>;
+    let renderContext: ReturnType<typeof initializeRenderContext>;
     try {
-      renderContext = createVolumeRenderContext(container);
+      renderContext = initializeRenderContext(container);
     } catch (error) {
       hoverInitializationFailedRef.current = true;
       setHoverNotReady('Hover inactive: renderer not initialized.');
@@ -1889,7 +1369,7 @@ function VolumeViewer({
     // in unnormalized dataset coordinates until another interaction triggers a
     // redraw.
     applyTrackGroupTransformRef.current?.(currentDimensionsRef.current);
-    setTrackOverlayRevision((revision) => revision + 1);
+    refreshTrackOverlay();
     setRenderContextRevision((revision) => revision + 1);
 
     cameraRef.current = camera;
@@ -1932,78 +1412,11 @@ function VolumeViewer({
     const domElement = renderer.domElement;
     const pointerTarget = domElement.parentElement ?? domElement;
 
-    const pointerVector = new THREE.Vector2();
     const raycaster = new THREE.Raycaster();
     raycaster.params.Line = { threshold: 0.02 };
     raycaster.params.Line2 = { threshold: 0.02 };
 
-    const pointerLookState = {
-      activePointerId: null as number | null,
-      yaw: 0,
-      pitch: 0,
-      lastClientX: 0,
-      lastClientY: 0
-    };
-    const cameraEuler = new THREE.Euler(0, 0, 0, 'YXZ');
-    const lookDirection = new THREE.Vector3();
-
-    const LOOK_SENSITIVITY = 0.0025;
-    const MAX_LOOK_PITCH = Math.PI / 2 - 0.001;
-
-    const beginPointerLook = (event: PointerEvent) => {
-      if (renderer.xr.isPresenting) {
-        return;
-      }
-
-      pointerLookState.activePointerId = event.pointerId;
-      pointerLookState.lastClientX = event.clientX;
-      pointerLookState.lastClientY = event.clientY;
-
-      cameraEuler.setFromQuaternion(camera.quaternion, 'YXZ');
-      pointerLookState.yaw = cameraEuler.y;
-      pointerLookState.pitch = cameraEuler.x;
-
-      domElement.setPointerCapture(event.pointerId);
-    };
-
-    const updatePointerLook = (event: PointerEvent) => {
-      if (pointerLookState.activePointerId !== event.pointerId) {
-        return;
-      }
-
-      const deltaX = event.clientX - pointerLookState.lastClientX;
-      const deltaY = event.clientY - pointerLookState.lastClientY;
-      pointerLookState.lastClientX = event.clientX;
-      pointerLookState.lastClientY = event.clientY;
-
-      pointerLookState.yaw -= deltaX * LOOK_SENSITIVITY;
-      pointerLookState.pitch -= deltaY * LOOK_SENSITIVITY;
-      pointerLookState.pitch = THREE.MathUtils.clamp(pointerLookState.pitch, -MAX_LOOK_PITCH, MAX_LOOK_PITCH);
-
-      cameraEuler.set(pointerLookState.pitch, pointerLookState.yaw, 0, 'YXZ');
-      camera.quaternion.setFromEuler(cameraEuler);
-
-      const targetDistance = Math.max(camera.position.distanceTo(rotationTargetRef.current), 0.0001);
-      lookDirection.set(0, 0, -1).applyQuaternion(camera.quaternion);
-      rotationTargetRef.current.copy(camera.position).addScaledVector(lookDirection, targetDistance);
-      controls.target.copy(rotationTargetRef.current);
-      controls.update();
-    };
-
-    const endPointerLook = (event?: PointerEvent) => {
-      const activePointerId = pointerLookState.activePointerId;
-      if (activePointerId === null) {
-        return;
-      }
-
-      pointerLookState.activePointerId = null;
-
-      if (event && domElement.hasPointerCapture(activePointerId)) {
-        domElement.releasePointerCapture(activePointerId);
-      }
-    };
-
-    endPointerLookRef.current = endPointerLook;
+    const { beginPointerLook, updatePointerLook, endPointerLook } = createPointerLookHandlers(renderContext);
 
     rendererRef.current = renderer;
     sceneRef.current = scene;
@@ -2013,65 +1426,6 @@ function VolumeViewer({
     clearVoxelHoverDebug();
     hoverSystemReadyRef.current = true;
     retryPendingVoxelHover();
-
-    const performHoverHitTest = (event: PointerEvent): string | null => {
-      const cameraInstance = cameraRef.current;
-      const trackGroupInstance = trackGroupRef.current;
-      const raycasterInstance = hoverRaycasterRef.current;
-      if (!cameraInstance || !trackGroupInstance || !raycasterInstance || !trackGroupInstance.visible) {
-        clearHoverState('pointer');
-        return null;
-      }
-
-      const rect = domElement.getBoundingClientRect();
-      const width = rect.width;
-      const height = rect.height;
-      if (width <= 0 || height <= 0) {
-        clearHoverState('pointer');
-        return null;
-      }
-
-      const offsetX = event.clientX - rect.left;
-      const offsetY = event.clientY - rect.top;
-      if (offsetX < 0 || offsetY < 0 || offsetX > width || offsetY > height) {
-        clearHoverState('pointer');
-        return null;
-      }
-
-      pointerVector.set((offsetX / width) * 2 - 1, -(offsetY / height) * 2 + 1);
-      raycasterInstance.setFromCamera(pointerVector, cameraInstance);
-
-      const visibleObjects: THREE.Object3D[] = [];
-      for (const resource of trackLinesRef.current.values()) {
-        if (resource.line.visible) {
-          visibleObjects.push(resource.line);
-        }
-        if (resource.endCap.visible) {
-          visibleObjects.push(resource.endCap);
-        }
-      }
-
-      if (visibleObjects.length === 0) {
-        clearHoverState('pointer');
-        return null;
-      }
-
-      const intersections = raycasterInstance.intersectObjects(visibleObjects, false);
-      if (intersections.length === 0) {
-        clearHoverState('pointer');
-        return null;
-      }
-
-      const intersection = intersections[0];
-      const trackId = getTrackIdFromObject(intersection.object);
-      if (trackId === null) {
-        clearHoverState('pointer');
-        return null;
-      }
-
-      updateHoverState(trackId, { x: offsetX, y: offsetY });
-      return trackId;
-    };
 
     const handlePointerDown = (event: PointerEvent) => {
       if (event.button !== 0) {
@@ -2146,174 +1500,14 @@ function VolumeViewer({
     resizeObserver.observe(container);
     handleResize();
 
-    const worldUp = new THREE.Vector3(0, 1, 0);
-    const forwardVector = new THREE.Vector3();
-    const horizontalForward = new THREE.Vector3();
-    const rightVector = new THREE.Vector3();
-    const movementVector = new THREE.Vector3();
-
-    const applyKeyboardMovement = () => {
-      if (renderer.xr.isPresenting) {
-        return;
-      }
-      if (followedTrackIdRef.current !== null) {
-        return;
-      }
-      const movementState = movementStateRef.current;
-      if (
-        !movementState ||
-        (!movementState.moveForward &&
-          !movementState.moveBackward &&
-          !movementState.moveLeft &&
-          !movementState.moveRight &&
-          !movementState.moveUp &&
-          !movementState.moveDown)
-      ) {
-        return;
-      }
-
-      const rotationTarget = rotationTargetRef.current;
-      const distance = rotationTarget.distanceTo(camera.position);
-      const movementScale = Math.max(distance * 0.0025, 0.0006);
-
-      camera.getWorldDirection(forwardVector).normalize();
-      horizontalForward.copy(forwardVector).projectOnPlane(worldUp);
-      if (horizontalForward.lengthSq() < 1e-8) {
-        horizontalForward.set(0, 0, forwardVector.z >= 0 ? 1 : -1);
-      } else {
-        horizontalForward.normalize();
-      }
-
-      rightVector.crossVectors(horizontalForward, worldUp);
-      if (rightVector.lengthSq() < 1e-8) {
-        rightVector.set(1, 0, 0);
-      } else {
-        rightVector.normalize();
-      }
-
-      movementVector.set(0, 0, 0);
-
-      if (movementState.moveForward) {
-        movementVector.addScaledVector(horizontalForward, movementScale);
-      }
-      if (movementState.moveBackward) {
-        movementVector.addScaledVector(horizontalForward, -movementScale);
-      }
-      if (movementState.moveLeft) {
-        movementVector.addScaledVector(rightVector, -movementScale);
-      }
-      if (movementState.moveRight) {
-        movementVector.addScaledVector(rightVector, movementScale);
-      }
-      if (movementState.moveUp) {
-        movementVector.addScaledVector(worldUp, movementScale);
-      }
-      if (movementState.moveDown) {
-        movementVector.addScaledVector(worldUp, -movementScale);
-      }
-
-      if (movementVector.lengthSq() === 0) {
-        return;
-      }
-
-      camera.position.add(movementVector);
-      rotationTarget.add(movementVector);
-      controls.target.copy(rotationTarget);
-    };
-
     let lastRenderTickSummary: { presenting: boolean; hoveredByController: string | null } | null = null;
 
     const renderLoop = (timestamp: number) => {
-      applyKeyboardMovement();
+      applyKeyboardMovement(renderer, camera, controls);
       controls.update();
       rotationTargetRef.current.copy(controls.target);
 
-      const blinkPhase = (timestamp % SELECTED_TRACK_BLINK_PERIOD_MS) / SELECTED_TRACK_BLINK_PERIOD_MS;
-      const blinkAngle = blinkPhase * Math.PI * 2;
-      const blinkWave = Math.sin(blinkAngle);
-      const blinkScale = SELECTED_TRACK_BLINK_BASE + SELECTED_TRACK_BLINK_RANGE * blinkWave;
-      const blinkColorMix = 0.5 + 0.5 * blinkWave;
-
-      for (const resource of trackLinesRef.current.values()) {
-        const {
-          line,
-          outline,
-          endCap,
-          material,
-          outlineMaterial,
-          endCapMaterial,
-          baseColor,
-          highlightColor
-        } = resource;
-        const shouldShow = resource.shouldShow;
-        if (line.visible !== shouldShow) {
-          line.visible = shouldShow;
-        }
-        const isHighlighted = resource.isFollowed || resource.isHovered || resource.isSelected;
-        const outlineVisible = shouldShow && isHighlighted;
-        if (outline.visible !== outlineVisible) {
-          outline.visible = outlineVisible;
-        }
-
-        const endCapVisible = shouldShow && resource.hasVisiblePoints;
-        if (endCap.visible !== endCapVisible) {
-          endCap.visible = endCapVisible;
-        }
-
-        const targetColor = resource.isSelected
-          ? trackBlinkColorTemp.copy(baseColor).lerp(highlightColor, blinkColorMix)
-          : isHighlighted
-            ? highlightColor
-            : baseColor;
-        if (!material.color.equals(targetColor)) {
-          material.color.copy(targetColor);
-          material.needsUpdate = true;
-        }
-        if (!endCapMaterial.color.equals(targetColor)) {
-          endCapMaterial.color.copy(targetColor);
-          endCapMaterial.needsUpdate = true;
-        }
-
-        const blinkMultiplier = resource.isSelected ? blinkScale : 1;
-        const targetOpacity = resource.targetOpacity * blinkMultiplier;
-        if (material.opacity !== targetOpacity) {
-          material.opacity = targetOpacity;
-          material.needsUpdate = true;
-        }
-        if (endCapMaterial.opacity !== targetOpacity) {
-          endCapMaterial.opacity = targetOpacity;
-          endCapMaterial.needsUpdate = true;
-        }
-
-        if (material.linewidth !== resource.targetLineWidth) {
-          material.linewidth = resource.targetLineWidth;
-          material.needsUpdate = true;
-        }
-
-        const outlineBlinkMultiplier = resource.isSelected ? blinkScale : 1;
-        const targetOutlineOpacity = resource.outlineBaseOpacity * outlineBlinkMultiplier;
-        if (outlineMaterial.opacity !== targetOutlineOpacity) {
-          outlineMaterial.opacity = targetOutlineOpacity;
-          outlineMaterial.needsUpdate = true;
-        }
-
-        const outlineWidth = resource.targetLineWidth + resource.outlineExtraWidth;
-        if (outlineMaterial.linewidth !== outlineWidth) {
-          outlineMaterial.linewidth = outlineWidth;
-          outlineMaterial.needsUpdate = true;
-        }
-
-        if (resource.needsAppearanceUpdate) {
-          const currentCapScale = endCap.scale.x;
-          if (currentCapScale !== resource.endCapRadius) {
-            endCap.scale.setScalar(resource.endCapRadius);
-          }
-        }
-
-        if (resource.needsAppearanceUpdate) {
-          resource.needsAppearanceUpdate = false;
-        }
-      }
+      updateTrackAppearance(timestamp);
 
       if (followedTrackIdRef.current !== null) {
         const rotationTarget = rotationTargetRef.current;
@@ -2342,64 +1536,7 @@ function VolumeViewer({
         }
       }
 
-      const playbackLoopState = playbackLoopRef.current;
-      const playbackState = playbackStateRef.current;
-      const playbackSliderActive = vrHoverStateRef.current.playbackSliderActive;
-      const shouldAdvancePlayback =
-        playbackState.isPlaying &&
-        !playbackState.playbackDisabled &&
-        playbackState.totalTimepoints > 1 &&
-        !playbackSliderActive &&
-        typeof playbackState.onTimeIndexChange === 'function';
-
-      if (shouldAdvancePlayback) {
-        const minFps = VR_PLAYBACK_MIN_FPS;
-        const maxFps = VR_PLAYBACK_MAX_FPS;
-        const requestedFps = playbackState.fps ?? minFps;
-        const clampedFps = Math.min(Math.max(requestedFps, minFps), maxFps);
-        const frameDuration = clampedFps > 0 ? 1000 / clampedFps : 0;
-
-        if (frameDuration > 0) {
-          if (playbackLoopState.lastTimestamp === null) {
-            playbackLoopState.lastTimestamp = timestamp;
-            playbackLoopState.accumulator = 0;
-          } else {
-            const delta = Math.max(0, Math.min(timestamp - playbackLoopState.lastTimestamp, 1000));
-            playbackLoopState.accumulator += delta;
-            playbackLoopState.lastTimestamp = timestamp;
-
-            const maxIndex = Math.max(0, playbackState.totalTimepoints - 1);
-            let didAdvance = false;
-
-            while (playbackLoopState.accumulator >= frameDuration) {
-              playbackLoopState.accumulator -= frameDuration;
-              let nextIndex = playbackState.timeIndex + 1;
-              if (nextIndex > maxIndex) {
-                nextIndex = 0;
-              }
-              if (nextIndex === playbackState.timeIndex) {
-                break;
-              }
-
-              playbackState.timeIndex = nextIndex;
-              timeIndexRef.current = nextIndex;
-
-              const total = Math.max(0, playbackState.totalTimepoints);
-              const labelCurrent = total > 0 ? Math.min(nextIndex + 1, total) : 0;
-              playbackState.playbackLabel = `${labelCurrent} / ${total}`;
-              playbackState.onTimeIndexChange?.(nextIndex);
-              didAdvance = true;
-            }
-
-            if (didAdvance) {
-              updateVrPlaybackHud();
-            }
-          }
-        }
-      } else {
-        playbackLoopState.lastTimestamp = null;
-        playbackLoopState.accumulator = 0;
-      }
+      advancePlaybackFrame(timestamp);
 
       refreshVrHudPlacementsRef.current?.();
 
@@ -2509,17 +1646,7 @@ function VolumeViewer({
 
       const trackGroup = trackGroupRef.current;
       if (trackGroup) {
-        for (const resource of trackLinesRef.current.values()) {
-          trackGroup.remove(resource.line);
-          trackGroup.remove(resource.outline);
-          trackGroup.remove(resource.endCap);
-          resource.geometry.dispose();
-          resource.material.dispose();
-          resource.outlineMaterial.dispose();
-          resource.endCap.geometry.dispose();
-          resource.endCapMaterial.dispose();
-        }
-        trackLinesRef.current.clear();
+        disposeTrackResources();
       }
       trackGroupRef.current = null;
 
@@ -2566,17 +1693,23 @@ function VolumeViewer({
     };
   }, [
     applyVrPlaybackHoverState,
+    applyKeyboardMovement,
     applyVolumeStepScaleToResources,
     containerNode,
     controllersRef,
+    createPointerLookHandlers,
     createVrChannelsHud,
     createVrPlaybackHud,
     createVrTracksHud,
     clearVoxelHoverDebug,
     endVrSessionRequestRef,
+    disposeTrackResources,
+    handleResize,
+    initializeRenderContext,
     onRendererInitialized,
     playbackLoopRef,
     playbackStateRef,
+    performHoverHitTest,
     raycasterRef,
     hoverRaycasterRef,
     resetVrChannelsHudPlacement,
@@ -2584,9 +1717,11 @@ function VolumeViewer({
     resetVrTracksHudPlacement,
     retryPendingVoxelHover,
     restoreVrFoveation,
+    refreshTrackOverlay,
     sessionCleanupRef,
     setHoverNotReady,
     setControllerVisibility,
+    updateTrackAppearance,
     updateControllerRays,
     updateVrChannelsHud,
     updateVrPlaybackHud,
@@ -2604,541 +1739,6 @@ function VolumeViewer({
     vrVolumeYawHandlesRef,
     xrSessionRef,
   ]);
-
-  useEffect(() => {
-    const handleKeyChange = (event: KeyboardEvent, isPressed: boolean) => {
-      const mappedKey = MOVEMENT_KEY_MAP[event.code];
-      if (!mappedKey) {
-        return;
-      }
-
-      const target = event.target as HTMLElement | null;
-      if (target) {
-        const tagName = target.tagName;
-        const isEditable = target.isContentEditable;
-        if (isEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') {
-          return;
-        }
-      }
-
-      event.preventDefault();
-
-      if (followedTrackIdRef.current !== null) {
-        return;
-      }
-
-      const movementState = movementStateRef.current;
-      if (!movementState) {
-        return;
-      }
-
-      movementState[mappedKey] = isPressed;
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      handleKeyChange(event, true);
-    };
-
-    const handleKeyUp = (event: KeyboardEvent) => {
-      handleKeyChange(event, false);
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-      const movementState = movementStateRef.current;
-      if (movementState) {
-        movementState.moveForward = false;
-        movementState.moveBackward = false;
-        movementState.moveLeft = false;
-        movementState.moveRight = false;
-        movementState.moveUp = false;
-        movementState.moveDown = false;
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const removeResource = (key: string) => {
-      const resource = resourcesRef.current.get(key);
-      if (!resource) {
-        return;
-      }
-      const parent = resource.mesh.parent;
-      if (parent) {
-        parent.remove(resource.mesh);
-      } else {
-        const activeScene = sceneRef.current;
-        if (activeScene) {
-          activeScene.remove(resource.mesh);
-        }
-      }
-      resource.mesh.geometry.dispose();
-      disposeMaterial(resource.mesh.material);
-      resource.texture.dispose();
-      resource.labelTexture?.dispose();
-      resourcesRef.current.delete(key);
-    };
-
-    const removeAllResources = () => {
-      for (const key of Array.from(resourcesRef.current.keys())) {
-        removeResource(key);
-      }
-    };
-
-    const scene = sceneRef.current;
-    const camera = cameraRef.current;
-    const controls = controlsRef.current;
-    if (!scene || !camera || !controls) {
-      removeAllResources();
-      currentDimensionsRef.current = null;
-      applyVolumeRootTransform(null);
-      return;
-    }
-
-    const referenceVolume = primaryVolume;
-
-    if (!referenceVolume) {
-      removeAllResources();
-      currentDimensionsRef.current = null;
-      rotationTargetRef.current.set(0, 0, 0);
-      controls.target.set(0, 0, 0);
-      controls.update();
-      defaultViewStateRef.current = {
-        position: camera.position.clone(),
-        target: controls.target.clone()
-      };
-      const trackGroup = trackGroupRef.current;
-      if (trackGroup) {
-        trackGroup.visible = false;
-      }
-      applyTrackGroupTransform(null);
-      applyVolumeRootTransform(null);
-      return;
-    }
-
-    const { width, height, depth } = referenceVolume;
-    const dimensionsChanged =
-      !currentDimensionsRef.current ||
-      currentDimensionsRef.current.width !== width ||
-      currentDimensionsRef.current.height !== height ||
-      currentDimensionsRef.current.depth !== depth;
-
-    if (dimensionsChanged) {
-      removeAllResources();
-      currentDimensionsRef.current = { width, height, depth };
-      volumeUserScaleRef.current = 1;
-
-      const maxDimension = Math.max(width, height, depth);
-      const scale = 1 / maxDimension;
-      const boundingRadius = Math.sqrt(width * width + height * height + depth * depth) * scale * 0.5;
-      const fovInRadians = THREE.MathUtils.degToRad(camera.fov * 0.5);
-      const distance = boundingRadius / Math.sin(fovInRadians);
-      const safeDistance = Number.isFinite(distance) ? distance * 1.2 : 2.5;
-      const nearDistance = Math.max(0.0001, boundingRadius * 0.00025);
-      const farDistance = Math.max(safeDistance * 5, boundingRadius * 10);
-      if (camera.near !== nearDistance || camera.far !== farDistance) {
-        camera.near = nearDistance;
-        camera.far = farDistance;
-        camera.updateProjectionMatrix();
-      }
-      camera.position.set(0, 0, safeDistance);
-      const rotationTarget = rotationTargetRef.current;
-      rotationTarget.set(0, 0, 0);
-      controls.target.copy(rotationTarget);
-      controls.update();
-      defaultViewStateRef.current = {
-        position: camera.position.clone(),
-        target: controls.target.clone()
-      };
-      controls.saveState();
-
-      applyTrackGroupTransform({ width, height, depth });
-      applyVolumeRootTransform({ width, height, depth });
-    }
-
-    const seenKeys = new Set<string>();
-    const materialBlending = isAdditiveBlending ? THREE.AdditiveBlending : THREE.NormalBlending;
-
-    layers.forEach((layer, index) => {
-      const volume = layer.volume;
-      if (!volume) {
-        removeResource(layer.key);
-        return;
-      }
-
-      let cachedPreparation: ReturnType<typeof getCachedTextureData> | null = null;
-
-      const isGrayscale = volume.channels === 1;
-      const colormapTexture = getColormapTexture(
-        isGrayscale ? layer.color : DEFAULT_LAYER_COLOR
-      );
-
-      let resources: VolumeResources | null = resourcesRef.current.get(layer.key) ?? null;
-
-      const viewerMode = layer.mode === 'slice' || layer.mode === '3d'
-        ? layer.mode
-        : volume.depth > 1
-        ? '3d'
-        : 'slice';
-      const zIndex = Number.isFinite(layer.sliceIndex)
-        ? Number(layer.sliceIndex)
-        : Math.floor(volume.depth / 2);
-
-      if (viewerMode === '3d') {
-        cachedPreparation = getCachedTextureData(volume);
-        const { data: textureData, format: textureFormat } = cachedPreparation;
-
-        let labelTexture: THREE.Data3DTexture | null = null;
-        if (layer.isSegmentation && volume.segmentationLabels) {
-          const labelData = new Float32Array(volume.segmentationLabels.length);
-          labelData.set(volume.segmentationLabels);
-          labelTexture = new THREE.Data3DTexture(
-            labelData,
-            volume.width,
-            volume.height,
-            volume.depth
-          );
-          labelTexture.format = THREE.RedFormat;
-          labelTexture.type = THREE.FloatType;
-          labelTexture.minFilter = THREE.NearestFilter;
-          labelTexture.magFilter = THREE.NearestFilter;
-          labelTexture.unpackAlignment = 1;
-          labelTexture.needsUpdate = true;
-        }
-
-        const needsRebuild =
-          !resources ||
-          resources.mode !== viewerMode ||
-          resources.dimensions.width !== volume.width ||
-          resources.dimensions.height !== volume.height ||
-          resources.dimensions.depth !== volume.depth ||
-          resources.channels !== volume.channels ||
-          !(resources.texture instanceof THREE.Data3DTexture) ||
-          resources.texture.image.data.length !== textureData.length ||
-          resources.texture.format !== textureFormat;
-
-        if (needsRebuild) {
-          removeResource(layer.key);
-
-          const texture = new THREE.Data3DTexture(textureData, volume.width, volume.height, volume.depth);
-          texture.format = textureFormat;
-          texture.type = THREE.UnsignedByteType;
-          const samplingFilter =
-            layer.samplingMode === 'nearest' ? THREE.NearestFilter : THREE.LinearFilter;
-          texture.minFilter = samplingFilter;
-          texture.magFilter = samplingFilter;
-          texture.unpackAlignment = 1;
-          texture.colorSpace = THREE.LinearSRGBColorSpace;
-          texture.needsUpdate = true;
-
-          const shader = VolumeRenderShader;
-          const uniforms = THREE.UniformsUtils.clone(shader.uniforms);
-          uniforms.u_data.value = texture;
-          uniforms.u_size.value.set(volume.width, volume.height, volume.depth);
-          uniforms.u_clim.value.set(0, 1);
-          uniforms.u_renderstyle.value = layer.renderStyle;
-          uniforms.u_renderthreshold.value = 0.5;
-          uniforms.u_cmdata.value = colormapTexture;
-          uniforms.u_channels.value = volume.channels;
-          uniforms.u_windowMin.value = layer.windowMin;
-          uniforms.u_windowMax.value = layer.windowMax;
-          uniforms.u_invert.value = layer.invert ? 1 : 0;
-          uniforms.u_stepScale.value = volumeStepScaleRef.current;
-          uniforms.u_nearestSampling.value = layer.samplingMode === 'nearest' ? 1 : 0;
-          if (uniforms.u_segmentationLabels) {
-            uniforms.u_segmentationLabels.value = labelTexture;
-          }
-          if (uniforms.u_additive) {
-            uniforms.u_additive.value = isAdditiveBlending ? 1 : 0;
-          }
-
-          const material = new THREE.ShaderMaterial({
-            uniforms,
-            vertexShader: shader.vertexShader,
-            fragmentShader: shader.fragmentShader,
-            side: THREE.BackSide,
-            transparent: true,
-            blending: materialBlending
-          });
-          material.depthWrite = false;
-
-          const geometry = new THREE.BoxGeometry(volume.width, volume.height, volume.depth);
-          geometry.translate(volume.width / 2 - 0.5, volume.height / 2 - 0.5, volume.depth / 2 - 0.5);
-
-          const mesh = new THREE.Mesh(geometry, material);
-          mesh.visible = layer.visible;
-          mesh.renderOrder = index;
-          mesh.position.set(layer.offsetX, layer.offsetY, 0);
-
-          const worldCameraPosition = new THREE.Vector3();
-          const localCameraPosition = new THREE.Vector3();
-          mesh.onBeforeRender = (_renderer, _scene, renderCamera) => {
-            const shaderMaterial = mesh.material as THREE.ShaderMaterial;
-            const cameraUniform = shaderMaterial.uniforms?.u_cameraPos?.value as
-              | THREE.Vector3
-              | undefined;
-            if (!cameraUniform) {
-              return;
-            }
-
-            worldCameraPosition.setFromMatrixPosition(renderCamera.matrixWorld);
-            localCameraPosition.copy(worldCameraPosition);
-            mesh.worldToLocal(localCameraPosition);
-            cameraUniform.copy(localCameraPosition);
-          };
-
-          const volumeRootGroup = volumeRootGroupRef.current;
-          if (volumeRootGroup) {
-            volumeRootGroup.add(mesh);
-          } else {
-            scene.add(mesh);
-          }
-          mesh.updateMatrixWorld(true);
-
-          resourcesRef.current.set(layer.key, {
-            mesh,
-            texture,
-            labelTexture,
-            dimensions: { width: volume.width, height: volume.height, depth: volume.depth },
-            channels: volume.channels,
-            mode: viewerMode,
-            samplingMode: layer.samplingMode
-          });
-        }
-
-        resources = resourcesRef.current.get(layer.key) ?? null;
-      } else {
-        const maxIndex = Math.max(0, volume.depth - 1);
-        const clampedIndex = Math.min(Math.max(zIndex, 0), maxIndex);
-        const expectedLength = getExpectedSliceBufferLength(volume);
-
-        const needsRebuild =
-          !resources ||
-          resources.mode !== viewerMode ||
-          resources.dimensions.width !== volume.width ||
-          resources.dimensions.height !== volume.height ||
-          resources.dimensions.depth !== volume.depth ||
-          resources.channels !== volume.channels ||
-          !(resources.texture instanceof THREE.DataTexture) ||
-          (resources.sliceBuffer?.length ?? 0) !== expectedLength;
-
-        if (needsRebuild) {
-          removeResource(layer.key);
-
-          const sliceInfo = prepareSliceTexture(volume, clampedIndex, null);
-          const texture = new THREE.DataTexture(
-            sliceInfo.data,
-            volume.width,
-            volume.height,
-            sliceInfo.format
-          );
-          texture.type = THREE.UnsignedByteType;
-          texture.minFilter = THREE.LinearFilter;
-          texture.magFilter = THREE.LinearFilter;
-          texture.unpackAlignment = 1;
-          texture.colorSpace = THREE.LinearSRGBColorSpace;
-          texture.needsUpdate = true;
-
-          const shader = SliceRenderShader;
-          const uniforms = THREE.UniformsUtils.clone(shader.uniforms);
-          uniforms.u_slice.value = texture;
-          uniforms.u_cmdata.value = colormapTexture;
-          uniforms.u_channels.value = volume.channels;
-          uniforms.u_windowMin.value = layer.windowMin;
-          uniforms.u_windowMax.value = layer.windowMax;
-          uniforms.u_invert.value = layer.invert ? 1 : 0;
-          if (uniforms.u_additive) {
-            uniforms.u_additive.value = isAdditiveBlending ? 1 : 0;
-          }
-
-          const material = new THREE.ShaderMaterial({
-            uniforms,
-            vertexShader: shader.vertexShader,
-            fragmentShader: shader.fragmentShader,
-            transparent: true,
-            side: THREE.DoubleSide,
-            depthTest: false,
-            depthWrite: false,
-            blending: materialBlending
-          });
-
-          const geometry = new THREE.PlaneGeometry(volume.width, volume.height);
-          geometry.translate(volume.width / 2 - 0.5, volume.height / 2 - 0.5, 0);
-
-          const mesh = new THREE.Mesh(geometry, material);
-          mesh.position.set(layer.offsetX, layer.offsetY, clampedIndex);
-          mesh.visible = layer.visible;
-          mesh.renderOrder = index;
-          const volumeRootGroup = volumeRootGroupRef.current;
-          if (volumeRootGroup) {
-            volumeRootGroup.add(mesh);
-          } else {
-            scene.add(mesh);
-          }
-
-          resourcesRef.current.set(layer.key, {
-            mesh,
-            texture,
-            dimensions: { width: volume.width, height: volume.height, depth: volume.depth },
-            channels: volume.channels,
-            mode: viewerMode,
-            samplingMode: layer.samplingMode,
-            sliceBuffer: sliceInfo.data
-          });
-        }
-
-        resources = resourcesRef.current.get(layer.key) ?? null;
-      }
-
-      if (resources) {
-        const { mesh } = resources;
-        mesh.visible = layer.visible;
-        mesh.renderOrder = index;
-
-        const materialUniforms = (mesh.material as THREE.ShaderMaterial).uniforms;
-        materialUniforms.u_channels.value = volume.channels;
-        materialUniforms.u_windowMin.value = layer.windowMin;
-        materialUniforms.u_windowMax.value = layer.windowMax;
-        materialUniforms.u_invert.value = layer.invert ? 1 : 0;
-        materialUniforms.u_cmdata.value = colormapTexture;
-        if (materialUniforms.u_additive) {
-          materialUniforms.u_additive.value = isAdditiveBlending ? 1 : 0;
-        }
-        const shaderMaterial = mesh.material as THREE.ShaderMaterial;
-        const desiredBlending = materialBlending;
-        if (shaderMaterial.blending !== desiredBlending) {
-          shaderMaterial.blending = desiredBlending;
-          shaderMaterial.needsUpdate = true;
-        }
-        if (materialUniforms.u_stepScale) {
-          materialUniforms.u_stepScale.value = volumeStepScaleRef.current;
-        }
-        if (materialUniforms.u_nearestSampling) {
-          materialUniforms.u_nearestSampling.value =
-            layer.samplingMode === 'nearest' ? 1 : 0;
-        }
-
-        if (resources.mode === '3d') {
-          const preparation = cachedPreparation ?? getCachedTextureData(volume);
-          const dataTexture = resources.texture as THREE.Data3DTexture;
-          if (resources.samplingMode !== layer.samplingMode) {
-            const samplingFilter =
-              layer.samplingMode === 'nearest' ? THREE.NearestFilter : THREE.LinearFilter;
-            dataTexture.minFilter = samplingFilter;
-            dataTexture.magFilter = samplingFilter;
-            dataTexture.needsUpdate = true;
-            resources.samplingMode = layer.samplingMode;
-          }
-          dataTexture.image.data = preparation.data;
-          dataTexture.format = preparation.format;
-          dataTexture.needsUpdate = true;
-          materialUniforms.u_data.value = dataTexture;
-          if (layer.isSegmentation && volume.segmentationLabels) {
-            const expectedLength = volume.segmentationLabels.length;
-            let labelTexture = resources.labelTexture ?? null;
-            const needsLabelTextureRebuild =
-              !labelTexture ||
-              !(labelTexture.image?.data instanceof Float32Array) ||
-              labelTexture.image.data.length !== expectedLength;
-
-            if (needsLabelTextureRebuild) {
-              labelTexture?.dispose();
-              const labelData = new Float32Array(volume.segmentationLabels.length);
-              labelData.set(volume.segmentationLabels);
-              labelTexture = new THREE.Data3DTexture(
-                labelData,
-                volume.width,
-                volume.height,
-                volume.depth
-              );
-              labelTexture.format = THREE.RedFormat;
-              labelTexture.type = THREE.FloatType;
-              labelTexture.minFilter = THREE.NearestFilter;
-              labelTexture.magFilter = THREE.NearestFilter;
-              labelTexture.unpackAlignment = 1;
-              labelTexture.needsUpdate = true;
-            } else if (labelTexture) {
-              const labelData = labelTexture.image.data as Float32Array;
-              labelData.set(volume.segmentationLabels);
-              labelTexture.needsUpdate = true;
-            }
-            resources.labelTexture = labelTexture;
-            if (materialUniforms.u_segmentationLabels) {
-              materialUniforms.u_segmentationLabels.value = labelTexture;
-            }
-          } else if (materialUniforms.u_segmentationLabels) {
-            materialUniforms.u_segmentationLabels.value = null;
-            resources.labelTexture = null;
-          }
-          if (materialUniforms.u_renderstyle) {
-            materialUniforms.u_renderstyle.value = layer.renderStyle;
-          }
-
-          const desiredX = layer.offsetX;
-          const desiredY = layer.offsetY;
-          if (mesh.position.x !== desiredX || mesh.position.y !== desiredY) {
-            mesh.position.set(desiredX, desiredY, mesh.position.z);
-            mesh.updateMatrixWorld();
-          }
-        } else {
-          const maxIndex = Math.max(0, volume.depth - 1);
-          const clampedIndex = Math.min(Math.max(zIndex, 0), maxIndex);
-          const existingBuffer = resources.sliceBuffer ?? null;
-          const sliceInfo = prepareSliceTexture(volume, clampedIndex, existingBuffer);
-          resources.sliceBuffer = sliceInfo.data;
-          const dataTexture = resources.texture as THREE.DataTexture;
-          dataTexture.image.data = sliceInfo.data;
-          dataTexture.image.width = volume.width;
-          dataTexture.image.height = volume.height;
-          dataTexture.format = sliceInfo.format;
-          dataTexture.needsUpdate = true;
-          materialUniforms.u_slice.value = dataTexture;
-          const desiredX = layer.offsetX;
-          const desiredY = layer.offsetY;
-          if (
-            mesh.position.x !== desiredX ||
-            mesh.position.y !== desiredY ||
-            mesh.position.z !== clampedIndex
-          ) {
-            mesh.position.set(desiredX, desiredY, clampedIndex);
-            mesh.updateMatrixWorld();
-          }
-        }
-      }
-
-      seenKeys.add(layer.key);
-    });
-
-    for (const key of Array.from(resourcesRef.current.keys())) {
-      if (!seenKeys.has(key)) {
-        removeResource(key);
-      }
-    }
-
-    applyHoverHighlightToResources();
-
-  }, [
-    applyTrackGroupTransform,
-    applyVolumeStepScaleToResources,
-    getColormapTexture,
-    layers,
-    renderContextRevision,
-    applyHoverHighlightToResources,
-    isAdditiveBlending
-  ]);
-
-  useEffect(() => {
-    return () => {
-      for (const texture of colormapCacheRef.current.values()) {
-        texture.dispose();
-      }
-      colormapCacheRef.current.clear();
-    };
-  }, []);
 
   const hoveredTrackDefinition = hoveredTrackId ? trackLookup.get(hoveredTrackId) ?? null : null;
   const hoveredTrackLabel = hoveredTrackDefinition
