@@ -52,6 +52,11 @@
 - Moved renderer/camera/scene initialization into a reusable helper to simplify viewer setup effects.
 - Extracted hover sampling math into a shared utility and isolated VR bridge wiring into its own component.
 
+## Volume viewer modularization
+- Moved slice texture preparation and material disposal helpers into `volume-viewer/renderingUtils` to share rendering cleanup logic.
+- Added a dedicated `useVolumeViewerVrBridge` hook beside the VR bridge to centralize param/fallback wiring away from the React surface component.
+- Split the loading overlay, hover debug banner, and track tooltip into focused presentational components within `volume-viewer/`.
+
 ## Front page contract review
 - Documented the AppContent props and state that feed voxel resolution inputs, dataset error handling, preprocessing/import flows, and upload progress.
 - Added a draft `FrontPageContainer` prop contract so the landing screen can be wrapped without leaking unrelated AppContent state.
