@@ -33,19 +33,8 @@ import HelpMenu from '../components/app/HelpMenu';
 import useChannelEditing from './hooks/useChannelEditing';
 import { useDatasetLaunch } from './hooks/useDatasetLaunch';
 import { useViewerModePlayback } from './hooks/useViewerModePlayback';
-import {
-  LAYERS_WINDOW_VERTICAL_OFFSET,
-  WARNING_WINDOW_WIDTH,
-  WINDOW_MARGIN,
-  computeControlWindowDefaultPosition,
-  computeLayersWindowDefaultPosition,
-  computePlotSettingsWindowDefaultPosition,
-  computeSelectedTracksWindowDefaultPosition,
-  computeTrackWindowDefaultPosition,
-  computeViewerSettingsWindowDefaultPosition,
-  nextLayoutResetToken,
-  type WindowPosition
-} from '../utils/windowLayout';
+import { useWindowLayout } from './hooks/useWindowLayout';
+import { WARNING_WINDOW_WIDTH, WINDOW_MARGIN } from '../utils/windowLayout';
 
 const DEFAULT_RESET_WINDOW = { windowMin: DEFAULT_WINDOW_MIN, windowMax: DEFAULT_WINDOW_MAX };
 
@@ -140,26 +129,21 @@ function AppRouter() {
   const [resetViewHandler, setResetViewHandler] = useState<(() => void) | null>(null);
   const [activeChannelTabId, setActiveChannelTabId] = useState<string | null>(null);
   const [maxSliceDepth, setMaxSliceDepth] = useState(0);
-  const [layoutResetToken, setLayoutResetToken] = useState(0);
   const [hoveredVolumeVoxel, setHoveredVolumeVoxel] = useState<HoveredVoxelInfo | null>(null);
   const playback = useViewerPlayback();
   const { selectedIndex, setSelectedIndex, isPlaying, fps, setFps, stopPlayback, setIsPlaying } = playback;
   const is3dViewerAvailable = experimentDimension === '3d';
 
-  const controlWindowInitialPosition = useMemo(computeControlWindowDefaultPosition, []);
-  const layersWindowInitialPosition = useMemo(computeLayersWindowDefaultPosition, []);
-  const [trackWindowInitialPosition, setTrackWindowInitialPosition] = useState<WindowPosition>(
-    () => computeTrackWindowDefaultPosition()
-  );
-  const [viewerSettingsWindowInitialPosition, setViewerSettingsWindowInitialPosition] = useState<WindowPosition>(
-    () => computeViewerSettingsWindowDefaultPosition()
-  );
-  const [selectedTracksWindowInitialPosition, setSelectedTracksWindowInitialPosition] = useState<WindowPosition>(
-    () => computeSelectedTracksWindowDefaultPosition()
-  );
-  const [plotSettingsWindowInitialPosition, setPlotSettingsWindowInitialPosition] = useState<WindowPosition>(
-    () => computePlotSettingsWindowDefaultPosition()
-  );
+  const {
+    layoutResetToken,
+    controlWindowInitialPosition,
+    layersWindowInitialPosition,
+    trackWindowInitialPosition,
+    viewerSettingsWindowInitialPosition,
+    selectedTracksWindowInitialPosition,
+    plotSettingsWindowInitialPosition,
+    resetLayout: handleResetWindowLayout
+  } = useWindowLayout();
 
   const handlePreprocessedStateChange = useCallback(
     ({
@@ -378,60 +362,6 @@ function AppRouter() {
     }
     setIsViewerLaunched(false);
   }, [setIsViewerLaunched]);
-
-  const handleResetWindowLayout = useCallback(() => {
-    setLayoutResetToken(nextLayoutResetToken);
-    setTrackWindowInitialPosition(computeTrackWindowDefaultPosition());
-    setViewerSettingsWindowInitialPosition(computeViewerSettingsWindowDefaultPosition());
-    setSelectedTracksWindowInitialPosition(computeSelectedTracksWindowDefaultPosition());
-    setPlotSettingsWindowInitialPosition(computePlotSettingsWindowDefaultPosition());
-  }, [
-    nextLayoutResetToken,
-    computeSelectedTracksWindowDefaultPosition,
-    computePlotSettingsWindowDefaultPosition,
-    computeViewerSettingsWindowDefaultPosition,
-    computeTrackWindowDefaultPosition
-  ]);
-
-  useEffect(() => {
-    const defaultPosition = computeTrackWindowDefaultPosition();
-    setTrackWindowInitialPosition((current) => {
-      if (current.x === defaultPosition.x && current.y === defaultPosition.y) {
-        return current;
-      }
-      return defaultPosition;
-    });
-  }, [computeTrackWindowDefaultPosition]);
-
-  useEffect(() => {
-    const defaultPosition = computeViewerSettingsWindowDefaultPosition();
-    setViewerSettingsWindowInitialPosition((current) => {
-      if (current.x === defaultPosition.x && current.y === defaultPosition.y) {
-        return current;
-      }
-      return defaultPosition;
-    });
-  }, [computeViewerSettingsWindowDefaultPosition]);
-
-  useEffect(() => {
-    const defaultPosition = computeSelectedTracksWindowDefaultPosition();
-    setSelectedTracksWindowInitialPosition((current) => {
-      if (current.x === defaultPosition.x && current.y === defaultPosition.y) {
-        return current;
-      }
-      return defaultPosition;
-    });
-  }, [computeSelectedTracksWindowDefaultPosition]);
-
-  useEffect(() => {
-    const defaultPosition = computePlotSettingsWindowDefaultPosition();
-    setPlotSettingsWindowInitialPosition((current) => {
-      if (current.x === defaultPosition.x && current.y === defaultPosition.y) {
-        return current;
-      }
-      return defaultPosition;
-    });
-  }, [computePlotSettingsWindowDefaultPosition]);
 
   useEffect(() => {
     setFollowedTrack((current) => {
