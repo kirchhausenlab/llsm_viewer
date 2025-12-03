@@ -40,10 +40,7 @@ import useTrackState, {
   DEFAULT_TRACK_OPACITY,
   TRACK_SMOOTHING_RANGE
 } from './hooks/useTrackState';
-import {
-  ChannelLayerStateProvider,
-  useChannelLayerStateContext
-} from './hooks/useChannelLayerState';
+import { useChannelLayerStateContext } from './hooks/useChannelLayerState';
 import { useViewerControls } from './hooks/useViewerControls';
 import { useViewerPlayback } from './hooks/useViewerPlayback';
 import {
@@ -2058,12 +2055,6 @@ function AppContent() {
   return <ViewerShell {...viewerShellProps} />;
 }
 
-function App() {
-  return (
-    <ChannelLayerStateProvider>
-      <AppContent />
-    </ChannelLayerStateProvider>
-  );
+export default function App() {
+  return <AppContent />;
 }
-
-export default App;
