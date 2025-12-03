@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import FrontPageContainer from './components/FrontPageContainer';
+import FrontPageContainer, { type FrontPageContainerProps } from './components/FrontPageContainer';
 import ViewerShell, { type ViewerShellProps } from './components/ViewerShell';
 import type {
   ChannelLayerSource,
@@ -1708,53 +1708,54 @@ function AppContent() {
             x: Math.max(WINDOW_MARGIN, Math.round(window.innerWidth / 2 - WARNING_WINDOW_WIDTH / 2)),
             y: WINDOW_MARGIN + 16
           };
+    const frontPageContainerProps: FrontPageContainerProps = {
+      isExperimentSetupStarted,
+      channels,
+      setChannels,
+      activeChannelId,
+      activeChannel,
+      channelValidationMap,
+      editingChannelId,
+      editingChannelInputRef,
+      editingChannelOriginalNameRef,
+      setActiveChannelId,
+      setEditingChannelId,
+      onStartExperimentSetup: handleStartExperimentSetup,
+      onAddChannel: handleAddChannel,
+      onReturnToStart: handleReturnToFrontPage,
+      onChannelNameChange: handleChannelNameChange,
+      onRemoveChannel: handleRemoveChannel,
+      onChannelLayerFilesAdded: handleChannelLayerFilesAdded,
+      onChannelLayerDrop: handleChannelLayerDrop,
+      onChannelLayerSegmentationToggle: handleChannelLayerSegmentationToggle,
+      onChannelLayerRemove: handleChannelLayerRemove,
+      onChannelTrackFileSelected: handleChannelTrackFileSelected,
+      onChannelTrackDrop: handleChannelTrackDrop,
+      onChannelTrackClear: handleChannelTrackClear,
+      setIsExperimentSetupStarted,
+      setViewerMode,
+      updateChannelIdCounter,
+      loadSelectedDataset: loadDataset,
+      showInteractionWarning,
+      isLaunchingViewer,
+      setChannelTrackStates,
+      setTrackOrderModeByChannel,
+      setSelectedTrackOrder,
+      setFollowedTrack,
+      computeTrackSummary,
+      hasGlobalTimepointMismatch,
+      interactionErrorMessage,
+      launchErrorMessage,
+      onLaunchViewer: handleLaunchViewer,
+      canLaunch,
+      warningWindowInitialPosition,
+      warningWindowWidth: WARNING_WINDOW_WIDTH,
+      onPreprocessedStateChange: handlePreprocessedStateChange,
+      onDatasetErrorsChange: handleDatasetErrorsChange,
+      onVoxelResolutionChange: handleVoxelResolutionChange
+    };
     return (
-      <FrontPageContainer
-        isExperimentSetupStarted={isExperimentSetupStarted}
-        channels={channels}
-        setChannels={setChannels}
-        activeChannelId={activeChannelId}
-        activeChannel={activeChannel}
-        channelValidationMap={channelValidationMap}
-        editingChannelId={editingChannelId}
-        editingChannelInputRef={editingChannelInputRef}
-        editingChannelOriginalNameRef={editingChannelOriginalNameRef}
-        setActiveChannelId={setActiveChannelId}
-        setEditingChannelId={setEditingChannelId}
-        onStartExperimentSetup={handleStartExperimentSetup}
-        onAddChannel={handleAddChannel}
-        onReturnToStart={handleReturnToFrontPage}
-        onChannelNameChange={handleChannelNameChange}
-        onRemoveChannel={handleRemoveChannel}
-        onChannelLayerFilesAdded={handleChannelLayerFilesAdded}
-        onChannelLayerDrop={handleChannelLayerDrop}
-        onChannelLayerSegmentationToggle={handleChannelLayerSegmentationToggle}
-        onChannelLayerRemove={handleChannelLayerRemove}
-        onChannelTrackFileSelected={handleChannelTrackFileSelected}
-        onChannelTrackDrop={handleChannelTrackDrop}
-        onChannelTrackClear={handleChannelTrackClear}
-        setIsExperimentSetupStarted={setIsExperimentSetupStarted}
-        setViewerMode={setViewerMode}
-        updateChannelIdCounter={updateChannelIdCounter}
-        loadSelectedDataset={loadDataset}
-        showInteractionWarning={showInteractionWarning}
-        isLaunchingViewer={isLaunchingViewer}
-        setChannelTrackStates={setChannelTrackStates}
-        setTrackOrderModeByChannel={setTrackOrderModeByChannel}
-        setSelectedTrackOrder={setSelectedTrackOrder}
-        setFollowedTrack={setFollowedTrack}
-        computeTrackSummary={computeTrackSummary}
-        hasGlobalTimepointMismatch={hasGlobalTimepointMismatch}
-        interactionErrorMessage={interactionErrorMessage}
-        launchErrorMessage={launchErrorMessage}
-        onLaunchViewer={handleLaunchViewer}
-        canLaunch={canLaunch}
-        warningWindowInitialPosition={warningWindowInitialPosition}
-        warningWindowWidth={WARNING_WINDOW_WIDTH}
-        onPreprocessedStateChange={handlePreprocessedStateChange}
-        onDatasetErrorsChange={handleDatasetErrorsChange}
-        onVoxelResolutionChange={handleVoxelResolutionChange}
-      />
+      <FrontPageContainer {...frontPageContainerProps} />
     );
   }
 
