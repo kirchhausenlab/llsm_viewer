@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import type { NormalizedVolume } from '../volumeProcessing';
 import { denormalizeValue } from './intensityFormatting';
 
-const clampValue = (value: number, min: number, max: number): number => {
+export const clampValue = (value: number, min: number, max: number): number => {
   if (value < min) {
     return min;
   }

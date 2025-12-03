@@ -47,8 +47,8 @@ import {
   DEFAULT_WINDOW_MAX
 } from '../state/layerSettings';
 import { DEFAULT_TRACK_LINE_WIDTH, DEFAULT_TRACK_OPACITY } from './volume-viewer/constants';
-import { formatChannelValuesDetailed } from '../utils/intensityFormatting';
-import { sampleRawValuesAtPosition, sampleSegmentationLabel } from '../utils/hoverSampling';
+import { denormalizeValue, formatChannelValuesDetailed } from '../utils/intensityFormatting';
+import { clampValue, sampleRawValuesAtPosition, sampleSegmentationLabel } from '../utils/hoverSampling';
 
 type VrUiTargetDescriptor = { type: VrUiTargetType; data?: unknown };
 
