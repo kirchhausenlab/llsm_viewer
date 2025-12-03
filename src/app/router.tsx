@@ -31,6 +31,7 @@ import useTrackState from '../hooks/useTrackState';
 import { useChannelLayerStateContext } from '../hooks/useChannelLayerState';
 import { useViewerControls } from '../hooks/useViewerControls';
 import { useViewerPlayback } from '../hooks/useViewerPlayback';
+import useChannelEditing from './hooks/useChannelEditing';
 import {
   LAYERS_WINDOW_VERTICAL_OFFSET,
   WARNING_WINDOW_WIDTH,
@@ -90,8 +91,6 @@ function AppRouter() {
   } = useChannelLayerStateContext();
   const [preprocessedExperiment, setPreprocessedExperiment] = useState<StagedPreprocessedExperiment | null>(null);
   const [isExperimentSetupStarted, setIsExperimentSetupStarted] = useState(false);
-  const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
-  const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const {
     voxelResolution: voxelResolutionHook,
     datasetErrors,
@@ -153,6 +152,18 @@ function AppRouter() {
   const [layoutResetToken, setLayoutResetToken] = useState(0);
   const [hoveredVolumeVoxel, setHoveredVolumeVoxel] = useState<HoveredVoxelInfo | null>(null);
   const [isHelpMenuOpen, setIsHelpMenuOpen] = useState(false);
+  const {
+    activeChannelId,
+    editingChannelId,
+    editingChannelInputRef,
+    editingChannelOriginalNameRef,
+    setActiveChannelId,
+    setEditingChannelId,
+    startEditingChannel,
+    queuePendingChannelFocus,
+    handleChannelRemoved,
+    resetChannelEditingState
+  } = useChannelEditing({ channels, isLaunchingViewer });
 
   const playback = useViewerPlayback();
   const { selectedIndex, setSelectedIndex, isPlaying, fps, togglePlayback, setFps, stopPlayback, setIsPlaying } = playback;
@@ -162,11 +173,6 @@ function AppRouter() {
     setIsHelpMenuOpen((previous) => !previous);
   }, []);
 
-  useEffect(() => {
-    if (channels.length === 0) {
-      setActiveChannelId(null);
-    }
-  }, [channels.length]);
   const controlWindowInitialPosition = useMemo(computeControlWindowDefaultPosition, []);
   const layersWindowInitialPosition = useMemo(computeLayersWindowDefaultPosition, []);
   const [trackWindowInitialPosition, setTrackWindowInitialPosition] = useState<WindowPosition>(
@@ -181,9 +187,6 @@ function AppRouter() {
   const [plotSettingsWindowInitialPosition, setPlotSettingsWindowInitialPosition] = useState<WindowPosition>(
     () => computePlotSettingsWindowDefaultPosition()
   );
-  const editingChannelOriginalNameRef = useRef('');
-  const editingChannelInputRef = useRef<HTMLInputElement | null>(null);
-  const pendingChannelFocusIdRef = useRef<string | null>(null);
   const helpMenuRef = useRef<HTMLDivElement | null>(null);
 
   const handlePreprocessedStateChange = useCallback(
@@ -314,12 +317,6 @@ function AppRouter() {
   }, [viewerMode]);
 
   useEffect(() => {
-    if (editingChannelId && editingChannelId !== activeChannelId) {
-      setEditingChannelId(null);
-    }
-  }, [activeChannelId, editingChannelId]);
-
-  useEffect(() => {
     if (!isViewerLaunched) {
       setIsHelpMenuOpen(false);
     }
@@ -361,53 +358,6 @@ function AppRouter() {
       bumpDatasetErrorResetSignal();
     }
   }, [bumpDatasetErrorResetSignal, datasetError, datasetErrorContext]);
-
-  useEffect(() => {
-    const pendingChannelId = pendingChannelFocusIdRef.current;
-    if (!pendingChannelId) {
-      return;
-    }
-    const pendingChannel = channels.find((channel) => channel.id === pendingChannelId);
-    if (!pendingChannel) {
-      pendingChannelFocusIdRef.current = null;
-      return;
-    }
-    pendingChannelFocusIdRef.current = null;
-    setActiveChannelId(pendingChannelId);
-    editingChannelOriginalNameRef.current = pendingChannel.name;
-    setEditingChannelId(pendingChannelId);
-  }, [channels]);
-
-  useEffect(() => {
-    if (editingChannelId && !channels.some((channel) => channel.id === editingChannelId)) {
-      setEditingChannelId(null);
-    }
-  }, [channels, editingChannelId]);
-
-  useEffect(() => {
-    if (isLaunchingViewer) {
-      setEditingChannelId(null);
-    }
-  }, [isLaunchingViewer]);
-
-  useEffect(() => {
-    if (editingChannelId) {
-      editingChannelInputRef.current?.focus();
-      editingChannelInputRef.current?.select();
-    }
-  }, [editingChannelId]);
-
-  useEffect(() => {
-    if (channels.length === 0) {
-      if (activeChannelId !== null) {
-        setActiveChannelId(null);
-      }
-      return;
-    }
-    if (!activeChannelId || !channels.some((channel) => channel.id === activeChannelId)) {
-      setActiveChannelId(channels[0].id);
-    }
-  }, [activeChannelId, channels]);
   const volumeStepScaleChangeRef = useRef<((value: number) => void) | null>(null);
 
   const handleRegisterReset = useCallback((handler: (() => void) | null) => {
@@ -712,11 +662,9 @@ function AppRouter() {
   const handleStartExperimentSetup = useCallback(() => {
     resetPreprocessedState();
     setIsExperimentSetupStarted(true);
-    setActiveChannelId(null);
-    setEditingChannelId(null);
-    pendingChannelFocusIdRef.current = null;
+    resetChannelEditingState();
     clearDatasetError();
-  }, [clearDatasetError, resetPreprocessedState]);
+  }, [clearDatasetError, resetChannelEditingState, resetPreprocessedState]);
 
   const handleAddChannel = useCallback(() => {
     resetPreprocessedState();
@@ -732,12 +680,10 @@ function AppRouter() {
       return;
     }
     const channel = createdChannel as ChannelSource;
-    pendingChannelFocusIdRef.current = channel.id;
-    setActiveChannelId(channel.id);
-    editingChannelOriginalNameRef.current = channel.name;
-    setEditingChannelId(channel.id);
+    queuePendingChannelFocus(channel.id, channel.name);
+    startEditingChannel(channel.id, channel.name);
     clearDatasetError();
-  }, [clearDatasetError, createChannelSource, resetPreprocessedState]);
+  }, [clearDatasetError, createChannelSource, queuePendingChannelFocus, resetPreprocessedState, startEditingChannel]);
 
   const handleChannelNameChange = useCallback((channelId: string, value: string) => {
     setChannels((current) =>
@@ -753,19 +699,10 @@ function AppRouter() {
       if (removedChannel) {
         removedLayerIds = removedChannel.layers.map((layer) => layer.id);
       }
-      setActiveChannelId((previous) => {
-        if (filtered.length === 0) {
-          return null;
-        }
-        if (previous && filtered.some((channel) => channel.id === previous)) {
-          return previous;
-        }
-        const removedIndex = current.findIndex((channel) => channel.id === channelId);
-        if (removedIndex <= 0) {
-          return filtered[0].id;
-        }
-        const fallbackIndex = Math.min(removedIndex - 1, filtered.length - 1);
-        return filtered[fallbackIndex]?.id ?? filtered[0].id;
+      handleChannelRemoved({
+        removedChannelId: channelId,
+        previousChannels: current,
+        nextChannels: filtered
       });
       return filtered;
     });
@@ -783,7 +720,7 @@ function AppRouter() {
       });
     }
     clearDatasetError();
-  }, [clearDatasetError]);
+  }, [clearDatasetError, handleChannelRemoved]);
 
 
   const handleDiscardPreprocessedExperiment = useCallback(() => {
@@ -796,8 +733,7 @@ function AppRouter() {
     setLayerAutoThresholds({});
     setLayers([]);
     setSelectedIndex(0);
-    setActiveChannelId(null);
-    setEditingChannelId(null);
+    resetChannelEditingState();
     setActiveChannelTabId(null);
     resetTrackState();
     setStatus('idle');
@@ -812,7 +748,7 @@ function AppRouter() {
     layerIdRef.current = 0;
     clearTextureCache();
     clearDatasetError();
-  }, [clearDatasetError, resetPreprocessedState]);
+  }, [clearDatasetError, resetChannelEditingState, resetPreprocessedState]);
 
   const handleReturnToFrontPage = useCallback(() => {
     handleDiscardPreprocessedExperiment();
