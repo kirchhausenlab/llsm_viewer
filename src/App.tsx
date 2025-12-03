@@ -1716,6 +1716,7 @@ function AppContent() {
     setMaxSliceDepth(computedMaxSliceDepth);
   }, [computedMaxSliceDepth]);
 
+  // FrontPageContainer contract documented in src/components/FrontPageContainer.md for future extraction.
   if (!isViewerLaunched) {
     const isFrontPageLocked =
       isLaunchingViewer || isExportingPreprocessed || isPreprocessedImporting || preprocessedDropboxImporting;
