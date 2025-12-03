@@ -9,12 +9,16 @@ import type {
 } from 'react';
 import FrontPage from './FrontPage';
 import usePreprocessedExperiment from '../hooks/usePreprocessedExperiment';
-import type { ExperimentDimension } from '../hooks/useVoxelResolution';
+import {
+  useVoxelResolution,
+  type ExperimentDimension,
+  type VoxelResolutionHook
+} from '../hooks/useVoxelResolution';
+import { useDatasetErrors, type DatasetErrorHook } from '../hooks/useDatasetErrors';
 import type { DropboxAppKeySource } from '../integrations/dropbox';
 import type { ChannelTrackState, FollowedTrackState } from '../types/channelTracks';
 import type { LoadedLayer } from '../types/layers';
 import type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment } from '../hooks/useChannelSources';
-import type { VoxelResolutionInput, VoxelResolutionUnit, VoxelResolutionValues } from '../types/voxelResolution';
 
 type TrackSummary = { totalRows: number; uniqueTracks: number };
 
@@ -42,17 +46,8 @@ export type FrontPageContainerProps = {
   onChannelTrackFileSelected: (channelId: string, file: File | null) => void;
   onChannelTrackDrop: (channelId: string, dataTransfer: DataTransfer) => void;
   onChannelTrackClear: (channelId: string) => void;
-  experimentDimension: ExperimentDimension;
-  voxelResolutionInput: VoxelResolutionInput;
-  voxelResolution: VoxelResolutionValues | null;
-  onExperimentDimensionChange: (dimension: ExperimentDimension) => void;
-  onVoxelResolutionAxisChange: (axis: 'x' | 'y' | 'z', value: string) => void;
-  onVoxelResolutionUnitChange: (unit: VoxelResolutionUnit) => void;
-  onVoxelResolutionAnisotropyToggle: (value: boolean) => void;
   setIsExperimentSetupStarted: Dispatch<SetStateAction<boolean>>;
-  setExperimentDimension: Dispatch<SetStateAction<ExperimentDimension>>;
   setViewerMode: Dispatch<SetStateAction<'3d' | '2d'>>;
-  clearDatasetError: () => void;
   updateChannelIdCounter: (sources: ChannelSource[]) => void;
   loadSelectedDataset: () => Promise<LoadedLayer[] | null>;
   showInteractionWarning: (message: string) => void;
@@ -69,12 +64,12 @@ export type FrontPageContainerProps = {
   canLaunch: boolean;
   warningWindowInitialPosition: { x: number; y: number };
   warningWindowWidth: number;
-  datasetErrorResetSignal: number;
-  onDatasetErrorDismiss: () => void;
   onPreprocessedStateChange?: (state: {
     preprocessedExperiment: StagedPreprocessedExperiment | null;
     resetPreprocessedState: () => void;
   }) => void;
+  onDatasetErrorsChange?: (state: DatasetErrorHook) => void;
+  onVoxelResolutionChange?: (state: VoxelResolutionHook) => void;
 };
 
 export default function FrontPageContainer({
@@ -101,17 +96,8 @@ export default function FrontPageContainer({
   onChannelTrackFileSelected,
   onChannelTrackDrop,
   onChannelTrackClear,
-  experimentDimension,
-  voxelResolutionInput,
-  voxelResolution,
-  onExperimentDimensionChange,
-  onVoxelResolutionAxisChange,
-  onVoxelResolutionUnitChange,
-  onVoxelResolutionAnisotropyToggle,
   setIsExperimentSetupStarted,
-  setExperimentDimension,
   setViewerMode,
-  clearDatasetError,
   updateChannelIdCounter,
   loadSelectedDataset,
   showInteractionWarning,
@@ -128,10 +114,94 @@ export default function FrontPageContainer({
   canLaunch,
   warningWindowInitialPosition,
   warningWindowWidth,
-  datasetErrorResetSignal,
-  onDatasetErrorDismiss,
-  onPreprocessedStateChange
+  onPreprocessedStateChange,
+  onDatasetErrorsChange,
+  onVoxelResolutionChange
 }: FrontPageContainerProps) {
+  const {
+    voxelResolutionInput,
+    voxelResolution,
+    anisotropyScale,
+    experimentDimension,
+    trackScale,
+    handleVoxelResolutionAxisChange,
+    handleVoxelResolutionUnitChange,
+    handleVoxelResolutionAnisotropyToggle,
+    handleExperimentDimensionChange,
+    setExperimentDimension,
+    setVoxelResolutionInput
+  } = useVoxelResolution();
+  const datasetErrors = useDatasetErrors();
+  const {
+    datasetError,
+    datasetErrorContext,
+    datasetErrorResetSignal,
+    reportDatasetError,
+    clearDatasetError,
+    bumpDatasetErrorResetSignal
+  } = datasetErrors;
+
+  useEffect(() => {
+    onVoxelResolutionChange?.({
+      voxelResolutionInput,
+      voxelResolution,
+      anisotropyScale,
+      experimentDimension,
+      trackScale,
+      handleVoxelResolutionAxisChange,
+      handleVoxelResolutionUnitChange,
+      handleVoxelResolutionAnisotropyToggle,
+      handleExperimentDimensionChange,
+      setExperimentDimension,
+      setVoxelResolutionInput
+    });
+  }, [
+    anisotropyScale,
+    experimentDimension,
+    handleExperimentDimensionChange,
+    handleVoxelResolutionAnisotropyToggle,
+    handleVoxelResolutionAxisChange,
+    handleVoxelResolutionUnitChange,
+    onVoxelResolutionChange,
+    setExperimentDimension,
+    setVoxelResolutionInput,
+    trackScale,
+    voxelResolution,
+    voxelResolutionInput
+  ]);
+
+  useEffect(() => {
+    onDatasetErrorsChange?.({
+      datasetError,
+      datasetErrorContext,
+      datasetErrorResetSignal,
+      reportDatasetError,
+      clearDatasetError,
+      bumpDatasetErrorResetSignal
+    });
+  }, [
+    bumpDatasetErrorResetSignal,
+    clearDatasetError,
+    datasetError,
+    datasetErrorContext,
+    datasetErrorResetSignal,
+    onDatasetErrorsChange,
+    reportDatasetError
+  ]);
+
+  useEffect(() => {
+    return () => {
+      onDatasetErrorsChange?.({
+        datasetError: null,
+        datasetErrorContext: null,
+        datasetErrorResetSignal: 0,
+        reportDatasetError: () => {},
+        clearDatasetError: () => {},
+        bumpDatasetErrorResetSignal: () => {}
+      });
+    };
+  }, [onDatasetErrorsChange]);
+
   const handleLoadSelectedDataset = useCallback(() => {
     setIsExperimentSetupStarted(true);
     setExperimentDimension(experimentDimension);
@@ -204,11 +274,11 @@ export default function FrontPageContainer({
       onOpenPreprocessedLoader={preprocessedState.handlePreprocessedLoaderOpen}
       onReturnToStart={onReturnToStart}
       experimentDimension={experimentDimension}
-      onExperimentDimensionChange={onExperimentDimensionChange}
+      onExperimentDimensionChange={handleExperimentDimensionChange}
       voxelResolution={voxelResolutionInput}
-      onVoxelResolutionAxisChange={onVoxelResolutionAxisChange}
-      onVoxelResolutionUnitChange={onVoxelResolutionUnitChange}
-      onVoxelResolutionAnisotropyToggle={onVoxelResolutionAnisotropyToggle}
+      onVoxelResolutionAxisChange={handleVoxelResolutionAxisChange}
+      onVoxelResolutionUnitChange={handleVoxelResolutionUnitChange}
+      onVoxelResolutionAnisotropyToggle={handleVoxelResolutionAnisotropyToggle}
       isPreprocessedLoaderOpen={preprocessedState.isPreprocessedLoaderOpen}
       isPreprocessedDragActive={preprocessedState.isPreprocessedDragActive}
       onPreprocessedDragEnter={preprocessedState.handlePreprocessedDragEnter}
@@ -259,7 +329,7 @@ export default function FrontPageContainer({
       warningWindowInitialPosition={warningWindowInitialPosition}
       warningWindowWidth={warningWindowWidth}
       datasetErrorResetSignal={datasetErrorResetSignal}
-      onDatasetErrorDismiss={onDatasetErrorDismiss}
+      onDatasetErrorDismiss={clearDatasetError}
     />
   );
 }
