@@ -1,4 +1,4 @@
-import FloatingWindow from '../FloatingWindow';
+import FloatingWindow from '../../widgets/FloatingWindow';
 import type { LayoutProps, ViewerMode } from './types';
 import type { ModeToggleState, ViewerSettingsControls } from './hooks/useViewerModeControls';
 import type { PlaybackControlState } from './hooks/useViewerPlaybackControls';

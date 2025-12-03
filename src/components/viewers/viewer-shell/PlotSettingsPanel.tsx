@@ -1,6 +1,6 @@
-import FloatingWindow from '../FloatingWindow';
-import PlotSettingsWindow from '../PlotSettingsWindow';
-import SelectedTracksWindow from '../SelectedTracksWindow';
+import FloatingWindow from '../../widgets/FloatingWindow';
+import PlotSettingsWindow from '../../widgets/PlotSettingsWindow';
+import SelectedTracksWindow from '../../widgets/SelectedTracksWindow';
 import type { LayoutProps, PlotSettingsProps, SelectedTracksPanelProps } from './types';
 
 export type PlotSettingsPanelProps = {

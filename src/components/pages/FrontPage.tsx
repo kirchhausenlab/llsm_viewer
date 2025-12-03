@@ -8,7 +8,7 @@ import type {
   SetStateAction
 } from 'react';
 import ChannelCard from './ChannelCard';
-import FloatingWindow from './FloatingWindow';
+import FloatingWindow from '../widgets/FloatingWindow';
 import { formatBytes } from '../../errors';
 import type {
   ChannelSource,

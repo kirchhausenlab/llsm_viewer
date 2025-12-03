@@ -4,7 +4,7 @@ import { DEFAULT_WINDOW_MAX, DEFAULT_WINDOW_MIN, createDefaultLayerSettings } fr
 import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from '../../../shared/colorMaps/layerColors';
 import { applyAlphaToHex } from '../../../shared/utils/appHelpers';
 import BrightnessContrastHistogram from '../BrightnessContrastHistogram';
-import FloatingWindow from '../FloatingWindow';
+import FloatingWindow from '../../widgets/FloatingWindow';
 import type { ChannelsPanelProps, ChannelPanelStyle, LayoutProps } from './types';
 
 const formatNormalizedIntensity = (value: number): string => {

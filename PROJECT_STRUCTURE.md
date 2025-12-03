@@ -41,9 +41,9 @@ The main responsibilities are:
 
 **2. Visualization (2D + 3D)**
 
-- 2D planar views: `PlanarViewer.tsx` + `components/planar-viewer/*` render slices and handle interactions.
-- 3D volume views: `VolumeViewer.tsx` + `components/volume-viewer/*` (plus shaders in `src/shaders/*`) handle raymarching, track overlays, and hover sampling.
-- Viewer shell (`ViewerShell.tsx` + `components/viewer-shell/*`) orchestrates layout, panels, and mode switching (2D/3D).
+- 2D planar views: `src/components/viewers/PlanarViewer.tsx` + `src/components/viewers/planar-viewer/*` render slices and handle interactions.
+- 3D volume views: `src/components/viewers/VolumeViewer.tsx` + `src/components/viewers/volume-viewer/*` (plus shaders in `src/shaders/*`) handle raymarching, track overlays, and hover sampling.
+- Viewer shell (`src/components/viewers/ViewerShell.tsx` + `src/components/viewers/viewer-shell/*`) orchestrates layout, panels, and mode switching (2D/3D).
 
 **3. State & control**
 
@@ -95,43 +95,28 @@ The main responsibilities are:
 
 ---
 
-### UI + rendering (`src/ui/components/`)
+### UI + rendering (`src/components/`)
 
-**Setup / ingestion UI**
+**Setup / ingestion UI (`src/components/pages/*`)**
 
 - `FrontPage.tsx`, `ChannelCard.tsx`, `ChannelUploads.tsx`, `ChannelDropboxSection.tsx`
   Channel configuration and dataset ingestion (local + Dropbox) + entry points for preprocessed import/export.
 
-**Viewer shell / panels / windows**
+**Viewer shell / panels / windows (`src/components/viewers/*`)**
 
 - `ViewerShell.tsx`
   Main viewer layout; switches between 2D/3D viewer modes and hosts panels/windows.
-- `components/viewer-shell/*`  
+- `viewer-shell/*`
   Panels (channels, playback, tracks, plot settings) + shell-level hooks.
-- `FloatingWindow.tsx` and window components (e.g. `PlotSettingsWindow`, `SelectedTracksWindow`, etc.)  
-  Draggable/positioned tool windows.
-
-**2D viewer**
-
-- `PlanarViewer.tsx` + `components/planar-viewer/*`
+- `PlanarViewer.tsx` + `planar-viewer/*`
   Canvas-based slice viewing + layout/interaction hooks/utilities.
+- `VolumeViewer.tsx` + `volume-viewer/*`
+  Three.js volume renderer (raymarching, hover sampling, VR bridge, track overlays) and helper modules.
 
-**3D viewer + VR**
+**Shared widgets (`src/components/widgets/*`)**
 
-- `VolumeViewer.tsx`
-  Three.js volume renderer (3D textures + raymarch shader), track overlays, hover sampling, playback integration.
-- `components/volume-viewer/rendering/*`
-  Rendering/math helpers for the 3D viewer (shader prep, hover/raycast utilities, track geometry/appearance).
-- `components/volume-viewer/*`
-  3D viewer helpers and bridges (loading overlays, tooltips, VR bridge wiring).
-- `components/volume-viewer/vr/*`
-  WebXR session manager, input, HUD, placement/render/update utilities.
-- `components/volume-viewer/useVolumeResources.ts`
-  Builds/updates Three.js meshes/textures for volume layers, handles rebuild/cleanup when datasets or render contexts change.
-- `components/volume-viewer/useTrackRendering.ts`
-  Maintains track overlays for the 3D view (geometry/material lifecycle, hover state resolution, appearance updates).
-- `components/volume-viewer/usePlaybackControls.ts`
-  Playback state bridge for desktop/VR timelines (time index clamping, FPS clamping, HUD wiring helpers).
+- `FloatingWindow.tsx` and window components (e.g. `PlotSettingsWindow`, `SelectedTracksWindow`, etc.)
+  Draggable/positioned tool windows reused across viewer panels and the front page.
 
 ---
 

@@ -1,10 +1,10 @@
 import type { ComponentProps, CSSProperties, MouseEvent, RefObject } from 'react';
 
 import type BrightnessContrastHistogram from '../BrightnessContrastHistogram';
-import type FloatingWindow from '../FloatingWindow';
+import type FloatingWindow from '../../widgets/FloatingWindow';
 import type PlanarViewer from '../PlanarViewer';
-import type PlotSettingsWindow from '../PlotSettingsWindow';
-import type SelectedTracksWindow from '../SelectedTracksWindow';
+import type PlotSettingsWindow from '../../widgets/PlotSettingsWindow';
+import type SelectedTracksWindow from '../../widgets/SelectedTracksWindow';
 import type VolumeViewer from '../VolumeViewer';
 import type { VolumeViewerProps } from '../VolumeViewer.types';
 import type { ChannelSource } from '../../../hooks/useChannelSources';
