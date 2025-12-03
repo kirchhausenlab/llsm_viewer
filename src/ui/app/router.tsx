@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import FrontPageContainer, { type FrontPageContainerProps } from '../../components/pages/FrontPageContainer';
 import ViewerShellContainer, { type ViewerShellContainerProps } from '../../components/viewers/ViewerShellContainer';
-import type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment } from '../../hooks/useChannelSources';
+import type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment } from '../../hooks/dataset';
 import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../../shared/colorMaps/layerColors';
 import { clearTextureCache } from '../../core/textureCache';
 import {
@@ -25,10 +25,10 @@ import { computeAutoWindow, getVolumeHistogram } from '../../autoContrast';
 import { computeTrackSummary } from '../../shared/utils/trackSummary';
 import { type ExperimentDimension } from '../../hooks/useVoxelResolution';
 import type { DatasetErrorContext } from '../../hooks/useDatasetErrors';
-import { useDatasetSetup } from '../../hooks/useDatasetSetup';
-import useTrackState from '../../hooks/useTrackState';
+import { useDatasetSetup } from '../../hooks/dataset';
+import { useTrackState } from '../../hooks/tracks';
 import { useChannelLayerStateContext } from '../../hooks/useChannelLayerState';
-import { useViewerPlayback } from '../../hooks/useViewerPlayback';
+import { useViewerPlayback } from '../../hooks/viewer';
 import HelpMenu from '../../components/app/HelpMenu';
 import useChannelEditing from './hooks/useChannelEditing';
 import { useDatasetLaunch } from './hooks/useDatasetLaunch';

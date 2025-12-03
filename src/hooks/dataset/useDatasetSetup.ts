@@ -1,18 +1,18 @@
 import { useCallback, useMemo, type Dispatch, type SetStateAction } from 'react';
 
-import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../shared/colorMaps/layerColors';
-import type { LayerSettings } from '../state/layerSettings';
-import { useDatasetErrors } from './useDatasetErrors';
-import { DEFAULT_EXPERIMENT_DIMENSION, DEFAULT_VOXEL_RESOLUTION, useVoxelResolution, type VoxelResolutionHook } from './useVoxelResolution';
+import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../../shared/colorMaps/layerColors';
+import type { LayerSettings } from '../../state/layerSettings';
+import { useDatasetErrors } from '../useDatasetErrors';
+import { DEFAULT_EXPERIMENT_DIMENSION, DEFAULT_VOXEL_RESOLUTION, useVoxelResolution, type VoxelResolutionHook } from '../useVoxelResolution';
 import type { ChannelLayerSource, ChannelSource } from './useChannelSources';
-import type { LoadedLayer } from '../types/layers';
+import type { LoadedLayer } from '../../types/layers';
 import {
   collectFilesFromDataTransfer,
   dedupeFiles,
   groupFilesIntoLayers,
   hasTiffExtension,
   sortVolumeFiles
-} from '../shared/utils/appHelpers';
+} from '../../shared/utils/appHelpers';
 
 export type DatasetSetupParams = {
   channels: ChannelSource[];

@@ -31,7 +31,7 @@ import {
 import type { LoadedLayer } from '../types/layers';
 import type { VoxelResolutionValues } from '../types/voxelResolution';
 import type { ExperimentDimension } from './useVoxelResolution';
-import { type ChannelSourcesApi, type LoadState, useChannelSources } from './useChannelSources';
+import { type ChannelSourcesApi, type LoadState, useChannelSources } from './dataset';
 
 const DEFAULT_RESET_WINDOW = { windowMin: DEFAULT_WINDOW_MIN, windowMax: DEFAULT_WINDOW_MAX };
 

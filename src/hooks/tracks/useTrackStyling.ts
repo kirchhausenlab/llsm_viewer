@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback, type Dispatch, type 
 import { TRACK_COLOR_SWATCHES, normalizeTrackColor, type TrackColorOption } from '../../shared/colorMaps/trackColors';
 import type { ChannelTrackState } from '../../types/channelTracks';
 import type { TrackColorMode, TrackDefinition } from '../../types/tracks';
-import type { ChannelSource } from '../useChannelSources';
+import type { ChannelSource } from '../dataset';
 
 export const DEFAULT_TRACK_OPACITY = 0.9;
 export const DEFAULT_TRACK_LINE_WIDTH = 1;

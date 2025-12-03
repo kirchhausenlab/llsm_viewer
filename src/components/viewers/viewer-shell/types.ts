@@ -7,7 +7,7 @@ import type PlotSettingsWindow from '../../widgets/PlotSettingsWindow';
 import type SelectedTracksWindow from '../../widgets/SelectedTracksWindow';
 import type VolumeViewer from '../VolumeViewer';
 import type { VolumeViewerProps } from '../VolumeViewer.types';
-import type { ChannelSource } from '../../../hooks/useChannelSources';
+import type { ChannelSource } from '../../../hooks/dataset';
 import type { LayerSettings } from '../../../state/layerSettings';
 import type { HoveredVoxelInfo } from '../../../types/hover';
 import type { LoadedLayer } from '../../../types/layers';

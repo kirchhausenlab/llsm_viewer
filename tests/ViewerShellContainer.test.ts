@@ -3,7 +3,7 @@ import { createRef } from 'react';
 
 import { type ViewerShellContainerProps, useViewerShellProps } from '../src/components/viewers/useViewerShellProps.ts';
 import { createDefaultLayerSettings } from '../src/state/layerSettings.ts';
-import { DEFAULT_TRACK_LINE_WIDTH, DEFAULT_TRACK_OPACITY } from '../src/hooks/useTrackState.ts';
+import { DEFAULT_TRACK_LINE_WIDTH, DEFAULT_TRACK_OPACITY } from '../src/hooks/tracks';
 import { WINDOW_MARGIN, CONTROL_WINDOW_WIDTH, SELECTED_TRACKS_WINDOW_WIDTH } from '../src/shared/utils/windowLayout.ts';
 
 const noop = () => {};

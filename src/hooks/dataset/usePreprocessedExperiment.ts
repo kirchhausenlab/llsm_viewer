@@ -7,16 +7,16 @@ import type {
   MutableRefObject,
   SetStateAction
 } from 'react';
-import type { DropboxAppKeySource } from '../integrations/dropbox';
-import type { LoadedLayer } from '../types/layers';
-import type { ChannelTrackState, FollowedTrackState } from '../types/channelTracks';
+import type { DropboxAppKeySource } from '../../integrations/dropbox';
+import type { LoadedLayer } from '../../types/layers';
+import type { ChannelTrackState, FollowedTrackState } from '../../types/channelTracks';
 import type { ChannelSource, StagedPreprocessedExperiment } from './useChannelSources';
-import type { ExperimentDimension } from './useVoxelResolution';
-import type { PreprocessedDropboxCallbacks } from './preprocessedExperiment/shared';
-import { usePreprocessedImport } from './preprocessedExperiment/usePreprocessedImport';
-import { useDropboxPreprocessed } from './preprocessedExperiment/useDropboxPreprocessed';
-import { usePreprocessedExport } from './preprocessedExperiment/usePreprocessedExport';
-import type { VoxelResolutionValues } from '../types/voxelResolution';
+import type { ExperimentDimension } from '../useVoxelResolution';
+import type { PreprocessedDropboxCallbacks } from '../preprocessedExperiment/shared';
+import { usePreprocessedImport } from '../preprocessedExperiment/usePreprocessedImport';
+import { useDropboxPreprocessed } from '../preprocessedExperiment/useDropboxPreprocessed';
+import { usePreprocessedExport } from '../preprocessedExperiment/usePreprocessedExport';
+import type { VoxelResolutionValues } from '../../types/voxelResolution';
 
 export type UsePreprocessedExperimentOptions = {
   channels: ChannelSource[];

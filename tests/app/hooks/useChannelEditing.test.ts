@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import useChannelEditing from '../../../src/ui/app/hooks/useChannelEditing.ts';
-import type { ChannelSource } from '../../../src/hooks/useChannelSources.ts';
+import type { ChannelSource } from '../../../src/hooks/dataset';
 import { renderHook } from '../../hooks/renderHook.ts';
 
 const createChannel = (id: string, name: string): ChannelSource => ({

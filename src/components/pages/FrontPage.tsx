@@ -14,7 +14,7 @@ import type {
   ChannelSource,
   ChannelValidation,
   StagedPreprocessedExperiment
-} from '../../hooks/useChannelSources';
+} from '../../hooks/dataset';
 import type { ExperimentDimension } from '../../hooks/useVoxelResolution';
 import type { DropboxAppKeySource } from '../../integrations/dropbox';
 import type { VoxelResolutionInput, VoxelResolutionUnit } from '../../types/voxelResolution';

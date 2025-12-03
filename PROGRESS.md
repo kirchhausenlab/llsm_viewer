@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Reorganized hooks under `src/hooks` into `dataset/`, `viewer/`, and `tracks/` subfolders, moving related hooks and adding
+  barrel exports to keep imports stable across the app and tests.
 - Fixed broken import paths after the core/shared/ui split (Dropbox/components, workers, shared utils) and addressed implicit
   any warnings so `npm run typecheck` passes again.
 - Pointed the UI layout to the relocated `styles/app/index.css` asset so the Vite production build can resolve global styles.
