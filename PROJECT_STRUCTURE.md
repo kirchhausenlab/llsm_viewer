@@ -127,11 +127,13 @@ The main responsibilities are:
 
 **3D viewer + VR**
 
-- `VolumeViewer.tsx`  
+- `VolumeViewer.tsx`
   Three.js volume renderer (3D textures + raymarch shader), track overlays, hover sampling, playback integration.
-- `components/volume-viewer/*`  
-  3D viewer helpers and bridges (including VR-related integration).
-- `components/volume-viewer/vr/*`  
+- `components/volume-viewer/rendering/*`
+  Rendering/math helpers for the 3D viewer (shader prep, hover/raycast utilities, track geometry/appearance).
+- `components/volume-viewer/*`
+  3D viewer helpers and bridges (loading overlays, tooltips, VR bridge wiring).
+- `components/volume-viewer/vr/*`
   WebXR session manager, input, HUD, placement/render/update utilities.
 
 ---
