@@ -1,26 +1,64 @@
-## Project overview
+# AGENTS
 
-This project is a 4D (3D+time) scientific data viewer for the browser, focused on data from fluorescent microscopy.
+This file defines how agents should work on this repository.  
+**Do not modify this file.**
 
-It reads sequences of 3D files (such as .tif) and views them as 3D movies, with "free roaming" in space and proper control of time (start, stop, choose timestep via slides, etc).
+---
 
-It must be blazingly fast, being as real time as possible, and for that it needs to leverage the GPU as much as possible.
+## Project structure
 
-Rendering is based on Direct Volume Rendering (DVR), using 3D textures and GPU ray-marching.
+For the up-to-date project layout and architectural overview:
 
-## What can you expect from the data?
+- **Do not** add structure descriptions here.
+- Instead, read and update: `PROJECT_STRUCTURE.md`.
 
-- Typical volumes are of shape [T,Z,Y,X] = [100,200,500,500], and can be greyscale 8bit (0-255), RGB or float.
-- The data is mostly bright shapes and a dark background, and I want to see "through " the background. Real time transparency/transfer function tuning is a must.
+Agents: You may freely modify `PROJECT_STRUCTURE.md` to reflect code changes, but must not change `AGENTS.md` itself.
 
-## Code guidelines
+---
 
-- Data visualization should be as fast/efficient as possible, making full use of the GPUs.
-- When data is loaded, there is a preprocessing step before going to the data visualization. This preprocessing step's goal is to precompute/format stuff as much as possible in order to make the subsequent visualization stage as fast as possible. The preprocessing stage can take as much time as needed in order to speed up the actual data visualization. The preprocessing stage can later be optimized, but without affecting data visualization performance, which is the utmost priority.
-- Record your progress, status, etc, in a PROGRESS.md file.
-- Do all the testing necessary to ensure the code is working correctly.
-- If I ask you to do something, do it, do it properly, do not save energy or be lazy or do half-implementations.
-- Make your code understandable to readers/humans. I will be manually checking it periodically.
-- Make your code well-organized, well-planed, properly modularized. Make sure components meant to be independent are indeeed independent from one another.
-- Avoid monolithic files with thousands of lines of code. Try to split them as necessary to avoid that.
-- When changing anything in the code, make sure everything else (anywhere else in the code) that might depend on that stuff you just changed is still properly working after the change.
+## Performance model
+
+- **Primary goal:** Data visualization must be as fast and responsive as possible, making full use of GPUs where appropriate.
+- The data-loading pipeline is split into:
+  1. **Preprocessing stage** – May take as long as needed. Its job is to precompute/format everything it reasonably can so that…
+  2. **Visualization stage** – Is as fast as possible at runtime (this stage has top priority).
+- When optimizing, you may:
+  - Make preprocessing slower if it clearly makes visualization faster.
+  - Refactor or re-run preprocessing logic, as long as you do **not** regress visualization performance.
+
+---
+
+## Workflow & progress
+
+- Record your progress, status, and open questions in `PROGRESS.md`.
+- When you make non-trivial changes, add:
+  - A short summary of what changed.
+  - Any follow-up work or TODOs.
+  - Any caveats or trade-offs you made.
+
+---
+
+## Code quality and organization
+
+- Do all necessary testing to ensure the code is working correctly before considering a task “done”.
+- Make your code understandable to humans:
+  - Prefer clear names, small focused functions, and comments where intent is non-obvious.
+  - Avoid surprising behaviours or hidden side effects.
+- Keep the codebase well organized and modular:
+  - Components or modules that are conceptually independent should be **actually** independent (minimal coupling, clean interfaces).
+  - Avoid monolithic files with thousands of lines. Split them into smaller, cohesive modules when they start to grow too large.
+- When changing existing code:
+  - Consider all call sites and dependent modules.
+  - Update or add tests as needed.
+  - Verify that existing behaviours that should remain stable still work.
+
+---
+
+## Working expectations for agents
+
+- If the user asks you to do something, implement it fully and properly. Do not leave half-finished work or obvious TODOs without clearly documenting them.
+- Prefer robust, maintainable solutions over quick hacks.
+- When you introduce complexity, pay extra attention to:
+  - Documentation (comments, `PROJECT_STRUCTURE.md`, `PROGRESS.md`).
+  - Tests that pin down key behaviour.
+```
