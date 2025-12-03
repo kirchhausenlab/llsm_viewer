@@ -56,6 +56,8 @@ import { useCameraControls } from './volume-viewer/useCameraControls';
 import { useVolumeResources } from './volume-viewer/useVolumeResources';
 import { useTrackRendering } from './volume-viewer/useTrackRendering';
 import { usePlaybackControls } from './volume-viewer/usePlaybackControls';
+import { useLoadingOverlay } from './volume-viewer/useLoadingOverlay';
+import { useTrackTooltip } from './volume-viewer/useTrackTooltip';
 
 function VolumeViewer({
   layers,
@@ -352,17 +354,12 @@ function VolumeViewer({
     [reportVoxelHoverAbort],
   );
 
-  const safeProgress = Math.min(1, Math.max(0, loadingProgress));
-  const clampedLoadedVolumes = Math.max(0, loadedVolumes);
-  const clampedExpectedVolumes = Math.max(0, expectedVolumes);
-  const normalizedProgress =
-    clampedExpectedVolumes > 0
-      ? Math.min(1, clampedLoadedVolumes / clampedExpectedVolumes)
-      : safeProgress;
-  const hasStartedLoading = normalizedProgress > 0 || clampedLoadedVolumes > 0 || safeProgress > 0;
-  const hasFinishedLoading =
-    clampedExpectedVolumes > 0 ? clampedLoadedVolumes >= clampedExpectedVolumes : safeProgress >= 1;
-  const showLoadingOverlay = isLoading || (hasStartedLoading && !hasFinishedLoading);
+  const { showLoadingOverlay } = useLoadingOverlay({
+    isLoading,
+    loadingProgress,
+    loadedVolumes,
+    expectedVolumes,
+  });
   const primaryVolume = useMemo(() => {
     for (const layer of layers) {
       if (layer.volume) {
@@ -421,6 +418,11 @@ function VolumeViewer({
     hoverRaycasterRef,
     currentDimensionsRef,
     hasActive3DLayer,
+  });
+
+  const { hoveredTrackLabel } = useTrackTooltip({
+    hoveredTrackId,
+    trackLookup,
   });
 
   const { vrApi, vrParams, vrIntegration, setVrIntegration } = useVolumeViewerVrBridge({
@@ -1739,11 +1741,6 @@ function VolumeViewer({
     vrVolumeYawHandlesRef,
     xrSessionRef,
   ]);
-
-  const hoveredTrackDefinition = hoveredTrackId ? trackLookup.get(hoveredTrackId) ?? null : null;
-  const hoveredTrackLabel = hoveredTrackDefinition
-    ? `${hoveredTrackDefinition.channelName} · Track #${hoveredTrackDefinition.trackNumber}`
-    : null;
 
   useEffect(() => {
     return () => {
