@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Added a shared layer settings updater to centralize brightness/contrast/window change handling and reduce duplication in the
+  app router callbacks.
 - Reorganized hooks under `src/hooks` into `dataset/`, `viewer/`, and `tracks/` subfolders, moving related hooks and adding
   barrel exports to keep imports stable across the app and tests.
 - Fixed broken import paths after the core/shared/ui split (Dropbox/components, workers, shared utils) and addressed implicit
