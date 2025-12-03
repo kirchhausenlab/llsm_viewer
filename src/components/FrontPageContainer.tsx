@@ -1,20 +1,9 @@
 import { useCallback, useEffect, useMemo } from 'react';
-import type {
-  Dispatch,
-  MutableRefObject,
-  SetStateAction,
-  ChangeEvent,
-  DragEvent,
-  FormEvent
-} from 'react';
+import type { Dispatch, MutableRefObject, SetStateAction, ChangeEvent, DragEvent, FormEvent } from 'react';
 import FrontPage from './FrontPage';
 import usePreprocessedExperiment from '../hooks/usePreprocessedExperiment';
-import {
-  useVoxelResolution,
-  type ExperimentDimension,
-  type VoxelResolutionHook
-} from '../hooks/useVoxelResolution';
-import { useDatasetErrors, type DatasetErrorHook } from '../hooks/useDatasetErrors';
+import { type ExperimentDimension, type VoxelResolutionHook } from '../hooks/useVoxelResolution';
+import type { DatasetErrorHook } from '../hooks/useDatasetErrors';
 import type { DropboxAppKeySource } from '../integrations/dropbox';
 import type { ChannelTrackState, FollowedTrackState } from '../types/channelTracks';
 import type { LoadedLayer } from '../types/layers';
@@ -68,8 +57,8 @@ export type FrontPageContainerProps = {
     preprocessedExperiment: StagedPreprocessedExperiment | null;
     resetPreprocessedState: () => void;
   }) => void;
-  onDatasetErrorsChange?: (state: DatasetErrorHook) => void;
-  onVoxelResolutionChange?: (state: VoxelResolutionHook) => void;
+  datasetErrors: DatasetErrorHook;
+  voxelResolution: VoxelResolutionHook;
 };
 
 export default function FrontPageContainer({
@@ -115,12 +104,20 @@ export default function FrontPageContainer({
   warningWindowInitialPosition,
   warningWindowWidth,
   onPreprocessedStateChange,
-  onDatasetErrorsChange,
-  onVoxelResolutionChange
+  datasetErrors,
+  voxelResolution
 }: FrontPageContainerProps) {
   const {
+    datasetError,
+    datasetErrorContext,
+    datasetErrorResetSignal,
+    reportDatasetError,
+    clearDatasetError,
+    bumpDatasetErrorResetSignal
+  } = datasetErrors;
+  const {
     voxelResolutionInput,
-    voxelResolution,
+    voxelResolution: voxelResolutionValue,
     anisotropyScale,
     experimentDimension,
     trackScale,
@@ -130,77 +127,7 @@ export default function FrontPageContainer({
     handleExperimentDimensionChange,
     setExperimentDimension,
     setVoxelResolutionInput
-  } = useVoxelResolution();
-  const datasetErrors = useDatasetErrors();
-  const {
-    datasetError,
-    datasetErrorContext,
-    datasetErrorResetSignal,
-    reportDatasetError,
-    clearDatasetError,
-    bumpDatasetErrorResetSignal
-  } = datasetErrors;
-
-  useEffect(() => {
-    onVoxelResolutionChange?.({
-      voxelResolutionInput,
-      voxelResolution,
-      anisotropyScale,
-      experimentDimension,
-      trackScale,
-      handleVoxelResolutionAxisChange,
-      handleVoxelResolutionUnitChange,
-      handleVoxelResolutionAnisotropyToggle,
-      handleExperimentDimensionChange,
-      setExperimentDimension,
-      setVoxelResolutionInput
-    });
-  }, [
-    anisotropyScale,
-    experimentDimension,
-    handleExperimentDimensionChange,
-    handleVoxelResolutionAnisotropyToggle,
-    handleVoxelResolutionAxisChange,
-    handleVoxelResolutionUnitChange,
-    onVoxelResolutionChange,
-    setExperimentDimension,
-    setVoxelResolutionInput,
-    trackScale,
-    voxelResolution,
-    voxelResolutionInput
-  ]);
-
-  useEffect(() => {
-    onDatasetErrorsChange?.({
-      datasetError,
-      datasetErrorContext,
-      datasetErrorResetSignal,
-      reportDatasetError,
-      clearDatasetError,
-      bumpDatasetErrorResetSignal
-    });
-  }, [
-    bumpDatasetErrorResetSignal,
-    clearDatasetError,
-    datasetError,
-    datasetErrorContext,
-    datasetErrorResetSignal,
-    onDatasetErrorsChange,
-    reportDatasetError
-  ]);
-
-  useEffect(() => {
-    return () => {
-      onDatasetErrorsChange?.({
-        datasetError: null,
-        datasetErrorContext: null,
-        datasetErrorResetSignal: 0,
-        reportDatasetError: () => {},
-        clearDatasetError: () => {},
-        bumpDatasetErrorResetSignal: () => {}
-      });
-    };
-  }, [onDatasetErrorsChange]);
+  } = voxelResolution;
 
   const handleLoadSelectedDataset = useCallback(() => {
     setIsExperimentSetupStarted(true);
@@ -225,7 +152,7 @@ export default function FrontPageContainer({
     loadSelectedDataset: handleLoadSelectedDataset,
     showInteractionWarning,
     isLaunchingViewer,
-    voxelResolution,
+    voxelResolution: voxelResolutionValue,
     experimentDimension
   });
 
