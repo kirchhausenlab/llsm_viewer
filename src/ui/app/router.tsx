@@ -15,7 +15,8 @@ import {
   DEFAULT_WINDOW_MIN,
   formatContrastMultiplier,
   type LayerSettings,
-  type SamplingMode
+  type SamplingMode,
+  updateLayerSettings
 } from '../../state/layerSettings';
 import { deriveChannelTrackOffsets } from '../../state/channelTrackOffsets';
 import type { LoadedLayer } from '../../types/layers';
@@ -702,115 +703,55 @@ function AppRouter() {
     });
   }, [channelLayersMap, layers]);
 
-  const handleLayerContrastChange = useCallback((key: string, sliderIndex: number) => {
-    setLayerSettings((current) => {
-      const previous = current[key] ?? createLayerDefaultSettings(key);
-      if (previous.contrastSliderIndex === sliderIndex) {
-        return current;
-      }
-      const updated = brightnessContrastModel.applyContrast(previous, sliderIndex);
-      if (
-        previous.windowMin === updated.windowMin &&
-        previous.windowMax === updated.windowMax &&
-        previous.contrastSliderIndex === updated.contrastSliderIndex &&
-        previous.brightnessSliderIndex === updated.brightnessSliderIndex &&
-        previous.minSliderIndex === updated.minSliderIndex &&
-        previous.maxSliderIndex === updated.maxSliderIndex
-      ) {
-        return current;
-      }
-      return {
-        ...current,
-        [key]: {
-          ...previous,
-          ...updated
+  const handleLayerContrastChange = useCallback(
+    (key: string, sliderIndex: number) => {
+      updateLayerSettings(key, setLayerSettings, createLayerDefaultSettings, ({ previous }) => {
+        if (previous.contrastSliderIndex === sliderIndex) {
+          return null;
         }
-      };
-    });
-  }, [createLayerDefaultSettings]);
+        return brightnessContrastModel.applyContrast(previous, sliderIndex);
+      });
+    },
+    [createLayerDefaultSettings, setLayerSettings]
+  );
 
-  const handleLayerBrightnessChange = useCallback((key: string, sliderIndex: number) => {
-    setLayerSettings((current) => {
-      const previous = current[key] ?? createLayerDefaultSettings(key);
-      if (previous.brightnessSliderIndex === sliderIndex) {
-        return current;
-      }
-      const updated = brightnessContrastModel.applyBrightness(previous, sliderIndex);
-      if (
-        previous.windowMin === updated.windowMin &&
-        previous.windowMax === updated.windowMax &&
-        previous.contrastSliderIndex === updated.contrastSliderIndex &&
-        previous.brightnessSliderIndex === updated.brightnessSliderIndex &&
-        previous.minSliderIndex === updated.minSliderIndex &&
-        previous.maxSliderIndex === updated.maxSliderIndex
-      ) {
-        return current;
-      }
-      return {
-        ...current,
-        [key]: {
-          ...previous,
-          ...updated
+  const handleLayerBrightnessChange = useCallback(
+    (key: string, sliderIndex: number) => {
+      updateLayerSettings(key, setLayerSettings, createLayerDefaultSettings, ({ previous }) => {
+        if (previous.brightnessSliderIndex === sliderIndex) {
+          return null;
         }
-      };
-    });
-  }, [createLayerDefaultSettings]);
+        return brightnessContrastModel.applyBrightness(previous, sliderIndex);
+      });
+    },
+    [createLayerDefaultSettings, setLayerSettings]
+  );
 
-  const handleLayerWindowMinChange = useCallback((key: string, value: number) => {
-    setLayerSettings((current) => {
-      const previous = current[key] ?? createLayerDefaultSettings(key);
-      const clampedValue = Math.max(DEFAULT_WINDOW_MIN, Math.min(DEFAULT_WINDOW_MAX, value));
-      if (previous.windowMin === clampedValue) {
-        return current;
-      }
-      const updated = brightnessContrastModel.applyWindow(clampedValue, previous.windowMax);
-      if (
-        previous.windowMin === updated.windowMin &&
-        previous.windowMax === updated.windowMax &&
-        previous.contrastSliderIndex === updated.contrastSliderIndex &&
-        previous.brightnessSliderIndex === updated.brightnessSliderIndex &&
-        previous.minSliderIndex === updated.minSliderIndex &&
-        previous.maxSliderIndex === updated.maxSliderIndex
-      ) {
-        return current;
-      }
-      return {
-        ...current,
-        [key]: {
-          ...previous,
-          ...updated
+  const handleLayerWindowMinChange = useCallback(
+    (key: string, value: number) => {
+      updateLayerSettings(key, setLayerSettings, createLayerDefaultSettings, ({ previous }) => {
+        const clampedValue = Math.max(DEFAULT_WINDOW_MIN, Math.min(DEFAULT_WINDOW_MAX, value));
+        if (previous.windowMin === clampedValue) {
+          return null;
         }
-      };
-    });
-  }, [createLayerDefaultSettings]);
+        return brightnessContrastModel.applyWindow(clampedValue, previous.windowMax);
+      });
+    },
+    [createLayerDefaultSettings, setLayerSettings]
+  );
 
-  const handleLayerWindowMaxChange = useCallback((key: string, value: number) => {
-    setLayerSettings((current) => {
-      const previous = current[key] ?? createLayerDefaultSettings(key);
-      const clampedValue = Math.max(DEFAULT_WINDOW_MIN, Math.min(DEFAULT_WINDOW_MAX, value));
-      if (previous.windowMax === clampedValue) {
-        return current;
-      }
-      const updated = brightnessContrastModel.applyWindow(previous.windowMin, clampedValue);
-      if (
-        previous.windowMin === updated.windowMin &&
-        previous.windowMax === updated.windowMax &&
-        previous.contrastSliderIndex === updated.contrastSliderIndex &&
-        previous.brightnessSliderIndex === updated.brightnessSliderIndex &&
-        previous.minSliderIndex === updated.minSliderIndex &&
-        previous.maxSliderIndex === updated.maxSliderIndex
-      ) {
-        return current;
-      }
-      return {
-        ...current,
-        [key]: {
-          ...previous,
-          ...updated
+  const handleLayerWindowMaxChange = useCallback(
+    (key: string, value: number) => {
+      updateLayerSettings(key, setLayerSettings, createLayerDefaultSettings, ({ previous }) => {
+        const clampedValue = Math.max(DEFAULT_WINDOW_MIN, Math.min(DEFAULT_WINDOW_MAX, value));
+        if (previous.windowMax === clampedValue) {
+          return null;
         }
-      };
-    });
-  }, [createLayerDefaultSettings]);
+        return brightnessContrastModel.applyWindow(previous.windowMin, clampedValue);
+      });
+    },
+    [createLayerDefaultSettings, setLayerSettings]
+  );
 
   const handleLayerAutoContrast = useCallback(
     (key: string) => {

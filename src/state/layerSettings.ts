@@ -1,3 +1,4 @@
+import type { Dispatch, SetStateAction } from 'react';
 import { DEFAULT_LAYER_COLOR } from '../shared/colorMaps/layerColors';
 import {
   DEFAULT_BRIGHTNESS_CONTRAST_MODEL,
@@ -46,6 +47,45 @@ export const clampWindowBounds = (
 ): { windowMin: number; windowMax: number } => {
   const state = DEFAULT_BRIGHTNESS_CONTRAST_MODEL.applyWindow(windowMin, windowMax);
   return { windowMin: state.windowMin, windowMax: state.windowMax };
+};
+
+const layerSettingsChanged = (
+  previous: LayerSettings,
+  next: BrightnessContrastState
+): boolean => {
+  return (
+    previous.windowMin !== next.windowMin ||
+    previous.windowMax !== next.windowMax ||
+    previous.contrastSliderIndex !== next.contrastSliderIndex ||
+    previous.brightnessSliderIndex !== next.brightnessSliderIndex ||
+    previous.minSliderIndex !== next.minSliderIndex ||
+    previous.maxSliderIndex !== next.maxSliderIndex
+  );
+};
+
+export const updateLayerSettings = (
+  key: string,
+  setLayerSettings: Dispatch<SetStateAction<Record<string, LayerSettings>>>,
+  createLayerDefaultSettings: (key: string) => LayerSettings,
+  updater: (args: {
+    previous: LayerSettings;
+    brightnessContrastModel: typeof DEFAULT_BRIGHTNESS_CONTRAST_MODEL;
+  }) => BrightnessContrastState | null
+): void => {
+  setLayerSettings((current) => {
+    const previous = current[key] ?? createLayerDefaultSettings(key);
+    const updated = updater({ previous, brightnessContrastModel: DEFAULT_BRIGHTNESS_CONTRAST_MODEL });
+    if (!updated || !layerSettingsChanged(previous, updated)) {
+      return current;
+    }
+    return {
+      ...current,
+      [key]: {
+        ...previous,
+        ...updated
+      }
+    };
+  });
 };
 
 export const computeContrastMultiplier = (windowMin: number, windowMax: number): number => {
