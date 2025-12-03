@@ -1,24 +1,24 @@
 import { useCallback, useMemo, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import { fromBlob } from 'geotiff';
-import { VolumeTooLargeError, formatBytes } from '../errors';
-import { expandVolumesForMovieMode, loadVolumesFromFiles } from '../loaders/volumeLoader';
-import { clearTextureCache } from '../core/textureCache';
-import type { NormalizedVolume } from '../core/volumeProcessing';
+import { VolumeTooLargeError, formatBytes } from '../../errors';
+import { expandVolumesForMovieMode, loadVolumesFromFiles } from '../../loaders/volumeLoader';
+import { clearTextureCache } from '../../core/textureCache';
+import type { NormalizedVolume } from '../../core/volumeProcessing';
 import {
   colorizeSegmentationVolume,
   computeNormalizationParameters,
   normalizeVolume
-} from '../core/volumeProcessing';
-import type { ExperimentDimension } from './useVoxelResolution';
-import { computeAutoWindow } from '../autoContrast';
-import type { ImportPreprocessedDatasetResult } from '../shared/utils/preprocessedDataset';
-import { resampleVolume } from '../shared/utils/anisotropyCorrection';
-import { createSegmentationSeed, sortVolumeFiles } from '../shared/utils/appHelpers';
+} from '../../core/volumeProcessing';
+import type { ExperimentDimension } from '../useVoxelResolution';
+import { computeAutoWindow } from '../../autoContrast';
+import type { ImportPreprocessedDatasetResult } from '../../shared/utils/preprocessedDataset';
+import { resampleVolume } from '../../shared/utils/anisotropyCorrection';
+import { createSegmentationSeed, sortVolumeFiles } from '../../shared/utils/appHelpers';
 import {
   DEFAULT_LAYER_COLOR,
   GRAYSCALE_COLOR_SWATCHES,
   normalizeHexColor
-} from '../shared/colorMaps/layerColors';
+} from '../../shared/colorMaps/layerColors';
 import {
   brightnessContrastModel,
   clampWindowBounds,
@@ -29,9 +29,9 @@ import {
   DEFAULT_WINDOW_MIN,
   type LayerSettings,
   type SamplingMode
-} from '../state/layerSettings';
-import type { LoadedLayer } from '../types/layers';
-import type { VoxelResolutionValues } from '../types/voxelResolution';
+} from '../../state/layerSettings';
+import type { LoadedLayer } from '../../types/layers';
+import type { VoxelResolutionValues } from '../../types/voxelResolution';
 
 export type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 

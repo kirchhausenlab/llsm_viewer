@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo } from 'react';
 
-import { useViewerControls, type ViewerMode } from '../../../hooks/useViewerControls';
-import { useViewerPlayback, type ViewerPlaybackHook } from '../../../hooks/useViewerPlayback';
+import { useViewerControls, useViewerPlayback, type ViewerMode, type ViewerPlaybackHook } from '../../../hooks/viewer';
 import type { ExperimentDimension } from '../../../hooks/useVoxelResolution';
 
 type UseViewerModePlaybackParams = {

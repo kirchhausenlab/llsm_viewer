@@ -1,13 +1,13 @@
 import { useCallback, type Dispatch, type SetStateAction } from 'react';
-import type { ChannelSource } from './useChannelSources';
-import type { ExperimentDimension } from './useVoxelResolution';
-import useParsedTracks from './tracks/useParsedTracks';
+import type { ChannelSource } from '../dataset';
+import type { ExperimentDimension } from '../useVoxelResolution';
+import useParsedTracks from './useParsedTracks';
 import useTrackStyling, {
   DEFAULT_TRACK_LINE_WIDTH,
   DEFAULT_TRACK_OPACITY,
   createDefaultChannelTrackState
-} from './tracks/useTrackStyling';
-import useTrackSelection, { TRACK_SMOOTHING_RANGE } from './tracks/useTrackSelection';
+} from './useTrackStyling';
+import useTrackSelection, { TRACK_SMOOTHING_RANGE } from './useTrackSelection';
 
 export type UseTrackStateOptions = {
   channels: ChannelSource[];

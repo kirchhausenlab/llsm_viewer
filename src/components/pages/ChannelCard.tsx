@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react';
 import ChannelDropboxSection from './ChannelDropboxSection';
 import ChannelUploads from './ChannelUploads';
 import useChannelDropbox from '../../hooks/useChannelDropbox';
-import type { ChannelSource, ChannelValidation } from '../../hooks/useChannelSources';
+import type { ChannelSource, ChannelValidation } from '../../hooks/dataset';
 import type { ExperimentDimension } from '../../hooks/useVoxelResolution';
 
 export type ChannelCardProps = {

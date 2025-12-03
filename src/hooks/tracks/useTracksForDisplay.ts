@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import { getTrackColorHex } from '../shared/colorMaps/trackColors';
-import type { NumericRange, TrackDefinition, TrackPoint } from '../types/tracks';
-import { applyGaussianAmplitudeSmoothing } from '../shared/utils/trackSmoothing';
+import { getTrackColorHex } from '../../shared/colorMaps/trackColors';
+import type { NumericRange, TrackDefinition, TrackPoint } from '../../types/tracks';
+import { applyGaussianAmplitudeSmoothing } from '../../shared/utils/trackSmoothing';
 
 export type TrackSeriesEntry = {
   id: string;

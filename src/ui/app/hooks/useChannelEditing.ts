@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { ChannelSource } from '../../../hooks/useChannelSources';
+import type { ChannelSource } from '../../../hooks/dataset';
 
 export type ChannelRemovalContext = {
   removedChannelId: string;

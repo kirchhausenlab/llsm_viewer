@@ -9,8 +9,8 @@ import {
 } from 'react';
 import type { ChannelTrackState, FollowedTrackState } from '../../types/channelTracks';
 import type { NumericRange, TrackDefinition } from '../../types/tracks';
-import { useTracksForDisplay } from '../useTracksForDisplay';
-import type { ChannelSource } from '../useChannelSources';
+import { useTracksForDisplay } from './useTracksForDisplay';
+import type { ChannelSource } from '../dataset';
 import { createDefaultChannelTrackState } from './useTrackStyling';
 
 const clampRangeToBounds = (range: NumericRange, bounds: NumericRange): NumericRange => {

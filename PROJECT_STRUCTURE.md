@@ -48,9 +48,9 @@ The main responsibilities are:
 **3. State & control**
 
 - Central dataset and layer state: `useChannelLayerState` and `state/*`.
-- Channel sources and per-layer volume state: `useChannelSources`.
-- Playback and viewer interaction: `useViewerPlayback`, `useViewerControls`, and app-level helpers such as
-  `useViewerModePlayback` (viewer routing) and `useDatasetLaunch` (load/progress wiring).
+- Channel sources and per-layer volume state: `hooks/dataset/useChannelSources.ts`.
+- Playback and viewer interaction: `hooks/viewer/useViewerPlayback.ts`, `hooks/viewer/useViewerControls.ts`, and app-level
+  helpers such as `useViewerModePlayback` (viewer routing) and `useDatasetLaunch` (load/progress wiring).
 - Tracks: hooks under `hooks/tracks/*` feed both planar and volume viewers.
 
 **4. Preprocessed dataset import/export**
@@ -124,9 +124,9 @@ The main responsibilities are:
 
 - `hooks/useChannelLayerState.tsx`  
   Central **React context/store** for channels, layers, per-layer settings, and dataset lifecycle helpers.
-- `hooks/useChannelSources.ts`  
+- `hooks/dataset/useChannelSources.ts`
   Loads/validates sources and constructs per-layer volume state (normalization, auto-windowing, segmentation handling, anisotropy resampling, etc.).
-- `hooks/useViewerPlayback.ts`, `hooks/useViewerControls.ts`  
+- `hooks/viewer/useViewerPlayback.ts`, `hooks/viewer/useViewerControls.ts`
   Timeline playback + viewer UI/control state.
 - `hooks/tracks/*`  
   Track CSV parsing, selection, styling (feeds both planar + volume viewers).

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import React from 'react';
 
-import { useDatasetSetup } from '../src/hooks/useDatasetSetup.ts';
+import { useDatasetSetup } from '../src/hooks/dataset';
 import { createDefaultLayerSettings } from '../src/state/layerSettings.ts';
 import { renderHook } from './hooks/renderHook.ts';
 
