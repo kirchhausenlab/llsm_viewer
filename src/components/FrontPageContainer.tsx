@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction, ChangeEvent, DragEvent, FormEvent } from 'react';
 import FrontPage from './FrontPage';
 import usePreprocessedExperiment from '../hooks/usePreprocessedExperiment';
@@ -117,7 +117,7 @@ export default function FrontPageContainer({
   } = datasetErrors;
   const {
     voxelResolutionInput,
-    voxelResolution,
+    voxelResolution: voxelResolutionValue,
     anisotropyScale,
     experimentDimension,
     trackScale,
@@ -152,7 +152,7 @@ export default function FrontPageContainer({
     loadSelectedDataset: handleLoadSelectedDataset,
     showInteractionWarning,
     isLaunchingViewer,
-    voxelResolution,
+    voxelResolution: voxelResolutionValue,
     experimentDimension
   });
 
