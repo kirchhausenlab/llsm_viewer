@@ -15,3 +15,4 @@ import './ViewerShellContainer.test.ts';
 import './app/hooks/useChannelEditing.test.ts';
 import './app/hooks/useDatasetLaunch.test.ts';
 import './app/hooks/useViewerModePlayback.test.ts';
+import './app/components/HelpMenu.test.tsx';
