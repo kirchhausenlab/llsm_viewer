@@ -1,17 +1,29 @@
-import { useCallback, useMemo } from 'react';
+import type React from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useVrLifecycle from './useVrLifecycle';
-import { useViewerPlayback } from './useViewerPlayback';
+import { useViewerPlayback, type ViewerPlaybackHook } from './useViewerPlayback';
 
 export type ViewerMode = '3d' | '2d';
 
 export type UseViewerControlsParams = {
-  viewerMode: ViewerMode;
+  playback?: ViewerPlaybackHook;
+  initialViewerMode?: ViewerMode;
   is3dViewerAvailable: boolean;
+  maxSliceDepth: number;
   onBeforeEnterVr: () => void;
+  onViewerModeToggle?: (nextMode: ViewerMode) => void;
 };
 
 export type UseViewerControlsResult = {
-  playback: ReturnType<typeof useViewerPlayback>;
+  viewerMode: ViewerMode;
+  setViewerMode: React.Dispatch<React.SetStateAction<ViewerMode>>;
+  toggleViewerMode: () => void;
+  sliceIndex: number;
+  handleSliceIndexChange: (index: number) => void;
+  orthogonalViewsEnabled: boolean;
+  toggleOrthogonalViews: () => void;
+  orthogonalViewsAvailable: boolean;
+  playback: ViewerPlaybackHook;
   vr: ReturnType<typeof useVrLifecycle> & {
     vrButtonDisabled: boolean;
     vrButtonTitle: string | undefined;
@@ -20,11 +32,77 @@ export type UseViewerControlsResult = {
 };
 
 export const useViewerControls = ({
-  viewerMode,
+  playback: providedPlayback,
+  initialViewerMode = '3d',
   is3dViewerAvailable,
-  onBeforeEnterVr
+  maxSliceDepth,
+  onBeforeEnterVr,
+  onViewerModeToggle
 }: UseViewerControlsParams): UseViewerControlsResult => {
-  const playback = useViewerPlayback();
+  const playback = providedPlayback ?? useViewerPlayback();
+
+  const [viewerMode, setViewerMode] = useState<ViewerMode>(initialViewerMode);
+  const [sliceIndex, setSliceIndex] = useState(0);
+  const [orthogonalViewsEnabled, setOrthogonalViewsEnabled] = useState(false);
+  const hasInitializedSliceIndexRef = useRef(false);
+
+  useEffect(() => {
+    if (!is3dViewerAvailable && viewerMode === '3d') {
+      setViewerMode('2d');
+    }
+  }, [is3dViewerAvailable, viewerMode]);
+
+  useEffect(() => {
+    if (hasInitializedSliceIndexRef.current) {
+      return;
+    }
+    if (maxSliceDepth > 0) {
+      const middleIndex = Math.floor(maxSliceDepth / 2);
+      setSliceIndex(middleIndex);
+      hasInitializedSliceIndexRef.current = true;
+    }
+  }, [maxSliceDepth]);
+
+  useEffect(() => {
+    if (maxSliceDepth <= 0) {
+      if (sliceIndex !== 0) {
+        setSliceIndex(0);
+      }
+      return;
+    }
+    if (sliceIndex >= maxSliceDepth) {
+      setSliceIndex(maxSliceDepth - 1);
+    }
+    if (sliceIndex < 0) {
+      setSliceIndex(0);
+    }
+  }, [maxSliceDepth, sliceIndex]);
+
+  useEffect(() => {
+    if (maxSliceDepth <= 1 && orthogonalViewsEnabled) {
+      setOrthogonalViewsEnabled(false);
+    }
+  }, [maxSliceDepth, orthogonalViewsEnabled]);
+
+  const toggleViewerMode = useCallback(() => {
+    if (!is3dViewerAvailable) {
+      return;
+    }
+    setViewerMode((current) => {
+      const nextMode: ViewerMode = current === '3d' ? '2d' : '3d';
+      onViewerModeToggle?.(nextMode);
+      return nextMode;
+    });
+  }, [is3dViewerAvailable, onViewerModeToggle]);
+
+  const handleSliceIndexChange = useCallback((index: number) => {
+    setSliceIndex(index);
+  }, []);
+
+  const toggleOrthogonalViews = useCallback(() => {
+    setOrthogonalViewsEnabled((current) => !current);
+  }, []);
+
   const vrLifecycle = useVrLifecycle({ viewerMode, onBeforeEnter: onBeforeEnterVr });
 
   const handleVrButtonClick = useCallback(() => {
@@ -76,7 +154,19 @@ export const useViewerControls = ({
     viewerMode
   ]);
 
+  const orthogonalViewsAvailable = useMemo(() => {
+    return viewerMode === '2d' && maxSliceDepth > 1;
+  }, [maxSliceDepth, viewerMode]);
+
   return {
+    viewerMode,
+    setViewerMode,
+    toggleViewerMode,
+    sliceIndex,
+    handleSliceIndexChange,
+    orthogonalViewsEnabled,
+    toggleOrthogonalViews,
+    orthogonalViewsAvailable,
     playback,
     vr: {
       ...vrLifecycle,
