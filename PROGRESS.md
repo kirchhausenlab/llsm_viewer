@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Centralized dataset launch state into `useDatasetLaunch` and viewer mode playback wiring into `useViewerModePlayback`,
+  refactoring `router.tsx` and adding focused hook tests for launch progression and playback toggles.
 - Extracted channel selection/editing state into `useChannelEditing`, refactoring `router.tsx` wiring and adding focused hook
   tests for activation, focus, and channel removal interactions.
 - Split the top-level app into dedicated provider/layout/router modules under `src/app/`, leaving `App.tsx` as a lightweight composer.

@@ -49,7 +49,8 @@ The main responsibilities are:
 
 - Central dataset and layer state: `useChannelLayerState` and `state/*`.
 - Channel sources and per-layer volume state: `useChannelSources`.
-- Playback and viewer interaction: `useViewerPlayback`, `useViewerControls`.
+- Playback and viewer interaction: `useViewerPlayback`, `useViewerControls`, and app-level helpers such as
+  `useViewerModePlayback` (viewer routing) and `useDatasetLaunch` (load/progress wiring).
 - Tracks: hooks under `hooks/tracks/*` feed both planar and volume viewers.
 
 **4. Preprocessed dataset import/export**
