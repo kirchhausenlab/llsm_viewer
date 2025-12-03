@@ -30,7 +30,7 @@ A container that wraps `<FrontPage />` should only receive and forward the data/
 import type { ExperimentDimension } from '../hooks/useVoxelResolution';
 import type { VoxelResolutionInput, VoxelResolutionUnit } from '../types/voxelResolution';
 import type { DropboxAppKeySource } from '../integrations/dropbox';
-import type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment } from '../hooks/useChannelSources';
+import type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment } from '../hooks/dataset';
 
 export type FrontPageContainerProps = {
   isFrontPageLocked: boolean;

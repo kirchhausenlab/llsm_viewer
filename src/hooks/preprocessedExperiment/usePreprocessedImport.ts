@@ -9,7 +9,7 @@ import type {
 import { collectFilesFromDataTransfer } from '../../shared/utils/appHelpers';
 import { importPreprocessedDatasetWithWorker } from '../../workers/importPreprocessedDatasetClient';
 import type { ChannelTrackState, FollowedTrackState } from '../../types/channelTracks';
-import type { ChannelSource, StagedPreprocessedExperiment } from '../useChannelSources';
+import type { ChannelSource, StagedPreprocessedExperiment } from '../dataset';
 import type { ExperimentDimension } from '../useVoxelResolution';
 import type { PreprocessedDropboxCallbacksRef } from './shared';
 

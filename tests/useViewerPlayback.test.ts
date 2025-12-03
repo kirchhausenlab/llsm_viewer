@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { useViewerPlayback } from '../src/hooks/useViewerPlayback.ts';
+import { useViewerPlayback } from '../src/hooks/viewer';
 import { renderHook } from './hooks/renderHook.ts';
 
 console.log('Starting useViewerPlayback tests');

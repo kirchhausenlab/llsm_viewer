@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction, ChangeEvent, DragEvent, FormEvent } from 'react';
 import FrontPage from './FrontPage';
-import usePreprocessedExperiment from '../../hooks/usePreprocessedExperiment';
+import usePreprocessedExperiment from '../../hooks/dataset/usePreprocessedExperiment';
 import { type ExperimentDimension, type VoxelResolutionHook } from '../../hooks/useVoxelResolution';
 import type { DatasetErrorHook } from '../../hooks/useDatasetErrors';
 import type { DropboxAppKeySource } from '../../integrations/dropbox';
 import type { ChannelTrackState, FollowedTrackState } from '../../types/channelTracks';
 import type { LoadedLayer } from '../../types/layers';
-import type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment } from '../../hooks/useChannelSources';
+import type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment } from '../../hooks/dataset';
 
 type TrackSummary = { totalRows: number; uniqueTracks: number };
 

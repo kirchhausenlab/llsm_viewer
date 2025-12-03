@@ -9,12 +9,12 @@ import {
   DEFAULT_TRACK_LINE_WIDTH,
   DEFAULT_TRACK_OPACITY,
   TRACK_SMOOTHING_RANGE
-} from '../../hooks/useTrackState';
+} from '../../hooks/tracks';
 import type { VolumeViewerVrProps } from './VolumeViewer.types';
 import type { LayerSettings } from '../../state/layerSettings';
 import type { HoveredVoxelInfo } from '../../types/hover';
 import type { NumericRange, TrackDefinition } from '../../types/tracks';
-import type { ChannelSource } from '../../hooks/useChannelSources';
+import type { ChannelSource } from '../../hooks/dataset';
 import type { ViewerShellProps } from './ViewerShell';
 
 type ViewerLayerConfig =
