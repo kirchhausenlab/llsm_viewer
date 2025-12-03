@@ -23,15 +23,15 @@ import type { HoveredVoxelInfo } from '../types/hover';
 import type { NormalizedVolume } from '../volumeProcessing';
 import { computeAutoWindow, getVolumeHistogram } from '../autoContrast';
 import { computeTrackSummary } from '../utils/trackSummary';
-import { type VoxelResolutionValues } from '../types/voxelResolution';
 import { type ExperimentDimension } from '../hooks/useVoxelResolution';
 import type { DatasetErrorContext } from '../hooks/useDatasetErrors';
 import { useDatasetSetup } from '../hooks/useDatasetSetup';
 import useTrackState from '../hooks/useTrackState';
 import { useChannelLayerStateContext } from '../hooks/useChannelLayerState';
-import { useViewerControls } from '../hooks/useViewerControls';
 import { useViewerPlayback } from '../hooks/useViewerPlayback';
 import useChannelEditing from './hooks/useChannelEditing';
+import { useDatasetLaunch } from './hooks/useDatasetLaunch';
+import { useViewerModePlayback } from './hooks/useViewerModePlayback';
 import {
   LAYERS_WINDOW_VERTICAL_OFFSET,
   WARNING_WINDOW_WIDTH,
@@ -47,8 +47,6 @@ import {
 } from '../utils/windowLayout';
 
 const DEFAULT_RESET_WINDOW = { windowMin: DEFAULT_WINDOW_MIN, windowMax: DEFAULT_WINDOW_MAX };
-
-type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 
 function AppRouter() {
   const {
@@ -137,37 +135,15 @@ function AppRouter() {
     bumpDatasetErrorResetSignal
   } = datasetErrors;
   const [blendingMode, setBlendingMode] = useState<'alpha' | 'additive'>('additive');
-  const preprocessingSettingsRef = useRef<VoxelResolutionValues | null>(null);
   const resetPreprocessedStateRef = useRef<() => void>(() => {});
-  const [status, setStatus] = useState<LoadState>('idle');
-  const [error, setError] = useState<string | null>(null);
-  const [loadProgress, setLoadProgress] = useState(0);
-  const [loadedCount, setLoadedCount] = useState(0);
-  const [expectedVolumeCount, setExpectedVolumeCount] = useState(0);
   const [resetViewHandler, setResetViewHandler] = useState<(() => void) | null>(null);
   const [activeChannelTabId, setActiveChannelTabId] = useState<string | null>(null);
   const [maxSliceDepth, setMaxSliceDepth] = useState(0);
-  const [isViewerLaunched, setIsViewerLaunched] = useState(false);
-  const [isLaunchingViewer, setIsLaunchingViewer] = useState(false);
   const [layoutResetToken, setLayoutResetToken] = useState(0);
   const [hoveredVolumeVoxel, setHoveredVolumeVoxel] = useState<HoveredVoxelInfo | null>(null);
   const [isHelpMenuOpen, setIsHelpMenuOpen] = useState(false);
-  const {
-    activeChannelId,
-    editingChannelId,
-    editingChannelInputRef,
-    editingChannelOriginalNameRef,
-    setActiveChannelId,
-    setEditingChannelId,
-    startEditingChannel,
-    queuePendingChannelFocus,
-    handleChannelRemoved,
-    resetChannelEditingState
-  } = useChannelEditing({ channels, isLaunchingViewer });
-
   const playback = useViewerPlayback();
-  const { selectedIndex, setSelectedIndex, isPlaying, fps, togglePlayback, setFps, stopPlayback, setIsPlaying } = playback;
-
+  const { selectedIndex, setSelectedIndex, isPlaying, fps, setFps, stopPlayback, setIsPlaying } = playback;
   const is3dViewerAvailable = experimentDimension === '3d';
   const handleHelpMenuToggle = useCallback(() => {
     setIsHelpMenuOpen((previous) => !previous);
@@ -206,6 +182,52 @@ function AppRouter() {
   const resetPreprocessedState = useCallback(() => {
     resetPreprocessedStateRef.current();
   }, []);
+  const {
+    preprocessingSettingsRef,
+    status,
+    setStatus,
+    error,
+    setError,
+    loadProgress,
+    setLoadProgress,
+    loadedCount,
+    setLoadedCount,
+    expectedVolumeCount,
+    setExpectedVolumeCount,
+    isViewerLaunched,
+    setIsViewerLaunched,
+    isLaunchingViewer,
+    setIsLaunchingViewer,
+    showLaunchError,
+    loadDataset,
+    resetLaunchState
+  } = useDatasetLaunch({
+    voxelResolution,
+    anisotropyScale,
+    experimentDimension,
+    loadSelectedDataset,
+    clearDatasetError,
+    reportDatasetError,
+    bumpDatasetErrorResetSignal,
+    datasetError,
+    datasetErrorContext,
+    setSelectedIndex,
+    setIsPlaying,
+    setActiveChannelTabId
+  });
+  const isLoading = status === 'loading';
+  const {
+    activeChannelId,
+    editingChannelId,
+    editingChannelInputRef,
+    editingChannelOriginalNameRef,
+    setActiveChannelId,
+    setEditingChannelId,
+    startEditingChannel,
+    queuePendingChannelFocus,
+    handleChannelRemoved,
+    resetChannelEditingState
+  } = useChannelEditing({ channels, isLaunchingViewer });
   const {
     channelTrackStates,
     setChannelTrackStates,
@@ -274,6 +296,31 @@ function AppRouter() {
   }, [setFollowedTrack]);
 
   const {
+    viewerControls,
+    playbackDisabled,
+    playbackLabel,
+    handleTogglePlayback,
+    handleTimeIndexChange,
+    handleJumpToStart,
+    handleJumpToEnd
+  } = useViewerModePlayback({
+    playback,
+    experimentDimension,
+    is3dViewerAvailable,
+    maxSliceDepth,
+    onBeforeEnterVr: handleBeforeEnterVr,
+    onViewerModeToggle: () => {
+      setResetViewHandler(null);
+      handleStopTrackFollow();
+    },
+    onViewerModeChange: () => {
+      setHoveredVolumeVoxel(null);
+    },
+    volumeTimepointCount,
+    isLoading
+  });
+
+  const {
     viewerMode,
     setViewerMode,
     toggleViewerMode,
@@ -300,21 +347,7 @@ function AppRouter() {
       vrButtonTitle,
       handleVrButtonClick
     }
-  } = useViewerControls({
-    playback,
-    initialViewerMode: experimentDimension,
-    is3dViewerAvailable,
-    maxSliceDepth,
-    onBeforeEnterVr: handleBeforeEnterVr,
-    onViewerModeToggle: () => {
-      setResetViewHandler(null);
-      handleStopTrackFollow();
-    }
-  });
-
-  useEffect(() => {
-    setHoveredVolumeVoxel(null);
-  }, [viewerMode]);
+  } = viewerControls;
 
   useEffect(() => {
     if (!isViewerLaunched) {
@@ -453,57 +486,6 @@ function AppRouter() {
     });
   }, [trackLookup]);
 
-  const showLaunchError = useCallback((message: string) => {
-    reportDatasetError(message, 'launch');
-  }, [reportDatasetError]);
-
-  const loadDataset = useCallback(
-    () =>
-      loadSelectedDataset({
-        voxelResolution,
-        anisotropyScale,
-        experimentDimension,
-        preprocessingSettingsRef,
-        setStatus,
-        setError,
-        clearDatasetError,
-        setSelectedIndex,
-        setIsPlaying,
-        setLoadProgress,
-        setLoadedCount,
-        setExpectedVolumeCount,
-        setActiveChannelTabId,
-        showLaunchError
-      }),
-    [
-      anisotropyScale,
-      clearDatasetError,
-      experimentDimension,
-      loadSelectedDataset,
-      setActiveChannelTabId,
-      setExpectedVolumeCount,
-      setIsPlaying,
-      setLoadProgress,
-      setLoadedCount,
-      setStatus,
-      setError,
-      setSelectedIndex,
-      voxelResolution,
-      showLaunchError
-    ]
-  );
-
-  const isLoading = status === 'loading';
-  const playbackDisabled = isLoading || volumeTimepointCount <= 1;
-
-  const playbackLabel = useMemo(() => {
-    if (volumeTimepointCount === 0) {
-      return '0 / 0';
-    }
-    const currentFrame = Math.min(selectedIndex + 1, volumeTimepointCount);
-    return `${currentFrame} / ${volumeTimepointCount}`;
-  }, [selectedIndex, volumeTimepointCount]);
-
   const trackChannels = useMemo(() => {
     return loadedChannelIds.map((channelId) => ({
       id: channelId,
@@ -561,103 +543,6 @@ function AppRouter() {
       }),
     [channelActiveLayer, channelLayersMap, channels, layerSettings]
   );
-
-  const handleTogglePlayback = useCallback(() => {
-    setIsPlaying((current) => {
-      if (!current && volumeTimepointCount <= 1) {
-        return current;
-      }
-      return !current;
-    });
-  }, [volumeTimepointCount]);
-
-  const handleTimeIndexChange = useCallback(
-    (nextIndex: number) => {
-      setSelectedIndex((prev) => {
-        if (volumeTimepointCount === 0) {
-          return prev;
-        }
-        const clamped = Math.max(0, Math.min(volumeTimepointCount - 1, nextIndex));
-        return clamped;
-      });
-    },
-    [volumeTimepointCount]
-  );
-
-  const handleJumpToStart = useCallback(() => {
-    if (volumeTimepointCount === 0) {
-      return;
-    }
-    handleTimeIndexChange(0);
-  }, [handleTimeIndexChange, volumeTimepointCount]);
-
-  const handleJumpToEnd = useCallback(() => {
-    if (volumeTimepointCount === 0) {
-      return;
-    }
-    handleTimeIndexChange(volumeTimepointCount - 1);
-  }, [handleTimeIndexChange, volumeTimepointCount]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-    if (viewerMode !== '2d') {
-      return;
-    }
-    if (!isPlaying || playbackDisabled) {
-      return;
-    }
-
-    const minFps = 1;
-    const maxFps = 60;
-    const clampedFps = Math.min(Math.max(fps, minFps), maxFps);
-    const frameDuration = clampedFps > 0 ? 1000 / clampedFps : Infinity;
-
-    let animationFrame: number | null = null;
-    let lastTimestamp: number | null = null;
-    let accumulator = 0;
-    let cancelled = false;
-
-    const step = (timestamp: number) => {
-      if (cancelled) {
-        return;
-      }
-
-      if (lastTimestamp === null) {
-        lastTimestamp = timestamp;
-      }
-
-      accumulator += timestamp - lastTimestamp;
-      lastTimestamp = timestamp;
-
-      while (accumulator >= frameDuration) {
-        accumulator -= frameDuration;
-        setSelectedIndex((previous) => {
-          if (volumeTimepointCount <= 1) {
-            const maxIndex = Math.max(0, volumeTimepointCount - 1);
-            const clamped = Math.min(Math.max(previous, 0), maxIndex);
-            return clamped;
-          }
-
-          const maxIndex = Math.max(0, volumeTimepointCount - 1);
-          const nextIndex = previous >= maxIndex ? 0 : previous + 1;
-          return nextIndex;
-        });
-      }
-
-      animationFrame = window.requestAnimationFrame(step);
-    };
-
-    animationFrame = window.requestAnimationFrame(step);
-
-    return () => {
-      cancelled = true;
-      if (animationFrame !== null) {
-        window.cancelAnimationFrame(animationFrame);
-      }
-    };
-  }, [fps, isPlaying, playbackDisabled, viewerMode, volumeTimepointCount]);
 
   const handleStartExperimentSetup = useCallback(() => {
     resetPreprocessedState();
@@ -736,19 +621,19 @@ function AppRouter() {
     resetChannelEditingState();
     setActiveChannelTabId(null);
     resetTrackState();
-    setStatus('idle');
-    setError(null);
-    setLoadProgress(0);
-    setLoadedCount(0);
-    setExpectedVolumeCount(0);
-    setIsPlaying(false);
-    setIsViewerLaunched(false);
+    resetLaunchState();
     setIsExperimentSetupStarted(false);
     channelIdRef.current = 0;
     layerIdRef.current = 0;
     clearTextureCache();
     clearDatasetError();
-  }, [clearDatasetError, resetChannelEditingState, resetPreprocessedState]);
+  }, [
+    clearDatasetError,
+    resetChannelEditingState,
+    resetLaunchState,
+    resetPreprocessedState,
+    resetTrackState
+  ]);
 
   const handleReturnToFrontPage = useCallback(() => {
     handleDiscardPreprocessedExperiment();
