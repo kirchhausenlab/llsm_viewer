@@ -3,6 +3,8 @@
 ## Latest changes
 - Fixed broken import paths after the core/shared/ui split (Dropbox/components, workers, shared utils) and addressed implicit
   any warnings so `npm run typecheck` passes again.
+- Pointed the UI layout to the relocated `styles/app/index.css` asset so the Vite production build can resolve global styles.
+- Updated the texture cache to pack 3-channel volumes into RGBA textures so Three.js builds without missing format exports.
 - Restructured the app into `src/core`, `src/shared`, and `src/ui`, moving processing/cache modules, shared helpers, and UI
   components accordingly while updating imports/tests.
 - Centralized window layout defaults and reset handling into a dedicated `useWindowLayout` hook with coverage for layout
