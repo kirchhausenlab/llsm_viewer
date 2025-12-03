@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
-import type { HelpMenuControls } from '../../app/hooks/useHelpMenu';
-import { useHelpMenu } from '../../app/hooks/useHelpMenu';
+import type { HelpMenuControls } from '../../ui/app/hooks/useHelpMenu';
+import { useHelpMenu } from '../../ui/app/hooks/useHelpMenu';
 
 interface HelpMenuProps {
   isViewerLaunched: boolean;

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import FrontPageContainer, { type FrontPageContainerProps } from '../components/FrontPageContainer';
-import ViewerShellContainer, { type ViewerShellContainerProps } from '../components/ViewerShellContainer';
+import FrontPageContainer, { type FrontPageContainerProps } from '../../components/pages/FrontPageContainer';
+import ViewerShellContainer, { type ViewerShellContainerProps } from '../../components/viewers/ViewerShellContainer';
 import type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment } from '../../hooks/useChannelSources';
 import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../../shared/colorMaps/layerColors';
 import { clearTextureCache } from '../../core/textureCache';
@@ -29,7 +29,7 @@ import { useDatasetSetup } from '../../hooks/useDatasetSetup';
 import useTrackState from '../../hooks/useTrackState';
 import { useChannelLayerStateContext } from '../../hooks/useChannelLayerState';
 import { useViewerPlayback } from '../../hooks/useViewerPlayback';
-import HelpMenu from '../components/app/HelpMenu';
+import HelpMenu from '../../components/app/HelpMenu';
 import useChannelEditing from './hooks/useChannelEditing';
 import { useDatasetLaunch } from './hooks/useDatasetLaunch';
 import { useViewerModePlayback } from './hooks/useViewerModePlayback';

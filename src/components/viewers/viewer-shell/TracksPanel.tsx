@@ -6,7 +6,7 @@ import {
   normalizeTrackColor
 } from '../../../shared/colorMaps/trackColors';
 import { applyAlphaToHex } from '../../../shared/utils/appHelpers';
-import FloatingWindow from '../FloatingWindow';
+import FloatingWindow from '../../widgets/FloatingWindow';
 import type { LayoutProps, TracksPanelProps, TrackDefaults } from './types';
 
 export type TracksPanelWindowProps = TracksPanelProps & {
