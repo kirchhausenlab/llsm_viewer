@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import FrontPage from './components/FrontPage';
 import ViewerShell, { type ViewerShellProps } from './components/ViewerShell';
+import type { ChannelLayerSource, ChannelSource, ChannelValidation } from './hooks/useChannelSources';
 import type { NumericRange, TrackColorMode, TrackDefinition, TrackPoint } from './types/tracks';
 import {
   DEFAULT_LAYER_COLOR,
-  GRAYSCALE_COLOR_SWATCHES,
   normalizeHexColor
 } from './layerColors';
 import { clearTextureCache } from './textureCache';
@@ -49,11 +49,9 @@ import { useVoxelResolution, type ExperimentDimension } from './hooks/useVoxelRe
 import { useDatasetErrors, type DatasetErrorContext } from './hooks/useDatasetErrors';
 import { useTracksForDisplay } from './hooks/useTracksForDisplay';
 import {
-  type ChannelLayerSource,
-  type ChannelSource,
-  type ChannelValidation,
-  useChannelSources
-} from './hooks/useChannelSources';
+  ChannelLayerStateProvider,
+  useChannelLayerStateContext
+} from './hooks/useChannelLayerState';
 import { useViewerControls } from './hooks/useViewerControls';
 
 const DEFAULT_TRACK_OPACITY = 0.9;
@@ -66,23 +64,6 @@ const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
 const WARNING_WINDOW_WIDTH = 360;
 const TRACK_SMOOTHING_RANGE: NumericRange = { min: 0, max: 5 };
 const DEFAULT_RESET_WINDOW = { windowMin: DEFAULT_WINDOW_MIN, windowMax: DEFAULT_WINDOW_MAX };
-
-const computeInitialWindowForVolume = (
-  volume: NormalizedVolume | null | undefined
-): { windowMin: number; windowMax: number; autoThreshold: number } => {
-  if (!volume) {
-    return { ...DEFAULT_RESET_WINDOW, autoThreshold: 0 };
-  }
-
-  const { windowMin, windowMax, nextThreshold } = computeAutoWindow(volume);
-  const { windowMin: clampedMin, windowMax: clampedMax } = clampWindowBounds(windowMin, windowMax);
-
-  return {
-    windowMin: clampedMin,
-    windowMax: clampedMax,
-    autoThreshold: nextThreshold
-  };
-};
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 
@@ -99,7 +80,7 @@ const clampRangeToBounds = (range: NumericRange, bounds: NumericRange): NumericR
   return { min, max };
 };
 
-function App() {
+function AppContent() {
   const {
     channels,
     setChannels,
@@ -118,9 +99,26 @@ function App() {
     hasAnyLayers,
     hasLoadingTracks,
     allChannelsValid,
+    layers,
+    setLayers,
+    channelVisibility,
+    setChannelVisibility,
+    channelActiveLayer,
+    setChannelActiveLayer,
+    layerSettings,
+    setLayerSettings,
+    layerAutoThresholds,
+    setLayerAutoThresholds,
+    globalRenderStyle,
+    setGlobalRenderStyle,
+    globalSamplingMode,
+    setGlobalSamplingMode,
+    getChannelDefaultColor,
+    createLayerDefaultSettings,
+    createLayerDefaultBrightnessState,
     applyLoadedLayers,
     loadSelectedDataset
-  } = useChannelSources();
+  } = useChannelLayerStateContext();
   const [isExperimentSetupStarted, setIsExperimentSetupStarted] = useState(false);
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
@@ -145,64 +143,8 @@ function App() {
     clearDatasetError,
     bumpDatasetErrorResetSignal
   } = useDatasetErrors();
-  const [layers, setLayers] = useState<LoadedLayer[]>([]);
-  const layersRef = useRef<LoadedLayer[]>([]);
-  useEffect(() => {
-    layersRef.current = layers;
-  }, [layers]);
-  const [channelVisibility, setChannelVisibility] = useState<Record<string, boolean>>({});
-  const [channelActiveLayer, setChannelActiveLayer] = useState<Record<string, string>>({});
-  const [layerSettings, setLayerSettings] = useState<Record<string, LayerSettings>>({});
-  const [globalRenderStyle, setGlobalRenderStyle] = useState<0 | 1>(DEFAULT_RENDER_STYLE);
-  const [globalSamplingMode, setGlobalSamplingMode] = useState<SamplingMode>(DEFAULT_SAMPLING_MODE);
   const [blendingMode, setBlendingMode] = useState<'alpha' | 'additive'>('additive');
   const preprocessingSettingsRef = useRef<VoxelResolutionValues | null>(null);
-  const channelDefaultColorMap = useMemo(() => {
-    const colorableChannels = channels.filter((channel) =>
-      channel.layers.some((layer) => !layer.isSegmentation)
-    );
-    if (colorableChannels.length <= 1) {
-      return new Map<string, string>();
-    }
-
-    const fallbackSwatch = GRAYSCALE_COLOR_SWATCHES[0];
-    const shiftedSwatches = GRAYSCALE_COLOR_SWATCHES.slice(1);
-
-    const map = new Map<string, string>();
-    colorableChannels.forEach((channel, index) => {
-      const swatch = index < shiftedSwatches.length ? shiftedSwatches[index] : fallbackSwatch;
-      map.set(channel.id, normalizeHexColor(swatch?.value, DEFAULT_LAYER_COLOR));
-    });
-    return map;
-  }, [channels]);
-  const getChannelDefaultColor = useCallback(
-    (channelId: string): string => channelDefaultColorMap.get(channelId) ?? DEFAULT_LAYER_COLOR,
-    [channelDefaultColorMap]
-  );
-  const createLayerDefaultSettings = useCallback(
-    (layerKey: string): LayerSettings => {
-      const layer = layersRef.current.find((entry) => entry.key === layerKey) ?? null;
-      const { windowMin, windowMax } = computeInitialWindowForVolume(layer?.volumes[0]);
-      const defaultColor =
-        layer?.isSegmentation === true
-          ? DEFAULT_LAYER_COLOR
-          : getChannelDefaultColor(layer?.channelId ?? '');
-      return {
-        ...createDefaultLayerSettings({ windowMin, windowMax }),
-        color: defaultColor,
-        renderStyle: globalRenderStyle,
-        samplingMode: globalSamplingMode
-      };
-    },
-    [getChannelDefaultColor, globalRenderStyle, globalSamplingMode]
-  );
-  const createLayerDefaultBrightnessState = useCallback(
-    (_layerKey: string) => {
-      return brightnessContrastModel.createState(DEFAULT_WINDOW_MIN, DEFAULT_WINDOW_MAX);
-    },
-    []
-  );
-  const [layerAutoThresholds, setLayerAutoThresholds] = useState<Record<string, number>>({});
   const [status, setStatus] = useState<LoadState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [loadProgress, setLoadProgress] = useState(0);
@@ -925,44 +867,34 @@ function App() {
       loadSelectedDataset({
         voxelResolution,
         anisotropyScale,
-        channels,
         experimentDimension,
         preprocessingSettingsRef,
         setStatus,
         setError,
         clearDatasetError,
-        setLayers,
-        setChannelVisibility,
-        setChannelActiveLayer,
-        setLayerSettings,
-        setLayerAutoThresholds,
         setSelectedIndex,
         setIsPlaying,
         setLoadProgress,
         setLoadedCount,
         setExpectedVolumeCount,
         setActiveChannelTabId,
-        showLaunchError,
-        getChannelDefaultColor,
-        globalRenderStyle,
-        globalSamplingMode
+        showLaunchError
       }),
     [
       anisotropyScale,
-      channels,
       clearDatasetError,
       experimentDimension,
-      getChannelDefaultColor,
-      globalRenderStyle,
-      globalSamplingMode,
       loadSelectedDataset,
       setActiveChannelTabId,
-      setChannelActiveLayer,
-      setChannelVisibility,
       setExpectedVolumeCount,
       setIsPlaying,
-      setLayerSettings,
-      voxelResolution
+      setLoadProgress,
+      setLoadedCount,
+      setStatus,
+      setError,
+      setSelectedIndex,
+      voxelResolution,
+      showLaunchError
     ]
   );
 
@@ -1679,10 +1611,6 @@ function App() {
         preprocessingSettingsRef.current = manifestVoxelResolution;
         setLayers(preprocessedExperiment.layers);
         applyLoadedLayers(preprocessedExperiment.layers, preprocessedExperiment.totalVolumeCount, {
-          setChannelVisibility,
-          setChannelActiveLayer,
-          setLayerSettings,
-          setLayerAutoThresholds,
           setSelectedIndex,
           setActiveChannelTabId,
           setStatus,
@@ -1691,10 +1619,7 @@ function App() {
           setLoadProgress,
           setIsPlaying,
           clearDatasetError,
-          setError,
-          globalRenderStyle,
-          globalSamplingMode,
-          getChannelDefaultColor
+          setError
         });
         setIsViewerLaunched(true);
       } finally {
@@ -2950,6 +2875,14 @@ function App() {
   };
 
   return <ViewerShell {...viewerShellProps} />;
+}
+
+function App() {
+  return (
+    <ChannelLayerStateProvider>
+      <AppContent />
+    </ChannelLayerStateProvider>
+  );
 }
 
 export default App;
