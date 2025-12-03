@@ -29,7 +29,7 @@ import type { NormalizedVolume } from './volumeProcessing';
 import './styles/app/index.css';
 import { computeAutoWindow, getVolumeHistogram } from './autoContrast';
 import { computeTrackSummary } from './utils/trackSummary';
-import type { VoxelResolutionInput, VoxelResolutionUnit, VoxelResolutionValues } from './types/voxelResolution';
+import type { VoxelResolutionInput, VoxelResolutionValues } from './types/voxelResolution';
 import {
   collectFilesFromDataTransfer,
   dedupeFiles,
@@ -37,8 +37,12 @@ import {
   hasTiffExtension,
   sortVolumeFiles
 } from './utils/appHelpers';
-import { useVoxelResolution, type ExperimentDimension } from './hooks/useVoxelResolution';
-import { useDatasetErrors, type DatasetErrorContext } from './hooks/useDatasetErrors';
+import {
+  DEFAULT_EXPERIMENT_DIMENSION,
+  DEFAULT_VOXEL_RESOLUTION,
+  type ExperimentDimension
+} from './hooks/useVoxelResolution';
+import type { DatasetErrorContext, DatasetErrorHook } from './hooks/useDatasetErrors';
 import useTrackState, {
   DEFAULT_TRACK_LINE_WIDTH,
   DEFAULT_TRACK_OPACITY,
@@ -67,6 +71,14 @@ import {
 const DEFAULT_RESET_WINDOW = { windowMin: DEFAULT_WINDOW_MIN, windowMax: DEFAULT_WINDOW_MAX };
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
+
+type VoxelResolutionSnapshot = {
+  voxelResolutionInput: VoxelResolutionInput;
+  voxelResolution: VoxelResolutionValues | null;
+  anisotropyScale: { x: number; y: number; z: number } | null;
+  experimentDimension: ExperimentDimension;
+  trackScale: { x: number; y: number; z: number };
+};
 
 function AppContent() {
   const {
@@ -111,27 +123,41 @@ function AppContent() {
   const [isExperimentSetupStarted, setIsExperimentSetupStarted] = useState(false);
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
+  const [voxelResolutionState, setVoxelResolutionState] = useState<VoxelResolutionSnapshot>({
+    voxelResolutionInput: { ...DEFAULT_VOXEL_RESOLUTION },
+    voxelResolution: null,
+    anisotropyScale: null,
+    experimentDimension: DEFAULT_EXPERIMENT_DIMENSION,
+    trackScale: { x: 1, y: 1, z: 1 }
+  });
+  const [datasetErrors, setDatasetErrors] = useState<DatasetErrorHook>({
+    datasetError: null,
+    datasetErrorContext: null,
+    datasetErrorResetSignal: 0,
+    reportDatasetError: () => {},
+    clearDatasetError: () => {},
+    bumpDatasetErrorResetSignal: () => {}
+  });
   const {
     voxelResolutionInput,
     voxelResolution,
     anisotropyScale,
-    trackScale,
     experimentDimension,
-    handleVoxelResolutionAxisChange,
-    handleVoxelResolutionUnitChange,
-    handleVoxelResolutionAnisotropyToggle,
-    handleExperimentDimensionChange,
-    setExperimentDimension,
-    setVoxelResolutionInput
-  } = useVoxelResolution();
+    trackScale
+  } = voxelResolutionState;
   const {
     datasetError,
     datasetErrorContext,
-    datasetErrorResetSignal,
     reportDatasetError,
     clearDatasetError,
     bumpDatasetErrorResetSignal
-  } = useDatasetErrors();
+  } = datasetErrors;
+  const handleDatasetErrorsChange = useCallback((next: DatasetErrorHook) => {
+    setDatasetErrors(next);
+  }, []);
+  const handleVoxelResolutionChange = useCallback((next: VoxelResolutionSnapshot) => {
+    setVoxelResolutionState(next);
+  }, []);
   const [blendingMode, setBlendingMode] = useState<'alpha' | 'additive'>('additive');
   const preprocessingSettingsRef = useRef<VoxelResolutionValues | null>(null);
   const resetPreprocessedStateRef = useRef<() => void>(() => {});
@@ -1707,17 +1733,8 @@ function AppContent() {
         onChannelTrackFileSelected={handleChannelTrackFileSelected}
         onChannelTrackDrop={handleChannelTrackDrop}
         onChannelTrackClear={handleChannelTrackClear}
-        experimentDimension={experimentDimension}
-        voxelResolutionInput={voxelResolutionInput}
-        voxelResolution={voxelResolution}
-        onExperimentDimensionChange={handleExperimentDimensionChange}
-        onVoxelResolutionAxisChange={handleVoxelResolutionAxisChange}
-        onVoxelResolutionUnitChange={handleVoxelResolutionUnitChange}
-        onVoxelResolutionAnisotropyToggle={handleVoxelResolutionAnisotropyToggle}
         setIsExperimentSetupStarted={setIsExperimentSetupStarted}
-        setExperimentDimension={setExperimentDimension}
         setViewerMode={setViewerMode}
-        clearDatasetError={clearDatasetError}
         updateChannelIdCounter={updateChannelIdCounter}
         loadSelectedDataset={loadDataset}
         showInteractionWarning={showInteractionWarning}
@@ -1734,9 +1751,9 @@ function AppContent() {
         canLaunch={canLaunch}
         warningWindowInitialPosition={warningWindowInitialPosition}
         warningWindowWidth={WARNING_WINDOW_WIDTH}
-        datasetErrorResetSignal={datasetErrorResetSignal}
-        onDatasetErrorDismiss={handleDatasetErrorDismiss}
         onPreprocessedStateChange={handlePreprocessedStateChange}
+        onDatasetErrorsChange={handleDatasetErrorsChange}
+        onVoxelResolutionChange={handleVoxelResolutionChange}
       />
     );
   }
