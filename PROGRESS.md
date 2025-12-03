@@ -50,3 +50,7 @@
 ## Volume viewer cleanup
 - Moved renderer/camera/scene initialization into a reusable helper to simplify viewer setup effects.
 - Extracted hover sampling math into a shared utility and isolated VR bridge wiring into its own component.
+
+## Front page contract review
+- Documented the AppContent props and state that feed voxel resolution inputs, dataset error handling, preprocessing/import flows, and upload progress.
+- Added a draft `FrontPageContainer` prop contract so the landing screen can be wrapped without leaking unrelated AppContent state.
