@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import { usePlaybackControls } from '../src/ui/components/volume-viewer/usePlaybackControls.ts';
-import { VR_PLAYBACK_MAX_FPS, VR_PLAYBACK_MIN_FPS } from '../src/ui/components/volume-viewer/vr/constants.ts';
-import type { PlaybackLoopState, PlaybackState, VrHoverState } from '../src/ui/components/volume-viewer/vr';
+import { usePlaybackControls } from '../src/components/viewers/volume-viewer/usePlaybackControls.ts';
+import { VR_PLAYBACK_MAX_FPS, VR_PLAYBACK_MIN_FPS } from '../src/components/viewers/volume-viewer/vr/constants.ts';
+import type { PlaybackLoopState, PlaybackState, VrHoverState } from '../src/components/viewers/volume-viewer/vr';
 import { renderHook } from './hooks/renderHook.ts';
 
 console.log('Starting usePlaybackControls tests');

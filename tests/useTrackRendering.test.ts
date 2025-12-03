@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 
-import { useTrackRendering } from '../src/ui/components/volume-viewer/useTrackRendering.ts';
+import { useTrackRendering } from '../src/components/viewers/volume-viewer/useTrackRendering.ts';
 import { renderHook } from './hooks/renderHook.ts';
 
 console.log('Starting useTrackRendering tests');

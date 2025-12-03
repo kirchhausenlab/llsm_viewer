@@ -95,3 +95,6 @@
 ## Front page contract review
 - Documented the AppContent props and state that feed voxel resolution inputs, dataset error handling, preprocessing/import flows, and upload progress.
 - Added a draft `FrontPageContainer` prop contract so the landing screen can be wrapped without leaking unrelated AppContent state.
+
+## Test maintenance
+- Updated volume viewer unit test imports to the relocated `components/viewers` paths after the UI restructuring.
