@@ -12,6 +12,7 @@ import { SliceRenderShader } from '../shaders/sliceRenderShader';
 import { getCachedTextureData } from '../textureCache';
 import './VolumeViewer.css';
 import type { TrackColorMode, TrackDefinition } from '../types/tracks';
+import { createVolumeRenderContext } from '../hooks/useVolumeRenderSetup';
 import type {
   MovementState,
   TrackLineResource,
@@ -24,6 +25,7 @@ import type {
   VrUiTarget,
   VrUiTargetType,
 } from './volume-viewer/useVolumeViewerVr';
+import { VolumeViewerVrBridge } from './volume-viewer/VolumeViewerVrBridge';
 import {
   DESKTOP_VOLUME_STEP_SCALE,
   VR_PLAYBACK_MAX_FPS,
@@ -45,7 +47,8 @@ import {
   DEFAULT_WINDOW_MAX
 } from '../state/layerSettings';
 import { DEFAULT_TRACK_LINE_WIDTH, DEFAULT_TRACK_OPACITY } from './volume-viewer/constants';
-import { denormalizeValue, formatChannelValuesDetailed } from '../utils/intensityFormatting';
+import { formatChannelValuesDetailed } from '../utils/intensityFormatting';
+import { sampleRawValuesAtPosition, sampleSegmentationLabel } from '../utils/hoverSampling';
 
 type VrUiTargetDescriptor = { type: VrUiTargetType; data?: unknown };
 
@@ -86,98 +89,6 @@ function getExpectedSliceBufferLength(volume: NormalizedVolume) {
   return pixelCount * 4;
 }
 
-const clampValue = (value: number, min: number, max: number): number => {
-  if (value < min) {
-    return min;
-  }
-  if (value > max) {
-    return max;
-  }
-  return value;
-};
-
-const sampleSegmentationLabel = (volume: NormalizedVolume, normalizedPosition: THREE.Vector3) => {
-  if (!volume.segmentationLabels) {
-    return null;
-  }
-
-  const x = Math.round(clampValue(normalizedPosition.x * volume.width, 0, volume.width - 1));
-  const y = Math.round(clampValue(normalizedPosition.y * volume.height, 0, volume.height - 1));
-  const z = Math.round(clampValue(normalizedPosition.z * volume.depth, 0, volume.depth - 1));
-
-  const sliceStride = volume.width * volume.height;
-  const index = z * sliceStride + y * volume.width + x;
-  return volume.segmentationLabels[index] ?? null;
-};
-
-const sampleRawValuesAtPosition = (volume: NormalizedVolume, normalizedPosition: THREE.Vector3) => {
-  const channels = Math.max(1, volume.channels);
-  const sliceStride = volume.width * volume.height * channels;
-  const rowStride = volume.width * channels;
-
-  const x = clampValue(normalizedPosition.x * volume.width, 0, volume.width - 1);
-  const y = clampValue(normalizedPosition.y * volume.height, 0, volume.height - 1);
-  const z = clampValue(normalizedPosition.z * volume.depth, 0, volume.depth - 1);
-
-  const leftX = Math.floor(x);
-  const rightX = Math.min(volume.width - 1, leftX + 1);
-  const topY = Math.floor(y);
-  const bottomY = Math.min(volume.height - 1, topY + 1);
-  const frontZ = Math.floor(z);
-  const backZ = Math.min(volume.depth - 1, frontZ + 1);
-
-  const tX = x - leftX;
-  const tY = y - topY;
-  const tZ = z - frontZ;
-  const invTX = 1 - tX;
-  const invTY = 1 - tY;
-  const invTZ = 1 - tZ;
-
-  const weight000 = invTX * invTY * invTZ;
-  const weight100 = tX * invTY * invTZ;
-  const weight010 = invTX * tY * invTZ;
-  const weight110 = tX * tY * invTZ;
-  const weight001 = invTX * invTY * tZ;
-  const weight101 = tX * invTY * tZ;
-  const weight011 = invTX * tY * tZ;
-  const weight111 = tX * tY * tZ;
-
-  const frontOffset = frontZ * sliceStride;
-  const backOffset = backZ * sliceStride;
-  const topFrontOffset = frontOffset + topY * rowStride;
-  const bottomFrontOffset = frontOffset + bottomY * rowStride;
-  const topBackOffset = backOffset + topY * rowStride;
-  const bottomBackOffset = backOffset + bottomY * rowStride;
-
-  const rawValues: number[] = [];
-
-  for (let channelIndex = 0; channelIndex < channels; channelIndex++) {
-    const baseChannelOffset = channelIndex;
-    const topLeftFront = volume.normalized[topFrontOffset + leftX * channels + baseChannelOffset] ?? 0;
-    const topRightFront = volume.normalized[topFrontOffset + rightX * channels + baseChannelOffset] ?? 0;
-    const bottomLeftFront = volume.normalized[bottomFrontOffset + leftX * channels + baseChannelOffset] ?? 0;
-    const bottomRightFront = volume.normalized[bottomFrontOffset + rightX * channels + baseChannelOffset] ?? 0;
-
-    const topLeftBack = volume.normalized[topBackOffset + leftX * channels + baseChannelOffset] ?? 0;
-    const topRightBack = volume.normalized[topBackOffset + rightX * channels + baseChannelOffset] ?? 0;
-    const bottomLeftBack = volume.normalized[bottomBackOffset + leftX * channels + baseChannelOffset] ?? 0;
-    const bottomRightBack = volume.normalized[bottomBackOffset + rightX * channels + baseChannelOffset] ?? 0;
-
-    const interpolated =
-      topLeftFront * weight000 +
-      topRightFront * weight100 +
-      bottomLeftFront * weight010 +
-      bottomRightFront * weight110 +
-      topLeftBack * weight001 +
-      topRightBack * weight101 +
-      bottomLeftBack * weight011 +
-      bottomRightBack * weight111;
-
-    rawValues.push(denormalizeValue(interpolated, volume));
-  }
-
-  return rawValues;
-};
 
 function prepareSliceTexture(volume: NormalizedVolume, sliceIndex: number, existingBuffer: Uint8Array | null) {
   const { width, height, depth, channels, normalized } = volume;
@@ -229,32 +140,6 @@ function prepareSliceTexture(volume: NormalizedVolume, sliceIndex: number, exist
   return { data: buffer, format: THREE.RGBAFormat };
 }
 
-type UseVolumeViewerVrBridgeProps = {
-  params: UseVolumeViewerVrParams;
-  onValue: Dispatch<SetStateAction<UseVolumeViewerVrResult | null>>;
-};
-
-const UseVolumeViewerVrBridge = lazy(async () => {
-  const module = await import('./volume-viewer/useVolumeViewerVr');
-  const Bridge = ({ params, onValue }: UseVolumeViewerVrBridgeProps) => {
-    const api = module.useVolumeViewerVr(params);
-    useEffect(() => {
-      onValue((previous) =>
-        previous?.playbackLoopRef === api.playbackLoopRef ? previous : api,
-      );
-    }, [api, onValue]);
-    useEffect(
-      () => () => {
-        onValue(null);
-      },
-      [onValue],
-    );
-    return null;
-  };
-  return { default: Bridge };
-});
-
-
 const SELECTED_TRACK_BLINK_PERIOD_MS = 1600;
 const SELECTED_TRACK_BLINK_BASE = 0.85;
 const SELECTED_TRACK_BLINK_RANGE = 0.15;
@@ -278,7 +163,6 @@ const MIP_REFINEMENT_STEPS = 4;
 const HOVER_HIGHLIGHT_RADIUS_VOXELS = 1.5;
 const HOVER_PULSE_SPEED = 0.009;
 
-const MAX_RENDERER_PIXEL_RATIO = 2;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const VIEWER_YAW_FORWARD_REFERENCE = new THREE.Vector3(0, 0, -1);
 const VIEWER_YAW_RIGHT_REFERENCE = new THREE.Vector3(1, 0, 0);
@@ -2284,33 +2168,16 @@ function VolumeViewer({
       return;
     }
 
-    let renderer: THREE.WebGLRenderer;
+    let renderContext: ReturnType<typeof createVolumeRenderContext>;
     try {
-      renderer = new THREE.WebGLRenderer({
-        antialias: true,
-        alpha: true,
-        powerPreference: 'high-performance'
-      });
+      renderContext = createVolumeRenderContext(container);
     } catch (error) {
       hoverInitializationFailedRef.current = true;
       setHoverNotReady('Hover inactive: renderer not initialized.');
       return;
     }
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    const pixelRatio =
-      typeof window === 'undefined'
-        ? 1
-        : Math.min(window.devicePixelRatio ?? 1, MAX_RENDERER_PIXEL_RATIO);
-    renderer.setPixelRatio(pixelRatio);
-    renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setClearColor(0x000000, 0);
-    renderer.domElement.style.background = 'transparent';
-    renderer.xr.enabled = true;
-    renderer.xr.setReferenceSpaceType?.('local-floor');
 
-    container.appendChild(renderer.domElement);
-
-    const scene = new THREE.Scene();
+    const { renderer, scene, camera, controls } = renderContext;
 
     const volumeRootGroup = new THREE.Group();
     volumeRootGroup.name = 'VolumeRoot';
@@ -2388,24 +2255,7 @@ function VolumeViewer({
     setTrackOverlayRevision((revision) => revision + 1);
     setRenderContextRevision((revision) => revision + 1);
 
-    const camera = new THREE.PerspectiveCamera(
-      38,
-      container.clientWidth / container.clientHeight,
-      0.0001,
-      1000
-    );
-    camera.position.set(0, 0, 2.5);
-
-    scene.add(camera);
     cameraRef.current = camera;
-
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = false;
-    controls.dampingFactor = 0;
-    controls.enablePan = false;
-    controls.enableRotate = false;
-    controls.rotateSpeed = 0.65;
-    controls.zoomSpeed = 0.7;
     controlsRef.current = controls;
 
     const hud = createVrPlaybackHud();
@@ -3668,7 +3518,7 @@ function VolumeViewer({
     <div className="volume-viewer">
       {vrParams ? (
         <Suspense fallback={null}>
-          <UseVolumeViewerVrBridge params={vrParams} onValue={setVrIntegration} />
+          <VolumeViewerVrBridge params={vrParams} onValue={setVrIntegration} />
         </Suspense>
       ) : null}
       <section className="viewer-surface">
