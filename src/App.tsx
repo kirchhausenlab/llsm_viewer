@@ -45,6 +45,7 @@ import {
   useChannelLayerStateContext
 } from './hooks/useChannelLayerState';
 import { useViewerControls } from './hooks/useViewerControls';
+import { useViewerPlayback } from './hooks/useViewerPlayback';
 
 const WINDOW_MARGIN = 24;
 const CONTROL_WINDOW_WIDTH = 360;
@@ -128,26 +129,17 @@ function AppContent() {
   const [expectedVolumeCount, setExpectedVolumeCount] = useState(0);
   const [resetViewHandler, setResetViewHandler] = useState<(() => void) | null>(null);
   const [activeChannelTabId, setActiveChannelTabId] = useState<string | null>(null);
-  const [viewerMode, setViewerMode] = useState<'3d' | '2d'>('3d');
-  const [sliceIndex, setSliceIndex] = useState(0);
-  const [orthogonalViewsEnabled, setOrthogonalViewsEnabled] = useState(false);
-  const hasInitializedSliceIndexRef = useRef(false);
+  const [maxSliceDepth, setMaxSliceDepth] = useState(0);
   const [isViewerLaunched, setIsViewerLaunched] = useState(false);
   const [isLaunchingViewer, setIsLaunchingViewer] = useState(false);
   const [layoutResetToken, setLayoutResetToken] = useState(0);
   const [hoveredVolumeVoxel, setHoveredVolumeVoxel] = useState<HoveredVoxelInfo | null>(null);
   const [isHelpMenuOpen, setIsHelpMenuOpen] = useState(false);
 
-  const is3dViewerAvailable = experimentDimension === '3d';
+  const playback = useViewerPlayback();
+  const { selectedIndex, setSelectedIndex, isPlaying, fps, togglePlayback, setFps, stopPlayback, setIsPlaying } = playback;
 
-  useEffect(() => {
-    setHoveredVolumeVoxel(null);
-  }, [viewerMode]);
-  useEffect(() => {
-    if (!is3dViewerAvailable) {
-      setViewerMode('2d');
-    }
-  }, [is3dViewerAvailable]);
+  const is3dViewerAvailable = experimentDimension === '3d';
   const handleHelpMenuToggle = useCallback(() => {
     setIsHelpMenuOpen((previous) => !previous);
   }, []);
@@ -319,7 +311,14 @@ function AppContent() {
   }, [setFollowedTrack]);
 
   const {
-    playback: { selectedIndex, setSelectedIndex, isPlaying, fps, togglePlayback, setFps, stopPlayback, setIsPlaying },
+    viewerMode,
+    setViewerMode,
+    toggleViewerMode,
+    sliceIndex,
+    handleSliceIndexChange,
+    orthogonalViewsEnabled,
+    toggleOrthogonalViews,
+    orthogonalViewsAvailable,
     vr: {
       isVrSupportChecked,
       isVrSupported,
@@ -339,10 +338,20 @@ function AppContent() {
       handleVrButtonClick
     }
   } = useViewerControls({
-    viewerMode,
+    playback,
+    initialViewerMode: experimentDimension,
     is3dViewerAvailable,
-    onBeforeEnterVr: handleBeforeEnterVr
+    maxSliceDepth,
+    onBeforeEnterVr: handleBeforeEnterVr,
+    onViewerModeToggle: () => {
+      setResetViewHandler(null);
+      handleStopTrackFollow();
+    }
   });
+
+  useEffect(() => {
+    setHoveredVolumeVoxel(null);
+  }, [viewerMode]);
 
   useEffect(() => {
     if (editingChannelId && editingChannelId !== activeChannelId) {
@@ -1260,23 +1269,6 @@ function AppContent() {
   }, []);
 
 
-  const handleToggleViewerMode = useCallback(() => {
-    if (!is3dViewerAvailable) {
-      return;
-    }
-    setViewerMode((current) => (current === '3d' ? '2d' : '3d'));
-    setResetViewHandler(null);
-    handleStopTrackFollow();
-  }, [handleStopTrackFollow, is3dViewerAvailable]);
-
-  const handleSliceIndexChange = useCallback((index: number) => {
-    setSliceIndex(index);
-  }, []);
-
-  const handleOrthogonalViewsToggle = useCallback(() => {
-    setOrthogonalViewsEnabled((current) => !current);
-  }, []);
-
   useEffect(() => {
     if (layers.length === 0) {
       setActiveChannelTabId(null);
@@ -1776,7 +1768,7 @@ function AppContent() {
     selectedIndex
   ]);
 
-  const maxSliceDepth = useMemo(() => {
+  const computedMaxSliceDepth = useMemo(() => {
     let depth = 0;
     for (const layer of viewerLayers) {
       if (layer.volume) {
@@ -1787,36 +1779,8 @@ function AppContent() {
   }, [viewerLayers]);
 
   useEffect(() => {
-    if (hasInitializedSliceIndexRef.current) {
-      return;
-    }
-    if (maxSliceDepth > 0) {
-      const middleIndex = Math.floor(maxSliceDepth / 2);
-      setSliceIndex(middleIndex);
-      hasInitializedSliceIndexRef.current = true;
-    }
-  }, [maxSliceDepth]);
-
-  useEffect(() => {
-    if (maxSliceDepth <= 0) {
-      if (sliceIndex !== 0) {
-        setSliceIndex(0);
-      }
-      return;
-    }
-    if (sliceIndex >= maxSliceDepth) {
-      setSliceIndex(maxSliceDepth - 1);
-    }
-    if (sliceIndex < 0) {
-      setSliceIndex(0);
-    }
-  }, [maxSliceDepth, sliceIndex]);
-
-  useEffect(() => {
-    if (maxSliceDepth <= 1 && orthogonalViewsEnabled) {
-      setOrthogonalViewsEnabled(false);
-    }
-  }, [maxSliceDepth, orthogonalViewsEnabled]);
+    setMaxSliceDepth(computedMaxSliceDepth);
+  }, [computedMaxSliceDepth]);
 
   if (!isViewerLaunched) {
     const isFrontPageLocked =
@@ -1975,8 +1939,6 @@ function AppContent() {
       : undefined
   };
 
-  const orthogonalViewsAvailable = viewerMode === '2d' && maxSliceDepth > 1;
-
   const planarViewerProps: ViewerShellProps['planarViewerProps'] = {
     layers: viewerLayers,
     isLoading,
@@ -2001,7 +1963,7 @@ function AppContent() {
     onTrackSelectionToggle: handleTrackSelectionToggle,
     onTrackFollowRequest: handleTrackFollowFromViewer,
     onHoverVoxelChange: setHoveredVolumeVoxel,
-    orthogonalViewsEnabled: viewerMode === '2d' && maxSliceDepth > 1 && orthogonalViewsEnabled
+    orthogonalViewsEnabled: orthogonalViewsAvailable && orthogonalViewsEnabled
   };
 
   const showSelectedTracksWindow = !isVrActive && hasParsedTrackData;
@@ -2013,7 +1975,7 @@ function AppContent() {
     planarSettings: {
       orthogonalViewsAvailable,
       orthogonalViewsEnabled,
-      onOrthogonalViewsToggle: handleOrthogonalViewsToggle
+      onOrthogonalViewsToggle: toggleOrthogonalViews
     },
     topMenu: {
       onReturnToLauncher: handleReturnToLauncher,
@@ -2043,7 +2005,7 @@ function AppContent() {
       isVrActive,
       isVrRequesting,
       resetViewHandler,
-      onToggleViewerMode: handleToggleViewerMode,
+      onToggleViewerMode: toggleViewerMode,
       onVrButtonClick: handleVrButtonClick,
       vrButtonDisabled,
       vrButtonTitle,
