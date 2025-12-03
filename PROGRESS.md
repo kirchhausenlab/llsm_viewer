@@ -43,3 +43,6 @@
 - Added brightness/contrast controls (including ImageJ-like windowing for float volumes), playback speed/looping, and robust loading overlays.
 - Refined camera clipping, ray-cast coordinates, and normalization to keep rendering stable across multi-channel datasets.
 - Provided early webfont bundling and sidebar/control layout refreshes for consistent styling.
+
+## Viewer shell refactor
+- Broke the monolithic viewer shell into focused components for top navigation, playback, channels, tracks, and plot settings, with hooks to keep state wiring tidy.
