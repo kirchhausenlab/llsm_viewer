@@ -1,6 +1,10 @@
 import { useCallback, useMemo } from 'react';
-import { denormalizeValue, formatChannelValuesDetailed } from '../../../shared/utils/intensityFormatting';
-import type { VolumeDataType } from '../../../types/volume';
+import {
+  denormalizeValue,
+  formatChannelValuesDetailed,
+  type FormattedChannelValue,
+} from '../../../../shared/utils/intensityFormatting';
+import type { VolumeDataType } from '../../../../types/volume';
 import type { HoveredIntensityInfo, OrthogonalAnchor, SliceData, ViewerLayer } from '../types';
 import { clamp, getColorComponents } from '../utils';
 
@@ -491,10 +495,12 @@ export function usePlanarSlices({
 
       const includeLabel = totalValues > 1;
       const parts = samples.flatMap((sample) =>
-        formatChannelValuesDetailed(sample.values, sample.type, sample.label, includeLabel).map((entry) => ({
-          text: entry.text,
-          color: sample.color,
-        })),
+        formatChannelValuesDetailed(sample.values, sample.type, sample.label, includeLabel).map(
+          (entry: FormattedChannelValue) => ({
+            text: entry.text,
+            color: sample.color,
+          }),
+        ),
       );
 
       if (parts.length === 0) {

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-import type { NormalizedVolume } from '../core/volumeProcessing';
+import type { NormalizedVolume } from '../../core/volumeProcessing';
 import { denormalizeValue } from './intensityFormatting';
 
 export const clampValue = (value: number, min: number, max: number): number => {

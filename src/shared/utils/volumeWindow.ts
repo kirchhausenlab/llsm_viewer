@@ -1,5 +1,5 @@
-import type { NormalizedVolume } from '../core/volumeProcessing';
-import { computeHistogramQuantileWindow } from '../autoContrast';
+import type { NormalizedVolume } from '../../core/volumeProcessing';
+import { computeHistogramQuantileWindow } from '../../autoContrast';
 
 const FLOAT_DATA_TYPES: ReadonlySet<NormalizedVolume['dataType']> = new Set([
   'float32',

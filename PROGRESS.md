@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Fixed broken import paths after the core/shared/ui split (Dropbox/components, workers, shared utils) and addressed implicit
+  any warnings so `npm run typecheck` passes again.
 - Restructured the app into `src/core`, `src/shared`, and `src/ui`, moving processing/cache modules, shared helpers, and UI
   components accordingly while updating imports/tests.
 - Centralized window layout defaults and reset handling into a dedicated `useWindowLayout` hook with coverage for layout

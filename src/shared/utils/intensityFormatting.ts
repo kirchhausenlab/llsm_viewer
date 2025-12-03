@@ -1,4 +1,4 @@
-import type { NormalizedVolume } from '../core/volumeProcessing';
+import type { NormalizedVolume } from '../../core/volumeProcessing';
 import type { VolumeDataType } from '../../types/volume';
 
 export type FormattedChannelValue = { text: string; channelLabel: string | null };

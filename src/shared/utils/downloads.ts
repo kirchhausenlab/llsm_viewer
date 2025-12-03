@@ -4,7 +4,7 @@ import {
   collectStreamToBlob,
   writeStreamToFileHandle,
   type FileSystemFileHandleLike
-} from '../workers/exportPreprocessedDatasetClient';
+} from '../../workers/exportPreprocessedDatasetClient';
 
 const triggerDownloadLink = (href: string, fileName: string) => {
   const link = document.createElement('a');

@@ -9,16 +9,16 @@ import type {
 } from 'react';
 import ChannelCard from './ChannelCard';
 import FloatingWindow from './FloatingWindow';
-import { formatBytes } from '../errors';
+import { formatBytes } from '../../errors';
 import type {
   ChannelSource,
   ChannelValidation,
   StagedPreprocessedExperiment
-} from '../hooks/useChannelSources';
-import type { ExperimentDimension } from '../hooks/useVoxelResolution';
-import type { DropboxAppKeySource } from '../integrations/dropbox';
-import type { VoxelResolutionInput, VoxelResolutionUnit } from '../types/voxelResolution';
-import { VOXEL_RESOLUTION_UNITS } from '../types/voxelResolution';
+} from '../../hooks/useChannelSources';
+import type { ExperimentDimension } from '../../hooks/useVoxelResolution';
+import type { DropboxAppKeySource } from '../../integrations/dropbox';
+import type { VoxelResolutionInput, VoxelResolutionUnit } from '../../types/voxelResolution';
+import { VOXEL_RESOLUTION_UNITS } from '../../types/voxelResolution';
 
 type TrackSummary = { totalRows: number; uniqueTracks: number };
 
@@ -129,7 +129,7 @@ const buildChannelTabMeta = (channel: ChannelSource, validation: ChannelValidati
     parts.push(hasNameError ? 'Insert channel name' : 'Needs attention');
   } else if (validation.warnings.length > 0) {
     const hasNoTracksWarning = validation.warnings.some(
-      (warning) => warning === 'No tracks attached to this channel.'
+      (warning: string) => warning === 'No tracks attached to this channel.'
     );
     parts.push(hasNoTracksWarning ? 'no tracks attached' : 'Warnings');
   }
@@ -320,7 +320,7 @@ export default function FrontPage({
                     }
                     disabled={isFrontPageLocked}
                   >
-                    {VOXEL_RESOLUTION_UNITS.map((unit) => (
+                    {VOXEL_RESOLUTION_UNITS.map((unit: VoxelResolutionUnit) => (
                       <option key={unit} value={unit}>
                         {unit}
                       </option>
@@ -706,14 +706,16 @@ export default function FrontPage({
                 </p>
               </div>
               <ul className="preprocessed-summary-list">
-                {preprocessedExperiment.channelSummaries.map((summary) => {
+                {preprocessedExperiment.channelSummaries.map((
+                  summary: StagedPreprocessedExperiment['channelSummaries'][number]
+                ) => {
                   const trackSummary = computeTrackSummary(summary.trackEntries);
                   return (
                     <li key={summary.id} className="preprocessed-summary-item">
                       <div className="preprocessed-summary-channel">
                         <h3>{summary.name}</h3>
                         <ul className="preprocessed-summary-layer-list">
-                          {summary.layers.map((layer) => (
+                          {summary.layers.map((layer: (typeof summary.layers)[number]) => (
                             <li key={layer.key} className="preprocessed-summary-layer">
                               <span className="preprocessed-summary-layer-title">
                                 {layer.label}

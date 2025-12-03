@@ -8,9 +8,9 @@ import {
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent
 } from 'react';
-import { getTrackColorHex } from '../../../shared/colorMaps/trackColors';
-import type { TrackDefinition } from '../../../types/tracks';
-import type { NormalizedVolume } from '../../../core/volumeProcessing';
+import { getTrackColorHex } from '../../../../shared/colorMaps/trackColors';
+import type { TrackDefinition } from '../../../../types/tracks';
+import type { NormalizedVolume } from '../../../../core/volumeProcessing';
 import { componentsToCss, clamp, getColorComponents, mixWithWhite } from '../utils';
 import type {
   HoveredPixel,

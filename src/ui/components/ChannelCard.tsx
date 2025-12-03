@@ -1,9 +1,9 @@
 import { useCallback, useMemo } from 'react';
 import ChannelDropboxSection from './ChannelDropboxSection';
 import ChannelUploads from './ChannelUploads';
-import useChannelDropbox from '../hooks/useChannelDropbox';
-import type { ChannelSource, ChannelValidation } from '../hooks/useChannelSources';
-import type { ExperimentDimension } from '../hooks/useVoxelResolution';
+import useChannelDropbox from '../../hooks/useChannelDropbox';
+import type { ChannelSource, ChannelValidation } from '../../hooks/useChannelSources';
+import type { ExperimentDimension } from '../../hooks/useVoxelResolution';
 
 export type ChannelCardProps = {
   channel: ChannelSource;
@@ -85,7 +85,7 @@ export default function ChannelCard({
       dropboxControls.importFromDropbox({
         target: 'layers',
         options: { extensions: ['.tif', '.tiff'], multiselect: true },
-        onImported: (files) => onLayerFilesAdded(channel.id, files)
+        onImported: (files: File[]) => onLayerFilesAdded(channel.id, files)
       }),
     [channel.id, dropboxControls, onLayerFilesAdded]
   );
@@ -95,7 +95,7 @@ export default function ChannelCard({
       dropboxControls.importFromDropbox({
         target: 'tracks',
         options: { extensions: ['.csv'], multiselect: false },
-        onImported: (files) => {
+        onImported: (files: File[]) => {
           const [file] = files;
           onTrackFileSelected(channel.id, file ?? null);
         }

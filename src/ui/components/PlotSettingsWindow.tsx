@@ -1,5 +1,5 @@
 import { useMemo, type ChangeEvent } from 'react';
-import type { NumericRange } from '../types/tracks';
+import type { NumericRange } from '../../types/tracks';
 
 const clampToRange = (value: number, min: number, max: number) => {
   if (!Number.isFinite(value)) {

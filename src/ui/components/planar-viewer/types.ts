@@ -1,5 +1,5 @@
-import type { NormalizedVolume } from '../../core/volumeProcessing';
-import type { TrackColorMode, TrackDefinition } from '../../types/tracks';
+import type { NormalizedVolume } from '../../../core/volumeProcessing';
+import type { TrackColorMode, TrackDefinition } from '../../../types/tracks';
 
 export type ViewerLayer = {
   key: string;

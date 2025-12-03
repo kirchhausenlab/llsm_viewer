@@ -4,8 +4,8 @@ import {
   TRACK_COLOR_SWATCHES,
   getTrackColorHex,
   normalizeTrackColor
-} from '../../shared/colorMaps/trackColors';
-import { applyAlphaToHex } from '../../shared/utils/appHelpers';
+} from '../../../shared/colorMaps/trackColors';
+import { applyAlphaToHex } from '../../../shared/utils/appHelpers';
 import FloatingWindow from '../FloatingWindow';
 import type { LayoutProps, TracksPanelProps, TrackDefaults } from './types';
 
@@ -227,7 +227,7 @@ export default function TracksPanel({
                       </div>
                       <div className="track-color-swatch-row">
                         <div className="color-swatch-grid" role="group" aria-labelledby={`track-color-label-${channel.id}`}>
-                          {TRACK_COLOR_SWATCHES.map((swatch) => {
+                          {TRACK_COLOR_SWATCHES.map((swatch: (typeof TRACK_COLOR_SWATCHES)[number]) => {
                             const normalized = normalizeTrackColor(swatch.value);
                             const isSelected =
                               colorMode.type === 'uniform' && normalizeTrackColor(colorMode.color) === normalized;

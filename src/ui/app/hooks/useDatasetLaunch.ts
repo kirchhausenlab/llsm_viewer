@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChannelLayerState } from '../../../hooks/useChannelLayerState';
 import type { DatasetErrorContext } from '../../../hooks/useDatasetErrors';
 import type { ExperimentDimension } from '../../../hooks/useVoxelResolution';
-import type { VoxelResolutionValues } from '../../types/voxelResolution';
+import type { VoxelResolutionValues } from '../../../types/voxelResolution';
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 
