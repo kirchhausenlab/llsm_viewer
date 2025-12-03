@@ -53,11 +53,12 @@ import { TrackTooltip } from './volume-viewer/TrackTooltip';
 import { HoverDebug } from './volume-viewer/HoverDebug';
 import { useVolumeViewerVrBridge } from './volume-viewer/useVolumeViewerVrBridge';
 import { useCameraControls } from './volume-viewer/useCameraControls';
-import { useVolumeResources } from './volume-viewer/useVolumeResources';
 import { useTrackRendering } from './volume-viewer/useTrackRendering';
 import { usePlaybackControls } from './volume-viewer/usePlaybackControls';
-import { useLoadingOverlay } from './volume-viewer/useLoadingOverlay';
 import { useTrackTooltip } from './volume-viewer/useTrackTooltip';
+import { useVolumeViewerState } from './volume-viewer/useVolumeViewerState';
+import { useVolumeViewerDataState, useVolumeViewerResources } from './volume-viewer/useVolumeViewerData';
+import { useVolumeViewerInteractions } from './volume-viewer/useVolumeViewerInteractions';
 
 function VolumeViewer({
   layers,
@@ -134,26 +135,42 @@ function VolumeViewer({
   const pendingHoverEventRef = useRef<PointerEvent | null>(null);
   const hoverRetryFrameRef = useRef<number | null>(null);
   const updateVoxelHoverRef = useRef<(event: PointerEvent) => void>(() => {});
-  const currentDimensionsRef = useRef<{ width: number; height: number; depth: number } | null>(null);
-  const colormapCacheRef = useRef<Map<string, THREE.DataTexture>>(new Map());
-  const volumeRootGroupRef = useRef<THREE.Group | null>(null);
-  const volumeRootBaseOffsetRef = useRef(new THREE.Vector3());
-  const volumeRootCenterOffsetRef = useRef(new THREE.Vector3());
-  const volumeRootCenterUnscaledRef = useRef(new THREE.Vector3());
-  const volumeRootHalfExtentsRef = useRef(new THREE.Vector3());
-  const volumeNormalizationScaleRef = useRef(1);
-  const volumeUserScaleRef = useRef(1);
-  const volumeStepScaleRef = useRef(DESKTOP_VOLUME_STEP_SCALE);
-  const volumeYawRef = useRef(0);
-  const volumePitchRef = useRef(0);
-  const volumeRootRotatedCenterTempRef = useRef(new THREE.Vector3());
-  const trackGroupRef = useRef<THREE.Group | null>(null);
-  const trackLinesRef = useRef<Map<string, TrackLineResource>>(new Map());
-  const followedTrackIdRef = useRef<string | null>(null);
-  const trackFollowOffsetRef = useRef<THREE.Vector3 | null>(null);
-  const previousFollowedTrackIdRef = useRef<string | null>(null);
-  const hasActive3DLayerRef = useRef(false);
-  const [hasMeasured, setHasMeasured] = useState(false);
+  const {
+    containerNode,
+    setContainerNode,
+    currentDimensionsRef,
+    colormapCacheRef,
+    volumeRootGroupRef,
+    volumeRootBaseOffsetRef,
+    volumeRootCenterOffsetRef,
+    volumeRootCenterUnscaledRef,
+    volumeRootHalfExtentsRef,
+    volumeNormalizationScaleRef,
+    volumeUserScaleRef,
+    volumeStepScaleRef,
+    volumeYawRef,
+    volumePitchRef,
+    volumeRootRotatedCenterTempRef,
+    trackGroupRef,
+    trackLinesRef,
+    followedTrackIdRef,
+    trackFollowOffsetRef,
+    previousFollowedTrackIdRef,
+    hasActive3DLayerRef,
+    hasMeasured,
+    setHasMeasured,
+    renderContextRevision,
+    setRenderContextRevision,
+    layersRef,
+    hoverIntensityRef,
+    hoveredVoxelRef,
+    voxelHoverDebugRef,
+    voxelHoverDebug,
+    setVoxelHoverDebug,
+    resetVolumeCallbackRef,
+    resetHudPlacementCallbackRef,
+    trackFollowRequestCallbackRef,
+  } = useVolumeViewerState();
   const {
     containerRef,
     rendererRef,
@@ -169,25 +186,7 @@ function VolumeViewer({
     createPointerLookHandlers,
     initializeRenderContext,
   } = useCameraControls({ trackLinesRef, followedTrackIdRef, setHasMeasured });
-  const [renderContextRevision, setRenderContextRevision] = useState(0);
-  const layersRef = useRef(layers);
-  const hoverIntensityRef = useRef<HoveredVoxelInfo | null>(null);
-  const hoveredVoxelRef = useRef<{
-    layerKey: string | null;
-    normalizedPosition: THREE.Vector3 | null;
-    segmentationLabel: number | null;
-  }>({
-    layerKey: null,
-    normalizedPosition: null,
-    segmentationLabel: null
-  });
-  const voxelHoverDebugRef = useRef<string | null>(null);
-  const [voxelHoverDebug, setVoxelHoverDebug] = useState<string | null>(null);
   const isDevMode = Boolean(import.meta.env?.DEV);
-  const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(null);
-  const resetVolumeCallbackRef = useRef<() => void>(() => {});
-  const resetHudPlacementCallbackRef = useRef<() => void>(() => {});
-  const trackFollowRequestCallbackRef = useRef<(trackId: string) => void>(() => {});
   trackFollowRequestCallbackRef.current = onTrackFollowRequest;
 
   const requestVolumeReset = useCallback(() => {
@@ -226,166 +225,32 @@ function VolumeViewer({
     layersRef.current = layers;
   }, [layers]);
 
-  const applyHoverHighlightToResources = useCallback(() => {
-    const { layerKey, normalizedPosition, segmentationLabel } = hoveredVoxelRef.current;
-    const layersByKey = new Map(layersRef.current.map((layer) => [layer.key, layer]));
-    for (const [key, resource] of resourcesRef.current.entries()) {
-      if (resource.mode !== '3d') {
-        continue;
-      }
-      const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms;
-      const layer = layersByKey.get(key);
-      const isSegmentationLayer = Boolean(layer?.isSegmentation);
-      const hasHoverLabel = Number.isFinite(segmentationLabel);
-      const isActive = Boolean(layerKey && normalizedPosition && layerKey === key);
-      if (uniforms.u_hoverActive) {
-        uniforms.u_hoverActive.value = isActive ? 1 : 0;
-      }
-      if (uniforms.u_hoverSegmentationMode) {
-        uniforms.u_hoverSegmentationMode.value = isActive && isSegmentationLayer && hasHoverLabel ? 1 : 0;
-      }
-      if (uniforms.u_hoverLabel) {
-        uniforms.u_hoverLabel.value = hasHoverLabel ? (segmentationLabel as number) : 0;
-      }
-      if (uniforms.u_segmentationLabels) {
-        uniforms.u_segmentationLabels.value = resource.labelTexture ?? null;
-      }
-      if (
-        isActive &&
-        normalizedPosition &&
-        uniforms.u_hoverPos &&
-        uniforms.u_hoverRadius &&
-        uniforms.u_hoverScale
-      ) {
-        uniforms.u_hoverPos.value.copy(normalizedPosition);
-        uniforms.u_hoverScale.value.set(
-          resource.dimensions.width,
-          resource.dimensions.height,
-          resource.dimensions.depth,
-        );
-        uniforms.u_hoverRadius.value = HOVER_HIGHLIGHT_RADIUS_VOXELS;
-      } else {
-        if (uniforms.u_hoverRadius) {
-          uniforms.u_hoverRadius.value = 0;
-        }
-        if (uniforms.u_hoverScale) {
-          uniforms.u_hoverScale.value.set(0, 0, 0);
-        }
-      }
-    }
-  }, []);
-
-  const areHoverComponentsEqual = useCallback(
-    (
-      a: HoveredVoxelInfo['components'] | undefined,
-      b: HoveredVoxelInfo['components'] | undefined,
-    ) => {
-      const left = a ?? [];
-      const right = b ?? [];
-      if (left.length !== right.length) {
-        return false;
-      }
-      for (let i = 0; i < left.length; i++) {
-        if (left[i].text !== right[i].text || left[i].color !== right[i].color) {
-          return false;
-        }
-      }
-      return true;
-    },
-    [],
-  );
-
-  const emitHoverVoxel = useCallback(
-    (value: HoveredVoxelInfo | null) => {
-      const previous = hoverIntensityRef.current;
-      const isSame =
-        (previous === null && value === null) ||
-        (previous !== null &&
-          value !== null &&
-          previous.intensity === value.intensity &&
-          previous.coordinates.x === value.coordinates.x &&
-          previous.coordinates.y === value.coordinates.y &&
-          previous.coordinates.z === value.coordinates.z &&
-          areHoverComponentsEqual(previous.components, value.components));
-
-      if (isSame) {
-        return;
-      }
-      hoverIntensityRef.current = value;
-      onHoverVoxelChange?.(value);
-    },
-    [areHoverComponentsEqual, onHoverVoxelChange]
-  );
-
-  const clearVoxelHover = useCallback(() => {
-    emitHoverVoxel(null);
-    hoveredVoxelRef.current = { layerKey: null, normalizedPosition: null, segmentationLabel: null };
-    applyHoverHighlightToResources();
-  }, [applyHoverHighlightToResources, emitHoverVoxel]);
-
-  const reportVoxelHoverAbort = useCallback(
-    (reason: string) => {
-      if (voxelHoverDebugRef.current !== reason && isDevMode) {
-        console.debug('[voxel-hover]', reason);
-      }
-      if (isDevMode) {
-        voxelHoverDebugRef.current = reason;
-        setVoxelHoverDebug(reason);
-      } else {
-        voxelHoverDebugRef.current = null;
-        setVoxelHoverDebug(null);
-      }
-      clearVoxelHover();
-    },
-    [clearVoxelHover, isDevMode],
-  );
-
-  const clearVoxelHoverDebug = useCallback(() => {
-    voxelHoverDebugRef.current = null;
-    if (isDevMode) {
-      setVoxelHoverDebug(null);
-    }
-  }, [isDevMode]);
-
-  const setHoverNotReady = useCallback(
-    (reason: string) => {
-      reportVoxelHoverAbort(reason);
-    },
-    [reportVoxelHoverAbort],
-  );
-
-  const { showLoadingOverlay } = useLoadingOverlay({
-    isLoading,
-    loadingProgress,
-    loadedVolumes,
-    expectedVolumes,
+  const {
+    applyHoverHighlightToResources,
+    emitHoverVoxel,
+    clearVoxelHover,
+    reportVoxelHoverAbort,
+    clearVoxelHoverDebug,
+    setHoverNotReady,
+  } = useVolumeViewerInteractions({
+    layersRef,
+    resourcesRef,
+    hoveredVoxelRef,
+    hoverIntensityRef,
+    voxelHoverDebugRef,
+    setVoxelHoverDebug,
+    isDevMode,
+    onHoverVoxelChange,
   });
-  const primaryVolume = useMemo(() => {
-    for (const layer of layers) {
-      if (layer.volume) {
-        return layer.volume;
-      }
-    }
-    return null;
-  }, [layers]);
 
-  const hasRenderableLayer = Boolean(primaryVolume);
-  const hasActive3DLayer = useMemo(
-    () =>
-      layers.some((layer) => {
-        if (!layer.volume) {
-          return false;
-        }
-        const viewerMode =
-          layer.mode === 'slice' || layer.mode === '3d'
-            ? layer.mode
-            : layer.volume.depth > 1
-            ? '3d'
-            : 'slice';
-        return viewerMode === '3d';
-      }),
-    [layers],
-  );
+  const { showLoadingOverlay, primaryVolume, hasRenderableLayer, hasActive3DLayer } =
+    useVolumeViewerDataState({
+      layers,
+      isLoading,
+      loadingProgress,
+      loadedVolumes,
+      expectedVolumes,
+    });
 
   const {
     hoveredTrackId,
@@ -585,7 +450,7 @@ function VolumeViewer({
     updateVolumeHandles();
   }, [hasActive3DLayer, updateVolumeHandles]);
 
-  const { getColormapTexture } = useVolumeResources({
+  const { getColormapTexture } = useVolumeViewerResources({
     layers,
     primaryVolume,
     isAdditiveBlending,
