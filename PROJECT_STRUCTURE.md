@@ -97,10 +97,16 @@ The main responsibilities are:
 
 ### App entrypoints (start reading here)
 
-- `src/main.tsx`  
-  Bootstraps React, registers the export service worker, mounts `<App/>` inside `<ChannelLayerStateProvider/>`.
-- `src/App.tsx`  
-  Top-level “state machine”: front-page dataset setup vs viewer; wires together channel/layer state, playback, window layout, and VR lifecycle.
+- `src/main.tsx`
+  Bootstraps React, registers the export service worker, and renders `<App/>`.
+- `src/App.tsx`
+  Composes global providers, layout chrome, and the app router.
+- `src/app/providers.tsx`
+  Wraps the tree in shared providers (e.g., `ChannelLayerStateProvider`).
+- `src/app/layout.tsx`
+  Top-level layout/chrome wrapper that pulls in app-wide styles.
+- `src/app/router.tsx`
+  App state machine and routing: front-page dataset setup vs viewer shell, including playback, window layout, and VR lifecycle wiring.
 
 ---
 
