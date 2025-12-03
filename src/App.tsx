@@ -46,13 +46,23 @@ import {
 } from './hooks/useChannelLayerState';
 import { useViewerControls } from './hooks/useViewerControls';
 import { useViewerPlayback } from './hooks/useViewerPlayback';
+import {
+  CONTROL_WINDOW_WIDTH,
+  LAYERS_WINDOW_VERTICAL_OFFSET,
+  SELECTED_TRACKS_WINDOW_HEIGHT,
+  SELECTED_TRACKS_WINDOW_WIDTH,
+  WARNING_WINDOW_WIDTH,
+  WINDOW_MARGIN,
+  computeControlWindowDefaultPosition,
+  computeLayersWindowDefaultPosition,
+  computePlotSettingsWindowDefaultPosition,
+  computeSelectedTracksWindowDefaultPosition,
+  computeTrackWindowDefaultPosition,
+  computeViewerSettingsWindowDefaultPosition,
+  nextLayoutResetToken,
+  type WindowPosition
+} from './utils/windowLayout';
 
-const WINDOW_MARGIN = 24;
-const CONTROL_WINDOW_WIDTH = 360;
-const SELECTED_TRACKS_WINDOW_WIDTH = 1120;
-const SELECTED_TRACKS_WINDOW_HEIGHT = 220;
-const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
-const WARNING_WINDOW_WIDTH = 360;
 const DEFAULT_RESET_WINDOW = { windowMin: DEFAULT_WINDOW_MIN, windowMax: DEFAULT_WINDOW_MAX };
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
@@ -149,94 +159,20 @@ function AppContent() {
       setActiveChannelId(null);
     }
   }, [channels.length]);
-  const controlWindowInitialPosition = useMemo(
-    () => ({ x: WINDOW_MARGIN, y: WINDOW_MARGIN }),
-    []
-  );
-  const layersWindowInitialPosition = useMemo(
-    () => ({ x: WINDOW_MARGIN, y: WINDOW_MARGIN + LAYERS_WINDOW_VERTICAL_OFFSET }),
-    []
-  );
-  const computeRightColumnX = useCallback(() => {
-    if (typeof window === 'undefined') {
-      return WINDOW_MARGIN;
-    }
-    const windowWidth = Math.min(CONTROL_WINDOW_WIDTH, window.innerWidth - WINDOW_MARGIN * 2);
-    return Math.max(WINDOW_MARGIN, window.innerWidth - windowWidth - WINDOW_MARGIN);
-  }, []);
-  const computeViewerSettingsWindowDefaultPosition = useCallback(() => {
-    if (typeof window === 'undefined') {
-      return { x: WINDOW_MARGIN, y: WINDOW_MARGIN };
-    }
-
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    const windowWidth = Math.min(CONTROL_WINDOW_WIDTH, viewportWidth - WINDOW_MARGIN * 2);
-    const estimatedHeight = 320;
-    const centeredX = Math.max(WINDOW_MARGIN, Math.round((viewportWidth - windowWidth) / 2));
-    const centeredY = Math.max(
-      WINDOW_MARGIN,
-      Math.round((viewportHeight - estimatedHeight) / 2)
-    );
-
-    return { x: centeredX, y: centeredY };
-  }, []);
-  const computeTrackWindowDefaultPosition = useCallback(() => {
-    const x = computeRightColumnX();
-
-    if (typeof window === 'undefined') {
-      return { x, y: WINDOW_MARGIN };
-    }
-
-    const viewportHeight = window.innerHeight;
-    const estimatedHeight = 360;
-    const maxY = Math.max(WINDOW_MARGIN, viewportHeight - estimatedHeight - WINDOW_MARGIN);
-
-    return { x, y: Math.min(WINDOW_MARGIN, maxY) };
-  }, [computeRightColumnX]);
-  const [trackWindowInitialPosition, setTrackWindowInitialPosition] = useState<{ x: number; y: number }>(
+  const controlWindowInitialPosition = useMemo(computeControlWindowDefaultPosition, []);
+  const layersWindowInitialPosition = useMemo(computeLayersWindowDefaultPosition, []);
+  const [trackWindowInitialPosition, setTrackWindowInitialPosition] = useState<WindowPosition>(
     () => computeTrackWindowDefaultPosition()
   );
-  const computeSelectedTracksWindowDefaultPosition = useCallback(() => {
-    if (typeof window === 'undefined') {
-      return { x: WINDOW_MARGIN, y: WINDOW_MARGIN };
-    }
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    const windowWidth = Math.min(SELECTED_TRACKS_WINDOW_WIDTH, viewportWidth - WINDOW_MARGIN * 2);
-    const x = Math.max(WINDOW_MARGIN, Math.round((viewportWidth - windowWidth) / 2));
-    const y = Math.max(
-      WINDOW_MARGIN,
-      viewportHeight - SELECTED_TRACKS_WINDOW_HEIGHT - WINDOW_MARGIN
-    );
-    return { x, y };
-  }, []);
-  const computePlotSettingsWindowDefaultPosition = useCallback(() => {
-    if (typeof window === 'undefined') {
-      return { x: WINDOW_MARGIN, y: WINDOW_MARGIN };
-    }
-
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    const windowWidth = Math.min(CONTROL_WINDOW_WIDTH, viewportWidth - WINDOW_MARGIN * 2);
-    const estimatedHeight = 260;
-    const x = Math.max(WINDOW_MARGIN, Math.round((viewportWidth - windowWidth) / 2));
-    const anchorY = viewportHeight - SELECTED_TRACKS_WINDOW_HEIGHT - WINDOW_MARGIN;
-    const y = Math.max(WINDOW_MARGIN, Math.round(anchorY - estimatedHeight - 16));
-    return { x, y };
-  }, []);
-  const [viewerSettingsWindowInitialPosition, setViewerSettingsWindowInitialPosition] = useState<{
-    x: number;
-    y: number;
-  }>(() => computeViewerSettingsWindowDefaultPosition());
-  const [selectedTracksWindowInitialPosition, setSelectedTracksWindowInitialPosition] = useState<{
-    x: number;
-    y: number;
-  }>(() => computeSelectedTracksWindowDefaultPosition());
-  const [plotSettingsWindowInitialPosition, setPlotSettingsWindowInitialPosition] = useState<{
-    x: number;
-    y: number;
-  }>(() => computePlotSettingsWindowDefaultPosition());
+  const [viewerSettingsWindowInitialPosition, setViewerSettingsWindowInitialPosition] = useState<WindowPosition>(
+    () => computeViewerSettingsWindowDefaultPosition()
+  );
+  const [selectedTracksWindowInitialPosition, setSelectedTracksWindowInitialPosition] = useState<WindowPosition>(
+    () => computeSelectedTracksWindowDefaultPosition()
+  );
+  const [plotSettingsWindowInitialPosition, setPlotSettingsWindowInitialPosition] = useState<WindowPosition>(
+    () => computePlotSettingsWindowDefaultPosition()
+  );
   const editingChannelOriginalNameRef = useRef('');
   const editingChannelInputRef = useRef<HTMLInputElement | null>(null);
   const pendingChannelFocusIdRef = useRef<string | null>(null);
@@ -531,12 +467,13 @@ function AppContent() {
   }, [setIsViewerLaunched]);
 
   const handleResetWindowLayout = useCallback(() => {
-    setLayoutResetToken((value) => value + 1);
+    setLayoutResetToken(nextLayoutResetToken);
     setTrackWindowInitialPosition(computeTrackWindowDefaultPosition());
     setViewerSettingsWindowInitialPosition(computeViewerSettingsWindowDefaultPosition());
     setSelectedTracksWindowInitialPosition(computeSelectedTracksWindowDefaultPosition());
     setPlotSettingsWindowInitialPosition(computePlotSettingsWindowDefaultPosition());
   }, [
+    nextLayoutResetToken,
     computeSelectedTracksWindowDefaultPosition,
     computePlotSettingsWindowDefaultPosition,
     computeViewerSettingsWindowDefaultPosition,
