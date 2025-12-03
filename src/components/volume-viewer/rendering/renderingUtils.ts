@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { NormalizedVolume } from '../../volumeProcessing';
+import type { NormalizedVolume } from '../../../volumeProcessing';
 
 export function disposeMaterial(material: THREE.Material | THREE.Material[] | null | undefined) {
   if (Array.isArray(material)) {

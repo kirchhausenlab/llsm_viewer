@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../../layerColors';
+import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../../../layerColors';
 
 export function createColormapTexture(hexColor: string) {
   const normalized = normalizeHexColor(hexColor, DEFAULT_LAYER_COLOR);
