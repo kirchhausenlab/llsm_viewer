@@ -1,4 +1,4 @@
-import { ensureArrayBuffer } from '../../utils/buffer';
+import { ensureArrayBuffer } from '../../shared/utils/buffer';
 
 const ZIP_MIME_TYPE = 'application/zip';
 

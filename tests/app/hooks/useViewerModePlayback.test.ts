@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { useViewerModePlayback } from '../../../src/app/hooks/useViewerModePlayback.ts';
+import { useViewerModePlayback } from '../../../src/ui/app/hooks/useViewerModePlayback.ts';
 import { renderHook } from '../../hooks/renderHook.ts';
 
 console.log('Starting useViewerModePlayback tests');

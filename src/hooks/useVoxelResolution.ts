@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 
-import { computeAnisotropyScale } from '../utils/anisotropyCorrection';
+import { computeAnisotropyScale } from '../shared/utils/anisotropyCorrection';
 import type { VoxelResolutionAxis, VoxelResolutionInput, VoxelResolutionUnit, VoxelResolutionValues } from '../types/voxelResolution';
 
 const DEFAULT_VOXEL_RESOLUTION: VoxelResolutionInput = {

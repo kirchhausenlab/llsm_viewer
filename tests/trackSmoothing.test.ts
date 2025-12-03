@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { applyGaussianAmplitudeSmoothing, smoothTrackPoints } from '../src/utils/trackSmoothing.ts';
+import { applyGaussianAmplitudeSmoothing, smoothTrackPoints } from '../src/shared/utils/trackSmoothing.ts';
 import type { TrackDefinition, TrackPoint } from '../src/types/tracks.ts';
 
 console.log('Starting track smoothing tests');

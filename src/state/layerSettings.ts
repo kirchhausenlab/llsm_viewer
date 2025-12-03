@@ -1,4 +1,4 @@
-import { DEFAULT_LAYER_COLOR } from '../layerColors';
+import { DEFAULT_LAYER_COLOR } from '../shared/colorMaps/layerColors';
 import {
   DEFAULT_BRIGHTNESS_CONTRAST_MODEL,
   DEFAULT_WINDOW_MAX,

@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Restructured the app into `src/core`, `src/shared`, and `src/ui`, moving processing/cache modules, shared helpers, and UI
+  components accordingly while updating imports/tests.
 - Centralized window layout defaults and reset handling into a dedicated `useWindowLayout` hook with coverage for layout
   resets.
 - Centralized dataset launch state into `useDatasetLaunch` and viewer mode playback wiring into `useViewerModePlayback`,

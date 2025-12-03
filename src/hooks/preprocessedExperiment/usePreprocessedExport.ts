@@ -1,12 +1,12 @@
 import { useCallback, useState } from 'react';
-import { downloadStream, sanitizeExportFileName } from '../../utils/downloads';
+import { downloadStream, sanitizeExportFileName } from '../../shared/utils/downloads';
 import {
   canUseFileSystemSavePicker,
   exportPreprocessedDatasetInWorker,
   requestFileSystemSaveHandle,
   type FileSystemFileHandleLike
 } from '../../workers/exportPreprocessedDatasetClient';
-import type { ChannelExportMetadata } from '../../utils/preprocessedDataset';
+import type { ChannelExportMetadata } from '../../shared/utils/preprocessedDataset';
 import type { LoadedLayer } from '../../types/layers';
 import type { ChannelSource, StagedPreprocessedExperiment } from '../useChannelSources';
 import type { ExperimentDimension } from '../useVoxelResolution';

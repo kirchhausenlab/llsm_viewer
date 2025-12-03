@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import useChannelEditing from '../../../src/app/hooks/useChannelEditing.ts';
+import useChannelEditing from '../../../src/ui/app/hooks/useChannelEditing.ts';
 import type { ChannelSource } from '../../../src/hooks/useChannelSources.ts';
 import { renderHook } from '../../hooks/renderHook.ts';
 

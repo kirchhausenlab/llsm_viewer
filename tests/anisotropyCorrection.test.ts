@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { computeAnisotropyScale, resampleVolume } from '../src/utils/anisotropyCorrection.ts';
+import { computeAnisotropyScale, resampleVolume } from '../src/shared/utils/anisotropyCorrection.ts';
 import type { VoxelResolutionValues } from '../src/types/voxelResolution.ts';
 import type { VolumePayload } from '../src/types/volume.ts';
 

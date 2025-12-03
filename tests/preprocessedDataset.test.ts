@@ -14,9 +14,9 @@ import {
   type ChannelExportMetadata,
   type PreprocessedMovieMode,
   type PreprocessedManifest
-} from '../src/utils/preprocessedDataset/index.ts';
+} from '../src/shared/utils/preprocessedDataset/index.ts';
 import type { LoadedLayer } from '../src/types/layers.ts';
-import type { NormalizedVolume } from '../src/volumeProcessing.ts';
+import type { NormalizedVolume } from '../src/core/volumeProcessing.ts';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();

@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 
-import { clampUiRayLength } from '../src/components/volume-viewer/vr/controllerHudInteractions.ts';
+import { clampUiRayLength } from '../src/ui/components/volume-viewer/vr/controllerHudInteractions.ts';
 import {
   computePitchRotation,
   computeYawRotation,
   createVolumeScaleState,
-} from '../src/components/volume-viewer/vr/controllerVolumeGestures.ts';
+} from '../src/ui/components/volume-viewer/vr/controllerVolumeGestures.ts';
 
 console.log('Starting VR input math tests');
 

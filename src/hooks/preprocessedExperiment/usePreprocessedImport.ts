@@ -6,7 +6,7 @@ import type {
   MutableRefObject,
   SetStateAction
 } from 'react';
-import { collectFilesFromDataTransfer } from '../../utils/appHelpers';
+import { collectFilesFromDataTransfer } from '../../shared/utils/appHelpers';
 import { importPreprocessedDatasetWithWorker } from '../../workers/importPreprocessedDatasetClient';
 import type { ChannelTrackState, FollowedTrackState } from '../../types/channelTracks';
 import type { ChannelSource, StagedPreprocessedExperiment } from '../useChannelSources';

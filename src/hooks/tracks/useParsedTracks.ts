@@ -2,7 +2,7 @@ import { useCallback, useMemo, type Dispatch, type SetStateAction } from 'react'
 import type { TrackDefinition, TrackPoint } from '../../types/tracks';
 import type { ExperimentDimension } from '../useVoxelResolution';
 import type { ChannelSource } from '../useChannelSources';
-import { collectFilesFromDataTransfer, parseTrackCsvFile } from '../../utils/appHelpers';
+import { collectFilesFromDataTransfer, parseTrackCsvFile } from '../../shared/utils/appHelpers';
 
 export type UseParsedTracksOptions = {
   channels: ChannelSource[];

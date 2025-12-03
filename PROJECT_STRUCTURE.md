@@ -36,8 +36,8 @@ The main responsibilities are:
 
 - Front-end UI for local/Dropbox uploads and preprocessed dataset import.
 - Volume loading via `src/loaders/volumeLoader.ts` → worker decoding → normalized volume data.
-- Preprocessing (`src/volumeProcessing.ts`) prepares GPU-friendly buffers, applies normalization, segmentation colorization, and anisotropy-related logic.
-- Processed volumes are cached in `src/textureCache.ts` for reuse.
+- Preprocessing (`src/core/volumeProcessing.ts`) prepares GPU-friendly buffers, applies normalization, segmentation colorization, and anisotropy-related logic.
+- Processed volumes are cached in `src/core/textureCache.ts` for reuse.
 
 **2. Visualization (2D + 3D)**
 
@@ -82,29 +82,29 @@ The main responsibilities are:
 
 ### App entrypoints (start reading here)
 
-- `src/main.tsx`
+- `src/ui/main.tsx`
   Bootstraps React, registers the export service worker, and renders `<App/>`.
-- `src/App.tsx`
+- `src/ui/App.tsx`
   Composes global providers, layout chrome, and the app router.
-- `src/app/providers.tsx`
+- `src/ui/app/providers.tsx`
   Wraps the tree in shared providers (e.g., `ChannelLayerStateProvider`).
-- `src/app/layout.tsx`
+- `src/ui/app/layout.tsx`
   Top-level layout/chrome wrapper that pulls in app-wide styles.
-- `src/app/router.tsx`
+- `src/ui/app/router.tsx`
   App state machine and routing: front-page dataset setup vs viewer shell, including playback, window layout, and VR lifecycle wiring.
 
 ---
 
-### UI + rendering (`src/components/`)
+### UI + rendering (`src/ui/components/`)
 
 **Setup / ingestion UI**
 
-- `FrontPage.tsx`, `ChannelCard.tsx`, `ChannelUploads.tsx`, `ChannelDropboxSection.tsx`  
+- `FrontPage.tsx`, `ChannelCard.tsx`, `ChannelUploads.tsx`, `ChannelDropboxSection.tsx`
   Channel configuration and dataset ingestion (local + Dropbox) + entry points for preprocessed import/export.
 
 **Viewer shell / panels / windows**
 
-- `ViewerShell.tsx`  
+- `ViewerShell.tsx`
   Main viewer layout; switches between 2D/3D viewer modes and hosts panels/windows.
 - `components/viewer-shell/*`  
   Panels (channels, playback, tracks, plot settings) + shell-level hooks.
@@ -113,7 +113,7 @@ The main responsibilities are:
 
 **2D viewer**
 
-- `PlanarViewer.tsx` + `components/planar-viewer/*`  
+- `PlanarViewer.tsx` + `components/planar-viewer/*`
   Canvas-based slice viewing + layout/interaction hooks/utilities.
 
 **3D viewer + VR**
@@ -158,9 +158,9 @@ The main responsibilities are:
   High-level API to load many TIFF/GeoTIFF volumes; delegates decoding to a worker and streams slices back.
 - `src/workers/volumeLoader.worker.ts` + `src/workers/volumeLoaderMessages.ts`  
   Worker implementation + typed message protocol.
-- `src/volumeProcessing.ts`  
+- `src/core/volumeProcessing.ts`
   Normalization into GPU-friendly formats + segmentation colorization/label handling.
-- `src/textureCache.ts`  
+- `src/core/textureCache.ts`
   Caches packed 3D texture buffers derived from normalized volumes (avoids repeated repacking).
 - `src/shaders/*`  
   Shader source modules (`volumeRenderShader.ts`, `sliceRenderShader.ts`).
@@ -169,11 +169,11 @@ The main responsibilities are:
 
 ### Export/import (“preprocessed dataset” ZIP)
 
-- `src/utils/preprocessedDataset/*`  
+- `src/shared/utils/preprocessedDataset/*`
   ZIP format + manifest/types, hashing, import/export implementations.
-- `src/workers/exportPreprocessedDataset*.ts` / `importPreprocessedDataset*.ts`  
+- `src/workers/exportPreprocessedDataset*.ts` / `importPreprocessedDataset*.ts`
   Worker-backed export/import with main-thread fallbacks.
-- `src/utils/downloads.ts` + `src/utils/exportServiceWorker.ts` + `public/export-sw.js`  
+- `src/shared/utils/downloads.ts` + `src/shared/utils/exportServiceWorker.ts` + `public/export-sw.js`
   Streaming export pipeline (File System Access API when available; service-worker download fallback otherwise).
 
 ---
@@ -182,11 +182,13 @@ The main responsibilities are:
 
 - `src/types/*`  
   Core TS types (volumes, layers, tracks, hover, voxel resolution, etc.).
-- `src/utils/*`  
+- `src/shared/utils/*`
   Pure helpers (drag/drop FS helpers, anisotropy correction/resampling, hover sampling, intensity formatting, window layout, track smoothing/summary, service-worker helpers).
-- `src/constants/*`  
+- `src/shared/constants/*`
   App limits/config (notably `volumeLimits.ts` reads `VITE_MAX_VOLUME_BYTES`).
-- `src/styles.css` + `src/styles/app/*` + component CSS files  
+- `src/shared/colorMaps/*`
+  Shared color palettes and normalization helpers for layers/tracks.
+- `src/styles.css` + `src/styles/app/*` + component CSS files
   Global + feature-specific styling.
 
 ---

@@ -4,7 +4,7 @@ import {
   importPreprocessedDataset,
   type ImportPreprocessedDatasetOptions,
   type ImportPreprocessedDatasetResult
-} from '../utils/preprocessedDataset';
+} from '../shared/utils/preprocessedDataset';
 
 type ImportWorkerRequest = {
   id: number;

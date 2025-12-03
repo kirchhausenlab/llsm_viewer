@@ -2,23 +2,23 @@ import { useCallback, useMemo, useRef, useState, type Dispatch, type MutableRefO
 import { fromBlob } from 'geotiff';
 import { VolumeTooLargeError, formatBytes } from '../errors';
 import { expandVolumesForMovieMode, loadVolumesFromFiles } from '../loaders/volumeLoader';
-import { clearTextureCache } from '../textureCache';
-import type { NormalizedVolume } from '../volumeProcessing';
+import { clearTextureCache } from '../core/textureCache';
+import type { NormalizedVolume } from '../core/volumeProcessing';
 import {
   colorizeSegmentationVolume,
   computeNormalizationParameters,
   normalizeVolume
-} from '../volumeProcessing';
+} from '../core/volumeProcessing';
 import type { ExperimentDimension } from './useVoxelResolution';
 import { computeAutoWindow } from '../autoContrast';
-import type { ImportPreprocessedDatasetResult } from '../utils/preprocessedDataset';
-import { resampleVolume } from '../utils/anisotropyCorrection';
-import { createSegmentationSeed, sortVolumeFiles } from '../utils/appHelpers';
+import type { ImportPreprocessedDatasetResult } from '../shared/utils/preprocessedDataset';
+import { resampleVolume } from '../shared/utils/anisotropyCorrection';
+import { createSegmentationSeed, sortVolumeFiles } from '../shared/utils/appHelpers';
 import {
   DEFAULT_LAYER_COLOR,
   GRAYSCALE_COLOR_SWATCHES,
   normalizeHexColor
-} from '../layerColors';
+} from '../shared/colorMaps/layerColors';
 import {
   brightnessContrastModel,
   clampWindowBounds,

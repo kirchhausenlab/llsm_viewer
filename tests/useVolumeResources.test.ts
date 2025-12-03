@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 
-import { useVolumeResources } from '../src/components/volume-viewer/useVolumeResources.ts';
-import type { NormalizedVolume } from '../src/volumeProcessing.ts';
-import type { VolumeResources } from '../src/components/VolumeViewer.types.ts';
+import { useVolumeResources } from '../src/ui/components/volume-viewer/useVolumeResources.ts';
+import type { NormalizedVolume } from '../src/core/volumeProcessing.ts';
+import type { VolumeResources } from '../src/ui/components/VolumeViewer.types.ts';
 import { renderHook } from './hooks/renderHook.ts';
 
 console.log('Starting useVolumeResources tests');

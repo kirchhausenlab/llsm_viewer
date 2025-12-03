@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 
-import type { HelpMenuControls } from '../../../src/app/hooks/useHelpMenu.ts';
-import { HelpMenu } from '../../../src/components/app/HelpMenu.tsx';
+import type { HelpMenuControls } from '../../../src/ui/app/hooks/useHelpMenu.ts';
+import { HelpMenu } from '../../../src/ui/components/app/HelpMenu.tsx';
 
 type EventListenerMap = Map<string, Set<EventListener>>;
 
