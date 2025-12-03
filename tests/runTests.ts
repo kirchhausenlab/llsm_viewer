@@ -7,3 +7,4 @@ import './trackSmoothing.test.ts';
 import './useVoxelResolution.test.ts';
 import './useViewerPlayback.test.ts';
 import './useDatasetErrors.test.ts';
+import './vrInputMath.test.ts';

@@ -51,6 +51,10 @@
 ## Volume viewer cleanup
 - Moved renderer/camera/scene initialization into a reusable helper to simplify viewer setup effects.
 - Extracted hover sampling math into a shared utility and isolated VR bridge wiring into its own component.
+- Split VR input handling into focused controller configuration, HUD interaction, and volume gesture modules, adding unit
+  coverage for yaw/pitch math and UI ray clamping helpers.
+- Restored VR controller select handling to call the existing channel/layer and track callbacks without stray targets so
+  typechecking passes and interactions match the pre-refactor behavior.
 
 ## Front page contract review
 - Documented the AppContent props and state that feed voxel resolution inputs, dataset error handling, preprocessing/import flows, and upload progress.
