@@ -135,6 +135,12 @@ The main responsibilities are:
   3D viewer helpers and bridges (loading overlays, tooltips, VR bridge wiring).
 - `components/volume-viewer/vr/*`
   WebXR session manager, input, HUD, placement/render/update utilities.
+- `components/volume-viewer/useVolumeResources.ts`
+  Builds/updates Three.js meshes/textures for volume layers, handles rebuild/cleanup when datasets or render contexts change.
+- `components/volume-viewer/useTrackRendering.ts`
+  Maintains track overlays for the 3D view (geometry/material lifecycle, hover state resolution, appearance updates).
+- `components/volume-viewer/usePlaybackControls.ts`
+  Playback state bridge for desktop/VR timelines (time index clamping, FPS clamping, HUD wiring helpers).
 
 ---
 
