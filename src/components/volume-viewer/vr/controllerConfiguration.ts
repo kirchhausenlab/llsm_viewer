@@ -506,9 +506,36 @@ export function createControllerEntryConfigurator(
         if (region.layerKey) {
           vrCallbacks?.onLayerSelect?.(region.layerKey);
         }
-      } else if (activeTarget?.type === 'channels-scroll' && activeTarget.data) {
+      } else if (activeTarget?.type === 'channels-render-style' && activeTarget.data) {
         const region = activeTarget.data as VrChannelsInteractiveRegion;
-        vrCallbacks?.onChannelsScroll?.(region.direction);
+        if (!region.disabled && region.layerKey) {
+          vrCallbacks?.onLayerRenderStyleToggle?.(region.layerKey);
+        }
+      } else if (activeTarget?.type === 'channels-sampling' && activeTarget.data) {
+        const region = activeTarget.data as VrChannelsInteractiveRegion;
+        if (!region.disabled && region.layerKey) {
+          vrCallbacks?.onLayerSamplingModeToggle?.(region.layerKey);
+        }
+      } else if (activeTarget?.type === 'channels-solo' && activeTarget.data) {
+        const region = activeTarget.data as VrChannelsInteractiveRegion;
+        if (!region.disabled && region.layerKey) {
+          vrCallbacks?.onLayerSoloToggle?.(region.layerKey);
+        }
+      } else if (activeTarget?.type === 'channels-invert' && activeTarget.data) {
+        const region = activeTarget.data as VrChannelsInteractiveRegion;
+        if (!region.disabled && region.layerKey) {
+          vrCallbacks?.onLayerInvertToggle?.(region.layerKey);
+        }
+      } else if (activeTarget?.type === 'channels-auto-contrast' && activeTarget.data) {
+        const region = activeTarget.data as VrChannelsInteractiveRegion;
+        if (!region.disabled && region.layerKey) {
+          vrCallbacks?.onLayerAutoContrast?.(region.layerKey);
+        }
+      } else if (activeTarget?.type === 'channels-color' && activeTarget.data) {
+        const region = activeTarget.data as VrChannelsInteractiveRegion;
+        if (!region.disabled && region.layerKey && region.color) {
+          vrCallbacks?.onLayerColorChange?.(region.layerKey, region.color);
+        }
       } else if (activeTarget?.type === 'tracks-panel-grab') {
         entry.hudGrabOffsets.tracks = null;
         entry.hudRotationState = null;
@@ -517,9 +544,41 @@ export function createControllerEntryConfigurator(
         activeTarget?.type === 'tracks-panel-pitch'
       ) {
         entry.hudRotationState = null;
-      } else if (activeTarget?.type === 'tracks-reset' && activeTarget.data) {
+      } else if (activeTarget?.type === 'tracks-tab' && activeTarget.data) {
         const region = activeTarget.data as VrTracksInteractiveRegion;
-        vrCallbacks?.onTracksReset?.(region.channelId);
+        vrCallbacks?.onTrackChannelSelect?.(region.channelId);
+      } else if (activeTarget?.type === 'tracks-stop-follow' && activeTarget.data) {
+        const region = activeTarget.data as VrTracksInteractiveRegion;
+        if (!region.disabled) {
+          vrCallbacks?.onStopTrackFollow?.(region.channelId);
+        }
+      } else if (activeTarget?.type === 'tracks-color' && activeTarget.data) {
+        const region = activeTarget.data as VrTracksInteractiveRegion;
+        if (!region.disabled && region.color) {
+          vrCallbacks?.onTrackColorSelect?.(region.channelId, region.color);
+        }
+      } else if (activeTarget?.type === 'tracks-color-mode' && activeTarget.data) {
+        const region = activeTarget.data as VrTracksInteractiveRegion;
+        if (!region.disabled) {
+          vrCallbacks?.onTrackColorReset?.(region.channelId);
+        }
+      } else if (activeTarget?.type === 'tracks-master-toggle' && activeTarget.data) {
+        const region = activeTarget.data as VrTracksInteractiveRegion;
+        if (!region.disabled) {
+          const channelState = vrTracksStateRef.current.channels.find(
+            (channel) => channel.id === region.channelId,
+          );
+          if (channelState) {
+            const trackCount = channelState.tracks.length;
+            const enableAll = trackCount > 0 && channelState.visibleTracks < trackCount;
+            vrCallbacks?.onTrackVisibilityAllChange?.(region.channelId, enableAll);
+          }
+        }
+      } else if (activeTarget?.type === 'tracks-toggle' && activeTarget.data) {
+        const region = activeTarget.data as VrTracksInteractiveRegion;
+        if (region.trackId) {
+          vrCallbacks?.onTrackVisibilityToggle?.(region.trackId);
+        }
       } else if (activeTarget?.type === 'tracks-slider' && activeTarget.data) {
         const region = activeTarget.data as VrTracksInteractiveRegion;
         if (!region.disabled && entry.hasHoverUiPoint) {
@@ -529,21 +588,6 @@ export function createControllerEntryConfigurator(
         const region = activeTarget.data as VrTracksInteractiveRegion;
         if (!region.disabled && entry.hasHoverUiPoint) {
           applyVrTracksScrollFromPointRef.current?.(region, entry.hoverUiPoint);
-        }
-      } else if (activeTarget?.type === 'tracks-tab' && activeTarget.data) {
-        const region = activeTarget.data as VrTracksInteractiveRegion;
-        if (region.channelId) {
-          vrCallbacks?.onTrackPanelSelect?.(region.channelId);
-        }
-      } else if (activeTarget?.type === 'tracks-track' && activeTarget.data) {
-        const region = activeTarget.data as VrTracksInteractiveRegion;
-        if (region.trackId) {
-          vrCallbacks?.onTrackSelect?.(region.trackId);
-        }
-      } else if (activeTarget?.type === 'tracks-track-toggle' && activeTarget.data) {
-        const region = activeTarget.data as VrTracksInteractiveRegion;
-        if (region.trackId) {
-          vrCallbacks?.onTrackVisibilityToggle?.(region.trackId);
         }
       } else if (activeTarget?.type === 'tracks-follow' && activeTarget.data) {
         const region = activeTarget.data as VrTracksInteractiveRegion;
