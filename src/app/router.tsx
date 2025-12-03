@@ -29,6 +29,7 @@ import { useDatasetSetup } from '../hooks/useDatasetSetup';
 import useTrackState from '../hooks/useTrackState';
 import { useChannelLayerStateContext } from '../hooks/useChannelLayerState';
 import { useViewerPlayback } from '../hooks/useViewerPlayback';
+import HelpMenu from '../components/app/HelpMenu';
 import useChannelEditing from './hooks/useChannelEditing';
 import { useDatasetLaunch } from './hooks/useDatasetLaunch';
 import { useViewerModePlayback } from './hooks/useViewerModePlayback';
@@ -141,13 +142,9 @@ function AppRouter() {
   const [maxSliceDepth, setMaxSliceDepth] = useState(0);
   const [layoutResetToken, setLayoutResetToken] = useState(0);
   const [hoveredVolumeVoxel, setHoveredVolumeVoxel] = useState<HoveredVoxelInfo | null>(null);
-  const [isHelpMenuOpen, setIsHelpMenuOpen] = useState(false);
   const playback = useViewerPlayback();
   const { selectedIndex, setSelectedIndex, isPlaying, fps, setFps, stopPlayback, setIsPlaying } = playback;
   const is3dViewerAvailable = experimentDimension === '3d';
-  const handleHelpMenuToggle = useCallback(() => {
-    setIsHelpMenuOpen((previous) => !previous);
-  }, []);
 
   const controlWindowInitialPosition = useMemo(computeControlWindowDefaultPosition, []);
   const layersWindowInitialPosition = useMemo(computeLayersWindowDefaultPosition, []);
@@ -163,7 +160,6 @@ function AppRouter() {
   const [plotSettingsWindowInitialPosition, setPlotSettingsWindowInitialPosition] = useState<WindowPosition>(
     () => computePlotSettingsWindowDefaultPosition()
   );
-  const helpMenuRef = useRef<HTMLDivElement | null>(null);
 
   const handlePreprocessedStateChange = useCallback(
     ({
@@ -348,43 +344,6 @@ function AppRouter() {
       handleVrButtonClick
     }
   } = viewerControls;
-
-  useEffect(() => {
-    if (!isViewerLaunched) {
-      setIsHelpMenuOpen(false);
-    }
-  }, [isViewerLaunched]);
-
-  useEffect(() => {
-    if (!isHelpMenuOpen) {
-      return;
-    }
-
-    const handleDocumentClick = (event: MouseEvent) => {
-      const container = helpMenuRef.current;
-      if (!container) {
-        return;
-      }
-
-      if (!container.contains(event.target as Node)) {
-        setIsHelpMenuOpen(false);
-      }
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setIsHelpMenuOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleDocumentClick);
-    document.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      document.removeEventListener('mousedown', handleDocumentClick);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isHelpMenuOpen]);
 
   useEffect(() => {
     if (datasetError && datasetErrorContext === 'launch') {
@@ -1317,7 +1276,10 @@ function AppRouter() {
     );
   }
 
-  const viewerShellContainerProps: ViewerShellContainerProps = {
+  const viewerShellContainerProps: Omit<
+    ViewerShellContainerProps,
+    'helpMenuRef' | 'isHelpMenuOpen' | 'onHelpMenuToggle'
+  > = {
     viewerMode,
     viewerLayers,
     isLoading,
@@ -1426,9 +1388,6 @@ function AppRouter() {
     onSliceIndexChange: handleSliceIndexChange,
     onReturnToLauncher: handleReturnToLauncher,
     onResetWindowLayout: handleResetWindowLayout,
-    helpMenuRef,
-    isHelpMenuOpen,
-    onHelpMenuToggle: handleHelpMenuToggle,
     onToggleViewerMode: toggleViewerMode,
     onVrButtonClick: handleVrButtonClick,
     vrButtonDisabled,
@@ -1453,7 +1412,11 @@ function AppRouter() {
     getLayerDefaultSettings: createLayerDefaultSettings
   };
 
-  return <ViewerShellContainer {...viewerShellContainerProps} />;
+  return (
+    <HelpMenu isViewerLaunched={isViewerLaunched}>
+      {(helpMenuProps) => <ViewerShellContainer {...viewerShellContainerProps} {...helpMenuProps} />}
+    </HelpMenu>
+  );
 }
 
 export default AppRouter;
