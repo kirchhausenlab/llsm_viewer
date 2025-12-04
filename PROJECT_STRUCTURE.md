@@ -91,7 +91,11 @@ The main responsibilities are:
 - `src/ui/app/layout.tsx`
   Top-level layout/chrome wrapper that pulls in app-wide styles.
 - `src/ui/app/router.tsx`
-  App state machine and routing: front-page dataset setup vs viewer shell, including playback, window layout, and VR lifecycle wiring.
+  High-level navigation and suspense boundary that chooses between dataset setup and viewer routes.
+- `src/ui/app/hooks/useAppRouteState.tsx`
+  Central app-state wiring for dataset setup + viewer routes; builds props for both `DatasetSetupRoute` and `ViewerRoute` while managing shared channel/layer lifecycle.
+- `src/ui/app/routes/*`
+  Route-level containers: `DatasetSetupRoute` wraps the front page, and `ViewerRoute` wraps the viewer shell/help menu.
 
 ---
 
