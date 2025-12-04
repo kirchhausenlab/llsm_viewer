@@ -702,7 +702,7 @@ function VolumeViewer({
     }
 
     const domElement = renderer.domElement;
-    const pointerTarget = domElement.parentElement ?? domElement;
+    const pointerTarget = domElement;
 
     const raycaster = new THREE.Raycaster();
     raycaster.params.Line = { threshold: 0.02 };
