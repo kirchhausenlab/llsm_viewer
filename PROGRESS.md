@@ -102,3 +102,4 @@
 
 ## Test maintenance
 - Updated volume viewer unit test imports to the relocated `components/viewers` paths after the UI restructuring.
+- Broke out hover sampling into `useVolumeHover`, added a renderless `TrackCameraPresenter` for follow-mode camera updates, and introduced `VolumeViewerVrAdapter` so `VolumeViewer` now orchestrates hover, camera, and VR pieces instead of inlining them.
