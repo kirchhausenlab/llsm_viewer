@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type * as THREE from 'three';
 import type { MutableRefObject } from 'react';
-import { useLoadingOverlay } from './useLoadingOverlay';
+import { useLoadingOverlay } from '../../../shared/hooks/useLoadingOverlay';
 import { useVolumeResources } from './useVolumeResources';
 import type { VolumeResources, VolumeViewerProps } from '../VolumeViewer.types';
 
