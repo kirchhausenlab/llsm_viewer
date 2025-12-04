@@ -128,6 +128,7 @@ export function useAppRouteState(): AppRouteState {
   const [activeChannelTabId, setActiveChannelTabId] = useState<string | null>(null);
   const [maxSliceDepth, setMaxSliceDepth] = useState(0);
   const [hoveredVolumeVoxel, setHoveredVolumeVoxel] = useState<HoveredVoxelInfo | null>(null);
+  const [lastHoveredVolumeVoxel, setLastHoveredVolumeVoxel] = useState<HoveredVoxelInfo | null>(null);
   const playback = useViewerPlayback();
   const { selectedIndex, setSelectedIndex, isPlaying, fps, setFps, stopPlayback, setIsPlaying } = playback;
   const is3dViewerAvailable = experimentDimension === '3d';
@@ -273,6 +274,18 @@ export function useAppRouteState(): AppRouteState {
     setFollowedTrack(null);
   }, [setFollowedTrack]);
 
+  const resetHoveredVoxel = useCallback(() => {
+    setHoveredVolumeVoxel(null);
+    setLastHoveredVolumeVoxel(null);
+  }, []);
+
+  const handleHoverVoxelChange = useCallback((value: HoveredVoxelInfo | null) => {
+    if (value) {
+      setLastHoveredVolumeVoxel(value);
+    }
+    setHoveredVolumeVoxel(value);
+  }, []);
+
   const {
     viewerControls,
     playbackDisabled,
@@ -291,9 +304,7 @@ export function useAppRouteState(): AppRouteState {
       setResetViewHandler(null);
       handleStopTrackFollow();
     },
-    onViewerModeChange: () => {
-      setHoveredVolumeVoxel(null);
-    },
+    onViewerModeChange: resetHoveredVoxel,
     volumeTimepointCount,
     isLoading
   });
@@ -875,7 +886,7 @@ export function useAppRouteState(): AppRouteState {
     amplitudeExtent,
     timeExtent,
     error,
-    hoveredVolumeVoxel,
+    hoveredVolumeVoxel: hoveredVolumeVoxel ?? lastHoveredVolumeVoxel,
     onTogglePlayback: handleTogglePlayback,
     onTimeIndexChange: handleTimeIndexChange,
     onFpsChange: setFps,
@@ -884,7 +895,7 @@ export function useAppRouteState(): AppRouteState {
     onRegisterReset: handleRegisterReset,
     onTrackSelectionToggle: handleTrackSelectionToggle,
     onTrackFollowRequest: handleTrackFollowFromViewer,
-    onHoverVoxelChange: setHoveredVolumeVoxel,
+    onHoverVoxelChange: handleHoverVoxelChange,
     onTrackChannelSelect: handleTrackChannelSelect,
     onTrackVisibilityToggle: handleTrackVisibilityToggle,
     onTrackVisibilityAllChange: handleTrackVisibilityAllChange,

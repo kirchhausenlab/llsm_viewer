@@ -124,3 +124,7 @@
 ## Hover sampling fixes
 - Adjusted planar hover handling to rely on the active canvas element from the pointer event, preventing stale refs from blocking pixel sampling.
 - Limited volume hover listeners to the WebGL canvas so pointer coordinates match the sampled surface, restoring voxel intensity readouts.
+
+## Hover readout persistence
+- Added persistent hover tracking in `useAppRouteState` so the last sampled voxel remains visible in the top menu instead of being cleared immediately.
+- Reset the stored hover value alongside viewer mode switches to avoid stale readouts when changing contexts.
