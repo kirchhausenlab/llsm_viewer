@@ -235,7 +235,7 @@ export function usePlanarInteractions({
         return;
       }
 
-      const canvas = canvasRef.current;
+      const canvas = (event.currentTarget as HTMLCanvasElement | null) ?? canvasRef.current;
       if (!canvas) {
         clearPixelInfo();
         return;
