@@ -113,11 +113,20 @@ export function useVolumeResources({
     const materialBlending = isAdditive ? THREE.AdditiveBlending : THREE.NormalBlending;
 
     resourcesRef.current.forEach((resource) => {
-      resource.mesh.material.blending = materialBlending;
+      const applyToMaterial = (material: THREE.Material) => {
+        material.blending = materialBlending;
 
-      const uniforms = (resource.mesh.material as THREE.ShaderMaterial | THREE.RawShaderMaterial).uniforms;
-      if (uniforms?.u_additive) {
-        uniforms.u_additive.value = isAdditive ? 1 : 0;
+        const uniforms = (material as THREE.ShaderMaterial | THREE.RawShaderMaterial).uniforms;
+        if (uniforms?.u_additive) {
+          uniforms.u_additive.value = isAdditive ? 1 : 0;
+        }
+      };
+
+      const { material } = resource.mesh;
+      if (Array.isArray(material)) {
+        material.forEach(applyToMaterial);
+      } else {
+        applyToMaterial(material);
       }
     });
 

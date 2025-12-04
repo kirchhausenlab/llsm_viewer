@@ -131,3 +131,6 @@
 ## Hover readout persistence
 - Added persistent hover tracking in `useAppRouteState` so the last sampled voxel remains visible in the top menu instead of being cleared immediately.
 - Reset the stored hover value alongside viewer mode switches to avoid stale readouts when changing contexts.
+
+## Additive blending fix
+- Guarded volume resource materials that may be arrays when applying additive blending so shader uniforms and blending modes update without type errors.
