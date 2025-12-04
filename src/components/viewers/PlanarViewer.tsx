@@ -280,7 +280,6 @@ function PlanarViewer({
     channelTrackOffsets,
     selectedTrackIds,
     followedTrackId,
-    orthogonalAnchor,
     orthogonalViewsEnabled,
     onTrackSelectionToggle,
     onHoverVoxelChange,

@@ -141,3 +141,7 @@
 - Updated planar track hit testing to use per-view projected points across XY, XZ, and ZY layouts, aligning selection distances with the rendered overlays.
 ## Viewer settings blending toggle
 - Preserved the current camera position and target across render context teardowns so toggling additive/alpha blending no longer resets the 3D view.
+
+## Planar track rendering regression
+- Restored the XY overlay to render full track projections instead of slice-clipped fragments, recovering the smoother, continuous appearance from the previous implementation while keeping orthogonal overlays slice-aware.
+- Updated orthogonal planar overlays to render full max projections rather than slice-aware fragments so XZ and ZY tracks match the restored XY behaviour.

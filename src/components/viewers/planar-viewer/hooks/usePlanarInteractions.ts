@@ -30,7 +30,6 @@ const TRACK_HIT_TEST_MIN_DISTANCE = 6;
 const DEFAULT_TRACK_LINE_WIDTH = 1;
 const FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER = 1.35;
 const SELECTED_TRACK_LINE_WIDTH_MULTIPLIER = 1.5;
-const TRACK_SLICE_PROJECTION_EPSILON = 0.6;
 
 type UsePlanarInteractionsParams = {
   canvasRef: MutableRefObject<HTMLCanvasElement | null>;
@@ -51,7 +50,6 @@ type UsePlanarInteractionsParams = {
   channelTrackOffsets: PlanarViewerProps['channelTrackOffsets'];
   selectedTrackIds: ReadonlySet<string>;
   followedTrackId: string | null;
-  orthogonalAnchor: { x: number; y: number } | null;
   orthogonalViewsEnabled: boolean;
   onTrackSelectionToggle: (trackId: string) => void;
   onHoverVoxelChange?: PlanarViewerProps['onHoverVoxelChange'];
@@ -80,56 +78,6 @@ function resolveTrackHexColor(track: TrackDefinition, channelModes: PlanarViewer
 
 type ScaledTrackPoint = { x: number; y: number; z: number };
 
-function projectTrackToPlane(
-  points: ScaledTrackPoint[],
-  planeAxis: keyof ScaledTrackPoint,
-  planeValue: number,
-  tolerance: number,
-  project: (point: ScaledTrackPoint) => { x: number; y: number }
-): { x: number; y: number }[] {
-  if (!Number.isFinite(planeValue)) {
-    return [];
-  }
-
-  const projected: { x: number; y: number }[] = [];
-  let last: { x: number; y: number } | null = null;
-
-  const pushPoint = (point: ScaledTrackPoint) => {
-    const next = project(point);
-    if (!last || Math.abs(last.x - next.x) > 1e-5 || Math.abs(last.y - next.y) > 1e-5) {
-      projected.push(next);
-      last = next;
-    }
-  };
-
-  for (let index = 0; index < points.length; index += 1) {
-    const current = points[index];
-    const currentDistance = current[planeAxis] - planeValue;
-    const currentWithin = Math.abs(currentDistance) <= tolerance;
-
-    if (index > 0) {
-      const previous = points[index - 1];
-      const previousDistance = previous[planeAxis] - planeValue;
-      const crossesPlane = previousDistance * currentDistance < 0;
-
-      if (crossesPlane) {
-        const t = clamp(previousDistance / (previousDistance - currentDistance), 0, 1);
-        pushPoint({
-          x: previous.x + (current.x - previous.x) * t,
-          y: previous.y + (current.y - previous.y) * t,
-          z: previous.z + (current.z - previous.z) * t
-        });
-      }
-    }
-
-    if (currentWithin) {
-      pushPoint(current);
-    }
-  }
-
-  return projected;
-}
-
 export function usePlanarInteractions({
   canvasRef,
   layout,
@@ -149,7 +97,6 @@ export function usePlanarInteractions({
   channelTrackOffsets,
   selectedTrackIds,
   followedTrackId,
-  orthogonalAnchor,
   orthogonalViewsEnabled,
   onTrackSelectionToggle,
   onHoverVoxelChange,
@@ -206,13 +153,7 @@ export function usePlanarInteractions({
       return [] as TrackRenderEntry[];
     }
 
-    const width = primaryVolume.width;
-    const height = primaryVolume.height;
-    const centerX = Math.max(0, width / 2 - 0.5);
-    const centerY = Math.max(0, height / 2 - 0.5);
     const maxVisibleTime = clampedTimeIndex;
-    const anchorX = orthogonalAnchor?.x ?? centerX;
-    const anchorY = orthogonalAnchor?.y ?? centerY;
 
     return tracks
       .map<TrackRenderEntry | null>((track) => {
@@ -243,32 +184,16 @@ export function usePlanarInteractions({
           return null;
         }
 
-        const xyPoints = projectTrackToPlane(
-          scaledPoints,
-          'z',
-          clampedSliceIndex,
-          TRACK_SLICE_PROJECTION_EPSILON,
-          (point) => ({ x: point.x, y: point.y })
-        );
+        // Render full projections of each track in every planar view so overlays stay smooth and
+        // consistent regardless of the current slice anchor.
+        const xyPoints = scaledPoints.map((point) => ({ x: point.x, y: point.y }));
 
         const xzPoints = orthogonalViewsEnabled
-          ? projectTrackToPlane(
-              scaledPoints,
-              'y',
-              anchorY,
-              TRACK_SLICE_PROJECTION_EPSILON,
-              (point) => ({ x: point.x, y: point.z })
-            )
+          ? scaledPoints.map((point) => ({ x: point.x, y: point.z }))
           : [];
 
         const zyPoints = orthogonalViewsEnabled
-          ? projectTrackToPlane(
-              scaledPoints,
-              'x',
-              anchorX,
-              TRACK_SLICE_PROJECTION_EPSILON,
-              (point) => ({ x: point.z, y: point.y })
-            )
+          ? scaledPoints.map((point) => ({ x: point.z, y: point.y }))
           : [];
 
         if (xyPoints.length === 0 && xzPoints.length === 0 && zyPoints.length === 0) {
@@ -291,9 +216,7 @@ export function usePlanarInteractions({
   }, [
     channelTrackColorModes,
     channelTrackOffsets,
-    clampedSliceIndex,
     clampedTimeIndex,
-    orthogonalAnchor,
     orthogonalViewsEnabled,
     primaryVolume,
     trackScale.x,
