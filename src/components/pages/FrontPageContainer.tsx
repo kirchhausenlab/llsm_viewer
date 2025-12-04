@@ -183,80 +183,119 @@ export default function FrontPageContainer({
     frontPageMode === 'preprocessed' ? preprocessedState.preprocessedExperiment !== null : canLaunch;
   const launchButtonLaunchable = launchButtonEnabled ? 'true' : 'false';
 
+  const headerProps = {
+    onReturnToStart,
+    isFrontPageLocked
+  };
+
+  const initialActions = {
+    isFrontPageLocked,
+    onStartExperimentSetup,
+    onOpenPreprocessedLoader: preprocessedState.handlePreprocessedLoaderOpen,
+    isPreprocessedImporting: preprocessedState.isPreprocessedImporting,
+    preprocessedDropboxImporting: preprocessedState.preprocessedDropboxImporting
+  };
+
+  const experimentConfigurationProps = {
+    experimentDimension,
+    onExperimentDimensionChange: handleExperimentDimensionChange,
+    voxelResolution: voxelResolutionInput,
+    onVoxelResolutionAxisChange: handleVoxelResolutionAxisChange,
+    onVoxelResolutionUnitChange: handleVoxelResolutionUnitChange,
+    onVoxelResolutionAnisotropyToggle: handleVoxelResolutionAnisotropyToggle
+  };
+
+  const preprocessedLoaderProps = {
+    isOpen: preprocessedState.isPreprocessedLoaderOpen,
+    isPreprocessedDragActive: preprocessedState.isPreprocessedDragActive,
+    onPreprocessedDragEnter: preprocessedState.handlePreprocessedDragEnter,
+    onPreprocessedDragLeave: preprocessedState.handlePreprocessedDragLeave,
+    onPreprocessedDragOver: preprocessedState.handlePreprocessedDragOver,
+    onPreprocessedDrop: preprocessedState.handlePreprocessedDrop,
+    preprocessedFileInputRef: preprocessedState.preprocessedFileInputRef,
+    onPreprocessedFileInputChange: preprocessedState.handlePreprocessedFileInputChange,
+    isPreprocessedImporting: preprocessedState.isPreprocessedImporting,
+    preprocessedImportBytesProcessed: preprocessedState.preprocessedImportBytesProcessed,
+    preprocessedImportTotalBytes: preprocessedState.preprocessedImportTotalBytes,
+    preprocessedImportVolumesDecoded: preprocessedState.preprocessedImportVolumesDecoded,
+    preprocessedImportTotalVolumeCount: preprocessedState.preprocessedImportTotalVolumeCount,
+    preprocessedDropboxImporting: preprocessedState.preprocessedDropboxImporting,
+    onPreprocessedBrowse: preprocessedState.handlePreprocessedBrowse,
+    onPreprocessedDropboxImport: preprocessedState.handlePreprocessedDropboxImport,
+    preprocessedImportError: preprocessedState.preprocessedImportError,
+    preprocessedDropboxError: preprocessedState.preprocessedDropboxError,
+    preprocessedDropboxInfo: preprocessedState.preprocessedDropboxInfo,
+    isPreprocessedDropboxConfigOpen: preprocessedState.isPreprocessedDropboxConfigOpen,
+    onPreprocessedDropboxConfigSubmit: preprocessedState.handlePreprocessedDropboxConfigSubmit,
+    preprocessedDropboxAppKeyInput: preprocessedState.preprocessedDropboxAppKeyInput,
+    onPreprocessedDropboxConfigInputChange: preprocessedState.handlePreprocessedDropboxConfigInputChange,
+    preprocessedDropboxAppKeySource: preprocessedState.preprocessedDropboxAppKeySource as DropboxAppKeySource | null,
+    onPreprocessedDropboxConfigCancel: preprocessedState.handlePreprocessedDropboxConfigCancel,
+    onPreprocessedDropboxConfigClear: preprocessedState.handlePreprocessedDropboxConfigClear
+  };
+
+  const channelListPanelProps = {
+    channels,
+    channelValidationMap,
+    activeChannelId,
+    activeChannel,
+    editingChannelId,
+    editingChannelInputRef,
+    editingChannelOriginalNameRef,
+    setActiveChannelId,
+    setEditingChannelId,
+    onAddChannel,
+    onChannelNameChange,
+    onRemoveChannel,
+    onChannelLayerFilesAdded,
+    onChannelLayerDrop,
+    onChannelLayerSegmentationToggle,
+    onChannelLayerRemove,
+    onChannelTrackFileSelected,
+    onChannelTrackDrop,
+    onChannelTrackClear,
+    isFrontPageLocked
+  };
+
+  const preprocessedSummaryProps = {
+    preprocessedExperiment: preprocessedState.preprocessedExperiment,
+    computeTrackSummary
+  };
+
+  const launchActionsProps = {
+    frontPageMode,
+    hasGlobalTimepointMismatch,
+    interactionErrorMessage,
+    launchErrorMessage,
+    onLaunchViewer,
+    isLaunchingViewer,
+    launchButtonEnabled,
+    launchButtonLaunchable,
+    onExportPreprocessedExperiment: preprocessedState.handleExportPreprocessedExperiment,
+    isExportingPreprocessed: preprocessedState.isExportingPreprocessed,
+    canLaunch
+  };
+
+  const warningsWindowProps = {
+    launchErrorMessage,
+    warningWindowInitialPosition,
+    warningWindowWidth,
+    datasetErrorResetSignal,
+    onDatasetErrorDismiss: clearDatasetError
+  };
+
   return (
     <FrontPage
       isFrontPageLocked={isFrontPageLocked}
       frontPageMode={frontPageMode}
-      channels={channels}
-      activeChannelId={activeChannelId}
-      activeChannel={activeChannel}
-      channelValidationMap={channelValidationMap}
-      editingChannelId={editingChannelId}
-      editingChannelInputRef={editingChannelInputRef}
-      editingChannelOriginalNameRef={editingChannelOriginalNameRef}
-      setActiveChannelId={setActiveChannelId}
-      setEditingChannelId={setEditingChannelId}
-      onStartExperimentSetup={onStartExperimentSetup}
-      onAddChannel={onAddChannel}
-      onOpenPreprocessedLoader={preprocessedState.handlePreprocessedLoaderOpen}
-      onReturnToStart={onReturnToStart}
-      experimentDimension={experimentDimension}
-      onExperimentDimensionChange={handleExperimentDimensionChange}
-      voxelResolution={voxelResolutionInput}
-      onVoxelResolutionAxisChange={handleVoxelResolutionAxisChange}
-      onVoxelResolutionUnitChange={handleVoxelResolutionUnitChange}
-      onVoxelResolutionAnisotropyToggle={handleVoxelResolutionAnisotropyToggle}
-      isPreprocessedLoaderOpen={preprocessedState.isPreprocessedLoaderOpen}
-      isPreprocessedDragActive={preprocessedState.isPreprocessedDragActive}
-      onPreprocessedDragEnter={preprocessedState.handlePreprocessedDragEnter}
-      onPreprocessedDragLeave={preprocessedState.handlePreprocessedDragLeave}
-      onPreprocessedDragOver={preprocessedState.handlePreprocessedDragOver}
-      onPreprocessedDrop={preprocessedState.handlePreprocessedDrop}
-      preprocessedFileInputRef={preprocessedState.preprocessedFileInputRef}
-      onPreprocessedFileInputChange={preprocessedState.handlePreprocessedFileInputChange}
-      isPreprocessedImporting={preprocessedState.isPreprocessedImporting}
-      preprocessedImportBytesProcessed={preprocessedState.preprocessedImportBytesProcessed}
-      preprocessedImportTotalBytes={preprocessedState.preprocessedImportTotalBytes}
-      preprocessedImportVolumesDecoded={preprocessedState.preprocessedImportVolumesDecoded}
-      preprocessedImportTotalVolumeCount={preprocessedState.preprocessedImportTotalVolumeCount}
-      preprocessedDropboxImporting={preprocessedState.preprocessedDropboxImporting}
-      onPreprocessedBrowse={preprocessedState.handlePreprocessedBrowse}
-      onPreprocessedDropboxImport={preprocessedState.handlePreprocessedDropboxImport}
-      preprocessedImportError={preprocessedState.preprocessedImportError}
-      preprocessedDropboxError={preprocessedState.preprocessedDropboxError}
-      preprocessedDropboxInfo={preprocessedState.preprocessedDropboxInfo}
-      isPreprocessedDropboxConfigOpen={preprocessedState.isPreprocessedDropboxConfigOpen}
-      onPreprocessedDropboxConfigSubmit={preprocessedState.handlePreprocessedDropboxConfigSubmit}
-      preprocessedDropboxAppKeyInput={preprocessedState.preprocessedDropboxAppKeyInput}
-      onPreprocessedDropboxConfigInputChange={preprocessedState.handlePreprocessedDropboxConfigInputChange}
-      preprocessedDropboxAppKeySource={preprocessedState.preprocessedDropboxAppKeySource as DropboxAppKeySource | null}
-      onPreprocessedDropboxConfigCancel={preprocessedState.handlePreprocessedDropboxConfigCancel}
-      onPreprocessedDropboxConfigClear={preprocessedState.handlePreprocessedDropboxConfigClear}
-      onChannelNameChange={onChannelNameChange}
-      onRemoveChannel={onRemoveChannel}
-      onChannelLayerFilesAdded={onChannelLayerFilesAdded}
-      onChannelLayerDrop={onChannelLayerDrop}
-      onChannelLayerSegmentationToggle={onChannelLayerSegmentationToggle}
-      onChannelLayerRemove={onChannelLayerRemove}
-      onChannelTrackFileSelected={onChannelTrackFileSelected}
-      onChannelTrackDrop={onChannelTrackDrop}
-      onChannelTrackClear={onChannelTrackClear}
-      preprocessedExperiment={preprocessedState.preprocessedExperiment}
-      computeTrackSummary={computeTrackSummary}
-      hasGlobalTimepointMismatch={hasGlobalTimepointMismatch}
-      interactionErrorMessage={interactionErrorMessage}
-      launchErrorMessage={launchErrorMessage}
-      onLaunchViewer={onLaunchViewer}
-      isLaunchingViewer={isLaunchingViewer}
-      launchButtonEnabled={launchButtonEnabled}
-      launchButtonLaunchable={launchButtonLaunchable}
-      onExportPreprocessedExperiment={preprocessedState.handleExportPreprocessedExperiment}
-      isExportingPreprocessed={preprocessedState.isExportingPreprocessed}
-      canLaunch={canLaunch}
-      warningWindowInitialPosition={warningWindowInitialPosition}
-      warningWindowWidth={warningWindowWidth}
-      datasetErrorResetSignal={datasetErrorResetSignal}
-      onDatasetErrorDismiss={clearDatasetError}
+      header={headerProps}
+      initialActions={initialActions}
+      experimentConfiguration={experimentConfigurationProps}
+      preprocessedLoader={preprocessedLoaderProps}
+      channelListPanel={channelListPanelProps}
+      preprocessedSummary={preprocessedSummaryProps}
+      launchActions={launchActionsProps}
+      warningsWindow={warningsWindowProps}
     />
   );
 }
