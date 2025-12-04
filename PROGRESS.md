@@ -108,6 +108,8 @@
 - Added `useAppRouteState` to centralize dataset setup and viewer state wiring, exposing route-specific props for reuse.
 - Introduced `DatasetSetupRoute` and `ViewerRoute` wrappers so `AppRouter` now only handles navigation and suspense boundaries.
 
+## Front page modularization
+- Split the landing screen into focused components for the header, experiment configuration, preprocessed loader, channel tabs, launch actions, and warning window, passing grouped props to reduce the monolithic prop list.
 ## useAppRouteState cleanup
 - Extracted layer interaction and viewer-layer memoization into a dedicated `useLayerControls` hook to slim down the route wiring and group related handlers.
 - Removed unused imports from `useAppRouteState` after the extraction to keep the hook surface focused on the state it owns.
