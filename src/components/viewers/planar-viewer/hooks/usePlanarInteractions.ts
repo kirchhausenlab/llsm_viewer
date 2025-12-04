@@ -447,30 +447,39 @@ export function usePlanarInteractions({
       }
 
       const currentView = viewStateRef.current;
-        const scale = currentView.scale;
-        const rotation = currentView.rotation;
-        const cos = Math.cos(rotation);
-        const sin = Math.sin(rotation);
-        const centerX = width / 2 + currentView.offsetX;
-        const centerY = height / 2 + currentView.offsetY;
-        const originX = -layout.blockWidth / 2;
-        const originY = -layout.blockHeight / 2;
-        const xyOriginX = layout.xy.originX;
-        const xyOriginY = layout.xy.originY;
+      const scale = currentView.scale;
+      const rotation = currentView.rotation;
+      const cos = Math.cos(rotation);
+      const sin = Math.sin(rotation);
+      const centerX = width / 2 + currentView.offsetX;
+      const centerY = height / 2 + currentView.offsetY;
+      const originX = -layout.blockWidth / 2;
+      const originY = -layout.blockHeight / 2;
+      const xyOriginX = layout.xy.originX;
+      const xyOriginY = layout.xy.originY;
+      const xzOriginX = layout.xz ? layout.xz.originX : null;
+      const xzOriginY = layout.xz ? layout.xz.originY : null;
+      const zyOriginX = layout.zy ? layout.zy.originX : null;
+      const zyOriginY = layout.zy ? layout.zy.originY : null;
 
       let closestTrackId: string | null = null;
       let closestDistance = Infinity;
 
-        const computeScreenPosition = (pointX: number, pointY: number) => {
-          const blockX = originX + xyOriginX + pointX;
-          const blockY = originY + xyOriginY + pointY;
-          const rotatedX = blockX * cos - blockY * sin;
-          const rotatedY = blockX * sin + blockY * cos;
-          return {
-            x: centerX + rotatedX * scale,
-            y: centerY + rotatedY * scale
-          };
+      const computeScreenPosition = (
+        pointX: number,
+        pointY: number,
+        viewOriginX: number,
+        viewOriginY: number
+      ) => {
+        const blockX = originX + viewOriginX + pointX;
+        const blockY = originY + viewOriginY + pointY;
+        const rotatedX = blockX * cos - blockY * sin;
+        const rotatedY = blockX * sin + blockY * cos;
+        return {
+          x: centerX + rotatedX * scale,
+          y: centerY + rotatedY * scale
         };
+      };
 
       const distanceToSegment = (
         px: number,
@@ -501,30 +510,47 @@ export function usePlanarInteractions({
         }
 
         let minDistanceForTrack = Infinity;
-        let previousPoint: { x: number; y: number } | null = null;
 
-        for (const point of track.points) {
-          const screenPoint = computeScreenPosition(point.x, point.y);
-          const pointDistance = Math.hypot(screenPoint.x - pointerX, screenPoint.y - pointerY);
-          if (pointDistance < minDistanceForTrack) {
-            minDistanceForTrack = pointDistance;
-          }
+        const measurePoints = (
+          points: { x: number; y: number }[],
+          viewOriginX: number,
+          viewOriginY: number
+        ) => {
+          let previousPoint: { x: number; y: number } | null = null;
 
-          if (previousPoint) {
-            const segmentDistance = distanceToSegment(
-              pointerX,
-              pointerY,
-              previousPoint.x,
-              previousPoint.y,
-              screenPoint.x,
-              screenPoint.y
-            );
-            if (segmentDistance < minDistanceForTrack) {
-              minDistanceForTrack = segmentDistance;
+          for (const point of points) {
+            const screenPoint = computeScreenPosition(point.x, point.y, viewOriginX, viewOriginY);
+            const pointDistance = Math.hypot(screenPoint.x - pointerX, screenPoint.y - pointerY);
+            if (pointDistance < minDistanceForTrack) {
+              minDistanceForTrack = pointDistance;
             }
-          }
 
-          previousPoint = screenPoint;
+            if (previousPoint) {
+              const segmentDistance = distanceToSegment(
+                pointerX,
+                pointerY,
+                previousPoint.x,
+                previousPoint.y,
+                screenPoint.x,
+                screenPoint.y
+              );
+              if (segmentDistance < minDistanceForTrack) {
+                minDistanceForTrack = segmentDistance;
+              }
+            }
+
+            previousPoint = screenPoint;
+          }
+        };
+
+        if (track.xyPoints.length > 0) {
+          measurePoints(track.xyPoints, xyOriginX, xyOriginY);
+        }
+        if (layout.xz && track.xzPoints.length > 0 && xzOriginX !== null && xzOriginY !== null) {
+          measurePoints(track.xzPoints, xzOriginX, xzOriginY);
+        }
+        if (layout.zy && track.zyPoints.length > 0 && zyOriginX !== null && zyOriginY !== null) {
+          measurePoints(track.zyPoints, zyOriginX, zyOriginY);
         }
 
         if (!isFinite(minDistanceForTrack)) {

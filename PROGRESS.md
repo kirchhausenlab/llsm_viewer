@@ -136,3 +136,6 @@
 
 ## Additive blending fix
 - Guarded volume resource materials that may be arrays when applying additive blending so shader uniforms and blending modes update without type errors.
+
+## Planar track hit testing
+- Updated planar track hit testing to use per-view projected points across XY, XZ, and ZY layouts, aligning selection distances with the rendered overlays.
