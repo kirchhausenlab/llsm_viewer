@@ -79,6 +79,7 @@ export function useVolumeResources({
   applyHoverHighlightToResources,
 }: UseVolumeResourcesParams) {
   const resourcesRef = providedResourcesRef ?? useRef<Map<string, VolumeResources>>(new Map());
+  const additiveBlendingRef = useRef(isAdditiveBlending);
   const currentDimensionsRef =
     providedCurrentDimensionsRef ??
     useRef<{ width: number; height: number; depth: number } | null>(null);
@@ -106,6 +107,36 @@ export function useVolumeResources({
     }
     return texture;
   }, []);
+
+  const applyAdditiveBlendingToResources = useCallback(() => {
+    const isAdditive = additiveBlendingRef.current;
+    const materialBlending = isAdditive ? THREE.AdditiveBlending : THREE.NormalBlending;
+
+    resourcesRef.current.forEach((resource) => {
+      const applyToMaterial = (material: THREE.Material) => {
+        material.blending = materialBlending;
+
+        const uniforms = (material as THREE.ShaderMaterial | THREE.RawShaderMaterial).uniforms;
+        if (uniforms?.u_additive) {
+          uniforms.u_additive.value = isAdditive ? 1 : 0;
+        }
+      };
+
+      const { material } = resource.mesh;
+      if (Array.isArray(material)) {
+        material.forEach(applyToMaterial);
+      } else {
+        applyToMaterial(material);
+      }
+    });
+
+    applyHoverHighlightToResources();
+  }, [applyHoverHighlightToResources, resourcesRef]);
+
+  useEffect(() => {
+    additiveBlendingRef.current = isAdditiveBlending;
+    applyAdditiveBlendingToResources();
+  }, [applyAdditiveBlendingToResources, isAdditiveBlending]);
 
   useEffect(() => {
     const removeResource = (key: string) => {
@@ -207,7 +238,9 @@ export function useVolumeResources({
     }
 
     const seenKeys = new Set<string>();
-    const materialBlending = isAdditiveBlending ? THREE.AdditiveBlending : THREE.NormalBlending;
+    const materialBlending = additiveBlendingRef.current
+      ? THREE.AdditiveBlending
+      : THREE.NormalBlending;
 
     layers.forEach((layer, index) => {
       const volume = layer.volume;
@@ -571,7 +604,6 @@ export function useVolumeResources({
     layers,
     renderContextRevision,
     applyHoverHighlightToResources,
-    isAdditiveBlending,
     applyVolumeRootTransform,
     primaryVolume,
     cameraRef,

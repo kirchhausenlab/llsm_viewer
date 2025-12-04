@@ -1,6 +1,9 @@
 # Progress
 
 ## Latest changes
+- Ensured 2D slices render pixel-perfect with a visible hover indicator, fixed viewer setting labels/visibility (orthogonal
+  toggle in 2D, renamed rendering controls, widened trilinear quality range), and prevented the additive/alpha toggle from
+  resetting the 3D camera view.
 - Centralized loading overlay normalization into a shared hook for Planar and Volume viewers, removing duplicate calculations
   and keeping overlay displays consistent.
 - Extracted shared viewer styles (layout, headers, overlays, tooltips, loading panels) into `viewerCommon.css` so Planar and
@@ -128,3 +131,6 @@
 ## Hover readout persistence
 - Added persistent hover tracking in `useAppRouteState` so the last sampled voxel remains visible in the top menu instead of being cleared immediately.
 - Reset the stored hover value alongside viewer mode switches to avoid stale readouts when changing contexts.
+
+## Additive blending fix
+- Guarded volume resource materials that may be arrays when applying additive blending so shader uniforms and blending modes update without type errors.

@@ -252,7 +252,7 @@ export default function PlaybackControlsPanel({
                       disabled={!hasVolumeData || viewerMode !== '3d'}
                       aria-pressed={renderStyle === 1}
                     >
-                      Debug view
+                      Rendering
                     </button>
                     <button
                       type="button"
@@ -279,12 +279,12 @@ export default function PlaybackControlsPanel({
               {showRenderingQualityControl ? (
                 <div className="control-group control-group--slider">
                   <label htmlFor="volume-steps-slider">
-                    Volume samples <span>{renderingQuality}</span>
+                    Trilinear quality <span>{renderingQuality}</span>
                   </label>
                   <input
                     id="volume-steps-slider"
                     type="range"
-                    min={1}
+                    min={0.1}
                     max={3}
                     step={0.1}
                     value={renderingQuality}
@@ -293,7 +293,7 @@ export default function PlaybackControlsPanel({
                 </div>
               ) : null}
 
-              {viewerMode === '3d' ? (
+              {viewerMode === '2d' ? (
                 <div className="control-group">
                   <div className="viewer-mode-row viewer-mode-row--orthogonal">
                     <span className="viewer-mode-label">Orthogonal views</span>
