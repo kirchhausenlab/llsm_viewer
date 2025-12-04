@@ -30,6 +30,7 @@ const TRACK_HIT_TEST_MIN_DISTANCE = 6;
 const DEFAULT_TRACK_LINE_WIDTH = 1;
 const FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER = 1.35;
 const SELECTED_TRACK_LINE_WIDTH_MULTIPLIER = 1.5;
+const TRACK_SLICE_PROJECTION_EPSILON = 0.6;
 
 type UsePlanarInteractionsParams = {
   canvasRef: MutableRefObject<HTMLCanvasElement | null>;
@@ -50,6 +51,8 @@ type UsePlanarInteractionsParams = {
   channelTrackOffsets: PlanarViewerProps['channelTrackOffsets'];
   selectedTrackIds: ReadonlySet<string>;
   followedTrackId: string | null;
+  orthogonalAnchor: { x: number; y: number } | null;
+  orthogonalViewsEnabled: boolean;
   onTrackSelectionToggle: (trackId: string) => void;
   onHoverVoxelChange?: PlanarViewerProps['onHoverVoxelChange'];
   clampedTimeIndex: number;
@@ -75,6 +78,58 @@ function resolveTrackHexColor(track: TrackDefinition, channelModes: PlanarViewer
   return getTrackColorHex(track.id);
 }
 
+type ScaledTrackPoint = { x: number; y: number; z: number };
+
+function projectTrackToPlane(
+  points: ScaledTrackPoint[],
+  planeAxis: keyof ScaledTrackPoint,
+  planeValue: number,
+  tolerance: number,
+  project: (point: ScaledTrackPoint) => { x: number; y: number }
+): { x: number; y: number }[] {
+  if (!Number.isFinite(planeValue)) {
+    return [];
+  }
+
+  const projected: { x: number; y: number }[] = [];
+  let last: { x: number; y: number } | null = null;
+
+  const pushPoint = (point: ScaledTrackPoint) => {
+    const next = project(point);
+    if (!last || Math.abs(last.x - next.x) > 1e-5 || Math.abs(last.y - next.y) > 1e-5) {
+      projected.push(next);
+      last = next;
+    }
+  };
+
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index];
+    const currentDistance = current[planeAxis] - planeValue;
+    const currentWithin = Math.abs(currentDistance) <= tolerance;
+
+    if (index > 0) {
+      const previous = points[index - 1];
+      const previousDistance = previous[planeAxis] - planeValue;
+      const crossesPlane = previousDistance * currentDistance < 0;
+
+      if (crossesPlane) {
+        const t = clamp(previousDistance / (previousDistance - currentDistance), 0, 1);
+        pushPoint({
+          x: previous.x + (current.x - previous.x) * t,
+          y: previous.y + (current.y - previous.y) * t,
+          z: previous.z + (current.z - previous.z) * t
+        });
+      }
+    }
+
+    if (currentWithin) {
+      pushPoint(current);
+    }
+  }
+
+  return projected;
+}
+
 export function usePlanarInteractions({
   canvasRef,
   layout,
@@ -94,6 +149,8 @@ export function usePlanarInteractions({
   channelTrackOffsets,
   selectedTrackIds,
   followedTrackId,
+  orthogonalAnchor,
+  orthogonalViewsEnabled,
   onTrackSelectionToggle,
   onHoverVoxelChange,
   clampedTimeIndex,
@@ -151,10 +208,11 @@ export function usePlanarInteractions({
 
     const width = primaryVolume.width;
     const height = primaryVolume.height;
-    const centerX = width / 2 - 0.5;
-    const centerY = height / 2 - 0.5;
-    const centerZ = primaryVolume.depth > 0 ? primaryVolume.depth / 2 - 0.5 : 0;
+    const centerX = Math.max(0, width / 2 - 0.5);
+    const centerY = Math.max(0, height / 2 - 0.5);
     const maxVisibleTime = clampedTimeIndex;
+    const anchorX = orthogonalAnchor?.x ?? centerX;
+    const anchorY = orthogonalAnchor?.y ?? centerY;
 
     return tracks
       .map<TrackRenderEntry | null>((track) => {
@@ -168,20 +226,52 @@ export function usePlanarInteractions({
         const baseColor = getColorComponents(resolveTrackHexColor(track, channelTrackColorModes));
         const highlightColor = mixWithWhite(baseColor, TRACK_HIGHLIGHT_BOOST);
 
-        const visiblePoints: { x: number; y: number; z: number }[] = [];
+        const scaledPoints: ScaledTrackPoint[] = [];
         for (const point of track.points) {
           if (point.time - maxVisibleTime > TRACK_EPSILON) {
             break;
           }
           const resolvedZ = Number.isFinite(point.z) ? point.z : 0;
-          visiblePoints.push({
-            x: point.x * trackScale.x + scaledOffsetX - centerX,
-            y: point.y * trackScale.y + scaledOffsetY - centerY,
-            z: resolvedZ * trackScale.z - centerZ
+          scaledPoints.push({
+            x: point.x * trackScale.x + scaledOffsetX,
+            y: point.y * trackScale.y + scaledOffsetY,
+            z: resolvedZ * trackScale.z
           });
         }
 
-        if (visiblePoints.length === 0) {
+        if (scaledPoints.length === 0) {
+          return null;
+        }
+
+        const xyPoints = projectTrackToPlane(
+          scaledPoints,
+          'z',
+          clampedSliceIndex,
+          TRACK_SLICE_PROJECTION_EPSILON,
+          (point) => ({ x: point.x, y: point.y })
+        );
+
+        const xzPoints = orthogonalViewsEnabled
+          ? projectTrackToPlane(
+              scaledPoints,
+              'y',
+              anchorY,
+              TRACK_SLICE_PROJECTION_EPSILON,
+              (point) => ({ x: point.x, y: point.z })
+            )
+          : [];
+
+        const zyPoints = orthogonalViewsEnabled
+          ? projectTrackToPlane(
+              scaledPoints,
+              'x',
+              anchorX,
+              TRACK_SLICE_PROJECTION_EPSILON,
+              (point) => ({ x: point.z, y: point.y })
+            )
+          : [];
+
+        if (xyPoints.length === 0 && xzPoints.length === 0 && zyPoints.length === 0) {
           return null;
         }
 
@@ -190,7 +280,9 @@ export function usePlanarInteractions({
           channelId: track.channelId,
           channelName: track.channelName,
           trackNumber: track.trackNumber,
-          points: visiblePoints,
+          xyPoints,
+          xzPoints,
+          zyPoints,
           baseColor,
           highlightColor
         };
@@ -199,7 +291,10 @@ export function usePlanarInteractions({
   }, [
     channelTrackColorModes,
     channelTrackOffsets,
+    clampedSliceIndex,
     clampedTimeIndex,
+    orthogonalAnchor,
+    orthogonalViewsEnabled,
     primaryVolume,
     trackScale.x,
     trackScale.y,
@@ -352,32 +447,30 @@ export function usePlanarInteractions({
       }
 
       const currentView = viewStateRef.current;
-      const scale = currentView.scale;
-      const rotation = currentView.rotation;
-      const cos = Math.cos(rotation);
-      const sin = Math.sin(rotation);
-      const centerX = width / 2 + currentView.offsetX;
-      const centerY = height / 2 + currentView.offsetY;
-      const halfBlockWidth = layout.blockWidth / 2;
-      const halfBlockHeight = layout.blockHeight / 2;
-      const xyCenterX = layout.xy.centerX;
-      const xyCenterY = layout.xy.centerY;
+        const scale = currentView.scale;
+        const rotation = currentView.rotation;
+        const cos = Math.cos(rotation);
+        const sin = Math.sin(rotation);
+        const centerX = width / 2 + currentView.offsetX;
+        const centerY = height / 2 + currentView.offsetY;
+        const originX = -layout.blockWidth / 2;
+        const originY = -layout.blockHeight / 2;
+        const xyOriginX = layout.xy.originX;
+        const xyOriginY = layout.xy.originY;
 
       let closestTrackId: string | null = null;
       let closestDistance = Infinity;
 
-      const computeScreenPosition = (pointX: number, pointY: number) => {
-        const blockX = xyCenterX + pointX;
-        const blockY = xyCenterY + pointY;
-        const relX = blockX - halfBlockWidth;
-        const relY = blockY - halfBlockHeight;
-        const rotatedX = relX * cos - relY * sin;
-        const rotatedY = relX * sin + relY * cos;
-        return {
-          x: centerX + rotatedX * scale,
-          y: centerY + rotatedY * scale
+        const computeScreenPosition = (pointX: number, pointY: number) => {
+          const blockX = originX + xyOriginX + pointX;
+          const blockY = originY + xyOriginY + pointY;
+          const rotatedX = blockX * cos - blockY * sin;
+          const rotatedY = blockX * sin + blockY * cos;
+          return {
+            x: centerX + rotatedX * scale,
+            y: centerY + rotatedY * scale
+          };
         };
-      };
 
       const distanceToSegment = (
         px: number,

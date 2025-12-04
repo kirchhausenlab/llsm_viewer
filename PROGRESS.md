@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Fixed planar track rendering so XY slices only draw points near the current slice, added projected overlays in XZ/ZY views,
+  and updated hit testing/drawing to use per-view coordinates.
 - Ensured 2D slices render pixel-perfect with a visible hover indicator, fixed viewer setting labels/visibility (orthogonal
   toggle in 2D, renamed rendering controls, widened trilinear quality range), and prevented the additive/alpha toggle from
   resetting the 3D camera view.

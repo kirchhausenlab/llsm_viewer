@@ -280,6 +280,8 @@ function PlanarViewer({
     channelTrackOffsets,
     selectedTrackIds,
     followedTrackId,
+    orthogonalAnchor,
+    orthogonalViewsEnabled,
     onTrackSelectionToggle,
     onHoverVoxelChange,
     clampedTimeIndex,
@@ -338,6 +340,9 @@ function PlanarViewer({
     const xyCenterY = originY + layout.xy.centerY;
 
     context.drawImage(xyCanvas, originX + layout.xy.originX, originY + layout.xy.originY);
+
+    const xyOriginX = originX + layout.xy.originX;
+    const xyOriginY = originY + layout.xy.originY;
 
     if (layout.zy && zyCanvas) {
       const zyCenterX = originX + layout.zy.centerX;
@@ -413,46 +418,23 @@ function PlanarViewer({
         const fillAlpha = Math.min(1, strokeAlpha * 0.9);
         const highlightColor = mixWithWhite(track.baseColor, 0.4);
         const strokeColor = isSelected ? highlightColor : track.baseColor;
-        context.save();
-        context.globalAlpha = strokeAlpha;
-        context.lineWidth = lineWidth;
-        context.lineCap = 'round';
-        context.lineJoin = 'round';
-        context.strokeStyle = componentsToCss(strokeColor);
-        context.beginPath();
 
-        track.points.forEach((point, index) => {
-          const x = xyCenterX + point.x;
-          const y = xyCenterY + point.y;
-          if (index === 0) {
-            context.moveTo(x, y);
-          } else {
-            context.lineTo(x, y);
+        const drawTrack = (points: { x: number; y: number }[], offsetX: number, offsetY: number) => {
+          if (points.length === 0) {
+            return;
           }
-        });
-        context.stroke();
 
-        const endpointRadius = Math.max(lineWidth * 0.6, OUTLINE_MIN_WIDTH) / dprScale;
-        context.fillStyle = componentsToCss(track.highlightColor);
-        context.globalAlpha = fillAlpha;
-        for (const point of track.points) {
-          const x = xyCenterX + point.x;
-          const y = xyCenterY + point.y;
-          context.beginPath();
-          context.arc(x, y, endpointRadius, 0, Math.PI * 2);
-          context.fill();
-        }
-
-        context.restore();
-
-        if (lineWidth / dprScale < 1.25) {
           context.save();
-          context.lineWidth = Math.max(OUTLINE_MIN_WIDTH, lineWidth * 1.4);
-          context.strokeStyle = `rgba(0, 0, 0, ${OUTLINE_OPACITY})`;
+          context.globalAlpha = strokeAlpha;
+          context.lineWidth = lineWidth;
+          context.lineCap = 'round';
+          context.lineJoin = 'round';
+          context.strokeStyle = componentsToCss(strokeColor);
           context.beginPath();
-          track.points.forEach((point, index) => {
-            const x = xyCenterX + point.x;
-            const y = xyCenterY + point.y;
+
+          points.forEach((point, index) => {
+            const x = offsetX + point.x;
+            const y = offsetY + point.y;
             if (index === 0) {
               context.moveTo(x, y);
             } else {
@@ -460,7 +442,51 @@ function PlanarViewer({
             }
           });
           context.stroke();
+
+          const endpointRadius = Math.max(lineWidth * 0.6, OUTLINE_MIN_WIDTH) / dprScale;
+          context.fillStyle = componentsToCss(track.highlightColor);
+          context.globalAlpha = fillAlpha;
+          for (const point of points) {
+            const x = offsetX + point.x;
+            const y = offsetY + point.y;
+            context.beginPath();
+            context.arc(x, y, endpointRadius, 0, Math.PI * 2);
+            context.fill();
+          }
+
           context.restore();
+
+          if (lineWidth / dprScale < 1.25) {
+            context.save();
+            context.lineWidth = Math.max(OUTLINE_MIN_WIDTH, lineWidth * 1.4);
+            context.strokeStyle = `rgba(0, 0, 0, ${OUTLINE_OPACITY})`;
+            context.beginPath();
+            points.forEach((point, index) => {
+              const x = offsetX + point.x;
+              const y = offsetY + point.y;
+              if (index === 0) {
+                context.moveTo(x, y);
+              } else {
+                context.lineTo(x, y);
+              }
+            });
+            context.stroke();
+            context.restore();
+          }
+        };
+
+        drawTrack(track.xyPoints, xyOriginX, xyOriginY);
+
+        if (layout.xz) {
+          const xzOriginX = originX + layout.xz.originX;
+          const xzOriginY = originY + layout.xz.originY;
+          drawTrack(track.xzPoints, xzOriginX, xzOriginY);
+        }
+
+        if (layout.zy) {
+          const zyOriginX = originX + layout.zy.originX;
+          const zyOriginY = originY + layout.zy.originY;
+          drawTrack(track.zyPoints, zyOriginX, zyOriginY);
         }
       }
     }

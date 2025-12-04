@@ -60,7 +60,9 @@ export type TrackRenderEntry = {
   channelId: string;
   channelName: string;
   trackNumber: number;
-  points: { x: number; y: number; z: number }[];
+  xyPoints: { x: number; y: number }[];
+  xzPoints: { x: number; y: number }[];
+  zyPoints: { x: number; y: number }[];
   baseColor: { r: number; g: number; b: number };
   highlightColor: { r: number; g: number; b: number };
 };
