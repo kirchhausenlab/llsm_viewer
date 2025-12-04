@@ -134,3 +134,6 @@
 
 ## Additive blending fix
 - Guarded volume resource materials that may be arrays when applying additive blending so shader uniforms and blending modes update without type errors.
+
+## Viewer settings blending toggle
+- Preserved the current camera position and target across render context teardowns so toggling additive/alpha blending no longer resets the 3D view.
