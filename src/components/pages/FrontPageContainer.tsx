@@ -181,7 +181,7 @@ export default function FrontPageContainer({
 
   const launchButtonEnabled =
     frontPageMode === 'preprocessed' ? preprocessedState.preprocessedExperiment !== null : canLaunch;
-  const launchButtonLaunchable = launchButtonEnabled ? 'true' : 'false';
+  const launchButtonLaunchable: 'true' | 'false' = launchButtonEnabled ? 'true' : 'false';
 
   const headerProps = {
     onReturnToStart,
@@ -254,6 +254,7 @@ export default function FrontPageContainer({
     onChannelTrackFileSelected,
     onChannelTrackDrop,
     onChannelTrackClear,
+    experimentDimension,
     isFrontPageLocked
   };
 
@@ -267,6 +268,7 @@ export default function FrontPageContainer({
     hasGlobalTimepointMismatch,
     interactionErrorMessage,
     launchErrorMessage,
+    showLaunchViewerButton: frontPageMode !== 'initial' || preprocessedState.isPreprocessedLoaderOpen,
     onLaunchViewer,
     isLaunchingViewer,
     launchButtonEnabled,

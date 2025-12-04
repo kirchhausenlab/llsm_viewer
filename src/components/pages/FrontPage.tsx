@@ -155,6 +155,7 @@ export default function FrontPage({
               onChannelTrackFileSelected={channelListPanel.onChannelTrackFileSelected}
               onChannelTrackDrop={channelListPanel.onChannelTrackDrop}
               onChannelTrackClear={channelListPanel.onChannelTrackClear}
+              experimentDimension={channelListPanel.experimentDimension}
               isFrontPageLocked={channelListPanel.isFrontPageLocked}
             />
           ) : null}

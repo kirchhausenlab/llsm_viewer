@@ -6,6 +6,7 @@ import type {
 } from 'react';
 import ChannelCard from './ChannelCard';
 import type { ChannelSource, ChannelValidation } from '../../hooks/dataset';
+import type { ExperimentDimension } from '../../hooks/useVoxelResolution';
 
 const getChannelLayerSummary = (channel: ChannelSource): string => {
   if (channel.layers.length === 0) {
@@ -58,6 +59,7 @@ type ChannelListPanelProps = {
   onChannelTrackFileSelected: (channelId: string, file: File | null) => void;
   onChannelTrackDrop: (channelId: string, dataTransfer: DataTransfer) => void;
   onChannelTrackClear: (channelId: string) => void;
+  experimentDimension: ExperimentDimension;
   isFrontPageLocked: boolean;
 };
 
@@ -81,6 +83,7 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
   onChannelTrackFileSelected,
   onChannelTrackDrop,
   onChannelTrackClear,
+  experimentDimension,
   isFrontPageLocked
 }) => {
   return (
@@ -231,7 +234,8 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
             key={activeChannel.id}
             channel={activeChannel}
             validation={channelValidationMap.get(activeChannel.id) ?? { errors: [], warnings: [] }}
-            isFrontPageLocked={isFrontPageLocked}
+            isDisabled={isFrontPageLocked}
+            experimentDimension={experimentDimension}
             onLayerFilesAdded={onChannelLayerFilesAdded}
             onLayerDrop={onChannelLayerDrop}
             onLayerSegmentationToggle={onChannelLayerSegmentationToggle}
