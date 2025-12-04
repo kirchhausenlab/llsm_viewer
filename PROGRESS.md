@@ -139,3 +139,5 @@
 
 ## Planar track hit testing
 - Updated planar track hit testing to use per-view projected points across XY, XZ, and ZY layouts, aligning selection distances with the rendered overlays.
+## Viewer settings blending toggle
+- Preserved the current camera position and target across render context teardowns so toggling additive/alpha blending no longer resets the 3D view.

@@ -181,6 +181,10 @@ function VolumeViewer({
   });
 
   const isAdditiveBlending = blendingMode === 'additive';
+  const preservedViewStateRef = useRef<{
+    position: THREE.Vector3;
+    target: THREE.Vector3;
+  } | null>(null);
 
   useEffect(() => {
     layersRef.current = layers;
@@ -588,6 +592,14 @@ function VolumeViewer({
 
     const { renderer, scene, camera, controls } = renderContext;
 
+    const preservedViewState = preservedViewStateRef.current;
+    if (preservedViewState) {
+      camera.position.copy(preservedViewState.position);
+      controls.target.copy(preservedViewState.target);
+      rotationTargetRef.current.copy(preservedViewState.target);
+      controls.update();
+    }
+
     const volumeRootGroup = new THREE.Group();
     volumeRootGroup.name = 'VolumeRoot';
     scene.add(volumeRootGroup);
@@ -837,6 +849,11 @@ function VolumeViewer({
 
       restoreVrFoveation();
       applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
+
+      preservedViewStateRef.current = {
+        position: camera.position.clone(),
+        target: controls.target.clone(),
+      };
       renderer.setAnimationLoop(null);
 
       const activeSession = xrSessionRef.current;
