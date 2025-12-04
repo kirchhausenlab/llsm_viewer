@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Fixed planar track rendering so XY slices only draw points near the current slice, added projected overlays in XZ/ZY views,
+  and updated hit testing/drawing to use per-view coordinates.
 - Ensured 2D slices render pixel-perfect with a visible hover indicator, fixed viewer setting labels/visibility (orthogonal
   toggle in 2D, renamed rendering controls, widened trilinear quality range), and prevented the additive/alpha toggle from
   resetting the 3D camera view.
@@ -135,5 +137,7 @@
 ## Additive blending fix
 - Guarded volume resource materials that may be arrays when applying additive blending so shader uniforms and blending modes update without type errors.
 
+## Planar track hit testing
+- Updated planar track hit testing to use per-view projected points across XY, XZ, and ZY layouts, aligning selection distances with the rendered overlays.
 ## Viewer settings blending toggle
 - Preserved the current camera position and target across render context teardowns so toggling additive/alpha blending no longer resets the 3D view.
