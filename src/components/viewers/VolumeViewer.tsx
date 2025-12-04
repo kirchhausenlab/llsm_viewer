@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import * as THREE from 'three';
+import './viewerCommon.css';
 import './VolumeViewer.css';
 import type {
   TrackLineResource,

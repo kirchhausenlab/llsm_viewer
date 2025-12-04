@@ -4,6 +4,7 @@ import { usePlanarLayout } from './planar-viewer/hooks/usePlanarLayout';
 import { usePlanarSlices } from './planar-viewer/hooks/usePlanarSlices';
 import { usePlanarInteractions } from './planar-viewer/hooks/usePlanarInteractions';
 import { componentsToCss, clamp, mixWithWhite } from './planar-viewer/utils';
+import './viewerCommon.css';
 import './PlanarViewer.css';
 
 const OUTLINE_OPACITY = 0.75;

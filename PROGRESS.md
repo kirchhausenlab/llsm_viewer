@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Extracted shared viewer styles (layout, headers, overlays, tooltips, loading panels) into `viewerCommon.css` so Planar and
+  Volume viewers only keep their unique rules.
 - Added a shared layer settings updater to centralize brightness/contrast/window change handling and reduce duplication in the
   app router callbacks.
 - Reorganized hooks under `src/hooks` into `dataset/`, `viewer/`, and `tracks/` subfolders, moving related hooks and adding
@@ -113,3 +115,6 @@
 ## useAppRouteState cleanup
 - Extracted layer interaction and viewer-layer memoization into a dedicated `useLayerControls` hook to slim down the route wiring and group related handlers.
 - Removed unused imports from `useAppRouteState` after the extraction to keep the hook surface focused on the state it owns.
+
+## Front page typing fixes
+- Added the missing `experimentDimension` and launch visibility props to the channel list and launch actions wiring so the front page passes the full contract expected by `ChannelCard` and `LaunchActions` without type errors.
