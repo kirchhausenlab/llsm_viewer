@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Extracted shared viewer styles (layout, headers, overlays, tooltips, loading panels) into `viewerCommon.css` so Planar and
+  Volume viewers only keep their unique rules.
 - Added a shared layer settings updater to centralize brightness/contrast/window change handling and reduce duplication in the
   app router callbacks.
 - Reorganized hooks under `src/hooks` into `dataset/`, `viewer/`, and `tracks/` subfolders, moving related hooks and adding
