@@ -313,6 +313,7 @@ function PlanarViewer({
 
     context.setTransform(dpr, 0, 0, dpr, 0, 0);
     context.clearRect(0, 0, width, height);
+    context.imageSmoothingEnabled = false;
 
     if (!layout.xy || !xyCanvas || layout.blockWidth <= 0 || layout.blockHeight <= 0) {
       return;
@@ -369,6 +370,16 @@ function PlanarViewer({
     }
 
     const dprScale = Math.max(viewScale, 1e-6);
+
+    if (hoveredPixel && layout.xy) {
+      const hoverX = originX + layout.xy.originX + hoveredPixel.x;
+      const hoverY = originY + layout.xy.originY + hoveredPixel.y;
+      context.save();
+      context.lineWidth = Math.max(1 / dprScale, OUTLINE_MIN_WIDTH);
+      context.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      context.strokeRect(hoverX - 0.5, hoverY - 0.5, 1, 1);
+      context.restore();
+    }
 
     if (trackRenderData.length > 0) {
       const blinkPhase = ((performance.now() % SELECTED_TRACK_BLINK_PERIOD_MS) / SELECTED_TRACK_BLINK_PERIOD_MS) * Math.PI * 2;
@@ -466,6 +477,7 @@ function PlanarViewer({
     trackLineWidthByChannel,
     trackOpacityByChannel,
     trackRenderData,
+    hoveredPixel,
     trackVisibility,
     viewState.offsetX,
     viewState.offsetY,
