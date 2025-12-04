@@ -103,3 +103,7 @@
 ## Test maintenance
 - Updated volume viewer unit test imports to the relocated `components/viewers` paths after the UI restructuring.
 - Broke out hover sampling into `useVolumeHover`, added a renderless `TrackCameraPresenter` for follow-mode camera updates, and introduced `VolumeViewerVrAdapter` so `VolumeViewer` now orchestrates hover, camera, and VR pieces instead of inlining them.
+
+## Router refactor
+- Added `useAppRouteState` to centralize dataset setup and viewer state wiring, exposing route-specific props for reuse.
+- Introduced `DatasetSetupRoute` and `ViewerRoute` wrappers so `AppRouter` now only handles navigation and suspense boundaries.
