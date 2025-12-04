@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Centralized loading overlay normalization into a shared hook for Planar and Volume viewers, removing duplicate calculations
+  and keeping overlay displays consistent.
 - Extracted shared viewer styles (layout, headers, overlays, tooltips, loading panels) into `viewerCommon.css` so Planar and
   Volume viewers only keep their unique rules.
 - Added a shared layer settings updater to centralize brightness/contrast/window change handling and reduce duplication in the

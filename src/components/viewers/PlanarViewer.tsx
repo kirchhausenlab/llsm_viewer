@@ -3,6 +3,7 @@ import type { HoveredPixel, PlanarViewerProps, SliceData } from './planar-viewer
 import { usePlanarLayout } from './planar-viewer/hooks/usePlanarLayout';
 import { usePlanarSlices } from './planar-viewer/hooks/usePlanarSlices';
 import { usePlanarInteractions } from './planar-viewer/hooks/usePlanarInteractions';
+import { useLoadingOverlay } from '../../shared/hooks/useLoadingOverlay';
 import { componentsToCss, clamp, mixWithWhite } from './planar-viewer/utils';
 import './viewerCommon.css';
 import './PlanarViewer.css';
@@ -108,17 +109,12 @@ function PlanarViewer({
   const trackScaleY = trackScale.y ?? 1;
   const trackScaleZ = trackScale.z ?? 1;
 
-  const safeProgress = clamp(loadingProgress, 0, 1);
-  const clampedLoadedVolumes = Math.max(0, loadedVolumes);
-  const clampedExpectedVolumes = Math.max(0, expectedVolumes);
-  const normalizedProgress =
-    clampedExpectedVolumes > 0
-      ? Math.min(1, clampedLoadedVolumes / clampedExpectedVolumes)
-      : safeProgress;
-  const hasStartedLoading = normalizedProgress > 0 || clampedLoadedVolumes > 0 || safeProgress > 0;
-  const hasFinishedLoading =
-    clampedExpectedVolumes > 0 ? clampedLoadedVolumes >= clampedExpectedVolumes : safeProgress >= 1;
-  const showLoadingOverlay = isLoading || (hasStartedLoading && !hasFinishedLoading);
+  const { showLoadingOverlay, clampedExpectedVolumes, clampedLoadedVolumes } = useLoadingOverlay({
+    isLoading,
+    loadingProgress,
+    loadedVolumes,
+    expectedVolumes,
+  });
   const clampedTimeIndex = totalTimepoints === 0 ? 0 : Math.min(timeIndex, Math.max(0, totalTimepoints - 1));
 
   const primaryVolume = useMemo(() => {
