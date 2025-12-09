@@ -145,6 +145,8 @@ export type VolumeViewerProps = {
   vr?: VolumeViewerVrProps;
 };
 
+export type { FollowedVoxelTarget };
+
 export type VolumeResources = {
   mesh: THREE.Mesh;
   texture: THREE.Data3DTexture | THREE.DataTexture;

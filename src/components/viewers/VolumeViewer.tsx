@@ -847,7 +847,7 @@ function VolumeViewer({
       endPointerLook(event);
     };
 
-    const handleDoubleClick = (event: PointerEvent) => {
+    const handleDoubleClick = (event: MouseEvent) => {
       updateVoxelHover(event);
 
       if (followedTrackIdRef.current !== null) {
