@@ -10,8 +10,14 @@ const MOVEMENT_KEY_MAP: Record<string, keyof MovementState> = {
   KeyS: 'moveBackward',
   KeyA: 'moveLeft',
   KeyD: 'moveRight',
-  KeyE: 'moveUp',
-  KeyQ: 'moveDown'
+  Space: 'moveUp',
+  ControlLeft: 'moveDown',
+  ControlRight: 'moveDown'
+};
+
+const ROLL_KEY_MAP: Record<string, keyof MovementState> = {
+  KeyQ: 'rollLeft',
+  KeyE: 'rollRight'
 };
 
 type PointerLookHandlers = {
@@ -45,6 +51,8 @@ export function useCameraControls({
     moveRight: false,
     moveUp: false,
     moveDown: false,
+    rollLeft: false,
+    rollRight: false,
   });
   const endPointerLookRef = useRef<(event?: PointerEvent) => void>(() => {});
 
@@ -83,6 +91,10 @@ export function useCameraControls({
   const horizontalForwardRef = useRef(new THREE.Vector3());
   const rightVectorRef = useRef(new THREE.Vector3());
   const movementVectorRef = useRef(new THREE.Vector3());
+  const rollAxisRef = useRef(new THREE.Vector3());
+  const rollQuaternionRef = useRef(new THREE.Quaternion());
+
+  const ROLL_SPEED = 0.02;
 
   const applyKeyboardMovement = useCallback(
     (renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera, controls: OrbitControls) => {
@@ -101,7 +113,9 @@ export function useCameraControls({
           !movementState.moveLeft &&
           !movementState.moveRight &&
           !movementState.moveUp &&
-          !movementState.moveDown)
+          !movementState.moveDown &&
+          !movementState.rollLeft &&
+          !movementState.rollRight)
       ) {
         return;
       }
@@ -151,6 +165,15 @@ export function useCameraControls({
         movementVector.addScaledVector(worldUp, -movementScale);
       }
 
+      const rollInput = (movementState.rollLeft ? 1 : 0) - (movementState.rollRight ? 1 : 0);
+      if (rollInput !== 0) {
+        const rollAxis = rollAxisRef.current.copy(forwardVector).normalize();
+        const rollQuaternion = rollQuaternionRef.current;
+        rollQuaternion.setFromAxisAngle(rollAxis, rollInput * ROLL_SPEED);
+        camera.applyQuaternion(rollQuaternion);
+        camera.up.applyQuaternion(rollQuaternion);
+      }
+
       if (movementVector.lengthSq() === 0) {
         return;
       }
@@ -169,6 +192,7 @@ export function useCameraControls({
         activePointerId: null as number | null,
         yaw: 0,
         pitch: 0,
+        roll: 0,
         lastClientX: 0,
         lastClientY: 0,
       };
@@ -190,6 +214,7 @@ export function useCameraControls({
         cameraEuler.setFromQuaternion(camera.quaternion, 'YXZ');
         pointerLookState.yaw = cameraEuler.y;
         pointerLookState.pitch = cameraEuler.x;
+        pointerLookState.roll = cameraEuler.z;
 
         domElement.setPointerCapture(event.pointerId);
       };
@@ -208,7 +233,7 @@ export function useCameraControls({
         pointerLookState.pitch -= deltaY * LOOK_SENSITIVITY;
         pointerLookState.pitch = THREE.MathUtils.clamp(pointerLookState.pitch, -MAX_LOOK_PITCH, MAX_LOOK_PITCH);
 
-        cameraEuler.set(pointerLookState.pitch, pointerLookState.yaw, 0, 'YXZ');
+        cameraEuler.set(pointerLookState.pitch, pointerLookState.yaw, pointerLookState.roll, 'YXZ');
         camera.quaternion.setFromEuler(cameraEuler);
 
         const targetDistance = Math.max(camera.position.distanceTo(rotationTargetRef.current), 0.0001);
@@ -253,8 +278,9 @@ export function useCameraControls({
 
   useEffect(() => {
     const handleKeyChange = (event: KeyboardEvent, isPressed: boolean) => {
-      const mappedKey = MOVEMENT_KEY_MAP[event.code];
-      if (!mappedKey) {
+      const movementKey = MOVEMENT_KEY_MAP[event.code];
+      const rollKey = ROLL_KEY_MAP[event.code];
+      if (!movementKey && !rollKey) {
         return;
       }
 
@@ -278,7 +304,12 @@ export function useCameraControls({
         return;
       }
 
-      movementState[mappedKey] = isPressed;
+      if (movementKey) {
+        movementState[movementKey] = isPressed;
+      }
+      if (rollKey) {
+        movementState[rollKey] = isPressed;
+      }
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -303,6 +334,8 @@ export function useCameraControls({
         movementState.moveRight = false;
         movementState.moveUp = false;
         movementState.moveDown = false;
+        movementState.rollLeft = false;
+        movementState.rollRight = false;
       }
     };
   }, [followedTrackIdRef]);

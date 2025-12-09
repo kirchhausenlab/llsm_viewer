@@ -54,7 +54,8 @@ export default function TopMenu({
                 <div className="viewer-top-menu-popover-section">
                   <h4>3D volume view</h4>
                   <ul>
-                    <li>Use WASDQE to move forward, back, strafe, and rise or descend.</li>
+                    <li>Use WASD with Space/Ctrl to move forward, back, strafe, and rise or descend.</li>
+                    <li>Press Q/E to roll the camera counterclockwise/clockwise.</li>
                     <li>Drag to orbit the dataset.</li>
                     <li>
                       Click a track line to select and highlight it. Use the Follow button in the Tracks window to follow that

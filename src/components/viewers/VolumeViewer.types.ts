@@ -169,6 +169,8 @@ export type MovementState = {
   moveRight: boolean;
   moveUp: boolean;
   moveDown: boolean;
+  rollLeft: boolean;
+  rollRight: boolean;
 };
 
 export type TrackLineResource = {
