@@ -161,3 +161,10 @@
 - Swapped A/D horizontal panning directions and added Space/Ctrl bindings for vertical panning in the 2D viewer.
 ## Track follow state propagation
 - Synced the followed track ID prop into the shared ref and refreshed per-frame follow offsets so track-centered orbits stay aligned while playback advances.
+
+## Voxel follow mode
+- Added a voxel-follow state that centers the camera on the last double-clicked voxel, mirrors track-follow orbit locking, and surfaces a stop-follow control alongside the existing track follow UI.
+- Blocked voxel following while a track is actively followed and clear voxel follow state whenever track following engages or viewer mode switches.
+
+## Voxel follow type fixes
+- Exported the voxel follow target type from the viewer types module and broadened hover handlers to accept double-click mouse events so type checking succeeds for the new follow entrypoint.

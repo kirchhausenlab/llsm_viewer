@@ -3,53 +3,77 @@ import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
-import type { MovementState } from '../VolumeViewer.types';
+import type { FollowedVoxelTarget, MovementState } from '../VolumeViewer.types';
 
 type TrackCameraPresenterProps = {
   followedTrackId: string | null;
+  followedVoxel: FollowedVoxelTarget | null;
   clampedTimeIndex: number;
   computeTrackCentroid: (trackId: string, timeIndex: number) => THREE.Vector3 | null;
+  computeVoxelWorldPosition: (target: FollowedVoxelTarget) => THREE.Vector3 | null;
   movementStateRef: MutableRefObject<MovementState | null>;
   controlsRef: MutableRefObject<OrbitControls | null>;
   cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
   rotationTargetRef: MutableRefObject<THREE.Vector3 | null>;
-  trackFollowOffsetRef: MutableRefObject<THREE.Vector3 | null>;
-  previousFollowedTrackIdRef: MutableRefObject<string | null>;
+  followTargetOffsetRef: MutableRefObject<THREE.Vector3 | null>;
+  previousFollowTargetKeyRef: MutableRefObject<string | null>;
   endPointerLookRef: MutableRefObject<(() => void) | null>;
 };
 
 export function TrackCameraPresenter({
   followedTrackId,
+  followedVoxel,
   clampedTimeIndex,
   computeTrackCentroid,
+  computeVoxelWorldPosition,
   movementStateRef,
   controlsRef,
   cameraRef,
   rotationTargetRef,
-  trackFollowOffsetRef,
-  previousFollowedTrackIdRef,
+  followTargetOffsetRef,
+  previousFollowTargetKeyRef,
   endPointerLookRef,
 }: TrackCameraPresenterProps) {
   useEffect(() => {
+    const followTargetKey =
+      followedTrackId !== null
+        ? `track:${followedTrackId}`
+        : followedVoxel
+          ? `voxel:${followedVoxel.layerKey}:${followedVoxel.coordinates.x},${followedVoxel.coordinates.y},${followedVoxel.coordinates.z}`
+          : null;
     const controls = controlsRef.current;
     if (controls) {
-      controls.enableRotate = followedTrackId !== null;
+      controls.enableRotate = followTargetKey !== null;
     }
 
-    const wasFollowingTrack = previousFollowedTrackIdRef.current !== null;
-    previousFollowedTrackIdRef.current = followedTrackId;
+    const wasFollowingTarget = previousFollowTargetKeyRef.current !== null;
+    previousFollowTargetKeyRef.current = followTargetKey;
 
-    if (followedTrackId === null) {
-      trackFollowOffsetRef.current = null;
-      previousFollowedTrackIdRef.current = null;
-      if (wasFollowingTrack) {
+    if (followTargetKey === null) {
+      followTargetOffsetRef.current = null;
+      previousFollowTargetKeyRef.current = null;
+      if (wasFollowingTarget) {
         endPointerLookRef.current?.();
       }
     }
-  }, [controlsRef, endPointerLookRef, followedTrackId, previousFollowedTrackIdRef, trackFollowOffsetRef]);
+  }, [
+    controlsRef,
+    endPointerLookRef,
+    followTargetOffsetRef,
+    followedTrackId,
+    followedVoxel,
+    previousFollowTargetKeyRef,
+  ]);
 
   useEffect(() => {
-    if (followedTrackId === null) {
+    const followTargetKey =
+      followedTrackId !== null
+        ? `track:${followedTrackId}`
+        : followedVoxel
+          ? `voxel:${followedVoxel.layerKey}:${followedVoxel.coordinates.x},${followedVoxel.coordinates.y},${followedVoxel.coordinates.z}`
+          : null;
+
+    if (!followTargetKey) {
       return;
     }
 
@@ -73,28 +97,46 @@ export function TrackCameraPresenter({
       return;
     }
 
-    const centroid = computeTrackCentroid(followedTrackId, clampedTimeIndex);
-    if (!centroid) {
+    const targetPosition =
+      followedTrackId !== null
+        ? computeTrackCentroid(followedTrackId, clampedTimeIndex)
+        : followedVoxel
+          ? computeVoxelWorldPosition(followedVoxel)
+          : null;
+
+    if (!targetPosition) {
       return;
     }
 
-    const previousTrackId = previousFollowedTrackIdRef.current;
-    previousFollowedTrackIdRef.current = followedTrackId;
+    const previousTargetKey = previousFollowTargetKeyRef.current;
+    previousFollowTargetKeyRef.current = followTargetKey;
 
     let offset: THREE.Vector3;
-    if (previousTrackId === followedTrackId && trackFollowOffsetRef.current) {
-      offset = trackFollowOffsetRef.current.clone();
+    if (previousTargetKey === followTargetKey && followTargetOffsetRef.current) {
+      offset = followTargetOffsetRef.current.clone();
     } else {
       offset = camera.position.clone().sub(rotationTarget);
     }
 
-    rotationTarget.copy(centroid);
-    controls.target.copy(centroid);
-    camera.position.copy(centroid).add(offset);
+    rotationTarget.copy(targetPosition);
+    controls.target.copy(targetPosition);
+    camera.position.copy(targetPosition).add(offset);
     controls.update();
 
-    trackFollowOffsetRef.current = camera.position.clone().sub(rotationTarget);
-  }, [cameraRef, clampedTimeIndex, computeTrackCentroid, controlsRef, followedTrackId, movementStateRef, previousFollowedTrackIdRef, rotationTargetRef, trackFollowOffsetRef]);
+    followTargetOffsetRef.current = camera.position.clone().sub(rotationTarget);
+  }, [
+    cameraRef,
+    clampedTimeIndex,
+    computeTrackCentroid,
+    computeVoxelWorldPosition,
+    controlsRef,
+    followTargetOffsetRef,
+    followedTrackId,
+    followedVoxel,
+    movementStateRef,
+    previousFollowTargetKeyRef,
+    rotationTargetRef,
+  ]);
 
   return null;
 }

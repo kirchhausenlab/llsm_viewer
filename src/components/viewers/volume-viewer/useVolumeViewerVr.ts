@@ -63,7 +63,7 @@ export function useVolumeViewerVr({
   timeIndexRef,
   movementStateRef,
   trackLinesRef,
-  trackFollowOffsetRef,
+  followTargetOffsetRef,
   hasActive3DLayerRef,
   playbackState,
   isVrPassthroughSupported,

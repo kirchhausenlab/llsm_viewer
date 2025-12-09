@@ -8,7 +8,9 @@ export default function TopMenu({
   onHelpMenuToggle,
   followedTrackChannelId,
   followedTrackId,
+  followedVoxel,
   onStopTrackFollow,
+  onStopVoxelFollow,
   hoveredVoxel
 }: TopMenuProps) {
   const intensityComponents =
@@ -19,6 +21,7 @@ export default function TopMenu({
       : [];
 
   const isTrackFollowActive = followedTrackChannelId !== null && followedTrackId !== null;
+  const isFollowActive = isTrackFollowActive || followedVoxel !== null;
 
   return (
     <div className="viewer-top-menu">
@@ -74,11 +77,15 @@ export default function TopMenu({
               </div>
             ) : null}
           </div>
-          {isTrackFollowActive ? (
+          {isFollowActive ? (
             <button
               type="button"
               className="viewer-top-menu-button viewer-top-menu-button--danger"
-              onClick={() => onStopTrackFollow(followedTrackChannelId ?? undefined)}
+              onClick={() =>
+                isTrackFollowActive
+                  ? onStopTrackFollow(followedTrackChannelId ?? undefined)
+                  : onStopVoxelFollow()
+              }
             >
               Stop following
             </button>

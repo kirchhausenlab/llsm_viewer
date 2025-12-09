@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import './viewerCommon.css';
 import './VolumeViewer.css';
 import type {
+  FollowedVoxelTarget,
   TrackLineResource,
   VolumeResources,
   VolumeViewerProps,
@@ -54,8 +55,10 @@ function VolumeViewer({
   channelTrackOffsets,
   selectedTrackIds,
   followedTrackId,
+  followedVoxel,
   onTrackSelectionToggle,
   onTrackFollowRequest,
+  onVoxelFollowRequest,
   onHoverVoxelChange,
   vr
 }: VolumeViewerProps) {
@@ -115,8 +118,10 @@ function VolumeViewer({
     trackGroupRef,
     trackLinesRef,
     followedTrackIdRef,
-    trackFollowOffsetRef,
-    previousFollowedTrackIdRef,
+    followTargetOffsetRef,
+    previousFollowTargetKeyRef,
+    followTargetActiveRef,
+    followedVoxelRef,
     hasActive3DLayerRef,
     hasMeasured,
     setHasMeasured,
@@ -146,7 +151,7 @@ function VolumeViewer({
     applyKeyboardMovement,
     createPointerLookHandlers,
     initializeRenderContext,
-  } = useCameraControls({ trackLinesRef, followedTrackIdRef, setHasMeasured });
+  } = useCameraControls({ trackLinesRef, followTargetActiveRef, setHasMeasured });
   const isDevMode = Boolean(import.meta.env?.DEV);
   trackFollowRequestCallbackRef.current = onTrackFollowRequest;
 
@@ -255,9 +260,72 @@ function VolumeViewer({
     trackLookup,
   });
 
+  const computeFollowedVoxelPosition = useCallback(
+    (target: FollowedVoxelTarget) => {
+      const volumeRootGroup = volumeRootGroupRef.current;
+      if (!volumeRootGroup) {
+        return null;
+      }
+
+      const layer = layersRef.current.find((entry) => entry.key === target.layerKey);
+      const volume = layer?.volume;
+
+      if (!layer || !volume) {
+        return null;
+      }
+
+      const clampedX = THREE.MathUtils.clamp(target.coordinates.x, 0, volume.width - 1);
+      const clampedY = THREE.MathUtils.clamp(target.coordinates.y, 0, volume.height - 1);
+      const clampedZ = THREE.MathUtils.clamp(target.coordinates.z, 0, volume.depth - 1);
+
+      const localPosition = new THREE.Vector3(
+        clampedX + (layer.offsetX ?? 0),
+        clampedY + (layer.offsetY ?? 0),
+        clampedZ,
+      );
+
+      volumeRootGroup.updateMatrixWorld(true);
+      return volumeRootGroup.localToWorld(localPosition);
+    },
+    [layersRef, volumeRootGroupRef],
+  );
+
+  const resolveHoveredFollowTarget = useCallback((): FollowedVoxelTarget | null => {
+    const hovered = hoveredVoxelRef.current;
+    const normalizedPosition = hovered?.normalizedPosition;
+    const layerKey = hovered?.layerKey;
+
+    if (!normalizedPosition || !layerKey) {
+      return null;
+    }
+
+    const layer = layersRef.current.find((entry) => entry.key === layerKey);
+    const volume = layer?.volume;
+
+    if (!layer || !volume) {
+      return null;
+    }
+
+    return {
+      layerKey,
+      coordinates: {
+        x: Math.round(THREE.MathUtils.clamp(normalizedPosition.x * volume.width, 0, volume.width - 1)),
+        y: Math.round(
+          THREE.MathUtils.clamp(normalizedPosition.y * volume.height, 0, volume.height - 1),
+        ),
+        z: Math.round(THREE.MathUtils.clamp(normalizedPosition.z * volume.depth, 0, volume.depth - 1)),
+      },
+    };
+  }, [hoveredVoxelRef, layersRef]);
+
   useEffect(() => {
     followedTrackIdRef.current = followedTrackId ?? null;
   }, [followedTrackId]);
+
+  useEffect(() => {
+    followedVoxelRef.current = followedVoxel;
+    followTargetActiveRef.current = followedTrackId !== null || followedVoxel !== null;
+  }, [followTargetActiveRef, followedTrackId, followedVoxel, followedVoxelRef]);
 
   const { vrApi, vrParams, vrIntegration, setVrIntegration } = useVolumeViewerVrBridge({
     vr,
@@ -283,7 +351,7 @@ function VolumeViewer({
     timeIndexRef,
     movementStateRef,
     trackLinesRef,
-    trackFollowOffsetRef,
+    followTargetOffsetRef,
     hasActive3DLayerRef,
     playbackState,
     isVrPassthroughSupported,
@@ -779,6 +847,19 @@ function VolumeViewer({
       endPointerLook(event);
     };
 
+    const handleDoubleClick = (event: MouseEvent) => {
+      updateVoxelHover(event);
+
+      if (followedTrackIdRef.current !== null) {
+        return;
+      }
+
+      const hoveredTarget = resolveHoveredFollowTarget();
+      if (hoveredTarget) {
+        onVoxelFollowRequest(hoveredTarget);
+      }
+    };
+
     const pointerDownOptions: AddEventListenerOptions = { capture: true };
 
     domElement.addEventListener('pointerdown', handlePointerDown, pointerDownOptions);
@@ -786,6 +867,7 @@ function VolumeViewer({
     pointerTarget.addEventListener('pointerup', handlePointerUp);
     pointerTarget.addEventListener('pointercancel', handlePointerUp);
     pointerTarget.addEventListener('pointerleave', handlePointerLeave);
+    pointerTarget.addEventListener('dblclick', handleDoubleClick);
 
     resetVrPlaybackHudPlacement();
     resetVrChannelsHudPlacement();
@@ -805,13 +887,13 @@ function VolumeViewer({
 
       updateTrackAppearance(timestamp);
 
-      if (followedTrackIdRef.current !== null) {
+      if (followTargetActiveRef.current) {
         const rotationTarget = rotationTargetRef.current;
         if (rotationTarget) {
-          if (!trackFollowOffsetRef.current) {
-            trackFollowOffsetRef.current = new THREE.Vector3();
+          if (!followTargetOffsetRef.current) {
+            followTargetOffsetRef.current = new THREE.Vector3();
           }
-          trackFollowOffsetRef.current.copy(camera.position).sub(rotationTarget);
+          followTargetOffsetRef.current.copy(camera.position).sub(rotationTarget);
         }
       }
 
@@ -971,6 +1053,7 @@ function VolumeViewer({
       pointerTarget.removeEventListener('pointerup', handlePointerUp);
       pointerTarget.removeEventListener('pointercancel', handlePointerUp);
       pointerTarget.removeEventListener('pointerleave', handlePointerLeave);
+      pointerTarget.removeEventListener('dblclick', handleDoubleClick);
 
       raycasterRef.current = null;
       resizeObserver.disconnect();
@@ -996,6 +1079,8 @@ function VolumeViewer({
     createVrChannelsHud,
     createVrPlaybackHud,
     createVrTracksHud,
+    followTargetActiveRef,
+    followTargetOffsetRef,
     clearVoxelHoverDebug,
     endVrSessionRequestRef,
     disposeTrackResources,
@@ -1004,10 +1089,12 @@ function VolumeViewer({
     markHoverInitializationFailed,
     markHoverInitialized,
     onRendererInitialized,
+    onVoxelFollowRequest,
     playbackLoopRef,
     playbackStateRef,
     performHoverHitTest,
     raycasterRef,
+    resolveHoveredFollowTarget,
     resetHoverState,
     resetVrChannelsHudPlacement,
     resetVrPlaybackHudPlacement,
@@ -1050,14 +1137,16 @@ function VolumeViewer({
     <div className="volume-viewer">
       <TrackCameraPresenter
         followedTrackId={followedTrackId}
+        followedVoxel={followedVoxel}
         clampedTimeIndex={clampedTimeIndex}
         computeTrackCentroid={computeTrackCentroid}
+        computeVoxelWorldPosition={computeFollowedVoxelPosition}
         movementStateRef={movementStateRef}
         controlsRef={controlsRef}
         cameraRef={cameraRef}
         rotationTargetRef={rotationTargetRef}
-        trackFollowOffsetRef={trackFollowOffsetRef}
-        previousFollowedTrackIdRef={previousFollowedTrackIdRef}
+        followTargetOffsetRef={followTargetOffsetRef}
+        previousFollowTargetKeyRef={previousFollowTargetKeyRef}
         endPointerLookRef={endPointerLookRef}
       />
       <VolumeViewerVrAdapter

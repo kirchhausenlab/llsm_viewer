@@ -47,7 +47,7 @@ export type UseVolumeViewerVrParams = {
   timeIndexRef: MutableRefObject<number>;
   movementStateRef: MutableRefObject<MovementState>;
   trackLinesRef: MutableRefObject<Map<string, TrackLineResource>>;
-  trackFollowOffsetRef: MutableRefObject<THREE.Vector3 | null>;
+  followTargetOffsetRef: MutableRefObject<THREE.Vector3 | null>;
   hasActive3DLayerRef: MutableRefObject<boolean>;
   playbackState: {
     isPlaying: boolean;

@@ -28,13 +28,13 @@ type PointerLookHandlers = {
 
 type UseCameraControlsParams = {
   trackLinesRef: MutableRefObject<Map<string, TrackLineResource>>;
-  followedTrackIdRef: MutableRefObject<string | null>;
+  followTargetActiveRef: MutableRefObject<boolean>;
   setHasMeasured: (hasMeasured: boolean) => void;
 };
 
 export function useCameraControls({
   trackLinesRef,
-  followedTrackIdRef,
+  followTargetActiveRef,
   setHasMeasured,
 }: UseCameraControlsParams) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -101,7 +101,7 @@ export function useCameraControls({
       if (renderer.xr.isPresenting) {
         return;
       }
-      if (followedTrackIdRef.current !== null) {
+      if (followTargetActiveRef.current) {
         return;
       }
 
@@ -182,7 +182,7 @@ export function useCameraControls({
       rotationTarget.add(movementVector);
       controls.target.copy(rotationTarget);
     },
-    [followedTrackIdRef, worldUp],
+    [followTargetActiveRef, worldUp],
   );
 
   const createPointerLookHandlers = useCallback(
@@ -295,7 +295,7 @@ export function useCameraControls({
 
       event.preventDefault();
 
-      if (followedTrackIdRef.current !== null) {
+      if (followTargetActiveRef.current) {
         return;
       }
 
@@ -338,7 +338,7 @@ export function useCameraControls({
         movementState.rollRight = false;
       }
     };
-  }, [followedTrackIdRef]);
+  }, [followTargetActiveRef]);
 
   return {
     containerRef,

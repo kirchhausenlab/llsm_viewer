@@ -4,6 +4,7 @@ import type { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
 import type { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
 
 import type { NormalizedVolume } from '../../core/volumeProcessing';
+import type { FollowedVoxelTarget } from '../../types/follow';
 import type { HoveredVoxelInfo } from '../../types/hover';
 import type { TrackColorMode, TrackDefinition } from '../../types/tracks';
 
@@ -136,11 +137,15 @@ export type VolumeViewerProps = {
   channelTrackOffsets: Record<string, { x: number; y: number }>;
   selectedTrackIds: ReadonlySet<string>;
   followedTrackId: string | null;
+  followedVoxel: FollowedVoxelTarget | null;
   onTrackSelectionToggle: (trackId: string) => void;
   onTrackFollowRequest: (trackId: string) => void;
+  onVoxelFollowRequest: (voxel: FollowedVoxelTarget) => void;
   onHoverVoxelChange?: (value: HoveredVoxelInfo | null) => void;
   vr?: VolumeViewerVrProps;
 };
+
+export type { FollowedVoxelTarget };
 
 export type VolumeResources = {
   mesh: THREE.Mesh;

@@ -5,6 +5,7 @@ import type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment } f
 import { clearTextureCache } from '../../../core/textureCache';
 import { DEFAULT_WINDOW_MAX, DEFAULT_WINDOW_MIN } from '../../../state/layerSettings';
 import { deriveChannelTrackOffsets } from '../../../state/channelTrackOffsets';
+import type { FollowedVoxelTarget } from '../../../types/follow';
 import type { HoveredVoxelInfo } from '../../../types/hover';
 import { getVolumeHistogram } from '../../../autoContrast';
 import { computeTrackSummary } from '../../../shared/utils/trackSummary';
@@ -128,6 +129,7 @@ export function useAppRouteState(): AppRouteState {
   const [activeChannelTabId, setActiveChannelTabId] = useState<string | null>(null);
   const [maxSliceDepth, setMaxSliceDepth] = useState(0);
   const [hoveredVolumeVoxel, setHoveredVolumeVoxel] = useState<HoveredVoxelInfo | null>(null);
+  const [followedVoxel, setFollowedVoxel] = useState<FollowedVoxelTarget | null>(null);
   const [lastHoveredVolumeVoxel, setLastHoveredVolumeVoxel] = useState<HoveredVoxelInfo | null>(null);
   const playback = useViewerPlayback();
   const { selectedIndex, setSelectedIndex, isPlaying, fps, setFps, stopPlayback, setIsPlaying } = playback;
@@ -273,7 +275,8 @@ export function useAppRouteState(): AppRouteState {
 
   const handleBeforeEnterVr = useCallback(() => {
     setFollowedTrack(null);
-  }, [setFollowedTrack]);
+    setFollowedVoxel(null);
+  }, [setFollowedTrack, setFollowedVoxel]);
 
   const resetHoveredVoxel = useCallback(() => {
     setHoveredVolumeVoxel(null);
@@ -286,6 +289,37 @@ export function useAppRouteState(): AppRouteState {
     }
     setHoveredVolumeVoxel(value);
   }, []);
+
+  const handleTrackFollowWithVoxelReset = useCallback(
+    (trackId: string) => {
+      setFollowedVoxel(null);
+      handleTrackFollow(trackId);
+    },
+    [handleTrackFollow, setFollowedVoxel],
+  );
+
+  const handleTrackFollowFromViewerWithVoxelReset = useCallback(
+    (trackId: string) => {
+      setFollowedVoxel(null);
+      handleTrackFollowFromViewer(trackId);
+    },
+    [handleTrackFollowFromViewer, setFollowedVoxel],
+  );
+
+  const handleVoxelFollowRequest = useCallback(
+    (target: FollowedVoxelTarget) => {
+      if (followedTrackId !== null) {
+        return;
+      }
+
+      setFollowedVoxel(target);
+    },
+    [followedTrackId, setFollowedVoxel],
+  );
+
+  const handleStopVoxelFollow = useCallback(() => {
+    setFollowedVoxel(null);
+  }, [setFollowedVoxel]);
 
   const {
     viewerControls,
@@ -304,6 +338,7 @@ export function useAppRouteState(): AppRouteState {
     onViewerModeToggle: () => {
       setResetViewHandler(null);
       handleStopTrackFollow();
+      setFollowedVoxel(null);
     },
     onViewerModeChange: resetHoveredVoxel,
     volumeTimepointCount,
@@ -384,6 +419,12 @@ export function useAppRouteState(): AppRouteState {
       return null;
     });
   }, [trackLookup]);
+
+  useEffect(() => {
+    if (followedTrackId !== null) {
+      setFollowedVoxel(null);
+    }
+  }, [followedTrackId]);
 
   const trackChannels = useMemo(() => {
     return loadedChannelIds.map((channelId) => ({
@@ -844,6 +885,7 @@ export function useAppRouteState(): AppRouteState {
     channelTrackOffsets,
     selectedTrackIds,
     followedTrackId,
+    followedVoxel,
     followedTrackChannelId,
     activeTrackChannelId,
     activeChannelTabId,
@@ -896,7 +938,8 @@ export function useAppRouteState(): AppRouteState {
     onRegisterVolumeStepScaleChange: handleRegisterVolumeStepScaleChange,
     onRegisterReset: handleRegisterReset,
     onTrackSelectionToggle: handleTrackSelectionToggle,
-    onTrackFollowRequest: handleTrackFollowFromViewer,
+    onTrackFollowRequest: handleTrackFollowFromViewerWithVoxelReset,
+    onVoxelFollowRequest: handleVoxelFollowRequest,
     onHoverVoxelChange: handleHoverVoxelChange,
     onTrackChannelSelect: handleTrackChannelSelect,
     onTrackVisibilityToggle: handleTrackVisibilityToggle,
@@ -906,6 +949,7 @@ export function useAppRouteState(): AppRouteState {
     onTrackColorSelect: handleTrackColorSelect,
     onTrackColorReset: handleTrackColorReset,
     onStopTrackFollow: handleStopTrackFollow,
+    onStopVoxelFollow: handleStopVoxelFollow,
     onChannelPanelSelect: setActiveChannelTabId,
     onTrackPanelChannelSelect: setActiveTrackChannelId,
     onChannelVisibilityToggle: handleChannelVisibilityToggle,
@@ -944,7 +988,7 @@ export function useAppRouteState(): AppRouteState {
     onMinimumTrackLengthChange: handleMinimumTrackLengthChange,
     onMinimumTrackLengthApply: handleMinimumTrackLengthApply,
     onTrackOrderToggle: handleTrackOrderToggle,
-    onTrackFollow: handleTrackFollow,
+    onTrackFollow: handleTrackFollowWithVoxelReset,
     onAmplitudeLimitsChange: handleSelectedTracksAmplitudeLimitsChange,
     onTimeLimitsChange: handleSelectedTracksTimeLimitsChange,
     onSmoothingChange: handleTrackSmoothingChange,

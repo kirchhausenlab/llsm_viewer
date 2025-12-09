@@ -9,6 +9,7 @@ import type VolumeViewer from '../VolumeViewer';
 import type { VolumeViewerProps } from '../VolumeViewer.types';
 import type { ChannelSource } from '../../../hooks/dataset';
 import type { LayerSettings } from '../../../state/layerSettings';
+import type { FollowedVoxelTarget } from '../../../types/follow';
 import type { HoveredVoxelInfo } from '../../../types/hover';
 import type { LoadedLayer } from '../../../types/layers';
 import type { NumericRange, TrackColorMode, TrackDefinition, TrackPoint } from '../../../types/tracks';
@@ -23,7 +24,9 @@ export type TopMenuProps = {
   onHelpMenuToggle: () => void;
   followedTrackChannelId: string | null;
   followedTrackId: string | null;
+  followedVoxel: FollowedVoxelTarget | null;
   onStopTrackFollow: (channelId?: string) => void;
+  onStopVoxelFollow: () => void;
   hoveredVoxel: HoveredVoxelInfo | null;
 };
 

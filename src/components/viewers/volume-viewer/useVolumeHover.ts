@@ -93,9 +93,9 @@ export function useVolumeHover({
   const hoverTeardownRef = useRef(false);
   const hoverInitializationFailedRef = useRef(false);
   const hoverSystemReadyRef = useRef(false);
-  const pendingHoverEventRef = useRef<PointerEvent | null>(null);
+  const pendingHoverEventRef = useRef<PointerEvent | MouseEvent | null>(null);
   const hoverRetryFrameRef = useRef<number | null>(null);
-  const updateVoxelHoverRef = useRef<(event: PointerEvent) => void>(() => {});
+  const updateVoxelHoverRef = useRef<(event: PointerEvent | MouseEvent) => void>(() => {});
 
   const retryPendingVoxelHover = useCallback(() => {
     const pendingEvent = pendingHoverEventRef.current;
@@ -150,7 +150,7 @@ export function useVolumeHover({
   }, [cameraRef, hoverRaycasterRef, rendererRef, setHoverNotReady]);
 
   const updateVoxelHover = useCallback(
-    (event: PointerEvent) => {
+    (event: PointerEvent | MouseEvent) => {
       if (hoverTeardownRef.current) {
         pendingHoverEventRef.current = null;
         return;

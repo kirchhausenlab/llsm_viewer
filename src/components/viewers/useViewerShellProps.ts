@@ -46,6 +46,7 @@ export type ViewerShellContainerProps = {
   channelTrackOffsets: ViewerShellProps['volumeViewerProps']['channelTrackOffsets'];
   selectedTrackIds: ViewerShellProps['volumeViewerProps']['selectedTrackIds'];
   followedTrackId: ViewerShellProps['volumeViewerProps']['followedTrackId'];
+  followedVoxel: ViewerShellProps['volumeViewerProps']['followedVoxel'];
   followedTrackChannelId: ViewerShellProps['topMenu']['followedTrackChannelId'];
   activeTrackChannelId: ViewerShellProps['tracksPanel']['activeChannelId'];
   activeChannelTabId: ViewerShellProps['channelsPanel']['activeChannelId'];
@@ -99,6 +100,7 @@ export type ViewerShellContainerProps = {
   onRegisterReset: ViewerShellProps['volumeViewerProps']['onRegisterReset'];
   onTrackSelectionToggle: ViewerShellProps['volumeViewerProps']['onTrackSelectionToggle'];
   onTrackFollowRequest: ViewerShellProps['volumeViewerProps']['onTrackFollowRequest'];
+  onVoxelFollowRequest: ViewerShellProps['volumeViewerProps']['onVoxelFollowRequest'];
   onHoverVoxelChange?: ViewerShellProps['volumeViewerProps']['onHoverVoxelChange'];
   onTrackChannelSelect: VolumeViewerVrProps['onTrackChannelSelect'];
   onTrackVisibilityToggle: VolumeViewerVrProps['onTrackVisibilityToggle'];
@@ -108,6 +110,7 @@ export type ViewerShellContainerProps = {
   onTrackColorSelect: VolumeViewerVrProps['onTrackColorSelect'];
   onTrackColorReset: VolumeViewerVrProps['onTrackColorReset'];
   onStopTrackFollow: VolumeViewerVrProps['onStopTrackFollow'];
+  onStopVoxelFollow: ViewerShellProps['topMenu']['onStopVoxelFollow'];
   onChannelPanelSelect: VolumeViewerVrProps['onChannelPanelSelect'];
   onTrackPanelChannelSelect: ViewerShellProps['tracksPanel']['onChannelTabSelect'];
   onChannelVisibilityToggle: VolumeViewerVrProps['onChannelVisibilityToggle'];
@@ -183,6 +186,7 @@ export function useViewerShellProps({
   channelTrackOffsets,
   selectedTrackIds,
   followedTrackId,
+  followedVoxel,
   followedTrackChannelId,
   activeTrackChannelId,
   activeChannelTabId,
@@ -236,6 +240,7 @@ export function useViewerShellProps({
   onRegisterReset,
   onTrackSelectionToggle,
   onTrackFollowRequest,
+  onVoxelFollowRequest,
   onHoverVoxelChange,
   onTrackChannelSelect,
   onTrackVisibilityToggle,
@@ -245,6 +250,7 @@ export function useViewerShellProps({
   onTrackColorSelect,
   onTrackColorReset,
   onStopTrackFollow,
+  onStopVoxelFollow,
   onChannelPanelSelect,
   onTrackPanelChannelSelect,
   onChannelVisibilityToggle,
@@ -322,8 +328,10 @@ export function useViewerShellProps({
     channelTrackOffsets,
     selectedTrackIds,
     followedTrackId,
+    followedVoxel,
     onTrackSelectionToggle,
     onTrackFollowRequest,
+    onVoxelFollowRequest,
     onHoverVoxelChange,
     vr: is3dViewerAvailable
       ? {
@@ -410,7 +418,9 @@ export function useViewerShellProps({
       hoveredVoxel: hoveredVolumeVoxel,
       followedTrackChannelId,
       followedTrackId,
-      onStopTrackFollow
+      followedVoxel,
+      onStopTrackFollow,
+      onStopVoxelFollow
     },
     layout: {
       windowMargin: WINDOW_MARGIN,
