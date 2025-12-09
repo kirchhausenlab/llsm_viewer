@@ -157,5 +157,7 @@
 ## Reset view roll correction
 - Ensured the volume viewer reset action also restores the camera up vector and forward alignment so any roll input is cleared when resetting the view.
 
+## Planar viewer key remapping
+- Swapped A/D horizontal panning directions and added Space/Ctrl bindings for vertical panning in the 2D viewer.
 ## Track follow state propagation
 - Synced the followed track ID prop into the shared ref and refreshed per-frame follow offsets so track-centered orbits stay aligned while playback advances.
