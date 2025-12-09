@@ -498,21 +498,27 @@ function VolumeViewer({
     applyVolumeRootTransformRef.current?.(currentDimensionsRef.current);
 
     const controls = controlsRef.current;
+    const camera = cameraRef.current;
     if (!controls) {
       return;
     }
-    const camera = cameraRef.current;
     const defaultViewState = defaultViewStateRef.current;
     if (defaultViewState && camera) {
+      camera.up.set(0, 1, 0);
       camera.position.copy(defaultViewState.position);
       controls.target.copy(defaultViewState.target);
       rotationTargetRef.current.copy(defaultViewState.target);
+      camera.lookAt(defaultViewState.target);
       controls.update();
       return;
     }
 
     controls.reset();
     controls.target.copy(rotationTargetRef.current);
+    if (camera) {
+      camera.up.set(0, 1, 0);
+      camera.lookAt(controls.target);
+    }
     controls.update();
   }, [applyVolumeRootTransform]);
   resetVolumeCallbackRef.current = handleResetVolume;
