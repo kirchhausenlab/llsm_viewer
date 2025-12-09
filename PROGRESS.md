@@ -150,3 +150,7 @@
 
 ## Camera control remapping
 - Remapped vertical fly controls to Space (up) and Ctrl (down), freed Q/E from movement, and added keyboard-driven camera roll for 3D navigation.
+
+## Channel opacity interactivity guards
+- Hid planar hit-test targets and volume track line/end-cap meshes when their channel opacity is zero unless the track is explicitly followed/selected, preventing invisible overlays from capturing pointer/VR hover.
+- Added regression coverage to ensure opacity-zero tracks are neither rendered nor hovered in pointer/VR contexts.
