@@ -156,3 +156,6 @@
 - Added regression coverage to ensure opacity-zero tracks are neither rendered nor hovered in pointer/VR contexts.
 ## Reset view roll correction
 - Ensured the volume viewer reset action also restores the camera up vector and forward alignment so any roll input is cleared when resetting the view.
+
+## Track follow state propagation
+- Synced the followed track ID prop into the shared ref and refreshed per-frame follow offsets so track-centered orbits stay aligned while playback advances.

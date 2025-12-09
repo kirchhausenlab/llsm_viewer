@@ -255,6 +255,10 @@ function VolumeViewer({
     trackLookup,
   });
 
+  useEffect(() => {
+    followedTrackIdRef.current = followedTrackId ?? null;
+  }, [followedTrackId]);
+
   const { vrApi, vrParams, vrIntegration, setVrIntegration } = useVolumeViewerVrBridge({
     vr,
     containerRef,
