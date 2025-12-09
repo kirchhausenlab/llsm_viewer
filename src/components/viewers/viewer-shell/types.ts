@@ -126,6 +126,7 @@ export type TracksPanelProps = {
   onTrackColorSelect: (channelId: string, color: string) => void;
   onTrackColorReset: (channelId: string) => void;
   onTrackSelectionToggle: (trackId: string) => void;
+  selectedTrackOrder: string[];
   selectedTrackIds: ReadonlySet<string>;
   onTrackFollow: (trackId: string) => void;
 };

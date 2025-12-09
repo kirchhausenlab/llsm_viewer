@@ -83,6 +83,7 @@ export type ViewerShellContainerProps = {
   trackSummaryByChannel: ViewerShellProps['tracksPanel']['trackSummaryByChannel'];
   trackOrderModeByChannel: ViewerShellProps['tracksPanel']['trackOrderModeByChannel'];
   selectedTrackSeries: ViewerShellProps['selectedTracksPanel']['series'];
+  selectedTrackOrder: ViewerShellProps['tracksPanel']['selectedTrackOrder'];
   resolvedAmplitudeLimits: NumericRange;
   resolvedTimeLimits: NumericRange;
   trackSmoothing: number;
@@ -218,6 +219,7 @@ export function useViewerShellProps({
   trackLengthBounds,
   trackSummaryByChannel,
   trackOrderModeByChannel,
+  selectedTrackOrder,
   selectedTrackSeries,
   resolvedAmplitudeLimits,
   resolvedTimeLimits,
@@ -507,6 +509,7 @@ export function useViewerShellProps({
       onTrackColorSelect,
       onTrackColorReset,
       onTrackSelectionToggle,
+      selectedTrackOrder,
       selectedTrackIds,
       onTrackFollow
     },
