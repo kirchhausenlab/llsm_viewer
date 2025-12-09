@@ -811,12 +811,8 @@ function VolumeViewer({
         return;
       }
 
-      const shouldUsePointerLook = followedTrackIdRef.current === null;
-      if (shouldUsePointerLook) {
-        beginPointerLook(event);
-      } else {
-        endPointerLook();
-      }
+      rotationTargetRef.current.copy(controls.target);
+      beginPointerLook(event);
 
       updateVoxelHover(event);
       const hitTrackId = performHoverHitTest(event);
@@ -826,9 +822,11 @@ function VolumeViewer({
     };
 
     const handlePointerMove = (event: PointerEvent) => {
-      if (followedTrackIdRef.current === null) {
-        updatePointerLook(event);
+      if (followTargetActiveRef.current) {
+        rotationTargetRef.current.copy(controls.target);
       }
+
+      updatePointerLook(event);
 
       updateVoxelHover(event);
       performHoverHitTest(event);

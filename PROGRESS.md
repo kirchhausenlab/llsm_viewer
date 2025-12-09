@@ -168,3 +168,6 @@
 
 ## Voxel follow type fixes
 - Exported the voxel follow target type from the viewer types module and broadened hover handlers to accept double-click mouse events so type checking succeeds for the new follow entrypoint.
+
+## Pointer look while following
+- Allowed pointer-driven camera rotation even when following a track by keeping pointer look handlers active and aligning the rotation target with the current follow target.
