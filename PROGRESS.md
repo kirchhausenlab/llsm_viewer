@@ -154,3 +154,5 @@
 ## Channel opacity interactivity guards
 - Hid planar hit-test targets and volume track line/end-cap meshes when their channel opacity is zero unless the track is explicitly followed/selected, preventing invisible overlays from capturing pointer/VR hover.
 - Added regression coverage to ensure opacity-zero tracks are neither rendered nor hovered in pointer/VR contexts.
+## Reset view roll correction
+- Ensured the volume viewer reset action also restores the camera up vector and forward alignment so any roll input is cleared when resetting the view.
