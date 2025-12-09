@@ -45,11 +45,14 @@ export default function TracksPanel({
   onTrackColorSelect,
   onTrackColorReset,
   onTrackSelectionToggle,
+  selectedTrackOrder,
   selectedTrackIds,
   onTrackFollow,
   trackDefaults
 }: TracksPanelWindowProps) {
   const { windowMargin, controlWindowWidth, trackWindowInitialPosition, resetToken } = layout;
+
+  const selectedTrackOrderMap = new Map(selectedTrackOrder.map((trackId, index) => [trackId, index]));
 
   if (!hasTrackData) {
     return null;
@@ -139,6 +142,17 @@ export default function TracksPanel({
               const opacity = trackOpacityByChannel[channel.id] ?? trackDefaults.opacity;
               const lineWidth = trackLineWidthByChannel[channel.id] ?? trackDefaults.lineWidth;
               const displayTracks = [...tracksForChannel].sort((a, b) => {
+                const selectionIndexA = selectedTrackOrderMap.get(a.id);
+                const selectionIndexB = selectedTrackOrderMap.get(b.id);
+
+                if (selectionIndexA !== undefined || selectionIndexB !== undefined) {
+                  if (selectionIndexA === undefined) return 1;
+                  if (selectionIndexB === undefined) return -1;
+                  if (selectionIndexA !== selectionIndexB) {
+                    return selectionIndexA - selectionIndexB;
+                  }
+                }
+
                 if (orderMode === 'length') {
                   return b.points.length - a.points.length;
                 }

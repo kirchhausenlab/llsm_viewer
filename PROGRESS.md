@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Ensured selecting a track from the viewer promotes it to the top of the Tracks list and refreshes selection state so the rend
+  ered line visibly blinks and the selection order drives list sorting.
 - Fixed planar track rendering so XY slices only draw points near the current slice, added projected overlays in XZ/ZY views,
   and updated hit testing/drawing to use per-view coordinates.
 - Ensured 2D slices render pixel-perfect with a visible hover indicator, fixed viewer setting labels/visibility (orthogonal

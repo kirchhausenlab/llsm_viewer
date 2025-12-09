@@ -221,11 +221,13 @@ export const useTrackSelection = ({
 
       let didSelect = false;
       setSelectedTrackOrder((current) => {
-        if (current.includes(trackId)) {
-          return current.filter((id) => id !== trackId);
+        const withoutTrack = current.filter((id) => id !== trackId);
+        if (withoutTrack.length !== current.length) {
+          return withoutTrack;
         }
+
         didSelect = true;
-        return [...current, trackId];
+        return [trackId, ...withoutTrack];
       });
 
       if (didSelect) {
