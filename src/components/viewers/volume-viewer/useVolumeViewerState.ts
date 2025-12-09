@@ -1,7 +1,11 @@
 import { useRef, useState } from 'react';
 import * as THREE from 'three';
 import { DESKTOP_VOLUME_STEP_SCALE } from './vr';
-import type { TrackLineResource, VolumeViewerProps } from '../VolumeViewer.types';
+import type {
+  FollowedVoxelTarget,
+  TrackLineResource,
+  VolumeViewerProps,
+} from '../VolumeViewer.types';
 import type { HoveredVoxelInfo } from '../../../types/hover';
 
 export function useVolumeViewerState() {
@@ -21,8 +25,10 @@ export function useVolumeViewerState() {
   const trackGroupRef = useRef<THREE.Group | null>(null);
   const trackLinesRef = useRef<Map<string, TrackLineResource>>(new Map());
   const followedTrackIdRef = useRef<string | null>(null);
-  const trackFollowOffsetRef = useRef<THREE.Vector3 | null>(null);
-  const previousFollowedTrackIdRef = useRef<string | null>(null);
+  const followTargetOffsetRef = useRef<THREE.Vector3 | null>(null);
+  const previousFollowTargetKeyRef = useRef<string | null>(null);
+  const followTargetActiveRef = useRef(false);
+  const followedVoxelRef = useRef<FollowedVoxelTarget | null>(null);
   const hasActive3DLayerRef = useRef(false);
   const [hasMeasured, setHasMeasured] = useState(false);
   const [renderContextRevision, setRenderContextRevision] = useState(0);
@@ -63,8 +69,10 @@ export function useVolumeViewerState() {
     trackGroupRef,
     trackLinesRef,
     followedTrackIdRef,
-    trackFollowOffsetRef,
-    previousFollowedTrackIdRef,
+    followTargetOffsetRef,
+    previousFollowTargetKeyRef,
+    followTargetActiveRef,
+    followedVoxelRef,
     hasActive3DLayerRef,
     hasMeasured,
     setHasMeasured,

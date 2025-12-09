@@ -44,7 +44,7 @@ export type VolumeViewerVrBridgeOptions = {
   timeIndexRef: MutableRefObject<number>;
   movementStateRef: MutableRefObject<MovementState>;
   trackLinesRef: MutableRefObject<Map<string, TrackLineResource>>;
-  trackFollowOffsetRef: MutableRefObject<THREE.Vector3 | null>;
+  followTargetOffsetRef: MutableRefObject<THREE.Vector3 | null>;
   hasActive3DLayerRef: MutableRefObject<boolean>;
   playbackState: {
     isPlaying: boolean;
@@ -107,7 +107,7 @@ export function useVolumeViewerVrBridge(options: VolumeViewerVrBridgeOptions) {
     timeIndexRef,
     movementStateRef,
     trackLinesRef,
-    trackFollowOffsetRef,
+    followTargetOffsetRef,
     hasActive3DLayerRef,
     playbackState,
     isVrPassthroughSupported,
@@ -171,7 +171,7 @@ export function useVolumeViewerVrBridge(options: VolumeViewerVrBridgeOptions) {
             timeIndexRef,
             movementStateRef,
             trackLinesRef,
-            trackFollowOffsetRef,
+            followTargetOffsetRef,
             hasActive3DLayerRef,
             playbackState: playbackStateForVr,
             isVrPassthroughSupported,
@@ -219,7 +219,7 @@ export function useVolumeViewerVrBridge(options: VolumeViewerVrBridgeOptions) {
       timeIndexRef,
       movementStateRef,
       trackLinesRef,
-      trackFollowOffsetRef,
+      followTargetOffsetRef,
       hasActive3DLayerRef,
       playbackStateForVr,
       isVrPassthroughSupported,
