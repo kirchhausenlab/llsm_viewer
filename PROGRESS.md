@@ -145,3 +145,6 @@
 ## Planar track rendering regression
 - Restored the XY overlay to render full track projections instead of slice-clipped fragments, recovering the smoother, continuous appearance from the previous implementation while keeping orthogonal overlays slice-aware.
 - Updated orthogonal planar overlays to render full max projections rather than slice-aware fragments so XZ and ZY tracks match the restored XY behaviour.
+
+## Camera control remapping
+- Remapped vertical fly controls to Space (up) and Ctrl (down), freed Q/E from movement, and added keyboard-driven camera roll for 3D navigation.

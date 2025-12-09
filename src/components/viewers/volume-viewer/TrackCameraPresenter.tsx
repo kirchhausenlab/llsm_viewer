@@ -3,11 +3,13 @@ import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
+import type { MovementState } from '../VolumeViewer.types';
+
 type TrackCameraPresenterProps = {
   followedTrackId: string | null;
   clampedTimeIndex: number;
   computeTrackCentroid: (trackId: string, timeIndex: number) => THREE.Vector3 | null;
-  movementStateRef: MutableRefObject<{ moveForward: boolean; moveBackward: boolean; moveLeft: boolean; moveRight: boolean; moveUp: boolean; moveDown: boolean } | null>;
+  movementStateRef: MutableRefObject<MovementState | null>;
   controlsRef: MutableRefObject<OrbitControls | null>;
   cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
   rotationTargetRef: MutableRefObject<THREE.Vector3 | null>;
@@ -59,6 +61,8 @@ export function TrackCameraPresenter({
       movementState.moveRight = false;
       movementState.moveUp = false;
       movementState.moveDown = false;
+      movementState.rollLeft = false;
+      movementState.rollRight = false;
     }
 
     const controls = controlsRef.current;
