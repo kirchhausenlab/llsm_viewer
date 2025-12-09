@@ -275,6 +275,7 @@ function PlanarViewer({
     tracks,
     trackLookup,
     trackVisibility,
+    trackOpacityByChannel,
     trackLineWidthByChannel,
     channelTrackColorModes,
     channelTrackOffsets,
@@ -398,9 +399,14 @@ function PlanarViewer({
         }
 
         const channelOpacity = trackOpacityByChannel[track.channelId] ?? DEFAULT_TRACK_OPACITY;
-        if (channelOpacity <= 0) {
+        const isChannelHidden = channelOpacity <= 0;
+        if (isChannelHidden && !isFollowed && !isSelected) {
           continue;
         }
+
+        const effectiveOpacity = isChannelHidden && (isSelected || isFollowed)
+          ? DEFAULT_TRACK_OPACITY
+          : channelOpacity;
 
         const channelLineWidth = trackLineWidthByChannel[track.channelId] ?? 1;
         const sanitizedLineWidth = Math.max(0.1, Math.min(10, channelLineWidth));
@@ -413,7 +419,7 @@ function PlanarViewer({
         }
 
         const opacityMultiplier = isSelected ? blinkFactor : 1;
-        const strokeAlpha = Math.min(1, channelOpacity * opacityMultiplier);
+        const strokeAlpha = Math.min(1, effectiveOpacity * opacityMultiplier);
         const fillAlpha = Math.min(1, strokeAlpha * 0.9);
         const highlightColor = mixWithWhite(track.baseColor, 0.4);
         const strokeColor = isSelected ? highlightColor : track.baseColor;

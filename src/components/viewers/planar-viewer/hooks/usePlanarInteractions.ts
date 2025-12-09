@@ -30,6 +30,7 @@ const TRACK_HIT_TEST_MIN_DISTANCE = 6;
 const DEFAULT_TRACK_LINE_WIDTH = 1;
 const FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER = 1.35;
 const SELECTED_TRACK_LINE_WIDTH_MULTIPLIER = 1.5;
+const DEFAULT_TRACK_OPACITY = 0.9;
 
 type UsePlanarInteractionsParams = {
   canvasRef: MutableRefObject<HTMLCanvasElement | null>;
@@ -45,6 +46,7 @@ type UsePlanarInteractionsParams = {
   tracks: TrackDefinition[];
   trackLookup: Map<string, TrackDefinition>;
   trackVisibility: Record<string, boolean>;
+  trackOpacityByChannel: Record<string, number>;
   trackLineWidthByChannel: Record<string, number>;
   channelTrackColorModes: PlanarViewerProps['channelTrackColorModes'];
   channelTrackOffsets: PlanarViewerProps['channelTrackOffsets'];
@@ -92,6 +94,7 @@ export function usePlanarInteractions({
   tracks,
   trackLookup,
   trackVisibility,
+  trackOpacityByChannel,
   trackLineWidthByChannel,
   channelTrackColorModes,
   channelTrackOffsets,
@@ -161,6 +164,14 @@ export function usePlanarInteractions({
           return null;
         }
 
+        const channelOpacity = trackOpacityByChannel[track.channelId] ?? DEFAULT_TRACK_OPACITY;
+        const isChannelHidden = channelOpacity <= 0;
+        const isExplicitlyTracked =
+          selectedTrackIdsRef.current.has(track.id) || followedTrackIdRef.current === track.id;
+        if (isChannelHidden && !isExplicitlyTracked) {
+          return null;
+        }
+
         const offset = channelTrackOffsets[track.channelId] ?? { x: 0, y: 0 };
         const scaledOffsetX = offset.x * trackScale.x;
         const scaledOffsetY = offset.y * trackScale.y;
@@ -217,8 +228,11 @@ export function usePlanarInteractions({
     channelTrackColorModes,
     channelTrackOffsets,
     clampedTimeIndex,
+    followedTrackId,
     orthogonalViewsEnabled,
     primaryVolume,
+    selectedTrackIds,
+    trackOpacityByChannel,
     trackScale.x,
     trackScale.y,
     trackScale.z,
@@ -428,6 +442,11 @@ export function usePlanarInteractions({
         const isFollowed = followedTrackIdRef.current === track.id;
         const isExplicitlyVisible = trackVisibility[track.id] ?? true;
         const isSelected = selectedTrackIdsRef.current.has(track.id);
+        const channelOpacity = trackOpacityByChannel[track.channelId] ?? DEFAULT_TRACK_OPACITY;
+        const isChannelHidden = channelOpacity <= 0;
+        if (isChannelHidden && !isFollowed && !isSelected) {
+          continue;
+        }
         if (!isFollowed && !isExplicitlyVisible && !isSelected) {
           continue;
         }
@@ -509,7 +528,15 @@ export function usePlanarInteractions({
 
       return { trackId: closestTrackId, pointer: { x: pointerX, y: pointerY } };
     },
-    [layout, trackLineWidthByChannel, trackRenderData, trackVisibility, viewStateRef, canvasRef]
+    [
+      layout,
+      trackLineWidthByChannel,
+      trackOpacityByChannel,
+      trackRenderData,
+      trackVisibility,
+      viewStateRef,
+      canvasRef,
+    ]
   );
 
   const hoveredTrackDefinition = hoveredTrackId ? trackLookup.get(hoveredTrackId) ?? null : null;

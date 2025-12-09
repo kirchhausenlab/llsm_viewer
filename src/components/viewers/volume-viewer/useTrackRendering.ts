@@ -418,7 +418,12 @@ export function useTrackRendering({
       const isHovered = hoveredTrackId === track.id;
       const isSelected = selectedTrackIds.has(track.id);
       const isHighlighted = isFollowed || isHovered || isSelected;
-      const shouldShow = isFollowed || isExplicitlyVisible || isSelected;
+      const channelOpacity = trackOpacityByChannel[track.channelId] ?? DEFAULT_TRACK_OPACITY;
+      const sanitizedOpacity = Math.min(1, Math.max(0, channelOpacity));
+      const isChannelHidden = sanitizedOpacity <= 0;
+      const isOpacityExempt = isFollowed || isSelected;
+      const shouldShow =
+        (isFollowed || isExplicitlyVisible || isSelected) && (!isChannelHidden || isOpacityExempt);
 
       resource.channelId = track.channelId;
       resource.isFollowed = isFollowed;
@@ -434,10 +439,9 @@ export function useTrackRendering({
         visibleCount += 1;
       }
 
-      const channelOpacity = trackOpacityByChannel[track.channelId] ?? DEFAULT_TRACK_OPACITY;
-      const sanitizedOpacity = Math.min(1, Math.max(0, channelOpacity));
+      const effectiveOpacity = isChannelHidden && isOpacityExempt ? DEFAULT_TRACK_OPACITY : sanitizedOpacity;
       const opacityBoost = isFollowed || isSelected ? 0.15 : isHovered ? 0.12 : 0;
-      resource.targetOpacity = Math.min(1, sanitizedOpacity + opacityBoost);
+      resource.targetOpacity = Math.min(1, effectiveOpacity + opacityBoost);
 
       const channelLineWidth = trackLineWidthByChannel[track.channelId] ?? DEFAULT_TRACK_LINE_WIDTH;
       const sanitizedLineWidth = Math.max(0.1, Math.min(10, channelLineWidth));
