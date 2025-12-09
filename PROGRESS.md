@@ -150,3 +150,6 @@
 
 ## Camera control remapping
 - Remapped vertical fly controls to Space (up) and Ctrl (down), freed Q/E from movement, and added keyboard-driven camera roll for 3D navigation.
+
+## Reset view roll correction
+- Ensured the volume viewer reset action also restores the camera up vector and forward alignment so any roll input is cleared when resetting the view.
