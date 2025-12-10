@@ -13,7 +13,6 @@ type DropdownMenuId = 'file' | 'view' | 'channels' | 'tracks';
 
 type DropdownMenuItem = {
   label: string;
-  icon: string;
   onSelect?: () => void;
 };
 
@@ -64,24 +63,24 @@ export default function TopMenu({
   const dropdownItems = useMemo<Record<DropdownMenuId, DropdownMenuItem[]>>(
     () => ({
       file: [
-        { label: 'Preferences', icon: '⚙️' },
-        { label: 'Reset layout', icon: '↺', onSelect: onResetLayout },
-        { label: 'Exit', icon: '⟵', onSelect: onReturnToLauncher }
+        { label: 'Preferences' },
+        { label: 'Reset layout', onSelect: onResetLayout },
+        { label: 'Exit', onSelect: onReturnToLauncher }
       ],
       view: [
-        { label: 'Switch 3D / 2D', icon: '🖥️' },
-        { label: 'Rendering quality', icon: '✨' },
-        { label: 'VR mode', icon: '🕶️' }
+        { label: 'Switch 3D / 2D' },
+        { label: 'Rendering quality' },
+        { label: 'VR mode' }
       ],
       channels: [
-        { label: 'Channel tabs', icon: '🗂️' },
-        { label: 'Brightness & contrast', icon: '🌗' },
-        { label: 'Layer resets', icon: '↩️' }
+        { label: 'Channel tabs' },
+        { label: 'Brightness & contrast' },
+        { label: 'Layer resets' }
       ],
       tracks: [
-        { label: 'Filter tracks', icon: '🎯' },
-        { label: 'Follow selection', icon: '📌' },
-        { label: 'Selected tracks plot', icon: '📈' }
+        { label: 'Filter tracks' },
+        { label: 'Follow selection' },
+        { label: 'Selected tracks plot' }
       ]
     }),
     [onResetLayout, onReturnToLauncher]
@@ -240,14 +239,11 @@ export default function TopMenu({
                             type="button"
                             role="menuitem"
                             className="viewer-top-menu-dropdown-item"
-                          ref={(element) => {
-                            menuItemRefs.current[menuId][index] = element;
-                          }}
-                          onClick={() => handleMenuItemSelect(menuId, item.onSelect)}
+                            ref={(element) => {
+                              menuItemRefs.current[menuId][index] = element;
+                            }}
+                            onClick={() => handleMenuItemSelect(menuId, item.onSelect)}
                           >
-                            <span aria-hidden="true" className="viewer-top-menu-dropdown-icon">
-                              {item.icon}
-                            </span>
                             <span className="viewer-top-menu-dropdown-item-label">{item.label}</span>
                           </button>
                         ))}
