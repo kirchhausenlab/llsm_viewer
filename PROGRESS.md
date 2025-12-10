@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Simplified the viewer top menu by removing dropdown headers/descriptions, aligning dropdowns to stay on-screen, and blending
+  the menu buttons into the bar styling.
 - Added dropdown menus for File/View/Channels/Tracks in the viewer top bar with keyboard-friendly popovers and moved layout/exit
   actions into the File menu.
 - Swapped Space and Ctrl slice-view pan bindings so Space pans down and Ctrl pans up in the 2D view.
