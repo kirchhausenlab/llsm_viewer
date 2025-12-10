@@ -188,8 +188,8 @@
 .viewer-top-menu-dropdown-menu {
   position: absolute;
   top: calc(100% + 0.6rem);
-  right: 0;
-  left: auto;
+  right: auto;
+  left: 0;
   min-width: 260px;
   width: max-content;
   max-width: min(340px, calc(100vw - 2.5rem));
@@ -208,7 +208,7 @@
   content: '';
   position: absolute;
   top: -0.45rem;
-  right: 1.7rem;
+  left: 1.7rem;
   width: 0.9rem;
   height: 0.9rem;
   background: inherit;
