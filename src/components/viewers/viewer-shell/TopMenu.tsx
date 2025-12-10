@@ -13,7 +13,6 @@ type DropdownMenuId = 'file' | 'view' | 'channels' | 'tracks';
 
 type DropdownMenuItem = {
   label: string;
-  description?: string;
   onSelect?: () => void;
 };
 
@@ -64,24 +63,24 @@ export default function TopMenu({
   const dropdownItems = useMemo<Record<DropdownMenuId, DropdownMenuItem[]>>(
     () => ({
       file: [
-        { label: 'Preferences', description: 'Customize viewer defaults and shortcuts.' },
-        { label: 'Reset layout', description: 'Restore windows to their default positions.', onSelect: onResetLayout },
-        { label: 'Exit', description: 'Return to the experiment launcher.', onSelect: onReturnToLauncher }
+        { label: 'Preferences' },
+        { label: 'Reset layout', onSelect: onResetLayout },
+        { label: 'Exit', onSelect: onReturnToLauncher }
       ],
       view: [
-        { label: 'Switch 3D / 2D', description: 'Use the mode toggle to change between 3D and 2D viewers.' },
-        { label: 'Rendering quality', description: 'Adjust sampling and quality controls in viewer settings.' },
-        { label: 'VR mode', description: 'Start a headset session from the viewer controls when available.' }
+        { label: 'Switch 3D / 2D' },
+        { label: 'Rendering quality' },
+        { label: 'VR mode' }
       ],
       channels: [
-        { label: 'Channel tabs', description: 'Use the Channels window to switch and manage visible layers.' },
-        { label: 'Brightness & contrast', description: 'Window, invert, and tint channels from their settings panels.' },
-        { label: 'Layer resets', description: 'Reset individual channel layers without affecting others.' }
+        { label: 'Channel tabs' },
+        { label: 'Brightness & contrast' },
+        { label: 'Layer resets' }
       ],
       tracks: [
-        { label: 'Filter tracks', description: 'Apply length filters and visibility toggles per channel.' },
-        { label: 'Follow selection', description: 'Use the Tracks window to follow a selected trajectory.' },
-        { label: 'Selected tracks plot', description: 'Open the Selected Tracks window for amplitude/time plots.' }
+        { label: 'Filter tracks' },
+        { label: 'Follow selection' },
+        { label: 'Selected tracks plot' }
       ]
     }),
     [onResetLayout, onReturnToLauncher]
@@ -233,12 +232,6 @@ export default function TopMenu({
                       aria-label={`${menuId} menu`}
                       onKeyDown={(event) => handleMenuKeyDown(menuId, event)}
                     >
-                      <div className="viewer-top-menu-dropdown-header">
-                        <h3 className="viewer-top-menu-dropdown-title">
-                          {menuId.charAt(0).toUpperCase() + menuId.slice(1)}
-                        </h3>
-                        <p className="viewer-top-menu-dropdown-subtitle">Quick actions and tips</p>
-                      </div>
                       <div className="viewer-top-menu-dropdown-list">
                         {dropdownItems[menuId].map((item, index) => (
                           <button
@@ -252,9 +245,6 @@ export default function TopMenu({
                             onClick={() => handleMenuItemSelect(menuId, item.onSelect)}
                           >
                             <span className="viewer-top-menu-dropdown-item-label">{item.label}</span>
-                            {item.description ? (
-                              <span className="viewer-top-menu-dropdown-item-description">{item.description}</span>
-                            ) : null}
                           </button>
                         ))}
                       </div>
