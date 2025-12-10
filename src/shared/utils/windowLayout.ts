@@ -2,6 +2,7 @@ export type WindowPosition = { x: number; y: number };
 
 export const WINDOW_MARGIN = 24;
 export const TOP_MENU_HEIGHT = 72;
+export const TOP_MENU_WINDOW_PADDING = 8;
 export const CONTROL_WINDOW_WIDTH = 360;
 export const SELECTED_TRACKS_WINDOW_WIDTH = 1120;
 export const SELECTED_TRACKS_WINDOW_HEIGHT = 220;
@@ -19,7 +20,7 @@ const computeRightColumnX = (): number => {
 
 export const computeControlWindowDefaultPosition = (): WindowPosition => ({
   x: WINDOW_MARGIN,
-  y: WINDOW_MARGIN + TOP_MENU_HEIGHT
+  y: TOP_MENU_HEIGHT + TOP_MENU_WINDOW_PADDING
 });
 
 export const computeLayersWindowDefaultPosition = (): WindowPosition => ({
@@ -44,7 +45,7 @@ export const computeViewerSettingsWindowDefaultPosition = (): WindowPosition => 
 
 export const computeTrackWindowDefaultPosition = (): WindowPosition => {
   const x = computeRightColumnX();
-  const y = WINDOW_MARGIN + TOP_MENU_HEIGHT;
+  const y = TOP_MENU_HEIGHT + TOP_MENU_WINDOW_PADDING;
 
   if (typeof window === 'undefined') {
     return { x, y };
