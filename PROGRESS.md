@@ -1,6 +1,7 @@
 # Progress
 
 ## Latest changes
+- Split the viewer top menu into left/right flex regions so controls wrap independently and the hover status stays right-aligned.
 - Swapped Space and Ctrl slice-view pan bindings so Space pans down and Ctrl pans up in the 2D view.
 - Extended the viewer top menu to span the full width with left-aligned controls and squared edges.
 - Made selected track blink intensity much more pronounced so the highlight is easy to notice.
