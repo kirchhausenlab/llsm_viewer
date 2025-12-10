@@ -186,3 +186,6 @@
 
 ## Track follow rotation enablement
 - Re-run OrbitControls rotation enabling when the controls instance appears so track follow mode always allows orbit dragging without impacting voxel follow behaviour.
+
+## Viewer top menu layout alignment
+- Split the top menu bar into left and right flex regions so dropdown triggers, help, and follow controls stay grouped while the intensity readout aligns to the opposite edge alongside newer main-branch layout updates.
