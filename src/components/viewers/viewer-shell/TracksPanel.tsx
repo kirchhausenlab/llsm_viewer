@@ -92,19 +92,22 @@ export default function TracksPanel({
                 : undefined;
 
             const handleTrackTabClick = (event: MouseEvent<HTMLButtonElement>) => {
-              const currentSummary = trackSummaryByChannel.get(channel.id) ?? { total: 0, visible: 0 };
-              const nextHasVisibleTracks = currentSummary.visible > 0;
-              if (event.ctrlKey) {
-                event.preventDefault();
-                onTrackVisibilityAllChange(channel.id, !nextHasVisibleTracks);
-                return;
-              }
+              if (event.button !== 0) return;
               onChannelTabSelect(channel.id);
             };
 
+            const handleTrackTabAuxClick = (event: MouseEvent<HTMLButtonElement>) => {
+              const currentSummary = trackSummaryByChannel.get(channel.id) ?? { total: 0, visible: 0 };
+              const nextHasVisibleTracks = currentSummary.visible > 0;
+              if (event.button === 1) {
+                event.preventDefault();
+                onTrackVisibilityAllChange(channel.id, !nextHasVisibleTracks);
+              }
+            };
+
             const tabTitle = hasVisibleTracks
-              ? 'Ctrl + click to hide all tracks for this channel'
-              : 'Ctrl + click to show all tracks for this channel';
+              ? 'Middle click to hide all tracks for this channel'
+              : 'Middle click to show all tracks for this channel';
 
             return (
               <button
@@ -113,6 +116,7 @@ export default function TracksPanel({
                 className={tabClassName}
                 style={tabStyle}
                 onClick={handleTrackTabClick}
+                onAuxClick={handleTrackTabAuxClick}
                 role="tab"
                 id={`track-tab-${channel.id}`}
                 aria-label={label}

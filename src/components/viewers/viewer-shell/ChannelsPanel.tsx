@@ -71,12 +71,15 @@ export default function ChannelsPanel({
                 '--channel-tab-border-active': applyAlphaToHex(tintColor, 0.55)
               };
               const handleChannelTabClick = (event: MouseEvent<HTMLButtonElement>) => {
-                if (event.ctrlKey) {
+                if (event.button !== 0) return;
+                onChannelTabSelect(channelId);
+              };
+
+              const handleChannelTabAuxClick = (event: MouseEvent<HTMLButtonElement>) => {
+                if (event.button === 1) {
                   event.preventDefault();
                   onChannelVisibilityToggle(channelId);
-                  return;
                 }
-                onChannelTabSelect(channelId);
               };
               return (
                 <button
@@ -85,7 +88,8 @@ export default function ChannelsPanel({
                   className={tabClassName}
                   style={tabStyle}
                   onClick={handleChannelTabClick}
-                  title={isVisible ? 'Ctrl + click to hide this channel' : 'Ctrl + click to show this channel'}
+                  onAuxClick={handleChannelTabAuxClick}
+                  title={isVisible ? 'Middle click to hide this channel' : 'Middle click to show this channel'}
                   role="tab"
                   id={`channel-tab-${channelId}`}
                   aria-label={label}
