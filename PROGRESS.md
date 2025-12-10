@@ -179,3 +179,6 @@
 
 ## Follow pointer/OrbitControls overlap
 - Gated pointer-look handlers while a track/voxel is being followed so OrbitControls rotation owns the drag gestures and the camera no longer receives conflicting updates that caused stutter.
+
+## Track follow rotation enablement
+- Re-run OrbitControls rotation enabling when the controls instance appears so track follow mode always allows orbit dragging without impacting voxel follow behaviour.
