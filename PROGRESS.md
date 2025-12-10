@@ -175,3 +175,6 @@
 
 ## Follow orbit center preservation
 - Updated pointer-look orbiting to keep the rotation target anchored to the followed subject, moving the camera around the current controls target instead of shifting the target during drags.
+
+## Follow pointer/OrbitControls overlap
+- Gated pointer-look handlers while a track/voxel is being followed so OrbitControls rotation owns the drag gestures and the camera no longer receives conflicting updates that caused stutter.
