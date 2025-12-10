@@ -812,7 +812,9 @@ function VolumeViewer({
       }
 
       rotationTargetRef.current.copy(controls.target);
-      beginPointerLook(event);
+      if (!followTargetActiveRef.current) {
+        beginPointerLook(event);
+      }
 
       updateVoxelHover(event);
       const hitTrackId = performHoverHitTest(event);
@@ -826,7 +828,9 @@ function VolumeViewer({
         rotationTargetRef.current.copy(controls.target);
       }
 
-      updatePointerLook(event);
+      if (!followTargetActiveRef.current) {
+        updatePointerLook(event);
+      }
 
       updateVoxelHover(event);
       performHoverHitTest(event);
@@ -836,13 +840,17 @@ function VolumeViewer({
       updateVoxelHover(event);
       performHoverHitTest(event);
 
-      endPointerLook(event);
+      if (!followTargetActiveRef.current) {
+        endPointerLook(event);
+      }
     };
 
     const handlePointerLeave = (event: PointerEvent) => {
       clearHoverState('pointer');
       clearVoxelHover();
-      endPointerLook(event);
+      if (!followTargetActiveRef.current) {
+        endPointerLook(event);
+      }
     };
 
     const handleDoubleClick = (event: MouseEvent) => {
