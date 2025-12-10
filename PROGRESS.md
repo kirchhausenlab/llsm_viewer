@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Reduced the default vertical offset for the Viewer controls and Tracks floating windows so they sit closer to the top menu wi
+  thout overlapping it.
 - Simplified the viewer top menu by removing dropdown headers/descriptions, aligning dropdowns to stay on-screen, and blending
   the menu buttons into the bar styling.
 - Added dropdown menus for File/View/Channels/Tracks in the viewer top bar with keyboard-friendly popovers and moved layout/exit
