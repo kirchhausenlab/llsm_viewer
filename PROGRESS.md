@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Added dropdown menus for File/View/Channels/Tracks in the viewer top bar with keyboard-friendly popovers and moved layout/exit
+  actions into the File menu.
 - Swapped Space and Ctrl slice-view pan bindings so Space pans down and Ctrl pans up in the 2D view.
 - Extended the viewer top menu to span the full width with left-aligned controls and squared edges.
 - Made selected track blink intensity much more pronounced so the highlight is easy to notice.
