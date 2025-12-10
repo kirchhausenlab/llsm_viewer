@@ -171,3 +171,6 @@
 
 ## Pointer look while following
 - Allowed pointer-driven camera rotation even when following a track by keeping pointer look handlers active and aligning the rotation target with the current follow target.
+
+## Follow orbit center preservation
+- Updated pointer-look orbiting to keep the rotation target anchored to the followed subject, moving the camera around the current controls target instead of shifting the target during drags.

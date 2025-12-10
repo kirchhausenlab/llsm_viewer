@@ -236,10 +236,18 @@ export function useCameraControls({
         cameraEuler.set(pointerLookState.pitch, pointerLookState.yaw, pointerLookState.roll, 'YXZ');
         camera.quaternion.setFromEuler(cameraEuler);
 
-        const targetDistance = Math.max(camera.position.distanceTo(rotationTargetRef.current), 0.0001);
+        const orbitCenter = followTargetActiveRef.current ? controls.target : rotationTargetRef.current;
+        const targetDistance = Math.max(camera.position.distanceTo(orbitCenter), 0.0001);
         lookDirection.set(0, 0, -1).applyQuaternion(camera.quaternion);
-        rotationTargetRef.current.copy(camera.position).addScaledVector(lookDirection, targetDistance);
-        controls.target.copy(rotationTargetRef.current);
+
+        if (followTargetActiveRef.current) {
+          camera.position.copy(orbitCenter).addScaledVector(lookDirection, -targetDistance);
+          rotationTargetRef.current.copy(orbitCenter);
+          controls.target.copy(orbitCenter);
+        } else {
+          rotationTargetRef.current.copy(camera.position).addScaledVector(lookDirection, targetDistance);
+          controls.target.copy(rotationTargetRef.current);
+        }
         controls.update();
       };
 
