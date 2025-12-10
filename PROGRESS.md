@@ -1,6 +1,7 @@
 # Progress
 
 ## Latest changes
+- Restyled the viewer top menu dropdown items to remove outlines/background fill so they blend with the top bar styling while keeping hover/focus cues.
 - Added a Shift-modifier sprint that doubles W/A/S/D/Space/Ctrl camera movement speed in the 3D viewer.
 - Reduced the default vertical offset for the Viewer controls and Tracks floating windows so they sit closer to the top menu wi
   thout overlapping it.
