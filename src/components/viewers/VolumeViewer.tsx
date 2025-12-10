@@ -148,6 +148,7 @@ function VolumeViewer({
     movementStateRef,
     endPointerLookRef,
     handleResize,
+    applyKeyboardRotation,
     applyKeyboardMovement,
     createPointerLookHandlers,
     initializeRenderContext,
@@ -887,6 +888,7 @@ function VolumeViewer({
     let lastRenderTickSummary: { presenting: boolean; hoveredByController: string | null } | null = null;
 
     const renderLoop = (timestamp: number) => {
+      applyKeyboardRotation(renderer, camera, controls);
       applyKeyboardMovement(renderer, camera, controls);
       controls.update();
       rotationTargetRef.current.copy(controls.target);
@@ -1076,6 +1078,7 @@ function VolumeViewer({
     };
   }, [
     applyVrPlaybackHoverState,
+    applyKeyboardRotation,
     applyKeyboardMovement,
     applyVolumeStepScaleToResources,
     advancePlaybackFrame,

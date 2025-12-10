@@ -197,3 +197,6 @@
 
 ## Viewer dropdown alignment
 - Anchored top menu dropdowns to the left edge of their triggers so the menus open to the right without covering the buttons themselves.
+
+## Arrow key camera rotation
+- Added arrow-key yaw/pitch controls that mirror pointer-look behaviour in both free-roam and follow/orbit camera modes.

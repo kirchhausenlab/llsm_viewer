@@ -20,6 +20,8 @@ const ROLL_KEY_MAP: Record<string, keyof MovementState> = {
   KeyE: 'rollRight'
 };
 
+const LOOK_KEY_CODES = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
+
 const SHIFT_KEY_CODES = new Set(['ShiftLeft', 'ShiftRight']);
 
 type PointerLookHandlers = {
@@ -89,15 +91,26 @@ export function useCameraControls({
   }, [setHasMeasured, trackLinesRef]);
 
   const worldUp = useMemo(() => new THREE.Vector3(0, 1, 0), []);
+  const lookDirectionRef = useRef(new THREE.Vector3());
   const forwardVectorRef = useRef(new THREE.Vector3());
   const horizontalForwardRef = useRef(new THREE.Vector3());
   const rightVectorRef = useRef(new THREE.Vector3());
   const movementVectorRef = useRef(new THREE.Vector3());
   const rollAxisRef = useRef(new THREE.Vector3());
   const rollQuaternionRef = useRef(new THREE.Quaternion());
+  const cameraEulerRef = useRef(new THREE.Euler(0, 0, 0, 'YXZ'));
+  const keyboardLookStateRef = useRef({
+    rotateLeft: false,
+    rotateRight: false,
+    rotateUp: false,
+    rotateDown: false,
+  });
   const isShiftPressedRef = useRef(false);
 
   const ROLL_SPEED = 0.02;
+  const LOOK_SENSITIVITY = 0.0025;
+  const MAX_LOOK_PITCH = Math.PI / 2 - 0.001;
+  const KEYBOARD_LOOK_SENSITIVITY = 0.02;
 
   const applyKeyboardMovement = useCallback(
     (renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera, controls: OrbitControls) => {
@@ -189,6 +202,43 @@ export function useCameraControls({
     [followTargetActiveRef, worldUp],
   );
 
+  const applyKeyboardRotation = useCallback(
+    (renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera, controls: OrbitControls) => {
+      if (renderer.xr.isPresenting) {
+        return;
+      }
+
+      const lookState = keyboardLookStateRef.current;
+      const yawInput = (lookState.rotateRight ? 1 : 0) - (lookState.rotateLeft ? 1 : 0);
+      const pitchInput = (lookState.rotateDown ? 1 : 0) - (lookState.rotateUp ? 1 : 0);
+      if (yawInput === 0 && pitchInput === 0) {
+        return;
+      }
+
+      const cameraEuler = cameraEulerRef.current;
+      cameraEuler.setFromQuaternion(camera.quaternion, 'YXZ');
+      cameraEuler.y -= yawInput * KEYBOARD_LOOK_SENSITIVITY;
+      cameraEuler.x -= pitchInput * KEYBOARD_LOOK_SENSITIVITY;
+      cameraEuler.x = THREE.MathUtils.clamp(cameraEuler.x, -MAX_LOOK_PITCH, MAX_LOOK_PITCH);
+      camera.quaternion.setFromEuler(cameraEuler);
+
+      const orbitCenter = followTargetActiveRef.current ? controls.target : rotationTargetRef.current;
+      const targetDistance = Math.max(camera.position.distanceTo(orbitCenter), 0.0001);
+      const lookDirection = lookDirectionRef.current;
+      lookDirection.set(0, 0, -1).applyQuaternion(camera.quaternion);
+
+      if (followTargetActiveRef.current) {
+        camera.position.copy(orbitCenter).addScaledVector(lookDirection, -targetDistance);
+        rotationTargetRef.current.copy(orbitCenter);
+        controls.target.copy(orbitCenter);
+      } else {
+        rotationTargetRef.current.copy(camera.position).addScaledVector(lookDirection, targetDistance);
+        controls.target.copy(rotationTargetRef.current);
+      }
+    },
+    [followTargetActiveRef],
+  );
+
   const createPointerLookHandlers = useCallback(
     ({ renderer, camera, controls }: VolumeRenderContext): PointerLookHandlers => {
       const domElement = renderer.domElement;
@@ -200,11 +250,8 @@ export function useCameraControls({
         lastClientX: 0,
         lastClientY: 0,
       };
-      const cameraEuler = new THREE.Euler(0, 0, 0, 'YXZ');
-      const lookDirection = new THREE.Vector3();
-
-      const LOOK_SENSITIVITY = 0.0025;
-      const MAX_LOOK_PITCH = Math.PI / 2 - 0.001;
+      const cameraEuler = cameraEulerRef.current;
+      const lookDirection = lookDirectionRef.current;
 
       const beginPointerLook = (event: PointerEvent) => {
         if (renderer.xr.isPresenting) {
@@ -292,8 +339,9 @@ export function useCameraControls({
     const handleKeyChange = (event: KeyboardEvent, isPressed: boolean) => {
       const movementKey = MOVEMENT_KEY_MAP[event.code];
       const rollKey = ROLL_KEY_MAP[event.code];
+      const lookKey = LOOK_KEY_CODES.has(event.code);
       const isShiftKey = SHIFT_KEY_CODES.has(event.code);
-      if (!movementKey && !rollKey && !isShiftKey) {
+      if (!movementKey && !rollKey && !isShiftKey && !lookKey) {
         return;
       }
 
@@ -308,12 +356,24 @@ export function useCameraControls({
 
       event.preventDefault();
 
-      if (followTargetActiveRef.current) {
+      const movementState = movementStateRef.current;
+      if (!movementState) {
         return;
       }
 
-      const movementState = movementStateRef.current;
-      if (!movementState) {
+      if (lookKey) {
+        if (event.code === 'ArrowLeft') {
+          keyboardLookStateRef.current.rotateLeft = isPressed;
+        } else if (event.code === 'ArrowRight') {
+          keyboardLookStateRef.current.rotateRight = isPressed;
+        } else if (event.code === 'ArrowUp') {
+          keyboardLookStateRef.current.rotateUp = isPressed;
+        } else if (event.code === 'ArrowDown') {
+          keyboardLookStateRef.current.rotateDown = isPressed;
+        }
+      }
+
+      if (followTargetActiveRef.current && (movementKey || rollKey || isShiftKey)) {
         return;
       }
 
@@ -353,6 +413,11 @@ export function useCameraControls({
         movementState.rollLeft = false;
         movementState.rollRight = false;
       }
+      const lookState = keyboardLookStateRef.current;
+      lookState.rotateLeft = false;
+      lookState.rotateRight = false;
+      lookState.rotateUp = false;
+      lookState.rotateDown = false;
       isShiftPressedRef.current = false;
     };
   }, [followTargetActiveRef]);
@@ -368,6 +433,7 @@ export function useCameraControls({
     movementStateRef,
     endPointerLookRef,
     handleResize,
+    applyKeyboardRotation,
     applyKeyboardMovement,
     createPointerLookHandlers,
     initializeRenderContext,
