@@ -184,3 +184,6 @@
 
 ## Track follow rotation enablement
 - Re-run OrbitControls rotation enabling when the controls instance appears so track follow mode always allows orbit dragging without impacting voxel follow behaviour.
+
+## Floating window positioning
+- Offset the default positions of the Viewer controls and Tracks windows downward so they no longer overlap the full-width top menu.
