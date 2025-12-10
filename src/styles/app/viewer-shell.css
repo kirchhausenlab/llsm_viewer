@@ -28,13 +28,13 @@
   justify-content: space-between;
   gap: 0.75rem;
   width: 100%;
-  padding: 0.75rem 1.25rem;
+  padding: 0.65rem 1.1rem;
   border-radius: 0;
-  background: rgba(12, 16, 24, 0.88);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+  background: linear-gradient(180deg, rgba(9, 12, 18, 0.94), rgba(7, 10, 15, 0.92));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.35);
   pointer-events: auto;
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(10px);
   flex-wrap: wrap;
   box-sizing: border-box;
 }
@@ -69,21 +69,24 @@
 }
 
 .viewer-top-menu-button {
-  border: none;
-  border-radius: 0.6rem;
-  padding: 0.35rem 0.7rem;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.65rem;
+  padding: 0.5rem 0.85rem;
+  background: rgba(15, 22, 35, 0.75);
+  color: rgba(255, 255, 255, 0.94);
   font-size: var(--overlay-button-font-size);
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
   cursor: pointer;
-  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+  transition: border-color 0.18s ease, background-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
   white-space: nowrap;
 }
 
 .viewer-top-menu-button:hover {
+  border-color: rgba(91, 140, 255, 0.6);
+  background: rgba(91, 140, 255, 0.12);
   color: #ffffff;
+  transform: translateY(-1px);
 }
 
 .viewer-top-menu-button:focus-visible {
@@ -98,7 +101,7 @@
 }
 
 .viewer-top-menu-button--danger {
-  border: 1px solid rgba(255, 255, 255, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.3);
   background: #dc2626;
   color: #ffffff;
   box-shadow: 0 12px 24px rgba(220, 38, 38, 0.28);
@@ -120,9 +123,9 @@
   gap: 0.35rem;
   margin-left: 0.5rem;
   padding-left: 1rem;
-  border-left: 1px solid rgba(255, 255, 255, 0.14);
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
   color: rgba(230, 238, 255, 0.9);
-  font-weight: 700;
+  font-weight: 600;
   font-size: var(--overlay-button-font-size);
   letter-spacing: 0.01em;
   white-space: nowrap;
@@ -193,13 +196,13 @@
   min-width: 260px;
   width: max-content;
   max-width: min(340px, calc(100vw - 2.5rem));
-  padding: 0.95rem 1rem;
-  border-radius: 0.85rem;
-  background: rgba(10, 14, 22, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  padding: 0.9rem 0.95rem;
+  border-radius: 0.9rem;
+  background: rgba(9, 13, 20, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   color: rgba(240, 245, 255, 0.92);
-  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(18px);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(10px);
   pointer-events: auto;
   z-index: 210;
 }
@@ -225,22 +228,23 @@
 
 .viewer-top-menu-dropdown-item {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0;
+  align-items: center;
+  gap: 0.55rem;
   width: 100%;
-  border: none;
-  border-radius: 0.65rem;
-  padding: 0.55rem 0.65rem;
-  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0.75rem;
+  padding: 0.55rem 0.7rem;
+  background: rgba(255, 255, 255, 0.02);
   color: rgba(240, 245, 255, 0.92);
   text-align: left;
   cursor: pointer;
-  transition: color 0.2s ease, text-decoration-color 0.2s ease;
+  transition: color 0.2s ease, text-decoration-color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
 }
 
 .viewer-top-menu-dropdown-item:hover {
   color: #ffffff;
+  border-color: rgba(91, 140, 255, 0.5);
+  background: rgba(91, 140, 255, 0.12);
 }
 
 .viewer-top-menu-dropdown-item:focus-visible {
@@ -256,9 +260,22 @@
 }
 
 .viewer-top-menu-dropdown-item-label {
-  font-weight: 700;
-  letter-spacing: 0.01em;
+  font-weight: 600;
+  letter-spacing: 0.005em;
   font-size: 0.95rem;
+}
+
+.viewer-top-menu-dropdown-icon {
+  width: 1.3rem;
+  height: 1.3rem;
+  border-radius: 0.4rem;
+  background: rgba(255, 255, 255, 0.06);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(230, 238, 255, 0.9);
+  font-size: 0.9rem;
+  flex-shrink: 0;
 }
 
 .viewer-top-menu-popover {
@@ -268,11 +285,11 @@
   width: min(320px, 80vw);
   padding: 1rem 1.1rem;
   border-radius: 0.85rem;
-  background: rgba(10, 14, 22, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(9, 13, 20, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   color: rgba(240, 245, 255, 0.92);
-  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(18px);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(10px);
   pointer-events: auto;
   z-index: 210;
 }
