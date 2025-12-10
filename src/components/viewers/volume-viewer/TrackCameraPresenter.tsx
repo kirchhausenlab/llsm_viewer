@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
@@ -34,14 +34,21 @@ export function TrackCameraPresenter({
   previousFollowTargetKeyRef,
   endPointerLookRef,
 }: TrackCameraPresenterProps) {
-  useEffect(() => {
-    const followTargetKey =
+  const followTargetKey = useMemo(
+    () =>
       followedTrackId !== null
         ? `track:${followedTrackId}`
         : followedVoxel
           ? `voxel:${followedVoxel.layerKey}:${followedVoxel.coordinates.x},${followedVoxel.coordinates.y},${followedVoxel.coordinates.z}`
-          : null;
-    const controls = controlsRef.current;
+          : null,
+    [followedTrackId, followedVoxel],
+  );
+
+  const controls = controlsRef.current;
+  const camera = cameraRef.current;
+  const rotationTarget = rotationTargetRef.current;
+
+  useEffect(() => {
     if (controls) {
       controls.enableRotate = followTargetKey !== null;
     }
@@ -57,22 +64,14 @@ export function TrackCameraPresenter({
       }
     }
   }, [
-    controlsRef,
+    controls,
     endPointerLookRef,
+    followTargetKey,
     followTargetOffsetRef,
-    followedTrackId,
-    followedVoxel,
     previousFollowTargetKeyRef,
   ]);
 
   useEffect(() => {
-    const followTargetKey =
-      followedTrackId !== null
-        ? `track:${followedTrackId}`
-        : followedVoxel
-          ? `voxel:${followedVoxel.layerKey}:${followedVoxel.coordinates.x},${followedVoxel.coordinates.y},${followedVoxel.coordinates.z}`
-          : null;
-
     if (!followTargetKey) {
       return;
     }
@@ -88,10 +87,6 @@ export function TrackCameraPresenter({
       movementState.rollLeft = false;
       movementState.rollRight = false;
     }
-
-    const controls = controlsRef.current;
-    const camera = cameraRef.current;
-    const rotationTarget = rotationTargetRef.current;
 
     if (!camera || !controls || !rotationTarget) {
       return;
@@ -125,17 +120,16 @@ export function TrackCameraPresenter({
 
     followTargetOffsetRef.current = camera.position.clone().sub(rotationTarget);
   }, [
-    cameraRef,
     clampedTimeIndex,
     computeTrackCentroid,
     computeVoxelWorldPosition,
-    controlsRef,
     followTargetOffsetRef,
-    followedTrackId,
-    followedVoxel,
     movementStateRef,
     previousFollowTargetKeyRef,
-    rotationTargetRef,
+    camera,
+    controls,
+    followTargetKey,
+    rotationTarget,
   ]);
 
   return null;
