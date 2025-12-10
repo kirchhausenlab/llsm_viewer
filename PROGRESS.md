@@ -3,6 +3,7 @@
 ## Latest changes
 - Added dropdown menus for File/View/Channels/Tracks in the viewer top bar with keyboard-friendly popovers and moved layout/exit
   actions into the File menu.
+- Split the viewer top menu into left/right flex regions so controls wrap independently and the hover status stays right-aligned.
 - Swapped Space and Ctrl slice-view pan bindings so Space pans down and Ctrl pans up in the 2D view.
 - Extended the viewer top menu to span the full width with left-aligned controls and squared edges.
 - Made selected track blink intensity much more pronounced so the highlight is easy to notice.
@@ -189,3 +190,5 @@
 
 ## Viewer top menu layout alignment
 - Split the top menu bar into left and right flex regions so dropdown triggers, help, and follow controls stay grouped while the intensity readout aligns to the opposite edge alongside newer main-branch layout updates.
+## Floating window positioning
+- Offset the default positions of the Viewer controls and Tracks windows downward so they no longer overlap the full-width top menu.
