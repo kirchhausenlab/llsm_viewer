@@ -191,3 +191,6 @@
 
 ## Viewer top menu layout alignment
 - Split the top menu bar into left and right flex regions so dropdown triggers, help, and follow controls stay grouped while the intensity readout aligns to the opposite edge alongside newer main-branch layout updates.
+
+## Viewer dropdown alignment
+- Anchored top menu dropdowns to the left edge of their triggers so the menus open to the right without covering the buttons themselves.
