@@ -792,7 +792,7 @@ export function usePlanarInteractions({
         case 'Space': {
           updateViewState((previous) => ({
             ...previous,
-            offsetY: previous.offsetY - PAN_STEP
+            offsetY: previous.offsetY + PAN_STEP
           }));
           event.preventDefault();
           break;
@@ -801,7 +801,7 @@ export function usePlanarInteractions({
         case 'ControlRight': {
           updateViewState((previous) => ({
             ...previous,
-            offsetY: previous.offsetY + PAN_STEP
+            offsetY: previous.offsetY - PAN_STEP
           }));
           event.preventDefault();
           break;
