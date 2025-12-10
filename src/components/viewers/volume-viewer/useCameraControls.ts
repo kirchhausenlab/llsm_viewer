@@ -20,6 +20,8 @@ const ROLL_KEY_MAP: Record<string, keyof MovementState> = {
   KeyE: 'rollRight'
 };
 
+const SHIFT_KEY_CODES = new Set(['ShiftLeft', 'ShiftRight']);
+
 type PointerLookHandlers = {
   beginPointerLook: (event: PointerEvent) => void;
   updatePointerLook: (event: PointerEvent) => void;
@@ -93,6 +95,7 @@ export function useCameraControls({
   const movementVectorRef = useRef(new THREE.Vector3());
   const rollAxisRef = useRef(new THREE.Vector3());
   const rollQuaternionRef = useRef(new THREE.Quaternion());
+  const isShiftPressedRef = useRef(false);
 
   const ROLL_SPEED = 0.02;
 
@@ -122,7 +125,8 @@ export function useCameraControls({
 
       const rotationTarget = rotationTargetRef.current;
       const distance = rotationTarget.distanceTo(camera.position);
-      const movementScale = Math.max(distance * 0.0025, 0.0006);
+      const baseMovementScale = Math.max(distance * 0.0025, 0.0006);
+      const movementScale = baseMovementScale * (isShiftPressedRef.current ? 2 : 1);
 
       const forwardVector = forwardVectorRef.current;
       camera.getWorldDirection(forwardVector).normalize();
@@ -288,7 +292,8 @@ export function useCameraControls({
     const handleKeyChange = (event: KeyboardEvent, isPressed: boolean) => {
       const movementKey = MOVEMENT_KEY_MAP[event.code];
       const rollKey = ROLL_KEY_MAP[event.code];
-      if (!movementKey && !rollKey) {
+      const isShiftKey = SHIFT_KEY_CODES.has(event.code);
+      if (!movementKey && !rollKey && !isShiftKey) {
         return;
       }
 
@@ -318,6 +323,9 @@ export function useCameraControls({
       if (rollKey) {
         movementState[rollKey] = isPressed;
       }
+      if (isShiftKey) {
+        isShiftPressedRef.current = isPressed;
+      }
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -345,6 +353,7 @@ export function useCameraControls({
         movementState.rollLeft = false;
         movementState.rollRight = false;
       }
+      isShiftPressedRef.current = false;
     };
   }, [followTargetActiveRef]);
 
