@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 
 export const SELECTED_TRACK_BLINK_PERIOD_MS = 1600;
-export const SELECTED_TRACK_BLINK_BASE = 0.85;
-export const SELECTED_TRACK_BLINK_RANGE = 0.15;
+export const SELECTED_TRACK_BLINK_BASE = 1;
+export const SELECTED_TRACK_BLINK_RANGE = 0.5;
 export const TRACK_END_CAP_RADIUS_MULTIPLIER = 0.35;
 export const TRACK_END_CAP_MIN_RADIUS = 0.12;
 export const TRACK_LINE_WIDTH_MIN = 0.5;
