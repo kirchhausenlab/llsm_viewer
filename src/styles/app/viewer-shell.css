@@ -55,6 +55,16 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.viewer-top-menu-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 1 1 220px;
+  min-width: 200px;
+  margin-left: auto;
 }
 
 .viewer-top-menu-button {
