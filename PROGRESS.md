@@ -1,6 +1,7 @@
 # Progress
 
 ## Latest changes
+- Extended the viewer top menu to span the full width with left-aligned controls and squared edges.
 - Made selected track blink intensity much more pronounced so the highlight is easy to notice.
 - Swapped channel/track tab visibility toggles from Ctrl+click to middle-click to avoid conflicts with translation shortcuts.
 - Ensured selecting a track from the viewer promotes it to the top of the Tracks list and refreshes selection state so the rend
