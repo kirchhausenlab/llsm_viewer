@@ -1,6 +1,7 @@
 # Progress
 
 ## Latest changes
+- Swapped Space and Ctrl slice-view pan bindings so Space pans down and Ctrl pans up in the 2D view.
 - Extended the viewer top menu to span the full width with left-aligned controls and squared edges.
 - Made selected track blink intensity much more pronounced so the highlight is easy to notice.
 - Swapped channel/track tab visibility toggles from Ctrl+click to middle-click to avoid conflicts with translation shortcuts.
