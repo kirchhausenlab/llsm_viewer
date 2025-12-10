@@ -1,6 +1,7 @@
 # Progress
 
 ## Latest changes
+- Added a Shift-modifier sprint that doubles W/A/S/D/Space/Ctrl camera movement speed in the 3D viewer.
 - Reduced the default vertical offset for the Viewer controls and Tracks floating windows so they sit closer to the top menu wi
   thout overlapping it.
 - Simplified the viewer top menu by removing dropdown headers/descriptions, aligning dropdowns to stay on-screen, and blending
