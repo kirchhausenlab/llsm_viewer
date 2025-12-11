@@ -175,14 +175,13 @@ export default function TracksPanel({
                   <div className="track-header">
                     <div className="track-header-title">
                       <span className="track-channel-name">{channelNameMap.get(channel.id) ?? 'Channel'}</span>
-                      <span className="track-count">{summary.visible} shown · {summary.total} total</span>
                     </div>
                   </div>
                   <div className="track-panel-body">
                     <div className="track-filters">
                       <div className="track-length-filter">
                         <label htmlFor={`track-length-${channel.id}`}>
-                          Min length <span>{pendingMinimumTrackLength.toFixed(1)} μm</span>
+                          Min length <span>{pendingMinimumTrackLength}</span>
                         </label>
                         <div className="track-length-input-row">
                           <input
