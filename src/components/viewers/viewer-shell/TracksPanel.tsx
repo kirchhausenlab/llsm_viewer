@@ -172,11 +172,6 @@ export default function TracksPanel({
                   className={isActive ? 'track-panel is-active' : 'track-panel'}
                   hidden={!isActive}
                 >
-                  <div className="track-header">
-                    <div className="track-header-title">
-                      <span className="track-channel-name">{channelNameMap.get(channel.id) ?? 'Channel'}</span>
-                    </div>
-                  </div>
                   <div className="track-panel-body">
                     <div className="track-filters">
                       <div className="track-length-filter">

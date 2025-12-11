@@ -1,6 +1,7 @@
 # Progress
 
 ## Latest changes
+- Removed the track channel label above the Min length slider in the Tracks window to avoid duplicating the active tab name.
 - Simplified channel tab editing by removing the rename button, enabling double-click rename on the tab header, keeping a single close control, and capping names at 9 characters.
 - Removed the per-channel track count header line from the Tracks window and now show the Min length slider value as the raw input number instead of a micrometer-formatted length.
 - Restyled the viewer top menu dropdown items to remove outlines/background fill so they blend with the top bar styling while keeping hover/focus cues.
