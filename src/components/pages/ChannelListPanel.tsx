@@ -141,6 +141,7 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
                   type="text"
                   value={channel.name}
                   className="channel-name-input"
+                  maxLength={9}
                   onChange={(event) => onChannelNameChange(channel.id, event.target.value)}
                   onBlur={() => setEditingChannelId(null)}
                   onKeyDown={(event) => {
@@ -194,18 +195,9 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
             >
               <div className="channel-tab-content">
                 <div className="channel-tab-title-row">
-                  <h3>{channel.name || 'Untitled channel'}</h3>
+                  <h3 onDoubleClick={startEditingChannelName}>{channel.name || 'Untitled channel'}</h3>
                   <button
-                    className="channel-tab-edit-button"
-                    type="button"
-                    aria-label={`Rename channel ${channel.name || channel.id}`}
-                    disabled={isFrontPageLocked}
-                    onClick={startEditingChannelName}
-                  >
-                    Rename
-                  </button>
-                  <button
-                    className="channel-tab-remove-button"
+                    className="channel-tab-remove"
                     type="button"
                     aria-label={removeLabel}
                     onClick={() => onRemoveChannel(channel.id)}
