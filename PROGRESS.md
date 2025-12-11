@@ -203,3 +203,5 @@
 
 ## Arrow key camera rotation
 - Added arrow-key yaw/pitch controls that mirror pointer-look behaviour in both free-roam and follow/orbit camera modes.
+## Planar track endpoint rendering
+- Limited planar endpoint markers to the last visible point per track while retaining full line segments, keeping selection/follow styling on the singular marker.
