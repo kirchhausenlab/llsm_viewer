@@ -206,3 +206,7 @@
 - Added arrow-key yaw/pitch controls that mirror pointer-look behaviour in both free-roam and follow/orbit camera modes.
 ## Planar track endpoint rendering
 - Limited planar endpoint markers to the last visible point per track while retaining full line segments, keeping selection/follow styling on the singular marker.
+
+## Planar overlay pixel widths
+- Normalized planar overlay strokes and endpoints to screen-space widths so zooming no longer inflates or shrinks track lines.
+- Kept hover outlines and thin-stroke fallback outlines anchored to pixel widths after reversing the view scale during rendering.
