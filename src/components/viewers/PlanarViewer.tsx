@@ -327,6 +327,7 @@ function PlanarViewer({
 
     const viewScale = viewState.scale;
     const viewRotation = viewState.rotation;
+    const dprScale = Math.max(viewScale, 1e-6);
     const cos = Math.cos(viewRotation);
     const sin = Math.sin(viewRotation);
 
@@ -354,7 +355,7 @@ function PlanarViewer({
       context.moveTo(xyCenterX, originY + layout.zy.originY);
       context.lineTo(zyCenterX, zyCenterY);
       context.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-      context.lineWidth = 1 / Math.max(viewScale, 1e-6);
+      context.lineWidth = 1 / dprScale;
       context.stroke();
       context.restore();
     }
@@ -369,18 +370,17 @@ function PlanarViewer({
       context.moveTo(xyCenterX, originY + layout.xz.originY);
       context.lineTo(xzCenterX, xzCenterY);
       context.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-      context.lineWidth = 1 / Math.max(viewScale, 1e-6);
+      context.lineWidth = 1 / dprScale;
       context.stroke();
       context.restore();
     }
-
-    const dprScale = Math.max(viewScale, 1e-6);
 
     if (hoveredPixel && layout.xy) {
       const hoverX = originX + layout.xy.originX + hoveredPixel.x;
       const hoverY = originY + layout.xy.originY + hoveredPixel.y;
       context.save();
-      context.lineWidth = Math.max(1 / dprScale, OUTLINE_MIN_WIDTH);
+      const hoverOutlineWidth = Math.max(1, OUTLINE_MIN_WIDTH) / dprScale;
+      context.lineWidth = hoverOutlineWidth;
       context.strokeStyle = 'rgba(255, 255, 255, 0.9)';
       context.strokeRect(hoverX - 0.5, hoverY - 0.5, 1, 1);
       context.restore();
@@ -436,7 +436,8 @@ function PlanarViewer({
 
           context.save();
           context.globalAlpha = strokeAlpha;
-          context.lineWidth = lineWidth;
+          const strokeLineWidth = lineWidth / dprScale;
+          context.lineWidth = strokeLineWidth;
           context.lineCap = 'round';
           context.lineJoin = 'round';
           context.strokeStyle = componentsToCss(strokeColor);
@@ -467,9 +468,9 @@ function PlanarViewer({
 
           context.restore();
 
-          if (lineWidth / dprScale < 1.25) {
+          if (lineWidth < 1.25) {
             context.save();
-            context.lineWidth = Math.max(OUTLINE_MIN_WIDTH, lineWidth * 1.4);
+            context.lineWidth = Math.max(OUTLINE_MIN_WIDTH, lineWidth * 1.4) / dprScale;
             context.strokeStyle = `rgba(0, 0, 0, ${OUTLINE_OPACITY})`;
             context.beginPath();
             points.forEach((point, index) => {
