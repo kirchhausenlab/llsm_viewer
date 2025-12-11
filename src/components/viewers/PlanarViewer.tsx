@@ -424,7 +424,12 @@ function PlanarViewer({
         const highlightColor = mixWithWhite(track.baseColor, 0.4);
         const strokeColor = isSelected ? highlightColor : track.baseColor;
 
-        const drawTrack = (points: { x: number; y: number }[], offsetX: number, offsetY: number) => {
+        const drawTrack = (
+          points: { x: number; y: number }[],
+          offsetX: number,
+          offsetY: number,
+          endpoint: { x: number; y: number } | null
+        ) => {
           if (points.length === 0) {
             return;
           }
@@ -449,11 +454,12 @@ function PlanarViewer({
           context.stroke();
 
           const endpointRadius = Math.max(lineWidth * 0.6, OUTLINE_MIN_WIDTH) / dprScale;
-          context.fillStyle = componentsToCss(track.highlightColor);
-          context.globalAlpha = fillAlpha;
-          for (const point of points) {
-            const x = offsetX + point.x;
-            const y = offsetY + point.y;
+          const endpointToDraw = endpoint ?? points[points.length - 1];
+          if (endpointToDraw) {
+            const x = offsetX + endpointToDraw.x;
+            const y = offsetY + endpointToDraw.y;
+            context.fillStyle = componentsToCss(track.highlightColor);
+            context.globalAlpha = fillAlpha;
             context.beginPath();
             context.arc(x, y, endpointRadius, 0, Math.PI * 2);
             context.fill();
@@ -480,18 +486,21 @@ function PlanarViewer({
           }
         };
 
-        drawTrack(track.xyPoints, xyOriginX, xyOriginY);
+        const xyEndpoint = track.xyPoints.length > 0 ? track.xyPoints[track.xyPoints.length - 1] : null;
+        drawTrack(track.xyPoints, xyOriginX, xyOriginY, xyEndpoint);
 
         if (layout.xz) {
           const xzOriginX = originX + layout.xz.originX;
           const xzOriginY = originY + layout.xz.originY;
-          drawTrack(track.xzPoints, xzOriginX, xzOriginY);
+          const xzEndpoint = track.xzPoints.length > 0 ? track.xzPoints[track.xzPoints.length - 1] : null;
+          drawTrack(track.xzPoints, xzOriginX, xzOriginY, xzEndpoint);
         }
 
         if (layout.zy) {
           const zyOriginX = originX + layout.zy.originX;
           const zyOriginY = originY + layout.zy.originY;
-          drawTrack(track.zyPoints, zyOriginX, zyOriginY);
+          const zyEndpoint = track.zyPoints.length > 0 ? track.zyPoints[track.zyPoints.length - 1] : null;
+          drawTrack(track.zyPoints, zyOriginX, zyOriginY, zyEndpoint);
         }
       }
     }
