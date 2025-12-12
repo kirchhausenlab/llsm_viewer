@@ -69,7 +69,8 @@ function createSliceWithSampler(
       const normalized = normalizeScalar(value);
       return invert ? 1 - normalized : normalized;
     };
-    const tint = channels === 1 ? getColor(layer.color) : null;
+    const layerColor = layer.color ?? '#ffffff';
+    const tint = channels === 1 ? getColor(layerColor) : null;
     const channelValues = new Array<number>(channels);
 
     for (let y = 0; y < height; y++) {
@@ -98,7 +99,7 @@ function createSliceWithSampler(
         if (channels === 1) {
           const normalizedIntensity = applyWindow(channelR);
           const layerAlpha = Math.max(normalizedIntensity, MIN_ALPHA);
-          const color = tint ?? getColor('#ffffff');
+          const color = tint ?? getColor(layerColor);
           srcR = color.r * normalizedIntensity;
           srcG = color.g * normalizedIntensity;
           srcB = color.b * normalizedIntensity;
@@ -435,7 +436,7 @@ export function usePlanarSlices({
         const sampleY = sliceY - offsetY;
 
         const channelLabel = layer.channelName?.trim() || layer.label?.trim() || null;
-        const channelColor = layer.color;
+        const channelColor = layer.color ?? '#ffffff';
 
         if (layer.isSegmentation && volume.segmentationLabels) {
           const labelValue = sampleSegmentationLabel2d(volume, sampleX, sampleY, slice);

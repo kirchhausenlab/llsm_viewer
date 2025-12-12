@@ -256,3 +256,6 @@
 
 ## Clipmap initialization fix
 - Seeded clipmap level origins with an invalid sentinel so the first update populates textures instead of leaving them empty and producing black renders.
+
+## Planar hover color typing
+- Defaulted planar layer colors to white when unset so hover formatting and slice compositing avoid undefined hex strings and continue to pass strict type checks.
