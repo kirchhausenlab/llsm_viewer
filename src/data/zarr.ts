@@ -137,14 +137,20 @@ async function collectDirectoryEntries(
   prefix: string,
   files: Map<AbsolutePath, File>
 ): Promise<void> {
-  for await (const [name, entry] of handle.entries()) {
+  const iterator: AsyncIterableIterator<[string, FileSystemHandle]> | undefined =
+    (handle as any).entries?.();
+  if (!iterator) {
+    throw new Error('FileSystemDirectoryHandle.entries() is not supported in this environment.');
+  }
+
+  for await (const [name, entry] of iterator) {
     if (entry.kind === 'file') {
-      const file = await entry.getFile();
+      const file = await (entry as FileSystemFileHandle).getFile();
       const fullPath = normalizeKey(prefix ? `${prefix}/${name}` : name);
       files.set(fullPath, file);
     } else if (entry.kind === 'directory') {
       const nextPrefix = prefix ? `${prefix}/${name}` : name;
-      await collectDirectoryEntries(entry, nextPrefix, files);
+      await collectDirectoryEntries(entry as FileSystemDirectoryHandle, nextPrefix, files);
     }
   }
 }
@@ -207,7 +213,9 @@ export class DirectoryHandleStore implements AsyncMutable {
     const handle = await this.getFileHandle(key, true);
     if (!handle) throw new Error(`Cannot create file for key ${key}`);
     const writer = await handle.createWritable();
-    await writer.write(value);
+    const buffer = new ArrayBuffer(value.byteLength);
+    new Uint8Array(buffer).set(value);
+    await writer.write(buffer);
     await writer.close();
   }
 }
@@ -242,7 +250,7 @@ export class IndexedDBStore implements AsyncMutable {
     return new IndexedDBStore(db, storeName);
   }
 
-  private transaction<T>(
+  private transaction<T = unknown>(
     mode: IDBTransactionMode,
     action: (store: IDBObjectStore) => IDBRequest<T>
   ): Promise<T> {
@@ -256,7 +264,7 @@ export class IndexedDBStore implements AsyncMutable {
   }
 
   async get(key: AbsolutePath): Promise<Uint8Array | undefined> {
-    const result = await this.transaction<IDBValidValue>('readonly', (store) =>
+    const result = await this.transaction<unknown>('readonly', (store) =>
       store.get(normalizeKey(key))
     );
     if (!result) return undefined;
