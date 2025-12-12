@@ -284,3 +284,8 @@
 ## Time-aware planar streaming fixes
 - Corrected planar slice mip selection to treat Zarr shapes as 5D tuples and propagate the viewer's time index through streaming requests without type errors.
 - Restored `useVolumeViewerResources` time-index threading so streaming hooks receive the selected frame during volume rendering.
+
+## Clipmap dtype support
+- Taught `VolumeClipmapManager` to mirror the Zarr source dtype when allocating clipmap buffers and textures so float and uint16 volumes upload without truncation.
+- Normalized clipmap uploads to use matching typed arrays instead of `Uint8Array`, wiring UnsignedShort and Float textures through to the shader path.
+- Added a streaming clipmap regression test covering uint16 data to guard future dtype regressions and wired it into the shared test runner.
