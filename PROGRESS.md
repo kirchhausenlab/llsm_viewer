@@ -253,3 +253,7 @@
 
 ## Clipmap initialization fix
 - Seeded clipmap level origins with an invalid sentinel so the first update populates textures instead of leaving them empty and producing black renders.
+
+## Planar streaming slices
+- Added view-aware planar slice streaming that selects mip levels based on zoom, requests only the visible region, and reuses cached tiles with abortable fetches.
+- Reused the planar loading overlay for slice streaming progress and wired hover/intensity sampling to the streamed slice buffers.
