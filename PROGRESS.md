@@ -1,6 +1,7 @@
 # Progress
 
 ## Latest changes
+- Tightened volume streaming detection to require a `streamingSource`, keeping TIFF/offline Zarr volumes on cached textures and ensuring streaming metadata includes explicit sources in both 3D and slice modes.
 - Documented the streaming Zarr pipeline, clipmap renderer, and store options in `PROJECT_STRUCTURE.md` and `README.md` so new contributors can trace the data flow.
 - Added dataset metadata/store types to centralize Zarr store descriptors and expose streaming hints on viewer resources.
 - Expanded test coverage for `ZarrVolumeSource` region reads and the clipmap renderer to exercise chunk copying, cache reuse, and shader uniform wiring.
