@@ -180,7 +180,9 @@ async function createArchiveZarrStore(
   return new KeyedFileStore(files);
 }
 
-async function createOpfsZarrStore(store: PreprocessedZarrStore): Promise<AsyncReadable | null> {
+type NamedZarrStore = Extract<PreprocessedZarrStore, { source: 'opfs' | 'local' }>;
+
+async function createOpfsZarrStore(store: NamedZarrStore): Promise<AsyncReadable | null> {
   if (typeof navigator === 'undefined' || typeof navigator.storage?.getDirectory !== 'function') {
     return null;
   }
