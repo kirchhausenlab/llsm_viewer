@@ -285,6 +285,9 @@
 - Corrected planar slice mip selection to treat Zarr shapes as 5D tuples and propagate the viewer's time index through streaming requests without type errors.
 - Restored `useVolumeViewerResources` time-index threading so streaming hooks receive the selected frame during volume rendering.
 
+## Zarr volume chunk validation
+- Normalized Zarr chunk requests to honor five-dimensional coordinates when present and fallback to the array's dimensionality for 4D data.
+- Added shape-aware byte length validation when loading Zarr-backed preprocessed volumes to catch mismatched payloads while preserving streaming context setup.
 ## Clipmap dtype support
 - Taught `VolumeClipmapManager` to mirror the Zarr source dtype when allocating clipmap buffers and textures so float and uint16 volumes upload without truncation.
 - Normalized clipmap uploads to use matching typed arrays instead of `Uint8Array`, wiring UnsignedShort and Float textures through to the shader path.
