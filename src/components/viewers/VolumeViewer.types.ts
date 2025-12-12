@@ -11,7 +11,8 @@ import type { TrackColorMode, TrackDefinition } from '../../types/tracks';
 
 export type StreamableNormalizedVolume = NormalizedVolume & {
   streamingSource?: ZarrVolumeSource;
-  streamingBaseShape?: [number, number, number, number];
+  streamingBaseShape?: [number, number, number, number, number];
+  streamingBaseChunkShape?: [number, number, number, number, number];
 };
 
 export type VolumeSourceMetadata = {

@@ -479,6 +479,7 @@ function VolumeViewer({
     layers,
     primaryVolume,
     isAdditiveBlending,
+    timeIndex: clampedTimeIndex,
     renderContextRevision,
     sceneRef,
     cameraRef,

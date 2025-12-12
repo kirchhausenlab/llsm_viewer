@@ -67,14 +67,15 @@ console.log('Starting clipmap renderer tests');
 
   const streamingSize = 4;
   const streamingData = new Uint8Array(streamingSize * streamingSize * streamingSize).fill(7);
-  const streamingChunks: [number, number, number, number] = [
+  const streamingChunks: [number, number, number, number, number] = [
+    1,
     1,
     streamingSize,
     streamingSize,
     streamingSize,
   ];
   const streamingArray: MinimalZarrArray = {
-    shape: [1, streamingSize, streamingSize, streamingSize],
+    shape: [1, 1, streamingSize, streamingSize, streamingSize],
     chunks: streamingChunks,
     dtype: '<u1',
     async getChunk() {
@@ -86,7 +87,7 @@ console.log('Starting clipmap renderer tests');
       level: 0,
       array: streamingArray,
       dataType: 'uint8',
-      shape: [1, streamingSize, streamingSize, streamingSize],
+      shape: [1, 1, streamingSize, streamingSize, streamingSize],
       chunkShape: streamingChunks,
     },
   ]);
@@ -101,7 +102,7 @@ console.log('Starting clipmap renderer tests');
     max: 255,
     chunkShape: [streamingSize, streamingSize, streamingSize],
     streamingSource,
-    streamingBaseShape: [1, streamingSize, streamingSize, streamingSize],
+    streamingBaseShape: [1, 1, streamingSize, streamingSize, streamingSize],
   };
   const streamingClipmap = new VolumeClipmapManager(streamingVolume, 2);
   await streamingClipmap.update(new THREE.Vector3(streamingSize / 2, streamingSize / 2, streamingSize / 2));

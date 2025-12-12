@@ -314,6 +314,7 @@ function PlanarViewer({
     visibleSliceRegion,
     pixelRatio: window.devicePixelRatio || 1,
     viewScale: viewState.scale,
+    timeIndex: clampedTimeIndex,
   });
 
   const {

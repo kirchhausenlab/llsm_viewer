@@ -137,8 +137,8 @@ const createFakeResource = (): VolumeResources => {
     getMipLevels: () => [0],
     getMip: () => ({
       level: 0,
-      shape: [1, streamingSize, streamingSize, streamingSize] as const,
-      chunkShape: [1, streamingSize, streamingSize, streamingSize] as const,
+      shape: [1, 1, streamingSize, streamingSize, streamingSize] as const,
+      chunkShape: [1, 1, streamingSize, streamingSize, streamingSize] as const,
       dataType: 'uint8',
       array: null as never,
     }),
@@ -158,7 +158,7 @@ const createFakeResource = (): VolumeResources => {
     min: 0,
     max: 1,
     streamingSource,
-    streamingBaseShape: [1, streamingSize, streamingSize, streamingSize],
+    streamingBaseShape: [1, 1, streamingSize, streamingSize, streamingSize],
     chunkShape: [streamingSize, streamingSize, streamingSize],
   };
 
@@ -208,6 +208,7 @@ const createFakeResource = (): VolumeResources => {
       sceneRef,
       cameraRef,
       controlsRef,
+      timeIndex: 0,
       rotationTargetRef: { current: new THREE.Vector3(streamingSize / 2, streamingSize / 2, streamingSize / 2) },
       defaultViewStateRef: { current: null },
       trackGroupRef,

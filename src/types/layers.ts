@@ -3,7 +3,8 @@ import type { NormalizedVolume } from '../core/volumeProcessing';
 
 export type LoadedVolume = NormalizedVolume & {
   streamingSource?: ZarrVolumeSource;
-  streamingBaseShape?: [number, number, number, number];
+  streamingBaseShape?: [number, number, number, number, number];
+  streamingBaseChunkShape?: [number, number, number, number, number];
 };
 
 export type LoadedLayer = {

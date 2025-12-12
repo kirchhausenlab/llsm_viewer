@@ -275,19 +275,20 @@ async function readZarrVolume(
 
 type StreamingContext = {
   streamingSource: ZarrVolumeSource;
-  streamingBaseShape: [number, number, number, number];
+  streamingBaseShape: [number, number, number, number, number];
+  streamingBaseChunkShape: [number, number, number, number, number];
 };
 
-function normalizeToFourDimensions(
+function normalizeToFiveDimensions(
   shape: readonly number[] | undefined,
-  fallback: [number, number, number, number]
-): [number, number, number, number] {
-  const normalized: [number, number, number, number] = [...fallback];
+  fallback: [number, number, number, number, number]
+): [number, number, number, number, number] {
+  const normalized: [number, number, number, number, number] = [...fallback];
   if (!Array.isArray(shape)) {
     return normalized;
   }
 
-  for (let index = 0; index < 4; index += 1) {
+  for (let index = 0; index < 5; index += 1) {
     const value = shape[index];
     if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
       normalized[index] = value;
@@ -314,21 +315,23 @@ export async function buildStreamingContexts(
 
         try {
           const baseArray = await openArrayAt(store, volume.path);
-          const baseShape = normalizeToFourDimensions(baseArray.shape as number[] | undefined, [
+          const baseShape = normalizeToFiveDimensions(baseArray.shape as number[] | undefined, [
+            1,
             volume.channels,
             volume.depth,
             volume.height,
             volume.width
           ]);
-          const baseChunkShape = normalizeToFourDimensions(
+          const baseChunkShape = normalizeToFiveDimensions(
             (baseArray as { chunks?: readonly number[] }).chunks,
             baseShape
           );
-          const streamingBaseShape: [number, number, number, number] = [
+          const streamingBaseShape: [number, number, number, number, number] = [
             Math.max(baseShape[0], baseChunkShape[0]),
             Math.max(baseShape[1], baseChunkShape[1]),
             Math.max(baseShape[2], baseChunkShape[2]),
-            Math.max(baseShape[3], baseChunkShape[3])
+            Math.max(baseShape[3], baseChunkShape[3]),
+            Math.max(baseShape[4], baseChunkShape[4])
           ];
 
           const levels: ZarrMipLevel[] = [
@@ -359,8 +362,8 @@ export async function buildStreamingContexts(
               }
               try {
                 const mipArray = await openArrayAt(store, path);
-                const mipShape = normalizeToFourDimensions(mipArray.shape as number[] | undefined, baseShape);
-                const mipChunkShape = normalizeToFourDimensions(
+                const mipShape = normalizeToFiveDimensions(mipArray.shape as number[] | undefined, baseShape);
+                const mipChunkShape = normalizeToFiveDimensions(
                   (mipArray as { chunks?: readonly number[] }).chunks,
                   mipShape
                 );
@@ -380,7 +383,11 @@ export async function buildStreamingContexts(
           }
 
           const streamingSource = new ZarrVolumeSource(levels);
-          contexts.set(volume.path, { streamingSource, streamingBaseShape });
+          contexts.set(volume.path, {
+            streamingSource,
+            streamingBaseShape,
+            streamingBaseChunkShape: baseChunkShape,
+          });
         } catch (error) {
           console.warn(`Failed to initialize streaming for ${volume.path}`, error);
         }
@@ -421,7 +428,8 @@ export async function attachStreamingContexts(
         return {
           ...volume,
           streamingSource: context.streamingSource,
-          streamingBaseShape: context.streamingBaseShape
+          streamingBaseShape: context.streamingBaseShape,
+          streamingBaseChunkShape: context.streamingBaseChunkShape,
         } satisfies LoadedVolume;
       });
       updated.set(layer.key, { ...targetLayer, volumes: nextVolumes });

@@ -6,16 +6,16 @@ console.log('Starting ZarrVolumeSource tests');
 
 const createMockArray = (resolverList?: Array<() => void>) => {
   const array = {
-    chunks: [1, 1, 1, 1] as const,
+    chunks: [1, 1, 1, 1, 1] as const,
     dtype: '|u1',
-    shape: [4, 4, 4, 4] as const,
+    shape: [1, 4, 4, 4, 4] as const,
     getChunk: (coords: number[]) => {
       if (resolverList) {
         return new Promise<Uint8Array>((resolve) => {
-          resolverList.push(() => resolve(new Uint8Array([coords[3] ?? 0])));
+          resolverList.push(() => resolve(new Uint8Array([coords[4] ?? 0])));
         });
       }
-      return Promise.resolve(new Uint8Array([coords[3] ?? 0]));
+      return Promise.resolve(new Uint8Array([coords[4] ?? 0]));
     }
   } satisfies Partial<ZarrMipLevel['array']>;
   return array as ZarrMipLevel['array'];
@@ -26,19 +26,19 @@ try {
     level: 0,
     array: createMockArray(),
     dataType: 'uint8',
-    shape: [4, 4, 4, 4],
-    chunkShape: [1, 1, 1, 1]
+    shape: [1, 4, 4, 4, 4],
+    chunkShape: [1, 1, 1, 1, 1]
   };
 
   const evictionSource = new ZarrVolumeSource([evictionLevel], { cacheSizeBytes: 2 });
-  await evictionSource.readChunk(0, [0, 0, 0, 0]);
-  await evictionSource.readChunk(0, [0, 0, 0, 1]);
-  await evictionSource.readChunk(0, [0, 0, 0, 2]);
+  await evictionSource.readChunk(0, [0, 0, 0, 0, 0]);
+  await evictionSource.readChunk(0, [0, 0, 0, 0, 1]);
+  await evictionSource.readChunk(0, [0, 0, 0, 0, 2]);
 
   const cacheKeys = evictionSource.getCachedKeys();
-  assert.ok(cacheKeys.includes('0:0,0,0,1'));
-  assert.ok(cacheKeys.includes('0:0,0,0,2'));
-  assert.ok(!cacheKeys.includes('0:0,0,0,0'));
+  assert.ok(cacheKeys.includes('0:0,0,0,0,1'));
+  assert.ok(cacheKeys.includes('0:0,0,0,0,2'));
+  assert.ok(!cacheKeys.includes('0:0,0,0,0,0'));
 
   const resolvers: Array<() => void> = [];
   const slowArray = createMockArray(resolvers);
@@ -53,14 +53,14 @@ try {
       }
     },
     dataType: 'uint8',
-    shape: [4, 4, 4, 4],
-    chunkShape: [1, 1, 1, 1]
+    shape: [1, 4, 4, 4, 4],
+    chunkShape: [1, 1, 1, 1, 1]
   };
 
   const cancellationSource = new ZarrVolumeSource([slowLevel], { maxConcurrency: 1 });
-  const first = cancellationSource.readChunk(0, [0, 0, 0, 0]);
+  const first = cancellationSource.readChunk(0, [0, 0, 0, 0, 0]);
   const controller = new AbortController();
-  const pending = cancellationSource.readChunk(0, [0, 0, 0, 1], { signal: controller.signal });
+  const pending = cancellationSource.readChunk(0, [0, 0, 0, 0, 1], { signal: controller.signal });
   controller.abort();
   resolvers.shift()?.();
   await first;
@@ -77,8 +77,8 @@ try {
 try {
   console.log('Starting ZarrVolumeSource region tests');
 
-  const chunkShape: ZarrMipLevel['chunkShape'] = [1, 1, 1, 1];
-  const shape: ZarrMipLevel['shape'] = [1, 2, 2, 2];
+  const chunkShape: ZarrMipLevel['chunkShape'] = [1, 1, 1, 1, 1];
+  const shape: ZarrMipLevel['shape'] = [1, 1, 2, 2, 2];
   const recordedCoords: number[][] = [];
   const level: ZarrMipLevel = {
     level: 0,
@@ -88,7 +88,7 @@ try {
       shape,
       getChunk: (coords: number[]) => {
         recordedCoords.push(coords);
-        const value = coords[1] * 4 + coords[2] * 2 + coords[3];
+        const value = coords[2] * 4 + coords[3] * 2 + coords[4];
         return Promise.resolve(new Uint8Array([value]));
       }
     } as ZarrMipLevel['array'],
@@ -98,7 +98,7 @@ try {
   };
 
   const source = new ZarrVolumeSource([level]);
-  const region = await source.readRegion({ mipLevel: 0, offset: [0, 0, 0, 0], shape });
+  const region = await source.readRegion({ mipLevel: 0, offset: [0, 0, 0, 0], shape: [1, 2, 2, 2] });
 
   assert.deepEqual(Array.from(region), [0, 1, 2, 3, 4, 5, 6, 7]);
   assert.equal(recordedCoords.length, 8);

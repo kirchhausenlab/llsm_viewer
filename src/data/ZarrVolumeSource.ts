@@ -5,19 +5,20 @@ export type ZarrMipLevel = {
   level: number;
   array: MinimalZarrArray;
   dataType: VolumeDataType;
-  shape: [number, number, number, number];
-  chunkShape: [number, number, number, number];
+  shape: [number, number, number, number, number];
+  chunkShape: [number, number, number, number, number];
 };
 
 export type RegionRequest = {
   mipLevel: number;
+  time?: number;
   offset: [number, number, number, number];
   shape: [number, number, number, number];
   signal?: AbortSignal;
-  priorityCenter?: [number, number, number, number];
+  priorityCenter?: [number, number, number, number, number];
 };
 
-type ChunkCoords = [number, number, number, number];
+type ChunkCoords = [number, number, number, number, number];
 
 type CacheEntry = { key: string; bytes: number; value: VolumeTypedArray };
 
@@ -50,7 +51,7 @@ function computeStrides(shape: readonly number[]): number[] {
 function distanceSquared(a: readonly number[], b: readonly number[]): number {
   let total = 0;
   for (let i = 0; i < a.length; i += 1) {
-    const delta = a[i] - b[i];
+    const delta = a[i] - (b[i] ?? 0);
     total += delta * delta;
   }
   return total;
@@ -120,24 +121,30 @@ export class ZarrVolumeSource {
   async readRegion(request: RegionRequest): Promise<VolumeTypedArray> {
     const level = this.getMip(request.mipLevel);
     const [cSize, zSize, ySize, xSize] = request.shape;
+    const timeIndex = Math.min(
+      Math.max(0, Math.floor(request.time ?? 0)),
+      Math.max(0, level.shape[0] - 1)
+    );
     const destination = createWritableVolumeArray(level.dataType, cSize * zSize * ySize * xSize);
     const destStrides = computeStrides(request.shape);
 
     const chunkRanges = request.offset.map((start, index) => {
       const size = request.shape[index];
-      const chunk = level.chunkShape[index];
+      const chunk = level.chunkShape[index + 1];
       return {
         startChunk: Math.floor(start / chunk),
         endChunk: Math.floor((start + size - 1) / chunk)
       };
     }) as Array<{ startChunk: number; endChunk: number }>;
 
+    const timeChunk = Math.floor(timeIndex / level.chunkShape[0]);
+
     const pending: Array<Promise<void>> = [];
     for (let c = chunkRanges[0].startChunk; c <= chunkRanges[0].endChunk; c += 1) {
       for (let z = chunkRanges[1].startChunk; z <= chunkRanges[1].endChunk; z += 1) {
         for (let y = chunkRanges[2].startChunk; y <= chunkRanges[2].endChunk; y += 1) {
           for (let x = chunkRanges[3].startChunk; x <= chunkRanges[3].endChunk; x += 1) {
-            const coords: ChunkCoords = [c, z, y, x];
+            const coords: ChunkCoords = [timeChunk, c, z, y, x];
             const priorityCenter = request.priorityCenter ?? coords;
             pending.push(
               this.readChunk(request.mipLevel, coords, {
@@ -150,6 +157,7 @@ export class ZarrVolumeSource {
                   destination,
                   destStrides,
                   request,
+                  timeIndex,
                   level,
                 });
               })
@@ -169,44 +177,51 @@ export class ZarrVolumeSource {
     destination: VolumeTypedArray;
     destStrides: number[];
     request: RegionRequest;
+    timeIndex: number;
     level: ZarrMipLevel;
   }) {
-    const { chunk, chunkCoords, destination, destStrides, request, level } = params;
+    const { chunk, chunkCoords, destination, destStrides, request, level, timeIndex } = params;
     const { chunkShape } = level;
     const chunkStrides = computeStrides(chunkShape);
     const [cOffset, zOffset, yOffset, xOffset] = request.offset;
     const [cSize, zSize, ySize, xSize] = request.shape;
 
-    const baseC = chunkCoords[0] * chunkShape[0];
-    const baseZ = chunkCoords[1] * chunkShape[1];
-    const baseY = chunkCoords[2] * chunkShape[2];
-    const baseX = chunkCoords[3] * chunkShape[3];
+    const baseT = chunkCoords[0] * chunkShape[0];
+    const baseC = chunkCoords[1] * chunkShape[1];
+    const baseZ = chunkCoords[2] * chunkShape[2];
+    const baseY = chunkCoords[3] * chunkShape[3];
+    const baseX = chunkCoords[4] * chunkShape[4];
 
-    for (let localC = 0; localC < chunkShape[0]; localC += 1) {
-      const globalC = baseC + localC;
-      if (globalC < cOffset || globalC >= cOffset + cSize) continue;
-      for (let localZ = 0; localZ < chunkShape[1]; localZ += 1) {
-        const globalZ = baseZ + localZ;
-        if (globalZ < zOffset || globalZ >= zOffset + zSize) continue;
-        for (let localY = 0; localY < chunkShape[2]; localY += 1) {
-          const globalY = baseY + localY;
-          if (globalY < yOffset || globalY >= yOffset + ySize) continue;
-          for (let localX = 0; localX < chunkShape[3]; localX += 1) {
-            const globalX = baseX + localX;
-            if (globalX < xOffset || globalX >= xOffset + xSize) continue;
+    for (let localT = 0; localT < chunkShape[0]; localT += 1) {
+      const globalT = baseT + localT;
+      if (globalT !== timeIndex) continue;
+      for (let localC = 0; localC < chunkShape[1]; localC += 1) {
+        const globalC = baseC + localC;
+        if (globalC < cOffset || globalC >= cOffset + cSize) continue;
+        for (let localZ = 0; localZ < chunkShape[2]; localZ += 1) {
+          const globalZ = baseZ + localZ;
+          if (globalZ < zOffset || globalZ >= zOffset + zSize) continue;
+          for (let localY = 0; localY < chunkShape[3]; localY += 1) {
+            const globalY = baseY + localY;
+            if (globalY < yOffset || globalY >= yOffset + ySize) continue;
+            for (let localX = 0; localX < chunkShape[4]; localX += 1) {
+              const globalX = baseX + localX;
+              if (globalX < xOffset || globalX >= xOffset + xSize) continue;
 
-            const chunkIndex =
-              localC * chunkStrides[0] +
-              localZ * chunkStrides[1] +
-              localY * chunkStrides[2] +
-              localX * chunkStrides[3];
-            const destIndex =
-              (globalC - cOffset) * destStrides[0] +
-              (globalZ - zOffset) * destStrides[1] +
-              (globalY - yOffset) * destStrides[2] +
-              (globalX - xOffset) * destStrides[3];
+              const chunkIndex =
+                localT * chunkStrides[0] +
+                localC * chunkStrides[1] +
+                localZ * chunkStrides[2] +
+                localY * chunkStrides[3] +
+                localX * chunkStrides[4];
+              const destIndex =
+                (globalC - cOffset) * destStrides[0] +
+                (globalZ - zOffset) * destStrides[1] +
+                (globalY - yOffset) * destStrides[2] +
+                (globalX - xOffset) * destStrides[3];
 
-            destination[destIndex] = chunk[chunkIndex];
+              destination[destIndex] = chunk[chunkIndex];
+            }
           }
         }
       }
