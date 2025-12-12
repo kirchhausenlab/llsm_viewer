@@ -143,15 +143,18 @@ The main responsibilities are:
 
 ### Data pipeline (loading → processing → GPU)
 
-- `src/loaders/volumeLoader.ts`  
+- `src/loaders/volumeLoader.ts`
   High-level API to load many TIFF/GeoTIFF volumes; delegates decoding to a worker and streams slices back.
-- `src/workers/volumeLoader.worker.ts` + `src/workers/volumeLoaderMessages.ts`  
+- `src/workers/volumeLoader.worker.ts` + `src/workers/volumeLoaderMessages.ts`
   Worker implementation + typed message protocol.
 - `src/core/volumeProcessing.ts`
   Normalization into GPU-friendly formats + segmentation colorization/label handling.
 - `src/core/textureCache.ts`
   Caches packed 3D texture buffers derived from normalized volumes (avoids repeated repacking).
-- `src/shaders/*`  
+- `src/data/zarr.ts`
+  Zarrita-backed stores for remote URLs, directory-picked File mappings, and OPFS/IndexedDB preprocessing output plus helpers
+  to open arrays/groups with minimal surfaces for loaders/workers.
+- `src/shaders/*`
   Shader source modules (`volumeRenderShader.ts`, `sliceRenderShader.ts`).
 
 ---

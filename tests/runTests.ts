@@ -17,3 +17,4 @@ import './app/hooks/useDatasetLaunch.test.ts';
 import './app/hooks/useViewerModePlayback.test.ts';
 import './app/hooks/useWindowLayout.test.ts';
 import './app/components/HelpMenu.test.tsx';
+import './zarrStores.test.ts';
