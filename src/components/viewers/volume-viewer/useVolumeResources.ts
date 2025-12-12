@@ -21,6 +21,7 @@ type UseVolumeResourcesParams = {
   layers: import('../VolumeViewer.types').VolumeViewerProps['layers'];
   primaryVolume: StreamableNormalizedVolume | null;
   isAdditiveBlending: boolean;
+  timeIndex: number;
   renderContextRevision: number;
   sceneRef: MutableRefObject<THREE.Scene | null>;
   cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
@@ -52,6 +53,7 @@ export function useVolumeResources({
   layers,
   primaryVolume,
   isAdditiveBlending,
+  timeIndex,
   renderContextRevision,
   sceneRef,
   cameraRef,
@@ -613,6 +615,7 @@ export function useVolumeResources({
                 streamingBaseShape: streamingBaseShape!,
               });
             }
+            resources.clipmap?.setTimeIndex(timeIndex);
             resources.clipmap?.update(rotationTargetRef.current, {
               signal: abortController.signal,
               priorityCenter: rotationTargetRef.current,
@@ -693,6 +696,7 @@ export function useVolumeResources({
     defaultViewStateRef,
     trackGroupRef,
     sceneRef,
+    timeIndex,
   ]);
 
   useEffect(() => {

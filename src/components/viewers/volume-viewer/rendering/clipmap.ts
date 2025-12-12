@@ -20,12 +20,13 @@ type ClipLevel = {
 
 type StreamingMetadata = {
   source: ZarrVolumeSource;
-  baseShape: [number, number, number, number];
+  baseShape: [number, number, number, number, number];
 };
 
 type ClipmapVolume = NormalizedVolume & {
   streamingSource?: ZarrVolumeSource;
-  streamingBaseShape?: [number, number, number, number];
+  streamingBaseShape?: [number, number, number, number, number];
+  streamingBaseChunkShape?: [number, number, number, number, number];
 };
 
 function createTexture(size: number, channels: number): THREE.Data3DTexture {
@@ -80,6 +81,7 @@ export class VolumeClipmapManager {
   private readonly chunkShape: [number, number, number];
   private readonly streaming?: StreamingMetadata;
   private minLevelOverride = 0;
+  private timeIndex = 0;
 
   constructor(volume: ClipmapVolume, clipSize = DEFAULT_CLIP_SIZE) {
     this.volume = volume;
@@ -97,7 +99,7 @@ export class VolumeClipmapManager {
         baseShape: streamingBaseShape,
       };
       const rootChunk = streamingSource.getMip(streamingSource.getMipLevels()[0]).chunkShape;
-      this.chunkShape = [rootChunk[3], rootChunk[2], rootChunk[1]];
+      this.chunkShape = [rootChunk[4], rootChunk[3], rootChunk[2]];
     } else {
       this.chunkShape = volume.chunkShape ?? [FALLBACK_CHUNK, FALLBACK_CHUNK, FALLBACK_CHUNK];
     }
@@ -119,6 +121,21 @@ export class VolumeClipmapManager {
 
   setInteractionLod(dropFine: boolean) {
     this.minLevelOverride = dropFine ? 1 : 0;
+  }
+
+  setTimeIndex(timeIndex: number) {
+    if (!this.streaming) {
+      return;
+    }
+    const clamped = Number.isFinite(timeIndex) ? Math.max(0, Math.floor(timeIndex)) : 0;
+    if (clamped === this.timeIndex) {
+      return;
+    }
+    this.timeIndex = clamped;
+    this.levels.forEach((level) => {
+      level.requestId += 1;
+      level.abortController?.abort();
+    });
   }
 
   getActiveLevelCount(): number {
@@ -227,11 +244,11 @@ export class VolumeClipmapManager {
     const mipLevels = this.streaming.source.getMipLevels();
     const baseShape = this.streaming.baseShape;
 
-    const computeLevelScale = (shape: [number, number, number, number]) => {
+    const computeLevelScale = (shape: [number, number, number, number, number]) => {
       return {
-        scaleX: Math.max(1, Math.round(baseShape[3] / shape[3])),
-        scaleY: Math.max(1, Math.round(baseShape[2] / shape[2])),
-        scaleZ: Math.max(1, Math.round(baseShape[1] / shape[1])),
+        scaleX: Math.max(1, Math.round(baseShape[4] / shape[4])),
+        scaleY: Math.max(1, Math.round(baseShape[3] / shape[3])),
+        scaleZ: Math.max(1, Math.round(baseShape[2] / shape[2])),
       };
     };
 
@@ -272,10 +289,12 @@ export class VolumeClipmapManager {
     const { source } = streaming;
     const mip = this.computeMipScale(level.scale);
     const mipInfo = source.getMip(mip.level);
-    const [channelShape, zShape, yShape, xShape] = mipInfo.shape;
+    const [timeShape, channelShape, zShape, yShape, xShape] = mipInfo.shape;
     const scaleX = mip.scale.scaleX;
     const scaleY = mip.scale.scaleY;
     const scaleZ = mip.scale.scaleZ;
+
+    const timeIndex = Math.min(Math.max(0, this.timeIndex), Math.max(0, timeShape - 1));
 
     const startX = Math.max(0, Math.floor(level.origin.x / scaleX));
     const startY = Math.max(0, Math.floor(level.origin.y / scaleY));
@@ -289,18 +308,20 @@ export class VolumeClipmapManager {
     const shapeZ = Math.max(0, endZ - startZ);
     const channels = Math.min(Math.max(1, this.volume.channels), channelShape);
 
-    const priorityChunks: [number, number, number, number] | undefined = options?.priorityCenter
+    const priorityChunks: [number, number, number, number, number] | undefined = options?.priorityCenter
       ? [
+          Math.floor(timeIndex / mipInfo.chunkShape[0]),
           0,
-          Math.floor(options.priorityCenter.z / mipInfo.chunkShape[1]),
-          Math.floor(options.priorityCenter.y / mipInfo.chunkShape[2]),
-          Math.floor(options.priorityCenter.x / mipInfo.chunkShape[3]),
+          Math.floor(options.priorityCenter.z / mipInfo.chunkShape[2]),
+          Math.floor(options.priorityCenter.y / mipInfo.chunkShape[3]),
+          Math.floor(options.priorityCenter.x / mipInfo.chunkShape[4]),
         ]
       : undefined;
 
     try {
       const region = await source.readRegion({
         mipLevel: mip.level,
+        time: timeIndex,
         offset: [0, startZ, startY, startX],
         shape: [channels, shapeZ, shapeY, shapeX],
         signal: controller.signal,

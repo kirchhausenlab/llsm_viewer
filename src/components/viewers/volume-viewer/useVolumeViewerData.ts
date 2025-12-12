@@ -60,6 +60,7 @@ export function useVolumeViewerResources({
   layers,
   primaryVolume,
   isAdditiveBlending,
+  timeIndex,
   renderContextRevision,
   sceneRef,
   cameraRef,
@@ -89,6 +90,7 @@ export function useVolumeViewerResources({
   layers: VolumeViewerProps['layers'];
   primaryVolume: ReturnType<typeof useVolumeViewerDataState>['primaryVolume'];
   isAdditiveBlending: boolean;
+  timeIndex: number;
   renderContextRevision: number;
   sceneRef: MutableRefObject<THREE.Scene | null>;
   cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
@@ -119,6 +121,7 @@ export function useVolumeViewerResources({
     layers,
     primaryVolume,
     isAdditiveBlending,
+    timeIndex,
     renderContextRevision,
     sceneRef,
     cameraRef,

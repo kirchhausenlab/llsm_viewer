@@ -29,7 +29,7 @@ type StreamedSlice = {
 
 type StreamableVolume = ViewerLayer['volume'] & {
   streamingSource?: ZarrVolumeSource;
-  streamingBaseShape?: [number, number, number, number];
+  streamingBaseShape?: [number, number, number, number, number];
 };
 
 type VisibleSliceRegion = { minX: number; minY: number; maxX: number; maxY: number } | null;
@@ -56,27 +56,27 @@ function getStreamableVolume(volume: ViewerLayer['volume']): StreamableVolume | 
   return candidate.streamingSource ? candidate : null;
 }
 
-function getStreamingBaseShape(volume: StreamableVolume): [number, number, number, number] {
+function getStreamingBaseShape(volume: StreamableVolume): [number, number, number, number, number] {
   if (volume.streamingBaseShape) {
     return volume.streamingBaseShape;
   }
-  return [Math.max(1, volume.channels), Math.max(1, volume.depth), volume.height, volume.width];
+  return [1, Math.max(1, volume.channels), Math.max(1, volume.depth), volume.height, volume.width];
 }
 
 function computeLevelScale(
-  baseShape: [number, number, number, number],
-  levelShape: [number, number, number, number]
+  baseShape: [number, number, number, number, number],
+  levelShape: [number, number, number, number, number]
 ): { scaleX: number; scaleY: number; scaleZ: number } {
   return {
-    scaleX: Math.max(1, Math.round(baseShape[3] / levelShape[3])),
-    scaleY: Math.max(1, Math.round(baseShape[2] / levelShape[2])),
-    scaleZ: Math.max(1, Math.round(baseShape[1] / levelShape[1]))
+    scaleX: Math.max(1, Math.round(baseShape[4] / levelShape[4])),
+    scaleY: Math.max(1, Math.round(baseShape[3] / levelShape[3])),
+    scaleZ: Math.max(1, Math.round(baseShape[2] / levelShape[2]))
   };
 }
 
 function pickMipLevel(
   source: ZarrVolumeSource,
-  baseShape: [number, number, number, number],
+  baseShape: [number, number, number, number, number],
   desiredScale: number
 ): { level: number; scale: { scaleX: number; scaleY: number; scaleZ: number } } {
   const mipLevels = source.getMipLevels();
@@ -365,6 +365,7 @@ type UseStreamingSlicesParams = {
   pixelRatio: number;
   fallbackSize: { width: number; height: number };
   viewScale: number;
+  timeIndex: number;
 };
 
 function useStreamingSlices({
@@ -373,7 +374,8 @@ function useStreamingSlices({
   visibleSliceRegion,
   pixelRatio,
   fallbackSize,
-  viewScale
+  viewScale,
+  timeIndex,
 }: UseStreamingSlicesParams) {
   const [streamedSlices, setStreamedSlices] = useState<Map<string, StreamedSlice>>(new Map());
   const [isStreaming, setIsStreaming] = useState(false);
@@ -412,25 +414,29 @@ function useStreamingSlices({
       const mip = streamableVolume.streamingSource.getMip(target.level);
       const scale = target.scale;
 
+      const clampedTimeIndex = Math.min(Math.max(0, Math.floor(timeIndex)), Math.max(0, baseShape[0] - 1));
+      const timeChunk = Math.floor(clampedTimeIndex / mip.chunkShape[0]);
+      const channelChunk = Math.floor(Math.max(0, mip.shape[1] - 1) / mip.chunkShape[1]);
+
       const regionMinX = Math.max(0, Math.floor((region.minX - padding) / scale.scaleX));
       const regionMinY = Math.max(0, Math.floor((region.minY - padding) / scale.scaleY));
       const regionMaxX = Math.min(
-        mip.shape[3],
+        mip.shape[4],
         Math.ceil((region.maxX + padding) / scale.scaleX)
       );
       const regionMaxY = Math.min(
-        mip.shape[2],
+        mip.shape[3],
         Math.ceil((region.maxY + padding) / scale.scaleY)
       );
 
       const sliceZ = Math.min(
         Math.max(0, Math.floor(clampedSliceIndex / scale.scaleZ)),
-        Math.max(0, mip.shape[1] - 1)
+        Math.max(0, mip.shape[2] - 1)
       );
       const width = Math.max(1, regionMaxX - regionMinX);
       const height = Math.max(1, regionMaxY - regionMinY);
 
-      const requestKey = `${layer.key}:${target.level}:${sliceZ}:${regionMinX},${regionMinY},${width},${height}`;
+      const requestKey = `${layer.key}:${target.level}:${clampedTimeIndex}:${sliceZ}:${regionMinX},${regionMinY},${width},${height}`;
       const cached = cacheRef.current.get(requestKey);
       if (cached) {
         nextSlices.set(layer.key, cached);
@@ -439,15 +445,17 @@ function useStreamingSlices({
 
       const request = {
         mipLevel: target.level,
+        time: clampedTimeIndex,
         offset: [0, sliceZ, regionMinY, regionMinX] as [number, number, number, number],
-        shape: [mip.shape[0], 1, height, width] as [number, number, number, number],
+        shape: [mip.shape[1], 1, height, width] as [number, number, number, number],
         signal: controller.signal,
-        priorityCenter: [mip.shape[0] / 2, sliceZ, regionMinY + height / 2, regionMinX + width / 2] as [
-          number,
-          number,
-          number,
-          number
-        ]
+        priorityCenter: [
+          timeChunk,
+          channelChunk,
+          sliceZ,
+          regionMinY + height / 2,
+          regionMinX + width / 2,
+        ] as [number, number, number, number, number]
       } satisfies Parameters<ZarrVolumeSource['readRegion']>[0];
 
       const data = await streamableVolume.streamingSource.readRegion(request);
@@ -465,7 +473,7 @@ function useStreamingSlices({
         offsetY: regionMinY * scale.scaleY,
         width,
         height,
-        channels: mip.shape[0],
+        channels: mip.shape[1],
         data
       };
 
@@ -502,7 +510,16 @@ function useStreamingSlices({
     return () => {
       controller.abort();
     };
-  }, [clampedSliceIndex, fallbackSize.height, fallbackSize.width, layers, pixelRatio, visibleSliceRegion, viewScale]);
+  }, [
+    clampedSliceIndex,
+    fallbackSize.height,
+    fallbackSize.width,
+    layers,
+    pixelRatio,
+    visibleSliceRegion,
+    viewScale,
+    timeIndex,
+  ]);
 
   return { streamedSlices, isStreaming } as const;
 }
@@ -516,6 +533,7 @@ type UsePlanarSlicesParams = {
   visibleSliceRegion: VisibleSliceRegion;
   pixelRatio: number;
   viewScale: number;
+  timeIndex: number;
 };
 
 export function usePlanarSlices({
@@ -526,7 +544,8 @@ export function usePlanarSlices({
   orthogonalViewsEnabled,
   visibleSliceRegion,
   pixelRatio,
-  viewScale
+  viewScale,
+  timeIndex,
 }: UsePlanarSlicesParams) {
   const fallbackSize = useMemo(
     () => ({ width: primaryVolume?.width ?? 0, height: primaryVolume?.height ?? 0 }),
@@ -539,7 +558,8 @@ export function usePlanarSlices({
     visibleSliceRegion,
     pixelRatio,
     fallbackSize,
-    viewScale
+    viewScale,
+    timeIndex,
   });
 
   const sliceSamplers = useMemo(() => {
