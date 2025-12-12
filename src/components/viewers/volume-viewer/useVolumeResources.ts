@@ -9,6 +9,7 @@ import {
   getExpectedSliceBufferLength,
   prepareSliceTexture,
 } from './rendering';
+import { VolumeClipmapManager } from './rendering/clipmap';
 import { SliceRenderShader } from '../../../shaders/sliceRenderShader';
 import { VolumeRenderShader } from '../../../shaders/volumeRenderShader';
 import { getCachedTextureData } from '../../../core/textureCache';
@@ -157,6 +158,7 @@ export function useVolumeResources({
       disposeMaterial(resource.mesh.material);
       resource.texture.dispose();
       resource.labelTexture?.dispose();
+      resource.clipmap?.dispose();
       resourcesRef.current.delete(key);
     };
 
@@ -334,6 +336,11 @@ export function useVolumeResources({
             uniforms.u_additive.value = isAdditiveBlending ? 1 : 0;
           }
 
+          let clipmap: VolumeClipmapManager | null = null;
+          if (uniforms.u_useClipmap && uniforms.u_clipmapTextures) {
+            clipmap = new VolumeClipmapManager(volume);
+          }
+
           const material = new THREE.ShaderMaterial({
             uniforms,
             vertexShader: shader.vertexShader,
@@ -351,6 +358,10 @@ export function useVolumeResources({
           mesh.visible = layer.visible;
           mesh.renderOrder = index;
           mesh.position.set(layer.offsetX, layer.offsetY, 0);
+
+          clipmap?.update(rotationTargetRef.current);
+          clipmap?.uploadPending();
+          clipmap?.applyToMaterial(material);
 
           const worldCameraPosition = new THREE.Vector3();
           const localCameraPosition = new THREE.Vector3();
@@ -380,6 +391,7 @@ export function useVolumeResources({
           resourcesRef.current.set(layer.key, {
             mesh,
             texture,
+            clipmap: clipmap ?? undefined,
             labelTexture,
             dimensions: { width: volume.width, height: volume.height, depth: volume.depth },
             channels: volume.channels,
@@ -553,6 +565,17 @@ export function useVolumeResources({
           }
           if (materialUniforms.u_renderstyle) {
             materialUniforms.u_renderstyle.value = layer.renderStyle;
+          }
+
+          if (materialUniforms.u_useClipmap && materialUniforms.u_clipmapTextures) {
+            if (!resources.clipmap) {
+              resources.clipmap = new VolumeClipmapManager(volume);
+            }
+            resources.clipmap?.update(rotationTargetRef.current);
+            resources.clipmap?.uploadPending();
+            resources.clipmap?.applyToMaterial(shaderMaterial);
+          } else if (materialUniforms.u_useClipmap) {
+            materialUniforms.u_useClipmap.value = 0;
           }
 
           const desiredX = layer.offsetX;

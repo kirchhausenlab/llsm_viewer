@@ -894,6 +894,11 @@ function VolumeViewer({
       controls.update();
       rotationTargetRef.current.copy(controls.target);
 
+      const movementState = movementStateRef.current;
+      const isInteracting = Boolean(
+        movementState && Object.values(movementState).some((value) => value),
+      );
+
       updateTrackAppearance(timestamp);
 
       if (followTargetActiveRef.current) {
@@ -910,6 +915,13 @@ function VolumeViewer({
       for (const resource of resources.values()) {
         const { mesh } = resource;
         mesh.updateMatrixWorld();
+        if (resource.clipmap && resource.mode === '3d') {
+          const shaderMaterial = mesh.material as THREE.ShaderMaterial;
+          resource.clipmap.setInteractionLod(isInteracting);
+          resource.clipmap.update(rotationTargetRef.current);
+          resource.clipmap.uploadPending();
+          resource.clipmap.applyToMaterial(shaderMaterial);
+        }
       }
 
       const hoverPulse = 0.5 + 0.5 * Math.sin(timestamp * HOVER_PULSE_SPEED);
