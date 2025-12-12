@@ -230,3 +230,6 @@
 - Replaced the deep import of the Zarrita array context helper in the volume loader worker with a local symbol lookup so Vite can resolve worker builds without missing export errors.
 
 - Added streaming preprocessing hooks that build sharded Zarr arrays during volume loading and expose reopened arrays for visualization reuse.
+
+## Zarr mipmap builder and analytics
+- Added an incremental mipmap builder that reads level-0 chunks, max-pools them into additional Zarr arrays, and streams per-channel histograms/quantiles into root and analytics metadata without materializing entire volumes.
