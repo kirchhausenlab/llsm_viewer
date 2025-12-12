@@ -1,5 +1,10 @@
 import type { LoadedLayer } from '../../../types/layers';
 import type { VolumeDataType } from '../../../types/volume';
+import type {
+  DatasetMetadata,
+  DatasetMovieMode,
+  DatasetZarrStoreDescriptor
+} from '../../../types/dataset';
 import type { AnisotropyScaleFactors, VoxelResolutionValues } from '../../../types/voxelResolution';
 
 export type AnisotropyCorrectionMetadata = {
@@ -12,7 +17,7 @@ export type ChannelExportMetadata = {
   trackEntries: string[][];
 };
 
-export type PreprocessedMovieMode = '2d' | '3d';
+export type PreprocessedMovieMode = DatasetMovieMode;
 
 export type PreprocessedVolumeManifestEntry = {
   path: string;
@@ -53,21 +58,13 @@ export type PreprocessedManifest = {
   format: 'llsm-viewer-preprocessed';
   version: 1;
   generatedAt: string;
-  dataset: {
-    movieMode: PreprocessedMovieMode;
+  dataset: DatasetMetadata & {
     totalVolumeCount: number;
     channels: PreprocessedChannelManifest[];
-    voxelResolution?: VoxelResolutionValues | null;
-    anisotropyCorrection?: AnisotropyCorrectionMetadata | null;
-    zarrStore?: PreprocessedZarrStore | null;
   };
 };
 
-export type PreprocessedZarrStore =
-  | { source: 'archive'; root?: string | null }
-  | { source: 'url'; url: string; root?: string | null }
-  | { source: 'local'; root?: string | null; name?: string | null }
-  | { source: 'opfs'; root?: string | null; name?: string | null };
+export type PreprocessedZarrStore = DatasetZarrStoreDescriptor;
 
 export type ExportPreprocessedDatasetOptions = {
   layers: LoadedLayer[];

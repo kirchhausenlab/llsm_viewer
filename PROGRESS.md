@@ -1,6 +1,9 @@
 # Progress
 
 ## Latest changes
+- Documented the streaming Zarr pipeline, clipmap renderer, and store options in `PROJECT_STRUCTURE.md` and `README.md` so new contributors can trace the data flow.
+- Added dataset metadata/store types to centralize Zarr store descriptors and expose streaming hints on viewer resources.
+- Expanded test coverage for `ZarrVolumeSource` region reads and the clipmap renderer to exercise chunk copying, cache reuse, and shader uniform wiring.
 - Added a `src/data/zarr.ts` module that wraps zarrita stores for remote fetches, directory-picked files, and OPFS/IndexedDB
   preprocessing outputs with helpers for opening arrays/groups and range slicing utilities backed by new tests.
 - Removed the track channel label above the Min length slider in the Tracks window to avoid duplicating the active tab name.
@@ -254,6 +257,8 @@
 ## Clipmap initialization fix
 - Seeded clipmap level origins with an invalid sentinel so the first update populates textures instead of leaving them empty and producing black renders.
 
+## Planar hover color typing
+- Defaulted planar layer colors to white when unset so hover formatting and slice compositing avoid undefined hex strings and continue to pass strict type checks.
 ## Planar streaming slices
 - Added view-aware planar slice streaming that selects mip levels based on zoom, requests only the visible region, and reuses cached tiles with abortable fetches.
 - Reused the planar loading overlay for slice streaming progress and wired hover/intensity sampling to the streamed slice buffers.

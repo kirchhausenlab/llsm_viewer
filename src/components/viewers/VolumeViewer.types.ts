@@ -8,6 +8,13 @@ import type { FollowedVoxelTarget } from '../../types/follow';
 import type { HoveredVoxelInfo } from '../../types/hover';
 import type { TrackColorMode, TrackDefinition } from '../../types/tracks';
 
+export type VolumeSourceMetadata = {
+  type: 'tiff' | 'zarr';
+  cacheBytes?: number;
+  clipmap?: { levels: number; size: number } | null;
+  root?: string | null;
+};
+
 export type ViewerLayer = {
   key: string;
   label: string;
@@ -138,6 +145,7 @@ export type VolumeViewerProps = {
   selectedTrackIds: ReadonlySet<string>;
   followedTrackId: string | null;
   followedVoxel: FollowedVoxelTarget | null;
+  sourceMetadata?: VolumeSourceMetadata | null;
   onTrackSelectionToggle: (trackId: string) => void;
   onTrackFollowRequest: (trackId: string) => void;
   onVoxelFollowRequest: (voxel: FollowedVoxelTarget) => void;
@@ -152,6 +160,7 @@ export type VolumeResources = {
   texture: THREE.Data3DTexture | THREE.DataTexture;
   labelTexture?: THREE.Data3DTexture | null;
   clipmap?: import('./volume-viewer/rendering/clipmap').VolumeClipmapManager;
+  source?: VolumeSourceMetadata;
   dimensions: {
     width: number;
     height: number;
