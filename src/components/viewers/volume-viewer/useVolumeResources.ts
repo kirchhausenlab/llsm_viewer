@@ -268,8 +268,8 @@ export function useVolumeResources({
       const zIndex = Number.isFinite(layer.sliceIndex)
         ? Number(layer.sliceIndex)
         : Math.floor(volume.depth / 2);
-      const streamingSource = volume.streamingSource ?? null;
-      const streamingBaseShape = volume.streamingBaseShape ?? null;
+      const streamingSource = volume.streamingSource;
+      const streamingBaseShape = volume.streamingBaseShape;
       const isStreamingVolume = Boolean(streamingSource);
       const hasStreamingClipmap = Boolean(streamingSource && streamingBaseShape);
 
@@ -357,8 +357,8 @@ export function useVolumeResources({
           if (hasStreamingClipmap && uniforms.u_useClipmap && uniforms.u_clipmapTextures) {
             clipmap = new VolumeClipmapManager({
               ...volume,
-              streamingSource,
-              streamingBaseShape,
+              streamingSource: streamingSource!,
+              streamingBaseShape: streamingBaseShape!,
             });
           }
 
@@ -609,8 +609,8 @@ export function useVolumeResources({
             if (!resources.clipmap) {
               resources.clipmap = new VolumeClipmapManager({
                 ...volume,
-                streamingSource,
-                streamingBaseShape,
+                streamingSource: streamingSource!,
+                streamingBaseShape: streamingBaseShape!,
               });
             }
             resources.clipmap?.update(rotationTargetRef.current, {
