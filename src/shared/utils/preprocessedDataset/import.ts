@@ -14,7 +14,8 @@ import {
   type PreprocessedLayerSummary,
   type PreprocessedManifest,
   type PreprocessedVolumeManifestEntry,
-  MANIFEST_FILE_NAME
+  MANIFEST_FILE_NAME,
+  type PreprocessedImportMilestone
 } from './types';
 
 const textDecoder = new TextDecoder();
@@ -36,6 +37,7 @@ function isVolumeDataType(value: unknown): value is VolumeDataType {
 export type ImportPreprocessedDatasetOptions = {
   onProgress?: (bytesProcessed: number) => void;
   onVolumeDecoded?: (volumesDecoded: number, totalVolumeCount: number) => void;
+  onMilestone?: (milestone: PreprocessedImportMilestone) => void;
 };
 
 type VolumeData = {
@@ -358,6 +360,9 @@ export async function importPreprocessedDataset(
 ): Promise<ImportPreprocessedDatasetResult> {
   const { stream, totalBytes } = toReadableStream(source);
   let bytesProcessed = 0;
+  const emitMilestone = (milestone: PreprocessedImportMilestone) => {
+    options?.onMilestone?.(milestone);
+  };
   const reportingStream = createProgressReportingStream(stream, (delta) => {
     bytesProcessed += delta;
     options?.onProgress?.(bytesProcessed);
@@ -384,6 +389,7 @@ export async function importPreprocessedDataset(
     const manifestBytes = await manifestEntry.getData(new Uint8ArrayWriter());
     const manifest = parseManifest(manifestBytes);
     fileEntries.delete(MANIFEST_FILE_NAME);
+    emitMilestone('scan');
 
     const volumes = new Map<string, VolumeData>();
     const segmentationLabelVolumes = new Map<string, VolumeData>();
@@ -421,7 +427,12 @@ export async function importPreprocessedDataset(
       }
     }
 
-    return buildImportResult(manifest, volumes, segmentationLabelVolumes);
+    emitMilestone('level0');
+
+    const result = buildImportResult(manifest, volumes, segmentationLabelVolumes);
+    emitMilestone('mips');
+    emitMilestone('finalize');
+    return result;
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   } finally {

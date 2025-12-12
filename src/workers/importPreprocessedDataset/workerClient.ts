@@ -1,4 +1,7 @@
-import type { ImportPreprocessedDatasetResult } from '../../shared/utils/preprocessedDataset';
+import type {
+  ImportPreprocessedDatasetResult,
+  PreprocessedImportMilestone
+} from '../../shared/utils/preprocessedDataset';
 import WorkerScript from '../importPreprocessedDataset.worker?worker';
 
 export type PreprocessedImportProgress = {
@@ -12,7 +15,8 @@ type WorkerResponse =
   | { id: number; type: 'progress' } & PreprocessedImportProgress
   | { id: number; type: 'done'; result: ImportPreprocessedDatasetResult }
   | { id: number; type: 'error'; message: string; stack?: string }
-  | { id: number; type: 'cancelled' };
+  | { id: number; type: 'cancelled' }
+  | { id: number; type: 'milestone'; milestone: PreprocessedImportMilestone };
 
 type WorkerRequest =
   | { id: number; type: 'import'; stream: ReadableStream<Uint8Array>; totalBytes: number | null }
@@ -22,6 +26,7 @@ type PendingRequest = {
   resolve: (result: ImportPreprocessedDatasetResult) => void;
   reject: (error: Error) => void;
   onProgress?: (progress: PreprocessedImportProgress) => void;
+  onMilestone?: (milestone: PreprocessedImportMilestone) => void;
   abortController: AbortController;
   abortListener?: () => void;
 };
@@ -30,6 +35,7 @@ export type ImportPreprocessedDatasetWorkerOptions = {
   stream: ReadableStream<Uint8Array>;
   totalBytes: number | null;
   onProgress?: (progress: PreprocessedImportProgress) => void;
+  onMilestone?: (milestone: PreprocessedImportMilestone) => void;
   signal?: AbortSignal;
 };
 
@@ -77,6 +83,7 @@ export class ImportPreprocessedDatasetWorkerClient {
       resolve: () => {},
       reject: () => {},
       onProgress: options.onProgress,
+      onMilestone: options.onMilestone,
       abortController
     };
 
@@ -148,6 +155,10 @@ export class ImportPreprocessedDatasetWorkerClient {
           volumesDecoded: message.volumesDecoded,
           totalVolumeCount: message.totalVolumeCount
         });
+        break;
+      }
+      case 'milestone': {
+        request.onMilestone?.(message.milestone);
         break;
       }
       case 'done': {

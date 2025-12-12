@@ -13,6 +13,7 @@ import type { ChannelTrackState, FollowedTrackState } from '../../types/channelT
 import type { ChannelSource, StagedPreprocessedExperiment } from './useChannelSources';
 import type { ExperimentDimension } from '../useVoxelResolution';
 import type { PreprocessedDropboxCallbacks } from '../preprocessedExperiment/shared';
+import type { PreprocessedImportMilestone } from '../../shared/utils/preprocessedDataset';
 import { usePreprocessedImport } from '../preprocessedExperiment/usePreprocessedImport';
 import { useDropboxPreprocessed } from '../preprocessedExperiment/useDropboxPreprocessed';
 import { usePreprocessedExport } from '../preprocessedExperiment/usePreprocessedExport';
@@ -53,6 +54,8 @@ export type UsePreprocessedExperimentResult = {
   preprocessedImportTotalBytes: number | null;
   preprocessedImportVolumesDecoded: number;
   preprocessedImportTotalVolumeCount: number | null;
+  preprocessedImportMilestone: PreprocessedImportMilestone | null;
+  preprocessedImportMilestoneProgress: number;
   isPreprocessedDropboxConfigOpen: boolean;
   preprocessedDropboxAppKeyInput: string;
   preprocessedDropboxAppKeySource: DropboxAppKeySource | null;
@@ -152,6 +155,8 @@ export default function usePreprocessedExperiment({
     preprocessedImportTotalBytes: importState.preprocessedImportTotalBytes,
     preprocessedImportVolumesDecoded: importState.preprocessedImportVolumesDecoded,
     preprocessedImportTotalVolumeCount: importState.preprocessedImportTotalVolumeCount,
+    preprocessedImportMilestone: importState.preprocessedImportMilestone,
+    preprocessedImportMilestoneProgress: importState.preprocessedImportMilestoneProgress,
     preprocessedDropboxError: dropboxState.preprocessedDropboxError,
     preprocessedDropboxInfo: dropboxState.preprocessedDropboxInfo,
     isPreprocessedDropboxConfigOpen: dropboxState.isPreprocessedDropboxConfigOpen,
