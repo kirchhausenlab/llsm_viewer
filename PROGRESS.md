@@ -244,3 +244,11 @@
 - Corrected chunk byte accounting to handle Zarrita's `{ data, shape, stride }` chunk responses so caching works under strict type-checking.
 - Hardened abort error creation with a DOMException fallback so cancellation works in runtimes without the DOM lib on the global scope.
 - Fixed the cancellation unit test to resolve in-flight work before asserting the aborted request, eliminating the dangling pending promise that caused the runner to exit with code 13.
+
+## Volume viewer clipmap rendering
+- Added a clipmap manager that keeps per-mip 3D textures aligned to the chunk grid, updates origins around the camera target, and uploads refreshed regions.
+- Updated the volume shader to select clipmap levels per sample, scale raymarching steps by LOD, and preserve multi-channel blending.
+- Wired interaction-aware LOD throttling into the render loop so movement temporarily biases sampling toward coarser levels while keeping the coarsest mip resident.
+
+## Clipmap initialization fix
+- Seeded clipmap level origins with an invalid sentinel so the first update populates textures instead of leaving them empty and producing black renders.
