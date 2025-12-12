@@ -19,6 +19,59 @@ import { computeAnisotropyScale } from '../anisotropyCorrection';
 const textEncoder = new TextEncoder();
 
 const ZIP_COMPRESSION_LEVEL = 9;
+const ZARR_STORE_ROOT = 'zarr';
+const ZARR_SINGLE_CHUNK_KEY = '0.0.0.0';
+
+type ZarrEntry = { path: string; data: Uint8Array };
+
+function normalizeZarrPath(path: string): string {
+  return path.startsWith('/') ? path.slice(1) : path;
+}
+
+function dtypeToZarr(data: Uint8Array | Uint32Array): string {
+  if (data instanceof Uint8Array) return '|u1';
+  if (data instanceof Uint32Array) return '<u4';
+  return '|u1';
+}
+
+function writeZarrArray(
+  entries: ZarrEntry[],
+  root: string,
+  arrayPath: string,
+  data: Uint8Array | Uint32Array,
+  metadata: { min: number; max: number; shape: [number, number, number, number] }
+) {
+  const normalized = normalizeZarrPath(arrayPath);
+  const basePath = root ? `${root}/${normalized}` : normalized;
+  const dtype = dtypeToZarr(data);
+  const shape = metadata.shape;
+
+  entries.push({
+    path: `${basePath}/.zarray`,
+    data: textEncoder.encode(
+      JSON.stringify({
+        zarr_format: 2,
+        shape: shape,
+        chunks: shape,
+        dtype,
+        order: 'C',
+        compressor: null,
+        filters: null,
+        fill_value: 0
+      })
+    )
+  });
+
+  entries.push({
+    path: `${basePath}/.zattrs`,
+    data: textEncoder.encode(JSON.stringify({ min: metadata.min, max: metadata.max }))
+  });
+
+  entries.push({
+    path: `${basePath}/${ZARR_SINGLE_CHUNK_KEY}`,
+    data: data instanceof Uint8Array ? data : new Uint8Array(data.buffer)
+  });
+}
 
 function createVolumePath(layer: LoadedLayer, timepoint: number): string {
   return `volumes/${layer.channelId}/${layer.key}/timepoint-${timepoint
@@ -41,6 +94,9 @@ export async function exportPreprocessedDataset(
   let totalVolumeCount = 0;
   let zipWriter: ZipWriter<unknown> | null = null;
   let blobWriter: BlobWriter | null = null;
+  const zarrEntries: ZarrEntry[] = [
+    { path: `${ZARR_STORE_ROOT}/.zgroup`, data: textEncoder.encode(JSON.stringify({ zarr_format: 2 })) }
+  ];
 
   const writable = onChunk
     ? new WritableStream<Uint8Array>({
@@ -89,6 +145,18 @@ export async function exportPreprocessedDataset(
 
           const digest = await computeSha256Hex(volumeBytes);
 
+          const zarrShape: [number, number, number, number] = [
+            volume.channels,
+            volume.depth,
+            volume.height,
+            volume.width
+          ];
+          writeZarrArray(zarrEntries, ZARR_STORE_ROOT, path, volumeBytes, {
+            min: volume.min,
+            max: volume.max,
+            shape: zarrShape
+          });
+
           let segmentationLabelsManifest: PreprocessedVolumeManifestEntry['segmentationLabels'];
           if (layer.isSegmentation && volume.segmentationLabels) {
             const labelPath = createSegmentationLabelPath(layer, index);
@@ -110,6 +178,16 @@ export async function exportPreprocessedDataset(
               digest: labelDigest,
               dataType: 'uint32'
             };
+
+            const labelArrayView =
+              labelBytes.byteOffset === 0 && labelBytes.byteLength === labelBytes.buffer.byteLength
+                ? new Uint32Array(labelBytes.buffer)
+                : new Uint32Array(labelBytes.slice().buffer);
+            writeZarrArray(zarrEntries, ZARR_STORE_ROOT, labelPath, labelArrayView, {
+              min: volume.min,
+              max: volume.max,
+              shape: zarrShape
+            });
 
             await zipWriter!.add(labelPath, new Uint8ArrayReader(labelBytes), {
               level: ZIP_COMPRESSION_LEVEL,
@@ -194,11 +272,30 @@ export async function exportPreprocessedDataset(
       totalVolumeCount,
       channels: manifestChannels,
       voxelResolution,
-      anisotropyCorrection
+      anisotropyCorrection,
+      zarrStore: { source: 'archive', root: ZARR_STORE_ROOT }
     }
   };
 
+  zarrEntries.push({
+    path: `${ZARR_STORE_ROOT}/.zattrs`,
+    data: textEncoder.encode(
+      JSON.stringify({
+        movieMode,
+        voxelResolution,
+        anisotropyCorrection
+      })
+    )
+  });
+
   try {
+    for (const entry of zarrEntries) {
+      await zipWriter!.add(entry.path, new Uint8ArrayReader(entry.data), {
+        level: ZIP_COMPRESSION_LEVEL,
+        zip64: true
+      });
+    }
+
     const manifestBytes = textEncoder.encode(JSON.stringify(manifest));
     await zipWriter!.add(
       MANIFEST_FILE_NAME,
