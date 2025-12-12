@@ -4,9 +4,15 @@ import type { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
 import type { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
 
 import type { NormalizedVolume } from '../../core/volumeProcessing';
+import type { ZarrVolumeSource } from '../../data/ZarrVolumeSource';
 import type { FollowedVoxelTarget } from '../../types/follow';
 import type { HoveredVoxelInfo } from '../../types/hover';
 import type { TrackColorMode, TrackDefinition } from '../../types/tracks';
+
+export type StreamableNormalizedVolume = NormalizedVolume & {
+  streamingSource?: ZarrVolumeSource;
+  streamingBaseShape?: [number, number, number, number];
+};
 
 export type VolumeSourceMetadata = {
   type: 'tiff' | 'zarr';
@@ -19,7 +25,7 @@ export type ViewerLayer = {
   key: string;
   label: string;
   channelName: string;
-  volume: NormalizedVolume | null;
+  volume: StreamableNormalizedVolume | null;
   visible: boolean;
   sliderRange: number;
   minSliderIndex: number;
@@ -160,7 +166,7 @@ export type VolumeResources = {
   texture: THREE.Data3DTexture | THREE.DataTexture;
   labelTexture?: THREE.Data3DTexture | null;
   clipmap?: import('./volume-viewer/rendering/clipmap').VolumeClipmapManager;
-  source?: VolumeSourceMetadata;
+  source?: VolumeSourceMetadata & { streamingSource?: ZarrVolumeSource };
   dimensions: {
     width: number;
     height: number;

@@ -263,3 +263,8 @@
 - Added view-aware planar slice streaming that selects mip levels based on zoom, requests only the visible region, and reuses cached tiles with abortable fetches.
 - Reused the planar loading overlay for slice streaming progress and wired hover/intensity sampling to the streamed slice buffers.
 - Guarded planar slice cache eviction against undefined keys to satisfy strict type checks while preserving the LRU behaviour.
+
+## 3D clipmap streaming refactor
+- Swapped the volume viewer's clipmap path to stream chunked data from `ZarrVolumeSource`, keeping the coarsest mip resident for early visibility and honoring abort/priority cues around the camera.
+- Updated `useVolumeResources` to treat volumes as streamable objects, seed placeholder textures when data isn't preloaded, and drive clipmap fetches for the active bounds before shader uploads.
+- Added a streaming clipmap unit test that exercises async fills and confirms coarse-level visibility without cached volume buffers.

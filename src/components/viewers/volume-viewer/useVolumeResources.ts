@@ -13,14 +13,13 @@ import { VolumeClipmapManager } from './rendering/clipmap';
 import { SliceRenderShader } from '../../../shaders/sliceRenderShader';
 import { VolumeRenderShader } from '../../../shaders/volumeRenderShader';
 import { getCachedTextureData } from '../../../core/textureCache';
-import type { NormalizedVolume } from '../../../core/volumeProcessing';
-import type { VolumeResources } from '../VolumeViewer.types';
+import type { StreamableNormalizedVolume, VolumeResources } from '../VolumeViewer.types';
 import { DESKTOP_VOLUME_STEP_SCALE } from './vr';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
 type UseVolumeResourcesParams = {
   layers: import('../VolumeViewer.types').VolumeViewerProps['layers'];
-  primaryVolume: NormalizedVolume | null;
+  primaryVolume: StreamableNormalizedVolume | null;
   isAdditiveBlending: boolean;
   renderContextRevision: number;
   sceneRef: MutableRefObject<THREE.Scene | null>;
@@ -140,6 +139,8 @@ export function useVolumeResources({
   }, [applyAdditiveBlendingToResources, isAdditiveBlending]);
 
   useEffect(() => {
+    const abortController = new AbortController();
+
     const removeResource = (key: string) => {
       const resource = resourcesRef.current.get(key);
       if (!resource) {
@@ -175,7 +176,7 @@ export function useVolumeResources({
       removeAllResources();
       currentDimensionsRef.current = null;
       applyVolumeRootTransform(null);
-      return;
+      return () => abortController.abort();
     }
 
     const referenceVolume = primaryVolume;
@@ -196,7 +197,7 @@ export function useVolumeResources({
       }
       applyTrackGroupTransform(null);
       applyVolumeRootTransform(null);
-      return;
+      return () => abortController.abort();
     }
 
     const { width, height, depth } = referenceVolume;
@@ -267,10 +268,18 @@ export function useVolumeResources({
       const zIndex = Number.isFinite(layer.sliceIndex)
         ? Number(layer.sliceIndex)
         : Math.floor(volume.depth / 2);
+      const streamingSource = volume.streamingSource ?? null;
+      const isStreamingVolume = Boolean(streamingSource);
 
       if (viewerMode === '3d') {
-        cachedPreparation = getCachedTextureData(volume);
-        const { data: textureData, format: textureFormat } = cachedPreparation;
+        if (!isStreamingVolume) {
+          cachedPreparation = getCachedTextureData(volume);
+        }
+        const placeholderChannels = Math.max(1, volume.channels);
+        const initialData = cachedPreparation?.data ?? new Uint8Array(placeholderChannels);
+        const initialFormat =
+          cachedPreparation?.format ??
+          (placeholderChannels === 1 ? THREE.RedFormat : placeholderChannels === 2 ? THREE.RGFormat : THREE.RGBAFormat);
 
         let labelTexture: THREE.Data3DTexture | null = null;
         if (layer.isSegmentation && volume.segmentationLabels) {
@@ -290,6 +299,7 @@ export function useVolumeResources({
           labelTexture.needsUpdate = true;
         }
 
+        const expectedLength = cachedPreparation?.data.length ?? placeholderChannels;
         const needsRebuild =
           !resources ||
           resources.mode !== viewerMode ||
@@ -298,14 +308,19 @@ export function useVolumeResources({
           resources.dimensions.depth !== volume.depth ||
           resources.channels !== volume.channels ||
           !(resources.texture instanceof THREE.Data3DTexture) ||
-          resources.texture.image.data.length !== textureData.length ||
-          resources.texture.format !== textureFormat;
+          resources.texture.image.data.length !== expectedLength ||
+          resources.texture.format !== initialFormat;
 
         if (needsRebuild) {
           removeResource(layer.key);
 
-          const texture = new THREE.Data3DTexture(textureData, volume.width, volume.height, volume.depth);
-          texture.format = textureFormat;
+          const texture = new THREE.Data3DTexture(
+            initialData,
+            cachedPreparation ? volume.width : 1,
+            cachedPreparation ? volume.height : 1,
+            cachedPreparation ? volume.depth : 1,
+          );
+          texture.format = initialFormat;
           texture.type = THREE.UnsignedByteType;
           const samplingFilter =
             layer.samplingMode === 'nearest' ? THREE.NearestFilter : THREE.LinearFilter;
@@ -359,8 +374,10 @@ export function useVolumeResources({
           mesh.renderOrder = index;
           mesh.position.set(layer.offsetX, layer.offsetY, 0);
 
-          clipmap?.update(rotationTargetRef.current);
-          clipmap?.uploadPending();
+          clipmap?.update(rotationTargetRef.current, {
+            signal: abortController.signal,
+            priorityCenter: rotationTargetRef.current,
+          });
           clipmap?.applyToMaterial(material);
 
           const worldCameraPosition = new THREE.Vector3();
@@ -393,19 +410,21 @@ export function useVolumeResources({
             texture,
             clipmap: clipmap ?? undefined,
             labelTexture,
-            source: volume.chunkShape
-              ? {
-                  type: 'zarr',
-                  clipmap: clipmap
-                    ? { levels: clipmap.getActiveLevelCount(), size: clipmap.clipSize }
-                    : null,
-                }
-              : {
-                  type: 'tiff',
-                  clipmap: clipmap
-                    ? { levels: clipmap.getActiveLevelCount(), size: clipmap.clipSize }
-                    : null,
-                },
+            source:
+              streamingSource || volume.chunkShape
+                ? {
+                    type: 'zarr',
+                    clipmap: clipmap
+                      ? { levels: clipmap.getActiveLevelCount(), size: clipmap.clipSize }
+                      : null,
+                    streamingSource: streamingSource ?? undefined,
+                  }
+                : {
+                    type: 'tiff',
+                    clipmap: clipmap
+                      ? { levels: clipmap.getActiveLevelCount(), size: clipmap.clipSize }
+                      : null,
+                  },
             dimensions: { width: volume.width, height: volume.height, depth: volume.depth },
             channels: volume.channels,
             mode: viewerMode,
@@ -491,9 +510,10 @@ export function useVolumeResources({
             mode: viewerMode,
             samplingMode: layer.samplingMode,
             sliceBuffer: sliceInfo.data,
-            source: volume.chunkShape
-              ? { type: 'zarr', clipmap: null }
-              : { type: 'tiff', clipmap: null },
+            source:
+              streamingSource || volume.chunkShape
+                ? { type: 'zarr', clipmap: null, streamingSource: streamingSource ?? undefined }
+                : { type: 'tiff', clipmap: null },
           });
         }
 
@@ -528,7 +548,7 @@ export function useVolumeResources({
         }
 
         if (resources.mode === '3d') {
-          const preparation = cachedPreparation ?? getCachedTextureData(volume);
+          const preparation = !isStreamingVolume ? cachedPreparation ?? getCachedTextureData(volume) : null;
           const dataTexture = resources.texture as THREE.Data3DTexture;
           if (resources.samplingMode !== layer.samplingMode) {
             const samplingFilter =
@@ -538,9 +558,14 @@ export function useVolumeResources({
             dataTexture.needsUpdate = true;
             resources.samplingMode = layer.samplingMode;
           }
-          dataTexture.image.data = preparation.data;
-          dataTexture.format = preparation.format;
-          dataTexture.needsUpdate = true;
+          if (preparation) {
+            dataTexture.image.data = preparation.data;
+            dataTexture.image.width = volume.width;
+            dataTexture.image.height = volume.height;
+            dataTexture.image.depth = volume.depth;
+            dataTexture.format = preparation.format;
+            dataTexture.needsUpdate = true;
+          }
           materialUniforms.u_data.value = dataTexture;
           if (layer.isSegmentation && volume.segmentationLabels) {
             const expectedLength = volume.segmentationLabels.length;
@@ -587,8 +612,10 @@ export function useVolumeResources({
             if (!resources.clipmap) {
               resources.clipmap = new VolumeClipmapManager(volume);
             }
-            resources.clipmap?.update(rotationTargetRef.current);
-            resources.clipmap?.uploadPending();
+            resources.clipmap?.update(rotationTargetRef.current, {
+              signal: abortController.signal,
+              priorityCenter: rotationTargetRef.current,
+            });
             resources.clipmap?.applyToMaterial(shaderMaterial);
           } else if (materialUniforms.u_useClipmap) {
             materialUniforms.u_useClipmap.value = 0;
@@ -636,6 +663,7 @@ export function useVolumeResources({
     }
 
     applyHoverHighlightToResources();
+    return () => abortController.abort();
   }, [
     applyTrackGroupTransform,
     applyVolumeStepScaleToResources,
