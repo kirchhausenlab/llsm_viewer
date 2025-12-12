@@ -216,3 +216,8 @@
 ## Volume renderer teardown
 - Added a destroy helper for the volume render context that disposes the WebGL renderer, XR state, render lists, controls, and DOM nodes while clearing the scene.
 - Wired the volume viewer cleanup to use the new helper so unmounting releases WebGL contexts and associated listeners cleanly.
+
+## Zarr layout metadata helpers
+- Defined `src/data/zarrLayout.ts` with canonical volume array paths, chunk/shard sizing helpers, root attribute typing, and backward-compatible metadata validation.
+- Added read/write utilities to normalize voxel sizing, axes, channel labels, and per-volume statistics for zarr roots.
+- Covered the new layout helpers with unit tests and wired them into the test suite.
