@@ -37,6 +37,18 @@ setting `VITE_DROPBOX_APP_KEY` at build time or replacing the embedded key in `s
 If you do not have an app yet, create one in the [Dropbox App Console](https://www.dropbox.com/developers/apps) (Scoped app → Full
 Dropbox access) and enable the **Dropbox Chooser** capability.
 
+### Zarr streaming and preprocessing pipeline
+
+- The viewer understands Zarr layout metadata defined in `src/data/zarrLayout.ts` and uses helpers in `src/data/zarr.ts` to open
+  HTTP-backed stores, File System Access directories, or OPFS/IndexedDB caches without loading full files into memory.
+- `src/data/mipmapBuilder.ts` walks source volumes to compute histograms/quantiles and writes multiscale mip levels plus
+  statistics into a mutable store so renderers can request only the chunks they need.
+- `src/data/ZarrVolumeSource.ts` provides a prioritized, abortable chunk reader with an LRU cache; its chunks back the
+  clipmap-aware renderer when available.
+- The 3D renderer uses a clipmap manager (`src/components/viewers/volume-viewer/rendering/clipmap.ts`) that keeps concentric
+  bricks around the camera target filled from the current mip level. This keeps streaming datasets responsive while preserving
+  detail near the focus point.
+
 ### Production build
 
 ```bash

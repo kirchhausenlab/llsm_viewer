@@ -393,6 +393,19 @@ export function useVolumeResources({
             texture,
             clipmap: clipmap ?? undefined,
             labelTexture,
+            source: volume.chunkShape
+              ? {
+                  type: 'zarr',
+                  clipmap: clipmap
+                    ? { levels: clipmap.getActiveLevelCount(), size: clipmap.clipSize }
+                    : null,
+                }
+              : {
+                  type: 'tiff',
+                  clipmap: clipmap
+                    ? { levels: clipmap.getActiveLevelCount(), size: clipmap.clipSize }
+                    : null,
+                },
             dimensions: { width: volume.width, height: volume.height, depth: volume.depth },
             channels: volume.channels,
             mode: viewerMode,
@@ -478,6 +491,9 @@ export function useVolumeResources({
             mode: viewerMode,
             samplingMode: layer.samplingMode,
             sliceBuffer: sliceInfo.data,
+            source: volume.chunkShape
+              ? { type: 'zarr', clipmap: null }
+              : { type: 'tiff', clipmap: null },
           });
         }
 

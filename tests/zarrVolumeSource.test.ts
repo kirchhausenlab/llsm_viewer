@@ -73,3 +73,37 @@ try {
   console.error(error);
   process.exit(1);
 }
+
+try {
+  console.log('Starting ZarrVolumeSource region tests');
+
+  const chunkShape: ZarrMipLevel['chunkShape'] = [1, 1, 1, 1];
+  const shape: ZarrMipLevel['shape'] = [1, 2, 2, 2];
+  const recordedCoords: number[][] = [];
+  const level: ZarrMipLevel = {
+    level: 0,
+    array: {
+      chunks: chunkShape,
+      dtype: '|u1',
+      shape,
+      getChunk: (coords: number[]) => {
+        recordedCoords.push(coords);
+        const value = coords[1] * 4 + coords[2] * 2 + coords[3];
+        return Promise.resolve(new Uint8Array([value]));
+      }
+    } as ZarrMipLevel['array'],
+    dataType: 'uint8',
+    shape,
+    chunkShape
+  };
+
+  const source = new ZarrVolumeSource([level]);
+  const region = await source.readRegion({ mipLevel: 0, offset: [0, 0, 0, 0], shape });
+
+  assert.deepEqual(Array.from(region), [0, 1, 2, 3, 4, 5, 6, 7]);
+  assert.equal(recordedCoords.length, 8);
+  console.log('ZarrVolumeSource region tests passed');
+} catch (error) {
+  console.error(error);
+  process.exit(1);
+}

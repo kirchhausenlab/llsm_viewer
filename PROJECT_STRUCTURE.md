@@ -23,10 +23,10 @@ This repo is a **Vite + React + TypeScript** single-page app (no backend). Most 
 
 The main responsibilities are:
 
-- Load multi-channel volumetric data and tracks.
+- Load multi-channel volumetric data and tracks (TIFF stacks + streaming Zarr stores).
 - Preprocess and normalize data for fast GPU-based visualization.
-- Render 2D slices and 3D volumes (including VR).
-- Support export/import of “preprocessed datasets” as ZIPs.
+- Render 2D slices and 3D volumes (including VR) with clipmap-assisted volume sampling.
+- Support export/import of “preprocessed datasets” as ZIPs and Zarr-backed archives.
 
 ---
 
@@ -35,14 +35,15 @@ The main responsibilities are:
 **1. Dataset ingestion & preprocessing**
 
 - Front-end UI for local/Dropbox uploads and preprocessed dataset import.
-- Volume loading via `src/loaders/volumeLoader.ts` → worker decoding → normalized volume data.
+- TIFF volume loading via `src/loaders/volumeLoader.ts` → worker decoding → normalized volume data.
+- Zarr ingestion/streaming handled by `src/data/zarr.ts` (stores + directory/OPFS shims), `src/data/zarrLayout.ts` (layout metadata + chunk/shard sizing), `src/data/mipmapBuilder.ts` (on-the-fly mipmap generation + stats), and `src/data/ZarrVolumeSource.ts` (LRU/prioritized chunk reader feeding renderers).
 - Preprocessing (`src/core/volumeProcessing.ts`) prepares GPU-friendly buffers, applies normalization, segmentation colorization, and anisotropy-related logic.
 - Processed volumes are cached in `src/core/textureCache.ts` for reuse.
 
 **2. Visualization (2D + 3D)**
 
 - 2D planar views: `src/components/viewers/PlanarViewer.tsx` + `src/components/viewers/planar-viewer/*` render slices and handle interactions.
-- 3D volume views: `src/components/viewers/VolumeViewer.tsx` + `src/components/viewers/volume-viewer/*` (plus shaders in `src/shaders/*`) handle raymarching, track overlays, and hover sampling.
+- 3D volume views: `src/components/viewers/VolumeViewer.tsx` + `src/components/viewers/volume-viewer/*` (plus shaders in `src/shaders/*`) handle raymarching, clipmap-driven sampling for streaming datasets, track overlays, and hover sampling.
 - Viewer shell (`src/components/viewers/ViewerShell.tsx` + `src/components/viewers/viewer-shell/*`) orchestrates layout, panels, and mode switching (2D/3D).
 
 **3. State & control**
@@ -55,7 +56,7 @@ The main responsibilities are:
 
 **4. Preprocessed dataset import/export**
 
-- ZIP format and manifest: `src/utils/preprocessedDataset/*`.
+- ZIP format and manifest: `src/utils/preprocessedDataset/*` (captures anisotropy/voxel metadata and optional Zarr store descriptors for streaming sources).
 - Export/import workers: `src/workers/exportPreprocessedDataset*.ts` / `importPreprocessedDataset*.ts`.
 - Streaming download/export pipeline uses `src/utils/downloads.ts`, `src/utils/exportServiceWorker.ts`, and `public/export-sw.js`.
 
@@ -115,7 +116,7 @@ The main responsibilities are:
 - `PlanarViewer.tsx` + `planar-viewer/*`
   Canvas-based slice viewing + layout/interaction hooks/utilities.
 - `VolumeViewer.tsx` + `volume-viewer/*`
-  Three.js volume renderer (raymarching, hover sampling, VR bridge, track overlays) and helper modules.
+  Three.js volume renderer (raymarching, hover sampling, clipmap renderer for streaming Zarr sources, VR bridge, track overlays) and helper modules.
 
 **Shared widgets (`src/components/widgets/*`)**
 
@@ -154,6 +155,10 @@ The main responsibilities are:
 - `src/data/zarr.ts`
   Zarrita-backed stores for remote URLs, directory-picked File mappings, and OPFS/IndexedDB preprocessing output plus helpers
   to open arrays/groups with minimal surfaces for loaders/workers.
+- `src/data/zarrLayout.ts`
+  Zarr layout helpers for llsm-viewer metadata, chunk/shard sizing, voxel resolution + channel stats validation.
+- `src/data/mipmapBuilder.ts`
+  Builder that walks source Zarr data, computes histograms/quantiles, and writes multiscale mip levels into mutable stores.
 - `src/data/ZarrVolumeSource.ts`
   Streaming per-mip chunk reader with priority scheduling and LRU caching, intended for incremental viewport-driven requests.
 - `src/shaders/*`
