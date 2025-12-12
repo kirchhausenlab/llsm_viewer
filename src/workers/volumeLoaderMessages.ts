@@ -20,6 +20,8 @@ export type VolumeSliceMessage = {
   index: number;
   sliceIndex: number;
   sliceCount: number;
+  min: number;
+  max: number;
   buffer: ArrayBuffer;
 };
 

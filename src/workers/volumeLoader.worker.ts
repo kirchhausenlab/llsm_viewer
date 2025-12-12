@@ -1,9 +1,14 @@
 /// <reference lib="webworker" />
 import { fromBlob } from 'geotiff';
+import type { AsyncMutable } from '@zarrita/storage';
+import { create, root } from 'zarrita';
+import { get_context } from 'zarrita/dist/src/hierarchy.js';
 import { MAX_VOLUME_BYTES } from '../shared/constants/volumeLimits';
 import { VolumeTooLargeError } from '../errors';
 import type { VolumeDataType, VolumeTypedArray } from '../types/volume';
 import { getBytesPerValue } from '../types/volume';
+import { getVolumeArrayPath } from '../data/zarrLayout';
+import { createPreprocessingStore } from '../data/zarr';
 import type {
   VolumeLoadedMessage,
   VolumeSliceMessage,
@@ -71,6 +76,8 @@ async function loadVolumesConcurrently(
     return { error: null };
   }
 
+  const store = await createPreprocessingStore();
+
   const hardwareConcurrency = ctx.navigator?.hardwareConcurrency;
   const maxConcurrency = Number.isFinite(hardwareConcurrency) && hardwareConcurrency
     ? hardwareConcurrency
@@ -103,7 +110,7 @@ async function loadVolumesConcurrently(
       const file = files[index];
 
       try {
-        await loadVolumeFromFile(file, requestId, index);
+        await loadVolumeFromFile(file, requestId, index, store);
         if (errorRef.value) {
           return;
         }
@@ -125,7 +132,8 @@ async function loadVolumesConcurrently(
 async function loadVolumeFromFile(
   file: File,
   requestId: number,
-  index: number
+  index: number,
+  store: AsyncMutable
 ): Promise<void> {
   const tiff = await fromBlob(file);
   const imageCount = await tiff.getImageCount();
@@ -170,11 +178,21 @@ async function loadVolumeFromFile(
   let globalMin = Number.POSITIVE_INFINITY;
   let globalMax = Number.NEGATIVE_INFINITY;
 
+  const zarrArray = await createVolumeArray(store, index, {
+    width,
+    height,
+    depth: imageCount,
+    channels,
+    dataType
+  });
+  const zarrContext = get_context(zarrArray);
+  const chunkShape = zarrContext.chunk_shape;
+
   if (typedFirstRaster.length !== sliceLength) {
     throw new Error(`File "${file.name}" returned an unexpected slice length.`);
   }
 
-  scanAndPostSlice(typedFirstRaster, 0);
+  await scanAndPostSlice(typedFirstRaster, 0);
 
   for (let index = 1; index < imageCount; index += 1) {
     const image = await tiff.getImage(index);
@@ -195,7 +213,7 @@ async function loadVolumeFromFile(
       throw new Error(`Slice ${index + 1} in file "${file.name}" returned an unexpected slice length.`);
     }
 
-    scanAndPostSlice(raster, index);
+    await scanAndPostSlice(raster, index);
   }
 
   if (!Number.isFinite(globalMin) || globalMin === Number.POSITIVE_INFINITY) {
@@ -223,7 +241,7 @@ async function loadVolumeFromFile(
   };
   ctx.postMessage(loadedMessage);
 
-  function scanAndPostSlice(array: SupportedTypedArray, sliceIndex: number) {
+  async function scanAndPostSlice(array: SupportedTypedArray, sliceIndex: number) {
     let sliceMin = Number.POSITIVE_INFINITY;
     let sliceMax = Number.NEGATIVE_INFINITY;
 
@@ -248,16 +266,63 @@ async function loadVolumeFromFile(
     }
 
     const transferable = toTransferableBuffer(array);
+    await writeSliceToZarr({
+      array,
+      zarrArray,
+      zarrContext,
+      chunkShape,
+      sliceIndex
+    });
     const message: VolumeSliceMessage = {
       type: 'volume-slice',
       requestId,
       index,
       sliceIndex,
       sliceCount: imageCount,
+      min: sliceMin,
+      max: sliceMax,
       buffer: transferable
     };
     ctx.postMessage(message, [transferable]);
   }
+}
+
+async function writeSliceToZarr(options: {
+  array: SupportedTypedArray;
+  zarrArray: Awaited<ReturnType<typeof createVolumeArray>>;
+  zarrContext: ReturnType<typeof get_context>;
+  chunkShape: number[];
+  sliceIndex: number;
+}): Promise<void> {
+  const { array, zarrArray, zarrContext, chunkShape, sliceIndex } = options;
+  const expectedLength = chunkShape.reduce((product, value) => product * value, 1);
+  if (array.length !== expectedLength) {
+    throw new Error(
+      `Slice ${sliceIndex + 1} does not match expected chunk size (expected ${expectedLength} elements, got ${array.length}).`
+    );
+  }
+  const chunkCoords = [0, sliceIndex, 0, 0];
+  const chunkPath = zarrArray.resolve(zarrContext.encode_chunk_key(chunkCoords)).path;
+  const encoded = await zarrContext.codec.encode({
+    data: array,
+    shape: chunkShape,
+    stride: zarrContext.get_strides(chunkShape)
+  });
+  await zarrArray.store.set(chunkPath, encoded);
+}
+
+async function createVolumeArray(
+  store: AsyncMutable,
+  index: number,
+  metadata: { width: number; height: number; depth: number; channels: number; dataType: VolumeDataType }
+) {
+  const path = root(store).resolve(getVolumeArrayPath(index));
+  const chunkShape = [metadata.channels, 1, metadata.height, metadata.width];
+  return create(path, {
+    shape: [metadata.channels, metadata.depth, metadata.height, metadata.width],
+    chunk_shape: chunkShape,
+    data_type: metadata.dataType
+  });
 }
 
 function detectDataType(array: SupportedTypedArray): VolumeDataType {
