@@ -232,7 +232,8 @@ class VolumePreprocessingWriter {
     }
 
     const valuesPerChunk = options.chunkShape.reduce((product, value) => product * value, 1);
-    const data = createVolumeTypedArray(this.metadata.dataType, valuesPerChunk);
+    const buffer = new ArrayBuffer(valuesPerChunk * this.metadata.bytesPerValue);
+    const data = createVolumeTypedArray(this.metadata.dataType, buffer);
     const assembly: ChunkAssembly = {
       coords: options.coords,
       ranges: options.ranges,
