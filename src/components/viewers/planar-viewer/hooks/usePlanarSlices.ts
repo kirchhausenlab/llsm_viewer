@@ -472,7 +472,9 @@ function useStreamingSlices({
       cacheRef.current.set(requestKey, slice);
       if (cacheRef.current.size > 32) {
         const oldestKey = cacheRef.current.keys().next().value;
-        cacheRef.current.delete(oldestKey);
+        if (oldestKey !== undefined) {
+          cacheRef.current.delete(oldestKey);
+        }
       }
 
       nextSlices.set(layer.key, slice);

@@ -262,3 +262,4 @@
 ## Planar streaming slices
 - Added view-aware planar slice streaming that selects mip levels based on zoom, requests only the visible region, and reuses cached tiles with abortable fetches.
 - Reused the planar loading overlay for slice streaming progress and wired hover/intensity sampling to the streamed slice buffers.
+- Guarded planar slice cache eviction against undefined keys to satisfy strict type checks while preserving the LRU behaviour.
