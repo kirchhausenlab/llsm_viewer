@@ -30,7 +30,14 @@ type PendingTask = {
   resolve: (value: VolumeTypedArray) => void;
 };
 
-const createAbortError = () => new DOMException('Aborted', 'AbortError');
+const createAbortError = () => {
+  if (typeof DOMException !== 'undefined') {
+    return new DOMException('Aborted', 'AbortError');
+  }
+  const error = new Error('Aborted');
+  error.name = 'AbortError';
+  return error;
+};
 
 function computeStrides(shape: readonly number[]): number[] {
   const strides = new Array(shape.length).fill(1);
