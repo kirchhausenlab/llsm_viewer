@@ -85,17 +85,16 @@ export class VolumeClipmapManager {
     this.volume = volume;
     this.clipSize = clipSize;
     const streamingSource = volume.streamingSource ?? null;
-    const baseShape: [number, number, number, number] = volume.streamingBaseShape ?? [
-      Math.max(1, volume.channels),
-      Math.max(1, volume.depth),
-      volume.height,
-      volume.width,
-    ];
+    const streamingBaseShape = volume.streamingBaseShape ?? null;
 
-    if (streamingSource) {
+    if (streamingSource && !streamingBaseShape) {
+      console.warn('Streaming clipmap requested without a base shape; falling back to CPU clipmap.');
+    }
+
+    if (streamingSource && streamingBaseShape) {
       this.streaming = {
         source: streamingSource,
-        baseShape,
+        baseShape: streamingBaseShape,
       };
       const rootChunk = streamingSource.getMip(streamingSource.getMipLevels()[0]).chunkShape;
       this.chunkShape = [rootChunk[3], rootChunk[2], rootChunk[1]];
