@@ -25,6 +25,15 @@ type LoadVolumesMessage = {
   files: File[];
 };
 
+type ZarrArrayContext = {
+  chunk_shape: number[];
+  encode_chunk_key(chunkCoords: number[]): string;
+  codec: {
+    encode(chunk: { data: SupportedTypedArray; shape: number[]; stride: number[] }): Promise<Uint8Array>;
+  };
+  get_strides(shape: number[]): number[];
+};
+
 type WorkerMessage = LoadVolumesMessage;
 
 const ctx: DedicatedWorkerGlobalScope = self as unknown as DedicatedWorkerGlobalScope;
@@ -185,7 +194,7 @@ async function loadVolumeFromFile(
     channels,
     dataType
   });
-  const zarrContext = get_context(zarrArray);
+  const zarrContext = get_context(zarrArray) as ZarrArrayContext;
   const chunkShape = zarrContext.chunk_shape;
 
   if (typedFirstRaster.length !== sliceLength) {
@@ -290,7 +299,7 @@ async function loadVolumeFromFile(
 async function writeSliceToZarr(options: {
   array: SupportedTypedArray;
   zarrArray: Awaited<ReturnType<typeof createVolumeArray>>;
-  zarrContext: ReturnType<typeof get_context>;
+  zarrContext: ZarrArrayContext;
   chunkShape: number[];
   sliceIndex: number;
 }): Promise<void> {
