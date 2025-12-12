@@ -1,13 +1,9 @@
 /// <reference lib="webworker" />
 import { fromBlob } from 'geotiff';
-import type { AsyncMutable } from '@zarrita/storage';
-import { create, root } from 'zarrita';
 import { MAX_VOLUME_BYTES } from '../shared/constants/volumeLimits';
 import { VolumeTooLargeError } from '../errors';
 import type { VolumeDataType, VolumeTypedArray } from '../types/volume';
 import { getBytesPerValue } from '../types/volume';
-import { getVolumeArrayPath } from '../data/zarrLayout';
-import { createPreprocessingStore } from '../data/zarr';
 import type {
   VolumeLoadedMessage,
   VolumeSliceMessage,
@@ -23,26 +19,6 @@ type LoadVolumesMessage = {
   requestId: number;
   files: File[];
 };
-
-type ZarrArrayContext = {
-  chunk_shape: number[];
-  encode_chunk_key(chunkCoords: number[]): string;
-  codec: {
-    encode(chunk: { data: SupportedTypedArray; shape: number[]; stride: number[] }): Promise<Uint8Array>;
-  };
-  get_strides(shape: number[]): number[];
-};
-
-function getZarrContext(zarrArray: object): ZarrArrayContext {
-  const contextSymbol = Object.getOwnPropertySymbols(zarrArray).find(
-    (symbol) => symbol.description === 'zarrita.context'
-  );
-  const zarrContext = contextSymbol ? (zarrArray as Record<symbol, unknown>)[contextSymbol] : undefined;
-  if (!zarrContext || typeof zarrContext !== 'object') {
-    throw new Error('Failed to access Zarr array context.');
-  }
-  return zarrContext as ZarrArrayContext;
-}
 
 type WorkerMessage = LoadVolumesMessage;
 
@@ -95,8 +71,6 @@ async function loadVolumesConcurrently(
     return { error: null };
   }
 
-  const store = await createPreprocessingStore();
-
   const hardwareConcurrency = ctx.navigator?.hardwareConcurrency;
   const maxConcurrency = Number.isFinite(hardwareConcurrency) && hardwareConcurrency
     ? hardwareConcurrency
@@ -129,7 +103,7 @@ async function loadVolumesConcurrently(
       const file = files[index];
 
       try {
-        await loadVolumeFromFile(file, requestId, index, store);
+        await loadVolumeFromFile(file, requestId, index);
         if (errorRef.value) {
           return;
         }
@@ -151,8 +125,7 @@ async function loadVolumesConcurrently(
 async function loadVolumeFromFile(
   file: File,
   requestId: number,
-  index: number,
-  store: AsyncMutable
+  index: number
 ): Promise<void> {
   const tiff = await fromBlob(file);
   const imageCount = await tiff.getImageCount();
@@ -196,16 +169,6 @@ async function loadVolumeFromFile(
 
   let globalMin = Number.POSITIVE_INFINITY;
   let globalMax = Number.NEGATIVE_INFINITY;
-
-  const zarrArray = await createVolumeArray(store, index, {
-    width,
-    height,
-    depth: imageCount,
-    channels,
-    dataType
-  });
-  const zarrContext = getZarrContext(zarrArray);
-  const chunkShape = zarrContext.chunk_shape;
 
   if (typedFirstRaster.length !== sliceLength) {
     throw new Error(`File "${file.name}" returned an unexpected slice length.`);
@@ -285,13 +248,6 @@ async function loadVolumeFromFile(
     }
 
     const transferable = toTransferableBuffer(array);
-    await writeSliceToZarr({
-      array,
-      zarrArray,
-      zarrContext,
-      chunkShape,
-      sliceIndex
-    });
     const message: VolumeSliceMessage = {
       type: 'volume-slice',
       requestId,
@@ -304,44 +260,6 @@ async function loadVolumeFromFile(
     };
     ctx.postMessage(message, [transferable]);
   }
-}
-
-async function writeSliceToZarr(options: {
-  array: SupportedTypedArray;
-  zarrArray: Awaited<ReturnType<typeof createVolumeArray>>;
-  zarrContext: ZarrArrayContext;
-  chunkShape: number[];
-  sliceIndex: number;
-}): Promise<void> {
-  const { array, zarrArray, zarrContext, chunkShape, sliceIndex } = options;
-  const expectedLength = chunkShape.reduce((product, value) => product * value, 1);
-  if (array.length !== expectedLength) {
-    throw new Error(
-      `Slice ${sliceIndex + 1} does not match expected chunk size (expected ${expectedLength} elements, got ${array.length}).`
-    );
-  }
-  const chunkCoords = [0, sliceIndex, 0, 0];
-  const chunkPath = zarrArray.resolve(zarrContext.encode_chunk_key(chunkCoords)).path;
-  const encoded = await zarrContext.codec.encode({
-    data: array,
-    shape: chunkShape,
-    stride: zarrContext.get_strides(chunkShape)
-  });
-  await zarrArray.store.set(chunkPath, encoded);
-}
-
-async function createVolumeArray(
-  store: AsyncMutable,
-  index: number,
-  metadata: { width: number; height: number; depth: number; channels: number; dataType: VolumeDataType }
-) {
-  const path = root(store).resolve(getVolumeArrayPath(index));
-  const chunkShape = [metadata.channels, 1, metadata.height, metadata.width];
-  return create(path, {
-    shape: [metadata.channels, metadata.depth, metadata.height, metadata.width],
-    chunk_shape: chunkShape,
-    data_type: metadata.dataType
-  });
 }
 
 function detectDataType(array: SupportedTypedArray): VolumeDataType {

@@ -1,3 +1,15 @@
+import { create, root } from 'zarrita';
+import type { Array as ZarrArray } from 'zarrita';
+import type { VolumeChunkShape } from '../data/zarrLayout';
+import { computeChunkShape, computeShardShape, getVolumeArrayPath } from '../data/zarrLayout';
+import {
+  createPreprocessingStore,
+  openArrayAt,
+  openGroupAt,
+  type MinimalZarrArray,
+  type MinimalZarrGroup,
+  type ZarrMutableStore
+} from '../data/zarr';
 import { VolumeTooLargeError, type VolumeDimensions } from '../errors';
 import {
   createVolumeTypedArray,
@@ -12,8 +24,19 @@ import type {
   VolumeWorkerOutboundMessage
 } from '../workers/volumeLoaderMessages';
 
+export type PreprocessingResult<Store extends ZarrMutableStore = ZarrMutableStore> = {
+  store: Store;
+  group: MinimalZarrGroup<Store>;
+  arrays: MinimalZarrArray<Store>[];
+};
+
+export type VolumePreprocessingHooks = {
+  onPreprocessingComplete?: (result: PreprocessingResult) => void | Promise<void>;
+};
+
 export type VolumeLoadCallbacks = {
   onVolumeLoaded?: (index: number, payload: VolumePayload) => void;
+  preprocessingHooks?: VolumePreprocessingHooks;
 };
 
 type VolumeAssemblyState = {
@@ -51,6 +74,256 @@ function isVolumeTooLargeMessageDetails(value: unknown): value is VolumeTooLarge
   );
 }
 
+type ZarrArrayContext = {
+  chunk_shape: VolumeChunkShape;
+  encode_chunk_key(chunkCoords: number[]): string;
+  codec: {
+    encode(chunk: { data: VolumeTypedArray; shape: number[]; stride: number[] }): Promise<Uint8Array>;
+  };
+  get_strides(shape: number[]): number[];
+};
+
+function getZarrContext(zarrArray: object): ZarrArrayContext {
+  const contextSymbol = Object.getOwnPropertySymbols(zarrArray).find(
+    (symbol) => symbol.description === 'zarrita.context'
+  );
+  const zarrContext = contextSymbol ? (zarrArray as Record<symbol, unknown>)[contextSymbol] : undefined;
+  if (!zarrContext || typeof zarrContext !== 'object') {
+    throw new Error('Failed to access Zarr array context.');
+  }
+  return zarrContext as ZarrArrayContext;
+}
+
+type ChunkRanges = {
+  c: { start: number; end: number };
+  z: { start: number; end: number };
+  y: { start: number; end: number };
+  x: { start: number; end: number };
+};
+
+type ChunkAssembly = {
+  coords: [number, number, number, number];
+  ranges: ChunkRanges;
+  data: VolumeTypedArray;
+  chunkShape: VolumeChunkShape;
+  chunkStrides: number[];
+  zarrArray: Awaited<ReturnType<typeof createVolumeArray>>['array'];
+  zarrContext: ZarrArrayContext;
+};
+
+class VolumePreprocessingWriter {
+  private readonly chunkWriters = new Map<string, ChunkAssembly>();
+  private readonly volumeArrayPromise: ReturnType<typeof createVolumeArray>;
+  private readonly chunkCounts: { x: number; y: number; z: number; c: number };
+  private readonly targetChunkShape: VolumeChunkShape;
+
+  constructor(
+    private readonly store: ZarrMutableStore,
+    private readonly index: number,
+    private readonly metadata: VolumeStartMessage['metadata']
+  ) {
+    this.targetChunkShape = computeChunkShape(metadata, { bytesPerValue: metadata.bytesPerValue });
+    this.volumeArrayPromise = createVolumeArray(store, index, metadata);
+    this.chunkCounts = {
+      x: Math.ceil(metadata.width / this.targetChunkShape[3]),
+      y: Math.ceil(metadata.height / this.targetChunkShape[2]),
+      z: Math.ceil(metadata.depth / this.targetChunkShape[1]),
+      c: Math.ceil(metadata.channels / this.targetChunkShape[0])
+    };
+  }
+
+  async writeSlice(slice: VolumeTypedArray, sliceIndex: number): Promise<void> {
+    const volumeArray = await this.volumeArrayPromise;
+    const { chunkShape, chunkStrides } = volumeArray;
+
+    for (let cChunk = 0; cChunk < this.chunkCounts.c; cChunk += 1) {
+      const cStart = cChunk * chunkShape[0];
+      const cEnd = Math.min(this.metadata.channels, cStart + chunkShape[0]);
+
+      for (let yChunk = 0; yChunk < this.chunkCounts.y; yChunk += 1) {
+        const yStart = yChunk * chunkShape[2];
+        const yEnd = Math.min(this.metadata.height, yStart + chunkShape[2]);
+
+        for (let xChunk = 0; xChunk < this.chunkCounts.x; xChunk += 1) {
+          const xStart = xChunk * chunkShape[3];
+          const xEnd = Math.min(this.metadata.width, xStart + chunkShape[3]);
+
+          const zChunk = Math.floor(sliceIndex / chunkShape[1]);
+          const zStart = zChunk * chunkShape[1];
+          const zEnd = Math.min(this.metadata.depth, zStart + chunkShape[1]);
+
+          if (sliceIndex < zStart || sliceIndex >= zEnd) {
+            continue;
+          }
+
+          const chunkKey = `${cChunk}/${zChunk}/${yChunk}/${xChunk}`;
+          const assembly = this.getOrCreateAssembly({
+            chunkKey,
+            coords: [cChunk, zChunk, yChunk, xChunk],
+            ranges: { c: { start: cStart, end: cEnd }, z: { start: zStart, end: zEnd }, y: { start: yStart, end: yEnd }, x: { start: xStart, end: xEnd } },
+            chunkShape,
+            chunkStrides,
+            zarrArray: volumeArray.array,
+            zarrContext: volumeArray.zarrContext
+          });
+
+          this.writeChunkSlice(assembly, slice, sliceIndex);
+
+          if (sliceIndex + 1 >= assembly.ranges.z.end) {
+            await this.flushChunk(chunkKey, assembly);
+          }
+        }
+      }
+    }
+  }
+
+  async finalize(): Promise<void> {
+    const chunks = Array.from(this.chunkWriters.entries());
+    this.chunkWriters.clear();
+    await Promise.all(chunks.map(([key, assembly]) => this.flushChunk(key, assembly)));
+  }
+
+  async reopen(): Promise<MinimalZarrArray<ZarrMutableStore>> {
+    return openArrayAt(this.store, getVolumeArrayPath(this.index));
+  }
+
+  private writeChunkSlice(assembly: ChunkAssembly, slice: VolumeTypedArray, sliceIndex: number) {
+    const localZ = sliceIndex - assembly.ranges.z.start;
+    const stride = assembly.chunkStrides;
+
+    for (let y = assembly.ranges.y.start; y < assembly.ranges.y.end; y += 1) {
+      for (let x = assembly.ranges.x.start; x < assembly.ranges.x.end; x += 1) {
+        const baseIndex = (y * this.metadata.width + x) * this.metadata.channels;
+        for (let c = assembly.ranges.c.start; c < assembly.ranges.c.end; c += 1) {
+          const localC = c - assembly.ranges.c.start;
+          const localY = y - assembly.ranges.y.start;
+          const localX = x - assembly.ranges.x.start;
+          const destinationIndex =
+            localC * stride[0] + localZ * stride[1] + localY * stride[2] + localX * stride[3];
+          assembly.data[destinationIndex] = slice[baseIndex + c];
+        }
+      }
+    }
+  }
+
+  private async flushChunk(chunkKey: string, assembly: ChunkAssembly): Promise<void> {
+    const chunkPath = assembly.zarrArray.resolve(assembly.zarrContext.encode_chunk_key(assembly.coords)).path;
+    const encoded = await assembly.zarrContext.codec.encode({
+      data: assembly.data,
+      shape: assembly.chunkShape,
+      stride: assembly.chunkStrides
+    });
+    await assembly.zarrArray.store.set(chunkPath, encoded);
+    this.chunkWriters.delete(chunkKey);
+  }
+
+  private getOrCreateAssembly(options: {
+    chunkKey: string;
+    coords: [number, number, number, number];
+    ranges: ChunkRanges;
+    chunkShape: VolumeChunkShape;
+    chunkStrides: number[];
+    zarrArray: Awaited<ReturnType<typeof createVolumeArray>>['array'];
+    zarrContext: ZarrArrayContext;
+  }): ChunkAssembly {
+    const existing = this.chunkWriters.get(options.chunkKey);
+    if (existing) {
+      return existing;
+    }
+
+    const valuesPerChunk = options.chunkShape.reduce((product, value) => product * value, 1);
+    const data = createVolumeTypedArray(this.metadata.dataType, valuesPerChunk);
+    const assembly: ChunkAssembly = {
+      coords: options.coords,
+      ranges: options.ranges,
+      data,
+      chunkShape: options.chunkShape,
+      chunkStrides: options.chunkStrides,
+      zarrArray: options.zarrArray,
+      zarrContext: options.zarrContext
+    };
+    this.chunkWriters.set(options.chunkKey, assembly);
+    return assembly;
+  }
+}
+
+class PreprocessingCoordinator {
+  private readonly writers = new Map<number, VolumePreprocessingWriter>();
+
+  constructor(private readonly store: ZarrMutableStore) {}
+
+  startVolume(index: number, metadata: VolumeStartMessage['metadata']): void {
+    this.writers.set(index, new VolumePreprocessingWriter(this.store, index, metadata));
+  }
+
+  async writeSlice(index: number, slice: VolumeTypedArray, sliceIndex: number): Promise<void> {
+    const writer = this.writers.get(index);
+    if (!writer) return;
+    await writer.writeSlice(slice, sliceIndex);
+  }
+
+  async finalizeVolume(index: number): Promise<void> {
+    const writer = this.writers.get(index);
+    if (!writer) return;
+    await writer.finalize();
+  }
+
+  async finalizeAll(volumeCount: number): Promise<PreprocessingResult> {
+    await Promise.all(Array.from(this.writers.values()).map((writer) => writer.finalize()));
+    const group = await openGroupAt(this.store);
+    const arrays = await Promise.all(
+      Array.from({ length: volumeCount }, (_value, index) => writerOrOpen(this.store, index, this.writers))
+    );
+    return { store: this.store, group, arrays };
+  }
+}
+
+async function writerOrOpen(
+  store: ZarrMutableStore,
+  index: number,
+  writers: Map<number, VolumePreprocessingWriter>
+): Promise<MinimalZarrArray<ZarrMutableStore>> {
+  const writer = writers.get(index);
+  if (writer) {
+    return writer.reopen();
+  }
+  return openArrayAt(store, getVolumeArrayPath(index));
+}
+
+async function createVolumeArray(
+  store: ZarrMutableStore,
+  index: number,
+  metadata: VolumeStartMessage['metadata']
+): Promise<{
+  array: ZarrArray<any, ZarrMutableStore>;
+  zarrContext: ZarrArrayContext;
+  chunkShape: VolumeChunkShape;
+  chunkStrides: number[];
+}> {
+  const path = root(store).resolve(getVolumeArrayPath(index));
+  const chunkShape = computeChunkShape(metadata, { bytesPerValue: metadata.bytesPerValue });
+  const shardShape = computeShardShape(chunkShape, { bytesPerValue: metadata.bytesPerValue });
+  const array = await create(path, {
+    shape: [metadata.channels, metadata.depth, metadata.height, metadata.width],
+    chunk_shape: shardShape,
+    data_type: metadata.dataType,
+    codecs: [
+      {
+        name: 'sharding_indexed',
+        configuration: { chunk_shape: chunkShape, codecs: [], index_codecs: [] }
+      }
+    ]
+  });
+  const zarrContext = getZarrContext(array);
+  const zarrChunkShape = zarrContext.chunk_shape as VolumeChunkShape;
+  return {
+    array,
+    zarrContext,
+    chunkShape: zarrChunkShape,
+    chunkStrides: zarrContext.get_strides(zarrChunkShape)
+  };
+}
+
 export async function loadVolumesFromFiles(
   files: File[],
   callbacks: VolumeLoadCallbacks = {}
@@ -66,6 +339,11 @@ export async function loadVolumesFromFiles(
 
     const assemblies = new Map<number, VolumeAssemblyState>();
     let settled = false;
+
+    const preprocessingCoordinatorPromise: Promise<PreprocessingCoordinator | null> =
+      callbacks.preprocessingHooks?.onPreprocessingComplete
+        ? createPreprocessingStore().then((store) => new PreprocessingCoordinator(store))
+        : Promise.resolve(null);
 
     const cleanup = () => {
       assemblies.clear();
@@ -124,7 +402,7 @@ export async function loadVolumesFromFiles(
       };
     };
 
-    worker.onmessage = (event) => {
+    worker.onmessage = async (event) => {
       const message = event.data as VolumeWorkerOutboundMessage;
 
       if (!message || message.requestId !== requestId || settled) {
@@ -136,6 +414,8 @@ export async function loadVolumesFromFiles(
           try {
             const state = createAssemblyState(message);
             assemblies.set(message.index, state);
+            const coordinator = await preprocessingCoordinatorPromise;
+            coordinator?.startVolume(message.index, message.metadata);
           } catch (error) {
             fail(error);
           }
@@ -167,6 +447,10 @@ export async function loadVolumesFromFiles(
               0,
               state.sliceLength
             );
+            const coordinator = await preprocessingCoordinatorPromise;
+            if (coordinator) {
+              await coordinator.writeSlice(message.index, slice, message.sliceIndex);
+            }
             state.destination.set(slice, message.sliceIndex * state.sliceLength);
             state.slicesReceived += 1;
           } catch (error) {
@@ -189,6 +473,16 @@ export async function loadVolumesFromFiles(
             );
           }
 
+          try {
+            const coordinator = await preprocessingCoordinatorPromise;
+            if (coordinator) {
+              await coordinator.finalizeVolume(message.index);
+            }
+          } catch (error) {
+            fail(error);
+            return;
+          }
+
           const payload: VolumePayload = {
             ...message.metadata,
             data: state.buffer
@@ -207,9 +501,18 @@ export async function loadVolumesFromFiles(
           break;
         }
         case 'complete':
-          settled = true;
-          cleanup();
-          resolve(volumes);
+          try {
+            const coordinator = await preprocessingCoordinatorPromise;
+            if (coordinator && callbacks.preprocessingHooks?.onPreprocessingComplete) {
+              const result = await coordinator.finalizeAll(files.length);
+              await callbacks.preprocessingHooks.onPreprocessingComplete(result);
+            }
+            settled = true;
+            cleanup();
+            resolve(volumes);
+          } catch (error) {
+            fail(error);
+          }
           break;
         case 'error': {
           let errorToReport: Error;
