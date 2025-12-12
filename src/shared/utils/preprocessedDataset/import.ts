@@ -265,9 +265,37 @@ async function readZarrVolume(
   expectedBytes: number
 ): Promise<Uint8Array> {
   const array = await openArrayAt(store, path);
-  const payload = await array.getChunk([0, 0, 0, 0] as any);
-  const data = ensureUint8Array((payload as any).data ?? payload);
-  if (data.byteLength !== expectedBytes) {
+  const shape = Array.isArray(array.shape) ? array.shape : [];
+  const chunkCoordinates = new Array(shape.length > 0 ? shape.length : 5).fill(0);
+  const payload = await array.getChunk(chunkCoordinates as any);
+  const payloadData = (payload as any).data ?? payload;
+  const bytesPerElement =
+    payloadData && typeof (payloadData as { BYTES_PER_ELEMENT?: number }).BYTES_PER_ELEMENT === 'number'
+      ? (payloadData as { BYTES_PER_ELEMENT: number }).BYTES_PER_ELEMENT
+      : null;
+
+  const normalizedShape: [number, number, number, number, number] = [1, 1, 1, 1, 1];
+  const dimensionOffset = Math.max(0, 5 - shape.length);
+  for (let index = 0; index < Math.min(shape.length, 5); index += 1) {
+    const dimension = shape[index];
+    if (typeof dimension === 'number' && Number.isFinite(dimension) && dimension > 0) {
+      normalizedShape[index + dimensionOffset] = dimension;
+    }
+  }
+
+  const expectedShapeBytes =
+    bytesPerElement !== null
+      ? normalizedShape.reduce((total, dimension) => total * dimension, 1) * bytesPerElement
+      : null;
+
+  const data = ensureUint8Array(payloadData);
+  if (expectedShapeBytes !== null && data.byteLength !== expectedShapeBytes) {
+    console.warn(
+      `Zarr volume at ${path} has ${data.byteLength} bytes; expected ${expectedShapeBytes} from shape [${normalizedShape.join(
+        'x'
+      )}].`
+    );
+  } else if (data.byteLength !== expectedBytes) {
     console.warn(`Zarr volume at ${path} has ${data.byteLength} bytes; expected ${expectedBytes}.`);
   }
   return data;

@@ -284,3 +284,7 @@
 ## Time-aware planar streaming fixes
 - Corrected planar slice mip selection to treat Zarr shapes as 5D tuples and propagate the viewer's time index through streaming requests without type errors.
 - Restored `useVolumeViewerResources` time-index threading so streaming hooks receive the selected frame during volume rendering.
+
+## Zarr volume chunk validation
+- Normalized Zarr chunk requests to honor five-dimensional coordinates when present and fallback to the array's dimensionality for 4D data.
+- Added shape-aware byte length validation when loading Zarr-backed preprocessed volumes to catch mismatched payloads while preserving streaming context setup.
