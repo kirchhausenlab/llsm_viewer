@@ -51,3 +51,20 @@ export function createVolumeRenderContext(container: HTMLElement): VolumeRenderC
 
   return { renderer, scene, camera, controls };
 }
+
+export function destroyVolumeRenderContext(context: VolumeRenderContext): void {
+  const { renderer, scene, controls } = context;
+
+  if (renderer.domElement.parentNode) {
+    renderer.domElement.parentNode.removeChild(renderer.domElement);
+  }
+
+  controls.dispose();
+
+  renderer.setAnimationLoop(null);
+  renderer.dispose();
+  renderer.renderLists?.dispose?.();
+  renderer.xr?.dispose?.();
+
+  scene.clear();
+}

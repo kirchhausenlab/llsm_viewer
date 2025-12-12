@@ -210,3 +210,7 @@
 ## Planar overlay pixel widths
 - Normalized planar overlay strokes and endpoints to screen-space widths so zooming no longer inflates or shrinks track lines.
 - Kept hover outlines and thin-stroke fallback outlines anchored to pixel widths after reversing the view scale during rendering.
+
+## Volume renderer teardown
+- Added a destroy helper for the volume render context that disposes the WebGL renderer, XR state, render lists, controls, and DOM nodes while clearing the scene.
+- Wired the volume viewer cleanup to use the new helper so unmounting releases WebGL contexts and associated listeners cleanly.
