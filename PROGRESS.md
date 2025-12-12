@@ -237,3 +237,10 @@
 ## Preprocessed loader milestones
 - Threaded new preprocessing milestone messages (scan → level0 → mips → finalize) through the import worker client and loader state.
 - Surfaced the milestones in the preprocessed loader UI alongside byte/volume progress while keeping drag-and-drop and Dropbox controls responsive.
+
+## Streaming Zarr volume source
+- Added a `ZarrVolumeSource` abstraction with per-mip chunk scheduling, LRU caching, and abort-aware request handling to keep streaming responsive during viewport changes.
+- Covered cache eviction and request cancellation behaviours with dedicated unit tests and wired them into the shared test runner.
+- Corrected chunk byte accounting to handle Zarrita's `{ data, shape, stride }` chunk responses so caching works under strict type-checking.
+- Hardened abort error creation with a DOMException fallback so cancellation works in runtimes without the DOM lib on the global scope.
+- Fixed the cancellation unit test to resolve in-flight work before asserting the aborted request, eliminating the dangling pending promise that caused the runner to exit with code 13.

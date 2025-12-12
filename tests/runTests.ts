@@ -19,3 +19,4 @@ import './app/hooks/useWindowLayout.test.ts';
 import './app/components/HelpMenu.test.tsx';
 import './zarrStores.test.ts';
 import './zarrLayout.test.ts';
+import './zarrVolumeSource.test.ts';
