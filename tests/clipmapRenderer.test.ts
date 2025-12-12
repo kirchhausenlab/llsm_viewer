@@ -41,7 +41,8 @@ console.log('Starting clipmap renderer tests');
   const firstLevel = clipmap.levels[0];
   assert.deepEqual(firstLevel.origin.toArray(), [0, 0, 0]);
   assert.equal(firstLevel.buffer[0], normalized[0]);
-  assert.equal(firstLevel.buffer[5], normalized[5 * channels]);
+  const expectedIndex = (((0 * size + 1) * size + 1) * channels) | 0;
+  assert.equal(firstLevel.buffer[5], normalized[expectedIndex]);
   assert.equal(firstLevel.needsUpload, false);
 
   clipmap.setInteractionLod(true);
@@ -158,6 +159,47 @@ console.log('Starting clipmap renderer tests');
   assert.deepEqual(mip2Request?.offset, [0, 0, 0, 0]);
 
   multiMipClipmap.dispose();
+  const uint16Size = 4;
+  const uint16Value = 1234;
+  const uint16Data = new Uint16Array(uint16Size * uint16Size * uint16Size).fill(uint16Value);
+  const uint16Chunks: [number, number, number, number, number] = [1, 1, uint16Size, uint16Size, uint16Size];
+  const uint16Array: MinimalZarrArray = {
+    shape: [1, 1, uint16Size, uint16Size, uint16Size],
+    chunks: uint16Chunks,
+    dtype: '<u2',
+    async getChunk() {
+      return { data: uint16Data } as any;
+    },
+  };
+  const uint16Source = new ZarrVolumeSource([
+    {
+      level: 0,
+      array: uint16Array,
+      dataType: 'uint16',
+      shape: [1, 1, uint16Size, uint16Size, uint16Size],
+      chunkShape: uint16Chunks,
+    },
+  ]);
+  const uint16Volume: StreamableNormalizedVolume = {
+    width: uint16Size,
+    height: uint16Size,
+    depth: uint16Size,
+    channels: 1,
+    dataType: 'uint16',
+    normalized: new Uint8Array(uint16Size * uint16Size * uint16Size),
+    min: 0,
+    max: 65535,
+    chunkShape: [uint16Size, uint16Size, uint16Size],
+    streamingSource: uint16Source,
+    streamingBaseShape: [1, 1, uint16Size, uint16Size, uint16Size],
+  };
+  const uint16Clipmap = new VolumeClipmapManager(uint16Volume, 2);
+  await uint16Clipmap.update(new THREE.Vector3(uint16Size / 2, uint16Size / 2, uint16Size / 2));
+  const uint16Level = uint16Clipmap.levels[0];
+  assert(uint16Level.buffer instanceof Uint16Array);
+  assert.equal(uint16Level.texture.type, THREE.UnsignedShortType);
+  assert.equal(uint16Level.buffer[0], uint16Value);
+  uint16Clipmap.dispose();
   streamingClipmap.dispose();
   clipmap.dispose();
   console.log('clipmap renderer tests passed');
