@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
 import type { NormalizedVolume } from '../../../../core/volumeProcessing';
+import type { ZarrVolumeSource } from '../../../../data/ZarrVolumeSource';
 
 const DEFAULT_CLIP_SIZE = 128;
 const MAX_CLIP_LEVELS = 6;
@@ -12,6 +13,18 @@ type ClipLevel = {
   texture: THREE.Data3DTexture;
   buffer: Uint8Array;
   needsUpload: boolean;
+  requestId: number;
+  abortController?: AbortController;
+};
+
+type StreamingMetadata = {
+  source: ZarrVolumeSource;
+  baseShape: [number, number, number, number];
+};
+
+type ClipmapVolume = NormalizedVolume & {
+  streamingSource?: ZarrVolumeSource;
+  streamingBaseShape?: [number, number, number, number];
 };
 
 function createTexture(size: number, channels: number): THREE.Data3DTexture {
@@ -62,14 +75,32 @@ function alignToChunk(value: number, step: number, limit: number): number {
 export class VolumeClipmapManager {
   readonly levels: ClipLevel[];
   readonly clipSize: number;
-  private readonly volume: NormalizedVolume;
+  private readonly volume: ClipmapVolume;
   private readonly chunkShape: [number, number, number];
+  private readonly streaming?: StreamingMetadata;
   private minLevelOverride = 0;
 
-  constructor(volume: NormalizedVolume, clipSize = DEFAULT_CLIP_SIZE) {
+  constructor(volume: ClipmapVolume, clipSize = DEFAULT_CLIP_SIZE) {
     this.volume = volume;
     this.clipSize = clipSize;
-    this.chunkShape = volume.chunkShape ?? [FALLBACK_CHUNK, FALLBACK_CHUNK, FALLBACK_CHUNK];
+    const streamingSource = volume.streamingSource ?? null;
+    const baseShape: [number, number, number, number] = volume.streamingBaseShape ?? [
+      Math.max(1, volume.channels),
+      Math.max(1, volume.depth),
+      volume.height,
+      volume.width,
+    ];
+
+    if (streamingSource) {
+      this.streaming = {
+        source: streamingSource,
+        baseShape,
+      };
+      const rootChunk = streamingSource.getMip(streamingSource.getMipLevels()[0]).chunkShape;
+      this.chunkShape = [rootChunk[3], rootChunk[2], rootChunk[1]];
+    } else {
+      this.chunkShape = volume.chunkShape ?? [FALLBACK_CHUNK, FALLBACK_CHUNK, FALLBACK_CHUNK];
+    }
     const scales = determineLevelScales(volume, clipSize);
 
     this.levels = scales.map((scale) => {
@@ -81,6 +112,7 @@ export class VolumeClipmapManager {
         texture: createTexture(clipSize, volume.channels),
         buffer,
         needsUpload: true,
+        requestId: 0,
       } satisfies ClipLevel;
     });
   }
@@ -97,8 +129,9 @@ export class VolumeClipmapManager {
     return this.levels[Math.min(Math.max(0, level), this.levels.length - 1)].scale;
   }
 
-  update(target: THREE.Vector3): void {
+  async update(target: THREE.Vector3, options?: { signal?: AbortSignal; priorityCenter?: THREE.Vector3 }): Promise<void> {
     const { width, height, depth } = this.volume;
+    const pending: Array<Promise<void>> = [];
     this.levels.forEach((level, index) => {
       const extent = this.clipSize * level.scale;
       const halfExtent = extent * 0.5;
@@ -121,7 +154,7 @@ export class VolumeClipmapManager {
 
       if (!aligned.equals(level.origin)) {
         level.origin.copy(aligned);
-        this.populateLevel(level);
+        pending.push(this.populateLevel(level, options));
       }
 
       if (
@@ -132,9 +165,23 @@ export class VolumeClipmapManager {
         level.needsUpload = true;
       }
     });
+
+    if (pending.length > 0) {
+      try {
+        await Promise.all(pending);
+      } catch (error) {
+        if ((error as Error)?.name !== 'AbortError') {
+          console.error('Failed to populate clipmap level', error);
+        }
+      }
+    }
+    this.uploadPending();
   }
 
-  private populateLevel(level: ClipLevel): void {
+  private async populateLevel(level: ClipLevel, options?: { signal?: AbortSignal; priorityCenter?: THREE.Vector3 }): Promise<void> {
+    if (this.streaming) {
+      return this.populateFromStreaming(level, options);
+    }
     const { width, height, depth, channels } = this.volume;
     const { origin, scale } = level;
     const baseX = Math.floor(origin.x);
@@ -171,6 +218,163 @@ export class VolumeClipmapManager {
     }
 
     level.needsUpload = true;
+  }
+
+  private computeMipScale(levelScale: number) {
+    if (!this.streaming) {
+      return { level: 0, scale: { scaleX: levelScale, scaleY: levelScale, scaleZ: levelScale } };
+    }
+    const mipLevels = this.streaming.source.getMipLevels();
+    const baseShape = this.streaming.baseShape;
+
+    const computeLevelScale = (shape: [number, number, number, number]) => {
+      return {
+        scaleX: Math.max(1, Math.round(baseShape[3] / shape[3])),
+        scaleY: Math.max(1, Math.round(baseShape[2] / shape[2])),
+        scaleZ: Math.max(1, Math.round(baseShape[1] / shape[1])),
+      };
+    };
+
+    let best = { level: mipLevels[0], scale: computeLevelScale(this.streaming.source.getMip(mipLevels[0]).shape) };
+    let bestError = Number.POSITIVE_INFINITY;
+
+    for (const mip of mipLevels) {
+      const scale = computeLevelScale(this.streaming.source.getMip(mip).shape);
+      const mipScale = Math.max(scale.scaleX, Math.max(scale.scaleY, scale.scaleZ));
+      const error = Math.abs(mipScale - levelScale);
+      if (error < bestError) {
+        best = { level: mip, scale };
+        bestError = error;
+      }
+    }
+
+    return best;
+  }
+
+  private async populateFromStreaming(
+    level: ClipLevel,
+    options?: { signal?: AbortSignal; priorityCenter?: THREE.Vector3 }
+  ): Promise<void> {
+    const streaming = this.streaming;
+    if (!streaming) {
+      return;
+    }
+
+    const requestId = level.requestId + 1;
+    level.requestId = requestId;
+    level.abortController?.abort();
+    const controller = new AbortController();
+    level.abortController = controller;
+    if (options?.signal) {
+      options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+
+    const { source } = streaming;
+    const mip = this.computeMipScale(level.scale);
+    const mipInfo = source.getMip(mip.level);
+    const [channelShape, zShape, yShape, xShape] = mipInfo.shape;
+    const scaleX = mip.scale.scaleX;
+    const scaleY = mip.scale.scaleY;
+    const scaleZ = mip.scale.scaleZ;
+
+    const startX = Math.max(0, Math.floor(level.origin.x / scaleX));
+    const startY = Math.max(0, Math.floor(level.origin.y / scaleY));
+    const startZ = Math.max(0, Math.floor(level.origin.z / scaleZ));
+    const endX = Math.min(xShape, Math.ceil((level.origin.x + this.clipSize * level.scale) / scaleX));
+    const endY = Math.min(yShape, Math.ceil((level.origin.y + this.clipSize * level.scale) / scaleY));
+    const endZ = Math.min(zShape, Math.ceil((level.origin.z + this.clipSize * level.scale) / scaleZ));
+
+    const shapeX = Math.max(0, endX - startX);
+    const shapeY = Math.max(0, endY - startY);
+    const shapeZ = Math.max(0, endZ - startZ);
+    const channels = Math.min(Math.max(1, this.volume.channels), channelShape);
+
+    const priorityChunks: [number, number, number, number] | undefined = options?.priorityCenter
+      ? [
+          0,
+          Math.floor(options.priorityCenter.z / mipInfo.chunkShape[1]),
+          Math.floor(options.priorityCenter.y / mipInfo.chunkShape[2]),
+          Math.floor(options.priorityCenter.x / mipInfo.chunkShape[3]),
+        ]
+      : undefined;
+
+    try {
+      const region = await source.readRegion({
+        mipLevel: mip.level,
+        offset: [0, startZ, startY, startX],
+        shape: [channels, shapeZ, shapeY, shapeX],
+        signal: controller.signal,
+        priorityCenter: priorityChunks,
+      });
+      if (controller.signal.aborted || requestId !== level.requestId) {
+        return;
+      }
+      this.copyRegionIntoLevel({
+        level,
+        region,
+        offset: { x: startX, y: startY, z: startZ },
+        scale: { x: scaleX, y: scaleY, z: scaleZ },
+        shape: { x: shapeX, y: shapeY, z: shapeZ, c: channels },
+      });
+    } catch (error) {
+      if ((error as Error)?.name !== 'AbortError') {
+        console.error('Failed to stream clipmap region', error);
+      }
+    }
+  }
+
+  private copyRegionIntoLevel(params: {
+    level: ClipLevel;
+    region: Uint8Array;
+    offset: { x: number; y: number; z: number };
+    scale: { x: number; y: number; z: number };
+    shape: { x: number; y: number; z: number; c: number };
+  }) {
+    const { level, region, offset, scale, shape } = params;
+    const channels = Math.max(1, this.volume.channels);
+    const stride = this.clipSize;
+
+    const strides = this.computeStrides([shape.c, shape.z, shape.y, shape.x]);
+    level.buffer.fill(0);
+
+    for (let z = 0; z < stride; z += 1) {
+      const sampleZ = Math.floor((level.origin.z + z * level.scale) / scale.z) - offset.z;
+      if (sampleZ < 0 || sampleZ >= shape.z) {
+        continue;
+      }
+      for (let y = 0; y < stride; y += 1) {
+        const sampleY = Math.floor((level.origin.y + y * level.scale) / scale.y) - offset.y;
+        if (sampleY < 0 || sampleY >= shape.y) {
+          continue;
+        }
+        for (let x = 0; x < stride; x += 1) {
+          const sampleX = Math.floor((level.origin.x + x * level.scale) / scale.x) - offset.x;
+          const destIndex = ((z * stride + y) * stride + x) * channels;
+          if (sampleX < 0 || sampleX >= shape.x) {
+            for (let c = 0; c < channels; c += 1) {
+              level.buffer[destIndex + c] = 0;
+            }
+            continue;
+          }
+          for (let c = 0; c < channels; c += 1) {
+            const clampedC = Math.min(c, shape.c - 1);
+            const sourceIndex =
+              clampedC * strides[0] + sampleZ * strides[1] + sampleY * strides[2] + sampleX * strides[3];
+            level.buffer[destIndex + c] = region[sourceIndex] ?? 0;
+          }
+        }
+      }
+    }
+
+    level.needsUpload = true;
+  }
+
+  private computeStrides(shape: readonly number[]): number[] {
+    const strides = new Array(shape.length).fill(1);
+    for (let i = shape.length - 2; i >= 0; i -= 1) {
+      strides[i] = strides[i + 1] * shape[i + 1];
+    }
+    return strides;
   }
 
   uploadPending(): void {
@@ -223,6 +427,7 @@ export class VolumeClipmapManager {
 
   dispose(): void {
     this.levels.forEach((level) => {
+      level.abortController?.abort();
       level.texture.dispose();
     });
   }
