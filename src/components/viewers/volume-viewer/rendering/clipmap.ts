@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 import type { NormalizedVolume } from '../../../../core/volumeProcessing';
 import type { ZarrVolumeSource } from '../../../../data/ZarrVolumeSource';
+import type { VolumeTypedArray } from '../../../../types/volume';
 
 const DEFAULT_CLIP_SIZE = 128;
 const MAX_CLIP_LEVELS = 6;
@@ -325,7 +326,7 @@ export class VolumeClipmapManager {
 
   private copyRegionIntoLevel(params: {
     level: ClipLevel;
-    region: Uint8Array;
+    region: VolumeTypedArray;
     offset: { x: number; y: number; z: number };
     scale: { x: number; y: number; z: number };
     shape: { x: number; y: number; z: number; c: number };
