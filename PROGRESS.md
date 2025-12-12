@@ -237,3 +237,7 @@
 ## Preprocessed loader milestones
 - Threaded new preprocessing milestone messages (scan → level0 → mips → finalize) through the import worker client and loader state.
 - Surfaced the milestones in the preprocessed loader UI alongside byte/volume progress while keeping drag-and-drop and Dropbox controls responsive.
+
+## Streaming Zarr volume source
+- Added a `ZarrVolumeSource` abstraction with per-mip chunk scheduling, LRU caching, and abort-aware request handling to keep streaming responsive during viewport changes.
+- Covered cache eviction and request cancellation behaviours with dedicated unit tests and wired them into the shared test runner.

@@ -154,6 +154,8 @@ The main responsibilities are:
 - `src/data/zarr.ts`
   Zarrita-backed stores for remote URLs, directory-picked File mappings, and OPFS/IndexedDB preprocessing output plus helpers
   to open arrays/groups with minimal surfaces for loaders/workers.
+- `src/data/ZarrVolumeSource.ts`
+  Streaming per-mip chunk reader with priority scheduling and LRU caching, intended for incremental viewport-driven requests.
 - `src/shaders/*`
   Shader source modules (`volumeRenderShader.ts`, `sliceRenderShader.ts`).
 
