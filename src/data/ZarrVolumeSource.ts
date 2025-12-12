@@ -211,10 +211,12 @@ export class ZarrVolumeSource {
     if (signal?.aborted) {
       throw createAbortError();
     }
+    const data = (chunk as any).data ?? chunk;
     const cacheKey = this.getChunkKey(mipLevel, coords);
-    const bytes = chunk.byteLength ?? chunk.length * getBytesPerValue(level.dataType);
-    this.insertCacheEntry(cacheKey, bytes, chunk as VolumeTypedArray);
-    return chunk as VolumeTypedArray;
+    const bytes =
+      (data as VolumeTypedArray).byteLength ?? data.length * getBytesPerValue(level.dataType);
+    this.insertCacheEntry(cacheKey, bytes, data as VolumeTypedArray);
+    return data as VolumeTypedArray;
   }
 
   private getChunkKey(mip: number, coords: ChunkCoords): string {
