@@ -225,3 +225,6 @@
 ## Volume loader Zarr writes
 - Refactored the volume loader worker to stream TIFF slices straight into per-slice Zarr chunks via the shared async store while still emitting slice progress metadata.
 - Added per-slice min/max reporting to loader messages so downstream consumers retain range visibility during incremental writes.
+
+## Zarr context access for build compatibility
+- Replaced the deep import of the Zarrita array context helper in the volume loader worker with a local symbol lookup so Vite can resolve worker builds without missing export errors.

@@ -2,7 +2,6 @@
 import { fromBlob } from 'geotiff';
 import type { AsyncMutable } from '@zarrita/storage';
 import { create, root } from 'zarrita';
-import { get_context } from 'zarrita/dist/src/hierarchy.js';
 import { MAX_VOLUME_BYTES } from '../shared/constants/volumeLimits';
 import { VolumeTooLargeError } from '../errors';
 import type { VolumeDataType, VolumeTypedArray } from '../types/volume';
@@ -33,6 +32,17 @@ type ZarrArrayContext = {
   };
   get_strides(shape: number[]): number[];
 };
+
+function getZarrContext(zarrArray: object): ZarrArrayContext {
+  const contextSymbol = Object.getOwnPropertySymbols(zarrArray).find(
+    (symbol) => symbol.description === 'zarrita.context'
+  );
+  const zarrContext = contextSymbol ? (zarrArray as Record<symbol, unknown>)[contextSymbol] : undefined;
+  if (!zarrContext || typeof zarrContext !== 'object') {
+    throw new Error('Failed to access Zarr array context.');
+  }
+  return zarrContext as ZarrArrayContext;
+}
 
 type WorkerMessage = LoadVolumesMessage;
 
@@ -194,7 +204,7 @@ async function loadVolumeFromFile(
     channels,
     dataType
   });
-  const zarrContext = get_context(zarrArray) as ZarrArrayContext;
+  const zarrContext = getZarrContext(zarrArray);
   const chunkShape = zarrContext.chunk_shape;
 
   if (typedFirstRaster.length !== sliceLength) {
