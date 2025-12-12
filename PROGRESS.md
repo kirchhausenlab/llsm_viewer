@@ -274,3 +274,7 @@
 - Initialized `ZarrVolumeSource` instances for Zarr-backed preprocessed imports, deriving base and mip chunk metadata from the store when available.
 - Threaded streaming base shapes and sources into the normalized volumes returned to callers while keeping non-Zarr archives on the previous non-streaming path.
 - Added streaming source reconstruction for external Zarr stores during preprocessed import worker results.
+
+## Clipmap base-shape validation
+- Ensured GPU clipmaps only initialize when both Zarr streaming sources and base shapes are present, passing the real streaming metadata into the manager so mip sizes align with the loader output.
+- Added a streaming volume resource test that instantiates a clipmap-backed layer and confirms the first mip uploads streamed data instead of placeholder textures.

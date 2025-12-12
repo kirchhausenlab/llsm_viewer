@@ -269,10 +269,12 @@ export function useVolumeResources({
         ? Number(layer.sliceIndex)
         : Math.floor(volume.depth / 2);
       const streamingSource = volume.streamingSource ?? null;
-      const isStreamingVolume = streamingSource !== null;
+      const streamingBaseShape = volume.streamingBaseShape ?? null;
+      const isStreamingVolume = Boolean(streamingSource);
+      const hasStreamingClipmap = Boolean(streamingSource && streamingBaseShape);
 
       if (viewerMode === '3d') {
-        if (!isStreamingVolume) {
+        if (!hasStreamingClipmap) {
           cachedPreparation = getCachedTextureData(volume);
         }
         const placeholderChannels = Math.max(1, volume.channels);
@@ -352,8 +354,12 @@ export function useVolumeResources({
           }
 
           let clipmap: VolumeClipmapManager | null = null;
-          if (isStreamingVolume && streamingSource && uniforms.u_useClipmap && uniforms.u_clipmapTextures) {
-            clipmap = new VolumeClipmapManager(volume);
+          if (hasStreamingClipmap && uniforms.u_useClipmap && uniforms.u_clipmapTextures) {
+            clipmap = new VolumeClipmapManager({
+              ...volume,
+              streamingSource,
+              streamingBaseShape,
+            });
           }
 
           const material = new THREE.ShaderMaterial({
@@ -599,9 +605,13 @@ export function useVolumeResources({
             materialUniforms.u_renderstyle.value = layer.renderStyle;
           }
 
-          if (isStreamingVolume && streamingSource && materialUniforms.u_useClipmap && materialUniforms.u_clipmapTextures) {
+          if (hasStreamingClipmap && materialUniforms.u_useClipmap && materialUniforms.u_clipmapTextures) {
             if (!resources.clipmap) {
-              resources.clipmap = new VolumeClipmapManager(volume);
+              resources.clipmap = new VolumeClipmapManager({
+                ...volume,
+                streamingSource,
+                streamingBaseShape,
+              });
             }
             resources.clipmap?.update(rotationTargetRef.current, {
               signal: abortController.signal,
