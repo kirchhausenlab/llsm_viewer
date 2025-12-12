@@ -11,6 +11,7 @@ export type NormalizedVolume = {
   depth: number;
   channels: number;
   dataType: VolumeDataType;
+  chunkShape?: [number, number, number];
   /**
    * Normalized voxel data. This view must be treated as read-only because it
    * can share the underlying buffer with the source volume when normalization

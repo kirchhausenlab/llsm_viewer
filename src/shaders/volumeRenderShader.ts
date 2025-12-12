@@ -16,6 +16,13 @@ type VolumeUniforms = {
   u_invert: { value: number };
   u_stepScale: { value: number };
   u_nearestSampling: { value: number };
+  u_useClipmap: { value: number };
+  u_clipmapLevelCount: { value: number };
+  u_clipmapSize: { value: number };
+  u_clipmapOrigins: { value: Vector3[] };
+  u_clipmapScales: { value: number[] };
+  u_clipmapTextures: { value: (Data3DTexture | null)[] };
+  u_minClipLevel: { value: number };
   u_hoverPos: { value: Vector3 };
   u_hoverScale: { value: Vector3 };
   u_hoverRadius: { value: number };
@@ -41,6 +48,13 @@ const uniforms = {
   u_invert: { value: 0 },
   u_stepScale: { value: 1 },
   u_nearestSampling: { value: 0 },
+  u_useClipmap: { value: 0 },
+  u_clipmapLevelCount: { value: 0 },
+  u_clipmapSize: { value: 1 },
+  u_clipmapOrigins: { value: new Array(6).fill(null).map(() => new Vector3()) },
+  u_clipmapScales: { value: new Array(6).fill(1) },
+  u_clipmapTextures: { value: new Array(6).fill(null) as (Data3DTexture | null)[] },
+  u_minClipLevel: { value: 0 },
   u_hoverPos: { value: new Vector3() },
   u_hoverScale: { value: new Vector3() },
   u_hoverRadius: { value: 0 },
@@ -79,6 +93,8 @@ export const VolumeRenderShader = {
     precision highp float;
     precision mediump sampler3D;
 
+    #define MAX_CLIP_LEVELS 6
+
     uniform vec3 u_size;
     uniform int u_renderstyle;
     uniform float u_renderthreshold;
@@ -90,6 +106,13 @@ export const VolumeRenderShader = {
     uniform float u_invert;
     uniform float u_stepScale;
     uniform float u_nearestSampling;
+    uniform float u_useClipmap;
+    uniform int u_clipmapLevelCount;
+    uniform float u_clipmapSize;
+    uniform vec3 u_clipmapOrigins[MAX_CLIP_LEVELS];
+    uniform float u_clipmapScales[MAX_CLIP_LEVELS];
+    uniform sampler3D u_clipmapTextures[MAX_CLIP_LEVELS];
+    uniform float u_minClipLevel;
     uniform vec3 u_hoverPos;
     uniform vec3 u_hoverScale;
     uniform float u_hoverRadius;
@@ -120,8 +143,55 @@ export const VolumeRenderShader = {
     void cast_mip(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
     void cast_iso(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
 
-    vec4 sample_color(vec3 texcoords) {
+    vec4 sample_clipmap(vec3 texcoords, out float levelScale) {
+      vec3 voxelPos = texcoords * u_size;
+      int chosenLevel = -1;
+      vec4 sampled = vec4(0.0);
+      levelScale = 1.0;
+
+      for (int i = 0; i < MAX_CLIP_LEVELS; i++) {
+        if (i >= u_clipmapLevelCount) {
+          break;
+        }
+        if (float(i) < u_minClipLevel) {
+          continue;
+        }
+        vec3 origin = u_clipmapOrigins[i];
+        float scale = u_clipmapScales[i];
+        vec3 extent = vec3(u_clipmapSize * scale);
+        vec3 local = (voxelPos - origin) / extent;
+        if (all(greaterThanEqual(local, vec3(0.0))) && all(lessThan(local, vec3(1.0)))) {
+          sampled = texture(u_clipmapTextures[i], local);
+          levelScale = scale;
+          chosenLevel = i;
+          break;
+        }
+      }
+
+      if (chosenLevel == -1) {
+        int fallback = max(u_clipmapLevelCount - 1, 0);
+        float scale = u_clipmapScales[fallback];
+        vec3 origin = u_clipmapOrigins[fallback];
+        vec3 extent = vec3(u_clipmapSize * scale);
+        vec3 local = (voxelPos - origin) / extent;
+        sampled = texture(u_clipmapTextures[fallback], local);
+        levelScale = scale;
+      }
+
+      return sampled;
+    }
+
+    vec4 sample_color_with_scale(vec3 texcoords, out float levelScale) {
+      if (u_useClipmap > 0.5 && u_clipmapLevelCount > 0) {
+        return sample_clipmap(texcoords, levelScale);
+      }
+      levelScale = 1.0;
       return texture(u_data, texcoords.xyz);
+    }
+
+    vec4 sample_color(vec3 texcoords) {
+      float unusedScale;
+      return sample_color_with_scale(texcoords, unusedScale);
     }
 
     float normalize_window(float value) {
@@ -166,7 +236,8 @@ export const VolumeRenderShader = {
     }
 
     float sample1(vec3 texcoords) {
-      vec4 colorSample = sample_color(texcoords);
+      float levelScale;
+      vec4 colorSample = sample_color_with_scale(texcoords, levelScale);
       float intensity = luminance(colorSample);
       return adjust_intensity(intensity);
     }
@@ -320,7 +391,8 @@ export const VolumeRenderShader = {
         if (iter >= nsteps) {
           break;
         }
-        vec4 colorSample = sample_color(loc);
+        float levelScale;
+        vec4 colorSample = sample_color_with_scale(loc, levelScale);
         float rawVal = luminance(colorSample);
         float normalizedVal = normalize_intensity(rawVal);
         if (normalizedVal > max_val) {
@@ -333,13 +405,15 @@ export const VolumeRenderShader = {
             break;
           }
         }
-        loc += step;
+        vec3 scaledStep = step * levelScale;
+        loc += scaledStep;
       }
 
       vec3 iloc = start_loc + step * (float(max_i) - 0.5);
       vec3 istep = step / float(REFINEMENT_STEPS);
       for (int i = 0; i < REFINEMENT_STEPS; i++) {
-        vec4 colorSample = sample_color(iloc);
+        float levelScale;
+        vec4 colorSample = sample_color_with_scale(iloc, levelScale);
         float refinedRaw = luminance(colorSample);
         float refined = normalize_intensity(refinedRaw);
         if (refined > max_val) {
@@ -373,7 +447,6 @@ export const VolumeRenderShader = {
 
     void cast_iso(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray) {
       vec4 hitColor = vec4(0.0);
-      vec3 dstep = 1.5 / u_size;
       vec3 loc = start_loc;
 
       float low_threshold = u_renderthreshold - 0.02 * (u_clim[1] - u_clim[0]);
@@ -384,18 +457,23 @@ export const VolumeRenderShader = {
           break;
         }
 
-        float val = sample1(loc);
+        float levelScale;
+        vec4 colorSample = sample_color_with_scale(loc, levelScale);
+        float val = adjust_intensity(luminance(colorSample));
+        vec3 dstep = (1.5 * levelScale) / u_size;
 
         if (!hasHit && val > low_threshold) {
           vec3 iloc = loc - 0.5 * step;
           vec3 istep = step / float(REFINEMENT_STEPS);
           for (int i = 0; i < REFINEMENT_STEPS; i++) {
-            vec4 colorSample = sample_color(iloc);
+            float refineScale;
+            vec4 colorSample = sample_color_with_scale(iloc, refineScale);
             float refinedRaw = luminance(colorSample);
             float refined = normalize_intensity(refinedRaw);
             float adjustedRefined = apply_inversion(refined);
             if (adjustedRefined > u_renderthreshold) {
-              hitColor = add_lighting(refined, iloc, dstep, view_ray, colorSample);
+              vec3 gradientStep = (1.5 * refineScale) / u_size;
+              hitColor = add_lighting(refined, iloc, gradientStep, view_ray, colorSample);
               hasHit = true;
               break;
             }
@@ -406,7 +484,8 @@ export const VolumeRenderShader = {
           }
         }
 
-        loc += step;
+        vec3 scaledStep = step * levelScale;
+        loc += scaledStep;
       }
 
       gl_FragColor = apply_blending_mode(hitColor);
