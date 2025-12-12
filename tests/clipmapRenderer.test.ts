@@ -109,6 +109,55 @@ console.log('Starting clipmap renderer tests');
   const coarseLevel = streamingClipmap.levels[streamingClipmap.levels.length - 1];
   assert.equal(coarseLevel.buffer[0], 7);
   assert.equal(coarseLevel.needsUpload, false);
+
+  const mipLevels = [
+    { level: 0, shape: [1, 1, 8, 8, 8], chunkShape: [1, 1, 4, 4, 4] },
+    { level: 1, shape: [1, 1, 4, 4, 4], chunkShape: [1, 1, 2, 2, 2] },
+    { level: 2, shape: [1, 1, 2, 2, 2], chunkShape: [1, 1, 2, 2, 2] },
+  ];
+  const regionRequests: Array<{ mip: number; offset: number[]; shape: number[] }> = [];
+  const multiMipSource = {
+    getMipLevels: () => mipLevels.map((entry) => entry.level),
+    getMip: (level: number) => {
+      const entry = mipLevels.find((candidate) => candidate.level === level);
+      if (!entry) {
+        throw new Error(`Missing mip level ${level}`);
+      }
+      return entry as any;
+    },
+    async readRegion(request: any) {
+      regionRequests.push({ mip: request.mipLevel, offset: [...request.offset], shape: [...request.shape] });
+      const [cSize, zSize, ySize, xSize] = request.shape as number[];
+      return new Uint8Array(cSize * zSize * ySize * xSize);
+    },
+  } as unknown as ZarrVolumeSource;
+
+  const multiMipVolume: StreamableNormalizedVolume = {
+    width: 8,
+    height: 8,
+    depth: 8,
+    channels: 1,
+    dataType: 'uint8',
+    normalized: new Uint8Array(8 * 8 * 8),
+    min: 0,
+    max: 255,
+    chunkShape: [4, 4, 4],
+    streamingSource: multiMipSource,
+    streamingBaseShape: mipLevels[0].shape,
+    streamingBaseChunkShape: mipLevels[0].chunkShape,
+  };
+
+  const multiMipClipmap = new VolumeClipmapManager(multiMipVolume, 2);
+  await multiMipClipmap.update(new THREE.Vector3(4, 4, 4));
+
+  const requestedMips = regionRequests.map((entry) => entry.mip).sort((a, b) => a - b);
+  assert.deepEqual(requestedMips, [0, 1, 2]);
+
+  const mip2Request = regionRequests.find((entry) => entry.mip === 2);
+  assert.deepEqual(mip2Request?.shape, [1, 2, 2, 2]);
+  assert.deepEqual(mip2Request?.offset, [0, 0, 0, 0]);
+
+  multiMipClipmap.dispose();
   streamingClipmap.dispose();
   clipmap.dispose();
   console.log('clipmap renderer tests passed');

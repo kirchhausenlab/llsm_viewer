@@ -284,3 +284,5 @@
 ## Time-aware planar streaming fixes
 - Corrected planar slice mip selection to treat Zarr shapes as 5D tuples and propagate the viewer's time index through streaming requests without type errors.
 - Restored `useVolumeViewerResources` time-index threading so streaming hooks receive the selected frame during volume rendering.
+2025-12-12T21:34:34+00:00: Updated clipmap mip selection to use logical shapes and added streaming region coverage test/assertions.
+
