@@ -76,7 +76,8 @@ export class VolumeClipmapManager {
       const buffer = new Uint8Array(clipSize * clipSize * clipSize * volume.channels);
       return {
         scale,
-        origin: new THREE.Vector3(),
+        // Force an initial populate on the first update so clipmap textures are not empty.
+        origin: new THREE.Vector3(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY),
         texture: createTexture(clipSize, volume.channels),
         buffer,
         needsUpload: true,
