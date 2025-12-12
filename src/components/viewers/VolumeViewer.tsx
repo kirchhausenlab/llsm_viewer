@@ -21,6 +21,7 @@ import { TrackCameraPresenter } from './volume-viewer/TrackCameraPresenter';
 import { useVolumeHover } from './volume-viewer/useVolumeHover';
 import { useVolumeViewerVrBridge } from './volume-viewer/useVolumeViewerVrBridge';
 import { useCameraControls } from './volume-viewer/useCameraControls';
+import { destroyVolumeRenderContext } from '../../hooks/useVolumeRenderSetup';
 import { useTrackRendering } from './volume-viewer/useTrackRendering';
 import { usePlaybackControls } from './volume-viewer/usePlaybackControls';
 import { useTrackTooltip } from './volume-viewer/useTrackTooltip';
@@ -1065,11 +1066,7 @@ function VolumeViewer({
 
       raycasterRef.current = null;
       resizeObserver.disconnect();
-      controls.dispose();
-      renderer.dispose();
-      if (renderer.domElement.parentNode) {
-        renderer.domElement.parentNode.removeChild(renderer.domElement);
-      }
+      destroyVolumeRenderContext(renderContext);
       rendererRef.current = null;
       sceneRef.current = null;
       cameraRef.current = null;
