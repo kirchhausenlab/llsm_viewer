@@ -1,6 +1,9 @@
-import type {
-  ImportPreprocessedDatasetResult,
-  PreprocessedImportMilestone
+import {
+  attachStreamingContexts,
+  buildStreamingContexts,
+  openExternalZarrStore,
+  type ImportPreprocessedDatasetResult,
+  type PreprocessedImportMilestone
 } from '../../shared/utils/preprocessedDataset';
 import WorkerScript from '../importPreprocessedDataset.worker?worker';
 
@@ -38,6 +41,35 @@ export type ImportPreprocessedDatasetWorkerOptions = {
   onMilestone?: (milestone: PreprocessedImportMilestone) => void;
   signal?: AbortSignal;
 };
+
+async function augmentStreamingSources(
+  result: ImportPreprocessedDatasetResult
+): Promise<ImportPreprocessedDatasetResult> {
+  const { zarrStore } = result.manifest.dataset;
+  if (!zarrStore || zarrStore.source === 'archive') {
+    return result;
+  }
+
+  const hasStreamingSources = result.layers.some((layer) =>
+    layer.volumes.some((volume) => Boolean(volume.streamingSource))
+  );
+  if (hasStreamingSources) {
+    return result;
+  }
+
+  try {
+    const store = await openExternalZarrStore(zarrStore);
+    if (!store) {
+      return result;
+    }
+    const contexts = await buildStreamingContexts(result.manifest, store);
+    const layers = await attachStreamingContexts(result.manifest, result.layers, contexts);
+    return { ...result, layers };
+  } catch (error) {
+    console.warn('Failed to rebuild streaming sources for preprocessed import', error);
+    return result;
+  }
+}
 
 export class ImportPreprocessedDatasetWorkerClient {
   private readonly worker: Worker;
@@ -164,7 +196,9 @@ export class ImportPreprocessedDatasetWorkerClient {
       case 'done': {
         this.pending.delete(message.id);
         request.abortController.abort();
-        request.resolve(message.result);
+        augmentStreamingSources(message.result)
+          .then((result) => request.resolve(result))
+          .catch((error) => request.reject(error instanceof Error ? error : new Error(String(error))));
         break;
       }
       case 'cancelled': {

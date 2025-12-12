@@ -18,7 +18,13 @@ import {
   MANIFEST_FILE_NAME,
   type PreprocessedImportMilestone
 } from './types';
-import { KeyedFileStore, createFetchStore, openArrayAt } from '../../../data/zarr';
+import {
+  DirectoryHandleStore,
+  IndexedDBStore,
+  KeyedFileStore,
+  createFetchStore,
+  openArrayAt
+} from '../../../data/zarr';
 import type { AsyncReadable } from '@zarrita/storage';
 
 const textDecoder = new TextDecoder();
@@ -174,6 +180,47 @@ async function createArchiveZarrStore(
   return new KeyedFileStore(files);
 }
 
+type NamedZarrStore = Extract<PreprocessedZarrStore, { source: 'opfs' | 'local' }>;
+
+async function createOpfsZarrStore(store: NamedZarrStore): Promise<AsyncReadable | null> {
+  if (typeof navigator === 'undefined' || typeof navigator.storage?.getDirectory !== 'function') {
+    return null;
+  }
+
+  try {
+    const rootHandle = await navigator.storage.getDirectory();
+    const targetHandle =
+      store.name && store.name.length > 0
+        ? await rootHandle.getDirectoryHandle(store.name, { create: false })
+        : rootHandle;
+    return new DirectoryHandleStore(targetHandle);
+  } catch (error) {
+    console.warn('Failed to open OPFS-backed Zarr store', error);
+    return null;
+  }
+}
+
+export async function openExternalZarrStore(store: PreprocessedZarrStore): Promise<AsyncReadable | null> {
+  if (store.source === 'url') {
+    return createFetchStore(store.url);
+  }
+
+  if (store.source === 'opfs') {
+    return createOpfsZarrStore(store);
+  }
+
+  if (store.source === 'local') {
+    const opfsStore = await createOpfsZarrStore(store);
+    if (opfsStore) {
+      return opfsStore;
+    }
+    const storeName = store.name && store.name.length > 0 ? store.name : undefined;
+    return IndexedDBStore.create(storeName);
+  }
+
+  return null;
+}
+
 async function createZarrStore(
   entries: Map<string, FileEntry>,
   store?: PreprocessedZarrStore | null
@@ -184,8 +231,9 @@ async function createZarrStore(
     return createArchiveZarrStore(entries, store);
   }
 
-  if (store.source === 'url') {
-    return createFetchStore(store.url);
+  const externalStore = await openExternalZarrStore(store);
+  if (externalStore) {
+    return externalStore;
   }
 
   if (store.source === 'local' || store.source === 'opfs') {
@@ -249,7 +297,7 @@ function normalizeToFourDimensions(
   return normalized;
 }
 
-async function buildStreamingContexts(
+export async function buildStreamingContexts(
   manifest: PreprocessedManifest,
   store: AsyncReadable
 ): Promise<Map<string, StreamingContext>> {
@@ -341,6 +389,46 @@ async function buildStreamingContexts(
   }
 
   return contexts;
+}
+
+export async function attachStreamingContexts(
+  manifest: PreprocessedManifest,
+  layers: LoadedLayer[],
+  contexts: Map<string, StreamingContext>
+): Promise<LoadedLayer[]> {
+  if (contexts.size === 0) {
+    return layers;
+  }
+
+  const layerMap = new Map(layers.map((layer) => [layer.key, layer] as const));
+  const updated = new Map<string, LoadedLayer>();
+
+  for (const channel of manifest.dataset.channels) {
+    for (const layer of channel.layers) {
+      const targetLayer = layerMap.get(layer.key);
+      if (!targetLayer) {
+        continue;
+      }
+      const nextVolumes = targetLayer.volumes.map((volume, index) => {
+        const manifestVolume = layer.volumes[index];
+        if (!manifestVolume) {
+          return volume;
+        }
+        const context = contexts.get(manifestVolume.path);
+        if (!context) {
+          return volume;
+        }
+        return {
+          ...volume,
+          streamingSource: context.streamingSource,
+          streamingBaseShape: context.streamingBaseShape
+        } satisfies LoadedVolume;
+      });
+      updated.set(layer.key, { ...targetLayer, volumes: nextVolumes });
+    }
+  }
+
+  return layers.map((layer) => updated.get(layer.key) ?? layer);
 }
 
 function parseManifest(bytes: Uint8Array): PreprocessedManifest {
