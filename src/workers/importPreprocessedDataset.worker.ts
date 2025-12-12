@@ -3,7 +3,8 @@
 import {
   importPreprocessedDataset,
   type ImportPreprocessedDatasetOptions,
-  type ImportPreprocessedDatasetResult
+  type ImportPreprocessedDatasetResult,
+  type PreprocessedImportMilestone
 } from '../shared/utils/preprocessedDataset';
 
 type ImportWorkerRequest = {
@@ -45,6 +46,12 @@ type WorkerError = {
 type WorkerCancelled = {
   id: number;
   type: 'cancelled';
+};
+
+type WorkerMilestone = {
+  id: number;
+  type: 'milestone';
+  milestone: PreprocessedImportMilestone;
 };
 
 type ActiveTask = {
@@ -102,6 +109,10 @@ function handleImport(request: ImportWorkerRequest): void {
       latestVolumesDecoded = volumesDecoded;
       totalVolumeCount = total;
       postProgress();
+    },
+    onMilestone: (milestone) => {
+      const milestoneMessage: WorkerMilestone = { id, type: 'milestone', milestone };
+      ctx.postMessage(milestoneMessage);
     }
   };
 

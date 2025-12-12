@@ -42,7 +42,8 @@ export async function importPreprocessedDatasetWithWorker(
         progress.volumesDecoded = volumesDecoded;
         progress.totalVolumeCount = totalVolumeCount;
         emitProgress();
-      }
+      },
+      onMilestone: options.onMilestone
     };
 
     return importPreprocessedDataset(options.stream, fallbackOptions);

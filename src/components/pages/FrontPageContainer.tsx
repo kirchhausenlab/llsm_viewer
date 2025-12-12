@@ -219,6 +219,8 @@ export default function FrontPageContainer({
     preprocessedImportTotalBytes: preprocessedState.preprocessedImportTotalBytes,
     preprocessedImportVolumesDecoded: preprocessedState.preprocessedImportVolumesDecoded,
     preprocessedImportTotalVolumeCount: preprocessedState.preprocessedImportTotalVolumeCount,
+    preprocessedImportMilestone: preprocessedState.preprocessedImportMilestone,
+    preprocessedImportMilestoneProgress: preprocessedState.preprocessedImportMilestoneProgress,
     preprocessedDropboxImporting: preprocessedState.preprocessedDropboxImporting,
     onPreprocessedBrowse: preprocessedState.handlePreprocessedBrowse,
     onPreprocessedDropboxImport: preprocessedState.handlePreprocessedDropboxImport,

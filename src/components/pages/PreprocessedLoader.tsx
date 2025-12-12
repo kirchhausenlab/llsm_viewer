@@ -1,6 +1,15 @@
 import type { ChangeEvent, DragEvent, FC, FormEvent, MutableRefObject } from 'react';
 import type { DropboxAppKeySource } from '../../integrations/dropbox';
 import { formatBytes } from '../../errors';
+import type { PreprocessedImportMilestone } from '../../shared/utils/preprocessedDataset';
+
+const PREPROCESSED_IMPORT_MILESTONES: PreprocessedImportMilestone[] = ['scan', 'level0', 'mips', 'finalize'];
+const PREPROCESSED_IMPORT_MILESTONE_LABELS: Record<PreprocessedImportMilestone, string> = {
+  scan: 'Scanning archive',
+  level0: 'Preparing level 0 volumes',
+  mips: 'Generating mipmaps',
+  finalize: 'Finalizing dataset'
+};
 
 type PreprocessedLoaderProps = {
   isOpen: boolean;
@@ -16,6 +25,8 @@ type PreprocessedLoaderProps = {
   preprocessedImportTotalBytes: number | null;
   preprocessedImportVolumesDecoded: number;
   preprocessedImportTotalVolumeCount: number | null;
+  preprocessedImportMilestone: PreprocessedImportMilestone | null;
+  preprocessedImportMilestoneProgress: number;
   preprocessedDropboxImporting: boolean;
   onPreprocessedBrowse: () => void;
   onPreprocessedDropboxImport: () => void;
@@ -45,6 +56,8 @@ const PreprocessedLoader: FC<PreprocessedLoaderProps> = ({
   preprocessedImportTotalBytes,
   preprocessedImportVolumesDecoded,
   preprocessedImportTotalVolumeCount,
+  preprocessedImportMilestone,
+  preprocessedImportMilestoneProgress,
   preprocessedDropboxImporting,
   onPreprocessedBrowse,
   onPreprocessedDropboxImport,
@@ -59,6 +72,13 @@ const PreprocessedLoader: FC<PreprocessedLoaderProps> = ({
   onPreprocessedDropboxConfigCancel,
   onPreprocessedDropboxConfigClear
 }) => {
+  const milestoneIndex = preprocessedImportMilestone
+    ? PREPROCESSED_IMPORT_MILESTONES.indexOf(preprocessedImportMilestone)
+    : -1;
+  const milestoneLabel = preprocessedImportMilestone
+    ? PREPROCESSED_IMPORT_MILESTONE_LABELS[preprocessedImportMilestone]
+    : null;
+
   if (!isOpen) {
     return null;
   }
@@ -104,6 +124,15 @@ const PreprocessedLoader: FC<PreprocessedLoaderProps> = ({
         {isPreprocessedImporting ? (
           <p className="preprocessed-loader-status">
             Loading preprocessed dataset…
+            {milestoneLabel && milestoneIndex >= 0 ? (
+              <>
+                {' '}
+                Stage {milestoneIndex + 1} of {PREPROCESSED_IMPORT_MILESTONES.length}: {milestoneLabel}
+                {preprocessedImportMilestoneProgress > 0
+                  ? ` (${preprocessedImportMilestoneProgress}%)`
+                  : null}
+              </>
+            ) : null}
             {preprocessedImportTotalVolumeCount !== null || preprocessedImportVolumesDecoded > 0 ? (
               <>
                 {' '}

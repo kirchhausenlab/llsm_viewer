@@ -233,3 +233,7 @@
 
 ## Zarr mipmap builder and analytics
 - Added an incremental mipmap builder that reads level-0 chunks, max-pools them into additional Zarr arrays, and streams per-channel histograms/quantiles into root and analytics metadata without materializing entire volumes.
+
+## Preprocessed loader milestones
+- Threaded new preprocessing milestone messages (scan → level0 → mips → finalize) through the import worker client and loader state.
+- Surfaced the milestones in the preprocessed loader UI alongside byte/volume progress while keeping drag-and-drop and Dropbox controls responsive.

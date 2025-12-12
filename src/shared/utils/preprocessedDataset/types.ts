@@ -79,6 +79,8 @@ export type ExportPreprocessedDatasetResult = {
   manifest: PreprocessedManifest;
 };
 
+export type PreprocessedImportMilestone = 'scan' | 'level0' | 'mips' | 'finalize';
+
 export type PreprocessedLayerSummary = {
   key: string;
   label: string;

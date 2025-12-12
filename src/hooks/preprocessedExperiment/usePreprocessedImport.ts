@@ -11,7 +11,10 @@ import { importPreprocessedDatasetWithWorker } from '../../workers/importPreproc
 import type { ChannelTrackState, FollowedTrackState } from '../../types/channelTracks';
 import type { ChannelSource, StagedPreprocessedExperiment } from '../dataset';
 import type { ExperimentDimension } from '../useVoxelResolution';
+import type { PreprocessedImportMilestone } from '../../shared/utils/preprocessedDataset';
 import type { PreprocessedDropboxCallbacksRef } from './shared';
+
+const PREPROCESSED_IMPORT_MILESTONES: PreprocessedImportMilestone[] = ['scan', 'level0', 'mips', 'finalize'];
 
 export type UsePreprocessedImportOptions = {
   setChannels: Dispatch<SetStateAction<ChannelSource[]>>;
@@ -42,6 +45,8 @@ export type UsePreprocessedImportResult = {
   preprocessedImportTotalBytes: number | null;
   preprocessedImportVolumesDecoded: number;
   preprocessedImportTotalVolumeCount: number | null;
+  preprocessedImportMilestone: PreprocessedImportMilestone | null;
+  preprocessedImportMilestoneProgress: number;
   preprocessedFileInputRef: MutableRefObject<HTMLInputElement | null>;
   handlePreprocessedLoaderOpen: () => void;
   handlePreprocessedLoaderClose: () => void;
@@ -84,6 +89,9 @@ export function usePreprocessedImport({
   const [preprocessedImportVolumesDecoded, setPreprocessedImportVolumesDecoded] = useState(0);
   const [preprocessedImportTotalVolumeCount, setPreprocessedImportTotalVolumeCount] =
     useState<number | null>(null);
+  const [preprocessedImportMilestone, setPreprocessedImportMilestone] =
+    useState<PreprocessedImportMilestone | null>(null);
+  const [preprocessedImportMilestoneProgress, setPreprocessedImportMilestoneProgress] = useState(0);
 
   const resetPreprocessedLoader = useCallback(() => {
     setPreprocessedImportError(null);
@@ -91,10 +99,22 @@ export function usePreprocessedImport({
     setPreprocessedImportTotalBytes(null);
     setPreprocessedImportVolumesDecoded(0);
     setPreprocessedImportTotalVolumeCount(null);
+    setPreprocessedImportMilestone(null);
+    setPreprocessedImportMilestoneProgress(0);
     dropboxCallbacksRef.current.onResetLoader();
     setIsPreprocessedDragActive(false);
     preprocessedDropCounterRef.current = 0;
   }, [dropboxCallbacksRef, preprocessedDropCounterRef]);
+
+  const handleMilestoneUpdate = useCallback((milestone: PreprocessedImportMilestone) => {
+    setPreprocessedImportMilestone(milestone);
+    const index = PREPROCESSED_IMPORT_MILESTONES.indexOf(milestone);
+    if (index >= 0) {
+      setPreprocessedImportMilestoneProgress(
+        Math.round(((index + 1) / PREPROCESSED_IMPORT_MILESTONES.length) * 100)
+      );
+    }
+  }, []);
 
   const importPreprocessedFile = useCallback(
     async (file: File) => {
@@ -113,6 +133,7 @@ export function usePreprocessedImport({
         const result = await importPreprocessedDatasetWithWorker({
           stream: file.stream(),
           totalBytes,
+          onMilestone: handleMilestoneUpdate,
           onProgress: (progress) => {
             setPreprocessedImportBytesProcessed(progress.bytesProcessed);
             setPreprocessedImportTotalBytes(progress.totalBytes);
@@ -165,6 +186,8 @@ export function usePreprocessedImport({
         setPreprocessedImportTotalBytes(null);
         setPreprocessedImportVolumesDecoded(0);
         setPreprocessedImportTotalVolumeCount(null);
+        setPreprocessedImportMilestone(null);
+        setPreprocessedImportMilestoneProgress(0);
       } finally {
         setIsPreprocessedImporting(false);
       }
@@ -183,6 +206,7 @@ export function usePreprocessedImport({
       setChannelTrackStates,
       updateChannelIdCounter,
       dropboxCallbacksRef,
+      handleMilestoneUpdate,
       setExperimentDimension,
       setViewerMode
     ]
@@ -295,6 +319,8 @@ export function usePreprocessedImport({
     preprocessedImportTotalBytes,
     preprocessedImportVolumesDecoded,
     preprocessedImportTotalVolumeCount,
+    preprocessedImportMilestone,
+    preprocessedImportMilestoneProgress,
     preprocessedFileInputRef,
     handlePreprocessedLoaderOpen,
     handlePreprocessedLoaderClose,
