@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 import type { NormalizedVolume } from '../../../../core/volumeProcessing';
 import type { ZarrVolumeSource } from '../../../../data/ZarrVolumeSource';
-import type { VolumeTypedArray } from '../../../../types/volume';
+import { createWritableVolumeArray, type VolumeDataType, type VolumeTypedArray } from '../../../../types/volume';
 
 const DEFAULT_CLIP_SIZE = 128;
 const MAX_CLIP_LEVELS = 6;
@@ -12,7 +12,7 @@ type ClipLevel = {
   scale: number;
   origin: THREE.Vector3;
   texture: THREE.Data3DTexture;
-  buffer: Uint8Array;
+  buffer: VolumeTypedArray;
   needsUpload: boolean;
   requestId: number;
   abortController?: AbortController;
@@ -29,11 +29,49 @@ type ClipmapVolume = NormalizedVolume & {
   streamingBaseChunkShape?: [number, number, number, number, number];
 };
 
-function createTexture(size: number, channels: number): THREE.Data3DTexture {
-  const data = new Uint8Array(size * size * size * channels);
-  const texture = new THREE.Data3DTexture(data, size, size, size);
+function getTextureTypeForDataType(dataType: VolumeDataType): THREE.TextureDataType {
+  switch (dataType) {
+    case 'uint8':
+      return THREE.UnsignedByteType;
+    case 'int8':
+      return THREE.ByteType;
+    case 'uint16':
+      return THREE.UnsignedShortType;
+    case 'int16':
+      return THREE.ShortType;
+    case 'float32':
+    case 'float64':
+    case 'uint32':
+    case 'int32':
+      return THREE.FloatType;
+    default:
+      return THREE.UnsignedByteType;
+  }
+}
+
+function resolveClipmapDataType(dataType: VolumeDataType | null): VolumeDataType {
+  if (!dataType) {
+    return 'uint8';
+  }
+  switch (dataType) {
+    case 'float64':
+    case 'uint32':
+    case 'int32':
+      return 'float32';
+    default:
+      return dataType;
+  }
+}
+
+function createTexture(
+  size: number,
+  channels: number,
+  buffer: VolumeTypedArray,
+  textureType: THREE.TextureDataType,
+): THREE.Data3DTexture {
+  const texture = new THREE.Data3DTexture(buffer, size, size, size);
   texture.format = channels === 1 ? THREE.RedFormat : channels === 2 ? THREE.RGFormat : THREE.RGBAFormat;
-  texture.type = THREE.UnsignedByteType;
+  texture.type = textureType;
   texture.minFilter = THREE.LinearFilter;
   texture.magFilter = THREE.LinearFilter;
   texture.unpackAlignment = 1;
@@ -80,6 +118,8 @@ export class VolumeClipmapManager {
   private readonly volume: ClipmapVolume;
   private readonly chunkShape: [number, number, number];
   private readonly streaming?: StreamingMetadata;
+  private readonly clipmapDataType: VolumeDataType;
+  private readonly clipmapTextureType: THREE.TextureDataType;
   private minLevelOverride = 0;
   private timeIndex = 0;
 
@@ -88,6 +128,12 @@ export class VolumeClipmapManager {
     this.clipSize = clipSize;
     const streamingSource = volume.streamingSource ?? null;
     const streamingBaseShape = volume.streamingBaseShape ?? null;
+
+    const streamingDataType = streamingSource
+      ? streamingSource.getMip(streamingSource.getMipLevels()[0]).dataType
+      : null;
+    this.clipmapDataType = resolveClipmapDataType(streamingDataType);
+    this.clipmapTextureType = getTextureTypeForDataType(this.clipmapDataType);
 
     if (streamingSource && !streamingBaseShape) {
       console.warn('Streaming clipmap requested without a base shape; falling back to CPU clipmap.');
@@ -106,12 +152,15 @@ export class VolumeClipmapManager {
     const scales = determineLevelScales(volume, clipSize);
 
     this.levels = scales.map((scale) => {
-      const buffer = new Uint8Array(clipSize * clipSize * clipSize * volume.channels);
+      const buffer = createWritableVolumeArray(
+        this.clipmapDataType,
+        clipSize * clipSize * clipSize * volume.channels,
+      );
       return {
         scale,
         // Force an initial populate on the first update so clipmap textures are not empty.
         origin: new THREE.Vector3(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY),
-        texture: createTexture(clipSize, volume.channels),
+        texture: createTexture(clipSize, volume.channels, buffer, this.clipmapTextureType),
         buffer,
         needsUpload: true,
         requestId: 0,
