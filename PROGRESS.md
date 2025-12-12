@@ -272,3 +272,4 @@
 ## Preprocessed streaming context
 - Initialized `ZarrVolumeSource` instances for Zarr-backed preprocessed imports, deriving base and mip chunk metadata from the store when available.
 - Threaded streaming base shapes and sources into the normalized volumes returned to callers while keeping non-Zarr archives on the previous non-streaming path.
+- Added streaming source reconstruction for external Zarr stores during preprocessed import worker results.
