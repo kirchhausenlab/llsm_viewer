@@ -354,13 +354,6 @@ export async function buildStreamingContexts(
             (baseArray as { chunks?: readonly number[] }).chunks,
             baseShape
           );
-          const streamingBaseShape: [number, number, number, number, number] = [
-            Math.max(baseShape[0], baseChunkShape[0]),
-            Math.max(baseShape[1], baseChunkShape[1]),
-            Math.max(baseShape[2], baseChunkShape[2]),
-            Math.max(baseShape[3], baseChunkShape[3]),
-            Math.max(baseShape[4], baseChunkShape[4])
-          ];
 
           const levels: ZarrMipLevel[] = [
             {
@@ -413,7 +406,7 @@ export async function buildStreamingContexts(
           const streamingSource = new ZarrVolumeSource(levels);
           contexts.set(volume.path, {
             streamingSource,
-            streamingBaseShape,
+            streamingBaseShape: baseShape,
             streamingBaseChunkShape: baseChunkShape,
           });
         } catch (error) {

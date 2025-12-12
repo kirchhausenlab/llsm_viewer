@@ -20,7 +20,8 @@ type ClipLevel = {
 
 type StreamingMetadata = {
   source: ZarrVolumeSource;
-  baseShape: [number, number, number, number, number];
+  arrayShape: [number, number, number, number, number];
+  chunkShape: [number, number, number, number, number];
 };
 
 type ClipmapVolume = NormalizedVolume & {
@@ -128,6 +129,7 @@ export class VolumeClipmapManager {
     this.clipSize = clipSize;
     const streamingSource = volume.streamingSource ?? null;
     const streamingBaseShape = volume.streamingBaseShape ?? null;
+    const streamingBaseChunkShape = volume.streamingBaseChunkShape ?? null;
 
     const streamingDataType = streamingSource
       ? streamingSource.getMip(streamingSource.getMipLevels()[0]).dataType
@@ -140,12 +142,13 @@ export class VolumeClipmapManager {
     }
 
     if (streamingSource && streamingBaseShape) {
+      const rootChunkShape = streamingBaseChunkShape ?? streamingSource.getMip(streamingSource.getMipLevels()[0]).chunkShape;
       this.streaming = {
         source: streamingSource,
-        baseShape: streamingBaseShape,
+        arrayShape: streamingBaseShape,
+        chunkShape: rootChunkShape,
       };
-      const rootChunk = streamingSource.getMip(streamingSource.getMipLevels()[0]).chunkShape;
-      this.chunkShape = [rootChunk[4], rootChunk[3], rootChunk[2]];
+      this.chunkShape = [rootChunkShape[4], rootChunkShape[3], rootChunkShape[2]];
     } else {
       this.chunkShape = volume.chunkShape ?? [FALLBACK_CHUNK, FALLBACK_CHUNK, FALLBACK_CHUNK];
     }
@@ -291,13 +294,13 @@ export class VolumeClipmapManager {
       return { level: 0, scale: { scaleX: levelScale, scaleY: levelScale, scaleZ: levelScale } };
     }
     const mipLevels = this.streaming.source.getMipLevels();
-    const baseShape = this.streaming.baseShape;
+    const baseShape = this.streaming.arrayShape;
 
     const computeLevelScale = (shape: [number, number, number, number, number]) => {
       return {
-        scaleX: Math.max(1, Math.round(baseShape[4] / shape[4])),
-        scaleY: Math.max(1, Math.round(baseShape[3] / shape[3])),
-        scaleZ: Math.max(1, Math.round(baseShape[2] / shape[2])),
+        scaleX: Math.max(1, baseShape[4] / shape[4]),
+        scaleY: Math.max(1, baseShape[3] / shape[3]),
+        scaleZ: Math.max(1, baseShape[2] / shape[2]),
       };
     };
 
@@ -314,7 +317,20 @@ export class VolumeClipmapManager {
       }
     }
 
-    return best;
+    const mipScale = Math.max(best.scale.scaleX, Math.max(best.scale.scaleY, best.scale.scaleZ));
+    console.assert(
+      Math.abs(mipScale - levelScale) < 0.5,
+      `Selected mip scale ${mipScale.toFixed(2)} does not match clipmap scale ${levelScale}`
+    );
+
+    return {
+      level: best.level,
+      scale: {
+        scaleX: Math.max(1, Math.round(best.scale.scaleX)),
+        scaleY: Math.max(1, Math.round(best.scale.scaleY)),
+        scaleZ: Math.max(1, Math.round(best.scale.scaleZ)),
+      },
+    };
   }
 
   private async populateFromStreaming(
@@ -356,6 +372,14 @@ export class VolumeClipmapManager {
     const shapeY = Math.max(0, endY - startY);
     const shapeZ = Math.max(0, endZ - startZ);
     const channels = Math.min(Math.max(1, this.volume.channels), channelShape);
+
+    const expectedX = Math.max(0, Math.min(Math.ceil((this.clipSize * level.scale) / scaleX), xShape - startX));
+    const expectedY = Math.max(0, Math.min(Math.ceil((this.clipSize * level.scale) / scaleY), yShape - startY));
+    const expectedZ = Math.max(0, Math.min(Math.ceil((this.clipSize * level.scale) / scaleZ), zShape - startZ));
+    console.assert(
+      shapeX === expectedX && shapeY === expectedY && shapeZ === expectedZ,
+      `Clipmap region mismatch; expected (${expectedX}, ${expectedY}, ${expectedZ}) but requested (${shapeX}, ${shapeY}, ${shapeZ})`
+    );
 
     const priorityChunks: [number, number, number, number, number] | undefined = options?.priorityCenter
       ? [
