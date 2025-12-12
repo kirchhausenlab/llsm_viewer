@@ -60,6 +60,7 @@ export function useVolumeViewerResources({
   layers,
   primaryVolume,
   isAdditiveBlending,
+  timeIndex,
   renderContextRevision,
   sceneRef,
   cameraRef,

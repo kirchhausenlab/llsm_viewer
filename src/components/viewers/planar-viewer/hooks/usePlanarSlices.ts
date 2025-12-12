@@ -76,7 +76,7 @@ function computeLevelScale(
 
 function pickMipLevel(
   source: ZarrVolumeSource,
-  baseShape: [number, number, number, number],
+  baseShape: [number, number, number, number, number],
   desiredScale: number
 ): { level: number; scale: { scaleX: number; scaleY: number; scaleZ: number } } {
   const mipLevels = source.getMipLevels();

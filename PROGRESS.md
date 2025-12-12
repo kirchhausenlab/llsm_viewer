@@ -280,3 +280,7 @@
 - Ensured GPU clipmaps only initialize when both Zarr streaming sources and base shapes are present, passing the real streaming metadata into the manager so mip sizes align with the loader output.
 - Added a streaming volume resource test that instantiates a clipmap-backed layer and confirms the first mip uploads streamed data instead of placeholder textures.
 - Cleaned up the clipmap streaming inputs to use `undefined`-backed optionals so the stricter type-checker accepts the gating logic without null fallbacks.
+
+## Time-aware planar streaming fixes
+- Corrected planar slice mip selection to treat Zarr shapes as 5D tuples and propagate the viewer's time index through streaming requests without type errors.
+- Restored `useVolumeViewerResources` time-index threading so streaming hooks receive the selected frame during volume rendering.
