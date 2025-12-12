@@ -244,6 +244,7 @@
 - Corrected chunk byte accounting to handle Zarrita's `{ data, shape, stride }` chunk responses so caching works under strict type-checking.
 - Hardened abort error creation with a DOMException fallback so cancellation works in runtimes without the DOM lib on the global scope.
 - Fixed the cancellation unit test to resolve in-flight work before asserting the aborted request, eliminating the dangling pending promise that caused the runner to exit with code 13.
+- Updated preprocessed export/import to embed a Zarr store alongside the legacy binaries, validate the new manifest `zarrStore` descriptor, and read arrays directly from archive or URL-backed stores when present.
 
 ## Volume viewer clipmap rendering
 - Added a clipmap manager that keeps per-mip 3D textures aligned to the chunk grid, updates origins around the camera target, and uploads refreshed regions.

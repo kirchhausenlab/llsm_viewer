@@ -59,8 +59,15 @@ export type PreprocessedManifest = {
     channels: PreprocessedChannelManifest[];
     voxelResolution?: VoxelResolutionValues | null;
     anisotropyCorrection?: AnisotropyCorrectionMetadata | null;
+    zarrStore?: PreprocessedZarrStore | null;
   };
 };
+
+export type PreprocessedZarrStore =
+  | { source: 'archive'; root?: string | null }
+  | { source: 'url'; url: string; root?: string | null }
+  | { source: 'local'; root?: string | null; name?: string | null }
+  | { source: 'opfs'; root?: string | null; name?: string | null };
 
 export type ExportPreprocessedDatasetOptions = {
   layers: LoadedLayer[];
