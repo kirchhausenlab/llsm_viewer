@@ -259,3 +259,6 @@
 
 ## Planar hover color typing
 - Defaulted planar layer colors to white when unset so hover formatting and slice compositing avoid undefined hex strings and continue to pass strict type checks.
+## Planar streaming slices
+- Added view-aware planar slice streaming that selects mip levels based on zoom, requests only the visible region, and reuses cached tiles with abortable fetches.
+- Reused the planar loading overlay for slice streaming progress and wired hover/intensity sampling to the streamed slice buffers.

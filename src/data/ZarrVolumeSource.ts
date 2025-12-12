@@ -82,6 +82,10 @@ export class ZarrVolumeSource {
     return Array.from(this.cache.keys());
   }
 
+  getMipLevels(): number[] {
+    return Array.from(this.mips.keys()).sort((a, b) => a - b);
+  }
+
   async readChunk(
     mipLevel: number,
     coords: ChunkCoords,

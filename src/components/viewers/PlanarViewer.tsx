@@ -59,6 +59,59 @@ function updateOffscreenCanvas(
   return true;
 }
 
+function computeVisibleSliceRegion(
+  layout: ReturnType<typeof usePlanarLayout>['layout'],
+  viewState: ReturnType<typeof usePlanarLayout>['viewState'],
+  canvasSize: { width: number; height: number }
+): { minX: number; minY: number; maxX: number; maxY: number } | null {
+  if (!layout.xy || canvasSize.width <= 0 || canvasSize.height <= 0) {
+    return null;
+  }
+
+  const centerX = canvasSize.width / 2 + viewState.offsetX;
+  const centerY = canvasSize.height / 2 + viewState.offsetY;
+  const cos = Math.cos(viewState.rotation);
+  const sin = Math.sin(viewState.rotation);
+  const invScale = 1 / Math.max(viewState.scale, 1e-6);
+
+  const corners = [
+    { x: 0, y: 0 },
+    { x: canvasSize.width, y: 0 },
+    { x: canvasSize.width, y: canvasSize.height },
+    { x: 0, y: canvasSize.height },
+  ];
+
+  let minBlockX = Number.POSITIVE_INFINITY;
+  let minBlockY = Number.POSITIVE_INFINITY;
+  let maxBlockX = Number.NEGATIVE_INFINITY;
+  let maxBlockY = Number.NEGATIVE_INFINITY;
+
+  for (const corner of corners) {
+    const dx = corner.x - centerX;
+    const dy = corner.y - centerY;
+    const rotatedX = dx * cos + dy * sin;
+    const rotatedY = -dx * sin + dy * cos;
+    const blockX = rotatedX * invScale + layout.blockWidth / 2;
+    const blockY = rotatedY * invScale + layout.blockHeight / 2;
+
+    minBlockX = Math.min(minBlockX, blockX);
+    minBlockY = Math.min(minBlockY, blockY);
+    maxBlockX = Math.max(maxBlockX, blockX);
+    maxBlockY = Math.max(maxBlockY, blockY);
+  }
+
+  const minX = clamp(minBlockX - layout.xy.originX, 0, layout.xy.width);
+  const maxX = clamp(maxBlockX - layout.xy.originX, 0, layout.xy.width);
+  const minY = clamp(minBlockY - layout.xy.originY, 0, layout.xy.height);
+  const maxY = clamp(maxBlockY - layout.xy.originY, 0, layout.xy.height);
+
+  if (minX >= maxX || minY >= maxY) {
+    return null;
+  }
+
+  return { minX, minY, maxX, maxY };
+}
+
 function PlanarViewer({
   layers,
   isLoading,
@@ -217,6 +270,11 @@ function PlanarViewer({
     onRegisterReset
   });
 
+  const visibleSliceRegion = useMemo(
+    () => computeVisibleSliceRegion(layout, viewState, canvasSize),
+    [canvasSize, layout, viewState]
+  );
+
   const orthogonalAnchor = useMemo(() => {
     if (!primaryVolume) {
       return null;
@@ -247,12 +305,15 @@ function PlanarViewer({
     return fallbackAnchor;
   }, [clampedTimeIndex, computeTrackCentroid, followedTrackId, hoveredPixel, primaryVolume]);
 
-  const { sliceData, xzSliceData, zySliceData, samplePixelValue } = usePlanarSlices({
+  const { sliceData, xzSliceData, zySliceData, samplePixelValue, isStreaming } = usePlanarSlices({
     layers,
     primaryVolume,
     clampedSliceIndex,
     orthogonalAnchor,
-    orthogonalViewsEnabled
+    orthogonalViewsEnabled,
+    visibleSliceRegion,
+    pixelRatio: window.devicePixelRatio || 1,
+    viewScale: viewState.scale,
   });
 
   const {
@@ -612,11 +673,13 @@ function PlanarViewer({
   return (
     <div className="planar-viewer">
       <section className="planar-surface">
-        {showLoadingOverlay && (
+        {(showLoadingOverlay || isStreaming) && (
           <div className="overlay">
             <div className="loading-panel">
-              <span className="loading-title">Loading dataset…</span>
-              {clampedExpectedVolumes > 0 ? (
+              <span className="loading-title">
+                {showLoadingOverlay ? 'Loading dataset…' : 'Loading slice…'}
+              </span>
+              {showLoadingOverlay && clampedExpectedVolumes > 0 ? (
                 <span>
                   Loaded {clampedLoadedVolumes} / {clampedExpectedVolumes} volumes
                 </span>
