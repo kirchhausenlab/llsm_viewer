@@ -228,3 +228,5 @@
 
 ## Zarr context access for build compatibility
 - Replaced the deep import of the Zarrita array context helper in the volume loader worker with a local symbol lookup so Vite can resolve worker builds without missing export errors.
+
+- Added streaming preprocessing hooks that build sharded Zarr arrays during volume loading and expose reopened arrays for visualization reuse.
