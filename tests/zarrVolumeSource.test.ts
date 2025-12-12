@@ -62,12 +62,11 @@ try {
   const controller = new AbortController();
   const pending = cancellationSource.readChunk(0, [0, 0, 0, 1], { signal: controller.signal });
   controller.abort();
+  resolvers.shift()?.();
+  await first;
 
   await assert.rejects(pending, (error) => error?.name === 'AbortError');
   assert.equal(fetchCalls, 1);
-
-  resolvers.shift()?.();
-  await first;
 
   console.log('ZarrVolumeSource tests passed');
 } catch (error) {
