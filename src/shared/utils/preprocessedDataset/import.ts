@@ -13,10 +13,13 @@ import {
   type PreprocessedChannelSummary,
   type PreprocessedLayerSummary,
   type PreprocessedManifest,
+  type PreprocessedZarrStore,
   type PreprocessedVolumeManifestEntry,
   MANIFEST_FILE_NAME,
   type PreprocessedImportMilestone
 } from './types';
+import { KeyedFileStore, createFetchStore, openArrayAt } from '../../../data/zarr';
+import type { AsyncReadable } from '@zarrita/storage';
 
 const textDecoder = new TextDecoder();
 const VALID_VOLUME_DATA_TYPES: VolumeDataType[] = [
@@ -32,6 +35,31 @@ const VALID_VOLUME_DATA_TYPES: VolumeDataType[] = [
 
 function isVolumeDataType(value: unknown): value is VolumeDataType {
   return typeof value === 'string' && VALID_VOLUME_DATA_TYPES.includes(value as VolumeDataType);
+}
+
+function validateZarrStore(store: PreprocessedZarrStore): void {
+  if (!store || typeof store !== 'object') {
+    throw new Error('Manifest Zarr store description is invalid.');
+  }
+
+  const { source } = store as { source?: unknown };
+  if (source !== 'archive' && source !== 'url' && source !== 'local' && source !== 'opfs') {
+    throw new Error('Manifest Zarr store source is invalid.');
+  }
+
+  if ('url' in store) {
+    if (typeof store.url !== 'string' || store.url.length === 0) {
+      throw new Error('Manifest Zarr store URL is invalid.');
+    }
+  }
+
+  if (store.root !== undefined && store.root !== null && typeof store.root !== 'string') {
+    throw new Error('Manifest Zarr store root is invalid.');
+  }
+
+  if ('name' in store && store.name !== undefined && store.name !== null && typeof store.name !== 'string') {
+    throw new Error('Manifest Zarr store name is invalid.');
+  }
 }
 
 export type ImportPreprocessedDatasetOptions = {
@@ -112,6 +140,91 @@ function createProgressReportingStream(
   });
 }
 
+function stripPrefix(value: string, prefix: string): string {
+  if (!prefix) return value;
+  return value.startsWith(prefix) ? value.slice(prefix.length) : value;
+}
+
+function normalizeRoot(root?: string | null): string {
+  if (!root) return '';
+  const trimmed = root.replace(/^\/+/, '').replace(/\/+$/, '');
+  return trimmed.length > 0 ? `${trimmed}/` : '';
+}
+
+async function createArchiveZarrStore(
+  entries: Map<string, FileEntry>,
+  store: PreprocessedZarrStore
+): Promise<AsyncReadable | null> {
+  const rootPrefix = normalizeRoot(store.root ?? 'zarr');
+  const files = new Map<string, Blob>();
+
+  for (const [filename, entry] of entries) {
+    if (rootPrefix && !filename.startsWith(rootPrefix)) {
+      continue;
+    }
+    const normalizedKey = `/${stripPrefix(filename, rootPrefix)}`;
+    const data = await entry.getData(new Uint8ArrayWriter());
+    files.set(normalizedKey, new Blob([data]));
+  }
+
+  if (files.size === 0) {
+    return null;
+  }
+
+  return new KeyedFileStore(files);
+}
+
+async function createZarrStore(
+  entries: Map<string, FileEntry>,
+  store?: PreprocessedZarrStore | null
+): Promise<AsyncReadable | null> {
+  if (!store) return null;
+
+  if (store.source === 'archive') {
+    return createArchiveZarrStore(entries, store);
+  }
+
+  if (store.source === 'url') {
+    return createFetchStore(store.url);
+  }
+
+  if (store.source === 'local' || store.source === 'opfs') {
+    throw new Error('This preprocessed dataset targets a local Zarr store; please import it from the source directly.');
+  }
+
+  return null;
+}
+
+function ensureUint8Array(data: unknown): Uint8Array {
+  if (data instanceof Uint8Array) {
+    return data.byteOffset === 0 && data.byteLength === data.buffer.byteLength
+      ? data
+      : data.slice();
+  }
+  if (ArrayBuffer.isView(data)) {
+    const view = data as ArrayBufferView;
+    return new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+  }
+  if (data instanceof ArrayBuffer) {
+    return new Uint8Array(data);
+  }
+  throw new Error('Zarr array read returned an unsupported payload.');
+}
+
+async function readZarrVolume(
+  store: AsyncReadable,
+  path: string,
+  expectedBytes: number
+): Promise<Uint8Array> {
+  const array = await openArrayAt(store, path);
+  const payload = await array.getChunk([0, 0, 0, 0] as any);
+  const data = ensureUint8Array((payload as any).data ?? payload);
+  if (data.byteLength !== expectedBytes) {
+    console.warn(`Zarr volume at ${path} has ${data.byteLength} bytes; expected ${expectedBytes}.`);
+  }
+  return data;
+}
+
 function parseManifest(bytes: Uint8Array): PreprocessedManifest {
   const manifestText = textDecoder.decode(bytes);
   try {
@@ -170,6 +283,11 @@ function validateManifest(manifest: PreprocessedManifest): void {
         throw new Error('Manifest anisotropy correction metadata is invalid.');
       }
     }
+  }
+
+  const { zarrStore } = manifest.dataset;
+  if (zarrStore !== undefined && zarrStore !== null) {
+    validateZarrStore(zarrStore);
   }
 
   for (const channel of manifest.dataset.channels) {
@@ -391,6 +509,8 @@ export async function importPreprocessedDataset(
     fileEntries.delete(MANIFEST_FILE_NAME);
     emitMilestone('scan');
 
+    const zarrStore = await createZarrStore(fileEntries, manifest.dataset.zarrStore);
+
     const volumes = new Map<string, VolumeData>();
     const segmentationLabelVolumes = new Map<string, VolumeData>();
     const totalVolumeCount = manifest.dataset.totalVolumeCount;
@@ -399,29 +519,47 @@ export async function importPreprocessedDataset(
     for (const channel of manifest.dataset.channels) {
       for (const layer of channel.layers) {
         for (const volume of layer.volumes) {
-          const entry = fileEntries.get(volume.path);
-          if (!entry) {
-            throw new Error(`Archive is missing volume data at ${volume.path}.`);
+          let volumeBytes: Uint8Array | null = null;
+
+          if (zarrStore) {
+            volumeBytes = await readZarrVolume(zarrStore, volume.path, volume.byteLength);
+          } else {
+            const entry = fileEntries.get(volume.path);
+            if (!entry) {
+              throw new Error(`Archive is missing volume data at ${volume.path}.`);
+            }
+            volumeBytes = await entry.getData(new Uint8ArrayWriter());
+            fileEntries.delete(volume.path);
           }
-          const volumeData = await entry.getData(new Uint8ArrayWriter());
-          const digest = await computeSha256Hex(volumeData);
-          volumes.set(volume.path, { data: volumeData, digest });
-          fileEntries.delete(volume.path);
+
+          const digest = await computeSha256Hex(volumeBytes);
+          volumes.set(volume.path, { data: volumeBytes, digest });
           volumesDecoded += 1;
           options?.onVolumeDecoded?.(volumesDecoded, totalVolumeCount);
 
           if (volume.segmentationLabels) {
-            const segmentationEntry = fileEntries.get(volume.segmentationLabels.path);
-            if (!segmentationEntry) {
-              throw new Error(`Archive is missing segmentation labels at ${volume.segmentationLabels.path}.`);
+            let segmentationBytes: Uint8Array | null = null;
+
+            if (zarrStore) {
+              segmentationBytes = await readZarrVolume(
+                zarrStore,
+                volume.segmentationLabels.path,
+                volume.segmentationLabels.byteLength
+              );
+            } else {
+              const segmentationEntry = fileEntries.get(volume.segmentationLabels.path);
+              if (!segmentationEntry) {
+                throw new Error(`Archive is missing segmentation labels at ${volume.segmentationLabels.path}.`);
+              }
+              segmentationBytes = await segmentationEntry.getData(new Uint8ArrayWriter());
+              fileEntries.delete(volume.segmentationLabels.path);
             }
-            const segmentationData = await segmentationEntry.getData(new Uint8ArrayWriter());
-            const segmentationDigest = await computeSha256Hex(segmentationData);
+
+            const segmentationDigest = await computeSha256Hex(segmentationBytes);
             segmentationLabelVolumes.set(volume.segmentationLabels.path, {
-              data: segmentationData,
+              data: segmentationBytes,
               digest: segmentationDigest
             });
-            fileEntries.delete(volume.segmentationLabels.path);
           }
         }
       }

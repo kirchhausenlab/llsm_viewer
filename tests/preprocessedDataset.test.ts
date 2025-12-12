@@ -189,10 +189,15 @@ console.log('Starting preprocessed dataset import/export tests');
       )
     };
 
-    assert.deepEqual(
-      Object.keys(filesInArchive).sort(),
-      [...Object.keys(expectedVolumeEntries), 'manifest.json'].sort()
-    );
+    const archivePaths = Object.keys(filesInArchive).sort();
+    const expectedPaths = [...Object.keys(expectedVolumeEntries), 'manifest.json'];
+
+    for (const path of expectedPaths) {
+      assert.ok(filesInArchive[path], `missing archive entry for ${path}`);
+    }
+
+    const zarrPaths = archivePaths.filter((path) => path.startsWith('zarr/'));
+    assert.ok(zarrPaths.length > 0, 'expected embedded Zarr store entries');
 
     for (const [path, expected] of Object.entries(expectedVolumeEntries)) {
       const entry = filesInArchive[path];
@@ -314,10 +319,13 @@ console.log('Starting preprocessed dataset import/export tests');
     }
 
     const streamedFiles = await unzipToMap(reconstructed);
-    assert.deepEqual(
-      Object.keys(streamedFiles).sort(),
-      [...Object.keys(expectedVolumeEntries), 'manifest.json'].sort()
-    );
+    const streamedPaths = Object.keys(streamedFiles).sort();
+    for (const path of [...Object.keys(expectedVolumeEntries), 'manifest.json']) {
+      assert.ok(streamedFiles[path], `missing streamed archive entry for ${path}`);
+    }
+
+    const streamedZarr = streamedPaths.filter((path) => path.startsWith('zarr/'));
+    assert.ok(streamedZarr.length > 0, 'expected streamed export to carry Zarr store entries');
 
     const streamedManifestFromArchive = JSON.parse(
       decoder.decode(streamedFiles['manifest.json'])
