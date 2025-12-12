@@ -2,6 +2,7 @@ import type { VoxelResolutionValues, VoxelResolutionUnit } from '../types/voxelR
 
 export type VolumeArrayPath = `/${number}`;
 export type VolumeChunkShape = [number, number, number, number]; // [c, z, y, x]
+type VolumeAxisIndex = 0 | 1 | 2 | 3;
 
 export type AxisLabel = 'c' | 'z' | 'y' | 'x';
 export const DEFAULT_VOLUME_AXES: readonly AxisLabel[] = ['c', 'z', 'y', 'x'] as const;
@@ -64,7 +65,7 @@ export function computeChunkShape(
     clampPositiveInteger(Math.min(dimensions.width, 256), 1)
   ];
 
-  const shrinkOrder: (keyof VolumeChunkShape)[] = [3, 2, 1, 0];
+  const shrinkOrder: VolumeAxisIndex[] = [3, 2, 1, 0];
 
   while (chunkByteSize(shape, bytesPerValue) > targetBytes) {
     const dimensionToShrink = shrinkOrder.find((dimension) => shape[dimension] > 1);
@@ -86,7 +87,7 @@ export function computeShardShape(
   const shard: VolumeChunkShape = [...chunkShape];
   const maxShape = chunkShape.map((value) => value * MAX_SHARD_MULTIPLIER) as VolumeChunkShape;
 
-  const expandOrder: (keyof VolumeChunkShape)[] = [1, 2, 3, 0];
+  const expandOrder: VolumeAxisIndex[] = [1, 2, 3, 0];
 
   let size = chunkByteSize(shard, bytesPerValue);
   for (const dimension of expandOrder) {
