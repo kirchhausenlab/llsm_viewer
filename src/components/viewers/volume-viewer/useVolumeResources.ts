@@ -269,7 +269,7 @@ export function useVolumeResources({
         ? Number(layer.sliceIndex)
         : Math.floor(volume.depth / 2);
       const streamingSource = volume.streamingSource ?? null;
-      const isStreamingVolume = Boolean(streamingSource);
+      const isStreamingVolume = streamingSource !== null;
 
       if (viewerMode === '3d') {
         if (!isStreamingVolume) {
@@ -352,7 +352,7 @@ export function useVolumeResources({
           }
 
           let clipmap: VolumeClipmapManager | null = null;
-          if (uniforms.u_useClipmap && uniforms.u_clipmapTextures) {
+          if (isStreamingVolume && streamingSource && uniforms.u_useClipmap && uniforms.u_clipmapTextures) {
             clipmap = new VolumeClipmapManager(volume);
           }
 
@@ -405,26 +405,18 @@ export function useVolumeResources({
           }
           mesh.updateMatrixWorld(true);
 
+          const clipmapMetadata = clipmap
+            ? { levels: clipmap.getActiveLevelCount(), size: clipmap.clipSize }
+            : null;
+
           resourcesRef.current.set(layer.key, {
             mesh,
             texture,
             clipmap: clipmap ?? undefined,
             labelTexture,
-            source:
-              streamingSource || volume.chunkShape
-                ? {
-                    type: 'zarr',
-                    clipmap: clipmap
-                      ? { levels: clipmap.getActiveLevelCount(), size: clipmap.clipSize }
-                      : null,
-                    streamingSource: streamingSource ?? undefined,
-                  }
-                : {
-                    type: 'tiff',
-                    clipmap: clipmap
-                      ? { levels: clipmap.getActiveLevelCount(), size: clipmap.clipSize }
-                      : null,
-                  },
+            source: isStreamingVolume
+              ? { type: 'zarr', clipmap: clipmapMetadata, streamingSource: streamingSource! }
+              : { type: 'tiff', clipmap: clipmapMetadata },
             dimensions: { width: volume.width, height: volume.height, depth: volume.depth },
             channels: volume.channels,
             mode: viewerMode,
@@ -510,10 +502,9 @@ export function useVolumeResources({
             mode: viewerMode,
             samplingMode: layer.samplingMode,
             sliceBuffer: sliceInfo.data,
-            source:
-              streamingSource || volume.chunkShape
-                ? { type: 'zarr', clipmap: null, streamingSource: streamingSource ?? undefined }
-                : { type: 'tiff', clipmap: null },
+            source: isStreamingVolume
+              ? { type: 'zarr', clipmap: null, streamingSource: streamingSource! }
+              : { type: 'tiff', clipmap: null },
           });
         }
 
@@ -608,7 +599,7 @@ export function useVolumeResources({
             materialUniforms.u_renderstyle.value = layer.renderStyle;
           }
 
-          if (materialUniforms.u_useClipmap && materialUniforms.u_clipmapTextures) {
+          if (isStreamingVolume && streamingSource && materialUniforms.u_useClipmap && materialUniforms.u_clipmapTextures) {
             if (!resources.clipmap) {
               resources.clipmap = new VolumeClipmapManager(volume);
             }
@@ -618,8 +609,18 @@ export function useVolumeResources({
             });
             resources.clipmap?.applyToMaterial(shaderMaterial);
           } else if (materialUniforms.u_useClipmap) {
+            resources.clipmap?.dispose();
+            resources.clipmap = undefined;
             materialUniforms.u_useClipmap.value = 0;
           }
+
+          const clipmapMetadata = resources.clipmap
+            ? { levels: resources.clipmap.getActiveLevelCount(), size: resources.clipmap.clipSize }
+            : null;
+
+          resources.source = isStreamingVolume
+            ? { type: 'zarr', clipmap: clipmapMetadata, streamingSource: streamingSource! }
+            : { type: 'tiff', clipmap: clipmapMetadata };
 
           const desiredX = layer.offsetX;
           const desiredY = layer.offsetY;
@@ -650,6 +651,9 @@ export function useVolumeResources({
             mesh.position.set(desiredX, desiredY, clampedIndex);
             mesh.updateMatrixWorld();
           }
+          resources.source = isStreamingVolume
+            ? { type: 'zarr', clipmap: null, streamingSource: streamingSource! }
+            : { type: 'tiff', clipmap: null };
         }
       }
 
