@@ -1,10 +1,10 @@
 import { Uint8ArrayWriter, ZipReader } from '@zip.js/zip.js';
 import type { FileEntry } from '@zip.js/zip.js';
 
-import type { LoadedLayer } from '../../../types/layers';
-import type { NormalizedVolume } from '../../../core/volumeProcessing';
+import type { LoadedLayer, LoadedVolume } from '../../../types/layers';
 import { VOXEL_RESOLUTION_UNITS } from '../../../types/voxelResolution';
 import { getBytesPerValue, type VolumeDataType } from '../../../types/volume';
+import { ZarrVolumeSource, type ZarrMipLevel } from '../../../data/ZarrVolumeSource';
 
 import { computeSha256Hex } from './hash';
 import {
@@ -225,6 +225,124 @@ async function readZarrVolume(
   return data;
 }
 
+type StreamingContext = {
+  streamingSource: ZarrVolumeSource;
+  streamingBaseShape: [number, number, number, number];
+};
+
+function normalizeToFourDimensions(
+  shape: readonly number[] | undefined,
+  fallback: [number, number, number, number]
+): [number, number, number, number] {
+  const normalized: [number, number, number, number] = [...fallback];
+  if (!Array.isArray(shape)) {
+    return normalized;
+  }
+
+  for (let index = 0; index < 4; index += 1) {
+    const value = shape[index];
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+      normalized[index] = value;
+    }
+  }
+
+  return normalized;
+}
+
+async function buildStreamingContexts(
+  manifest: PreprocessedManifest,
+  store: AsyncReadable
+): Promise<Map<string, StreamingContext>> {
+  const contexts = new Map<string, StreamingContext>();
+  const visited = new Set<string>();
+
+  for (const channel of manifest.dataset.channels) {
+    for (const layer of channel.layers) {
+      for (const volume of layer.volumes) {
+        if (visited.has(volume.path)) {
+          continue;
+        }
+        visited.add(volume.path);
+
+        try {
+          const baseArray = await openArrayAt(store, volume.path);
+          const baseShape = normalizeToFourDimensions(baseArray.shape as number[] | undefined, [
+            volume.channels,
+            volume.depth,
+            volume.height,
+            volume.width
+          ]);
+          const baseChunkShape = normalizeToFourDimensions(
+            (baseArray as { chunks?: readonly number[] }).chunks,
+            baseShape
+          );
+          const streamingBaseShape: [number, number, number, number] = [
+            Math.max(baseShape[0], baseChunkShape[0]),
+            Math.max(baseShape[1], baseChunkShape[1]),
+            Math.max(baseShape[2], baseChunkShape[2]),
+            Math.max(baseShape[3], baseChunkShape[3])
+          ];
+
+          const levels: ZarrMipLevel[] = [
+            {
+              level: 0,
+              array: baseArray,
+              dataType: volume.dataType,
+              shape: baseShape,
+              chunkShape: baseChunkShape
+            }
+          ];
+
+          const mipEntries =
+            (volume as { mips?: Array<{ level: number; path: string }> }).mips ??
+            (volume as { mipLevels?: Array<{ level: number; path: string }> }).mipLevels;
+
+          if (Array.isArray(mipEntries)) {
+            const seenLevels = new Set<number>([0]);
+            for (const entry of mipEntries) {
+              if (!entry || typeof entry !== 'object') continue;
+              const levelIndex = (entry as { level?: number }).level;
+              const path = (entry as { path?: string }).path;
+              if (typeof levelIndex !== 'number' || !Number.isFinite(levelIndex) || typeof path !== 'string') {
+                continue;
+              }
+              if (seenLevels.has(levelIndex)) {
+                continue;
+              }
+              try {
+                const mipArray = await openArrayAt(store, path);
+                const mipShape = normalizeToFourDimensions(mipArray.shape as number[] | undefined, baseShape);
+                const mipChunkShape = normalizeToFourDimensions(
+                  (mipArray as { chunks?: readonly number[] }).chunks,
+                  mipShape
+                );
+                levels.push({
+                  level: levelIndex,
+                  array: mipArray,
+                  dataType: volume.dataType,
+                  shape: mipShape,
+                  chunkShape: mipChunkShape
+                });
+                seenLevels.add(levelIndex);
+              } catch (mipError) {
+                console.warn(`Failed to initialize mip level ${levelIndex} for ${path}`, mipError);
+              }
+            }
+            levels.sort((a, b) => a.level - b.level);
+          }
+
+          const streamingSource = new ZarrVolumeSource(levels);
+          contexts.set(volume.path, { streamingSource, streamingBaseShape });
+        } catch (error) {
+          console.warn(`Failed to initialize streaming for ${volume.path}`, error);
+        }
+      }
+    }
+  }
+
+  return contexts;
+}
+
 function parseManifest(bytes: Uint8Array): PreprocessedManifest {
   const manifestText = textDecoder.decode(bytes);
   try {
@@ -330,8 +448,9 @@ function validateManifest(manifest: PreprocessedManifest): void {
 function createNormalizedVolume(
   entry: PreprocessedVolumeManifestEntry,
   data: Uint8Array,
-  segmentationLabels?: { manifest: NonNullable<PreprocessedVolumeManifestEntry['segmentationLabels']>; data: VolumeData }
-): NormalizedVolume {
+  segmentationLabels?: { manifest: NonNullable<PreprocessedVolumeManifestEntry['segmentationLabels']>; data: VolumeData },
+  streaming?: StreamingContext
+): LoadedVolume {
   if (data.byteLength !== entry.byteLength) {
     throw new Error(
       `Volume size mismatch for ${entry.path}. Expected ${entry.byteLength} bytes, received ${data.byteLength}.`
@@ -375,14 +494,17 @@ function createNormalizedVolume(
     min: entry.min,
     max: entry.max,
     segmentationLabels: labelArray,
-    segmentationLabelDataType
+    segmentationLabelDataType,
+    streamingSource: streaming?.streamingSource,
+    streamingBaseShape: streaming?.streamingBaseShape
   };
 }
 
 function buildImportResult(
   manifest: PreprocessedManifest,
   volumes: Map<string, VolumeData>,
-  segmentationLabels: Map<string, VolumeData>
+  segmentationLabels: Map<string, VolumeData>,
+  streamingContexts: Map<string, StreamingContext>
 ): ImportPreprocessedDatasetResult {
   const layers: LoadedLayer[] = [];
   const channelSummaries: PreprocessedChannelSummary[] = [];
@@ -391,7 +513,7 @@ function buildImportResult(
   for (const channel of manifest.dataset.channels) {
     const layerSummaries: PreprocessedLayerSummary[] = [];
     for (const layer of channel.layers) {
-      const normalizedVolumes: NormalizedVolume[] = [];
+      const normalizedVolumes: LoadedVolume[] = [];
       for (const volume of layer.volumes) {
         const data = volumes.get(volume.path);
         if (!data) {
@@ -419,7 +541,8 @@ function buildImportResult(
             data.data,
             segmentationManifest && segmentationData
               ? { manifest: segmentationManifest, data: segmentationData }
-              : undefined
+              : undefined,
+            streamingContexts.get(volume.path)
           )
         );
         volumes.delete(volume.path);
@@ -510,6 +633,9 @@ export async function importPreprocessedDataset(
     emitMilestone('scan');
 
     const zarrStore = await createZarrStore(fileEntries, manifest.dataset.zarrStore);
+    const streamingContexts = zarrStore
+      ? await buildStreamingContexts(manifest, zarrStore)
+      : new Map<string, StreamingContext>();
 
     const volumes = new Map<string, VolumeData>();
     const segmentationLabelVolumes = new Map<string, VolumeData>();
@@ -567,7 +693,7 @@ export async function importPreprocessedDataset(
 
     emitMilestone('level0');
 
-    const result = buildImportResult(manifest, volumes, segmentationLabelVolumes);
+    const result = buildImportResult(manifest, volumes, segmentationLabelVolumes, streamingContexts);
     emitMilestone('mips');
     emitMilestone('finalize');
     return result;

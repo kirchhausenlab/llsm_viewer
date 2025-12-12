@@ -268,3 +268,7 @@
 - Swapped the volume viewer's clipmap path to stream chunked data from `ZarrVolumeSource`, keeping the coarsest mip resident for early visibility and honoring abort/priority cues around the camera.
 - Updated `useVolumeResources` to treat volumes as streamable objects, seed placeholder textures when data isn't preloaded, and drive clipmap fetches for the active bounds before shader uploads.
 - Added a streaming clipmap unit test that exercises async fills and confirms coarse-level visibility without cached volume buffers.
+
+## Preprocessed streaming context
+- Initialized `ZarrVolumeSource` instances for Zarr-backed preprocessed imports, deriving base and mip chunk metadata from the store when available.
+- Threaded streaming base shapes and sources into the normalized volumes returned to callers while keeping non-Zarr archives on the previous non-streaming path.
