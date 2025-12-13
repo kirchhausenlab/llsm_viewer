@@ -1,4 +1,21 @@
-const EXPORT_ROUTE_PREFIX = '/__export__/';
+function normalizeBasePath(path) {
+  if (!path.startsWith('/')) {
+    path = `/${path}`;
+  }
+  return path.endsWith('/') ? path : `${path}/`;
+}
+
+function getBasePath() {
+  try {
+    const scopeUrl = new URL(self.registration?.scope ?? '/', self.location.href);
+    return normalizeBasePath(scopeUrl.pathname);
+  } catch (_error) {
+    return '/';
+  }
+}
+
+const BASE_PATH = getBasePath();
+const EXPORT_ROUTE_PREFIX = `${BASE_PATH}__export__/`;
 const DEFAULT_CONTENT_TYPE = 'application/zip';
 
 const activeExports = new Map();

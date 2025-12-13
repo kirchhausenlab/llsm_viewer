@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Made the export service worker registration and fetch prefix respect the configured base path so GitHub Pages subpaths serve
+  downloads correctly and continue copying `export-sw.js` to the base-relative build output.
 - Fixed preprocessing chunk strides to match the logical chunk shape so TIFF imports populate chunk buffers instead of writing
   past their bounds and producing zero-intensity volumes.
 - Added a guard in the volume loader to fail gracefully when a worker finishes without returning all volumes, surfacing a clear
