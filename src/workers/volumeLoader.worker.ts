@@ -1,7 +1,5 @@
 /// <reference lib="webworker" />
 import { fromBlob } from 'geotiff';
-import { MAX_VOLUME_BYTES } from '../shared/constants/volumeLimits';
-import { VolumeTooLargeError } from '../errors';
 import type { VolumeDataType, VolumeTypedArray } from '../types/volume';
 import { getBytesPerValue } from '../types/volume';
 import type {
@@ -23,6 +21,32 @@ type LoadVolumesMessage = {
 type WorkerMessage = LoadVolumesMessage;
 
 const ctx: DedicatedWorkerGlobalScope = self as unknown as DedicatedWorkerGlobalScope;
+
+ctx.addEventListener('error', (event) => {
+  const serialized = serializeErrorDetails(event.error ?? event.message ?? 'Worker error');
+  ctx.postMessage(
+    {
+      type: 'error',
+      requestId: Number.NaN,
+      message: serialized.message,
+      code: serialized.code,
+      details: serialized.details
+    } satisfies VolumeWorkerErrorMessage
+  );
+});
+
+ctx.addEventListener('unhandledrejection', (event) => {
+  const serialized = serializeErrorDetails(event.reason ?? 'Unhandled worker rejection');
+  ctx.postMessage(
+    {
+      type: 'error',
+      requestId: Number.NaN,
+      message: serialized.message,
+      code: serialized.code,
+      details: serialized.details
+    } satisfies VolumeWorkerErrorMessage
+  );
+});
 
 ctx.onmessage = async (event: MessageEvent<WorkerMessage>) => {
   const message = event.data;
@@ -139,7 +163,6 @@ async function loadVolumeFromFile(
   const channels = firstImage.getSamplesPerPixel();
 
   const sliceLength = width * height * channels;
-  const totalValues = sliceLength * imageCount;
 
   const firstRasterRaw = (await firstImage.readRasters({ interleave: true })) as unknown;
   if (!ArrayBuffer.isView(firstRasterRaw)) {
@@ -149,15 +172,6 @@ async function loadVolumeFromFile(
   const typedFirstRaster = firstRasterRaw as SupportedTypedArray;
   const dataType = detectDataType(typedFirstRaster);
   const bytesPerValue = getBytesPerValue(dataType);
-  const totalBytes = totalValues * bytesPerValue;
-  if (totalBytes > MAX_VOLUME_BYTES) {
-    throw new VolumeTooLargeError({
-      requiredBytes: totalBytes,
-      maxBytes: MAX_VOLUME_BYTES,
-      dimensions: { width, height, depth: imageCount, channels, dataType },
-      fileName: file.name
-    });
-  }
 
   const startMessage: VolumeStartMessage = {
     type: 'volume-start',
@@ -361,24 +375,19 @@ function serializeErrorDetails(error: unknown): {
   code?: string;
   details?: unknown;
 } {
-  if (error instanceof VolumeTooLargeError) {
+  if (error instanceof Error) {
     return {
-      message: error.message,
-      code: 'volume-too-large',
-      details: {
-        requiredBytes: error.requiredBytes,
-        maxBytes: error.maxBytes,
-        dimensions: error.dimensions,
-        fileName: error.fileName
-      }
+      message: error.message || 'An unexpected error occurred while loading volumes.',
+      code: error.name,
+      details: error.stack
     };
   }
 
-  if (error instanceof Error) {
-    return { message: error.message };
+  if (typeof error === 'string') {
+    return { message: error };
   }
 
-  return { message: 'An unexpected error occurred while loading volumes.' };
+  return { message: 'An unexpected error occurred while loading volumes.', details: error };
 }
 
 export {};
