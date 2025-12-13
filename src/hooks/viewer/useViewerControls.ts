@@ -47,6 +47,10 @@ export const useViewerControls = ({
   const hasInitializedSliceIndexRef = useRef(false);
 
   useEffect(() => {
+    setViewerMode((current) => (current === initialViewerMode ? current : initialViewerMode));
+  }, [initialViewerMode]);
+
+  useEffect(() => {
     if (!is3dViewerAvailable && viewerMode === '3d') {
       setViewerMode('2d');
     }
