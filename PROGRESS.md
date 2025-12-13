@@ -3,6 +3,8 @@
 ## Latest changes
 - Added a guard in the volume loader to fail gracefully when a worker finishes without returning all volumes, surfacing a clear
   retry message instead of an undefined `dataType` error.
+- Allow the streaming clipmap manager to infer a base shape from the streaming source when metadata is missing so it keeps
+  streaming voxels instead of falling back to an empty CPU buffer.
 - Guarded preprocessed viewer launches so errors surface as launch failures instead of crashing the UI when loading exported experiments.
 - Unrolled clipmap sampler access in the volume fragment shader so WebGL2 sees only constant-index texture lookups for clipmap levels and the fallback path.
 - Updated streaming Zarr ingestion and clipmap rendering to preserve the time dimension, promote shapes/chunks to 5D tuples, and thread the viewer time index through streaming slice/clipmap reads so timepoints align correctly.
@@ -327,3 +329,6 @@
 
 ## VR track transform wiring (2025-05-30)
 - Restored the VR hook's track group transform helper and bridge typing so session lifecycle hooks can safely normalize track overlays during VR entry/exit without TypeScript errors.
+
+## Streaming clipmap inference gating (2025-06-XX)
+- Allowed streaming clipmaps to initialize whenever a streaming source is present so inferred base shapes from the Zarr metadata are used instead of falling back to empty CPU textures when the preprocessed shape is missing.
