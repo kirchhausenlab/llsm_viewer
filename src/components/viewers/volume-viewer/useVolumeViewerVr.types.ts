@@ -139,6 +139,9 @@ export type UseVolumeViewerVrResult = {
   resetVrPlaybackHudPlacement: () => void;
   resetVrChannelsHudPlacement: () => void;
   resetVrTracksHudPlacement: () => void;
+  applyTrackGroupTransform: (
+    dimensions: { width: number; height: number; depth: number } | null,
+  ) => void;
   applyVolumeRootTransform: (
     dimensions: { width: number; height: number; depth: number } | null,
   ) => void;

@@ -314,3 +314,9 @@
 ## Hover readiness reporting (2025-03-22)
 - Clear the hover "inactive" status once the renderer initializes so the overlay activates immediately after context setup.
 - Added a useVolumeHover regression test to assert the hover state transitions to ready when the raycaster is registered.
+## Track/volume transform synchronization (2025-05-14)
+- Ensured track group normalization runs whenever volume root transforms or volume step scaling occur, including user reset and VR session transitions.
+- Added regression coverage to confirm track overlay transforms stay aligned with volume bounds after scaling and reset flows.
+## Clipmap time-index propagation (2025-03-24)
+- Threaded the active clipmap time index into streaming read options and refresh logic so time-series playback pulls the correct slice even when the camera is stationary.
+- Added a regression test around `VolumeClipmapManager.update` to confirm time changes trigger fresh streaming requests.
