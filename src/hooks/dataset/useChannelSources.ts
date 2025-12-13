@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import { fromBlob } from 'geotiff';
-import { VolumeTooLargeError, formatBytes } from '../../errors';
 import { expandVolumesForMovieMode, loadVolumesFromFiles } from '../../loaders/volumeLoader';
 import { clearTextureCache } from '../../core/textureCache';
 import type { NormalizedVolume } from '../../core/volumeProcessing';
@@ -624,17 +623,7 @@ export function useChannelSources(): ChannelSourcesApi {
         setLoadedCount(0);
         setExpectedVolumeCount(0);
         setIsPlaying(false);
-        const message =
-          err instanceof VolumeTooLargeError
-            ? (() => {
-                const size = formatBytes(err.requiredBytes);
-                const limit = formatBytes(err.maxBytes);
-                const name = err.fileName ? ` "${err.fileName}"` : '';
-                return `The dataset${name} requires ${size}, which exceeds the current browser limit of ${limit}. Reduce the dataset size or enable chunked uploads before trying again.`;
-              })()
-            : err instanceof Error
-              ? err.message
-              : 'Failed to load volumes.';
+        const message = err instanceof Error ? err.message : 'Failed to load volumes.';
         showLaunchError(message);
         setError(message);
         return null;
