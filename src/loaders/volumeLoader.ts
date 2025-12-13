@@ -378,9 +378,9 @@ export async function loadVolumesFromFiles(
       };
     };
 
-    worker.onmessage = async (event) => {
-      const message = event.data as VolumeWorkerOutboundMessage;
+    let messageQueue = Promise.resolve();
 
+    const processWorkerMessage = async (message: VolumeWorkerOutboundMessage) => {
       if (!message || settled) {
         return;
       }
@@ -513,6 +513,12 @@ export async function loadVolumesFromFiles(
         default:
           break;
       }
+    };
+
+    worker.onmessage = (event) => {
+      messageQueue = messageQueue
+        .then(() => processWorkerMessage(event.data as VolumeWorkerOutboundMessage))
+        .catch((error) => fail(error));
     };
 
     worker.onerror = (event) => {
