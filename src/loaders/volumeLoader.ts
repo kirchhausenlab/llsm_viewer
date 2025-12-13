@@ -322,6 +322,7 @@ export async function loadVolumesFromFiles(
     const volumes: Array<VolumePayload<VolumeDataHandle> | undefined> = new Array(files.length);
 
     const assemblies = new Map<number, VolumeAssemblyState>();
+    const pendingVolumes = new Set<Promise<void>>();
     let settled = false;
 
     const preprocessingCoordinatorPromise: Promise<PreprocessingCoordinator> = createPreprocessingStore().then(
@@ -419,26 +420,24 @@ export async function loadVolumesFromFiles(
           break;
         }
         case 'volume-loaded': {
-          const state = assemblies.get(message.index);
-          if (!state) {
-            fail(new Error('Received volume metadata before initialization.'));
-            return;
-          }
+          const handleVolumeLoaded = async () => {
+            const state = assemblies.get(message.index);
+            if (!state) {
+              throw new Error('Received volume metadata before initialization.');
+            }
 
-          assemblies.delete(message.index);
+            assemblies.delete(message.index);
 
-          if (state.slicesReceived !== state.sliceCount) {
-            console.warn(
-              `Volume ${message.index} completed with ${state.slicesReceived} of ${state.sliceCount} slices.`
-            );
-          }
+            if (state.slicesReceived !== state.sliceCount) {
+              console.warn(
+                `Volume ${message.index} completed with ${state.slicesReceived} of ${state.sliceCount} slices.`
+              );
+            }
 
-          let payload: VolumePayload<VolumeDataHandle>;
-          try {
             const coordinator = await preprocessingCoordinatorPromise;
             await coordinator.finalizeVolume(message.index);
             const array = await writerOrOpen(coordinator.getStore(), message.index, coordinator);
-            payload = {
+            const payload: VolumePayload<VolumeDataHandle> = {
               ...message.metadata,
               data: {
                 kind: 'zarr',
@@ -447,25 +446,26 @@ export async function loadVolumesFromFiles(
                 chunkShape: array.chunks as VolumeChunkShape
               }
             };
-          } catch (error) {
-            fail(error);
-            return;
-          }
 
-          volumes[message.index] = payload;
+            volumes[message.index] = payload;
 
-          if (callbacks.onVolumeLoaded) {
-            try {
+            if (callbacks.onVolumeLoaded) {
               callbacks.onVolumeLoaded(message.index, payload);
-            } catch (error) {
-              fail(error);
-              return;
             }
-          }
+          };
+
+          const volumePromise = handleVolumeLoaded();
+          pendingVolumes.add(volumePromise);
+          volumePromise
+            .catch((error) => fail(error))
+            .finally(() => pendingVolumes.delete(volumePromise));
+
+          await volumePromise.catch(() => {});
           break;
         }
         case 'complete':
           try {
+            await Promise.all(Array.from(pendingVolumes));
             const coordinator = await preprocessingCoordinatorPromise;
             if (coordinator && callbacks.preprocessingHooks?.onPreprocessingComplete) {
               const result = await coordinator.finalizeAll(files.length);

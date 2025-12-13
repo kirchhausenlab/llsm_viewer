@@ -307,3 +307,6 @@
 - Improve volume worker error propagation to surface detailed failure reasons in the UI after removing the legacy size guard.
 - Refactored volume loader to stream slices into Zarr chunks, returning storage handles and providing materialization helper for downstream processing.
 - Hardened normalization and resampling paths to require materialized volume buffers before processing and tightened typings to avoid passing Zarr handles into CPU-bound code. (2025-03-18)
+
+## Volume loader completion ordering (2025-03-19)
+- Serialized volume-finalization steps so worker completion waits for pending volume assembly, preventing premature launch failures when large volumes finish asynchronously.
