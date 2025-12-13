@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Added a guard in the volume loader to fail gracefully when a worker finishes without returning all volumes, surfacing a clear
+  retry message instead of an undefined `dataType` error.
 - Unrolled clipmap sampler access in the volume fragment shader so WebGL2 sees only constant-index texture lookups for clipmap levels and the fallback path.
 - Updated streaming Zarr ingestion and clipmap rendering to preserve the time dimension, promote shapes/chunks to 5D tuples, and thread the viewer time index through streaming slice/clipmap reads so timepoints align correctly.
 - Tightened volume streaming detection to require a `streamingSource`, keeping TIFF/offline Zarr volumes on cached textures and ensuring streaming metadata includes explicit sources in both 3D and slice modes.
@@ -304,3 +306,6 @@
 - Improve volume worker error propagation to surface detailed failure reasons in the UI after removing the legacy size guard.
 - Refactored volume loader to stream slices into Zarr chunks, returning storage handles and providing materialization helper for downstream processing.
 - Hardened normalization and resampling paths to require materialized volume buffers before processing and tightened typings to avoid passing Zarr handles into CPU-bound code. (2025-03-18)
+
+## Volume loader completion ordering (2025-03-19)
+- Serialized volume-finalization steps so worker completion waits for pending volume assembly, preventing premature launch failures when large volumes finish asynchronously.
