@@ -15,6 +15,7 @@ type ClipLevel = {
   buffer: VolumeTypedArray;
   needsUpload: boolean;
   requestId: number;
+  lastTimeIndex?: number;
   abortController?: AbortController;
 };
 
@@ -167,6 +168,7 @@ export class VolumeClipmapManager {
         buffer,
         needsUpload: true,
         requestId: 0,
+        lastTimeIndex: this.streaming ? undefined : 0,
       } satisfies ClipLevel;
     });
   }
@@ -186,6 +188,7 @@ export class VolumeClipmapManager {
     this.timeIndex = clamped;
     this.levels.forEach((level) => {
       level.requestId += 1;
+      level.lastTimeIndex = undefined;
       level.abortController?.abort();
     });
   }
@@ -221,8 +224,14 @@ export class VolumeClipmapManager {
         alignToChunk(desired.z, alignStep[2], limit.z),
       );
 
+      const timeChanged = this.streaming ? level.lastTimeIndex !== this.timeIndex : false;
+
       if (!aligned.equals(level.origin)) {
         level.origin.copy(aligned);
+        level.lastTimeIndex = this.timeIndex;
+        pending.push(this.populateLevel(level, options));
+      } else if (timeChanged) {
+        level.lastTimeIndex = this.timeIndex;
         pending.push(this.populateLevel(level, options));
       }
 

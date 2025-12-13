@@ -111,6 +111,45 @@ console.log('Starting clipmap renderer tests');
   assert.equal(coarseLevel.buffer[0], 7);
   assert.equal(coarseLevel.needsUpload, false);
 
+  const timeAwareRequests: Array<number | undefined> = [];
+  const timeAwareSource = {
+    getMipLevels: () => [0],
+    getMip: (_level: number) => ({
+      level: 0,
+      shape: [2, 1, streamingSize, streamingSize, streamingSize],
+      chunkShape: [1, 1, streamingSize, streamingSize, streamingSize],
+    }),
+    async readRegion(request: any) {
+      timeAwareRequests.push(request.time);
+      const [cSize, zSize, ySize, xSize] = request.shape as number[];
+      return new Uint8Array(cSize * zSize * ySize * xSize);
+    },
+  } as unknown as ZarrVolumeSource;
+
+  const timeAwareVolume: StreamableNormalizedVolume = {
+    width: streamingSize,
+    height: streamingSize,
+    depth: streamingSize,
+    channels: 1,
+    dataType: 'uint8',
+    normalized: new Uint8Array(streamingSize * streamingSize * streamingSize),
+    min: 0,
+    max: 255,
+    chunkShape: [streamingSize, streamingSize, streamingSize],
+    streamingSource: timeAwareSource,
+    streamingBaseShape: [2, 1, streamingSize, streamingSize, streamingSize],
+  };
+
+  const timeAwareClipmap = new VolumeClipmapManager(timeAwareVolume, streamingSize);
+  const timeAwareTarget = new THREE.Vector3(streamingSize / 2, streamingSize / 2, streamingSize / 2);
+
+  await timeAwareClipmap.update(timeAwareTarget);
+  timeAwareClipmap.setTimeIndex(1);
+  await timeAwareClipmap.update(timeAwareTarget);
+
+  assert.deepEqual(timeAwareRequests, [0, 1]);
+  timeAwareClipmap.dispose();
+
   const mipLevels = [
     { level: 0, shape: [1, 1, 8, 8, 8], chunkShape: [1, 1, 4, 4, 4] },
     { level: 1, shape: [1, 1, 4, 4, 4], chunkShape: [1, 1, 2, 2, 2] },
