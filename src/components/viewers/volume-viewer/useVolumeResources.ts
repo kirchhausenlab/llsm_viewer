@@ -177,6 +177,7 @@ export function useVolumeResources({
     if (!scene || !camera || !controls) {
       removeAllResources();
       currentDimensionsRef.current = null;
+      applyTrackGroupTransform(null);
       applyVolumeRootTransform(null);
       return () => abortController.abort();
     }

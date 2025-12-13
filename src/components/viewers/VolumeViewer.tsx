@@ -565,12 +565,13 @@ function VolumeViewer({
     if (isVrPresenting) {
       volumeRootBaseOffsetRef.current.copy(VR_VOLUME_BASE_OFFSET);
     } else {
-      volumeRootBaseOffsetRef.current.set(0, 0, 0);
-    }
-    volumeYawRef.current = 0;
-    volumePitchRef.current = 0;
-    volumeUserScaleRef.current = 1;
-    applyVolumeRootTransformRef.current?.(currentDimensionsRef.current);
+    volumeRootBaseOffsetRef.current.set(0, 0, 0);
+  }
+  volumeYawRef.current = 0;
+  volumePitchRef.current = 0;
+  volumeUserScaleRef.current = 1;
+  applyTrackGroupTransformRef.current?.(currentDimensionsRef.current);
+  applyVolumeRootTransformRef.current?.(currentDimensionsRef.current);
 
     const controls = controlsRef.current;
     const camera = cameraRef.current;
@@ -608,6 +609,7 @@ function VolumeViewer({
       const clampedStepScale = Math.max(stepScale, 1e-3);
       volumeStepScaleRef.current = clampedStepScale;
       applyVolumeStepScaleToResources(clampedStepScale);
+      applyTrackGroupTransformRef.current?.(currentDimensionsRef.current);
     },
     [applyVolumeStepScaleToResources],
   );
@@ -963,6 +965,7 @@ function VolumeViewer({
 
       restoreVrFoveation();
       applyVolumeStepScaleToResources(DESKTOP_VOLUME_STEP_SCALE);
+      applyTrackGroupTransformRef.current?.(currentDimensionsRef.current);
 
       preservedViewStateRef.current = {
         position: camera.position.clone(),
