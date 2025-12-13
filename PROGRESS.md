@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Fixed preprocessing chunk strides to match the logical chunk shape so TIFF imports populate chunk buffers instead of writing
+  past their bounds and producing zero-intensity volumes.
 - Added a guard in the volume loader to fail gracefully when a worker finishes without returning all volumes, surfacing a clear
   retry message instead of an undefined `dataType` error.
 - Allow the streaming clipmap manager to infer a base shape from the streaming source when metadata is missing so it keeps

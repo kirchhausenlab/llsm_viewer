@@ -299,12 +299,11 @@ async function createVolumeArray(
     ]
   });
   const zarrContext = getZarrContext(array);
-  const zarrChunkShape = zarrContext.chunk_shape as VolumeChunkShape;
   return {
     array,
     zarrContext,
-    chunkShape: zarrChunkShape,
-    chunkStrides: zarrContext.get_strides(zarrChunkShape)
+    chunkShape,
+    chunkStrides: zarrContext.get_strides(chunkShape)
   };
 }
 
