@@ -1,6 +1,7 @@
 # Progress
 
 ## Latest changes
+- Unrolled clipmap sampler access in the volume fragment shader so WebGL2 sees only constant-index texture lookups for clipmap levels and the fallback path.
 - Updated streaming Zarr ingestion and clipmap rendering to preserve the time dimension, promote shapes/chunks to 5D tuples, and thread the viewer time index through streaming slice/clipmap reads so timepoints align correctly.
 - Tightened volume streaming detection to require a `streamingSource`, keeping TIFF/offline Zarr volumes on cached textures and ensuring streaming metadata includes explicit sources in both 3D and slice modes.
 - Documented the streaming Zarr pipeline, clipmap renderer, and store options in `PROJECT_STRUCTURE.md` and `README.md` so new contributors can trace the data flow.

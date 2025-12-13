@@ -148,34 +148,91 @@ export const VolumeRenderShader = {
       int chosenLevel = -1;
       vec4 sampled = vec4(0.0);
       levelScale = 1.0;
+      bool sampledLevel = false;
 
-      for (int i = 0; i < MAX_CLIP_LEVELS; i++) {
-        if (i >= u_clipmapLevelCount) {
-          break;
-        }
-        if (float(i) < u_minClipLevel) {
-          continue;
-        }
-        vec3 origin = u_clipmapOrigins[i];
-        float scale = u_clipmapScales[i];
-        vec3 extent = vec3(u_clipmapSize * scale);
-        vec3 local = (voxelPos - origin) / extent;
-        if (all(greaterThanEqual(local, vec3(0.0))) && all(lessThan(local, vec3(1.0)))) {
-          sampled = texture(u_clipmapTextures[i], local);
-          levelScale = scale;
-          chosenLevel = i;
-          break;
-        }
+#define SAMPLE_CLIPMAP_LEVEL(LEVEL)                                                                            \
+      if (!sampledLevel && u_clipmapLevelCount > LEVEL && float(LEVEL) >= u_minClipLevel) {                   \
+        vec3 origin = u_clipmapOrigins[LEVEL];                                                                \
+        float scale = u_clipmapScales[LEVEL];                                                                 \
+        vec3 extent = vec3(u_clipmapSize * scale);                                                            \
+        vec3 local = (voxelPos - origin) / extent;                                                            \
+        if (all(greaterThanEqual(local, vec3(0.0))) && all(lessThan(local, vec3(1.0)))) {                    \
+          sampled = texture(u_clipmapTextures[LEVEL], local);                                                 \
+          levelScale = scale;                                                                                \
+          chosenLevel = LEVEL;                                                                               \
+          sampledLevel = true;                                                                               \
+        }                                                                                                     \
       }
 
-      if (chosenLevel == -1) {
-        int fallback = max(u_clipmapLevelCount - 1, 0);
-        float scale = u_clipmapScales[fallback];
-        vec3 origin = u_clipmapOrigins[fallback];
-        vec3 extent = vec3(u_clipmapSize * scale);
-        vec3 local = (voxelPos - origin) / extent;
-        sampled = texture(u_clipmapTextures[fallback], local);
-        levelScale = scale;
+      SAMPLE_CLIPMAP_LEVEL(0)
+      SAMPLE_CLIPMAP_LEVEL(1)
+      SAMPLE_CLIPMAP_LEVEL(2)
+      SAMPLE_CLIPMAP_LEVEL(3)
+      SAMPLE_CLIPMAP_LEVEL(4)
+      SAMPLE_CLIPMAP_LEVEL(5)
+
+#undef SAMPLE_CLIPMAP_LEVEL
+
+      if (!sampledLevel) {
+        int fallback = clamp(u_clipmapLevelCount - 1, 0, MAX_CLIP_LEVELS - 1);
+        switch (fallback) {
+          case 0: {
+            float scale = u_clipmapScales[0];
+            vec3 origin = u_clipmapOrigins[0];
+            vec3 extent = vec3(u_clipmapSize * scale);
+            vec3 local = (voxelPos - origin) / extent;
+            sampled = texture(u_clipmapTextures[0], local);
+            levelScale = scale;
+            break;
+          }
+          case 1: {
+            float scale = u_clipmapScales[1];
+            vec3 origin = u_clipmapOrigins[1];
+            vec3 extent = vec3(u_clipmapSize * scale);
+            vec3 local = (voxelPos - origin) / extent;
+            sampled = texture(u_clipmapTextures[1], local);
+            levelScale = scale;
+            break;
+          }
+          case 2: {
+            float scale = u_clipmapScales[2];
+            vec3 origin = u_clipmapOrigins[2];
+            vec3 extent = vec3(u_clipmapSize * scale);
+            vec3 local = (voxelPos - origin) / extent;
+            sampled = texture(u_clipmapTextures[2], local);
+            levelScale = scale;
+            break;
+          }
+          case 3: {
+            float scale = u_clipmapScales[3];
+            vec3 origin = u_clipmapOrigins[3];
+            vec3 extent = vec3(u_clipmapSize * scale);
+            vec3 local = (voxelPos - origin) / extent;
+            sampled = texture(u_clipmapTextures[3], local);
+            levelScale = scale;
+            break;
+          }
+          case 4: {
+            float scale = u_clipmapScales[4];
+            vec3 origin = u_clipmapOrigins[4];
+            vec3 extent = vec3(u_clipmapSize * scale);
+            vec3 local = (voxelPos - origin) / extent;
+            sampled = texture(u_clipmapTextures[4], local);
+            levelScale = scale;
+            break;
+          }
+          case 5: {
+            float scale = u_clipmapScales[5];
+            vec3 origin = u_clipmapOrigins[5];
+            vec3 extent = vec3(u_clipmapSize * scale);
+            vec3 local = (voxelPos - origin) / extent;
+            sampled = texture(u_clipmapTextures[5], local);
+            levelScale = scale;
+            break;
+          }
+          default:
+            break;
+        }
       }
 
       return sampled;
