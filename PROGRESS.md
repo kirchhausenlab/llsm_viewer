@@ -3,6 +3,8 @@
 ## Latest changes
 - Added a guard in the volume loader to fail gracefully when a worker finishes without returning all volumes, surfacing a clear
   retry message instead of an undefined `dataType` error.
+- Allow the streaming clipmap manager to infer a base shape from the streaming source when metadata is missing so it keeps
+  streaming voxels instead of falling back to an empty CPU buffer.
 - Guarded preprocessed viewer launches so errors surface as launch failures instead of crashing the UI when loading exported experiments.
 - Unrolled clipmap sampler access in the volume fragment shader so WebGL2 sees only constant-index texture lookups for clipmap levels and the fallback path.
 - Updated streaming Zarr ingestion and clipmap rendering to preserve the time dimension, promote shapes/chunks to 5D tuples, and thread the viewer time index through streaming slice/clipmap reads so timepoints align correctly.
