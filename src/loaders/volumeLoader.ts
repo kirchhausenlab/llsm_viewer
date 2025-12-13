@@ -380,7 +380,12 @@ export async function loadVolumesFromFiles(
     worker.onmessage = async (event) => {
       const message = event.data as VolumeWorkerOutboundMessage;
 
-      if (!message || message.requestId !== requestId || settled) {
+      if (!message || settled) {
+        return;
+      }
+
+      const isMatchingRequest = message.requestId === requestId;
+      if (!isMatchingRequest && message.type !== 'error') {
         return;
       }
 
@@ -490,7 +495,11 @@ export async function loadVolumesFromFiles(
           }
           break;
         case 'error': {
-          const errorToReport = new Error(message.message);
+          const details = message.code ? `${message.code}: ${message.message}` : message.message;
+          const errorToReport = new Error(details);
+          if (message.details) {
+            (errorToReport as Error & { details?: unknown }).details = message.details;
+          }
           fail(errorToReport);
           break;
         }
@@ -500,7 +509,8 @@ export async function loadVolumesFromFiles(
     };
 
     worker.onerror = (event) => {
-      fail(event.error instanceof Error ? event.error : new Error(event.message ?? 'Worker error'));
+      const fallbackMessage = event.message || String(event.error || 'Worker error');
+      fail(event.error instanceof Error ? event.error : new Error(fallbackMessage));
     };
 
     worker.postMessage({ type: 'load-volumes', requestId, files });

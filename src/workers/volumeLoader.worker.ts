@@ -22,6 +22,32 @@ type WorkerMessage = LoadVolumesMessage;
 
 const ctx: DedicatedWorkerGlobalScope = self as unknown as DedicatedWorkerGlobalScope;
 
+ctx.addEventListener('error', (event) => {
+  const serialized = serializeErrorDetails(event.error ?? event.message ?? 'Worker error');
+  ctx.postMessage(
+    {
+      type: 'error',
+      requestId: Number.NaN,
+      message: serialized.message,
+      code: serialized.code,
+      details: serialized.details
+    } satisfies VolumeWorkerErrorMessage
+  );
+});
+
+ctx.addEventListener('unhandledrejection', (event) => {
+  const serialized = serializeErrorDetails(event.reason ?? 'Unhandled worker rejection');
+  ctx.postMessage(
+    {
+      type: 'error',
+      requestId: Number.NaN,
+      message: serialized.message,
+      code: serialized.code,
+      details: serialized.details
+    } satisfies VolumeWorkerErrorMessage
+  );
+});
+
 ctx.onmessage = async (event: MessageEvent<WorkerMessage>) => {
   const message = event.data;
   if (!message) {
@@ -350,10 +376,18 @@ function serializeErrorDetails(error: unknown): {
   details?: unknown;
 } {
   if (error instanceof Error) {
-    return { message: error.message };
+    return {
+      message: error.message || 'An unexpected error occurred while loading volumes.',
+      code: error.name,
+      details: error.stack
+    };
   }
 
-  return { message: 'An unexpected error occurred while loading volumes.' };
+  if (typeof error === 'string') {
+    return { message: error };
+  }
+
+  return { message: 'An unexpected error occurred while loading volumes.', details: error };
 }
 
 export {};

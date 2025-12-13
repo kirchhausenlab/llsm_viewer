@@ -299,3 +299,5 @@
 - Fixed preprocessed viewer launch by passing all layer state setters into applyLoadedLayers so preprocessed imports initialize viewer state correctly (2025-03-01).
 - Extended ApplyLoadedLayersOptions to include layer state setters and global defaults so preprocessed experiment launches type-check and correctly seed viewer state (2025-03-01).
 - Removed the legacy browser volume size guard in the TIFF loader to allow large datasets to pass through the new preprocessing path without hitting a hard 512 MiB limit (2025-03-15).
+
+- Improve volume worker error propagation to surface detailed failure reasons in the UI after removing the legacy size guard.
