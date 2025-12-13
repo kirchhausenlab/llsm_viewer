@@ -320,3 +320,7 @@
 ## Clipmap time-index propagation (2025-03-24)
 - Threaded the active clipmap time index into streaming read options and refresh logic so time-series playback pulls the correct slice even when the camera is stationary.
 - Added a regression test around `VolumeClipmapManager.update` to confirm time changes trigger fresh streaming requests.
+
+## Streaming clipmap normalization (2025-05-25)
+- Normalized streamed mip regions with the same min/max scaling used for preloaded volumes so clipmap textures stay in the expected 0–255 range.
+- Forced streamed clipmaps to use uint8 texture data and added regression coverage for non-uint8 sources to verify distinct voxels render as distinct samples.

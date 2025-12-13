@@ -241,7 +241,11 @@ const createFakeResource = (): VolumeResources => {
   resource?.clipmap?.uploadPending();
   const firstLevel = resource?.clipmap?.levels[0];
   assert(firstLevel, 'Streaming clipmap levels missing');
-  assert(firstLevel.buffer.includes(streamingValue), 'Streaming clipmap never received mip data');
+  const normalizationRange = Math.max(streamingVolume.max - streamingVolume.min, 1);
+  const normalizedStreamingValue = Math.round(
+    Math.min(1, Math.max(0, (streamingValue - streamingVolume.min) / normalizationRange)) * 255,
+  );
+  assert(firstLevel.buffer.includes(normalizedStreamingValue), 'Streaming clipmap never received mip data');
   assert.strictEqual(streamingReads > 0, true, 'Streaming clipmap never requested streamed mip data');
 
   hook.unmount();

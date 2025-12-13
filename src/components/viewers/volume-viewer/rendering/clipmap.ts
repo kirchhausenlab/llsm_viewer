@@ -122,6 +122,8 @@ export class VolumeClipmapManager {
   private readonly streaming?: StreamingMetadata;
   private readonly clipmapDataType: VolumeDataType;
   private readonly clipmapTextureType: THREE.TextureDataType;
+  private readonly normalizationMin: number;
+  private readonly normalizationRange: number;
   private minLevelOverride = 0;
   private timeIndex = 0;
 
@@ -131,12 +133,6 @@ export class VolumeClipmapManager {
     const streamingSource = volume.streamingSource ?? null;
     const streamingBaseShape = volume.streamingBaseShape ?? null;
     const streamingBaseChunkShape = volume.streamingBaseChunkShape ?? null;
-
-    const streamingDataType = streamingSource
-      ? streamingSource.getMip(streamingSource.getMipLevels()[0]).dataType
-      : null;
-    this.clipmapDataType = resolveClipmapDataType(streamingDataType);
-    this.clipmapTextureType = getTextureTypeForDataType(this.clipmapDataType);
 
     if (streamingSource && !streamingBaseShape) {
       console.warn('Streaming clipmap requested without a base shape; falling back to CPU clipmap.');
@@ -153,7 +149,18 @@ export class VolumeClipmapManager {
     } else {
       this.chunkShape = volume.chunkShape ?? [FALLBACK_CHUNK, FALLBACK_CHUNK, FALLBACK_CHUNK];
     }
+
+    const streamingDataType = streamingSource
+      ? streamingSource.getMip(streamingSource.getMipLevels()[0]).dataType
+      : null;
+    this.clipmapDataType = this.streaming ? 'uint8' : resolveClipmapDataType(streamingDataType);
+    this.clipmapTextureType = getTextureTypeForDataType(this.clipmapDataType);
     const scales = determineLevelScales(volume, clipSize);
+
+    const safeMin = Number.isFinite(volume.min) ? volume.min : 0;
+    const safeMax = Number.isFinite(volume.max) ? volume.max : safeMin + 1;
+    this.normalizationMin = safeMin;
+    this.normalizationRange = Math.max(safeMax - safeMin, 1);
 
     this.levels = scales.map((scale) => {
       const buffer = createWritableVolumeArray(
@@ -463,7 +470,9 @@ export class VolumeClipmapManager {
             const clampedC = Math.min(c, shape.c - 1);
             const sourceIndex =
               clampedC * strides[0] + sampleZ * strides[1] + sampleY * strides[2] + sampleX * strides[3];
-            level.buffer[destIndex + c] = region[sourceIndex] ?? 0;
+            const rawValue = region[sourceIndex] ?? 0;
+            const normalizedValue = this.normalizeSample(rawValue);
+            level.buffer[destIndex + c] = normalizedValue;
           }
         }
       }
@@ -478,6 +487,12 @@ export class VolumeClipmapManager {
       strides[i] = strides[i + 1] * shape[i + 1];
     }
     return strides;
+  }
+
+  private normalizeSample(value: number): number {
+    const normalized = (value - this.normalizationMin) / this.normalizationRange;
+    const clamped = Math.max(0, Math.min(1, normalized));
+    return Math.round(clamped * 255);
   }
 
   uploadPending(): void {
