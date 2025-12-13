@@ -21,4 +21,5 @@ import './zarrStores.test.ts';
 import './zarrLayout.test.ts';
 import './zarrVolumeSource.test.ts';
 import './clipmapRenderer.test.ts';
+import './useVolumeHover.test.ts';
 import './sessionTrackAlignment.test.ts';

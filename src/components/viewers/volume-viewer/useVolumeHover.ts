@@ -59,7 +59,7 @@ export type UseVolumeHoverParams = {
   clearVoxelHover: () => void;
   reportVoxelHoverAbort: (reason: string) => void;
   clearVoxelHoverDebug: () => void;
-  setHoverNotReady: (message: string) => void;
+  setHoverNotReady: (message: string | null) => void;
   isAdditiveBlending: boolean;
 };
 
@@ -612,9 +612,10 @@ export function useVolumeHover({
       hoverRaycasterRef.current = raycaster;
       clearVoxelHoverDebug();
       hoverSystemReadyRef.current = true;
+      setHoverNotReady(null);
       retryPendingVoxelHover();
     },
-    [clearVoxelHoverDebug, hoverRaycasterRef, retryPendingVoxelHover],
+    [clearVoxelHoverDebug, hoverRaycasterRef, retryPendingVoxelHover, setHoverNotReady],
   );
 
   const teardownHover = useCallback(() => {
