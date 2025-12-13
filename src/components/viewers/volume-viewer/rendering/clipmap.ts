@@ -135,10 +135,21 @@ export class VolumeClipmapManager {
     const streamingBaseChunkShape = volume.streamingBaseChunkShape ?? null;
 
     if (streamingSource && !streamingBaseShape) {
-      console.warn('Streaming clipmap requested without a base shape; falling back to CPU clipmap.');
-    }
-
-    if (streamingSource && streamingBaseShape) {
+      const mipLevels = streamingSource.getMipLevels();
+      if (mipLevels.length > 0) {
+        const rootMip = streamingSource.getMip(mipLevels[0]);
+        const inferredChunkShape = streamingBaseChunkShape ?? rootMip.chunkShape;
+        this.streaming = {
+          source: streamingSource,
+          arrayShape: rootMip.shape,
+          chunkShape: inferredChunkShape,
+        };
+        this.chunkShape = [inferredChunkShape[4], inferredChunkShape[3], inferredChunkShape[2]];
+      } else {
+        console.warn('Streaming clipmap requested without mip levels; falling back to CPU clipmap.');
+        this.chunkShape = volume.chunkShape ?? [FALLBACK_CHUNK, FALLBACK_CHUNK, FALLBACK_CHUNK];
+      }
+    } else if (streamingSource && streamingBaseShape) {
       const rootChunkShape = streamingBaseChunkShape ?? streamingSource.getMip(streamingSource.getMipLevels()[0]).chunkShape;
       this.streaming = {
         source: streamingSource,
