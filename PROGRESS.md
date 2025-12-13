@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Hardened streaming source validation to compare mip levels, shapes, and chunk shapes against manifest/base metadata and
+  added regression coverage for rebuilding mismatched sources during preprocessed import augmentation.
 - Reworked streaming source validation/augmentation to rebuild invalid volume contexts even in mixed-validity datasets and add
   targeted test coverage for the repair path.
 - Unrolled clipmap sampler access in the volume fragment shader so WebGL2 sees only constant-index texture lookups for clipmap levels and the fallback path.

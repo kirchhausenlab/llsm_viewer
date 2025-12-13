@@ -7,7 +7,19 @@ import { __TEST_ONLY__ } from '../src/workers/importPreprocessedDataset/streamin
 
 const { augmentStreamingSources, hasValidStreamingSources } = __TEST_ONLY__;
 
-type MockStreamingSource = { getMipLevels: () => number[] };
+type MockStreamingSource = { getMipLevels: () => number[]; getMip: (level: number) => { shape: number[]; chunkShape: number[] } };
+
+const streamingBaseShape: [number, number, number, number, number] = [1, 1, 1, 1, 1];
+const streamingBaseChunkShape: [number, number, number, number, number] = [1, 1, 1, 1, 1];
+
+const createMockStreamingSource = (
+  shape: [number, number, number, number, number] = streamingBaseShape,
+  chunkShape: [number, number, number, number, number] = streamingBaseChunkShape,
+  mipLevels: number[] = [0]
+): MockStreamingSource => ({
+  getMipLevels: () => mipLevels,
+  getMip: () => ({ shape, chunkShape })
+});
 
 const manifest: ImportPreprocessedDatasetResult['manifest'] = {
   format: 'llsm-viewer-preprocessed',
@@ -97,7 +109,7 @@ console.log('Starting importPreprocessedDatasetWorkerClient tests');
 
   assert.equal(hasValidStreamingSources(invalidResult), false);
 
-  const validSource: MockStreamingSource = { getMipLevels: () => [0] };
+  const validSource: MockStreamingSource = createMockStreamingSource();
   const updatedLayers: LoadedLayer[] = [
     {
       key: 'layer',
@@ -105,7 +117,12 @@ console.log('Starting importPreprocessedDatasetWorkerClient tests');
       channelId: 'channel',
       isSegmentation: false,
       volumes: [
-        { ...baseVolume, streamingSource: validSource } as LoadedLayer['volumes'][number],
+        {
+          ...baseVolume,
+          streamingSource: validSource,
+          streamingBaseShape,
+          streamingBaseChunkShape,
+        } as LoadedLayer['volumes'][number],
       ]
     }
   ];
@@ -141,8 +158,8 @@ console.log('Starting importPreprocessedDatasetWorkerClient tests');
 
 // Mixed valid/invalid sources should rebuild only the broken volumes and leave valid ones intact.
 (async () => {
-  const validSource: MockStreamingSource = { getMipLevels: () => [0] };
-  const rebuiltSource: MockStreamingSource = { getMipLevels: () => [0, 1] };
+  const validSource: MockStreamingSource = createMockStreamingSource();
+  const rebuiltSource: MockStreamingSource = createMockStreamingSource(streamingBaseShape, streamingBaseChunkShape, [0, 1]);
 
   const mixedLayers: LoadedLayer[] = [
     {
@@ -151,7 +168,7 @@ console.log('Starting importPreprocessedDatasetWorkerClient tests');
       channelId: 'channel',
       isSegmentation: false,
       volumes: [
-        { ...baseVolume, streamingSource: validSource },
+        { ...baseVolume, streamingSource: validSource, streamingBaseShape, streamingBaseChunkShape },
         { ...baseVolume }
       ]
     }
@@ -227,6 +244,73 @@ console.log('Starting importPreprocessedDatasetWorkerClient tests');
   assert.equal(typeof rebuilt.layers[0].volumes[1].streamingSource?.getMipLevels, 'function');
   assert.equal(rebuilt.layers[0].volumes[0].streamingSource, validSource);
   assert.equal(rebuilt.layers[0].volumes[1].streamingSource, rebuiltSource);
+})();
+
+// Sources with incompatible chunk/shape metadata should be rebuilt.
+(async () => {
+  const mismatchedSource = createMockStreamingSource(streamingBaseShape, [2, 1, 1, 1, 1]);
+  const rebuiltSource = createMockStreamingSource();
+
+  const layers: LoadedLayer[] = [
+    {
+      key: 'layer',
+      label: 'Layer',
+      channelId: 'channel',
+      isSegmentation: false,
+      volumes: [
+        {
+          ...baseVolume,
+          streamingSource: mismatchedSource,
+          streamingBaseShape,
+          streamingBaseChunkShape
+        }
+      ]
+    }
+  ];
+
+  const result: ImportPreprocessedDatasetResult = { manifest, layers } as ImportPreprocessedDatasetResult;
+
+  assert.equal(hasValidStreamingSources(result), false);
+
+  const openExternalZarrStore = async () => ({}) as any;
+  const buildStreamingContexts = async () =>
+    new Map([
+      [
+        'vol-0',
+        {
+          streamingSource: rebuiltSource,
+          streamingBaseShape,
+          streamingBaseChunkShape,
+        }
+      ]
+    ]);
+  const attachStreamingContexts = async (
+    _manifest: ImportPreprocessedDatasetResult['manifest'],
+    _layers: LoadedLayer[],
+    contexts: Map<string, { streamingSource: MockStreamingSource }>
+  ) =>
+    layers.map((layer) => ({
+      ...layer,
+      volumes: layer.volumes.map((volume, index) => {
+        const context = contexts.get(`vol-${index}`);
+        if (!context) return volume;
+        return {
+          ...volume,
+          streamingSource: context.streamingSource,
+          streamingBaseShape,
+          streamingBaseChunkShape,
+        } as LoadedLayer['volumes'][number];
+      })
+    }));
+
+  const rebuilt = await augmentStreamingSources(result, {
+    openExternalZarrStore: openExternalZarrStore as any,
+    buildStreamingContexts: buildStreamingContexts as any,
+    attachStreamingContexts: attachStreamingContexts as any
+  });
+
+  assert.equal(rebuilt.layers[0].volumes[0].streamingSource, rebuiltSource);
+  assert.equal(hasValidStreamingSources(rebuilt), true);
 })();
 
 console.log('importPreprocessedDatasetWorkerClient tests passed');
