@@ -281,7 +281,7 @@ async function createLevelArray(
     ]
   });
   const context = getZarrContext(array);
-  return { array, context, chunkShape: context.chunk_shape, chunkStrides: context.get_strides(context.chunk_shape) };
+  return { array, context, chunkShape, chunkStrides: context.get_strides(chunkShape) };
 }
 
 type ChunkStride = { shape: VolumeChunkShape; stride: number[]; data: VolumeTypedArray };

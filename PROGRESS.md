@@ -338,3 +338,7 @@
 ## Logical chunk shape threading (2025-06-XX)
 - Threaded the logical chunk shape from preprocessing through to the stored `VolumeDataHandle` so readers rely on the expected chunk layout instead of shard sizes.
 - Added fallback logic to derive the logical chunk shape from codec metadata when reopening arrays without a preprocessing writer.
+
+## Logical chunk stride safety (2025-06-XX)
+- Ensured mipmap level creation threads the logical chunk shape into stride computation instead of the shard dimensions so downsampling writes land within allocated buffers.
+- Added an explicit bounds check when assembling preprocessing chunks to fail fast on any future stride mismatches instead of silently emitting zeroed data.
