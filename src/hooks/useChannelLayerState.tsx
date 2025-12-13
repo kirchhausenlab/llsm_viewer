@@ -53,6 +53,10 @@ const computeInitialWindowForVolume = (
 };
 
 export type ApplyLoadedLayersOptions = {
+  setChannelVisibility: (value: Record<string, boolean>) => void;
+  setChannelActiveLayer: (value: Record<string, string>) => void;
+  setLayerSettings: Dispatch<SetStateAction<Record<string, LayerSettings>>>;
+  setLayerAutoThresholds: Dispatch<SetStateAction<Record<string, number>>>;
   setSelectedIndex: (index: number) => void;
   setActiveChannelTabId: (id: string | null) => void;
   setStatus: (state: LoadState) => void;
@@ -62,6 +66,9 @@ export type ApplyLoadedLayersOptions = {
   setIsPlaying: (value: boolean) => void;
   clearDatasetError: () => void;
   setError: (message: string | null) => void;
+  globalRenderStyle: 0 | 1;
+  globalSamplingMode: SamplingMode;
+  getChannelDefaultColor: (channelId: string) => string;
 };
 
 export type LoadSelectedDatasetOptions = {
