@@ -302,4 +302,5 @@
 - Removed the legacy browser volume size guard in the TIFF loader to allow large datasets to pass through the new preprocessing path without hitting a hard 512 MiB limit (2025-03-15).
 
 - Improve volume worker error propagation to surface detailed failure reasons in the UI after removing the legacy size guard.
-\n- Refactored volume loader to stream slices into Zarr chunks, returning storage handles and providing materialization helper for downstream processing.
+- Refactored volume loader to stream slices into Zarr chunks, returning storage handles and providing materialization helper for downstream processing.
+- Hardened normalization and resampling paths to require materialized volume buffers before processing and tightened typings to avoid passing Zarr handles into CPU-bound code. (2025-03-18)

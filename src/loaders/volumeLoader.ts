@@ -602,20 +602,23 @@ const computeSliceRange = (slice: VolumeTypedArray): { min: number; max: number 
 };
 
 export function expandVolumesForMovieMode(
-  volumes: VolumePayload[],
+  volumes: VolumePayload<ArrayBufferLike>[],
   movieMode: '2d' | '3d'
-): VolumePayload[] {
+): VolumePayload<ArrayBufferLike>[] {
   if (movieMode !== '2d') {
     return volumes;
   }
 
-  const expanded: VolumePayload[] = [];
+  const expanded: VolumePayload<ArrayBufferLike>[] = [];
   for (const volume of volumes) {
     if (volume.depth <= 0) {
       continue;
     }
 
     const sliceLength = volume.width * volume.height * volume.channels;
+    if (isVolumeDataHandle(volume.data)) {
+      throw new Error('Expected materialized volume data but received a VolumeDataHandle.');
+    }
     const source = createVolumeTypedArray(volume.dataType, volume.data);
 
     for (let sliceIndex = 0; sliceIndex < volume.depth; sliceIndex += 1) {

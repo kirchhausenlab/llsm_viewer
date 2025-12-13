@@ -1,5 +1,6 @@
 import {
   createVolumeTypedArray,
+  isVolumeDataHandle,
   type VolumeDataType,
   type VolumePayload,
   type VolumeTypedArray
@@ -105,7 +106,10 @@ const createSegmentationColorTable = (maxLabel: number, seed: number): Uint8Arra
   return table;
 };
 
-export function colorizeSegmentationVolume(volume: VolumePayload, seed: number): NormalizedVolume {
+export function colorizeSegmentationVolume(
+  volume: VolumePayload<ArrayBufferLike>,
+  seed: number
+): NormalizedVolume {
   const { width, height, depth, dataType } = volume;
   const source = createSourceArray(volume.data, dataType);
 
@@ -162,7 +166,9 @@ export function colorizeSegmentationVolume(volume: VolumePayload, seed: number):
   };
 }
 
-export function computeNormalizationParameters(volumes: VolumePayload[]): NormalizationParameters {
+export function computeNormalizationParameters(
+  volumes: VolumePayload<ArrayBufferLike>[]
+): NormalizationParameters {
   if (volumes.length === 0) {
     return { min: 0, max: 1 };
   }
@@ -203,7 +209,7 @@ export function computeNormalizationParameters(volumes: VolumePayload[]): Normal
 }
 
 export function normalizeVolume(
-  volume: VolumePayload,
+  volume: VolumePayload<ArrayBufferLike>,
   parameters: NormalizationParameters
 ): NormalizedVolume {
   const { width, height, depth, channels, data, dataType } = volume;
@@ -254,5 +260,8 @@ export function normalizeVolume(
 type SourceArray = VolumeTypedArray;
 
 function createSourceArray(data: ArrayBufferLike, dataType: VolumeDataType): SourceArray {
+  if (isVolumeDataHandle(data)) {
+    throw new Error('Expected materialized volume data but received a VolumeDataHandle.');
+  }
   return createVolumeTypedArray(dataType, data);
 }

@@ -5,6 +5,7 @@ import type {
 import {
   createVolumeTypedArray,
   createWritableVolumeArray,
+  isVolumeDataHandle,
   type VolumeDataType,
   type VolumePayload
 } from '../../types/volume';
@@ -59,9 +60,13 @@ export function isIdentityScale(scale: AnisotropyScaleFactors): boolean {
 }
 
 export function resampleVolume(
-  volume: VolumePayload,
+  volume: VolumePayload<ArrayBufferLike>,
   { scale, interpolation, targetDataType }: ResampleOptions
-): VolumePayload {
+): VolumePayload<ArrayBufferLike> {
+  if (isVolumeDataHandle(volume.data)) {
+    throw new Error('Expected materialized volume data but received a VolumeDataHandle.');
+  }
+
   const sourceWidth = Math.max(1, volume.width);
   const sourceHeight = Math.max(1, volume.height);
   const sourceDepth = Math.max(1, volume.depth);
