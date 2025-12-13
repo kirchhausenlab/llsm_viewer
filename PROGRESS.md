@@ -342,3 +342,5 @@
 ## Logical chunk stride safety (2025-06-XX)
 - Ensured mipmap level creation threads the logical chunk shape into stride computation instead of the shard dimensions so downsampling writes land within allocated buffers.
 - Added an explicit bounds check when assembling preprocessing chunks to fail fast on any future stride mismatches instead of silently emitting zeroed data.
+
+- Improved preprocessing bounds error messaging to include chunk coordinates for easier debugging of stride issues.
