@@ -304,3 +304,4 @@
 - Updated export service worker registration and route prefix derivation to honor the deployed base path (e.g., GitHub Pages subdirectories) so `export-sw.js` no longer 404s when served from a repository scope.
 - The service worker now calculates its base path from its own URL, ensuring fetch handling and registrations align with the hosted location.
 2025-03-08T00:00:00+00:00: Fixed export service worker registration on subpath deployments.
+- Ensured preprocessed imports rebuild streaming contexts when worker-transferred streaming sources lose methods, avoiding viewer crashes and adding targeted regression tests (2025-12-14).
