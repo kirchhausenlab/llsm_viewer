@@ -70,8 +70,8 @@ The main responsibilities are:
   Scripts: `dev` (Vite), `build`, `preview`, `typecheck`, `test` (runs `tests/runTests.ts` via `tsx`).
 - `vite.config.ts`  
   Vite config (GitHub Pages base path logic, `@` alias → `src/`, worker format).
-- `environment.d.ts`  
-  Typed env vars (`VITE_DROPBOX_APP_KEY`, `VITE_MAX_VOLUME_BYTES`) + Dropbox chooser typings.
+- `environment.d.ts`
+  Typed env vars (currently `VITE_DROPBOX_APP_KEY`) + Dropbox chooser typings.
 - `.github/workflows/deploy.yml`  
   CI (typecheck/test/build) + GitHub Pages deploy.
 - `public/export-sw.js`  
@@ -184,7 +184,7 @@ The main responsibilities are:
 - `src/shared/utils/*`
   Pure helpers (drag/drop FS helpers, anisotropy correction/resampling, hover sampling, intensity formatting, window layout, track smoothing/summary, service-worker helpers).
 - `src/shared/constants/*`
-  App limits/config (notably `volumeLimits.ts` reads `VITE_MAX_VOLUME_BYTES`).
+  App limits/config constants.
 - `src/shared/colorMaps/*`
   Shared color palettes and normalization helpers for layers/tracks.
 - `src/styles.css` + `src/styles/app/*` + component CSS files

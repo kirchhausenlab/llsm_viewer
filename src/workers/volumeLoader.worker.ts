@@ -1,7 +1,5 @@
 /// <reference lib="webworker" />
 import { fromBlob } from 'geotiff';
-import { MAX_VOLUME_BYTES } from '../shared/constants/volumeLimits';
-import { VolumeTooLargeError } from '../errors';
 import type { VolumeDataType, VolumeTypedArray } from '../types/volume';
 import { getBytesPerValue } from '../types/volume';
 import type {
@@ -139,7 +137,6 @@ async function loadVolumeFromFile(
   const channels = firstImage.getSamplesPerPixel();
 
   const sliceLength = width * height * channels;
-  const totalValues = sliceLength * imageCount;
 
   const firstRasterRaw = (await firstImage.readRasters({ interleave: true })) as unknown;
   if (!ArrayBuffer.isView(firstRasterRaw)) {
@@ -149,15 +146,6 @@ async function loadVolumeFromFile(
   const typedFirstRaster = firstRasterRaw as SupportedTypedArray;
   const dataType = detectDataType(typedFirstRaster);
   const bytesPerValue = getBytesPerValue(dataType);
-  const totalBytes = totalValues * bytesPerValue;
-  if (totalBytes > MAX_VOLUME_BYTES) {
-    throw new VolumeTooLargeError({
-      requiredBytes: totalBytes,
-      maxBytes: MAX_VOLUME_BYTES,
-      dimensions: { width, height, depth: imageCount, channels, dataType },
-      fileName: file.name
-    });
-  }
 
   const startMessage: VolumeStartMessage = {
     type: 'volume-start',
@@ -361,19 +349,6 @@ function serializeErrorDetails(error: unknown): {
   code?: string;
   details?: unknown;
 } {
-  if (error instanceof VolumeTooLargeError) {
-    return {
-      message: error.message,
-      code: 'volume-too-large',
-      details: {
-        requiredBytes: error.requiredBytes,
-        maxBytes: error.maxBytes,
-        dimensions: error.dimensions,
-        fileName: error.fileName
-      }
-    };
-  }
-
   if (error instanceof Error) {
     return { message: error.message };
   }

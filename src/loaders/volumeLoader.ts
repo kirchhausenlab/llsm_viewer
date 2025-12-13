@@ -10,7 +10,6 @@ import {
   type MinimalZarrGroup,
   type ZarrMutableStore
 } from '../data/zarr';
-import { VolumeTooLargeError, type VolumeDimensions } from '../errors';
 import {
   createVolumeTypedArray,
   type VolumePayload,
@@ -48,31 +47,6 @@ type VolumeAssemblyState = {
   bytesPerSlice: number;
   slicesReceived: number;
 };
-
-type VolumeTooLargeMessageDetails = {
-  requiredBytes: number;
-  maxBytes: number;
-  dimensions: VolumeDimensions;
-  fileName?: string;
-};
-
-function isVolumeTooLargeMessageDetails(value: unknown): value is VolumeTooLargeMessageDetails {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const details = value as Partial<VolumeTooLargeMessageDetails>;
-  return (
-    typeof details.requiredBytes === 'number' &&
-    typeof details.maxBytes === 'number' &&
-    typeof details.dimensions === 'object' &&
-    details.dimensions !== null &&
-    typeof (details.dimensions as VolumeDimensions).width === 'number' &&
-    typeof (details.dimensions as VolumeDimensions).height === 'number' &&
-    typeof (details.dimensions as VolumeDimensions).depth === 'number' &&
-    typeof (details.dimensions as VolumeDimensions).channels === 'number' &&
-    typeof (details.dimensions as VolumeDimensions).dataType === 'string'
-  );
-}
 
 type ZarrArrayContext = {
   chunk_shape: VolumeChunkShape;
@@ -516,20 +490,7 @@ export async function loadVolumesFromFiles(
           }
           break;
         case 'error': {
-          let errorToReport: Error;
-          if (message.code === 'volume-too-large' && isVolumeTooLargeMessageDetails(message.details)) {
-            errorToReport = new VolumeTooLargeError(
-              {
-                requiredBytes: message.details.requiredBytes,
-                maxBytes: message.details.maxBytes,
-                dimensions: message.details.dimensions,
-                fileName: message.details.fileName
-              },
-              message.message
-            );
-          } else {
-            errorToReport = new Error(message.message);
-          }
+          const errorToReport = new Error(message.message);
           fail(errorToReport);
           break;
         }
