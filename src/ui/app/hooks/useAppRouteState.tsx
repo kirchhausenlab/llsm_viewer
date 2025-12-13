@@ -605,6 +605,9 @@ export function useAppRouteState(): AppRouteState {
       try {
         const manifestVoxelResolution =
           preprocessedExperiment.manifest.dataset.voxelResolution ?? voxelResolution ?? null;
+        const manifestViewerMode = preprocessedExperiment.manifest.dataset.movieMode;
+        setExperimentDimension(manifestViewerMode);
+        setViewerMode(manifestViewerMode);
         preprocessingSettingsRef.current = manifestVoxelResolution;
         setLayers(preprocessedExperiment.layers);
         applyLoadedLayers(preprocessedExperiment.layers, preprocessedExperiment.totalVolumeCount, {
