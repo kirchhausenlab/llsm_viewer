@@ -177,6 +177,11 @@ class VolumePreprocessingWriter {
           const localX = x - assembly.ranges.x.start;
           const destinationIndex =
             localC * stride[0] + localZ * stride[1] + localY * stride[2] + localX * stride[3];
+          if (destinationIndex >= assembly.data.length) {
+            throw new Error(
+              `Chunk write out of bounds at ${assembly.coords.join('/')} (${destinationIndex} / ${assembly.data.length})`
+            );
+          }
           assembly.data[destinationIndex] = slice[baseIndex + c];
         }
       }
