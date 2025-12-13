@@ -235,9 +235,52 @@ console.log('Starting clipmap renderer tests');
   const uint16Clipmap = new VolumeClipmapManager(uint16Volume, 2);
   await uint16Clipmap.update(new THREE.Vector3(uint16Size / 2, uint16Size / 2, uint16Size / 2));
   const uint16Level = uint16Clipmap.levels[0];
-  assert(uint16Level.buffer instanceof Uint16Array);
-  assert.equal(uint16Level.texture.type, THREE.UnsignedShortType);
-  assert.equal(uint16Level.buffer[0], uint16Value);
+  assert(uint16Level.buffer instanceof Uint8Array);
+  assert.equal(uint16Level.texture.type, THREE.UnsignedByteType);
+  assert.equal(uint16Level.buffer[0], Math.round((uint16Value / 65535) * 255));
+
+  const floatSize = 2;
+  const floatData = new Float32Array(floatSize * floatSize * floatSize).fill(10);
+  floatData[1] = 20;
+  const floatChunks: [number, number, number, number, number] = [
+    1,
+    1,
+    floatSize,
+    floatSize,
+    floatSize,
+  ];
+  const floatArray: MinimalZarrArray = {
+    shape: [1, 1, floatSize, floatSize, floatSize],
+    chunks: floatChunks,
+    dtype: '<f4',
+    async getChunk() {
+      return { data: floatData } as any;
+    },
+  };
+  const floatSource = new ZarrVolumeSource([
+    { level: 0, array: floatArray, dataType: 'float32', shape: floatArray.shape, chunkShape: floatChunks },
+  ]);
+  const floatVolume: StreamableNormalizedVolume = {
+    width: floatSize,
+    height: floatSize,
+    depth: floatSize,
+    channels: 1,
+    dataType: 'float32',
+    normalized: new Uint8Array(floatSize * floatSize * floatSize),
+    min: 10,
+    max: 20,
+    chunkShape: [floatSize, floatSize, floatSize],
+    streamingSource: floatSource,
+    streamingBaseShape: [1, 1, floatSize, floatSize, floatSize],
+  };
+
+  const floatClipmap = new VolumeClipmapManager(floatVolume, 2);
+  await floatClipmap.update(new THREE.Vector3(floatSize / 2, floatSize / 2, floatSize / 2));
+  const floatLevel = floatClipmap.levels[0];
+  assert(floatLevel.buffer[0] < floatLevel.buffer[1]);
+  assert.deepEqual([floatLevel.buffer[0], floatLevel.buffer[1]], [0, 255]);
+
+  floatClipmap.dispose();
   uint16Clipmap.dispose();
   streamingClipmap.dispose();
   clipmap.dispose();

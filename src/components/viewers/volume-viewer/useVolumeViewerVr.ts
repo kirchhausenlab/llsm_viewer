@@ -677,6 +677,36 @@ export function useVolumeViewerVr({
     applyVolumeStepScaleToResources,
   } = volumeHelpers;
 
+  const applyTrackGroupTransform = useCallback(
+    (dimensions: { width: number; height: number; depth: number } | null) => {
+      const trackGroup = trackGroupRef.current;
+      if (!trackGroup) {
+        return;
+      }
+
+      if (!dimensions) {
+        trackGroup.position.set(0, 0, 0);
+        trackGroup.scale.set(1, 1, 1);
+        trackGroup.matrixWorldNeedsUpdate = true;
+        return;
+      }
+
+      const { width, height, depth } = dimensions;
+      const maxDimension = Math.max(width, height, depth);
+      if (!Number.isFinite(maxDimension) || maxDimension <= 0) {
+        trackGroup.position.set(0, 0, 0);
+        trackGroup.scale.set(1, 1, 1);
+        trackGroup.matrixWorldNeedsUpdate = true;
+        return;
+      }
+
+      trackGroup.position.set(0, 0, 0);
+      trackGroup.scale.set(1, 1, 1);
+      trackGroup.matrixWorldNeedsUpdate = true;
+    },
+    [trackGroupRef],
+  );
+
   const applyVrFoveation = useCallback(
     (target: number = XR_TARGET_FOVEATION) => {
       sessionManagerRef.current?.applyFoveation(target);
@@ -996,6 +1026,7 @@ export function useVolumeViewerVr({
     resetVrPlaybackHudPlacement,
     resetVrChannelsHudPlacement,
     resetVrTracksHudPlacement,
+    applyTrackGroupTransform,
     applyVolumeRootTransform,
     applyVolumeStepScaleToResources,
     restoreVrFoveation,

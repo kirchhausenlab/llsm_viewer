@@ -305,6 +305,7 @@ export function useVolumeViewerVrBridge(options: VolumeViewerVrBridgeOptions) {
       resetVrPlaybackHudPlacement: () => {},
       resetVrChannelsHudPlacement: () => {},
       resetVrTracksHudPlacement: () => {},
+      applyTrackGroupTransform: () => {},
       applyVolumeRootTransform: () => {},
       applyVolumeStepScaleToResources: () => {},
       restoreVrFoveation: () => {},
