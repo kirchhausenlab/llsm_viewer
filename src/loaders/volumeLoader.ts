@@ -18,7 +18,6 @@ import {
   type VolumeDataHandle,
   type VolumeTypedArray
 } from '../types/volume';
-import VolumeWorker from '../workers/volumeLoader.worker?worker';
 import type {
   VolumeLoadedMessage,
   VolumeSliceMessage,
@@ -69,6 +68,14 @@ function getZarrContext(zarrArray: object): ZarrArrayContext {
   return zarrContext as ZarrArrayContext;
 }
 
+async function createVolumeWorker(): Promise<Worker> {
+  const module = (await import('../workers/volumeLoader.worker?worker')) as { default?: new () => Worker };
+  if (!module.default) {
+    throw new Error('Failed to load volume loader worker.');
+  }
+  return new module.default();
+}
+
 type ChunkRanges = {
   c: { start: number; end: number };
   z: { start: number; end: number };
@@ -86,7 +93,7 @@ type ChunkAssembly = {
   zarrContext: ZarrArrayContext;
 };
 
-class VolumePreprocessingWriter {
+export class VolumePreprocessingWriter {
   private readonly chunkWriters = new Map<string, ChunkAssembly>();
   private readonly volumeArrayPromise: ReturnType<typeof createVolumeArray>;
   private readonly chunkCounts: { x: number; y: number; z: number; c: number };
@@ -333,8 +340,9 @@ export async function loadVolumesFromFiles(
     return [];
   }
 
+  const worker = await createVolumeWorker();
+
   return new Promise<VolumePayload<VolumeDataHandle>[]>((resolve, reject) => {
-    const worker = new VolumeWorker();
     const requestId = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
     const volumes: Array<VolumePayload<VolumeDataHandle> | undefined> = new Array(files.length);
 
