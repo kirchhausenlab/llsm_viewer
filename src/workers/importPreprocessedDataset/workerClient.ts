@@ -1,10 +1,8 @@
+import { type PreprocessedImportMilestone } from '../../shared/utils/preprocessedDataset';
 import {
-  attachStreamingContexts,
-  buildStreamingContexts,
-  openExternalZarrStore,
+  augmentStreamingSources,
   type ImportPreprocessedDatasetResult,
-  type PreprocessedImportMilestone
-} from '../../shared/utils/preprocessedDataset';
+} from './streamingAugmentation';
 import WorkerScript from '../importPreprocessedDataset.worker?worker';
 
 export type PreprocessedImportProgress = {
@@ -41,35 +39,6 @@ export type ImportPreprocessedDatasetWorkerOptions = {
   onMilestone?: (milestone: PreprocessedImportMilestone) => void;
   signal?: AbortSignal;
 };
-
-async function augmentStreamingSources(
-  result: ImportPreprocessedDatasetResult
-): Promise<ImportPreprocessedDatasetResult> {
-  const { zarrStore } = result.manifest.dataset;
-  if (!zarrStore || zarrStore.source === 'archive') {
-    return result;
-  }
-
-  const hasStreamingSources = result.layers.some((layer) =>
-    layer.volumes.some((volume) => Boolean(volume.streamingSource))
-  );
-  if (hasStreamingSources) {
-    return result;
-  }
-
-  try {
-    const store = await openExternalZarrStore(zarrStore);
-    if (!store) {
-      return result;
-    }
-    const contexts = await buildStreamingContexts(result.manifest, store);
-    const layers = await attachStreamingContexts(result.manifest, result.layers, contexts);
-    return { ...result, layers };
-  } catch (error) {
-    console.warn('Failed to rebuild streaming sources for preprocessed import', error);
-    return result;
-  }
-}
 
 export class ImportPreprocessedDatasetWorkerClient {
   private readonly worker: Worker;
