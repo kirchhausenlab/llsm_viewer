@@ -3,6 +3,8 @@
 ## Latest changes
 - Serialized volume loader worker message handling so slice writes finish before volume completion, preventing missing slices
   from finalizing as zero-filled volumes.
+- Added a regression test for logical chunk stride handling to ensure sharded Zarr v3 preprocessing writes populate chunks
+  instead of dropping values as zeros when shard and chunk shapes differ.
 - Made the export service worker registration and fetch prefix respect the configured base path so GitHub Pages subpaths serve
   downloads correctly and continue copying `export-sw.js` to the base-relative build output.
 - Fixed preprocessing chunk strides to match the logical chunk shape so TIFF imports populate chunk buffers instead of writing
