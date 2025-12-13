@@ -29,7 +29,7 @@ import type {
 export type PreprocessingResult<Store extends ZarrMutableStore = ZarrMutableStore> = {
   store: Store;
   group: MinimalZarrGroup<Store>;
-  arrays: MinimalZarrArray<Store>[];
+  arrays: Array<{ array: MinimalZarrArray<Store>; chunkShape: VolumeChunkShape }>;
 };
 
 export type VolumePreprocessingHooks = {
@@ -158,8 +158,10 @@ class VolumePreprocessingWriter {
     await Promise.all(chunks.map(([key, assembly]) => this.flushChunk(key, assembly)));
   }
 
-  async reopen(): Promise<MinimalZarrArray<ZarrMutableStore>> {
-    return openArrayAt(this.store, getVolumeArrayPath(this.index));
+  async reopen(): Promise<{ array: MinimalZarrArray<ZarrMutableStore>; chunkShape: VolumeChunkShape }> {
+    const { chunkShape } = await this.volumeArrayPromise;
+    const array = await openArrayAt(this.store, getVolumeArrayPath(this.index));
+    return { array, chunkShape };
   }
 
   private writeChunkSlice(assembly: ChunkAssembly, slice: VolumeTypedArray, sliceIndex: number) {
@@ -266,12 +268,23 @@ async function writerOrOpen(
   store: ZarrMutableStore,
   index: number,
   coordinator: PreprocessingCoordinator
-): Promise<MinimalZarrArray<ZarrMutableStore>> {
+): Promise<{ array: MinimalZarrArray<ZarrMutableStore>; chunkShape: VolumeChunkShape }> {
   const writer = coordinator.getWriter(index);
   if (writer) {
     return writer.reopen();
   }
-  return openArrayAt(store, getVolumeArrayPath(index));
+  const array = await openArrayAt(store, getVolumeArrayPath(index));
+  const chunkShape = extractLogicalChunkShape(array);
+  return { array, chunkShape };
+}
+
+function extractLogicalChunkShape(array: MinimalZarrArray): VolumeChunkShape {
+  const primaryCodec = (array as { codecs?: Array<{ configuration?: { chunk_shape?: number[] } }> }).codecs?.[0];
+  const codecChunkShape = primaryCodec?.configuration?.chunk_shape;
+  if (codecChunkShape?.length === 4) {
+    return codecChunkShape as VolumeChunkShape;
+  }
+  return array.chunks as VolumeChunkShape;
 }
 
 async function createVolumeArray(
@@ -435,14 +448,14 @@ export async function loadVolumesFromFiles(
 
             const coordinator = await preprocessingCoordinatorPromise;
             await coordinator.finalizeVolume(message.index);
-            const array = await writerOrOpen(coordinator.getStore(), message.index, coordinator);
+            const { chunkShape } = await writerOrOpen(coordinator.getStore(), message.index, coordinator);
             const payload: VolumePayload<VolumeDataHandle> = {
               ...message.metadata,
               data: {
                 kind: 'zarr',
                 store: coordinator.getStore(),
                 path: getVolumeArrayPath(message.index),
-                chunkShape: array.chunks as VolumeChunkShape
+                chunkShape
               }
             };
 
@@ -515,7 +528,7 @@ export async function materializeVolumePayload(
 
   const handle = volume.data as VolumeDataHandle<ZarrMutableStore>;
   const array = await openArrayAt(handle.store, handle.path);
-  const chunkShape = (handle.chunkShape ?? (array.chunks as VolumeChunkShape)) as VolumeChunkShape;
+  const chunkShape = (handle.chunkShape ?? extractLogicalChunkShape(array)) as VolumeChunkShape;
 
   const chunkCounts = {
     x: Math.ceil(volume.width / chunkShape[3]),

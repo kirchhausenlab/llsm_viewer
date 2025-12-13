@@ -334,3 +334,7 @@
 
 ## Streaming clipmap inference gating (2025-06-XX)
 - Allowed streaming clipmaps to initialize whenever a streaming source is present so inferred base shapes from the Zarr metadata are used instead of falling back to empty CPU textures when the preprocessed shape is missing.
+
+## Logical chunk shape threading (2025-06-XX)
+- Threaded the logical chunk shape from preprocessing through to the stored `VolumeDataHandle` so readers rely on the expected chunk layout instead of shard sizes.
+- Added fallback logic to derive the logical chunk shape from codec metadata when reopening arrays without a preprocessing writer.
