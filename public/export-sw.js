@@ -1,4 +1,13 @@
-const EXPORT_ROUTE_PREFIX = '/__export__/';
+const BASE_PATH = (() => {
+  const scriptPath = self.location.pathname || '/';
+  if (scriptPath.endsWith('/')) {
+    return scriptPath;
+  }
+  const lastSlashIndex = scriptPath.lastIndexOf('/');
+  return lastSlashIndex >= 0 ? scriptPath.slice(0, lastSlashIndex + 1) : '/';
+})();
+
+const EXPORT_ROUTE_PREFIX = `${BASE_PATH}__export__/`;
 const DEFAULT_CONTENT_TYPE = 'application/zip';
 
 const activeExports = new Map();
