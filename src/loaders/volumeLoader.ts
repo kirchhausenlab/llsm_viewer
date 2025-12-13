@@ -319,7 +319,7 @@ export async function loadVolumesFromFiles(
   return new Promise<VolumePayload<VolumeDataHandle>[]>((resolve, reject) => {
     const worker = new VolumeWorker();
     const requestId = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
-    const volumes: VolumePayload<VolumeDataHandle>[] = new Array(files.length);
+    const volumes: Array<VolumePayload<VolumeDataHandle> | undefined> = new Array(files.length);
 
     const assemblies = new Map<number, VolumeAssemblyState>();
     let settled = false;
@@ -471,9 +471,15 @@ export async function loadVolumesFromFiles(
               const result = await coordinator.finalizeAll(files.length);
               await callbacks.preprocessingHooks.onPreprocessingComplete(result);
             }
+            const missingIndex = volumes.findIndex((volume) => volume === undefined);
+            if (missingIndex !== -1) {
+              throw new Error(
+                `Volume ${missingIndex + 1} did not finish loading. Please retry the launch.`
+              );
+            }
             settled = true;
             cleanup();
-            resolve(volumes);
+            resolve(volumes as VolumePayload<VolumeDataHandle>[]);
           } catch (error) {
             fail(error);
           }
