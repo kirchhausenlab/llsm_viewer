@@ -629,6 +629,10 @@ export function useAppRouteState(): AppRouteState {
           getChannelDefaultColor
         });
         setIsViewerLaunched(true);
+      } catch (error) {
+        console.error('Failed to launch preprocessed experiment', error);
+        showLaunchError('Failed to launch the preprocessed experiment.');
+        setStatus('error');
       } finally {
         setIsLaunchingViewer(false);
       }
