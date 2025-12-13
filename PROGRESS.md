@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Added a fallback that strips invalid streaming sources when Zarr contexts cannot be rebuilt (e.g., archived manifests) and
+  added regression coverage for missing `getMipLevels` sources during import augmentation.
 - Hardened streaming source validation to compare mip levels, shapes, and chunk shapes against manifest/base metadata and
   added regression coverage for rebuilding mismatched sources during preprocessed import augmentation.
 - Reworked streaming source validation/augmentation to rebuild invalid volume contexts even in mixed-validity datasets and add

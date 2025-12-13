@@ -156,6 +156,33 @@ console.log('Starting importPreprocessedDatasetWorkerClient tests');
   assert.equal(attachCalls, 1);
 })();
 
+// Archived manifests cannot rebuild streaming sources and should strip invalid metadata.
+(async () => {
+  const archivedManifest: ImportPreprocessedDatasetResult['manifest'] = {
+    ...manifest,
+    dataset: { ...manifest.dataset, zarrStore: { source: 'archive' } },
+  };
+
+  const archivedLayers: LoadedLayer[] = [
+    {
+      key: 'layer',
+      label: 'Layer',
+      channelId: 'channel',
+      isSegmentation: false,
+      volumes: [{ ...baseVolume, streamingSource: { getMip: () => ({}) } } as LoadedLayer['volumes'][number]],
+    },
+  ];
+
+  const archivedResult: ImportPreprocessedDatasetResult = {
+    manifest: archivedManifest,
+    layers: archivedLayers,
+  } as ImportPreprocessedDatasetResult;
+
+  const rebuilt = await augmentStreamingSources(archivedResult);
+
+  assert.equal(rebuilt.layers[0].volumes[0].streamingSource, undefined);
+})();
+
 // Mixed valid/invalid sources should rebuild only the broken volumes and leave valid ones intact.
 (async () => {
   const validSource: MockStreamingSource = createMockStreamingSource();
