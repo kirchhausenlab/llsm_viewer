@@ -324,3 +324,6 @@
 ## Streaming clipmap normalization (2025-05-25)
 - Normalized streamed mip regions with the same min/max scaling used for preloaded volumes so clipmap textures stay in the expected 0–255 range.
 - Forced streamed clipmaps to use uint8 texture data and added regression coverage for non-uint8 sources to verify distinct voxels render as distinct samples.
+
+## VR track transform wiring (2025-05-30)
+- Restored the VR hook's track group transform helper and bridge typing so session lifecycle hooks can safely normalize track overlays during VR entry/exit without TypeScript errors.
