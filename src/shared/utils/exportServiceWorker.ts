@@ -1,5 +1,27 @@
-const EXPORT_SW_URL = '/export-sw.js';
-const EXPORT_ROUTE_PREFIX = '/__export__/';
+function normalizeBasePath(path: string): string {
+  if (!path.startsWith('/')) {
+    path = `/${path}`;
+  }
+  return path.endsWith('/') ? path : `${path}/`;
+}
+
+function getBasePath(): string {
+  const baseFromEnv = typeof import.meta !== 'undefined' ? import.meta.env.BASE_URL : undefined;
+  if (baseFromEnv && typeof baseFromEnv === 'string') {
+    return normalizeBasePath(baseFromEnv);
+  }
+
+  if (typeof window !== 'undefined') {
+    const url = new URL('.', window.location.href);
+    return normalizeBasePath(url.pathname);
+  }
+
+  return '/';
+}
+
+const BASE_PATH = getBasePath();
+const EXPORT_SW_URL = `${BASE_PATH}export-sw.js`;
+const EXPORT_ROUTE_PREFIX = `${BASE_PATH}__export__/`;
 const DEFAULT_CONTENT_TYPE = 'application/zip';
 const ACK_TIMEOUT_MS = 5000;
 
