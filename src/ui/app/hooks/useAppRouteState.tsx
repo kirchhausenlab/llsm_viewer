@@ -605,9 +605,16 @@ export function useAppRouteState(): AppRouteState {
       try {
         const manifestVoxelResolution =
           preprocessedExperiment.manifest.dataset.voxelResolution ?? voxelResolution ?? null;
+        const manifestViewerMode = preprocessedExperiment.manifest.dataset.movieMode;
+        setExperimentDimension(manifestViewerMode);
+        setViewerMode(manifestViewerMode);
         preprocessingSettingsRef.current = manifestVoxelResolution;
         setLayers(preprocessedExperiment.layers);
         applyLoadedLayers(preprocessedExperiment.layers, preprocessedExperiment.totalVolumeCount, {
+          setChannelVisibility,
+          setChannelActiveLayer,
+          setLayerSettings,
+          setLayerAutoThresholds,
           setSelectedIndex,
           setActiveChannelTabId,
           setStatus,
@@ -616,7 +623,10 @@ export function useAppRouteState(): AppRouteState {
           setLoadProgress,
           setIsPlaying,
           clearDatasetError,
-          setError
+          setError,
+          globalRenderStyle,
+          globalSamplingMode,
+          getChannelDefaultColor
         });
         setIsViewerLaunched(true);
       } finally {
