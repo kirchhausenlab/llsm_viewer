@@ -299,3 +299,8 @@
 - Fixed preprocessed viewer launch by passing all layer state setters into applyLoadedLayers so preprocessed imports initialize viewer state correctly (2025-03-01).
 - Extended ApplyLoadedLayersOptions to include layer state setters and global defaults so preprocessed experiment launches type-check and correctly seed viewer state (2025-03-01).
 - Synced viewer and experiment dimensions to the preprocessed manifest before applying loaded layers to keep the viewer from launching into a blank state. (2025-03-01)
+
+## Export service worker base path
+- Updated export service worker registration and route prefix derivation to honor the deployed base path (e.g., GitHub Pages subdirectories) so `export-sw.js` no longer 404s when served from a repository scope.
+- The service worker now calculates its base path from its own URL, ensuring fetch handling and registrations align with the hosted location.
+2025-03-08T00:00:00+00:00: Fixed export service worker registration on subpath deployments.
