@@ -297,3 +297,4 @@
 - Added a streaming clipmap regression test covering uint16 data to guard future dtype regressions and wired it into the shared test runner.
 
 - Fixed preprocessed viewer launch by passing all layer state setters into applyLoadedLayers so preprocessed imports initialize viewer state correctly (2025-03-01).
+- Extended ApplyLoadedLayersOptions to include layer state setters and global defaults so preprocessed experiment launches type-check and correctly seed viewer state (2025-03-01).
