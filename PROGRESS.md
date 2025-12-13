@@ -329,3 +329,6 @@
 
 ## VR track transform wiring (2025-05-30)
 - Restored the VR hook's track group transform helper and bridge typing so session lifecycle hooks can safely normalize track overlays during VR entry/exit without TypeScript errors.
+
+## Streaming clipmap inference gating (2025-06-XX)
+- Allowed streaming clipmaps to initialize whenever a streaming source is present so inferred base shapes from the Zarr metadata are used instead of falling back to empty CPU textures when the preprocessed shape is missing.

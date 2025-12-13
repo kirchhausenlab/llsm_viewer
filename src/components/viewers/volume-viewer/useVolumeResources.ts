@@ -274,7 +274,7 @@ export function useVolumeResources({
       const streamingSource = volume.streamingSource;
       const streamingBaseShape = volume.streamingBaseShape;
       const isStreamingVolume = Boolean(streamingSource);
-      const hasStreamingClipmap = Boolean(streamingSource && streamingBaseShape);
+      const hasStreamingClipmap = Boolean(streamingSource);
 
       if (viewerMode === '3d') {
         if (!hasStreamingClipmap) {
@@ -361,7 +361,7 @@ export function useVolumeResources({
             clipmap = new VolumeClipmapManager({
               ...volume,
               streamingSource: streamingSource!,
-              streamingBaseShape: streamingBaseShape!,
+              streamingBaseShape,
             });
           }
 
@@ -613,7 +613,7 @@ export function useVolumeResources({
               resources.clipmap = new VolumeClipmapManager({
                 ...volume,
                 streamingSource: streamingSource!,
-                streamingBaseShape: streamingBaseShape!,
+                streamingBaseShape,
               });
             }
             resources.clipmap?.setTimeIndex(timeIndex);
