@@ -310,3 +310,7 @@
 
 ## Volume loader completion ordering (2025-03-19)
 - Serialized volume-finalization steps so worker completion waits for pending volume assembly, preventing premature launch failures when large volumes finish asynchronously.
+
+## Clipmap time-index propagation (2025-03-24)
+- Threaded the active clipmap time index into streaming read options and refresh logic so time-series playback pulls the correct slice even when the camera is stationary.
+- Added a regression test around `VolumeClipmapManager.update` to confirm time changes trigger fresh streaming requests.
