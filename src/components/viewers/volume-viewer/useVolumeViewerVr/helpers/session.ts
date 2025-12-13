@@ -46,6 +46,7 @@ export type CreateSessionHelpersParams = {
   applyVolumeStepScaleToResources: UseVolumeViewerVrResult['applyVolumeStepScaleToResources'];
   volumeRootBaseOffsetRef: MutableRefObject<THREE.Vector3>;
   applyVolumeRootTransform: UseVolumeViewerVrResult['applyVolumeRootTransform'];
+  applyTrackGroupTransform: UseVolumeViewerVrResult['applyTrackGroupTransform'];
   currentDimensionsRef: MutableRefObject<VolumeDimensions | null>;
   refreshControllerVisibility: () => void;
   setVrPlaybackHudVisible: (visible: boolean) => void;
@@ -106,6 +107,7 @@ export function createSessionHelpers({
   applyVolumeStepScaleToResources,
   volumeRootBaseOffsetRef,
   applyVolumeRootTransform,
+  applyTrackGroupTransform,
   currentDimensionsRef,
   refreshControllerVisibility,
   setVrPlaybackHudVisible,
@@ -129,8 +131,10 @@ export function createSessionHelpers({
     previousVolumeStepScale = volumeStepScaleRef.current;
     applyVrFoveation();
     applyVolumeStepScaleToResources(VR_VOLUME_STEP_SCALE);
+    applyTrackGroupTransform(currentDimensionsRef.current);
     volumeRootBaseOffsetRef.current.copy(VR_VOLUME_BASE_OFFSET);
     applyVolumeRootTransform(currentDimensionsRef.current);
+    applyTrackGroupTransform(currentDimensionsRef.current);
     refreshControllerVisibility();
     setVrPlaybackHudVisible(true);
     setVrChannelsHudVisible(true);
@@ -151,8 +155,10 @@ export function createSessionHelpers({
     const restoredStepScale =
       currentStepScale === VR_VOLUME_STEP_SCALE ? previousVolumeStepScale : currentStepScale;
     applyVolumeStepScaleToResources(restoredStepScale);
+    applyTrackGroupTransform(currentDimensionsRef.current);
     volumeRootBaseOffsetRef.current.set(0, 0, 0);
     applyVolumeRootTransform(currentDimensionsRef.current);
+    applyTrackGroupTransform(currentDimensionsRef.current);
     refreshControllerVisibility();
     setVrPlaybackHudVisible(false);
     setVrChannelsHudVisible(false);
