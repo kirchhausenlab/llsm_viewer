@@ -12,7 +12,10 @@ import {
 } from '../data/zarr';
 import {
   createVolumeTypedArray,
+  isVolumeDataHandle,
+  getBytesPerValue,
   type VolumePayload,
+  type VolumeDataHandle,
   type VolumeTypedArray
 } from '../types/volume';
 import VolumeWorker from '../workers/volumeLoader.worker?worker';
@@ -34,14 +37,12 @@ export type VolumePreprocessingHooks = {
 };
 
 export type VolumeLoadCallbacks = {
-  onVolumeLoaded?: (index: number, payload: VolumePayload) => void;
+  onVolumeLoaded?: (index: number, payload: VolumePayload<VolumeDataHandle>) => void;
   preprocessingHooks?: VolumePreprocessingHooks;
 };
 
 type VolumeAssemblyState = {
   metadata: VolumeStartMessage['metadata'];
-  buffer: ArrayBufferLike;
-  destination: VolumeTypedArray;
   sliceCount: number;
   sliceLength: number;
   bytesPerSlice: number;
@@ -227,6 +228,14 @@ class PreprocessingCoordinator {
 
   constructor(private readonly store: ZarrMutableStore) {}
 
+  getStore(): ZarrMutableStore {
+    return this.store;
+  }
+
+  getWriter(index: number): VolumePreprocessingWriter | undefined {
+    return this.writers.get(index);
+  }
+
   startVolume(index: number, metadata: VolumeStartMessage['metadata']): void {
     this.writers.set(index, new VolumePreprocessingWriter(this.store, index, metadata));
   }
@@ -247,7 +256,7 @@ class PreprocessingCoordinator {
     await Promise.all(Array.from(this.writers.values()).map((writer) => writer.finalize()));
     const group = await openGroupAt(this.store);
     const arrays = await Promise.all(
-      Array.from({ length: volumeCount }, (_value, index) => writerOrOpen(this.store, index, this.writers))
+      Array.from({ length: volumeCount }, (_value, index) => writerOrOpen(this.store, index, this))
     );
     return { store: this.store, group, arrays };
   }
@@ -256,9 +265,9 @@ class PreprocessingCoordinator {
 async function writerOrOpen(
   store: ZarrMutableStore,
   index: number,
-  writers: Map<number, VolumePreprocessingWriter>
+  coordinator: PreprocessingCoordinator
 ): Promise<MinimalZarrArray<ZarrMutableStore>> {
-  const writer = writers.get(index);
+  const writer = coordinator.getWriter(index);
   if (writer) {
     return writer.reopen();
   }
@@ -302,23 +311,22 @@ async function createVolumeArray(
 export async function loadVolumesFromFiles(
   files: File[],
   callbacks: VolumeLoadCallbacks = {}
-): Promise<VolumePayload[]> {
+): Promise<VolumePayload<VolumeDataHandle>[]> {
   if (files.length === 0) {
     return [];
   }
 
-  return new Promise<VolumePayload[]>((resolve, reject) => {
+  return new Promise<VolumePayload<VolumeDataHandle>[]>((resolve, reject) => {
     const worker = new VolumeWorker();
     const requestId = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
-    const volumes: VolumePayload[] = new Array(files.length);
+    const volumes: VolumePayload<VolumeDataHandle>[] = new Array(files.length);
 
     const assemblies = new Map<number, VolumeAssemblyState>();
     let settled = false;
 
-    const preprocessingCoordinatorPromise: Promise<PreprocessingCoordinator | null> =
-      callbacks.preprocessingHooks?.onPreprocessingComplete
-        ? createPreprocessingStore().then((store) => new PreprocessingCoordinator(store))
-        : Promise.resolve(null);
+    const preprocessingCoordinatorPromise: Promise<PreprocessingCoordinator> = createPreprocessingStore().then(
+      (store) => new PreprocessingCoordinator(store)
+    );
 
     const cleanup = () => {
       assemblies.clear();
@@ -341,35 +349,10 @@ export async function loadVolumesFromFiles(
       if (sliceLength <= 0 || sliceCount <= 0) {
         throw new Error('Received invalid volume dimensions from worker.');
       }
-      const totalValues = sliceLength * sliceCount;
       const bytesPerSlice = sliceLength * metadata.bytesPerValue;
-      const totalBytes = bytesPerSlice * sliceCount;
-
-      let buffer: ArrayBufferLike | null = null;
-      let allocationError: unknown = null;
-
-      if (typeof SharedArrayBuffer !== 'undefined') {
-        try {
-          buffer = new SharedArrayBuffer(totalBytes);
-        } catch (error) {
-          allocationError = error;
-        }
-      }
-
-      if (!buffer) {
-        try {
-          buffer = new ArrayBuffer(totalBytes);
-        } catch (error) {
-          throw (allocationError ?? error);
-        }
-      }
-
-      const destination = createVolumeTypedArray(metadata.dataType, buffer, 0, totalValues);
 
       return {
         metadata,
-        buffer,
-        destination,
         sliceCount,
         sliceLength,
         bytesPerSlice,
@@ -395,7 +378,7 @@ export async function loadVolumesFromFiles(
             const state = createAssemblyState(message);
             assemblies.set(message.index, state);
             const coordinator = await preprocessingCoordinatorPromise;
-            coordinator?.startVolume(message.index, message.metadata);
+            coordinator.startVolume(message.index, message.metadata);
           } catch (error) {
             fail(error);
           }
@@ -428,10 +411,7 @@ export async function loadVolumesFromFiles(
               state.sliceLength
             );
             const coordinator = await preprocessingCoordinatorPromise;
-            if (coordinator) {
-              await coordinator.writeSlice(message.index, slice, message.sliceIndex);
-            }
-            state.destination.set(slice, message.sliceIndex * state.sliceLength);
+            await coordinator.writeSlice(message.index, slice, message.sliceIndex);
             state.slicesReceived += 1;
           } catch (error) {
             fail(error);
@@ -453,20 +433,24 @@ export async function loadVolumesFromFiles(
             );
           }
 
+          let payload: VolumePayload<VolumeDataHandle>;
           try {
             const coordinator = await preprocessingCoordinatorPromise;
-            if (coordinator) {
-              await coordinator.finalizeVolume(message.index);
-            }
+            await coordinator.finalizeVolume(message.index);
+            const array = await writerOrOpen(coordinator.getStore(), message.index, coordinator);
+            payload = {
+              ...message.metadata,
+              data: {
+                kind: 'zarr',
+                store: coordinator.getStore(),
+                path: getVolumeArrayPath(message.index),
+                chunkShape: array.chunks as VolumeChunkShape
+              }
+            };
           } catch (error) {
             fail(error);
             return;
           }
-
-          const payload: VolumePayload = {
-            ...message.metadata,
-            data: state.buffer
-          };
 
           volumes[message.index] = payload;
 
@@ -515,6 +499,76 @@ export async function loadVolumesFromFiles(
 
     worker.postMessage({ type: 'load-volumes', requestId, files });
   });
+}
+
+export async function materializeVolumePayload(
+  volume: VolumePayload<VolumeDataHandle | ArrayBufferLike>
+): Promise<VolumePayload<ArrayBufferLike>> {
+  if (!isVolumeDataHandle(volume.data)) {
+    return volume as VolumePayload<ArrayBufferLike>;
+  }
+
+  const handle = volume.data as VolumeDataHandle<ZarrMutableStore>;
+  const array = await openArrayAt(handle.store, handle.path);
+  const chunkShape = (handle.chunkShape ?? (array.chunks as VolumeChunkShape)) as VolumeChunkShape;
+
+  const chunkCounts = {
+    x: Math.ceil(volume.width / chunkShape[3]),
+    y: Math.ceil(volume.height / chunkShape[2]),
+    z: Math.ceil(volume.depth / chunkShape[1]),
+    c: Math.ceil(volume.channels / chunkShape[0])
+  };
+
+  const valuesPerVolume = volume.width * volume.height * volume.depth * volume.channels;
+  const buffer = new ArrayBuffer(valuesPerVolume * getBytesPerValue(volume.dataType));
+  const destination = createVolumeTypedArray(volume.dataType, buffer);
+
+  for (let cChunk = 0; cChunk < chunkCounts.c; cChunk += 1) {
+    const cStart = cChunk * chunkShape[0];
+    const cEnd = Math.min(volume.channels, cStart + chunkShape[0]);
+
+    for (let zChunk = 0; zChunk < chunkCounts.z; zChunk += 1) {
+      const zStart = zChunk * chunkShape[1];
+      const zEnd = Math.min(volume.depth, zStart + chunkShape[1]);
+
+      for (let yChunk = 0; yChunk < chunkCounts.y; yChunk += 1) {
+        const yStart = yChunk * chunkShape[2];
+        const yEnd = Math.min(volume.height, yStart + chunkShape[2]);
+
+        for (let xChunk = 0; xChunk < chunkCounts.x; xChunk += 1) {
+          const xStart = xChunk * chunkShape[3];
+          const xEnd = Math.min(volume.width, xStart + chunkShape[3]);
+
+          const chunk = await array.getChunk([cChunk, zChunk, yChunk, xChunk]);
+          const stride = chunk.stride;
+          const data = chunk.data as VolumeTypedArray;
+
+          for (let c = cStart; c < cEnd; c += 1) {
+            const localC = c - cStart;
+
+            for (let z = zStart; z < zEnd; z += 1) {
+              const localZ = z - zStart;
+
+              for (let y = yStart; y < yEnd; y += 1) {
+                const localY = y - yStart;
+
+                for (let x = xStart; x < xEnd; x += 1) {
+                  const localX = x - xStart;
+                  const chunkIndex =
+                    localC * stride[0] + localZ * stride[1] + localY * stride[2] + localX * stride[3];
+                  const destinationIndex =
+                    ((z * volume.height + y) * volume.width + x) * volume.channels + c;
+                  destination[destinationIndex] = data[chunkIndex];
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return { ...volume, data: buffer };
 }
 
 const computeSliceRange = (slice: VolumeTypedArray): { min: number; max: number } => {
