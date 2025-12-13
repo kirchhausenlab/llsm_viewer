@@ -175,15 +175,51 @@ export async function augmentStreamingSources(
     attachStreamingContexts?: typeof attachStreamingContexts;
   }
 ): Promise<ImportPreprocessedDatasetResult> {
-  const { zarrStore } = result.manifest.dataset;
-  if (!zarrStore || zarrStore.source === 'archive') {
-    return result;
-  }
-
   const invalidVolumes = findInvalidStreamingVolumes(result);
 
   if (invalidVolumes.length === 0) {
     return result;
+  }
+
+  const stripInvalidStreamingSources = (): ImportPreprocessedDatasetResult => {
+    const invalidByLayer = new Map<string, Set<number>>();
+
+    for (const { layerKey, volumeIndex } of invalidVolumes) {
+      if (!invalidByLayer.has(layerKey)) {
+        invalidByLayer.set(layerKey, new Set());
+      }
+      invalidByLayer.get(layerKey)!.add(volumeIndex);
+    }
+
+    const layers = result.layers.map((layer) => {
+      const invalidIndices = invalidByLayer.get(layer.key);
+      if (!invalidIndices) {
+        return layer;
+      }
+
+      return {
+        ...layer,
+        volumes: layer.volumes.map((volume, index) => {
+          if (!invalidIndices.has(index)) {
+            return volume;
+          }
+
+          return {
+            ...volume,
+            streamingSource: undefined,
+            streamingBaseShape: undefined,
+            streamingBaseChunkShape: undefined,
+          };
+        }),
+      };
+    });
+
+    return { ...result, layers };
+  };
+
+  const { zarrStore } = result.manifest.dataset;
+  if (!zarrStore || zarrStore.source === 'archive') {
+    return stripInvalidStreamingSources();
   }
 
   try {
@@ -193,7 +229,7 @@ export async function augmentStreamingSources(
 
     const store = await openStore(zarrStore);
     if (!store) {
-      return result;
+      return stripInvalidStreamingSources();
     }
     const contexts = await buildContexts(result.manifest, store);
     const invalidPaths = new Set(
@@ -209,7 +245,7 @@ export async function augmentStreamingSources(
     return { ...result, layers };
   } catch (error) {
     console.warn('Failed to rebuild streaming sources for preprocessed import', error);
-    return result;
+    return stripInvalidStreamingSources();
   }
 }
 
