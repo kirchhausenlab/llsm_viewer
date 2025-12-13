@@ -1,6 +1,10 @@
 import { useCallback, useMemo, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import { fromBlob } from 'geotiff';
-import { expandVolumesForMovieMode, loadVolumesFromFiles } from '../../loaders/volumeLoader';
+import {
+  expandVolumesForMovieMode,
+  loadVolumesFromFiles,
+  materializeVolumePayload
+} from '../../loaders/volumeLoader';
 import { clearTextureCache } from '../../core/textureCache';
 import type { NormalizedVolume } from '../../core/volumeProcessing';
 import {
@@ -505,7 +509,10 @@ export function useChannelSources(): ChannelSourcesApi {
                 });
               }
             });
-            const expandedVolumes = expandVolumesForMovieMode(volumes, experimentDimension);
+            const realizedVolumes = await Promise.all(
+              volumes.map((volume) => materializeVolumePayload(volume))
+            );
+            const expandedVolumes = expandVolumesForMovieMode(realizedVolumes, experimentDimension);
 
             if (experimentDimension === '2d') {
               const primaryVolume = expandedVolumes[0] ?? null;

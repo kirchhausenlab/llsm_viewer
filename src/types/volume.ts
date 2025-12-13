@@ -29,9 +29,25 @@ export type VolumeMetadata = {
   max: number;
 };
 
-export type VolumePayload = VolumeMetadata & {
-  data: ArrayBufferLike;
+export type VolumeDataHandle<Store = unknown> = {
+  kind: 'zarr';
+  store: Store;
+  path: string;
+  chunkShape: [number, number, number, number];
 };
+
+export type VolumePayload<Data = ArrayBufferLike | VolumeDataHandle> = VolumeMetadata & {
+  data: Data;
+};
+
+export function isVolumeDataHandle(value: unknown): value is VolumeDataHandle {
+  return (
+    typeof value === 'object' &&
+    !!value &&
+    (value as Partial<VolumeDataHandle>).kind === 'zarr' &&
+    typeof (value as Partial<VolumeDataHandle>).path === 'string'
+  );
+}
 
 export function getBytesPerValue(type: VolumeDataType): number {
   switch (type) {
