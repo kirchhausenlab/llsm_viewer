@@ -153,10 +153,16 @@ export function useVolumeViewerInteractions({
   }, [isDevMode, setVoxelHoverDebug, voxelHoverDebugRef]);
 
   const setHoverNotReady = useCallback(
-    (reason: string) => {
+    (reason: string | null) => {
+      if (reason === null) {
+        voxelHoverDebugRef.current = null;
+        setVoxelHoverDebug(null);
+        return;
+      }
+
       reportVoxelHoverAbort(reason);
     },
-    [reportVoxelHoverAbort],
+    [reportVoxelHoverAbort, setVoxelHoverDebug, voxelHoverDebugRef],
   );
 
   return {

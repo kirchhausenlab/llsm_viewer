@@ -310,3 +310,7 @@
 
 ## Volume loader completion ordering (2025-03-19)
 - Serialized volume-finalization steps so worker completion waits for pending volume assembly, preventing premature launch failures when large volumes finish asynchronously.
+
+## Hover readiness reporting (2025-03-22)
+- Clear the hover "inactive" status once the renderer initializes so the overlay activates immediately after context setup.
+- Added a useVolumeHover regression test to assert the hover state transitions to ready when the raycaster is registered.
