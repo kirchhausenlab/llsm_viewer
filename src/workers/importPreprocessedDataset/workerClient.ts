@@ -1,8 +1,8 @@
-import { type PreprocessedImportMilestone } from '../../shared/utils/preprocessedDataset';
 import {
-  augmentStreamingSources,
   type ImportPreprocessedDatasetResult,
-} from './streamingAugmentation';
+  type PreprocessedImportMilestone,
+} from '../../shared/utils/preprocessedDataset';
+import { augmentStreamingSources } from './streamingAugmentation';
 import WorkerScript from '../importPreprocessedDataset.worker?worker';
 
 export type PreprocessedImportProgress = {
