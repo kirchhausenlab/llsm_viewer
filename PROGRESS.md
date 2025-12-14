@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Ensured preprocessed dataset exports write root Zarr metadata before streaming volumes, fail loudly when required keys are
+  missing, and covered interrupted stream handling with regression tests.
 - Surfaced a clear import error when archived Zarr data is missing `zarr.json`, preventing UI
   crashes and adding regression coverage.
 - Added slice-count validation in the volume loader worker so TIFF stacks that report more images than they provide surface an

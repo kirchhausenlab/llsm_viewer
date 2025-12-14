@@ -349,6 +349,36 @@ console.log('Starting preprocessed dataset import/export tests');
       assert.ok(entry, `missing streamed archive entry for ${path}`);
       assert.deepEqual(Array.from(entry), Array.from(expected));
     }
+
+    let interruptedManifest: PreprocessedManifest | null = null;
+    let streamedChunkCount = 0;
+    await assert.rejects(
+      async () => {
+        const result = await exportPreprocessedDataset(
+          {
+            layers,
+            channels,
+            voxelResolution,
+            movieMode
+          },
+          (chunk, isFinal) => {
+            if (isFinal) {
+              return;
+            }
+            streamedChunkCount += 1;
+            throw new Error('Simulated stream interruption');
+          }
+        );
+        interruptedManifest = result.manifest;
+      },
+      (error) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /Export incomplete—root metadata missing/);
+        return true;
+      }
+    );
+    assert.strictEqual(interruptedManifest, null);
+    assert.strictEqual(streamedChunkCount, 1);
     const paddedBuffer = new Uint8Array(16);
     const offsetPayload = new Uint8Array([5, 15, 25, 35, 45, 55, 65, 75]);
     paddedBuffer.set(offsetPayload, 4);
