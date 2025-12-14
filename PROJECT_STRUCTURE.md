@@ -70,8 +70,8 @@ The main responsibilities are:
   Scripts: `dev` (Vite), `build`, `preview`, `typecheck`, `test` (runs `tests/runTests.ts` via `tsx`).
 - `vite.config.ts`  
   Vite config (GitHub Pages base path logic, `@` alias → `src/`, worker format).
-- `environment.d.ts`  
-  Typed env vars (`VITE_DROPBOX_APP_KEY`, `VITE_MAX_VOLUME_BYTES`) + Dropbox chooser typings.
+- `environment.d.ts`
+  Typed env vars (`VITE_DROPBOX_APP_KEY`, `VITE_MAX_VOLUME_BYTES`, `VITE_STREAMING_BYTE_THRESHOLD`) + Dropbox chooser typings.
 - `.github/workflows/deploy.yml`  
   CI (typecheck/test/build) + GitHub Pages deploy.
 - `public/export-sw.js`  

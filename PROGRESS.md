@@ -315,3 +315,8 @@
 - The service worker now calculates its base path from its own URL, ensuring fetch handling and registrations align with the hosted location.
 2025-03-08T00:00:00+00:00: Fixed export service worker registration on subpath deployments.
 - Ensured preprocessed imports rebuild streaming contexts when worker-transferred streaming sources lose methods, avoiding viewer crashes and adding targeted regression tests (2025-12-14).
+
+## Volume streaming thresholds
+- Defaulted volume streaming to a configurable byte threshold derived from `VITE_STREAMING_BYTE_THRESHOLD`/`VITE_MAX_VOLUME_BYTES` so multi-GB datasets automatically take the streaming path while smaller files stay buffered.
+- Documented the new env var alongside existing limits and extended the loader tests to cover buffered, forced streaming, and default-threshold streaming flows using in-memory preprocessing stores.
+2025-05-18T00:00:00+00:00: Added configurable streaming threshold defaults and regression tests.

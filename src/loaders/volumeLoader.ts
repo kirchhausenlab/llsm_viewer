@@ -11,6 +11,7 @@ import {
   type ZarrMutableStore
 } from '../data/zarr';
 import { VolumeTooLargeError, type VolumeDimensions } from '../errors';
+import { STREAMING_VOLUME_BYTE_THRESHOLD } from '../shared/constants/volumeLimits';
 import {
   createVolumeTypedArray,
   type VolumePayload,
@@ -360,7 +361,7 @@ export async function loadVolumesFromFiles(
   }
 
   const {
-    streamingByteThreshold = Number.POSITIVE_INFINITY,
+    streamingByteThreshold = STREAMING_VOLUME_BYTE_THRESHOLD,
     workerFactory,
     preprocessingStoreFactory = createPreprocessingStore
   } = options;
