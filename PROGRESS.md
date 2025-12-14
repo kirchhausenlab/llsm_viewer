@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Added a configurable streaming path for volume loading that uses the preprocessing store when volumes exceed a byte-size
+  threshold, keeping small inputs on the existing in-memory assembly path and documenting the default threshold configuration.
 - Removed the default 512 MiB browser volume limit so local TIFF loads are unrestricted unless an explicit environment cap is
   provided.
 - Added a fallback that strips invalid streaming sources when Zarr contexts cannot be rebuilt (e.g., archived manifests) and
