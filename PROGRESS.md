@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Kept buffered 3D volumes on their existing clipmaps when time indices change so playback reuses
+  textures without rebuilding meshes/materials, keeping multi-timepoint playback smooth. (2025-12-20)
 - Clamped clipmap origin alignment when clip extents exceed the dataset bounds and added coverage to keep coarse levels
   anchored while moving the camera target. (2025-12-15)
 - Ensured preprocessed dataset exports write root Zarr metadata before streaming volumes, fail loudly when required keys are
