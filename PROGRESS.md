@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Enforced preprocessed volume imports to verify byte lengths against dimensions and data buffers, rejecting malformed
+  manifests before allocating impossible slice buffers. (2025-12-22)
 - Kept buffered 3D volumes on their existing clipmaps when time indices change so playback reuses
   textures without rebuilding meshes/materials, keeping multi-timepoint playback smooth. (2025-12-20)
 - Clamped clipmap origin alignment when clip extents exceed the dataset bounds and added coverage to keep coarse levels
