@@ -410,6 +410,29 @@ console.log('Starting preprocessed dataset import/export tests');
 
     await assert.rejects(() => importPreprocessedDataset(tamperedArchive), /Digest mismatch/);
 
+    const missingZarrManifest: PreprocessedManifest = {
+      format: 'llsm-viewer-preprocessed',
+      version: 1,
+      generatedAt: new Date().toISOString(),
+      dataset: {
+        movieMode,
+        voxelResolution: null,
+        anisotropyCorrection: null,
+        zarrStore: { source: 'archive', root: 'zarr' },
+        totalVolumeCount: 0,
+        channels: []
+      }
+    };
+
+    const missingZarrArchive = await zipFromMap({
+      'manifest.json': encoder.encode(JSON.stringify(missingZarrManifest))
+    });
+
+    await assert.rejects(
+      () => importPreprocessedDataset(missingZarrArchive),
+      /Archive is missing zarr\.json/
+    );
+
     const anisotropicVoxelResolution = {
       x: 5,
       y: 3.6,

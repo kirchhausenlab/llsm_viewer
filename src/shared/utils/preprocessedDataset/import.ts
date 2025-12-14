@@ -173,8 +173,8 @@ async function createArchiveZarrStore(
     files.set(normalizedKey, new Blob([data]));
   }
 
-  if (files.size === 0) {
-    return null;
+  if (!files.has('/zarr.json')) {
+    throw new Error('Archive is missing zarr.json; the export may be incomplete. Please re-run the export.');
   }
 
   return new KeyedFileStore(files);
