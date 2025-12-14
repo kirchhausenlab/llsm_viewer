@@ -6,7 +6,6 @@ type VolumeUniforms = {
   u_renderstyle: { value: number };
   u_renderthreshold: { value: number };
   u_clim: { value: Vector2 };
-  u_data: { value: Data3DTexture | null };
   u_cmdata: { value: DataTexture | null };
   u_channels: { value: number };
   u_additive: { value: number };
@@ -38,7 +37,6 @@ const uniforms = {
   u_renderstyle: { value: 0 },
   u_renderthreshold: { value: 0.5 },
   u_clim: { value: new Vector2(1, 1) },
-  u_data: { value: null as Data3DTexture | null },
   u_cmdata: { value: null as DataTexture | null },
   u_channels: { value: 1 },
   u_additive: { value: 0 },
@@ -122,7 +120,6 @@ export const VolumeRenderShader = {
     uniform float u_hoverSegmentationMode;
     uniform sampler3D u_segmentationLabels;
 
-    uniform sampler3D u_data;
     uniform sampler2D u_cmdata;
     uniform vec3 u_cameraPos;
 
@@ -243,7 +240,7 @@ export const VolumeRenderShader = {
         return sample_clipmap(texcoords, levelScale);
       }
       levelScale = 1.0;
-      return texture(u_data, texcoords.xyz);
+      return vec4(0.0);
     }
 
     vec4 sample_color(vec3 texcoords) {
