@@ -349,3 +349,8 @@
 - Always construct `VolumeClipmapManager` for 3D volumes, seeding local CPU data into clipmap levels when streaming metadata is absent and routing shader sampling through clipmap uniforms.
 - Simplified the volume render shader/material setup to drop monolithic `u_data` usage, keeping hover and segmentation uniforms intact and extending coverage to both local TIFF and streaming Zarr fixtures.
 2025-12-14T04:33:03Z: Enabled clipmap-only rendering and refreshed volume resource tests.
+
+## Clipmap fallback sampling guardrails
+- Added shared clipmap bounds helper in the fragment shader and applied it to both primary and fallback sampling paths to prevent out-of-range fetches from smearing edge voxels.
+- Introduced a regression test that mirrors the shader bounds logic to ensure fallback sampling leaves empty space black when the camera moves beyond populated clipmap regions.
+2025-12-15T00:00:00Z: Hardened clipmap fallback sampling and added coverage for empty-space rendering.

@@ -140,6 +140,10 @@ export const VolumeRenderShader = {
     void cast_mip(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
     void cast_iso(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
 
+    bool isWithinClipmapBounds(vec3 local) {
+      return all(greaterThanEqual(local, vec3(0.0))) && all(lessThan(local, vec3(1.0)));
+    }
+
     vec4 sample_clipmap(vec3 texcoords, out float levelScale) {
       vec3 voxelPos = texcoords * u_size;
       int chosenLevel = -1;
@@ -153,7 +157,7 @@ export const VolumeRenderShader = {
         float scale = u_clipmapScales[LEVEL];                                                                 \
         vec3 extent = vec3(u_clipmapSize * scale);                                                            \
         vec3 local = (voxelPos - origin) / extent;                                                            \
-        if (all(greaterThanEqual(local, vec3(0.0))) && all(lessThan(local, vec3(1.0)))) {                    \
+        if (isWithinClipmapBounds(local)) {                                                                   \
           sampled = texture(u_clipmapTextures[LEVEL], local);                                                 \
           levelScale = scale;                                                                                \
           chosenLevel = LEVEL;                                                                               \
@@ -178,8 +182,11 @@ export const VolumeRenderShader = {
             vec3 origin = u_clipmapOrigins[0];
             vec3 extent = vec3(u_clipmapSize * scale);
             vec3 local = (voxelPos - origin) / extent;
-            sampled = texture(u_clipmapTextures[0], local);
-            levelScale = scale;
+            if (isWithinClipmapBounds(local)) {
+              sampled = texture(u_clipmapTextures[0], local);
+              levelScale = scale;
+              chosenLevel = 0;
+            }
             break;
           }
           case 1: {
@@ -187,8 +194,11 @@ export const VolumeRenderShader = {
             vec3 origin = u_clipmapOrigins[1];
             vec3 extent = vec3(u_clipmapSize * scale);
             vec3 local = (voxelPos - origin) / extent;
-            sampled = texture(u_clipmapTextures[1], local);
-            levelScale = scale;
+            if (isWithinClipmapBounds(local)) {
+              sampled = texture(u_clipmapTextures[1], local);
+              levelScale = scale;
+              chosenLevel = 1;
+            }
             break;
           }
           case 2: {
@@ -196,8 +206,11 @@ export const VolumeRenderShader = {
             vec3 origin = u_clipmapOrigins[2];
             vec3 extent = vec3(u_clipmapSize * scale);
             vec3 local = (voxelPos - origin) / extent;
-            sampled = texture(u_clipmapTextures[2], local);
-            levelScale = scale;
+            if (isWithinClipmapBounds(local)) {
+              sampled = texture(u_clipmapTextures[2], local);
+              levelScale = scale;
+              chosenLevel = 2;
+            }
             break;
           }
           case 3: {
@@ -205,8 +218,11 @@ export const VolumeRenderShader = {
             vec3 origin = u_clipmapOrigins[3];
             vec3 extent = vec3(u_clipmapSize * scale);
             vec3 local = (voxelPos - origin) / extent;
-            sampled = texture(u_clipmapTextures[3], local);
-            levelScale = scale;
+            if (isWithinClipmapBounds(local)) {
+              sampled = texture(u_clipmapTextures[3], local);
+              levelScale = scale;
+              chosenLevel = 3;
+            }
             break;
           }
           case 4: {
@@ -214,8 +230,11 @@ export const VolumeRenderShader = {
             vec3 origin = u_clipmapOrigins[4];
             vec3 extent = vec3(u_clipmapSize * scale);
             vec3 local = (voxelPos - origin) / extent;
-            sampled = texture(u_clipmapTextures[4], local);
-            levelScale = scale;
+            if (isWithinClipmapBounds(local)) {
+              sampled = texture(u_clipmapTextures[4], local);
+              levelScale = scale;
+              chosenLevel = 4;
+            }
             break;
           }
           case 5: {
@@ -223,8 +242,11 @@ export const VolumeRenderShader = {
             vec3 origin = u_clipmapOrigins[5];
             vec3 extent = vec3(u_clipmapSize * scale);
             vec3 local = (voxelPos - origin) / extent;
-            sampled = texture(u_clipmapTextures[5], local);
-            levelScale = scale;
+            if (isWithinClipmapBounds(local)) {
+              sampled = texture(u_clipmapTextures[5], local);
+              levelScale = scale;
+              chosenLevel = 5;
+            }
             break;
           }
           default:
