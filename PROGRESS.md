@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Added slice-count validation in the volume loader worker so TIFF stacks that report more images than they provide surface an
+  error before completing, along with regression coverage for the worker error path.
 - Added a configurable streaming path for volume loading that uses the preprocessing store when volumes exceed a byte-size
   threshold, keeping small inputs on the existing in-memory assembly path and documenting the default threshold configuration.
 - Removed the default 512 MiB browser volume limit so local TIFF loads are unrestricted unless an explicit environment cap is

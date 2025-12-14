@@ -198,3 +198,75 @@ function buildWorker(options: {
   process.exitCode = 1;
 });
 
+console.log('Starting volume loader worker slice validation tests');
+
+(async () => {
+  const previousSelf = (globalThis as any).self;
+
+  let resolveCompletion: (() => void) | undefined;
+  const onComplete = new Promise<void>((resolve, reject) => {
+    resolveCompletion = resolve;
+    setTimeout(() => reject(new Error('Timed out waiting for worker error')), 1000);
+  });
+
+  const workerMessages: any[] = [];
+  const workerErrors: any[] = [];
+
+  const mockSelf: any = {
+    navigator: { hardwareConcurrency: 1 },
+    onmessage: null,
+    postMessage: (message: any) => {
+      if (message.type === 'volume-loaded') {
+        workerMessages.push(message);
+      }
+      if (message.type === 'error') {
+        workerErrors.push(message);
+        resolveCompletion?.();
+      }
+    }
+  };
+
+  (globalThis as any).self = mockSelf;
+
+  const { __TEST_ONLY__ } = await import('../src/workers/volumeLoader.worker.ts');
+
+  __TEST_ONLY__.setFromBlobImplementation(async () => {
+    const slices = [new Uint8Array([1, 2, 3, 4]), new Uint8Array([5, 6, 7, 8])];
+
+    return {
+      getImageCount: async () => 3,
+      getImage: async (sliceIndex: number) => {
+        const slice = slices[sliceIndex];
+
+        if (!slice) {
+          throw new Error('Slice missing');
+        }
+
+        return {
+          getWidth: () => 2,
+          getHeight: () => 2,
+          getSamplesPerPixel: () => 1,
+          readRasters: async () => slice
+        };
+      }
+    } as const;
+  });
+
+  try {
+    mockSelf.onmessage?.({
+      data: { type: 'load-volumes', requestId: 99, files: [new File(['mock'], 'missing-slice.tiff')] }
+    });
+
+    await onComplete;
+
+    assert.equal(workerMessages.length, 0);
+    assert.equal(workerErrors.length, 1);
+  } finally {
+    __TEST_ONLY__.resetFromBlobImplementation();
+    (globalThis as any).self = previousSelf;
+  }
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
