@@ -332,3 +332,7 @@
 - The volume loader now rejects loads when workers report fewer slices than expected, cleaning up any preprocessing stores instead of silently continuing.
 - Added a regression test that simulates an undersized slice count and asserts a user-facing error is surfaced.
 2025-05-31T00:00:00+00:00: Hardened volume-loading error handling and coverage for incomplete slice uploads.
+
+## Directory handle iteration compatibility
+- Centralized directory iteration through a helper that throws when `entries()` is unavailable, avoiding type errors on platforms lacking the method.
+2025-06-01T00:00:00+00:00: Normalized `FileSystemDirectoryHandle` iteration to keep type checks green across browsers.
