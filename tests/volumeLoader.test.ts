@@ -56,6 +56,10 @@ class MemoryStore {
     this.data.delete(this.normalize(key));
   }
 
+  async clear(): Promise<void> {
+    this.data.clear();
+  }
+
   listKeys(): string[] {
     return Array.from(this.data.keys());
   }
@@ -68,11 +72,12 @@ class MemoryStore {
 function buildWorker(options: {
   metadata: { width: number; height: number; depth: number; channels: number; dataType: 'uint8' };
   slices: Uint8Array[];
+  sliceCountOverride?: number;
 }) {
   return () =>
     new StubWorker((worker, message: any) => {
       const requestId = message.requestId;
-      const { metadata, slices } = options;
+      const { metadata, slices, sliceCountOverride } = options;
       queueMicrotask(() => {
         worker.onmessage?.({ data: { type: 'volume-start', requestId, index: 0, metadata: { ...metadata, bytesPerValue: 1 } } });
         slices.forEach((slice, sliceIndex) => {
@@ -82,7 +87,7 @@ function buildWorker(options: {
               requestId,
               index: 0,
               sliceIndex,
-              sliceCount: slices.length,
+              sliceCount: sliceCountOverride ?? slices.length,
               min: 0,
               max: 1,
               buffer: slice.buffer
@@ -109,18 +114,19 @@ function buildWorker(options: {
 
   const baseMetadata = { width: 2, height: 2, channels: 1, dataType: 'uint8' as const };
 
-  const [bufferedVolume] = await loadVolumesFromFiles(
-    [new File(['buffered'], 'buffered.tiff')],
-    {},
-    {
-      workerFactory: buildWorker({
-        metadata: { ...baseMetadata, depth: 1 },
-        slices: [new Uint8Array([1, 2, 3, 4])]
-      }),
-      streamingByteThreshold: 16
-    }
-  );
-  assert.strictEqual(bufferedVolume.data.byteLength, 4);
+    const [bufferedVolume] = await loadVolumesFromFiles(
+      [new File(['buffered'], 'buffered.tiff')],
+      {},
+      {
+        workerFactory: buildWorker({
+          metadata: { ...baseMetadata, depth: 1 },
+          slices: [new Uint8Array([1, 2, 3, 4])]
+        }),
+        streamingByteThreshold: 16
+      }
+    );
+    assert.ok(bufferedVolume);
+    assert.strictEqual(bufferedVolume.data.byteLength, 4);
   assert.deepEqual(Array.from(new Uint8Array(bufferedVolume.data)), [1, 2, 3, 4]);
 
   const streamingStore = new MemoryStore();
@@ -149,6 +155,29 @@ function buildWorker(options: {
 
   assert.strictEqual(streamingVolume[0].data.byteLength, 0);
   assert.ok(preprocessingCalled);
+
+  const failingStore = new MemoryStore();
+  await assert.rejects(
+    loadVolumesFromFiles(
+      [new File(['undersized'], 'undersized.tiff')],
+      {},
+      {
+        workerFactory: buildWorker({
+          metadata: { ...baseMetadata, depth: 2 },
+          slices: [new Uint8Array([1, 1, 1, 1])],
+          sliceCountOverride: 2
+        }),
+        streamingByteThreshold: 4,
+        preprocessingStoreFactory: async () => failingStore
+      }
+    ),
+    (error: any) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /completed with 1 of 2 slices/);
+      return true;
+    }
+  );
+  assert.deepEqual(failingStore.listKeys(), []);
 
   const defaultStore = new MemoryStore();
   const [defaultStreamingVolume] = await loadVolumesFromFiles(

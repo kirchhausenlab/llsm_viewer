@@ -325,3 +325,8 @@
 - Export now writes Zarr v3 `zarr.json` metadata (alongside v2 markers) for each volume/segmentation and the store root so Zarrita readers find valid nodes instead of failing with "Node not found" errors when launching the viewer.
 - Added regression checks to ensure exported archives include the new metadata entries.
 2025-05-20T00:00:00+00:00: Ensured preprocessed exports generate complete Zarr v3 metadata for viewer imports.
+
+## Volume loader slice validation
+- The volume loader now rejects loads when workers report fewer slices than expected, cleaning up any preprocessing stores instead of silently continuing.
+- Added a regression test that simulates an undersized slice count and asserts a user-facing error is surfaced.
+2025-05-31T00:00:00+00:00: Hardened volume-loading error handling and coverage for incomplete slice uploads.
