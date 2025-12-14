@@ -273,6 +273,14 @@ class PreprocessingCoordinator {
 
   constructor(private readonly store: ZarrMutableStore) {}
 
+  async clear(): Promise<void> {
+    this.writers.clear();
+    const clearableStore = this.store as { clear?: () => Promise<void> };
+    if (typeof clearableStore.clear === 'function') {
+      await clearableStore.clear();
+    }
+  }
+
   startVolume(index: number, metadata: VolumeStartMessage['metadata']): void {
     this.writers.set(index, new VolumePreprocessingWriter(this.store, index, metadata));
   }
@@ -393,11 +401,24 @@ export async function loadVolumesFromFiles(
       worker?.terminate();
     };
 
+    const cleanupPreprocessingStore = async () => {
+      if (!preprocessingCoordinatorPromise) return;
+      try {
+        const coordinator = await preprocessingCoordinatorPromise.catch(() => null);
+        await coordinator?.clear();
+      } catch (error) {
+        console.warn('Failed to clean preprocessing store after error.', error);
+      } finally {
+        preprocessingCoordinatorPromise = null;
+      }
+    };
+
     const fail = (error: unknown) => {
       if (settled) {
         return;
       }
       settled = true;
+      void cleanupPreprocessingStore();
       cleanup();
       reject(error instanceof Error ? error : new Error(String(error)));
     };
@@ -472,14 +493,16 @@ export async function loadVolumesFromFiles(
           return;
         }
 
-      switch (message.type) {
+        switch (message.type) {
         case 'volume-start': {
           try {
             const state = createAssemblyState(message);
             assemblies.set(message.index, state);
-            const coordinator = await (state.mode === 'streaming'
-              ? ensurePreprocessingCoordinator()
-              : preprocessingCoordinatorPromise ?? null);
+            const coordinatorPromise =
+              state.mode === 'streaming'
+                ? ensurePreprocessingCoordinator()
+                : preprocessingCoordinatorPromise ?? null;
+            const coordinator = coordinatorPromise ? await coordinatorPromise : null;
             coordinator?.startVolume(message.index, message.metadata);
           } catch (error) {
             fail(error);
@@ -512,16 +535,18 @@ export async function loadVolumesFromFiles(
               0,
               state.sliceLength
             );
-            const coordinator = await (state.mode === 'streaming'
-              ? ensurePreprocessingCoordinator()
-              : preprocessingCoordinatorPromise ?? null);
+            state.slicesReceived += 1;
+            const coordinatorPromise =
+              state.mode === 'streaming'
+                ? ensurePreprocessingCoordinator()
+                : preprocessingCoordinatorPromise ?? null;
+            const coordinator = coordinatorPromise ? await coordinatorPromise : null;
             if (coordinator) {
               await coordinator.writeSlice(message.index, slice, message.sliceIndex);
             }
             if (state.mode === 'buffered') {
               state.destination.set(slice, message.sliceIndex * state.sliceLength);
             }
-            state.slicesReceived += 1;
           } catch (error) {
             fail(error);
           }
@@ -537,15 +562,21 @@ export async function loadVolumesFromFiles(
           assemblies.delete(message.index);
 
           if (state.slicesReceived !== state.sliceCount) {
-            console.warn(
-              `Volume ${message.index} completed with ${state.slicesReceived} of ${state.sliceCount} slices.`
+            await cleanupPreprocessingStore();
+            fail(
+              new Error(
+                `Volume ${message.index} completed with ${state.slicesReceived} of ${state.sliceCount} slices.`
+              )
             );
+            return;
           }
 
           try {
-            const coordinator = await (state.mode === 'streaming'
-              ? ensurePreprocessingCoordinator()
-              : preprocessingCoordinatorPromise ?? null);
+            const coordinatorPromise =
+              state.mode === 'streaming'
+                ? ensurePreprocessingCoordinator()
+                : preprocessingCoordinatorPromise ?? null;
+            const coordinator = coordinatorPromise ? await coordinatorPromise : null;
             if (coordinator) {
               await coordinator.finalizeVolume(message.index);
             }

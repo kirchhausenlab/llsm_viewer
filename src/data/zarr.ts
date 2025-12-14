@@ -166,6 +166,12 @@ export async function filesFromDirectory(
 export class DirectoryHandleStore implements AsyncMutable {
   constructor(private readonly directory: FileSystemDirectoryHandle) {}
 
+  async clear(): Promise<void> {
+    for await (const [name] of this.directory.entries()) {
+      await this.directory.removeEntry(name, { recursive: true });
+    }
+  }
+
   private async getFileHandle(
     key: AbsolutePath,
     create: boolean
@@ -241,6 +247,10 @@ export class IndexedDBStore implements AsyncMutable {
     private readonly db: IDBDatabase,
     private readonly storeName: string
   ) {}
+
+  async clear(): Promise<void> {
+    await this.transaction('readwrite', (store) => store.clear());
+  }
 
   static async create(dbName = 'llsm-zarr', storeName = 'chunks'): Promise<IndexedDBStore> {
     if (typeof indexedDB === 'undefined') {
