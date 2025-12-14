@@ -364,3 +364,8 @@
 - Taught `useVolumeResources` to refresh clipmaps with newly loaded CPU time slices without tearing down meshes so buffered playback swaps textures smoothly, and added a regression test that feeds time slices after clipmap creation.
 2025-12-15T00:00:00Z: Ensured clipmaps swap buffered time slices when playback advances.
 2025-12-16T00:00:00Z: Guarded buffered time-slice updates to keep clipmap refresh logic type-safe while preserving slice replacement behavior.
+
+## Clipmap full-resolution CPU volumes
+- Detect non-streaming volumes that fit in memory and expand clipmap tiles to the full dataset extents so only one undownsampled level is produced.
+- Propagate the computed clip size from the volume resources hook and add a regression test that asserts 256³ CPU volumes render from a single full-resolution clipmap level.
+2025-12-16T00:00:00Z: Prevented clipmaps from downsampling CPU volumes and added coverage for full-resolution playback.
