@@ -42,8 +42,9 @@ try {
   try {
     const remote = createFetchStore('https://example.com/data', { useSuffixRequest: true });
     await readRangeFromStore(remote, '/0.shard', { suffixLength: 4 });
-    assert.strictEqual(requests.length, 1);
-    assert.strictEqual(readRangeHeader(requests[0]?.init), 'bytes=-4');
+    const shardRequests = requests.filter(({ url }) => url.endsWith('/0.shard'));
+    assert.strictEqual(shardRequests.length, 1);
+    assert.strictEqual(readRangeHeader(shardRequests[0]?.init), 'bytes=-4');
 
     requests.length = 0;
     const offsetStore = createFetchStore('https://example.com/data');

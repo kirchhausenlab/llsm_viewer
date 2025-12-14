@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Filtered the zarr store range request test to ignore unrelated fetches (e.g., WASM loads) so range
+  header assertions stay isolated.
 - Ensured preprocessed dataset exports write root Zarr metadata before streaming volumes, fail loudly when required keys are
   missing, and covered interrupted stream handling with regression tests.
 - Surfaced a clear import error when archived Zarr data is missing `zarr.json`, preventing UI
