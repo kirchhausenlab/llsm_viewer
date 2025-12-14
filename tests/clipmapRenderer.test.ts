@@ -66,6 +66,55 @@ console.log('Starting clipmap renderer tests');
   assert.equal(uniforms.u_useClipmap.value, 1);
   assert.equal(uniforms.u_clipmapOrigins.value[0]?.x, 0);
 
+  const oversizedSize = 4;
+  const oversizedClipSize = 8;
+  const oversizedChannels = 1;
+  const oversizedData = new Uint8Array(oversizedSize * oversizedSize * oversizedSize * oversizedChannels);
+  oversizedData.forEach((_, index) => {
+    oversizedData[index] = (index % 200) + 1;
+  });
+
+  const oversizedVolume: NormalizedVolume = {
+    width: oversizedSize,
+    height: oversizedSize,
+    depth: oversizedSize,
+    channels: oversizedChannels,
+    dataType: 'uint8',
+    chunkShape: [4, 4, 4],
+    normalized: oversizedData,
+    min: 1,
+    max: 200,
+  };
+
+  const oversizedClipmap = new VolumeClipmapManager(oversizedVolume, oversizedClipSize);
+  const oversizedTargets = [
+    new THREE.Vector3(oversizedSize / 2, oversizedSize / 2, oversizedSize / 2),
+    new THREE.Vector3(-100, -100, -100),
+    new THREE.Vector3(100, 100, 100),
+  ];
+
+  for (const targetPosition of oversizedTargets) {
+    await oversizedClipmap.update(targetPosition);
+    const level = oversizedClipmap.levels[0];
+
+    for (let z = 0; z < oversizedSize; z += 1) {
+      for (let y = 0; y < oversizedSize; y += 1) {
+        for (let x = 0; x < oversizedSize; x += 1) {
+          const localX = Math.floor((x - level.origin.x) / level.scale);
+          const localY = Math.floor((y - level.origin.y) / level.scale);
+          const localZ = Math.floor((z - level.origin.z) / level.scale);
+          assert(localX >= 0 && localX < oversizedClipSize);
+          assert(localY >= 0 && localY < oversizedClipSize);
+          assert(localZ >= 0 && localZ < oversizedClipSize);
+          const destIndex = ((localZ * oversizedClipSize + localY) * oversizedClipSize + localX) * oversizedChannels;
+          const sourceIndex = (((z * oversizedSize + y) * oversizedSize + x) * oversizedChannels) | 0;
+          assert.equal(level.buffer[destIndex], oversizedData[sourceIndex]);
+        }
+      }
+    }
+  }
+  oversizedClipmap.dispose();
+
   const streamingSize = 4;
   const streamingData = new Uint8Array(streamingSize * streamingSize * streamingSize).fill(7);
   const streamingChunks: [number, number, number, number, number] = [

@@ -113,7 +113,9 @@ function determineLevelScales(volume: NormalizedVolume, clipSize: number): numbe
 function alignToChunk(value: number, step: number, limit: number): number {
   const aligned = Math.floor(value / step) * step;
   if (!Number.isFinite(limit) || limit <= 0) {
-    return aligned;
+    const minBound = Math.min(0, limit);
+    const maxBound = Math.max(0, limit);
+    return Math.min(Math.max(aligned, minBound), maxBound);
   }
   return Math.min(Math.max(0, aligned), Math.max(0, limit));
 }
