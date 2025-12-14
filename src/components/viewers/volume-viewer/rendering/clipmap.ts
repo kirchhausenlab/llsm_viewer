@@ -129,7 +129,7 @@ export class VolumeClipmapManager {
   private readonly streaming?: StreamingMetadata;
   private readonly clipmapDataType: VolumeDataType;
   private readonly clipmapTextureType: THREE.TextureDataType;
-  private readonly timepointVolumes: NormalizedVolume[] | null;
+  private timepointVolumes: NormalizedVolume[] | null;
   private minLevelOverride = 0;
   private timeIndex = 0;
 
@@ -193,6 +193,26 @@ export class VolumeClipmapManager {
     }
     this.timeIndex = clamped;
     this.volume = this.resolveVolumeForTime(clamped);
+    this.invalidateLevels();
+  }
+
+  setTimeSlices(timeSlices: NormalizedVolume[] | undefined) {
+    const nextSlices = timeSlices?.length ? [...timeSlices] : null;
+    const hasChanges =
+      this.timepointVolumes?.length !== nextSlices?.length ||
+      (nextSlices?.some((slice, index) => this.timepointVolumes?.[index] !== slice) ??
+        this.timepointVolumes?.length > 0);
+
+    if (!hasChanges) {
+      return;
+    }
+
+    this.timepointVolumes = nextSlices;
+    this.volume = this.resolveVolumeForTime(this.timeIndex);
+    this.invalidateLevels();
+  }
+
+  private invalidateLevels() {
     this.levels.forEach((level) => {
       level.requestId += 1;
       level.abortController?.abort();

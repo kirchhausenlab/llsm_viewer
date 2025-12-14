@@ -298,8 +298,7 @@ export function useVolumeResources({
           resources.dimensions.height !== volume.height ||
           resources.dimensions.depth !== volume.depth ||
           resources.channels !== volume.channels ||
-          !resources.clipmap ||
-          (!isStreamingVolume && resources.timeIndex !== timeIndex);
+          !resources.clipmap;
 
         if (needsRebuild) {
           removeResource(layer.key);
@@ -529,6 +528,7 @@ export function useVolumeResources({
             resources.clipmap = clipmap;
           }
 
+          clipmap.setTimeSlices(volume.timeSlices);
           clipmap.setTimeIndex(timeIndex);
           void clipmap.update(rotationTargetRef.current, {
             signal: abortController.signal,

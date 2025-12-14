@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Kept buffered 3D volumes on their existing clipmaps when time indices change so playback reuses
+  textures without rebuilding meshes/materials, keeping multi-timepoint playback smooth. (2025-12-20)
 - Clamped clipmap origin alignment when clip extents exceed the dataset bounds and added coverage to keep coarse levels
   anchored while moving the camera target. (2025-12-15)
 - Ensured preprocessed dataset exports write root Zarr metadata before streaming volumes, fail loudly when required keys are
@@ -359,5 +361,5 @@
 
 ## Clipmap timepoint updates
 - Extended `VolumeClipmapManager` to retain CPU time slices, honoring `setTimeIndex` for both streaming and buffered volumes by marking levels dirty and swapping the active slice.
-- Taught `useVolumeResources` to rebuild clipmaps when non-streaming time indices change so time series frames repopulate before rendering, and added a regression test that verifies clipmap textures refresh when the CPU time index toggles.
+- Taught `useVolumeResources` to refresh clipmaps with newly loaded CPU time slices without tearing down meshes so buffered playback swaps textures smoothly, and added a regression test that feeds time slices after clipmap creation.
 2025-12-15T00:00:00Z: Ensured clipmaps swap buffered time slices when playback advances.
