@@ -369,3 +369,8 @@
 - Detect non-streaming volumes that fit in memory and expand clipmap tiles to the full dataset extents so only one undownsampled level is produced.
 - Propagate the computed clip size from the volume resources hook and add a regression test that asserts 256³ CPU volumes render from a single full-resolution clipmap level.
 2025-12-16T00:00:00Z: Prevented clipmaps from downsampling CPU volumes and added coverage for full-resolution playback.
+
+## Playback time-slice selection fixes
+- Updated layer selection to prefer per-timepoint slices embedded in a volume (`timeSlices`) when advancing playback, ensuring playback swaps actual frames instead of sticking on the first volume.
+- Reused the new selection helper for auto-contrast so histogram/windowing tracks the currently displayed timepoint.
+2025-12-17T00:00:00Z: Fixed playback to pick the correct time slice for each frame and kept contrast tooling in sync.
