@@ -110,6 +110,14 @@ function determineLevelScales(volume: NormalizedVolume, clipSize: number): numbe
   return scales;
 }
 
+export function computeClipSizeForVolume(volume: ClipmapVolume, requestedClipSize = DEFAULT_CLIP_SIZE): number {
+  const maxDimension = Math.max(volume.width, volume.height, volume.depth);
+  if (volume.streamingSource && volume.streamingBaseShape) {
+    return requestedClipSize;
+  }
+  return Math.max(requestedClipSize, maxDimension);
+}
+
 function alignToChunk(value: number, step: number, limit: number): number {
   const aligned = Math.floor(value / step) * step;
   if (!Number.isFinite(limit) || limit <= 0) {
@@ -137,10 +145,11 @@ export class VolumeClipmapManager {
     this.baseVolume = volume;
     this.timepointVolumes = volume.timeSlices?.length ? [...volume.timeSlices] : null;
     this.volume = this.resolveVolumeForTime(0);
-    this.clipSize = clipSize;
     const streamingSource = volume.streamingSource ?? null;
     const streamingBaseShape = volume.streamingBaseShape ?? null;
     const streamingBaseChunkShape = volume.streamingBaseChunkShape ?? null;
+    const isStreaming = Boolean(streamingSource && streamingBaseShape);
+    this.clipSize = computeClipSizeForVolume(volume, clipSize);
 
     const streamingDataType = streamingSource
       ? streamingSource.getMip(streamingSource.getMipLevels()[0]).dataType
@@ -152,7 +161,7 @@ export class VolumeClipmapManager {
       console.warn('Streaming clipmap requested without a base shape; falling back to CPU clipmap.');
     }
 
-    if (streamingSource && streamingBaseShape) {
+    if (isStreaming) {
       const rootChunkShape = streamingBaseChunkShape ?? streamingSource.getMip(streamingSource.getMipLevels()[0]).chunkShape;
       this.streaming = {
         source: streamingSource,
@@ -163,18 +172,18 @@ export class VolumeClipmapManager {
     } else {
       this.chunkShape = volume.chunkShape ?? [FALLBACK_CHUNK, FALLBACK_CHUNK, FALLBACK_CHUNK];
     }
-    const scales = determineLevelScales(volume, clipSize);
+    const scales = determineLevelScales(volume, this.clipSize);
 
     this.levels = scales.map((scale) => {
       const buffer = createWritableVolumeArray(
         this.clipmapDataType,
-        clipSize * clipSize * clipSize * volume.channels,
+        this.clipSize * this.clipSize * this.clipSize * volume.channels,
       );
       return {
         scale,
         // Force an initial populate on the first update so clipmap textures are not empty.
         origin: new THREE.Vector3(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY),
-        texture: createTexture(clipSize, volume.channels, buffer, this.clipmapTextureType),
+        texture: createTexture(this.clipSize, volume.channels, buffer, this.clipmapTextureType),
         buffer,
         needsUpload: true,
         requestId: 0,
@@ -533,7 +542,7 @@ export class VolumeClipmapManager {
       uniforms.u_clipmapSize.value = this.clipSize;
     }
     if (uniforms.u_minClipLevel) {
-      uniforms.u_minClipLevel.value = this.minLevelOverride;
+      uniforms.u_minClipLevel.value = Math.min(this.minLevelOverride, Math.max(0, this.levels.length - 1));
     }
     if (uniforms.u_useClipmap) {
       uniforms.u_useClipmap.value = 1;

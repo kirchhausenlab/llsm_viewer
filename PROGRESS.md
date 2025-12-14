@@ -361,3 +361,8 @@
 - Extended `VolumeClipmapManager` to retain CPU time slices, honoring `setTimeIndex` for both streaming and buffered volumes by marking levels dirty and swapping the active slice.
 - Taught `useVolumeResources` to rebuild clipmaps when non-streaming time indices change so time series frames repopulate before rendering, and added a regression test that verifies clipmap textures refresh when the CPU time index toggles.
 2025-12-15T00:00:00Z: Ensured clipmaps swap buffered time slices when playback advances.
+
+## Clipmap full-resolution CPU volumes
+- Detect non-streaming volumes that fit in memory and expand clipmap tiles to the full dataset extents so only one undownsampled level is produced.
+- Propagate the computed clip size from the volume resources hook and add a regression test that asserts 256³ CPU volumes render from a single full-resolution clipmap level.
+2025-12-16T00:00:00Z: Prevented clipmaps from downsampling CPU volumes and added coverage for full-resolution playback.

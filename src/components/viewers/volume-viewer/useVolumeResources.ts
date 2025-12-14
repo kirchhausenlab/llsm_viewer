@@ -9,7 +9,7 @@ import {
   getExpectedSliceBufferLength,
   prepareSliceTexture,
 } from './rendering';
-import { VolumeClipmapManager } from './rendering/clipmap';
+import { VolumeClipmapManager, computeClipSizeForVolume } from './rendering/clipmap';
 import { SliceRenderShader } from '../../../shaders/sliceRenderShader';
 import { VolumeRenderShader } from '../../../shaders/volumeRenderShader';
 import type { StreamableNormalizedVolume, VolumeResources } from '../VolumeViewer.types';
@@ -304,12 +304,21 @@ export function useVolumeResources({
         if (needsRebuild) {
           removeResource(layer.key);
 
-          const clipmap = new VolumeClipmapManager({
+          const clipSize = computeClipSizeForVolume({
             ...volume,
             streamingSource,
             streamingBaseShape,
             streamingBaseChunkShape,
           });
+          const clipmap = new VolumeClipmapManager(
+            {
+              ...volume,
+              streamingSource,
+              streamingBaseShape,
+              streamingBaseChunkShape,
+            },
+            clipSize,
+          );
           clipmap.setTimeIndex(timeIndex);
 
           const shader = VolumeRenderShader;
