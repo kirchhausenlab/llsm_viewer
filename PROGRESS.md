@@ -354,3 +354,8 @@
 - Added shared clipmap bounds helper in the fragment shader and applied it to both primary and fallback sampling paths to prevent out-of-range fetches from smearing edge voxels.
 - Introduced a regression test that mirrors the shader bounds logic to ensure fallback sampling leaves empty space black when the camera moves beyond populated clipmap regions.
 2025-12-15T00:00:00Z: Hardened clipmap fallback sampling and added coverage for empty-space rendering.
+
+## Clipmap timepoint updates
+- Extended `VolumeClipmapManager` to retain CPU time slices, honoring `setTimeIndex` for both streaming and buffered volumes by marking levels dirty and swapping the active slice.
+- Taught `useVolumeResources` to rebuild clipmaps when non-streaming time indices change so time series frames repopulate before rendering, and added a regression test that verifies clipmap textures refresh when the CPU time index toggles.
+2025-12-15T00:00:00Z: Ensured clipmaps swap buffered time slices when playback advances.

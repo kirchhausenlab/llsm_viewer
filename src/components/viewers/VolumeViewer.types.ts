@@ -13,6 +13,10 @@ export type StreamableNormalizedVolume = NormalizedVolume & {
   streamingSource?: ZarrVolumeSource;
   streamingBaseShape?: [number, number, number, number, number];
   streamingBaseChunkShape?: [number, number, number, number, number];
+  /**
+   * Optional CPU-resident volume data for each timepoint when not streaming.
+   */
+  timeSlices?: NormalizedVolume[];
 };
 
 export type VolumeSourceMetadata = {
@@ -168,6 +172,7 @@ export type VolumeResources = {
   labelTexture?: THREE.Data3DTexture | null;
   clipmap?: import('./volume-viewer/rendering/clipmap').VolumeClipmapManager;
   source?: VolumeSourceMetadata & { streamingSource?: ZarrVolumeSource };
+  timeIndex?: number;
   dimensions: {
     width: number;
     height: number;
