@@ -24,6 +24,8 @@ type WorkerMessage = LoadVolumesMessage;
 
 const ctx: DedicatedWorkerGlobalScope = self as unknown as DedicatedWorkerGlobalScope;
 
+let fromBlobImpl = fromBlob;
+
 ctx.onmessage = async (event: MessageEvent<WorkerMessage>) => {
   const message = event.data;
   if (!message) {
@@ -127,7 +129,7 @@ async function loadVolumeFromFile(
   requestId: number,
   index: number
 ): Promise<void> {
-  const tiff = await fromBlob(file);
+  const tiff = await fromBlobImpl(file);
   const imageCount = await tiff.getImageCount();
   if (imageCount === 0) {
     throw new Error(`File "${file.name}" does not contain any images.`);
@@ -169,12 +171,14 @@ async function loadVolumeFromFile(
 
   let globalMin = Number.POSITIVE_INFINITY;
   let globalMax = Number.NEGATIVE_INFINITY;
+  let slicesSent = 0;
 
   if (typedFirstRaster.length !== sliceLength) {
     throw new Error(`File "${file.name}" returned an unexpected slice length.`);
   }
 
   await scanAndPostSlice(typedFirstRaster, 0);
+  slicesSent += 1;
 
   for (let index = 1; index < imageCount; index += 1) {
     const image = await tiff.getImage(index);
@@ -196,6 +200,13 @@ async function loadVolumeFromFile(
     }
 
     await scanAndPostSlice(raster, index);
+    slicesSent += 1;
+  }
+
+  if (slicesSent !== imageCount) {
+    throw new Error(
+      `File "${file.name}" provided ${slicesSent} slices, but ${imageCount} were expected.`
+    );
   }
 
   if (!Number.isFinite(globalMin) || globalMin === Number.POSITIVE_INFINITY) {
@@ -380,5 +391,14 @@ function serializeErrorDetails(error: unknown): {
 
   return { message: 'An unexpected error occurred while loading volumes.' };
 }
+
+export const __TEST_ONLY__ = {
+  setFromBlobImplementation: (implementation: typeof fromBlob) => {
+    fromBlobImpl = implementation;
+  },
+  resetFromBlobImplementation: () => {
+    fromBlobImpl = fromBlob;
+  }
+};
 
 export {};
