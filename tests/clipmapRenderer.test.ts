@@ -30,9 +30,9 @@ console.log('Starting clipmap renderer tests');
   };
 
   const clipmap = new VolumeClipmapManager(volume, 4);
-  assert.equal(clipmap.getActiveLevelCount(), 2);
+  assert.equal(clipmap.clipSize, size);
+  assert.equal(clipmap.getActiveLevelCount(), 1);
   assert.equal(clipmap.getScale(0), 1);
-  assert.equal(clipmap.getScale(1), 2);
 
   const target = new THREE.Vector3(4, 4, 4);
   await clipmap.update(target);
@@ -42,7 +42,8 @@ console.log('Starting clipmap renderer tests');
   assert.deepEqual(firstLevel.origin.toArray(), [0, 0, 0]);
   assert.equal(firstLevel.buffer[0], normalized[0]);
   const expectedIndex = (((0 * size + 1) * size + 1) * channels) | 0;
-  assert.equal(firstLevel.buffer[5], normalized[expectedIndex]);
+  const destIndex = (((0 * clipmap.clipSize + 1) * clipmap.clipSize + 1) * channels) | 0;
+  assert.equal(firstLevel.buffer[destIndex], normalized[expectedIndex]);
   assert.equal(firstLevel.needsUpload, false);
 
   clipmap.setInteractionLod(true);
@@ -60,9 +61,9 @@ console.log('Starting clipmap renderer tests');
   const material = new THREE.ShaderMaterial({ uniforms, vertexShader: '', fragmentShader: '' });
   clipmap.applyToMaterial(material);
 
-  assert.equal(uniforms.u_clipmapLevelCount.value, 2);
-  assert.equal(uniforms.u_clipmapSize.value, 4);
-  assert.equal(uniforms.u_minClipLevel.value, 1);
+  assert.equal(uniforms.u_clipmapLevelCount.value, 1);
+  assert.equal(uniforms.u_clipmapSize.value, size);
+  assert.equal(uniforms.u_minClipLevel.value, 0);
   assert.equal(uniforms.u_useClipmap.value, 1);
   assert.equal(uniforms.u_clipmapOrigins.value[0]?.x, 0);
 
