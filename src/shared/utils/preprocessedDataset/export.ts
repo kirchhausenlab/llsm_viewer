@@ -118,9 +118,35 @@ export async function exportPreprocessedDataset(
   let totalVolumeCount = 0;
   let zipWriter: ZipWriter<unknown> | null = null;
   let blobWriter: BlobWriter | null = null;
-  const zarrEntries: ZarrEntry[] = [
-    { path: `${ZARR_STORE_ROOT}/.zgroup`, data: textEncoder.encode(JSON.stringify({ zarr_format: 2 })) }
-  ];
+  const zarrEntries: ZarrEntry[] = [];
+  const anisotropyScale = computeAnisotropyScale(voxelResolution);
+  const anisotropyCorrection: AnisotropyCorrectionMetadata | null = anisotropyScale
+    ? { scale: anisotropyScale }
+    : null;
+  const rootAttributes = {
+    movieMode,
+    voxelResolution,
+    anisotropyCorrection
+  };
+  const requiredRootEntries = new Set<string>([
+    `${ZARR_STORE_ROOT}/.zattrs`,
+    `${ZARR_STORE_ROOT}/zarr.json`,
+    `${ZARR_STORE_ROOT}/.zgroup`
+  ]);
+  const addedRootEntries = new Set<string>();
+
+  const ensureRootEntriesPersisted = () => {
+    const missing = [...requiredRootEntries].filter((path) => !addedRootEntries.has(path));
+    if (missing.length > 0) {
+      throw new Error('Export incomplete—root metadata missing');
+    }
+  };
+
+  const markRootEntry = (path: string) => {
+    if (requiredRootEntries.has(path)) {
+      addedRootEntries.add(path);
+    }
+  };
 
   const writable = onChunk
     ? new WritableStream<Uint8Array>({
@@ -150,6 +176,23 @@ export async function exportPreprocessedDataset(
   }
 
   try {
+    for (const entry of [
+      { path: `${ZARR_STORE_ROOT}/.zgroup`, data: textEncoder.encode(JSON.stringify({ zarr_format: 2 })) },
+      { path: `${ZARR_STORE_ROOT}/.zattrs`, data: textEncoder.encode(JSON.stringify(rootAttributes)) },
+      {
+        path: `${ZARR_STORE_ROOT}/zarr.json`,
+        data: textEncoder.encode(
+          JSON.stringify({ zarr_format: 3, node_type: 'group', attributes: rootAttributes })
+        )
+      }
+    ]) {
+      await zipWriter!.add(entry.path, new Uint8ArrayReader(entry.data), {
+        level: ZIP_COMPRESSION_LEVEL,
+        zip64: true
+      });
+      markRootEntry(entry.path);
+    }
+
     for (const channel of channels) {
       const associatedLayers = groupedLayers.get(channel.id) ?? [];
       const manifestLayers: PreprocessedLayerManifestEntry[] = [];
@@ -268,6 +311,9 @@ export async function exportPreprocessedDataset(
     } catch {
       // Ignore close failures when recovering from an earlier error.
     }
+    if (requiredRootEntries.size !== addedRootEntries.size) {
+      throw new Error('Export incomplete—root metadata missing');
+    }
     throw error instanceof Error ? error : new Error(String(error));
   }
 
@@ -281,11 +327,6 @@ export async function exportPreprocessedDataset(
       }
     }
   }
-
-  const anisotropyScale = computeAnisotropyScale(voxelResolution);
-  const anisotropyCorrection: AnisotropyCorrectionMetadata | null = anisotropyScale
-    ? { scale: anisotropyScale }
-    : null;
 
   const manifest: PreprocessedManifest = {
     format: 'llsm-viewer-preprocessed',
@@ -301,28 +342,6 @@ export async function exportPreprocessedDataset(
     }
   };
 
-  const rootAttributes = {
-    movieMode,
-    voxelResolution,
-    anisotropyCorrection
-  };
-
-  zarrEntries.push({
-    path: `${ZARR_STORE_ROOT}/.zattrs`,
-    data: textEncoder.encode(JSON.stringify(rootAttributes))
-  });
-
-  zarrEntries.push({
-    path: `${ZARR_STORE_ROOT}/zarr.json`,
-    data: textEncoder.encode(
-      JSON.stringify({
-        zarr_format: 3,
-        node_type: 'group',
-        attributes: rootAttributes
-      })
-    )
-  });
-
   try {
     for (const entry of zarrEntries) {
       await zipWriter!.add(entry.path, new Uint8ArrayReader(entry.data), {
@@ -337,12 +356,16 @@ export async function exportPreprocessedDataset(
       new Uint8ArrayReader(manifestBytes),
       { level: ZIP_COMPRESSION_LEVEL, zip64: true }
     );
+    ensureRootEntriesPersisted();
     await zipWriter!.close(undefined, { zip64: true });
   } catch (error) {
     try {
       await zipWriter!.close();
     } catch {
       // Ignore close failures when handling the primary error.
+    }
+    if (requiredRootEntries.size !== addedRootEntries.size) {
+      throw new Error('Export incomplete—root metadata missing');
     }
     throw error instanceof Error ? error : new Error(String(error));
   }
