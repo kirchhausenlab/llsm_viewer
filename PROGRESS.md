@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Clamped clipmap origin alignment when clip extents exceed the dataset bounds and added coverage to keep coarse levels
+  anchored while moving the camera target. (2025-12-15)
 - Ensured preprocessed dataset exports write root Zarr metadata before streaming volumes, fail loudly when required keys are
   missing, and covered interrupted stream handling with regression tests.
 - Filtered the zarr store range request test to ignore unrelated fetches (e.g., WASM loads) so range
