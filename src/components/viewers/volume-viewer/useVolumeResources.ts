@@ -298,7 +298,8 @@ export function useVolumeResources({
           resources.dimensions.height !== volume.height ||
           resources.dimensions.depth !== volume.depth ||
           resources.channels !== volume.channels ||
-          !resources.clipmap;
+          !resources.clipmap ||
+          (!isStreamingVolume && resources.timeIndex !== timeIndex);
 
         if (needsRebuild) {
           removeResource(layer.key);
@@ -398,6 +399,7 @@ export function useVolumeResources({
             channels: volume.channels,
             mode: viewerMode,
             samplingMode: layer.samplingMode,
+            timeIndex,
           });
         }
 
@@ -632,6 +634,8 @@ export function useVolumeResources({
             ? { type: 'zarr', clipmap: null, streamingSource: streamingSource! }
             : { type: 'tiff', clipmap: null };
         }
+
+        resources.timeIndex = timeIndex;
       }
 
       seenKeys.add(layer.key);

@@ -28,6 +28,11 @@ type ClipmapVolume = NormalizedVolume & {
   streamingSource?: ZarrVolumeSource;
   streamingBaseShape?: [number, number, number, number, number];
   streamingBaseChunkShape?: [number, number, number, number, number];
+  /**
+   * Optional per-timepoint CPU volumes. When present, clipmap sampling will
+   * swap to the requested time slice when {@link setTimeIndex} is called.
+   */
+  timeSlices?: NormalizedVolume[];
 };
 
 function getTextureTypeForDataType(dataType: VolumeDataType): THREE.TextureDataType {
@@ -116,16 +121,20 @@ function alignToChunk(value: number, step: number, limit: number): number {
 export class VolumeClipmapManager {
   readonly levels: ClipLevel[];
   readonly clipSize: number;
-  private readonly volume: ClipmapVolume;
+  private volume: ClipmapVolume;
+  private readonly baseVolume: ClipmapVolume;
   private readonly chunkShape: [number, number, number];
   private readonly streaming?: StreamingMetadata;
   private readonly clipmapDataType: VolumeDataType;
   private readonly clipmapTextureType: THREE.TextureDataType;
+  private readonly timepointVolumes: NormalizedVolume[] | null;
   private minLevelOverride = 0;
   private timeIndex = 0;
 
   constructor(volume: ClipmapVolume, clipSize = DEFAULT_CLIP_SIZE) {
-    this.volume = volume;
+    this.baseVolume = volume;
+    this.timepointVolumes = volume.timeSlices?.length ? [...volume.timeSlices] : null;
+    this.volume = this.resolveVolumeForTime(0);
     this.clipSize = clipSize;
     const streamingSource = volume.streamingSource ?? null;
     const streamingBaseShape = volume.streamingBaseShape ?? null;
@@ -176,17 +185,17 @@ export class VolumeClipmapManager {
   }
 
   setTimeIndex(timeIndex: number) {
-    if (!this.streaming) {
-      return;
-    }
     const clamped = Number.isFinite(timeIndex) ? Math.max(0, Math.floor(timeIndex)) : 0;
     if (clamped === this.timeIndex) {
       return;
     }
     this.timeIndex = clamped;
+    this.volume = this.resolveVolumeForTime(clamped);
     this.levels.forEach((level) => {
       level.requestId += 1;
       level.abortController?.abort();
+      level.origin.set(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY);
+      level.needsUpload = true;
     });
   }
 
@@ -287,6 +296,16 @@ export class VolumeClipmapManager {
     }
 
     level.needsUpload = true;
+  }
+
+  private resolveVolumeForTime(timeIndex: number): ClipmapVolume {
+    if (!this.timepointVolumes || this.timepointVolumes.length === 0) {
+      return this.baseVolume;
+    }
+
+    const clampedIndex = Math.min(Math.max(0, Math.floor(timeIndex)), this.timepointVolumes.length - 1);
+    const slice = this.timepointVolumes[clampedIndex];
+    return { ...this.baseVolume, ...slice };
   }
 
   private computeMipScale(levelScale: number) {
