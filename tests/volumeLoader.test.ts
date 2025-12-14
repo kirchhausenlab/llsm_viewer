@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { loadVolumesFromFiles } from '../src/loaders/volumeLoader.ts';
+console.log('Starting volume loader tests');
 
 class StubWorker implements Worker {
   onmessage: ((this: Worker, ev: MessageEvent<any>) => any) | null = null;
@@ -9,9 +9,13 @@ class StubWorker implements Worker {
   addEventListener: Worker['addEventListener'] = () => undefined as any;
   dispatchEvent: Worker['dispatchEvent'] = () => false;
   removeEventListener: Worker['removeEventListener'] = () => undefined as any;
+
+  constructor(private readonly script: (worker: StubWorker, message: any) => void) {}
+
   postMessage(message: any) {
     this.script(this, message);
   }
+
   terminate() {
     this.terminated = true;
   }
@@ -20,8 +24,6 @@ class StubWorker implements Worker {
   readonly name = 'stub-worker';
   readonly self: Worker = this;
   terminated = false;
-
-  constructor(private readonly script: (worker: StubWorker, message: any) => void) {}
 }
 
 class MemoryStore {
@@ -100,41 +102,70 @@ function buildWorker(options: {
     });
 }
 
-try {
-  (async () => {
-    const metadata = { width: 2, height: 2, depth: 1, channels: 1 };
-    const workerFactory = buildWorker({ metadata: { ...metadata, dataType: 'uint8' }, slices: [new Uint8Array([1, 2, 3, 4])] });
+(async () => {
+  (import.meta as any).env = { VITE_STREAMING_BYTE_THRESHOLD: '8' };
+  process.env.VITE_STREAMING_BYTE_THRESHOLD = '8';
+  const { loadVolumesFromFiles } = await import('../src/loaders/volumeLoader.ts');
 
-    const [volume] = await loadVolumesFromFiles([new File(['buffered'], 'buffered.tiff')], {}, { workerFactory });
-    assert.strictEqual(volume.data.byteLength, 4);
-    assert.deepEqual(Array.from(new Uint8Array(volume.data)), [1, 2, 3, 4]);
+  const baseMetadata = { width: 2, height: 2, channels: 1, dataType: 'uint8' as const };
 
-    const store = new MemoryStore();
-    let preprocessingCalled = false;
-    const streamingVolume = await loadVolumesFromFiles(
-      [new File(['streaming'], 'streaming.tiff')],
-      {
-        preprocessingHooks: {
-          onPreprocessingComplete: async (result) => {
-            preprocessingCalled = true;
-            assert.ok(result.arrays.length > 0);
-            const keys = store.listKeys();
-            assert.ok(keys.length > 1);
-          }
+  const [bufferedVolume] = await loadVolumesFromFiles(
+    [new File(['buffered'], 'buffered.tiff')],
+    {},
+    {
+      workerFactory: buildWorker({
+        metadata: { ...baseMetadata, depth: 1 },
+        slices: [new Uint8Array([1, 2, 3, 4])]
+      }),
+      streamingByteThreshold: 16
+    }
+  );
+  assert.strictEqual(bufferedVolume.data.byteLength, 4);
+  assert.deepEqual(Array.from(new Uint8Array(bufferedVolume.data)), [1, 2, 3, 4]);
+
+  const streamingStore = new MemoryStore();
+  let preprocessingCalled = false;
+  const streamingVolume = await loadVolumesFromFiles(
+    [new File(['streaming'], 'streaming.tiff')],
+    {
+      preprocessingHooks: {
+        onPreprocessingComplete: async (result) => {
+          preprocessingCalled = true;
+          assert.ok(result.arrays.length > 0);
+          const keys = streamingStore.listKeys();
+          assert.ok(keys.length > 1);
         }
-      },
-      {
-        workerFactory: buildWorker({ metadata: { ...metadata, dataType: 'uint8' }, slices: [new Uint8Array([5, 6, 7, 8])] }),
-        streamingByteThreshold: 1,
-        preprocessingStoreFactory: async () => store
       }
-    );
+    },
+    {
+      workerFactory: buildWorker({
+        metadata: { ...baseMetadata, depth: 2 },
+        slices: [new Uint8Array([5, 6, 7, 8]), new Uint8Array([9, 10, 11, 12])]
+      }),
+      streamingByteThreshold: 4,
+      preprocessingStoreFactory: async () => streamingStore
+    }
+  );
 
-    assert.strictEqual(streamingVolume[0].data.byteLength, 0);
-    assert.ok(preprocessingCalled);
-  })();
-} catch (error) {
+  assert.strictEqual(streamingVolume[0].data.byteLength, 0);
+  assert.ok(preprocessingCalled);
+
+  const defaultStore = new MemoryStore();
+  const [defaultStreamingVolume] = await loadVolumesFromFiles(
+    [new File(['default'], 'default.tiff')],
+    {},
+    {
+      workerFactory: buildWorker({
+        metadata: { ...baseMetadata, depth: 3 },
+        slices: [new Uint8Array([13, 14, 15, 16]), new Uint8Array([17, 18, 19, 20]), new Uint8Array([21, 22, 23, 24])]
+      }),
+      preprocessingStoreFactory: async () => defaultStore
+    }
+  );
+
+  assert.strictEqual(defaultStreamingVolume.data.byteLength, 0);
+})().catch((error) => {
   console.error(error);
   process.exitCode = 1;
-}
+});
 
