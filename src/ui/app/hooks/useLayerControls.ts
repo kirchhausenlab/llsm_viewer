@@ -13,6 +13,23 @@ import {
 } from '../../../state/layerSettings';
 import type { LoadedLayer } from '../../../types/layers';
 
+function selectVolumeForIndex(layer: LoadedLayer, index: number) {
+  const fallbackVolume = layer.volumes[index] ?? layer.volumes[0] ?? null;
+  if (!fallbackVolume) {
+    return null;
+  }
+
+  const { timeSlices } = fallbackVolume as LoadedLayer['volumes'][number] & {
+    timeSlices?: LoadedLayer['volumes'];
+  };
+  if (!timeSlices || timeSlices.length === 0) {
+    return fallbackVolume;
+  }
+
+  const clampedIndex = Math.min(Math.max(index, 0), timeSlices.length - 1);
+  return timeSlices[clampedIndex] ?? fallbackVolume;
+}
+
 export type LayerControlsParams = {
   layers: LoadedLayer[];
   selectedIndex: number;
@@ -110,7 +127,7 @@ export function useLayerControls({
       if (!layer) {
         return;
       }
-      const volume = layer.volumes[selectedIndex] ?? null;
+      const volume = selectVolumeForIndex(layer, selectedIndex);
       if (!volume) {
         return;
       }
@@ -397,12 +414,13 @@ export function useLayerControls({
     return activeLayers.map((layer) => {
       const settings = layerSettings[layer.key] ?? createLayerDefaultSettings(layer.key);
       const channelVisible = channelVisibility[layer.channelId];
+      const volume = selectVolumeForIndex(layer, selectedIndex);
       return {
         key: layer.key,
         label: layer.label,
         channelId: layer.channelId,
         channelName: channelNameMap.get(layer.channelId) ?? 'Untitled channel',
-        volume: layer.volumes[selectedIndex] ?? null,
+        volume,
         visible: channelVisible ?? true,
         sliderRange: settings.sliderRange,
         minSliderIndex: settings.minSliderIndex,
