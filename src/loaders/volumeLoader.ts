@@ -16,7 +16,14 @@ import {
   type VolumePayload,
   type VolumeTypedArray
 } from '../types/volume';
-import VolumeWorker from '../workers/volumeLoader.worker?worker';
+async function createDefaultVolumeWorker(): Promise<Worker> {
+  const module = await import('../workers/volumeLoader.worker?worker');
+  const WorkerConstructor = (module as { default?: new () => Worker }).default ?? (module as any);
+  if (typeof WorkerConstructor !== 'function') {
+    throw new Error('Failed to load volume worker implementation.');
+  }
+  return new WorkerConstructor();
+}
 import type {
   VolumeLoadedMessage,
   VolumeSliceMessage,
@@ -39,7 +46,17 @@ export type VolumeLoadCallbacks = {
   preprocessingHooks?: VolumePreprocessingHooks;
 };
 
-type VolumeAssemblyState = {
+type StreamingAssemblyState = {
+  mode: 'streaming';
+  metadata: VolumeStartMessage['metadata'];
+  sliceCount: number;
+  sliceLength: number;
+  bytesPerSlice: number;
+  slicesReceived: number;
+};
+
+type BufferedAssemblyState = {
+  mode: 'buffered';
   metadata: VolumeStartMessage['metadata'];
   buffer: ArrayBufferLike;
   destination: VolumeTypedArray;
@@ -48,6 +65,8 @@ type VolumeAssemblyState = {
   bytesPerSlice: number;
   slicesReceived: number;
 };
+
+type VolumeAssemblyState = StreamingAssemblyState | BufferedAssemblyState;
 
 type VolumeTooLargeMessageDetails = {
   requiredBytes: number;
@@ -325,30 +344,52 @@ async function createVolumeArray(
   };
 }
 
+export type VolumeLoadOptions = {
+  streamingByteThreshold?: number;
+  workerFactory?: () => Worker;
+  preprocessingStoreFactory?: typeof createPreprocessingStore;
+};
+
 export async function loadVolumesFromFiles(
   files: File[],
-  callbacks: VolumeLoadCallbacks = {}
+  callbacks: VolumeLoadCallbacks = {},
+  options: VolumeLoadOptions = {}
 ): Promise<VolumePayload[]> {
   if (files.length === 0) {
     return [];
   }
 
+  const {
+    streamingByteThreshold = Number.POSITIVE_INFINITY,
+    workerFactory,
+    preprocessingStoreFactory = createPreprocessingStore
+  } = options;
+
   return new Promise<VolumePayload[]>((resolve, reject) => {
-    const worker = new VolumeWorker();
+    let worker: Worker | null = null;
     const requestId = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
     const volumes: VolumePayload[] = new Array(files.length);
 
     const assemblies = new Map<number, VolumeAssemblyState>();
     let settled = false;
 
-    const preprocessingCoordinatorPromise: Promise<PreprocessingCoordinator | null> =
+    let preprocessingCoordinatorPromise: Promise<PreprocessingCoordinator | null> | null =
       callbacks.preprocessingHooks?.onPreprocessingComplete
-        ? createPreprocessingStore().then((store) => new PreprocessingCoordinator(store))
-        : Promise.resolve(null);
+        ? preprocessingStoreFactory().then((store) => new PreprocessingCoordinator(store))
+        : null;
+
+    const ensurePreprocessingCoordinator = () => {
+      if (!preprocessingCoordinatorPromise) {
+        preprocessingCoordinatorPromise = preprocessingStoreFactory().then(
+          (store) => new PreprocessingCoordinator(store)
+        );
+      }
+      return preprocessingCoordinatorPromise;
+    };
 
     const cleanup = () => {
       assemblies.clear();
-      worker.terminate();
+      worker?.terminate();
     };
 
     const fail = (error: unknown) => {
@@ -370,6 +411,17 @@ export async function loadVolumesFromFiles(
       const totalValues = sliceLength * sliceCount;
       const bytesPerSlice = sliceLength * metadata.bytesPerValue;
       const totalBytes = bytesPerSlice * sliceCount;
+
+      if (totalBytes >= streamingByteThreshold) {
+        return {
+          mode: 'streaming',
+          metadata,
+          sliceCount,
+          sliceLength,
+          bytesPerSlice,
+          slicesReceived: 0
+        };
+      }
 
       let buffer: ArrayBufferLike | null = null;
       let allocationError: unknown = null;
@@ -393,6 +445,7 @@ export async function loadVolumesFromFiles(
       const destination = createVolumeTypedArray(metadata.dataType, buffer, 0, totalValues);
 
       return {
+        mode: 'buffered',
         metadata,
         buffer,
         destination,
@@ -403,19 +456,29 @@ export async function loadVolumesFromFiles(
       };
     };
 
-    worker.onmessage = async (event) => {
-      const message = event.data as VolumeWorkerOutboundMessage;
-
-      if (!message || message.requestId !== requestId || settled) {
+    const setupWorker = async () => {
+      try {
+        worker = workerFactory ? workerFactory() : await createDefaultVolumeWorker();
+      } catch (error) {
+        fail(error);
         return;
       }
+
+      worker.onmessage = async (event) => {
+        const message = event.data as VolumeWorkerOutboundMessage;
+
+        if (!message || message.requestId !== requestId || settled) {
+          return;
+        }
 
       switch (message.type) {
         case 'volume-start': {
           try {
             const state = createAssemblyState(message);
             assemblies.set(message.index, state);
-            const coordinator = await preprocessingCoordinatorPromise;
+            const coordinator = await (state.mode === 'streaming'
+              ? ensurePreprocessingCoordinator()
+              : preprocessingCoordinatorPromise ?? null);
             coordinator?.startVolume(message.index, message.metadata);
           } catch (error) {
             fail(error);
@@ -448,11 +511,15 @@ export async function loadVolumesFromFiles(
               0,
               state.sliceLength
             );
-            const coordinator = await preprocessingCoordinatorPromise;
+            const coordinator = await (state.mode === 'streaming'
+              ? ensurePreprocessingCoordinator()
+              : preprocessingCoordinatorPromise ?? null);
             if (coordinator) {
               await coordinator.writeSlice(message.index, slice, message.sliceIndex);
             }
-            state.destination.set(slice, message.sliceIndex * state.sliceLength);
+            if (state.mode === 'buffered') {
+              state.destination.set(slice, message.sliceIndex * state.sliceLength);
+            }
             state.slicesReceived += 1;
           } catch (error) {
             fail(error);
@@ -475,7 +542,9 @@ export async function loadVolumesFromFiles(
           }
 
           try {
-            const coordinator = await preprocessingCoordinatorPromise;
+            const coordinator = await (state.mode === 'streaming'
+              ? ensurePreprocessingCoordinator()
+              : preprocessingCoordinatorPromise ?? null);
             if (coordinator) {
               await coordinator.finalizeVolume(message.index);
             }
@@ -486,7 +555,7 @@ export async function loadVolumesFromFiles(
 
           const payload: VolumePayload = {
             ...message.metadata,
-            data: state.buffer
+            data: state.mode === 'buffered' ? state.buffer : new ArrayBuffer(0)
           };
 
           volumes[message.index] = payload;
@@ -503,10 +572,14 @@ export async function loadVolumesFromFiles(
         }
         case 'complete':
           try {
-            const coordinator = await preprocessingCoordinatorPromise;
-            if (coordinator && callbacks.preprocessingHooks?.onPreprocessingComplete) {
+            const coordinator = preprocessingCoordinatorPromise
+              ? await preprocessingCoordinatorPromise
+              : null;
+            if (coordinator) {
               const result = await coordinator.finalizeAll(files.length);
-              await callbacks.preprocessingHooks.onPreprocessingComplete(result);
+              if (callbacks.preprocessingHooks?.onPreprocessingComplete) {
+                await callbacks.preprocessingHooks.onPreprocessingComplete(result);
+              }
             }
             settled = true;
             cleanup();
@@ -536,13 +609,16 @@ export async function loadVolumesFromFiles(
         default:
           break;
       }
+      };
+
+      worker.onerror = (event) => {
+        fail(event.error instanceof Error ? event.error : new Error(event.message ?? 'Worker error'));
+      };
+
+      worker.postMessage({ type: 'load-volumes', requestId, files });
     };
 
-    worker.onerror = (event) => {
-      fail(event.error instanceof Error ? event.error : new Error(event.message ?? 'Worker error'));
-    };
-
-    worker.postMessage({ type: 'load-volumes', requestId, files });
+    void setupWorker();
   });
 }
 
