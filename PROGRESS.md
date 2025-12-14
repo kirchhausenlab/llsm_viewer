@@ -3,6 +3,12 @@
 ## Latest changes
 - Ensured preprocessed dataset exports write root Zarr metadata before streaming volumes, fail loudly when required keys are
   missing, and covered interrupted stream handling with regression tests.
+- Filtered the zarr store range request test to ignore unrelated fetches (e.g., WASM loads) so range
+  header assertions stay isolated.
+- Ensured preprocessed dataset exports write root Zarr metadata before streaming volumes, fail loudly when required keys are
+  missing, and covered interrupted stream handling with regression tests.
+- Surfaced a clear import error when archived Zarr data is missing `zarr.json`, preventing UI
+  crashes and adding regression coverage.
 - Added slice-count validation in the volume loader worker so TIFF stacks that report more images than they provide surface an
   error before completing, along with regression coverage for the worker error path.
 - Added a configurable streaming path for volume loading that uses the preprocessing store when volumes exceed a byte-size
@@ -338,3 +344,8 @@
 ## Directory handle iteration compatibility
 - Centralized directory iteration through a helper that throws when `entries()` is unavailable, avoiding type errors on platforms lacking the method.
 2025-06-01T00:00:00+00:00: Normalized `FileSystemDirectoryHandle` iteration to keep type checks green across browsers.
+
+## Clipmap-only 3D volume rendering
+- Always construct `VolumeClipmapManager` for 3D volumes, seeding local CPU data into clipmap levels when streaming metadata is absent and routing shader sampling through clipmap uniforms.
+- Simplified the volume render shader/material setup to drop monolithic `u_data` usage, keeping hover and segmentation uniforms intact and extending coverage to both local TIFF and streaming Zarr fixtures.
+2025-12-14T04:33:03Z: Enabled clipmap-only rendering and refreshed volume resource tests.
