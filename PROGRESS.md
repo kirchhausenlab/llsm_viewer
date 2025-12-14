@@ -214,3 +214,6 @@
 ## Volume renderer teardown
 - Added a destroy helper for the volume render context that disposes the WebGL renderer, XR state, render lists, controls, and DOM nodes while clearing the scene.
 - Wired the volume viewer cleanup to use the new helper so unmounting releases WebGL contexts and associated listeners cleanly.
+
+## Pointer listener cleanup
+- Removed volume viewer pointer listeners and resize observer subscriptions during teardown to avoid leaking DOM references after unmount.

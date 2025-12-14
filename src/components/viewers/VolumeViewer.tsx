@@ -957,6 +957,15 @@ function VolumeViewer({
       };
       renderer.setAnimationLoop(null);
 
+      domElement.removeEventListener('pointerdown', handlePointerDown, pointerDownOptions);
+      pointerTarget.removeEventListener('pointermove', handlePointerMove);
+      pointerTarget.removeEventListener('pointerup', handlePointerUp);
+      pointerTarget.removeEventListener('pointercancel', handlePointerUp);
+      pointerTarget.removeEventListener('pointerleave', handlePointerLeave);
+      pointerTarget.removeEventListener('dblclick', handleDoubleClick);
+
+      resizeObserver.disconnect();
+
       const activeSession = xrSessionRef.current;
       if (activeSession) {
         try {
