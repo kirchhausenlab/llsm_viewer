@@ -197,11 +197,15 @@ export class VolumeClipmapManager {
   }
 
   setTimeSlices(timeSlices: NormalizedVolume[] | undefined) {
-    const nextSlices = timeSlices?.length ? [...timeSlices] : null;
+    let nextSlices: NormalizedVolume[] | null = null;
+    if (timeSlices && timeSlices.length > 0) {
+      nextSlices = [...timeSlices];
+    }
+
+    const currentLength = this.timepointVolumes?.length ?? 0;
     const hasChanges =
-      this.timepointVolumes?.length !== nextSlices?.length ||
-      (nextSlices?.some((slice, index) => this.timepointVolumes?.[index] !== slice) ??
-        this.timepointVolumes?.length > 0);
+      currentLength !== (nextSlices?.length ?? 0) ||
+      (nextSlices?.some((slice, index) => this.timepointVolumes?.[index] !== slice) ?? currentLength > 0);
 
     if (!hasChanges) {
       return;

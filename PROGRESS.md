@@ -363,3 +363,4 @@
 - Extended `VolumeClipmapManager` to retain CPU time slices, honoring `setTimeIndex` for both streaming and buffered volumes by marking levels dirty and swapping the active slice.
 - Taught `useVolumeResources` to refresh clipmaps with newly loaded CPU time slices without tearing down meshes so buffered playback swaps textures smoothly, and added a regression test that feeds time slices after clipmap creation.
 2025-12-15T00:00:00Z: Ensured clipmaps swap buffered time slices when playback advances.
+2025-12-16T00:00:00Z: Guarded buffered time-slice updates to keep clipmap refresh logic type-safe while preserving slice replacement behavior.
