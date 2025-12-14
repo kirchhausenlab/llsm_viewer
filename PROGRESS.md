@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Removed the default 512 MiB browser volume limit so local TIFF loads are unrestricted unless an explicit environment cap is
+  provided.
 - Added a fallback that strips invalid streaming sources when Zarr contexts cannot be rebuilt (e.g., archived manifests) and
   added regression coverage for missing `getMipLevels` sources during import augmentation.
 - Hardened streaming source validation to compare mip levels, shapes, and chunk shapes against manifest/base metadata and
