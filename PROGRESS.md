@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Ensured preprocessed dataset exports write root Zarr metadata before streaming volumes, fail loudly when required keys are
+  missing, and covered interrupted stream handling with regression tests.
 - Added slice-count validation in the volume loader worker so TIFF stacks that report more images than they provide surface an
   error before completing, along with regression coverage for the worker error path.
 - Added a configurable streaming path for volume loading that uses the preprocessing store when volumes exceed a byte-size
