@@ -21,5 +21,6 @@ import './zarrStores.test.ts';
 import './zarrLayout.test.ts';
 import './zarrVolumeSource.test.ts';
 import './clipmapRenderer.test.ts';
+import './sampleClipmapFallback.test.ts';
 import './importPreprocessedDatasetWorkerClient.test.ts';
 import './volumeLoader.test.ts';
