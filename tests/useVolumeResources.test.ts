@@ -130,6 +130,104 @@ const createFakeResource = (): VolumeResources => {
 })();
 
 (async () => {
+  const localSize = 4;
+  const localValue = 5;
+  const localVolume: StreamableNormalizedVolume = {
+    width: localSize,
+    height: localSize,
+    depth: localSize,
+    channels: 1,
+    dataType: 'uint8',
+    normalized: new Uint8Array(localSize * localSize * localSize).fill(localValue),
+    min: 0,
+    max: 1,
+  };
+
+  const sceneRef = { current: new THREE.Scene() };
+  const cameraRef = { current: new THREE.PerspectiveCamera(75, 1, 0.1, 10) };
+  const controlsRef = {
+    current: {
+      target: new THREE.Vector3(),
+      update: () => {},
+      saveState: () => {},
+    } as unknown as THREE.OrbitControls,
+  };
+
+  const resourcesRef = { current: new Map<string, VolumeResources>() };
+  const trackGroupRef = { current: new THREE.Group() };
+  const volumeRootGroupRef = { current: new THREE.Group() };
+
+  const hook = renderHook(() =>
+    useVolumeResources({
+      layers: [
+        {
+          key: 'local',
+          label: 'Local layer',
+          channelName: 'local',
+          volume: localVolume,
+          visible: true,
+          sliderRange: 1,
+          minSliderIndex: 0,
+          maxSliderIndex: 0,
+          brightnessSliderIndex: 0,
+          contrastSliderIndex: 0,
+          windowMin: 0,
+          windowMax: 1,
+          color: '#ffffff',
+          offsetX: 0,
+          offsetY: 0,
+          renderStyle: 0,
+          invert: false,
+          samplingMode: 'nearest',
+          isSegmentation: false,
+          mode: '3d',
+        },
+      ],
+      primaryVolume: localVolume,
+      isAdditiveBlending: false,
+      renderContextRevision: 0,
+      sceneRef,
+      cameraRef,
+      controlsRef,
+      timeIndex: 0,
+      rotationTargetRef: { current: new THREE.Vector3(localSize / 2, localSize / 2, localSize / 2) },
+      defaultViewStateRef: { current: null },
+      trackGroupRef,
+      resourcesRef,
+      currentDimensionsRef: { current: null },
+      colormapCacheRef: { current: new Map() },
+      volumeRootGroupRef,
+      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+      volumeNormalizationScaleRef: { current: 1 },
+      volumeUserScaleRef: { current: 1 },
+      volumeStepScaleRef: { current: 1 },
+      volumeYawRef: { current: 0 },
+      volumePitchRef: { current: 0 },
+      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+      applyTrackGroupTransform: () => {},
+      applyVolumeRootTransform: () => {},
+      applyVolumeStepScaleToResources: () => {},
+      applyHoverHighlightToResources: () => {},
+    }),
+  );
+
+  const resource = resourcesRef.current.get('local');
+  assert(resource, 'Local clipmap resource was not created');
+  assert(resource?.clipmap, 'Local clipmap was not initialized');
+
+  await resource?.clipmap?.update(new THREE.Vector3(localSize / 2, localSize / 2, localSize / 2));
+  resource?.clipmap?.uploadPending();
+  const firstLevel = resource?.clipmap?.levels[0];
+  assert(firstLevel, 'Local clipmap levels missing');
+  assert(firstLevel.buffer.includes(localValue), 'Local clipmap never populated from CPU volume');
+
+  hook.unmount();
+})();
+
+(async () => {
   const streamingSize = 4;
   const streamingValue = 9;
   let streamingReads = 0;
