@@ -198,6 +198,14 @@ console.log('Starting preprocessed dataset import/export tests');
 
     const zarrPaths = archivePaths.filter((path) => path.startsWith('zarr/'));
     assert.ok(zarrPaths.length > 0, 'expected embedded Zarr store entries');
+    assert.ok(zarrPaths.includes('zarr/zarr.json'), 'missing root zarr.json');
+
+    for (const path of Object.keys(expectedVolumeEntries)) {
+      assert.ok(
+        zarrPaths.includes(`zarr/${path}/zarr.json`),
+        `missing zarr.json for ${path}`
+      );
+    }
 
     for (const [path, expected] of Object.entries(expectedVolumeEntries)) {
       const entry = filesInArchive[path];

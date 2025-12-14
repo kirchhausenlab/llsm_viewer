@@ -28,10 +28,16 @@ function normalizeZarrPath(path: string): string {
   return path.startsWith('/') ? path.slice(1) : path;
 }
 
-function dtypeToZarr(data: Uint8Array | Uint32Array): string {
+function dtypeToZarrV2(data: Uint8Array | Uint32Array): string {
   if (data instanceof Uint8Array) return '|u1';
   if (data instanceof Uint32Array) return '<u4';
   return '|u1';
+}
+
+function dtypeToZarrV3(data: Uint8Array | Uint32Array): string {
+  if (data instanceof Uint8Array) return 'uint8';
+  if (data instanceof Uint32Array) return 'uint32';
+  return 'uint8';
 }
 
 function writeZarrArray(
@@ -43,7 +49,8 @@ function writeZarrArray(
 ) {
   const normalized = normalizeZarrPath(arrayPath);
   const basePath = root ? `${root}/${normalized}` : normalized;
-  const dtype = dtypeToZarr(data);
+  const dtypeV2 = dtypeToZarrV2(data);
+  const dtypeV3 = dtypeToZarrV3(data);
   const shape = metadata.shape;
 
   entries.push({
@@ -53,7 +60,7 @@ function writeZarrArray(
         zarr_format: 2,
         shape: shape,
         chunks: shape,
-        dtype,
+        dtype: dtypeV2,
         order: 'C',
         compressor: null,
         filters: null,
@@ -65,6 +72,23 @@ function writeZarrArray(
   entries.push({
     path: `${basePath}/.zattrs`,
     data: textEncoder.encode(JSON.stringify({ min: metadata.min, max: metadata.max }))
+  });
+
+  entries.push({
+    path: `${basePath}/zarr.json`,
+    data: textEncoder.encode(
+      JSON.stringify({
+        zarr_format: 3,
+        node_type: 'array',
+        shape,
+        data_type: dtypeV3,
+        chunk_grid: { name: 'regular', configuration: { chunk_shape: shape } },
+        chunk_key_encoding: { name: 'default', configuration: { separator: '.' } },
+        codecs: [],
+        fill_value: 0,
+        attributes: { min: metadata.min, max: metadata.max }
+      })
+    )
   });
 
   entries.push({
@@ -277,13 +301,24 @@ export async function exportPreprocessedDataset(
     }
   };
 
+  const rootAttributes = {
+    movieMode,
+    voxelResolution,
+    anisotropyCorrection
+  };
+
   zarrEntries.push({
     path: `${ZARR_STORE_ROOT}/.zattrs`,
+    data: textEncoder.encode(JSON.stringify(rootAttributes))
+  });
+
+  zarrEntries.push({
+    path: `${ZARR_STORE_ROOT}/zarr.json`,
     data: textEncoder.encode(
       JSON.stringify({
-        movieMode,
-        voxelResolution,
-        anisotropyCorrection
+        zarr_format: 3,
+        node_type: 'group',
+        attributes: rootAttributes
       })
     )
   });
