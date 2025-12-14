@@ -537,6 +537,7 @@ export function useVolumeResources({
             resources.clipmap = clipmap;
           }
 
+          clipmap.setTimeSlices(volume.timeSlices);
           clipmap.setTimeIndex(timeIndex);
           void clipmap.update(rotationTargetRef.current, {
             signal: abortController.signal,

@@ -46,6 +46,21 @@ import type { NormalizedVolume } from '../src/core/volumeProcessing.ts';
 
   clipmap.dispose();
   console.log('clipmap CPU time index tests passed');
+
+  const lateLoadedClipmap = new VolumeClipmapManager({ ...timeZeroVolume }, 4);
+  await lateLoadedClipmap.update(target);
+  lateLoadedClipmap.uploadPending();
+  const lateLevel = lateLoadedClipmap.levels[0];
+  assert.equal(lateLevel.buffer[0], baseData[0]);
+
+  lateLoadedClipmap.setTimeSlices([timeZeroVolume, timeOneVolume]);
+  lateLoadedClipmap.setTimeIndex(1);
+  await lateLoadedClipmap.update(target);
+  lateLoadedClipmap.uploadPending();
+  assert.equal(lateLevel.buffer[0], nextData[0]);
+  assert.equal((lateLevel.texture.image.data as Uint8Array)[0], nextData[0]);
+
+  lateLoadedClipmap.dispose();
 })().catch((error) => {
   console.error(error);
   process.exit(1);
