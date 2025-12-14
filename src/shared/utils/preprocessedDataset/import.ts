@@ -43,6 +43,13 @@ function isVolumeDataType(value: unknown): value is VolumeDataType {
   return typeof value === 'string' && VALID_VOLUME_DATA_TYPES.includes(value as VolumeDataType);
 }
 
+function getExpectedVolumeByteLength(
+  entry: Pick<PreprocessedVolumeManifestEntry, 'width' | 'height' | 'depth' | 'channels' | 'dataType'>
+): number {
+  const bytesPerValue = getBytesPerValue(entry.dataType);
+  return entry.width * entry.height * entry.depth * entry.channels * bytesPerValue;
+}
+
 function validateZarrStore(store: PreprocessedZarrStore): void {
   if (!store || typeof store !== 'object') {
     throw new Error('Manifest Zarr store description is invalid.');
@@ -528,6 +535,14 @@ function validateManifest(manifest: PreprocessedManifest): void {
   for (const channel of manifest.dataset.channels) {
     for (const layer of channel.layers) {
       for (const volume of layer.volumes) {
+        const expectedByteLength = getExpectedVolumeByteLength(volume);
+        if (expectedByteLength !== volume.byteLength) {
+          throw new Error(
+            `Manifest byte length for ${volume.path} does not match its dimensions (${volume.width}x${volume.height}x${volume.depth}` +
+              ` with ${volume.channels} channels of type ${volume.dataType}). Expected ${expectedByteLength} bytes.`
+          );
+        }
+
         const { segmentationLabels } = volume;
         if (!segmentationLabels) {
           continue;
@@ -568,9 +583,18 @@ function createNormalizedVolume(
   segmentationLabels?: { manifest: NonNullable<PreprocessedVolumeManifestEntry['segmentationLabels']>; data: VolumeData },
   streaming?: StreamingContext
 ): LoadedVolume {
-  if (data.byteLength !== entry.byteLength) {
+  const expectedByteLength = getExpectedVolumeByteLength(entry);
+
+  if (expectedByteLength !== entry.byteLength) {
     throw new Error(
-      `Volume size mismatch for ${entry.path}. Expected ${entry.byteLength} bytes, received ${data.byteLength}.`
+      `Manifest byte length for ${entry.path} does not match its dimensions (${entry.width}x${entry.height}x${entry.depth}` +
+        ` with ${entry.channels} channels of type ${entry.dataType}). Expected ${expectedByteLength} bytes.`
+    );
+  }
+
+  if (data.byteLength !== expectedByteLength) {
+    throw new Error(
+      `Volume size mismatch for ${entry.path}. Expected ${expectedByteLength} bytes from its dimensions, received ${data.byteLength}.`
     );
   }
 
