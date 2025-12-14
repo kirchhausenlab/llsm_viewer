@@ -44,6 +44,20 @@ function sliceArray(data: Uint8Array, range: RangeQuery): Uint8Array {
   return data.slice(start, end);
 }
 
+type DirectoryEntriesIterator = AsyncIterableIterator<[string, FileSystemHandle]>;
+
+type DirectoryHandleWithEntries = FileSystemDirectoryHandle & {
+  entries?: () => DirectoryEntriesIterator;
+};
+
+function getDirectoryEntriesIterator(handle: FileSystemDirectoryHandle): DirectoryEntriesIterator {
+  const iterator = (handle as DirectoryHandleWithEntries).entries?.();
+  if (!iterator) {
+    throw new Error('FileSystemDirectoryHandle.entries() is not supported in this environment.');
+  }
+  return iterator;
+}
+
 export async function readRangeFromStore<Store extends AsyncReadable>(
   store: Store,
   key: string,
@@ -137,11 +151,7 @@ async function collectDirectoryEntries(
   prefix: string,
   files: Map<AbsolutePath, File>
 ): Promise<void> {
-  const iterator: AsyncIterableIterator<[string, FileSystemHandle]> | undefined =
-    (handle as any).entries?.();
-  if (!iterator) {
-    throw new Error('FileSystemDirectoryHandle.entries() is not supported in this environment.');
-  }
+  const iterator = getDirectoryEntriesIterator(handle);
 
   for await (const [name, entry] of iterator) {
     if (entry.kind === 'file') {
@@ -167,7 +177,8 @@ export class DirectoryHandleStore implements AsyncMutable {
   constructor(private readonly directory: FileSystemDirectoryHandle) {}
 
   async clear(): Promise<void> {
-    for await (const [name] of this.directory.entries()) {
+    const iterator = getDirectoryEntriesIterator(this.directory);
+    for await (const [name] of iterator) {
       await this.directory.removeEntry(name, { recursive: true });
     }
   }
