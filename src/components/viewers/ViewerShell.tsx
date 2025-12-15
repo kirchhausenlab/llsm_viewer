@@ -246,7 +246,13 @@ function ViewerShell({
     previousViewerModeRef.current = viewerMode;
   }, [handleStopRecording, viewerMode]);
 
-  useEffect(() => handleStopRecording, [handleStopRecording]);
+  const stopRecordingOnUnmountRef = useRef(handleStopRecording);
+
+  useEffect(() => {
+    stopRecordingOnUnmountRef.current = handleStopRecording;
+  }, [handleStopRecording]);
+
+  useEffect(() => () => stopRecordingOnUnmountRef.current(), []);
 
   const toggleViewerSettingsVisibility = () => {
     setIsViewerSettingsOpen((current) => !current);
