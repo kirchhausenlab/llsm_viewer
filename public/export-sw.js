@@ -1,4 +1,5 @@
-const EXPORT_ROUTE_PREFIX = '/__export__/';
+const BASE_PATH = new URL(self.registration.scope).pathname;
+const EXPORT_ROUTE_PREFIX = `${BASE_PATH}__export__/`;
 const DEFAULT_CONTENT_TYPE = 'application/zip';
 
 const activeExports = new Map();
