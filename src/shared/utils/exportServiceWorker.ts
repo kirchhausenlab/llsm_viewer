@@ -1,5 +1,7 @@
-const EXPORT_SW_URL = '/export-sw.js';
-const EXPORT_ROUTE_PREFIX = '/__export__/';
+const baseUrl = new URL(import.meta.env.BASE_URL ?? '/', window.location.origin);
+const BASE_PATH = baseUrl.pathname;
+const EXPORT_SW_URL = new URL('export-sw.js', baseUrl).pathname;
+const EXPORT_ROUTE_PREFIX = new URL('__export__/', baseUrl).pathname;
 const DEFAULT_CONTENT_TYPE = 'application/zip';
 const ACK_TIMEOUT_MS = 5000;
 

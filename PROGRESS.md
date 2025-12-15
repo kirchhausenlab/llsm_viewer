@@ -217,3 +217,6 @@
 
 ## Pointer listener cleanup
 - Removed volume viewer pointer listeners and resize observer subscriptions during teardown to avoid leaking DOM references after unmount.
+
+## Export service worker base path
+- Adjusted export service worker registration and routing to respect the deployed base path so GitHub Pages loads `export-sw.js` and handles `__export__` routes without 404s.
