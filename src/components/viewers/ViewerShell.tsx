@@ -62,6 +62,8 @@ function ViewerShell({
   const [renderingQuality, setRenderingQuality] = useState(1);
   const [isViewerSettingsOpen, setIsViewerSettingsOpen] = useState(false);
   const [isPlotSettingsOpen, setIsPlotSettingsOpen] = useState(false);
+  const previousViewerModeRef = useRef(viewerMode);
+  const isRecordingRef = useRef(isRecording);
 
   const normalizeCaptureTarget = useCallback(
     (target: HTMLCanvasElement | CaptureTargetGetter | null): CaptureTargetGetter | null => {
@@ -231,10 +233,18 @@ function ViewerShell({
   }, [activeCaptureTarget, handleStopRecording, isRecording]);
 
   useEffect(() => {
-    if (isRecording) {
+    isRecordingRef.current = isRecording;
+  }, [isRecording]);
+
+  useEffect(() => {
+    const previousViewerMode = previousViewerModeRef.current;
+
+    if (viewerMode !== previousViewerMode && isRecordingRef.current) {
       handleStopRecording();
     }
-  }, [handleStopRecording, viewerMode, isRecording]);
+
+    previousViewerModeRef.current = viewerMode;
+  }, [handleStopRecording, viewerMode]);
 
   useEffect(() => handleStopRecording, [handleStopRecording]);
 
