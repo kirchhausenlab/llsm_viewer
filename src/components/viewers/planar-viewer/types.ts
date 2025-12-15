@@ -81,6 +81,9 @@ export type PlanarViewerProps = {
   timeIndex: number;
   totalTimepoints: number;
   onRegisterReset: (handler: (() => void) | null) => void;
+  onRegisterCaptureTarget?: (
+    target: HTMLCanvasElement | (() => HTMLCanvasElement | null) | null,
+  ) => void;
   sliceIndex: number;
   maxSlices: number;
   onSliceIndexChange: (index: number) => void;

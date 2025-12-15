@@ -47,6 +47,7 @@ function VolumeViewer({
   onFpsChange,
   onRegisterVolumeStepScaleChange,
   onRegisterReset,
+  onRegisterCaptureTarget,
   trackScale,
   tracks,
   trackVisibility,
@@ -451,13 +452,17 @@ function VolumeViewer({
     );
   }, [updateHudGroupFromPlacement]);
 
-  const handleContainerRef = useCallback((node: HTMLDivElement | null) => {
-    containerRef.current = node;
-    if (!node) {
-      return;
-    }
-    setContainerNode((current) => (current === node ? current : node));
-  }, []);
+  const handleContainerRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      containerRef.current = node;
+      if (!node) {
+        onRegisterCaptureTarget?.(null);
+        return;
+      }
+      setContainerNode((current) => (current === node ? current : node));
+    },
+    [onRegisterCaptureTarget]
+  );
 
   useEffect(() => {
     const activeContainer = containerNode ?? containerRef.current;
@@ -664,9 +669,11 @@ function VolumeViewer({
     let renderContext: ReturnType<typeof initializeRenderContext>;
     try {
       renderContext = initializeRenderContext(container);
+      onRegisterCaptureTarget?.(() => rendererRef.current?.domElement ?? null);
     } catch (error) {
       markHoverInitializationFailed();
       setHoverNotReady('Hover inactive: renderer not initialized.');
+      onRegisterCaptureTarget?.(null);
       return;
     }
 
@@ -1081,6 +1088,7 @@ function VolumeViewer({
       cameraRef.current = null;
       controlsRef.current = null;
       endVrSessionRequestRef.current = null;
+      onRegisterCaptureTarget?.(null);
     };
   }, [
     applyVrPlaybackHoverState,
@@ -1103,6 +1111,7 @@ function VolumeViewer({
     initializeRenderContext,
     markHoverInitializationFailed,
     markHoverInitialized,
+    onRegisterCaptureTarget,
     onRendererInitialized,
     onVoxelFollowRequest,
     playbackLoopRef,

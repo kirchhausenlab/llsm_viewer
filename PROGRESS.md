@@ -221,3 +221,7 @@
 
 ## Export service worker base path
 - Adjusted export service worker registration and routing to respect the deployed base path so GitHub Pages loads `export-sw.js` and handles `__export__` routes without 404s.
+
+## Viewer recording
+- Wired planar and volume viewers to register their canvas elements for recording.
+- Added ViewerShell-managed recording that captures the active canvas stream at the playback FPS, downloads recordings with timestamps, and stops cleanly on mode changes or unmount.

@@ -128,6 +128,9 @@ export type VolumeViewerProps = {
   onVolumeStepScaleChange?: (value: number) => void;
   onRegisterVolumeStepScaleChange?: (handler: ((value: number) => void) | null) => void;
   onRegisterReset: (handler: (() => void) | null) => void;
+  onRegisterCaptureTarget?: (
+    target: HTMLCanvasElement | (() => HTMLCanvasElement | null) | null,
+  ) => void;
   trackScale: { x: number; y: number; z: number };
   tracks: TrackDefinition[];
   trackVisibility: Record<string, boolean>;

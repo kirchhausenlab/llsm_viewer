@@ -68,6 +68,7 @@ function PlanarViewer({
   timeIndex,
   totalTimepoints,
   onRegisterReset,
+  onRegisterCaptureTarget,
   sliceIndex,
   maxSlices,
   onSliceIndexChange,
@@ -160,6 +161,19 @@ function PlanarViewer({
     }
     return map;
   }, [tracks]);
+
+  useEffect(() => {
+    if (!onRegisterCaptureTarget) {
+      return;
+    }
+
+    const getCanvas = () => canvasRef.current;
+    onRegisterCaptureTarget(canvasRef.current ? getCanvas : null);
+
+    return () => {
+      onRegisterCaptureTarget(null);
+    };
+  }, [onRegisterCaptureTarget]);
 
   const computeTrackCentroid = useCallback(
     (trackId: string, maxVisibleTime: number) => {
