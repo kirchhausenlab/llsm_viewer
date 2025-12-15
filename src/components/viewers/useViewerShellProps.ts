@@ -33,6 +33,8 @@ export type ViewerShellContainerProps = {
   isPlaying: boolean;
   playbackDisabled: boolean;
   playbackLabel: string;
+  isRecording: boolean;
+  canRecord: boolean;
   fps: number;
   blendingMode: ViewerShellProps['modeControls']['blendingMode'];
   sliceIndex: number;
@@ -102,6 +104,8 @@ export type ViewerShellContainerProps = {
   onTrackFollowRequest: ViewerShellProps['volumeViewerProps']['onTrackFollowRequest'];
   onVoxelFollowRequest: ViewerShellProps['volumeViewerProps']['onVoxelFollowRequest'];
   onHoverVoxelChange?: ViewerShellProps['volumeViewerProps']['onHoverVoxelChange'];
+  onStartRecording: ViewerShellProps['playbackControls']['onStartRecording'];
+  onStopRecording: ViewerShellProps['playbackControls']['onStopRecording'];
   onTrackChannelSelect: VolumeViewerVrProps['onTrackChannelSelect'];
   onTrackVisibilityToggle: VolumeViewerVrProps['onTrackVisibilityToggle'];
   onTrackVisibilityAllChange: VolumeViewerVrProps['onTrackVisibilityAllChange'];
@@ -173,6 +177,8 @@ export function useViewerShellProps({
   isPlaying,
   playbackDisabled,
   playbackLabel,
+  isRecording,
+  canRecord,
   fps,
   blendingMode,
   sliceIndex,
@@ -242,6 +248,8 @@ export function useViewerShellProps({
   onTrackFollowRequest,
   onVoxelFollowRequest,
   onHoverVoxelChange,
+  onStartRecording,
+  onStopRecording,
   onTrackChannelSelect,
   onTrackVisibilityToggle,
   onTrackVisibilityAllChange,
@@ -311,11 +319,11 @@ export function useViewerShellProps({
     isPlaying,
     playbackDisabled,
     playbackLabel,
-    fps,
-    blendingMode,
-    onTogglePlayback,
-    onTimeIndexChange,
-    onFpsChange,
+      fps,
+      blendingMode,
+      onTogglePlayback,
+      onTimeIndexChange,
+      onFpsChange,
     onVolumeStepScaleChange,
     onRegisterVolumeStepScaleChange,
     onRegisterReset,
@@ -326,11 +334,11 @@ export function useViewerShellProps({
     trackLineWidthByChannel,
     channelTrackColorModes,
     channelTrackOffsets,
-    selectedTrackIds,
-    followedTrackId,
-    followedVoxel,
-    onTrackSelectionToggle,
-    onTrackFollowRequest,
+      selectedTrackIds,
+      followedTrackId,
+      followedVoxel,
+      onTrackSelectionToggle,
+      onTrackFollowRequest,
     onVoxelFollowRequest,
     onHoverVoxelChange,
     vr: is3dViewerAvailable
@@ -460,13 +468,17 @@ export function useViewerShellProps({
       onSliceIndexChange,
       isPlaying,
       playbackLabel,
+      isRecording,
+      canRecord,
       selectedIndex,
       onTimeIndexChange,
       playbackDisabled,
       onTogglePlayback,
       onJumpToStart,
       onJumpToEnd,
-      error
+      error,
+      onStartRecording,
+      onStopRecording
     },
     channelsPanel: {
       loadedChannelIds,

@@ -170,6 +170,21 @@
   fill: currentColor;
 }
 
+.viewer-settings-recording-row .viewer-mode-row {
+  align-items: stretch;
+}
+
+.viewer-settings-recording-row .playback-button {
+  flex: 1 1 0;
+  width: auto;
+  height: auto;
+  padding: 0.6rem 0.85rem;
+}
+
+.viewer-settings-recording-row .playback-toggle {
+  width: auto;
+}
+
 .track-controls {
   display: flex;
   flex-direction: column;

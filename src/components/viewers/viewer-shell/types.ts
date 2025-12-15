@@ -64,6 +64,10 @@ export type PlaybackControlsProps = {
   onJumpToStart: () => void;
   onJumpToEnd: () => void;
   error: string | null;
+  onStartRecording: () => void;
+  onStopRecording: () => void;
+  isRecording: boolean;
+  canRecord: boolean;
 };
 
 export type PlanarSettingsProps = {

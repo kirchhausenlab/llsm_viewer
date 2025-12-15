@@ -345,6 +345,27 @@ export function useAppRouteState(): AppRouteState {
     isLoading
   });
 
+  const [isRecording, setIsRecording] = useState(false);
+  const canRecord = volumeTimepointCount > 0 && !isLoading;
+
+  const handleStartRecording = useCallback(() => {
+    if (!canRecord) {
+      return;
+    }
+
+    setIsRecording(true);
+  }, [canRecord]);
+
+  const handleStopRecording = useCallback(() => {
+    setIsRecording(false);
+  }, []);
+
+  useEffect(() => {
+    if (!canRecord) {
+      setIsRecording(false);
+    }
+  }, [canRecord]);
+
   const {
     viewerMode,
     setViewerMode,
@@ -872,6 +893,8 @@ export function useAppRouteState(): AppRouteState {
     isPlaying,
     playbackDisabled,
     playbackLabel,
+    isRecording,
+    canRecord,
     fps,
     blendingMode,
     sliceIndex,
@@ -933,6 +956,8 @@ export function useAppRouteState(): AppRouteState {
     hoveredVolumeVoxel: hoveredVolumeVoxel ?? lastHoveredVolumeVoxel,
     onTogglePlayback: handleTogglePlayback,
     onTimeIndexChange: handleTimeIndexChange,
+    onStartRecording: handleStartRecording,
+    onStopRecording: handleStopRecording,
     onFpsChange: setFps,
     onVolumeStepScaleChange: handleVolumeStepScaleChange,
     onRegisterVolumeStepScaleChange: handleRegisterVolumeStepScaleChange,
