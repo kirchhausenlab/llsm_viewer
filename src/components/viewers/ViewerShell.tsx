@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import PlanarViewer from './PlanarViewer';
 import VolumeViewer from './VolumeViewer';
@@ -9,7 +9,7 @@ import TopMenu from './viewer-shell/TopMenu';
 import TracksPanel from './viewer-shell/TracksPanel';
 import { useViewerModeControls } from './viewer-shell/hooks/useViewerModeControls';
 import { useViewerPlaybackControls } from './viewer-shell/hooks/useViewerPlaybackControls';
-import type { ViewerShellProps } from './viewer-shell/types';
+import type { ViewerMode, ViewerShellProps } from './viewer-shell/types';
 
 function ViewerShell({
   viewerMode,
@@ -47,14 +47,196 @@ function ViewerShell({
     (channel) => (tracksPanel.parsedTracksByChannel.get(channel.id)?.length ?? 0) > 0
   );
 
+  type CaptureTargetGetter = () => HTMLCanvasElement | null;
+
+  const [captureTargets, setCaptureTargets] = useState<Record<ViewerMode, CaptureTargetGetter | null>>({
+    '3d': null,
+    '2d': null,
+  });
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [captureStream, setCaptureStream] = useState<MediaStream | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
+  const recordingChunksRef = useRef<BlobPart[]>([]);
+
   const [renderingQuality, setRenderingQuality] = useState(1);
   const [isViewerSettingsOpen, setIsViewerSettingsOpen] = useState(false);
   const [isPlotSettingsOpen, setIsPlotSettingsOpen] = useState(false);
+
+  const normalizeCaptureTarget = useCallback(
+    (target: HTMLCanvasElement | CaptureTargetGetter | null): CaptureTargetGetter | null => {
+      if (!target) {
+        return null;
+      }
+      if (typeof target === 'function') {
+        return target;
+      }
+      return () => target;
+    },
+    []
+  );
+
+  const stopStreamTracks = useCallback((stream: MediaStream | null) => {
+    stream?.getTracks().forEach((track) => track.stop());
+  }, []);
+
+  const registerCaptureTargetForMode = useCallback(
+    (mode: ViewerMode, target: HTMLCanvasElement | CaptureTargetGetter | null) => {
+      setCaptureTargets((current) => ({
+        ...current,
+        [mode]: normalizeCaptureTarget(target),
+      }));
+    },
+    [normalizeCaptureTarget]
+  );
+
+  const handleVolumeCaptureTarget = useCallback(
+    (target: HTMLCanvasElement | CaptureTargetGetter | null) => {
+      registerCaptureTargetForMode('3d', target);
+    },
+    [registerCaptureTargetForMode]
+  );
+
+  const handlePlanarCaptureTarget = useCallback(
+    (target: HTMLCanvasElement | CaptureTargetGetter | null) => {
+      registerCaptureTargetForMode('2d', target);
+    },
+    [registerCaptureTargetForMode]
+  );
 
   const handleRenderingQualityChange = (value: number) => {
     setRenderingQuality(value);
     volumeViewerProps.onVolumeStepScaleChange?.(value);
   };
+
+  const activeCaptureTarget = captureTargets[viewerMode];
+  const canRecord = Boolean(playbackControls.canRecord && activeCaptureTarget && activeCaptureTarget());
+
+  const handleStopRecording = useCallback(() => {
+    setRecordingError(null);
+
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+      return;
+    }
+
+    stopStreamTracks(captureStream);
+    setCaptureStream(null);
+    setMediaRecorder(null);
+    setIsRecording(false);
+    recordingChunksRef.current = [];
+  }, [captureStream, mediaRecorder, stopStreamTracks]);
+
+  const handleStartRecording = useCallback(() => {
+    if (!canRecord || isRecording || !activeCaptureTarget) {
+      return;
+    }
+
+    const canvas = activeCaptureTarget();
+    if (!canvas || typeof canvas.captureStream !== 'function') {
+      setRecordingError('Recording unavailable: capture target not ready.');
+      return;
+    }
+
+    setRecordingError(null);
+
+    let stream: MediaStream | null = null;
+    try {
+      stream = canvas.captureStream(playbackControls.fps);
+    } catch (error) {
+      try {
+        stream = canvas.captureStream();
+      } catch (fallbackError) {
+        stream = null;
+      }
+    }
+
+    if (!stream) {
+      setRecordingError('Recording unavailable: captureStream is not supported.');
+      return;
+    }
+
+    const preferredMimeType = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find(
+      (candidate) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported?.(candidate)
+    );
+
+    let recorder: MediaRecorder;
+    try {
+      recorder = new MediaRecorder(stream, preferredMimeType ? { mimeType: preferredMimeType } : undefined);
+    } catch (error) {
+      stopStreamTracks(stream);
+      setRecordingError('Recording unavailable: failed to start recorder.');
+      return;
+    }
+
+    recordingChunksRef.current = [];
+
+    const handleDataAvailable = (event: BlobEvent) => {
+      if (event.data && event.data.size > 0) {
+        recordingChunksRef.current.push(event.data);
+      }
+    };
+
+    const handleStop = () => {
+      recorder.removeEventListener('dataavailable', handleDataAvailable);
+      recorder.removeEventListener('stop', handleStop);
+
+      const hasChunks = recordingChunksRef.current.length > 0;
+
+      stopStreamTracks(stream);
+      setCaptureStream(null);
+      setMediaRecorder(null);
+      setIsRecording(false);
+
+      if (hasChunks) {
+        const blob = new Blob(recordingChunksRef.current, { type: recorder.mimeType || 'video/webm' });
+        recordingChunksRef.current = [];
+
+        if (blob.size > 0) {
+          const url = URL.createObjectURL(blob);
+          const timestamp = new Date();
+          const pad = (value: number) => value.toString().padStart(2, '0');
+          const fileName = `recording-${timestamp.getFullYear()}-${pad(timestamp.getMonth() + 1)}-${pad(timestamp.getDate())}-${pad(timestamp.getHours())}${pad(timestamp.getMinutes())}${pad(timestamp.getSeconds())}.mp4`;
+
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = fileName;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          requestAnimationFrame(() => URL.revokeObjectURL(url));
+        }
+      }
+    };
+
+    recorder.addEventListener('dataavailable', handleDataAvailable);
+    recorder.addEventListener('stop', handleStop);
+
+    setCaptureStream(stream);
+    setMediaRecorder(recorder);
+    setIsRecording(true);
+    recorder.start();
+  }, [
+    activeCaptureTarget,
+    canRecord,
+    isRecording,
+    playbackControls.fps,
+    stopStreamTracks,
+  ]);
+
+  useEffect(() => {
+    if (!activeCaptureTarget && isRecording) {
+      handleStopRecording();
+    }
+  }, [activeCaptureTarget, handleStopRecording, isRecording]);
+
+  useEffect(() => {
+    if (isRecording) {
+      handleStopRecording();
+    }
+  }, [handleStopRecording, viewerMode, isRecording]);
+
+  useEffect(() => handleStopRecording, [handleStopRecording]);
 
   const toggleViewerSettingsVisibility = () => {
     setIsViewerSettingsOpen((current) => !current);
@@ -99,15 +281,38 @@ function ViewerShell({
     hasVolumeData
   });
 
+  const volumeViewerWithCaptureTarget = {
+    ...volumeViewerProps,
+    onRegisterCaptureTarget: handleVolumeCaptureTarget,
+  } satisfies ViewerShellProps['volumeViewerProps'];
+
+  const planarViewerWithCaptureTarget = {
+    ...planarViewerProps,
+    onRegisterCaptureTarget: handlePlanarCaptureTarget,
+  } satisfies ViewerShellProps['planarViewerProps'];
+
+  const playbackControlsWithRecording = {
+    ...playbackControls,
+    onStartRecording: handleStartRecording,
+    onStopRecording: handleStopRecording,
+    isRecording,
+    canRecord,
+    error: playbackControls.error ?? recordingError ?? null,
+  } satisfies ViewerShellProps['playbackControls'];
+
   const playbackState = useViewerPlaybackControls({
     viewerMode,
-    playbackControls
+    playbackControls: playbackControlsWithRecording,
   });
 
   return (
     <div className="app">
       <main className="viewer">
-        {viewerMode === '3d' ? <VolumeViewer {...volumeViewerProps} /> : <PlanarViewer {...planarViewerProps} />}
+        {viewerMode === '3d' ? (
+          <VolumeViewer {...volumeViewerWithCaptureTarget} />
+        ) : (
+          <PlanarViewer {...planarViewerWithCaptureTarget} />
+        )}
       </main>
 
       <TopMenu {...topMenu} />
