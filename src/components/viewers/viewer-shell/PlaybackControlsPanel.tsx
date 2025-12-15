@@ -59,7 +59,11 @@ export default function PlaybackControlsPanel({
     onJumpToStart,
     onJumpToEnd,
     error,
-    isSliceSliderVisible
+    isSliceSliderVisible,
+    onStartRecording,
+    onStopRecording,
+    isRecording,
+    canRecord
   } = playbackControls;
   const {
     renderStyle,
@@ -349,10 +353,36 @@ export default function PlaybackControlsPanel({
                     step={1}
                     value={fps}
                     onChange={(event) => onFpsChange(Number(event.target.value))}
-                    disabled={volumeTimepointCount <= 1}
-                  />
-                </div>
+                  disabled={volumeTimepointCount <= 1}
+                />
+              </div>
               )}
+
+              <div className="control-group viewer-settings-recording-row">
+                <div className="viewer-mode-row">
+                  <button
+                    type="button"
+                    className={
+                      isRecording
+                        ? 'playback-button playback-toggle playing'
+                        : 'playback-button playback-toggle'
+                    }
+                    onClick={onStartRecording}
+                    disabled={!canRecord || isRecording}
+                    aria-pressed={isRecording}
+                  >
+                    Record
+                  </button>
+                  <button
+                    type="button"
+                    className="playback-button"
+                    onClick={onStopRecording}
+                    disabled={!isRecording}
+                  >
+                    Stop
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </FloatingWindow>
