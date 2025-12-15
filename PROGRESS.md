@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Prevented viewer recording from stopping immediately after start by only reacting to viewer mode changes or lost capture
+  targets.
 - Added recording controls to the viewer settings window with Record/Stop buttons wired through shell props and styled alongside existing playback controls.
 - Removed the track channel label above the Min length slider in the Tracks window to avoid duplicating the active tab name.
 - Simplified channel tab editing by removing the rename button, enabling double-click rename on the tab header, keeping a single close control, and capping names at 9 characters.
