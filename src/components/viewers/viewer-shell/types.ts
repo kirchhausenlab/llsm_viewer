@@ -8,10 +8,11 @@ import type SelectedTracksWindow from '../../widgets/SelectedTracksWindow';
 import type VolumeViewer from '../VolumeViewer';
 import type { VolumeViewerProps } from '../VolumeViewer.types';
 import type { ChannelSource } from '../../../hooks/dataset';
+import type { LoadedDatasetLayer } from '../../../hooks/dataset';
+import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import type { LayerSettings } from '../../../state/layerSettings';
 import type { FollowedVoxelTarget } from '../../../types/follow';
 import type { HoveredVoxelInfo } from '../../../types/hover';
-import type { LoadedLayer } from '../../../types/layers';
 import type { NumericRange, TrackColorMode, TrackDefinition, TrackPoint } from '../../../types/tracks';
 
 export type PlanarViewerProps = ComponentProps<typeof PlanarViewer>;
@@ -87,7 +88,8 @@ export type ChannelsPanelProps = {
   activeChannelId: string | null;
   onChannelTabSelect: (channelId: string) => void;
   onChannelVisibilityToggle: (channelId: string) => void;
-  channelLayersMap: Map<string, LoadedLayer[]>;
+  channelLayersMap: Map<string, LoadedDatasetLayer[]>;
+  layerVolumesByKey: Record<string, NormalizedVolume | null>;
   channelActiveLayer: Record<string, string>;
   layerSettings: Record<string, LayerSettings>;
   getLayerDefaultSettings: (layerKey: string) => LayerSettings;

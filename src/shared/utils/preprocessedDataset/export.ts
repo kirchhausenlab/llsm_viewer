@@ -1,6 +1,7 @@
 import { BlobWriter, Uint8ArrayReader, ZipWriter } from '@zip.js/zip.js';
 
 import type { LoadedLayer } from '../../../types/layers';
+import type { PreprocessedStorage } from '../../storage/preprocessedStorage';
 
 import {
   type AnisotropyCorrectionMetadata,
@@ -211,6 +212,90 @@ export async function exportPreprocessedDataset(
       await zipWriter!.close();
     } catch {
       // Ignore close failures when handling the primary error.
+    }
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+
+  if (blobWriter) {
+    const blob = await blobWriter.getData();
+    return { blob, manifest };
+  }
+
+  return { manifest };
+}
+
+export async function exportPreprocessedDatasetFromStorage(
+  { manifest, storage }: { manifest: PreprocessedManifest; storage: PreprocessedStorage },
+  onChunk?: ExportPreprocessedDatasetChunkHandler
+): Promise<ExportPreprocessedDatasetResult> {
+  let zipWriter: ZipWriter<unknown> | null = null;
+  let blobWriter: BlobWriter | null = null;
+
+  const writable = onChunk
+    ? new WritableStream<Uint8Array>({
+        write(chunk) {
+          onChunk(chunk, false);
+        },
+        close() {
+          onChunk(new Uint8Array(0), true);
+        }
+      })
+    : null;
+
+  if (writable) {
+    zipWriter = new ZipWriter(writable, { zip64: true });
+  } else {
+    blobWriter = new BlobWriter('application/zip');
+    zipWriter = new ZipWriter(blobWriter, { zip64: true });
+  }
+
+  try {
+    for (const channel of manifest.dataset.channels) {
+      for (const layer of channel.layers) {
+        for (const volume of layer.volumes) {
+          let volumeBytes = await storage.readFile(volume.path);
+          if (
+            volumeBytes.byteOffset !== 0 ||
+            volumeBytes.byteLength !== volumeBytes.buffer.byteLength
+          ) {
+            volumeBytes = volumeBytes.slice();
+          }
+
+          await zipWriter!.add(
+            volume.path,
+            new Uint8ArrayReader(volumeBytes),
+            { level: ZIP_COMPRESSION_LEVEL, zip64: true }
+          );
+          volumeBytes = new Uint8Array(0);
+
+          if (volume.segmentationLabels) {
+            let labelBytes = await storage.readFile(volume.segmentationLabels.path);
+            if (labelBytes.byteOffset !== 0 || labelBytes.byteLength !== labelBytes.buffer.byteLength) {
+              labelBytes = labelBytes.slice();
+            }
+            await zipWriter!.add(
+              volume.segmentationLabels.path,
+              new Uint8ArrayReader(labelBytes),
+              { level: ZIP_COMPRESSION_LEVEL, zip64: true }
+            );
+            labelBytes = new Uint8Array(0);
+          }
+        }
+      }
+    }
+
+    const manifestBytes = textEncoder.encode(JSON.stringify(manifest));
+    await zipWriter!.add(
+      MANIFEST_FILE_NAME,
+      new Uint8ArrayReader(manifestBytes),
+      { level: ZIP_COMPRESSION_LEVEL, zip64: true }
+    );
+    await zipWriter!.close(undefined, { zip64: true });
+  } catch (error) {
+    try {
+      await zipWriter?.close();
+    } catch {
+      // Ignore close failures when recovering from an earlier error.
     }
     throw error instanceof Error ? error : new Error(String(error));
   }

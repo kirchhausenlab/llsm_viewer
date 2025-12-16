@@ -11,9 +11,10 @@ import {
 } from '../../core/volumeProcessing';
 import type { ExperimentDimension } from '../useVoxelResolution';
 import { computeAutoWindow } from '../../autoContrast';
-import type { ImportPreprocessedDatasetResult } from '../../shared/utils/preprocessedDataset';
+import type { PreprocessedChannelSummary, PreprocessedManifest } from '../../shared/utils/preprocessedDataset';
 import { resampleVolume } from '../../shared/utils/anisotropyCorrection';
 import { createSegmentationSeed, sortVolumeFiles } from '../../shared/utils/appHelpers';
+import type { PreprocessedStorageHandle } from '../../shared/storage/preprocessedStorage';
 import {
   DEFAULT_LAYER_COLOR,
   GRAYSCALE_COLOR_SWATCHES,
@@ -56,7 +57,11 @@ export type ChannelValidation = {
   warnings: string[];
 };
 
-export type StagedPreprocessedExperiment = ImportPreprocessedDatasetResult & {
+export type StagedPreprocessedExperiment = {
+  manifest: PreprocessedManifest;
+  channelSummaries: PreprocessedChannelSummary[];
+  totalVolumeCount: number;
+  storageHandle: PreprocessedStorageHandle;
   sourceName: string | null;
   sourceSize: number | null;
 };

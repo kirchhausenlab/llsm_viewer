@@ -5,7 +5,7 @@ import type { LayerSettings } from '../../state/layerSettings';
 import { useDatasetErrors } from '../useDatasetErrors';
 import { DEFAULT_EXPERIMENT_DIMENSION, DEFAULT_VOXEL_RESOLUTION, useVoxelResolution, type VoxelResolutionHook } from '../useVoxelResolution';
 import type { ChannelLayerSource, ChannelSource } from './useChannelSources';
-import type { LoadedLayer } from '../../types/layers';
+import type { VolumeDataType } from '../../types/volume';
 import {
   collectFilesFromDataTransfer,
   dedupeFiles,
@@ -14,9 +14,24 @@ import {
   sortVolumeFiles
 } from '../../shared/utils/appHelpers';
 
+export type LoadedDatasetLayer = {
+  key: string;
+  label: string;
+  channelId: string;
+  isSegmentation: boolean;
+  volumeCount: number;
+  width: number;
+  height: number;
+  depth: number;
+  channels: number;
+  dataType: VolumeDataType;
+  min: number;
+  max: number;
+};
+
 export type DatasetSetupParams = {
   channels: ChannelSource[];
-  layers: LoadedLayer[];
+  loadedLayers: LoadedDatasetLayer[];
   channelActiveLayer: Record<string, string>;
   layerSettings: Record<string, LayerSettings>;
   setChannels: Dispatch<SetStateAction<ChannelSource[]>>;
@@ -31,7 +46,7 @@ export type DatasetSetupHook = {
   voxelResolution: VoxelResolutionHook;
   datasetErrors: ReturnType<typeof useDatasetErrors>;
   channelNameMap: Map<string, string>;
-  channelLayersMap: Map<string, LoadedLayer[]>;
+  channelLayersMap: Map<string, LoadedDatasetLayer[]>;
   layerChannelMap: Map<string, string>;
   channelTintMap: Map<string, string>;
   loadedChannelIds: string[];
@@ -45,7 +60,7 @@ export type DatasetSetupHook = {
 
 export function useDatasetSetup({
   channels,
-  layers,
+  loadedLayers,
   channelActiveLayer,
   layerSettings,
   setChannels,
@@ -66,7 +81,7 @@ export function useDatasetSetup({
     [reportDatasetError]
   );
 
-  const volumeTimepointCount = layers.length > 0 ? layers[0].volumes.length : 0;
+  const volumeTimepointCount = loadedLayers.length > 0 ? loadedLayers[0].volumeCount : 0;
 
   const channelNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -77,8 +92,8 @@ export function useDatasetSetup({
   }, [channels]);
 
   const channelLayersMap = useMemo(() => {
-    const map = new Map<string, LoadedLayer[]>();
-    for (const layer of layers) {
+    const map = new Map<string, LoadedDatasetLayer[]>();
+    for (const layer of loadedLayers) {
       const collection = map.get(layer.channelId);
       if (collection) {
         collection.push(layer);
@@ -87,15 +102,15 @@ export function useDatasetSetup({
       }
     }
     return map;
-  }, [layers]);
+  }, [loadedLayers]);
 
   const layerChannelMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const layer of layers) {
+    for (const layer of loadedLayers) {
       map.set(layer.key, layer.channelId);
     }
     return map;
-  }, [layers]);
+  }, [loadedLayers]);
 
   const channelTintMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -116,14 +131,14 @@ export function useDatasetSetup({
   const loadedChannelIds = useMemo(() => {
     const seen = new Set<string>();
     const order: string[] = [];
-    for (const layer of layers) {
+    for (const layer of loadedLayers) {
       if (!seen.has(layer.channelId)) {
         seen.add(layer.channelId);
         order.push(layer.channelId);
       }
     }
     return order;
-  }, [layers]);
+  }, [loadedLayers]);
 
   const handleChannelLayerFilesAdded = useCallback(
     async (channelId: string, incomingFiles: File[]) => {

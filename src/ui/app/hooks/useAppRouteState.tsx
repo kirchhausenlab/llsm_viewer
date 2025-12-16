@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FrontPageContainerProps } from '../../../components/pages/FrontPageContainer';
 import type { ViewerShellContainerProps } from '../../../components/viewers/ViewerShellContainer';
-import type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment } from '../../../hooks/dataset';
+import type {
+  ChannelSource,
+  ChannelValidation,
+  LoadedDatasetLayer,
+  StagedPreprocessedExperiment
+} from '../../../hooks/dataset';
 import { clearTextureCache } from '../../../core/textureCache';
 import { DEFAULT_WINDOW_MAX, DEFAULT_WINDOW_MIN } from '../../../state/layerSettings';
 import { deriveChannelTrackOffsets } from '../../../state/channelTrackOffsets';
@@ -14,10 +19,11 @@ import type { DatasetErrorContext } from '../../../hooks/useDatasetErrors';
 import { useDatasetSetup } from '../../../hooks/dataset';
 import { useTrackState } from '../../../hooks/tracks';
 import { useChannelLayerStateContext } from '../../../hooks/useChannelLayerState';
+import type { NormalizedVolume } from '../../../core/volumeProcessing';
+import { createVolumeProvider } from '../../../core/volumeProvider';
 import { useViewerPlayback } from '../../../hooks/viewer';
 import useChannelEditing from './useChannelEditing';
 import { useLayerControls } from './useLayerControls';
-import { useDatasetLaunch } from './useDatasetLaunch';
 import { useViewerModePlayback } from './useViewerModePlayback';
 import { useWindowLayout } from './useWindowLayout';
 import { WARNING_WINDOW_WIDTH, WINDOW_MARGIN } from '../../../shared/utils/windowLayout';
@@ -56,8 +62,6 @@ export function useAppRouteState(): AppRouteState {
     hasAnyLayers,
     hasLoadingTracks,
     allChannelsValid,
-    layers,
-    setLayers,
     channelVisibility,
     setChannelVisibility,
     channelActiveLayer,
@@ -73,10 +77,20 @@ export function useAppRouteState(): AppRouteState {
     getChannelDefaultColor,
     createLayerDefaultSettings,
     createLayerDefaultBrightnessState,
-    applyLoadedLayers,
-    loadSelectedDataset
   } = useChannelLayerStateContext();
   const [preprocessedExperiment, setPreprocessedExperiment] = useState<StagedPreprocessedExperiment | null>(null);
+  const loadedDatasetLayers = useMemo<LoadedDatasetLayer[]>(() => {
+    if (!preprocessedExperiment) {
+      return [];
+    }
+
+    return preprocessedExperiment.channelSummaries.flatMap((channel) =>
+      channel.layers.map((layer) => ({
+        ...layer,
+        channelId: channel.id
+      }))
+    );
+  }, [preprocessedExperiment]);
   const [isExperimentSetupStarted, setIsExperimentSetupStarted] = useState(false);
   const {
     voxelResolution: voxelResolutionHook,
@@ -94,7 +108,7 @@ export function useAppRouteState(): AppRouteState {
     showInteractionWarning
   } = useDatasetSetup({
     channels,
-    layers,
+    loadedLayers: loadedDatasetLayers,
     channelActiveLayer,
     layerSettings,
     setChannels,
@@ -163,39 +177,41 @@ export function useAppRouteState(): AppRouteState {
   const resetPreprocessedState = useCallback(() => {
     resetPreprocessedStateRef.current();
   }, []);
-  const {
-    preprocessingSettingsRef,
-    status,
-    setStatus,
-    error,
-    setError,
-    loadProgress,
-    setLoadProgress,
-    loadedCount,
-    setLoadedCount,
-    expectedVolumeCount,
-    setExpectedVolumeCount,
-    isViewerLaunched,
-    setIsViewerLaunched,
-    isLaunchingViewer,
-    setIsLaunchingViewer,
-    showLaunchError,
-    loadDataset,
-    resetLaunchState
-  } = useDatasetLaunch({
-    voxelResolution,
-    anisotropyScale,
-    experimentDimension,
-    loadSelectedDataset,
-    clearDatasetError,
-    reportDatasetError,
-    bumpDatasetErrorResetSignal,
-    datasetError,
-    datasetErrorContext,
-    setSelectedIndex,
-    setIsPlaying,
-    setActiveChannelTabId
-  });
+
+  const [status, setStatus] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
+  const [error, setError] = useState<string | null>(null);
+  const [loadProgress, setLoadProgress] = useState(0);
+  const [loadedCount, setLoadedCount] = useState(0);
+  const [expectedVolumeCount, setExpectedVolumeCount] = useState(0);
+  const [isViewerLaunched, setIsViewerLaunched] = useState(false);
+  const [isLaunchingViewer, setIsLaunchingViewer] = useState(false);
+  const showLaunchError = useCallback((message: string) => reportDatasetError(message, 'launch'), [reportDatasetError]);
+
+  const resetLaunchState = useCallback(() => {
+    setStatus('idle');
+    setError(null);
+    setLoadProgress(0);
+    setLoadedCount(0);
+    setExpectedVolumeCount(0);
+    stopPlayback();
+    setIsViewerLaunched(false);
+    setIsLaunchingViewer(false);
+  }, [stopPlayback]);
+
+  const volumeProvider = useMemo(() => {
+    if (!preprocessedExperiment) {
+      return null;
+    }
+    return createVolumeProvider({
+      manifest: preprocessedExperiment.manifest,
+      storage: preprocessedExperiment.storageHandle.storage,
+      maxCachedVolumes: 12
+    });
+  }, [preprocessedExperiment]);
+
+  const [currentLayerVolumes, setCurrentLayerVolumes] = useState<Record<string, NormalizedVolume | null>>({});
+  const volumeLoadRequestRef = useRef(0);
+
   const isLoading = status === 'loading';
   const {
     activeChannelId,
@@ -321,6 +337,71 @@ export function useAppRouteState(): AppRouteState {
     setFollowedVoxel(null);
   }, [setFollowedVoxel]);
 
+  const playbackLayerKeys = useMemo(() => {
+    if (!isViewerLaunched || loadedChannelIds.length === 0) {
+      return [] as string[];
+    }
+
+    const keys = loadedChannelIds
+      .map((channelId) => {
+        const channelLayers = channelLayersMap.get(channelId) ?? [];
+        const selectedLayerKey = channelActiveLayer[channelId] ?? channelLayers[0]?.key ?? null;
+        return selectedLayerKey;
+      })
+      .filter((key): key is string => Boolean(key))
+      .filter((layerKey) => {
+        const channelId = layerChannelMap.get(layerKey);
+        if (!channelId) {
+          return true;
+        }
+        return channelVisibility[channelId] ?? true;
+      });
+
+    return keys;
+  }, [
+    channelActiveLayer,
+    channelLayersMap,
+    channelVisibility,
+    isViewerLaunched,
+    layerChannelMap,
+    loadedChannelIds
+  ]);
+
+  const canAdvancePlaybackToIndex = useCallback(
+    (nextIndex: number): boolean => {
+      if (!isViewerLaunched || !volumeProvider || volumeTimepointCount <= 1 || playbackLayerKeys.length === 0) {
+        return true;
+      }
+
+      const clampedIndex = Math.max(0, Math.min(volumeTimepointCount - 1, nextIndex));
+      const ready = playbackLayerKeys.every((layerKey) => volumeProvider.hasVolume(layerKey, clampedIndex));
+
+      if (!ready) {
+        void volumeProvider.prefetch(playbackLayerKeys, clampedIndex);
+        return false;
+      }
+
+      const next1 = (clampedIndex + 1) % volumeTimepointCount;
+      const next2 = (clampedIndex + 2) % volumeTimepointCount;
+      void volumeProvider.prefetch(playbackLayerKeys, next1);
+      void volumeProvider.prefetch(playbackLayerKeys, next2);
+
+      return true;
+    },
+    [isViewerLaunched, playbackLayerKeys, volumeProvider, volumeTimepointCount]
+  );
+
+  useEffect(() => {
+    if (!isViewerLaunched || !isPlaying || !volumeProvider || volumeTimepointCount <= 1 || playbackLayerKeys.length === 0) {
+      return;
+    }
+
+    const next1 = (selectedIndex + 1) % volumeTimepointCount;
+    const next2 = (selectedIndex + 2) % volumeTimepointCount;
+    void volumeProvider.prefetch(playbackLayerKeys, next1);
+    void volumeProvider.prefetch(playbackLayerKeys, next2);
+  }, [isPlaying, isViewerLaunched, playbackLayerKeys, selectedIndex, volumeProvider, volumeTimepointCount]);
+
   const {
     viewerControls,
     playbackDisabled,
@@ -342,7 +423,8 @@ export function useAppRouteState(): AppRouteState {
     },
     onViewerModeChange: resetHoveredVoxel,
     volumeTimepointCount,
-    isLoading
+    isLoading,
+    canAdvancePlayback: canAdvancePlaybackToIndex
   });
 
   const [isRecording, setIsRecording] = useState(false);
@@ -426,8 +508,12 @@ export function useAppRouteState(): AppRouteState {
         return;
       }
     }
+    stopPlayback();
+    volumeProvider?.clear();
+    setCurrentLayerVolumes({});
+    clearTextureCache();
     setIsViewerLaunched(false);
-  }, [setIsViewerLaunched]);
+  }, [setIsViewerLaunched, stopPlayback, volumeProvider]);
 
   useEffect(() => {
     setFollowedTrack((current) => {
@@ -463,13 +549,13 @@ export function useAppRouteState(): AppRouteState {
       const layersInfo = channelLayers.map((layer) => {
         const defaultWindow = DEFAULT_RESET_WINDOW;
         const settings = layerSettings[layer.key] ?? createLayerDefaultSettings(layer.key);
-        const firstVolume = layer.volumes[0] ?? null;
-        const isGrayscale = Boolean(firstVolume && firstVolume.channels === 1);
-        const histogram = firstVolume ? getVolumeHistogram(firstVolume) : null;
+        const cachedVolume = currentLayerVolumes[layer.key] ?? null;
+        const isGrayscale = layer.channels === 1;
+        const histogram = cachedVolume ? getVolumeHistogram(cachedVolume) : null;
         return {
           key: layer.key,
           label: layer.label,
-          hasData: layer.volumes.length > 0,
+          hasData: layer.volumeCount > 0,
           isGrayscale,
           isSegmentation: layer.isSegmentation,
           defaultWindow,
@@ -490,6 +576,8 @@ export function useAppRouteState(): AppRouteState {
     channelLayersMap,
     channelNameMap,
     channelVisibility,
+    createLayerDefaultSettings,
+    currentLayerVolumes,
     layerSettings,
     loadedChannelIds
   ]);
@@ -577,7 +665,7 @@ export function useAppRouteState(): AppRouteState {
     setChannelActiveLayer({});
     setLayerSettings({});
     setLayerAutoThresholds({});
-    setLayers([]);
+    setCurrentLayerVolumes({});
     setSelectedIndex(0);
     resetChannelEditingState();
     setActiveChannelTabId(null);
@@ -615,83 +703,68 @@ export function useAppRouteState(): AppRouteState {
       return;
     }
 
-    if (!preprocessedExperiment && !voxelResolution) {
-      showLaunchError('Fill in all voxel resolution fields before launching.');
-      return;
-    }
-
-    if (preprocessedExperiment) {
-      clearDatasetError();
-      setIsLaunchingViewer(true);
-      try {
-        const manifestVoxelResolution =
-          preprocessedExperiment.manifest.dataset.voxelResolution ?? voxelResolution ?? null;
-        preprocessingSettingsRef.current = manifestVoxelResolution;
-        setLayers(preprocessedExperiment.layers);
-        applyLoadedLayers(preprocessedExperiment.layers, preprocessedExperiment.totalVolumeCount, {
-          setSelectedIndex,
-          setActiveChannelTabId,
-          setStatus,
-          setLoadedCount,
-          setExpectedVolumeCount,
-          setLoadProgress,
-          setIsPlaying,
-          clearDatasetError,
-          setError
-        });
-        setIsViewerLaunched(true);
-      } finally {
-        setIsLaunchingViewer(false);
-      }
-      return;
-    }
-
-    const hasAnyLayersConfigured = channels.some((channel) =>
-      channel.layers.some((layer) => layer.files.length > 0)
-    );
-    if (!hasAnyLayersConfigured) {
-      showLaunchError('Add a volume before launching the viewer.');
-      return;
-    }
-
-    const blockingChannel = channelValidationList.find((entry) => entry.errors.length > 0);
-    if (blockingChannel) {
-      const rawName = channels.find((channel) => channel.id === blockingChannel.channelId)?.name ?? '';
-      const channelName = rawName.trim() || 'this channel';
-      showLaunchError(`Resolve the errors in ${channelName} before launching.`);
-      return;
-    }
-
-    const hasPendingTracks = channels.some((channel) => channel.trackStatus === 'loading');
-    if (hasPendingTracks) {
-      showLaunchError('Wait for tracks to finish loading before launching.');
+    if (!preprocessedExperiment || !volumeProvider) {
+      showLaunchError('Preprocess or import a preprocessed experiment before launching the viewer.');
       return;
     }
 
     clearDatasetError();
-    preprocessingSettingsRef.current = voxelResolution;
-    setViewerMode(experimentDimension);
     setIsLaunchingViewer(true);
+    setStatus('loading');
+    setError(null);
+    setCurrentLayerVolumes({});
+    setSelectedIndex(0);
+    setIsPlaying(false);
+    setLoadProgress(0);
+    setLoadedCount(0);
     try {
-      const normalizedLayers = await loadDataset();
-      if (!normalizedLayers) {
-        return;
+      clearTextureCache();
+
+      const initialTimeIndex = 0;
+      const layerKeys = loadedChannelIds
+        .map((channelId) => {
+          const channelLayers = channelLayersMap.get(channelId) ?? [];
+          const selectedLayerKey = channelActiveLayer[channelId] ?? channelLayers[0]?.key ?? null;
+          return selectedLayerKey;
+        })
+        .filter((key): key is string => Boolean(key));
+
+      setExpectedVolumeCount(layerKeys.length);
+
+      const loadedVolumes: Record<string, NormalizedVolume | null> = {};
+      for (let index = 0; index < layerKeys.length; index++) {
+        const layerKey = layerKeys[index];
+        loadedVolumes[layerKey] = await volumeProvider.getVolume(layerKey, initialTimeIndex);
+        const nextLoaded = index + 1;
+        setLoadedCount(nextLoaded);
+        setLoadProgress(layerKeys.length === 0 ? 0 : nextLoaded / layerKeys.length);
       }
 
+      setCurrentLayerVolumes(loadedVolumes);
       setIsViewerLaunched(true);
+      setStatus('loaded');
+      setLoadedCount(layerKeys.length);
+      setLoadProgress(layerKeys.length === 0 ? 0 : 1);
+    } catch (error) {
+      console.error('Failed to launch viewer', error);
+      const message = error instanceof Error ? error.message : 'Failed to launch viewer.';
+      setStatus('error');
+      setError(message);
+      showLaunchError(message);
+      setIsViewerLaunched(false);
     } finally {
       setIsLaunchingViewer(false);
     }
   }, [
-    channelValidationList,
-    channels,
     clearDatasetError,
     isLaunchingViewer,
-    loadDataset,
-    preprocessedExperiment,
     showLaunchError,
-    experimentDimension,
-    voxelResolution
+    preprocessedExperiment,
+    volumeProvider,
+    channelActiveLayer,
+    channelLayersMap,
+    loadedChannelIds,
+    setIsPlaying
   ]);
 
   const handleChannelVisibilityToggle = useCallback((channelId: string) => {
@@ -705,20 +778,19 @@ export function useAppRouteState(): AppRouteState {
     });
   }, []);
 
-
   useEffect(() => {
-    if (layers.length === 0) {
+    if (loadedChannelIds.length === 0) {
       setActiveChannelTabId(null);
       return;
     }
 
     setActiveChannelTabId((current) => {
-      if (current && layers.some((layer) => layer.channelId === current)) {
+      if (current && loadedChannelIds.includes(current)) {
         return current;
       }
-      return layers[0].channelId;
+      return loadedChannelIds[0] ?? null;
     });
-  }, [layers]);
+  }, [loadedChannelIds]);
 
   useEffect(() => {
     if (channels.length === 0) {
@@ -736,7 +808,7 @@ export function useAppRouteState(): AppRouteState {
 
   useEffect(() => {
     setChannelActiveLayer((current) => {
-      if (layers.length === 0) {
+      if (loadedChannelIds.length === 0) {
         if (Object.keys(current).length === 0) {
           return current;
         }
@@ -745,10 +817,7 @@ export function useAppRouteState(): AppRouteState {
 
       const next: Record<string, string> = { ...current };
       let changed = false;
-      const validChannels = new Set<string>();
-      for (const layer of layers) {
-        validChannels.add(layer.channelId);
-      }
+      const validChannels = new Set<string>(loadedChannelIds);
 
       for (const channelId of Object.keys(next)) {
         if (!validChannels.has(channelId)) {
@@ -757,7 +826,7 @@ export function useAppRouteState(): AppRouteState {
         }
       }
 
-      for (const channelId of validChannels) {
+      for (const channelId of loadedChannelIds) {
         const channelLayers = channelLayersMap.get(channelId) ?? [];
         const activeKey = next[channelId];
         const hasActive = activeKey ? channelLayers.some((layer) => layer.key === activeKey) : false;
@@ -772,11 +841,71 @@ export function useAppRouteState(): AppRouteState {
 
       return changed ? next : current;
     });
-  }, [channelLayersMap, layers]);
+  }, [channelLayersMap, loadedChannelIds]);
 
   const handleBlendingModeToggle = useCallback(() => {
     setBlendingMode((current) => (current === 'additive' ? 'alpha' : 'additive'));
   }, []);
+
+  const activeViewerLayerKeys = useMemo(() => {
+    if (!isViewerLaunched || loadedChannelIds.length === 0) {
+      return [] as string[];
+    }
+
+    const keys: string[] = [];
+    for (const channelId of loadedChannelIds) {
+      const channelLayers = channelLayersMap.get(channelId) ?? [];
+      const selectedLayerKey = channelActiveLayer[channelId] ?? channelLayers[0]?.key ?? null;
+      if (selectedLayerKey) {
+        keys.push(selectedLayerKey);
+      }
+    }
+    return keys;
+  }, [channelActiveLayer, channelLayersMap, isViewerLaunched, loadedChannelIds]);
+
+  useEffect(() => {
+    if (!isViewerLaunched || !volumeProvider) {
+      return;
+    }
+    if (volumeTimepointCount === 0 || activeViewerLayerKeys.length === 0) {
+      setCurrentLayerVolumes({});
+      return;
+    }
+
+    const requestId = volumeLoadRequestRef.current + 1;
+    volumeLoadRequestRef.current = requestId;
+    let cancelled = false;
+
+    const clampedIndex = Math.max(0, Math.min(volumeTimepointCount - 1, selectedIndex));
+
+    void (async () => {
+      try {
+        const entries = await Promise.all(
+          activeViewerLayerKeys.map(async (layerKey) => [
+            layerKey,
+            await volumeProvider.getVolume(layerKey, clampedIndex)
+          ] as const)
+        );
+
+        if (cancelled || volumeLoadRequestRef.current !== requestId) {
+          return;
+        }
+
+        const nextVolumes = entries.reduce<Record<string, NormalizedVolume | null>>((acc, [layerKey, volume]) => {
+          acc[layerKey] = volume;
+          return acc;
+        }, {});
+
+        setCurrentLayerVolumes(nextVolumes);
+      } catch (error) {
+        console.error('Failed to load timepoint volumes', error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeViewerLayerKeys, isViewerLaunched, selectedIndex, volumeProvider, volumeTimepointCount]);
 
   const {
     viewerLayers,
@@ -796,8 +925,10 @@ export function useAppRouteState(): AppRouteState {
     handleLayerSamplingModeToggle,
     handleLayerInvertToggle
   } = useLayerControls({
-    layers,
+    layers: loadedDatasetLayers,
     selectedIndex,
+    layerVolumes: currentLayerVolumes,
+    loadVolume: volumeProvider ? volumeProvider.getVolume : null,
     layerAutoThresholds,
     setLayerAutoThresholds,
     createLayerDefaultSettings,
@@ -858,7 +989,6 @@ export function useAppRouteState(): AppRouteState {
     setIsExperimentSetupStarted,
     setViewerMode,
     updateChannelIdCounter,
-    loadSelectedDataset: loadDataset,
     showInteractionWarning,
     isLaunchingViewer,
     setChannelTrackStates,
@@ -935,6 +1065,7 @@ export function useAppRouteState(): AppRouteState {
     channelVisibility,
     channelTintMap,
     channelLayersMap,
+    layerVolumesByKey: currentLayerVolumes,
     channelActiveLayer,
     layerSettings,
     loadedChannelIds,
@@ -956,6 +1087,7 @@ export function useAppRouteState(): AppRouteState {
     hoveredVolumeVoxel: hoveredVolumeVoxel ?? lastHoveredVolumeVoxel,
     onTogglePlayback: handleTogglePlayback,
     onTimeIndexChange: handleTimeIndexChange,
+    canAdvancePlayback: canAdvancePlaybackToIndex,
     onStartRecording: handleStartRecording,
     onStopRecording: handleStopRecording,
     onFpsChange: setFps,

@@ -2,25 +2,20 @@ import { useCallback, useState } from 'react';
 import { downloadStream, sanitizeExportFileName } from '../../shared/utils/downloads';
 import {
   canUseFileSystemSavePicker,
-  exportPreprocessedDatasetInWorker,
   requestFileSystemSaveHandle,
   type FileSystemFileHandleLike
 } from '../../workers/exportPreprocessedDatasetClient';
-import type { ChannelExportMetadata } from '../../shared/utils/preprocessedDataset';
-import type { LoadedLayer } from '../../types/layers';
+import { exportPreprocessedDatasetFromStorage } from '../../shared/utils/preprocessedDataset';
+import { createBufferedUint8Stream } from '../../workers/exportPreprocessedDataset/mainThread';
+import { cloneUint8Array } from '../../shared/utils/buffer';
 import type { ChannelSource, StagedPreprocessedExperiment } from '../dataset';
-import type { ExperimentDimension } from '../useVoxelResolution';
-import type { VoxelResolutionValues } from '../../types/voxelResolution';
 
 export type UsePreprocessedExportOptions = {
   channels: ChannelSource[];
   preprocessedExperiment: StagedPreprocessedExperiment | null;
-  loadSelectedDataset: () => Promise<LoadedLayer[] | null>;
   clearDatasetError: () => void;
   showInteractionWarning: (message: string) => void;
   isLaunchingViewer: boolean;
-  voxelResolution: VoxelResolutionValues | null;
-  experimentDimension: ExperimentDimension;
 };
 
 export type UsePreprocessedExportResult = {
@@ -31,12 +26,9 @@ export type UsePreprocessedExportResult = {
 export function usePreprocessedExport({
   channels,
   preprocessedExperiment,
-  loadSelectedDataset,
   clearDatasetError,
   showInteractionWarning,
-  isLaunchingViewer,
-  voxelResolution,
-  experimentDimension
+  isLaunchingViewer
 }: UsePreprocessedExportOptions): UsePreprocessedExportResult {
   const [isExportingPreprocessed, setIsExportingPreprocessed] = useState(false);
 
@@ -50,17 +42,9 @@ export function usePreprocessedExport({
       return;
     }
 
-    const hasAnyLayers = preprocessedExperiment.layers.length > 0;
-
-    if (!hasAnyLayers) {
+    const totalVolumes = preprocessedExperiment.totalVolumeCount ?? 0;
+    if (totalVolumes <= 0) {
       showInteractionWarning('There are no volumes available to export.');
-      return;
-    }
-
-    const resolvedVoxelResolution = preprocessedExperiment.manifest.dataset.voxelResolution ?? voxelResolution;
-
-    if (!resolvedVoxelResolution) {
-      showInteractionWarning('Fill in all voxel resolution fields before exporting.');
       return;
     }
 
@@ -85,27 +69,20 @@ export function usePreprocessedExport({
         }
       }
 
-      const layersToExport: LoadedLayer[] = preprocessedExperiment.layers;
-      const channelsMetadata: ChannelExportMetadata[] = preprocessedExperiment.channelSummaries.map((summary) => ({
-        id: summary.id,
-        name: summary.name.trim() || 'Untitled channel',
-        trackEntries: summary.trackEntries
-      }));
-
-      if (layersToExport.length === 0) {
-        showInteractionWarning('There are no volumes available to export.');
-        return;
-      }
-
-      const { manifest, stream } = await exportPreprocessedDatasetInWorker({
-        layers: layersToExport,
-        channels: channelsMetadata,
-        voxelResolution: resolvedVoxelResolution,
-        movieMode: preprocessedExperiment?.manifest.dataset.movieMode ?? experimentDimension
-      });
+      const bufferedStream = createBufferedUint8Stream();
+      const { manifest } = await exportPreprocessedDatasetFromStorage(
+        { manifest: preprocessedExperiment.manifest, storage: preprocessedExperiment.storageHandle.storage },
+        (chunk) => {
+          if (!bufferedStream.isCancelled()) {
+            bufferedStream.enqueue(cloneUint8Array(chunk));
+          }
+        }
+      );
+      bufferedStream.close();
+      const stream = bufferedStream.stream;
 
       const baseNameSource =
-        preprocessedExperiment?.sourceName ?? channelsMetadata[0]?.name ?? 'preprocessed-experiment';
+        preprocessedExperiment?.sourceName ?? channels[0]?.name ?? 'preprocessed-experiment';
       const fileBase = sanitizeExportFileName(baseNameSource);
       const timestamp = manifest.generatedAt.replace(/[:.]/g, '-');
       const fileName = `${fileBase}-${timestamp}.zip`;
@@ -129,9 +106,7 @@ export function usePreprocessedExport({
     isExportingPreprocessed,
     isLaunchingViewer,
     preprocessedExperiment,
-    showInteractionWarning,
-    voxelResolution,
-    experimentDimension
+    showInteractionWarning
   ]);
 
   return {

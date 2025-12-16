@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { useViewerControls, useViewerPlayback, type ViewerMode, type ViewerPlaybackHook } from '../../../hooks/viewer';
 import type { ExperimentDimension } from '../../../hooks/useVoxelResolution';
@@ -13,6 +13,7 @@ type UseViewerModePlaybackParams = {
   volumeTimepointCount: number;
   isLoading: boolean;
   playback?: ViewerPlaybackHook;
+  canAdvancePlayback?: (nextIndex: number) => boolean;
 };
 
 export function useViewerModePlayback({
@@ -24,9 +25,15 @@ export function useViewerModePlayback({
   onViewerModeChange,
   volumeTimepointCount,
   isLoading,
-  playback: providedPlayback
+  playback: providedPlayback,
+  canAdvancePlayback
 }: UseViewerModePlaybackParams) {
   const playback = providedPlayback ?? useViewerPlayback();
+  const selectedIndexRef = useRef(playback.selectedIndex);
+
+  useEffect(() => {
+    selectedIndexRef.current = playback.selectedIndex;
+  }, [playback.selectedIndex]);
 
   const viewerControls = useViewerControls({
     playback,
@@ -113,18 +120,23 @@ export function useViewerModePlayback({
       lastTimestamp = timestamp;
 
       while (accumulator >= frameDuration) {
-        accumulator -= frameDuration;
-        playback.setSelectedIndex((previous) => {
-          if (volumeTimepointCount <= 1) {
-            const maxIndex = Math.max(0, volumeTimepointCount - 1);
-            const clamped = Math.min(Math.max(previous, 0), maxIndex);
-            return clamped;
-          }
+        if (volumeTimepointCount <= 1) {
+          accumulator = 0;
+          break;
+        }
 
-          const maxIndex = Math.max(0, volumeTimepointCount - 1);
-          const nextIndex = previous >= maxIndex ? 0 : previous + 1;
-          return nextIndex;
-        });
+        const maxIndex = Math.max(0, volumeTimepointCount - 1);
+        const currentIndex = Math.min(Math.max(selectedIndexRef.current, 0), maxIndex);
+        const nextIndex = currentIndex >= maxIndex ? 0 : currentIndex + 1;
+
+        if (canAdvancePlayback && !canAdvancePlayback(nextIndex)) {
+          accumulator = 0;
+          break;
+        }
+
+        accumulator -= frameDuration;
+        selectedIndexRef.current = nextIndex;
+        playback.setSelectedIndex(nextIndex);
       }
 
       animationFrame = window.requestAnimationFrame(step);
@@ -140,6 +152,7 @@ export function useViewerModePlayback({
     };
   }, [
     playback,
+    canAdvancePlayback,
     playbackDisabled,
     playback.fps,
     playback.isPlaying,

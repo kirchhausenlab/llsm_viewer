@@ -107,4 +107,10 @@ export type ImportPreprocessedDatasetResult = {
   totalVolumeCount: number;
 };
 
+export type OpenPreprocessedDatasetResult = {
+  manifest: PreprocessedManifest;
+  channelSummaries: PreprocessedChannelSummary[];
+  totalVolumeCount: number;
+};
+
 export const MANIFEST_FILE_NAME = 'manifest.json';

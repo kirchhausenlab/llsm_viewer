@@ -7,8 +7,12 @@ import { VOXEL_RESOLUTION_UNITS } from '../../../types/voxelResolution';
 import { getBytesPerValue, type VolumeDataType } from '../../../types/volume';
 
 import { computeSha256Hex } from './hash';
+import { ensureArrayBuffer } from '../buffer';
+import { createZipPreprocessedStorage } from '../../storage/zipPreprocessedStorage';
+import type { PreprocessedStorageHandle } from '../../storage/preprocessedStorage';
 import {
   type ImportPreprocessedDatasetResult,
+  type OpenPreprocessedDatasetResult,
   type PreprocessedMovieMode,
   type PreprocessedChannelSummary,
   type PreprocessedLayerSummary,
@@ -36,6 +40,10 @@ function isVolumeDataType(value: unknown): value is VolumeDataType {
 export type ImportPreprocessedDatasetOptions = {
   onProgress?: (bytesProcessed: number) => void;
   onVolumeDecoded?: (volumesDecoded: number, totalVolumeCount: number) => void;
+};
+
+export type OpenPreprocessedDatasetOptions = {
+  sourceId?: string;
 };
 
 type VolumeData = {
@@ -433,5 +441,80 @@ export async function importPreprocessedDataset(
     if (totalBytes !== null && bytesProcessed < totalBytes) {
       options?.onProgress?.(totalBytes);
     }
+  }
+}
+
+function buildOpenChannelSummaries(manifest: PreprocessedManifest): PreprocessedChannelSummary[] {
+  return manifest.dataset.channels.map((channel) => {
+    const layerSummaries: PreprocessedLayerSummary[] = channel.layers.map((layer) => {
+      const firstVolume = layer.volumes[0];
+      return {
+        key: layer.key,
+        label: layer.label,
+        isSegmentation: layer.isSegmentation,
+        volumeCount: layer.volumes.length,
+        width: firstVolume?.width ?? 0,
+        height: firstVolume?.height ?? 0,
+        depth: firstVolume?.depth ?? 0,
+        channels: firstVolume?.channels ?? 0,
+        dataType: firstVolume?.dataType ?? 'uint8',
+        min: firstVolume?.min ?? 0,
+        max: firstVolume?.max ?? 0
+      };
+    });
+
+    return {
+      id: channel.id,
+      name: channel.name,
+      trackEntries: channel.trackEntries,
+      layers: layerSummaries
+    };
+  });
+}
+
+function countManifestVolumes(manifest: PreprocessedManifest): number {
+  let total = 0;
+  for (const channel of manifest.dataset.channels) {
+    for (const layer of channel.layers) {
+      total += layer.volumes.length;
+    }
+  }
+  return total;
+}
+
+export async function openPreprocessedDatasetFromZip(
+  source: Blob | ArrayBuffer | Uint8Array,
+  options?: OpenPreprocessedDatasetOptions
+): Promise<OpenPreprocessedDatasetResult & { storageHandle: PreprocessedStorageHandle }> {
+  const blob =
+    source instanceof Blob
+      ? source
+      : source instanceof Uint8Array
+        ? new Blob([ensureArrayBuffer(source)])
+        : new Blob([new Uint8Array(source)]);
+
+  const storageHandle = await createZipPreprocessedStorage(blob, {
+    id: options?.sourceId
+  });
+
+  try {
+    const manifestBytes = await storageHandle.storage.readFile(MANIFEST_FILE_NAME);
+    const manifest = parseManifest(manifestBytes);
+
+    const countedVolumes = countManifestVolumes(manifest);
+    if (countedVolumes !== manifest.dataset.totalVolumeCount) {
+      throw new Error('Manifest volume count does not match the declared totalVolumeCount.');
+    }
+
+    const channelSummaries = buildOpenChannelSummaries(manifest);
+    return {
+      manifest,
+      channelSummaries,
+      totalVolumeCount: manifest.dataset.totalVolumeCount,
+      storageHandle
+    };
+  } catch (error) {
+    await storageHandle.dispose?.();
+    throw error instanceof Error ? error : new Error(String(error));
   }
 }

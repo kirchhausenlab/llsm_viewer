@@ -44,6 +44,7 @@ function VolumeViewer({
   blendingMode,
   onTogglePlayback,
   onTimeIndexChange,
+  canAdvancePlayback,
   onFpsChange,
   onRegisterVolumeStepScaleChange,
   onRegisterReset,
@@ -185,6 +186,7 @@ function VolumeViewer({
     totalTimepoints,
     onTogglePlayback,
     onTimeIndexChange,
+    canAdvancePlayback,
     onFpsChange,
   });
 

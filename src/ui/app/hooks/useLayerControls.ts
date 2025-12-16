@@ -1,6 +1,7 @@
 import { useCallback, useMemo, type Dispatch, type SetStateAction } from 'react';
 import { computeAutoWindow } from '../../../autoContrast';
 import { normalizeHexColor, DEFAULT_LAYER_COLOR } from '../../../shared/colorMaps/layerColors';
+import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import {
   brightnessContrastModel,
   clampWindowBounds,
@@ -11,11 +12,13 @@ import {
   type SamplingMode,
   updateLayerSettings
 } from '../../../state/layerSettings';
-import type { LoadedLayer } from '../../../types/layers';
+import type { LoadedDatasetLayer } from '../../../hooks/dataset';
 
 export type LayerControlsParams = {
-  layers: LoadedLayer[];
+  layers: LoadedDatasetLayer[];
   selectedIndex: number;
+  layerVolumes: Record<string, NormalizedVolume | null>;
+  loadVolume: ((layerKey: string, timepoint: number) => Promise<NormalizedVolume>) | null;
   layerAutoThresholds: Record<string, number>;
   setLayerAutoThresholds: Dispatch<SetStateAction<Record<string, number>>>;
   createLayerDefaultSettings: (key: string) => LayerSettings;
@@ -37,6 +40,8 @@ export type LayerControlsParams = {
 export function useLayerControls({
   layers,
   selectedIndex,
+  layerVolumes,
+  loadVolume,
   layerAutoThresholds,
   setLayerAutoThresholds,
   createLayerDefaultSettings,
@@ -106,52 +111,72 @@ export function useLayerControls({
 
   const handleLayerAutoContrast = useCallback(
     (key: string) => {
-      const layer = layers.find((entry) => entry.key === key);
-      if (!layer) {
-        return;
-      }
-      const volume = layer.volumes[selectedIndex] ?? null;
-      if (!volume) {
-        return;
-      }
+      const applyAutoWindow = (volume: NormalizedVolume) => {
+        const previousThreshold = layerAutoThresholds[key] ?? 0;
+        const { windowMin, windowMax, nextThreshold } = computeAutoWindow(volume, previousThreshold);
+        const { windowMin: clampedMin, windowMax: clampedMax } = clampWindowBounds(windowMin, windowMax);
+        const updatedState = brightnessContrastModel.applyWindow(clampedMin, clampedMax);
 
-      const previousThreshold = layerAutoThresholds[key] ?? 0;
-      const { windowMin, windowMax, nextThreshold } = computeAutoWindow(volume, previousThreshold);
-      const { windowMin: clampedMin, windowMax: clampedMax } = clampWindowBounds(windowMin, windowMax);
-      const updatedState = brightnessContrastModel.applyWindow(clampedMin, clampedMax);
-
-      setLayerAutoThresholds((current) => {
-        if (current[key] === nextThreshold) {
-          return current;
-        }
-        return {
-          ...current,
-          [key]: nextThreshold
-        };
-      });
-
-      setLayerSettings((current) => {
-        const previous = current[key] ?? createLayerDefaultSettings(key);
-        if (
-          previous.windowMin === updatedState.windowMin &&
-          previous.windowMax === updatedState.windowMax &&
-          previous.brightnessSliderIndex === updatedState.brightnessSliderIndex &&
-          previous.contrastSliderIndex === updatedState.contrastSliderIndex &&
-          previous.minSliderIndex === updatedState.minSliderIndex &&
-          previous.maxSliderIndex === updatedState.maxSliderIndex
-        ) {
-          return current;
-        }
-        return {
-          ...current,
-          [key]: {
-            ...previous,
-            ...updatedState
+        setLayerAutoThresholds((current) => {
+          if (current[key] === nextThreshold) {
+            return current;
           }
-        };
-      });
+          return {
+            ...current,
+            [key]: nextThreshold
+          };
+        });
+
+        setLayerSettings((current) => {
+          const previous = current[key] ?? createLayerDefaultSettings(key);
+          if (
+            previous.windowMin === updatedState.windowMin &&
+            previous.windowMax === updatedState.windowMax &&
+            previous.brightnessSliderIndex === updatedState.brightnessSliderIndex &&
+            previous.contrastSliderIndex === updatedState.contrastSliderIndex &&
+            previous.minSliderIndex === updatedState.minSliderIndex &&
+            previous.maxSliderIndex === updatedState.maxSliderIndex
+          ) {
+            return current;
+          }
+          return {
+            ...current,
+            [key]: {
+              ...previous,
+              ...updatedState
+            }
+          };
+        });
+      };
+
+      const cached = layerVolumes[key] ?? null;
+      if (cached) {
+        applyAutoWindow(cached);
+        return;
+      }
+
+      if (!loadVolume) {
+        return;
+      }
+
+      void (async () => {
+        try {
+          const volume = await loadVolume(key, selectedIndex);
+          applyAutoWindow(volume);
+        } catch (error) {
+          console.error('Failed to auto-contrast layer', error);
+        }
+      })();
     },
-    [createLayerDefaultSettings, layerAutoThresholds, layers, selectedIndex, setLayerAutoThresholds, setLayerSettings]
+    [
+      createLayerDefaultSettings,
+      layerAutoThresholds,
+      layerVolumes,
+      loadVolume,
+      selectedIndex,
+      setLayerAutoThresholds,
+      setLayerSettings
+    ]
   );
 
   const handleLayerOffsetChange = useCallback(
@@ -387,11 +412,16 @@ export function useLayerControls({
   );
 
   const viewerLayers = useMemo(() => {
-    const activeLayers: LoadedLayer[] = [];
-    for (const layer of layers) {
-      if (channelActiveLayer[layer.channelId] === layer.key) {
-        activeLayers.push(layer);
+    const activeLayers: LoadedDatasetLayer[] = [];
+    for (const channelId of loadedChannelIds) {
+      const channelLayers = layers.filter((layer) => layer.channelId === channelId);
+      if (channelLayers.length === 0) {
+        continue;
       }
+      const selectedKey = channelActiveLayer[channelId];
+      const selectedLayer =
+        (selectedKey ? channelLayers.find((layer) => layer.key === selectedKey) : null) ?? channelLayers[0];
+      activeLayers.push(selectedLayer);
     }
 
     return activeLayers.map((layer) => {
@@ -402,7 +432,7 @@ export function useLayerControls({
         label: layer.label,
         channelId: layer.channelId,
         channelName: channelNameMap.get(layer.channelId) ?? 'Untitled channel',
-        volume: layer.volumes[selectedIndex] ?? null,
+        volume: layerVolumes[layer.key] ?? null,
         visible: channelVisible ?? true,
         sliderRange: settings.sliderRange,
         minSliderIndex: settings.minSliderIndex,
@@ -425,20 +455,28 @@ export function useLayerControls({
     channelNameMap,
     channelVisibility,
     createLayerDefaultSettings,
+    layerVolumes,
     layerSettings,
     layers,
-    selectedIndex
+    loadedChannelIds
   ]);
+
+  const layerDepthMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const layer of layers) {
+      map.set(layer.key, layer.depth);
+    }
+    return map;
+  }, [layers]);
 
   const computedMaxSliceDepth = useMemo(() => {
     let depth = 0;
     for (const layer of viewerLayers) {
-      if (layer.volume) {
-        depth = Math.max(depth, layer.volume.depth);
-      }
+      const fallbackDepth = layerDepthMap.get(layer.key) ?? 0;
+      depth = Math.max(depth, layer.volume?.depth ?? fallbackDepth);
     }
     return depth;
-  }, [viewerLayers]);
+  }, [layerDepthMap, viewerLayers]);
 
   return {
     viewerLayers,

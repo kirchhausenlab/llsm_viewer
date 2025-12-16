@@ -35,9 +35,10 @@ The main responsibilities are:
 **1. Dataset ingestion & preprocessing**
 
 - Front-end UI for local/Dropbox uploads and preprocessed dataset import.
-- Volume loading via `src/loaders/volumeLoader.ts` → worker decoding → normalized volume data.
-- Preprocessing (`src/core/volumeProcessing.ts`) prepares GPU-friendly buffers, applies normalization, segmentation colorization, and anisotropy-related logic.
-- Processed volumes are cached in `src/core/textureCache.ts` for reuse.
+- **Preprocessing is mandatory**: raw TIFF decoding happens only during preprocessing.
+- Raw TIFF decoding via `src/loaders/volumeLoader.ts` → worker decode → `VolumePayload`.
+- Streaming preprocessing via `src/shared/utils/preprocessedDataset/preprocess.ts` writes one timepoint at a time into a `PreprocessedStorage` backend (OPFS by default), then writes `manifest.json` last.
+- Core processing (`src/core/volumeProcessing.ts`) handles normalization + segmentation colorization; GPU texture packing is cached via `src/core/textureCache.ts`.
 
 **2. Visualization (2D + 3D)**
 
@@ -50,14 +51,14 @@ The main responsibilities are:
 - Central dataset and layer state: `useChannelLayerState` and `state/*`.
 - Channel sources and per-layer volume state: `hooks/dataset/useChannelSources.ts`.
 - Playback and viewer interaction: `hooks/viewer/useViewerPlayback.ts`, `hooks/viewer/useViewerControls.ts`, and app-level
-  helpers such as `useViewerModePlayback` (viewer routing) and `useDatasetLaunch` (load/progress wiring).
+  helpers such as `useViewerModePlayback` (mode + playback wiring).
 - Tracks: hooks under `hooks/tracks/*` feed both planar and volume viewers.
 
 **4. Preprocessed dataset import/export**
 
-- ZIP format and manifest: `src/utils/preprocessedDataset/*`.
-- Export/import workers: `src/workers/exportPreprocessedDataset*.ts` / `importPreprocessedDataset*.ts`.
-- Streaming download/export pipeline uses `src/utils/downloads.ts`, `src/utils/exportServiceWorker.ts`, and `public/export-sw.js`.
+- ZIP format and manifest: `src/shared/utils/preprocessedDataset/*`.
+- Storage abstraction shared by preprocessing + viewing: `src/shared/storage/*` (OPFS + in-memory + ZIP read-only backend).
+- Streaming export pipeline: `src/shared/utils/preprocessedDataset/export.ts` (can stream from `{manifest + storage}`), with service worker download fallback in `public/export-sw.js`.
 
 ---
 
@@ -151,6 +152,8 @@ The main responsibilities are:
   Normalization into GPU-friendly formats + segmentation colorization/label handling.
 - `src/core/textureCache.ts`
   Caches packed 3D texture buffers derived from normalized volumes (avoids repeated repacking).
+- `src/core/volumeProvider.ts`
+  Random-access volume loader for preprocessed datasets (reads from `PreprocessedStorage` with a small bounded cache).
 - `src/shaders/*`  
   Shader source modules (`volumeRenderShader.ts`, `sliceRenderShader.ts`).
 
@@ -159,11 +162,13 @@ The main responsibilities are:
 ### Export/import (“preprocessed dataset” ZIP)
 
 - `src/shared/utils/preprocessedDataset/*`
-  ZIP format + manifest/types, hashing, import/export implementations.
+  ZIP format + manifest/types, hashing, import/export implementations (including streaming preprocess → storage).
+- `src/shared/storage/*`
+  Storage backends used by preprocessing + viewing: OPFS + in-memory + ZIP read-only storage.
 - `src/workers/exportPreprocessedDataset*.ts` / `importPreprocessedDataset*.ts`
-  Worker-backed export/import with main-thread fallbacks.
+  Legacy worker-backed export/import paths (some flows now run on the main thread using storage-backed streaming).
 - `src/shared/utils/downloads.ts` + `src/shared/utils/exportServiceWorker.ts` + `public/export-sw.js`
-  Streaming export pipeline (File System Access API when available; service-worker download fallback otherwise).
+  Streaming ZIP download/export fallback pipeline.
 
 ---
 

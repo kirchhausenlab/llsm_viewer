@@ -75,6 +75,7 @@ export type ViewerShellContainerProps = {
   channelVisibility: ViewerShellProps['channelsPanel']['channelVisibility'];
   channelTintMap: ViewerShellProps['channelsPanel']['channelTintMap'];
   channelLayersMap: ViewerShellProps['channelsPanel']['channelLayersMap'];
+  layerVolumesByKey: ViewerShellProps['channelsPanel']['layerVolumesByKey'];
   channelActiveLayer: ViewerShellProps['channelsPanel']['channelActiveLayer'];
   layerSettings: ViewerShellProps['channelsPanel']['layerSettings'];
   loadedChannelIds: ViewerShellProps['channelsPanel']['loadedChannelIds'];
@@ -96,6 +97,7 @@ export type ViewerShellContainerProps = {
   hoveredVolumeVoxel: HoveredVoxelInfo | null;
   onTogglePlayback: ViewerShellProps['volumeViewerProps']['onTogglePlayback'];
   onTimeIndexChange: ViewerShellProps['volumeViewerProps']['onTimeIndexChange'];
+  canAdvancePlayback?: ViewerShellProps['volumeViewerProps']['canAdvancePlayback'];
   onFpsChange: ViewerShellProps['volumeViewerProps']['onFpsChange'];
   onVolumeStepScaleChange?: ViewerShellProps['volumeViewerProps']['onVolumeStepScaleChange'];
   onRegisterVolumeStepScaleChange?: ViewerShellProps['volumeViewerProps']['onRegisterVolumeStepScaleChange'];
@@ -219,6 +221,7 @@ export function useViewerShellProps({
   channelVisibility,
   channelTintMap,
   channelLayersMap,
+  layerVolumesByKey,
   channelActiveLayer,
   layerSettings,
   loadedChannelIds,
@@ -240,6 +243,7 @@ export function useViewerShellProps({
   hoveredVolumeVoxel,
   onTogglePlayback,
   onTimeIndexChange,
+  canAdvancePlayback,
   onFpsChange,
   onVolumeStepScaleChange,
   onRegisterVolumeStepScaleChange,
@@ -323,6 +327,7 @@ export function useViewerShellProps({
       blendingMode,
       onTogglePlayback,
       onTimeIndexChange,
+      canAdvancePlayback,
       onFpsChange,
     onVolumeStepScaleChange,
     onRegisterVolumeStepScaleChange,
@@ -489,6 +494,7 @@ export function useViewerShellProps({
       onChannelTabSelect: onChannelPanelSelect,
       onChannelVisibilityToggle,
       channelLayersMap,
+      layerVolumesByKey,
       channelActiveLayer,
       layerSettings,
       getLayerDefaultSettings,

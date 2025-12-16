@@ -41,7 +41,7 @@ function ViewerShell({
   const { loadedChannelIds, channelLayersMap } = channelsPanel;
 
   const hasVolumeData = loadedChannelIds.some((channelId) =>
-    (channelLayersMap.get(channelId) ?? []).some((layer) => layer.volumes.length > 0)
+    (channelLayersMap.get(channelId) ?? []).some((layer) => layer.volumeCount > 0)
   );
   const hasTrackData = tracksPanel.channels.some(
     (channel) => (tracksPanel.parsedTracksByChannel.get(channel.id)?.length ?? 0) > 0

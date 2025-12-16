@@ -124,6 +124,7 @@ export type VolumeViewerProps = {
   expectedVolumes: number;
   onTogglePlayback: () => void;
   onTimeIndexChange: (nextIndex: number) => void;
+  canAdvancePlayback?: (nextIndex: number) => boolean;
   onFpsChange: (value: number) => void;
   onVolumeStepScaleChange?: (value: number) => void;
   onRegisterVolumeStepScaleChange?: (handler: ((value: number) => void) | null) => void;
@@ -207,4 +208,3 @@ export type TrackLineResource = {
   shouldShow: boolean;
   needsAppearanceUpdate: boolean;
 };
-

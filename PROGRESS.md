@@ -1,8 +1,14 @@
 # Progress
 
 ## Latest changes
-- Reworked the front-page “Set up new experiment” flow to preprocess first: a single “Preprocess experiment” action stages an in-memory preprocessed dataset, shows a success message, then reveals “Launch viewer” and “Export preprocessed experiment” that reuse the staged data (no reprocessing).
-- Added `stagePreprocessedDataset` for building an in-memory preprocessed manifest/summaries from loaded layers, with test coverage.
+- Refactored preprocessing/viewing to be storage-backed and streaming: preprocessing writes directly to `PreprocessedStorage` (OPFS primary) and viewer reads volumes on demand via `VolumeProvider` (bounded cache) instead of materializing full movies in RAM.
+- Implemented the locked normalization policy (“representative global”): pass #1 loads only the middle timepoint per non-segmentation layer for stats; pass #2 preprocesses the full movie using those stats for every timepoint.
+- Removed anisotropy resampling from the new preprocess pipeline (render-time scaling remains a follow-up task).
+- Made preprocessed ZIP import lazy: open reads `manifest.json` only and uses a ZIP-backed storage handle for random-access volume reads.
+- Updated export to stream from `{manifest + storage}` (no dependency on `LoadedLayer.volumes[]`).
+- Added playback backpressure + prefetch: autoplay advances only once the next frame’s active volumes are ready, with a small lookahead window.
+- TODO: Apply anisotropy scale at render-time (volume root transform + track alignment) and remove legacy resample paths.
+- TODO: Ensure storage handles are disposed on reset (ZIP backend) and wire preprocess progress/cancel into UI.
 - Note: In restricted sandboxes, `npm test` may fail due to tsx IPC socket permissions; `node --import tsx tests/runTests.ts` runs the suite without IPC.
 - Prevented viewer recording from stopping immediately after start by only reacting to viewer mode changes or lost capture
   targets.

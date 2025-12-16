@@ -7,7 +7,7 @@ import type {
   SetStateAction
 } from 'react';
 import { collectFilesFromDataTransfer } from '../../shared/utils/appHelpers';
-import { importPreprocessedDatasetWithWorker } from '../../workers/importPreprocessedDatasetClient';
+import { openPreprocessedDatasetFromZip } from '../../shared/utils/preprocessedDataset';
 import type { ChannelTrackState, FollowedTrackState } from '../../types/channelTracks';
 import type { ChannelSource, StagedPreprocessedExperiment } from '../dataset';
 import type { ExperimentDimension } from '../useVoxelResolution';
@@ -111,18 +111,12 @@ export function usePreprocessedImport({
         setPreprocessedImportTotalBytes(totalBytes);
         setPreprocessedImportVolumesDecoded(0);
         setPreprocessedImportTotalVolumeCount(null);
-        const result = await importPreprocessedDatasetWithWorker({
-          stream: file.stream(),
-          totalBytes,
-          onProgress: (progress) => {
-            setPreprocessedImportBytesProcessed(progress.bytesProcessed);
-            setPreprocessedImportTotalBytes(progress.totalBytes);
-            setPreprocessedImportVolumesDecoded(progress.volumesDecoded);
-            setPreprocessedImportTotalVolumeCount(progress.totalVolumeCount);
-          }
-        });
+        const result = await openPreprocessedDatasetFromZip(file, { sourceId: file.name ?? undefined });
         const staged: StagedPreprocessedExperiment = {
-          ...result,
+          manifest: result.manifest,
+          channelSummaries: result.channelSummaries,
+          totalVolumeCount: result.totalVolumeCount,
+          storageHandle: result.storageHandle,
           sourceName: file.name ?? null,
           sourceSize: Number.isFinite(file.size) ? file.size : null
         };
@@ -155,6 +149,9 @@ export function usePreprocessedImport({
         setIsPreprocessedLoaderOpen(false);
         resetPreprocessedLoader();
         clearDatasetError();
+        setPreprocessedImportBytesProcessed(totalBytes ?? 0);
+        setPreprocessedImportVolumesDecoded(0);
+        setPreprocessedImportTotalVolumeCount(result.totalVolumeCount);
       } catch (error) {
         console.error('Failed to import preprocessed dataset', error);
         const message = error instanceof Error ? error.message : 'Failed to import preprocessed dataset.';

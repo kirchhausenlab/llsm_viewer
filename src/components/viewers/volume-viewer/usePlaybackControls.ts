@@ -13,6 +13,7 @@ type UsePlaybackControlsParams = {
   totalTimepoints: number;
   onTogglePlayback: () => void;
   onTimeIndexChange: (nextIndex: number) => void;
+  canAdvancePlayback?: (nextIndex: number) => boolean;
   onFpsChange: (value: number) => void;
 };
 
@@ -33,9 +34,11 @@ export function usePlaybackControls({
   totalTimepoints,
   onTogglePlayback,
   onTimeIndexChange,
+  canAdvancePlayback,
   onFpsChange,
 }: UsePlaybackControlsParams) {
   const timeIndexRef = useRef(0);
+  const canAdvancePlaybackRef = useRef<((nextIndex: number) => boolean) | null>(null);
   const playbackState = useMemo(
     () => ({
       isPlaying,
@@ -69,6 +72,10 @@ export function usePlaybackControls({
   useEffect(() => {
     timeIndexRef.current = clampedTimeIndex;
   }, [clampedTimeIndex]);
+
+  useEffect(() => {
+    canAdvancePlaybackRef.current = canAdvancePlayback ?? null;
+  }, [canAdvancePlayback]);
 
   const playbackStateRefRef = useRef<MutableRefObject<PlaybackState> | null>(null);
   const playbackLoopRefRef = useRef<MutableRefObject<PlaybackLoopState> | null>(null);
@@ -161,15 +168,22 @@ export function usePlaybackControls({
             let didAdvance = false;
 
             while (playbackLoopState.accumulator >= frameDuration) {
-              playbackLoopState.accumulator -= frameDuration;
               let nextIndex = playbackStateValue.timeIndex + 1;
               if (nextIndex > maxIndex) {
                 nextIndex = 0;
               }
               if (nextIndex === playbackStateValue.timeIndex) {
+                playbackLoopState.accumulator = 0;
                 break;
               }
 
+              const canAdvance = canAdvancePlaybackRef.current;
+              if (canAdvance && !canAdvance(nextIndex)) {
+                playbackLoopState.accumulator = 0;
+                break;
+              }
+
+              playbackLoopState.accumulator -= frameDuration;
               playbackStateValue.timeIndex = nextIndex;
               timeIndexRef.current = nextIndex;
 

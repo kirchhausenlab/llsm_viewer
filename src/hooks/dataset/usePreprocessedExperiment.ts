@@ -8,7 +8,6 @@ import type {
   SetStateAction
 } from 'react';
 import type { DropboxAppKeySource } from '../../integrations/dropbox';
-import type { LoadedLayer } from '../../types/layers';
 import type { ChannelTrackState, FollowedTrackState } from '../../types/channelTracks';
 import type { ChannelSource, StagedPreprocessedExperiment } from './useChannelSources';
 import type { ExperimentDimension } from '../useVoxelResolution';
@@ -16,7 +15,6 @@ import type { PreprocessedDropboxCallbacks } from '../preprocessedExperiment/sha
 import { usePreprocessedImport } from '../preprocessedExperiment/usePreprocessedImport';
 import { useDropboxPreprocessed } from '../preprocessedExperiment/useDropboxPreprocessed';
 import { usePreprocessedExport } from '../preprocessedExperiment/usePreprocessedExport';
-import type { VoxelResolutionValues } from '../../types/voxelResolution';
 
 export type UsePreprocessedExperimentOptions = {
   channels: ChannelSource[];
@@ -32,11 +30,8 @@ export type UsePreprocessedExperimentOptions = {
   setViewerMode: Dispatch<SetStateAction<'3d' | '2d'>>;
   clearDatasetError: () => void;
   updateChannelIdCounter: (sources: ChannelSource[]) => void;
-  loadSelectedDataset: () => Promise<LoadedLayer[] | null>;
   showInteractionWarning: (message: string) => void;
   isLaunchingViewer: boolean;
-  voxelResolution: VoxelResolutionValues | null;
-  experimentDimension: ExperimentDimension;
 };
 
 export type UsePreprocessedExperimentResult = {
@@ -89,11 +84,8 @@ export default function usePreprocessedExperiment({
   setViewerMode,
   clearDatasetError,
   updateChannelIdCounter,
-  loadSelectedDataset,
   showInteractionWarning,
-  isLaunchingViewer,
-  voxelResolution,
-  experimentDimension
+  isLaunchingViewer
 }: UsePreprocessedExperimentOptions): UsePreprocessedExperimentResult {
   const preprocessedFileInputRef = useRef<HTMLInputElement | null>(null);
   const preprocessedDropCounterRef = useRef(0);
@@ -133,12 +125,9 @@ export default function usePreprocessedExperiment({
   const exportState = usePreprocessedExport({
     channels,
     preprocessedExperiment: importState.preprocessedExperiment,
-    loadSelectedDataset,
     clearDatasetError,
     showInteractionWarning,
-    isLaunchingViewer,
-    voxelResolution,
-    experimentDimension
+    isLaunchingViewer
   });
 
   return {

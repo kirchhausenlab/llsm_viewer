@@ -6,9 +6,9 @@ import { type ExperimentDimension, type VoxelResolutionHook } from '../../hooks/
 import type { DatasetErrorHook } from '../../hooks/useDatasetErrors';
 import type { DropboxAppKeySource } from '../../integrations/dropbox';
 import type { ChannelTrackState, FollowedTrackState } from '../../types/channelTracks';
-import type { LoadedLayer } from '../../types/layers';
 import type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment } from '../../hooks/dataset';
-import { stagePreprocessedDataset } from '../../shared/utils/preprocessedDataset';
+import { preprocessDatasetToStorage } from '../../shared/utils/preprocessedDataset';
+import { createOpfsPreprocessedStorage } from '../../shared/storage';
 
 type TrackSummary = { totalRows: number; uniqueTracks: number };
 
@@ -39,7 +39,6 @@ export type FrontPageContainerProps = {
   setIsExperimentSetupStarted: Dispatch<SetStateAction<boolean>>;
   setViewerMode: Dispatch<SetStateAction<'3d' | '2d'>>;
   updateChannelIdCounter: (sources: ChannelSource[]) => void;
-  loadSelectedDataset: () => Promise<LoadedLayer[] | null>;
   showInteractionWarning: (message: string) => void;
   isLaunchingViewer: boolean;
   setChannelTrackStates: Dispatch<SetStateAction<Record<string, ChannelTrackState>>>;
@@ -89,7 +88,6 @@ export default function FrontPageContainer({
   setIsExperimentSetupStarted,
   setViewerMode,
   updateChannelIdCounter,
-  loadSelectedDataset,
   showInteractionWarning,
   isLaunchingViewer,
   setChannelTrackStates,
@@ -130,12 +128,6 @@ export default function FrontPageContainer({
     setVoxelResolutionInput
   } = voxelResolution;
 
-  const handleLoadSelectedDataset = useCallback(() => {
-    setIsExperimentSetupStarted(true);
-    setExperimentDimension(experimentDimension);
-    return loadSelectedDataset();
-  }, [experimentDimension, loadSelectedDataset, setExperimentDimension, setIsExperimentSetupStarted]);
-
   const preprocessedState = usePreprocessedExperiment({
     channels,
     setChannels,
@@ -150,11 +142,8 @@ export default function FrontPageContainer({
     setViewerMode,
     clearDatasetError,
     updateChannelIdCounter,
-    loadSelectedDataset: handleLoadSelectedDataset,
     showInteractionWarning,
-    isLaunchingViewer,
-    voxelResolution: voxelResolutionValue,
-    experimentDimension
+    isLaunchingViewer
   });
 
   const {
@@ -219,31 +208,48 @@ export default function FrontPageContainer({
     setIsPreprocessingExperiment(true);
     try {
       setIsExperimentSetupStarted(true);
-      const normalizedLayers = await loadSelectedDataset();
-      if (!normalizedLayers) {
-        return;
-      }
-
       const channelsMetadata = channels.map((channel) => ({
         id: channel.id,
         name: channel.name.trim() || 'Untitled channel',
         trackEntries: channel.trackEntries
       }));
+      const layersToProcess = channels
+        .flatMap((channel) =>
+          channel.layers.map((layer) => ({
+            channelId: channel.id,
+            channelLabel: channel.name.trim() || 'Untitled channel',
+            key: layer.id,
+            label: 'Volume',
+            files: layer.files,
+            isSegmentation: layer.isSegmentation
+          }))
+        )
+        .filter((layer) => layer.files.length > 0);
 
-      const staged = stagePreprocessedDataset({
-        layers: normalizedLayers,
+      const storageHandle = await createOpfsPreprocessedStorage();
+      const { manifest, channelSummaries, totalVolumeCount } = await preprocessDatasetToStorage({
+        layers: layersToProcess,
         channels: channelsMetadata,
         voxelResolution: voxelResolutionValue,
-        movieMode: experimentDimension
+        movieMode: experimentDimension,
+        storage: storageHandle.storage
       });
 
       setPreprocessedExperiment({
-        ...staged,
+        manifest,
+        channelSummaries,
+        totalVolumeCount,
+        storageHandle,
         sourceName: 'experiment',
         sourceSize: null
       });
       clearDatasetError();
       setPreprocessSuccessMessage('Experiment successfully preprocessed.');
+    } catch (error) {
+      console.error('Failed to preprocess experiment', error);
+      const message = error instanceof Error ? error.message : 'Failed to preprocess experiment.';
+      showInteractionWarning(message);
+      setPreprocessedExperiment(null);
     } finally {
       setIsPreprocessingExperiment(false);
     }
@@ -256,7 +262,6 @@ export default function FrontPageContainer({
     isPreprocessingExperiment,
     isExportingPreprocessed,
     isPreprocessedImporting,
-    loadSelectedDataset,
     preprocessedDropboxImporting,
     setIsExperimentSetupStarted,
     setPreprocessedExperiment,
