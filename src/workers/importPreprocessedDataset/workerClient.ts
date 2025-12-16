@@ -26,12 +26,32 @@ type PendingRequest = {
   abortListener?: () => void;
 };
 
+let readableStreamTransferSupported = true;
+
 export type ImportPreprocessedDatasetWorkerOptions = {
   stream: ReadableStream<Uint8Array>;
   totalBytes: number | null;
   onProgress?: (progress: PreprocessedImportProgress) => void;
   signal?: AbortSignal;
 };
+
+export class ReadableStreamTransferNotSupportedError extends Error {
+  readonly cause?: unknown;
+
+  constructor(cause?: unknown) {
+    super('ReadableStream transfer to the import worker is not supported in this environment.');
+    this.name = 'ReadableStreamTransferNotSupportedError';
+    this.cause = cause;
+  }
+}
+
+function isReadableStreamTransferError(error: unknown): boolean {
+  if (typeof DOMException !== 'undefined' && error instanceof DOMException && error.name === 'DataCloneError') {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return /readablestream/i.test(message) && /postmessage|transfer|clone|structured/i.test(message);
+}
 
 export class ImportPreprocessedDatasetWorkerClient {
   private readonly worker: Worker;
@@ -118,6 +138,11 @@ export class ImportPreprocessedDatasetWorkerClient {
       if (request.abortListener && options.signal) {
         options.signal.removeEventListener('abort', request.abortListener);
       }
+      if (isReadableStreamTransferError(error)) {
+        readableStreamTransferSupported = false;
+        this.dispose(new Error('ReadableStream transfer is not supported.'));
+        return Promise.reject(new ReadableStreamTransferNotSupportedError(error));
+      }
       return Promise.reject(error instanceof Error ? error : new Error(String(error)));
     }
 
@@ -190,6 +215,13 @@ export class ImportPreprocessedDatasetWorkerClient {
 let workerClient: ImportPreprocessedDatasetWorkerClient | null = null;
 
 export function getImportPreprocessedDatasetWorker(): ImportPreprocessedDatasetWorkerClient | null {
+  if (!readableStreamTransferSupported) {
+    if (workerClient) {
+      workerClient.dispose(new Error('ReadableStream transfer is not supported.'));
+      workerClient = null;
+    }
+    return null;
+  }
   if (workerClient) {
     return workerClient;
   }
