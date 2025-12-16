@@ -1,6 +1,9 @@
 # Progress
 
 ## Latest changes
+- Reworked the front-page “Set up new experiment” flow to preprocess first: a single “Preprocess experiment” action stages an in-memory preprocessed dataset, shows a success message, then reveals “Launch viewer” and “Export preprocessed experiment” that reuse the staged data (no reprocessing).
+- Added `stagePreprocessedDataset` for building an in-memory preprocessed manifest/summaries from loaded layers, with test coverage.
+- Note: In restricted sandboxes, `npm test` may fail due to tsx IPC socket permissions; `node --import tsx tests/runTests.ts` runs the suite without IPC.
 - Prevented viewer recording from stopping immediately after start by only reacting to viewer mode changes or lost capture
   targets.
 - Added recording controls to the viewer settings window with Record/Stop buttons wired through shell props and styled alongside existing playback controls.

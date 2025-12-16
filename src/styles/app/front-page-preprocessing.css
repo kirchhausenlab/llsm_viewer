@@ -282,6 +282,10 @@
   color: #ff7f7f;
 }
 
+.launch-feedback-success {
+  color: rgba(175, 255, 190, 0.95);
+}
+
 .front-page-actions {
   display: flex;
   justify-content: center;

@@ -34,6 +34,7 @@ export type UsePreprocessedImportOptions = {
 
 export type UsePreprocessedImportResult = {
   preprocessedExperiment: StagedPreprocessedExperiment | null;
+  setPreprocessedExperiment: Dispatch<SetStateAction<StagedPreprocessedExperiment | null>>;
   isPreprocessedLoaderOpen: boolean;
   isPreprocessedImporting: boolean;
   isPreprocessedDragActive: boolean;
@@ -287,6 +288,7 @@ export function usePreprocessedImport({
 
   return {
     preprocessedExperiment,
+    setPreprocessedExperiment,
     isPreprocessedLoaderOpen,
     isPreprocessedImporting,
     isPreprocessedDragActive,

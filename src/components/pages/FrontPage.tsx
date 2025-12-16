@@ -219,6 +219,10 @@ export default function FrontPage({
             interactionErrorMessage={launchActions.interactionErrorMessage}
             launchErrorMessage={launchActions.launchErrorMessage}
             showLaunchViewerButton={showLaunchViewerButton}
+            onPreprocessExperiment={launchActions.onPreprocessExperiment}
+            isPreprocessingExperiment={launchActions.isPreprocessingExperiment}
+            preprocessButtonEnabled={launchActions.preprocessButtonEnabled}
+            preprocessSuccessMessage={launchActions.preprocessSuccessMessage}
             onLaunchViewer={launchActions.onLaunchViewer}
             isLaunchingViewer={launchActions.isLaunchingViewer}
             launchButtonEnabled={launchActions.launchButtonEnabled}

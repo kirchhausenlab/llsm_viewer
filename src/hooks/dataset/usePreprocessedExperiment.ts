@@ -41,6 +41,7 @@ export type UsePreprocessedExperimentOptions = {
 
 export type UsePreprocessedExperimentResult = {
   preprocessedExperiment: StagedPreprocessedExperiment | null;
+  setPreprocessedExperiment: (experiment: StagedPreprocessedExperiment | null) => void;
   isPreprocessedLoaderOpen: boolean;
   isPreprocessedImporting: boolean;
   isPreprocessedDragActive: boolean;
@@ -142,6 +143,7 @@ export default function usePreprocessedExperiment({
 
   return {
     preprocessedExperiment: importState.preprocessedExperiment,
+    setPreprocessedExperiment: importState.setPreprocessedExperiment,
     isPreprocessedLoaderOpen: importState.isPreprocessedLoaderOpen,
     isPreprocessedImporting: importState.isPreprocessedImporting,
     isPreprocessedDragActive: importState.isPreprocessedDragActive,

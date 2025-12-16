@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction, ChangeEvent, DragEvent, FormEvent } from 'react';
 import FrontPage from './FrontPage';
 import usePreprocessedExperiment from '../../hooks/dataset/usePreprocessedExperiment';
@@ -8,6 +8,7 @@ import type { DropboxAppKeySource } from '../../integrations/dropbox';
 import type { ChannelTrackState, FollowedTrackState } from '../../types/channelTracks';
 import type { LoadedLayer } from '../../types/layers';
 import type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment } from '../../hooks/dataset';
+import { stagePreprocessedDataset } from '../../shared/utils/preprocessedDataset';
 
 type TrackSummary = { totalRows: number; uniqueTracks: number };
 
@@ -156,28 +157,119 @@ export default function FrontPageContainer({
     experimentDimension
   });
 
-  useEffect(() => {
+  const {
+    preprocessedExperiment,
+    setPreprocessedExperiment,
+    resetPreprocessedState,
+    isExportingPreprocessed,
+    isPreprocessedImporting,
+    preprocessedDropboxImporting,
+    isPreprocessedLoaderOpen,
+    handleExportPreprocessedExperiment
+  } = preprocessedState;
+
+  const [isPreprocessingExperiment, setIsPreprocessingExperiment] = useState(false);
+  const [preprocessSuccessMessage, setPreprocessSuccessMessage] = useState<string | null>(null);
+
+  useLayoutEffect(() => {
     onPreprocessedStateChange?.({
-      preprocessedExperiment: preprocessedState.preprocessedExperiment,
-      resetPreprocessedState: preprocessedState.resetPreprocessedState
+      preprocessedExperiment,
+      resetPreprocessedState
     });
-  }, [onPreprocessedStateChange, preprocessedState.preprocessedExperiment, preprocessedState.resetPreprocessedState]);
+  }, [onPreprocessedStateChange, preprocessedExperiment, resetPreprocessedState]);
+
+  useEffect(() => {
+    if (!preprocessedExperiment) {
+      setPreprocessSuccessMessage(null);
+    }
+  }, [preprocessedExperiment]);
 
   const frontPageMode = useMemo<'initial' | 'configuring' | 'preprocessed'>(() => {
-    if (preprocessedState.preprocessedExperiment) {
+    if (preprocessedExperiment) {
       return 'preprocessed';
     }
     if (channels.length > 0 || isExperimentSetupStarted) {
       return 'configuring';
     }
     return 'initial';
-  }, [channels.length, isExperimentSetupStarted, preprocessedState.preprocessedExperiment]);
+  }, [channels.length, isExperimentSetupStarted, preprocessedExperiment]);
+
+  const handlePreprocessExperiment = useCallback(async () => {
+    if (
+      isPreprocessingExperiment ||
+      isLaunchingViewer ||
+      isExportingPreprocessed ||
+      isPreprocessedImporting ||
+      preprocessedDropboxImporting
+    ) {
+      return;
+    }
+
+    if (!voxelResolutionValue) {
+      showInteractionWarning('Fill in all voxel resolution fields before preprocessing.');
+      return;
+    }
+
+    if (!canLaunch) {
+      showInteractionWarning('Resolve all dataset issues before preprocessing.');
+      return;
+    }
+
+    setPreprocessSuccessMessage(null);
+    setIsPreprocessingExperiment(true);
+    try {
+      setIsExperimentSetupStarted(true);
+      const normalizedLayers = await loadSelectedDataset();
+      if (!normalizedLayers) {
+        return;
+      }
+
+      const channelsMetadata = channels.map((channel) => ({
+        id: channel.id,
+        name: channel.name.trim() || 'Untitled channel',
+        trackEntries: channel.trackEntries
+      }));
+
+      const staged = stagePreprocessedDataset({
+        layers: normalizedLayers,
+        channels: channelsMetadata,
+        voxelResolution: voxelResolutionValue,
+        movieMode: experimentDimension
+      });
+
+      setPreprocessedExperiment({
+        ...staged,
+        sourceName: 'experiment',
+        sourceSize: null
+      });
+      clearDatasetError();
+      setPreprocessSuccessMessage('Experiment successfully preprocessed.');
+    } finally {
+      setIsPreprocessingExperiment(false);
+    }
+  }, [
+    canLaunch,
+    channels,
+    clearDatasetError,
+    experimentDimension,
+    isLaunchingViewer,
+    isPreprocessingExperiment,
+    isExportingPreprocessed,
+    isPreprocessedImporting,
+    loadSelectedDataset,
+    preprocessedDropboxImporting,
+    setIsExperimentSetupStarted,
+    setPreprocessedExperiment,
+    showInteractionWarning,
+    voxelResolutionValue
+  ]);
 
   const isFrontPageLocked =
     isLaunchingViewer ||
-    preprocessedState.isExportingPreprocessed ||
-    preprocessedState.isPreprocessedImporting ||
-    preprocessedState.preprocessedDropboxImporting;
+    isPreprocessingExperiment ||
+    isExportingPreprocessed ||
+    isPreprocessedImporting ||
+    preprocessedDropboxImporting;
 
   const launchButtonEnabled =
     frontPageMode === 'preprocessed' ? preprocessedState.preprocessedExperiment !== null : canLaunch;
@@ -259,7 +351,7 @@ export default function FrontPageContainer({
   };
 
   const preprocessedSummaryProps = {
-    preprocessedExperiment: preprocessedState.preprocessedExperiment,
+    preprocessedExperiment,
     computeTrackSummary
   };
 
@@ -268,13 +360,17 @@ export default function FrontPageContainer({
     hasGlobalTimepointMismatch,
     interactionErrorMessage,
     launchErrorMessage,
-    showLaunchViewerButton: frontPageMode !== 'initial' || preprocessedState.isPreprocessedLoaderOpen,
+    showLaunchViewerButton: frontPageMode !== 'initial' || isPreprocessedLoaderOpen,
+    onPreprocessExperiment: handlePreprocessExperiment,
+    isPreprocessingExperiment,
+    preprocessButtonEnabled: canLaunch,
+    preprocessSuccessMessage,
     onLaunchViewer,
     isLaunchingViewer,
     launchButtonEnabled,
     launchButtonLaunchable,
-    onExportPreprocessedExperiment: preprocessedState.handleExportPreprocessedExperiment,
-    isExportingPreprocessed: preprocessedState.isExportingPreprocessed,
+    onExportPreprocessedExperiment: handleExportPreprocessedExperiment,
+    isExportingPreprocessed,
     canLaunch
   };
 

@@ -45,17 +45,19 @@ export function usePreprocessedExport({
       return;
     }
 
-    const hasAnyLayers = preprocessedExperiment
-      ? preprocessedExperiment.layers.length > 0
-      : channels.some((channel) => channel.layers.length > 0);
+    if (!preprocessedExperiment) {
+      showInteractionWarning('Preprocess the experiment before exporting.');
+      return;
+    }
+
+    const hasAnyLayers = preprocessedExperiment.layers.length > 0;
 
     if (!hasAnyLayers) {
       showInteractionWarning('There are no volumes available to export.');
       return;
     }
 
-    const resolvedVoxelResolution =
-      preprocessedExperiment?.manifest.dataset.voxelResolution ?? voxelResolution;
+    const resolvedVoxelResolution = preprocessedExperiment.manifest.dataset.voxelResolution ?? voxelResolution;
 
     if (!resolvedVoxelResolution) {
       showInteractionWarning('Fill in all voxel resolution fields before exporting.');
@@ -83,28 +85,12 @@ export function usePreprocessedExport({
         }
       }
 
-      let layersToExport: LoadedLayer[];
-      let channelsMetadata: ChannelExportMetadata[];
-
-      if (preprocessedExperiment) {
-        layersToExport = preprocessedExperiment.layers;
-        channelsMetadata = preprocessedExperiment.channelSummaries.map((summary) => ({
-          id: summary.id,
-          name: summary.name.trim() || 'Untitled channel',
-          trackEntries: summary.trackEntries
-        }));
-      } else {
-        const normalizedLayers = await loadSelectedDataset();
-        if (!normalizedLayers) {
-          return;
-        }
-        layersToExport = normalizedLayers;
-        channelsMetadata = channels.map<ChannelExportMetadata>((channel) => ({
-          id: channel.id,
-          name: channel.name.trim() || 'Untitled channel',
-          trackEntries: channel.trackEntries
-        }));
-      }
+      const layersToExport: LoadedLayer[] = preprocessedExperiment.layers;
+      const channelsMetadata: ChannelExportMetadata[] = preprocessedExperiment.channelSummaries.map((summary) => ({
+        id: summary.id,
+        name: summary.name.trim() || 'Untitled channel',
+        trackEntries: summary.trackEntries
+      }));
 
       if (layersToExport.length === 0) {
         showInteractionWarning('There are no volumes available to export.');
@@ -142,7 +128,6 @@ export function usePreprocessedExport({
     clearDatasetError,
     isExportingPreprocessed,
     isLaunchingViewer,
-    loadSelectedDataset,
     preprocessedExperiment,
     showInteractionWarning,
     voxelResolution,

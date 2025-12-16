@@ -11,6 +11,7 @@ import {
 import {
   exportPreprocessedDataset,
   importPreprocessedDataset,
+  stagePreprocessedDataset,
   type ChannelExportMetadata,
   type PreprocessedMovieMode,
   type PreprocessedManifest
@@ -420,6 +421,22 @@ console.log('Starting preprocessed dataset import/export tests');
       z: anisotropicVoxelResolution.z / minSpacing
     };
     assert.deepEqual(anisotropicManifest.dataset.anisotropyCorrection?.scale, expectedScale);
+
+    const staged = stagePreprocessedDataset({
+      layers,
+      channels,
+      voxelResolution,
+      movieMode
+    });
+    assert.strictEqual(staged.totalVolumeCount, 3);
+    assert.strictEqual(staged.manifest.dataset.totalVolumeCount, 3);
+    assert.strictEqual(staged.manifest.dataset.channels.length, 1);
+    assert.strictEqual(staged.manifest.dataset.channels[0].layers.length, 2);
+    assert.strictEqual(staged.manifest.dataset.channels[0].layers[0].volumes.length, 1);
+    assert.strictEqual(staged.manifest.dataset.channels[0].layers[1].volumes.length, 2);
+    assert.strictEqual(staged.manifest.dataset.channels[0].layers[0].volumes[0].digest.length > 0, true);
+    assert.deepEqual(staged.channelSummaries, imported.channelSummaries);
+    assert.deepEqual(staged.manifest.dataset.anisotropyCorrection, null);
 
     console.log('preprocessed dataset import/export tests passed');
   } catch (error) {
