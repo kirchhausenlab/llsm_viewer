@@ -47,21 +47,50 @@ export type PreprocessedChannelManifest = {
   id: string;
   name: string;
   layers: PreprocessedLayerManifestEntry[];
+};
+
+export type PreprocessedTracksDescriptor = {
+  path: string;
+  format: 'csv';
+  columns: 8;
+  decimalPlaces: 3;
+};
+
+export type PreprocessedChannelManifestV2 = PreprocessedChannelManifest & {
   trackEntries: string[][];
 };
 
-export type PreprocessedManifest = {
+export type PreprocessedChannelManifestV3 = PreprocessedChannelManifest & {
+  tracks: PreprocessedTracksDescriptor | null;
+};
+
+export type PreprocessedManifestV2 = {
   format: 'llsm-viewer-preprocessed';
   version: 2;
   generatedAt: string;
   dataset: {
     movieMode: PreprocessedMovieMode;
     totalVolumeCount: number;
-    channels: PreprocessedChannelManifest[];
+    channels: PreprocessedChannelManifestV2[];
     voxelResolution?: VoxelResolutionValues | null;
     anisotropyCorrection?: AnisotropyCorrectionMetadata | null;
   };
 };
+
+export type PreprocessedManifestV3 = {
+  format: 'llsm-viewer-preprocessed';
+  version: 3;
+  generatedAt: string;
+  dataset: {
+    movieMode: PreprocessedMovieMode;
+    totalVolumeCount: number;
+    channels: PreprocessedChannelManifestV3[];
+    voxelResolution?: VoxelResolutionValues | null;
+    anisotropyCorrection?: AnisotropyCorrectionMetadata | null;
+  };
+};
+
+export type PreprocessedManifest = PreprocessedManifestV2 | PreprocessedManifestV3;
 
 export type PreprocessedLayerSummary = {
   key: string;

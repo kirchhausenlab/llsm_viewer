@@ -16,12 +16,17 @@ function buildLayerSummaryFromManifest(layer: PreprocessedLayerManifestEntry): P
   };
 }
 
-export function buildChannelSummariesFromManifest(manifest: PreprocessedManifest): PreprocessedChannelSummary[] {
+export function buildChannelSummariesFromManifest(
+  manifest: PreprocessedManifest,
+  trackEntriesByChannelId?: Map<string, string[][]>
+): PreprocessedChannelSummary[] {
   return manifest.dataset.channels.map((channel) => ({
     id: channel.id,
     name: channel.name,
-    trackEntries: channel.trackEntries,
+    trackEntries:
+      'trackEntries' in channel
+        ? channel.trackEntries
+        : (trackEntriesByChannelId?.get(channel.id) ?? []),
     layers: channel.layers.map(buildLayerSummaryFromManifest)
   }));
 }
-

@@ -1,6 +1,7 @@
 import type { PreprocessedStorage } from '../../storage/preprocessedStorage';
 import type { OpenPreprocessedDatasetResult, PreprocessedManifest } from './types';
 import { buildChannelSummariesFromManifest } from './manifest';
+import { parseTrackEntriesFromCsvBytes } from './tracks';
 
 const textDecoder = new TextDecoder();
 
@@ -23,7 +24,7 @@ function coerceManifest(value: unknown): PreprocessedManifest {
   if (candidate.format !== 'llsm-viewer-preprocessed') {
     throw new Error('Unsupported preprocessed dataset format.');
   }
-  if (candidate.version !== 2) {
+  if (candidate.version !== 2 && candidate.version !== 3) {
     throw new Error(`Unsupported preprocessed dataset version: ${String(candidate.version)}`);
   }
   return candidate as PreprocessedManifest;
@@ -41,7 +42,21 @@ export async function openPreprocessedDatasetFromZarrStorage(storage: Preprocess
   }
   const attrs = metadata.attributes ?? {};
   const manifest = coerceManifest(attrs.llsmViewerPreprocessed);
-  const channelSummaries = buildChannelSummariesFromManifest(manifest);
+  const trackEntriesByChannelId = new Map<string, string[][]>();
+
+  if (manifest.version === 3) {
+    for (const channel of manifest.dataset.channels) {
+      const descriptor = channel.tracks;
+      if (!descriptor) {
+        trackEntriesByChannelId.set(channel.id, []);
+        continue;
+      }
+      const trackBytes = await storage.readFile(descriptor.path);
+      const entries = parseTrackEntriesFromCsvBytes(trackBytes);
+      trackEntriesByChannelId.set(channel.id, entries);
+    }
+  }
+
+  const channelSummaries = buildChannelSummariesFromManifest(manifest, trackEntriesByChannelId);
   return { manifest, channelSummaries, totalVolumeCount: manifest.dataset.totalVolumeCount };
 }
-

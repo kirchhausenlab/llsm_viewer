@@ -5,6 +5,7 @@ import { createVolumeProvider } from '../src/core/volumeProvider.ts';
 import { createInMemoryPreprocessedStorage } from '../src/shared/storage/preprocessedStorage.ts';
 import { openPreprocessedDatasetFromZarrStorage } from '../src/shared/utils/preprocessedDataset/open.ts';
 import type { PreprocessedManifest } from '../src/shared/utils/preprocessedDataset/types.ts';
+import { serializeTrackEntriesToCsvBytes } from '../src/shared/utils/preprocessedDataset/tracks.ts';
 import { createZarrStoreFromPreprocessedStorage } from '../src/shared/utils/zarrStore.ts';
 
 console.log('Starting preprocessed dataset Zarr v3 tests');
@@ -21,7 +22,7 @@ const makeManifest = (): PreprocessedManifest => {
 
   return {
     format: 'llsm-viewer-preprocessed',
-    version: 2,
+    version: 3,
     generatedAt: new Date().toISOString(),
     dataset: {
       movieMode: '3d',
@@ -30,7 +31,7 @@ const makeManifest = (): PreprocessedManifest => {
         {
           id: 'channel-a',
           name: 'Channel A',
-          trackEntries: [],
+          tracks: { path: 'tracks/channel-a.csv', format: 'csv', columns: 8, decimalPlaces: 3 },
           layers: [
             {
               key: 'seg',
@@ -77,6 +78,13 @@ const makeManifest = (): PreprocessedManifest => {
     await zarr.create(zarr.root(zarrStore), { attributes: { llsmViewerPreprocessed: manifest } });
 
     const layer = manifest.dataset.channels[0]!.layers[0]!;
+    const trackEntries = [
+      ['1', '0', '1', '1.123456', '2.100000', '3.987654', '4.000000', '0.000000']
+    ];
+    await storageHandle.storage.writeFile(
+      'tracks/channel-a.csv',
+      serializeTrackEntriesToCsvBytes(trackEntries, { decimalPlaces: 3 })
+    );
     await zarr.create(zarr.root(zarrStore).resolve(layer.zarr.data.path), {
       shape: layer.zarr.data.shape,
       data_type: layer.zarr.data.dataType,
@@ -109,9 +117,10 @@ const makeManifest = (): PreprocessedManifest => {
     );
 
     const opened = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
-    assert.equal(opened.manifest.version, 2);
+    assert.equal(opened.manifest.version, 3);
     assert.equal(opened.totalVolumeCount, 2);
     assert.equal(opened.channelSummaries.length, 1);
+    assert.deepEqual(opened.channelSummaries[0]?.trackEntries, [['1', '0', '1', '1.123', '2.1', '3.988', '4', '0']]);
 
     const provider = createVolumeProvider({ manifest: opened.manifest, storage: storageHandle.storage });
     const volume0 = await provider.getVolume('seg', 0);
@@ -129,4 +138,3 @@ const makeManifest = (): PreprocessedManifest => {
     process.exitCode = 1;
   }
 })();
-
