@@ -13,13 +13,10 @@ The development setup runs the Vite front-end (http://localhost:5173).
 
 ### Browser requirements
 
-- Chromium browsers (Chrome, Edge, Brave) provide the File System Access API used for direct, zero-buffer ZIP exports.
-- Browsers without `window.showSaveFilePicker` (for example, Firefox or embedded WebViews) transparently fall back to a
-  streaming download route powered by the bundled service worker. No large in-memory buffers are allocated in this path, but it
-  does require service worker support and an HTTPS origin (such as GitHub Pages).
-- To verify the fallback, deploy or preview the static site over HTTPS and trigger an export in a browser that lacks the File
-  System Access API. The download should start immediately and the browser's memory usage should remain stable while the ZIP is
-  written to disk.
+- Chromium browsers (Chrome, Edge, Brave) are recommended for the File System Access API used to load/save preprocessed datasets
+  as folder-based Zarr v3 stores.
+- Preprocessing always writes the preprocessed dataset into OPFS (Origin Private File System). If "Export to folder while
+  preprocessing" is enabled, the app also writes the Zarr store into a user-selected folder while preprocessing runs.
 
 ### Dropbox Chooser configuration
 

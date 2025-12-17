@@ -1,4 +1,3 @@
-import type { LoadedLayer } from '../../../types/layers';
 import type { VolumeDataType } from '../../../types/volume';
 import type { AnisotropyScaleFactors, VoxelResolutionValues } from '../../../types/voxelResolution';
 
@@ -14,24 +13,16 @@ export type ChannelExportMetadata = {
 
 export type PreprocessedMovieMode = '2d' | '3d';
 
-export type PreprocessedVolumeManifestEntry = {
-  path: string;
-  timepoint: number;
-  width: number;
-  height: number;
-  depth: number;
-  channels: number;
-  dataType: VolumeDataType;
+export type NormalizationMetadata = {
   min: number;
   max: number;
-  byteLength: number;
-  digest: string;
-  segmentationLabels?: {
-    path: string;
-    byteLength: number;
-    digest: string;
-    dataType: VolumeDataType;
-  };
+};
+
+export type ZarrArrayDescriptor = {
+  path: string;
+  shape: number[];
+  chunkShape: number[];
+  dataType: VolumeDataType;
 };
 
 export type PreprocessedLayerManifestEntry = {
@@ -39,7 +30,17 @@ export type PreprocessedLayerManifestEntry = {
   label: string;
   channelId: string;
   isSegmentation: boolean;
-  volumes: PreprocessedVolumeManifestEntry[];
+  volumeCount: number;
+  width: number;
+  height: number;
+  depth: number;
+  channels: number;
+  dataType: VolumeDataType;
+  normalization: NormalizationMetadata | null;
+  zarr: {
+    data: ZarrArrayDescriptor;
+    labels?: ZarrArrayDescriptor;
+  };
 };
 
 export type PreprocessedChannelManifest = {
@@ -51,7 +52,7 @@ export type PreprocessedChannelManifest = {
 
 export type PreprocessedManifest = {
   format: 'llsm-viewer-preprocessed';
-  version: 1;
+  version: 2;
   generatedAt: string;
   dataset: {
     movieMode: PreprocessedMovieMode;
@@ -60,23 +61,6 @@ export type PreprocessedManifest = {
     voxelResolution?: VoxelResolutionValues | null;
     anisotropyCorrection?: AnisotropyCorrectionMetadata | null;
   };
-};
-
-export type ExportPreprocessedDatasetOptions = {
-  layers: LoadedLayer[];
-  channels: ChannelExportMetadata[];
-  voxelResolution: VoxelResolutionValues;
-  movieMode: PreprocessedMovieMode;
-};
-
-export type ExportPreprocessedDatasetChunkHandler = (
-  chunk: Uint8Array,
-  final: boolean
-) => void;
-
-export type ExportPreprocessedDatasetResult = {
-  blob?: Blob;
-  manifest: PreprocessedManifest;
 };
 
 export type PreprocessedLayerSummary = {
@@ -100,17 +84,8 @@ export type PreprocessedChannelSummary = {
   layers: PreprocessedLayerSummary[];
 };
 
-export type ImportPreprocessedDatasetResult = {
-  manifest: PreprocessedManifest;
-  layers: LoadedLayer[];
-  channelSummaries: PreprocessedChannelSummary[];
-  totalVolumeCount: number;
-};
-
 export type OpenPreprocessedDatasetResult = {
   manifest: PreprocessedManifest;
   channelSummaries: PreprocessedChannelSummary[];
   totalVolumeCount: number;
 };
-
-export const MANIFEST_FILE_NAME = 'manifest.json';

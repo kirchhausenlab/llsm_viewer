@@ -26,7 +26,7 @@ The main responsibilities are:
 - Load multi-channel volumetric data and tracks.
 - Preprocess and normalize data for fast GPU-based visualization.
 - Render 2D slices and 3D volumes (including VR).
-- Support export/import of “preprocessed datasets” as ZIPs.
+- Support loading/saving “preprocessed datasets” as folder-based Zarr v3 stores.
 
 ---
 
@@ -37,7 +37,7 @@ The main responsibilities are:
 - Front-end UI for local/Dropbox uploads and preprocessed dataset import.
 - **Preprocessing is mandatory**: raw TIFF decoding happens only during preprocessing.
 - Raw TIFF decoding via `src/loaders/volumeLoader.ts` → worker decode → `VolumePayload`.
-- Streaming preprocessing via `src/shared/utils/preprocessedDataset/preprocess.ts` writes one timepoint at a time into a `PreprocessedStorage` backend (OPFS by default), then writes `manifest.json` last.
+- Streaming preprocessing via `src/shared/utils/preprocessedDataset/preprocess.ts` writes one timepoint at a time into a Zarr v3 store backed by a `PreprocessedStorage` backend (OPFS by default).
 - Core processing (`src/core/volumeProcessing.ts`) handles normalization + segmentation colorization; GPU texture packing is cached via `src/core/textureCache.ts`.
 
 **2. Visualization (2D + 3D)**
@@ -54,11 +54,11 @@ The main responsibilities are:
   helpers such as `useViewerModePlayback` (mode + playback wiring).
 - Tracks: hooks under `hooks/tracks/*` feed both planar and volume viewers.
 
-**4. Preprocessed dataset import/export**
+**4. Preprocessed dataset load/save (Zarr v3 folders)**
 
-- ZIP format and manifest: `src/shared/utils/preprocessedDataset/*`.
-- Storage abstraction shared by preprocessing + viewing: `src/shared/storage/*` (OPFS + in-memory + ZIP read-only backend).
-- Streaming export pipeline: `src/shared/utils/preprocessedDataset/export.ts` (can stream from `{manifest + storage}`), with service worker download fallback in `public/export-sw.js`.
+- Format + manifest/types: `src/shared/utils/preprocessedDataset/*` (manifest stored in Zarr root `zarr.json` attributes).
+- Storage abstraction shared by preprocessing + viewing: `src/shared/storage/*` (OPFS + in-memory + directory-backed).
+- Folder-based import/export uses the File System Access API directory picker; OPFS is used for the in-session preprocessed dataset.
 
 ---
 
@@ -67,15 +67,13 @@ The main responsibilities are:
 ### Top-level / tooling
 
 - `package.json`  
-  Scripts: `dev` (Vite), `build`, `preview`, `typecheck`, `test` (runs `tests/runTests.ts` via `tsx`).
+  Scripts: `dev` (Vite), `build`, `preview`, `typecheck`, `test` (runs `tests/runTests.ts` via `node --import tsx`).
 - `vite.config.ts`  
   Vite config (GitHub Pages base path logic, `@` alias → `src/`, worker format).
 - `environment.d.ts`  
   Typed env vars (`VITE_DROPBOX_APP_KEY`, `VITE_MAX_VOLUME_BYTES`) + Dropbox chooser typings.
 - `.github/workflows/deploy.yml`  
   CI (typecheck/test/build) + GitHub Pages deploy.
-- `public/export-sw.js`  
-  Service worker powering streamed ZIP downloads (export fallback path).
 - `PROGRESS.md`  
   Running progress log / next tasks.
 
@@ -84,7 +82,7 @@ The main responsibilities are:
 ### App entrypoints (start reading here)
 
 - `src/ui/main.tsx`
-  Bootstraps React, registers the export service worker, and renders `<App/>`.
+  Bootstraps React and renders `<App/>`.
 - `src/ui/App.tsx`
   Composes global providers, layout chrome, and the app router.
 - `src/ui/app/providers.tsx`
@@ -105,7 +103,7 @@ The main responsibilities are:
 **Setup / ingestion UI (`src/components/pages/*`)**
 
 - `FrontPage.tsx`, `ChannelCard.tsx`, `ChannelUploads.tsx`, `ChannelDropboxSection.tsx`
-  Channel configuration and dataset ingestion (local + Dropbox) + entry points for preprocessed import/export.
+  Channel configuration and dataset ingestion (local + Dropbox) + entry points for loading preprocessed Zarr datasets.
 
 **Viewer shell / panels / windows (`src/components/viewers/*`)**
 
@@ -159,16 +157,12 @@ The main responsibilities are:
 
 ---
 
-### Export/import (“preprocessed dataset” ZIP)
+### Load/save preprocessed datasets (Zarr v3 folders)
 
 - `src/shared/utils/preprocessedDataset/*`
-  ZIP format + manifest/types, hashing, import/export implementations (including streaming preprocess → storage).
+  Zarr-backed preprocessed dataset format + manifest/types + open/preprocess helpers.
 - `src/shared/storage/*`
-  Storage backends used by preprocessing + viewing: OPFS + in-memory + ZIP read-only storage.
-- `src/workers/exportPreprocessedDataset*.ts` / `importPreprocessedDataset*.ts`
-  Legacy worker-backed export/import paths (some flows now run on the main thread using storage-backed streaming).
-- `src/shared/utils/downloads.ts` + `src/shared/utils/exportServiceWorker.ts` + `public/export-sw.js`
-  Streaming ZIP download/export fallback pipeline.
+  Storage backends used by preprocessing + viewing: OPFS + in-memory + directory-backed storage.
 
 ---
 

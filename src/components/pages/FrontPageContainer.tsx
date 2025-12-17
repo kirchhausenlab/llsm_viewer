@@ -4,11 +4,10 @@ import FrontPage from './FrontPage';
 import usePreprocessedExperiment from '../../hooks/dataset/usePreprocessedExperiment';
 import { type ExperimentDimension, type VoxelResolutionHook } from '../../hooks/useVoxelResolution';
 import type { DatasetErrorHook } from '../../hooks/useDatasetErrors';
-import type { DropboxAppKeySource } from '../../integrations/dropbox';
 import type { ChannelTrackState, FollowedTrackState } from '../../types/channelTracks';
 import type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment } from '../../hooks/dataset';
 import { preprocessDatasetToStorage } from '../../shared/utils/preprocessedDataset';
-import { createOpfsPreprocessedStorage } from '../../shared/storage';
+import { createDirectoryHandlePreprocessedStorage, createOpfsPreprocessedStorage } from '../../shared/storage/preprocessedStorage';
 
 type TrackSummary = { totalRows: number; uniqueTracks: number };
 
@@ -150,15 +149,13 @@ export default function FrontPageContainer({
     preprocessedExperiment,
     setPreprocessedExperiment,
     resetPreprocessedState,
-    isExportingPreprocessed,
     isPreprocessedImporting,
-    preprocessedDropboxImporting,
-    isPreprocessedLoaderOpen,
-    handleExportPreprocessedExperiment
+    isPreprocessedLoaderOpen
   } = preprocessedState;
 
   const [isPreprocessingExperiment, setIsPreprocessingExperiment] = useState(false);
   const [preprocessSuccessMessage, setPreprocessSuccessMessage] = useState<string | null>(null);
+  const [exportWhilePreprocessing, setExportWhilePreprocessing] = useState(false);
 
   useLayoutEffect(() => {
     onPreprocessedStateChange?.({
@@ -187,9 +184,7 @@ export default function FrontPageContainer({
     if (
       isPreprocessingExperiment ||
       isLaunchingViewer ||
-      isExportingPreprocessed ||
-      isPreprocessedImporting ||
-      preprocessedDropboxImporting
+      isPreprocessedImporting
     ) {
       return;
     }
@@ -226,20 +221,58 @@ export default function FrontPageContainer({
         )
         .filter((layer) => layer.files.length > 0);
 
-      const storageHandle = await createOpfsPreprocessedStorage();
+      const opfsStorageHandle = await createOpfsPreprocessedStorage();
+      let storage = opfsStorageHandle.storage;
+
+      if (exportWhilePreprocessing) {
+        if (typeof window === 'undefined' || typeof (window as any).showDirectoryPicker !== 'function') {
+          showInteractionWarning('Folder export is not supported in this browser.');
+          return;
+        }
+
+        let directoryHandle: any;
+        try {
+          directoryHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
+        } catch (error) {
+          if (error instanceof DOMException && error.name === 'AbortError') {
+            return;
+          }
+          throw error;
+        }
+
+        const exportStorageHandle = await createDirectoryHandlePreprocessedStorage(directoryHandle);
+        storage = {
+          async writeFile(path, data) {
+            await Promise.all([
+              opfsStorageHandle.storage.writeFile(path, data),
+              exportStorageHandle.storage.writeFile(path, data)
+            ]);
+          },
+          async readFile(path) {
+            return opfsStorageHandle.storage.readFile(path);
+          },
+          async finalizeManifest(manifest) {
+            await Promise.all([
+              opfsStorageHandle.storage.finalizeManifest(manifest),
+              exportStorageHandle.storage.finalizeManifest(manifest)
+            ]);
+          }
+        };
+      }
+
       const { manifest, channelSummaries, totalVolumeCount } = await preprocessDatasetToStorage({
         layers: layersToProcess,
         channels: channelsMetadata,
         voxelResolution: voxelResolutionValue,
         movieMode: experimentDimension,
-        storage: storageHandle.storage
+        storage
       });
 
       setPreprocessedExperiment({
         manifest,
         channelSummaries,
         totalVolumeCount,
-        storageHandle,
+        storageHandle: opfsStorageHandle,
         sourceName: 'experiment',
         sourceSize: null
       });
@@ -258,11 +291,10 @@ export default function FrontPageContainer({
     channels,
     clearDatasetError,
     experimentDimension,
+    exportWhilePreprocessing,
     isLaunchingViewer,
     isPreprocessingExperiment,
-    isExportingPreprocessed,
     isPreprocessedImporting,
-    preprocessedDropboxImporting,
     setIsExperimentSetupStarted,
     setPreprocessedExperiment,
     showInteractionWarning,
@@ -272,9 +304,7 @@ export default function FrontPageContainer({
   const isFrontPageLocked =
     isLaunchingViewer ||
     isPreprocessingExperiment ||
-    isExportingPreprocessed ||
-    isPreprocessedImporting ||
-    preprocessedDropboxImporting;
+    isPreprocessedImporting;
 
   const launchButtonEnabled =
     frontPageMode === 'preprocessed' ? preprocessedState.preprocessedExperiment !== null : canLaunch;
@@ -289,8 +319,7 @@ export default function FrontPageContainer({
     isFrontPageLocked,
     onStartExperimentSetup,
     onOpenPreprocessedLoader: preprocessedState.handlePreprocessedLoaderOpen,
-    isPreprocessedImporting: preprocessedState.isPreprocessedImporting,
-    preprocessedDropboxImporting: preprocessedState.preprocessedDropboxImporting
+    isPreprocessedImporting: preprocessedState.isPreprocessedImporting
   };
 
   const experimentConfigurationProps = {
@@ -304,31 +333,9 @@ export default function FrontPageContainer({
 
   const preprocessedLoaderProps = {
     isOpen: preprocessedState.isPreprocessedLoaderOpen,
-    isPreprocessedDragActive: preprocessedState.isPreprocessedDragActive,
-    onPreprocessedDragEnter: preprocessedState.handlePreprocessedDragEnter,
-    onPreprocessedDragLeave: preprocessedState.handlePreprocessedDragLeave,
-    onPreprocessedDragOver: preprocessedState.handlePreprocessedDragOver,
-    onPreprocessedDrop: preprocessedState.handlePreprocessedDrop,
-    preprocessedFileInputRef: preprocessedState.preprocessedFileInputRef,
-    onPreprocessedFileInputChange: preprocessedState.handlePreprocessedFileInputChange,
     isPreprocessedImporting: preprocessedState.isPreprocessedImporting,
-    preprocessedImportBytesProcessed: preprocessedState.preprocessedImportBytesProcessed,
-    preprocessedImportTotalBytes: preprocessedState.preprocessedImportTotalBytes,
-    preprocessedImportVolumesDecoded: preprocessedState.preprocessedImportVolumesDecoded,
-    preprocessedImportTotalVolumeCount: preprocessedState.preprocessedImportTotalVolumeCount,
-    preprocessedDropboxImporting: preprocessedState.preprocessedDropboxImporting,
     onPreprocessedBrowse: preprocessedState.handlePreprocessedBrowse,
-    onPreprocessedDropboxImport: preprocessedState.handlePreprocessedDropboxImport,
-    preprocessedImportError: preprocessedState.preprocessedImportError,
-    preprocessedDropboxError: preprocessedState.preprocessedDropboxError,
-    preprocessedDropboxInfo: preprocessedState.preprocessedDropboxInfo,
-    isPreprocessedDropboxConfigOpen: preprocessedState.isPreprocessedDropboxConfigOpen,
-    onPreprocessedDropboxConfigSubmit: preprocessedState.handlePreprocessedDropboxConfigSubmit,
-    preprocessedDropboxAppKeyInput: preprocessedState.preprocessedDropboxAppKeyInput,
-    onPreprocessedDropboxConfigInputChange: preprocessedState.handlePreprocessedDropboxConfigInputChange,
-    preprocessedDropboxAppKeySource: preprocessedState.preprocessedDropboxAppKeySource as DropboxAppKeySource | null,
-    onPreprocessedDropboxConfigCancel: preprocessedState.handlePreprocessedDropboxConfigCancel,
-    onPreprocessedDropboxConfigClear: preprocessedState.handlePreprocessedDropboxConfigClear
+    preprocessedImportError: preprocessedState.preprocessedImportError
   };
 
   const channelListPanelProps = {
@@ -370,12 +377,12 @@ export default function FrontPageContainer({
     isPreprocessingExperiment,
     preprocessButtonEnabled: canLaunch,
     preprocessSuccessMessage,
+    exportWhilePreprocessing,
+    onExportWhilePreprocessingChange: setExportWhilePreprocessing,
     onLaunchViewer,
     isLaunchingViewer,
     launchButtonEnabled,
     launchButtonLaunchable,
-    onExportPreprocessedExperiment: handleExportPreprocessedExperiment,
-    isExportingPreprocessed,
     canLaunch
   };
 

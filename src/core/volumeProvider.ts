@@ -1,8 +1,7 @@
 import type { NormalizedVolume } from './volumeProcessing';
-import type { PreprocessedManifest, PreprocessedVolumeManifestEntry } from '../shared/utils/preprocessedDataset/types';
+import type { PreprocessedLayerManifestEntry, PreprocessedManifest } from '../shared/utils/preprocessedDataset/types';
 import type { PreprocessedStorage } from '../shared/storage/preprocessedStorage';
 import { ensureArrayBuffer } from '../shared/utils/buffer';
-import { computeSha256Hex } from '../shared/utils/preprocessedDataset/hash';
 
 export type VolumeProviderOptions = {
   manifest: PreprocessedManifest;
@@ -22,7 +21,7 @@ type LayerIndexEntry = {
   layerKey: string;
   channelId: string;
   isSegmentation: boolean;
-  volumes: PreprocessedVolumeManifestEntry[];
+  layer: PreprocessedLayerManifestEntry;
 };
 
 type CachedVolumeEntry = {
@@ -42,6 +41,11 @@ function isValidTimepoint(timepoint: number): boolean {
   return Number.isFinite(timepoint) && Math.floor(timepoint) === timepoint && timepoint >= 0;
 }
 
+function createZarrChunkKey(timepoint: number, rank: number): string {
+  const coords = [timepoint, ...Array.from({ length: Math.max(0, rank - 1) }, () => 0)];
+  return `c/${coords.join('/')}`;
+}
+
 export function createVolumeProvider({
   manifest,
   storage,
@@ -49,6 +53,7 @@ export function createVolumeProvider({
   verifyDigestsOnRead = false
 }: VolumeProviderOptions): VolumeProvider {
   const layerIndex = new Map<string, LayerIndexEntry>();
+  let warnedDigestVerification = false;
 
   for (const channel of manifest.dataset.channels) {
     for (const layer of channel.layers) {
@@ -59,7 +64,7 @@ export function createVolumeProvider({
         layerKey: layer.key,
         channelId: layer.channelId,
         isSegmentation: layer.isSegmentation,
-        volumes: layer.volumes
+        layer
       });
     }
   }
@@ -105,50 +110,36 @@ export function createVolumeProvider({
     }
   };
 
-  const verifyEntry = async (
-    entry: PreprocessedVolumeManifestEntry,
-    bytes: Uint8Array
-  ): Promise<void> => {
-    if (!verifyDigestsOnRead) {
-      return;
-    }
-    const digest = await computeSha256Hex(bytes);
-    if (digest !== entry.digest) {
-      throw new Error(`Digest mismatch for ${entry.path}.`);
-    }
-  };
-
   const loadVolume = async (
     layer: LayerIndexEntry,
     timepoint: number
   ): Promise<NormalizedVolume> => {
-    const volumeEntry = layer.volumes[timepoint];
-    if (!volumeEntry) {
+    if (timepoint >= layer.layer.volumeCount) {
       throw new Error(`Timepoint ${timepoint} is out of bounds for layer ${layer.layerKey}.`);
     }
 
-    const volumeBytes = await storage.readFile(volumeEntry.path);
-    if (volumeBytes.byteLength !== volumeEntry.byteLength) {
+    const dataDescriptor = layer.layer.zarr.data;
+    const dataChunkPath = `${dataDescriptor.path}/${createZarrChunkKey(timepoint, dataDescriptor.shape.length)}`;
+    const volumeBytes = await storage.readFile(dataChunkPath);
+
+    const expectedByteLength =
+      layer.layer.width * layer.layer.height * layer.layer.depth * layer.layer.channels;
+    if (volumeBytes.byteLength !== expectedByteLength) {
       throw new Error(
-        `Volume byte length mismatch for ${volumeEntry.path} (expected ${volumeEntry.byteLength}, got ${volumeBytes.byteLength}).`
+        `Volume byte length mismatch for ${dataChunkPath} (expected ${expectedByteLength}, got ${volumeBytes.byteLength}).`
       );
     }
 
-    await verifyEntry(volumeEntry, volumeBytes);
-
     let segmentationLabels: Uint32Array | undefined;
-    if (volumeEntry.segmentationLabels) {
-      const labelBytes = await storage.readFile(volumeEntry.segmentationLabels.path);
-      if (labelBytes.byteLength !== volumeEntry.segmentationLabels.byteLength) {
+    if (layer.layer.zarr.labels) {
+      const labelsDescriptor = layer.layer.zarr.labels;
+      const labelChunkPath = `${labelsDescriptor.path}/${createZarrChunkKey(timepoint, labelsDescriptor.shape.length)}`;
+      const labelBytes = await storage.readFile(labelChunkPath);
+      const expectedLabelBytes = layer.layer.width * layer.layer.height * layer.layer.depth * 4;
+      if (labelBytes.byteLength !== expectedLabelBytes) {
         throw new Error(
-          `Segmentation label byte length mismatch for ${volumeEntry.segmentationLabels.path} (expected ${volumeEntry.segmentationLabels.byteLength}, got ${labelBytes.byteLength}).`
+          `Segmentation label byte length mismatch for ${labelChunkPath} (expected ${expectedLabelBytes}, got ${labelBytes.byteLength}).`
         );
-      }
-      if (verifyDigestsOnRead) {
-        const labelDigest = await computeSha256Hex(labelBytes);
-        if (labelDigest !== volumeEntry.segmentationLabels.digest) {
-          throw new Error(`Digest mismatch for ${volumeEntry.segmentationLabels.path}.`);
-        }
       }
       const labelBuffer = ensureArrayBuffer(labelBytes);
       segmentationLabels = new Uint32Array(labelBuffer);
@@ -159,14 +150,14 @@ export function createVolumeProvider({
       : volumeBytes.slice();
 
     return {
-      width: volumeEntry.width,
-      height: volumeEntry.height,
-      depth: volumeEntry.depth,
-      channels: volumeEntry.channels,
-      dataType: volumeEntry.dataType,
+      width: layer.layer.width,
+      height: layer.layer.height,
+      depth: layer.layer.depth,
+      channels: layer.layer.channels,
+      dataType: layer.layer.dataType,
       normalized,
-      min: volumeEntry.min,
-      max: volumeEntry.max,
+      min: layer.layer.normalization?.min ?? 0,
+      max: layer.layer.normalization?.max ?? 255,
       ...(segmentationLabels ? { segmentationLabels, segmentationLabelDataType: 'uint32' } : {})
     };
   };
@@ -174,6 +165,12 @@ export function createVolumeProvider({
   const getVolume = async (layerKey: string, timepoint: number): Promise<NormalizedVolume> => {
     if (!isValidTimepoint(timepoint)) {
       throw new Error(`Invalid timepoint: ${timepoint}`);
+    }
+    if (verifyDigestsOnRead) {
+      if (!warnedDigestVerification) {
+        warnedDigestVerification = true;
+        console.warn('Digest verification is not supported for Zarr-backed datasets; ignoring verifyDigestsOnRead=true.');
+      }
     }
     const layer = layerIndex.get(layerKey);
     if (!layer) {
@@ -238,4 +235,3 @@ export function createVolumeProvider({
 
   return { getVolume, prefetch, hasVolume, clear };
 }
-

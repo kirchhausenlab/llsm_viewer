@@ -17,7 +17,6 @@ export type InitialActionsProps = {
   onStartExperimentSetup: () => void;
   onOpenPreprocessedLoader: () => void;
   isPreprocessedImporting: boolean;
-  preprocessedDropboxImporting: boolean;
 };
 
 export type ExperimentConfigurationState = {
@@ -112,9 +111,7 @@ export default function FrontPage({
                   className="channel-add-button"
                   onClick={initialActions.onOpenPreprocessedLoader}
                   disabled={
-                    initialActions.isFrontPageLocked ||
-                    initialActions.isPreprocessedImporting ||
-                    initialActions.preprocessedDropboxImporting
+                    initialActions.isFrontPageLocked || initialActions.isPreprocessedImporting
                   }
                 >
                   Load preprocessed experiment
@@ -223,13 +220,12 @@ export default function FrontPage({
             isPreprocessingExperiment={launchActions.isPreprocessingExperiment}
             preprocessButtonEnabled={launchActions.preprocessButtonEnabled}
             preprocessSuccessMessage={launchActions.preprocessSuccessMessage}
+            exportWhilePreprocessing={launchActions.exportWhilePreprocessing}
+            onExportWhilePreprocessingChange={launchActions.onExportWhilePreprocessingChange}
             onLaunchViewer={launchActions.onLaunchViewer}
             isLaunchingViewer={launchActions.isLaunchingViewer}
             launchButtonEnabled={launchActions.launchButtonEnabled}
             launchButtonLaunchable={launchActions.launchButtonLaunchable}
-            onExportPreprocessedExperiment={launchActions.onExportPreprocessedExperiment}
-            isExportingPreprocessed={launchActions.isExportingPreprocessed}
-            canLaunch={launchActions.canLaunch}
           />
         </div>
         <WarningsWindow

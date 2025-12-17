@@ -10,13 +10,12 @@ type LaunchActionsProps = {
   isPreprocessingExperiment: boolean;
   preprocessButtonEnabled: boolean;
   preprocessSuccessMessage: string | null;
+  exportWhilePreprocessing: boolean;
+  onExportWhilePreprocessingChange: (value: boolean) => void;
   onLaunchViewer: () => void;
   isLaunchingViewer: boolean;
   launchButtonEnabled: boolean;
   launchButtonLaunchable: 'true' | 'false';
-  onExportPreprocessedExperiment: () => void;
-  isExportingPreprocessed: boolean;
-  canLaunch: boolean;
 };
 
 const LaunchActions: FC<LaunchActionsProps> = ({
@@ -29,13 +28,12 @@ const LaunchActions: FC<LaunchActionsProps> = ({
   isPreprocessingExperiment,
   preprocessButtonEnabled,
   preprocessSuccessMessage,
+  exportWhilePreprocessing,
+  onExportWhilePreprocessingChange,
   onLaunchViewer,
   isLaunchingViewer,
   launchButtonEnabled,
-  launchButtonLaunchable,
-  onExportPreprocessedExperiment,
-  isExportingPreprocessed,
-  canLaunch
+  launchButtonLaunchable
 }) => {
   return (
     <>
@@ -56,36 +54,37 @@ const LaunchActions: FC<LaunchActionsProps> = ({
       {showLaunchViewerButton && frontPageMode !== 'initial' ? (
         <div className="front-page-actions">
           {frontPageMode === 'configuring' ? (
-            <button
-              type="button"
-              className="launch-viewer-button"
-              onClick={onPreprocessExperiment}
-              disabled={isPreprocessingExperiment || isLaunchingViewer || !preprocessButtonEnabled}
-              data-launchable={preprocessButtonEnabled ? 'true' : 'false'}
-            >
-              {isPreprocessingExperiment ? 'Preprocessing…' : 'Preprocess experiment'}
-            </button>
-          ) : null}
-          {frontPageMode === 'preprocessed' ? (
             <>
               <button
                 type="button"
                 className="launch-viewer-button"
-                onClick={onLaunchViewer}
-                disabled={isLaunchingViewer || !launchButtonEnabled}
-                data-launchable={launchButtonLaunchable}
+                onClick={onPreprocessExperiment}
+                disabled={isPreprocessingExperiment || isLaunchingViewer || !preprocessButtonEnabled}
+                data-launchable={preprocessButtonEnabled ? 'true' : 'false'}
               >
-                {isLaunchingViewer ? 'Loading…' : 'Launch viewer'}
+                {isPreprocessingExperiment ? 'Preprocessing…' : 'Preprocess experiment'}
               </button>
-              <button
-                type="button"
-                className="export-preprocessed-button"
-                onClick={onExportPreprocessedExperiment}
-                disabled={isExportingPreprocessed || isLaunchingViewer}
-              >
-                {isExportingPreprocessed ? 'Exporting…' : 'Export preprocessed experiment'}
-              </button>
+              <label className="launch-checkbox">
+                <input
+                  type="checkbox"
+                  checked={exportWhilePreprocessing}
+                  disabled={isPreprocessingExperiment || isLaunchingViewer}
+                  onChange={(event) => onExportWhilePreprocessingChange(event.target.checked)}
+                />
+                Export to folder while preprocessing
+              </label>
             </>
+          ) : null}
+          {frontPageMode === 'preprocessed' ? (
+            <button
+              type="button"
+              className="launch-viewer-button"
+              onClick={onLaunchViewer}
+              disabled={isLaunchingViewer || !launchButtonEnabled}
+              data-launchable={launchButtonLaunchable}
+            >
+              {isLaunchingViewer ? 'Loading…' : 'Launch viewer'}
+            </button>
           ) : null}
         </div>
       ) : null}

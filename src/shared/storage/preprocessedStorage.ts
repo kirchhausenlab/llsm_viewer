@@ -7,7 +7,7 @@ export type PreprocessedStorage = {
   finalizeManifest(manifest: PreprocessedManifest): Promise<void>;
 };
 
-export type PreprocessedStorageBackend = 'opfs' | 'memory' | 'zip';
+export type PreprocessedStorageBackend = 'opfs' | 'memory' | 'directory';
 
 export type PreprocessedStorageHandle = {
   backend: PreprocessedStorageBackend;
@@ -117,12 +117,16 @@ async function readFileFromDirectory(root: FileSystemDirectoryHandleLike, path: 
   return new Uint8Array(buffer);
 }
 
+function resolveRootDir(rootDir: string | undefined, fallback: string): string {
+  return rootDir?.trim() ? rootDir.trim() : fallback;
+}
+
 export async function createOpfsPreprocessedStorage(
   options?: { datasetId?: string; rootDir?: string }
 ): Promise<PreprocessedStorageHandle> {
   const root = await getOpfsRoot();
   const datasetId = options?.datasetId ?? createDatasetId('preprocessed');
-  const rootDir = options?.rootDir?.trim() ? options.rootDir.trim() : 'llsm-viewer-preprocessed';
+  const rootDir = resolveRootDir(options?.rootDir, 'llsm-viewer-preprocessed');
   const datasetRoot = await getOrCreateDirectory(root, `${rootDir}/${datasetId}`);
 
   const storage: PreprocessedStorage = {
@@ -140,6 +144,62 @@ export async function createOpfsPreprocessedStorage(
   };
 
   return { backend: 'opfs', id: datasetId, storage };
+}
+
+export async function createDirectoryPreprocessedStorage(
+  directory: FileSystemDirectoryHandleLike,
+  options?: { datasetId?: string; rootDir?: string }
+): Promise<PreprocessedStorageHandle> {
+  if (!directory) {
+    throw new Error('Missing directory handle for preprocessed storage.');
+  }
+
+  const datasetId = options?.datasetId ?? createDatasetId('preprocessed-export');
+  const rootDir = resolveRootDir(options?.rootDir, 'llsm-viewer-preprocessed');
+  const datasetRoot = await getOrCreateDirectory(directory, `${rootDir}/${datasetId}`);
+
+  const storage: PreprocessedStorage = {
+    async writeFile(path, data) {
+      await writeFileToDirectory(datasetRoot, path, data);
+    },
+    async readFile(path) {
+      return readFileFromDirectory(datasetRoot, path);
+    },
+    async finalizeManifest(manifest) {
+      const encoder = new TextEncoder();
+      const bytes = encoder.encode(JSON.stringify(manifest));
+      await writeFileToDirectory(datasetRoot, 'manifest.json', bytes);
+    }
+  };
+
+  return { backend: 'directory', id: datasetId, storage };
+}
+
+export async function createDirectoryHandlePreprocessedStorage(
+  directory: FileSystemDirectoryHandleLike,
+  options?: { id?: string }
+): Promise<PreprocessedStorageHandle> {
+  if (!directory) {
+    throw new Error('Missing directory handle for preprocessed storage.');
+  }
+
+  const id = options?.id?.trim() ? options.id.trim() : createDatasetId('preprocessed-folder');
+
+  const storage: PreprocessedStorage = {
+    async writeFile(path, data) {
+      await writeFileToDirectory(directory, path, data);
+    },
+    async readFile(path) {
+      return readFileFromDirectory(directory, path);
+    },
+    async finalizeManifest(manifest) {
+      const encoder = new TextEncoder();
+      const bytes = encoder.encode(JSON.stringify(manifest));
+      await writeFileToDirectory(directory, 'manifest.json', bytes);
+    }
+  };
+
+  return { backend: 'directory', id, storage };
 }
 
 export function createInMemoryPreprocessedStorage(options?: { datasetId?: string }): PreprocessedStorageHandle {
