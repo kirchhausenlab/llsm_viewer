@@ -37,6 +37,14 @@ function createDatasetId(prefix: string): string {
   return `${prefix}-${stamp}-${random}`;
 }
 
+function ensureZarrDirectoryName(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    throw new Error('Dataset id must not be empty.');
+  }
+  return trimmed.toLowerCase().endsWith('.zarr') ? trimmed : `${trimmed}.zarr`;
+}
+
 type FileSystemDirectoryHandleLike = {
   getDirectoryHandle(name: string, options?: { create?: boolean }): Promise<FileSystemDirectoryHandleLike>;
   getFileHandle(name: string, options?: { create?: boolean }): Promise<FileSystemFileHandleLike>;
@@ -127,7 +135,8 @@ export async function createOpfsPreprocessedStorage(
   const root = await getOpfsRoot();
   const datasetId = options?.datasetId ?? createDatasetId('preprocessed');
   const rootDir = resolveRootDir(options?.rootDir, 'llsm-viewer-preprocessed');
-  const datasetRoot = await getOrCreateDirectory(root, `${rootDir}/${datasetId}`);
+  const datasetDirName = ensureZarrDirectoryName(datasetId);
+  const datasetRoot = await getOrCreateDirectory(root, `${rootDir}/${datasetDirName}`);
 
   const storage: PreprocessedStorage = {
     async writeFile(path, data) {
@@ -156,7 +165,8 @@ export async function createDirectoryPreprocessedStorage(
 
   const datasetId = options?.datasetId ?? createDatasetId('preprocessed-export');
   const rootDir = resolveRootDir(options?.rootDir, 'llsm-viewer-preprocessed');
-  const datasetRoot = await getOrCreateDirectory(directory, `${rootDir}/${datasetId}`);
+  const datasetDirName = ensureZarrDirectoryName(datasetId);
+  const datasetRoot = await getOrCreateDirectory(directory, `${rootDir}/${datasetDirName}`);
 
   const storage: PreprocessedStorage = {
     async writeFile(path, data) {

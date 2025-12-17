@@ -19,7 +19,7 @@ This file summarizes the pieces of app state that drive `<FrontPage />` and outl
   - `resetPreprocessedState` to discard the staged dataset
 - `FrontPageContainer` implements preprocessing:
   - always writes a Zarr v3 store into OPFS
-  - optionally “tees” writes to a user-selected folder when “Export to folder while preprocessing” is enabled
+  - optionally “tees” writes to a user-selected folder when “Export to folder while preprocessing” is enabled (exported dataset folder uses the `.zarr` directory naming convention)
 
 ## Minimal `FrontPageContainer` prop contract
 
@@ -66,4 +66,3 @@ export type FrontPageContainerProps = {
   canLaunch: boolean;
 };
 ```
-

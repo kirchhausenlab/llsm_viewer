@@ -233,6 +233,9 @@
 ## Export service worker (removed)
 - Removed the ZIP export pipeline and its service worker; no `export-sw.js` routing is needed now that preprocessed datasets are saved as folder-based Zarr v3 stores.
 
+## Preprocessed export folder naming
+- Updated preprocessed dataset roots to be created with a `.zarr` suffix (still a directory-based Zarr v3 store) to match common Zarr naming conventions.
+
 ## Viewer recording
 - Wired planar and volume viewers to register their canvas elements for recording.
 - Added ViewerShell-managed recording that captures the active canvas stream at the playback FPS, downloads recordings with timestamps, and stops cleanly on mode changes or unmount.
