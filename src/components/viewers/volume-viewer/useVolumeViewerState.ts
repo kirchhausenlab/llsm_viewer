@@ -17,6 +17,9 @@ export function useVolumeViewerState() {
   const volumeRootCenterUnscaledRef = useRef(new THREE.Vector3());
   const volumeRootHalfExtentsRef = useRef(new THREE.Vector3());
   const volumeNormalizationScaleRef = useRef(1);
+  const volumeAnisotropyScaleRef = useRef({ x: 1, y: 1, z: 1 });
+  const volumeStepScaleBaseRef = useRef(DESKTOP_VOLUME_STEP_SCALE);
+  const volumeStepScaleRatioRef = useRef(1);
   const volumeUserScaleRef = useRef(1);
   const volumeStepScaleRef = useRef(DESKTOP_VOLUME_STEP_SCALE);
   const volumeYawRef = useRef(0);
@@ -61,6 +64,9 @@ export function useVolumeViewerState() {
     volumeRootCenterUnscaledRef,
     volumeRootHalfExtentsRef,
     volumeNormalizationScaleRef,
+    volumeAnisotropyScaleRef,
+    volumeStepScaleBaseRef,
+    volumeStepScaleRatioRef,
     volumeUserScaleRef,
     volumeStepScaleRef,
     volumeYawRef,

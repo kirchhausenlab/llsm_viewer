@@ -122,6 +122,7 @@ export type ControllerRayDependencies = {
   volumeRootCenterUnscaledRef: MutableRefObject<THREE.Vector3>;
   volumeRootBaseOffsetRef: MutableRefObject<THREE.Vector3>;
   volumeNormalizationScaleRef: MutableRefObject<number>;
+  volumeAnisotropyScaleRef: MutableRefObject<{ x: number; y: number; z: number }>;
   volumeUserScaleRef: MutableRefObject<number>;
   volumeYawRef: MutableRefObject<number>;
   volumePitchRef: MutableRefObject<number>;
@@ -193,6 +194,7 @@ export function createControllerRayUpdater(
     volumeRootCenterUnscaledRef,
     volumeRootBaseOffsetRef,
     volumeNormalizationScaleRef,
+    volumeAnisotropyScaleRef,
     volumeUserScaleRef,
     volumeYawRef,
     volumePitchRef,
@@ -446,7 +448,15 @@ export function createControllerRayUpdater(
           );
           volumeUserScaleRef.current = nextUserScale;
           const baseScale = volumeNormalizationScaleRef.current;
-          volumeRootGroup.scale.setScalar(baseScale * nextUserScale);
+          const anisotropy = volumeAnisotropyScaleRef.current;
+          const anisX = Number.isFinite(anisotropy?.x) && anisotropy.x > 0 ? anisotropy.x : 1;
+          const anisY = Number.isFinite(anisotropy?.y) && anisotropy.y > 0 ? anisotropy.y : 1;
+          const anisZ = Number.isFinite(anisotropy?.z) && anisotropy.z > 0 ? anisotropy.z : 1;
+          volumeRootGroup.scale.set(
+            baseScale * nextUserScale * anisX,
+            baseScale * nextUserScale * anisY,
+            baseScale * nextUserScale * anisZ,
+          );
           applyVolumeYawPitch(volumeYawRef.current, volumePitchRef.current);
           handle.getWorldPosition(scaleHandleWorldPoint);
           entry.hoverUiPoint.copy(scaleHandleWorldPoint);

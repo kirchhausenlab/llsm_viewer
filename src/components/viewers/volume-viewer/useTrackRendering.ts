@@ -57,7 +57,7 @@ export function useTrackRendering({
   trackLineWidthByChannel,
   channelTrackColorModes,
   channelTrackOffsets,
-  trackScale,
+  trackScale: _trackScale,
   selectedTrackIds,
   followedTrackId,
   clampedTimeIndex,
@@ -70,10 +70,6 @@ export function useTrackRendering({
   currentDimensionsRef,
   hasActive3DLayer,
 }: UseTrackRenderingParams) {
-  const trackScaleX = trackScale.x ?? 1;
-  const trackScaleY = trackScale.y ?? 1;
-  const trackScaleZ = trackScale.z ?? 1;
-
   const [trackOverlayRevision, setTrackOverlayRevision] = useState(0);
   const hoveredTrackIdRef = useRef<string | null>(null);
   const [hoveredTrackId, setHoveredTrackId] = useState<string | null>(null);
@@ -256,15 +252,15 @@ export function useTrackRendering({
       const positions = new Float32Array(track.points.length * 3);
       const times = new Array<number>(track.points.length);
       const offset = channelTrackOffsets[track.channelId] ?? { x: 0, y: 0 };
-      const scaledOffsetX = offset.x * trackScaleX;
-      const scaledOffsetY = offset.y * trackScaleY;
+      const offsetX = offset.x;
+      const offsetY = offset.y;
 
       for (let index = 0; index < track.points.length; index++) {
         const point = track.points[index];
         const resolvedZ = Number.isFinite(point.z) ? point.z : 0;
-        positions[index * 3 + 0] = point.x * trackScaleX + scaledOffsetX;
-        positions[index * 3 + 1] = point.y * trackScaleY + scaledOffsetY;
-        positions[index * 3 + 2] = resolvedZ * trackScaleZ;
+        positions[index * 3 + 0] = point.x + offsetX;
+        positions[index * 3 + 1] = point.y + offsetY;
+        positions[index * 3 + 2] = resolvedZ;
         times[index] = point.time;
       }
 
@@ -386,9 +382,6 @@ export function useTrackRendering({
     resolveTrackColor,
     trackLinesRef,
     trackOverlayRevision,
-    trackScaleX,
-    trackScaleY,
-    trackScaleZ,
     tracks,
     updateTrackDrawRanges,
   ]);
@@ -531,8 +524,8 @@ export function useTrackRendering({
       let sumY = 0;
       let sumZ = 0;
       const offset = channelTrackOffsets[track.channelId] ?? { x: 0, y: 0 };
-      const scaledOffsetX = offset.x * trackScaleX;
-      const scaledOffsetY = offset.y * trackScaleY;
+      const offsetX = offset.x;
+      const offsetY = offset.y;
 
       for (const point of track.points) {
         if (point.time - maxVisibleTime > epsilon) {
@@ -542,14 +535,14 @@ export function useTrackRendering({
         if (point.time > latestTime + epsilon) {
           latestTime = point.time;
           count = 1;
-          sumX = point.x * trackScaleX + scaledOffsetX;
-          sumY = point.y * trackScaleY + scaledOffsetY;
-          sumZ = (Number.isFinite(point.z) ? point.z : 0) * trackScaleZ;
+          sumX = point.x + offsetX;
+          sumY = point.y + offsetY;
+          sumZ = Number.isFinite(point.z) ? point.z : 0;
         } else if (Math.abs(point.time - latestTime) <= epsilon) {
           count += 1;
-          sumX += point.x * trackScaleX + scaledOffsetX;
-          sumY += point.y * trackScaleY + scaledOffsetY;
-          sumZ += (Number.isFinite(point.z) ? point.z : 0) * trackScaleZ;
+          sumX += point.x + offsetX;
+          sumY += point.y + offsetY;
+          sumZ += Number.isFinite(point.z) ? point.z : 0;
         }
       }
 
@@ -566,7 +559,7 @@ export function useTrackRendering({
       trackGroup.updateMatrixWorld(true);
       return trackGroup.localToWorld(centroidLocal);
     },
-    [channelTrackOffsets, trackLookup, trackGroupRef, trackScaleX, trackScaleY, trackScaleZ],
+    [channelTrackOffsets, trackLookup, trackGroupRef],
   );
 
   const performHoverHitTest = useCallback(

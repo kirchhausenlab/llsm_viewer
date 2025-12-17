@@ -20,6 +20,8 @@ export type UpdateVolumeHandlesParams = {
   volumeRootGroupRef: MutableRefObject<THREE.Group | null>;
   currentDimensionsRef: MutableRefObject<VolumeDimensions | null>;
   hasActive3DLayerRef: MutableRefObject<boolean>;
+  volumeNormalizationScaleRef: MutableRefObject<number>;
+  volumeAnisotropyScaleRef: MutableRefObject<{ x: number; y: number; z: number }>;
   volumeUserScaleRef: MutableRefObject<number>;
   volumeRootCenterUnscaledRef: MutableRefObject<THREE.Vector3>;
   volumeRootHalfExtentsRef: MutableRefObject<THREE.Vector3>;
@@ -42,7 +44,46 @@ export type ApplyVolumeYawPitchParams = UpdateVolumeHandlesParams & {
 
 export type ApplyVolumeRootTransformParams = ApplyVolumeYawPitchParams & {
   volumeNormalizationScaleRef: MutableRefObject<number>;
+  volumeAnisotropyScaleRef: MutableRefObject<{ x: number; y: number; z: number }>;
 };
+
+function resolveAxisScale(value: unknown): number {
+  const numeric = typeof value === 'number' ? value : Number.NaN;
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : 1;
+}
+
+function resolveAnisotropyScale(value: { x: number; y: number; z: number } | null | undefined): {
+  x: number;
+  y: number;
+  z: number;
+} {
+  const candidate = value ?? null;
+  return {
+    x: resolveAxisScale(candidate?.x),
+    y: resolveAxisScale(candidate?.y),
+    z: resolveAxisScale(candidate?.z),
+  };
+}
+
+function applyVolumeRootScale({
+  volumeRootGroup,
+  normalizationScale,
+  userScale,
+  anisotropyScale,
+}: {
+  volumeRootGroup: THREE.Group;
+  normalizationScale: number;
+  userScale: number;
+  anisotropyScale: { x: number; y: number; z: number };
+}) {
+  const safeNormalization = Number.isFinite(normalizationScale) && normalizationScale > 0 ? normalizationScale : 1;
+  const safeUser = Number.isFinite(userScale) && userScale > 0 ? userScale : 1;
+  volumeRootGroup.scale.set(
+    safeNormalization * safeUser * anisotropyScale.x,
+    safeNormalization * safeUser * anisotropyScale.y,
+    safeNormalization * safeUser * anisotropyScale.z,
+  );
+}
 
 export function updateVolumeHandles(params: UpdateVolumeHandlesParams) {
   const {
@@ -96,30 +137,36 @@ export function updateVolumeHandles(params: UpdateVolumeHandlesParams) {
     return;
   }
 
-  const scale = 1 / maxDimension;
   const userScale = params.volumeUserScaleRef.current;
-  const totalScale = scale * userScale;
-  const safeScale = totalScale > 1e-6 ? totalScale : 1e-6;
+  const normalizationScale = params.volumeNormalizationScaleRef.current;
+  const anisotropyScale = resolveAnisotropyScale(params.volumeAnisotropyScaleRef.current);
+  const totalScaleX = Math.max(1e-6, normalizationScale * userScale * anisotropyScale.x);
+  const totalScaleY = Math.max(1e-6, normalizationScale * userScale * anisotropyScale.y);
+  const totalScaleZ = Math.max(1e-6, normalizationScale * userScale * anisotropyScale.z);
+
   const centerUnscaled = params.volumeRootCenterUnscaledRef.current;
   const halfExtents = params.volumeRootHalfExtentsRef.current;
   const translationLocal = params.vrHandleLocalPointRef.current;
 
   translationLocal.set(
     centerUnscaled.x,
-    centerUnscaled.y + (halfExtents.y + VR_TRANSLATION_HANDLE_OFFSET) / scale,
+    centerUnscaled.y + (halfExtents.y + VR_TRANSLATION_HANDLE_OFFSET) / Math.max(1e-6, normalizationScale * anisotropyScale.y),
     centerUnscaled.z,
   );
 
   if (translationHandle) {
     translationHandle.position.copy(translationLocal);
-    translationHandle.scale.setScalar(VR_TRANSLATION_HANDLE_RADIUS / safeScale);
+    translationHandle.scale.set(
+      VR_TRANSLATION_HANDLE_RADIUS / totalScaleX,
+      VR_TRANSLATION_HANDLE_RADIUS / totalScaleY,
+      VR_TRANSLATION_HANDLE_RADIUS / totalScaleZ,
+    );
     translationHandle.visible = true;
   }
 
-  const lateralOffset = (halfExtents.x + VR_ROTATION_HANDLE_OFFSET) / scale;
-  const verticalOffset = -(halfExtents.y + VR_ROTATION_HANDLE_OFFSET) / scale;
-  const forwardOffset = (halfExtents.z + VR_PITCH_HANDLE_FORWARD_OFFSET) / scale;
-  const handleScale = VR_ROTATION_HANDLE_RADIUS / safeScale;
+  const lateralOffset = (halfExtents.x + VR_ROTATION_HANDLE_OFFSET) / Math.max(1e-6, normalizationScale * anisotropyScale.x);
+  const verticalOffset = -(halfExtents.y + VR_ROTATION_HANDLE_OFFSET) / Math.max(1e-6, normalizationScale * anisotropyScale.y);
+  const forwardOffset = (halfExtents.z + VR_PITCH_HANDLE_FORWARD_OFFSET) / Math.max(1e-6, normalizationScale * anisotropyScale.z);
 
   yawHandles.forEach((handle, index) => {
     if (!handle) {
@@ -131,7 +178,11 @@ export function updateVolumeHandles(params: UpdateVolumeHandlesParams) {
       centerUnscaled.y,
       centerUnscaled.z,
     );
-    handle.scale.setScalar(handleScale);
+    handle.scale.set(
+      VR_ROTATION_HANDLE_RADIUS / totalScaleX,
+      VR_ROTATION_HANDLE_RADIUS / totalScaleY,
+      VR_ROTATION_HANDLE_RADIUS / totalScaleZ,
+    );
     handle.visible = true;
   });
 
@@ -141,17 +192,25 @@ export function updateVolumeHandles(params: UpdateVolumeHandlesParams) {
       centerUnscaled.y + verticalOffset,
       centerUnscaled.z - forwardOffset,
     );
-    pitchHandle.scale.setScalar(handleScale);
+    pitchHandle.scale.set(
+      VR_ROTATION_HANDLE_RADIUS / totalScaleX,
+      VR_ROTATION_HANDLE_RADIUS / totalScaleY,
+      VR_ROTATION_HANDLE_RADIUS / totalScaleZ,
+    );
     pitchHandle.visible = true;
   }
 
   if (scaleHandle) {
     scaleHandle.position.set(
-      centerUnscaled.x + (halfExtents.x + VR_SCALE_HANDLE_OFFSET) / scale,
-      centerUnscaled.y + (halfExtents.y + VR_SCALE_HANDLE_OFFSET) / scale,
+      centerUnscaled.x + (halfExtents.x + VR_SCALE_HANDLE_OFFSET) / Math.max(1e-6, normalizationScale * anisotropyScale.x),
+      centerUnscaled.y + (halfExtents.y + VR_SCALE_HANDLE_OFFSET) / Math.max(1e-6, normalizationScale * anisotropyScale.y),
       centerUnscaled.z,
     );
-    scaleHandle.scale.setScalar(VR_SCALE_HANDLE_RADIUS / safeScale);
+    scaleHandle.scale.set(
+      VR_SCALE_HANDLE_RADIUS / totalScaleX,
+      VR_SCALE_HANDLE_RADIUS / totalScaleY,
+      VR_SCALE_HANDLE_RADIUS / totalScaleZ,
+    );
     scaleHandle.visible = true;
   }
 }
@@ -207,7 +266,12 @@ export function applyVolumeRootTransform(
     params.volumeRootHalfExtentsRef.current.set(0, 0, 0);
     params.volumeNormalizationScaleRef.current = 1;
     params.volumeUserScaleRef.current = 1;
-    volumeRootGroup.scale.set(1, 1, 1);
+    applyVolumeRootScale({
+      volumeRootGroup,
+      normalizationScale: 1,
+      userScale: 1,
+      anisotropyScale: resolveAnisotropyScale(params.volumeAnisotropyScaleRef.current),
+    });
     params.volumeYawRef.current = 0;
     params.volumePitchRef.current = 0;
     applyVolumeYawPitch(params, 0, 0);
@@ -215,14 +279,23 @@ export function applyVolumeRootTransform(
   }
 
   const { width, height, depth } = dimensions;
-  const maxDimension = Math.max(width, height, depth);
+  const anisotropyScale = resolveAnisotropyScale(params.volumeAnisotropyScaleRef.current);
+  const physicalWidth = width * anisotropyScale.x;
+  const physicalHeight = height * anisotropyScale.y;
+  const physicalDepth = depth * anisotropyScale.z;
+  const maxDimension = Math.max(physicalWidth, physicalHeight, physicalDepth);
   if (!Number.isFinite(maxDimension) || maxDimension <= 0) {
     params.volumeRootCenterOffsetRef.current.set(0, 0, 0);
     params.volumeRootCenterUnscaledRef.current.set(0, 0, 0);
     params.volumeRootHalfExtentsRef.current.set(0, 0, 0);
     params.volumeNormalizationScaleRef.current = 1;
     params.volumeUserScaleRef.current = 1;
-    volumeRootGroup.scale.set(1, 1, 1);
+    applyVolumeRootScale({
+      volumeRootGroup,
+      normalizationScale: 1,
+      userScale: 1,
+      anisotropyScale,
+    });
     params.volumeYawRef.current = 0;
     params.volumePitchRef.current = 0;
     applyVolumeYawPitch(params, 0, 0);
@@ -242,15 +315,24 @@ export function applyVolumeRootTransform(
   centerUnscaled.set(width / 2 - 0.5, height / 2 - 0.5, depth / 2 - 0.5);
 
   const centerOffset = params.volumeRootCenterOffsetRef.current;
-  centerOffset.copy(centerUnscaled).multiplyScalar(scale);
+  centerOffset.set(
+    centerUnscaled.x * scale * anisotropyScale.x,
+    centerUnscaled.y * scale * anisotropyScale.y,
+    centerUnscaled.z * scale * anisotropyScale.z,
+  );
 
   const halfExtents = params.volumeRootHalfExtentsRef.current;
   halfExtents.set(
-    ((width - 1) / 2) * scale,
-    ((height - 1) / 2) * scale,
-    ((depth - 1) / 2) * scale,
+    ((width - 1) / 2) * scale * anisotropyScale.x,
+    ((height - 1) / 2) * scale * anisotropyScale.y,
+    ((depth - 1) / 2) * scale * anisotropyScale.z,
   );
 
-  volumeRootGroup.scale.setScalar(scale * clampedUserScale);
+  applyVolumeRootScale({
+    volumeRootGroup,
+    normalizationScale: scale,
+    userScale: clampedUserScale,
+    anisotropyScale,
+  });
   applyVolumeYawPitch(params, params.volumeYawRef.current, params.volumePitchRef.current);
 }

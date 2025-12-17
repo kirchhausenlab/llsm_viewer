@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import './viewerCommon.css';
 import './VolumeViewer.css';
@@ -113,6 +113,9 @@ function VolumeViewer({
     volumeRootCenterUnscaledRef,
     volumeRootHalfExtentsRef,
     volumeNormalizationScaleRef,
+    volumeAnisotropyScaleRef,
+    volumeStepScaleBaseRef,
+    volumeStepScaleRatioRef,
     volumeUserScaleRef,
     volumeStepScaleRef,
     volumeYawRef,
@@ -158,6 +161,42 @@ function VolumeViewer({
   } = useCameraControls({ trackLinesRef, followTargetActiveRef, setHasMeasured });
   const isDevMode = Boolean(import.meta.env?.DEV);
   trackFollowRequestCallbackRef.current = onTrackFollowRequest;
+
+  const resolvedAnisotropyScale = useMemo(() => {
+    const resolveAxis = (value: unknown) => {
+      const numeric = typeof value === 'number' ? value : Number.NaN;
+      return Number.isFinite(numeric) && numeric > 0 ? numeric : 1;
+    };
+    return {
+      x: resolveAxis(trackScale?.x),
+      y: resolveAxis(trackScale?.y),
+      z: resolveAxis(trackScale?.z),
+    };
+  }, [trackScale?.x, trackScale?.y, trackScale?.z]);
+
+  const anisotropyStepRatio = useMemo(() => {
+    const values = [resolvedAnisotropyScale.x, resolvedAnisotropyScale.y, resolvedAnisotropyScale.z];
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const safeMin = Number.isFinite(min) && min > 0 ? min : 1;
+    const safeMax = Number.isFinite(max) && max > 0 ? max : 1;
+    const ratio = safeMax / safeMin;
+    return Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
+  }, [resolvedAnisotropyScale.x, resolvedAnisotropyScale.y, resolvedAnisotropyScale.z]);
+
+  useEffect(() => {
+    volumeAnisotropyScaleRef.current = resolvedAnisotropyScale;
+    volumeStepScaleRatioRef.current = anisotropyStepRatio;
+    const base = Math.max(volumeStepScaleBaseRef.current, 1e-3);
+    volumeStepScaleRef.current = base * anisotropyStepRatio;
+  }, [
+    anisotropyStepRatio,
+    resolvedAnisotropyScale,
+    volumeAnisotropyScaleRef,
+    volumeStepScaleBaseRef,
+    volumeStepScaleRatioRef,
+    volumeStepScaleRef,
+  ]);
 
   const requestVolumeReset = useCallback(() => {
     resetVolumeCallbackRef.current?.();
@@ -211,6 +250,7 @@ function VolumeViewer({
     layersRef,
     resourcesRef,
     hoveredVoxelRef,
+    volumeAnisotropyScaleRef,
     hoverIntensityRef,
     voxelHoverDebugRef,
     setVoxelHoverDebug,
@@ -346,6 +386,7 @@ function VolumeViewer({
     volumeRootCenterUnscaledRef,
     volumeRootHalfExtentsRef,
     volumeNormalizationScaleRef,
+    volumeAnisotropyScaleRef,
     volumeUserScaleRef,
     volumeRootRotatedCenterTempRef,
     volumeStepScaleRef,
@@ -612,10 +653,13 @@ function VolumeViewer({
   const handleVolumeStepScaleChange = useCallback(
     (stepScale: number) => {
       const clampedStepScale = Math.max(stepScale, 1e-3);
-      volumeStepScaleRef.current = clampedStepScale;
-      applyVolumeStepScaleToResources(clampedStepScale);
+      volumeStepScaleBaseRef.current = clampedStepScale;
+      const ratio = Math.max(volumeStepScaleRatioRef.current, 1);
+      const effectiveStepScale = clampedStepScale * ratio;
+      volumeStepScaleRef.current = effectiveStepScale;
+      applyVolumeStepScaleToResources(effectiveStepScale);
     },
-    [applyVolumeStepScaleToResources],
+    [applyVolumeStepScaleToResources, volumeStepScaleBaseRef, volumeStepScaleRatioRef, volumeStepScaleRef],
   );
 
   useEffect(() => {
@@ -657,6 +701,19 @@ function VolumeViewer({
     applyVolumeRootTransformRef.current?.(currentDimensionsRef.current);
     applyTrackGroupTransformRef.current?.(currentDimensionsRef.current);
   }, [applyTrackGroupTransform, applyVolumeRootTransform]);
+
+  useEffect(() => {
+    applyVolumeRootTransformRef.current?.(currentDimensionsRef.current);
+    applyVolumeStepScaleToResources(volumeStepScaleRef.current);
+  }, [
+    anisotropyStepRatio,
+    applyVolumeStepScaleToResources,
+    currentDimensionsRef,
+    resolvedAnisotropyScale.x,
+    resolvedAnisotropyScale.y,
+    resolvedAnisotropyScale.z,
+    volumeStepScaleRef,
+  ]);
 
   useEffect(() => {
     resetHoverState();

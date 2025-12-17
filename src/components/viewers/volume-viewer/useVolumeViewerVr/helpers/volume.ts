@@ -30,6 +30,7 @@ export type CreateVolumeHelpersParams = {
   vrHudYawEulerRef: MutableRefObject<THREE.Euler>;
   vrHandleQuaternionTempRef: MutableRefObject<THREE.Quaternion>;
   volumeNormalizationScaleRef: MutableRefObject<number>;
+  volumeAnisotropyScaleRef: MutableRefObject<{ x: number; y: number; z: number }>;
   volumeStepScaleRef: MutableRefObject<number>;
   resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
 };
@@ -62,6 +63,7 @@ export function createVolumeHelpers({
   vrHudYawEulerRef,
   vrHandleQuaternionTempRef,
   volumeNormalizationScaleRef,
+  volumeAnisotropyScaleRef,
   volumeStepScaleRef,
   resourcesRef,
 }: CreateVolumeHelpersParams): CreateVolumeHelpersResult {
@@ -71,6 +73,8 @@ export function createVolumeHelpers({
       volumeRootGroupRef,
       currentDimensionsRef,
       hasActive3DLayerRef,
+      volumeNormalizationScaleRef,
+      volumeAnisotropyScaleRef,
       volumeUserScaleRef,
       volumeRootCenterUnscaledRef,
       volumeRootHalfExtentsRef,
@@ -89,6 +93,8 @@ export function createVolumeHelpers({
         volumeRootGroupRef,
         currentDimensionsRef,
         hasActive3DLayerRef,
+        volumeNormalizationScaleRef,
+        volumeAnisotropyScaleRef,
         volumeUserScaleRef,
         volumeRootCenterUnscaledRef,
         volumeRootHalfExtentsRef,
@@ -117,6 +123,8 @@ export function createVolumeHelpers({
         volumeRootGroupRef,
         currentDimensionsRef,
         hasActive3DLayerRef,
+        volumeNormalizationScaleRef,
+        volumeAnisotropyScaleRef,
         volumeUserScaleRef,
         volumeRootCenterUnscaledRef,
         volumeRootHalfExtentsRef,
@@ -132,7 +140,6 @@ export function createVolumeHelpers({
         volumePitchRef,
         vrHudYawEulerRef,
         vrHandleQuaternionTempRef,
-        volumeNormalizationScaleRef,
       },
       dimensions,
     );

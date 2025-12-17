@@ -149,6 +149,17 @@ export function useAppRouteState(): AppRouteState {
   const { selectedIndex, setSelectedIndex, isPlaying, fps, setFps, stopPlayback, setIsPlaying } = playback;
   const is3dViewerAvailable = experimentDimension === '3d';
 
+  const effectiveTrackScale = useMemo(() => {
+    if (!preprocessedExperiment) {
+      return trackScale;
+    }
+    const saved = preprocessedExperiment.manifest.dataset.anisotropyCorrection?.scale ?? null;
+    if (!saved) {
+      return { x: 1, y: 1, z: 1 };
+    }
+    return saved;
+  }, [preprocessedExperiment, trackScale]);
+
   const {
     layoutResetToken,
     controlWindowInitialPosition,
@@ -1029,7 +1040,7 @@ export function useAppRouteState(): AppRouteState {
     blendingMode,
     sliceIndex,
     maxSliceDepth,
-    trackScale,
+    trackScale: effectiveTrackScale,
     filteredTracks,
     trackVisibility,
     trackOpacityByChannel,

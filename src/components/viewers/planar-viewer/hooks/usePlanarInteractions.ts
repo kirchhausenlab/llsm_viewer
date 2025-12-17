@@ -317,14 +317,19 @@ export function usePlanarInteractions({
       const sliceX = blockX - xyView.originX;
       const sliceY = blockY - xyView.originY;
 
-      const intensity = samplePixelValue(sliceX, sliceY);
+      const scaleX = Math.max(trackScale.x, 1e-6);
+      const scaleY = Math.max(trackScale.y, 1e-6);
+      const voxelXFloat = sliceX / scaleX;
+      const voxelYFloat = sliceY / scaleY;
+
+      const intensity = samplePixelValue(voxelXFloat, voxelYFloat);
       if (!intensity) {
         clearPixelInfo();
         return;
       }
 
-      const voxelX = Math.round(clamp(sliceX, 0, Math.max(0, sliceData.width - 1)));
-      const voxelY = Math.round(clamp(sliceY, 0, Math.max(0, sliceData.height - 1)));
+      const voxelX = Math.round(clamp(voxelXFloat, 0, Math.max(0, sliceData.width - 1)));
+      const voxelY = Math.round(clamp(voxelYFloat, 0, Math.max(0, sliceData.height - 1)));
       updateHoveredPixel({ x: voxelX, y: voxelY });
       emitHoverVoxel({
         intensity: intensity.intensity,
@@ -343,6 +348,8 @@ export function usePlanarInteractions({
       samplePixelValue,
       sliceData,
       layout,
+      trackScale.x,
+      trackScale.y,
       updateHoveredPixel,
       viewStateRef,
       canvasRef
@@ -687,8 +694,8 @@ export function usePlanarInteractions({
 
     const width = primaryVolume.width;
     const height = primaryVolume.height;
-    const centerX = centroid.x - (width / 2 - 0.5);
-    const centerY = centroid.y - (height / 2 - 0.5);
+    const centerX = centroid.x - (width / 2 - 0.5) * trackScale.x;
+    const centerY = centroid.y - (height / 2 - 0.5) * trackScale.y;
     const scale = viewStateRef.current.scale;
     const rotation = viewStateRef.current.rotation;
     const cos = Math.cos(rotation);
@@ -728,6 +735,8 @@ export function usePlanarInteractions({
     followedTrackId,
     onSliceIndexChange,
     primaryVolume,
+    trackScale.x,
+    trackScale.y,
     updateViewState,
     viewStateRef
   ]);

@@ -12,7 +12,6 @@ import {
 import type { ExperimentDimension } from '../useVoxelResolution';
 import { computeAutoWindow } from '../../autoContrast';
 import type { PreprocessedChannelSummary, PreprocessedManifest } from '../../shared/utils/preprocessedDataset';
-import { resampleVolume } from '../../shared/utils/anisotropyCorrection';
 import { createSegmentationSeed, sortVolumeFiles } from '../../shared/utils/appHelpers';
 import type { PreprocessedStorageHandle } from '../../shared/storage/preprocessedStorage';
 import {
@@ -557,22 +556,13 @@ export function useChannelSources(): ChannelSourcesApi {
         );
 
         const normalizedLayers: LoadedLayer[] = rawLayers.map(({ layer, volumes }) => {
-          const correctedVolumes = anisotropyScale
-            ? volumes.map((rawVolume) =>
-                resampleVolume(rawVolume, {
-                  scale: anisotropyScale,
-                  interpolation: layer.isSegmentation ? 'nearest' : 'linear',
-                  targetDataType: layer.isSegmentation ? rawVolume.dataType : 'float32'
-                })
-              )
-            : volumes;
           const normalizedVolumes = layer.isSegmentation
-            ? correctedVolumes.map((rawVolume, volumeIndex) =>
+            ? volumes.map((rawVolume, volumeIndex) =>
                 colorizeSegmentationVolume(rawVolume, createSegmentationSeed(layer.key, volumeIndex))
               )
             : (() => {
-                const normalizationParameters = computeNormalizationParameters(correctedVolumes);
-                return correctedVolumes.map((rawVolume) => normalizeVolume(rawVolume, normalizationParameters));
+                const normalizationParameters = computeNormalizationParameters(volumes);
+                return volumes.map((rawVolume) => normalizeVolume(rawVolume, normalizationParameters));
               })();
           return {
             key: layer.key,

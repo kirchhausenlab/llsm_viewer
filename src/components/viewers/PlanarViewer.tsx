@@ -202,12 +202,12 @@ function PlanarViewer({
           count = 1;
           sumX = point.x * trackScaleX + scaledOffsetX;
           sumY = point.y * trackScaleY + scaledOffsetY;
-          sumZ = (Number.isFinite(point.z) ? point.z : 0) * trackScaleZ;
+          sumZ = Number.isFinite(point.z) ? point.z : 0;
         } else if (Math.abs(point.time - latestTime) <= 1e-3) {
           count += 1;
           sumX += point.x * trackScaleX + scaledOffsetX;
           sumY += point.y * trackScaleY + scaledOffsetY;
-          sumZ += (Number.isFinite(point.z) ? point.z : 0) * trackScaleZ;
+          sumZ += Number.isFinite(point.z) ? point.z : 0;
         }
       }
 
@@ -221,12 +221,13 @@ function PlanarViewer({
         z: sumZ / count
       };
     },
-    [channelTrackOffsets, trackLookup, trackScaleX, trackScaleY, trackScaleZ]
+    [channelTrackOffsets, trackLookup, trackScaleX, trackScaleY]
   );
 
   const { layout, viewState, viewStateRef, updateViewState, resetView } = usePlanarLayout({
     primaryVolume,
     orthogonalViewsEnabled,
+    voxelScale: { x: trackScaleX, y: trackScaleY, z: trackScaleZ },
     containerRef,
     onRegisterReset
   });
@@ -245,8 +246,8 @@ function PlanarViewer({
       const centroid = computeTrackCentroid(followedTrackId, clampedTimeIndex);
       if (centroid) {
         return {
-          x: clamp(centroid.x, 0, Math.max(0, primaryVolume.width - 1)),
-          y: clamp(centroid.y, 0, Math.max(0, primaryVolume.height - 1))
+          x: clamp(centroid.x / trackScaleX, 0, Math.max(0, primaryVolume.width - 1)),
+          y: clamp(centroid.y / trackScaleY, 0, Math.max(0, primaryVolume.height - 1))
         };
       }
     }
@@ -259,7 +260,7 @@ function PlanarViewer({
     }
 
     return fallbackAnchor;
-  }, [clampedTimeIndex, computeTrackCentroid, followedTrackId, hoveredPixel, primaryVolume]);
+  }, [clampedTimeIndex, computeTrackCentroid, followedTrackId, hoveredPixel, primaryVolume, trackScaleX, trackScaleY]);
 
   const { sliceData, xzSliceData, zySliceData, samplePixelValue } = usePlanarSlices({
     layers,
@@ -354,7 +355,13 @@ function PlanarViewer({
     const xyCenterX = originX + layout.xy.centerX;
     const xyCenterY = originY + layout.xy.centerY;
 
-    context.drawImage(xyCanvas, originX + layout.xy.originX, originY + layout.xy.originY);
+    context.drawImage(
+      xyCanvas,
+      originX + layout.xy.originX,
+      originY + layout.xy.originY,
+      layout.xy.width,
+      layout.xy.height
+    );
 
     const xyOriginX = originX + layout.xy.originX;
     const xyOriginY = originY + layout.xy.originY;
@@ -362,7 +369,13 @@ function PlanarViewer({
     if (layout.zy && zyCanvas) {
       const zyCenterX = originX + layout.zy.centerX;
       const zyCenterY = originY + layout.zy.centerY;
-      context.drawImage(zyCanvas, originX + layout.zy.originX, originY + layout.zy.originY);
+      context.drawImage(
+        zyCanvas,
+        originX + layout.zy.originX,
+        originY + layout.zy.originY,
+        layout.zy.width,
+        layout.zy.height
+      );
       context.save();
       context.globalAlpha = 0.4;
       context.beginPath();
@@ -377,7 +390,13 @@ function PlanarViewer({
     if (layout.xz && xzCanvas) {
       const xzCenterX = originX + layout.xz.centerX;
       const xzCenterY = originY + layout.xz.centerY;
-      context.drawImage(xzCanvas, originX + layout.xz.originX, originY + layout.xz.originY);
+      context.drawImage(
+        xzCanvas,
+        originX + layout.xz.originX,
+        originY + layout.xz.originY,
+        layout.xz.width,
+        layout.xz.height
+      );
       context.save();
       context.globalAlpha = 0.4;
       context.beginPath();
@@ -390,13 +409,18 @@ function PlanarViewer({
     }
 
     if (hoveredPixel && layout.xy) {
-      const hoverX = originX + layout.xy.originX + hoveredPixel.x;
-      const hoverY = originY + layout.xy.originY + hoveredPixel.y;
+      const hoverX = originX + layout.xy.originX + hoveredPixel.x * trackScaleX;
+      const hoverY = originY + layout.xy.originY + hoveredPixel.y * trackScaleY;
       context.save();
       const hoverOutlineWidth = Math.max(1, OUTLINE_MIN_WIDTH) / dprScale;
       context.lineWidth = hoverOutlineWidth;
       context.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-      context.strokeRect(hoverX - 0.5, hoverY - 0.5, 1, 1);
+      context.strokeRect(
+        hoverX - 0.5 * trackScaleX,
+        hoverY - 0.5 * trackScaleY,
+        trackScaleX,
+        trackScaleY
+      );
       context.restore();
     }
 

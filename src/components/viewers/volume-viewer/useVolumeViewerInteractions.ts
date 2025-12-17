@@ -9,6 +9,7 @@ export function useVolumeViewerInteractions({
   layersRef,
   resourcesRef,
   hoveredVoxelRef,
+  volumeAnisotropyScaleRef,
   hoverIntensityRef,
   voxelHoverDebugRef,
   setVoxelHoverDebug,
@@ -22,6 +23,7 @@ export function useVolumeViewerInteractions({
     normalizedPosition: THREE.Vector3 | null;
     segmentationLabel: number | null;
   }>;
+  volumeAnisotropyScaleRef: MutableRefObject<{ x: number; y: number; z: number }>;
   hoverIntensityRef: MutableRefObject<HoveredVoxelInfo | null>;
   voxelHoverDebugRef: MutableRefObject<string | null>;
   setVoxelHoverDebug: (value: string | null) => void;
@@ -61,10 +63,14 @@ export function useVolumeViewerInteractions({
         uniforms.u_hoverScale
       ) {
         uniforms.u_hoverPos.value.copy(normalizedPosition);
+        const scale = volumeAnisotropyScaleRef.current;
+        const scaleX = Number.isFinite(scale?.x) && scale.x > 0 ? scale.x : 1;
+        const scaleY = Number.isFinite(scale?.y) && scale.y > 0 ? scale.y : 1;
+        const scaleZ = Number.isFinite(scale?.z) && scale.z > 0 ? scale.z : 1;
         uniforms.u_hoverScale.value.set(
-          resource.dimensions.width,
-          resource.dimensions.height,
-          resource.dimensions.depth,
+          resource.dimensions.width * scaleX,
+          resource.dimensions.height * scaleY,
+          resource.dimensions.depth * scaleZ,
         );
         uniforms.u_hoverRadius.value = HOVER_HIGHLIGHT_RADIUS_VOXELS;
       } else {
@@ -76,7 +82,7 @@ export function useVolumeViewerInteractions({
         }
       }
     }
-  }, [hoveredVoxelRef, layersRef, resourcesRef]);
+  }, [hoveredVoxelRef, layersRef, resourcesRef, volumeAnisotropyScaleRef]);
 
   const areHoverComponentsEqual = useCallback(
     (

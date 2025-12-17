@@ -37,6 +37,7 @@ export type UseVolumeViewerVrParams = {
   volumeRootCenterUnscaledRef: MutableRefObject<THREE.Vector3>;
   volumeRootHalfExtentsRef: MutableRefObject<THREE.Vector3>;
   volumeNormalizationScaleRef: MutableRefObject<number>;
+  volumeAnisotropyScaleRef: MutableRefObject<{ x: number; y: number; z: number }>;
   volumeUserScaleRef: MutableRefObject<number>;
   volumeRootRotatedCenterTempRef: MutableRefObject<THREE.Vector3>;
   volumeStepScaleRef: MutableRefObject<number>;

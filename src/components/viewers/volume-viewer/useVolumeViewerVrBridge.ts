@@ -34,6 +34,7 @@ export type VolumeViewerVrBridgeOptions = {
   volumeRootCenterUnscaledRef: MutableRefObject<THREE.Vector3>;
   volumeRootHalfExtentsRef: MutableRefObject<THREE.Vector3>;
   volumeNormalizationScaleRef: MutableRefObject<number>;
+  volumeAnisotropyScaleRef: MutableRefObject<{ x: number; y: number; z: number }>;
   volumeUserScaleRef: MutableRefObject<number>;
   volumeRootRotatedCenterTempRef: MutableRefObject<THREE.Vector3>;
   volumeStepScaleRef: MutableRefObject<number>;
@@ -97,6 +98,7 @@ export function useVolumeViewerVrBridge(options: VolumeViewerVrBridgeOptions) {
     volumeRootCenterUnscaledRef,
     volumeRootHalfExtentsRef,
     volumeNormalizationScaleRef,
+    volumeAnisotropyScaleRef,
     volumeUserScaleRef,
     volumeRootRotatedCenterTempRef,
     volumeStepScaleRef,
@@ -161,6 +163,7 @@ export function useVolumeViewerVrBridge(options: VolumeViewerVrBridgeOptions) {
             volumeRootCenterUnscaledRef,
             volumeRootHalfExtentsRef,
             volumeNormalizationScaleRef,
+            volumeAnisotropyScaleRef,
             volumeUserScaleRef,
             volumeRootRotatedCenterTempRef,
             volumeStepScaleRef,
@@ -209,6 +212,7 @@ export function useVolumeViewerVrBridge(options: VolumeViewerVrBridgeOptions) {
       volumeRootCenterUnscaledRef,
       volumeRootHalfExtentsRef,
       volumeNormalizationScaleRef,
+      volumeAnisotropyScaleRef,
       volumeUserScaleRef,
       volumeRootRotatedCenterTempRef,
       volumeStepScaleRef,

@@ -10,7 +10,8 @@ export const ORTHOGONAL_GAP = 16;
 
 function createLayout(
   primaryVolume: { width: number; height: number; depth: number } | null,
-  orthogonalViewsEnabled: boolean
+  orthogonalViewsEnabled: boolean,
+  voxelScale: { x: number; y: number; z: number }
 ): PlanarLayout {
   if (!primaryVolume) {
     return {
@@ -23,8 +24,12 @@ function createLayout(
     };
   }
 
-  const xyWidth = primaryVolume.width;
-  const xyHeight = primaryVolume.height;
+  const safeScaleX = Number.isFinite(voxelScale.x) && voxelScale.x > 0 ? voxelScale.x : 1;
+  const safeScaleY = Number.isFinite(voxelScale.y) && voxelScale.y > 0 ? voxelScale.y : 1;
+  const safeScaleZ = Number.isFinite(voxelScale.z) && voxelScale.z > 0 ? voxelScale.z : 1;
+
+  const xyWidth = primaryVolume.width * safeScaleX;
+  const xyHeight = primaryVolume.height * safeScaleY;
 
   const xy: PlanarLayoutView = {
     width: xyWidth,
@@ -46,10 +51,10 @@ function createLayout(
     };
   }
 
-  const xzWidth = primaryVolume.width;
-  const xzHeight = primaryVolume.depth;
-  const zyWidth = primaryVolume.depth;
-  const zyHeight = primaryVolume.height;
+  const xzWidth = primaryVolume.width * safeScaleX;
+  const xzHeight = primaryVolume.depth * safeScaleZ;
+  const zyWidth = primaryVolume.depth * safeScaleZ;
+  const zyHeight = primaryVolume.height * safeScaleY;
 
   return {
     blockWidth: xyWidth + ORTHOGONAL_GAP + zyWidth,
@@ -82,6 +87,7 @@ export function createInitialViewState(): ViewState {
 type UsePlanarLayoutParams = {
   primaryVolume: { width: number; height: number; depth: number } | null;
   orthogonalViewsEnabled: boolean;
+  voxelScale: { x: number; y: number; z: number };
   containerRef: MutableRefObject<HTMLDivElement | null>;
   onRegisterReset: (handler: (() => void) | null) => void;
 };
@@ -89,6 +95,7 @@ type UsePlanarLayoutParams = {
 export function usePlanarLayout({
   primaryVolume,
   orthogonalViewsEnabled,
+  voxelScale,
   containerRef,
   onRegisterReset
 }: UsePlanarLayoutParams) {
@@ -101,8 +108,8 @@ export function usePlanarLayout({
   }, [viewState]);
 
   const layout = useMemo(
-    () => createLayout(primaryVolume, orthogonalViewsEnabled),
-    [orthogonalViewsEnabled, primaryVolume]
+    () => createLayout(primaryVolume, orthogonalViewsEnabled, voxelScale),
+    [orthogonalViewsEnabled, primaryVolume, voxelScale.x, voxelScale.y, voxelScale.z]
   );
 
   const updateViewState = useCallback(

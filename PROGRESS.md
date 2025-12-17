@@ -6,6 +6,7 @@
 - Removed anisotropy resampling from the new preprocess pipeline (render-time scaling remains a follow-up task).
 - Switched the preprocessed dataset format to Zarr v3: preprocessing writes a folder-based Zarr store into OPFS, with an optional “Export to folder while preprocessing” tee for large datasets.
 - Moved preprocessed track CSV rows out of the Zarr root attributes into per-channel payload files under `tracks/` (manifest v3), capping exported floating-point values to 3 decimal places; loader still supports v2 manifests.
+- Switched anisotropy correction to render-time transforms (no volume resampling): volumes + tracks share the same anisotropy-scaled `volumeRootGroup` transform, hover sampling stays in voxel space via inverse transforms, and raymarch step scale is multiplied by `max(scale)/min(scale)` to keep sampling density stable in physical space.
 - Replaced the preprocessed dataset loader with a folder picker (Zarr v3) and removed the ZIP import/export pipeline (including service worker and worker clients).
 - Added playback backpressure + prefetch: autoplay advances only once the next frame’s active volumes are ready, with a small lookahead window.
 - TODO: Apply anisotropy scale at render-time (volume root transform + track alignment) and remove legacy resample paths.
