@@ -20,6 +20,7 @@ This file summarizes the pieces of app state that drive `<FrontPage />` and outl
 - `FrontPageContainer` implements preprocessing:
   - always writes a Zarr v3 store into OPFS
   - optionally “tees” writes to a user-selected folder when “Export to folder while preprocessing” is enabled (exported dataset folder uses the `.zarr` directory naming convention)
+  - when exporting, the app prompts for a parent folder and creates `<exportName>.zarr/` inside it
 
 ## Minimal `FrontPageContainer` prop contract
 
@@ -60,6 +61,8 @@ export type FrontPageContainerProps = {
   onPreprocessExperiment: () => void;
   exportWhilePreprocessing: boolean;
   onExportWhilePreprocessingChange: (value: boolean) => void;
+  exportName: string;
+  onExportNameChange: (value: string) => void;
 
   onLaunchViewer: () => void;
   isLaunchingViewer: boolean;

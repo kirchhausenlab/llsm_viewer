@@ -235,6 +235,7 @@
 
 ## Preprocessed export folder naming
 - Updated preprocessed dataset roots to be created with a `.zarr` suffix (still a directory-based Zarr v3 store) to match common Zarr naming conventions.
+- Changed export UX to pick a parent folder, then create a named `<exportName>.zarr/` subfolder for the Zarr v3 store to avoid manual “new folder” steps.
 
 ## Viewer recording
 - Wired planar and volume viewers to register their canvas elements for recording.

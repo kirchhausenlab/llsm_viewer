@@ -288,6 +288,7 @@
 
 .front-page-actions {
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
   margin-top: 1.25rem;
@@ -347,4 +348,41 @@
 .launch-checkbox input[type='checkbox'] {
   width: 1.05rem;
   height: 1.05rem;
+}
+
+.launch-export-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: min(44rem, 100%);
+}
+
+.launch-export-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.launch-export-name {
+  padding: 0.55rem 0.75rem;
+  min-width: min(22rem, 90vw);
+  border-radius: 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 0.95rem;
+}
+
+.launch-export-name:disabled {
+  opacity: 0.65;
+}
+
+.launch-export-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.7);
 }

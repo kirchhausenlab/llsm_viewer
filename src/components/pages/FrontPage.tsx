@@ -222,6 +222,9 @@ export default function FrontPage({
             preprocessSuccessMessage={launchActions.preprocessSuccessMessage}
             exportWhilePreprocessing={launchActions.exportWhilePreprocessing}
             onExportWhilePreprocessingChange={launchActions.onExportWhilePreprocessingChange}
+            exportName={launchActions.exportName}
+            onExportNameChange={launchActions.onExportNameChange}
+            exportDestinationLabel={launchActions.exportDestinationLabel}
             onLaunchViewer={launchActions.onLaunchViewer}
             isLaunchingViewer={launchActions.isLaunchingViewer}
             launchButtonEnabled={launchActions.launchButtonEnabled}

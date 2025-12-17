@@ -12,11 +12,22 @@ type LaunchActionsProps = {
   preprocessSuccessMessage: string | null;
   exportWhilePreprocessing: boolean;
   onExportWhilePreprocessingChange: (value: boolean) => void;
+  exportName: string;
+  onExportNameChange: (value: string) => void;
+  exportDestinationLabel: string | null;
   onLaunchViewer: () => void;
   isLaunchingViewer: boolean;
   launchButtonEnabled: boolean;
   launchButtonLaunchable: 'true' | 'false';
 };
+
+function ensureZarrDirectoryName(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return 'preprocessed.zarr';
+  }
+  return trimmed.toLowerCase().endsWith('.zarr') ? trimmed : `${trimmed}.zarr`;
+}
 
 const LaunchActions: FC<LaunchActionsProps> = ({
   frontPageMode,
@@ -30,11 +41,19 @@ const LaunchActions: FC<LaunchActionsProps> = ({
   preprocessSuccessMessage,
   exportWhilePreprocessing,
   onExportWhilePreprocessingChange,
+  exportName,
+  onExportNameChange,
+  exportDestinationLabel,
   onLaunchViewer,
   isLaunchingViewer,
   launchButtonEnabled,
   launchButtonLaunchable
 }) => {
+  const exportDirectoryName = ensureZarrDirectoryName(exportName);
+  const exportHint = exportDestinationLabel
+    ? `Exporting to: ${exportDestinationLabel}`
+    : `You’ll be asked to choose the parent folder; we will create ${exportDirectoryName}/ inside it.`;
+
   return (
     <>
       {frontPageMode === 'configuring' && hasGlobalTimepointMismatch ? (
@@ -55,6 +74,30 @@ const LaunchActions: FC<LaunchActionsProps> = ({
         <div className="front-page-actions">
           {frontPageMode === 'configuring' ? (
             <>
+              <div className="launch-export-controls">
+                <div className="launch-export-row">
+                  <label className="launch-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={exportWhilePreprocessing}
+                      disabled={isPreprocessingExperiment || isLaunchingViewer}
+                      onChange={(event) => onExportWhilePreprocessingChange(event.target.checked)}
+                    />
+                    Export to `.zarr` while preprocessing
+                  </label>
+                  {exportWhilePreprocessing ? (
+                    <input
+                      type="text"
+                      className="launch-export-name"
+                      value={exportName}
+                      disabled={isPreprocessingExperiment || isLaunchingViewer}
+                      onChange={(event) => onExportNameChange(event.target.value)}
+                      aria-label="Export dataset name"
+                    />
+                  ) : null}
+                </div>
+                {exportWhilePreprocessing ? <p className="launch-export-hint">{exportHint}</p> : null}
+              </div>
               <button
                 type="button"
                 className="launch-viewer-button"
@@ -64,15 +107,6 @@ const LaunchActions: FC<LaunchActionsProps> = ({
               >
                 {isPreprocessingExperiment ? 'Preprocessing…' : 'Preprocess experiment'}
               </button>
-              <label className="launch-checkbox">
-                <input
-                  type="checkbox"
-                  checked={exportWhilePreprocessing}
-                  disabled={isPreprocessingExperiment || isLaunchingViewer}
-                  onChange={(event) => onExportWhilePreprocessingChange(event.target.checked)}
-                />
-                Export to folder while preprocessing
-              </label>
             </>
           ) : null}
           {frontPageMode === 'preprocessed' ? (

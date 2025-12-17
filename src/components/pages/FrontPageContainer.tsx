@@ -156,6 +156,39 @@ export default function FrontPageContainer({
   const [isPreprocessingExperiment, setIsPreprocessingExperiment] = useState(false);
   const [preprocessSuccessMessage, setPreprocessSuccessMessage] = useState<string | null>(null);
   const [exportWhilePreprocessing, setExportWhilePreprocessing] = useState(false);
+  const [exportName, setExportName] = useState('');
+  const [exportDestinationLabel, setExportDestinationLabel] = useState<string | null>(null);
+
+  const createDefaultExportName = useCallback((): string => {
+    const now = new Date();
+    const stamp = now.toISOString().replace(/[:.]/g, '-');
+    const random = Math.random().toString(16).slice(2, 6);
+    return `llsm-viewer-preprocessed-${stamp}-${random}`;
+  }, []);
+
+  const ensureZarrDirectoryName = useCallback((name: string): string => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      return ensureZarrDirectoryName(createDefaultExportName());
+    }
+    return trimmed.toLowerCase().endsWith('.zarr') ? trimmed : `${trimmed}.zarr`;
+  }, [createDefaultExportName]);
+
+  const handleExportWhilePreprocessingChange = useCallback(
+    (enabled: boolean) => {
+      setExportWhilePreprocessing(enabled);
+      setExportDestinationLabel(null);
+      if (enabled && !exportName.trim()) {
+        setExportName(createDefaultExportName());
+      }
+    },
+    [createDefaultExportName, exportName]
+  );
+
+  const handleExportNameChange = useCallback((value: string) => {
+    setExportName(value);
+    setExportDestinationLabel(null);
+  }, []);
 
   useLayoutEffect(() => {
     onPreprocessedStateChange?.({
@@ -240,7 +273,31 @@ export default function FrontPageContainer({
           throw error;
         }
 
-        const exportStorageHandle = await createDirectoryHandlePreprocessedStorage(directoryHandle);
+        const exportDirectoryName = ensureZarrDirectoryName(exportName);
+        if (/[\\/]/.test(exportDirectoryName)) {
+          showInteractionWarning('Export name must not contain path separators.');
+          return;
+        }
+
+        let exportDirectoryHandle: any;
+        try {
+          await directoryHandle.getDirectoryHandle(exportDirectoryName);
+          showInteractionWarning(`A folder named "${exportDirectoryName}" already exists in the selected location.`);
+          return;
+        } catch (error) {
+          if (error instanceof DOMException && error.name === 'NotFoundError') {
+            // expected
+          } else if (error instanceof Error && /not found/i.test(error.message)) {
+            // expected in some environments
+          } else {
+            throw error;
+          }
+        }
+
+        exportDirectoryHandle = await directoryHandle.getDirectoryHandle(exportDirectoryName, { create: true });
+        setExportDestinationLabel(`${directoryHandle.name}/${exportDirectoryName}/`);
+
+        const exportStorageHandle = await createDirectoryHandlePreprocessedStorage(exportDirectoryHandle);
         storage = {
           async writeFile(path, data) {
             await Promise.all([
@@ -290,7 +347,9 @@ export default function FrontPageContainer({
     canLaunch,
     channels,
     clearDatasetError,
+    ensureZarrDirectoryName,
     experimentDimension,
+    exportName,
     exportWhilePreprocessing,
     isLaunchingViewer,
     isPreprocessingExperiment,
@@ -378,7 +437,10 @@ export default function FrontPageContainer({
     preprocessButtonEnabled: canLaunch,
     preprocessSuccessMessage,
     exportWhilePreprocessing,
-    onExportWhilePreprocessingChange: setExportWhilePreprocessing,
+    onExportWhilePreprocessingChange: handleExportWhilePreprocessingChange,
+    exportName,
+    onExportNameChange: handleExportNameChange,
+    exportDestinationLabel,
     onLaunchViewer,
     isLaunchingViewer,
     launchButtonEnabled,
