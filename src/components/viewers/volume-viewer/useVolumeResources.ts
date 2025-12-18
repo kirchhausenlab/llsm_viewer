@@ -272,16 +272,14 @@ export function useVolumeResources({
 
         let labelTexture: THREE.Data3DTexture | null = null;
         if (layer.isSegmentation && volume.segmentationLabels) {
-          const labelData = new Float32Array(volume.segmentationLabels.length);
-          labelData.set(volume.segmentationLabels);
           labelTexture = new THREE.Data3DTexture(
-            labelData,
+            volume.segmentationLabels,
             volume.width,
             volume.height,
             volume.depth,
           );
-          labelTexture.format = THREE.RedFormat;
-          labelTexture.type = THREE.FloatType;
+          labelTexture.format = THREE.RedIntegerFormat;
+          labelTexture.type = THREE.UnsignedIntType;
           labelTexture.minFilter = THREE.NearestFilter;
           labelTexture.magFilter = THREE.NearestFilter;
           labelTexture.unpackAlignment = 1;
@@ -519,28 +517,25 @@ export function useVolumeResources({
             let labelTexture = resources.labelTexture ?? null;
             const needsLabelTextureRebuild =
               !labelTexture ||
-              !(labelTexture.image?.data instanceof Float32Array) ||
+              !(labelTexture.image?.data instanceof Uint32Array) ||
               labelTexture.image.data.length !== expectedLength;
 
             if (needsLabelTextureRebuild) {
               labelTexture?.dispose();
-              const labelData = new Float32Array(volume.segmentationLabels.length);
-              labelData.set(volume.segmentationLabels);
               labelTexture = new THREE.Data3DTexture(
-                labelData,
+                volume.segmentationLabels,
                 volume.width,
                 volume.height,
                 volume.depth,
               );
-              labelTexture.format = THREE.RedFormat;
-              labelTexture.type = THREE.FloatType;
+              labelTexture.format = THREE.RedIntegerFormat;
+              labelTexture.type = THREE.UnsignedIntType;
               labelTexture.minFilter = THREE.NearestFilter;
               labelTexture.magFilter = THREE.NearestFilter;
               labelTexture.unpackAlignment = 1;
               labelTexture.needsUpdate = true;
             } else if (labelTexture) {
-              const labelData = labelTexture.image.data as Float32Array;
-              labelData.set(volume.segmentationLabels);
+              labelTexture.image.data = volume.segmentationLabels;
               labelTexture.needsUpdate = true;
             }
             resources.labelTexture = labelTexture;
@@ -642,4 +637,3 @@ export function useVolumeResources({
     applyVolumeStepScaleToResources,
   };
 }
-

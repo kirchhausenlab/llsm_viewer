@@ -2,6 +2,7 @@
 
 ## Latest changes
 - Refactored preprocessing/viewing to be storage-backed and streaming: preprocessing writes directly to `PreprocessedStorage` (OPFS primary) and viewer reads volumes on demand via `VolumeProvider` (bounded cache) instead of materializing full movies in RAM.
+- Reduced streaming playback stutter by prefetching a deeper, FPS-aware lookahead window, resizing the volume cache based on active layers, and skipping volume loads for hidden channels; added `VolumeProvider` stats instrumentation and optimized texture uploads (RGB/RGBA fast paths + uint32 segmentation label textures).
 - Implemented the locked normalization policy (“representative global”): pass #1 loads only the middle timepoint per non-segmentation layer for stats; pass #2 preprocesses the full movie using those stats for every timepoint.
 - Removed anisotropy resampling from the new preprocess pipeline (render-time scaling remains a follow-up task).
 - Switched the preprocessed dataset format to Zarr v3: preprocessing writes a folder-based Zarr store into OPFS, with an optional “Export to folder while preprocessing” tee for large datasets.
@@ -9,6 +10,7 @@
 - Switched anisotropy correction to render-time transforms (no volume resampling): volumes + tracks share the same anisotropy-scaled `volumeRootGroup` transform, hover sampling stays in voxel space via inverse transforms, and raymarch step scale is multiplied by `max(scale)/min(scale)` to keep sampling density stable in physical space.
 - Replaced the preprocessed dataset loader with a folder picker (Zarr v3) and removed the ZIP import/export pipeline (including service worker and worker clients).
 - Added playback backpressure + prefetch: autoplay advances only once the next frame’s active volumes are ready, with a small lookahead window.
+- TODO: Consider exposing playback lookahead/cache sizing as a UI knob and/or adding a small GPU texture ring buffer for smoother high-FPS playback on large volumes.
 - TODO: Apply anisotropy scale at render-time (volume root transform + track alignment) and remove legacy resample paths.
 - TODO: Wire preprocess progress/cancel into UI and consider adding a “clear local preprocessed data” option for OPFS.
 - Note: Tests run via `node --import tsx` to avoid tsx IPC socket requirements in restricted environments.

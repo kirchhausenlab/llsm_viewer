@@ -220,6 +220,22 @@ export function useAppRouteState(): AppRouteState {
     });
   }, [preprocessedExperiment]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (!import.meta.env?.DEV) {
+      return;
+    }
+
+    (window as any).__LLSM_VOLUME_PROVIDER__ = volumeProvider;
+    return () => {
+      if ((window as any).__LLSM_VOLUME_PROVIDER__ === volumeProvider) {
+        delete (window as any).__LLSM_VOLUME_PROVIDER__;
+      }
+    };
+  }, [volumeProvider]);
+
   const [currentLayerVolumes, setCurrentLayerVolumes] = useState<Record<string, NormalizedVolume | null>>({});
   const volumeLoadRequestRef = useRef(0);
 
@@ -378,6 +394,61 @@ export function useAppRouteState(): AppRouteState {
     loadedChannelIds
   ]);
 
+  const playbackPrefetchLookahead = useMemo(() => {
+    if (!isPlaying) {
+      return 2;
+    }
+    const minLookahead = 4;
+    const maxLookahead = 12;
+    const requestedFps = Number.isFinite(fps) ? fps : 0;
+    const estimated = Math.ceil(Math.max(requestedFps, 0) / 6) + 3;
+    return Math.min(maxLookahead, Math.max(minLookahead, estimated));
+  }, [fps, isPlaying]);
+
+  const schedulePlaybackPrefetch = useCallback(
+    (baseIndex: number) => {
+      if (!isViewerLaunched || !volumeProvider || volumeTimepointCount <= 1 || playbackLayerKeys.length === 0) {
+        return;
+      }
+
+      const clampedIndex = Math.max(0, Math.min(volumeTimepointCount - 1, baseIndex));
+      const lookahead = Math.min(playbackPrefetchLookahead, Math.max(0, volumeTimepointCount - 1));
+      const layerKeysSnapshot = playbackLayerKeys.slice();
+      const seen = new Set<number>();
+      for (let offset = 0; offset <= lookahead; offset++) {
+        const idx = (clampedIndex + offset) % volumeTimepointCount;
+        if (seen.has(idx)) {
+          continue;
+        }
+        seen.add(idx);
+        void volumeProvider.prefetch(layerKeysSnapshot, idx).catch((error) => {
+          console.warn('Playback prefetch failed', error);
+        });
+      }
+    },
+    [
+      isViewerLaunched,
+      playbackLayerKeys,
+      playbackPrefetchLookahead,
+      volumeProvider,
+      volumeTimepointCount
+    ]
+  );
+
+  useEffect(() => {
+    if (!volumeProvider) {
+      return;
+    }
+    const layerCount = playbackLayerKeys.length;
+    if (layerCount === 0) {
+      volumeProvider.setMaxCachedVolumes(12);
+      return;
+    }
+
+    const desired = Math.max(12, layerCount * (playbackPrefetchLookahead + 3));
+    volumeProvider.setMaxCachedVolumes(desired);
+  }, [playbackLayerKeys.length, playbackPrefetchLookahead, volumeProvider]);
+
   const canAdvancePlaybackToIndex = useCallback(
     (nextIndex: number): boolean => {
       if (!isViewerLaunched || !volumeProvider || volumeTimepointCount <= 1 || playbackLayerKeys.length === 0) {
@@ -388,18 +459,13 @@ export function useAppRouteState(): AppRouteState {
       const ready = playbackLayerKeys.every((layerKey) => volumeProvider.hasVolume(layerKey, clampedIndex));
 
       if (!ready) {
-        void volumeProvider.prefetch(playbackLayerKeys, clampedIndex);
+        schedulePlaybackPrefetch(clampedIndex);
         return false;
       }
 
-      const next1 = (clampedIndex + 1) % volumeTimepointCount;
-      const next2 = (clampedIndex + 2) % volumeTimepointCount;
-      void volumeProvider.prefetch(playbackLayerKeys, next1);
-      void volumeProvider.prefetch(playbackLayerKeys, next2);
-
       return true;
     },
-    [isViewerLaunched, playbackLayerKeys, volumeProvider, volumeTimepointCount]
+    [isViewerLaunched, playbackLayerKeys, schedulePlaybackPrefetch, volumeProvider, volumeTimepointCount]
   );
 
   useEffect(() => {
@@ -407,11 +473,16 @@ export function useAppRouteState(): AppRouteState {
       return;
     }
 
-    const next1 = (selectedIndex + 1) % volumeTimepointCount;
-    const next2 = (selectedIndex + 2) % volumeTimepointCount;
-    void volumeProvider.prefetch(playbackLayerKeys, next1);
-    void volumeProvider.prefetch(playbackLayerKeys, next2);
-  }, [isPlaying, isViewerLaunched, playbackLayerKeys, selectedIndex, volumeProvider, volumeTimepointCount]);
+    schedulePlaybackPrefetch(selectedIndex);
+  }, [
+    isPlaying,
+    isViewerLaunched,
+    playbackLayerKeys,
+    schedulePlaybackPrefetch,
+    selectedIndex,
+    volumeProvider,
+    volumeTimepointCount
+  ]);
 
   const {
     viewerControls,
@@ -858,21 +929,7 @@ export function useAppRouteState(): AppRouteState {
     setBlendingMode((current) => (current === 'additive' ? 'alpha' : 'additive'));
   }, []);
 
-  const activeViewerLayerKeys = useMemo(() => {
-    if (!isViewerLaunched || loadedChannelIds.length === 0) {
-      return [] as string[];
-    }
-
-    const keys: string[] = [];
-    for (const channelId of loadedChannelIds) {
-      const channelLayers = channelLayersMap.get(channelId) ?? [];
-      const selectedLayerKey = channelActiveLayer[channelId] ?? channelLayers[0]?.key ?? null;
-      if (selectedLayerKey) {
-        keys.push(selectedLayerKey);
-      }
-    }
-    return keys;
-  }, [channelActiveLayer, channelLayersMap, isViewerLaunched, loadedChannelIds]);
+  const activeViewerLayerKeys = playbackLayerKeys;
 
   useEffect(() => {
     if (!isViewerLaunched || !volumeProvider) {

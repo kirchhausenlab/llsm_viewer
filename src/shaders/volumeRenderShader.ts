@@ -78,6 +78,7 @@ export const VolumeRenderShader = {
   fragmentShader: /* glsl */ `
     precision highp float;
     precision mediump sampler3D;
+    precision mediump usampler3D;
 
     uniform vec3 u_size;
     uniform int u_renderstyle;
@@ -97,7 +98,7 @@ export const VolumeRenderShader = {
     uniform float u_hoverPulse;
     uniform float u_hoverLabel;
     uniform float u_hoverSegmentationMode;
-    uniform sampler3D u_segmentationLabels;
+    uniform usampler3D u_segmentationLabels;
 
     uniform sampler3D u_data;
     uniform sampler2D u_cmdata;
@@ -356,8 +357,8 @@ export const VolumeRenderShader = {
         float pulse = clamp(u_hoverPulse, 0.0, 1.0);
         bool segmentationHover = u_hoverSegmentationMode > 0.5;
         if (segmentationHover) {
-          float sampleLabel = texture(u_segmentationLabels, max_loc).r;
-          if (abs(sampleLabel - u_hoverLabel) <= 0.5) {
+          uint sampleLabel = texture(u_segmentationLabels, max_loc).r;
+          if (abs(float(sampleLabel) - u_hoverLabel) <= 0.5) {
             color.rgb = mix(color.rgb, vec3(1.0), pulse * 0.6);
           }
         } else if (u_hoverRadius > 0.0) {
