@@ -17,6 +17,18 @@ import type { VolumeResources } from '../VolumeViewer.types';
 import { DESKTOP_VOLUME_STEP_SCALE } from './vr';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
+const FALLBACK_SEGMENTATION_LABEL_TEXTURE = (() => {
+  const texture = new THREE.Data3DTexture(new Uint32Array([0]), 1, 1, 1);
+  texture.format = THREE.RedIntegerFormat;
+  texture.type = THREE.UnsignedIntType;
+  texture.minFilter = THREE.NearestFilter;
+  texture.magFilter = THREE.NearestFilter;
+  texture.unpackAlignment = 1;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  return texture;
+})();
+
 type UseVolumeResourcesParams = {
   layers: import('../VolumeViewer.types').VolumeViewerProps['layers'];
   primaryVolume: NormalizedVolume | null;
@@ -326,7 +338,7 @@ export function useVolumeResources({
           uniforms.u_stepScale.value = volumeStepScaleRef.current;
           uniforms.u_nearestSampling.value = layer.samplingMode === 'nearest' ? 1 : 0;
           if (uniforms.u_segmentationLabels) {
-            uniforms.u_segmentationLabels.value = labelTexture;
+            uniforms.u_segmentationLabels.value = labelTexture ?? FALLBACK_SEGMENTATION_LABEL_TEXTURE;
           }
           if (uniforms.u_additive) {
             uniforms.u_additive.value = isAdditiveBlending ? 1 : 0;
@@ -543,7 +555,7 @@ export function useVolumeResources({
               materialUniforms.u_segmentationLabels.value = labelTexture;
             }
           } else if (materialUniforms.u_segmentationLabels) {
-            materialUniforms.u_segmentationLabels.value = null;
+            materialUniforms.u_segmentationLabels.value = FALLBACK_SEGMENTATION_LABEL_TEXTURE;
             resources.labelTexture = null;
           }
           if (materialUniforms.u_renderstyle) {

@@ -3,6 +3,7 @@
 ## Latest changes
 - Refactored preprocessing/viewing to be storage-backed and streaming: preprocessing writes directly to `PreprocessedStorage` (OPFS primary) and viewer reads volumes on demand via `VolumeProvider` (bounded cache) instead of materializing full movies in RAM.
 - Reduced streaming playback stutter by prefetching a deeper, FPS-aware lookahead window, resizing the volume cache based on active layers, and skipping volume loads for hidden channels; added `VolumeProvider` stats instrumentation and optimized texture uploads (RGB/RGBA fast paths + uint32 segmentation label textures).
+- Fixed a 3D rendering regression when using integer segmentation label textures by always binding a fallback 1×1×1 uint32 3D texture to `u_segmentationLabels` (avoids WebGL sampler/texture-type mismatch errors when no labels are present).
 - Implemented the locked normalization policy (“representative global”): pass #1 loads only the middle timepoint per non-segmentation layer for stats; pass #2 preprocesses the full movie using those stats for every timepoint.
 - Removed anisotropy resampling from the new preprocess pipeline (render-time scaling remains a follow-up task).
 - Switched the preprocessed dataset format to Zarr v3: preprocessing writes a folder-based Zarr store into OPFS, with an optional “Export to folder while preprocessing” tee for large datasets.
