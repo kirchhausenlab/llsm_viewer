@@ -396,14 +396,90 @@ export function useAppRouteState(): AppRouteState {
 
   const playbackPrefetchLookahead = useMemo(() => {
     if (!isPlaying) {
-      return 2;
+      return 1;
     }
-    const minLookahead = 4;
-    const maxLookahead = 12;
+    const minLookahead = 2;
+    const maxLookahead = 8;
     const requestedFps = Number.isFinite(fps) ? fps : 0;
-    const estimated = Math.ceil(Math.max(requestedFps, 0) / 6) + 3;
+    const estimated = Math.ceil(Math.max(requestedFps, 0) / 8) + 2;
     return Math.min(maxLookahead, Math.max(minLookahead, estimated));
   }, [fps, isPlaying]);
+
+  const playbackPrefetchSessionRef = useRef(0);
+  const playbackPrefetchStateRef = useRef({
+    pending: [] as number[],
+    inFlight: new Set<number>(),
+    layerKeys: [] as string[],
+    maxInFlight: 1,
+    drainScheduled: false,
+  });
+
+  useEffect(() => {
+    playbackPrefetchSessionRef.current += 1;
+    const state = playbackPrefetchStateRef.current;
+    state.pending.length = 0;
+    state.inFlight.clear();
+    state.layerKeys = [];
+    state.drainScheduled = false;
+  }, [volumeProvider]);
+
+  useEffect(() => {
+    if (isPlaying) {
+      return;
+    }
+    playbackPrefetchSessionRef.current += 1;
+    const state = playbackPrefetchStateRef.current;
+    state.pending.length = 0;
+    state.inFlight.clear();
+    state.layerKeys = [];
+    state.drainScheduled = false;
+  }, [isPlaying]);
+
+  const drainPlaybackPrefetchQueue = useCallback(() => {
+    if (!volumeProvider) {
+      return;
+    }
+
+    const session = playbackPrefetchSessionRef.current;
+    const state = playbackPrefetchStateRef.current;
+    if (state.drainScheduled) {
+      return;
+    }
+
+    state.drainScheduled = true;
+    queueMicrotask(() => {
+      const nextState = playbackPrefetchStateRef.current;
+      nextState.drainScheduled = false;
+
+      if (!volumeProvider) {
+        return;
+      }
+      if (playbackPrefetchSessionRef.current !== session) {
+        return;
+      }
+
+      while (nextState.inFlight.size < nextState.maxInFlight && nextState.pending.length > 0) {
+        const idx = nextState.pending.shift();
+        if (idx === undefined) {
+          break;
+        }
+        nextState.inFlight.add(idx);
+
+        void volumeProvider
+          .prefetch(nextState.layerKeys, idx)
+          .catch((error) => {
+            console.warn('Playback prefetch failed', error);
+          })
+          .finally(() => {
+            if (playbackPrefetchSessionRef.current !== session) {
+              return;
+            }
+            playbackPrefetchStateRef.current.inFlight.delete(idx);
+            drainPlaybackPrefetchQueue();
+          });
+      }
+    });
+  }, [volumeProvider]);
 
   const schedulePlaybackPrefetch = useCallback(
     (baseIndex: number) => {
@@ -413,20 +489,38 @@ export function useAppRouteState(): AppRouteState {
 
       const clampedIndex = Math.max(0, Math.min(volumeTimepointCount - 1, baseIndex));
       const lookahead = Math.min(playbackPrefetchLookahead, Math.max(0, volumeTimepointCount - 1));
-      const layerKeysSnapshot = playbackLayerKeys.slice();
-      const seen = new Set<number>();
+
+      const maxInFlight = lookahead >= 6 ? 2 : 1;
+      const state = playbackPrefetchStateRef.current;
+      state.layerKeys = playbackLayerKeys;
+      state.maxInFlight = maxInFlight;
+      state.pending.length = 0;
+
       for (let offset = 0; offset <= lookahead; offset++) {
         const idx = (clampedIndex + offset) % volumeTimepointCount;
-        if (seen.has(idx)) {
+        if (state.inFlight.has(idx)) {
           continue;
         }
-        seen.add(idx);
-        void volumeProvider.prefetch(layerKeysSnapshot, idx).catch((error) => {
-          console.warn('Playback prefetch failed', error);
-        });
+
+        let ready = true;
+        for (const layerKey of playbackLayerKeys) {
+          if (!volumeProvider.hasVolume(layerKey, idx)) {
+            ready = false;
+            break;
+          }
+        }
+
+        if (!ready) {
+          state.pending.push(idx);
+        }
+      }
+
+      if (state.pending.length > 0) {
+        drainPlaybackPrefetchQueue();
       }
     },
     [
+      drainPlaybackPrefetchQueue,
       isViewerLaunched,
       playbackLayerKeys,
       playbackPrefetchLookahead,
@@ -441,11 +535,11 @@ export function useAppRouteState(): AppRouteState {
     }
     const layerCount = playbackLayerKeys.length;
     if (layerCount === 0) {
-      volumeProvider.setMaxCachedVolumes(12);
+      volumeProvider.setMaxCachedVolumes(6);
       return;
     }
 
-    const desired = Math.max(12, layerCount * (playbackPrefetchLookahead + 3));
+    const desired = Math.max(6, layerCount * (playbackPrefetchLookahead + 2));
     volumeProvider.setMaxCachedVolumes(desired);
   }, [playbackLayerKeys.length, playbackPrefetchLookahead, volumeProvider]);
 

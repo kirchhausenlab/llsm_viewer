@@ -2,7 +2,7 @@
 
 ## Latest changes
 - Refactored preprocessing/viewing to be storage-backed and streaming: preprocessing writes directly to `PreprocessedStorage` (OPFS primary) and viewer reads volumes on demand via `VolumeProvider` (bounded cache) instead of materializing full movies in RAM.
-- Reduced streaming playback stutter by prefetching a deeper, FPS-aware lookahead window, resizing the volume cache based on active layers, and skipping volume loads for hidden channels; added `VolumeProvider` stats instrumentation and optimized texture uploads (RGBA fast path + uint32 segmentation label textures; RGB falls back to RGBA packing on three@0.161).
+- Reduced streaming playback stutter by pacing playback prefetch (FPS-aware lookahead + concurrency-limited queue) and resizing the volume cache based on active layers, while skipping volume loads for hidden channels; added `VolumeProvider` stats instrumentation and optimized texture uploads (RGBA fast path + uint32 segmentation label textures; RGB falls back to RGBA packing on three@0.161).
 - Fixed a 3D rendering regression when using integer segmentation label textures by always binding a fallback 1×1×1 uint32 3D texture to `u_segmentationLabels` (including hover-interaction updates) so non-seg volumes don’t hit WebGL sampler/texture-type mismatch errors.
 - Fixed 3D rendering for 3-channel volumes: three@0.161 does not export `THREE.RGBFormat` at runtime, so the 3D texture cache now packs RGB into RGBA instead of emitting an invalid format.
 - Implemented the locked normalization policy (“representative global”): pass #1 loads only the middle timepoint per non-segmentation layer for stats; pass #2 preprocesses the full movie using those stats for every timepoint.
