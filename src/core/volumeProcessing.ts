@@ -17,6 +17,11 @@ export type NormalizedVolume = {
    * is already in the [0, 255] range.
    */
   readonly normalized: Uint8Array;
+  /**
+   * Optional precomputed intensity histogram for the normalized bytes, using the
+   * viewer's intensity definition (1ch=R, 2ch=avg(R,G), >=3ch=luminance(R,G,B)).
+   */
+  histogram?: Uint32Array;
   min: number;
   max: number;
   segmentationLabels?: Uint32Array;

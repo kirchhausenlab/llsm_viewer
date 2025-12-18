@@ -2,6 +2,7 @@ import type { NormalizedVolume } from './volumeProcessing';
 import type { PreprocessedLayerManifestEntry, PreprocessedManifest } from '../shared/utils/preprocessedDataset/types';
 import type { PreprocessedStorage } from '../shared/storage/preprocessedStorage';
 import { ensureArrayBuffer } from '../shared/utils/buffer';
+import { decodeUint32ArrayLE, HISTOGRAM_BINS } from '../shared/utils/histogram';
 
 export type VolumeProviderOptions = {
   manifest: PreprocessedManifest;
@@ -212,6 +213,12 @@ export function createVolumeProvider({
       segmentationLabels = new Uint32Array(labelBuffer);
     }
 
+    const histogramDescriptor = layer.layer.zarr.histogram;
+    const histogramChunkPath = `${histogramDescriptor.path}/${createZarrChunkKey(timepoint, histogramDescriptor.shape.length)}`;
+    const histogramBytes = await storage.readFile(histogramChunkPath);
+    stats.bytesRead += histogramBytes.byteLength;
+    const histogram = decodeUint32ArrayLE(histogramBytes, HISTOGRAM_BINS);
+
     const normalized = volumeBytes.byteOffset === 0 && volumeBytes.byteLength === volumeBytes.buffer.byteLength
       ? volumeBytes
       : volumeBytes.slice();
@@ -228,6 +235,7 @@ export function createVolumeProvider({
       channels: layer.layer.channels,
       dataType: layer.layer.dataType,
       normalized,
+      histogram,
       min: layer.layer.normalization?.min ?? 0,
       max: layer.layer.normalization?.max ?? 255,
       ...(segmentationLabels ? { segmentationLabels, segmentationLabelDataType: 'uint32' } : {})

@@ -735,6 +735,7 @@ export function useAppRouteState(): AppRouteState {
         const defaultWindow = DEFAULT_RESET_WINDOW;
         const settings = layerSettings[layer.key] ?? createLayerDefaultSettings(layer.key);
         const isGrayscale = layer.channels === 1;
+        const volume = currentLayerVolumes[layer.key] ?? null;
         return {
           key: layer.key,
           label: layer.label,
@@ -742,7 +743,7 @@ export function useAppRouteState(): AppRouteState {
           isGrayscale,
           isSegmentation: layer.isSegmentation,
           defaultWindow,
-          histogram: null,
+          histogram: volume?.histogram ?? null,
           settings
         };
       });
@@ -761,7 +762,8 @@ export function useAppRouteState(): AppRouteState {
     channelVisibility,
     createLayerDefaultSettings,
     layerSettings,
-    loadedChannelIds
+    loadedChannelIds,
+    currentLayerVolumes
   ]);
 
   const channelTrackOffsets = useMemo(

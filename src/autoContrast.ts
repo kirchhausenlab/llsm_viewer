@@ -1,7 +1,7 @@
 import type { NormalizedVolume } from './core/volumeProcessing';
 import { MIN_WINDOW_WIDTH } from './state/layerSettings';
+import { computeUint8VolumeHistogram, HISTOGRAM_BINS } from './shared/utils/histogram';
 
-const HISTOGRAM_BINS = 256;
 export const HISTOGRAM_FIRST_VALID_BIN = 1;
 const DEFAULT_AUTO_THRESHOLD_DENOMINATOR = 10000;
 const DEFAULT_LOWER_QUANTILE = 0.005;
@@ -27,61 +27,18 @@ type CachedHistogram = {
 
 let histogramCache = new WeakMap<NormalizedVolume, CachedHistogram>();
 
-function computeIntensity(
-  data: Uint8Array,
-  offset: number,
-  channels: number
-): number {
-  const sourceR = data[offset] ?? 0;
-  if (channels <= 1) {
-    return sourceR;
-  }
-
-  const sourceG = data[offset + 1] ?? 0;
-  if (channels === 2) {
-    return Math.round((sourceR + sourceG) * 0.5);
-  }
-
-  const sourceB = data[offset + 2] ?? 0;
-  const luminance = Math.round(sourceR * 0.2126 + sourceG * 0.7152 + sourceB * 0.0722);
-  if (channels === 3) {
-    return luminance;
-  }
-
-  // For RGBA or higher channel counts, derive intensity from RGB only so alpha does not skew
-  // histogram tails or auto windowing.
-  return luminance;
-}
-
 function computeHistogram(volume: NormalizedVolume): CachedHistogram {
-  const { normalized, width, height, depth } = volume;
+  const { width, height, depth } = volume;
   const channels = Math.max(1, volume.channels);
-  const voxelCount = width * height * depth;
-  const expectedLength = voxelCount * channels;
-  const histogram = new Uint32Array(HISTOGRAM_BINS);
-
-  if (normalized.length < expectedLength) {
-    const error = new Error(
-      `Normalized volume length (${normalized.length}) is less than expected (${expectedLength}) for ${width}x${height}x${depth} with ${channels} channel(s).`
-    );
-    console.error(error);
-    throw error;
-  }
-
-  if (voxelCount === 0 || normalized.length === 0) {
-    return { histogram, width, height, depth, channels, length: normalized.length };
-  }
-
-  for (let index = 0, offset = 0; index < voxelCount; index++, offset += channels) {
-    const intensity = computeIntensity(normalized, offset, channels);
-    const clamped = intensity < 0 ? 0 : intensity > 255 ? 255 : intensity;
-    histogram[clamped]++;
-  }
-
-  return { histogram, width, height, depth, channels, length: normalized.length };
+  const histogram = computeUint8VolumeHistogram(volume);
+  return { histogram, width, height, depth, channels, length: volume.normalized.length };
 }
 
 function getCachedHistogram(volume: NormalizedVolume): Uint32Array {
+  if (volume.histogram && volume.histogram.length === HISTOGRAM_BINS) {
+    return volume.histogram;
+  }
+
   const cached = histogramCache.get(volume);
   if (cached) {
     const { width, height, depth, channels, length } = cached;

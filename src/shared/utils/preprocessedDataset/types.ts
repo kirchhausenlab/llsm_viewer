@@ -40,6 +40,7 @@ export type PreprocessedLayerManifestEntry = {
   zarr: {
     data: ZarrArrayDescriptor;
     labels?: ZarrArrayDescriptor;
+    histogram: ZarrArrayDescriptor;
   };
 };
 
@@ -56,41 +57,24 @@ export type PreprocessedTracksDescriptor = {
   decimalPlaces: 3;
 };
 
-export type PreprocessedChannelManifestV2 = PreprocessedChannelManifest & {
-  trackEntries: string[][];
-};
-
-export type PreprocessedChannelManifestV3 = PreprocessedChannelManifest & {
+export type PreprocessedChannelManifestV4 = PreprocessedChannelManifest & {
   tracks: PreprocessedTracksDescriptor | null;
 };
 
-export type PreprocessedManifestV2 = {
+export type PreprocessedManifestV4 = {
   format: 'llsm-viewer-preprocessed';
-  version: 2;
+  version: 4;
   generatedAt: string;
   dataset: {
     movieMode: PreprocessedMovieMode;
     totalVolumeCount: number;
-    channels: PreprocessedChannelManifestV2[];
+    channels: PreprocessedChannelManifestV4[];
     voxelResolution?: VoxelResolutionValues | null;
     anisotropyCorrection?: AnisotropyCorrectionMetadata | null;
   };
 };
 
-export type PreprocessedManifestV3 = {
-  format: 'llsm-viewer-preprocessed';
-  version: 3;
-  generatedAt: string;
-  dataset: {
-    movieMode: PreprocessedMovieMode;
-    totalVolumeCount: number;
-    channels: PreprocessedChannelManifestV3[];
-    voxelResolution?: VoxelResolutionValues | null;
-    anisotropyCorrection?: AnisotropyCorrectionMetadata | null;
-  };
-};
-
-export type PreprocessedManifest = PreprocessedManifestV2 | PreprocessedManifestV3;
+export type PreprocessedManifest = PreprocessedManifestV4;
 
 export type PreprocessedLayerSummary = {
   key: string;

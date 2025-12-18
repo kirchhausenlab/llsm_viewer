@@ -18,7 +18,7 @@ import type {
   PreprocessedChannelSummary,
   PreprocessedLayerManifestEntry,
   PreprocessedManifest,
-  PreprocessedManifestV3,
+  PreprocessedManifestV4,
   PreprocessedMovieMode,
   PreprocessedTracksDescriptor,
   ZarrArrayDescriptor
@@ -26,6 +26,7 @@ import type {
 import { createZarrStoreFromPreprocessedStorage } from '../zarrStore';
 import { buildChannelSummariesFromManifest } from './manifest';
 import { createTracksDescriptor, serializeTrackEntriesToCsvBytes } from './tracks';
+import { computeUint8VolumeHistogram, encodeUint32ArrayLE, HISTOGRAM_BINS } from '../histogram';
 
 export type PreprocessLayerSource = {
   channelId: string;
@@ -78,6 +79,10 @@ function createZarrDataArrayPath(channelId: string, layerKey: string): string {
 
 function createZarrLabelsArrayPath(channelId: string, layerKey: string): string {
   return `channels/${channelId}/${layerKey}/labels`;
+}
+
+function createZarrHistogramArrayPath(channelId: string, layerKey: string): string {
+  return `channels/${channelId}/${layerKey}/histogram`;
 }
 
 function createZarrChunkKey(timepoint: number, rank: number): string {
@@ -363,7 +368,7 @@ export async function preprocessDatasetToStorage({
     }
   }
 
-  const manifestChannels: PreprocessedManifestV3['dataset']['channels'] = [];
+  const manifestChannels: PreprocessedManifestV4['dataset']['channels'] = [];
   const layerManifestByKey = new Map<string, PreprocessedLayerManifestEntry>();
 
   const tracksByChannelId = new Map<string, string[][]>();
@@ -380,6 +385,7 @@ export async function preprocessDatasetToStorage({
 
       const dataArrayPath = createZarrDataArrayPath(layer.channelId, layer.key);
       const labelsArrayPath = layer.isSegmentation ? createZarrLabelsArrayPath(layer.channelId, layer.key) : null;
+      const histogramArrayPath = createZarrHistogramArrayPath(layer.channelId, layer.key);
       const dataShape = [
         expectedTimepoints,
         layerMetadata.depth,
@@ -410,6 +416,13 @@ export async function preprocessDatasetToStorage({
           }
         : undefined;
 
+      const histogramZarr: ZarrArrayDescriptor = {
+        path: histogramArrayPath,
+        shape: [expectedTimepoints, HISTOGRAM_BINS],
+        chunkShape: [1, HISTOGRAM_BINS],
+        dataType: 'uint32'
+      };
+
       const manifestLayer: PreprocessedLayerManifestEntry = {
         key: layer.key,
         label: layer.label,
@@ -426,6 +439,7 @@ export async function preprocessDatasetToStorage({
           : (normalizationByLayerKey.get(layer.key) ?? null),
         zarr: {
           data: dataZarr,
+          histogram: histogramZarr,
           ...(labelsZarr ? { labels: labelsZarr } : {})
         }
       };
@@ -451,9 +465,9 @@ export async function preprocessDatasetToStorage({
   const anisotropyScale = computeAnisotropyScale(voxelResolution);
   const anisotropyCorrection = anisotropyScale ? { scale: anisotropyScale } : null;
 
-  const manifest: PreprocessedManifestV3 = {
+  const manifest: PreprocessedManifestV4 = {
     format: 'llsm-viewer-preprocessed',
-    version: 3,
+    version: 4,
     generatedAt: new Date().toISOString(),
     dataset: {
       movieMode,
@@ -472,7 +486,7 @@ export async function preprocessDatasetToStorage({
   await zarr.create(root, { attributes: { llsmViewerPreprocessed: manifest } });
 
   for (const channel of manifest.dataset.channels) {
-    if (!('tracks' in channel) || !channel.tracks) {
+    if (!channel.tracks) {
       continue;
     }
     const entries = tracksByChannelId.get(channel.id) ?? [];
@@ -500,6 +514,15 @@ export async function preprocessDatasetToStorage({
           fill_value: 0
         });
       }
+
+      const histogram = layer.zarr.histogram;
+      await zarr.create(root.resolve(histogram.path), {
+        shape: histogram.shape,
+        data_type: histogram.dataType,
+        chunk_shape: histogram.chunkShape,
+        codecs: [],
+        fill_value: 0
+      });
     }
   }
 
@@ -514,6 +537,7 @@ export async function preprocessDatasetToStorage({
 
       const dataArrayPath = manifestLayer.zarr.data.path;
       const labelsArrayPath = manifestLayer.zarr.labels?.path ?? null;
+      const histogramArrayPath = manifestLayer.zarr.histogram.path;
 
       if (movieMode === '2d') {
         const depths = layer2dFileDepthsByKey.get(layer.key);
@@ -545,6 +569,15 @@ export async function preprocessDatasetToStorage({
               timepoint,
               rank: manifestLayer.zarr.data.shape.length,
               bytes: normalized.normalized,
+              signal
+            });
+            const histogram = computeUint8VolumeHistogram(normalized);
+            await writeZarrChunk({
+              storage,
+              arrayPath: histogramArrayPath,
+              timepoint,
+              rank: manifestLayer.zarr.histogram.shape.length,
+              bytes: encodeUint32ArrayLE(histogram),
               signal
             });
             if (layer.isSegmentation && normalized.segmentationLabels && labelsArrayPath) {
@@ -599,6 +632,15 @@ export async function preprocessDatasetToStorage({
             timepoint,
             rank: manifestLayer.zarr.data.shape.length,
             bytes: normalized.normalized,
+            signal
+          });
+          const histogram = computeUint8VolumeHistogram(normalized);
+          await writeZarrChunk({
+            storage,
+            arrayPath: histogramArrayPath,
+            timepoint,
+            rank: manifestLayer.zarr.histogram.shape.length,
+            bytes: encodeUint32ArrayLE(histogram),
             signal
           });
           if (layer.isSegmentation && normalized.segmentationLabels && labelsArrayPath) {

@@ -38,6 +38,7 @@ The main responsibilities are:
 - **Preprocessing is mandatory**: raw TIFF decoding happens only during preprocessing.
 - Raw TIFF decoding via `src/loaders/volumeLoader.ts` → worker decode → `VolumePayload`.
 - Streaming preprocessing via `src/shared/utils/preprocessedDataset/preprocess.ts` writes one timepoint at a time into a Zarr v3 store backed by a `PreprocessedStorage` backend (OPFS by default).
+- Preprocessing also writes per-timepoint 256-bin intensity histograms (manifest v4) so the viewer can do auto-windowing and histogram UI without scanning whole volumes at runtime.
 - Core processing (`src/core/volumeProcessing.ts`) handles normalization + segmentation colorization; GPU texture packing is cached via `src/core/textureCache.ts`.
 
 **2. Visualization (2D + 3D)**

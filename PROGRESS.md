@@ -1,6 +1,7 @@
 # Progress
 
 ## Latest changes
+- Precomputed and persisted per-timepoint 256-bin intensity histograms during preprocessing (manifest v4) and load them with each volume at runtime, eliminating full-volume histogram scans in the viewer for auto-windowing and histogram UI/VR panels. Note: this bumps the preprocessed dataset version to 4 (older preprocessed exports will not open).
 - Improved playback smoothness by removing per-timepoint full-volume histogram scans from VR panel state and by avoiding rendering heavy channel-panel UI for inactive tabs; brightness/contrast histograms now compute lazily (idle callback) and use an approximate sampler for large volumes, and they freeze while playback is running.
 - Track CSV loading now treats rows with empty `t,x,y,z` as explicit track breaks: it ends the current segment and starts a new subtrack (`36`, `36-1`, `36-2`, …) while preserving a parent-child chain; UI labels/tooltips reflect the suffixes, and per-track length is derived from point count (ignoring the CSV `track_length` column). Added unit tests for the segmentation logic.
 - Refactored preprocessing/viewing to be storage-backed and streaming: preprocessing writes directly to `PreprocessedStorage` (OPFS primary) and viewer reads volumes on demand via `VolumeProvider` (bounded cache) instead of materializing full movies in RAM.

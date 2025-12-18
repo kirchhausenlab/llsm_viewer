@@ -204,17 +204,18 @@ function BrightnessContrastHistogram({
 
     let cancelled = false;
     const voxelCount = volume.width * volume.height * volume.depth;
-    const compute = () => {
-      if (cancelled) {
-        return;
-      }
+      const compute = () => {
+        if (cancelled) {
+          return;
+        }
       const next =
-        voxelCount <= FULL_HISTOGRAM_MAX_VOXELS ? getVolumeHistogram(volume) : computeApproxHistogram(volume);
-      if (cancelled) {
-        return;
-      }
-      setHistogram(next);
-    };
+        volume.histogram ??
+        (voxelCount <= FULL_HISTOGRAM_MAX_VOXELS ? getVolumeHistogram(volume) : computeApproxHistogram(volume));
+        if (cancelled) {
+          return;
+        }
+        setHistogram(next);
+      };
 
     let idleHandle: number | null = null;
     const requestIdle = (globalThis as unknown as { requestIdleCallback?: unknown }).requestIdleCallback;

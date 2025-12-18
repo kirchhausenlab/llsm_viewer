@@ -1,4 +1,9 @@
-import type { PreprocessedChannelSummary, PreprocessedLayerManifestEntry, PreprocessedLayerSummary, PreprocessedManifest } from './types';
+import type {
+  PreprocessedChannelSummary,
+  PreprocessedLayerManifestEntry,
+  PreprocessedLayerSummary,
+  PreprocessedManifest
+} from './types';
 
 function buildLayerSummaryFromManifest(layer: PreprocessedLayerManifestEntry): PreprocessedLayerSummary {
   return {
@@ -18,15 +23,12 @@ function buildLayerSummaryFromManifest(layer: PreprocessedLayerManifestEntry): P
 
 export function buildChannelSummariesFromManifest(
   manifest: PreprocessedManifest,
-  trackEntriesByChannelId?: Map<string, string[][]>
+  trackEntriesByChannelId: Map<string, string[][]>
 ): PreprocessedChannelSummary[] {
   return manifest.dataset.channels.map((channel) => ({
     id: channel.id,
     name: channel.name,
-    trackEntries:
-      'trackEntries' in channel
-        ? channel.trackEntries
-        : (trackEntriesByChannelId?.get(channel.id) ?? []),
+    trackEntries: trackEntriesByChannelId.get(channel.id) ?? [],
     layers: channel.layers.map(buildLayerSummaryFromManifest)
   }));
 }
