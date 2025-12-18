@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import * as THREE from 'three';
 import type { MutableRefObject } from 'react';
 import { HOVER_HIGHLIGHT_RADIUS_VOXELS } from './rendering';
+import { FALLBACK_SEGMENTATION_LABEL_TEXTURE } from './fallbackTextures';
 import type { HoveredVoxelInfo } from '../../../types/hover';
 import type { VolumeResources, VolumeViewerProps } from '../VolumeViewer.types';
 
@@ -53,7 +54,8 @@ export function useVolumeViewerInteractions({
         uniforms.u_hoverLabel.value = hasHoverLabel ? (segmentationLabel as number) : 0;
       }
       if (uniforms.u_segmentationLabels) {
-        uniforms.u_segmentationLabels.value = resource.labelTexture ?? null;
+        uniforms.u_segmentationLabels.value =
+          resource.labelTexture ?? FALLBACK_SEGMENTATION_LABEL_TEXTURE;
       }
       if (
         isActive &&
