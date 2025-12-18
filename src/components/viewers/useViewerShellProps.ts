@@ -486,6 +486,7 @@ export function useViewerShellProps({
       onStopRecording
     },
     channelsPanel: {
+      isPlaying,
       loadedChannelIds,
       channelNameMap,
       channelVisibility,

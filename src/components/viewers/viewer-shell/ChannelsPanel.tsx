@@ -18,6 +18,7 @@ export type ChannelsPanelWindowProps = ChannelsPanelProps & {
 
 export default function ChannelsPanel({
   layout,
+  isPlaying,
   loadedChannelIds,
   channelNameMap,
   channelVisibility,
@@ -142,30 +143,36 @@ export default function ChannelsPanel({
                   hidden={!isActive}
                   style={channelPanelStyle}
                 >
-                  {channelLayers.length > 1 ? (
-                    <div className="channel-layer-selector" role="radiogroup" aria-label={`${channelNameMap.get(channelId) ?? 'Channel'} volume`}>
-                      {channelLayers.map((layer) => {
-                        const isSelected = Boolean(selectedLayer && selectedLayer.key === layer.key);
-                        const inputId = `channel-${channelId}-layer-${layer.key}`;
-                        return (
-                          <label key={layer.key} className="channel-layer-option" htmlFor={inputId}>
-                            <input
-                              type="radio"
-                              id={inputId}
-                              name={`channel-layer-${channelId}`}
-                              checked={isSelected}
-                              onChange={() => onChannelLayerSelect(channelId, layer.key)}
-                            />
-                            <span>{layer.label}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  ) : channelLayers.length === 0 ? (
-                    <p className="channel-empty-hint">No volume available for this channel.</p>
-                  ) : null}
-                  {selectedLayer ? (
+                  {isActive ? (
                     <>
+                      {channelLayers.length > 1 ? (
+                        <div
+                          className="channel-layer-selector"
+                          role="radiogroup"
+                          aria-label={`${channelNameMap.get(channelId) ?? 'Channel'} volume`}
+                        >
+                          {channelLayers.map((layer) => {
+                            const isSelected = Boolean(selectedLayer && selectedLayer.key === layer.key);
+                            const inputId = `channel-${channelId}-layer-${layer.key}`;
+                            return (
+                              <label key={layer.key} className="channel-layer-option" htmlFor={inputId}>
+                                <input
+                                  type="radio"
+                                  id={inputId}
+                                  name={`channel-layer-${channelId}`}
+                                  checked={isSelected}
+                                  onChange={() => onChannelLayerSelect(channelId, layer.key)}
+                                />
+                                <span>{layer.label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      ) : channelLayers.length === 0 ? (
+                        <p className="channel-empty-hint">No volume available for this channel.</p>
+                      ) : null}
+                      {selectedLayer ? (
+                        <>
                       <div className="channel-primary-actions">
                         <div className="channel-primary-actions-row">
                           <button
@@ -199,6 +206,7 @@ export default function ChannelsPanel({
                       <BrightnessContrastHistogram
                         className="channel-histogram"
                         volume={currentVolume}
+                        isPlaying={isPlaying}
                         windowMin={settings.windowMin}
                         windowMax={settings.windowMax}
                         defaultMin={DEFAULT_WINDOW_MIN}
@@ -342,6 +350,8 @@ export default function ChannelsPanel({
                             />
                           </label>
                         </div>
+                      ) : null}
+                        </>
                       ) : null}
                     </>
                   ) : null}

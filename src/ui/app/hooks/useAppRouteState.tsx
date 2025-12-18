@@ -12,7 +12,6 @@ import { DEFAULT_WINDOW_MAX, DEFAULT_WINDOW_MIN } from '../../../state/layerSett
 import { deriveChannelTrackOffsets } from '../../../state/channelTrackOffsets';
 import type { FollowedVoxelTarget } from '../../../types/follow';
 import type { HoveredVoxelInfo } from '../../../types/hover';
-import { getVolumeHistogram } from '../../../autoContrast';
 import { computeTrackSummary } from '../../../shared/utils/trackSummary';
 import { type ExperimentDimension } from '../../../hooks/useVoxelResolution';
 import type { DatasetErrorContext } from '../../../hooks/useDatasetErrors';
@@ -735,9 +734,7 @@ export function useAppRouteState(): AppRouteState {
       const layersInfo = channelLayers.map((layer) => {
         const defaultWindow = DEFAULT_RESET_WINDOW;
         const settings = layerSettings[layer.key] ?? createLayerDefaultSettings(layer.key);
-        const cachedVolume = currentLayerVolumes[layer.key] ?? null;
         const isGrayscale = layer.channels === 1;
-        const histogram = cachedVolume ? getVolumeHistogram(cachedVolume) : null;
         return {
           key: layer.key,
           label: layer.label,
@@ -745,7 +742,7 @@ export function useAppRouteState(): AppRouteState {
           isGrayscale,
           isSegmentation: layer.isSegmentation,
           defaultWindow,
-          histogram,
+          histogram: null,
           settings
         };
       });
@@ -763,7 +760,6 @@ export function useAppRouteState(): AppRouteState {
     channelNameMap,
     channelVisibility,
     createLayerDefaultSettings,
-    currentLayerVolumes,
     layerSettings,
     loadedChannelIds
   ]);

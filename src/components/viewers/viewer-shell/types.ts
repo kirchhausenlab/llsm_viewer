@@ -81,6 +81,7 @@ export type ChannelPanelStyle = (CSSProperties & { '--channel-slider-color'?: st
   Record<string, string | number | undefined>;
 
 export type ChannelsPanelProps = {
+  isPlaying: boolean;
   loadedChannelIds: string[];
   channelNameMap: Map<string, string>;
   channelVisibility: Record<string, boolean>;

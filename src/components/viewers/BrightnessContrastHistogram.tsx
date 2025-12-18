@@ -1,10 +1,13 @@
-import { useMemo, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { getVolumeHistogram, HISTOGRAM_FIRST_VALID_BIN } from '../../autoContrast';
 import type { NormalizedVolume } from '../../core/volumeProcessing';
 import { applyAlphaToHex } from '../../shared/utils/appHelpers';
 
 const HISTOGRAM_WIDTH = 255;
 const HISTOGRAM_HEIGHT = 100;
+const HISTOGRAM_BINS = 256;
+const FULL_HISTOGRAM_MAX_VOXELS = 250_000;
+const MAX_APPROX_SAMPLES = 250_000;
 
 const clamp = (value: number, min: number, max: number): number => {
   if (value < min) {
@@ -18,6 +21,7 @@ const clamp = (value: number, min: number, max: number): number => {
 
 type BrightnessContrastHistogramProps = {
   volume: NormalizedVolume | null;
+  isPlaying?: boolean;
   windowMin: number;
   windowMax: number;
   defaultMin: number;
@@ -31,6 +35,53 @@ type HistogramShape = {
   path: string;
   isEmpty: boolean;
 };
+
+function computeApproxHistogram(volume: NormalizedVolume): Uint32Array {
+  const { normalized, width, height, depth } = volume;
+  const channels = Math.max(1, volume.channels);
+  const voxelCount = width * height * depth;
+  const histogram = new Uint32Array(HISTOGRAM_BINS);
+
+  if (voxelCount === 0 || normalized.length === 0) {
+    return histogram;
+  }
+
+  const expectedLength = voxelCount * channels;
+  if (normalized.length < expectedLength) {
+    return histogram;
+  }
+
+  const stride = Math.max(1, Math.ceil(voxelCount / MAX_APPROX_SAMPLES));
+
+  if (channels === 1) {
+    for (let index = 0; index < voxelCount; index += stride) {
+      histogram[normalized[index] ?? 0] += 1;
+    }
+    return histogram;
+  }
+
+  if (channels === 2) {
+    for (let index = 0; index < voxelCount; index += stride) {
+      const offset = index * 2;
+      const r = normalized[offset] ?? 0;
+      const g = normalized[offset + 1] ?? 0;
+      histogram[Math.round((r + g) * 0.5)] += 1;
+    }
+    return histogram;
+  }
+
+  for (let index = 0; index < voxelCount; index += stride) {
+    const offset = index * channels;
+    const r = normalized[offset] ?? 0;
+    const g = normalized[offset + 1] ?? 0;
+    const b = normalized[offset + 2] ?? 0;
+    const luminance = Math.round(r * 0.2126 + g * 0.7152 + b * 0.0722);
+    const clamped = luminance < 0 ? 0 : luminance > 255 ? 255 : luminance;
+    histogram[clamped] += 1;
+  }
+
+  return histogram;
+}
 
 const createHistogramPath = (histogram: Uint32Array | null): HistogramShape => {
   if (!histogram || histogram.length === 0) {
@@ -122,6 +173,7 @@ const createMappingPath = (
 
 function BrightnessContrastHistogram({
   volume,
+  isPlaying = false,
   windowMin,
   windowMax,
   defaultMin,
@@ -130,7 +182,58 @@ function BrightnessContrastHistogram({
   className,
   tintColor
 }: BrightnessContrastHistogramProps) {
-  const histogram = volume ? getVolumeHistogram(volume) : null;
+  const [histogram, setHistogram] = useState<Uint32Array | null>(null);
+  const lastVolumeRef = useRef<NormalizedVolume | null>(null);
+
+  useEffect(() => {
+    if (!volume) {
+      lastVolumeRef.current = null;
+      setHistogram(null);
+      return;
+    }
+
+    if (isPlaying) {
+      return;
+    }
+
+    if (lastVolumeRef.current === volume) {
+      return;
+    }
+
+    lastVolumeRef.current = volume;
+
+    let cancelled = false;
+    const voxelCount = volume.width * volume.height * volume.depth;
+    const compute = () => {
+      if (cancelled) {
+        return;
+      }
+      const next =
+        voxelCount <= FULL_HISTOGRAM_MAX_VOXELS ? getVolumeHistogram(volume) : computeApproxHistogram(volume);
+      if (cancelled) {
+        return;
+      }
+      setHistogram(next);
+    };
+
+    let idleHandle: number | null = null;
+    const requestIdle = (globalThis as unknown as { requestIdleCallback?: unknown }).requestIdleCallback;
+    const cancelIdle = (globalThis as unknown as { cancelIdleCallback?: unknown }).cancelIdleCallback;
+    if (typeof requestIdle === 'function') {
+      idleHandle = (requestIdle as (cb: () => void) => number)(compute);
+    } else if (typeof globalThis.setTimeout === 'function') {
+      globalThis.setTimeout(compute, 0);
+    } else {
+      compute();
+    }
+
+    return () => {
+      cancelled = true;
+      if (idleHandle !== null && typeof cancelIdle === 'function') {
+        (cancelIdle as (handle: number) => void)(idleHandle);
+      }
+    };
+  }, [isPlaying, volume]);
 
   const histogramShape = useMemo(() => createHistogramPath(histogram), [histogram]);
 
