@@ -27,6 +27,7 @@ import { useLayerControls } from './useLayerControls';
 import { useViewerModePlayback } from './useViewerModePlayback';
 import { useWindowLayout } from './useWindowLayout';
 import { WARNING_WINDOW_WIDTH, WINDOW_MARGIN } from '../../../shared/utils/windowLayout';
+import { getTrackPlaybackIndexWindow } from '../../../shared/utils';
 
 const DEFAULT_RESET_WINDOW = { windowMin: DEFAULT_WINDOW_MIN, windowMax: DEFAULT_WINDOW_MAX };
 
@@ -562,6 +563,14 @@ export function useAppRouteState(): AppRouteState {
     [isViewerLaunched, playbackLayerKeys, schedulePlaybackPrefetch, volumeProvider, volumeTimepointCount]
   );
 
+  const followedTrackPlaybackWindow = useMemo(() => {
+    if (followedTrackId === null) {
+      return null;
+    }
+    const track = trackLookup.get(followedTrackId) ?? null;
+    return getTrackPlaybackIndexWindow(track, volumeTimepointCount);
+  }, [followedTrackId, trackLookup, volumeTimepointCount]);
+
   useEffect(() => {
     if (!isViewerLaunched || !isPlaying || !volumeProvider || volumeTimepointCount <= 1 || playbackLayerKeys.length === 0) {
       return;
@@ -600,7 +609,8 @@ export function useAppRouteState(): AppRouteState {
     onViewerModeChange: resetHoveredVoxel,
     volumeTimepointCount,
     isLoading,
-    canAdvancePlayback: canAdvancePlaybackToIndex
+    canAdvancePlayback: canAdvancePlaybackToIndex,
+    playbackWindow: followedTrackPlaybackWindow
   });
 
   const [isRecording, setIsRecording] = useState(false);

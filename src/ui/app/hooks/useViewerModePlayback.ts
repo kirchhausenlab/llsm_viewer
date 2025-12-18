@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { useViewerControls, useViewerPlayback, type ViewerMode, type ViewerPlaybackHook } from '../../../hooks/viewer';
 import type { ExperimentDimension } from '../../../hooks/useVoxelResolution';
+import type { PlaybackIndexWindow } from '../../../shared/utils';
+import { computeLoopedNextTimeIndex, snapTimeIndexToWindow } from '../../../shared/utils';
 
 type UseViewerModePlaybackParams = {
   experimentDimension: ExperimentDimension;
@@ -14,6 +16,7 @@ type UseViewerModePlaybackParams = {
   isLoading: boolean;
   playback?: ViewerPlaybackHook;
   canAdvancePlayback?: (nextIndex: number) => boolean;
+  playbackWindow?: PlaybackIndexWindow | null;
 };
 
 export function useViewerModePlayback({
@@ -26,7 +29,8 @@ export function useViewerModePlayback({
   volumeTimepointCount,
   isLoading,
   playback: providedPlayback,
-  canAdvancePlayback
+  canAdvancePlayback,
+  playbackWindow
 }: UseViewerModePlaybackParams) {
   const playback = providedPlayback ?? useViewerPlayback();
   const selectedIndexRef = useRef(playback.selectedIndex);
@@ -34,6 +38,17 @@ export function useViewerModePlayback({
   useEffect(() => {
     selectedIndexRef.current = playback.selectedIndex;
   }, [playback.selectedIndex]);
+
+  useEffect(() => {
+    if (volumeTimepointCount <= 0) {
+      return;
+    }
+    if (!playbackWindow) {
+      return;
+    }
+
+    playback.setSelectedIndex((prev) => snapTimeIndexToWindow(prev, volumeTimepointCount, playbackWindow));
+  }, [playback, playbackWindow, volumeTimepointCount]);
 
   const viewerControls = useViewerControls({
     playback,
@@ -61,26 +76,33 @@ export function useViewerModePlayback({
         if (volumeTimepointCount === 0) {
           return prev;
         }
-        const clamped = Math.max(0, Math.min(volumeTimepointCount - 1, nextIndex));
-        return clamped;
+        return snapTimeIndexToWindow(nextIndex, volumeTimepointCount, playbackWindow);
       });
     },
-    [playback, volumeTimepointCount]
+    [playback, playbackWindow, volumeTimepointCount]
   );
 
   const handleJumpToStart = useCallback(() => {
     if (volumeTimepointCount === 0) {
       return;
     }
-    handleTimeIndexChange(0);
-  }, [handleTimeIndexChange, volumeTimepointCount]);
+    if (playbackWindow) {
+      handleTimeIndexChange(playbackWindow.minIndex);
+    } else {
+      handleTimeIndexChange(0);
+    }
+  }, [handleTimeIndexChange, playbackWindow, volumeTimepointCount]);
 
   const handleJumpToEnd = useCallback(() => {
     if (volumeTimepointCount === 0) {
       return;
     }
-    handleTimeIndexChange(volumeTimepointCount - 1);
-  }, [handleTimeIndexChange, volumeTimepointCount]);
+    if (playbackWindow) {
+      handleTimeIndexChange(playbackWindow.maxIndex);
+    } else {
+      handleTimeIndexChange(volumeTimepointCount - 1);
+    }
+  }, [handleTimeIndexChange, playbackWindow, volumeTimepointCount]);
 
   useEffect(() => {
     onViewerModeChange?.(viewerControls.viewerMode);
@@ -124,10 +146,11 @@ export function useViewerModePlayback({
           accumulator = 0;
           break;
         }
-
-        const maxIndex = Math.max(0, volumeTimepointCount - 1);
-        const currentIndex = Math.min(Math.max(selectedIndexRef.current, 0), maxIndex);
-        const nextIndex = currentIndex >= maxIndex ? 0 : currentIndex + 1;
+        const nextIndex = computeLoopedNextTimeIndex(selectedIndexRef.current, volumeTimepointCount, playbackWindow);
+        if (nextIndex === selectedIndexRef.current) {
+          accumulator = 0;
+          break;
+        }
 
         if (canAdvancePlayback && !canAdvancePlayback(nextIndex)) {
           accumulator = 0;
@@ -157,7 +180,8 @@ export function useViewerModePlayback({
     playback.fps,
     playback.isPlaying,
     viewerControls.viewerMode,
-    volumeTimepointCount
+    volumeTimepointCount,
+    playbackWindow
   ]);
 
   const playbackLabel = useMemo(() => {

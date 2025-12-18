@@ -131,4 +131,58 @@ console.log('Starting usePlaybackControls tests');
   assert.strictEqual(playbackState.timeIndex, 0);
 })();
 
+(() => {
+  const onTimeIndexChangeCalls: number[] = [];
+  const playbackState: PlaybackState = {
+    isPlaying: true,
+    playbackDisabled: false,
+    playbackLabel: '20 / 50',
+    fps: VR_PLAYBACK_MIN_FPS,
+    timeIndex: 19,
+    totalTimepoints: 50,
+    onTogglePlayback: () => {},
+    onTimeIndexChange: (index) => onTimeIndexChangeCalls.push(index),
+    onFpsChange: () => {},
+  };
+
+  const playbackLoopState: PlaybackLoopState = {
+    lastTimestamp: null,
+    accumulator: 0,
+  };
+
+  const vrHoverState: VrHoverState = {
+    playbackSliderActive: false,
+    hoverTrackIds: [],
+    hoverUiTarget: null,
+  };
+
+  const hook = renderHook(() =>
+    usePlaybackControls({
+      isPlaying: playbackState.isPlaying,
+      playbackDisabled: playbackState.playbackDisabled,
+      playbackLabel: playbackState.playbackLabel,
+      fps: playbackState.fps,
+      timeIndex: playbackState.timeIndex,
+      totalTimepoints: playbackState.totalTimepoints,
+      onTogglePlayback: playbackState.onTogglePlayback,
+      onTimeIndexChange: playbackState.onTimeIndexChange,
+      onFpsChange: playbackState.onFpsChange,
+      playbackWindow: { minIndex: 4, maxIndex: 19 },
+    }),
+  );
+
+  hook.result.registerPlaybackRefs({
+    playbackStateRef: { current: playbackState },
+    playbackLoopRef: { current: playbackLoopState },
+    vrHoverStateRef: { current: vrHoverState },
+  });
+
+  hook.result.advancePlaybackFrame(0);
+  hook.result.advancePlaybackFrame(Math.ceil(1000 / VR_PLAYBACK_MIN_FPS) + 1);
+
+  assert.strictEqual(playbackState.timeIndex, 4);
+  assert.strictEqual(onTimeIndexChangeCalls.length, 1);
+  assert.strictEqual(onTimeIndexChangeCalls[0], 4);
+})();
+
 console.log('usePlaybackControls tests passed');

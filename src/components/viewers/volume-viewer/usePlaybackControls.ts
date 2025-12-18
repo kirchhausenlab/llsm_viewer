@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 
+import type { PlaybackIndexWindow } from '../../../shared/utils';
+import { computeLoopedNextTimeIndex, snapTimeIndexToWindow } from '../../../shared/utils';
 import { VR_PLAYBACK_MAX_FPS, VR_PLAYBACK_MIN_FPS } from './vr';
 import type { PlaybackLoopState, PlaybackState, VrHoverState } from './vr';
 
@@ -14,6 +16,7 @@ type UsePlaybackControlsParams = {
   onTogglePlayback: () => void;
   onTimeIndexChange: (nextIndex: number) => void;
   canAdvancePlayback?: (nextIndex: number) => boolean;
+  playbackWindow?: PlaybackIndexWindow | null;
   onFpsChange: (value: number) => void;
 };
 
@@ -35,10 +38,12 @@ export function usePlaybackControls({
   onTogglePlayback,
   onTimeIndexChange,
   canAdvancePlayback,
+  playbackWindow,
   onFpsChange,
 }: UsePlaybackControlsParams) {
   const timeIndexRef = useRef(0);
   const canAdvancePlaybackRef = useRef<((nextIndex: number) => boolean) | null>(null);
+  const playbackWindowRef = useRef<PlaybackIndexWindow | null>(null);
   const playbackState = useMemo(
     () => ({
       isPlaying,
@@ -65,8 +70,8 @@ export function usePlaybackControls({
   );
 
   const clampedTimeIndex = useMemo(
-    () => (totalTimepoints === 0 ? 0 : Math.min(timeIndex, totalTimepoints - 1)),
-    [timeIndex, totalTimepoints],
+    () => snapTimeIndexToWindow(timeIndex, totalTimepoints, playbackWindow),
+    [playbackWindow, timeIndex, totalTimepoints],
   );
 
   useEffect(() => {
@@ -76,6 +81,10 @@ export function usePlaybackControls({
   useEffect(() => {
     canAdvancePlaybackRef.current = canAdvancePlayback ?? null;
   }, [canAdvancePlayback]);
+
+  useEffect(() => {
+    playbackWindowRef.current = playbackWindow ?? null;
+  }, [playbackWindow]);
 
   const playbackStateRefRef = useRef<MutableRefObject<PlaybackState> | null>(null);
   const playbackLoopRefRef = useRef<MutableRefObject<PlaybackLoopState> | null>(null);
@@ -164,14 +173,14 @@ export function usePlaybackControls({
             playbackLoopState.accumulator += delta;
             playbackLoopState.lastTimestamp = timestamp;
 
-            const maxIndex = Math.max(0, playbackStateValue.totalTimepoints - 1);
             let didAdvance = false;
 
             while (playbackLoopState.accumulator >= frameDuration) {
-              let nextIndex = playbackStateValue.timeIndex + 1;
-              if (nextIndex > maxIndex) {
-                nextIndex = 0;
-              }
+              const nextIndex = computeLoopedNextTimeIndex(
+                playbackStateValue.timeIndex,
+                playbackStateValue.totalTimepoints,
+                playbackWindowRef.current,
+              );
               if (nextIndex === playbackStateValue.timeIndex) {
                 playbackLoopState.accumulator = 0;
                 break;

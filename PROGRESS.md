@@ -248,3 +248,7 @@
 - Wired planar and volume viewers to register their canvas elements for recording.
 - Added ViewerShell-managed recording that captures the active canvas stream at the playback FPS, downloads recordings with timestamps, and stops cleanly on mode changes or unmount.
 - Stabilized the recording stop effect so recordings only stop on viewer mode changes or missing capture targets rather than immediately after starting.
+
+## Track-follow playback window lock
+- When a track is followed, time changes (slider, buttons, playback) snap to the track's `[ti, tf]` time index bounds and playback loops within that window.
+- Implemented the windowing logic in shared utilities and applied it to both desktop playback (2D mode RAF loop) and VR playback advancement.

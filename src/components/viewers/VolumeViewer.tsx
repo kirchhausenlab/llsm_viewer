@@ -28,6 +28,7 @@ import { useTrackTooltip } from './volume-viewer/useTrackTooltip';
 import { useVolumeViewerState } from './volume-viewer/useVolumeViewerState';
 import { useVolumeViewerDataState, useVolumeViewerResources } from './volume-viewer/useVolumeViewerData';
 import { useVolumeViewerInteractions } from './volume-viewer/useVolumeViewerInteractions';
+import { getTrackPlaybackIndexWindow } from '../../shared/utils';
 
 function VolumeViewer({
   layers,
@@ -210,6 +211,14 @@ function VolumeViewer({
     trackFollowRequestCallbackRef.current?.(trackId);
   }, []);
 
+  const playbackWindow = useMemo(() => {
+    if (!followedTrackId) {
+      return null;
+    }
+    const track = tracks.find((entry) => entry.id === followedTrackId) ?? null;
+    return getTrackPlaybackIndexWindow(track, totalTimepoints);
+  }, [followedTrackId, totalTimepoints, tracks]);
+
   const {
     playbackState,
     clampedTimeIndex,
@@ -226,6 +235,7 @@ function VolumeViewer({
     onTogglePlayback,
     onTimeIndexChange,
     canAdvancePlayback,
+    playbackWindow,
     onFpsChange,
   });
 
