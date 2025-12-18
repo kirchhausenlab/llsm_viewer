@@ -10,6 +10,7 @@ import './useDatasetErrors.test.ts';
 import './usePlaybackControls.test.ts';
 import './useTrackRendering.test.ts';
 import './useVolumeResources.test.ts';
+import './textureCache.test.ts';
 import './vrInputMath.test.ts';
 import './ViewerShellContainer.test.ts';
 import './app/hooks/useChannelEditing.test.ts';
