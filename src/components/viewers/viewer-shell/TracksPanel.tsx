@@ -160,7 +160,11 @@ export default function TracksPanel({
                 if (orderMode === 'length') {
                   return b.points.length - a.points.length;
                 }
-                return a.trackNumber - b.trackNumber;
+                const idOrder = a.trackNumber - b.trackNumber;
+                if (idOrder !== 0) {
+                  return idOrder;
+                }
+                return (a.segmentIndex ?? 0) - (b.segmentIndex ?? 0);
               });
 
               return (
@@ -306,14 +310,14 @@ export default function TracksPanel({
                               <div
                                 key={track.id}
                                 className={itemClassName}
-                                title={`${track.channelName} · Track #${track.trackNumber}`}
+                                title={`${track.channelName} · Track #${track.displayTrackNumber ?? String(track.trackNumber)}`}
                               >
                                 <div className="track-toggle">
                                   <input
                                     type="checkbox"
                                     checked={isChecked}
                                     onChange={() => onTrackVisibilityToggle(track.id)}
-                                    aria-label={`Toggle visibility for Track #${track.trackNumber}`}
+                                    aria-label={`Toggle visibility for Track #${track.displayTrackNumber ?? String(track.trackNumber)}`}
                                   />
                                 </div>
                                 <button
@@ -324,7 +328,7 @@ export default function TracksPanel({
                                 >
                                   <span className="track-label">
                                     <span className="track-color-swatch" style={{ backgroundColor: trackColor }} aria-hidden="true" />
-                                    <span className="track-name">Track #{track.trackNumber}</span>
+                                    <span className="track-name">Track #{track.displayTrackNumber ?? String(track.trackNumber)}</span>
                                   </span>
                                 </button>
                                 {shouldShowFollowButton ? (

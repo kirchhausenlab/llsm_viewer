@@ -147,6 +147,7 @@ export type SelectedTracksPanelProps = {
     channelId: string;
     channelName: string;
     trackNumber: number;
+    displayTrackNumber?: string;
     color: string;
     rawPoints: TrackPoint[];
     points: TrackPoint[];

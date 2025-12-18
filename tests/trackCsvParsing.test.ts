@@ -1,0 +1,67 @@
+import assert from 'node:assert/strict';
+
+import { buildTracksFromCsvEntries } from '../src/shared/utils/trackCsvParsing.ts';
+
+console.log('Starting trackCsvParsing tests');
+
+(() => {
+  const tracks = buildTracksFromCsvEntries({
+    channelId: 'channel-0',
+    channelName: 'Channel 0',
+    experimentDimension: '3d',
+    entries: [
+      ['36', '1.0', '50.0', '305.779096', '326.565542', '38.697693', '0', '57'],
+      ['36', '1.0', '', '', '', '', '0', '57'],
+      ['36', '1.0', '13.0', '327.944334', '319.266013', '33.21774', '0', '57'],
+    ],
+  });
+
+  assert.strictEqual(tracks.length, 2);
+
+  const [first, second] = tracks;
+  assert.strictEqual(first.id, 'channel-0:36');
+  assert.strictEqual(first.displayTrackNumber, '36');
+  assert.strictEqual(first.parentTrackId, null);
+  assert.strictEqual(first.points.length, 1);
+  assert.strictEqual(first.points[0]?.x, 305.779096);
+
+  assert.strictEqual(second.id, 'channel-0:36-1');
+  assert.strictEqual(second.displayTrackNumber, '36-1');
+  assert.strictEqual(second.parentTrackId, 'channel-0:36');
+  assert.strictEqual(second.points.length, 1);
+  assert.strictEqual(second.points[0]?.x, 327.944334);
+
+  assert.ok(typeof first.internalTrackId === 'number');
+  assert.ok(typeof second.internalTrackId === 'number');
+  assert.strictEqual(second.parentInternalTrackId, first.internalTrackId);
+})();
+
+(() => {
+  const tracks = buildTracksFromCsvEntries({
+    channelId: 'c',
+    channelName: 'C',
+    experimentDimension: '3d',
+    entries: [
+      ['1', '0', '0', '0', '0', '0', '0', '0'],
+      ['1', '0', '', '', '', '', '0', '0'],
+      ['1', '0', '', '', '', '', '0', '0'],
+      ['1', '0', '1', '1', '1', '1', '0', '0'],
+      ['1', '0', '', '', '', '', '0', '0'],
+      ['1', '0', '2', '2', '2', '2', '0', '0'],
+    ],
+  });
+
+  assert.deepStrictEqual(
+    tracks.map((track) => track.displayTrackNumber),
+    ['1', '1-1', '1-2'],
+  );
+  assert.deepStrictEqual(
+    tracks.map((track) => track.points.length),
+    [1, 1, 1],
+  );
+  assert.strictEqual(tracks[1]?.parentTrackId, 'c:1');
+  assert.strictEqual(tracks[2]?.parentTrackId, 'c:1-1');
+})();
+
+console.log('trackCsvParsing tests passed');
+

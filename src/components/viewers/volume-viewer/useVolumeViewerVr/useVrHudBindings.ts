@@ -127,7 +127,7 @@ export function useVrHudBindings({
         return {
           id: track.id,
           trackNumber: track.trackNumber,
-          label: `Track #${track.trackNumber}`,
+          label: `Track #${track.displayTrackNumber ?? String(track.trackNumber)}`,
           color,
           explicitVisible,
           visible: isFollowed || explicitVisible || isSelected,

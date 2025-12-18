@@ -7,6 +7,7 @@ type SelectedTrackSeries = {
   channelId: string;
   channelName: string;
   trackNumber: number;
+  displayTrackNumber?: string;
   color: string;
   rawPoints: TrackPoint[];
   points: TrackPoint[];
@@ -478,7 +479,8 @@ function SelectedTracksWindow({
           >
             <ul className="selected-tracks-legend">
               {resolvedSeries.map((entry) => {
-                const legendLabel = `${entry.channelName} · Track #${entry.trackNumber}`;
+                const trackNumber = entry.displayTrackNumber ?? String(entry.trackNumber);
+                const legendLabel = `${entry.channelName} · Track #${trackNumber}`;
                 const channelTint = channelTintMap.get(entry.channelId) ?? DEFAULT_LAYER_COLOR;
                 const rawHoverValue =
                   hoverTimepoint !== null
@@ -524,7 +526,7 @@ function SelectedTracksWindow({
                         <span className="selected-tracks-legend-separator" aria-hidden="true">
                           ·
                         </span>
-                        <span className="selected-tracks-legend-track">Track #{entry.trackNumber}</span>
+                        <span className="selected-tracks-legend-track">Track #{trackNumber}</span>
                         {hoverLabel ? (
                           <span className="selected-tracks-legend-value">: {hoverLabel}</span>
                         ) : null}

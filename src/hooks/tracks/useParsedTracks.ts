@@ -1,8 +1,9 @@
 import { useCallback, useMemo, type Dispatch, type SetStateAction } from 'react';
-import type { TrackDefinition, TrackPoint } from '../../types/tracks';
+import type { TrackDefinition } from '../../types/tracks';
 import type { ExperimentDimension } from '../useVoxelResolution';
 import type { ChannelSource } from '../dataset';
 import { collectFilesFromDataTransfer, parseTrackCsvFile } from '../../shared/utils/appHelpers';
+import { buildTracksFromCsvEntries } from '../../shared/utils/trackCsvParsing';
 
 export type UseParsedTracksOptions = {
   channels: ChannelSource[];
@@ -13,8 +14,6 @@ export type UseParsedTracksOptions = {
 export const useParsedTracks = ({ channels, setChannels, experimentDimension }: UseParsedTracksOptions) => {
   const rawTracksByChannel = useMemo(() => {
     const map = new Map<string, TrackDefinition[]>();
-    const is2dExperiment = experimentDimension === '2d';
-    const minimumColumns = is2dExperiment ? 6 : 7;
 
     for (const channel of channels) {
       const entries = channel.trackEntries;
@@ -22,78 +21,15 @@ export const useParsedTracks = ({ channels, setChannels, experimentDimension }: 
         map.set(channel.id, []);
         continue;
       }
-
-      const trackMap = new Map<number, TrackPoint[]>();
-
-      for (const row of entries) {
-        if (row.length < minimumColumns) {
-          continue;
-        }
-
-        const rawId = Number(row[0]);
-        const initialTime = Number(row[1]);
-        const deltaTime = Number(row[2]);
-        const x = Number(row[3]);
-        const y = Number(row[4]);
-        const amplitudeIndex = is2dExperiment && row.length < 7 ? 5 : 6;
-        const rawZ = is2dExperiment ? (row.length >= 7 ? Number(row[5]) : 0) : Number(row[5]);
-        const amplitudeRaw = Number(row[amplitudeIndex]);
-        const hasValidZ = Number.isFinite(rawZ);
-        const z = is2dExperiment ? (hasValidZ ? rawZ : 0) : rawZ;
-
-        if (
-          !Number.isFinite(rawId) ||
-          !Number.isFinite(initialTime) ||
-          !Number.isFinite(deltaTime) ||
-          !Number.isFinite(x) ||
-          !Number.isFinite(y) ||
-          !Number.isFinite(amplitudeRaw) ||
-          (!is2dExperiment && !hasValidZ)
-        ) {
-          continue;
-        }
-
-        const id = Math.trunc(rawId);
-        const time = initialTime + deltaTime;
-        const normalizedTime = Math.max(0, time - 1);
-        const amplitude = Math.max(0, amplitudeRaw);
-        const point: TrackPoint = { time: normalizedTime, x, y, z, amplitude };
-        const existing = trackMap.get(id);
-        if (existing) {
-          existing.push(point);
-        } else {
-          trackMap.set(id, [point]);
-        }
-      }
-
-      const parsed: TrackDefinition[] = [];
-
-      const sortedEntries = Array.from(trackMap.entries()).sort((a, b) => a[0] - b[0]);
-      sortedEntries.forEach(([sourceTrackId, points]) => {
-        if (points.length === 0) {
-          return;
-        }
-
-        const sortedPoints = [...points].sort((a, b) => a.time - b.time);
-        const adjustedPoints = sortedPoints.map<TrackPoint>((point) => ({
-          time: point.time,
-          x: point.x,
-          y: point.y,
-          z: point.z,
-          amplitude: point.amplitude
-        }));
-
-        parsed.push({
-          id: `${channel.id}:${sourceTrackId}`,
+      map.set(
+        channel.id,
+        buildTracksFromCsvEntries({
           channelId: channel.id,
-          channelName: channel.name.trim() || 'Untitled channel',
-          trackNumber: sourceTrackId,
-          sourceTrackId,
-          points: adjustedPoints
-        });
-      });
-
-      map.set(channel.id, parsed);
+          channelName: channel.name,
+          entries,
+          experimentDimension
+        })
+      );
     }
 
     return map;

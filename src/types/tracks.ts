@@ -19,6 +19,11 @@ export type TrackDefinition = {
   channelName: string;
   trackNumber: number;
   sourceTrackId: number;
+  displayTrackNumber?: string;
+  segmentIndex?: number;
+  internalTrackId?: number;
+  parentTrackId?: string | null;
+  parentInternalTrackId?: number | null;
   points: TrackPoint[];
 };
 

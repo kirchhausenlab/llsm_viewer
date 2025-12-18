@@ -548,7 +548,9 @@ export function usePlanarInteractions({
 
   const hoveredTrackDefinition = hoveredTrackId ? trackLookup.get(hoveredTrackId) ?? null : null;
   const hoveredTrackLabel = hoveredTrackDefinition
-    ? `${hoveredTrackDefinition.channelName} · Track #${hoveredTrackDefinition.trackNumber}`
+    ? `${hoveredTrackDefinition.channelName} · Track #${
+        hoveredTrackDefinition.displayTrackNumber ?? String(hoveredTrackDefinition.trackNumber)
+      }`
     : null;
 
   const handlePointerDown = useCallback(

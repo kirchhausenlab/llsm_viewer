@@ -8,6 +8,7 @@ export type TrackSeriesEntry = {
   channelId: string;
   channelName: string;
   trackNumber: number;
+  displayTrackNumber?: string;
   color: string;
   rawPoints: TrackPoint[];
   points: TrackPoint[];
@@ -161,6 +162,7 @@ export function useTracksForDisplay({
         channelId: plotTrack.channelId,
         channelName: plotTrack.channelName,
         trackNumber: plotTrack.trackNumber,
+        displayTrackNumber: plotTrack.displayTrackNumber,
         color: getTrackColorHex(plotTrack.id),
         rawPoints: rawTrack.points,
         points: plotTrack.points

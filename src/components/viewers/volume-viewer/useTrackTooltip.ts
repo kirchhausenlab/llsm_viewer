@@ -17,7 +17,8 @@ export function useTrackTooltip({ hoveredTrackId, trackLookup }: UseTrackTooltip
     if (!hoveredTrackDefinition) {
       return null;
     }
-    return `${hoveredTrackDefinition.channelName} · Track #${hoveredTrackDefinition.trackNumber}`;
+    const trackNumber = hoveredTrackDefinition.displayTrackNumber ?? String(hoveredTrackDefinition.trackNumber);
+    return `${hoveredTrackDefinition.channelName} · Track #${trackNumber}`;
   }, [hoveredTrackDefinition]);
 
   return { hoveredTrackDefinition, hoveredTrackLabel };
