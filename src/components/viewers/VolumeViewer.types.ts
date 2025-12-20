@@ -8,7 +8,7 @@ import type { FollowedVoxelTarget } from '../../types/follow';
 import type { HoveredVoxelInfo } from '../../types/hover';
 import type { TrackColorMode, TrackDefinition } from '../../types/tracks';
 
-export type InstancedLineGeometry = LineGeometry & { instanceStart: number; instanceCount: number };
+export type InstancedLineGeometry = LineGeometry & { instanceCount: number };
 
 export type ViewerLayer = {
   key: string;
@@ -196,6 +196,8 @@ export type TrackLineResource = {
   endCapMaterial: THREE.MeshBasicMaterial;
   times: number[];
   positions: Float32Array;
+  geometryPointStartIndex: number | null;
+  geometryPointEndIndex: number | null;
   baseColor: THREE.Color;
   highlightColor: THREE.Color;
   channelId: string;

@@ -212,14 +212,36 @@ export function useTrackRendering({
           );
         }
 
-        const startSegment = hasVisiblePoints ? Math.max(firstVisibleIndex, 0) : 0;
-        const visibleSegments = hasVisiblePoints
-          ? Math.max(lastVisibleIndex - Math.max(firstVisibleIndex, 0), 0)
-          : 0;
-
         endCap.visible = resource.shouldShow && hasVisiblePoints;
-        geometry.instanceStart = startSegment;
-        geometry.instanceCount = visibleSegments;
+
+        if (isFullTrackTrailEnabled) {
+          if (resource.geometryPointStartIndex !== 0 || resource.geometryPointEndIndex !== times.length - 1) {
+            geometry.setPositions(positions);
+            resource.geometryPointStartIndex = 0;
+            resource.geometryPointEndIndex = times.length - 1;
+          }
+
+          geometry.instanceCount = hasVisiblePoints ? Math.max(lastVisibleIndex, 0) : 0;
+          continue;
+        }
+
+        if (!hasVisiblePoints) {
+          geometry.instanceCount = 0;
+          resource.geometryPointStartIndex = null;
+          resource.geometryPointEndIndex = null;
+          continue;
+        }
+
+        if (
+          resource.geometryPointStartIndex !== firstVisibleIndex ||
+          resource.geometryPointEndIndex !== lastVisibleIndex
+        ) {
+          geometry.setPositions(positions.subarray(firstVisibleIndex * 3, (lastVisibleIndex + 1) * 3));
+          resource.geometryPointStartIndex = firstVisibleIndex;
+          resource.geometryPointEndIndex = lastVisibleIndex;
+        }
+
+        geometry.instanceCount = Math.max(lastVisibleIndex - firstVisibleIndex, 0);
       }
     },
     [isFullTrackTrailEnabled, trackLinesRef, trackTrailLength],
@@ -355,6 +377,8 @@ export function useTrackRendering({
           endCapMaterial,
           times,
           positions,
+          geometryPointStartIndex: 0,
+          geometryPointEndIndex: Math.max(track.points.length - 1, 0),
           baseColor: baseColor.clone(),
           highlightColor: highlightColor.clone(),
           channelId: track.channelId,
@@ -380,6 +404,8 @@ export function useTrackRendering({
         outline.computeLineDistances();
         resource.times = times;
         resource.positions = positions;
+        resource.geometryPointStartIndex = 0;
+        resource.geometryPointEndIndex = Math.max(track.points.length - 1, 0);
         resource.baseColor.copy(baseColor);
         resource.highlightColor.copy(highlightColor);
         resource.endCapMaterial.color.copy(baseColor);

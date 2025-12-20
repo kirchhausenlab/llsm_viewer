@@ -2,7 +2,9 @@
 
 ## Latest changes
 - Added a Tracks settings window with a Full trail toggle and 1–20 trail length slider; when disabled the 3D/2D viewers now
-  render only the last L timepoints of each track, with window layout defaults and tests updated accordingly.
+  render only the last L timepoints of each track, with window layout defaults and tests updated accordingly. Fixed 3D trail
+  clipping so the visible window actually slides forward (older points drop off as time advances); the initial implementation
+  tried to use a non-existent `LineGeometry.instanceStart` offset.
 - Re-enabled Q/E roll controls while following a track or voxel so users can roll the camera without breaking the follow lock, while keeping translational input disabled.
 - Turned the Help control into a dropdown that opens a center-screen navigation controls window with the viewer tips content and standard minimize/close actions.
 - Precomputed and persisted per-timepoint 256-bin intensity histograms during preprocessing (manifest v4) and load them with each volume at runtime, eliminating full-volume histogram scans in the viewer for auto-windowing and histogram UI/VR panels. Note: this bumps the preprocessed dataset version to 4 (older preprocessed exports will not open).

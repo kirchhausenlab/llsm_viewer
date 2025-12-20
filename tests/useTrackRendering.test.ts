@@ -114,4 +114,80 @@ console.log('Starting useTrackRendering tests');
   assert.strictEqual(hook.result.hoveredTrackId, null);
 })();
 
+(() => {
+  const trackGroupRef = { current: new THREE.Group() } as const;
+  const trackLinesRef = { current: new Map() } as const;
+
+  const points = Array.from({ length: 11 }, (_, index) => {
+    const time = 10 + index;
+    return { x: time, y: 0, z: 0, time, amplitude: 0 };
+  });
+
+  const track = {
+    id: 'track-windowed',
+    channelId: 'channel-0',
+    channelName: 'Channel 0',
+    trackNumber: 1,
+    points,
+  };
+
+  let clampedTimeIndex = 15;
+
+  const hook = renderHook(() =>
+    useTrackRendering({
+      tracks: [track],
+      trackVisibility: {},
+      trackOpacityByChannel: { 'channel-0': 1 },
+      trackLineWidthByChannel: {},
+      channelTrackColorModes: {},
+      channelTrackOffsets: {},
+      trackScale: {},
+      isFullTrackTrailEnabled: false,
+      trackTrailLength: 5,
+      selectedTrackIds: new Set(),
+      followedTrackId: null,
+      clampedTimeIndex,
+      trackGroupRef,
+      trackLinesRef,
+      containerRef: { current: null },
+      rendererRef: { current: null },
+      cameraRef: { current: null },
+      hoverRaycasterRef: { current: null },
+      currentDimensionsRef: { current: null },
+      hasActive3DLayer: true,
+    }),
+  );
+
+  const { act } = hook;
+
+  act(() => hook.result.refreshTrackOverlay());
+
+  const resource = trackLinesRef.current.get('track-windowed');
+  assert.ok(resource, 'resource should be created');
+
+  const readFirstSegmentStartX = () => {
+    const attribute = resource.geometry.getAttribute('instanceStart') as unknown as {
+      data: { array: Float32Array; stride: number };
+      offset: number;
+    };
+    return attribute.data.array[attribute.offset];
+  };
+
+  assert.strictEqual(readFirstSegmentStartX(), 10);
+
+  act(() => {
+    clampedTimeIndex = 16;
+    hook.rerender();
+  });
+
+  assert.strictEqual(readFirstSegmentStartX(), 11);
+
+  act(() => {
+    clampedTimeIndex = 30;
+    hook.rerender();
+  });
+
+  assert.strictEqual(resource.hasVisiblePoints, false);
+})();
+
 console.log('useTrackRendering tests passed');
