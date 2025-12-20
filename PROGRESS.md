@@ -257,6 +257,7 @@
 - Wired planar and volume viewers to register their canvas elements for recording.
 - Added ViewerShell-managed recording that captures the active canvas stream at the playback FPS, downloads recordings with timestamps, and stops cleanly on mode changes or unmount.
 - Stabilized the recording stop effect so recordings only stop on viewer mode changes or missing capture targets rather than immediately after starting.
+- Added a `requestFrame()` pump (when supported) and FPS sanitization to avoid intermittent "frozen first frame" recordings; caveat: background tabs may still throttle rendering and yield static frames.
 
 ## Track-follow playback window lock
 - When a track is followed, time changes (slider, buttons, playback) snap to the track's `[ti, tf]` time index bounds and playback loops within that window.

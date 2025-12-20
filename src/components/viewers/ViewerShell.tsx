@@ -15,6 +15,8 @@ import type { ViewerMode, ViewerShellProps } from './viewer-shell/types';
 const NAVIGATION_HELP_WINDOW_WIDTH = 420;
 const DEFAULT_RECORDING_BITRATE_MBPS = 20;
 const RECORDING_BITRATE_RANGE_MBPS = { min: 1, max: 100 } as const;
+const DEFAULT_RECORDING_FRAME_PUMP_FPS = 30;
+const MAX_RECORDING_FRAME_PUMP_FPS = 60;
 
 function ViewerShell({
   viewerMode,
@@ -74,6 +76,7 @@ function ViewerShell({
   const [recordingBitrateMbps, setRecordingBitrateMbps] = useState(DEFAULT_RECORDING_BITRATE_MBPS);
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const recordingChunksRef = useRef<BlobPart[]>([]);
+  const recordingFramePumpRef = useRef<number | null>(null);
 
   const [renderingQuality, setRenderingQuality] = useState(1);
   const [isViewerSettingsOpen, setIsViewerSettingsOpen] = useState(false);
@@ -98,6 +101,36 @@ function ViewerShell({
   const stopStreamTracks = useCallback((stream: MediaStream | null) => {
     stream?.getTracks().forEach((track) => track.stop());
   }, []);
+
+  const stopRecordingFramePump = useCallback(() => {
+    if (recordingFramePumpRef.current !== null) {
+      window.clearInterval(recordingFramePumpRef.current);
+      recordingFramePumpRef.current = null;
+    }
+  }, []);
+
+  const startRecordingFramePump = useCallback(
+    (stream: MediaStream, requestedFps: number | null) => {
+      stopRecordingFramePump();
+
+      const videoTrack = stream.getVideoTracks()[0] as (MediaStreamTrack & { requestFrame?: () => void }) | undefined;
+      if (!videoTrack || typeof videoTrack.requestFrame !== 'function') {
+        return;
+      }
+
+      const safeFps =
+        requestedFps && Number.isFinite(requestedFps) && requestedFps > 0
+          ? Math.min(MAX_RECORDING_FRAME_PUMP_FPS, Math.max(1, Math.round(requestedFps)))
+          : DEFAULT_RECORDING_FRAME_PUMP_FPS;
+
+      const intervalMs = Math.max(1, Math.round(1000 / safeFps));
+      videoTrack.requestFrame();
+      recordingFramePumpRef.current = window.setInterval(() => {
+        videoTrack.requestFrame?.();
+      }, intervalMs);
+    },
+    [stopRecordingFramePump]
+  );
 
   const registerCaptureTargetForMode = useCallback(
     (mode: ViewerMode, target: HTMLCanvasElement | CaptureTargetGetter | null) => {
@@ -144,6 +177,7 @@ function ViewerShell({
 
   const handleStopRecording = useCallback(() => {
     setRecordingError(null);
+    stopRecordingFramePump();
 
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
       mediaRecorder.stop();
@@ -155,7 +189,7 @@ function ViewerShell({
     setMediaRecorder(null);
     setIsRecording(false);
     recordingChunksRef.current = [];
-  }, [captureStream, mediaRecorder, stopStreamTracks]);
+  }, [captureStream, mediaRecorder, stopRecordingFramePump, stopStreamTracks]);
 
   const handleStartRecording = useCallback(() => {
     if (!canRecord || isRecording || !activeCaptureTarget) {
@@ -170,9 +204,19 @@ function ViewerShell({
 
     setRecordingError(null);
 
+    const resolveCaptureFps = (value: unknown) => {
+      const numeric = typeof value === 'number' ? value : Number(value);
+      if (!Number.isFinite(numeric) || numeric <= 0) {
+        return null;
+      }
+      return Math.min(MAX_RECORDING_FRAME_PUMP_FPS, Math.max(1, Math.round(numeric)));
+    };
+
+    const captureFps = resolveCaptureFps(playbackControls.fps);
+
     let stream: MediaStream | null = null;
     try {
-      stream = canvas.captureStream(playbackControls.fps);
+      stream = captureFps ? canvas.captureStream(captureFps) : canvas.captureStream();
     } catch (error) {
       try {
         stream = canvas.captureStream();
@@ -223,6 +267,7 @@ function ViewerShell({
 
       const hasChunks = recordingChunksRef.current.length > 0;
 
+      stopRecordingFramePump();
       stopStreamTracks(stream);
       setCaptureStream(null);
       setMediaRecorder(null);
@@ -254,6 +299,7 @@ function ViewerShell({
     recorder.addEventListener('dataavailable', handleDataAvailable);
     recorder.addEventListener('stop', handleStop);
 
+    startRecordingFramePump(stream, captureFps);
     setCaptureStream(stream);
     setMediaRecorder(recorder);
     setIsRecording(true);
@@ -264,6 +310,8 @@ function ViewerShell({
     isRecording,
     playbackControls.fps,
     recordingBitrateMbps,
+    startRecordingFramePump,
+    stopRecordingFramePump,
     stopStreamTracks,
   ]);
 
