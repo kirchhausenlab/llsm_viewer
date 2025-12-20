@@ -17,7 +17,7 @@ import {
   trackBlinkColorTemp,
 } from './rendering';
 import { DEFAULT_TRACK_LINE_WIDTH, DEFAULT_TRACK_OPACITY } from './constants';
-import type { TrackLineResource } from '../VolumeViewer.types';
+import type { InstancedLineGeometry, TrackLineResource } from '../VolumeViewer.types';
 import { Line2 } from 'three/examples/jsm/lines/Line2';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
@@ -265,7 +265,7 @@ export function useTrackRendering({
         continue;
       }
 
-      let resource = trackLines.get(track.id) ?? null;
+      let resource = trackLines.get(track.id);
       const positions = new Float32Array(track.points.length * 3);
       const times = new Array<number>(track.points.length);
       const offset = channelTrackOffsets[track.channelId] ?? { x: 0, y: 0 };
@@ -285,7 +285,7 @@ export function useTrackRendering({
       const highlightColor = baseColor.clone().lerp(new THREE.Color(0xffffff), 0.4);
 
       if (!resource) {
-        const geometry = new LineGeometry();
+        const geometry = new LineGeometry() as InstancedLineGeometry;
         geometry.setPositions(positions);
         geometry.instanceCount = 0;
         const material = new LineMaterial({
@@ -345,7 +345,7 @@ export function useTrackRendering({
         endCap.userData.trackId = track.id;
 
         trackGroup.add(endCap);
-        resource = {
+        const newResource: TrackLineResource = {
           line,
           outline,
           geometry,
@@ -371,7 +371,8 @@ export function useTrackRendering({
           shouldShow: false,
           needsAppearanceUpdate: true,
         };
-        trackLines.set(track.id, resource);
+        trackLines.set(track.id, newResource);
+        resource = newResource;
       } else {
         const { geometry, line, outline } = resource;
         geometry.setPositions(positions);

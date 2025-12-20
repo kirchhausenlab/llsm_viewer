@@ -398,11 +398,16 @@ function ViewerShell({
       />
 
       <TracksPanel
-        layout={{ windowMargin, controlWindowWidth, trackWindowInitialPosition, resetToken }}
+        layout={{
+          windowMargin,
+          controlWindowWidth,
+          trackWindowInitialPosition,
+          trackSettingsWindowInitialPosition,
+          resetToken,
+        }}
         hasTrackData={hasTrackData}
         trackDefaults={trackDefaults}
         trackSettings={trackSettings}
-        trackSettingsWindowInitialPosition={trackSettingsWindowInitialPosition}
         isTrackSettingsOpen={isTrackSettingsOpen}
         onToggleTrackSettings={toggleTrackSettingsVisibility}
         onCloseTrackSettings={closeTrackSettings}

@@ -7,7 +7,11 @@ import useTrackStyling, {
   DEFAULT_TRACK_OPACITY,
   createDefaultChannelTrackState
 } from './useTrackStyling';
-import useTrackSelection, { TRACK_SMOOTHING_RANGE } from './useTrackSelection';
+import useTrackSelection, {
+  DEFAULT_TRACK_TRAIL_LENGTH,
+  TRACK_SMOOTHING_RANGE,
+  TRACK_TRAIL_LENGTH_RANGE,
+} from './useTrackSelection';
 
 export type UseTrackStateOptions = {
   channels: ChannelSource[];

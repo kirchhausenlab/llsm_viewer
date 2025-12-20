@@ -262,3 +262,7 @@
 ## Orthogonal view removal
 - Removed the 2D orthogonal view toggle and supporting XZ/ZY rendering paths so planar viewing always uses the standard XY slice layout.
 - Simplified viewer controls and shell wiring to drop orthogonal availability state and related tests.
+
+## Track settings regressions
+- Fixed the Tracks panel layout wiring to include the settings window initial position so layouts reset cleanly with type safety.
+- Typed instanced line geometry fields and re-exported trail length defaults to restore TypeScript coverage after the trail controls were added.
