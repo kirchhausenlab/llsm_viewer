@@ -117,10 +117,6 @@ export function useCameraControls({
       if (renderer.xr.isPresenting) {
         return;
       }
-      if (followTargetActiveRef.current) {
-        return;
-      }
-
       const movementState = movementStateRef.current;
       if (
         !movementState ||
@@ -136,13 +132,26 @@ export function useCameraControls({
         return;
       }
 
+      const forwardVector = forwardVectorRef.current;
+      camera.getWorldDirection(forwardVector).normalize();
+
+      const rollInput = (movementState.rollLeft ? 1 : 0) - (movementState.rollRight ? 1 : 0);
+      if (rollInput !== 0) {
+        const rollAxis = rollAxisRef.current.copy(forwardVector).normalize();
+        const rollQuaternion = rollQuaternionRef.current;
+        rollQuaternion.setFromAxisAngle(rollAxis, rollInput * ROLL_SPEED);
+        camera.applyQuaternion(rollQuaternion);
+        camera.up.applyQuaternion(rollQuaternion);
+      }
+
+      if (followTargetActiveRef.current) {
+        return;
+      }
+
       const rotationTarget = rotationTargetRef.current;
       const distance = rotationTarget.distanceTo(camera.position);
       const baseMovementScale = Math.max(distance * 0.0025, 0.0006);
       const movementScale = baseMovementScale * (isShiftPressedRef.current ? 2 : 1);
-
-      const forwardVector = forwardVectorRef.current;
-      camera.getWorldDirection(forwardVector).normalize();
 
       const horizontalForward = horizontalForwardRef.current;
       horizontalForward.copy(forwardVector).projectOnPlane(worldUp);
@@ -180,15 +189,6 @@ export function useCameraControls({
       }
       if (movementState.moveDown) {
         movementVector.addScaledVector(worldUp, -movementScale);
-      }
-
-      const rollInput = (movementState.rollLeft ? 1 : 0) - (movementState.rollRight ? 1 : 0);
-      if (rollInput !== 0) {
-        const rollAxis = rollAxisRef.current.copy(forwardVector).normalize();
-        const rollQuaternion = rollQuaternionRef.current;
-        rollQuaternion.setFromAxisAngle(rollAxis, rollInput * ROLL_SPEED);
-        camera.applyQuaternion(rollQuaternion);
-        camera.up.applyQuaternion(rollQuaternion);
       }
 
       if (movementVector.lengthSq() === 0) {
@@ -373,7 +373,7 @@ export function useCameraControls({
         }
       }
 
-      if (followTargetActiveRef.current && (movementKey || rollKey || isShiftKey)) {
+      if (followTargetActiveRef.current && (movementKey || isShiftKey)) {
         return;
       }
 
