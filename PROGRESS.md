@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Added a Tracks settings window with a Full trail toggle and 1–20 trail length slider; when disabled the 3D/2D viewers now
+  render only the last L timepoints of each track, with window layout defaults and tests updated accordingly.
 - Re-enabled Q/E roll controls while following a track or voxel so users can roll the camera without breaking the follow lock, while keeping translational input disabled.
 - Turned the Help control into a dropdown that opens a center-screen navigation controls window with the viewer tips content and standard minimize/close actions.
 - Precomputed and persisted per-timepoint 256-bin intensity histograms during preprocessing (manifest v4) and load them with each volume at runtime, eliminating full-volume histogram scans in the viewer for auto-windowing and histogram UI/VR panels. Note: this bumps the preprocessed dataset version to 4 (older preprocessed exports will not open).
@@ -260,3 +262,7 @@
 ## Orthogonal view removal
 - Removed the 2D orthogonal view toggle and supporting XZ/ZY rendering paths so planar viewing always uses the standard XY slice layout.
 - Simplified viewer controls and shell wiring to drop orthogonal availability state and related tests.
+
+## Track settings regressions
+- Fixed the Tracks panel layout wiring to include the settings window initial position so layouts reset cleanly with type safety.
+- Typed instanced line geometry fields and re-exported trail length defaults to restore TypeScript coverage after the trail controls were added.

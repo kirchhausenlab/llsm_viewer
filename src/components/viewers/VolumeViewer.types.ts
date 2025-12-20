@@ -8,6 +8,8 @@ import type { FollowedVoxelTarget } from '../../types/follow';
 import type { HoveredVoxelInfo } from '../../types/hover';
 import type { TrackColorMode, TrackDefinition } from '../../types/tracks';
 
+export type InstancedLineGeometry = LineGeometry & { instanceStart: number; instanceCount: number };
+
 export type ViewerLayer = {
   key: string;
   label: string;
@@ -139,6 +141,8 @@ export type VolumeViewerProps = {
   trackLineWidthByChannel: Record<string, number>;
   channelTrackColorModes: Record<string, TrackColorMode>;
   channelTrackOffsets: Record<string, { x: number; y: number }>;
+  isFullTrackTrailEnabled: boolean;
+  trackTrailLength: number;
   selectedTrackIds: ReadonlySet<string>;
   followedTrackId: string | null;
   followedVoxel: FollowedVoxelTarget | null;
@@ -185,7 +189,7 @@ export type MovementState = {
 export type TrackLineResource = {
   line: Line2;
   outline: Line2;
-  geometry: LineGeometry;
+  geometry: InstancedLineGeometry;
   material: LineMaterial;
   outlineMaterial: LineMaterial;
   endCap: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>;

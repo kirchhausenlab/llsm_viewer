@@ -7,11 +7,19 @@ import {
 } from '../../../shared/colorMaps/trackColors';
 import { applyAlphaToHex } from '../../../shared/utils/appHelpers';
 import FloatingWindow from '../../widgets/FloatingWindow';
-import type { LayoutProps, TracksPanelProps, TrackDefaults } from './types';
+import TrackSettingsWindow from '../../widgets/TrackSettingsWindow';
+import type { LayoutProps, TrackDefaults, TrackSettingsProps, TracksPanelProps } from './types';
 
 export type TracksPanelWindowProps = TracksPanelProps & {
-  layout: Pick<LayoutProps, 'windowMargin' | 'controlWindowWidth' | 'trackWindowInitialPosition' | 'resetToken'>;
+  layout: Pick<
+    LayoutProps,
+    'windowMargin' | 'controlWindowWidth' | 'trackWindowInitialPosition' | 'trackSettingsWindowInitialPosition' | 'resetToken'
+  >;
   trackDefaults: TrackDefaults;
+  trackSettings: TrackSettingsProps;
+  isTrackSettingsOpen: boolean;
+  onToggleTrackSettings: () => void;
+  onCloseTrackSettings: () => void;
   hasTrackData: boolean;
 };
 
@@ -48,9 +56,19 @@ export default function TracksPanel({
   selectedTrackOrder,
   selectedTrackIds,
   onTrackFollow,
-  trackDefaults
+  trackDefaults,
+  trackSettings,
+  isTrackSettingsOpen,
+  onToggleTrackSettings,
+  onCloseTrackSettings
 }: TracksPanelWindowProps) {
-  const { windowMargin, controlWindowWidth, trackWindowInitialPosition, resetToken } = layout;
+  const {
+    windowMargin,
+    controlWindowWidth,
+    trackWindowInitialPosition,
+    trackSettingsWindowInitialPosition,
+    resetToken
+  } = layout;
 
   const selectedTrackOrderMap = new Map(selectedTrackOrder.map((trackId, index) => [trackId, index]));
 
@@ -59,78 +77,92 @@ export default function TracksPanel({
   }
 
   return (
-    <FloatingWindow
-      title="Tracks"
-      initialPosition={trackWindowInitialPosition}
-      width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
-      className="floating-window--tracks"
-      resetSignal={resetToken}
-      headerContent={
-        <div className="channel-tabs channel-tabs--header" role="tablist" aria-label="Track channels">
-          {channels.map((channel) => {
-            const label = channelNameMap.get(channel.id) ?? 'Untitled channel';
-            const displayLabel = label.length > 9 ? `${label.slice(0, 6)}...` : label;
-            const isActive = channel.id === activeChannelId;
-            const summary = trackSummaryByChannel.get(channel.id) ?? { total: 0, visible: 0 };
-            const hasTracksForChannel = (parsedTracksByChannel.get(channel.id)?.length ?? 0) > 0;
-            const hasVisibleTracks = summary.visible > 0;
-            const tabClassName = ['channel-tab', isActive ? 'is-active' : '', !hasTracksForChannel ? 'is-hidden' : '']
-              .filter(Boolean)
-              .join(' ');
-            const labelClassName = hasVisibleTracks
-              ? 'channel-tab-label'
-              : 'channel-tab-label channel-tab-label--crossed';
-            const colorMode = channelTrackColorModes[channel.id] ?? { type: 'random' };
-            const tabStyle: CSSProperties & Record<string, string> | undefined =
-              colorMode.type === 'uniform'
-                ? {
-                    '--channel-tab-background': applyAlphaToHex(normalizeTrackColor(colorMode.color), 0.18),
-                    '--channel-tab-background-active': applyAlphaToHex(normalizeTrackColor(colorMode.color), 0.35),
-                    '--channel-tab-border': 'rgba(255, 255, 255, 0.15)',
-                    '--channel-tab-border-active': applyAlphaToHex(normalizeTrackColor(colorMode.color), 0.55)
-                  }
-                : undefined;
+    <>
+      <FloatingWindow
+        title="Tracks"
+        initialPosition={trackWindowInitialPosition}
+        width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
+        className="floating-window--tracks"
+        resetSignal={resetToken}
+        headerActions={
+          <button
+            type="button"
+            className="floating-window-toggle"
+            onClick={onToggleTrackSettings}
+            aria-label={isTrackSettingsOpen ? 'Hide track settings window' : 'Show track settings window'}
+            aria-pressed={isTrackSettingsOpen}
+            data-no-drag
+            title="Settings"
+          >
+            <span aria-hidden="true">⚙</span>
+          </button>
+        }
+        headerContent={
+          <div className="channel-tabs channel-tabs--header" role="tablist" aria-label="Track channels">
+            {channels.map((channel) => {
+              const label = channelNameMap.get(channel.id) ?? 'Untitled channel';
+              const displayLabel = label.length > 9 ? `${label.slice(0, 6)}...` : label;
+              const isActive = channel.id === activeChannelId;
+              const summary = trackSummaryByChannel.get(channel.id) ?? { total: 0, visible: 0 };
+              const hasTracksForChannel = (parsedTracksByChannel.get(channel.id)?.length ?? 0) > 0;
+              const hasVisibleTracks = summary.visible > 0;
+              const tabClassName = ['channel-tab', isActive ? 'is-active' : '', !hasTracksForChannel ? 'is-hidden' : '']
+                .filter(Boolean)
+                .join(' ');
+              const labelClassName = hasVisibleTracks
+                ? 'channel-tab-label'
+                : 'channel-tab-label channel-tab-label--crossed';
+              const colorMode = channelTrackColorModes[channel.id] ?? { type: 'random' };
+              const tabStyle: CSSProperties & Record<string, string> | undefined =
+                colorMode.type === 'uniform'
+                  ? {
+                      '--channel-tab-background': applyAlphaToHex(normalizeTrackColor(colorMode.color), 0.18),
+                      '--channel-tab-background-active': applyAlphaToHex(normalizeTrackColor(colorMode.color), 0.35),
+                      '--channel-tab-border': 'rgba(255, 255, 255, 0.15)',
+                      '--channel-tab-border-active': applyAlphaToHex(normalizeTrackColor(colorMode.color), 0.55)
+                    }
+                  : undefined;
 
-            const handleTrackTabClick = (event: MouseEvent<HTMLButtonElement>) => {
-              if (event.button !== 0) return;
-              onChannelTabSelect(channel.id);
-            };
+              const handleTrackTabClick = (event: MouseEvent<HTMLButtonElement>) => {
+                if (event.button !== 0) return;
+                onChannelTabSelect(channel.id);
+              };
 
-            const handleTrackTabAuxClick = (event: MouseEvent<HTMLButtonElement>) => {
-              const currentSummary = trackSummaryByChannel.get(channel.id) ?? { total: 0, visible: 0 };
-              const nextHasVisibleTracks = currentSummary.visible > 0;
-              if (event.button === 1) {
-                event.preventDefault();
-                onTrackVisibilityAllChange(channel.id, !nextHasVisibleTracks);
-              }
-            };
+              const handleTrackTabAuxClick = (event: MouseEvent<HTMLButtonElement>) => {
+                const currentSummary = trackSummaryByChannel.get(channel.id) ?? { total: 0, visible: 0 };
+                const nextHasVisibleTracks = currentSummary.visible > 0;
+                if (event.button === 1) {
+                  event.preventDefault();
+                  onTrackVisibilityAllChange(channel.id, !nextHasVisibleTracks);
+                }
+              };
 
-            const tabTitle = hasVisibleTracks
-              ? 'Middle click to hide all tracks for this channel'
-              : 'Middle click to show all tracks for this channel';
+              const tabTitle = hasVisibleTracks
+                ? 'Middle click to hide all tracks for this channel'
+                : 'Middle click to show all tracks for this channel';
 
-            return (
-              <button
-                key={channel.id}
-                type="button"
-                className={tabClassName}
-                style={tabStyle}
-                onClick={handleTrackTabClick}
-                onAuxClick={handleTrackTabAuxClick}
-                role="tab"
-                id={`track-tab-${channel.id}`}
-                aria-label={label}
-                aria-selected={isActive}
-                aria-controls={`track-panel-${channel.id}`}
-                title={tabTitle}
-              >
-                <span className={labelClassName}>{displayLabel}</span>
-              </button>
-            );
-          })}
-        </div>
-      }
-    >
+              return (
+                <button
+                  key={channel.id}
+                  type="button"
+                  className={tabClassName}
+                  style={tabStyle}
+                  onClick={handleTrackTabClick}
+                  onAuxClick={handleTrackTabAuxClick}
+                  role="tab"
+                  id={`track-tab-${channel.id}`}
+                  aria-label={label}
+                  aria-selected={isActive}
+                  aria-controls={`track-panel-${channel.id}`}
+                  title={tabTitle}
+                >
+                  <span className={labelClassName}>{displayLabel}</span>
+                </button>
+              );
+            })}
+          </div>
+        }
+      >
       <div className="sidebar sidebar-left">
         {channels.length > 0 ? (
           <div className="track-controls">
@@ -360,6 +392,31 @@ export default function TracksPanel({
           <p className="track-empty-hint">Add a channel to manage tracks.</p>
         )}
       </div>
-    </FloatingWindow>
+      </FloatingWindow>
+
+      <div style={{ display: isTrackSettingsOpen ? undefined : 'none' }} aria-hidden={!isTrackSettingsOpen}>
+        <FloatingWindow
+          title="Tracks settings"
+          initialPosition={trackSettingsWindowInitialPosition}
+          width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
+          className="floating-window--track-settings"
+          resetSignal={resetToken}
+          headerEndActions={
+            <button
+              type="button"
+              className="floating-window-toggle"
+              onClick={onCloseTrackSettings}
+              aria-label="Close track settings window"
+              data-no-drag
+              title="Close"
+            >
+              <span aria-hidden="true">×</span>
+            </button>
+          }
+        >
+          <TrackSettingsWindow {...trackSettings} />
+        </FloatingWindow>
+      </div>
+    </>
   );
 }

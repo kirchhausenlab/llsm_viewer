@@ -6,6 +6,7 @@ import {
   computeLayersWindowDefaultPosition,
   computePlotSettingsWindowDefaultPosition,
   computeSelectedTracksWindowDefaultPosition,
+  computeTrackSettingsWindowDefaultPosition,
   computeTrackWindowDefaultPosition,
   computeViewerSettingsWindowDefaultPosition,
   nextLayoutResetToken,
@@ -20,6 +21,7 @@ type UseWindowLayoutResult = {
   viewerSettingsWindowInitialPosition: WindowPosition;
   selectedTracksWindowInitialPosition: WindowPosition;
   plotSettingsWindowInitialPosition: WindowPosition;
+  trackSettingsWindowInitialPosition: WindowPosition;
   resetLayout: () => void;
 };
 
@@ -38,6 +40,8 @@ export function useWindowLayout(): UseWindowLayoutResult {
     useState<WindowPosition>(() => computeSelectedTracksWindowDefaultPosition());
   const [plotSettingsWindowInitialPosition, setPlotSettingsWindowInitialPosition] =
     useState<WindowPosition>(() => computePlotSettingsWindowDefaultPosition());
+  const [trackSettingsWindowInitialPosition, setTrackSettingsWindowInitialPosition] =
+    useState<WindowPosition>(() => computeTrackSettingsWindowDefaultPosition());
 
   const updatePositionToDefault = useCallback(
     (
@@ -72,12 +76,20 @@ export function useWindowLayout(): UseWindowLayoutResult {
     updatePositionToDefault(computePlotSettingsWindowDefaultPosition, setPlotSettingsWindowInitialPosition);
   }, [updatePositionToDefault]);
 
+  useEffect(() => {
+    updatePositionToDefault(
+      computeTrackSettingsWindowDefaultPosition,
+      setTrackSettingsWindowInitialPosition
+    );
+  }, [updatePositionToDefault]);
+
   const resetLayout = useCallback(() => {
     setLayoutResetToken(nextLayoutResetToken);
     setTrackWindowInitialPosition(computeTrackWindowDefaultPosition());
     setViewerSettingsWindowInitialPosition(computeViewerSettingsWindowDefaultPosition());
     setSelectedTracksWindowInitialPosition(computeSelectedTracksWindowDefaultPosition());
     setPlotSettingsWindowInitialPosition(computePlotSettingsWindowDefaultPosition());
+    setTrackSettingsWindowInitialPosition(computeTrackSettingsWindowDefaultPosition());
   }, []);
 
   return {
@@ -88,6 +100,7 @@ export function useWindowLayout(): UseWindowLayoutResult {
     viewerSettingsWindowInitialPosition,
     selectedTracksWindowInitialPosition,
     plotSettingsWindowInitialPosition,
+    trackSettingsWindowInitialPosition,
     resetLayout
   };
 }

@@ -17,7 +17,7 @@ import {
   trackBlinkColorTemp,
 } from './rendering';
 import { DEFAULT_TRACK_LINE_WIDTH, DEFAULT_TRACK_OPACITY } from './constants';
-import type { TrackLineResource } from '../VolumeViewer.types';
+import type { InstancedLineGeometry, TrackLineResource } from '../VolumeViewer.types';
 import { Line2 } from 'three/examples/jsm/lines/Line2';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
@@ -37,6 +37,8 @@ export type UseTrackRenderingParams = {
   channelTrackColorModes: Record<string, TrackColorMode>;
   channelTrackOffsets: Record<string, { x: number; y: number }>;
   trackScale: { x?: number; y?: number; z?: number };
+  isFullTrackTrailEnabled: boolean;
+  trackTrailLength: number;
   selectedTrackIds: ReadonlySet<string>;
   followedTrackId: string | null;
   clampedTimeIndex: number;
@@ -58,6 +60,8 @@ export function useTrackRendering({
   channelTrackColorModes,
   channelTrackOffsets,
   trackScale: _trackScale,
+  isFullTrackTrailEnabled,
+  trackTrailLength,
   selectedTrackIds,
   followedTrackId,
   clampedTimeIndex,
@@ -176,36 +180,49 @@ export function useTrackRendering({
     (targetTimeIndex: number) => {
       const lines = trackLinesRef.current;
       const maxVisibleTime = targetTimeIndex;
+      const minVisibleTime = isFullTrackTrailEnabled ? -Infinity : targetTimeIndex - trackTrailLength;
 
       for (const resource of lines.values()) {
         const { geometry, times, positions, endCap } = resource;
-        let visiblePoints = 0;
+        let firstVisibleIndex = -1;
+        let lastVisibleIndex = -1;
+
         for (let index = 0; index < times.length; index++) {
-          if (times[index] <= maxVisibleTime) {
-            visiblePoints = index + 1;
-          } else {
+          const time = times[index];
+          if (time > maxVisibleTime) {
             break;
+          }
+          if (time >= minVisibleTime) {
+            if (firstVisibleIndex === -1) {
+              firstVisibleIndex = index;
+            }
+            lastVisibleIndex = index;
           }
         }
 
-        const totalSegments = Math.max(times.length - 1, 0);
-        const visibleSegments = Math.min(Math.max(visiblePoints - 1, 0), totalSegments);
-        const hasVisiblePoints = visiblePoints > 0;
+        const hasVisiblePoints = firstVisibleIndex !== -1 && lastVisibleIndex !== -1;
         resource.hasVisiblePoints = hasVisiblePoints;
+
         if (hasVisiblePoints) {
-          const lastPointIndex = visiblePoints - 1;
-          const baseIndex = lastPointIndex * 3;
+          const baseIndex = lastVisibleIndex * 3;
           endCap.position.set(
             positions[baseIndex] ?? 0,
             positions[baseIndex + 1] ?? 0,
             positions[baseIndex + 2] ?? 0,
           );
         }
+
+        const startSegment = hasVisiblePoints ? Math.max(firstVisibleIndex, 0) : 0;
+        const visibleSegments = hasVisiblePoints
+          ? Math.max(lastVisibleIndex - Math.max(firstVisibleIndex, 0), 0)
+          : 0;
+
         endCap.visible = resource.shouldShow && hasVisiblePoints;
+        geometry.instanceStart = startSegment;
         geometry.instanceCount = visibleSegments;
       }
     },
-    [trackLinesRef],
+    [isFullTrackTrailEnabled, trackLinesRef, trackTrailLength],
   );
 
   useEffect(() => {
@@ -248,7 +265,7 @@ export function useTrackRendering({
         continue;
       }
 
-      let resource = trackLines.get(track.id) ?? null;
+      let resource = trackLines.get(track.id);
       const positions = new Float32Array(track.points.length * 3);
       const times = new Array<number>(track.points.length);
       const offset = channelTrackOffsets[track.channelId] ?? { x: 0, y: 0 };
@@ -268,7 +285,7 @@ export function useTrackRendering({
       const highlightColor = baseColor.clone().lerp(new THREE.Color(0xffffff), 0.4);
 
       if (!resource) {
-        const geometry = new LineGeometry();
+        const geometry = new LineGeometry() as InstancedLineGeometry;
         geometry.setPositions(positions);
         geometry.instanceCount = 0;
         const material = new LineMaterial({
@@ -328,7 +345,7 @@ export function useTrackRendering({
         endCap.userData.trackId = track.id;
 
         trackGroup.add(endCap);
-        resource = {
+        const newResource: TrackLineResource = {
           line,
           outline,
           geometry,
@@ -354,7 +371,8 @@ export function useTrackRendering({
           shouldShow: false,
           needsAppearanceUpdate: true,
         };
-        trackLines.set(track.id, resource);
+        trackLines.set(track.id, newResource);
+        resource = newResource;
       } else {
         const { geometry, line, outline } = resource;
         geometry.setPositions(positions);
@@ -516,7 +534,8 @@ export function useTrackRendering({
         return null;
       }
 
-      const maxVisibleTime = targetTimeIndex + 1;
+      const maxVisibleTime = targetTimeIndex;
+      const minVisibleTime = isFullTrackTrailEnabled ? -Infinity : targetTimeIndex - trackTrailLength;
       const epsilon = 1e-3;
       let latestTime = -Infinity;
       let count = 0;
@@ -530,6 +549,10 @@ export function useTrackRendering({
       for (const point of track.points) {
         if (point.time - maxVisibleTime > epsilon) {
           break;
+        }
+
+        if (point.time < minVisibleTime - epsilon) {
+          continue;
         }
 
         if (point.time > latestTime + epsilon) {
@@ -559,7 +582,7 @@ export function useTrackRendering({
       trackGroup.updateMatrixWorld(true);
       return trackGroup.localToWorld(centroidLocal);
     },
-    [channelTrackOffsets, trackLookup, trackGroupRef],
+    [channelTrackOffsets, isFullTrackTrailEnabled, trackGroupRef, trackLookup, trackTrailLength],
   );
 
   const performHoverHitTest = useCallback(

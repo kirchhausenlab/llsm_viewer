@@ -20,6 +20,8 @@ const clampRangeToBounds = (range: NumericRange, bounds: NumericRange): NumericR
 };
 
 export const TRACK_SMOOTHING_RANGE: NumericRange = { min: 0, max: 5 };
+export const TRACK_TRAIL_LENGTH_RANGE: NumericRange = { min: 1, max: 20 };
+export const DEFAULT_TRACK_TRAIL_LENGTH = 10;
 
 export type UseTrackSelectionResult = ReturnType<typeof useTrackSelection>;
 
@@ -46,6 +48,8 @@ export const useTrackSelection = ({
   const [selectedTracksAmplitudeLimits, setSelectedTracksAmplitudeLimits] = useState<NumericRange | null>(null);
   const [selectedTracksTimeLimits, setSelectedTracksTimeLimits] = useState<NumericRange | null>(null);
   const [trackSmoothing, setTrackSmoothing] = useState(0);
+  const [isFullTrackTrailEnabled, setIsFullTrackTrailEnabled] = useState(true);
+  const [trackTrailLength, setTrackTrailLength] = useState(DEFAULT_TRACK_TRAIL_LENGTH);
   const [pendingMinimumTrackLength, setPendingMinimumTrackLength] = useState(1);
   const [minimumTrackLength, setMinimumTrackLength] = useState(1);
   const [followedTrack, setFollowedTrack] = useState<FollowedTrackState>(null);
@@ -394,6 +398,25 @@ export const useTrackSelection = ({
     setTrackSmoothing(clamped);
   }, []);
 
+  const handleTrackTrailModeChange = useCallback((isFull: boolean) => {
+    setIsFullTrackTrailEnabled(isFull);
+  }, []);
+
+  const clampTrailLength = useCallback(
+    (value: number) => Math.min(Math.max(Math.round(value), TRACK_TRAIL_LENGTH_RANGE.min), TRACK_TRAIL_LENGTH_RANGE.max),
+    [],
+  );
+
+  const handleTrackTrailLengthChange = useCallback(
+    (value: number) => {
+      setTrackTrailLength((current) => {
+        const clamped = clampTrailLength(value);
+        return clamped === current ? current : clamped;
+      });
+    },
+    [clampTrailLength],
+  );
+
   const handleClearSelectedTracks = useCallback(() => {
     setSelectedTrackOrder([]);
     setFollowedTrack(null);
@@ -406,6 +429,8 @@ export const useTrackSelection = ({
     setSelectedTracksAmplitudeLimits(null);
     setSelectedTracksTimeLimits(null);
     setTrackSmoothing(0);
+    setIsFullTrackTrailEnabled(true);
+    setTrackTrailLength(DEFAULT_TRACK_TRAIL_LENGTH);
     setPendingMinimumTrackLength(1);
     setMinimumTrackLength(1);
     setActiveTrackChannelId(null);
@@ -422,6 +447,8 @@ export const useTrackSelection = ({
     selectedTracksAmplitudeLimits,
     selectedTracksTimeLimits,
     trackSmoothing,
+    isFullTrackTrailEnabled,
+    trackTrailLength,
     pendingMinimumTrackLength,
     minimumTrackLength,
     followedTrack,
@@ -460,6 +487,8 @@ export const useTrackSelection = ({
     handleTrackVisibilityAllChange,
     handleMinimumTrackLengthChange,
     handleMinimumTrackLengthApply,
+    handleTrackTrailModeChange,
+    handleTrackTrailLengthChange,
     handleSelectedTracksAmplitudeLimitsChange,
     handleSelectedTracksTimeLimitsChange,
     handleSelectedTracksAutoRange,
