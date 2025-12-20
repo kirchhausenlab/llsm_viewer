@@ -63,18 +63,17 @@ export function buildTracksFromCsvEntries({
       trackStates.set(sourceTrackId, state);
     }
 
-    const rawDeltaTime = row[2] ?? '';
+    const rawFrame = row[2] ?? '';
     const rawX = row[3] ?? '';
     const rawY = row[4] ?? '';
     const rawZ = is2dExperiment ? (row.length >= 7 ? (row[5] ?? '') : '') : (row[5] ?? '');
-    const isBreakRow = rawDeltaTime === '' && rawX === '' && rawY === '' && rawZ === '';
+    const isBreakRow = rawFrame === '' && rawX === '' && rawY === '' && rawZ === '';
     if (isBreakRow) {
       state.breakPending = true;
       continue;
     }
 
-    const initialTime = Number(row[1]);
-    const deltaTime = Number(rawDeltaTime);
+    const frame = Number(rawFrame);
     const x = Number(rawX);
     const y = Number(rawY);
     const amplitudeIndex = is2dExperiment && row.length < 7 ? 5 : 6;
@@ -85,8 +84,7 @@ export function buildTracksFromCsvEntries({
     const z = is2dExperiment ? (hasValidZ ? zRaw : 0) : zRaw;
 
     if (
-      !Number.isFinite(initialTime) ||
-      !Number.isFinite(deltaTime) ||
+      !Number.isFinite(frame) ||
       !Number.isFinite(x) ||
       !Number.isFinite(y) ||
       !Number.isFinite(amplitudeRaw) ||
@@ -95,8 +93,7 @@ export function buildTracksFromCsvEntries({
       continue;
     }
 
-    const time = initialTime + deltaTime;
-    const normalizedTime = Math.max(0, time - 1);
+    const normalizedTime = Math.max(0, frame);
     const amplitude = Math.max(0, amplitudeRaw);
     const point: TrackPoint = { time: normalizedTime, x, y, z, amplitude };
 

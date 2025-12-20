@@ -24,12 +24,14 @@ console.log('Starting trackCsvParsing tests');
   assert.strictEqual(first.parentTrackId, null);
   assert.strictEqual(first.points.length, 1);
   assert.strictEqual(first.points[0]?.x, 305.779096);
+  assert.strictEqual(first.points[0]?.time, 50);
 
   assert.strictEqual(second.id, 'channel-0:36-1');
   assert.strictEqual(second.displayTrackNumber, '36-1');
   assert.strictEqual(second.parentTrackId, 'channel-0:36');
   assert.strictEqual(second.points.length, 1);
   assert.strictEqual(second.points[0]?.x, 327.944334);
+  assert.strictEqual(second.points[0]?.time, 13);
 
   assert.ok(typeof first.internalTrackId === 'number');
   assert.ok(typeof second.internalTrackId === 'number');
@@ -63,5 +65,22 @@ console.log('Starting trackCsvParsing tests');
   assert.strictEqual(tracks[2]?.parentTrackId, 'c:1-1');
 })();
 
-console.log('trackCsvParsing tests passed');
+(() => {
+  const tracks = buildTracksFromCsvEntries({
+    channelId: 'c',
+    channelName: 'C',
+    experimentDimension: '3d',
+    entries: [
+      ['1', '0', '0', '0', '0', '0', '0', '0'],
+      ['1', '999', '0', '1', '1', '1', '0', '0'],
+    ],
+  });
 
+  assert.strictEqual(tracks.length, 1);
+  assert.deepStrictEqual(
+    tracks[0]?.points.map((point) => point.time),
+    [0, 0],
+  );
+})();
+
+console.log('trackCsvParsing tests passed');
