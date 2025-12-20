@@ -52,7 +52,6 @@ type UsePlanarInteractionsParams = {
   channelTrackOffsets: PlanarViewerProps['channelTrackOffsets'];
   selectedTrackIds: ReadonlySet<string>;
   followedTrackId: string | null;
-  orthogonalViewsEnabled: boolean;
   onTrackSelectionToggle: (trackId: string) => void;
   onHoverVoxelChange?: PlanarViewerProps['onHoverVoxelChange'];
   clampedTimeIndex: number;
@@ -100,7 +99,6 @@ export function usePlanarInteractions({
   channelTrackOffsets,
   selectedTrackIds,
   followedTrackId,
-  orthogonalViewsEnabled,
   onTrackSelectionToggle,
   onHoverVoxelChange,
   clampedTimeIndex,
@@ -195,19 +193,11 @@ export function usePlanarInteractions({
           return null;
         }
 
-        // Render full projections of each track in every planar view so overlays stay smooth and
+        // Render full projections of each track in the XY view so overlays stay smooth and
         // consistent regardless of the current slice anchor.
         const xyPoints = scaledPoints.map((point) => ({ x: point.x, y: point.y }));
 
-        const xzPoints = orthogonalViewsEnabled
-          ? scaledPoints.map((point) => ({ x: point.x, y: point.z }))
-          : [];
-
-        const zyPoints = orthogonalViewsEnabled
-          ? scaledPoints.map((point) => ({ x: point.z, y: point.y }))
-          : [];
-
-        if (xyPoints.length === 0 && xzPoints.length === 0 && zyPoints.length === 0) {
+        if (xyPoints.length === 0) {
           return null;
         }
 
@@ -217,8 +207,6 @@ export function usePlanarInteractions({
           channelName: track.channelName,
           trackNumber: track.trackNumber,
           xyPoints,
-          xzPoints,
-          zyPoints,
           baseColor,
           highlightColor
         };
@@ -229,7 +217,6 @@ export function usePlanarInteractions({
     channelTrackOffsets,
     clampedTimeIndex,
     followedTrackId,
-    orthogonalViewsEnabled,
     primaryVolume,
     selectedTrackIds,
     trackOpacityByChannel,
@@ -401,10 +388,6 @@ export function usePlanarInteractions({
       const originY = -layout.blockHeight / 2;
       const xyOriginX = layout.xy.originX;
       const xyOriginY = layout.xy.originY;
-      const xzOriginX = layout.xz ? layout.xz.originX : null;
-      const xzOriginY = layout.xz ? layout.xz.originY : null;
-      const zyOriginX = layout.zy ? layout.zy.originX : null;
-      const zyOriginY = layout.zy ? layout.zy.originY : null;
 
       let closestTrackId: string | null = null;
       let closestDistance = Infinity;
@@ -494,12 +477,6 @@ export function usePlanarInteractions({
 
         if (track.xyPoints.length > 0) {
           measurePoints(track.xyPoints, xyOriginX, xyOriginY);
-        }
-        if (layout.xz && track.xzPoints.length > 0 && xzOriginX !== null && xzOriginY !== null) {
-          measurePoints(track.xzPoints, xzOriginX, xzOriginY);
-        }
-        if (layout.zy && track.zyPoints.length > 0 && zyOriginX !== null && zyOriginY !== null) {
-          measurePoints(track.zyPoints, zyOriginX, zyOriginY);
         }
 
         if (!isFinite(minDistanceForTrack)) {

@@ -51,9 +51,6 @@ function createViewerShellContainerProps(
     resetViewHandler: null,
     isVrPassthroughSupported: false,
     hasParsedTrackData: true,
-    orthogonalViewsAvailable: true,
-    orthogonalViewsEnabled: true,
-    onOrthogonalViewsToggle: noop,
     layoutResetToken: 0,
     controlWindowInitialPosition: { x: 0, y: 0 },
     viewerSettingsWindowInitialPosition: { x: 0, y: 0 },
@@ -185,10 +182,8 @@ function createViewerShellContainerProps(
 })();
 
 (() => {
-  const onOrthogonalViewsToggle = () => {};
   const onTrackPanelChannelSelect = () => {};
   const props = createViewerShellContainerProps({
-    onOrthogonalViewsToggle,
     onTrackPanelChannelSelect,
     vrChannelPanels: [{
       id: 'channel',
@@ -201,7 +196,6 @@ function createViewerShellContainerProps(
 
   const viewerShellProps = useViewerShellProps(props);
 
-  assert.strictEqual(viewerShellProps.planarSettings.onOrthogonalViewsToggle, onOrthogonalViewsToggle);
   assert.strictEqual(viewerShellProps.tracksPanel.onChannelTabSelect, onTrackPanelChannelSelect);
   assert.deepStrictEqual(viewerShellProps.volumeViewerProps.vr?.channelPanels, props.vrChannelPanels);
 })();

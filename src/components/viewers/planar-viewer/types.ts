@@ -49,10 +49,7 @@ export type PlanarLayoutView = {
 export type PlanarLayout = {
   blockWidth: number;
   blockHeight: number;
-  gap: number;
   xy: PlanarLayoutView | null;
-  xz: PlanarLayoutView | null;
-  zy: PlanarLayoutView | null;
 };
 
 export type TrackRenderEntry = {
@@ -61,8 +58,6 @@ export type TrackRenderEntry = {
   channelName: string;
   trackNumber: number;
   xyPoints: { x: number; y: number }[];
-  xzPoints: { x: number; y: number }[];
-  zyPoints: { x: number; y: number }[];
   baseColor: { r: number; g: number; b: number };
   highlightColor: { r: number; g: number; b: number };
 };
@@ -103,7 +98,6 @@ export type PlanarViewerProps = {
     components: { text: string; color: string }[];
     coordinates: { x: number; y: number; z: number };
   } | null) => void;
-  orthogonalViewsEnabled: boolean;
 };
 
 export type TrackHitTestResult = {
@@ -113,7 +107,6 @@ export type TrackHitTestResult = {
 
 export type SliceSampler = (x: number, y: number) => number[] | null;
 export type Offset = { x: number; y: number };
-export type OrthogonalAnchor = { x: number; y: number } | null;
 export type HoveredPixel = { x: number; y: number } | null;
 export type HoveredVoxelInfo = {
   intensity: string;

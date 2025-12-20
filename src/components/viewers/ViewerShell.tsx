@@ -15,7 +15,6 @@ function ViewerShell({
   viewerMode,
   volumeViewerProps,
   planarViewerProps,
-  planarSettings,
   topMenu,
   layout,
   modeControls,
@@ -290,7 +289,6 @@ function ViewerShell({
   const { modeToggle, viewerSettings } = useViewerModeControls({
     viewerMode,
     modeControls,
-    planarSettings,
     showRenderingQualityControl,
     renderingQuality,
     onRenderingQualityChange: handleRenderingQualityChange,

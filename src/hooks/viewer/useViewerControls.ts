@@ -20,9 +20,6 @@ export type UseViewerControlsResult = {
   toggleViewerMode: () => void;
   sliceIndex: number;
   handleSliceIndexChange: (index: number) => void;
-  orthogonalViewsEnabled: boolean;
-  toggleOrthogonalViews: () => void;
-  orthogonalViewsAvailable: boolean;
   playback: ViewerPlaybackHook;
   vr: ReturnType<typeof useVrLifecycle> & {
     vrButtonDisabled: boolean;
@@ -43,7 +40,6 @@ export const useViewerControls = ({
 
   const [viewerMode, setViewerMode] = useState<ViewerMode>(initialViewerMode);
   const [sliceIndex, setSliceIndex] = useState(0);
-  const [orthogonalViewsEnabled, setOrthogonalViewsEnabled] = useState(false);
   const hasInitializedSliceIndexRef = useRef(false);
 
   useEffect(() => {
@@ -78,12 +74,6 @@ export const useViewerControls = ({
     }
   }, [maxSliceDepth, sliceIndex]);
 
-  useEffect(() => {
-    if (maxSliceDepth <= 1 && orthogonalViewsEnabled) {
-      setOrthogonalViewsEnabled(false);
-    }
-  }, [maxSliceDepth, orthogonalViewsEnabled]);
-
   const toggleViewerMode = useCallback(() => {
     if (!is3dViewerAvailable) {
       return;
@@ -97,10 +87,6 @@ export const useViewerControls = ({
 
   const handleSliceIndexChange = useCallback((index: number) => {
     setSliceIndex(index);
-  }, []);
-
-  const toggleOrthogonalViews = useCallback(() => {
-    setOrthogonalViewsEnabled((current) => !current);
   }, []);
 
   const vrLifecycle = useVrLifecycle({ viewerMode, onBeforeEnter: onBeforeEnterVr });
@@ -154,19 +140,12 @@ export const useViewerControls = ({
     viewerMode
   ]);
 
-  const orthogonalViewsAvailable = useMemo(() => {
-    return viewerMode === '2d' && maxSliceDepth > 1;
-  }, [maxSliceDepth, viewerMode]);
-
   return {
     viewerMode,
     setViewerMode,
     toggleViewerMode,
     sliceIndex,
     handleSliceIndexChange,
-    orthogonalViewsEnabled,
-    toggleOrthogonalViews,
-    orthogonalViewsAvailable,
     playback,
     vr: {
       ...vrLifecycle,

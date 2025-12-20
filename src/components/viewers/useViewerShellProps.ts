@@ -60,9 +60,6 @@ export type ViewerShellContainerProps = {
   resetViewHandler: ViewerShellProps['modeControls']['resetViewHandler'];
   isVrPassthroughSupported: VolumeViewerVrProps['isVrPassthroughSupported'];
   hasParsedTrackData: boolean;
-  orthogonalViewsAvailable: ViewerShellProps['planarSettings']['orthogonalViewsAvailable'];
-  orthogonalViewsEnabled: ViewerShellProps['planarSettings']['orthogonalViewsEnabled'];
-  onOrthogonalViewsToggle: ViewerShellProps['planarSettings']['onOrthogonalViewsToggle'];
   layoutResetToken: ViewerShellProps['layout']['resetToken'];
   controlWindowInitialPosition: ViewerShellProps['layout']['controlWindowInitialPosition'];
   viewerSettingsWindowInitialPosition: ViewerShellProps['layout']['viewerSettingsWindowInitialPosition'];
@@ -206,9 +203,6 @@ export function useViewerShellProps({
   resetViewHandler,
   isVrPassthroughSupported,
   hasParsedTrackData,
-  orthogonalViewsAvailable,
-  orthogonalViewsEnabled,
-  onOrthogonalViewsToggle,
   layoutResetToken,
   controlWindowInitialPosition,
   viewerSettingsWindowInitialPosition,
@@ -311,7 +305,7 @@ export function useViewerShellProps({
   onAutoRange,
   onClearSelection,
   getLayerDefaultSettings
-}: ViewerShellContainerProps): ViewerShellProps {
+  }: ViewerShellContainerProps): ViewerShellProps {
   const volumeViewerProps: ViewerShellProps['volumeViewerProps'] = {
     layers: viewerLayers,
     isLoading,
@@ -323,12 +317,12 @@ export function useViewerShellProps({
     isPlaying,
     playbackDisabled,
     playbackLabel,
-      fps,
-      blendingMode,
-      onTogglePlayback,
-      onTimeIndexChange,
-      canAdvancePlayback,
-      onFpsChange,
+    fps,
+    blendingMode,
+    onTogglePlayback,
+    onTimeIndexChange,
+    canAdvancePlayback,
+    onFpsChange,
     onVolumeStepScaleChange,
     onRegisterVolumeStepScaleChange,
     onRegisterReset,
@@ -339,11 +333,11 @@ export function useViewerShellProps({
     trackLineWidthByChannel,
     channelTrackColorModes,
     channelTrackOffsets,
-      selectedTrackIds,
-      followedTrackId,
-      followedVoxel,
-      onTrackSelectionToggle,
-      onTrackFollowRequest,
+    selectedTrackIds,
+    followedTrackId,
+    followedVoxel,
+    onTrackSelectionToggle,
+    onTrackFollowRequest,
     onVoxelFollowRequest,
     onHoverVoxelChange,
     vr: is3dViewerAvailable
@@ -407,8 +401,7 @@ export function useViewerShellProps({
     selectedTrackIds,
     onTrackSelectionToggle,
     onTrackFollowRequest,
-    onHoverVoxelChange,
-    orthogonalViewsEnabled: orthogonalViewsAvailable && orthogonalViewsEnabled
+    onHoverVoxelChange
   };
 
   const showSelectedTracksWindow = !isVrActive && hasParsedTrackData;
@@ -417,11 +410,6 @@ export function useViewerShellProps({
     viewerMode,
     volumeViewerProps,
     planarViewerProps,
-    planarSettings: {
-      orthogonalViewsAvailable,
-      orthogonalViewsEnabled,
-      onOrthogonalViewsToggle
-    },
     topMenu: {
       onReturnToLauncher,
       onResetLayout: onResetWindowLayout,
