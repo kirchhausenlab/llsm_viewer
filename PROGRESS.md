@@ -1,6 +1,7 @@
 # Progress
 
 ## Latest changes
+- Re-enabled Q/E roll controls while following a track or voxel so users can roll the camera without breaking the follow lock, while keeping translational input disabled.
 - Turned the Help control into a dropdown that opens a center-screen navigation controls window with the viewer tips content and standard minimize/close actions.
 - Precomputed and persisted per-timepoint 256-bin intensity histograms during preprocessing (manifest v4) and load them with each volume at runtime, eliminating full-volume histogram scans in the viewer for auto-windowing and histogram UI/VR panels. Note: this bumps the preprocessed dataset version to 4 (older preprocessed exports will not open).
 - Improved playback smoothness by removing per-timepoint full-volume histogram scans from VR panel state and by avoiding rendering heavy channel-panel UI for inactive tabs; brightness/contrast histograms now compute lazily (idle callback) and use an approximate sampler for large volumes, and they freeze while playback is running.
