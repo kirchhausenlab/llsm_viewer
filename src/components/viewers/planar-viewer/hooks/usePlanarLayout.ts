@@ -6,21 +6,16 @@ export const ROTATION_KEY_STEP = 0.1;
 export const PAN_STEP = 40;
 export const MIN_SCALE = 0.05;
 export const MAX_SCALE = 40;
-export const ORTHOGONAL_GAP = 16;
 
 function createLayout(
   primaryVolume: { width: number; height: number; depth: number } | null,
-  orthogonalViewsEnabled: boolean,
   voxelScale: { x: number; y: number; z: number }
 ): PlanarLayout {
   if (!primaryVolume) {
     return {
       blockWidth: 0,
       blockHeight: 0,
-      gap: ORTHOGONAL_GAP,
-      xy: null,
-      xz: null,
-      zy: null
+      xy: null
     };
   }
 
@@ -39,44 +34,10 @@ function createLayout(
     centerX: xyWidth / 2,
     centerY: xyHeight / 2
   };
-
-  if (!orthogonalViewsEnabled || primaryVolume.depth <= 1) {
-    return {
-      blockWidth: xyWidth,
-      blockHeight: xyHeight,
-      gap: ORTHOGONAL_GAP,
-      xy,
-      xz: null,
-      zy: null
-    };
-  }
-
-  const xzWidth = primaryVolume.width * safeScaleX;
-  const xzHeight = primaryVolume.depth * safeScaleZ;
-  const zyWidth = primaryVolume.depth * safeScaleZ;
-  const zyHeight = primaryVolume.height * safeScaleY;
-
   return {
-    blockWidth: xyWidth + ORTHOGONAL_GAP + zyWidth,
-    blockHeight: xyHeight + ORTHOGONAL_GAP + xzHeight,
-    gap: ORTHOGONAL_GAP,
-    xy,
-    xz: {
-      width: xzWidth,
-      height: xzHeight,
-      originX: 0,
-      originY: xyHeight + ORTHOGONAL_GAP,
-      centerX: xzWidth / 2,
-      centerY: xyHeight + ORTHOGONAL_GAP + xzHeight / 2
-    },
-    zy: {
-      width: zyWidth,
-      height: zyHeight,
-      originX: xyWidth + ORTHOGONAL_GAP,
-      originY: 0,
-      centerX: xyWidth + ORTHOGONAL_GAP + zyWidth / 2,
-      centerY: zyHeight / 2
-    }
+    blockWidth: xyWidth,
+    blockHeight: xyHeight,
+    xy
   };
 }
 
@@ -86,7 +47,6 @@ export function createInitialViewState(): ViewState {
 
 type UsePlanarLayoutParams = {
   primaryVolume: { width: number; height: number; depth: number } | null;
-  orthogonalViewsEnabled: boolean;
   voxelScale: { x: number; y: number; z: number };
   containerRef: MutableRefObject<HTMLDivElement | null>;
   onRegisterReset: (handler: (() => void) | null) => void;
@@ -94,7 +54,6 @@ type UsePlanarLayoutParams = {
 
 export function usePlanarLayout({
   primaryVolume,
-  orthogonalViewsEnabled,
   voxelScale,
   containerRef,
   onRegisterReset
@@ -107,10 +66,12 @@ export function usePlanarLayout({
     viewStateRef.current = viewState;
   }, [viewState]);
 
-  const layout = useMemo(
-    () => createLayout(primaryVolume, orthogonalViewsEnabled, voxelScale),
-    [orthogonalViewsEnabled, primaryVolume, voxelScale.x, voxelScale.y, voxelScale.z]
-  );
+  const layout = useMemo(() => createLayout(primaryVolume, voxelScale), [
+    primaryVolume,
+    voxelScale.x,
+    voxelScale.y,
+    voxelScale.z
+  ]);
 
   const updateViewState = useCallback(
     (updater: Partial<ViewState> | ((prev: ViewState) => ViewState)) => {

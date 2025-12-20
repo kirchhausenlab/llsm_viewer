@@ -71,12 +71,6 @@ export type PlaybackControlsProps = {
   canRecord: boolean;
 };
 
-export type PlanarSettingsProps = {
-  orthogonalViewsEnabled: boolean;
-  orthogonalViewsAvailable: boolean;
-  onOrthogonalViewsToggle: () => void;
-};
-
 export type ChannelPanelStyle = (CSSProperties & { '--channel-slider-color'?: string }) &
   Record<string, string | number | undefined>;
 
@@ -200,7 +194,6 @@ export type ViewerShellProps = {
   viewerMode: '3d' | '2d';
   volumeViewerProps: VolumeViewerProps;
   planarViewerProps: PlanarViewerProps;
-  planarSettings: PlanarSettingsProps;
   topMenu: TopMenuProps;
   layout: LayoutProps;
   modeControls: ModeControlsProps;

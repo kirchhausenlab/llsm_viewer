@@ -5,7 +5,7 @@ import {
   type FormattedChannelValue,
 } from '../../../../shared/utils/intensityFormatting';
 import type { VolumeDataType } from '../../../../types/volume';
-import type { HoveredIntensityInfo, OrthogonalAnchor, SliceData, ViewerLayer } from '../types';
+import type { HoveredIntensityInfo, SliceData, ViewerLayer } from '../types';
 import { clamp, getColorComponents } from '../utils';
 
 const MIN_ALPHA = 0.05;
@@ -168,16 +168,12 @@ type UsePlanarSlicesParams = {
   layers: ViewerLayer[];
   primaryVolume: ViewerLayer['volume'];
   clampedSliceIndex: number;
-  orthogonalAnchor: OrthogonalAnchor;
-  orthogonalViewsEnabled: boolean;
 };
 
 export function usePlanarSlices({
   layers,
   primaryVolume,
-  clampedSliceIndex,
-  orthogonalAnchor,
-  orthogonalViewsEnabled
+  clampedSliceIndex
 }: UsePlanarSlicesParams) {
   const sliceData = useMemo<SliceData | null>(() => {
     if (!primaryVolume) {
@@ -257,146 +253,6 @@ export function usePlanarSlices({
       };
     });
   }, [clampedSliceIndex, layers, primaryVolume]);
-
-  const xzSliceData = useMemo<SliceData | null>(() => {
-    if (!primaryVolume || !orthogonalViewsEnabled || primaryVolume.depth <= 1) {
-      return null;
-    }
-
-    const anchorY = orthogonalAnchor?.y ?? Math.max(0, primaryVolume.height / 2 - 0.5);
-    const width = primaryVolume.width;
-    const depth = primaryVolume.depth;
-
-    return createSliceWithSampler(width, depth, layers, (layer) => {
-      const volume = layer.volume;
-      if (!volume || !layer.visible) {
-        return null;
-      }
-      if (
-        volume.width !== primaryVolume.width ||
-        volume.height !== primaryVolume.height ||
-        volume.depth !== primaryVolume.depth
-      ) {
-        return null;
-      }
-
-      const channels = Math.max(1, volume.channels);
-      const sliceStride = volume.width * volume.height * channels;
-      const rowStride = volume.width * channels;
-      const offsetX = layer.offsetX ?? 0;
-      const offsetY = layer.offsetY ?? 0;
-      const values = new Array<number>(channels);
-
-      return (x, z) => {
-        const clampedZ = Math.round(clamp(z, 0, volume.depth - 1));
-        const sliceOffset = clampedZ * sliceStride;
-        const sampleX = x - offsetX;
-        const sampleY = anchorY - offsetY;
-
-        const clampedX = clamp(sampleX, 0, volume.width - 1);
-        const clampedY = clamp(sampleY, 0, volume.height - 1);
-        const leftX = Math.floor(clampedX);
-        const rightX = Math.min(volume.width - 1, leftX + 1);
-        const topY = Math.floor(clampedY);
-        const bottomY = Math.min(volume.height - 1, topY + 1);
-        const tX = clampedX - leftX;
-        const tY = clampedY - topY;
-
-        const topRowOffset = sliceOffset + topY * rowStride;
-        const bottomRowOffset = sliceOffset + bottomY * rowStride;
-
-        const topLeftOffset = topRowOffset + leftX * channels;
-        const topRightOffset = topRowOffset + rightX * channels;
-        const bottomLeftOffset = bottomRowOffset + leftX * channels;
-        const bottomRightOffset = bottomRowOffset + rightX * channels;
-
-        const weightTopLeft = (1 - tX) * (1 - tY);
-        const weightTopRight = tX * (1 - tY);
-        const weightBottomLeft = (1 - tX) * tY;
-        const weightBottomRight = tX * tY;
-
-        for (let channelIndex = 0; channelIndex < channels; channelIndex += 1) {
-          values[channelIndex] =
-            (volume.normalized[topLeftOffset + channelIndex] ?? 0) * weightTopLeft +
-            (volume.normalized[topRightOffset + channelIndex] ?? 0) * weightTopRight +
-            (volume.normalized[bottomLeftOffset + channelIndex] ?? 0) * weightBottomLeft +
-            (volume.normalized[bottomRightOffset + channelIndex] ?? 0) * weightBottomRight;
-        }
-
-        return values;
-      };
-    });
-  }, [layers, orthogonalAnchor, orthogonalViewsEnabled, primaryVolume]);
-
-  const zySliceData = useMemo<SliceData | null>(() => {
-    if (!primaryVolume || !orthogonalViewsEnabled || primaryVolume.depth <= 1) {
-      return null;
-    }
-
-    const anchorX = orthogonalAnchor?.x ?? Math.max(0, primaryVolume.width / 2 - 0.5);
-    const height = primaryVolume.height;
-    const depth = primaryVolume.depth;
-
-    return createSliceWithSampler(depth, height, layers, (layer) => {
-      const volume = layer.volume;
-      if (!volume || !layer.visible) {
-        return null;
-      }
-      if (
-        volume.width !== primaryVolume.width ||
-        volume.height !== primaryVolume.height ||
-        volume.depth !== primaryVolume.depth
-      ) {
-        return null;
-      }
-
-      const channels = Math.max(1, volume.channels);
-      const sliceStride = volume.width * volume.height * channels;
-      const rowStride = volume.width * channels;
-      const offsetX = layer.offsetX ?? 0;
-      const offsetY = layer.offsetY ?? 0;
-      const values = new Array<number>(channels);
-
-      return (z, y) => {
-        const clampedZ = Math.round(clamp(z, 0, volume.depth - 1));
-        const sliceOffset = clampedZ * sliceStride;
-        const sampleX = anchorX - offsetX;
-        const sampleY = y - offsetY;
-
-        const clampedX = clamp(sampleX, 0, volume.width - 1);
-        const clampedY = clamp(sampleY, 0, volume.height - 1);
-        const leftX = Math.floor(clampedX);
-        const rightX = Math.min(volume.width - 1, leftX + 1);
-        const topY = Math.floor(clampedY);
-        const bottomY = Math.min(volume.height - 1, topY + 1);
-        const tX = clampedX - leftX;
-        const tY = clampedY - topY;
-
-        const topRowOffset = sliceOffset + topY * rowStride;
-        const bottomRowOffset = sliceOffset + bottomY * rowStride;
-
-        const topLeftOffset = topRowOffset + leftX * channels;
-        const topRightOffset = topRowOffset + rightX * channels;
-        const bottomLeftOffset = bottomRowOffset + leftX * channels;
-        const bottomRightOffset = bottomRowOffset + rightX * channels;
-
-        const weightTopLeft = (1 - tX) * (1 - tY);
-        const weightTopRight = tX * (1 - tY);
-        const weightBottomLeft = (1 - tX) * tY;
-        const weightBottomRight = tX * tY;
-
-        for (let channelIndex = 0; channelIndex < channels; channelIndex += 1) {
-          values[channelIndex] =
-            (volume.normalized[topLeftOffset + channelIndex] ?? 0) * weightTopLeft +
-            (volume.normalized[topRightOffset + channelIndex] ?? 0) * weightTopRight +
-            (volume.normalized[bottomLeftOffset + channelIndex] ?? 0) * weightBottomLeft +
-            (volume.normalized[bottomRightOffset + channelIndex] ?? 0) * weightBottomRight;
-        }
-
-        return values;
-      };
-    });
-  }, [layers, orthogonalAnchor, orthogonalViewsEnabled, primaryVolume]);
 
   const samplePixelValue = useCallback(
     (sliceX: number, sliceY: number): HoveredIntensityInfo | null => {
@@ -517,8 +373,6 @@ export function usePlanarSlices({
 
   return {
     sliceData,
-    xzSliceData,
-    zySliceData,
     samplePixelValue,
   };
 }

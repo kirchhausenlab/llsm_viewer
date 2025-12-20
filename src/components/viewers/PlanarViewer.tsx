@@ -84,16 +84,11 @@ function PlanarViewer({
   onTrackSelectionToggle,
   onTrackFollowRequest: _onTrackFollowRequest,
   onHoverVoxelChange,
-  orthogonalViewsEnabled
 }: PlanarViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const xyCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const xzCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const zyCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const xyContextRef = useRef<CanvasRenderingContext2D | null>(null);
-  const xzContextRef = useRef<CanvasRenderingContext2D | null>(null);
-  const zyContextRef = useRef<CanvasRenderingContext2D | null>(null);
   const hoveredPixelRef = useRef<HoveredPixel>(null);
   const previousPrimaryVolumeRef = useRef<{ width: number; height: number; depth: number } | null>(null);
   const needsAutoFitRef = useRef(false);
@@ -226,48 +221,15 @@ function PlanarViewer({
 
   const { layout, viewState, viewStateRef, updateViewState, resetView } = usePlanarLayout({
     primaryVolume,
-    orthogonalViewsEnabled,
     voxelScale: { x: trackScaleX, y: trackScaleY, z: trackScaleZ },
     containerRef,
     onRegisterReset
   });
 
-  const orthogonalAnchor = useMemo(() => {
-    if (!primaryVolume) {
-      return null;
-    }
-
-    const fallbackAnchor = {
-      x: Math.max(0, primaryVolume.width / 2 - 0.5),
-      y: Math.max(0, primaryVolume.height / 2 - 0.5)
-    };
-
-    if (followedTrackId) {
-      const centroid = computeTrackCentroid(followedTrackId, clampedTimeIndex);
-      if (centroid) {
-        return {
-          x: clamp(centroid.x / trackScaleX, 0, Math.max(0, primaryVolume.width - 1)),
-          y: clamp(centroid.y / trackScaleY, 0, Math.max(0, primaryVolume.height - 1))
-        };
-      }
-    }
-
-    if (hoveredPixel) {
-      return {
-        x: clamp(hoveredPixel.x ?? 0, 0, Math.max(0, primaryVolume.width - 1)),
-        y: clamp(hoveredPixel.y ?? 0, 0, Math.max(0, primaryVolume.height - 1))
-      };
-    }
-
-    return fallbackAnchor;
-  }, [clampedTimeIndex, computeTrackCentroid, followedTrackId, hoveredPixel, primaryVolume, trackScaleX, trackScaleY]);
-
-  const { sliceData, xzSliceData, zySliceData, samplePixelValue } = usePlanarSlices({
+  const { sliceData, samplePixelValue } = usePlanarSlices({
     layers,
     primaryVolume,
-    clampedSliceIndex,
-    orthogonalAnchor,
-    orthogonalViewsEnabled
+    clampedSliceIndex
   });
 
   const {
@@ -296,7 +258,6 @@ function PlanarViewer({
     channelTrackOffsets,
     selectedTrackIds,
     followedTrackId,
-    orthogonalViewsEnabled,
     onTrackSelectionToggle,
     onHoverVoxelChange,
     clampedTimeIndex,
@@ -336,8 +297,6 @@ function PlanarViewer({
       return;
     }
 
-    const xzCanvas = layout.xz && xzSliceData ? xzCanvasRef.current : null;
-    const zyCanvas = layout.zy && zySliceData ? zyCanvasRef.current : null;
     context.save();
 
     const viewScale = viewState.scale;
@@ -365,48 +324,6 @@ function PlanarViewer({
 
     const xyOriginX = originX + layout.xy.originX;
     const xyOriginY = originY + layout.xy.originY;
-
-    if (layout.zy && zyCanvas) {
-      const zyCenterX = originX + layout.zy.centerX;
-      const zyCenterY = originY + layout.zy.centerY;
-      context.drawImage(
-        zyCanvas,
-        originX + layout.zy.originX,
-        originY + layout.zy.originY,
-        layout.zy.width,
-        layout.zy.height
-      );
-      context.save();
-      context.globalAlpha = 0.4;
-      context.beginPath();
-      context.moveTo(xyCenterX, originY + layout.zy.originY);
-      context.lineTo(zyCenterX, zyCenterY);
-      context.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-      context.lineWidth = 1 / dprScale;
-      context.stroke();
-      context.restore();
-    }
-
-    if (layout.xz && xzCanvas) {
-      const xzCenterX = originX + layout.xz.centerX;
-      const xzCenterY = originY + layout.xz.centerY;
-      context.drawImage(
-        xzCanvas,
-        originX + layout.xz.originX,
-        originY + layout.xz.originY,
-        layout.xz.width,
-        layout.xz.height
-      );
-      context.save();
-      context.globalAlpha = 0.4;
-      context.beginPath();
-      context.moveTo(xyCenterX, originY + layout.xz.originY);
-      context.lineTo(xzCenterX, xzCenterY);
-      context.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-      context.lineWidth = 1 / dprScale;
-      context.stroke();
-      context.restore();
-    }
 
     if (hoveredPixel && layout.xy) {
       const hoverX = originX + layout.xy.originX + hoveredPixel.x * trackScaleX;
@@ -527,20 +444,6 @@ function PlanarViewer({
 
         const xyEndpoint = track.xyPoints.length > 0 ? track.xyPoints[track.xyPoints.length - 1] : null;
         drawTrack(track.xyPoints, xyOriginX, xyOriginY, xyEndpoint);
-
-        if (layout.xz) {
-          const xzOriginX = originX + layout.xz.originX;
-          const xzOriginY = originY + layout.xz.originY;
-          const xzEndpoint = track.xzPoints.length > 0 ? track.xzPoints[track.xzPoints.length - 1] : null;
-          drawTrack(track.xzPoints, xzOriginX, xzOriginY, xzEndpoint);
-        }
-
-        if (layout.zy) {
-          const zyOriginX = originX + layout.zy.originX;
-          const zyOriginY = originY + layout.zy.originY;
-          const zyEndpoint = track.zyPoints.length > 0 ? track.zyPoints[track.zyPoints.length - 1] : null;
-          drawTrack(track.zyPoints, zyOriginX, zyOriginY, zyEndpoint);
-        }
       }
     }
 
@@ -561,9 +464,7 @@ function PlanarViewer({
     viewState.offsetX,
     viewState.offsetY,
     viewState.rotation,
-    viewState.scale,
-    xzSliceData,
-    zySliceData
+    viewState.scale
   ]);
 
   useEffect(() => {
@@ -628,13 +529,10 @@ function PlanarViewer({
 
   useEffect(() => {
     const updatedXY = updateOffscreenCanvas(sliceData, xyCanvasRef, xyContextRef);
-    const updatedXZ = updateOffscreenCanvas(xzSliceData, xzCanvasRef, xzContextRef);
-    const updatedZY = updateOffscreenCanvas(zySliceData, zyCanvasRef, zyContextRef);
-
-    if (updatedXY || updatedXZ || updatedZY) {
+    if (updatedXY) {
       setSliceRevision((value) => value + 1);
     }
-  }, [sliceData, xzSliceData, zySliceData]);
+  }, [sliceData]);
 
   useEffect(() => {
     if (needsAutoFitRef.current) {

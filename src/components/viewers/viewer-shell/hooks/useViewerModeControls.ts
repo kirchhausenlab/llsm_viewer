@@ -1,4 +1,4 @@
-import type { PlanarSettingsProps, ViewerMode, ModeControlsProps } from '../types';
+import type { ViewerMode, ModeControlsProps } from '../types';
 
 export type ModeToggleState = {
   viewerMode: ViewerMode;
@@ -20,9 +20,6 @@ export type ViewerSettingsControls = {
   onSamplingModeToggle: ModeControlsProps['onSamplingModeToggle'];
   blendingMode: ModeControlsProps['blendingMode'];
   onBlendingModeToggle: ModeControlsProps['onBlendingModeToggle'];
-  orthogonalViewsEnabled: PlanarSettingsProps['orthogonalViewsEnabled'];
-  orthogonalViewsAvailable: PlanarSettingsProps['orthogonalViewsAvailable'];
-  onOrthogonalViewsToggle: PlanarSettingsProps['onOrthogonalViewsToggle'];
   showRenderingQualityControl: boolean;
   renderingQuality: number;
   onRenderingQualityChange: (value: number) => void;
@@ -33,7 +30,6 @@ export type ViewerSettingsControls = {
 export function useViewerModeControls({
   viewerMode,
   modeControls,
-  planarSettings,
   showRenderingQualityControl,
   renderingQuality,
   onRenderingQualityChange,
@@ -41,7 +37,6 @@ export function useViewerModeControls({
 }: {
   viewerMode: ViewerMode;
   modeControls: ModeControlsProps;
-  planarSettings: PlanarSettingsProps;
   showRenderingQualityControl: boolean;
   renderingQuality: number;
   onRenderingQualityChange: (value: number) => void;
@@ -67,9 +62,6 @@ export function useViewerModeControls({
     onSamplingModeToggle: modeControls.onSamplingModeToggle,
     blendingMode: modeControls.blendingMode,
     onBlendingModeToggle: modeControls.onBlendingModeToggle,
-    orthogonalViewsEnabled: planarSettings.orthogonalViewsEnabled,
-    orthogonalViewsAvailable: planarSettings.orthogonalViewsAvailable,
-    onOrthogonalViewsToggle: planarSettings.onOrthogonalViewsToggle,
     showRenderingQualityControl,
     renderingQuality,
     onRenderingQualityChange,

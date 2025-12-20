@@ -72,9 +72,6 @@ export default function PlaybackControlsPanel({
     onSamplingModeToggle,
     blendingMode,
     onBlendingModeToggle,
-    orthogonalViewsEnabled,
-    orthogonalViewsAvailable,
-    onOrthogonalViewsToggle,
     showRenderingQualityControl,
     hasVolumeData
   } = viewerSettings;
@@ -294,25 +291,6 @@ export default function PlaybackControlsPanel({
                     value={renderingQuality}
                     onChange={(event) => onRenderingQualityChange(Number(event.target.value))}
                   />
-                </div>
-              ) : null}
-
-              {viewerMode === '2d' ? (
-                <div className="control-group">
-                  <div className="viewer-mode-row viewer-mode-row--orthogonal">
-                    <span className="viewer-mode-label">Orthogonal views</span>
-                    <button
-                      type="button"
-                      className={
-                        orthogonalViewsEnabled ? 'viewer-mode-button is-active' : 'viewer-mode-button'
-                      }
-                      onClick={onOrthogonalViewsToggle}
-                      disabled={!orthogonalViewsAvailable || !hasVolumeData}
-                      aria-pressed={orthogonalViewsEnabled}
-                    >
-                      {orthogonalViewsEnabled ? 'On' : 'Off'}
-                    </button>
-                  </div>
                 </div>
               ) : null}
 

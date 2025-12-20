@@ -254,3 +254,7 @@
 ## Track-follow playback window lock
 - When a track is followed, time changes (slider, buttons, playback) snap to the track's `[ti, tf]` time index bounds and playback loops within that window.
 - Implemented the windowing logic in shared utilities and applied it to both desktop playback (2D mode RAF loop) and VR playback advancement.
+
+## Orthogonal view removal
+- Removed the 2D orthogonal view toggle and supporting XZ/ZY rendering paths so planar viewing always uses the standard XY slice layout.
+- Simplified viewer controls and shell wiring to drop orthogonal availability state and related tests.
