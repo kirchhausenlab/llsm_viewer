@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import PlanarViewer from './PlanarViewer';
 import VolumeViewer from './VolumeViewer';
@@ -7,9 +7,12 @@ import PlaybackControlsPanel from './viewer-shell/PlaybackControlsPanel';
 import PlotSettingsPanel from './viewer-shell/PlotSettingsPanel';
 import TopMenu from './viewer-shell/TopMenu';
 import TracksPanel from './viewer-shell/TracksPanel';
+import NavigationHelpWindow, { computeNavigationHelpInitialPosition } from './viewer-shell/NavigationHelpWindow';
 import { useViewerModeControls } from './viewer-shell/hooks/useViewerModeControls';
 import { useViewerPlaybackControls } from './viewer-shell/hooks/useViewerPlaybackControls';
 import type { ViewerMode, ViewerShellProps } from './viewer-shell/types';
+
+const NAVIGATION_HELP_WINDOW_WIDTH = 420;
 
 function ViewerShell({
   viewerMode,
@@ -45,6 +48,15 @@ function ViewerShell({
   const hasTrackData = tracksPanel.channels.some(
     (channel) => (tracksPanel.parsedTracksByChannel.get(channel.id)?.length ?? 0) > 0
   );
+  const navigationHelpInitialPosition = useMemo(
+    () =>
+      computeNavigationHelpInitialPosition({
+        windowMargin,
+        windowWidth: NAVIGATION_HELP_WINDOW_WIDTH
+      }),
+    [windowMargin]
+  );
+  const { isHelpMenuOpen, closeHelpMenu } = topMenu;
 
   type CaptureTargetGetter = () => HTMLCanvasElement | null;
 
@@ -330,6 +342,15 @@ function ViewerShell({
       </main>
 
       <TopMenu {...topMenu} />
+
+      <NavigationHelpWindow
+        isOpen={isHelpMenuOpen}
+        onClose={closeHelpMenu}
+        initialPosition={navigationHelpInitialPosition}
+        windowMargin={windowMargin}
+        width={NAVIGATION_HELP_WINDOW_WIDTH}
+        resetSignal={resetToken}
+      />
 
       <PlaybackControlsPanel
         layout={{

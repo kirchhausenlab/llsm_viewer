@@ -57,10 +57,10 @@ function renderHelpMenu() {
   withDocumentMock(() => {
     const { renderer, getProps } = renderHelpMenu();
 
-    act(() => getProps().onHelpMenuToggle());
+    act(() => getProps().openHelpMenu());
     assert.equal(getProps().isHelpMenuOpen, true);
 
-    act(() => getProps().onHelpMenuToggle());
+    act(() => getProps().closeHelpMenu());
     assert.equal(getProps().isHelpMenuOpen, false);
 
     renderer.unmount();
@@ -71,7 +71,7 @@ function renderHelpMenu() {
   withDocumentMock((documentMock) => {
     const { renderer, getProps } = renderHelpMenu();
 
-    act(() => getProps().onHelpMenuToggle());
+    act(() => getProps().openHelpMenu());
     assert.equal(getProps().isHelpMenuOpen, true);
 
     act(() => documentMock.dispatchEvent({ type: 'keydown', key: 'Escape' } as unknown as Event));
@@ -84,20 +84,14 @@ function renderHelpMenu() {
 (() => {
   withDocumentMock((documentMock) => {
     const { renderer, getProps } = renderHelpMenu();
-    const insideTarget = {};
-    const container = {
-      contains: (node: unknown) => node === insideTarget
-    } as unknown as HTMLDivElement;
 
-    getProps().helpMenuRef.current = container;
-
-    act(() => getProps().onHelpMenuToggle());
+    act(() => getProps().openHelpMenu());
     assert.equal(getProps().isHelpMenuOpen, true);
 
-    act(() => documentMock.dispatchEvent({ type: 'mousedown', target: insideTarget } as unknown as Event));
+    act(() => documentMock.dispatchEvent({ type: 'mousedown' } as unknown as Event));
     assert.equal(getProps().isHelpMenuOpen, true);
 
-    act(() => documentMock.dispatchEvent({ type: 'mousedown', target: {} } as unknown as Event));
+    act(() => getProps().closeHelpMenu());
     assert.equal(getProps().isHelpMenuOpen, false);
 
     renderer.unmount();
