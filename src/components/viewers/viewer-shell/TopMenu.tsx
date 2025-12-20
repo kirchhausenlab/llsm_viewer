@@ -9,7 +9,7 @@ import {
 
 import type { TopMenuProps } from './types';
 
-type DropdownMenuId = 'file' | 'view' | 'channels' | 'tracks';
+type DropdownMenuId = 'file' | 'view' | 'channels' | 'tracks' | 'help';
 
 type DropdownMenuItem = {
   label: string;
@@ -19,9 +19,9 @@ type DropdownMenuItem = {
 export default function TopMenu({
   onReturnToLauncher,
   onResetLayout,
-  helpMenuRef,
   isHelpMenuOpen,
-  onHelpMenuToggle,
+  openHelpMenu,
+  closeHelpMenu,
   followedTrackChannelId,
   followedTrackId,
   followedVoxel,
@@ -34,24 +34,28 @@ export default function TopMenu({
   const viewMenuRef = useRef<HTMLDivElement>(null);
   const channelsMenuRef = useRef<HTMLDivElement>(null);
   const tracksMenuRef = useRef<HTMLDivElement>(null);
+  const helpMenuRef = useRef<HTMLDivElement>(null);
   const menuRefs: Record<DropdownMenuId, RefObject<HTMLDivElement>> = {
     file: fileMenuRef,
     view: viewMenuRef,
     channels: channelsMenuRef,
-    tracks: tracksMenuRef
+    tracks: tracksMenuRef,
+    help: helpMenuRef
   };
   const triggerRefs = useRef<Record<DropdownMenuId, HTMLButtonElement | null>>({
     file: null,
     view: null,
     channels: null,
-    tracks: null
+    tracks: null,
+    help: null
   });
   const menuItemRefs = useRef<Record<DropdownMenuId, Array<HTMLButtonElement | null>>>(
     {
       file: [],
       view: [],
       channels: [],
-      tracks: []
+      tracks: [],
+      help: []
     }
   );
 
@@ -59,6 +63,7 @@ export default function TopMenu({
   menuItemRefs.current.view = [];
   menuItemRefs.current.channels = [];
   menuItemRefs.current.tracks = [];
+  menuItemRefs.current.help = [];
 
   const dropdownItems = useMemo<Record<DropdownMenuId, DropdownMenuItem[]>>(
     () => ({
@@ -81,9 +86,12 @@ export default function TopMenu({
         { label: 'Filter tracks' },
         { label: 'Follow selection' },
         { label: 'Selected tracks plot' }
+      ],
+      help: [
+        { label: 'Navigation controls', onSelect: openHelpMenu }
       ]
     }),
-    [onResetLayout, onReturnToLauncher]
+    [onResetLayout, onReturnToLauncher, openHelpMenu]
   );
 
   useEffect(() => {
@@ -130,8 +138,8 @@ export default function TopMenu({
       return;
     }
 
-    onHelpMenuToggle();
-  }, [isHelpMenuOpen, onHelpMenuToggle, openMenu]);
+    closeHelpMenu();
+  }, [closeHelpMenu, isHelpMenuOpen, openMenu]);
 
   useEffect(() => {
     if (isHelpMenuOpen) {
@@ -252,50 +260,6 @@ export default function TopMenu({
                   ) : null}
                 </div>
               ))}
-            </div>
-            <div className="viewer-top-menu-help" ref={helpMenuRef}>
-              <button
-                type="button"
-                className="viewer-top-menu-button"
-                onClick={onHelpMenuToggle}
-                aria-expanded={isHelpMenuOpen}
-                aria-controls="viewer-help-popover"
-              >
-                Help
-              </button>
-              {isHelpMenuOpen ? (
-                <div
-                  id="viewer-help-popover"
-                  className="viewer-top-menu-popover"
-                  role="dialog"
-                  aria-modal="false"
-                  aria-labelledby="viewer-help-popover-title"
-                >
-                  <h3 id="viewer-help-popover-title" className="viewer-top-menu-popover-title">
-                    Viewer tips
-                  </h3>
-                  <div className="viewer-top-menu-popover-section">
-                    <h4>3D volume view</h4>
-                    <ul>
-                      <li>Use WASD with Space/Ctrl to move forward, back, strafe, and rise or descend.</li>
-                      <li>Press Q/E to roll the camera counterclockwise/clockwise.</li>
-                      <li>Drag to orbit the dataset.</li>
-                      <li>
-                        Click a track line to select and highlight it. Use the Follow button in the Tracks window to follow that
-                        object in time.
-                      </li>
-                    </ul>
-                  </div>
-                  <div className="viewer-top-menu-popover-section">
-                    <h4>2D slice view</h4>
-                    <ul>
-                      <li>Press W/S to step through slices (hold Shift to skip 10 at a time).</li>
-                      <li>Drag to pan the slice, and scroll to zoom.</li>
-                      <li>Press Q/E to rotate the slice around its center.</li>
-                    </ul>
-                  </div>
-                </div>
-              ) : null}
             </div>
             {isFollowActive ? (
               <button
