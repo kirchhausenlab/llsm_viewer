@@ -33,7 +33,7 @@ const DEFAULT_RESET_WINDOW = { windowMin: DEFAULT_WINDOW_MIN, windowMax: DEFAULT
 export type DatasetSetupRouteProps = FrontPageContainerProps;
 
 export type ViewerRouteProps = {
-  viewerShellProps: Omit<ViewerShellContainerProps, 'helpMenuRef' | 'isHelpMenuOpen' | 'onHelpMenuToggle'>;
+  viewerShellProps: Omit<ViewerShellContainerProps, 'isHelpMenuOpen' | 'openHelpMenu' | 'closeHelpMenu'>;
   isViewerLaunched: boolean;
 };
 
@@ -1180,7 +1180,7 @@ export function useAppRouteState(): AppRouteState {
 
   const viewerShellContainerProps: Omit<
     ViewerShellContainerProps,
-    'helpMenuRef' | 'isHelpMenuOpen' | 'onHelpMenuToggle'
+    'isHelpMenuOpen' | 'openHelpMenu' | 'closeHelpMenu'
   > = {
     viewerMode,
     viewerLayers,

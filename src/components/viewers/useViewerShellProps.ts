@@ -1,5 +1,3 @@
-import { type RefObject } from 'react';
-
 import {
   CONTROL_WINDOW_WIDTH,
   SELECTED_TRACKS_WINDOW_WIDTH,
@@ -140,9 +138,9 @@ export type ViewerShellContainerProps = {
   onSliceIndexChange: ViewerShellProps['planarViewerProps']['onSliceIndexChange'];
   onReturnToLauncher: ViewerShellProps['topMenu']['onReturnToLauncher'];
   onResetWindowLayout: ViewerShellProps['topMenu']['onResetLayout'];
-  helpMenuRef: RefObject<HTMLDivElement>;
   isHelpMenuOpen: boolean;
-  onHelpMenuToggle: ViewerShellProps['topMenu']['onHelpMenuToggle'];
+  openHelpMenu: ViewerShellProps['topMenu']['openHelpMenu'];
+  closeHelpMenu: ViewerShellProps['topMenu']['closeHelpMenu'];
   onToggleViewerMode: ViewerShellProps['modeControls']['onToggleViewerMode'];
   onVrButtonClick: ViewerShellProps['modeControls']['onVrButtonClick'];
   vrButtonDisabled: ViewerShellProps['modeControls']['vrButtonDisabled'];
@@ -286,9 +284,9 @@ export function useViewerShellProps({
   onSliceIndexChange,
   onReturnToLauncher,
   onResetWindowLayout,
-  helpMenuRef,
   isHelpMenuOpen,
-  onHelpMenuToggle,
+  openHelpMenu,
+  closeHelpMenu,
   onToggleViewerMode,
   onVrButtonClick,
   vrButtonDisabled,
@@ -425,9 +423,9 @@ export function useViewerShellProps({
     topMenu: {
       onReturnToLauncher,
       onResetLayout: onResetWindowLayout,
-      helpMenuRef,
       isHelpMenuOpen,
-      onHelpMenuToggle,
+      openHelpMenu,
+      closeHelpMenu,
       hoveredVoxel: hoveredVolumeVoxel,
       followedTrackChannelId,
       followedTrackId,

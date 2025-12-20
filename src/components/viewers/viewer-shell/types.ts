@@ -1,4 +1,4 @@
-import type { ComponentProps, CSSProperties, MouseEvent, RefObject } from 'react';
+import type { ComponentProps, CSSProperties, MouseEvent } from 'react';
 
 import type BrightnessContrastHistogram from '../BrightnessContrastHistogram';
 import type FloatingWindow from '../../widgets/FloatingWindow';
@@ -20,9 +20,9 @@ export type PlanarViewerProps = ComponentProps<typeof PlanarViewer>;
 export type TopMenuProps = {
   onReturnToLauncher: () => void;
   onResetLayout: () => void;
-  helpMenuRef: RefObject<HTMLDivElement>;
   isHelpMenuOpen: boolean;
-  onHelpMenuToggle: () => void;
+  openHelpMenu: () => void;
+  closeHelpMenu: () => void;
   followedTrackChannelId: string | null;
   followedTrackId: string | null;
   followedVoxel: FollowedVoxelTarget | null;
