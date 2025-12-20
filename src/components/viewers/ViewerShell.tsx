@@ -13,6 +13,8 @@ import { useViewerPlaybackControls } from './viewer-shell/hooks/useViewerPlaybac
 import type { ViewerMode, ViewerShellProps } from './viewer-shell/types';
 
 const NAVIGATION_HELP_WINDOW_WIDTH = 420;
+const DEFAULT_RECORDING_BITRATE_MBPS = 20;
+const RECORDING_BITRATE_RANGE_MBPS = { min: 1, max: 100 } as const;
 
 function ViewerShell({
   viewerMode,
@@ -69,6 +71,7 @@ function ViewerShell({
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [captureStream, setCaptureStream] = useState<MediaStream | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [recordingBitrateMbps, setRecordingBitrateMbps] = useState(DEFAULT_RECORDING_BITRATE_MBPS);
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const recordingChunksRef = useRef<BlobPart[]>([]);
 
@@ -125,6 +128,17 @@ function ViewerShell({
     volumeViewerProps.onVolumeStepScaleChange?.(value);
   };
 
+  const handleRecordingBitrateChange = useCallback((value: number) => {
+    if (!Number.isFinite(value)) {
+      return;
+    }
+    setRecordingBitrateMbps((current) => {
+      const next = Math.round(value);
+      const clamped = Math.min(RECORDING_BITRATE_RANGE_MBPS.max, Math.max(RECORDING_BITRATE_RANGE_MBPS.min, next));
+      return clamped === current ? current : clamped;
+    });
+  }, []);
+
   const activeCaptureTarget = captureTargets[viewerMode];
   const canRecord = Boolean(playbackControls.canRecord && activeCaptureTarget && activeCaptureTarget());
 
@@ -178,11 +192,21 @@ function ViewerShell({
 
     let recorder: MediaRecorder;
     try {
-      recorder = new MediaRecorder(stream, preferredMimeType ? { mimeType: preferredMimeType } : undefined);
+      const recordingBitrate = Math.round(recordingBitrateMbps * 1_000_000);
+      const options: MediaRecorderOptions = {
+        ...(preferredMimeType ? { mimeType: preferredMimeType } : {}),
+        bitsPerSecond: recordingBitrate,
+        videoBitsPerSecond: recordingBitrate,
+      };
+      recorder = new MediaRecorder(stream, options);
     } catch (error) {
-      stopStreamTracks(stream);
-      setRecordingError('Recording unavailable: failed to start recorder.');
-      return;
+      try {
+        recorder = new MediaRecorder(stream, preferredMimeType ? { mimeType: preferredMimeType } : undefined);
+      } catch (fallbackError) {
+        stopStreamTracks(stream);
+        setRecordingError('Recording unavailable: failed to start recorder.');
+        return;
+      }
     }
 
     recordingChunksRef.current = [];
@@ -212,7 +236,9 @@ function ViewerShell({
           const url = URL.createObjectURL(blob);
           const timestamp = new Date();
           const pad = (value: number) => value.toString().padStart(2, '0');
-          const fileName = `recording-${timestamp.getFullYear()}-${pad(timestamp.getMonth() + 1)}-${pad(timestamp.getDate())}-${pad(timestamp.getHours())}${pad(timestamp.getMinutes())}${pad(timestamp.getSeconds())}.mp4`;
+          const mimeType = recorder.mimeType || blob.type;
+          const extension = mimeType.includes('mp4') ? 'mp4' : 'webm';
+          const fileName = `recording-${timestamp.getFullYear()}-${pad(timestamp.getMonth() + 1)}-${pad(timestamp.getDate())}-${pad(timestamp.getHours())}${pad(timestamp.getMinutes())}${pad(timestamp.getSeconds())}.${extension}`;
 
           const link = document.createElement('a');
           link.href = url;
@@ -237,6 +263,7 @@ function ViewerShell({
     canRecord,
     isRecording,
     playbackControls.fps,
+    recordingBitrateMbps,
     stopStreamTracks,
   ]);
 
@@ -344,6 +371,8 @@ function ViewerShell({
     onStopRecording: handleStopRecording,
     isRecording,
     canRecord,
+    recordingBitrateMbps,
+    onRecordingBitrateMbpsChange: handleRecordingBitrateChange,
     error: playbackControls.error ?? recordingError ?? null,
   } satisfies ViewerShellProps['playbackControls'];
 

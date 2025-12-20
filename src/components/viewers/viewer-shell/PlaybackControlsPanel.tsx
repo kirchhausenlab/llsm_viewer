@@ -46,6 +46,8 @@ export default function PlaybackControlsPanel({
   const {
     fps,
     onFpsChange,
+    recordingBitrateMbps,
+    onRecordingBitrateMbpsChange,
     volumeTimepointCount,
     clampedSliceIndex,
     maxSliceDepth,
@@ -361,6 +363,34 @@ export default function PlaybackControlsPanel({
                   </button>
                 </div>
               </div>
+
+              {typeof recordingBitrateMbps === 'number' && onRecordingBitrateMbpsChange ? (
+                <div className="control-group control-group--slider">
+                  <label htmlFor="recording-bitrate-slider">
+                    Recording bitrate (Mbps) <span>{recordingBitrateMbps}</span>
+                  </label>
+                  <div className="double-range-input">
+                    <input
+                      id="recording-bitrate-slider"
+                      type="range"
+                      min={1}
+                      max={100}
+                      step={1}
+                      value={recordingBitrateMbps}
+                      onChange={(event) => onRecordingBitrateMbpsChange(Number(event.target.value))}
+                      disabled={isRecording}
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={recordingBitrateMbps}
+                      onChange={(event) => onRecordingBitrateMbpsChange(Number(event.target.value))}
+                      disabled={isRecording}
+                    />
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
         </FloatingWindow>

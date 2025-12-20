@@ -52,6 +52,8 @@ export type ModeControlsProps = {
 export type PlaybackControlsProps = {
   fps: number;
   onFpsChange: (value: number) => void;
+  recordingBitrateMbps?: number;
+  onRecordingBitrateMbpsChange?: (value: number) => void;
   volumeTimepointCount: number;
   sliceIndex: number;
   maxSliceDepth: number;
