@@ -88,4 +88,19 @@ export const computePlotSettingsWindowDefaultPosition = (): WindowPosition => {
   return { x, y };
 };
 
+export const computeTrackSettingsWindowDefaultPosition = (): WindowPosition => {
+  const x = computeRightColumnX();
+  const baseY = TOP_MENU_HEIGHT + TOP_MENU_WINDOW_PADDING + 360;
+
+  if (typeof window === 'undefined') {
+    return { x, y: baseY };
+  }
+
+  const viewportHeight = window.innerHeight;
+  const estimatedHeight = 180;
+  const maxY = Math.max(WINDOW_MARGIN, viewportHeight - estimatedHeight - WINDOW_MARGIN);
+
+  return { x, y: Math.min(baseY, maxY) };
+};
+
 export const nextLayoutResetToken = (token: number): number => token + 1;

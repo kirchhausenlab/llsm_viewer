@@ -37,6 +37,8 @@ export type UseTrackRenderingParams = {
   channelTrackColorModes: Record<string, TrackColorMode>;
   channelTrackOffsets: Record<string, { x: number; y: number }>;
   trackScale: { x?: number; y?: number; z?: number };
+  isFullTrackTrailEnabled: boolean;
+  trackTrailLength: number;
   selectedTrackIds: ReadonlySet<string>;
   followedTrackId: string | null;
   clampedTimeIndex: number;
@@ -58,6 +60,8 @@ export function useTrackRendering({
   channelTrackColorModes,
   channelTrackOffsets,
   trackScale: _trackScale,
+  isFullTrackTrailEnabled,
+  trackTrailLength,
   selectedTrackIds,
   followedTrackId,
   clampedTimeIndex,
@@ -176,36 +180,49 @@ export function useTrackRendering({
     (targetTimeIndex: number) => {
       const lines = trackLinesRef.current;
       const maxVisibleTime = targetTimeIndex;
+      const minVisibleTime = isFullTrackTrailEnabled ? -Infinity : targetTimeIndex - trackTrailLength;
 
       for (const resource of lines.values()) {
         const { geometry, times, positions, endCap } = resource;
-        let visiblePoints = 0;
+        let firstVisibleIndex = -1;
+        let lastVisibleIndex = -1;
+
         for (let index = 0; index < times.length; index++) {
-          if (times[index] <= maxVisibleTime) {
-            visiblePoints = index + 1;
-          } else {
+          const time = times[index];
+          if (time > maxVisibleTime) {
             break;
+          }
+          if (time >= minVisibleTime) {
+            if (firstVisibleIndex === -1) {
+              firstVisibleIndex = index;
+            }
+            lastVisibleIndex = index;
           }
         }
 
-        const totalSegments = Math.max(times.length - 1, 0);
-        const visibleSegments = Math.min(Math.max(visiblePoints - 1, 0), totalSegments);
-        const hasVisiblePoints = visiblePoints > 0;
+        const hasVisiblePoints = firstVisibleIndex !== -1 && lastVisibleIndex !== -1;
         resource.hasVisiblePoints = hasVisiblePoints;
+
         if (hasVisiblePoints) {
-          const lastPointIndex = visiblePoints - 1;
-          const baseIndex = lastPointIndex * 3;
+          const baseIndex = lastVisibleIndex * 3;
           endCap.position.set(
             positions[baseIndex] ?? 0,
             positions[baseIndex + 1] ?? 0,
             positions[baseIndex + 2] ?? 0,
           );
         }
+
+        const startSegment = hasVisiblePoints ? Math.max(firstVisibleIndex, 0) : 0;
+        const visibleSegments = hasVisiblePoints
+          ? Math.max(lastVisibleIndex - Math.max(firstVisibleIndex, 0), 0)
+          : 0;
+
         endCap.visible = resource.shouldShow && hasVisiblePoints;
+        geometry.instanceStart = startSegment;
         geometry.instanceCount = visibleSegments;
       }
     },
-    [trackLinesRef],
+    [isFullTrackTrailEnabled, trackLinesRef, trackTrailLength],
   );
 
   useEffect(() => {
@@ -516,7 +533,8 @@ export function useTrackRendering({
         return null;
       }
 
-      const maxVisibleTime = targetTimeIndex + 1;
+      const maxVisibleTime = targetTimeIndex;
+      const minVisibleTime = isFullTrackTrailEnabled ? -Infinity : targetTimeIndex - trackTrailLength;
       const epsilon = 1e-3;
       let latestTime = -Infinity;
       let count = 0;
@@ -530,6 +548,10 @@ export function useTrackRendering({
       for (const point of track.points) {
         if (point.time - maxVisibleTime > epsilon) {
           break;
+        }
+
+        if (point.time < minVisibleTime - epsilon) {
+          continue;
         }
 
         if (point.time > latestTime + epsilon) {
@@ -559,7 +581,7 @@ export function useTrackRendering({
       trackGroup.updateMatrixWorld(true);
       return trackGroup.localToWorld(centroidLocal);
     },
-    [channelTrackOffsets, trackLookup, trackGroupRef],
+    [channelTrackOffsets, isFullTrackTrailEnabled, trackGroupRef, trackLookup, trackTrailLength],
   );
 
   const performHoverHitTest = useCallback(

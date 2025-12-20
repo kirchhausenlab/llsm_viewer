@@ -6,7 +6,8 @@ import {
 import {
   DEFAULT_TRACK_LINE_WIDTH,
   DEFAULT_TRACK_OPACITY,
-  TRACK_SMOOTHING_RANGE
+  TRACK_SMOOTHING_RANGE,
+  TRACK_TRAIL_LENGTH_RANGE
 } from '../../hooks/tracks';
 import type { VolumeViewerVrProps } from './VolumeViewer.types';
 import type { LayerSettings } from '../../state/layerSettings';
@@ -65,6 +66,7 @@ export type ViewerShellContainerProps = {
   trackWindowInitialPosition: ViewerShellProps['layout']['trackWindowInitialPosition'];
   selectedTracksWindowInitialPosition: ViewerShellProps['layout']['selectedTracksWindowInitialPosition'];
   plotSettingsWindowInitialPosition: ViewerShellProps['layout']['plotSettingsWindowInitialPosition'];
+  trackSettingsWindowInitialPosition: ViewerShellProps['layout']['trackSettingsWindowInitialPosition'];
   channels: ChannelSource[];
   channelNameMap: ViewerShellProps['channelsPanel']['channelNameMap'];
   channelVisibility: ViewerShellProps['channelsPanel']['channelVisibility'];
@@ -86,6 +88,8 @@ export type ViewerShellContainerProps = {
   resolvedAmplitudeLimits: NumericRange;
   resolvedTimeLimits: NumericRange;
   trackSmoothing: number;
+  isFullTrackTrailEnabled: boolean;
+  trackTrailLength: number;
   amplitudeExtent: NumericRange;
   timeExtent: NumericRange;
   error: ViewerShellProps['playbackControls']['error'];
@@ -110,6 +114,8 @@ export type ViewerShellContainerProps = {
   onTrackLineWidthChange: VolumeViewerVrProps['onTrackLineWidthChange'];
   onTrackColorSelect: VolumeViewerVrProps['onTrackColorSelect'];
   onTrackColorReset: VolumeViewerVrProps['onTrackColorReset'];
+  onTrackTrailModeChange: (isFull: boolean) => void;
+  onTrackTrailLengthChange: (value: number) => void;
   onStopTrackFollow: VolumeViewerVrProps['onStopTrackFollow'];
   onStopVoxelFollow: ViewerShellProps['topMenu']['onStopVoxelFollow'];
   onChannelPanelSelect: VolumeViewerVrProps['onChannelPanelSelect'];
@@ -208,6 +214,7 @@ export function useViewerShellProps({
   trackWindowInitialPosition,
   selectedTracksWindowInitialPosition,
   plotSettingsWindowInitialPosition,
+  trackSettingsWindowInitialPosition,
   channels,
   channelNameMap,
   channelVisibility,
@@ -229,6 +236,8 @@ export function useViewerShellProps({
   resolvedAmplitudeLimits,
   resolvedTimeLimits,
   trackSmoothing,
+  isFullTrackTrailEnabled,
+  trackTrailLength,
   amplitudeExtent,
   timeExtent,
   error,
@@ -253,6 +262,8 @@ export function useViewerShellProps({
   onTrackLineWidthChange,
   onTrackColorSelect,
   onTrackColorReset,
+  onTrackTrailModeChange,
+  onTrackTrailLengthChange,
   onStopTrackFollow,
   onStopVoxelFollow,
   onChannelPanelSelect,
@@ -331,6 +342,8 @@ export function useViewerShellProps({
     trackLineWidthByChannel,
     channelTrackColorModes,
     channelTrackOffsets,
+    isFullTrackTrailEnabled,
+    trackTrailLength,
     selectedTrackIds,
     followedTrackId,
     followedVoxel,
@@ -395,6 +408,8 @@ export function useViewerShellProps({
     trackLineWidthByChannel,
     channelTrackColorModes,
     channelTrackOffsets,
+    isFullTrackTrailEnabled,
+    trackTrailLength,
     followedTrackId,
     selectedTrackIds,
     onTrackSelectionToggle,
@@ -431,7 +446,8 @@ export function useViewerShellProps({
       layersWindowInitialPosition,
       trackWindowInitialPosition,
       selectedTracksWindowInitialPosition,
-      plotSettingsWindowInitialPosition
+      plotSettingsWindowInitialPosition,
+      trackSettingsWindowInitialPosition
     },
     modeControls: {
       is3dModeAvailable: is3dViewerAvailable,
@@ -551,6 +567,13 @@ export function useViewerShellProps({
       onSmoothingChange,
       onAutoRange,
       onClearSelection
+    },
+    trackSettings: {
+      isFullTrailEnabled: isFullTrackTrailEnabled,
+      trailLength: trackTrailLength,
+      trailLengthExtent: TRACK_TRAIL_LENGTH_RANGE,
+      onFullTrailToggle: onTrackTrailModeChange,
+      onTrailLengthChange: onTrackTrailLengthChange
     },
     trackDefaults: {
       opacity: DEFAULT_TRACK_OPACITY,

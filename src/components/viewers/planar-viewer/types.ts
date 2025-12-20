@@ -89,6 +89,8 @@ export type PlanarViewerProps = {
   trackLineWidthByChannel: Record<string, number>;
   channelTrackColorModes: Record<string, TrackColorMode>;
   channelTrackOffsets: Record<string, { x: number; y: number }>;
+  isFullTrackTrailEnabled: boolean;
+  trackTrailLength: number;
   selectedTrackIds: ReadonlySet<string>;
   followedTrackId: string | null;
   onTrackSelectionToggle: (trackId: string) => void;

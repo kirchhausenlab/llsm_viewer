@@ -53,4 +53,11 @@ export const useTrackState = ({
 };
 
 export default useTrackState;
-export { DEFAULT_TRACK_OPACITY, DEFAULT_TRACK_LINE_WIDTH, TRACK_SMOOTHING_RANGE, createDefaultChannelTrackState };
+export {
+  DEFAULT_TRACK_OPACITY,
+  DEFAULT_TRACK_LINE_WIDTH,
+  TRACK_SMOOTHING_RANGE,
+  TRACK_TRAIL_LENGTH_RANGE,
+  DEFAULT_TRACK_TRAIL_LENGTH,
+  createDefaultChannelTrackState,
+};

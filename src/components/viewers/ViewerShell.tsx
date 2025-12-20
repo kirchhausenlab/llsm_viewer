@@ -26,6 +26,7 @@ function ViewerShell({
   tracksPanel,
   selectedTracksPanel,
   plotSettings,
+  trackSettings,
   trackDefaults
 }: ViewerShellProps) {
   const {
@@ -38,7 +39,8 @@ function ViewerShell({
     layersWindowInitialPosition,
     trackWindowInitialPosition,
     selectedTracksWindowInitialPosition,
-    plotSettingsWindowInitialPosition
+    plotSettingsWindowInitialPosition,
+    trackSettingsWindowInitialPosition
   } = layout;
   const { loadedChannelIds, channelLayersMap } = channelsPanel;
 
@@ -73,6 +75,7 @@ function ViewerShell({
   const [renderingQuality, setRenderingQuality] = useState(1);
   const [isViewerSettingsOpen, setIsViewerSettingsOpen] = useState(false);
   const [isPlotSettingsOpen, setIsPlotSettingsOpen] = useState(false);
+  const [isTrackSettingsOpen, setIsTrackSettingsOpen] = useState(false);
   const previousViewerModeRef = useRef(viewerMode);
   const isRecordingRef = useRef(isRecording);
 
@@ -295,6 +298,24 @@ function ViewerShell({
     }
   }, [selectedTracksPanel.shouldRender]);
 
+  const toggleTrackSettingsVisibility = () => {
+    setIsTrackSettingsOpen((current) => !current);
+  };
+
+  const closeTrackSettings = () => {
+    setIsTrackSettingsOpen(false);
+  };
+
+  useEffect(() => {
+    setIsTrackSettingsOpen(false);
+  }, [resetToken]);
+
+  useEffect(() => {
+    if (!hasTrackData) {
+      setIsTrackSettingsOpen(false);
+    }
+  }, [hasTrackData]);
+
   const showRenderingQualityControl =
     modeControls.is3dModeAvailable && viewerMode === '3d' && modeControls.samplingMode === 'linear';
 
@@ -380,6 +401,11 @@ function ViewerShell({
         layout={{ windowMargin, controlWindowWidth, trackWindowInitialPosition, resetToken }}
         hasTrackData={hasTrackData}
         trackDefaults={trackDefaults}
+        trackSettings={trackSettings}
+        trackSettingsWindowInitialPosition={trackSettingsWindowInitialPosition}
+        isTrackSettingsOpen={isTrackSettingsOpen}
+        onToggleTrackSettings={toggleTrackSettingsVisibility}
+        onCloseTrackSettings={closeTrackSettings}
         {...tracksPanel}
       />
 

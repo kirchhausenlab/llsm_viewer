@@ -50,6 +50,8 @@ type UsePlanarInteractionsParams = {
   trackLineWidthByChannel: Record<string, number>;
   channelTrackColorModes: PlanarViewerProps['channelTrackColorModes'];
   channelTrackOffsets: PlanarViewerProps['channelTrackOffsets'];
+  isFullTrackTrailEnabled: boolean;
+  trackTrailLength: number;
   selectedTrackIds: ReadonlySet<string>;
   followedTrackId: string | null;
   onTrackSelectionToggle: (trackId: string) => void;
@@ -97,6 +99,8 @@ export function usePlanarInteractions({
   trackLineWidthByChannel,
   channelTrackColorModes,
   channelTrackOffsets,
+  isFullTrackTrailEnabled,
+  trackTrailLength,
   selectedTrackIds,
   followedTrackId,
   onTrackSelectionToggle,
@@ -155,6 +159,7 @@ export function usePlanarInteractions({
     }
 
     const maxVisibleTime = clampedTimeIndex;
+    const minVisibleTime = isFullTrackTrailEnabled ? -Infinity : clampedTimeIndex - trackTrailLength;
 
     return tracks
       .map<TrackRenderEntry | null>((track) => {
@@ -180,6 +185,9 @@ export function usePlanarInteractions({
         for (const point of track.points) {
           if (point.time - maxVisibleTime > TRACK_EPSILON) {
             break;
+          }
+          if (point.time + TRACK_EPSILON < minVisibleTime) {
+            continue;
           }
           const resolvedZ = Number.isFinite(point.z) ? point.z : 0;
           scaledPoints.push({
@@ -217,8 +225,10 @@ export function usePlanarInteractions({
     channelTrackOffsets,
     clampedTimeIndex,
     followedTrackId,
+    isFullTrackTrailEnabled,
     primaryVolume,
     selectedTrackIds,
+    trackTrailLength,
     trackOpacityByChannel,
     trackScale.x,
     trackScale.y,

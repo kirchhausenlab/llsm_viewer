@@ -102,6 +102,14 @@ export type ChannelsPanelProps = {
 
 export type TrackSummary = { total: number; visible: number };
 
+export type TrackSettingsProps = {
+  isFullTrailEnabled: boolean;
+  trailLength: number;
+  trailLengthExtent: NumericRange;
+  onFullTrailToggle: (enabled: boolean) => void;
+  onTrailLengthChange: (value: number) => void;
+};
+
 export type TracksPanelProps = {
   channels: ChannelSource[];
   channelNameMap: Map<string, string>;
@@ -183,6 +191,7 @@ export type LayoutProps = {
   trackWindowInitialPosition: Position;
   selectedTracksWindowInitialPosition: Position;
   plotSettingsWindowInitialPosition: Position;
+  trackSettingsWindowInitialPosition: Position;
 };
 
 export type TrackDefaults = {
@@ -202,6 +211,7 @@ export type ViewerShellProps = {
   tracksPanel: TracksPanelProps;
   selectedTracksPanel: SelectedTracksPanelProps;
   plotSettings: PlotSettingsProps;
+  trackSettings: TrackSettingsProps;
   trackDefaults: TrackDefaults;
 };
 

@@ -79,6 +79,8 @@ function PlanarViewer({
   trackLineWidthByChannel,
   channelTrackColorModes,
   channelTrackOffsets,
+  isFullTrackTrailEnabled,
+  trackTrailLength,
   selectedTrackIds,
   followedTrackId,
   onTrackSelectionToggle,
@@ -180,6 +182,7 @@ function PlanarViewer({
       const offset = channelTrackOffsets[track.channelId] ?? { x: 0, y: 0 };
       const scaledOffsetX = offset.x * trackScaleX;
       const scaledOffsetY = offset.y * trackScaleY;
+      const minVisibleTime = isFullTrackTrailEnabled ? -Infinity : maxVisibleTime - trackTrailLength;
 
       let count = 0;
       let latestTime = -Infinity;
@@ -190,6 +193,10 @@ function PlanarViewer({
       for (const point of track.points) {
         if (point.time - maxVisibleTime > 1e-3) {
           break;
+        }
+
+        if (point.time + 1e-3 < minVisibleTime) {
+          continue;
         }
 
         if (point.time > latestTime + 1e-3) {
@@ -216,7 +223,14 @@ function PlanarViewer({
         z: sumZ / count
       };
     },
-    [channelTrackOffsets, trackLookup, trackScaleX, trackScaleY]
+    [
+      channelTrackOffsets,
+      isFullTrackTrailEnabled,
+      trackLookup,
+      trackScaleX,
+      trackScaleY,
+      trackTrailLength,
+    ]
   );
 
   const { layout, viewState, viewStateRef, updateViewState, resetView } = usePlanarLayout({
@@ -256,6 +270,8 @@ function PlanarViewer({
     trackLineWidthByChannel,
     channelTrackColorModes,
     channelTrackOffsets,
+    isFullTrackTrailEnabled,
+    trackTrailLength,
     selectedTrackIds,
     followedTrackId,
     onTrackSelectionToggle,
