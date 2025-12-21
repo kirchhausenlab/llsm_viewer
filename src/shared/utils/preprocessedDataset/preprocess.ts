@@ -18,9 +18,7 @@ import type {
   PreprocessedChannelSummary,
   PreprocessedLayerManifestEntry,
   PreprocessedManifest,
-  PreprocessedManifestV4,
   PreprocessedMovieMode,
-  PreprocessedTracksDescriptor,
   ZarrArrayDescriptor
 } from './types';
 import { createZarrStoreFromPreprocessedStorage } from '../zarrStore';
@@ -368,10 +366,10 @@ export async function preprocessDatasetToStorage({
     }
   }
 
-  const manifestChannels: PreprocessedManifestV4['dataset']['channels'] = [];
+  const manifestChannels: PreprocessedManifest['dataset']['channels'] = [];
   const layerManifestByKey = new Map<string, PreprocessedLayerManifestEntry>();
 
-  const tracksByChannelId = new Map<string, string[][]>();
+  const trackEntriesByTrackSetId = new Map<string, string[][]>();
   for (const channel of channels) {
     const layerSources = layersByChannel.get(channel.id) ?? [];
     const manifestLayers: PreprocessedLayerManifestEntry[] = [];
@@ -448,16 +446,20 @@ export async function preprocessDatasetToStorage({
       layerManifestByKey.set(layer.key, manifestLayer);
     }
 
-    tracksByChannelId.set(channel.id, channel.trackEntries);
-    const tracksDescriptor: PreprocessedTracksDescriptor | null =
-      channel.trackEntries.length > 0
-        ? createTracksDescriptor(`tracks/${encodeURIComponent(channel.id)}.csv`)
-        : null;
+    const manifestTrackSets = channel.trackSets.map((trackSet) => {
+      trackEntriesByTrackSetId.set(trackSet.id, trackSet.entries);
+      return {
+        id: trackSet.id,
+        name: trackSet.name,
+        fileName: trackSet.fileName,
+        tracks: createTracksDescriptor(`tracks/${encodeURIComponent(trackSet.id)}.csv`)
+      } as const;
+    });
 
     manifestChannels.push({
       id: channel.id,
       name: channel.name,
-      tracks: tracksDescriptor,
+      trackSets: manifestTrackSets,
       layers: manifestLayers
     });
   }
@@ -465,9 +467,9 @@ export async function preprocessDatasetToStorage({
   const anisotropyScale = computeAnisotropyScale(voxelResolution);
   const anisotropyCorrection = anisotropyScale ? { scale: anisotropyScale } : null;
 
-  const manifest: PreprocessedManifestV4 = {
+  const manifest: PreprocessedManifest = {
     format: 'llsm-viewer-preprocessed',
-    version: 4,
+    version: 5,
     generatedAt: new Date().toISOString(),
     dataset: {
       movieMode,
@@ -486,12 +488,11 @@ export async function preprocessDatasetToStorage({
   await zarr.create(root, { attributes: { llsmViewerPreprocessed: manifest } });
 
   for (const channel of manifest.dataset.channels) {
-    if (!channel.tracks) {
-      continue;
+    for (const trackSet of channel.trackSets) {
+      const entries = trackEntriesByTrackSetId.get(trackSet.id) ?? [];
+      const payload = serializeTrackEntriesToCsvBytes(entries, { decimalPlaces: trackSet.tracks.decimalPlaces });
+      await storage.writeFile(trackSet.tracks.path, payload);
     }
-    const entries = tracksByChannelId.get(channel.id) ?? [];
-    const payload = serializeTrackEntriesToCsvBytes(entries, { decimalPlaces: channel.tracks.decimalPlaces });
-    await storage.writeFile(channel.tracks.path, payload);
   }
 
   for (const channel of manifest.dataset.channels) {
@@ -672,6 +673,6 @@ export async function preprocessDatasetToStorage({
     }
   }
 
-  const channelSummaries = buildChannelSummariesFromManifest(manifest, tracksByChannelId);
+  const channelSummaries = buildChannelSummariesFromManifest(manifest, trackEntriesByTrackSetId);
   return { manifest, channelSummaries, totalVolumeCount };
 }

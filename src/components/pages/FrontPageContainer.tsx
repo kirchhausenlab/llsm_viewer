@@ -4,7 +4,7 @@ import FrontPage from './FrontPage';
 import usePreprocessedExperiment from '../../hooks/dataset/usePreprocessedExperiment';
 import { type ExperimentDimension, type VoxelResolutionHook } from '../../hooks/useVoxelResolution';
 import type { DatasetErrorHook } from '../../hooks/useDatasetErrors';
-import type { ChannelTrackState, FollowedTrackState } from '../../types/channelTracks';
+import type { FollowedTrackState, TrackSetState } from '../../types/channelTracks';
 import type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment } from '../../hooks/dataset';
 import { preprocessDatasetToStorage } from '../../shared/utils/preprocessedDataset';
 import { createDirectoryHandlePreprocessedStorage, createOpfsPreprocessedStorage } from '../../shared/storage/preprocessedStorage';
@@ -32,16 +32,17 @@ export type FrontPageContainerProps = {
   onChannelLayerDrop: (channelId: string, dataTransfer: DataTransfer) => void;
   onChannelLayerSegmentationToggle: (channelId: string, layerId: string, value: boolean) => void;
   onChannelLayerRemove: (channelId: string, layerId: string) => void;
-  onChannelTrackFileSelected: (channelId: string, file: File | null) => void;
+  onChannelTrackFilesAdded: (channelId: string, files: File[]) => void | Promise<void>;
   onChannelTrackDrop: (channelId: string, dataTransfer: DataTransfer) => void;
-  onChannelTrackClear: (channelId: string) => void;
+  onChannelTrackSetNameChange: (channelId: string, trackSetId: string, name: string) => void;
+  onChannelTrackSetRemove: (channelId: string, trackSetId: string) => void;
   setIsExperimentSetupStarted: Dispatch<SetStateAction<boolean>>;
   setViewerMode: Dispatch<SetStateAction<'3d' | '2d'>>;
   updateChannelIdCounter: (sources: ChannelSource[]) => void;
   showInteractionWarning: (message: string) => void;
   isLaunchingViewer: boolean;
-  setChannelTrackStates: Dispatch<SetStateAction<Record<string, ChannelTrackState>>>;
-  setTrackOrderModeByChannel: Dispatch<SetStateAction<Record<string, 'id' | 'length'>>>;
+  setTrackSetStates: Dispatch<SetStateAction<Record<string, TrackSetState>>>;
+  setTrackOrderModeByTrackSet: Dispatch<SetStateAction<Record<string, 'id' | 'length'>>>;
   setSelectedTrackOrder: Dispatch<SetStateAction<string[]>>;
   setFollowedTrack: Dispatch<SetStateAction<FollowedTrackState>>;
   computeTrackSummary: (entries: string[][]) => TrackSummary;
@@ -81,16 +82,17 @@ export default function FrontPageContainer({
   onChannelLayerDrop,
   onChannelLayerSegmentationToggle,
   onChannelLayerRemove,
-  onChannelTrackFileSelected,
+  onChannelTrackFilesAdded,
   onChannelTrackDrop,
-  onChannelTrackClear,
+  onChannelTrackSetNameChange,
+  onChannelTrackSetRemove,
   setIsExperimentSetupStarted,
   setViewerMode,
   updateChannelIdCounter,
   showInteractionWarning,
   isLaunchingViewer,
-  setChannelTrackStates,
-  setTrackOrderModeByChannel,
+  setTrackSetStates,
+  setTrackOrderModeByTrackSet,
   setSelectedTrackOrder,
   setFollowedTrack,
   computeTrackSummary,
@@ -132,8 +134,8 @@ export default function FrontPageContainer({
     setChannels,
     setActiveChannelId,
     setEditingChannelId,
-    setChannelTrackStates,
-    setTrackOrderModeByChannel,
+    setTrackSetStates,
+    setTrackOrderModeByTrackSet,
     setSelectedTrackOrder,
     setFollowedTrack,
     setIsExperimentSetupStarted,
@@ -232,14 +234,19 @@ export default function FrontPageContainer({
       return;
     }
 
-    setPreprocessSuccessMessage(null);
-    setIsPreprocessingExperiment(true);
+      setPreprocessSuccessMessage(null);
+      setIsPreprocessingExperiment(true);
     try {
       setIsExperimentSetupStarted(true);
       const channelsMetadata = channels.map((channel) => ({
         id: channel.id,
         name: channel.name.trim() || 'Untitled channel',
-        trackEntries: channel.trackEntries
+        trackSets: channel.trackSets.map((set) => ({
+          id: set.id,
+          name: set.name.trim() || 'Tracks',
+          fileName: set.fileName,
+          entries: set.entries
+        }))
       }));
       const layersToProcess = channels
         .flatMap((channel) =>
@@ -414,9 +421,10 @@ export default function FrontPageContainer({
     onChannelLayerDrop,
     onChannelLayerSegmentationToggle,
     onChannelLayerRemove,
-    onChannelTrackFileSelected,
+    onChannelTrackFilesAdded,
     onChannelTrackDrop,
-    onChannelTrackClear,
+    onChannelTrackSetNameChange,
+    onChannelTrackSetRemove,
     experimentDimension,
     isFrontPageLocked
   };

@@ -51,8 +51,8 @@ function ViewerShell({
   const hasVolumeData = loadedChannelIds.some((channelId) =>
     (channelLayersMap.get(channelId) ?? []).some((layer) => layer.volumeCount > 0)
   );
-  const hasTrackData = tracksPanel.channels.some(
-    (channel) => (tracksPanel.parsedTracksByChannel.get(channel.id)?.length ?? 0) > 0
+  const hasTrackData = tracksPanel.trackSets.some(
+    (trackSet) => (tracksPanel.parsedTracksByTrackSet.get(trackSet.id)?.length ?? 0) > 0
   );
   const navigationHelpInitialPosition = useMemo(
     () =>

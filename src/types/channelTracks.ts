@@ -1,6 +1,6 @@
 import type { TrackColorMode } from './tracks';
 
-export type ChannelTrackState = {
+export type TrackSetState = {
   opacity: number;
   lineWidth: number;
   visibility: Record<string, boolean>;
@@ -9,5 +9,5 @@ export type ChannelTrackState = {
 
 export type FollowedTrackState = {
   id: string;
-  channelId: string;
+  trackSetId: string;
 } | null;

@@ -11,6 +11,6 @@ export {
   default as useTrackStyling,
   DEFAULT_TRACK_LINE_WIDTH,
   DEFAULT_TRACK_OPACITY,
-  createDefaultChannelTrackState
+  createDefaultTrackSetState
 } from './useTrackStyling';
 export * from './useTracksForDisplay';

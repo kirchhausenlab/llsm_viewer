@@ -1,95 +1,96 @@
 import { useEffect, useMemo, useRef, useState, useCallback, type Dispatch, type SetStateAction } from 'react';
 import { TRACK_COLOR_SWATCHES, normalizeTrackColor, type TrackColorOption } from '../../shared/colorMaps/trackColors';
-import type { ChannelTrackState } from '../../types/channelTracks';
+import type { TrackSetState } from '../../types/channelTracks';
 import type { TrackColorMode, TrackDefinition } from '../../types/tracks';
-import type { ChannelSource } from '../dataset';
 
 export const DEFAULT_TRACK_OPACITY = 0.9;
 export const DEFAULT_TRACK_LINE_WIDTH = 1;
 
-export const createDefaultChannelTrackState = (): ChannelTrackState => ({
+export const createDefaultTrackSetState = (): TrackSetState => ({
   opacity: DEFAULT_TRACK_OPACITY,
   lineWidth: DEFAULT_TRACK_LINE_WIDTH,
   visibility: {},
   colorMode: { type: 'random' }
 });
 
+export type TrackSetDescriptor = {
+  id: string;
+  name: string;
+};
+
 export type UseTrackStylingResult = {
-  channelTrackStates: Record<string, ChannelTrackState>;
-  setChannelTrackStates: Dispatch<SetStateAction<Record<string, ChannelTrackState>>>;
-  trackOpacityByChannel: Record<string, number>;
-  trackLineWidthByChannel: Record<string, number>;
-  channelTrackColorModes: Record<string, TrackColorMode>;
+  trackSetStates: Record<string, TrackSetState>;
+  setTrackSetStates: Dispatch<SetStateAction<Record<string, TrackSetState>>>;
+  trackOpacityByTrackSet: Record<string, number>;
+  trackLineWidthByTrackSet: Record<string, number>;
+  trackColorModesByTrackSet: Record<string, TrackColorMode>;
   ensureTrackIsVisible: (track: TrackDefinition) => void;
-  handleTrackOpacityChange: (channelId: string, value: number) => void;
-  handleTrackLineWidthChange: (channelId: string, value: number) => void;
-  handleTrackColorSelect: (channelId: string, color: string | TrackColorOption) => void;
-  handleTrackColorReset: (channelId: string) => void;
+  handleTrackOpacityChange: (trackSetId: string, value: number) => void;
+  handleTrackLineWidthChange: (trackSetId: string, value: number) => void;
+  handleTrackColorSelect: (trackSetId: string, color: string | TrackColorOption) => void;
+  handleTrackColorReset: (trackSetId: string) => void;
   resetTrackStyling: () => void;
 };
 
 export const useTrackStyling = ({
-  channels,
-  parsedTracksByChannel
+  trackSets,
+  parsedTracksByTrackSet
 }: {
-  channels: ChannelSource[];
-  parsedTracksByChannel: Map<string, TrackDefinition[]>;
+  trackSets: TrackSetDescriptor[];
+  parsedTracksByTrackSet: Map<string, TrackDefinition[]>;
 }): UseTrackStylingResult => {
-  const [channelTrackStates, setChannelTrackStates] = useState<Record<string, ChannelTrackState>>({});
+  const [trackSetStates, setTrackSetStates] = useState<Record<string, TrackSetState>>({});
   const hasInitializedTrackColorsRef = useRef(false);
 
   useEffect(() => {
-    if (channels.length === 0) {
+    if (trackSets.length === 0) {
       hasInitializedTrackColorsRef.current = false;
     }
-  }, [channels.length]);
+  }, [trackSets.length]);
 
   useEffect(() => {
     if (hasInitializedTrackColorsRef.current) {
       return;
     }
 
-    const channelsWithTracks = channels.filter(
-      (channel) => (parsedTracksByChannel.get(channel.id)?.length ?? 0) > 0
-    );
-
-    if (channelsWithTracks.length === 0) {
+    const setsWithTracks = trackSets.filter((set) => (parsedTracksByTrackSet.get(set.id)?.length ?? 0) > 0);
+    if (setsWithTracks.length === 0) {
       return;
     }
 
-    setChannelTrackStates((current) => {
-      const next: Record<string, ChannelTrackState> = { ...current };
+    setTrackSetStates((current) => {
+      const next: Record<string, TrackSetState> = { ...current };
       let changed = false;
 
-      const ensureState = (channelId: string) => {
-        const existing = next[channelId];
+      const ensureState = (trackSetId: string) => {
+        const existing = next[trackSetId];
         if (existing) {
           return existing;
         }
-        const fallback = createDefaultChannelTrackState();
-        next[channelId] = fallback;
+        const fallback = createDefaultTrackSetState();
+        next[trackSetId] = fallback;
         changed = true;
         return fallback;
       };
 
-      if (channelsWithTracks.length === 1) {
-        const channelId = channelsWithTracks[0].id;
-        const state = ensureState(channelId);
+      if (setsWithTracks.length === 1) {
+        const trackSetId = setsWithTracks[0].id;
+        const state = ensureState(trackSetId);
         if (state.colorMode.type !== 'random') {
-          next[channelId] = { ...state, colorMode: { type: 'random' } };
+          next[trackSetId] = { ...state, colorMode: { type: 'random' } };
           changed = true;
         }
       } else {
-        channelsWithTracks.forEach((channel, index) => {
-          const state = ensureState(channel.id);
+        setsWithTracks.forEach((set, index) => {
+          const state = ensureState(set.id);
           if (index < TRACK_COLOR_SWATCHES.length) {
             const color = normalizeTrackColor(TRACK_COLOR_SWATCHES[index].value);
             if (state.colorMode.type !== 'uniform' || state.colorMode.color !== color) {
-              next[channel.id] = { ...state, colorMode: { type: 'uniform', color } };
+              next[set.id] = { ...state, colorMode: { type: 'uniform', color } };
               changed = true;
             }
           } else if (state.colorMode.type !== 'random') {
-            next[channel.id] = { ...state, colorMode: { type: 'random' } };
+            next[set.id] = { ...state, colorMode: { type: 'random' } };
             changed = true;
           }
         });
@@ -99,17 +100,17 @@ export const useTrackStyling = ({
     });
 
     hasInitializedTrackColorsRef.current = true;
-  }, [channels, parsedTracksByChannel]);
+  }, [parsedTracksByTrackSet, trackSets]);
 
   useEffect(() => {
-    setChannelTrackStates((current) => {
-      const next: Record<string, ChannelTrackState> = {};
+    setTrackSetStates((current) => {
+      const next: Record<string, TrackSetState> = {};
       let changed = false;
 
-      for (const channel of channels) {
-        const channelId = channel.id;
-        const existing = current[channelId] ?? createDefaultChannelTrackState();
-        const tracks = parsedTracksByChannel.get(channelId) ?? [];
+      for (const set of trackSets) {
+        const trackSetId = set.id;
+        const existing = current[trackSetId] ?? createDefaultTrackSetState();
+        const tracks = parsedTracksByTrackSet.get(trackSetId) ?? [];
 
         const visibility: Record<string, boolean> = {};
         let visibilityChanged = false;
@@ -133,56 +134,56 @@ export const useTrackStyling = ({
           nextState = { ...nextState, visibility };
         }
 
-        next[channelId] = nextState;
-        if (!current[channelId] || nextState !== existing) {
+        next[trackSetId] = nextState;
+        if (!current[trackSetId] || nextState !== existing) {
           changed = true;
         }
       }
 
-      if (Object.keys(current).length !== channels.length) {
+      if (Object.keys(current).length !== trackSets.length) {
         changed = true;
       }
 
       return changed ? next : current;
     });
-  }, [channels, parsedTracksByChannel]);
+  }, [parsedTracksByTrackSet, trackSets]);
 
-  const trackOpacityByChannel = useMemo(() => {
+  const trackOpacityByTrackSet = useMemo(() => {
     const map: Record<string, number> = {};
-    for (const channel of channels) {
-      const state = channelTrackStates[channel.id] ?? createDefaultChannelTrackState();
-      map[channel.id] = state.opacity;
+    for (const set of trackSets) {
+      const state = trackSetStates[set.id] ?? createDefaultTrackSetState();
+      map[set.id] = state.opacity;
     }
     return map;
-  }, [channelTrackStates, channels]);
+  }, [trackSetStates, trackSets]);
 
-  const trackLineWidthByChannel = useMemo(() => {
+  const trackLineWidthByTrackSet = useMemo(() => {
     const map: Record<string, number> = {};
-    for (const channel of channels) {
-      const state = channelTrackStates[channel.id] ?? createDefaultChannelTrackState();
-      map[channel.id] = state.lineWidth;
+    for (const set of trackSets) {
+      const state = trackSetStates[set.id] ?? createDefaultTrackSetState();
+      map[set.id] = state.lineWidth;
     }
     return map;
-  }, [channelTrackStates, channels]);
+  }, [trackSetStates, trackSets]);
 
-  const channelTrackColorModes = useMemo(() => {
+  const trackColorModesByTrackSet = useMemo(() => {
     const map: Record<string, TrackColorMode> = {};
-    for (const channel of channels) {
-      const state = channelTrackStates[channel.id] ?? createDefaultChannelTrackState();
-      map[channel.id] = state.colorMode;
+    for (const set of trackSets) {
+      const state = trackSetStates[set.id] ?? createDefaultTrackSetState();
+      map[set.id] = state.colorMode;
     }
     return map;
-  }, [channelTrackStates, channels]);
+  }, [trackSetStates, trackSets]);
 
   const ensureTrackIsVisible = useCallback((track: TrackDefinition) => {
-    setChannelTrackStates((current) => {
-      const existing = current[track.channelId] ?? createDefaultChannelTrackState();
+    setTrackSetStates((current) => {
+      const existing = current[track.trackSetId] ?? createDefaultTrackSetState();
       if (existing.visibility[track.id] ?? true) {
         return current;
       }
       return {
         ...current,
-        [track.channelId]: {
+        [track.trackSetId]: {
           ...existing,
           visibility: {
             ...existing.visibility,
@@ -193,15 +194,15 @@ export const useTrackStyling = ({
     });
   }, []);
 
-  const handleTrackOpacityChange = useCallback((channelId: string, value: number) => {
-    setChannelTrackStates((current) => {
-      const existing = current[channelId] ?? createDefaultChannelTrackState();
+  const handleTrackOpacityChange = useCallback((trackSetId: string, value: number) => {
+    setTrackSetStates((current) => {
+      const existing = current[trackSetId] ?? createDefaultTrackSetState();
       if (existing.opacity === value) {
         return current;
       }
       return {
         ...current,
-        [channelId]: {
+        [trackSetId]: {
           ...existing,
           opacity: value
         }
@@ -209,15 +210,15 @@ export const useTrackStyling = ({
     });
   }, []);
 
-  const handleTrackLineWidthChange = useCallback((channelId: string, value: number) => {
-    setChannelTrackStates((current) => {
-      const existing = current[channelId] ?? createDefaultChannelTrackState();
+  const handleTrackLineWidthChange = useCallback((trackSetId: string, value: number) => {
+    setTrackSetStates((current) => {
+      const existing = current[trackSetId] ?? createDefaultTrackSetState();
       if (existing.lineWidth === value) {
         return current;
       }
       return {
         ...current,
-        [channelId]: {
+        [trackSetId]: {
           ...existing,
           lineWidth: value
         }
@@ -225,16 +226,16 @@ export const useTrackStyling = ({
     });
   }, []);
 
-  const handleTrackColorSelect = useCallback((channelId: string, color: string | TrackColorOption) => {
+  const handleTrackColorSelect = useCallback((trackSetId: string, color: string | TrackColorOption) => {
     const normalized = typeof color === 'string' ? normalizeTrackColor(color) : normalizeTrackColor(color.value);
-    setChannelTrackStates((current) => {
-      const existing = current[channelId] ?? createDefaultChannelTrackState();
+    setTrackSetStates((current) => {
+      const existing = current[trackSetId] ?? createDefaultTrackSetState();
       if (existing.colorMode.type === 'uniform' && existing.colorMode.color === normalized) {
         return current;
       }
       return {
         ...current,
-        [channelId]: {
+        [trackSetId]: {
           ...existing,
           colorMode: { type: 'uniform', color: normalized }
         }
@@ -242,15 +243,15 @@ export const useTrackStyling = ({
     });
   }, []);
 
-  const handleTrackColorReset = useCallback((channelId: string) => {
-    setChannelTrackStates((current) => {
-      const existing = current[channelId] ?? createDefaultChannelTrackState();
+  const handleTrackColorReset = useCallback((trackSetId: string) => {
+    setTrackSetStates((current) => {
+      const existing = current[trackSetId] ?? createDefaultTrackSetState();
       if (existing.colorMode.type === 'random') {
         return current;
       }
       return {
         ...current,
-        [channelId]: {
+        [trackSetId]: {
           ...existing,
           colorMode: { type: 'random' }
         }
@@ -259,16 +260,16 @@ export const useTrackStyling = ({
   }, []);
 
   const resetTrackStyling = useCallback(() => {
-    setChannelTrackStates({});
+    setTrackSetStates({});
     hasInitializedTrackColorsRef.current = false;
   }, []);
 
   return {
-    channelTrackStates,
-    setChannelTrackStates,
-    trackOpacityByChannel,
-    trackLineWidthByChannel,
-    channelTrackColorModes,
+    trackSetStates,
+    setTrackSetStates,
+    trackOpacityByTrackSet,
+    trackLineWidthByTrackSet,
+    trackColorModesByTrackSet,
     ensureTrackIsVisible,
     handleTrackOpacityChange,
     handleTrackLineWidthChange,
@@ -279,3 +280,4 @@ export const useTrackStyling = ({
 };
 
 export default useTrackStyling;
+

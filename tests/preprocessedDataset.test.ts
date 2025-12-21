@@ -9,7 +9,7 @@ import type { PreprocessedManifest } from '../src/shared/utils/preprocessedDatas
 import { serializeTrackEntriesToCsvBytes } from '../src/shared/utils/preprocessedDataset/tracks.ts';
 import { createZarrStoreFromPreprocessedStorage } from '../src/shared/utils/zarrStore.ts';
 
-console.log('Starting preprocessed dataset Zarr v4 tests');
+console.log('Starting preprocessed dataset Zarr v5 tests');
 
 const makeManifest = (): PreprocessedManifest => {
   const width = 2;
@@ -24,7 +24,7 @@ const makeManifest = (): PreprocessedManifest => {
 
   return {
     format: 'llsm-viewer-preprocessed',
-    version: 4,
+    version: 5,
     generatedAt: new Date().toISOString(),
     dataset: {
       movieMode: '3d',
@@ -33,7 +33,14 @@ const makeManifest = (): PreprocessedManifest => {
         {
           id: 'channel-a',
           name: 'Channel A',
-          tracks: { path: 'tracks/channel-a.csv', format: 'csv', columns: 8, decimalPlaces: 3 },
+          trackSets: [
+            {
+              id: 'track-set-a',
+              name: 'Track set A',
+              fileName: 'channel-a.csv',
+              tracks: { path: 'tracks/track-set-a.csv', format: 'csv', columns: 8, decimalPlaces: 3 }
+            }
+          ],
           layers: [
             {
               key: 'seg',
@@ -90,7 +97,7 @@ const makeManifest = (): PreprocessedManifest => {
       ['1', '0', '1', '1.123456', '2.100000', '3.987654', '4.000000', '0.000000']
     ];
     await storageHandle.storage.writeFile(
-      'tracks/channel-a.csv',
+      'tracks/track-set-a.csv',
       serializeTrackEntriesToCsvBytes(trackEntries, { decimalPlaces: 3 })
     );
     await zarr.create(zarr.root(zarrStore).resolve(layer.zarr.data.path), {
@@ -149,10 +156,10 @@ const makeManifest = (): PreprocessedManifest => {
     await storageHandle.storage.writeFile(`${layer.zarr.histogram.path}/c/1/0`, encodeUint32ArrayLE(histogramT1));
 
     const opened = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
-    assert.equal(opened.manifest.version, 4);
+    assert.equal(opened.manifest.version, 5);
     assert.equal(opened.totalVolumeCount, 2);
     assert.equal(opened.channelSummaries.length, 1);
-    assert.deepEqual(opened.channelSummaries[0]?.trackEntries, [['1', '0', '1', '1.123', '2.1', '3.988', '4', '0']]);
+    assert.deepEqual(opened.channelSummaries[0]?.trackSets[0]?.entries, [['1', '0', '1', '1.123', '2.1', '3.988', '4', '0']]);
 
     const provider = createVolumeProvider({ manifest: opened.manifest, storage: storageHandle.storage });
     const volume0 = await provider.getVolume('seg', 0);
@@ -165,9 +172,9 @@ const makeManifest = (): PreprocessedManifest => {
     assert.deepEqual(Array.from(volume1.segmentationLabels ?? []), Array.from(labelsT1));
     assert.deepEqual(Array.from(volume1.histogram ?? []), Array.from(histogramT1));
 
-    console.log('preprocessed dataset Zarr v4 tests passed');
+    console.log('preprocessed dataset Zarr v5 tests passed');
   } catch (error) {
-    console.error('preprocessed dataset Zarr v4 tests failed');
+    console.error('preprocessed dataset Zarr v5 tests failed');
     console.error(error);
     process.exitCode = 1;
   }

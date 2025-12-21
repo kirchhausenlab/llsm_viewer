@@ -14,9 +14,10 @@ export type ChannelCardProps = {
   onLayerDrop: (id: string, dataTransfer: DataTransfer) => void;
   onLayerSegmentationToggle: (channelId: string, layerId: string, value: boolean) => void;
   onLayerRemove: (channelId: string, layerId: string) => void;
-  onTrackFileSelected: (channelId: string, file: File | null) => void;
+  onTrackFilesAdded: (channelId: string, files: File[]) => void | Promise<void>;
   onTrackDrop: (channelId: string, dataTransfer: DataTransfer) => void;
-  onTrackClear: (channelId: string) => void;
+  onTrackSetNameChange: (channelId: string, trackSetId: string, name: string) => void;
+  onTrackSetRemove: (channelId: string, trackSetId: string) => void;
 };
 
 export default function ChannelCard({
@@ -28,9 +29,10 @@ export default function ChannelCard({
   onLayerDrop,
   onLayerSegmentationToggle,
   onLayerRemove,
-  onTrackFileSelected,
+  onTrackFilesAdded,
   onTrackDrop,
-  onTrackClear
+  onTrackSetNameChange,
+  onTrackSetRemove
 }: ChannelCardProps) {
   const { state: dropboxState, controls: dropboxControls } = useChannelDropbox({ disabled: isDisabled });
 
@@ -68,9 +70,9 @@ export default function ChannelCard({
 
   const handleTrackFilesSelected = useCallback(
     (files: File[]) => {
-      onTrackFileSelected(channel.id, files[0] ?? null);
+      onTrackFilesAdded(channel.id, files);
     },
-    [channel.id, onTrackFileSelected]
+    [channel.id, onTrackFilesAdded]
   );
 
   const handleTrackDrop = useCallback(
@@ -94,44 +96,54 @@ export default function ChannelCard({
     () =>
       dropboxControls.importFromDropbox({
         target: 'tracks',
-        options: { extensions: ['.csv'], multiselect: false },
+        options: { extensions: ['.csv'], multiselect: true },
         onImported: (files: File[]) => {
-          const [file] = files;
-          onTrackFileSelected(channel.id, file ?? null);
+          onTrackFilesAdded(channel.id, files);
         }
       }),
-    [channel.id, dropboxControls, onTrackFileSelected]
+    [channel.id, dropboxControls, onTrackFilesAdded]
   );
 
-  const trackEntryCount = channel.trackEntries.length;
-  const uniqueTrackCount = useMemo(() => {
-    const identifiers = new Set<string>();
-    for (const row of channel.trackEntries) {
-      const trackId = row[0];
-      if (trackId) {
-        identifiers.add(trackId);
+  const trackSetSummaries = useMemo(() => {
+    const summaries = new Map<string, string>();
+    for (const set of channel.trackSets) {
+      const entries = set.entries;
+      const entryCount = entries.length;
+      const identifiers = new Set<string>();
+      for (const row of entries) {
+        const trackId = row[0];
+        if (trackId) {
+          identifiers.add(trackId);
+        }
       }
-    }
-    return identifiers.size;
-  }, [channel.trackEntries]);
+      const uniqueCount = identifiers.size;
 
-  const loadedTrackSummary = useMemo(() => {
-    if (trackEntryCount === 0) {
-      return 'Loaded 0 track entries.';
-    }
-    if (uniqueTrackCount > 0) {
-      const trackLabel = uniqueTrackCount === 1 ? '1 track' : `${uniqueTrackCount} tracks`;
-      if (uniqueTrackCount === trackEntryCount) {
-        return `Loaded ${trackLabel}.`;
+      if (set.status === 'loading') {
+        summaries.set(set.id, 'Loading…');
+        continue;
       }
-      const entryLabel =
-        trackEntryCount === 1 ? '1 track entry' : `${trackEntryCount} track entries`;
-      return `Loaded ${trackLabel} across ${entryLabel}.`;
+      if (set.status === 'error') {
+        summaries.set(set.id, set.error ?? 'Failed to load tracks.');
+        continue;
+      }
+      if (entryCount === 0) {
+        summaries.set(set.id, 'Loaded 0 track entries.');
+        continue;
+      }
+      if (uniqueCount > 0) {
+        const trackLabel = uniqueCount === 1 ? '1 track' : `${uniqueCount} tracks`;
+        if (uniqueCount === entryCount) {
+          summaries.set(set.id, `Loaded ${trackLabel}.`);
+          continue;
+        }
+        const entryLabel = entryCount === 1 ? '1 track entry' : `${entryCount} track entries`;
+        summaries.set(set.id, `Loaded ${trackLabel} across ${entryLabel}.`);
+        continue;
+      }
+      summaries.set(set.id, entryCount === 1 ? 'Loaded 1 track entry.' : `Loaded ${entryCount} track entries.`);
     }
-    return trackEntryCount === 1
-      ? 'Loaded 1 track entry.'
-      : `Loaded ${trackEntryCount} track entries.`;
-  }, [trackEntryCount, uniqueTrackCount]);
+    return summaries;
+  }, [channel.trackSets]);
 
   return (
     <section className={`channel-card${isDisabled ? ' is-disabled' : ''}`} aria-disabled={isDisabled}>
@@ -216,14 +228,15 @@ export default function ChannelCard({
           </>
         }
       />
-      <p className="channel-tracks-title">Upload tracks (optional, .csv file)</p>
+      <p className="channel-tracks-title">Upload tracks (optional, .csv files)</p>
       <ChannelUploads
         variant="tracks"
         accept=".csv"
+        multiple
         disabled={isDisabled}
         isBusy={isDropboxImporting}
         browseLabel="From Files"
-        subtitle="Or drop the tracks file here"
+        subtitle="Or drop one or more tracks files here"
         onFilesSelected={handleTrackFilesSelected}
         onDropDataTransfer={handleTrackDrop}
         actionSlot={
@@ -245,44 +258,54 @@ export default function ChannelCard({
             onClearAppKey={dropboxControls.clearDropboxConfig}
           />
         }
-        rightSlot={
-          channel.trackFile ? (
-            <button
-              type="button"
-              onClick={() => onTrackClear(channel.id)}
-              className="channel-track-clear"
-              disabled={isDisabled || isDropboxImporting}
-            >
-              Clear
-            </button>
-          ) : null
-        }
         statusSlot={
-          <>
-            <ChannelDropboxSection
-              channelId={channel.id}
-              variant="tracks"
-              isDisabled={isDisabled}
-              isImporting={dropboxState.importTarget === 'tracks'}
-              error={dropboxState.errorContext === 'tracks' ? dropboxState.error : null}
-              appKeyInput={dropboxState.appKeyInput}
-              appKeySource={dropboxState.appKeySource}
-              isConfigOpen={dropboxState.isConfigOpen}
-              renderButton={false}
-              onImport={handleTrackDropboxImport}
-              onAppKeyInputChange={dropboxControls.updateAppKeyInput}
-              onSubmitAppKey={dropboxControls.submitDropboxConfig}
-              onCancelAppKey={dropboxControls.cancelDropboxConfig}
-              onClearAppKey={dropboxControls.clearDropboxConfig}
-            />
-            {channel.trackError ? <p className="channel-tracks-error">{channel.trackError}</p> : null}
-            {channel.trackStatus === 'loading' ? <p className="channel-tracks-status">Loading tracks…</p> : null}
-            {channel.trackStatus === 'loaded' ? (
-              <p className="channel-tracks-status">{loadedTrackSummary}</p>
-            ) : null}
-          </>
+          <ChannelDropboxSection
+            channelId={channel.id}
+            variant="tracks"
+            isDisabled={isDisabled}
+            isImporting={dropboxState.importTarget === 'tracks'}
+            error={dropboxState.errorContext === 'tracks' ? dropboxState.error : null}
+            appKeyInput={dropboxState.appKeyInput}
+            appKeySource={dropboxState.appKeySource}
+            isConfigOpen={dropboxState.isConfigOpen}
+            renderButton={false}
+            onImport={handleTrackDropboxImport}
+            onAppKeyInputChange={dropboxControls.updateAppKeyInput}
+            onSubmitAppKey={dropboxControls.submitDropboxConfig}
+            onCancelAppKey={dropboxControls.cancelDropboxConfig}
+            onClearAppKey={dropboxControls.clearDropboxConfig}
+          />
         }
       />
+      {channel.trackSets.length > 0 ? (
+        <div className="channel-tracks-list" aria-label="Attached track sets">
+          {channel.trackSets.map((set) => (
+            <div key={set.id} className="channel-tracks-list-row">
+              <span className="channel-tracks-filename">{set.fileName}</span>
+              <input
+                type="text"
+                className="channel-tracks-name-input"
+                value={set.name}
+                onChange={(event) => onTrackSetNameChange(channel.id, set.id, event.target.value)}
+                disabled={isDisabled}
+                aria-label={`Track set name for ${set.fileName}`}
+              />
+              <button
+                type="button"
+                className="channel-tracks-remove"
+                onClick={() => onTrackSetRemove(channel.id, set.id)}
+                aria-label={`Remove ${set.fileName}`}
+                disabled={isDisabled || isDropboxImporting}
+              >
+                🗑
+              </button>
+              <span className={set.status === 'error' ? 'channel-tracks-status channel-tracks-error' : 'channel-tracks-status'}>
+                {trackSetSummaries.get(set.id) ?? ''}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }

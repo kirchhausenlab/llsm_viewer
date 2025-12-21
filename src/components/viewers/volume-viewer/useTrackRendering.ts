@@ -32,9 +32,9 @@ type HoverState = {
 export type UseTrackRenderingParams = {
   tracks: TrackDefinition[];
   trackVisibility: Record<string, boolean>;
-  trackOpacityByChannel: Record<string, number>;
-  trackLineWidthByChannel: Record<string, number>;
-  channelTrackColorModes: Record<string, TrackColorMode>;
+  trackOpacityByTrackSet: Record<string, number>;
+  trackLineWidthByTrackSet: Record<string, number>;
+  trackColorModesByTrackSet: Record<string, TrackColorMode>;
   channelTrackOffsets: Record<string, { x: number; y: number }>;
   trackScale: { x?: number; y?: number; z?: number };
   isFullTrackTrailEnabled: boolean;
@@ -55,9 +55,9 @@ export type UseTrackRenderingParams = {
 export function useTrackRendering({
   tracks,
   trackVisibility,
-  trackOpacityByChannel,
-  trackLineWidthByChannel,
-  channelTrackColorModes,
+  trackOpacityByTrackSet,
+  trackLineWidthByTrackSet,
+  trackColorModesByTrackSet,
   channelTrackOffsets,
   trackScale: _trackScale,
   isFullTrackTrailEnabled,
@@ -137,13 +137,13 @@ export function useTrackRendering({
 
   const resolveTrackColor = useCallback(
     (track: TrackDefinition) => {
-      const mode = channelTrackColorModes[track.channelId];
+      const mode = trackColorModesByTrackSet[track.trackSetId];
       if (mode && mode.type === 'uniform') {
         return new THREE.Color(mode.color);
       }
       return createTrackColor(track.id);
     },
-    [channelTrackColorModes],
+    [trackColorModesByTrackSet],
   );
 
   const applyTrackGroupTransform = useCallback(
@@ -418,7 +418,7 @@ export function useTrackRendering({
 
     updateTrackDrawRanges(clampedTimeIndex);
   }, [
-    channelTrackColorModes,
+    trackColorModesByTrackSet,
     channelTrackOffsets,
     clearHoverState,
     clampedTimeIndex,
@@ -455,7 +455,7 @@ export function useTrackRendering({
       const isHovered = hoveredTrackId === track.id;
       const isSelected = selectedTrackIds.has(track.id);
       const isHighlighted = isFollowed || isHovered || isSelected;
-      const channelOpacity = trackOpacityByChannel[track.channelId] ?? DEFAULT_TRACK_OPACITY;
+      const channelOpacity = trackOpacityByTrackSet[track.trackSetId] ?? DEFAULT_TRACK_OPACITY;
       const sanitizedOpacity = Math.min(1, Math.max(0, channelOpacity));
       const isChannelHidden = sanitizedOpacity <= 0;
       const isOpacityExempt = isFollowed || isSelected;
@@ -480,7 +480,7 @@ export function useTrackRendering({
       const opacityBoost = isFollowed || isSelected ? 0.15 : isHovered ? 0.12 : 0;
       resource.targetOpacity = Math.min(1, effectiveOpacity + opacityBoost);
 
-      const channelLineWidth = trackLineWidthByChannel[track.channelId] ?? DEFAULT_TRACK_LINE_WIDTH;
+      const channelLineWidth = trackLineWidthByTrackSet[track.trackSetId] ?? DEFAULT_TRACK_LINE_WIDTH;
       const sanitizedLineWidth = Math.max(0.1, Math.min(10, channelLineWidth));
       resource.baseLineWidth = sanitizedLineWidth;
       let widthMultiplier = 1;
@@ -516,8 +516,8 @@ export function useTrackRendering({
     followedTrackId,
     hoveredTrackId,
     selectedTrackIds,
-    trackLineWidthByChannel,
-    trackOpacityByChannel,
+    trackLineWidthByTrackSet,
+    trackOpacityByTrackSet,
     trackOverlayRevision,
     trackVisibility,
     trackLinesRef,

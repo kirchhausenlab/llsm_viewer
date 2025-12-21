@@ -621,6 +621,64 @@
   color: rgba(255, 255, 255, 0.65);
 }
 
+.channel-tracks-list {
+  margin: 0.85rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.channel-tracks-list-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(120px, 1fr) auto;
+  gap: 0.6rem 0.75rem;
+  align-items: center;
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.channel-tracks-filename {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.85);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channel-tracks-name-input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border-radius: 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(7, 10, 14, 0.75);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.85rem;
+}
+
+.channel-tracks-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  border-radius: 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.channel-tracks-remove:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.channel-tracks-list-row .channel-tracks-status {
+  grid-column: 1 / -1;
+  font-size: 0.78rem;
+}
+
 .channel-add-actions {
   display: flex;
   justify-content: center;

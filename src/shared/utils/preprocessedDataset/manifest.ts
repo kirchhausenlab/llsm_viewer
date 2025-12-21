@@ -23,12 +23,17 @@ function buildLayerSummaryFromManifest(layer: PreprocessedLayerManifestEntry): P
 
 export function buildChannelSummariesFromManifest(
   manifest: PreprocessedManifest,
-  trackEntriesByChannelId: Map<string, string[][]>
+  trackEntriesByTrackSetId: Map<string, string[][]>
 ): PreprocessedChannelSummary[] {
   return manifest.dataset.channels.map((channel) => ({
     id: channel.id,
     name: channel.name,
-    trackEntries: trackEntriesByChannelId.get(channel.id) ?? [],
+    trackSets: (channel.trackSets ?? []).map((trackSet) => ({
+      id: trackSet.id,
+      name: trackSet.name,
+      fileName: trackSet.fileName,
+      entries: trackEntriesByTrackSetId.get(trackSet.id) ?? []
+    })),
     layers: channel.layers.map(buildLayerSummaryFromManifest)
   }));
 }

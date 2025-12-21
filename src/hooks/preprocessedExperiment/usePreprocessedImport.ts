@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import type { ChannelTrackState, FollowedTrackState } from '../../types/channelTracks';
+import type { FollowedTrackState, TrackSetState } from '../../types/channelTracks';
 import { openPreprocessedDatasetFromZarrStorage } from '../../shared/utils/preprocessedDataset/open';
 import { createDirectoryHandlePreprocessedStorage } from '../../shared/storage/preprocessedStorage';
 import type { ChannelSource, StagedPreprocessedExperiment } from '../dataset';
@@ -10,8 +10,8 @@ export type UsePreprocessedImportOptions = {
   setChannels: Dispatch<SetStateAction<ChannelSource[]>>;
   setActiveChannelId: Dispatch<SetStateAction<string | null>>;
   setEditingChannelId: Dispatch<SetStateAction<string | null>>;
-  setChannelTrackStates: Dispatch<SetStateAction<Record<string, ChannelTrackState>>>;
-  setTrackOrderModeByChannel: Dispatch<SetStateAction<Record<string, 'id' | 'length'>>>;
+  setTrackSetStates: Dispatch<SetStateAction<Record<string, TrackSetState>>>;
+  setTrackOrderModeByTrackSet: Dispatch<SetStateAction<Record<string, 'id' | 'length'>>>;
   setSelectedTrackOrder: Dispatch<SetStateAction<string[]>>;
   setFollowedTrack: Dispatch<SetStateAction<FollowedTrackState>>;
   setIsExperimentSetupStarted: Dispatch<SetStateAction<boolean>>;
@@ -46,8 +46,8 @@ export function usePreprocessedImport({
   setChannels,
   setActiveChannelId,
   setEditingChannelId,
-  setChannelTrackStates,
-  setTrackOrderModeByChannel,
+  setTrackSetStates,
+  setTrackOrderModeByTrackSet,
   setSelectedTrackOrder,
   setFollowedTrack,
   setIsExperimentSetupStarted,
@@ -125,18 +125,23 @@ export function usePreprocessedImport({
           files: [],
           isSegmentation: layer.isSegmentation
         })),
-        trackFile: null,
-        trackStatus: 'loaded',
-        trackError: null,
-        trackEntries: summary.trackEntries
+        trackSets: summary.trackSets.map((set) => ({
+          id: set.id,
+          name: set.name,
+          file: null,
+          fileName: set.fileName,
+          status: 'loaded',
+          error: null,
+          entries: set.entries
+        }))
       }));
 
       setChannels(nextChannels);
       updateChannelIdCounter(nextChannels);
       setActiveChannelId(null);
       setEditingChannelId(null);
-      setChannelTrackStates({});
-      setTrackOrderModeByChannel({});
+      setTrackSetStates({});
+      setTrackOrderModeByTrackSet({});
       setSelectedTrackOrder([]);
       setFollowedTrack(null);
       setPreprocessedExperiment(staged);
@@ -161,13 +166,13 @@ export function usePreprocessedImport({
     isPreprocessedImporting,
     setActiveChannelId,
     setChannels,
-    setChannelTrackStates,
+    setTrackSetStates,
     setEditingChannelId,
     setExperimentDimension,
     setFollowedTrack,
     setIsExperimentSetupStarted,
     setSelectedTrackOrder,
-    setTrackOrderModeByChannel,
+    setTrackOrderModeByTrackSet,
     setViewerMode,
     updateChannelIdCounter
   ]);

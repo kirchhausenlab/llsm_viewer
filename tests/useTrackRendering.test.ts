@@ -11,9 +11,9 @@ console.log('Starting useTrackRendering tests');
     useTrackRendering({
       tracks: [],
       trackVisibility: {},
-      trackOpacityByChannel: {},
-      trackLineWidthByChannel: {},
-      channelTrackColorModes: {},
+      trackOpacityByTrackSet: {},
+      trackLineWidthByTrackSet: {},
+      trackColorModesByTrackSet: {},
       channelTrackOffsets: {},
       trackScale: {},
       isFullTrackTrailEnabled: true,
@@ -56,24 +56,27 @@ console.log('Starting useTrackRendering tests');
   const trackLinesRef = { current: new Map() } as const;
   const track = {
     id: 'track-0',
+    trackSetId: 'track-set-0',
+    trackSetName: 'Track set 0',
     channelId: 'channel-0',
     channelName: 'Channel 0',
     trackNumber: 1,
+    sourceTrackId: 1,
     points: [
-      { x: 0, y: 0, z: 0, time: 0 },
-      { x: 1, y: 1, z: 0, time: 1 },
+      { x: 0, y: 0, z: 0, time: 0, amplitude: 0 },
+      { x: 1, y: 1, z: 0, time: 1, amplitude: 0 },
     ],
   };
 
-  let trackOpacityByChannel: Record<string, number> = { 'channel-0': 1 };
+  let trackOpacityByTrackSet: Record<string, number> = { 'track-set-0': 1 };
 
   const hook = renderHook(() =>
     useTrackRendering({
       tracks: [track],
       trackVisibility: {},
-      trackOpacityByChannel,
-      trackLineWidthByChannel: {},
-      channelTrackColorModes: {},
+      trackOpacityByTrackSet,
+      trackLineWidthByTrackSet: {},
+      trackColorModesByTrackSet: {},
       channelTrackOffsets: {},
       trackScale: {},
       isFullTrackTrailEnabled: true,
@@ -105,7 +108,7 @@ console.log('Starting useTrackRendering tests');
   assert.strictEqual(hook.result.hoveredTrackId, 'track-0');
 
   act(() => {
-    trackOpacityByChannel = { 'channel-0': 0 };
+    trackOpacityByTrackSet = { 'track-set-0': 0 };
     hook.rerender();
   });
 
@@ -125,9 +128,12 @@ console.log('Starting useTrackRendering tests');
 
   const track = {
     id: 'track-windowed',
+    trackSetId: 'track-set-0',
+    trackSetName: 'Track set 0',
     channelId: 'channel-0',
     channelName: 'Channel 0',
     trackNumber: 1,
+    sourceTrackId: 1,
     points,
   };
 
@@ -137,9 +143,9 @@ console.log('Starting useTrackRendering tests');
     useTrackRendering({
       tracks: [track],
       trackVisibility: {},
-      trackOpacityByChannel: { 'channel-0': 1 },
-      trackLineWidthByChannel: {},
-      channelTrackColorModes: {},
+      trackOpacityByTrackSet: { 'track-set-0': 1 },
+      trackLineWidthByTrackSet: {},
+      trackColorModesByTrackSet: {},
       channelTrackOffsets: {},
       trackScale: {},
       isFullTrackTrailEnabled: false,

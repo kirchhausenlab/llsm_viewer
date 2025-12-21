@@ -28,6 +28,8 @@ function makeDisplayTrackNumber(sourceTrackId: number, segmentIndex: number): st
 }
 
 export type BuildTracksFromCsvEntriesOptions = {
+  trackSetId: string;
+  trackSetName: string;
   channelId: string;
   channelName: string;
   entries: string[][];
@@ -35,6 +37,8 @@ export type BuildTracksFromCsvEntriesOptions = {
 };
 
 export function buildTracksFromCsvEntries({
+  trackSetId,
+  trackSetName,
   channelId,
   channelName,
   entries,
@@ -121,10 +125,12 @@ export function buildTracksFromCsvEntries({
         continue;
       }
 
-      const id = makeTrackId(channelId, sourceTrackId, segment.segmentIndex);
+      const id = makeTrackId(`${trackSetId}:${channelId}`, sourceTrackId, segment.segmentIndex);
       const displayTrackNumber = makeDisplayTrackNumber(sourceTrackId, segment.segmentIndex);
       const parentTrackId =
-        segment.segmentIndex <= 0 ? null : makeTrackId(channelId, sourceTrackId, segment.segmentIndex - 1);
+        segment.segmentIndex <= 0
+          ? null
+          : makeTrackId(`${trackSetId}:${channelId}`, sourceTrackId, segment.segmentIndex - 1);
 
       const sortedPoints = [...segment.points].sort((a, b) => a.time - b.time);
       const adjustedPoints = sortedPoints.map<TrackPoint>((point) => ({
@@ -137,6 +143,8 @@ export function buildTracksFromCsvEntries({
 
       parsed.push({
         id,
+        trackSetId,
+        trackSetName,
         channelId,
         channelName: channelName.trim() || 'Untitled channel',
         trackNumber: sourceTrackId,

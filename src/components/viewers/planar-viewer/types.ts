@@ -54,6 +54,8 @@ export type PlanarLayout = {
 
 export type TrackRenderEntry = {
   id: string;
+  trackSetId: string;
+  trackSetName: string;
   channelId: string;
   channelName: string;
   trackNumber: number;
@@ -85,9 +87,9 @@ export type PlanarViewerProps = {
   trackScale: { x: number; y: number; z: number };
   tracks: TrackDefinition[];
   trackVisibility: Record<string, boolean>;
-  trackOpacityByChannel: Record<string, number>;
-  trackLineWidthByChannel: Record<string, number>;
-  channelTrackColorModes: Record<string, TrackColorMode>;
+  trackOpacityByTrackSet: Record<string, number>;
+  trackLineWidthByTrackSet: Record<string, number>;
+  trackColorModesByTrackSet: Record<string, TrackColorMode>;
   channelTrackOffsets: Record<string, { x: number; y: number }>;
   isFullTrackTrailEnabled: boolean;
   trackTrailLength: number;

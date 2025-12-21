@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react';
-import type { ChannelTrackState, FollowedTrackState } from '../../types/channelTracks';
+import type { FollowedTrackState, TrackSetState } from '../../types/channelTracks';
 import type { ChannelSource, StagedPreprocessedExperiment } from './useChannelSources';
 import type { ExperimentDimension } from '../useVoxelResolution';
 import { usePreprocessedImport } from '../preprocessedExperiment/usePreprocessedImport';
@@ -9,8 +9,8 @@ export type UsePreprocessedExperimentOptions = {
   setChannels: Dispatch<SetStateAction<ChannelSource[]>>;
   setActiveChannelId: Dispatch<SetStateAction<string | null>>;
   setEditingChannelId: Dispatch<SetStateAction<string | null>>;
-  setChannelTrackStates: Dispatch<SetStateAction<Record<string, ChannelTrackState>>>;
-  setTrackOrderModeByChannel: Dispatch<SetStateAction<Record<string, 'id' | 'length'>>>;
+  setTrackSetStates: Dispatch<SetStateAction<Record<string, TrackSetState>>>;
+  setTrackOrderModeByTrackSet: Dispatch<SetStateAction<Record<string, 'id' | 'length'>>>;
   setSelectedTrackOrder: Dispatch<SetStateAction<string[]>>;
   setFollowedTrack: Dispatch<SetStateAction<FollowedTrackState>>;
   setIsExperimentSetupStarted: Dispatch<SetStateAction<boolean>>;
@@ -39,8 +39,8 @@ export default function usePreprocessedExperiment({
   setChannels,
   setActiveChannelId,
   setEditingChannelId,
-  setChannelTrackStates,
-  setTrackOrderModeByChannel,
+  setTrackSetStates,
+  setTrackOrderModeByTrackSet,
   setSelectedTrackOrder,
   setFollowedTrack,
   setIsExperimentSetupStarted,
@@ -55,8 +55,8 @@ export default function usePreprocessedExperiment({
     setChannels,
     setActiveChannelId,
     setEditingChannelId,
-    setChannelTrackStates,
-    setTrackOrderModeByChannel,
+    setTrackSetStates,
+    setTrackOrderModeByTrackSet,
     setSelectedTrackOrder,
     setFollowedTrack,
     setIsExperimentSetupStarted,

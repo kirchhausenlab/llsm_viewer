@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Experiment setup now supports attaching multiple track CSVs per channel as separate track sets (each with its own viewer label, styling, and visibility state) while remaining spatially tied to the underlying channel transforms.
+- Updated preprocessing/export + preprocessed import to store per-track-set CSV payloads and record them in a new manifest v5 `trackSets` list per channel (older preprocessed datasets are no longer supported).
 - Track CSV parsing now ignores the `start` column entirely; the `t` column is treated as the absolute (0-based) frame index for each row. This replaces the previous `frame = start + t - 1` interpretation.
 - Increased viewer canvas recording quality by setting an explicit default bitrate (20 Mbps) for `MediaRecorder`, exposing a bitrate control (1–100 Mbps) in the viewer settings, and fixing the download extension to match the recorded container (WebM in most browsers). Caveat: the effective bitrate still depends on browser/codec support and may be clamped or ignored on some platforms.
 - Added a Tracks settings window with a Full trail toggle and 1–20 trail length slider; when disabled the 3D/2D viewers now

@@ -149,9 +149,10 @@ export default function FrontPage({
               onChannelLayerDrop={channelListPanel.onChannelLayerDrop}
               onChannelLayerSegmentationToggle={channelListPanel.onChannelLayerSegmentationToggle}
               onChannelLayerRemove={channelListPanel.onChannelLayerRemove}
-              onChannelTrackFileSelected={channelListPanel.onChannelTrackFileSelected}
+              onChannelTrackFilesAdded={channelListPanel.onChannelTrackFilesAdded}
               onChannelTrackDrop={channelListPanel.onChannelTrackDrop}
-              onChannelTrackClear={channelListPanel.onChannelTrackClear}
+              onChannelTrackSetNameChange={channelListPanel.onChannelTrackSetNameChange}
+              onChannelTrackSetRemove={channelListPanel.onChannelTrackSetRemove}
               experimentDimension={channelListPanel.experimentDimension}
               isFrontPageLocked={channelListPanel.isFrontPageLocked}
             />
@@ -174,7 +175,11 @@ export default function FrontPage({
                 {preprocessedSummary.preprocessedExperiment.channelSummaries.map((
                   summary: StagedPreprocessedExperiment['channelSummaries'][number]
                 ) => {
-                  const trackSummary = preprocessedSummary.computeTrackSummary(summary.trackEntries);
+                  const trackSummaries = summary.trackSets.map((set) =>
+                    preprocessedSummary.computeTrackSummary(set.entries)
+                  );
+                  const totalRows = trackSummaries.reduce((acc, current) => acc + current.totalRows, 0);
+                  const totalTracks = trackSummaries.reduce((acc, current) => acc + current.uniqueTracks, 0);
                   return (
                     <li key={summary.id} className="preprocessed-summary-item">
                       <div className="preprocessed-summary-channel">
@@ -199,8 +204,8 @@ export default function FrontPage({
                           ))}
                         </ul>
                         <p className="preprocessed-summary-tracks">
-                          {trackSummary.uniqueTracks > 0
-                            ? `${trackSummary.uniqueTracks} tracks (${trackSummary.totalRows} rows)`
+                          {summary.trackSets.length > 0
+                            ? `${summary.trackSets.length} track sets · ${totalTracks} tracks (${totalRows} rows)`
                             : 'No tracks attached'}
                         </p>
                       </div>

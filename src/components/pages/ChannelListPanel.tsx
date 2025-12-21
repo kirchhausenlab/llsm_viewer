@@ -20,9 +20,11 @@ const getChannelLayerSummary = (channel: ChannelSource): string => {
 
 const buildChannelTabMeta = (channel: ChannelSource, validation: ChannelValidation): string => {
   const parts: string[] = [getChannelLayerSummary(channel)];
-  if (channel.trackEntries.length > 0) {
+  const hasTracks = channel.trackSets.some((set) => set.entries.length > 0);
+  const isLoadingTracks = channel.trackSets.some((set) => set.status === 'loading');
+  if (hasTracks) {
     parts.push('Tracks attached');
-  } else if (channel.trackStatus === 'loading') {
+  } else if (isLoadingTracks) {
     parts.push('Tracks loading');
   }
   if (channel.layers.length === 0) {
@@ -56,9 +58,10 @@ type ChannelListPanelProps = {
   onChannelLayerDrop: (channelId: string, dataTransfer: DataTransfer) => void;
   onChannelLayerSegmentationToggle: (channelId: string, layerId: string, value: boolean) => void;
   onChannelLayerRemove: (channelId: string, layerId: string) => void;
-  onChannelTrackFileSelected: (channelId: string, file: File | null) => void;
+  onChannelTrackFilesAdded: (channelId: string, files: File[]) => void | Promise<void>;
   onChannelTrackDrop: (channelId: string, dataTransfer: DataTransfer) => void;
-  onChannelTrackClear: (channelId: string) => void;
+  onChannelTrackSetNameChange: (channelId: string, trackSetId: string, name: string) => void;
+  onChannelTrackSetRemove: (channelId: string, trackSetId: string) => void;
   experimentDimension: ExperimentDimension;
   isFrontPageLocked: boolean;
 };
@@ -80,9 +83,10 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
   onChannelLayerDrop,
   onChannelLayerSegmentationToggle,
   onChannelLayerRemove,
-  onChannelTrackFileSelected,
+  onChannelTrackFilesAdded,
   onChannelTrackDrop,
-  onChannelTrackClear,
+  onChannelTrackSetNameChange,
+  onChannelTrackSetRemove,
   experimentDimension,
   isFrontPageLocked
 }) => {
@@ -232,9 +236,10 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
             onLayerDrop={onChannelLayerDrop}
             onLayerSegmentationToggle={onChannelLayerSegmentationToggle}
             onLayerRemove={onChannelLayerRemove}
-            onTrackFileSelected={onChannelTrackFileSelected}
+            onTrackFilesAdded={onChannelTrackFilesAdded}
             onTrackDrop={onChannelTrackDrop}
-            onTrackClear={onChannelTrackClear}
+            onTrackSetNameChange={onChannelTrackSetNameChange}
+            onTrackSetRemove={onChannelTrackSetRemove}
           />
         ) : (
           <p className="channel-panel-placeholder">

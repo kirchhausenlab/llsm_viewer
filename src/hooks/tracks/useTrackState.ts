@@ -5,7 +5,7 @@ import useParsedTracks from './useParsedTracks';
 import useTrackStyling, {
   DEFAULT_TRACK_LINE_WIDTH,
   DEFAULT_TRACK_OPACITY,
-  createDefaultChannelTrackState
+  createDefaultTrackSetState
 } from './useTrackStyling';
 import useTrackSelection, {
   DEFAULT_TRACK_TRAIL_LENGTH,
@@ -26,17 +26,23 @@ export const useTrackState = ({
   experimentDimension,
   volumeTimepointCount
 }: UseTrackStateOptions) => {
-  const { rawTracksByChannel, handleChannelTrackFileSelected, handleChannelTrackDrop, handleChannelTrackClear } =
-    useParsedTracks({ channels, setChannels, experimentDimension });
+  const {
+    trackSets,
+    rawTracksByTrackSet,
+    handleChannelTrackFilesAdded,
+    handleChannelTrackDrop,
+    handleTrackSetNameChange,
+    handleTrackSetRemove
+  } = useParsedTracks({ channels, setChannels, experimentDimension });
 
-  const styling = useTrackStyling({ channels, parsedTracksByChannel: rawTracksByChannel });
+  const styling = useTrackStyling({ trackSets, parsedTracksByTrackSet: rawTracksByTrackSet });
 
   const selection = useTrackSelection({
-    channels,
-    rawTracksByChannel,
+    trackSets,
+    rawTracksByTrackSet,
     volumeTimepointCount,
-    channelTrackStates: styling.channelTrackStates,
-    setChannelTrackStates: styling.setChannelTrackStates,
+    trackSetStates: styling.trackSetStates,
+    setTrackSetStates: styling.setTrackSetStates,
     ensureTrackIsVisible: styling.ensureTrackIsVisible
   });
 
@@ -48,10 +54,12 @@ export const useTrackState = ({
   return {
     ...selection,
     ...styling,
-    rawTracksByChannel,
-    handleChannelTrackFileSelected,
+    trackSets,
+    rawTracksByTrackSet,
+    handleChannelTrackFilesAdded,
     handleChannelTrackDrop,
-    handleChannelTrackClear,
+    handleTrackSetNameChange,
+    handleTrackSetRemove,
     resetTrackState
   };
 };
@@ -63,5 +71,5 @@ export {
   TRACK_SMOOTHING_RANGE,
   TRACK_TRAIL_LENGTH_RANGE,
   DEFAULT_TRACK_TRAIL_LENGTH,
-  createDefaultChannelTrackState,
+  createDefaultTrackSetState,
 };

@@ -22,7 +22,7 @@ export default function TopMenu({
   isHelpMenuOpen,
   openHelpMenu,
   closeHelpMenu,
-  followedTrackChannelId,
+  followedTrackSetId,
   followedTrackId,
   followedVoxel,
   onStopTrackFollow,
@@ -204,7 +204,7 @@ export default function TopMenu({
       ? [{ text: hoveredVoxel.intensity, color: null }]
       : [];
 
-  const isTrackFollowActive = followedTrackChannelId !== null && followedTrackId !== null;
+  const isTrackFollowActive = followedTrackSetId !== null && followedTrackId !== null;
   const isFollowActive = isTrackFollowActive || followedVoxel !== null;
 
   return (
@@ -267,7 +267,7 @@ export default function TopMenu({
                 className="viewer-top-menu-button viewer-top-menu-button--danger"
                 onClick={() =>
                   isTrackFollowActive
-                    ? onStopTrackFollow(followedTrackChannelId ?? undefined)
+                    ? onStopTrackFollow(followedTrackSetId ?? undefined)
                     : onStopVoxelFollow()
                 }
               >

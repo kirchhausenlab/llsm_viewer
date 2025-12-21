@@ -196,7 +196,7 @@ function createViewerShellContainerProps(
 
   const viewerShellProps = useViewerShellProps(props);
 
-  assert.strictEqual(viewerShellProps.tracksPanel.onChannelTabSelect, onTrackPanelChannelSelect);
+  assert.strictEqual(viewerShellProps.tracksPanel.onTrackSetTabSelect, onTrackPanelChannelSelect);
   assert.deepStrictEqual(viewerShellProps.volumeViewerProps.vr?.channelPanels, props.vrChannelPanels);
 })();
 

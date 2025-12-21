@@ -46,9 +46,9 @@ type UsePlanarInteractionsParams = {
   tracks: TrackDefinition[];
   trackLookup: Map<string, TrackDefinition>;
   trackVisibility: Record<string, boolean>;
-  trackOpacityByChannel: Record<string, number>;
-  trackLineWidthByChannel: Record<string, number>;
-  channelTrackColorModes: PlanarViewerProps['channelTrackColorModes'];
+  trackOpacityByTrackSet: Record<string, number>;
+  trackLineWidthByTrackSet: Record<string, number>;
+  trackColorModesByTrackSet: PlanarViewerProps['trackColorModesByTrackSet'];
   channelTrackOffsets: PlanarViewerProps['channelTrackOffsets'];
   isFullTrackTrailEnabled: boolean;
   trackTrailLength: number;
@@ -71,8 +71,8 @@ type PointerState = {
   startOffsetY: number;
 };
 
-function resolveTrackHexColor(track: TrackDefinition, channelModes: PlanarViewerProps['channelTrackColorModes']) {
-  const mode = channelModes[track.channelId];
+function resolveTrackHexColor(track: TrackDefinition, channelModes: PlanarViewerProps['trackColorModesByTrackSet']) {
+  const mode = channelModes[track.trackSetId];
   if (mode && mode.type === 'uniform') {
     return mode.color;
   }
@@ -95,9 +95,9 @@ export function usePlanarInteractions({
   tracks,
   trackLookup,
   trackVisibility,
-  trackOpacityByChannel,
-  trackLineWidthByChannel,
-  channelTrackColorModes,
+  trackOpacityByTrackSet,
+  trackLineWidthByTrackSet,
+  trackColorModesByTrackSet,
   channelTrackOffsets,
   isFullTrackTrailEnabled,
   trackTrailLength,
@@ -167,7 +167,7 @@ export function usePlanarInteractions({
           return null;
         }
 
-        const channelOpacity = trackOpacityByChannel[track.channelId] ?? DEFAULT_TRACK_OPACITY;
+        const channelOpacity = trackOpacityByTrackSet[track.trackSetId] ?? DEFAULT_TRACK_OPACITY;
         const isChannelHidden = channelOpacity <= 0;
         const isExplicitlyTracked =
           selectedTrackIdsRef.current.has(track.id) || followedTrackIdRef.current === track.id;
@@ -178,7 +178,7 @@ export function usePlanarInteractions({
         const offset = channelTrackOffsets[track.channelId] ?? { x: 0, y: 0 };
         const scaledOffsetX = offset.x * trackScale.x;
         const scaledOffsetY = offset.y * trackScale.y;
-        const baseColor = getColorComponents(resolveTrackHexColor(track, channelTrackColorModes));
+        const baseColor = getColorComponents(resolveTrackHexColor(track, trackColorModesByTrackSet));
         const highlightColor = mixWithWhite(baseColor, TRACK_HIGHLIGHT_BOOST);
 
         const scaledPoints: ScaledTrackPoint[] = [];
@@ -211,6 +211,8 @@ export function usePlanarInteractions({
 
         return {
           id: track.id,
+          trackSetId: track.trackSetId,
+          trackSetName: track.trackSetName,
           channelId: track.channelId,
           channelName: track.channelName,
           trackNumber: track.trackNumber,
@@ -221,7 +223,7 @@ export function usePlanarInteractions({
       })
       .filter((entry): entry is TrackRenderEntry => entry !== null);
   }, [
-    channelTrackColorModes,
+    trackColorModesByTrackSet,
     channelTrackOffsets,
     clampedTimeIndex,
     followedTrackId,
@@ -229,7 +231,7 @@ export function usePlanarInteractions({
     primaryVolume,
     selectedTrackIds,
     trackTrailLength,
-    trackOpacityByChannel,
+    trackOpacityByTrackSet,
     trackScale.x,
     trackScale.y,
     trackScale.z,
@@ -442,7 +444,7 @@ export function usePlanarInteractions({
         const isFollowed = followedTrackIdRef.current === track.id;
         const isExplicitlyVisible = trackVisibility[track.id] ?? true;
         const isSelected = selectedTrackIdsRef.current.has(track.id);
-        const channelOpacity = trackOpacityByChannel[track.channelId] ?? DEFAULT_TRACK_OPACITY;
+        const channelOpacity = trackOpacityByTrackSet[track.trackSetId] ?? DEFAULT_TRACK_OPACITY;
         const isChannelHidden = channelOpacity <= 0;
         if (isChannelHidden && !isFollowed && !isSelected) {
           continue;
@@ -493,7 +495,7 @@ export function usePlanarInteractions({
           continue;
         }
 
-        const channelLineWidth = trackLineWidthByChannel[track.channelId] ?? DEFAULT_TRACK_LINE_WIDTH;
+        const channelLineWidth = trackLineWidthByTrackSet[track.trackSetId] ?? DEFAULT_TRACK_LINE_WIDTH;
         const sanitizedLineWidth = Math.max(0.1, Math.min(10, channelLineWidth));
         let widthMultiplier = 1;
         if (isFollowed) {
@@ -524,8 +526,8 @@ export function usePlanarInteractions({
     },
     [
       layout,
-      trackLineWidthByChannel,
-      trackOpacityByChannel,
+      trackLineWidthByTrackSet,
+      trackOpacityByTrackSet,
       trackRenderData,
       trackVisibility,
       viewStateRef,
@@ -535,7 +537,7 @@ export function usePlanarInteractions({
 
   const hoveredTrackDefinition = hoveredTrackId ? trackLookup.get(hoveredTrackId) ?? null : null;
   const hoveredTrackLabel = hoveredTrackDefinition
-    ? `${hoveredTrackDefinition.channelName} · Track #${
+    ? `${hoveredTrackDefinition.trackSetName} · Track #${
         hoveredTrackDefinition.displayTrackNumber ?? String(hoveredTrackDefinition.trackNumber)
       }`
     : null;

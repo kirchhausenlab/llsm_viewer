@@ -254,10 +254,11 @@ export function useAppRouteState(): AppRouteState {
     resetChannelEditingState
   } = useChannelEditing({ channels, isLaunchingViewer });
   const {
-    channelTrackStates,
-    setChannelTrackStates,
-    trackOrderModeByChannel,
-    setTrackOrderModeByChannel,
+    trackSets,
+    trackSetStates,
+    setTrackSetStates,
+    trackOrderModeByTrackSet,
+    setTrackOrderModeByTrackSet,
     setSelectedTrackOrder,
     selectedTrackIds,
     trackSmoothing,
@@ -265,12 +266,12 @@ export function useAppRouteState(): AppRouteState {
     minimumTrackLength,
     followedTrack,
     setFollowedTrack,
-    activeTrackChannelId,
-    setActiveTrackChannelId,
-    parsedTracksByChannel,
+    activeTrackSetId,
+    setActiveTrackSetId,
+    parsedTracksByTrackSet,
     parsedTracks,
     trackLookup,
-    filteredTracksByChannel,
+    filteredTracksByTrackSet,
     filteredTracks,
     selectedTrackOrder,
     selectedTrackSeries,
@@ -279,18 +280,19 @@ export function useAppRouteState(): AppRouteState {
     resolvedAmplitudeLimits,
     resolvedTimeLimits,
     trackLengthBounds,
-    trackSummaryByChannel,
+    trackSummaryByTrackSet,
     trackVisibility,
-    trackOpacityByChannel,
-    trackLineWidthByChannel,
-    channelTrackColorModes,
+    trackOpacityByTrackSet,
+    trackLineWidthByTrackSet,
+    trackColorModesByTrackSet,
     isFullTrackTrailEnabled,
     trackTrailLength,
     followedTrackId,
-    followedTrackChannelId,
-    handleChannelTrackFileSelected,
+    followedTrackSetId,
+    handleChannelTrackFilesAdded,
     handleChannelTrackDrop,
-    handleChannelTrackClear,
+    handleTrackSetNameChange,
+    handleTrackSetRemove,
     handleTrackVisibilityToggle,
     handleTrackVisibilityAllChange,
     handleMinimumTrackLengthChange,
@@ -305,7 +307,7 @@ export function useAppRouteState(): AppRouteState {
     handleTrackSelectionToggle,
     handleTrackFollow,
     handleTrackFollowFromViewer,
-    handleTrackChannelSelect,
+    handleTrackSetSelect,
     handleStopTrackFollow,
     handleSelectedTracksAmplitudeLimitsChange,
     handleSelectedTracksTimeLimitsChange,
@@ -979,18 +981,18 @@ export function useAppRouteState(): AppRouteState {
   }, [loadedChannelIds]);
 
   useEffect(() => {
-    if (channels.length === 0) {
-      setActiveTrackChannelId(null);
+    if (trackSets.length === 0) {
+      setActiveTrackSetId(null);
       return;
     }
 
-    setActiveTrackChannelId((current) => {
-      if (current && channels.some((channel) => channel.id === current)) {
+    setActiveTrackSetId((current) => {
+      if (current && trackSets.some((trackSet) => trackSet.id === current)) {
         return current;
       }
-      return channels[0].id;
+      return trackSets[0]?.id ?? null;
     });
-  }, [channels]);
+  }, [trackSets]);
 
   useEffect(() => {
     setChannelActiveLayer((current) => {
@@ -1155,16 +1157,17 @@ export function useAppRouteState(): AppRouteState {
     onChannelLayerDrop: handleChannelLayerDrop,
     onChannelLayerSegmentationToggle: handleChannelLayerSegmentationToggle,
     onChannelLayerRemove: handleChannelLayerRemove,
-    onChannelTrackFileSelected: handleChannelTrackFileSelected,
+    onChannelTrackFilesAdded: handleChannelTrackFilesAdded,
     onChannelTrackDrop: handleChannelTrackDrop,
-    onChannelTrackClear: handleChannelTrackClear,
+    onChannelTrackSetNameChange: handleTrackSetNameChange,
+    onChannelTrackSetRemove: handleTrackSetRemove,
     setIsExperimentSetupStarted,
     setViewerMode,
     updateChannelIdCounter,
     showInteractionWarning,
     isLaunchingViewer,
-    setChannelTrackStates,
-    setTrackOrderModeByChannel,
+    setTrackSetStates,
+    setTrackOrderModeByTrackSet,
     setSelectedTrackOrder,
     setFollowedTrack,
     computeTrackSummary,
@@ -1204,15 +1207,15 @@ export function useAppRouteState(): AppRouteState {
     trackScale: effectiveTrackScale,
     filteredTracks,
     trackVisibility,
-    trackOpacityByChannel,
-    trackLineWidthByChannel,
-    channelTrackColorModes,
+    trackOpacityByTrackSet,
+    trackLineWidthByTrackSet,
+    trackColorModesByTrackSet,
     channelTrackOffsets,
     selectedTrackIds,
     followedTrackId,
     followedVoxel,
-    followedTrackChannelId,
-    activeTrackChannelId,
+    followedTrackSetId,
+    activeTrackSetId,
     activeChannelTabId,
     trackChannels,
     vrChannelPanels,
@@ -1239,13 +1242,14 @@ export function useAppRouteState(): AppRouteState {
     channelActiveLayer,
     layerSettings,
     loadedChannelIds,
-    parsedTracksByChannel,
-    filteredTracksByChannel,
+    trackSets,
+    parsedTracksByTrackSet,
+    filteredTracksByTrackSet,
     minimumTrackLength,
     pendingMinimumTrackLength,
     trackLengthBounds,
-    trackSummaryByChannel,
-    trackOrderModeByChannel,
+    trackSummaryByTrackSet,
+    trackOrderModeByTrackSet,
     selectedTrackOrder,
     selectedTrackSeries,
     resolvedAmplitudeLimits,
@@ -1270,7 +1274,7 @@ export function useAppRouteState(): AppRouteState {
     onTrackFollowRequest: handleTrackFollowFromViewerWithVoxelReset,
     onVoxelFollowRequest: handleVoxelFollowRequest,
     onHoverVoxelChange: handleHoverVoxelChange,
-    onTrackChannelSelect: handleTrackChannelSelect,
+    onTrackChannelSelect: handleTrackSetSelect,
     onTrackVisibilityToggle: handleTrackVisibilityToggle,
     onTrackVisibilityAllChange: handleTrackVisibilityAllChange,
     onTrackOpacityChange: handleTrackOpacityChange,
@@ -1282,7 +1286,7 @@ export function useAppRouteState(): AppRouteState {
     onStopTrackFollow: handleStopTrackFollow,
     onStopVoxelFollow: handleStopVoxelFollow,
     onChannelPanelSelect: setActiveChannelTabId,
-    onTrackPanelChannelSelect: setActiveTrackChannelId,
+    onTrackPanelChannelSelect: setActiveTrackSetId,
     onChannelVisibilityToggle: handleChannelVisibilityToggle,
     onChannelReset: handleChannelSliderReset,
     onChannelLayerSelect: handleChannelLayerSelectionChange,

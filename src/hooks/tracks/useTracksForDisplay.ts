@@ -7,6 +7,8 @@ export type TrackSeriesEntry = {
   id: string;
   channelId: string;
   channelName: string;
+  trackSetId: string;
+  trackSetName: string;
   trackNumber: number;
   displayTrackNumber?: string;
   color: string;
@@ -25,8 +27,8 @@ export type SelectedTrackExtents = {
 };
 
 type UseTracksForDisplayParams = {
-  rawTracksByChannel: Map<string, TrackDefinition[]>;
-  channels: Array<{ id: string }>;
+  rawTracksByTrackSet: Map<string, TrackDefinition[]>;
+  trackSets: Array<{ id: string }>;
   selectedTrackOrder: string[];
   minimumTrackLength: number;
   trackSmoothing: number;
@@ -34,14 +36,14 @@ type UseTracksForDisplayParams = {
 };
 
 type UseTracksForDisplayResult = {
-  parsedTracksByChannel: Map<string, TrackDefinition[]>;
-  plotTracksByChannel: Map<string, TrackDefinition[]>;
+  parsedTracksByTrackSet: Map<string, TrackDefinition[]>;
+  plotTracksByTrackSet: Map<string, TrackDefinition[]>;
   parsedTracks: TrackDefinition[];
   trackLookup: Map<string, TrackDefinition>;
-  filteredTracksByChannel: Map<string, TrackDefinition[]>;
+  filteredTracksByTrackSet: Map<string, TrackDefinition[]>;
   filteredTracks: TrackDefinition[];
   filteredTrackLookup: Map<string, TrackDefinition>;
-  plotFilteredTracksByChannel: Map<string, TrackDefinition[]>;
+  plotFilteredTracksByTrackSet: Map<string, TrackDefinition[]>;
   plotFilteredTracks: TrackDefinition[];
   plotFilteredTrackLookup: Map<string, TrackDefinition>;
   selectedTrackSeries: TrackSeriesEntry[];
@@ -50,45 +52,45 @@ type UseTracksForDisplayResult = {
 };
 
 const computeOrderedTracks = (
-  tracksByChannel: Map<string, TrackDefinition[]>,
-  channels: Array<{ id: string }>
+  tracksByTrackSet: Map<string, TrackDefinition[]>,
+  trackSets: Array<{ id: string }>
 ): TrackDefinition[] => {
   const ordered: TrackDefinition[] = [];
-  for (const channel of channels) {
-    const channelTracks = tracksByChannel.get(channel.id) ?? [];
-    ordered.push(...channelTracks);
+  for (const set of trackSets) {
+    const setTracks = tracksByTrackSet.get(set.id) ?? [];
+    ordered.push(...setTracks);
   }
   return ordered;
 };
 
 export function useTracksForDisplay({
-  rawTracksByChannel,
-  channels,
+  rawTracksByTrackSet,
+  trackSets,
   selectedTrackOrder,
   minimumTrackLength,
   trackSmoothing,
   volumeTimepointCount
 }: UseTracksForDisplayParams): UseTracksForDisplayResult {
-  const parsedTracksByChannel = useMemo(
-    () => rawTracksByChannel,
-    [rawTracksByChannel]
+  const parsedTracksByTrackSet = useMemo(
+    () => rawTracksByTrackSet,
+    [rawTracksByTrackSet]
   );
 
-  const plotTracksByChannel = useMemo(() => {
+  const plotTracksByTrackSet = useMemo(() => {
     if (!Number.isFinite(trackSmoothing) || trackSmoothing <= 0) {
-      return parsedTracksByChannel;
+      return parsedTracksByTrackSet;
     }
 
     const map = new Map<string, TrackDefinition[]>();
-    for (const [channelId, tracks] of parsedTracksByChannel.entries()) {
-      map.set(channelId, applyGaussianAmplitudeSmoothing(tracks, trackSmoothing));
+    for (const [trackSetId, tracks] of parsedTracksByTrackSet.entries()) {
+      map.set(trackSetId, applyGaussianAmplitudeSmoothing(tracks, trackSmoothing));
     }
     return map;
-  }, [parsedTracksByChannel, trackSmoothing]);
+  }, [parsedTracksByTrackSet, trackSmoothing]);
 
   const parsedTracks = useMemo(
-    () => computeOrderedTracks(parsedTracksByChannel, channels),
-    [channels, parsedTracksByChannel]
+    () => computeOrderedTracks(parsedTracksByTrackSet, trackSets),
+    [parsedTracksByTrackSet, trackSets]
   );
 
   const trackLookup = useMemo(() => {
@@ -99,21 +101,21 @@ export function useTracksForDisplay({
     return map;
   }, [parsedTracks]);
 
-  const filteredTracksByChannel = useMemo(() => {
+  const filteredTracksByTrackSet = useMemo(() => {
     const map = new Map<string, TrackDefinition[]>();
 
-    for (const channel of channels) {
-      const tracksForChannel = parsedTracksByChannel.get(channel.id) ?? [];
-      const filtered = tracksForChannel.filter((track) => track.points.length >= minimumTrackLength);
-      map.set(channel.id, filtered);
+    for (const set of trackSets) {
+      const tracksForSet = parsedTracksByTrackSet.get(set.id) ?? [];
+      const filtered = tracksForSet.filter((track) => track.points.length >= minimumTrackLength);
+      map.set(set.id, filtered);
     }
 
     return map;
-  }, [channels, minimumTrackLength, parsedTracksByChannel]);
+  }, [minimumTrackLength, parsedTracksByTrackSet, trackSets]);
 
   const filteredTracks = useMemo(
-    () => computeOrderedTracks(filteredTracksByChannel, channels),
-    [channels, filteredTracksByChannel]
+    () => computeOrderedTracks(filteredTracksByTrackSet, trackSets),
+    [filteredTracksByTrackSet, trackSets]
   );
 
   const filteredTrackLookup = useMemo(() => {
@@ -124,21 +126,21 @@ export function useTracksForDisplay({
     return map;
   }, [filteredTracks]);
 
-  const plotFilteredTracksByChannel = useMemo(() => {
+  const plotFilteredTracksByTrackSet = useMemo(() => {
     const map = new Map<string, TrackDefinition[]>();
 
-    for (const channel of channels) {
-      const tracksForChannel = plotTracksByChannel.get(channel.id) ?? [];
-      const filtered = tracksForChannel.filter((track) => track.points.length >= minimumTrackLength);
-      map.set(channel.id, filtered);
+    for (const set of trackSets) {
+      const tracksForSet = plotTracksByTrackSet.get(set.id) ?? [];
+      const filtered = tracksForSet.filter((track) => track.points.length >= minimumTrackLength);
+      map.set(set.id, filtered);
     }
 
     return map;
-  }, [channels, minimumTrackLength, plotTracksByChannel]);
+  }, [minimumTrackLength, plotTracksByTrackSet, trackSets]);
 
   const plotFilteredTracks = useMemo(
-    () => computeOrderedTracks(plotFilteredTracksByChannel, channels),
-    [channels, plotFilteredTracksByChannel]
+    () => computeOrderedTracks(plotFilteredTracksByTrackSet, trackSets),
+    [plotFilteredTracksByTrackSet, trackSets]
   );
 
   const plotFilteredTrackLookup = useMemo(() => {
@@ -161,6 +163,8 @@ export function useTracksForDisplay({
         id: plotTrack.id,
         channelId: plotTrack.channelId,
         channelName: plotTrack.channelName,
+        trackSetId: plotTrack.trackSetId,
+        trackSetName: plotTrack.trackSetName,
         trackNumber: plotTrack.trackNumber,
         displayTrackNumber: plotTrack.displayTrackNumber,
         color: getTrackColorHex(plotTrack.id),
@@ -242,14 +246,14 @@ export function useTracksForDisplay({
   }, [selectedTrackSeries, trackSmoothing]);
 
   return {
-    parsedTracksByChannel,
-    plotTracksByChannel,
+    parsedTracksByTrackSet,
+    plotTracksByTrackSet,
     parsedTracks,
     trackLookup,
-    filteredTracksByChannel,
+    filteredTracksByTrackSet,
     filteredTracks,
     filteredTrackLookup,
-    plotFilteredTracksByChannel,
+    plotFilteredTracksByTrackSet,
     plotFilteredTracks,
     plotFilteredTrackLookup,
     selectedTrackSeries,

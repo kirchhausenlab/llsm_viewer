@@ -7,11 +7,10 @@ import {
   type Dispatch,
   type SetStateAction
 } from 'react';
-import type { ChannelTrackState, FollowedTrackState } from '../../types/channelTracks';
+import type { FollowedTrackState, TrackSetState } from '../../types/channelTracks';
 import type { NumericRange, TrackDefinition } from '../../types/tracks';
 import { useTracksForDisplay } from './useTracksForDisplay';
-import type { ChannelSource } from '../dataset';
-import { createDefaultChannelTrackState } from './useTrackStyling';
+import { createDefaultTrackSetState } from './useTrackStyling';
 
 const clampRangeToBounds = (range: NumericRange, bounds: NumericRange): NumericRange => {
   const min = Math.min(Math.max(range.min, bounds.min), bounds.max);
@@ -23,26 +22,28 @@ export const TRACK_SMOOTHING_RANGE: NumericRange = { min: 0, max: 5 };
 export const TRACK_TRAIL_LENGTH_RANGE: NumericRange = { min: 1, max: 20 };
 export const DEFAULT_TRACK_TRAIL_LENGTH = 10;
 
+export type TrackSetDescriptor = { id: string };
+
 export type UseTrackSelectionResult = ReturnType<typeof useTrackSelection>;
 
 export type UseTrackSelectionOptions = {
-  channels: ChannelSource[];
-  rawTracksByChannel: Map<string, TrackDefinition[]>;
+  trackSets: TrackSetDescriptor[];
+  rawTracksByTrackSet: Map<string, TrackDefinition[]>;
   volumeTimepointCount: number;
-  channelTrackStates: Record<string, ChannelTrackState>;
-  setChannelTrackStates: Dispatch<SetStateAction<Record<string, ChannelTrackState>>>;
+  trackSetStates: Record<string, TrackSetState>;
+  setTrackSetStates: Dispatch<SetStateAction<Record<string, TrackSetState>>>;
   ensureTrackIsVisible: (track: TrackDefinition) => void;
 };
 
 export const useTrackSelection = ({
-  channels,
-  rawTracksByChannel,
+  trackSets,
+  rawTracksByTrackSet,
   volumeTimepointCount,
-  channelTrackStates,
-  setChannelTrackStates,
+  trackSetStates,
+  setTrackSetStates,
   ensureTrackIsVisible
 }: UseTrackSelectionOptions) => {
-  const [trackOrderModeByChannel, setTrackOrderModeByChannel] = useState<Record<string, 'id' | 'length'>>({});
+  const [trackOrderModeByTrackSet, setTrackOrderModeByTrackSet] = useState<Record<string, 'id' | 'length'>>({});
   const [selectedTrackOrder, setSelectedTrackOrder] = useState<string[]>([]);
   const selectedTrackIds = useMemo(() => new Set(selectedTrackOrder), [selectedTrackOrder]);
   const [selectedTracksAmplitudeLimits, setSelectedTracksAmplitudeLimits] = useState<NumericRange | null>(null);
@@ -53,27 +54,27 @@ export const useTrackSelection = ({
   const [pendingMinimumTrackLength, setPendingMinimumTrackLength] = useState(1);
   const [minimumTrackLength, setMinimumTrackLength] = useState(1);
   const [followedTrack, setFollowedTrack] = useState<FollowedTrackState>(null);
-  const [activeTrackChannelId, setActiveTrackChannelId] = useState<string | null>(null);
+  const [activeTrackSetId, setActiveTrackSetId] = useState<string | null>(null);
   const previousAmplitudeExtentRef = useRef<NumericRange | null>(null);
   const previousTimeExtentRef = useRef<NumericRange | null>(null);
 
   const {
-    parsedTracksByChannel,
-    plotTracksByChannel,
+    parsedTracksByTrackSet,
+    plotTracksByTrackSet,
     parsedTracks,
     trackLookup,
-    filteredTracksByChannel,
+    filteredTracksByTrackSet,
     filteredTracks,
     filteredTrackLookup,
-    plotFilteredTracksByChannel,
+    plotFilteredTracksByTrackSet,
     plotFilteredTracks,
     plotFilteredTrackLookup,
     selectedTrackSeries,
     trackExtents,
     selectedTrackExtents
   } = useTracksForDisplay({
-    rawTracksByChannel,
-    channels,
+    rawTracksByTrackSet,
+    trackSets,
     selectedTrackOrder,
     minimumTrackLength,
     trackSmoothing,
@@ -168,13 +169,13 @@ export const useTrackSelection = ({
     });
   }, [trackLookup]);
 
-  const trackSummaryByChannel = useMemo(() => {
+  const trackSummaryByTrackSet = useMemo(() => {
     const summary = new Map<string, { total: number; visible: number }>();
-    for (const channel of channels) {
-      const tracksForChannel = filteredTracksByChannel.get(channel.id) ?? [];
-      const state = channelTrackStates[channel.id] ?? createDefaultChannelTrackState();
+    for (const set of trackSets) {
+      const tracksForSet = filteredTracksByTrackSet.get(set.id) ?? [];
+      const state = trackSetStates[set.id] ?? createDefaultTrackSetState();
       let visible = 0;
-      for (const track of tracksForChannel) {
+      for (const track of tracksForSet) {
         const explicitVisible = state.visibility[track.id] ?? true;
         const isFollowedTrack = followedTrack?.id === track.id;
         const isSelectedTrack = selectedTrackIds.has(track.id);
@@ -182,36 +183,36 @@ export const useTrackSelection = ({
           visible += 1;
         }
       }
-      summary.set(channel.id, { total: tracksForChannel.length, visible });
+      summary.set(set.id, { total: tracksForSet.length, visible });
     }
     return summary;
-  }, [channels, channelTrackStates, filteredTracksByChannel, followedTrack, selectedTrackIds]);
+  }, [filteredTracksByTrackSet, followedTrack, selectedTrackIds, trackSetStates, trackSets]);
 
   const trackVisibility = useMemo(() => {
     const visibility: Record<string, boolean> = {};
-    for (const channel of channels) {
-      const tracksForChannel = filteredTracksByChannel.get(channel.id) ?? [];
-      const state = channelTrackStates[channel.id] ?? createDefaultChannelTrackState();
-      for (const track of tracksForChannel) {
+    for (const set of trackSets) {
+      const tracksForSet = filteredTracksByTrackSet.get(set.id) ?? [];
+      const state = trackSetStates[set.id] ?? createDefaultTrackSetState();
+      for (const track of tracksForSet) {
         visibility[track.id] = state.visibility[track.id] ?? true;
       }
     }
     return visibility;
-  }, [channelTrackStates, channels, filteredTracksByChannel]);
+  }, [filteredTracksByTrackSet, trackSetStates, trackSets]);
 
   const followedTrackId = followedTrack?.id ?? null;
-  const followedTrackChannelId = followedTrack?.channelId ?? null;
+  const followedTrackSetId = followedTrack?.trackSetId ?? null;
 
-  const handleTrackOrderToggle = useCallback((channelId: string) => {
-    setTrackOrderModeByChannel((current) => {
-      const previous = current[channelId] ?? 'id';
+  const handleTrackOrderToggle = useCallback((trackSetId: string) => {
+    setTrackOrderModeByTrackSet((current) => {
+      const previous = current[trackSetId] ?? 'id';
       const nextMode = previous === 'id' ? 'length' : 'id';
-      if (current[channelId] === nextMode) {
+      if (current[trackSetId] === nextMode) {
         return current;
       }
       return {
         ...current,
-        [channelId]: nextMode
+        [trackSetId]: nextMode
       };
     });
   }, []);
@@ -249,12 +250,10 @@ export const useTrackSelection = ({
       }
 
       if (followedTrack?.id !== trackId) {
-        setSelectedTrackOrder((current) =>
-          current.includes(trackId) ? current : [...current, trackId]
-        );
+        setSelectedTrackOrder((current) => (current.includes(trackId) ? current : [...current, trackId]));
       }
 
-      setFollowedTrack((current) => (current && current.id === trackId ? null : { id: trackId, channelId: track.channelId }));
+      setFollowedTrack((current) => (current && current.id === trackId ? null : { id: trackId, trackSetId: track.trackSetId }));
       ensureTrackIsVisible(track);
     },
     [ensureTrackIsVisible, followedTrack, trackLookup]
@@ -267,27 +266,24 @@ export const useTrackSelection = ({
         return;
       }
 
-      setSelectedTrackOrder((current) =>
-        current.includes(trackId) ? current : [...current, trackId]
-      );
-
-      setFollowedTrack((current) => (current && current.id === trackId ? current : { id: trackId, channelId: track.channelId }));
+      setSelectedTrackOrder((current) => (current.includes(trackId) ? current : [...current, trackId]));
+      setFollowedTrack((current) => (current && current.id === trackId ? current : { id: trackId, trackSetId: track.trackSetId }));
       ensureTrackIsVisible(track);
-      setActiveTrackChannelId(track.channelId);
+      setActiveTrackSetId(track.trackSetId);
     },
     [ensureTrackIsVisible, trackLookup]
   );
 
-  const handleTrackChannelSelect = useCallback((channelId: string) => {
-    setActiveTrackChannelId(channelId);
+  const handleTrackSetSelect = useCallback((trackSetId: string) => {
+    setActiveTrackSetId(trackSetId);
   }, []);
 
-  const handleStopTrackFollow = useCallback((channelId?: string) => {
-    if (!channelId) {
+  const handleStopTrackFollow = useCallback((trackSetId?: string) => {
+    if (!trackSetId) {
       setFollowedTrack(null);
       return;
     }
-    setFollowedTrack((current) => (current && current.channelId === channelId ? null : current));
+    setFollowedTrack((current) => (current && current.trackSetId === trackSetId ? null : current));
   }, []);
 
   const handleTrackVisibilityToggle = useCallback(
@@ -298,13 +294,13 @@ export const useTrackSelection = ({
       }
 
       let nextVisible = true;
-      setChannelTrackStates((current) => {
-        const existing = current[track.channelId] ?? createDefaultChannelTrackState();
+      setTrackSetStates((current) => {
+        const existing = current[track.trackSetId] ?? createDefaultTrackSetState();
         const previous = existing.visibility[trackId] ?? true;
         nextVisible = !previous;
         return {
           ...current,
-          [track.channelId]: {
+          [track.trackSetId]: {
             ...existing,
             visibility: {
               ...existing.visibility,
@@ -316,26 +312,24 @@ export const useTrackSelection = ({
 
       if (!nextVisible) {
         setFollowedTrack((current) => (current && current.id === trackId ? null : current));
-        setSelectedTrackOrder((current) =>
-          current.includes(trackId) ? current.filter((id) => id !== trackId) : current
-        );
+        setSelectedTrackOrder((current) => (current.includes(trackId) ? current.filter((id) => id !== trackId) : current));
       }
     },
-    [setChannelTrackStates, trackLookup]
+    [setTrackSetStates, trackLookup]
   );
 
   const handleTrackVisibilityAllChange = useCallback(
-    (channelId: string, isChecked: boolean) => {
-      const tracksForChannel = parsedTracksByChannel.get(channelId) ?? [];
-      setChannelTrackStates((current) => {
-        const existing = current[channelId] ?? createDefaultChannelTrackState();
+    (trackSetId: string, isChecked: boolean) => {
+      const tracksForSet = parsedTracksByTrackSet.get(trackSetId) ?? [];
+      setTrackSetStates((current) => {
+        const existing = current[trackSetId] ?? createDefaultTrackSetState();
         const visibility: Record<string, boolean> = {};
-        for (const track of tracksForChannel) {
+        for (const track of tracksForSet) {
           visibility[track.id] = isChecked;
         }
         return {
           ...current,
-          [channelId]: {
+          [trackSetId]: {
             ...existing,
             visibility
           }
@@ -343,18 +337,18 @@ export const useTrackSelection = ({
       });
 
       if (!isChecked) {
-        setFollowedTrack((current) => (current && current.channelId === channelId ? null : current));
-        const trackIdsForChannel = new Set(tracksForChannel.map((track) => track.id));
+        setFollowedTrack((current) => (current && current.trackSetId === trackSetId ? null : current));
+        const trackIdsForSet = new Set(tracksForSet.map((track) => track.id));
         setSelectedTrackOrder((current) => {
           if (current.length === 0) {
             return current;
           }
-          const filtered = current.filter((id) => !trackIdsForChannel.has(id));
+          const filtered = current.filter((id) => !trackIdsForSet.has(id));
           return filtered.length === current.length ? current : filtered;
         });
       }
     },
-    [parsedTracksByChannel, setChannelTrackStates]
+    [parsedTracksByTrackSet, setTrackSetStates]
   );
 
   const handleMinimumTrackLengthChange = useCallback(
@@ -403,8 +397,9 @@ export const useTrackSelection = ({
   }, []);
 
   const clampTrailLength = useCallback(
-    (value: number) => Math.min(Math.max(Math.round(value), TRACK_TRAIL_LENGTH_RANGE.min), TRACK_TRAIL_LENGTH_RANGE.max),
-    [],
+    (value: number) =>
+      Math.min(Math.max(Math.round(value), TRACK_TRAIL_LENGTH_RANGE.min), TRACK_TRAIL_LENGTH_RANGE.max),
+    []
   );
 
   const handleTrackTrailLengthChange = useCallback(
@@ -414,7 +409,7 @@ export const useTrackSelection = ({
         return clamped === current ? current : clamped;
       });
     },
-    [clampTrailLength],
+    [clampTrailLength]
   );
 
   const handleClearSelectedTracks = useCallback(() => {
@@ -423,7 +418,7 @@ export const useTrackSelection = ({
   }, []);
 
   const resetTrackSelection = useCallback(() => {
-    setTrackOrderModeByChannel({});
+    setTrackOrderModeByTrackSet({});
     setSelectedTrackOrder([]);
     setFollowedTrack(null);
     setSelectedTracksAmplitudeLimits(null);
@@ -433,14 +428,14 @@ export const useTrackSelection = ({
     setTrackTrailLength(DEFAULT_TRACK_TRAIL_LENGTH);
     setPendingMinimumTrackLength(1);
     setMinimumTrackLength(1);
-    setActiveTrackChannelId(null);
+    setActiveTrackSetId(null);
   }, []);
 
   const hasParsedTrackData = parsedTracks.length > 0;
 
   return {
-    trackOrderModeByChannel,
-    setTrackOrderModeByChannel,
+    trackOrderModeByTrackSet,
+    setTrackOrderModeByTrackSet,
     selectedTrackOrder,
     setSelectedTrackOrder,
     selectedTrackIds,
@@ -453,16 +448,16 @@ export const useTrackSelection = ({
     minimumTrackLength,
     followedTrack,
     setFollowedTrack,
-    activeTrackChannelId,
-    setActiveTrackChannelId,
-    parsedTracksByChannel,
-    plotTracksByChannel,
+    activeTrackSetId,
+    setActiveTrackSetId,
+    parsedTracksByTrackSet,
+    plotTracksByTrackSet,
     parsedTracks,
     trackLookup,
-    filteredTracksByChannel,
+    filteredTracksByTrackSet,
     filteredTracks,
     filteredTrackLookup,
-    plotFilteredTracksByChannel,
+    plotFilteredTracksByTrackSet,
     plotFilteredTracks,
     plotFilteredTrackLookup,
     selectedTrackSeries,
@@ -473,15 +468,15 @@ export const useTrackSelection = ({
     resolvedAmplitudeLimits,
     resolvedTimeLimits,
     trackLengthBounds,
-    trackSummaryByChannel,
+    trackSummaryByTrackSet,
     trackVisibility,
     followedTrackId,
-    followedTrackChannelId,
+    followedTrackSetId,
     handleTrackOrderToggle,
     handleTrackSelectionToggle,
     handleTrackFollow,
     handleTrackFollowFromViewer,
-    handleTrackChannelSelect,
+    handleTrackSetSelect,
     handleStopTrackFollow,
     handleTrackVisibilityToggle,
     handleTrackVisibilityAllChange,
@@ -500,3 +495,4 @@ export const useTrackSelection = ({
 };
 
 export default useTrackSelection;
+

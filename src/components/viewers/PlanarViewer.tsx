@@ -75,9 +75,9 @@ function PlanarViewer({
   trackScale,
   tracks,
   trackVisibility,
-  trackOpacityByChannel,
-  trackLineWidthByChannel,
-  channelTrackColorModes,
+  trackOpacityByTrackSet,
+  trackLineWidthByTrackSet,
+  trackColorModesByTrackSet,
   channelTrackOffsets,
   isFullTrackTrailEnabled,
   trackTrailLength,
@@ -266,9 +266,9 @@ function PlanarViewer({
     tracks,
     trackLookup,
     trackVisibility,
-    trackOpacityByChannel,
-    trackLineWidthByChannel,
-    channelTrackColorModes,
+    trackOpacityByTrackSet,
+    trackLineWidthByTrackSet,
+    trackColorModesByTrackSet,
     channelTrackOffsets,
     isFullTrackTrailEnabled,
     trackTrailLength,
@@ -369,7 +369,7 @@ function PlanarViewer({
           continue;
         }
 
-        const channelOpacity = trackOpacityByChannel[track.channelId] ?? DEFAULT_TRACK_OPACITY;
+        const channelOpacity = trackOpacityByTrackSet[track.trackSetId] ?? DEFAULT_TRACK_OPACITY;
         const isChannelHidden = channelOpacity <= 0;
         if (isChannelHidden && !isFollowed && !isSelected) {
           continue;
@@ -379,7 +379,7 @@ function PlanarViewer({
           ? DEFAULT_TRACK_OPACITY
           : channelOpacity;
 
-        const channelLineWidth = trackLineWidthByChannel[track.channelId] ?? 1;
+        const channelLineWidth = trackLineWidthByTrackSet[track.trackSetId] ?? 1;
         const sanitizedLineWidth = Math.max(0.1, Math.min(10, channelLineWidth));
         let lineWidth = sanitizedLineWidth;
         if (isFollowed) {
@@ -472,8 +472,8 @@ function PlanarViewer({
     layout,
     selectedTrackIds,
     sliceData,
-    trackLineWidthByChannel,
-    trackOpacityByChannel,
+    trackLineWidthByTrackSet,
+    trackOpacityByTrackSet,
     trackRenderData,
     hoveredPixel,
     trackVisibility,

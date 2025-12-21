@@ -137,9 +137,9 @@ export type VolumeViewerProps = {
   trackScale: { x: number; y: number; z: number };
   tracks: TrackDefinition[];
   trackVisibility: Record<string, boolean>;
-  trackOpacityByChannel: Record<string, number>;
-  trackLineWidthByChannel: Record<string, number>;
-  channelTrackColorModes: Record<string, TrackColorMode>;
+  trackOpacityByTrackSet: Record<string, number>;
+  trackLineWidthByTrackSet: Record<string, number>;
+  trackColorModesByTrackSet: Record<string, TrackColorMode>;
   channelTrackOffsets: Record<string, { x: number; y: number }>;
   isFullTrackTrailEnabled: boolean;
   trackTrailLength: number;

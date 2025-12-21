@@ -68,9 +68,9 @@ export type UseVolumeViewerVrParams = {
   activeTrackChannelId: string | null;
   tracks: TrackDefinition[];
   trackVisibility: Record<string, boolean>;
-  trackOpacityByChannel: Record<string, number>;
-  trackLineWidthByChannel: Record<string, number>;
-  channelTrackColorModes: Record<string, TrackColorMode>;
+  trackOpacityByTrackSet: Record<string, number>;
+  trackLineWidthByTrackSet: Record<string, number>;
+  trackColorModesByTrackSet: Record<string, TrackColorMode>;
   selectedTrackIds: ReadonlySet<string>;
   followedTrackId: string | null;
   updateHoverState: (

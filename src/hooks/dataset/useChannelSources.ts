@@ -41,14 +41,21 @@ export type ChannelLayerSource = {
   isSegmentation: boolean;
 };
 
+export type TrackSetSource = {
+  id: string;
+  name: string;
+  file: File | null;
+  fileName: string;
+  status: LoadState;
+  error: string | null;
+  entries: string[][];
+};
+
 export type ChannelSource = {
   id: string;
   name: string;
   layers: ChannelLayerSource[];
-  trackFile: File | null;
-  trackStatus: LoadState;
-  trackError: string | null;
-  trackEntries: string[][];
+  trackSets: TrackSetSource[];
 };
 
 export type ChannelValidation = {
@@ -107,6 +114,7 @@ export type ChannelSourcesApi = {
   setLayerTimepointCounts: Dispatch<SetStateAction<Record<string, number>>>;
   channelIdRef: MutableRefObject<number>;
   layerIdRef: MutableRefObject<number>;
+  trackSetIdRef: MutableRefObject<number>;
   computeLayerTimepointCount: (files: File[]) => Promise<number>;
   getLayerTimepointCount: (layer: Pick<ChannelLayerSource, 'id' | 'files'> | null | undefined) => number;
   createChannelSource: (name: string) => ChannelSource;
@@ -180,6 +188,7 @@ export function useChannelSources(): ChannelSourcesApi {
   const [layerTimepointCounts, setLayerTimepointCounts] = useState<Record<string, number>>({});
   const channelIdRef = useRef(0);
   const layerIdRef = useRef(0);
+  const trackSetIdRef = useRef(0);
   const layerAutoThresholdsRef = useRef<Record<string, number>>({});
   const loadRequestRef = useRef(0);
 
@@ -209,10 +218,7 @@ export function useChannelSources(): ChannelSourcesApi {
       id: `channel-${nextId}`,
       name,
       layers: [],
-      trackFile: null,
-      trackStatus: 'idle',
-      trackError: null,
-      trackEntries: []
+      trackSets: []
     };
   }, []);
 
@@ -257,11 +263,14 @@ export function useChannelSources(): ChannelSourcesApi {
         errors.push('Add files to the volume in this channel.');
       }
 
-      if (channel.trackStatus === 'error' && channel.trackError) {
-        errors.push(channel.trackError);
-      } else if (channel.trackStatus === 'loading') {
+      const trackSetErrors = channel.trackSets
+        .filter((set) => set.status === 'error' && set.error)
+        .map((set) => set.error as string);
+      if (trackSetErrors.length > 0) {
+        errors.push(...trackSetErrors);
+      } else if (channel.trackSets.some((set) => set.status === 'loading')) {
         warnings.push('Tracks are still loading.');
-      } else if (channel.layers.length > 0 && !channel.trackFile) {
+      } else if (channel.layers.length > 0 && channel.trackSets.length === 0) {
         warnings.push('No tracks attached to this channel.');
       }
 
@@ -302,7 +311,7 @@ export function useChannelSources(): ChannelSourcesApi {
   );
 
   const hasLoadingTracks = useMemo(
-    () => channels.some((channel) => channel.trackStatus === 'loading'),
+    () => channels.some((channel) => channel.trackSets.some((set) => set.status === 'loading')),
     [channels]
   );
 
@@ -645,6 +654,7 @@ export function useChannelSources(): ChannelSourcesApi {
     setLayerTimepointCounts,
     channelIdRef,
     layerIdRef,
+    trackSetIdRef,
     computeLayerTimepointCount,
     getLayerTimepointCount,
     createChannelSource,

@@ -21,9 +21,9 @@ type UseVrHudBindingsParams = {
   trackChannels: UseVolumeViewerVrParams['trackChannels'];
   tracks: UseVolumeViewerVrParams['tracks'];
   trackVisibility: UseVolumeViewerVrParams['trackVisibility'];
-  trackOpacityByChannel: UseVolumeViewerVrParams['trackOpacityByChannel'];
-  trackLineWidthByChannel: UseVolumeViewerVrParams['trackLineWidthByChannel'];
-  channelTrackColorModes: UseVolumeViewerVrParams['channelTrackColorModes'];
+  trackOpacityByTrackSet: UseVolumeViewerVrParams['trackOpacityByTrackSet'];
+  trackLineWidthByTrackSet: UseVolumeViewerVrParams['trackLineWidthByTrackSet'];
+  trackColorModesByTrackSet: UseVolumeViewerVrParams['trackColorModesByTrackSet'];
   activeTrackChannelId: UseVolumeViewerVrParams['activeTrackChannelId'];
   followedTrackId: UseVolumeViewerVrParams['followedTrackId'];
   selectedTrackIds: UseVolumeViewerVrParams['selectedTrackIds'];
@@ -31,15 +31,15 @@ type UseVrHudBindingsParams = {
   updateVrTracksHud: () => void;
 };
 
-function groupTracksByChannel(tracks: TrackDefinition[]) {
+function groupTracksByTrackSet(tracks: TrackDefinition[]) {
   return useMemo(() => {
     const map = new Map<string, TrackDefinition[]>();
     for (const track of tracks) {
-      const existing = map.get(track.channelId);
+      const existing = map.get(track.trackSetId);
       if (existing) {
         existing.push(track);
       } else {
-        map.set(track.channelId, [track]);
+        map.set(track.trackSetId, [track]);
       }
     }
     return map;
@@ -54,16 +54,16 @@ export function useVrHudBindings({
   trackChannels,
   tracks,
   trackVisibility,
-  trackOpacityByChannel,
-  trackLineWidthByChannel,
-  channelTrackColorModes,
+  trackOpacityByTrackSet,
+  trackLineWidthByTrackSet,
+  trackColorModesByTrackSet,
   activeTrackChannelId,
   followedTrackId,
   selectedTrackIds,
   vrTracksStateRef,
   updateVrTracksHud,
 }: UseVrHudBindingsParams) {
-  const tracksByChannel = groupTracksByChannel(tracks);
+  const tracksByChannel = groupTracksByTrackSet(tracks);
 
   useEffect(() => {
     const nextChannels = channelPanels.map((panel) => ({
@@ -109,9 +109,9 @@ export function useVrHudBindings({
     );
     const nextChannels = trackChannels.map((channel) => {
       const tracksForChannel = tracksByChannel.get(channel.id) ?? [];
-      const colorMode = channelTrackColorModes[channel.id] ?? { type: 'random' };
-      const opacity = trackOpacityByChannel[channel.id] ?? DEFAULT_TRACK_OPACITY;
-      const lineWidth = trackLineWidthByChannel[channel.id] ?? DEFAULT_TRACK_LINE_WIDTH;
+      const colorMode = trackColorModesByTrackSet[channel.id] ?? { type: 'random' };
+      const opacity = trackOpacityByTrackSet[channel.id] ?? DEFAULT_TRACK_OPACITY;
+      const lineWidth = trackLineWidthByTrackSet[channel.id] ?? DEFAULT_TRACK_LINE_WIDTH;
       let visibleTracks = 0;
       const trackEntries = tracksForChannel.map((track) => {
         const explicitVisible = trackVisibility[track.id] ?? true;
@@ -164,10 +164,10 @@ export function useVrHudBindings({
     updateVrTracksHud();
   }, [
     activeTrackChannelId,
-    channelTrackColorModes,
+    trackColorModesByTrackSet,
     trackChannels,
-    trackLineWidthByChannel,
-    trackOpacityByChannel,
+    trackLineWidthByTrackSet,
+    trackOpacityByTrackSet,
     trackVisibility,
     tracksByChannel,
     followedTrackId,

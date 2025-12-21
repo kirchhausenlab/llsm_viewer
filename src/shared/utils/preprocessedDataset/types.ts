@@ -5,10 +5,17 @@ export type AnisotropyCorrectionMetadata = {
   scale: AnisotropyScaleFactors;
 };
 
+export type TrackSetExportMetadata = {
+  id: string;
+  name: string;
+  fileName: string;
+  entries: string[][];
+};
+
 export type ChannelExportMetadata = {
   id: string;
   name: string;
-  trackEntries: string[][];
+  trackSets: TrackSetExportMetadata[];
 };
 
 export type PreprocessedMovieMode = '2d' | '3d';
@@ -57,24 +64,31 @@ export type PreprocessedTracksDescriptor = {
   decimalPlaces: 3;
 };
 
-export type PreprocessedChannelManifestV4 = PreprocessedChannelManifest & {
-  tracks: PreprocessedTracksDescriptor | null;
+export type PreprocessedTrackSetManifestEntry = {
+  id: string;
+  name: string;
+  fileName: string;
+  tracks: PreprocessedTracksDescriptor;
 };
 
-export type PreprocessedManifestV4 = {
+export type PreprocessedChannelManifestV5 = PreprocessedChannelManifest & {
+  trackSets: PreprocessedTrackSetManifestEntry[];
+};
+
+export type PreprocessedManifestV5 = {
   format: 'llsm-viewer-preprocessed';
-  version: 4;
+  version: 5;
   generatedAt: string;
   dataset: {
     movieMode: PreprocessedMovieMode;
     totalVolumeCount: number;
-    channels: PreprocessedChannelManifestV4[];
+    channels: PreprocessedChannelManifestV5[];
     voxelResolution?: VoxelResolutionValues | null;
     anisotropyCorrection?: AnisotropyCorrectionMetadata | null;
   };
 };
 
-export type PreprocessedManifest = PreprocessedManifestV4;
+export type PreprocessedManifest = PreprocessedManifestV5;
 
 export type PreprocessedLayerSummary = {
   key: string;
@@ -93,7 +107,12 @@ export type PreprocessedLayerSummary = {
 export type PreprocessedChannelSummary = {
   id: string;
   name: string;
-  trackEntries: string[][];
+  trackSets: Array<{
+    id: string;
+    name: string;
+    fileName: string;
+    entries: string[][];
+  }>;
   layers: PreprocessedLayerSummary[];
 };
 

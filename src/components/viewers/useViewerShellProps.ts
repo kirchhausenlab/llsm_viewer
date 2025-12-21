@@ -41,15 +41,15 @@ export type ViewerShellContainerProps = {
   trackScale: ViewerShellProps['volumeViewerProps']['trackScale'];
   filteredTracks: TrackDefinition[];
   trackVisibility: ViewerShellProps['volumeViewerProps']['trackVisibility'];
-  trackOpacityByChannel: ViewerShellProps['volumeViewerProps']['trackOpacityByChannel'];
-  trackLineWidthByChannel: ViewerShellProps['volumeViewerProps']['trackLineWidthByChannel'];
-  channelTrackColorModes: ViewerShellProps['volumeViewerProps']['channelTrackColorModes'];
+  trackOpacityByTrackSet: ViewerShellProps['volumeViewerProps']['trackOpacityByTrackSet'];
+  trackLineWidthByTrackSet: ViewerShellProps['volumeViewerProps']['trackLineWidthByTrackSet'];
+  trackColorModesByTrackSet: ViewerShellProps['volumeViewerProps']['trackColorModesByTrackSet'];
   channelTrackOffsets: ViewerShellProps['volumeViewerProps']['channelTrackOffsets'];
   selectedTrackIds: ViewerShellProps['volumeViewerProps']['selectedTrackIds'];
   followedTrackId: ViewerShellProps['volumeViewerProps']['followedTrackId'];
   followedVoxel: ViewerShellProps['volumeViewerProps']['followedVoxel'];
-  followedTrackChannelId: ViewerShellProps['topMenu']['followedTrackChannelId'];
-  activeTrackChannelId: ViewerShellProps['tracksPanel']['activeChannelId'];
+  followedTrackSetId: ViewerShellProps['topMenu']['followedTrackSetId'];
+  activeTrackSetId: ViewerShellProps['tracksPanel']['activeTrackSetId'];
   activeChannelTabId: ViewerShellProps['channelsPanel']['activeChannelId'];
   trackChannels: VolumeViewerVrProps['trackChannels'];
   vrChannelPanels: VolumeViewerVrProps['channelPanels'];
@@ -76,13 +76,14 @@ export type ViewerShellContainerProps = {
   channelActiveLayer: ViewerShellProps['channelsPanel']['channelActiveLayer'];
   layerSettings: ViewerShellProps['channelsPanel']['layerSettings'];
   loadedChannelIds: ViewerShellProps['channelsPanel']['loadedChannelIds'];
-  parsedTracksByChannel: ViewerShellProps['tracksPanel']['parsedTracksByChannel'];
-  filteredTracksByChannel: ViewerShellProps['tracksPanel']['filteredTracksByChannel'];
+  trackSets: ViewerShellProps['tracksPanel']['trackSets'];
+  parsedTracksByTrackSet: ViewerShellProps['tracksPanel']['parsedTracksByTrackSet'];
+  filteredTracksByTrackSet: ViewerShellProps['tracksPanel']['filteredTracksByTrackSet'];
   minimumTrackLength: ViewerShellProps['tracksPanel']['minimumTrackLength'];
   pendingMinimumTrackLength: ViewerShellProps['tracksPanel']['pendingMinimumTrackLength'];
   trackLengthBounds: ViewerShellProps['tracksPanel']['trackLengthBounds'];
-  trackSummaryByChannel: ViewerShellProps['tracksPanel']['trackSummaryByChannel'];
-  trackOrderModeByChannel: ViewerShellProps['tracksPanel']['trackOrderModeByChannel'];
+  trackSummaryByTrackSet: ViewerShellProps['tracksPanel']['trackSummaryByTrackSet'];
+  trackOrderModeByTrackSet: ViewerShellProps['tracksPanel']['trackOrderModeByTrackSet'];
   selectedTrackSeries: ViewerShellProps['selectedTracksPanel']['series'];
   selectedTrackOrder: ViewerShellProps['tracksPanel']['selectedTrackOrder'];
   resolvedAmplitudeLimits: NumericRange;
@@ -119,7 +120,7 @@ export type ViewerShellContainerProps = {
   onStopTrackFollow: VolumeViewerVrProps['onStopTrackFollow'];
   onStopVoxelFollow: ViewerShellProps['topMenu']['onStopVoxelFollow'];
   onChannelPanelSelect: VolumeViewerVrProps['onChannelPanelSelect'];
-  onTrackPanelChannelSelect: ViewerShellProps['tracksPanel']['onChannelTabSelect'];
+  onTrackPanelChannelSelect: ViewerShellProps['tracksPanel']['onTrackSetTabSelect'];
   onChannelVisibilityToggle: VolumeViewerVrProps['onChannelVisibilityToggle'];
   onChannelReset: VolumeViewerVrProps['onChannelReset'];
   onChannelLayerSelect: VolumeViewerVrProps['onChannelLayerSelect'];
@@ -189,15 +190,15 @@ export function useViewerShellProps({
   trackScale,
   filteredTracks,
   trackVisibility,
-  trackOpacityByChannel,
-  trackLineWidthByChannel,
-  channelTrackColorModes,
+  trackOpacityByTrackSet,
+  trackLineWidthByTrackSet,
+  trackColorModesByTrackSet,
   channelTrackOffsets,
   selectedTrackIds,
   followedTrackId,
   followedVoxel,
-  followedTrackChannelId,
-  activeTrackChannelId,
+  followedTrackSetId,
+  activeTrackSetId,
   activeChannelTabId,
   trackChannels,
   vrChannelPanels,
@@ -224,13 +225,14 @@ export function useViewerShellProps({
   channelActiveLayer,
   layerSettings,
   loadedChannelIds,
-  parsedTracksByChannel,
-  filteredTracksByChannel,
+  trackSets,
+  parsedTracksByTrackSet,
+  filteredTracksByTrackSet,
   minimumTrackLength,
   pendingMinimumTrackLength,
   trackLengthBounds,
-  trackSummaryByChannel,
-  trackOrderModeByChannel,
+  trackSummaryByTrackSet,
+  trackOrderModeByTrackSet,
   selectedTrackOrder,
   selectedTrackSeries,
   resolvedAmplitudeLimits,
@@ -338,9 +340,9 @@ export function useViewerShellProps({
     trackScale,
     tracks: filteredTracks,
     trackVisibility,
-    trackOpacityByChannel,
-    trackLineWidthByChannel,
-    channelTrackColorModes,
+    trackOpacityByTrackSet,
+    trackLineWidthByTrackSet,
+    trackColorModesByTrackSet,
     channelTrackOffsets,
     isFullTrackTrailEnabled,
     trackTrailLength,
@@ -355,7 +357,7 @@ export function useViewerShellProps({
       ? {
           isVrPassthroughSupported,
           trackChannels,
-          activeTrackChannelId,
+          activeTrackChannelId: activeTrackSetId,
           onTrackChannelSelect,
           onTrackVisibilityToggle,
           onTrackVisibilityAllChange,
@@ -404,9 +406,9 @@ export function useViewerShellProps({
     trackScale,
     tracks: filteredTracks,
     trackVisibility,
-    trackOpacityByChannel,
-    trackLineWidthByChannel,
-    channelTrackColorModes,
+    trackOpacityByTrackSet,
+    trackLineWidthByTrackSet,
+    trackColorModesByTrackSet,
     channelTrackOffsets,
     isFullTrackTrailEnabled,
     trackTrailLength,
@@ -430,7 +432,7 @@ export function useViewerShellProps({
       openHelpMenu,
       closeHelpMenu,
       hoveredVoxel: hoveredVolumeVoxel,
-      followedTrackChannelId,
+      followedTrackSetId,
       followedTrackId,
       followedVoxel,
       onStopTrackFollow,
@@ -513,25 +515,24 @@ export function useViewerShellProps({
       onLayerInvertToggle
     },
     tracksPanel: {
-      channels,
-      channelNameMap,
-      activeChannelId: activeTrackChannelId,
-      onChannelTabSelect: onTrackPanelChannelSelect,
-      parsedTracksByChannel,
-      filteredTracksByChannel,
+      trackSets,
+      activeTrackSetId,
+      onTrackSetTabSelect: onTrackPanelChannelSelect,
+      parsedTracksByTrackSet,
+      filteredTracksByTrackSet,
       minimumTrackLength,
       pendingMinimumTrackLength,
       trackLengthBounds,
       onMinimumTrackLengthChange,
       onMinimumTrackLengthApply,
-      channelTrackColorModes,
-      trackOpacityByChannel,
-      trackLineWidthByChannel,
-      trackSummaryByChannel,
-      followedTrackChannelId,
+      trackColorModesByTrackSet,
+      trackOpacityByTrackSet,
+      trackLineWidthByTrackSet,
+      trackSummaryByTrackSet,
+      followedTrackSetId,
       followedTrackId,
       onTrackOrderToggle,
-      trackOrderModeByChannel,
+      trackOrderModeByTrackSet,
       trackVisibility,
       onTrackVisibilityToggle,
       onTrackVisibilityAllChange,

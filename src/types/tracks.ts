@@ -15,6 +15,8 @@ export type TrackColorMode =
 
 export type TrackDefinition = {
   id: string;
+  trackSetId: string;
+  trackSetName: string;
   channelId: string;
   channelName: string;
   trackNumber: number;
