@@ -13,6 +13,14 @@ type TrackAccumulator = {
   segments: SegmentAccumulator[];
 };
 
+function isBreakSentinel(value: string): boolean {
+  const trimmed = value.trim();
+  if (trimmed === '') {
+    return true;
+  }
+  return Number.isNaN(Number(trimmed));
+}
+
 function makeTrackId(channelId: string, sourceTrackId: number, segmentIndex: number): string {
   if (segmentIndex <= 0) {
     return `${channelId}:${sourceTrackId}`;
@@ -71,7 +79,8 @@ export function buildTracksFromCsvEntries({
     const rawX = row[3] ?? '';
     const rawY = row[4] ?? '';
     const rawZ = is2dExperiment ? (row.length >= 7 ? (row[5] ?? '') : '') : (row[5] ?? '');
-    const isBreakRow = rawFrame === '' && rawX === '' && rawY === '' && rawZ === '';
+    const isBreakRow =
+      isBreakSentinel(rawFrame) && isBreakSentinel(rawX) && isBreakSentinel(rawY) && isBreakSentinel(rawZ);
     if (isBreakRow) {
       state.breakPending = true;
       continue;

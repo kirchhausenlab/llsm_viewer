@@ -273,3 +273,6 @@
 ## Track settings regressions
 - Fixed the Tracks panel layout wiring to include the settings window initial position so layouts reset cleanly with type safety.
 - Typed instanced line geometry fields and re-exported trail length defaults to restore TypeScript coverage after the trail controls were added.
+
+## Track CSV NaN breaks
+- Treated rows where `t/x/y/z` parse to `NaN` (including missing `z` in 2D) as track break markers, matching the existing “empty fields” break behavior.

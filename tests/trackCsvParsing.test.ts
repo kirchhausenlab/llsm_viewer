@@ -46,6 +46,31 @@ console.log('Starting trackCsvParsing tests');
   const tracks = buildTracksFromCsvEntries({
     trackSetId: 'track-set-1',
     trackSetName: 'Set 1',
+    channelId: 'channel-0',
+    channelName: 'Channel 0',
+    experimentDimension: '3d',
+    entries: [
+      ['36', '1.0', '50.0', '305.779096', '326.565542', '38.697693', '0', '57'],
+      ['36', '1.0', 'NaN', 'NaN', 'NaN', 'NaN', '0', '57'],
+      ['36', '1.0', '13.0', '327.944334', '319.266013', '33.21774', '0', '57'],
+    ],
+  });
+
+  assert.strictEqual(tracks.length, 2);
+  assert.deepStrictEqual(
+    tracks.map((track) => track.displayTrackNumber),
+    ['36', '36-1'],
+  );
+  assert.deepStrictEqual(
+    tracks.map((track) => track.points[0]?.time),
+    [50, 13],
+  );
+})();
+
+(() => {
+  const tracks = buildTracksFromCsvEntries({
+    trackSetId: 'track-set-1',
+    trackSetName: 'Set 1',
     channelId: 'c',
     channelName: 'C',
     experimentDimension: '3d',
@@ -69,6 +94,27 @@ console.log('Starting trackCsvParsing tests');
   );
   assert.strictEqual(tracks[1]?.parentTrackId, 'track-set-1:c:1');
   assert.strictEqual(tracks[2]?.parentTrackId, 'track-set-1:c:1-1');
+})();
+
+(() => {
+  const tracks = buildTracksFromCsvEntries({
+    trackSetId: 'track-set-1',
+    trackSetName: 'Set 1',
+    channelId: 'c',
+    channelName: 'C',
+    experimentDimension: '2d',
+    entries: [
+      ['1', '0', '0', '0', '0', '0'],
+      ['1', '0', 'NaN', 'NaN', 'NaN', '0'],
+      ['1', '0', '1', '1', '1', '0'],
+    ],
+  });
+
+  assert.strictEqual(tracks.length, 2);
+  assert.deepStrictEqual(
+    tracks.map((track) => track.displayTrackNumber),
+    ['1', '1-1'],
+  );
 })();
 
 (() => {
