@@ -469,7 +469,6 @@ export async function preprocessDatasetToStorage({
 
   const manifest: PreprocessedManifest = {
     format: 'llsm-viewer-preprocessed',
-    version: 5,
     generatedAt: new Date().toISOString(),
     dataset: {
       movieMode,

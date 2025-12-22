@@ -9,7 +9,7 @@ import type { PreprocessedManifest } from '../src/shared/utils/preprocessedDatas
 import { serializeTrackEntriesToCsvBytes } from '../src/shared/utils/preprocessedDataset/tracks.ts';
 import { createZarrStoreFromPreprocessedStorage } from '../src/shared/utils/zarrStore.ts';
 
-console.log('Starting preprocessed dataset Zarr v5 tests');
+console.log('Starting preprocessed dataset Zarr tests');
 
 const makeManifest = (): PreprocessedManifest => {
   const width = 2;
@@ -24,7 +24,6 @@ const makeManifest = (): PreprocessedManifest => {
 
   return {
     format: 'llsm-viewer-preprocessed',
-    version: 5,
     generatedAt: new Date().toISOString(),
     dataset: {
       movieMode: '3d',
@@ -156,7 +155,6 @@ const makeManifest = (): PreprocessedManifest => {
     await storageHandle.storage.writeFile(`${layer.zarr.histogram.path}/c/1/0`, encodeUint32ArrayLE(histogramT1));
 
     const opened = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
-    assert.equal(opened.manifest.version, 5);
     assert.equal(opened.totalVolumeCount, 2);
     assert.equal(opened.channelSummaries.length, 1);
     assert.deepEqual(opened.channelSummaries[0]?.trackSets[0]?.entries, [['1', '0', '1', '1.123', '2.1', '3.988', '4', '0']]);
@@ -172,9 +170,9 @@ const makeManifest = (): PreprocessedManifest => {
     assert.deepEqual(Array.from(volume1.segmentationLabels ?? []), Array.from(labelsT1));
     assert.deepEqual(Array.from(volume1.histogram ?? []), Array.from(histogramT1));
 
-    console.log('preprocessed dataset Zarr v5 tests passed');
+    console.log('preprocessed dataset Zarr tests passed');
   } catch (error) {
-    console.error('preprocessed dataset Zarr v5 tests failed');
+    console.error('preprocessed dataset Zarr tests failed');
     console.error(error);
     process.exitCode = 1;
   }

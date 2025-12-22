@@ -276,3 +276,6 @@
 
 ## Track CSV NaN breaks
 - Treated rows where `t/x/y/z` parse to `NaN` (including missing `z` in 2D) as track break markers, matching the existing “empty fields” break behavior.
+
+## Preprocessed dataset manifest versions (dev mode)
+- Dropped the manifest `version` field entirely (writer no longer emits it; reader no longer checks it).

@@ -77,7 +77,6 @@ export type PreprocessedChannelManifestV5 = PreprocessedChannelManifest & {
 
 export type PreprocessedManifestV5 = {
   format: 'llsm-viewer-preprocessed';
-  version: 5;
   generatedAt: string;
   dataset: {
     movieMode: PreprocessedMovieMode;

@@ -24,9 +24,6 @@ function coerceManifest(value: unknown): PreprocessedManifest {
   if (candidate.format !== 'llsm-viewer-preprocessed') {
     throw new Error('Unsupported preprocessed dataset format.');
   }
-  if (candidate.version !== 5) {
-    throw new Error(`Unsupported preprocessed dataset version: ${String(candidate.version)}`);
-  }
   return candidate as PreprocessedManifest;
 }
 
