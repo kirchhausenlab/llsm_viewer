@@ -54,6 +54,7 @@ The main responsibilities are:
 - Playback and viewer interaction: `hooks/viewer/useViewerPlayback.ts`, `hooks/viewer/useViewerControls.ts`, and app-level
   helpers such as `useViewerModePlayback` (mode + playback wiring).
 - Tracks: hooks under `hooks/tracks/*` feed both planar and volume viewers.
+- Paintbrush: `src/hooks/paintbrush/usePaintbrush.ts` manages the paint volume + history; `src/shared/utils/tiffWriter.ts` writes RGB TIFF stacks.
 
 **4. Preprocessed dataset load/save (Zarr v3 folders)**
 

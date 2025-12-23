@@ -207,6 +207,9 @@ export function useVolumeHover({
       let cpuFallbackLayer: (typeof layersSnapshot)[number] | null = null;
 
       for (const layer of layersSnapshot) {
+        if (layer.isHoverTarget === false) {
+          continue;
+        }
         const volume = layer.volume;
         if (!volume || !layer.visible) {
           continue;

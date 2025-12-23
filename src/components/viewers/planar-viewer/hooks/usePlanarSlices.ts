@@ -63,6 +63,7 @@ function createSliceWithSampler(
     const invert = layer.invert ?? false;
     const windowMin = layer.windowMin ?? 0;
     const windowMax = layer.windowMax ?? 1;
+    const minAlpha = layer.minAlpha ?? MIN_ALPHA;
     const windowRange = Math.max(windowMax - windowMin, WINDOW_EPSILON);
     const normalizeScalar = (value: number) => clamp((value - windowMin) / windowRange, 0, 1);
     const applyWindow = (value: number) => {
@@ -97,7 +98,7 @@ function createSliceWithSampler(
 
         if (channels === 1) {
           const normalizedIntensity = applyWindow(channelR);
-          const layerAlpha = Math.max(normalizedIntensity, MIN_ALPHA);
+          const layerAlpha = Math.max(normalizedIntensity, minAlpha);
           const color = tint ?? getColor('#ffffff');
           srcR = color.r * normalizedIntensity;
           srcG = color.g * normalizedIntensity;
@@ -111,7 +112,7 @@ function createSliceWithSampler(
               ? channelR * 0.2126 + channelG * 0.7152 + channelB * 0.0722
               : Math.max(channelR, channelG, Math.max(channelB, channelA));
           const normalizedIntensity = applyWindow(intensity);
-          alpha = Math.max(normalizedIntensity, MIN_ALPHA);
+          alpha = Math.max(normalizedIntensity, minAlpha);
           const normalizedR = applyWindow(channelR);
           const normalizedG = channels > 1 ? applyWindow(channelG) : normalizedR;
           const normalizedB = channels > 2 ? applyWindow(channelB) : channels === 2 ? 0 : normalizedG;
@@ -268,6 +269,9 @@ export function usePlanarSlices({
       }> = [];
 
       for (const layer of layers) {
+        if (layer.isHoverTarget === false) {
+          continue;
+        }
         const volume = layer.volume;
         if (!volume || !layer.visible) {
           continue;

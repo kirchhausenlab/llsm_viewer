@@ -85,6 +85,7 @@ function PlanarViewer({
   followedTrackId,
   onTrackSelectionToggle,
   onTrackFollowRequest: _onTrackFollowRequest,
+  paintbrush,
   onHoverVoxelChange,
 }: PlanarViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -275,6 +276,7 @@ function PlanarViewer({
     selectedTrackIds,
     followedTrackId,
     onTrackSelectionToggle,
+    paintbrush,
     onHoverVoxelChange,
     clampedTimeIndex,
     primaryVolume,

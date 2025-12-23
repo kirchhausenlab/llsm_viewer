@@ -1,6 +1,8 @@
 # Progress
 
 ## Latest changes
+- Implemented the Paintbrush tool end-to-end: Shift+LMB brush/eraser with configurable radius (3D sphere), per-stroke undo/redo, clear (resets history), overlay show/hide, distinct label counting, random unused non-black colors, and RGB multi-page TIFF export.
+- Paintbrush caveat: TIFF export is currently uncompressed baseline TIFF (multi-page RGB), so files can get large for big volumes.
 - Added Paintbrush UI defaults: window opens disabled + visible with an eraser toggle, color preview swatch, and close/reset actions that force the tool back to Disabled (UI only).
 - Experiment setup now supports attaching multiple track CSVs per channel as separate track sets (each with its own viewer label, styling, and visibility state) while remaining spatially tied to the underlying channel transforms.
 - Updated preprocessing/export + preprocessed import to store per-track-set CSV payloads and record them in a new manifest v5 `trackSets` list per channel (older preprocessed datasets are no longer supported).

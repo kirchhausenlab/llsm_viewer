@@ -12,6 +12,8 @@ import NavigationHelpWindow, { computeNavigationHelpInitialPosition } from './vi
 import { useViewerModeControls } from './viewer-shell/hooks/useViewerModeControls';
 import { useViewerPlaybackControls } from './viewer-shell/hooks/useViewerPlaybackControls';
 import type { ViewerMode, ViewerShellProps } from './viewer-shell/types';
+import { usePaintbrush } from '../../hooks/paintbrush/usePaintbrush';
+import { encodeRgbTiffStack } from '../../shared/utils/tiffWriter';
 
 const NAVIGATION_HELP_WINDOW_WIDTH = 420;
 const DEFAULT_RECORDING_BITRATE_MBPS = 20;
@@ -418,14 +420,118 @@ function ViewerShell({
     hasVolumeData
   });
 
+  const primaryVolume = useMemo(() => {
+    for (const layer of volumeViewerProps.layers) {
+      if (layer.volume) {
+        return layer.volume;
+      }
+    }
+    return null;
+  }, [volumeViewerProps.layers]);
+
+  const paintbrushController = usePaintbrush({ primaryVolume, resetSignal: resetToken });
+
+  const paintbrushStrokeHandlers = useMemo(() => {
+    return {
+      enabled: paintbrushController.enabled,
+      onStrokeStart: paintbrushController.beginStroke,
+      onStrokeApply: paintbrushController.applyStrokeAt,
+      onStrokeEnd: paintbrushController.endStroke,
+    };
+  }, [
+    paintbrushController.applyStrokeAt,
+    paintbrushController.beginStroke,
+    paintbrushController.enabled,
+    paintbrushController.endStroke,
+  ]);
+
+  const paintOverlayVolumeLayer = useMemo(() => {
+    const volume = paintbrushController.paintVolume;
+    if (!volume) {
+      return null;
+    }
+
+    return {
+      key: 'paintbrush-overlay',
+      label: 'Painting',
+      channelName: 'Painting',
+      volume,
+      visible: paintbrushController.overlayVisible,
+      isHoverTarget: false,
+      sliderRange: 1,
+      minSliderIndex: 0,
+      maxSliderIndex: 0,
+      brightnessSliderIndex: 0,
+      contrastSliderIndex: 0,
+      windowMin: 0,
+      windowMax: 1,
+      color: '#ffffff',
+      offsetX: 0,
+      offsetY: 0,
+      renderStyle: 0 as const,
+      invert: false,
+      samplingMode: 'nearest' as const,
+      mode: '3d' as const,
+    };
+  }, [paintbrushController.overlayVisible, paintbrushController.paintVolume, paintbrushController.revision]);
+
+  const paintOverlayPlanarLayer = useMemo(() => {
+    const volume = paintbrushController.paintVolume;
+    if (!volume) {
+      return null;
+    }
+
+    return {
+      key: 'paintbrush-overlay',
+      label: 'Painting',
+      channelId: 'paintbrush',
+      channelName: 'Painting',
+      volume,
+      visible: paintbrushController.overlayVisible,
+      isHoverTarget: false,
+      minAlpha: 0,
+      sliderRange: 1,
+      minSliderIndex: 0,
+      maxSliderIndex: 0,
+      brightnessSliderIndex: 0,
+      contrastSliderIndex: 0,
+      windowMin: 0,
+      windowMax: 1,
+      color: '#ffffff',
+      offsetX: 0,
+      offsetY: 0,
+      renderStyle: 0 as const,
+      invert: false,
+      isSegmentation: false,
+    };
+  }, [paintbrushController.overlayVisible, paintbrushController.paintVolume, paintbrushController.revision]);
+
+  const volumeViewerLayers = useMemo(() => {
+    if (!paintOverlayVolumeLayer) {
+      return volumeViewerProps.layers;
+    }
+    return [...volumeViewerProps.layers, paintOverlayVolumeLayer];
+  }, [paintOverlayVolumeLayer, volumeViewerProps.layers]);
+
+  const planarViewerLayers = useMemo(() => {
+    if (!paintOverlayPlanarLayer) {
+      return planarViewerProps.layers;
+    }
+    return [...planarViewerProps.layers, paintOverlayPlanarLayer];
+  }, [paintOverlayPlanarLayer, planarViewerProps.layers]);
+
   const volumeViewerWithCaptureTarget = {
     ...volumeViewerProps,
+    layers: volumeViewerLayers,
     onRegisterCaptureTarget: handleVolumeCaptureTarget,
+    paintbrush: paintbrushStrokeHandlers,
   } satisfies ViewerShellProps['volumeViewerProps'];
 
   const planarViewerWithCaptureTarget = {
     ...planarViewerProps,
+    layers: planarViewerLayers,
     onRegisterCaptureTarget: handlePlanarCaptureTarget,
+    paintbrush: paintbrushStrokeHandlers,
   } satisfies ViewerShellProps['planarViewerProps'];
 
   const playbackControlsWithRecording = {
@@ -448,6 +554,41 @@ function ViewerShell({
     () => ({ ...topMenu, onOpenPaintbrush: handleOpenPaintbrush }),
     [handleOpenPaintbrush, topMenu]
   );
+
+  const handleSavePainting = useCallback(() => {
+    const payload = paintbrushController.getPaintRgbBytes();
+    if (!payload) {
+      return;
+    }
+
+    const fileName = paintbrushController.getSuggestedSaveName();
+    const { dimensions, rgb } = payload;
+
+    const buffer = encodeRgbTiffStack({
+      width: dimensions.width,
+      height: dimensions.height,
+      depth: dimensions.depth,
+      rgb,
+    });
+
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    const blob = new Blob([buffer], { type: 'image/tiff' });
+    if (blob.size <= 0) {
+      return;
+    }
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    requestAnimationFrame(() => URL.revokeObjectURL(url));
+  }, [paintbrushController]);
 
   return (
     <div className="app">
@@ -476,6 +617,24 @@ function ViewerShell({
           windowMargin={windowMargin}
           controlWindowWidth={controlWindowWidth}
           resetSignal={resetToken}
+          enabled={paintbrushController.enabled}
+          overlayVisible={paintbrushController.overlayVisible}
+          mode={paintbrushController.mode}
+          radius={paintbrushController.radius}
+          color={paintbrushController.color}
+          labelCount={paintbrushController.labelCount}
+          canUndo={paintbrushController.canUndo}
+          canRedo={paintbrushController.canRedo}
+          onEnabledChange={paintbrushController.setEnabled}
+          onOverlayVisibleChange={paintbrushController.setOverlayVisible}
+          onModeChange={paintbrushController.setMode}
+          onRadiusChange={paintbrushController.setRadius}
+          onColorChange={paintbrushController.setColor}
+          onRandomColor={paintbrushController.pickRandomUnusedColor}
+          onUndo={paintbrushController.undo}
+          onRedo={paintbrushController.redo}
+          onClear={paintbrushController.clear}
+          onSave={handleSavePainting}
           onClose={handleClosePaintbrush}
         />
       ) : null}

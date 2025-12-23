@@ -6,6 +6,7 @@ import type { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
 import type { NormalizedVolume } from '../../core/volumeProcessing';
 import type { FollowedVoxelTarget } from '../../types/follow';
 import type { HoveredVoxelInfo } from '../../types/hover';
+import type { PaintbrushStrokeHandlers } from '../../types/paintbrush';
 import type { TrackColorMode, TrackDefinition } from '../../types/tracks';
 
 export type InstancedLineGeometry = LineGeometry & { instanceCount: number };
@@ -16,6 +17,7 @@ export type ViewerLayer = {
   channelName: string;
   volume: NormalizedVolume | null;
   visible: boolean;
+  isHoverTarget?: boolean;
   sliderRange: number;
   minSliderIndex: number;
   maxSliderIndex: number;
@@ -150,6 +152,7 @@ export type VolumeViewerProps = {
   onTrackFollowRequest: (trackId: string) => void;
   onVoxelFollowRequest: (voxel: FollowedVoxelTarget) => void;
   onHoverVoxelChange?: (value: HoveredVoxelInfo | null) => void;
+  paintbrush?: PaintbrushStrokeHandlers;
   vr?: VolumeViewerVrProps;
 };
 

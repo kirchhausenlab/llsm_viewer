@@ -1,4 +1,5 @@
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
+import type { PaintbrushStrokeHandlers } from '../../../types/paintbrush';
 import type { TrackColorMode, TrackDefinition } from '../../../types/tracks';
 
 export type ViewerLayer = {
@@ -8,6 +9,8 @@ export type ViewerLayer = {
   channelName: string;
   volume: NormalizedVolume | null;
   visible: boolean;
+  isHoverTarget?: boolean;
+  minAlpha?: number;
   sliderRange: number;
   minSliderIndex: number;
   maxSliderIndex: number;
@@ -97,6 +100,7 @@ export type PlanarViewerProps = {
   followedTrackId: string | null;
   onTrackSelectionToggle: (trackId: string) => void;
   onTrackFollowRequest: (trackId: string) => void;
+  paintbrush?: PaintbrushStrokeHandlers;
   onHoverVoxelChange?: (value: {
     intensity: string;
     components: { text: string; color: string }[];

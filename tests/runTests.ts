@@ -15,6 +15,8 @@ import './useVolumeViewerInteractions.test.ts';
 import './textureCache.test.ts';
 import './vrInputMath.test.ts';
 import './ViewerShellContainer.test.ts';
+import './usePaintbrush.test.ts';
+import './tiffWriter.test.ts';
 import './app/hooks/useChannelEditing.test.ts';
 import './app/hooks/useDatasetLaunch.test.ts';
 import './app/hooks/useViewerModePlayback.test.ts';

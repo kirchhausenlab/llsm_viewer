@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 
 import FloatingWindow from '../../widgets/FloatingWindow';
+import type { PaintbrushMode } from '../../../hooks/paintbrush/usePaintbrush';
 import type { LayoutProps } from './types';
 
 type PaintbrushWindowProps = {
@@ -8,46 +9,61 @@ type PaintbrushWindowProps = {
   windowMargin: number;
   controlWindowWidth: number;
   resetSignal: number;
+  enabled: boolean;
+  overlayVisible: boolean;
+  mode: PaintbrushMode;
+  radius: number;
+  color: string;
+  labelCount: number;
+  canUndo: boolean;
+  canRedo: boolean;
+  onEnabledChange: (value: boolean) => void;
+  onOverlayVisibleChange: (value: boolean) => void;
+  onModeChange: (value: PaintbrushMode) => void;
+  onRadiusChange: (value: number) => void;
+  onColorChange: (value: string) => void;
+  onRandomColor: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  onClear: () => void;
+  onSave: () => void;
   onClose: () => void;
 };
 
 const PAINTBRUSH_MIN_RADIUS = 1;
 const PAINTBRUSH_MAX_RADIUS = 10;
-const DEFAULT_COLOR = '#ff5b5b';
 
 export default function PaintbrushWindow({
   initialPosition,
   windowMargin,
   controlWindowWidth,
   resetSignal,
+  enabled,
+  overlayVisible,
+  mode,
+  radius,
+  color,
+  labelCount,
+  canUndo,
+  canRedo,
+  onEnabledChange,
+  onOverlayVisibleChange,
+  onModeChange,
+  onRadiusChange,
+  onColorChange,
+  onRandomColor,
+  onUndo,
+  onRedo,
+  onClear,
+  onSave,
   onClose
 }: PaintbrushWindowProps) {
-  const [isEnabled, setIsEnabled] = useState(false);
-  const [isVisible, setIsVisible] = useState(true);
-  const [isEraserMode, setIsEraserMode] = useState(false);
-  const [radius, setRadius] = useState(PAINTBRUSH_MIN_RADIUS);
-  const [color, setColor] = useState(DEFAULT_COLOR);
-  const [labelCount] = useState(0);
-
-  useEffect(() => {
-    setIsEnabled(false);
-    setIsVisible(true);
-    setIsEraserMode(false);
-    setRadius(PAINTBRUSH_MIN_RADIUS);
-    setColor(DEFAULT_COLOR);
-  }, [resetSignal]);
-
   const handleClose = useCallback(() => {
-    setIsEnabled(false);
+    onEnabledChange(false);
     onClose();
-  }, [onClose]);
+  }, [onClose, onEnabledChange]);
 
-  const handleRandomizeColor = useCallback(() => {
-    const randomColor = `#${Math.floor(Math.random() * 0xffffff)
-      .toString(16)
-      .padStart(6, '0')}`;
-    setColor(randomColor);
-  }, []);
+  const isEraserMode = mode === 'eraser';
 
   return (
     <FloatingWindow
@@ -73,14 +89,15 @@ export default function PaintbrushWindow({
           <button
             type="button"
             className="paintbrush-toggle"
-            onClick={() => setIsEnabled((current) => !current)}
-            aria-pressed={isEnabled}
+            onClick={() => onEnabledChange(!enabled)}
+            aria-pressed={enabled}
+            title="Hold Shift + Left-click/drag in the viewer to paint/erase"
           >
-            {isEnabled ? 'Enabled' : 'Disabled'}
+            {enabled ? 'Enabled' : 'Disabled'}
           </button>
           <button
             type="button"
-            onClick={() => setIsEraserMode((current) => !current)}
+            onClick={() => onModeChange(isEraserMode ? 'brush' : 'eraser')}
             aria-pressed={isEraserMode}
           >
             {isEraserMode ? 'Switch to brush' : 'Switch to Eraser'}
@@ -88,17 +105,23 @@ export default function PaintbrushWindow({
           <button
             type="button"
             className="paintbrush-toggle"
-            onClick={() => setIsVisible((current) => !current)}
-            aria-pressed={isVisible}
+            onClick={() => onOverlayVisibleChange(!overlayVisible)}
+            aria-pressed={overlayVisible}
           >
-            {isVisible ? 'Show' : 'Hide'}
+            {overlayVisible ? 'Hide overlay' : 'Show overlay'}
           </button>
         </div>
 
         <div className="control-row paintbrush-button-row">
-          <button type="button">Undo</button>
-          <button type="button">Redo</button>
-          <button type="button">Clear</button>
+          <button type="button" onClick={onUndo} disabled={!canUndo}>
+            Undo
+          </button>
+          <button type="button" onClick={onRedo} disabled={!canRedo}>
+            Redo
+          </button>
+          <button type="button" onClick={onClear}>
+            Clear
+          </button>
         </div>
 
         <div className="control-row paintbrush-controls-row">
@@ -113,7 +136,7 @@ export default function PaintbrushWindow({
               max={PAINTBRUSH_MAX_RADIUS}
               step={1}
               value={radius}
-              onChange={(event) => setRadius(Number(event.target.value))}
+              onChange={(event) => onRadiusChange(Number(event.target.value))}
             />
           </div>
           <div
@@ -128,11 +151,11 @@ export default function PaintbrushWindow({
               className="paintbrush-color-input"
               type="color"
               value={color}
-              onChange={(event) => setColor(event.target.value)}
+              onChange={(event) => onColorChange(event.target.value)}
               aria-label="Choose paintbrush color"
             />
           </label>
-          <button type="button" onClick={handleRandomizeColor}>
+          <button type="button" onClick={onRandomColor}>
             Random
           </button>
         </div>
@@ -142,7 +165,9 @@ export default function PaintbrushWindow({
             <span># of labels:</span>
             <output aria-live="polite">{labelCount}</output>
           </div>
-          <button type="button">Save</button>
+          <button type="button" onClick={onSave}>
+            Save
+          </button>
         </div>
       </div>
     </FloatingWindow>

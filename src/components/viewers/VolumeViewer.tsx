@@ -66,6 +66,7 @@ function VolumeViewer({
   onTrackFollowRequest,
   onVoxelFollowRequest,
   onHoverVoxelChange,
+  paintbrush,
   vr
 }: VolumeViewerProps) {
   const vrLog = (...args: Parameters<typeof console.debug>) => {
@@ -102,6 +103,13 @@ function VolumeViewer({
   const onLayerSamplingModeToggle = vr?.onLayerSamplingModeToggle;
   const onLayerInvertToggle = vr?.onLayerInvertToggle;
   const onRegisterVrSession = vr?.onRegisterVrSession;
+
+  const paintbrushRef = useRef(paintbrush);
+  const paintStrokePointerIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    paintbrushRef.current = paintbrush;
+  }, [paintbrush]);
 
   const resourcesRef = useRef<Map<string, VolumeResources>>(new Map());
   const hoverRaycasterRef = useRef<THREE.Raycaster | null>(null);
@@ -893,6 +901,24 @@ function VolumeViewer({
         return;
       }
 
+      const paint = paintbrushRef.current;
+      const shouldPaint = Boolean(paint?.enabled && event.shiftKey);
+      if (shouldPaint && paint) {
+        paintStrokePointerIdRef.current = event.pointerId;
+        try {
+          domElement.setPointerCapture(event.pointerId);
+        } catch {
+          // Ignore: some platforms may reject capture.
+        }
+        paint.onStrokeStart();
+        updateVoxelHover(event);
+        const hovered = hoverIntensityRef.current;
+        if (hovered) {
+          paint.onStrokeApply(hovered.coordinates);
+        }
+        return;
+      }
+
       rotationTargetRef.current.copy(controls.target);
       if (!followTargetActiveRef.current) {
         beginPointerLook(event);
@@ -906,6 +932,17 @@ function VolumeViewer({
     };
 
     const handlePointerMove = (event: PointerEvent) => {
+      const paint = paintbrushRef.current;
+      const isPainting = paintStrokePointerIdRef.current !== null;
+      if (paint && isPainting && paintStrokePointerIdRef.current === event.pointerId) {
+        updateVoxelHover(event);
+        const hovered = hoverIntensityRef.current;
+        if (hovered) {
+          paint.onStrokeApply(hovered.coordinates);
+        }
+        return;
+      }
+
       if (followTargetActiveRef.current) {
         rotationTargetRef.current.copy(controls.target);
       }
@@ -919,6 +956,24 @@ function VolumeViewer({
     };
 
     const handlePointerUp = (event: PointerEvent) => {
+      const paint = paintbrushRef.current;
+      const activePointerId = paintStrokePointerIdRef.current;
+      if (paint && activePointerId !== null && activePointerId === event.pointerId) {
+        updateVoxelHover(event);
+        const hovered = hoverIntensityRef.current;
+        if (hovered) {
+          paint.onStrokeApply(hovered.coordinates);
+        }
+        paint.onStrokeEnd();
+        paintStrokePointerIdRef.current = null;
+        try {
+          domElement.releasePointerCapture(event.pointerId);
+        } catch {
+          // Ignore.
+        }
+        return;
+      }
+
       updateVoxelHover(event);
       performHoverHitTest(event);
 
@@ -928,6 +983,12 @@ function VolumeViewer({
     };
 
     const handlePointerLeave = (event: PointerEvent) => {
+      const paint = paintbrushRef.current;
+      const activePointerId = paintStrokePointerIdRef.current;
+      if (paint && activePointerId !== null && activePointerId === event.pointerId) {
+        paint.onStrokeEnd();
+        paintStrokePointerIdRef.current = null;
+      }
       clearHoverState('pointer');
       clearVoxelHover();
       if (!followTargetActiveRef.current) {

@@ -55,6 +55,7 @@ type UsePlanarInteractionsParams = {
   selectedTrackIds: ReadonlySet<string>;
   followedTrackId: string | null;
   onTrackSelectionToggle: (trackId: string) => void;
+  paintbrush?: PlanarViewerProps['paintbrush'];
   onHoverVoxelChange?: PlanarViewerProps['onHoverVoxelChange'];
   clampedTimeIndex: number;
   primaryVolume: NormalizedVolume | null;
@@ -104,6 +105,7 @@ export function usePlanarInteractions({
   selectedTrackIds,
   followedTrackId,
   onTrackSelectionToggle,
+  paintbrush,
   onHoverVoxelChange,
   clampedTimeIndex,
   primaryVolume,
@@ -114,6 +116,7 @@ export function usePlanarInteractions({
   const [hoveredTrackId, setHoveredTrackId] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
   const pointerStateRef = useRef<PointerState | null>(null);
+  const paintStrokePointerIdRef = useRef<number | null>(null);
   const hoveredTrackIdRef = useRef<string | null>(null);
   const selectedTrackIdsRef = useRef<ReadonlySet<string>>(selectedTrackIds);
   const followedTrackIdRef = useRef<string | null>(followedTrackId);
@@ -355,6 +358,22 @@ export function usePlanarInteractions({
     ]
   );
 
+  const applyPaintAtHover = useCallback(
+    (event: PointerEvent) => {
+      const paint = paintbrush;
+      const activePointerId = paintStrokePointerIdRef.current;
+      if (!paint || !paint.enabled || activePointerId === null || activePointerId !== event.pointerId) {
+        return;
+      }
+      updatePixelHover(event);
+      const hovered = hoveredPixelRef.current;
+      if (hovered) {
+        paint.onStrokeApply({ x: hovered.x, y: hovered.y, z: clampedSliceIndex });
+      }
+    },
+    [clampedSliceIndex, paintbrush, hoveredPixelRef, updatePixelHover],
+  );
+
   useEffect(() => {
     return () => {
       emitHoverVoxel(null);
@@ -549,6 +568,22 @@ export function usePlanarInteractions({
       }
       const nativeEvent = event.nativeEvent;
 
+      const paint = paintbrush;
+      const shouldPaint = Boolean(paint?.enabled && nativeEvent.shiftKey);
+      if (shouldPaint && paint) {
+        pointerStateRef.current = null;
+        paintStrokePointerIdRef.current = nativeEvent.pointerId;
+        const target = event.currentTarget;
+        target.setPointerCapture(nativeEvent.pointerId);
+        paint.onStrokeStart();
+        updatePixelHover(nativeEvent);
+        const hovered = hoveredPixelRef.current;
+        if (hovered) {
+          paint.onStrokeApply({ x: hovered.x, y: hovered.y, z: clampedSliceIndex });
+        }
+        return;
+      }
+
       const { trackId, pointer } = performTrackHitTest(nativeEvent);
       if (trackId !== null) {
         pointerStateRef.current = null;
@@ -570,12 +605,29 @@ export function usePlanarInteractions({
       };
       target.setPointerCapture(nativeEvent.pointerId);
     },
-    [onTrackSelectionToggle, performTrackHitTest, updateHoverState, viewStateRef]
+    [
+      clampedSliceIndex,
+      onTrackSelectionToggle,
+      paintbrush,
+      performTrackHitTest,
+      updateHoverState,
+      updatePixelHover,
+      hoveredPixelRef,
+      viewStateRef,
+    ]
   );
 
   const handlePointerMove = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
       const nativeEvent = event.nativeEvent;
+
+      const paint = paintbrush;
+      const activePointerId = paintStrokePointerIdRef.current;
+      if (paint && paint.enabled && activePointerId !== null && activePointerId === nativeEvent.pointerId) {
+        applyPaintAtHover(nativeEvent);
+        return;
+      }
+
       const state = pointerStateRef.current;
       if (state && state.pointerId === nativeEvent.pointerId) {
         const deltaX = nativeEvent.clientX - state.startX;
@@ -608,12 +660,32 @@ export function usePlanarInteractions({
       }
       updatePixelHover(nativeEvent);
     },
-    [clearHoverState, performTrackHitTest, updateHoverState, updatePixelHover, updateViewState]
+    [
+      applyPaintAtHover,
+      clearHoverState,
+      paintbrush,
+      performTrackHitTest,
+      updateHoverState,
+      updatePixelHover,
+      updateViewState,
+    ]
   );
 
   const handlePointerEnd = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
       const nativeEvent = event.nativeEvent;
+
+      const paint = paintbrush;
+      const activePointerId = paintStrokePointerIdRef.current;
+      if (paint && paint.enabled && activePointerId !== null && activePointerId === nativeEvent.pointerId) {
+        applyPaintAtHover(nativeEvent);
+        const target = event.currentTarget;
+        target.releasePointerCapture(nativeEvent.pointerId);
+        paint.onStrokeEnd();
+        paintStrokePointerIdRef.current = null;
+        return;
+      }
+
       const state = pointerStateRef.current;
       if (state && state.pointerId === nativeEvent.pointerId) {
         const target = event.currentTarget;
@@ -629,7 +701,7 @@ export function usePlanarInteractions({
       }
       updatePixelHover(nativeEvent);
     },
-    [clearHoverState, performTrackHitTest, updateHoverState, updatePixelHover]
+    [applyPaintAtHover, clearHoverState, paintbrush, performTrackHitTest, updateHoverState, updatePixelHover]
   );
 
   const handleWheel = useCallback(
