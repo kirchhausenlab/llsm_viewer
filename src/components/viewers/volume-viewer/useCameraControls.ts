@@ -11,8 +11,7 @@ const MOVEMENT_KEY_MAP: Record<string, keyof MovementState> = {
   KeyA: 'moveLeft',
   KeyD: 'moveRight',
   Space: 'moveUp',
-  ControlLeft: 'moveDown',
-  ControlRight: 'moveDown'
+  KeyC: 'moveDown'
 };
 
 const ROLL_KEY_MAP: Record<string, keyof MovementState> = {
