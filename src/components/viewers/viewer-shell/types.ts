@@ -20,6 +20,7 @@ export type PlanarViewerProps = ComponentProps<typeof PlanarViewer>;
 export type TopMenuProps = {
   onReturnToLauncher: () => void;
   onResetLayout: () => void;
+  onOpenPaintbrush: () => void;
   isHelpMenuOpen: boolean;
   openHelpMenu: () => void;
   closeHelpMenu: () => void;
@@ -191,6 +192,7 @@ export type LayoutProps = {
   controlWindowInitialPosition: Position;
   viewerSettingsWindowInitialPosition: Position;
   layersWindowInitialPosition: Position;
+  paintbrushWindowInitialPosition: Position;
   trackWindowInitialPosition: Position;
   selectedTracksWindowInitialPosition: Position;
   plotSettingsWindowInitialPosition: Position;
@@ -206,7 +208,7 @@ export type ViewerShellProps = {
   viewerMode: '3d' | '2d';
   volumeViewerProps: VolumeViewerProps;
   planarViewerProps: PlanarViewerProps;
-  topMenu: TopMenuProps;
+  topMenu: Omit<TopMenuProps, 'onOpenPaintbrush'>;
   layout: LayoutProps;
   modeControls: ModeControlsProps;
   playbackControls: PlaybackControlsProps;

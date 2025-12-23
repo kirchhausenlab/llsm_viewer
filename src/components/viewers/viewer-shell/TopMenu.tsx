@@ -19,6 +19,7 @@ type DropdownMenuItem = {
 export default function TopMenu({
   onReturnToLauncher,
   onResetLayout,
+  onOpenPaintbrush,
   isHelpMenuOpen,
   openHelpMenu,
   closeHelpMenu,
@@ -74,6 +75,7 @@ export default function TopMenu({
       ],
       view: [
         { label: 'Switch 3D / 2D' },
+        { label: 'Paintbrush', onSelect: onOpenPaintbrush },
         { label: 'Rendering quality' },
         { label: 'VR mode' }
       ],
@@ -91,7 +93,7 @@ export default function TopMenu({
         { label: 'Navigation controls', onSelect: openHelpMenu }
       ]
     }),
-    [onResetLayout, onReturnToLauncher, openHelpMenu]
+    [onOpenPaintbrush, onResetLayout, onReturnToLauncher, openHelpMenu]
   );
 
   useEffect(() => {

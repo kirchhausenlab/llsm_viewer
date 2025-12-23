@@ -4,6 +4,7 @@ import PlanarViewer from './PlanarViewer';
 import VolumeViewer from './VolumeViewer';
 import ChannelsPanel from './viewer-shell/ChannelsPanel';
 import PlaybackControlsPanel from './viewer-shell/PlaybackControlsPanel';
+import PaintbrushWindow from './viewer-shell/PaintbrushWindow';
 import PlotSettingsPanel from './viewer-shell/PlotSettingsPanel';
 import TopMenu from './viewer-shell/TopMenu';
 import TracksPanel from './viewer-shell/TracksPanel';
@@ -41,6 +42,7 @@ function ViewerShell({
     controlWindowInitialPosition,
     viewerSettingsWindowInitialPosition,
     layersWindowInitialPosition,
+    paintbrushWindowInitialPosition,
     trackWindowInitialPosition,
     selectedTracksWindowInitialPosition,
     plotSettingsWindowInitialPosition,
@@ -82,6 +84,7 @@ function ViewerShell({
   const [isViewerSettingsOpen, setIsViewerSettingsOpen] = useState(false);
   const [isPlotSettingsOpen, setIsPlotSettingsOpen] = useState(false);
   const [isTrackSettingsOpen, setIsTrackSettingsOpen] = useState(false);
+  const [isPaintbrushOpen, setIsPaintbrushOpen] = useState(false);
   const previousViewerModeRef = useRef(viewerMode);
   const isRecordingRef = useRef(isRecording);
 
@@ -355,6 +358,18 @@ function ViewerShell({
     setIsViewerSettingsOpen(false);
   }, [resetToken]);
 
+  const handleOpenPaintbrush = useCallback(() => {
+    setIsPaintbrushOpen(true);
+  }, []);
+
+  const handleClosePaintbrush = useCallback(() => {
+    setIsPaintbrushOpen(false);
+  }, []);
+
+  useEffect(() => {
+    setIsPaintbrushOpen(false);
+  }, [resetToken]);
+
   const togglePlotSettingsVisibility = () => {
     setIsPlotSettingsOpen((current) => !current);
   };
@@ -429,6 +444,11 @@ function ViewerShell({
     playbackControls: playbackControlsWithRecording,
   });
 
+  const topMenuProps = useMemo(
+    () => ({ ...topMenu, onOpenPaintbrush: handleOpenPaintbrush }),
+    [handleOpenPaintbrush, topMenu]
+  );
+
   return (
     <div className="app">
       <main className="viewer">
@@ -439,7 +459,7 @@ function ViewerShell({
         )}
       </main>
 
-      <TopMenu {...topMenu} />
+      <TopMenu {...topMenuProps} />
 
       <NavigationHelpWindow
         isOpen={isHelpMenuOpen}
@@ -449,6 +469,16 @@ function ViewerShell({
         width={NAVIGATION_HELP_WINDOW_WIDTH}
         resetSignal={resetToken}
       />
+
+      {isPaintbrushOpen ? (
+        <PaintbrushWindow
+          initialPosition={paintbrushWindowInitialPosition}
+          windowMargin={windowMargin}
+          controlWindowWidth={controlWindowWidth}
+          resetSignal={resetToken}
+          onClose={handleClosePaintbrush}
+        />
+      ) : null}
 
       <PlaybackControlsPanel
         layout={{
