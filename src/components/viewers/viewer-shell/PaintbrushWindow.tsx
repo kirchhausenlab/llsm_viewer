@@ -63,6 +63,16 @@ export default function PaintbrushWindow({
     onClose();
   }, [onClose, onEnabledChange]);
 
+  const handleClear = useCallback(() => {
+    if (typeof globalThis.confirm === 'function') {
+      const confirmed = globalThis.confirm('Clear all painting? This will erase all painted voxels and history.');
+      if (!confirmed) {
+        return;
+      }
+    }
+    onClear();
+  }, [onClear]);
+
   const isEraserMode = mode === 'eraser';
 
   return (
@@ -119,7 +129,7 @@ export default function PaintbrushWindow({
           <button type="button" onClick={onRedo} disabled={!canRedo}>
             Redo
           </button>
-          <button type="button" onClick={onClear}>
+          <button type="button" onClick={handleClear}>
             Clear
           </button>
         </div>

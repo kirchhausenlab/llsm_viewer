@@ -210,14 +210,10 @@ export function usePaintbrush({
 
   const ensurePaintVolume = useCallback(() => {
     if (!primaryVolume) {
-      paintStateRef.current = null;
-      undoStackRef.current = [];
-      redoStackRef.current = [];
-      strokeRef.current = null;
-      setLabelCount(0);
-      setCanUndo(false);
-      setCanRedo(false);
-      return null;
+      // Channel/layer toggles can temporarily remove all volume layers even though the user is still
+      // working within the same dataset. Clearing here would erase the painting unexpectedly.
+      // Keep the existing paint state until we can compare dimensions again.
+      return paintStateRef.current;
     }
 
     const dimensions: Dimensions = {

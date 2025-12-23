@@ -16,6 +16,7 @@ import './textureCache.test.ts';
 import './vrInputMath.test.ts';
 import './ViewerShellContainer.test.ts';
 import './usePaintbrush.test.ts';
+import './PaintbrushWindow.test.tsx';
 import './tiffWriter.test.ts';
 import './app/hooks/useChannelEditing.test.ts';
 import './app/hooks/useDatasetLaunch.test.ts';

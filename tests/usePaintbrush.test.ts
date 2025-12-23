@@ -80,6 +80,46 @@ const readVoxelRgba = (volume: NormalizedVolume, x: number, y: number, z: number
 })();
 
 (() => {
+  let primary: NormalizedVolume | null = createPrimaryVolume({ width: 3, height: 3, depth: 1 });
+  const hook = renderHook(() => usePaintbrush({ primaryVolume: primary, resetSignal: 0 }));
+
+  hook.act(() => {
+    hook.result.setColor('#ff0000');
+    hook.result.setRadius(1);
+    hook.result.setMode('brush');
+  });
+  hook.rerender();
+
+  hook.act(() => {
+    hook.result.beginStroke();
+    hook.result.applyStrokeAt({ x: 1, y: 1, z: 0 });
+    hook.result.endStroke();
+  });
+
+  const paintVolume = hook.result.paintVolume;
+  assert.ok(paintVolume);
+  assert.deepStrictEqual(readVoxelRgba(paintVolume, 1, 1, 0), { r: 255, g: 0, b: 0, a: 255 });
+  assert.strictEqual(hook.result.labelCount, 1);
+  assert.strictEqual(hook.result.canUndo, true);
+
+  primary = null;
+  hook.rerender();
+
+  assert.ok(hook.result.paintVolume);
+  assert.deepStrictEqual(readVoxelRgba(hook.result.paintVolume, 1, 1, 0), { r: 255, g: 0, b: 0, a: 255 });
+  assert.strictEqual(hook.result.labelCount, 1);
+  assert.strictEqual(hook.result.canUndo, true);
+
+  primary = createPrimaryVolume({ width: 3, height: 3, depth: 1 });
+  hook.rerender();
+
+  assert.ok(hook.result.paintVolume);
+  assert.deepStrictEqual(readVoxelRgba(hook.result.paintVolume, 1, 1, 0), { r: 255, g: 0, b: 0, a: 255 });
+  assert.strictEqual(hook.result.labelCount, 1);
+  assert.strictEqual(hook.result.canUndo, true);
+})();
+
+(() => {
   const primary = createPrimaryVolume({ width: 3, height: 3, depth: 1 });
   const hook = renderHook(() => usePaintbrush({ primaryVolume: primary, resetSignal: 0 }));
 

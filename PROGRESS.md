@@ -285,3 +285,10 @@
 
 ## Keyboard navigation safety
 - Swapped the downward translation key from Ctrl to `C` in both volume and planar viewers to avoid accidental browser shortcuts.
+
+## Paintbrush persistence across channel toggles
+- Fixed `usePaintbrush` so transient `primaryVolume === null` (e.g., when toggling channel/layer visibility) no longer clears the paint volume and undo/redo history.
+- Added a regression test covering a `primaryVolume -> null -> primaryVolume` transition without losing painted voxels.
+
+## Paintbrush clear confirmation
+- Added a confirmation prompt before executing the paintbrush "Clear" action to prevent accidental loss of painting work.
