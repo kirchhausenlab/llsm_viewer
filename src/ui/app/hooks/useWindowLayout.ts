@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   computeControlWindowDefaultPosition,
   computeLayersWindowDefaultPosition,
+  computePaintbrushWindowDefaultPosition,
   computePlotSettingsWindowDefaultPosition,
   computeSelectedTracksWindowDefaultPosition,
   computeTrackSettingsWindowDefaultPosition,
@@ -17,6 +18,7 @@ type UseWindowLayoutResult = {
   layoutResetToken: number;
   controlWindowInitialPosition: WindowPosition;
   layersWindowInitialPosition: WindowPosition;
+  paintbrushWindowInitialPosition: WindowPosition;
   trackWindowInitialPosition: WindowPosition;
   viewerSettingsWindowInitialPosition: WindowPosition;
   selectedTracksWindowInitialPosition: WindowPosition;
@@ -33,6 +35,9 @@ export function useWindowLayout(): UseWindowLayoutResult {
   const layersWindowInitialPosition = useMemo(computeLayersWindowDefaultPosition, []);
   const [trackWindowInitialPosition, setTrackWindowInitialPosition] = useState<WindowPosition>(
     () => computeTrackWindowDefaultPosition()
+  );
+  const [paintbrushWindowInitialPosition, setPaintbrushWindowInitialPosition] = useState<WindowPosition>(
+    () => computePaintbrushWindowDefaultPosition()
   );
   const [viewerSettingsWindowInitialPosition, setViewerSettingsWindowInitialPosition] =
     useState<WindowPosition>(() => computeViewerSettingsWindowDefaultPosition());
@@ -56,6 +61,13 @@ export function useWindowLayout(): UseWindowLayoutResult {
 
   useEffect(() => {
     updatePositionToDefault(computeTrackWindowDefaultPosition, setTrackWindowInitialPosition);
+  }, [updatePositionToDefault]);
+
+  useEffect(() => {
+    updatePositionToDefault(
+      computePaintbrushWindowDefaultPosition,
+      setPaintbrushWindowInitialPosition
+    );
   }, [updatePositionToDefault]);
 
   useEffect(() => {
@@ -86,6 +98,7 @@ export function useWindowLayout(): UseWindowLayoutResult {
   const resetLayout = useCallback(() => {
     setLayoutResetToken(nextLayoutResetToken);
     setTrackWindowInitialPosition(computeTrackWindowDefaultPosition());
+    setPaintbrushWindowInitialPosition(computePaintbrushWindowDefaultPosition());
     setViewerSettingsWindowInitialPosition(computeViewerSettingsWindowDefaultPosition());
     setSelectedTracksWindowInitialPosition(computeSelectedTracksWindowDefaultPosition());
     setPlotSettingsWindowInitialPosition(computePlotSettingsWindowDefaultPosition());
@@ -96,6 +109,7 @@ export function useWindowLayout(): UseWindowLayoutResult {
     layoutResetToken,
     controlWindowInitialPosition,
     layersWindowInitialPosition,
+    paintbrushWindowInitialPosition,
     trackWindowInitialPosition,
     viewerSettingsWindowInitialPosition,
     selectedTracksWindowInitialPosition,

@@ -63,6 +63,7 @@ export type ViewerShellContainerProps = {
   controlWindowInitialPosition: ViewerShellProps['layout']['controlWindowInitialPosition'];
   viewerSettingsWindowInitialPosition: ViewerShellProps['layout']['viewerSettingsWindowInitialPosition'];
   layersWindowInitialPosition: ViewerShellProps['layout']['layersWindowInitialPosition'];
+  paintbrushWindowInitialPosition: ViewerShellProps['layout']['paintbrushWindowInitialPosition'];
   trackWindowInitialPosition: ViewerShellProps['layout']['trackWindowInitialPosition'];
   selectedTracksWindowInitialPosition: ViewerShellProps['layout']['selectedTracksWindowInitialPosition'];
   plotSettingsWindowInitialPosition: ViewerShellProps['layout']['plotSettingsWindowInitialPosition'];
@@ -212,6 +213,7 @@ export function useViewerShellProps({
   controlWindowInitialPosition,
   viewerSettingsWindowInitialPosition,
   layersWindowInitialPosition,
+  paintbrushWindowInitialPosition,
   trackWindowInitialPosition,
   selectedTracksWindowInitialPosition,
   plotSettingsWindowInitialPosition,
@@ -446,6 +448,7 @@ export function useViewerShellProps({
       controlWindowInitialPosition,
       viewerSettingsWindowInitialPosition,
       layersWindowInitialPosition,
+      paintbrushWindowInitialPosition,
       trackWindowInitialPosition,
       selectedTracksWindowInitialPosition,
       plotSettingsWindowInitialPosition,

@@ -199,6 +199,62 @@
   width: 100%;
 }
 
+.paintbrush-window .paintbrush-button-row {
+  flex-wrap: wrap;
+}
+
+.paintbrush-window .paintbrush-toggle {
+  flex: 1 1 0;
+  text-align: center;
+}
+
+.paintbrush-window .paintbrush-controls-row {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.paintbrush-window .paintbrush-slider-group {
+  min-width: 220px;
+}
+
+.paintbrush-window .paintbrush-color-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.paintbrush-window .paintbrush-color-input {
+  width: 3rem;
+  height: 2.4rem;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 0.45rem;
+  background: transparent;
+}
+
+.paintbrush-window .paintbrush-color-preview {
+  width: 3rem;
+  height: 2.4rem;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 0.45rem;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+.paintbrush-window .paintbrush-label-row {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.paintbrush-window .paintbrush-label-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+}
+
 .track-controls .control-group {
   display: flex;
   flex-direction: column;

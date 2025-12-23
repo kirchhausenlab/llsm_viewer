@@ -7,6 +7,7 @@ export const CONTROL_WINDOW_WIDTH = 360;
 export const SELECTED_TRACKS_WINDOW_WIDTH = 1120;
 export const SELECTED_TRACKS_WINDOW_HEIGHT = 220;
 export const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
+export const PAINTBRUSH_WINDOW_VERTICAL_OFFSET = 220;
 export const WARNING_WINDOW_WIDTH = 360;
 
 const computeRightColumnX = (): number => {
@@ -26,6 +27,11 @@ export const computeControlWindowDefaultPosition = (): WindowPosition => ({
 export const computeLayersWindowDefaultPosition = (): WindowPosition => ({
   x: WINDOW_MARGIN,
   y: WINDOW_MARGIN + LAYERS_WINDOW_VERTICAL_OFFSET
+});
+
+export const computePaintbrushWindowDefaultPosition = (): WindowPosition => ({
+  x: WINDOW_MARGIN,
+  y: TOP_MENU_HEIGHT + TOP_MENU_WINDOW_PADDING + PAINTBRUSH_WINDOW_VERTICAL_OFFSET
 });
 
 export const computeViewerSettingsWindowDefaultPosition = (): WindowPosition => {
