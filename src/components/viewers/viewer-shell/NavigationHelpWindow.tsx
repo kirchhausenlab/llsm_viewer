@@ -45,7 +45,7 @@ function NavigationHelpWindow({
           <div className="viewer-top-menu-popover-section">
             <h4>3D volume view</h4>
             <ul>
-              <li>Use WASD with Space/Ctrl to move forward, back, strafe, and rise or descend.</li>
+              <li>Use WASD with Space/C to move forward, back, strafe, and rise or descend.</li>
               <li>Press Q/E to roll the camera counterclockwise/clockwise.</li>
               <li>Drag to orbit the dataset.</li>
               <li>

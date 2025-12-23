@@ -797,8 +797,7 @@ export function usePlanarInteractions({
           event.preventDefault();
           break;
         }
-        case 'ControlLeft':
-        case 'ControlRight': {
+        case 'KeyC': {
           updateViewState((previous) => ({
             ...previous,
             offsetY: previous.offsetY - PAN_STEP

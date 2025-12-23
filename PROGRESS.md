@@ -280,3 +280,6 @@
 
 ## Preprocessed dataset manifest versions (dev mode)
 - Dropped the manifest `version` field entirely (writer no longer emits it; reader no longer checks it).
+
+## Keyboard navigation safety
+- Swapped the downward translation key from Ctrl to `C` in both volume and planar viewers to avoid accidental browser shortcuts.
