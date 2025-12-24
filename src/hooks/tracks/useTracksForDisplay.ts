@@ -167,7 +167,7 @@ export function useTracksForDisplay({
         trackSetName: plotTrack.trackSetName,
         trackNumber: plotTrack.trackNumber,
         displayTrackNumber: plotTrack.displayTrackNumber,
-        color: getTrackColorHex(plotTrack.id),
+        color: getTrackColorHex(plotTrack.trackNumber),
         rawPoints: rawTrack.points,
         points: plotTrack.points
       });

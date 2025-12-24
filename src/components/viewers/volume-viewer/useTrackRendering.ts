@@ -141,7 +141,7 @@ export function useTrackRendering({
       if (mode && mode.type === 'uniform') {
         return new THREE.Color(mode.color);
       }
-      return createTrackColor(track.id);
+      return createTrackColor(track.trackNumber);
     },
     [trackColorModesByTrackSet],
   );

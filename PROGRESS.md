@@ -1,6 +1,7 @@
 # Progress
 
 ## Latest changes
+- Made "sorted" track colors deterministic by seeding random track colors from the track number instead of volatile track IDs.
 - Implemented the Paintbrush tool end-to-end: Shift+LMB brush/eraser with configurable radius (3D sphere), per-stroke undo/redo, clear (resets history), overlay show/hide, distinct label counting, random unused non-black colors, and RGB multi-page TIFF export.
 - Paintbrush caveat: TIFF export is currently uncompressed baseline TIFF (multi-page RGB), so files can get large for big volumes.
 - Added Paintbrush UI defaults: window opens disabled + visible with an eraser toggle, color preview swatch, and close/reset actions that force the tool back to Disabled (UI only).
