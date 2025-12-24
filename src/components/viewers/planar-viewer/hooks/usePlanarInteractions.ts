@@ -77,7 +77,7 @@ function resolveTrackHexColor(track: TrackDefinition, channelModes: PlanarViewer
   if (mode && mode.type === 'uniform') {
     return mode.color;
   }
-  return getTrackColorHex(track.id);
+  return getTrackColorHex(track.trackNumber);
 }
 
 type ScaledTrackPoint = { x: number; y: number; z: number };

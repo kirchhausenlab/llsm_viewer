@@ -123,7 +123,7 @@ export function useVrHudBindings({
         const color =
           colorMode.type === 'uniform'
             ? normalizeTrackColor(colorMode.color, DEFAULT_TRACK_COLOR)
-            : getTrackColorHex(track.id);
+            : getTrackColorHex(track.trackNumber);
         return {
           id: track.id,
           trackNumber: track.trackNumber,

@@ -326,7 +326,7 @@ export default function TracksPanel({
                               const trackColor =
                                 colorMode.type === 'uniform'
                                   ? normalizeTrackColor(colorMode.color)
-                                  : getTrackColorHex(track.id);
+                                  : getTrackColorHex(track.trackNumber);
                               const itemClassName = [
                                 'track-item',
                                 isSelected ? 'is-selected' : '',
@@ -418,4 +418,3 @@ export default function TracksPanel({
     </>
   );
 }
-
