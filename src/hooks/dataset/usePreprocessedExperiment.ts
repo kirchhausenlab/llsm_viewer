@@ -31,6 +31,7 @@ export type UsePreprocessedExperimentResult = {
   handlePreprocessedLoaderOpen: () => void;
   handlePreprocessedLoaderClose: () => void;
   handlePreprocessedBrowse: () => Promise<void>;
+  handlePreprocessedArchiveBrowse: () => Promise<void>;
   resetPreprocessedState: () => void;
 };
 
@@ -78,6 +79,7 @@ export default function usePreprocessedExperiment({
     handlePreprocessedLoaderOpen: importState.handlePreprocessedLoaderOpen,
     handlePreprocessedLoaderClose: importState.handlePreprocessedLoaderClose,
     handlePreprocessedBrowse: importState.handlePreprocessedBrowse,
+    handlePreprocessedArchiveBrowse: importState.handlePreprocessedArchiveBrowse,
     resetPreprocessedState: importState.resetPreprocessedState
   };
 }

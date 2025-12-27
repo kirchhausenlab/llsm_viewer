@@ -401,6 +401,7 @@ export default function FrontPageContainer({
     isOpen: preprocessedState.isPreprocessedLoaderOpen,
     isPreprocessedImporting: preprocessedState.isPreprocessedImporting,
     onPreprocessedBrowse: preprocessedState.handlePreprocessedBrowse,
+    onPreprocessedArchiveBrowse: preprocessedState.handlePreprocessedArchiveBrowse,
     preprocessedImportError: preprocessedState.preprocessedImportError
   };
 
