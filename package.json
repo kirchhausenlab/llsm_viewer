@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
+    "fflate": "^0.8.2",
     "geotiff": "^2.0.7",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

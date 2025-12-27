@@ -1,6 +1,7 @@
 # Progress
 
 ## Latest changes
+- Added a preprocessed dataset archive import path (.zip) with in-browser extraction into temporary storage; note the trade-off that unzip time and extra storage writes can slow import, but runtime visualization stays fast once loaded.
 - Made "sorted" track colors deterministic by seeding random track colors from the track number instead of volatile track IDs.
 - Implemented the Paintbrush tool end-to-end: Shift+LMB brush/eraser with configurable radius (3D sphere), per-stroke undo/redo, clear (resets history), overlay show/hide, distinct label counting, random unused non-black colors, and RGB multi-page TIFF export.
 - Paintbrush caveat: TIFF export is currently uncompressed baseline TIFF (multi-page RGB), so files can get large for big volumes.
