@@ -402,6 +402,7 @@ export default function FrontPageContainer({
     isPreprocessedImporting: preprocessedState.isPreprocessedImporting,
     onPreprocessedBrowse: preprocessedState.handlePreprocessedBrowse,
     onPreprocessedArchiveBrowse: preprocessedState.handlePreprocessedArchiveBrowse,
+    onPreprocessedArchiveDrop: preprocessedState.handlePreprocessedArchiveDrop,
     preprocessedImportError: preprocessedState.preprocessedImportError
   };
 

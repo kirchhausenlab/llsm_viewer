@@ -37,6 +37,7 @@ export type UsePreprocessedImportResult = {
   handlePreprocessedLoaderClose: () => void;
   handlePreprocessedBrowse: () => Promise<void>;
   handlePreprocessedArchiveBrowse: () => Promise<void>;
+  handlePreprocessedArchiveDrop: (file: File) => Promise<void>;
   resetPreprocessedState: () => void;
 };
 
@@ -281,55 +282,75 @@ export function usePreprocessedImport({
     setPreprocessedExperiment
   ]);
 
+  const importPreprocessedArchive = useCallback(
+    async (file: File) => {
+      setIsPreprocessedImporting(true);
+      setPreprocessedImportError(null);
+      try {
+        if (!file.name.toLowerCase().endsWith('.zip')) {
+          throw new Error('Please drop a .zip archive.');
+        }
+
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const entries = await unzipArchive(bytes);
+        const { rootPrefix, files } = resolveArchiveEntries(entries);
+        const datasetId = deriveArchiveDatasetId(file, rootPrefix);
+
+        let storageHandle;
+        try {
+          storageHandle = await createOpfsPreprocessedStorage({ datasetId });
+        } catch (error) {
+          console.warn('Falling back to in-memory storage for archive import', error);
+          storageHandle = createInMemoryPreprocessedStorage({ datasetId });
+        }
+
+        for (const entry of files) {
+          await storageHandle.storage.writeFile(entry.path, entry.data);
+        }
+
+        const result = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
+        stagePreprocessedDataset(result, storageHandle, file.name, file.size);
+      } catch (error) {
+        console.error('Failed to load preprocessed dataset archive', error);
+        const message = error instanceof Error ? error.message : 'Failed to load preprocessed dataset archive.';
+        setPreprocessedImportError(message);
+        setPreprocessedExperiment(null);
+        setChannels([]);
+        setIsExperimentSetupStarted(false);
+      } finally {
+        setIsPreprocessedImporting(false);
+      }
+    },
+    [
+      setChannels,
+      setIsExperimentSetupStarted,
+      setPreprocessedExperiment,
+      stagePreprocessedDataset
+    ]
+  );
+
   const handlePreprocessedArchiveBrowse = useCallback(async () => {
     if (isPreprocessedImporting) {
       return;
     }
 
-    setIsPreprocessedImporting(true);
-    setPreprocessedImportError(null);
-    try {
-      const file = await requestArchiveFile();
-      if (!file) {
+    const file = await requestArchiveFile();
+    if (!file) {
+      return;
+    }
+
+    await importPreprocessedArchive(file);
+  }, [isPreprocessedImporting, importPreprocessedArchive]);
+
+  const handlePreprocessedArchiveDrop = useCallback(
+    async (file: File) => {
+      if (isPreprocessedImporting) {
         return;
       }
-
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const entries = await unzipArchive(bytes);
-      const { rootPrefix, files } = resolveArchiveEntries(entries);
-      const datasetId = deriveArchiveDatasetId(file, rootPrefix);
-
-      let storageHandle;
-      try {
-        storageHandle = await createOpfsPreprocessedStorage({ datasetId });
-      } catch (error) {
-        console.warn('Falling back to in-memory storage for archive import', error);
-        storageHandle = createInMemoryPreprocessedStorage({ datasetId });
-      }
-
-      for (const entry of files) {
-        await storageHandle.storage.writeFile(entry.path, entry.data);
-      }
-
-      const result = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
-      stagePreprocessedDataset(result, storageHandle, file.name, file.size);
-    } catch (error) {
-      console.error('Failed to load preprocessed dataset archive', error);
-      const message = error instanceof Error ? error.message : 'Failed to load preprocessed dataset archive.';
-      setPreprocessedImportError(message);
-      setPreprocessedExperiment(null);
-      setChannels([]);
-      setIsExperimentSetupStarted(false);
-    } finally {
-      setIsPreprocessedImporting(false);
-    }
-  }, [
-    isPreprocessedImporting,
-    setChannels,
-    setIsExperimentSetupStarted,
-    setPreprocessedExperiment,
-    stagePreprocessedDataset
-  ]);
+      await importPreprocessedArchive(file);
+    },
+    [isPreprocessedImporting, importPreprocessedArchive]
+  );
 
   return {
     preprocessedExperiment,
@@ -341,6 +362,7 @@ export function usePreprocessedImport({
     handlePreprocessedLoaderClose,
     handlePreprocessedBrowse,
     handlePreprocessedArchiveBrowse,
+    handlePreprocessedArchiveDrop,
     resetPreprocessedState
   };
 }
