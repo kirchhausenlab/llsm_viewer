@@ -1,6 +1,7 @@
 # Progress
 
 ## Latest changes
+- Added drag-and-drop handling for preprocessed dataset archives so dropping a .zip into the loader uses the same extraction path as the upload button, plus Safari guidance for dropping archives when folder picking is unavailable.
 - Added a preprocessed dataset archive import path (.zip) with in-browser extraction into temporary storage; note the trade-off that unzip time and extra storage writes can slow import, but runtime visualization stays fast once loaded.
 - Made "sorted" track colors deterministic by seeding random track colors from the track number instead of volatile track IDs.
 - Implemented the Paintbrush tool end-to-end: Shift+LMB brush/eraser with configurable radius (3D sphere), per-stroke undo/redo, clear (resets history), overlay show/hide, distinct label counting, random unused non-black colors, and RGB multi-page TIFF export.
