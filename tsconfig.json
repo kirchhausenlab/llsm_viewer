@@ -9,7 +9,7 @@
       "DOM.Iterable"
     ],
     "skipLibCheck": true,
-    "moduleResolution": "Bundler",
+    "moduleResolution": "Node",
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "strict": true,
@@ -24,7 +24,6 @@
   },
   "include": [
     "src",
-    "vite.config.ts",
     "environment.d.ts"
   ]
 }
