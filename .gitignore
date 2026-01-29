@@ -208,3 +208,5 @@ __marimo__/
 
 # Node
 node_modules/
+.npm-cache/
+.tmp/
