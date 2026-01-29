@@ -1,6 +1,7 @@
 # Progress
 
 ## Latest changes
+- Upgraded Vite and the React plugin to v7.3.1/5.1.2 to clear the Dependabot dev-server vulnerabilities; Node 20.19+ is now required for the dev server/build.
 - Removed tracked npm/temp cache directories (.npm-cache, .tmp) and added gitignore rules so they no longer enter the repo.
 - Added drag-and-drop handling for preprocessed dataset archives so dropping a .zip into the loader uses the same extraction path as the upload button, plus Safari guidance for dropping archives when folder picking is unavailable.
 - Added a preprocessed dataset archive import path (.zip) with in-browser extraction into temporary storage; note the trade-off that unzip time and extra storage writes can slow import, but runtime visualization stays fast once loaded.
