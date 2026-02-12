@@ -183,11 +183,11 @@ function BrightnessContrastHistogram({
   tintColor
 }: BrightnessContrastHistogramProps) {
   const [histogram, setHistogram] = useState<Uint32Array | null>(null);
-  const lastVolumeRef = useRef<NormalizedVolume | null>(null);
+  const histogramVolumeRef = useRef<NormalizedVolume | null>(null);
 
   useEffect(() => {
     if (!volume) {
-      lastVolumeRef.current = null;
+      histogramVolumeRef.current = null;
       setHistogram(null);
       return;
     }
@@ -196,34 +196,34 @@ function BrightnessContrastHistogram({
       return;
     }
 
-    if (lastVolumeRef.current === volume) {
+    if (histogramVolumeRef.current === volume) {
       return;
     }
 
-    lastVolumeRef.current = volume;
-
     let cancelled = false;
     const voxelCount = volume.width * volume.height * volume.depth;
-      const compute = () => {
-        if (cancelled) {
-          return;
-        }
+    const compute = () => {
+      if (cancelled) {
+        return;
+      }
       const next =
         volume.histogram ??
         (voxelCount <= FULL_HISTOGRAM_MAX_VOXELS ? getVolumeHistogram(volume) : computeApproxHistogram(volume));
-        if (cancelled) {
-          return;
-        }
-        setHistogram(next);
-      };
+      if (cancelled) {
+        return;
+      }
+      histogramVolumeRef.current = volume;
+      setHistogram(next);
+    };
 
     let idleHandle: number | null = null;
+    let timeoutHandle: ReturnType<typeof globalThis.setTimeout> | null = null;
     const requestIdle = (globalThis as unknown as { requestIdleCallback?: unknown }).requestIdleCallback;
     const cancelIdle = (globalThis as unknown as { cancelIdleCallback?: unknown }).cancelIdleCallback;
     if (typeof requestIdle === 'function') {
       idleHandle = (requestIdle as (cb: () => void) => number)(compute);
     } else if (typeof globalThis.setTimeout === 'function') {
-      globalThis.setTimeout(compute, 0);
+      timeoutHandle = globalThis.setTimeout(compute, 0);
     } else {
       compute();
     }
@@ -232,6 +232,9 @@ function BrightnessContrastHistogram({
       cancelled = true;
       if (idleHandle !== null && typeof cancelIdle === 'function') {
         (cancelIdle as (handle: number) => void)(idleHandle);
+      }
+      if (timeoutHandle !== null && typeof globalThis.clearTimeout === 'function') {
+        globalThis.clearTimeout(timeoutHandle);
       }
     };
   }, [isPlaying, volume]);

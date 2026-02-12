@@ -1,6 +1,9 @@
 # Progress
 
 ## Latest changes
+- Fixed a dev-only Channels histogram regression caused by a stale `lastVolumeRef` guard in `BrightnessContrastHistogram`: when an async compute was canceled (React StrictMode effect replay or quick playback toggle), the guard could block recomputation for the same volume and leave the histogram empty. The component now tracks which volume the current histogram actually belongs to and retries compute when needed.
+- Added `tests/BrightnessContrastHistogram.test.tsx` to cover both normal histogram rendering and the canceled-then-resumed compute sequence that previously left the plot blank.
+- Caveat/trade-off: the UI still keeps the previous histogram visible until the next volume histogram is computed, favoring responsiveness over immediately clearing the plot during fast volume switches.
 - Restored Node module resolution and stopped TypeScript from typechecking `vite.config.ts` so Three.js example module paths resolve again in CI.
 - Upgraded Vite and the React plugin to v7.3.1/5.1.2 to clear the Dependabot dev-server vulnerabilities; Node 20.19+ is now required for the dev server/build.
 - Removed tracked npm/temp cache directories (.npm-cache, .tmp) and added gitignore rules so they no longer enter the repo.
