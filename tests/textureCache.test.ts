@@ -28,16 +28,8 @@ console.log('Starting textureCache tests');
 
   const prepared = getCachedTextureData(volume);
   assert.ok(prepared.format != null, 'Expected a valid THREE texture format for 3-channel volumes');
-
-  const runtimeRgbFormat = (THREE as unknown as { RGBFormat?: unknown }).RGBFormat;
-  if (typeof runtimeRgbFormat === 'number') {
-    assert.strictEqual(prepared.format, runtimeRgbFormat);
-    assert.strictEqual(prepared.data.length, voxelCount * channels);
-  } else {
-    assert.strictEqual(prepared.format, THREE.RGBAFormat);
-    assert.strictEqual(prepared.data.length, voxelCount * 4);
-  }
+  assert.strictEqual(prepared.format, THREE.RGBAFormat);
+  assert.strictEqual(prepared.data.length, voxelCount * 4);
 })();
 
 console.log('textureCache tests passed');
-

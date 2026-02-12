@@ -12,6 +12,7 @@ import { createSegmentationSeed, sortVolumeFiles } from '../appHelpers';
 import { computeAnisotropyScale } from '../anisotropyCorrection';
 import type { VolumePayload, VolumeTypedArray } from '../../../types/volume';
 import { createVolumeTypedArray } from '../../../types/volume';
+import { loadVolumesFromFiles } from '../../../loaders/volumeLoader';
 
 import type {
   ChannelExportMetadata,
@@ -141,6 +142,34 @@ function computeSliceMinMax(slice: VolumeTypedArray): { min: number; max: number
   return { min, max };
 }
 
+type VolumeShapeExpectation = {
+  width: number;
+  height: number;
+  depth?: number;
+  channels: number;
+  dataType: VolumePayload['dataType'];
+};
+
+function assertVolumeMatchesExpectedShape(
+  volume: Pick<VolumePayload, 'width' | 'height' | 'depth' | 'channels' | 'dataType'>,
+  expected: VolumeShapeExpectation,
+  context: string
+): void {
+  const depthMatches = expected.depth === undefined || volume.depth === expected.depth;
+  if (
+    volume.width !== expected.width ||
+    volume.height !== expected.height ||
+    !depthMatches ||
+    volume.channels !== expected.channels ||
+    volume.dataType !== expected.dataType
+  ) {
+    const expectedDepthLabel = expected.depth === undefined ? '*' : String(expected.depth);
+    throw new Error(
+      `${context} has shape ${volume.width}×${volume.height}×${volume.depth} (${volume.channels}ch ${volume.dataType}) but expected ${expected.width}×${expected.height}×${expectedDepthLabel} (${expected.channels}ch ${expected.dataType}).`
+    );
+  }
+}
+
 function extract2dSlice(volume: VolumePayload, sliceIndex: number): VolumePayload {
   const sliceLength = volume.width * volume.height * volume.channels;
   if (sliceLength <= 0 || volume.depth <= 0) {
@@ -227,8 +256,6 @@ export async function preprocessDatasetToStorage({
 
   throwIfAborted(signal);
 
-  const { loadVolumesFromFiles } = await import('../../../loaders/volumeLoader');
-
   const layerTimepointCounts: number[] = [];
   const layer2dFileDepthsByKey = new Map<string, number[]>();
   for (const layer of sortedLayerSources) {
@@ -285,6 +312,10 @@ export async function preprocessDatasetToStorage({
 
   let referenceShape3d: { width: number; height: number; depth: number } | null = null;
   let referenceShape2d: { width: number; height: number } | null = null;
+  const sourceMetadataByLayerKey = new Map<
+    string,
+    { width: number; height: number; depth: number; channels: number; dataType: VolumePayload['dataType'] }
+  >();
   const layerMetadataByKey = new Map<
     string,
     { width: number; height: number; depth: number; channels: number; dataType: VolumePayload['dataType'] }
@@ -309,6 +340,13 @@ export async function preprocessDatasetToStorage({
         signal
       );
       const firstSlice = extract2dSlice(stackVolume, 0);
+      sourceMetadataByLayerKey.set(layer.key, {
+        width: firstSlice.width,
+        height: firstSlice.height,
+        depth: 1,
+        channels: firstSlice.channels,
+        dataType: firstSlice.dataType
+      });
       layerMetadataByKey.set(layer.key, {
         width: firstSlice.width,
         height: firstSlice.height,
@@ -328,6 +366,13 @@ export async function preprocessDatasetToStorage({
       }
     } else {
       const firstVolume = await loadVolumeFor3dTimepoint(layer.files[0]!, loadVolumesFromFiles, signal);
+      sourceMetadataByLayerKey.set(layer.key, {
+        width: firstVolume.width,
+        height: firstVolume.height,
+        depth: firstVolume.depth,
+        channels: firstVolume.channels,
+        dataType: firstVolume.dataType
+      });
       layerMetadataByKey.set(layer.key, {
         width: firstVolume.width,
         height: firstVolume.height,
@@ -534,6 +579,10 @@ export async function preprocessDatasetToStorage({
       if (!manifestLayer) {
         throw new Error(`Missing manifest entry for layer "${layer.key}".`);
       }
+      const sourceMetadata = sourceMetadataByLayerKey.get(layer.key);
+      if (!sourceMetadata) {
+        throw new Error(`Missing source metadata for layer "${layer.key}".`);
+      }
 
       const dataArrayPath = manifestLayer.zarr.data.path;
       const labelsArrayPath = manifestLayer.zarr.labels?.path ?? null;
@@ -553,9 +602,29 @@ export async function preprocessDatasetToStorage({
             continue;
           }
           const stackVolume = await loadVolumeFor3dTimepoint(layer.files[fileIndex]!, loadVolumesFromFiles, signal);
+          assertVolumeMatchesExpectedShape(
+            stackVolume,
+            {
+              width: sourceMetadata.width,
+              height: sourceMetadata.height,
+              channels: sourceMetadata.channels,
+              dataType: sourceMetadata.dataType
+            },
+            `Layer "${layer.channelLabel}" file "${layer.files[fileIndex]?.name ?? `#${fileIndex + 1}`}" stack`
+          );
+          if (stackVolume.depth !== depth) {
+            throw new Error(
+              `Layer "${layer.channelLabel}" file "${layer.files[fileIndex]?.name ?? `#${fileIndex + 1}`}" reported ${depth} slices during indexing but decoded as ${stackVolume.depth} slices.`
+            );
+          }
           for (let sliceIndex = 0; sliceIndex < depth; sliceIndex += 1) {
             throwIfAborted(signal);
             const rawSlice = extract2dSlice(stackVolume, sliceIndex);
+            assertVolumeMatchesExpectedShape(
+              rawSlice,
+              sourceMetadata,
+              `Layer "${layer.channelLabel}" timepoint ${timepoint + 1}`
+            );
             const normalized = layer.isSegmentation
               ? colorizeSegmentationVolume(rawSlice, createSegmentationSeed(layer.key, timepoint))
               : normalizeVolume(
@@ -622,6 +691,11 @@ export async function preprocessDatasetToStorage({
         for (let timepoint = 0; timepoint < layer.files.length; timepoint += 1) {
           throwIfAborted(signal);
           const raw = await loadVolumeFor3dTimepoint(layer.files[timepoint]!, loadVolumesFromFiles, signal);
+          assertVolumeMatchesExpectedShape(
+            raw,
+            sourceMetadata,
+            `Layer "${layer.channelLabel}" timepoint ${timepoint + 1}`
+          );
           const normalized = layer.isSegmentation
             ? colorizeSegmentationVolume(raw, createSegmentationSeed(layer.key, timepoint))
             : normalizeVolume(raw, normalization ?? computeRepresentativeNormalization(raw));

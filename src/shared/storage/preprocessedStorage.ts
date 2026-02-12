@@ -1,10 +1,8 @@
-import type { PreprocessedManifest } from '../utils/preprocessedDataset/types';
 import { ensureArrayBuffer } from '../utils/buffer';
 
 export type PreprocessedStorage = {
   writeFile(path: string, data: Uint8Array): Promise<void>;
   readFile(path: string): Promise<Uint8Array>;
-  finalizeManifest(manifest: PreprocessedManifest): Promise<void>;
 };
 
 export type PreprocessedStorageBackend = 'opfs' | 'memory' | 'directory';
@@ -144,11 +142,6 @@ export async function createOpfsPreprocessedStorage(
     },
     async readFile(path) {
       return readFileFromDirectory(datasetRoot, path);
-    },
-    async finalizeManifest(manifest) {
-      const encoder = new TextEncoder();
-      const bytes = encoder.encode(JSON.stringify(manifest));
-      await writeFileToDirectory(datasetRoot, 'manifest.json', bytes);
     }
   };
 
@@ -174,11 +167,6 @@ export async function createDirectoryPreprocessedStorage(
     },
     async readFile(path) {
       return readFileFromDirectory(datasetRoot, path);
-    },
-    async finalizeManifest(manifest) {
-      const encoder = new TextEncoder();
-      const bytes = encoder.encode(JSON.stringify(manifest));
-      await writeFileToDirectory(datasetRoot, 'manifest.json', bytes);
     }
   };
 
@@ -201,11 +189,6 @@ export async function createDirectoryHandlePreprocessedStorage(
     },
     async readFile(path) {
       return readFileFromDirectory(directory, path);
-    },
-    async finalizeManifest(manifest) {
-      const encoder = new TextEncoder();
-      const bytes = encoder.encode(JSON.stringify(manifest));
-      await writeFileToDirectory(directory, 'manifest.json', bytes);
     }
   };
 
@@ -228,10 +211,6 @@ export function createInMemoryPreprocessedStorage(options?: { datasetId?: string
         throw new Error(`Storage entry not found: ${safePath}`);
       }
       return entry.slice();
-    },
-    async finalizeManifest(manifest) {
-      const encoder = new TextEncoder();
-      files.set('manifest.json', encoder.encode(JSON.stringify(manifest)));
     }
   };
 

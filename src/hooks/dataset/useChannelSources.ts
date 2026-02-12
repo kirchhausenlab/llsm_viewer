@@ -522,35 +522,44 @@ export function useChannelSources(): ChannelSourcesApi {
             const expandedVolumes = expandVolumesForMovieMode(volumes, experimentDimension);
 
             if (experimentDimension === '2d') {
-              const primaryVolume = expandedVolumes[0] ?? null;
-              if (!referencePlanarShape && primaryVolume) {
-                referencePlanarShape = { width: primaryVolume.width, height: primaryVolume.height };
-              } else if (
-                primaryVolume &&
-                referencePlanarShape &&
-                (primaryVolume.width !== referencePlanarShape.width ||
-                  primaryVolume.height !== referencePlanarShape.height)
-              ) {
-                throw new Error(
-                  `Channel "${layer.channelLabel}" has volume dimensions ${primaryVolume.width}×${primaryVolume.height}×${primaryVolume.depth} that do not match the reference shape ${referencePlanarShape.width}×${referencePlanarShape.height}×1.`
-                );
+              for (let timepoint = 0; timepoint < expandedVolumes.length; timepoint += 1) {
+                const candidate = expandedVolumes[timepoint];
+                if (!candidate) {
+                  continue;
+                }
+                if (!referencePlanarShape) {
+                  referencePlanarShape = { width: candidate.width, height: candidate.height };
+                } else if (
+                  candidate.width !== referencePlanarShape.width ||
+                  candidate.height !== referencePlanarShape.height ||
+                  candidate.depth !== 1
+                ) {
+                  throw new Error(
+                    `Channel "${layer.channelLabel}" timepoint ${timepoint + 1} has volume dimensions ${candidate.width}×${candidate.height}×${candidate.depth} that do not match the reference shape ${referencePlanarShape.width}×${referencePlanarShape.height}×1.`
+                  );
+                }
               }
             } else {
-              if (!referenceShape) {
-                referenceShape = {
-                  width: volumes[0]?.width ?? 0,
-                  height: volumes[0]?.height ?? 0,
-                  depth: volumes[0]?.depth ?? 0
-                };
-              } else if (
-                volumes[0] &&
-                (volumes[0].width !== referenceShape.width ||
-                  volumes[0].height !== referenceShape.height ||
-                  volumes[0].depth !== referenceShape.depth)
-              ) {
-                throw new Error(
-                  `Channel "${layer.channelLabel}" has volume dimensions ${volumes[0].width}×${volumes[0].height}×${volumes[0].depth} that do not match the reference shape ${referenceShape.width}×${referenceShape.height}×${referenceShape.depth}.`
-                );
+              for (let timepoint = 0; timepoint < volumes.length; timepoint += 1) {
+                const candidate = volumes[timepoint];
+                if (!candidate) {
+                  continue;
+                }
+                if (!referenceShape) {
+                  referenceShape = {
+                    width: candidate.width,
+                    height: candidate.height,
+                    depth: candidate.depth
+                  };
+                } else if (
+                  candidate.width !== referenceShape.width ||
+                  candidate.height !== referenceShape.height ||
+                  candidate.depth !== referenceShape.depth
+                ) {
+                  throw new Error(
+                    `Channel "${layer.channelLabel}" timepoint ${timepoint + 1} has volume dimensions ${candidate.width}×${candidate.height}×${candidate.depth} that do not match the reference shape ${referenceShape.width}×${referenceShape.height}×${referenceShape.depth}.`
+                  );
+                }
               }
             }
 

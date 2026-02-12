@@ -261,8 +261,9 @@ export default function FrontPageContainer({
         )
         .filter((layer) => layer.files.length > 0);
 
-      const opfsStorageHandle = await createOpfsPreprocessedStorage();
-      let storage = opfsStorageHandle.storage;
+      let exportStorageHandle:
+        | Awaited<ReturnType<typeof createDirectoryHandlePreprocessedStorage>>
+        | null = null;
 
       if (exportWhilePreprocessing) {
         if (typeof window === 'undefined' || typeof (window as any).showDirectoryPicker !== 'function') {
@@ -304,25 +305,23 @@ export default function FrontPageContainer({
         exportDirectoryHandle = await directoryHandle.getDirectoryHandle(exportDirectoryName, { create: true });
         setExportDestinationLabel(`${directoryHandle.name}/${exportDirectoryName}/`);
 
-        const exportStorageHandle = await createDirectoryHandlePreprocessedStorage(exportDirectoryHandle);
-        storage = {
-          async writeFile(path, data) {
-            await Promise.all([
-              opfsStorageHandle.storage.writeFile(path, data),
-              exportStorageHandle.storage.writeFile(path, data)
-            ]);
-          },
-          async readFile(path) {
-            return opfsStorageHandle.storage.readFile(path);
-          },
-          async finalizeManifest(manifest) {
-            await Promise.all([
-              opfsStorageHandle.storage.finalizeManifest(manifest),
-              exportStorageHandle.storage.finalizeManifest(manifest)
-            ]);
-          }
-        };
+        exportStorageHandle = await createDirectoryHandlePreprocessedStorage(exportDirectoryHandle);
       }
+
+      const opfsStorageHandle = await createOpfsPreprocessedStorage();
+      const storage = exportStorageHandle
+        ? {
+            async writeFile(path: string, data: Uint8Array) {
+              await Promise.all([
+                opfsStorageHandle.storage.writeFile(path, data),
+                exportStorageHandle.storage.writeFile(path, data)
+              ]);
+            },
+            async readFile(path: string) {
+              return opfsStorageHandle.storage.readFile(path);
+            }
+          }
+        : opfsStorageHandle.storage;
 
       const { manifest, channelSummaries, totalVolumeCount } = await preprocessDatasetToStorage({
         layers: layersToProcess,

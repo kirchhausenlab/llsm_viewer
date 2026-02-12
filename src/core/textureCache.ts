@@ -24,12 +24,6 @@ function computeTextureData(volume: NormalizedVolume): PreparedTexture {
   }
 
   if (channels === 3) {
-    const runtimeRgbFormat = (THREE as unknown as { RGBFormat?: unknown }).RGBFormat;
-    if (typeof runtimeRgbFormat === 'number') {
-      const data = isTightlyPacked ? normalized : normalized.slice();
-      return { data, format: runtimeRgbFormat as PreparedTexture['format'] };
-    }
-
     const packed = new Uint8Array(voxelCount * 4);
     for (let index = 0; index < voxelCount; index++) {
       const srcBase = index * 3;

@@ -65,14 +65,44 @@ async function requestArchiveFile(): Promise<File | null> {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.zip';
-    const cleanup = () => {
-      input.remove();
-    };
-    input.addEventListener('change', () => {
-      const file = input.files && input.files.length > 0 ? input.files[0] : null;
+    let settled = false;
+    let focusTimeoutHandle: number | null = null;
+    const settle = (file: File | null) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
       cleanup();
       resolve(file);
-    });
+    };
+    const handleChange = () => {
+      const file = input.files && input.files.length > 0 ? input.files[0] : null;
+      settle(file);
+    };
+    const handleCancel = () => {
+      settle(null);
+    };
+    const handleWindowFocus = () => {
+      if (focusTimeoutHandle !== null) {
+        window.clearTimeout(focusTimeoutHandle);
+      }
+      focusTimeoutHandle = window.setTimeout(() => {
+        const file = input.files && input.files.length > 0 ? input.files[0] : null;
+        settle(file);
+      }, 0);
+    };
+    const cleanup = () => {
+      if (focusTimeoutHandle !== null) {
+        window.clearTimeout(focusTimeoutHandle);
+      }
+      window.removeEventListener('focus', handleWindowFocus);
+      input.removeEventListener('change', handleChange);
+      input.removeEventListener('cancel', handleCancel);
+      input.remove();
+    };
+    input.addEventListener('change', handleChange);
+    input.addEventListener('cancel', handleCancel);
+    window.addEventListener('focus', handleWindowFocus, { once: true });
     input.click();
   });
 }
@@ -103,11 +133,6 @@ function resolveArchiveEntries(entries: ArchiveEntries): ArchiveExtractionResult
     throw new Error('Archive does not contain zarr.json.');
   }
   const rootPrefix = zarrPath.slice(0, zarrPath.length - 'zarr.json'.length);
-  const manifestPath = `${rootPrefix}manifest.json`;
-  const hasManifest = fileEntries.some(([name]) => name === manifestPath);
-  if (!hasManifest) {
-    throw new Error('Archive is missing manifest.json.');
-  }
   const files = fileEntries
     .filter(([name]) => name.startsWith(rootPrefix))
     .map(([name, data]) => ({ path: name.slice(rootPrefix.length), data }))

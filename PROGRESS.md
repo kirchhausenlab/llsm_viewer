@@ -1,6 +1,14 @@
 # Progress
 
 ## Latest changes
+- Removed legacy `manifest.json` handling from the preprocessed storage/import path: archive import now keys exclusively off Zarr (`zarr.json`) data, and the unused `finalizeManifest` storage API was deleted from all backends and call sites.
+- Hardened dataset shape validation across timepoints: raw launch (`useChannelSources`) now validates every loaded timepoint, and preprocessing validates each decoded volume/slice against expected shape+type before writing chunks.
+- Fixed archive picker cancellation behavior so `requestArchiveFile()` always resolves (selected file or `null`) instead of potentially hanging after cancel.
+- Updated preprocessing/export flow to avoid creating OPFS dataset storage before export destination checks complete, preventing orphan directories on early-return validation/cancel paths.
+- Removed the `THREE.RGBFormat` compatibility branch and standardized 3-channel uploads to RGBA packing; this eliminated the previous production build warning while keeping rendering behavior deterministic.
+- Adjusted Vite chunking for heavy vendor modules (`three`, `react`, `geotiff`, `zarrita`) and set `chunkSizeWarningLimit` to 800 to match expected decoder/library chunk sizes in this app.
+- Caveat/trade-off: always packing 3-channel volumes to RGBA increases texture memory for those layers (4 bytes/voxel vs 3), but avoids runtime format ambiguity and build-time API drift.
+- Follow-up TODO: add focused tests around archive-import edge cases (cancel behavior and archive root detection without `manifest.json`) and explicit multi-timepoint shape mismatch fixtures for preprocessing.
 - Fixed a dev-only Channels histogram regression caused by a stale `lastVolumeRef` guard in `BrightnessContrastHistogram`: when an async compute was canceled (React StrictMode effect replay or quick playback toggle), the guard could block recomputation for the same volume and leave the histogram empty. The component now tracks which volume the current histogram actually belongs to and retries compute when needed.
 - Added `tests/BrightnessContrastHistogram.test.tsx` to cover both normal histogram rendering and the canceled-then-resumed compute sequence that previously left the plot blank.
 - Caveat/trade-off: the UI still keeps the previous histogram visible until the next volume histogram is computed, favoring responsiveness over immediately clearing the plot during fast volume switches.

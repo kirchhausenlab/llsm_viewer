@@ -26,6 +26,29 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    emptyOutDir: true
+    emptyOutDir: true,
+    chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) {
+            return undefined;
+          }
+          if (id.includes('/react/') || id.includes('/react-dom/')) {
+            return 'vendor-react';
+          }
+          if (id.includes('/three/')) {
+            return 'vendor-three';
+          }
+          if (id.includes('/geotiff/')) {
+            return 'vendor-geotiff';
+          }
+          if (id.includes('/zarrita/')) {
+            return 'vendor-zarr';
+          }
+          return undefined;
+        }
+      }
+    }
   }
 });
