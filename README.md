@@ -19,3 +19,107 @@ The development setup runs the Vite front-end (http://localhost:5173).
 npm run build
 npm run preview
 ```
+
+## Local automated verification
+
+This repository supports a fully local test/verification workflow (no GitHub dependency required).
+
+### Fast gate
+
+```bash
+npm run verify:fast
+```
+
+Runs:
+- app typecheck (`src/`)
+- targeted test typecheck (`tests/frontend`, `tests/visual`, `tests/perf`, dataset fixture helper tests)
+- full test suite with coverage thresholds (lines: 80, branches: 70, functions: 80) for critical modules
+- production build
+
+### UI gate
+
+```bash
+npm run verify:ui
+```
+
+Runs:
+- frontend component tests
+- structural visual snapshot tests
+- Playwright browser smoke tests (Chromium)
+- Playwright screenshot regression tests (Chromium)
+
+### Full gate
+
+```bash
+npm run verify:full
+```
+
+Runs fast + UI gates, plus performance budget tests.
+
+### Snapshot workflow
+
+If visual snapshots change intentionally:
+
+```bash
+npm run test:visual:update
+```
+
+Then validate:
+
+```bash
+npm run test:visual
+```
+
+### Playwright workflow
+
+Install browser binaries once:
+
+```bash
+npx playwright install chromium
+```
+
+Run browser smoke coverage:
+
+```bash
+npm run test:e2e
+```
+
+Run nightly-only browser scenarios (multi-channel + segmentation):
+
+```bash
+npm run test:e2e:nightly
+```
+
+Run browser screenshot regression:
+
+```bash
+npm run test:e2e:visual
+```
+
+If browser screenshots intentionally change:
+
+```bash
+npm run test:e2e:visual:update
+```
+
+### Local dataset fixture
+
+Dataset-backed tests use `TEST_DATA_DIR` if set; otherwise they default to:
+
+```text
+data/test_dataset_0
+```
+
+Example:
+
+```bash
+TEST_DATA_DIR=data/test_dataset_0 npm test
+```
+
+### Local nightly run
+
+```bash
+npm run verify:nightly
+```
+
+This calls `scripts/local-nightly.sh`, runs `verify:full`, then runs `test:e2e:nightly` (nightly-only browser scenarios), and is suitable for local cron scheduling.

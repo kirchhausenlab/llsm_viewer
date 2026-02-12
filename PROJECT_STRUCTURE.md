@@ -69,13 +69,19 @@ The main responsibilities are:
 ### Top-level / tooling
 
 - `package.json`  
-  Scripts: `dev` (Vite), `build`, `preview`, `typecheck`, `test` (runs `tests/runTests.ts` via `node --import tsx`).
+  Scripts: `dev` (Vite), `build`, `preview`, `typecheck`, local verification/test commands (`test`, `test:coverage`, `test:frontend`, `test:visual`, `test:e2e`, `test:e2e:visual`, `test:perf`, `verify:fast`, `verify:ui`, `verify:full`, `verify:nightly`).
+- `tsconfig.tests.json`  
+  Narrow test-only TypeScript project used by `typecheck:tests` for local automation checks.
+- `playwright.config.ts`
+  Local browser automation config for Playwright smoke + screenshot tests (Chromium project, local Vite web server).
 - `vite.config.ts`  
   Vite config (GitHub Pages base path logic, `@` alias → `src/`, worker format).
 - `environment.d.ts`  
   Typed env vars (`VITE_DROPBOX_APP_KEY`, `VITE_MAX_VOLUME_BYTES`) + Dropbox chooser typings.
 - `.github/workflows/deploy.yml`  
   CI (typecheck/test/build) + GitHub Pages deploy.
+- `scripts/local-nightly.sh`
+  Local automation entrypoint for running the full verification pipeline without remote CI.
 - `PROGRESS.md`  
   Running progress log / next tasks.
 
@@ -185,10 +191,20 @@ The main responsibilities are:
 
 ### Tests
 
-- `tests/*.test.ts`  
-  Unit tests for core math/state/utils/hooks.
-- `tests/runTests.ts`  
-  Simple test index used by `npm test`.
+- `tests/*.test.ts` + `tests/*.test.tsx`  
+  Broad unit/integration coverage for core math/state/utils/hooks/components, run through Node's built-in test runner (`node --test` with `tsx` import support).
+- `tests/frontend/*`  
+  Frontend component tests (setup/launcher UI and upload interactions).
+- `tests/visual/*` + `tests/visual/snapshots/*`  
+  Local structural visual regression tests (React tree snapshots) plus committed snapshot baselines.
+- `tests/perf/*`  
+  Local performance budget guards for critical hot paths.
+- `tests/e2e/*` + `tests/e2e/**/*.spec.ts`  
+  Browser-driven end-to-end smoke and screenshot tests via Playwright; includes dataset-backed launch/preprocess flow, channels/playback/viewer-settings/top-menu smoke coverage, track CSV upload + track-panel interactions, nightly multi-channel/segmentation scenarios, and front-page screenshots.
+- `tests/e2e/*-snapshots/*`
+  Playwright screenshot baseline images used by browser visual regression checks.
+- `tests/helpers/*` + `tests/types/*` + `tests/e2e/helpers/*`  
+  Shared test fixtures/utilities (dataset discovery, reusable e2e setup workflows, snapshot assertions, ambient test typings).
 
 ---
 

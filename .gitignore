@@ -3,6 +3,8 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+data/
+
 # C extensions
 *.so
 
@@ -210,3 +212,5 @@ __marimo__/
 node_modules/
 .npm-cache/
 .tmp/
+playwright-report/
+test-results/

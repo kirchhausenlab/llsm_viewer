@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src",
+    "tests/frontend/**/*.ts",
+    "tests/frontend/**/*.tsx",
+    "tests/e2e/**/*.ts",
+    "tests/helpers/**/*.ts",
+    "tests/perf/**/*.ts",
+    "tests/visual/**/*.ts",
+    "tests/visual/**/*.tsx",
+    "tests/localDatasetFixture.test.ts",
+    "tests/types/**/*.d.ts",
+    "environment.d.ts"
+  ]
+}

@@ -8,7 +8,22 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx tests/runTests.ts"
+    "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json",
+    "test": "node --import tsx --test \"tests/**/*.test.ts\" \"tests/**/*.test.tsx\"",
+    "test:coverage": "node --import tsx --test --experimental-test-coverage --test-coverage-lines=80 --test-coverage-branches=70 --test-coverage-functions=80 --test-coverage-exclude=\"tests/**\" --test-coverage-include=\"src/core/volumeProcessing.ts\" --test-coverage-include=\"src/state/channelTrackOffsets.ts\" --test-coverage-include=\"src/shared/utils/trackCsvParsing.ts\" --test-coverage-include=\"src/shared/utils/trackSmoothing.ts\" --test-coverage-include=\"src/hooks/useDatasetErrors.ts\" --test-coverage-include=\"src/ui/app/hooks/useChannelEditing.ts\" --test-coverage-include=\"src/ui/app/hooks/useDatasetLaunch.ts\" --test-coverage-include=\"src/ui/app/hooks/useViewerModePlayback.ts\" --test-coverage-include=\"src/ui/app/hooks/useWindowLayout.ts\" \"tests/**/*.test.ts\" \"tests/**/*.test.tsx\"",
+    "test:frontend": "node --import tsx --test \"tests/frontend/**/*.test.ts\" \"tests/frontend/**/*.test.tsx\"",
+    "test:visual": "node --import tsx --test \"tests/visual/**/*.test.ts\" \"tests/visual/**/*.test.tsx\"",
+    "test:visual:update": "UPDATE_VISUAL_SNAPSHOTS=1 node --import tsx --test \"tests/visual/**/*.test.ts\" \"tests/visual/**/*.test.tsx\"",
+    "test:e2e": "playwright test --config=playwright.config.ts --project=chromium --grep \"@smoke\"",
+    "test:e2e:nightly": "playwright test --config=playwright.config.ts --project=chromium --grep \"@nightly\"",
+    "test:e2e:visual": "playwright test --config=playwright.config.ts --project=chromium --grep \"@visual\"",
+    "test:e2e:visual:update": "playwright test --config=playwright.config.ts --project=chromium --grep \"@visual\" --update-snapshots",
+    "test:e2e:full": "playwright test --config=playwright.config.ts --project=chromium",
+    "test:perf": "node --import tsx --test --test-concurrency=1 \"tests/perf/**/*.test.ts\"",
+    "verify:fast": "npm run typecheck && npm run typecheck:tests && npm run test:coverage && npm run build",
+    "verify:ui": "npm run test:frontend && npm run test:visual && npm run test:e2e && npm run test:e2e:visual",
+    "verify:full": "npm run verify:fast && npm run verify:ui && npm run test:perf",
+    "verify:nightly": "bash scripts/local-nightly.sh"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
@@ -20,11 +35,13 @@
     "zarrita": "^0.5.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@types/node": "^20.19.19",
     "@types/react": "^18.2.48",
     "@types/react-dom": "^18.2.18",
     "@types/three": "^0.180.0",
     "@vitejs/plugin-react": "^5.1.2",
+    "playwright": "^1.58.2",
     "react-test-renderer": "^18.3.1",
     "tsx": "^4.20.6",
     "typescript": "^5.3.3",

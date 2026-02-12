@@ -83,97 +83,91 @@ const makeManifest = (): PreprocessedManifest => {
   };
 };
 
-(async () => {
-  try {
-    const storageHandle = createInMemoryPreprocessedStorage();
-    const zarrStore = createZarrStoreFromPreprocessedStorage(storageHandle.storage);
+await (async () => {
+  const storageHandle = createInMemoryPreprocessedStorage();
+  const zarrStore = createZarrStoreFromPreprocessedStorage(storageHandle.storage);
 
-    const manifest = makeManifest();
-    await zarr.create(zarr.root(zarrStore), { attributes: { llsmViewerPreprocessed: manifest } });
+  const manifest = makeManifest();
+  await zarr.create(zarr.root(zarrStore), { attributes: { llsmViewerPreprocessed: manifest } });
 
-    const layer = manifest.dataset.channels[0]!.layers[0]!;
-    const trackEntries = [
-      ['1', '0', '1', '1.123456', '2.100000', '3.987654', '4.000000', '0.000000']
-    ];
-    await storageHandle.storage.writeFile(
-      'tracks/track-set-a.csv',
-      serializeTrackEntriesToCsvBytes(trackEntries, { decimalPlaces: 3 })
-    );
-    await zarr.create(zarr.root(zarrStore).resolve(layer.zarr.data.path), {
-      shape: layer.zarr.data.shape,
-      data_type: layer.zarr.data.dataType,
-      chunk_shape: layer.zarr.data.chunkShape,
-      codecs: [],
-      fill_value: 0
-    });
-    await zarr.create(zarr.root(zarrStore).resolve(layer.zarr.labels!.path), {
-      shape: layer.zarr.labels!.shape,
-      data_type: layer.zarr.labels!.dataType,
-      chunk_shape: layer.zarr.labels!.chunkShape,
-      codecs: [],
-      fill_value: 0
-    });
-    await zarr.create(zarr.root(zarrStore).resolve(layer.zarr.histogram.path), {
-      shape: layer.zarr.histogram.shape,
-      data_type: layer.zarr.histogram.dataType,
-      chunk_shape: layer.zarr.histogram.chunkShape,
-      codecs: [],
-      fill_value: 0
-    });
+  const layer = manifest.dataset.channels[0]!.layers[0]!;
+  const trackEntries = [
+    ['1', '0', '1', '1.123456', '2.100000', '3.987654', '4.000000', '0.000000']
+  ];
+  await storageHandle.storage.writeFile(
+    'tracks/track-set-a.csv',
+    serializeTrackEntriesToCsvBytes(trackEntries, { decimalPlaces: 3 })
+  );
+  await zarr.create(zarr.root(zarrStore).resolve(layer.zarr.data.path), {
+    shape: layer.zarr.data.shape,
+    data_type: layer.zarr.data.dataType,
+    chunk_shape: layer.zarr.data.chunkShape,
+    codecs: [],
+    fill_value: 0
+  });
+  await zarr.create(zarr.root(zarrStore).resolve(layer.zarr.labels!.path), {
+    shape: layer.zarr.labels!.shape,
+    data_type: layer.zarr.labels!.dataType,
+    chunk_shape: layer.zarr.labels!.chunkShape,
+    codecs: [],
+    fill_value: 0
+  });
+  await zarr.create(zarr.root(zarrStore).resolve(layer.zarr.histogram.path), {
+    shape: layer.zarr.histogram.shape,
+    data_type: layer.zarr.histogram.dataType,
+    chunk_shape: layer.zarr.histogram.chunkShape,
+    codecs: [],
+    fill_value: 0
+  });
 
-    const segT0 = new Uint8Array([0, 0, 0, 0, 255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255]);
-    const segT1 = new Uint8Array([255, 255, 255, 255, 10, 20, 30, 255, 40, 50, 60, 255, 0, 0, 0, 0]);
-    const labelsT0 = new Uint32Array([0, 1, 2, 3]);
-    const labelsT1 = new Uint32Array([3, 2, 1, 0]);
+  const segT0 = new Uint8Array([0, 0, 0, 0, 255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255]);
+  const segT1 = new Uint8Array([255, 255, 255, 255, 10, 20, 30, 255, 40, 50, 60, 255, 0, 0, 0, 0]);
+  const labelsT0 = new Uint32Array([0, 1, 2, 3]);
+  const labelsT1 = new Uint32Array([3, 2, 1, 0]);
 
-    await storageHandle.storage.writeFile(`${layer.zarr.data.path}/c/0/0/0/0/0`, segT0);
-    await storageHandle.storage.writeFile(`${layer.zarr.data.path}/c/1/0/0/0/0`, segT1);
-    await storageHandle.storage.writeFile(
-      `${layer.zarr.labels!.path}/c/0/0/0/0`,
-      new Uint8Array(labelsT0.buffer, labelsT0.byteOffset, labelsT0.byteLength)
-    );
-    await storageHandle.storage.writeFile(
-      `${layer.zarr.labels!.path}/c/1/0/0/0`,
-      new Uint8Array(labelsT1.buffer, labelsT1.byteOffset, labelsT1.byteLength)
-    );
+  await storageHandle.storage.writeFile(`${layer.zarr.data.path}/c/0/0/0/0/0`, segT0);
+  await storageHandle.storage.writeFile(`${layer.zarr.data.path}/c/1/0/0/0/0`, segT1);
+  await storageHandle.storage.writeFile(
+    `${layer.zarr.labels!.path}/c/0/0/0/0`,
+    new Uint8Array(labelsT0.buffer, labelsT0.byteOffset, labelsT0.byteLength)
+  );
+  await storageHandle.storage.writeFile(
+    `${layer.zarr.labels!.path}/c/1/0/0/0`,
+    new Uint8Array(labelsT1.buffer, labelsT1.byteOffset, labelsT1.byteLength)
+  );
 
-    const histogramT0 = computeUint8VolumeHistogram({
-      width: layer.width,
-      height: layer.height,
-      depth: layer.depth,
-      channels: layer.channels,
-      normalized: segT0
-    });
-    const histogramT1 = computeUint8VolumeHistogram({
-      width: layer.width,
-      height: layer.height,
-      depth: layer.depth,
-      channels: layer.channels,
-      normalized: segT1
-    });
-    await storageHandle.storage.writeFile(`${layer.zarr.histogram.path}/c/0/0`, encodeUint32ArrayLE(histogramT0));
-    await storageHandle.storage.writeFile(`${layer.zarr.histogram.path}/c/1/0`, encodeUint32ArrayLE(histogramT1));
+  const histogramT0 = computeUint8VolumeHistogram({
+    width: layer.width,
+    height: layer.height,
+    depth: layer.depth,
+    channels: layer.channels,
+    normalized: segT0
+  });
+  const histogramT1 = computeUint8VolumeHistogram({
+    width: layer.width,
+    height: layer.height,
+    depth: layer.depth,
+    channels: layer.channels,
+    normalized: segT1
+  });
+  await storageHandle.storage.writeFile(`${layer.zarr.histogram.path}/c/0/0`, encodeUint32ArrayLE(histogramT0));
+  await storageHandle.storage.writeFile(`${layer.zarr.histogram.path}/c/1/0`, encodeUint32ArrayLE(histogramT1));
 
-    const opened = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
-    assert.equal(opened.totalVolumeCount, 2);
-    assert.equal(opened.channelSummaries.length, 1);
-    assert.deepEqual(opened.channelSummaries[0]?.trackSets[0]?.entries, [['1', '0', '1', '1.123', '2.1', '3.988', '4', '0']]);
+  const opened = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
+  assert.equal(opened.totalVolumeCount, 2);
+  assert.equal(opened.channelSummaries.length, 1);
+  assert.deepEqual(opened.channelSummaries[0]?.trackSets[0]?.entries, [['1', '0', '1', '1.123', '2.1', '3.988', '4', '0']]);
 
-    const provider = createVolumeProvider({ manifest: opened.manifest, storage: storageHandle.storage });
-    const volume0 = await provider.getVolume('seg', 0);
-    assert.deepEqual(Array.from(volume0.normalized), Array.from(segT0));
-    assert.deepEqual(Array.from(volume0.segmentationLabels ?? []), Array.from(labelsT0));
-    assert.deepEqual(Array.from(volume0.histogram ?? []), Array.from(histogramT0));
+  const provider = createVolumeProvider({ manifest: opened.manifest, storage: storageHandle.storage });
+  const volume0 = await provider.getVolume('seg', 0);
+  assert.deepEqual(Array.from(volume0.normalized), Array.from(segT0));
+  assert.deepEqual(Array.from(volume0.segmentationLabels ?? []), Array.from(labelsT0));
+  assert.deepEqual(Array.from(volume0.histogram ?? []), Array.from(histogramT0));
 
-    const volume1 = await provider.getVolume('seg', 1);
-    assert.deepEqual(Array.from(volume1.normalized), Array.from(segT1));
-    assert.deepEqual(Array.from(volume1.segmentationLabels ?? []), Array.from(labelsT1));
-    assert.deepEqual(Array.from(volume1.histogram ?? []), Array.from(histogramT1));
+  const volume1 = await provider.getVolume('seg', 1);
+  assert.deepEqual(Array.from(volume1.normalized), Array.from(segT1));
+  assert.deepEqual(Array.from(volume1.segmentationLabels ?? []), Array.from(labelsT1));
+  assert.deepEqual(Array.from(volume1.histogram ?? []), Array.from(histogramT1));
 
-    console.log('preprocessed dataset Zarr tests passed');
-  } catch (error) {
-    console.error('preprocessed dataset Zarr tests failed');
-    console.error(error);
-    process.exitCode = 1;
-  }
+  console.log('preprocessed dataset Zarr tests passed');
 })();

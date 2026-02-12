@@ -1,0 +1,85 @@
+{
+  "type": "div",
+  "props": {
+    "className": "app front-page-mode"
+  },
+  "children": [
+    {
+      "type": "div",
+      "props": {
+        "className": "front-page"
+      },
+      "children": [
+        {
+          "type": "div",
+          "props": {
+            "className": "front-page-card"
+          },
+          "children": [
+            {
+              "type": "header",
+              "props": {
+                "className": "front-page-header"
+              },
+              "children": [
+                {
+                  "type": "div",
+                  "props": {
+                    "className": "front-page-title-row"
+                  },
+                  "children": [
+                    {
+                      "type": "h1",
+                      "props": {},
+                      "children": [
+                        "4D viewer"
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "div",
+              "props": {
+                "className": "channel-add-actions"
+              },
+              "children": [
+                {
+                  "type": "div",
+                  "props": {
+                    "className": "channel-add-initial"
+                  },
+                  "children": [
+                    {
+                      "type": "button",
+                      "props": {
+                        "type": "button",
+                        "className": "channel-add-button",
+                        "disabled": false
+                      },
+                      "children": [
+                        "Set up new experiment"
+                      ]
+                    },
+                    {
+                      "type": "button",
+                      "props": {
+                        "type": "button",
+                        "className": "channel-add-button",
+                        "disabled": false
+                      },
+                      "children": [
+                        "Load preprocessed experiment"
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

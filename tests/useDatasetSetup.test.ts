@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import React from 'react';
 
-import { useDatasetSetup } from '../src/hooks/dataset';
+import { useDatasetSetup } from '../src/hooks/dataset/useDatasetSetup.ts';
 import { createDefaultLayerSettings } from '../src/state/layerSettings.ts';
 import { renderHook } from './hooks/renderHook.ts';
 
@@ -19,17 +19,14 @@ const createFile = (name: string, relativePath?: string) => {
   return file;
 };
 
-(() => {
+await (async () => {
   const hook = renderHook(() => {
     const [channels, setChannels] = React.useState([
       {
         id: 'channel-1',
         name: 'Channel 1',
         layers: [{ id: 'layer-1', files: [createFile('initial.tif')], isSegmentation: false }],
-        trackFile: null,
-        trackStatus: 'idle' as const,
-        trackError: null,
-        trackEntries: []
+        trackSets: []
       }
     ]);
     const [layerSettings, setLayerSettings] = React.useState<Record<string, ReturnType<typeof createDefaultLayerSettings>>>(
@@ -43,7 +40,7 @@ const createFile = (name: string, relativePath?: string) => {
 
     const datasetSetup = useDatasetSetup({
       channels,
-      layers: [],
+      loadedLayers: [],
       channelActiveLayer: {},
       layerSettings,
       setChannels,
@@ -75,17 +72,14 @@ const createFile = (name: string, relativePath?: string) => {
   assert.ok(!('layer-1' in hook.result.layerTimepointCounts));
 })();
 
-(() => {
+await (async () => {
   const hook = renderHook(() => {
     const [channels, setChannels] = React.useState([
       {
         id: 'channel-1',
         name: 'Channel 1',
         layers: [],
-        trackFile: null,
-        trackStatus: 'idle' as const,
-        trackError: null,
-        trackEntries: []
+        trackSets: []
       }
     ]);
 
@@ -93,7 +87,7 @@ const createFile = (name: string, relativePath?: string) => {
 
     const datasetSetup = useDatasetSetup({
       channels,
-      layers: [],
+      loadedLayers: [],
       channelActiveLayer: {},
       layerSettings: {},
       setChannels,

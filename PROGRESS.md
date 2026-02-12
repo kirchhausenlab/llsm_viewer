@@ -1,6 +1,18 @@
 # Progress
 
 ## Latest changes
+- Added Playwright local browser automation (`playwright.config.ts`) and wired it into the local pipeline via `test:e2e`, `test:e2e:visual`, and `verify:ui`, so UI verification now includes a real Chromium run in addition to component-level tests.
+- Added a dataset-backed browser smoke test (`tests/e2e/frontpage-smoke.spec.ts`) that exercises the full front-page path: setup, channel creation, TIFF upload from `TEST_DATA_DIR` (`data/test_dataset_0` default), preprocessing, and viewer launch.
+- Added browser visual regression tests (`tests/e2e/frontpage-visual.spec.ts`) with committed Playwright screenshot baselines for initial/setup front-page states.
+- Added Playwright result directories to `.gitignore` (`playwright-report/`, `test-results/`) and documented Playwright setup/use in `README.md`.
+- Replaced the manual test index (`tests/runTests.ts`) with Node's built-in test discovery (`node --test` + `tsx` import support), so new `*.test.ts/tsx` files run automatically without hand-editing an import list.
+- Added a local-only verification pipeline in `package.json`: `verify:fast`, `verify:ui`, `verify:full`, and `verify:nightly` (backed by `scripts/local-nightly.sh`), including build/typecheck/test/coverage/perf gates that run entirely on the developer machine.
+- Enforced coverage thresholds (lines 80 / branches 70 / functions 80) in `test:coverage` for a critical-module scope (`volumeProcessing`, track parsing/smoothing, dataset error plumbing, and route wiring hooks) to provide hard gates for high-impact logic.
+- Added focused local frontend automation under `tests/frontend/*` (front page states, launch actions, header behavior, upload interactions), local structural visual regression checks under `tests/visual/*`, and performance budget tests under `tests/perf/*`.
+- Added local dataset fixture coverage (`tests/localDatasetFixture.test.ts`) that validates discoverability/decoding of TIFF data from `TEST_DATA_DIR` (default `data/test_dataset_0`), matching the new local-data workflow.
+- Added `tsconfig.tests.json` + `typecheck:tests` to keep frontend/visual/perf/new fixture tests type-checked without requiring full migration of all legacy test files.
+- Follow-up TODO: once npm registry access is available in the agent environment, add true browser-level E2E/visual checks (Playwright) to complement the current component/snapshot coverage.
+- Caveat/trade-off: coverage thresholds are currently enforced on a curated critical-file set rather than the entire `src/` tree to avoid blocking on legacy low-coverage areas while still protecting the hottest runtime paths.
 - Removed legacy `manifest.json` handling from the preprocessed storage/import path: archive import now keys exclusively off Zarr (`zarr.json`) data, and the unused `finalizeManifest` storage API was deleted from all backends and call sites.
 - Hardened dataset shape validation across timepoints: raw launch (`useChannelSources`) now validates every loaded timepoint, and preprocessing validates each decoded volume/slice against expected shape+type before writing chunks.
 - Fixed archive picker cancellation behavior so `requestArchiveFile()` always resolves (selected file or `null`) instead of potentially hanging after cancel.
@@ -309,3 +321,41 @@
 
 ## Paintbrush clear confirmation
 - Added a confirmation prompt before executing the paintbrush "Clear" action to prevent accidental loss of painting work.
+
+## Playwright track smoke coverage
+- Added `tests/e2e/tracks-smoke.spec.ts` to cover end-to-end track CSV upload from setup, preprocessing + viewer launch, and core Tracks panel interactions (select, legend presence, deselect).
+- Kept assertions focused on stable user-visible behavior to avoid flaky overlap/actionability issues from movable floating windows.
+- Verified locally with:
+  - `npx playwright test --config=playwright.config.ts --project=chromium tests/e2e/tracks-smoke.spec.ts`
+  - `npm run verify:ui` (frontend + visual + Playwright smoke + Playwright visual).
+
+## Expanded local webapp smoke coverage
+- Added reusable e2e launch workflow helper at `tests/e2e/helpers/workflows.ts` to standardize setup + preprocess + launch steps for dataset-backed browser tests.
+- Added new browser smoke specs:
+  - `tests/e2e/channels-smoke.spec.ts` (channel panel: invert, auto, brightness, tint, reset behavior)
+  - `tests/e2e/viewer-playback-smoke.spec.ts` (time navigation, play/pause toggle, 3D/2D mode switch)
+  - `tests/e2e/viewer-settings-smoke.spec.ts` (viewer settings toggles + FPS control + close flow)
+  - `tests/e2e/top-menu-smoke.spec.ts` (help window + File->Exit confirm flow back to setup screen)
+- Refactored existing smoke specs (`frontpage-smoke`, `tracks-smoke`) to use the shared workflow helper for consistency and easier maintenance.
+- Stabilized flaky interactions by preferring deterministic checks and direct DOM-triggered clicks where floating window overlap can intercept pointer events.
+- Verified locally:
+  - `npx playwright test --config=playwright.config.ts --project=chromium --grep "@smoke"` (6 passed)
+  - `npm run verify:ui` (all frontend/visual/e2e/e2e-visual passing)
+  - `npm run verify:fast` (typecheck + targeted coverage + build passing)
+  - `npm run test:perf` (performance guard passing)
+
+## Nightly multi-channel + segmentation browser coverage
+- Extended e2e workflow utilities with `launchViewerFromChannelFixtures(...)` so tests can configure multiple channels (including segmentation toggles and optional track CSV attachments) before preprocessing.
+- Added `tests/e2e/multi-channel-segmentation-nightly.spec.ts` (`@nightly`) covering:
+  - two-channel setup (raw + segmentation),
+  - successful preprocess/launch,
+  - per-channel tab switching in viewer,
+  - segmentation-specific control behavior (Invert disabled with expected tooltip),
+  - persistence of controls after 3D/2D mode toggling.
+- Tuned nightly fixture usage to one timepoint per channel to avoid browser storage quota failures during local multi-channel preprocessing while still exercising the multi-channel path.
+- Added local script entrypoint `test:e2e:nightly` and updated `scripts/local-nightly.sh` so `verify:nightly` now runs:
+  - `verify:full`
+  - then nightly-only Playwright scenarios (`@nightly`).
+- Verified locally:
+  - `npx playwright test --config=playwright.config.ts --project=chromium --grep "@nightly"` (passed)
+  - `bash scripts/local-nightly.sh` (passed end-to-end).

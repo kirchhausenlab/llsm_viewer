@@ -1,0 +1,74 @@
+{
+  "type": "div",
+  "props": {
+    "className": "front-page-actions"
+  },
+  "children": [
+    {
+      "type": "div",
+      "props": {
+        "className": "launch-export-controls"
+      },
+      "children": [
+        {
+          "type": "div",
+          "props": {
+            "className": "launch-export-row"
+          },
+          "children": [
+            {
+              "type": "label",
+              "props": {
+                "className": "launch-checkbox"
+              },
+              "children": [
+                {
+                  "type": "input",
+                  "props": {
+                    "type": "checkbox",
+                    "checked": true,
+                    "disabled": false
+                  },
+                  "children": null
+                },
+                "Export to `.zarr` while preprocessing"
+              ]
+            },
+            {
+              "type": "input",
+              "props": {
+                "type": "text",
+                "className": "launch-export-name",
+                "value": "fixture",
+                "disabled": false,
+                "aria-label": "Export dataset name"
+              },
+              "children": null
+            }
+          ]
+        },
+        {
+          "type": "p",
+          "props": {
+            "className": "launch-export-hint"
+          },
+          "children": [
+            "You’ll be asked to choose the parent folder; we will create fixture.zarr/ inside it."
+          ]
+        }
+      ]
+    },
+    {
+      "type": "button",
+      "props": {
+        "type": "button",
+        "className": "launch-viewer-button",
+        "disabled": false,
+        "data-launchable": "true"
+      },
+      "children": [
+        "Preprocess experiment"
+      ]
+    }
+  ]
+}
