@@ -85,8 +85,10 @@ The main responsibilities are:
   CI (typecheck/test/build) + GitHub Pages deploy.
 - `scripts/local-nightly.sh`
   Local automation entrypoint for running the full verification pipeline without remote CI.
-- `PROGRESS.md`  
+- `docs/PROGRESS.md`  
   Running progress log / next tasks.
+- `docs/AGENTS.md`
+  Agent workflow and repository operating guidance.
 - `docs/refactor/README.md`, `docs/refactor/ARCHIVE_SUMMARY.md`
   Archived refactor-program record. The refactor plan is completed; the consolidated history and outcomes are stored in `ARCHIVE_SUMMARY.md`.
 
