@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import type { Dispatch, MutableRefObject, SetStateAction, ChangeEvent, DragEvent, FormEvent } from 'react';
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import FrontPage from './FrontPage';
 import usePreprocessedExperiment from '../../hooks/dataset/usePreprocessedExperiment';
-import { type ExperimentDimension, type VoxelResolutionHook } from '../../hooks/useVoxelResolution';
+import type { VoxelResolutionHook } from '../../hooks/useVoxelResolution';
 import type { DatasetErrorHook } from '../../hooks/useDatasetErrors';
 import type { FollowedTrackState, TrackSetState } from '../../types/channelTracks';
 import type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment } from '../../hooks/dataset';
@@ -108,25 +108,18 @@ export default function FrontPageContainer({
   voxelResolution
 }: FrontPageContainerProps) {
   const {
-    datasetError,
-    datasetErrorContext,
     datasetErrorResetSignal,
-    reportDatasetError,
-    clearDatasetError,
-    bumpDatasetErrorResetSignal
+    clearDatasetError
   } = datasetErrors;
   const {
     voxelResolutionInput,
     voxelResolution: voxelResolutionValue,
-    anisotropyScale,
     experimentDimension,
-    trackScale,
     handleVoxelResolutionAxisChange,
     handleVoxelResolutionUnitChange,
     handleVoxelResolutionAnisotropyToggle,
     handleExperimentDimensionChange,
-    setExperimentDimension,
-    setVoxelResolutionInput
+    setExperimentDimension
   } = voxelResolution;
 
   const preprocessedState = usePreprocessedExperiment({
@@ -266,14 +259,14 @@ export default function FrontPageContainer({
         | null = null;
 
       if (exportWhilePreprocessing) {
-        if (typeof window === 'undefined' || typeof (window as any).showDirectoryPicker !== 'function') {
+        if (typeof window === 'undefined' || typeof window.showDirectoryPicker !== 'function') {
           showInteractionWarning('Folder export is not supported in this browser.');
           return;
         }
 
-        let directoryHandle: any;
+        let directoryHandle: FileSystemDirectoryHandle;
         try {
-          directoryHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
+          directoryHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
         } catch (error) {
           if (error instanceof DOMException && error.name === 'AbortError') {
             return;
@@ -287,7 +280,7 @@ export default function FrontPageContainer({
           return;
         }
 
-        let exportDirectoryHandle: any;
+        let exportDirectoryHandle: FileSystemDirectoryHandle;
         try {
           await directoryHandle.getDirectoryHandle(exportDirectoryName);
           showInteractionWarning(`A folder named "${exportDirectoryName}" already exists in the selected location.`);

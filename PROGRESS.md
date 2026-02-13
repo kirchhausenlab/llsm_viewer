@@ -1,6 +1,267 @@
 # Progress
 
 ## Latest changes
+- Resolved the previously known strict-unused VR blocker:
+  - Removed the unused `THREE` import from `src/components/viewers/volume-viewer/vr/controllerConnectionLifecycle.ts`.
+- Verification:
+  - `npm run -s typecheck:strict-unused` passed.
+  - `npm run -s typecheck` passed.
+  - `npm run -s typecheck:tests` passed.
+  - `node --import tsx --test tests/controllerRayUpdater.test.ts` passed.
+- Continued non-VR `VolumeViewer` fan-in reduction by extracting typed argument assembly for heavyweight hooks:
+  - Added `src/components/viewers/volume-viewer/volumeViewerVrRuntime.ts` to isolate defaulted VR runtime prop resolution (`isVrPassthroughSupported`, channel/track panel fallbacks, session registration callback extraction).
+  - Added `src/components/viewers/volume-viewer/volumeViewerRuntimeArgs.ts` to isolate grouped typed builders for:
+    - `useVolumeViewerVrBridge` options (`buildVolumeViewerVrBridgeOptions`)
+    - `useVolumeViewerLifecycle` params (`buildVolumeViewerLifecycleParams`)
+  - Refactored `src/components/viewers/VolumeViewer.tsx` to use the new grouped builders instead of inlining the largest argument object literals.
+- Added targeted tests for the extracted argument/runtime helpers:
+  - `tests/volumeViewerVrRuntime.test.ts`
+  - `tests/volumeViewerRuntimeArgs.test.ts`
+- Verification:
+  - `npm run -s typecheck` passed.
+  - `npm run -s typecheck:tests` passed.
+  - `node --import tsx --test tests/volumeViewerVrRuntime.test.ts tests/volumeViewerRuntimeArgs.test.ts tests/volumeViewerAnisotropy.test.ts tests/volumeHoverSampling.test.ts tests/volumeHoverTargetLayer.test.ts tests/planarTrackCentroid.test.ts tests/planarTrackStyle.test.ts tests/planarPrimaryVolume.test.ts tests/planarViewerCanvasLifecycle.test.ts tests/planarViewerBindings.test.ts` passed.
+  - `npm run -s typecheck:strict-unused` still fails on known pre-existing VR blocker:
+    `src/components/viewers/volume-viewer/vr/controllerConnectionLifecycle.ts` unused `THREE` import.
+- Follow-up TODO: continue reducing `VolumeViewer.tsx` top-level orchestration by extracting remaining non-render business logic around playback-window/tooltip/follow wiring into a dedicated integration hook if further readability gains are needed.
+- Caveat/trade-off: this slice is wiring-only; runtime behavior is preserved while option assembly is now modular and type-constrained in a dedicated helper module.
+- Continued the non-VR `PlanarViewer` cleanup by extracting remaining integration effects:
+  - Added `src/components/viewers/planar-viewer/usePlanarViewerBindings.ts` to isolate capture-target registration and hover-reset behavior when slice data is absent.
+  - Refactored `src/components/viewers/PlanarViewer.tsx` to delegate these bindings.
+- Continued `useVolumeHover` decomposition with pure sampling/intensity helpers:
+  - Added `src/components/viewers/volume-viewer/volumeHoverSampling.ts` for trilinear sample extraction, channel luminance resolution, and windowed intensity adjustment.
+  - Refactored `src/components/viewers/volume-viewer/useVolumeHover.ts` to use the extracted helper module while preserving hover behavior.
+- Added targeted tests for the new helper seams:
+  - `tests/volumeHoverSampling.test.ts`
+  - `tests/planarViewerBindings.test.ts`
+- Verification:
+  - `npm run -s typecheck` passed.
+  - `npm run -s typecheck:tests` passed.
+  - `node --import tsx --test tests/volumeViewerAnisotropy.test.ts tests/volumeHoverSampling.test.ts tests/volumeHoverTargetLayer.test.ts tests/planarTrackCentroid.test.ts tests/planarTrackStyle.test.ts tests/planarPrimaryVolume.test.ts tests/planarViewerCanvasLifecycle.test.ts tests/planarViewerBindings.test.ts` passed.
+  - `npm run -s typecheck:strict-unused` still fails on known pre-existing VR blocker:
+    `src/components/viewers/volume-viewer/vr/controllerConnectionLifecycle.ts` unused `THREE` import.
+- Follow-up TODO: keep reducing `VolumeViewer.tsx` orchestration fan-in (grouping and extracting large hook argument assembly) now that `PlanarViewer` and `useVolumeHover` seams are further modularized.
+- Caveat/trade-off: this slice is behavior-preserving; hover sampling math is now testable and isolated, but still executed on pointer-move cadence as before.
+- Continued the non-VR `PlanarViewer` orchestration reduction by extracting lifecycle ownership into focused hooks:
+  - Added `src/components/viewers/planar-viewer/usePlanarPrimaryVolume.ts` to isolate primary-volume selection and auto-fit triggering on source volume shape changes.
+  - Added `src/components/viewers/planar-viewer/usePlanarViewerCanvasLifecycle.ts` to isolate canvas lifecycle orchestration (animation loop, resize observer, offscreen slice staging, auto-fit reset, draw revision triggers).
+  - Refactored `src/components/viewers/PlanarViewer.tsx` to delegate these lifecycle responsibilities while preserving behavior.
+- Added targeted helper tests for the new planar lifecycle seams:
+  - `tests/planarPrimaryVolume.test.ts`
+  - `tests/planarViewerCanvasLifecycle.test.ts`
+- Verification:
+  - `npm run -s typecheck` passed.
+  - `npm run -s typecheck:tests` passed.
+  - `node --import tsx --test tests/volumeViewerAnisotropy.test.ts tests/planarTrackCentroid.test.ts tests/planarTrackStyle.test.ts tests/volumeHoverTargetLayer.test.ts tests/planarPrimaryVolume.test.ts tests/planarViewerCanvasLifecycle.test.ts` passed.
+  - `npm run -s typecheck:strict-unused` still fails on known pre-existing VR blocker:
+    `src/components/viewers/volume-viewer/vr/controllerConnectionLifecycle.ts` unused `THREE` import.
+- Follow-up TODO: if we continue non-VR decomposition, next smallest seam is isolating `PlanarViewer` capture-target registration + hover-clearing route callbacks into a small integration hook for parity with the extracted lifecycle hooks.
+- Caveat/trade-off: this slice intentionally keeps redraw/resize behavior unchanged; canvas lifecycle work is now modular but still uses the same `requestAnimationFrame` and `ResizeObserver` timing policy as before.
+- Continued the non-VR viewer refactor by splitting `VolumeViewer` orchestration seams into focused hooks:
+  - Added `src/components/viewers/volume-viewer/useVolumeViewerAnisotropy.ts` for anisotropy-scale normalization and step-ratio synchronization.
+  - Added `src/components/viewers/volume-viewer/useVolumeViewerRefSync.ts` for paintbrush/layer/follow-target ref syncing and reset/follow callback wrappers.
+  - Added `src/components/viewers/volume-viewer/useVolumeViewerSurfaceBinding.ts` for render-surface binding (`handleContainerRef`) and active-3D-layer handle refresh wiring.
+  - Added `src/components/viewers/volume-viewer/useVolumeViewerTransformBindings.ts` for VR HUD placement refresh + volume/track transform ref synchronization.
+  - Refactored `src/components/viewers/VolumeViewer.tsx` to delegate to these hooks while preserving runtime behavior.
+- Continued the non-VR viewer refactor by reducing `PlanarViewer`’s monolithic canvas/track math surface:
+  - Added `src/components/viewers/planar-viewer/planarTrackCentroid.ts` to isolate followed-track centroid computation.
+  - Added `src/components/viewers/planar-viewer/planarSliceCanvas.ts` to isolate offscreen slice canvas updates and 2D draw-path/style logic.
+  - Refactored `src/components/viewers/PlanarViewer.tsx` to delegate centroid + canvas rendering helpers.
+- Completed an optional follow-up split in `useVolumeHover`:
+  - Added `src/components/viewers/volume-viewer/volumeHoverTargetLayer.ts` to isolate hover target-layer/resource selection policy.
+  - Refactored `src/components/viewers/volume-viewer/useVolumeHover.ts` to delegate layer/resource selection to the new helper.
+- Added targeted tests for extracted logic:
+  - `tests/volumeViewerAnisotropy.test.ts`
+  - `tests/planarTrackCentroid.test.ts`
+  - `tests/planarTrackStyle.test.ts`
+  - `tests/volumeHoverTargetLayer.test.ts`
+- Verification:
+  - `npm run -s typecheck` passed.
+  - `npm run -s typecheck:tests` passed.
+  - `node --import tsx --test tests/volumeViewerAnisotropy.test.ts tests/planarTrackCentroid.test.ts tests/planarTrackStyle.test.ts tests/volumeHoverTargetLayer.test.ts` passed.
+  - `npm run -s typecheck:strict-unused` still fails on known pre-existing VR blocker:
+    `src/components/viewers/volume-viewer/vr/controllerConnectionLifecycle.ts` unused `THREE` import.
+- Follow-up TODO: continue reducing orchestration fan-in in `VolumeViewer`/`PlanarViewer` by extracting remaining lifecycle effects (resize/animation wiring) into dedicated hooks if further readability gains are needed.
+- Caveat/trade-off: this slice intentionally keeps runtime behavior unchanged and does not alter VR execution paths beyond moving hover layer-selection logic into a pure helper shared by existing code flow.
+- Continued the VR hotspot split by extracting HUD candidate resolution out of the controller ray frame loop:
+  - Added `src/components/viewers/volume-viewer/vr/controllerRayHudCandidates.ts`.
+  - Refactored `src/components/viewers/volume-viewer/vr/controllerRayUpdater.ts` to delegate HUD candidate resolution to the new module while preserving runtime behavior.
+  - Reduced `controllerRayUpdater.ts` from 1409 LOC to 610 LOC (candidate logic now isolated in the new module).
+- Decomposed monolithic VR HUD rendering into feature modules:
+  - Added `src/components/viewers/volume-viewer/vr/hudRenderersTracks.ts` (tracks HUD renderer).
+  - Added `src/components/viewers/volume-viewer/vr/hudRenderersChannels.ts` (channels HUD renderer).
+  - Converted `src/components/viewers/volume-viewer/vr/hudRenderers.ts` into a thin export surface.
+- Standardized rounded swatch path handling and removed the round-rect `any` seam:
+  - Added `drawRoundedRectCompat()` to `src/components/viewers/volume-viewer/vr/hudCanvas.ts`.
+  - Updated tracks/channels swatch rendering to use the shared compatibility helper.
+- Added direct hotspot tests:
+  - `tests/controllerRayUpdater.test.ts` for controller-ray updater behavior (non-presenting clear path + playback panel-grab targeting).
+  - `tests/hudRenderers.test.ts` for tracks/channels HUD renderer contracts (region emission, stale-hover clearing, dynamic channels-height behavior).
+- Removed remaining browser/debug `any` seams in active hotspots:
+  - Added `window.showDirectoryPicker` and `window.__LLSM_VOLUME_PROVIDER__` declarations in `environment.d.ts`.
+  - Updated `src/hooks/preprocessedExperiment/usePreprocessedImport.ts`, `src/components/pages/FrontPageContainer.tsx`, and `src/ui/app/hooks/useAppRouteState.tsx` to use typed window APIs.
+- Verification:
+  - `npm run typecheck`
+  - `npm run typecheck:strict-unused`
+  - `npm run test`
+  - `npm run verify:fast`
+- Follow-up TODO: continue with top-level orchestration decomposition (`VolumeViewer` lifecycle extraction and `useAppRouteState` route assembly extraction) and reduce the size of `controllerRayHudCandidates.ts` by splitting playback/channels/tracks candidate evaluators.
+- Caveat/trade-off: ray/HUD hotspot responsibilities are now separated by module boundary, but the extracted HUD candidate module is still large and should be split by interaction domain in a follow-up slice.
+- Replaced the untyped route-prop assembly seam with explicit contracts:
+  - `src/ui/app/hooks/useRouteViewerProps.ts` now accepts typed `{ datasetSetup, viewerShell }` inputs instead of `Record<string, any>`.
+  - `src/ui/app/hooks/useAppRouteState.tsx` now constructs `RouteDatasetSetupProps` and `ViewerShellRouteProps` explicitly before route wiring.
+- Expanded the strict-unused gate surface (`tsconfig.strict-unused.json`) to include high-risk orchestration/viewer files:
+  - `src/ui/app/hooks/useAppRouteState.tsx`
+  - `src/components/viewers/VolumeViewer.tsx`
+  - `src/components/viewers/volume-viewer/useVolumeViewerVr.ts`
+- Removed newly surfaced unused-symbol debt across the reachable graph so the expanded gate passes (front-page container, planar/viewer-shell helpers, VR hover/render helpers, loader/preprocess helpers).
+- Decomposed additional VR hotspot logic into focused modules:
+  - `src/components/viewers/volume-viewer/vr/controllerRayUiFlags.ts` (controller UI hover/active flag transitions and hover-suppression rules)
+  - `src/components/viewers/volume-viewer/vr/controllerRayRegionState.ts` (HUD region equality + ray summary change detection)
+  - `src/components/viewers/volume-viewer/vr/hudMath.ts` (histogram math/format helpers)
+  - `src/components/viewers/volume-viewer/vr/hudCanvas.ts` (shared rounded-rect canvas primitive)
+- Refactored large hotspots to delegate to the new helpers while preserving behavior:
+  - `src/components/viewers/volume-viewer/vr/controllerRayUpdater.ts`
+  - `src/components/viewers/volume-viewer/vr/hudRenderers.ts`
+  - `src/components/viewers/volume-viewer/useVolumeViewerVr.ts`
+- Added direct unit tests for the extracted VR/math modules:
+  - `tests/controllerRayUiFlags.test.ts`
+  - `tests/controllerRayRegionState.test.ts`
+  - `tests/hudMath.test.ts`
+- Verification:
+  - `npm run typecheck`
+  - `npm run typecheck:strict-unused`
+  - `npm test`
+  - `npm run verify:fast`
+  - `npm run verify:ui`
+- Follow-up TODO: continue splitting `controllerRayUpdater.ts` and `hudRenderers.ts` at interaction-category boundaries (playback/channels/tracks) to reduce per-function cognitive load further.
+- Caveat/trade-off: strict-unused coverage is now meaningfully broader, but still intentionally scoped (not full-repo) to keep the gate stable while legacy areas are incrementally cleaned.
+- Archived the refactor workspace into a compact two-file format under `docs/refactor/`:
+  - `docs/refactor/README.md` (minimal completion pointer)
+  - `docs/refactor/ARCHIVE_SUMMARY.md` (consolidated full program record)
+- Removed now-redundant per-phase refactor tracking files after consolidation:
+  - `docs/refactor/BACKLOG.md`
+  - `docs/refactor/BASELINE.md`
+  - `docs/refactor/ROADMAP.md`
+  - `docs/refactor/SESSION_HANDOFF.md`
+- Explicitly recorded that the **entire refactor program is completed** in both `docs/refactor/README.md` and `docs/refactor/ARCHIVE_SUMMARY.md`.
+- Updated `PROJECT_STRUCTURE.md` to describe `docs/refactor` as an archived completed-program record instead of an active backlog workspace.
+- Verification: docs-only archival update (no runtime code changes).
+- Completed `RF-010` and marked it `done` in `docs/refactor/BACKLOG.md` by adding a maintained optional strict-unused gate command.
+- Added `tsconfig.strict-unused.json` as the scoped strict-unused gate definition with:
+  - `noUnusedLocals: true`
+  - `noUnusedParameters: true`
+  - focused include scope on refactored route-orchestration hooks (`useRouteLaunchSessionState`, `useRoutePlaybackPrefetch`) to keep the gate stable while broader legacy surfaces are still being reduced.
+- Added `npm run typecheck:strict-unused` to `package.json` as the new optional gate command.
+- Updated refactor source-of-truth docs:
+  - `docs/refactor/README.md` verification-gate section now documents `npm run typecheck:strict-unused`.
+  - `docs/refactor/BASELINE.md` now records the scoped-gate strategy introduced in RF-010.
+- Verification:
+  - `npm run typecheck:strict-unused` passed.
+  - `npm run verify:fast` passed after RF-010 completion.
+- Follow-up TODO: expand `tsconfig.strict-unused.json` scope incrementally as remaining large legacy modules are decomposed and unused surfaces are removed.
+- Caveat/trade-off: RF-010 intentionally uses a scoped strict-unused surface for stability; full-repo strict-unused enforcement is still noisy and remains future cleanup work.
+- Completed `RF-009` and marked it `done` in `docs/refactor/BACKLOG.md` after adding targeted behavior-preserving tests for recently refactored VR and route orchestration seams.
+- Added VR hotspot tests:
+  - `tests/useVrHudInteractions.test.ts` covering channels/tracks slider updates and tracks scroll snapping/no-op behavior for unchanged offsets.
+  - `tests/controllerRayVolumeDomain.test.ts` covering volume-translate and volume-scale controller-ray domain behavior (handle targeting, transform updates, ray-length clamping, and scale/yaw-pitch apply wiring).
+- Added orchestration hotspot tests:
+  - `tests/app/hooks/useRouteLaunchSessionState.test.ts` covering launch/session lifecycle transitions (begin/progress/complete/fail/reset/end).
+  - `tests/app/hooks/useRoutePlaybackPrefetch.test.ts` covering prefetch readiness gating, queue scheduling/draining, and cache sizing behavior.
+- Verification: `npm run verify:fast` passed after RF-009 completion.
+- Follow-up TODO: start `RF-010` (optional strict-unused lint/type gate as a maintained check) as the next active refactor item.
+- Caveat/trade-off: RF-009 intentionally hardened unit-level refactor seams; immersive runtime behavior in an actual XR session still relies primarily on existing smoke coverage rather than dedicated hardware-backed automated tests.
+- Completed `RF-008` and marked it `done` in `docs/refactor/BACKLOG.md` after modularizing the largest viewer CSS surface by feature ownership.
+- Split `src/styles/app/viewer-playback-tracks.css` into focused feature files:
+  - `src/styles/app/viewer-controls-base.css` (shared `.global-controls` primitives)
+  - `src/styles/app/viewer-playback-controls.css` (playback/recording controls)
+  - `src/styles/app/viewer-track-panels.css` (tracks + paintbrush panel styling)
+  - `src/styles/app/viewer-selected-tracks.css` (selected-tracks chart, legend, and plot settings slider controls)
+- Updated `src/styles/app/index.css` imports to reference the new feature-owned styles in stable order and removed the monolithic `viewer-playback-tracks.css`.
+- Verification: `npm run verify:fast` passed and `npm run verify:ui` passed after RF-008 completion.
+- Follow-up TODO: start `RF-009` (expand tests around refactored hotspots, especially VR/orchestration and newly split CSS ownership boundaries) as the next active refactor item.
+- Caveat/trade-off: CSS behavior remains parity-preserving but still relies on import order across `src/styles/app/index.css`; further isolation (e.g., per-component CSS modules) would require broader style-system changes.
+- Completed `RF-007` and marked it `done` in `docs/refactor/BACKLOG.md` after simplifying dataset setup/load surfaces between `useChannelSources` and `useChannelLayerState`.
+- Added `src/hooks/dataset/useChannelDatasetLoader.ts` to isolate dataset load/apply lifecycle concerns:
+  - load/reset/error orchestration for selected dataset launch
+  - layer normalization/segmentation mapping and shape validation during load
+  - loaded-layer default state application (`channelVisibility`, active layer, layer settings, auto thresholds)
+- Refactored `src/hooks/dataset/useChannelSources.ts` into a source/validation-focused hook that delegates load/apply behavior to `useChannelDatasetLoader`.
+- Refactored `src/hooks/useChannelLayerState.tsx` to reuse shared dataset loader option contracts (`Omit`-based local load/apply types) and consolidated load binding assembly before delegating to `useChannelSources`.
+- Verification: `npm run verify:fast` passed after RF-007 completion.
+- Follow-up TODO: start `RF-008` (modularize large CSS files by panel/feature ownership) as the next active refactor item.
+- Caveat/trade-off: `LoadSelectedDatasetOptions` still carries `anisotropyScale` for compatibility with existing route call sites, but loader behavior remains unchanged (the parameter is currently not applied in this path).
+- Completed `RF-006` and marked it `done` in `docs/refactor/BACKLOG.md` after splitting planar interaction responsibilities into focused modules with no behavior-contract changes.
+- Added `src/components/viewers/planar-viewer/hooks/usePlanarInteractions/*` helper modules:
+  - `usePlanarTrackHoverState.ts` for hovered-track + tooltip state transitions.
+  - `usePlanarTrackHitTest.ts` for XY track hit-testing and threshold/visibility logic.
+  - `usePlanarPixelHover.ts` for pixel hover sampling and hover-voxel emission lifecycle.
+  - `usePlanarCanvasInputHandlers.ts` for pointer/wheel input (paint, pan, selection, hover updates).
+  - `usePlanarKeyboardShortcuts.ts` for planar keyboard bindings (`W/S`, pan, rotation).
+- Refactored `src/components/viewers/planar-viewer/hooks/usePlanarInteractions.ts` into an orchestrator that composes the new hover/input/hit-test/keyboard modules while preserving the existing `canvasHandlers` API consumed by `PlanarViewer`.
+- Verification: `npm run verify:fast` passed after RF-006 completion.
+- Follow-up TODO: start `RF-007` (dataset setup/load surface simplification in `useChannelSources` + `useChannelLayerState`) as the next active refactor item.
+- Caveat/trade-off: `usePlanarInteractions.ts` still owns track-render-data assembly and followed-track recenter logic by design; RF-006 intentionally scoped the split to interaction responsibilities only.
+- Completed `RF-005` and marked it `done` in `docs/refactor/BACKLOG.md` after splitting remaining VR responsibilities by domain inside `useVolumeViewerVr` and controller-ray modules.
+- Added `src/components/viewers/volume-viewer/useVolumeViewerVr/useVrHudInteractions.ts` to isolate VR HUD interaction state updates (channels sliders, tracks sliders, tracks scroll) away from the main `useVolumeViewerVr` orchestrator.
+- Added `src/components/viewers/volume-viewer/vr/controllerRayVolumeDomain.ts` to isolate controller ray volume-transform responsibilities (translate, scale, yaw, pitch handle candidates + active gesture updates) from general HUD/track ray flow.
+- Refactored `src/components/viewers/volume-viewer/useVolumeViewerVr.ts` and `src/components/viewers/volume-viewer/vr/controllerRayUpdater.ts` to delegate to these new domain modules while preserving runtime behavior.
+- Verification: `npm run verify:fast` passed after RF-005 completion.
+- Follow-up TODO: start `RF-006` (`usePlanarInteractions` decomposition) as the next active refactor item.
+- Caveat/trade-off: `controllerRayUpdater.ts` remains large and still mixes playback/channels/tracks HUD candidate resolution in one pass; this slice intentionally extracted volume-transform controls first to keep behavior stable.
+- Completed `RF-004` and marked it `done` in `docs/refactor/BACKLOG.md` after finishing the `VolumeViewer` runtime boundary split.
+- Added `src/components/viewers/volume-viewer/volumeViewerPointerLifecycle.ts` to isolate pointer + paintbrush event wiring (`pointerdown/move/up/leave`, pointer capture/release, double-click voxel follow).
+- Added `src/components/viewers/volume-viewer/volumeViewerRenderLoop.ts` to isolate render-loop lifecycle (camera motion, track appearance updates, hover pulse uniforms, playback advancement, VR ray updates).
+- Refactored `src/components/viewers/VolumeViewer.tsx` to delegate pointer lifecycle and render-loop construction to the new modules while preserving centralized resource teardown.
+- Verification: `npm run verify:fast` passed after RF-004 completion.
+- Follow-up TODO: start `RF-005` (VR decomposition) as the next active slice.
+- Caveat/trade-off: `VolumeViewer` cleanup remains intentionally centralized and deterministic, but still large; VR HUD/resource disposal extraction is a potential readability follow-up.
+- Completed `RF-003` and marked it `done` in `docs/refactor/BACKLOG.md` after reducing the `ViewerShellContainerProps` top-level surface from a giant flat contract to grouped feature bundles (`viewerPanels`, `vr`, `topMenu`, `layout`, `modeControls`, `playbackControls`, `channelsPanel`, `tracksPanel`, `selectedTracksPanel`, `plotSettings`, `trackSettings`).
+- Refactored `src/components/viewers/useViewerShellProps.ts` into feature-oriented mapper units (`mapVolumeViewerProps`, `mapPlanarViewerProps`, layout/top-menu/panel/settings mappers), preserving `ViewerShellProps` output behavior while removing the monolithic mapping block.
+- Updated `src/ui/app/hooks/useRouteViewerProps.ts` to emit the new grouped viewer-shell container contract and rewrote `tests/ViewerShellContainer.test.ts` to validate the same VR/panel wiring on the new shape.
+- Verification: `npm run verify:fast` passed after RF-003 completion.
+- Follow-up TODO: start `RF-004` (`VolumeViewer` decomposition) as the next active slice.
+- Caveat/trade-off: `useRouteViewerProps` still intentionally uses a broad `Record<string, any>` options input as a behavior-preserving bridge; tightening that contract is still recommended in a follow-up slice.
+- Completed `RF-002` and marked it `done` in `docs/refactor/BACKLOG.md` after finishing the prop-assembly split: added `src/ui/app/hooks/useRouteViewerProps.ts` and moved `datasetSetupProps` + `viewerShellContainerProps` assembly out of `useAppRouteState`.
+- `src/ui/app/hooks/useAppRouteState.tsx` now delegates responsibilities across focused helpers: dataset setup actions (`useRouteDatasetSetupState`), dataset reset lifecycle (`useRouteDatasetResetState`), launch/session state (`useRouteLaunchSessionState`), playback prefetch policy (`useRoutePlaybackPrefetch`), and route prop assembly (`useRouteViewerProps`).
+- Verification: `npm run verify:fast` passed after the full RF-002 decomposition.
+- Follow-up TODO: start `RF-003` (`ViewerShellContainerProps` contract cleanup and feature-oriented shell prop mappers).
+- Caveat/trade-off: `useRouteViewerProps` currently accepts a broad options object to keep this slice behavior-preserving while moving assembly logic; tightening that input surface can be done incrementally during RF-003 prop-contract cleanup.
+- Continued `RF-002` with discard/reset lifecycle extraction: added `src/ui/app/hooks/useRouteDatasetResetState.ts` to own `handleDiscardPreprocessedExperiment` and `handleReturnToFrontPage`.
+- Refactored `src/ui/app/hooks/useAppRouteState.tsx` to consume `useRouteDatasetResetState`, removing inline front-page discard/reset callback definitions while preserving behavior.
+- Verification: `npm run verify:fast` passed after the RF-002 discard/reset slice.
+- Follow-up TODO: continue RF-002 by extracting the next smallest internal hotspot (recommended: isolate viewer route prop assembly from `useAppRouteState`).
+- Caveat/trade-off: dataset setup lifecycle is now split across two helpers (`useRouteDatasetSetupState` and `useRouteDatasetResetState`), but the large viewer prop assembly block still dominates `useAppRouteState` complexity.
+- Continued `RF-002` with a small dataset setup decomposition: added `src/ui/app/hooks/useRouteDatasetSetupState.ts` to own front-page setup actions (`handleStartExperimentSetup`, `handleAddChannel`, `handleChannelNameChange`, `handleRemoveChannel`).
+- Refactored `src/ui/app/hooks/useAppRouteState.tsx` to consume `useRouteDatasetSetupState`, removing inline dataset setup callback definitions while preserving existing front-page behavior and prop contracts.
+- Verification: `npm run verify:fast` passed after the RF-002 dataset-setup action slice.
+- Follow-up TODO: continue RF-002 by extracting the remaining dataset setup surface (recommended: discard/return-to-front-page lifecycle reset path and related setup selectors) or start isolating pure viewer-prop assembly.
+- Caveat/trade-off: this slice only moved setup callbacks; discard/reset orchestration still lives in `useAppRouteState`, so setup lifecycle remains partially coupled.
+- In-progress focus: analyzing `useAppRouteState` and nearby route hooks to outline helper hooks for building `RouteDatasetSetupProps` and `ViewerShellRouteProps` with clearer dependency inputs before any code changes.
+- Continued `RF-002` with a behavior-preserving playback-prefetch decomposition: added `src/ui/app/hooks/useRoutePlaybackPrefetch.ts` and moved prefetch lookahead/session queue/drain/cache-sizing/can-advance logic out of `useAppRouteState`.
+- Updated `src/ui/app/hooks/useAppRouteState.tsx` to consume `useRoutePlaybackPrefetch`, keeping `playbackLayerKeys` local for current layer-loading behavior while delegating prefetch policy/execution through the new hook.
+- Verification: `npm run verify:fast` passed after the RF-002 playback-prefetch slice.
+- Follow-up TODO: continue RF-002 by extracting the next smallest route-surface slice (recommended: dataset setup/front-page action wiring into `useRouteDatasetSetupState` or pure viewer prop assembly helper).
+- Caveat/trade-off: playback prefetch is now isolated but still depends on parent-owned `playbackLayerKeys` selection, so launch/setup and prefetch concerns are only partially decoupled in this step.
+- Started `RF-002` by setting it to `active` in `docs/refactor/BACKLOG.md` and extracting launch/session state transitions from `useAppRouteState` into a dedicated helper hook: `src/ui/app/hooks/useRouteLaunchSessionState.ts`.
+- Refactored `src/ui/app/hooks/useAppRouteState.tsx` to use the new launch/session helper for viewer launch start/progress/complete/fail flow, route reset behavior (`resetLaunchState`), and viewer return session teardown (`endViewerSession`) with no contract changes.
+- Verification: `npm run verify:fast` passed after the RF-002 slice.
+- Follow-up TODO: continue RF-002 with the next smallest decomposition slice (recommended: move playback prefetch policy/queue wiring into a focused helper hook).
+- Caveat/trade-off: this slice centralizes launch/session transitions but intentionally keeps launch orchestration inside `useAppRouteState` so behavior and call-site ownership stay stable while refactoring incrementally.
+- Completed `RF-001` (dead/stale cleanup): removed test-only hook `src/ui/app/hooks/useDatasetLaunch.ts` and its test `tests/app/hooks/useDatasetLaunch.test.ts`, and removed the stale coverage include for that file from `package.json`.
+- Closed the dead-file cleanup by deleting unreferenced modules `src/components/viewers/volume-viewer/vr/controllerRays.ts` and `src/shared/utils/volumeWindow.ts`; backlog status is now `done` for `RF-001`.
+- Follow-up TODO: start `RF-002` (`useAppRouteState` decomposition) as the next active slice.
+- Caveat/trade-off: deleting `useDatasetLaunch` avoids duplicate abstractions now, but if launch/session state is split from `useAppRouteState` later we may reintroduce a smaller, runtime-owned launch hook.
+- Started `RF-001` (dead/stale cleanup) by setting `docs/refactor/BACKLOG.md` status to `active` and removing unused modules `src/components/viewers/volume-viewer/vr/controllerRays.ts` and `src/shared/utils/volumeWindow.ts` after repo-wide reference validation.
+- Confirmed `src/ui/app/hooks/useDatasetLaunch.ts` is currently test-only while runtime launch/session wiring lives inline in `src/ui/app/hooks/useAppRouteState.tsx`; kept this as the remaining `RF-001` decision point.
+- Follow-up TODO: complete `RF-001` by deciding whether to delete `useDatasetLaunch` (+ test) or reintegrate it intentionally into runtime route wiring.
+- Caveat/trade-off: this was an intentionally minimal first implementation slice; `RF-001` remains active until the `useDatasetLaunch` role is resolved.
+- Added a persistent refactor-program documentation workspace under `docs/refactor/` with `README.md`, `BASELINE.md`, `ROADMAP.md`, `BACKLOG.md`, and `SESSION_HANDOFF.md` so large cleanup work can continue coherently across sessions.
+- Captured the structural baseline (hotspot monolith files, dead/stale-code candidates, and current verification status) in `docs/refactor/BASELINE.md` to avoid re-discovery on each new session.
+- Added a phased execution plan and prioritized backlog IDs (`RF-001`..`RF-010`) with acceptance checks, so refactor slices can be tracked explicitly as `todo/active/blocked/done`.
+- Updated `PROJECT_STRUCTURE.md` to include the new `docs/refactor/*` area as part of top-level tooling/documentation.
+- Follow-up TODO: start `RF-001` (dead/stale surface cleanup) as the first implementation slice and log progress in `docs/refactor/SESSION_HANDOFF.md` at the end of each session.
+- Caveat/trade-off: this session introduced documentation and process scaffolding only; no runtime refactor has been applied yet.
 - Added Playwright local browser automation (`playwright.config.ts`) and wired it into the local pipeline via `test:e2e`, `test:e2e:visual`, and `verify:ui`, so UI verification now includes a real Chromium run in addition to component-level tests.
 - Added a dataset-backed browser smoke test (`tests/e2e/frontpage-smoke.spec.ts`) that exercises the full front-page path: setup, channel creation, TIFF upload from `TEST_DATA_DIR` (`data/test_dataset_0` default), preprocessing, and viewer launch.
 - Added browser visual regression tests (`tests/e2e/frontpage-visual.spec.ts`) with committed Playwright screenshot baselines for initial/setup front-page states.
@@ -359,3 +620,205 @@
 - Verified locally:
   - `npx playwright test --config=playwright.config.ts --project=chromium --grep "@nightly"` (passed)
   - `bash scripts/local-nightly.sh` (passed end-to-end).
+
+## Route orchestration split (launch + VR panel assembly)
+- Extracted viewer launch + timepoint volume-loading mechanics from `useAppRouteState.tsx` into `src/ui/app/hooks/useRouteLayerVolumes.ts`.
+- Extracted VR channel/track panel payload shaping from `useAppRouteState.tsx` into `src/ui/app/hooks/useRouteVrChannelPanels.ts`.
+- Reduced `src/ui/app/hooks/useAppRouteState.tsx` from 1138 LOC to 983 LOC while keeping existing behavior and route contracts.
+- Validation run (post-extraction):
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:strict-unused`
+  - `npm test -- --runInBand`
+  - `npm run -s build`
+- Follow-up: split the remaining large viewer-shell props assembly in `useAppRouteState.tsx` into smaller feature-focused route hooks.
+
+## 3D viewer regression fix (blank render + context churn)
+- Addressed a 3D-mode regression where repeated lifecycle teardown/re-init could exhaust WebGL contexts (`Too many active WebGL contexts`) and leave the viewer blank.
+- Stabilized `useVolumeViewerLifecycle` by pinning volatile callbacks behind refs and preventing renderer lifecycle churn from callback identity changes.
+- Added hover tooltip state de-duplication in `useTrackRendering` to avoid unnecessary state churn from equivalent pointer/controller hover positions.
+- Hardened active-layer resolution in `useRouteLayerVolumes` so stale channel-layer selections fall back to a valid layer key before volume fetch.
+- Validation run (post-fix):
+  - `npm run -s typecheck`
+  - `npm test -- --runInBand`
+  - `npm run -s build`
+  - `npm run -s verify:fast`
+  - `npx playwright test --config=playwright.config.ts --project=chromium tests/e2e/viewer-playback-smoke.spec.ts`
+
+## VR HUD renderer modular split (channels + tracks)
+- Split monolithic HUD renderers into section modules while preserving public entrypoints:
+  - `src/components/viewers/volume-viewer/vr/hudRenderersChannels.ts` now orchestrates only.
+  - `src/components/viewers/volume-viewer/vr/hudRenderersChannelsBase.ts` + `hudRenderersChannelsShared.ts` own channels HUD prep + active-layer resolution.
+  - `src/components/viewers/volume-viewer/vr/hudRenderersChannelsTabs.ts` isolates channel-tab layout/region emission.
+  - `src/components/viewers/volume-viewer/vr/hudRenderersChannelsLayerSections.ts` isolates layer toggles/histogram/reset/color swatch drawing.
+  - `src/components/viewers/volume-viewer/vr/hudRenderersChannelsLayerSliders.ts` isolates slider definitions + slider interaction region wiring.
+  - `src/components/viewers/volume-viewer/vr/hudRenderersChannelsLayerControls.ts` coordinates channel-layer controls from focused helpers.
+  - `src/components/viewers/volume-viewer/vr/hudRenderersChannelsSections.ts` is now a compatibility re-export surface.
+  - `src/components/viewers/volume-viewer/vr/hudRenderersTracks.ts` now orchestrates only.
+  - `src/components/viewers/volume-viewer/vr/hudRenderersTracksBase.ts` + `hudRenderersTracksShared.ts` own tracks HUD prep + active-channel resolution.
+  - `src/components/viewers/volume-viewer/vr/hudRenderersTracksTabs.ts` isolates channel-tab layout/region emission.
+  - `src/components/viewers/volume-viewer/vr/hudRenderersTracksControls.ts` isolates stop-follow/sliders/color controls/master toggle rows.
+  - `src/components/viewers/volume-viewer/vr/hudRenderersTracksRows.ts` isolates track rows + scrollbar rendering/regions.
+  - `src/components/viewers/volume-viewer/vr/hudRenderersTracksSections.ts` is now a compatibility re-export surface.
+- LOC impact:
+  - channels orchestrator reduced to ~95 LOC (`hudRenderersChannels.ts`)
+  - tracks orchestrator reduced to ~92 LOC (`hudRenderersTracks.ts`)
+  - former channels sections hotspot (`hudRenderersChannelsSections.ts`) reduced to 2 LOC re-export; channels controls now split across 129/181/194/411 LOC modules.
+  - former tracks sections hotspot (`hudRenderersTracksSections.ts`) reduced to 7 LOC re-export; tracks controls now split across 102/374/200 LOC modules.
+- Validation run (post-split):
+  - `npm run -s typecheck`
+  - `node --import tsx --test tests/hudRenderers.test.ts`
+  - `npm test -- --runInBand`
+  - `npm run -s build`
+  - `npm run -s test:coverage:hotspots`
+
+## Controller ray updater extraction (loop decomposition)
+- Reduced `src/components/viewers/volume-viewer/vr/controllerRayUpdater.ts` from 616 LOC to 466 LOC by extracting focused controller-ray responsibilities:
+  - `src/components/viewers/volume-viewer/vr/controllerRayHudTransforms.ts` for selected HUD panel drag + yaw/pitch manipulation updates.
+  - `src/components/viewers/volume-viewer/vr/controllerRayTrackIntersections.ts` for visible-track ray intersections and container-space hover projection.
+  - `src/components/viewers/volume-viewer/vr/controllerRayFrameFinalize.ts` for frame-final hover synchronization, summary logging, and playback-hover flag fanout.
+- Updated hotspot coverage gate in `package.json` to include the new controller-ray helper modules.
+- Validation run (post-extraction):
+  - `npm run -s typecheck`
+  - `node --import tsx --test tests/controllerRayUpdater.test.ts`
+  - `node --import tsx --test tests/controllerRayHudCandidates.test.ts tests/controllerRayRegionState.test.ts tests/controllerRayUiFlags.test.ts tests/controllerRayVolumeDomain.test.ts`
+  - `npm run -s test:coverage:hotspots`
+
+## Controller configuration decomposition (entry lifecycle + select handlers)
+- Reduced `src/components/viewers/volume-viewer/vr/controllerConfiguration.ts` from 606 LOC to 195 LOC by extracting event-handler responsibilities:
+  - `src/components/viewers/volume-viewer/vr/controllerConnectionLifecycle.ts` for connect/disconnect state reset + visibility refresh behavior.
+  - `src/components/viewers/volume-viewer/vr/controllerSelectStart.ts` for select-start activation, HUD/volume gesture state setup, and immediate slider/scroll application.
+  - `src/components/viewers/volume-viewer/vr/controllerSelectEnd.ts` for select-end action routing across playback/channels/tracks + follow interactions.
+- Preserved configurator API (`createControllerEntryConfigurator`) while making it a thin wiring/orchestration layer.
+- Moved shared dependency typing into `src/components/viewers/volume-viewer/vr/controllerInputDependencies.ts` so extracted handler modules no longer import types from the configurator module.
+- Added targeted handler tests in `tests/controllerSelectHandlers.test.ts` covering:
+  - controller connect/disconnect lifecycle resets,
+  - select-start suppression for disabled playback toggle,
+  - select-start slider invocation on tracks regions,
+  - select-end channel tab selection + track follow + playback toggle actions.
+- Expanded hotspot coverage includes to track the new handler modules:
+  - `controllerConnectionLifecycle.ts`
+  - `controllerSelectStart.ts`
+  - `controllerSelectEnd.ts`
+- Validation run (post-extraction):
+  - `npm run -s typecheck`
+  - `node --import tsx --test tests/controllerSelectHandlers.test.ts`
+  - `node --import tsx --test tests/controllerRayUpdater.test.ts tests/controllerRayHudCandidates.test.ts tests/controllerRayRegionState.test.ts tests/controllerRayUiFlags.test.ts tests/controllerRayVolumeDomain.test.ts`
+  - `npm run -s test:coverage:hotspots`
+  - `npm run -s build`
+
+## App route props decomposition (non-VR route orchestration)
+- Extracted route-prop assembly from `useAppRouteState.tsx` into focused pure composers:
+  - `src/ui/app/hooks/routeDatasetSetupProps.ts` now builds `RouteDatasetSetupProps` from grouped sections (`state`, `handlers`, `tracks`, `launch`, `preprocess`).
+  - `src/ui/app/hooks/routeViewerShellProps.ts` now builds `ViewerShellRouteProps` from grouped sections (`viewer`, `chrome`, `panels`).
+- Updated `src/ui/app/hooks/useAppRouteState.tsx` to delegate both large object constructions through these composers, reducing monolithic wiring in the route hook while keeping behavior and route contracts unchanged.
+- Added targeted unit coverage:
+  - `tests/app/hooks/routeDatasetSetupProps.test.ts`
+  - `tests/app/hooks/routeViewerShellProps.test.ts`
+- Validation run:
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `node --import tsx --test tests/app/hooks/routeDatasetSetupProps.test.ts tests/app/hooks/routeViewerShellProps.test.ts`
+- Caveat:
+  - `npm run -s typecheck:strict-unused` currently fails on an existing unrelated VR file (`src/components/viewers/volume-viewer/vr/controllerConnectionLifecycle.ts`) due an unused `THREE` import. This change set intentionally avoided VR edits.
+- Follow-up:
+  - Continue the same decomposition pattern for `ViewerShell.tsx` and `VolumeViewer.tsx` non-VR orchestration surfaces.
+
+## Viewer shell orchestration split (non-VR UI/runtime seams)
+- Reduced `src/components/viewers/ViewerShell.tsx` by extracting three dense orchestration concerns into focused shell hooks:
+  - `src/components/viewers/viewer-shell/hooks/useViewerRecording.ts`
+    - owns capture-target registration (`3d`/`2d`), media-recorder setup/teardown, frame-pump lifecycle, bitrate clamping, and playback recording glue.
+    - exports tested pure helpers (`clampRecordingBitrateMbps`, `resolveCaptureFps`, `createRecordingFileName`).
+  - `src/components/viewers/viewer-shell/hooks/useViewerPanelWindows.ts`
+    - owns viewer-settings / plot-settings / track-settings / paintbrush window open-close-reset policies.
+  - `src/components/viewers/viewer-shell/hooks/useViewerPaintbrushIntegration.ts`
+    - owns paintbrush primary-volume binding, overlay layer composition for 3d/2d viewers, stroke handler wiring, and paint TIFF export callback.
+- Rewrote `src/components/viewers/ViewerShell.tsx` to a thin composition shell that delegates recording, window state, and paintbrush integration to the extracted hooks while preserving panel/viewer contracts.
+- Added targeted test coverage:
+  - `tests/viewer-shell/useViewerRecording.test.ts` for recording helper behavior (bitrate clamp, FPS resolution, file-name shaping).
+- Validation run:
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `node --import tsx --test tests/ViewerShellContainer.test.ts tests/PaintbrushWindow.test.tsx tests/viewer-shell/useViewerRecording.test.ts`
+- Caveat:
+  - `npm run -s typecheck:strict-unused` still fails due a pre-existing VR-file unused import (`src/components/viewers/volume-viewer/vr/controllerConnectionLifecycle.ts`), unchanged in this non-VR slice.
+- Follow-up:
+  - Continue with the next non-VR high-priority hotspot: `src/components/viewers/volume-viewer/useTrackRendering.ts`.
+
+## Track rendering decomposition (non-VR overlay pipeline)
+- Reduced coupling in `src/components/viewers/volume-viewer/useTrackRendering.ts` by extracting dense responsibilities into focused helper modules:
+  - `src/components/viewers/volume-viewer/trackHoverState.ts`
+    - isolates hover-source arbitration (`pointer` vs `controller`), hovered-track state, and tooltip position synchronization.
+  - `src/components/viewers/volume-viewer/trackDrawRanges.ts`
+    - isolates draw-range updates for full-trail vs windowed-trail modes, including end-cap position/visibility updates and geometry slice reuse.
+  - `src/components/viewers/volume-viewer/trackHitTesting.ts`
+    - isolates pointer raycast hit testing against visible line/end-cap objects and hover fallback clearing behavior.
+  - `src/components/viewers/volume-viewer/trackAppearance.ts`
+    - isolates per-frame appearance updates (color/highlight/blink, opacity, line widths, outline widths/opacities, end-cap scale updates).
+- Updated `useTrackRendering.ts` to delegate the extracted concerns while preserving public hook API and resource lifecycle behavior.
+- Validation run:
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `node --import tsx --test tests/useTrackRendering.test.ts`
+- Caveat:
+  - `npm run -s typecheck:strict-unused` remains blocked by an unchanged pre-existing VR file (`src/components/viewers/volume-viewer/vr/controllerConnectionLifecycle.ts`) with an unused import.
+- Follow-up:
+  - Continue with the next non-VR high-priority hotspot: `src/shared/utils/preprocessedDataset/preprocess.ts` (pipeline orchestration split).
+
+## Preprocess pipeline decomposition (non-VR data pipeline)
+- Refactored `src/shared/utils/preprocessedDataset/preprocess.ts` to split the large `preprocessDatasetToStorage(...)` orchestration into explicit staged helpers:
+  - `computeLayerTimepointMetadata(...)`
+  - `computeLayerRepresentativeNormalization(...)`
+  - `collectLayerMetadata(...)`
+  - `groupLayersByChannel(...)`
+  - `buildManifestFromLayerMetadata(...)`
+  - `writeTrackSetCsvFiles(...)`
+  - `createManifestZarrArrays(...)`
+  - `writeNormalizedLayerTimepoint(...)`
+  - `writeLayerVolumesFor2d(...)`
+  - `writeLayerVolumesFor3d(...)`
+- Updated `preprocessDatasetToStorage(...)` to read as a linear pipeline (prepare -> normalize -> validate metadata -> build manifest -> materialize arrays/tracks -> write per-timepoint volumes).
+- Kept behavior and error messages stable while reducing coupling between orchestration, I/O, normalization, and manifest shaping.
+- Validation run:
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `node --import tsx --test tests/preprocessedDataset.test.ts`
+  - `node --import tsx --test tests/useTrackRendering.test.ts tests/viewer-shell/useViewerRecording.test.ts tests/ViewerShellContainer.test.ts tests/preprocessedDataset.test.ts`
+- Caveat:
+  - `createManifestZarrArrays(...)` uses a permissive `root` type boundary (`any`) to keep Zarrita store typing flexible across current call sites; behavior is unchanged.
+  - `npm run -s typecheck:strict-unused` remains blocked by an unchanged pre-existing VR file (`src/components/viewers/volume-viewer/vr/controllerConnectionLifecycle.ts`) with an unused import.
+- Follow-up:
+  - Continue with non-VR viewer orchestration cleanup in `src/components/viewers/VolumeViewer.tsx` and `src/components/viewers/PlanarViewer.tsx`.
+
+## Refactor stabilization pass (route hooks, VR bridge, planar auto-fit)
+- Addressed post-refactor correctness risks in route/VR/planar wiring:
+  - `src/components/viewers/volume-viewer/VolumeViewerVrBridge.tsx`
+    - Replaced narrow `playbackLoopRef` equality gating with field-level integration diffing (`hasChangedVrIntegration`) so parent VR integration updates when any API surface changes.
+  - `src/components/viewers/planar-viewer/usePlanarViewerCanvasLifecycle.ts`
+  - `src/components/viewers/planar-viewer/usePlanarPrimaryVolume.ts`
+  - `src/components/viewers/PlanarViewer.tsx`
+    - Replaced ref-only planar auto-fit signaling with an explicit request revision state (`requestAutoFit` + `autoFitRequestRevision`) so reset effects run deterministically when auto-fit is requested.
+  - `src/hooks/dataset/useChannelSources.ts`
+  - `src/hooks/dataset/channelTimepointValidation.ts`
+    - Global timepoint mismatch now uses only known computed counts (ignores pending/unknown layers), and channels report a pending warning while counts are still being computed.
+  - `src/ui/app/hooks/useRouteDatasetSetupState.ts`
+    - Fixed `handleAddChannel` callback sequencing so pending-focus/edit handlers always receive the created channel (removed fragile state-updater side-channel capture).
+- Added dedicated coverage for newly extracted route/refactor seams:
+  - `tests/app/hooks/useRouteLayerVolumes.test.ts`
+  - `tests/app/hooks/useRouteDatasetResetState.test.ts`
+  - `tests/app/hooks/useRouteDatasetSetupState.test.ts`
+  - `tests/app/hooks/useRouteVrChannelPanels.test.ts`
+  - `tests/volumeViewerVrBridge.test.ts`
+  - `tests/channelTimepointValidation.test.ts`
+- Validation run:
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm test`
+  - `npm run -s verify:fast`
+  - `npm run -s verify:ui`
+  - `npm run -s typecheck:strict-unused`
+  - `npm run -s test:perf`
+- Caveats / trade-offs:
+  - VR integration diffing now compares all enumerable API fields; this prioritizes correctness over minimal update frequency and can propagate updates whenever any returned handler/ref identity changes.
+  - Planar auto-fit now intentionally triggers a small additional rerender per auto-fit request, trading minimal state churn for deterministic reset behavior.
+- Follow-up:
+  - If VR integration update frequency ever becomes a measurable hotspot, consider introducing an explicit revision token from `useVolumeViewerVr` for cheaper publication gating.

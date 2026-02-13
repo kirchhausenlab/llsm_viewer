@@ -1,13 +1,11 @@
-import type { ComponentProps, CSSProperties, MouseEvent } from 'react';
+import type { ComponentProps, CSSProperties } from 'react';
 
 import type BrightnessContrastHistogram from '../BrightnessContrastHistogram';
 import type FloatingWindow from '../../widgets/FloatingWindow';
 import type PlanarViewer from '../PlanarViewer';
 import type PlotSettingsWindow from '../../widgets/PlotSettingsWindow';
 import type SelectedTracksWindow from '../../widgets/SelectedTracksWindow';
-import type VolumeViewer from '../VolumeViewer';
 import type { VolumeViewerProps } from '../VolumeViewer.types';
-import type { ChannelSource } from '../../../hooks/dataset';
 import type { LoadedDatasetLayer } from '../../../hooks/dataset';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import type { LayerSettings } from '../../../state/layerSettings';

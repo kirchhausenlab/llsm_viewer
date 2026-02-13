@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 
-import { denormalizeValue, formatChannelValuesDetailed } from '../../../shared/utils/intensityFormatting';
+import { formatChannelValuesDetailed } from '../../../shared/utils/intensityFormatting';
 import { clampValue, sampleRawValuesAtPosition, sampleSegmentationLabel } from '../../../shared/utils/hoverSampling';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import type { HoveredVoxelInfo } from '../../../types/hover';
@@ -30,23 +30,19 @@ import {
   MIP_MAX_STEPS,
   MIP_REFINEMENT_STEPS,
 } from './rendering';
+import { resolveVolumeHoverLayerSelection } from './volumeHoverTargetLayer';
+import {
+  adjustWindowedIntensity,
+  computeVolumeLuminance,
+  sampleVolumeAtNormalizedPosition,
+} from './volumeHoverSampling';
 
 export type UseVolumeHoverParams = {
   layersRef: MutableRefObject<ViewerLayer[]>;
   resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
   hoverRaycasterRef: MutableRefObject<THREE.Raycaster | null>;
   volumeRootGroupRef: MutableRefObject<THREE.Group | null>;
-  volumeRootBaseOffsetRef: MutableRefObject<THREE.Vector3>;
-  volumeRootCenterOffsetRef: MutableRefObject<THREE.Vector3>;
-  volumeRootCenterUnscaledRef: MutableRefObject<THREE.Vector3>;
-  volumeRootHalfExtentsRef: MutableRefObject<THREE.Vector3>;
-  volumeNormalizationScaleRef: MutableRefObject<number>;
-  volumeUserScaleRef: MutableRefObject<number>;
   volumeStepScaleRef: MutableRefObject<number>;
-  volumeYawRef: MutableRefObject<number>;
-  volumePitchRef: MutableRefObject<number>;
-  volumeRootRotatedCenterTempRef: MutableRefObject<THREE.Vector3>;
-  currentDimensionsRef: MutableRefObject<{ width: number; height: number; depth: number } | null>;
   hoveredVoxelRef: MutableRefObject<{
     layerKey: string | null;
     normalizedPosition: THREE.Vector3 | null;
@@ -68,17 +64,7 @@ export function useVolumeHover({
   resourcesRef,
   hoverRaycasterRef,
   volumeRootGroupRef,
-  volumeRootBaseOffsetRef,
-  volumeRootCenterOffsetRef,
-  volumeRootCenterUnscaledRef,
-  volumeRootHalfExtentsRef,
-  volumeNormalizationScaleRef,
-  volumeUserScaleRef,
   volumeStepScaleRef,
-  volumeYawRef,
-  volumePitchRef,
-  volumeRootRotatedCenterTempRef,
-  currentDimensionsRef,
   hoveredVoxelRef,
   rendererRef,
   cameraRef,
@@ -200,55 +186,10 @@ export function useVolumeHover({
         return;
       }
 
-      const layersSnapshot = layersRef.current;
-      const hoverableLayers: (typeof layersSnapshot)[number][] = [];
-      let targetLayer: (typeof layersSnapshot)[number] | null = null;
-      let resource: VolumeResources | null = null;
-      let cpuFallbackLayer: (typeof layersSnapshot)[number] | null = null;
-
-      for (const layer of layersSnapshot) {
-        if (layer.isHoverTarget === false) {
-          continue;
-        }
-        const volume = layer.volume;
-        if (!volume || !layer.visible) {
-          continue;
-        }
-
-        const hasVolumeDepth = volume.depth > 1;
-        const viewerMode =
-          layer.mode === 'slice' || layer.mode === '3d'
-            ? layer.mode
-            : hasVolumeDepth
-              ? '3d'
-              : 'slice';
-
-        const canSampleLayer = viewerMode === '3d' || hasVolumeDepth;
-
-        if (!canSampleLayer) {
-          continue;
-        }
-
-        hoverableLayers.push(layer);
-
-        const candidate = resourcesRef.current.get(layer.key) ?? null;
-        const isSliceResource = candidate?.mode === 'slice' && hasVolumeDepth;
-        const has3dResource = candidate?.mode === '3d';
-
-        if (has3dResource && (!resource || resource.mode !== '3d')) {
-          targetLayer = layer;
-          resource = candidate;
-        } else if (isSliceResource && (!resource || resource.mode !== '3d') && !targetLayer) {
-          targetLayer = layer;
-          resource = candidate;
-        } else if (!cpuFallbackLayer) {
-          cpuFallbackLayer = layer;
-        }
-      }
-
-      if (!targetLayer && cpuFallbackLayer) {
-        targetLayer = cpuFallbackLayer;
-      }
+      const { hoverableLayers, targetLayer, resource } = resolveVolumeHoverLayerSelection(
+        layersRef.current,
+        resourcesRef.current,
+      );
 
       if (!targetLayer || !targetLayer.volume) {
         reportVoxelHoverAbort('No visible 3D-capable volume layer is available.');
@@ -347,113 +288,28 @@ export function useVolumeHover({
       hoverSample.copy(hoverStartNormalized);
 
       const channels = Math.max(1, volume.channels);
-      const sliceStride = volume.width * volume.height * channels;
-      const rowStride = volume.width * channels;
-
-      const sampleVolume = (coords: THREE.Vector3) => {
-        const x = clampValue(coords.x * volume.width, 0, volume.width - 1);
-        const y = clampValue(coords.y * volume.height, 0, volume.height - 1);
-        const z = clampValue(coords.z * volume.depth, 0, volume.depth - 1);
-
-        const leftX = Math.floor(x);
-        const rightX = Math.min(volume.width - 1, leftX + 1);
-        const topY = Math.floor(y);
-        const bottomY = Math.min(volume.height - 1, topY + 1);
-        const frontZ = Math.floor(z);
-        const backZ = Math.min(volume.depth - 1, frontZ + 1);
-
-        const tX = x - leftX;
-        const tY = y - topY;
-        const tZ = z - frontZ;
-        const invTX = 1 - tX;
-        const invTY = 1 - tY;
-        const invTZ = 1 - tZ;
-
-        const weight000 = invTX * invTY * invTZ;
-        const weight100 = tX * invTY * invTZ;
-        const weight010 = invTX * tY * invTZ;
-        const weight110 = tX * tY * invTZ;
-        const weight001 = invTX * invTY * tZ;
-        const weight101 = tX * invTY * tZ;
-        const weight011 = invTX * tY * tZ;
-        const weight111 = tX * tY * tZ;
-
-        const frontOffset = frontZ * sliceStride;
-        const backOffset = backZ * sliceStride;
-        const topFrontOffset = frontOffset + topY * rowStride;
-        const bottomFrontOffset = frontOffset + bottomY * rowStride;
-        const topBackOffset = backOffset + topY * rowStride;
-        const bottomBackOffset = backOffset + bottomY * rowStride;
-
-        const normalizedValues: number[] = [];
-        const rawValues: number[] = [];
-
-        for (let channelIndex = 0; channelIndex < channels; channelIndex++) {
-          const baseChannelOffset = channelIndex;
-          const topLeftFront = volume.normalized[topFrontOffset + leftX * channels + baseChannelOffset] ?? 0;
-          const topRightFront = volume.normalized[topFrontOffset + rightX * channels + baseChannelOffset] ?? 0;
-          const bottomLeftFront = volume.normalized[bottomFrontOffset + leftX * channels + baseChannelOffset] ?? 0;
-          const bottomRightFront = volume.normalized[bottomFrontOffset + rightX * channels + baseChannelOffset] ?? 0;
-
-          const topLeftBack = volume.normalized[topBackOffset + leftX * channels + baseChannelOffset] ?? 0;
-          const topRightBack = volume.normalized[topBackOffset + rightX * channels + baseChannelOffset] ?? 0;
-          const bottomLeftBack = volume.normalized[bottomBackOffset + leftX * channels + baseChannelOffset] ?? 0;
-          const bottomRightBack = volume.normalized[bottomBackOffset + rightX * channels + baseChannelOffset] ?? 0;
-
-          const interpolated =
-            topLeftFront * weight000 +
-            topRightFront * weight100 +
-            bottomLeftFront * weight010 +
-            bottomRightFront * weight110 +
-            topLeftBack * weight001 +
-            topRightBack * weight101 +
-            bottomLeftBack * weight011 +
-            bottomRightBack * weight111;
-
-          normalizedValues.push(interpolated / 255);
-          rawValues.push(denormalizeValue(interpolated, volume));
-        }
-
-        return { normalizedValues, rawValues };
-      };
-
-      const computeLuminance = (values: number[]) => {
-        if (channels === 1) {
-          return values[0] ?? 0;
-        }
-        if (channels === 2) {
-          return 0.5 * ((values[0] ?? 0) + (values[1] ?? 0));
-        }
-        if (channels === 3) {
-          return 0.2126 * (values[0] ?? 0) + 0.7152 * (values[1] ?? 0) + 0.0722 * (values[2] ?? 0);
-        }
-        return Math.max(...values, 0);
-      };
-
-      const adjustIntensity = (value: number) => {
-        const range = Math.max(targetLayer.windowMax - targetLayer.windowMin, 1e-5);
-        const normalized = clampValue((value - targetLayer.windowMin) / range, 0, 1);
-        return targetLayer.invert ? 1 - normalized : normalized;
-      };
 
       let maxValue = -Infinity;
       let maxIndex = 0;
       hoverMaxPosition.copy(hoverSample);
       let maxRawValues: number[] = [];
-      let maxNormalizedValues: number[] = [];
 
       const highWaterMark = targetLayer.invert ? 0.001 : 0.999;
 
       for (let i = 0; i < nsteps; i++) {
-        const sample = sampleVolume(hoverSample);
-        const luminance = computeLuminance(sample.normalizedValues);
-        const adjusted = adjustIntensity(luminance);
+        const sample = sampleVolumeAtNormalizedPosition(volume, hoverSample);
+        const luminance = computeVolumeLuminance(sample.normalizedValues, channels);
+        const adjusted = adjustWindowedIntensity(
+          luminance,
+          targetLayer.windowMin,
+          targetLayer.windowMax,
+          targetLayer.invert,
+        );
         if (adjusted > maxValue) {
           maxValue = adjusted;
           maxIndex = i;
           hoverMaxPosition.copy(hoverSample);
           maxRawValues = sample.rawValues;
-          maxNormalizedValues = sample.normalizedValues;
 
           if ((!targetLayer.invert && maxValue >= highWaterMark) || (targetLayer.invert && maxValue <= highWaterMark)) {
             break;
@@ -467,14 +323,18 @@ export function useVolumeHover({
       hoverRefineStep.copy(hoverStep).divideScalar(MIP_REFINEMENT_STEPS);
 
       for (let i = 0; i < MIP_REFINEMENT_STEPS; i++) {
-        const sample = sampleVolume(hoverSample);
-        const luminance = computeLuminance(sample.normalizedValues);
-        const adjusted = adjustIntensity(luminance);
+        const sample = sampleVolumeAtNormalizedPosition(volume, hoverSample);
+        const luminance = computeVolumeLuminance(sample.normalizedValues, channels);
+        const adjusted = adjustWindowedIntensity(
+          luminance,
+          targetLayer.windowMin,
+          targetLayer.windowMax,
+          targetLayer.invert,
+        );
         if (adjusted > maxValue) {
           maxValue = adjusted;
           hoverMaxPosition.copy(hoverSample);
           maxRawValues = sample.rawValues;
-          maxNormalizedValues = sample.normalizedValues;
         }
         hoverSample.add(hoverRefineStep);
       }

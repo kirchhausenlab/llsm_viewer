@@ -1,7 +1,7 @@
 import { fromBlob } from 'geotiff';
 import * as zarr from 'zarrita';
 
-import type { NormalizationParameters } from '../../../core/volumeProcessing';
+import type { NormalizationParameters, NormalizedVolume } from '../../../core/volumeProcessing';
 import {
   colorizeSegmentationVolume,
   computeNormalizationParameters,
@@ -199,7 +199,6 @@ function extract2dSlice(volume: VolumePayload, sliceIndex: number): VolumePayloa
 }
 
 function resolve2dFileSliceForTimepoint(
-  files: File[],
   timepoint: number,
   depths: number[]
 ): { fileIndex: number; sliceIndex: number } {
@@ -233,31 +232,29 @@ function computeRepresentativeNormalization(volume: VolumePayload): Normalizatio
   return computeNormalizationParameters([volume]);
 }
 
-export async function preprocessDatasetToStorage({
-  layers,
-  channels,
-  voxelResolution,
+type LayerMetadata = {
+  width: number;
+  height: number;
+  depth: number;
+  channels: number;
+  dataType: VolumePayload['dataType'];
+};
+
+async function computeLayerTimepointMetadata({
+  sortedLayerSources,
   movieMode,
-  storage,
-  signal,
-  onProgress
-}: PreprocessDatasetToStorageOptions): Promise<{
-  manifest: PreprocessedManifest;
-  channelSummaries: PreprocessedChannelSummary[];
-  totalVolumeCount: number;
+  signal
+}: {
+  sortedLayerSources: PreprocessLayerSource[];
+  movieMode: PreprocessedMovieMode;
+  signal?: AbortSignal;
+}): Promise<{
+  expectedTimepoints: number;
+  layer2dFileDepthsByKey: Map<string, number[]>;
 }> {
-  const sortedLayerSources = layers
-    .map((layer) => ({ ...layer, files: sortVolumeFiles(layer.files) }))
-    .filter((layer) => layer.files.length > 0);
-
-  if (sortedLayerSources.length === 0) {
-    throw new Error('No TIFF files were provided for preprocessing.');
-  }
-
-  throwIfAborted(signal);
-
   const layerTimepointCounts: number[] = [];
   const layer2dFileDepthsByKey = new Map<string, number[]>();
+
   for (const layer of sortedLayerSources) {
     if (movieMode === '2d') {
       const depths: number[] = [];
@@ -284,14 +281,34 @@ export async function preprocessDatasetToStorage({
     }
   }
 
-  const representativeTimepoint = Math.floor(expectedTimepoints / 2);
+  return {
+    expectedTimepoints,
+    layer2dFileDepthsByKey
+  };
+}
+
+async function computeLayerRepresentativeNormalization({
+  sortedLayerSources,
+  movieMode,
+  representativeTimepoint,
+  layer2dFileDepthsByKey,
+  signal,
+  onProgress
+}: {
+  sortedLayerSources: PreprocessLayerSource[];
+  movieMode: PreprocessedMovieMode;
+  representativeTimepoint: number;
+  layer2dFileDepthsByKey: Map<string, number[]>;
+  signal?: AbortSignal;
+  onProgress?: (progress: PreprocessDatasetProgress) => void;
+}): Promise<Map<string, NormalizationParameters>> {
   const normalizationByLayerKey = new Map<string, NormalizationParameters>();
 
-  for (let layerIndex = 0; layerIndex < sortedLayerSources.length; layerIndex += 1) {
-    const layer = sortedLayerSources[layerIndex];
+  for (const layer of sortedLayerSources) {
     if (layer.isSegmentation) {
       continue;
     }
+
     throwIfAborted(signal);
     onProgress?.({ stage: 'rep-stats', layerKey: layer.key });
 
@@ -300,7 +317,7 @@ export async function preprocessDatasetToStorage({
       if (!depths) {
         throw new Error('Missing 2D stack metadata while computing representative stats.');
       }
-      const { fileIndex, sliceIndex } = resolve2dFileSliceForTimepoint(layer.files, representativeTimepoint, depths);
+      const { fileIndex, sliceIndex } = resolve2dFileSliceForTimepoint(representativeTimepoint, depths);
       const stackVolume = await loadVolumeFor3dTimepoint(layer.files[fileIndex]!, loadVolumesFromFiles, signal);
       const sliceVolume = extract2dSlice(stackVolume, sliceIndex);
       normalizationByLayerKey.set(layer.key, computeRepresentativeNormalization(sliceVolume));
@@ -310,19 +327,30 @@ export async function preprocessDatasetToStorage({
     }
   }
 
+  return normalizationByLayerKey;
+}
+
+async function collectLayerMetadata({
+  sortedLayerSources,
+  movieMode,
+  layer2dFileDepthsByKey,
+  signal
+}: {
+  sortedLayerSources: PreprocessLayerSource[];
+  movieMode: PreprocessedMovieMode;
+  layer2dFileDepthsByKey: Map<string, number[]>;
+  signal?: AbortSignal;
+}): Promise<{
+  sourceMetadataByLayerKey: Map<string, LayerMetadata>;
+  layerMetadataByKey: Map<string, LayerMetadata>;
+}> {
   let referenceShape3d: { width: number; height: number; depth: number } | null = null;
   let referenceShape2d: { width: number; height: number } | null = null;
-  const sourceMetadataByLayerKey = new Map<
-    string,
-    { width: number; height: number; depth: number; channels: number; dataType: VolumePayload['dataType'] }
-  >();
-  const layerMetadataByKey = new Map<
-    string,
-    { width: number; height: number; depth: number; channels: number; dataType: VolumePayload['dataType'] }
-  >();
 
-  for (let layerIndex = 0; layerIndex < sortedLayerSources.length; layerIndex += 1) {
-    const layer = sortedLayerSources[layerIndex];
+  const sourceMetadataByLayerKey = new Map<string, LayerMetadata>();
+  const layerMetadataByKey = new Map<string, LayerMetadata>();
+
+  for (const layer of sortedLayerSources) {
     throwIfAborted(signal);
 
     if (movieMode === '2d') {
@@ -334,6 +362,7 @@ export async function preprocessDatasetToStorage({
       if (firstAvailableFileIndex < 0) {
         throw new Error(`Layer "${layer.channelLabel}" does not contain any TIFF frames.`);
       }
+
       const stackVolume = await loadVolumeFor3dTimepoint(
         layer.files[firstAvailableFileIndex]!,
         loadVolumesFromFiles,
@@ -398,9 +427,13 @@ export async function preprocessDatasetToStorage({
     }
   }
 
-  const totalVolumeCount = expectedTimepoints * sortedLayerSources.length;
-  let processedVolumes = 0;
+  return {
+    sourceMetadataByLayerKey,
+    layerMetadataByKey
+  };
+}
 
+function groupLayersByChannel(sortedLayerSources: PreprocessLayerSource[]): Map<string, PreprocessLayerSource[]> {
   const layersByChannel = new Map<string, PreprocessLayerSource[]>();
   for (const layer of sortedLayerSources) {
     const bucket = layersByChannel.get(layer.channelId);
@@ -410,17 +443,41 @@ export async function preprocessDatasetToStorage({
       layersByChannel.set(layer.channelId, [layer]);
     }
   }
+  return layersByChannel;
+}
 
+function buildManifestFromLayerMetadata({
+  channels,
+  layersByChannel,
+  layerMetadataByKey,
+  expectedTimepoints,
+  normalizationByLayerKey,
+  movieMode,
+  totalVolumeCount,
+  voxelResolution
+}: {
+  channels: ChannelExportMetadata[];
+  layersByChannel: Map<string, PreprocessLayerSource[]>;
+  layerMetadataByKey: Map<string, LayerMetadata>;
+  expectedTimepoints: number;
+  normalizationByLayerKey: Map<string, NormalizationParameters>;
+  movieMode: PreprocessedMovieMode;
+  totalVolumeCount: number;
+  voxelResolution: NonNullable<PreprocessedManifest['dataset']['voxelResolution']>;
+}): {
+  manifest: PreprocessedManifest;
+  layerManifestByKey: Map<string, PreprocessedLayerManifestEntry>;
+  trackEntriesByTrackSetId: Map<string, string[][]>;
+} {
   const manifestChannels: PreprocessedManifest['dataset']['channels'] = [];
   const layerManifestByKey = new Map<string, PreprocessedLayerManifestEntry>();
-
   const trackEntriesByTrackSetId = new Map<string, string[][]>();
+
   for (const channel of channels) {
     const layerSources = layersByChannel.get(channel.id) ?? [];
     const manifestLayers: PreprocessedLayerManifestEntry[] = [];
 
-    for (let layerIndex = 0; layerIndex < layerSources.length; layerIndex += 1) {
-      const layer = layerSources[layerIndex];
+    for (const layer of layerSources) {
       const layerMetadata = layerMetadataByKey.get(layer.key);
       if (!layerMetadata) {
         throw new Error(`Missing metadata for layer "${layer.key}".`);
@@ -524,13 +581,22 @@ export async function preprocessDatasetToStorage({
     }
   };
 
-  const zarrStore = createZarrStoreFromPreprocessedStorage(storage);
-  const root = zarr.root(zarrStore);
+  return {
+    manifest,
+    layerManifestByKey,
+    trackEntriesByTrackSetId
+  };
+}
 
-  throwIfAborted(signal);
-  onProgress?.({ stage: 'finalize-manifest' });
-  await zarr.create(root, { attributes: { llsmViewerPreprocessed: manifest } });
-
+async function writeTrackSetCsvFiles({
+  manifest,
+  trackEntriesByTrackSetId,
+  storage
+}: {
+  manifest: PreprocessedManifest;
+  trackEntriesByTrackSetId: Map<string, string[][]>;
+  storage: PreprocessedStorage;
+}): Promise<void> {
   for (const channel of manifest.dataset.channels) {
     for (const trackSet of channel.trackSets) {
       const entries = trackEntriesByTrackSetId.get(trackSet.id) ?? [];
@@ -538,7 +604,15 @@ export async function preprocessDatasetToStorage({
       await storage.writeFile(trackSet.tracks.path, payload);
     }
   }
+}
 
+async function createManifestZarrArrays({
+  root,
+  manifest
+}: {
+  root: any;
+  manifest: PreprocessedManifest;
+}): Promise<void> {
   for (const channel of manifest.dataset.channels) {
     for (const layer of channel.layers) {
       const data = layer.zarr.data;
@@ -549,6 +623,7 @@ export async function preprocessDatasetToStorage({
         codecs: [],
         fill_value: 0
       });
+
       if (layer.zarr.labels) {
         const labels = layer.zarr.labels;
         await zarr.create(root.resolve(labels.path), {
@@ -570,11 +645,274 @@ export async function preprocessDatasetToStorage({
       });
     }
   }
+}
 
+async function writeNormalizedLayerTimepoint({
+  normalized,
+  layer,
+  manifestLayer,
+  storage,
+  signal,
+  timepoint
+}: {
+  normalized: NormalizedVolume;
+  layer: PreprocessLayerSource;
+  manifestLayer: PreprocessedLayerManifestEntry;
+  storage: PreprocessedStorage;
+  signal?: AbortSignal;
+  timepoint: number;
+}): Promise<void> {
+  const dataArrayPath = manifestLayer.zarr.data.path;
+  const labelsArrayPath = manifestLayer.zarr.labels?.path ?? null;
+  const histogramArrayPath = manifestLayer.zarr.histogram.path;
+
+  await writeZarrChunk({
+    storage,
+    arrayPath: dataArrayPath,
+    timepoint,
+    rank: manifestLayer.zarr.data.shape.length,
+    bytes: normalized.normalized,
+    signal
+  });
+
+  const histogram = computeUint8VolumeHistogram(normalized);
+  await writeZarrChunk({
+    storage,
+    arrayPath: histogramArrayPath,
+    timepoint,
+    rank: manifestLayer.zarr.histogram.shape.length,
+    bytes: encodeUint32ArrayLE(histogram),
+    signal
+  });
+
+  if (layer.isSegmentation && normalized.segmentationLabels && labelsArrayPath) {
+    const labelBytes = new Uint8Array(
+      normalized.segmentationLabels.buffer,
+      normalized.segmentationLabels.byteOffset,
+      normalized.segmentationLabels.byteLength
+    );
+    await writeZarrChunk({
+      storage,
+      arrayPath: labelsArrayPath,
+      timepoint,
+      rank: manifestLayer.zarr.labels?.shape.length ?? 4,
+      bytes: labelBytes,
+      signal
+    });
+  }
+}
+
+async function writeLayerVolumesFor2d({
+  layer,
+  manifestLayer,
+  sourceMetadata,
+  normalizationByLayerKey,
+  layer2dFileDepthsByKey,
+  storage,
+  signal,
+  onProgress,
+  totalVolumeCount,
+  progressState
+}: {
+  layer: PreprocessLayerSource;
+  manifestLayer: PreprocessedLayerManifestEntry;
+  sourceMetadata: LayerMetadata;
+  normalizationByLayerKey: Map<string, NormalizationParameters>;
+  layer2dFileDepthsByKey: Map<string, number[]>;
+  storage: PreprocessedStorage;
+  signal?: AbortSignal;
+  onProgress?: (progress: PreprocessDatasetProgress) => void;
+  totalVolumeCount: number;
+  progressState: { processedVolumes: number };
+}): Promise<void> {
+  const depths = layer2dFileDepthsByKey.get(layer.key);
+  if (!depths) {
+    throw new Error('Missing 2D stack metadata while preprocessing.');
+  }
+
+  let timepoint = 0;
+  for (let fileIndex = 0; fileIndex < layer.files.length; fileIndex += 1) {
+    throwIfAborted(signal);
+    const depth = depths[fileIndex] ?? 0;
+    if (depth <= 0) {
+      continue;
+    }
+
+    const stackVolume = await loadVolumeFor3dTimepoint(layer.files[fileIndex]!, loadVolumesFromFiles, signal);
+    assertVolumeMatchesExpectedShape(
+      stackVolume,
+      {
+        width: sourceMetadata.width,
+        height: sourceMetadata.height,
+        channels: sourceMetadata.channels,
+        dataType: sourceMetadata.dataType
+      },
+      `Layer "${layer.channelLabel}" file "${layer.files[fileIndex]?.name ?? `#${fileIndex + 1}`}" stack`
+    );
+    if (stackVolume.depth !== depth) {
+      throw new Error(
+        `Layer "${layer.channelLabel}" file "${layer.files[fileIndex]?.name ?? `#${fileIndex + 1}`}" reported ${depth} slices during indexing but decoded as ${stackVolume.depth} slices.`
+      );
+    }
+
+    for (let sliceIndex = 0; sliceIndex < depth; sliceIndex += 1) {
+      throwIfAborted(signal);
+      const rawSlice = extract2dSlice(stackVolume, sliceIndex);
+      assertVolumeMatchesExpectedShape(rawSlice, sourceMetadata, `Layer "${layer.channelLabel}" timepoint ${timepoint + 1}`);
+
+      const normalized = layer.isSegmentation
+        ? colorizeSegmentationVolume(rawSlice, createSegmentationSeed(layer.key, timepoint))
+        : normalizeVolume(rawSlice, normalizationByLayerKey.get(layer.key) ?? computeRepresentativeNormalization(rawSlice));
+
+      await writeNormalizedLayerTimepoint({
+        normalized,
+        layer,
+        manifestLayer,
+        storage,
+        signal,
+        timepoint
+      });
+
+      progressState.processedVolumes += 1;
+      onProgress?.({
+        stage: 'write-volumes',
+        processedVolumes: progressState.processedVolumes,
+        totalVolumes: totalVolumeCount,
+        layerKey: layer.key,
+        timepoint
+      });
+      timepoint += 1;
+    }
+  }
+}
+
+async function writeLayerVolumesFor3d({
+  layer,
+  manifestLayer,
+  sourceMetadata,
+  representativeTimepoint,
+  normalizationByLayerKey,
+  storage,
+  signal,
+  onProgress,
+  totalVolumeCount,
+  progressState
+}: {
+  layer: PreprocessLayerSource;
+  manifestLayer: PreprocessedLayerManifestEntry;
+  sourceMetadata: LayerMetadata;
+  representativeTimepoint: number;
+  normalizationByLayerKey: Map<string, NormalizationParameters>;
+  storage: PreprocessedStorage;
+  signal?: AbortSignal;
+  onProgress?: (progress: PreprocessDatasetProgress) => void;
+  totalVolumeCount: number;
+  progressState: { processedVolumes: number };
+}): Promise<void> {
+  const normalization = layer.isSegmentation
+    ? null
+    : normalizationByLayerKey.get(layer.key) ??
+      computeRepresentativeNormalization(
+        await loadVolumeFor3dTimepoint(layer.files[representativeTimepoint]!, loadVolumesFromFiles, signal)
+      );
+
+  for (let timepoint = 0; timepoint < layer.files.length; timepoint += 1) {
+    throwIfAborted(signal);
+    const raw = await loadVolumeFor3dTimepoint(layer.files[timepoint]!, loadVolumesFromFiles, signal);
+    assertVolumeMatchesExpectedShape(raw, sourceMetadata, `Layer "${layer.channelLabel}" timepoint ${timepoint + 1}`);
+
+    const normalized = layer.isSegmentation
+      ? colorizeSegmentationVolume(raw, createSegmentationSeed(layer.key, timepoint))
+      : normalizeVolume(raw, normalization ?? computeRepresentativeNormalization(raw));
+
+    await writeNormalizedLayerTimepoint({
+      normalized,
+      layer,
+      manifestLayer,
+      storage,
+      signal,
+      timepoint
+    });
+
+    progressState.processedVolumes += 1;
+    onProgress?.({
+      stage: 'write-volumes',
+      processedVolumes: progressState.processedVolumes,
+      totalVolumes: totalVolumeCount,
+      layerKey: layer.key,
+      timepoint
+    });
+  }
+}
+
+export async function preprocessDatasetToStorage({
+  layers,
+  channels,
+  voxelResolution,
+  movieMode,
+  storage,
+  signal,
+  onProgress
+}: PreprocessDatasetToStorageOptions): Promise<{
+  manifest: PreprocessedManifest;
+  channelSummaries: PreprocessedChannelSummary[];
+  totalVolumeCount: number;
+}> {
+  const sortedLayerSources = layers
+    .map((layer) => ({ ...layer, files: sortVolumeFiles(layer.files) }))
+    .filter((layer) => layer.files.length > 0);
+
+  if (sortedLayerSources.length === 0) {
+    throw new Error('No TIFF files were provided for preprocessing.');
+  }
+
+  throwIfAborted(signal);
+  const { expectedTimepoints, layer2dFileDepthsByKey } = await computeLayerTimepointMetadata({
+    sortedLayerSources,
+    movieMode,
+    signal
+  });
+  const representativeTimepoint = Math.floor(expectedTimepoints / 2);
+  const normalizationByLayerKey = await computeLayerRepresentativeNormalization({
+    sortedLayerSources,
+    movieMode,
+    representativeTimepoint,
+    layer2dFileDepthsByKey,
+    signal,
+    onProgress
+  });
+  const { sourceMetadataByLayerKey, layerMetadataByKey } = await collectLayerMetadata({
+    sortedLayerSources,
+    movieMode,
+    layer2dFileDepthsByKey,
+    signal
+  });
+  const totalVolumeCount = expectedTimepoints * sortedLayerSources.length;
+  const layersByChannel = groupLayersByChannel(sortedLayerSources);
+  const { manifest, layerManifestByKey, trackEntriesByTrackSetId } = buildManifestFromLayerMetadata({
+    channels,
+    layersByChannel,
+    layerMetadataByKey,
+    expectedTimepoints,
+    normalizationByLayerKey,
+    movieMode,
+    totalVolumeCount,
+    voxelResolution
+  });
+
+  const zarrStore = createZarrStoreFromPreprocessedStorage(storage);
+  const root = zarr.root(zarrStore);
+
+  throwIfAborted(signal);
+  onProgress?.({ stage: 'finalize-manifest' });
+  await zarr.create(root, { attributes: { llsmViewerPreprocessed: manifest } });
+  await writeTrackSetCsvFiles({ manifest, trackEntriesByTrackSetId, storage });
+  await createManifestZarrArrays({ root, manifest });
+
+  const progressState = { processedVolumes: 0 };
   for (const channel of channels) {
     const layerSources = layersByChannel.get(channel.id) ?? [];
-    for (let layerIndex = 0; layerIndex < layerSources.length; layerIndex += 1) {
-      const layer = layerSources[layerIndex];
+    for (const layer of layerSources) {
       const manifestLayer = layerManifestByKey.get(layer.key);
       if (!manifestLayer) {
         throw new Error(`Missing manifest entry for layer "${layer.key}".`);
@@ -584,164 +922,32 @@ export async function preprocessDatasetToStorage({
         throw new Error(`Missing source metadata for layer "${layer.key}".`);
       }
 
-      const dataArrayPath = manifestLayer.zarr.data.path;
-      const labelsArrayPath = manifestLayer.zarr.labels?.path ?? null;
-      const histogramArrayPath = manifestLayer.zarr.histogram.path;
-
       if (movieMode === '2d') {
-        const depths = layer2dFileDepthsByKey.get(layer.key);
-        if (!depths) {
-          throw new Error('Missing 2D stack metadata while preprocessing.');
-        }
-
-        let timepoint = 0;
-        for (let fileIndex = 0; fileIndex < layer.files.length; fileIndex += 1) {
-          throwIfAborted(signal);
-          const depth = depths[fileIndex] ?? 0;
-          if (depth <= 0) {
-            continue;
-          }
-          const stackVolume = await loadVolumeFor3dTimepoint(layer.files[fileIndex]!, loadVolumesFromFiles, signal);
-          assertVolumeMatchesExpectedShape(
-            stackVolume,
-            {
-              width: sourceMetadata.width,
-              height: sourceMetadata.height,
-              channels: sourceMetadata.channels,
-              dataType: sourceMetadata.dataType
-            },
-            `Layer "${layer.channelLabel}" file "${layer.files[fileIndex]?.name ?? `#${fileIndex + 1}`}" stack`
-          );
-          if (stackVolume.depth !== depth) {
-            throw new Error(
-              `Layer "${layer.channelLabel}" file "${layer.files[fileIndex]?.name ?? `#${fileIndex + 1}`}" reported ${depth} slices during indexing but decoded as ${stackVolume.depth} slices.`
-            );
-          }
-          for (let sliceIndex = 0; sliceIndex < depth; sliceIndex += 1) {
-            throwIfAborted(signal);
-            const rawSlice = extract2dSlice(stackVolume, sliceIndex);
-            assertVolumeMatchesExpectedShape(
-              rawSlice,
-              sourceMetadata,
-              `Layer "${layer.channelLabel}" timepoint ${timepoint + 1}`
-            );
-            const normalized = layer.isSegmentation
-              ? colorizeSegmentationVolume(rawSlice, createSegmentationSeed(layer.key, timepoint))
-              : normalizeVolume(
-                  rawSlice,
-                  normalizationByLayerKey.get(layer.key) ?? computeRepresentativeNormalization(rawSlice)
-                );
-
-            await writeZarrChunk({
-              storage,
-              arrayPath: dataArrayPath,
-              timepoint,
-              rank: manifestLayer.zarr.data.shape.length,
-              bytes: normalized.normalized,
-              signal
-            });
-            const histogram = computeUint8VolumeHistogram(normalized);
-            await writeZarrChunk({
-              storage,
-              arrayPath: histogramArrayPath,
-              timepoint,
-              rank: manifestLayer.zarr.histogram.shape.length,
-              bytes: encodeUint32ArrayLE(histogram),
-              signal
-            });
-            if (layer.isSegmentation && normalized.segmentationLabels && labelsArrayPath) {
-              const labelBytes = new Uint8Array(
-                normalized.segmentationLabels.buffer,
-                normalized.segmentationLabels.byteOffset,
-                normalized.segmentationLabels.byteLength
-              );
-              await writeZarrChunk({
-                storage,
-                arrayPath: labelsArrayPath,
-                timepoint,
-                rank: manifestLayer.zarr.labels?.shape.length ?? 4,
-                bytes: labelBytes,
-                signal
-              });
-            }
-
-            processedVolumes += 1;
-            onProgress?.({
-              stage: 'write-volumes',
-              processedVolumes,
-              totalVolumes: totalVolumeCount,
-              layerKey: layer.key,
-              timepoint
-            });
-            timepoint += 1;
-          }
-        }
+        await writeLayerVolumesFor2d({
+          layer,
+          manifestLayer,
+          sourceMetadata,
+          normalizationByLayerKey,
+          layer2dFileDepthsByKey,
+          storage,
+          signal,
+          onProgress,
+          totalVolumeCount,
+          progressState
+        });
       } else {
-        const normalization = layer.isSegmentation
-          ? null
-          : normalizationByLayerKey.get(layer.key) ??
-            computeRepresentativeNormalization(
-              await loadVolumeFor3dTimepoint(
-                layer.files[representativeTimepoint]!,
-                loadVolumesFromFiles,
-                signal
-              )
-            );
-
-        for (let timepoint = 0; timepoint < layer.files.length; timepoint += 1) {
-          throwIfAborted(signal);
-          const raw = await loadVolumeFor3dTimepoint(layer.files[timepoint]!, loadVolumesFromFiles, signal);
-          assertVolumeMatchesExpectedShape(
-            raw,
-            sourceMetadata,
-            `Layer "${layer.channelLabel}" timepoint ${timepoint + 1}`
-          );
-          const normalized = layer.isSegmentation
-            ? colorizeSegmentationVolume(raw, createSegmentationSeed(layer.key, timepoint))
-            : normalizeVolume(raw, normalization ?? computeRepresentativeNormalization(raw));
-
-          await writeZarrChunk({
-            storage,
-            arrayPath: dataArrayPath,
-            timepoint,
-            rank: manifestLayer.zarr.data.shape.length,
-            bytes: normalized.normalized,
-            signal
-          });
-          const histogram = computeUint8VolumeHistogram(normalized);
-          await writeZarrChunk({
-            storage,
-            arrayPath: histogramArrayPath,
-            timepoint,
-            rank: manifestLayer.zarr.histogram.shape.length,
-            bytes: encodeUint32ArrayLE(histogram),
-            signal
-          });
-          if (layer.isSegmentation && normalized.segmentationLabels && labelsArrayPath) {
-            const labelBytes = new Uint8Array(
-              normalized.segmentationLabels.buffer,
-              normalized.segmentationLabels.byteOffset,
-              normalized.segmentationLabels.byteLength
-            );
-            await writeZarrChunk({
-              storage,
-              arrayPath: labelsArrayPath,
-              timepoint,
-              rank: manifestLayer.zarr.labels?.shape.length ?? 4,
-              bytes: labelBytes,
-              signal
-            });
-          }
-
-          processedVolumes += 1;
-          onProgress?.({
-            stage: 'write-volumes',
-            processedVolumes,
-            totalVolumes: totalVolumeCount,
-            layerKey: layer.key,
-            timepoint
-          });
-        }
+        await writeLayerVolumesFor3d({
+          layer,
+          manifestLayer,
+          sourceMetadata,
+          representativeTimepoint,
+          normalizationByLayerKey,
+          storage,
+          signal,
+          onProgress,
+          totalVolumeCount,
+          progressState
+        });
       }
     }
   }

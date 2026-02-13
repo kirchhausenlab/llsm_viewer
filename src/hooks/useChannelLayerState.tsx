@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
   type Dispatch,
-  type MutableRefObject,
   type ReactNode,
   type SetStateAction
 } from 'react';
@@ -29,9 +28,11 @@ import {
   type SamplingMode
 } from '../state/layerSettings';
 import type { LoadedLayer } from '../types/layers';
-import type { VoxelResolutionValues } from '../types/voxelResolution';
-import type { ExperimentDimension } from './useVoxelResolution';
-import { type ChannelSourcesApi, type LoadState, useChannelSources } from './dataset';
+import { type ChannelSourcesApi, useChannelSources } from './dataset';
+import type {
+  ApplyLoadedLayersOptions as ChannelSourcesApplyLoadedLayersOptions,
+  LoadSelectedDatasetOptions as ChannelSourcesLoadSelectedDatasetOptions
+} from './dataset/useChannelDatasetLoader';
 
 const DEFAULT_RESET_WINDOW = { windowMin: DEFAULT_WINDOW_MIN, windowMax: DEFAULT_WINDOW_MAX };
 
@@ -52,34 +53,21 @@ const computeInitialWindowForVolume = (
   };
 };
 
-export type ApplyLoadedLayersOptions = {
-  setSelectedIndex: (index: number) => void;
-  setActiveChannelTabId: (id: string | null) => void;
-  setStatus: (state: LoadState) => void;
-  setLoadedCount: Dispatch<SetStateAction<number>>;
-  setExpectedVolumeCount: (count: number) => void;
-  setLoadProgress: (progress: number) => void;
-  setIsPlaying: (value: boolean) => void;
-  clearDatasetError: () => void;
-  setError: (message: string | null) => void;
-};
+type ChannelLayerLoadBindingKeys =
+  | 'setChannelVisibility'
+  | 'setChannelActiveLayer'
+  | 'setLayerSettings'
+  | 'setLayerAutoThresholds'
+  | 'globalRenderStyle'
+  | 'globalSamplingMode'
+  | 'getChannelDefaultColor';
 
-export type LoadSelectedDatasetOptions = {
-  voxelResolution: VoxelResolutionValues | null;
-  anisotropyScale: { x: number; y: number; z: number } | null;
-  experimentDimension: ExperimentDimension;
-  preprocessingSettingsRef: MutableRefObject<VoxelResolutionValues | null>;
-  setStatus: (state: LoadState) => void;
-  setError: (message: string | null) => void;
-  clearDatasetError: () => void;
-  setSelectedIndex: (index: number) => void;
-  setIsPlaying: (value: boolean) => void;
-  setLoadProgress: (value: number) => void;
-  setLoadedCount: Dispatch<SetStateAction<number>>;
-  setExpectedVolumeCount: (value: number) => void;
-  setActiveChannelTabId: (value: string | null) => void;
-  showLaunchError: (message: string) => void;
-};
+export type ApplyLoadedLayersOptions = Omit<ChannelSourcesApplyLoadedLayersOptions, ChannelLayerLoadBindingKeys>;
+
+export type LoadSelectedDatasetOptions = Omit<
+  ChannelSourcesLoadSelectedDatasetOptions,
+  ChannelLayerLoadBindingKeys | 'setLayers' | 'channels'
+>;
 
 export type ChannelLayerState = Omit<ChannelSourcesApi, 'loadSelectedDataset' | 'applyLoadedLayers'> & {
   layers: LoadedLayer[];
@@ -170,20 +158,17 @@ export function useChannelLayerState(): ChannelLayerState {
     []
   );
 
-  const applyLoadedLayers: ChannelLayerState['applyLoadedLayers'] = useCallback(
-    (normalizedLayers, expectedVolumeCount, options) =>
-      channelSources.applyLoadedLayers(normalizedLayers, expectedVolumeCount, {
-        ...options,
-        setChannelVisibility,
-        setChannelActiveLayer,
-        setLayerSettings,
-        setLayerAutoThresholds,
-        globalRenderStyle,
-        globalSamplingMode,
-        getChannelDefaultColor
-      }),
+  const baseLoadBindings = useMemo(
+    () => ({
+      setChannelVisibility,
+      setChannelActiveLayer,
+      setLayerSettings,
+      setLayerAutoThresholds,
+      getChannelDefaultColor,
+      globalRenderStyle,
+      globalSamplingMode
+    }),
     [
-      channelSources,
       getChannelDefaultColor,
       globalRenderStyle,
       globalSamplingMode,
@@ -192,28 +177,31 @@ export function useChannelLayerState(): ChannelLayerState {
     ]
   );
 
+  const loadSelectedDatasetBindings = useMemo(
+    () => ({
+      ...baseLoadBindings,
+      setLayers
+    }),
+    [baseLoadBindings]
+  );
+
+  const applyLoadedLayers: ChannelLayerState['applyLoadedLayers'] = useCallback(
+    (normalizedLayers, expectedVolumeCount, options) =>
+      channelSources.applyLoadedLayers(normalizedLayers, expectedVolumeCount, {
+        ...options,
+        ...baseLoadBindings
+      }),
+    [baseLoadBindings, channelSources]
+  );
+
   const loadSelectedDataset: ChannelLayerState['loadSelectedDataset'] = useCallback(
     (options) =>
       channelSources.loadSelectedDataset({
         ...options,
         channels: channelSources.channels,
-        setLayers,
-        setChannelVisibility,
-        setChannelActiveLayer,
-        setLayerSettings,
-        setLayerAutoThresholds,
-        getChannelDefaultColor,
-        globalRenderStyle,
-        globalSamplingMode
+        ...loadSelectedDatasetBindings
       }),
-    [
-      channelSources,
-      getChannelDefaultColor,
-      globalRenderStyle,
-      globalSamplingMode,
-      setChannelActiveLayer,
-      setChannelVisibility
-    ]
+    [channelSources, loadSelectedDatasetBindings]
   );
 
   return {

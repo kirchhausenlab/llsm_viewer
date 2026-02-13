@@ -2,32 +2,24 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 
-import { createTrackColor, DEFAULT_TRACK_COLOR } from '../../../shared/colorMaps/trackColors';
+import { createTrackColor } from '../../../shared/colorMaps/trackColors';
 import type { TrackDefinition } from '../../../types/tracks';
 import type { TrackColorMode } from '../../../types/tracks';
 import {
   computeTrackEndCapRadius,
   FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER,
-  getTrackIdFromObject,
   HOVERED_TRACK_LINE_WIDTH_MULTIPLIER,
-  SELECTED_TRACK_BLINK_BASE,
-  SELECTED_TRACK_BLINK_PERIOD_MS,
-  SELECTED_TRACK_BLINK_RANGE,
   SELECTED_TRACK_LINE_WIDTH_MULTIPLIER,
-  trackBlinkColorTemp,
 } from './rendering';
 import { DEFAULT_TRACK_LINE_WIDTH, DEFAULT_TRACK_OPACITY } from './constants';
 import type { InstancedLineGeometry, TrackLineResource } from '../VolumeViewer.types';
 import { Line2 } from 'three/examples/jsm/lines/Line2';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
-
-const HOVER_STATE_SOURCES = ['pointer', 'controller'] as const;
-
-type HoverState = {
-  trackId: string | null;
-  position: { x: number; y: number } | null;
-};
+import { useTrackHoverState } from './trackHoverState';
+import { updateTrackDrawRanges as applyTrackDrawRanges } from './trackDrawRanges';
+import { performTrackHoverHitTest } from './trackHitTesting';
+import { updateTrackAppearance as applyTrackAppearance } from './trackAppearance';
 
 export type UseTrackRenderingParams = {
   tracks: TrackDefinition[];
@@ -75,13 +67,13 @@ export function useTrackRendering({
   hasActive3DLayer,
 }: UseTrackRenderingParams) {
   const [trackOverlayRevision, setTrackOverlayRevision] = useState(0);
-  const hoveredTrackIdRef = useRef<string | null>(null);
-  const [hoveredTrackId, setHoveredTrackId] = useState<string | null>(null);
-  const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
-  const hoverSourcesRef = useRef<Record<(typeof HOVER_STATE_SOURCES)[number], HoverState>>({
-    pointer: { trackId: null, position: null },
-    controller: { trackId: null, position: null },
-  });
+  const {
+    hoveredTrackIdRef,
+    hoveredTrackId,
+    tooltipPosition,
+    updateHoverState,
+    clearHoverState
+  } = useTrackHoverState();
   const previouslyHad3DLayerRef = useRef(false);
 
   const trackLookup = useMemo(() => {
@@ -91,49 +83,6 @@ export function useTrackRendering({
     }
     return map;
   }, [tracks]);
-
-  const applyHoverState = useCallback(() => {
-    const pointerState = hoverSourcesRef.current.pointer;
-    const controllerState = hoverSourcesRef.current.controller;
-    const nextState =
-      pointerState.trackId !== null
-        ? pointerState
-        : controllerState.trackId !== null
-        ? controllerState
-        : { trackId: null as string | null, position: null as { x: number; y: number } | null };
-
-    if (hoveredTrackIdRef.current !== nextState.trackId) {
-      hoveredTrackIdRef.current = nextState.trackId;
-      setHoveredTrackId(nextState.trackId);
-    }
-    setTooltipPosition(nextState.position);
-  }, []);
-
-  const updateHoverState = useCallback(
-    (
-      trackId: string | null,
-      position: { x: number; y: number } | null,
-      source: 'pointer' | 'controller' = 'pointer',
-    ) => {
-      hoverSourcesRef.current[source] = { trackId, position };
-      applyHoverState();
-    },
-    [applyHoverState],
-  );
-
-  const clearHoverState = useCallback(
-    (source?: 'pointer' | 'controller') => {
-      if (source) {
-        hoverSourcesRef.current[source] = { trackId: null, position: null };
-      } else {
-        HOVER_STATE_SOURCES.forEach((key) => {
-          hoverSourcesRef.current[key] = { trackId: null, position: null };
-        });
-      }
-      applyHoverState();
-    },
-    [applyHoverState],
-  );
 
   const resolveTrackColor = useCallback(
     (track: TrackDefinition) => {
@@ -178,71 +127,12 @@ export function useTrackRendering({
 
   const updateTrackDrawRanges = useCallback(
     (targetTimeIndex: number) => {
-      const lines = trackLinesRef.current;
-      const maxVisibleTime = targetTimeIndex;
-      const minVisibleTime = isFullTrackTrailEnabled ? -Infinity : targetTimeIndex - trackTrailLength;
-
-      for (const resource of lines.values()) {
-        const { geometry, times, positions, endCap } = resource;
-        let firstVisibleIndex = -1;
-        let lastVisibleIndex = -1;
-
-        for (let index = 0; index < times.length; index++) {
-          const time = times[index];
-          if (time > maxVisibleTime) {
-            break;
-          }
-          if (time >= minVisibleTime) {
-            if (firstVisibleIndex === -1) {
-              firstVisibleIndex = index;
-            }
-            lastVisibleIndex = index;
-          }
-        }
-
-        const hasVisiblePoints = firstVisibleIndex !== -1 && lastVisibleIndex !== -1;
-        resource.hasVisiblePoints = hasVisiblePoints;
-
-        if (hasVisiblePoints) {
-          const baseIndex = lastVisibleIndex * 3;
-          endCap.position.set(
-            positions[baseIndex] ?? 0,
-            positions[baseIndex + 1] ?? 0,
-            positions[baseIndex + 2] ?? 0,
-          );
-        }
-
-        endCap.visible = resource.shouldShow && hasVisiblePoints;
-
-        if (isFullTrackTrailEnabled) {
-          if (resource.geometryPointStartIndex !== 0 || resource.geometryPointEndIndex !== times.length - 1) {
-            geometry.setPositions(positions);
-            resource.geometryPointStartIndex = 0;
-            resource.geometryPointEndIndex = times.length - 1;
-          }
-
-          geometry.instanceCount = hasVisiblePoints ? Math.max(lastVisibleIndex, 0) : 0;
-          continue;
-        }
-
-        if (!hasVisiblePoints) {
-          geometry.instanceCount = 0;
-          resource.geometryPointStartIndex = null;
-          resource.geometryPointEndIndex = null;
-          continue;
-        }
-
-        if (
-          resource.geometryPointStartIndex !== firstVisibleIndex ||
-          resource.geometryPointEndIndex !== lastVisibleIndex
-        ) {
-          geometry.setPositions(positions.subarray(firstVisibleIndex * 3, (lastVisibleIndex + 1) * 3));
-          resource.geometryPointStartIndex = firstVisibleIndex;
-          resource.geometryPointEndIndex = lastVisibleIndex;
-        }
-
-        geometry.instanceCount = Math.max(lastVisibleIndex - firstVisibleIndex, 0);
-      }
+      applyTrackDrawRanges({
+        lines: trackLinesRef.current.values(),
+        targetTimeIndex,
+        isFullTrackTrailEnabled,
+        trackTrailLength
+      });
     },
     [isFullTrackTrailEnabled, trackLinesRef, trackTrailLength],
   );
@@ -613,138 +503,28 @@ export function useTrackRendering({
 
   const performHoverHitTest = useCallback(
     (event: PointerEvent) => {
-      const cameraInstance = cameraRef.current;
-      const trackGroupInstance = trackGroupRef.current;
-      const raycasterInstance = hoverRaycasterRef.current;
-      const renderer = rendererRef.current;
-      if (!cameraInstance || !trackGroupInstance || !raycasterInstance || !trackGroupInstance.visible || !renderer) {
-        clearHoverState('pointer');
-        return null;
-      }
-
-      const domElement = renderer.domElement;
-      const rect = domElement.getBoundingClientRect();
-      const width = rect.width;
-      const height = rect.height;
-      if (width <= 0 || height <= 0) {
-        clearHoverState('pointer');
-        return null;
-      }
-
-      const offsetX = event.clientX - rect.left;
-      const offsetY = event.clientY - rect.top;
-      if (offsetX < 0 || offsetY < 0 || offsetX > width || offsetY > height) {
-        clearHoverState('pointer');
-        return null;
-      }
-
-      const pointerVector = new THREE.Vector2();
-      pointerVector.set((offsetX / width) * 2 - 1, -(offsetY / height) * 2 + 1);
-      raycasterInstance.setFromCamera(pointerVector, cameraInstance);
-
-      const visibleObjects: THREE.Object3D[] = [];
-      for (const resource of trackLinesRef.current.values()) {
-        if (resource.line.visible) {
-          visibleObjects.push(resource.line);
+      return performTrackHoverHitTest({
+        event,
+        camera: cameraRef.current,
+        trackGroup: trackGroupRef.current,
+        raycaster: hoverRaycasterRef.current,
+        renderer: rendererRef.current,
+        trackLines: trackLinesRef.current,
+        clearPointerHover: () => clearHoverState('pointer'),
+        setPointerHover: (trackId, position) => {
+          updateHoverState(trackId, position, 'pointer');
         }
-        if (resource.endCap.visible) {
-          visibleObjects.push(resource.endCap);
-        }
-      }
-
-      if (visibleObjects.length === 0) {
-        clearHoverState('pointer');
-        return null;
-      }
-
-      const intersections = raycasterInstance.intersectObjects(visibleObjects, false);
-      if (intersections.length === 0) {
-        clearHoverState('pointer');
-        return null;
-      }
-
-      const intersection = intersections[0];
-      const trackId = getTrackIdFromObject(intersection.object);
-      if (trackId === null) {
-        clearHoverState('pointer');
-        return null;
-      }
-
-      updateHoverState(trackId, { x: offsetX, y: offsetY }, 'pointer');
-      return trackId;
+      });
     },
     [cameraRef, clearHoverState, hoverRaycasterRef, rendererRef, trackLinesRef, trackGroupRef, updateHoverState],
   );
 
   const updateTrackAppearance = useCallback(
     (timestamp: number) => {
-      const blinkPhase = (timestamp % SELECTED_TRACK_BLINK_PERIOD_MS) / SELECTED_TRACK_BLINK_PERIOD_MS;
-      const blinkAngle = blinkPhase * Math.PI * 2;
-      const blinkWave = Math.sin(blinkAngle);
-      const blinkScale = SELECTED_TRACK_BLINK_BASE + SELECTED_TRACK_BLINK_RANGE * blinkWave;
-
-      for (const resource of trackLinesRef.current.values()) {
-        const { line, outline, material, outlineMaterial, endCap, endCapMaterial } = resource;
-        const baseColor = resource.baseColor ?? new THREE.Color(DEFAULT_TRACK_COLOR);
-        const highlightColor = resource.highlightColor ?? baseColor;
-        const visibleColor = resource.isHovered ? highlightColor : baseColor;
-        trackBlinkColorTemp.copy(visibleColor);
-        if (resource.isSelected) {
-          trackBlinkColorTemp.multiplyScalar(blinkScale);
-        }
-        const targetColor = trackBlinkColorTemp.getHex();
-        if ((material.color?.getHex?.() ?? material.color) !== targetColor) {
-          material.color.setHex(targetColor);
-          material.needsUpdate = true;
-        }
-        if ((endCapMaterial.color?.getHex?.() ?? endCapMaterial.color) !== targetColor) {
-          endCapMaterial.color.setHex(targetColor);
-          endCapMaterial.needsUpdate = true;
-        }
-
-        const outlineTarget = resource.isHovered ? highlightColor : baseColor;
-        const outlineTargetColor = outlineTarget.getHex();
-        const currentOutlineColor = (outlineMaterial.color?.getHex?.() ?? outlineMaterial.color) as number;
-        if (outlineTargetColor !== currentOutlineColor) {
-          outlineMaterial.color.setHex(outlineTargetColor);
-          outlineMaterial.needsUpdate = true;
-        }
-
-        const targetOpacity = resource.targetOpacity * (resource.isSelected ? blinkScale : 1);
-        if (material.opacity !== targetOpacity) {
-          material.opacity = targetOpacity;
-          material.needsUpdate = true;
-        }
-        if (endCapMaterial.opacity !== targetOpacity) {
-          endCapMaterial.opacity = targetOpacity;
-          endCapMaterial.needsUpdate = true;
-        }
-
-        if (material.linewidth !== resource.targetLineWidth) {
-          material.linewidth = resource.targetLineWidth;
-          material.needsUpdate = true;
-        }
-
-        const targetOutlineOpacity = resource.outlineBaseOpacity * (resource.isSelected ? blinkScale : 1);
-        if (outlineMaterial.opacity !== targetOutlineOpacity) {
-          outlineMaterial.opacity = targetOutlineOpacity;
-          outlineMaterial.needsUpdate = true;
-        }
-
-        const outlineWidth = resource.targetLineWidth + resource.outlineExtraWidth;
-        if (outlineMaterial.linewidth !== outlineWidth) {
-          outlineMaterial.linewidth = outlineWidth;
-          outlineMaterial.needsUpdate = true;
-        }
-
-        if (resource.needsAppearanceUpdate) {
-          const currentCapScale = endCap.scale.x;
-          if (currentCapScale !== resource.endCapRadius) {
-            endCap.scale.setScalar(resource.endCapRadius);
-          }
-          resource.needsAppearanceUpdate = false;
-        }
-      }
+      applyTrackAppearance({
+        trackLines: trackLinesRef.current,
+        timestamp
+      });
     },
     [trackLinesRef],
   );

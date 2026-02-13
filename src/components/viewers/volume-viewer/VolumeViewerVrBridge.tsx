@@ -8,14 +8,37 @@ export type VolumeViewerVrBridgeProps = {
   onValue: Dispatch<SetStateAction<UseVolumeViewerVrResult | null>>;
 };
 
+function hasChangedVrIntegration(
+  previous: UseVolumeViewerVrResult | null,
+  next: UseVolumeViewerVrResult,
+): boolean {
+  if (!previous) {
+    return true;
+  }
+
+  const previousKeys = Object.keys(previous) as Array<keyof UseVolumeViewerVrResult>;
+  const nextKeys = Object.keys(next) as Array<keyof UseVolumeViewerVrResult>;
+  if (previousKeys.length !== nextKeys.length) {
+    return true;
+  }
+
+  for (const key of previousKeys) {
+    if (previous[key] !== next[key]) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export { hasChangedVrIntegration };
+
 export const VolumeViewerVrBridge = lazy(async () => {
   const module = await import('./useVolumeViewerVr');
   const Bridge = ({ params, onValue }: VolumeViewerVrBridgeProps) => {
     const api = module.useVolumeViewerVr(params);
     useEffect(() => {
-      onValue((previous) =>
-        previous?.playbackLoopRef === api.playbackLoopRef ? previous : api,
-      );
+      onValue((previous) => (hasChangedVrIntegration(previous, api) ? api : previous));
     }, [api, onValue]);
     useEffect(
       () => () => {

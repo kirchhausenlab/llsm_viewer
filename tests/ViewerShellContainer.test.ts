@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { createRef } from 'react';
 
 import { type ViewerShellContainerProps, useViewerShellProps } from '../src/components/viewers/useViewerShellProps.ts';
 import { createDefaultLayerSettings } from '../src/state/layerSettings.ts';
@@ -9,150 +8,218 @@ import { WINDOW_MARGIN, CONTROL_WINDOW_WIDTH, SELECTED_TRACKS_WINDOW_WIDTH } fro
 const noop = () => {};
 const noopWithArgs = (..._args: unknown[]) => {};
 
-function createViewerShellContainerProps(
-  overrides: Partial<ViewerShellContainerProps> = {}
-): ViewerShellContainerProps {
-  const baseProps: ViewerShellContainerProps = {
+function createViewerShellContainerProps(): ViewerShellContainerProps {
+  return {
     viewerMode: '3d',
-    viewerLayers: [],
-    isLoading: false,
-    loadProgress: 0,
-    loadedCount: 0,
-    expectedVolumeCount: 0,
-    selectedIndex: 0,
-    volumeTimepointCount: 1,
-    isPlaying: false,
-    playbackDisabled: false,
-    playbackLabel: 'Paused',
-    isRecording: false,
-    canRecord: true,
-    fps: 1,
-    blendingMode: 'additive',
-    sliceIndex: 0,
-    maxSliceDepth: 5,
-    trackScale: { x: 1, y: 1, z: 1, unit: 'μm', correctAnisotropy: false },
-    filteredTracks: [],
-    trackVisibility: {},
-    trackOpacityByChannel: {},
-    trackLineWidthByChannel: {},
-    channelTrackColorModes: {},
-    channelTrackOffsets: {},
-    selectedTrackIds: new Set(),
-    followedTrackId: null,
-    followedVoxel: null,
-    followedTrackChannelId: null,
-    activeTrackChannelId: null,
-    activeChannelTabId: null,
-    trackChannels: [],
-    vrChannelPanels: [],
-    is3dViewerAvailable: true,
-    isVrActive: false,
-    isVrRequesting: false,
-    resetViewHandler: null,
-    isVrPassthroughSupported: false,
-    hasParsedTrackData: true,
-    layoutResetToken: 0,
-    controlWindowInitialPosition: { x: 0, y: 0 },
-    viewerSettingsWindowInitialPosition: { x: 0, y: 0 },
-    layersWindowInitialPosition: { x: 0, y: 0 },
-    trackWindowInitialPosition: { x: 0, y: 0 },
-    selectedTracksWindowInitialPosition: { x: 0, y: 0 },
-    plotSettingsWindowInitialPosition: { x: 0, y: 0 },
-    channels: [],
-    channelNameMap: new Map(),
-    channelVisibility: {},
-    channelTintMap: new Map(),
-    channelLayersMap: new Map(),
-    channelActiveLayer: {},
-    layerSettings: {},
-    loadedChannelIds: [],
-    parsedTracksByChannel: new Map(),
-    filteredTracksByChannel: new Map(),
-    minimumTrackLength: 0,
-    pendingMinimumTrackLength: 0,
-    trackLengthBounds: { min: 0, max: 1 },
-    trackSummaryByChannel: new Map(),
-    trackOrderModeByChannel: {},
-    selectedTrackSeries: [],
-    resolvedAmplitudeLimits: { min: 0, max: 1 },
-    resolvedTimeLimits: { min: 0, max: 1 },
-    trackSmoothing: 0,
-    amplitudeExtent: { min: 0, max: 1 },
-    timeExtent: { min: 0, max: 1 },
-    error: null,
-    hoveredVolumeVoxel: null,
-    onTogglePlayback: noop,
-    onTimeIndexChange: noopWithArgs,
-    onFpsChange: noopWithArgs,
-    onVolumeStepScaleChange: noopWithArgs,
-    onRegisterVolumeStepScaleChange: noopWithArgs,
-    onRegisterReset: noopWithArgs,
-    onTrackSelectionToggle: noopWithArgs,
-    onTrackFollowRequest: noopWithArgs,
-    onVoxelFollowRequest: noopWithArgs,
-    onHoverVoxelChange: noopWithArgs,
-    onStartRecording: noop,
-    onStopRecording: noop,
-    onTrackChannelSelect: noopWithArgs,
-    onTrackVisibilityToggle: noopWithArgs,
-    onTrackVisibilityAllChange: noopWithArgs,
-    onTrackOpacityChange: noopWithArgs,
-    onTrackLineWidthChange: noopWithArgs,
-    onTrackColorSelect: noopWithArgs,
-    onTrackColorReset: noopWithArgs,
-    onStopTrackFollow: noopWithArgs,
-    onStopVoxelFollow: noopWithArgs,
-    onChannelPanelSelect: noopWithArgs,
-    onTrackPanelChannelSelect: noopWithArgs,
-    onChannelVisibilityToggle: noopWithArgs,
-    onChannelReset: noopWithArgs,
-    onChannelLayerSelect: noopWithArgs,
-    onLayerSelect: noopWithArgs,
-    onLayerSoloToggle: noopWithArgs,
-    onLayerContrastChange: noopWithArgs,
-    onLayerBrightnessChange: noopWithArgs,
-    onLayerWindowMinChange: noopWithArgs,
-    onLayerWindowMaxChange: noopWithArgs,
-    onLayerAutoContrast: noopWithArgs,
-    onLayerOffsetChange: noopWithArgs,
-    onLayerColorChange: noopWithArgs,
-    onLayerRenderStyleToggle: noopWithArgs,
-    onLayerSamplingModeToggle: noopWithArgs,
-    onLayerInvertToggle: noopWithArgs,
-    onRegisterVrSession: noopWithArgs,
-    onVrSessionStarted: noop,
-    onVrSessionEnded: noop,
-    onSliceIndexChange: noopWithArgs,
-    onReturnToLauncher: noop,
-    onResetWindowLayout: noop,
-    helpMenuRef: createRef<HTMLDivElement>(),
     isHelpMenuOpen: false,
-    onHelpMenuToggle: noop,
-    onToggleViewerMode: noop,
-    onVrButtonClick: noop,
-    vrButtonDisabled: false,
-    vrButtonTitle: 'title',
-    vrButtonLabel: 'label',
-    renderStyle: 0,
-    samplingMode: 'linear',
-    onRenderStyleToggle: noop,
-    onSamplingModeToggle: noop,
-    onBlendingModeToggle: noop,
-    onJumpToStart: noop,
-    onJumpToEnd: noop,
-    onMinimumTrackLengthChange: noopWithArgs,
-    onMinimumTrackLengthApply: noop,
-    onTrackOrderToggle: noopWithArgs,
-    onTrackFollow: noopWithArgs,
-    onAmplitudeLimitsChange: noopWithArgs,
-    onTimeLimitsChange: noopWithArgs,
-    onSmoothingChange: noopWithArgs,
-    onAutoRange: noop,
-    onClearSelection: noop,
-    getLayerDefaultSettings: () => createDefaultLayerSettings()
+    openHelpMenu: noop,
+    closeHelpMenu: noop,
+    viewerPanels: {
+      layers: [],
+      loading: {
+        isLoading: false,
+        loadingProgress: 0,
+        loadedVolumes: 0,
+        expectedVolumes: 0
+      },
+      tracks: {
+        trackScale: { x: 1, y: 1, z: 1 },
+        tracks: [],
+        trackVisibility: {},
+        trackOpacityByTrackSet: {},
+        trackLineWidthByTrackSet: {},
+        trackColorModesByTrackSet: {},
+        channelTrackOffsets: {},
+        selectedTrackIds: new Set(),
+        followedTrackId: null,
+        followedVoxel: null,
+        onTrackSelectionToggle: noopWithArgs,
+        onTrackFollowRequest: noopWithArgs,
+        onVoxelFollowRequest: noopWithArgs,
+        onHoverVoxelChange: noopWithArgs
+      },
+      canAdvancePlayback: undefined,
+      onRegisterReset: noopWithArgs,
+      onVolumeStepScaleChange: noopWithArgs,
+      onRegisterVolumeStepScaleChange: noopWithArgs
+    },
+    vr: {
+      isVrPassthroughSupported: false,
+      trackChannels: [],
+      onTrackChannelSelect: noopWithArgs,
+      onTrackVisibilityToggle: noopWithArgs,
+      onTrackVisibilityAllChange: noopWithArgs,
+      onTrackOpacityChange: noopWithArgs,
+      onTrackLineWidthChange: noopWithArgs,
+      onTrackColorSelect: noopWithArgs,
+      onTrackColorReset: noopWithArgs,
+      onStopTrackFollow: noopWithArgs,
+      channelPanels: [],
+      onChannelPanelSelect: noopWithArgs,
+      onChannelVisibilityToggle: noopWithArgs,
+      onChannelReset: noopWithArgs,
+      onChannelLayerSelect: noopWithArgs,
+      onLayerSelect: noopWithArgs,
+      onLayerSoloToggle: noopWithArgs,
+      onLayerContrastChange: noopWithArgs,
+      onLayerBrightnessChange: noopWithArgs,
+      onLayerWindowMinChange: noopWithArgs,
+      onLayerWindowMaxChange: noopWithArgs,
+      onLayerAutoContrast: noopWithArgs,
+      onLayerOffsetChange: noopWithArgs,
+      onLayerColorChange: noopWithArgs,
+      onLayerRenderStyleToggle: noopWithArgs,
+      onLayerSamplingModeToggle: noopWithArgs,
+      onLayerInvertToggle: noopWithArgs,
+      onRegisterVrSession: noopWithArgs,
+      onVrSessionStarted: noop,
+      onVrSessionEnded: noop
+    },
+    topMenu: {
+      onReturnToLauncher: noop,
+      onResetLayout: noop,
+      followedTrackSetId: null,
+      followedTrackId: null,
+      followedVoxel: null,
+      onStopTrackFollow: noopWithArgs,
+      onStopVoxelFollow: noop,
+      hoveredVoxel: null
+    },
+    layout: {
+      resetToken: 0,
+      controlWindowInitialPosition: { x: 0, y: 0 },
+      viewerSettingsWindowInitialPosition: { x: 0, y: 0 },
+      layersWindowInitialPosition: { x: 0, y: 0 },
+      paintbrushWindowInitialPosition: { x: 0, y: 0 },
+      trackWindowInitialPosition: { x: 0, y: 0 },
+      selectedTracksWindowInitialPosition: { x: 0, y: 0 },
+      plotSettingsWindowInitialPosition: { x: 0, y: 0 },
+      trackSettingsWindowInitialPosition: { x: 0, y: 0 }
+    },
+    modeControls: {
+      is3dModeAvailable: true,
+      isVrActive: false,
+      isVrRequesting: false,
+      resetViewHandler: null,
+      onToggleViewerMode: noop,
+      onVrButtonClick: noop,
+      vrButtonDisabled: false,
+      vrButtonTitle: 'title',
+      vrButtonLabel: 'label',
+      renderStyle: 0,
+      samplingMode: 'linear',
+      onRenderStyleToggle: noop,
+      onSamplingModeToggle: noop,
+      blendingMode: 'additive',
+      onBlendingModeToggle: noop
+    },
+    playbackControls: {
+      fps: 1,
+      onFpsChange: noopWithArgs,
+      volumeTimepointCount: 1,
+      sliceIndex: 0,
+      maxSliceDepth: 5,
+      onSliceIndexChange: noopWithArgs,
+      isPlaying: false,
+      playbackLabel: 'Paused',
+      selectedIndex: 0,
+      onTimeIndexChange: noopWithArgs,
+      playbackDisabled: false,
+      onTogglePlayback: noop,
+      onJumpToStart: noop,
+      onJumpToEnd: noop,
+      error: null,
+      onStartRecording: noop,
+      onStopRecording: noop,
+      isRecording: false,
+      canRecord: true
+    },
+    channelsPanel: {
+      isPlaying: false,
+      loadedChannelIds: [],
+      channelNameMap: new Map(),
+      channelVisibility: {},
+      channelTintMap: new Map(),
+      activeChannelId: null,
+      onChannelTabSelect: noopWithArgs,
+      onChannelVisibilityToggle: noopWithArgs,
+      channelLayersMap: new Map(),
+      layerVolumesByKey: {},
+      channelActiveLayer: {},
+      layerSettings: {},
+      getLayerDefaultSettings: (_layerKey: string) => createDefaultLayerSettings(),
+      onChannelLayerSelect: noopWithArgs,
+      onChannelReset: noopWithArgs,
+      onLayerWindowMinChange: noopWithArgs,
+      onLayerWindowMaxChange: noopWithArgs,
+      onLayerBrightnessChange: noopWithArgs,
+      onLayerContrastChange: noopWithArgs,
+      onLayerAutoContrast: noopWithArgs,
+      onLayerOffsetChange: noopWithArgs,
+      onLayerColorChange: noopWithArgs,
+      onLayerInvertToggle: noopWithArgs
+    },
+    tracksPanel: {
+      trackSets: [],
+      activeTrackSetId: null,
+      onTrackSetTabSelect: noopWithArgs,
+      parsedTracksByTrackSet: new Map(),
+      filteredTracksByTrackSet: new Map(),
+      minimumTrackLength: 0,
+      pendingMinimumTrackLength: 0,
+      trackLengthBounds: { min: 0, max: 1 },
+      onMinimumTrackLengthChange: noopWithArgs,
+      onMinimumTrackLengthApply: noop,
+      trackColorModesByTrackSet: {},
+      trackOpacityByTrackSet: {},
+      trackLineWidthByTrackSet: {},
+      trackSummaryByTrackSet: new Map(),
+      followedTrackSetId: null,
+      followedTrackId: null,
+      onTrackOrderToggle: noopWithArgs,
+      trackOrderModeByTrackSet: {},
+      trackVisibility: {},
+      onTrackVisibilityToggle: noopWithArgs,
+      onTrackVisibilityAllChange: noopWithArgs,
+      onTrackOpacityChange: noopWithArgs,
+      onTrackLineWidthChange: noopWithArgs,
+      onTrackColorSelect: noopWithArgs,
+      onTrackColorReset: noopWithArgs,
+      onTrackSelectionToggle: noopWithArgs,
+      selectedTrackOrder: [],
+      selectedTrackIds: new Set(),
+      onTrackFollow: noopWithArgs,
+      hasParsedTrackData: true
+    },
+    selectedTracksPanel: {
+      series: [],
+      totalTimepoints: 1,
+      amplitudeLimits: { min: 0, max: 1 },
+      timeLimits: { min: 0, max: 1 },
+      currentTimepoint: 0,
+      channelTintMap: new Map(),
+      smoothing: 0,
+      onTrackSelectionToggle: noopWithArgs
+    },
+    plotSettings: {
+      amplitudeExtent: { min: 0, max: 1 },
+      amplitudeLimits: { min: 0, max: 1 },
+      timeExtent: { min: 0, max: 1 },
+      timeLimits: { min: 0, max: 1 },
+      smoothing: 0,
+      onAmplitudeLimitsChange: noopWithArgs,
+      onTimeLimitsChange: noopWithArgs,
+      onSmoothingChange: noopWithArgs,
+      onAutoRange: noop,
+      onClearSelection: noop
+    },
+    trackSettings: {
+      isFullTrailEnabled: true,
+      trailLength: 3,
+      onFullTrailToggle: noopWithArgs,
+      onTrailLengthChange: noopWithArgs
+    }
   };
-
-  return { ...baseProps, ...overrides } as ViewerShellContainerProps;
 }
 
 (() => {
@@ -169,35 +236,33 @@ function createViewerShellContainerProps(
 })();
 
 (() => {
-  const viewerShellProps = useViewerShellProps(
-    createViewerShellContainerProps({
-      is3dViewerAvailable: false,
-      isVrActive: true,
-      hasParsedTrackData: true
-    })
-  );
+  const props = createViewerShellContainerProps();
+  props.modeControls.is3dModeAvailable = false;
+  props.modeControls.isVrActive = true;
+  props.tracksPanel.hasParsedTrackData = true;
+
+  const viewerShellProps = useViewerShellProps(props);
 
   assert.strictEqual(viewerShellProps.volumeViewerProps.vr, undefined);
   assert.strictEqual(viewerShellProps.selectedTracksPanel.shouldRender, false);
 })();
 
 (() => {
-  const onTrackPanelChannelSelect = () => {};
-  const props = createViewerShellContainerProps({
-    onTrackPanelChannelSelect,
-    vrChannelPanels: [{
-      id: 'channel',
-      name: 'Channel',
-      visible: true,
-      activeLayerKey: null,
-      layers: []
-    }]
-  });
+  const onTrackSetTabSelect = () => {};
+  const props = createViewerShellContainerProps();
+  props.tracksPanel.onTrackSetTabSelect = onTrackSetTabSelect;
+  props.vr.channelPanels = [{
+    id: 'channel',
+    name: 'Channel',
+    visible: true,
+    activeLayerKey: null,
+    layers: []
+  }];
 
   const viewerShellProps = useViewerShellProps(props);
 
-  assert.strictEqual(viewerShellProps.tracksPanel.onTrackSetTabSelect, onTrackPanelChannelSelect);
-  assert.deepStrictEqual(viewerShellProps.volumeViewerProps.vr?.channelPanels, props.vrChannelPanels);
+  assert.strictEqual(viewerShellProps.tracksPanel.onTrackSetTabSelect, onTrackSetTabSelect);
+  assert.deepStrictEqual(viewerShellProps.volumeViewerProps.vr?.channelPanels, props.vr.channelPanels);
 })();
 
 console.log('ViewerShellContainer wiring tests passed');

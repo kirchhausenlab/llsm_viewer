@@ -41,11 +41,6 @@ export type UsePreprocessedImportResult = {
   resetPreprocessedState: () => void;
 };
 
-type FileSystemDirectoryHandleLike = {
-  getDirectoryHandle(name: string, options?: { create?: boolean }): Promise<FileSystemDirectoryHandleLike>;
-  getFileHandle(name: string, options?: { create?: boolean }): Promise<any>;
-};
-
 type ArchiveEntries = Record<string, Uint8Array>;
 
 type ArchiveExtractionResult = {
@@ -54,7 +49,7 @@ type ArchiveExtractionResult = {
 };
 
 function canUseDirectoryPicker(): boolean {
-  return typeof window !== 'undefined' && typeof (window as any).showDirectoryPicker === 'function';
+  return typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function';
 }
 
 async function requestArchiveFile(): Promise<File | null> {
@@ -279,11 +274,14 @@ export function usePreprocessedImport({
     setIsPreprocessedImporting(true);
     setPreprocessedImportError(null);
     try {
-      const directoryHandle = (await (window as any).showDirectoryPicker({
+      const directoryHandle = await window.showDirectoryPicker?.({
         mode: 'read'
-      })) as any;
+      });
+      if (!directoryHandle) {
+        throw new Error('Folder selection is not supported in this browser.');
+      }
 
-      const storageHandle = await createDirectoryHandlePreprocessedStorage(directoryHandle as any);
+      const storageHandle = await createDirectoryHandlePreprocessedStorage(directoryHandle);
       const result = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
       stagePreprocessedDataset(result, storageHandle, null, null);
     } catch (error) {

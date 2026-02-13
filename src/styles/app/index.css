@@ -3,6 +3,9 @@
 @import './front-page-preprocessing.css';
 @import './viewer-windows.css';
 @import './viewer-channel-controls.css';
-@import './viewer-playback-tracks.css';
+@import './viewer-controls-base.css';
+@import './viewer-playback-controls.css';
+@import './viewer-track-panels.css';
+@import './viewer-selected-tracks.css';
 @import './viewer-shell.css';
 @import './utilities.css';

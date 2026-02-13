@@ -44,4 +44,6 @@ declare const Dropbox: DropboxStatic;
 
 declare interface Window {
   Dropbox?: DropboxStatic;
+  showDirectoryPicker?: (options?: { mode?: 'read' | 'readwrite' }) => Promise<FileSystemDirectoryHandle>;
+  __LLSM_VOLUME_PROVIDER__?: unknown;
 }

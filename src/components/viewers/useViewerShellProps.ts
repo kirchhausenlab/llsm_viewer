@@ -10,578 +10,285 @@ import {
   TRACK_TRAIL_LENGTH_RANGE
 } from '../../hooks/tracks';
 import type { VolumeViewerVrProps } from './VolumeViewer.types';
-import type { LayerSettings } from '../../state/layerSettings';
-import type { HoveredVoxelInfo } from '../../types/hover';
-import type { NumericRange, TrackDefinition } from '../../types/tracks';
-import type { ChannelSource } from '../../hooks/dataset';
 import type { ViewerShellProps } from './ViewerShell';
 
 type ViewerLayerConfig =
   ViewerShellProps['planarViewerProps']['layers'][number] &
   ViewerShellProps['volumeViewerProps']['layers'][number];
 
-export type ViewerShellContainerProps = {
-  viewerMode: ViewerShellProps['viewerMode'];
-  viewerLayers: ViewerLayerConfig[];
-  isLoading: boolean;
-  loadProgress: number;
-  loadedCount: number;
-  expectedVolumeCount: number;
-  selectedIndex: number;
-  volumeTimepointCount: number;
-  isPlaying: boolean;
-  playbackDisabled: boolean;
-  playbackLabel: string;
-  isRecording: boolean;
-  canRecord: boolean;
-  fps: number;
-  blendingMode: ViewerShellProps['modeControls']['blendingMode'];
-  sliceIndex: number;
-  maxSliceDepth: number;
-  trackScale: ViewerShellProps['volumeViewerProps']['trackScale'];
-  filteredTracks: TrackDefinition[];
-  trackVisibility: ViewerShellProps['volumeViewerProps']['trackVisibility'];
-  trackOpacityByTrackSet: ViewerShellProps['volumeViewerProps']['trackOpacityByTrackSet'];
-  trackLineWidthByTrackSet: ViewerShellProps['volumeViewerProps']['trackLineWidthByTrackSet'];
-  trackColorModesByTrackSet: ViewerShellProps['volumeViewerProps']['trackColorModesByTrackSet'];
-  channelTrackOffsets: ViewerShellProps['volumeViewerProps']['channelTrackOffsets'];
-  selectedTrackIds: ViewerShellProps['volumeViewerProps']['selectedTrackIds'];
-  followedTrackId: ViewerShellProps['volumeViewerProps']['followedTrackId'];
-  followedVoxel: ViewerShellProps['volumeViewerProps']['followedVoxel'];
-  followedTrackSetId: ViewerShellProps['topMenu']['followedTrackSetId'];
-  activeTrackSetId: ViewerShellProps['tracksPanel']['activeTrackSetId'];
-  activeChannelTabId: ViewerShellProps['channelsPanel']['activeChannelId'];
-  trackChannels: VolumeViewerVrProps['trackChannels'];
-  vrChannelPanels: VolumeViewerVrProps['channelPanels'];
-  is3dViewerAvailable: ViewerShellProps['modeControls']['is3dModeAvailable'];
-  isVrActive: ViewerShellProps['modeControls']['isVrActive'];
-  isVrRequesting: ViewerShellProps['modeControls']['isVrRequesting'];
-  resetViewHandler: ViewerShellProps['modeControls']['resetViewHandler'];
-  isVrPassthroughSupported: VolumeViewerVrProps['isVrPassthroughSupported'];
+type ViewerShellContainerHelpMenuProps = Pick<
+  ViewerShellProps['topMenu'],
+  'isHelpMenuOpen' | 'openHelpMenu' | 'closeHelpMenu'
+>;
+
+type ViewerShellContainerTopMenuProps = Omit<
+  ViewerShellProps['topMenu'],
+  'isHelpMenuOpen' | 'openHelpMenu' | 'closeHelpMenu'
+>;
+
+type ViewerShellContainerLayoutProps = Omit<
+  ViewerShellProps['layout'],
+  'windowMargin' | 'controlWindowWidth' | 'selectedTracksWindowWidth'
+>;
+
+type ViewerShellContainerTracksPanelProps = ViewerShellProps['tracksPanel'] & {
   hasParsedTrackData: boolean;
-  layoutResetToken: ViewerShellProps['layout']['resetToken'];
-  controlWindowInitialPosition: ViewerShellProps['layout']['controlWindowInitialPosition'];
-  viewerSettingsWindowInitialPosition: ViewerShellProps['layout']['viewerSettingsWindowInitialPosition'];
-  layersWindowInitialPosition: ViewerShellProps['layout']['layersWindowInitialPosition'];
-  paintbrushWindowInitialPosition: ViewerShellProps['layout']['paintbrushWindowInitialPosition'];
-  trackWindowInitialPosition: ViewerShellProps['layout']['trackWindowInitialPosition'];
-  selectedTracksWindowInitialPosition: ViewerShellProps['layout']['selectedTracksWindowInitialPosition'];
-  plotSettingsWindowInitialPosition: ViewerShellProps['layout']['plotSettingsWindowInitialPosition'];
-  trackSettingsWindowInitialPosition: ViewerShellProps['layout']['trackSettingsWindowInitialPosition'];
-  channels: ChannelSource[];
-  channelNameMap: ViewerShellProps['channelsPanel']['channelNameMap'];
-  channelVisibility: ViewerShellProps['channelsPanel']['channelVisibility'];
-  channelTintMap: ViewerShellProps['channelsPanel']['channelTintMap'];
-  channelLayersMap: ViewerShellProps['channelsPanel']['channelLayersMap'];
-  layerVolumesByKey: ViewerShellProps['channelsPanel']['layerVolumesByKey'];
-  channelActiveLayer: ViewerShellProps['channelsPanel']['channelActiveLayer'];
-  layerSettings: ViewerShellProps['channelsPanel']['layerSettings'];
-  loadedChannelIds: ViewerShellProps['channelsPanel']['loadedChannelIds'];
-  trackSets: ViewerShellProps['tracksPanel']['trackSets'];
-  parsedTracksByTrackSet: ViewerShellProps['tracksPanel']['parsedTracksByTrackSet'];
-  filteredTracksByTrackSet: ViewerShellProps['tracksPanel']['filteredTracksByTrackSet'];
-  minimumTrackLength: ViewerShellProps['tracksPanel']['minimumTrackLength'];
-  pendingMinimumTrackLength: ViewerShellProps['tracksPanel']['pendingMinimumTrackLength'];
-  trackLengthBounds: ViewerShellProps['tracksPanel']['trackLengthBounds'];
-  trackSummaryByTrackSet: ViewerShellProps['tracksPanel']['trackSummaryByTrackSet'];
-  trackOrderModeByTrackSet: ViewerShellProps['tracksPanel']['trackOrderModeByTrackSet'];
-  selectedTrackSeries: ViewerShellProps['selectedTracksPanel']['series'];
-  selectedTrackOrder: ViewerShellProps['tracksPanel']['selectedTrackOrder'];
-  resolvedAmplitudeLimits: NumericRange;
-  resolvedTimeLimits: NumericRange;
-  trackSmoothing: number;
-  isFullTrackTrailEnabled: boolean;
-  trackTrailLength: number;
-  amplitudeExtent: NumericRange;
-  timeExtent: NumericRange;
-  error: ViewerShellProps['playbackControls']['error'];
-  hoveredVolumeVoxel: HoveredVoxelInfo | null;
-  onTogglePlayback: ViewerShellProps['volumeViewerProps']['onTogglePlayback'];
-  onTimeIndexChange: ViewerShellProps['volumeViewerProps']['onTimeIndexChange'];
-  canAdvancePlayback?: ViewerShellProps['volumeViewerProps']['canAdvancePlayback'];
-  onFpsChange: ViewerShellProps['volumeViewerProps']['onFpsChange'];
-  onVolumeStepScaleChange?: ViewerShellProps['volumeViewerProps']['onVolumeStepScaleChange'];
-  onRegisterVolumeStepScaleChange?: ViewerShellProps['volumeViewerProps']['onRegisterVolumeStepScaleChange'];
-  onRegisterReset: ViewerShellProps['volumeViewerProps']['onRegisterReset'];
-  onTrackSelectionToggle: ViewerShellProps['volumeViewerProps']['onTrackSelectionToggle'];
-  onTrackFollowRequest: ViewerShellProps['volumeViewerProps']['onTrackFollowRequest'];
-  onVoxelFollowRequest: ViewerShellProps['volumeViewerProps']['onVoxelFollowRequest'];
-  onHoverVoxelChange?: ViewerShellProps['volumeViewerProps']['onHoverVoxelChange'];
-  onStartRecording: ViewerShellProps['playbackControls']['onStartRecording'];
-  onStopRecording: ViewerShellProps['playbackControls']['onStopRecording'];
-  onTrackChannelSelect: VolumeViewerVrProps['onTrackChannelSelect'];
-  onTrackVisibilityToggle: VolumeViewerVrProps['onTrackVisibilityToggle'];
-  onTrackVisibilityAllChange: VolumeViewerVrProps['onTrackVisibilityAllChange'];
-  onTrackOpacityChange: VolumeViewerVrProps['onTrackOpacityChange'];
-  onTrackLineWidthChange: VolumeViewerVrProps['onTrackLineWidthChange'];
-  onTrackColorSelect: VolumeViewerVrProps['onTrackColorSelect'];
-  onTrackColorReset: VolumeViewerVrProps['onTrackColorReset'];
-  onTrackTrailModeChange: (isFull: boolean) => void;
-  onTrackTrailLengthChange: (value: number) => void;
-  onStopTrackFollow: VolumeViewerVrProps['onStopTrackFollow'];
-  onStopVoxelFollow: ViewerShellProps['topMenu']['onStopVoxelFollow'];
-  onChannelPanelSelect: VolumeViewerVrProps['onChannelPanelSelect'];
-  onTrackPanelChannelSelect: ViewerShellProps['tracksPanel']['onTrackSetTabSelect'];
-  onChannelVisibilityToggle: VolumeViewerVrProps['onChannelVisibilityToggle'];
-  onChannelReset: VolumeViewerVrProps['onChannelReset'];
-  onChannelLayerSelect: VolumeViewerVrProps['onChannelLayerSelect'];
-  onLayerSelect?: VolumeViewerVrProps['onLayerSelect'];
-  onLayerSoloToggle?: VolumeViewerVrProps['onLayerSoloToggle'];
-  onLayerContrastChange: VolumeViewerVrProps['onLayerContrastChange'];
-  onLayerBrightnessChange: VolumeViewerVrProps['onLayerBrightnessChange'];
-  onLayerWindowMinChange: VolumeViewerVrProps['onLayerWindowMinChange'];
-  onLayerWindowMaxChange: VolumeViewerVrProps['onLayerWindowMaxChange'];
-  onLayerAutoContrast: VolumeViewerVrProps['onLayerAutoContrast'];
-  onLayerOffsetChange: VolumeViewerVrProps['onLayerOffsetChange'];
-  onLayerColorChange: VolumeViewerVrProps['onLayerColorChange'];
-  onLayerRenderStyleToggle: VolumeViewerVrProps['onLayerRenderStyleToggle'];
-  onLayerSamplingModeToggle: VolumeViewerVrProps['onLayerSamplingModeToggle'];
-  onLayerInvertToggle: VolumeViewerVrProps['onLayerInvertToggle'];
-  onRegisterVrSession?: VolumeViewerVrProps['onRegisterVrSession'];
-  onVrSessionStarted?: VolumeViewerVrProps['onVrSessionStarted'];
-  onVrSessionEnded?: VolumeViewerVrProps['onVrSessionEnded'];
-  onSliceIndexChange: ViewerShellProps['planarViewerProps']['onSliceIndexChange'];
-  onReturnToLauncher: ViewerShellProps['topMenu']['onReturnToLauncher'];
-  onResetWindowLayout: ViewerShellProps['topMenu']['onResetLayout'];
-  isHelpMenuOpen: boolean;
-  openHelpMenu: ViewerShellProps['topMenu']['openHelpMenu'];
-  closeHelpMenu: ViewerShellProps['topMenu']['closeHelpMenu'];
-  onToggleViewerMode: ViewerShellProps['modeControls']['onToggleViewerMode'];
-  onVrButtonClick: ViewerShellProps['modeControls']['onVrButtonClick'];
-  vrButtonDisabled: ViewerShellProps['modeControls']['vrButtonDisabled'];
-  vrButtonTitle?: ViewerShellProps['modeControls']['vrButtonTitle'];
-  vrButtonLabel: ViewerShellProps['modeControls']['vrButtonLabel'];
-  renderStyle: ViewerShellProps['modeControls']['renderStyle'];
-  samplingMode: ViewerShellProps['modeControls']['samplingMode'];
-  onRenderStyleToggle: ViewerShellProps['modeControls']['onRenderStyleToggle'];
-  onSamplingModeToggle: ViewerShellProps['modeControls']['onSamplingModeToggle'];
-  onBlendingModeToggle: ViewerShellProps['modeControls']['onBlendingModeToggle'];
-  onJumpToStart: ViewerShellProps['playbackControls']['onJumpToStart'];
-  onJumpToEnd: ViewerShellProps['playbackControls']['onJumpToEnd'];
-  onMinimumTrackLengthChange: ViewerShellProps['tracksPanel']['onMinimumTrackLengthChange'];
-  onMinimumTrackLengthApply: ViewerShellProps['tracksPanel']['onMinimumTrackLengthApply'];
-  onTrackOrderToggle: ViewerShellProps['tracksPanel']['onTrackOrderToggle'];
-  onTrackFollow: ViewerShellProps['tracksPanel']['onTrackFollow'];
-  onAmplitudeLimitsChange: ViewerShellProps['plotSettings']['onAmplitudeLimitsChange'];
-  onTimeLimitsChange: ViewerShellProps['plotSettings']['onTimeLimitsChange'];
-  onSmoothingChange: ViewerShellProps['plotSettings']['onSmoothingChange'];
-  onAutoRange: ViewerShellProps['plotSettings']['onAutoRange'];
-  onClearSelection: ViewerShellProps['plotSettings']['onClearSelection'];
-  getLayerDefaultSettings: (layerKey: string) => LayerSettings;
 };
 
-export function useViewerShellProps({
-  viewerMode,
-  viewerLayers,
-  isLoading,
-  loadProgress,
-  loadedCount,
-  expectedVolumeCount,
-  selectedIndex,
-  volumeTimepointCount,
-  isPlaying,
-  playbackDisabled,
-  playbackLabel,
-  isRecording,
-  canRecord,
-  fps,
-  blendingMode,
-  sliceIndex,
-  maxSliceDepth,
-  trackScale,
-  filteredTracks,
-  trackVisibility,
-  trackOpacityByTrackSet,
-  trackLineWidthByTrackSet,
-  trackColorModesByTrackSet,
-  channelTrackOffsets,
-  selectedTrackIds,
-  followedTrackId,
-  followedVoxel,
-  followedTrackSetId,
-  activeTrackSetId,
-  activeChannelTabId,
-  trackChannels,
-  vrChannelPanels,
-  is3dViewerAvailable,
-  isVrActive,
-  isVrRequesting,
-  resetViewHandler,
-  isVrPassthroughSupported,
-  hasParsedTrackData,
-  layoutResetToken,
-  controlWindowInitialPosition,
-  viewerSettingsWindowInitialPosition,
-  layersWindowInitialPosition,
-  paintbrushWindowInitialPosition,
-  trackWindowInitialPosition,
-  selectedTracksWindowInitialPosition,
-  plotSettingsWindowInitialPosition,
-  trackSettingsWindowInitialPosition,
-  channels,
-  channelNameMap,
-  channelVisibility,
-  channelTintMap,
-  channelLayersMap,
-  layerVolumesByKey,
-  channelActiveLayer,
-  layerSettings,
-  loadedChannelIds,
-  trackSets,
-  parsedTracksByTrackSet,
-  filteredTracksByTrackSet,
-  minimumTrackLength,
-  pendingMinimumTrackLength,
-  trackLengthBounds,
-  trackSummaryByTrackSet,
-  trackOrderModeByTrackSet,
-  selectedTrackOrder,
-  selectedTrackSeries,
-  resolvedAmplitudeLimits,
-  resolvedTimeLimits,
-  trackSmoothing,
-  isFullTrackTrailEnabled,
-  trackTrailLength,
-  amplitudeExtent,
-  timeExtent,
-  error,
-  hoveredVolumeVoxel,
-  onTogglePlayback,
-  onTimeIndexChange,
-  canAdvancePlayback,
-  onFpsChange,
-  onVolumeStepScaleChange,
-  onRegisterVolumeStepScaleChange,
-  onRegisterReset,
-  onTrackSelectionToggle,
-  onTrackFollowRequest,
-  onVoxelFollowRequest,
-  onHoverVoxelChange,
-  onStartRecording,
-  onStopRecording,
-  onTrackChannelSelect,
-  onTrackVisibilityToggle,
-  onTrackVisibilityAllChange,
-  onTrackOpacityChange,
-  onTrackLineWidthChange,
-  onTrackColorSelect,
-  onTrackColorReset,
-  onTrackTrailModeChange,
-  onTrackTrailLengthChange,
-  onStopTrackFollow,
-  onStopVoxelFollow,
-  onChannelPanelSelect,
-  onTrackPanelChannelSelect,
-  onChannelVisibilityToggle,
-  onChannelReset,
-  onChannelLayerSelect,
-  onLayerSelect,
-  onLayerSoloToggle,
-  onLayerContrastChange,
-  onLayerBrightnessChange,
-  onLayerWindowMinChange,
-  onLayerWindowMaxChange,
-  onLayerAutoContrast,
-  onLayerOffsetChange,
-  onLayerColorChange,
-  onLayerRenderStyleToggle,
-  onLayerSamplingModeToggle,
-  onLayerInvertToggle,
-  onRegisterVrSession,
-  onVrSessionStarted,
-  onVrSessionEnded,
-  onSliceIndexChange,
-  onReturnToLauncher,
-  onResetWindowLayout,
-  isHelpMenuOpen,
-  openHelpMenu,
-  closeHelpMenu,
-  onToggleViewerMode,
-  onVrButtonClick,
-  vrButtonDisabled,
-  vrButtonTitle,
-  vrButtonLabel,
-  renderStyle,
-  samplingMode,
-  onRenderStyleToggle,
-  onSamplingModeToggle,
-  onBlendingModeToggle,
-  onJumpToStart,
-  onJumpToEnd,
-  onMinimumTrackLengthChange,
-  onMinimumTrackLengthApply,
-  onTrackOrderToggle,
-  onTrackFollow,
-  onAmplitudeLimitsChange,
-  onTimeLimitsChange,
-  onSmoothingChange,
-  onAutoRange,
-  onClearSelection,
-  getLayerDefaultSettings
-  }: ViewerShellContainerProps): ViewerShellProps {
-  const volumeViewerProps: ViewerShellProps['volumeViewerProps'] = {
-    layers: viewerLayers,
-    isLoading,
-    loadingProgress: loadProgress,
-    loadedVolumes: loadedCount,
-    expectedVolumes: expectedVolumeCount,
-    timeIndex: selectedIndex,
-    totalTimepoints: volumeTimepointCount,
-    isPlaying,
-    playbackDisabled,
-    playbackLabel,
-    fps,
-    blendingMode,
-    onTogglePlayback,
-    onTimeIndexChange,
-    canAdvancePlayback,
-    onFpsChange,
-    onVolumeStepScaleChange,
-    onRegisterVolumeStepScaleChange,
-    onRegisterReset,
-    trackScale,
-    tracks: filteredTracks,
-    trackVisibility,
-    trackOpacityByTrackSet,
-    trackLineWidthByTrackSet,
-    trackColorModesByTrackSet,
-    channelTrackOffsets,
-    isFullTrackTrailEnabled,
-    trackTrailLength,
-    selectedTrackIds,
-    followedTrackId,
-    followedVoxel,
-    onTrackSelectionToggle,
-    onTrackFollowRequest,
-    onVoxelFollowRequest,
-    onHoverVoxelChange,
-    vr: is3dViewerAvailable
+type ViewerShellContainerSelectedTracksPanelProps = Omit<ViewerShellProps['selectedTracksPanel'], 'shouldRender'>;
+
+type ViewerShellContainerPlotSettingsProps = Omit<ViewerShellProps['plotSettings'], 'smoothingExtent'>;
+
+type ViewerShellContainerTrackSettingsProps = Omit<ViewerShellProps['trackSettings'], 'trailLengthExtent'>;
+
+type ViewerPanelsLoadingInput = Pick<
+  ViewerShellProps['volumeViewerProps'],
+  'isLoading' | 'loadingProgress' | 'loadedVolumes' | 'expectedVolumes'
+>;
+
+type ViewerPanelsTrackInput = Pick<
+  ViewerShellProps['volumeViewerProps'],
+  | 'trackScale'
+  | 'tracks'
+  | 'trackVisibility'
+  | 'trackOpacityByTrackSet'
+  | 'trackLineWidthByTrackSet'
+  | 'trackColorModesByTrackSet'
+  | 'channelTrackOffsets'
+  | 'selectedTrackIds'
+  | 'followedTrackId'
+  | 'followedVoxel'
+  | 'onTrackSelectionToggle'
+  | 'onTrackFollowRequest'
+  | 'onVoxelFollowRequest'
+  | 'onHoverVoxelChange'
+>;
+
+export type ViewerShellContainerViewerPanelsProps = {
+  layers: ViewerLayerConfig[];
+  loading: ViewerPanelsLoadingInput;
+  tracks: ViewerPanelsTrackInput;
+  canAdvancePlayback?: ViewerShellProps['volumeViewerProps']['canAdvancePlayback'];
+  onRegisterReset: ViewerShellProps['volumeViewerProps']['onRegisterReset'];
+  onVolumeStepScaleChange?: ViewerShellProps['volumeViewerProps']['onVolumeStepScaleChange'];
+  onRegisterVolumeStepScaleChange?: ViewerShellProps['volumeViewerProps']['onRegisterVolumeStepScaleChange'];
+};
+
+export type ViewerShellContainerVrProps = Pick<
+  VolumeViewerVrProps,
+  | 'isVrPassthroughSupported'
+  | 'trackChannels'
+  | 'onTrackChannelSelect'
+  | 'onTrackVisibilityToggle'
+  | 'onTrackVisibilityAllChange'
+  | 'onTrackOpacityChange'
+  | 'onTrackLineWidthChange'
+  | 'onTrackColorSelect'
+  | 'onTrackColorReset'
+  | 'onStopTrackFollow'
+  | 'channelPanels'
+  | 'onChannelPanelSelect'
+  | 'onChannelVisibilityToggle'
+  | 'onChannelReset'
+  | 'onChannelLayerSelect'
+  | 'onLayerSelect'
+  | 'onLayerSoloToggle'
+  | 'onLayerContrastChange'
+  | 'onLayerBrightnessChange'
+  | 'onLayerWindowMinChange'
+  | 'onLayerWindowMaxChange'
+  | 'onLayerAutoContrast'
+  | 'onLayerOffsetChange'
+  | 'onLayerColorChange'
+  | 'onLayerRenderStyleToggle'
+  | 'onLayerSamplingModeToggle'
+  | 'onLayerInvertToggle'
+  | 'onRegisterVrSession'
+  | 'onVrSessionStarted'
+  | 'onVrSessionEnded'
+>;
+
+export type ViewerShellContainerProps = ViewerShellContainerHelpMenuProps & {
+  viewerMode: ViewerShellProps['viewerMode'];
+  viewerPanels: ViewerShellContainerViewerPanelsProps;
+  vr: ViewerShellContainerVrProps;
+  topMenu: ViewerShellContainerTopMenuProps;
+  layout: ViewerShellContainerLayoutProps;
+  modeControls: ViewerShellProps['modeControls'];
+  playbackControls: ViewerShellProps['playbackControls'];
+  channelsPanel: ViewerShellProps['channelsPanel'];
+  tracksPanel: ViewerShellContainerTracksPanelProps;
+  selectedTracksPanel: ViewerShellContainerSelectedTracksPanelProps;
+  plotSettings: ViewerShellContainerPlotSettingsProps;
+  trackSettings: ViewerShellContainerTrackSettingsProps;
+};
+
+function mapVolumeViewerProps({
+  viewerPanels,
+  playbackControls,
+  modeControls,
+  trackSettings,
+  vr,
+  tracksPanel,
+  channelsPanel
+}: Pick<
+  ViewerShellContainerProps,
+  'viewerPanels' | 'playbackControls' | 'modeControls' | 'trackSettings' | 'vr' | 'tracksPanel' | 'channelsPanel'
+>): ViewerShellProps['volumeViewerProps'] {
+  return {
+    layers: viewerPanels.layers,
+    isLoading: viewerPanels.loading.isLoading,
+    loadingProgress: viewerPanels.loading.loadingProgress,
+    loadedVolumes: viewerPanels.loading.loadedVolumes,
+    expectedVolumes: viewerPanels.loading.expectedVolumes,
+    timeIndex: playbackControls.selectedIndex,
+    totalTimepoints: playbackControls.volumeTimepointCount,
+    isPlaying: playbackControls.isPlaying,
+    playbackDisabled: playbackControls.playbackDisabled,
+    playbackLabel: playbackControls.playbackLabel,
+    fps: playbackControls.fps,
+    blendingMode: modeControls.blendingMode,
+    onTogglePlayback: playbackControls.onTogglePlayback,
+    onTimeIndexChange: playbackControls.onTimeIndexChange,
+    canAdvancePlayback: viewerPanels.canAdvancePlayback,
+    onFpsChange: playbackControls.onFpsChange,
+    onVolumeStepScaleChange: viewerPanels.onVolumeStepScaleChange,
+    onRegisterVolumeStepScaleChange: viewerPanels.onRegisterVolumeStepScaleChange,
+    onRegisterReset: viewerPanels.onRegisterReset,
+    trackScale: viewerPanels.tracks.trackScale,
+    tracks: viewerPanels.tracks.tracks,
+    trackVisibility: viewerPanels.tracks.trackVisibility,
+    trackOpacityByTrackSet: viewerPanels.tracks.trackOpacityByTrackSet,
+    trackLineWidthByTrackSet: viewerPanels.tracks.trackLineWidthByTrackSet,
+    trackColorModesByTrackSet: viewerPanels.tracks.trackColorModesByTrackSet,
+    channelTrackOffsets: viewerPanels.tracks.channelTrackOffsets,
+    isFullTrackTrailEnabled: trackSettings.isFullTrailEnabled,
+    trackTrailLength: trackSettings.trailLength,
+    selectedTrackIds: viewerPanels.tracks.selectedTrackIds,
+    followedTrackId: viewerPanels.tracks.followedTrackId,
+    followedVoxel: viewerPanels.tracks.followedVoxel,
+    onTrackSelectionToggle: viewerPanels.tracks.onTrackSelectionToggle,
+    onTrackFollowRequest: viewerPanels.tracks.onTrackFollowRequest,
+    onVoxelFollowRequest: viewerPanels.tracks.onVoxelFollowRequest,
+    onHoverVoxelChange: viewerPanels.tracks.onHoverVoxelChange,
+    vr: modeControls.is3dModeAvailable
       ? {
-          isVrPassthroughSupported,
-          trackChannels,
-          activeTrackChannelId: activeTrackSetId,
-          onTrackChannelSelect,
-          onTrackVisibilityToggle,
-          onTrackVisibilityAllChange,
-          onTrackOpacityChange,
-          onTrackLineWidthChange,
-          onTrackColorSelect,
-          onTrackColorReset,
-          onStopTrackFollow,
-          channelPanels: vrChannelPanels,
-          activeChannelPanelId: activeChannelTabId,
-          onChannelPanelSelect,
-          onChannelVisibilityToggle,
-          onChannelReset,
-          onChannelLayerSelect,
-          onLayerSelect,
-          onLayerSoloToggle,
-          onLayerContrastChange,
-          onLayerBrightnessChange,
-          onLayerWindowMinChange,
-          onLayerWindowMaxChange,
-          onLayerAutoContrast,
-          onLayerOffsetChange,
-          onLayerColorChange,
-          onLayerRenderStyleToggle,
-          onLayerSamplingModeToggle,
-          onLayerInvertToggle,
-          onRegisterVrSession,
-          onVrSessionStarted,
-          onVrSessionEnded
+          ...vr,
+          activeTrackChannelId: tracksPanel.activeTrackSetId,
+          activeChannelPanelId: channelsPanel.activeChannelId
         }
       : undefined
   };
+}
 
-  const planarViewerProps: ViewerShellProps['planarViewerProps'] = {
-    layers: viewerLayers,
-    isLoading,
-    loadingProgress: loadProgress,
-    loadedVolumes: loadedCount,
-    expectedVolumes: expectedVolumeCount,
-    timeIndex: selectedIndex,
-    totalTimepoints: volumeTimepointCount,
-    onRegisterReset,
-    sliceIndex,
-    maxSlices: maxSliceDepth,
-    onSliceIndexChange,
-    trackScale,
-    tracks: filteredTracks,
-    trackVisibility,
-    trackOpacityByTrackSet,
-    trackLineWidthByTrackSet,
-    trackColorModesByTrackSet,
-    channelTrackOffsets,
-    isFullTrackTrailEnabled,
-    trackTrailLength,
-    followedTrackId,
-    selectedTrackIds,
-    onTrackSelectionToggle,
-    onTrackFollowRequest,
-    onHoverVoxelChange
-  };
-
-  const showSelectedTracksWindow = !isVrActive && hasParsedTrackData;
-
+function mapPlanarViewerProps({
+  viewerPanels,
+  playbackControls,
+  trackSettings
+}: Pick<ViewerShellContainerProps, 'viewerPanels' | 'playbackControls' | 'trackSettings'>): ViewerShellProps['planarViewerProps'] {
   return {
-    viewerMode,
-    volumeViewerProps,
-    planarViewerProps,
-    topMenu: {
-      onReturnToLauncher,
-      onResetLayout: onResetWindowLayout,
-      isHelpMenuOpen,
-      openHelpMenu,
-      closeHelpMenu,
-      hoveredVoxel: hoveredVolumeVoxel,
-      followedTrackSetId,
-      followedTrackId,
-      followedVoxel,
-      onStopTrackFollow,
-      onStopVoxelFollow
-    },
-    layout: {
-      windowMargin: WINDOW_MARGIN,
-      controlWindowWidth: CONTROL_WINDOW_WIDTH,
-      selectedTracksWindowWidth: SELECTED_TRACKS_WINDOW_WIDTH,
-      resetToken: layoutResetToken,
-      controlWindowInitialPosition,
-      viewerSettingsWindowInitialPosition,
-      layersWindowInitialPosition,
-      paintbrushWindowInitialPosition,
-      trackWindowInitialPosition,
-      selectedTracksWindowInitialPosition,
-      plotSettingsWindowInitialPosition,
-      trackSettingsWindowInitialPosition
-    },
-    modeControls: {
-      is3dModeAvailable: is3dViewerAvailable,
-      isVrActive,
-      isVrRequesting,
-      resetViewHandler,
-      onToggleViewerMode,
-      onVrButtonClick,
-      vrButtonDisabled,
-      vrButtonTitle,
-      vrButtonLabel,
-      renderStyle,
-      samplingMode,
-      onRenderStyleToggle,
-      onSamplingModeToggle,
-      blendingMode,
-      onBlendingModeToggle
-    },
-    playbackControls: {
-      fps,
-      onFpsChange,
-      volumeTimepointCount,
-      sliceIndex,
-      maxSliceDepth,
-      onSliceIndexChange,
-      isPlaying,
-      playbackLabel,
-      isRecording,
-      canRecord,
-      selectedIndex,
-      onTimeIndexChange,
-      playbackDisabled,
-      onTogglePlayback,
-      onJumpToStart,
-      onJumpToEnd,
-      error,
-      onStartRecording,
-      onStopRecording
-    },
-    channelsPanel: {
-      isPlaying,
-      loadedChannelIds,
-      channelNameMap,
-      channelVisibility,
-      channelTintMap,
-      activeChannelId: activeChannelTabId,
-      onChannelTabSelect: onChannelPanelSelect,
-      onChannelVisibilityToggle,
-      channelLayersMap,
-      layerVolumesByKey,
-      channelActiveLayer,
-      layerSettings,
-      getLayerDefaultSettings,
-      onChannelLayerSelect,
-      onChannelReset,
-      onLayerWindowMinChange,
-      onLayerWindowMaxChange,
-      onLayerBrightnessChange,
-      onLayerContrastChange,
-      onLayerAutoContrast,
-      onLayerOffsetChange,
-      onLayerColorChange,
-      onLayerInvertToggle
-    },
-    tracksPanel: {
-      trackSets,
-      activeTrackSetId,
-      onTrackSetTabSelect: onTrackPanelChannelSelect,
-      parsedTracksByTrackSet,
-      filteredTracksByTrackSet,
-      minimumTrackLength,
-      pendingMinimumTrackLength,
-      trackLengthBounds,
-      onMinimumTrackLengthChange,
-      onMinimumTrackLengthApply,
-      trackColorModesByTrackSet,
-      trackOpacityByTrackSet,
-      trackLineWidthByTrackSet,
-      trackSummaryByTrackSet,
-      followedTrackSetId,
-      followedTrackId,
-      onTrackOrderToggle,
-      trackOrderModeByTrackSet,
-      trackVisibility,
-      onTrackVisibilityToggle,
-      onTrackVisibilityAllChange,
-      onTrackOpacityChange,
-      onTrackLineWidthChange,
-      onTrackColorSelect,
-      onTrackColorReset,
-      onTrackSelectionToggle,
-      selectedTrackOrder,
-      selectedTrackIds,
-      onTrackFollow
-    },
-    selectedTracksPanel: {
-      shouldRender: showSelectedTracksWindow,
-      series: selectedTrackSeries,
-      totalTimepoints: volumeTimepointCount,
-      amplitudeLimits: resolvedAmplitudeLimits,
-      timeLimits: resolvedTimeLimits,
-      currentTimepoint: selectedIndex,
-      channelTintMap,
-      smoothing: trackSmoothing,
-      onTrackSelectionToggle
-    },
-    plotSettings: {
-      amplitudeExtent,
-      amplitudeLimits: resolvedAmplitudeLimits,
-      timeExtent,
-      timeLimits: resolvedTimeLimits,
-      smoothing: trackSmoothing,
-      smoothingExtent: TRACK_SMOOTHING_RANGE,
-      onAmplitudeLimitsChange,
-      onTimeLimitsChange,
-      onSmoothingChange,
-      onAutoRange,
-      onClearSelection
-    },
-    trackSettings: {
-      isFullTrailEnabled: isFullTrackTrailEnabled,
-      trailLength: trackTrailLength,
-      trailLengthExtent: TRACK_TRAIL_LENGTH_RANGE,
-      onFullTrailToggle: onTrackTrailModeChange,
-      onTrailLengthChange: onTrackTrailLengthChange
-    },
-    trackDefaults: {
-      opacity: DEFAULT_TRACK_OPACITY,
-      lineWidth: DEFAULT_TRACK_LINE_WIDTH
-    }
+    layers: viewerPanels.layers,
+    isLoading: viewerPanels.loading.isLoading,
+    loadingProgress: viewerPanels.loading.loadingProgress,
+    loadedVolumes: viewerPanels.loading.loadedVolumes,
+    expectedVolumes: viewerPanels.loading.expectedVolumes,
+    timeIndex: playbackControls.selectedIndex,
+    totalTimepoints: playbackControls.volumeTimepointCount,
+    onRegisterReset: viewerPanels.onRegisterReset,
+    sliceIndex: playbackControls.sliceIndex,
+    maxSlices: playbackControls.maxSliceDepth,
+    onSliceIndexChange: playbackControls.onSliceIndexChange,
+    trackScale: viewerPanels.tracks.trackScale,
+    tracks: viewerPanels.tracks.tracks,
+    trackVisibility: viewerPanels.tracks.trackVisibility,
+    trackOpacityByTrackSet: viewerPanels.tracks.trackOpacityByTrackSet,
+    trackLineWidthByTrackSet: viewerPanels.tracks.trackLineWidthByTrackSet,
+    trackColorModesByTrackSet: viewerPanels.tracks.trackColorModesByTrackSet,
+    channelTrackOffsets: viewerPanels.tracks.channelTrackOffsets,
+    isFullTrackTrailEnabled: trackSettings.isFullTrailEnabled,
+    trackTrailLength: trackSettings.trailLength,
+    followedTrackId: viewerPanels.tracks.followedTrackId,
+    selectedTrackIds: viewerPanels.tracks.selectedTrackIds,
+    onTrackSelectionToggle: viewerPanels.tracks.onTrackSelectionToggle,
+    onTrackFollowRequest: viewerPanels.tracks.onTrackFollowRequest,
+    onHoverVoxelChange: viewerPanels.tracks.onHoverVoxelChange
+  };
+}
+
+function mapTopMenuProps({
+  topMenu,
+  isHelpMenuOpen,
+  openHelpMenu,
+  closeHelpMenu
+}: Pick<ViewerShellContainerProps, 'topMenu' | 'isHelpMenuOpen' | 'openHelpMenu' | 'closeHelpMenu'>): ViewerShellProps['topMenu'] {
+  return {
+    ...topMenu,
+    isHelpMenuOpen,
+    openHelpMenu,
+    closeHelpMenu
+  };
+}
+
+function mapLayoutProps(layout: ViewerShellContainerLayoutProps): ViewerShellProps['layout'] {
+  return {
+    windowMargin: WINDOW_MARGIN,
+    controlWindowWidth: CONTROL_WINDOW_WIDTH,
+    selectedTracksWindowWidth: SELECTED_TRACKS_WINDOW_WIDTH,
+    ...layout
+  };
+}
+
+function mapTracksPanelProps(tracksPanel: ViewerShellContainerTracksPanelProps): ViewerShellProps['tracksPanel'] {
+  const { hasParsedTrackData: _hasParsedTrackData, ...rest } = tracksPanel;
+  return rest;
+}
+
+function mapSelectedTracksPanelProps({
+  selectedTracksPanel,
+  modeControls,
+  tracksPanel
+}: Pick<ViewerShellContainerProps, 'selectedTracksPanel' | 'modeControls' | 'tracksPanel'>): ViewerShellProps['selectedTracksPanel'] {
+  return {
+    ...selectedTracksPanel,
+    shouldRender: !modeControls.isVrActive && tracksPanel.hasParsedTrackData
+  };
+}
+
+function mapPlotSettingsProps(plotSettings: ViewerShellContainerPlotSettingsProps): ViewerShellProps['plotSettings'] {
+  return {
+    ...plotSettings,
+    smoothingExtent: TRACK_SMOOTHING_RANGE
+  };
+}
+
+function mapTrackSettingsProps(trackSettings: ViewerShellContainerTrackSettingsProps): ViewerShellProps['trackSettings'] {
+  return {
+    ...trackSettings,
+    trailLengthExtent: TRACK_TRAIL_LENGTH_RANGE
+  };
+}
+
+function mapTrackDefaults(): ViewerShellProps['trackDefaults'] {
+  return {
+    opacity: DEFAULT_TRACK_OPACITY,
+    lineWidth: DEFAULT_TRACK_LINE_WIDTH
+  };
+}
+
+export function useViewerShellProps(props: ViewerShellContainerProps): ViewerShellProps {
+  return {
+    viewerMode: props.viewerMode,
+    volumeViewerProps: mapVolumeViewerProps(props),
+    planarViewerProps: mapPlanarViewerProps(props),
+    topMenu: mapTopMenuProps(props),
+    layout: mapLayoutProps(props.layout),
+    modeControls: props.modeControls,
+    playbackControls: props.playbackControls,
+    channelsPanel: props.channelsPanel,
+    tracksPanel: mapTracksPanelProps(props.tracksPanel),
+    selectedTracksPanel: mapSelectedTracksPanelProps(props),
+    plotSettings: mapPlotSettingsProps(props.plotSettings),
+    trackSettings: mapTrackSettingsProps(props.trackSettings),
+    trackDefaults: mapTrackDefaults()
   };
 }

@@ -50,7 +50,8 @@ The main responsibilities are:
 **3. State & control**
 
 - Central dataset and layer state: `useChannelLayerState` and `state/*`.
-- Channel sources and per-layer volume state: `hooks/dataset/useChannelSources.ts`.
+- Channel source/validation state: `hooks/dataset/useChannelSources.ts`.
+- Dataset load/apply lifecycle for channel sources: `hooks/dataset/useChannelDatasetLoader.ts`.
 - Playback and viewer interaction: `hooks/viewer/useViewerPlayback.ts`, `hooks/viewer/useViewerControls.ts`, and app-level
   helpers such as `useViewerModePlayback` (mode + playback wiring).
 - Tracks: hooks under `hooks/tracks/*` feed both planar and volume viewers.
@@ -69,9 +70,11 @@ The main responsibilities are:
 ### Top-level / tooling
 
 - `package.json`  
-  Scripts: `dev` (Vite), `build`, `preview`, `typecheck`, local verification/test commands (`test`, `test:coverage`, `test:frontend`, `test:visual`, `test:e2e`, `test:e2e:visual`, `test:perf`, `verify:fast`, `verify:ui`, `verify:full`, `verify:nightly`).
+  Scripts: `dev` (Vite), `build`, `preview`, `typecheck`, `typecheck:strict-unused` (scoped optional strict-unused gate), local verification/test commands (`test`, `test:coverage`, `test:frontend`, `test:visual`, `test:e2e`, `test:e2e:visual`, `test:perf`, `verify:fast`, `verify:ui`, `verify:full`, `verify:nightly`).
 - `tsconfig.tests.json`  
   Narrow test-only TypeScript project used by `typecheck:tests` for local automation checks.
+- `tsconfig.strict-unused.json`
+  Scoped strict-unused TypeScript gate (`noUnusedLocals` + `noUnusedParameters`) used by `typecheck:strict-unused`; currently covers route orchestration and high-risk viewer/VR shells (`useAppRouteState`, `VolumeViewer`, `useVolumeViewerVr`).
 - `playwright.config.ts`
   Local browser automation config for Playwright smoke + screenshot tests (Chromium project, local Vite web server).
 - `vite.config.ts`  
@@ -84,6 +87,8 @@ The main responsibilities are:
   Local automation entrypoint for running the full verification pipeline without remote CI.
 - `PROGRESS.md`  
   Running progress log / next tasks.
+- `docs/refactor/README.md`, `docs/refactor/ARCHIVE_SUMMARY.md`
+  Archived refactor-program record. The refactor plan is completed; the consolidated history and outcomes are stored in `ARCHIVE_SUMMARY.md`.
 
 ---
 
@@ -100,7 +105,15 @@ The main responsibilities are:
 - `src/ui/app/router.tsx`
   High-level navigation and suspense boundary that chooses between dataset setup and viewer routes.
 - `src/ui/app/hooks/useAppRouteState.tsx`
-  Central app-state wiring for dataset setup + viewer routes; builds props for both `DatasetSetupRoute` and `ViewerRoute` while managing shared channel/layer lifecycle.
+  Central app-state wiring for dataset setup + viewer routes; builds typed route contracts for both `DatasetSetupRoute` and `ViewerRoute` while managing shared channel/layer lifecycle.
+- `src/ui/app/hooks/routeDatasetSetupProps.ts`
+  Pure route-props assembler that composes `FrontPageContainer` setup contracts from focused state/handler sections.
+- `src/ui/app/hooks/routeViewerShellProps.ts`
+  Pure route-props assembler that composes `ViewerShellContainer` route contracts from viewer/chrome/panel sections.
+- `src/ui/app/hooks/useRouteLayerVolumes.ts`
+  Isolates launch-time volume bootstrap and timepoint-driven active-layer volume loading from the route orchestrator.
+- `src/ui/app/hooks/useRouteVrChannelPanels.ts`
+  Isolates VR channels/tracks panel view-model assembly (channel visibility, active layer, histogram + settings payloads).
 - `src/ui/app/routes/*`
   Route-level containers: `DatasetSetupRoute` wraps the front page, and `ViewerRoute` wraps the viewer shell/help menu.
 
@@ -119,10 +132,76 @@ The main responsibilities are:
   Main viewer layout; switches between 2D/3D viewer modes and hosts panels/windows.
 - `viewer-shell/*`
   Panels (channels, playback, tracks, plot settings) + shell-level hooks.
+  Shell orchestration hooks:
+  - `hooks/useViewerRecording.ts` isolates capture-target registration and media-recording lifecycle (bitrate controls, frame-pump, mode-switch/unmount teardown).
+  - `hooks/useViewerPanelWindows.ts` isolates viewer panel window visibility/reset policies (viewer settings, plot settings, track settings, paintbrush).
+  - `hooks/useViewerPaintbrushIntegration.ts` isolates paintbrush overlay composition, viewer prop wiring, and painting export handling.
 - `PlanarViewer.tsx` + `planar-viewer/*`
   Canvas-based slice viewing + layout/interaction hooks/utilities.
+  Planar rendering boundaries:
+  - `planarTrackCentroid.ts` isolates followed-track centroid math used by planar interaction recentering.
+  - `planarSliceCanvas.ts` isolates offscreen slice-canvas staging and planar track/slice draw-path styling logic.
+  Planar lifecycle boundaries:
+  - `usePlanarPrimaryVolume.ts` isolates primary-volume selection and auto-fit trigger rules tied to source volume shape changes.
+  - `usePlanarViewerCanvasLifecycle.ts` isolates animation, resize, offscreen canvas staging, auto-fit reset, and draw-revision lifecycle wiring.
+  - `usePlanarViewerBindings.ts` isolates planar capture-target registration and hover-reset binding behavior.
+  Planar interaction boundaries:
+  - `hooks/usePlanarInteractions/usePlanarTrackHoverState.ts` isolates hovered-track and tooltip state transitions.
+  - `hooks/usePlanarInteractions/usePlanarTrackHitTest.ts` isolates XY track hit-testing and visibility/threshold logic.
+  - `hooks/usePlanarInteractions/usePlanarPixelHover.ts` isolates pixel hover sampling and hover-voxel emission.
+  - `hooks/usePlanarInteractions/usePlanarCanvasInputHandlers.ts` isolates pointer/wheel input handlers (paint/pan/selection/hover).
+  - `hooks/usePlanarInteractions/usePlanarKeyboardShortcuts.ts` isolates planar keyboard bindings.
 - `VolumeViewer.tsx` + `volume-viewer/*`
   Three.js volume renderer (raymarching, hover sampling, VR bridge, track overlays) and helper modules.
+  Volume viewer orchestration boundaries:
+  - `useVolumeViewerAnisotropy.ts` isolates anisotropy-scale normalization and step-scale ratio synchronization.
+  - `useVolumeViewerRefSync.ts` isolates ref synchronization (paintbrush/layers/follow target) and reset/follow callback wrappers.
+  - `useVolumeViewerSurfaceBinding.ts` isolates render-surface container wiring and active-3D-layer handle refresh.
+  - `useVolumeViewerTransformBindings.ts` isolates VR HUD placement refresh and transform callback ref synchronization.
+  - `volumeViewerVrRuntime.ts` isolates defaulted VR runtime prop resolution from optional `vr` props.
+  - `volumeViewerRuntimeArgs.ts` isolates grouped typed argument assembly for `useVolumeViewerVrBridge` and `useVolumeViewerLifecycle`.
+  Runtime lifecycle boundaries:
+  - `volumeViewerPointerLifecycle.ts` isolates pointer/paint event wiring.
+  - `volumeViewerRenderLoop.ts` isolates the per-frame render loop pipeline.
+  Track-rendering boundaries:
+  - `useTrackRendering.ts` remains the track-overlay orchestrator for resource lifecycle + visibility policy.
+  - `trackHoverState.ts` isolates pointer/controller hover-source state resolution and tooltip synchronization.
+  - `trackDrawRanges.ts` isolates time-window draw-range updates for line geometry/endcaps.
+  - `trackHitTesting.ts` isolates pointer ray-hit testing against visible track line/endcap objects.
+  - `trackAppearance.ts` isolates per-frame material/opacity/width/blink appearance updates.
+  Hover-sampling boundaries:
+  - `volumeHoverTargetLayer.ts` isolates hover target-layer/resource selection policy before ray sampling.
+  - `volumeHoverSampling.ts` isolates trilinear sample extraction, luminance resolution, and windowed-intensity adjustment used by hover MIP sampling.
+  VR domain boundaries:
+  - `useVolumeViewerVr/useVrHudInteractions.ts` isolates channels/tracks HUD slider + scroll interaction state updates.
+  - `vr/controllerRayVolumeDomain.ts` isolates controller-based volume transform ray logic (translate/scale/yaw/pitch handles).
+  - `vr/controllerConfiguration.ts` is now a thin controller entry orchestrator (wires lifecycle + select handlers).
+  - `vr/controllerInputDependencies.ts` centralizes controller input dependency typing shared by configurator and extracted handler modules.
+  - `vr/controllerConnectionLifecycle.ts` isolates controller connect/disconnect state transitions.
+  - `vr/controllerSelectStart.ts` isolates select-start activation logic (HUD/volume gesture setup and immediate slider/scroll interactions).
+  - `vr/controllerSelectEnd.ts` isolates select-end action dispatch (playback/channels/tracks callbacks + follow behavior).
+  - `vr/controllerRayHudCandidates.ts` isolates playback/channels/tracks HUD candidate resolution from the outer controller-ray frame loop.
+  - `vr/controllerRayHudTransforms.ts` isolates controller-driven HUD panel drag + yaw/pitch transform updates.
+  - `vr/controllerRayTrackIntersections.ts` isolates controller raycasting against visible track lines and screen-space hover projection.
+  - `vr/controllerRayFrameFinalize.ts` isolates end-of-frame hover synchronization (HUD hover regions, playback flags, summary logging, controller hover state).
+  - `vr/controllerRayUiFlags.ts` isolates controller hover/active UI flag transitions from the ray-update loop.
+  - `vr/controllerRayRegionState.ts` isolates HUD-region equality + controller-ray summary change detection.
+  - `vr/hudRenderersTracks.ts` + `vr/hudRenderersChannels.ts` are thin HUD orchestrators.
+  - Tracks HUD modules:
+    `vr/hudRenderersTracksBase.ts` + `vr/hudRenderersTracksShared.ts` isolate tracks HUD canvas prep and active-channel resolution.
+    `vr/hudRenderersTracksTabs.ts` isolates channel tab rendering/regions.
+    `vr/hudRenderersTracksControls.ts` isolates stop-follow/sliders/color/mode/master-toggle controls.
+    `vr/hudRenderersTracksRows.ts` isolates track rows + scroll region rendering.
+    `vr/hudRenderersTracksSections.ts` remains a thin compatibility re-export.
+  - Channels HUD modules:
+    `vr/hudRenderersChannelsBase.ts` + `vr/hudRenderersChannelsShared.ts` isolate channels HUD canvas prep and active-layer resolution.
+    `vr/hudRenderersChannelsTabs.ts` isolates channel tab rendering/regions.
+    `vr/hudRenderersChannelsLayerSections.ts` isolates toggles/histogram/reset/swatches drawing.
+    `vr/hudRenderersChannelsLayerSliders.ts` isolates slider definitions + slider interaction regions.
+    `vr/hudRenderersChannelsLayerControls.ts` orchestrates layer controls.
+    `vr/hudRenderersChannelsSections.ts` remains a thin compatibility re-export.
+  - `vr/hudRenderers.ts` remains a thin export surface.
+  - `vr/hudMath.ts` + `vr/hudCanvas.ts` isolate reusable HUD math and canvas-shape drawing utilities (including round-rect compatibility) shared by HUD renderers.
 
 **Shared widgets (`src/components/widgets/*`)**
 
@@ -136,7 +215,11 @@ The main responsibilities are:
 - `hooks/useChannelLayerState.tsx`  
   Central **React context/store** for channels, layers, per-layer settings, and dataset lifecycle helpers.
 - `hooks/dataset/useChannelSources.ts`
-  Loads/validates sources and constructs per-layer volume state (normalization, auto-windowing, segmentation handling, anisotropy resampling, etc.).
+  Owns channel/layer source authoring state, IDs, and setup-time validation (timepoints, track attachment, channel readiness).
+- `hooks/dataset/channelTimepointValidation.ts`
+  Pure helpers for setup-time timepoint-count resolution/pending-state detection and global mismatch computation; used by `useChannelSources` and isolated for focused testing.
+- `hooks/dataset/useChannelDatasetLoader.ts`
+  Owns dataset load/apply runtime lifecycle for channel sources (volume decode/normalization, shape checks, state reset/apply transitions, and launch error mapping).
 - `hooks/viewer/useViewerPlayback.ts`, `hooks/viewer/useViewerControls.ts`
   Timeline playback + viewer UI/control state.
 - `hooks/tracks/*`  
@@ -169,6 +252,13 @@ The main responsibilities are:
 
 - `src/shared/utils/preprocessedDataset/*`
   Zarr-backed preprocessed dataset format + manifest/types + open/preprocess helpers.
+  Preprocess pipeline boundaries inside `preprocess.ts`:
+  - layer timepoint indexing + validation
+  - representative normalization sampling
+  - source/layer metadata validation
+  - manifest + Zarr descriptor shaping
+  - array/trackset materialization
+  - mode-specific volume writing (2d stack slicing vs 3d per-file loads)
 - `src/shared/storage/*`
   Storage backends used by preprocessing + viewing: OPFS + in-memory + directory-backed storage.
 
@@ -186,6 +276,11 @@ The main responsibilities are:
   Shared color palettes and normalization helpers for layers/tracks.
 - `src/styles.css` + `src/styles/app/*` + component CSS files
   Global + feature-specific styling.
+  Viewer style ownership is split by feature under `src/styles/app/`:
+  - `viewer-controls-base.css` (shared control primitives)
+  - `viewer-playback-controls.css` (playback/recording controls)
+  - `viewer-track-panels.css` (tracks + paintbrush panels)
+  - `viewer-selected-tracks.css` (selected-track chart and plot settings controls)
 
 ---
 

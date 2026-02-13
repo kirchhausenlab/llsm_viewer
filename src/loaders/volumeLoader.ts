@@ -6,8 +6,6 @@ import {
 } from '../types/volume';
 import VolumeWorker from '../workers/volumeLoader.worker?worker';
 import type {
-  VolumeLoadedMessage,
-  VolumeSliceMessage,
   VolumeStartMessage,
   VolumeWorkerOutboundMessage
 } from '../workers/volumeLoaderMessages';

@@ -1,36 +1,27 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type MutableRefObject,
-  type PointerEvent as ReactPointerEvent,
-  type WheelEvent as ReactWheelEvent
-} from 'react';
+import { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
 import { getTrackColorHex } from '../../../../shared/colorMaps/trackColors';
 import type { TrackDefinition } from '../../../../types/tracks';
 import type { NormalizedVolume } from '../../../../core/volumeProcessing';
-import { componentsToCss, clamp, getColorComponents, mixWithWhite } from '../utils';
+import { clamp, getColorComponents, mixWithWhite } from '../utils';
 import type {
-  HoveredPixel,
   HoveredIntensityInfo,
+  HoveredPixel,
   PlanarLayout,
   PlanarViewerProps,
   SliceData,
-  TrackHitTestResult,
   TrackRenderEntry,
   ViewState
 } from '../types';
-import { MAX_SCALE, MIN_SCALE, PAN_STEP, ROTATION_KEY_STEP } from './usePlanarLayout';
-
-const TRACK_HIGHLIGHT_BOOST = 0.4;
-const TRACK_EPSILON = 1e-3;
-const TRACK_HIT_TEST_MIN_DISTANCE = 6;
-const DEFAULT_TRACK_LINE_WIDTH = 1;
-const FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER = 1.35;
-const SELECTED_TRACK_LINE_WIDTH_MULTIPLIER = 1.5;
-const DEFAULT_TRACK_OPACITY = 0.9;
+import {
+  DEFAULT_TRACK_OPACITY,
+  TRACK_EPSILON,
+  TRACK_HIGHLIGHT_BOOST
+} from './usePlanarInteractions/constants';
+import { usePlanarCanvasInputHandlers } from './usePlanarInteractions/usePlanarCanvasInputHandlers';
+import { usePlanarKeyboardShortcuts } from './usePlanarInteractions/usePlanarKeyboardShortcuts';
+import { usePlanarPixelHover } from './usePlanarInteractions/usePlanarPixelHover';
+import { usePlanarTrackHitTest } from './usePlanarInteractions/usePlanarTrackHitTest';
+import { usePlanarTrackHoverState } from './usePlanarInteractions/usePlanarTrackHoverState';
 
 type UsePlanarInteractionsParams = {
   canvasRef: MutableRefObject<HTMLCanvasElement | null>;
@@ -62,14 +53,6 @@ type UsePlanarInteractionsParams = {
   hoveredPixelRef: MutableRefObject<HoveredPixel>;
   onHoveredPixelChange: (value: HoveredPixel) => void;
   computeTrackCentroid: (trackId: string, maxVisibleTime: number) => { x: number; y: number; z: number } | null;
-};
-
-type PointerState = {
-  pointerId: number;
-  startX: number;
-  startY: number;
-  startOffsetX: number;
-  startOffsetY: number;
 };
 
 function resolveTrackHexColor(track: TrackDefinition, channelModes: PlanarViewerProps['trackColorModesByTrackSet']) {
@@ -113,17 +96,9 @@ export function usePlanarInteractions({
   onHoveredPixelChange,
   computeTrackCentroid
 }: UsePlanarInteractionsParams) {
-  const [hoveredTrackId, setHoveredTrackId] = useState<string | null>(null);
-  const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
-  const pointerStateRef = useRef<PointerState | null>(null);
-  const paintStrokePointerIdRef = useRef<number | null>(null);
-  const hoveredTrackIdRef = useRef<string | null>(null);
   const selectedTrackIdsRef = useRef<ReadonlySet<string>>(selectedTrackIds);
   const followedTrackIdRef = useRef<string | null>(followedTrackId);
-
-  useEffect(() => {
-    hoveredTrackIdRef.current = hoveredTrackId;
-  }, [hoveredTrackId]);
+  const { hoveredTrackId, tooltipPosition, updateHoverState, clearHoverState } = usePlanarTrackHoverState();
 
   useEffect(() => {
     selectedTrackIdsRef.current = selectedTrackIds;
@@ -132,29 +107,6 @@ export function usePlanarInteractions({
   useEffect(() => {
     followedTrackIdRef.current = followedTrackId;
   }, [followedTrackId]);
-
-  const emitHoverVoxel = useCallback(
-    (value: Parameters<NonNullable<PlanarViewerProps['onHoverVoxelChange']>>[0]) => {
-      onHoverVoxelChange?.(value);
-    },
-    [onHoverVoxelChange]
-  );
-
-  const updateHoveredPixel = useCallback(
-    (value: HoveredPixel) => {
-      const previous = hoveredPixelRef.current;
-      if (
-        (previous === null && value === null) ||
-        (previous && value && previous.x === value.x && previous.y === value.y)
-      ) {
-        return;
-      }
-
-      hoveredPixelRef.current = value;
-      onHoveredPixelChange(value);
-    },
-    [hoveredPixelRef, onHoveredPixelChange]
-  );
 
   const trackRenderData = useMemo(() => {
     if (!primaryVolume) {
@@ -241,318 +193,43 @@ export function usePlanarInteractions({
     tracks
   ]);
 
-  const updateHoverState = useCallback((trackId: string | null, position: { x: number; y: number } | null) => {
-    if (hoveredTrackIdRef.current !== trackId) {
-      hoveredTrackIdRef.current = trackId;
-      setHoveredTrackId(trackId);
-    }
-    setTooltipPosition(position);
-  }, []);
+  const { updatePixelHover } = usePlanarPixelHover({
+    canvasRef,
+    layout,
+    viewStateRef,
+    sliceData,
+    samplePixelValue,
+    clampedSliceIndex,
+    trackScale: { x: trackScale.x, y: trackScale.y },
+    hoveredPixelRef,
+    onHoveredPixelChange,
+    onHoverVoxelChange
+  });
 
-  const clearHoverState = useCallback(() => {
-    if (hoveredTrackIdRef.current !== null) {
-      hoveredTrackIdRef.current = null;
-      setHoveredTrackId(null);
-    }
-    setTooltipPosition(null);
-  }, []);
+  const performTrackHitTest = usePlanarTrackHitTest({
+    canvasRef,
+    layout,
+    viewStateRef,
+    trackRenderData,
+    trackVisibility,
+    trackOpacityByTrackSet,
+    trackLineWidthByTrackSet,
+    selectedTrackIdsRef,
+    followedTrackIdRef
+  });
 
-  const clearPixelInfo = useCallback(() => {
-    updateHoveredPixel(null);
-    emitHoverVoxel(null);
-  }, [emitHoverVoxel, updateHoveredPixel]);
-
-  const updatePixelHover = useCallback(
-    (event: PointerEvent) => {
-      if (!sliceData || !sliceData.hasLayer || !layout.xy) {
-        clearPixelInfo();
-        return;
-      }
-
-      const canvas = (event.currentTarget as HTMLCanvasElement | null) ?? canvasRef.current;
-      if (!canvas) {
-        clearPixelInfo();
-        return;
-      }
-
-      const rect = canvas.getBoundingClientRect();
-      const width = rect.width;
-      const height = rect.height;
-      if (width <= 0 || height <= 0) {
-        clearPixelInfo();
-        return;
-      }
-
-      const pointerX = event.clientX - rect.left;
-      const pointerY = event.clientY - rect.top;
-      if (pointerX < 0 || pointerY < 0 || pointerX > width || pointerY > height) {
-        clearPixelInfo();
-        return;
-      }
-
-      const currentView = viewStateRef.current;
-      const scale = Math.max(currentView.scale, 1e-6);
-      const rotation = currentView.rotation;
-      const cos = Math.cos(rotation);
-      const sin = Math.sin(rotation);
-      const centerX = width / 2 + currentView.offsetX;
-      const centerY = height / 2 + currentView.offsetY;
-      const dx = pointerX - centerX;
-      const dy = pointerY - centerY;
-      const rotatedX = dx * cos + dy * sin;
-      const rotatedY = -dx * sin + dy * cos;
-      const blockX = rotatedX / scale + layout.blockWidth / 2;
-      const blockY = rotatedY / scale + layout.blockHeight / 2;
-
-      const xyView = layout.xy;
-      if (
-        !xyView ||
-        blockX < xyView.originX ||
-        blockY < xyView.originY ||
-        blockX >= xyView.originX + xyView.width ||
-        blockY >= xyView.originY + xyView.height
-      ) {
-        clearPixelInfo();
-        return;
-      }
-
-      const sliceX = blockX - xyView.originX;
-      const sliceY = blockY - xyView.originY;
-
-      const scaleX = Math.max(trackScale.x, 1e-6);
-      const scaleY = Math.max(trackScale.y, 1e-6);
-      const voxelXFloat = sliceX / scaleX;
-      const voxelYFloat = sliceY / scaleY;
-
-      const intensity = samplePixelValue(voxelXFloat, voxelYFloat);
-      if (!intensity) {
-        clearPixelInfo();
-        return;
-      }
-
-      const voxelX = Math.round(clamp(voxelXFloat, 0, Math.max(0, sliceData.width - 1)));
-      const voxelY = Math.round(clamp(voxelYFloat, 0, Math.max(0, sliceData.height - 1)));
-      updateHoveredPixel({ x: voxelX, y: voxelY });
-      emitHoverVoxel({
-        intensity: intensity.intensity,
-        components: intensity.components,
-        coordinates: {
-          x: voxelX,
-          y: voxelY,
-          z: clampedSliceIndex
-        }
-      });
-    },
-    [
-      clampedSliceIndex,
-      clearPixelInfo,
-      emitHoverVoxel,
-      samplePixelValue,
-      sliceData,
-      layout,
-      trackScale.x,
-      trackScale.y,
-      updateHoveredPixel,
-      viewStateRef,
-      canvasRef
-    ]
-  );
-
-  const applyPaintAtHover = useCallback(
-    (event: PointerEvent) => {
-      const paint = paintbrush;
-      const activePointerId = paintStrokePointerIdRef.current;
-      if (!paint || !paint.enabled || activePointerId === null || activePointerId !== event.pointerId) {
-        return;
-      }
-      updatePixelHover(event);
-      const hovered = hoveredPixelRef.current;
-      if (hovered) {
-        paint.onStrokeApply({ x: hovered.x, y: hovered.y, z: clampedSliceIndex });
-      }
-    },
-    [clampedSliceIndex, paintbrush, hoveredPixelRef, updatePixelHover],
-  );
-
-  useEffect(() => {
-    return () => {
-      emitHoverVoxel(null);
-    };
-  }, [emitHoverVoxel]);
-
-  const performTrackHitTest = useCallback(
-    (event: PointerEvent): TrackHitTestResult => {
-      if (trackRenderData.length === 0) {
-        return { trackId: null, pointer: null };
-      }
-
-      const canvas = canvasRef.current;
-      if (!canvas) {
-        return { trackId: null, pointer: null };
-      }
-
-      const rect = canvas.getBoundingClientRect();
-      const width = rect.width;
-      const height = rect.height;
-      if (width <= 0 || height <= 0) {
-        return { trackId: null, pointer: null };
-      }
-
-      if (!layout.xy || layout.blockWidth <= 0 || layout.blockHeight <= 0) {
-        return { trackId: null, pointer: null };
-      }
-
-      const pointerX = event.clientX - rect.left;
-      const pointerY = event.clientY - rect.top;
-      if (pointerX < 0 || pointerY < 0 || pointerX > width || pointerY > height) {
-        return { trackId: null, pointer: null };
-      }
-
-      const currentView = viewStateRef.current;
-      const scale = currentView.scale;
-      const rotation = currentView.rotation;
-      const cos = Math.cos(rotation);
-      const sin = Math.sin(rotation);
-      const centerX = width / 2 + currentView.offsetX;
-      const centerY = height / 2 + currentView.offsetY;
-      const originX = -layout.blockWidth / 2;
-      const originY = -layout.blockHeight / 2;
-      const xyOriginX = layout.xy.originX;
-      const xyOriginY = layout.xy.originY;
-
-      let closestTrackId: string | null = null;
-      let closestDistance = Infinity;
-
-      const computeScreenPosition = (
-        pointX: number,
-        pointY: number,
-        viewOriginX: number,
-        viewOriginY: number
-      ) => {
-        const blockX = originX + viewOriginX + pointX;
-        const blockY = originY + viewOriginY + pointY;
-        const rotatedX = blockX * cos - blockY * sin;
-        const rotatedY = blockX * sin + blockY * cos;
-        return {
-          x: centerX + rotatedX * scale,
-          y: centerY + rotatedY * scale
-        };
-      };
-
-      const distanceToSegment = (
-        px: number,
-        py: number,
-        x1: number,
-        y1: number,
-        x2: number,
-        y2: number
-      ) => {
-        const dx = x2 - x1;
-        const dy = y2 - y1;
-        const lengthSq = dx * dx + dy * dy;
-        if (lengthSq < 1e-8) {
-          return Math.hypot(px - x1, py - y1);
-        }
-        const t = clamp(((px - x1) * dx + (py - y1) * dy) / lengthSq, 0, 1);
-        const projX = x1 + t * dx;
-        const projY = y1 + t * dy;
-        return Math.hypot(px - projX, py - projY);
-      };
-
-      for (const track of trackRenderData) {
-        const isFollowed = followedTrackIdRef.current === track.id;
-        const isExplicitlyVisible = trackVisibility[track.id] ?? true;
-        const isSelected = selectedTrackIdsRef.current.has(track.id);
-        const channelOpacity = trackOpacityByTrackSet[track.trackSetId] ?? DEFAULT_TRACK_OPACITY;
-        const isChannelHidden = channelOpacity <= 0;
-        if (isChannelHidden && !isFollowed && !isSelected) {
-          continue;
-        }
-        if (!isFollowed && !isExplicitlyVisible && !isSelected) {
-          continue;
-        }
-
-        let minDistanceForTrack = Infinity;
-
-        const measurePoints = (
-          points: { x: number; y: number }[],
-          viewOriginX: number,
-          viewOriginY: number
-        ) => {
-          let previousPoint: { x: number; y: number } | null = null;
-
-          for (const point of points) {
-            const screenPoint = computeScreenPosition(point.x, point.y, viewOriginX, viewOriginY);
-            const pointDistance = Math.hypot(screenPoint.x - pointerX, screenPoint.y - pointerY);
-            if (pointDistance < minDistanceForTrack) {
-              minDistanceForTrack = pointDistance;
-            }
-
-            if (previousPoint) {
-              const segmentDistance = distanceToSegment(
-                pointerX,
-                pointerY,
-                previousPoint.x,
-                previousPoint.y,
-                screenPoint.x,
-                screenPoint.y
-              );
-              if (segmentDistance < minDistanceForTrack) {
-                minDistanceForTrack = segmentDistance;
-              }
-            }
-
-            previousPoint = screenPoint;
-          }
-        };
-
-        if (track.xyPoints.length > 0) {
-          measurePoints(track.xyPoints, xyOriginX, xyOriginY);
-        }
-
-        if (!isFinite(minDistanceForTrack)) {
-          continue;
-        }
-
-        const channelLineWidth = trackLineWidthByTrackSet[track.trackSetId] ?? DEFAULT_TRACK_LINE_WIDTH;
-        const sanitizedLineWidth = Math.max(0.1, Math.min(10, channelLineWidth));
-        let widthMultiplier = 1;
-        if (isFollowed) {
-          widthMultiplier = Math.max(widthMultiplier, FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER);
-        }
-        if (isSelected) {
-          widthMultiplier = Math.max(widthMultiplier, SELECTED_TRACK_LINE_WIDTH_MULTIPLIER);
-        }
-        const strokeScreenWidth = Math.max(0.1, (sanitizedLineWidth / scale) * widthMultiplier);
-        const endpointRadius = Math.max(strokeScreenWidth * 0.6, 1.2 / scale);
-        const hitThreshold = Math.max(
-          TRACK_HIT_TEST_MIN_DISTANCE,
-          strokeScreenWidth * 0.75,
-          endpointRadius
-        );
-
-        if (minDistanceForTrack <= hitThreshold && minDistanceForTrack < closestDistance) {
-          closestDistance = minDistanceForTrack;
-          closestTrackId = track.id;
-        }
-      }
-
-      if (closestTrackId === null) {
-        return { trackId: null, pointer: null };
-      }
-
-      return { trackId: closestTrackId, pointer: { x: pointerX, y: pointerY } };
-    },
-    [
-      layout,
-      trackLineWidthByTrackSet,
-      trackOpacityByTrackSet,
-      trackRenderData,
-      trackVisibility,
-      viewStateRef,
-      canvasRef,
-    ]
-  );
+  const canvasHandlers = usePlanarCanvasInputHandlers({
+    clampedSliceIndex,
+    paintbrush,
+    hoveredPixelRef,
+    viewStateRef,
+    updateViewState,
+    onTrackSelectionToggle,
+    performTrackHitTest,
+    updateHoverState,
+    clearHoverState,
+    updatePixelHover
+  });
 
   const hoveredTrackDefinition = hoveredTrackId ? trackLookup.get(hoveredTrackId) ?? null : null;
   const hoveredTrackLabel = hoveredTrackDefinition
@@ -560,164 +237,6 @@ export function usePlanarInteractions({
         hoveredTrackDefinition.displayTrackNumber ?? String(hoveredTrackDefinition.trackNumber)
       }`
     : null;
-
-  const handlePointerDown = useCallback(
-    (event: ReactPointerEvent<HTMLCanvasElement>) => {
-      if (event.button !== 0) {
-        return;
-      }
-      const nativeEvent = event.nativeEvent;
-
-      const paint = paintbrush;
-      const shouldPaint = Boolean(paint?.enabled && nativeEvent.shiftKey);
-      if (shouldPaint && paint) {
-        pointerStateRef.current = null;
-        paintStrokePointerIdRef.current = nativeEvent.pointerId;
-        const target = event.currentTarget;
-        target.setPointerCapture(nativeEvent.pointerId);
-        paint.onStrokeStart();
-        updatePixelHover(nativeEvent);
-        const hovered = hoveredPixelRef.current;
-        if (hovered) {
-          paint.onStrokeApply({ x: hovered.x, y: hovered.y, z: clampedSliceIndex });
-        }
-        return;
-      }
-
-      const { trackId, pointer } = performTrackHitTest(nativeEvent);
-      if (trackId !== null) {
-        pointerStateRef.current = null;
-        onTrackSelectionToggle(trackId);
-        if (pointer) {
-          updateHoverState(trackId, pointer);
-        }
-        return;
-      }
-
-      const target = event.currentTarget;
-      const currentView = viewStateRef.current;
-      pointerStateRef.current = {
-        pointerId: nativeEvent.pointerId,
-        startX: nativeEvent.clientX,
-        startY: nativeEvent.clientY,
-        startOffsetX: currentView.offsetX,
-        startOffsetY: currentView.offsetY
-      };
-      target.setPointerCapture(nativeEvent.pointerId);
-    },
-    [
-      clampedSliceIndex,
-      onTrackSelectionToggle,
-      paintbrush,
-      performTrackHitTest,
-      updateHoverState,
-      updatePixelHover,
-      hoveredPixelRef,
-      viewStateRef,
-    ]
-  );
-
-  const handlePointerMove = useCallback(
-    (event: ReactPointerEvent<HTMLCanvasElement>) => {
-      const nativeEvent = event.nativeEvent;
-
-      const paint = paintbrush;
-      const activePointerId = paintStrokePointerIdRef.current;
-      if (paint && paint.enabled && activePointerId !== null && activePointerId === nativeEvent.pointerId) {
-        applyPaintAtHover(nativeEvent);
-        return;
-      }
-
-      const state = pointerStateRef.current;
-      if (state && state.pointerId === nativeEvent.pointerId) {
-        const deltaX = nativeEvent.clientX - state.startX;
-        const deltaY = nativeEvent.clientY - state.startY;
-        const nextOffsetX = state.startOffsetX + deltaX;
-        const nextOffsetY = state.startOffsetY + deltaY;
-        updateViewState((previous) => {
-          if (
-            Math.abs(previous.offsetX - nextOffsetX) < 1e-3 &&
-            Math.abs(previous.offsetY - nextOffsetY) < 1e-3
-          ) {
-            return previous;
-          }
-          return {
-            ...previous,
-            offsetX: nextOffsetX,
-            offsetY: nextOffsetY
-          };
-        });
-        clearHoverState();
-        updatePixelHover(nativeEvent);
-        return;
-      }
-
-      const { trackId, pointer } = performTrackHitTest(nativeEvent);
-      if (trackId !== null && pointer) {
-        updateHoverState(trackId, pointer);
-      } else {
-        clearHoverState();
-      }
-      updatePixelHover(nativeEvent);
-    },
-    [
-      applyPaintAtHover,
-      clearHoverState,
-      paintbrush,
-      performTrackHitTest,
-      updateHoverState,
-      updatePixelHover,
-      updateViewState,
-    ]
-  );
-
-  const handlePointerEnd = useCallback(
-    (event: ReactPointerEvent<HTMLCanvasElement>) => {
-      const nativeEvent = event.nativeEvent;
-
-      const paint = paintbrush;
-      const activePointerId = paintStrokePointerIdRef.current;
-      if (paint && paint.enabled && activePointerId !== null && activePointerId === nativeEvent.pointerId) {
-        applyPaintAtHover(nativeEvent);
-        const target = event.currentTarget;
-        target.releasePointerCapture(nativeEvent.pointerId);
-        paint.onStrokeEnd();
-        paintStrokePointerIdRef.current = null;
-        return;
-      }
-
-      const state = pointerStateRef.current;
-      if (state && state.pointerId === nativeEvent.pointerId) {
-        const target = event.currentTarget;
-        target.releasePointerCapture(nativeEvent.pointerId);
-        pointerStateRef.current = null;
-      }
-
-      const { trackId, pointer } = performTrackHitTest(nativeEvent);
-      if (trackId !== null && pointer) {
-        updateHoverState(trackId, pointer);
-      } else {
-        clearHoverState();
-      }
-      updatePixelHover(nativeEvent);
-    },
-    [applyPaintAtHover, clearHoverState, paintbrush, performTrackHitTest, updateHoverState, updatePixelHover]
-  );
-
-  const handleWheel = useCallback(
-    (event: ReactWheelEvent<HTMLCanvasElement>) => {
-      if (event.deltaY === 0) {
-        return;
-      }
-      event.preventDefault();
-      const zoomFactor = Math.exp(-event.deltaY * 0.0015);
-      updateViewState((previous) => {
-        const nextScale = clamp(previous.scale * zoomFactor, MIN_SCALE, MAX_SCALE);
-        return { ...previous, scale: nextScale };
-      });
-    },
-    [updateViewState]
-  );
 
   useEffect(() => {
     if (hoveredTrackId === null) {
@@ -804,123 +323,18 @@ export function usePlanarInteractions({
     viewStateRef
   ]);
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const activeElement = document.activeElement;
-      if (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement) {
-        return;
-      }
-      if (activeElement instanceof HTMLElement && activeElement.getAttribute('contenteditable') === 'true') {
-        return;
-      }
-
-      switch (event.code) {
-        case 'KeyW': {
-          if (effectiveMaxSlices > 0) {
-            const step = event.shiftKey ? 10 : 1;
-            const nextIndex = clamp(
-              clampedSliceIndex + step,
-              0,
-              Math.max(0, effectiveMaxSlices - 1)
-            );
-            if (nextIndex !== clampedSliceIndex) {
-              onSliceIndexChange(nextIndex);
-            }
-            event.preventDefault();
-          }
-          break;
-        }
-        case 'KeyS': {
-          if (effectiveMaxSlices > 0) {
-            const step = event.shiftKey ? 10 : 1;
-            const nextIndex = clamp(
-              clampedSliceIndex - step,
-              0,
-              Math.max(0, effectiveMaxSlices - 1)
-            );
-            if (nextIndex !== clampedSliceIndex) {
-              onSliceIndexChange(nextIndex);
-            }
-            event.preventDefault();
-          }
-          break;
-        }
-        case 'KeyA': {
-          updateViewState((previous) => ({
-            ...previous,
-            offsetX: previous.offsetX + PAN_STEP
-          }));
-          event.preventDefault();
-          break;
-        }
-        case 'KeyD': {
-          updateViewState((previous) => ({
-            ...previous,
-            offsetX: previous.offsetX - PAN_STEP
-          }));
-          event.preventDefault();
-          break;
-        }
-        case 'Space': {
-          updateViewState((previous) => ({
-            ...previous,
-            offsetY: previous.offsetY + PAN_STEP
-          }));
-          event.preventDefault();
-          break;
-        }
-        case 'KeyC': {
-          updateViewState((previous) => ({
-            ...previous,
-            offsetY: previous.offsetY - PAN_STEP
-          }));
-          event.preventDefault();
-          break;
-        }
-        case 'KeyQ': {
-          updateViewState((previous) => ({
-            ...previous,
-            rotation: previous.rotation - ROTATION_KEY_STEP
-          }));
-          event.preventDefault();
-          break;
-        }
-        case 'KeyE': {
-          updateViewState((previous) => ({
-            ...previous,
-            rotation: previous.rotation + ROTATION_KEY_STEP
-          }));
-          event.preventDefault();
-          break;
-        }
-        default:
-          break;
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [
+  usePlanarKeyboardShortcuts({
     clampedSliceIndex,
     effectiveMaxSlices,
     onSliceIndexChange,
     updateViewState
-  ]);
+  });
 
   return {
     trackRenderData,
     hoveredTrackId,
     hoveredTrackLabel,
     tooltipPosition,
-    canvasHandlers: {
-      onPointerDown: handlePointerDown,
-      onPointerMove: handlePointerMove,
-      onPointerUp: handlePointerEnd,
-      onPointerCancel: handlePointerEnd,
-      onPointerLeave: handlePointerEnd,
-      onWheel: handleWheel,
-    },
+    canvasHandlers
   };
 }

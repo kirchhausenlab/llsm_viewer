@@ -1,63 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
-import type { HoveredPixel, PlanarViewerProps, SliceData } from './planar-viewer/types';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import type { HoveredPixel, PlanarViewerProps } from './planar-viewer/types';
 import { usePlanarLayout } from './planar-viewer/hooks/usePlanarLayout';
 import { usePlanarSlices } from './planar-viewer/hooks/usePlanarSlices';
 import { usePlanarInteractions } from './planar-viewer/hooks/usePlanarInteractions';
 import { useLoadingOverlay } from '../../shared/hooks/useLoadingOverlay';
-import { componentsToCss, clamp, mixWithWhite } from './planar-viewer/utils';
+import { clamp } from './planar-viewer/utils';
+import { computePlanarTrackCentroid } from './planar-viewer/planarTrackCentroid';
+import { drawPlanarSlice } from './planar-viewer/planarSliceCanvas';
+import { usePlanarPrimaryVolume } from './planar-viewer/usePlanarPrimaryVolume';
+import { usePlanarViewerCanvasLifecycle } from './planar-viewer/usePlanarViewerCanvasLifecycle';
+import { usePlanarViewerBindings } from './planar-viewer/usePlanarViewerBindings';
 import './viewerCommon.css';
 import './PlanarViewer.css';
-
-const OUTLINE_OPACITY = 0.75;
-const OUTLINE_MIN_WIDTH = 0.4;
-const DEFAULT_TRACK_OPACITY = 0.9;
-const SELECTED_TRACK_BLINK_PERIOD_MS = 1600;
-const SELECTED_TRACK_BLINK_BASE = 1;
-const SELECTED_TRACK_BLINK_RANGE = 0.5;
-
-function updateOffscreenCanvas(
-  slice: SliceData | null,
-  canvasRef: MutableRefObject<HTMLCanvasElement | null>,
-  contextRef: MutableRefObject<CanvasRenderingContext2D | null>
-): boolean {
-  const previousCanvas = canvasRef.current;
-  const previousContext = contextRef.current;
-
-  if (!slice || slice.width === 0 || slice.height === 0) {
-    const hadContent = Boolean(previousCanvas && previousContext);
-    canvasRef.current = null;
-    contextRef.current = null;
-    return hadContent;
-  }
-
-  let canvas = previousCanvas;
-  if (!canvas) {
-    canvas = document.createElement('canvas');
-  }
-
-  if (canvas.width !== slice.width || canvas.height !== slice.height) {
-    canvas.width = slice.width;
-    canvas.height = slice.height;
-    contextRef.current = null;
-  }
-
-  let context = contextRef.current;
-  if (!context) {
-    context = canvas.getContext('2d');
-    if (!context) {
-      canvasRef.current = null;
-      contextRef.current = null;
-      return Boolean(previousCanvas && previousContext);
-    }
-    contextRef.current = context;
-  }
-
-  const image = new ImageData(slice.buffer as unknown as ImageDataArray, slice.width, slice.height);
-  context.putImageData(image, 0, 0);
-  canvasRef.current = canvas;
-
-  return true;
-}
 
 function PlanarViewer({
   layers,
@@ -93,13 +47,14 @@ function PlanarViewer({
   const xyCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const xyContextRef = useRef<CanvasRenderingContext2D | null>(null);
   const hoveredPixelRef = useRef<HoveredPixel>(null);
-  const previousPrimaryVolumeRef = useRef<{ width: number; height: number; depth: number } | null>(null);
-  const needsAutoFitRef = useRef(false);
 
   const [hasMeasured, setHasMeasured] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
-  const [sliceRevision, setSliceRevision] = useState(0);
+  const [autoFitRequestRevision, setAutoFitRequestRevision] = useState(0);
   const [hoveredPixel, setHoveredPixel] = useState<HoveredPixel>(null);
+  const requestAutoFit = useCallback(() => {
+    setAutoFitRequestRevision((value) => value + 1);
+  }, []);
 
   const effectiveMaxSlices = Math.max(0, maxSlices);
   const clampedSliceIndex = effectiveMaxSlices > 0 ? clamp(sliceIndex, 0, effectiveMaxSlices - 1) : 0;
@@ -115,42 +70,7 @@ function PlanarViewer({
     expectedVolumes,
   });
   const clampedTimeIndex = totalTimepoints === 0 ? 0 : Math.min(timeIndex, Math.max(0, totalTimepoints - 1));
-
-  const primaryVolume = useMemo(() => {
-    for (const layer of layers) {
-      if (layer.volume) {
-        return layer.volume;
-      }
-    }
-    return null;
-  }, [layers]);
-
-  useEffect(() => {
-    const previous = previousPrimaryVolumeRef.current;
-
-    if (!primaryVolume) {
-      previousPrimaryVolumeRef.current = null;
-      needsAutoFitRef.current = true;
-      return;
-    }
-
-    const current = {
-      width: primaryVolume.width,
-      height: primaryVolume.height,
-      depth: primaryVolume.depth
-    };
-
-    previousPrimaryVolumeRef.current = current;
-
-    if (
-      !previous ||
-      previous.width !== current.width ||
-      previous.height !== current.height ||
-      previous.depth !== current.depth
-    ) {
-      needsAutoFitRef.current = true;
-    }
-  }, [primaryVolume]);
+  const { primaryVolume } = usePlanarPrimaryVolume({ layers, requestAutoFit });
 
   const trackLookup = useMemo(() => {
     const map = new Map<string, typeof tracks[number]>();
@@ -160,69 +80,16 @@ function PlanarViewer({
     return map;
   }, [tracks]);
 
-  useEffect(() => {
-    if (!onRegisterCaptureTarget) {
-      return;
-    }
-
-    const getCanvas = () => canvasRef.current;
-    onRegisterCaptureTarget(canvasRef.current ? getCanvas : null);
-
-    return () => {
-      onRegisterCaptureTarget(null);
-    };
-  }, [onRegisterCaptureTarget]);
-
   const computeTrackCentroid = useCallback(
     (trackId: string, maxVisibleTime: number) => {
-      const track = trackLookup.get(trackId);
-      if (!track) {
-        return null;
-      }
-
-      const offset = channelTrackOffsets[track.channelId] ?? { x: 0, y: 0 };
-      const scaledOffsetX = offset.x * trackScaleX;
-      const scaledOffsetY = offset.y * trackScaleY;
-      const minVisibleTime = isFullTrackTrailEnabled ? -Infinity : maxVisibleTime - trackTrailLength;
-
-      let count = 0;
-      let latestTime = -Infinity;
-      let sumX = 0;
-      let sumY = 0;
-      let sumZ = 0;
-
-      for (const point of track.points) {
-        if (point.time - maxVisibleTime > 1e-3) {
-          break;
-        }
-
-        if (point.time + 1e-3 < minVisibleTime) {
-          continue;
-        }
-
-        if (point.time > latestTime + 1e-3) {
-          latestTime = point.time;
-          count = 1;
-          sumX = point.x * trackScaleX + scaledOffsetX;
-          sumY = point.y * trackScaleY + scaledOffsetY;
-          sumZ = Number.isFinite(point.z) ? point.z : 0;
-        } else if (Math.abs(point.time - latestTime) <= 1e-3) {
-          count += 1;
-          sumX += point.x * trackScaleX + scaledOffsetX;
-          sumY += point.y * trackScaleY + scaledOffsetY;
-          sumZ += Number.isFinite(point.z) ? point.z : 0;
-        }
-      }
-
-      if (count === 0) {
-        return null;
-      }
-
-      return {
-        x: sumX / count,
-        y: sumY / count,
-        z: sumZ / count
-      };
+      return computePlanarTrackCentroid({
+        track: trackLookup.get(trackId),
+        maxVisibleTime,
+        channelTrackOffsets,
+        trackScale: { x: trackScaleX, y: trackScaleY },
+        isFullTrackTrailEnabled,
+        trackTrailLength,
+      });
     },
     [
       channelTrackOffsets,
@@ -249,7 +116,6 @@ function PlanarViewer({
 
   const {
     trackRenderData,
-    hoveredTrackId,
     hoveredTrackLabel,
     tooltipPosition,
     canvasHandlers
@@ -285,199 +151,46 @@ function PlanarViewer({
     computeTrackCentroid
   });
 
-  useEffect(() => {
-    if (!sliceData || !sliceData.hasLayer) {
-      setHoveredPixel(null);
-      onHoverVoxelChange?.(null);
-    }
-  }, [onHoverVoxelChange, sliceData]);
+  usePlanarViewerBindings({
+    onRegisterCaptureTarget,
+    canvasRef,
+    sliceData,
+    setHoveredPixel,
+    onHoverVoxelChange,
+  });
 
   const drawSlice = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) {
       return;
     }
-    const context = canvas.getContext('2d');
-    if (!context) {
-      return;
-    }
-
-    const xyCanvas = xyCanvasRef.current;
-    const dpr = window.devicePixelRatio || 1;
-    const width = canvasSize.width;
-    const height = canvasSize.height;
-
-    context.setTransform(dpr, 0, 0, dpr, 0, 0);
-    context.clearRect(0, 0, width, height);
-    context.imageSmoothingEnabled = false;
-
-    if (!layout.xy || !xyCanvas || layout.blockWidth <= 0 || layout.blockHeight <= 0) {
-      return;
-    }
-
-    context.save();
-
-    const viewScale = viewState.scale;
-    const viewRotation = viewState.rotation;
-    const dprScale = Math.max(viewScale, 1e-6);
-    const cos = Math.cos(viewRotation);
-    const sin = Math.sin(viewRotation);
-
-    context.translate(width / 2 + viewState.offsetX, height / 2 + viewState.offsetY);
-    context.rotate(viewRotation);
-    context.scale(viewScale, viewScale);
-
-    const originX = -layout.blockWidth / 2;
-    const originY = -layout.blockHeight / 2;
-    const xyCenterX = originX + layout.xy.centerX;
-    const xyCenterY = originY + layout.xy.centerY;
-
-    context.drawImage(
-      xyCanvas,
-      originX + layout.xy.originX,
-      originY + layout.xy.originY,
-      layout.xy.width,
-      layout.xy.height
-    );
-
-    const xyOriginX = originX + layout.xy.originX;
-    const xyOriginY = originY + layout.xy.originY;
-
-    if (hoveredPixel && layout.xy) {
-      const hoverX = originX + layout.xy.originX + hoveredPixel.x * trackScaleX;
-      const hoverY = originY + layout.xy.originY + hoveredPixel.y * trackScaleY;
-      context.save();
-      const hoverOutlineWidth = Math.max(1, OUTLINE_MIN_WIDTH) / dprScale;
-      context.lineWidth = hoverOutlineWidth;
-      context.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-      context.strokeRect(
-        hoverX - 0.5 * trackScaleX,
-        hoverY - 0.5 * trackScaleY,
-        trackScaleX,
-        trackScaleY
-      );
-      context.restore();
-    }
-
-    if (trackRenderData.length > 0) {
-      const blinkPhase = ((performance.now() % SELECTED_TRACK_BLINK_PERIOD_MS) / SELECTED_TRACK_BLINK_PERIOD_MS) * Math.PI * 2;
-      const blinkFactor = SELECTED_TRACK_BLINK_BASE + Math.sin(blinkPhase) * SELECTED_TRACK_BLINK_RANGE;
-
-      for (const track of trackRenderData) {
-        const isSelected = selectedTrackIds.has(track.id);
-        const isFollowed = followedTrackId === track.id;
-        const isExplicitlyVisible = trackVisibility[track.id] ?? true;
-        if (!isFollowed && !isExplicitlyVisible && !isSelected) {
-          continue;
-        }
-
-        const channelOpacity = trackOpacityByTrackSet[track.trackSetId] ?? DEFAULT_TRACK_OPACITY;
-        const isChannelHidden = channelOpacity <= 0;
-        if (isChannelHidden && !isFollowed && !isSelected) {
-          continue;
-        }
-
-        const effectiveOpacity = isChannelHidden && (isSelected || isFollowed)
-          ? DEFAULT_TRACK_OPACITY
-          : channelOpacity;
-
-        const channelLineWidth = trackLineWidthByTrackSet[track.trackSetId] ?? 1;
-        const sanitizedLineWidth = Math.max(0.1, Math.min(10, channelLineWidth));
-        let lineWidth = sanitizedLineWidth;
-        if (isFollowed) {
-          lineWidth *= 1.35;
-        }
-        if (isSelected) {
-          lineWidth *= 1.5;
-        }
-
-        const opacityMultiplier = isSelected ? blinkFactor : 1;
-        const strokeAlpha = Math.min(1, effectiveOpacity * opacityMultiplier);
-        const fillAlpha = Math.min(1, strokeAlpha * 0.9);
-        const highlightColor = mixWithWhite(track.baseColor, 0.4);
-        const strokeColor = isSelected ? highlightColor : track.baseColor;
-
-        const drawTrack = (
-          points: { x: number; y: number }[],
-          offsetX: number,
-          offsetY: number,
-          endpoint: { x: number; y: number } | null
-        ) => {
-          if (points.length === 0) {
-            return;
-          }
-
-          context.save();
-          context.globalAlpha = strokeAlpha;
-          const strokeLineWidth = lineWidth / dprScale;
-          context.lineWidth = strokeLineWidth;
-          context.lineCap = 'round';
-          context.lineJoin = 'round';
-          context.strokeStyle = componentsToCss(strokeColor);
-          context.beginPath();
-
-          points.forEach((point, index) => {
-            const x = offsetX + point.x;
-            const y = offsetY + point.y;
-            if (index === 0) {
-              context.moveTo(x, y);
-            } else {
-              context.lineTo(x, y);
-            }
-          });
-          context.stroke();
-
-          const endpointRadius = Math.max(lineWidth * 0.6, OUTLINE_MIN_WIDTH) / dprScale;
-          const endpointToDraw = endpoint ?? points[points.length - 1];
-          if (endpointToDraw) {
-            const x = offsetX + endpointToDraw.x;
-            const y = offsetY + endpointToDraw.y;
-            context.fillStyle = componentsToCss(track.highlightColor);
-            context.globalAlpha = fillAlpha;
-            context.beginPath();
-            context.arc(x, y, endpointRadius, 0, Math.PI * 2);
-            context.fill();
-          }
-
-          context.restore();
-
-          if (lineWidth < 1.25) {
-            context.save();
-            context.lineWidth = Math.max(OUTLINE_MIN_WIDTH, lineWidth * 1.4) / dprScale;
-            context.strokeStyle = `rgba(0, 0, 0, ${OUTLINE_OPACITY})`;
-            context.beginPath();
-            points.forEach((point, index) => {
-              const x = offsetX + point.x;
-              const y = offsetY + point.y;
-              if (index === 0) {
-                context.moveTo(x, y);
-              } else {
-                context.lineTo(x, y);
-              }
-            });
-            context.stroke();
-            context.restore();
-          }
-        };
-
-        const xyEndpoint = track.xyPoints.length > 0 ? track.xyPoints[track.xyPoints.length - 1] : null;
-        drawTrack(track.xyPoints, xyOriginX, xyOriginY, xyEndpoint);
-      }
-    }
-
-    context.restore();
+    drawPlanarSlice({
+      canvas,
+      xyCanvas: xyCanvasRef.current,
+      canvasSize,
+      layout,
+      viewState,
+      hoveredPixel,
+      trackScale: { x: trackScaleX, y: trackScaleY },
+      trackRenderData,
+      selectedTrackIds,
+      followedTrackId,
+      trackVisibility,
+      trackOpacityByTrackSet,
+      trackLineWidthByTrackSet,
+    });
   }, [
     canvasSize.height,
     canvasSize.width,
-    clampedSliceIndex,
     followedTrackId,
+    hoveredPixel,
     layout,
     selectedTrackIds,
-    sliceData,
     trackLineWidthByTrackSet,
     trackOpacityByTrackSet,
     trackRenderData,
-    hoveredPixel,
+    trackScaleX,
+    trackScaleY,
     trackVisibility,
     viewState.offsetX,
     viewState.offsetY,
@@ -485,83 +198,21 @@ function PlanarViewer({
     viewState.scale
   ]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    let frameId: number | null = null;
-    let isRunning = true;
-
-    const animate = () => {
-      if (!isRunning) {
-        return;
-      }
-      drawSlice();
-      frameId = window.requestAnimationFrame(animate);
-    };
-
-    const shouldAnimate = selectedTrackIds.size > 0 || hoveredPixel !== null;
-    if (shouldAnimate) {
-      frameId = window.requestAnimationFrame(animate);
-    }
-
-    return () => {
-      isRunning = false;
-      if (frameId !== null) {
-        window.cancelAnimationFrame(frameId);
-      }
-    };
-  }, [drawSlice, hoveredPixel, selectedTrackIds]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const container = containerRef.current;
-    if (!canvas || !container) {
-      return;
-    }
-
-    const observer = new ResizeObserver(() => {
-      const width = container.clientWidth;
-      const height = container.clientHeight;
-      if (width > 0 && height > 0) {
-        setHasMeasured(true);
-      }
-      setCanvasSize((current) => {
-        if (current.width === width && current.height === height) {
-          return current;
-        }
-        return { width, height };
-      });
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.max(1, Math.round(width * dpr));
-      canvas.height = Math.max(1, Math.round(height * dpr));
-      needsAutoFitRef.current = true;
-    });
-
-    observer.observe(container);
-    return () => {
-      observer.disconnect();
-    };
-  }, []);
-
-  useEffect(() => {
-    const updatedXY = updateOffscreenCanvas(sliceData, xyCanvasRef, xyContextRef);
-    if (updatedXY) {
-      setSliceRevision((value) => value + 1);
-    }
-  }, [sliceData]);
-
-  useEffect(() => {
-    if (needsAutoFitRef.current) {
-      needsAutoFitRef.current = false;
-      resetView();
-    }
-  }, [canvasSize, layout.blockHeight, layout.blockWidth, resetView, sliceRevision]);
-
-  useEffect(() => {
-    drawSlice();
-  }, [drawSlice, sliceRevision]);
+  usePlanarViewerCanvasLifecycle({
+    drawSlice,
+    selectedTrackIds,
+    hoveredPixel,
+    canvasRef,
+    containerRef,
+    setHasMeasured,
+    setCanvasSize,
+    autoFitRequestRevision,
+    requestAutoFit,
+    resetView,
+    sliceData,
+    xyCanvasRef,
+    xyContextRef,
+  });
 
   return (
     <div className="planar-viewer">

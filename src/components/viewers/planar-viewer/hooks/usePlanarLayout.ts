@@ -21,7 +21,6 @@ function createLayout(
 
   const safeScaleX = Number.isFinite(voxelScale.x) && voxelScale.x > 0 ? voxelScale.x : 1;
   const safeScaleY = Number.isFinite(voxelScale.y) && voxelScale.y > 0 ? voxelScale.y : 1;
-  const safeScaleZ = Number.isFinite(voxelScale.z) && voxelScale.z > 0 ? voxelScale.z : 1;
 
   const xyWidth = primaryVolume.width * safeScaleX;
   const xyHeight = primaryVolume.height * safeScaleY;

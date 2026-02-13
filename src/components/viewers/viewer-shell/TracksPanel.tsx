@@ -40,7 +40,6 @@ export default function TracksPanel({
   trackOpacityByTrackSet,
   trackLineWidthByTrackSet,
   trackSummaryByTrackSet,
-  followedTrackSetId,
   followedTrackId,
   onTrackOrderToggle,
   trackOrderModeByTrackSet,
