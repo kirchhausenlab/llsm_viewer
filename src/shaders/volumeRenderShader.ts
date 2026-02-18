@@ -1,6 +1,190 @@
 import { Vector2, Vector3 } from 'three';
 import type { Data3DTexture, DataTexture } from 'three';
 
+export type BrickSkipDecisionArgs = {
+  skipEnabled: boolean;
+  atlasIndex: number;
+  occupancy: number;
+  brickMinRaw: number;
+  brickMaxRaw: number;
+  currentMax: number;
+  isoLowThreshold: number;
+  invert: boolean;
+  windowMin: number;
+  windowMax: number;
+};
+
+export type AdaptiveLodDecisionArgs = {
+  adaptiveLodEnabled: boolean;
+  nearestSampling: boolean;
+  step: [number, number, number];
+  size: [number, number, number];
+  lodScale: number;
+  lodMax: number;
+  mode: 'mip' | 'iso';
+  currentMax?: number;
+};
+
+export type LinearAtlasSamplingAnalysisArgs = {
+  texcoords: [number, number, number];
+  size: [number, number, number];
+  chunkSize: [number, number, number];
+};
+
+export type LinearAtlasSamplingAnalysis = {
+  baseBrick: [number, number, number];
+  farBrick: [number, number, number];
+  spans: [boolean, boolean, boolean];
+  sameBrickFastPath: boolean;
+  atlasIndexLookupCount: number;
+  atlasDataSampleCount: number;
+};
+
+function normalizeWindowValue(value: number, windowMin: number, windowMax: number): number {
+  const range = Math.max(windowMax - windowMin, 1e-5);
+  const normalized = (value - windowMin) / range;
+  return Math.min(1, Math.max(0, normalized));
+}
+
+function clampUnit(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
+function clampAtLeastOne(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 1;
+  }
+  return Math.max(1, value);
+}
+
+function clampVoxelCoordinate(value: number, size: number): number {
+  const safeSize = clampAtLeastOne(size);
+  return Math.min(Math.max(value, 0), Math.max(safeSize - 1, 0));
+}
+
+function brickCoordForVoxelCpu(voxelCoord: number, size: number, chunkSize: number): number {
+  const safeSize = clampAtLeastOne(size);
+  const safeChunk = clampAtLeastOne(chunkSize);
+  const clampedVoxel = clampVoxelCoordinate(voxelCoord, safeSize);
+  const brickCoord = Math.floor(clampedVoxel / safeChunk);
+  const maxBrickCoord = Math.max(0, Math.ceil(safeSize / safeChunk) - 1);
+  return Math.min(Math.max(brickCoord, 0), maxBrickCoord);
+}
+
+export function analyzeLinearAtlasSamplingCpu(
+  args: LinearAtlasSamplingAnalysisArgs,
+): LinearAtlasSamplingAnalysis {
+  const safeTexcoords: [number, number, number] = [
+    clampUnit(Number.isFinite(args.texcoords[0]) ? args.texcoords[0] : 0),
+    clampUnit(Number.isFinite(args.texcoords[1]) ? args.texcoords[1] : 0),
+    clampUnit(Number.isFinite(args.texcoords[2]) ? args.texcoords[2] : 0),
+  ];
+  const safeSize: [number, number, number] = [
+    clampAtLeastOne(args.size[0]),
+    clampAtLeastOne(args.size[1]),
+    clampAtLeastOne(args.size[2]),
+  ];
+  const safeChunkSize: [number, number, number] = [
+    clampAtLeastOne(args.chunkSize[0]),
+    clampAtLeastOne(args.chunkSize[1]),
+    clampAtLeastOne(args.chunkSize[2]),
+  ];
+
+  const baseVoxel: [number, number, number] = [
+    Math.floor(safeTexcoords[0] * safeSize[0] - 0.5),
+    Math.floor(safeTexcoords[1] * safeSize[1] - 0.5),
+    Math.floor(safeTexcoords[2] * safeSize[2] - 0.5),
+  ];
+  const farVoxel: [number, number, number] = [
+    baseVoxel[0] + 1,
+    baseVoxel[1] + 1,
+    baseVoxel[2] + 1,
+  ];
+
+  const baseBrick: [number, number, number] = [
+    brickCoordForVoxelCpu(baseVoxel[0], safeSize[0], safeChunkSize[0]),
+    brickCoordForVoxelCpu(baseVoxel[1], safeSize[1], safeChunkSize[1]),
+    brickCoordForVoxelCpu(baseVoxel[2], safeSize[2], safeChunkSize[2]),
+  ];
+  const farBrick: [number, number, number] = [
+    brickCoordForVoxelCpu(farVoxel[0], safeSize[0], safeChunkSize[0]),
+    brickCoordForVoxelCpu(farVoxel[1], safeSize[1], safeChunkSize[1]),
+    brickCoordForVoxelCpu(farVoxel[2], safeSize[2], safeChunkSize[2]),
+  ];
+
+  const spans: [boolean, boolean, boolean] = [
+    baseBrick[0] !== farBrick[0],
+    baseBrick[1] !== farBrick[1],
+    baseBrick[2] !== farBrick[2],
+  ];
+  const sameBrickFastPath = !spans[0] && !spans[1] && !spans[2];
+  const atlasIndexLookupCount =
+    (spans[0] ? 2 : 1) * (spans[1] ? 2 : 1) * (spans[2] ? 2 : 1);
+  const atlasDataSampleCount = sameBrickFastPath ? 1 : 8;
+
+  return {
+    baseBrick,
+    farBrick,
+    spans,
+    sameBrickFastPath,
+    atlasIndexLookupCount,
+    atlasDataSampleCount,
+  };
+}
+
+export function computeAdaptiveLodCpu(args: AdaptiveLodDecisionArgs): number {
+  if (!args.adaptiveLodEnabled || args.nearestSampling) {
+    return 0;
+  }
+
+  const stepX = Number.isFinite(args.step[0]) ? args.step[0] : 0;
+  const stepY = Number.isFinite(args.step[1]) ? args.step[1] : 0;
+  const stepZ = Number.isFinite(args.step[2]) ? args.step[2] : 0;
+  const sizeX = Number.isFinite(args.size[0]) ? args.size[0] : 0;
+  const sizeY = Number.isFinite(args.size[1]) ? args.size[1] : 0;
+  const sizeZ = Number.isFinite(args.size[2]) ? args.size[2] : 0;
+  const voxelStep = Math.sqrt(
+    (stepX * sizeX) * (stepX * sizeX) +
+      (stepY * sizeY) * (stepY * sizeY) +
+      (stepZ * sizeZ) * (stepZ * sizeZ),
+  );
+  const baseLod = Math.log2(Math.max(voxelStep, 1));
+  const lodScale = Math.max(0, Number.isFinite(args.lodScale) ? args.lodScale : 0);
+  const lodMax = Math.max(0, Number.isFinite(args.lodMax) ? args.lodMax : 0);
+  const clampedBase = Math.min(Math.max(baseLod * lodScale, 0), lodMax);
+  if (args.mode === 'iso') {
+    return clampedBase;
+  }
+  const confidence = clampUnit(Number.isFinite(args.currentMax) ? (args.currentMax as number) : 0);
+  return Math.min(Math.max(clampedBase * (1 - confidence), 0), lodMax);
+}
+
+export function shouldSkipWithBrickStatsCpu(args: BrickSkipDecisionArgs): boolean {
+  if (!args.skipEnabled) {
+    return false;
+  }
+  if (args.atlasIndex < -0.5) {
+    return true;
+  }
+  if (args.occupancy <= 0) {
+    return true;
+  }
+  if (args.brickMaxRaw < args.brickMinRaw) {
+    return false;
+  }
+
+  const rawCandidate = args.invert ? args.brickMinRaw : args.brickMaxRaw;
+  const normalized = normalizeWindowValue(rawCandidate, args.windowMin, args.windowMax);
+  const candidate = args.invert ? 1 - normalized : normalized;
+  if (candidate <= args.currentMax + 1e-5) {
+    return true;
+  }
+  if (args.isoLowThreshold > -0.5 && candidate <= args.isoLowThreshold + 1e-5) {
+    return true;
+  }
+  return false;
+}
+
 type VolumeUniforms = {
   u_size: { value: Vector3 };
   u_renderstyle: { value: number };
@@ -24,6 +208,20 @@ type VolumeUniforms = {
   u_hoverLabel: { value: number };
   u_hoverSegmentationMode: { value: number };
   u_segmentationLabels: { value: Data3DTexture | null };
+  u_brickSkipEnabled: { value: number };
+  u_brickGridSize: { value: Vector3 };
+  u_brickChunkSize: { value: Vector3 };
+  u_brickVolumeSize: { value: Vector3 };
+  u_brickOccupancy: { value: Data3DTexture | null };
+  u_brickMin: { value: Data3DTexture | null };
+  u_brickMax: { value: Data3DTexture | null };
+  u_brickAtlasIndices: { value: Data3DTexture | null };
+  u_brickAtlasEnabled: { value: number };
+  u_brickAtlasData: { value: Data3DTexture | null };
+  u_brickAtlasSize: { value: Vector3 };
+  u_adaptiveLodEnabled: { value: number };
+  u_adaptiveLodScale: { value: number };
+  u_adaptiveLodMax: { value: number };
 };
 
 const uniforms = {
@@ -48,7 +246,21 @@ const uniforms = {
   u_hoverPulse: { value: 0 },
   u_hoverLabel: { value: 0 },
   u_hoverSegmentationMode: { value: 0 },
-  u_segmentationLabels: { value: null as Data3DTexture | null }
+  u_segmentationLabels: { value: null as Data3DTexture | null },
+  u_brickSkipEnabled: { value: 0 },
+  u_brickGridSize: { value: new Vector3(1, 1, 1) },
+  u_brickChunkSize: { value: new Vector3(1, 1, 1) },
+  u_brickVolumeSize: { value: new Vector3(1, 1, 1) },
+  u_brickOccupancy: { value: null as Data3DTexture | null },
+  u_brickMin: { value: null as Data3DTexture | null },
+  u_brickMax: { value: null as Data3DTexture | null },
+  u_brickAtlasIndices: { value: null as Data3DTexture | null },
+  u_brickAtlasEnabled: { value: 0 },
+  u_brickAtlasData: { value: null as Data3DTexture | null },
+  u_brickAtlasSize: { value: new Vector3(1, 1, 1) },
+  u_adaptiveLodEnabled: { value: 1 },
+  u_adaptiveLodScale: { value: 1 },
+  u_adaptiveLodMax: { value: 2 }
 } satisfies VolumeUniforms;
 
 export const VolumeRenderShader = {
@@ -99,6 +311,20 @@ export const VolumeRenderShader = {
     uniform float u_hoverLabel;
     uniform float u_hoverSegmentationMode;
     uniform usampler3D u_segmentationLabels;
+    uniform float u_brickSkipEnabled;
+    uniform vec3 u_brickGridSize;
+    uniform vec3 u_brickChunkSize;
+    uniform vec3 u_brickVolumeSize;
+    uniform sampler3D u_brickOccupancy;
+    uniform sampler3D u_brickMin;
+    uniform sampler3D u_brickMax;
+    uniform sampler3D u_brickAtlasIndices;
+    uniform float u_brickAtlasEnabled;
+    uniform sampler3D u_brickAtlasData;
+    uniform vec3 u_brickAtlasSize;
+    uniform float u_adaptiveLodEnabled;
+    uniform float u_adaptiveLodScale;
+    uniform float u_adaptiveLodMax;
 
     uniform sampler3D u_data;
     uniform sampler2D u_cmdata;
@@ -120,9 +346,403 @@ export const VolumeRenderShader = {
     vec4 add_lighting(float val, vec3 loc, vec3 step, vec3 view_ray, vec4 sampleColor);
     void cast_mip(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
     void cast_iso(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
+    float normalize_intensity(float value);
+    float apply_inversion(float normalized);
+
+    vec3 brick_lookup_coord(vec3 texcoords) {
+      vec3 safeGrid = max(u_brickGridSize, vec3(1.0));
+      vec3 safeChunk = max(u_brickChunkSize, vec3(1.0));
+      vec3 atlasVolumeSize = max(u_brickVolumeSize, vec3(1.0));
+      vec3 voxelCoords = clamp(
+        texcoords * atlasVolumeSize,
+        vec3(0.0),
+        max(atlasVolumeSize - vec3(1e-3), vec3(0.0))
+      );
+      vec3 brickCoords = floor(voxelCoords / safeChunk);
+      brickCoords = clamp(brickCoords, vec3(0.0), safeGrid - vec3(1.0));
+      return (brickCoords + vec3(0.5)) / safeGrid;
+    }
+
+    bool should_skip_with_brick_stats_values(
+      float atlasIndex,
+      float occupancy,
+      float brickMinRaw,
+      float brickMaxRaw,
+      float currentMax,
+      float isoLowThreshold
+    ) {
+      if (atlasIndex < -0.5) {
+        return true;
+      }
+      if (occupancy <= 0.0) {
+        return true;
+      }
+      if (brickMaxRaw < brickMinRaw) {
+        return false;
+      }
+
+      float brickCandidateMax = u_invert > 0.5
+        ? apply_inversion(normalize_intensity(brickMinRaw))
+        : apply_inversion(normalize_intensity(brickMaxRaw));
+      if (brickCandidateMax <= currentMax + 1e-5) {
+        return true;
+      }
+      if (isoLowThreshold > -0.5 && brickCandidateMax <= isoLowThreshold + 1e-5) {
+        return true;
+      }
+      return false;
+    }
+
+    bool should_skip_with_brick_stats(vec3 texcoords, float currentMax, float isoLowThreshold) {
+      if (u_brickSkipEnabled <= 0.5) {
+        return false;
+      }
+
+      vec3 brickCoord = brick_lookup_coord(texcoords);
+      float atlasIndex = texture(u_brickAtlasIndices, brickCoord).r - 1.0;
+      float occupancy = texture(u_brickOccupancy, brickCoord).r;
+      float brickMinRaw = texture(u_brickMin, brickCoord).r;
+      float brickMaxRaw = texture(u_brickMax, brickCoord).r;
+      return should_skip_with_brick_stats_values(
+        atlasIndex,
+        occupancy,
+        brickMinRaw,
+        brickMaxRaw,
+        currentMax,
+        isoLowThreshold
+      );
+    }
+
+    vec3 clamp_voxel_coords(vec3 voxelCoords, vec3 atlasVolumeSize) {
+      return clamp(voxelCoords, vec3(0.0), max(atlasVolumeSize - vec3(1.0), vec3(0.0)));
+    }
+
+    vec3 brick_coords_for_voxel(vec3 voxelCoords, vec3 safeGrid, vec3 safeChunk, vec3 atlasVolumeSize) {
+      vec3 clampedVoxel = clamp_voxel_coords(voxelCoords, atlasVolumeSize);
+      vec3 brickCoords = floor(clampedVoxel / safeChunk);
+      return clamp(brickCoords, vec3(0.0), safeGrid - vec3(1.0));
+    }
+
+    float atlas_index_for_brick(vec3 brickCoords, vec3 safeGrid) {
+      vec3 brickLookup = (brickCoords + vec3(0.5)) / safeGrid;
+      return texture(u_brickAtlasIndices, brickLookup).r - 1.0;
+    }
+
+    vec4 sample_brick_atlas_voxel_known(
+      vec3 voxelCoords,
+      vec3 brickCoords,
+      float atlasIndex,
+      vec3 safeChunk,
+      vec3 atlasSize,
+      vec3 atlasVolumeSize
+    ) {
+      vec3 clampedVoxel = clamp_voxel_coords(voxelCoords, atlasVolumeSize);
+      vec3 localVoxel = clampedVoxel - brickCoords * safeChunk;
+      vec3 atlasVoxel = vec3(localVoxel.x, localVoxel.y, localVoxel.z + atlasIndex * safeChunk.z);
+      vec3 atlasTexcoords = (atlasVoxel + vec3(0.5)) / atlasSize;
+      return texture(u_brickAtlasData, atlasTexcoords);
+    }
+
+    bool brick_coords_equal(vec3 a, vec3 b) {
+      return all(lessThan(abs(a - b), vec3(0.5)));
+    }
+
+    vec3 brick_corner_coords(vec3 lowBrick, vec3 highBrick, vec3 cornerMask) {
+      return mix(lowBrick, highBrick, cornerMask);
+    }
+
+    vec4 sample_brick_atlas_voxel_or_missing(
+      vec3 voxelCoords,
+      vec3 brickCoords,
+      float atlasIndex,
+      vec3 safeChunk,
+      vec3 atlasSize,
+      vec3 atlasVolumeSize
+    ) {
+      if (atlasIndex < -0.5) {
+        return vec4(0.0);
+      }
+      return sample_brick_atlas_voxel_known(
+        voxelCoords,
+        brickCoords,
+        atlasIndex,
+        safeChunk,
+        atlasSize,
+        atlasVolumeSize
+      );
+    }
+
+    vec4 sample_brick_atlas_voxel_with(vec3 voxelCoords, vec3 safeGrid, vec3 safeChunk) {
+      vec3 atlasVolumeSize = max(u_brickVolumeSize, vec3(1.0));
+      vec3 brickCoords = brick_coords_for_voxel(voxelCoords, safeGrid, safeChunk, atlasVolumeSize);
+      float atlasIndex = atlas_index_for_brick(brickCoords, safeGrid);
+      if (atlasIndex < -0.5) {
+        return vec4(0.0);
+      }
+      vec3 atlasSize = max(u_brickAtlasSize, vec3(1.0));
+      return sample_brick_atlas_voxel_known(
+        voxelCoords,
+        brickCoords,
+        atlasIndex,
+        safeChunk,
+        atlasSize,
+        atlasVolumeSize
+      );
+    }
+
+    vec4 sample_brick_atlas_voxel(vec3 voxelCoords) {
+      vec3 safeGrid = max(u_brickGridSize, vec3(1.0));
+      vec3 safeChunk = max(u_brickChunkSize, vec3(1.0));
+      return sample_brick_atlas_voxel_with(voxelCoords, safeGrid, safeChunk);
+    }
+
+    vec4 sample_brick_atlas_linear_same_brick(
+      vec3 texcoords,
+      vec3 brickCoords,
+      float atlasIndex,
+      vec3 safeChunk,
+      vec3 atlasSize,
+      vec3 atlasVolumeSize
+    ) {
+      vec3 safeTexcoords = clamp(texcoords, vec3(0.0), vec3(1.0));
+      vec3 linearVoxel = safeTexcoords * atlasVolumeSize - vec3(0.5);
+      vec3 clampedLinearVoxel = clamp_voxel_coords(linearVoxel, atlasVolumeSize);
+      vec3 localLinearVoxel = clampedLinearVoxel - brickCoords * safeChunk;
+      vec3 atlasLinearVoxel = vec3(
+        localLinearVoxel.x,
+        localLinearVoxel.y,
+        localLinearVoxel.z + atlasIndex * safeChunk.z
+      );
+      vec3 atlasTexcoords = (atlasLinearVoxel + vec3(0.5)) / atlasSize;
+      return texture(u_brickAtlasData, atlasTexcoords);
+    }
+
+    vec4 sample_brick_atlas_linear(vec3 texcoords) {
+      vec3 safeTexcoords = clamp(texcoords, vec3(0.0), vec3(1.0));
+      vec3 atlasVolumeSize = max(u_brickVolumeSize, vec3(1.0));
+      vec3 linearCoord = safeTexcoords * atlasVolumeSize - vec3(0.5);
+      vec3 baseVoxel = floor(linearCoord);
+      vec3 frac = clamp(linearCoord - baseVoxel, vec3(0.0), vec3(1.0));
+      vec3 safeGrid = max(u_brickGridSize, vec3(1.0));
+      vec3 safeChunk = max(u_brickChunkSize, vec3(1.0));
+      vec3 atlasSize = max(u_brickAtlasSize, vec3(1.0));
+      vec3 voxel000 = baseVoxel + vec3(0.0, 0.0, 0.0);
+      vec3 voxel100 = baseVoxel + vec3(1.0, 0.0, 0.0);
+      vec3 voxel010 = baseVoxel + vec3(0.0, 1.0, 0.0);
+      vec3 voxel110 = baseVoxel + vec3(1.0, 1.0, 0.0);
+      vec3 voxel001 = baseVoxel + vec3(0.0, 0.0, 1.0);
+      vec3 voxel101 = baseVoxel + vec3(1.0, 0.0, 1.0);
+      vec3 voxel011 = baseVoxel + vec3(0.0, 1.0, 1.0);
+      vec3 voxel111 = baseVoxel + vec3(1.0, 1.0, 1.0);
+
+      // Degenerate trilinear case: exact voxel-center sampling.
+      if (frac.x <= 0.0 && frac.y <= 0.0 && frac.z <= 0.0) {
+        return sample_brick_atlas_voxel_with(voxel000, safeGrid, safeChunk);
+      }
+
+      // Fast path: if all trilinear corner samples stay in one brick, resolve atlas index once.
+      vec3 baseBrick = brick_coords_for_voxel(voxel000, safeGrid, safeChunk, atlasVolumeSize);
+      vec3 farBrick = brick_coords_for_voxel(voxel111, safeGrid, safeChunk, atlasVolumeSize);
+      if (brick_coords_equal(baseBrick, farBrick)) {
+        float atlasIndex = atlas_index_for_brick(baseBrick, safeGrid);
+        if (atlasIndex < -0.5) {
+          return vec4(0.0);
+        }
+        // Within one brick we can use the hardware trilinear filter directly.
+        return sample_brick_atlas_linear_same_brick(
+          safeTexcoords,
+          baseBrick,
+          atlasIndex,
+          safeChunk,
+          atlasSize,
+          atlasVolumeSize
+        );
+      }
+
+      vec3 spanMask = step(vec3(0.5), abs(farBrick - baseBrick));
+      vec3 brick000 = baseBrick;
+      vec3 brick100 = brick_corner_coords(baseBrick, farBrick, vec3(1.0, 0.0, 0.0));
+      vec3 brick010 = brick_corner_coords(baseBrick, farBrick, vec3(0.0, 1.0, 0.0));
+      vec3 brick110 = brick_corner_coords(baseBrick, farBrick, vec3(1.0, 1.0, 0.0));
+      vec3 brick001 = brick_corner_coords(baseBrick, farBrick, vec3(0.0, 0.0, 1.0));
+      vec3 brick101 = brick_corner_coords(baseBrick, farBrick, vec3(1.0, 0.0, 1.0));
+      vec3 brick011 = brick_corner_coords(baseBrick, farBrick, vec3(0.0, 1.0, 1.0));
+      vec3 brick111 = farBrick;
+      float spanX = spanMask.x;
+      float spanY = spanMask.y;
+      float spanZ = spanMask.z;
+
+      float atlas000 = atlas_index_for_brick(brick000, safeGrid);
+      float atlas100 = spanX > 0.5 ? atlas_index_for_brick(brick100, safeGrid) : atlas000;
+      float atlas010 = spanY > 0.5 ? atlas_index_for_brick(brick010, safeGrid) : atlas000;
+      float atlas001 = spanZ > 0.5 ? atlas_index_for_brick(brick001, safeGrid) : atlas000;
+      float atlas110 = atlas000;
+      if (spanX > 0.5 && spanY > 0.5) {
+        atlas110 = atlas_index_for_brick(brick110, safeGrid);
+      } else if (spanX > 0.5) {
+        atlas110 = atlas100;
+      } else if (spanY > 0.5) {
+        atlas110 = atlas010;
+      }
+      float atlas101 = atlas000;
+      if (spanX > 0.5 && spanZ > 0.5) {
+        atlas101 = atlas_index_for_brick(brick101, safeGrid);
+      } else if (spanX > 0.5) {
+        atlas101 = atlas100;
+      } else if (spanZ > 0.5) {
+        atlas101 = atlas001;
+      }
+      float atlas011 = atlas000;
+      if (spanY > 0.5 && spanZ > 0.5) {
+        atlas011 = atlas_index_for_brick(brick011, safeGrid);
+      } else if (spanY > 0.5) {
+        atlas011 = atlas010;
+      } else if (spanZ > 0.5) {
+        atlas011 = atlas001;
+      }
+      float atlas111 = atlas000;
+      if (spanX > 0.5) {
+        atlas111 = atlas100;
+      }
+      if (spanY > 0.5) {
+        atlas111 = spanX > 0.5 ? atlas110 : atlas010;
+      }
+      if (spanZ > 0.5) {
+        if (spanX > 0.5 && spanY > 0.5) {
+          atlas111 = atlas_index_for_brick(brick111, safeGrid);
+        } else if (spanX > 0.5) {
+          atlas111 = atlas101;
+        } else if (spanY > 0.5) {
+          atlas111 = atlas011;
+        } else {
+          atlas111 = atlas001;
+        }
+      }
+
+      if (
+        atlas000 < -0.5 ||
+        atlas100 < -0.5 ||
+        atlas010 < -0.5 ||
+        atlas110 < -0.5 ||
+        atlas001 < -0.5 ||
+        atlas101 < -0.5 ||
+        atlas011 < -0.5 ||
+        atlas111 < -0.5
+      ) {
+        return vec4(0.0);
+      }
+
+      vec4 c000 = sample_brick_atlas_voxel_or_missing(
+        voxel000,
+        brick000,
+        atlas000,
+        safeChunk,
+        atlasSize,
+        atlasVolumeSize
+      );
+      vec4 c100 = sample_brick_atlas_voxel_or_missing(
+        voxel100,
+        brick100,
+        atlas100,
+        safeChunk,
+        atlasSize,
+        atlasVolumeSize
+      );
+      vec4 c010 = sample_brick_atlas_voxel_or_missing(
+        voxel010,
+        brick010,
+        atlas010,
+        safeChunk,
+        atlasSize,
+        atlasVolumeSize
+      );
+      vec4 c110 = sample_brick_atlas_voxel_or_missing(
+        voxel110,
+        brick110,
+        atlas110,
+        safeChunk,
+        atlasSize,
+        atlasVolumeSize
+      );
+      vec4 c001 = sample_brick_atlas_voxel_or_missing(
+        voxel001,
+        brick001,
+        atlas001,
+        safeChunk,
+        atlasSize,
+        atlasVolumeSize
+      );
+      vec4 c101 = sample_brick_atlas_voxel_or_missing(
+        voxel101,
+        brick101,
+        atlas101,
+        safeChunk,
+        atlasSize,
+        atlasVolumeSize
+      );
+      vec4 c011 = sample_brick_atlas_voxel_or_missing(
+        voxel011,
+        brick011,
+        atlas011,
+        safeChunk,
+        atlasSize,
+        atlasVolumeSize
+      );
+      vec4 c111 = sample_brick_atlas_voxel_or_missing(
+        voxel111,
+        brick111,
+        atlas111,
+        safeChunk,
+        atlasSize,
+        atlasVolumeSize
+      );
+
+      vec4 c00 = mix(c000, c100, frac.x);
+      vec4 c10 = mix(c010, c110, frac.x);
+      vec4 c01 = mix(c001, c101, frac.x);
+      vec4 c11 = mix(c011, c111, frac.x);
+      vec4 c0 = mix(c00, c10, frac.y);
+      vec4 c1 = mix(c01, c11, frac.y);
+      return mix(c0, c1, frac.z);
+    }
+
+    vec4 sample_brick_atlas_linear_lod(vec3 texcoords, float lod) {
+      if (lod <= 1e-3) {
+        return sample_brick_atlas_linear(texcoords);
+      }
+      vec3 safeTexcoords = clamp(texcoords, vec3(0.0), vec3(1.0));
+      float safeLod = clamp(lod, 0.0, max(u_adaptiveLodMax, 0.0));
+      float voxelScale = exp2(safeLod);
+      vec3 atlasVolumeSize = max(u_brickVolumeSize, vec3(1.0));
+      vec3 coarseVoxel = floor((safeTexcoords * atlasVolumeSize) / voxelScale) * voxelScale;
+      return sample_brick_atlas_voxel(coarseVoxel);
+    }
+
+    vec4 sample_full_volume_color(vec3 texcoords, float lod) {
+      vec3 safeTexcoords = clamp(texcoords, vec3(0.0), vec3(1.0));
+      if (u_adaptiveLodEnabled > 0.5 && u_nearestSampling <= 0.5) {
+        float safeLod = clamp(lod, 0.0, max(u_adaptiveLodMax, 0.0));
+        if (safeLod > 1e-3) {
+          return textureLod(u_data, safeTexcoords, safeLod);
+        }
+      }
+      return texture(u_data, safeTexcoords);
+    }
+
+    vec4 sample_color_lod(vec3 texcoords, float lod) {
+      if (u_brickAtlasEnabled > 0.5) {
+        if (u_nearestSampling > 0.5) {
+          vec3 safeTexcoords = clamp(texcoords, vec3(0.0), vec3(1.0));
+          vec3 nearestVoxel = floor(safeTexcoords * max(u_brickVolumeSize, vec3(1.0)));
+          return sample_brick_atlas_voxel(nearestVoxel);
+        }
+        return sample_brick_atlas_linear_lod(texcoords, lod);
+      }
+      return sample_full_volume_color(texcoords, lod);
+    }
 
     vec4 sample_color(vec3 texcoords) {
-      return texture(u_data, texcoords.xyz);
+      return sample_color_lod(texcoords, 0.0);
     }
 
     float normalize_window(float value) {
@@ -137,6 +757,28 @@ export const VolumeRenderShader = {
 
     float normalize_intensity(float value) {
       return normalize_window(value);
+    }
+
+    float compute_adaptive_lod_base(vec3 step) {
+      if (u_adaptiveLodEnabled <= 0.5 || u_nearestSampling > 0.5) {
+        return 0.0;
+      }
+      float voxelStep = length(step * u_size);
+      float baseLod = max(log2(max(voxelStep, 1.0)), 0.0);
+      float scaledLod = baseLod * max(u_adaptiveLodScale, 0.0);
+      return clamp(scaledLod, 0.0, max(u_adaptiveLodMax, 0.0));
+    }
+
+    float adaptive_lod_for_mip(float baseLod, float currentMax) {
+      if (baseLod <= 0.0) {
+        return 0.0;
+      }
+      float confidence = clamp(currentMax, 0.0, 1.0);
+      return clamp(baseLod * (1.0 - confidence), 0.0, max(u_adaptiveLodMax, 0.0));
+    }
+
+    float adaptive_lod_for_iso(float baseLod) {
+      return clamp(baseLod, 0.0, max(u_adaptiveLodMax, 0.0));
     }
 
     float adjust_intensity(float value) {
@@ -167,7 +809,13 @@ export const VolumeRenderShader = {
     }
 
     float sample1(vec3 texcoords) {
-      vec4 colorSample = sample_color(texcoords);
+      vec4 colorSample = sample_color_lod(texcoords, 0.0);
+      float intensity = luminance(colorSample);
+      return adjust_intensity(intensity);
+    }
+
+    float sample1_lod(vec3 texcoords, float lod) {
+      vec4 colorSample = sample_color_lod(texcoords, lod);
       float intensity = luminance(colorSample);
       return adjust_intensity(intensity);
     }
@@ -314,6 +962,13 @@ export const VolumeRenderShader = {
       vec4 max_color = vec4(0.0);
       vec3 loc = start_loc;
       vec3 max_loc = start_loc;
+      float baseAdaptiveLod = compute_adaptive_lod_base(step);
+      vec3 cachedBrickCoord = vec3(-1.0);
+      float cachedAtlasIndex = -1.0;
+      float cachedOccupancy = 0.0;
+      float cachedBrickMinRaw = 0.0;
+      float cachedBrickMaxRaw = 0.0;
+      bool hasCachedBrick = false;
 
       const float HIGH_WATER_MARK = 0.999;
 
@@ -321,7 +976,30 @@ export const VolumeRenderShader = {
         if (iter >= nsteps) {
           break;
         }
-        vec4 colorSample = sample_color(loc);
+        if (u_brickSkipEnabled > 0.5) {
+          vec3 brickCoord = brick_lookup_coord(loc);
+          if (!hasCachedBrick || !brick_coords_equal(brickCoord, cachedBrickCoord)) {
+            cachedBrickCoord = brickCoord;
+            cachedAtlasIndex = texture(u_brickAtlasIndices, brickCoord).r - 1.0;
+            cachedOccupancy = texture(u_brickOccupancy, brickCoord).r;
+            cachedBrickMinRaw = texture(u_brickMin, brickCoord).r;
+            cachedBrickMaxRaw = texture(u_brickMax, brickCoord).r;
+            hasCachedBrick = true;
+          }
+          if (should_skip_with_brick_stats_values(
+            cachedAtlasIndex,
+            cachedOccupancy,
+            cachedBrickMinRaw,
+            cachedBrickMaxRaw,
+            max_val,
+            -1.0
+          )) {
+            loc += step;
+            continue;
+          }
+        }
+        float adaptiveLod = adaptive_lod_for_mip(baseAdaptiveLod, max_val);
+        vec4 colorSample = sample_color_lod(loc, adaptiveLod);
         float rawVal = luminance(colorSample);
         float normalizedVal = normalize_intensity(rawVal);
         if (normalizedVal > max_val) {
@@ -376,6 +1054,13 @@ export const VolumeRenderShader = {
       vec4 hitColor = vec4(0.0);
       vec3 dstep = 1.5 / u_size;
       vec3 loc = start_loc;
+      float baseAdaptiveLod = compute_adaptive_lod_base(step);
+      vec3 cachedBrickCoord = vec3(-1.0);
+      float cachedAtlasIndex = -1.0;
+      float cachedOccupancy = 0.0;
+      float cachedBrickMinRaw = 0.0;
+      float cachedBrickMaxRaw = 0.0;
+      bool hasCachedBrick = false;
 
       float low_threshold = u_renderthreshold - 0.02 * (u_clim[1] - u_clim[0]);
       bool hasHit = false;
@@ -384,8 +1069,30 @@ export const VolumeRenderShader = {
         if (iter >= nsteps) {
           break;
         }
+        if (u_brickSkipEnabled > 0.5) {
+          vec3 brickCoord = brick_lookup_coord(loc);
+          if (!hasCachedBrick || !brick_coords_equal(brickCoord, cachedBrickCoord)) {
+            cachedBrickCoord = brickCoord;
+            cachedAtlasIndex = texture(u_brickAtlasIndices, brickCoord).r - 1.0;
+            cachedOccupancy = texture(u_brickOccupancy, brickCoord).r;
+            cachedBrickMinRaw = texture(u_brickMin, brickCoord).r;
+            cachedBrickMaxRaw = texture(u_brickMax, brickCoord).r;
+            hasCachedBrick = true;
+          }
+          if (should_skip_with_brick_stats_values(
+            cachedAtlasIndex,
+            cachedOccupancy,
+            cachedBrickMinRaw,
+            cachedBrickMaxRaw,
+            -1.0,
+            low_threshold
+          )) {
+            loc += step;
+            continue;
+          }
+        }
 
-        float val = sample1(loc);
+        float val = sample1_lod(loc, adaptive_lod_for_iso(baseAdaptiveLod));
 
         if (!hasHit && val > low_threshold) {
           vec3 iloc = loc - 0.5 * step;

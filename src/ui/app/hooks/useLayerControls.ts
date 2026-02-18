@@ -2,6 +2,7 @@ import { useCallback, useMemo, type Dispatch, type SetStateAction } from 'react'
 import { computeAutoWindow } from '../../../autoContrast';
 import { normalizeHexColor, DEFAULT_LAYER_COLOR } from '../../../shared/colorMaps/layerColors';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
+import type { VolumeBrickAtlas, VolumeBrickPageTable } from '../../../core/volumeProvider';
 import {
   brightnessContrastModel,
   clampWindowBounds,
@@ -18,6 +19,8 @@ export type LayerControlsParams = {
   layers: LoadedDatasetLayer[];
   selectedIndex: number;
   layerVolumes: Record<string, NormalizedVolume | null>;
+  layerPageTables: Record<string, VolumeBrickPageTable | null>;
+  layerBrickAtlases: Record<string, VolumeBrickAtlas | null>;
   loadVolume: ((layerKey: string, timepoint: number) => Promise<NormalizedVolume>) | null;
   layerAutoThresholds: Record<string, number>;
   setLayerAutoThresholds: Dispatch<SetStateAction<Record<string, number>>>;
@@ -41,6 +44,8 @@ export function useLayerControls({
   layers,
   selectedIndex,
   layerVolumes,
+  layerPageTables,
+  layerBrickAtlases,
   loadVolume,
   layerAutoThresholds,
   setLayerAutoThresholds,
@@ -432,6 +437,9 @@ export function useLayerControls({
         label: layer.label,
         channelId: layer.channelId,
         channelName: channelNameMap.get(layer.channelId) ?? 'Untitled channel',
+        fullResolutionWidth: layer.width,
+        fullResolutionHeight: layer.height,
+        fullResolutionDepth: layer.depth,
         volume: layerVolumes[layer.key] ?? null,
         visible: channelVisible ?? true,
         sliderRange: settings.sliderRange,
@@ -447,7 +455,11 @@ export function useLayerControls({
         renderStyle: settings.renderStyle,
         invert: settings.invert,
         samplingMode: settings.samplingMode,
-        isSegmentation: layer.isSegmentation
+        isSegmentation: layer.isSegmentation,
+        scaleLevel:
+          layerBrickAtlases[layer.key]?.scaleLevel ?? layerVolumes[layer.key]?.scaleLevel ?? 0,
+        brickPageTable: layerPageTables[layer.key] ?? null,
+        brickAtlas: layerBrickAtlases[layer.key] ?? null
       };
     });
   }, [
@@ -455,6 +467,8 @@ export function useLayerControls({
     channelNameMap,
     channelVisibility,
     createLayerDefaultSettings,
+    layerBrickAtlases,
+    layerPageTables,
     layerVolumes,
     layerSettings,
     layers,

@@ -7,6 +7,13 @@ import { DEFAULT_WINDOW_MAX, DEFAULT_WINDOW_MIN } from '../../../state/layerSett
 
 const DEFAULT_RESET_WINDOW = { windowMin: DEFAULT_WINDOW_MIN, windowMax: DEFAULT_WINDOW_MAX };
 
+function selectDeterministicLayerKey(layers: ReadonlyArray<{ key: string }>): string | null {
+  if (layers.length === 0) {
+    return null;
+  }
+  return [...layers].sort((left, right) => left.key.localeCompare(right.key))[0]?.key ?? null;
+}
+
 type UseRouteVrChannelPanelsOptions = {
   loadedChannelIds: string[];
   channelNameMap: Map<string, string>;
@@ -69,7 +76,7 @@ export function useRouteVrChannelPanels({
       const channelLayers = channelLayersMap.get(channelId) ?? [];
       const name = channelNameMap.get(channelId) ?? 'Untitled channel';
       const visible = channelVisibility[channelId] ?? true;
-      const activeLayerKey = channelActiveLayer[channelId] ?? channelLayers[0]?.key ?? null;
+      const activeLayerKey = channelActiveLayer[channelId] ?? selectDeterministicLayerKey(channelLayers);
       const layers = channelLayers.map((layer) => {
         const settings = layerSettings[layer.key] ?? createLayerDefaultSettings(layer.key);
         const volume = currentLayerVolumes[layer.key] ?? null;

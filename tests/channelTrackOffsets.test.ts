@@ -55,7 +55,7 @@ const channelLayersMap = new Map<string, LoadedLayer[]>([
 const channelActiveLayer: Record<string, string | undefined> = {
   'channel-a': 'layer-a',
   'channel-b': 'layer-b'
-  // channel-c intentionally omitted to verify fallback behaviour
+  // channel-c intentionally omitted to verify deterministic no-fallback behaviour
 };
 
 const layerSettings = {
@@ -73,7 +73,7 @@ const offsets = deriveChannelTrackOffsets({
 
 assert.deepEqual(offsets['channel-a'], { x: 12, y: -4 });
 assert.deepEqual(offsets['channel-b'], { x: -7, y: 9 });
-assert.deepEqual(offsets['channel-c'], { x: 3, y: 5 });
+assert.deepEqual(offsets['channel-c'], { x: 0, y: 0 });
 assert.deepEqual(offsets['channel-empty'], { x: 0, y: 0 });
 
 console.log('channel track offset tests passed');

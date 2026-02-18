@@ -8,8 +8,16 @@ import type { FollowedTrackState, TrackSetState } from '../../types/channelTrack
 import type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment } from '../../hooks/dataset';
 import { preprocessDatasetToStorage } from '../../shared/utils/preprocessedDataset';
 import { createDirectoryHandlePreprocessedStorage, createOpfsPreprocessedStorage } from '../../shared/storage/preprocessedStorage';
+import type { PreprocessedStorageHandle } from '../../shared/storage/preprocessedStorage';
 
 type TrackSummary = { totalRows: number; uniqueTracks: number };
+const PREPROCESSED_STORAGE_ROOT_DIR = 'llsm-viewer-preprocessed-vnext';
+const FRONTPAGE_OPFS_DATASET_ID = 'preprocessed-experiment';
+const PREPROCESS_STORAGE_STRATEGY = {
+  sharding: {
+    enabled: true
+  }
+} as const;
 
 export type FrontPageContainerProps = {
   isExperimentSetupStarted: boolean;
@@ -158,7 +166,7 @@ export default function FrontPageContainer({
     const now = new Date();
     const stamp = now.toISOString().replace(/[:.]/g, '-');
     const random = Math.random().toString(16).slice(2, 6);
-    return `llsm-viewer-preprocessed-${stamp}-${random}`;
+    return `llsm-viewer-preprocessed-vnext-${stamp}-${random}`;
   }, []);
 
   const ensureZarrDirectoryName = useCallback((name: string): string => {
@@ -254,9 +262,7 @@ export default function FrontPageContainer({
         )
         .filter((layer) => layer.files.length > 0);
 
-      let exportStorageHandle:
-        | Awaited<ReturnType<typeof createDirectoryHandlePreprocessedStorage>>
-        | null = null;
+      let selectedStorageHandle: PreprocessedStorageHandle | null = null;
 
       if (exportWhilePreprocessing) {
         if (typeof window === 'undefined' || typeof window.showDirectoryPicker !== 'function') {
@@ -298,37 +304,34 @@ export default function FrontPageContainer({
         exportDirectoryHandle = await directoryHandle.getDirectoryHandle(exportDirectoryName, { create: true });
         setExportDestinationLabel(`${directoryHandle.name}/${exportDirectoryName}/`);
 
-        exportStorageHandle = await createDirectoryHandlePreprocessedStorage(exportDirectoryHandle);
+        selectedStorageHandle = await createDirectoryHandlePreprocessedStorage(exportDirectoryHandle, {
+          id: exportDirectoryName
+        });
+      } else {
+        selectedStorageHandle = await createOpfsPreprocessedStorage({
+          datasetId: FRONTPAGE_OPFS_DATASET_ID,
+          rootDir: PREPROCESSED_STORAGE_ROOT_DIR
+        });
       }
 
-      const opfsStorageHandle = await createOpfsPreprocessedStorage();
-      const storage = exportStorageHandle
-        ? {
-            async writeFile(path: string, data: Uint8Array) {
-              await Promise.all([
-                opfsStorageHandle.storage.writeFile(path, data),
-                exportStorageHandle.storage.writeFile(path, data)
-              ]);
-            },
-            async readFile(path: string) {
-              return opfsStorageHandle.storage.readFile(path);
-            }
-          }
-        : opfsStorageHandle.storage;
+      if (!selectedStorageHandle) {
+        throw new Error('Preprocessed storage handle was not initialized.');
+      }
 
       const { manifest, channelSummaries, totalVolumeCount } = await preprocessDatasetToStorage({
         layers: layersToProcess,
         channels: channelsMetadata,
         voxelResolution: voxelResolutionValue,
         movieMode: experimentDimension,
-        storage
+        storage: selectedStorageHandle.storage,
+        storageStrategy: PREPROCESS_STORAGE_STRATEGY
       });
 
       setPreprocessedExperiment({
         manifest,
         channelSummaries,
         totalVolumeCount,
-        storageHandle: opfsStorageHandle,
+        storageHandle: selectedStorageHandle,
         sourceName: 'experiment',
         sourceSize: null
       });

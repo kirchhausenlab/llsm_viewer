@@ -1,13 +1,14 @@
 import { expect, test } from '@playwright/test';
 import { resolveDatasetFixture } from './helpers/dataset';
-import { launchViewerFromFixture } from './helpers/workflows';
+import { launchViewerFromFixture, STANDARD_VOXEL_RESOLUTION } from './helpers/workflows';
 
 const fixture = resolveDatasetFixture();
 
 test('@smoke playback controls and viewer mode toggles work after launch', async ({ page }) => {
-  test.skip(!fixture.available, fixture.reason ?? 'Local TIFF fixture is unavailable.');
-
-  const { timepointCount } = await launchViewerFromFixture(page, fixture);
+  const { timepointCount } = await launchViewerFromFixture(page, fixture, {
+    channelName: 'Ch1',
+    voxelResolution: STANDARD_VOXEL_RESOLUTION
+  });
 
   const playbackWindow = page.locator('.floating-window--playback');
   await expect(playbackWindow.getByRole('heading', { name: 'Viewer controls' })).toBeVisible();

@@ -16,13 +16,22 @@ import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import type { VolumeResources } from '../VolumeViewer.types';
 import { DESKTOP_VOLUME_STEP_SCALE } from './vr';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { FALLBACK_SEGMENTATION_LABEL_TEXTURE } from './fallbackTextures';
+import type { VolumeBrickAtlas, VolumeBrickPageTable } from '../../../core/volumeProvider';
+import {
+  FALLBACK_BRICK_ATLAS_DATA_TEXTURE,
+  FALLBACK_BRICK_ATLAS_INDEX_TEXTURE,
+  FALLBACK_BRICK_MAX_TEXTURE,
+  FALLBACK_BRICK_MIN_TEXTURE,
+  FALLBACK_BRICK_OCCUPANCY_TEXTURE,
+  FALLBACK_SEGMENTATION_LABEL_TEXTURE,
+} from './fallbackTextures';
 
 type UseVolumeResourcesParams = {
   layers: import('../VolumeViewer.types').VolumeViewerProps['layers'];
   primaryVolume: NormalizedVolume | null;
   isAdditiveBlending: boolean;
   renderContextRevision: number;
+  rendererRef?: MutableRefObject<THREE.WebGLRenderer | null>;
   sceneRef: MutableRefObject<THREE.Scene | null>;
   cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
   controlsRef: MutableRefObject<OrbitControls | null>;
@@ -49,11 +58,1363 @@ type UseVolumeResourcesParams = {
   applyHoverHighlightToResources: () => void;
 };
 
+type ShaderUniformMap = Record<string, { value: unknown }>;
+type TextureFormat = THREE.Data3DTexture['format'];
+type ByteTextureFilterMode = 'nearest' | 'linear';
+type BrickAtlasBuildResult = {
+  data: Uint8Array;
+  width: number;
+  height: number;
+  depth: number;
+  textureFormat: TextureFormat;
+  enabled: boolean;
+};
+
+type BrickResidencyState = {
+  sourceToken: object | null;
+  pageTable: VolumeBrickPageTable | null;
+  textureFormat: TextureFormat | null;
+  textureComponents: number;
+  chunkWidth: number;
+  chunkHeight: number;
+  chunkDepth: number;
+  slotCapacity: number;
+  slotSourceIndices: Int32Array;
+  sourceToSlot: Map<number, number>;
+  sourceLastUsedTick: Map<number, number>;
+  residentAtlasData: Uint8Array;
+  residentAtlasIndices: Float32Array;
+  tick: number;
+  uploads: number;
+  evictions: number;
+  residentBytes: number;
+  budgetBytes: number;
+  lastCameraDistance: number | null;
+  scaleLevel: number;
+  bootstrapUpdatesRemaining: number;
+};
+
+type BrickResidencyMetrics = {
+  layerKey: string;
+  timepoint: number;
+  scaleLevel: number;
+  residentBricks: number;
+  totalBricks: number;
+  residentBytes: number;
+  budgetBytes: number;
+  uploads: number;
+  evictions: number;
+  pendingBricks: number;
+  prioritizedBricks: number;
+  scheduledUploads: number;
+  lastCameraDistance: number | null;
+};
+
+type BrickSkipDiagnostics = {
+  enabled: boolean;
+  reason:
+    | 'enabled'
+    | 'disabled-by-config'
+    | 'missing-page-table'
+    | 'invalid-page-table'
+    | 'occupied-bricks-missing-from-atlas'
+    | 'invalid-min-max-range'
+    | 'occupancy-metadata-mismatch';
+  totalBricks: number;
+  emptyBricks: number;
+  occupiedBricks: number;
+  occupiedBricksMissingFromAtlas: number;
+  invalidRangeBricks: number;
+  occupancyMetadataMismatchBricks: number;
+};
+
+function createDisabledBrickSkipDiagnostics(
+  reason: BrickSkipDiagnostics['reason'],
+  totalBricks = 0,
+): BrickSkipDiagnostics {
+  return {
+    enabled: false,
+    reason,
+    totalBricks,
+    emptyBricks: 0,
+    occupiedBricks: 0,
+    occupiedBricksMissingFromAtlas: 0,
+    invalidRangeBricks: 0,
+    occupancyMetadataMismatchBricks: 0
+  };
+}
+
+const FALLBACK_VOLUME_TEXTURE_DATA = new Uint8Array([0]);
+const DEFAULT_MAX_GPU_BRICK_BYTES = 48 * 1024 * 1024;
+const AUTO_EXPANDED_MAX_GPU_BRICK_BYTES = 512 * 1024 * 1024;
+const DEFAULT_MAX_BRICK_UPLOADS_PER_UPDATE = 24;
+const BOOTSTRAP_UPLOAD_BURST_UPDATES = 3;
+const BOOTSTRAP_UPLOAD_BURST_MULTIPLIER = 8;
+const BOOTSTRAP_UPLOAD_BURST_MAX = 256;
+const CAMERA_RESIDENCY_EPSILON_SQ = 0.25;
+const gpuBrickResidencyStateByResource = new WeakMap<VolumeResources, BrickResidencyState>();
+
+type LayerRenderSource = {
+  width: number;
+  height: number;
+  depth: number;
+  channels: number;
+  volume: NormalizedVolume | null;
+  pageTable: VolumeBrickPageTable | null;
+  brickAtlas: VolumeBrickAtlas | null;
+};
+
+function applyVolumeTextureSampling(
+  texture: THREE.Data3DTexture,
+  samplingMode: 'linear' | 'nearest',
+): void {
+  const nearest = samplingMode === 'nearest';
+  texture.minFilter = nearest ? THREE.NearestFilter : THREE.LinearMipmapLinearFilter;
+  texture.magFilter = nearest ? THREE.NearestFilter : THREE.LinearFilter;
+  texture.generateMipmaps = !nearest;
+}
+
+function applyAdaptiveLodUniforms(
+  uniforms: ShaderUniformMap,
+  samplingMode: 'linear' | 'nearest',
+): void {
+  const adaptiveLodEnabled = samplingMode === 'linear' ? 1 : 0;
+  if ('u_adaptiveLodEnabled' in uniforms) {
+    uniforms.u_adaptiveLodEnabled.value = adaptiveLodEnabled;
+  }
+  if ('u_adaptiveLodScale' in uniforms) {
+    uniforms.u_adaptiveLodScale.value = 1;
+  }
+  if ('u_adaptiveLodMax' in uniforms) {
+    uniforms.u_adaptiveLodMax.value = 2;
+  }
+}
+
+function createByte3dTexture(
+  data: Uint8Array,
+  width: number,
+  height: number,
+  depth: number,
+  format: TextureFormat = THREE.RedFormat,
+  filterMode: ByteTextureFilterMode = 'nearest',
+): THREE.Data3DTexture {
+  const texture = new THREE.Data3DTexture(data, width, height, depth);
+  texture.format = format;
+  texture.type = THREE.UnsignedByteType;
+  applyByteTextureFilter(texture, filterMode);
+  texture.unpackAlignment = 1;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function createFloat3dTexture(
+  data: Float32Array,
+  width: number,
+  height: number,
+  depth: number,
+): THREE.Data3DTexture {
+  const texture = new THREE.Data3DTexture(data, width, height, depth);
+  texture.format = THREE.RedFormat;
+  texture.type = THREE.FloatType;
+  texture.minFilter = THREE.NearestFilter;
+  texture.magFilter = THREE.NearestFilter;
+  texture.unpackAlignment = 1;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function getTextureComponentsFromFormat(format: TextureFormat): number | null {
+  if (format === THREE.RedFormat) {
+    return 1;
+  }
+  if (format === THREE.RGFormat) {
+    return 2;
+  }
+  if (format === THREE.RGBAFormat) {
+    return 4;
+  }
+  return null;
+}
+
+function getTextureFormatFromBrickAtlas(atlas: VolumeBrickAtlas): TextureFormat {
+  if (atlas.textureFormat === 'red') {
+    return THREE.RedFormat;
+  }
+  if (atlas.textureFormat === 'rg') {
+    return THREE.RGFormat;
+  }
+  return THREE.RGBAFormat;
+}
+
+function getTextureDimensions(texture: THREE.Data3DTexture): {
+  width: number;
+  height: number;
+  depth: number;
+  data: unknown;
+} {
+  const image = texture.image as {
+    width: number;
+    height: number;
+    depth: number;
+    data: unknown;
+  };
+  return {
+    width: image.width,
+    height: image.height,
+    depth: image.depth,
+    data: image.data,
+  };
+}
+
+function applyByteTextureFilter(texture: THREE.Data3DTexture, filterMode: ByteTextureFilterMode): void {
+  const nextFilter = filterMode === 'nearest' ? THREE.NearestFilter : THREE.LinearFilter;
+  const needsFilterUpdate =
+    texture.minFilter !== nextFilter || texture.magFilter !== nextFilter || texture.generateMipmaps;
+  if (!needsFilterUpdate) {
+    return;
+  }
+  texture.minFilter = nextFilter;
+  texture.magFilter = nextFilter;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+}
+
+function updateOrCreateByte3dTexture(
+  existing: THREE.Data3DTexture | null | undefined,
+  source: Uint8Array,
+  width: number,
+  height: number,
+  depth: number,
+  format: TextureFormat = THREE.RedFormat,
+  filterMode: ByteTextureFilterMode = 'nearest',
+  forceNeedsUpdate = true,
+): THREE.Data3DTexture {
+  if (existing) {
+    const { width: currentWidth, height: currentHeight, depth: currentDepth, data } =
+      getTextureDimensions(existing);
+    if (
+      currentWidth === width &&
+      currentHeight === height &&
+      currentDepth === depth &&
+      data instanceof Uint8Array &&
+      data.length === source.length
+    ) {
+      const hasSharedBuffer = data === source;
+      if (!hasSharedBuffer) {
+        data.set(source);
+      }
+      const formatChanged = existing.format !== format;
+      existing.format = format;
+      applyByteTextureFilter(existing, filterMode);
+      if (!hasSharedBuffer || formatChanged || forceNeedsUpdate) {
+        existing.needsUpdate = true;
+      }
+      return existing;
+    }
+    existing.dispose();
+  }
+  return createByte3dTexture(source, width, height, depth, format, filterMode);
+}
+
+function updateOrCreateFloat3dTexture(
+  existing: THREE.Data3DTexture | null | undefined,
+  source: Float32Array,
+  width: number,
+  height: number,
+  depth: number,
+  forceNeedsUpdate = true,
+): THREE.Data3DTexture {
+  if (existing) {
+    const { width: currentWidth, height: currentHeight, depth: currentDepth, data } =
+      getTextureDimensions(existing);
+    if (
+      currentWidth === width &&
+      currentHeight === height &&
+      currentDepth === depth &&
+      data instanceof Float32Array &&
+      data.length === source.length
+    ) {
+      const hasSharedBuffer = data === source;
+      if (!hasSharedBuffer) {
+        data.set(source);
+      }
+      if (!hasSharedBuffer || forceNeedsUpdate) {
+        existing.needsUpdate = true;
+      }
+      return existing;
+    }
+    existing.dispose();
+  }
+  return createFloat3dTexture(source, width, height, depth);
+}
+
+function createFallbackVolumeDataTexture(): THREE.Data3DTexture {
+  const texture = new THREE.Data3DTexture(FALLBACK_VOLUME_TEXTURE_DATA.slice(), 1, 1, 1);
+  texture.format = THREE.RedFormat;
+  texture.type = THREE.UnsignedByteType;
+  texture.minFilter = THREE.NearestFilter;
+  texture.magFilter = THREE.NearestFilter;
+  texture.unpackAlignment = 1;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function resolveNumericEnvValue(name: string): number {
+  const fromImportMeta = Number((import.meta as { env?: Record<string, unknown> })?.env?.[name] ?? Number.NaN);
+  if (Number.isFinite(fromImportMeta)) {
+    return fromImportMeta;
+  }
+  const fromProcessEnv =
+    typeof process !== 'undefined' && process?.env ? Number(process.env[name] ?? Number.NaN) : Number.NaN;
+  return fromProcessEnv;
+}
+
+function resolveBrickSkipEnabledByConfig(): boolean {
+  const configured = resolveNumericEnvValue('VITE_BRICK_SKIP_ENABLED');
+  if (!Number.isFinite(configured)) {
+    return true;
+  }
+  return configured > 0;
+}
+
+function analyzeBrickSkipDiagnostics({
+  pageTable,
+  atlasIndexData,
+  enabledByConfig,
+}: {
+  pageTable: VolumeBrickPageTable | null | undefined;
+  atlasIndexData: Float32Array | null;
+  enabledByConfig: boolean;
+}): BrickSkipDiagnostics {
+  if (!pageTable) {
+    return {
+      enabled: false,
+      reason: 'missing-page-table',
+      totalBricks: 0,
+      emptyBricks: 0,
+      occupiedBricks: 0,
+      occupiedBricksMissingFromAtlas: 0,
+      invalidRangeBricks: 0,
+      occupancyMetadataMismatchBricks: 0
+    };
+  }
+
+  const totalBricks = pageTable.brickAtlasIndices.length;
+  let emptyBricks = 0;
+  let occupiedBricks = 0;
+  let occupiedBricksMissingFromAtlas = 0;
+  let invalidRangeBricks = 0;
+  let occupancyMetadataMismatchBricks = 0;
+
+  for (let brickIndex = 0; brickIndex < totalBricks; brickIndex += 1) {
+    const occupancy = pageTable.chunkOccupancy[brickIndex] ?? 0;
+    const min = pageTable.chunkMin[brickIndex] ?? 0;
+    const max = pageTable.chunkMax[brickIndex] ?? 0;
+    const atlasIndexValue = atlasIndexData ? atlasIndexData[brickIndex] ?? 0 : 0;
+    const hasAtlasBrick = atlasIndexValue > 0;
+
+    if (max < min) {
+      invalidRangeBricks += 1;
+    }
+    if (occupancy <= 0) {
+      emptyBricks += 1;
+      if (max > 0 || min > 0) {
+        occupancyMetadataMismatchBricks += 1;
+      }
+      continue;
+    }
+
+    occupiedBricks += 1;
+    if (!hasAtlasBrick) {
+      occupiedBricksMissingFromAtlas += 1;
+    }
+  }
+
+  if (!enabledByConfig) {
+    return {
+      enabled: false,
+      reason: 'disabled-by-config',
+      totalBricks,
+      emptyBricks,
+      occupiedBricks,
+      occupiedBricksMissingFromAtlas,
+      invalidRangeBricks,
+      occupancyMetadataMismatchBricks
+    };
+  }
+  if (occupiedBricksMissingFromAtlas > 0) {
+    return {
+      enabled: false,
+      reason: 'occupied-bricks-missing-from-atlas',
+      totalBricks,
+      emptyBricks,
+      occupiedBricks,
+      occupiedBricksMissingFromAtlas,
+      invalidRangeBricks,
+      occupancyMetadataMismatchBricks
+    };
+  }
+  if (invalidRangeBricks > 0) {
+    return {
+      enabled: false,
+      reason: 'invalid-min-max-range',
+      totalBricks,
+      emptyBricks,
+      occupiedBricks,
+      occupiedBricksMissingFromAtlas,
+      invalidRangeBricks,
+      occupancyMetadataMismatchBricks
+    };
+  }
+  if (occupancyMetadataMismatchBricks > 0) {
+    return {
+      enabled: false,
+      reason: 'occupancy-metadata-mismatch',
+      totalBricks,
+      emptyBricks,
+      occupiedBricks,
+      occupiedBricksMissingFromAtlas,
+      invalidRangeBricks,
+      occupancyMetadataMismatchBricks
+    };
+  }
+
+  return {
+    enabled: true,
+    reason: 'enabled',
+    totalBricks,
+    emptyBricks,
+    occupiedBricks,
+    occupiedBricksMissingFromAtlas,
+    invalidRangeBricks,
+    occupancyMetadataMismatchBricks
+  };
+}
+
+function resolveGpuBrickBudgetBytes(): number {
+  const configured = resolveNumericEnvValue('VITE_MAX_GPU_BRICK_BYTES');
+  if (!Number.isFinite(configured) || configured <= 0) {
+    return DEFAULT_MAX_GPU_BRICK_BYTES;
+  }
+  return Math.max(1, Math.floor(configured));
+}
+
+function hasExplicitGpuBrickBudgetBytes(): boolean {
+  const configured = resolveNumericEnvValue('VITE_MAX_GPU_BRICK_BYTES');
+  return Number.isFinite(configured) && configured > 0;
+}
+
+function resolveMaxBrickUploadsPerUpdate(): number {
+  const configured = resolveNumericEnvValue('VITE_MAX_BRICK_UPLOADS_PER_UPDATE');
+  if (!Number.isFinite(configured) || configured <= 0) {
+    return DEFAULT_MAX_BRICK_UPLOADS_PER_UPDATE;
+  }
+  return Math.max(1, Math.floor(configured));
+}
+
+function hasExplicitMaxBrickUploadsPerUpdate(): boolean {
+  const configured = resolveNumericEnvValue('VITE_MAX_BRICK_UPLOADS_PER_UPDATE');
+  return Number.isFinite(configured) && configured > 0;
+}
+
+function resolveRendererMax3DTextureSize(
+  rendererRef: MutableRefObject<THREE.WebGLRenderer | null> | undefined,
+): number | null {
+  const renderer = rendererRef?.current;
+  if (!renderer || !renderer.capabilities?.isWebGL2) {
+    return null;
+  }
+  const gl = renderer.getContext() as WebGL2RenderingContext | null;
+  if (!gl) {
+    return null;
+  }
+  const raw = Number(gl.getParameter(gl.MAX_3D_TEXTURE_SIZE));
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return null;
+  }
+  return Math.floor(raw);
+}
+
+function exceeds3DTextureSizeLimit(
+  size: { width: number; height: number; depth: number },
+  max3DTextureSize: number | null | undefined,
+): boolean {
+  if (!max3DTextureSize || !Number.isFinite(max3DTextureSize) || max3DTextureSize <= 0) {
+    return false;
+  }
+  return size.width > max3DTextureSize || size.height > max3DTextureSize || size.depth > max3DTextureSize;
+}
+
+function copyBrickIntoResidentAtlas({
+  sourceData,
+  sourceIndex,
+  destinationData,
+  destinationSlot,
+  chunkWidth,
+  chunkHeight,
+  chunkDepth,
+  sourceDepth,
+  destinationDepth,
+  textureComponents
+}: {
+  sourceData: Uint8Array;
+  sourceIndex: number;
+  destinationData: Uint8Array;
+  destinationSlot: number;
+  chunkWidth: number;
+  chunkHeight: number;
+  chunkDepth: number;
+  sourceDepth: number;
+  destinationDepth: number;
+  textureComponents: number;
+}): void {
+  const sourceZBase = sourceIndex * chunkDepth;
+  const destinationZBase = destinationSlot * chunkDepth;
+  for (let localZ = 0; localZ < chunkDepth; localZ += 1) {
+    const sourceZ = sourceZBase + localZ;
+    const destinationZ = destinationZBase + localZ;
+    if (sourceZ >= sourceDepth || destinationZ >= destinationDepth) {
+      continue;
+    }
+    for (let localY = 0; localY < chunkHeight; localY += 1) {
+      for (let localX = 0; localX < chunkWidth; localX += 1) {
+        const sourceVoxelOffset =
+          ((sourceZ * chunkHeight + localY) * chunkWidth + localX) * textureComponents;
+        const destinationVoxelOffset =
+          ((destinationZ * chunkHeight + localY) * chunkWidth + localX) * textureComponents;
+        for (let component = 0; component < textureComponents; component += 1) {
+          destinationData[destinationVoxelOffset + component] = sourceData[sourceVoxelOffset + component] ?? 0;
+        }
+      }
+    }
+  }
+}
+
+function buildViewPrioritySourceIndices({
+  pageTable,
+  cameraPosition,
+  fullResolutionSize
+}: {
+  pageTable: VolumeBrickPageTable;
+  cameraPosition: THREE.Vector3 | null;
+  fullResolutionSize: { width: number; height: number; depth: number };
+}): Array<{ sourceIndex: number; distanceSq: number }> {
+  const entries: Array<{ sourceIndex: number; distanceSq: number }> = [];
+  const [gridZ, gridY, gridX] = pageTable.gridShape;
+  const [chunkDepth, chunkHeight, chunkWidth] = pageTable.chunkShape;
+  const [scaleDepth, scaleHeight, scaleWidth] = pageTable.volumeShape;
+  const plane = gridY * gridX;
+  const ratioX = fullResolutionSize.width > 0 ? scaleWidth / fullResolutionSize.width : 1;
+  const ratioY = fullResolutionSize.height > 0 ? scaleHeight / fullResolutionSize.height : 1;
+  const ratioZ = fullResolutionSize.depth > 0 ? scaleDepth / fullResolutionSize.depth : 1;
+  const scaledCamera = cameraPosition
+    ? new THREE.Vector3(cameraPosition.x * ratioX, cameraPosition.y * ratioY, cameraPosition.z * ratioZ)
+    : null;
+
+  for (let flatBrickIndex = 0; flatBrickIndex < pageTable.brickAtlasIndices.length; flatBrickIndex += 1) {
+    const sourceIndex = pageTable.brickAtlasIndices[flatBrickIndex] ?? -1;
+    if (sourceIndex < 0) {
+      continue;
+    }
+    const brickZ = Math.floor(flatBrickIndex / plane);
+    const withinPlane = flatBrickIndex % plane;
+    const brickY = Math.floor(withinPlane / gridX);
+    const brickX = withinPlane % gridX;
+    if (brickZ < 0 || brickZ >= gridZ || brickY < 0 || brickY >= gridY || brickX < 0 || brickX >= gridX) {
+      continue;
+    }
+    const centerX = brickX * chunkWidth + chunkWidth * 0.5;
+    const centerY = brickY * chunkHeight + chunkHeight * 0.5;
+    const centerZ = brickZ * chunkDepth + chunkDepth * 0.5;
+    const distanceSq =
+      scaledCamera
+        ? (centerX - scaledCamera.x) * (centerX - scaledCamera.x) +
+          (centerY - scaledCamera.y) * (centerY - scaledCamera.y) +
+          (centerZ - scaledCamera.z) * (centerZ - scaledCamera.z)
+        : sourceIndex;
+    entries.push({ sourceIndex, distanceSq });
+  }
+
+  entries.sort((left, right) => {
+    if (left.distanceSq !== right.distanceSq) {
+      return left.distanceSq - right.distanceSq;
+    }
+    return left.sourceIndex - right.sourceIndex;
+  });
+  return entries;
+}
+
+function updateGpuBrickResidency({
+  resource,
+  pageTable,
+  sourceData,
+  sourceToken,
+  textureFormat,
+  cameraPosition,
+  atlasSize,
+  max3DTextureSize,
+  layerKey,
+  timepoint,
+  maxUploadsPerUpdate,
+  allowBootstrapUploadBurst,
+  forceFullResidency
+}: {
+  resource: VolumeResources;
+  pageTable: VolumeBrickPageTable;
+  sourceData: Uint8Array;
+  sourceToken: object | null;
+  textureFormat: TextureFormat;
+  cameraPosition: THREE.Vector3 | null;
+  atlasSize: { width: number; height: number; depth: number };
+  max3DTextureSize: number | null;
+  layerKey: string;
+  timepoint: number;
+  maxUploadsPerUpdate: number;
+  allowBootstrapUploadBurst: boolean;
+  forceFullResidency: boolean;
+}): {
+  atlasData: Uint8Array;
+  atlasSize: { width: number; height: number; depth: number };
+  atlasIndices: Float32Array;
+  metrics: BrickResidencyMetrics;
+  texturesDirty: boolean;
+} {
+  const components = getTextureComponentsFromFormat(textureFormat);
+  if (!components) {
+    return {
+      atlasData: new Uint8Array([0]),
+      atlasSize: { width: 1, height: 1, depth: 1 },
+      atlasIndices: new Float32Array(pageTable.brickAtlasIndices.length),
+      metrics: {
+        layerKey,
+        timepoint,
+        scaleLevel: pageTable.scaleLevel,
+        residentBricks: 0,
+        totalBricks: pageTable.occupiedBrickCount,
+        residentBytes: 0,
+        budgetBytes: resolveGpuBrickBudgetBytes(),
+        uploads: 0,
+        evictions: 0,
+        pendingBricks: pageTable.occupiedBrickCount,
+        prioritizedBricks: pageTable.occupiedBrickCount,
+        scheduledUploads: 0,
+        lastCameraDistance: null
+      },
+      texturesDirty: false,
+    };
+  }
+
+  const chunkDepth = Math.max(1, pageTable.chunkShape[0]);
+  const chunkHeight = Math.max(1, pageTable.chunkShape[1]);
+  const chunkWidth = Math.max(1, pageTable.chunkShape[2]);
+  const bytesPerBrick = chunkDepth * chunkHeight * chunkWidth * components;
+  const configuredBudgetBytes = resolveGpuBrickBudgetBytes();
+  const explicitBudget = hasExplicitGpuBrickBudgetBytes();
+  const shouldForceFullResidency = forceFullResidency && !explicitBudget;
+  const canAutoExpandBudget = !hasExplicitGpuBrickBudgetBytes() && pageTable.scaleLevel === 0;
+  const targetBudgetBytes = shouldForceFullResidency
+    ? Math.max(configuredBudgetBytes, bytesPerBrick * pageTable.occupiedBrickCount)
+    : canAutoExpandBudget
+      ? Math.min(
+          AUTO_EXPANDED_MAX_GPU_BRICK_BYTES,
+          Math.max(configuredBudgetBytes, bytesPerBrick * pageTable.occupiedBrickCount)
+        )
+      : configuredBudgetBytes;
+  const budgetBytes = Math.max(1, targetBudgetBytes);
+  const budgetLimitedSlotCapacity = Math.floor(budgetBytes / bytesPerBrick) || 1;
+  const maxDepthLimitedSlotCapacity = max3DTextureSize ? Math.floor(max3DTextureSize / chunkDepth) : Number.POSITIVE_INFINITY;
+  const slotCapacity = Math.max(
+    1,
+    Math.min(pageTable.occupiedBrickCount, budgetLimitedSlotCapacity, maxDepthLimitedSlotCapacity)
+  );
+  const residentDepth = chunkDepth * slotCapacity;
+  const expectedResidentDataLength = chunkWidth * chunkHeight * residentDepth * components;
+  const expectedResidentIndexLength = pageTable.brickAtlasIndices.length;
+  const existing = gpuBrickResidencyStateByResource.get(resource);
+  const shouldReset =
+    !existing ||
+    existing.sourceToken !== sourceToken ||
+    existing.pageTable !== pageTable ||
+    existing.textureFormat !== textureFormat ||
+    existing.slotCapacity !== slotCapacity ||
+    existing.chunkDepth !== chunkDepth ||
+    existing.chunkHeight !== chunkHeight ||
+    existing.chunkWidth !== chunkWidth;
+
+  const state: BrickResidencyState =
+    shouldReset || !existing
+      ? {
+          sourceToken,
+          pageTable,
+          textureFormat,
+          textureComponents: components,
+          chunkWidth,
+          chunkHeight,
+          chunkDepth,
+          slotCapacity,
+          slotSourceIndices: new Int32Array(slotCapacity).fill(-1),
+          sourceToSlot: new Map<number, number>(),
+          sourceLastUsedTick: new Map<number, number>(),
+          residentAtlasData: new Uint8Array(expectedResidentDataLength),
+          residentAtlasIndices: new Float32Array(expectedResidentIndexLength),
+          tick: 1,
+          uploads: 0,
+          evictions: 0,
+          residentBytes: slotCapacity * bytesPerBrick,
+          budgetBytes,
+          lastCameraDistance: null,
+          scaleLevel: pageTable.scaleLevel,
+          bootstrapUpdatesRemaining: BOOTSTRAP_UPLOAD_BURST_UPDATES
+        }
+      : existing;
+
+  if (state.residentAtlasData.length !== expectedResidentDataLength) {
+    state.residentAtlasData = new Uint8Array(expectedResidentDataLength);
+  }
+  if (state.residentAtlasIndices.length !== expectedResidentIndexLength) {
+    state.residentAtlasIndices = new Float32Array(expectedResidentIndexLength);
+  }
+  state.budgetBytes = budgetBytes;
+  state.residentBytes = slotCapacity * bytesPerBrick;
+  state.scaleLevel = pageTable.scaleLevel;
+  state.pageTable = pageTable;
+
+  const priorityEntries = buildViewPrioritySourceIndices({
+    pageTable,
+    cameraPosition,
+    fullResolutionSize: {
+      width: resource.dimensions.width,
+      height: resource.dimensions.height,
+      depth: resource.dimensions.depth
+    }
+  });
+  const desiredSources = new Set<number>(priorityEntries.slice(0, slotCapacity).map((entry) => entry.sourceIndex));
+  state.tick += 1;
+
+  const pendingSources = priorityEntries
+    .map((entry) => entry.sourceIndex)
+    .filter((sourceIndex) => desiredSources.has(sourceIndex) && !state.sourceToSlot.has(sourceIndex));
+  const baseUploadBudget = Math.max(1, maxUploadsPerUpdate);
+  const boostedUploadBudget =
+    allowBootstrapUploadBurst && state.bootstrapUpdatesRemaining > 0
+      ? Math.min(BOOTSTRAP_UPLOAD_BURST_MAX, baseUploadBudget * BOOTSTRAP_UPLOAD_BURST_MULTIPLIER)
+      : baseUploadBudget;
+  const forceImmediateUploads = shouldForceFullResidency && !hasExplicitMaxBrickUploadsPerUpdate();
+  const pendingLimit = forceImmediateUploads
+    ? pendingSources.length
+    : Math.min(Math.max(baseUploadBudget, boostedUploadBudget), pendingSources.length);
+  for (let pendingIndex = 0; pendingIndex < pendingLimit; pendingIndex += 1) {
+    const sourceIndex = pendingSources[pendingIndex]!;
+    let slot = state.sourceToSlot.get(sourceIndex);
+    if (slot !== undefined) {
+      state.sourceLastUsedTick.set(sourceIndex, state.tick);
+      continue;
+    }
+
+    let replacementSlot = state.slotSourceIndices.indexOf(-1);
+    if (replacementSlot < 0) {
+      let oldestTick = Number.POSITIVE_INFINITY;
+      for (let slotIndex = 0; slotIndex < state.slotSourceIndices.length; slotIndex += 1) {
+        const residentSource = state.slotSourceIndices[slotIndex] ?? -1;
+        if (residentSource < 0) {
+          replacementSlot = slotIndex;
+          break;
+        }
+        if (desiredSources.has(residentSource)) {
+          continue;
+        }
+        const residentTick = state.sourceLastUsedTick.get(residentSource) ?? 0;
+        if (residentTick < oldestTick) {
+          oldestTick = residentTick;
+          replacementSlot = slotIndex;
+        }
+      }
+      if (replacementSlot < 0) {
+        // All resident slots are currently desired; avoid churn.
+        continue;
+      }
+    }
+
+    const evictedSource = state.slotSourceIndices[replacementSlot] ?? -1;
+    if (evictedSource >= 0) {
+      state.sourceToSlot.delete(evictedSource);
+      state.sourceLastUsedTick.delete(evictedSource);
+      state.evictions += 1;
+    }
+    copyBrickIntoResidentAtlas({
+      sourceData,
+      sourceIndex,
+      destinationData: state.residentAtlasData,
+      destinationSlot: replacementSlot,
+      chunkWidth,
+      chunkHeight,
+      chunkDepth,
+      sourceDepth: atlasSize.depth,
+      destinationDepth: residentDepth,
+      textureComponents: components
+    });
+    state.slotSourceIndices[replacementSlot] = sourceIndex;
+    state.sourceToSlot.set(sourceIndex, replacementSlot);
+    state.sourceLastUsedTick.set(sourceIndex, state.tick);
+    state.uploads += 1;
+  }
+
+  for (const sourceIndex of desiredSources) {
+    if (state.sourceToSlot.has(sourceIndex)) {
+      state.sourceLastUsedTick.set(sourceIndex, state.tick);
+    }
+  }
+
+  for (let flatBrickIndex = 0; flatBrickIndex < pageTable.brickAtlasIndices.length; flatBrickIndex += 1) {
+    const sourceIndex = pageTable.brickAtlasIndices[flatBrickIndex] ?? -1;
+    const slot = sourceIndex >= 0 ? state.sourceToSlot.get(sourceIndex) : undefined;
+    state.residentAtlasIndices[flatBrickIndex] = slot === undefined ? 0 : slot + 1;
+  }
+
+  const nearestDistanceSq = priorityEntries[0]?.distanceSq;
+  state.lastCameraDistance =
+    nearestDistanceSq !== undefined && Number.isFinite(nearestDistanceSq) ? Math.sqrt(nearestDistanceSq) : null;
+  if (state.bootstrapUpdatesRemaining > 0) {
+    state.bootstrapUpdatesRemaining -= 1;
+  }
+  gpuBrickResidencyStateByResource.set(resource, state);
+
+  return {
+    atlasData: state.residentAtlasData,
+    atlasSize: { width: chunkWidth, height: chunkHeight, depth: residentDepth },
+    atlasIndices: state.residentAtlasIndices,
+    metrics: {
+      layerKey,
+      timepoint,
+      scaleLevel: state.scaleLevel,
+      residentBricks: state.sourceToSlot.size,
+      totalBricks: pageTable.occupiedBrickCount,
+      residentBytes: state.residentBytes,
+      budgetBytes: state.budgetBytes,
+      uploads: state.uploads,
+      evictions: state.evictions,
+      pendingBricks: pendingSources.length,
+      prioritizedBricks: priorityEntries.length,
+      scheduledUploads: pendingLimit,
+      lastCameraDistance: state.lastCameraDistance
+    },
+    texturesDirty: pendingLimit > 0,
+  };
+}
+
+function disposeBrickAtlasDataTexture(resource: VolumeResources): void {
+  resource.brickAtlasDataTexture?.dispose();
+  resource.brickAtlasDataTexture = null;
+  resource.brickAtlasSourceToken = null;
+  resource.brickAtlasSourceData = null;
+  resource.brickAtlasSourceFormat = null;
+  resource.brickAtlasSourcePageTable = null;
+  resource.brickAtlasBuildVersion = 0;
+  resource.gpuBrickResidencyMetrics = null;
+  gpuBrickResidencyStateByResource.delete(resource);
+}
+
+function disposeBrickPageTableTextures(resource: VolumeResources): void {
+  resource.brickOccupancyTexture?.dispose();
+  resource.brickMinTexture?.dispose();
+  resource.brickMaxTexture?.dispose();
+  resource.brickAtlasIndexTexture?.dispose();
+  disposeBrickAtlasDataTexture(resource);
+  resource.brickOccupancyTexture = null;
+  resource.brickMinTexture = null;
+  resource.brickMaxTexture = null;
+  resource.brickAtlasIndexTexture = null;
+  resource.brickMetadataSourcePageTable = null;
+}
+
+function occupancyMaskFromPageTable(pageTable: VolumeBrickPageTable): Uint8Array {
+  const mask = new Uint8Array(pageTable.chunkOccupancy.length);
+  for (let index = 0; index < pageTable.chunkOccupancy.length; index += 1) {
+    mask[index] = pageTable.chunkOccupancy[index] > 0 ? 255 : 0;
+  }
+  return mask;
+}
+
+function atlasIndexTextureDataFromPageTable(pageTable: VolumeBrickPageTable): Float32Array {
+  const data = new Float32Array(pageTable.brickAtlasIndices.length);
+  for (let index = 0; index < pageTable.brickAtlasIndices.length; index += 1) {
+    const atlasIndex = pageTable.brickAtlasIndices[index] ?? -1;
+    data[index] = atlasIndex >= 0 ? atlasIndex + 1 : 0;
+  }
+  return data;
+}
+
+function buildBrickAtlasDataTexture({
+  pageTable,
+  textureData,
+  textureFormat,
+}: {
+  pageTable: VolumeBrickPageTable;
+  textureData: Uint8Array;
+  textureFormat: TextureFormat;
+}): BrickAtlasBuildResult | null {
+  const components = getTextureComponentsFromFormat(textureFormat);
+  if (components === null) {
+    return null;
+  }
+
+  const chunkDepth = pageTable.chunkShape[0];
+  const chunkHeight = pageTable.chunkShape[1];
+  const chunkWidth = pageTable.chunkShape[2];
+  if (chunkDepth <= 0 || chunkHeight <= 0 || chunkWidth <= 0) {
+    return null;
+  }
+
+  const occupiedBrickCount = pageTable.occupiedBrickCount;
+  if (occupiedBrickCount <= 0) {
+    return null;
+  }
+
+  const volumeDepth = pageTable.volumeShape[0];
+  const volumeHeight = pageTable.volumeShape[1];
+  const volumeWidth = pageTable.volumeShape[2];
+  if (volumeDepth <= 0 || volumeHeight <= 0 || volumeWidth <= 0) {
+    return null;
+  }
+
+  const expectedSourceLength = volumeWidth * volumeHeight * volumeDepth * components;
+  if (textureData.length !== expectedSourceLength) {
+    return null;
+  }
+
+  const atlasWidth = chunkWidth;
+  const atlasHeight = chunkHeight;
+  const atlasDepth = chunkDepth * occupiedBrickCount;
+  const atlasData = new Uint8Array(atlasWidth * atlasHeight * atlasDepth * components);
+  const gridZ = pageTable.gridShape[0];
+  const gridY = pageTable.gridShape[1];
+  const gridX = pageTable.gridShape[2];
+  const planeChunks = gridY * gridX;
+
+  for (let flatBrickIndex = 0; flatBrickIndex < pageTable.brickAtlasIndices.length; flatBrickIndex += 1) {
+    const atlasIndex = pageTable.brickAtlasIndices[flatBrickIndex] ?? -1;
+    if (atlasIndex < 0 || atlasIndex >= occupiedBrickCount) {
+      continue;
+    }
+
+    const brickZ = Math.floor(flatBrickIndex / planeChunks);
+    const withinPlane = flatBrickIndex % planeChunks;
+    const brickY = Math.floor(withinPlane / gridX);
+    const brickX = withinPlane % gridX;
+    if (brickZ < 0 || brickZ >= gridZ || brickY < 0 || brickY >= gridY || brickX < 0 || brickX >= gridX) {
+      continue;
+    }
+
+    const sourceZBase = brickZ * chunkDepth;
+    const sourceYBase = brickY * chunkHeight;
+    const sourceXBase = brickX * chunkWidth;
+    const atlasZBase = atlasIndex * chunkDepth;
+
+    for (let localZ = 0; localZ < chunkDepth; localZ += 1) {
+      const sourceZ = sourceZBase + localZ;
+      if (sourceZ >= volumeDepth) {
+        continue;
+      }
+      for (let localY = 0; localY < chunkHeight; localY += 1) {
+        const sourceY = sourceYBase + localY;
+        if (sourceY >= volumeHeight) {
+          continue;
+        }
+        for (let localX = 0; localX < chunkWidth; localX += 1) {
+          const sourceX = sourceXBase + localX;
+          if (sourceX >= volumeWidth) {
+            continue;
+          }
+
+          const sourceVoxelIndex =
+            ((sourceZ * volumeHeight + sourceY) * volumeWidth + sourceX) * components;
+          const atlasVoxelIndex =
+            (((atlasZBase + localZ) * atlasHeight + localY) * atlasWidth + localX) * components;
+          for (let component = 0; component < components; component += 1) {
+            atlasData[atlasVoxelIndex + component] = textureData[sourceVoxelIndex + component] ?? 0;
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    data: atlasData,
+    width: atlasWidth,
+    height: atlasHeight,
+    depth: atlasDepth,
+    textureFormat,
+    enabled: true,
+  };
+}
+
+function resolveAtlasTextureFilterMode(uniforms: ShaderUniformMap): ByteTextureFilterMode {
+  if (!('u_nearestSampling' in uniforms)) {
+    return 'linear';
+  }
+  const nearestSampling = Number(uniforms.u_nearestSampling.value);
+  if (Number.isFinite(nearestSampling) && nearestSampling > 0.5) {
+    return 'nearest';
+  }
+  return 'linear';
+}
+
+function applyBrickPageTableUniforms(
+  uniforms: ShaderUniformMap,
+  resource: VolumeResources,
+  pageTable: VolumeBrickPageTable | null | undefined,
+  options?: {
+    textureDataToken?: object;
+    textureData?: Uint8Array;
+    textureFormat?: TextureFormat;
+    atlasDataToken?: object;
+    atlasData?: Uint8Array;
+    atlasFormat?: TextureFormat;
+    atlasSize?: { width: number; height: number; depth: number };
+    max3DTextureSize?: number | null;
+    cameraPosition?: THREE.Vector3 | null;
+    forceFullResidency?: boolean;
+  },
+): void {
+  if (
+    !('u_brickSkipEnabled' in uniforms) ||
+    !('u_brickGridSize' in uniforms) ||
+    !('u_brickChunkSize' in uniforms) ||
+    !('u_brickVolumeSize' in uniforms) ||
+    !('u_brickOccupancy' in uniforms) ||
+    !('u_brickMin' in uniforms) ||
+    !('u_brickMax' in uniforms) ||
+    !('u_brickAtlasIndices' in uniforms) ||
+    !('u_brickAtlasEnabled' in uniforms) ||
+    !('u_brickAtlasData' in uniforms) ||
+    !('u_brickAtlasSize' in uniforms)
+  ) {
+    resource.brickSkipDiagnostics = null;
+    return;
+  }
+
+  const disableBrickSkipping = (
+    reason: BrickSkipDiagnostics['reason'],
+    totalBricks = 0,
+  ) => {
+    console.warn(`[brick-residency] Disabling brick metadata textures: ${reason}`);
+    disposeBrickPageTableTextures(resource);
+    uniforms.u_brickSkipEnabled.value = 0;
+    (uniforms.u_brickGridSize.value as THREE.Vector3).set(1, 1, 1);
+    (uniforms.u_brickChunkSize.value as THREE.Vector3).set(1, 1, 1);
+    (uniforms.u_brickVolumeSize.value as THREE.Vector3).set(1, 1, 1);
+    uniforms.u_brickOccupancy.value = FALLBACK_BRICK_OCCUPANCY_TEXTURE;
+    uniforms.u_brickMin.value = FALLBACK_BRICK_MIN_TEXTURE;
+    uniforms.u_brickMax.value = FALLBACK_BRICK_MAX_TEXTURE;
+    uniforms.u_brickAtlasIndices.value = FALLBACK_BRICK_ATLAS_INDEX_TEXTURE;
+    uniforms.u_brickAtlasEnabled.value = 0;
+    uniforms.u_brickAtlasData.value = FALLBACK_BRICK_ATLAS_DATA_TEXTURE;
+    (uniforms.u_brickAtlasSize.value as THREE.Vector3).set(1, 1, 1);
+    resource.gpuBrickResidencyMetrics = null;
+    resource.brickSkipDiagnostics = createDisabledBrickSkipDiagnostics(reason, totalBricks);
+  };
+
+  if (!pageTable) {
+    disableBrickSkipping('missing-page-table');
+    return;
+  }
+
+  const gridX = pageTable.gridShape[2];
+  const gridY = pageTable.gridShape[1];
+  const gridZ = pageTable.gridShape[0];
+  const expectedBrickCount = gridX * gridY * gridZ;
+  if (
+    pageTable.brickAtlasIndices.length !== expectedBrickCount ||
+    pageTable.chunkMin.length !== expectedBrickCount ||
+    pageTable.chunkMax.length !== expectedBrickCount ||
+    pageTable.chunkOccupancy.length !== expectedBrickCount
+  ) {
+    disableBrickSkipping('invalid-page-table', expectedBrickCount);
+    return;
+  }
+
+  const hasMetadataTextures =
+    resource.brickOccupancyTexture !== null &&
+    resource.brickOccupancyTexture !== undefined &&
+    resource.brickMinTexture !== null &&
+    resource.brickMinTexture !== undefined &&
+    resource.brickMaxTexture !== null &&
+    resource.brickMaxTexture !== undefined;
+  const canReuseMetadataTextures =
+    hasMetadataTextures && resource.brickMetadataSourcePageTable === pageTable;
+  if (!canReuseMetadataTextures) {
+    const occupancyMask = occupancyMaskFromPageTable(pageTable);
+    resource.brickOccupancyTexture = updateOrCreateByte3dTexture(
+      resource.brickOccupancyTexture,
+      occupancyMask,
+      gridX,
+      gridY,
+      gridZ,
+    );
+    resource.brickMinTexture = updateOrCreateByte3dTexture(
+      resource.brickMinTexture,
+      pageTable.chunkMin,
+      gridX,
+      gridY,
+      gridZ,
+    );
+    resource.brickMaxTexture = updateOrCreateByte3dTexture(
+      resource.brickMaxTexture,
+      pageTable.chunkMax,
+      gridX,
+      gridY,
+      gridZ,
+    );
+    resource.brickMetadataSourcePageTable = pageTable;
+  }
+
+  const atlasSourceToken =
+    options?.atlasDataToken ??
+    options?.textureDataToken ??
+    options?.atlasData ??
+    options?.textureData ??
+    null;
+  const atlasTextureFilterMode = resolveAtlasTextureFilterMode(uniforms);
+  const atlasFormat = options?.atlasFormat ?? options?.textureFormat;
+  const shouldUseGpuResidency =
+    Boolean(options?.atlasData && atlasFormat && options.atlasSize);
+
+  let atlasIndexData = atlasIndexTextureDataFromPageTable(pageTable);
+  let atlasBuild: BrickAtlasBuildResult | null = null;
+  let atlasTexturesDirty = true;
+
+  if (shouldUseGpuResidency && options?.atlasData && atlasFormat && options.atlasSize) {
+    const components = getTextureComponentsFromFormat(atlasFormat);
+    const expectedLength =
+      options.atlasSize.width * options.atlasSize.height * options.atlasSize.depth * (components ?? 0);
+    if (
+      components &&
+      options.atlasSize.width > 0 &&
+      options.atlasSize.height > 0 &&
+      options.atlasSize.depth > 0 &&
+      expectedLength > 0 &&
+      options.atlasData.length === expectedLength
+    ) {
+      const residency = updateGpuBrickResidency({
+        resource,
+        pageTable,
+        sourceData: options.atlasData,
+        sourceToken: typeof atlasSourceToken === 'object' && atlasSourceToken !== null ? atlasSourceToken : null,
+        textureFormat: atlasFormat,
+        cameraPosition: options.cameraPosition ?? null,
+        atlasSize: options.atlasSize,
+        max3DTextureSize: options.max3DTextureSize ?? null,
+        layerKey: pageTable.layerKey,
+        timepoint: pageTable.timepoint,
+        maxUploadsPerUpdate: resolveMaxBrickUploadsPerUpdate(),
+        allowBootstrapUploadBurst: !hasExplicitMaxBrickUploadsPerUpdate(),
+        forceFullResidency: options.forceFullResidency ?? false
+      });
+      atlasIndexData = residency.atlasIndices;
+      atlasBuild = {
+        data: residency.atlasData,
+        width: residency.atlasSize.width,
+        height: residency.atlasSize.height,
+        depth: residency.atlasSize.depth,
+        textureFormat: atlasFormat,
+        enabled: true
+      };
+      atlasTexturesDirty = residency.texturesDirty;
+      resource.gpuBrickResidencyMetrics = residency.metrics;
+    } else {
+      resource.gpuBrickResidencyMetrics = null;
+    }
+  } else {
+    resource.gpuBrickResidencyMetrics = null;
+  }
+
+  resource.brickAtlasIndexTexture = updateOrCreateFloat3dTexture(
+    resource.brickAtlasIndexTexture,
+    atlasIndexData,
+    gridX,
+    gridY,
+    gridZ,
+    atlasTexturesDirty,
+  );
+
+  const brickSkipDiagnostics = analyzeBrickSkipDiagnostics({
+    pageTable,
+    atlasIndexData,
+    enabledByConfig: resolveBrickSkipEnabledByConfig()
+  });
+  resource.brickSkipDiagnostics = brickSkipDiagnostics.enabled
+    ? {
+        ...brickSkipDiagnostics,
+        enabled: false,
+        reason: 'disabled-by-config'
+      }
+    : brickSkipDiagnostics;
+  uniforms.u_brickSkipEnabled.value = 0;
+  (uniforms.u_brickGridSize.value as THREE.Vector3).set(gridX, gridY, gridZ);
+  (uniforms.u_brickChunkSize.value as THREE.Vector3).set(
+    pageTable.chunkShape[2],
+    pageTable.chunkShape[1],
+    pageTable.chunkShape[0],
+  );
+  (uniforms.u_brickVolumeSize.value as THREE.Vector3).set(
+    pageTable.volumeShape[2],
+    pageTable.volumeShape[1],
+    pageTable.volumeShape[0]
+  );
+  uniforms.u_brickOccupancy.value = resource.brickOccupancyTexture;
+  uniforms.u_brickMin.value = resource.brickMinTexture;
+  uniforms.u_brickMax.value = resource.brickMaxTexture;
+  uniforms.u_brickAtlasIndices.value = resource.brickAtlasIndexTexture;
+
+  const canReuseAtlasTexture =
+    !shouldUseGpuResidency &&
+    resource.brickAtlasDataTexture !== null &&
+    resource.brickAtlasDataTexture !== undefined &&
+    resource.brickAtlasSourcePageTable === pageTable &&
+    resource.brickAtlasSourceToken === atlasSourceToken &&
+    resource.brickAtlasSourceFormat === atlasFormat;
+  if (canReuseAtlasTexture) {
+    const atlasTexture = resource.brickAtlasDataTexture;
+    if (!atlasTexture) {
+      return;
+    }
+    const { width, height, depth } = getTextureDimensions(atlasTexture);
+    if (exceeds3DTextureSizeLimit({ width, height, depth }, options?.max3DTextureSize)) {
+      disposeBrickAtlasDataTexture(resource);
+    } else {
+      applyByteTextureFilter(atlasTexture, atlasTextureFilterMode);
+      uniforms.u_brickAtlasEnabled.value = 1;
+      uniforms.u_brickAtlasData.value = atlasTexture;
+      (uniforms.u_brickAtlasSize.value as THREE.Vector3).set(width, height, depth);
+      return;
+    }
+  }
+
+  if (!atlasBuild) {
+    atlasBuild = (() => {
+      if (options?.atlasData && atlasFormat && options.atlasSize) {
+        const components = getTextureComponentsFromFormat(atlasFormat);
+        const expectedLength =
+          options.atlasSize.width * options.atlasSize.height * options.atlasSize.depth * (components ?? 0);
+        if (
+          components &&
+          options.atlasSize.width > 0 &&
+          options.atlasSize.height > 0 &&
+          options.atlasSize.depth > 0 &&
+          expectedLength > 0 &&
+          options.atlasData.length === expectedLength
+        ) {
+          return {
+            data: options.atlasData,
+            width: options.atlasSize.width,
+            height: options.atlasSize.height,
+            depth: options.atlasSize.depth,
+            textureFormat: atlasFormat,
+            enabled: true,
+          } satisfies BrickAtlasBuildResult;
+        }
+        return null;
+      }
+
+      if (options?.textureData && options.textureFormat) {
+        return buildBrickAtlasDataTexture({
+          pageTable,
+          textureData: options.textureData,
+          textureFormat: options.textureFormat,
+        });
+      }
+
+      return null;
+    })();
+  }
+
+  if (!atlasBuild || !atlasBuild.enabled) {
+    disposeBrickAtlasDataTexture(resource);
+    uniforms.u_brickAtlasEnabled.value = 0;
+    uniforms.u_brickAtlasData.value = FALLBACK_BRICK_ATLAS_DATA_TEXTURE;
+    (uniforms.u_brickAtlasSize.value as THREE.Vector3).set(1, 1, 1);
+    return;
+  }
+
+  if (
+    exceeds3DTextureSizeLimit(
+      { width: atlasBuild.width, height: atlasBuild.height, depth: atlasBuild.depth },
+      options?.max3DTextureSize
+    )
+  ) {
+    disposeBrickAtlasDataTexture(resource);
+    uniforms.u_brickAtlasEnabled.value = 0;
+    uniforms.u_brickAtlasData.value = FALLBACK_BRICK_ATLAS_DATA_TEXTURE;
+    (uniforms.u_brickAtlasSize.value as THREE.Vector3).set(1, 1, 1);
+    return;
+  }
+
+  resource.brickAtlasDataTexture = updateOrCreateByte3dTexture(
+    resource.brickAtlasDataTexture,
+    atlasBuild.data,
+    atlasBuild.width,
+    atlasBuild.height,
+    atlasBuild.depth,
+    atlasBuild.textureFormat,
+    atlasTextureFilterMode,
+    atlasTexturesDirty,
+  );
+  resource.brickAtlasSourceToken = atlasSourceToken;
+  resource.brickAtlasSourceData = options?.atlasData ?? options?.textureData ?? null;
+  resource.brickAtlasSourceFormat = atlasFormat ?? null;
+  resource.brickAtlasSourcePageTable = pageTable;
+  resource.brickAtlasBuildVersion = (resource.brickAtlasBuildVersion ?? 0) + 1;
+  uniforms.u_brickAtlasEnabled.value = 1;
+  uniforms.u_brickAtlasData.value = resource.brickAtlasDataTexture;
+  (uniforms.u_brickAtlasSize.value as THREE.Vector3).set(
+    atlasBuild.width,
+    atlasBuild.height,
+    atlasBuild.depth,
+  );
+}
+
+function resolveLayerRenderSource(
+  layer: UseVolumeResourcesParams['layers'][number]
+): LayerRenderSource | null {
+  const volume = layer.volume ?? null;
+  const brickAtlas = layer.brickAtlas ?? null;
+  const pageTable = layer.brickPageTable ?? brickAtlas?.pageTable ?? null;
+  if (brickAtlas?.enabled && pageTable) {
+    const depth = layer.fullResolutionDepth > 0 ? layer.fullResolutionDepth : pageTable.volumeShape[0];
+    const height = layer.fullResolutionHeight > 0 ? layer.fullResolutionHeight : pageTable.volumeShape[1];
+    const width = layer.fullResolutionWidth > 0 ? layer.fullResolutionWidth : pageTable.volumeShape[2];
+    return {
+      width,
+      height,
+      depth,
+      channels: brickAtlas.sourceChannels,
+      volume: null,
+      pageTable,
+      brickAtlas
+    };
+  }
+  if (volume) {
+    return {
+      width: volume.width,
+      height: volume.height,
+      depth: volume.depth,
+      channels: volume.channels,
+      volume,
+      pageTable,
+      brickAtlas
+    };
+  }
+  return null;
+}
+
 export function useVolumeResources({
   layers,
   primaryVolume,
   isAdditiveBlending,
   renderContextRevision,
+  rendererRef,
   sceneRef,
   cameraRef,
   controlsRef,
@@ -140,6 +1501,10 @@ export function useVolumeResources({
   }, [applyAdditiveBlendingToResources, isAdditiveBlending]);
 
   useEffect(() => {
+    const flushRendererRenderLists = () => {
+      rendererRef?.current?.renderLists?.dispose?.();
+    };
+
     const removeResource = (key: string) => {
       const resource = resourcesRef.current.get(key);
       if (!resource) {
@@ -158,7 +1523,9 @@ export function useVolumeResources({
       disposeMaterial(resource.mesh.material);
       resource.texture.dispose();
       resource.labelTexture?.dispose();
+      disposeBrickPageTableTextures(resource);
       resourcesRef.current.delete(key);
+      flushRendererRenderLists();
     };
 
     const removeAllResources = () => {
@@ -177,9 +1544,20 @@ export function useVolumeResources({
       return;
     }
 
-    const referenceVolume = primaryVolume;
+    const referenceSource =
+      primaryVolume
+        ? { width: primaryVolume.width, height: primaryVolume.height, depth: primaryVolume.depth }
+        : (() => {
+            for (const layer of layers) {
+              const source = resolveLayerRenderSource(layer);
+              if (source) {
+                return { width: source.width, height: source.height, depth: source.depth };
+              }
+            }
+            return null;
+          })();
 
-    if (!referenceVolume) {
+    if (!referenceSource) {
       removeAllResources();
       currentDimensionsRef.current = null;
       rotationTargetRef.current.set(0, 0, 0);
@@ -198,7 +1576,7 @@ export function useVolumeResources({
       return;
     }
 
-    const { width, height, depth } = referenceVolume;
+    const { width, height, depth } = referenceSource;
     const dimensionsChanged =
       !currentDimensionsRef.current ||
       currentDimensionsRef.current.width !== width ||
@@ -242,17 +1620,73 @@ export function useVolumeResources({
     const materialBlending = additiveBlendingRef.current
       ? THREE.AdditiveBlending
       : THREE.NormalBlending;
+    const max3DTextureSize = resolveRendererMax3DTextureSize(rendererRef);
 
-    layers.forEach((layer, index) => {
-      const volume = layer.volume;
-      if (!volume) {
-        removeResource(layer.key);
+    const assignGpuResidencyUpdater = ({
+      resource,
+      mesh,
+      uniforms,
+      pageTable,
+      brickAtlas,
+      directAtlasFormat,
+    }: {
+      resource: VolumeResources;
+      mesh: THREE.Mesh;
+      uniforms: ShaderUniformMap;
+      pageTable: VolumeBrickPageTable | null;
+      brickAtlas: VolumeBrickAtlas | null;
+      directAtlasFormat: TextureFormat | null;
+    }) => {
+      if (!pageTable || !brickAtlas || !directAtlasFormat) {
+        resource.updateGpuBrickResidencyForCamera = null;
         return;
       }
 
+      const atlasSize = {
+        width: brickAtlas.width,
+        height: brickAtlas.height,
+        depth: brickAtlas.depth,
+      };
+
+      const localCameraPosition = new THREE.Vector3();
+      const lastResidencyCameraPosition = new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN);
+      resource.updateGpuBrickResidencyForCamera = (cameraWorldPosition: THREE.Vector3) => {
+        localCameraPosition.copy(cameraWorldPosition);
+        mesh.worldToLocal(localCameraPosition);
+        const hasPendingResidencyWork = (resource.gpuBrickResidencyMetrics?.pendingBricks ?? 0) > 0;
+        const hasLastResidencyCamera = Number.isFinite(lastResidencyCameraPosition.x);
+        if (
+          hasLastResidencyCamera &&
+          !hasPendingResidencyWork &&
+          lastResidencyCameraPosition.distanceToSquared(localCameraPosition) <= CAMERA_RESIDENCY_EPSILON_SQ
+        ) {
+          return;
+        }
+        lastResidencyCameraPosition.copy(localCameraPosition);
+        applyBrickPageTableUniforms(uniforms, resource, pageTable, {
+          atlasDataToken: brickAtlas,
+          atlasData: brickAtlas.data,
+          atlasFormat: directAtlasFormat,
+          atlasSize,
+          max3DTextureSize,
+          cameraPosition: localCameraPosition,
+          forceFullResidency: true,
+        });
+      };
+    };
+
+    layers.forEach((layer, index) => {
+      const source = resolveLayerRenderSource(layer);
+      if (!source) {
+        removeResource(layer.key);
+        return;
+      }
+      const { volume, pageTable, brickAtlas, width, height, depth, channels } = source;
+      const sourceUsesVolume = Boolean(volume);
+
       let cachedPreparation: ReturnType<typeof getCachedTextureData> | null = null;
 
-      const isGrayscale = volume.channels === 1;
+      const isGrayscale = channels === 1;
       const colormapTexture = getColormapTexture(isGrayscale ? layer.color : DEFAULT_LAYER_COLOR);
 
       let resources: VolumeResources | null = resourcesRef.current.get(layer.key) ?? null;
@@ -260,19 +1694,23 @@ export function useVolumeResources({
       const viewerMode =
         layer.mode === 'slice' || layer.mode === '3d'
           ? layer.mode
-          : volume.depth > 1
+          : depth > 1
             ? '3d'
             : 'slice';
       const zIndex = Number.isFinite(layer.sliceIndex)
         ? Number(layer.sliceIndex)
-        : Math.floor(volume.depth / 2);
+        : Math.floor(depth / 2);
 
       if (viewerMode === '3d') {
-        cachedPreparation = getCachedTextureData(volume);
-        const { data: textureData, format: textureFormat } = cachedPreparation;
+        if (volume) {
+          cachedPreparation = getCachedTextureData(volume);
+        }
+        const textureData = cachedPreparation?.data ?? FALLBACK_VOLUME_TEXTURE_DATA;
+        const textureFormat = cachedPreparation?.format ?? THREE.RedFormat;
+        const directAtlasFormat = brickAtlas ? getTextureFormatFromBrickAtlas(brickAtlas) : null;
 
         let labelTexture: THREE.Data3DTexture | null = null;
-        if (layer.isSegmentation && volume.segmentationLabels) {
+        if (layer.isSegmentation && volume?.segmentationLabels) {
           labelTexture = new THREE.Data3DTexture(
             volume.segmentationLabels,
             volume.width,
@@ -290,10 +1728,10 @@ export function useVolumeResources({
         const needsRebuild =
           !resources ||
           resources.mode !== viewerMode ||
-          resources.dimensions.width !== volume.width ||
-          resources.dimensions.height !== volume.height ||
-          resources.dimensions.depth !== volume.depth ||
-          resources.channels !== volume.channels ||
+          resources.dimensions.width !== width ||
+          resources.dimensions.height !== height ||
+          resources.dimensions.depth !== depth ||
+          resources.channels !== channels ||
           !(resources.texture instanceof THREE.Data3DTexture) ||
           resources.texture.image.data.length !== textureData.length ||
           resources.texture.format !== textureFormat;
@@ -301,13 +1739,12 @@ export function useVolumeResources({
         if (needsRebuild) {
           removeResource(layer.key);
 
-          const texture = new THREE.Data3DTexture(textureData, volume.width, volume.height, volume.depth);
-          texture.format = textureFormat;
+          const texture = sourceUsesVolume
+            ? new THREE.Data3DTexture(textureData, width, height, depth)
+            : createFallbackVolumeDataTexture();
+          texture.format = sourceUsesVolume ? textureFormat : THREE.RedFormat;
           texture.type = THREE.UnsignedByteType;
-          const samplingFilter =
-            layer.samplingMode === 'nearest' ? THREE.NearestFilter : THREE.LinearFilter;
-          texture.minFilter = samplingFilter;
-          texture.magFilter = samplingFilter;
+          applyVolumeTextureSampling(texture, layer.samplingMode);
           texture.unpackAlignment = 1;
           texture.colorSpace = THREE.LinearSRGBColorSpace;
           texture.needsUpdate = true;
@@ -315,17 +1752,18 @@ export function useVolumeResources({
           const shader = VolumeRenderShader;
           const uniforms = THREE.UniformsUtils.clone(shader.uniforms);
           uniforms.u_data.value = texture;
-          uniforms.u_size.value.set(volume.width, volume.height, volume.depth);
+          uniforms.u_size.value.set(width, height, depth);
           uniforms.u_clim.value.set(0, 1);
           uniforms.u_renderstyle.value = layer.renderStyle;
           uniforms.u_renderthreshold.value = 0.5;
           uniforms.u_cmdata.value = colormapTexture;
-          uniforms.u_channels.value = volume.channels;
+          uniforms.u_channels.value = channels;
           uniforms.u_windowMin.value = layer.windowMin;
           uniforms.u_windowMax.value = layer.windowMax;
           uniforms.u_invert.value = layer.invert ? 1 : 0;
           uniforms.u_stepScale.value = volumeStepScaleRef.current;
           uniforms.u_nearestSampling.value = layer.samplingMode === 'nearest' ? 1 : 0;
+          applyAdaptiveLodUniforms(uniforms as ShaderUniformMap, layer.samplingMode);
           if (uniforms.u_segmentationLabels) {
             uniforms.u_segmentationLabels.value = labelTexture ?? FALLBACK_SEGMENTATION_LABEL_TEXTURE;
           }
@@ -343,8 +1781,8 @@ export function useVolumeResources({
           });
           material.depthWrite = false;
 
-          const geometry = new THREE.BoxGeometry(volume.width, volume.height, volume.depth);
-          geometry.translate(volume.width / 2 - 0.5, volume.height / 2 - 0.5, volume.depth / 2 - 0.5);
+          const geometry = new THREE.BoxGeometry(width, height, depth);
+          geometry.translate(width / 2 - 0.5, height / 2 - 0.5, depth / 2 - 0.5);
 
           const mesh = new THREE.Mesh(geometry, material);
           mesh.visible = layer.visible;
@@ -374,21 +1812,81 @@ export function useVolumeResources({
           } else {
             scene.add(mesh);
           }
+          flushRendererRenderLists();
           mesh.updateMatrixWorld(true);
+          const residencyCameraPosition = (() => {
+            const activeCamera = cameraRef.current;
+            if (!activeCamera) {
+              return null;
+            }
+            const local = new THREE.Vector3();
+            local.setFromMatrixPosition(activeCamera.matrixWorld);
+            mesh.worldToLocal(local);
+            return local;
+          })();
 
-          resourcesRef.current.set(layer.key, {
+          const nextResource: VolumeResources = {
             mesh,
             texture,
             labelTexture,
-            dimensions: { width: volume.width, height: volume.height, depth: volume.depth },
-            channels: volume.channels,
+            dimensions: { width, height, depth },
+            channels,
             mode: viewerMode,
             samplingMode: layer.samplingMode,
+            brickPageTable: pageTable,
+            brickOccupancyTexture: null,
+            brickMinTexture: null,
+            brickMaxTexture: null,
+            brickAtlasIndexTexture: null,
+            brickAtlasDataTexture: null,
+            brickMetadataSourcePageTable: null,
+            brickAtlasSourceToken: null,
+            brickAtlasSourceData: null,
+            brickAtlasSourceFormat: null,
+            brickAtlasSourcePageTable: null,
+            brickAtlasBuildVersion: 0,
+            updateGpuBrickResidencyForCamera: null,
+          };
+          applyBrickPageTableUniforms(
+            uniforms as ShaderUniformMap,
+            nextResource,
+            pageTable,
+            brickAtlas
+                ? {
+                    atlasDataToken: brickAtlas,
+                    atlasData: brickAtlas.data,
+                    atlasFormat: directAtlasFormat ?? undefined,
+                    atlasSize: { width: brickAtlas.width, height: brickAtlas.height, depth: brickAtlas.depth },
+                    max3DTextureSize,
+                    cameraPosition: residencyCameraPosition,
+                    forceFullResidency: true
+                  }
+              : volume
+                ? {
+                    textureDataToken: volume.normalized,
+                    textureData,
+                    textureFormat,
+                    max3DTextureSize,
+                  }
+                : undefined,
+          );
+          assignGpuResidencyUpdater({
+            resource: nextResource,
+            mesh,
+            uniforms: uniforms as ShaderUniformMap,
+            pageTable,
+            brickAtlas,
+            directAtlasFormat,
           });
+          resourcesRef.current.set(layer.key, nextResource);
         }
 
         resources = resourcesRef.current.get(layer.key) ?? null;
       } else {
+        if (!volume) {
+          removeResource(layer.key);
+          return;
+        }
         const maxIndex = Math.max(0, volume.depth - 1);
         const clampedIndex = Math.min(Math.max(zIndex, 0), maxIndex);
         const expectedLength = getExpectedSliceBufferLength(volume);
@@ -456,6 +1954,7 @@ export function useVolumeResources({
           } else {
             scene.add(mesh);
           }
+          flushRendererRenderLists();
 
           resourcesRef.current.set(layer.key, {
             mesh,
@@ -465,6 +1964,8 @@ export function useVolumeResources({
             mode: viewerMode,
             samplingMode: layer.samplingMode,
             sliceBuffer: sliceInfo.data,
+            brickPageTable: pageTable,
+            updateGpuBrickResidencyForCamera: null,
           });
         }
 
@@ -473,11 +1974,12 @@ export function useVolumeResources({
 
       if (resources) {
         const { mesh } = resources;
+        resources.brickPageTable = pageTable;
         mesh.visible = layer.visible;
         mesh.renderOrder = index;
 
-        const materialUniforms = (mesh.material as THREE.ShaderMaterial).uniforms;
-        materialUniforms.u_channels.value = volume.channels;
+        const materialUniforms = (mesh.material as THREE.ShaderMaterial).uniforms as ShaderUniformMap;
+        materialUniforms.u_channels.value = channels;
         materialUniforms.u_windowMin.value = layer.windowMin;
         materialUniforms.u_windowMax.value = layer.windowMax;
         materialUniforms.u_invert.value = layer.invert ? 1 : 0;
@@ -497,23 +1999,77 @@ export function useVolumeResources({
         if (materialUniforms.u_nearestSampling) {
           materialUniforms.u_nearestSampling.value = layer.samplingMode === 'nearest' ? 1 : 0;
         }
+        applyAdaptiveLodUniforms(materialUniforms, layer.samplingMode);
 
         if (resources.mode === '3d') {
-          const preparation = cachedPreparation ?? getCachedTextureData(volume);
+          const preparation = volume ? cachedPreparation ?? getCachedTextureData(volume) : null;
+          const directAtlasFormat = brickAtlas ? getTextureFormatFromBrickAtlas(brickAtlas) : null;
+          const residencyCameraPosition = (() => {
+            const activeCamera = cameraRef.current;
+            if (!activeCamera) {
+              return null;
+            }
+            const local = new THREE.Vector3();
+            local.setFromMatrixPosition(activeCamera.matrixWorld);
+            mesh.worldToLocal(local);
+            return local;
+          })();
+          applyBrickPageTableUniforms(
+            materialUniforms,
+            resources,
+            pageTable,
+            brickAtlas
+              ? {
+                  atlasDataToken: brickAtlas,
+                  atlasData: brickAtlas.data,
+                  atlasFormat: directAtlasFormat ?? undefined,
+                  atlasSize: { width: brickAtlas.width, height: brickAtlas.height, depth: brickAtlas.depth },
+                  max3DTextureSize,
+                  cameraPosition: residencyCameraPosition,
+                  forceFullResidency: true
+                }
+              : volume && preparation
+                ? {
+                    textureDataToken: volume.normalized,
+                    textureData: preparation.data,
+                    textureFormat: preparation.format,
+                    max3DTextureSize,
+                  }
+                : undefined
+          );
+          assignGpuResidencyUpdater({
+            resource: resources,
+            mesh,
+            uniforms: materialUniforms,
+            pageTable,
+            brickAtlas,
+            directAtlasFormat,
+          });
           const dataTexture = resources.texture as THREE.Data3DTexture;
           if (resources.samplingMode !== layer.samplingMode) {
-            const samplingFilter =
-              layer.samplingMode === 'nearest' ? THREE.NearestFilter : THREE.LinearFilter;
-            dataTexture.minFilter = samplingFilter;
-            dataTexture.magFilter = samplingFilter;
+            applyVolumeTextureSampling(dataTexture, layer.samplingMode);
             dataTexture.needsUpdate = true;
             resources.samplingMode = layer.samplingMode;
           }
-          dataTexture.image.data = preparation.data;
-          dataTexture.format = preparation.format;
+          if (preparation) {
+            dataTexture.image.data = preparation.data;
+            dataTexture.image.width = width;
+            dataTexture.image.height = height;
+            dataTexture.image.depth = depth;
+            dataTexture.format = preparation.format;
+          } else {
+            dataTexture.image.data = FALLBACK_VOLUME_TEXTURE_DATA;
+            dataTexture.image.width = 1;
+            dataTexture.image.height = 1;
+            dataTexture.image.depth = 1;
+            dataTexture.format = THREE.RedFormat;
+          }
           dataTexture.needsUpdate = true;
           materialUniforms.u_data.value = dataTexture;
-          if (layer.isSegmentation && volume.segmentationLabels) {
+          if (materialUniforms.u_size) {
+            (materialUniforms.u_size.value as THREE.Vector3).set(width, height, depth);
+          }
+          if (layer.isSegmentation && volume?.segmentationLabels) {
             const expectedLength = volume.segmentationLabels.length;
             let labelTexture = resources.labelTexture ?? null;
             const needsLabelTextureRebuild =
@@ -558,6 +2114,12 @@ export function useVolumeResources({
             mesh.updateMatrixWorld();
           }
         } else {
+          if (!volume) {
+            removeResource(layer.key);
+            return;
+          }
+          resources.updateGpuBrickResidencyForCamera = null;
+          disposeBrickPageTableTextures(resources);
           const maxIndex = Math.max(0, volume.depth - 1);
           const clampedIndex = Math.min(Math.max(zIndex, 0), maxIndex);
           const existingBuffer = resources.sliceBuffer ?? null;
@@ -607,6 +2169,7 @@ export function useVolumeResources({
     rotationTargetRef,
     defaultViewStateRef,
     trackGroupRef,
+    rendererRef,
     sceneRef,
   ]);
 

@@ -161,7 +161,10 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
                 <button
                   type="button"
                   className="channel-tab-remove"
-                  onClick={() => onRemoveChannel(channel.id)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRemoveChannel(channel.id);
+                  }}
                   aria-label={removeLabel}
                   disabled={isFrontPageLocked}
                 >
@@ -171,11 +174,10 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
             );
           }
           return (
-            <button
+            <div
               key={channel.id}
               id={`${channel.id}-tab`}
               className={tabClassName}
-              type="button"
               role="tab"
               aria-selected={isActive}
               aria-controls="channel-detail-panel"
@@ -196,6 +198,16 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
                 setActiveChannelId(channel.id);
               }}
               onDoubleClick={startEditingChannelName}
+              onKeyDown={(event) => {
+                if (isFrontPageLocked) {
+                  return;
+                }
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  setEditingChannelId(null);
+                  setActiveChannelId(channel.id);
+                }
+              }}
             >
               <div className="channel-tab-content">
                 <div className="channel-tab-title-row">
@@ -204,7 +216,10 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
                     className="channel-tab-remove"
                     type="button"
                     aria-label={removeLabel}
-                    onClick={() => onRemoveChannel(channel.id)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onRemoveChannel(channel.id);
+                    }}
                     disabled={isFrontPageLocked}
                   >
                     ×
@@ -212,7 +227,7 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
                 </div>
                 <p className="channel-tab-meta">{tabMeta}</p>
               </div>
-            </button>
+            </div>
           );
         })}
         <button

@@ -1,0 +1,73 @@
+{
+  "version": "1.1.0",
+  "updatedAt": "2026-02-13",
+  "approval": {
+    "status": "approved",
+    "approvedAt": "2026-02-13",
+    "approvedBy": "nextgen-volume-program",
+    "notes": "Tier-A local acceptance targets approved for benchmark threshold enforcement. Recalibrate if hardware class changes."
+  },
+  "hardwareTiers": [
+    {
+      "id": "dev-laptop-tier-a",
+      "label": "Developer Laptop Tier A",
+      "notes": "Modern x86_64 laptop/desktop with SSD and >=16 GB RAM. Used for local acceptance gating."
+    }
+  ],
+  "cases": [
+    {
+      "id": "tier-a-single-channel",
+      "name": "Tier A baseline single-channel volume",
+      "tierId": "dev-laptop-tier-a",
+      "dataset": {
+        "width": 96,
+        "height": 96,
+        "depth": 48,
+        "channels": 1,
+        "timepoints": 3,
+        "chunkShape": [1, 16, 64, 64, 1]
+      },
+      "acceptance": {
+        "generationMaxMs": 160,
+        "loadStepMaxMs": {
+          "volume_t0_cold": 140,
+          "volume_t0_chunk_warm": 90,
+          "volume_t1_mixed_cache": 100
+        },
+        "atlasStepMaxMs": {
+          "atlas_t0_scale0": 160,
+          "atlas_t0_scale1": 120
+        },
+        "chunkHitRateMin": 0.3,
+        "scale1RequestMin": 1
+      }
+    },
+    {
+      "id": "tier-a-multichannel",
+      "name": "Tier A multichannel/high-timepoint stress slice",
+      "tierId": "dev-laptop-tier-a",
+      "dataset": {
+        "width": 128,
+        "height": 128,
+        "depth": 64,
+        "channels": 2,
+        "timepoints": 4,
+        "chunkShape": [1, 16, 64, 64, 2]
+      },
+      "acceptance": {
+        "generationMaxMs": 650,
+        "loadStepMaxMs": {
+          "volume_t0_cold": 300,
+          "volume_t0_chunk_warm": 220,
+          "volume_t1_mixed_cache": 240
+        },
+        "atlasStepMaxMs": {
+          "atlas_t0_scale0": 320,
+          "atlas_t0_scale1": 240
+        },
+        "chunkHitRateMin": 0.3,
+        "scale1RequestMin": 1
+      }
+    }
+  ]
+}

@@ -127,17 +127,20 @@ export function handleControllerSelectStart(
         const initialAngle = computeYawRotation(
           yawVector,
           yawBasisForward,
-          yawBasisRight,
-          placement.yaw,
+          yawBasisRight
         );
-        entry.hudRotationState = {
-          hud: hudCategory,
-          mode: 'yaw',
-          initialYaw: placement.yaw,
-          initialAngle,
-          basisForward: yawBasisForward,
-          basisRight: yawBasisRight,
-        };
+        if (initialAngle === null) {
+          entry.activeUiTarget = null;
+        } else {
+          entry.hudRotationState = {
+            hud: hudCategory,
+            mode: 'yaw',
+            initialYaw: placement.yaw,
+            initialAngle,
+            basisForward: yawBasisForward,
+            basisRight: yawBasisRight,
+          };
+        }
       } else {
         const pitchVector = vrHudPitchVectorRef.current;
         pitchVector.copy(entry.rayOrigin).sub(placement.position);
@@ -147,16 +150,19 @@ export function handleControllerSelectStart(
         computeViewerYawBasis(rendererInstance, camera, pitchBasisForward, pitchBasisRight);
         const initialAngle = computePitchRotation(
           pitchVector,
-          pitchBasisForward,
-          placement.pitch ?? 0,
+          pitchBasisForward
         );
-        entry.hudRotationState = {
-          hud: hudCategory,
-          mode: 'pitch',
-          initialPitch: placement.pitch ?? 0,
-          initialAngle,
-          basisForward: pitchBasisForward,
-        };
+        if (initialAngle === null) {
+          entry.activeUiTarget = null;
+        } else {
+          entry.hudRotationState = {
+            hud: hudCategory,
+            mode: 'pitch',
+            initialPitch: placement.pitch ?? 0,
+            initialAngle,
+            basisForward: pitchBasisForward,
+          };
+        }
       }
     } else {
       entry.activeUiTarget = null;
@@ -307,16 +313,19 @@ export function handleControllerSelectStart(
         const initialAngle = computeYawRotation(
           vrHandleDirectionTempRef.current,
           yawBasisForward,
-          yawBasisRight,
-          volumeYawRef.current,
+          yawBasisRight
         );
-        entry.volumeRotationState = {
-          mode: 'yaw',
-          initialYaw: volumeYawRef.current,
-          initialAngle,
-          basisForward: yawBasisForward,
-          basisRight: yawBasisRight,
-        };
+        if (initialAngle === null) {
+          entry.activeUiTarget = null;
+        } else {
+          entry.volumeRotationState = {
+            mode: 'yaw',
+            initialYaw: volumeYawRef.current,
+            initialAngle,
+            basisForward: yawBasisForward,
+            basisRight: yawBasisRight,
+          };
+        }
       } else {
         vrHandleDirectionTempRef.current.x = 0;
         const pitchBasisForward = new THREE.Vector3();
@@ -324,15 +333,18 @@ export function handleControllerSelectStart(
         computeViewerYawBasis(rendererInstance, camera, pitchBasisForward, pitchBasisRight);
         const initialAngle = computePitchRotation(
           vrHandleDirectionTempRef.current,
-          pitchBasisForward,
-          volumePitchRef.current,
+          pitchBasisForward
         );
-        entry.volumeRotationState = {
-          mode: 'pitch',
-          initialPitch: volumePitchRef.current,
-          initialAngle,
-          basisForward: pitchBasisForward,
-        };
+        if (initialAngle === null) {
+          entry.activeUiTarget = null;
+        } else {
+          entry.volumeRotationState = {
+            mode: 'pitch',
+            initialPitch: volumePitchRef.current,
+            initialAngle,
+            basisForward: pitchBasisForward,
+          };
+        }
       }
     } else {
       entry.activeUiTarget = null;

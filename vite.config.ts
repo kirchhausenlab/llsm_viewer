@@ -2,12 +2,23 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 
-const repositoryName = process.env.GITHUB_REPOSITORY?.split('/')?.[1];
-const isGitHubActions = process.env.GITHUB_ACTIONS === 'true';
-const defaultBase = isGitHubActions && repositoryName ? `/${repositoryName}/` : '/';
+function requireEnv(name: string): string {
+  const raw = process.env[name];
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    throw new Error(`Missing required environment variable ${name}.`);
+  }
+  return raw.trim();
+}
+
+function normalizeBasePath(basePath: string): string {
+  const prefixed = basePath.startsWith('/') ? basePath : `/${basePath}`;
+  return prefixed.endsWith('/') ? prefixed : `${prefixed}/`;
+}
+
+const deployBasePath = normalizeBasePath(requireEnv('DEPLOY_BASE_PATH'));
 
 export default defineConfig({
-  base: process.env.DEPLOY_BASE_PATH ?? defaultBase,
+  base: deployBasePath,
   plugins: [react()],
   server: {
     host: '0.0.0.0',

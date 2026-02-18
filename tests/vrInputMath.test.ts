@@ -20,18 +20,16 @@ console.log('Starting VR input math tests');
   const forward = new THREE.Vector3(0, 0, -1);
   const right = new THREE.Vector3(1, 0, 0);
   const direction = new THREE.Vector3(0, 0, -2);
-  assert.strictEqual(computeYawRotation(direction, forward, right, 0.7), 0);
-  const fallback = 0.42;
-  assert.strictEqual(computeYawRotation(new THREE.Vector3(), forward, right, fallback), fallback);
+  assert.strictEqual(computeYawRotation(direction, forward, right), 0);
+  assert.strictEqual(computeYawRotation(new THREE.Vector3(), forward, right), null);
 })();
 
 (() => {
   const forward = new THREE.Vector3(0, 0, 1);
   const direction = new THREE.Vector3(0, 1, 1);
   const expected = Math.atan2(1, 1);
-  assert.strictEqual(computePitchRotation(direction, forward, 0), expected);
-  const fallback = -0.5;
-  assert.strictEqual(computePitchRotation(new THREE.Vector3(), forward, fallback), fallback);
+  assert.strictEqual(computePitchRotation(direction, forward), expected);
+  assert.strictEqual(computePitchRotation(new THREE.Vector3(), forward), null);
 })();
 
 (() => {

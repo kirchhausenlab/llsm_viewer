@@ -13,7 +13,13 @@ import { computeTrackSummary } from '../../../shared/utils/trackSummary';
 import { useDatasetSetup } from '../../../hooks/dataset';
 import { useTrackState } from '../../../hooks/tracks';
 import { useChannelLayerStateContext } from '../../../hooks/useChannelLayerState';
-import { createVolumeProvider } from '../../../core/volumeProvider';
+import {
+  createVolumeProvider,
+  DEFAULT_MAX_CACHED_CHUNK_BYTES,
+  DEFAULT_MAX_CACHED_VOLUMES,
+  DEFAULT_MAX_CONCURRENT_CHUNK_READS,
+  DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS
+} from '../../../core/volumeProvider';
 import { useViewerPlayback } from '../../../hooks/viewer';
 import useChannelEditing from './useChannelEditing';
 import { useRouteDatasetResetState } from './useRouteDatasetResetState';
@@ -44,6 +50,20 @@ export type AppRouteState = {
   datasetSetupProps: DatasetSetupRouteProps;
   viewerRouteProps: ViewerRouteProps;
 };
+
+function selectDeterministicLayerKey(layers: ReadonlyArray<{ key: string }>): string | null {
+  if (layers.length === 0) {
+    return null;
+  }
+  return [...layers].sort((left, right) => left.key.localeCompare(right.key))[0]?.key ?? null;
+}
+
+function selectDeterministicId(values: ReadonlyArray<string>): string | null {
+  if (values.length === 0) {
+    return null;
+  }
+  return [...values].sort((left, right) => left.localeCompare(right))[0] ?? null;
+}
 
 export function useAppRouteState(): AppRouteState {
   const {
@@ -139,6 +159,7 @@ export function useAppRouteState(): AppRouteState {
   const playback = useViewerPlayback();
   const { selectedIndex, setSelectedIndex, isPlaying, fps, setFps, stopPlayback, setIsPlaying } = playback;
   const is3dViewerAvailable = experimentDimension === '3d';
+  const [preferBrickResidency, setPreferBrickResidency] = useState(is3dViewerAvailable);
 
   const effectiveTrackScale = useMemo(() => {
     if (!preprocessedExperiment) {
@@ -208,7 +229,10 @@ export function useAppRouteState(): AppRouteState {
     return createVolumeProvider({
       manifest: preprocessedExperiment.manifest,
       storage: preprocessedExperiment.storageHandle.storage,
-      maxCachedVolumes: 12
+      maxCachedVolumes: DEFAULT_MAX_CACHED_VOLUMES,
+      maxCachedChunkBytes: DEFAULT_MAX_CACHED_CHUNK_BYTES,
+      maxConcurrentChunkReads: DEFAULT_MAX_CONCURRENT_CHUNK_READS,
+      maxConcurrentPrefetchLoads: DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS
     });
   }, [preprocessedExperiment]);
 
@@ -224,6 +248,23 @@ export function useAppRouteState(): AppRouteState {
     return () => {
       if (window.__LLSM_VOLUME_PROVIDER__ === volumeProvider) {
         delete window.__LLSM_VOLUME_PROVIDER__;
+      }
+    };
+  }, [volumeProvider]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (!import.meta.env?.DEV) {
+      return;
+    }
+
+    const diagnosticsGetter = volumeProvider ? () => volumeProvider.getDiagnostics() : null;
+    window.__LLSM_VOLUME_PROVIDER_DIAGNOSTICS__ = diagnosticsGetter;
+    return () => {
+      if (window.__LLSM_VOLUME_PROVIDER_DIAGNOSTICS__ === diagnosticsGetter) {
+        delete window.__LLSM_VOLUME_PROVIDER_DIAGNOSTICS__;
       }
     };
   }, [volumeProvider]);
@@ -357,12 +398,16 @@ export function useAppRouteState(): AppRouteState {
 
   const {
     currentLayerVolumes,
+    currentLayerPageTables,
+    currentLayerBrickAtlases,
+    volumeProviderDiagnostics,
     setCurrentLayerVolumes,
     playbackLayerKeys,
     handleLaunchViewer
   } = useRouteLayerVolumes({
     isViewerLaunched,
     isLaunchingViewer,
+    isPlaying,
     preprocessedExperiment,
     volumeProvider,
     loadedChannelIds,
@@ -370,6 +415,7 @@ export function useAppRouteState(): AppRouteState {
     channelActiveLayer,
     channelVisibility,
     layerChannelMap,
+    preferBrickResidency,
     volumeTimepointCount,
     selectedIndex,
     clearDatasetError,
@@ -383,10 +429,20 @@ export function useAppRouteState(): AppRouteState {
     setIsPlaying,
     showLaunchError
   });
+  const brickResidencyLayerKeys = useMemo(() => {
+    if (!preferBrickResidency) {
+      return [] as string[];
+    }
+    return loadedDatasetLayers
+      .filter((layer) => !layer.isSegmentation && layer.depth > 1)
+      .map((layer) => layer.key);
+  }, [loadedDatasetLayers, preferBrickResidency]);
   const { canAdvancePlaybackToIndex } = useRoutePlaybackPrefetch({
     isViewerLaunched,
     isPlaying,
     fps,
+    preferBrickResidency,
+    brickResidencyLayerKeys,
     volumeProvider,
     volumeTimepointCount,
     playbackLayerKeys,
@@ -467,6 +523,14 @@ export function useAppRouteState(): AppRouteState {
       handleVrButtonClick
     }
   } = viewerControls;
+
+  useEffect(() => {
+    if (!is3dViewerAvailable) {
+      setPreferBrickResidency(false);
+      return;
+    }
+    setPreferBrickResidency(viewerMode === '3d');
+  }, [is3dViewerAvailable, viewerMode]);
 
   useEffect(() => {
     if (datasetError && datasetErrorContext === 'launch') {
@@ -611,7 +675,7 @@ export function useAppRouteState(): AppRouteState {
       if (current && loadedChannelIds.includes(current)) {
         return current;
       }
-      return loadedChannelIds[0] ?? null;
+      return selectDeterministicId(loadedChannelIds);
     });
   }, [loadedChannelIds]);
 
@@ -625,7 +689,7 @@ export function useAppRouteState(): AppRouteState {
       if (current && trackSets.some((trackSet) => trackSet.id === current)) {
         return current;
       }
-      return trackSets[0]?.id ?? null;
+      return selectDeterministicId(trackSets.map((trackSet) => trackSet.id));
     });
   }, [trackSets]);
 
@@ -654,9 +718,9 @@ export function useAppRouteState(): AppRouteState {
         const activeKey = next[channelId];
         const hasActive = activeKey ? channelLayers.some((layer) => layer.key === activeKey) : false;
         if (!hasActive) {
-          const fallback = channelLayers[0];
-          if (fallback) {
-            next[channelId] = fallback.key;
+          const deterministicLayerKey = selectDeterministicLayerKey(channelLayers);
+          if (deterministicLayerKey) {
+            next[channelId] = deterministicLayerKey;
             changed = true;
           }
         }
@@ -691,6 +755,8 @@ export function useAppRouteState(): AppRouteState {
     layers: loadedDatasetLayers,
     selectedIndex,
     layerVolumes: currentLayerVolumes,
+    layerPageTables: currentLayerPageTables,
+    layerBrickAtlases: currentLayerBrickAtlases,
     loadVolume: volumeProvider ? volumeProvider.getVolume : null,
     layerAutoThresholds,
     setLayerAutoThresholds,
@@ -795,6 +861,7 @@ export function useAppRouteState(): AppRouteState {
           onVoxelFollowRequest: handleVoxelFollowRequest,
           onHoverVoxelChange: handleHoverVoxelChange
         },
+        runtimeDiagnostics: volumeProviderDiagnostics,
         canAdvancePlayback: canAdvancePlaybackToIndex,
         onRegisterReset: handleRegisterReset,
         onVolumeStepScaleChange: handleVolumeStepScaleChange,
@@ -906,6 +973,7 @@ export function useAppRouteState(): AppRouteState {
         onChannelVisibilityToggle: handleChannelVisibilityToggle,
         channelLayersMap,
         layerVolumesByKey: currentLayerVolumes,
+        layerBrickAtlasesByKey: currentLayerBrickAtlases,
         channelActiveLayer,
         layerSettings,
         getLayerDefaultSettings: createLayerDefaultSettings,

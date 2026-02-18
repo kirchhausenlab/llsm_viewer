@@ -491,7 +491,9 @@ export function useVolumeViewerLifecycle({
         try {
           sessionCleanupRef.current?.();
         } finally {
-          activeSession.end().catch(() => undefined);
+          activeSession.end().catch((error) => {
+            console.error('Failed to end active XR session during viewer cleanup.', error);
+          });
         }
       }
 

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { resolveDatasetFixture } from './helpers/dataset';
-import { launchViewerFromFixture } from './helpers/workflows';
+import { launchViewerFromFixture, STANDARD_VOXEL_RESOLUTION } from './helpers/workflows';
 
 const fixture = resolveDatasetFixture();
 
@@ -16,9 +16,9 @@ function buildTrackCsvBuffer(): Buffer {
 }
 
 test('@smoke can upload tracks and interact with track controls after launch', async ({ page }) => {
-  test.skip(!fixture.available, fixture.reason ?? 'Local TIFF fixture is unavailable.');
-
   await launchViewerFromFixture(page, fixture, {
+    channelName: 'Ch1',
+    voxelResolution: STANDARD_VOXEL_RESOLUTION,
     trackCsv: {
       name: 'tracks.csv',
       mimeType: 'text/csv',

@@ -21,6 +21,7 @@ const clamp = (value: number, min: number, max: number): number => {
 
 type BrightnessContrastHistogramProps = {
   volume: NormalizedVolume | null;
+  histogram?: Uint32Array | null;
   isPlaying?: boolean;
   windowMin: number;
   windowMax: number;
@@ -173,6 +174,7 @@ const createMappingPath = (
 
 function BrightnessContrastHistogram({
   volume,
+  histogram: histogramOverride = null,
   isPlaying = false,
   windowMin,
   windowMax,
@@ -186,6 +188,12 @@ function BrightnessContrastHistogram({
   const histogramVolumeRef = useRef<NormalizedVolume | null>(null);
 
   useEffect(() => {
+    if (histogramOverride) {
+      histogramVolumeRef.current = volume;
+      setHistogram(histogramOverride);
+      return;
+    }
+
     if (!volume) {
       histogramVolumeRef.current = null;
       setHistogram(null);
@@ -237,7 +245,7 @@ function BrightnessContrastHistogram({
         globalThis.clearTimeout(timeoutHandle);
       }
     };
-  }, [isPlaying, volume]);
+  }, [histogramOverride, isPlaying, volume]);
 
   const histogramShape = useMemo(() => createHistogramPath(histogram), [histogram]);
 

@@ -16,6 +16,7 @@ import {
   GRAYSCALE_COLOR_SWATCHES,
   normalizeHexColor
 } from '../shared/colorMaps/layerColors';
+import { getTrackColorHex } from '../shared/colorMaps/trackColors';
 import {
   brightnessContrastModel,
   clampWindowBounds,
@@ -119,13 +120,13 @@ export function useChannelLayerState(): ChannelLayerState {
       return new Map<string, string>();
     }
 
-    const fallbackSwatch = GRAYSCALE_COLOR_SWATCHES[0];
     const shiftedSwatches = GRAYSCALE_COLOR_SWATCHES.slice(1);
 
     const map = new Map<string, string>();
     colorableChannels.forEach((channel, index) => {
-      const swatch = index < shiftedSwatches.length ? shiftedSwatches[index] : fallbackSwatch;
-      map.set(channel.id, normalizeHexColor(swatch?.value, DEFAULT_LAYER_COLOR));
+      const swatch = shiftedSwatches[index];
+      const explicitColor = swatch ? swatch.value : getTrackColorHex(channel.id);
+      map.set(channel.id, normalizeHexColor(explicitColor, DEFAULT_LAYER_COLOR));
     });
     return map;
   }, [channelSources.channels]);

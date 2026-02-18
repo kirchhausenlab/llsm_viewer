@@ -1,8 +1,74 @@
 import { defineConfig, devices } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const PORT = Number(process.env.PLAYWRIGHT_PORT ?? 4173);
-const HOST = process.env.PLAYWRIGHT_HOST ?? '127.0.0.1';
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? `http://${HOST}:${PORT}`;
+const PLAYWRIGHT_ENV_FILE = resolve(dirname(fileURLToPath(import.meta.url)), '.env.playwright');
+
+function loadRequiredEnvFile(path: string): void {
+  let raw: string;
+  try {
+    raw = readFileSync(path, 'utf8');
+  } catch {
+    throw new Error(`Missing required Playwright env file at ${path}.`);
+  }
+
+  const lines = raw.split(/\r?\n/u);
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const original = lines[lineIndex] ?? '';
+    const line = original.trim();
+    if (line.length === 0 || line.startsWith('#')) {
+      continue;
+    }
+    const separator = line.indexOf('=');
+    if (separator <= 0) {
+      throw new Error(`Invalid env assignment in ${path}:${lineIndex + 1}.`);
+    }
+    const key = line.slice(0, separator).trim();
+    const value = line.slice(separator + 1).trim();
+    if (!/^[A-Z0-9_]+$/u.test(key)) {
+      throw new Error(`Invalid env key "${key}" in ${path}:${lineIndex + 1}.`);
+    }
+    if (value.length === 0) {
+      throw new Error(`Empty env value for "${key}" in ${path}:${lineIndex + 1}.`);
+    }
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
+    }
+  }
+}
+
+loadRequiredEnvFile(PLAYWRIGHT_ENV_FILE);
+
+function requireEnv(name: string): string {
+  const raw = process.env[name];
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    throw new Error(`Missing required environment variable ${name}.`);
+  }
+  return raw.trim();
+}
+
+function parsePositiveInteger(raw: string, name: string): number {
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer, received "${raw}".`);
+  }
+  return parsed;
+}
+
+function parseNonNegativeInteger(raw: string, name: string): number {
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`${name} must be a non-negative integer, received "${raw}".`);
+  }
+  return parsed;
+}
+
+const HOST = requireEnv('PLAYWRIGHT_HOST');
+const PORT = parsePositiveInteger(requireEnv('PLAYWRIGHT_PORT'), 'PLAYWRIGHT_PORT');
+const BASE_URL = requireEnv('PLAYWRIGHT_BASE_URL');
+const RETRIES = parseNonNegativeInteger(requireEnv('PLAYWRIGHT_RETRIES'), 'PLAYWRIGHT_RETRIES');
+const WORKERS = parsePositiveInteger(requireEnv('PLAYWRIGHT_WORKERS'), 'PLAYWRIGHT_WORKERS');
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -15,8 +81,8 @@ export default defineConfig({
     }
   },
   fullyParallel: false,
-  retries: process.env.CI ? 1 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  retries: RETRIES,
+  workers: WORKERS,
   use: {
     baseURL: BASE_URL,
     trace: 'on-first-retry',

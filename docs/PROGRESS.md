@@ -2,11 +2,153 @@
 
 ## Current status
 - Markdown documentation has been centralized under `docs/`.
+- The next-gen volume pipeline refactor program under `docs/refactor-nextgen-volume/` is complete for the currently scoped backlog (Phases 0-6).
+- vNext preprocessed schema implementation is complete (strict format + multiscale descriptors + spatial chunk writes/reads).
 - The major refactor program is complete and archived in `docs/refactor/ARCHIVE_SUMMARY.md`.
 - The app has local verification gates for fast checks, UI/browser checks, and full/nightly runs.
 - Viewer, route, VR, and preprocessing hotspots have been decomposed into smaller modules to reduce coupling.
 
 ## Most recent high-signal updates
+- Improved preprocessing throughput on the main ingest path:
+  - 3D/2D file decoding now runs in bounded batches with next-batch prefetch to reduce one-file-at-a-time worker startup overhead in `preprocess.ts`
+  - chunk writes now use a bounded in-flight write queue (instead of hard per-chunk write serialization)
+  - per-scale histogram generation is now fused with chunk-stat scanning during chunk emission (removes an extra full-volume pass)
+  - segmentation label downsampling now avoids per-voxel `Map` allocations by using fixed-size local candidate arrays
+  - OPFS/directory storage backends now cache directory handles for read/write path reuse
+  - front-page preprocessing now enables shard-backed write mode by default (`storageStrategy.sharding.enabled=true`)
+- Landed true 3D brick-residency cutover (`NGR-080/081/082`):
+  - provider now exposes `getBrickAtlas` / `hasBrickAtlas` / `prefetchBrickAtlases` and builds atlas payloads directly from chunk reads (sharded + non-sharded)
+  - route/playback prefetch/readiness in 3D mode now uses brick-atlas residency instead of full-volume cache residency
+  - viewer 3D path now supports atlas-only layers (`volume === null`) without requiring full-volume `u_data` uploads
+  - added/updated coverage in:
+    - `tests/preprocessedDataset.test.ts`
+    - `tests/app/hooks/useRouteLayerVolumes.test.ts`
+    - `tests/app/hooks/useRoutePlaybackPrefetch.test.ts`
+    - `tests/useVolumeResources.test.ts`
+  - provider cache hardening completed (`NGR-083`): brick page-table/atlas caches now use bounded LRU eviction tied to `setMaxCachedVolumes(...)`
+  - provider atlas build throughput improved (`NGR-084`): brick-atlas chunk plans now execute in bounded parallel workers
+  - mixed layer residency hardening completed (`NGR-085`): route/playback now split atlas+volume backend usage per-layer to preserve segmentation/slice correctness
+  - refreshed benchmark report in `docs/refactor-nextgen-volume/BASELINE_REPORT.json` (2/2 matrix cases passing):
+    - `tier-a-single-channel`: generation 27.89 ms, cold 31.12 ms, warm 18.98 ms, mixed 19.22 ms
+    - `tier-a-multichannel`: generation 80.36 ms, cold 48.06 ms, warm 46.54 ms, mixed 46.70 ms
+- Closed remaining next-gen volume refactor backlog items (`NGR-050/052/053/060/061/070/071/072`):
+  - linear atlas sampling path received additional branch/corner-planning optimization and CPU analysis coverage
+  - skip-model parity coverage expanded with deterministic randomized checks
+  - segmentation overlay correctness now covers atlas-enabled linear->nearest transitions
+  - runtime defaults tuned to measured values (`64MB` chunk cache, `10` concurrent chunk reads)
+  - dead legacy runtime/preprocess surfaces removed (`verifyDigestsOnRead` path, `preprocessedDataset/hash.ts`)
+  - benchmark matrix chunk shapes tuned to `[1,16,64,64,c]`
+  - strict-unused and full required verification + benchmark commands all pass
+- Continued Phase 4 linear-atlas optimization (`NGR-050`, `IN_PROGRESS`):
+  - `VolumeRenderShader.sample_brick_atlas_linear(...)` cross-brick path now derives corner bricks from base/far axis spans (instead of per-corner brick recomputation), reducing branch depth in mixed-brick sampling
+  - added exact voxel-center degenerate fast path in linear atlas sampling
+  - added CPU analysis helper + tests:
+    - `analyzeLinearAtlasSamplingCpu(...)`
+    - `tests/volumeRenderShaderAtlasPlan.test.ts`
+- Continued Phase 4 skip-model parity hardening (`NGR-052`, `IN_PROGRESS`):
+  - added deterministic randomized parity checks between `shouldSkipWithBrickStatsCpu(...)` and an independent reference model in `tests/volumeRenderShaderSkipModel.test.ts`
+- Refreshed benchmark report in `docs/refactor-nextgen-volume/BASELINE_REPORT.json` (2/2 matrix cases passing):
+  - `tier-a-single-channel`: generation 44.61 ms, cold 39.51 ms, warm 19.40 ms, mixed 20.23 ms
+  - `tier-a-multichannel`: generation 85.08 ms, cold 51.69 ms, warm 49.62 ms, mixed 50.84 ms
+- Completed adaptive per-sample shader LOD integration (`NGR-051`, `DONE`):
+  - `VolumeRenderShader` now supports LOD-aware sampling paths for both full-volume and atlas bridges, with adaptive LOD applied in MIP/ISO traversal loops
+  - full-volume linear path now uses `textureLod(...)`; atlas linear path now uses adaptive coarse-voxel fallback
+  - runtime/viewer wiring now applies mip-capable texture filtering (`LinearMipmapLinearFilter`) and adaptive LOD uniforms for linear sampling mode
+  - added CPU mirror + focused tests in `tests/volumeRenderShaderLodModel.test.ts`
+- Continued correctness hardening (`NGR-052` / `NGR-053`, `IN_PROGRESS`):
+  - extended `tests/useVolumeResources.test.ts` with segmentation overlay correctness checks while atlas sampling is enabled (initial bind, rerender updates, fallback labels)
+  - kept focused skip-model parity coverage in `tests/volumeRenderShaderSkipModel.test.ts`
+- Expanded tuning/hardening infrastructure (`NGR-060` / `NGR-061` / `NGR-062` / `NGR-063`):
+  - provider runtime now exposes tuning knobs (`maxCachedChunkBytes`, `maxConcurrentChunkReads`, `maxConcurrentPrefetchLoads`)
+  - benchmark harness now supports provider tuning env overrides
+  - preprocess chunk sizing now supports `storageStrategy.chunkTargetBytes`
+  - added large-volume stress/perf and playback-cancellation stability checks in `tests/perf/nextgenVolumeRuntimeStress.test.ts`
+  - refreshed benchmark report in `docs/refactor-nextgen-volume/BASELINE_REPORT.json` (2/2 matrix cases passing)
+- Continued Phase 4 brick indirection optimization (`NGR-050`, `IN_PROGRESS`):
+  - `VolumeRenderShader.sample_brick_atlas_linear(...)` cross-brick path now caches/reuses corner brick atlas-index lookups to cut duplicate indirection fetches while keeping same-brick fast-path behavior
+  - `useVolumeResources` now reuses page-table metadata textures when the page-table reference is unchanged (`brickMetadataSourcePageTable`)
+  - atlas-data reuse now tracks a stable source token (`brickAtlasSourceToken`, keyed by `volume.normalized`) for better render-only update reuse behavior
+  - added/updated coverage in `tests/useVolumeResources.test.ts`
+- Continued Phase 4 traversal pruning correctness hardening (`NGR-052`, `IN_PROGRESS`):
+  - expanded `shouldSkipWithBrickStatsCpu(...)` model tests with epsilon-boundary, invert/iso threshold, and window-clamp edge cases in `tests/volumeRenderShaderSkipModel.test.ts`
+  - refreshed benchmark report in `docs/refactor-nextgen-volume/BASELINE_REPORT.json` (2/2 matrix cases passing)
+- Advanced Phase 4 brick indirection bridge (`NGR-050`, now `IN_PROGRESS`):
+  - atlas-data build path in `useVolumeResources` now supports multi-channel texture formats (`Red`/`RG`/`RGBA`) instead of single-channel-only gating
+  - `VolumeRenderShader.sample_color` now supports:
+    - nearest-mode atlas voxel sampling
+    - linear-mode parity via shader-side trilinear interpolation over atlas/page-table voxel lookups
+    - same-brick fast path for linear sampling (atlas index resolved once when all trilinear taps stay in one brick)
+  - `useVolumeResources` now reuses atlas data textures when page-table/source texture references are unchanged, reducing rebuild work during window/invert-style render-only updates
+  - shader linear-path trilinear taps now hoist invariant atlas grid/chunk setup per sample to reduce repeated per-corner ALU work
+  - extended coverage in `tests/useVolumeResources.test.ts` for multi-channel atlas texture format + data-layout assertions under linear sampling
+  - refreshed benchmark report in `docs/refactor-nextgen-volume/BASELINE_REPORT.json` (2/2 matrix cases passing)
+- Advanced Phase 4 traversal pruning (`NGR-052`, now `IN_PROGRESS`):
+  - shader MIP/ISO loops continue using conservative occupancy/min-max-based sample skipping with invert-aware bounds and safety guards
+  - extended targeted coverage for window/invert updates while atlas sampling is active (including linear-mode path), plus fallback-reset/build-state assertions in atlas resource wiring tests
+  - added `shouldSkipWithBrickStatsCpu(...)` mirror helper and focused tests (`tests/volumeRenderShaderSkipModel.test.ts`) for window/invert/iso edge-case skip semantics
+  - refreshed benchmark report in `docs/refactor-nextgen-volume/BASELINE_REPORT.json` (2/2 matrix cases passing)
+- Finalized benchmark matrix signoff and enforcement (`NGR-011`):
+  - matrix config now carries explicit approval metadata (`approval.status`, `approvedAt`, `approvedBy`, `notes`)
+  - benchmark harness now validates matrix config through shared schema utilities and enforces approval for thresholded runs
+  - emergency override added for temporary bring-up: `ALLOW_UNAPPROVED_BENCHMARK_MATRIX=1`
+  - baseline report now records matrix approval metadata for auditability
+  - added matrix contract test coverage in `tests/perf/benchmarkMatrixConfig.test.ts`
+- Completed schema validation fixtures/tests and strict open-time coercion (`NGR-023`):
+  - added strict manifest validator/coercion for vNext schema, including descriptor rank/shape checks and sharding divisibility constraints
+  - open path now rejects malformed manifests before runtime/provider usage
+  - added fixture-backed tests covering valid/invalid sharded + non-sharded manifests
+  - aligned sharded runtime test fixture chunk-stats metadata with strict schema invariants
+  - refreshed benchmark report in `docs/refactor-nextgen-volume/BASELINE_REPORT.json` (2/2 matrix cases passing)
+- Completed histogram/statistics schema alignment (`NGR-034`):
+  - histogram descriptor moved to the per-scale contract (`scale.zarr.histogram`) instead of layer-level
+  - preprocessing now writes histogram chunks per scale/timepoint while generating multiscale outputs
+  - runtime now reads histogram from base scale descriptor (`zarr.scales[0]`)
+  - synthetic benchmark fixtures/tests updated to per-scale histogram paths
+  - refreshed benchmark report in `docs/refactor-nextgen-volume/BASELINE_REPORT.json` (2/2 matrix cases passing)
+- Completed diagnostics surfacing slice (`NGR-043`):
+  - route layer-volume hook now publishes live provider diagnostics snapshots (`useRouteLayerVolumes`)
+  - diagnostics are threaded into viewer props and rendered in-app as a DEV runtime overlay in `VolumeViewer`
+  - existing DEV global diagnostics hook remains available for ad-hoc inspection
+  - tests updated in `tests/app/hooks/useRouteLayerVolumes.test.ts` and `tests/ViewerShellContainer.test.ts`
+  - refreshed benchmark report in `docs/refactor-nextgen-volume/BASELINE_REPORT.json` (2/2 matrix cases passing)
+- Implemented real shard encoding/write + shard-aware runtime reads (`NGR-032B`):
+  - added shared sharding helpers (`src/shared/utils/preprocessedDataset/sharding.ts`) for layout mapping + shard encode/decode
+  - preprocess now writes real shard payloads under `<arrayPath>/shards/<coords>.shard` when sharding is enabled
+  - runtime `volumeProvider` now resolves and decodes sharded chunk reads through the existing chunk cache path
+  - test coverage added for sharded runtime loading in `tests/preprocessedDataset.test.ts`
+- Finalized benchmark acceptance criteria and matrix-driven harness:
+  - benchmark matrix config added at `docs/refactor-nextgen-volume/BENCHMARK_MATRIX.json`
+  - matrix reference doc added at `docs/refactor-nextgen-volume/BENCHMARK_MATRIX.md`
+  - benchmark harness now executes configured matrix cases and enforces per-case thresholds
+  - report now includes matrix metadata, environment snapshot, per-case acceptance results, and summary
+  - latest run passed 2/2 configured cases
+- Implemented third next-gen runtime slice (prefetch/cancellation + diagnostics):
+  - `volumeProvider.prefetch(...)` now accepts explicit policy (`missing-only` / `force`) and `AbortSignal`
+  - playback prefetch queue now aborts stale sessions explicitly and tags runtime prefetch reason as `playback`
+  - provider diagnostics snapshot now reports residency, cache pressure, miss rates, and active prefetch requests
+  - DEV diagnostics getter surfaced as `window.__LLSM_VOLUME_PROVIDER_DIAGNOSTICS__`
+  - test coverage expanded in `tests/preprocessedDataset.test.ts` for policy/cancellation/diagnostics behavior
+  - refreshed benchmark report in `docs/refactor-nextgen-volume/BASELINE_REPORT.json`
+- Implemented the first functional next-gen volume pipeline slice:
+  - strict preprocessed dataset format id: `llsm-viewer-preprocessed-vnext`
+  - layer schema moved to `zarr.scales[]` + histogram
+  - preprocessing now writes spatial chunks and multiscale mip levels
+  - runtime provider now reconstructs full timepoints from spatial chunks (base scale)
+  - test coverage updated in `tests/preprocessedDataset.test.ts`
+  - schema reference added: `docs/refactor-nextgen-volume/SCHEMA_VNEXT.md`
+- Implemented second next-gen runtime/data slice:
+  - per-scale chunk metadata arrays now emitted (`min`, `max`, `occupancy`)
+  - runtime provider now includes chunk-cache budgeting + in-flight dedupe
+  - chunk assembly now uses prioritized center-first bounded concurrency
+  - sharding plan metadata added to descriptors, followed by real shard write/read path in later work
+  - baseline benchmark harness added (`scripts/benchmark-nextgen-volume.ts`) with report output in `docs/refactor-nextgen-volume/BASELINE_REPORT.json`
+- Created `docs/refactor-nextgen-volume/` for the next-gen 3D volume/rendering rewrite:
+  - `README.md` (program index/rules)
+  - `DECISIONS.md` (locked architecture decisions)
+  - `ROADMAP.md` (phase plan + exit criteria)
+  - `BACKLOG.md` (task tracking)
+  - `SESSION_HANDOFF.md` (multi-session continuity)
+  - `EXECUTION_LOG.md` (session history)
 - Moved Markdown files into `docs/`:
   - `docs/README.md`
   - `docs/PROGRESS.md`
@@ -27,8 +169,8 @@
 - Local test and verification workflow expanded (frontend tests, visual checks, Playwright smoke/visual/nightly scenarios, perf checks).
 
 ## Active follow-up TODOs
+- Keep the refactor status synchronized between `BACKLOG.md`, `SESSION_HANDOFF.md`, and `EXECUTION_LOG.md`.
 - Keep `docs/README.md` and any contributor tooling aligned with the new docs-only Markdown layout.
-- Continue expanding strict-unused coverage in controlled scopes as remaining legacy surfaces shrink.
 - Continue monitoring large orchestration files and split further when cohesion degrades.
 - Add or maintain focused tests for import/export edge cases and high-risk viewer/VR interaction paths.
 
@@ -44,6 +186,9 @@
 
 ## Historical detail
 - The previous line-by-line historical changelog was intentionally removed to keep this file concise.
+- For the active next-gen volume refactor, see:
+  - `docs/refactor-nextgen-volume/README.md`
+  - `docs/refactor-nextgen-volume/SESSION_HANDOFF.md`
 - For detailed historical refactor context, see:
   - `docs/refactor/ARCHIVE_SUMMARY.md`
   - `git log` / PR history

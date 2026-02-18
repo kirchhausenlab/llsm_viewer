@@ -73,6 +73,12 @@ export function useDatasetSetup({
   const voxelResolution = useVoxelResolution(DEFAULT_VOXEL_RESOLUTION, DEFAULT_EXPERIMENT_DIMENSION);
   const datasetErrors = useDatasetErrors();
   const { reportDatasetError, clearDatasetError } = datasetErrors;
+  const selectDeterministicLayerKey = useCallback((layers: LoadedDatasetLayer[]): string | null => {
+    if (layers.length === 0) {
+      return null;
+    }
+    return [...layers].sort((left, right) => left.key.localeCompare(right.key))[0]?.key ?? null;
+  }, []);
 
   const showInteractionWarning = useCallback(
     (message: string) => {
@@ -116,7 +122,7 @@ export function useDatasetSetup({
     const map = new Map<string, string>();
     for (const channel of channels) {
       const channelLayers = channelLayersMap.get(channel.id) ?? [];
-      const activeLayerKey = channelActiveLayer[channel.id] ?? channelLayers[0]?.key ?? null;
+      const activeLayerKey = channelActiveLayer[channel.id] ?? selectDeterministicLayerKey(channelLayers);
       if (activeLayerKey) {
         const settings = layerSettings[activeLayerKey];
         const normalized = normalizeHexColor(settings?.color ?? DEFAULT_LAYER_COLOR, DEFAULT_LAYER_COLOR);
@@ -126,7 +132,7 @@ export function useDatasetSetup({
       }
     }
     return map;
-  }, [channelActiveLayer, channelLayersMap, channels, layerSettings]);
+  }, [channelActiveLayer, channelLayersMap, channels, layerSettings, selectDeterministicLayerKey]);
 
   const loadedChannelIds = useMemo(() => {
     const seen = new Set<string>();
@@ -257,12 +263,17 @@ export function useDatasetSetup({
 
   const handleChannelLayerDrop = useCallback(
     async (channelId: string, dataTransfer: DataTransfer) => {
-      const files = await collectFilesFromDataTransfer(dataTransfer);
-      if (files.length === 0) {
-        showInteractionWarning('No TIFF files detected in the dropped selection.');
-        return;
+      try {
+        const files = await collectFilesFromDataTransfer(dataTransfer);
+        if (files.length === 0) {
+          showInteractionWarning('No TIFF files detected in the dropped selection.');
+          return;
+        }
+        handleChannelLayerFilesAdded(channelId, files);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to read dropped files.';
+        showInteractionWarning(message);
       }
-      handleChannelLayerFilesAdded(channelId, files);
     },
     [handleChannelLayerFilesAdded, showInteractionWarning]
   );

@@ -37,8 +37,8 @@ The main responsibilities are:
 - Front-end UI for local/Dropbox uploads and preprocessed dataset import.
 - **Preprocessing is mandatory**: raw TIFF decoding happens only during preprocessing.
 - Raw TIFF decoding via `src/loaders/volumeLoader.ts` → worker decode → `VolumePayload`.
-- Streaming preprocessing via `src/shared/utils/preprocessedDataset/preprocess.ts` writes one timepoint at a time into a Zarr v3 store backed by a `PreprocessedStorage` backend (OPFS by default).
-- Preprocessing also writes per-timepoint 256-bin intensity histograms (manifest v4) so the viewer can do auto-windowing and histogram UI without scanning whole volumes at runtime.
+- Streaming preprocessing via `src/shared/utils/preprocessedDataset/preprocess.ts` now emits a strict vNext Zarr v3 layout (`llsm-viewer-preprocessed-vnext`) with spatial chunking and multiscale `zarr.scales[]` descriptors per layer.
+- Preprocessing writes per-timepoint 256-bin histograms, max-pooled mip levels (currently capped), and per-scale chunk-stat arrays (`min`/`max`/`occupancy`) for downstream scheduling/skip strategies.
 - Core processing (`src/core/volumeProcessing.ts`) handles normalization + segmentation colorization; GPU texture packing is cached via `src/core/textureCache.ts`.
 
 **2. Visualization (2D + 3D)**
@@ -85,10 +85,14 @@ The main responsibilities are:
   CI (typecheck/test/build) + GitHub Pages deploy.
 - `scripts/local-nightly.sh`
   Local automation entrypoint for running the full verification pipeline without remote CI.
+- `scripts/benchmark-nextgen-volume.ts`
+  Local synthetic baseline harness for next-gen chunked volume provider timings/caching (`npm run benchmark:nextgen-volume`), outputting to `docs/refactor-nextgen-volume/BASELINE_REPORT.json`.
 - `docs/PROGRESS.md`  
   Running progress log / next tasks.
 - `docs/AGENTS.md`
   Agent workflow and repository operating guidance.
+- `docs/refactor-nextgen-volume/*`
+  Active multi-session plan and tracking docs for the next-gen 3D volume pipeline refactor (spatial chunking + mips + renderer/runtime rewrite).
 - `docs/refactor/README.md`, `docs/refactor/ARCHIVE_SUMMARY.md`
   Archived refactor-program record. The refactor plan is completed; the consolidated history and outcomes are stored in `ARCHIVE_SUMMARY.md`.
 
@@ -244,7 +248,7 @@ The main responsibilities are:
 - `src/core/textureCache.ts`
   Caches packed 3D texture buffers derived from normalized volumes (avoids repeated repacking).
 - `src/core/volumeProvider.ts`
-  Random-access volume loader for preprocessed datasets (reads from `PreprocessedStorage` with a small bounded cache).
+  Random-access volume loader for preprocessed datasets; currently reconstructs full timepoints from chunked base-scale arrays, with internal chunk-cache budgeting, in-flight dedupe, and prioritized bounded-concurrency chunk reads.
 - `src/shaders/*`  
   Shader source modules (`volumeRenderShader.ts`, `sliceRenderShader.ts`).
 
@@ -253,14 +257,15 @@ The main responsibilities are:
 ### Load/save preprocessed datasets (Zarr v3 folders)
 
 - `src/shared/utils/preprocessedDataset/*`
-  Zarr-backed preprocessed dataset format + manifest/types + open/preprocess helpers.
+  Zarr-backed preprocessed dataset format + manifest/types + open/preprocess helpers (now strict vNext schema with multiscale layer descriptors).
   Preprocess pipeline boundaries inside `preprocess.ts`:
   - layer timepoint indexing + validation
   - representative normalization sampling
   - source/layer metadata validation
-  - manifest + Zarr descriptor shaping
+  - manifest + multiscale Zarr descriptor shaping
   - array/trackset materialization
   - mode-specific volume writing (2d stack slicing vs 3d per-file loads)
+  - spatial chunk extraction/writing and mip generation
 - `src/shared/storage/*`
   Storage backends used by preprocessing + viewing: OPFS + in-memory + directory-backed storage.
 

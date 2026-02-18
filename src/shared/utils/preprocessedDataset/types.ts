@@ -1,6 +1,8 @@
 import type { VolumeDataType } from '../../../types/volume';
 import type { AnisotropyScaleFactors, VoxelResolutionValues } from '../../../types/voxelResolution';
 
+export const PREPROCESSED_DATASET_FORMAT = 'llsm-viewer-preprocessed-vnext' as const;
+
 export type AnisotropyCorrectionMetadata = {
   scale: AnisotropyScaleFactors;
 };
@@ -30,6 +32,36 @@ export type ZarrArrayDescriptor = {
   shape: number[];
   chunkShape: number[];
   dataType: VolumeDataType;
+  sharding?: ZarrArrayShardingPlan | null;
+};
+
+export type ZarrArrayShardingPlan = {
+  enabled: boolean;
+  targetShardBytes: number;
+  shardShape: number[];
+  estimatedShardBytes: number;
+  reason?: string;
+};
+
+export type PreprocessedScaleChunkStatsZarrDescriptor = {
+  min: ZarrArrayDescriptor;
+  max: ZarrArrayDescriptor;
+  occupancy: ZarrArrayDescriptor;
+};
+
+export type PreprocessedLayerScaleManifestEntry = {
+  level: number;
+  downsampleFactor: [number, number, number];
+  width: number;
+  height: number;
+  depth: number;
+  channels: number;
+  zarr: {
+    data: ZarrArrayDescriptor;
+    labels?: ZarrArrayDescriptor;
+    chunkStats: PreprocessedScaleChunkStatsZarrDescriptor;
+    histogram: ZarrArrayDescriptor;
+  };
 };
 
 export type PreprocessedLayerManifestEntry = {
@@ -45,15 +77,14 @@ export type PreprocessedLayerManifestEntry = {
   dataType: VolumeDataType;
   normalization: NormalizationMetadata | null;
   zarr: {
-    data: ZarrArrayDescriptor;
-    labels?: ZarrArrayDescriptor;
-    histogram: ZarrArrayDescriptor;
+    scales: PreprocessedLayerScaleManifestEntry[];
   };
 };
 
 export type PreprocessedChannelManifest = {
   id: string;
   name: string;
+  trackSets: PreprocessedTrackSetManifestEntry[];
   layers: PreprocessedLayerManifestEntry[];
 };
 
@@ -71,23 +102,17 @@ export type PreprocessedTrackSetManifestEntry = {
   tracks: PreprocessedTracksDescriptor;
 };
 
-export type PreprocessedChannelManifestV5 = PreprocessedChannelManifest & {
-  trackSets: PreprocessedTrackSetManifestEntry[];
-};
-
-export type PreprocessedManifestV5 = {
-  format: 'llsm-viewer-preprocessed';
+export type PreprocessedManifest = {
+  format: typeof PREPROCESSED_DATASET_FORMAT;
   generatedAt: string;
   dataset: {
     movieMode: PreprocessedMovieMode;
     totalVolumeCount: number;
-    channels: PreprocessedChannelManifestV5[];
+    channels: PreprocessedChannelManifest[];
     voxelResolution?: VoxelResolutionValues | null;
     anisotropyCorrection?: AnisotropyCorrectionMetadata | null;
   };
 };
-
-export type PreprocessedManifest = PreprocessedManifestV5;
 
 export type PreprocessedLayerSummary = {
   key: string;

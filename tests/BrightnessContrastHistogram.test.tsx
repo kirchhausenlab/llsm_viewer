@@ -83,4 +83,25 @@ await (async () => {
   renderer!.unmount();
 })();
 
+await (async () => {
+  const histogram = new Uint32Array(256);
+  histogram[64] = 7;
+  let renderer: TestRenderer.ReactTestRenderer;
+
+  act(() => {
+    renderer = TestRenderer.create(
+      <BrightnessContrastHistogram
+        volume={null}
+        histogram={histogram}
+        isPlaying={false}
+        {...baseProps}
+      />
+    );
+  });
+
+  await flushTimers();
+  assert.equal(countHistogramAreas(renderer!), 1);
+  renderer!.unmount();
+})();
+
 console.log('BrightnessContrastHistogram tests passed');

@@ -8,6 +8,7 @@ import type SelectedTracksWindow from '../../widgets/SelectedTracksWindow';
 import type { VolumeViewerProps } from '../VolumeViewer.types';
 import type { LoadedDatasetLayer } from '../../../hooks/dataset';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
+import type { VolumeBrickAtlas } from '../../../core/volumeProvider';
 import type { LayerSettings } from '../../../state/layerSettings';
 import type { FollowedVoxelTarget } from '../../../types/follow';
 import type { HoveredVoxelInfo } from '../../../types/hover';
@@ -86,6 +87,7 @@ export type ChannelsPanelProps = {
   onChannelVisibilityToggle: (channelId: string) => void;
   channelLayersMap: Map<string, LoadedDatasetLayer[]>;
   layerVolumesByKey: Record<string, NormalizedVolume | null>;
+  layerBrickAtlasesByKey: Record<string, VolumeBrickAtlas | null>;
   channelActiveLayer: Record<string, string>;
   layerSettings: Record<string, LayerSettings>;
   getLayerDefaultSettings: (layerKey: string) => LayerSettings;

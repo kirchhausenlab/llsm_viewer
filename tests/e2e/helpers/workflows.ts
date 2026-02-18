@@ -3,7 +3,7 @@ import type { DatasetFixture } from './dataset';
 
 type TrackCsvPayload = {
   name: string;
-  mimeType?: string;
+  mimeType: string;
   buffer: Buffer;
 };
 
@@ -15,21 +15,21 @@ export type ChannelFixtureSetup = {
 };
 
 type LaunchSetupOptions = {
-  voxelResolution?: { x: string; y: string; z: string };
+  voxelResolution: { x: string; y: string; z: string };
 };
 
-const DEFAULT_VOXEL_RESOLUTION = { x: '1', y: '1', z: '1' } as const;
+export const STANDARD_VOXEL_RESOLUTION = { x: '1', y: '1', z: '1' } as const;
 
 export async function launchViewerFromChannelFixtures(
   page: Page,
   channels: ChannelFixtureSetup[],
-  options: LaunchSetupOptions = {}
+  options: LaunchSetupOptions
 ): Promise<{ timepointCount: number }> {
   if (channels.length === 0) {
     throw new Error('launchViewerFromChannelFixtures requires at least one channel.');
   }
 
-  const voxelResolution = options.voxelResolution ?? DEFAULT_VOXEL_RESOLUTION;
+  const voxelResolution = options.voxelResolution;
 
   await page.goto('/');
   await page.getByRole('button', { name: 'Set up new experiment' }).click();
@@ -48,23 +48,10 @@ export async function launchViewerFromChannelFixtures(
     await targetTab.click();
 
     const nameInput = page.locator('.channel-name-input').first();
-    let canEditNameInline = await nameInput
-      .waitFor({ state: 'visible', timeout: 2_000 })
-      .then(() => true)
-      .catch(() => false);
-    if (!canEditNameInline) {
-      await targetTab.dblclick();
-      canEditNameInline = await nameInput
-        .waitFor({ state: 'visible', timeout: 2_000 })
-        .then(() => true)
-        .catch(() => false);
-    }
-    if (canEditNameInline) {
-      await nameInput.fill(channel.name);
-      await nameInput.press('Enter');
-    } else {
-      throw new Error(`Unable to edit name for channel "${channel.name}".`);
-    }
+    await targetTab.dblclick();
+    await expect(nameInput).toBeVisible({ timeout: 2_000 });
+    await nameInput.fill(channel.name);
+    await nameInput.press('Enter');
 
     const volumeInput = page.locator('input[type="file"][accept*=".tif"]').first();
     await volumeInput.setInputFiles(channel.tiffPaths);
@@ -84,7 +71,7 @@ export async function launchViewerFromChannelFixtures(
       const trackInput = page.locator('input[type="file"][accept=".csv"]').first();
       await trackInput.setInputFiles({
         name: channel.trackCsv.name,
-        mimeType: channel.trackCsv.mimeType ?? 'text/csv',
+        mimeType: channel.trackCsv.mimeType,
         buffer: channel.trackCsv.buffer
       });
       await expect(page.locator('.channel-tracks-filename')).toContainText(channel.trackCsv.name);
@@ -109,14 +96,22 @@ export async function launchViewerFromChannelFixtures(
 export async function launchViewerFromFixture(
   page: Page,
   fixture: DatasetFixture,
-  options: { channelName?: string; trackCsv?: TrackCsvPayload } = {}
+  options: {
+    channelName: string;
+    voxelResolution: { x: string; y: string; z: string };
+    trackCsv?: TrackCsvPayload;
+  }
 ): Promise<{ timepointCount: number }> {
-  return launchViewerFromChannelFixtures(page, [
-    {
-      name: options.channelName ?? 'Ch1',
-      tiffPaths: fixture.tiffPaths,
-      segmentation: false,
-      trackCsv: options.trackCsv
-    }
-  ]);
+  return launchViewerFromChannelFixtures(
+    page,
+    [
+      {
+        name: options.channelName,
+        tiffPaths: fixture.tiffPaths,
+        segmentation: false,
+        trackCsv: options.trackCsv
+      }
+    ],
+    { voxelResolution: options.voxelResolution }
+  );
 }

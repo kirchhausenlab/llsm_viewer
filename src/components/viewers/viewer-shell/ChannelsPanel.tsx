@@ -28,6 +28,7 @@ export default function ChannelsPanel({
   onChannelVisibilityToggle,
   channelLayersMap,
   layerVolumesByKey,
+  layerBrickAtlasesByKey,
   channelActiveLayer,
   layerSettings,
   getLayerDefaultSettings,
@@ -120,6 +121,9 @@ export default function ChannelsPanel({
               const sliderDisabled = !selectedLayer || selectedLayer.volumeCount === 0;
               const offsetDisabled = sliderDisabled || channelId !== activeChannelId;
               const currentVolume = selectedLayer ? layerVolumesByKey[selectedLayer.key] ?? null : null;
+              const currentHistogram = selectedLayer
+                ? currentVolume?.histogram ?? layerBrickAtlasesByKey[selectedLayer.key]?.histogram ?? null
+                : null;
               const isGrayscale = Boolean(selectedLayer && selectedLayer.channels === 1);
               const normalizedColor = normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR);
               const displayColor = normalizedColor.toUpperCase();
@@ -206,6 +210,7 @@ export default function ChannelsPanel({
                       <BrightnessContrastHistogram
                         className="channel-histogram"
                         volume={currentVolume}
+                        histogram={currentHistogram}
                         isPlaying={isPlaying}
                         windowMin={settings.windowMin}
                         windowMax={settings.windowMax}

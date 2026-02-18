@@ -82,7 +82,7 @@ const sanitizeNonBlackHex = (value: string, fallback: string) => {
   const parsed = parseHexRgb(value);
   const fallbackParsed = parseHexRgb(fallback);
   if (!fallbackParsed) {
-    return DEFAULT_COLOR;
+    throw new Error(`Invalid paintbrush fallback color: ${fallback}`);
   }
   if (!parsed) {
     return fallbackParsed.hex;

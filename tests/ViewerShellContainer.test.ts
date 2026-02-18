@@ -145,6 +145,7 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
       onChannelVisibilityToggle: noopWithArgs,
       channelLayersMap: new Map(),
       layerVolumesByKey: {},
+      layerBrickAtlasesByKey: {},
       channelActiveLayer: {},
       layerSettings: {},
       getLayerDefaultSettings: (_layerKey: string) => createDefaultLayerSettings(),
@@ -251,6 +252,27 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
   const onTrackSetTabSelect = () => {};
   const props = createViewerShellContainerProps();
   props.tracksPanel.onTrackSetTabSelect = onTrackSetTabSelect;
+  const diagnostics = {
+    capturedAt: '2026-02-13T00:00:00.000Z',
+    residency: {
+      cachedVolumes: 1,
+      inFlightVolumes: 0,
+      cachedChunks: 2,
+      inFlightChunks: 0,
+      chunkBytes: 2048
+    },
+    cachePressure: {
+      volume: 0.2,
+      chunk: 0.4
+    },
+    missRates: {
+      volume: 0.1,
+      chunk: 0.3
+    },
+    activePrefetchRequests: [],
+    stats: {} as any
+  };
+  props.viewerPanels.runtimeDiagnostics = diagnostics as any;
   props.vr.channelPanels = [{
     id: 'channel',
     name: 'Channel',
@@ -263,6 +285,7 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
 
   assert.strictEqual(viewerShellProps.tracksPanel.onTrackSetTabSelect, onTrackSetTabSelect);
   assert.deepStrictEqual(viewerShellProps.volumeViewerProps.vr?.channelPanels, props.vr.channelPanels);
+  assert.strictEqual(viewerShellProps.volumeViewerProps.runtimeDiagnostics, diagnostics);
 })();
 
 console.log('ViewerShellContainer wiring tests passed');

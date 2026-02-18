@@ -28,7 +28,7 @@ export function buildChannelSummariesFromManifest(
   return manifest.dataset.channels.map((channel) => ({
     id: channel.id,
     name: channel.name,
-    trackSets: (channel.trackSets ?? []).map((trackSet) => ({
+    trackSets: channel.trackSets.map((trackSet) => ({
       id: trackSet.id,
       name: trackSet.name,
       fileName: trackSet.fileName,

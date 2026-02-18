@@ -1,13 +1,14 @@
 import { expect, test } from '@playwright/test';
 import { resolveDatasetFixture } from './helpers/dataset';
-import { launchViewerFromFixture } from './helpers/workflows';
+import { launchViewerFromFixture, STANDARD_VOXEL_RESOLUTION } from './helpers/workflows';
 
 const fixture = resolveDatasetFixture();
 
 test('@smoke top menu help and exit flows work after launch', async ({ page }) => {
-  test.skip(!fixture.available, fixture.reason ?? 'Local TIFF fixture is unavailable.');
-
-  await launchViewerFromFixture(page, fixture);
+  await launchViewerFromFixture(page, fixture, {
+    channelName: 'Ch1',
+    voxelResolution: STANDARD_VOXEL_RESOLUTION
+  });
 
   await page.getByRole('button', { name: 'Help' }).click();
   const helpMenu = page.getByRole('menu', { name: 'help menu' });

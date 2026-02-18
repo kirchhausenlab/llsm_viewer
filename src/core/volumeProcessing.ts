@@ -22,6 +22,8 @@ export type NormalizedVolume = {
    * viewer's intensity definition (1ch=R, 2ch=avg(R,G), >=3ch=luminance(R,G,B)).
    */
   histogram?: Uint32Array;
+  scaleLevel?: number;
+  downsampleFactor?: [number, number, number];
   min: number;
   max: number;
   segmentationLabels?: Uint32Array;

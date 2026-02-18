@@ -1,7 +1,8 @@
 import type { PreprocessedStorage } from '../../storage/preprocessedStorage';
-import type { OpenPreprocessedDatasetResult, PreprocessedManifest } from './types';
+import { type OpenPreprocessedDatasetResult } from './types';
 import { buildChannelSummariesFromManifest } from './manifest';
 import { parseTrackEntriesFromCsvBytes } from './tracks';
+import { coercePreprocessedManifest } from './schema';
 
 const textDecoder = new TextDecoder();
 
@@ -16,17 +17,6 @@ function parseJson(bytes: Uint8Array): unknown {
   return JSON.parse(text);
 }
 
-function coerceManifest(value: unknown): PreprocessedManifest {
-  if (!value || typeof value !== 'object') {
-    throw new Error('Missing preprocessed manifest in Zarr attributes.');
-  }
-  const candidate = value as Partial<PreprocessedManifest>;
-  if (candidate.format !== 'llsm-viewer-preprocessed') {
-    throw new Error('Unsupported preprocessed dataset format.');
-  }
-  return candidate as PreprocessedManifest;
-}
-
 export async function openPreprocessedDatasetFromZarrStorage(storage: PreprocessedStorage): Promise<OpenPreprocessedDatasetResult> {
   const bytes = await storage.readFile('zarr.json');
   const metadataRaw = parseJson(bytes);
@@ -38,11 +28,11 @@ export async function openPreprocessedDatasetFromZarrStorage(storage: Preprocess
     throw new Error('Unsupported Zarr root node.');
   }
   const attrs = metadata.attributes ?? {};
-  const manifest = coerceManifest(attrs.llsmViewerPreprocessed);
+  const manifest = coercePreprocessedManifest(attrs.llsmViewerPreprocessed);
   const trackEntriesByTrackSetId = new Map<string, string[][]>();
 
   for (const channel of manifest.dataset.channels) {
-    for (const trackSet of channel.trackSets ?? []) {
+    for (const trackSet of channel.trackSets) {
       const trackBytes = await storage.readFile(trackSet.tracks.path);
       const entries = parseTrackEntriesFromCsvBytes(trackBytes);
       trackEntriesByTrackSetId.set(trackSet.id, entries);

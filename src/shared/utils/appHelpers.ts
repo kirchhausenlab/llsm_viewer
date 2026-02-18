@@ -63,7 +63,7 @@ const isDirectoryEntry = (entry: FileSystemEntryLike): entry is FileSystemDirect
   entry.isDirectory;
 
 async function getFilesFromFileEntry(entry: FileSystemFileEntryLike): Promise<File[]> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     entry.file(
       (file) => {
         const relativePath = entry.fullPath.replace(/^\//, '');
@@ -80,8 +80,7 @@ async function getFilesFromFileEntry(entry: FileSystemFileEntryLike): Promise<Fi
         resolve([file]);
       },
       (error) => {
-        console.warn('Failed to read file entry', error);
-        resolve([]);
+        reject(new Error(`Failed to read file entry "${entry.fullPath}": ${error.message}`));
       }
     );
   });
@@ -90,7 +89,7 @@ async function getFilesFromFileEntry(entry: FileSystemFileEntryLike): Promise<Fi
 async function readAllDirectoryEntries(
   reader: FileSystemDirectoryReaderLike
 ): Promise<FileSystemEntryLike[]> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     reader.readEntries(
       async (entries) => {
         if (entries.length === 0) {
@@ -101,8 +100,7 @@ async function readAllDirectoryEntries(
         resolve([...entries, ...remainder]);
       },
       (error) => {
-        console.warn('Failed to read directory entries', error);
-        resolve([]);
+        reject(new Error(`Failed to read directory entries: ${error.message}`));
       }
     );
   });
@@ -243,4 +241,3 @@ export async function parseTrackCsvFile(file: File): Promise<string[][]> {
 
   return rows;
 }
-

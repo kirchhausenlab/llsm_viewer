@@ -1,13 +1,14 @@
 import { expect, test } from '@playwright/test';
 import { resolveDatasetFixture } from './helpers/dataset';
-import { launchViewerFromFixture } from './helpers/workflows';
+import { launchViewerFromFixture, STANDARD_VOXEL_RESOLUTION } from './helpers/workflows';
 
 const fixture = resolveDatasetFixture();
 
 test('@smoke channels panel controls work after launch', async ({ page }) => {
-  test.skip(!fixture.available, fixture.reason ?? 'Local TIFF fixture is unavailable.');
-
-  await launchViewerFromFixture(page, fixture);
+  await launchViewerFromFixture(page, fixture, {
+    channelName: 'Ch1',
+    voxelResolution: STANDARD_VOXEL_RESOLUTION
+  });
 
   const channelsWindow = page.locator('.floating-window--channels');
   await expect(channelsWindow.getByRole('heading', { name: 'Channels' })).toBeVisible();

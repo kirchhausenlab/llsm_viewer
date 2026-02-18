@@ -1,4 +1,4 @@
-import { createDefaultLayerSettings, type LayerSettings } from './layerSettings';
+import type { LayerSettings } from './layerSettings';
 
 export type ChannelDescriptor = { id: string };
 export type ChannelLayersLookup = {
@@ -21,13 +21,16 @@ export const deriveChannelTrackOffsets = ({
 }): ChannelTrackOffsets => {
   const offsets: ChannelTrackOffsets = {};
   for (const channel of channels) {
-    const channelLayers = channelLayersMap.get(channel.id) ?? [];
-    const activeLayerKey = channelActiveLayer[channel.id] ?? channelLayers[0]?.key ?? null;
+    const activeLayerKey = channelActiveLayer[channel.id] ?? null;
     if (!activeLayerKey) {
       offsets[channel.id] = { x: 0, y: 0 };
       continue;
     }
-    const settings = layerSettings[activeLayerKey] ?? createDefaultLayerSettings();
+    const settings = layerSettings[activeLayerKey];
+    if (!settings) {
+      offsets[channel.id] = { x: 0, y: 0 };
+      continue;
+    }
     offsets[channel.id] = {
       x: settings.xOffset,
       y: settings.yOffset

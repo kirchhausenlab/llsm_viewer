@@ -47,7 +47,7 @@ export function VolumeViewerVrAdapter({
   }
 
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<div role="status">Loading VR bridge…</div>}>
       <VolumeViewerVrBridge params={vrParams} onValue={setVrIntegration} />
     </Suspense>
   );

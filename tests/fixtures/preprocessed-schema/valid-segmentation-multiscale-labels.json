@@ -1,0 +1,135 @@
+{
+  "format": "llsm-viewer-preprocessed-vnext",
+  "generatedAt": "2026-02-13T00:00:00.000Z",
+  "dataset": {
+    "movieMode": "3d",
+    "totalVolumeCount": 1,
+    "channels": [
+      {
+        "id": "channel-seg",
+        "name": "Segmentation Channel",
+        "trackSets": [],
+        "layers": [
+          {
+            "key": "layer-seg",
+            "label": "Layer Segmentation",
+            "channelId": "channel-seg",
+            "isSegmentation": true,
+            "volumeCount": 1,
+            "width": 4,
+            "height": 2,
+            "depth": 1,
+            "channels": 1,
+            "dataType": "uint16",
+            "normalization": {
+              "min": 0,
+              "max": 65535
+            },
+            "zarr": {
+              "scales": [
+                {
+                  "level": 0,
+                  "downsampleFactor": [1, 1, 1],
+                  "width": 4,
+                  "height": 2,
+                  "depth": 1,
+                  "channels": 1,
+                  "zarr": {
+                    "data": {
+                      "path": "channels/channel-seg/layer-seg/scales/0/data",
+                      "shape": [1, 1, 2, 4, 1],
+                      "chunkShape": [1, 1, 1, 2, 1],
+                      "dataType": "uint8"
+                    },
+                    "labels": {
+                      "path": "channels/channel-seg/layer-seg/scales/0/labels",
+                      "shape": [1, 1, 2, 4],
+                      "chunkShape": [1, 1, 1, 2],
+                      "dataType": "uint32"
+                    },
+                    "chunkStats": {
+                      "min": {
+                        "path": "channels/channel-seg/layer-seg/scales/0/chunk-stats/min",
+                        "shape": [1, 1, 2, 2],
+                        "chunkShape": [1, 1, 2, 2],
+                        "dataType": "uint8"
+                      },
+                      "max": {
+                        "path": "channels/channel-seg/layer-seg/scales/0/chunk-stats/max",
+                        "shape": [1, 1, 2, 2],
+                        "chunkShape": [1, 1, 2, 2],
+                        "dataType": "uint8"
+                      },
+                      "occupancy": {
+                        "path": "channels/channel-seg/layer-seg/scales/0/chunk-stats/occupancy",
+                        "shape": [1, 1, 2, 2],
+                        "chunkShape": [1, 1, 2, 2],
+                        "dataType": "float32"
+                      }
+                    },
+                    "histogram": {
+                      "path": "channels/channel-seg/layer-seg/scales/0/histogram",
+                      "shape": [1, 256],
+                      "chunkShape": [1, 256],
+                      "dataType": "uint32"
+                    }
+                  }
+                },
+                {
+                  "level": 1,
+                  "downsampleFactor": [1, 2, 2],
+                  "width": 2,
+                  "height": 1,
+                  "depth": 1,
+                  "channels": 1,
+                  "zarr": {
+                    "data": {
+                      "path": "channels/channel-seg/layer-seg/scales/1/data",
+                      "shape": [1, 1, 1, 2, 1],
+                      "chunkShape": [1, 1, 1, 2, 1],
+                      "dataType": "uint8"
+                    },
+                    "labels": {
+                      "path": "channels/channel-seg/layer-seg/scales/1/labels",
+                      "shape": [1, 1, 1, 2],
+                      "chunkShape": [1, 1, 1, 2],
+                      "dataType": "uint32"
+                    },
+                    "chunkStats": {
+                      "min": {
+                        "path": "channels/channel-seg/layer-seg/scales/1/chunk-stats/min",
+                        "shape": [1, 1, 1, 1],
+                        "chunkShape": [1, 1, 1, 1],
+                        "dataType": "uint8"
+                      },
+                      "max": {
+                        "path": "channels/channel-seg/layer-seg/scales/1/chunk-stats/max",
+                        "shape": [1, 1, 1, 1],
+                        "chunkShape": [1, 1, 1, 1],
+                        "dataType": "uint8"
+                      },
+                      "occupancy": {
+                        "path": "channels/channel-seg/layer-seg/scales/1/chunk-stats/occupancy",
+                        "shape": [1, 1, 1, 1],
+                        "chunkShape": [1, 1, 1, 1],
+                        "dataType": "float32"
+                      }
+                    },
+                    "histogram": {
+                      "path": "channels/channel-seg/layer-seg/scales/1/histogram",
+                      "shape": [1, 256],
+                      "chunkShape": [1, 256],
+                      "dataType": "uint32"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "voxelResolution": null,
+    "anisotropyCorrection": null
+  }
+}

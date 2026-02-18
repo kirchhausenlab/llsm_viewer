@@ -31,6 +31,13 @@ type UseVrHudBindingsParams = {
   updateVrTracksHud: () => void;
 };
 
+function selectDeterministicChannelId(channels: ReadonlyArray<{ id: string }>): string | null {
+  if (channels.length === 0) {
+    return null;
+  }
+  return [...channels].sort((left, right) => left.id.localeCompare(right.id))[0]?.id ?? null;
+}
+
 function groupTracksByTrackSet(tracks: TrackDefinition[]) {
   return useMemo(() => {
     const map = new Map<string, TrackDefinition[]>();
@@ -158,7 +165,7 @@ export function useVrHudBindings({
       !nextState.activeChannelId ||
       !nextChannels.some((channel) => channel.id === nextState.activeChannelId)
     ) {
-      nextState.activeChannelId = nextChannels[0]?.id ?? null;
+      nextState.activeChannelId = selectDeterministicChannelId(nextChannels);
     }
     vrTracksStateRef.current = nextState;
     updateVrTracksHud();

@@ -15,9 +15,13 @@ export function assertVisualSnapshot(snapshotName: string, serializedTree: strin
   const snapshotPath = path.join(SNAPSHOT_DIR, `${snapshotName}.json`);
   const shouldUpdate = process.env.UPDATE_VISUAL_SNAPSHOTS === '1';
 
-  if (shouldUpdate || !fs.existsSync(snapshotPath)) {
+  if (shouldUpdate) {
     fs.writeFileSync(snapshotPath, serializedTree);
     return;
+  }
+
+  if (!fs.existsSync(snapshotPath)) {
+    assert.fail(`Visual snapshot "${snapshotName}" does not exist. Run: npm run test:visual:update`);
   }
 
   const expected = fs.readFileSync(snapshotPath, 'utf8');

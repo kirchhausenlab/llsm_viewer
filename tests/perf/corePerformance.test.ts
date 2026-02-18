@@ -6,8 +6,8 @@ import { normalizeVolume } from '../../src/core/volumeProcessing.ts';
 import { smoothTrackPoints } from '../../src/shared/utils/trackSmoothing.ts';
 import type { VolumePayload } from '../../src/types/volume.ts';
 
-const NORMALIZE_MS_BUDGET = Number(process.env.PERF_NORMALIZE_BUDGET_MS ?? 3000);
-const TRACK_SMOOTH_MS_BUDGET = Number(process.env.PERF_TRACK_SMOOTH_BUDGET_MS ?? 1500);
+const NORMALIZE_MS_BUDGET = 3000;
+const TRACK_SMOOTH_MS_BUDGET = 1500;
 
 test('performance: normalizeVolume stays within local budget', () => {
   const width = 128;

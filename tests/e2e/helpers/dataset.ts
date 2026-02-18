@@ -13,20 +13,21 @@ const TIFF_EXTENSIONS = new Set(['.tif', '.tiff']);
 const compareNaturally = (left: string, right: string) =>
   left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
 
-export function resolveDatasetFixture(): DatasetFixture {
+function resolveConfiguredDatasetPath(): string {
   const configuredPath = process.env.TEST_DATA_DIR?.trim();
-  const rootDir = path.resolve(
-    process.cwd(),
-    configuredPath && configuredPath.length > 0 ? configuredPath : 'data/test_dataset_0'
-  );
+  if (!configuredPath) {
+    throw new Error(
+      'TEST_DATA_DIR must be set to a dataset directory containing TIFF files for deterministic E2E runs.'
+    );
+  }
+  return configuredPath;
+}
+
+export function resolveDatasetFixture(): DatasetFixture {
+  const rootDir = path.resolve(process.cwd(), resolveConfiguredDatasetPath());
 
   if (!fs.existsSync(rootDir)) {
-    return {
-      rootDir,
-      tiffPaths: [],
-      available: false,
-      reason: `Dataset directory does not exist: ${rootDir}`
-    };
+    throw new Error(`Dataset directory does not exist: ${rootDir}`);
   }
 
   const tiffPaths = fs
@@ -43,12 +44,7 @@ export function resolveDatasetFixture(): DatasetFixture {
     .sort(compareNaturally);
 
   if (tiffPaths.length === 0) {
-    return {
-      rootDir,
-      tiffPaths: [],
-      available: false,
-      reason: `No TIFF files were found under ${rootDir}`
-    };
+    throw new Error(`No TIFF files were found under ${rootDir}`);
   }
 
   return {

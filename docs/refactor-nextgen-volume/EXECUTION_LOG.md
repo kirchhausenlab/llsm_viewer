@@ -1,0 +1,585 @@
+# Execution Log
+
+## 2026-02-13
+
+- Final architecture closure pass (`NGR-090` through `NGR-097`) completed:
+  - wired GPU brick residency into live atlas uniforms/textures with strict budget enforcement + deterministic eviction
+  - added view-priority residency scheduling metrics and diagnostics surfacing in viewer runtime panel
+  - completed multiscale runtime request coverage across route/prefetch/provider (`scaleLevel` + `scaleLevels[]`)
+  - added proof tests for atlas/residency-first 3D intensity flow and no normal-path `getVolume(...)` dependency
+  - finalized multiscale segmentation labels+histogram contract with new schema fixtures/tests
+  - extracted explicit uncapped mip geometry policy (`mipPolicy.ts`) and added no-cap tests
+  - expanded benchmark acceptance schema/harness with atlas and multiscale KPI gates:
+    - `atlas_t0_scale0`
+    - `atlas_t0_scale1`
+    - `scale1RequestMin`
+  - updated matrix docs/config and perf tests to enforce final-architecture signals
+- Regenerated baseline report after final KPI gate expansion:
+  - `tier-a-single-channel`: generation 36.89 ms, cold 31.21 ms, warm 19.40 ms, mixed 19.33 ms, atlas0 8.80 ms, atlas1 0.84 ms, hitRate 0.424, scale1Req 2
+  - `tier-a-multichannel`: generation 116.23 ms, cold 49.63 ms, warm 44.67 ms, mixed 46.13 ms, atlas0 16.66 ms, atlas1 1.62 ms, hitRate 0.440, scale1Req 2
+- Final verification run (completion gate):
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test`
+  - `npm run -s benchmark:nextgen-volume`
+  - all passed
+
+- Created `docs/refactor-nextgen-volume/` as the new multi-session refactor workspace.
+- Wrote initial planning docs (`README`, `DECISIONS`, `ROADMAP`, `BACKLOG`, `SESSION_HANDOFF`).
+- Locked core early decisions and translated them into phased and task-level execution artifacts.
+- Implemented strict vNext preprocessed schema in code (`format` + `zarr.scales[]` contract).
+- Added shared coordinate-based chunk-key helper and switched preprocessing/runtime to it.
+- Refactored preprocessing to write spatial chunks and multiscale mip levels (max pooling).
+- Refactored runtime provider to assemble chunked base-scale arrays per timepoint.
+- Added per-scale chunk-stat metadata arrays (`min`, `max`, `occupancy`) to preprocessing output.
+- Added runtime chunk-cache + prioritized center-first bounded-concurrency chunk scheduling.
+- Added advisory sharding strategy/config metadata and explicit guard for unsupported shard writing.
+- Updated default OPFS/export naming to `llsm-viewer-preprocessed-vnext` prefixes.
+- Updated `tests/preprocessedDataset.test.ts` to vNext schema/chunk path expectations.
+- Added `SCHEMA_VNEXT.md` and refreshed backlog/handoff with completed tasks and next targets.
+- Added synthetic baseline harness `scripts/benchmark-nextgen-volume.ts`.
+- Generated baseline report at `docs/refactor-nextgen-volume/BASELINE_REPORT.json`.
+- Implemented explicit runtime prefetch policies (`missing-only`/`force`) with abort-signal cancellation handling.
+- Added prefetch diagnostics counters and `getDiagnostics()` snapshot API in `src/core/volumeProvider.ts`.
+- Wired playback prefetch session resets to `AbortController` cancellation and explicit prefetch options.
+- Exposed DEV diagnostics accessor via `window.__LLSM_VOLUME_PROVIDER_DIAGNOSTICS__`.
+- Expanded `tests/preprocessedDataset.test.ts` for prefetch policy/cancellation/diagnostics coverage.
+- Regenerated baseline report:
+  - generation: 30.72 ms
+  - cold load (`t0`): 31.25 ms
+  - chunk-warm load (`t0`): 20.52 ms
+  - mixed-cache load (`t1`): 21.11 ms
+- Added benchmark matrix config and reference docs:
+  - `docs/refactor-nextgen-volume/BENCHMARK_MATRIX.json`
+  - `docs/refactor-nextgen-volume/BENCHMARK_MATRIX.md`
+- Reworked benchmark harness to run matrix cases + enforce acceptance thresholds from config.
+- Regenerated baseline report as matrix output with per-case pass/fail summary:
+  - `tier-a-single-channel`: generation 42.03 ms, cold 42.68 ms, warm 28.05 ms, mixed 29.00 ms
+  - `tier-a-multichannel`: generation 116.31 ms, cold 69.68 ms, warm 67.29 ms, mixed 70.09 ms
+  - threshold summary: 2/2 cases passed
+- Implemented real shard payload helpers (`sharding.ts`) for shard layout resolution + shard encode/decode.
+- Implemented preprocess shard writing path (when `storageStrategy.sharding.enabled=true`) with `/shards/<coords>.shard` outputs.
+- Implemented runtime shard-aware chunk reads in `volumeProvider` with cache/dedupe integration.
+- Added sharded runtime coverage in `tests/preprocessedDataset.test.ts`.
+- Regenerated baseline report after shard-path landing:
+  - `tier-a-single-channel`: generation 44.12 ms, cold 44.56 ms, warm 29.11 ms, mixed 30.31 ms
+  - `tier-a-multichannel`: generation 123.14 ms, cold 60.06 ms, warm 48.23 ms, mixed 50.13 ms
+  - threshold summary: 2/2 cases passed
+- Completed diagnostics surfacing slice (`NGR-043`):
+  - added route-level diagnostics state + polling in `useRouteLayerVolumes`
+  - threaded diagnostics through viewer-shell mapping into `VolumeViewer` props
+  - added DEV runtime diagnostics overlay in `VolumeViewer` (`cachePressure`, `missRates`, `residency`, prefetch activity)
+  - added coverage updates in:
+    - `tests/app/hooks/useRouteLayerVolumes.test.ts`
+    - `tests/ViewerShellContainer.test.ts`
+- Completed histogram/statistics schema alignment (`NGR-034`):
+  - moved histogram descriptor from layer-level to per-scale (`scale.zarr.histogram`)
+  - updated preprocess writer to emit histogram chunks for each scale/timepoint
+  - updated runtime histogram read path to use base-scale histogram descriptor
+  - updated synthetic benchmark manifest/fixture writes and tests for per-scale histogram paths
+- Regenerated baseline report after diagnostics surfacing:
+  - `tier-a-single-channel`: generation 41.81 ms, cold 42.82 ms, warm 28.15 ms, mixed 29.55 ms
+  - `tier-a-multichannel`: generation 102.43 ms, cold 52.41 ms, warm 47.52 ms, mixed 49.69 ms
+  - threshold summary: 2/2 cases passed
+- Verification run:
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test`
+  - `npm run -s benchmark:nextgen-volume`
+- Completed strict schema validation coverage (`NGR-023`):
+  - added manifest schema validator/coercion module:
+    - `src/shared/utils/preprocessedDataset/schema.ts`
+  - integrated strict coercion into open path:
+    - `src/shared/utils/preprocessedDataset/open.ts`
+  - exported schema utilities through:
+    - `src/shared/utils/preprocessedDataset/index.ts`
+  - added fixtures-backed manifest validation tests:
+    - `tests/preprocessedSchemaValidation.test.ts`
+    - `tests/fixtures/preprocessed-schema/valid-non-sharded.json`
+    - `tests/fixtures/preprocessed-schema/valid-sharded.json`
+    - `tests/fixtures/preprocessed-schema/invalid-non-sharded-data-rank.json`
+    - `tests/fixtures/preprocessed-schema/invalid-sharded-nondivisible-shard-shape.json`
+  - aligned sharded runtime test chunk-stats descriptors with strict schema invariants:
+    - `tests/preprocessedDataset.test.ts`
+- Regenerated baseline report after `NGR-023` landing:
+  - `tier-a-single-channel`: generation 42.95 ms, cold 43.77 ms, warm 28.35 ms, mixed 28.95 ms
+  - `tier-a-multichannel`: generation 111.23 ms, cold 49.44 ms, warm 68.35 ms, mixed 50.19 ms
+  - threshold summary: 2/2 cases passed
+- Verification run (post-`NGR-023`):
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test`
+  - `npm run -s benchmark:nextgen-volume`
+- Finalized benchmark matrix signoff (`NGR-011`):
+  - added explicit approval metadata to matrix config:
+    - `approval.status`
+    - `approval.approvedAt`
+    - `approval.approvedBy`
+    - `approval.notes`
+  - added shared benchmark matrix schema/validation utilities:
+    - `src/shared/utils/benchmarkMatrix.ts`
+  - benchmark harness now validates matrix via shared schema and enforces approval when thresholds are enabled
+  - added emergency override support for unapproved matrices:
+    - `ALLOW_UNAPPROVED_BENCHMARK_MATRIX=1`
+  - baseline report now includes matrix approval metadata
+  - added unit coverage:
+    - `tests/perf/benchmarkMatrixConfig.test.ts`
+  - docs updated:
+    - `docs/refactor-nextgen-volume/BENCHMARK_MATRIX.json`
+    - `docs/refactor-nextgen-volume/BENCHMARK_MATRIX.md`
+- Regenerated baseline report after `NGR-011` finalization:
+  - `tier-a-single-channel`: generation 43.89 ms, cold 43.71 ms, warm 27.94 ms, mixed 29.13 ms
+  - `tier-a-multichannel`: generation 89.30 ms, cold 50.15 ms, warm 47.75 ms, mixed 49.35 ms
+  - threshold summary: 2/2 cases passed
+- Verification run (post-`NGR-011`):
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test`
+  - `npm run -s benchmark:nextgen-volume`
+- Advanced Phase 4 bridge work (`NGR-050`, now `IN_PROGRESS`):
+  - added runtime brick page-table API:
+    - `createVolumeProvider(...).getBrickPageTable(layerKey, timepoint)`
+  - page-table payload now includes:
+    - base-scale chunk grid shape
+    - chunk dimensions
+    - per-chunk `min`, `max`, `occupancy`
+    - dense atlas index indirection (`brickAtlasIndices`, `-1` for empty bricks)
+  - added internal page-table cache + in-flight dedupe and clear-path integration
+  - routed page-table data through app/viewer:
+    - `useRouteLayerVolumes` now loads page-tables with volumes
+    - `useLayerControls` and viewer layer objects now carry `brickPageTable`
+    - `VolumeResources` now stores `brickPageTable` for renderer-side consumption
+  - files:
+    - `src/core/volumeProvider.ts`
+    - `src/ui/app/hooks/useRouteLayerVolumes.ts`
+    - `src/ui/app/hooks/useAppRouteState.tsx`
+    - `src/ui/app/hooks/useLayerControls.ts`
+    - `src/components/viewers/VolumeViewer.types.ts`
+    - `src/components/viewers/volume-viewer/useVolumeResources.ts`
+- Expanded coverage for page-table bridge path:
+  - provider page-table assertions in:
+    - `tests/preprocessedDataset.test.ts`
+  - route hook page-table wiring assertions in:
+    - `tests/app/hooks/useRouteLayerVolumes.test.ts`
+- Regenerated baseline report after `NGR-050` bridge landing:
+  - `tier-a-single-channel`: generation 42.50 ms, cold 42.76 ms, warm 27.85 ms, mixed 29.73 ms
+  - `tier-a-multichannel`: generation 116.18 ms, cold 72.02 ms, warm 64.01 ms, mixed 50.22 ms
+  - threshold summary: 2/2 cases passed
+- Verification run (post-`NGR-050` bridge slice):
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test`
+  - `npm run -s benchmark:nextgen-volume`
+- Advanced traversal pruning work (`NGR-052`, now `IN_PROGRESS`):
+  - extended `VolumeRenderShader` with brick page-table uniforms (`u_brickSkipEnabled`, grid/chunk sizing, occupancy/min/max textures)
+  - added conservative occupancy/max-based sample skipping in MIP/ISO traversal loops with safety guards for inversion/window edge cases
+  - added brick metadata fallback textures and resource lifecycle wiring (create/update/dispose) in `useVolumeResources`
+  - expanded viewer resource types for brick metadata textures
+  - added focused coverage for uniform wiring/fallback behavior:
+    - `tests/useVolumeResources.test.ts`
+  - files:
+    - `src/shaders/volumeRenderShader.ts`
+    - `src/components/viewers/volume-viewer/fallbackTextures.ts`
+    - `src/components/viewers/volume-viewer/useVolumeResources.ts`
+    - `src/components/viewers/VolumeViewer.types.ts`
+- Regenerated baseline report after `NGR-052` shader bridge slice:
+  - `tier-a-single-channel`: generation 45.03 ms, cold 42.38 ms, warm 27.95 ms, mixed 29.19 ms
+  - `tier-a-multichannel`: generation 117.17 ms, cold 70.25 ms, warm 64.71 ms, mixed 48.50 ms
+  - threshold summary: 2/2 cases passed
+- Verification run (post-`NGR-052` shader bridge slice):
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test`
+  - `npm run -s benchmark:nextgen-volume`
+- Continued `NGR-052` hardening pass:
+  - updated shader skip bound logic to use invert-aware candidate maxima (`chunkMin` when inverted, `chunkMax` otherwise)
+  - retained conservative fallback behavior for malformed chunk-stat grid lengths
+  - expanded `tests/useVolumeResources.test.ts` to cover:
+    - page-table texture/uniform updates across rerenders
+    - invalid page-table shape fallback to non-skip shader uniforms/textures
+- Regenerated baseline report after `NGR-052` hardening pass:
+  - `tier-a-single-channel`: generation 44.76 ms, cold 34.33 ms, warm 19.25 ms, mixed 20.04 ms
+  - `tier-a-multichannel`: generation 88.24 ms, cold 50.20 ms, warm 47.51 ms, mixed 51.63 ms
+  - threshold summary: 2/2 cases passed
+- Verification run (post-`NGR-052` hardening pass):
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test`
+  - `npm run -s benchmark:nextgen-volume`
+- Continued `NGR-050` bridge pass with atlas-index shader plumbing:
+  - added shader uniform:
+    - `u_brickAtlasIndices`
+  - `useVolumeResources` now builds/updates/disposes a float 3D texture from page-table atlas indices (`index + 1` encoding, `0` = empty)
+  - skip path now checks atlas index texture for empty-brick rejection alongside occupancy/min-max metadata
+  - fallback texture path extended for atlas index uniforms
+  - expanded `tests/useVolumeResources.test.ts` to assert atlas texture wiring and fallback behavior
+  - files:
+    - `src/shaders/volumeRenderShader.ts`
+    - `src/components/viewers/volume-viewer/useVolumeResources.ts`
+    - `src/components/viewers/volume-viewer/fallbackTextures.ts`
+    - `src/components/viewers/VolumeViewer.types.ts`
+    - `tests/useVolumeResources.test.ts`
+- Regenerated baseline report after `NGR-050` atlas-index bridge pass:
+  - `tier-a-single-channel`: generation 30.95 ms, cold 31.12 ms, warm 19.61 ms, mixed 21.54 ms
+  - `tier-a-multichannel`: generation 82.16 ms, cold 55.03 ms, warm 48.71 ms, mixed 49.59 ms
+  - threshold summary: 2/2 cases passed
+- Verification run (post-`NGR-050` atlas-index bridge pass):
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test`
+  - `npm run -s benchmark:nextgen-volume`
+- Continued `NGR-050` bridge pass with initial atlas-data sampling path:
+  - shader now includes atlas data uniforms:
+    - `u_brickAtlasEnabled`
+    - `u_brickAtlasData`
+    - `u_brickAtlasSize`
+  - nearest-mode `sample_color` now maps `(volume texcoord -> brick coord -> atlas index -> atlas texcoord)` and samples atlas data when enabled
+  - `useVolumeResources` now builds/updates/disposes atlas data textures from occupied bricks (nearest-mode single-channel only) and resets to fallback uniforms when not eligible
+  - extended resource typing + fallback textures for atlas-data path
+  - expanded `tests/useVolumeResources.test.ts` for atlas-data enable/fallback assertions
+  - files:
+    - `src/shaders/volumeRenderShader.ts`
+    - `src/components/viewers/volume-viewer/useVolumeResources.ts`
+    - `src/components/viewers/volume-viewer/fallbackTextures.ts`
+    - `src/components/viewers/VolumeViewer.types.ts`
+    - `tests/useVolumeResources.test.ts`
+- Regenerated baseline report after `NGR-050` atlas-data sampling bridge pass:
+  - `tier-a-single-channel`: generation 44.04 ms, cold 42.83 ms, warm 27.96 ms, mixed 29.42 ms
+  - `tier-a-multichannel`: generation 117.48 ms, cold 70.20 ms, warm 67.33 ms, mixed 50.86 ms
+  - threshold summary: 2/2 cases passed
+- Verification run (post-`NGR-050` atlas-data sampling bridge pass):
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test`
+  - `npm run -s benchmark:nextgen-volume`
+- Safety/compatibility hardening for atlas-data sampling:
+  - restricted atlas-data bridge eligibility to nearest-mode single-channel textures while broader format support is pending
+  - reran full verification and baseline benchmark after the restriction
+- Regenerated baseline report after nearest/single-channel atlas restriction:
+  - `tier-a-single-channel`: generation 42.55 ms, cold 42.77 ms, warm 28.09 ms, mixed 29.06 ms
+  - `tier-a-multichannel`: generation 114.55 ms, cold 73.46 ms, warm 67.32 ms, mixed 53.39 ms
+  - threshold summary: 2/2 cases passed
+- Verification run (post-atlas restriction):
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test`
+  - `npm run -s benchmark:nextgen-volume`
+- Continued `NGR-050` atlas-data bridge for multi-channel + linear parity:
+  - removed nearest/single-channel atlas eligibility guard in `useVolumeResources`
+  - atlas builder now preserves source texture channel format (`Red`/`RG`/`RGBA`)
+  - atlas texture upload path now keeps format parity with the source volume texture
+  - files:
+    - `src/components/viewers/volume-viewer/useVolumeResources.ts`
+- Continued `NGR-050` shader sampling path:
+  - `sample_color` now supports:
+    - nearest-mode atlas voxel sampling
+    - linear-mode parity path via shader-side trilinear interpolation over atlas/page-table voxel lookups
+  - files:
+    - `src/shaders/volumeRenderShader.ts`
+- Continued `NGR-052` targeted coverage:
+  - expanded `tests/useVolumeResources.test.ts` for:
+    - multi-channel (`RG`) atlas texture format + data-layout assertions
+    - window/invert uniform update assertions while linear-mode atlas sampling is active
+- Landed true 3D brick-residency runtime path (`NGR-080/081/082`):
+  - provider now exposes brick atlas runtime APIs:
+    - `getBrickAtlas(...)`
+    - `hasBrickAtlas(...)`
+    - `prefetchBrickAtlases(...)`
+  - brick atlas payloads are assembled from chunk reads (including sharded decode path) with page-table linkage and typed atlas texture format metadata
+  - files:
+    - `src/core/volumeProvider.ts`
+    - `tests/preprocessedDataset.test.ts`
+- Landed route/playback atlas-residency cutover:
+  - `useRouteLayerVolumes` now supports `preferBrickResidency` mode and tracks `currentLayerBrickAtlases`
+  - 3D route loads now use `getBrickAtlas(...)` rather than requiring `getVolume(...)`
+  - playback prefetch and readiness gating now switch to `hasBrickAtlas`/`prefetchBrickAtlases` in brick-residency mode
+  - files:
+    - `src/ui/app/hooks/useRouteLayerVolumes.ts`
+    - `src/ui/app/hooks/useRoutePlaybackPrefetch.ts`
+    - `src/ui/app/hooks/useAppRouteState.tsx`
+    - `tests/app/hooks/useRouteLayerVolumes.test.ts`
+    - `tests/app/hooks/useRoutePlaybackPrefetch.test.ts`
+- Landed atlas-only 3D viewer resource path:
+  - viewer layers now carry optional `brickAtlas` payloads
+  - `useVolumeResources` now renders 3D layers without full `NormalizedVolume` buffers when atlas payloads are present
+  - maintains page-table skip metadata and atlas sampling uniforms with direct provider payloads
+  - files:
+    - `src/components/viewers/VolumeViewer.types.ts`
+    - `src/components/viewers/volume-viewer/useVolumeResources.ts`
+    - `src/components/viewers/volume-viewer/useVolumeViewerData.ts`
+    - `src/ui/app/hooks/useLayerControls.ts`
+    - `tests/useVolumeResources.test.ts`
+- Landed provider cache-bound hardening for residency metadata (`NGR-083`):
+  - added LRU-style eviction/touch behavior for:
+    - `brickPageTableCache`
+    - `brickAtlasCache`
+  - cache budget updates (`setMaxCachedVolumes(...)`) now enforce limits consistently across:
+    - volume cache
+    - page-table cache
+    - atlas cache
+  - files:
+    - `src/core/volumeProvider.ts`
+    - `tests/preprocessedDataset.test.ts`
+- Landed provider atlas build throughput optimization (`NGR-084`):
+  - `loadBrickAtlas(...)` now builds chunk plans and executes bounded parallel workers instead of serial brick/channel chunk reads
+  - parallelism is constrained by runtime `maxConcurrentChunkReads`
+  - file:
+    - `src/core/volumeProvider.ts`
+- Landed mixed-residency route/prefetch hardening (`NGR-085`):
+  - residency decision is now per-layer in route loading:
+    - atlas mode for non-segmentation depth>1 layers
+    - volume mode for segmentation/slice-sensitive layers
+  - playback prefetch/readiness now splits layer sets across atlas and volume backends in one cycle
+  - files:
+    - `src/ui/app/hooks/useRouteLayerVolumes.ts`
+    - `src/ui/app/hooks/useRoutePlaybackPrefetch.ts`
+    - `src/ui/app/hooks/useAppRouteState.tsx`
+    - `tests/app/hooks/useRouteLayerVolumes.test.ts`
+    - `tests/app/hooks/useRoutePlaybackPrefetch.test.ts`
+- Verification run (post-atlas residency cutover):
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test`
+  - `npm run -s benchmark:nextgen-volume`
+- Updated baseline report after cutover:
+  - `tier-a-single-channel`: generation 27.89 ms, cold 31.12 ms, warm 18.98 ms, mixed 19.22 ms
+  - `tier-a-multichannel`: generation 80.36 ms, cold 48.06 ms, warm 46.54 ms, mixed 46.70 ms
+  - threshold summary: 2/2 cases passed
+  - files:
+    - `tests/useVolumeResources.test.ts`
+- Regenerated baseline report after multi-channel/linear atlas pass:
+  - `tier-a-single-channel`: generation 44.88 ms, cold 42.82 ms, warm 28.34 ms, mixed 28.72 ms
+  - `tier-a-multichannel`: generation 120.46 ms, cold 69.51 ms, warm 67.73 ms, mixed 70.49 ms
+  - threshold summary: 2/2 cases passed
+- Verification run (post multi-channel/linear atlas pass):
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test`
+  - `npm run -s benchmark:nextgen-volume`
+- Continued `NGR-050` atlas runtime optimization pass:
+  - `useVolumeResources` now tracks atlas-source references (`pageTable`, `textureData`, `textureFormat`) and reuses atlas textures when inputs are unchanged
+  - atlas cleanup/reset now clears atlas texture/cache fields on fallback paths (invalid/missing page-table metadata)
+  - added atlas build bookkeeping field (`brickAtlasBuildVersion`) in `VolumeResources` for targeted coverage and handoff visibility
+  - files:
+    - `src/components/viewers/VolumeViewer.types.ts`
+    - `src/components/viewers/volume-viewer/useVolumeResources.ts`
+- Continued `NGR-050` shader perf hardening:
+  - linear atlas sampling now hoists invariant `safeGrid/safeChunk` calculations outside the 8-corner trilinear taps
+  - files:
+    - `src/shaders/volumeRenderShader.ts`
+- Continued `NGR-052` targeted test hardening:
+  - expanded `tests/useVolumeResources.test.ts` with atlas build-state assertions (`brickAtlasBuildVersion`) and fallback reset assertions
+  - files:
+    - `tests/useVolumeResources.test.ts`
+- Regenerated baseline report after atlas reuse/perf hardening:
+  - `tier-a-single-channel`: generation 42.49 ms, cold 42.40 ms, warm 27.94 ms, mixed 28.73 ms
+  - `tier-a-multichannel`: generation 116.46 ms, cold 71.31 ms, warm 67.28 ms, mixed 70.75 ms
+  - threshold summary: 2/2 cases passed
+- Verification run (post atlas reuse/perf hardening):
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test`
+  - `npm run -s benchmark:nextgen-volume`
+- Continued `NGR-052` correctness coverage with a shader-skip CPU mirror:
+  - added `shouldSkipWithBrickStatsCpu(...)` helper in:
+    - `src/shaders/volumeRenderShader.ts`
+  - helper mirrors shader skip semantics for:
+    - skip enable/disable
+    - atlas-index/occupancy rejection
+    - invert-aware candidate max selection
+    - window normalization + iso threshold gating
+    - malformed min/max guard (`brickMaxRaw < brickMinRaw` => do not skip)
+  - added focused tests:
+    - `tests/volumeRenderShaderSkipModel.test.ts`
+- Regenerated baseline report after skip-model test pass:
+  - `tier-a-single-channel`: generation 43.32 ms, cold 42.69 ms, warm 27.84 ms, mixed 28.47 ms
+  - `tier-a-multichannel`: generation 221.18 ms, cold 69.64 ms, warm 65.54 ms, mixed 49.44 ms
+  - threshold summary: 2/2 cases passed
+- Verification run (post skip-model test pass):
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test`
+  - `npm run -s benchmark:nextgen-volume`
+- Continued `NGR-050` linear-atlas shader optimization:
+  - added same-brick fast path in `sample_brick_atlas_linear(...)`:
+    - resolve atlas index once when all 8 trilinear taps stay inside one brick
+    - keep existing conservative per-corner indirection path for cross-brick sampling
+  - files:
+    - `src/shaders/volumeRenderShader.ts`
+- Regenerated baseline report after same-brick fast-path pass:
+  - `tier-a-single-channel`: generation 47.25 ms, cold 46.50 ms, warm 33.41 ms, mixed 34.24 ms
+  - `tier-a-multichannel`: generation 121.32 ms, cold 73.34 ms, warm 67.27 ms, mixed 69.79 ms
+  - threshold summary: 2/2 cases passed
+- Verification run (post same-brick fast-path pass):
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test`
+  - `npm run -s benchmark:nextgen-volume`
+- Continued `NGR-050` linear-atlas shader optimization:
+  - cross-brick trilinear path now caches/reuses corner brick atlas-index lookups to avoid duplicate indirection fetches when multiple corners resolve to the same brick
+  - added shader helpers for brick-equality checks and atlas-sample zero fallback:
+    - `same_brick_coords(...)`
+    - `sample_brick_atlas_voxel_or_zero(...)`
+  - files:
+    - `src/shaders/volumeRenderShader.ts`
+- Continued `NGR-050` runtime resource optimization:
+  - `useVolumeResources` now skips rebuilding brick metadata textures when page-table reference is unchanged (`brickMetadataSourcePageTable`)
+  - atlas reuse now tracks a stable source token (`brickAtlasSourceToken`) keyed to `volume.normalized`, improving render-only update reuse robustness
+  - files:
+    - `src/components/viewers/volume-viewer/useVolumeResources.ts`
+    - `src/components/viewers/VolumeViewer.types.ts`
+    - `tests/useVolumeResources.test.ts`
+- Continued `NGR-052` skip-model coverage hardening:
+  - added focused CPU-mirror tests for:
+    - epsilon boundary behavior on `currentMax`
+    - invert-aware iso-threshold rejection
+    - window-clamp edge cases with out-of-range brick statistics
+  - files:
+    - `tests/volumeRenderShaderSkipModel.test.ts`
+- Regenerated baseline report after cross-brick atlas caching + skip-model hardening pass:
+  - `tier-a-single-channel`: generation 45.82 ms, cold 42.24 ms, warm 28.00 ms, mixed 28.85 ms
+  - `tier-a-multichannel`: generation 122.68 ms, cold 75.26 ms, warm 67.60 ms, mixed 69.64 ms
+  - threshold summary: 2/2 cases passed
+- Verification run (post cross-brick atlas caching + skip-model hardening pass):
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test`
+  - `npm run -s benchmark:nextgen-volume`
+- Continued `NGR-051` adaptive LOD integration:
+  - added shader adaptive LOD uniforms:
+    - `u_adaptiveLodEnabled`
+    - `u_adaptiveLodScale`
+    - `u_adaptiveLodMax`
+  - added LOD-aware sampling paths:
+    - `sample_color_lod(...)`
+    - `sample_full_volume_color(..., lod)` using `textureLod(...)` for full-volume linear path
+    - `sample_brick_atlas_linear_lod(..., lod)` for atlas path
+  - MIP/ISO traversal loops now compute/apply adaptive LOD during sampling
+  - added CPU mirror helper + focused coverage:
+    - `computeAdaptiveLodCpu(...)`
+    - `tests/volumeRenderShaderLodModel.test.ts`
+  - files:
+    - `src/shaders/volumeRenderShader.ts`
+    - `tests/volumeRenderShaderLodModel.test.ts`
+- Continued `NGR-051` runtime/viewer wiring:
+  - 3D linear sampling now uses mip-capable texture filtering (`LinearMipmapLinearFilter`) and enables mipmap generation
+  - nearest sampling remains nearest-filter/no-mipmap
+  - adaptive LOD uniforms now applied consistently on create/update paths
+  - files:
+    - `src/components/viewers/volume-viewer/useVolumeResources.ts`
+    - `tests/useVolumeResources.test.ts`
+- Continued `NGR-053` correctness coverage:
+  - added segmentation overlay correctness assertions while atlas sampling is active:
+    - label texture uniform binding on initial + rerender
+    - window/invert rerender uniform updates
+    - fallback to `FALLBACK_SEGMENTATION_LABEL_TEXTURE` when labels are absent
+  - files:
+    - `tests/useVolumeResources.test.ts`
+- Continued `NGR-060`/`NGR-061` tuning infrastructure:
+  - provider options now expose:
+    - `maxCachedChunkBytes`
+    - `maxConcurrentChunkReads`
+    - `maxConcurrentPrefetchLoads`
+  - benchmark harness now supports env overrides:
+    - `BENCHMARK_MAX_CACHED_CHUNK_BYTES`
+    - `BENCHMARK_MAX_CONCURRENT_CHUNK_READS`
+    - `BENCHMARK_MAX_CONCURRENT_PREFETCH_LOADS`
+  - preprocess chunk sizing now accepts `storageStrategy.chunkTargetBytes`
+  - files:
+    - `src/core/volumeProvider.ts`
+    - `scripts/benchmark-nextgen-volume.ts`
+    - `src/shared/utils/preprocessedDataset/preprocess.ts`
+- Completed `NGR-062` and `NGR-063` hardening coverage:
+  - added large-volume stress/perf regression budgets and long-playback cancellation stability assertions
+  - file:
+    - `tests/perf/nextgenVolumeRuntimeStress.test.ts`
+- Regenerated baseline report after adaptive LOD + hardening pass:
+  - `tier-a-single-channel`: generation 45.94 ms, cold 43.99 ms, warm 28.42 ms, mixed 21.24 ms
+  - `tier-a-multichannel`: generation 152.72 ms, cold 51.22 ms, warm 47.96 ms, mixed 52.15 ms
+  - threshold summary: 2/2 cases passed
+- Final verification run (current tree):
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test`
+  - `npm run -s benchmark:nextgen-volume`
+- Continued `NGR-050` linear-atlas branch/cost tuning pass:
+  - refactored cross-brick corner planning in `sample_brick_atlas_linear(...)`:
+    - corner brick coords are now derived from `baseBrick/farBrick` axis spans instead of per-corner `brick_coords_for_voxel(...)` calls
+    - atlas-index dedupe now follows explicit axis-span combinations (`x/y/z`) with reduced branch depth
+  - added degenerate exact-voxel-center fast path in linear atlas sampling (single voxel sample)
+  - file:
+    - `src/shaders/volumeRenderShader.ts`
+- Added `NGR-050` CPU analysis support for sampling-plan visibility:
+  - exported `analyzeLinearAtlasSamplingCpu(...)` and related types to mirror shader corner planning and lookup-count behavior
+  - added focused tests:
+    - `tests/volumeRenderShaderAtlasPlan.test.ts`
+  - files:
+    - `src/shaders/volumeRenderShader.ts`
+    - `tests/volumeRenderShaderAtlasPlan.test.ts`
+- Continued `NGR-052` parity coverage hardening:
+  - extended `tests/volumeRenderShaderSkipModel.test.ts` with deterministic randomized parity checks against an independent reference implementation for skip semantics (window/invert/iso combinations)
+  - file:
+    - `tests/volumeRenderShaderSkipModel.test.ts`
+- Regenerated baseline report after linear-atlas planning + skip parity hardening pass:
+  - `tier-a-single-channel`: generation 44.61 ms, cold 39.51 ms, warm 19.40 ms, mixed 20.23 ms
+  - `tier-a-multichannel`: generation 85.08 ms, cold 51.69 ms, warm 49.62 ms, mixed 50.84 ms
+  - threshold summary: 2/2 cases passed
+- Verification run (post linear-atlas planning + skip parity hardening pass):
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test`
+  - `npm run -s benchmark:nextgen-volume`
+- Continued `NGR-053` overlay correctness hardening:
+  - expanded atlas-enabled segmentation overlay coverage to include linear->nearest sampling transitions while preserving label-texture wiring and expected adaptive-LOD toggle semantics
+  - file:
+    - `tests/useVolumeResources.test.ts`
+- Continued `NGR-060` measured tuning workflow:
+  - benchmark harness now supports spatial-chunk override for case sweeps:
+    - `BENCHMARK_CHUNK_SPATIAL=<depth,height,width>`
+  - benchmark reports now include runtime tuning overrides under `environment.runtimeOverrides`
+  - benchmark matrix case chunk shapes tuned to:
+    - `[1,16,64,64,1]`
+    - `[1,16,64,64,2]`
+  - files:
+    - `scripts/benchmark-nextgen-volume.ts`
+    - `docs/refactor-nextgen-volume/BENCHMARK_MATRIX.json`
+    - `docs/refactor-nextgen-volume/BENCHMARK_MATRIX.md`
+- Continued `NGR-061` measured runtime tuning:
+  - tuned provider defaults:
+    - `DEFAULT_MAX_CACHED_CHUNK_BYTES = 64MB`
+    - `DEFAULT_MAX_CONCURRENT_CHUNK_READS = 10`
+  - file:
+    - `src/core/volumeProvider.ts`
+- Completed `NGR-070` and `NGR-071` cleanup slice:
+  - removed unsupported/dead digest verification path (`verifyDigestsOnRead`) and stale `verified` cache state
+  - removed unused legacy digest helper:
+    - `src/shared/utils/preprocessedDataset/hash.ts`
+  - files:
+    - `src/core/volumeProvider.ts`
+    - `src/shared/utils/preprocessedDataset/hash.ts`
+- Completed `NGR-072` cutover validation:
+  - strict-unused gate passes:
+    - `npm run -s typecheck:strict-unused`
+- Regenerated baseline report after tuning/defaults cleanup pass:
+  - `tier-a-single-channel`: generation 37.61 ms, cold 43.41 ms, warm 27.69 ms, mixed 28.21 ms
+  - `tier-a-multichannel`: generation 114.78 ms, cold 71.17 ms, warm 55.17 ms, mixed 48.78 ms
+  - threshold summary: 2/2 cases passed
+- Verification run (post tuning/defaults cleanup pass):
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test`
+  - `npm run -s benchmark:nextgen-volume`
+- Corrected refactor status documentation to remove ambiguity about completion:
+  - updated `README.md` status to **In Progress (Not 100% Architecture Complete)**
+  - updated `ROADMAP.md` status and added mandatory closure phases:
+    - Phase 7: true brick residency cutover
+    - Phase 8: multiscale streaming and final closure
+  - added explicit Architecture Completion Backlog (`NGR-090` through `NGR-097`) in `BACKLOG.md`
+  - replaced "no open tasks" messaging in `SESSION_HANDOFF.md` with mandatory next actions tied to `NGR-090+`
+  - replaced schema "known gaps" wording with explicit mandatory closure blockers in `SCHEMA_VNEXT.md`
+- Re-verified current tree while updating handoff status docs:
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test`
+  - `npm run -s benchmark:nextgen-volume`
+  - latest matrix summary: 2/2 cases passed

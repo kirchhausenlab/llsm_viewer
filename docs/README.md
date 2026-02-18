@@ -4,6 +4,13 @@ A high-performance web viewer for 4D (3D + time) lattice light-sheet microscopy 
 
 Try it [here](https://kirchhausenlab.github.io/llsm_viewer/)! Recommended on Chromium browsers (Chrome, Edge, Brave).
 
+## Refactor documentation
+
+- Active next-gen volume/rendering refactor:
+  - `docs/refactor-nextgen-volume/README.md`
+- Archived prior refactor program:
+  - `docs/refactor/ARCHIVE_SUMMARY.md`
+
 ## Running locally
 
 ```bash
@@ -71,6 +78,14 @@ npm run test:visual
 ```
 
 ### Playwright workflow
+
+Playwright runtime values are defined in:
+
+```text
+.env.playwright
+```
+
+`playwright.config.ts` reads this file directly and requires all keys to be present.
 
 Install browser binaries once:
 

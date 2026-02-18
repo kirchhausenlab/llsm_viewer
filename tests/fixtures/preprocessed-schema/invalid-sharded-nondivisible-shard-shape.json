@@ -1,0 +1,87 @@
+{
+  "format": "llsm-viewer-preprocessed-vnext",
+  "generatedAt": "2026-02-13T00:00:00.000Z",
+  "dataset": {
+    "movieMode": "3d",
+    "totalVolumeCount": 2,
+    "channels": [
+      {
+        "id": "channel-sharded",
+        "name": "Channel Sharded",
+        "trackSets": [],
+        "layers": [
+          {
+            "key": "layer-sharded",
+            "label": "Layer Sharded",
+            "channelId": "channel-sharded",
+            "isSegmentation": false,
+            "volumeCount": 2,
+            "width": 4,
+            "height": 3,
+            "depth": 2,
+            "channels": 1,
+            "dataType": "uint8",
+            "normalization": {
+              "min": 0,
+              "max": 255
+            },
+            "zarr": {
+              "scales": [
+                {
+                  "level": 0,
+                  "downsampleFactor": [1, 1, 1],
+                  "width": 4,
+                  "height": 3,
+                  "depth": 2,
+                  "channels": 1,
+                  "zarr": {
+                    "data": {
+                      "path": "channels/channel-sharded/layer-sharded/scales/0/data",
+                      "shape": [2, 2, 3, 4, 1],
+                      "chunkShape": [1, 1, 2, 2, 1],
+                      "dataType": "uint8",
+                      "sharding": {
+                        "enabled": true,
+                        "targetShardBytes": 8192,
+                        "shardShape": [1, 1, 2, 3, 1],
+                        "estimatedShardBytes": 8
+                      }
+                    },
+                    "chunkStats": {
+                      "min": {
+                        "path": "channels/channel-sharded/layer-sharded/scales/0/chunk-stats/min",
+                        "shape": [2, 2, 2, 2],
+                        "chunkShape": [1, 2, 2, 2],
+                        "dataType": "uint8"
+                      },
+                      "max": {
+                        "path": "channels/channel-sharded/layer-sharded/scales/0/chunk-stats/max",
+                        "shape": [2, 2, 2, 2],
+                        "chunkShape": [1, 2, 2, 2],
+                        "dataType": "uint8"
+                      },
+                      "occupancy": {
+                        "path": "channels/channel-sharded/layer-sharded/scales/0/chunk-stats/occupancy",
+                        "shape": [2, 2, 2, 2],
+                        "chunkShape": [1, 2, 2, 2],
+                        "dataType": "float32"
+                      }
+                    },
+                    "histogram": {
+                      "path": "channels/channel-sharded/layer-sharded/scales/0/histogram",
+                      "shape": [2, 256],
+                      "chunkShape": [1, 256],
+                      "dataType": "uint32"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "voxelResolution": null,
+    "anisotropyCorrection": null
+  }
+}

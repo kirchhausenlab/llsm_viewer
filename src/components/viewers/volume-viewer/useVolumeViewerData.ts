@@ -35,16 +35,29 @@ export function useVolumeViewerDataState({
   }, [layers]);
 
   const hasRenderableLayer = Boolean(primaryVolume);
+  const hasAtlasOnlyLayer = useMemo(
+    () =>
+      layers.some(
+        (layer) =>
+          !layer.volume &&
+          layer.brickAtlas?.enabled &&
+          layer.brickAtlas.pageTable.volumeShape[0] > 0 &&
+          layer.brickAtlas.pageTable.volumeShape[1] > 0 &&
+          layer.brickAtlas.pageTable.volumeShape[2] > 0
+      ),
+    [layers]
+  );
   const hasActive3DLayer = useMemo(
     () =>
       layers.some((layer) => {
-        if (!layer.volume) {
+        const depth = layer.volume?.depth ?? layer.brickAtlas?.pageTable.volumeShape[0] ?? 0;
+        if (depth <= 0) {
           return false;
         }
         const viewerMode =
           layer.mode === 'slice' || layer.mode === '3d'
             ? layer.mode
-            : layer.volume.depth > 1
+            : depth > 1
               ? '3d'
               : 'slice';
 
@@ -53,7 +66,12 @@ export function useVolumeViewerDataState({
     [layers],
   );
 
-  return { showLoadingOverlay, primaryVolume, hasRenderableLayer, hasActive3DLayer } as const;
+  return {
+    showLoadingOverlay,
+    primaryVolume,
+    hasRenderableLayer: hasRenderableLayer || hasAtlasOnlyLayer,
+    hasActive3DLayer
+  } as const;
 }
 
 export function useVolumeViewerResources({
@@ -61,6 +79,7 @@ export function useVolumeViewerResources({
   primaryVolume,
   isAdditiveBlending,
   renderContextRevision,
+  rendererRef,
   sceneRef,
   cameraRef,
   controlsRef,
@@ -90,6 +109,7 @@ export function useVolumeViewerResources({
   primaryVolume: ReturnType<typeof useVolumeViewerDataState>['primaryVolume'];
   isAdditiveBlending: boolean;
   renderContextRevision: number;
+  rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
   sceneRef: MutableRefObject<THREE.Scene | null>;
   cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
   controlsRef: MutableRefObject<any>;
@@ -120,6 +140,7 @@ export function useVolumeViewerResources({
     primaryVolume,
     isAdditiveBlending,
     renderContextRevision,
+    rendererRef,
     sceneRef,
     cameraRef,
     controlsRef,

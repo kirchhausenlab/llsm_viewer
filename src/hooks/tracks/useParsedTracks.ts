@@ -176,7 +176,13 @@ export const useParsedTracks = ({ channels, setChannels, experimentDimension }: 
 
   const handleChannelTrackDrop = useCallback(
     async (channelId: string, dataTransfer: DataTransfer) => {
-      const files = await collectFilesFromDataTransfer(dataTransfer);
+      let files: File[];
+      try {
+        files = await collectFilesFromDataTransfer(dataTransfer);
+      } catch (error) {
+        console.error('Failed to read dropped track files', error);
+        return;
+      }
       const csvFiles = files.filter((file) => file.name.toLowerCase().endsWith('.csv'));
       if (csvFiles.length === 0) {
         return;

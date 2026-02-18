@@ -5,7 +5,6 @@ import { unzip } from 'fflate';
 import { openPreprocessedDatasetFromZarrStorage } from '../../shared/utils/preprocessedDataset/open';
 import {
   createDirectoryHandlePreprocessedStorage,
-  createInMemoryPreprocessedStorage,
   createOpfsPreprocessedStorage
 } from '../../shared/storage/preprocessedStorage';
 import type { PreprocessedStorageHandle } from '../../shared/storage/preprocessedStorage';
@@ -44,9 +43,10 @@ export type UsePreprocessedImportResult = {
 type ArchiveEntries = Record<string, Uint8Array>;
 
 type ArchiveExtractionResult = {
-  rootPrefix: string;
   files: Array<{ path: string; data: Uint8Array }>;
 };
+
+const PREPROCESSED_STORAGE_ROOT_DIR = 'llsm-viewer-preprocessed-vnext';
 
 function canUseDirectoryPicker(): boolean {
   return typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function';
@@ -115,38 +115,39 @@ async function unzipArchive(bytes: Uint8Array): Promise<ArchiveEntries> {
 }
 
 function resolveArchiveEntries(entries: ArchiveEntries): ArchiveExtractionResult {
-  const fileEntries = Object.entries(entries).filter(([name]) => !name.endsWith('/'));
+  const fileEntries = Object.entries(entries)
+    .map(([name, data]) => ({
+      path: name.replace(/\\/g, '/').replace(/^\.\/+/, '').replace(/^\/+/, ''),
+      data
+    }))
+    .filter((entry) => entry.path.length > 0 && !entry.path.endsWith('/'));
   if (fileEntries.length === 0) {
     throw new Error('Archive is empty.');
   }
-  const zarrCandidates = fileEntries
-    .map(([name]) => name)
-    .filter((name) => name.endsWith('zarr.json'))
-    .sort((a, b) => a.length - b.length);
-  const zarrPath = zarrCandidates[0];
-  if (!zarrPath) {
+
+  for (const entry of fileEntries) {
+    const parts = entry.path.split('/');
+    if (parts.some((part) => part === '.' || part === '..')) {
+      throw new Error(`Archive contains an unsafe path: ${entry.path}`);
+    }
+  }
+
+  const hasRootZarr = fileEntries.some((entry) => entry.path === 'zarr.json');
+  if (!hasRootZarr) {
+    const nestedZarrPath = fileEntries.find((entry) => entry.path.endsWith('/zarr.json'))?.path ?? null;
+    if (nestedZarrPath) {
+      throw new Error('Archive must contain zarr.json at the archive root.');
+    }
     throw new Error('Archive does not contain zarr.json.');
   }
-  const rootPrefix = zarrPath.slice(0, zarrPath.length - 'zarr.json'.length);
-  const files = fileEntries
-    .filter(([name]) => name.startsWith(rootPrefix))
-    .map(([name, data]) => ({ path: name.slice(rootPrefix.length), data }))
-    .filter((entry) => entry.path.length > 0);
-  if (files.length === 0) {
-    throw new Error('Archive does not contain dataset files.');
-  }
-  return { rootPrefix, files };
+
+  return { files: fileEntries };
 }
 
-function deriveArchiveDatasetId(file: File, rootPrefix: string): string {
+function deriveArchiveDatasetId(file: File): string {
   const baseName = file.name.replace(/\.(zip|tar)$/i, '').trim();
   if (baseName) {
     return baseName;
-  }
-  const trimmedRoot = rootPrefix.replace(/\/+$/, '');
-  if (trimmedRoot) {
-    const parts = trimmedRoot.split('/').filter(Boolean);
-    return parts[parts.length - 1];
   }
   return 'preprocessed-archive';
 }
@@ -281,7 +282,9 @@ export function usePreprocessedImport({
         throw new Error('Folder selection is not supported in this browser.');
       }
 
-      const storageHandle = await createDirectoryHandlePreprocessedStorage(directoryHandle);
+      const storageHandle = await createDirectoryHandlePreprocessedStorage(directoryHandle, {
+        id: directoryHandle.name
+      });
       const result = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
       stagePreprocessedDataset(result, storageHandle, null, null);
     } catch (error) {
@@ -316,16 +319,13 @@ export function usePreprocessedImport({
 
         const bytes = new Uint8Array(await file.arrayBuffer());
         const entries = await unzipArchive(bytes);
-        const { rootPrefix, files } = resolveArchiveEntries(entries);
-        const datasetId = deriveArchiveDatasetId(file, rootPrefix);
+        const { files } = resolveArchiveEntries(entries);
+        const datasetId = deriveArchiveDatasetId(file);
 
-        let storageHandle;
-        try {
-          storageHandle = await createOpfsPreprocessedStorage({ datasetId });
-        } catch (error) {
-          console.warn('Falling back to in-memory storage for archive import', error);
-          storageHandle = createInMemoryPreprocessedStorage({ datasetId });
-        }
+        const storageHandle = await createOpfsPreprocessedStorage({
+          datasetId,
+          rootDir: PREPROCESSED_STORAGE_ROOT_DIR
+        });
 
         for (const entry of files) {
           await storageHandle.storage.writeFile(entry.path, entry.data);

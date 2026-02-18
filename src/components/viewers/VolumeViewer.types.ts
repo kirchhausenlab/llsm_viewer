@@ -4,6 +4,7 @@ import type { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
 import type { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
 
 import type { NormalizedVolume } from '../../core/volumeProcessing';
+import type { VolumeBrickAtlas, VolumeBrickPageTable, VolumeProviderDiagnostics } from '../../core/volumeProvider';
 import type { FollowedVoxelTarget } from '../../types/follow';
 import type { HoveredVoxelInfo } from '../../types/hover';
 import type { PaintbrushStrokeHandlers } from '../../types/paintbrush';
@@ -15,6 +16,9 @@ export type ViewerLayer = {
   key: string;
   label: string;
   channelName: string;
+  fullResolutionWidth: number;
+  fullResolutionHeight: number;
+  fullResolutionDepth: number;
   volume: NormalizedVolume | null;
   visible: boolean;
   isHoverTarget?: boolean;
@@ -34,6 +38,9 @@ export type ViewerLayer = {
   isSegmentation?: boolean;
   mode?: '3d' | 'slice';
   sliceIndex?: number;
+  scaleLevel?: number;
+  brickPageTable?: VolumeBrickPageTable | null;
+  brickAtlas?: VolumeBrickAtlas | null;
 };
 
 export type VolumeViewerVrPanelLayerSettings = {
@@ -126,6 +133,7 @@ export type VolumeViewerProps = {
   loadingProgress: number;
   loadedVolumes: number;
   expectedVolumes: number;
+  runtimeDiagnostics?: VolumeProviderDiagnostics | null;
   onTogglePlayback: () => void;
   onTimeIndexChange: (nextIndex: number) => void;
   canAdvancePlayback?: (nextIndex: number) => boolean;
@@ -171,6 +179,51 @@ export type VolumeResources = {
   mode: '3d' | 'slice';
   samplingMode: 'linear' | 'nearest';
   sliceBuffer?: Uint8Array | null;
+  brickPageTable?: VolumeBrickPageTable | null;
+  brickOccupancyTexture?: THREE.Data3DTexture | null;
+  brickMinTexture?: THREE.Data3DTexture | null;
+  brickMaxTexture?: THREE.Data3DTexture | null;
+  brickAtlasIndexTexture?: THREE.Data3DTexture | null;
+  brickAtlasDataTexture?: THREE.Data3DTexture | null;
+  brickMetadataSourcePageTable?: VolumeBrickPageTable | null;
+  brickAtlasSourceToken?: object | null;
+  brickAtlasSourceData?: Uint8Array | null;
+  brickAtlasSourceFormat?: THREE.Data3DTexture['format'] | null;
+  brickAtlasSourcePageTable?: VolumeBrickPageTable | null;
+  brickAtlasBuildVersion?: number;
+  gpuBrickResidencyMetrics?: {
+    layerKey: string;
+    timepoint: number;
+    scaleLevel: number;
+    residentBricks: number;
+    totalBricks: number;
+    residentBytes: number;
+    budgetBytes: number;
+    uploads: number;
+    evictions: number;
+    pendingBricks: number;
+    prioritizedBricks: number;
+    scheduledUploads: number;
+    lastCameraDistance: number | null;
+  } | null;
+  brickSkipDiagnostics?: {
+    enabled: boolean;
+    reason:
+      | 'enabled'
+      | 'disabled-by-config'
+      | 'missing-page-table'
+      | 'invalid-page-table'
+      | 'occupied-bricks-missing-from-atlas'
+      | 'invalid-min-max-range'
+      | 'occupancy-metadata-mismatch';
+    totalBricks: number;
+    emptyBricks: number;
+    occupiedBricks: number;
+    occupiedBricksMissingFromAtlas: number;
+    invalidRangeBricks: number;
+    occupancyMetadataMismatchBricks: number;
+  } | null;
+  updateGpuBrickResidencyForCamera?: ((cameraWorldPosition: THREE.Vector3) => void) | null;
 };
 
 export type VrHistogramShape = {

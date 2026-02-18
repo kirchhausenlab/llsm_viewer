@@ -9,6 +9,7 @@ import {
   TRACK_SMOOTHING_RANGE,
   TRACK_TRAIL_LENGTH_RANGE
 } from '../../hooks/tracks';
+import type { VolumeProviderDiagnostics } from '../../core/volumeProvider';
 import type { VolumeViewerVrProps } from './VolumeViewer.types';
 import type { ViewerShellProps } from './ViewerShell';
 
@@ -68,6 +69,7 @@ export type ViewerShellContainerViewerPanelsProps = {
   layers: ViewerLayerConfig[];
   loading: ViewerPanelsLoadingInput;
   tracks: ViewerPanelsTrackInput;
+  runtimeDiagnostics?: VolumeProviderDiagnostics | null;
   canAdvancePlayback?: ViewerShellProps['volumeViewerProps']['canAdvancePlayback'];
   onRegisterReset: ViewerShellProps['volumeViewerProps']['onRegisterReset'];
   onVolumeStepScaleChange?: ViewerShellProps['volumeViewerProps']['onVolumeStepScaleChange'];
@@ -141,6 +143,7 @@ function mapVolumeViewerProps({
     loadingProgress: viewerPanels.loading.loadingProgress,
     loadedVolumes: viewerPanels.loading.loadedVolumes,
     expectedVolumes: viewerPanels.loading.expectedVolumes,
+    runtimeDiagnostics: viewerPanels.runtimeDiagnostics ?? null,
     timeIndex: playbackControls.selectedIndex,
     totalTimepoints: playbackControls.volumeTimepointCount,
     isPlaying: playbackControls.isPlaying,

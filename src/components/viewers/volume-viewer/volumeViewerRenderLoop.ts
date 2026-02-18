@@ -51,6 +51,7 @@ export function createVolumeViewerRenderLoop({
   vrLog
 }: CreateVolumeViewerRenderLoopOptions): (timestamp: number) => void {
   let lastRenderTickSummary: { presenting: boolean; hoveredByController: string | null } | null = null;
+  const cameraWorldPosition = new THREE.Vector3();
 
   return (timestamp: number) => {
     applyKeyboardRotation(renderer, camera, controls);
@@ -71,9 +72,11 @@ export function createVolumeViewerRenderLoop({
     }
 
     const resources = resourcesRef.current;
+    cameraWorldPosition.setFromMatrixPosition(camera.matrixWorld);
     for (const resource of resources.values()) {
       const { mesh } = resource;
       mesh.updateMatrixWorld();
+      resource.updateGpuBrickResidencyForCamera?.(cameraWorldPosition);
     }
 
     const hoverPulse = 0.5 + 0.5 * Math.sin(timestamp * HOVER_PULSE_SPEED);

@@ -5,6 +5,8 @@ type UseRoutePlaybackPrefetchOptions = {
   isViewerLaunched: boolean;
   isPlaying: boolean;
   fps: number;
+  preferBrickResidency: boolean;
+  brickResidencyLayerKeys: string[];
   volumeProvider: VolumeProvider | null;
   volumeTimepointCount: number;
   playbackLayerKeys: string[];
@@ -27,11 +29,28 @@ export function useRoutePlaybackPrefetch({
   isViewerLaunched,
   isPlaying,
   fps,
+  preferBrickResidency,
+  brickResidencyLayerKeys,
   volumeProvider,
   volumeTimepointCount,
   playbackLayerKeys,
   selectedIndex
 }: UseRoutePlaybackPrefetchOptions): UseRoutePlaybackPrefetchResult {
+  const brickResidencyLayerKeySet = useMemo(() => new Set(brickResidencyLayerKeys), [brickResidencyLayerKeys]);
+  const atlasScaleLevels = useMemo(() => (isPlaying ? [0, 1] : [0]), [isPlaying]);
+  const preferredAtlasScaleLevel = atlasScaleLevels[atlasScaleLevels.length - 1] ?? 0;
+
+  const useBrickResidencyPrefetch = useMemo(
+    () =>
+      Boolean(
+        preferBrickResidency &&
+          volumeProvider &&
+          typeof volumeProvider.getBrickAtlas === 'function' &&
+          typeof volumeProvider.hasBrickAtlas === 'function'
+      ),
+    [preferBrickResidency, volumeProvider]
+  );
+
   const playbackPrefetchLookahead = useMemo(() => {
     if (!isPlaying) {
       return 1;
@@ -44,6 +63,7 @@ export function useRoutePlaybackPrefetch({
   }, [fps, isPlaying]);
 
   const playbackPrefetchSessionRef = useRef(0);
+  const playbackPrefetchAbortRef = useRef<AbortController | null>(null);
   const playbackPrefetchStateRef = useRef<RoutePlaybackPrefetchState>({
     pending: [],
     inFlight: new Set<number>(),
@@ -52,25 +72,40 @@ export function useRoutePlaybackPrefetch({
     drainScheduled: false
   });
 
-  useEffect(() => {
+  const resetPlaybackPrefetchSession = useCallback(() => {
     playbackPrefetchSessionRef.current += 1;
+    playbackPrefetchAbortRef.current?.abort();
+    playbackPrefetchAbortRef.current = null;
     const state = playbackPrefetchStateRef.current;
     state.pending.length = 0;
     state.inFlight.clear();
     state.layerKeys = [];
     state.drainScheduled = false;
-  }, [volumeProvider]);
+  }, []);
+
+  useEffect(() => {
+    resetPlaybackPrefetchSession();
+  }, [resetPlaybackPrefetchSession, volumeProvider]);
+
+  useEffect(() => {
+    return () => {
+      playbackPrefetchAbortRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     if (isPlaying) {
       return;
     }
-    playbackPrefetchSessionRef.current += 1;
-    const state = playbackPrefetchStateRef.current;
-    state.pending.length = 0;
-    state.inFlight.clear();
-    state.layerKeys = [];
-    state.drainScheduled = false;
+    resetPlaybackPrefetchSession();
+  }, [isPlaying, resetPlaybackPrefetchSession]);
+  useEffect(() => {
+    if (!isPlaying) {
+      return;
+    }
+    if (!playbackPrefetchAbortRef.current || playbackPrefetchAbortRef.current.signal.aborted) {
+      playbackPrefetchAbortRef.current = new AbortController();
+    }
   }, [isPlaying]);
 
   const drainPlaybackPrefetchQueue = useCallback(() => {
@@ -95,6 +130,10 @@ export function useRoutePlaybackPrefetch({
       if (playbackPrefetchSessionRef.current !== session) {
         return;
       }
+      const prefetchSignal = playbackPrefetchAbortRef.current?.signal ?? null;
+      if (prefetchSignal?.aborted) {
+        return;
+      }
 
       while (nextState.inFlight.size < nextState.maxInFlight && nextState.pending.length > 0) {
         const idx = nextState.pending.shift();
@@ -103,8 +142,55 @@ export function useRoutePlaybackPrefetch({
         }
         nextState.inFlight.add(idx);
 
-        void volumeProvider
-          .prefetch(nextState.layerKeys, idx)
+        const atlasLayerKeys =
+          useBrickResidencyPrefetch
+            ? nextState.layerKeys.filter((layerKey) => brickResidencyLayerKeySet.has(layerKey))
+            : [];
+        const volumeLayerKeys =
+          atlasLayerKeys.length > 0
+            ? nextState.layerKeys.filter((layerKey) => !brickResidencyLayerKeySet.has(layerKey))
+            : nextState.layerKeys;
+        const prefetchTasks: Promise<void>[] = [];
+
+        if (atlasLayerKeys.length > 0) {
+          prefetchTasks.push(
+            (
+              typeof volumeProvider.prefetchBrickAtlases === 'function'
+                ? volumeProvider.prefetchBrickAtlases(atlasLayerKeys, idx, {
+                    policy: 'missing-only',
+                    reason: 'playback',
+                    signal: prefetchSignal,
+                    maxConcurrentLayerLoads: 2,
+                    scaleLevels: atlasScaleLevels
+                  })
+                : Promise.all(
+                    atlasLayerKeys.flatMap((layerKey) =>
+                      atlasScaleLevels.map((scaleLevel) =>
+                        volumeProvider.getBrickAtlas!(layerKey, idx, { scaleLevel })
+                      )
+                    )
+                  ).then(() => {})
+            ) as Promise<void>
+          );
+        }
+
+        if (volumeLayerKeys.length > 0) {
+          prefetchTasks.push(
+            volumeProvider.prefetch(volumeLayerKeys, idx, {
+              policy: 'missing-only',
+              reason: 'playback',
+              signal: prefetchSignal,
+              maxConcurrentLayerLoads: 2
+            })
+          );
+        }
+
+        const prefetchTask =
+          prefetchTasks.length === 1
+            ? prefetchTasks[0]!
+            : Promise.all(prefetchTasks).then(() => {});
+
+        void prefetchTask
           .catch((error) => {
             console.warn('Playback prefetch failed', error);
           })
@@ -117,7 +203,7 @@ export function useRoutePlaybackPrefetch({
           });
       }
     });
-  }, [volumeProvider]);
+  }, [atlasScaleLevels, brickResidencyLayerKeySet, useBrickResidencyPrefetch, volumeProvider]);
 
   const schedulePlaybackPrefetch = useCallback(
     (baseIndex: number) => {
@@ -130,6 +216,9 @@ export function useRoutePlaybackPrefetch({
 
       const maxInFlight = lookahead >= 6 ? 2 : 1;
       const state = playbackPrefetchStateRef.current;
+      if (!playbackPrefetchAbortRef.current || playbackPrefetchAbortRef.current.signal.aborted) {
+        playbackPrefetchAbortRef.current = new AbortController();
+      }
       state.layerKeys = playbackLayerKeys;
       state.maxInFlight = maxInFlight;
       state.pending.length = 0;
@@ -142,7 +231,11 @@ export function useRoutePlaybackPrefetch({
 
         let ready = true;
         for (const layerKey of playbackLayerKeys) {
-          if (!volumeProvider.hasVolume(layerKey, idx)) {
+          const useLayerBrickResidency = useBrickResidencyPrefetch && brickResidencyLayerKeySet.has(layerKey);
+          const layerReady = useLayerBrickResidency
+            ? volumeProvider.hasBrickAtlas?.(layerKey, idx, { scaleLevel: preferredAtlasScaleLevel }) ?? false
+            : volumeProvider.hasVolume(layerKey, idx);
+          if (!layerReady) {
             ready = false;
             break;
           }
@@ -162,6 +255,8 @@ export function useRoutePlaybackPrefetch({
       isViewerLaunched,
       playbackLayerKeys,
       playbackPrefetchLookahead,
+      brickResidencyLayerKeySet,
+      useBrickResidencyPrefetch,
       volumeProvider,
       volumeTimepointCount
     ]
@@ -177,9 +272,12 @@ export function useRoutePlaybackPrefetch({
       return;
     }
 
-    const desired = Math.max(6, layerCount * (playbackPrefetchLookahead + 2));
+    const desired = Math.max(
+      6,
+      layerCount * (playbackPrefetchLookahead + 2) * (useBrickResidencyPrefetch ? atlasScaleLevels.length : 1)
+    );
     volumeProvider.setMaxCachedVolumes(desired);
-  }, [playbackLayerKeys.length, playbackPrefetchLookahead, volumeProvider]);
+  }, [atlasScaleLevels.length, playbackLayerKeys.length, playbackPrefetchLookahead, useBrickResidencyPrefetch, volumeProvider]);
 
   const canAdvancePlaybackToIndex = useCallback(
     (nextIndex: number): boolean => {
@@ -188,7 +286,13 @@ export function useRoutePlaybackPrefetch({
       }
 
       const clampedIndex = Math.max(0, Math.min(volumeTimepointCount - 1, nextIndex));
-      const ready = playbackLayerKeys.every((layerKey) => volumeProvider.hasVolume(layerKey, clampedIndex));
+      const ready = playbackLayerKeys.every((layerKey) => {
+        const useLayerBrickResidency = useBrickResidencyPrefetch && brickResidencyLayerKeySet.has(layerKey);
+        return useLayerBrickResidency
+          ? volumeProvider.hasBrickAtlas?.(layerKey, clampedIndex, { scaleLevel: preferredAtlasScaleLevel }) ?? false
+          : volumeProvider.hasVolume(layerKey, clampedIndex);
+      }
+      );
 
       if (!ready) {
         schedulePlaybackPrefetch(clampedIndex);
@@ -197,7 +301,16 @@ export function useRoutePlaybackPrefetch({
 
       return true;
     },
-    [isViewerLaunched, playbackLayerKeys, schedulePlaybackPrefetch, volumeProvider, volumeTimepointCount]
+    [
+      isViewerLaunched,
+      playbackLayerKeys,
+      schedulePlaybackPrefetch,
+      brickResidencyLayerKeySet,
+      useBrickResidencyPrefetch,
+      preferredAtlasScaleLevel,
+      volumeProvider,
+      volumeTimepointCount
+    ]
   );
 
   useEffect(() => {

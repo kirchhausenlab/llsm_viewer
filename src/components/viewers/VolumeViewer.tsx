@@ -34,12 +34,72 @@ import {
 } from './volume-viewer/volumeViewerRuntimeArgs';
 import { getTrackPlaybackIndexWindow } from '../../shared/utils';
 
+function formatPercentage(value: number): string {
+  if (!Number.isFinite(value)) {
+    return '0%';
+  }
+  const clamped = Math.max(0, Math.min(1, value));
+  return `${Math.round(clamped * 100)}%`;
+}
+
+function formatChunkBytesAsMb(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '0.0 MB';
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function summarizeGpuResidency(resources: Map<string, VolumeResources>) {
+  let layerCount = 0;
+  let residentBricks = 0;
+  let totalBricks = 0;
+  let residentBytes = 0;
+  let budgetBytes = 0;
+  let uploads = 0;
+  let evictions = 0;
+  let pendingBricks = 0;
+  let scheduledUploads = 0;
+
+  for (const resource of resources.values()) {
+    const metrics = resource.gpuBrickResidencyMetrics;
+    if (!metrics) {
+      continue;
+    }
+    layerCount += 1;
+    residentBricks += metrics.residentBricks;
+    totalBricks += metrics.totalBricks;
+    residentBytes += metrics.residentBytes;
+    budgetBytes += metrics.budgetBytes;
+    uploads += metrics.uploads;
+    evictions += metrics.evictions;
+    pendingBricks += metrics.pendingBricks;
+    scheduledUploads += metrics.scheduledUploads;
+  }
+
+  if (layerCount === 0) {
+    return null;
+  }
+
+  return {
+    layerCount,
+    residentBricks,
+    totalBricks,
+    residentBytes,
+    budgetBytes,
+    uploads,
+    evictions,
+    pendingBricks,
+    scheduledUploads
+  };
+}
+
 function VolumeViewer({
   layers,
   isLoading,
   loadingProgress,
   loadedVolumes,
   expectedVolumes,
+  runtimeDiagnostics,
   timeIndex,
   totalTimepoints,
   isPlaying,
@@ -181,7 +241,10 @@ function VolumeViewer({
     if (!followedTrackId) {
       return null;
     }
-    const track = tracks.find((entry) => entry.id === followedTrackId) ?? null;
+    const track = tracks.find((entry) => entry.id === followedTrackId);
+    if (!track) {
+      return null;
+    }
     return getTrackPlaybackIndexWindow(track, totalTimepoints);
   }, [followedTrackId, totalTimepoints, tracks]);
 
@@ -210,6 +273,7 @@ function VolumeViewer({
     position: THREE.Vector3;
     target: THREE.Vector3;
   } | null>(null);
+  const gpuResidencySummary = summarizeGpuResidency(resourcesRef.current);
 
   const {
     applyHoverHighlightToResources,
@@ -415,6 +479,7 @@ function VolumeViewer({
     primaryVolume,
     isAdditiveBlending,
     renderContextRevision,
+    rendererRef,
     sceneRef,
     cameraRef,
     controlsRef,
@@ -632,6 +697,69 @@ function VolumeViewer({
         <div className={`render-surface${hasMeasured ? ' is-ready' : ''}`} ref={handleContainerRef}>
           <TrackTooltip label={hoveredTrackLabel} position={tooltipPosition} />
           <HoverDebug message={isDevMode ? voxelHoverDebug : null} />
+          {isDevMode && runtimeDiagnostics ? (
+            <aside className="runtime-diagnostics" aria-label="Runtime diagnostics">
+              <div className="runtime-diagnostics__title">Runtime diagnostics</div>
+              <ul>
+                <li>
+                  <span>Cache pressure</span>
+                  <span>
+                    V {formatPercentage(runtimeDiagnostics.cachePressure.volume)} / C{' '}
+                    {formatPercentage(runtimeDiagnostics.cachePressure.chunk)}
+                  </span>
+                </li>
+                <li>
+                  <span>Miss rate</span>
+                  <span>
+                    V {formatPercentage(runtimeDiagnostics.missRates.volume)} / C{' '}
+                    {formatPercentage(runtimeDiagnostics.missRates.chunk)}
+                  </span>
+                </li>
+                <li>
+                  <span>Residency</span>
+                  <span>
+                    Vol {runtimeDiagnostics.residency.cachedVolumes} +{runtimeDiagnostics.residency.inFlightVolumes} / Ch{' '}
+                    {runtimeDiagnostics.residency.cachedChunks} +{runtimeDiagnostics.residency.inFlightChunks}
+                  </span>
+                </li>
+                <li>
+                  <span>Chunk bytes</span>
+                  <span>{formatChunkBytesAsMb(runtimeDiagnostics.residency.chunkBytes)}</span>
+                </li>
+                <li>
+                  <span>Prefetch</span>
+                  <span>{runtimeDiagnostics.activePrefetchRequests.length} active</span>
+                </li>
+                {gpuResidencySummary ? (
+                  <li>
+                    <span>GPU bricks</span>
+                    <span>
+                      {gpuResidencySummary.residentBricks}/{gpuResidencySummary.totalBricks} (
+                      {gpuResidencySummary.layerCount} layers)
+                    </span>
+                  </li>
+                ) : null}
+                {gpuResidencySummary ? (
+                  <li>
+                    <span>GPU budget</span>
+                    <span>
+                      {formatChunkBytesAsMb(gpuResidencySummary.residentBytes)} /{' '}
+                      {formatChunkBytesAsMb(gpuResidencySummary.budgetBytes)}
+                    </span>
+                  </li>
+                ) : null}
+                {gpuResidencySummary ? (
+                  <li>
+                    <span>GPU scheduler</span>
+                    <span>
+                      up {gpuResidencySummary.uploads} ev {gpuResidencySummary.evictions} p{' '}
+                      {gpuResidencySummary.pendingBricks} / sched {gpuResidencySummary.scheduledUploads}
+                    </span>
+                  </li>
+                ) : null}
+              </ul>
+            </aside>
+          ) : null}
         </div>
       </section>
     </div>
