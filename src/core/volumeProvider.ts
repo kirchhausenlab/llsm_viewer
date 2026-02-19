@@ -148,7 +148,7 @@ export type VolumeProvider = {
   getVolume(
     layerKey: string,
     timepoint: number,
-    options?: { scaleLevel?: number; signal?: AbortSignal | null }
+    options?: { scaleLevel?: number; signal?: AbortSignal | null; recordLookup?: boolean }
   ): Promise<NormalizedVolume>;
   getBrickPageTable?(
     layerKey: string,
@@ -1366,9 +1366,12 @@ export function createVolumeProvider({
   const getVolume = async (
     layerKey: string,
     timepoint: number,
-    options?: { scaleLevel?: number; signal?: AbortSignal | null }
+    options?: { scaleLevel?: number; signal?: AbortSignal | null; recordLookup?: boolean }
   ): Promise<NormalizedVolume> => {
     const signal = options?.signal ?? null;
+    // Prefetch warmups call with recordLookup=false so miss-rate diagnostics
+    // track interactive lookups instead of background cache fills.
+    const recordLookup = options?.recordLookup ?? true;
     throwIfAborted(signal);
     stats.getVolumeCalls += 1;
     if (!isValidTimepoint(timepoint)) {
@@ -1386,16 +1389,22 @@ export function createVolumeProvider({
     if (existing) {
       touch(key, existing);
       if (existing.volume) {
-        stats.cacheHits += 1;
+        if (recordLookup) {
+          stats.cacheHits += 1;
+        }
         return existing.volume;
       }
       if (existing.inFlight) {
-        stats.cacheHitInFlight += 1;
+        if (recordLookup) {
+          stats.cacheHitInFlight += 1;
+        }
         return awaitAbortableInFlight(existing, existing.inFlight, signal);
       }
     }
 
-    stats.cacheMisses += 1;
+    if (recordLookup) {
+      stats.cacheMisses += 1;
+    }
     const entry: CachedVolumeEntry = {
       key,
       layerKey,
@@ -1992,7 +2001,7 @@ export function createVolumeProvider({
 
           stats.prefetchLoadsStarted += 1;
           try {
-            await getVolume(layerKey, timepoint, { scaleLevel, signal });
+            await getVolume(layerKey, timepoint, { scaleLevel, signal, recordLookup: false });
             stats.prefetchLoadsCompleted += 1;
           } catch (error) {
             if (requestAborted || signal?.aborted || isAbortLikeError(error)) {

@@ -40,6 +40,20 @@ jobs:
               - 'tests/preprocessPipeline.test.ts'
               - 'tests/perf/preprocessSmoke.test.ts'
               - 'package.json'
+            playback:
+              - 'src/ui/app/hooks/useRouteLayerVolumes.ts'
+              - 'src/ui/app/hooks/useRoutePlaybackPrefetch.ts'
+              - 'src/ui/app/hooks/useViewerModePlayback.ts'
+              - 'src/components/viewers/volume-viewer/usePlaybackControls.ts'
+              - 'src/components/viewers/volume-viewer/useVolumeResources.ts'
+              - 'src/core/volumeProvider.ts'
+              - 'tests/app/hooks/useRouteLayerVolumes.test.ts'
+              - 'tests/app/hooks/useRoutePlaybackPrefetch.test.ts'
+              - 'tests/app/hooks/useViewerModePlayback.test.ts'
+              - 'tests/usePlaybackControls.test.ts'
+              - 'tests/preprocessedDataset.test.ts'
+              - 'docs/playback-invariants.md'
+              - 'package.json'
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -52,6 +66,15 @@ jobs:
         run: |
           npm run test -- tests/preprocessPipeline.test.ts
           npm run test:perf:preprocess-smoke
+      - name: Run playback regression guard tests
+        if: github.event_name == 'pull_request' && steps.preprocess_paths.outputs.playback == 'true'
+        run: |
+          node --import tsx --test \
+            tests/app/hooks/useRouteLayerVolumes.test.ts \
+            tests/app/hooks/useRoutePlaybackPrefetch.test.ts \
+            tests/app/hooks/useViewerModePlayback.test.ts \
+            tests/usePlaybackControls.test.ts \
+            tests/preprocessedDataset.test.ts
       - name: Type check
         run: npm run typecheck
       - name: Test

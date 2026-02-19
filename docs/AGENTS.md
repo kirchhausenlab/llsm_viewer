@@ -24,6 +24,8 @@ Agents: You may freely modify `docs/PROJECT_STRUCTURE.md` to reflect code change
 - When optimizing, you may:
   - Make preprocessing slower if it clearly makes visualization faster.
   - Refactor or re-run preprocessing logic, as long as you do **not** regress visualization performance.
+- For playback/streaming changes, follow invariants in:
+  - `docs/playback-invariants.md`
 
 ---
 

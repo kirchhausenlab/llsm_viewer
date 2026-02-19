@@ -410,9 +410,9 @@ await (async () => {
   );
 
   await flushAsyncWork();
-  assert.deepStrictEqual(getVolumeCalls[0], { layerKey: 'layer-a', timeIndex: 1 });
+  assert.strictEqual(getVolumeCalls.length, 0);
   assert.deepStrictEqual(getBrickAtlasCalls[0], { layerKey: 'layer-a', timeIndex: 1 });
-  assert.ok(hook.result.currentLayerVolumes['layer-a']);
+  assert.strictEqual(hook.result.currentLayerVolumes['layer-a'] ?? null, null);
   assert.ok(hook.result.currentLayerPageTables['layer-a']);
   assert.ok(hook.result.currentLayerBrickAtlases['layer-a']);
 
@@ -423,10 +423,7 @@ await (async () => {
     layerKey: 'layer-a',
     timeIndex: 3
   });
-  assert.deepStrictEqual(getVolumeCalls[getVolumeCalls.length - 1], {
-    layerKey: 'layer-a',
-    timeIndex: 3
-  });
+  assert.strictEqual(getVolumeCalls.length, 0);
   hook.unmount();
 })();
 
@@ -476,9 +473,9 @@ await (async () => {
 
   await flushAsyncWork();
   assert.deepStrictEqual(getVolumeCalls[0], { layerKey: 'layer-a', timeIndex: 1 });
-  assert.deepStrictEqual(getBrickAtlasCalls[0], { layerKey: 'layer-a', timeIndex: 1 });
+  assert.strictEqual(getBrickAtlasCalls.length, 0);
   assert.ok(hook.result.currentLayerVolumes['layer-a']);
-  assert.ok(hook.result.currentLayerBrickAtlases['layer-a']);
+  assert.strictEqual(hook.result.currentLayerBrickAtlases['layer-a'] ?? null, null);
   hook.unmount();
 })();
 
@@ -550,14 +547,14 @@ await (async () => {
   );
 
   await flushAsyncWork();
-  assert.deepStrictEqual(getVolumeCalls[0], { layerKey: 'layer-a', timeIndex: 1 });
+  assert.strictEqual(getVolumeCalls.length, 0);
   assert.deepStrictEqual(getBrickAtlasCalls[0], { layerKey: 'layer-a', timeIndex: 1, scaleLevel: 0 });
 
   isPlaying = true;
   selectedIndex = 2;
   hook.rerender();
   await flushAsyncWork();
-  assert.deepStrictEqual(getVolumeCalls[getVolumeCalls.length - 1], { layerKey: 'layer-a', timeIndex: 2 });
+  assert.strictEqual(getVolumeCalls.length, 0);
   assert.deepStrictEqual(getBrickAtlasCalls[getBrickAtlasCalls.length - 1], {
     layerKey: 'layer-a',
     timeIndex: 2,
@@ -640,7 +637,7 @@ await (async () => {
     { layerKey: 'layer-a', timeIndex: 1, scaleLevel: 0 },
     { layerKey: 'layer-a', timeIndex: 1, scaleLevel: 1 }
   ]);
-  assert.strictEqual(getVolumeCalls, 1);
+  assert.strictEqual(getVolumeCalls, 0);
   assert.strictEqual(hook.result.currentLayerBrickAtlases['layer-a']?.scaleLevel, 1);
   hook.unmount();
 })();

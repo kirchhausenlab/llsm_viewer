@@ -1689,7 +1689,7 @@ export function useVolumeResources({
           atlasSize,
           max3DTextureSize,
           cameraPosition: localCameraPosition,
-          forceFullResidency: true,
+          forceFullResidency: false,
         });
       };
     };

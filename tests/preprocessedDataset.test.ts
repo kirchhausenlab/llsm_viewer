@@ -345,6 +345,8 @@ await (async () => {
   assert.equal(forcedPrefetchStats.prefetchLoadsStarted, 1);
   assert.equal(forcedPrefetchStats.prefetchLoadsCompleted, 1);
   assert.equal(forcedPrefetchStats.prefetchLoadsFailed, 0);
+  const forcedPrefetchDiagnostics = provider.getDiagnostics();
+  assert.equal(forcedPrefetchDiagnostics.missRates.volume, 0);
 
   provider.resetStats();
   const prefetchAbortController = new AbortController();
@@ -354,8 +356,10 @@ await (async () => {
   assert.equal(abortedPrefetchStats.prefetchCalls, 1);
   assert.equal(abortedPrefetchStats.prefetchRequestsAborted, 1);
   assert.equal(abortedPrefetchStats.prefetchLoadsStarted, 0);
+  const abortedPrefetchDiagnostics = provider.getDiagnostics();
+  assert.equal(abortedPrefetchDiagnostics.missRates.volume, 0);
 
-  const diagnostics = provider.getDiagnostics();
+  const diagnostics = abortedPrefetchDiagnostics;
   assert.equal(typeof diagnostics.capturedAt, 'string');
   assert.equal(diagnostics.activePrefetchRequests.length, 0);
   assert.equal(diagnostics.stats.prefetchRequestsAborted, abortedPrefetchStats.prefetchRequestsAborted);

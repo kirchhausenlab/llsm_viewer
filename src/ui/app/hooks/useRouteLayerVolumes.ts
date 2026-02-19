@@ -135,7 +135,7 @@ function buildLayerResidencyModeMap({
   const modeByKey = new Map<string, 'volume' | 'atlas'>();
   for (const layers of channelLayersMap.values()) {
     for (const layer of layers) {
-      const useAtlas = preferBrickResidency && canUseAtlas && layer.depth > 1;
+      const useAtlas = preferBrickResidency && canUseAtlas && layer.depth > 1 && !layer.isSegmentation;
       modeByKey.set(layer.key, useAtlas ? 'atlas' : 'volume');
     }
   }
@@ -241,6 +241,8 @@ export function useRouteLayerVolumes({
         residencyMode === 'atlas' && typeof volumeProvider?.getBrickAtlas === 'function';
 
       if (shouldLoadBrickAtlas) {
+        // Keep atlas playback on the atlas/page-table path only.
+        // Pulling full volumes here regresses playback throughput and cache miss diagnostics.
         const preferredScaleLevel = resolvePreferredAtlasScaleLevel(layerKey);
         const knownLevels = layerScaleLevelsByKey.get(layerKey) ?? [preferredScaleLevel];
         const candidateScaleLevels = knownLevels.filter((level) => level >= preferredScaleLevel);
@@ -258,10 +260,8 @@ export function useRouteLayerVolumes({
           if (atlas.depth > maxBrickAtlasDepthHint) {
             continue;
           }
-          const volume = await volumeProvider!.getVolume(layerKey, timeIndex, { scaleLevel: 0, signal });
-          throwIfAborted(signal);
           return {
-            volume,
+            volume: null,
             pageTable: atlas.pageTable,
             brickAtlas: atlas
           };
