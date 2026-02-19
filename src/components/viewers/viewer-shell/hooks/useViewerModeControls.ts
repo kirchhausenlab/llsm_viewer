@@ -14,9 +14,7 @@ export type ModeToggleState = {
 };
 
 export type ViewerSettingsControls = {
-  renderStyle: ModeControlsProps['renderStyle'];
   samplingMode: ModeControlsProps['samplingMode'];
-  onRenderStyleToggle: ModeControlsProps['onRenderStyleToggle'];
   onSamplingModeToggle: ModeControlsProps['onSamplingModeToggle'];
   blendingMode: ModeControlsProps['blendingMode'];
   onBlendingModeToggle: ModeControlsProps['onBlendingModeToggle'];
@@ -56,9 +54,7 @@ export function useViewerModeControls({
   };
 
   const viewerSettings: ViewerSettingsControls = {
-    renderStyle: modeControls.renderStyle,
     samplingMode: modeControls.samplingMode,
-    onRenderStyleToggle: modeControls.onRenderStyleToggle,
     onSamplingModeToggle: modeControls.onSamplingModeToggle,
     blendingMode: modeControls.blendingMode,
     onBlendingModeToggle: modeControls.onBlendingModeToggle,

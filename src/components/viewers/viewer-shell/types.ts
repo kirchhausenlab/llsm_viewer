@@ -9,7 +9,7 @@ import type { VolumeViewerProps } from '../VolumeViewer.types';
 import type { LoadedDatasetLayer } from '../../../hooks/dataset';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import type { VolumeBrickAtlas } from '../../../core/volumeProvider';
-import type { LayerSettings } from '../../../state/layerSettings';
+import type { LayerSettings, RenderStyle } from '../../../state/layerSettings';
 import type { FollowedVoxelTarget } from '../../../types/follow';
 import type { HoveredVoxelInfo } from '../../../types/hover';
 import type { NumericRange, TrackColorMode, TrackDefinition, TrackPoint } from '../../../types/tracks';
@@ -41,9 +41,7 @@ export type ModeControlsProps = {
   vrButtonDisabled: boolean;
   vrButtonTitle?: string;
   vrButtonLabel: string;
-  renderStyle: 0 | 1;
   samplingMode: 'linear' | 'nearest';
-  onRenderStyleToggle: () => void;
   onSamplingModeToggle: () => void;
   blendingMode: 'alpha' | 'additive';
   onBlendingModeToggle: () => void;
@@ -100,6 +98,11 @@ export type ChannelsPanelProps = {
   onLayerAutoContrast: (layerKey: string) => void;
   onLayerOffsetChange: (layerKey: string, axis: 'x' | 'y', value: number) => void;
   onLayerColorChange: (layerKey: string, color: string) => void;
+  onLayerRenderStyleChange: (layerKey: string, renderStyle: RenderStyle) => void;
+  onLayerBlDensityScaleChange: (layerKey: string, value: number) => void;
+  onLayerBlBackgroundCutoffChange: (layerKey: string, value: number) => void;
+  onLayerBlOpacityScaleChange: (layerKey: string, value: number) => void;
+  onLayerBlEarlyExitAlphaChange: (layerKey: string, value: number) => void;
   onLayerInvertToggle: (layerKey: string) => void;
 };
 

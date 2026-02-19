@@ -9,6 +9,7 @@ import type { FollowedVoxelTarget } from '../../types/follow';
 import type { HoveredVoxelInfo } from '../../types/hover';
 import type { PaintbrushStrokeHandlers } from '../../types/paintbrush';
 import type { TrackColorMode, TrackDefinition } from '../../types/tracks';
+import type { RenderStyle, SamplingMode } from '../../state/layerSettings';
 
 export type InstancedLineGeometry = LineGeometry & { instanceCount: number };
 
@@ -32,9 +33,13 @@ export type ViewerLayer = {
   color: string;
   offsetX: number;
   offsetY: number;
-  renderStyle: 0 | 1;
+  renderStyle: RenderStyle;
+  blDensityScale: number;
+  blBackgroundCutoff: number;
+  blOpacityScale: number;
+  blEarlyExitAlpha: number;
   invert: boolean;
-  samplingMode: 'linear' | 'nearest';
+  samplingMode: SamplingMode;
   isSegmentation?: boolean;
   mode?: '3d' | 'slice';
   sliceIndex?: number;
@@ -54,9 +59,13 @@ export type VolumeViewerVrPanelLayerSettings = {
   color: string;
   xOffset: number;
   yOffset: number;
-  renderStyle: 0 | 1;
+  renderStyle: RenderStyle;
+  blDensityScale: number;
+  blBackgroundCutoff: number;
+  blOpacityScale: number;
+  blEarlyExitAlpha: number;
   invert: boolean;
-  samplingMode: 'linear' | 'nearest';
+  samplingMode: SamplingMode;
 };
 
 export type VolumeViewerVrPanelLayer = {
@@ -177,6 +186,7 @@ export type VolumeResources = {
   };
   channels: number;
   mode: '3d' | 'slice';
+  renderStyle?: RenderStyle;
   samplingMode: 'linear' | 'nearest';
   sliceBuffer?: Uint8Array | null;
   brickPageTable?: VolumeBrickPageTable | null;

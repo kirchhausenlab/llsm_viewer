@@ -6,10 +6,14 @@ import type { VolumeBrickAtlas, VolumeBrickPageTable } from '../../../core/volum
 import {
   brightnessContrastModel,
   clampWindowBounds,
+  RENDER_STYLE_BL,
+  RENDER_STYLE_ISO,
+  RENDER_STYLE_MIP,
   DEFAULT_WINDOW_MAX,
   DEFAULT_WINDOW_MIN,
   type BrightnessContrastState,
   type LayerSettings,
+  type RenderStyle,
   type SamplingMode,
   updateLayerSettings
 } from '../../../state/layerSettings';
@@ -36,8 +40,18 @@ export type LayerControlsParams = {
   layerChannelMap: Map<string, string>;
   loadedChannelIds: string[];
   setActiveChannelTabId: Dispatch<SetStateAction<string | null>>;
-  setGlobalRenderStyle: Dispatch<SetStateAction<0 | 1>>;
+  setGlobalRenderStyle: Dispatch<SetStateAction<RenderStyle>>;
   setGlobalSamplingMode: Dispatch<SetStateAction<SamplingMode>>;
+};
+
+const nextRenderStyle = (current: RenderStyle): RenderStyle => {
+  if (current === RENDER_STYLE_MIP) {
+    return RENDER_STYLE_ISO;
+  }
+  if (current === RENDER_STYLE_ISO) {
+    return RENDER_STYLE_BL;
+  }
+  return RENDER_STYLE_MIP;
 };
 
 export function useLayerControls({
@@ -64,6 +78,32 @@ export function useLayerControls({
   setGlobalRenderStyle,
   setGlobalSamplingMode
 }: LayerControlsParams) {
+  const resolveRenderStyleTargetLayerKey = useCallback(
+    (requestedLayerKey?: string): string | null => {
+      if (requestedLayerKey && layers.some((layer) => layer.key === requestedLayerKey)) {
+        return requestedLayerKey;
+      }
+
+      const sortedChannelIds = [...loadedChannelIds].sort((left, right) => left.localeCompare(right));
+      for (const channelId of sortedChannelIds) {
+        const channelLayers = layers
+          .filter((layer) => layer.channelId === channelId)
+          .sort((left, right) => left.key.localeCompare(right.key));
+        if (channelLayers.length === 0) {
+          continue;
+        }
+        const activeLayerKey = channelActiveLayer[channelId];
+        if (activeLayerKey && channelLayers.some((layer) => layer.key === activeLayerKey)) {
+          return activeLayerKey;
+        }
+        return channelLayers[0]?.key ?? null;
+      }
+
+      return [...layers].sort((left, right) => left.key.localeCompare(right.key))[0]?.key ?? null;
+    },
+    [channelActiveLayer, layers, loadedChannelIds]
+  );
+
   const handleLayerContrastChange = useCallback(
     (key: string, sliderIndex: number) => {
       updateLayerSettings(key, setLayerSettings, createLayerDefaultSettings, ({ previous }) => {
@@ -224,23 +264,43 @@ export function useLayerControls({
     [createLayerDefaultSettings, setLayerSettings]
   );
 
-  const handleLayerRenderStyleToggle = useCallback(() => {
-    setGlobalRenderStyle((current) => {
-      const nextStyle: 0 | 1 = current === 1 ? 0 : 1;
-      setLayerSettings((settings) => {
-        let changed = false;
-        const nextSettings: Record<string, LayerSettings> = { ...settings };
-        for (const [layerKey, previous] of Object.entries(settings)) {
-          if (previous.renderStyle !== nextStyle) {
-            nextSettings[layerKey] = { ...previous, renderStyle: nextStyle };
-            changed = true;
-          }
+  const handleLayerRenderStyleChange = useCallback(
+    (layerKey: string, renderStyle: RenderStyle) => {
+      setLayerSettings((current) => {
+        const previous = current[layerKey] ?? createLayerDefaultSettings(layerKey);
+        if (previous.renderStyle === renderStyle) {
+          return current;
         }
-        return changed ? nextSettings : settings;
+        return {
+          ...current,
+          [layerKey]: {
+            ...previous,
+            renderStyle,
+          }
+        };
       });
-      return nextStyle;
-    });
-  }, [setGlobalRenderStyle, setLayerSettings]);
+      setGlobalRenderStyle(renderStyle);
+    },
+    [createLayerDefaultSettings, setGlobalRenderStyle, setLayerSettings]
+  );
+
+  const handleLayerRenderStyleToggle = useCallback(
+    (layerKey?: string) => {
+      const targetLayerKey = resolveRenderStyleTargetLayerKey(layerKey);
+      if (!targetLayerKey) {
+        return;
+      }
+      const currentStyle = (layerSettings[targetLayerKey] ?? createLayerDefaultSettings(targetLayerKey)).renderStyle;
+      const nextStyle = nextRenderStyle(currentStyle);
+      handleLayerRenderStyleChange(targetLayerKey, nextStyle);
+    },
+    [
+      createLayerDefaultSettings,
+      handleLayerRenderStyleChange,
+      layerSettings,
+      resolveRenderStyleTargetLayerKey
+    ]
+  );
 
   const handleLayerSamplingModeToggle = useCallback(() => {
     setGlobalSamplingMode((current) => {
@@ -273,6 +333,86 @@ export function useLayerControls({
           [key]: {
             ...previous,
             invert: nextInvert
+          }
+        };
+      });
+    },
+    [createLayerDefaultSettings, setLayerSettings]
+  );
+
+  const handleLayerBlDensityScaleChange = useCallback(
+    (key: string, value: number) => {
+      const clamped = Math.max(0, value);
+      setLayerSettings((current) => {
+        const previous = current[key] ?? createLayerDefaultSettings(key);
+        if (previous.blDensityScale === clamped) {
+          return current;
+        }
+        return {
+          ...current,
+          [key]: {
+            ...previous,
+            blDensityScale: clamped
+          }
+        };
+      });
+    },
+    [createLayerDefaultSettings, setLayerSettings]
+  );
+
+  const handleLayerBlBackgroundCutoffChange = useCallback(
+    (key: string, value: number) => {
+      const clamped = Math.min(Math.max(value, 0), 1);
+      setLayerSettings((current) => {
+        const previous = current[key] ?? createLayerDefaultSettings(key);
+        if (previous.blBackgroundCutoff === clamped) {
+          return current;
+        }
+        return {
+          ...current,
+          [key]: {
+            ...previous,
+            blBackgroundCutoff: clamped
+          }
+        };
+      });
+    },
+    [createLayerDefaultSettings, setLayerSettings]
+  );
+
+  const handleLayerBlOpacityScaleChange = useCallback(
+    (key: string, value: number) => {
+      const clamped = Math.max(0, value);
+      setLayerSettings((current) => {
+        const previous = current[key] ?? createLayerDefaultSettings(key);
+        if (previous.blOpacityScale === clamped) {
+          return current;
+        }
+        return {
+          ...current,
+          [key]: {
+            ...previous,
+            blOpacityScale: clamped
+          }
+        };
+      });
+    },
+    [createLayerDefaultSettings, setLayerSettings]
+  );
+
+  const handleLayerBlEarlyExitAlphaChange = useCallback(
+    (key: string, value: number) => {
+      const clamped = Math.min(Math.max(value, 0), 1);
+      setLayerSettings((current) => {
+        const previous = current[key] ?? createLayerDefaultSettings(key);
+        if (previous.blEarlyExitAlpha === clamped) {
+          return current;
+        }
+        return {
+          ...current,
+          [key]: {
+            ...previous,
+            blEarlyExitAlpha: clamped
           }
         };
       });
@@ -453,6 +593,10 @@ export function useLayerControls({
         offsetX: settings.xOffset,
         offsetY: settings.yOffset,
         renderStyle: settings.renderStyle,
+        blDensityScale: settings.blDensityScale,
+        blBackgroundCutoff: settings.blBackgroundCutoff,
+        blOpacityScale: settings.blOpacityScale,
+        blEarlyExitAlpha: settings.blEarlyExitAlpha,
         invert: settings.invert,
         samplingMode: settings.samplingMode,
         isSegmentation: layer.isSegmentation,
@@ -506,7 +650,12 @@ export function useLayerControls({
     handleLayerAutoContrast,
     handleLayerOffsetChange,
     handleLayerColorChange,
+    handleLayerRenderStyleChange,
     handleLayerRenderStyleToggle,
+    handleLayerBlDensityScaleChange,
+    handleLayerBlBackgroundCutoffChange,
+    handleLayerBlOpacityScaleChange,
+    handleLayerBlEarlyExitAlphaChange,
     handleLayerSamplingModeToggle,
     handleLayerInvertToggle
   };

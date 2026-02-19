@@ -24,6 +24,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Detect preprocessing path changes
+        id: preprocess_paths
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            preprocess:
+              - 'src/shared/utils/preprocessedDataset/**'
+              - 'src/core/volumeProcessing.ts'
+              - 'src/loaders/volumeLoader.ts'
+              - 'src/workers/volumeLoader.worker.ts'
+              - 'src/shared/storage/preprocessedStorage.ts'
+              - 'src/shared/utils/histogram.ts'
+              - 'src/shared/utils/zarrStore.ts'
+              - 'tests/preprocessPipeline.test.ts'
+              - 'tests/perf/preprocessSmoke.test.ts'
+              - 'package.json'
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -31,6 +47,11 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Run preprocessing regression guard tests
+        if: github.event_name == 'pull_request' && steps.preprocess_paths.outputs.preprocess == 'true'
+        run: |
+          npm run test -- tests/preprocessPipeline.test.ts
+          npm run test:perf:preprocess-smoke
       - name: Type check
         run: npm run typecheck
       - name: Test

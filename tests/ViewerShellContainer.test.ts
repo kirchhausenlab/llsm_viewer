@@ -106,9 +106,7 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
       vrButtonDisabled: false,
       vrButtonTitle: 'title',
       vrButtonLabel: 'label',
-      renderStyle: 0,
       samplingMode: 'linear',
-      onRenderStyleToggle: noop,
       onSamplingModeToggle: noop,
       blendingMode: 'additive',
       onBlendingModeToggle: noop
@@ -158,6 +156,11 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
       onLayerAutoContrast: noopWithArgs,
       onLayerOffsetChange: noopWithArgs,
       onLayerColorChange: noopWithArgs,
+      onLayerRenderStyleChange: noopWithArgs,
+      onLayerBlDensityScaleChange: noopWithArgs,
+      onLayerBlBackgroundCutoffChange: noopWithArgs,
+      onLayerBlOpacityScaleChange: noopWithArgs,
+      onLayerBlEarlyExitAlphaChange: noopWithArgs,
       onLayerInvertToggle: noopWithArgs
     },
     tracksPanel: {

@@ -13,21 +13,34 @@ export type TiffDatasetFixture = {
 const compareNaturally = (left: string, right: string) =>
   left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
 
-function resolveConfiguredDatasetPath(): string {
+function resolveConfiguredDatasetPath(): string | null {
   const configuredPath = process.env.TEST_DATA_DIR?.trim();
   if (!configuredPath) {
-    throw new Error(
-      'TEST_DATA_DIR must be set to a dataset directory containing TIFF files for deterministic test runs.'
-    );
+    return null;
   }
   return configuredPath;
 }
 
 export function resolveTiffDatasetFixture(): TiffDatasetFixture {
-  const rootDir = path.resolve(process.cwd(), resolveConfiguredDatasetPath());
+  const configuredPath = resolveConfiguredDatasetPath();
+  if (!configuredPath) {
+    return {
+      rootDir: process.cwd(),
+      tiffPaths: [],
+      available: false,
+      reason: 'TEST_DATA_DIR is not set. Skipping local dataset fixture tests.'
+    };
+  }
+
+  const rootDir = path.resolve(process.cwd(), configuredPath);
 
   if (!fs.existsSync(rootDir)) {
-    throw new Error(`Dataset directory does not exist: ${rootDir}`);
+    return {
+      rootDir,
+      tiffPaths: [],
+      available: false,
+      reason: `Dataset directory does not exist: ${rootDir}`
+    };
   }
 
   const tiffPaths = fs
@@ -44,7 +57,12 @@ export function resolveTiffDatasetFixture(): TiffDatasetFixture {
     .sort(compareNaturally);
 
   if (tiffPaths.length === 0) {
-    throw new Error(`No TIFF files were found under ${rootDir}`);
+    return {
+      rootDir,
+      tiffPaths: [],
+      available: false,
+      reason: `No TIFF files were found under ${rootDir}`
+    };
   }
 
   return {

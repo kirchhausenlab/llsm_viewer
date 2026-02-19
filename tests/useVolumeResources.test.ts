@@ -55,6 +55,10 @@ const createLayer = (
   offsetX: 0,
   offsetY: 0,
   renderStyle: 0,
+  blDensityScale: 1,
+  blBackgroundCutoff: 0.08,
+  blOpacityScale: 1,
+  blEarlyExitAlpha: 0.98,
   invert: false,
   samplingMode,
   mode: '3d',
@@ -179,6 +183,120 @@ const createLayer = (
   assert.strictEqual(resourcesRef.current.size, 0);
   assert.deepStrictEqual(currentDimensionsRef.current, { width: 2, height: 2, depth: 2 });
   assert.strictEqual(volumeUserScaleRef.current, 1);
+})();
+
+(() => {
+  const volume: NormalizedVolume = {
+    width: 2,
+    height: 2,
+    depth: 2,
+    channels: 1,
+    dataType: 'uint8',
+    normalized: new Uint8Array(8),
+    min: 0,
+    max: 1,
+  };
+  const sceneRef = { current: new THREE.Scene() };
+  const cameraRef = { current: new THREE.PerspectiveCamera(75, 1, 0.1, 10) };
+  const controlsRef = {
+    current: {
+      target: new THREE.Vector3(),
+      update: () => {},
+      saveState: () => {},
+    } as unknown as THREE.OrbitControls,
+  };
+
+  const resourcesRef = { current: new Map<string, VolumeResources>() };
+  let layers: ViewerLayer[] = [createLayer(volume, null, null, 'linear')];
+
+  const hook = renderHook(() =>
+    useVolumeResources({
+      layers,
+      primaryVolume: volume,
+      isAdditiveBlending: false,
+      renderContextRevision: 0,
+      sceneRef,
+      cameraRef,
+      controlsRef,
+      rotationTargetRef: { current: new THREE.Vector3() },
+      defaultViewStateRef: { current: null },
+      trackGroupRef: { current: new THREE.Group() },
+      resourcesRef,
+      currentDimensionsRef: { current: null },
+      colormapCacheRef: { current: new Map() },
+      volumeRootGroupRef: { current: new THREE.Group() },
+      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+      volumeNormalizationScaleRef: { current: 1 },
+      volumeUserScaleRef: { current: 1 },
+      volumeStepScaleRef: { current: 1 },
+      volumeYawRef: { current: 0 },
+      volumePitchRef: { current: 0 },
+      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+      applyTrackGroupTransform: () => {},
+      applyVolumeRootTransform: () => {},
+      applyVolumeStepScaleToResources: () => {},
+      applyHoverHighlightToResources: () => {},
+    }),
+  );
+
+  const mipResource = resourcesRef.current.get('layer-3d');
+  assert.ok(mipResource);
+  const mipMaterial = mipResource.mesh.material as THREE.ShaderMaterial;
+  assert.ok(mipMaterial.fragmentShader.includes('#define VOLUME_STYLE_MIP'));
+
+  layers = [{ ...layers[0], renderStyle: 1 }];
+  hook.rerender();
+  const isoResource = resourcesRef.current.get('layer-3d');
+  assert.ok(isoResource);
+  const isoMaterial = isoResource.mesh.material as THREE.ShaderMaterial;
+  assert.notStrictEqual(isoMaterial, mipMaterial);
+  assert.ok(isoMaterial.fragmentShader.includes('#define VOLUME_STYLE_ISO'));
+
+  layers = [
+    {
+      ...layers[0],
+      renderStyle: 2,
+      blDensityScale: 2.5,
+      blBackgroundCutoff: 0.15,
+      blOpacityScale: 1.7,
+      blEarlyExitAlpha: 0.91,
+    },
+  ];
+  hook.rerender();
+
+  const blResource = resourcesRef.current.get('layer-3d');
+  assert.ok(blResource);
+  const blMaterial = blResource.mesh.material as THREE.ShaderMaterial;
+  const blUniforms = blMaterial.uniforms as Record<string, { value: unknown }>;
+  assert.notStrictEqual(blMaterial, isoMaterial);
+  assert.ok(blMaterial.fragmentShader.includes('#define VOLUME_STYLE_BL'));
+  assert.equal(blUniforms.u_blDensityScale?.value, 2.5);
+  assert.equal(blUniforms.u_blBackgroundCutoff?.value, 0.15);
+  assert.equal(blUniforms.u_blOpacityScale?.value, 1.7);
+  assert.equal(blUniforms.u_blEarlyExitAlpha?.value, 0.91);
+
+  layers = [
+    {
+      ...layers[0],
+      blDensityScale: 3.25,
+      blBackgroundCutoff: 0.2,
+      blOpacityScale: 1.3,
+      blEarlyExitAlpha: 0.95,
+    },
+  ];
+  hook.rerender();
+  const updatedBlResource = resourcesRef.current.get('layer-3d');
+  assert.ok(updatedBlResource);
+  const updatedBlMaterial = updatedBlResource.mesh.material as THREE.ShaderMaterial;
+  const updatedBlUniforms = updatedBlMaterial.uniforms as Record<string, { value: unknown }>;
+  assert.ok(updatedBlMaterial.fragmentShader.includes('#define VOLUME_STYLE_BL'));
+  assert.equal(updatedBlUniforms.u_blDensityScale?.value, 3.25);
+  assert.equal(updatedBlUniforms.u_blBackgroundCutoff?.value, 0.2);
+  assert.equal(updatedBlUniforms.u_blOpacityScale?.value, 1.3);
+  assert.equal(updatedBlUniforms.u_blEarlyExitAlpha?.value, 0.95);
 })();
 
 (() => {

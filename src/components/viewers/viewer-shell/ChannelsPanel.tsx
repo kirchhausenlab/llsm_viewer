@@ -1,6 +1,13 @@
 import type { MouseEvent } from 'react';
 
-import { DEFAULT_WINDOW_MAX, DEFAULT_WINDOW_MIN, createDefaultLayerSettings } from '../../../state/layerSettings';
+import {
+  DEFAULT_WINDOW_MAX,
+  DEFAULT_WINDOW_MIN,
+  RENDER_STYLE_BL,
+  RENDER_STYLE_ISO,
+  RENDER_STYLE_MIP,
+  createDefaultLayerSettings
+} from '../../../state/layerSettings';
 import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from '../../../shared/colorMaps/layerColors';
 import { applyAlphaToHex } from '../../../shared/utils/appHelpers';
 import BrightnessContrastHistogram from '../BrightnessContrastHistogram';
@@ -9,6 +16,11 @@ import type { ChannelsPanelProps, ChannelPanelStyle, LayoutProps } from './types
 
 const formatNormalizedIntensity = (value: number): string => {
   const fixed = value.toFixed(3);
+  return fixed.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
+};
+
+const formatBlControlValue = (value: number): string => {
+  const fixed = value.toFixed(2);
   return fixed.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
 };
 
@@ -41,6 +53,11 @@ export default function ChannelsPanel({
   onLayerAutoContrast,
   onLayerOffsetChange,
   onLayerColorChange,
+  onLayerRenderStyleChange,
+  onLayerBlDensityScaleChange,
+  onLayerBlBackgroundCutoffChange,
+  onLayerBlOpacityScaleChange,
+  onLayerBlEarlyExitAlphaChange,
   onLayerInvertToggle
 }: ChannelsPanelWindowProps) {
   const { windowMargin, controlWindowWidth, layersWindowInitialPosition, resetToken } = layout;
@@ -119,6 +136,7 @@ export default function ChannelsPanel({
                 ? layerSettings[selectedLayer.key] ?? getLayerDefaultSettings(selectedLayer.key)
                 : createDefaultLayerSettings();
               const sliderDisabled = !selectedLayer || selectedLayer.volumeCount === 0;
+              const renderStyleDisabled = sliderDisabled;
               const offsetDisabled = sliderDisabled || channelId !== activeChannelId;
               const currentVolume = selectedLayer ? layerVolumesByKey[selectedLayer.key] ?? null : null;
               const currentHistogram = selectedLayer
@@ -128,6 +146,7 @@ export default function ChannelsPanel({
               const normalizedColor = normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR);
               const displayColor = normalizedColor.toUpperCase();
               const isActive = channelId === activeChannelId;
+              const showBlControls = settings.renderStyle === RENDER_STYLE_BL;
               const invertDisabled = sliderDisabled || Boolean(selectedLayer?.isSegmentation);
               const invertTitle = selectedLayer?.isSegmentation
                 ? 'Invert LUT is unavailable for segmentation volumes.'
@@ -204,6 +223,37 @@ export default function ChannelsPanel({
                             disabled={sliderDisabled}
                           >
                             Auto
+                          </button>
+                        </div>
+                      </div>
+                      <div className="channel-primary-actions">
+                        <div className="channel-primary-actions-row" role="group" aria-label="Render style">
+                          <button
+                            type="button"
+                            className="channel-action-button"
+                            onClick={() => onLayerRenderStyleChange(selectedLayer.key, RENDER_STYLE_MIP)}
+                            disabled={renderStyleDisabled}
+                            aria-pressed={settings.renderStyle === RENDER_STYLE_MIP}
+                          >
+                            MIP
+                          </button>
+                          <button
+                            type="button"
+                            className="channel-action-button"
+                            onClick={() => onLayerRenderStyleChange(selectedLayer.key, RENDER_STYLE_ISO)}
+                            disabled={renderStyleDisabled}
+                            aria-pressed={settings.renderStyle === RENDER_STYLE_ISO}
+                          >
+                            ISO
+                          </button>
+                          <button
+                            type="button"
+                            className="channel-action-button"
+                            onClick={() => onLayerRenderStyleChange(selectedLayer.key, RENDER_STYLE_BL)}
+                            disabled={renderStyleDisabled}
+                            aria-pressed={settings.renderStyle === RENDER_STYLE_BL}
+                          >
+                            BL
                           </button>
                         </div>
                       </div>
@@ -311,6 +361,82 @@ export default function ChannelsPanel({
                           />
                         </div>
                       </div>
+                      {showBlControls ? (
+                        <>
+                          <div className="slider-control slider-control--pair">
+                            <div className="slider-control slider-control--inline">
+                              <label htmlFor={`layer-bl-density-${selectedLayer.key}`}>
+                                BL density <span>{formatBlControlValue(settings.blDensityScale)}</span>
+                              </label>
+                              <input
+                                id={`layer-bl-density-${selectedLayer.key}`}
+                                type="range"
+                                min={0}
+                                max={8}
+                                step={0.05}
+                                value={settings.blDensityScale}
+                                onChange={(event) =>
+                                  onLayerBlDensityScaleChange(selectedLayer.key, Number(event.target.value))
+                                }
+                                disabled={sliderDisabled}
+                              />
+                            </div>
+                            <div className="slider-control slider-control--inline">
+                              <label htmlFor={`layer-bl-background-cutoff-${selectedLayer.key}`}>
+                                BL cutoff <span>{formatNormalizedIntensity(settings.blBackgroundCutoff)}</span>
+                              </label>
+                              <input
+                                id={`layer-bl-background-cutoff-${selectedLayer.key}`}
+                                type="range"
+                                min={0}
+                                max={1}
+                                step={0.005}
+                                value={settings.blBackgroundCutoff}
+                                onChange={(event) =>
+                                  onLayerBlBackgroundCutoffChange(selectedLayer.key, Number(event.target.value))
+                                }
+                                disabled={sliderDisabled}
+                              />
+                            </div>
+                          </div>
+                          <div className="slider-control slider-control--pair">
+                            <div className="slider-control slider-control--inline">
+                              <label htmlFor={`layer-bl-opacity-${selectedLayer.key}`}>
+                                BL opacity <span>{formatBlControlValue(settings.blOpacityScale)}</span>
+                              </label>
+                              <input
+                                id={`layer-bl-opacity-${selectedLayer.key}`}
+                                type="range"
+                                min={0}
+                                max={8}
+                                step={0.05}
+                                value={settings.blOpacityScale}
+                                onChange={(event) =>
+                                  onLayerBlOpacityScaleChange(selectedLayer.key, Number(event.target.value))
+                                }
+                                disabled={sliderDisabled}
+                              />
+                            </div>
+                            <div className="slider-control slider-control--inline">
+                              <label htmlFor={`layer-bl-early-exit-${selectedLayer.key}`}>
+                                BL early exit <span>{formatNormalizedIntensity(settings.blEarlyExitAlpha)}</span>
+                              </label>
+                              <input
+                                id={`layer-bl-early-exit-${selectedLayer.key}`}
+                                type="range"
+                                min={0}
+                                max={1}
+                                step={0.005}
+                                value={settings.blEarlyExitAlpha}
+                                onChange={(event) =>
+                                  onLayerBlEarlyExitAlphaChange(selectedLayer.key, Number(event.target.value))
+                                }
+                                disabled={sliderDisabled}
+                              />
+                            </div>
+                          </div>
+                        </>
+                      ) : null}
                       {isGrayscale ? (
                         <div className="color-control">
                           <div className="color-control-header">

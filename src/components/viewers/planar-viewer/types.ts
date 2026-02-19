@@ -1,6 +1,7 @@
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import type { PaintbrushStrokeHandlers } from '../../../types/paintbrush';
 import type { TrackColorMode, TrackDefinition } from '../../../types/tracks';
+import type { RenderStyle } from '../../../state/layerSettings';
 
 export type ViewerLayer = {
   key: string;
@@ -21,7 +22,7 @@ export type ViewerLayer = {
   color: string;
   offsetX: number;
   offsetY: number;
-  renderStyle: 0 | 1;
+  renderStyle: RenderStyle;
   invert: boolean;
   isSegmentation: boolean;
 };

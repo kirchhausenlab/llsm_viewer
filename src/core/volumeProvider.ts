@@ -189,6 +189,8 @@ type CachedVolumeEntry = {
   scaleLevel: number;
   volume: NormalizedVolume | null;
   inFlight: Promise<NormalizedVolume> | null;
+  inFlightAbortController: AbortController | null;
+  inFlightWaiters: number;
 };
 
 type CachedChunkEntry = {
@@ -206,6 +208,8 @@ type CachedBrickPageTableEntry = {
   scaleLevel: number;
   pageTable: VolumeBrickPageTable | null;
   inFlight: Promise<VolumeBrickPageTable> | null;
+  inFlightAbortController: AbortController | null;
+  inFlightWaiters: number;
 };
 
 type CachedBrickAtlasEntry = {
@@ -215,6 +219,8 @@ type CachedBrickAtlasEntry = {
   scaleLevel: number;
   atlas: VolumeBrickAtlas | null;
   inFlight: Promise<VolumeBrickAtlas> | null;
+  inFlightAbortController: AbortController | null;
+  inFlightWaiters: number;
 };
 
 type ChunkReadPlan = {
@@ -331,6 +337,32 @@ function awaitWithAbort<T>(promise: Promise<T>, signal: AbortSignal | null | und
       }
     );
   });
+}
+
+type AbortableInFlightEntry<T> = {
+  inFlight: Promise<T> | null;
+  inFlightAbortController: AbortController | null;
+  inFlightWaiters: number;
+};
+
+async function awaitAbortableInFlight<T>(
+  entry: AbortableInFlightEntry<T>,
+  promise: Promise<T>,
+  signal: AbortSignal | null | undefined
+): Promise<T> {
+  entry.inFlightWaiters += 1;
+  let aborted = false;
+  try {
+    return await awaitWithAbort(promise, signal);
+  } catch (error) {
+    aborted = Boolean(signal?.aborted || isAbortLikeError(error));
+    throw error;
+  } finally {
+    entry.inFlightWaiters = Math.max(0, entry.inFlightWaiters - 1);
+    if (aborted && entry.inFlight && entry.inFlightWaiters === 0) {
+      entry.inFlightAbortController?.abort('The operation was aborted.');
+    }
+  }
 }
 
 function clamp01(value: number): number {
@@ -1359,7 +1391,7 @@ export function createVolumeProvider({
       }
       if (existing.inFlight) {
         stats.cacheHitInFlight += 1;
-        return awaitWithAbort(existing.inFlight, signal);
+        return awaitAbortableInFlight(existing, existing.inFlight, signal);
       }
     }
 
@@ -1370,19 +1402,30 @@ export function createVolumeProvider({
       timepoint,
       scaleLevel: scale.level,
       volume: null,
-      inFlight: null
+      inFlight: null,
+      inFlightAbortController: null,
+      inFlightWaiters: 0
     };
+    const inFlightAbortController = new AbortController();
+    entry.inFlightAbortController = inFlightAbortController;
 
-    const promise = loadVolume(layer, timepoint, scale.level, null)
+    const promise = loadVolume(layer, timepoint, scale.level, inFlightAbortController.signal)
       .then((volume) => {
         entry.volume = volume;
         entry.inFlight = null;
+        entry.inFlightAbortController = null;
+        entry.inFlightWaiters = 0;
         touch(key, entry);
         evictIfNeeded();
         return volume;
       })
       .catch((error) => {
-        stats.loadsFailed += 1;
+        if (!isAbortLikeError(error)) {
+          stats.loadsFailed += 1;
+        }
+        entry.inFlight = null;
+        entry.inFlightAbortController = null;
+        entry.inFlightWaiters = 0;
         cache.delete(key);
         throw error;
       });
@@ -1390,7 +1433,7 @@ export function createVolumeProvider({
     entry.inFlight = promise;
     cache.set(key, entry);
     evictIfNeeded();
-    return awaitWithAbort(promise, signal);
+    return awaitAbortableInFlight(entry, promise, signal);
   };
 
   const getBrickPageTable = async (
@@ -1417,7 +1460,7 @@ export function createVolumeProvider({
         return existing.pageTable;
       }
       if (existing.inFlight) {
-        return awaitWithAbort(existing.inFlight, signal);
+        return awaitAbortableInFlight(existing, existing.inFlight, signal);
       }
     }
 
@@ -1427,18 +1470,27 @@ export function createVolumeProvider({
       timepoint,
       scaleLevel: scale.level,
       pageTable: null,
-      inFlight: null
+      inFlight: null,
+      inFlightAbortController: null,
+      inFlightWaiters: 0
     };
+    const inFlightAbortController = new AbortController();
+    entry.inFlightAbortController = inFlightAbortController;
 
-    const promise = loadBrickPageTable(layer, timepoint, scale.level, null)
+    const promise = loadBrickPageTable(layer, timepoint, scale.level, inFlightAbortController.signal)
       .then((pageTable) => {
         entry.pageTable = pageTable;
         entry.inFlight = null;
+        entry.inFlightAbortController = null;
+        entry.inFlightWaiters = 0;
         touchBrickPageTable(key, entry);
         evictBrickPageTableCacheIfNeeded();
         return pageTable;
       })
       .catch((error) => {
+        entry.inFlight = null;
+        entry.inFlightAbortController = null;
+        entry.inFlightWaiters = 0;
         brickPageTableCache.delete(key);
         throw error;
       });
@@ -1446,7 +1498,7 @@ export function createVolumeProvider({
     entry.inFlight = promise;
     brickPageTableCache.set(key, entry);
     evictBrickPageTableCacheIfNeeded();
-    return awaitWithAbort(promise, signal);
+    return awaitAbortableInFlight(entry, promise, signal);
   };
 
   const loadBrickAtlas = async (
@@ -1714,7 +1766,7 @@ export function createVolumeProvider({
         return existing.atlas;
       }
       if (existing.inFlight) {
-        return awaitWithAbort(existing.inFlight, signal);
+        return awaitAbortableInFlight(existing, existing.inFlight, signal);
       }
     }
 
@@ -1724,19 +1776,31 @@ export function createVolumeProvider({
       timepoint,
       scaleLevel: scale.level,
       atlas: null,
-      inFlight: null
+      inFlight: null,
+      inFlightAbortController: null,
+      inFlightWaiters: 0
     };
+    const inFlightAbortController = new AbortController();
+    entry.inFlightAbortController = inFlightAbortController;
 
-    const promise = getBrickPageTable(layerKey, timepoint, { scaleLevel: scale.level })
-      .then((pageTable) => loadBrickAtlas(layer, timepoint, pageTable, null))
+    const promise = getBrickPageTable(layerKey, timepoint, {
+      scaleLevel: scale.level,
+      signal: inFlightAbortController.signal
+    })
+      .then((pageTable) => loadBrickAtlas(layer, timepoint, pageTable, inFlightAbortController.signal))
       .then((atlas) => {
         entry.atlas = atlas;
         entry.inFlight = null;
+        entry.inFlightAbortController = null;
+        entry.inFlightWaiters = 0;
         touchBrickAtlas(key, entry);
         evictBrickAtlasCacheIfNeeded();
         return atlas;
       })
       .catch((error) => {
+        entry.inFlight = null;
+        entry.inFlightAbortController = null;
+        entry.inFlightWaiters = 0;
         brickAtlasCache.delete(key);
         throw error;
       });
@@ -1744,7 +1808,7 @@ export function createVolumeProvider({
     entry.inFlight = promise;
     brickAtlasCache.set(key, entry);
     evictBrickAtlasCacheIfNeeded();
-    return awaitWithAbort(promise, signal);
+    return awaitAbortableInFlight(entry, promise, signal);
   };
 
   const hasBrickAtlas = (
@@ -1966,6 +2030,21 @@ export function createVolumeProvider({
   };
 
   const clear = () => {
+    for (const entry of cache.values()) {
+      entry.inFlightAbortController?.abort('Volume cache cleared.');
+      entry.inFlightAbortController = null;
+      entry.inFlightWaiters = 0;
+    }
+    for (const entry of brickPageTableCache.values()) {
+      entry.inFlightAbortController?.abort('Brick page-table cache cleared.');
+      entry.inFlightAbortController = null;
+      entry.inFlightWaiters = 0;
+    }
+    for (const entry of brickAtlasCache.values()) {
+      entry.inFlightAbortController?.abort('Brick atlas cache cleared.');
+      entry.inFlightAbortController = null;
+      entry.inFlightWaiters = 0;
+    }
     cache.clear();
     chunkCache.clear();
     brickPageTableCache.clear();

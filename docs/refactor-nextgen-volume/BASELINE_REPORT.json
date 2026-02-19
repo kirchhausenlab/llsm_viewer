@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-02-13T18:31:25.292Z",
+  "generatedAt": "2026-02-19T02:18:07.980Z",
   "matrixConfigPath": "docs/refactor-nextgen-volume/BENCHMARK_MATRIX.json",
   "matrixVersion": "1.1.0",
   "matrixApproval": {
@@ -11,7 +11,7 @@
   "environment": {
     "platform": "linux",
     "arch": "x64",
-    "nodeVersion": "v25.6.1",
+    "nodeVersion": "v22.22.0",
     "cpus": 16,
     "cpuModel": "AMD Ryzen 7 6800H with Radeon Graphics",
     "runtimeOverrides": {}
@@ -35,34 +35,34 @@
           1
         ]
       },
-      "generationMs": 36.885992999999985,
+      "generationMs": 100.010309,
       "loadSteps": [
         {
           "label": "volume_t0_cold",
-          "elapsedMs": 31.206669000000005,
+          "elapsedMs": 44.611909000000026,
           "normalizedBytes": 442368
         },
         {
           "label": "volume_t0_chunk_warm",
-          "elapsedMs": 19.403894000000008,
+          "elapsedMs": 27.189918000000034,
           "normalizedBytes": 442368
         },
         {
           "label": "volume_t1_mixed_cache",
-          "elapsedMs": 19.328651999999977,
+          "elapsedMs": 27.140285000000006,
           "normalizedBytes": 442368
         }
       ],
       "atlasSteps": [
         {
           "label": "atlas_t0_scale0",
-          "elapsedMs": 8.796342999999979,
+          "elapsedMs": 18.922595,
           "atlasBytes": 786432,
           "residentBricks": 12
         },
         {
           "label": "atlas_t0_scale1",
-          "elapsedMs": 0.8439119999999889,
+          "elapsedMs": 1.4236190000000306,
           "atlasBytes": 73728,
           "residentBricks": 2
         }
@@ -83,30 +83,30 @@
         "loadsStarted": 3,
         "loadsCompleted": 3,
         "loadsFailed": 0,
-        "bytesRead": 942164,
+        "bytesRead": 943188,
         "dataBytesRead": 940032,
         "labelBytesRead": 0,
-        "totalLoadMs": 69.44963200000001,
-        "totalDataReadMs": 68.97889299999997,
+        "totalLoadMs": 98.17237799999998,
+        "totalDataReadMs": 97.58446800000002,
         "totalLabelReadMs": 0,
-        "lastLoadMs": 19.25291900000002,
-        "lastDataReadMs": 19.161385999999965,
+        "lastLoadMs": 26.97507300000001,
+        "lastDataReadMs": 26.87868100000003,
         "lastLabelReadMs": null,
-        "chunkCacheHits": 25,
+        "chunkCacheHits": 26,
         "chunkCacheHitInFlight": 0,
-        "chunkCacheMisses": 34,
-        "chunkReadsStarted": 34,
-        "chunkReadsCompleted": 34,
+        "chunkCacheMisses": 35,
+        "chunkReadsStarted": 35,
+        "chunkReadsCompleted": 35,
         "chunkReadsFailed": 0,
-        "chunkBytesRead": 942164,
+        "chunkBytesRead": 943188,
         "chunkCacheEvictions": 0,
         "prefetchActiveRequests": 0,
         "maxCachedVolumes": 0,
         "cacheSize": 0,
         "inFlightCount": 0,
         "maxCachedChunkBytes": 67108864,
-        "chunkCacheBytes": 942164,
-        "chunkCacheSize": 34,
+        "chunkCacheBytes": 943188,
+        "chunkCacheSize": 35,
         "chunkInFlightCount": 0
       },
       "acceptance": {
@@ -127,7 +127,7 @@
           "scale1RequestMin": 1
         },
         "observed": {
-          "chunkHitRate": 0.423728813559322,
+          "chunkHitRate": 0.4262295081967213,
           "scale1Requests": 2
         }
       }
@@ -150,34 +150,34 @@
           2
         ]
       },
-      "generationMs": 116.23291599999999,
+      "generationMs": 206.692747,
       "loadSteps": [
         {
           "label": "volume_t0_cold",
-          "elapsedMs": 49.62645699999996,
+          "elapsedMs": 57.28000199999997,
           "normalizedBytes": 2097152
         },
         {
           "label": "volume_t0_chunk_warm",
-          "elapsedMs": 44.674825999999996,
+          "elapsedMs": 41.912120999999956,
           "normalizedBytes": 2097152
         },
         {
           "label": "volume_t1_mixed_cache",
-          "elapsedMs": 46.12808700000005,
+          "elapsedMs": 43.04318699999999,
           "normalizedBytes": 2097152
         }
       ],
       "atlasSteps": [
         {
           "label": "atlas_t0_scale0",
-          "elapsedMs": 16.660007999999948,
+          "elapsedMs": 19.77727900000002,
           "atlasBytes": 2097152,
           "residentBricks": 16
         },
         {
           "label": "atlas_t0_scale1",
-          "elapsedMs": 1.6237730000000283,
+          "elapsedMs": 1.784960999999953,
           "atlasBytes": 262144,
           "residentBricks": 2
         }
@@ -198,30 +198,30 @@
         "loadsStarted": 3,
         "loadsCompleted": 3,
         "loadsFailed": 0,
-        "bytesRead": 4458604,
+        "bytesRead": 4459628,
         "dataBytesRead": 4456448,
         "labelBytesRead": 0,
-        "totalLoadMs": 140.305747,
-        "totalDataReadMs": 139.89407100000005,
+        "totalLoadMs": 142.11057399999993,
+        "totalDataReadMs": 141.79365499999994,
         "totalLabelReadMs": 0,
-        "lastLoadMs": 46.09182899999996,
-        "lastDataReadMs": 45.991490000000056,
+        "lastLoadMs": 43.006437000000005,
+        "lastDataReadMs": 42.87594999999999,
         "lastLabelReadMs": null,
-        "chunkCacheHits": 33,
+        "chunkCacheHits": 34,
         "chunkCacheHitInFlight": 0,
-        "chunkCacheMisses": 42,
-        "chunkReadsStarted": 42,
-        "chunkReadsCompleted": 42,
+        "chunkCacheMisses": 43,
+        "chunkReadsStarted": 43,
+        "chunkReadsCompleted": 43,
         "chunkReadsFailed": 0,
-        "chunkBytesRead": 4458604,
+        "chunkBytesRead": 4459628,
         "chunkCacheEvictions": 0,
         "prefetchActiveRequests": 0,
         "maxCachedVolumes": 0,
         "cacheSize": 0,
         "inFlightCount": 0,
         "maxCachedChunkBytes": 67108864,
-        "chunkCacheBytes": 4458604,
-        "chunkCacheSize": 42,
+        "chunkCacheBytes": 4459628,
+        "chunkCacheSize": 43,
         "chunkInFlightCount": 0
       },
       "acceptance": {
@@ -242,7 +242,7 @@
           "scale1RequestMin": 1
         },
         "observed": {
-          "chunkHitRate": 0.44,
+          "chunkHitRate": 0.44155844155844154,
           "scale1Requests": 2
         }
       }

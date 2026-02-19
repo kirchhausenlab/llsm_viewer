@@ -151,7 +151,7 @@ await (async () => {
     }),
   );
 
-  assert.strictEqual(setMaxCachedVolumesCalls[0], 6);
+  assert.strictEqual(setMaxCachedVolumesCalls[0], 8);
   const canAdvance = hook.result.canAdvancePlaybackToIndex(1);
   assert.strictEqual(canAdvance, false);
 
@@ -279,7 +279,7 @@ await (async () => {
   assert.ok(atlasHasCalls.some((entry) => entry.layerKey === 'layer-a' && entry.scaleLevel === 1));
   assert.deepStrictEqual(
     atlasPrefetchCalls.map((entry) => entry.scaleLevels),
-    [[0, 1], [0, 1], [0, 1]]
+    [[1], [1], [1]]
   );
   hook.unmount();
 })();

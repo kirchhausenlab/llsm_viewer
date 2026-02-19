@@ -9,15 +9,16 @@ import {
 } from './helpers/datasetFixture.ts';
 
 const fixture = resolveTiffDatasetFixture();
+const fixtureSkipReason = fixture.available ? undefined : fixture.reason ?? 'Dataset fixture unavailable';
 
-test('local TIFF fixture discovery reports status', () => {
+test('local TIFF fixture discovery reports status', { skip: fixtureSkipReason }, () => {
   assert.equal(typeof fixture.rootDir, 'string');
   assert.equal(fixture.available, true);
   assert.equal(fixture.reason, null);
   assert.ok(fixture.tiffPaths.length >= 1);
 });
 
-test('local TIFF fixture decodes first stack successfully', async () => {
+test('local TIFF fixture decodes first stack successfully', { skip: fixtureSkipReason }, async () => {
   const bytes = await fs.promises.readFile(fixture.tiffPaths[0]!);
   const arrayBuffer = bytes.buffer.slice(
     bytes.byteOffset,
@@ -33,7 +34,7 @@ test('local TIFF fixture decodes first stack successfully', async () => {
   assert.ok(firstImage.getSamplesPerPixel() >= 1);
 });
 
-test('fixture paths can be converted to browser File objects', async () => {
+test('fixture paths can be converted to browser File objects', { skip: fixtureSkipReason }, async () => {
   const files = await createBrowserFilesFromPaths([fixture.tiffPaths[0]!]);
   assert.equal(files.length, 1);
   assert.equal(files[0]?.name.endsWith('.tif') || files[0]?.name.endsWith('.tiff'), true);

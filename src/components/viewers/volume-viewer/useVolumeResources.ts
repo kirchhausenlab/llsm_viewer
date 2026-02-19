@@ -10,7 +10,7 @@ import {
   prepareSliceTexture,
 } from './rendering';
 import { SliceRenderShader } from '../../../shaders/sliceRenderShader';
-import { VolumeRenderShader } from '../../../shaders/volumeRenderShader';
+import { getVolumeRenderShaderVariantKey, VolumeRenderShaderVariants } from '../../../shaders/volumeRenderShader';
 import { getCachedTextureData } from '../../../core/textureCache';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import type { VolumeResources } from '../VolumeViewer.types';
@@ -25,6 +25,7 @@ import {
   FALLBACK_BRICK_OCCUPANCY_TEXTURE,
   FALLBACK_SEGMENTATION_LABEL_TEXTURE,
 } from './fallbackTextures';
+import type { LayerSettings } from '../../../state/layerSettings';
 
 type UseVolumeResourcesParams = {
   layers: import('../VolumeViewer.types').VolumeViewerProps['layers'];
@@ -187,6 +188,24 @@ function applyAdaptiveLodUniforms(
   }
   if ('u_adaptiveLodMax' in uniforms) {
     uniforms.u_adaptiveLodMax.value = 2;
+  }
+}
+
+function applyBeerLambertUniforms(uniforms: ShaderUniformMap, layer: Pick<
+  LayerSettings,
+  'blDensityScale' | 'blBackgroundCutoff' | 'blOpacityScale' | 'blEarlyExitAlpha'
+>): void {
+  if ('u_blDensityScale' in uniforms) {
+    uniforms.u_blDensityScale.value = layer.blDensityScale;
+  }
+  if ('u_blBackgroundCutoff' in uniforms) {
+    uniforms.u_blBackgroundCutoff.value = layer.blBackgroundCutoff;
+  }
+  if ('u_blOpacityScale' in uniforms) {
+    uniforms.u_blOpacityScale.value = layer.blOpacityScale;
+  }
+  if ('u_blEarlyExitAlpha' in uniforms) {
+    uniforms.u_blEarlyExitAlpha.value = layer.blEarlyExitAlpha;
   }
 }
 
@@ -1728,6 +1747,7 @@ export function useVolumeResources({
         const needsRebuild =
           !resources ||
           resources.mode !== viewerMode ||
+          resources.renderStyle !== layer.renderStyle ||
           resources.dimensions.width !== width ||
           resources.dimensions.height !== height ||
           resources.dimensions.depth !== depth ||
@@ -1749,7 +1769,7 @@ export function useVolumeResources({
           texture.colorSpace = THREE.LinearSRGBColorSpace;
           texture.needsUpdate = true;
 
-          const shader = VolumeRenderShader;
+          const shader = VolumeRenderShaderVariants[getVolumeRenderShaderVariantKey(layer.renderStyle)];
           const uniforms = THREE.UniformsUtils.clone(shader.uniforms);
           uniforms.u_data.value = texture;
           uniforms.u_size.value.set(width, height, depth);
@@ -1764,6 +1784,7 @@ export function useVolumeResources({
           uniforms.u_stepScale.value = volumeStepScaleRef.current;
           uniforms.u_nearestSampling.value = layer.samplingMode === 'nearest' ? 1 : 0;
           applyAdaptiveLodUniforms(uniforms as ShaderUniformMap, layer.samplingMode);
+          applyBeerLambertUniforms(uniforms as ShaderUniformMap, layer);
           if (uniforms.u_segmentationLabels) {
             uniforms.u_segmentationLabels.value = labelTexture ?? FALLBACK_SEGMENTATION_LABEL_TEXTURE;
           }
@@ -1832,6 +1853,7 @@ export function useVolumeResources({
             dimensions: { width, height, depth },
             channels,
             mode: viewerMode,
+            renderStyle: layer.renderStyle,
             samplingMode: layer.samplingMode,
             brickPageTable: pageTable,
             brickOccupancyTexture: null,
@@ -1962,6 +1984,7 @@ export function useVolumeResources({
             dimensions: { width: volume.width, height: volume.height, depth: volume.depth },
             channels: volume.channels,
             mode: viewerMode,
+            renderStyle: layer.renderStyle,
             samplingMode: layer.samplingMode,
             sliceBuffer: sliceInfo.data,
             brickPageTable: pageTable,
@@ -1975,6 +1998,7 @@ export function useVolumeResources({
       if (resources) {
         const { mesh } = resources;
         resources.brickPageTable = pageTable;
+        resources.renderStyle = layer.renderStyle;
         mesh.visible = layer.visible;
         mesh.renderOrder = index;
 
@@ -2000,6 +2024,7 @@ export function useVolumeResources({
           materialUniforms.u_nearestSampling.value = layer.samplingMode === 'nearest' ? 1 : 0;
         }
         applyAdaptiveLodUniforms(materialUniforms, layer.samplingMode);
+        applyBeerLambertUniforms(materialUniforms, layer);
 
         if (resources.mode === '3d') {
           const preparation = volume ? cachedPreparation ?? getCachedTextureData(volume) : null;
@@ -2051,23 +2076,33 @@ export function useVolumeResources({
             dataTexture.needsUpdate = true;
             resources.samplingMode = layer.samplingMode;
           }
-          if (preparation) {
-            dataTexture.image.data = preparation.data;
-            dataTexture.image.width = width;
-            dataTexture.image.height = height;
-            dataTexture.image.depth = depth;
-            dataTexture.format = preparation.format;
-          } else {
-            dataTexture.image.data = FALLBACK_VOLUME_TEXTURE_DATA;
-            dataTexture.image.width = 1;
-            dataTexture.image.height = 1;
-            dataTexture.image.depth = 1;
-            dataTexture.format = THREE.RedFormat;
+          const nextTextureData = preparation ? preparation.data : FALLBACK_VOLUME_TEXTURE_DATA;
+          const nextTextureWidth = preparation ? width : 1;
+          const nextTextureHeight = preparation ? height : 1;
+          const nextTextureDepth = preparation ? depth : 1;
+          const nextTextureFormat = preparation ? preparation.format : THREE.RedFormat;
+          const textureSourceChanged =
+            dataTexture.image.data !== nextTextureData ||
+            dataTexture.image.width !== nextTextureWidth ||
+            dataTexture.image.height !== nextTextureHeight ||
+            dataTexture.image.depth !== nextTextureDepth ||
+            dataTexture.format !== nextTextureFormat;
+          if (textureSourceChanged) {
+            dataTexture.image.data = nextTextureData;
+            dataTexture.image.width = nextTextureWidth;
+            dataTexture.image.height = nextTextureHeight;
+            dataTexture.image.depth = nextTextureDepth;
+            dataTexture.format = nextTextureFormat;
+            dataTexture.needsUpdate = true;
           }
-          dataTexture.needsUpdate = true;
-          materialUniforms.u_data.value = dataTexture;
+          if (materialUniforms.u_data.value !== dataTexture) {
+            materialUniforms.u_data.value = dataTexture;
+          }
           if (materialUniforms.u_size) {
-            (materialUniforms.u_size.value as THREE.Vector3).set(width, height, depth);
+            const sizeUniform = materialUniforms.u_size.value as THREE.Vector3;
+            if (sizeUniform.x !== width || sizeUniform.y !== height || sizeUniform.z !== depth) {
+              sizeUniform.set(width, height, depth);
+            }
           }
           if (layer.isSegmentation && volume?.segmentationLabels) {
             const expectedLength = volume.segmentationLabels.length;
@@ -2092,8 +2127,18 @@ export function useVolumeResources({
               labelTexture.unpackAlignment = 1;
               labelTexture.needsUpdate = true;
             } else if (labelTexture) {
-              labelTexture.image.data = volume.segmentationLabels;
-              labelTexture.needsUpdate = true;
+              const labelsChanged =
+                labelTexture.image.data !== volume.segmentationLabels ||
+                labelTexture.image.width !== volume.width ||
+                labelTexture.image.height !== volume.height ||
+                labelTexture.image.depth !== volume.depth;
+              if (labelsChanged) {
+                labelTexture.image.data = volume.segmentationLabels;
+                labelTexture.image.width = volume.width;
+                labelTexture.image.height = volume.height;
+                labelTexture.image.depth = volume.depth;
+                labelTexture.needsUpdate = true;
+              }
             }
             resources.labelTexture = labelTexture;
             if (materialUniforms.u_segmentationLabels) {
@@ -2101,6 +2146,7 @@ export function useVolumeResources({
             }
           } else if (materialUniforms.u_segmentationLabels) {
             materialUniforms.u_segmentationLabels.value = FALLBACK_SEGMENTATION_LABEL_TEXTURE;
+            resources.labelTexture?.dispose();
             resources.labelTexture = null;
           }
           if (materialUniforms.u_renderstyle) {

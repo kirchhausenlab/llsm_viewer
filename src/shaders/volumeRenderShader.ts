@@ -1,5 +1,11 @@
 import { Vector2, Vector3 } from 'three';
 import type { Data3DTexture, DataTexture } from 'three';
+import {
+  RENDER_STYLE_BL,
+  RENDER_STYLE_ISO,
+  RENDER_STYLE_MIP,
+  type RenderStyle
+} from '../state/layerSettings';
 
 export type BrickSkipDecisionArgs = {
   skipEnabled: boolean;
@@ -188,6 +194,10 @@ export function shouldSkipWithBrickStatsCpu(args: BrickSkipDecisionArgs): boolea
 type VolumeUniforms = {
   u_size: { value: Vector3 };
   u_renderstyle: { value: number };
+  u_blDensityScale: { value: number };
+  u_blBackgroundCutoff: { value: number };
+  u_blOpacityScale: { value: number };
+  u_blEarlyExitAlpha: { value: number };
   u_renderthreshold: { value: number };
   u_clim: { value: Vector2 };
   u_data: { value: Data3DTexture | null };
@@ -227,6 +237,10 @@ type VolumeUniforms = {
 const uniforms = {
   u_size: { value: new Vector3(1, 1, 1) },
   u_renderstyle: { value: 0 },
+  u_blDensityScale: { value: 1 },
+  u_blBackgroundCutoff: { value: 0.08 },
+  u_blOpacityScale: { value: 1 },
+  u_blEarlyExitAlpha: { value: 0.98 },
   u_renderthreshold: { value: 0.5 },
   u_clim: { value: new Vector2(1, 1) },
   u_data: { value: null as Data3DTexture | null },
@@ -263,9 +277,7 @@ const uniforms = {
   u_adaptiveLodMax: { value: 2 }
 } satisfies VolumeUniforms;
 
-export const VolumeRenderShader = {
-  uniforms,
-  vertexShader: /* glsl */ `
+const volumeRenderVertexShader = /* glsl */ `
     varying vec4 v_nearpos;
     varying vec4 v_farpos;
     varying vec3 v_position;
@@ -286,14 +298,19 @@ export const VolumeRenderShader = {
       v_position = position;
       gl_Position = projectionMatrix * viewMatrix * modelMatrix * position4;
     }
-  `,
-  fragmentShader: /* glsl */ `
+  `;
+
+const volumeRenderFragmentShader = /* glsl */ `
     precision highp float;
     precision mediump sampler3D;
     precision mediump usampler3D;
 
     uniform vec3 u_size;
     uniform int u_renderstyle;
+    uniform float u_blDensityScale;
+    uniform float u_blBackgroundCutoff;
+    uniform float u_blOpacityScale;
+    uniform float u_blEarlyExitAlpha;
     uniform float u_renderthreshold;
     uniform vec2 u_clim;
     uniform int u_channels;
@@ -343,9 +360,18 @@ export const VolumeRenderShader = {
     const float diffuseStrength = 0.8;
     const vec3 specularColor = vec3(1.0);
 
-    vec4 add_lighting(float val, vec3 loc, vec3 step, vec3 view_ray, vec4 sampleColor);
-    void cast_mip(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
-    void cast_iso(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
+    #if defined(VOLUME_STYLE_ISO)
+      vec4 add_lighting(float val, vec3 loc, vec3 step, vec3 view_ray, vec4 sampleColor);
+    #endif
+    #if defined(VOLUME_STYLE_MIP)
+      void cast_mip(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
+    #endif
+    #if defined(VOLUME_STYLE_ISO)
+      void cast_iso(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
+    #endif
+    #if defined(VOLUME_STYLE_BL)
+      void cast_bl(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
+    #endif
     float normalize_intensity(float value);
     float apply_inversion(float normalized);
 
@@ -945,17 +971,22 @@ export const VolumeRenderShader = {
       }
       vec3 view_ray = -rayDir;
 
-      if (u_renderstyle == 0) {
+      #if defined(VOLUME_STYLE_MIP)
         cast_mip(start_loc, step, nsteps, view_ray);
-      } else if (u_renderstyle == 1) {
+      #elif defined(VOLUME_STYLE_ISO)
         cast_iso(start_loc, step, nsteps, view_ray);
-      }
+      #elif defined(VOLUME_STYLE_BL)
+        cast_bl(start_loc, step, nsteps, view_ray);
+      #else
+        cast_mip(start_loc, step, nsteps, view_ray);
+      #endif
 
       if (gl_FragColor.a < 0.05) {
         discard;
       }
     }
 
+    #if defined(VOLUME_STYLE_MIP)
     void cast_mip(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray) {
       float max_val = -1e6;
       int max_i = 100;
@@ -1049,7 +1080,9 @@ export const VolumeRenderShader = {
 
       gl_FragColor = apply_blending_mode(color);
     }
+    #endif
 
+    #if defined(VOLUME_STYLE_ISO)
     void cast_iso(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray) {
       vec4 hitColor = vec4(0.0);
       vec3 dstep = 1.5 / u_size;
@@ -1119,7 +1152,89 @@ export const VolumeRenderShader = {
 
       gl_FragColor = apply_blending_mode(hitColor);
     }
+    #endif
 
+    #if defined(VOLUME_STYLE_BL)
+    void cast_bl(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray) {
+      vec3 loc = start_loc;
+      vec3 accumulatedColor = vec3(0.0);
+      float transmittance = 1.0;
+      float accumulatedAlpha = 0.0;
+      float safeEarlyExit = clamp(u_blEarlyExitAlpha, 0.0, 1.0);
+      float safeBackgroundCutoff = clamp(u_blBackgroundCutoff, 0.0, 1.0);
+      float safeDensity = max(u_blDensityScale, 0.0);
+      float safeOpacity = max(u_blOpacityScale, 0.0);
+      float stepDistance = max(length(step * u_size), 1e-5);
+      float baseAdaptiveLod = compute_adaptive_lod_base(step);
+      vec3 cachedBrickCoord = vec3(-1.0);
+      float cachedAtlasIndex = -1.0;
+      float cachedOccupancy = 0.0;
+      float cachedBrickMinRaw = 0.0;
+      float cachedBrickMaxRaw = 0.0;
+      bool hasCachedBrick = false;
+
+      for (int iter = 0; iter < MAX_STEPS; iter++) {
+        if (iter >= nsteps) {
+          break;
+        }
+        if (u_brickSkipEnabled > 0.5) {
+          vec3 brickCoord = brick_lookup_coord(loc);
+          if (!hasCachedBrick || !brick_coords_equal(brickCoord, cachedBrickCoord)) {
+            cachedBrickCoord = brickCoord;
+            cachedAtlasIndex = texture(u_brickAtlasIndices, brickCoord).r - 1.0;
+            cachedOccupancy = texture(u_brickOccupancy, brickCoord).r;
+            cachedBrickMinRaw = texture(u_brickMin, brickCoord).r;
+            cachedBrickMaxRaw = texture(u_brickMax, brickCoord).r;
+            hasCachedBrick = true;
+          }
+          if (should_skip_with_brick_stats_values(
+            cachedAtlasIndex,
+            cachedOccupancy,
+            cachedBrickMinRaw,
+            cachedBrickMaxRaw,
+            -1.0,
+            -1.0
+          )) {
+            loc += step;
+            continue;
+          }
+        }
+
+        float adaptiveLod = adaptive_lod_for_iso(baseAdaptiveLod);
+        vec4 colorSample = sample_color_lod(loc, adaptiveLod);
+        float rawIntensity = luminance(colorSample);
+        float normalizedIntensity = normalize_intensity(rawIntensity);
+        if (normalizedIntensity <= safeBackgroundCutoff) {
+          loc += step;
+          continue;
+        }
+
+        float cutoffAdjustedIntensity = safeBackgroundCutoff >= 1.0
+          ? 0.0
+          : clamp(
+            (normalizedIntensity - safeBackgroundCutoff) / max(1.0 - safeBackgroundCutoff, 1e-5),
+            0.0,
+            1.0
+          );
+        float sigmaT = cutoffAdjustedIntensity * safeDensity * safeOpacity;
+        float alphaStep = 1.0 - exp(-sigmaT * stepDistance);
+        vec4 sampleColor = compose_color(normalizedIntensity, colorSample);
+        accumulatedColor += transmittance * alphaStep * sampleColor.rgb;
+        transmittance *= max(0.0, 1.0 - alphaStep);
+        accumulatedAlpha = 1.0 - transmittance;
+
+        if (accumulatedAlpha >= safeEarlyExit) {
+          break;
+        }
+
+        loc += step;
+      }
+
+      gl_FragColor = apply_blending_mode(vec4(accumulatedColor, accumulatedAlpha));
+    }
+    #endif
+
+    #if defined(VOLUME_STYLE_ISO)
     vec4 add_lighting(float val, vec3 loc, vec3 step, vec3 view_ray, vec4 colorSample) {
       vec3 V = normalize(view_ray);
 
@@ -1157,7 +1272,47 @@ export const VolumeRenderShader = {
       vec3 litColor = baseColor.rgb * (ambientStrength + diffuseStrength * lambertTerm) + specularTerm * specularColor;
       return vec4(litColor, baseColor.a);
     }
-  `
+    #endif
+  `;
+
+export type VolumeRenderShaderVariantKey = 'mip' | 'iso' | 'bl';
+
+const createVariantFragmentShader = (variant: VolumeRenderShaderVariantKey): string => {
+  if (variant === 'iso') {
+    return `#define VOLUME_STYLE_ISO\n${volumeRenderFragmentShader}`;
+  }
+  if (variant === 'bl') {
+    return `#define VOLUME_STYLE_BL\n${volumeRenderFragmentShader}`;
+  }
+  return `#define VOLUME_STYLE_MIP\n${volumeRenderFragmentShader}`;
 };
+
+const createVolumeRenderShaderVariant = (variant: VolumeRenderShaderVariantKey) => ({
+  uniforms,
+  vertexShader: volumeRenderVertexShader,
+  fragmentShader: createVariantFragmentShader(variant)
+});
+
+export const VolumeRenderShaderVariants = {
+  mip: createVolumeRenderShaderVariant('mip'),
+  iso: createVolumeRenderShaderVariant('iso'),
+  bl: createVolumeRenderShaderVariant('bl')
+} as const;
+
+export const getVolumeRenderShaderVariantKey = (renderStyle: RenderStyle): VolumeRenderShaderVariantKey => {
+  if (renderStyle === RENDER_STYLE_ISO) {
+    return 'iso';
+  }
+  if (renderStyle === RENDER_STYLE_BL) {
+    return 'bl';
+  }
+  return 'mip';
+};
+
+export const getVolumeRenderShaderVariant = (renderStyle: RenderStyle) =>
+  VolumeRenderShaderVariants[getVolumeRenderShaderVariantKey(renderStyle)];
+
+// Backward-compatible default variant for existing imports.
+export const VolumeRenderShader = VolumeRenderShaderVariants.mip;
 
 export type VolumeRenderShaderType = typeof VolumeRenderShader;

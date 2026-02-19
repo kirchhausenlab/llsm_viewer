@@ -123,6 +123,14 @@ export function getShardChunkLocation(
   if (!layout) {
     throw new Error(`Descriptor ${descriptor.path} is not sharded.`);
   }
+  return getShardChunkLocationForLayout(descriptor, layout, chunkCoords);
+}
+
+export function getShardChunkLocationForLayout(
+  descriptor: ZarrArrayDescriptor,
+  layout: ShardLayout,
+  chunkCoords: readonly number[]
+): ShardChunkLocation {
   if (chunkCoords.length !== descriptor.shape.length) {
     throw new Error(
       `Chunk coordinate rank mismatch for ${descriptor.path}: expected ${descriptor.shape.length}, got ${chunkCoords.length}.`

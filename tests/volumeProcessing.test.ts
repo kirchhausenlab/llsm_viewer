@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 
-import { colorizeSegmentationVolume, normalizeVolume } from '../src/core/volumeProcessing.ts';
+import {
+  colorizeSegmentationTypedArray,
+  colorizeSegmentationVolume,
+  normalizeTypedArray,
+  normalizeVolume
+} from '../src/core/volumeProcessing.ts';
 import type { VolumePayload } from '../src/types/volume.ts';
 
 console.log('Starting volumeProcessing normalization tests');
@@ -114,5 +119,57 @@ assert.deepEqual(roundedLabelColor, repeatedRoundedLabelColor);
 const higherLabelColor = Array.from(fractionalColorized.normalized.slice(16, 20));
 assert.ok(higherLabelColor.some((value) => value !== 0));
 assert.notDeepStrictEqual(roundedLabelColor, higherLabelColor);
+
+const offsetUint8 = new Uint8Array([99, 0, 64, 128, 255, 77]);
+const offsetUint8View = offsetUint8.subarray(1, 5);
+const identityFromView = normalizeTypedArray({
+  width: 4,
+  height: 1,
+  depth: 1,
+  channels: 1,
+  dataType: 'uint8',
+  source: offsetUint8View,
+  parameters: { min: 0, max: 255 }
+});
+assert.strictEqual(identityFromView.normalized, offsetUint8View);
+assert.deepEqual(Array.from(identityFromView.normalized), [0, 64, 128, 255]);
+
+const offsetUint16 = new Uint16Array([777, 10, 20, 30, 40, 50, 888]);
+const offsetUint16View = offsetUint16.subarray(1, 6);
+const normalizedFromView = normalizeTypedArray({
+  width: 5,
+  height: 1,
+  depth: 1,
+  channels: 1,
+  dataType: 'uint16',
+  source: offsetUint16View,
+  parameters: { min: 10, max: 50 }
+});
+assert.deepEqual(Array.from(normalizedFromView.normalized), [0, 64, 128, 191, 255]);
+
+const segmentedFromView = colorizeSegmentationTypedArray({
+  width: 4,
+  height: 1,
+  depth: 1,
+  dataType: 'uint8',
+  source: offsetUint8View,
+  seed
+});
+const offsetSegmentationVolume: VolumePayload = {
+  width: 4,
+  height: 1,
+  depth: 1,
+  channels: 1,
+  dataType: 'uint8',
+  data: new Uint8Array(offsetUint8View).buffer,
+  min: 0,
+  max: 255
+};
+const segmentedFromVolume = colorizeSegmentationVolume(offsetSegmentationVolume, seed);
+assert.deepEqual(Array.from(segmentedFromView.normalized), Array.from(segmentedFromVolume.normalized));
+assert.deepEqual(
+  Array.from(segmentedFromView.segmentationLabels ?? []),
+  Array.from(segmentedFromVolume.segmentationLabels ?? [])
+);
 
 console.log('volumeProcessing normalization tests passed');

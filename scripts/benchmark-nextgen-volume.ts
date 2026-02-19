@@ -94,6 +94,9 @@ type BenchmarkMatrixReport = {
 
 const DEFAULT_OUTPUT_PATH = 'docs/refactor-nextgen-volume/BASELINE_REPORT.json';
 const DEFAULT_MATRIX_CONFIG_PATH = 'docs/refactor-nextgen-volume/BENCHMARK_MATRIX.json';
+const DEFAULT_PROVIDER_MAX_CACHED_CHUNK_BYTES = 64 * 1024 * 1024;
+const DEFAULT_PROVIDER_MAX_CONCURRENT_CHUNK_READS = 10;
+const DEFAULT_PROVIDER_MAX_CONCURRENT_PREFETCH_LOADS = 4;
 
 function readOptionalPositiveIntegerEnv(key: string): number | undefined {
   const raw = process.env[key];
@@ -691,13 +694,10 @@ async function runBenchmarkCase(
     manifest: generation.value.manifest,
     storage: generation.value.storage,
     maxCachedVolumes: 0,
-    ...(overrides.maxCachedChunkBytes ? { maxCachedChunkBytes: overrides.maxCachedChunkBytes } : {}),
-    ...(overrides.maxConcurrentChunkReads
-      ? { maxConcurrentChunkReads: overrides.maxConcurrentChunkReads }
-      : {}),
-    ...(overrides.maxConcurrentPrefetchLoads
-      ? { maxConcurrentPrefetchLoads: overrides.maxConcurrentPrefetchLoads }
-      : {})
+    maxCachedChunkBytes: overrides.maxCachedChunkBytes ?? DEFAULT_PROVIDER_MAX_CACHED_CHUNK_BYTES,
+    maxConcurrentChunkReads: overrides.maxConcurrentChunkReads ?? DEFAULT_PROVIDER_MAX_CONCURRENT_CHUNK_READS,
+    maxConcurrentPrefetchLoads:
+      overrides.maxConcurrentPrefetchLoads ?? DEFAULT_PROVIDER_MAX_CONCURRENT_PREFETCH_LOADS
   });
 
   const t1Timepoint = Math.min(benchmarkCase.dataset.timepoints - 1, 1);

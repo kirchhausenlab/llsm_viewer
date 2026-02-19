@@ -26,6 +26,7 @@ import {
   DEFAULT_WINDOW_MAX,
   DEFAULT_WINDOW_MIN,
   type LayerSettings,
+  type RenderStyle,
   type SamplingMode
 } from '../state/layerSettings';
 import type { LoadedLayer } from '../types/layers';
@@ -81,8 +82,8 @@ export type ChannelLayerState = Omit<ChannelSourcesApi, 'loadSelectedDataset' | 
   setLayerSettings: Dispatch<SetStateAction<Record<string, LayerSettings>>>;
   layerAutoThresholds: Record<string, number>;
   setLayerAutoThresholds: Dispatch<SetStateAction<Record<string, number>>>;
-  globalRenderStyle: 0 | 1;
-  setGlobalRenderStyle: Dispatch<SetStateAction<0 | 1>>;
+  globalRenderStyle: RenderStyle;
+  setGlobalRenderStyle: Dispatch<SetStateAction<RenderStyle>>;
   globalSamplingMode: SamplingMode;
   setGlobalSamplingMode: Dispatch<SetStateAction<SamplingMode>>;
   channelDefaultColorMap: Map<string, string>;
@@ -105,7 +106,7 @@ export function useChannelLayerState(): ChannelLayerState {
   const [channelActiveLayer, setChannelActiveLayer] = useState<Record<string, string>>({});
   const [layerSettings, setLayerSettings] = useState<Record<string, LayerSettings>>({});
   const [layerAutoThresholds, setLayerAutoThresholds] = useState<Record<string, number>>({});
-  const [globalRenderStyle, setGlobalRenderStyle] = useState<0 | 1>(DEFAULT_RENDER_STYLE);
+  const [globalRenderStyle, setGlobalRenderStyle] = useState<RenderStyle>(DEFAULT_RENDER_STYLE);
   const [globalSamplingMode, setGlobalSamplingMode] = useState<SamplingMode>(DEFAULT_SAMPLING_MODE);
 
   useEffect(() => {

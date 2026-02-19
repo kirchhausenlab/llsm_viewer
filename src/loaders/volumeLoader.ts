@@ -5,23 +5,10 @@ import {
   type VolumeTypedArray
 } from '../types/volume';
 import VolumeWorker from '../workers/volumeLoader.worker?worker';
-import type {
-  VolumeStartMessage,
-  VolumeWorkerOutboundMessage
-} from '../workers/volumeLoaderMessages';
+import type { VolumeWorkerOutboundMessage } from '../workers/volumeLoaderMessages';
 
 export type VolumeLoadCallbacks = {
   onVolumeLoaded?: (index: number, payload: VolumePayload) => void;
-};
-
-type VolumeAssemblyState = {
-  metadata: VolumeStartMessage['metadata'];
-  buffer: ArrayBufferLike;
-  destination: VolumeTypedArray;
-  sliceCount: number;
-  sliceLength: number;
-  bytesPerSlice: number;
-  slicesReceived: number;
 };
 
 type VolumeTooLargeMessageDetails = {
@@ -30,6 +17,19 @@ type VolumeTooLargeMessageDetails = {
   dimensions: VolumeDimensions;
   fileName?: string;
 };
+
+type PendingLoadRequest = {
+  expectedVolumeCount: number;
+  callbacks: VolumeLoadCallbacks;
+  volumes: Array<VolumePayload | undefined>;
+  settled: boolean;
+  resolve: (volumes: VolumePayload[]) => void;
+  reject: (error: Error) => void;
+};
+
+let sharedVolumeWorker: Worker | null = null;
+const pendingLoadRequests = new Map<number, PendingLoadRequest>();
+let nextRequestId = 1;
 
 function isVolumeTooLargeMessageDetails(value: unknown): value is VolumeTooLargeMessageDetails {
   if (typeof value !== 'object' || value === null) {
@@ -49,6 +49,158 @@ function isVolumeTooLargeMessageDetails(value: unknown): value is VolumeTooLarge
   );
 }
 
+function normalizeError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+function toVolumeTooLargeError(details: VolumeTooLargeMessageDetails, message: string): VolumeTooLargeError {
+  return new VolumeTooLargeError(
+    {
+      requiredBytes: details.requiredBytes,
+      maxBytes: details.maxBytes,
+      dimensions: details.dimensions,
+      fileName: details.fileName
+    },
+    message
+  );
+}
+
+function destroySharedWorker(): void {
+  if (!sharedVolumeWorker) {
+    return;
+  }
+  sharedVolumeWorker.terminate();
+  sharedVolumeWorker = null;
+}
+
+function failLoadRequest(requestId: number, error: unknown): void {
+  const request = pendingLoadRequests.get(requestId);
+  if (!request || request.settled) {
+    return;
+  }
+  request.settled = true;
+  pendingLoadRequests.delete(requestId);
+  request.reject(normalizeError(error));
+}
+
+function failAllLoadRequests(error: unknown): void {
+  const requestIds = Array.from(pendingLoadRequests.keys());
+  for (const requestId of requestIds) {
+    failLoadRequest(requestId, error);
+  }
+}
+
+function completeLoadRequest(requestId: number): void {
+  const request = pendingLoadRequests.get(requestId);
+  if (!request || request.settled) {
+    return;
+  }
+
+  const loadedCount = request.volumes.filter((volume) => volume !== undefined).length;
+  if (loadedCount !== request.expectedVolumeCount) {
+    failLoadRequest(
+      requestId,
+      new Error(
+        `Worker completed request ${requestId} with ${loadedCount} of ${request.expectedVolumeCount} volumes loaded.`
+      )
+    );
+    return;
+  }
+
+  request.settled = true;
+  pendingLoadRequests.delete(requestId);
+  request.resolve(request.volumes as VolumePayload[]);
+}
+
+function assignLoadedVolume(
+  request: PendingLoadRequest,
+  index: number,
+  payload: VolumePayload
+): void {
+  if (index < 0 || index >= request.expectedVolumeCount) {
+    throw new Error(`Worker returned out-of-bounds volume index ${index}.`);
+  }
+  request.volumes[index] = payload;
+}
+
+function handleWorkerMessage(event: MessageEvent<VolumeWorkerOutboundMessage>): void {
+  const message = event.data;
+  if (!message) {
+    return;
+  }
+
+  const request = pendingLoadRequests.get(message.requestId);
+  if (!request || request.settled) {
+    return;
+  }
+
+  switch (message.type) {
+    case 'volume-loaded': {
+      try {
+        const payload: VolumePayload = {
+          ...message.metadata,
+          data: message.buffer
+        };
+        assignLoadedVolume(request, message.index, payload);
+
+        if (request.callbacks.onVolumeLoaded) {
+          request.callbacks.onVolumeLoaded(message.index, payload);
+        }
+      } catch (error) {
+        failLoadRequest(message.requestId, error);
+      }
+      break;
+    }
+    case 'complete':
+      completeLoadRequest(message.requestId);
+      break;
+    case 'error': {
+      if (message.code === 'volume-too-large' && isVolumeTooLargeMessageDetails(message.details)) {
+        failLoadRequest(message.requestId, toVolumeTooLargeError(message.details, message.message));
+        break;
+      }
+      failLoadRequest(message.requestId, new Error(message.message));
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+function handleWorkerError(event: ErrorEvent): void {
+  const normalized = event.error instanceof Error
+    ? event.error
+    : new Error(event.message || 'Volume loader worker error');
+  failAllLoadRequests(normalized);
+  destroySharedWorker();
+}
+
+function ensureSharedWorker(): Worker {
+  if (sharedVolumeWorker) {
+    return sharedVolumeWorker;
+  }
+  const worker = new VolumeWorker();
+  worker.onmessage = handleWorkerMessage as (event: MessageEvent) => void;
+  worker.onerror = handleWorkerError;
+  sharedVolumeWorker = worker;
+  return worker;
+}
+
+function allocateRequestId(): number {
+  let candidate = nextRequestId;
+  while (pendingLoadRequests.has(candidate)) {
+    candidate += 1;
+    if (candidate >= Number.MAX_SAFE_INTEGER) {
+      candidate = 1;
+    }
+  }
+  nextRequestId = candidate + 1;
+  if (nextRequestId >= Number.MAX_SAFE_INTEGER) {
+    nextRequestId = 1;
+  }
+  return candidate;
+}
+
 export async function loadVolumesFromFiles(
   files: File[],
   callbacks: VolumeLoadCallbacks = {}
@@ -58,185 +210,22 @@ export async function loadVolumesFromFiles(
   }
 
   return new Promise<VolumePayload[]>((resolve, reject) => {
-    const worker = new VolumeWorker();
-    const requestId = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
-    const volumes: VolumePayload[] = new Array(files.length);
+    const requestId = allocateRequestId();
+    pendingLoadRequests.set(requestId, {
+      expectedVolumeCount: files.length,
+      callbacks,
+      volumes: new Array(files.length),
+      settled: false,
+      resolve,
+      reject
+    });
 
-    const assemblies = new Map<number, VolumeAssemblyState>();
-    let settled = false;
-
-    const cleanup = () => {
-      assemblies.clear();
-      worker.terminate();
-    };
-
-    const fail = (error: unknown) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      cleanup();
-      reject(error instanceof Error ? error : new Error(String(error)));
-    };
-
-    const createAssemblyState = (start: VolumeStartMessage): VolumeAssemblyState => {
-      const { metadata } = start;
-      const sliceLength = metadata.width * metadata.height * metadata.channels;
-      const sliceCount = metadata.depth;
-      if (sliceLength <= 0 || sliceCount <= 0) {
-        throw new Error('Received invalid volume dimensions from worker.');
-      }
-      const totalValues = sliceLength * sliceCount;
-      const bytesPerSlice = sliceLength * metadata.bytesPerValue;
-      const totalBytes = bytesPerSlice * sliceCount;
-
-      let buffer: ArrayBufferLike | null = null;
-      let allocationError: unknown = null;
-
-      if (typeof SharedArrayBuffer !== 'undefined') {
-        try {
-          buffer = new SharedArrayBuffer(totalBytes);
-        } catch (error) {
-          allocationError = error;
-        }
-      }
-
-      if (!buffer) {
-        try {
-          buffer = new ArrayBuffer(totalBytes);
-        } catch (error) {
-          throw (allocationError ?? error);
-        }
-      }
-
-      const destination = createVolumeTypedArray(metadata.dataType, buffer, 0, totalValues);
-
-      return {
-        metadata,
-        buffer,
-        destination,
-        sliceCount,
-        sliceLength,
-        bytesPerSlice,
-        slicesReceived: 0
-      };
-    };
-
-    worker.onmessage = (event) => {
-      const message = event.data as VolumeWorkerOutboundMessage;
-
-      if (!message || message.requestId !== requestId || settled) {
-        return;
-      }
-
-      switch (message.type) {
-        case 'volume-start': {
-          try {
-            const state = createAssemblyState(message);
-            assemblies.set(message.index, state);
-          } catch (error) {
-            fail(error);
-          }
-          break;
-        }
-        case 'volume-slice': {
-          const state = assemblies.get(message.index);
-          if (!state) {
-            fail(new Error('Received a volume slice before initialization.'));
-            return;
-          }
-
-          try {
-            if (message.sliceCount !== state.sliceCount) {
-              throw new Error('Volume slice count mismatch between worker and loader.');
-            }
-            if (message.sliceIndex < 0 || message.sliceIndex >= state.sliceCount) {
-              throw new Error(
-                `Slice index ${message.sliceIndex} is out of bounds for volume ${message.index}.`
-              );
-            }
-            if (message.buffer.byteLength !== state.bytesPerSlice) {
-              throw new Error('Received a volume slice with an unexpected byte length.');
-            }
-
-            const slice = createVolumeTypedArray(
-              state.metadata.dataType,
-              message.buffer,
-              0,
-              state.sliceLength
-            );
-            state.destination.set(slice, message.sliceIndex * state.sliceLength);
-            state.slicesReceived += 1;
-          } catch (error) {
-            fail(error);
-          }
-          break;
-        }
-        case 'volume-loaded': {
-          const state = assemblies.get(message.index);
-          if (!state) {
-            fail(new Error('Received volume metadata before initialization.'));
-            return;
-          }
-
-          assemblies.delete(message.index);
-
-          if (state.slicesReceived !== state.sliceCount) {
-            console.warn(
-              `Volume ${message.index} completed with ${state.slicesReceived} of ${state.sliceCount} slices.`
-            );
-          }
-
-          const payload: VolumePayload = {
-            ...message.metadata,
-            data: state.buffer
-          };
-
-          volumes[message.index] = payload;
-
-          if (callbacks.onVolumeLoaded) {
-            try {
-              callbacks.onVolumeLoaded(message.index, payload);
-            } catch (error) {
-              fail(error);
-              return;
-            }
-          }
-          break;
-        }
-        case 'complete':
-          settled = true;
-          cleanup();
-          resolve(volumes);
-          break;
-        case 'error': {
-          let errorToReport: Error;
-          if (message.code === 'volume-too-large' && isVolumeTooLargeMessageDetails(message.details)) {
-            errorToReport = new VolumeTooLargeError(
-              {
-                requiredBytes: message.details.requiredBytes,
-                maxBytes: message.details.maxBytes,
-                dimensions: message.details.dimensions,
-                fileName: message.details.fileName
-              },
-              message.message
-            );
-          } else {
-            errorToReport = new Error(message.message);
-          }
-          fail(errorToReport);
-          break;
-        }
-        default:
-          break;
-      }
-    };
-
-    worker.onerror = (event) => {
-      fail(event.error instanceof Error ? event.error : new Error(event.message ?? 'Worker error'));
-    };
-
-    worker.postMessage({ type: 'load-volumes', requestId, files });
+    const worker = ensureSharedWorker();
+    try {
+      worker.postMessage({ type: 'load-volumes', requestId, files });
+    } catch (error) {
+      failLoadRequest(requestId, error);
+    }
   });
 }
 

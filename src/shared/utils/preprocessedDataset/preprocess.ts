@@ -3,8 +3,10 @@ import * as zarr from 'zarrita';
 
 import type { NormalizationParameters, NormalizedVolume } from '../../../core/volumeProcessing';
 import {
+  colorizeSegmentationTypedArray,
   colorizeSegmentationVolume,
   computeNormalizationParameters,
+  normalizeTypedArray,
   normalizeVolume
 } from '../../../core/volumeProcessing';
 import type { PreprocessedStorage } from '../../storage/preprocessedStorage';
@@ -12,7 +14,6 @@ import { createSegmentationSeed, sortVolumeFiles } from '../appHelpers';
 import { computeAnisotropyScale } from '../anisotropyCorrection';
 import type { VolumePayload, VolumeTypedArray } from '../../../types/volume';
 import { createVolumeTypedArray, getBytesPerValue } from '../../../types/volume';
-import { loadVolumesFromFiles } from '../../../loaders/volumeLoader';
 
 import type {
   ChannelExportMetadata,
@@ -30,13 +31,18 @@ import { createZarrStoreFromPreprocessedStorage } from '../zarrStore';
 import { buildChannelSummariesFromManifest } from './manifest';
 import { createTracksDescriptor, serializeTrackEntriesToCsvBytes } from './tracks';
 import { encodeUint32ArrayLE, HISTOGRAM_BINS } from '../histogram';
+import {
+  buildPreprocessScalePyramidInWorker,
+  supportsPreprocessScalePyramidWorker,
+  type PreprocessScalePyramidWorkerResultScale
+} from './preprocessScalePyramidWorker';
 import { createZarrChunkKeyFromCoords } from './chunkKey';
 import { computeMultiscaleGeometryLevels } from './mipPolicy';
 import {
   computeExpectedChunkCountForShard,
   createShardCoordKey,
   encodeShardEntries,
-  getShardChunkLocation,
+  getShardChunkLocationForLayout,
   getShardLayoutForArray,
   isShardedArrayDescriptor,
   type ShardLayout
@@ -67,19 +73,26 @@ export type PreprocessDatasetProgress =
       stage: 'finalize-manifest';
     };
 
+type LoadVolumesFromFiles = (files: File[]) => Promise<VolumePayload[]>;
+
 export type PreprocessDatasetToStorageOptions = {
   layers: PreprocessLayerSource[];
   channels: ChannelExportMetadata[];
   voxelResolution: NonNullable<PreprocessedManifest['dataset']['voxelResolution']>;
   movieMode: PreprocessedMovieMode;
   storage: PreprocessedStorage;
+  volumeLoader?: LoadVolumesFromFiles;
   storageStrategy?: {
     chunkTargetBytes?: number;
+    maxInFlightChunkWrites?: number;
     sharding?: {
       enabled?: boolean;
       targetShardBytes?: number;
       maxChunksPerAxis?: number;
     };
+  };
+  processingStrategy?: {
+    workerizeNormalizationDownsample?: boolean;
   };
   signal?: AbortSignal;
   onProgress?: (progress: PreprocessDatasetProgress) => void;
@@ -93,6 +106,24 @@ function throwIfAborted(signal: AbortSignal | undefined) {
     }
     throw new DOMException('Aborted', 'AbortError');
   }
+}
+
+function isAbortLikeError(error: unknown): boolean {
+  return (
+    (typeof DOMException !== 'undefined' &&
+      error instanceof DOMException &&
+      error.name === 'AbortError') ||
+    (error instanceof Error && error.name === 'AbortError')
+  );
+}
+
+function resolveWorkerizeNormalizationDownsample(
+  options: PreprocessDatasetToStorageOptions['processingStrategy'] | undefined
+): boolean {
+  if (options?.workerizeNormalizationDownsample === false) {
+    return false;
+  }
+  return true;
 }
 
 function createZarrScaleDataArrayPath(channelId: string, layerKey: string, scaleLevel: number): string {
@@ -121,10 +152,13 @@ const DEFAULT_SHARD_TARGET_BYTES = 16 * 1024 * 1024;
 const DEFAULT_SHARD_MAX_CHUNKS_PER_AXIS = 8;
 const DEFAULT_PREPROCESS_DECODE_BATCH_SIZE = 4;
 const MAX_PREPROCESS_DECODE_BATCH_SIZE = 8;
-const DEFAULT_PREPROCESS_MAX_IN_FLIGHT_WRITES = 1;
+const DEFAULT_PREPROCESS_IMAGE_COUNT_PROBE_CONCURRENCY = 4;
+const MAX_PREPROCESS_IMAGE_COUNT_PROBE_CONCURRENCY = 8;
+const DEFAULT_PREPROCESS_MAX_IN_FLIGHT_WRITES = 4;
 
 type ShardingStrategy = {
   chunkTargetBytes: number;
+  maxInFlightChunkWrites: number;
   enabled: boolean;
   targetShardBytes: number;
   maxChunksPerAxis: number;
@@ -149,6 +183,11 @@ function resolveShardingStrategy(
       options?.chunkTargetBytes,
       DEFAULT_CHUNK_TARGET_BYTES,
       'storageStrategy.chunkTargetBytes'
+    ),
+    maxInFlightChunkWrites: normalizePositiveInteger(
+      options?.maxInFlightChunkWrites,
+      DEFAULT_PREPROCESS_MAX_IN_FLIGHT_WRITES,
+      'storageStrategy.maxInFlightChunkWrites'
     ),
     enabled: Boolean(sharding?.enabled),
     targetShardBytes: normalizePositiveInteger(
@@ -430,9 +469,17 @@ type ChunkWriteDispatcher = {
   flush: (signal?: AbortSignal) => Promise<void>;
 };
 
-function createChunkWriteDispatcher(storage: PreprocessedStorage): ChunkWriteDispatcher {
+function createChunkWriteDispatcher(
+  storage: PreprocessedStorage,
+  options?: { maxInFlightWrites?: number }
+): ChunkWriteDispatcher {
   const pendingShardsByPath = new Map<string, PendingShard>();
-  const maxInFlightWrites = DEFAULT_PREPROCESS_MAX_IN_FLIGHT_WRITES;
+  const shardLayoutByDescriptorPath = new Map<string, ShardLayout>();
+  const maxInFlightWrites = normalizePositiveInteger(
+    options?.maxInFlightWrites,
+    DEFAULT_PREPROCESS_MAX_IN_FLIGHT_WRITES,
+    'storageStrategy.maxInFlightChunkWrites'
+  );
   const inFlightWrites = new Set<Promise<void>>();
   let writeFailure: Error | null = null;
 
@@ -494,6 +541,19 @@ function createChunkWriteDispatcher(storage: PreprocessedStorage): ChunkWriteDis
     pendingShardsByPath.delete(pendingShard.shardPath);
   };
 
+  const getCachedShardLayout = (descriptor: ZarrArrayDescriptor): ShardLayout => {
+    const cached = shardLayoutByDescriptorPath.get(descriptor.path);
+    if (cached) {
+      return cached;
+    }
+    const resolved = getShardLayoutForArray(descriptor);
+    if (!resolved) {
+      throw new Error(`Failed to resolve sharding layout for ${descriptor.path}.`);
+    }
+    shardLayoutByDescriptorPath.set(descriptor.path, resolved);
+    return resolved;
+  };
+
   const writeChunk: ChunkWriteDispatcher['writeChunk'] = async ({
     descriptor,
     chunkCoords,
@@ -508,11 +568,8 @@ function createChunkWriteDispatcher(storage: PreprocessedStorage): ChunkWriteDis
       return;
     }
 
-    const layout = getShardLayoutForArray(descriptor);
-    if (!layout) {
-      throw new Error(`Failed to resolve sharding layout for ${descriptor.path}.`);
-    }
-    const location = getShardChunkLocation(descriptor, chunkCoords);
+    const layout = getCachedShardLayout(descriptor);
+    const location = getShardChunkLocationForLayout(descriptor, layout, chunkCoords);
     const shardKey = location.shardPath;
     let pendingShard = pendingShardsByPath.get(shardKey) ?? null;
     if (!pendingShard) {
@@ -612,10 +669,60 @@ function assertVolumeMatchesExpectedShape(
   }
 }
 
-function extract2dSlice(volume: VolumePayload, sliceIndex: number): VolumePayload {
+type Extracted2dSliceView = {
+  width: number;
+  height: number;
+  depth: 1;
+  channels: number;
+  dataType: VolumePayload['dataType'];
+  min: number;
+  max: number;
+  source: VolumeTypedArray;
+};
+
+function createReusable2dSliceExtractor(
+  volume: VolumePayload,
+  options?: { includeSliceMinMax?: boolean }
+): (sliceIndex: number) => Extracted2dSliceView {
   const sliceLength = volume.width * volume.height * volume.channels;
   if (sliceLength <= 0 || volume.depth <= 0) {
-    throw new Error('Received invalid volume dimensions while extracting slice.');
+    throw new Error('Received invalid volume dimensions while preparing 2D slice extraction.');
+  }
+  const source = createVolumeTypedArray(volume.dataType, volume.data);
+  const includeSliceMinMax = options?.includeSliceMinMax === true;
+  const fallbackMin = Number.isFinite(volume.min) ? volume.min : 0;
+  const fallbackMaxRaw = Number.isFinite(volume.max) ? volume.max : fallbackMin + 1;
+  const fallbackMax = fallbackMaxRaw === fallbackMin ? fallbackMin + 1 : fallbackMaxRaw;
+
+  return (sliceIndex: number): Extracted2dSliceView => {
+    if (sliceIndex < 0 || sliceIndex >= volume.depth) {
+      throw new Error(`Slice index ${sliceIndex} is out of bounds for depth ${volume.depth}.`);
+    }
+    const start = sliceIndex * sliceLength;
+    const end = start + sliceLength;
+    const sliceSource = source.subarray(start, end);
+    const sliceRange = includeSliceMinMax ? computeSliceMinMax(sliceSource) : null;
+
+    return {
+      width: volume.width,
+      height: volume.height,
+      depth: 1,
+      channels: volume.channels,
+      dataType: volume.dataType,
+      min: sliceRange?.min ?? fallbackMin,
+      max: sliceRange?.max ?? fallbackMax,
+      source: sliceSource
+    };
+  };
+}
+
+function compute2dSliceMinMax(
+  volume: Pick<VolumePayload, 'width' | 'height' | 'depth' | 'channels' | 'dataType' | 'data'>,
+  sliceIndex: number
+): { min: number; max: number } {
+  const sliceLength = volume.width * volume.height * volume.channels;
+  if (sliceLength <= 0 || volume.depth <= 0) {
+    throw new Error('Received invalid volume dimensions while scanning 2D slice range.');
   }
   if (sliceIndex < 0 || sliceIndex >= volume.depth) {
     throw new Error(`Slice index ${sliceIndex} is out of bounds for depth ${volume.depth}.`);
@@ -624,20 +731,17 @@ function extract2dSlice(volume: VolumePayload, sliceIndex: number): VolumePayloa
   const source = createVolumeTypedArray(volume.dataType, volume.data);
   const start = sliceIndex * sliceLength;
   const end = start + sliceLength;
-  const slice = source.slice(start, end);
-  const { min, max } = computeSliceMinMax(slice);
+  return computeSliceMinMax(source.subarray(start, end));
+}
 
-  return {
-    width: volume.width,
-    height: volume.height,
-    depth: 1,
-    channels: volume.channels,
-    dataType: volume.dataType,
-    voxelSize: volume.voxelSize,
-    min,
-    max,
-    data: slice.buffer
-  };
+function computeRepresentativeNormalizationFor2dSlice(
+  volume: Pick<VolumePayload, 'width' | 'height' | 'depth' | 'channels' | 'dataType' | 'data'>,
+  sliceIndex: number
+): NormalizationParameters {
+  if (volume.dataType === 'uint8') {
+    return { min: 0, max: 255 };
+  }
+  return compute2dSliceMinMax(volume, sliceIndex);
 }
 
 function resolve2dFileSliceForTimepoint(
@@ -655,8 +759,6 @@ function resolve2dFileSliceForTimepoint(
   throw new Error(`Timepoint ${timepoint} is out of bounds for the provided 2D stacks.`);
 }
 
-type LoadVolumesFromFiles = (files: File[]) => Promise<VolumePayload[]>;
-
 async function loadVolumeFor3dTimepoint(
   file: File,
   loader: LoadVolumesFromFiles,
@@ -670,6 +772,56 @@ async function loadVolumeFor3dTimepoint(
   return volume;
 }
 
+type DecodedVolumeCacheByLayerKey = Map<string, Map<number, VolumePayload>>;
+
+function getCachedLayerVolume(
+  cache: DecodedVolumeCacheByLayerKey,
+  layerKey: string,
+  fileIndex: number
+): VolumePayload | null {
+  return cache.get(layerKey)?.get(fileIndex) ?? null;
+}
+
+function cacheLayerVolume(
+  cache: DecodedVolumeCacheByLayerKey,
+  layerKey: string,
+  fileIndex: number,
+  volume: VolumePayload
+): void {
+  const byFileIndex = cache.get(layerKey);
+  if (byFileIndex) {
+    byFileIndex.set(fileIndex, volume);
+    return;
+  }
+  cache.set(layerKey, new Map([[fileIndex, volume]]));
+}
+
+async function loadLayerVolumeByFileIndex({
+  layer,
+  fileIndex,
+  loader,
+  decodedVolumeCacheByLayerKey,
+  signal
+}: {
+  layer: PreprocessLayerSource;
+  fileIndex: number;
+  loader: LoadVolumesFromFiles;
+  decodedVolumeCacheByLayerKey: DecodedVolumeCacheByLayerKey;
+  signal?: AbortSignal;
+}): Promise<VolumePayload> {
+  const cached = getCachedLayerVolume(decodedVolumeCacheByLayerKey, layer.key, fileIndex);
+  if (cached) {
+    return cached;
+  }
+  const file = layer.files[fileIndex];
+  if (!file) {
+    throw new Error(`Missing source file #${fileIndex + 1} for layer "${layer.key}".`);
+  }
+  const volume = await loadVolumeFor3dTimepoint(file, loader, signal);
+  cacheLayerVolume(decodedVolumeCacheByLayerKey, layer.key, fileIndex, volume);
+  return volume;
+}
+
 function resolvePreprocessDecodeBatchSize(fileCount: number): number {
   const hardwareConcurrency =
     typeof navigator !== 'undefined' && Number.isFinite(navigator.hardwareConcurrency)
@@ -678,6 +830,71 @@ function resolvePreprocessDecodeBatchSize(fileCount: number): number {
   const fallback = Math.max(1, DEFAULT_PREPROCESS_DECODE_BATCH_SIZE);
   const normalized = hardwareConcurrency > 0 ? hardwareConcurrency : fallback;
   return Math.max(1, Math.min(fileCount, normalized, MAX_PREPROCESS_DECODE_BATCH_SIZE));
+}
+
+function resolvePreprocessImageCountProbeConcurrency(fileCount: number): number {
+  const hardwareConcurrency =
+    typeof navigator !== 'undefined' && Number.isFinite(navigator.hardwareConcurrency)
+      ? Math.floor(navigator.hardwareConcurrency)
+      : DEFAULT_PREPROCESS_IMAGE_COUNT_PROBE_CONCURRENCY;
+  const fallback = Math.max(1, DEFAULT_PREPROCESS_IMAGE_COUNT_PROBE_CONCURRENCY);
+  const normalized = hardwareConcurrency > 0 ? hardwareConcurrency : fallback;
+  return Math.max(1, Math.min(fileCount, normalized, MAX_PREPROCESS_IMAGE_COUNT_PROBE_CONCURRENCY));
+}
+
+async function mapWithConcurrencyLimit<T, TResult>({
+  items,
+  concurrency,
+  signal,
+  mapper
+}: {
+  items: readonly T[];
+  concurrency: number;
+  signal?: AbortSignal;
+  mapper: (item: T, index: number) => Promise<TResult>;
+}): Promise<TResult[]> {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const results = new Array<TResult>(items.length);
+  const workerCount = Math.max(1, Math.min(Math.floor(concurrency), items.length));
+  let nextIndex = 0;
+
+  const worker = async () => {
+    while (true) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= items.length) {
+        return;
+      }
+      throwIfAborted(signal);
+      const item = items[index];
+      if (item === undefined) {
+        throw new Error(`Missing item at index ${index} while mapping with concurrency limit.`);
+      }
+      results[index] = await mapper(item, index);
+    }
+  };
+
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
+let cachedDefaultVolumeLoader: LoadVolumesFromFiles | null = null;
+
+async function resolveVolumeLoader(
+  providedLoader: LoadVolumesFromFiles | undefined
+): Promise<LoadVolumesFromFiles> {
+  if (providedLoader) {
+    return providedLoader;
+  }
+  if (cachedDefaultVolumeLoader) {
+    return cachedDefaultVolumeLoader;
+  }
+  const module = await import('../../../loaders/volumeLoader');
+  cachedDefaultVolumeLoader = module.loadVolumesFromFiles;
+  return cachedDefaultVolumeLoader;
 }
 
 type DecodedBatchVolume = {
@@ -689,11 +906,13 @@ async function* decodeVolumesInBatchesWithPrefetch({
   files,
   loader,
   batchSize,
+  preloadedVolumesByFileIndex,
   signal
 }: {
   files: File[];
   loader: LoadVolumesFromFiles;
   batchSize: number;
+  preloadedVolumesByFileIndex?: ReadonlyMap<number, VolumePayload>;
   signal?: AbortSignal;
 }): AsyncGenerator<DecodedBatchVolume, void, void> {
   if (files.length === 0) {
@@ -707,12 +926,44 @@ async function* decodeVolumesInBatchesWithPrefetch({
     if (batchFiles.length === 0) {
       return { start, volumes: [] };
     }
-    const volumes = await loader(batchFiles);
-    if (volumes.length !== batchFiles.length) {
-      throw new Error(
-        `Decoded volume count mismatch: expected ${batchFiles.length}, got ${volumes.length}.`
-      );
+
+    const volumes = new Array<VolumePayload>(batchFiles.length);
+    const filesToDecode: File[] = [];
+    const decodeOffsets: number[] = [];
+
+    for (let offset = 0; offset < batchFiles.length; offset += 1) {
+      const batchFile = batchFiles[offset];
+      if (!batchFile) {
+        throw new Error(`Missing batch file at index ${start + offset}.`);
+      }
+      const fileIndex = start + offset;
+      const preloaded = preloadedVolumesByFileIndex?.get(fileIndex) ?? null;
+      if (preloaded) {
+        volumes[offset] = preloaded;
+        continue;
+      }
+      filesToDecode.push(batchFile);
+      decodeOffsets.push(offset);
     }
+
+    if (filesToDecode.length > 0) {
+      const decoded = await loader(filesToDecode);
+      if (decoded.length !== filesToDecode.length) {
+        throw new Error(`Decoded volume count mismatch: expected ${filesToDecode.length}, got ${decoded.length}.`);
+      }
+      for (let index = 0; index < decoded.length; index += 1) {
+        const offset = decodeOffsets[index];
+        if (offset === undefined) {
+          throw new Error(`Missing decode offset while processing batch starting at ${start}.`);
+        }
+        const volume = decoded[index];
+        if (!volume) {
+          throw new Error(`Missing decoded volume at decode batch index ${index}.`);
+        }
+        volumes[offset] = volume;
+      }
+    }
+
     return { start, volumes };
   };
 
@@ -769,13 +1020,17 @@ async function computeLayerTimepointMetadata({
 
   for (const layer of sortedLayerSources) {
     if (movieMode === '2d') {
-      const depths: number[] = [];
-      for (const file of layer.files) {
-        throwIfAborted(signal);
-        const tiff = await fromBlob(file);
-        const depth = await tiff.getImageCount();
-        depths.push(Math.max(0, depth));
-      }
+      const probeConcurrency = resolvePreprocessImageCountProbeConcurrency(layer.files.length);
+      const depths = await mapWithConcurrencyLimit({
+        items: layer.files,
+        concurrency: probeConcurrency,
+        signal,
+        mapper: async (file) => {
+          const tiff = await fromBlob(file);
+          const depth = await tiff.getImageCount();
+          return Math.max(0, depth);
+        }
+      });
       layer2dFileDepthsByKey.set(layer.key, depths);
       layerTimepointCounts.push(depths.reduce((sum, value) => sum + value, 0));
     } else {
@@ -804,6 +1059,8 @@ async function computeLayerRepresentativeNormalization({
   movieMode,
   representativeTimepoint,
   layer2dFileDepthsByKey,
+  decodedVolumeCacheByLayerKey,
+  volumeLoader,
   signal,
   onProgress
 }: {
@@ -811,6 +1068,8 @@ async function computeLayerRepresentativeNormalization({
   movieMode: PreprocessedMovieMode;
   representativeTimepoint: number;
   layer2dFileDepthsByKey: Map<string, number[]>;
+  decodedVolumeCacheByLayerKey: DecodedVolumeCacheByLayerKey;
+  volumeLoader: LoadVolumesFromFiles;
   signal?: AbortSignal;
   onProgress?: (progress: PreprocessDatasetProgress) => void;
 }): Promise<Map<string, NormalizationParameters>> {
@@ -830,11 +1089,25 @@ async function computeLayerRepresentativeNormalization({
         throw new Error('Missing 2D stack metadata while computing representative stats.');
       }
       const { fileIndex, sliceIndex } = resolve2dFileSliceForTimepoint(representativeTimepoint, depths);
-      const stackVolume = await loadVolumeFor3dTimepoint(layer.files[fileIndex]!, loadVolumesFromFiles, signal);
-      const sliceVolume = extract2dSlice(stackVolume, sliceIndex);
-      normalizationByLayerKey.set(layer.key, computeRepresentativeNormalization(sliceVolume));
+      const stackVolume = await loadLayerVolumeByFileIndex({
+        layer,
+        fileIndex,
+        loader: volumeLoader,
+        decodedVolumeCacheByLayerKey,
+        signal
+      });
+      normalizationByLayerKey.set(
+        layer.key,
+        computeRepresentativeNormalizationFor2dSlice(stackVolume, sliceIndex)
+      );
     } else {
-      const volume = await loadVolumeFor3dTimepoint(layer.files[representativeTimepoint]!, loadVolumesFromFiles, signal);
+      const volume = await loadLayerVolumeByFileIndex({
+        layer,
+        fileIndex: representativeTimepoint,
+        loader: volumeLoader,
+        decodedVolumeCacheByLayerKey,
+        signal
+      });
       normalizationByLayerKey.set(layer.key, computeRepresentativeNormalization(volume));
     }
   }
@@ -846,11 +1119,15 @@ async function collectLayerMetadata({
   sortedLayerSources,
   movieMode,
   layer2dFileDepthsByKey,
+  decodedVolumeCacheByLayerKey,
+  volumeLoader,
   signal
 }: {
   sortedLayerSources: PreprocessLayerSource[];
   movieMode: PreprocessedMovieMode;
   layer2dFileDepthsByKey: Map<string, number[]>;
+  decodedVolumeCacheByLayerKey: DecodedVolumeCacheByLayerKey;
+  volumeLoader: LoadVolumesFromFiles;
   signal?: AbortSignal;
 }): Promise<{
   sourceMetadataByLayerKey: Map<string, LayerMetadata>;
@@ -875,38 +1152,54 @@ async function collectLayerMetadata({
         throw new Error(`Layer "${layer.channelLabel}" does not contain any TIFF frames.`);
       }
 
-      const stackVolume = await loadVolumeFor3dTimepoint(
-        layer.files[firstAvailableFileIndex]!,
-        loadVolumesFromFiles,
+      const stackVolume = await loadLayerVolumeByFileIndex({
+        layer,
+        fileIndex: firstAvailableFileIndex,
+        loader: volumeLoader,
+        decodedVolumeCacheByLayerKey,
         signal
-      );
-      const firstSlice = extract2dSlice(stackVolume, 0);
+      });
+      if (stackVolume.depth <= 0) {
+        throw new Error(
+          `Layer "${layer.channelLabel}" first decoded stack did not contain any slices.`
+        );
+      }
+      const width = stackVolume.width;
+      const height = stackVolume.height;
+      const channels = stackVolume.channels;
+      const dataType = stackVolume.dataType;
       sourceMetadataByLayerKey.set(layer.key, {
-        width: firstSlice.width,
-        height: firstSlice.height,
+        width,
+        height,
         depth: 1,
-        channels: firstSlice.channels,
-        dataType: firstSlice.dataType
+        channels,
+        dataType
       });
       layerMetadataByKey.set(layer.key, {
-        width: firstSlice.width,
-        height: firstSlice.height,
+        width,
+        height,
         depth: 1,
-        channels: layer.isSegmentation ? 4 : firstSlice.channels,
-        dataType: layer.isSegmentation ? 'uint8' : firstSlice.dataType
+        channels: layer.isSegmentation ? 4 : channels,
+        dataType: layer.isSegmentation ? 'uint8' : dataType
       });
       if (!referenceShape2d) {
-        referenceShape2d = { width: firstSlice.width, height: firstSlice.height };
+        referenceShape2d = { width, height };
       } else if (
-        firstSlice.width !== referenceShape2d.width ||
-        firstSlice.height !== referenceShape2d.height
+        width !== referenceShape2d.width ||
+        height !== referenceShape2d.height
       ) {
         throw new Error(
-          `Channel "${layer.channelLabel}" has volume dimensions ${firstSlice.width}×${firstSlice.height}×1 that do not match the reference shape ${referenceShape2d.width}×${referenceShape2d.height}×1.`
+          `Channel "${layer.channelLabel}" has volume dimensions ${width}×${height}×1 that do not match the reference shape ${referenceShape2d.width}×${referenceShape2d.height}×1.`
         );
       }
     } else {
-      const firstVolume = await loadVolumeFor3dTimepoint(layer.files[0]!, loadVolumesFromFiles, signal);
+      const firstVolume = await loadLayerVolumeByFileIndex({
+        layer,
+        fileIndex: 0,
+        loader: volumeLoader,
+        decodedVolumeCacheByLayerKey,
+        signal
+      });
       sourceMetadataByLayerKey.set(layer.key, {
         width: firstVolume.width,
         height: firstVolume.height,
@@ -1167,7 +1460,7 @@ function chunkLength(totalSize: number, start: number, chunkSize: number): numbe
   return Math.max(0, Math.min(chunkSize, totalSize - start));
 }
 
-function extractDataChunkBytes({
+function extractDataChunkBytesAndComputeStatistics({
   source,
   width,
   height,
@@ -1177,7 +1470,8 @@ function extractDataChunkBytes({
   yStart,
   yLength,
   xStart,
-  xLength
+  xLength,
+  histogram
 }: {
   source: Uint8Array;
   width: number;
@@ -1189,23 +1483,149 @@ function extractDataChunkBytes({
   yLength: number;
   xStart: number;
   xLength: number;
-}): Uint8Array {
+  histogram: Uint32Array;
+}): {
+  chunk: Uint8Array;
+  stats: {
+    min: number;
+    max: number;
+    occupancy: number;
+  };
+} {
+  if (channels <= 0) {
+    throw new Error(`Invalid channel count while computing chunk statistics: ${channels}.`);
+  }
+  if (histogram.length !== HISTOGRAM_BINS) {
+    throw new Error(
+      `Histogram length mismatch while computing chunk statistics: expected ${HISTOGRAM_BINS}, got ${histogram.length}.`
+    );
+  }
+
   const rowStride = width * channels;
   const planeStride = height * rowStride;
   const lineLength = xLength * channels;
   const chunk = new Uint8Array(zLength * yLength * lineLength);
+  if (chunk.length === 0) {
+    return {
+      chunk,
+      stats: { min: 0, max: 0, occupancy: 0 }
+    };
+  }
+
+  let min = 255;
+  let max = 0;
+  let occupiedVoxelCount = 0;
+  const voxelCount = zLength * yLength * xLength;
 
   let destinationOffset = 0;
   for (let localZ = 0; localZ < zLength; localZ += 1) {
     const sourceZBase = (zStart + localZ) * planeStride;
     for (let localY = 0; localY < yLength; localY += 1) {
       const sourceOffset = sourceZBase + (yStart + localY) * rowStride + xStart * channels;
-      chunk.set(source.subarray(sourceOffset, sourceOffset + lineLength), destinationOffset);
+      const sourceLine = source.subarray(sourceOffset, sourceOffset + lineLength);
+      chunk.set(sourceLine, destinationOffset);
+
+      if (channels === 1) {
+        for (let voxelIndex = 0; voxelIndex < xLength; voxelIndex += 1) {
+          const value = sourceLine[voxelIndex] ?? 0;
+          if (value < min) {
+            min = value;
+          }
+          if (value > max) {
+            max = value;
+          }
+          if (value > 0) {
+            occupiedVoxelCount += 1;
+          }
+          histogram[value] += 1;
+        }
+      } else if (channels === 2) {
+        for (let voxelIndex = 0; voxelIndex < xLength; voxelIndex += 1) {
+          const voxelBase = voxelIndex * 2;
+          const red = sourceLine[voxelBase] ?? 0;
+          const green = sourceLine[voxelBase + 1] ?? 0;
+          if (red < min) {
+            min = red;
+          }
+          if (green < min) {
+            min = green;
+          }
+          if (red > max) {
+            max = red;
+          }
+          if (green > max) {
+            max = green;
+          }
+          if (red > 0 || green > 0) {
+            occupiedVoxelCount += 1;
+          }
+          histogram[Math.round((red + green) * 0.5)] += 1;
+        }
+      } else {
+        for (let voxelIndex = 0; voxelIndex < xLength; voxelIndex += 1) {
+          const voxelBase = voxelIndex * channels;
+          const red = sourceLine[voxelBase] ?? 0;
+          const green = sourceLine[voxelBase + 1] ?? 0;
+          const blue = sourceLine[voxelBase + 2] ?? 0;
+          let voxelMin = red;
+          let voxelMax = red;
+          let voxelOccupied = red > 0 || green > 0 || blue > 0;
+
+          if (green < voxelMin) {
+            voxelMin = green;
+          }
+          if (green > voxelMax) {
+            voxelMax = green;
+          }
+          if (blue < voxelMin) {
+            voxelMin = blue;
+          }
+          if (blue > voxelMax) {
+            voxelMax = blue;
+          }
+
+          for (let channel = 3; channel < channels; channel += 1) {
+            const value = sourceLine[voxelBase + channel] ?? 0;
+            if (value < voxelMin) {
+              voxelMin = value;
+            }
+            if (value > voxelMax) {
+              voxelMax = value;
+            }
+            if (!voxelOccupied && value > 0) {
+              voxelOccupied = true;
+            }
+          }
+
+          if (voxelMin < min) {
+            min = voxelMin;
+          }
+          if (voxelMax > max) {
+            max = voxelMax;
+          }
+
+          const intensity = Math.round(red * 0.2126 + green * 0.7152 + blue * 0.0722);
+          const clampedIntensity = intensity < 0 ? 0 : intensity > 255 ? 255 : intensity;
+          histogram[clampedIntensity] += 1;
+
+          if (voxelOccupied) {
+            occupiedVoxelCount += 1;
+          }
+        }
+      }
+
       destinationOffset += lineLength;
     }
   }
 
-  return chunk;
+  return {
+    chunk,
+    stats: {
+      min,
+      max,
+      occupancy: voxelCount > 0 ? occupiedVoxelCount / voxelCount : 0
+    }
+  };
 }
 
 function extractLabelChunkBytes({
@@ -1300,134 +1720,6 @@ function assertChunkStatsDescriptorMatchesGrid({
       `Chunk stats descriptor chunk shape mismatch for ${label} (${descriptor.path}): expected 1x${zChunks}x${yChunks}x${xChunks}, got ${chunkTimepoints}x${chunkZ}x${chunkY}x${chunkX}.`
     );
   }
-}
-
-function computeDataChunkStatisticsAndHistogram(
-  chunk: Uint8Array,
-  channels: number,
-  histogram: Uint32Array
-): {
-  min: number;
-  max: number;
-  occupancy: number;
-} {
-  if (channels <= 0) {
-    throw new Error(`Invalid channel count while computing chunk statistics: ${channels}.`);
-  }
-  if (histogram.length !== HISTOGRAM_BINS) {
-    throw new Error(
-      `Histogram length mismatch while computing chunk statistics: expected ${HISTOGRAM_BINS}, got ${histogram.length}.`
-    );
-  }
-  if (chunk.length % channels !== 0) {
-    throw new Error(
-      `Chunk payload length (${chunk.length}) must be divisible by channel count (${channels}) for chunk statistics.`
-    );
-  }
-
-  if (chunk.length === 0) {
-    return { min: 0, max: 0, occupancy: 0 };
-  }
-
-  let min = 255;
-  let max = 0;
-  let occupiedVoxelCount = 0;
-  const voxelCount = chunk.length / channels;
-
-  if (channels === 1) {
-    for (let voxelIndex = 0; voxelIndex < voxelCount; voxelIndex += 1) {
-      const value = chunk[voxelIndex] ?? 0;
-      if (value < min) {
-        min = value;
-      }
-      if (value > max) {
-        max = value;
-      }
-      if (value > 0) {
-        occupiedVoxelCount += 1;
-      }
-      histogram[value] += 1;
-    }
-  } else if (channels === 2) {
-    for (let voxelIndex = 0; voxelIndex < voxelCount; voxelIndex += 1) {
-      const voxelBase = voxelIndex * 2;
-      const red = chunk[voxelBase] ?? 0;
-      const green = chunk[voxelBase + 1] ?? 0;
-      if (red < min) {
-        min = red;
-      }
-      if (green < min) {
-        min = green;
-      }
-      if (red > max) {
-        max = red;
-      }
-      if (green > max) {
-        max = green;
-      }
-      if (red > 0 || green > 0) {
-        occupiedVoxelCount += 1;
-      }
-      histogram[Math.round((red + green) * 0.5)] += 1;
-    }
-  } else {
-    for (let voxelIndex = 0; voxelIndex < voxelCount; voxelIndex += 1) {
-      const voxelBase = voxelIndex * channels;
-      const red = chunk[voxelBase] ?? 0;
-      const green = chunk[voxelBase + 1] ?? 0;
-      const blue = chunk[voxelBase + 2] ?? 0;
-      let voxelMin = red;
-      let voxelMax = red;
-      let voxelOccupied = red > 0 || green > 0 || blue > 0;
-
-      if (green < voxelMin) {
-        voxelMin = green;
-      }
-      if (green > voxelMax) {
-        voxelMax = green;
-      }
-      if (blue < voxelMin) {
-        voxelMin = blue;
-      }
-      if (blue > voxelMax) {
-        voxelMax = blue;
-      }
-
-      for (let channel = 3; channel < channels; channel += 1) {
-        const value = chunk[voxelBase + channel] ?? 0;
-        if (value < voxelMin) {
-          voxelMin = value;
-        }
-        if (value > voxelMax) {
-          voxelMax = value;
-        }
-        if (!voxelOccupied && value > 0) {
-          voxelOccupied = true;
-        }
-      }
-
-      if (voxelMin < min) {
-        min = voxelMin;
-      }
-      if (voxelMax > max) {
-        max = voxelMax;
-      }
-
-      const intensity = Math.round(red * 0.2126 + green * 0.7152 + blue * 0.0722);
-      const clampedIntensity = intensity < 0 ? 0 : intensity > 255 ? 255 : intensity;
-      histogram[clampedIntensity] += 1;
-
-      if (voxelOccupied) {
-        occupiedVoxelCount += 1;
-      }
-    }
-  }
-
-  return {
-    min,
-    max,
-    occupancy: voxelCount > 0 ? occupiedVoxelCount / voxelCount : 0
-  };
 }
 
 async function writeDataChunksForScale({
@@ -1533,7 +1825,7 @@ async function writeDataChunksForScale({
       for (let xChunk = 0; xChunk < xChunks; xChunk += 1) {
         const xStart = chunkStart(xChunk, chunkWidth);
         const xLength = chunkLength(volume.width, xStart, chunkWidth);
-        const chunk = extractDataChunkBytes({
+        const { chunk, stats } = extractDataChunkBytesAndComputeStatistics({
           source: volume.data,
           width: volume.width,
           height: volume.height,
@@ -1543,7 +1835,8 @@ async function writeDataChunksForScale({
           yStart,
           yLength,
           xStart,
-          xLength
+          xLength,
+          histogram
         });
         await chunkWriter.writeChunk({
           descriptor,
@@ -1551,8 +1844,6 @@ async function writeDataChunksForScale({
           bytes: chunk,
           signal
         });
-
-        const stats = computeDataChunkStatisticsAndHistogram(chunk, volume.channels, histogram);
         if (chunkMinValues && chunkMaxValues && chunkOccupancyValues) {
           const chunkIndex = (zChunk * yChunks + yChunk) * xChunks + xChunk;
           chunkMinValues[chunkIndex] = stats.min;
@@ -1891,6 +2182,89 @@ async function writeNormalizedLayerTimepoint({
   }
 }
 
+async function writePrecomputedLayerTimepointScales({
+  chunkWriter,
+  layer,
+  manifestLayer,
+  precomputedScales,
+  signal,
+  timepoint
+}: {
+  chunkWriter: ChunkWriteDispatcher;
+  layer: PreprocessLayerSource;
+  manifestLayer: PreprocessedLayerManifestEntry;
+  precomputedScales: PreprocessScalePyramidWorkerResultScale[];
+  signal?: AbortSignal;
+  timepoint: number;
+}): Promise<void> {
+  const sortedScales = [...manifestLayer.zarr.scales].sort((left, right) => left.level - right.level);
+  if (sortedScales.length !== precomputedScales.length) {
+    throw new Error(
+      `Precomputed scale count mismatch for layer "${layer.key}" at timepoint ${timepoint}: expected ${sortedScales.length}, got ${precomputedScales.length}.`
+    );
+  }
+
+  for (let index = 0; index < sortedScales.length; index += 1) {
+    const scale = sortedScales[index]!;
+    const prepared = precomputedScales[index];
+    if (!prepared) {
+      throw new Error(
+        `Missing precomputed scale payload for layer "${layer.key}" scale ${scale.level} at timepoint ${timepoint}.`
+      );
+    }
+    if (
+      prepared.level !== scale.level ||
+      prepared.width !== scale.width ||
+      prepared.height !== scale.height ||
+      prepared.depth !== scale.depth ||
+      prepared.channels !== scale.channels
+    ) {
+      throw new Error(
+        `Precomputed scale metadata mismatch for layer "${layer.key}" scale ${scale.level} at timepoint ${timepoint}.`
+      );
+    }
+
+    const histogram = await writeDataChunksForScale({
+      chunkWriter,
+      descriptor: scale.zarr.data,
+      chunkStatsDescriptors: scale.zarr.chunkStats,
+      timepoint,
+      volume: {
+        width: prepared.width,
+        height: prepared.height,
+        depth: prepared.depth,
+        channels: prepared.channels,
+        data: prepared.data
+      },
+      signal
+    });
+    await chunkWriter.writeChunk({
+      descriptor: scale.zarr.histogram,
+      chunkCoords: [timepoint, 0],
+      bytes: encodeUint32ArrayLE(histogram),
+      signal
+    });
+
+    if (scale.zarr.labels) {
+      if (!prepared.labels) {
+        throw new Error(
+          `Missing precomputed labels for layer "${layer.key}" scale ${scale.level} at timepoint ${timepoint}.`
+        );
+      }
+      await writeLabelChunksForScale({
+        chunkWriter,
+        descriptor: scale.zarr.labels,
+        timepoint,
+        labels: prepared.labels,
+        depth: prepared.depth,
+        height: prepared.height,
+        width: prepared.width,
+        signal
+      });
+    }
+  }
+}
+
 async function writeLayerVolumesFor2d({
   chunkWriter,
   layer,
@@ -1898,6 +2272,8 @@ async function writeLayerVolumesFor2d({
   sourceMetadata,
   normalizationByLayerKey,
   layer2dFileDepthsByKey,
+  preloadedVolumesByFileIndex,
+  volumeLoader,
   signal,
   onProgress,
   totalVolumeCount,
@@ -1909,6 +2285,8 @@ async function writeLayerVolumesFor2d({
   sourceMetadata: LayerMetadata;
   normalizationByLayerKey: Map<string, NormalizationParameters>;
   layer2dFileDepthsByKey: Map<string, number[]>;
+  preloadedVolumesByFileIndex?: ReadonlyMap<number, VolumePayload>;
+  volumeLoader: LoadVolumesFromFiles;
   signal?: AbortSignal;
   onProgress?: (progress: PreprocessDatasetProgress) => void;
   totalVolumeCount: number;
@@ -1918,6 +2296,7 @@ async function writeLayerVolumesFor2d({
   if (!depths) {
     throw new Error('Missing 2D stack metadata while preprocessing.');
   }
+  const layerNormalization = layer.isSegmentation ? null : (normalizationByLayerKey.get(layer.key) ?? null);
 
   const filesToDecode: File[] = [];
   const originalFileIndices: number[] = [];
@@ -1932,11 +2311,22 @@ async function writeLayerVolumesFor2d({
   const decodeBatchSize = resolvePreprocessDecodeBatchSize(
     filesToDecode.length > 0 ? filesToDecode.length : 1
   );
+  const preloaded2dVolumesByDecodeIndex = preloadedVolumesByFileIndex
+    ? new Map(
+        originalFileIndices
+          .map((fileIndex, decodeIndex) => {
+            const preloaded = preloadedVolumesByFileIndex.get(fileIndex);
+            return preloaded ? ([decodeIndex, preloaded] as const) : null;
+          })
+          .filter((entry): entry is readonly [number, VolumePayload] => entry !== null)
+      )
+    : undefined;
   let timepoint = 0;
   for await (const decoded of decodeVolumesInBatchesWithPrefetch({
     files: filesToDecode,
-    loader: loadVolumesFromFiles,
+    loader: volumeLoader,
     batchSize: decodeBatchSize,
+    preloadedVolumesByFileIndex: preloaded2dVolumesByDecodeIndex,
     signal
   })) {
     throwIfAborted(signal);
@@ -1947,6 +2337,10 @@ async function writeLayerVolumesFor2d({
     const depth = depths[fileIndex] ?? 0;
 
     const stackVolume = decoded.volume;
+    const needsPerSliceFallbackNormalization = !layer.isSegmentation && layerNormalization === null;
+    const extractSlice = createReusable2dSliceExtractor(stackVolume, {
+      includeSliceMinMax: needsPerSliceFallbackNormalization
+    });
     assertVolumeMatchesExpectedShape(
       stackVolume,
       {
@@ -1965,12 +2359,31 @@ async function writeLayerVolumesFor2d({
 
     for (let sliceIndex = 0; sliceIndex < depth; sliceIndex += 1) {
       throwIfAborted(signal);
-      const rawSlice = extract2dSlice(stackVolume, sliceIndex);
+      const rawSlice = extractSlice(sliceIndex);
       assertVolumeMatchesExpectedShape(rawSlice, sourceMetadata, `Layer "${layer.channelLabel}" timepoint ${timepoint + 1}`);
 
       const normalized = layer.isSegmentation
-        ? colorizeSegmentationVolume(rawSlice, createSegmentationSeed(layer.key, timepoint))
-        : normalizeVolume(rawSlice, normalizationByLayerKey.get(layer.key) ?? computeRepresentativeNormalization(rawSlice));
+        ? colorizeSegmentationTypedArray({
+            width: rawSlice.width,
+            height: rawSlice.height,
+            depth: rawSlice.depth,
+            dataType: rawSlice.dataType,
+            source: rawSlice.source,
+            seed: createSegmentationSeed(layer.key, timepoint)
+          })
+        : normalizeTypedArray({
+            width: rawSlice.width,
+            height: rawSlice.height,
+            depth: rawSlice.depth,
+            channels: rawSlice.channels,
+            dataType: rawSlice.dataType,
+            source: rawSlice.source,
+            parameters:
+              layerNormalization ??
+              (rawSlice.dataType === 'uint8'
+                ? { min: 0, max: 255 }
+                : { min: rawSlice.min, max: rawSlice.max })
+          });
 
       await writeNormalizedLayerTimepoint({
         chunkWriter,
@@ -2001,6 +2414,9 @@ async function writeLayerVolumesFor3d({
   sourceMetadata,
   representativeTimepoint,
   normalizationByLayerKey,
+  workerizeNormalizationDownsample,
+  preloadedVolumesByFileIndex,
+  volumeLoader,
   signal,
   onProgress,
   totalVolumeCount,
@@ -2012,6 +2428,9 @@ async function writeLayerVolumesFor3d({
   sourceMetadata: LayerMetadata;
   representativeTimepoint: number;
   normalizationByLayerKey: Map<string, NormalizationParameters>;
+  workerizeNormalizationDownsample: boolean;
+  preloadedVolumesByFileIndex?: ReadonlyMap<number, VolumePayload>;
+  volumeLoader: LoadVolumesFromFiles;
   signal?: AbortSignal;
   onProgress?: (progress: PreprocessDatasetProgress) => void;
   totalVolumeCount: number;
@@ -2021,14 +2440,17 @@ async function writeLayerVolumesFor3d({
     ? null
     : normalizationByLayerKey.get(layer.key) ??
       computeRepresentativeNormalization(
-        await loadVolumeFor3dTimepoint(layer.files[representativeTimepoint]!, loadVolumesFromFiles, signal)
+        await loadVolumeFor3dTimepoint(layer.files[representativeTimepoint]!, volumeLoader, signal)
       );
+  let useWorkerizedNormalizationDownsample =
+    workerizeNormalizationDownsample && supportsPreprocessScalePyramidWorker();
 
   const decodeBatchSize = resolvePreprocessDecodeBatchSize(layer.files.length);
   for await (const decoded of decodeVolumesInBatchesWithPrefetch({
     files: layer.files,
-    loader: loadVolumesFromFiles,
+    loader: volumeLoader,
     batchSize: decodeBatchSize,
+    preloadedVolumesByFileIndex,
     signal
   })) {
     throwIfAborted(signal);
@@ -2036,18 +2458,53 @@ async function writeLayerVolumesFor3d({
     const raw = decoded.volume;
     assertVolumeMatchesExpectedShape(raw, sourceMetadata, `Layer "${layer.channelLabel}" timepoint ${timepoint + 1}`);
 
-    const normalized = layer.isSegmentation
-      ? colorizeSegmentationVolume(raw, createSegmentationSeed(layer.key, timepoint))
-      : normalizeVolume(raw, normalization ?? computeRepresentativeNormalization(raw));
+    let wroteWithWorker = false;
+    if (useWorkerizedNormalizationDownsample) {
+      try {
+        const precomputedScales = await buildPreprocessScalePyramidInWorker({
+          rawVolume: raw,
+          scales: manifestLayer.zarr.scales,
+          layerKey: layer.key,
+          isSegmentation: layer.isSegmentation,
+          segmentationSeed: createSegmentationSeed(layer.key, timepoint),
+          normalization,
+          signal
+        });
+        await writePrecomputedLayerTimepointScales({
+          chunkWriter,
+          layer,
+          manifestLayer,
+          precomputedScales,
+          signal,
+          timepoint
+        });
+        wroteWithWorker = true;
+      } catch (error) {
+        if (isAbortLikeError(error)) {
+          throw error;
+        }
+        useWorkerizedNormalizationDownsample = false;
+        console.warn(
+          `Falling back to synchronous normalization/downsample for layer "${layer.key}" after worker failure.`,
+          error
+        );
+      }
+    }
 
-    await writeNormalizedLayerTimepoint({
-      chunkWriter,
-      normalized,
-      layer,
-      manifestLayer,
-      signal,
-      timepoint
-    });
+    if (!wroteWithWorker) {
+      const normalized = layer.isSegmentation
+        ? colorizeSegmentationVolume(raw, createSegmentationSeed(layer.key, timepoint))
+        : normalizeVolume(raw, normalization ?? computeRepresentativeNormalization(raw));
+
+      await writeNormalizedLayerTimepoint({
+        chunkWriter,
+        normalized,
+        layer,
+        manifestLayer,
+        signal,
+        timepoint
+      });
+    }
 
     progressState.processedVolumes += 1;
     onProgress?.({
@@ -2066,7 +2523,9 @@ export async function preprocessDatasetToStorage({
   voxelResolution,
   movieMode,
   storage,
+  volumeLoader: providedVolumeLoader,
   storageStrategy,
+  processingStrategy,
   signal,
   onProgress
 }: PreprocessDatasetToStorageOptions): Promise<{
@@ -2082,6 +2541,8 @@ export async function preprocessDatasetToStorage({
     throw new Error('No TIFF files were provided for preprocessing.');
   }
 
+  const volumeLoader = await resolveVolumeLoader(providedVolumeLoader);
+  const decodedVolumeCacheByLayerKey: DecodedVolumeCacheByLayerKey = new Map();
   throwIfAborted(signal);
   const { expectedTimepoints, layer2dFileDepthsByKey } = await computeLayerTimepointMetadata({
     sortedLayerSources,
@@ -2094,6 +2555,8 @@ export async function preprocessDatasetToStorage({
     movieMode,
     representativeTimepoint,
     layer2dFileDepthsByKey,
+    decodedVolumeCacheByLayerKey,
+    volumeLoader,
     signal,
     onProgress
   });
@@ -2101,12 +2564,15 @@ export async function preprocessDatasetToStorage({
     sortedLayerSources,
     movieMode,
     layer2dFileDepthsByKey,
+    decodedVolumeCacheByLayerKey,
+    volumeLoader,
     signal
   });
   const totalVolumeCount = expectedTimepoints;
   const totalWritableVolumes = expectedTimepoints * sortedLayerSources.length;
   const layersByChannel = groupLayersByChannel(sortedLayerSources);
   const shardingStrategy = resolveShardingStrategy(storageStrategy);
+  const workerizeNormalizationDownsample = resolveWorkerizeNormalizationDownsample(processingStrategy);
   const { manifest, layerManifestByKey, trackEntriesByTrackSetId } = buildManifestFromLayerMetadata({
     channels,
     layersByChannel,
@@ -2128,7 +2594,9 @@ export async function preprocessDatasetToStorage({
   await writeTrackSetCsvFiles({ manifest, trackEntriesByTrackSetId, storage });
   await createManifestZarrArrays({ root, manifest });
 
-  const chunkWriter = createChunkWriteDispatcher(storage);
+  const chunkWriter = createChunkWriteDispatcher(storage, {
+    maxInFlightWrites: shardingStrategy.maxInFlightChunkWrites
+  });
   const progressState = { processedVolumes: 0 };
   for (const channel of channels) {
     const layerSources = layersByChannel.get(channel.id) ?? [];
@@ -2141,6 +2609,7 @@ export async function preprocessDatasetToStorage({
       if (!sourceMetadata) {
         throw new Error(`Missing source metadata for layer "${layer.key}".`);
       }
+      const preloadedVolumesByFileIndex = decodedVolumeCacheByLayerKey.get(layer.key);
 
       if (movieMode === '2d') {
         await writeLayerVolumesFor2d({
@@ -2150,6 +2619,8 @@ export async function preprocessDatasetToStorage({
           sourceMetadata,
           normalizationByLayerKey,
           layer2dFileDepthsByKey,
+          preloadedVolumesByFileIndex,
+          volumeLoader,
           signal,
           onProgress,
           totalVolumeCount: totalWritableVolumes,
@@ -2163,6 +2634,9 @@ export async function preprocessDatasetToStorage({
           sourceMetadata,
           representativeTimepoint,
           normalizationByLayerKey,
+          workerizeNormalizationDownsample,
+          preloadedVolumesByFileIndex,
+          volumeLoader,
           signal,
           onProgress,
           totalVolumeCount: totalWritableVolumes,

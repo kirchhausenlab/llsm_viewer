@@ -14,6 +14,7 @@ type TrackSummary = { totalRows: number; uniqueTracks: number };
 const PREPROCESSED_STORAGE_ROOT_DIR = 'llsm-viewer-preprocessed-vnext';
 const FRONTPAGE_OPFS_DATASET_ID = 'preprocessed-experiment';
 const PREPROCESS_STORAGE_STRATEGY = {
+  maxInFlightChunkWrites: 4,
   sharding: {
     enabled: true
   }

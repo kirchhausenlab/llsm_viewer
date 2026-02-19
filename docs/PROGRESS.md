@@ -9,6 +9,74 @@
 - Viewer, route, VR, and preprocessing hotspots have been decomposed into smaller modules to reduce coupling.
 
 ## Most recent high-signal updates
+- Completed final preprocessing validation pass after the remaining 2D no-copy work:
+  - fixture benchmark rerun: `TEST_DATA_DIR=data/test_dataset_0 PREPROCESS_FIXTURE_RUNS=3 npm run benchmark:preprocess:fixture`
+  - measured `min=13973.43ms`, `avg=14034.92ms`, `max=14137.15ms` (improved vs earlier 3-run sample avg `14266.77ms`)
+  - browser preprocess perf rerun: `TEST_DATA_DIR=data/test_dataset_0 npm run test:e2e:preprocess-perf` passed with `elapsedMs=12049` (5 files/timepoints)
+- Landed the remaining 2D write-loop copy elimination (`PREP-011`, `DONE`):
+  - 2D preprocessing now processes typed-array slice views directly (no per-slice staging copy buffer in write loop)
+  - added typed-array processing entry points in `src/core/volumeProcessing.ts` (`normalizeTypedArray`, `colorizeSegmentationTypedArray`) and wired them into `writeLayerVolumesFor2d`
+  - preserves preprocessed output contract and deterministic segmentation behavior while reducing per-slice memory movement on large 2D stacks
+  - verification passed (`tests/preprocessPipeline.test.ts`, `test:perf:preprocess-smoke`, `typecheck`, `typecheck:tests`, `tests/preprocessedDataset.test.ts`, benchmark matrix 2/2)
+- Landed another preprocessing micro-optimization (`PREP-010`, `DONE`):
+  - removed extra 2D slice allocation/copy work in representative-normalization and metadata collection passes
+  - representative 2D normalization now derives per-slice min/max from source typed-array subviews; metadata validation now uses decoded stack metadata directly
+  - output semantics are unchanged; verification passed (`tests/preprocessPipeline.test.ts`, `test:perf:preprocess-smoke`, `typecheck`, `typecheck:tests`, `tests/preprocessedDataset.test.ts`, benchmark matrix 2/2)
+- Landed an additional preprocessing micro-optimization (`PREP-009`, `DONE`):
+  - `writeLayerVolumesFor2d` no longer re-extracts a second slice copy when per-slice normalization fallback is needed
+  - reusable 2D extractor now optionally computes per-slice min/max on the already-copied slice buffer, and fallback normalization uses `computeRepresentativeNormalization(rawSlice)` directly
+  - this preserves fallback normalization semantics while removing redundant copy/allocation work on fallback-active 2D paths
+  - verification passed (`tests/preprocessPipeline.test.ts`, `test:perf:preprocess-smoke`, `typecheck`, `typecheck:tests`, `tests/preprocessedDataset.test.ts`, benchmark matrix 2/2)
+- Closed the remaining preprocessing perf validation TODOs for `PREP-007` and `PREP-008` on a real fixture:
+  - `TEST_DATA_DIR=data/test_dataset_0 PREPROCESS_FIXTURE_RUNS=5 npm run benchmark:preprocess:fixture` measured `min=14170.31ms`, `avg=14383.44ms`, `max=14458.99ms` (5 files/timepoints)
+  - `TEST_DATA_DIR=data/test_dataset_0 npm run test:e2e:preprocess-perf` passed with browser-path `elapsedMs=11981` for the same fixture
+  - reran verification gates successfully: `tests/preprocessPipeline.test.ts`, `test:perf:preprocess-smoke`, `typecheck`, `typecheck:tests`, `tests/preprocessedDataset.test.ts`, `benchmark:nextgen-volume` (2/2 passing)
+- Added a reusable real-TIFF preprocessing benchmark command:
+  - `npm run benchmark:preprocess:fixture` (`scripts/benchmark-preprocess-fixture.ts`)
+  - uses `TEST_DATA_DIR` for local fixture timing with in-memory storage and reports run-by-run + min/avg/max summary
+  - first 3-run sample on `data/test_dataset_0` (5 timepoints) measured `min=14218.08ms`, `avg=14266.77ms`, `max=14331.04ms`
+- Landed a post-Phase-C 2D preprocessing CPU trim:
+  - reusable 2D slice extraction in `preprocess.ts` no longer performs mandatory per-slice min/max scans when layer normalization is already known
+  - fallback behavior for missing normalization metadata still computes per-slice normalization exactly as before
+  - verification passed (`tests/preprocessPipeline.test.ts`, `test:perf:preprocess-smoke`, `typecheck`, `typecheck:tests`, `tests/preprocessedDataset.test.ts`, benchmark matrix 2/2)
+  - recent smoke timings remain noisy run-to-run (`duration_ms 298.1-422.3`) but include faster runs than prior baseline
+- Completed preprocessing Phase C workerization slice (`PREP-008`, `DONE`):
+  - added workerized 3D normalization/downsample scale-pyramid generation (`src/workers/preprocessScalePyramid.worker.ts`) and a persistent worker client (`src/shared/utils/preprocessedDataset/preprocessScalePyramidWorker.ts`)
+  - preprocess write path now uses precomputed scale payloads from worker when browser worker support is available, with deterministic segmentation seed behavior preserved per `(layerKey, timepoint)`
+  - added strict fallback to existing synchronous path if worker is unavailable or errors (no output contract change)
+  - verification passed (`tests/preprocessPipeline.test.ts`, `test:perf:preprocess-smoke`, `typecheck`, `typecheck:tests`, `tests/preprocessedDataset.test.ts`, benchmark matrix 2/2)
+  - note: browser-side fixture throughput is now measured in `tests/e2e/preprocess-perf.spec.ts` (`elapsedMs=11981` on `data/test_dataset_0`, 5 files/timepoints)
+- Completed preprocessing performance Phase A + B backlog items (`PREP-001..006`) from `docs/preprocessing-performance-playbook.md`:
+  - reused representative/metadata decoded volumes across preprocessing stages
+  - made chunk write concurrency configurable (`storageStrategy.maxInFlightChunkWrites`) and raised default/front-page setting to `4`
+  - cached sharding layout per descriptor and switched chunk-location math to precomputed layouts
+  - fused data-chunk copy + stats/hist accumulation into one pass
+  - parallelized 2D TIFF image-count probing with bounded concurrency
+  - switched 2D write path to reusable per-stack slice buffers to cut repeated slice allocations/copies
+  - required checks passed: `tests/preprocessPipeline.test.ts`, `test:perf:preprocess-smoke`, `typecheck`, `typecheck:tests`
+  - broader checks passed: `tests/preprocessedDataset.test.ts` and benchmark matrix (2/2 passing)
+  - preprocess smoke improved in-session from `duration_ms 418.4` (`real 0.57s`) to post-change `duration_ms 349.9-376.8` (`real 0.50-0.52s`) (~10-16% by test duration, run-to-run variance)
+- Completed preprocessing Phase C protocol slice (`PREP-007`, `DONE`):
+  - `loadVolumesFromFiles` now uses a persistent shared worker (instead of creating/tearing down a worker per load call)
+  - worker protocol now emits one `volume-loaded` transferable full-volume buffer per file instead of per-slice `postMessage` traffic
+  - preserves `VolumePayload` semantics and existing callback/error contract (including `VolumeTooLargeError`)
+  - verification passed (`tests/preprocessPipeline.test.ts`, `test:perf:preprocess-smoke`, `typecheck`, `typecheck:tests`, `tests/preprocessedDataset.test.ts`, benchmark matrix 2/2)
+  - note: real-fixture browser-path validation is now captured (`tests/e2e/preprocess-perf.spec.ts`, `elapsedMs=11981`, 5 files/timepoints)
+- Added a multi-session preprocessing acceleration playbook:
+  - `docs/preprocessing-performance-playbook.md`
+  - includes prioritized backlog IDs (`PREP-001..008`), guardrails, rollout order, rollback criteria, and handoff template
+  - intended to let future sessions continue performance work safely without repeating context gathering
+- Created a dedicated multi-session implementation dossier for per-layer render style + Beer-Lambert mode:
+  - `docs/renderstyle-bl-mode/README.md`
+  - `docs/renderstyle-bl-mode/DECISIONS.md`
+  - `docs/renderstyle-bl-mode/IMPLEMENTATION_SPEC.md`
+  - `docs/renderstyle-bl-mode/ROADMAP.md`
+  - `docs/renderstyle-bl-mode/BACKLOG.md`
+  - `docs/renderstyle-bl-mode/TEST_PLAN.md`
+  - `docs/renderstyle-bl-mode/SESSION_HANDOFF.md`
+  - `docs/renderstyle-bl-mode/EXECUTION_LOG.md`
+  - `docs/renderstyle-bl-mode/SESSION_PROMPT.md`
+  - objective: coordinate implementation across multiple agent sessions with explicit backlog IDs, acceptance criteria, and handoff protocol.
 - Improved preprocessing throughput on the main ingest path:
   - 3D/2D file decoding now runs in bounded batches with next-batch prefetch to reduce one-file-at-a-time worker startup overhead in `preprocess.ts`
   - chunk writes now use a bounded in-flight write queue (instead of hard per-chunk write serialization)

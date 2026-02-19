@@ -1,6 +1,7 @@
 import type * as THREE from 'three';
 
 import type { TrackColorMode } from '../../../../types/tracks';
+import type { RenderStyle, SamplingMode } from '../../../../state/layerSettings';
 
 export type VrUiTargetType =
   | 'playback-play-toggle'
@@ -250,9 +251,13 @@ export type VrChannelsState = {
         color: string;
         xOffset: number;
         yOffset: number;
-        renderStyle: 0 | 1;
+        renderStyle: RenderStyle;
+        blDensityScale: number;
+        blBackgroundCutoff: number;
+        blOpacityScale: number;
+        blEarlyExitAlpha: number;
         invert: boolean;
-        samplingMode: 'linear' | 'nearest';
+        samplingMode: SamplingMode;
       };
     }>;
   }>;

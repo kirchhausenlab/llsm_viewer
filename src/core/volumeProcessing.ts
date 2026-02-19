@@ -111,10 +111,21 @@ const createSegmentationColorTable = (maxLabel: number, seed: number): Uint8Arra
   return table;
 };
 
-export function colorizeSegmentationVolume(volume: VolumePayload, seed: number): NormalizedVolume {
-  const { width, height, depth, dataType } = volume;
-  const source = createSourceArray(volume.data, dataType);
-
+function colorizeSegmentationFromSource({
+  width,
+  height,
+  depth,
+  dataType,
+  source,
+  seed
+}: {
+  width: number;
+  height: number;
+  depth: number;
+  dataType: VolumeDataType;
+  source: SourceArray;
+  seed: number;
+}): NormalizedVolume {
   const voxelCount = source.length;
   const toLabelId = (value: number): number => {
     if (!Number.isFinite(value)) {
@@ -168,6 +179,44 @@ export function colorizeSegmentationVolume(volume: VolumePayload, seed: number):
   };
 }
 
+export function colorizeSegmentationVolume(volume: VolumePayload, seed: number): NormalizedVolume {
+  const { width, height, depth, dataType } = volume;
+  const source = createSourceArray(volume.data, dataType);
+  return colorizeSegmentationFromSource({
+    width,
+    height,
+    depth,
+    dataType,
+    source,
+    seed
+  });
+}
+
+export function colorizeSegmentationTypedArray({
+  width,
+  height,
+  depth,
+  dataType,
+  source,
+  seed
+}: {
+  width: number;
+  height: number;
+  depth: number;
+  dataType: VolumeDataType;
+  source: VolumeTypedArray;
+  seed: number;
+}): NormalizedVolume {
+  return colorizeSegmentationFromSource({
+    width,
+    height,
+    depth,
+    dataType,
+    source,
+    seed
+  });
+}
+
 export function computeNormalizationParameters(volumes: VolumePayload[]): NormalizationParameters {
   if (volumes.length === 0) {
     return { min: 0, max: 1 };
@@ -208,13 +257,23 @@ export function computeNormalizationParameters(volumes: VolumePayload[]): Normal
   return { min, max };
 }
 
-export function normalizeVolume(
-  volume: VolumePayload,
-  parameters: NormalizationParameters
-): NormalizedVolume {
-  const { width, height, depth, channels, data, dataType } = volume;
-  const source = createSourceArray(data, dataType);
-
+function normalizeFromSource({
+  width,
+  height,
+  depth,
+  channels,
+  dataType,
+  source,
+  parameters
+}: {
+  width: number;
+  height: number;
+  depth: number;
+  channels: number;
+  dataType: VolumeDataType;
+  source: SourceArray;
+  parameters: NormalizationParameters;
+}): NormalizedVolume {
   const { min, max } = parameters;
 
   if (
@@ -255,6 +314,51 @@ export function normalizeVolume(
     min,
     max
   };
+}
+
+export function normalizeVolume(
+  volume: VolumePayload,
+  parameters: NormalizationParameters
+): NormalizedVolume {
+  const { width, height, depth, channels, data, dataType } = volume;
+  const source = createSourceArray(data, dataType);
+  return normalizeFromSource({
+    width,
+    height,
+    depth,
+    channels,
+    dataType,
+    source,
+    parameters
+  });
+}
+
+export function normalizeTypedArray({
+  width,
+  height,
+  depth,
+  channels,
+  dataType,
+  source,
+  parameters
+}: {
+  width: number;
+  height: number;
+  depth: number;
+  channels: number;
+  dataType: VolumeDataType;
+  source: VolumeTypedArray;
+  parameters: NormalizationParameters;
+}): NormalizedVolume {
+  return normalizeFromSource({
+    width,
+    height,
+    depth,
+    channels,
+    dataType,
+    source,
+    parameters
+  });
 }
 
 type SourceArray = VolumeTypedArray;

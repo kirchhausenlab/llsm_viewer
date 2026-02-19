@@ -19,6 +19,7 @@ import {
   DEFAULT_WINDOW_MAX,
   DEFAULT_WINDOW_MIN,
   type LayerSettings,
+  type RenderStyle,
   type SamplingMode
 } from '../../state/layerSettings';
 import type { LoadedLayer } from '../../types/layers';
@@ -59,7 +60,7 @@ export type ChannelDatasetLayerStateOptions = {
 };
 
 export type ChannelDatasetAppearanceOptions = {
-  globalRenderStyle: 0 | 1;
+  globalRenderStyle: RenderStyle;
   globalSamplingMode: SamplingMode;
   getChannelDefaultColor: (channelId: string) => string;
 };
@@ -104,7 +105,7 @@ const computeInitialWindowForVolume = (
 
 const computeLayerDefaultSettings = (
   layer: LoadedLayer,
-  globalRenderStyle: 0 | 1,
+  globalRenderStyle: RenderStyle,
   globalSamplingMode: SamplingMode,
   getChannelDefaultColor: (channelId: string) => string
 ): LayerSettings => {

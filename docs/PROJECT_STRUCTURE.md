@@ -93,6 +93,8 @@ The main responsibilities are:
   Agent workflow and repository operating guidance.
 - `docs/refactor-nextgen-volume/*`
   Active multi-session plan and tracking docs for the next-gen 3D volume pipeline refactor (spatial chunking + mips + renderer/runtime rewrite).
+- `docs/renderstyle-bl-mode/*`
+  Active multi-session plan and tracking docs for per-layer 3D render-style selection and Beer-Lambert (`BL`) mode implementation.
 - `docs/refactor/README.md`, `docs/refactor/ARCHIVE_SUMMARY.md`
   Archived refactor-program record. The refactor plan is completed; the consolidated history and outcomes are stored in `ARCHIVE_SUMMARY.md`.
 

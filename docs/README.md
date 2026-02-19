@@ -8,6 +8,10 @@ Try it [here](https://kirchhausenlab.github.io/llsm_viewer/)! Recommended on Chr
 
 - Active next-gen volume/rendering refactor:
   - `docs/refactor-nextgen-volume/README.md`
+- Active per-layer render-style + Beer-Lambert implementation program:
+  - `docs/renderstyle-bl-mode/README.md`
+- Active preprocessing acceleration plan:
+  - `docs/preprocessing-performance-playbook.md`
 - Archived prior refactor program:
   - `docs/refactor/ARCHIVE_SUMMARY.md`
 
@@ -119,11 +123,7 @@ npm run test:e2e:visual:update
 
 ### Local dataset fixture
 
-Dataset-backed tests use `TEST_DATA_DIR` if set; otherwise they default to:
-
-```text
-data/test_dataset_0
-```
+Dataset-backed local fixture tests use `TEST_DATA_DIR` when set. If it is unset, fixture-only tests are skipped.
 
 Example:
 

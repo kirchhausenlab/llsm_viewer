@@ -14,14 +14,28 @@ export { DEFAULT_WINDOW_MIN, DEFAULT_WINDOW_MAX, MIN_WINDOW_WIDTH } from './brig
 
 export type SamplingMode = 'linear' | 'nearest';
 
-export const DEFAULT_RENDER_STYLE = 0;
+export const RENDER_STYLE_MIP = 0 as const;
+export const RENDER_STYLE_ISO = 1 as const;
+export const RENDER_STYLE_BL = 2 as const;
+
+export type RenderStyle = typeof RENDER_STYLE_MIP | typeof RENDER_STYLE_ISO | typeof RENDER_STYLE_BL;
+
+export const DEFAULT_RENDER_STYLE: RenderStyle = RENDER_STYLE_MIP;
 export const DEFAULT_SAMPLING_MODE: SamplingMode = 'linear';
+export const DEFAULT_BL_DENSITY_SCALE = 1.0;
+export const DEFAULT_BL_BACKGROUND_CUTOFF = 0.08;
+export const DEFAULT_BL_OPACITY_SCALE = 1.0;
+export const DEFAULT_BL_EARLY_EXIT_ALPHA = 0.98;
 
 export type LayerSettings = BrightnessContrastState & {
   color: string;
   xOffset: number;
   yOffset: number;
-  renderStyle: 0 | 1;
+  renderStyle: RenderStyle;
+  blDensityScale: number;
+  blBackgroundCutoff: number;
+  blOpacityScale: number;
+  blEarlyExitAlpha: number;
   invert: boolean;
   samplingMode: SamplingMode;
 };
@@ -35,6 +49,10 @@ export const createDefaultLayerSettings = (initialWindow?: WindowBounds | null):
   xOffset: 0,
   yOffset: 0,
   renderStyle: DEFAULT_RENDER_STYLE,
+  blDensityScale: DEFAULT_BL_DENSITY_SCALE,
+  blBackgroundCutoff: DEFAULT_BL_BACKGROUND_CUTOFF,
+  blOpacityScale: DEFAULT_BL_OPACITY_SCALE,
+  blEarlyExitAlpha: DEFAULT_BL_EARLY_EXIT_ALPHA,
   invert: false,
   samplingMode: DEFAULT_SAMPLING_MODE
 });

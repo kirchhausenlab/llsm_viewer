@@ -68,9 +68,7 @@ export default function PlaybackControlsPanel({
     canRecord
   } = playbackControls;
   const {
-    renderStyle,
     samplingMode,
-    onRenderStyleToggle,
     onSamplingModeToggle,
     blendingMode,
     onBlendingModeToggle,
@@ -248,15 +246,6 @@ export default function PlaybackControlsPanel({
               {is3dModeAvailable ? (
                 <div className="control-group">
                   <div className="viewer-mode-row">
-                    <button
-                      type="button"
-                      className={renderStyle === 1 ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
-                      onClick={onRenderStyleToggle}
-                      disabled={!hasVolumeData || viewerMode !== '3d'}
-                      aria-pressed={renderStyle === 1}
-                    >
-                      Rendering
-                    </button>
                     <button
                       type="button"
                       className={samplingMode === 'linear' ? 'viewer-mode-button is-active' : 'viewer-mode-button'}

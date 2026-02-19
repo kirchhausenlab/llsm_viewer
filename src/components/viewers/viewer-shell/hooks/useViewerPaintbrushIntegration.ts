@@ -82,6 +82,10 @@ export function useViewerPaintbrushIntegration({
       offsetX: 0,
       offsetY: 0,
       renderStyle: 0 as const,
+      blDensityScale: 1,
+      blBackgroundCutoff: 0.08,
+      blOpacityScale: 1,
+      blEarlyExitAlpha: 0.98,
       invert: false,
       samplingMode: 'nearest' as const,
       mode: '3d' as const

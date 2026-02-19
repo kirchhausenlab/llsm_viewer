@@ -89,7 +89,6 @@ export function useAppRouteState(): AppRouteState {
     setLayerSettings,
     layerAutoThresholds,
     setLayerAutoThresholds,
-    globalRenderStyle,
     setGlobalRenderStyle,
     globalSamplingMode,
     setGlobalSamplingMode,
@@ -437,12 +436,35 @@ export function useAppRouteState(): AppRouteState {
       .filter((layer) => !layer.isSegmentation && layer.depth > 1)
       .map((layer) => layer.key);
   }, [loadedDatasetLayers, preferBrickResidency]);
+  const playbackAtlasScaleLevelByLayerKey = useMemo(() => {
+    const byKey: Record<string, number> = {};
+    const manifest = preprocessedExperiment?.manifest;
+    if (!manifest) {
+      return byKey;
+    }
+
+    const desiredScaleLevel = isPlaying ? 1 : 0;
+    for (const channel of manifest.dataset.channels) {
+      for (const layer of channel.layers) {
+        const levels = Array.from(new Set(layer.zarr.scales.map((scale) => scale.level))).sort((left, right) => left - right);
+        let resolvedScaleLevel = levels[0] ?? 0;
+        for (const level of levels) {
+          if (level <= desiredScaleLevel) {
+            resolvedScaleLevel = level;
+          }
+        }
+        byKey[layer.key] = resolvedScaleLevel;
+      }
+    }
+    return byKey;
+  }, [isPlaying, preprocessedExperiment?.manifest]);
   const { canAdvancePlaybackToIndex } = useRoutePlaybackPrefetch({
     isViewerLaunched,
     isPlaying,
     fps,
     preferBrickResidency,
     brickResidencyLayerKeys,
+    playbackAtlasScaleLevelByLayerKey,
     volumeProvider,
     volumeTimepointCount,
     playbackLayerKeys,
@@ -748,7 +770,12 @@ export function useAppRouteState(): AppRouteState {
     handleLayerAutoContrast,
     handleLayerOffsetChange,
     handleLayerColorChange,
+    handleLayerRenderStyleChange,
     handleLayerRenderStyleToggle,
+    handleLayerBlDensityScaleChange,
+    handleLayerBlBackgroundCutoffChange,
+    handleLayerBlOpacityScaleChange,
+    handleLayerBlEarlyExitAlphaChange,
     handleLayerSamplingModeToggle,
     handleLayerInvertToggle
   } = useLayerControls({
@@ -932,9 +959,7 @@ export function useAppRouteState(): AppRouteState {
         vrButtonDisabled,
         vrButtonTitle,
         vrButtonLabel,
-        renderStyle: globalRenderStyle,
         samplingMode: globalSamplingMode,
-        onRenderStyleToggle: () => handleLayerRenderStyleToggle(),
         onSamplingModeToggle: () => handleLayerSamplingModeToggle(),
         blendingMode,
         onBlendingModeToggle: handleBlendingModeToggle
@@ -986,6 +1011,11 @@ export function useAppRouteState(): AppRouteState {
         onLayerAutoContrast: handleLayerAutoContrast,
         onLayerOffsetChange: handleLayerOffsetChange,
         onLayerColorChange: handleLayerColorChange,
+        onLayerRenderStyleChange: handleLayerRenderStyleChange,
+        onLayerBlDensityScaleChange: handleLayerBlDensityScaleChange,
+        onLayerBlBackgroundCutoffChange: handleLayerBlBackgroundCutoffChange,
+        onLayerBlOpacityScaleChange: handleLayerBlOpacityScaleChange,
+        onLayerBlEarlyExitAlphaChange: handleLayerBlEarlyExitAlphaChange,
         onLayerInvertToggle: handleLayerInvertToggle
       },
       tracksPanel: {
