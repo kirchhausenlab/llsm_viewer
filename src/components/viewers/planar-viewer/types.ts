@@ -1,4 +1,5 @@
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
+import type { VolumeBrickAtlas, VolumeBrickPageTable } from '../../../core/volumeProvider';
 import type { PaintbrushStrokeHandlers } from '../../../types/paintbrush';
 import type { TrackColorMode, TrackDefinition } from '../../../types/tracks';
 import type { RenderStyle } from '../../../state/layerSettings';
@@ -8,6 +9,9 @@ export type ViewerLayer = {
   label: string;
   channelId: string;
   channelName: string;
+  fullResolutionWidth?: number;
+  fullResolutionHeight?: number;
+  fullResolutionDepth?: number;
   volume: NormalizedVolume | null;
   visible: boolean;
   isHoverTarget?: boolean;
@@ -23,8 +27,18 @@ export type ViewerLayer = {
   offsetX: number;
   offsetY: number;
   renderStyle: RenderStyle;
+  blDensityScale?: number;
+  blBackgroundCutoff?: number;
+  blOpacityScale?: number;
+  blEarlyExitAlpha?: number;
   invert: boolean;
+  samplingMode?: 'linear' | 'nearest';
   isSegmentation: boolean;
+  mode?: '3d' | 'slice';
+  sliceIndex?: number;
+  scaleLevel?: number;
+  brickPageTable?: VolumeBrickPageTable | null;
+  brickAtlas?: VolumeBrickAtlas | null;
 };
 
 export type SliceData = {

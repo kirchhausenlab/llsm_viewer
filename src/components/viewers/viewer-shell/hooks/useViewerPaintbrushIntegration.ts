@@ -104,6 +104,9 @@ export function useViewerPaintbrushIntegration({
       channelId: 'paintbrush',
       channelName: 'Painting',
       volume,
+      fullResolutionWidth: volume.width,
+      fullResolutionHeight: volume.height,
+      fullResolutionDepth: volume.depth,
       visible: paintbrushController.overlayVisible,
       isHoverTarget: false,
       minAlpha: 0,
@@ -118,8 +121,16 @@ export function useViewerPaintbrushIntegration({
       offsetX: 0,
       offsetY: 0,
       renderStyle: 0 as const,
+      blDensityScale: 1,
+      blBackgroundCutoff: 0.08,
+      blOpacityScale: 1,
+      blEarlyExitAlpha: 0.98,
       invert: false,
-      isSegmentation: false
+      samplingMode: 'nearest' as const,
+      isSegmentation: false,
+      scaleLevel: 0,
+      brickPageTable: null,
+      brickAtlas: null
     } satisfies ViewerShellProps['planarViewerProps']['layers'][number];
   }, [paintbrushController.overlayVisible, paintbrushController.paintVolume, paintbrushController.revision]);
 

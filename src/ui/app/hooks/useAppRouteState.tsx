@@ -551,8 +551,8 @@ export function useAppRouteState(): AppRouteState {
       setPreferBrickResidency(false);
       return;
     }
-    setPreferBrickResidency(viewerMode === '3d');
-  }, [is3dViewerAvailable, viewerMode]);
+    setPreferBrickResidency(true);
+  }, [is3dViewerAvailable]);
 
   useEffect(() => {
     if (datasetError && datasetErrorContext === 'launch') {

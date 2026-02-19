@@ -1400,6 +1400,17 @@ function resolveLayerRenderSource(
   const volume = layer.volume ?? null;
   const brickAtlas = layer.brickAtlas ?? null;
   const pageTable = layer.brickPageTable ?? brickAtlas?.pageTable ?? null;
+  if (volume) {
+    return {
+      width: volume.width,
+      height: volume.height,
+      depth: volume.depth,
+      channels: volume.channels,
+      volume,
+      pageTable,
+      brickAtlas
+    };
+  }
   if (brickAtlas?.enabled && pageTable) {
     const depth = layer.fullResolutionDepth > 0 ? layer.fullResolutionDepth : pageTable.volumeShape[0];
     const height = layer.fullResolutionHeight > 0 ? layer.fullResolutionHeight : pageTable.volumeShape[1];
@@ -1410,17 +1421,6 @@ function resolveLayerRenderSource(
       depth,
       channels: brickAtlas.sourceChannels,
       volume: null,
-      pageTable,
-      brickAtlas
-    };
-  }
-  if (volume) {
-    return {
-      width: volume.width,
-      height: volume.height,
-      depth: volume.depth,
-      channels: volume.channels,
-      volume,
       pageTable,
       brickAtlas
     };
@@ -1905,46 +1905,68 @@ export function useVolumeResources({
 
         resources = resourcesRef.current.get(layer.key) ?? null;
       } else {
-        if (!volume) {
-          removeResource(layer.key);
-          return;
-        }
-        const maxIndex = Math.max(0, volume.depth - 1);
+        const maxIndex = Math.max(0, depth - 1);
         const clampedIndex = Math.min(Math.max(zIndex, 0), maxIndex);
-        const expectedLength = getExpectedSliceBufferLength(volume);
+        const expectedLength = volume ? getExpectedSliceBufferLength(volume) : 0;
 
         const needsRebuild =
           !resources ||
           resources.mode !== viewerMode ||
-          resources.dimensions.width !== volume.width ||
-          resources.dimensions.height !== volume.height ||
-          resources.dimensions.depth !== volume.depth ||
-          resources.channels !== volume.channels ||
+          resources.dimensions.width !== width ||
+          resources.dimensions.height !== height ||
+          resources.dimensions.depth !== depth ||
+          resources.channels !== channels ||
           !(resources.texture instanceof THREE.DataTexture) ||
-          (resources.sliceBuffer?.length ?? 0) !== expectedLength;
+          (volume && (resources.sliceBuffer?.length ?? 0) !== expectedLength);
 
         if (needsRebuild) {
           removeResource(layer.key);
 
-          const sliceInfo = prepareSliceTexture(volume, clampedIndex, null);
-          const texture = new THREE.DataTexture(
-            sliceInfo.data,
-            volume.width,
-            volume.height,
-            sliceInfo.format,
-          );
-          texture.type = THREE.UnsignedByteType;
-          texture.minFilter = THREE.LinearFilter;
-          texture.magFilter = THREE.LinearFilter;
-          texture.unpackAlignment = 1;
-          texture.colorSpace = THREE.LinearSRGBColorSpace;
-          texture.needsUpdate = true;
+          const sliceTexture = (() => {
+            if (!volume) {
+              const fallbackTexture = new THREE.DataTexture(
+                FALLBACK_VOLUME_TEXTURE_DATA.slice(),
+                1,
+                1,
+                THREE.RedFormat,
+              );
+              fallbackTexture.type = THREE.UnsignedByteType;
+              fallbackTexture.minFilter = THREE.LinearFilter;
+              fallbackTexture.magFilter = THREE.LinearFilter;
+              fallbackTexture.unpackAlignment = 1;
+              fallbackTexture.colorSpace = THREE.LinearSRGBColorSpace;
+              fallbackTexture.needsUpdate = true;
+              return { texture: fallbackTexture, sliceBuffer: null as Uint8Array | null };
+            }
+            const sliceInfo = prepareSliceTexture(volume, clampedIndex, null);
+            const texture = new THREE.DataTexture(
+              sliceInfo.data,
+              volume.width,
+              volume.height,
+              sliceInfo.format,
+            );
+            texture.type = THREE.UnsignedByteType;
+            texture.minFilter = THREE.LinearFilter;
+            texture.magFilter = THREE.LinearFilter;
+            texture.unpackAlignment = 1;
+            texture.colorSpace = THREE.LinearSRGBColorSpace;
+            texture.needsUpdate = true;
+            return { texture, sliceBuffer: sliceInfo.data };
+          })();
 
+          const texture = sliceTexture.texture;
           const shader = SliceRenderShader;
           const uniforms = THREE.UniformsUtils.clone(shader.uniforms);
+          const sliceUniforms = uniforms as ShaderUniformMap;
           uniforms.u_slice.value = texture;
+          if ('u_size' in sliceUniforms) {
+            (sliceUniforms.u_size.value as THREE.Vector3).set(width, height, depth);
+          }
+          if ('u_sliceIndex' in sliceUniforms) {
+            sliceUniforms.u_sliceIndex.value = clampedIndex;
+          }
           uniforms.u_cmdata.value = colormapTexture;
-          uniforms.u_channels.value = volume.channels;
+          uniforms.u_channels.value = channels;
           uniforms.u_windowMin.value = layer.windowMin;
           uniforms.u_windowMax.value = layer.windowMax;
           uniforms.u_invert.value = layer.invert ? 1 : 0;
@@ -1963,8 +1985,8 @@ export function useVolumeResources({
             blending: materialBlending,
           });
 
-          const geometry = new THREE.PlaneGeometry(volume.width, volume.height);
-          geometry.translate(volume.width / 2 - 0.5, volume.height / 2 - 0.5, 0);
+          const geometry = new THREE.PlaneGeometry(width, height);
+          geometry.translate(width / 2 - 0.5, height / 2 - 0.5, 0);
 
           const mesh = new THREE.Mesh(geometry, material);
           mesh.position.set(layer.offsetX, layer.offsetY, clampedIndex);
@@ -1978,18 +2000,47 @@ export function useVolumeResources({
           }
           flushRendererRenderLists();
 
-          resourcesRef.current.set(layer.key, {
+          const nextResource: VolumeResources = {
             mesh,
             texture,
-            dimensions: { width: volume.width, height: volume.height, depth: volume.depth },
-            channels: volume.channels,
+            dimensions: { width, height, depth },
+            channels,
             mode: viewerMode,
             renderStyle: layer.renderStyle,
             samplingMode: layer.samplingMode,
-            sliceBuffer: sliceInfo.data,
+            sliceBuffer: sliceTexture.sliceBuffer,
             brickPageTable: pageTable,
+            brickOccupancyTexture: null,
+            brickMinTexture: null,
+            brickMaxTexture: null,
+            brickAtlasIndexTexture: null,
+            brickAtlasDataTexture: null,
+            brickMetadataSourcePageTable: null,
+            brickAtlasSourceToken: null,
+            brickAtlasSourceData: null,
+            brickAtlasSourceFormat: null,
+            brickAtlasSourcePageTable: null,
+            brickAtlasBuildVersion: 0,
             updateGpuBrickResidencyForCamera: null,
-          });
+          };
+
+          const directAtlasFormat = brickAtlas ? getTextureFormatFromBrickAtlas(brickAtlas) : null;
+          applyBrickPageTableUniforms(
+            uniforms as ShaderUniformMap,
+            nextResource,
+            volume ? null : pageTable,
+            !volume && brickAtlas
+              ? {
+                  atlasDataToken: brickAtlas,
+                  atlasData: brickAtlas.data,
+                  atlasFormat: directAtlasFormat ?? undefined,
+                  atlasSize: { width: brickAtlas.width, height: brickAtlas.height, depth: brickAtlas.depth },
+                  max3DTextureSize,
+                  forceFullResidency: true,
+                }
+                : undefined,
+          );
+          resourcesRef.current.set(layer.key, nextResource);
         }
 
         resources = resourcesRef.current.get(layer.key) ?? null;
@@ -2160,24 +2211,46 @@ export function useVolumeResources({
             mesh.updateMatrixWorld();
           }
         } else {
-          if (!volume) {
-            removeResource(layer.key);
-            return;
-          }
           resources.updateGpuBrickResidencyForCamera = null;
-          disposeBrickPageTableTextures(resources);
-          const maxIndex = Math.max(0, volume.depth - 1);
+          const maxIndex = Math.max(0, depth - 1);
           const clampedIndex = Math.min(Math.max(zIndex, 0), maxIndex);
-          const existingBuffer = resources.sliceBuffer ?? null;
-          const sliceInfo = prepareSliceTexture(volume, clampedIndex, existingBuffer);
-          resources.sliceBuffer = sliceInfo.data;
-          const dataTexture = resources.texture as THREE.DataTexture;
-          dataTexture.image.data = sliceInfo.data;
-          dataTexture.image.width = volume.width;
-          dataTexture.image.height = volume.height;
-          dataTexture.format = sliceInfo.format;
-          dataTexture.needsUpdate = true;
-          materialUniforms.u_slice.value = dataTexture;
+          if (materialUniforms.u_size) {
+            (materialUniforms.u_size.value as THREE.Vector3).set(width, height, depth);
+          }
+          if (materialUniforms.u_sliceIndex) {
+            materialUniforms.u_sliceIndex.value = clampedIndex;
+          }
+
+          const directAtlasFormat = brickAtlas ? getTextureFormatFromBrickAtlas(brickAtlas) : null;
+          applyBrickPageTableUniforms(
+            materialUniforms,
+            resources,
+            volume ? null : pageTable,
+            !volume && brickAtlas
+              ? {
+                  atlasDataToken: brickAtlas,
+                  atlasData: brickAtlas.data,
+                  atlasFormat: directAtlasFormat ?? undefined,
+                  atlasSize: { width: brickAtlas.width, height: brickAtlas.height, depth: brickAtlas.depth },
+                  max3DTextureSize,
+                  forceFullResidency: true,
+                }
+                : undefined,
+          );
+
+          if (volume) {
+            const existingBuffer = resources.sliceBuffer ?? null;
+            const sliceInfo = prepareSliceTexture(volume, clampedIndex, existingBuffer);
+            resources.sliceBuffer = sliceInfo.data;
+            const dataTexture = resources.texture as THREE.DataTexture;
+            dataTexture.image.data = sliceInfo.data;
+            dataTexture.image.width = volume.width;
+            dataTexture.image.height = volume.height;
+            dataTexture.format = sliceInfo.format;
+            dataTexture.needsUpdate = true;
+            materialUniforms.u_slice.value = dataTexture;
+          }
+
           const desiredX = layer.offsetX;
           const desiredY = layer.offsetY;
           if (

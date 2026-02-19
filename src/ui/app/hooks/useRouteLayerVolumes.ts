@@ -135,7 +135,7 @@ function buildLayerResidencyModeMap({
   const modeByKey = new Map<string, 'volume' | 'atlas'>();
   for (const layers of channelLayersMap.values()) {
     for (const layer of layers) {
-      const useAtlas = preferBrickResidency && canUseAtlas && !layer.isSegmentation && layer.depth > 1;
+      const useAtlas = preferBrickResidency && canUseAtlas && layer.depth > 1;
       modeByKey.set(layer.key, useAtlas ? 'atlas' : 'volume');
     }
   }
@@ -258,8 +258,10 @@ export function useRouteLayerVolumes({
           if (atlas.depth > maxBrickAtlasDepthHint) {
             continue;
           }
+          const volume = await volumeProvider!.getVolume(layerKey, timeIndex, { scaleLevel: 0, signal });
+          throwIfAborted(signal);
           return {
-            volume: null,
+            volume,
             pageTable: atlas.pageTable,
             brickAtlas: atlas
           };

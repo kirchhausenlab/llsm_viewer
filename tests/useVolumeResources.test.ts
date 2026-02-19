@@ -1265,4 +1265,118 @@ const createLayer = (
   }
 })();
 
+(() => {
+  const volume: NormalizedVolume = {
+    width: 2,
+    height: 2,
+    depth: 3,
+    channels: 1,
+    dataType: 'uint8',
+    normalized: new Uint8Array([
+      1, 2, 3, 4,
+      11, 12, 13, 14,
+      21, 22, 23, 24,
+    ]),
+    min: 0,
+    max: 1,
+  };
+  const pageTable: VolumeBrickPageTable = {
+    layerKey: 'layer-3d',
+    timepoint: 0,
+    scaleLevel: 0,
+    gridShape: [1, 1, 1],
+    chunkShape: [3, 2, 2],
+    volumeShape: [3, 2, 2],
+    brickAtlasIndices: new Int32Array([0]),
+    chunkMin: new Uint8Array([0]),
+    chunkMax: new Uint8Array([255]),
+    chunkOccupancy: new Float32Array([1]),
+    occupiedBrickCount: 1,
+  };
+  const brickAtlas: VolumeBrickAtlas = {
+    layerKey: 'layer-3d',
+    timepoint: 0,
+    scaleLevel: 0,
+    pageTable,
+    width: 2,
+    height: 2,
+    depth: 3,
+    textureFormat: 'red',
+    sourceChannels: 1,
+    data: new Uint8Array([
+      100, 101, 102, 103,
+      110, 111, 112, 113,
+      120, 121, 122, 123,
+    ]),
+    enabled: true,
+  };
+  const layer: ViewerLayer = {
+    ...createLayer(volume, pageTable, brickAtlas, 'linear'),
+    mode: 'slice',
+    sliceIndex: 1,
+  };
+
+  const sceneRef = { current: new THREE.Scene() };
+  const cameraRef = { current: new THREE.PerspectiveCamera(75, 1, 0.1, 10) };
+  const controlsRef = {
+    current: {
+      target: new THREE.Vector3(),
+      update: () => {},
+      saveState: () => {},
+    } as unknown as THREE.OrbitControls,
+  };
+  const resourcesRef = { current: new Map<string, VolumeResources>() };
+
+  renderHook(() =>
+    useVolumeResources({
+      layers: [layer],
+      primaryVolume: volume,
+      isAdditiveBlending: false,
+      renderContextRevision: 0,
+      sceneRef,
+      cameraRef,
+      controlsRef,
+      rotationTargetRef: { current: new THREE.Vector3() },
+      defaultViewStateRef: { current: null },
+      trackGroupRef: { current: new THREE.Group() },
+      resourcesRef,
+      currentDimensionsRef: { current: null },
+      colormapCacheRef: { current: new Map() },
+      volumeRootGroupRef: { current: new THREE.Group() },
+      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+      volumeNormalizationScaleRef: { current: 1 },
+      volumeUserScaleRef: { current: 1 },
+      volumeStepScaleRef: { current: 1 },
+      volumeYawRef: { current: 0 },
+      volumePitchRef: { current: 0 },
+      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+      applyTrackGroupTransform: () => {},
+      applyVolumeRootTransform: () => {},
+      applyVolumeStepScaleToResources: () => {},
+      applyHoverHighlightToResources: () => {},
+    }),
+  );
+
+  const resource = resourcesRef.current.get('layer-3d');
+  assert.ok(resource);
+  assert.equal(resource.mode, 'slice');
+  assert.equal(resource.brickAtlasDataTexture, null);
+  assert.ok(resource.texture instanceof THREE.DataTexture);
+  const material = resource.mesh.material as THREE.ShaderMaterial;
+  assert.equal(material.uniforms.u_brickAtlasEnabled, undefined);
+  const data = Array.from((resource.texture as THREE.DataTexture).image.data as Uint8Array);
+  assert.deepEqual(
+    data,
+    [
+      11, 11, 11, 255,
+      12, 12, 12, 255,
+      13, 13, 13, 255,
+      14, 14, 14, 255,
+    ],
+  );
+})();
+
 console.log('useVolumeResources tests passed');

@@ -410,9 +410,9 @@ await (async () => {
   );
 
   await flushAsyncWork();
-  assert.strictEqual(getVolumeCalls.length, 0);
+  assert.deepStrictEqual(getVolumeCalls[0], { layerKey: 'layer-a', timeIndex: 1 });
   assert.deepStrictEqual(getBrickAtlasCalls[0], { layerKey: 'layer-a', timeIndex: 1 });
-  assert.strictEqual(hook.result.currentLayerVolumes['layer-a'], null);
+  assert.ok(hook.result.currentLayerVolumes['layer-a']);
   assert.ok(hook.result.currentLayerPageTables['layer-a']);
   assert.ok(hook.result.currentLayerBrickAtlases['layer-a']);
 
@@ -423,7 +423,10 @@ await (async () => {
     layerKey: 'layer-a',
     timeIndex: 3
   });
-  assert.strictEqual(getVolumeCalls.length, 0);
+  assert.deepStrictEqual(getVolumeCalls[getVolumeCalls.length - 1], {
+    layerKey: 'layer-a',
+    timeIndex: 3
+  });
   hook.unmount();
 })();
 
@@ -473,9 +476,9 @@ await (async () => {
 
   await flushAsyncWork();
   assert.deepStrictEqual(getVolumeCalls[0], { layerKey: 'layer-a', timeIndex: 1 });
-  assert.strictEqual(getBrickAtlasCalls.length, 0);
+  assert.deepStrictEqual(getBrickAtlasCalls[0], { layerKey: 'layer-a', timeIndex: 1 });
   assert.ok(hook.result.currentLayerVolumes['layer-a']);
-  assert.strictEqual(hook.result.currentLayerBrickAtlases['layer-a'], null);
+  assert.ok(hook.result.currentLayerBrickAtlases['layer-a']);
   hook.unmount();
 })();
 
@@ -483,10 +486,12 @@ await (async () => {
   let selectedIndex = 1;
   let isPlaying = false;
   const getBrickAtlasCalls: Array<{ layerKey: string; timeIndex: number; scaleLevel: number | undefined }> = [];
+  const getVolumeCalls: Array<{ layerKey: string; timeIndex: number }> = [];
 
   const provider = {
-    getVolume: async () => {
-      throw new Error('getVolume should not be called for atlas-resident intensity layers');
+    getVolume: async (layerKey: string, timeIndex: number) => {
+      getVolumeCalls.push({ layerKey, timeIndex });
+      return createVolume(timeIndex + 50);
     },
     getBrickAtlas: async (layerKey: string, timeIndex: number, options?: { scaleLevel?: number }) => {
       getBrickAtlasCalls.push({ layerKey, timeIndex, scaleLevel: options?.scaleLevel });
@@ -545,12 +550,14 @@ await (async () => {
   );
 
   await flushAsyncWork();
+  assert.deepStrictEqual(getVolumeCalls[0], { layerKey: 'layer-a', timeIndex: 1 });
   assert.deepStrictEqual(getBrickAtlasCalls[0], { layerKey: 'layer-a', timeIndex: 1, scaleLevel: 0 });
 
   isPlaying = true;
   selectedIndex = 2;
   hook.rerender();
   await flushAsyncWork();
+  assert.deepStrictEqual(getVolumeCalls[getVolumeCalls.length - 1], { layerKey: 'layer-a', timeIndex: 2 });
   assert.deepStrictEqual(getBrickAtlasCalls[getBrickAtlasCalls.length - 1], {
     layerKey: 'layer-a',
     timeIndex: 2,
@@ -633,7 +640,7 @@ await (async () => {
     { layerKey: 'layer-a', timeIndex: 1, scaleLevel: 0 },
     { layerKey: 'layer-a', timeIndex: 1, scaleLevel: 1 }
   ]);
-  assert.strictEqual(getVolumeCalls, 0);
+  assert.strictEqual(getVolumeCalls, 1);
   assert.strictEqual(hook.result.currentLayerBrickAtlases['layer-a']?.scaleLevel, 1);
   hook.unmount();
 })();

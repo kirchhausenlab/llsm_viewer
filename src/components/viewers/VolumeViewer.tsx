@@ -193,6 +193,24 @@ function VolumeViewer({
     resetHudPlacementCallbackRef,
     trackFollowRequestCallbackRef,
   } = useVolumeViewerState();
+  const enableKeyboardNavigation = useMemo(
+    () =>
+      layers.some((layer) => {
+        const depth =
+          layer.volume?.depth ??
+          layer.brickAtlas?.pageTable.volumeShape[0] ??
+          layer.fullResolutionDepth ??
+          0;
+        const mode =
+          layer.mode === 'slice' || layer.mode === '3d'
+            ? layer.mode
+            : depth > 1
+              ? '3d'
+              : 'slice';
+        return mode === '3d';
+      }),
+    [layers],
+  );
   const {
     containerRef,
     rendererRef,
@@ -208,7 +226,12 @@ function VolumeViewer({
     applyKeyboardMovement,
     createPointerLookHandlers,
     initializeRenderContext,
-  } = useCameraControls({ trackLinesRef, followTargetActiveRef, setHasMeasured });
+  } = useCameraControls({
+    trackLinesRef,
+    followTargetActiveRef,
+    setHasMeasured,
+    enableKeyboardNavigation,
+  });
   const isDevMode = Boolean(import.meta.env?.DEV);
   const { resolvedAnisotropyScale, anisotropyStepRatio } = useVolumeViewerAnisotropy({
     trackScale,

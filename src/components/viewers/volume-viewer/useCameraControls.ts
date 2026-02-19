@@ -33,12 +33,14 @@ type UseCameraControlsParams = {
   trackLinesRef: MutableRefObject<Map<string, TrackLineResource>>;
   followTargetActiveRef: MutableRefObject<boolean>;
   setHasMeasured: (hasMeasured: boolean) => void;
+  enableKeyboardNavigation?: boolean;
 };
 
 export function useCameraControls({
   trackLinesRef,
   followTargetActiveRef,
   setHasMeasured,
+  enableKeyboardNavigation = true,
 }: UseCameraControlsParams) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -335,6 +337,27 @@ export function useCameraControls({
   }, []);
 
   useEffect(() => {
+    if (!enableKeyboardNavigation) {
+      const movementState = movementStateRef.current;
+      if (movementState) {
+        movementState.moveForward = false;
+        movementState.moveBackward = false;
+        movementState.moveLeft = false;
+        movementState.moveRight = false;
+        movementState.moveUp = false;
+        movementState.moveDown = false;
+        movementState.rollLeft = false;
+        movementState.rollRight = false;
+      }
+      const lookState = keyboardLookStateRef.current;
+      lookState.rotateLeft = false;
+      lookState.rotateRight = false;
+      lookState.rotateUp = false;
+      lookState.rotateDown = false;
+      isShiftPressedRef.current = false;
+      return;
+    }
+
     const handleKeyChange = (event: KeyboardEvent, isPressed: boolean) => {
       const movementKey = MOVEMENT_KEY_MAP[event.code];
       const rollKey = ROLL_KEY_MAP[event.code];
@@ -419,7 +442,7 @@ export function useCameraControls({
       lookState.rotateDown = false;
       isShiftPressedRef.current = false;
     };
-  }, [followTargetActiveRef]);
+  }, [enableKeyboardNavigation, followTargetActiveRef]);
 
   return {
     containerRef,
