@@ -65,6 +65,20 @@ function selectDeterministicId(values: ReadonlyArray<string>): string | null {
   return [...values].sort((left, right) => left.localeCompare(right))[0] ?? null;
 }
 
+function sanitizeHoveredVoxel(value: HoveredVoxelInfo | null): HoveredVoxelInfo | null {
+  if (!value) {
+    return null;
+  }
+  return {
+    ...value,
+    coordinates: {
+      x: Math.round(value.coordinates.x),
+      y: Math.round(value.coordinates.y),
+      z: Math.round(value.coordinates.z),
+    },
+  };
+}
+
 export function useAppRouteState(): AppRouteState {
   const {
     channels,
@@ -358,10 +372,11 @@ export function useAppRouteState(): AppRouteState {
   }, []);
 
   const handleHoverVoxelChange = useCallback((value: HoveredVoxelInfo | null) => {
-    if (value) {
-      setLastHoveredVolumeVoxel(value);
+    const sanitized = sanitizeHoveredVoxel(value);
+    if (sanitized) {
+      setLastHoveredVolumeVoxel(sanitized);
     }
-    setHoveredVolumeVoxel(value);
+    setHoveredVolumeVoxel(sanitized);
   }, []);
 
   const handleTrackFollowWithVoxelReset = useCallback(

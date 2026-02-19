@@ -878,6 +878,45 @@ const volumeRenderFragmentShader = /* glsl */ `
       return color;
     }
 
+    vec2 compute_crosshair_axis_event(
+      vec2 startPerp,
+      vec2 dirPerp,
+      vec2 scalePerp,
+      float lineRadiusVoxels,
+      float lineDensity,
+      float raySpeed
+    ) {
+      if (lineRadiusVoxels <= 0.0 || lineDensity <= 0.0 || raySpeed <= 0.0) {
+        return vec2(0.0, 0.0);
+      }
+
+      vec2 weightedStart = startPerp * scalePerp;
+      vec2 weightedDir = dirPerp * scalePerp;
+      float a = dot(weightedDir, weightedDir);
+      float eventT = 0.0;
+      if (a > 1e-8) {
+        eventT = -dot(weightedStart, weightedDir) / a;
+      }
+      eventT = clamp(eventT, 0.0, 1.0);
+
+      vec2 closest = weightedStart + weightedDir * eventT;
+      float distancePerp = length(closest);
+      float feather = max(lineRadiusVoxels * 0.2, 0.08);
+      float outerRadius = lineRadiusVoxels + feather;
+      if (distancePerp > outerRadius) {
+        return vec2(eventT, 0.0);
+      }
+
+      float coverage = 1.0 - smoothstep(lineRadiusVoxels, outerRadius, distancePerp);
+      float chordHalf = sqrt(max(outerRadius * outerRadius - distancePerp * distancePerp, 0.0));
+      float perpSpeed = length(weightedDir);
+      float dtThrough = perpSpeed > 1e-5 ? (2.0 * chordHalf / perpSpeed) : 1.0;
+      float pathLength = dtThrough * raySpeed;
+      float opticalDepth = coverage * max(pathLength, 0.0);
+      float alpha = 1.0 - exp(-lineDensity * opticalDepth);
+      return vec2(eventT, clamp(alpha, 0.0, 1.0));
+    }
+
     void main() {
       vec3 farpos = v_farpos.xyz / v_farpos.w;
       vec3 nearpos = v_nearpos.xyz / v_nearpos.w;
@@ -1172,11 +1211,74 @@ const volumeRenderFragmentShader = /* glsl */ `
       float cachedBrickMinRaw = 0.0;
       float cachedBrickMaxRaw = 0.0;
       bool hasCachedBrick = false;
+      bool hoverActive = u_hoverActive > 0.5 && length(u_hoverScale) > 0.0;
+      float hoverPulse = clamp(u_hoverPulse, 0.0, 1.0);
+      float hoverLineRadius = max(u_hoverRadius * 0.45, 0.55);
+      float hoverAxisDensity = mix(2.6, 3.4, hoverPulse);
+      vec3 rayDelta = step * float(nsteps);
+      float raySpeed = length(rayDelta * u_hoverScale);
+
+      vec2 axisXEvent = vec2(0.0);
+      vec2 axisYEvent = vec2(0.0);
+      vec2 axisZEvent = vec2(0.0);
+      bool axisXPending = false;
+      bool axisYPending = false;
+      bool axisZPending = false;
+      if (hoverActive && u_hoverRadius > 0.0 && raySpeed > 0.0) {
+        axisXEvent = compute_crosshair_axis_event(
+          vec2(start_loc.y - u_hoverPos.y, start_loc.z - u_hoverPos.z),
+          vec2(rayDelta.y, rayDelta.z),
+          vec2(u_hoverScale.y, u_hoverScale.z),
+          hoverLineRadius,
+          hoverAxisDensity,
+          raySpeed
+        );
+        axisYEvent = compute_crosshair_axis_event(
+          vec2(start_loc.x - u_hoverPos.x, start_loc.z - u_hoverPos.z),
+          vec2(rayDelta.x, rayDelta.z),
+          vec2(u_hoverScale.x, u_hoverScale.z),
+          hoverLineRadius,
+          hoverAxisDensity,
+          raySpeed
+        );
+        axisZEvent = compute_crosshair_axis_event(
+          vec2(start_loc.x - u_hoverPos.x, start_loc.y - u_hoverPos.y),
+          vec2(rayDelta.x, rayDelta.y),
+          vec2(u_hoverScale.x, u_hoverScale.y),
+          hoverLineRadius,
+          hoverAxisDensity,
+          raySpeed
+        );
+        axisXPending = axisXEvent.y > 1e-4;
+        axisYPending = axisYEvent.y > 1e-4;
+        axisZPending = axisZEvent.y > 1e-4;
+      }
+      float safeSteps = max(float(nsteps), 1.0);
 
       for (int iter = 0; iter < MAX_STEPS; iter++) {
         if (iter >= nsteps) {
           break;
         }
+        float stepAlpha = 0.0;
+        vec3 stepPremultipliedColor = vec3(0.0);
+        float sampleT = (float(iter) + 0.5) / safeSteps;
+        if (axisXPending && sampleT >= axisXEvent.x) {
+          stepPremultipliedColor += (1.0 - stepAlpha) * axisXEvent.y * vec3(1.0, 0.0, 0.0);
+          stepAlpha = 1.0 - (1.0 - stepAlpha) * (1.0 - axisXEvent.y);
+          axisXPending = false;
+        }
+        if (axisYPending && sampleT >= axisYEvent.x) {
+          stepPremultipliedColor += (1.0 - stepAlpha) * axisYEvent.y * vec3(0.0, 1.0, 0.0);
+          stepAlpha = 1.0 - (1.0 - stepAlpha) * (1.0 - axisYEvent.y);
+          axisYPending = false;
+        }
+        if (axisZPending && sampleT >= axisZEvent.x) {
+          stepPremultipliedColor += (1.0 - stepAlpha) * axisZEvent.y * vec3(0.0, 0.0, 1.0);
+          stepAlpha = 1.0 - (1.0 - stepAlpha) * (1.0 - axisZEvent.y);
+          axisZPending = false;
+        }
+
+        bool skipVolumeSample = false;
         if (u_brickSkipEnabled > 0.5) {
           vec3 brickCoord = brick_lookup_coord(loc);
           if (!hasCachedBrick || !brick_coords_equal(brickCoord, cachedBrickCoord)) {
@@ -1195,39 +1297,60 @@ const volumeRenderFragmentShader = /* glsl */ `
             -1.0,
             -1.0
           )) {
-            loc += step;
-            continue;
+            skipVolumeSample = true;
           }
         }
 
-        float adaptiveLod = adaptive_lod_for_iso(baseAdaptiveLod);
-        vec4 colorSample = sample_color_lod(loc, adaptiveLod);
-        float rawIntensity = luminance(colorSample);
-        float normalizedIntensity = normalize_intensity(rawIntensity);
-        if (normalizedIntensity <= safeBackgroundCutoff) {
-          loc += step;
-          continue;
+        if (!skipVolumeSample) {
+          float adaptiveLod = adaptive_lod_for_iso(baseAdaptiveLod);
+          vec4 colorSample = sample_color_lod(loc, adaptiveLod);
+          float rawIntensity = luminance(colorSample);
+          float normalizedIntensity = normalize_intensity(rawIntensity);
+
+          if (normalizedIntensity > safeBackgroundCutoff) {
+            float cutoffAdjustedIntensity = safeBackgroundCutoff >= 1.0
+              ? 0.0
+              : clamp(
+                (normalizedIntensity - safeBackgroundCutoff) / max(1.0 - safeBackgroundCutoff, 1e-5),
+                0.0,
+                1.0
+              );
+            float sigmaT = cutoffAdjustedIntensity * safeDensity * safeOpacity;
+            float alphaStep = 1.0 - exp(-sigmaT * stepDistance);
+            vec4 sampleColor = compose_color(normalizedIntensity, colorSample);
+            float remainingStepAlpha = 1.0 - stepAlpha;
+            stepPremultipliedColor += remainingStepAlpha * alphaStep * sampleColor.rgb;
+            stepAlpha = 1.0 - (1.0 - stepAlpha) * (1.0 - alphaStep);
+          }
         }
 
-        float cutoffAdjustedIntensity = safeBackgroundCutoff >= 1.0
-          ? 0.0
-          : clamp(
-            (normalizedIntensity - safeBackgroundCutoff) / max(1.0 - safeBackgroundCutoff, 1e-5),
-            0.0,
-            1.0
-          );
-        float sigmaT = cutoffAdjustedIntensity * safeDensity * safeOpacity;
-        float alphaStep = 1.0 - exp(-sigmaT * stepDistance);
-        vec4 sampleColor = compose_color(normalizedIntensity, colorSample);
-        accumulatedColor += transmittance * alphaStep * sampleColor.rgb;
-        transmittance *= max(0.0, 1.0 - alphaStep);
-        accumulatedAlpha = 1.0 - transmittance;
+        if (stepAlpha > 0.0) {
+          accumulatedColor += transmittance * stepPremultipliedColor;
+          transmittance *= max(0.0, 1.0 - stepAlpha);
+          accumulatedAlpha = 1.0 - transmittance;
+        }
 
         if (accumulatedAlpha >= safeEarlyExit) {
           break;
         }
 
         loc += step;
+      }
+
+      if (axisXPending) {
+        accumulatedColor += transmittance * axisXEvent.y * vec3(1.0, 0.0, 0.0);
+        transmittance *= max(0.0, 1.0 - axisXEvent.y);
+        accumulatedAlpha = 1.0 - transmittance;
+      }
+      if (axisYPending) {
+        accumulatedColor += transmittance * axisYEvent.y * vec3(0.0, 1.0, 0.0);
+        transmittance *= max(0.0, 1.0 - axisYEvent.y);
+        accumulatedAlpha = 1.0 - transmittance;
+      }
+      if (axisZPending) {
+        accumulatedColor += transmittance * axisZEvent.y * vec3(0.0, 0.0, 1.0);
+        transmittance *= max(0.0, 1.0 - axisZEvent.y);
+        accumulatedAlpha = 1.0 - transmittance;
       }
 
       gl_FragColor = apply_blending_mode(vec4(accumulatedColor, accumulatedAlpha));

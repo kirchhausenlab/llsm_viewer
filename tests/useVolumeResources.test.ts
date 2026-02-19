@@ -273,6 +273,12 @@ const createLayer = (
   const blUniforms = blMaterial.uniforms as Record<string, { value: unknown }>;
   assert.notStrictEqual(blMaterial, isoMaterial);
   assert.ok(blMaterial.fragmentShader.includes('#define VOLUME_STYLE_BL'));
+  assert.ok(blMaterial.fragmentShader.includes('compute_crosshair_axis_event'));
+  assert.ok(blMaterial.fragmentShader.includes('axisXEvent = compute_crosshair_axis_event'));
+  assert.ok(blMaterial.fragmentShader.includes('sampleT >= axisXEvent.x'));
+  assert.ok(blMaterial.fragmentShader.includes('vec3(1.0, 0.0, 0.0)'));
+  assert.ok(blMaterial.fragmentShader.includes('vec3(0.0, 1.0, 0.0)'));
+  assert.ok(blMaterial.fragmentShader.includes('vec3(0.0, 0.0, 1.0)'));
   assert.equal(blUniforms.u_blDensityScale?.value, 2.5);
   assert.equal(blUniforms.u_blBackgroundCutoff?.value, 0.15);
   assert.equal(blUniforms.u_blOpacityScale?.value, 1.7);
