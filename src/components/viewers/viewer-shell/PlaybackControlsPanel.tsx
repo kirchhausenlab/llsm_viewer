@@ -3,6 +3,11 @@ import type { LayoutProps, ViewerMode } from './types';
 import type { ModeToggleState, ViewerSettingsControls } from './hooks/useViewerModeControls';
 import type { PlaybackControlState } from './hooks/useViewerPlaybackControls';
 
+const MIN_FPS = 1;
+const MAX_FPS = 30;
+
+const clampFps = (value: number) => Math.min(MAX_FPS, Math.max(MIN_FPS, value));
+
 export type PlaybackControlsPanelProps = {
   layout: Pick<LayoutProps, 'windowMargin' | 'controlWindowWidth' | 'controlWindowInitialPosition' | 'resetToken'> & {
     viewerSettingsWindowInitialPosition: LayoutProps['viewerSettingsWindowInitialPosition'];
@@ -253,7 +258,7 @@ export default function PlaybackControlsPanel({
                       disabled={!hasVolumeData || viewerMode !== '3d'}
                       aria-pressed={samplingMode === 'linear'}
                     >
-                      {samplingMode === 'linear' ? 'Quality' : 'Speed'}
+                      {samplingMode === 'linear' ? 'Trilinear' : 'Nearest'}
                     </button>
                     <button
                       type="button"
@@ -292,19 +297,19 @@ export default function PlaybackControlsPanel({
                     <input
                       id="fps-slider"
                       type="range"
-                      min={1}
-                      max={120}
+                      min={MIN_FPS}
+                      max={MAX_FPS}
                       step={1}
                       value={fps}
-                      onChange={(event) => onFpsChange(Number(event.target.value))}
+                      onChange={(event) => onFpsChange(clampFps(Number(event.target.value)))}
                       disabled={volumeTimepointCount <= 1}
                     />
                     <input
                       type="number"
-                      min={1}
-                      max={120}
+                      min={MIN_FPS}
+                      max={MAX_FPS}
                       value={fps}
-                      onChange={(event) => onFpsChange(Number(event.target.value))}
+                      onChange={(event) => onFpsChange(clampFps(Number(event.target.value)))}
                       disabled={volumeTimepointCount <= 1}
                     />
                   </div>
@@ -317,14 +322,14 @@ export default function PlaybackControlsPanel({
                   <input
                     id="fps-slider"
                     type="range"
-                    min={1}
-                    max={60}
+                    min={MIN_FPS}
+                    max={MAX_FPS}
                     step={1}
                     value={fps}
-                    onChange={(event) => onFpsChange(Number(event.target.value))}
-                  disabled={volumeTimepointCount <= 1}
-                />
-              </div>
+                    onChange={(event) => onFpsChange(clampFps(Number(event.target.value)))}
+                    disabled={volumeTimepointCount <= 1}
+                  />
+                </div>
               )}
 
               <div className="control-group viewer-settings-recording-row">

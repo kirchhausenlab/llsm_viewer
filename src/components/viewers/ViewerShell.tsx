@@ -65,7 +65,7 @@ function ViewerShell({
   );
   const { isHelpMenuOpen, closeHelpMenu } = topMenu;
 
-  const [renderingQuality, setRenderingQuality] = useState(1);
+  const [renderingQuality, setRenderingQuality] = useState(1.1);
 
   const handleRenderingQualityChange = (value: number) => {
     setRenderingQuality(value);
