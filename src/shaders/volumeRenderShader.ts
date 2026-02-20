@@ -1410,6 +1410,7 @@ const volumeRenderFragmentShader = /* glsl */ `
       vec3 startPoint = start_loc * safeVolumeSize + rayDir * 1e-4;
       vec3 voxel = floor(startPoint + vec3(0.5));
       voxel = clamp(voxel, vec3(0.0), safeVolumeSize - vec3(1.0));
+      float tCurrent = 0.0;
 
       vec3 stepDir = vec3(0.0);
       vec3 tMax = vec3(LARGE);
@@ -1458,35 +1459,60 @@ const volumeRenderFragmentShader = /* glsl */ `
           break;
         }
 
+        float tNext = min(tMax.x, min(tMax.y, tMax.z));
+        if (tNext >= LARGE) {
+          break;
+        }
+
+        float tSample = tCurrent;
         if (slicePlaneEnabled) {
-          float signedDistance = dot(voxel - u_slicePlanePoint, planeNormal);
-          if (signedDistance < 0.0) {
-            float tNextSkip = min(tMax.x, min(tMax.y, tMax.z));
-            if (tNextSkip >= LARGE) {
-              break;
+          vec3 segmentStart = startPoint + rayDir * tCurrent;
+          vec3 segmentEnd = startPoint + rayDir * tNext;
+          float signedStart = dot(segmentStart - u_slicePlanePoint, planeNormal);
+          float signedEnd = dot(segmentEnd - u_slicePlanePoint, planeNormal);
+          float planeEpsilon = 1e-5;
+          bool startIncluded = signedStart >= -planeEpsilon;
+          bool endIncluded = signedEnd >= -planeEpsilon;
+
+          if (!startIncluded && !endIncluded) {
+            tSample = -1.0;
+          } else if (!startIncluded && endIncluded) {
+            float denom = signedEnd - signedStart;
+            if (abs(denom) <= EPSILON) {
+              tSample = -1.0;
+            } else {
+              float crossing = clamp((-signedStart) / denom, 0.0, 1.0);
+              float segmentLength = max(tNext - tCurrent, 0.0);
+              // Bias slightly into the retained half-space to stabilize boundary selection.
+              tSample = tCurrent + crossing * segmentLength + 1e-4;
             }
-            if (tMax.x <= tNextSkip + 1e-6) {
-              voxel.x += stepDir.x;
-              tMax.x += tDelta.x;
-            }
-            if (tMax.y <= tNextSkip + 1e-6) {
-              voxel.y += stepDir.y;
-              tMax.y += tDelta.y;
-            }
-            if (tMax.z <= tNextSkip + 1e-6) {
-              voxel.z += stepDir.z;
-              tMax.z += tDelta.z;
-            }
-            continue;
           }
         }
 
-        vec4 colorSample = sample_color_voxel(voxel);
-        float rawVal = luminance(colorSample);
-        float normalizedVal = normalize_intensity(rawVal);
-        hitColor = compose_color(normalizedVal, colorSample);
-        hasHit = true;
-        break;
+        if (tSample >= 0.0) {
+          vec3 sampleVoxelPoint = startPoint + rayDir * tSample;
+          vec4 colorSample = sample_color_voxel(sampleVoxelPoint);
+          float rawVal = luminance(colorSample);
+          float normalizedVal = normalize_intensity(rawVal);
+          hitColor = compose_color(normalizedVal, colorSample);
+          hasHit = true;
+          break;
+        }
+
+        tCurrent = tNext;
+        float tieEps = max(1e-8, 1e-7 * max(1.0, abs(tNext)));
+        if (abs(tMax.x - tNext) <= tieEps) {
+          voxel.x += stepDir.x;
+          tMax.x += tDelta.x;
+        }
+        if (abs(tMax.y - tNext) <= tieEps) {
+          voxel.y += stepDir.y;
+          tMax.y += tDelta.y;
+        }
+        if (abs(tMax.z - tNext) <= tieEps) {
+          voxel.z += stepDir.z;
+          tMax.z += tDelta.z;
+        }
       }
 
       if (hasHit) {
