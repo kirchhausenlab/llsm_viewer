@@ -19,12 +19,23 @@ export function resolveVolumeHoverLayerSelection(
     if (layer.isHoverTarget === false) {
       continue;
     }
+    const candidate = resources.get(layer.key) ?? null;
     const volume = layer.volume;
-    if (!volume || !layer.visible) {
+    const pageTable =
+      layer.brickAtlas?.pageTable ?? layer.brickPageTable ?? candidate?.brickAtlasSourcePageTable ?? null;
+    const hasVolumeSource = Boolean(volume);
+    const hasAtlasSource = Boolean((layer.brickAtlas?.enabled ?? false) && pageTable);
+    if (!layer.visible || (!hasVolumeSource && !hasAtlasSource)) {
       continue;
     }
 
-    const hasVolumeDepth = volume.depth > 1;
+    const resolvedDepth =
+      volume?.depth ??
+      pageTable?.volumeShape[0] ??
+      candidate?.dimensions.depth ??
+      layer.fullResolutionDepth ??
+      0;
+    const hasVolumeDepth = resolvedDepth > 1;
     const viewerMode =
       layer.mode === 'slice' || layer.mode === '3d'
         ? layer.mode
@@ -39,7 +50,6 @@ export function resolveVolumeHoverLayerSelection(
 
     hoverableLayers.push(layer);
 
-    const candidate = resources.get(layer.key) ?? null;
     const isSliceResource = candidate?.mode === 'slice' && hasVolumeDepth;
     const has3dResource = candidate?.mode === '3d';
 

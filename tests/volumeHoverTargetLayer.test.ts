@@ -52,6 +52,37 @@ const createResource = (mode: '3d' | 'slice'): VolumeResources => ({
   samplingMode: 'linear',
 });
 
+const createPageTable = (layerKey: string) => ({
+  layerKey,
+  timepoint: 0,
+  scaleLevel: 0,
+  gridShape: [1, 1, 1] as [number, number, number],
+  chunkShape: [2, 2, 2] as [number, number, number],
+  volumeShape: [2, 2, 2] as [number, number, number],
+  brickAtlasIndices: new Int32Array([0]),
+  chunkMin: new Uint8Array([0]),
+  chunkMax: new Uint8Array([255]),
+  chunkOccupancy: new Float32Array([1]),
+  occupiedBrickCount: 1,
+});
+
+const createBrickAtlas = (layerKey: string) => {
+  const pageTable = createPageTable(layerKey);
+  return {
+    layerKey,
+    timepoint: 0,
+    scaleLevel: 0,
+    pageTable,
+    width: 2,
+    height: 2,
+    depth: 2,
+    textureFormat: 'red' as const,
+    sourceChannels: 1,
+    data: new Uint8Array(8),
+    enabled: true,
+  };
+};
+
 (() => {
   const sliceLayer = createLayer('slice');
   const gpuLayer = createLayer('gpu');
@@ -85,6 +116,56 @@ const createResource = (mode: '3d' | 'slice'): VolumeResources => ({
   const selection = resolveVolumeHoverLayerSelection([cpuLayer], new Map());
   assert.strictEqual(selection.targetLayer?.key, 'cpu-only');
   assert.strictEqual(selection.resource, null);
+})();
+
+(() => {
+  const atlasLayer = createLayer('atlas-only', {
+    volume: null,
+    brickAtlas: createBrickAtlas('atlas-only') as ViewerLayer['brickAtlas'],
+    brickPageTable: createPageTable('atlas-only') as ViewerLayer['brickPageTable'],
+  });
+  const selection = resolveVolumeHoverLayerSelection([atlasLayer], new Map());
+  assert.strictEqual(selection.targetLayer?.key, 'atlas-only');
+  assert.strictEqual(selection.resource, null);
+  assert.deepStrictEqual(selection.hoverableLayers.map((layer) => layer.key), ['atlas-only']);
+})();
+
+(() => {
+  const atlasLayer = createLayer('atlas-disabled', {
+    volume: null,
+    brickAtlas: {
+      ...(createBrickAtlas('atlas-disabled') as ViewerLayer['brickAtlas']),
+      enabled: false,
+    } as ViewerLayer['brickAtlas'],
+    brickPageTable: createPageTable('atlas-disabled') as ViewerLayer['brickPageTable'],
+  });
+  const selection = resolveVolumeHoverLayerSelection([atlasLayer], new Map());
+  assert.strictEqual(selection.targetLayer, null);
+  assert.strictEqual(selection.resource, null);
+  assert.deepStrictEqual(selection.hoverableLayers, []);
+})();
+
+(() => {
+  const pageTable = createPageTable('atlas-resource-page-table');
+  const atlasLayer = createLayer('atlas-resource-page-table', {
+    volume: null,
+    brickAtlas: {
+      ...(createBrickAtlas('atlas-resource-page-table') as ViewerLayer['brickAtlas']),
+      pageTable: undefined,
+    } as unknown as ViewerLayer['brickAtlas'],
+    brickPageTable: null,
+  });
+  const resource = {
+    ...createResource('3d'),
+    brickAtlasSourcePageTable: pageTable,
+  } as VolumeResources;
+  const selection = resolveVolumeHoverLayerSelection(
+    [atlasLayer],
+    new Map([['atlas-resource-page-table', resource]]),
+  );
+  assert.strictEqual(selection.targetLayer?.key, 'atlas-resource-page-table');
+  assert.strictEqual(selection.resource?.mode, '3d');
+  assert.deepStrictEqual(selection.hoverableLayers.map((layer) => layer.key), ['atlas-resource-page-table']);
 })();
 
 (() => {

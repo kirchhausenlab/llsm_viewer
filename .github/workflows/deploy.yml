@@ -54,6 +54,22 @@ jobs:
               - 'tests/preprocessedDataset.test.ts'
               - 'docs/playback-invariants.md'
               - 'package.json'
+            hover:
+              - 'src/components/viewers/volume-viewer/useVolumeHover.ts'
+              - 'src/components/viewers/volume-viewer/volumeHoverSampling.ts'
+              - 'src/components/viewers/volume-viewer/volumeHoverTargetLayer.ts'
+              - 'src/components/viewers/volume-viewer/useVolumeViewerInteractions.ts'
+              - 'src/components/viewers/VolumeViewer.types.ts'
+              - 'src/components/viewers/planar-viewer/types.ts'
+              - 'src/ui/app/hooks/useLayerControls.ts'
+              - 'src/components/viewers/viewer-shell/hooks/useViewerPaintbrushIntegration.ts'
+              - 'tests/volumeHoverSampling.test.ts'
+              - 'tests/volumeHoverTargetLayer.test.ts'
+              - 'tests/volumeHoverDimensions.test.ts'
+              - 'tests/useVolumeViewerInteractions.test.ts'
+              - 'tests/e2e/hover-smoke.spec.ts'
+              - 'docs/hover-invariants.md'
+              - 'package.json'
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -75,6 +91,9 @@ jobs:
             tests/app/hooks/useViewerModePlayback.test.ts \
             tests/usePlaybackControls.test.ts \
             tests/preprocessedDataset.test.ts
+      - name: Run hover regression guard tests
+        if: github.event_name == 'pull_request' && steps.preprocess_paths.outputs.hover == 'true'
+        run: npm run test:hover-guards
       - name: Type check
         run: npm run typecheck
       - name: Test

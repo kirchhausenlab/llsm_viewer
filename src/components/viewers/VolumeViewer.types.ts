@@ -9,6 +9,7 @@ import type { FollowedVoxelTarget } from '../../types/follow';
 import type { HoveredVoxelInfo } from '../../types/hover';
 import type { PaintbrushStrokeHandlers } from '../../types/paintbrush';
 import type { TrackColorMode, TrackDefinition } from '../../types/tracks';
+import type { VolumeDataType } from '../../types/volume';
 import type { RenderStyle, SamplingMode } from '../../state/layerSettings';
 
 export type InstancedLineGeometry = LineGeometry & { instanceCount: number };
@@ -21,6 +22,10 @@ export type ViewerLayer = {
   fullResolutionHeight: number;
   fullResolutionDepth: number;
   volume: NormalizedVolume | null;
+  channels?: number;
+  dataType?: VolumeDataType;
+  min?: number;
+  max?: number;
   visible: boolean;
   isHoverTarget?: boolean;
   sliderRange: number;

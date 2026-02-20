@@ -14,6 +14,8 @@ Try it [here](https://kirchhausenlab.github.io/llsm_viewer/)! Recommended on Chr
   - `docs/preprocessing-performance-playbook.md`
 - Playback/runtime invariants (must-hold behavior + regression checks):
   - `docs/playback-invariants.md`
+- Hover/runtime invariants (must-hold behavior + regression checks):
+  - `docs/hover-invariants.md`
 - Archived prior refactor program:
   - `docs/refactor/ARCHIVE_SUMMARY.md`
 

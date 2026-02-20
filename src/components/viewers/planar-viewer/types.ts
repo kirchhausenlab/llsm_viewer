@@ -2,6 +2,7 @@ import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import type { VolumeBrickAtlas, VolumeBrickPageTable } from '../../../core/volumeProvider';
 import type { PaintbrushStrokeHandlers } from '../../../types/paintbrush';
 import type { TrackColorMode, TrackDefinition } from '../../../types/tracks';
+import type { VolumeDataType } from '../../../types/volume';
 import type { RenderStyle } from '../../../state/layerSettings';
 
 export type ViewerLayer = {
@@ -13,6 +14,10 @@ export type ViewerLayer = {
   fullResolutionHeight?: number;
   fullResolutionDepth?: number;
   volume: NormalizedVolume | null;
+  channels?: number;
+  dataType?: VolumeDataType;
+  min?: number;
+  max?: number;
   visible: boolean;
   isHoverTarget?: boolean;
   minAlpha?: number;
