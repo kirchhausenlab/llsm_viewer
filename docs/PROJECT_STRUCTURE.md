@@ -25,7 +25,6 @@ The main responsibilities are:
 
 - Load multi-channel volumetric data and tracks.
 - Preprocess and normalize data for fast GPU-based visualization.
-- Render 2D slices and 3D volumes (including VR).
 - Support loading/saving “preprocessed datasets” as folder-based Zarr v3 stores.
 
 ---
@@ -41,11 +40,8 @@ The main responsibilities are:
 - Preprocessing writes per-timepoint 256-bin histograms, max-pooled mip levels (currently capped), and per-scale chunk-stat arrays (`min`/`max`/`occupancy`) for downstream scheduling/skip strategies.
 - Core processing (`src/core/volumeProcessing.ts`) handles normalization + segmentation colorization; GPU texture packing is cached via `src/core/textureCache.ts`.
 
-**2. Visualization (2D + 3D)**
 
-- 2D planar views: `src/components/viewers/PlanarViewer.tsx` + `src/components/viewers/planar-viewer/*` render slices and handle interactions.
 - 3D volume views: `src/components/viewers/VolumeViewer.tsx` + `src/components/viewers/volume-viewer/*` (plus shaders in `src/shaders/*`) handle raymarching, track overlays, and hover sampling.
-- Viewer shell (`src/components/viewers/ViewerShell.tsx` + `src/components/viewers/viewer-shell/*`) orchestrates layout, panels, and mode switching (2D/3D).
 
 **3. State & control**
 
@@ -137,28 +133,15 @@ The main responsibilities are:
 **Viewer shell / panels / windows (`src/components/viewers/*`)**
 
 - `ViewerShell.tsx`
-  Main viewer layout; switches between 2D/3D viewer modes and hosts panels/windows.
 - `viewer-shell/*`
   Panels (channels, playback, tracks, plot settings) + shell-level hooks.
   Shell orchestration hooks:
   - `hooks/useViewerRecording.ts` isolates capture-target registration and media-recording lifecycle (bitrate controls, frame-pump, mode-switch/unmount teardown).
   - `hooks/useViewerPanelWindows.ts` isolates viewer panel window visibility/reset policies (viewer settings, plot settings, track settings, paintbrush).
   - `hooks/useViewerPaintbrushIntegration.ts` isolates paintbrush overlay composition, viewer prop wiring, and painting export handling.
-- `PlanarViewer.tsx` + `planar-viewer/*`
   Canvas-based slice viewing + layout/interaction hooks/utilities.
-  Planar rendering boundaries:
   - `planarTrackCentroid.ts` isolates followed-track centroid math used by planar interaction recentering.
   - `planarSliceCanvas.ts` isolates offscreen slice-canvas staging and planar track/slice draw-path styling logic.
-  Planar lifecycle boundaries:
-  - `usePlanarPrimaryVolume.ts` isolates primary-volume selection and auto-fit trigger rules tied to source volume shape changes.
-  - `usePlanarViewerCanvasLifecycle.ts` isolates animation, resize, offscreen canvas staging, auto-fit reset, and draw-revision lifecycle wiring.
-  - `usePlanarViewerBindings.ts` isolates planar capture-target registration and hover-reset binding behavior.
-  Planar interaction boundaries:
-  - `hooks/usePlanarInteractions/usePlanarTrackHoverState.ts` isolates hovered-track and tooltip state transitions.
-  - `hooks/usePlanarInteractions/usePlanarTrackHitTest.ts` isolates XY track hit-testing and visibility/threshold logic.
-  - `hooks/usePlanarInteractions/usePlanarPixelHover.ts` isolates pixel hover sampling and hover-voxel emission.
-  - `hooks/usePlanarInteractions/usePlanarCanvasInputHandlers.ts` isolates pointer/wheel input handlers (paint/pan/selection/hover).
-  - `hooks/usePlanarInteractions/usePlanarKeyboardShortcuts.ts` isolates planar keyboard bindings.
 - `VolumeViewer.tsx` + `volume-viewer/*`
   Three.js volume renderer (raymarching, hover sampling, VR bridge, track overlays) and helper modules.
   Volume viewer orchestration boundaries:
@@ -266,7 +249,6 @@ The main responsibilities are:
   - source/layer metadata validation
   - manifest + multiscale Zarr descriptor shaping
   - array/trackset materialization
-  - mode-specific volume writing (2d stack slicing vs 3d per-file loads)
   - spatial chunk extraction/writing and mip generation
 - `src/shared/storage/*`
   Storage backends used by preprocessing + viewing: OPFS + in-memory + directory-backed storage.

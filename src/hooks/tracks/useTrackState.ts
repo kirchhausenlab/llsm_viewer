@@ -1,6 +1,5 @@
 import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import type { ChannelSource } from '../dataset';
-import type { ExperimentDimension } from '../useVoxelResolution';
 import useParsedTracks from './useParsedTracks';
 import useTrackStyling, {
   DEFAULT_TRACK_LINE_WIDTH,
@@ -16,14 +15,12 @@ import useTrackSelection, {
 export type UseTrackStateOptions = {
   channels: ChannelSource[];
   setChannels: Dispatch<SetStateAction<ChannelSource[]>>;
-  experimentDimension: ExperimentDimension;
   volumeTimepointCount: number;
 };
 
 export const useTrackState = ({
   channels,
   setChannels,
-  experimentDimension,
   volumeTimepointCount
 }: UseTrackStateOptions) => {
   const {
@@ -33,7 +30,7 @@ export const useTrackState = ({
     handleChannelTrackDrop,
     handleTrackSetNameChange,
     handleTrackSetRemove
-  } = useParsedTracks({ channels, setChannels, experimentDimension });
+  } = useParsedTracks({ channels, setChannels });
 
   const styling = useTrackStyling({ trackSets, parsedTracksByTrackSet: rawTracksByTrackSet });
 

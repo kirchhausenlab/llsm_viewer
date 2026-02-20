@@ -46,7 +46,7 @@ export type FrontPageContainerProps = {
   onChannelTrackSetNameChange: (channelId: string, trackSetId: string, name: string) => void;
   onChannelTrackSetRemove: (channelId: string, trackSetId: string) => void;
   setIsExperimentSetupStarted: Dispatch<SetStateAction<boolean>>;
-  setViewerMode: Dispatch<SetStateAction<'3d' | '2d'>>;
+  setViewerMode: Dispatch<SetStateAction<'3d'>>;
   updateChannelIdCounter: (sources: ChannelSource[]) => void;
   showInteractionWarning: (message: string) => void;
   isLaunchingViewer: boolean;
@@ -123,12 +123,9 @@ export default function FrontPageContainer({
   const {
     voxelResolutionInput,
     voxelResolution: voxelResolutionValue,
-    experimentDimension,
     handleVoxelResolutionAxisChange,
     handleVoxelResolutionUnitChange,
-    handleVoxelResolutionAnisotropyToggle,
-    handleExperimentDimensionChange,
-    setExperimentDimension
+    handleVoxelResolutionAnisotropyToggle
   } = voxelResolution;
 
   const preprocessedState = usePreprocessedExperiment({
@@ -141,7 +138,6 @@ export default function FrontPageContainer({
     setSelectedTrackOrder,
     setFollowedTrack,
     setIsExperimentSetupStarted,
-    setExperimentDimension,
     setViewerMode,
     clearDatasetError,
     updateChannelIdCounter,
@@ -323,7 +319,7 @@ export default function FrontPageContainer({
         layers: layersToProcess,
         channels: channelsMetadata,
         voxelResolution: voxelResolutionValue,
-        movieMode: experimentDimension,
+        movieMode: '3d',
         storage: selectedStorageHandle.storage,
         storageStrategy: PREPROCESS_STORAGE_STRATEGY
       });
@@ -351,7 +347,6 @@ export default function FrontPageContainer({
     channels,
     clearDatasetError,
     ensureZarrDirectoryName,
-    experimentDimension,
     exportName,
     exportWhilePreprocessing,
     isLaunchingViewer,
@@ -385,8 +380,6 @@ export default function FrontPageContainer({
   };
 
   const experimentConfigurationProps = {
-    experimentDimension,
-    onExperimentDimensionChange: handleExperimentDimensionChange,
     voxelResolution: voxelResolutionInput,
     onVoxelResolutionAxisChange: handleVoxelResolutionAxisChange,
     onVoxelResolutionUnitChange: handleVoxelResolutionUnitChange,
@@ -423,7 +416,6 @@ export default function FrontPageContainer({
     onChannelTrackDrop,
     onChannelTrackSetNameChange,
     onChannelTrackSetRemove,
-    experimentDimension,
     isFrontPageLocked
   };
 

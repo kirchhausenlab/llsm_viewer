@@ -41,7 +41,6 @@ export type BuildTracksFromCsvEntriesOptions = {
   channelId: string;
   channelName: string;
   entries: string[][];
-  experimentDimension: '2d' | '3d';
 };
 
 export function buildTracksFromCsvEntries({
@@ -49,11 +48,9 @@ export function buildTracksFromCsvEntries({
   trackSetName,
   channelId,
   channelName,
-  entries,
-  experimentDimension,
+  entries
 }: BuildTracksFromCsvEntriesOptions): TrackDefinition[] {
-  const is2dExperiment = experimentDimension === '2d';
-  const minimumColumns = is2dExperiment ? 6 : 7;
+  const minimumColumns = 7;
 
   const trackStates = new Map<number, TrackAccumulator>();
   let nextInternalTrackId = 1;
@@ -78,7 +75,7 @@ export function buildTracksFromCsvEntries({
     const rawFrame = row[2] ?? '';
     const rawX = row[3] ?? '';
     const rawY = row[4] ?? '';
-    const rawZ = is2dExperiment ? (row.length >= 7 ? (row[5] ?? '') : '') : (row[5] ?? '');
+    const rawZ = row[5] ?? '';
     const isBreakRow =
       isBreakSentinel(rawFrame) && isBreakSentinel(rawX) && isBreakSentinel(rawY) && isBreakSentinel(rawZ);
     if (isBreakRow) {
@@ -89,19 +86,19 @@ export function buildTracksFromCsvEntries({
     const frame = Number(rawFrame);
     const x = Number(rawX);
     const y = Number(rawY);
-    const amplitudeIndex = is2dExperiment && row.length < 7 ? 5 : 6;
-    const zRaw = is2dExperiment ? (row.length >= 7 ? Number(row[5]) : 0) : Number(row[5]);
+    const amplitudeIndex = 6;
+    const zRaw = Number(row[5]);
     const amplitudeRaw = Number(row[amplitudeIndex]);
 
     const hasValidZ = Number.isFinite(zRaw);
-    const z = is2dExperiment ? (hasValidZ ? zRaw : 0) : zRaw;
+    const z = zRaw;
 
     if (
       !Number.isFinite(frame) ||
       !Number.isFinite(x) ||
       !Number.isFinite(y) ||
       !Number.isFinite(amplitudeRaw) ||
-      (!is2dExperiment && !hasValidZ)
+      !hasValidZ
     ) {
       continue;
     }

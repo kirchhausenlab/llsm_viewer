@@ -1,4 +1,3 @@
-.planar-viewer,
 .volume-viewer {
   position: relative;
   display: flex;
@@ -13,7 +12,6 @@
   box-sizing: border-box;
 }
 
-.planar-viewer header,
 .volume-viewer header {
   display: flex;
   align-items: center;
@@ -21,19 +19,16 @@
   gap: 1rem;
 }
 
-.planar-viewer header h2,
 .volume-viewer header h2 {
   margin: 0;
   font-size: 1.25rem;
 }
 
-.planar-viewer header p,
 .volume-viewer header p {
   margin: 0.35rem 0 0;
   color: rgba(255, 255, 255, 0.65);
 }
 
-.planar-viewer .viewer-layer-summary,
 .viewer-layer-summary {
   display: flex;
   flex-wrap: wrap;

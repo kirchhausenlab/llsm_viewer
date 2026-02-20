@@ -14,15 +14,11 @@ console.log('Starting useViewerModePlayback tests');
   };
 
   const modeChanges: string[] = [];
-  const toggles: string[] = [];
 
   const hook = renderHook(() =>
     useViewerModePlayback({
-      experimentDimension: '2d',
       is3dViewerAvailable: true,
-      maxSliceDepth: 1,
       onBeforeEnterVr: () => {},
-      onViewerModeToggle: (nextMode) => toggles.push(nextMode),
       onViewerModeChange: (mode) => modeChanges.push(mode),
       volumeTimepointCount: 2,
       isLoading: false
@@ -34,12 +30,8 @@ console.log('Starting useViewerModePlayback tests');
   act(() => hook.result.handleTogglePlayback());
   assert.equal(hook.result.playback.isPlaying, true);
 
-  act(() => hook.result.viewerControls.toggleViewerMode());
   assert.equal(hook.result.viewerControls.viewerMode, '3d');
-
-  assert.equal(modeChanges[0], '2d');
-  assert.equal(modeChanges[modeChanges.length - 1], '3d');
-  assert.equal(toggles[toggles.length - 1], '3d');
+  assert.equal(modeChanges[0], '3d');
 
   act(() => hook.result.handleTimeIndexChange(5));
   assert.equal(hook.result.playback.selectedIndex, 1);

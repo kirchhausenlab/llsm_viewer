@@ -20,7 +20,7 @@ export type ChannelExportMetadata = {
   trackSets: TrackSetExportMetadata[];
 };
 
-export type PreprocessedMovieMode = '2d' | '3d';
+export type PreprocessedMovieMode = '3d';
 
 export type NormalizationMetadata = {
   min: number;

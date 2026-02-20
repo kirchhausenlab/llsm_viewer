@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
 import type { StagedPreprocessedExperiment } from '../../hooks/dataset';
-import type { ExperimentDimension } from '../../hooks/useVoxelResolution';
 import type { VoxelResolutionInput, VoxelResolutionUnit } from '../../types/voxelResolution';
 import FrontPageHeader from './FrontPageHeader';
 import ExperimentConfiguration, { type VoxelResolutionAxis } from './ExperimentConfiguration';
@@ -20,8 +19,6 @@ export type InitialActionsProps = {
 };
 
 export type ExperimentConfigurationState = {
-  experimentDimension: ExperimentDimension;
-  onExperimentDimensionChange: (dimension: ExperimentDimension) => void;
   voxelResolution: VoxelResolutionInput;
   onVoxelResolutionAxisChange: (axis: VoxelResolutionAxis, value: string) => void;
   onVoxelResolutionUnitChange: (unit: VoxelResolutionUnit) => void;
@@ -121,8 +118,6 @@ export default function FrontPage({
           ) : null}
           {frontPageMode === 'configuring' ? (
             <ExperimentConfiguration
-              experimentDimension={experimentConfiguration.experimentDimension}
-              onExperimentDimensionChange={experimentConfiguration.onExperimentDimensionChange}
               voxelResolution={experimentConfiguration.voxelResolution}
               onVoxelResolutionAxisChange={experimentConfiguration.onVoxelResolutionAxisChange}
               onVoxelResolutionUnitChange={experimentConfiguration.onVoxelResolutionUnitChange}
@@ -153,7 +148,6 @@ export default function FrontPage({
               onChannelTrackDrop={channelListPanel.onChannelTrackDrop}
               onChannelTrackSetNameChange={channelListPanel.onChannelTrackSetNameChange}
               onChannelTrackSetRemove={channelListPanel.onChannelTrackSetRemove}
-              experimentDimension={channelListPanel.experimentDimension}
               isFrontPageLocked={channelListPanel.isFrontPageLocked}
             />
           ) : null}

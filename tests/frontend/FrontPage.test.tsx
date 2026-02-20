@@ -21,8 +21,6 @@ function buildBaseProps() {
       isPreprocessedImporting: false
     },
     experimentConfiguration: {
-      experimentDimension: '3d' as const,
-      onExperimentDimensionChange: noop,
       voxelResolution: { x: '', y: '', z: '', unit: 'μm', correctAnisotropy: false },
       onVoxelResolutionAxisChange: noop,
       onVoxelResolutionUnitChange: noop,
@@ -57,7 +55,6 @@ function buildBaseProps() {
       onChannelTrackDrop: noop,
       onChannelTrackSetNameChange: noop,
       onChannelTrackSetRemove: noop,
-      experimentDimension: '3d' as const,
       isFrontPageLocked: false
     },
     preprocessedSummary: {

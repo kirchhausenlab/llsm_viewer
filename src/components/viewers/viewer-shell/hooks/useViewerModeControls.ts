@@ -1,12 +1,10 @@
-import type { ViewerMode, ModeControlsProps } from '../types';
+import type { ModeControlsProps } from '../types';
 
 export type ModeToggleState = {
-  viewerMode: ViewerMode;
   is3dModeAvailable: boolean;
   isVrActive: boolean;
   isVrRequesting: boolean;
   resetViewHandler: (() => void) | null;
-  onToggleViewerMode: () => void;
   onVrButtonClick: () => void;
   vrButtonDisabled: boolean;
   vrButtonTitle?: string;
@@ -22,18 +20,15 @@ export type ViewerSettingsControls = {
   renderingQuality: number;
   onRenderingQualityChange: (value: number) => void;
   hasVolumeData: boolean;
-  viewerMode: ViewerMode;
 };
 
 export function useViewerModeControls({
-  viewerMode,
   modeControls,
   showRenderingQualityControl,
   renderingQuality,
   onRenderingQualityChange,
   hasVolumeData
 }: {
-  viewerMode: ViewerMode;
   modeControls: ModeControlsProps;
   showRenderingQualityControl: boolean;
   renderingQuality: number;
@@ -41,12 +36,10 @@ export function useViewerModeControls({
   hasVolumeData: boolean;
 }): { modeToggle: ModeToggleState; viewerSettings: ViewerSettingsControls } {
   const modeToggle: ModeToggleState = {
-    viewerMode,
     is3dModeAvailable: modeControls.is3dModeAvailable,
     isVrActive: modeControls.isVrActive,
     isVrRequesting: modeControls.isVrRequesting,
     resetViewHandler: modeControls.resetViewHandler,
-    onToggleViewerMode: modeControls.onToggleViewerMode,
     onVrButtonClick: modeControls.onVrButtonClick,
     vrButtonDisabled: modeControls.vrButtonDisabled,
     vrButtonLabel: modeControls.vrButtonLabel,
@@ -61,8 +54,7 @@ export function useViewerModeControls({
     showRenderingQualityControl,
     renderingQuality,
     onRenderingQualityChange,
-    hasVolumeData,
-    viewerMode
+    hasVolumeData
   };
 
   return { modeToggle, viewerSettings };

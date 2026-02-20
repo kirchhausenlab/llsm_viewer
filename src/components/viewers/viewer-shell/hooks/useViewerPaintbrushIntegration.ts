@@ -10,25 +10,20 @@ type CaptureTargetRegistration = (
 
 type UseViewerPaintbrushIntegrationOptions = {
   volumeViewerProps: ViewerShellProps['volumeViewerProps'];
-  planarViewerProps: ViewerShellProps['planarViewerProps'];
   resetToken: number;
   onVolumeCaptureTarget: CaptureTargetRegistration;
-  onPlanarCaptureTarget: CaptureTargetRegistration;
 };
 
 type UseViewerPaintbrushIntegrationResult = {
   paintbrushController: PaintbrushController;
   volumeViewerProps: ViewerShellProps['volumeViewerProps'];
-  planarViewerProps: ViewerShellProps['planarViewerProps'];
   handleSavePainting: () => void;
 };
 
 export function useViewerPaintbrushIntegration({
   volumeViewerProps,
-  planarViewerProps,
   resetToken,
-  onVolumeCaptureTarget,
-  onPlanarCaptureTarget
+  onVolumeCaptureTarget
 }: UseViewerPaintbrushIntegrationOptions): UseViewerPaintbrushIntegrationResult {
   const primaryVolume = useMemo(() => {
     for (const layer of volumeViewerProps.layers) {
@@ -96,65 +91,12 @@ export function useViewerPaintbrushIntegration({
     } satisfies ViewerShellProps['volumeViewerProps']['layers'][number];
   }, [paintbrushController.overlayVisible, paintbrushController.paintVolume, paintbrushController.revision]);
 
-  const paintOverlayPlanarLayer = useMemo(() => {
-    const volume = paintbrushController.paintVolume;
-    if (!volume) {
-      return null;
-    }
-
-    return {
-      key: 'paintbrush-overlay',
-      label: 'Painting',
-      channelId: 'paintbrush',
-      channelName: 'Painting',
-      volume,
-      fullResolutionWidth: volume.width,
-      fullResolutionHeight: volume.height,
-      fullResolutionDepth: volume.depth,
-      visible: paintbrushController.overlayVisible,
-      isHoverTarget: false,
-      channels: volume.channels,
-      dataType: volume.dataType,
-      min: volume.min,
-      max: volume.max,
-      minAlpha: 0,
-      sliderRange: 1,
-      minSliderIndex: 0,
-      maxSliderIndex: 0,
-      brightnessSliderIndex: 0,
-      contrastSliderIndex: 0,
-      windowMin: 0,
-      windowMax: 1,
-      color: '#ffffff',
-      offsetX: 0,
-      offsetY: 0,
-      renderStyle: 0 as const,
-      blDensityScale: 1,
-      blBackgroundCutoff: 0.08,
-      blOpacityScale: 1,
-      blEarlyExitAlpha: 0.98,
-      invert: false,
-      samplingMode: 'nearest' as const,
-      isSegmentation: false,
-      scaleLevel: 0,
-      brickPageTable: null,
-      brickAtlas: null
-    } satisfies ViewerShellProps['planarViewerProps']['layers'][number];
-  }, [paintbrushController.overlayVisible, paintbrushController.paintVolume, paintbrushController.revision]);
-
   const volumeViewerLayers = useMemo(() => {
     if (!paintOverlayVolumeLayer) {
       return volumeViewerProps.layers;
     }
     return [...volumeViewerProps.layers, paintOverlayVolumeLayer];
   }, [paintOverlayVolumeLayer, volumeViewerProps.layers]);
-
-  const planarViewerLayers = useMemo(() => {
-    if (!paintOverlayPlanarLayer) {
-      return planarViewerProps.layers;
-    }
-    return [...planarViewerProps.layers, paintOverlayPlanarLayer];
-  }, [paintOverlayPlanarLayer, planarViewerProps.layers]);
 
   const volumeViewerWithPaintbrush = useMemo(
     () =>
@@ -165,17 +107,6 @@ export function useViewerPaintbrushIntegration({
         paintbrush: paintbrushStrokeHandlers
       }) satisfies ViewerShellProps['volumeViewerProps'],
     [onVolumeCaptureTarget, paintbrushStrokeHandlers, volumeViewerLayers, volumeViewerProps]
-  );
-
-  const planarViewerWithPaintbrush = useMemo(
-    () =>
-      ({
-        ...planarViewerProps,
-        layers: planarViewerLayers,
-        onRegisterCaptureTarget: onPlanarCaptureTarget,
-        paintbrush: paintbrushStrokeHandlers
-      }) satisfies ViewerShellProps['planarViewerProps'],
-    [onPlanarCaptureTarget, paintbrushStrokeHandlers, planarViewerLayers, planarViewerProps]
   );
 
   const handleSavePainting = useCallback(() => {
@@ -216,7 +147,6 @@ export function useViewerPaintbrushIntegration({
   return {
     paintbrushController,
     volumeViewerProps: volumeViewerWithPaintbrush,
-    planarViewerProps: planarViewerWithPaintbrush,
     handleSavePainting
   };
 }

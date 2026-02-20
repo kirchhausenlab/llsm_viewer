@@ -1,13 +1,12 @@
 import { useCallback, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import { VolumeTooLargeError, formatBytes } from '../../errors';
-import { expandVolumesForMovieMode, loadVolumesFromFiles } from '../../loaders/volumeLoader';
+import { loadVolumesFromFiles } from '../../loaders/volumeLoader';
 import { clearTextureCache } from '../../core/textureCache';
 import {
   colorizeSegmentationVolume,
   computeNormalizationParameters,
   normalizeVolume
 } from '../../core/volumeProcessing';
-import type { ExperimentDimension } from '../useVoxelResolution';
 import { computeAutoWindow } from '../../autoContrast';
 import { createSegmentationSeed, sortVolumeFiles } from '../../shared/utils/appHelpers';
 import { DEFAULT_LAYER_COLOR } from '../../shared/colorMaps/layerColors';
@@ -75,7 +74,6 @@ export type LoadSelectedDatasetOptions = ChannelDatasetRuntimeOptions &
     voxelResolution: VoxelResolutionValues | null;
     anisotropyScale: { x: number; y: number; z: number } | null;
     channels: LoadChannelSource[];
-    experimentDimension: ExperimentDimension;
     preprocessingSettingsRef: MutableRefObject<VoxelResolutionValues | null>;
     showLaunchError: (message: string) => void;
   };
@@ -219,7 +217,6 @@ export function useChannelDatasetLoader({ getLayerTimepointCount }: UseChannelDa
       voxelResolution,
       anisotropyScale: _anisotropyScale,
       channels: channelList,
-      experimentDimension,
       preprocessingSettingsRef,
       setStatus,
       setError,
@@ -283,12 +280,8 @@ export function useChannelDatasetLoader({ getLayerTimepointCount }: UseChannelDa
       const referenceTimepointsHint = referenceLayer
         ? getLayerTimepointCount({ id: referenceLayer.key, files: referenceLayer.files })
         : 0;
-      const referenceTimepoints =
-        experimentDimension === '2d' ? referenceTimepointsHint || referenceFiles.length : referenceFiles.length;
-      const totalExpectedVolumes =
-        experimentDimension === '2d'
-          ? referenceTimepoints * flatLayerSources.length
-          : referenceFiles.length * flatLayerSources.length;
+      const referenceTimepoints = referenceTimepointsHint || referenceFiles.length;
+      const totalExpectedVolumes = referenceTimepoints * flatLayerSources.length;
       if (totalExpectedVolumes === 0) {
         const message = 'The selected dataset does not contain any TIFF files.';
         showLaunchError(message);
@@ -301,7 +294,6 @@ export function useChannelDatasetLoader({ getLayerTimepointCount }: UseChannelDa
 
       try {
         let referenceShape: { width: number; height: number; depth: number } | null = null;
-        let referencePlanarShape: { width: number; height: number } | null = null;
 
         const rawLayers = await Promise.all(
           flatLayerSources.map(async (layer) => {
@@ -310,7 +302,7 @@ export function useChannelDatasetLoader({ getLayerTimepointCount }: UseChannelDa
                 if (loadRequestRef.current !== requestId) {
                   return;
                 }
-                const timepointIncrement = experimentDimension === '2d' ? volume.depth : 1;
+                const timepointIncrement = 1;
 
                 setLoadedCount((current) => {
                   if (loadRequestRef.current !== requestId) {
@@ -322,57 +314,36 @@ export function useChannelDatasetLoader({ getLayerTimepointCount }: UseChannelDa
                 });
               }
             });
-            const expandedVolumes = expandVolumesForMovieMode(volumes, experimentDimension);
 
-            if (experimentDimension === '2d') {
-              for (let timepoint = 0; timepoint < expandedVolumes.length; timepoint += 1) {
-                const candidate = expandedVolumes[timepoint];
-                if (!candidate) {
-                  continue;
-                }
-                if (!referencePlanarShape) {
-                  referencePlanarShape = { width: candidate.width, height: candidate.height };
-                } else if (
-                  candidate.width !== referencePlanarShape.width ||
-                  candidate.height !== referencePlanarShape.height ||
-                  candidate.depth !== 1
-                ) {
-                  throw new Error(
-                    `Channel "${layer.channelLabel}" timepoint ${timepoint + 1} has volume dimensions ${candidate.width}×${candidate.height}×${candidate.depth} that do not match the reference shape ${referencePlanarShape.width}×${referencePlanarShape.height}×1.`
-                  );
-                }
+            for (let timepoint = 0; timepoint < volumes.length; timepoint += 1) {
+              const candidate = volumes[timepoint];
+              if (!candidate) {
+                continue;
               }
-            } else {
-              for (let timepoint = 0; timepoint < volumes.length; timepoint += 1) {
-                const candidate = volumes[timepoint];
-                if (!candidate) {
-                  continue;
-                }
-                if (!referenceShape) {
-                  referenceShape = {
-                    width: candidate.width,
-                    height: candidate.height,
-                    depth: candidate.depth
-                  };
-                } else if (
-                  candidate.width !== referenceShape.width ||
-                  candidate.height !== referenceShape.height ||
-                  candidate.depth !== referenceShape.depth
-                ) {
-                  throw new Error(
-                    `Channel "${layer.channelLabel}" timepoint ${timepoint + 1} has volume dimensions ${candidate.width}×${candidate.height}×${candidate.depth} that do not match the reference shape ${referenceShape.width}×${referenceShape.height}×${referenceShape.depth}.`
-                  );
-                }
+              if (!referenceShape) {
+                referenceShape = {
+                  width: candidate.width,
+                  height: candidate.height,
+                  depth: candidate.depth
+                };
+              } else if (
+                candidate.width !== referenceShape.width ||
+                candidate.height !== referenceShape.height ||
+                candidate.depth !== referenceShape.depth
+              ) {
+                throw new Error(
+                  `Channel "${layer.channelLabel}" timepoint ${timepoint + 1} has volume dimensions ${candidate.width}×${candidate.height}×${candidate.depth} that do not match the reference shape ${referenceShape.width}×${referenceShape.height}×${referenceShape.depth}.`
+                );
               }
             }
 
-            if (referenceTimepoints > 0 && expandedVolumes.length !== referenceTimepoints) {
+            if (referenceTimepoints > 0 && volumes.length !== referenceTimepoints) {
               throw new Error(
-                `Channel "${layer.channelLabel}" has ${expandedVolumes.length} timepoints, but the first channel has ${referenceTimepoints}.`
+                `Channel "${layer.channelLabel}" has ${volumes.length} timepoints, but the first channel has ${referenceTimepoints}.`
               );
             }
 
-            return { layer, volumes: expandedVolumes };
+            return { layer, volumes };
           })
         );
 

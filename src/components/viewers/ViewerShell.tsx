@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 
-import PlanarViewer from './PlanarViewer';
 import VolumeViewer from './VolumeViewer';
 import ChannelsPanel from './viewer-shell/ChannelsPanel';
 import NavigationHelpWindow, { computeNavigationHelpInitialPosition } from './viewer-shell/NavigationHelpWindow';
@@ -21,7 +20,6 @@ const NAVIGATION_HELP_WINDOW_WIDTH = 420;
 function ViewerShell({
   viewerMode,
   volumeViewerProps,
-  planarViewerProps,
   topMenu,
   layout,
   modeControls,
@@ -74,8 +72,7 @@ function ViewerShell({
 
   const {
     playbackControlsWithRecording,
-    registerVolumeCaptureTarget,
-    registerPlanarCaptureTarget
+    registerVolumeCaptureTarget
   } = useViewerRecording({
     viewerMode,
     playbackControls
@@ -84,14 +81,11 @@ function ViewerShell({
   const {
     paintbrushController,
     volumeViewerProps: volumeViewerWithCaptureTarget,
-    planarViewerProps: planarViewerWithCaptureTarget,
     handleSavePainting
   } = useViewerPaintbrushIntegration({
     volumeViewerProps,
-    planarViewerProps,
     resetToken,
-    onVolumeCaptureTarget: registerVolumeCaptureTarget,
-    onPlanarCaptureTarget: registerPlanarCaptureTarget
+    onVolumeCaptureTarget: registerVolumeCaptureTarget
   });
 
   const {
@@ -113,11 +107,9 @@ function ViewerShell({
     canShowPlotSettings: selectedTracksPanel.shouldRender
   });
 
-  const showRenderingQualityControl =
-    modeControls.is3dModeAvailable && viewerMode === '3d' && modeControls.samplingMode === 'linear';
+  const showRenderingQualityControl = modeControls.is3dModeAvailable && modeControls.samplingMode === 'linear';
 
   const { modeToggle, viewerSettings } = useViewerModeControls({
-    viewerMode,
     modeControls,
     showRenderingQualityControl,
     renderingQuality,
@@ -125,10 +117,7 @@ function ViewerShell({
     hasVolumeData
   });
 
-  const playbackState = useViewerPlaybackControls({
-    viewerMode,
-    playbackControls: playbackControlsWithRecording
-  });
+  const playbackState = useViewerPlaybackControls({ playbackControls: playbackControlsWithRecording });
 
   const topMenuProps = useMemo(
     () => ({ ...topMenu, onOpenPaintbrush: openPaintbrush }),
@@ -138,11 +127,7 @@ function ViewerShell({
   return (
     <div className="app">
       <main className="viewer">
-        {viewerMode === '3d' ? (
-          <VolumeViewer {...volumeViewerWithCaptureTarget} />
-        ) : (
-          <PlanarViewer {...planarViewerWithCaptureTarget} />
-        )}
+        <VolumeViewer {...volumeViewerWithCaptureTarget} />
       </main>
 
       <TopMenu {...topMenuProps} />
@@ -192,7 +177,6 @@ function ViewerShell({
           controlWindowInitialPosition,
           viewerSettingsWindowInitialPosition
         }}
-        viewerMode={viewerMode}
         modeToggle={modeToggle}
         playbackControls={playbackState}
         viewerSettings={viewerSettings}

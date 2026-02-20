@@ -36,7 +36,6 @@ All planned backlog items were completed:
 - Viewer shell prop assembly and mapping are split by feature ownership.
 - `VolumeViewer` runtime lifecycle responsibilities are separated into dedicated modules.
 - VR internals now have clearer domain boundaries for HUD interactions and volume-handle ray behavior.
-- Planar interactions are split into dedicated interaction modules.
 - Dataset setup/load flow has clearer separation between source state and load/apply runtime behavior.
 - Large viewer CSS ownership is split into feature-oriented files.
 

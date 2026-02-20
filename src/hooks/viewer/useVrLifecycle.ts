@@ -6,7 +6,6 @@ type VrSessionHandlers = {
 };
 
 interface UseVrLifecycleOptions {
-  viewerMode: '3d' | '2d';
   onBeforeEnter?: () => void;
 }
 
@@ -43,7 +42,6 @@ const toPromise = (maybePromise: Promise<void> | void) => {
 };
 
 export const useVrLifecycle = ({
-  viewerMode,
   onBeforeEnter
 }: UseVrLifecycleOptions): UseVrLifecycleResult => {
   const [isVrSupported, setIsVrSupported] = useState(false);
@@ -69,9 +67,6 @@ export const useVrLifecycle = ({
   }, []);
 
   const enterVr = useCallback(async () => {
-    if (viewerMode !== '3d') {
-      return;
-    }
     if (!isVrSupportChecked || !isVrSupported) {
       return;
     }
@@ -88,7 +83,7 @@ export const useVrLifecycle = ({
     } finally {
       setIsVrRequesting(false);
     }
-  }, [isVrSupportChecked, isVrSupported, onBeforeEnter, viewerMode]);
+  }, [isVrSupportChecked, isVrSupported, onBeforeEnter]);
 
   const exitVr = useCallback(async () => {
     const controls = vrSessionControlsRef.current;
@@ -200,8 +195,8 @@ export const useVrLifecycle = ({
   }, [isVrActive, isVrRequesting]);
 
   const isVrAvailable = useMemo(() => {
-    return viewerMode === '3d' && isVrSupportChecked && isVrSupported;
-  }, [isVrSupportChecked, isVrSupported, viewerMode]);
+    return isVrSupportChecked && isVrSupported;
+  }, [isVrSupportChecked, isVrSupported]);
 
   return {
     isVrSupportChecked,

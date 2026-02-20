@@ -4,7 +4,7 @@ import { launchViewerFromFixture, STANDARD_VOXEL_RESOLUTION } from './helpers/wo
 
 const fixture = resolveDatasetFixture();
 
-test('@smoke playback controls and viewer mode toggles work after launch', async ({ page }) => {
+test('@smoke playback controls work after launch', async ({ page }) => {
   const { timepointCount } = await launchViewerFromFixture(page, fixture, {
     channelName: 'Ch1',
     voxelResolution: STANDARD_VOXEL_RESOLUTION
@@ -30,9 +30,5 @@ test('@smoke playback controls and viewer mode toggles work after launch', async
   await pausePlaybackButton.click();
   await expect(playbackWindow.getByRole('button', { name: 'Start playback' })).toBeVisible();
 
-  await playbackWindow.getByRole('button', { name: '3D view' }).click();
-  await expect(playbackWindow.getByRole('button', { name: '2D view' })).toBeVisible();
-  await expect(playbackWindow.locator('#z-plane-slider')).toBeVisible();
-  await playbackWindow.getByRole('button', { name: '2D view' }).click();
-  await expect(playbackWindow.getByRole('button', { name: '3D view' })).toBeVisible();
+  await expect(playbackWindow.getByRole('button', { name: 'Reset view' })).toBeVisible();
 });

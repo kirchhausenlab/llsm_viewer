@@ -3,13 +3,11 @@ import ChannelDropboxSection from './ChannelDropboxSection';
 import ChannelUploads from './ChannelUploads';
 import useChannelDropbox from '../../hooks/useChannelDropbox';
 import type { ChannelSource, ChannelValidation } from '../../hooks/dataset';
-import type { ExperimentDimension } from '../../hooks/useVoxelResolution';
 
 export type ChannelCardProps = {
   channel: ChannelSource;
   validation: ChannelValidation;
   isDisabled: boolean;
-  experimentDimension: ExperimentDimension;
   onLayerFilesAdded: (id: string, files: File[]) => void | Promise<void>;
   onLayerDrop: (id: string, dataTransfer: DataTransfer) => void;
   onLayerSegmentationToggle: (channelId: string, layerId: string, value: boolean) => void;
@@ -24,7 +22,6 @@ export default function ChannelCard({
   channel,
   validation: _validation,
   isDisabled,
-  experimentDimension,
   onLayerFilesAdded,
   onLayerDrop,
   onLayerSegmentationToggle,
@@ -38,13 +35,7 @@ export default function ChannelCard({
 
   const isDropboxImporting = dropboxState.importTarget !== null;
   const primaryLayer = channel.layers[0] ?? null;
-  const uploadTitle = useMemo(
-    () =>
-      experimentDimension === '2d'
-        ? 'Upload single 3D file or sequence of 2D files (.tif/.tiff)'
-        : 'Upload sequence of 3D files (.tif/.tiff)',
-    [experimentDimension]
-  );
+  const uploadTitle = useMemo(() => 'Upload sequence of 3D files (.tif/.tiff)', []);
 
   const volumeStatus = useMemo(() => {
     if (!primaryLayer) {

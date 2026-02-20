@@ -151,8 +151,7 @@ export function useAppRouteState(): AppRouteState {
   });
   const {
     voxelResolution,
-    experimentDimension,
-    trackScale,
+    trackScale
   } = voxelResolutionHook;
   const {
     datasetError,
@@ -165,14 +164,13 @@ export function useAppRouteState(): AppRouteState {
   const resetPreprocessedStateRef = useRef<() => void>(() => {});
   const [resetViewHandler, setResetViewHandler] = useState<(() => void) | null>(null);
   const [activeChannelTabId, setActiveChannelTabId] = useState<string | null>(null);
-  const [maxSliceDepth, setMaxSliceDepth] = useState(0);
   const [hoveredVolumeVoxel, setHoveredVolumeVoxel] = useState<HoveredVoxelInfo | null>(null);
   const [followedVoxel, setFollowedVoxel] = useState<FollowedVoxelTarget | null>(null);
   const [lastHoveredVolumeVoxel, setLastHoveredVolumeVoxel] = useState<HoveredVoxelInfo | null>(null);
   const playback = useViewerPlayback();
   const { selectedIndex, setSelectedIndex, isPlaying, fps, setFps, stopPlayback, setIsPlaying } = playback;
-  const is3dViewerAvailable = experimentDimension === '3d';
-  const [preferBrickResidency, setPreferBrickResidency] = useState(is3dViewerAvailable);
+  const is3dViewerAvailable = true;
+  const preferBrickResidency = true;
 
   const effectiveTrackScale = useMemo(() => {
     if (!preprocessedExperiment) {
@@ -357,7 +355,6 @@ export function useAppRouteState(): AppRouteState {
   } = useTrackState({
     channels,
     setChannels,
-    experimentDimension,
     volumeTimepointCount
   });
 
@@ -504,19 +501,11 @@ export function useAppRouteState(): AppRouteState {
     handleJumpToEnd
   } = useViewerModePlayback({
     playback,
-    experimentDimension,
     is3dViewerAvailable,
-    maxSliceDepth,
     onBeforeEnterVr: handleBeforeEnterVr,
-    onViewerModeToggle: () => {
-      setResetViewHandler(null);
-      handleStopTrackFollow();
-      setFollowedVoxel(null);
-    },
     onViewerModeChange: resetHoveredVoxel,
     volumeTimepointCount,
     isLoading,
-    canAdvancePlayback: canAdvancePlaybackToIndex,
     playbackWindow: followedTrackPlaybackWindow
   });
 
@@ -544,9 +533,6 @@ export function useAppRouteState(): AppRouteState {
   const {
     viewerMode,
     setViewerMode,
-    toggleViewerMode,
-    sliceIndex,
-    handleSliceIndexChange,
     vr: {
       isVrPassthroughSupported,
       isVrActive,
@@ -560,14 +546,6 @@ export function useAppRouteState(): AppRouteState {
       handleVrButtonClick
     }
   } = viewerControls;
-
-  useEffect(() => {
-    if (!is3dViewerAvailable) {
-      setPreferBrickResidency(false);
-      return;
-    }
-    setPreferBrickResidency(true);
-  }, [is3dViewerAvailable]);
 
   useEffect(() => {
     if (datasetError && datasetErrorContext === 'launch') {
@@ -773,7 +751,6 @@ export function useAppRouteState(): AppRouteState {
 
   const {
     viewerLayers,
-    computedMaxSliceDepth,
     handleChannelLayerSelectionChange,
     handleLayerSelect,
     handleLayerSoloToggle,
@@ -818,9 +795,6 @@ export function useAppRouteState(): AppRouteState {
     setGlobalSamplingMode
   });
 
-  useEffect(() => {
-    setMaxSliceDepth(computedMaxSliceDepth);
-  }, [computedMaxSliceDepth]);
   const routeDatasetSetup = createRouteDatasetSetupProps({
     state: {
       isExperimentSetupStarted,
@@ -969,7 +943,6 @@ export function useAppRouteState(): AppRouteState {
         isVrActive,
         isVrRequesting,
         resetViewHandler,
-        onToggleViewerMode: toggleViewerMode,
         onVrButtonClick: handleVrButtonClick,
         vrButtonDisabled,
         vrButtonTitle,
@@ -983,9 +956,6 @@ export function useAppRouteState(): AppRouteState {
         fps,
         onFpsChange: setFps,
         volumeTimepointCount,
-        sliceIndex,
-        maxSliceDepth,
-        onSliceIndexChange: handleSliceIndexChange,
         isPlaying,
         playbackLabel,
         selectedIndex,

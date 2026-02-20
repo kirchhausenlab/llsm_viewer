@@ -54,14 +54,6 @@ function NavigationHelpWindow({
               </li>
             </ul>
           </div>
-          <div className="viewer-top-menu-popover-section">
-            <h4>2D slice view</h4>
-            <ul>
-              <li>Press W/S to step through slices (hold Shift to skip 10 at a time).</li>
-              <li>Drag to pan the slice, and scroll to zoom.</li>
-              <li>Press Q/E to rotate the slice around its center.</li>
-            </ul>
-          </div>
         </div>
       </FloatingWindow>
     </div>

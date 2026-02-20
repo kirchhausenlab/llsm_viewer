@@ -596,9 +596,9 @@ export function coercePreprocessedManifest(value: unknown): PreprocessedManifest
   expectIsoDate(manifest.generatedAt, 'manifest.generatedAt');
   const dataset = expectRecord(manifest.dataset, 'manifest.dataset');
   const movieMode = expectString(dataset.movieMode, 'manifest.dataset.movieMode');
-  if (movieMode !== '2d' && movieMode !== '3d') {
+  if (movieMode !== '3d') {
     throw new Error(
-      `Invalid manifest schema at manifest.dataset.movieMode: expected "2d" or "3d", got "${movieMode}".`
+      `Invalid manifest schema at manifest.dataset.movieMode: expected "3d", got "${movieMode}".`
     );
   }
 

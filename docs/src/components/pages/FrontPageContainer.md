@@ -4,8 +4,7 @@ This file summarizes the pieces of app state that drive `<FrontPage />` and outl
 
 ## App state by concern
 
-### Voxel resolution and experiment dimension
-- `useVoxelResolution` exposes `voxelResolutionInput` and `experimentDimension`, plus axis/unit/anisotropy change handlers.
+### Voxel resolution
 - A complete voxel resolution value is required before preprocessing.
 
 ### Dataset error handling
@@ -27,7 +26,6 @@ This file summarizes the pieces of app state that drive `<FrontPage />` and outl
 This contract mirrors the current prop usage without exposing unrelated app state:
 
 ```ts
-import type { ExperimentDimension } from '../../hooks/useVoxelResolution';
 import type { VoxelResolutionInput, VoxelResolutionUnit } from '../../types/voxelResolution';
 import type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment } from '../../hooks/dataset';
 
@@ -44,8 +42,6 @@ export type FrontPageContainerProps = {
   onStartExperimentSetup: () => void;
   onReturnToStart: () => void;
 
-  experimentDimension: ExperimentDimension;
-  onExperimentDimensionChange: (dimension: ExperimentDimension) => void;
   voxelResolution: VoxelResolutionInput;
   onVoxelResolutionAxisChange: (axis: 'x' | 'y' | 'z', value: string) => void;
   onVoxelResolutionUnitChange: (unit: VoxelResolutionUnit) => void;

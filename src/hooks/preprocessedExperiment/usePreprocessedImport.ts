@@ -9,7 +9,6 @@ import {
 } from '../../shared/storage/preprocessedStorage';
 import type { PreprocessedStorageHandle } from '../../shared/storage/preprocessedStorage';
 import type { ChannelSource, StagedPreprocessedExperiment } from '../dataset';
-import type { ExperimentDimension } from '../useVoxelResolution';
 
 export type UsePreprocessedImportOptions = {
   setChannels: Dispatch<SetStateAction<ChannelSource[]>>;
@@ -20,8 +19,7 @@ export type UsePreprocessedImportOptions = {
   setSelectedTrackOrder: Dispatch<SetStateAction<string[]>>;
   setFollowedTrack: Dispatch<SetStateAction<FollowedTrackState>>;
   setIsExperimentSetupStarted: Dispatch<SetStateAction<boolean>>;
-  setExperimentDimension: Dispatch<SetStateAction<ExperimentDimension>>;
-  setViewerMode: Dispatch<SetStateAction<'3d' | '2d'>>;
+  setViewerMode: Dispatch<SetStateAction<'3d'>>;
   clearDatasetError: () => void;
   updateChannelIdCounter: (sources: ChannelSource[]) => void;
 };
@@ -161,7 +159,6 @@ export function usePreprocessedImport({
   setSelectedTrackOrder,
   setFollowedTrack,
   setIsExperimentSetupStarted,
-  setExperimentDimension,
   setViewerMode,
   clearDatasetError,
   updateChannelIdCounter
@@ -210,9 +207,7 @@ export function usePreprocessedImport({
         sourceSize
       };
 
-      const movieMode = result.manifest.dataset.movieMode;
-      setExperimentDimension(movieMode);
-      setViewerMode(movieMode);
+      setViewerMode('3d');
 
       const nextChannels = result.channelSummaries.map<ChannelSource>((summary) => ({
         id: summary.id,
@@ -251,7 +246,6 @@ export function usePreprocessedImport({
       setActiveChannelId,
       setChannels,
       setEditingChannelId,
-      setExperimentDimension,
       setFollowedTrack,
       setIsExperimentSetupStarted,
       setSelectedTrackOrder,

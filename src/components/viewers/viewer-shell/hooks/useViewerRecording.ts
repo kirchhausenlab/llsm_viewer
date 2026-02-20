@@ -47,17 +47,13 @@ type UseViewerRecordingOptions = {
 type UseViewerRecordingResult = {
   playbackControlsWithRecording: PlaybackControlsProps;
   registerVolumeCaptureTarget: (target: CaptureTarget) => void;
-  registerPlanarCaptureTarget: (target: CaptureTarget) => void;
 };
 
 export function useViewerRecording({
   viewerMode,
   playbackControls
 }: UseViewerRecordingOptions): UseViewerRecordingResult {
-  const [captureTargets, setCaptureTargets] = useState<Record<ViewerMode, CaptureTargetGetter | null>>({
-    '3d': null,
-    '2d': null
-  });
+  const [captureTarget, setCaptureTarget] = useState<CaptureTargetGetter | null>(null);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [captureStream, setCaptureStream] = useState<MediaStream | null>(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -102,25 +98,16 @@ export function useViewerRecording({
     [stopRecordingFramePump]
   );
 
-  const registerCaptureTargetForMode = useCallback((mode: ViewerMode, target: CaptureTarget) => {
-    setCaptureTargets((current) => ({
-      ...current,
-      [mode]: normalizeCaptureTarget(target)
-    }));
+  const registerCaptureTarget = useCallback((target: CaptureTarget) => {
+    const normalized = normalizeCaptureTarget(target);
+    setCaptureTarget(() => normalized);
   }, []);
 
   const registerVolumeCaptureTarget = useCallback(
     (target: CaptureTarget) => {
-      registerCaptureTargetForMode('3d', target);
+      registerCaptureTarget(target);
     },
-    [registerCaptureTargetForMode]
-  );
-
-  const registerPlanarCaptureTarget = useCallback(
-    (target: CaptureTarget) => {
-      registerCaptureTargetForMode('2d', target);
-    },
-    [registerCaptureTargetForMode]
+    [registerCaptureTarget]
   );
 
   const handleRecordingBitrateChange = useCallback((value: number) => {
@@ -133,8 +120,8 @@ export function useViewerRecording({
     });
   }, []);
 
-  const activeCaptureTarget = captureTargets[viewerMode];
-  const canRecord = Boolean(playbackControls.canRecord && activeCaptureTarget && activeCaptureTarget());
+  const activeCaptureTarget = viewerMode === '3d' && typeof captureTarget === 'function' ? captureTarget : null;
+  const canRecord = Boolean(playbackControls.canRecord && activeCaptureTarget?.());
 
   const handleStopRecording = useCallback(() => {
     setRecordingError(null);
@@ -320,7 +307,6 @@ export function useViewerRecording({
 
   return {
     playbackControlsWithRecording,
-    registerVolumeCaptureTarget,
-    registerPlanarCaptureTarget
+    registerVolumeCaptureTarget
   };
 }

@@ -1,7 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react';
 import type { FollowedTrackState, TrackSetState } from '../../types/channelTracks';
 import type { ChannelSource, StagedPreprocessedExperiment } from './useChannelSources';
-import type { ExperimentDimension } from '../useVoxelResolution';
 import { usePreprocessedImport } from '../preprocessedExperiment/usePreprocessedImport';
 
 export type UsePreprocessedExperimentOptions = {
@@ -14,8 +13,7 @@ export type UsePreprocessedExperimentOptions = {
   setSelectedTrackOrder: Dispatch<SetStateAction<string[]>>;
   setFollowedTrack: Dispatch<SetStateAction<FollowedTrackState>>;
   setIsExperimentSetupStarted: Dispatch<SetStateAction<boolean>>;
-  setExperimentDimension: Dispatch<SetStateAction<ExperimentDimension>>;
-  setViewerMode: Dispatch<SetStateAction<'3d' | '2d'>>;
+  setViewerMode: Dispatch<SetStateAction<'3d'>>;
   clearDatasetError: () => void;
   updateChannelIdCounter: (sources: ChannelSource[]) => void;
   showInteractionWarning: (message: string) => void;
@@ -46,7 +44,6 @@ export default function usePreprocessedExperiment({
   setSelectedTrackOrder,
   setFollowedTrack,
   setIsExperimentSetupStarted,
-  setExperimentDimension,
   setViewerMode,
   clearDatasetError,
   updateChannelIdCounter,
@@ -62,7 +59,6 @@ export default function usePreprocessedExperiment({
     setSelectedTrackOrder,
     setFollowedTrack,
     setIsExperimentSetupStarted,
-    setExperimentDimension,
     setViewerMode,
     clearDatasetError,
     updateChannelIdCounter

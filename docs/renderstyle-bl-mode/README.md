@@ -17,7 +17,6 @@ This folder is the source of truth for implementing Beer-Lambert (`BL`) as a thi
 
 - A full physically based lighting pipeline rewrite.
 - Deep compositing between arbitrary transparent meshes and volume.
-- Changes to 2D planar rendering behavior.
 
 ## Definition of done
 

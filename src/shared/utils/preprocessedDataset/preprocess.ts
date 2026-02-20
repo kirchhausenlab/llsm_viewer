@@ -669,96 +669,6 @@ function assertVolumeMatchesExpectedShape(
   }
 }
 
-type Extracted2dSliceView = {
-  width: number;
-  height: number;
-  depth: 1;
-  channels: number;
-  dataType: VolumePayload['dataType'];
-  min: number;
-  max: number;
-  source: VolumeTypedArray;
-};
-
-function createReusable2dSliceExtractor(
-  volume: VolumePayload,
-  options?: { includeSliceMinMax?: boolean }
-): (sliceIndex: number) => Extracted2dSliceView {
-  const sliceLength = volume.width * volume.height * volume.channels;
-  if (sliceLength <= 0 || volume.depth <= 0) {
-    throw new Error('Received invalid volume dimensions while preparing 2D slice extraction.');
-  }
-  const source = createVolumeTypedArray(volume.dataType, volume.data);
-  const includeSliceMinMax = options?.includeSliceMinMax === true;
-  const fallbackMin = Number.isFinite(volume.min) ? volume.min : 0;
-  const fallbackMaxRaw = Number.isFinite(volume.max) ? volume.max : fallbackMin + 1;
-  const fallbackMax = fallbackMaxRaw === fallbackMin ? fallbackMin + 1 : fallbackMaxRaw;
-
-  return (sliceIndex: number): Extracted2dSliceView => {
-    if (sliceIndex < 0 || sliceIndex >= volume.depth) {
-      throw new Error(`Slice index ${sliceIndex} is out of bounds for depth ${volume.depth}.`);
-    }
-    const start = sliceIndex * sliceLength;
-    const end = start + sliceLength;
-    const sliceSource = source.subarray(start, end);
-    const sliceRange = includeSliceMinMax ? computeSliceMinMax(sliceSource) : null;
-
-    return {
-      width: volume.width,
-      height: volume.height,
-      depth: 1,
-      channels: volume.channels,
-      dataType: volume.dataType,
-      min: sliceRange?.min ?? fallbackMin,
-      max: sliceRange?.max ?? fallbackMax,
-      source: sliceSource
-    };
-  };
-}
-
-function compute2dSliceMinMax(
-  volume: Pick<VolumePayload, 'width' | 'height' | 'depth' | 'channels' | 'dataType' | 'data'>,
-  sliceIndex: number
-): { min: number; max: number } {
-  const sliceLength = volume.width * volume.height * volume.channels;
-  if (sliceLength <= 0 || volume.depth <= 0) {
-    throw new Error('Received invalid volume dimensions while scanning 2D slice range.');
-  }
-  if (sliceIndex < 0 || sliceIndex >= volume.depth) {
-    throw new Error(`Slice index ${sliceIndex} is out of bounds for depth ${volume.depth}.`);
-  }
-
-  const source = createVolumeTypedArray(volume.dataType, volume.data);
-  const start = sliceIndex * sliceLength;
-  const end = start + sliceLength;
-  return computeSliceMinMax(source.subarray(start, end));
-}
-
-function computeRepresentativeNormalizationFor2dSlice(
-  volume: Pick<VolumePayload, 'width' | 'height' | 'depth' | 'channels' | 'dataType' | 'data'>,
-  sliceIndex: number
-): NormalizationParameters {
-  if (volume.dataType === 'uint8') {
-    return { min: 0, max: 255 };
-  }
-  return compute2dSliceMinMax(volume, sliceIndex);
-}
-
-function resolve2dFileSliceForTimepoint(
-  timepoint: number,
-  depths: number[]
-): { fileIndex: number; sliceIndex: number } {
-  let remaining = timepoint;
-  for (let index = 0; index < depths.length; index += 1) {
-    const depth = depths[index] ?? 0;
-    if (remaining < depth) {
-      return { fileIndex: index, sliceIndex: remaining };
-    }
-    remaining -= depth;
-  }
-  throw new Error(`Timepoint ${timepoint} is out of bounds for the provided 2D stacks.`);
-}
-
 async function loadVolumeFor3dTimepoint(
   file: File,
   loader: LoadVolumesFromFiles,
@@ -1005,37 +915,17 @@ type LayerMetadata = {
 
 async function computeLayerTimepointMetadata({
   sortedLayerSources,
-  movieMode,
   signal
 }: {
   sortedLayerSources: PreprocessLayerSource[];
-  movieMode: PreprocessedMovieMode;
   signal?: AbortSignal;
 }): Promise<{
   expectedTimepoints: number;
-  layer2dFileDepthsByKey: Map<string, number[]>;
 }> {
   const layerTimepointCounts: number[] = [];
-  const layer2dFileDepthsByKey = new Map<string, number[]>();
 
   for (const layer of sortedLayerSources) {
-    if (movieMode === '2d') {
-      const probeConcurrency = resolvePreprocessImageCountProbeConcurrency(layer.files.length);
-      const depths = await mapWithConcurrencyLimit({
-        items: layer.files,
-        concurrency: probeConcurrency,
-        signal,
-        mapper: async (file) => {
-          const tiff = await fromBlob(file);
-          const depth = await tiff.getImageCount();
-          return Math.max(0, depth);
-        }
-      });
-      layer2dFileDepthsByKey.set(layer.key, depths);
-      layerTimepointCounts.push(depths.reduce((sum, value) => sum + value, 0));
-    } else {
-      layerTimepointCounts.push(layer.files.length);
-    }
+    layerTimepointCounts.push(layer.files.length);
   }
 
   const expectedTimepoints = layerTimepointCounts[0] ?? 0;
@@ -1049,25 +939,20 @@ async function computeLayerTimepointMetadata({
   }
 
   return {
-    expectedTimepoints,
-    layer2dFileDepthsByKey
+    expectedTimepoints
   };
 }
 
 async function computeLayerRepresentativeNormalization({
   sortedLayerSources,
-  movieMode,
   representativeTimepoint,
-  layer2dFileDepthsByKey,
   decodedVolumeCacheByLayerKey,
   volumeLoader,
   signal,
   onProgress
 }: {
   sortedLayerSources: PreprocessLayerSource[];
-  movieMode: PreprocessedMovieMode;
   representativeTimepoint: number;
-  layer2dFileDepthsByKey: Map<string, number[]>;
   decodedVolumeCacheByLayerKey: DecodedVolumeCacheByLayerKey;
   volumeLoader: LoadVolumesFromFiles;
   signal?: AbortSignal;
@@ -1083,33 +968,14 @@ async function computeLayerRepresentativeNormalization({
     throwIfAborted(signal);
     onProgress?.({ stage: 'rep-stats', layerKey: layer.key });
 
-    if (movieMode === '2d') {
-      const depths = layer2dFileDepthsByKey.get(layer.key);
-      if (!depths) {
-        throw new Error('Missing 2D stack metadata while computing representative stats.');
-      }
-      const { fileIndex, sliceIndex } = resolve2dFileSliceForTimepoint(representativeTimepoint, depths);
-      const stackVolume = await loadLayerVolumeByFileIndex({
-        layer,
-        fileIndex,
-        loader: volumeLoader,
-        decodedVolumeCacheByLayerKey,
-        signal
-      });
-      normalizationByLayerKey.set(
-        layer.key,
-        computeRepresentativeNormalizationFor2dSlice(stackVolume, sliceIndex)
-      );
-    } else {
-      const volume = await loadLayerVolumeByFileIndex({
-        layer,
-        fileIndex: representativeTimepoint,
-        loader: volumeLoader,
-        decodedVolumeCacheByLayerKey,
-        signal
-      });
-      normalizationByLayerKey.set(layer.key, computeRepresentativeNormalization(volume));
-    }
+    const volume = await loadLayerVolumeByFileIndex({
+      layer,
+      fileIndex: representativeTimepoint,
+      loader: volumeLoader,
+      decodedVolumeCacheByLayerKey,
+      signal
+    });
+    normalizationByLayerKey.set(layer.key, computeRepresentativeNormalization(volume));
   }
 
   return normalizationByLayerKey;
@@ -1117,15 +983,11 @@ async function computeLayerRepresentativeNormalization({
 
 async function collectLayerMetadata({
   sortedLayerSources,
-  movieMode,
-  layer2dFileDepthsByKey,
   decodedVolumeCacheByLayerKey,
   volumeLoader,
   signal
 }: {
   sortedLayerSources: PreprocessLayerSource[];
-  movieMode: PreprocessedMovieMode;
-  layer2dFileDepthsByKey: Map<string, number[]>;
   decodedVolumeCacheByLayerKey: DecodedVolumeCacheByLayerKey;
   volumeLoader: LoadVolumesFromFiles;
   signal?: AbortSignal;
@@ -1134,7 +996,6 @@ async function collectLayerMetadata({
   layerMetadataByKey: Map<string, LayerMetadata>;
 }> {
   let referenceShape3d: { width: number; height: number; depth: number } | null = null;
-  let referenceShape2d: { width: number; height: number } | null = null;
 
   const sourceMetadataByLayerKey = new Map<string, LayerMetadata>();
   const layerMetadataByKey = new Map<string, LayerMetadata>();
@@ -1142,93 +1003,41 @@ async function collectLayerMetadata({
   for (const layer of sortedLayerSources) {
     throwIfAborted(signal);
 
-    if (movieMode === '2d') {
-      const depths = layer2dFileDepthsByKey.get(layer.key);
-      if (!depths) {
-        throw new Error('Missing 2D stack metadata while validating shapes.');
-      }
-      const firstAvailableFileIndex = depths.findIndex((depth) => depth > 0);
-      if (firstAvailableFileIndex < 0) {
-        throw new Error(`Layer "${layer.channelLabel}" does not contain any TIFF frames.`);
-      }
-
-      const stackVolume = await loadLayerVolumeByFileIndex({
-        layer,
-        fileIndex: firstAvailableFileIndex,
-        loader: volumeLoader,
-        decodedVolumeCacheByLayerKey,
-        signal
-      });
-      if (stackVolume.depth <= 0) {
-        throw new Error(
-          `Layer "${layer.channelLabel}" first decoded stack did not contain any slices.`
-        );
-      }
-      const width = stackVolume.width;
-      const height = stackVolume.height;
-      const channels = stackVolume.channels;
-      const dataType = stackVolume.dataType;
-      sourceMetadataByLayerKey.set(layer.key, {
-        width,
-        height,
-        depth: 1,
-        channels,
-        dataType
-      });
-      layerMetadataByKey.set(layer.key, {
-        width,
-        height,
-        depth: 1,
-        channels: layer.isSegmentation ? 4 : channels,
-        dataType: layer.isSegmentation ? 'uint8' : dataType
-      });
-      if (!referenceShape2d) {
-        referenceShape2d = { width, height };
-      } else if (
-        width !== referenceShape2d.width ||
-        height !== referenceShape2d.height
-      ) {
-        throw new Error(
-          `Channel "${layer.channelLabel}" has volume dimensions ${width}×${height}×1 that do not match the reference shape ${referenceShape2d.width}×${referenceShape2d.height}×1.`
-        );
-      }
-    } else {
-      const firstVolume = await loadLayerVolumeByFileIndex({
-        layer,
-        fileIndex: 0,
-        loader: volumeLoader,
-        decodedVolumeCacheByLayerKey,
-        signal
-      });
-      sourceMetadataByLayerKey.set(layer.key, {
+    const firstVolume = await loadLayerVolumeByFileIndex({
+      layer,
+      fileIndex: 0,
+      loader: volumeLoader,
+      decodedVolumeCacheByLayerKey,
+      signal
+    });
+    sourceMetadataByLayerKey.set(layer.key, {
+      width: firstVolume.width,
+      height: firstVolume.height,
+      depth: firstVolume.depth,
+      channels: firstVolume.channels,
+      dataType: firstVolume.dataType
+    });
+    layerMetadataByKey.set(layer.key, {
+      width: firstVolume.width,
+      height: firstVolume.height,
+      depth: firstVolume.depth,
+      channels: layer.isSegmentation ? 4 : firstVolume.channels,
+      dataType: layer.isSegmentation ? 'uint8' : firstVolume.dataType
+    });
+    if (!referenceShape3d) {
+      referenceShape3d = {
         width: firstVolume.width,
         height: firstVolume.height,
-        depth: firstVolume.depth,
-        channels: firstVolume.channels,
-        dataType: firstVolume.dataType
-      });
-      layerMetadataByKey.set(layer.key, {
-        width: firstVolume.width,
-        height: firstVolume.height,
-        depth: firstVolume.depth,
-        channels: layer.isSegmentation ? 4 : firstVolume.channels,
-        dataType: layer.isSegmentation ? 'uint8' : firstVolume.dataType
-      });
-      if (!referenceShape3d) {
-        referenceShape3d = {
-          width: firstVolume.width,
-          height: firstVolume.height,
-          depth: firstVolume.depth
-        };
-      } else if (
-        firstVolume.width !== referenceShape3d.width ||
-        firstVolume.height !== referenceShape3d.height ||
-        firstVolume.depth !== referenceShape3d.depth
-      ) {
-        throw new Error(
-          `Channel "${layer.channelLabel}" has volume dimensions ${firstVolume.width}×${firstVolume.height}×${firstVolume.depth} that do not match the reference shape ${referenceShape3d.width}×${referenceShape3d.height}×${referenceShape3d.depth}.`
-        );
-      }
+        depth: firstVolume.depth
+      };
+    } else if (
+      firstVolume.width !== referenceShape3d.width ||
+      firstVolume.height !== referenceShape3d.height ||
+      firstVolume.depth !== referenceShape3d.depth
+    ) {
+      throw new Error(
+        `Channel "${layer.channelLabel}" has volume dimensions ${firstVolume.width}×${firstVolume.height}×${firstVolume.depth} that do not match the reference shape ${referenceShape3d.width}×${referenceShape3d.height}×${referenceShape3d.depth}.`
+      );
     }
   }
 
@@ -2265,148 +2074,6 @@ async function writePrecomputedLayerTimepointScales({
   }
 }
 
-async function writeLayerVolumesFor2d({
-  chunkWriter,
-  layer,
-  manifestLayer,
-  sourceMetadata,
-  normalizationByLayerKey,
-  layer2dFileDepthsByKey,
-  preloadedVolumesByFileIndex,
-  volumeLoader,
-  signal,
-  onProgress,
-  totalVolumeCount,
-  progressState
-}: {
-  chunkWriter: ChunkWriteDispatcher;
-  layer: PreprocessLayerSource;
-  manifestLayer: PreprocessedLayerManifestEntry;
-  sourceMetadata: LayerMetadata;
-  normalizationByLayerKey: Map<string, NormalizationParameters>;
-  layer2dFileDepthsByKey: Map<string, number[]>;
-  preloadedVolumesByFileIndex?: ReadonlyMap<number, VolumePayload>;
-  volumeLoader: LoadVolumesFromFiles;
-  signal?: AbortSignal;
-  onProgress?: (progress: PreprocessDatasetProgress) => void;
-  totalVolumeCount: number;
-  progressState: { processedVolumes: number };
-}): Promise<void> {
-  const depths = layer2dFileDepthsByKey.get(layer.key);
-  if (!depths) {
-    throw new Error('Missing 2D stack metadata while preprocessing.');
-  }
-  const layerNormalization = layer.isSegmentation ? null : (normalizationByLayerKey.get(layer.key) ?? null);
-
-  const filesToDecode: File[] = [];
-  const originalFileIndices: number[] = [];
-  for (let fileIndex = 0; fileIndex < layer.files.length; fileIndex += 1) {
-    if ((depths[fileIndex] ?? 0) <= 0) {
-      continue;
-    }
-    filesToDecode.push(layer.files[fileIndex]!);
-    originalFileIndices.push(fileIndex);
-  }
-
-  const decodeBatchSize = resolvePreprocessDecodeBatchSize(
-    filesToDecode.length > 0 ? filesToDecode.length : 1
-  );
-  const preloaded2dVolumesByDecodeIndex = preloadedVolumesByFileIndex
-    ? new Map(
-        originalFileIndices
-          .map((fileIndex, decodeIndex) => {
-            const preloaded = preloadedVolumesByFileIndex.get(fileIndex);
-            return preloaded ? ([decodeIndex, preloaded] as const) : null;
-          })
-          .filter((entry): entry is readonly [number, VolumePayload] => entry !== null)
-      )
-    : undefined;
-  let timepoint = 0;
-  for await (const decoded of decodeVolumesInBatchesWithPrefetch({
-    files: filesToDecode,
-    loader: volumeLoader,
-    batchSize: decodeBatchSize,
-    preloadedVolumesByFileIndex: preloaded2dVolumesByDecodeIndex,
-    signal
-  })) {
-    throwIfAborted(signal);
-    const fileIndex = originalFileIndices[decoded.fileIndex];
-    if (fileIndex === undefined) {
-      throw new Error(`Missing source file index for decoded 2D stack ${decoded.fileIndex}.`);
-    }
-    const depth = depths[fileIndex] ?? 0;
-
-    const stackVolume = decoded.volume;
-    const needsPerSliceFallbackNormalization = !layer.isSegmentation && layerNormalization === null;
-    const extractSlice = createReusable2dSliceExtractor(stackVolume, {
-      includeSliceMinMax: needsPerSliceFallbackNormalization
-    });
-    assertVolumeMatchesExpectedShape(
-      stackVolume,
-      {
-        width: sourceMetadata.width,
-        height: sourceMetadata.height,
-        channels: sourceMetadata.channels,
-        dataType: sourceMetadata.dataType
-      },
-      `Layer "${layer.channelLabel}" file "${layer.files[fileIndex]?.name ?? `#${fileIndex + 1}`}" stack`
-    );
-    if (stackVolume.depth !== depth) {
-      throw new Error(
-        `Layer "${layer.channelLabel}" file "${layer.files[fileIndex]?.name ?? `#${fileIndex + 1}`}" reported ${depth} slices during indexing but decoded as ${stackVolume.depth} slices.`
-      );
-    }
-
-    for (let sliceIndex = 0; sliceIndex < depth; sliceIndex += 1) {
-      throwIfAborted(signal);
-      const rawSlice = extractSlice(sliceIndex);
-      assertVolumeMatchesExpectedShape(rawSlice, sourceMetadata, `Layer "${layer.channelLabel}" timepoint ${timepoint + 1}`);
-
-      const normalized = layer.isSegmentation
-        ? colorizeSegmentationTypedArray({
-            width: rawSlice.width,
-            height: rawSlice.height,
-            depth: rawSlice.depth,
-            dataType: rawSlice.dataType,
-            source: rawSlice.source,
-            seed: createSegmentationSeed(layer.key, timepoint)
-          })
-        : normalizeTypedArray({
-            width: rawSlice.width,
-            height: rawSlice.height,
-            depth: rawSlice.depth,
-            channels: rawSlice.channels,
-            dataType: rawSlice.dataType,
-            source: rawSlice.source,
-            parameters:
-              layerNormalization ??
-              (rawSlice.dataType === 'uint8'
-                ? { min: 0, max: 255 }
-                : { min: rawSlice.min, max: rawSlice.max })
-          });
-
-      await writeNormalizedLayerTimepoint({
-        chunkWriter,
-        normalized,
-        layer,
-        manifestLayer,
-        signal,
-        timepoint
-      });
-
-      progressState.processedVolumes += 1;
-      onProgress?.({
-        stage: 'write-volumes',
-        processedVolumes: progressState.processedVolumes,
-        totalVolumes: totalVolumeCount,
-        layerKey: layer.key,
-        timepoint
-      });
-      timepoint += 1;
-    }
-  }
-}
-
 async function writeLayerVolumesFor3d({
   chunkWriter,
   layer,
@@ -2544,17 +2211,14 @@ export async function preprocessDatasetToStorage({
   const volumeLoader = await resolveVolumeLoader(providedVolumeLoader);
   const decodedVolumeCacheByLayerKey: DecodedVolumeCacheByLayerKey = new Map();
   throwIfAborted(signal);
-  const { expectedTimepoints, layer2dFileDepthsByKey } = await computeLayerTimepointMetadata({
+  const { expectedTimepoints } = await computeLayerTimepointMetadata({
     sortedLayerSources,
-    movieMode,
     signal
   });
   const representativeTimepoint = Math.floor(expectedTimepoints / 2);
   const normalizationByLayerKey = await computeLayerRepresentativeNormalization({
     sortedLayerSources,
-    movieMode,
     representativeTimepoint,
-    layer2dFileDepthsByKey,
     decodedVolumeCacheByLayerKey,
     volumeLoader,
     signal,
@@ -2562,8 +2226,6 @@ export async function preprocessDatasetToStorage({
   });
   const { sourceMetadataByLayerKey, layerMetadataByKey } = await collectLayerMetadata({
     sortedLayerSources,
-    movieMode,
-    layer2dFileDepthsByKey,
     decodedVolumeCacheByLayerKey,
     volumeLoader,
     signal
@@ -2610,39 +2272,21 @@ export async function preprocessDatasetToStorage({
         throw new Error(`Missing source metadata for layer "${layer.key}".`);
       }
       const preloadedVolumesByFileIndex = decodedVolumeCacheByLayerKey.get(layer.key);
-
-      if (movieMode === '2d') {
-        await writeLayerVolumesFor2d({
-          chunkWriter,
-          layer,
-          manifestLayer,
-          sourceMetadata,
-          normalizationByLayerKey,
-          layer2dFileDepthsByKey,
-          preloadedVolumesByFileIndex,
-          volumeLoader,
-          signal,
-          onProgress,
-          totalVolumeCount: totalWritableVolumes,
-          progressState
-        });
-      } else {
-        await writeLayerVolumesFor3d({
-          chunkWriter,
-          layer,
-          manifestLayer,
-          sourceMetadata,
-          representativeTimepoint,
-          normalizationByLayerKey,
-          workerizeNormalizationDownsample,
-          preloadedVolumesByFileIndex,
-          volumeLoader,
-          signal,
-          onProgress,
-          totalVolumeCount: totalWritableVolumes,
-          progressState
-        });
-      }
+      await writeLayerVolumesFor3d({
+        chunkWriter,
+        layer,
+        manifestLayer,
+        sourceMetadata,
+        representativeTimepoint,
+        normalizationByLayerKey,
+        workerizeNormalizationDownsample,
+        preloadedVolumesByFileIndex,
+        volumeLoader,
+        signal,
+        onProgress,
+        totalVolumeCount: totalWritableVolumes,
+        progressState
+      });
     }
   }
   await chunkWriter.flush(signal);

@@ -10,7 +10,6 @@ console.log('Starting trackCsvParsing tests');
     trackSetName: 'Set 1',
     channelId: 'channel-0',
     channelName: 'Channel 0',
-    experimentDimension: '3d',
     entries: [
       ['36', '1.0', '50.0', '305.779096', '326.565542', '38.697693', '0', '57'],
       ['36', '1.0', '', '', '', '', '0', '57'],
@@ -48,7 +47,6 @@ console.log('Starting trackCsvParsing tests');
     trackSetName: 'Set 1',
     channelId: 'channel-0',
     channelName: 'Channel 0',
-    experimentDimension: '3d',
     entries: [
       ['36', '1.0', '50.0', '305.779096', '326.565542', '38.697693', '0', '57'],
       ['36', '1.0', 'NaN', 'NaN', 'NaN', 'NaN', '0', '57'],
@@ -73,7 +71,6 @@ console.log('Starting trackCsvParsing tests');
     trackSetName: 'Set 1',
     channelId: 'c',
     channelName: 'C',
-    experimentDimension: '3d',
     entries: [
       ['1', '0', '0', '0', '0', '0', '0', '0'],
       ['1', '0', '', '', '', '', '0', '0'],
@@ -102,28 +99,6 @@ console.log('Starting trackCsvParsing tests');
     trackSetName: 'Set 1',
     channelId: 'c',
     channelName: 'C',
-    experimentDimension: '2d',
-    entries: [
-      ['1', '0', '0', '0', '0', '0'],
-      ['1', '0', 'NaN', 'NaN', 'NaN', '0'],
-      ['1', '0', '1', '1', '1', '0'],
-    ],
-  });
-
-  assert.strictEqual(tracks.length, 2);
-  assert.deepStrictEqual(
-    tracks.map((track) => track.displayTrackNumber),
-    ['1', '1-1'],
-  );
-})();
-
-(() => {
-  const tracks = buildTracksFromCsvEntries({
-    trackSetId: 'track-set-1',
-    trackSetName: 'Set 1',
-    channelId: 'c',
-    channelName: 'C',
-    experimentDimension: '3d',
     entries: [
       ['1', '0', '0', '0', '0', '0', '0', '0'],
       ['1', '999', '0', '1', '1', '1', '0', '0'],

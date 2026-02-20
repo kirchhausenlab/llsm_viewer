@@ -1,5 +1,4 @@
 import type { FC } from 'react';
-import type { ExperimentDimension } from '../../hooks/useVoxelResolution';
 import type { VoxelResolutionInput, VoxelResolutionUnit } from '../../types/voxelResolution';
 import { VOXEL_RESOLUTION_UNITS } from '../../types/voxelResolution';
 
@@ -12,8 +11,6 @@ const VOXEL_RESOLUTION_AXES: ReadonlyArray<{ axis: VoxelResolutionAxis; label: s
 ];
 
 type ExperimentConfigurationProps = {
-  experimentDimension: ExperimentDimension;
-  onExperimentDimensionChange: (dimension: ExperimentDimension) => void;
   voxelResolution: VoxelResolutionInput;
   onVoxelResolutionAxisChange: (axis: VoxelResolutionAxis, value: string) => void;
   onVoxelResolutionUnitChange: (unit: VoxelResolutionUnit) => void;
@@ -22,44 +19,17 @@ type ExperimentConfigurationProps = {
 };
 
 const ExperimentConfiguration: FC<ExperimentConfigurationProps> = ({
-  experimentDimension,
-  onExperimentDimensionChange,
   voxelResolution,
   onVoxelResolutionAxisChange,
   onVoxelResolutionUnitChange,
   onVoxelResolutionAnisotropyToggle,
   isFrontPageLocked
 }) => {
-  const voxelResolutionAxes =
-    experimentDimension === '2d'
-      ? VOXEL_RESOLUTION_AXES.filter(({ axis }) => axis !== 'z')
-      : VOXEL_RESOLUTION_AXES;
-
   return (
     <>
-      <div className="movie-mode-row">
-        <span className="movie-mode-label">Choose movie type:</span>
-        <div className="voxel-resolution-mode-toggle" role="group" aria-label="Movie dimension">
-          {['3d', '2d'].map((mode) => (
-            <label
-              key={mode}
-              className={`voxel-resolution-mode${experimentDimension === mode ? ' is-selected' : ''}`}
-            >
-              <input
-                type="radio"
-                value={mode}
-                checked={experimentDimension === mode}
-                onChange={() => onExperimentDimensionChange(mode as ExperimentDimension)}
-                disabled={isFrontPageLocked}
-              />
-              {mode === '3d' ? '3D movie' : '2D movie'}
-            </label>
-          ))}
-        </div>
-      </div>
       <div className="voxel-resolution-row">
         <span className="voxel-resolution-title">Voxel resolution:</span>
-        {voxelResolutionAxes.map(({ axis, label }) => (
+        {VOXEL_RESOLUTION_AXES.map(({ axis, label }) => (
           <label key={axis} className="voxel-resolution-field">
             <span className="voxel-resolution-field-label">{label}:</span>
             <input

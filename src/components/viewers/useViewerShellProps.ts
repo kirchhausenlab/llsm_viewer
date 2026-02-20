@@ -14,7 +14,6 @@ import type { VolumeViewerVrProps } from './VolumeViewer.types';
 import type { ViewerShellProps } from './ViewerShell';
 
 type ViewerLayerConfig =
-  ViewerShellProps['planarViewerProps']['layers'][number] &
   ViewerShellProps['volumeViewerProps']['layers'][number];
 
 type ViewerShellContainerHelpMenuProps = Pick<
@@ -184,40 +183,6 @@ function mapVolumeViewerProps({
   };
 }
 
-function mapPlanarViewerProps({
-  viewerPanels,
-  playbackControls,
-  trackSettings
-}: Pick<ViewerShellContainerProps, 'viewerPanels' | 'playbackControls' | 'trackSettings'>): ViewerShellProps['planarViewerProps'] {
-  return {
-    layers: viewerPanels.layers,
-    isLoading: viewerPanels.loading.isLoading,
-    loadingProgress: viewerPanels.loading.loadingProgress,
-    loadedVolumes: viewerPanels.loading.loadedVolumes,
-    expectedVolumes: viewerPanels.loading.expectedVolumes,
-    timeIndex: playbackControls.selectedIndex,
-    totalTimepoints: playbackControls.volumeTimepointCount,
-    onRegisterReset: viewerPanels.onRegisterReset,
-    sliceIndex: playbackControls.sliceIndex,
-    maxSlices: playbackControls.maxSliceDepth,
-    onSliceIndexChange: playbackControls.onSliceIndexChange,
-    trackScale: viewerPanels.tracks.trackScale,
-    tracks: viewerPanels.tracks.tracks,
-    trackVisibility: viewerPanels.tracks.trackVisibility,
-    trackOpacityByTrackSet: viewerPanels.tracks.trackOpacityByTrackSet,
-    trackLineWidthByTrackSet: viewerPanels.tracks.trackLineWidthByTrackSet,
-    trackColorModesByTrackSet: viewerPanels.tracks.trackColorModesByTrackSet,
-    channelTrackOffsets: viewerPanels.tracks.channelTrackOffsets,
-    isFullTrackTrailEnabled: trackSettings.isFullTrailEnabled,
-    trackTrailLength: trackSettings.trailLength,
-    followedTrackId: viewerPanels.tracks.followedTrackId,
-    selectedTrackIds: viewerPanels.tracks.selectedTrackIds,
-    onTrackSelectionToggle: viewerPanels.tracks.onTrackSelectionToggle,
-    onTrackFollowRequest: viewerPanels.tracks.onTrackFollowRequest,
-    onHoverVoxelChange: viewerPanels.tracks.onHoverVoxelChange
-  };
-}
-
 function mapTopMenuProps({
   topMenu,
   isHelpMenuOpen,
@@ -282,7 +247,6 @@ export function useViewerShellProps(props: ViewerShellContainerProps): ViewerShe
   return {
     viewerMode: props.viewerMode,
     volumeViewerProps: mapVolumeViewerProps(props),
-    planarViewerProps: mapPlanarViewerProps(props),
     topMenu: mapTopMenuProps(props),
     layout: mapLayoutProps(props.layout),
     modeControls: props.modeControls,

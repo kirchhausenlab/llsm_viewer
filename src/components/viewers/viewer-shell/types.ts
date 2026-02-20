@@ -2,7 +2,6 @@ import type { ComponentProps, CSSProperties } from 'react';
 
 import type BrightnessContrastHistogram from '../BrightnessContrastHistogram';
 import type FloatingWindow from '../../widgets/FloatingWindow';
-import type PlanarViewer from '../PlanarViewer';
 import type PlotSettingsWindow from '../../widgets/PlotSettingsWindow';
 import type SelectedTracksWindow from '../../widgets/SelectedTracksWindow';
 import type { VolumeViewerProps } from '../VolumeViewer.types';
@@ -13,8 +12,6 @@ import type { LayerSettings, RenderStyle } from '../../../state/layerSettings';
 import type { FollowedVoxelTarget } from '../../../types/follow';
 import type { HoveredVoxelInfo } from '../../../types/hover';
 import type { NumericRange, TrackColorMode, TrackDefinition, TrackPoint } from '../../../types/tracks';
-
-export type PlanarViewerProps = ComponentProps<typeof PlanarViewer>;
 
 export type TopMenuProps = {
   onReturnToLauncher: () => void;
@@ -36,7 +33,6 @@ export type ModeControlsProps = {
   isVrActive: boolean;
   isVrRequesting: boolean;
   resetViewHandler: (() => void) | null;
-  onToggleViewerMode: () => void;
   onVrButtonClick: () => void;
   vrButtonDisabled: boolean;
   vrButtonTitle?: string;
@@ -53,9 +49,6 @@ export type PlaybackControlsProps = {
   recordingBitrateMbps?: number;
   onRecordingBitrateMbpsChange?: (value: number) => void;
   volumeTimepointCount: number;
-  sliceIndex: number;
-  maxSliceDepth: number;
-  onSliceIndexChange: (index: number) => void;
   isPlaying: boolean;
   playbackLabel: string;
   selectedIndex: number;
@@ -208,9 +201,8 @@ export type TrackDefaults = {
 };
 
 export type ViewerShellProps = {
-  viewerMode: '3d' | '2d';
+  viewerMode: '3d';
   volumeViewerProps: VolumeViewerProps;
-  planarViewerProps: PlanarViewerProps;
   topMenu: Omit<TopMenuProps, 'onOpenPaintbrush'>;
   layout: LayoutProps;
   modeControls: ModeControlsProps;

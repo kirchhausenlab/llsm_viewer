@@ -63,11 +63,9 @@ Status legend: `LOCKED`, `PROVISIONAL`, `SUPERSEDED`
   - Existing shader/state/plumbing already uses numeric render style.
   - Reduces migration risk and diff size.
 
-## D-BL-006: 2D planar viewer remains behaviorally unchanged
 
 - Status: `LOCKED`
 - Decision:
-  - Planar rendering behavior remains unchanged.
   - Any type broadening to include `2` is accepted; no BL rendering changes in planar.
 - Rationale:
   - BL is a 3D raymarching mode.

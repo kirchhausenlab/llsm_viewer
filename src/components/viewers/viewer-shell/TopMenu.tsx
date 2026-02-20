@@ -74,7 +74,7 @@ export default function TopMenu({
         { label: 'Exit', onSelect: onReturnToLauncher }
       ],
       view: [
-        { label: 'Switch 3D / 2D' },
+        { label: '3D view' },
         { label: 'Paintbrush', onSelect: onOpenPaintbrush },
         { label: 'Rendering quality' },
         { label: 'VR mode' }

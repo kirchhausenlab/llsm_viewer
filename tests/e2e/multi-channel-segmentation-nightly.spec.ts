@@ -53,9 +53,6 @@ test('@nightly can launch with raw and segmentation channels and preserve per-ch
 
   const playbackWindow = page.locator('.floating-window--playback');
   await expect(playbackWindow.getByRole('heading', { name: 'Viewer controls' })).toBeVisible();
-  await playbackWindow.getByRole('button', { name: '3D view' }).click();
-  await expect(playbackWindow.getByRole('button', { name: '2D view' })).toBeVisible();
+  await expect(playbackWindow.getByRole('button', { name: 'Reset view' })).toBeVisible();
   await expect(invertButton).toBeDisabled();
-  await playbackWindow.getByRole('button', { name: '2D view' }).click();
-  await expect(playbackWindow.getByRole('button', { name: '3D view' })).toBeVisible();
 });

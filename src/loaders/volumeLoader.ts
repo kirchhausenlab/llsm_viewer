@@ -1,9 +1,5 @@
 import { VolumeTooLargeError, type VolumeDimensions } from '../errors';
-import {
-  createVolumeTypedArray,
-  type VolumePayload,
-  type VolumeTypedArray
-} from '../types/volume';
+import { type VolumePayload } from '../types/volume';
 import VolumeWorker from '../workers/volumeLoader.worker?worker';
 import type { VolumeWorkerOutboundMessage } from '../workers/volumeLoaderMessages';
 
@@ -227,71 +223,4 @@ export async function loadVolumesFromFiles(
       failLoadRequest(requestId, error);
     }
   });
-}
-
-const computeSliceRange = (slice: VolumeTypedArray): { min: number; max: number } => {
-  let min = Number.POSITIVE_INFINITY;
-  let max = Number.NEGATIVE_INFINITY;
-
-  for (let i = 0; i < slice.length; i += 1) {
-    const value = slice[i] as number;
-    if (Number.isNaN(value)) {
-      continue;
-    }
-    if (value < min) {
-      min = value;
-    }
-    if (value > max) {
-      max = value;
-    }
-  }
-
-  if (!Number.isFinite(min)) {
-    min = 0;
-  }
-  if (!Number.isFinite(max)) {
-    max = min === 0 ? 1 : min + 1;
-  }
-  if (min === max) {
-    max = min + 1;
-  }
-
-  return { min, max };
-};
-
-export function expandVolumesForMovieMode(
-  volumes: VolumePayload[],
-  movieMode: '2d' | '3d'
-): VolumePayload[] {
-  if (movieMode !== '2d') {
-    return volumes;
-  }
-
-  const expanded: VolumePayload[] = [];
-  for (const volume of volumes) {
-    if (volume.depth <= 0) {
-      continue;
-    }
-
-    const sliceLength = volume.width * volume.height * volume.channels;
-    const source = createVolumeTypedArray(volume.dataType, volume.data);
-
-    for (let sliceIndex = 0; sliceIndex < volume.depth; sliceIndex += 1) {
-      const slice = source.slice(sliceIndex * sliceLength, (sliceIndex + 1) * sliceLength);
-      const { min, max } = computeSliceRange(slice);
-      expanded.push({
-        width: volume.width,
-        height: volume.height,
-        depth: 1,
-        channels: volume.channels,
-        dataType: volume.dataType,
-        voxelSize: volume.voxelSize,
-        min,
-        max,
-        data: slice.buffer
-      });
-    }
-  }
-
-  return expanded;
 }

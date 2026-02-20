@@ -1,5 +1,5 @@
 import FloatingWindow from '../../widgets/FloatingWindow';
-import type { LayoutProps, ViewerMode } from './types';
+import type { LayoutProps } from './types';
 import type { ModeToggleState, ViewerSettingsControls } from './hooks/useViewerModeControls';
 import type { PlaybackControlState } from './hooks/useViewerPlaybackControls';
 
@@ -12,7 +12,6 @@ export type PlaybackControlsPanelProps = {
   layout: Pick<LayoutProps, 'windowMargin' | 'controlWindowWidth' | 'controlWindowInitialPosition' | 'resetToken'> & {
     viewerSettingsWindowInitialPosition: LayoutProps['viewerSettingsWindowInitialPosition'];
   };
-  viewerMode: ViewerMode;
   modeToggle: ModeToggleState;
   playbackControls: PlaybackControlState;
   viewerSettings: ViewerSettingsControls;
@@ -25,7 +24,6 @@ export type PlaybackControlsPanelProps = {
 
 export default function PlaybackControlsPanel({
   layout,
-  viewerMode,
   modeToggle,
   playbackControls,
   viewerSettings,
@@ -42,7 +40,6 @@ export default function PlaybackControlsPanel({
     isVrActive,
     isVrRequesting,
     resetViewHandler,
-    onToggleViewerMode,
     onVrButtonClick,
     vrButtonDisabled,
     vrButtonLabel,
@@ -54,9 +51,6 @@ export default function PlaybackControlsPanel({
     recordingBitrateMbps,
     onRecordingBitrateMbpsChange,
     volumeTimepointCount,
-    clampedSliceIndex,
-    maxSliceDepth,
-    onSliceIndexChange,
     isPlaying,
     playbackLabel,
     selectedIndex,
@@ -66,7 +60,6 @@ export default function PlaybackControlsPanel({
     onJumpToStart,
     onJumpToEnd,
     error,
-    isSliceSliderVisible,
     onStartRecording,
     onStopRecording,
     isRecording,
@@ -108,14 +101,6 @@ export default function PlaybackControlsPanel({
             <div className="viewer-mode-row">
               <button
                 type="button"
-                onClick={onToggleViewerMode}
-                className={viewerMode === '3d' ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
-                disabled={isVrActive || isVrRequesting || !is3dModeAvailable}
-              >
-                {viewerMode === '3d' ? '3D view' : '2D view'}
-              </button>
-              <button
-                type="button"
                 className="viewer-mode-button"
                 onClick={() => resetViewHandler?.()}
                 disabled={!resetViewHandler}
@@ -123,14 +108,14 @@ export default function PlaybackControlsPanel({
                 Reset view
               </button>
               {is3dModeAvailable ? (
-                <button
-                  type="button"
-                  className="viewer-mode-button"
-                  onClick={onVrButtonClick}
-                  disabled={vrButtonDisabled}
-                  title={vrButtonTitle}
-                >
-                  {vrButtonLabel}
+              <button
+                type="button"
+                className="viewer-mode-button"
+                onClick={onVrButtonClick}
+                disabled={isVrActive || isVrRequesting || !is3dModeAvailable || vrButtonDisabled}
+                title={vrButtonTitle}
+              >
+                {vrButtonLabel}
                 </button>
               ) : null}
             </div>
@@ -201,25 +186,6 @@ export default function PlaybackControlsPanel({
               </button>
             </div>
 
-            {isSliceSliderVisible ? (
-              <div className="control-group">
-                <label htmlFor="z-plane-slider" className="control-label control-label--compact">
-                  Z plane{' '}
-                  <span>
-                    {clampedSliceIndex} / {maxSliceDepth}
-                  </span>
-                </label>
-                <input
-                  id="z-plane-slider"
-                  type="range"
-                  min={0}
-                  max={maxSliceDepth}
-                  value={clampedSliceIndex}
-                  onChange={(event) => onSliceIndexChange(Number(event.target.value))}
-                  disabled={maxSliceDepth <= 1}
-                />
-              </div>
-            ) : null}
           </div>
 
           {error && <p className="error">{error}</p>}
@@ -255,7 +221,7 @@ export default function PlaybackControlsPanel({
                       type="button"
                       className={samplingMode === 'linear' ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
                       onClick={onSamplingModeToggle}
-                      disabled={!hasVolumeData || viewerMode !== '3d'}
+                      disabled={!hasVolumeData}
                       aria-pressed={samplingMode === 'linear'}
                     >
                       {samplingMode === 'linear' ? 'Trilinear' : 'Nearest'}
@@ -264,7 +230,7 @@ export default function PlaybackControlsPanel({
                       type="button"
                       className={blendingMode === 'additive' ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
                       onClick={onBlendingModeToggle}
-                      disabled={!hasVolumeData || viewerMode !== '3d'}
+                      disabled={!hasVolumeData}
                       aria-pressed={blendingMode === 'additive'}
                     >
                       {blendingMode === 'additive' ? 'Additive' : 'Alpha'}

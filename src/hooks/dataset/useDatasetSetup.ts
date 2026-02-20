@@ -3,7 +3,7 @@ import { useCallback, useMemo, type Dispatch, type SetStateAction } from 'react'
 import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../../shared/colorMaps/layerColors';
 import type { LayerSettings } from '../../state/layerSettings';
 import { useDatasetErrors } from '../useDatasetErrors';
-import { DEFAULT_EXPERIMENT_DIMENSION, DEFAULT_VOXEL_RESOLUTION, useVoxelResolution, type VoxelResolutionHook } from '../useVoxelResolution';
+import { DEFAULT_VOXEL_RESOLUTION, useVoxelResolution, type VoxelResolutionHook } from '../useVoxelResolution';
 import type { ChannelLayerSource, ChannelSource } from './useChannelSources';
 import type { VolumeDataType } from '../../types/volume';
 import {
@@ -70,7 +70,7 @@ export function useDatasetSetup({
   computeLayerTimepointCount,
   createLayerSource
 }: DatasetSetupParams): DatasetSetupHook {
-  const voxelResolution = useVoxelResolution(DEFAULT_VOXEL_RESOLUTION, DEFAULT_EXPERIMENT_DIMENSION);
+  const voxelResolution = useVoxelResolution(DEFAULT_VOXEL_RESOLUTION);
   const datasetErrors = useDatasetErrors();
   const { reportDatasetError, clearDatasetError } = datasetErrors;
   const selectDeterministicLayerKey = useCallback((layers: LoadedDatasetLayer[]): string | null => {

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
 import type { TrackDefinition } from '../../types/tracks';
-import type { ExperimentDimension } from '../useVoxelResolution';
 import type { ChannelSource, TrackSetSource } from '../dataset';
 import { collectFilesFromDataTransfer, parseTrackCsvFile } from '../../shared/utils/appHelpers';
 import { buildTracksFromCsvEntries } from '../../shared/utils/trackCsvParsing';
@@ -16,7 +15,6 @@ export type TrackSetDescriptor = {
 export type UseParsedTracksOptions = {
   channels: ChannelSource[];
   setChannels: Dispatch<SetStateAction<ChannelSource[]>>;
-  experimentDimension: ExperimentDimension;
 };
 
 const DEFAULT_TRACK_SET_NAME = 'Tracks';
@@ -26,7 +24,7 @@ function normalizeTrackSetName(name: string): string {
   return trimmed || DEFAULT_TRACK_SET_NAME;
 }
 
-export const useParsedTracks = ({ channels, setChannels, experimentDimension }: UseParsedTracksOptions) => {
+export const useParsedTracks = ({ channels, setChannels }: UseParsedTracksOptions) => {
   const trackSetIdRef = useRef(0);
 
   useEffect(() => {
@@ -84,15 +82,14 @@ export const useParsedTracks = ({ channels, setChannels, experimentDimension }: 
             trackSetName: normalizeTrackSetName(set.name),
             channelId: channel.id,
             channelName: channel.name,
-            entries,
-            experimentDimension
+            entries
           })
         );
       }
     }
 
     return map;
-  }, [channels, experimentDimension]);
+  }, [channels]);
 
   const createTrackSetSource = useCallback((file: File): TrackSetSource => {
     const nextId = trackSetIdRef.current + 1;

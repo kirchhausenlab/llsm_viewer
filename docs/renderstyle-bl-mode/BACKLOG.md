@@ -13,7 +13,6 @@ Status legend: `TODO`, `IN_PROGRESS`, `DONE`, `BLOCKED`
     - `src/hooks/dataset/useChannelDatasetLoader.ts`
     - `src/components/viewers/VolumeViewer.types.ts`
     - `src/components/viewers/viewer-shell/types.ts`
-    - `src/components/viewers/planar-viewer/types.ts`
     - `src/components/viewers/volume-viewer/vr/types.ts`
 
 - `BLR-002` (`DONE`): add BL setting fields and defaults in layer settings.
