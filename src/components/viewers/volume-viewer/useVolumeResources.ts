@@ -1755,7 +1755,7 @@ export function useVolumeResources({
         camera.far = farDistance;
         camera.updateProjectionMatrix();
       }
-      camera.position.set(0, 0, safeDistance);
+      camera.position.set(0, 0, -safeDistance);
       const rotationTarget = rotationTargetRef.current;
       rotationTarget.set(0, 0, 0);
       controls.target.copy(rotationTarget);

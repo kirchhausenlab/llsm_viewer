@@ -7,6 +7,7 @@ import {
   RENDER_STYLE_BL,
   RENDER_STYLE_ISO,
   RENDER_STYLE_MIP,
+  RENDER_STYLE_SLICED,
   createDefaultLayerSettings,
   brightnessContrastModel,
   type LayerSettings,
@@ -134,6 +135,29 @@ function useLayerControlsHarness(initialRenderStyle: RenderStyle = RENDER_STYLE_
   });
   assert.equal(hook.result.layerSettings['layer-a']?.renderStyle, RENDER_STYLE_MIP);
   assert.equal(hook.result.layerSettings['layer-b']?.renderStyle, RENDER_STYLE_MIP);
+
+  hook.unmount();
+})();
+
+(() => {
+  const hook = renderHook(() => useLayerControlsHarness(RENDER_STYLE_SLICED));
+
+  hook.act(() => {
+    hook.result.controls.handleLayerSlicedDepthChange('layer-a', 3);
+    hook.result.controls.handleLayerSlicedPlaneRotateSet(
+      'layer-a',
+      { x: 1, y: 2, z: 3 },
+      { x: 0.2, y: 0.3, z: 0.4 },
+    );
+  });
+
+  hook.act(() => {
+    hook.result.controls.handleLayerSlicedAnglesReset('layer-a');
+  });
+
+  assert.equal(hook.result.layerSettings['layer-a']?.slicedPlaneDepth, 3);
+  assert.deepEqual(hook.result.layerSettings['layer-a']?.slicedPlanePoint, { x: 0, y: 0, z: 3 });
+  assert.deepEqual(hook.result.layerSettings['layer-a']?.slicedPlaneNormal, { x: 0, y: 0, z: 1 });
 
   hook.unmount();
 })();

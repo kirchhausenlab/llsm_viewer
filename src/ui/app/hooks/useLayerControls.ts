@@ -7,6 +7,7 @@ import {
   brightnessContrastModel,
   clampWindowBounds,
   DEFAULT_SLICED_PLANE_NORMAL,
+  DEFAULT_SLICED_PLANE_POINT,
   RENDER_STYLE_BL,
   RENDER_STYLE_ISO,
   RENDER_STYLE_MIP,
@@ -347,6 +348,48 @@ export function useLayerControls({
           ...current,
           [key]: {
             ...previous,
+            slicedPlanePoint: nextPoint,
+            slicedPlaneNormal: nextNormal
+          }
+        };
+      });
+    },
+    [createLayerDefaultSettings, setLayerSettings]
+  );
+
+  const handleLayerSlicedAnglesReset = useCallback(
+    (key: string) => {
+      setLayerSettings((current) => {
+        const previous = current[key] ?? createLayerDefaultSettings(key);
+        const previousPoint = sanitizeSlicedPlanePoint(previous.slicedPlanePoint);
+        const previousNormal = normalizeSlicedPlaneNormal(previous.slicedPlaneNormal);
+        const nextDepth = Math.max(0, Math.round(coerceFiniteNumber(previous.slicedPlaneDepth)));
+        const nextPoint = {
+          x: DEFAULT_SLICED_PLANE_POINT.x,
+          y: DEFAULT_SLICED_PLANE_POINT.y,
+          z: nextDepth
+        };
+        const nextNormal = { ...DEFAULT_SLICED_PLANE_NORMAL };
+
+        const depthUnchanged = previous.slicedPlaneDepth === nextDepth;
+        const pointUnchanged =
+          previousPoint.x === nextPoint.x &&
+          previousPoint.y === nextPoint.y &&
+          previousPoint.z === nextPoint.z;
+        const normalUnchanged =
+          previousNormal.x === nextNormal.x &&
+          previousNormal.y === nextNormal.y &&
+          previousNormal.z === nextNormal.z;
+
+        if (depthUnchanged && pointUnchanged && normalUnchanged) {
+          return current;
+        }
+
+        return {
+          ...current,
+          [key]: {
+            ...previous,
+            slicedPlaneDepth: nextDepth,
             slicedPlanePoint: nextPoint,
             slicedPlaneNormal: nextNormal
           }
@@ -752,6 +795,7 @@ export function useLayerControls({
     handleLayerColorChange,
     handleLayerSlicedDepthChange,
     handleLayerSlicedPlaneRotateSet,
+    handleLayerSlicedAnglesReset,
     handleLayerRenderStyleChange,
     handleLayerRenderStyleToggle,
     handleLayerBlDensityScaleChange,

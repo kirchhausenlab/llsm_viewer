@@ -98,6 +98,7 @@ export type ChannelsPanelProps = {
   onLayerOffsetChange: (layerKey: string, axis: 'x' | 'y', value: number) => void;
   onLayerColorChange: (layerKey: string, color: string) => void;
   onLayerRenderStyleChange: (layerKey: string, renderStyle: RenderStyle) => void;
+  onLayerSlicedAnglesReset: (layerKey: string) => void;
   onLayerBlDensityScaleChange: (layerKey: string, value: number) => void;
   onLayerBlBackgroundCutoffChange: (layerKey: string, value: number) => void;
   onLayerBlOpacityScaleChange: (layerKey: string, value: number) => void;

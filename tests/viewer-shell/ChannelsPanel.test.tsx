@@ -8,6 +8,7 @@ import {
   RENDER_STYLE_BL,
   RENDER_STYLE_ISO,
   RENDER_STYLE_MIP,
+  RENDER_STYLE_SLICED,
   createDefaultLayerSettings,
 } from '../../src/state/layerSettings.ts';
 
@@ -29,8 +30,13 @@ const layer: LoadedDatasetLayer = {
 };
 
 type RenderStyleCall = { layerKey: string; renderStyle: number } | null;
+type ResetAnglesCall = string | null;
 
-function createProps(renderStyle: number, onRenderStyleCall: (value: RenderStyleCall) => void) {
+function createProps(
+  renderStyle: number,
+  onRenderStyleCall: (value: RenderStyleCall) => void,
+  onResetAnglesCall: (layerKey: string) => void = () => {},
+) {
   return {
     layout: {
       windowMargin: 16,
@@ -69,6 +75,9 @@ function createProps(renderStyle: number, onRenderStyleCall: (value: RenderStyle
     onLayerRenderStyleChange: (layerKey: string, nextRenderStyle: number) => {
       onRenderStyleCall({ layerKey, renderStyle: nextRenderStyle });
     },
+    onLayerSlicedAnglesReset: (layerKey: string) => {
+      onResetAnglesCall(layerKey);
+    },
     onLayerBlDensityScaleChange: () => {},
     onLayerBlBackgroundCutoffChange: () => {},
     onLayerBlOpacityScaleChange: () => {},
@@ -94,6 +103,7 @@ function findBlInputs(renderer: TestRenderer.ReactTestRenderer) {
 
 (() => {
   let renderStyleCall: RenderStyleCall = null;
+  let resetAnglesCall: ResetAnglesCall = null;
   const renderer = TestRenderer.create(
     <ChannelsPanel {...(createProps(RENDER_STYLE_MIP, (value) => {
       renderStyleCall = value;
@@ -103,10 +113,12 @@ function findBlInputs(renderer: TestRenderer.ReactTestRenderer) {
   const mipButton = findButtonByLabel(renderer, 'MIP');
   const isoButton = findButtonByLabel(renderer, 'ISO');
   const blButton = findButtonByLabel(renderer, 'BL');
+  const resetAnglesButtonInMip = findButtonByLabel(renderer, 'Reset angles');
 
   assert.ok(mipButton);
   assert.ok(isoButton);
   assert.ok(blButton);
+  assert.equal(resetAnglesButtonInMip, null);
   assert.equal(mipButton?.props['aria-pressed'], true);
   assert.equal(isoButton?.props['aria-pressed'], false);
   assert.equal(blButton?.props['aria-pressed'], false);
@@ -126,6 +138,20 @@ function findBlInputs(renderer: TestRenderer.ReactTestRenderer) {
     <ChannelsPanel {...(createProps(RENDER_STYLE_ISO, () => {}) as any)} />,
   );
   assert.equal(findBlInputs(renderer).length, 0);
+  assert.equal(findButtonByLabel(renderer, 'Reset angles'), null);
+
+  renderer.update(
+    <ChannelsPanel {...(createProps(RENDER_STYLE_SLICED, () => {}, (layerKey) => {
+      resetAnglesCall = layerKey;
+    }) as any)} />,
+  );
+  const resetAnglesButtonInSliced = findButtonByLabel(renderer, 'Reset angles');
+  assert.ok(resetAnglesButtonInSliced);
+
+  act(() => {
+    resetAnglesButtonInSliced?.props.onClick();
+  });
+  assert.equal(resetAnglesCall, 'layer-a');
 
   renderer.unmount();
 })();
