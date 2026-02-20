@@ -34,6 +34,7 @@ export async function launchViewerFromChannelFixtures(
   await page.goto('/');
   await page.getByRole('button', { name: 'Set up new experiment' }).click();
   await expect(page.getByRole('heading', { name: 'Set up new experiment' })).toBeVisible();
+  await page.getByRole('button', { name: '3D movie' }).click();
 
   await page.getByLabel('X:').fill(voxelResolution.x);
   await page.getByLabel('Y:').fill(voxelResolution.y);

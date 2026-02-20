@@ -20,10 +20,16 @@ function buildBaseProps() {
       onOpenPreprocessedLoader: noop,
       isPreprocessedImporting: false
     },
+    experimentTypeSelection: {
+      onSelectExperimentType: noop,
+      isFrontPageLocked: false
+    },
     experimentConfiguration: {
-      voxelResolution: { x: '', y: '', z: '', unit: 'μm', correctAnisotropy: false },
+      experimentType: 'single-3d-volume' as const,
+      voxelResolution: { x: '', y: '', z: '', t: '', unit: 'μm', timeUnit: 's', correctAnisotropy: false },
       onVoxelResolutionAxisChange: noop,
       onVoxelResolutionUnitChange: noop,
+      onVoxelResolutionTimeUnitChange: noop,
       onVoxelResolutionAnisotropyToggle: noop
     },
     preprocessedLoader: {
@@ -96,7 +102,7 @@ test('front page initial mode renders setup choices', () => {
   const textNodes = renderer.root.findAll((node: any) => typeof node.children?.[0] === 'string');
   const text = textNodes.flatMap((node: any) => node.children).join(' ');
 
-  assert.match(text, /4D viewer/);
+  assert.match(text, /Mirante4D/);
   assert.match(text, /Set up new experiment/);
   assert.match(text, /Load preprocessed experiment/);
 
@@ -152,6 +158,25 @@ test('front page preprocessed mode renders launch action', () => {
     .findAllByType('button')
     .find((button: any) => button.props.children === 'Launch viewer');
   assert.ok(launchButton);
+
+  renderer.unmount();
+});
+
+test('front page experiment type mode renders chooser buttons', () => {
+  const props = buildBaseProps();
+  const renderer = TestRenderer.create(
+    <FrontPage
+      {...(props as any)}
+      frontPageMode="experimentTypeSelection"
+    />
+  );
+
+  const textNodes = renderer.root.findAll((node: any) => typeof node.children?.[0] === 'string');
+  const text = textNodes.flatMap((node: any) => node.children).join(' ');
+  assert.match(text, /Choose the type of experiment:/);
+  assert.match(text, /3D movie/);
+  assert.match(text, /2D movie/);
+  assert.match(text, /Single 3D volume/);
 
   renderer.unmount();
 });

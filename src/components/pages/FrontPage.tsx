@@ -1,8 +1,13 @@
 import { useMemo } from 'react';
 import type { StagedPreprocessedExperiment } from '../../hooks/dataset';
-import type { VoxelResolutionInput, VoxelResolutionUnit } from '../../types/voxelResolution';
+import type {
+  TemporalResolutionUnit,
+  VoxelResolutionAxis,
+  VoxelResolutionInput,
+  VoxelResolutionUnit
+} from '../../types/voxelResolution';
 import FrontPageHeader from './FrontPageHeader';
-import ExperimentConfiguration, { type VoxelResolutionAxis } from './ExperimentConfiguration';
+import ExperimentConfiguration from './ExperimentConfiguration';
 import PreprocessedLoader, { type PreprocessedLoaderProps } from './PreprocessedLoader';
 import ChannelListPanel, { type ChannelListPanelProps } from './ChannelListPanel';
 import LaunchActions, { type LaunchActionsProps } from './LaunchActions';
@@ -10,6 +15,13 @@ import WarningsWindow from './WarningsWindow';
 import { formatBytes } from '../../errors';
 
 export type TrackSummary = { totalRows: number; uniqueTracks: number };
+export type ExperimentType = '3d-movie' | '2d-movie' | 'single-3d-volume';
+
+const EXPERIMENT_TYPE_OPTIONS: ReadonlyArray<{ type: ExperimentType; label: string }> = [
+  { type: '3d-movie', label: '3D movie' },
+  { type: '2d-movie', label: '2D movie' },
+  { type: 'single-3d-volume', label: 'Single 3D volume' }
+];
 
 export type InitialActionsProps = {
   isFrontPageLocked: boolean;
@@ -19,15 +31,22 @@ export type InitialActionsProps = {
 };
 
 export type ExperimentConfigurationState = {
+  experimentType: ExperimentType;
   voxelResolution: VoxelResolutionInput;
   onVoxelResolutionAxisChange: (axis: VoxelResolutionAxis, value: string) => void;
   onVoxelResolutionUnitChange: (unit: VoxelResolutionUnit) => void;
+  onVoxelResolutionTimeUnitChange: (unit: TemporalResolutionUnit) => void;
   onVoxelResolutionAnisotropyToggle: (value: boolean) => void;
 };
 
 export type PreprocessedSummaryProps = {
   preprocessedExperiment: StagedPreprocessedExperiment | null;
   computeTrackSummary: (entries: string[][]) => TrackSummary;
+};
+
+type ExperimentTypeSelectionProps = {
+  onSelectExperimentType: (type: ExperimentType) => void;
+  isFrontPageLocked: boolean;
 };
 
 type HeaderProps = {
@@ -37,9 +56,10 @@ type HeaderProps = {
 
 type FrontPageProps = {
   isFrontPageLocked: boolean;
-  frontPageMode: 'initial' | 'configuring' | 'preprocessed';
+  frontPageMode: 'initial' | 'experimentTypeSelection' | 'configuring' | 'preprocessed';
   header: HeaderProps;
   initialActions: InitialActionsProps;
+  experimentTypeSelection: ExperimentTypeSelectionProps;
   experimentConfiguration: ExperimentConfigurationState;
   preprocessedLoader: PreprocessedLoaderProps;
   channelListPanel: ChannelListPanelProps;
@@ -59,6 +79,7 @@ export default function FrontPage({
   frontPageMode,
   header,
   initialActions,
+  experimentTypeSelection,
   experimentConfiguration,
   preprocessedLoader,
   channelListPanel,
@@ -70,13 +91,13 @@ export default function FrontPage({
     if (frontPageMode === 'preprocessed') {
       return 'Loaded preprocessed experiment';
     }
-    if (frontPageMode === 'configuring') {
+    if (frontPageMode === 'configuring' || frontPageMode === 'experimentTypeSelection') {
       return 'Set up new experiment';
     }
     if (preprocessedLoader.isOpen) {
       return 'Load preprocessed experiment';
     }
-    return '4D viewer';
+    return 'Mirante4D';
   }, [frontPageMode, preprocessedLoader.isOpen]);
 
   const showReturnButton = frontPageMode !== 'initial' || preprocessedLoader.isOpen;
@@ -116,11 +137,31 @@ export default function FrontPage({
               </div>
             </div>
           ) : null}
+          {frontPageMode === 'experimentTypeSelection' ? (
+            <div className="experiment-type-selection">
+              <p className="experiment-type-selection-title">Choose the type of experiment:</p>
+              <div className="experiment-type-selection-buttons">
+                {EXPERIMENT_TYPE_OPTIONS.map((option) => (
+                  <button
+                    key={option.type}
+                    type="button"
+                    className="channel-add-button experiment-type-selection-button"
+                    onClick={() => experimentTypeSelection.onSelectExperimentType(option.type)}
+                    disabled={experimentTypeSelection.isFrontPageLocked}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {frontPageMode === 'configuring' ? (
             <ExperimentConfiguration
+              experimentType={experimentConfiguration.experimentType}
               voxelResolution={experimentConfiguration.voxelResolution}
               onVoxelResolutionAxisChange={experimentConfiguration.onVoxelResolutionAxisChange}
               onVoxelResolutionUnitChange={experimentConfiguration.onVoxelResolutionUnitChange}
+              onVoxelResolutionTimeUnitChange={experimentConfiguration.onVoxelResolutionTimeUnitChange}
               onVoxelResolutionAnisotropyToggle={experimentConfiguration.onVoxelResolutionAnisotropyToggle}
               isFrontPageLocked={isFrontPageLocked}
             />

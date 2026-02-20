@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test('@visual front page initial state', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: '4D viewer' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Mirante4D' })).toBeVisible();
 
   await expect(page).toHaveScreenshot('frontpage-initial.png', {
     fullPage: true

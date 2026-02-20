@@ -13,3 +13,51 @@ test('@smoke can preprocess local TIFF fixture and launch viewer', async ({ page
     page.getByRole('button', { name: /Start playback|Pause playback/ })
   ).toBeVisible();
 });
+
+test('@smoke setup flow steps back through chooser before front page', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Set up new experiment' }).click();
+
+  await expect(page.getByText('Choose the type of experiment:')).toBeVisible();
+  await expect(page.getByRole('button', { name: '3D movie' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '2D movie' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Single 3D volume' })).toBeVisible();
+
+  await page.getByRole('button', { name: '↩ Return' }).click();
+  await expect(page.getByRole('heading', { name: 'Mirante4D' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Set up new experiment' }).click();
+  await page.getByRole('button', { name: '3D movie' }).click();
+  await expect(page.getByText('Resolution:')).toBeVisible();
+  await expect(page.getByLabel('X:')).toBeVisible();
+  await expect(page.getByLabel('Y:')).toBeVisible();
+  await expect(page.getByLabel('Z:')).toBeVisible();
+  await expect(page.getByLabel('T:')).toBeVisible();
+  await expect(page.getByLabel('Temporal unit')).toBeVisible();
+
+  await page.getByRole('button', { name: '↩ Return' }).click();
+  await expect(page.getByText('Choose the type of experiment:')).toBeVisible();
+
+  await page.getByRole('button', { name: '2D movie' }).click();
+  await expect(page.getByLabel('X:')).toBeVisible();
+  await expect(page.getByLabel('Y:')).toBeVisible();
+  await expect(page.getByLabel('T:')).toBeVisible();
+  await expect(page.getByLabel('Z:')).toHaveCount(0);
+  await expect(page.getByLabel('Temporal unit')).toBeVisible();
+
+  await page.getByRole('button', { name: '↩ Return' }).click();
+  await expect(page.getByText('Choose the type of experiment:')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Single 3D volume' }).click();
+  await expect(page.getByLabel('X:')).toBeVisible();
+  await expect(page.getByLabel('Y:')).toBeVisible();
+  await expect(page.getByLabel('Z:')).toBeVisible();
+  await expect(page.getByLabel('T:')).toHaveCount(0);
+  await expect(page.getByLabel('Temporal unit')).toHaveCount(0);
+
+  await page.getByRole('button', { name: '↩ Return' }).click();
+  await expect(page.getByText('Choose the type of experiment:')).toBeVisible();
+
+  await page.getByRole('button', { name: '↩ Return' }).click();
+  await expect(page.getByRole('heading', { name: 'Mirante4D' })).toBeVisible();
+});

@@ -21,10 +21,16 @@ function buildFrontPageProps() {
       onOpenPreprocessedLoader: noop,
       isPreprocessedImporting: false
     },
+    experimentTypeSelection: {
+      onSelectExperimentType: noop,
+      isFrontPageLocked: false
+    },
     experimentConfiguration: {
-      voxelResolution: { x: '', y: '', z: '', unit: 'μm', correctAnisotropy: false },
+      experimentType: 'single-3d-volume' as const,
+      voxelResolution: { x: '', y: '', z: '', t: '', unit: 'μm', timeUnit: 's', correctAnisotropy: false },
       onVoxelResolutionAxisChange: noop,
       onVoxelResolutionUnitChange: noop,
+      onVoxelResolutionTimeUnitChange: noop,
       onVoxelResolutionAnisotropyToggle: noop
     },
     preprocessedLoader: {

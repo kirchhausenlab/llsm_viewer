@@ -1,7 +1,7 @@
 import type { FC } from 'react';
 
 type LaunchActionsProps = {
-  frontPageMode: 'initial' | 'configuring' | 'preprocessed';
+  frontPageMode: 'initial' | 'experimentTypeSelection' | 'configuring' | 'preprocessed';
   hasGlobalTimepointMismatch: boolean;
   interactionErrorMessage: string | null;
   launchErrorMessage: string | null;
@@ -70,7 +70,7 @@ const LaunchActions: FC<LaunchActionsProps> = ({
       {frontPageMode === 'preprocessed' && preprocessSuccessMessage ? (
         <p className="launch-feedback launch-feedback-success">{preprocessSuccessMessage}</p>
       ) : null}
-      {showLaunchViewerButton && frontPageMode !== 'initial' ? (
+      {showLaunchViewerButton && (frontPageMode === 'configuring' || frontPageMode === 'preprocessed') ? (
         <div className="front-page-actions">
           {frontPageMode === 'configuring' ? (
             <>

@@ -8,7 +8,7 @@ import FrontPageHeader from '../../src/components/pages/FrontPageHeader.tsx';
 test('front page header hides return button when not needed', () => {
   const renderer = TestRenderer.create(
     <FrontPageHeader
-      title="4D viewer"
+      title="Mirante4D"
       showReturnButton={false}
       onReturnToStart={() => {}}
       isFrontPageLocked={false}

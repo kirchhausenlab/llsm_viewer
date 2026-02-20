@@ -3,19 +3,25 @@ import type { Dispatch, SetStateAction } from 'react';
 
 import { computeAnisotropyScale } from '../shared/utils/anisotropyCorrection';
 import type {
+  TemporalResolutionUnit,
   VoxelResolutionAxis,
   VoxelResolutionInput,
   VoxelResolutionUnit,
   VoxelResolutionValues
 } from '../types/voxelResolution';
+import type { AnisotropyScaleFactors } from '../types/voxelResolution';
 
 const DEFAULT_VOXEL_RESOLUTION: VoxelResolutionInput = {
   x: '1.0',
   y: '1.0',
   z: '1.0',
+  t: '1.0',
   unit: 'μm',
+  timeUnit: 's',
   correctAnisotropy: false
 };
+
+const SPATIAL_VOXEL_RESOLUTION_AXES: ReadonlyArray<keyof AnisotropyScaleFactors> = ['x', 'y', 'z'];
 
 export type VoxelResolutionState = {
   voxelResolutionInput: VoxelResolutionInput;
@@ -27,6 +33,7 @@ export type VoxelResolutionState = {
 export type VoxelResolutionActions = {
   handleVoxelResolutionAxisChange: (axis: VoxelResolutionAxis, value: string) => void;
   handleVoxelResolutionUnitChange: (unit: VoxelResolutionUnit) => void;
+  handleVoxelResolutionTimeUnitChange: (unit: TemporalResolutionUnit) => void;
   handleVoxelResolutionAnisotropyToggle: (value: boolean) => void;
   setVoxelResolutionInput: Dispatch<SetStateAction<VoxelResolutionInput>>;
 };
@@ -37,9 +44,8 @@ export function useVoxelResolution(initial: VoxelResolutionInput = DEFAULT_VOXEL
   const [voxelResolutionInput, setVoxelResolutionInput] = useState<VoxelResolutionInput>(initial);
 
   const voxelResolution = useMemo<VoxelResolutionValues | null>(() => {
-    const axes: VoxelResolutionAxis[] = ['x', 'y', 'z'];
-    const parsed: Partial<Record<VoxelResolutionAxis, number>> = {};
-    for (const axis of axes) {
+    const parsed: Partial<Record<'x' | 'y' | 'z', number>> = {};
+    for (const axis of SPATIAL_VOXEL_RESOLUTION_AXES) {
       const rawValue = voxelResolutionInput[axis].trim();
       if (!rawValue) {
         return null;
@@ -83,6 +89,15 @@ export function useVoxelResolution(initial: VoxelResolutionInput = DEFAULT_VOXEL
     });
   }, []);
 
+  const handleVoxelResolutionTimeUnitChange = useCallback((unit: TemporalResolutionUnit) => {
+    setVoxelResolutionInput((current) => {
+      if (current.timeUnit === unit) {
+        return current;
+      }
+      return { ...current, timeUnit: unit };
+    });
+  }, []);
+
   const handleVoxelResolutionAnisotropyToggle = useCallback((value: boolean) => {
     setVoxelResolutionInput((current) => {
       if (current.correctAnisotropy === value) {
@@ -99,6 +114,7 @@ export function useVoxelResolution(initial: VoxelResolutionInput = DEFAULT_VOXEL
     trackScale,
     handleVoxelResolutionAxisChange,
     handleVoxelResolutionUnitChange,
+    handleVoxelResolutionTimeUnitChange,
     handleVoxelResolutionAnisotropyToggle,
     setVoxelResolutionInput
   };

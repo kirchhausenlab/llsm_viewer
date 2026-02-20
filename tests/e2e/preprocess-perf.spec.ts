@@ -12,6 +12,7 @@ test('@nightly preprocesses local fixture within sanity budget and reports timin
   await page.goto('/');
   await page.getByRole('button', { name: 'Set up new experiment' }).click();
   await expect(page.getByRole('heading', { name: 'Set up new experiment' })).toBeVisible();
+  await page.getByRole('button', { name: '3D movie' }).click();
 
   await page.getByLabel('X:').fill(x);
   await page.getByLabel('Y:').fill(y);
@@ -49,4 +50,3 @@ test('@nightly preprocesses local fixture within sanity budget and reports timin
   );
   expect(elapsedMs).toBeLessThanOrEqual(maxAllowedMs);
 });
-

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import FrontPage from './FrontPage';
+import FrontPage, { type ExperimentType } from './FrontPage';
 import usePreprocessedExperiment from '../../hooks/dataset/usePreprocessedExperiment';
 import type { VoxelResolutionHook } from '../../hooks/useVoxelResolution';
 import type { DatasetErrorHook } from '../../hooks/useDatasetErrors';
@@ -125,6 +125,7 @@ export default function FrontPageContainer({
     voxelResolution: voxelResolutionValue,
     handleVoxelResolutionAxisChange,
     handleVoxelResolutionUnitChange,
+    handleVoxelResolutionTimeUnitChange,
     handleVoxelResolutionAnisotropyToggle
   } = voxelResolution;
 
@@ -158,6 +159,8 @@ export default function FrontPageContainer({
   const [exportWhilePreprocessing, setExportWhilePreprocessing] = useState(false);
   const [exportName, setExportName] = useState('');
   const [exportDestinationLabel, setExportDestinationLabel] = useState<string | null>(null);
+  const [isExperimentTypeSelectionOpen, setIsExperimentTypeSelectionOpen] = useState(false);
+  const [selectedExperimentType, setSelectedExperimentType] = useState<ExperimentType>('single-3d-volume');
 
   const createDefaultExportName = useCallback((): string => {
     const now = new Date();
@@ -190,6 +193,21 @@ export default function FrontPageContainer({
     setExportDestinationLabel(null);
   }, []);
 
+  const handleOpenExperimentTypeSelection = useCallback(() => {
+    resetPreprocessedState();
+    setIsExperimentTypeSelectionOpen(true);
+    clearDatasetError();
+  }, [clearDatasetError, resetPreprocessedState]);
+
+  const handleExperimentTypeSelected = useCallback((experimentType: ExperimentType) => {
+    setSelectedExperimentType(experimentType);
+    if (experimentType === '2d-movie') {
+      handleVoxelResolutionAxisChange('z', '1.0');
+    }
+    setIsExperimentTypeSelectionOpen(false);
+    onStartExperimentSetup();
+  }, [handleVoxelResolutionAxisChange, onStartExperimentSetup]);
+
   useLayoutEffect(() => {
     onPreprocessedStateChange?.({
       preprocessedExperiment,
@@ -203,15 +221,33 @@ export default function FrontPageContainer({
     }
   }, [preprocessedExperiment]);
 
-  const frontPageMode = useMemo<'initial' | 'configuring' | 'preprocessed'>(() => {
+  const frontPageMode = useMemo<'initial' | 'experimentTypeSelection' | 'configuring' | 'preprocessed'>(() => {
     if (preprocessedExperiment) {
       return 'preprocessed';
+    }
+    if (isExperimentTypeSelectionOpen) {
+      return 'experimentTypeSelection';
     }
     if (channels.length > 0 || isExperimentSetupStarted) {
       return 'configuring';
     }
     return 'initial';
-  }, [channels.length, isExperimentSetupStarted, preprocessedExperiment]);
+  }, [
+    channels.length,
+    isExperimentSetupStarted,
+    isExperimentTypeSelectionOpen,
+    preprocessedExperiment
+  ]);
+
+  const handleReturnFromFrontPage = useCallback(() => {
+    if (frontPageMode === 'configuring') {
+      setIsExperimentTypeSelectionOpen(true);
+      return;
+    }
+    setIsExperimentTypeSelectionOpen(false);
+    setSelectedExperimentType('single-3d-volume');
+    onReturnToStart();
+  }, [frontPageMode, onReturnToStart]);
 
   const handlePreprocessExperiment = useCallback(async () => {
     if (
@@ -368,21 +404,28 @@ export default function FrontPageContainer({
   const launchButtonLaunchable: 'true' | 'false' = launchButtonEnabled ? 'true' : 'false';
 
   const headerProps = {
-    onReturnToStart,
+    onReturnToStart: handleReturnFromFrontPage,
     isFrontPageLocked
   };
 
   const initialActions = {
     isFrontPageLocked,
-    onStartExperimentSetup,
+    onStartExperimentSetup: handleOpenExperimentTypeSelection,
     onOpenPreprocessedLoader: preprocessedState.handlePreprocessedLoaderOpen,
     isPreprocessedImporting: preprocessedState.isPreprocessedImporting
   };
 
+  const experimentTypeSelectionProps = {
+    onSelectExperimentType: handleExperimentTypeSelected,
+    isFrontPageLocked
+  };
+
   const experimentConfigurationProps = {
+    experimentType: selectedExperimentType,
     voxelResolution: voxelResolutionInput,
     onVoxelResolutionAxisChange: handleVoxelResolutionAxisChange,
     onVoxelResolutionUnitChange: handleVoxelResolutionUnitChange,
+    onVoxelResolutionTimeUnitChange: handleVoxelResolutionTimeUnitChange,
     onVoxelResolutionAnisotropyToggle: handleVoxelResolutionAnisotropyToggle
   };
 
@@ -429,7 +472,8 @@ export default function FrontPageContainer({
     hasGlobalTimepointMismatch,
     interactionErrorMessage,
     launchErrorMessage,
-    showLaunchViewerButton: frontPageMode !== 'initial' || isPreprocessedLoaderOpen,
+    showLaunchViewerButton:
+      frontPageMode === 'configuring' || frontPageMode === 'preprocessed' || isPreprocessedLoaderOpen,
     onPreprocessExperiment: handlePreprocessExperiment,
     isPreprocessingExperiment,
     preprocessButtonEnabled: canLaunch,
@@ -460,6 +504,7 @@ export default function FrontPageContainer({
       frontPageMode={frontPageMode}
       header={headerProps}
       initialActions={initialActions}
+      experimentTypeSelection={experimentTypeSelectionProps}
       experimentConfiguration={experimentConfigurationProps}
       preprocessedLoader={preprocessedLoaderProps}
       channelListPanel={channelListPanelProps}
