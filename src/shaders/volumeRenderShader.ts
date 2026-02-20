@@ -784,6 +784,18 @@ const volumeRenderFragmentShader = /* glsl */ `
       return sample_color_lod(texcoords, 0.0);
     }
 
+    vec4 sample_color_voxel(vec3 voxelCoord) {
+      vec3 safeVolumeSize = max(u_size, vec3(1.0));
+      vec3 clampedVoxel = clamp(floor(voxelCoord + vec3(0.5)), vec3(0.0), safeVolumeSize - vec3(1.0));
+      vec3 texcoords = (clampedVoxel + vec3(0.5)) / safeVolumeSize;
+      if (u_brickAtlasEnabled > 0.5) {
+        vec3 atlasVolumeSize = max(u_brickVolumeSize, vec3(1.0));
+        vec3 atlasVoxel = floor(clamp(texcoords, vec3(0.0), vec3(1.0)) * atlasVolumeSize);
+        return sample_brick_atlas_voxel(atlasVoxel);
+      }
+      return texture(u_data, texcoords);
+    }
+
     float normalize_window(float value) {
       float range = max(u_windowMax - u_windowMin, 1e-5);
       float normalized = (value - u_windowMin) / range;
@@ -1030,7 +1042,7 @@ const volumeRenderFragmentShader = /* glsl */ `
       #elif defined(VOLUME_STYLE_BL)
         cast_bl(start_loc, step, nsteps, view_ray);
       #elif defined(VOLUME_STYLE_SLICED)
-        cast_sliced(start_loc, step, nsteps, view_ray);
+        cast_sliced(front / u_size, rayDir / u_size, clamp(int(travelDistance * 3.0) + 3, 1, MAX_STEPS), view_ray);
       #else
         cast_mip(start_loc, step, nsteps, view_ray);
       #endif
@@ -1374,7 +1386,6 @@ const volumeRenderFragmentShader = /* glsl */ `
 
     #if defined(VOLUME_STYLE_SLICED)
     void cast_sliced(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray) {
-      vec3 loc = start_loc;
       vec4 hitColor = vec4(0.0);
       bool hasHit = false;
       bool slicePlaneEnabled = u_slicePlaneEnabled > 0.5;
@@ -1386,28 +1397,96 @@ const volumeRenderFragmentShader = /* glsl */ `
         }
       }
 
+      vec3 safeVolumeSize = max(u_size, vec3(1.0));
+      vec3 rayDir = -view_ray;
+      float rayDirLength = length(rayDir);
+      if (rayDirLength <= EPSILON) {
+        gl_FragColor = vec4(0.0);
+        return;
+      }
+      rayDir /= rayDirLength;
+
+      // Start exactly inside the volume and traverse crossed voxels one by one (3D DDA).
+      vec3 startPoint = start_loc * safeVolumeSize + rayDir * 1e-4;
+      vec3 voxel = floor(startPoint + vec3(0.5));
+      voxel = clamp(voxel, vec3(0.0), safeVolumeSize - vec3(1.0));
+
+      vec3 stepDir = vec3(0.0);
+      vec3 tMax = vec3(LARGE);
+      vec3 tDelta = vec3(LARGE);
+
+      if (rayDir.x > EPSILON) {
+        stepDir.x = 1.0;
+        tMax.x = (voxel.x + 0.5 - startPoint.x) / rayDir.x;
+        tDelta.x = 1.0 / rayDir.x;
+      } else if (rayDir.x < -EPSILON) {
+        stepDir.x = -1.0;
+        tMax.x = (voxel.x - 0.5 - startPoint.x) / rayDir.x;
+        tDelta.x = -1.0 / rayDir.x;
+      }
+
+      if (rayDir.y > EPSILON) {
+        stepDir.y = 1.0;
+        tMax.y = (voxel.y + 0.5 - startPoint.y) / rayDir.y;
+        tDelta.y = 1.0 / rayDir.y;
+      } else if (rayDir.y < -EPSILON) {
+        stepDir.y = -1.0;
+        tMax.y = (voxel.y - 0.5 - startPoint.y) / rayDir.y;
+        tDelta.y = -1.0 / rayDir.y;
+      }
+
+      if (rayDir.z > EPSILON) {
+        stepDir.z = 1.0;
+        tMax.z = (voxel.z + 0.5 - startPoint.z) / rayDir.z;
+        tDelta.z = 1.0 / rayDir.z;
+      } else if (rayDir.z < -EPSILON) {
+        stepDir.z = -1.0;
+        tMax.z = (voxel.z - 0.5 - startPoint.z) / rayDir.z;
+        tDelta.z = -1.0 / rayDir.z;
+      }
+
       for (int iter = 0; iter < MAX_STEPS; iter++) {
         if (iter >= nsteps) {
           break;
         }
+        if (
+          voxel.x < 0.0 || voxel.y < 0.0 || voxel.z < 0.0 ||
+          voxel.x > safeVolumeSize.x - 1.0 ||
+          voxel.y > safeVolumeSize.y - 1.0 ||
+          voxel.z > safeVolumeSize.z - 1.0
+        ) {
+          break;
+        }
 
-        vec3 samplePos = loc * u_size;
         if (slicePlaneEnabled) {
-          float signedDistance = dot(samplePos - u_slicePlanePoint, planeNormal);
+          float signedDistance = dot(voxel - u_slicePlanePoint, planeNormal);
           if (signedDistance < 0.0) {
-            loc += step;
+            float tNextSkip = min(tMax.x, min(tMax.y, tMax.z));
+            if (tNextSkip >= LARGE) {
+              break;
+            }
+            if (tMax.x <= tNextSkip + 1e-6) {
+              voxel.x += stepDir.x;
+              tMax.x += tDelta.x;
+            }
+            if (tMax.y <= tNextSkip + 1e-6) {
+              voxel.y += stepDir.y;
+              tMax.y += tDelta.y;
+            }
+            if (tMax.z <= tNextSkip + 1e-6) {
+              voxel.z += stepDir.z;
+              tMax.z += tDelta.z;
+            }
             continue;
           }
         }
 
-        vec4 colorSample = sample_color(loc);
+        vec4 colorSample = sample_color_voxel(voxel);
         float rawVal = luminance(colorSample);
         float normalizedVal = normalize_intensity(rawVal);
         hitColor = compose_color(normalizedVal, colorSample);
         hasHit = true;
         break;
-
-        loc += step;
       }
 
       if (hasHit) {
