@@ -62,6 +62,12 @@ export type PlaybackControlsProps = {
   onStopRecording: () => void;
   isRecording: boolean;
   canRecord: boolean;
+  activeSlicedLayerControl: {
+    layerKey: string;
+    depth: number;
+    zIndex: number;
+  } | null;
+  onActiveSlicedLayerDepthChange: (value: number) => void;
 };
 
 export type ChannelPanelStyle = (CSSProperties & { '--channel-slider-color'?: string }) &

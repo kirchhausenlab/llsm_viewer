@@ -62,6 +62,8 @@ const createLayer = (
   invert: false,
   samplingMode,
   mode: '3d',
+  slicedPlanePoint: { x: 0, y: 0, z: 0 },
+  slicedPlaneNormal: { x: 0, y: 0, z: 1 },
   brickPageTable,
   brickAtlas,
 });
@@ -208,12 +210,14 @@ const createLayer = (
 
   const resourcesRef = { current: new Map<string, VolumeResources>() };
   let layers: ViewerLayer[] = [createLayer(volume, null, null, 'linear')];
+  let isAdditiveBlending = false;
+  const slicedRenderStyle: ViewerLayer['renderStyle'] = 3;
 
   const hook = renderHook(() =>
     useVolumeResources({
       layers,
       primaryVolume: volume,
-      isAdditiveBlending: false,
+      isAdditiveBlending,
       renderContextRevision: 0,
       sceneRef,
       cameraRef,
@@ -303,6 +307,75 @@ const createLayer = (
   assert.equal(updatedBlUniforms.u_blBackgroundCutoff?.value, 0.2);
   assert.equal(updatedBlUniforms.u_blOpacityScale?.value, 1.3);
   assert.equal(updatedBlUniforms.u_blEarlyExitAlpha?.value, 0.95);
+
+  isAdditiveBlending = true;
+  hook.rerender();
+  const additiveBlResource = resourcesRef.current.get('layer-3d');
+  assert.ok(additiveBlResource);
+  const additiveBlMaterial = additiveBlResource.mesh.material as THREE.ShaderMaterial;
+  const additiveBlUniforms = additiveBlMaterial.uniforms as Record<string, { value: unknown }>;
+  assert.equal(additiveBlMaterial.blending, THREE.AdditiveBlending);
+  assert.equal(additiveBlMaterial.transparent, true);
+  assert.equal(additiveBlMaterial.depthWrite, false);
+  assert.equal(additiveBlUniforms.u_additive?.value, 1);
+
+  layers = [
+    {
+      ...layers[0],
+      renderStyle: slicedRenderStyle,
+      samplingMode: 'linear',
+      slicedPlanePoint: { x: 1, y: 1, z: 1 },
+      slicedPlaneNormal: { x: 0, y: 0, z: 4 },
+      slicedPlaneEnabled: true,
+    },
+  ];
+  hook.rerender();
+
+  const slicedResource = resourcesRef.current.get('layer-3d');
+  assert.ok(slicedResource);
+  const slicedMaterial = slicedResource.mesh.material as THREE.ShaderMaterial;
+  const slicedUniforms = slicedMaterial.uniforms as Record<string, { value: unknown }>;
+  assert.notStrictEqual(slicedMaterial, additiveBlMaterial);
+  assert.ok(slicedMaterial.fragmentShader.includes('#define VOLUME_STYLE_SLICED'));
+  assert.ok(slicedMaterial.fragmentShader.includes('void cast_sliced'));
+  assert.equal(slicedMaterial.transparent, false);
+  assert.equal(slicedMaterial.depthWrite, true);
+  assert.equal(slicedMaterial.depthTest, true);
+  assert.equal(slicedMaterial.blending, THREE.NormalBlending);
+  assert.equal(slicedUniforms.u_nearestSampling?.value, 1);
+  assert.equal(slicedUniforms.u_adaptiveLodEnabled?.value, 0);
+  assert.equal(slicedUniforms.u_additive?.value, 0);
+  assert.equal(slicedUniforms.u_slicePlaneEnabled?.value, 1);
+  assert.deepEqual((slicedUniforms.u_slicePlanePoint?.value as THREE.Vector3).toArray(), [1, 1, 1]);
+  assert.deepEqual((slicedUniforms.u_slicePlaneNormal?.value as THREE.Vector3).toArray(), [0, 0, 1]);
+  assert.equal((slicedResource.texture as THREE.Data3DTexture).minFilter, THREE.NearestFilter);
+  assert.equal((slicedResource.texture as THREE.Data3DTexture).magFilter, THREE.NearestFilter);
+  assert.equal(slicedResource.samplingMode, 'nearest');
+
+  layers = [
+    {
+      ...layers[0],
+      samplingMode: 'linear',
+      slicedPlanePoint: { x: 0.5, y: 0.25, z: 0.75 },
+      slicedPlaneNormal: { x: 8, y: 0, z: 0 },
+      slicedPlaneEnabled: false,
+    },
+  ];
+  hook.rerender();
+  const updatedSlicedResource = resourcesRef.current.get('layer-3d');
+  assert.ok(updatedSlicedResource);
+  const updatedSlicedMaterial = updatedSlicedResource.mesh.material as THREE.ShaderMaterial;
+  const updatedSlicedUniforms = updatedSlicedMaterial.uniforms as Record<string, { value: unknown }>;
+  assert.equal(updatedSlicedMaterial.blending, THREE.NormalBlending);
+  assert.equal(updatedSlicedUniforms.u_nearestSampling?.value, 1);
+  assert.equal(updatedSlicedUniforms.u_adaptiveLodEnabled?.value, 0);
+  assert.equal(updatedSlicedUniforms.u_additive?.value, 0);
+  assert.equal(updatedSlicedUniforms.u_slicePlaneEnabled?.value, 0);
+  assert.deepEqual(
+    (updatedSlicedUniforms.u_slicePlanePoint?.value as THREE.Vector3).toArray(),
+    [0.5, 0.25, 0.75],
+  );
+  assert.deepEqual((updatedSlicedUniforms.u_slicePlaneNormal?.value as THREE.Vector3).toArray(), [1, 0, 0]);
 })();
 
 (() => {

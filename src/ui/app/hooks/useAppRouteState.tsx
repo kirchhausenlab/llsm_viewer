@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FrontPageContainerProps } from '../../../components/pages/FrontPageContainer';
 import type { ViewerShellContainerProps } from '../../../components/viewers/ViewerShellContainer';
+import type { SlicePlaneUpdate } from '../../../components/viewers/VolumeViewer.types';
 import type {
   LoadedDatasetLayer,
   StagedPreprocessedExperiment
 } from '../../../hooks/dataset';
 import { clearTextureCache } from '../../../core/textureCache';
 import { deriveChannelTrackOffsets } from '../../../state/channelTrackOffsets';
+import { RENDER_STYLE_SLICED } from '../../../state/layerSettings';
 import type { FollowedVoxelTarget } from '../../../types/follow';
 import type { HoveredVoxelInfo } from '../../../types/hover';
 import { computeTrackSummary } from '../../../shared/utils/trackSummary';
@@ -762,6 +764,8 @@ export function useAppRouteState(): AppRouteState {
     handleLayerAutoContrast,
     handleLayerOffsetChange,
     handleLayerColorChange,
+    handleLayerSlicedDepthChange,
+    handleLayerSlicedPlaneRotateSet,
     handleLayerRenderStyleChange,
     handleLayerRenderStyleToggle,
     handleLayerBlDensityScaleChange,
@@ -794,6 +798,79 @@ export function useAppRouteState(): AppRouteState {
     setGlobalRenderStyle,
     setGlobalSamplingMode
   });
+
+  const layerDepthByKey = useMemo(() => {
+    const byKey = new Map<string, number>();
+    for (const layer of loadedDatasetLayers) {
+      byKey.set(layer.key, layer.depth);
+    }
+    return byKey;
+  }, [loadedDatasetLayers]);
+
+  const activeSelectedLayerKey = useMemo(() => {
+    if (!activeChannelTabId) {
+      return null;
+    }
+    const channelLayers = channelLayersMap.get(activeChannelTabId) ?? [];
+    if (channelLayers.length === 0) {
+      return null;
+    }
+    const selectedLayerKey = channelActiveLayer[activeChannelTabId];
+    if (selectedLayerKey && channelLayers.some((layer) => layer.key === selectedLayerKey)) {
+      return selectedLayerKey;
+    }
+    return selectDeterministicLayerKey(channelLayers);
+  }, [activeChannelTabId, channelActiveLayer, channelLayersMap]);
+
+  const activeSlicedLayerControl = useMemo(() => {
+    if (!activeSelectedLayerKey) {
+      return null;
+    }
+    const settings = layerSettings[activeSelectedLayerKey] ?? createLayerDefaultSettings(activeSelectedLayerKey);
+    if (settings.renderStyle !== RENDER_STYLE_SLICED) {
+      return null;
+    }
+
+    const runtimeDepth = currentLayerVolumes[activeSelectedLayerKey]?.depth ?? 0;
+    const fallbackDepth = layerDepthByKey.get(activeSelectedLayerKey) ?? 0;
+    const depth = Math.max(1, Math.floor(runtimeDepth || fallbackDepth));
+    const rawDepth = Number.isFinite(settings.slicedPlaneDepth) ? settings.slicedPlaneDepth : 0;
+    const zIndex = Math.min(Math.max(Math.round(rawDepth), 0), depth - 1);
+
+    return {
+      layerKey: activeSelectedLayerKey,
+      depth,
+      zIndex
+    };
+  }, [
+    activeSelectedLayerKey,
+    createLayerDefaultSettings,
+    currentLayerVolumes,
+    layerDepthByKey,
+    layerSettings
+  ]);
+
+  const handleActiveSlicedLayerDepthChange = useCallback(
+    (value: number) => {
+      const layerKey = activeSlicedLayerControl?.layerKey;
+      if (!layerKey) {
+        return;
+      }
+      handleLayerSlicedDepthChange(layerKey, value);
+    },
+    [activeSlicedLayerControl, handleLayerSlicedDepthChange]
+  );
+
+  const handleActiveSlicedLayerPlaneRotate = useCallback(
+    (update: SlicePlaneUpdate) => {
+      const activeLayerKey = activeSlicedLayerControl?.layerKey;
+      if (!activeLayerKey || update.layerKey !== activeLayerKey) {
+        return;
+      }
+      handleLayerSlicedPlaneRotateSet(update.layerKey, update.point, update.normal);
+    },
+    [activeSlicedLayerControl, handleLayerSlicedPlaneRotateSet]
+  );
 
   const routeDatasetSetup = createRouteDatasetSetupProps({
     state: {
@@ -881,7 +958,9 @@ export function useAppRouteState(): AppRouteState {
         canAdvancePlayback: canAdvancePlaybackToIndex,
         onRegisterReset: handleRegisterReset,
         onVolumeStepScaleChange: handleVolumeStepScaleChange,
-        onRegisterVolumeStepScaleChange: handleRegisterVolumeStepScaleChange
+        onRegisterVolumeStepScaleChange: handleRegisterVolumeStepScaleChange,
+        activeSlicedLayerKey: activeSlicedLayerControl?.layerKey ?? null,
+        onSlicePlaneChange: handleActiveSlicedLayerPlaneRotate
       },
       vr: {
         isVrPassthroughSupported,
@@ -968,7 +1047,9 @@ export function useAppRouteState(): AppRouteState {
         onStartRecording: handleStartRecording,
         onStopRecording: handleStopRecording,
         isRecording,
-        canRecord
+        canRecord,
+        activeSlicedLayerControl,
+        onActiveSlicedLayerDepthChange: handleActiveSlicedLayerDepthChange
       }
     },
     panels: {

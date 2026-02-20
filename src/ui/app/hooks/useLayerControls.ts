@@ -6,15 +6,18 @@ import type { VolumeBrickAtlas, VolumeBrickPageTable } from '../../../core/volum
 import {
   brightnessContrastModel,
   clampWindowBounds,
+  DEFAULT_SLICED_PLANE_NORMAL,
   RENDER_STYLE_BL,
   RENDER_STYLE_ISO,
   RENDER_STYLE_MIP,
+  RENDER_STYLE_SLICED,
   DEFAULT_WINDOW_MAX,
   DEFAULT_WINDOW_MIN,
   type BrightnessContrastState,
   type LayerSettings,
   type RenderStyle,
   type SamplingMode,
+  type SlicedPlaneVector,
   updateLayerSettings
 } from '../../../state/layerSettings';
 import type { LoadedDatasetLayer } from '../../../hooks/dataset';
@@ -52,6 +55,28 @@ const nextRenderStyle = (current: RenderStyle): RenderStyle => {
     return RENDER_STYLE_BL;
   }
   return RENDER_STYLE_MIP;
+};
+
+const coerceFiniteNumber = (value: number, fallback = 0): number =>
+  Number.isFinite(value) ? value : fallback;
+
+const sanitizeSlicedPlanePoint = (point: SlicedPlaneVector): SlicedPlaneVector => ({
+  x: coerceFiniteNumber(point.x),
+  y: coerceFiniteNumber(point.y),
+  z: coerceFiniteNumber(point.z)
+});
+
+const normalizeSlicedPlaneNormal = (normal: SlicedPlaneVector): SlicedPlaneVector => {
+  const sanitized = sanitizeSlicedPlanePoint(normal);
+  const magnitude = Math.hypot(sanitized.x, sanitized.y, sanitized.z);
+  if (magnitude <= 1e-6) {
+    return { ...DEFAULT_SLICED_PLANE_NORMAL };
+  }
+  return {
+    x: sanitized.x / magnitude,
+    y: sanitized.y / magnitude,
+    z: sanitized.z / magnitude
+  };
 };
 
 export function useLayerControls({
@@ -257,6 +282,73 @@ export function useLayerControls({
           [key]: {
             ...previous,
             color: normalized
+          }
+        };
+      });
+    },
+    [createLayerDefaultSettings, setLayerSettings]
+  );
+
+  const handleLayerSlicedDepthChange = useCallback(
+    (key: string, value: number) => {
+      const nextDepth = Math.max(0, Math.round(coerceFiniteNumber(value)));
+      setLayerSettings((current) => {
+        const previous = current[key] ?? createLayerDefaultSettings(key);
+        const previousDepth = Math.max(0, Math.round(coerceFiniteNumber(previous.slicedPlaneDepth)));
+        if (previousDepth === nextDepth) {
+          return current;
+        }
+
+        const previousPoint = sanitizeSlicedPlanePoint(previous.slicedPlanePoint);
+        const deltaDepth = nextDepth - previousDepth;
+        const normal = normalizeSlicedPlaneNormal(previous.slicedPlaneNormal);
+        const nextPoint = {
+          x: previousPoint.x + normal.x * deltaDepth,
+          y: previousPoint.y + normal.y * deltaDepth,
+          z: previousPoint.z + normal.z * deltaDepth
+        };
+
+        return {
+          ...current,
+          [key]: {
+            ...previous,
+            slicedPlaneDepth: nextDepth,
+            slicedPlanePoint: nextPoint,
+            slicedPlaneNormal: normal
+          }
+        };
+      });
+    },
+    [createLayerDefaultSettings, setLayerSettings]
+  );
+
+  const handleLayerSlicedPlaneRotateSet = useCallback(
+    (key: string, point: SlicedPlaneVector, normal: SlicedPlaneVector) => {
+      const nextPoint = sanitizeSlicedPlanePoint(point);
+      const nextNormal = normalizeSlicedPlaneNormal(normal);
+      setLayerSettings((current) => {
+        const previous = current[key] ?? createLayerDefaultSettings(key);
+        const previousPoint = sanitizeSlicedPlanePoint(previous.slicedPlanePoint);
+        const previousNormal = normalizeSlicedPlaneNormal(previous.slicedPlaneNormal);
+        const pointUnchanged =
+          previousPoint.x === nextPoint.x &&
+          previousPoint.y === nextPoint.y &&
+          previousPoint.z === nextPoint.z;
+        const normalUnchanged =
+          previousNormal.x === nextNormal.x &&
+          previousNormal.y === nextNormal.y &&
+          previousNormal.z === nextNormal.z;
+
+        if (pointUnchanged && normalUnchanged) {
+          return current;
+        }
+
+        return {
+          ...current,
+          [key]: {
+            ...previous,
+            slicedPlanePoint: nextPoint,
+            slicedPlaneNormal: nextNormal
           }
         };
       });
@@ -603,6 +695,10 @@ export function useLayerControls({
         blEarlyExitAlpha: settings.blEarlyExitAlpha,
         invert: settings.invert,
         samplingMode: settings.samplingMode,
+        sliceIndex: settings.slicedPlaneDepth,
+        slicedPlanePoint: { ...settings.slicedPlanePoint },
+        slicedPlaneNormal: { ...settings.slicedPlaneNormal },
+        slicedPlaneEnabled: settings.renderStyle === RENDER_STYLE_SLICED,
         isSegmentation: layer.isSegmentation,
         scaleLevel:
           layerBrickAtlases[layer.key]?.scaleLevel ?? layerVolumes[layer.key]?.scaleLevel ?? 0,
@@ -654,6 +750,8 @@ export function useLayerControls({
     handleLayerAutoContrast,
     handleLayerOffsetChange,
     handleLayerColorChange,
+    handleLayerSlicedDepthChange,
+    handleLayerSlicedPlaneRotateSet,
     handleLayerRenderStyleChange,
     handleLayerRenderStyleToggle,
     handleLayerBlDensityScaleChange,

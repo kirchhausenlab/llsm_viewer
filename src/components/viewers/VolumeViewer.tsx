@@ -129,6 +129,8 @@ function VolumeViewer({
   onTrackSelectionToggle,
   onTrackFollowRequest,
   onVoxelFollowRequest,
+  activeSlicedLayerKey,
+  onSlicePlaneChange,
   onHoverVoxelChange,
   paintbrush,
   vr
@@ -148,6 +150,8 @@ function VolumeViewer({
     onRegisterVrSession,
   } = resolveVolumeViewerVrRuntime(vr);
   const paintbrushRef = useRef(paintbrush);
+  const activeSlicedLayerKeyRef = useRef<string | null>(activeSlicedLayerKey ?? null);
+  activeSlicedLayerKeyRef.current = activeSlicedLayerKey ?? null;
   const paintStrokePointerIdRef = useRef<number | null>(null);
 
   const resourcesRef = useRef<Map<string, VolumeResources>>(new Map());
@@ -633,6 +637,8 @@ function VolumeViewer({
       refreshTrackOverlay,
     },
     interaction: {
+      layersRef,
+      activeSlicedLayerKeyRef,
       paintbrushRef,
       paintStrokePointerIdRef,
       hoverIntensityRef,
@@ -644,6 +650,7 @@ function VolumeViewer({
       resolveHoveredFollowTarget,
       onTrackSelectionToggle,
       onVoxelFollowRequest,
+      onSlicePlaneChange,
     },
     hoverLifecycle: {
       resetHoverState,

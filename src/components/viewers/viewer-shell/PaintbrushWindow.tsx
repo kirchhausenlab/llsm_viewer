@@ -101,7 +101,7 @@ export default function PaintbrushWindow({
             className="paintbrush-toggle"
             onClick={() => onEnabledChange(!enabled)}
             aria-pressed={enabled}
-            title="Hold Shift + Left-click/drag in the viewer to paint/erase"
+            title="Hold Ctrl + Left-click/drag in the viewer to paint/erase"
           >
             {enabled ? 'Enabled' : 'Disabled'}
           </button>

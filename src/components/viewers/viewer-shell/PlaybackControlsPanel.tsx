@@ -63,8 +63,16 @@ export default function PlaybackControlsPanel({
     onStartRecording,
     onStopRecording,
     isRecording,
-    canRecord
+    canRecord,
+    activeSlicedLayerControl,
+    onActiveSlicedLayerDepthChange
   } = playbackControls;
+  const slicedDepthMax = activeSlicedLayerControl
+    ? Math.max(0, activeSlicedLayerControl.depth - 1)
+    : 0;
+  const slicedDepthValue = activeSlicedLayerControl
+    ? Math.min(Math.max(activeSlicedLayerControl.zIndex, 0), slicedDepthMax)
+    : 0;
   const {
     samplingMode,
     onSamplingModeToggle,
@@ -187,6 +195,26 @@ export default function PlaybackControlsPanel({
             </div>
 
           </div>
+
+          {activeSlicedLayerControl ? (
+            <div className="control-group control-group--slider">
+              <label htmlFor={`sliced-depth-slider-${activeSlicedLayerControl.layerKey}`}>
+                Z <span>{slicedDepthValue}</span>
+              </label>
+              <input
+                id={`sliced-depth-slider-${activeSlicedLayerControl.layerKey}`}
+                type="range"
+                min={0}
+                max={slicedDepthMax}
+                step={1}
+                value={slicedDepthValue}
+                onChange={(event) =>
+                  onActiveSlicedLayerDepthChange(Number.parseInt(event.target.value, 10))
+                }
+                disabled={playbackDisabled || slicedDepthMax <= 0}
+              />
+            </div>
+          ) : null}
 
           {error && <p className="error">{error}</p>}
         </div>

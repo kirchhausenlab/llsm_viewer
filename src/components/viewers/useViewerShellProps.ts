@@ -73,6 +73,8 @@ export type ViewerShellContainerViewerPanelsProps = {
   onRegisterReset: ViewerShellProps['volumeViewerProps']['onRegisterReset'];
   onVolumeStepScaleChange?: ViewerShellProps['volumeViewerProps']['onVolumeStepScaleChange'];
   onRegisterVolumeStepScaleChange?: ViewerShellProps['volumeViewerProps']['onRegisterVolumeStepScaleChange'];
+  activeSlicedLayerKey?: ViewerShellProps['volumeViewerProps']['activeSlicedLayerKey'];
+  onSlicePlaneChange?: ViewerShellProps['volumeViewerProps']['onSlicePlaneChange'];
 };
 
 export type ViewerShellContainerVrProps = Pick<
@@ -173,6 +175,8 @@ function mapVolumeViewerProps({
     onTrackFollowRequest: viewerPanels.tracks.onTrackFollowRequest,
     onVoxelFollowRequest: viewerPanels.tracks.onVoxelFollowRequest,
     onHoverVoxelChange: viewerPanels.tracks.onHoverVoxelChange,
+    activeSlicedLayerKey: viewerPanels.activeSlicedLayerKey,
+    onSlicePlaneChange: viewerPanels.onSlicePlaneChange,
     vr: modeControls.is3dModeAvailable
       ? {
           ...vr,

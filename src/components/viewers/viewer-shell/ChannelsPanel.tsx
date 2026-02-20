@@ -6,6 +6,7 @@ import {
   RENDER_STYLE_BL,
   RENDER_STYLE_ISO,
   RENDER_STYLE_MIP,
+  RENDER_STYLE_SLICED,
   createDefaultLayerSettings
 } from '../../../state/layerSettings';
 import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from '../../../shared/colorMaps/layerColors';
@@ -254,6 +255,15 @@ export default function ChannelsPanel({
                             aria-pressed={settings.renderStyle === RENDER_STYLE_BL}
                           >
                             BL
+                          </button>
+                          <button
+                            type="button"
+                            className="channel-action-button"
+                            onClick={() => onLayerRenderStyleChange(selectedLayer.key, RENDER_STYLE_SLICED)}
+                            disabled={renderStyleDisabled}
+                            aria-pressed={settings.renderStyle === RENDER_STYLE_SLICED}
+                          >
+                            Sliced
                           </button>
                         </div>
                       </div>

@@ -4,6 +4,7 @@ import {
   RENDER_STYLE_BL,
   RENDER_STYLE_ISO,
   RENDER_STYLE_MIP,
+  RENDER_STYLE_SLICED,
   type RenderStyle
 } from '../state/layerSettings';
 
@@ -232,6 +233,9 @@ type VolumeUniforms = {
   u_adaptiveLodEnabled: { value: number };
   u_adaptiveLodScale: { value: number };
   u_adaptiveLodMax: { value: number };
+  u_slicePlanePoint: { value: Vector3 };
+  u_slicePlaneNormal: { value: Vector3 };
+  u_slicePlaneEnabled: { value: number };
 };
 
 const uniforms = {
@@ -274,7 +278,10 @@ const uniforms = {
   u_brickAtlasSize: { value: new Vector3(1, 1, 1) },
   u_adaptiveLodEnabled: { value: 1 },
   u_adaptiveLodScale: { value: 1 },
-  u_adaptiveLodMax: { value: 2 }
+  u_adaptiveLodMax: { value: 2 },
+  u_slicePlanePoint: { value: new Vector3(0, 0, 0) },
+  u_slicePlaneNormal: { value: new Vector3(0, 0, 1) },
+  u_slicePlaneEnabled: { value: 0 }
 } satisfies VolumeUniforms;
 
 const volumeRenderVertexShader = /* glsl */ `
@@ -342,6 +349,9 @@ const volumeRenderFragmentShader = /* glsl */ `
     uniform float u_adaptiveLodEnabled;
     uniform float u_adaptiveLodScale;
     uniform float u_adaptiveLodMax;
+    uniform vec3 u_slicePlanePoint;
+    uniform vec3 u_slicePlaneNormal;
+    uniform float u_slicePlaneEnabled;
 
     uniform sampler3D u_data;
     uniform sampler2D u_cmdata;
@@ -371,6 +381,9 @@ const volumeRenderFragmentShader = /* glsl */ `
     #endif
     #if defined(VOLUME_STYLE_BL)
       void cast_bl(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
+    #endif
+    #if defined(VOLUME_STYLE_SLICED)
+      void cast_sliced(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
     #endif
     float normalize_intensity(float value);
     float apply_inversion(float normalized);
@@ -1016,6 +1029,8 @@ const volumeRenderFragmentShader = /* glsl */ `
         cast_iso(start_loc, step, nsteps, view_ray);
       #elif defined(VOLUME_STYLE_BL)
         cast_bl(start_loc, step, nsteps, view_ray);
+      #elif defined(VOLUME_STYLE_SLICED)
+        cast_sliced(start_loc, step, nsteps, view_ray);
       #else
         cast_mip(start_loc, step, nsteps, view_ray);
       #endif
@@ -1357,6 +1372,52 @@ const volumeRenderFragmentShader = /* glsl */ `
     }
     #endif
 
+    #if defined(VOLUME_STYLE_SLICED)
+    void cast_sliced(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray) {
+      vec3 loc = start_loc;
+      vec4 hitColor = vec4(0.0);
+      bool hasHit = false;
+      bool slicePlaneEnabled = u_slicePlaneEnabled > 0.5;
+      vec3 planeNormal = vec3(0.0, 0.0, 1.0);
+      if (slicePlaneEnabled) {
+        float normalLength = length(u_slicePlaneNormal);
+        if (normalLength > EPSILON) {
+          planeNormal = u_slicePlaneNormal / normalLength;
+        }
+      }
+
+      for (int iter = 0; iter < MAX_STEPS; iter++) {
+        if (iter >= nsteps) {
+          break;
+        }
+
+        vec3 samplePos = loc * u_size;
+        if (slicePlaneEnabled) {
+          float signedDistance = dot(samplePos - u_slicePlanePoint, planeNormal);
+          if (signedDistance < 0.0) {
+            loc += step;
+            continue;
+          }
+        }
+
+        vec4 colorSample = sample_color(loc);
+        float rawVal = luminance(colorSample);
+        float normalizedVal = normalize_intensity(rawVal);
+        hitColor = compose_color(normalizedVal, colorSample);
+        hasHit = true;
+        break;
+
+        loc += step;
+      }
+
+      if (hasHit) {
+        gl_FragColor = vec4(hitColor.rgb, 1.0);
+      } else {
+        gl_FragColor = vec4(0.0);
+      }
+    }
+    #endif
+
     #if defined(VOLUME_STYLE_ISO)
     vec4 add_lighting(float val, vec3 loc, vec3 step, vec3 view_ray, vec4 colorSample) {
       vec3 V = normalize(view_ray);
@@ -1398,7 +1459,7 @@ const volumeRenderFragmentShader = /* glsl */ `
     #endif
   `;
 
-export type VolumeRenderShaderVariantKey = 'mip' | 'iso' | 'bl';
+export type VolumeRenderShaderVariantKey = 'mip' | 'iso' | 'bl' | 'sliced';
 
 const createVariantFragmentShader = (variant: VolumeRenderShaderVariantKey): string => {
   if (variant === 'iso') {
@@ -1406,6 +1467,9 @@ const createVariantFragmentShader = (variant: VolumeRenderShaderVariantKey): str
   }
   if (variant === 'bl') {
     return `#define VOLUME_STYLE_BL\n${volumeRenderFragmentShader}`;
+  }
+  if (variant === 'sliced') {
+    return `#define VOLUME_STYLE_SLICED\n${volumeRenderFragmentShader}`;
   }
   return `#define VOLUME_STYLE_MIP\n${volumeRenderFragmentShader}`;
 };
@@ -1419,7 +1483,8 @@ const createVolumeRenderShaderVariant = (variant: VolumeRenderShaderVariantKey) 
 export const VolumeRenderShaderVariants = {
   mip: createVolumeRenderShaderVariant('mip'),
   iso: createVolumeRenderShaderVariant('iso'),
-  bl: createVolumeRenderShaderVariant('bl')
+  bl: createVolumeRenderShaderVariant('bl'),
+  sliced: createVolumeRenderShaderVariant('sliced')
 } as const;
 
 export const getVolumeRenderShaderVariantKey = (renderStyle: RenderStyle): VolumeRenderShaderVariantKey => {
@@ -1428,6 +1493,9 @@ export const getVolumeRenderShaderVariantKey = (renderStyle: RenderStyle): Volum
   }
   if (renderStyle === RENDER_STYLE_BL) {
     return 'bl';
+  }
+  if (renderStyle === RENDER_STYLE_SLICED) {
+    return 'sliced';
   }
   return 'mip';
 };

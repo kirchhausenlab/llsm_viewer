@@ -13,6 +13,12 @@ import type { VolumeDataType } from '../../types/volume';
 import type { RenderStyle, SamplingMode } from '../../state/layerSettings';
 
 export type InstancedLineGeometry = LineGeometry & { instanceCount: number };
+export type SlicePlaneVector = { x: number; y: number; z: number };
+export type SlicePlaneUpdate = {
+  layerKey: string;
+  point: SlicePlaneVector;
+  normal: SlicePlaneVector;
+};
 
 export type ViewerLayer = {
   key: string;
@@ -48,6 +54,9 @@ export type ViewerLayer = {
   isSegmentation?: boolean;
   mode?: '3d' | 'slice';
   sliceIndex?: number;
+  slicedPlanePoint?: { x: number; y: number; z: number } | null;
+  slicedPlaneNormal?: { x: number; y: number; z: number } | null;
+  slicedPlaneEnabled?: boolean;
   scaleLevel?: number;
   brickPageTable?: VolumeBrickPageTable | null;
   brickAtlas?: VolumeBrickAtlas | null;
@@ -173,6 +182,8 @@ export type VolumeViewerProps = {
   onTrackSelectionToggle: (trackId: string) => void;
   onTrackFollowRequest: (trackId: string) => void;
   onVoxelFollowRequest: (voxel: FollowedVoxelTarget) => void;
+  activeSlicedLayerKey?: string | null;
+  onSlicePlaneChange?: (update: SlicePlaneUpdate) => void;
   onHoverVoxelChange?: (value: HoveredVoxelInfo | null) => void;
   paintbrush?: PaintbrushStrokeHandlers;
   vr?: VolumeViewerVrProps;

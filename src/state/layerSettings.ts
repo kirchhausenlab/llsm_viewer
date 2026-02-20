@@ -17,8 +17,13 @@ export type SamplingMode = 'linear' | 'nearest';
 export const RENDER_STYLE_MIP = 0 as const;
 export const RENDER_STYLE_ISO = 1 as const;
 export const RENDER_STYLE_BL = 2 as const;
+export const RENDER_STYLE_SLICED = 3 as const;
 
-export type RenderStyle = typeof RENDER_STYLE_MIP | typeof RENDER_STYLE_ISO | typeof RENDER_STYLE_BL;
+export type RenderStyle =
+  | typeof RENDER_STYLE_MIP
+  | typeof RENDER_STYLE_ISO
+  | typeof RENDER_STYLE_BL
+  | typeof RENDER_STYLE_SLICED;
 
 export const DEFAULT_RENDER_STYLE: RenderStyle = RENDER_STYLE_MIP;
 export const DEFAULT_SAMPLING_MODE: SamplingMode = 'linear';
@@ -26,6 +31,16 @@ export const DEFAULT_BL_DENSITY_SCALE = 1.0;
 export const DEFAULT_BL_BACKGROUND_CUTOFF = 0.08;
 export const DEFAULT_BL_OPACITY_SCALE = 1.0;
 export const DEFAULT_BL_EARLY_EXIT_ALPHA = 0.98;
+export const DEFAULT_SLICED_PLANE_DEPTH = 0;
+
+export type SlicedPlaneVector = {
+  x: number;
+  y: number;
+  z: number;
+};
+
+export const DEFAULT_SLICED_PLANE_POINT: SlicedPlaneVector = { x: 0, y: 0, z: 0 };
+export const DEFAULT_SLICED_PLANE_NORMAL: SlicedPlaneVector = { x: 0, y: 0, z: 1 };
 
 export type LayerSettings = BrightnessContrastState & {
   color: string;
@@ -38,6 +53,9 @@ export type LayerSettings = BrightnessContrastState & {
   blEarlyExitAlpha: number;
   invert: boolean;
   samplingMode: SamplingMode;
+  slicedPlaneDepth: number;
+  slicedPlanePoint: SlicedPlaneVector;
+  slicedPlaneNormal: SlicedPlaneVector;
 };
 
 export const createDefaultLayerSettings = (initialWindow?: WindowBounds | null): LayerSettings => ({
@@ -54,7 +72,10 @@ export const createDefaultLayerSettings = (initialWindow?: WindowBounds | null):
   blOpacityScale: DEFAULT_BL_OPACITY_SCALE,
   blEarlyExitAlpha: DEFAULT_BL_EARLY_EXIT_ALPHA,
   invert: false,
-  samplingMode: DEFAULT_SAMPLING_MODE
+  samplingMode: DEFAULT_SAMPLING_MODE,
+  slicedPlaneDepth: DEFAULT_SLICED_PLANE_DEPTH,
+  slicedPlanePoint: { ...DEFAULT_SLICED_PLANE_POINT },
+  slicedPlaneNormal: { ...DEFAULT_SLICED_PLANE_NORMAL }
 });
 
 export const brightnessContrastModel = DEFAULT_BRIGHTNESS_CONTRAST_MODEL;
