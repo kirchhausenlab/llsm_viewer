@@ -5,8 +5,8 @@ import { applyGaussianAmplitudeSmoothing } from '../../shared/utils/trackSmoothi
 
 export type TrackSeriesEntry = {
   id: string;
-  channelId: string;
-  channelName: string;
+  channelId: string | null;
+  channelName: string | null;
   trackSetId: string;
   trackSetName: string;
   trackNumber: number;

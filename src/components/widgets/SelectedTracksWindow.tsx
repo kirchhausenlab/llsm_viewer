@@ -4,8 +4,8 @@ import type { NumericRange, TrackPoint } from '../../types/tracks';
 
 type SelectedTrackSeries = {
   id: string;
-  channelId: string;
-  channelName: string;
+  channelId: string | null;
+  channelName: string | null;
   trackSetId: string;
   trackSetName: string;
   trackNumber: number;
@@ -483,7 +483,8 @@ function SelectedTracksWindow({
               {resolvedSeries.map((entry) => {
                 const trackNumber = entry.displayTrackNumber ?? String(entry.trackNumber);
                 const legendLabel = `${entry.trackSetName} · Track #${trackNumber}`;
-                const channelTint = channelTintMap.get(entry.channelId) ?? DEFAULT_LAYER_COLOR;
+                const channelTint =
+                  (entry.channelId ? channelTintMap.get(entry.channelId) : null) ?? DEFAULT_LAYER_COLOR;
                 const rawHoverValue =
                   hoverTimepoint !== null
                     ? rawAmplitudeByTrack.get(entry.id)?.get(hoverTimepoint)

@@ -1,13 +1,14 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import { clearTextureCache } from '../../../core/textureCache';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
-import type { ChannelSource, StagedPreprocessedExperiment } from '../../../hooks/dataset';
+import type { ChannelSource, StagedPreprocessedExperiment, TrackSetSource } from '../../../hooks/dataset';
 import type { LayerSettings } from '../../../state/layerSettings';
 
 type UseRouteDatasetResetStateOptions = {
   resetPreprocessedState: () => void;
   setPreprocessedExperiment: Dispatch<SetStateAction<StagedPreprocessedExperiment | null>>;
   setChannels: Dispatch<SetStateAction<ChannelSource[]>>;
+  setTracks: Dispatch<SetStateAction<TrackSetSource[]>>;
   setChannelVisibility: Dispatch<SetStateAction<Record<string, boolean>>>;
   setChannelActiveLayer: Dispatch<SetStateAction<Record<string, string>>>;
   setLayerSettings: Dispatch<SetStateAction<Record<string, LayerSettings>>>;
@@ -21,6 +22,7 @@ type UseRouteDatasetResetStateOptions = {
   setIsExperimentSetupStarted: Dispatch<SetStateAction<boolean>>;
   channelIdRef: MutableRefObject<number>;
   layerIdRef: MutableRefObject<number>;
+  trackSetIdRef: MutableRefObject<number>;
   clearDatasetError: () => void;
 };
 
@@ -33,6 +35,7 @@ export function useRouteDatasetResetState({
   resetPreprocessedState,
   setPreprocessedExperiment,
   setChannels,
+  setTracks,
   setChannelVisibility,
   setChannelActiveLayer,
   setLayerSettings,
@@ -46,12 +49,14 @@ export function useRouteDatasetResetState({
   setIsExperimentSetupStarted,
   channelIdRef,
   layerIdRef,
+  trackSetIdRef,
   clearDatasetError
 }: UseRouteDatasetResetStateOptions): RouteDatasetResetState {
   const handleDiscardPreprocessedExperiment = useCallback(() => {
     resetPreprocessedState();
     setPreprocessedExperiment(null);
     setChannels([]);
+    setTracks([]);
     setChannelVisibility({});
     setChannelActiveLayer({});
     setLayerSettings({});
@@ -65,12 +70,14 @@ export function useRouteDatasetResetState({
     setIsExperimentSetupStarted(false);
     channelIdRef.current = 0;
     layerIdRef.current = 0;
+    trackSetIdRef.current = 0;
     clearTextureCache();
     clearDatasetError();
   }, [
     channelIdRef,
     clearDatasetError,
     layerIdRef,
+    trackSetIdRef,
     resetChannelEditingState,
     resetLaunchState,
     resetPreprocessedState,
@@ -84,6 +91,7 @@ export function useRouteDatasetResetState({
     setLayerAutoThresholds,
     setLayerSettings,
     setPreprocessedExperiment,
+    setTracks,
     setSelectedIndex
   ]);
 

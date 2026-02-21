@@ -180,7 +180,7 @@ export function useTrackRendering({
       let resource = trackLines.get(track.id);
       const positions = new Float32Array(track.points.length * 3);
       const times = new Array<number>(track.points.length);
-      const offset = channelTrackOffsets[track.channelId] ?? { x: 0, y: 0 };
+      const offset = track.channelId ? (channelTrackOffsets[track.channelId] ?? { x: 0, y: 0 }) : { x: 0, y: 0 };
       const offsetX = offset.x;
       const offsetY = offset.y;
 
@@ -458,7 +458,7 @@ export function useTrackRendering({
       let sumX = 0;
       let sumY = 0;
       let sumZ = 0;
-      const offset = channelTrackOffsets[track.channelId] ?? { x: 0, y: 0 };
+      const offset = track.channelId ? (channelTrackOffsets[track.channelId] ?? { x: 0, y: 0 }) : { x: 0, y: 0 };
       const offsetX = offset.x;
       const offsetY = offset.y;
 

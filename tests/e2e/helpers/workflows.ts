@@ -40,44 +40,83 @@ export async function launchViewerFromChannelFixtures(
   await page.getByLabel('Y:').fill(voxelResolution.y);
   await page.getByLabel('Z:').fill(voxelResolution.z);
 
-  for (const [channelIndex, channel] of channels.entries()) {
-    await page.getByRole('button', { name: '+ Add channel' }).click();
+  const channelSection = page
+    .locator('.setup-section')
+    .filter({ has: page.getByRole('heading', { name: 'Channels' }) })
+    .first();
+  const segmentationChannelSection = page
+    .locator('.setup-section')
+    .filter({ has: page.getByRole('heading', { name: 'Segmentation channels' }) })
+    .first();
+  let channelCount = 0;
+  let segmentationChannelCount = 0;
 
-    const channelTabs = page.locator('.channel-tabs [role="tab"]');
-    await expect(channelTabs).toHaveCount(channelIndex + 1);
-    const targetTab = channelTabs.nth(channelIndex);
+  for (const channel of channels) {
+    const isSegmentation = channel.segmentation === true;
+    if (isSegmentation) {
+      await page.getByRole('button', { name: '+ Add segmentation channel' }).click();
+    } else {
+      await page.getByRole('button', { name: '+ Add channel' }).click();
+    }
+
+    const targetSection = isSegmentation ? segmentationChannelSection : channelSection;
+    const channelTabs = targetSection.locator('.setup-row [role="tab"]');
+    const nextCount = isSegmentation ? segmentationChannelCount + 1 : channelCount + 1;
+    await expect(channelTabs).toHaveCount(nextCount);
+    const targetTab = channelTabs.nth(nextCount - 1);
     await targetTab.click();
 
-    const nameInput = page.locator('.channel-name-input').first();
+    const nameInput = targetTab.locator('.channel-name-input');
     await targetTab.dblclick();
     await expect(nameInput).toBeVisible({ timeout: 2_000 });
     await nameInput.fill(channel.name);
     await nameInput.press('Enter');
 
-    const volumeInput = page.locator('input[type="file"][accept*=".tif"]').first();
+    const channelRow = targetTab.locator('xpath=ancestor::div[contains(@class,"setup-row")]').first();
+    const volumeInput = channelRow.locator('input[type="file"][accept*=".tif"]');
     await volumeInput.setInputFiles(channel.tiffPaths);
-    const fileCountLabel = channel.tiffPaths.length === 1 ? '1 file' : `${channel.tiffPaths.length} files`;
-    await expect(page.locator('.channel-layer-status')).toContainText(fileCountLabel);
+    const fileCountLabel =
+      channel.tiffPaths.length === 1 ? '1 file selected' : `${channel.tiffPaths.length} files selected`;
+    await expect(channelRow.locator('.channel-layer-drop-subtitle')).toContainText(fileCountLabel);
 
-    const segmentationCheckbox = page.getByRole('checkbox', { name: 'Segmentation volume' });
-    if (channel.segmentation) {
-      await segmentationCheckbox.check();
-      await expect(segmentationCheckbox).toBeChecked();
+    if (isSegmentation) {
+      segmentationChannelCount += 1;
     } else {
-      await segmentationCheckbox.uncheck();
-      await expect(segmentationCheckbox).not.toBeChecked();
+      channelCount += 1;
     }
+  }
+
+  const trackSection = page
+    .locator('.setup-section')
+    .filter({ has: page.getByRole('heading', { name: 'Tracks' }) })
+    .first();
+  const tracksToAttach = channels.filter((channel) => channel.trackCsv);
+  for (const [trackIndex, channel] of tracksToAttach.entries()) {
+    await page.getByRole('button', { name: '+ Add track' }).click();
+
+    const trackTabs = trackSection.locator('.setup-row [role="tab"]');
+    await expect(trackTabs).toHaveCount(trackIndex + 1);
+    const trackTab = trackTabs.nth(trackIndex);
+    await trackTab.dblclick();
+    const trackNameInput = trackTab.locator('.channel-name-input');
+    await expect(trackNameInput).toBeVisible({ timeout: 2_000 });
+    await trackNameInput.fill(`Track ${trackIndex + 1}`);
+    await trackNameInput.press('Enter');
+
+    const trackRow = trackTab.locator('xpath=ancestor::div[contains(@class,"setup-row")]').first();
+    const trackInput = trackRow.locator('input[type="file"][accept=".csv"]');
 
     if (channel.trackCsv) {
-      const trackInput = page.locator('input[type="file"][accept=".csv"]').first();
       await trackInput.setInputFiles({
         name: channel.trackCsv.name,
         mimeType: channel.trackCsv.mimeType,
         buffer: channel.trackCsv.buffer
       });
-      await expect(page.locator('.channel-tracks-filename')).toContainText(channel.trackCsv.name);
-      await expect(page.locator('.channel-tracks-status')).toContainText(/Loaded/i);
+      await expect(trackRow.locator('.channel-tracks-subtitle')).toContainText('1 file selected');
     }
+
+    const bindSelect = trackRow.locator('.track-card-bind-select');
+    await bindSelect.selectOption({ label: channel.name });
   }
 
   const preprocessButton = page.getByRole('button', { name: 'Preprocess experiment' });

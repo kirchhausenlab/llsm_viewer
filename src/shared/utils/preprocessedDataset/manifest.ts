@@ -2,7 +2,8 @@ import type {
   PreprocessedChannelSummary,
   PreprocessedLayerManifestEntry,
   PreprocessedLayerSummary,
-  PreprocessedManifest
+  PreprocessedManifest,
+  PreprocessedTrackSetSummary
 } from './types';
 
 function buildLayerSummaryFromManifest(layer: PreprocessedLayerManifestEntry): PreprocessedLayerSummary {
@@ -23,17 +24,23 @@ function buildLayerSummaryFromManifest(layer: PreprocessedLayerManifestEntry): P
 
 export function buildChannelSummariesFromManifest(
   manifest: PreprocessedManifest,
-  trackEntriesByTrackSetId: Map<string, string[][]>
 ): PreprocessedChannelSummary[] {
   return manifest.dataset.channels.map((channel) => ({
     id: channel.id,
     name: channel.name,
-    trackSets: channel.trackSets.map((trackSet) => ({
-      id: trackSet.id,
-      name: trackSet.name,
-      fileName: trackSet.fileName,
-      entries: trackEntriesByTrackSetId.get(trackSet.id) ?? []
-    })),
     layers: channel.layers.map(buildLayerSummaryFromManifest)
+  }));
+}
+
+export function buildTrackSummariesFromManifest(
+  manifest: PreprocessedManifest,
+  trackEntriesByTrackSetId: Map<string, string[][]>
+): PreprocessedTrackSetSummary[] {
+  return manifest.dataset.trackSets.map((trackSet) => ({
+    id: trackSet.id,
+    name: trackSet.name,
+    fileName: trackSet.fileName,
+    boundChannelId: trackSet.boundChannelId,
+    entries: trackEntriesByTrackSetId.get(trackSet.id) ?? []
   }));
 }

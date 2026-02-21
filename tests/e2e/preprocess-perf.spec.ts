@@ -19,20 +19,23 @@ test('@nightly preprocesses local fixture within sanity budget and reports timin
   await page.getByLabel('Z:').fill(z);
 
   await page.getByRole('button', { name: '+ Add channel' }).click();
-  const channelTab = page.locator('.channel-tabs [role="tab"]').first();
+  const channelSection = page.locator('.setup-section').first();
+  const channelTab = channelSection.locator('.setup-row [role="tab"]').first();
   await expect(channelTab).toBeVisible();
   await channelTab.click();
 
   await channelTab.dblclick();
-  const nameInput = page.locator('.channel-name-input').first();
+  const nameInput = channelTab.locator('.channel-name-input');
   await expect(nameInput).toBeVisible({ timeout: 2_000 });
   await nameInput.fill('PerfCh1');
   await nameInput.press('Enter');
 
-  const volumeInput = page.locator('input[type="file"][accept*=".tif"]').first();
+  const channelRow = channelTab.locator('xpath=ancestor::div[contains(@class,"setup-row")]').first();
+  const volumeInput = channelRow.locator('input[type="file"][accept*=".tif"]');
   await volumeInput.setInputFiles(fixture.tiffPaths);
-  const fileCountLabel = fixture.tiffPaths.length === 1 ? '1 file' : `${fixture.tiffPaths.length} files`;
-  await expect(page.locator('.channel-layer-status')).toContainText(fileCountLabel);
+  const fileCountLabel =
+    fixture.tiffPaths.length === 1 ? '1 file selected' : `${fixture.tiffPaths.length} files selected`;
+  await expect(channelRow.locator('.channel-layer-drop-subtitle')).toContainText(fileCountLabel);
 
   const preprocessButton = page.getByRole('button', { name: 'Preprocess experiment' });
   await expect(preprocessButton).toBeEnabled();

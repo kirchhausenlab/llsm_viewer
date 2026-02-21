@@ -14,6 +14,19 @@ import {
   sortVolumeFiles
 } from '../../shared/utils/appHelpers';
 
+function isSegmentationChannel(channel: Pick<ChannelSource, 'channelType' | 'layers'>): boolean {
+  if (channel.channelType === 'segmentation') {
+    return true;
+  }
+  if (channel.channelType === 'channel') {
+    return false;
+  }
+  if (channel.layers.length === 0) {
+    return false;
+  }
+  return channel.layers.every((layer) => layer.isSegmentation);
+}
+
 export type LoadedDatasetLayer = {
   key: string;
   label: string;
@@ -137,13 +150,37 @@ export function useDatasetSetup({
   const loadedChannelIds = useMemo(() => {
     const seen = new Set<string>();
     const order: string[] = [];
+    const channelMeta = new Map<string, { firstIndex: number; hasNonSegmentationLayer: boolean }>();
+    let layerIndex = 0;
     for (const layer of loadedLayers) {
       if (!seen.has(layer.channelId)) {
         seen.add(layer.channelId);
         order.push(layer.channelId);
       }
+      const existing = channelMeta.get(layer.channelId);
+      if (existing) {
+        if (!layer.isSegmentation) {
+          existing.hasNonSegmentationLayer = true;
+        }
+      } else {
+        channelMeta.set(layer.channelId, {
+          firstIndex: layerIndex,
+          hasNonSegmentationLayer: !layer.isSegmentation
+        });
+      }
+      layerIndex += 1;
     }
-    return order;
+    return [...order].sort((left, right) => {
+      const leftMeta = channelMeta.get(left);
+      const rightMeta = channelMeta.get(right);
+      const leftIsSegmentation = !(leftMeta?.hasNonSegmentationLayer ?? true);
+      const rightIsSegmentation = !(rightMeta?.hasNonSegmentationLayer ?? true);
+
+      if (leftIsSegmentation !== rightIsSegmentation) {
+        return leftIsSegmentation ? 1 : -1;
+      }
+      return (leftMeta?.firstIndex ?? 0) - (rightMeta?.firstIndex ?? 0);
+    });
   }, [loadedLayers]);
 
   const handleChannelLayerFilesAdded = useCallback(
@@ -179,7 +216,10 @@ export function useDatasetSetup({
           if (channel.layers.length > 0) {
             replacedLayerIds.push(channel.layers[0].id);
           }
-          const nextLayer = createLayerSource(sorted);
+          const nextLayer = {
+            ...createLayerSource(sorted),
+            isSegmentation: isSegmentationChannel(channel)
+          };
           addedLayer = nextLayer;
           return { ...channel, layers: [nextLayer] };
         })

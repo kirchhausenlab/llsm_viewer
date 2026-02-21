@@ -107,11 +107,11 @@ function buildManifest(spec: DatasetSpec): PreprocessedManifest {
     dataset: {
       movieMode: '3d',
       totalVolumeCount: timepoints,
+      trackSets: [],
       channels: [
         {
           id: 'channel-a',
           name: 'Channel A',
-          trackSets: [],
           layers: [
             {
               key: 'layer-a',

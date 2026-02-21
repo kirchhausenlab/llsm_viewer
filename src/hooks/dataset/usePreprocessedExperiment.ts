@@ -1,11 +1,13 @@
 import type { Dispatch, SetStateAction } from 'react';
 import type { FollowedTrackState, TrackSetState } from '../../types/channelTracks';
-import type { ChannelSource, StagedPreprocessedExperiment } from './useChannelSources';
+import type { ChannelSource, StagedPreprocessedExperiment, TrackSetSource } from './useChannelSources';
 import { usePreprocessedImport } from '../preprocessedExperiment/usePreprocessedImport';
 
 export type UsePreprocessedExperimentOptions = {
   channels: ChannelSource[];
   setChannels: Dispatch<SetStateAction<ChannelSource[]>>;
+  tracks: TrackSetSource[];
+  setTracks: Dispatch<SetStateAction<TrackSetSource[]>>;
   setActiveChannelId: Dispatch<SetStateAction<string | null>>;
   setEditingChannelId: Dispatch<SetStateAction<string | null>>;
   setTrackSetStates: Dispatch<SetStateAction<Record<string, TrackSetState>>>;
@@ -37,6 +39,8 @@ export type UsePreprocessedExperimentResult = {
 export default function usePreprocessedExperiment({
   channels,
   setChannels,
+  tracks,
+  setTracks,
   setActiveChannelId,
   setEditingChannelId,
   setTrackSetStates,
@@ -52,6 +56,7 @@ export default function usePreprocessedExperiment({
 }: UsePreprocessedExperimentOptions): UsePreprocessedExperimentResult {
   const importState = usePreprocessedImport({
     setChannels,
+    setTracks,
     setActiveChannelId,
     setEditingChannelId,
     setTrackSetStates,
@@ -64,6 +69,7 @@ export default function usePreprocessedExperiment({
     updateChannelIdCounter
   });
   void channels;
+  void tracks;
   void showInteractionWarning;
   void isLaunchingViewer;
 

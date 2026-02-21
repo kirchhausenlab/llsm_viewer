@@ -117,7 +117,13 @@ export type TrackSettingsProps = {
 };
 
 export type TracksPanelProps = {
-  trackSets: Array<{ id: string; name: string; channelId: string; channelName: string }>;
+  trackSets: Array<{
+    id: string;
+    name: string;
+    boundChannelId: string | null;
+    boundChannelName: string | null;
+    fileName: string;
+  }>;
   activeTrackSetId: string | null;
   onTrackSetTabSelect: (trackSetId: string) => void;
   parsedTracksByTrackSet: Map<string, TrackDefinition[]>;
@@ -152,8 +158,8 @@ export type SelectedTracksPanelProps = {
   shouldRender: boolean;
   series: Array<{
     id: string;
-    channelId: string;
-    channelName: string;
+    channelId: string | null;
+    channelName: string | null;
     trackSetId: string;
     trackSetName: string;
     trackNumber: number;

@@ -14,7 +14,7 @@ test('channel uploads forwards selected files', () => {
       multiple
       disabled={false}
       browseLabel="From Files"
-      subtitle="Or drop sequence folder here"
+      subtitle="Or drop folder here"
       onFilesSelected={(files) => {
         selectedBatches.push(files);
       }}
@@ -51,7 +51,7 @@ test('channel uploads suppresses file selection while disabled', () => {
       multiple
       disabled
       browseLabel="From Files"
-      subtitle="Or drop one or more tracks files here"
+      subtitle="Or drop file here"
       onFilesSelected={() => {
         callCount += 1;
       }}
@@ -65,6 +65,53 @@ test('channel uploads suppresses file selection while disabled', () => {
     fileInput.props.onChange({
       target: {
         files: [new File(['x'], 'tracks.csv')],
+        value: 'mock-value'
+      }
+    });
+  });
+
+  assert.equal(callCount, 0);
+
+  renderer.unmount();
+});
+
+test('channel uploads switches to selected-state summary', () => {
+  let callCount = 0;
+  const renderer = TestRenderer.create(
+    <ChannelUploads
+      variant="layers"
+      accept=".tif"
+      multiple
+      disabled={false}
+      browseLabel="From Files"
+      subtitle="Or drop folder here"
+      hasSelection
+      selectedSummary="3 files selected"
+      onFilesSelected={() => {
+        callCount += 1;
+      }}
+      onDropDataTransfer={() => {}}
+      actionSlot={<span id="dropbox-action">From Dropbox</span>}
+      rightSlot={<button type="button">Clear</button>}
+    />
+  );
+
+  const root = renderer.root;
+  const browseButtons = root.findAll(
+    (node) => node.type === 'button' && node.props.children === 'From Files'
+  );
+  const dropboxActions = root.findAll((node) => node.type === 'span' && node.props.id === 'dropbox-action');
+  const subtitle = root.findByProps({ className: 'channel-layer-drop-subtitle' });
+
+  assert.equal(browseButtons.length, 0);
+  assert.equal(dropboxActions.length, 0);
+  assert.equal(subtitle.children.join(''), '3 files selected');
+
+  const fileInput = root.findByType('input');
+  act(() => {
+    fileInput.props.onChange({
+      target: {
+        files: [new File(['a'], 'a.tif')],
         value: 'mock-value'
       }
     });

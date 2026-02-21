@@ -21,11 +21,11 @@ function isBreakSentinel(value: string): boolean {
   return Number.isNaN(Number(trimmed));
 }
 
-function makeTrackId(channelId: string, sourceTrackId: number, segmentIndex: number): string {
+function makeTrackId(trackSetId: string, sourceTrackId: number, segmentIndex: number): string {
   if (segmentIndex <= 0) {
-    return `${channelId}:${sourceTrackId}`;
+    return `${trackSetId}:${sourceTrackId}`;
   }
-  return `${channelId}:${sourceTrackId}-${segmentIndex}`;
+  return `${trackSetId}:${sourceTrackId}-${segmentIndex}`;
 }
 
 function makeDisplayTrackNumber(sourceTrackId: number, segmentIndex: number): string {
@@ -38,8 +38,8 @@ function makeDisplayTrackNumber(sourceTrackId: number, segmentIndex: number): st
 export type BuildTracksFromCsvEntriesOptions = {
   trackSetId: string;
   trackSetName: string;
-  channelId: string;
-  channelName: string;
+  channelId: string | null;
+  channelName: string | null;
   entries: string[][];
 };
 
@@ -131,12 +131,12 @@ export function buildTracksFromCsvEntries({
         continue;
       }
 
-      const id = makeTrackId(`${trackSetId}:${channelId}`, sourceTrackId, segment.segmentIndex);
+      const id = makeTrackId(trackSetId, sourceTrackId, segment.segmentIndex);
       const displayTrackNumber = makeDisplayTrackNumber(sourceTrackId, segment.segmentIndex);
       const parentTrackId =
         segment.segmentIndex <= 0
           ? null
-          : makeTrackId(`${trackSetId}:${channelId}`, sourceTrackId, segment.segmentIndex - 1);
+          : makeTrackId(trackSetId, sourceTrackId, segment.segmentIndex - 1);
 
       const sortedPoints = [...segment.points].sort((a, b) => a.time - b.time);
       const adjustedPoints = sortedPoints.map<TrackPoint>((point) => ({
@@ -152,7 +152,7 @@ export function buildTracksFromCsvEntries({
         trackSetId,
         trackSetName,
         channelId,
-        channelName: channelName.trim() || 'Untitled channel',
+        channelName: channelName?.trim() || null,
         trackNumber: sourceTrackId,
         sourceTrackId,
         displayTrackNumber,

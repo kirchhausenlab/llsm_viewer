@@ -8,7 +8,6 @@
       {
         "id": "channel-a",
         "name": "Channel A",
-        "trackSets": [],
         "layers": [
           {
             "key": "layer-a",
@@ -137,6 +136,7 @@
         ]
       }
     ],
+    "trackSets": [],
     "voxelResolution": null,
     "anisotropyCorrection": null
   }

@@ -85,18 +85,25 @@ export function useAppRouteState(): AppRouteState {
   const {
     channels,
     setChannels,
+    tracks,
+    setTracks,
     setLayerTimepointCounts,
     channelIdRef,
     layerIdRef,
+    trackSetIdRef,
     computeLayerTimepointCount,
     createChannelSource,
     createLayerSource,
+    createTrackSetSource,
     updateChannelIdCounter,
+    updateTrackSetIdCounter,
     channelValidationMap,
+    trackValidationMap,
     hasGlobalTimepointMismatch,
     hasAnyLayers,
     hasLoadingTracks,
     allChannelsValid,
+    allTracksValid,
     channelVisibility,
     setChannelVisibility,
     channelActiveLayer,
@@ -136,7 +143,6 @@ export function useAppRouteState(): AppRouteState {
     volumeTimepointCount,
     handleChannelLayerFilesAdded,
     handleChannelLayerDrop,
-    handleChannelLayerSegmentationToggle,
     handleChannelLayerRemove,
     showInteractionWarning
   } = useDatasetSetup({
@@ -327,9 +333,12 @@ export function useAppRouteState(): AppRouteState {
     trackTrailLength,
     followedTrackId,
     followedTrackSetId,
-    handleChannelTrackFilesAdded,
-    handleChannelTrackDrop,
+    handleAddTrackSet,
+    handleTrackFilesAdded,
+    handleTrackDrop,
     handleTrackSetNameChange,
+    handleTrackSetBoundChannelChange,
+    handleTrackSetClearFile,
     handleTrackSetRemove,
     handleTrackVisibilityToggle,
     handleTrackVisibilityAllChange,
@@ -356,7 +365,10 @@ export function useAppRouteState(): AppRouteState {
     hasParsedTrackData
   } = useTrackState({
     channels,
-    setChannels,
+    tracks,
+    setTracks,
+    createTrackSetSource,
+    updateTrackSetIdCounter,
     volumeTimepointCount
   });
 
@@ -605,6 +617,7 @@ export function useAppRouteState(): AppRouteState {
   }, [followedTrackId]);
 
   const { trackChannels, vrChannelPanels } = useRouteVrChannelPanels({
+    trackSets,
     loadedChannelIds,
     channelNameMap,
     channelLayersMap,
@@ -628,6 +641,7 @@ export function useAppRouteState(): AppRouteState {
   const {
     handleStartExperimentSetup,
     handleAddChannel,
+    handleAddSegmentationChannel,
     handleChannelNameChange,
     handleRemoveChannel
   } = useRouteDatasetSetupState({
@@ -636,6 +650,7 @@ export function useAppRouteState(): AppRouteState {
     resetChannelEditingState,
     clearDatasetError,
     setChannels,
+    setTracks,
     createChannelSource,
     queuePendingChannelFocus,
     startEditingChannel,
@@ -646,6 +661,7 @@ export function useAppRouteState(): AppRouteState {
     resetPreprocessedState,
     setPreprocessedExperiment,
     setChannels,
+    setTracks,
     setChannelVisibility,
     setChannelActiveLayer,
     setLayerSettings,
@@ -659,9 +675,10 @@ export function useAppRouteState(): AppRouteState {
     setIsExperimentSetupStarted,
     channelIdRef,
     layerIdRef,
+    trackSetIdRef,
     clearDatasetError
   });
-  const canLaunch = hasAnyLayers && allChannelsValid && !hasLoadingTracks && voxelResolution !== null;
+  const canLaunch = hasAnyLayers && allChannelsValid && allTracksValid && !hasLoadingTracks && voxelResolution !== null;
 
   const activeChannel = useMemo(
     () => channels.find((channel) => channel.id === activeChannelId) ?? null,
@@ -878,9 +895,12 @@ export function useAppRouteState(): AppRouteState {
       isExperimentSetupStarted,
       channels,
       setChannels,
+      tracks,
+      setTracks,
       activeChannelId,
       activeChannel,
       channelValidationMap,
+      trackValidationMap,
       editingChannelId,
       editingChannelInputRef,
       editingChannelOriginalNameRef,
@@ -893,17 +913,20 @@ export function useAppRouteState(): AppRouteState {
     handlers: {
       onStartExperimentSetup: handleStartExperimentSetup,
       onAddChannel: handleAddChannel,
+      onAddSegmentationChannel: handleAddSegmentationChannel,
       onReturnToStart: handleReturnToFrontPage,
       onChannelNameChange: handleChannelNameChange,
       onRemoveChannel: handleRemoveChannel,
       onChannelLayerFilesAdded: handleChannelLayerFilesAdded,
       onChannelLayerDrop: handleChannelLayerDrop,
-      onChannelLayerSegmentationToggle: handleChannelLayerSegmentationToggle,
       onChannelLayerRemove: handleChannelLayerRemove,
-      onChannelTrackFilesAdded: handleChannelTrackFilesAdded,
-      onChannelTrackDrop: handleChannelTrackDrop,
-      onChannelTrackSetNameChange: handleTrackSetNameChange,
-      onChannelTrackSetRemove: handleTrackSetRemove
+      onAddTrack: handleAddTrackSet,
+      onTrackFilesAdded: handleTrackFilesAdded,
+      onTrackDrop: handleTrackDrop,
+      onTrackSetNameChange: handleTrackSetNameChange,
+      onTrackSetBoundChannelChange: handleTrackSetBoundChannelChange,
+      onTrackSetClearFile: handleTrackSetClearFile,
+      onTrackSetRemove: handleTrackSetRemove
     },
     tracks: {
       setTrackSetStates,

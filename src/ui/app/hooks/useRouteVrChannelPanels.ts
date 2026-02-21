@@ -15,6 +15,7 @@ function selectDeterministicLayerKey(layers: ReadonlyArray<{ key: string }>): st
 }
 
 type UseRouteVrChannelPanelsOptions = {
+  trackSets: Array<{ id: string; name: string }>;
   loadedChannelIds: string[];
   channelNameMap: Map<string, string>;
   channelLayersMap: Map<string, LoadedDatasetLayer[]>;
@@ -55,6 +56,7 @@ type UseRouteVrChannelPanelsResult = {
 };
 
 export function useRouteVrChannelPanels({
+  trackSets,
   loadedChannelIds,
   channelNameMap,
   channelLayersMap,
@@ -65,11 +67,11 @@ export function useRouteVrChannelPanels({
   createLayerDefaultSettings
 }: UseRouteVrChannelPanelsOptions): UseRouteVrChannelPanelsResult {
   const trackChannels = useMemo(() => {
-    return loadedChannelIds.map((channelId) => ({
-      id: channelId,
-      name: channelNameMap.get(channelId) ?? 'Untitled channel'
+    return trackSets.map((trackSet) => ({
+      id: trackSet.id,
+      name: trackSet.name.trim() || 'Tracks'
     }));
-  }, [channelNameMap, loadedChannelIds]);
+  }, [trackSets]);
 
   const vrChannelPanels = useMemo(() => {
     return loadedChannelIds.map((channelId) => {

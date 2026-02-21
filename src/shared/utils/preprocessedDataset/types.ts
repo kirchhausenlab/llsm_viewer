@@ -11,13 +11,13 @@ export type TrackSetExportMetadata = {
   id: string;
   name: string;
   fileName: string;
+  boundChannelId: string | null;
   entries: string[][];
 };
 
 export type ChannelExportMetadata = {
   id: string;
   name: string;
-  trackSets: TrackSetExportMetadata[];
 };
 
 export type PreprocessedMovieMode = '3d';
@@ -84,7 +84,6 @@ export type PreprocessedLayerManifestEntry = {
 export type PreprocessedChannelManifest = {
   id: string;
   name: string;
-  trackSets: PreprocessedTrackSetManifestEntry[];
   layers: PreprocessedLayerManifestEntry[];
 };
 
@@ -99,6 +98,7 @@ export type PreprocessedTrackSetManifestEntry = {
   id: string;
   name: string;
   fileName: string;
+  boundChannelId: string | null;
   tracks: PreprocessedTracksDescriptor;
 };
 
@@ -109,6 +109,7 @@ export type PreprocessedManifest = {
     movieMode: PreprocessedMovieMode;
     totalVolumeCount: number;
     channels: PreprocessedChannelManifest[];
+    trackSets: PreprocessedTrackSetManifestEntry[];
     voxelResolution?: VoxelResolutionValues | null;
     anisotropyCorrection?: AnisotropyCorrectionMetadata | null;
   };
@@ -131,17 +132,20 @@ export type PreprocessedLayerSummary = {
 export type PreprocessedChannelSummary = {
   id: string;
   name: string;
-  trackSets: Array<{
-    id: string;
-    name: string;
-    fileName: string;
-    entries: string[][];
-  }>;
   layers: PreprocessedLayerSummary[];
+};
+
+export type PreprocessedTrackSetSummary = {
+  id: string;
+  name: string;
+  fileName: string;
+  boundChannelId: string | null;
+  entries: string[][];
 };
 
 export type OpenPreprocessedDatasetResult = {
   manifest: PreprocessedManifest;
   channelSummaries: PreprocessedChannelSummary[];
+  trackSummaries: PreprocessedTrackSetSummary[];
   totalVolumeCount: number;
 };

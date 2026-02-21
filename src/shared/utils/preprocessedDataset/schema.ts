@@ -382,6 +382,12 @@ function validateTrackSet(value: unknown, path: string): PreprocessedTrackSetMan
   const id = expectString(trackSet.id, `${path}.id`, { nonEmpty: true });
   const name = expectString(trackSet.name, `${path}.name`, { nonEmpty: true });
   const fileName = expectString(trackSet.fileName, `${path}.fileName`, { nonEmpty: true });
+  let boundChannelId: string | null;
+  if (trackSet.boundChannelId === null) {
+    boundChannelId = null;
+  } else {
+    boundChannelId = expectString(trackSet.boundChannelId, `${path}.boundChannelId`, { nonEmpty: true });
+  }
   const tracks = expectRecord(trackSet.tracks, `${path}.tracks`);
   const trackPath = expectString(tracks.path, `${path}.tracks.path`, { nonEmpty: true });
   const format = expectString(tracks.format, `${path}.tracks.format`);
@@ -401,6 +407,7 @@ function validateTrackSet(value: unknown, path: string): PreprocessedTrackSetMan
     id,
     name,
     fileName,
+    boundChannelId,
     tracks: {
       path: trackPath,
       format: 'csv',
@@ -551,21 +558,9 @@ function validateChannel({
   const channel = expectRecord(value, path);
   const id = expectString(channel.id, `${path}.id`, { nonEmpty: true });
   const name = expectString(channel.name, `${path}.name`, { nonEmpty: true });
-  const trackSetsValue = expectArray(channel.trackSets, `${path}.trackSets`);
   const layersValue = expectArray(channel.layers, `${path}.layers`);
   if (layersValue.length === 0) {
     throw new Error(`Invalid manifest schema at ${path}.layers: expected at least one layer.`);
-  }
-
-  const trackSetIds = new Set<string>();
-  const trackSets: PreprocessedTrackSetManifestEntry[] = [];
-  for (let index = 0; index < trackSetsValue.length; index += 1) {
-    const trackSet = validateTrackSet(trackSetsValue[index], `${path}.trackSets[${index}]`);
-    if (trackSetIds.has(trackSet.id)) {
-      throw new Error(`Invalid manifest schema at ${path}.trackSets[${index}].id: duplicate "${trackSet.id}".`);
-    }
-    trackSetIds.add(trackSet.id);
-    trackSets.push(trackSet);
   }
 
   const layers: PreprocessedLayerManifestEntry[] = [];
@@ -579,7 +574,7 @@ function validateChannel({
     layers.push(layer);
   }
 
-  return { id, name, trackSets, layers };
+  return { id, name, layers };
 }
 
 export function coercePreprocessedManifest(value: unknown): PreprocessedManifest {
@@ -634,6 +629,23 @@ export function coercePreprocessedManifest(value: unknown): PreprocessedManifest
         );
       }
       layerKeys.add(layerKey);
+    }
+  }
+
+  const trackSetsValue = expectArray(dataset.trackSets, 'manifest.dataset.trackSets');
+  const trackSetIds = new Set<string>();
+  for (let index = 0; index < trackSetsValue.length; index += 1) {
+    const trackSet = validateTrackSet(trackSetsValue[index], `manifest.dataset.trackSets[${index}]`);
+    if (trackSetIds.has(trackSet.id)) {
+      throw new Error(
+        `Invalid manifest schema at manifest.dataset.trackSets[${index}].id: duplicate "${trackSet.id}".`
+      );
+    }
+    trackSetIds.add(trackSet.id);
+    if (trackSet.boundChannelId && !channelIds.has(trackSet.boundChannelId)) {
+      throw new Error(
+        `Invalid manifest schema at manifest.dataset.trackSets[${index}].boundChannelId: unknown channel "${trackSet.boundChannelId}".`
+      );
     }
   }
 

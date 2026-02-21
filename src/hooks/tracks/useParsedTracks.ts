@@ -1,178 +1,141 @@
-import { useCallback, useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useEffect, useMemo, type Dispatch, type SetStateAction } from 'react';
 import type { TrackDefinition } from '../../types/tracks';
 import type { ChannelSource, TrackSetSource } from '../dataset';
 import { collectFilesFromDataTransfer, parseTrackCsvFile } from '../../shared/utils/appHelpers';
 import { buildTracksFromCsvEntries } from '../../shared/utils/trackCsvParsing';
+import { normalizeEntityName } from '../../constants/naming';
 
 export type TrackSetDescriptor = {
   id: string;
-  channelId: string;
-  channelName: string;
   name: string;
+  boundChannelId: string | null;
+  boundChannelName: string | null;
   fileName: string;
 };
 
 export type UseParsedTracksOptions = {
+  tracks: TrackSetSource[];
+  setTracks: Dispatch<SetStateAction<TrackSetSource[]>>;
   channels: ChannelSource[];
-  setChannels: Dispatch<SetStateAction<ChannelSource[]>>;
+  createTrackSetSource: (name: string, boundChannelId: string | null) => TrackSetSource;
+  updateTrackSetIdCounter: (sources: TrackSetSource[]) => void;
 };
 
-const DEFAULT_TRACK_SET_NAME = 'Tracks';
-
-function normalizeTrackSetName(name: string): string {
-  const trimmed = name.trim();
-  return trimmed || DEFAULT_TRACK_SET_NAME;
-}
-
-export const useParsedTracks = ({ channels, setChannels }: UseParsedTracksOptions) => {
-  const trackSetIdRef = useRef(0);
-
+export const useParsedTracks = ({
+  tracks,
+  setTracks,
+  channels,
+  createTrackSetSource,
+  updateTrackSetIdCounter
+}: UseParsedTracksOptions) => {
   useEffect(() => {
-    if (channels.length === 0) {
-      trackSetIdRef.current = 0;
-      return;
-    }
-    let maxId = trackSetIdRef.current;
+    updateTrackSetIdCounter(tracks);
+  }, [tracks, updateTrackSetIdCounter]);
+
+  const channelNameById = useMemo(() => {
+    const map = new Map<string, string>();
     for (const channel of channels) {
-      for (const set of channel.trackSets) {
-        const match = /^track-set-(\d+)$/.exec(set.id);
-        if (!match) {
-          continue;
-        }
-        const value = Number.parseInt(match[1] ?? '', 10);
-        if (Number.isFinite(value) && value > maxId) {
-          maxId = value;
-        }
-      }
+      map.set(channel.id, channel.name.trim() || 'Unnamed channel');
     }
-    trackSetIdRef.current = maxId;
+    return map;
   }, [channels]);
 
   const trackSets = useMemo(() => {
-    const list: TrackSetDescriptor[] = [];
-    for (const channel of channels) {
-      const channelName = channel.name.trim() || 'Untitled channel';
-      for (const set of channel.trackSets) {
-        list.push({
-          id: set.id,
-          channelId: channel.id,
-          channelName,
-          name: normalizeTrackSetName(set.name),
-          fileName: set.fileName
-        });
-      }
-    }
-    return list;
-  }, [channels]);
+    return tracks.map<TrackSetDescriptor>((set) => {
+      const boundChannelId = set.boundChannelId;
+      const normalizedTrackSetName = normalizeEntityName(set.name);
+      return {
+        id: set.id,
+        name: normalizedTrackSetName,
+        boundChannelId,
+        boundChannelName: boundChannelId ? (channelNameById.get(boundChannelId) ?? null) : null,
+        fileName: set.fileName
+      };
+    });
+  }, [channelNameById, tracks]);
 
   const rawTracksByTrackSet = useMemo(() => {
     const map = new Map<string, TrackDefinition[]>();
 
-    for (const channel of channels) {
-      for (const set of channel.trackSets) {
-        const entries = set.entries;
-        if (entries.length === 0) {
-          map.set(set.id, []);
-          continue;
-        }
-        map.set(
-          set.id,
-          buildTracksFromCsvEntries({
-            trackSetId: set.id,
-            trackSetName: normalizeTrackSetName(set.name),
-            channelId: channel.id,
-            channelName: channel.name,
-            entries
-          })
-        );
+    for (const set of tracks) {
+      const entries = set.entries;
+      if (entries.length === 0) {
+        map.set(set.id, []);
+        continue;
       }
+
+      const boundChannelId = set.boundChannelId;
+      const normalizedTrackSetName = normalizeEntityName(set.name);
+      map.set(
+        set.id,
+        buildTracksFromCsvEntries({
+          trackSetId: set.id,
+          trackSetName: normalizedTrackSetName,
+          channelId: boundChannelId,
+          channelName: boundChannelId ? (channelNameById.get(boundChannelId) ?? null) : null,
+          entries
+        })
+      );
     }
 
     return map;
-  }, [channels]);
-
-  const createTrackSetSource = useCallback((file: File): TrackSetSource => {
-    const nextId = trackSetIdRef.current + 1;
-    trackSetIdRef.current = nextId;
-    return {
-      id: `track-set-${nextId}`,
-      name: file.name.replace(/\.csv$/i, ''),
-      file,
-      fileName: file.name,
-      status: 'loading',
-      error: null,
-      entries: []
-    };
-  }, []);
+  }, [channelNameById, tracks]);
 
   const updateTrackSet = useCallback(
-    (channelId: string, trackSetId: string, updater: (set: TrackSetSource) => TrackSetSource) => {
-      setChannels((current) =>
-        current.map((channel) => {
-          if (channel.id !== channelId) {
-            return channel;
-          }
-          const nextSets = channel.trackSets.map((set) => (set.id === trackSetId ? updater(set) : set));
-          return nextSets === channel.trackSets ? channel : { ...channel, trackSets: nextSets };
-        })
-      );
+    (trackSetId: string, updater: (set: TrackSetSource) => TrackSetSource) => {
+      setTracks((current) => current.map((set) => (set.id === trackSetId ? updater(set) : set)));
     },
-    [setChannels]
+    [setTracks]
   );
 
-  const handleChannelTrackFilesAdded = useCallback(
-    async (channelId: string, files: File[]) => {
+  const handleAddTrackSet = useCallback(() => {
+    setTracks((current) => [...current, createTrackSetSource('', null)]);
+  }, [createTrackSetSource, setTracks]);
+
+  const handleTrackFilesAdded = useCallback(
+    async (trackSetId: string, files: File[]) => {
       const csvFiles = files.filter((file) => file.name.toLowerCase().endsWith('.csv'));
       if (csvFiles.length === 0) {
         return;
       }
 
-      const created: Array<{ channelId: string; trackSetId: string; file: File }> = [];
-      setChannels((current) =>
-        current.map((channel) => {
-          if (channel.id !== channelId) {
-            return channel;
-          }
-          const nextSets = [...channel.trackSets];
-          for (const file of csvFiles) {
-            const source = createTrackSetSource(file);
-            nextSets.push(source);
-            created.push({ channelId, trackSetId: source.id, file });
-          }
-          return { ...channel, trackSets: nextSets };
-        })
-      );
+      const file = csvFiles[0];
+      updateTrackSet(trackSetId, (set) => ({
+        ...set,
+        file,
+        fileName: file.name,
+        status: 'loading',
+        error: null,
+        entries: []
+      }));
 
-      await Promise.all(
-        created.map(async ({ channelId: resolvedChannelId, trackSetId, file }) => {
-          try {
-            const rows = await parseTrackCsvFile(file);
-            updateTrackSet(resolvedChannelId, trackSetId, (set) => ({
-              ...set,
-              file,
-              status: 'loaded',
-              error: null,
-              entries: rows
-            }));
-          } catch (err) {
-            console.error('Failed to load tracks CSV', err);
-            const message = err instanceof Error ? err.message : 'Failed to load tracks.';
-            updateTrackSet(resolvedChannelId, trackSetId, (set) => ({
-              ...set,
-              file: null,
-              status: 'error',
-              error: message,
-              entries: []
-            }));
-          }
-        })
-      );
+      try {
+        const rows = await parseTrackCsvFile(file);
+        updateTrackSet(trackSetId, (set) => ({
+          ...set,
+          file,
+          fileName: file.name,
+          status: 'loaded',
+          error: null,
+          entries: rows
+        }));
+      } catch (err) {
+        console.error('Failed to load tracks CSV', err);
+        const message = err instanceof Error ? err.message : 'Failed to load tracks.';
+        updateTrackSet(trackSetId, (set) => ({
+          ...set,
+          file: null,
+          status: 'error',
+          error: message,
+          entries: []
+        }));
+      }
     },
-    [createTrackSetSource, setChannels, updateTrackSet]
+    [updateTrackSet]
   );
 
-  const handleChannelTrackDrop = useCallback(
-    async (channelId: string, dataTransfer: DataTransfer) => {
+  const handleTrackDrop = useCallback(
+    async (trackSetId: string, dataTransfer: DataTransfer) => {
       let files: File[];
       try {
         files = await collectFilesFromDataTransfer(dataTransfer);
@@ -184,39 +147,55 @@ export const useParsedTracks = ({ channels, setChannels }: UseParsedTracksOption
       if (csvFiles.length === 0) {
         return;
       }
-      await handleChannelTrackFilesAdded(channelId, csvFiles);
+      await handleTrackFilesAdded(trackSetId, [csvFiles[0]]);
     },
-    [handleChannelTrackFilesAdded]
+    [handleTrackFilesAdded]
   );
 
   const handleTrackSetNameChange = useCallback(
-    (channelId: string, trackSetId: string, name: string) => {
-      updateTrackSet(channelId, trackSetId, (set) => ({ ...set, name }));
+    (trackSetId: string, name: string) => {
+      updateTrackSet(trackSetId, (set) => ({ ...set, name }));
+    },
+    [updateTrackSet]
+  );
+
+  const handleTrackSetBoundChannelChange = useCallback(
+    (trackSetId: string, boundChannelId: string | null) => {
+      updateTrackSet(trackSetId, (set) => ({ ...set, boundChannelId }));
+    },
+    [updateTrackSet]
+  );
+
+  const handleTrackSetClearFile = useCallback(
+    (trackSetId: string) => {
+      updateTrackSet(trackSetId, (set) => ({
+        ...set,
+        file: null,
+        fileName: '',
+        status: 'idle',
+        error: null,
+        entries: []
+      }));
     },
     [updateTrackSet]
   );
 
   const handleTrackSetRemove = useCallback(
-    (channelId: string, trackSetId: string) => {
-      setChannels((current) =>
-        current.map((channel) => {
-          if (channel.id !== channelId) {
-            return channel;
-          }
-          const nextSets = channel.trackSets.filter((set) => set.id !== trackSetId);
-          return nextSets.length === channel.trackSets.length ? channel : { ...channel, trackSets: nextSets };
-        })
-      );
+    (trackSetId: string) => {
+      setTracks((current) => current.filter((set) => set.id !== trackSetId));
     },
-    [setChannels]
+    [setTracks]
   );
 
   return {
     trackSets,
     rawTracksByTrackSet,
-    handleChannelTrackFilesAdded,
-    handleChannelTrackDrop,
+    handleAddTrackSet,
+    handleTrackFilesAdded,
+    handleTrackDrop,
     handleTrackSetNameChange,
+    handleTrackSetBoundChannelChange,
+    handleTrackSetClearFile,
     handleTrackSetRemove
   };
 };

@@ -9,6 +9,8 @@ export type ChannelUploadsProps = {
   isBusy?: boolean;
   browseLabel: string;
   subtitle: string;
+  hasSelection?: boolean;
+  selectedSummary?: string;
   onFilesSelected: (files: File[]) => void;
   onDropDataTransfer: (dataTransfer: DataTransfer) => void;
   actionSlot?: ReactNode;
@@ -24,6 +26,8 @@ export default function ChannelUploads({
   isBusy = false,
   browseLabel,
   subtitle,
+  hasSelection = false,
+  selectedSummary,
   onFilesSelected,
   onDropDataTransfer,
   actionSlot,
@@ -35,15 +39,15 @@ export default function ChannelUploads({
   const [isDragging, setIsDragging] = useState(false);
 
   const handleBrowse = useCallback(() => {
-    if (disabled || isBusy) {
+    if (disabled || isBusy || hasSelection) {
       return;
     }
     inputRef.current?.click();
-  }, [disabled, isBusy]);
+  }, [disabled, hasSelection, isBusy]);
 
   const handleInputChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
-      if (disabled || isBusy) {
+      if (disabled || isBusy || hasSelection) {
         event.target.value = '';
         return;
       }
@@ -53,37 +57,37 @@ export default function ChannelUploads({
       }
       event.target.value = '';
     },
-    [disabled, isBusy, onFilesSelected]
+    [disabled, hasSelection, isBusy, onFilesSelected]
   );
 
   const handleDragEnter = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault();
-      if (disabled || isBusy) {
+      if (disabled || isBusy || hasSelection) {
         return;
       }
       dragCounterRef.current += 1;
       setIsDragging(true);
     },
-    [disabled, isBusy]
+    [disabled, hasSelection, isBusy]
   );
 
   const handleDragOver = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault();
-      if (disabled || isBusy) {
+      if (disabled || isBusy || hasSelection) {
         event.dataTransfer.dropEffect = 'none';
         return;
       }
       event.dataTransfer.dropEffect = 'copy';
     },
-    [disabled, isBusy]
+    [disabled, hasSelection, isBusy]
   );
 
   const handleDragLeave = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault();
-      if (disabled || isBusy) {
+      if (disabled || isBusy || hasSelection) {
         return;
       }
       dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
@@ -91,7 +95,7 @@ export default function ChannelUploads({
         setIsDragging(false);
       }
     },
-    [disabled, isBusy]
+    [disabled, hasSelection, isBusy]
   );
 
   const handleDrop = useCallback(
@@ -99,7 +103,7 @@ export default function ChannelUploads({
       event.preventDefault();
       dragCounterRef.current = 0;
       setIsDragging(false);
-      if (disabled || isBusy) {
+      if (disabled || isBusy || hasSelection) {
         return;
       }
       const { dataTransfer } = event;
@@ -108,7 +112,7 @@ export default function ChannelUploads({
       }
       onDropDataTransfer(dataTransfer);
     },
-    [disabled, isBusy, onDropDataTransfer]
+    [disabled, hasSelection, isBusy, onDropDataTransfer]
   );
 
   const dropClassName = variant === 'layers' ? 'channel-layer-drop' : 'channel-tracks-drop';
@@ -122,7 +126,7 @@ export default function ChannelUploads({
 
   return (
     <div
-      className={`${dropClassName}${isDragging ? ' is-active' : ''}`}
+      className={`${dropClassName}${hasSelection ? ' is-selected' : ''}${isDragging ? ' is-active' : ''}`}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -140,16 +144,22 @@ export default function ChannelUploads({
       <div className={contentClassName}>
         <div className={rowClassName}>
           <div className={descriptionClassName}>
-            <button
-              type="button"
-              className={browseButtonClassName}
-              onClick={handleBrowse}
-              disabled={disabled || isBusy}
-            >
-              {browseLabel}
-            </button>
-            {actionSlot}
-            <p className={subtitleClassName}>{subtitle}</p>
+            {hasSelection ? (
+              <p className={subtitleClassName}>{selectedSummary ?? ''}</p>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className={browseButtonClassName}
+                  onClick={handleBrowse}
+                  disabled={disabled || isBusy}
+                >
+                  {browseLabel}
+                </button>
+                {actionSlot}
+                <p className={subtitleClassName}>{subtitle}</p>
+              </>
+            )}
           </div>
           {rightSlot}
         </div>

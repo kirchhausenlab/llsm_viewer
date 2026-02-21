@@ -19,6 +19,7 @@ const createStateSetter = <T>(state: { value: T }) => (next: SetStateAction<T>) 
 
   const preprocessedExperiment = { value: { id: 'staged' } as unknown };
   const channels = { value: [{ id: 'channel-1' }] as unknown };
+  const tracks = { value: [{ id: 'track-set-1' }] as unknown };
   const channelVisibility = { value: { 'channel-1': true } };
   const channelActiveLayer = { value: { 'channel-1': 'layer-1' } };
   const layerSettings = { value: { 'layer-1': { color: '#ffffff' } } as Record<string, unknown> };
@@ -29,6 +30,7 @@ const createStateSetter = <T>(state: { value: T }) => (next: SetStateAction<T>) 
   const isExperimentSetupStarted = { value: true };
   const channelIdRef = { current: 5 };
   const layerIdRef = { current: 8 };
+  const trackSetIdRef = { current: 3 };
 
   const hook = renderHook(() =>
     useRouteDatasetResetState({
@@ -37,6 +39,7 @@ const createStateSetter = <T>(state: { value: T }) => (next: SetStateAction<T>) 
       },
       setPreprocessedExperiment: createStateSetter(preprocessedExperiment),
       setChannels: createStateSetter(channels),
+      setTracks: createStateSetter(tracks),
       setChannelVisibility: createStateSetter(channelVisibility),
       setChannelActiveLayer: createStateSetter(channelActiveLayer),
       setLayerSettings: createStateSetter(layerSettings),
@@ -56,6 +59,7 @@ const createStateSetter = <T>(state: { value: T }) => (next: SetStateAction<T>) 
       setIsExperimentSetupStarted: createStateSetter(isExperimentSetupStarted),
       channelIdRef,
       layerIdRef,
+      trackSetIdRef,
       clearDatasetError: () => {
         clearDatasetErrorCalls += 1;
       },
@@ -73,6 +77,7 @@ const createStateSetter = <T>(state: { value: T }) => (next: SetStateAction<T>) 
   assert.strictEqual(clearDatasetErrorCalls, 1);
   assert.strictEqual(preprocessedExperiment.value, null);
   assert.deepStrictEqual(channels.value, []);
+  assert.deepStrictEqual(tracks.value, []);
   assert.deepStrictEqual(channelVisibility.value, {});
   assert.deepStrictEqual(channelActiveLayer.value, {});
   assert.deepStrictEqual(layerSettings.value, {});
@@ -83,6 +88,7 @@ const createStateSetter = <T>(state: { value: T }) => (next: SetStateAction<T>) 
   assert.strictEqual(isExperimentSetupStarted.value, false);
   assert.strictEqual(channelIdRef.current, 0);
   assert.strictEqual(layerIdRef.current, 0);
+  assert.strictEqual(trackSetIdRef.current, 0);
 
   hook.act(() => {
     hook.result.handleReturnToFrontPage();

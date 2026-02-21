@@ -8,10 +8,11 @@ import {
   createOpfsPreprocessedStorage
 } from '../../shared/storage/preprocessedStorage';
 import type { PreprocessedStorageHandle } from '../../shared/storage/preprocessedStorage';
-import type { ChannelSource, StagedPreprocessedExperiment } from '../dataset';
+import type { ChannelSource, StagedPreprocessedExperiment, TrackSetSource } from '../dataset';
 
 export type UsePreprocessedImportOptions = {
   setChannels: Dispatch<SetStateAction<ChannelSource[]>>;
+  setTracks: Dispatch<SetStateAction<TrackSetSource[]>>;
   setActiveChannelId: Dispatch<SetStateAction<string | null>>;
   setEditingChannelId: Dispatch<SetStateAction<string | null>>;
   setTrackSetStates: Dispatch<SetStateAction<Record<string, TrackSetState>>>;
@@ -152,6 +153,7 @@ function deriveArchiveDatasetId(file: File): string {
 
 export function usePreprocessedImport({
   setChannels,
+  setTracks,
   setActiveChannelId,
   setEditingChannelId,
   setTrackSetStates,
@@ -201,6 +203,7 @@ export function usePreprocessedImport({
       const staged: StagedPreprocessedExperiment = {
         manifest: result.manifest,
         channelSummaries: result.channelSummaries,
+        trackSummaries: result.trackSummaries,
         totalVolumeCount: result.totalVolumeCount,
         storageHandle,
         sourceName,
@@ -212,23 +215,28 @@ export function usePreprocessedImport({
       const nextChannels = result.channelSummaries.map<ChannelSource>((summary) => ({
         id: summary.id,
         name: summary.name,
+        channelType: summary.layers.length > 0 && summary.layers.every((layer) => layer.isSegmentation)
+          ? 'segmentation'
+          : 'channel',
         layers: summary.layers.map((layer) => ({
           id: layer.key,
           files: [],
           isSegmentation: layer.isSegmentation
-        })),
-        trackSets: summary.trackSets.map((set) => ({
-          id: set.id,
-          name: set.name,
-          file: null,
-          fileName: set.fileName,
-          status: 'loaded',
-          error: null,
-          entries: set.entries
         }))
+      }));
+      const nextTracks = result.trackSummaries.map<TrackSetSource>((set) => ({
+        id: set.id,
+        name: set.name,
+        boundChannelId: set.boundChannelId,
+        file: null,
+        fileName: set.fileName,
+        status: 'loaded',
+        error: null,
+        entries: set.entries
       }));
 
       setChannels(nextChannels);
+      setTracks(nextTracks);
       updateChannelIdCounter(nextChannels);
       setActiveChannelId(null);
       setEditingChannelId(null);
@@ -251,6 +259,7 @@ export function usePreprocessedImport({
       setSelectedTrackOrder,
       setTrackOrderModeByTrackSet,
       setTrackSetStates,
+      setTracks,
       setViewerMode,
       updateChannelIdCounter
     ]
@@ -290,6 +299,7 @@ export function usePreprocessedImport({
       setPreprocessedImportError(message);
       setPreprocessedExperiment(null);
       setChannels([]);
+      setTracks([]);
       setIsExperimentSetupStarted(false);
     } finally {
       setIsPreprocessedImporting(false);
@@ -299,6 +309,7 @@ export function usePreprocessedImport({
     stagePreprocessedDataset,
     setIsExperimentSetupStarted,
     setChannels,
+    setTracks,
     setPreprocessedExperiment
   ]);
 
@@ -333,6 +344,7 @@ export function usePreprocessedImport({
         setPreprocessedImportError(message);
         setPreprocessedExperiment(null);
         setChannels([]);
+        setTracks([]);
         setIsExperimentSetupStarted(false);
       } finally {
         setIsPreprocessedImporting(false);
@@ -342,6 +354,7 @@ export function usePreprocessedImport({
       setChannels,
       setIsExperimentSetupStarted,
       setPreprocessedExperiment,
+      setTracks,
       stagePreprocessedDataset
     ]
   );

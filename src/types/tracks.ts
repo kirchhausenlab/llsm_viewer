@@ -17,8 +17,8 @@ export type TrackDefinition = {
   id: string;
   trackSetId: string;
   trackSetName: string;
-  channelId: string;
-  channelName: string;
+  channelId: string | null;
+  channelName: string | null;
   trackNumber: number;
   sourceTrackId: number;
   displayTrackNumber?: string;

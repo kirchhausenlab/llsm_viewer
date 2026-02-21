@@ -12,9 +12,12 @@ console.log('Starting routeDatasetSetupProps tests');
     isExperimentSetupStarted: true,
     channels: [],
     setChannels: (() => undefined) as RouteDatasetSetupSections['state']['setChannels'],
+    tracks: [],
+    setTracks: (() => undefined) as RouteDatasetSetupSections['state']['setTracks'],
     activeChannelId: 'channel-1',
     activeChannel: null,
     channelValidationMap: new Map(),
+    trackValidationMap: new Map(),
     editingChannelId: 'channel-1',
     editingChannelInputRef: { current: null },
     editingChannelOriginalNameRef: { current: 'Original' },
@@ -28,17 +31,20 @@ console.log('Starting routeDatasetSetupProps tests');
   const handlers = {
     onStartExperimentSetup: () => undefined,
     onAddChannel: () => undefined,
+    onAddSegmentationChannel: () => undefined,
     onReturnToStart: () => undefined,
     onChannelNameChange: () => undefined,
     onRemoveChannel: () => undefined,
     onChannelLayerFilesAdded: () => undefined,
     onChannelLayerDrop: () => undefined,
-    onChannelLayerSegmentationToggle: () => undefined,
     onChannelLayerRemove: () => undefined,
-    onChannelTrackFilesAdded: () => undefined,
-    onChannelTrackDrop: () => undefined,
-    onChannelTrackSetNameChange: () => undefined,
-    onChannelTrackSetRemove: () => undefined
+    onAddTrack: () => undefined,
+    onTrackFilesAdded: () => undefined,
+    onTrackDrop: () => undefined,
+    onTrackSetNameChange: () => undefined,
+    onTrackSetBoundChannelChange: () => undefined,
+    onTrackSetClearFile: () => undefined,
+    onTrackSetRemove: () => undefined
   } satisfies RouteDatasetSetupSections['handlers'];
 
   const tracks = {
@@ -75,7 +81,8 @@ console.log('Starting routeDatasetSetupProps tests');
 
   assert.strictEqual(result.activeChannelId, state.activeChannelId);
   assert.strictEqual(result.editingChannelOriginalNameRef, state.editingChannelOriginalNameRef);
-  assert.strictEqual(result.onChannelTrackDrop, handlers.onChannelTrackDrop);
+  assert.strictEqual(result.onTrackDrop, handlers.onTrackDrop);
+  assert.strictEqual(result.onTrackSetClearFile, handlers.onTrackSetClearFile);
   assert.strictEqual(result.setTrackSetStates, tracks.setTrackSetStates);
   assert.strictEqual(result.launchErrorMessage, launch.launchErrorMessage);
   assert.strictEqual(result.datasetErrors, preprocess.datasetErrors);

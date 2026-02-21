@@ -29,6 +29,10 @@ const createLayer = (key: string, channelId: string, options?: Partial<LoadedDat
 
   const hook = renderHook(() =>
     useRouteVrChannelPanels({
+      trackSets: [
+        { id: 'track-set-1', name: 'Main tracks' },
+        { id: 'track-set-2', name: '' },
+      ],
       loadedChannelIds: ['channel-a', 'channel-b'],
       channelNameMap: new Map<string, string>([['channel-a', 'Main channel']]),
       channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
@@ -59,8 +63,8 @@ const createLayer = (key: string, channelId: string, options?: Partial<LoadedDat
   );
 
   assert.deepStrictEqual(hook.result.trackChannels, [
-    { id: 'channel-a', name: 'Main channel' },
-    { id: 'channel-b', name: 'Untitled channel' },
+    { id: 'track-set-1', name: 'Main tracks' },
+    { id: 'track-set-2', name: 'Tracks' },
   ]);
 
   const panelA = hook.result.vrChannelPanels[0];

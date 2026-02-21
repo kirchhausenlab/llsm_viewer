@@ -8,7 +8,6 @@
       {
         "id": "channel-seg",
         "name": "Segmentation Channel",
-        "trackSets": [],
         "layers": [
           {
             "key": "layer-seg",
@@ -129,6 +128,7 @@
         ]
       }
     ],
+    "trackSets": [],
     "voxelResolution": null,
     "anisotropyCorrection": null
   }

@@ -1,5 +1,5 @@
 import { useCallback, type Dispatch, type SetStateAction } from 'react';
-import type { ChannelSource } from '../dataset';
+import type { ChannelSource, TrackSetSource } from '../dataset';
 import useParsedTracks from './useParsedTracks';
 import useTrackStyling, {
   DEFAULT_TRACK_LINE_WIDTH,
@@ -14,23 +14,38 @@ import useTrackSelection, {
 
 export type UseTrackStateOptions = {
   channels: ChannelSource[];
-  setChannels: Dispatch<SetStateAction<ChannelSource[]>>;
+  tracks: TrackSetSource[];
+  setTracks: Dispatch<SetStateAction<TrackSetSource[]>>;
+  createTrackSetSource: (name: string, boundChannelId: string | null) => TrackSetSource;
+  updateTrackSetIdCounter: (sources: TrackSetSource[]) => void;
   volumeTimepointCount: number;
 };
 
 export const useTrackState = ({
   channels,
-  setChannels,
+  tracks,
+  setTracks,
+  createTrackSetSource,
+  updateTrackSetIdCounter,
   volumeTimepointCount
 }: UseTrackStateOptions) => {
   const {
     trackSets,
     rawTracksByTrackSet,
-    handleChannelTrackFilesAdded,
-    handleChannelTrackDrop,
+    handleAddTrackSet,
+    handleTrackFilesAdded,
+    handleTrackDrop,
     handleTrackSetNameChange,
+    handleTrackSetBoundChannelChange,
+    handleTrackSetClearFile,
     handleTrackSetRemove
-  } = useParsedTracks({ channels, setChannels });
+  } = useParsedTracks({
+    tracks,
+    setTracks,
+    channels,
+    createTrackSetSource,
+    updateTrackSetIdCounter
+  });
 
   const styling = useTrackStyling({ trackSets, parsedTracksByTrackSet: rawTracksByTrackSet });
 
@@ -53,9 +68,12 @@ export const useTrackState = ({
     ...styling,
     trackSets,
     rawTracksByTrackSet,
-    handleChannelTrackFilesAdded,
-    handleChannelTrackDrop,
+    handleAddTrackSet,
+    handleTrackFilesAdded,
+    handleTrackDrop,
     handleTrackSetNameChange,
+    handleTrackSetBoundChannelChange,
+    handleTrackSetClearFile,
     handleTrackSetRemove,
     resetTrackState
   };

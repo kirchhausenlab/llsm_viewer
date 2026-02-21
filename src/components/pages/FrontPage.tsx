@@ -170,7 +170,9 @@ export default function FrontPage({
           {frontPageMode === 'configuring' ? (
             <ChannelListPanel
               channels={channelListPanel.channels}
+              tracks={channelListPanel.tracks}
               channelValidationMap={channelListPanel.channelValidationMap}
+              trackValidationMap={channelListPanel.trackValidationMap}
               activeChannelId={channelListPanel.activeChannelId}
               activeChannel={channelListPanel.activeChannel}
               editingChannelId={channelListPanel.editingChannelId}
@@ -179,16 +181,19 @@ export default function FrontPage({
               setActiveChannelId={channelListPanel.setActiveChannelId}
               setEditingChannelId={channelListPanel.setEditingChannelId}
               onAddChannel={channelListPanel.onAddChannel}
+              onAddSegmentationChannel={channelListPanel.onAddSegmentationChannel}
               onChannelNameChange={channelListPanel.onChannelNameChange}
               onRemoveChannel={channelListPanel.onRemoveChannel}
               onChannelLayerFilesAdded={channelListPanel.onChannelLayerFilesAdded}
               onChannelLayerDrop={channelListPanel.onChannelLayerDrop}
-              onChannelLayerSegmentationToggle={channelListPanel.onChannelLayerSegmentationToggle}
               onChannelLayerRemove={channelListPanel.onChannelLayerRemove}
-              onChannelTrackFilesAdded={channelListPanel.onChannelTrackFilesAdded}
-              onChannelTrackDrop={channelListPanel.onChannelTrackDrop}
-              onChannelTrackSetNameChange={channelListPanel.onChannelTrackSetNameChange}
-              onChannelTrackSetRemove={channelListPanel.onChannelTrackSetRemove}
+              onAddTrack={channelListPanel.onAddTrack}
+              onTrackFilesAdded={channelListPanel.onTrackFilesAdded}
+              onTrackDrop={channelListPanel.onTrackDrop}
+              onTrackSetNameChange={channelListPanel.onTrackSetNameChange}
+              onTrackSetBoundChannelChange={channelListPanel.onTrackSetBoundChannelChange}
+              onTrackSetClearFile={channelListPanel.onTrackSetClearFile}
+              onTrackSetRemove={channelListPanel.onTrackSetRemove}
               isFrontPageLocked={channelListPanel.isFrontPageLocked}
             />
           ) : null}
@@ -205,16 +210,31 @@ export default function FrontPage({
                     ? ` · ${preprocessedSummary.preprocessedExperiment.totalVolumeCount} volumes`
                     : ''}
                 </p>
+                {(() => {
+                  const trackSummaries = preprocessedSummary.preprocessedExperiment.trackSummaries ?? [];
+                  const totals = trackSummaries.reduce(
+                    (acc, set) => {
+                      const summary = preprocessedSummary.computeTrackSummary(set.entries);
+                      return {
+                        rows: acc.rows + summary.totalRows,
+                        tracks: acc.tracks + summary.uniqueTracks
+                      };
+                    },
+                    { rows: 0, tracks: 0 }
+                  );
+                  return (
+                    <p className="preprocessed-summary-tracks">
+                      {trackSummaries.length > 0
+                        ? `${trackSummaries.length} track sets · ${totals.tracks} tracks (${totals.rows} rows)`
+                        : 'No tracks attached'}
+                    </p>
+                  );
+                })()}
               </div>
               <ul className="preprocessed-summary-list">
                 {preprocessedSummary.preprocessedExperiment.channelSummaries.map((
                   summary: StagedPreprocessedExperiment['channelSummaries'][number]
                 ) => {
-                  const trackSummaries = summary.trackSets.map((set) =>
-                    preprocessedSummary.computeTrackSummary(set.entries)
-                  );
-                  const totalRows = trackSummaries.reduce((acc, current) => acc + current.totalRows, 0);
-                  const totalTracks = trackSummaries.reduce((acc, current) => acc + current.uniqueTracks, 0);
                   return (
                     <li key={summary.id} className="preprocessed-summary-item">
                       <div className="preprocessed-summary-channel">
@@ -238,11 +258,6 @@ export default function FrontPage({
                             </li>
                           ))}
                         </ul>
-                        <p className="preprocessed-summary-tracks">
-                          {summary.trackSets.length > 0
-                            ? `${summary.trackSets.length} track sets · ${totalTracks} tracks (${totalRows} rows)`
-                            : 'No tracks attached'}
-                        </p>
                       </div>
                     </li>
                   );

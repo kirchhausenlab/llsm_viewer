@@ -212,44 +212,6 @@
   color: rgba(255, 255, 255, 0.65);
 }
 
-.channel-card {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  padding: 1.35rem 1.5rem;
-  border-radius: 1rem;
-  background-color: rgba(14, 18, 28, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
-}
-
-.channel-card.is-disabled {
-  opacity: 0.7;
-}
-
-.channel-layer-drop-title,
-.channel-tracks-title {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.85);
-}
-
-.channel-layer-drop-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin: 0 0 0.5rem;
-}
-
-.channel-layer-drop-title {
-  margin: 0;
-}
-
-.channel-tracks-title {
-  margin: 1.5rem 0 0.5rem;
-}
-
 .channel-layer-drop,
 .channel-tracks-drop {
   position: relative;
@@ -259,6 +221,15 @@
   background: linear-gradient(135deg, rgba(64, 120, 255, 0.22), rgba(143, 92, 255, 0.28));
   box-shadow: 0 12px 32px rgba(26, 54, 122, 0.28);
   transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.channel-layer-drop.is-selected,
+.channel-tracks-drop.is-selected {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: rgba(12, 16, 24, 0.7);
+  box-shadow: none;
 }
 
 .file-drop-input {
@@ -640,6 +611,42 @@
   margin: 0;
   font-size: 0.8rem;
   color: rgba(255, 255, 255, 0.65);
+}
+
+.track-card-status-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.track-card-selected-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.track-card-bind-label {
+  margin: 0;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 600;
+}
+
+.track-card-bind-select {
+  min-width: 11rem;
+  padding: 0.42rem 0.55rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(8, 11, 16, 0.7);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.82rem;
+}
+
+.track-card-bind-select:disabled {
+  opacity: 0.6;
 }
 
 .channel-tracks-list {

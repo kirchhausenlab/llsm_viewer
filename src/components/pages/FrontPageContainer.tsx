@@ -5,7 +5,13 @@ import usePreprocessedExperiment from '../../hooks/dataset/usePreprocessedExperi
 import type { VoxelResolutionHook } from '../../hooks/useVoxelResolution';
 import type { DatasetErrorHook } from '../../hooks/useDatasetErrors';
 import type { FollowedTrackState, TrackSetState } from '../../types/channelTracks';
-import type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment } from '../../hooks/dataset';
+import type {
+  ChannelSource,
+  ChannelValidation,
+  StagedPreprocessedExperiment,
+  TrackSetSource,
+  TrackValidation
+} from '../../hooks/dataset';
 import { preprocessDatasetToStorage } from '../../shared/utils/preprocessedDataset';
 import { createDirectoryHandlePreprocessedStorage, createOpfsPreprocessedStorage } from '../../shared/storage/preprocessedStorage';
 import type { PreprocessedStorageHandle } from '../../shared/storage/preprocessedStorage';
@@ -24,9 +30,12 @@ export type FrontPageContainerProps = {
   isExperimentSetupStarted: boolean;
   channels: ChannelSource[];
   setChannels: Dispatch<SetStateAction<ChannelSource[]>>;
+  tracks: TrackSetSource[];
+  setTracks: Dispatch<SetStateAction<TrackSetSource[]>>;
   activeChannelId: string | null;
   activeChannel: ChannelSource | null;
   channelValidationMap: Map<string, ChannelValidation>;
+  trackValidationMap: Map<string, TrackValidation>;
   editingChannelId: string | null;
   editingChannelInputRef: MutableRefObject<HTMLInputElement | null>;
   editingChannelOriginalNameRef: MutableRefObject<string>;
@@ -34,17 +43,20 @@ export type FrontPageContainerProps = {
   setEditingChannelId: Dispatch<SetStateAction<string | null>>;
   onStartExperimentSetup: () => void;
   onAddChannel: () => void;
+  onAddSegmentationChannel: () => void;
   onReturnToStart: () => void;
   onChannelNameChange: (channelId: string, name: string) => void;
   onRemoveChannel: (channelId: string) => void;
   onChannelLayerFilesAdded: (channelId: string, files: File[]) => void | Promise<void>;
   onChannelLayerDrop: (channelId: string, dataTransfer: DataTransfer) => void;
-  onChannelLayerSegmentationToggle: (channelId: string, layerId: string, value: boolean) => void;
   onChannelLayerRemove: (channelId: string, layerId: string) => void;
-  onChannelTrackFilesAdded: (channelId: string, files: File[]) => void | Promise<void>;
-  onChannelTrackDrop: (channelId: string, dataTransfer: DataTransfer) => void;
-  onChannelTrackSetNameChange: (channelId: string, trackSetId: string, name: string) => void;
-  onChannelTrackSetRemove: (channelId: string, trackSetId: string) => void;
+  onAddTrack: () => void;
+  onTrackFilesAdded: (trackSetId: string, files: File[]) => void | Promise<void>;
+  onTrackDrop: (trackSetId: string, dataTransfer: DataTransfer) => void;
+  onTrackSetNameChange: (trackSetId: string, name: string) => void;
+  onTrackSetBoundChannelChange: (trackSetId: string, channelId: string | null) => void;
+  onTrackSetClearFile: (trackSetId: string) => void;
+  onTrackSetRemove: (trackSetId: string) => void;
   setIsExperimentSetupStarted: Dispatch<SetStateAction<boolean>>;
   setViewerMode: Dispatch<SetStateAction<'3d'>>;
   updateChannelIdCounter: (sources: ChannelSource[]) => void;
@@ -74,9 +86,12 @@ export default function FrontPageContainer({
   isExperimentSetupStarted,
   channels,
   setChannels,
+  tracks,
+  setTracks,
   activeChannelId,
   activeChannel,
   channelValidationMap,
+  trackValidationMap,
   editingChannelId,
   editingChannelInputRef,
   editingChannelOriginalNameRef,
@@ -84,17 +99,20 @@ export default function FrontPageContainer({
   setEditingChannelId,
   onStartExperimentSetup,
   onAddChannel,
+  onAddSegmentationChannel,
   onReturnToStart,
   onChannelNameChange,
   onRemoveChannel,
   onChannelLayerFilesAdded,
   onChannelLayerDrop,
-  onChannelLayerSegmentationToggle,
   onChannelLayerRemove,
-  onChannelTrackFilesAdded,
-  onChannelTrackDrop,
-  onChannelTrackSetNameChange,
-  onChannelTrackSetRemove,
+  onAddTrack,
+  onTrackFilesAdded,
+  onTrackDrop,
+  onTrackSetNameChange,
+  onTrackSetBoundChannelChange,
+  onTrackSetClearFile,
+  onTrackSetRemove,
   setIsExperimentSetupStarted,
   setViewerMode,
   updateChannelIdCounter,
@@ -132,6 +150,8 @@ export default function FrontPageContainer({
   const preprocessedState = usePreprocessedExperiment({
     channels,
     setChannels,
+    tracks,
+    setTracks,
     setActiveChannelId,
     setEditingChannelId,
     setTrackSetStates,
@@ -274,19 +294,20 @@ export default function FrontPageContainer({
       setIsExperimentSetupStarted(true);
       const channelsMetadata = channels.map((channel) => ({
         id: channel.id,
-        name: channel.name.trim() || 'Untitled channel',
-        trackSets: channel.trackSets.map((set) => ({
-          id: set.id,
-          name: set.name.trim() || 'Tracks',
-          fileName: set.fileName,
-          entries: set.entries
-        }))
+        name: channel.name.trim()
+      }));
+      const trackSetsMetadata = tracks.map((set) => ({
+        id: set.id,
+        name: set.name.trim(),
+        fileName: set.fileName,
+        boundChannelId: set.boundChannelId,
+        entries: set.entries
       }));
       const layersToProcess = channels
         .flatMap((channel) =>
           channel.layers.map((layer) => ({
             channelId: channel.id,
-            channelLabel: channel.name.trim() || 'Untitled channel',
+            channelLabel: channel.name.trim(),
             key: layer.id,
             label: 'Volume',
             files: layer.files,
@@ -351,9 +372,10 @@ export default function FrontPageContainer({
         throw new Error('Preprocessed storage handle was not initialized.');
       }
 
-      const { manifest, channelSummaries, totalVolumeCount } = await preprocessDatasetToStorage({
+      const { manifest, channelSummaries, trackSummaries, totalVolumeCount } = await preprocessDatasetToStorage({
         layers: layersToProcess,
         channels: channelsMetadata,
+        trackSets: trackSetsMetadata,
         voxelResolution: voxelResolutionValue,
         movieMode: '3d',
         storage: selectedStorageHandle.storage,
@@ -363,6 +385,7 @@ export default function FrontPageContainer({
       setPreprocessedExperiment({
         manifest,
         channelSummaries,
+        trackSummaries,
         totalVolumeCount,
         storageHandle: selectedStorageHandle,
         sourceName: 'experiment',
@@ -391,6 +414,7 @@ export default function FrontPageContainer({
     setIsExperimentSetupStarted,
     setPreprocessedExperiment,
     showInteractionWarning,
+    tracks,
     voxelResolutionValue
   ]);
 
@@ -440,7 +464,9 @@ export default function FrontPageContainer({
 
   const channelListPanelProps = {
     channels,
+    tracks,
     channelValidationMap,
+    trackValidationMap,
     activeChannelId,
     activeChannel,
     editingChannelId,
@@ -449,16 +475,19 @@ export default function FrontPageContainer({
     setActiveChannelId,
     setEditingChannelId,
     onAddChannel,
+    onAddSegmentationChannel,
     onChannelNameChange,
     onRemoveChannel,
     onChannelLayerFilesAdded,
     onChannelLayerDrop,
-    onChannelLayerSegmentationToggle,
     onChannelLayerRemove,
-    onChannelTrackFilesAdded,
-    onChannelTrackDrop,
-    onChannelTrackSetNameChange,
-    onChannelTrackSetRemove,
+    onAddTrack,
+    onTrackFilesAdded,
+    onTrackDrop,
+    onTrackSetNameChange,
+    onTrackSetBoundChannelChange,
+    onTrackSetClearFile,
+    onTrackSetRemove,
     isFrontPageLocked
   };
 

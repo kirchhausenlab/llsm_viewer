@@ -38,7 +38,7 @@ test('@smoke can upload tracks and interact with track controls after launch', a
   const followButton = page.getByRole('button', { name: 'Follow' });
   await expect(followButton).toBeVisible();
 
-  const deselectLegendButton = page.getByRole('button', { name: 'Deselect tracks · Track #1' });
+  const deselectLegendButton = page.getByRole('button', { name: /Deselect .*Track #1/ });
   await expect(deselectLegendButton).toBeVisible();
   await deselectLegendButton.evaluate((element) => {
     (element as HTMLButtonElement).click();

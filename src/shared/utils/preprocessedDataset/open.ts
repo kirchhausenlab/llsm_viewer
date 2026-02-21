@@ -1,6 +1,6 @@
 import type { PreprocessedStorage } from '../../storage/preprocessedStorage';
 import { type OpenPreprocessedDatasetResult } from './types';
-import { buildChannelSummariesFromManifest } from './manifest';
+import { buildChannelSummariesFromManifest, buildTrackSummariesFromManifest } from './manifest';
 import { parseTrackEntriesFromCsvBytes } from './tracks';
 import { coercePreprocessedManifest } from './schema';
 
@@ -31,14 +31,13 @@ export async function openPreprocessedDatasetFromZarrStorage(storage: Preprocess
   const manifest = coercePreprocessedManifest(attrs.llsmViewerPreprocessed);
   const trackEntriesByTrackSetId = new Map<string, string[][]>();
 
-  for (const channel of manifest.dataset.channels) {
-    for (const trackSet of channel.trackSets) {
-      const trackBytes = await storage.readFile(trackSet.tracks.path);
-      const entries = parseTrackEntriesFromCsvBytes(trackBytes);
-      trackEntriesByTrackSetId.set(trackSet.id, entries);
-    }
+  for (const trackSet of manifest.dataset.trackSets) {
+    const trackBytes = await storage.readFile(trackSet.tracks.path);
+    const entries = parseTrackEntriesFromCsvBytes(trackBytes);
+    trackEntriesByTrackSetId.set(trackSet.id, entries);
   }
 
-  const channelSummaries = buildChannelSummariesFromManifest(manifest, trackEntriesByTrackSetId);
-  return { manifest, channelSummaries, totalVolumeCount: manifest.dataset.totalVolumeCount };
+  const channelSummaries = buildChannelSummariesFromManifest(manifest);
+  const trackSummaries = buildTrackSummariesFromManifest(manifest, trackEntriesByTrackSetId);
+  return { manifest, channelSummaries, trackSummaries, totalVolumeCount: manifest.dataset.totalVolumeCount };
 }

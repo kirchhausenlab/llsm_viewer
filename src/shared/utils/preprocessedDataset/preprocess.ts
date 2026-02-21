@@ -23,12 +23,14 @@ import type {
   PreprocessedManifest,
   PreprocessedMovieMode,
   PreprocessedScaleChunkStatsZarrDescriptor,
+  PreprocessedTrackSetSummary,
+  TrackSetExportMetadata,
   ZarrArrayShardingPlan,
   ZarrArrayDescriptor
 } from './types';
 import { PREPROCESSED_DATASET_FORMAT } from './types';
 import { createZarrStoreFromPreprocessedStorage } from '../zarrStore';
-import { buildChannelSummariesFromManifest } from './manifest';
+import { buildChannelSummariesFromManifest, buildTrackSummariesFromManifest } from './manifest';
 import { createTracksDescriptor, serializeTrackEntriesToCsvBytes } from './tracks';
 import { encodeUint32ArrayLE, HISTOGRAM_BINS } from '../histogram';
 import {
@@ -78,6 +80,7 @@ type LoadVolumesFromFiles = (files: File[]) => Promise<VolumePayload[]>;
 export type PreprocessDatasetToStorageOptions = {
   layers: PreprocessLayerSource[];
   channels: ChannelExportMetadata[];
+  trackSets: TrackSetExportMetadata[];
   voxelResolution: NonNullable<PreprocessedManifest['dataset']['voxelResolution']>;
   movieMode: PreprocessedMovieMode;
   storage: PreprocessedStorage;
@@ -1062,6 +1065,7 @@ function groupLayersByChannel(sortedLayerSources: PreprocessLayerSource[]): Map<
 
 function buildManifestFromLayerMetadata({
   channels,
+  trackSets,
   layersByChannel,
   layerMetadataByKey,
   expectedTimepoints,
@@ -1072,6 +1076,7 @@ function buildManifestFromLayerMetadata({
   shardingStrategy
 }: {
   channels: ChannelExportMetadata[];
+  trackSets: TrackSetExportMetadata[];
   layersByChannel: Map<string, PreprocessLayerSource[]>;
   layerMetadataByKey: Map<string, LayerMetadata>;
   expectedTimepoints: number;
@@ -1088,6 +1093,16 @@ function buildManifestFromLayerMetadata({
   const manifestChannels: PreprocessedManifest['dataset']['channels'] = [];
   const layerManifestByKey = new Map<string, PreprocessedLayerManifestEntry>();
   const trackEntriesByTrackSetId = new Map<string, string[][]>();
+  const manifestTrackSets: PreprocessedManifest['dataset']['trackSets'] = trackSets.map((trackSet) => {
+    trackEntriesByTrackSetId.set(trackSet.id, trackSet.entries);
+    return {
+      id: trackSet.id,
+      name: trackSet.name,
+      fileName: trackSet.fileName,
+      boundChannelId: trackSet.boundChannelId,
+      tracks: createTracksDescriptor(`tracks/${encodeURIComponent(trackSet.id)}.csv`)
+    };
+  });
 
   for (const channel of channels) {
     const layerSources = layersByChannel.get(channel.id) ?? [];
@@ -1129,20 +1144,9 @@ function buildManifestFromLayerMetadata({
       layerManifestByKey.set(layer.key, manifestLayer);
     }
 
-    const manifestTrackSets = channel.trackSets.map((trackSet) => {
-      trackEntriesByTrackSetId.set(trackSet.id, trackSet.entries);
-      return {
-        id: trackSet.id,
-        name: trackSet.name,
-        fileName: trackSet.fileName,
-        tracks: createTracksDescriptor(`tracks/${encodeURIComponent(trackSet.id)}.csv`)
-      } as const;
-    });
-
     manifestChannels.push({
       id: channel.id,
       name: channel.name,
-      trackSets: manifestTrackSets,
       layers: manifestLayers
     });
   }
@@ -1157,6 +1161,7 @@ function buildManifestFromLayerMetadata({
       movieMode,
       totalVolumeCount,
       channels: manifestChannels,
+      trackSets: manifestTrackSets,
       voxelResolution,
       anisotropyCorrection
     }
@@ -1178,12 +1183,10 @@ async function writeTrackSetCsvFiles({
   trackEntriesByTrackSetId: Map<string, string[][]>;
   storage: PreprocessedStorage;
 }): Promise<void> {
-  for (const channel of manifest.dataset.channels) {
-    for (const trackSet of channel.trackSets) {
-      const entries = trackEntriesByTrackSetId.get(trackSet.id) ?? [];
-      const payload = serializeTrackEntriesToCsvBytes(entries, { decimalPlaces: trackSet.tracks.decimalPlaces });
-      await storage.writeFile(trackSet.tracks.path, payload);
-    }
+  for (const trackSet of manifest.dataset.trackSets) {
+    const entries = trackEntriesByTrackSetId.get(trackSet.id) ?? [];
+    const payload = serializeTrackEntriesToCsvBytes(entries, { decimalPlaces: trackSet.tracks.decimalPlaces });
+    await storage.writeFile(trackSet.tracks.path, payload);
   }
 }
 
@@ -2187,6 +2190,7 @@ async function writeLayerVolumesFor3d({
 export async function preprocessDatasetToStorage({
   layers,
   channels,
+  trackSets,
   voxelResolution,
   movieMode,
   storage,
@@ -2198,6 +2202,7 @@ export async function preprocessDatasetToStorage({
 }: PreprocessDatasetToStorageOptions): Promise<{
   manifest: PreprocessedManifest;
   channelSummaries: PreprocessedChannelSummary[];
+  trackSummaries: PreprocessedTrackSetSummary[];
   totalVolumeCount: number;
 }> {
   const sortedLayerSources = layers
@@ -2237,6 +2242,7 @@ export async function preprocessDatasetToStorage({
   const workerizeNormalizationDownsample = resolveWorkerizeNormalizationDownsample(processingStrategy);
   const { manifest, layerManifestByKey, trackEntriesByTrackSetId } = buildManifestFromLayerMetadata({
     channels,
+    trackSets,
     layersByChannel,
     layerMetadataByKey,
     expectedTimepoints,
@@ -2291,6 +2297,7 @@ export async function preprocessDatasetToStorage({
   }
   await chunkWriter.flush(signal);
 
-  const channelSummaries = buildChannelSummariesFromManifest(manifest, trackEntriesByTrackSetId);
-  return { manifest, channelSummaries, totalVolumeCount };
+  const channelSummaries = buildChannelSummariesFromManifest(manifest);
+  const trackSummaries = buildTrackSummariesFromManifest(manifest, trackEntriesByTrackSetId);
+  return { manifest, channelSummaries, trackSummaries, totalVolumeCount };
 }

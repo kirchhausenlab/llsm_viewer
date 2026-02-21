@@ -1,5 +1,5 @@
 import { useCallback, type Dispatch, type SetStateAction } from 'react';
-import type { ChannelSource } from '../../../hooks/dataset';
+import type { ChannelSource, ChannelSourceType, TrackSetSource } from '../../../hooks/dataset';
 import type { ChannelRemovalContext } from './useChannelEditing';
 
 type UseRouteDatasetSetupStateOptions = {
@@ -8,7 +8,8 @@ type UseRouteDatasetSetupStateOptions = {
   resetChannelEditingState: () => void;
   clearDatasetError: () => void;
   setChannels: Dispatch<SetStateAction<ChannelSource[]>>;
-  createChannelSource: (name: string) => ChannelSource;
+  setTracks: Dispatch<SetStateAction<TrackSetSource[]>>;
+  createChannelSource: (name: string, channelType?: ChannelSourceType) => ChannelSource;
   queuePendingChannelFocus: (channelId: string, originalName: string) => void;
   startEditingChannel: (channelId: string, originalName: string) => void;
   handleChannelRemoved: (context: ChannelRemovalContext) => void;
@@ -18,6 +19,7 @@ type UseRouteDatasetSetupStateOptions = {
 type RouteDatasetSetupState = {
   handleStartExperimentSetup: () => void;
   handleAddChannel: () => void;
+  handleAddSegmentationChannel: () => void;
   handleChannelNameChange: (channelId: string, value: string) => void;
   handleRemoveChannel: (channelId: string) => void;
 };
@@ -28,6 +30,7 @@ export function useRouteDatasetSetupState({
   resetChannelEditingState,
   clearDatasetError,
   setChannels,
+  setTracks,
   createChannelSource,
   queuePendingChannelFocus,
   startEditingChannel,
@@ -45,7 +48,28 @@ export function useRouteDatasetSetupState({
     resetPreprocessedState();
     setIsExperimentSetupStarted(true);
 
-    const channel = createChannelSource('');
+    const channel = createChannelSource('', 'channel');
+    setChannels((current) => {
+      return [...current, channel];
+    });
+    queuePendingChannelFocus(channel.id, channel.name);
+    startEditingChannel(channel.id, channel.name);
+    clearDatasetError();
+  }, [
+    clearDatasetError,
+    createChannelSource,
+    queuePendingChannelFocus,
+    resetPreprocessedState,
+    setChannels,
+    setIsExperimentSetupStarted,
+    startEditingChannel
+  ]);
+
+  const handleAddSegmentationChannel = useCallback(() => {
+    resetPreprocessedState();
+    setIsExperimentSetupStarted(true);
+
+    const channel = createChannelSource('', 'segmentation');
     setChannels((current) => {
       return [...current, channel];
     });
@@ -100,14 +124,29 @@ export function useRouteDatasetSetupState({
           return changed ? next : current;
         });
       }
+      setTracks((current) => {
+        let changed = false;
+        const next = current.map((trackSet) => {
+          if (trackSet.boundChannelId !== channelId) {
+            return trackSet;
+          }
+          changed = true;
+          return {
+            ...trackSet,
+            boundChannelId: null
+          };
+        });
+        return changed ? next : current;
+      });
       clearDatasetError();
     },
-    [clearDatasetError, handleChannelRemoved, setChannels, setLayerTimepointCounts]
+    [clearDatasetError, handleChannelRemoved, setChannels, setLayerTimepointCounts, setTracks]
   );
 
   return {
     handleStartExperimentSetup,
     handleAddChannel,
+    handleAddSegmentationChannel,
     handleChannelNameChange,
     handleRemoveChannel
   };

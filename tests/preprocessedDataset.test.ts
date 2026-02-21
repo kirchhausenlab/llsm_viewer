@@ -40,18 +40,19 @@ const makeManifest = (): PreprocessedManifest => {
     dataset: {
       movieMode: '3d',
       totalVolumeCount: timepoints,
+      trackSets: [
+        {
+          id: 'track-set-a',
+          name: 'Track set A',
+          fileName: 'channel-a.csv',
+          boundChannelId: 'channel-a',
+          tracks: { path: 'tracks/track-set-a.csv', format: 'csv', columns: 8, decimalPlaces: 3 }
+        }
+      ],
       channels: [
         {
           id: 'channel-a',
           name: 'Channel A',
-          trackSets: [
-            {
-              id: 'track-set-a',
-              name: 'Track set A',
-              fileName: 'channel-a.csv',
-              tracks: { path: 'tracks/track-set-a.csv', format: 'csv', columns: 8, decimalPlaces: 3 }
-            }
-          ],
           layers: [
             {
               key: 'seg',
@@ -258,7 +259,7 @@ await (async () => {
   const opened = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
   assert.equal(opened.totalVolumeCount, 2);
   assert.equal(opened.channelSummaries.length, 1);
-  assert.deepEqual(opened.channelSummaries[0]?.trackSets[0]?.entries, [['1', '0', '1', '1.123', '2.1', '3.988', '4', '0']]);
+  assert.deepEqual(opened.trackSummaries[0]?.entries, [['1', '0', '1', '1.123', '2.1', '3.988', '4', '0']]);
 
   const provider = createVolumeProvider({
     manifest: opened.manifest,
@@ -390,11 +391,11 @@ await (async () => {
     dataset: {
       movieMode: '3d',
       totalVolumeCount: timepoints,
+      trackSets: [],
       channels: [
         {
           id: 'channel-sharded',
           name: 'Channel Sharded',
-          trackSets: [],
           layers: [
             {
               key: 'layer-sharded',

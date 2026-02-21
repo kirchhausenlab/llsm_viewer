@@ -282,7 +282,7 @@ export type TrackLineResource = {
   geometryPointEndIndex: number | null;
   baseColor: THREE.Color;
   highlightColor: THREE.Color;
-  channelId: string;
+  channelId: string | null;
   baseLineWidth: number;
   targetLineWidth: number;
   outlineExtraWidth: number;

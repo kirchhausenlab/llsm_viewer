@@ -37,7 +37,6 @@ function buildManifest(): PreprocessedManifest {
         {
           id: 'channel-edge',
           name: 'Channel Edge',
-          trackSets: [],
           layers: [
             {
               key: 'layer-edge',
@@ -101,6 +100,7 @@ function buildManifest(): PreprocessedManifest {
           ]
         }
       ],
+      trackSets: [],
       voxelResolution: null,
       anisotropyCorrection: null
     }

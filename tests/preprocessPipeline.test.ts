@@ -9,7 +9,7 @@ import {
 } from '../src/shared/utils/preprocessedDataset/preprocess.ts';
 import { openPreprocessedDatasetFromZarrStorage } from '../src/shared/utils/preprocessedDataset/open.ts';
 import { createZarrChunkKeyFromCoords } from '../src/shared/utils/preprocessedDataset/chunkKey.ts';
-import type { ChannelExportMetadata } from '../src/shared/utils/preprocessedDataset/types.ts';
+import type { ChannelExportMetadata, TrackSetExportMetadata } from '../src/shared/utils/preprocessedDataset/types.ts';
 import type { VolumePayload } from '../src/types/volume.ts';
 
 type SyntheticVolume = {
@@ -72,7 +72,7 @@ function createLoaderByFileName(volumeByFileName: Map<string, VolumePayload>) {
   };
 }
 
-function createTrackEntries(): ChannelExportMetadata['trackSets'][number]['entries'] {
+function createTrackEntries(): TrackSetExportMetadata['entries'] {
   return [['1', '0', '1', '1.000', '2.000', '3.000', '4.000', '0.000']];
 }
 
@@ -90,15 +90,16 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
   const channels: ChannelExportMetadata[] = [
     {
       id: 'channel-a',
-      name: 'Channel A',
-      trackSets: [
-        {
-          id: 'tracks-a',
-          name: 'Tracks A',
-          fileName: 'tracks-a.csv',
-          entries: createTrackEntries()
-        }
-      ]
+      name: 'Channel A'
+    }
+  ];
+  const trackSets: TrackSetExportMetadata[] = [
+    {
+      id: 'tracks-a',
+      name: 'Tracks A',
+      fileName: 'tracks-a.csv',
+      boundChannelId: 'channel-a',
+      entries: createTrackEntries()
     }
   ];
 
@@ -178,6 +179,7 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
   const result = await preprocessDatasetToStorage({
     layers,
     channels,
+    trackSets,
     voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: true },
     movieMode: '3d',
     storage: storageHandle.storage,
@@ -191,7 +193,7 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
   assert.equal(result.totalVolumeCount, 2);
   assert.equal(result.manifest.dataset.channels.length, 1);
   assert.equal(result.channelSummaries.length, 1);
-  assert.equal(result.channelSummaries[0]?.trackSets[0]?.entries.length, 1);
+  assert.equal(result.trackSummaries[0]?.entries.length, 1);
 
   const finalizeIndex = progressEvents.findIndex((event) => event.stage === 'finalize-manifest');
   const firstWriteIndex = progressEvents.findIndex((event) => event.stage === 'write-volumes');
@@ -212,7 +214,7 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
   const opened = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
   assert.equal(opened.totalVolumeCount, 2);
   assert.equal(opened.channelSummaries[0]?.layers.length, 2);
-  assert.equal(opened.channelSummaries[0]?.trackSets[0]?.entries.length, 1);
+  assert.equal(opened.trackSummaries[0]?.entries.length, 1);
 
   const channel = result.manifest.dataset.channels[0];
   assert.ok(channel);

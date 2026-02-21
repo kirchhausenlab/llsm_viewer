@@ -60,8 +60,7 @@ test('preprocessing perf: end-to-end smoke check stays under budget', async () =
   const channels: ChannelExportMetadata[] = [
     {
       id: 'channel-a',
-      name: 'Channel A',
-      trackSets: []
+      name: 'Channel A'
     }
   ];
   const layers = [
@@ -80,6 +79,7 @@ test('preprocessing perf: end-to-end smoke check stays under budget', async () =
   const result = await preprocessDatasetToStorage({
     layers,
     channels,
+    trackSets: [],
     voxelResolution: { x: 100, y: 100, z: 200, unit: 'nm', correctAnisotropy: true },
     movieMode: '3d',
     storage: storageHandle.storage,
