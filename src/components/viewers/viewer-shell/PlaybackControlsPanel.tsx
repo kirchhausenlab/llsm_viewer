@@ -211,7 +211,7 @@ export default function PlaybackControlsPanel({
                 onChange={(event) =>
                   onActiveSlicedLayerDepthChange(Number.parseInt(event.target.value, 10))
                 }
-                disabled={playbackDisabled || slicedDepthMax <= 0}
+                disabled={slicedDepthMax <= 0}
               />
             </div>
           ) : null}
