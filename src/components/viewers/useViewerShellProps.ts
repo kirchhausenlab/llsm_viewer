@@ -66,6 +66,7 @@ type ViewerPanelsTrackInput = Pick<
 
 export type ViewerShellContainerViewerPanelsProps = {
   layers: ViewerLayerConfig[];
+  qualityProfile?: ViewerShellProps['volumeViewerProps']['qualityProfile'];
   projectionMode: ViewerShellProps['volumeViewerProps']['projectionMode'];
   loading: ViewerPanelsLoadingInput;
   tracks: ViewerPanelsTrackInput;
@@ -141,6 +142,7 @@ function mapVolumeViewerProps({
 >): ViewerShellProps['volumeViewerProps'] {
   return {
     layers: viewerPanels.layers,
+    qualityProfile: viewerPanels.qualityProfile,
     isLoading: viewerPanels.loading.isLoading,
     loadingProgress: viewerPanels.loading.loadingProgress,
     loadedVolumes: viewerPanels.loading.loadedVolumes,

@@ -29,6 +29,21 @@ Agents: You may freely modify `docs/PROJECT_STRUCTURE.md` to reflect code change
 
 ---
 
+## Scientific integrity invariant
+
+- **NEVER SHOW WRONG DATA.**
+- This is a scientific tool. Spatially incorrect substitutions are forbidden.
+- If exact data for a voxel/brick/sample is unavailable, acceptable behavior is only:
+  - render nothing/transparent for that sample, or
+  - fail with explicit diagnostics.
+- Forbidden behaviors include:
+  - remapping missing bricks to unrelated bricks,
+  - inventing placeholder values as if they were real measurements,
+  - silently substituting data from a different spatial location, timepoint, or channel.
+- In tradeoffs, correctness wins over performance and visual continuity.
+
+---
+
 ## Workflow & progress
 
 - Record your progress, status, and open questions in `docs/PROGRESS.md`.

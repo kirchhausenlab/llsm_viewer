@@ -31,6 +31,7 @@ import { isOrthographicVolumeCamera, isPerspectiveVolumeCamera } from './cameraT
 
 type UseVolumeResourcesParams = {
   layers: import('../VolumeViewer.types').VolumeViewerProps['layers'];
+  qualityProfile?: import('../VolumeViewer.types').VolumeViewerProps['qualityProfile'];
   primaryVolume: NormalizedVolume | null;
   projectionMode?: ProjectionMode;
   isAdditiveBlending: boolean;
@@ -107,6 +108,13 @@ type BrickResidencyState = {
   lastCameraDistance: number | null;
   scaleLevel: number;
   bootstrapUpdatesRemaining: number;
+  lastCameraPosition: THREE.Vector3 | null;
+  cameraMotionResetCount: number;
+  cancelledRefineBricks: number;
+  requiredQueueDepth: number;
+  refineQueueDepth: number;
+  fallbackMappedBricks: number;
+  hysteresisHeldBricks: number;
 };
 
 type BrickResidencyMetrics = {
@@ -123,6 +131,12 @@ type BrickResidencyMetrics = {
   prioritizedBricks: number;
   scheduledUploads: number;
   lastCameraDistance: number | null;
+  requiredQueueDepth: number;
+  refineQueueDepth: number;
+  cameraMotionResetCount: number;
+  cancelledRefineBricks: number;
+  fallbackMappedBricks: number;
+  hysteresisHeldBricks: number;
 };
 
 type BrickSkipDiagnostics = {
@@ -159,15 +173,92 @@ function createDisabledBrickSkipDiagnostics(
   };
 }
 
+type ResidencyQualityProfile = 'inspect' | 'interactive' | 'playback';
+
 const FALLBACK_VOLUME_TEXTURE_DATA = new Uint8Array([0]);
 const DEFAULT_MAX_GPU_BRICK_BYTES = 48 * 1024 * 1024;
 const AUTO_EXPANDED_MAX_GPU_BRICK_BYTES = 512 * 1024 * 1024;
+const MAX_FULL_RESIDENCY_ATLAS_BYTES_BY_PROFILE: Record<ResidencyQualityProfile, number> = {
+  inspect: 768 * 1024 * 1024,
+  interactive: 512 * 1024 * 1024,
+  playback: 384 * 1024 * 1024
+};
 const DEFAULT_MAX_BRICK_UPLOADS_PER_UPDATE = 24;
 const BOOTSTRAP_UPLOAD_BURST_UPDATES = 3;
 const BOOTSTRAP_UPLOAD_BURST_MULTIPLIER = 8;
 const BOOTSTRAP_UPLOAD_BURST_MAX = 256;
 const CAMERA_RESIDENCY_EPSILON_SQ = 0.25;
+const CAMERA_RESIDENCY_RESET_DISTANCE_SQ = 4;
 const gpuBrickResidencyStateByResource = new WeakMap<VolumeResources, BrickResidencyState>();
+
+function resolveResidencySchedulerConfig(profile: ResidencyQualityProfile, scaleLevel: number): {
+  targetFraction: number;
+  requiredFraction: number;
+  hysteresisTicks: number;
+} {
+  const base = (() => {
+    switch (profile) {
+      case 'playback':
+        return {
+          targetFraction: 0.58,
+          requiredFraction: 0.42,
+          hysteresisTicks: 20,
+        };
+      case 'interactive':
+        return {
+          targetFraction: 0.78,
+          requiredFraction: 0.5,
+          hysteresisTicks: 14,
+        };
+      case 'inspect':
+      default:
+        return {
+          targetFraction: 1,
+          requiredFraction: 0.62,
+          hysteresisTicks: 10,
+        };
+    }
+  })();
+
+  if (scaleLevel <= 0) {
+    return base;
+  }
+
+  // Coarser scales can tolerate lower churn.
+  return {
+    targetFraction: Math.max(0.5, base.targetFraction - 0.12),
+    requiredFraction: Math.max(0.35, base.requiredFraction - 0.1),
+    hysteresisTicks: base.hysteresisTicks + 4,
+  };
+}
+
+function buildAtlasIndexDataFromResidency({
+  pageTable,
+  sourceToSlot,
+}: {
+  pageTable: VolumeBrickPageTable;
+  sourceToSlot: Map<number, number>;
+}): { atlasIndices: Float32Array; fallbackMappedBricks: number } {
+  const atlasIndices = new Float32Array(pageTable.brickAtlasIndices.length);
+  let fallbackMappedBricks = 0;
+  for (let flatBrickIndex = 0; flatBrickIndex < pageTable.brickAtlasIndices.length; flatBrickIndex += 1) {
+    const sourceIndex = pageTable.brickAtlasIndices[flatBrickIndex] ?? -1;
+    if (sourceIndex < 0) {
+      atlasIndices[flatBrickIndex] = 0;
+      continue;
+    }
+
+    const directSlot = sourceToSlot.get(sourceIndex);
+    if (directSlot !== undefined) {
+      atlasIndices[flatBrickIndex] = directSlot + 1;
+      continue;
+    }
+    atlasIndices[flatBrickIndex] = 0;
+    fallbackMappedBricks += 1;
+  }
+
+  return { atlasIndices, fallbackMappedBricks };
+}
 
 const isSlicedRenderStyle = (renderStyle: number | undefined): boolean =>
   renderStyle === RENDER_STYLE_SLICED;
@@ -311,16 +402,28 @@ function applyVolumeTextureSampling(
 function applyAdaptiveLodUniforms(
   uniforms: ShaderUniformMap,
   samplingMode: 'linear' | 'nearest',
+  qualityProfile: 'inspect' | 'interactive' | 'playback',
 ): void {
   const adaptiveLodEnabled = samplingMode === 'linear' ? 1 : 0;
+  const profileLod = (() => {
+    switch (qualityProfile) {
+      case 'playback':
+        return { scale: 1.8, max: 3.0 };
+      case 'interactive':
+        return { scale: 1.2, max: 2.4 };
+      case 'inspect':
+      default:
+        return { scale: 0.9, max: 1.6 };
+    }
+  })();
   if ('u_adaptiveLodEnabled' in uniforms) {
     uniforms.u_adaptiveLodEnabled.value = adaptiveLodEnabled;
   }
   if ('u_adaptiveLodScale' in uniforms) {
-    uniforms.u_adaptiveLodScale.value = 1;
+    uniforms.u_adaptiveLodScale.value = profileLod.scale;
   }
   if ('u_adaptiveLodMax' in uniforms) {
-    uniforms.u_adaptiveLodMax.value = 2;
+    uniforms.u_adaptiveLodMax.value = profileLod.max;
   }
 }
 
@@ -811,7 +914,7 @@ function updateGpuBrickResidency({
   timepoint,
   maxUploadsPerUpdate,
   allowBootstrapUploadBurst,
-  forceFullResidency
+  qualityProfile
 }: {
   resource: VolumeResources;
   pageTable: VolumeBrickPageTable;
@@ -825,7 +928,7 @@ function updateGpuBrickResidency({
   timepoint: number;
   maxUploadsPerUpdate: number;
   allowBootstrapUploadBurst: boolean;
-  forceFullResidency: boolean;
+  qualityProfile: ResidencyQualityProfile;
 }): {
   atlasData: Uint8Array;
   atlasSize: { width: number; height: number; depth: number };
@@ -852,28 +955,41 @@ function updateGpuBrickResidency({
         pendingBricks: pageTable.occupiedBrickCount,
         prioritizedBricks: pageTable.occupiedBrickCount,
         scheduledUploads: 0,
-        lastCameraDistance: null
+        lastCameraDistance: null,
+        requiredQueueDepth: pageTable.occupiedBrickCount,
+        refineQueueDepth: 0,
+        cameraMotionResetCount: 0,
+        cancelledRefineBricks: 0,
+        fallbackMappedBricks: 0,
+        hysteresisHeldBricks: 0
       },
       texturesDirty: false,
     };
   }
 
+  const schedulerConfig = resolveResidencySchedulerConfig(qualityProfile, pageTable.scaleLevel);
   const chunkDepth = Math.max(1, pageTable.chunkShape[0]);
   const chunkHeight = Math.max(1, pageTable.chunkShape[1]);
   const chunkWidth = Math.max(1, pageTable.chunkShape[2]);
   const bytesPerBrick = chunkDepth * chunkHeight * chunkWidth * components;
+  const totalAtlasBytes = bytesPerBrick * pageTable.occupiedBrickCount;
   const configuredBudgetBytes = resolveGpuBrickBudgetBytes();
   const explicitBudget = hasExplicitGpuBrickBudgetBytes();
-  const shouldForceFullResidency = forceFullResidency && !explicitBudget;
+  const budgetMultiplier = qualityProfile === 'inspect' ? 1.5 : qualityProfile === 'interactive' ? 1.0 : 0.75;
+  const profileBudgetBytes = explicitBudget
+    ? configuredBudgetBytes
+    : Math.max(1, Math.floor(configuredBudgetBytes * budgetMultiplier));
+  const fullResidencyBudgetCap = MAX_FULL_RESIDENCY_ATLAS_BYTES_BY_PROFILE[qualityProfile];
+  const canPreferFullResidency = !explicitBudget && totalAtlasBytes > 0 && totalAtlasBytes <= fullResidencyBudgetCap;
   const canAutoExpandBudget = !hasExplicitGpuBrickBudgetBytes() && pageTable.scaleLevel === 0;
-  const targetBudgetBytes = shouldForceFullResidency
-    ? Math.max(configuredBudgetBytes, bytesPerBrick * pageTable.occupiedBrickCount)
+  const targetBudgetBytes = canPreferFullResidency
+    ? Math.max(profileBudgetBytes, totalAtlasBytes)
     : canAutoExpandBudget
       ? Math.min(
           AUTO_EXPANDED_MAX_GPU_BRICK_BYTES,
-          Math.max(configuredBudgetBytes, bytesPerBrick * pageTable.occupiedBrickCount)
+          Math.max(profileBudgetBytes, totalAtlasBytes)
         )
-      : configuredBudgetBytes;
+      : profileBudgetBytes;
   const budgetBytes = Math.max(1, targetBudgetBytes);
   const budgetLimitedSlotCapacity = Math.floor(budgetBytes / bytesPerBrick) || 1;
   const maxDepthLimitedSlotCapacity = max3DTextureSize ? Math.floor(max3DTextureSize / chunkDepth) : Number.POSITIVE_INFINITY;
@@ -918,7 +1034,14 @@ function updateGpuBrickResidency({
           budgetBytes,
           lastCameraDistance: null,
           scaleLevel: pageTable.scaleLevel,
-          bootstrapUpdatesRemaining: BOOTSTRAP_UPLOAD_BURST_UPDATES
+          bootstrapUpdatesRemaining: BOOTSTRAP_UPLOAD_BURST_UPDATES,
+          lastCameraPosition: cameraPosition ? cameraPosition.clone() : null,
+          cameraMotionResetCount: 0,
+          cancelledRefineBricks: 0,
+          requiredQueueDepth: 0,
+          refineQueueDepth: 0,
+          fallbackMappedBricks: 0,
+          hysteresisHeldBricks: 0
         }
       : existing;
 
@@ -933,6 +1056,21 @@ function updateGpuBrickResidency({
   state.scaleLevel = pageTable.scaleLevel;
   state.pageTable = pageTable;
 
+  let cameraMoved = false;
+  if (cameraPosition) {
+    if (state.lastCameraPosition) {
+      const distanceSq = state.lastCameraPosition.distanceToSquared(cameraPosition);
+      cameraMoved = distanceSq > CAMERA_RESIDENCY_RESET_DISTANCE_SQ;
+    }
+    if (!state.lastCameraPosition) {
+      state.lastCameraPosition = cameraPosition.clone();
+    } else {
+      state.lastCameraPosition.copy(cameraPosition);
+    }
+  } else {
+    state.lastCameraPosition = null;
+  }
+
   const priorityEntries = buildViewPrioritySourceIndices({
     pageTable,
     cameraPosition,
@@ -942,21 +1080,151 @@ function updateGpuBrickResidency({
       depth: resource.dimensions.depth
     }
   });
-  const desiredSources = new Set<number>(priorityEntries.slice(0, slotCapacity).map((entry) => entry.sourceIndex));
   state.tick += 1;
 
-  const pendingSources = priorityEntries
-    .map((entry) => entry.sourceIndex)
-    .filter((sourceIndex) => desiredSources.has(sourceIndex) && !state.sourceToSlot.has(sourceIndex));
+  const fullResidencyPossible = slotCapacity >= pageTable.occupiedBrickCount;
+  if (fullResidencyPossible) {
+    const expectedResidentCount = pageTable.occupiedBrickCount;
+    const hasFullMapping = state.sourceToSlot.size >= expectedResidentCount;
+    const needsRefresh = shouldReset || !hasFullMapping;
+    if (needsRefresh) {
+      state.sourceToSlot.clear();
+      state.sourceLastUsedTick.clear();
+      state.slotSourceIndices.fill(-1);
+      for (let sourceIndex = 0; sourceIndex < expectedResidentCount; sourceIndex += 1) {
+        state.slotSourceIndices[sourceIndex] = sourceIndex;
+        state.sourceToSlot.set(sourceIndex, sourceIndex);
+        state.sourceLastUsedTick.set(sourceIndex, state.tick);
+      }
+      state.residentAtlasData.fill(0);
+      if (sourceData.length > 0) {
+        state.residentAtlasData.set(sourceData.subarray(0, Math.min(sourceData.length, state.residentAtlasData.length)));
+      }
+      state.uploads += expectedResidentCount;
+    } else {
+      for (let sourceIndex = 0; sourceIndex < expectedResidentCount; sourceIndex += 1) {
+        state.sourceLastUsedTick.set(sourceIndex, state.tick);
+      }
+    }
+
+    state.residentAtlasIndices.set(atlasIndexTextureDataFromPageTable(pageTable));
+    state.requiredQueueDepth = 0;
+    state.refineQueueDepth = 0;
+    state.fallbackMappedBricks = 0;
+    state.hysteresisHeldBricks = 0;
+    if (cameraMoved) {
+      state.cameraMotionResetCount += 1;
+    }
+    const nearestDistanceSq = priorityEntries[0]?.distanceSq;
+    state.lastCameraDistance =
+      nearestDistanceSq !== undefined && Number.isFinite(nearestDistanceSq) ? Math.sqrt(nearestDistanceSq) : null;
+    if (state.bootstrapUpdatesRemaining > 0) {
+      state.bootstrapUpdatesRemaining -= 1;
+    }
+    gpuBrickResidencyStateByResource.set(resource, state);
+    return {
+      atlasData: state.residentAtlasData,
+      atlasSize: { width: chunkWidth, height: chunkHeight, depth: residentDepth },
+      atlasIndices: state.residentAtlasIndices,
+      metrics: {
+        layerKey,
+        timepoint,
+        scaleLevel: state.scaleLevel,
+        residentBricks: state.sourceToSlot.size,
+        totalBricks: pageTable.occupiedBrickCount,
+        residentBytes: state.residentBytes,
+        budgetBytes: state.budgetBytes,
+        uploads: state.uploads,
+        evictions: state.evictions,
+        pendingBricks: 0,
+        prioritizedBricks: priorityEntries.length,
+        scheduledUploads: needsRefresh ? expectedResidentCount : 0,
+        lastCameraDistance: state.lastCameraDistance,
+        requiredQueueDepth: 0,
+        refineQueueDepth: 0,
+        cameraMotionResetCount: state.cameraMotionResetCount,
+        cancelledRefineBricks: state.cancelledRefineBricks,
+        fallbackMappedBricks: 0,
+        hysteresisHeldBricks: 0
+      },
+      texturesDirty: needsRefresh,
+    };
+  }
+
+  const targetResidentSlotCount = Math.max(
+    1,
+    Math.min(slotCapacity, Math.ceil(slotCapacity * schedulerConfig.targetFraction))
+  );
+  const requiredSlotCount = Math.max(
+    1,
+    Math.min(targetResidentSlotCount, Math.ceil(targetResidentSlotCount * schedulerConfig.requiredFraction))
+  );
+  const desiredSourceList = priorityEntries.slice(0, targetResidentSlotCount).map((entry) => entry.sourceIndex);
+  const requiredSourceList = desiredSourceList.slice(0, requiredSlotCount);
+  const desiredSources = new Set<number>(desiredSourceList);
+  const requiredSources = new Set<number>(requiredSourceList);
+
+  const requiredMissingSources = requiredSourceList.filter((sourceIndex) => !state.sourceToSlot.has(sourceIndex));
+  const refineSourceList = desiredSourceList.slice(requiredSourceList.length);
+  const refineMissingSources = refineSourceList.filter((sourceIndex) => !state.sourceToSlot.has(sourceIndex));
+  if (cameraMoved) {
+    state.cancelledRefineBricks += state.refineQueueDepth;
+    state.cameraMotionResetCount += 1;
+  }
+  state.requiredQueueDepth = requiredMissingSources.length;
+  state.refineQueueDepth = refineMissingSources.length;
+
+  const pendingSources = [...requiredMissingSources, ...refineMissingSources];
   const baseUploadBudget = Math.max(1, maxUploadsPerUpdate);
   const boostedUploadBudget =
     allowBootstrapUploadBurst && state.bootstrapUpdatesRemaining > 0
       ? Math.min(BOOTSTRAP_UPLOAD_BURST_MAX, baseUploadBudget * BOOTSTRAP_UPLOAD_BURST_MULTIPLIER)
       : baseUploadBudget;
-  const forceImmediateUploads = shouldForceFullResidency && !hasExplicitMaxBrickUploadsPerUpdate();
-  const pendingLimit = forceImmediateUploads
-    ? pendingSources.length
-    : Math.min(Math.max(baseUploadBudget, boostedUploadBudget), pendingSources.length);
+  const pendingLimit = Math.min(Math.max(baseUploadBudget, boostedUploadBudget), pendingSources.length);
+  let hysteresisHeldBricks = 0;
+  const pickReplacementSlot = (): number => {
+    const emptySlot = state.slotSourceIndices.indexOf(-1);
+    if (emptySlot >= 0) {
+      return emptySlot;
+    }
+
+    let replacementSlot = -1;
+    let oldestTick = Number.POSITIVE_INFINITY;
+    for (let slotIndex = 0; slotIndex < state.slotSourceIndices.length; slotIndex += 1) {
+      const residentSource = state.slotSourceIndices[slotIndex] ?? -1;
+      if (residentSource < 0 || requiredSources.has(residentSource) || desiredSources.has(residentSource)) {
+        continue;
+      }
+      const residentTick = state.sourceLastUsedTick.get(residentSource) ?? 0;
+      const age = state.tick - residentTick;
+      if (age <= schedulerConfig.hysteresisTicks) {
+        hysteresisHeldBricks += 1;
+        continue;
+      }
+      if (residentTick < oldestTick) {
+        oldestTick = residentTick;
+        replacementSlot = slotIndex;
+      }
+    }
+    if (replacementSlot >= 0) {
+      return replacementSlot;
+    }
+
+    oldestTick = Number.POSITIVE_INFINITY;
+    for (let slotIndex = 0; slotIndex < state.slotSourceIndices.length; slotIndex += 1) {
+      const residentSource = state.slotSourceIndices[slotIndex] ?? -1;
+      if (residentSource < 0 || requiredSources.has(residentSource) || desiredSources.has(residentSource)) {
+        continue;
+      }
+      const residentTick = state.sourceLastUsedTick.get(residentSource) ?? 0;
+      if (residentTick < oldestTick) {
+        oldestTick = residentTick;
+        replacementSlot = slotIndex;
+      }
+    }
+    return replacementSlot;
+  };
+
   for (let pendingIndex = 0; pendingIndex < pendingLimit; pendingIndex += 1) {
     const sourceIndex = pendingSources[pendingIndex]!;
     let slot = state.sourceToSlot.get(sourceIndex);
@@ -965,28 +1233,10 @@ function updateGpuBrickResidency({
       continue;
     }
 
-    let replacementSlot = state.slotSourceIndices.indexOf(-1);
+    const replacementSlot = pickReplacementSlot();
     if (replacementSlot < 0) {
-      let oldestTick = Number.POSITIVE_INFINITY;
-      for (let slotIndex = 0; slotIndex < state.slotSourceIndices.length; slotIndex += 1) {
-        const residentSource = state.slotSourceIndices[slotIndex] ?? -1;
-        if (residentSource < 0) {
-          replacementSlot = slotIndex;
-          break;
-        }
-        if (desiredSources.has(residentSource)) {
-          continue;
-        }
-        const residentTick = state.sourceLastUsedTick.get(residentSource) ?? 0;
-        if (residentTick < oldestTick) {
-          oldestTick = residentTick;
-          replacementSlot = slotIndex;
-        }
-      }
-      if (replacementSlot < 0) {
-        // All resident slots are currently desired; avoid churn.
-        continue;
-      }
+      // All resident slots are currently required/desired; avoid churn.
+      continue;
     }
 
     const evictedSource = state.slotSourceIndices[replacementSlot] ?? -1;
@@ -1018,12 +1268,13 @@ function updateGpuBrickResidency({
       state.sourceLastUsedTick.set(sourceIndex, state.tick);
     }
   }
-
-  for (let flatBrickIndex = 0; flatBrickIndex < pageTable.brickAtlasIndices.length; flatBrickIndex += 1) {
-    const sourceIndex = pageTable.brickAtlasIndices[flatBrickIndex] ?? -1;
-    const slot = sourceIndex >= 0 ? state.sourceToSlot.get(sourceIndex) : undefined;
-    state.residentAtlasIndices[flatBrickIndex] = slot === undefined ? 0 : slot + 1;
-  }
+  const fallbackMapping = buildAtlasIndexDataFromResidency({
+    pageTable,
+    sourceToSlot: state.sourceToSlot,
+  });
+  state.residentAtlasIndices.set(fallbackMapping.atlasIndices);
+  state.fallbackMappedBricks = fallbackMapping.fallbackMappedBricks;
+  state.hysteresisHeldBricks = hysteresisHeldBricks;
 
   const nearestDistanceSq = priorityEntries[0]?.distanceSq;
   state.lastCameraDistance =
@@ -1050,7 +1301,13 @@ function updateGpuBrickResidency({
       pendingBricks: pendingSources.length,
       prioritizedBricks: priorityEntries.length,
       scheduledUploads: pendingLimit,
-      lastCameraDistance: state.lastCameraDistance
+      lastCameraDistance: state.lastCameraDistance,
+      requiredQueueDepth: state.requiredQueueDepth,
+      refineQueueDepth: state.refineQueueDepth,
+      cameraMotionResetCount: state.cameraMotionResetCount,
+      cancelledRefineBricks: state.cancelledRefineBricks,
+      fallbackMappedBricks: state.fallbackMappedBricks,
+      hysteresisHeldBricks: state.hysteresisHeldBricks
     },
     texturesDirty: pendingLimit > 0,
   };
@@ -1227,7 +1484,7 @@ function applyBrickPageTableUniforms(
     atlasSize?: { width: number; height: number; depth: number };
     max3DTextureSize?: number | null;
     cameraPosition?: THREE.Vector3 | null;
-    forceFullResidency?: boolean;
+    qualityProfile?: ResidencyQualityProfile;
   },
 ): void {
   if (
@@ -1362,7 +1619,7 @@ function applyBrickPageTableUniforms(
         timepoint: pageTable.timepoint,
         maxUploadsPerUpdate: resolveMaxBrickUploadsPerUpdate(),
         allowBootstrapUploadBurst: !hasExplicitMaxBrickUploadsPerUpdate(),
-        forceFullResidency: options.forceFullResidency ?? false
+        qualityProfile: options?.qualityProfile ?? 'inspect'
       });
       atlasIndexData = residency.atlasIndices;
       atlasBuild = {
@@ -1563,6 +1820,7 @@ function resolveLayerRenderSource(
 
 export function useVolumeResources({
   layers,
+  qualityProfile = 'inspect',
   primaryVolume,
   projectionMode = 'perspective',
   isAdditiveBlending,
@@ -1853,7 +2111,7 @@ export function useVolumeResources({
           atlasSize,
           max3DTextureSize,
           cameraPosition: localCameraPosition,
-          forceFullResidency: false,
+          qualityProfile,
         });
       };
     };
@@ -1964,7 +2222,7 @@ export function useVolumeResources({
           if (uniforms.u_projectionMode) {
             uniforms.u_projectionMode.value = projectionMode === 'orthographic' ? 1 : 0;
           }
-          applyAdaptiveLodUniforms(uniforms as ShaderUniformMap, effectiveSamplingMode);
+          applyAdaptiveLodUniforms(uniforms as ShaderUniformMap, effectiveSamplingMode, qualityProfile);
           applyBeerLambertUniforms(uniforms as ShaderUniformMap, layer);
           applySlicePlaneUniforms(uniforms as ShaderUniformMap, slicePlaneState);
           if (uniforms.u_segmentationLabels) {
@@ -2049,7 +2307,7 @@ export function useVolumeResources({
                     atlasSize: { width: brickAtlas.width, height: brickAtlas.height, depth: brickAtlas.depth },
                     max3DTextureSize,
                     cameraPosition: residencyCameraPosition,
-                    forceFullResidency: true
+                    qualityProfile
                   }
               : volume
                 ? {
@@ -2204,7 +2462,7 @@ export function useVolumeResources({
                   atlasFormat: directAtlasFormat ?? undefined,
                   atlasSize: { width: brickAtlas.width, height: brickAtlas.height, depth: brickAtlas.depth },
                   max3DTextureSize,
-                  forceFullResidency: true,
+                  qualityProfile,
                 }
                 : undefined,
           );
@@ -2248,7 +2506,7 @@ export function useVolumeResources({
         if (materialUniforms.u_projectionMode) {
           materialUniforms.u_projectionMode.value = projectionMode === 'orthographic' ? 1 : 0;
         }
-        applyAdaptiveLodUniforms(materialUniforms, effectiveSamplingMode);
+        applyAdaptiveLodUniforms(materialUniforms, effectiveSamplingMode, qualityProfile);
         applyBeerLambertUniforms(materialUniforms, layer);
 
         if (resources.mode === '3d') {
@@ -2277,7 +2535,7 @@ export function useVolumeResources({
                   atlasSize: { width: brickAtlas.width, height: brickAtlas.height, depth: brickAtlas.depth },
                   max3DTextureSize,
                   cameraPosition: residencyCameraPosition,
-                  forceFullResidency: true
+                  qualityProfile
                 }
               : volume && preparation
                 ? {
@@ -2408,7 +2666,7 @@ export function useVolumeResources({
                   atlasFormat: directAtlasFormat ?? undefined,
                   atlasSize: { width: brickAtlas.width, height: brickAtlas.height, depth: brickAtlas.depth },
                   max3DTextureSize,
-                  forceFullResidency: true,
+                  qualityProfile,
                 }
                 : undefined,
           );

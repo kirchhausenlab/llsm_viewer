@@ -141,7 +141,8 @@ await (async () => {
     useRoutePlaybackPrefetch({
       isViewerLaunched: true,
       isPlaying: false,
-      fps: 24,
+      qualityProfile: 'inspect',
+fps: 24,
       preferBrickResidency: false,
       brickResidencyLayerKeys: [],
       volumeProvider: provider,
@@ -173,7 +174,8 @@ await (async () => {
     useRoutePlaybackPrefetch({
       isViewerLaunched: true,
       isPlaying: false,
-      fps: 24,
+      qualityProfile: 'inspect',
+fps: 24,
       preferBrickResidency: false,
       brickResidencyLayerKeys: [],
       volumeProvider: provider,
@@ -196,7 +198,8 @@ await (async () => {
     useRoutePlaybackPrefetch({
       isViewerLaunched: true,
       isPlaying: false,
-      fps: 24,
+      qualityProfile: 'inspect',
+fps: 24,
       preferBrickResidency: true,
       brickResidencyLayerKeys: ['layer-a', 'layer-b'],
       volumeProvider: provider,
@@ -228,7 +231,8 @@ await (async () => {
     useRoutePlaybackPrefetch({
       isViewerLaunched: true,
       isPlaying: false,
-      fps: 24,
+      qualityProfile: 'inspect',
+fps: 24,
       preferBrickResidency: true,
       brickResidencyLayerKeys: ['layer-a'],
       volumeProvider: provider,
@@ -263,7 +267,8 @@ await (async () => {
     useRoutePlaybackPrefetch({
       isViewerLaunched: true,
       isPlaying: true,
-      fps: 24,
+      qualityProfile: 'playback',
+fps: 24,
       preferBrickResidency: true,
       brickResidencyLayerKeys: ['layer-a'],
       volumeProvider: provider,

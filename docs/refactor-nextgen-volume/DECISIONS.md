@@ -1,6 +1,6 @@
 # Decisions
 
-Last updated: **2026-02-13**
+Last updated: **2026-02-21**
 
 ## DR-001: Break compatibility with old preprocessed format
 
@@ -61,6 +61,47 @@ Status: **Locked**
 
 - Decision: render coarse mip first, then refine visible/high-impact bricks; skip bricks via occupancy + min/max bounds.
 - Rationale: transparent-ray rendering touches deep volume spans; hierarchical rejection is mandatory for scale.
+
+## DR-008: Full multiscale pyramid is required at load time
+
+Status: **Locked**
+
+- Decision: datasets must provide contiguous scales `0..N` for each layer; incomplete pyramids are launch-time errors.
+- Rationale: correctness and predictability are better than fallback heuristics that silently degrade detail.
+- Consequences:
+  - manifest validation enforces contiguous levels and scale invariants
+  - viewer launch fails early with explicit diagnostics when contract is violated
+
+## DR-009: Quality policy is explicit profiles, not implicit play/pause defaults
+
+Status: **Locked**
+
+- Decision: scale/LOD behavior is driven by named quality profiles (`inspect`, `interactive`, `playback`).
+- Rationale: removes hidden heuristics (`isPlaying ? 1 : 0`) and makes tradeoffs tunable and testable.
+- Consequences:
+  - load and prefetch paths use the same policy source
+  - diagnostics must expose active profile and resolved scale targets
+
+## DR-010: Hover coordinates are native-grid authoritative
+
+Status: **Locked**
+
+- Decision: hover coordinates in UI report native-grid voxel coordinates regardless of transient render LOD.
+- Rationale: avoids LOD-dependent coordinate jitter and preserves user trust in measurements/inspection.
+- Consequences:
+  - hover mapping uses the native coordinate transform as source-of-truth
+  - optional debug output may include sampled render LOD separately
+
+## DR-011: NEVER SHOW WRONG DATA
+
+Status: **Locked**
+
+- Decision: the viewer must never display data from the wrong spatial location/timepoint/channel as a substitute for missing data.
+- Rationale: this is a scientific tool; incorrect data display is worse than reduced quality, reduced coverage, or explicit failure.
+- Consequences:
+  - missing bricks/samples may render empty/transparent, but must not be remapped to unrelated bricks
+  - runtime must not silently fabricate or substitute measurements
+  - when required data is unavailable, surface explicit diagnostics/errors instead of incorrect visuals
 
 ## Open decisions
 

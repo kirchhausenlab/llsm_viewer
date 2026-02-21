@@ -76,6 +76,7 @@ export function useVolumeViewerDataState({
 
 export function useVolumeViewerResources({
   layers,
+  qualityProfile,
   primaryVolume,
   projectionMode,
   isAdditiveBlending,
@@ -107,6 +108,7 @@ export function useVolumeViewerResources({
   applyHoverHighlightToResources,
 }: {
   layers: VolumeViewerProps['layers'];
+  qualityProfile: NonNullable<VolumeViewerProps['qualityProfile']>;
   primaryVolume: ReturnType<typeof useVolumeViewerDataState>['primaryVolume'];
   projectionMode: VolumeViewerProps['projectionMode'];
   isAdditiveBlending: boolean;
@@ -139,6 +141,7 @@ export function useVolumeViewerResources({
 }) {
   const { getColormapTexture } = useVolumeResources({
     layers,
+    qualityProfile,
     primaryVolume,
     projectionMode,
     isAdditiveBlending,

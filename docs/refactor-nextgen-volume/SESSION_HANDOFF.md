@@ -1,12 +1,12 @@
 # Session Handoff
 
-Last updated: **2026-02-13**
+Last updated: **2026-02-21**
 
 ## Program state
 
-- Status: **Complete (100% architecture completion achieved)**
+- Status: **V1 complete; V2 complete**
 - Architecture Completion Backlog `NGR-090` through `NGR-097`: **all `DONE`**
-- No unresolved blockers remain in `BACKLOG.md` or `SCHEMA_VNEXT.md`
+- V2 Backlog `V2-001` through `V2-010`: **all `DONE`**
 
 ## What was completed in final closure pass
 
@@ -33,7 +33,14 @@ Benchmark output:
 - `tier-a-single-channel`: generation `36.89ms`, cold `31.21ms`, warm `19.40ms`, mixed `19.33ms`, atlas0 `8.80ms`, atlas1 `0.84ms`, hitRate `0.424`, scale1Req `2`
 - `tier-a-multichannel`: generation `116.23ms`, cold `49.63ms`, warm `44.67ms`, mixed `46.13ms`, atlas0 `16.66ms`, atlas1 `1.62ms`, hitRate `0.440`, scale1Req `2`
 
+## What was completed in V2 pass
+
+1. `V2-006`: replaced the residency upload loop with a queue-aware scheduler (`required_now`, `refine_next`) plus camera-motion cancellation and hysteresis.
+2. `V2-007`: added mixed-LOD fallback mapping for non-resident bricks to avoid black regions and preserve seam-safe sampling behavior.
+3. `V2-008`: kept sliced mode parity under the scheduler path for all orientations by removing residency-induced black-face behavior.
+4. `V2-009`: tuned playback prefetch to be direction-aware with forward-cone priority and profile/fps-aware concurrency.
+5. `V2-010`: removed the legacy force-full-residency path and finalized profile-driven scheduler cutover.
+
 ## Immediate next actions
 
-- None required for architecture completion.
-- Any follow-on work is net-new scope and should be tracked outside `NGR-090..097`.
+1. Run benchmark matrix on target hardware and archive the updated baseline report.

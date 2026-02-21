@@ -16,11 +16,9 @@ function readFixture(fileName: string): unknown {
   return JSON.parse(payload) as unknown;
 }
 
-async function openDatasetFromFixture(fileName: string) {
+async function openDatasetFromManifest(manifest: unknown) {
   const storageHandle = createInMemoryPreprocessedStorage({ datasetId: 'preprocessed-schema-validation' });
   const zarrStore = createZarrStoreFromPreprocessedStorage(storageHandle.storage);
-  const manifest = readFixture(fileName);
-
   await zarr.create(zarr.root(zarrStore), {
     attributes: {
       llsmViewerPreprocessed: manifest
@@ -28,6 +26,10 @@ async function openDatasetFromFixture(fileName: string) {
   });
 
   return openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
+}
+
+async function openDatasetFromFixture(fileName: string) {
+  return openDatasetFromManifest(readFixture(fileName));
 }
 
 test('openPreprocessedDatasetFromZarrStorage accepts valid non-sharded vNext fixture', async () => {
@@ -90,5 +92,32 @@ test('openPreprocessedDatasetFromZarrStorage rejects aggregate dataset totalVolu
   await assert.rejects(
     () => openDatasetFromFixture('invalid-multi-layer-aggregate-volume-count.json'),
     /manifest\.dataset\.channels\[0\]\.layers\[0\]\.volumeCount: expected 4, got 2/
+  );
+});
+
+test('openPreprocessedDatasetFromZarrStorage rejects non-contiguous scale levels', async () => {
+  const manifest = readFixture('valid-segmentation-multiscale-labels.json') as any;
+  manifest.dataset.channels[0].layers[0].zarr.scales[1].level = 2;
+  await assert.rejects(
+    () => openDatasetFromManifest(manifest),
+    /expected contiguous level 1, got 2/
+  );
+});
+
+test('openPreprocessedDatasetFromZarrStorage rejects invalid scale-factor progression', async () => {
+  const manifest = readFixture('valid-segmentation-multiscale-labels.json') as any;
+  manifest.dataset.channels[0].layers[0].zarr.scales[1].downsampleFactor = [1, 3, 2];
+  await assert.rejects(
+    () => openDatasetFromManifest(manifest),
+    /downsampleFactor\[1\]: expected 1 or 2, got 3/
+  );
+});
+
+test('openPreprocessedDatasetFromZarrStorage rejects dimensions inconsistent with downsampleFactor', async () => {
+  const manifest = readFixture('valid-segmentation-multiscale-labels.json') as any;
+  manifest.dataset.channels[0].layers[0].zarr.scales[1].downsampleFactor = [1, 1, 1];
+  await assert.rejects(
+    () => openDatasetFromManifest(manifest),
+    /scales\[1\]\.width: expected 4 from downsampleFactor, got 2/
   );
 });

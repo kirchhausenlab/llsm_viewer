@@ -778,8 +778,8 @@ const createLayer = (
     occupancyMetadataMismatchBricks: 0
   });
   assert.equal(uniforms.u_adaptiveLodEnabled?.value, 1);
-  assert.equal(uniforms.u_adaptiveLodScale?.value, 1);
-  assert.equal(uniforms.u_adaptiveLodMax?.value, 2);
+  assert.equal(uniforms.u_adaptiveLodScale?.value, 0.9);
+  assert.equal(uniforms.u_adaptiveLodMax?.value, 1.6);
   assert.equal(uniforms.u_brickAtlasEnabled?.value, 1);
   assert.equal(uniforms.u_nearestSampling?.value, 0);
   assert.equal(uniforms.u_windowMin?.value, 0.1);
@@ -1226,6 +1226,9 @@ const createLayer = (
     assert.equal(initial.gpuBrickResidencyMetrics?.totalBricks, 2);
     assert.ok((initial.gpuBrickResidencyMetrics?.scheduledUploads ?? 0) <= 1);
     assert.equal(initial.gpuBrickResidencyMetrics?.prioritizedBricks, 2);
+    assert.ok((initial.gpuBrickResidencyMetrics?.fallbackMappedBricks ?? 0) >= 1);
+    assert.ok((initial.gpuBrickResidencyMetrics?.requiredQueueDepth ?? 0) >= 0);
+    assert.ok((initial.gpuBrickResidencyMetrics?.refineQueueDepth ?? 0) >= 0);
     assert.ok((initial.gpuBrickResidencyMetrics?.residentBytes ?? 0) <= 2);
     const initialIndexData = (
       initial.brickAtlasIndexTexture?.image as { data: Float32Array } | undefined
@@ -1276,6 +1279,8 @@ const createLayer = (
     assert.equal(updated.gpuBrickResidencyMetrics?.totalBricks, 2);
     assert.ok((updated.gpuBrickResidencyMetrics?.uploads ?? 0) >= 2);
     assert.ok((updated.gpuBrickResidencyMetrics?.evictions ?? 0) >= 1);
+    assert.ok((updated.gpuBrickResidencyMetrics?.cameraMotionResetCount ?? 0) >= 1);
+    assert.ok((updated.gpuBrickResidencyMetrics?.cancelledRefineBricks ?? 0) >= 0);
     const updatedIndexData = (
       updated.brickAtlasIndexTexture?.image as { data: Float32Array } | undefined
     )?.data;

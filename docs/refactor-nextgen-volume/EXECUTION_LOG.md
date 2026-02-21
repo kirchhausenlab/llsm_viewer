@@ -1,5 +1,86 @@
 # Execution Log
 
+## 2026-02-21
+
+- Added explicit scientific-integrity invariant across docs:
+  - motto: **NEVER SHOW WRONG DATA**
+  - files:
+    - `docs/AGENTS.md`
+    - `docs/refactor-nextgen-volume/DECISIONS.md` (`DR-011`)
+    - `docs/refactor-nextgen-volume/MULTISCALE_V2_ARCHITECTURE.md`
+    - `docs/refactor-nextgen-volume/README.md`
+
+- Completed V2 execution slice (`V2-006`..`V2-010`):
+  - rewrote GPU brick residency into explicit queue-driven scheduling (`required_now` + `refine_next`) with:
+    - camera-motion cancellation
+    - hysteresis-aware eviction suppression
+    - queue-depth/cancellation/fallback metrics
+  - implemented mixed-LOD fallback index mapping for non-resident bricks to prevent black regions while preserving atlas sampling path
+  - removed force-full-residency behavior from runtime atlas updates (hard cutover to scheduler-governed residency)
+  - expanded runtime diagnostics overlay to show queue depths, cancellation counts, hysteresis holds, and fallback-mapped brick counts
+  - tuned playback prefetch policy:
+    - forward-direction cone ordering
+    - profile/fps-aware lookahead and concurrency
+    - backward context fill for stability
+  - tightened route load memory hints and volume-byte estimation (data-type-aware) to reduce allocation-failure regressions on large datasets
+  - files:
+    - `src/components/viewers/volume-viewer/useVolumeResources.ts`
+    - `src/components/viewers/VolumeViewer.tsx`
+    - `src/components/viewers/VolumeViewer.types.ts`
+    - `src/ui/app/hooks/useRoutePlaybackPrefetch.ts`
+    - `src/ui/app/hooks/useRouteLayerVolumes.ts`
+    - `tests/useVolumeResources.test.ts`
+    - `tests/app/hooks/useRoutePlaybackPrefetch.test.ts`
+    - `tests/app/hooks/useRouteLayerVolumes.test.ts`
+- Verification run:
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test -- tests/useVolumeResources.test.ts`
+  - `npm run -s test -- tests/app/hooks/useRoutePlaybackPrefetch.test.ts`
+  - `npm run -s test -- tests/app/hooks/useRouteLayerVolumes.test.ts`
+  - `npm run -s test`
+  - all passed
+- Benchmark refresh run:
+  - `npm run -s benchmark:nextgen-volume`
+  - `tier-a-single-channel`: generation `82.94ms`, cold `48.09ms`, warm `31.18ms`, mixed `31.72ms`, atlas0 `21.38ms`, atlas1 `1.56ms`, hitRate `0.426`, scale1Req `2`
+  - `tier-a-multichannel`: generation `268.28ms`, cold `75.34ms`, warm `71.81ms`, mixed `62.14ms`, atlas0 `20.68ms`, atlas1 `1.70ms`, hitRate `0.442`, scale1Req `2`
+  - benchmark cases passed: `2/2`
+
+- Started Multiscale V2 refactor track with explicit architecture + acceptance gates:
+  - added `docs/refactor-nextgen-volume/MULTISCALE_V2_ARCHITECTURE.md`
+  - updated `README.md` and locked new decisions in `DECISIONS.md` (`DR-008`..`DR-010`)
+- Enforced strict full-pyramid load contract in manifest schema validation:
+  - scales must be contiguous `0..N` (no gaps)
+  - scale dimensions must match `downsampleFactor` against base dimensions
+  - per-level downsample progression must be axis-wise `same` or `x2`
+  - files:
+    - `src/shared/utils/preprocessedDataset/schema.ts`
+    - `tests/preprocessedSchemaValidation.test.ts`
+- Replaced implicit play/pause scale defaults with centralized profile policy:
+  - added `src/ui/app/hooks/multiscaleQualityPolicy.ts`
+  - wired `qualityProfile` into:
+    - `useRouteLayerVolumes`
+    - `useRoutePlaybackPrefetch`
+    - `useAppRouteState`
+- Added runtime diagnostics visibility for scale behavior:
+  - runtime overlay now shows per-scale request summary (`sN:count`)
+  - file: `src/components/viewers/VolumeViewer.tsx`
+- Added profile-aware adaptive shader LOD tuning path:
+  - viewer now forwards `qualityProfile` through shell/runtime plumbing
+  - `useVolumeResources` sets profile-dependent `u_adaptiveLodScale` / `u_adaptiveLodMax`
+  - files:
+    - `src/components/viewers/VolumeViewer.types.ts`
+    - `src/components/viewers/useViewerShellProps.ts`
+    - `src/components/viewers/VolumeViewer.tsx`
+    - `src/components/viewers/volume-viewer/useVolumeViewerData.ts`
+    - `src/components/viewers/volume-viewer/useVolumeResources.ts`
+    - `tests/useVolumeResources.test.ts`
+- Verification run:
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test`
+  - all passed
+
 ## 2026-02-13
 
 - Final architecture closure pass (`NGR-090` through `NGR-097`) completed:

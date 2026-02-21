@@ -123,6 +123,7 @@ await (async () => {
     useRouteLayerVolumes({
       isViewerLaunched: false,
       isLaunchingViewer: false,
+      qualityProfile: 'inspect',
       preprocessedExperiment: {} as StagedPreprocessedExperiment,
       volumeProvider: provider,
       loadedChannelIds: ['channel-a', 'channel-b'],
@@ -209,6 +210,7 @@ await (async () => {
     useRouteLayerVolumes({
       isViewerLaunched: false,
       isLaunchingViewer: false,
+      qualityProfile: 'inspect',
       preprocessedExperiment: null,
       volumeProvider: null,
       loadedChannelIds: [],
@@ -263,6 +265,7 @@ await (async () => {
     useRouteLayerVolumes({
       isViewerLaunched: true,
       isLaunchingViewer: false,
+      qualityProfile: 'inspect',
       preprocessedExperiment: {} as StagedPreprocessedExperiment,
       volumeProvider: provider,
       loadedChannelIds: ['channel-a', 'channel-b'],
@@ -327,6 +330,7 @@ await (async () => {
     useRouteLayerVolumes({
       isViewerLaunched: true,
       isLaunchingViewer: false,
+      qualityProfile: 'inspect',
       preprocessedExperiment: {} as StagedPreprocessedExperiment,
       volumeProvider: provider,
       loadedChannelIds: ['channel-a'],
@@ -384,6 +388,7 @@ await (async () => {
     useRouteLayerVolumes({
       isViewerLaunched: true,
       isLaunchingViewer: false,
+      qualityProfile: 'inspect',
       preprocessedExperiment: {} as StagedPreprocessedExperiment,
       volumeProvider: provider,
       loadedChannelIds: ['channel-a'],
@@ -446,6 +451,7 @@ await (async () => {
     useRouteLayerVolumes({
       isViewerLaunched: true,
       isLaunchingViewer: false,
+      qualityProfile: 'inspect',
       preprocessedExperiment: {} as StagedPreprocessedExperiment,
       volumeProvider: provider,
       loadedChannelIds: ['channel-a'],
@@ -520,7 +526,7 @@ await (async () => {
     useRouteLayerVolumes({
       isViewerLaunched: true,
       isLaunchingViewer: false,
-      isPlaying,
+      qualityProfile: isPlaying ? 'playback' : 'inspect',
       preprocessedExperiment,
       volumeProvider: provider,
       loadedChannelIds: ['channel-a'],
@@ -606,7 +612,7 @@ await (async () => {
     useRouteLayerVolumes({
       isViewerLaunched: true,
       isLaunchingViewer: false,
-      isPlaying: false,
+      qualityProfile: 'inspect',
       preprocessedExperiment,
       volumeProvider: provider,
       loadedChannelIds: ['channel-a'],
@@ -685,7 +691,7 @@ await (async () => {
     useRouteLayerVolumes({
       isViewerLaunched: true,
       isLaunchingViewer: false,
-      isPlaying: false,
+      qualityProfile: 'inspect',
       preprocessedExperiment,
       volumeProvider: provider,
       loadedChannelIds: ['channel-a'],
@@ -745,6 +751,7 @@ await (async () => {
     useRouteLayerVolumes({
       isViewerLaunched: true,
       isLaunchingViewer: false,
+      qualityProfile: 'inspect',
       preprocessedExperiment: {} as StagedPreprocessedExperiment,
       volumeProvider: provider,
       loadedChannelIds: ['channel-a'],

@@ -18,6 +18,7 @@ import type {
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import type { PreprocessedLayerScaleManifestEntry } from '../../../shared/utils/preprocessedDataset/types';
 import type { LoadedDatasetLayer, StagedPreprocessedExperiment } from '../../../hooks/dataset';
+import { buildCandidateScaleLevels, resolvePreferredScaleLevel, type ViewerQualityProfile } from './multiscaleQualityPolicy';
 
 type SetLaunchProgressOptions = {
   loadedCount: number;
@@ -27,7 +28,7 @@ type SetLaunchProgressOptions = {
 type UseRouteLayerVolumesOptions = {
   isViewerLaunched: boolean;
   isLaunchingViewer: boolean;
-  isPlaying?: boolean;
+  qualityProfile: ViewerQualityProfile;
   preprocessedExperiment: StagedPreprocessedExperiment | null;
   volumeProvider: VolumeProvider | null;
   loadedChannelIds: string[];
@@ -62,9 +63,21 @@ type RouteLayerVolumesState = {
 };
 
 const DIAGNOSTICS_POLL_INTERVAL_MS = 500;
-const MAX_BRICK_ATLAS_DEPTH_HINT = 2048;
-const MAX_BRICK_ATLAS_BYTES_HINT = 512 * 1024 * 1024;
-const MAX_VOLUME_BYTES_HINT = 512 * 1024 * 1024;
+const MAX_BRICK_ATLAS_DEPTH_HINT_BY_PROFILE: Record<ViewerQualityProfile, number> = {
+  inspect: 3072,
+  interactive: 2560,
+  playback: 2048
+};
+const MAX_BRICK_ATLAS_BYTES_HINT_BY_PROFILE: Record<ViewerQualityProfile, number> = {
+  inspect: 768 * 1024 * 1024,
+  interactive: 512 * 1024 * 1024,
+  playback: 384 * 1024 * 1024
+};
+const MAX_VOLUME_BYTES_HINT_BY_PROFILE: Record<ViewerQualityProfile, number> = {
+  inspect: 768 * 1024 * 1024,
+  interactive: 512 * 1024 * 1024,
+  playback: 384 * 1024 * 1024
+};
 
 function isAbortLikeError(error: unknown): boolean {
   return (
@@ -120,6 +133,25 @@ function getTextureChannelCountForSourceChannels(sourceChannels: number): number
   return 4;
 }
 
+function getBytesPerValueForDataType(dataType: string | undefined): number {
+  switch (dataType) {
+    case 'uint8':
+    case 'int8':
+      return 1;
+    case 'uint16':
+    case 'int16':
+      return 2;
+    case 'uint32':
+    case 'int32':
+    case 'float32':
+      return 4;
+    case 'float64':
+      return 8;
+    default:
+      return 1;
+  }
+}
+
 function selectDeterministicLayerKey(layers: ReadonlyArray<{ key: string }>): string | null {
   if (layers.length === 0) {
     return null;
@@ -173,7 +205,7 @@ function buildLayerResidencyModeMap({
 export function useRouteLayerVolumes({
   isViewerLaunched,
   isLaunchingViewer,
-  isPlaying = false,
+  qualityProfile,
   preprocessedExperiment,
   volumeProvider,
   loadedChannelIds,
@@ -207,7 +239,9 @@ export function useRouteLayerVolumes({
   const volumeLoadRequestRef = useRef(0);
   const volumeLoadAbortControllerRef = useRef<AbortController | null>(null);
   const showLaunchErrorRef = useRef(showLaunchError);
-  const maxBrickAtlasDepthHint = useMemo(() => MAX_BRICK_ATLAS_DEPTH_HINT, []);
+  const maxBrickAtlasDepthHint = useMemo(() => MAX_BRICK_ATLAS_DEPTH_HINT_BY_PROFILE[qualityProfile], [qualityProfile]);
+  const maxBrickAtlasBytesHint = useMemo(() => MAX_BRICK_ATLAS_BYTES_HINT_BY_PROFILE[qualityProfile], [qualityProfile]);
+  const maxVolumeBytesHint = useMemo(() => MAX_VOLUME_BYTES_HINT_BY_PROFILE[qualityProfile], [qualityProfile]);
   const canUseAtlas = typeof volumeProvider?.getBrickAtlas === 'function';
   const layerScaleLevelsByKey = useMemo(() => {
     const map = new Map<string, number[]>();
@@ -242,21 +276,14 @@ export function useRouteLayerVolumes({
   }, [preprocessedExperiment?.manifest]);
   const resolvePreferredAtlasScaleLevel = useCallback(
     (layerKey: string): number => {
-      const configuredScaleLevel = playbackAtlasScaleLevelByLayerKey?.[layerKey];
-      if (Number.isFinite(configuredScaleLevel)) {
-        return Math.max(0, Math.floor(configuredScaleLevel as number));
-      }
       const levels = layerScaleLevelsByKey.get(layerKey) ?? [0];
-      const desired = isPlaying ? 1 : 0;
-      let resolved = levels[0] ?? 0;
-      for (const level of levels) {
-        if (level <= desired) {
-          resolved = level;
-        }
-      }
-      return resolved;
+      return resolvePreferredScaleLevel({
+        knownScaleLevels: levels,
+        configuredScaleLevel: playbackAtlasScaleLevelByLayerKey?.[layerKey],
+        qualityProfile
+      });
     },
-    [isPlaying, layerScaleLevelsByKey, playbackAtlasScaleLevelByLayerKey]
+    [layerScaleLevelsByKey, playbackAtlasScaleLevelByLayerKey, qualityProfile]
   );
   const layerResidencyModeByKeyRef = useRef<Map<string, 'volume' | 'atlas'>>(
     buildLayerResidencyModeMap({ channelLayersMap, preferBrickResidency, canUseAtlas })
@@ -295,10 +322,10 @@ export function useRouteLayerVolumes({
         // Pulling full volumes here regresses playback throughput and cache miss diagnostics.
         const preferredScaleLevel = resolvePreferredAtlasScaleLevel(layerKey);
         const knownLevels = layerScaleLevelsByKey.get(layerKey) ?? [preferredScaleLevel];
-        const candidateScaleLevels = knownLevels.filter((level) => level >= preferredScaleLevel);
-        if (candidateScaleLevels.length === 0) {
-          candidateScaleLevels.push(preferredScaleLevel);
-        }
+        const candidateScaleLevels = buildCandidateScaleLevels({
+          knownScaleLevels: knownLevels,
+          preferredScaleLevel
+        });
 
         let lastError: unknown = null;
         for (const scaleLevel of candidateScaleLevels) {
@@ -313,7 +340,7 @@ export function useRouteLayerVolumes({
             const [chunkDepth, chunkHeight, chunkWidth] = pageTable.chunkShape;
             const estimatedAtlasDepth = chunkDepth * pageTable.occupiedBrickCount;
             const estimatedAtlasBytes = chunkWidth * chunkHeight * estimatedAtlasDepth * textureChannels;
-            if (estimatedAtlasDepth > maxBrickAtlasDepthHint || estimatedAtlasBytes > MAX_BRICK_ATLAS_BYTES_HINT) {
+            if (estimatedAtlasDepth > maxBrickAtlasDepthHint || estimatedAtlasBytes > maxBrickAtlasBytesHint) {
               continue;
             }
           }
@@ -327,7 +354,7 @@ export function useRouteLayerVolumes({
             if (atlas.depth > maxBrickAtlasDepthHint) {
               continue;
             }
-            if (atlas.data.byteLength > MAX_BRICK_ATLAS_BYTES_HINT) {
+            if (atlas.data.byteLength > maxBrickAtlasBytesHint) {
               continue;
             }
             return {
@@ -350,19 +377,23 @@ export function useRouteLayerVolumes({
         throw new Error(`Brick atlas is unavailable for layer "${layerKey}" at timepoint ${timeIndex}.`);
       }
 
-      const knownLevels = layerScaleLevelsByKey.get(layerKey) ?? [0];
-      const candidateScaleLevels = knownLevels.filter((level) => level >= 0);
-      if (candidateScaleLevels.length === 0) {
-        candidateScaleLevels.push(0);
-      }
+      const preferredScaleLevel = resolvePreferredAtlasScaleLevel(layerKey);
+      const knownLevels = layerScaleLevelsByKey.get(layerKey) ?? [preferredScaleLevel];
+      const candidateScaleLevels = buildCandidateScaleLevels({
+        knownScaleLevels: knownLevels,
+        preferredScaleLevel
+      });
 
       let lastVolumeError: unknown = null;
       for (let index = 0; index < candidateScaleLevels.length; index += 1) {
         const scaleLevel = candidateScaleLevels[index] ?? 0;
         const isLastCandidate = index === candidateScaleLevels.length - 1;
         const scale = layerScalesByLevelByKey.get(layerKey)?.get(scaleLevel) ?? null;
-        const estimatedVolumeBytes = scale ? scale.width * scale.height * scale.depth * scale.channels : 0;
-        if (!isLastCandidate && estimatedVolumeBytes > MAX_VOLUME_BYTES_HINT) {
+        const bytesPerValue = getBytesPerValueForDataType(scale?.zarr.data.dataType);
+        const estimatedVolumeBytes = scale
+          ? scale.width * scale.height * scale.depth * scale.channels * bytesPerValue
+          : 0;
+        if (!isLastCandidate && estimatedVolumeBytes > maxVolumeBytesHint) {
           continue;
         }
 
@@ -396,6 +427,8 @@ export function useRouteLayerVolumes({
       layerScaleLevelsByKey,
       layerScalesByLevelByKey,
       maxBrickAtlasDepthHint,
+      maxBrickAtlasBytesHint,
+      maxVolumeBytesHint,
       resolvePreferredAtlasScaleLevel,
       volumeProvider
     ]

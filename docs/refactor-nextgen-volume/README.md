@@ -1,10 +1,13 @@
 # Next-Gen Volume Refactor
 
-Status: **Complete (100% Architecture Complete)**  
+Status: **V1 complete; V2 complete**  
 Start date: **2026-02-13**  
-Completion date: **2026-02-13**
+V2 start date: **2026-02-21**
 
-This folder is the source of truth for the next-gen volume architecture and its completion evidence.
+This folder is the source of truth for next-gen volume architecture.
+V1 closure artifacts remain intact; V2 refactor artifacts are tracked alongside them.
+
+Scientific integrity guardrail: **NEVER SHOW WRONG DATA.**
 
 ## Final outcome
 
@@ -34,7 +37,7 @@ Benchmark summary from `BASELINE_REPORT.json`:
 ## Read order
 
 1. `docs/refactor-nextgen-volume/SCHEMA_VNEXT.md`
-2. `docs/refactor-nextgen-volume/ROADMAP.md`
-3. `docs/refactor-nextgen-volume/BACKLOG.md`
-4. `docs/refactor-nextgen-volume/SESSION_HANDOFF.md`
-5. `docs/refactor-nextgen-volume/EXECUTION_LOG.md`
+2. `docs/refactor-nextgen-volume/MULTISCALE_V2_ARCHITECTURE.md`
+3. `docs/refactor-nextgen-volume/DECISIONS.md`
+4. `docs/refactor-nextgen-volume/ROADMAP.md`
+5. `docs/refactor-nextgen-volume/BACKLOG.md`

@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { VolumeProvider } from '../../../core/volumeProvider';
+import { resolvePreferredScaleLevel, type ViewerQualityProfile } from './multiscaleQualityPolicy';
 
 const MIN_CACHED_VOLUMES = 6;
 const PLAYBACK_CACHE_ENTRY_CAP = 192;
 const PLAYBACK_PREFETCH_MIN_IN_FLIGHT = 2;
 const PLAYBACK_PREFETCH_MAX_IN_FLIGHT = 4;
 const PLAYBACK_LAYER_LOAD_CONCURRENCY = 3;
+const PLAYBACK_LAYER_LOAD_CONCURRENCY_MIN = 2;
 
 type UseRoutePlaybackPrefetchOptions = {
   isViewerLaunched: boolean;
   isPlaying: boolean;
+  qualityProfile: ViewerQualityProfile;
   fps: number;
   preferBrickResidency: boolean;
   brickResidencyLayerKeys: string[];
@@ -33,9 +36,37 @@ type UseRoutePlaybackPrefetchResult = {
   canAdvancePlaybackToIndex: (nextIndex: number) => boolean;
 };
 
+function normalizeTimepointIndex(index: number, volumeTimepointCount: number): number {
+  if (volumeTimepointCount <= 0) {
+    return 0;
+  }
+  const mod = index % volumeTimepointCount;
+  return mod < 0 ? mod + volumeTimepointCount : mod;
+}
+
+function resolveForwardDirection(
+  previousIndex: number | null,
+  currentIndex: number,
+  volumeTimepointCount: number,
+): 1 | -1 {
+  if (previousIndex === null || volumeTimepointCount <= 1) {
+    return 1;
+  }
+  const prev = normalizeTimepointIndex(previousIndex, volumeTimepointCount);
+  const next = normalizeTimepointIndex(currentIndex, volumeTimepointCount);
+  if (prev === next) {
+    return 1;
+  }
+
+  const forwardDistance = (next - prev + volumeTimepointCount) % volumeTimepointCount;
+  const backwardDistance = (prev - next + volumeTimepointCount) % volumeTimepointCount;
+  return forwardDistance <= backwardDistance ? 1 : -1;
+}
+
 export function useRoutePlaybackPrefetch({
   isViewerLaunched,
   isPlaying,
+  qualityProfile,
   fps,
   preferBrickResidency,
   brickResidencyLayerKeys,
@@ -46,22 +77,27 @@ export function useRoutePlaybackPrefetch({
   selectedIndex
 }: UseRoutePlaybackPrefetchOptions): UseRoutePlaybackPrefetchResult {
   const brickResidencyLayerKeySet = useMemo(() => new Set(brickResidencyLayerKeys), [brickResidencyLayerKeys]);
-  const fallbackAtlasScaleLevel = isPlaying ? 1 : 0;
   const atlasScaleLevelByLayerKey = useMemo(() => {
     const map = new Map<string, number>();
     for (const layerKey of playbackLayerKeys) {
-      const configuredScaleLevel = playbackAtlasScaleLevelByLayerKey?.[layerKey];
-      const normalizedScaleLevel =
-        Number.isFinite(configuredScaleLevel) && configuredScaleLevel !== undefined
-          ? Math.max(0, Math.floor(configuredScaleLevel))
-          : Number.NaN;
-      map.set(layerKey, Number.isFinite(normalizedScaleLevel) ? normalizedScaleLevel : fallbackAtlasScaleLevel);
+      map.set(
+        layerKey,
+        resolvePreferredScaleLevel({
+          configuredScaleLevel: playbackAtlasScaleLevelByLayerKey?.[layerKey],
+          qualityProfile
+        })
+      );
     }
     return map;
-  }, [fallbackAtlasScaleLevel, playbackAtlasScaleLevelByLayerKey, playbackLayerKeys]);
+  }, [playbackAtlasScaleLevelByLayerKey, playbackLayerKeys, qualityProfile]);
   const resolveAtlasScaleLevelForLayer = useCallback(
-    (layerKey: string) => atlasScaleLevelByLayerKey.get(layerKey) ?? fallbackAtlasScaleLevel,
-    [atlasScaleLevelByLayerKey, fallbackAtlasScaleLevel]
+    (layerKey: string) =>
+      atlasScaleLevelByLayerKey.get(layerKey) ??
+      resolvePreferredScaleLevel({
+        configuredScaleLevel: playbackAtlasScaleLevelByLayerKey?.[layerKey],
+        qualityProfile
+      }),
+    [atlasScaleLevelByLayerKey, playbackAtlasScaleLevelByLayerKey, qualityProfile]
   );
 
   const useBrickResidencyPrefetch = useMemo(
@@ -79,12 +115,19 @@ export function useRoutePlaybackPrefetch({
     if (!isPlaying) {
       return 1;
     }
-    const minLookahead = 2;
-    const maxLookahead = 8;
+    const minLookahead = qualityProfile === 'playback' ? 3 : 2;
+    const maxLookahead = qualityProfile === 'playback' ? 10 : 6;
     const requestedFps = Number.isFinite(fps) ? fps : 0;
-    const estimated = Math.ceil(Math.max(requestedFps, 0) / 8) + 2;
+    const estimated = Math.ceil(Math.max(requestedFps, 0) / 7) + 2;
     return Math.min(maxLookahead, Math.max(minLookahead, estimated));
-  }, [fps, isPlaying]);
+  }, [fps, isPlaying, qualityProfile]);
+
+  const playbackLayerLoadConcurrency = useMemo(() => {
+    const requestedFps = Number.isFinite(fps) ? fps : 0;
+    const base = requestedFps >= 20 ? PLAYBACK_LAYER_LOAD_CONCURRENCY : requestedFps >= 12 ? 3 : 2;
+    const profileAdjusted = qualityProfile === 'playback' ? base + 1 : base;
+    return Math.max(PLAYBACK_LAYER_LOAD_CONCURRENCY_MIN, Math.min(PLAYBACK_LAYER_LOAD_CONCURRENCY + 1, profileAdjusted));
+  }, [fps, qualityProfile]);
 
   const playbackPrefetchSessionRef = useRef(0);
   const playbackPrefetchAbortRef = useRef<AbortController | null>(null);
@@ -96,6 +139,8 @@ export function useRoutePlaybackPrefetch({
     maxInFlight: 1,
     drainScheduled: false
   });
+  const playbackDirectionRef = useRef<1 | -1>(1);
+  const previousPlaybackIndexRef = useRef<number | null>(null);
 
   const resetPlaybackPrefetchSession = useCallback(() => {
     playbackPrefetchSessionRef.current += 1;
@@ -118,6 +163,17 @@ export function useRoutePlaybackPrefetch({
       playbackPrefetchAbortRef.current?.abort();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isPlaying || volumeTimepointCount <= 1) {
+      previousPlaybackIndexRef.current = selectedIndex;
+      playbackDirectionRef.current = 1;
+      return;
+    }
+    const direction = resolveForwardDirection(previousPlaybackIndexRef.current, selectedIndex, volumeTimepointCount);
+    playbackDirectionRef.current = direction;
+    previousPlaybackIndexRef.current = selectedIndex;
+  }, [isPlaying, selectedIndex, volumeTimepointCount]);
 
   useEffect(() => {
     if (isPlaying) {
@@ -198,7 +254,7 @@ export function useRoutePlaybackPrefetch({
                         policy: 'missing-only',
                         reason: 'playback',
                         signal: prefetchSignal,
-                        maxConcurrentLayerLoads: PLAYBACK_LAYER_LOAD_CONCURRENCY,
+                        maxConcurrentLayerLoads: playbackLayerLoadConcurrency,
                         scaleLevels: [scaleLevel]
                       })
                     )
@@ -221,7 +277,7 @@ export function useRoutePlaybackPrefetch({
               policy: 'missing-only',
               reason: 'playback',
               signal: prefetchSignal,
-              maxConcurrentLayerLoads: PLAYBACK_LAYER_LOAD_CONCURRENCY
+              maxConcurrentLayerLoads: playbackLayerLoadConcurrency
             })
           );
         }
@@ -244,7 +300,13 @@ export function useRoutePlaybackPrefetch({
           });
       }
     });
-  }, [brickResidencyLayerKeySet, resolveAtlasScaleLevelForLayer, useBrickResidencyPrefetch, volumeProvider]);
+  }, [
+    brickResidencyLayerKeySet,
+    resolveAtlasScaleLevelForLayer,
+    useBrickResidencyPrefetch,
+    volumeProvider,
+    playbackLayerLoadConcurrency
+  ]);
 
   const schedulePlaybackPrefetch = useCallback(
     (baseIndex: number) => {
@@ -254,10 +316,13 @@ export function useRoutePlaybackPrefetch({
 
       const clampedIndex = Math.max(0, Math.min(volumeTimepointCount - 1, baseIndex));
       const lookahead = Math.min(playbackPrefetchLookahead, Math.max(0, volumeTimepointCount - 1));
+      const direction = playbackDirectionRef.current;
+      const backwardContext = isPlaying ? Math.max(1, Math.floor(lookahead / 3)) : 0;
 
+      const profileMaxInFlight = qualityProfile === 'playback' ? PLAYBACK_PREFETCH_MAX_IN_FLIGHT : 3;
       const maxInFlight = isPlaying
         ? Math.min(
-            PLAYBACK_PREFETCH_MAX_IN_FLIGHT,
+            profileMaxInFlight,
             Math.max(PLAYBACK_PREFETCH_MIN_IN_FLIGHT, Math.ceil((lookahead + 1) / 2))
           )
         : 1;
@@ -271,12 +336,10 @@ export function useRoutePlaybackPrefetch({
       const prioritizedPending: number[] = [];
       const prioritizedPendingSet = new Set<number>();
 
-      for (let offset = 0; offset <= lookahead; offset++) {
-        const idx = (clampedIndex + offset) % volumeTimepointCount;
+      const maybeQueueIndex = (idx: number) => {
         if (state.inFlight.has(idx)) {
-          continue;
+          return;
         }
-
         let ready = true;
         for (const layerKey of playbackLayerKeys) {
           const useLayerBrickResidency = useBrickResidencyPrefetch && brickResidencyLayerKeySet.has(layerKey);
@@ -290,11 +353,17 @@ export function useRoutePlaybackPrefetch({
             break;
           }
         }
-
         if (!ready && !prioritizedPendingSet.has(idx)) {
           prioritizedPending.push(idx);
           prioritizedPendingSet.add(idx);
         }
+      };
+
+      for (let offset = 0; offset <= lookahead; offset++) {
+        maybeQueueIndex(normalizeTimepointIndex(clampedIndex + direction * offset, volumeTimepointCount));
+      }
+      for (let offset = 1; offset <= backwardContext; offset++) {
+        maybeQueueIndex(normalizeTimepointIndex(clampedIndex - direction * offset, volumeTimepointCount));
       }
 
       for (const queuedIndex of state.pendingQueue) {
@@ -325,6 +394,7 @@ export function useRoutePlaybackPrefetch({
       drainPlaybackPrefetchQueue,
       isPlaying,
       isViewerLaunched,
+      qualityProfile,
       playbackLayerKeys,
       playbackPrefetchLookahead,
       brickResidencyLayerKeySet,

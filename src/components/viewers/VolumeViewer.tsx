@@ -49,6 +49,16 @@ function formatChunkBytesAsMb(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function formatScaleRequestSummary(scaleRequestCounts: Record<string, number>): string {
+  const entries = Object.entries(scaleRequestCounts)
+    .filter(([, count]) => Number.isFinite(count) && count > 0)
+    .sort((left, right) => Number(left[0]) - Number(right[0]));
+  if (entries.length === 0) {
+    return 'none';
+  }
+  return entries.map(([scaleLevel, count]) => `s${scaleLevel}:${count}`).join(' ');
+}
+
 function summarizeGpuResidency(resources: Map<string, VolumeResources>) {
   let layerCount = 0;
   let residentBricks = 0;
@@ -59,6 +69,12 @@ function summarizeGpuResidency(resources: Map<string, VolumeResources>) {
   let evictions = 0;
   let pendingBricks = 0;
   let scheduledUploads = 0;
+  let requiredQueueDepth = 0;
+  let refineQueueDepth = 0;
+  let cameraMotionResetCount = 0;
+  let cancelledRefineBricks = 0;
+  let fallbackMappedBricks = 0;
+  let hysteresisHeldBricks = 0;
 
   for (const resource of resources.values()) {
     const metrics = resource.gpuBrickResidencyMetrics;
@@ -74,6 +90,12 @@ function summarizeGpuResidency(resources: Map<string, VolumeResources>) {
     evictions += metrics.evictions;
     pendingBricks += metrics.pendingBricks;
     scheduledUploads += metrics.scheduledUploads;
+    requiredQueueDepth += metrics.requiredQueueDepth;
+    refineQueueDepth += metrics.refineQueueDepth;
+    cameraMotionResetCount += metrics.cameraMotionResetCount;
+    cancelledRefineBricks += metrics.cancelledRefineBricks;
+    fallbackMappedBricks += metrics.fallbackMappedBricks;
+    hysteresisHeldBricks += metrics.hysteresisHeldBricks;
   }
 
   if (layerCount === 0) {
@@ -89,12 +111,19 @@ function summarizeGpuResidency(resources: Map<string, VolumeResources>) {
     uploads,
     evictions,
     pendingBricks,
-    scheduledUploads
+    scheduledUploads,
+    requiredQueueDepth,
+    refineQueueDepth,
+    cameraMotionResetCount,
+    cancelledRefineBricks,
+    fallbackMappedBricks,
+    hysteresisHeldBricks
   };
 }
 
 function VolumeViewer({
   layers,
+  qualityProfile = 'inspect',
   projectionMode,
   isLoading,
   loadingProgress,
@@ -516,6 +545,7 @@ function VolumeViewer({
   });
   useVolumeViewerResources({
     layers,
+    qualityProfile,
     primaryVolume,
     projectionMode,
     isAdditiveBlending,
@@ -776,6 +806,10 @@ function VolumeViewer({
                   <span>{runtimeDiagnostics.activePrefetchRequests.length} active</span>
                 </li>
                 <li>
+                  <span>Scale requests</span>
+                  <span>{formatScaleRequestSummary(runtimeDiagnostics.streaming.scaleRequestCounts)}</span>
+                </li>
+                <li>
                   <span>Projection</span>
                   <span>{projectionMode}</span>
                 </li>
@@ -802,8 +836,24 @@ function VolumeViewer({
                     <span>GPU scheduler</span>
                     <span>
                       up {gpuResidencySummary.uploads} ev {gpuResidencySummary.evictions} p{' '}
-                      {gpuResidencySummary.pendingBricks} / sched {gpuResidencySummary.scheduledUploads}
+                      {gpuResidencySummary.pendingBricks} / req {gpuResidencySummary.requiredQueueDepth} ref{' '}
+                      {gpuResidencySummary.refineQueueDepth} / sched {gpuResidencySummary.scheduledUploads}
                     </span>
+                  </li>
+                ) : null}
+                {gpuResidencySummary ? (
+                  <li>
+                    <span>GPU stability</span>
+                    <span>
+                      reset {gpuResidencySummary.cameraMotionResetCount} cancel{' '}
+                      {gpuResidencySummary.cancelledRefineBricks} hold {gpuResidencySummary.hysteresisHeldBricks}
+                    </span>
+                  </li>
+                ) : null}
+                {gpuResidencySummary ? (
+                  <li>
+                    <span>Fallback map</span>
+                    <span>{gpuResidencySummary.fallbackMappedBricks}</span>
                   </li>
                 ) : null}
               </ul>

@@ -1,10 +1,21 @@
 # Roadmap
 
-Status: **Complete**
+Status: **V1 complete; V2 complete**
+
+## V2 phase status (2026-02-21)
+
+- Phase 0: Baseline and targets (`DONE`)
+- Phase 1: Strict pyramid validator (`DONE`)
+- Phase 2: Profile-driven scale policy unification (`DONE`)
+- Phase 3: Demand-driven residency scheduler (`DONE`)
+- Phase 4: Mixed-LOD rendering (`DONE`)
+- Phase 5: Sliced-mode parity (`DONE`)
+- Phase 6: Playback QoS and prefetch tuning (`DONE`)
+- Phase 7: Hard cutover and cleanup (`DONE`)
 
 ## Completion summary
 
-All roadmap phases are complete. Phase 7 and Phase 8 mandatory closure work is fully landed.
+All V2 roadmap phases are complete. V1 closure phases remain complete.
 
 ## Phase status
 

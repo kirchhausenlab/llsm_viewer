@@ -147,6 +147,7 @@ export type VolumeViewerVrProps = {
 
 export type VolumeViewerProps = {
   layers: ViewerLayer[];
+  qualityProfile?: 'inspect' | 'interactive' | 'playback';
   projectionMode: ProjectionMode;
   timeIndex: number;
   totalTimepoints: number;
@@ -234,6 +235,12 @@ export type VolumeResources = {
     prioritizedBricks: number;
     scheduledUploads: number;
     lastCameraDistance: number | null;
+    requiredQueueDepth: number;
+    refineQueueDepth: number;
+    cameraMotionResetCount: number;
+    cancelledRefineBricks: number;
+    fallbackMappedBricks: number;
+    hysteresisHeldBricks: number;
   } | null;
   brickSkipDiagnostics?: {
     enabled: boolean;

@@ -32,6 +32,7 @@ import { useRouteVrChannelPanels } from './useRouteVrChannelPanels';
 import { useLayerControls } from './useLayerControls';
 import { useRouteLaunchSessionState } from './useRouteLaunchSessionState';
 import { useRoutePlaybackPrefetch } from './useRoutePlaybackPrefetch';
+import type { ViewerQualityProfile } from './multiscaleQualityPolicy';
 import {
   useRouteViewerProps
 } from './useRouteViewerProps';
@@ -179,6 +180,7 @@ export function useAppRouteState(): AppRouteState {
   const [lastHoveredVolumeVoxel, setLastHoveredVolumeVoxel] = useState<HoveredVoxelInfo | null>(null);
   const playback = useViewerPlayback();
   const { selectedIndex, setSelectedIndex, isPlaying, fps, setFps, stopPlayback, setIsPlaying } = playback;
+  const qualityProfile: ViewerQualityProfile = isPlaying ? 'playback' : 'inspect';
   const is3dViewerAvailable = true;
   const preferBrickResidency = true;
 
@@ -453,7 +455,7 @@ export function useAppRouteState(): AppRouteState {
   } = useRouteLayerVolumes({
     isViewerLaunched,
     isLaunchingViewer,
-    isPlaying,
+    qualityProfile,
     preprocessedExperiment,
     volumeProvider,
     loadedChannelIds,
@@ -487,6 +489,7 @@ export function useAppRouteState(): AppRouteState {
   const { canAdvancePlaybackToIndex } = useRoutePlaybackPrefetch({
     isViewerLaunched,
     isPlaying,
+    qualityProfile,
     fps,
     preferBrickResidency,
     brickResidencyLayerKeys,
@@ -956,6 +959,7 @@ export function useAppRouteState(): AppRouteState {
       viewerMode,
       viewerPanels: {
         layers: viewerLayers,
+        qualityProfile,
         loading: {
           isLoading,
           loadingProgress: loadProgress,

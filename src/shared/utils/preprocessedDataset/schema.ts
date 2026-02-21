@@ -477,6 +477,12 @@ function validateLayer({
     scales.push(scale);
   }
 
+  validateScaleHierarchy({
+    path: `${path}.zarr.scales`,
+    scales,
+    baseDimensions: { width, height, depth }
+  });
+
   return {
     key,
     label,
@@ -493,6 +499,69 @@ function validateLayer({
       scales
     }
   };
+}
+
+function validateScaleHierarchy({
+  path,
+  scales,
+  baseDimensions
+}: {
+  path: string;
+  scales: PreprocessedLayerScaleManifestEntry[];
+  baseDimensions: { width: number; height: number; depth: number };
+}): void {
+  for (let index = 0; index < scales.length; index += 1) {
+    const scale = scales[index]!;
+    const expectedLevel = index;
+    if (scale.level !== expectedLevel) {
+      throw new Error(
+        `Invalid manifest schema at ${path}[${index}].level: expected contiguous level ${expectedLevel}, got ${scale.level}.`
+      );
+    }
+
+    const [factorZ, factorY, factorX] = scale.downsampleFactor;
+    const expectedWidth = Math.max(1, Math.ceil(baseDimensions.width / Math.max(1, factorX)));
+    const expectedHeight = Math.max(1, Math.ceil(baseDimensions.height / Math.max(1, factorY)));
+    const expectedDepth = Math.max(1, Math.ceil(baseDimensions.depth / Math.max(1, factorZ)));
+    if (scale.width !== expectedWidth) {
+      throw new Error(
+        `Invalid manifest schema at ${path}[${index}].width: expected ${expectedWidth} from downsampleFactor, got ${scale.width}.`
+      );
+    }
+    if (scale.height !== expectedHeight) {
+      throw new Error(
+        `Invalid manifest schema at ${path}[${index}].height: expected ${expectedHeight} from downsampleFactor, got ${scale.height}.`
+      );
+    }
+    if (scale.depth !== expectedDepth) {
+      throw new Error(
+        `Invalid manifest schema at ${path}[${index}].depth: expected ${expectedDepth} from downsampleFactor, got ${scale.depth}.`
+      );
+    }
+
+    if (index === 0) {
+      if (factorZ !== 1 || factorY !== 1 || factorX !== 1) {
+        throw new Error(
+          `Invalid manifest schema at ${path}[0].downsampleFactor: expected [1,1,1], got [${factorZ},${factorY},${factorX}].`
+        );
+      }
+      continue;
+    }
+
+    const previous = scales[index - 1]!;
+    const previousFactors = previous.downsampleFactor;
+    const nextFactors = scale.downsampleFactor;
+    for (let axis = 0; axis < 3; axis += 1) {
+      const previousFactor = previousFactors[axis] ?? 1;
+      const nextFactor = nextFactors[axis] ?? 1;
+      const validAxisFactor = nextFactor === previousFactor || nextFactor === previousFactor * 2;
+      if (!validAxisFactor) {
+        throw new Error(
+          `Invalid manifest schema at ${path}[${index}].downsampleFactor[${axis}]: expected ${previousFactor} or ${previousFactor * 2}, got ${nextFactor}.`
+        );
+      }
+    }
+  }
 }
 
 function validateVoxelResolution(value: unknown, path: string): VoxelResolutionValues | null | undefined {
