@@ -97,6 +97,8 @@ export type PreprocessDatasetToStorageOptions = {
   };
   processingStrategy?: {
     workerizeNormalizationDownsample?: boolean;
+    executionMode?: 'auto' | 'in-memory' | 'streaming';
+    streamingThresholdBytes?: number;
   };
   inputInterpretation?: PreprocessInputInterpretation;
   signal?: AbortSignal;
@@ -131,6 +133,28 @@ function resolveWorkerizeNormalizationDownsample(
   return true;
 }
 
+type ResolvedPreprocessExecutionMode = 'in-memory' | 'streaming';
+
+function resolvePreprocessExecutionMode(
+  options: PreprocessDatasetToStorageOptions['processingStrategy'] | undefined
+): 'auto' | ResolvedPreprocessExecutionMode {
+  const requested = options?.executionMode ?? DEFAULT_PREPROCESS_EXECUTION_MODE;
+  if (requested === 'auto' || requested === 'in-memory' || requested === 'streaming') {
+    return requested;
+  }
+  return DEFAULT_PREPROCESS_EXECUTION_MODE;
+}
+
+function resolvePreprocessStreamingThresholdBytes(
+  options: PreprocessDatasetToStorageOptions['processingStrategy'] | undefined
+): number {
+  const configured = options?.streamingThresholdBytes;
+  if (!Number.isFinite(configured) || (configured ?? 0) <= 0) {
+    return DEFAULT_PREPROCESS_STREAMING_THRESHOLD_BYTES;
+  }
+  return Math.max(1, Math.floor(configured ?? DEFAULT_PREPROCESS_STREAMING_THRESHOLD_BYTES));
+}
+
 function createZarrScaleDataArrayPath(channelId: string, layerKey: string, scaleLevel: number): string {
   return `channels/${channelId}/${layerKey}/scales/${scaleLevel}/data`;
 }
@@ -160,6 +184,8 @@ const MAX_PREPROCESS_DECODE_BATCH_SIZE = 8;
 const DEFAULT_PREPROCESS_IMAGE_COUNT_PROBE_CONCURRENCY = 4;
 const MAX_PREPROCESS_IMAGE_COUNT_PROBE_CONCURRENCY = 8;
 const DEFAULT_PREPROCESS_MAX_IN_FLIGHT_WRITES = 4;
+const DEFAULT_PREPROCESS_EXECUTION_MODE = 'auto' as const;
+const DEFAULT_PREPROCESS_STREAMING_THRESHOLD_BYTES = 512 * 1024 * 1024;
 
 type ShardingStrategy = {
   chunkTargetBytes: number;
@@ -278,14 +304,16 @@ function chooseSpatialChunkDimensions({
   width,
   bytesPerVoxel,
   targetChunkBytes,
+  preferDepthChunkOne
 }: {
   depth: number;
   height: number;
   width: number;
   bytesPerVoxel: number;
   targetChunkBytes: number;
+  preferDepthChunkOne?: boolean;
 }): [number, number, number] {
-  let chunkDepth = Math.max(1, Math.min(depth, depth > 1 ? 16 : 1));
+  let chunkDepth = preferDepthChunkOne ? 1 : Math.max(1, Math.min(depth, depth > 1 ? 16 : 1));
   let chunkHeight = Math.max(1, Math.min(height, 64));
   let chunkWidth = Math.max(1, Math.min(width, 64));
 
@@ -317,12 +345,14 @@ function buildLayerScaleDescriptors({
   layer,
   layerMetadata,
   expectedTimepoints,
-  shardingStrategy
+  shardingStrategy,
+  preferDepthChunkOne
 }: {
   layer: PreprocessLayerSource;
   layerMetadata: LayerMetadata;
   expectedTimepoints: number;
   shardingStrategy: ShardingStrategy;
+  preferDepthChunkOne?: boolean;
 }): PreprocessedLayerScaleManifestEntry[] {
   const scales: PreprocessedLayerScaleManifestEntry[] = [];
   const geometryLevels = computeMultiscaleGeometryLevels({
@@ -343,7 +373,8 @@ function buildLayerScaleDescriptors({
       height: currentHeight,
       width: currentWidth,
       bytesPerVoxel: Math.max(1, layerMetadata.channels),
-      targetChunkBytes: shardingStrategy.chunkTargetBytes
+      targetChunkBytes: shardingStrategy.chunkTargetBytes,
+      preferDepthChunkOne
     });
 
     const dataDescriptor: ZarrArrayDescriptor = {
@@ -420,7 +451,8 @@ function buildLayerScaleDescriptors({
         height: currentHeight,
         width: currentWidth,
         bytesPerVoxel: 4,
-        targetChunkBytes: shardingStrategy.chunkTargetBytes
+        targetChunkBytes: shardingStrategy.chunkTargetBytes,
+        preferDepthChunkOne
       });
       labelsDescriptor = {
         path: createZarrScaleLabelsArrayPath(layer.channelId, layer.key, level),
@@ -852,10 +884,823 @@ type PreparedLayerSource = {
   getTimepointVolume: (timepoint: number, signal?: AbortSignal) => Promise<VolumePayload>;
 };
 
+type StreamingTimepointSliceSource =
+  | {
+      kind: 'single-file';
+      file: File;
+      startSlice: number;
+      depth: number;
+      expectedFileDepth: number;
+      depthValidation: 'shape' | '2d-movie-depth1' | 'single-3d-depth1';
+    }
+  | {
+      kind: 'multi-file-depth1';
+      files: File[];
+      depthValidation: 'single-3d-depth1';
+    };
+
+type StreamingPreparedLayerSource = {
+  layer: PreprocessLayerSource;
+  timepointCount: number;
+  sourceMetadata: LayerMetadata;
+  getTimepointSource: (timepoint: number) => StreamingTimepointSliceSource;
+};
+
+type ProbedTiffFileMetadata = {
+  width: number;
+  height: number;
+  depth: number;
+  channels: number;
+  dataType: VolumePayload['dataType'];
+};
+
+type SupportedTypedArray = VolumeTypedArray;
+
+function detectVolumeDataTypeFromTypedArray(array: SupportedTypedArray): VolumePayload['dataType'] {
+  if (array instanceof Uint8Array) {
+    return 'uint8';
+  }
+  if (array instanceof Int8Array) {
+    return 'int8';
+  }
+  if (array instanceof Uint16Array) {
+    return 'uint16';
+  }
+  if (array instanceof Int16Array) {
+    return 'int16';
+  }
+  if (array instanceof Uint32Array) {
+    return 'uint32';
+  }
+  if (array instanceof Int32Array) {
+    return 'int32';
+  }
+  if (array instanceof Float32Array) {
+    return 'float32';
+  }
+  if (array instanceof Float64Array) {
+    return 'float64';
+  }
+  throw new Error('Unsupported raster data type.');
+}
+
+function ensureTypedArrayMatchesExpectedDataType(
+  array: SupportedTypedArray,
+  expected: VolumePayload['dataType'],
+  fileName: string,
+  sliceIndex: number
+): SupportedTypedArray {
+  const actual = detectVolumeDataTypeFromTypedArray(array);
+  if (actual !== expected) {
+    throw new Error(`Slice ${sliceIndex + 1} in "${fileName}" changed its sample type.`);
+  }
+  return array;
+}
+
+function toSegmentationLabelId(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    return 0;
+  }
+  const rounded = Math.round(value);
+  return rounded <= 0 ? 0 : rounded;
+}
+
+function createDeterministicRng(seed: number): () => number {
+  let state = seed >>> 0;
+  if (state === 0) {
+    state = 0x6d2b79f5;
+  }
+  return () => {
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
+  const hue = ((h % 360) + 360) % 360;
+  const chroma = v * s;
+  const hueSector = hue / 60;
+  const intermediate = chroma * (1 - Math.abs((hueSector % 2) - 1));
+
+  let r1 = 0;
+  let g1 = 0;
+  let b1 = 0;
+
+  if (hueSector >= 0 && hueSector < 1) {
+    r1 = chroma;
+    g1 = intermediate;
+  } else if (hueSector >= 1 && hueSector < 2) {
+    r1 = intermediate;
+    g1 = chroma;
+  } else if (hueSector >= 2 && hueSector < 3) {
+    g1 = chroma;
+    b1 = intermediate;
+  } else if (hueSector >= 3 && hueSector < 4) {
+    g1 = intermediate;
+    b1 = chroma;
+  } else if (hueSector >= 4 && hueSector < 5) {
+    r1 = intermediate;
+    b1 = chroma;
+  } else {
+    r1 = chroma;
+    b1 = intermediate;
+  }
+
+  const match = v - chroma;
+  const toByte = (value: number): number => {
+    const adjusted = value + match;
+    const clamped = Math.max(0, Math.min(1, adjusted));
+    return Math.round(clamped * 255);
+  };
+
+  return [toByte(r1), toByte(g1), toByte(b1)];
+}
+
+function createSegmentationColorTable(maxLabel: number, seed: number): Uint8Array {
+  const table = new Uint8Array((maxLabel + 1) * 3);
+  table[0] = 0;
+  table[1] = 0;
+  table[2] = 0;
+
+  if (maxLabel === 0) {
+    return table;
+  }
+
+  const rng = createDeterministicRng(seed);
+  for (let label = 1; label <= maxLabel; label += 1) {
+    const hue = rng() * 360;
+    const [r, g, b] = hsvToRgb(hue, 1, 1);
+    const index = label * 3;
+    table[index] = r;
+    table[index + 1] = g;
+    table[index + 2] = b;
+  }
+
+  return table;
+}
+
 function resolveInputInterpretation(
   mode: PreprocessDatasetToStorageOptions['inputInterpretation']
 ): PreprocessInputInterpretation {
   return mode ?? '3d-movie';
+}
+
+async function probeTiffFileMetadata(file: File, signal?: AbortSignal): Promise<ProbedTiffFileMetadata> {
+  throwIfAborted(signal);
+  const tiff = await fromBlob(file);
+  throwIfAborted(signal);
+  const imageCount = await tiff.getImageCount();
+  if (imageCount <= 0) {
+    throw new Error(`File "${file.name}" does not contain any images.`);
+  }
+
+  const firstImage = await tiff.getImage(0);
+  const width = firstImage.getWidth();
+  const height = firstImage.getHeight();
+  const channels = firstImage.getSamplesPerPixel();
+  const firstRasterRaw = (await firstImage.readRasters({ interleave: true })) as unknown;
+  if (!ArrayBuffer.isView(firstRasterRaw)) {
+    throw new Error(`File "${file.name}" does not provide raster data as a typed array.`);
+  }
+
+  const firstRaster = firstRasterRaw as SupportedTypedArray;
+  const dataType = detectVolumeDataTypeFromTypedArray(firstRaster);
+  const expectedLength = width * height * channels;
+  if (firstRaster.length !== expectedLength) {
+    throw new Error(`File "${file.name}" returned an unexpected slice length.`);
+  }
+
+  return {
+    width,
+    height,
+    depth: imageCount,
+    channels,
+    dataType
+  };
+}
+
+function estimatePreparedLayerVolumeBytes(layer: StreamingPreparedLayerSource): number {
+  const metadata = layer.sourceMetadata;
+  const voxelCount = metadata.width * metadata.height * metadata.depth;
+  const sourceBytes = voxelCount * metadata.channels * getBytesPerValue(metadata.dataType);
+  const normalizedChannels = layer.layer.isSegmentation ? 4 : metadata.channels;
+  const normalizedBytes = voxelCount * normalizedChannels;
+  return sourceBytes + normalizedBytes * 2;
+}
+
+function resolveDatasetExecutionMode({
+  requestedMode,
+  estimatedMaxLayerVolumeBytes,
+  streamingThresholdBytes
+}: {
+  requestedMode: 'auto' | ResolvedPreprocessExecutionMode;
+  estimatedMaxLayerVolumeBytes: number;
+  streamingThresholdBytes: number;
+}): ResolvedPreprocessExecutionMode {
+  if (requestedMode === 'in-memory') {
+    return 'in-memory';
+  }
+  if (requestedMode === 'streaming') {
+    return 'streaming';
+  }
+  return estimatedMaxLayerVolumeBytes >= streamingThresholdBytes ? 'streaming' : 'in-memory';
+}
+
+async function prepareStreamingLayerSources({
+  sortedLayerSources,
+  inputInterpretation,
+  signal
+}: {
+  sortedLayerSources: PreprocessLayerSource[];
+  inputInterpretation: PreprocessInputInterpretation;
+  signal?: AbortSignal;
+}): Promise<{ preparedLayerSources: StreamingPreparedLayerSource[]; estimatedMaxLayerVolumeBytes: number }> {
+  const preparedLayerSources: StreamingPreparedLayerSource[] = [];
+  let estimatedMaxLayerVolumeBytes = 0;
+
+  for (const layer of sortedLayerSources) {
+    throwIfAborted(signal);
+    if (layer.files.length === 0) {
+      throw new Error(`Layer "${layer.channelLabel}" does not contain TIFF files.`);
+    }
+
+    const firstFile = layer.files[0];
+    if (!firstFile) {
+      throw new Error(`Layer "${layer.channelLabel}" does not contain TIFF files.`);
+    }
+    const firstMetadata = await probeTiffFileMetadata(firstFile, signal);
+
+    if (inputInterpretation === '3d-movie') {
+      const sourceMetadata: LayerMetadata = {
+        width: firstMetadata.width,
+        height: firstMetadata.height,
+        depth: firstMetadata.depth,
+        channels: firstMetadata.channels,
+        dataType: firstMetadata.dataType
+      };
+      const prepared: StreamingPreparedLayerSource = {
+        layer,
+        timepointCount: layer.files.length,
+        sourceMetadata,
+        getTimepointSource: (timepoint) => {
+          const file = layer.files[timepoint];
+          if (!file) {
+            throw new Error(`Layer "${layer.channelLabel}" timepoint ${timepoint + 1} is out of range.`);
+          }
+          return {
+            kind: 'single-file',
+            file,
+            startSlice: 0,
+            depth: sourceMetadata.depth,
+            expectedFileDepth: sourceMetadata.depth,
+            depthValidation: 'shape'
+          };
+        }
+      };
+      preparedLayerSources.push(prepared);
+      estimatedMaxLayerVolumeBytes = Math.max(estimatedMaxLayerVolumeBytes, estimatePreparedLayerVolumeBytes(prepared));
+      continue;
+    }
+
+    if (inputInterpretation === '2d-movie') {
+      if (layer.files.length === 1) {
+        const sourceMetadata: LayerMetadata = {
+          width: firstMetadata.width,
+          height: firstMetadata.height,
+          depth: 1,
+          channels: firstMetadata.channels,
+          dataType: firstMetadata.dataType
+        };
+        const timepointCount = firstMetadata.depth;
+        if (timepointCount <= 0) {
+          throw new Error(`Layer "${layer.channelLabel}" did not decode any image planes.`);
+        }
+        const prepared: StreamingPreparedLayerSource = {
+          layer,
+          timepointCount,
+          sourceMetadata,
+          getTimepointSource: (timepoint) => ({
+            kind: 'single-file',
+            file: firstFile,
+            startSlice: timepoint,
+            depth: 1,
+            expectedFileDepth: firstMetadata.depth,
+            depthValidation: 'shape'
+          })
+        };
+        preparedLayerSources.push(prepared);
+        estimatedMaxLayerVolumeBytes = Math.max(
+          estimatedMaxLayerVolumeBytes,
+          estimatePreparedLayerVolumeBytes(prepared)
+        );
+        continue;
+      }
+
+      if (firstMetadata.depth !== 1) {
+        throw new Error(
+          `Layer "${layer.channelLabel}" in 2D movie mode accepts either a single 3D TIFF or a sequence of 2D TIFFs. File "${firstFile.name}" is 3D (depth ${firstMetadata.depth}).`
+        );
+      }
+
+      const sourceMetadata: LayerMetadata = {
+        width: firstMetadata.width,
+        height: firstMetadata.height,
+        depth: 1,
+        channels: firstMetadata.channels,
+        dataType: firstMetadata.dataType
+      };
+      const prepared: StreamingPreparedLayerSource = {
+        layer,
+        timepointCount: layer.files.length,
+        sourceMetadata,
+        getTimepointSource: (timepoint) => {
+          const file = layer.files[timepoint];
+          if (!file) {
+            throw new Error(`Layer "${layer.channelLabel}" timepoint ${timepoint + 1} is out of range.`);
+          }
+          return {
+            kind: 'single-file',
+            file,
+            startSlice: 0,
+            depth: 1,
+            expectedFileDepth: 1,
+            depthValidation: '2d-movie-depth1'
+          };
+        }
+      };
+      preparedLayerSources.push(prepared);
+      estimatedMaxLayerVolumeBytes = Math.max(estimatedMaxLayerVolumeBytes, estimatePreparedLayerVolumeBytes(prepared));
+      continue;
+    }
+
+    if (layer.files.length === 1) {
+      const sourceMetadata: LayerMetadata = {
+        width: firstMetadata.width,
+        height: firstMetadata.height,
+        depth: firstMetadata.depth,
+        channels: firstMetadata.channels,
+        dataType: firstMetadata.dataType
+      };
+      const prepared: StreamingPreparedLayerSource = {
+        layer,
+        timepointCount: 1,
+        sourceMetadata,
+        getTimepointSource: () => ({
+          kind: 'single-file',
+          file: firstFile,
+          startSlice: 0,
+          depth: sourceMetadata.depth,
+          expectedFileDepth: sourceMetadata.depth,
+          depthValidation: 'shape'
+        })
+      };
+      preparedLayerSources.push(prepared);
+      estimatedMaxLayerVolumeBytes = Math.max(estimatedMaxLayerVolumeBytes, estimatePreparedLayerVolumeBytes(prepared));
+      continue;
+    }
+
+    if (firstMetadata.depth !== 1) {
+      throw new Error(
+        `Layer "${layer.channelLabel}" in Single 3D volume mode accepts either a single 3D TIFF or a sequence of 2D TIFFs. File "${firstFile.name}" is 3D (depth ${firstMetadata.depth}).`
+      );
+    }
+
+    const sourceMetadata: LayerMetadata = {
+      width: firstMetadata.width,
+      height: firstMetadata.height,
+      depth: layer.files.length,
+      channels: firstMetadata.channels,
+      dataType: firstMetadata.dataType
+    };
+    const prepared: StreamingPreparedLayerSource = {
+      layer,
+      timepointCount: 1,
+      sourceMetadata,
+      getTimepointSource: () => ({
+        kind: 'multi-file-depth1',
+        files: layer.files,
+        depthValidation: 'single-3d-depth1'
+      })
+    };
+    preparedLayerSources.push(prepared);
+    estimatedMaxLayerVolumeBytes = Math.max(estimatedMaxLayerVolumeBytes, estimatePreparedLayerVolumeBytes(prepared));
+  }
+
+  return { preparedLayerSources, estimatedMaxLayerVolumeBytes };
+}
+
+type TiffByFileCache = Map<File, Promise<any>>;
+
+async function getCachedTiffForFile(
+  file: File,
+  cache: TiffByFileCache,
+  signal?: AbortSignal
+): Promise<any> {
+  throwIfAborted(signal);
+  let pending = cache.get(file);
+  if (!pending) {
+    pending = fromBlob(file);
+    cache.set(file, pending);
+  }
+  const tiff = await pending;
+  throwIfAborted(signal);
+  return tiff;
+}
+
+function formatDepthValidationError({
+  validation,
+  layer,
+  file,
+  depth
+}: {
+  validation: StreamingTimepointSliceSource['depthValidation'];
+  layer: PreprocessLayerSource;
+  file: File;
+  depth: number;
+}): string {
+  if (validation === '2d-movie-depth1') {
+    return `Layer "${layer.channelLabel}" in 2D movie mode accepts either a single 3D TIFF or a sequence of 2D TIFFs. File "${file.name}" is 3D (depth ${depth}).`;
+  }
+  if (validation === 'single-3d-depth1') {
+    return `Layer "${layer.channelLabel}" in Single 3D volume mode accepts either a single 3D TIFF or a sequence of 2D TIFFs. File "${file.name}" is 3D (depth ${depth}).`;
+  }
+  return '';
+}
+
+function createShapeMismatchErrorMessage({
+  layer,
+  timepoint,
+  width,
+  height,
+  depth,
+  channels,
+  dataType,
+  expected
+}: {
+  layer: PreprocessLayerSource;
+  timepoint: number;
+  width: number;
+  height: number;
+  depth: number;
+  channels: number;
+  dataType: VolumePayload['dataType'];
+  expected: LayerMetadata;
+}): string {
+  return `Layer "${layer.channelLabel}" timepoint ${timepoint + 1} has shape ${width}×${height}×${depth} (${channels}ch ${dataType}) but expected ${expected.width}×${expected.height}×${expected.depth} (${expected.channels}ch ${expected.dataType}).`;
+}
+
+async function forEachSliceInStreamingTimepointSource({
+  layer,
+  timepoint,
+  source,
+  expectedMetadata,
+  tiffByFileCache,
+  signal,
+  onSlice
+}: {
+  layer: PreprocessLayerSource;
+  timepoint: number;
+  source: StreamingTimepointSliceSource;
+  expectedMetadata: LayerMetadata;
+  tiffByFileCache: TiffByFileCache;
+  signal?: AbortSignal;
+  onSlice: (slice: SupportedTypedArray, z: number) => Promise<void> | void;
+}): Promise<void> {
+  const expectedSliceLength = expectedMetadata.width * expectedMetadata.height * expectedMetadata.channels;
+
+  if (source.kind === 'single-file') {
+    const tiff = await getCachedTiffForFile(source.file, tiffByFileCache, signal);
+    const imageCount = await tiff.getImageCount();
+    throwIfAborted(signal);
+
+    if (source.depthValidation !== 'shape' && imageCount !== 1) {
+      throw new Error(
+        formatDepthValidationError({
+          validation: source.depthValidation,
+          layer,
+          file: source.file,
+          depth: imageCount
+        })
+      );
+    }
+    if (source.depthValidation === 'shape' && imageCount !== source.expectedFileDepth) {
+      throw new Error(
+        createShapeMismatchErrorMessage({
+          layer,
+          timepoint,
+          width: expectedMetadata.width,
+          height: expectedMetadata.height,
+          depth: imageCount,
+          channels: expectedMetadata.channels,
+          dataType: expectedMetadata.dataType,
+          expected: expectedMetadata
+        })
+      );
+    }
+
+    if (source.startSlice < 0 || source.startSlice + source.depth > imageCount) {
+      throw new Error(`Layer "${layer.channelLabel}" timepoint ${timepoint + 1} is out of range.`);
+    }
+
+    for (let localZ = 0; localZ < source.depth; localZ += 1) {
+      throwIfAborted(signal);
+      const imageIndex = source.startSlice + localZ;
+      const image = await tiff.getImage(imageIndex);
+      const width = image.getWidth();
+      const height = image.getHeight();
+      const channels = image.getSamplesPerPixel();
+      if (width !== expectedMetadata.width || height !== expectedMetadata.height || channels !== expectedMetadata.channels) {
+        throw new Error(
+          createShapeMismatchErrorMessage({
+            layer,
+            timepoint,
+            width,
+            height,
+            depth: source.depth,
+            channels,
+            dataType: expectedMetadata.dataType,
+            expected: expectedMetadata
+          })
+        );
+      }
+
+      const rasterRaw = (await image.readRasters({ interleave: true })) as unknown;
+      if (!ArrayBuffer.isView(rasterRaw)) {
+        throw new Error(`File "${source.file.name}" does not provide raster data as a typed array.`);
+      }
+      const typed = ensureTypedArrayMatchesExpectedDataType(
+        rasterRaw as SupportedTypedArray,
+        expectedMetadata.dataType,
+        source.file.name,
+        imageIndex
+      );
+      if (typed.length !== expectedSliceLength) {
+        throw new Error(`Slice ${imageIndex + 1} in file "${source.file.name}" returned an unexpected slice length.`);
+      }
+      await onSlice(typed, localZ);
+    }
+    return;
+  }
+
+  for (let z = 0; z < source.files.length; z += 1) {
+    throwIfAborted(signal);
+    const file = source.files[z];
+    if (!file) {
+      throw new Error(`Missing source file #${z + 1} for layer "${layer.key}".`);
+    }
+    const tiff = await getCachedTiffForFile(file, tiffByFileCache, signal);
+    const imageCount = await tiff.getImageCount();
+    if (source.depthValidation === 'single-3d-depth1' && imageCount !== 1) {
+      throw new Error(
+        `Layer "${layer.channelLabel}" in Single 3D volume mode accepts either a single 3D TIFF or a sequence of 2D TIFFs. File "${file.name}" is 3D (depth ${imageCount}).`
+      );
+    }
+
+    const image = await tiff.getImage(0);
+    const width = image.getWidth();
+    const height = image.getHeight();
+    const channels = image.getSamplesPerPixel();
+    if (width !== expectedMetadata.width || height !== expectedMetadata.height || channels !== expectedMetadata.channels) {
+      throw new Error(
+        createShapeMismatchErrorMessage({
+          layer,
+          timepoint,
+          width,
+          height,
+          depth: source.files.length,
+          channels,
+          dataType: expectedMetadata.dataType,
+          expected: expectedMetadata
+        })
+      );
+    }
+
+    const rasterRaw = (await image.readRasters({ interleave: true })) as unknown;
+    if (!ArrayBuffer.isView(rasterRaw)) {
+      throw new Error(`File "${file.name}" does not provide raster data as a typed array.`);
+    }
+    const typed = ensureTypedArrayMatchesExpectedDataType(
+      rasterRaw as SupportedTypedArray,
+      expectedMetadata.dataType,
+      file.name,
+      0
+    );
+    if (typed.length !== expectedSliceLength) {
+      throw new Error(`Slice 1 in file "${file.name}" returned an unexpected slice length.`);
+    }
+    await onSlice(typed, z);
+  }
+}
+
+function computeNormalizationParametersFromScannedMinMax({
+  dataType,
+  min,
+  max
+}: {
+  dataType: VolumePayload['dataType'];
+  min: number;
+  max: number;
+}): NormalizationParameters {
+  if (dataType === 'uint8') {
+    return { min: 0, max: 255 };
+  }
+  let normalizedMin = Number.isFinite(min) ? min : 0;
+  let normalizedMax = Number.isFinite(max) ? max : normalizedMin + 1;
+  if (normalizedMin === normalizedMax) {
+    normalizedMax = normalizedMin + 1;
+  }
+  return { min: normalizedMin, max: normalizedMax };
+}
+
+function scanSliceMinMax(slice: SupportedTypedArray): { min: number; max: number } {
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  for (let i = 0; i < slice.length; i += 1) {
+    const value = slice[i] as number;
+    if (Number.isNaN(value)) {
+      continue;
+    }
+    if (value < min) {
+      min = value;
+    }
+    if (value > max) {
+      max = value;
+    }
+  }
+  return { min, max };
+}
+
+function normalizeSliceToUint8({
+  source,
+  dataType,
+  parameters
+}: {
+  source: SupportedTypedArray;
+  dataType: VolumePayload['dataType'];
+  parameters: NormalizationParameters;
+}): Uint8Array {
+  if (dataType === 'uint8' && parameters.min === 0 && parameters.max === 255 && source instanceof Uint8Array) {
+    return source;
+  }
+
+  const range = parameters.max - parameters.min || 1;
+  const normalized = new Uint8Array(source.length);
+  for (let i = 0; i < source.length; i += 1) {
+    const normalizedValue = ((source[i] as number) - parameters.min) / range;
+    const clamped = Math.max(0, Math.min(1, normalizedValue));
+    normalized[i] = Math.round(clamped * 255);
+  }
+  return normalized;
+}
+
+function colorizeSegmentationSlice({
+  source,
+  colorTable
+}: {
+  source: SupportedTypedArray;
+  colorTable: Uint8Array;
+}): { normalized: Uint8Array; labels: Uint32Array } {
+  const labels = new Uint32Array(source.length);
+  const normalized = new Uint8Array(source.length * 4);
+  const maxLabel = Math.floor(colorTable.length / 3) - 1;
+  for (let i = 0; i < source.length; i += 1) {
+    const rawLabel = toSegmentationLabelId(source[i] as number);
+    const label = rawLabel > maxLabel ? maxLabel : rawLabel;
+    labels[i] = label;
+    const tableIndex = label * 3;
+    const destination = i * 4;
+    normalized[destination] = colorTable[tableIndex] ?? 0;
+    normalized[destination + 1] = colorTable[tableIndex + 1] ?? 0;
+    normalized[destination + 2] = colorTable[tableIndex + 2] ?? 0;
+    normalized[destination + 3] = label === 0 ? 0 : 255;
+  }
+  return { normalized, labels };
+}
+
+function downsampleDataSliceXYByMax({
+  source,
+  width,
+  height,
+  channels
+}: {
+  source: Uint8Array;
+  width: number;
+  height: number;
+  channels: number;
+}): Uint8Array {
+  const nextWidth = Math.max(1, Math.ceil(width / 2));
+  const nextHeight = Math.max(1, Math.ceil(height / 2));
+  const downsampled = new Uint8Array(nextWidth * nextHeight * channels);
+
+  for (let y = 0; y < nextHeight; y += 1) {
+    const sourceYStart = y * 2;
+    const sourceYEnd = Math.min(height, sourceYStart + 2);
+    for (let x = 0; x < nextWidth; x += 1) {
+      const sourceXStart = x * 2;
+      const sourceXEnd = Math.min(width, sourceXStart + 2);
+      const destinationBase = (y * nextWidth + x) * channels;
+      for (let channel = 0; channel < channels; channel += 1) {
+        let maxValue = 0;
+        for (let sourceY = sourceYStart; sourceY < sourceYEnd; sourceY += 1) {
+          for (let sourceX = sourceXStart; sourceX < sourceXEnd; sourceX += 1) {
+            const sourceIndex = (sourceY * width + sourceX) * channels + channel;
+            const value = source[sourceIndex] ?? 0;
+            if (value > maxValue) {
+              maxValue = value;
+            }
+          }
+        }
+        downsampled[destinationBase + channel] = maxValue;
+      }
+    }
+  }
+
+  return downsampled;
+}
+
+function mergeDataSlicesByMaxInPlace(target: Uint8Array, candidate: Uint8Array): void {
+  if (target.length !== candidate.length) {
+    throw new Error(`Cannot merge slices with different lengths (${target.length} vs ${candidate.length}).`);
+  }
+  for (let i = 0; i < target.length; i += 1) {
+    if ((candidate[i] ?? 0) > (target[i] ?? 0)) {
+      target[i] = candidate[i] ?? 0;
+    }
+  }
+}
+
+function downsampleLabelSlicesByMode({
+  first,
+  second,
+  width,
+  height
+}: {
+  first: Uint32Array;
+  second: Uint32Array | null;
+  width: number;
+  height: number;
+}): Uint32Array {
+  const nextWidth = Math.max(1, Math.ceil(width / 2));
+  const nextHeight = Math.max(1, Math.ceil(height / 2));
+  const downsampled = new Uint32Array(nextWidth * nextHeight);
+
+  for (let y = 0; y < nextHeight; y += 1) {
+    const sourceYStart = y * 2;
+    const sourceYEnd = Math.min(height, sourceYStart + 2);
+    for (let x = 0; x < nextWidth; x += 1) {
+      const sourceXStart = x * 2;
+      const sourceXEnd = Math.min(width, sourceXStart + 2);
+      const destinationIndex = y * nextWidth + x;
+
+      const candidateLabels = new Uint32Array(8);
+      const candidateCounts = new Uint8Array(8);
+      let candidateSize = 0;
+      let bestLabel = 0;
+      let bestCount = -1;
+
+      const accumulate = (slice: Uint32Array) => {
+        for (let sourceY = sourceYStart; sourceY < sourceYEnd; sourceY += 1) {
+          for (let sourceX = sourceXStart; sourceX < sourceXEnd; sourceX += 1) {
+            const label = slice[sourceY * width + sourceX] ?? 0;
+            let slot = -1;
+            for (let candidateIndex = 0; candidateIndex < candidateSize; candidateIndex += 1) {
+              if ((candidateLabels[candidateIndex] ?? 0) === label) {
+                slot = candidateIndex;
+                break;
+              }
+            }
+            if (slot < 0) {
+              slot = candidateSize;
+              candidateLabels[slot] = label;
+              candidateCounts[slot] = 0;
+              candidateSize += 1;
+            }
+            const nextCount = (candidateCounts[slot] ?? 0) + 1;
+            candidateCounts[slot] = nextCount;
+            if (
+              nextCount > bestCount ||
+              (nextCount === bestCount && bestLabel === 0 && label !== 0) ||
+              (nextCount === bestCount && label > bestLabel)
+            ) {
+              bestCount = nextCount;
+              bestLabel = label;
+            }
+          }
+        }
+      };
+
+      accumulate(first);
+      if (second) {
+        accumulate(second);
+      }
+
+      downsampled[destinationIndex] = bestLabel;
+    }
+  }
+
+  return downsampled;
 }
 
 async function prepareLayerSources({
@@ -1207,7 +2052,7 @@ async function computeLayerTimepointMetadata({
   preparedLayerSources,
   signal
 }: {
-  preparedLayerSources: PreparedLayerSource[];
+  preparedLayerSources: Array<{ timepointCount: number }>;
   signal?: AbortSignal;
 }): Promise<{
   expectedTimepoints: number;
@@ -1258,6 +2103,69 @@ async function computeLayerRepresentativeNormalization({
 
     const volume = await preparedLayer.getTimepointVolume(representativeTimepoint, signal);
     normalizationByLayerKey.set(layer.key, computeRepresentativeNormalization(volume));
+  }
+
+  return normalizationByLayerKey;
+}
+
+async function computeLayerRepresentativeNormalizationForStreaming({
+  preparedLayerSources,
+  representativeTimepoint,
+  tiffByFileCache,
+  signal,
+  onProgress
+}: {
+  preparedLayerSources: StreamingPreparedLayerSource[];
+  representativeTimepoint: number;
+  tiffByFileCache: TiffByFileCache;
+  signal?: AbortSignal;
+  onProgress?: (progress: PreprocessDatasetProgress) => void;
+}): Promise<Map<string, NormalizationParameters>> {
+  const normalizationByLayerKey = new Map<string, NormalizationParameters>();
+
+  for (const preparedLayer of preparedLayerSources) {
+    const layer = preparedLayer.layer;
+    if (layer.isSegmentation) {
+      continue;
+    }
+    throwIfAborted(signal);
+    onProgress?.({ stage: 'rep-stats', layerKey: layer.key });
+
+    const source = preparedLayer.getTimepointSource(representativeTimepoint);
+    let scannedMin = Number.POSITIVE_INFINITY;
+    let scannedMax = Number.NEGATIVE_INFINITY;
+    let sliceCount = 0;
+
+    await forEachSliceInStreamingTimepointSource({
+      layer,
+      timepoint: representativeTimepoint,
+      source,
+      expectedMetadata: preparedLayer.sourceMetadata,
+      tiffByFileCache,
+      signal,
+      onSlice: (slice) => {
+        const { min, max } = scanSliceMinMax(slice);
+        if (Number.isFinite(min) && min < scannedMin) {
+          scannedMin = min;
+        }
+        if (Number.isFinite(max) && max > scannedMax) {
+          scannedMax = max;
+        }
+        sliceCount += 1;
+      }
+    });
+
+    if (sliceCount <= 0) {
+      throw new Error(`Layer "${layer.channelLabel}" did not decode any image planes.`);
+    }
+    normalizationByLayerKey.set(
+      layer.key,
+      computeNormalizationParametersFromScannedMinMax({
+        dataType: preparedLayer.sourceMetadata.dataType,
+        min: scannedMin,
+        max: scannedMax
+      })
+    );
   }
 
   return normalizationByLayerKey;
@@ -1320,6 +2228,58 @@ async function collectLayerMetadata({
   };
 }
 
+function collectLayerMetadataFromStreamingSources({
+  preparedLayerSources
+}: {
+  preparedLayerSources: StreamingPreparedLayerSource[];
+}): {
+  sourceMetadataByLayerKey: Map<string, LayerMetadata>;
+  layerMetadataByKey: Map<string, LayerMetadata>;
+} {
+  let referenceShape3d: { width: number; height: number; depth: number } | null = null;
+  const sourceMetadataByLayerKey = new Map<string, LayerMetadata>();
+  const layerMetadataByKey = new Map<string, LayerMetadata>();
+
+  for (const preparedLayer of preparedLayerSources) {
+    const layer = preparedLayer.layer;
+    const source = preparedLayer.sourceMetadata;
+    sourceMetadataByLayerKey.set(layer.key, {
+      width: source.width,
+      height: source.height,
+      depth: source.depth,
+      channels: source.channels,
+      dataType: source.dataType
+    });
+    layerMetadataByKey.set(layer.key, {
+      width: source.width,
+      height: source.height,
+      depth: source.depth,
+      channels: layer.isSegmentation ? 4 : source.channels,
+      dataType: layer.isSegmentation ? 'uint8' : source.dataType
+    });
+
+    if (!referenceShape3d) {
+      referenceShape3d = {
+        width: source.width,
+        height: source.height,
+        depth: source.depth
+      };
+      continue;
+    }
+    if (
+      source.width !== referenceShape3d.width ||
+      source.height !== referenceShape3d.height ||
+      source.depth !== referenceShape3d.depth
+    ) {
+      throw new Error(
+        `Channel "${layer.channelLabel}" has volume dimensions ${source.width}×${source.height}×${source.depth} that do not match the reference shape ${referenceShape3d.width}×${referenceShape3d.height}×${referenceShape3d.depth}.`
+      );
+    }
+  }
+
+  return { sourceMetadataByLayerKey, layerMetadataByKey };
+}
+
 function groupLayersByChannel(sortedLayerSources: PreprocessLayerSource[]): Map<string, PreprocessLayerSource[]> {
   const layersByChannel = new Map<string, PreprocessLayerSource[]>();
   for (const layer of sortedLayerSources) {
@@ -1343,7 +2303,8 @@ function buildManifestFromLayerMetadata({
   movieMode,
   totalVolumeCount,
   voxelResolution,
-  shardingStrategy
+  shardingStrategy,
+  preferDepthChunkOne
 }: {
   channels: ChannelExportMetadata[];
   trackSets: TrackSetExportMetadata[];
@@ -1355,6 +2316,7 @@ function buildManifestFromLayerMetadata({
   totalVolumeCount: number;
   voxelResolution: NonNullable<PreprocessedManifest['dataset']['voxelResolution']>;
   shardingStrategy: ShardingStrategy;
+  preferDepthChunkOne?: boolean;
 }): {
   manifest: PreprocessedManifest;
   layerManifestByKey: Map<string, PreprocessedLayerManifestEntry>;
@@ -1388,7 +2350,8 @@ function buildManifestFromLayerMetadata({
         layer,
         layerMetadata,
         expectedTimepoints,
-        shardingStrategy
+        shardingStrategy,
+        preferDepthChunkOne
       });
 
       const manifestLayer: PreprocessedLayerManifestEntry = {
@@ -2032,6 +2995,515 @@ async function writeLabelChunksForScale({
   }
 }
 
+type StreamingScaleWriteState = {
+  scale: PreprocessedLayerScaleManifestEntry;
+  dataDescriptor: ZarrArrayDescriptor;
+  labelsDescriptor?: ZarrArrayDescriptor;
+  chunkStatsDescriptors?: PreprocessedScaleChunkStatsZarrDescriptor;
+  histogram: Uint32Array;
+  chunkDepth: number;
+  chunkHeight: number;
+  chunkWidth: number;
+  yChunks: number;
+  xChunks: number;
+  zChunks: number;
+  nextSliceIndex: number;
+  chunkMinValues: Uint8Array | null;
+  chunkMaxValues: Uint8Array | null;
+  chunkOccupancyValues: Float32Array | null;
+};
+
+type StreamingScaleTransition = {
+  pendingDataSlice: Uint8Array | null;
+  pendingLabelSlice: Uint32Array | null;
+  sourceWidth: number;
+  sourceHeight: number;
+  sourceChannels: number;
+  expectsLabels: boolean;
+};
+
+function createStreamingScaleWriteState({
+  scale,
+  chunkStatsDescriptors
+}: {
+  scale: PreprocessedLayerScaleManifestEntry;
+  chunkStatsDescriptors?: PreprocessedScaleChunkStatsZarrDescriptor;
+}): StreamingScaleWriteState {
+  const dataDescriptor = scale.zarr.data;
+  if (dataDescriptor.chunkShape.length !== 5) {
+    throw new Error(`Data chunk shape for ${dataDescriptor.path} must have rank 5.`);
+  }
+  const [, chunkDepth, chunkHeight, chunkWidth, chunkChannels] = dataDescriptor.chunkShape;
+  if (chunkDepth !== 1) {
+    throw new Error(
+      `Streaming preprocessing requires depth chunk size of 1 for ${dataDescriptor.path}, got ${chunkDepth}.`
+    );
+  }
+  if (chunkChannels !== scale.channels) {
+    throw new Error(
+      `Data chunk channel dimension mismatch for ${dataDescriptor.path}: expected ${scale.channels}, got ${chunkChannels}.`
+    );
+  }
+  const zChunks = Math.ceil(scale.depth / chunkDepth);
+  const yChunks = Math.ceil(scale.height / chunkHeight);
+  const xChunks = Math.ceil(scale.width / chunkWidth);
+  const chunkCount = zChunks * yChunks * xChunks;
+
+  let chunkMinValues: Uint8Array | null = null;
+  let chunkMaxValues: Uint8Array | null = null;
+  let chunkOccupancyValues: Float32Array | null = null;
+  if (chunkStatsDescriptors) {
+    assertChunkStatsDescriptorMatchesGrid({
+      descriptor: chunkStatsDescriptors.min,
+      expectedTimepoints: dataDescriptor.shape[0] ?? 0,
+      zChunks,
+      yChunks,
+      xChunks,
+      expectedDataType: 'uint8',
+      label: 'min'
+    });
+    assertChunkStatsDescriptorMatchesGrid({
+      descriptor: chunkStatsDescriptors.max,
+      expectedTimepoints: dataDescriptor.shape[0] ?? 0,
+      zChunks,
+      yChunks,
+      xChunks,
+      expectedDataType: 'uint8',
+      label: 'max'
+    });
+    assertChunkStatsDescriptorMatchesGrid({
+      descriptor: chunkStatsDescriptors.occupancy,
+      expectedTimepoints: dataDescriptor.shape[0] ?? 0,
+      zChunks,
+      yChunks,
+      xChunks,
+      expectedDataType: 'float32',
+      label: 'occupancy'
+    });
+    chunkMinValues = new Uint8Array(chunkCount);
+    chunkMaxValues = new Uint8Array(chunkCount);
+    chunkOccupancyValues = new Float32Array(chunkCount);
+  }
+
+  const labelsDescriptor = scale.zarr.labels;
+  if (labelsDescriptor) {
+    if (labelsDescriptor.chunkShape.length !== 4) {
+      throw new Error(`Label chunk shape for ${labelsDescriptor.path} must have rank 4.`);
+    }
+    const [, labelsChunkDepth] = labelsDescriptor.chunkShape;
+    if (labelsChunkDepth !== 1) {
+      throw new Error(
+        `Streaming preprocessing requires depth chunk size of 1 for ${labelsDescriptor.path}, got ${labelsChunkDepth}.`
+      );
+    }
+  }
+
+  return {
+    scale,
+    dataDescriptor,
+    labelsDescriptor,
+    chunkStatsDescriptors,
+    histogram: new Uint32Array(HISTOGRAM_BINS),
+    chunkDepth,
+    chunkHeight,
+    chunkWidth,
+    yChunks,
+    xChunks,
+    zChunks,
+    nextSliceIndex: 0,
+    chunkMinValues,
+    chunkMaxValues,
+    chunkOccupancyValues
+  };
+}
+
+async function writeStreamingScaleSlice({
+  chunkWriter,
+  state,
+  timepoint,
+  dataSlice,
+  labelsSlice,
+  signal
+}: {
+  chunkWriter: ChunkWriteDispatcher;
+  state: StreamingScaleWriteState;
+  timepoint: number;
+  dataSlice: Uint8Array;
+  labelsSlice?: Uint32Array;
+  signal?: AbortSignal;
+}): Promise<void> {
+  const { scale, dataDescriptor, labelsDescriptor, histogram } = state;
+  const sliceLength = scale.width * scale.height * scale.channels;
+  if (dataSlice.length !== sliceLength) {
+    throw new Error(
+      `Scale slice length mismatch for ${dataDescriptor.path}: expected ${sliceLength}, got ${dataSlice.length}.`
+    );
+  }
+  const zIndex = state.nextSliceIndex;
+  state.nextSliceIndex += 1;
+  if (zIndex >= scale.depth) {
+    throw new Error(`Received too many slices for scale ${scale.level} (${dataDescriptor.path}).`);
+  }
+
+  for (let yChunk = 0; yChunk < state.yChunks; yChunk += 1) {
+    const yStart = chunkStart(yChunk, state.chunkHeight);
+    const yLength = chunkLength(scale.height, yStart, state.chunkHeight);
+    for (let xChunk = 0; xChunk < state.xChunks; xChunk += 1) {
+      const xStart = chunkStart(xChunk, state.chunkWidth);
+      const xLength = chunkLength(scale.width, xStart, state.chunkWidth);
+      const { chunk, stats } = extractDataChunkBytesAndComputeStatistics({
+        source: dataSlice,
+        width: scale.width,
+        height: scale.height,
+        channels: scale.channels,
+        zStart: 0,
+        zLength: 1,
+        yStart,
+        yLength,
+        xStart,
+        xLength,
+        histogram
+      });
+      await chunkWriter.writeChunk({
+        descriptor: dataDescriptor,
+        chunkCoords: [timepoint, zIndex, yChunk, xChunk, 0],
+        bytes: chunk,
+        signal
+      });
+      if (state.chunkMinValues && state.chunkMaxValues && state.chunkOccupancyValues) {
+        const chunkIndex = (zIndex * state.yChunks + yChunk) * state.xChunks + xChunk;
+        state.chunkMinValues[chunkIndex] = stats.min;
+        state.chunkMaxValues[chunkIndex] = stats.max;
+        state.chunkOccupancyValues[chunkIndex] = stats.occupancy;
+      }
+
+      if (labelsDescriptor) {
+        if (!labelsSlice) {
+          throw new Error(`Missing label slice for segmentation scale ${labelsDescriptor.path}.`);
+        }
+        const labelChunkBytes = extractLabelChunkBytes({
+          source: labelsSlice,
+          width: scale.width,
+          height: scale.height,
+          zStart: 0,
+          zLength: 1,
+          yStart,
+          yLength,
+          xStart,
+          xLength
+        });
+        await chunkWriter.writeChunk({
+          descriptor: labelsDescriptor,
+          chunkCoords: [timepoint, zIndex, yChunk, xChunk],
+          bytes: labelChunkBytes,
+          signal
+        });
+      }
+    }
+  }
+}
+
+async function finalizeStreamingScaleWriteState({
+  chunkWriter,
+  state,
+  timepoint,
+  signal
+}: {
+  chunkWriter: ChunkWriteDispatcher;
+  state: StreamingScaleWriteState;
+  timepoint: number;
+  signal?: AbortSignal;
+}): Promise<void> {
+  if (state.nextSliceIndex !== state.scale.depth) {
+    throw new Error(
+      `Scale depth mismatch for ${state.dataDescriptor.path}: expected ${state.scale.depth} slices, got ${state.nextSliceIndex}.`
+    );
+  }
+
+  if (state.chunkStatsDescriptors && state.chunkMinValues && state.chunkMaxValues && state.chunkOccupancyValues) {
+    await chunkWriter.writeChunk({
+      descriptor: state.chunkStatsDescriptors.min,
+      chunkCoords: [timepoint, 0, 0, 0],
+      bytes: state.chunkMinValues,
+      signal
+    });
+    await chunkWriter.writeChunk({
+      descriptor: state.chunkStatsDescriptors.max,
+      chunkCoords: [timepoint, 0, 0, 0],
+      bytes: state.chunkMaxValues,
+      signal
+    });
+    await chunkWriter.writeChunk({
+      descriptor: state.chunkStatsDescriptors.occupancy,
+      chunkCoords: [timepoint, 0, 0, 0],
+      bytes: encodeFloat32ArrayLE(state.chunkOccupancyValues),
+      signal
+    });
+  }
+
+  await chunkWriter.writeChunk({
+    descriptor: state.scale.zarr.histogram,
+    chunkCoords: [timepoint, 0],
+    bytes: encodeUint32ArrayLE(state.histogram),
+    signal
+  });
+}
+
+function createStreamingScaleTransition({
+  fromScale,
+  expectsLabels
+}: {
+  fromScale: PreprocessedLayerScaleManifestEntry;
+  expectsLabels: boolean;
+}): StreamingScaleTransition {
+  return {
+    pendingDataSlice: null,
+    pendingLabelSlice: null,
+    sourceWidth: fromScale.width,
+    sourceHeight: fromScale.height,
+    sourceChannels: fromScale.channels,
+    expectsLabels
+  };
+}
+
+function pushStreamingScaleTransitionSlice({
+  transition,
+  dataSlice,
+  labelsSlice
+}: {
+  transition: StreamingScaleTransition;
+  dataSlice: Uint8Array;
+  labelsSlice?: Uint32Array;
+}): { data: Uint8Array; labels?: Uint32Array } | null {
+  const xyDownsampledData = downsampleDataSliceXYByMax({
+    source: dataSlice,
+    width: transition.sourceWidth,
+    height: transition.sourceHeight,
+    channels: transition.sourceChannels
+  });
+
+  if (transition.pendingDataSlice === null) {
+    transition.pendingDataSlice = xyDownsampledData;
+    if (transition.expectsLabels) {
+      if (!labelsSlice) {
+        throw new Error('Missing segmentation labels while building streaming scale pyramid.');
+      }
+      transition.pendingLabelSlice = labelsSlice;
+    }
+    return null;
+  }
+
+  mergeDataSlicesByMaxInPlace(transition.pendingDataSlice, xyDownsampledData);
+  const outputData = transition.pendingDataSlice;
+  transition.pendingDataSlice = null;
+
+  if (!transition.expectsLabels) {
+    return { data: outputData };
+  }
+  if (!transition.pendingLabelSlice || !labelsSlice) {
+    throw new Error('Missing segmentation labels while finalizing streaming scale pyramid pair.');
+  }
+  const outputLabels = downsampleLabelSlicesByMode({
+    first: transition.pendingLabelSlice,
+    second: labelsSlice,
+    width: transition.sourceWidth,
+    height: transition.sourceHeight
+  });
+  transition.pendingLabelSlice = null;
+  return {
+    data: outputData,
+    labels: outputLabels
+  };
+}
+
+function flushStreamingScaleTransition(
+  transition: StreamingScaleTransition
+): { data: Uint8Array; labels?: Uint32Array } | null {
+  if (!transition.pendingDataSlice) {
+    return null;
+  }
+
+  const outputData = transition.pendingDataSlice;
+  transition.pendingDataSlice = null;
+
+  if (!transition.expectsLabels) {
+    return { data: outputData };
+  }
+  if (!transition.pendingLabelSlice) {
+    throw new Error('Missing pending segmentation labels while flushing streaming scale transition.');
+  }
+  const outputLabels = downsampleLabelSlicesByMode({
+    first: transition.pendingLabelSlice,
+    second: null,
+    width: transition.sourceWidth,
+    height: transition.sourceHeight
+  });
+  transition.pendingLabelSlice = null;
+  return {
+    data: outputData,
+    labels: outputLabels
+  };
+}
+
+async function writeStreamingLayerTimepoint({
+  chunkWriter,
+  preparedLayer,
+  manifestLayer,
+  sourceMetadata,
+  normalization,
+  tiffByFileCache,
+  signal,
+  timepoint
+}: {
+  chunkWriter: ChunkWriteDispatcher;
+  preparedLayer: StreamingPreparedLayerSource;
+  manifestLayer: PreprocessedLayerManifestEntry;
+  sourceMetadata: LayerMetadata;
+  normalization: NormalizationParameters | null;
+  tiffByFileCache: TiffByFileCache;
+  signal?: AbortSignal;
+  timepoint: number;
+}): Promise<void> {
+  const sortedScales = [...manifestLayer.zarr.scales].sort((left, right) => left.level - right.level);
+  if (sortedScales.length === 0) {
+    throw new Error(`Layer "${preparedLayer.layer.key}" is missing Zarr scale metadata.`);
+  }
+
+  const scaleStates = sortedScales.map((scale) =>
+    createStreamingScaleWriteState({
+      scale,
+      chunkStatsDescriptors: scale.zarr.chunkStats
+    })
+  );
+  const transitions = sortedScales.slice(0, -1).map((scale, index) => {
+    const nextScale = sortedScales[index + 1];
+    if (!nextScale) {
+      throw new Error(`Missing next scale while preparing streaming transition for layer "${preparedLayer.layer.key}".`);
+    }
+    return createStreamingScaleTransition({
+      fromScale: scale,
+      expectsLabels: Boolean(nextScale.zarr.labels)
+    });
+  });
+
+  const processScaleSlice = async (
+    scaleIndex: number,
+    dataSlice: Uint8Array,
+    labelsSlice?: Uint32Array
+  ): Promise<void> => {
+    const state = scaleStates[scaleIndex];
+    if (!state) {
+      throw new Error(`Missing streaming scale state at index ${scaleIndex}.`);
+    }
+    await writeStreamingScaleSlice({
+      chunkWriter,
+      state,
+      timepoint,
+      dataSlice,
+      labelsSlice,
+      signal
+    });
+    const transition = transitions[scaleIndex];
+    if (!transition) {
+      return;
+    }
+    const produced = pushStreamingScaleTransitionSlice({
+      transition,
+      dataSlice,
+      labelsSlice
+    });
+    if (produced) {
+      await processScaleSlice(scaleIndex + 1, produced.data, produced.labels);
+    }
+  };
+
+  const timepointSource = preparedLayer.getTimepointSource(timepoint);
+
+  if (preparedLayer.layer.isSegmentation) {
+    if (sourceMetadata.channels !== 1) {
+      throw new Error(
+        `Segmentation layer "${preparedLayer.layer.channelLabel}" must decode to exactly one source channel.`
+      );
+    }
+
+    let maxLabel = 0;
+    await forEachSliceInStreamingTimepointSource({
+      layer: preparedLayer.layer,
+      timepoint,
+      source: timepointSource,
+      expectedMetadata: sourceMetadata,
+      tiffByFileCache,
+      signal,
+      onSlice: (slice) => {
+        for (let i = 0; i < slice.length; i += 1) {
+          const label = toSegmentationLabelId(slice[i] as number);
+          if (label > maxLabel) {
+            maxLabel = label;
+          }
+        }
+      }
+    });
+
+    const colorTable = createSegmentationColorTable(
+      maxLabel,
+      createSegmentationSeed(preparedLayer.layer.key, timepoint)
+    );
+    await forEachSliceInStreamingTimepointSource({
+      layer: preparedLayer.layer,
+      timepoint,
+      source: timepointSource,
+      expectedMetadata: sourceMetadata,
+      tiffByFileCache,
+      signal,
+      onSlice: async (slice) => {
+        const colorized = colorizeSegmentationSlice({
+          source: slice,
+          colorTable
+        });
+        await processScaleSlice(0, colorized.normalized, colorized.labels);
+      }
+    });
+  } else {
+    const resolvedNormalization = normalization ?? computeNormalizationParametersFromScannedMinMax({
+      dataType: sourceMetadata.dataType,
+      min: 0,
+      max: 1
+    });
+    await forEachSliceInStreamingTimepointSource({
+      layer: preparedLayer.layer,
+      timepoint,
+      source: timepointSource,
+      expectedMetadata: sourceMetadata,
+      tiffByFileCache,
+      signal,
+      onSlice: async (slice) => {
+        const normalizedSlice = normalizeSliceToUint8({
+          source: slice,
+          dataType: sourceMetadata.dataType,
+          parameters: resolvedNormalization
+        });
+        await processScaleSlice(0, normalizedSlice);
+      }
+    });
+  }
+
+  for (let index = 0; index < transitions.length; index += 1) {
+    const produced = flushStreamingScaleTransition(transitions[index]!);
+    if (produced) {
+      await processScaleSlice(index + 1, produced.data, produced.labels);
+    }
+  }
+
+  for (const state of scaleStates) {
+    await finalizeStreamingScaleWriteState({
+      chunkWriter,
+      state,
+      timepoint,
+      signal
+    });
+  }
+}
+
 function downsampleDataByMaxPooling(volume: {
   width: number;
   height: number;
@@ -2347,6 +3819,63 @@ async function writePrecomputedLayerTimepointScales({
   }
 }
 
+async function writeLayerVolumesFor3dStreaming({
+  chunkWriter,
+  preparedLayer,
+  manifestLayer,
+  sourceMetadata,
+  normalizationByLayerKey,
+  tiffByFileCache,
+  signal,
+  onProgress,
+  totalVolumeCount,
+  progressState
+}: {
+  chunkWriter: ChunkWriteDispatcher;
+  preparedLayer: StreamingPreparedLayerSource;
+  manifestLayer: PreprocessedLayerManifestEntry;
+  sourceMetadata: LayerMetadata;
+  normalizationByLayerKey: Map<string, NormalizationParameters>;
+  tiffByFileCache: TiffByFileCache;
+  signal?: AbortSignal;
+  onProgress?: (progress: PreprocessDatasetProgress) => void;
+  totalVolumeCount: number;
+  progressState: { processedVolumes: number };
+}): Promise<void> {
+  const layer = preparedLayer.layer;
+  const normalization = layer.isSegmentation
+    ? null
+    : normalizationByLayerKey.get(layer.key) ??
+      computeNormalizationParametersFromScannedMinMax({
+        dataType: sourceMetadata.dataType,
+        min: 0,
+        max: 1
+      });
+
+  for (let timepoint = 0; timepoint < preparedLayer.timepointCount; timepoint += 1) {
+    throwIfAborted(signal);
+    await writeStreamingLayerTimepoint({
+      chunkWriter,
+      preparedLayer,
+      manifestLayer,
+      sourceMetadata,
+      normalization,
+      tiffByFileCache,
+      signal,
+      timepoint
+    });
+
+    progressState.processedVolumes += 1;
+    onProgress?.({
+      stage: 'write-volumes',
+      processedVolumes: progressState.processedVolumes,
+      totalVolumes: totalVolumeCount,
+      layerKey: layer.key,
+      timepoint
+    });
+  }
+}
+
 async function writeLayerVolumesFor3d({
   chunkWriter,
   preparedLayer,
@@ -2473,40 +4002,93 @@ export async function preprocessDatasetToStorage({
     throw new Error('No TIFF files were provided for preprocessing.');
   }
 
-  const volumeLoader = await resolveVolumeLoader(providedVolumeLoader);
-  const decodedVolumeCacheByLayerKey: DecodedVolumeCacheByLayerKey = new Map();
   const resolvedInputInterpretation = resolveInputInterpretation(inputInterpretation);
-  const preparedLayerSources = await prepareLayerSources({
-    sortedLayerSources,
-    inputInterpretation: resolvedInputInterpretation,
-    volumeLoader,
-    decodedVolumeCacheByLayerKey,
-    signal
-  });
-  const preparedLayerByKey = new Map<string, PreparedLayerSource>(
-    preparedLayerSources.map((preparedLayer) => [preparedLayer.layer.key, preparedLayer])
-  );
-  throwIfAborted(signal);
-  const { expectedTimepoints } = await computeLayerTimepointMetadata({
-    preparedLayerSources,
-    signal
-  });
-  const representativeTimepoint = Math.floor(expectedTimepoints / 2);
-  const normalizationByLayerKey = await computeLayerRepresentativeNormalization({
-    preparedLayerSources,
-    representativeTimepoint,
-    signal,
-    onProgress
-  });
-  const { sourceMetadataByLayerKey, layerMetadataByKey } = await collectLayerMetadata({
-    preparedLayerSources,
-    signal
-  });
+  const requestedExecutionMode = resolvePreprocessExecutionMode(processingStrategy);
+  const streamingThresholdBytes = resolvePreprocessStreamingThresholdBytes(processingStrategy);
+  const canUseStreamingPipeline = typeof FileReader !== 'undefined' && !providedVolumeLoader;
+  let datasetExecutionMode: ResolvedPreprocessExecutionMode = 'in-memory';
+  let streamingPreparedLayerSources: StreamingPreparedLayerSource[] = [];
+  if (requestedExecutionMode !== 'in-memory' && canUseStreamingPipeline) {
+    const preparedStreaming = await prepareStreamingLayerSources({
+      sortedLayerSources,
+      inputInterpretation: resolvedInputInterpretation,
+      signal
+    });
+    streamingPreparedLayerSources = preparedStreaming.preparedLayerSources;
+    datasetExecutionMode = resolveDatasetExecutionMode({
+      requestedMode: requestedExecutionMode,
+      estimatedMaxLayerVolumeBytes: preparedStreaming.estimatedMaxLayerVolumeBytes,
+      streamingThresholdBytes
+    });
+  }
+
+  let expectedTimepoints: number;
+  let normalizationByLayerKey: Map<string, NormalizationParameters>;
+  let sourceMetadataByLayerKey: Map<string, LayerMetadata>;
+  let layerMetadataByKey: Map<string, LayerMetadata>;
+  let representativeTimepoint = 0;
+  let preparedLayerByKey: Map<string, PreparedLayerSource> | null = null;
+  let streamingPreparedLayerByKey: Map<string, StreamingPreparedLayerSource> | null = null;
+  let tiffByFileCache: TiffByFileCache | null = null;
+
+  if (datasetExecutionMode === 'in-memory') {
+    const volumeLoader = await resolveVolumeLoader(providedVolumeLoader);
+    const decodedVolumeCacheByLayerKey: DecodedVolumeCacheByLayerKey = new Map();
+    const preparedLayerSources = await prepareLayerSources({
+      sortedLayerSources,
+      inputInterpretation: resolvedInputInterpretation,
+      volumeLoader,
+      decodedVolumeCacheByLayerKey,
+      signal
+    });
+    preparedLayerByKey = new Map<string, PreparedLayerSource>(
+      preparedLayerSources.map((preparedLayer) => [preparedLayer.layer.key, preparedLayer])
+    );
+    throwIfAborted(signal);
+    ({ expectedTimepoints } = await computeLayerTimepointMetadata({
+      preparedLayerSources,
+      signal
+    }));
+    representativeTimepoint = Math.floor(expectedTimepoints / 2);
+    normalizationByLayerKey = await computeLayerRepresentativeNormalization({
+      preparedLayerSources,
+      representativeTimepoint,
+      signal,
+      onProgress
+    });
+    ({ sourceMetadataByLayerKey, layerMetadataByKey } = await collectLayerMetadata({
+      preparedLayerSources,
+      signal
+    }));
+  } else {
+    streamingPreparedLayerByKey = new Map<string, StreamingPreparedLayerSource>(
+      streamingPreparedLayerSources.map((preparedLayer) => [preparedLayer.layer.key, preparedLayer])
+    );
+    throwIfAborted(signal);
+    ({ expectedTimepoints } = await computeLayerTimepointMetadata({
+      preparedLayerSources: streamingPreparedLayerSources,
+      signal
+    }));
+    representativeTimepoint = Math.floor(expectedTimepoints / 2);
+    tiffByFileCache = new Map<File, Promise<any>>();
+    normalizationByLayerKey = await computeLayerRepresentativeNormalizationForStreaming({
+      preparedLayerSources: streamingPreparedLayerSources,
+      representativeTimepoint,
+      tiffByFileCache,
+      signal,
+      onProgress
+    });
+    ({ sourceMetadataByLayerKey, layerMetadataByKey } = collectLayerMetadataFromStreamingSources({
+      preparedLayerSources: streamingPreparedLayerSources
+    }));
+  }
+
   const totalVolumeCount = expectedTimepoints;
   const totalWritableVolumes = expectedTimepoints * sortedLayerSources.length;
   const layersByChannel = groupLayersByChannel(sortedLayerSources);
   const shardingStrategy = resolveShardingStrategy(storageStrategy);
-  const workerizeNormalizationDownsample = resolveWorkerizeNormalizationDownsample(processingStrategy);
+  const workerizeNormalizationDownsample =
+    datasetExecutionMode === 'in-memory' && resolveWorkerizeNormalizationDownsample(processingStrategy);
   const { manifest, layerManifestByKey, trackEntriesByTrackSetId } = buildManifestFromLayerMetadata({
     channels,
     trackSets,
@@ -2517,7 +4099,8 @@ export async function preprocessDatasetToStorage({
     movieMode,
     totalVolumeCount,
     voxelResolution,
-    shardingStrategy
+    shardingStrategy,
+    preferDepthChunkOne: datasetExecutionMode === 'streaming'
   });
 
   const zarrStore = createZarrStoreFromPreprocessedStorage(storage);
@@ -2544,23 +4127,45 @@ export async function preprocessDatasetToStorage({
       if (!sourceMetadata) {
         throw new Error(`Missing source metadata for layer "${layer.key}".`);
       }
-      const preparedLayer = preparedLayerByKey.get(layer.key);
-      if (!preparedLayer) {
-        throw new Error(`Missing prepared layer for "${layer.key}".`);
+      if (datasetExecutionMode === 'in-memory') {
+        const preparedLayer = preparedLayerByKey?.get(layer.key);
+        if (!preparedLayer) {
+          throw new Error(`Missing prepared layer for "${layer.key}".`);
+        }
+        await writeLayerVolumesFor3d({
+          chunkWriter,
+          preparedLayer,
+          manifestLayer,
+          sourceMetadata,
+          representativeTimepoint,
+          normalizationByLayerKey,
+          workerizeNormalizationDownsample,
+          signal,
+          onProgress,
+          totalVolumeCount: totalWritableVolumes,
+          progressState
+        });
+      } else {
+        const preparedLayer = streamingPreparedLayerByKey?.get(layer.key);
+        if (!preparedLayer) {
+          throw new Error(`Missing streaming prepared layer for "${layer.key}".`);
+        }
+        if (!tiffByFileCache) {
+          throw new Error('Missing TIFF cache for streaming preprocessing.');
+        }
+        await writeLayerVolumesFor3dStreaming({
+          chunkWriter,
+          preparedLayer,
+          manifestLayer,
+          sourceMetadata,
+          normalizationByLayerKey,
+          tiffByFileCache,
+          signal,
+          onProgress,
+          totalVolumeCount: totalWritableVolumes,
+          progressState
+        });
       }
-      await writeLayerVolumesFor3d({
-        chunkWriter,
-        preparedLayer,
-        manifestLayer,
-        sourceMetadata,
-        representativeTimepoint,
-        normalizationByLayerKey,
-        workerizeNormalizationDownsample,
-        signal,
-        onProgress,
-        totalVolumeCount: totalWritableVolumes,
-        progressState
-      });
     }
   }
   await chunkWriter.flush(signal);

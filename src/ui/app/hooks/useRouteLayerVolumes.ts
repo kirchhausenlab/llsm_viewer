@@ -16,6 +16,7 @@ import type {
   VolumeProviderDiagnostics
 } from '../../../core/volumeProvider';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
+import type { PreprocessedLayerScaleManifestEntry } from '../../../shared/utils/preprocessedDataset/types';
 import type { LoadedDatasetLayer, StagedPreprocessedExperiment } from '../../../hooks/dataset';
 
 type SetLaunchProgressOptions = {
@@ -61,6 +62,8 @@ type RouteLayerVolumesState = {
 
 const DIAGNOSTICS_POLL_INTERVAL_MS = 500;
 const MAX_BRICK_ATLAS_DEPTH_HINT = 2048;
+const MAX_BRICK_ATLAS_BYTES_HINT = 512 * 1024 * 1024;
+const MAX_VOLUME_BYTES_HINT = 512 * 1024 * 1024;
 
 function isAbortLikeError(error: unknown): boolean {
   return (
@@ -90,6 +93,30 @@ function throwIfAborted(signal: AbortSignal | null | undefined): void {
     throw signal.reason;
   }
   throw createAbortError();
+}
+
+function isAllocationLikeError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const message = error.message.toLowerCase();
+  return (
+    message.includes('array buffer allocation failed') ||
+    message.includes('allocation failed') ||
+    message.includes('invalid typed array length') ||
+    message.includes('out of memory') ||
+    message.includes('cannot allocate')
+  );
+}
+
+function getTextureChannelCountForSourceChannels(sourceChannels: number): number {
+  if (sourceChannels <= 1) {
+    return 1;
+  }
+  if (sourceChannels === 2) {
+    return 2;
+  }
+  return 4;
 }
 
 function selectDeterministicLayerKey(layers: ReadonlyArray<{ key: string }>): string | null {
@@ -194,6 +221,23 @@ export function useRouteLayerVolumes({
     }
     return map;
   }, [preprocessedExperiment?.manifest]);
+  const layerScalesByLevelByKey = useMemo(() => {
+    const map = new Map<string, Map<number, PreprocessedLayerScaleManifestEntry>>();
+    const manifest = preprocessedExperiment?.manifest;
+    if (!manifest) {
+      return map;
+    }
+    for (const channel of manifest.dataset.channels) {
+      for (const layer of channel.layers) {
+        const byLevel = new Map<number, PreprocessedLayerScaleManifestEntry>();
+        for (const scale of layer.zarr.scales) {
+          byLevel.set(scale.level, scale);
+        }
+        map.set(layer.key, byLevel);
+      }
+    }
+    return map;
+  }, [preprocessedExperiment?.manifest]);
   const resolvePreferredAtlasScaleLevel = useCallback(
     (layerKey: string): number => {
       const levels = layerScaleLevelsByKey.get(layerKey) ?? [0];
@@ -250,40 +294,105 @@ export function useRouteLayerVolumes({
           candidateScaleLevels.push(preferredScaleLevel);
         }
 
+        let lastError: unknown = null;
         for (const scaleLevel of candidateScaleLevels) {
           throwIfAborted(signal);
-          const atlas = await volumeProvider!.getBrickAtlas!(layerKey, timeIndex, { scaleLevel, signal });
-          throwIfAborted(signal);
-          if (!atlas.enabled) {
-            continue;
+          const scale = layerScalesByLevelByKey.get(layerKey)?.get(scaleLevel) ?? null;
+          const sourceChannels = scale?.channels ?? 1;
+          const textureChannels = getTextureChannelCountForSourceChannels(sourceChannels);
+
+          if (typeof volumeProvider?.getBrickPageTable === 'function') {
+            const pageTable = await volumeProvider.getBrickPageTable(layerKey, timeIndex, { scaleLevel, signal });
+            throwIfAborted(signal);
+            const [chunkDepth, chunkHeight, chunkWidth] = pageTable.chunkShape;
+            const estimatedAtlasDepth = chunkDepth * pageTable.occupiedBrickCount;
+            const estimatedAtlasBytes = chunkWidth * chunkHeight * estimatedAtlasDepth * textureChannels;
+            if (estimatedAtlasDepth > maxBrickAtlasDepthHint || estimatedAtlasBytes > MAX_BRICK_ATLAS_BYTES_HINT) {
+              continue;
+            }
           }
-          if (atlas.depth > maxBrickAtlasDepthHint) {
-            continue;
+
+          try {
+            const atlas = await volumeProvider!.getBrickAtlas!(layerKey, timeIndex, { scaleLevel, signal });
+            throwIfAborted(signal);
+            if (!atlas.enabled) {
+              continue;
+            }
+            if (atlas.depth > maxBrickAtlasDepthHint) {
+              continue;
+            }
+            if (atlas.data.byteLength > MAX_BRICK_ATLAS_BYTES_HINT) {
+              continue;
+            }
+            return {
+              volume: null,
+              pageTable: atlas.pageTable,
+              brickAtlas: atlas
+            };
+          } catch (error) {
+            if (isAllocationLikeError(error)) {
+              lastError = error;
+              continue;
+            }
+            throw error;
           }
-          return {
-            volume: null,
-            pageTable: atlas.pageTable,
-            brickAtlas: atlas
-          };
         }
 
+        if (lastError instanceof Error) {
+          throw lastError;
+        }
         throw new Error(`Brick atlas is unavailable for layer "${layerKey}" at timepoint ${timeIndex}.`);
       }
 
-      const [volume, pageTable] = await Promise.all([
-        volumeProvider!.getVolume(layerKey, timeIndex, { scaleLevel: 0, signal }),
-        typeof volumeProvider?.getBrickPageTable === 'function'
-          ? volumeProvider.getBrickPageTable(layerKey, timeIndex, { scaleLevel: 0, signal })
-          : Promise.resolve(null)
-      ]);
-      throwIfAborted(signal);
-      return {
-        volume,
-        pageTable,
-        brickAtlas: null
-      };
+      const knownLevels = layerScaleLevelsByKey.get(layerKey) ?? [0];
+      const candidateScaleLevels = knownLevels.filter((level) => level >= 0);
+      if (candidateScaleLevels.length === 0) {
+        candidateScaleLevels.push(0);
+      }
+
+      let lastVolumeError: unknown = null;
+      for (let index = 0; index < candidateScaleLevels.length; index += 1) {
+        const scaleLevel = candidateScaleLevels[index] ?? 0;
+        const isLastCandidate = index === candidateScaleLevels.length - 1;
+        const scale = layerScalesByLevelByKey.get(layerKey)?.get(scaleLevel) ?? null;
+        const estimatedVolumeBytes = scale ? scale.width * scale.height * scale.depth * scale.channels : 0;
+        if (!isLastCandidate && estimatedVolumeBytes > MAX_VOLUME_BYTES_HINT) {
+          continue;
+        }
+
+        try {
+          const [volume, pageTable] = await Promise.all([
+            volumeProvider!.getVolume(layerKey, timeIndex, { scaleLevel, signal }),
+            typeof volumeProvider?.getBrickPageTable === 'function'
+              ? volumeProvider.getBrickPageTable(layerKey, timeIndex, { scaleLevel, signal })
+              : Promise.resolve(null)
+          ]);
+          throwIfAborted(signal);
+          return {
+            volume,
+            pageTable,
+            brickAtlas: null
+          };
+        } catch (error) {
+          if (isAllocationLikeError(error)) {
+            lastVolumeError = error;
+            continue;
+          }
+          throw error;
+        }
+      }
+      if (lastVolumeError instanceof Error) {
+        throw lastVolumeError;
+      }
+      throw new Error(`Volume is unavailable for layer "${layerKey}" at timepoint ${timeIndex}.`);
     },
-    [layerScaleLevelsByKey, maxBrickAtlasDepthHint, resolvePreferredAtlasScaleLevel, volumeProvider]
+    [
+      layerScaleLevelsByKey,
+      layerScalesByLevelByKey,
+      maxBrickAtlasDepthHint,
+      resolvePreferredAtlasScaleLevel,
+      volumeProvider
+    ]
   );
 
   const playbackLayerKeys = useMemo(() => {
