@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
 import type { FollowedVoxelTarget, MovementState } from '../VolumeViewer.types';
+import type { VolumeCamera } from './cameraTypes';
 
 type TrackCameraPresenterProps = {
   followedTrackId: string | null;
@@ -13,7 +14,7 @@ type TrackCameraPresenterProps = {
   computeVoxelWorldPosition: (target: FollowedVoxelTarget) => THREE.Vector3 | null;
   movementStateRef: MutableRefObject<MovementState | null>;
   controlsRef: MutableRefObject<OrbitControls | null>;
-  cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
+  cameraRef: MutableRefObject<VolumeCamera | null>;
   rotationTargetRef: MutableRefObject<THREE.Vector3 | null>;
   followTargetOffsetRef: MutableRefObject<THREE.Vector3 | null>;
   previousFollowTargetKeyRef: MutableRefObject<string | null>;

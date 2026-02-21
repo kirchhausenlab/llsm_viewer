@@ -3,6 +3,9 @@ import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
 import { createVolumeRenderContext, type VolumeRenderContext } from '../../../hooks/useVolumeRenderSetup';
+import type { ProjectionMode } from '../../../types/projection';
+import type { VolumeCamera } from './cameraTypes';
+import { isOrthographicVolumeCamera, isPerspectiveVolumeCamera } from './cameraTypes';
 import type { MovementState, TrackLineResource } from '../VolumeViewer.types';
 
 const MOVEMENT_KEY_MAP: Record<string, keyof MovementState> = {
@@ -33,6 +36,7 @@ type UseCameraControlsParams = {
   trackLinesRef: MutableRefObject<Map<string, TrackLineResource>>;
   followTargetActiveRef: MutableRefObject<boolean>;
   setHasMeasured: (hasMeasured: boolean) => void;
+  projectionMode: ProjectionMode;
   enableKeyboardNavigation?: boolean;
 };
 
@@ -40,12 +44,13 @@ export function useCameraControls({
   trackLinesRef,
   followTargetActiveRef,
   setHasMeasured,
+  projectionMode,
   enableKeyboardNavigation = true,
 }: UseCameraControlsParams) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
-  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const cameraRef = useRef<VolumeCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const rotationTargetRef = useRef(new THREE.Vector3());
   const defaultViewStateRef = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
@@ -87,8 +92,20 @@ export function useCameraControls({
         resource.outlineMaterial.needsUpdate = true;
       }
     }
-    cameraInstance.aspect = width / height;
-    cameraInstance.updateProjectionMatrix();
+    const safeAspect = Math.max(width, 1) / Math.max(height, 1);
+    if (isPerspectiveVolumeCamera(cameraInstance)) {
+      cameraInstance.aspect = safeAspect;
+      cameraInstance.updateProjectionMatrix();
+    } else if (isOrthographicVolumeCamera(cameraInstance)) {
+      const frustumHeight = Math.max(Math.abs(cameraInstance.top - cameraInstance.bottom), 1e-3);
+      const halfHeight = frustumHeight * 0.5;
+      const halfWidth = halfHeight * safeAspect;
+      cameraInstance.left = -halfWidth;
+      cameraInstance.right = halfWidth;
+      cameraInstance.top = halfHeight;
+      cameraInstance.bottom = -halfHeight;
+      cameraInstance.updateProjectionMatrix();
+    }
   }, [setHasMeasured, trackLinesRef]);
 
   const worldUp = useMemo(() => new THREE.Vector3(0, 1, 0), []);
@@ -114,7 +131,7 @@ export function useCameraControls({
   const KEYBOARD_LOOK_SENSITIVITY = 0.02;
 
   const applyKeyboardMovement = useCallback(
-    (renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera, controls: OrbitControls) => {
+    (renderer: THREE.WebGLRenderer, camera: VolumeCamera, controls: OrbitControls) => {
       if (renderer.xr.isPresenting) {
         return;
       }
@@ -204,7 +221,7 @@ export function useCameraControls({
   );
 
   const applyKeyboardRotation = useCallback(
-    (renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera, controls: OrbitControls) => {
+    (renderer: THREE.WebGLRenderer, camera: VolumeCamera, controls: OrbitControls) => {
       if (renderer.xr.isPresenting) {
         return;
       }
@@ -328,13 +345,13 @@ export function useCameraControls({
   );
 
   const initializeRenderContext = useCallback((container: HTMLElement) => {
-    const renderContext = createVolumeRenderContext(container);
+    const renderContext = createVolumeRenderContext(container, projectionMode);
     rendererRef.current = renderContext.renderer;
     sceneRef.current = renderContext.scene;
     cameraRef.current = renderContext.camera;
     controlsRef.current = renderContext.controls;
     return renderContext;
-  }, []);
+  }, [projectionMode]);
 
   useEffect(() => {
     if (!enableKeyboardNavigation) {

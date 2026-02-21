@@ -5,10 +5,11 @@ import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
 import type { VolumeViewerProps } from '../VolumeViewer.types';
 import { VR_VOLUME_BASE_OFFSET } from './vr';
+import type { VolumeCamera } from './cameraTypes';
 
 type UseVolumeViewerResetsParams = {
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
-  cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
+  cameraRef: MutableRefObject<VolumeCamera | null>;
   controlsRef: MutableRefObject<OrbitControls | null>;
   defaultViewStateRef: MutableRefObject<{
     position: THREE.Vector3;

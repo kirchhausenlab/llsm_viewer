@@ -26,15 +26,18 @@ import {
   FALLBACK_SEGMENTATION_LABEL_TEXTURE,
 } from './fallbackTextures';
 import { RENDER_STYLE_SLICED, type LayerSettings } from '../../../state/layerSettings';
+import type { ProjectionMode } from '../../../types/projection';
+import { isOrthographicVolumeCamera, isPerspectiveVolumeCamera } from './cameraTypes';
 
 type UseVolumeResourcesParams = {
   layers: import('../VolumeViewer.types').VolumeViewerProps['layers'];
   primaryVolume: NormalizedVolume | null;
+  projectionMode?: ProjectionMode;
   isAdditiveBlending: boolean;
   renderContextRevision: number;
   rendererRef?: MutableRefObject<THREE.WebGLRenderer | null>;
   sceneRef: MutableRefObject<THREE.Scene | null>;
-  cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
+  cameraRef: MutableRefObject<THREE.Camera | null>;
   controlsRef: MutableRefObject<OrbitControls | null>;
   rotationTargetRef: MutableRefObject<THREE.Vector3>;
   defaultViewStateRef: MutableRefObject<{ position: THREE.Vector3; target: THREE.Vector3 } | null>;
@@ -268,11 +271,16 @@ function assignVolumeMeshOnBeforeRender(
     const shaderMaterial = mesh.material as THREE.ShaderMaterial;
     const uniforms = shaderMaterial.uniforms as ShaderUniformMap | undefined;
     const cameraUniform = uniforms?.u_cameraPos?.value as THREE.Vector3 | undefined;
+    const projectionUniform = uniforms?.u_projectionMode as { value: number } | undefined;
     if (cameraUniform) {
       worldCameraPosition.setFromMatrixPosition(renderCamera.matrixWorld);
       localCameraPosition.copy(worldCameraPosition);
       mesh.worldToLocal(localCameraPosition);
       cameraUniform.copy(localCameraPosition);
+    }
+    if (projectionUniform) {
+      projectionUniform.value =
+        (renderCamera as THREE.OrthographicCamera).isOrthographicCamera ? 1 : 0;
     }
     if (uniforms) {
       applySlicePlaneUniforms(uniforms, layer);
@@ -1556,6 +1564,7 @@ function resolveLayerRenderSource(
 export function useVolumeResources({
   layers,
   primaryVolume,
+  projectionMode = 'perspective',
   isAdditiveBlending,
   renderContextRevision,
   rendererRef,
@@ -1602,6 +1611,7 @@ export function useVolumeResources({
   const volumePitchRef = providedVolumePitchRef ?? useRef(0);
   const volumeRootRotatedCenterTempRef =
     providedVolumeRootRotatedCenterTempRef ?? useRef(new THREE.Vector3());
+  const lastProjectionModeRef = useRef<ProjectionMode | null>(null);
 
   const getColormapTexture = useCallback((color: string) => {
     const normalized = normalizeHexColor(color, DEFAULT_LAYER_COLOR);
@@ -1731,7 +1741,11 @@ export function useVolumeResources({
     }
 
     const { width, height, depth } = referenceSource;
+    const projectionModeChanged = lastProjectionModeRef.current !== projectionMode;
+    lastProjectionModeRef.current = projectionMode;
+
     const dimensionsChanged =
+      projectionModeChanged ||
       !currentDimensionsRef.current ||
       currentDimensionsRef.current.width !== width ||
       currentDimensionsRef.current.height !== height ||
@@ -1745,17 +1759,35 @@ export function useVolumeResources({
       const maxDimension = Math.max(width, height, depth);
       const scale = 1 / maxDimension;
       const boundingRadius = Math.sqrt(width * width + height * height + depth * depth) * scale * 0.5;
-      const fovInRadians = THREE.MathUtils.degToRad(camera.fov * 0.5);
-      const distance = boundingRadius / Math.sin(fovInRadians);
-      const safeDistance = Number.isFinite(distance) ? distance * 1.2 : 2.5;
-      const nearDistance = Math.max(0.0001, boundingRadius * 0.00025);
-      const farDistance = Math.max(safeDistance * 5, boundingRadius * 10);
-      if (camera.near !== nearDistance || camera.far !== farDistance) {
-        camera.near = nearDistance;
-        camera.far = farDistance;
+      if (isPerspectiveVolumeCamera(camera)) {
+        const fovInRadians = THREE.MathUtils.degToRad(camera.fov * 0.5);
+        const distance = boundingRadius / Math.sin(fovInRadians);
+        const safeDistance = Number.isFinite(distance) ? distance * 1.2 : 2.5;
+        const nearDistance = Math.max(0.0001, boundingRadius * 0.00025);
+        const farDistance = Math.max(safeDistance * 5, boundingRadius * 10);
+        if (camera.near !== nearDistance || camera.far !== farDistance) {
+          camera.near = nearDistance;
+          camera.far = farDistance;
+          camera.updateProjectionMatrix();
+        }
+        camera.position.set(0, 0, -safeDistance);
+      } else if (isOrthographicVolumeCamera(camera)) {
+        const renderer = rendererRef?.current;
+        const viewportWidth = renderer?.domElement?.clientWidth ?? 1;
+        const viewportHeight = renderer?.domElement?.clientHeight ?? 1;
+        const safeAspect = Math.max(viewportWidth, 1) / Math.max(viewportHeight, 1);
+        const halfHeight = Math.max(boundingRadius * 1.3, 0.5);
+        const halfWidth = halfHeight * safeAspect;
+        camera.left = -halfWidth;
+        camera.right = halfWidth;
+        camera.top = halfHeight;
+        camera.bottom = -halfHeight;
+        const safeDistance = Math.max(boundingRadius * 2.5, 2.5);
+        camera.near = 0.0001;
+        camera.far = Math.max(1000, safeDistance * 5 + boundingRadius * 20);
         camera.updateProjectionMatrix();
+        camera.position.set(0, 0, -safeDistance);
       }
-      camera.position.set(0, 0, -safeDistance);
       const rotationTarget = rotationTargetRef.current;
       rotationTarget.set(0, 0, 0);
       controls.target.copy(rotationTarget);
@@ -1929,6 +1961,9 @@ export function useVolumeResources({
           uniforms.u_invert.value = layer.invert ? 1 : 0;
           uniforms.u_stepScale.value = volumeStepScaleRef.current;
           uniforms.u_nearestSampling.value = effectiveSamplingMode === 'nearest' ? 1 : 0;
+          if (uniforms.u_projectionMode) {
+            uniforms.u_projectionMode.value = projectionMode === 'orthographic' ? 1 : 0;
+          }
           applyAdaptiveLodUniforms(uniforms as ShaderUniformMap, effectiveSamplingMode);
           applyBeerLambertUniforms(uniforms as ShaderUniformMap, layer);
           applySlicePlaneUniforms(uniforms as ShaderUniformMap, slicePlaneState);
@@ -2210,6 +2245,9 @@ export function useVolumeResources({
         if (materialUniforms.u_nearestSampling) {
           materialUniforms.u_nearestSampling.value = effectiveSamplingMode === 'nearest' ? 1 : 0;
         }
+        if (materialUniforms.u_projectionMode) {
+          materialUniforms.u_projectionMode.value = projectionMode === 'orthographic' ? 1 : 0;
+        }
         applyAdaptiveLodUniforms(materialUniforms, effectiveSamplingMode);
         applyBeerLambertUniforms(materialUniforms, layer);
 
@@ -2427,6 +2465,7 @@ export function useVolumeResources({
     trackGroupRef,
     rendererRef,
     sceneRef,
+    projectionMode,
   ]);
 
   useEffect(() => {

@@ -4,7 +4,7 @@ import type BrightnessContrastHistogram from '../BrightnessContrastHistogram';
 import type FloatingWindow from '../../widgets/FloatingWindow';
 import type PlotSettingsWindow from '../../widgets/PlotSettingsWindow';
 import type SelectedTracksWindow from '../../widgets/SelectedTracksWindow';
-import type { VolumeViewerProps } from '../VolumeViewer.types';
+import type { ProjectionMode, VolumeViewerProps } from '../VolumeViewer.types';
 import type { LoadedDatasetLayer } from '../../../hooks/dataset';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import type { VolumeBrickAtlas } from '../../../core/volumeProvider';
@@ -41,6 +41,10 @@ export type ModeControlsProps = {
   onSamplingModeToggle: () => void;
   blendingMode: 'alpha' | 'additive';
   onBlendingModeToggle: () => void;
+  projectionMode: ProjectionMode;
+  onProjectionModeToggle: () => void;
+  projectionModeToggleDisabled?: boolean;
+  projectionModeToggleTitle?: string;
 };
 
 export type PlaybackControlsProps = {

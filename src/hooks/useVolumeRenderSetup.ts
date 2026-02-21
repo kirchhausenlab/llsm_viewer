@@ -1,16 +1,21 @@
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import * as THREE from 'three';
+import type { ProjectionMode } from '../types/projection';
+import type { VolumeCamera } from '../components/viewers/volume-viewer/cameraTypes';
 
 export type VolumeRenderContext = {
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
-  camera: THREE.PerspectiveCamera;
+  camera: VolumeCamera;
   controls: OrbitControls;
 };
 
 const MAX_RENDERER_PIXEL_RATIO = 2;
 
-export function createVolumeRenderContext(container: HTMLElement): VolumeRenderContext {
+export function createVolumeRenderContext(
+  container: HTMLElement,
+  projectionMode: ProjectionMode = 'perspective',
+): VolumeRenderContext {
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
     alpha: true,
@@ -32,12 +37,23 @@ export function createVolumeRenderContext(container: HTMLElement): VolumeRenderC
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(
-    38,
-    container.clientWidth / container.clientHeight,
-    0.0001,
-    1000,
-  );
+  const safeHeight = Math.max(container.clientHeight, 1);
+  const safeAspect = Math.max(container.clientWidth, 1) / safeHeight;
+  const camera =
+    projectionMode === 'orthographic'
+      ? (() => {
+          const halfHeight = 1;
+          const halfWidth = halfHeight * safeAspect;
+          return new THREE.OrthographicCamera(
+            -halfWidth,
+            halfWidth,
+            halfHeight,
+            -halfHeight,
+            0.0001,
+            1000,
+          );
+        })()
+      : new THREE.PerspectiveCamera(38, safeAspect, 0.0001, 1000);
   camera.position.set(0, 0, 2.5);
   scene.add(camera);
 

@@ -53,6 +53,9 @@ function createProps(playbackDisabled: boolean, depth: number) {
       onSamplingModeToggle: () => {},
       blendingMode: 'alpha' as const,
       onBlendingModeToggle: () => {},
+      projectionMode: 'perspective' as const,
+      onProjectionModeToggle: () => {},
+      projectionModeToggleDisabled: false,
       showRenderingQualityControl: false,
       hasVolumeData: true
     },
@@ -68,6 +71,10 @@ function createProps(playbackDisabled: boolean, depth: number) {
   const renderer = TestRenderer.create(
     <PlaybackControlsPanel {...(createProps(true, 200) as any)} />
   );
+  const projectionButton = renderer.root.findAll(
+    (node: any) => node.type === 'button' && node.props.children === 'Perspective'
+  );
+  assert.equal(projectionButton.length, 1);
   const enabledSlider = renderer.root.findByProps({ id: 'sliced-depth-slider-layer-a' });
   assert.equal(enabledSlider.props.disabled, false);
   assert.equal(enabledSlider.props.max, 199);

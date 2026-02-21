@@ -24,7 +24,7 @@ export type VolumeViewerVrBridgeOptions = {
   vr: VolumeViewerVrProps | undefined;
   containerRef: MutableRefObject<HTMLDivElement | null>;
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
-  cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
+  cameraRef: MutableRefObject<THREE.Camera | null>;
   controlsRef: MutableRefObject<OrbitControls | null>;
   sceneRef: MutableRefObject<THREE.Scene | null>;
   volumeRootGroupRef: MutableRefObject<THREE.Group | null>;
@@ -153,7 +153,7 @@ export function useVolumeViewerVrBridge(options: VolumeViewerVrBridgeOptions) {
             vrProps: vr,
             containerRef,
             rendererRef,
-            cameraRef,
+            cameraRef: cameraRef as unknown as MutableRefObject<THREE.PerspectiveCamera | null>,
             controlsRef,
             sceneRef,
             volumeRootGroupRef,

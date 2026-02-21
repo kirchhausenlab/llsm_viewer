@@ -77,6 +77,7 @@ export function useVolumeViewerDataState({
 export function useVolumeViewerResources({
   layers,
   primaryVolume,
+  projectionMode,
   isAdditiveBlending,
   renderContextRevision,
   rendererRef,
@@ -107,11 +108,12 @@ export function useVolumeViewerResources({
 }: {
   layers: VolumeViewerProps['layers'];
   primaryVolume: ReturnType<typeof useVolumeViewerDataState>['primaryVolume'];
+  projectionMode: VolumeViewerProps['projectionMode'];
   isAdditiveBlending: boolean;
   renderContextRevision: number;
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
   sceneRef: MutableRefObject<THREE.Scene | null>;
-  cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
+  cameraRef: MutableRefObject<THREE.Camera | null>;
   controlsRef: MutableRefObject<any>;
   rotationTargetRef: MutableRefObject<THREE.Vector3>;
   defaultViewStateRef: MutableRefObject<any>;
@@ -138,6 +140,7 @@ export function useVolumeViewerResources({
   const { getColormapTexture } = useVolumeResources({
     layers,
     primaryVolume,
+    projectionMode,
     isAdditiveBlending,
     renderContextRevision,
     rendererRef,

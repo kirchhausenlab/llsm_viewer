@@ -1,0 +1,63 @@
+# Execution Log
+
+## 2026-02-21
+
+- Created orthographic refactor multi-session documentation workspace:
+  - `docs/refactor-orthographic-mode/README.md`
+  - `docs/refactor-orthographic-mode/DECISIONS.md`
+  - `docs/refactor-orthographic-mode/FEASIBILITY_REPORT.md`
+  - `docs/refactor-orthographic-mode/IMPLEMENTATION_SPEC.md`
+  - `docs/refactor-orthographic-mode/COMPATIBILITY_MATRIX.md`
+  - `docs/refactor-orthographic-mode/PERF_PLAN.md`
+  - `docs/refactor-orthographic-mode/ROADMAP.md`
+  - `docs/refactor-orthographic-mode/BACKLOG.md`
+  - `docs/refactor-orthographic-mode/TEST_PLAN.md`
+  - `docs/refactor-orthographic-mode/SESSION_HANDOFF.md`
+  - `docs/refactor-orthographic-mode/SESSION_PROMPT.md`
+- Captured feasibility, subsystem risk/effort, and phased migration strategy for orthographic mode.
+- No code changes were made in `src/` in this documentation session.
+- Tests not run (documentation-only update).
+
+- Implemented orthographic projection hard-cutover across runtime and UI:
+  - projection mode type + camera union added:
+    - `src/types/projection.ts`
+    - `src/components/viewers/volume-viewer/cameraTypes.ts`
+  - viewer-level projection mode plumbing + toggle UI + VR guard:
+    - `src/ui/app/hooks/useAppRouteState.tsx`
+    - `src/components/viewers/viewer-shell/types.ts`
+    - `src/components/viewers/viewer-shell/hooks/useViewerModeControls.ts`
+    - `src/components/viewers/viewer-shell/PlaybackControlsPanel.tsx`
+    - `src/components/viewers/useViewerShellProps.ts`
+    - `src/components/viewers/VolumeViewer.tsx`
+  - render context now supports orthographic camera creation:
+    - `src/hooks/useVolumeRenderSetup.ts`
+  - lifecycle/control/render-loop camera abstraction updates:
+    - `src/components/viewers/volume-viewer/useCameraControls.ts`
+    - `src/components/viewers/volume-viewer/useVolumeViewerLifecycle.ts`
+    - `src/components/viewers/volume-viewer/volumeViewerRenderLoop.ts`
+    - `src/components/viewers/volume-viewer/volumeViewerRuntimeArgs.ts`
+    - `src/components/viewers/volume-viewer/useVolumeViewerData.ts`
+    - `src/components/viewers/volume-viewer/useVolumeViewerResets.ts`
+  - shader dual-path ray generation landed:
+    - `src/shaders/volumeRenderShader.ts`
+    - `src/components/viewers/volume-viewer/useVolumeResources.ts`
+  - projection-safe interaction typing/path updates:
+    - `src/components/viewers/volume-viewer/volumeViewerPointerLifecycle.ts`
+    - `src/components/viewers/volume-viewer/useVolumeHover.ts`
+    - `src/components/viewers/volume-viewer/trackHitTesting.ts`
+    - `src/components/viewers/volume-viewer/useTrackRendering.ts`
+    - `src/components/viewers/volume-viewer/TrackCameraPresenter.tsx`
+  - VR bridge typing adapted for projection-aware camera refs:
+    - `src/components/viewers/volume-viewer/useVolumeViewerVrBridge.ts`
+  - runtime diagnostics now include current projection mode:
+    - `src/components/viewers/VolumeViewer.tsx`
+- Added/updated tests for projection behavior and plumbing:
+  - `tests/useVolumeResources.test.ts`
+  - `tests/ViewerShellContainer.test.ts`
+  - `tests/viewer-shell/PlaybackControlsPanel.test.tsx`
+  - `tests/frontend/ChannelUploads.test.tsx` (strict typing cleanup)
+- Verification run (final):
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test`
+  - all passed

@@ -10,6 +10,8 @@ Try it [here](https://kirchhausenlab.github.io/llsm_viewer/)! Recommended on Chr
   - `docs/refactor-nextgen-volume/README.md`
 - Active per-layer render-style + Beer-Lambert implementation program:
   - `docs/renderstyle-bl-mode/README.md`
+- Orthographic projection refactor program:
+  - `docs/refactor-orthographic-mode/README.md`
 - Active preprocessing acceleration plan:
   - `docs/preprocessing-performance-playbook.md`
 - Playback/runtime invariants (must-hold behavior + regression checks):

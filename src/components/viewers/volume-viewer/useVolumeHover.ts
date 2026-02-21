@@ -7,6 +7,7 @@ import { clampValue, sampleRawValuesAtPosition, sampleSegmentationLabel } from '
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import type { VolumeBrickPageTable } from '../../../core/volumeProvider';
 import type { HoveredVoxelInfo } from '../../../types/hover';
+import { RENDER_STYLE_SLICED } from '../../../state/layerSettings';
 import type { ViewerLayer, VolumeResources } from '../VolumeViewer.types';
 import {
   hoverBoundingBox,
@@ -37,6 +38,7 @@ import {
   computeVolumeLuminance,
   sampleBrickAtlasAtNormalizedPosition,
   sampleVolumeAtNormalizedPosition,
+  traceSlicedHoverVoxel,
 } from './volumeHoverSampling';
 
 export type UseVolumeHoverParams = {
@@ -51,7 +53,7 @@ export type UseVolumeHoverParams = {
     segmentationLabel: number | null;
   }>;
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
-  cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
+  cameraRef: MutableRefObject<THREE.Camera | null>;
   applyHoverHighlightToResources: () => void;
   emitHoverVoxel: (hovered: HoveredVoxelInfo | null) => void;
   clearVoxelHover: () => void;
@@ -374,73 +376,107 @@ export function useVolumeHover({
       hoverStart.copy(entryDistance <= exitDistance ? hoverEntryPoint : hoverExitPoint);
       hoverEnd.copy(entryDistance <= exitDistance ? hoverExitPoint : hoverEntryPoint);
 
-      const safeStepScale = Math.max(volumeStepScaleRef.current, 1e-3);
-      const travelDistance = hoverEnd.distanceTo(hoverStart);
-      let nsteps = Math.round(travelDistance * safeStepScale);
-      nsteps = clampValue(nsteps, 1, MIP_MAX_STEPS);
-
-      hoverStartNormalized.copy(hoverStart).divide(hoverVolumeSize);
-      hoverStep.copy(hoverEnd).sub(hoverStart).divide(hoverVolumeSize).divideScalar(nsteps);
-      hoverSample.copy(hoverStartNormalized);
-
+      const isSlicedHover = targetLayer.renderStyle === RENDER_STYLE_SLICED;
       const channels = Math.max(1, targetSourceChannels);
-
-      let maxValue = -Infinity;
-      let maxIndex = 0;
-      hoverMaxPosition.copy(hoverSample);
       let maxRawValues: number[] = [];
+      if (isSlicedHover) {
+        const slicedTrace = traceSlicedHoverVoxel({
+          startPoint: hoverStart,
+          endPoint: hoverEnd,
+          volumeSize: {
+            width: targetWidth,
+            height: targetHeight,
+            depth: targetDepth,
+          },
+          slicePlaneEnabled: targetLayer.slicedPlaneEnabled ?? true,
+          slicePlanePoint: targetLayer.slicedPlanePoint ?? null,
+          slicePlaneNormal: targetLayer.slicedPlaneNormal ?? null,
+        });
+        if (!slicedTrace) {
+          reportVoxelHoverAbort('No finite intensity was found along the sliced hover ray.');
+          return;
+        }
 
-      const highWaterMark = targetLayer.invert ? 0.001 : 0.999;
-
-      for (let i = 0; i < nsteps; i++) {
-        const sample = targetVolume
-          ? sampleVolumeAtNormalizedPosition(targetVolume, hoverSample)
-          : sampleBrickAtlasAtNormalizedPosition(targetAtlasSource!, hoverSample);
-        const luminance = computeVolumeLuminance(sample.normalizedValues, channels);
-        const adjusted = adjustWindowedIntensity(
-          luminance,
-          targetLayer.windowMin,
-          targetLayer.windowMax,
-          targetLayer.invert,
+        hoverMaxPosition.set(
+          clampValue(slicedTrace.normalizedPosition.x, 0, 1),
+          clampValue(slicedTrace.normalizedPosition.y, 0, 1),
+          clampValue(slicedTrace.normalizedPosition.z, 0, 1),
         );
-        if (adjusted > maxValue) {
-          maxValue = adjusted;
-          maxIndex = i;
-          hoverMaxPosition.copy(hoverSample);
-          maxRawValues = sample.rawValues;
+        const sample = targetVolume
+          ? sampleVolumeAtNormalizedPosition(targetVolume, hoverMaxPosition)
+          : sampleBrickAtlasAtNormalizedPosition(targetAtlasSource!, hoverMaxPosition);
+        maxRawValues = sample.rawValues;
+      } else {
+        const safeStepScale = Math.max(volumeStepScaleRef.current, 1e-3);
+        const travelDistance = hoverEnd.distanceTo(hoverStart);
+        let nsteps = Math.round(travelDistance * safeStepScale);
+        nsteps = clampValue(nsteps, 1, MIP_MAX_STEPS);
 
-          if ((!targetLayer.invert && maxValue >= highWaterMark) || (targetLayer.invert && maxValue <= highWaterMark)) {
-            break;
+        hoverStartNormalized.copy(hoverStart).divide(hoverVolumeSize);
+        hoverStep.copy(hoverEnd).sub(hoverStart).divide(hoverVolumeSize).divideScalar(nsteps);
+        hoverSample.copy(hoverStartNormalized);
+
+        let maxValue = -Infinity;
+        let maxIndex = 0;
+        hoverMaxPosition.copy(hoverSample);
+
+        const highWaterMark = targetLayer.invert ? 0.001 : 0.999;
+
+        for (let i = 0; i < nsteps; i++) {
+          const sample = targetVolume
+            ? sampleVolumeAtNormalizedPosition(targetVolume, hoverSample)
+            : sampleBrickAtlasAtNormalizedPosition(targetAtlasSource!, hoverSample);
+          const luminance = computeVolumeLuminance(sample.normalizedValues, channels);
+          const adjusted = adjustWindowedIntensity(
+            luminance,
+            targetLayer.windowMin,
+            targetLayer.windowMax,
+            targetLayer.invert,
+          );
+          if (adjusted > maxValue) {
+            maxValue = adjusted;
+            maxIndex = i;
+            hoverMaxPosition.copy(hoverSample);
+            maxRawValues = sample.rawValues;
+
+            if ((!targetLayer.invert && maxValue >= highWaterMark) || (targetLayer.invert && maxValue <= highWaterMark)) {
+              break;
+            }
           }
+
+          hoverSample.add(hoverStep);
         }
 
-        hoverSample.add(hoverStep);
-      }
+        hoverSample.copy(hoverStartNormalized).addScaledVector(hoverStep, maxIndex - 0.5);
+        hoverRefineStep.copy(hoverStep).divideScalar(MIP_REFINEMENT_STEPS);
 
-      hoverSample.copy(hoverStartNormalized).addScaledVector(hoverStep, maxIndex - 0.5);
-      hoverRefineStep.copy(hoverStep).divideScalar(MIP_REFINEMENT_STEPS);
-
-      for (let i = 0; i < MIP_REFINEMENT_STEPS; i++) {
-        const sample = targetVolume
-          ? sampleVolumeAtNormalizedPosition(targetVolume, hoverSample)
-          : sampleBrickAtlasAtNormalizedPosition(targetAtlasSource!, hoverSample);
-        const luminance = computeVolumeLuminance(sample.normalizedValues, channels);
-        const adjusted = adjustWindowedIntensity(
-          luminance,
-          targetLayer.windowMin,
-          targetLayer.windowMax,
-          targetLayer.invert,
-        );
-        if (adjusted > maxValue) {
-          maxValue = adjusted;
-          hoverMaxPosition.copy(hoverSample);
-          maxRawValues = sample.rawValues;
+        for (let i = 0; i < MIP_REFINEMENT_STEPS; i++) {
+          const sample = targetVolume
+            ? sampleVolumeAtNormalizedPosition(targetVolume, hoverSample)
+            : sampleBrickAtlasAtNormalizedPosition(targetAtlasSource!, hoverSample);
+          const luminance = computeVolumeLuminance(sample.normalizedValues, channels);
+          const adjusted = adjustWindowedIntensity(
+            luminance,
+            targetLayer.windowMin,
+            targetLayer.windowMax,
+            targetLayer.invert,
+          );
+          if (adjusted > maxValue) {
+            maxValue = adjusted;
+            hoverMaxPosition.copy(hoverSample);
+            maxRawValues = sample.rawValues;
+          }
+          hoverSample.add(hoverRefineStep);
         }
-        hoverSample.add(hoverRefineStep);
+
+        if (!Number.isFinite(maxValue) || maxRawValues.length === 0) {
+          reportVoxelHoverAbort('No finite intensity was found along the hover ray.');
+          return;
+        }
       }
 
-      if (!Number.isFinite(maxValue) || maxRawValues.length === 0) {
-        reportVoxelHoverAbort('No finite intensity was found along the hover ray.');
+      if (maxRawValues.length === 0) {
+        reportVoxelHoverAbort('Unable to sample sliced hover voxel.');
         return;
       }
 

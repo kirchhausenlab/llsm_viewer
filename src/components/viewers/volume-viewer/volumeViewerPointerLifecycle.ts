@@ -177,7 +177,7 @@ function resolveCurrentSlicePlane(
 
 type AttachVolumeViewerPointerLifecycleParams = PointerLookHandlers & {
   domElement: HTMLCanvasElement;
-  camera: THREE.PerspectiveCamera;
+  camera: THREE.Camera;
   controls: OrbitControls;
   layersRef: MutableRefObject<VolumeViewerProps['layers']>;
   activeSlicedLayerKeyRef: MutableRefObject<VolumeViewerProps['activeSlicedLayerKey']>;

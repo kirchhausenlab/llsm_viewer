@@ -9,10 +9,31 @@
 - Viewer, route, VR, and preprocessing hotspots have been decomposed into smaller modules to reduce coupling.
 
 ## Most recent high-signal updates
-  - fixture benchmark rerun: `TEST_DATA_DIR=data/test_dataset_0 PREPROCESS_FIXTURE_RUNS=3 npm run benchmark:preprocess:fixture`
-  - measured `min=13973.43ms`, `avg=14034.92ms`, `max=14137.15ms` (improved vs earlier 3-run sample avg `14266.77ms`)
-  - browser preprocess perf rerun: `TEST_DATA_DIR=data/test_dataset_0 npm run test:e2e:preprocess-perf` passed with `elapsedMs=12049` (5 files/timepoints)
-  - verification passed (`tests/preprocessPipeline.test.ts`, `test:perf:preprocess-smoke`, `typecheck`, `typecheck:tests`, `tests/preprocessedDataset.test.ts`, benchmark matrix 2/2)
+- Completed the orthographic projection hard-cutover:
+  - viewer-level projection mode toggle (`perspective` / `orthographic`) is now wired end-to-end
+  - render context supports orthographic camera creation and lifecycle switching
+  - volume shader supports projection-aware ray generation
+  - interaction/hover/picking/camera flows now accept projection-safe camera typing
+  - VR is explicitly guarded to perspective-only behavior
+  - verification passed: `npm run -s typecheck`, `npm run -s typecheck:tests`, `npm run -s test`
+- Created a dedicated multi-session orthographic refactor dossier:
+  - `docs/refactor-orthographic-mode/README.md`
+  - `docs/refactor-orthographic-mode/DECISIONS.md`
+  - `docs/refactor-orthographic-mode/FEASIBILITY_REPORT.md`
+  - `docs/refactor-orthographic-mode/IMPLEMENTATION_SPEC.md`
+  - `docs/refactor-orthographic-mode/COMPATIBILITY_MATRIX.md`
+  - `docs/refactor-orthographic-mode/PERF_PLAN.md`
+  - `docs/refactor-orthographic-mode/ROADMAP.md`
+  - `docs/refactor-orthographic-mode/BACKLOG.md`
+  - `docs/refactor-orthographic-mode/TEST_PLAN.md`
+  - `docs/refactor-orthographic-mode/SESSION_HANDOFF.md`
+  - `docs/refactor-orthographic-mode/EXECUTION_LOG.md`
+  - `docs/refactor-orthographic-mode/SESSION_PROMPT.md`
+  - objective: preserve refactor context across multiple agent sessions with explicit compatibility, risk, and rollout tracking.
+- fixture benchmark rerun: `TEST_DATA_DIR=data/test_dataset_0 PREPROCESS_FIXTURE_RUNS=3 npm run benchmark:preprocess:fixture`
+- measured `min=13973.43ms`, `avg=14034.92ms`, `max=14137.15ms` (improved vs earlier 3-run sample avg `14266.77ms`)
+- browser preprocess perf rerun: `TEST_DATA_DIR=data/test_dataset_0 npm run test:e2e:preprocess-perf` passed with `elapsedMs=12049` (5 files/timepoints)
+- verification passed (`tests/preprocessPipeline.test.ts`, `test:perf:preprocess-smoke`, `typecheck`, `typecheck:tests`, `tests/preprocessedDataset.test.ts`, benchmark matrix 2/2)
 - Landed another preprocessing micro-optimization (`PREP-010`, `DONE`):
   - output semantics are unchanged; verification passed (`tests/preprocessPipeline.test.ts`, `test:perf:preprocess-smoke`, `typecheck`, `typecheck:tests`, `tests/preprocessedDataset.test.ts`, benchmark matrix 2/2)
 - Landed an additional preprocessing micro-optimization (`PREP-009`, `DONE`):

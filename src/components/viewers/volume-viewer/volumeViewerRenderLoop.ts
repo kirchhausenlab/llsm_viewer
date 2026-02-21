@@ -4,20 +4,21 @@ import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
 import type { VolumeResources } from '../VolumeViewer.types';
 import { HOVER_PULSE_SPEED } from './rendering';
+import type { VolumeCamera } from './cameraTypes';
 
 type CreateVolumeViewerRenderLoopOptions = {
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
-  camera: THREE.PerspectiveCamera;
+  camera: VolumeCamera;
   controls: OrbitControls;
   applyKeyboardRotation: (
     renderer: THREE.WebGLRenderer,
-    camera: THREE.PerspectiveCamera,
+    camera: VolumeCamera,
     controls: OrbitControls
   ) => void;
   applyKeyboardMovement: (
     renderer: THREE.WebGLRenderer,
-    camera: THREE.PerspectiveCamera,
+    camera: VolumeCamera,
     controls: OrbitControls
   ) => void;
   rotationTargetRef: MutableRefObject<THREE.Vector3>;

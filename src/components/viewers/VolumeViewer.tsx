@@ -95,6 +95,7 @@ function summarizeGpuResidency(resources: Map<string, VolumeResources>) {
 
 function VolumeViewer({
   layers,
+  projectionMode,
   isLoading,
   loadingProgress,
   loadedVolumes,
@@ -235,6 +236,7 @@ function VolumeViewer({
     followTargetActiveRef,
     setHasMeasured,
     enableKeyboardNavigation,
+    projectionMode,
   });
   const isDevMode = Boolean(import.meta.env?.DEV);
   const { resolvedAnisotropyScale, anisotropyStepRatio } = useVolumeViewerAnisotropy({
@@ -372,6 +374,7 @@ function VolumeViewer({
 
   const { computeFollowedVoxelPosition, resolveHoveredFollowTarget } = useVolumeViewerFollowTarget({
     layersRef,
+    resourcesRef,
     volumeRootGroupRef,
     hoveredVoxelRef,
   });
@@ -476,6 +479,16 @@ function VolumeViewer({
   } = vrApi;
 
   useEffect(() => {
+    if (projectionMode !== 'orthographic') {
+      return;
+    }
+    if (!vrIntegration?.xrSessionRef.current) {
+      return;
+    }
+    void endVrSession();
+  }, [endVrSession, projectionMode, vrIntegration]);
+
+  useEffect(() => {
     registerPlaybackRefs({
       playbackStateRef,
       playbackLoopRef,
@@ -504,6 +517,7 @@ function VolumeViewer({
   useVolumeViewerResources({
     layers,
     primaryVolume,
+    projectionMode,
     isAdditiveBlending,
     renderContextRevision,
     rendererRef,
@@ -608,6 +622,7 @@ function VolumeViewer({
       initializeRenderContext,
       createPointerLookHandlers,
       handleResize,
+      projectionMode,
     },
     renderLoop: {
       applyKeyboardRotation,
@@ -759,6 +774,10 @@ function VolumeViewer({
                 <li>
                   <span>Prefetch</span>
                   <span>{runtimeDiagnostics.activePrefetchRequests.length} active</span>
+                </li>
+                <li>
+                  <span>Projection</span>
+                  <span>{projectionMode}</span>
                 </li>
                 {gpuResidencySummary ? (
                   <li>

@@ -16,6 +16,7 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
     closeHelpMenu: noop,
     viewerPanels: {
       layers: [],
+      projectionMode: 'perspective',
       loading: {
         isLoading: false,
         loadingProgress: 0,
@@ -108,7 +109,10 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
       samplingMode: 'linear',
       onSamplingModeToggle: noop,
       blendingMode: 'additive',
-      onBlendingModeToggle: noop
+      onBlendingModeToggle: noop,
+      projectionMode: 'perspective',
+      onProjectionModeToggle: noop,
+      projectionModeToggleDisabled: false
     },
     playbackControls: {
       fps: 1,
@@ -233,6 +237,7 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
     opacity: DEFAULT_TRACK_OPACITY,
     lineWidth: DEFAULT_TRACK_LINE_WIDTH
   });
+  assert.strictEqual(viewerShellProps.volumeViewerProps.projectionMode, 'perspective');
   assert.ok(viewerShellProps.volumeViewerProps.vr);
 })();
 

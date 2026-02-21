@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
+import type { ReactTestInstance } from 'react-test-renderer';
 
 import ChannelUploads from '../../src/components/pages/ChannelUploads.tsx';
 
@@ -98,9 +99,11 @@ test('channel uploads switches to selected-state summary', () => {
 
   const root = renderer.root;
   const browseButtons = root.findAll(
-    (node) => node.type === 'button' && node.props.children === 'From Files'
+    (node: ReactTestInstance) => node.type === 'button' && node.props.children === 'From Files'
   );
-  const dropboxActions = root.findAll((node) => node.type === 'span' && node.props.id === 'dropbox-action');
+  const dropboxActions = root.findAll(
+    (node: ReactTestInstance) => node.type === 'span' && node.props.id === 'dropbox-action'
+  );
   const subtitle = root.findByProps({ className: 'channel-layer-drop-subtitle' });
 
   assert.equal(browseButtons.length, 0);

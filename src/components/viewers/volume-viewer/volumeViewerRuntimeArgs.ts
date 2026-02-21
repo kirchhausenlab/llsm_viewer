@@ -86,6 +86,7 @@ export type VolumeViewerLifecycleOptionGroups = {
   core: Pick<
     VolumeViewerLifecycleParams,
     | 'containerNode'
+    | 'projectionMode'
     | 'onRegisterCaptureTarget'
     | 'initializeRenderContext'
     | 'createPointerLookHandlers'

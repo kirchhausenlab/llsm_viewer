@@ -8,9 +8,11 @@ import type { VolumeBrickAtlas, VolumeBrickPageTable, VolumeProviderDiagnostics 
 import type { FollowedVoxelTarget } from '../../types/follow';
 import type { HoveredVoxelInfo } from '../../types/hover';
 import type { PaintbrushStrokeHandlers } from '../../types/paintbrush';
+import type { ProjectionMode } from '../../types/projection';
 import type { TrackColorMode, TrackDefinition } from '../../types/tracks';
 import type { VolumeDataType } from '../../types/volume';
 import type { RenderStyle, SamplingMode } from '../../state/layerSettings';
+import type { VolumeCamera } from './volume-viewer/cameraTypes';
 
 export type InstancedLineGeometry = LineGeometry & { instanceCount: number };
 export type SlicePlaneVector = { x: number; y: number; z: number };
@@ -145,6 +147,7 @@ export type VolumeViewerVrProps = {
 
 export type VolumeViewerProps = {
   layers: ViewerLayer[];
+  projectionMode: ProjectionMode;
   timeIndex: number;
   totalTimepoints: number;
   isPlaying: boolean;
@@ -267,6 +270,8 @@ export type MovementState = {
   rollLeft: boolean;
   rollRight: boolean;
 };
+
+export type { ProjectionMode, VolumeCamera };
 
 export type TrackLineResource = {
   line: Line2;

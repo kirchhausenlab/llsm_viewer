@@ -16,6 +16,10 @@ export type ViewerSettingsControls = {
   onSamplingModeToggle: ModeControlsProps['onSamplingModeToggle'];
   blendingMode: ModeControlsProps['blendingMode'];
   onBlendingModeToggle: ModeControlsProps['onBlendingModeToggle'];
+  projectionMode: ModeControlsProps['projectionMode'];
+  onProjectionModeToggle: ModeControlsProps['onProjectionModeToggle'];
+  projectionModeToggleDisabled: boolean;
+  projectionModeToggleTitle?: string;
   showRenderingQualityControl: boolean;
   renderingQuality: number;
   onRenderingQualityChange: (value: number) => void;
@@ -51,6 +55,10 @@ export function useViewerModeControls({
     onSamplingModeToggle: modeControls.onSamplingModeToggle,
     blendingMode: modeControls.blendingMode,
     onBlendingModeToggle: modeControls.onBlendingModeToggle,
+    projectionMode: modeControls.projectionMode,
+    onProjectionModeToggle: modeControls.onProjectionModeToggle,
+    projectionModeToggleDisabled: modeControls.projectionModeToggleDisabled ?? false,
+    projectionModeToggleTitle: modeControls.projectionModeToggleTitle,
     showRenderingQualityControl,
     renderingQuality,
     onRenderingQualityChange,

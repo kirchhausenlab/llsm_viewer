@@ -9,6 +9,7 @@ import type {
 import { clearTextureCache } from '../../../core/textureCache';
 import { deriveChannelTrackOffsets } from '../../../state/channelTrackOffsets';
 import { RENDER_STYLE_SLICED } from '../../../state/layerSettings';
+import type { ProjectionMode } from '../../../types/projection';
 import type { FollowedVoxelTarget } from '../../../types/follow';
 import type { HoveredVoxelInfo } from '../../../types/hover';
 import { computeTrackSummary } from '../../../shared/utils/trackSummary';
@@ -169,6 +170,7 @@ export function useAppRouteState(): AppRouteState {
     bumpDatasetErrorResetSignal
   } = datasetErrors;
   const [blendingMode, setBlendingMode] = useState<'alpha' | 'additive'>('additive');
+  const [projectionMode, setProjectionMode] = useState<ProjectionMode>('perspective');
   const resetPreprocessedStateRef = useRef<() => void>(() => {});
   const [resetViewHandler, setResetViewHandler] = useState<(() => void) | null>(null);
   const [activeChannelTabId, setActiveChannelTabId] = useState<string | null>(null);
@@ -373,6 +375,7 @@ export function useAppRouteState(): AppRouteState {
   });
 
   const handleBeforeEnterVr = useCallback(() => {
+    setProjectionMode('perspective');
     setFollowedTrack(null);
     setFollowedVoxel(null);
   }, [setFollowedTrack, setFollowedVoxel]);
@@ -421,6 +424,24 @@ export function useAppRouteState(): AppRouteState {
     setFollowedVoxel(null);
   }, [setFollowedVoxel]);
 
+  const playbackAtlasScaleLevelByLayerKey = useMemo(() => {
+    const byKey: Record<string, number> = {};
+    const manifest = preprocessedExperiment?.manifest;
+    if (!manifest) {
+      return byKey;
+    }
+
+    for (const channel of manifest.dataset.channels) {
+      for (const layer of channel.layers) {
+        const settings = layerSettings[layer.key] ?? createLayerDefaultSettings(layer.key);
+        if (settings.renderStyle === RENDER_STYLE_SLICED) {
+          byKey[layer.key] = 0;
+        }
+      }
+    }
+    return byKey;
+  }, [createLayerDefaultSettings, layerSettings, preprocessedExperiment?.manifest]);
+
   const {
     currentLayerVolumes,
     currentLayerPageTables,
@@ -441,6 +462,7 @@ export function useAppRouteState(): AppRouteState {
     channelVisibility,
     layerChannelMap,
     preferBrickResidency,
+    playbackAtlasScaleLevelByLayerKey,
     volumeTimepointCount,
     selectedIndex,
     clearDatasetError,
@@ -462,28 +484,6 @@ export function useAppRouteState(): AppRouteState {
       .filter((layer) => !layer.isSegmentation && layer.depth > 1)
       .map((layer) => layer.key);
   }, [loadedDatasetLayers, preferBrickResidency]);
-  const playbackAtlasScaleLevelByLayerKey = useMemo(() => {
-    const byKey: Record<string, number> = {};
-    const manifest = preprocessedExperiment?.manifest;
-    if (!manifest) {
-      return byKey;
-    }
-
-    const desiredScaleLevel = isPlaying ? 1 : 0;
-    for (const channel of manifest.dataset.channels) {
-      for (const layer of channel.layers) {
-        const levels = Array.from(new Set(layer.zarr.scales.map((scale) => scale.level))).sort((left, right) => left - right);
-        let resolvedScaleLevel = levels[0] ?? 0;
-        for (const level of levels) {
-          if (level <= desiredScaleLevel) {
-            resolvedScaleLevel = level;
-          }
-        }
-        byKey[layer.key] = resolvedScaleLevel;
-      }
-    }
-    return byKey;
-  }, [isPlaying, preprocessedExperiment?.manifest]);
   const { canAdvancePlaybackToIndex } = useRoutePlaybackPrefetch({
     isViewerLaunched,
     isPlaying,
@@ -979,6 +979,7 @@ export function useAppRouteState(): AppRouteState {
           onHoverVoxelChange: handleHoverVoxelChange
         },
         runtimeDiagnostics: volumeProviderDiagnostics,
+        projectionMode,
         canAdvancePlayback: canAdvancePlaybackToIndex,
         onRegisterReset: handleRegisterReset,
         onVolumeStepScaleChange: handleVolumeStepScaleChange,
@@ -1047,13 +1048,29 @@ export function useAppRouteState(): AppRouteState {
         isVrRequesting,
         resetViewHandler,
         onVrButtonClick: handleVrButtonClick,
-        vrButtonDisabled,
-        vrButtonTitle,
+        vrButtonDisabled: vrButtonDisabled || projectionMode === 'orthographic',
+        vrButtonTitle:
+          projectionMode === 'orthographic'
+            ? 'VR requires perspective projection.'
+            : vrButtonTitle,
         vrButtonLabel,
         samplingMode: globalSamplingMode,
         onSamplingModeToggle: () => handleLayerSamplingModeToggle(),
         blendingMode,
-        onBlendingModeToggle: handleBlendingModeToggle
+        onBlendingModeToggle: handleBlendingModeToggle,
+        projectionMode,
+        onProjectionModeToggle: () => {
+          if (isVrActive) {
+            return;
+          }
+          setProjectionMode((current) =>
+            current === 'perspective' ? 'orthographic' : 'perspective',
+          );
+        },
+        projectionModeToggleDisabled: isVrActive,
+        projectionModeToggleTitle: isVrActive
+          ? 'Projection mode cannot be changed during an active VR session.'
+          : undefined,
       },
       playbackControls: {
         fps,

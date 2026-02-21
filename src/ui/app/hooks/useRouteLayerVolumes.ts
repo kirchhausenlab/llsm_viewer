@@ -36,6 +36,7 @@ type UseRouteLayerVolumesOptions = {
   channelVisibility: Record<string, boolean>;
   layerChannelMap: Map<string, string>;
   preferBrickResidency: boolean;
+  playbackAtlasScaleLevelByLayerKey?: Record<string, number>;
   volumeTimepointCount: number;
   selectedIndex: number;
   clearDatasetError: () => void;
@@ -181,6 +182,7 @@ export function useRouteLayerVolumes({
   channelVisibility,
   layerChannelMap,
   preferBrickResidency,
+  playbackAtlasScaleLevelByLayerKey,
   volumeTimepointCount,
   selectedIndex,
   clearDatasetError,
@@ -240,6 +242,10 @@ export function useRouteLayerVolumes({
   }, [preprocessedExperiment?.manifest]);
   const resolvePreferredAtlasScaleLevel = useCallback(
     (layerKey: string): number => {
+      const configuredScaleLevel = playbackAtlasScaleLevelByLayerKey?.[layerKey];
+      if (Number.isFinite(configuredScaleLevel)) {
+        return Math.max(0, Math.floor(configuredScaleLevel as number));
+      }
       const levels = layerScaleLevelsByKey.get(layerKey) ?? [0];
       const desired = isPlaying ? 1 : 0;
       let resolved = levels[0] ?? 0;
@@ -250,7 +256,7 @@ export function useRouteLayerVolumes({
       }
       return resolved;
     },
-    [isPlaying, layerScaleLevelsByKey]
+    [isPlaying, layerScaleLevelsByKey, playbackAtlasScaleLevelByLayerKey]
   );
   const layerResidencyModeByKeyRef = useRef<Map<string, 'volume' | 'atlas'>>(
     buildLayerResidencyModeMap({ channelLayersMap, preferBrickResidency, canUseAtlas })

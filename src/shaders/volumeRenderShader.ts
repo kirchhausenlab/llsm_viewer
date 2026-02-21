@@ -205,6 +205,7 @@ type VolumeUniforms = {
   u_cmdata: { value: DataTexture | null };
   u_channels: { value: number };
   u_additive: { value: number };
+  u_projectionMode: { value: number };
   u_cameraPos: { value: Vector3 };
   u_windowMin: { value: number };
   u_windowMax: { value: number };
@@ -251,6 +252,7 @@ const uniforms = {
   u_cmdata: { value: null as DataTexture | null },
   u_channels: { value: 1 },
   u_additive: { value: 0 },
+  u_projectionMode: { value: 0 },
   u_cameraPos: { value: new Vector3() },
   u_windowMin: { value: 0 },
   u_windowMax: { value: 1 },
@@ -355,6 +357,7 @@ const volumeRenderFragmentShader = /* glsl */ `
 
     uniform sampler3D u_data;
     uniform sampler2D u_cmdata;
+    uniform float u_projectionMode;
     uniform vec3 u_cameraPos;
 
     varying vec3 v_position;
@@ -946,13 +949,25 @@ const volumeRenderFragmentShader = /* glsl */ `
       vec3 farpos = v_farpos.xyz / v_farpos.w;
       vec3 nearpos = v_nearpos.xyz / v_nearpos.w;
 
-      vec3 rayOrigin = u_cameraPos;
-      vec3 rawDir = v_position - rayOrigin;
-      float rawDirLength = length(rawDir);
-      if (rawDirLength < EPSILON) {
-        discard;
+      vec3 rayOrigin;
+      vec3 rayDir;
+      if (u_projectionMode > 0.5) {
+        vec3 rawOrthoDir = nearpos - farpos;
+        float rawOrthoDirLength = length(rawOrthoDir);
+        if (rawOrthoDirLength < EPSILON) {
+          discard;
+        }
+        rayOrigin = nearpos;
+        rayDir = rawOrthoDir / rawOrthoDirLength;
+      } else {
+        rayOrigin = u_cameraPos;
+        vec3 rawDir = v_position - rayOrigin;
+        float rawDirLength = length(rawDir);
+        if (rawDirLength < EPSILON) {
+          discard;
+        }
+        rayDir = rawDir / rawDirLength;
       }
-      vec3 rayDir = rawDir / rawDirLength;
 
       vec3 boxMin = vec3(-0.5);
       vec3 boxMax = u_size - 0.5;
@@ -1495,6 +1510,26 @@ const volumeRenderFragmentShader = /* glsl */ `
           float rawVal = luminance(colorSample);
           float normalizedVal = normalize_intensity(rawVal);
           hitColor = compose_color(normalizedVal, colorSample);
+          if (u_hoverActive > 0.5) {
+            vec3 hoverVoxel = clamp(
+              floor(u_hoverPos * safeVolumeSize + vec3(0.5)),
+              vec3(0.0),
+              safeVolumeSize - vec3(1.0)
+            );
+            vec3 hitVoxel = clamp(
+              floor(sampleVoxelPoint + vec3(0.5)),
+              vec3(0.0),
+              safeVolumeSize - vec3(1.0)
+            );
+            if (all(lessThan(abs(hitVoxel - hoverVoxel), vec3(0.5)))) {
+              vec3 faceDistance = vec3(0.5) - abs(sampleVoxelPoint - hitVoxel);
+              float boundaryDistance = max(0.0, min(faceDistance.x, min(faceDistance.y, faceDistance.z)));
+              float pulse = clamp(u_hoverPulse, 0.0, 1.0);
+              float outline = 1.0 - smoothstep(0.02, 0.1, boundaryDistance);
+              float outlineStrength = mix(0.25, 0.55, pulse) * outline;
+              hitColor.rgb = mix(hitColor.rgb, vec3(1.0), outlineStrength);
+            }
+          }
           hasHit = true;
           break;
         }

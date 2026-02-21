@@ -128,6 +128,72 @@ const createLayer = (
 
 (() => {
   const volume: NormalizedVolume = {
+    width: 6,
+    height: 4,
+    depth: 2,
+    channels: 1,
+    dataType: 'uint8',
+    normalized: new Uint8Array(6 * 4 * 2),
+    min: 0,
+    max: 1,
+  };
+
+  const sceneRef = { current: new THREE.Scene() };
+  const cameraRef = {
+    current: new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10),
+  };
+  const controlsRef = {
+    current: {
+      target: new THREE.Vector3(),
+      update: () => {},
+      saveState: () => {},
+    } as unknown as THREE.OrbitControls,
+  };
+  const resourcesRef = { current: new Map<string, VolumeResources>() };
+
+  renderHook(() =>
+    useVolumeResources({
+      layers: [createLayer(volume, null, null, 'linear')],
+      primaryVolume: volume,
+      projectionMode: 'orthographic',
+      isAdditiveBlending: false,
+      renderContextRevision: 0,
+      sceneRef,
+      cameraRef,
+      controlsRef,
+      rotationTargetRef: { current: new THREE.Vector3() },
+      defaultViewStateRef: { current: null },
+      trackGroupRef: { current: new THREE.Group() },
+      resourcesRef,
+      currentDimensionsRef: { current: null },
+      colormapCacheRef: { current: new Map() },
+      volumeRootGroupRef: { current: new THREE.Group() },
+      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+      volumeNormalizationScaleRef: { current: 1 },
+      volumeUserScaleRef: { current: 1 },
+      volumeStepScaleRef: { current: 1 },
+      volumeYawRef: { current: 0 },
+      volumePitchRef: { current: 0 },
+      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+      applyTrackGroupTransform: () => {},
+      applyVolumeRootTransform: () => {},
+      applyVolumeStepScaleToResources: () => {},
+      applyHoverHighlightToResources: () => {},
+    }),
+  );
+
+  const resource = resourcesRef.current.get('layer-3d');
+  assert.ok(resource);
+  const material = resource.mesh.material as THREE.ShaderMaterial;
+  assert.equal(material.uniforms.u_projectionMode?.value, 1);
+  assert.ok(cameraRef.current.left < 0 && cameraRef.current.right > 0);
+})();
+
+(() => {
+  const volume: NormalizedVolume = {
     width: 2,
     height: 2,
     depth: 2,

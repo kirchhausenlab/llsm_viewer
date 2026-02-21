@@ -78,6 +78,10 @@ export default function PlaybackControlsPanel({
     onSamplingModeToggle,
     blendingMode,
     onBlendingModeToggle,
+    projectionMode,
+    onProjectionModeToggle,
+    projectionModeToggleDisabled,
+    projectionModeToggleTitle,
     showRenderingQualityControl,
     hasVolumeData
   } = viewerSettings;
@@ -262,6 +266,16 @@ export default function PlaybackControlsPanel({
                       aria-pressed={blendingMode === 'additive'}
                     >
                       {blendingMode === 'additive' ? 'Additive' : 'Alpha'}
+                    </button>
+                    <button
+                      type="button"
+                      className={projectionMode === 'orthographic' ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
+                      onClick={onProjectionModeToggle}
+                      disabled={!hasVolumeData || projectionModeToggleDisabled}
+                      aria-pressed={projectionMode === 'orthographic'}
+                      title={projectionModeToggleTitle}
+                    >
+                      {projectionMode === 'orthographic' ? 'Orthographic' : 'Perspective'}
                     </button>
                   </div>
                 </div>

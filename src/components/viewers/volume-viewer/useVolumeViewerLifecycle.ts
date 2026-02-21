@@ -17,6 +17,8 @@ import { destroyVolumeRenderContext } from '../../../hooks/useVolumeRenderSetup'
 import { attachVolumeViewerPointerLifecycle } from './volumeViewerPointerLifecycle';
 import { createVolumeViewerRenderLoop } from './volumeViewerRenderLoop';
 import { disposeMaterial } from './rendering';
+import type { ProjectionMode } from '../../../types/projection';
+import type { VolumeCamera } from './cameraTypes';
 
 type RenderLoopOptions = Parameters<typeof createVolumeViewerRenderLoop>[0];
 type PointerLifecycleOptions = Parameters<typeof attachVolumeViewerPointerLifecycle>[0];
@@ -24,7 +26,7 @@ type PointerLifecycleOptions = Parameters<typeof attachVolumeViewerPointerLifecy
 type VolumeRenderContext = {
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
-  camera: THREE.PerspectiveCamera;
+  camera: VolumeCamera;
   controls: OrbitControls;
 };
 
@@ -35,6 +37,7 @@ type PointerLookHandlers = Pick<
 
 type UseVolumeViewerLifecycleParams = {
   containerNode: HTMLDivElement | null;
+  projectionMode: ProjectionMode;
   onRegisterCaptureTarget: VolumeViewerProps['onRegisterCaptureTarget'];
   initializeRenderContext: (container: HTMLElement) => VolumeRenderContext;
   createPointerLookHandlers: (context: VolumeRenderContext) => PointerLookHandlers;
@@ -54,7 +57,7 @@ type UseVolumeViewerLifecycleParams = {
   currentDimensionsRef: MutableRefObject<{ width: number; height: number; depth: number } | null>;
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
   sceneRef: MutableRefObject<THREE.Scene | null>;
-  cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
+  cameraRef: MutableRefObject<VolumeCamera | null>;
   controlsRef: MutableRefObject<OrbitControls | null>;
   raycasterRef: MutableRefObject<RaycasterLike | null>;
   volumeRootGroupRef: MutableRefObject<THREE.Group | null>;
@@ -128,6 +131,7 @@ type UseVolumeViewerLifecycleParams = {
 
 export function useVolumeViewerLifecycle({
   containerNode,
+  projectionMode,
   onRegisterCaptureTarget,
   initializeRenderContext,
   createPointerLookHandlers,
@@ -610,6 +614,7 @@ export function useVolumeViewerLifecycle({
     };
   }, [
     containerNode,
+    projectionMode,
     onRegisterCaptureTarget,
   ]);
 }

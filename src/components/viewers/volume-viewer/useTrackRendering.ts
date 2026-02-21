@@ -38,7 +38,7 @@ export type UseTrackRenderingParams = {
   trackLinesRef: MutableRefObject<Map<string, TrackLineResource>>;
   containerRef: MutableRefObject<HTMLDivElement | null>;
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
-  cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
+  cameraRef: MutableRefObject<THREE.Camera | null>;
   hoverRaycasterRef: MutableRefObject<THREE.Raycaster | null>;
   currentDimensionsRef: MutableRefObject<{ width: number; height: number; depth: number } | null>;
   hasActive3DLayer: boolean;

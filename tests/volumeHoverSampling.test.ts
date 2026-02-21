@@ -5,6 +5,7 @@ import {
   computeVolumeLuminance,
   sampleBrickAtlasAtNormalizedPosition,
   sampleVolumeAtNormalizedPosition,
+  traceSlicedHoverVoxel,
 } from '../src/components/viewers/volume-viewer/volumeHoverSampling.ts';
 import type { NormalizedVolume } from '../src/core/volumeProcessing.ts';
 
@@ -158,6 +159,45 @@ const createVolume = ({
   assert.strictEqual(adjustWindowedIntensity(-10, 0, 1, false), 0);
   assert.strictEqual(adjustWindowedIntensity(10, 0, 1, false), 1);
   assert.strictEqual(adjustWindowedIntensity(10, 0, 1, true), 0);
+})();
+
+(() => {
+  const hit = traceSlicedHoverVoxel({
+    startPoint: { x: 2.3, y: 4.4, z: -0.5 },
+    endPoint: { x: 2.3, y: 4.4, z: 7.5 },
+    volumeSize: { width: 8, height: 8, depth: 8 },
+    slicePlaneEnabled: true,
+    slicePlanePoint: { x: 0, y: 0, z: 3 },
+    slicePlaneNormal: { x: 0, y: 0, z: 1 },
+  });
+  assert.ok(hit, 'expected a sliced hover hit');
+  assert.deepStrictEqual(hit?.voxel, { x: 2, y: 4, z: 3 });
+  assert.ok(Math.abs((hit?.normalizedPosition.z ?? 0) - 3 / 8) < 1e-9);
+})();
+
+(() => {
+  const hit = traceSlicedHoverVoxel({
+    startPoint: { x: 1.2, y: 1.1, z: -0.5 },
+    endPoint: { x: 1.2, y: 1.1, z: 7.5 },
+    volumeSize: { width: 8, height: 8, depth: 8 },
+    slicePlaneEnabled: false,
+    slicePlanePoint: { x: 0, y: 0, z: 7 },
+    slicePlaneNormal: { x: 0, y: 0, z: 1 },
+  });
+  assert.ok(hit, 'expected an unsliced hover hit');
+  assert.deepStrictEqual(hit?.voxel, { x: 1, y: 1, z: 0 });
+})();
+
+(() => {
+  const hit = traceSlicedHoverVoxel({
+    startPoint: { x: 2.3, y: 4.4, z: -0.5 },
+    endPoint: { x: 2.3, y: 4.4, z: 7.5 },
+    volumeSize: { width: 8, height: 8, depth: 8 },
+    slicePlaneEnabled: true,
+    slicePlanePoint: { x: 0, y: 0, z: 10 },
+    slicePlaneNormal: { x: 0, y: 0, z: 1 },
+  });
+  assert.equal(hit, null);
 })();
 
 console.log('volume hover sampling helper tests passed');
