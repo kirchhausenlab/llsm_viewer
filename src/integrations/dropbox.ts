@@ -15,7 +15,7 @@ export class DropboxConfigurationError extends Error {
 export type DropboxAppKeySource = 'env' | 'local';
 
 const getEnvAppKey = () => {
-  const appKey = import.meta.env.VITE_DROPBOX_APP_KEY;
+  const appKey = (import.meta as ImportMeta & { env?: Record<string, unknown> }).env?.VITE_DROPBOX_APP_KEY;
   if (typeof appKey === 'string' && appKey.trim().length > 0) {
     return appKey.trim();
   }

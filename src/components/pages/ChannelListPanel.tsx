@@ -4,6 +4,8 @@ import TrackCard from './TrackCard';
 import type { ChannelSource, ChannelValidation, TrackSetSource, TrackValidation } from '../../hooks/dataset';
 import { ENTITY_NAME_MAX_LENGTH } from '../../constants/naming';
 
+type SetupExperimentType = '3d-movie' | '2d-movie' | 'single-3d-volume';
+
 function isSegmentationChannel(channel: Pick<ChannelSource, 'channelType' | 'layers'>): boolean {
   if (channel.channelType === 'segmentation') {
     return true;
@@ -90,6 +92,7 @@ const buildTrackTabMeta = (
 };
 
 type ChannelListPanelProps = {
+  experimentType: SetupExperimentType;
   channels: ChannelSource[];
   tracks: TrackSetSource[];
   channelValidationMap: Map<string, ChannelValidation>;
@@ -119,6 +122,7 @@ type ChannelListPanelProps = {
 };
 
 const ChannelListPanel: FC<ChannelListPanelProps> = ({
+  experimentType,
   channels,
   tracks,
   channelValidationMap,
@@ -201,6 +205,12 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
     }
     return [...tracks.map((trackSet) => ({ type: 'track' as const, trackSet })), { type: 'add' as const }];
   }, [tracks]);
+
+  const layerUploadTitle =
+    experimentType === '3d-movie'
+      ? 'Upload sequence of 3D files (.tif/.tiff)'
+      : 'Upload single 3D file or sequence of 2D files (.tif/.tiff)';
+  const showTracksSection = experimentType !== 'single-3d-volume';
 
   const renderChannelRows = (
     rows: ReadonlyArray<{ type: 'add' } | { type: 'channel'; channel: ChannelSource }>,
@@ -387,9 +397,7 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
           className={`setup-section-header${standardChannels.length === 0 ? ' setup-section-header--title-only' : ''}`}
         >
           <h2 className="setup-section-title">Channels</h2>
-          {standardChannels.length > 0 ? (
-            <p className="setup-section-panel-title">Upload sequence of 3D files (.tif/.tiff)</p>
-          ) : null}
+          {standardChannels.length > 0 ? <p className="setup-section-panel-title">{layerUploadTitle}</p> : null}
         </div>
         <div className="setup-rows" role="list">
           {renderChannelRows(orderedStandardChannelRows, {
@@ -407,9 +415,7 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
           }`}
         >
           <h2 className="setup-section-title">Segmentation channels</h2>
-          {segmentationChannels.length > 0 ? (
-            <p className="setup-section-panel-title">Upload sequence of 3D files (.tif/.tiff)</p>
-          ) : null}
+          {segmentationChannels.length > 0 ? <p className="setup-section-panel-title">{layerUploadTitle}</p> : null}
         </div>
         <div className="setup-rows" role="list">
           {renderChannelRows(orderedSegmentationChannelRows, {
@@ -420,134 +426,136 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
         </div>
       </section>
 
-      <section className="setup-section">
-        <div className={`setup-section-header${tracks.length === 0 ? ' setup-section-header--title-only' : ''}`}>
-          <h2 className="setup-section-title">Tracks</h2>
-          {tracks.length > 0 ? <p className="setup-section-panel-title">Upload track file (.csv)</p> : null}
-        </div>
-        <div className="setup-rows" role="list">
-          {orderedTrackRows.map((row, index) => {
-            if (row.type === 'add') {
-              return (
-                <div key={`track-add-${index}`} className="setup-row setup-row--add" role="listitem">
-                  <button
-                    type="button"
-                    className="channel-tab channel-tab--add"
-                    onClick={onAddTrack}
-                    disabled={isFrontPageLocked}
-                  >
-                    + Add track
-                  </button>
-                  <div className="setup-row-panel setup-row-panel--empty" />
-                </div>
-              );
-            }
-
-            const trackSet = row.trackSet;
-            const validation = trackValidationMap.get(trackSet.id) ?? { errors: [], warnings: [] };
-            const isEditing = editingTrackId === trackSet.id;
-            const trackName = trackSet.name.trim();
-            const hasTrackError = validation.errors.length > 0 || trackSet.status === 'error';
-            const tabClassName = [
-              'channel-tab',
-              hasTrackError ? 'has-error' : '',
-              !hasTrackError && trackSet.status === 'loading' ? 'has-warning' : '',
-              isFrontPageLocked ? 'is-disabled' : ''
-            ]
-              .filter(Boolean)
-              .join(' ');
-            const tabMeta = buildTrackTabMeta(trackSet, channelNameMap, validation);
-            const startEditingTrackName = () => {
-              if (isFrontPageLocked || editingTrackId === trackSet.id) {
-                return;
-              }
-              editingTrackOriginalNameRef.current = trackSet.name;
-              setEditingTrackId(trackSet.id);
-            };
-            const removeLabel = trackName ? `Remove ${trackName}` : 'Remove track';
-
-            return (
-              <div key={trackSet.id} className="setup-row" role="listitem">
-                {isEditing ? (
-                  <div className={`${tabClassName} is-editing`} role="tab" aria-controls={`track-row-panel-${trackSet.id}`}>
-                    <input
-                      ref={editingTrackInputRef}
-                      type="text"
-                      value={trackSet.name}
-                      className="channel-name-input"
-                      maxLength={ENTITY_NAME_MAX_LENGTH}
-                      onChange={(event) => onTrackSetNameChange(trackSet.id, event.target.value)}
-                      onBlur={() => setEditingTrackId(null)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          setEditingTrackId(null);
-                        } else if (event.key === 'Escape') {
-                          onTrackSetNameChange(trackSet.id, editingTrackOriginalNameRef.current);
-                          setEditingTrackId(null);
-                        }
-                      }}
-                    />
-                    <p className="channel-tab-meta">{tabMeta}</p>
+      {showTracksSection ? (
+        <section className="setup-section">
+          <div className={`setup-section-header${tracks.length === 0 ? ' setup-section-header--title-only' : ''}`}>
+            <h2 className="setup-section-title">Tracks</h2>
+            {tracks.length > 0 ? <p className="setup-section-panel-title">Upload track file (.csv)</p> : null}
+          </div>
+          <div className="setup-rows" role="list">
+            {orderedTrackRows.map((row, index) => {
+              if (row.type === 'add') {
+                return (
+                  <div key={`track-add-${index}`} className="setup-row setup-row--add" role="listitem">
                     <button
                       type="button"
-                      className="channel-tab-remove"
-                      onPointerDown={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                      }}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onTrackSetRemove(trackSet.id);
-                      }}
-                      aria-label={removeLabel}
+                      className="channel-tab channel-tab--add"
+                      onClick={onAddTrack}
                       disabled={isFrontPageLocked}
                     >
-                      x
+                      + Add track
                     </button>
+                    <div className="setup-row-panel setup-row-panel--empty" />
                   </div>
-                ) : (
-                  <div
-                    className={tabClassName}
-                    role="tab"
-                    aria-controls={`track-row-panel-${trackSet.id}`}
-                    onDoubleClick={startEditingTrackName}
-                  >
-                    <div className="channel-tab-content">
-                      <div className="channel-tab-title-row">
-                        <h3 onDoubleClick={startEditingTrackName}>{trackName || 'Name required'}</h3>
-                        <button
-                          className="channel-tab-remove"
-                          type="button"
-                          aria-label={removeLabel}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onTrackSetRemove(trackSet.id);
-                          }}
-                          disabled={isFrontPageLocked}
-                        >
-                          x
-                        </button>
-                      </div>
+                );
+              }
+
+              const trackSet = row.trackSet;
+              const validation = trackValidationMap.get(trackSet.id) ?? { errors: [], warnings: [] };
+              const isEditing = editingTrackId === trackSet.id;
+              const trackName = trackSet.name.trim();
+              const hasTrackError = validation.errors.length > 0 || trackSet.status === 'error';
+              const tabClassName = [
+                'channel-tab',
+                hasTrackError ? 'has-error' : '',
+                !hasTrackError && trackSet.status === 'loading' ? 'has-warning' : '',
+                isFrontPageLocked ? 'is-disabled' : ''
+              ]
+                .filter(Boolean)
+                .join(' ');
+              const tabMeta = buildTrackTabMeta(trackSet, channelNameMap, validation);
+              const startEditingTrackName = () => {
+                if (isFrontPageLocked || editingTrackId === trackSet.id) {
+                  return;
+                }
+                editingTrackOriginalNameRef.current = trackSet.name;
+                setEditingTrackId(trackSet.id);
+              };
+              const removeLabel = trackName ? `Remove ${trackName}` : 'Remove track';
+
+              return (
+                <div key={trackSet.id} className="setup-row" role="listitem">
+                  {isEditing ? (
+                    <div className={`${tabClassName} is-editing`} role="tab" aria-controls={`track-row-panel-${trackSet.id}`}>
+                      <input
+                        ref={editingTrackInputRef}
+                        type="text"
+                        value={trackSet.name}
+                        className="channel-name-input"
+                        maxLength={ENTITY_NAME_MAX_LENGTH}
+                        onChange={(event) => onTrackSetNameChange(trackSet.id, event.target.value)}
+                        onBlur={() => setEditingTrackId(null)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            setEditingTrackId(null);
+                          } else if (event.key === 'Escape') {
+                            onTrackSetNameChange(trackSet.id, editingTrackOriginalNameRef.current);
+                            setEditingTrackId(null);
+                          }
+                        }}
+                      />
                       <p className="channel-tab-meta">{tabMeta}</p>
+                      <button
+                        type="button"
+                        className="channel-tab-remove"
+                        onPointerDown={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onTrackSetRemove(trackSet.id);
+                        }}
+                        aria-label={removeLabel}
+                        disabled={isFrontPageLocked}
+                      >
+                        x
+                      </button>
                     </div>
+                  ) : (
+                    <div
+                      className={tabClassName}
+                      role="tab"
+                      aria-controls={`track-row-panel-${trackSet.id}`}
+                      onDoubleClick={startEditingTrackName}
+                    >
+                      <div className="channel-tab-content">
+                        <div className="channel-tab-title-row">
+                          <h3 onDoubleClick={startEditingTrackName}>{trackName || 'Name required'}</h3>
+                          <button
+                            className="channel-tab-remove"
+                            type="button"
+                            aria-label={removeLabel}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onTrackSetRemove(trackSet.id);
+                            }}
+                            disabled={isFrontPageLocked}
+                          >
+                            x
+                          </button>
+                        </div>
+                        <p className="channel-tab-meta">{tabMeta}</p>
+                      </div>
+                    </div>
+                  )}
+                  <div id={`track-row-panel-${trackSet.id}`} className="setup-row-panel" role="tabpanel">
+                    <TrackCard
+                      trackSet={trackSet}
+                      channels={channels}
+                      isDisabled={isFrontPageLocked}
+                      onTrackFilesAdded={onTrackFilesAdded}
+                      onTrackDrop={onTrackDrop}
+                      onTrackSetBoundChannelChange={onTrackSetBoundChannelChange}
+                      onTrackSetClearFile={onTrackSetClearFile}
+                    />
                   </div>
-                )}
-                <div id={`track-row-panel-${trackSet.id}`} className="setup-row-panel" role="tabpanel">
-                  <TrackCard
-                    trackSet={trackSet}
-                    channels={channels}
-                    isDisabled={isFrontPageLocked}
-                    onTrackFilesAdded={onTrackFilesAdded}
-                    onTrackDrop={onTrackDrop}
-                    onTrackSetBoundChannelChange={onTrackSetBoundChannelChange}
-                    onTrackSetClearFile={onTrackSetClearFile}
-                  />
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 };

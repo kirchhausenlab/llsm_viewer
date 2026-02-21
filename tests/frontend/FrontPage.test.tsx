@@ -5,6 +5,13 @@ import TestRenderer from 'react-test-renderer';
 
 import FrontPage from '../../src/components/pages/FrontPage.tsx';
 
+(import.meta as any).env = (import.meta as any).env ?? {};
+
+function collectText(renderer: any): string {
+  const textNodes = renderer.root.findAll((node: any) => typeof node.children?.[0] === 'string');
+  return textNodes.flatMap((node: any) => node.children).join(' ');
+}
+
 function buildBaseProps() {
   const noop = () => {};
   return {
@@ -104,8 +111,7 @@ function buildBaseProps() {
 
 test('front page initial mode renders setup choices', () => {
   const renderer = TestRenderer.create(<FrontPage {...(buildBaseProps() as any)} />);
-  const textNodes = renderer.root.findAll((node: any) => typeof node.children?.[0] === 'string');
-  const text = textNodes.flatMap((node: any) => node.children).join(' ');
+  const text = collectText(renderer);
 
   assert.match(text, /Mirante4D/);
   assert.match(text, /Set up new experiment/);
@@ -176,12 +182,69 @@ test('front page experiment type mode renders chooser buttons', () => {
     />
   );
 
-  const textNodes = renderer.root.findAll((node: any) => typeof node.children?.[0] === 'string');
-  const text = textNodes.flatMap((node: any) => node.children).join(' ');
+  const text = collectText(renderer);
   assert.match(text, /Choose the type of experiment:/);
   assert.match(text, /3D movie/);
   assert.match(text, /2D movie/);
   assert.match(text, /Single 3D volume/);
 
+  renderer.unmount();
+});
+
+test('front page configuring mode uses 2D movie upload copy and keeps tracks section', () => {
+  const props = buildBaseProps();
+  const renderer = TestRenderer.create(
+    <FrontPage
+      {...(props as any)}
+      frontPageMode="configuring"
+      experimentConfiguration={{
+        ...props.experimentConfiguration,
+        experimentType: '2d-movie'
+      }}
+      channelListPanel={{
+        ...props.channelListPanel,
+        channels: [{ id: 'channel-1', name: 'Channel 1', layers: [], channelType: 'channel' }]
+      }}
+    />
+  );
+
+  const text = collectText(renderer);
+  assert.match(text, /Upload single 3D file or sequence of 2D files \(\.tif\/\.tiff\)/);
+  assert.match(text, /Tracks/);
+  renderer.unmount();
+});
+
+test('front page configuring mode hides tracks section for single 3D volume', () => {
+  const props = buildBaseProps();
+  const renderer = TestRenderer.create(
+    <FrontPage
+      {...(props as any)}
+      frontPageMode="configuring"
+      experimentConfiguration={{
+        ...props.experimentConfiguration,
+        experimentType: 'single-3d-volume'
+      }}
+      channelListPanel={{
+        ...props.channelListPanel,
+        channels: [{ id: 'channel-1', name: 'Channel 1', layers: [], channelType: 'channel' }],
+        tracks: [
+          {
+            id: 'track-set-1',
+            name: 'Track set',
+            boundChannelId: null,
+            file: null,
+            fileName: '',
+            status: 'idle',
+            error: null,
+            entries: []
+          }
+        ]
+      }}
+    />
+  );
+
+  const text = collectText(renderer);
+  assert.match(text, /Upload single 3D file or sequence of 2D files \(\.tif\/\.tiff\)/);
+  assert.doesNotMatch(text, /\bTracks\b/);
   renderer.unmount();
 });

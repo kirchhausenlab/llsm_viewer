@@ -13,7 +13,7 @@ import type { PreprocessedStorage } from '../../storage/preprocessedStorage';
 import { createSegmentationSeed, sortVolumeFiles } from '../appHelpers';
 import { computeAnisotropyScale } from '../anisotropyCorrection';
 import type { VolumePayload, VolumeTypedArray } from '../../../types/volume';
-import { createVolumeTypedArray, getBytesPerValue } from '../../../types/volume';
+import { createVolumeTypedArray, createWritableVolumeArray, getBytesPerValue } from '../../../types/volume';
 
 import type {
   ChannelExportMetadata,
@@ -76,6 +76,7 @@ export type PreprocessDatasetProgress =
     };
 
 type LoadVolumesFromFiles = (files: File[]) => Promise<VolumePayload[]>;
+export type PreprocessInputInterpretation = '3d-movie' | '2d-movie' | 'single-3d-volume';
 
 export type PreprocessDatasetToStorageOptions = {
   layers: PreprocessLayerSource[];
@@ -97,6 +98,7 @@ export type PreprocessDatasetToStorageOptions = {
   processingStrategy?: {
     workerizeNormalizationDownsample?: boolean;
   };
+  inputInterpretation?: PreprocessInputInterpretation;
   signal?: AbortSignal;
   onProgress?: (progress: PreprocessDatasetProgress) => void;
 };
@@ -735,6 +737,291 @@ async function loadLayerVolumeByFileIndex({
   return volume;
 }
 
+function createDepthOneVolumeFromSlice({
+  volume,
+  sliceIndex,
+  context
+}: {
+  volume: VolumePayload;
+  sliceIndex: number;
+  context: string;
+}): VolumePayload {
+  if (sliceIndex < 0 || sliceIndex >= volume.depth) {
+    throw new Error(`${context}: slice index ${sliceIndex + 1} is out of range for depth ${volume.depth}.`);
+  }
+  const sliceLength = volume.width * volume.height * volume.channels;
+  const values = createVolumeTypedArray(volume.dataType, volume.data);
+  const start = sliceIndex * sliceLength;
+  const end = start + sliceLength;
+  if (end > values.length) {
+    throw new Error(`${context}: slice ${sliceIndex + 1} exceeds decoded buffer bounds.`);
+  }
+
+  const slice = values.subarray(start, end);
+  const writable = createWritableVolumeArray(volume.dataType, sliceLength);
+  writable.set(slice);
+  const { min, max } = computeSliceMinMax(slice);
+
+  return {
+    width: volume.width,
+    height: volume.height,
+    depth: 1,
+    channels: volume.channels,
+    dataType: volume.dataType,
+    min,
+    max,
+    data: writable.buffer
+  };
+}
+
+function stackDepthOneVolumes({
+  volumes,
+  context
+}: {
+  volumes: VolumePayload[];
+  context: string;
+}): VolumePayload {
+  const first = volumes[0];
+  if (!first) {
+    throw new Error(`${context}: cannot stack an empty volume sequence.`);
+  }
+  if (first.depth !== 1) {
+    throw new Error(`${context}: expected 2D slices with depth 1, got depth ${first.depth}.`);
+  }
+
+  const sliceLength = first.width * first.height * first.channels;
+  const stacked = createWritableVolumeArray(first.dataType, sliceLength * volumes.length);
+  let globalMin = Number.POSITIVE_INFINITY;
+  let globalMax = Number.NEGATIVE_INFINITY;
+
+  for (let index = 0; index < volumes.length; index += 1) {
+    const volume = volumes[index];
+    if (!volume) {
+      throw new Error(`${context}: missing decoded slice at position ${index + 1}.`);
+    }
+    if (volume.depth !== 1) {
+      throw new Error(`${context}: file #${index + 1} is 3D (depth ${volume.depth}); all files must be 2D.`);
+    }
+    if (
+      volume.width !== first.width ||
+      volume.height !== first.height ||
+      volume.channels !== first.channels ||
+      volume.dataType !== first.dataType
+    ) {
+      throw new Error(
+        `${context}: file #${index + 1} has shape ${volume.width}×${volume.height}×${volume.depth} (${volume.channels}ch ${volume.dataType}), expected ${first.width}×${first.height}×1 (${first.channels}ch ${first.dataType}).`
+      );
+    }
+
+    const values = createVolumeTypedArray(volume.dataType, volume.data);
+    if (values.length !== sliceLength) {
+      throw new Error(`${context}: file #${index + 1} returned an unexpected data length.`);
+    }
+
+    stacked.set(values, index * sliceLength);
+    if (volume.min < globalMin) {
+      globalMin = volume.min;
+    }
+    if (volume.max > globalMax) {
+      globalMax = volume.max;
+    }
+  }
+
+  if (!Number.isFinite(globalMin)) {
+    globalMin = 0;
+  }
+  if (!Number.isFinite(globalMax) || globalMax === globalMin) {
+    globalMax = globalMin + 1;
+  }
+
+  return {
+    width: first.width,
+    height: first.height,
+    depth: volumes.length,
+    channels: first.channels,
+    dataType: first.dataType,
+    min: globalMin,
+    max: globalMax,
+    data: stacked.buffer
+  };
+}
+
+type PreparedLayerSource = {
+  layer: PreprocessLayerSource;
+  timepointCount: number;
+  getTimepointVolume: (timepoint: number, signal?: AbortSignal) => Promise<VolumePayload>;
+};
+
+function resolveInputInterpretation(
+  mode: PreprocessDatasetToStorageOptions['inputInterpretation']
+): PreprocessInputInterpretation {
+  return mode ?? '3d-movie';
+}
+
+async function prepareLayerSources({
+  sortedLayerSources,
+  inputInterpretation,
+  volumeLoader,
+  decodedVolumeCacheByLayerKey,
+  signal
+}: {
+  sortedLayerSources: PreprocessLayerSource[];
+  inputInterpretation: PreprocessInputInterpretation;
+  volumeLoader: LoadVolumesFromFiles;
+  decodedVolumeCacheByLayerKey: DecodedVolumeCacheByLayerKey;
+  signal?: AbortSignal;
+}): Promise<PreparedLayerSource[]> {
+  const prepared: PreparedLayerSource[] = [];
+
+  for (const layer of sortedLayerSources) {
+    throwIfAborted(signal);
+    if (layer.files.length === 0) {
+      throw new Error(`Layer "${layer.channelLabel}" does not contain TIFF files.`);
+    }
+
+    if (inputInterpretation === '3d-movie') {
+      const timepointCount = layer.files.length;
+      prepared.push({
+        layer,
+        timepointCount,
+        getTimepointVolume: async (timepoint, nextSignal) => {
+          if (timepoint < 0 || timepoint >= timepointCount) {
+            throw new Error(`Layer "${layer.channelLabel}" timepoint ${timepoint + 1} is out of range.`);
+          }
+          return loadLayerVolumeByFileIndex({
+            layer,
+            fileIndex: timepoint,
+            loader: volumeLoader,
+            decodedVolumeCacheByLayerKey,
+            signal: nextSignal
+          });
+        }
+      });
+      continue;
+    }
+
+    if (inputInterpretation === '2d-movie') {
+      if (layer.files.length === 1) {
+        const sourceVolume = await loadLayerVolumeByFileIndex({
+          layer,
+          fileIndex: 0,
+          loader: volumeLoader,
+          decodedVolumeCacheByLayerKey,
+          signal
+        });
+        const timepointCount = sourceVolume.depth;
+        if (timepointCount <= 0) {
+          throw new Error(`Layer "${layer.channelLabel}" did not decode any image planes.`);
+        }
+        const splitTimepointCache = new Map<number, VolumePayload>();
+        prepared.push({
+          layer,
+          timepointCount,
+          getTimepointVolume: async (timepoint) => {
+            if (timepoint < 0 || timepoint >= timepointCount) {
+              throw new Error(`Layer "${layer.channelLabel}" timepoint ${timepoint + 1} is out of range.`);
+            }
+            const cached = splitTimepointCache.get(timepoint);
+            if (cached) {
+              return cached;
+            }
+            const split = createDepthOneVolumeFromSlice({
+              volume: sourceVolume,
+              sliceIndex: timepoint,
+              context: `Layer "${layer.channelLabel}" (2D movie)`
+            });
+            splitTimepointCache.set(timepoint, split);
+            return split;
+          }
+        });
+      } else {
+        const timepointCount = layer.files.length;
+        prepared.push({
+          layer,
+          timepointCount,
+          getTimepointVolume: async (timepoint, nextSignal) => {
+            if (timepoint < 0 || timepoint >= timepointCount) {
+              throw new Error(`Layer "${layer.channelLabel}" timepoint ${timepoint + 1} is out of range.`);
+            }
+            const volume = await loadLayerVolumeByFileIndex({
+              layer,
+              fileIndex: timepoint,
+              loader: volumeLoader,
+              decodedVolumeCacheByLayerKey,
+              signal: nextSignal
+            });
+            if (volume.depth !== 1) {
+              throw new Error(
+                `Layer "${layer.channelLabel}" in 2D movie mode accepts either a single 3D TIFF or a sequence of 2D TIFFs. File "${layer.files[timepoint]?.name ?? `#${timepoint + 1}`}" is 3D (depth ${volume.depth}).`
+              );
+            }
+            return volume;
+          }
+        });
+      }
+      continue;
+    }
+
+    if (layer.files.length === 1) {
+      prepared.push({
+        layer,
+        timepointCount: 1,
+        getTimepointVolume: async (timepoint, nextSignal) => {
+          if (timepoint !== 0) {
+            throw new Error(`Layer "${layer.channelLabel}" timepoint ${timepoint + 1} is out of range.`);
+          }
+          return loadLayerVolumeByFileIndex({
+            layer,
+            fileIndex: 0,
+            loader: volumeLoader,
+            decodedVolumeCacheByLayerKey,
+            signal: nextSignal
+          });
+        }
+      });
+      continue;
+    }
+
+    let stackedVolumePromise: Promise<VolumePayload> | null = null;
+    prepared.push({
+      layer,
+      timepointCount: 1,
+      getTimepointVolume: async (timepoint, nextSignal) => {
+        if (timepoint !== 0) {
+          throw new Error(`Layer "${layer.channelLabel}" timepoint ${timepoint + 1} is out of range.`);
+        }
+        if (!stackedVolumePromise) {
+          stackedVolumePromise = (async () => {
+            const slices: VolumePayload[] = [];
+            for (let fileIndex = 0; fileIndex < layer.files.length; fileIndex += 1) {
+              const volume = await loadLayerVolumeByFileIndex({
+                layer,
+                fileIndex,
+                loader: volumeLoader,
+                decodedVolumeCacheByLayerKey,
+                signal: nextSignal
+              });
+              if (volume.depth !== 1) {
+                throw new Error(
+                  `Layer "${layer.channelLabel}" in Single 3D volume mode accepts either a single 3D TIFF or a sequence of 2D TIFFs. File "${layer.files[fileIndex]?.name ?? `#${fileIndex + 1}`}" is 3D (depth ${volume.depth}).`
+                );
+              }
+              slices.push(volume);
+            }
+            return stackDepthOneVolumes({
+              volumes: slices,
+              context: `Layer "${layer.channelLabel}" (Single 3D volume)`
+            });
+          })();
+        }
+        return stackedVolumePromise;
+      }
+    });
+  }
+
+  return prepared;
+}
+
 function resolvePreprocessDecodeBatchSize(fileCount: number): number {
   const hardwareConcurrency =
     typeof navigator !== 'undefined' && Number.isFinite(navigator.hardwareConcurrency)
@@ -917,18 +1204,19 @@ type LayerMetadata = {
 };
 
 async function computeLayerTimepointMetadata({
-  sortedLayerSources,
+  preparedLayerSources,
   signal
 }: {
-  sortedLayerSources: PreprocessLayerSource[];
+  preparedLayerSources: PreparedLayerSource[];
   signal?: AbortSignal;
 }): Promise<{
   expectedTimepoints: number;
 }> {
   const layerTimepointCounts: number[] = [];
 
-  for (const layer of sortedLayerSources) {
-    layerTimepointCounts.push(layer.files.length);
+  for (const layer of preparedLayerSources) {
+    throwIfAborted(signal);
+    layerTimepointCounts.push(layer.timepointCount);
   }
 
   const expectedTimepoints = layerTimepointCounts[0] ?? 0;
@@ -947,23 +1235,20 @@ async function computeLayerTimepointMetadata({
 }
 
 async function computeLayerRepresentativeNormalization({
-  sortedLayerSources,
+  preparedLayerSources,
   representativeTimepoint,
-  decodedVolumeCacheByLayerKey,
-  volumeLoader,
   signal,
   onProgress
 }: {
-  sortedLayerSources: PreprocessLayerSource[];
+  preparedLayerSources: PreparedLayerSource[];
   representativeTimepoint: number;
-  decodedVolumeCacheByLayerKey: DecodedVolumeCacheByLayerKey;
-  volumeLoader: LoadVolumesFromFiles;
   signal?: AbortSignal;
   onProgress?: (progress: PreprocessDatasetProgress) => void;
 }): Promise<Map<string, NormalizationParameters>> {
   const normalizationByLayerKey = new Map<string, NormalizationParameters>();
 
-  for (const layer of sortedLayerSources) {
+  for (const preparedLayer of preparedLayerSources) {
+    const layer = preparedLayer.layer;
     if (layer.isSegmentation) {
       continue;
     }
@@ -971,13 +1256,7 @@ async function computeLayerRepresentativeNormalization({
     throwIfAborted(signal);
     onProgress?.({ stage: 'rep-stats', layerKey: layer.key });
 
-    const volume = await loadLayerVolumeByFileIndex({
-      layer,
-      fileIndex: representativeTimepoint,
-      loader: volumeLoader,
-      decodedVolumeCacheByLayerKey,
-      signal
-    });
+    const volume = await preparedLayer.getTimepointVolume(representativeTimepoint, signal);
     normalizationByLayerKey.set(layer.key, computeRepresentativeNormalization(volume));
   }
 
@@ -985,14 +1264,10 @@ async function computeLayerRepresentativeNormalization({
 }
 
 async function collectLayerMetadata({
-  sortedLayerSources,
-  decodedVolumeCacheByLayerKey,
-  volumeLoader,
+  preparedLayerSources,
   signal
 }: {
-  sortedLayerSources: PreprocessLayerSource[];
-  decodedVolumeCacheByLayerKey: DecodedVolumeCacheByLayerKey;
-  volumeLoader: LoadVolumesFromFiles;
+  preparedLayerSources: PreparedLayerSource[];
   signal?: AbortSignal;
 }): Promise<{
   sourceMetadataByLayerKey: Map<string, LayerMetadata>;
@@ -1003,16 +1278,11 @@ async function collectLayerMetadata({
   const sourceMetadataByLayerKey = new Map<string, LayerMetadata>();
   const layerMetadataByKey = new Map<string, LayerMetadata>();
 
-  for (const layer of sortedLayerSources) {
+  for (const preparedLayer of preparedLayerSources) {
+    const layer = preparedLayer.layer;
     throwIfAborted(signal);
 
-    const firstVolume = await loadLayerVolumeByFileIndex({
-      layer,
-      fileIndex: 0,
-      loader: volumeLoader,
-      decodedVolumeCacheByLayerKey,
-      signal
-    });
+    const firstVolume = await preparedLayer.getTimepointVolume(0, signal);
     sourceMetadataByLayerKey.set(layer.key, {
       width: firstVolume.width,
       height: firstVolume.height,
@@ -2079,53 +2349,42 @@ async function writePrecomputedLayerTimepointScales({
 
 async function writeLayerVolumesFor3d({
   chunkWriter,
-  layer,
+  preparedLayer,
   manifestLayer,
   sourceMetadata,
   representativeTimepoint,
   normalizationByLayerKey,
   workerizeNormalizationDownsample,
-  preloadedVolumesByFileIndex,
-  volumeLoader,
   signal,
   onProgress,
   totalVolumeCount,
   progressState
 }: {
   chunkWriter: ChunkWriteDispatcher;
-  layer: PreprocessLayerSource;
+  preparedLayer: PreparedLayerSource;
   manifestLayer: PreprocessedLayerManifestEntry;
   sourceMetadata: LayerMetadata;
   representativeTimepoint: number;
   normalizationByLayerKey: Map<string, NormalizationParameters>;
   workerizeNormalizationDownsample: boolean;
-  preloadedVolumesByFileIndex?: ReadonlyMap<number, VolumePayload>;
-  volumeLoader: LoadVolumesFromFiles;
   signal?: AbortSignal;
   onProgress?: (progress: PreprocessDatasetProgress) => void;
   totalVolumeCount: number;
   progressState: { processedVolumes: number };
 }): Promise<void> {
+  const layer = preparedLayer.layer;
   const normalization = layer.isSegmentation
     ? null
     : normalizationByLayerKey.get(layer.key) ??
       computeRepresentativeNormalization(
-        await loadVolumeFor3dTimepoint(layer.files[representativeTimepoint]!, volumeLoader, signal)
+        await preparedLayer.getTimepointVolume(representativeTimepoint, signal)
       );
   let useWorkerizedNormalizationDownsample =
     workerizeNormalizationDownsample && supportsPreprocessScalePyramidWorker();
 
-  const decodeBatchSize = resolvePreprocessDecodeBatchSize(layer.files.length);
-  for await (const decoded of decodeVolumesInBatchesWithPrefetch({
-    files: layer.files,
-    loader: volumeLoader,
-    batchSize: decodeBatchSize,
-    preloadedVolumesByFileIndex,
-    signal
-  })) {
+  for (let timepoint = 0; timepoint < preparedLayer.timepointCount; timepoint += 1) {
     throwIfAborted(signal);
-    const timepoint = decoded.fileIndex;
-    const raw = decoded.volume;
+    const raw = await preparedLayer.getTimepointVolume(timepoint, signal);
     assertVolumeMatchesExpectedShape(raw, sourceMetadata, `Layer "${layer.channelLabel}" timepoint ${timepoint + 1}`);
 
     let wroteWithWorker = false;
@@ -2197,6 +2456,7 @@ export async function preprocessDatasetToStorage({
   volumeLoader: providedVolumeLoader,
   storageStrategy,
   processingStrategy,
+  inputInterpretation,
   signal,
   onProgress
 }: PreprocessDatasetToStorageOptions): Promise<{
@@ -2215,24 +2475,31 @@ export async function preprocessDatasetToStorage({
 
   const volumeLoader = await resolveVolumeLoader(providedVolumeLoader);
   const decodedVolumeCacheByLayerKey: DecodedVolumeCacheByLayerKey = new Map();
+  const resolvedInputInterpretation = resolveInputInterpretation(inputInterpretation);
+  const preparedLayerSources = await prepareLayerSources({
+    sortedLayerSources,
+    inputInterpretation: resolvedInputInterpretation,
+    volumeLoader,
+    decodedVolumeCacheByLayerKey,
+    signal
+  });
+  const preparedLayerByKey = new Map<string, PreparedLayerSource>(
+    preparedLayerSources.map((preparedLayer) => [preparedLayer.layer.key, preparedLayer])
+  );
   throwIfAborted(signal);
   const { expectedTimepoints } = await computeLayerTimepointMetadata({
-    sortedLayerSources,
+    preparedLayerSources,
     signal
   });
   const representativeTimepoint = Math.floor(expectedTimepoints / 2);
   const normalizationByLayerKey = await computeLayerRepresentativeNormalization({
-    sortedLayerSources,
+    preparedLayerSources,
     representativeTimepoint,
-    decodedVolumeCacheByLayerKey,
-    volumeLoader,
     signal,
     onProgress
   });
   const { sourceMetadataByLayerKey, layerMetadataByKey } = await collectLayerMetadata({
-    sortedLayerSources,
-    decodedVolumeCacheByLayerKey,
-    volumeLoader,
+    preparedLayerSources,
     signal
   });
   const totalVolumeCount = expectedTimepoints;
@@ -2277,17 +2544,18 @@ export async function preprocessDatasetToStorage({
       if (!sourceMetadata) {
         throw new Error(`Missing source metadata for layer "${layer.key}".`);
       }
-      const preloadedVolumesByFileIndex = decodedVolumeCacheByLayerKey.get(layer.key);
+      const preparedLayer = preparedLayerByKey.get(layer.key);
+      if (!preparedLayer) {
+        throw new Error(`Missing prepared layer for "${layer.key}".`);
+      }
       await writeLayerVolumesFor3d({
         chunkWriter,
-        layer,
+        preparedLayer,
         manifestLayer,
         sourceMetadata,
         representativeTimepoint,
         normalizationByLayerKey,
         workerizeNormalizationDownsample,
-        preloadedVolumesByFileIndex,
-        volumeLoader,
         signal,
         onProgress,
         totalVolumeCount: totalWritableVolumes,

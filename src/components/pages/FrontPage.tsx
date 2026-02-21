@@ -62,7 +62,7 @@ type FrontPageProps = {
   experimentTypeSelection: ExperimentTypeSelectionProps;
   experimentConfiguration: ExperimentConfigurationState;
   preprocessedLoader: PreprocessedLoaderProps;
-  channelListPanel: ChannelListPanelProps;
+  channelListPanel: Omit<ChannelListPanelProps, 'experimentType'>;
   preprocessedSummary: PreprocessedSummaryProps;
   launchActions: LaunchActionsProps;
   warningsWindow: {
@@ -169,6 +169,7 @@ export default function FrontPage({
           {frontPageMode !== 'preprocessed' ? <PreprocessedLoader {...preprocessedLoader} /> : null}
           {frontPageMode === 'configuring' ? (
             <ChannelListPanel
+              experimentType={experimentConfiguration.experimentType}
               channels={channelListPanel.channels}
               tracks={channelListPanel.tracks}
               channelValidationMap={channelListPanel.channelValidationMap}

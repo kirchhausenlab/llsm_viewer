@@ -224,9 +224,12 @@ export default function FrontPageContainer({
     if (experimentType === '2d-movie') {
       handleVoxelResolutionAxisChange('z', '1.0');
     }
+    if (experimentType === 'single-3d-volume') {
+      setTracks([]);
+    }
     setIsExperimentTypeSelectionOpen(false);
     onStartExperimentSetup();
-  }, [handleVoxelResolutionAxisChange, onStartExperimentSetup]);
+  }, [handleVoxelResolutionAxisChange, onStartExperimentSetup, setTracks]);
 
   useLayoutEffect(() => {
     onPreprocessedStateChange?.({
@@ -260,14 +263,10 @@ export default function FrontPageContainer({
   ]);
 
   const handleReturnFromFrontPage = useCallback(() => {
-    if (frontPageMode === 'configuring') {
-      setIsExperimentTypeSelectionOpen(true);
-      return;
-    }
     setIsExperimentTypeSelectionOpen(false);
     setSelectedExperimentType('single-3d-volume');
     onReturnToStart();
-  }, [frontPageMode, onReturnToStart]);
+  }, [onReturnToStart]);
 
   const handlePreprocessExperiment = useCallback(async () => {
     if (
@@ -296,7 +295,7 @@ export default function FrontPageContainer({
         id: channel.id,
         name: channel.name.trim()
       }));
-      const trackSetsMetadata = tracks.map((set) => ({
+      const trackSetsMetadata = (selectedExperimentType === 'single-3d-volume' ? [] : tracks).map((set) => ({
         id: set.id,
         name: set.name.trim(),
         fileName: set.fileName,
@@ -378,6 +377,7 @@ export default function FrontPageContainer({
         trackSets: trackSetsMetadata,
         voxelResolution: voxelResolutionValue,
         movieMode: '3d',
+        inputInterpretation: selectedExperimentType,
         storage: selectedStorageHandle.storage,
         storageStrategy: PREPROCESS_STORAGE_STRATEGY
       });
@@ -415,6 +415,7 @@ export default function FrontPageContainer({
     setPreprocessedExperiment,
     showInteractionWarning,
     tracks,
+    selectedExperimentType,
     voxelResolutionValue
   ]);
 
@@ -498,7 +499,8 @@ export default function FrontPageContainer({
 
   const launchActionsProps = {
     frontPageMode,
-    hasGlobalTimepointMismatch,
+    hasGlobalTimepointMismatch:
+      selectedExperimentType === 'single-3d-volume' ? false : hasGlobalTimepointMismatch,
     interactionErrorMessage,
     launchErrorMessage,
     showLaunchViewerButton:

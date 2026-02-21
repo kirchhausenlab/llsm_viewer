@@ -251,3 +251,229 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
   const firstLabel = new DataView(labelChunk.buffer, labelChunk.byteOffset, labelChunk.byteLength).getUint32(0, true);
   assert.equal(firstLabel, 0);
 });
+
+test('preprocessDatasetToStorage maps single 3D TIFF to 2D movie timepoints', async () => {
+  const channels: ChannelExportMetadata[] = [{ id: 'channel-a', name: 'Channel A' }];
+  const layers: PreprocessLayerSource[] = [
+    {
+      channelId: 'channel-a',
+      channelLabel: 'Channel A',
+      key: 'layer-a',
+      label: 'Layer A',
+      files: [new File(['movie'], 'movie-3d.tif', { type: 'image/tiff' })],
+      isSegmentation: false
+    }
+  ];
+  const volumeByFileName = new Map<string, VolumePayload>([
+    [
+      'movie-3d.tif',
+      createSyntheticVolumePayload({
+        width: 2,
+        height: 1,
+        depth: 3,
+        channels: 1,
+        values: [1, 2, 3, 4, 5, 6]
+      })
+    ]
+  ]);
+
+  const storageHandle = createInMemoryPreprocessedStorage({ datasetId: 'preprocess-2d-movie-single-3d' });
+  const result = await preprocessDatasetToStorage({
+    layers,
+    channels,
+    trackSets: [],
+    voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    movieMode: '3d',
+    inputInterpretation: '2d-movie',
+    storage: storageHandle.storage,
+    volumeLoader: createLoaderByFileName(volumeByFileName),
+    storageStrategy: { sharding: { enabled: false } }
+  });
+
+  assert.equal(result.totalVolumeCount, 3);
+  const layer = result.manifest.dataset.channels[0]?.layers[0];
+  assert.ok(layer);
+  assert.equal(layer?.volumeCount, 3);
+  assert.equal(layer?.depth, 1);
+});
+
+test('preprocessDatasetToStorage stacks 2D TIFF sequence into one single-3D volume', async () => {
+  const channels: ChannelExportMetadata[] = [{ id: 'channel-a', name: 'Channel A' }];
+  const layers: PreprocessLayerSource[] = [
+    {
+      channelId: 'channel-a',
+      channelLabel: 'Channel A',
+      key: 'layer-a',
+      label: 'Layer A',
+      files: [
+        new File(['slice-1'], 'slice-1.tif', { type: 'image/tiff' }),
+        new File(['slice-2'], 'slice-2.tif', { type: 'image/tiff' }),
+        new File(['slice-3'], 'slice-3.tif', { type: 'image/tiff' })
+      ],
+      isSegmentation: false
+    }
+  ];
+  const volumeByFileName = new Map<string, VolumePayload>([
+    [
+      'slice-1.tif',
+      createSyntheticVolumePayload({
+        width: 2,
+        height: 2,
+        depth: 1,
+        channels: 1,
+        values: [1, 2, 3, 4]
+      })
+    ],
+    [
+      'slice-2.tif',
+      createSyntheticVolumePayload({
+        width: 2,
+        height: 2,
+        depth: 1,
+        channels: 1,
+        values: [5, 6, 7, 8]
+      })
+    ],
+    [
+      'slice-3.tif',
+      createSyntheticVolumePayload({
+        width: 2,
+        height: 2,
+        depth: 1,
+        channels: 1,
+        values: [9, 10, 11, 12]
+      })
+    ]
+  ]);
+
+  const storageHandle = createInMemoryPreprocessedStorage({ datasetId: 'preprocess-single-3d-stack-2d' });
+  const result = await preprocessDatasetToStorage({
+    layers,
+    channels,
+    trackSets: [],
+    voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    movieMode: '3d',
+    inputInterpretation: 'single-3d-volume',
+    storage: storageHandle.storage,
+    volumeLoader: createLoaderByFileName(volumeByFileName),
+    storageStrategy: { sharding: { enabled: false } }
+  });
+
+  assert.equal(result.totalVolumeCount, 1);
+  const layer = result.manifest.dataset.channels[0]?.layers[0];
+  assert.ok(layer);
+  assert.equal(layer?.volumeCount, 1);
+  assert.equal(layer?.depth, 3);
+});
+
+test('preprocessDatasetToStorage rejects multiple 3D files in 2D movie mode', async () => {
+  const channels: ChannelExportMetadata[] = [{ id: 'channel-a', name: 'Channel A' }];
+  const layers: PreprocessLayerSource[] = [
+    {
+      channelId: 'channel-a',
+      channelLabel: 'Channel A',
+      key: 'layer-a',
+      label: 'Layer A',
+      files: [
+        new File(['vol-1'], 'vol-1.tif', { type: 'image/tiff' }),
+        new File(['vol-2'], 'vol-2.tif', { type: 'image/tiff' })
+      ],
+      isSegmentation: false
+    }
+  ];
+  const volumeByFileName = new Map<string, VolumePayload>([
+    [
+      'vol-1.tif',
+      createSyntheticVolumePayload({
+        width: 2,
+        height: 2,
+        depth: 3,
+        channels: 1,
+        values: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+      })
+    ],
+    [
+      'vol-2.tif',
+      createSyntheticVolumePayload({
+        width: 2,
+        height: 2,
+        depth: 2,
+        channels: 1,
+        values: [1, 2, 3, 4, 5, 6, 7, 8]
+      })
+    ]
+  ]);
+
+  const storageHandle = createInMemoryPreprocessedStorage({ datasetId: 'preprocess-2d-movie-reject-multi-3d' });
+  await assert.rejects(
+    () =>
+      preprocessDatasetToStorage({
+        layers,
+        channels,
+        trackSets: [],
+        voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+        movieMode: '3d',
+        inputInterpretation: '2d-movie',
+        storage: storageHandle.storage,
+        volumeLoader: createLoaderByFileName(volumeByFileName),
+        storageStrategy: { sharding: { enabled: false } }
+      }),
+    /accepts either a single 3D TIFF or a sequence of 2D TIFFs/
+  );
+});
+
+test('preprocessDatasetToStorage validates consistent 2D slice shape in single-3D mode', async () => {
+  const channels: ChannelExportMetadata[] = [{ id: 'channel-a', name: 'Channel A' }];
+  const layers: PreprocessLayerSource[] = [
+    {
+      channelId: 'channel-a',
+      channelLabel: 'Channel A',
+      key: 'layer-a',
+      label: 'Layer A',
+      files: [
+        new File(['slice-1'], 'slice-1.tif', { type: 'image/tiff' }),
+        new File(['slice-2'], 'slice-2.tif', { type: 'image/tiff' })
+      ],
+      isSegmentation: false
+    }
+  ];
+  const volumeByFileName = new Map<string, VolumePayload>([
+    [
+      'slice-1.tif',
+      createSyntheticVolumePayload({
+        width: 2,
+        height: 2,
+        depth: 1,
+        channels: 1,
+        values: [1, 2, 3, 4]
+      })
+    ],
+    [
+      'slice-2.tif',
+      createSyntheticVolumePayload({
+        width: 3,
+        height: 2,
+        depth: 1,
+        channels: 1,
+        values: [5, 6, 7, 8, 9, 10]
+      })
+    ]
+  ]);
+
+  const storageHandle = createInMemoryPreprocessedStorage({ datasetId: 'preprocess-single-3d-shape-mismatch' });
+  await assert.rejects(
+    () =>
+      preprocessDatasetToStorage({
+        layers,
+        channels,
+        trackSets: [],
+        voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+        movieMode: '3d',
+        inputInterpretation: 'single-3d-volume',
+        storage: storageHandle.storage,
+        volumeLoader: createLoaderByFileName(volumeByFileName),
+        storageStrategy: { sharding: { enabled: false } }
+      }),
+    /expected 2×2×1/
+  );
+});
