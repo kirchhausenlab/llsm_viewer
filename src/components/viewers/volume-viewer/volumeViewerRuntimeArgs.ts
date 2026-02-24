@@ -122,7 +122,6 @@ export type VolumeViewerLifecycleOptionGroups = {
   interaction: Pick<
     VolumeViewerLifecycleParams,
     | 'layersRef'
-    | 'activeSlicedLayerKeyRef'
     | 'paintbrushRef'
     | 'paintStrokePointerIdRef'
     | 'hoverIntensityRef'
@@ -134,7 +133,6 @@ export type VolumeViewerLifecycleOptionGroups = {
     | 'resolveHoveredFollowTarget'
     | 'onTrackSelectionToggle'
     | 'onVoxelFollowRequest'
-    | 'onSlicePlaneChange'
   >;
   hoverLifecycle: Pick<
     VolumeViewerLifecycleParams,

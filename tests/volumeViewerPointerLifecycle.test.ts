@@ -2,8 +2,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 
 import { attachVolumeViewerPointerLifecycle } from '../src/components/viewers/volume-viewer/volumeViewerPointerLifecycle.ts';
-import type { VolumeResources, VolumeViewerProps } from '../src/components/viewers/VolumeViewer.types.ts';
-import { RENDER_STYLE_SLICED } from '../src/state/layerSettings.ts';
+import type { VolumeResources } from '../src/components/viewers/VolumeViewer.types.ts';
 
 console.log('Starting volumeViewerPointerLifecycle tests');
 
@@ -94,40 +93,6 @@ function createPointerEvent(
   return event;
 }
 
-function createSliceLayer(key: string): VolumeViewerProps['layers'][number] {
-  return {
-    key,
-    label: key,
-    channelName: key,
-    fullResolutionWidth: 10,
-    fullResolutionHeight: 10,
-    fullResolutionDepth: 10,
-    volume: null,
-    visible: true,
-    sliderRange: 1,
-    minSliderIndex: 0,
-    maxSliderIndex: 0,
-    brightnessSliderIndex: 0,
-    contrastSliderIndex: 0,
-    windowMin: 0,
-    windowMax: 1,
-    color: '#ffffff',
-    offsetX: 0,
-    offsetY: 0,
-    renderStyle: RENDER_STYLE_SLICED,
-    blDensityScale: 1,
-    blBackgroundCutoff: 0,
-    blOpacityScale: 1,
-    blEarlyExitAlpha: 0.98,
-    invert: false,
-    samplingMode: 'linear',
-    mode: '3d',
-    sliceIndex: 0,
-    slicedPlanePoint: { x: 0, y: 0, z: 0 },
-    slicedPlaneNormal: { x: 0, y: 0, z: 1 },
-  };
-}
-
 (() => {
   const domElement = createFakeCanvas();
   const controls = { target: new THREE.Vector3() } as unknown as import('three/examples/jsm/controls/OrbitControls').OrbitControls;
@@ -161,7 +126,6 @@ function createSliceLayer(key: string): VolumeViewerProps['layers'][number] {
     camera,
     controls,
     layersRef: { current: [] },
-    activeSlicedLayerKeyRef: { current: null },
     resourcesRef: { current: new Map() },
     volumeRootGroupRef: { current: null },
     paintbrushRef,
@@ -203,40 +167,19 @@ function createSliceLayer(key: string): VolumeViewerProps['layers'][number] {
   const domElement = createFakeCanvas();
   const controls = { target: new THREE.Vector3() } as unknown as import('three/examples/jsm/controls/OrbitControls').OrbitControls;
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
-  camera.position.set(4.5, 4.5, -25);
-  camera.lookAt(4.5, 4.5, 4.5);
-  camera.updateMatrixWorld(true);
-
-  const layer = createSliceLayer('slice-layer');
-  const texture = new THREE.DataTexture(new Uint8Array([0]), 1, 1, THREE.RedFormat);
-  texture.needsUpdate = true;
-  const geometry = new THREE.BoxGeometry(10, 10, 10);
-  geometry.translate(4.5, 4.5, 4.5);
-  const resource: VolumeResources = {
-    mesh: new THREE.Mesh(geometry, new THREE.MeshBasicMaterial()),
-    texture,
-    dimensions: { width: 10, height: 10, depth: 10 },
-    channels: 1,
-    mode: '3d',
-    renderStyle: RENDER_STYLE_SLICED,
-    samplingMode: 'nearest',
-  };
-
+  const pointerLookCounters = { begin: 0, move: 0, end: 0 };
   const paintCounters = { start: 0, end: 0 };
-  const pointerLookCounters = { begin: 0 };
-  const sliceUpdates: Array<{ layerKey: string; normal: { x: number; y: number; z: number } }> = [];
 
   const detach = attachVolumeViewerPointerLifecycle({
     domElement,
     camera,
     controls,
-    layersRef: { current: [layer] },
-    activeSlicedLayerKeyRef: { current: layer.key },
-    resourcesRef: { current: new Map([[layer.key, resource]]) },
+    layersRef: { current: [] },
+    resourcesRef: { current: new Map<string, VolumeResources>() },
     volumeRootGroupRef: { current: null },
     paintbrushRef: {
       current: {
-        enabled: true,
+        enabled: false,
         onStrokeStart: () => {
           paintCounters.start += 1;
         },
@@ -258,14 +201,15 @@ function createSliceLayer(key: string): VolumeViewerProps['layers'][number] {
     resolveHoveredFollowTarget: () => null,
     onTrackSelectionToggle: () => {},
     onVoxelFollowRequest: () => {},
-    onSlicePlaneChange: (update) => {
-      sliceUpdates.push({ layerKey: update.layerKey, normal: update.normal });
-    },
     beginPointerLook: () => {
       pointerLookCounters.begin += 1;
     },
-    updatePointerLook: () => {},
-    endPointerLook: () => {},
+    updatePointerLook: () => {
+      pointerLookCounters.move += 1;
+    },
+    endPointerLook: () => {
+      pointerLookCounters.end += 1;
+    },
   });
 
   domElement.emitPointer('pointerdown', createPointerEvent({ shiftKey: true, pointerId: 7 }));
@@ -275,16 +219,11 @@ function createSliceLayer(key: string): VolumeViewerProps['layers'][number] {
   );
   domElement.emitPointer('pointerup', createPointerEvent({ shiftKey: true, pointerId: 7, clientX: 140 }));
 
-  assert.equal(paintCounters.start, 0, 'SHIFT-only drag should not trigger paint');
-  assert.equal(pointerLookCounters.begin, 0, 'SHIFT-only drag should not start pointer-look');
-  assert.ok(sliceUpdates.length >= 1, 'SHIFT-only drag should emit slice plane updates');
-  assert.equal(sliceUpdates[0]?.layerKey, layer.key);
-  const latestNormal = sliceUpdates[sliceUpdates.length - 1]?.normal;
-  assert.ok(latestNormal, 'expected a final slice plane normal');
-  assert.ok(
-    Math.abs((latestNormal?.x ?? 0)) > 1e-4 || Math.abs((latestNormal?.y ?? 0)) > 1e-4,
-    'dragging should rotate the default +Z normal',
-  );
+  assert.equal(paintCounters.start, 0, 'SHIFT drag should not trigger paint when CTRL is not pressed');
+  assert.equal(paintCounters.end, 0, 'SHIFT drag should not end paint when paint mode is disabled');
+  assert.equal(pointerLookCounters.begin, 1, 'SHIFT drag should start pointer-look');
+  assert.equal(pointerLookCounters.move, 1, 'SHIFT drag should update pointer-look');
+  assert.equal(pointerLookCounters.end, 1, 'SHIFT drag should end pointer-look');
   detach();
 })();
 

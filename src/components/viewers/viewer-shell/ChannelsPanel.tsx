@@ -6,7 +6,6 @@ import {
   RENDER_STYLE_BL,
   RENDER_STYLE_ISO,
   RENDER_STYLE_MIP,
-  RENDER_STYLE_SLICED,
   createDefaultLayerSettings
 } from '../../../state/layerSettings';
 import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from '../../../shared/colorMaps/layerColors';
@@ -55,7 +54,6 @@ export default function ChannelsPanel({
   onLayerOffsetChange,
   onLayerColorChange,
   onLayerRenderStyleChange,
-  onLayerSlicedAnglesReset,
   onLayerBlDensityScaleChange,
   onLayerBlBackgroundCutoffChange,
   onLayerBlOpacityScaleChange,
@@ -149,7 +147,6 @@ export default function ChannelsPanel({
               const displayColor = normalizedColor.toUpperCase();
               const isActive = channelId === activeChannelId;
               const showBlControls = settings.renderStyle === RENDER_STYLE_BL;
-              const showSlicedAngleControls = settings.renderStyle === RENDER_STYLE_SLICED;
               const invertDisabled = sliderDisabled || Boolean(selectedLayer?.isSegmentation);
               const invertTitle = selectedLayer?.isSegmentation
                 ? 'Invert LUT is unavailable for segmentation volumes.'
@@ -258,31 +255,8 @@ export default function ChannelsPanel({
                           >
                             BL
                           </button>
-                          <button
-                            type="button"
-                            className="channel-action-button"
-                            onClick={() => onLayerRenderStyleChange(selectedLayer.key, RENDER_STYLE_SLICED)}
-                            disabled={renderStyleDisabled}
-                            aria-pressed={settings.renderStyle === RENDER_STYLE_SLICED}
-                          >
-                            Sliced
-                          </button>
                         </div>
                       </div>
-                      {showSlicedAngleControls ? (
-                        <div className="channel-primary-actions">
-                          <div className="channel-primary-actions-row">
-                            <button
-                              type="button"
-                              className="channel-action-button"
-                              onClick={() => onLayerSlicedAnglesReset(selectedLayer.key)}
-                              disabled={sliderDisabled}
-                            >
-                              Reset angles
-                            </button>
-                          </div>
-                        </div>
-                      ) : null}
                       <BrightnessContrastHistogram
                         className="channel-histogram"
                         volume={currentVolume}

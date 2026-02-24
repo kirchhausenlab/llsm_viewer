@@ -3,8 +3,6 @@ import type { Data3DTexture, DataTexture } from 'three';
 import {
   RENDER_STYLE_BL,
   RENDER_STYLE_ISO,
-  RENDER_STYLE_MIP,
-  RENDER_STYLE_SLICED,
   type RenderStyle
 } from '../state/layerSettings';
 
@@ -233,9 +231,6 @@ type VolumeUniforms = {
   u_adaptiveLodEnabled: { value: number };
   u_adaptiveLodScale: { value: number };
   u_adaptiveLodMax: { value: number };
-  u_slicePlanePoint: { value: Vector3 };
-  u_slicePlaneNormal: { value: Vector3 };
-  u_slicePlaneEnabled: { value: number };
 };
 
 const uniforms = {
@@ -278,10 +273,7 @@ const uniforms = {
   u_brickAtlasSize: { value: new Vector3(1, 1, 1) },
   u_adaptiveLodEnabled: { value: 1 },
   u_adaptiveLodScale: { value: 1 },
-  u_adaptiveLodMax: { value: 2 },
-  u_slicePlanePoint: { value: new Vector3(0, 0, 0) },
-  u_slicePlaneNormal: { value: new Vector3(0, 0, 1) },
-  u_slicePlaneEnabled: { value: 0 }
+  u_adaptiveLodMax: { value: 2 }
 } satisfies VolumeUniforms;
 
 const volumeRenderVertexShader = /* glsl */ `
@@ -349,9 +341,6 @@ const volumeRenderFragmentShader = /* glsl */ `
     uniform float u_adaptiveLodEnabled;
     uniform float u_adaptiveLodScale;
     uniform float u_adaptiveLodMax;
-    uniform vec3 u_slicePlanePoint;
-    uniform vec3 u_slicePlaneNormal;
-    uniform float u_slicePlaneEnabled;
 
     uniform sampler3D u_data;
     uniform sampler2D u_cmdata;
@@ -381,9 +370,6 @@ const volumeRenderFragmentShader = /* glsl */ `
     #endif
     #if defined(VOLUME_STYLE_BL)
       void cast_bl(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
-    #endif
-    #if defined(VOLUME_STYLE_SLICED)
-      void cast_sliced(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
     #endif
     float normalize_intensity(float value);
     float apply_inversion(float normalized);
@@ -1041,8 +1027,6 @@ const volumeRenderFragmentShader = /* glsl */ `
         cast_iso(start_loc, step, nsteps, view_ray);
       #elif defined(VOLUME_STYLE_BL)
         cast_bl(start_loc, step, nsteps, view_ray);
-      #elif defined(VOLUME_STYLE_SLICED)
-        cast_sliced(front / u_size, rayDir / u_size, clamp(int(travelDistance * 3.0) + 3, 1, MAX_STEPS), view_ray);
       #else
         cast_mip(start_loc, step, nsteps, view_ray);
       #endif
@@ -1384,145 +1368,6 @@ const volumeRenderFragmentShader = /* glsl */ `
     }
     #endif
 
-    #if defined(VOLUME_STYLE_SLICED)
-    void cast_sliced(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray) {
-      vec4 hitColor = vec4(0.0);
-      bool hasHit = false;
-      bool slicePlaneEnabled = u_slicePlaneEnabled > 0.5;
-      vec3 planeNormal = vec3(0.0, 0.0, 1.0);
-      if (slicePlaneEnabled) {
-        float normalLength = length(u_slicePlaneNormal);
-        if (normalLength > EPSILON) {
-          planeNormal = u_slicePlaneNormal / normalLength;
-        }
-      }
-
-      vec3 safeVolumeSize = max(u_size, vec3(1.0));
-      vec3 rayDir = -view_ray;
-      float rayDirLength = length(rayDir);
-      if (rayDirLength <= EPSILON) {
-        gl_FragColor = vec4(0.0);
-        return;
-      }
-      rayDir /= rayDirLength;
-
-      // Start exactly inside the volume and traverse crossed voxels one by one (3D DDA).
-      vec3 startPoint = start_loc * safeVolumeSize + rayDir * 1e-4;
-      vec3 voxel = floor(startPoint + vec3(0.5));
-      voxel = clamp(voxel, vec3(0.0), safeVolumeSize - vec3(1.0));
-      float tCurrent = 0.0;
-
-      vec3 stepDir = vec3(0.0);
-      vec3 tMax = vec3(LARGE);
-      vec3 tDelta = vec3(LARGE);
-
-      if (rayDir.x > EPSILON) {
-        stepDir.x = 1.0;
-        tMax.x = (voxel.x + 0.5 - startPoint.x) / rayDir.x;
-        tDelta.x = 1.0 / rayDir.x;
-      } else if (rayDir.x < -EPSILON) {
-        stepDir.x = -1.0;
-        tMax.x = (voxel.x - 0.5 - startPoint.x) / rayDir.x;
-        tDelta.x = -1.0 / rayDir.x;
-      }
-
-      if (rayDir.y > EPSILON) {
-        stepDir.y = 1.0;
-        tMax.y = (voxel.y + 0.5 - startPoint.y) / rayDir.y;
-        tDelta.y = 1.0 / rayDir.y;
-      } else if (rayDir.y < -EPSILON) {
-        stepDir.y = -1.0;
-        tMax.y = (voxel.y - 0.5 - startPoint.y) / rayDir.y;
-        tDelta.y = -1.0 / rayDir.y;
-      }
-
-      if (rayDir.z > EPSILON) {
-        stepDir.z = 1.0;
-        tMax.z = (voxel.z + 0.5 - startPoint.z) / rayDir.z;
-        tDelta.z = 1.0 / rayDir.z;
-      } else if (rayDir.z < -EPSILON) {
-        stepDir.z = -1.0;
-        tMax.z = (voxel.z - 0.5 - startPoint.z) / rayDir.z;
-        tDelta.z = -1.0 / rayDir.z;
-      }
-
-      for (int iter = 0; iter < MAX_STEPS; iter++) {
-        if (iter >= nsteps) {
-          break;
-        }
-        if (
-          voxel.x < 0.0 || voxel.y < 0.0 || voxel.z < 0.0 ||
-          voxel.x > safeVolumeSize.x - 1.0 ||
-          voxel.y > safeVolumeSize.y - 1.0 ||
-          voxel.z > safeVolumeSize.z - 1.0
-        ) {
-          break;
-        }
-
-        float tNext = min(tMax.x, min(tMax.y, tMax.z));
-        if (tNext >= LARGE) {
-          break;
-        }
-
-        float tSample = tCurrent;
-        if (slicePlaneEnabled) {
-          vec3 segmentStart = startPoint + rayDir * tCurrent;
-          vec3 segmentEnd = startPoint + rayDir * tNext;
-          float signedStart = dot(segmentStart - u_slicePlanePoint, planeNormal);
-          float signedEnd = dot(segmentEnd - u_slicePlanePoint, planeNormal);
-          float planeEpsilon = 1e-5;
-          bool startIncluded = signedStart >= -planeEpsilon;
-          bool endIncluded = signedEnd >= -planeEpsilon;
-
-          if (!startIncluded && !endIncluded) {
-            tSample = -1.0;
-          } else if (!startIncluded && endIncluded) {
-            float denom = signedEnd - signedStart;
-            if (abs(denom) <= EPSILON) {
-              tSample = -1.0;
-            } else {
-              float crossing = clamp((-signedStart) / denom, 0.0, 1.0);
-              float segmentLength = max(tNext - tCurrent, 0.0);
-              // Bias slightly into the retained half-space to stabilize boundary selection.
-              tSample = tCurrent + crossing * segmentLength + 1e-4;
-            }
-          }
-        }
-
-        if (tSample >= 0.0) {
-          vec3 sampleVoxelPoint = startPoint + rayDir * tSample;
-          vec4 colorSample = sample_color_voxel(sampleVoxelPoint);
-          float rawVal = luminance(colorSample);
-          float normalizedVal = normalize_intensity(rawVal);
-          hitColor = compose_color(normalizedVal, colorSample);
-          hasHit = true;
-          break;
-        }
-
-        tCurrent = tNext;
-        float tieEps = max(1e-8, 1e-7 * max(1.0, abs(tNext)));
-        if (abs(tMax.x - tNext) <= tieEps) {
-          voxel.x += stepDir.x;
-          tMax.x += tDelta.x;
-        }
-        if (abs(tMax.y - tNext) <= tieEps) {
-          voxel.y += stepDir.y;
-          tMax.y += tDelta.y;
-        }
-        if (abs(tMax.z - tNext) <= tieEps) {
-          voxel.z += stepDir.z;
-          tMax.z += tDelta.z;
-        }
-      }
-
-      if (hasHit) {
-        gl_FragColor = vec4(hitColor.rgb, 1.0);
-      } else {
-        gl_FragColor = vec4(0.0);
-      }
-    }
-    #endif
-
     #if defined(VOLUME_STYLE_ISO)
     vec4 add_lighting(float val, vec3 loc, vec3 step, vec3 view_ray, vec4 colorSample) {
       vec3 V = normalize(view_ray);
@@ -1564,7 +1409,7 @@ const volumeRenderFragmentShader = /* glsl */ `
     #endif
   `;
 
-export type VolumeRenderShaderVariantKey = 'mip' | 'iso' | 'bl' | 'sliced';
+export type VolumeRenderShaderVariantKey = 'mip' | 'iso' | 'bl';
 
 const createVariantFragmentShader = (variant: VolumeRenderShaderVariantKey): string => {
   if (variant === 'iso') {
@@ -1572,9 +1417,6 @@ const createVariantFragmentShader = (variant: VolumeRenderShaderVariantKey): str
   }
   if (variant === 'bl') {
     return `#define VOLUME_STYLE_BL\n${volumeRenderFragmentShader}`;
-  }
-  if (variant === 'sliced') {
-    return `#define VOLUME_STYLE_SLICED\n${volumeRenderFragmentShader}`;
   }
   return `#define VOLUME_STYLE_MIP\n${volumeRenderFragmentShader}`;
 };
@@ -1588,8 +1430,7 @@ const createVolumeRenderShaderVariant = (variant: VolumeRenderShaderVariantKey) 
 export const VolumeRenderShaderVariants = {
   mip: createVolumeRenderShaderVariant('mip'),
   iso: createVolumeRenderShaderVariant('iso'),
-  bl: createVolumeRenderShaderVariant('bl'),
-  sliced: createVolumeRenderShaderVariant('sliced')
+  bl: createVolumeRenderShaderVariant('bl')
 } as const;
 
 export const getVolumeRenderShaderVariantKey = (renderStyle: RenderStyle): VolumeRenderShaderVariantKey => {
@@ -1598,9 +1439,6 @@ export const getVolumeRenderShaderVariantKey = (renderStyle: RenderStyle): Volum
   }
   if (renderStyle === RENDER_STYLE_BL) {
     return 'bl';
-  }
-  if (renderStyle === RENDER_STYLE_SLICED) {
-    return 'sliced';
   }
   return 'mip';
 };

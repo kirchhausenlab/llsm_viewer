@@ -63,12 +63,6 @@ export type PlaybackControlsProps = {
   onStopRecording: () => void;
   isRecording: boolean;
   canRecord: boolean;
-  activeSlicedLayerControl: {
-    layerKey: string;
-    depth: number;
-    zIndex: number;
-  } | null;
-  onActiveSlicedLayerDepthChange: (value: number) => void;
 };
 
 export type ChannelPanelStyle = (CSSProperties & { '--channel-slider-color'?: string }) &
@@ -99,7 +93,6 @@ export type ChannelsPanelProps = {
   onLayerOffsetChange: (layerKey: string, axis: 'x' | 'y', value: number) => void;
   onLayerColorChange: (layerKey: string, color: string) => void;
   onLayerRenderStyleChange: (layerKey: string, renderStyle: RenderStyle) => void;
-  onLayerSlicedAnglesReset: (layerKey: string) => void;
   onLayerBlDensityScaleChange: (layerKey: string, value: number) => void;
   onLayerBlBackgroundCutoffChange: (layerKey: string, value: number) => void;
   onLayerBlOpacityScaleChange: (layerKey: string, value: number) => void;

@@ -154,7 +154,6 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
       onLayerOffsetChange: noopWithArgs,
       onLayerColorChange: noopWithArgs,
       onLayerRenderStyleChange: noopWithArgs,
-      onLayerSlicedAnglesReset: noopWithArgs,
       onLayerBlDensityScaleChange: noopWithArgs,
       onLayerBlBackgroundCutoffChange: noopWithArgs,
       onLayerBlOpacityScaleChange: noopWithArgs,

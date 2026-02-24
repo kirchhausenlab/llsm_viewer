@@ -8,7 +8,6 @@ import {
   RENDER_STYLE_BL,
   RENDER_STYLE_ISO,
   RENDER_STYLE_MIP,
-  RENDER_STYLE_SLICED,
   createDefaultLayerSettings,
 } from '../../src/state/layerSettings.ts';
 
@@ -30,12 +29,10 @@ const layer: LoadedDatasetLayer = {
 };
 
 type RenderStyleCall = { layerKey: string; renderStyle: number } | null;
-type ResetAnglesCall = string | null;
 
 function createProps(
   renderStyle: number,
   onRenderStyleCall: (value: RenderStyleCall) => void,
-  onResetAnglesCall: (layerKey: string) => void = () => {},
 ) {
   return {
     layout: {
@@ -75,9 +72,6 @@ function createProps(
     onLayerRenderStyleChange: (layerKey: string, nextRenderStyle: number) => {
       onRenderStyleCall({ layerKey, renderStyle: nextRenderStyle });
     },
-    onLayerSlicedAnglesReset: (layerKey: string) => {
-      onResetAnglesCall(layerKey);
-    },
     onLayerBlDensityScaleChange: () => {},
     onLayerBlBackgroundCutoffChange: () => {},
     onLayerBlOpacityScaleChange: () => {},
@@ -103,7 +97,6 @@ function findBlInputs(renderer: TestRenderer.ReactTestRenderer) {
 
 (() => {
   let renderStyleCall: RenderStyleCall = null;
-  let resetAnglesCall: ResetAnglesCall = null;
   const renderer = TestRenderer.create(
     <ChannelsPanel {...(createProps(RENDER_STYLE_MIP, (value) => {
       renderStyleCall = value;
@@ -139,19 +132,6 @@ function findBlInputs(renderer: TestRenderer.ReactTestRenderer) {
   );
   assert.equal(findBlInputs(renderer).length, 0);
   assert.equal(findButtonByLabel(renderer, 'Reset angles'), null);
-
-  renderer.update(
-    <ChannelsPanel {...(createProps(RENDER_STYLE_SLICED, () => {}, (layerKey) => {
-      resetAnglesCall = layerKey;
-    }) as any)} />,
-  );
-  const resetAnglesButtonInSliced = findButtonByLabel(renderer, 'Reset angles');
-  assert.ok(resetAnglesButtonInSliced);
-
-  act(() => {
-    resetAnglesButtonInSliced?.props.onClick();
-  });
-  assert.equal(resetAnglesCall, 'layer-a');
 
   renderer.unmount();
 })();

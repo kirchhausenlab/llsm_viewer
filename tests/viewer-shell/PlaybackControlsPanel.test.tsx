@@ -6,7 +6,7 @@ import PlaybackControlsPanel from '../../src/components/viewers/viewer-shell/Pla
 
 console.log('Starting PlaybackControlsPanel tests');
 
-function createProps(playbackDisabled: boolean, depth: number) {
+function createProps(playbackDisabled: boolean) {
   return {
     layout: {
       windowMargin: 16,
@@ -40,13 +40,7 @@ function createProps(playbackDisabled: boolean, depth: number) {
       onStartRecording: () => {},
       onStopRecording: () => {},
       isRecording: false,
-      canRecord: true,
-      activeSlicedLayerControl: {
-        layerKey: 'layer-a',
-        depth,
-        zIndex: 0
-      },
-      onActiveSlicedLayerDepthChange: () => {}
+      canRecord: true
     },
     viewerSettings: {
       samplingMode: 'linear' as const,
@@ -66,16 +60,16 @@ function createProps(playbackDisabled: boolean, depth: number) {
 
 (() => {
   const renderer = TestRenderer.create(
-    <PlaybackControlsPanel {...(createProps(true, 200) as any)} />
+    <PlaybackControlsPanel {...(createProps(true) as any)} />
   );
-  const enabledSlider = renderer.root.findByProps({ id: 'sliced-depth-slider-layer-a' });
-  assert.equal(enabledSlider.props.disabled, false);
-  assert.equal(enabledSlider.props.max, 199);
+  const disabledPlaybackSlider = renderer.root.findByProps({ id: 'playback-slider' });
+  assert.equal(disabledPlaybackSlider.props.disabled, true);
+  assert.equal(disabledPlaybackSlider.props.max, 0);
 
-  renderer.update(<PlaybackControlsPanel {...(createProps(true, 1) as any)} />);
-  const disabledSlider = renderer.root.findByProps({ id: 'sliced-depth-slider-layer-a' });
-  assert.equal(disabledSlider.props.disabled, true);
-  assert.equal(disabledSlider.props.max, 0);
+  renderer.update(<PlaybackControlsPanel {...(createProps(false) as any)} />);
+  const enabledPlaybackSlider = renderer.root.findByProps({ id: 'playback-slider' });
+  assert.equal(enabledPlaybackSlider.props.disabled, false);
+  assert.equal(enabledPlaybackSlider.props.max, 0);
 
   renderer.unmount();
 })();

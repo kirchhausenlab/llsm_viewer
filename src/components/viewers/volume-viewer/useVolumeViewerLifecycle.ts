@@ -68,7 +68,6 @@ type UseVolumeViewerLifecycleParams = {
   setRenderContextRevision: Dispatch<SetStateAction<number>>;
   refreshTrackOverlay: () => void;
   layersRef: PointerLifecycleOptions['layersRef'];
-  activeSlicedLayerKeyRef: PointerLifecycleOptions['activeSlicedLayerKeyRef'];
   paintbrushRef: PointerLifecycleOptions['paintbrushRef'];
   paintStrokePointerIdRef: PointerLifecycleOptions['paintStrokePointerIdRef'];
   hoverIntensityRef: PointerLifecycleOptions['hoverIntensityRef'];
@@ -80,7 +79,6 @@ type UseVolumeViewerLifecycleParams = {
   resolveHoveredFollowTarget: PointerLifecycleOptions['resolveHoveredFollowTarget'];
   onTrackSelectionToggle: PointerLifecycleOptions['onTrackSelectionToggle'];
   onVoxelFollowRequest: PointerLifecycleOptions['onVoxelFollowRequest'];
-  onSlicePlaneChange: PointerLifecycleOptions['onSlicePlaneChange'];
   resetHoverState: () => void;
   markHoverInitializationFailed: () => void;
   markHoverInitialized: (raycaster: THREE.Raycaster) => void;
@@ -158,7 +156,6 @@ export function useVolumeViewerLifecycle({
   setRenderContextRevision,
   refreshTrackOverlay,
   layersRef,
-  activeSlicedLayerKeyRef,
   paintbrushRef,
   paintStrokePointerIdRef,
   hoverIntensityRef,
@@ -170,7 +167,6 @@ export function useVolumeViewerLifecycle({
   resolveHoveredFollowTarget,
   onTrackSelectionToggle,
   onVoxelFollowRequest,
-  onSlicePlaneChange,
   resetHoverState,
   markHoverInitializationFailed,
   markHoverInitialized,
@@ -237,8 +233,6 @@ export function useVolumeViewerLifecycle({
   onTrackSelectionToggleRef.current = onTrackSelectionToggle;
   const onVoxelFollowRequestRef = useRef(onVoxelFollowRequest);
   onVoxelFollowRequestRef.current = onVoxelFollowRequest;
-  const onSlicePlaneChangeRef = useRef(onSlicePlaneChange);
-  onSlicePlaneChangeRef.current = onSlicePlaneChange;
   const resetHoverStateRef = useRef(resetHoverState);
   resetHoverStateRef.current = resetHoverState;
   const markHoverInitializationFailedRef = useRef(markHoverInitializationFailed);
@@ -433,7 +427,6 @@ export function useVolumeViewerLifecycle({
       camera,
       controls,
       layersRef,
-      activeSlicedLayerKeyRef,
       resourcesRef,
       volumeRootGroupRef,
       paintbrushRef,
@@ -449,7 +442,6 @@ export function useVolumeViewerLifecycle({
       resolveHoveredFollowTarget: () => resolveHoveredFollowTargetRef.current(),
       onTrackSelectionToggle: (trackId) => onTrackSelectionToggleRef.current(trackId),
       onVoxelFollowRequest: (target) => onVoxelFollowRequestRef.current(target),
-      onSlicePlaneChange: (update) => onSlicePlaneChangeRef.current?.(update),
       beginPointerLook,
       updatePointerLook,
       endPointerLook,

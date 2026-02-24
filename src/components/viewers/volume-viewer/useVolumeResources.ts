@@ -25,7 +25,7 @@ import {
   FALLBACK_BRICK_OCCUPANCY_TEXTURE,
   FALLBACK_SEGMENTATION_LABEL_TEXTURE,
 } from './fallbackTextures';
-import { RENDER_STYLE_SLICED, type LayerSettings } from '../../../state/layerSettings';
+import { type LayerSettings } from '../../../state/layerSettings';
 
 type UseVolumeResourcesParams = {
   layers: import('../VolumeViewer.types').VolumeViewerProps['layers'];
@@ -62,17 +62,6 @@ type UseVolumeResourcesParams = {
 type ShaderUniformMap = Record<string, { value: unknown }>;
 type TextureFormat = THREE.Data3DTexture['format'];
 type ByteTextureFilterMode = 'nearest' | 'linear';
-type SlicePlaneVectorLike = {
-  x: number;
-  y: number;
-  z: number;
-};
-type SlicePlaneLayerState = {
-  renderStyle: number;
-  slicedPlanePoint?: SlicePlaneVectorLike | null;
-  slicedPlaneNormal?: SlicePlaneVectorLike | null;
-  slicedPlaneEnabled?: boolean;
-};
 type BrickAtlasBuildResult = {
   data: Uint8Array;
   width: number;
@@ -166,91 +155,37 @@ const BOOTSTRAP_UPLOAD_BURST_MAX = 256;
 const CAMERA_RESIDENCY_EPSILON_SQ = 0.25;
 const gpuBrickResidencyStateByResource = new WeakMap<VolumeResources, BrickResidencyState>();
 
-const isSlicedRenderStyle = (renderStyle: number | undefined): boolean =>
-  renderStyle === RENDER_STYLE_SLICED;
-
 function resolveSamplingModeForRenderStyle(
-  renderStyle: number | undefined,
   samplingMode: 'linear' | 'nearest',
 ): 'linear' | 'nearest' {
-  return isSlicedRenderStyle(renderStyle) ? 'nearest' : samplingMode;
+  return samplingMode;
 }
 
 function resolveLayerAdditiveEnabled(
   isAdditiveBlending: boolean,
-  renderStyle: number | undefined,
 ): boolean {
-  if (!isAdditiveBlending) {
-    return false;
-  }
-  return !isSlicedRenderStyle(renderStyle);
+  return isAdditiveBlending;
 }
 
-function resolveFiniteNumber(value: unknown, fallback: number): number {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : fallback;
-}
-
-function applySlicePlaneUniforms(
-  uniforms: ShaderUniformMap,
-  layer: SlicePlaneLayerState,
-): void {
-  if (!('u_slicePlanePoint' in uniforms) || !('u_slicePlaneNormal' in uniforms) || !('u_slicePlaneEnabled' in uniforms)) {
-    return;
-  }
-
-  const pointUniform = uniforms.u_slicePlanePoint.value as THREE.Vector3;
-  const normalUniform = uniforms.u_slicePlaneNormal.value as THREE.Vector3;
-  const point = layer.slicedPlanePoint;
-  const normal = layer.slicedPlaneNormal;
-
-  pointUniform.set(
-    resolveFiniteNumber(point?.x, 0),
-    resolveFiniteNumber(point?.y, 0),
-    resolveFiniteNumber(point?.z, 0),
-  );
-  normalUniform.set(
-    resolveFiniteNumber(normal?.x, 0),
-    resolveFiniteNumber(normal?.y, 0),
-    resolveFiniteNumber(normal?.z, 1),
-  );
-  if (normalUniform.lengthSq() <= 1e-8) {
-    normalUniform.set(0, 0, 1);
-  } else {
-    normalUniform.normalize();
-  }
-
-  const defaultEnabled = isSlicedRenderStyle(layer.renderStyle);
-  const enabled = layer.slicedPlaneEnabled ?? defaultEnabled;
-  uniforms.u_slicePlaneEnabled.value = enabled ? 1 : 0;
-}
-
-function applyVolumeMaterialRenderStyle(
+function applyVolumeMaterialState(
   material: THREE.ShaderMaterial,
-  renderStyle: number | undefined,
-  blendingForTransparentStyles: THREE.Blending,
+  blending: THREE.Blending,
 ): void {
-  const sliced = isSlicedRenderStyle(renderStyle);
-  const desiredTransparent = !sliced;
-  const desiredDepthWrite = sliced;
-  const desiredDepthTest = true;
-  const desiredBlending = sliced ? THREE.NormalBlending : blendingForTransparentStyles;
   let needsUpdate = false;
-
-  if (material.transparent !== desiredTransparent) {
-    material.transparent = desiredTransparent;
+  if (material.transparent !== true) {
+    material.transparent = true;
     needsUpdate = true;
   }
-  if (material.depthWrite !== desiredDepthWrite) {
-    material.depthWrite = desiredDepthWrite;
+  if (material.depthWrite !== false) {
+    material.depthWrite = false;
     needsUpdate = true;
   }
-  if (material.depthTest !== desiredDepthTest) {
-    material.depthTest = desiredDepthTest;
+  if (material.depthTest !== true) {
+    material.depthTest = true;
     needsUpdate = true;
   }
-  if (material.blending !== desiredBlending) {
-    material.blending = desiredBlending;
+  if (material.blending !== blending) {
+    material.blending = blending;
     needsUpdate = true;
   }
   if (needsUpdate) {
@@ -260,7 +195,6 @@ function applyVolumeMaterialRenderStyle(
 
 function assignVolumeMeshOnBeforeRender(
   mesh: THREE.Mesh,
-  layer: SlicePlaneLayerState,
 ): void {
   const worldCameraPosition = new THREE.Vector3();
   const localCameraPosition = new THREE.Vector3();
@@ -273,9 +207,6 @@ function assignVolumeMeshOnBeforeRender(
       localCameraPosition.copy(worldCameraPosition);
       mesh.worldToLocal(localCameraPosition);
       cameraUniform.copy(localCameraPosition);
-    }
-    if (uniforms) {
-      applySlicePlaneUniforms(uniforms, layer);
     }
   };
 }
@@ -1618,7 +1549,7 @@ export function useVolumeResources({
     const isAdditive = additiveBlendingRef.current;
 
     resourcesRef.current.forEach((resource) => {
-      const additiveEnabled = resolveLayerAdditiveEnabled(isAdditive, resource.renderStyle);
+      const additiveEnabled = resolveLayerAdditiveEnabled(isAdditive);
       const materialBlending = additiveEnabled ? THREE.AdditiveBlending : THREE.NormalBlending;
       const applyToMaterial = (material: THREE.Material) => {
         const shaderMaterial = material as THREE.ShaderMaterial | THREE.RawShaderMaterial;
@@ -1628,7 +1559,7 @@ export function useVolumeResources({
         }
         if (material instanceof THREE.ShaderMaterial) {
           if (resource.mode === '3d') {
-            applyVolumeMaterialRenderStyle(material, resource.renderStyle, materialBlending);
+            applyVolumeMaterialState(material, materialBlending);
           } else if (material.blending !== materialBlending) {
             material.blending = materialBlending;
             material.needsUpdate = true;
@@ -1851,20 +1782,13 @@ export function useVolumeResources({
       const zIndex = Number.isFinite(layer.sliceIndex)
         ? Number(layer.sliceIndex)
         : Math.floor(depth / 2);
-      const effectiveSamplingMode = resolveSamplingModeForRenderStyle(layer.renderStyle, layer.samplingMode);
+      const effectiveSamplingMode = resolveSamplingModeForRenderStyle(layer.samplingMode);
       const layerAdditiveEnabled = resolveLayerAdditiveEnabled(
         additiveBlendingRef.current,
-        layer.renderStyle,
       );
       const layerMaterialBlending = layerAdditiveEnabled
         ? THREE.AdditiveBlending
         : THREE.NormalBlending;
-      const slicePlaneState: SlicePlaneLayerState = {
-        renderStyle: layer.renderStyle,
-        slicedPlanePoint: layer.slicedPlanePoint ?? null,
-        slicedPlaneNormal: layer.slicedPlaneNormal ?? null,
-        slicedPlaneEnabled: layer.slicedPlaneEnabled,
-      };
 
       if (viewerMode === '3d') {
         if (volume) {
@@ -1931,7 +1855,6 @@ export function useVolumeResources({
           uniforms.u_nearestSampling.value = effectiveSamplingMode === 'nearest' ? 1 : 0;
           applyAdaptiveLodUniforms(uniforms as ShaderUniformMap, effectiveSamplingMode);
           applyBeerLambertUniforms(uniforms as ShaderUniformMap, layer);
-          applySlicePlaneUniforms(uniforms as ShaderUniformMap, slicePlaneState);
           if (uniforms.u_segmentationLabels) {
             uniforms.u_segmentationLabels.value = labelTexture ?? FALLBACK_SEGMENTATION_LABEL_TEXTURE;
           }
@@ -1944,12 +1867,12 @@ export function useVolumeResources({
             vertexShader: shader.vertexShader,
             fragmentShader: shader.fragmentShader,
             side: THREE.BackSide,
-            transparent: !isSlicedRenderStyle(layer.renderStyle),
+            transparent: true,
             blending: layerMaterialBlending,
           });
-          material.depthWrite = isSlicedRenderStyle(layer.renderStyle);
+          material.depthWrite = false;
           material.depthTest = true;
-          applyVolumeMaterialRenderStyle(material, layer.renderStyle, layerMaterialBlending);
+          applyVolumeMaterialState(material, layerMaterialBlending);
 
           const geometry = new THREE.BoxGeometry(width, height, depth);
           geometry.translate(width / 2 - 0.5, height / 2 - 0.5, depth / 2 - 0.5);
@@ -1958,7 +1881,7 @@ export function useVolumeResources({
           mesh.visible = layer.visible;
           mesh.renderOrder = index;
           mesh.position.set(layer.offsetX, layer.offsetY, 0);
-          assignVolumeMeshOnBeforeRender(mesh, slicePlaneState);
+          assignVolumeMeshOnBeforeRender(mesh);
 
           const volumeRootGroup = volumeRootGroupRef.current;
           if (volumeRootGroup) {
@@ -2195,11 +2118,10 @@ export function useVolumeResources({
         if (materialUniforms.u_additive) {
           materialUniforms.u_additive.value = layerAdditiveEnabled ? 1 : 0;
         }
-        applySlicePlaneUniforms(materialUniforms, slicePlaneState);
         const shaderMaterial = mesh.material as THREE.ShaderMaterial;
         const desiredBlending = layerMaterialBlending;
         if (resources.mode === '3d') {
-          applyVolumeMaterialRenderStyle(shaderMaterial, layer.renderStyle, desiredBlending);
+          applyVolumeMaterialState(shaderMaterial, desiredBlending);
         } else if (shaderMaterial.blending !== desiredBlending) {
           shaderMaterial.blending = desiredBlending;
           shaderMaterial.needsUpdate = true;
@@ -2214,7 +2136,7 @@ export function useVolumeResources({
         applyBeerLambertUniforms(materialUniforms, layer);
 
         if (resources.mode === '3d') {
-          assignVolumeMeshOnBeforeRender(mesh, slicePlaneState);
+          assignVolumeMeshOnBeforeRender(mesh);
           const preparation = volume ? cachedPreparation ?? getCachedTextureData(volume) : null;
           const directAtlasFormat = brickAtlas ? getTextureFormatFromBrickAtlas(brickAtlas) : null;
           const residencyCameraPosition = (() => {
