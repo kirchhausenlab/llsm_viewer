@@ -81,6 +81,21 @@ function sanitizeHoveredVoxel(value: HoveredVoxelInfo | null): HoveredVoxelInfo 
   };
 }
 
+function formatScaleLevelToken(level: number): string {
+  return `L${Math.max(0, Math.floor(level))}`;
+}
+
+function formatDownsampleSuffix(downsampleFactor: [number, number, number] | null): string {
+  if (!downsampleFactor) {
+    return '';
+  }
+  const [depth, height, width] = downsampleFactor;
+  if (depth === height && height === width && depth > 1) {
+    return ` (${depth}x)`;
+  }
+  return '';
+}
+
 export function useAppRouteState(): AppRouteState {
   const {
     channels,
@@ -484,6 +499,73 @@ export function useAppRouteState(): AppRouteState {
     }
     return byKey;
   }, [isPlaying, preprocessedExperiment?.manifest]);
+  const layerDownsampleFactorByLevelByKey = useMemo(() => {
+    const byLayer = new Map<string, Map<number, [number, number, number]>>();
+    const manifest = preprocessedExperiment?.manifest;
+    if (!manifest) {
+      return byLayer;
+    }
+    for (const channel of manifest.dataset.channels) {
+      for (const layer of channel.layers) {
+        const byLevel = new Map<number, [number, number, number]>();
+        for (const scale of layer.zarr.scales) {
+          byLevel.set(scale.level, scale.downsampleFactor);
+        }
+        byLayer.set(layer.key, byLevel);
+      }
+    }
+    return byLayer;
+  }, [preprocessedExperiment?.manifest]);
+  const currentScaleLabel = useMemo(() => {
+    if (!isViewerLaunched || playbackLayerKeys.length === 0) {
+      return '—';
+    }
+
+    const loadedScaleEntries = playbackLayerKeys
+      .map((layerKey) => {
+        const scaleLevel =
+          currentLayerBrickAtlases[layerKey]?.scaleLevel ??
+          currentLayerVolumes[layerKey]?.scaleLevel ??
+          null;
+        if (!Number.isFinite(scaleLevel)) {
+          return null;
+        }
+        return {
+          layerKey,
+          scaleLevel: Number(scaleLevel)
+        };
+      })
+      .filter((entry): entry is { layerKey: string; scaleLevel: number } => entry !== null);
+
+    if (loadedScaleEntries.length === 0) {
+      return 'Loading…';
+    }
+
+    const uniqueLevels = Array.from(new Set(loadedScaleEntries.map((entry) => entry.scaleLevel))).sort(
+      (left, right) => left - right
+    );
+    if (uniqueLevels.length === 1) {
+      const scaleLevel = uniqueLevels[0] ?? 0;
+      const entryForLevel = loadedScaleEntries.find((entry) => entry.scaleLevel === scaleLevel) ?? null;
+      const downsampleFactor =
+        entryForLevel
+          ? layerDownsampleFactorByLevelByKey.get(entryForLevel.layerKey)?.get(scaleLevel) ?? null
+          : null;
+      return `${formatScaleLevelToken(scaleLevel)}${formatDownsampleSuffix(downsampleFactor)}`;
+    }
+
+    const listed = uniqueLevels.slice(0, 3).map((level) => formatScaleLevelToken(level));
+    if (uniqueLevels.length > listed.length) {
+      listed.push(`+${uniqueLevels.length - listed.length}`);
+    }
+    return listed.join(' / ');
+  }, [
+    currentLayerBrickAtlases,
+    currentLayerVolumes,
+    isViewerLaunched,
+    layerDownsampleFactorByLevelByKey,
+    playbackLayerKeys
+  ]);
   const { canAdvancePlaybackToIndex } = useRoutePlaybackPrefetch({
     isViewerLaunched,
     isPlaying,
@@ -1023,6 +1105,7 @@ export function useAppRouteState(): AppRouteState {
       topMenu: {
         onReturnToLauncher: handleReturnToLauncher,
         onResetLayout: handleResetWindowLayout,
+        currentScaleLabel,
         hoveredVoxel: hoveredVolumeVoxel ?? lastHoveredVolumeVoxel,
         followedTrackSetId,
         followedTrackId,

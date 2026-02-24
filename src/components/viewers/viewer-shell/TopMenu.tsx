@@ -20,6 +20,7 @@ export default function TopMenu({
   onReturnToLauncher,
   onResetLayout,
   onOpenPaintbrush,
+  currentScaleLabel,
   isHelpMenuOpen,
   openHelpMenu,
   closeHelpMenu,
@@ -276,6 +277,12 @@ export default function TopMenu({
                 Stop following
               </button>
             ) : null}
+          </div>
+        </div>
+        <div className="viewer-top-menu-center">
+          <div className="viewer-top-menu-scale" role="status" aria-live="polite">
+            <span className="viewer-top-menu-scale-label">Scale</span>
+            <span className="viewer-top-menu-scale-value">{currentScaleLabel}</span>
           </div>
         </div>
         <div className="viewer-top-menu-right">

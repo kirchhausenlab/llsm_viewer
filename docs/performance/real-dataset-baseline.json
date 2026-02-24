@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "generatedAt": "2026-02-24T19:36:27.088Z",
+  "environment": {
+    "cwd": "/home/jidacf/code/llsm_viewer",
+    "node": "v22.22.0",
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "cases": {
+    "fib_large": {
+      "id": "fib_large",
+      "name": "FIB large single-volume",
+      "datasetPath": "data/test_fib_large.zarr",
+      "layerKey": "layer-1",
+      "totalTimepoints": 1,
+      "sweepTimepoints": 1,
+      "metrics": {
+        "selectedScaleLevel": 3,
+        "selectedResidencyMode": "atlas",
+        "coldLoadMs": 221.62,
+        "warmLoadMs": 0.17,
+        "transitionLoadMs": null,
+        "sweepLoadMs": null,
+        "chunkHitRate": 0.983
+      },
+      "thresholds": {
+        "selectedScaleLevel": 3,
+        "selectedResidencyMode": "atlas",
+        "coldLoadMsMax": 299.19,
+        "warmLoadMsMax": 8.17,
+        "transitionLoadMsMax": null,
+        "sweepLoadMsMax": null,
+        "chunkHitRateMin": 0.903
+      }
+    },
+    "npc2_20": {
+      "id": "npc2_20",
+      "name": "NPC2 20-timepoint sequence",
+      "datasetPath": "data/test_npc2_20.zarr",
+      "layerKey": "layer-1",
+      "totalTimepoints": 20,
+      "sweepTimepoints": 20,
+      "metrics": {
+        "selectedScaleLevel": 1,
+        "selectedResidencyMode": "atlas",
+        "coldLoadMs": 85.06,
+        "warmLoadMs": 0.06,
+        "transitionLoadMs": 73.49,
+        "sweepLoadMs": 971.28,
+        "chunkHitRate": 0.937
+      },
+      "thresholds": {
+        "selectedScaleLevel": 1,
+        "selectedResidencyMode": "atlas",
+        "coldLoadMsMax": 114.83,
+        "warmLoadMsMax": 8.06,
+        "transitionLoadMsMax": 99.21,
+        "sweepLoadMsMax": 1311.22,
+        "chunkHitRateMin": 0.857
+      }
+    }
+  }
+}

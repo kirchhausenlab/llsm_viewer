@@ -78,6 +78,7 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
     topMenu: {
       onReturnToLauncher: noop,
       onResetLayout: noop,
+      currentScaleLabel: '—',
       followedTrackSetId: null,
       followedTrackId: null,
       followedVoxel: null,
@@ -229,6 +230,7 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
   assert.strictEqual(viewerShellProps.layout.windowMargin, WINDOW_MARGIN);
   assert.strictEqual(viewerShellProps.layout.controlWindowWidth, CONTROL_WINDOW_WIDTH);
   assert.strictEqual(viewerShellProps.layout.selectedTracksWindowWidth, SELECTED_TRACKS_WINDOW_WIDTH);
+  assert.strictEqual(viewerShellProps.topMenu.currentScaleLabel, '—');
   assert.deepStrictEqual(viewerShellProps.trackDefaults, {
     opacity: DEFAULT_TRACK_OPACITY,
     lineWidth: DEFAULT_TRACK_LINE_WIDTH

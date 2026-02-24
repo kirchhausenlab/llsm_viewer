@@ -17,6 +17,7 @@ export type TopMenuProps = {
   onReturnToLauncher: () => void;
   onResetLayout: () => void;
   onOpenPaintbrush: () => void;
+  currentScaleLabel: string;
   isHelpMenuOpen: boolean;
   openHelpMenu: () => void;
   closeHelpMenu: () => void;
