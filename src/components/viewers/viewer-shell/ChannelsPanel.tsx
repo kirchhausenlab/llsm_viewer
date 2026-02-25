@@ -58,6 +58,7 @@ export default function ChannelsPanel({
   onLayerBlBackgroundCutoffChange,
   onLayerBlOpacityScaleChange,
   onLayerBlEarlyExitAlphaChange,
+  onLayerMipEarlyExitThresholdChange,
   onLayerInvertToggle
 }: ChannelsPanelWindowProps) {
   const { windowMargin, controlWindowWidth, layersWindowInitialPosition, resetToken } = layout;
@@ -146,6 +147,7 @@ export default function ChannelsPanel({
               const normalizedColor = normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR);
               const displayColor = normalizedColor.toUpperCase();
               const isActive = channelId === activeChannelId;
+              const showMipControls = settings.renderStyle === RENDER_STYLE_MIP;
               const showBlControls = settings.renderStyle === RENDER_STYLE_BL;
               const invertDisabled = sliderDisabled || Boolean(selectedLayer?.isSegmentation);
               const invertTitle = selectedLayer?.isSegmentation
@@ -361,6 +363,27 @@ export default function ChannelsPanel({
                           />
                         </div>
                       </div>
+                      {showMipControls ? (
+                        <div className="slider-control slider-control--pair">
+                          <div className="slider-control slider-control--inline">
+                            <label htmlFor={`layer-mip-early-exit-${selectedLayer.key}`}>
+                              MIP early exit <span>{formatNormalizedIntensity(settings.mipEarlyExitThreshold)}</span>
+                            </label>
+                            <input
+                              id={`layer-mip-early-exit-${selectedLayer.key}`}
+                              type="range"
+                              min={0}
+                              max={1}
+                              step={0.001}
+                              value={settings.mipEarlyExitThreshold}
+                              onChange={(event) =>
+                                onLayerMipEarlyExitThresholdChange(selectedLayer.key, Number(event.target.value))
+                              }
+                              disabled={sliderDisabled}
+                            />
+                          </div>
+                        </div>
+                      ) : null}
                       {showBlControls ? (
                         <>
                           <div className="slider-control slider-control--pair">

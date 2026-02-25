@@ -249,7 +249,7 @@ function applyAdaptiveLodUniforms(
 
 function applyBeerLambertUniforms(uniforms: ShaderUniformMap, layer: Pick<
   LayerSettings,
-  'blDensityScale' | 'blBackgroundCutoff' | 'blOpacityScale' | 'blEarlyExitAlpha'
+  'blDensityScale' | 'blBackgroundCutoff' | 'blOpacityScale' | 'blEarlyExitAlpha' | 'mipEarlyExitThreshold'
 >): void {
   if ('u_blDensityScale' in uniforms) {
     uniforms.u_blDensityScale.value = layer.blDensityScale;
@@ -262,6 +262,9 @@ function applyBeerLambertUniforms(uniforms: ShaderUniformMap, layer: Pick<
   }
   if ('u_blEarlyExitAlpha' in uniforms) {
     uniforms.u_blEarlyExitAlpha.value = layer.blEarlyExitAlpha;
+  }
+  if ('u_mipEarlyExitThreshold' in uniforms) {
+    uniforms.u_mipEarlyExitThreshold.value = layer.mipEarlyExitThreshold;
   }
 }
 

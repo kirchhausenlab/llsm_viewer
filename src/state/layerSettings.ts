@@ -29,6 +29,7 @@ export const DEFAULT_BL_DENSITY_SCALE = 1.0;
 export const DEFAULT_BL_BACKGROUND_CUTOFF = 0.08;
 export const DEFAULT_BL_OPACITY_SCALE = 1.0;
 export const DEFAULT_BL_EARLY_EXIT_ALPHA = 0.98;
+export const DEFAULT_MIP_EARLY_EXIT_THRESHOLD = 0.999;
 
 export type LayerSettings = BrightnessContrastState & {
   color: string;
@@ -39,6 +40,7 @@ export type LayerSettings = BrightnessContrastState & {
   blBackgroundCutoff: number;
   blOpacityScale: number;
   blEarlyExitAlpha: number;
+  mipEarlyExitThreshold: number;
   invert: boolean;
   samplingMode: SamplingMode;
 };
@@ -56,6 +58,7 @@ export const createDefaultLayerSettings = (initialWindow?: WindowBounds | null):
   blBackgroundCutoff: DEFAULT_BL_BACKGROUND_CUTOFF,
   blOpacityScale: DEFAULT_BL_OPACITY_SCALE,
   blEarlyExitAlpha: DEFAULT_BL_EARLY_EXIT_ALPHA,
+  mipEarlyExitThreshold: DEFAULT_MIP_EARLY_EXIT_THRESHOLD,
   invert: false,
   samplingMode: DEFAULT_SAMPLING_MODE
 });

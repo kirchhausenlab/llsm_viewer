@@ -867,6 +867,7 @@ export function useAppRouteState(): AppRouteState {
     handleLayerBlBackgroundCutoffChange,
     handleLayerBlOpacityScaleChange,
     handleLayerBlEarlyExitAlphaChange,
+    handleLayerMipEarlyExitThresholdChange,
     handleLayerSamplingModeToggle,
     handleLayerInvertToggle
   } = useLayerControls({
@@ -1107,6 +1108,7 @@ export function useAppRouteState(): AppRouteState {
         onLayerBlBackgroundCutoffChange: handleLayerBlBackgroundCutoffChange,
         onLayerBlOpacityScaleChange: handleLayerBlOpacityScaleChange,
         onLayerBlEarlyExitAlphaChange: handleLayerBlEarlyExitAlphaChange,
+        onLayerMipEarlyExitThresholdChange: handleLayerMipEarlyExitThresholdChange,
         onLayerInvertToggle: handleLayerInvertToggle
       },
       tracksPanel: {

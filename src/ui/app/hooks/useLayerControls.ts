@@ -420,6 +420,26 @@ export function useLayerControls({
     [createLayerDefaultSettings, setLayerSettings]
   );
 
+  const handleLayerMipEarlyExitThresholdChange = useCallback(
+    (key: string, value: number) => {
+      const clamped = Math.min(Math.max(value, 0), 1);
+      setLayerSettings((current) => {
+        const previous = current[key] ?? createLayerDefaultSettings(key);
+        if (previous.mipEarlyExitThreshold === clamped) {
+          return current;
+        }
+        return {
+          ...current,
+          [key]: {
+            ...previous,
+            mipEarlyExitThreshold: clamped
+          }
+        };
+      });
+    },
+    [createLayerDefaultSettings, setLayerSettings]
+  );
+
   const handleChannelLayerSelectionChange = useCallback(
     (channelId: string, layerKey: string) => {
       setChannelActiveLayer((current) => {
@@ -601,6 +621,7 @@ export function useLayerControls({
         blBackgroundCutoff: settings.blBackgroundCutoff,
         blOpacityScale: settings.blOpacityScale,
         blEarlyExitAlpha: settings.blEarlyExitAlpha,
+        mipEarlyExitThreshold: settings.mipEarlyExitThreshold,
         invert: settings.invert,
         samplingMode: settings.samplingMode,
         isSegmentation: layer.isSegmentation,
@@ -660,6 +681,7 @@ export function useLayerControls({
     handleLayerBlBackgroundCutoffChange,
     handleLayerBlOpacityScaleChange,
     handleLayerBlEarlyExitAlphaChange,
+    handleLayerMipEarlyExitThresholdChange,
     handleLayerSamplingModeToggle,
     handleLayerInvertToggle
   };

@@ -197,6 +197,7 @@ type VolumeUniforms = {
   u_blBackgroundCutoff: { value: number };
   u_blOpacityScale: { value: number };
   u_blEarlyExitAlpha: { value: number };
+  u_mipEarlyExitThreshold: { value: number };
   u_renderthreshold: { value: number };
   u_clim: { value: Vector2 };
   u_data: { value: Data3DTexture | null };
@@ -240,6 +241,7 @@ const uniforms = {
   u_blBackgroundCutoff: { value: 0.08 },
   u_blOpacityScale: { value: 1 },
   u_blEarlyExitAlpha: { value: 0.98 },
+  u_mipEarlyExitThreshold: { value: 0.999 },
   u_renderthreshold: { value: 0.5 },
   u_clim: { value: new Vector2(1, 1) },
   u_data: { value: null as Data3DTexture | null },
@@ -310,6 +312,7 @@ const volumeRenderFragmentShader = /* glsl */ `
     uniform float u_blBackgroundCutoff;
     uniform float u_blOpacityScale;
     uniform float u_blEarlyExitAlpha;
+    uniform float u_mipEarlyExitThreshold;
     uniform float u_renderthreshold;
     uniform vec2 u_clim;
     uniform int u_channels;
@@ -1051,7 +1054,7 @@ const volumeRenderFragmentShader = /* glsl */ `
       float cachedBrickMaxRaw = 0.0;
       bool hasCachedBrick = false;
 
-      const float HIGH_WATER_MARK = 0.999;
+      float safeHighWaterMark = clamp(u_mipEarlyExitThreshold, 0.0, 1.0);
 
       for (int iter = 0; iter < MAX_STEPS; iter++) {
         if (iter >= nsteps) {
@@ -1089,7 +1092,7 @@ const volumeRenderFragmentShader = /* glsl */ `
           max_color = colorSample;
           max_loc = loc;
 
-          if (max_val >= HIGH_WATER_MARK) {
+          if (max_val >= safeHighWaterMark) {
             break;
           }
         }

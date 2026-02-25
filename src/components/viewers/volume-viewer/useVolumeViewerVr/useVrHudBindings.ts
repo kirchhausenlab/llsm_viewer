@@ -102,6 +102,7 @@ export function useVrHudBindings({
           blBackgroundCutoff: layer.settings.blBackgroundCutoff,
           blOpacityScale: layer.settings.blOpacityScale,
           blEarlyExitAlpha: layer.settings.blEarlyExitAlpha,
+          mipEarlyExitThreshold: layer.settings.mipEarlyExitThreshold,
           invert: layer.settings.invert,
           samplingMode: layer.settings.samplingMode ?? 'linear',
         },

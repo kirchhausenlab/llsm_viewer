@@ -256,6 +256,7 @@ export type VrChannelsState = {
         blBackgroundCutoff: number;
         blOpacityScale: number;
         blEarlyExitAlpha: number;
+        mipEarlyExitThreshold: number;
         invert: boolean;
         samplingMode: SamplingMode;
       };

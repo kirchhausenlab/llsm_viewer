@@ -43,6 +43,7 @@ export type ViewerLayer = {
   blBackgroundCutoff: number;
   blOpacityScale: number;
   blEarlyExitAlpha: number;
+  mipEarlyExitThreshold: number;
   invert: boolean;
   samplingMode: SamplingMode;
   isSegmentation?: boolean;
@@ -69,6 +70,7 @@ export type VolumeViewerVrPanelLayerSettings = {
   blBackgroundCutoff: number;
   blOpacityScale: number;
   blEarlyExitAlpha: number;
+  mipEarlyExitThreshold: number;
   invert: boolean;
   samplingMode: SamplingMode;
 };

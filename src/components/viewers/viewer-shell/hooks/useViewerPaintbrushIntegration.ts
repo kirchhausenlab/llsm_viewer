@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react';
 
 import { usePaintbrush, type PaintbrushController } from '../../../../hooks/paintbrush/usePaintbrush';
+import { DEFAULT_MIP_EARLY_EXIT_THRESHOLD } from '../../../../state/layerSettings';
 import { encodeRgbTiffStack } from '../../../../shared/utils/tiffWriter';
 import type { ViewerShellProps } from '../types';
 
@@ -85,6 +86,7 @@ export function useViewerPaintbrushIntegration({
       blBackgroundCutoff: 0.08,
       blOpacityScale: 1,
       blEarlyExitAlpha: 0.98,
+      mipEarlyExitThreshold: DEFAULT_MIP_EARLY_EXIT_THRESHOLD,
       invert: false,
       samplingMode: 'nearest' as const,
       mode: '3d' as const

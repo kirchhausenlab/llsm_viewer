@@ -97,6 +97,7 @@ export type ChannelsPanelProps = {
   onLayerBlBackgroundCutoffChange: (layerKey: string, value: number) => void;
   onLayerBlOpacityScaleChange: (layerKey: string, value: number) => void;
   onLayerBlEarlyExitAlphaChange: (layerKey: string, value: number) => void;
+  onLayerMipEarlyExitThresholdChange: (layerKey: string, value: number) => void;
   onLayerInvertToggle: (layerKey: string) => void;
 };
 
