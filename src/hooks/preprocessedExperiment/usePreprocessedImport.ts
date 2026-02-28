@@ -5,7 +5,8 @@ import { unzip } from 'fflate';
 import { openPreprocessedDatasetFromZarrStorage } from '../../shared/utils/preprocessedDataset/open';
 import {
   createDirectoryHandlePreprocessedStorage,
-  createOpfsPreprocessedStorage
+  createOpfsPreprocessedStorage,
+  PREPROCESSED_STORAGE_ROOT_DIR
 } from '../../shared/storage/preprocessedStorage';
 import type { PreprocessedStorageHandle } from '../../shared/storage/preprocessedStorage';
 import type { ChannelSource, StagedPreprocessedExperiment, TrackSetSource } from '../dataset';
@@ -44,8 +45,6 @@ type ArchiveEntries = Record<string, Uint8Array>;
 type ArchiveExtractionResult = {
   files: Array<{ path: string; data: Uint8Array }>;
 };
-
-const PREPROCESSED_STORAGE_ROOT_DIR = 'llsm-viewer-preprocessed-vnext';
 
 function canUseDirectoryPicker(): boolean {
   return typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function';

@@ -13,11 +13,14 @@ import type {
   TrackValidation
 } from '../../hooks/dataset';
 import { preprocessDatasetToStorage } from '../../shared/utils/preprocessedDataset';
-import { createDirectoryHandlePreprocessedStorage, createOpfsPreprocessedStorage } from '../../shared/storage/preprocessedStorage';
+import {
+  createDirectoryHandlePreprocessedStorage,
+  createOpfsPreprocessedStorage,
+  PREPROCESSED_STORAGE_ROOT_DIR
+} from '../../shared/storage/preprocessedStorage';
 import type { PreprocessedStorageHandle } from '../../shared/storage/preprocessedStorage';
 
 type TrackSummary = { totalRows: number; uniqueTracks: number };
-const PREPROCESSED_STORAGE_ROOT_DIR = 'llsm-viewer-preprocessed-vnext';
 const FRONTPAGE_OPFS_DATASET_ID = 'preprocessed-experiment';
 const PREPROCESS_STORAGE_STRATEGY = {
   maxInFlightChunkWrites: 4,

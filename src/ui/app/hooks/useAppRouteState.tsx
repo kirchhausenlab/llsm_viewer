@@ -14,6 +14,10 @@ import { useDatasetSetup } from '../../../hooks/dataset';
 import { useTrackState } from '../../../hooks/tracks';
 import { useChannelLayerStateContext } from '../../../hooks/useChannelLayerState';
 import {
+  clearOpfsPreprocessedStorageRoot,
+  PREPROCESSED_STORAGE_ROOT_DIR
+} from '../../../shared/storage/preprocessedStorage';
+import {
   createVolumeProvider,
   DEFAULT_MAX_CACHED_CHUNK_BYTES,
   DEFAULT_MAX_CACHED_VOLUMES,
@@ -183,6 +187,7 @@ export function useAppRouteState(): AppRouteState {
   } = datasetErrors;
   const [blendingMode, setBlendingMode] = useState<'alpha' | 'additive'>('additive');
   const resetPreprocessedStateRef = useRef<() => void>(() => {});
+  const hasScheduledOpfsCleanupRef = useRef(false);
   const [resetViewHandler, setResetViewHandler] = useState<(() => void) | null>(null);
   const [activeChannelTabId, setActiveChannelTabId] = useState<string | null>(null);
   const [hoveredVolumeVoxel, setHoveredVolumeVoxel] = useState<HoveredVoxelInfo | null>(null);
@@ -267,6 +272,40 @@ export function useAppRouteState(): AppRouteState {
       maxConcurrentPrefetchLoads: DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS
     });
   }, [preprocessedExperiment]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const scheduleOpfsCleanup = () => {
+      if (hasScheduledOpfsCleanupRef.current) {
+        return;
+      }
+      hasScheduledOpfsCleanupRef.current = true;
+      void clearOpfsPreprocessedStorageRoot({ rootDir: PREPROCESSED_STORAGE_ROOT_DIR }).catch((error) => {
+        console.warn('Failed to clear OPFS preprocessed cache during tab teardown.', error);
+      });
+    };
+
+    const handlePageHide = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        return;
+      }
+      scheduleOpfsCleanup();
+    };
+    const handleBeforeUnload = () => {
+      scheduleOpfsCleanup();
+    };
+
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') {

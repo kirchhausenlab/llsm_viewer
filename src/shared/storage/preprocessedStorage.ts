@@ -14,6 +14,8 @@ export type PreprocessedStorageHandle = {
   dispose?: () => Promise<void>;
 };
 
+export const PREPROCESSED_STORAGE_ROOT_DIR = 'llsm-viewer-preprocessed-vnext';
+
 function assertSafePath(path: string): string {
   const normalized = path.replace(/^\/+/, '').trim();
   if (!normalized) {
@@ -47,6 +49,7 @@ function requireNonEmptyName(value: string, label: string): string {
 type FileSystemDirectoryHandleLike = {
   getDirectoryHandle(name: string, options?: { create?: boolean }): Promise<FileSystemDirectoryHandleLike>;
   getFileHandle(name: string, options?: { create?: boolean }): Promise<FileSystemFileHandleLike>;
+  removeEntry(name: string, options?: { recursive?: boolean }): Promise<void>;
 };
 
 type FileSystemFileHandleLike = {
@@ -79,6 +82,16 @@ async function getOrCreateDirectory(
     current = await current.getDirectoryHandle(part, { create: true });
   }
   return current;
+}
+
+function isMissingStorageEntryError(error: unknown): boolean {
+  if (typeof DOMException !== 'undefined' && error instanceof DOMException) {
+    return error.name === 'NotFoundError';
+  }
+  if (error instanceof Error) {
+    return /not found/i.test(error.message);
+  }
+  return false;
 }
 
 async function getDirectory(
@@ -160,6 +173,30 @@ async function writeFileToDirectory(
   await writable.close();
 }
 
+async function removeEntryFromDirectory(
+  root: FileSystemDirectoryHandleLike,
+  path: string,
+  options?: { recursive?: boolean }
+): Promise<void> {
+  const safePath = assertSafePath(path);
+  const parts = safePath.split('/');
+  const name = parts.pop();
+  if (!name) {
+    throw new Error('Storage entry path is missing a name.');
+  }
+  const directoryPath = parts.join('/');
+
+  try {
+    const dir = directoryPath ? await getDirectory(root, directoryPath) : root;
+    await dir.removeEntry(name, options);
+  } catch (error) {
+    if (isMissingStorageEntryError(error)) {
+      return;
+    }
+    throw error;
+  }
+}
+
 async function readFileFromDirectory(
   root: FileSystemDirectoryHandleLike,
   path: string,
@@ -202,7 +239,20 @@ export async function createOpfsPreprocessedStorage(
     }
   };
 
-  return { backend: 'opfs', id: datasetId, storage };
+  return {
+    backend: 'opfs',
+    id: datasetId,
+    storage,
+    async dispose() {
+      await removeEntryFromDirectory(root, `${rootDir}/${datasetDirName}`, { recursive: true });
+    }
+  };
+}
+
+export async function clearOpfsPreprocessedStorageRoot(options: { rootDir: string }): Promise<void> {
+  const rootDir = requireNonEmptyName(options.rootDir, 'rootDir');
+  const root = await getOpfsRoot();
+  await removeEntryFromDirectory(root, rootDir, { recursive: true });
 }
 
 export async function createDirectoryHandlePreprocessedStorage(
