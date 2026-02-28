@@ -552,9 +552,24 @@ await (async () => {
   await storageHandle.storage.writeFile(`${baseScale.zarr.histogram.path}/c/1/0`, encodeUint32ArrayLE(histogramT1));
 
   const opened = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
+  const readFileCalls: string[] = [];
+  const readFileRangeCalls: Array<{ path: string; offset: number; length: number }> = [];
+  const trackedStorage = {
+    async writeFile(path: string, data: Uint8Array) {
+      await storageHandle.storage.writeFile(path, data);
+    },
+    async readFile(path: string) {
+      readFileCalls.push(path);
+      return storageHandle.storage.readFile(path);
+    },
+    async readFileRange(path: string, offset: number, length: number) {
+      readFileRangeCalls.push({ path, offset, length });
+      return storageHandle.storage.readFileRange!(path, offset, length);
+    }
+  };
   const provider = createVolumeProvider({
     manifest: opened.manifest,
-    storage: storageHandle.storage,
+    storage: trackedStorage,
     maxCachedVolumes: 0,
     maxCachedChunkBytes: DEFAULT_MAX_CACHED_CHUNK_BYTES,
     maxConcurrentChunkReads: DEFAULT_MAX_CONCURRENT_CHUNK_READS,
@@ -564,6 +579,8 @@ await (async () => {
   const first = await provider.getVolume('layer-sharded', 0);
   assert.deepEqual(Array.from(first.normalized), Array.from(t0));
   assert.deepEqual(Array.from(first.histogram ?? []), Array.from(histogramT0));
+  assert.equal(readFileRangeCalls.some((call) => call.path.endsWith('.shard')), true);
+  assert.equal(readFileCalls.some((path) => path.endsWith('.shard')), false);
   assert.equal(typeof provider.getBrickPageTable, 'function');
   const shardedPageTableT0 = await provider.getBrickPageTable!('layer-sharded', 0);
   assert.deepEqual(shardedPageTableT0.gridShape, [1, 2, 2]);

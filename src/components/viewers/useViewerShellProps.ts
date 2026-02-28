@@ -10,6 +10,7 @@ import {
   TRACK_TRAIL_LENGTH_RANGE
 } from '../../hooks/tracks';
 import type { VolumeProviderDiagnostics } from '../../core/volumeProvider';
+import type { LODPolicyDiagnosticsSnapshot } from '../../core/lodPolicyDiagnostics';
 import type { VolumeViewerVrProps } from './VolumeViewer.types';
 import type { ViewerShellProps } from './ViewerShell';
 
@@ -69,10 +70,12 @@ export type ViewerShellContainerViewerPanelsProps = {
   loading: ViewerPanelsLoadingInput;
   tracks: ViewerPanelsTrackInput;
   runtimeDiagnostics?: VolumeProviderDiagnostics | null;
+  lodPolicyDiagnostics?: LODPolicyDiagnosticsSnapshot | null;
   canAdvancePlayback?: ViewerShellProps['volumeViewerProps']['canAdvancePlayback'];
   onRegisterReset: ViewerShellProps['volumeViewerProps']['onRegisterReset'];
   onVolumeStepScaleChange?: ViewerShellProps['volumeViewerProps']['onVolumeStepScaleChange'];
   onRegisterVolumeStepScaleChange?: ViewerShellProps['volumeViewerProps']['onRegisterVolumeStepScaleChange'];
+  onCameraNavigationSample?: ViewerShellProps['volumeViewerProps']['onCameraNavigationSample'];
 };
 
 export type ViewerShellContainerVrProps = Pick<
@@ -143,6 +146,7 @@ function mapVolumeViewerProps({
     loadedVolumes: viewerPanels.loading.loadedVolumes,
     expectedVolumes: viewerPanels.loading.expectedVolumes,
     runtimeDiagnostics: viewerPanels.runtimeDiagnostics ?? null,
+    lodPolicyDiagnostics: viewerPanels.lodPolicyDiagnostics ?? null,
     timeIndex: playbackControls.selectedIndex,
     totalTimepoints: playbackControls.volumeTimepointCount,
     isPlaying: playbackControls.isPlaying,
@@ -156,6 +160,7 @@ function mapVolumeViewerProps({
     onFpsChange: playbackControls.onFpsChange,
     onVolumeStepScaleChange: viewerPanels.onVolumeStepScaleChange,
     onRegisterVolumeStepScaleChange: viewerPanels.onRegisterVolumeStepScaleChange,
+    onCameraNavigationSample: viewerPanels.onCameraNavigationSample,
     onRegisterReset: viewerPanels.onRegisterReset,
     trackScale: viewerPanels.tracks.trackScale,
     tracks: viewerPanels.tracks.tracks,

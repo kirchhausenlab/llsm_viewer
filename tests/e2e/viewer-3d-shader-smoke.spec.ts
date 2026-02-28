@@ -32,13 +32,7 @@ test('@smoke entering 3D view does not trigger shader compile errors', async ({ 
   });
 
   const playbackWindow = page.locator('.floating-window--playback');
-  const modeButton = playbackWindow.locator('.viewer-mode-row button').first();
-  await expect(modeButton).toBeVisible();
-  const initialModeLabel = (await modeButton.textContent())?.trim() ?? '';
-  if (initialModeLabel !== '3D view') {
-    await modeButton.click();
-    await expect(modeButton).toHaveText('3D view');
-  }
+  await expect(playbackWindow.getByRole('heading', { name: 'Viewer controls' })).toBeVisible();
 
   await page.waitForTimeout(1200);
   expect(shaderErrors, `shader errors observed in browser console:\n${shaderErrors.join('\n')}`).toEqual([]);

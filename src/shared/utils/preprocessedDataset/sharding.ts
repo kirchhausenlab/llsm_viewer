@@ -239,7 +239,13 @@ export function encodeShardEntries(rank: number, entries: ShardEntry[]): Uint8Ar
   return output;
 }
 
-function parseShardHeader(shardBytes: Uint8Array): { header: EncodedShardHeader; payloadStart: number } {
+export type ShardEntryIndex = {
+  rank: number;
+  payloadStart: number;
+  entries: Map<string, { offset: number; length: number }>;
+};
+
+function parseShardHeaderFromBytes(shardBytes: Uint8Array): { header: EncodedShardHeader; payloadStart: number } {
   if (shardBytes.byteLength < 4) {
     throw new Error('Invalid shard file: missing header length.');
   }
@@ -269,6 +275,92 @@ function parseShardHeader(shardBytes: Uint8Array): { header: EncodedShardHeader;
   };
 }
 
+function parseShardHeaderText(headerText: string, payloadStart: number): ShardEntryIndex {
+  const parsed = JSON.parse(headerText) as Partial<EncodedShardHeader>;
+  if (parsed.v !== 1) {
+    throw new Error(`Unsupported shard format version: ${String(parsed.v)}.`);
+  }
+  if (!Array.isArray(parsed.e)) {
+    throw new Error('Invalid shard file: missing entry index.');
+  }
+  const rank = assertPositiveInteger(parsed.r ?? Number.NaN, 'shard rank');
+  const entries = new Map<string, { offset: number; length: number }>();
+  for (const entry of parsed.e) {
+    const key = String(entry.k ?? '');
+    if (!key) {
+      throw new Error('Invalid shard file: empty entry key.');
+    }
+    const offset = assertNonNegativeInteger(entry.o ?? Number.NaN, `entry offset for ${key}`);
+    const length = assertNonNegativeInteger(entry.l ?? Number.NaN, `entry length for ${key}`);
+    entries.set(key, { offset, length });
+  }
+  return {
+    rank,
+    payloadStart,
+    entries
+  };
+}
+
+export function parseShardEntryIndex(shardBytes: Uint8Array): ShardEntryIndex {
+  const { header, payloadStart } = parseShardHeaderFromBytes(shardBytes);
+  const entries = new Map<string, { offset: number; length: number }>();
+  for (const entry of header.e) {
+    const key = String(entry.k ?? '');
+    if (!key) {
+      throw new Error('Invalid shard file: empty entry key.');
+    }
+    const offset = assertNonNegativeInteger(entry.o, `entry offset for ${key}`);
+    const length = assertNonNegativeInteger(entry.l, `entry length for ${key}`);
+    entries.set(key, { offset, length });
+  }
+  return {
+    rank: header.r,
+    payloadStart,
+    entries
+  };
+}
+
+export function parseShardEntryIndexFromHeaderBytes(
+  headerBytes: Uint8Array,
+  payloadStart: number
+): ShardEntryIndex {
+  const headerText = shardHeaderDecoder.decode(headerBytes);
+  return parseShardHeaderText(headerText, payloadStart);
+}
+
+export function decodeShardEntryFromIndex({
+  shardBytes,
+  rank,
+  localChunkCoords,
+  entryIndex
+}: {
+  shardBytes: Uint8Array;
+  rank: number;
+  localChunkCoords: readonly number[];
+  entryIndex: ShardEntryIndex;
+}): Uint8Array {
+  const normalizedRank = assertPositiveInteger(rank, 'shard rank');
+  if (localChunkCoords.length !== normalizedRank) {
+    throw new Error(
+      `Local chunk coordinate rank mismatch: expected ${normalizedRank}, got ${localChunkCoords.length}.`
+    );
+  }
+  if (entryIndex.rank !== normalizedRank) {
+    throw new Error(`Shard rank mismatch: expected ${normalizedRank}, got ${entryIndex.rank}.`);
+  }
+  const targetKey = createShardEntryKey(localChunkCoords);
+  const entry = entryIndex.entries.get(targetKey);
+  if (!entry) {
+    throw new Error(`Shard entry not found for local chunk ${targetKey}.`);
+  }
+  const byteStart = entryIndex.payloadStart + entry.offset;
+  const byteEnd = byteStart + entry.length;
+  if (byteEnd > shardBytes.byteLength) {
+    throw new Error(`Shard entry range for ${targetKey} exceeds shard payload bounds.`);
+  }
+  return shardBytes.slice(byteStart, byteEnd);
+}
+
 export function decodeShardEntry({
   shardBytes,
   rank,
@@ -284,23 +376,11 @@ export function decodeShardEntry({
       `Local chunk coordinate rank mismatch: expected ${normalizedRank}, got ${localChunkCoords.length}.`
     );
   }
-  const { header, payloadStart } = parseShardHeader(shardBytes);
-  if (header.r !== normalizedRank) {
-    throw new Error(`Shard rank mismatch: expected ${normalizedRank}, got ${header.r}.`);
-  }
-
-  const targetKey = createShardEntryKey(localChunkCoords);
-  const entry = header.e.find((candidate) => candidate.k === targetKey);
-  if (!entry) {
-    throw new Error(`Shard entry not found for local chunk ${targetKey}.`);
-  }
-
-  const payloadOffset = assertNonNegativeInteger(entry.o, `entry offset for ${targetKey}`);
-  const payloadLength = assertNonNegativeInteger(entry.l, `entry length for ${targetKey}`);
-  const byteStart = payloadStart + payloadOffset;
-  const byteEnd = byteStart + payloadLength;
-  if (byteEnd > shardBytes.byteLength) {
-    throw new Error(`Shard entry range for ${targetKey} exceeds shard payload bounds.`);
-  }
-  return shardBytes.slice(byteStart, byteEnd);
+  const entryIndex = parseShardEntryIndex(shardBytes);
+  return decodeShardEntryFromIndex({
+    shardBytes,
+    rank,
+    localChunkCoords,
+    entryIndex
+  });
 }

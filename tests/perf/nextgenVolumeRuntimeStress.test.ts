@@ -431,3 +431,44 @@ test('stability: long playback-style prefetch cancellation leaves no active requ
   assert.ok(stats.prefetchCalls >= 24);
   assert.ok(stats.prefetchRequestsAborted >= 1);
 });
+
+test('stability: rapid scrub-playback scale transitions keep diagnostics coherent', async () => {
+  const { manifest, storage } = await sharedDatasetPromise;
+  const provider = createVolumeProvider({
+    manifest,
+    storage,
+    maxCachedVolumes: 0,
+    maxCachedChunkBytes: DEFAULT_MAX_CACHED_CHUNK_BYTES,
+    maxConcurrentChunkReads: DEFAULT_MAX_CONCURRENT_CHUNK_READS,
+    maxConcurrentPrefetchLoads: DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS,
+  });
+
+  const totalTimepoints = STRESS_DATASET_SPEC.timepoints;
+  const availableScaleLevels = (
+    manifest.dataset.channels[0]?.layers[0]?.zarr.scales.map((scale) => scale.level) ?? [0]
+  ).filter((level, index, source) => Number.isFinite(level) && source.indexOf(level) === index);
+  const orderedScaleLevels = availableScaleLevels.length > 0 ? availableScaleLevels : [0];
+  for (let step = 0; step < 20; step += 1) {
+    const timepoint = step % totalTimepoints;
+    const targetScaleLevel = orderedScaleLevels[step % orderedScaleLevels.length] ?? 0;
+    await provider.prefetch(['layer-a'], timepoint, {
+      policy: 'missing-only',
+      reason: step % 3 === 0 ? 'interactive' : 'playback',
+      scaleLevels: [targetScaleLevel]
+    });
+    await provider.getVolume('layer-a', timepoint, { scaleLevel: targetScaleLevel });
+    if (typeof provider.getBrickAtlas === 'function') {
+      await provider.getBrickAtlas('layer-a', timepoint, { scaleLevel: targetScaleLevel });
+    }
+  }
+
+  const diagnostics = provider.getDiagnostics();
+  const stats = provider.getStats();
+  assert.equal(diagnostics.activePrefetchRequests.length, 0);
+  assert.equal(stats.prefetchActiveRequests, 0);
+  assert.equal(stats.chunkInFlightCount, 0);
+  assert.ok((diagnostics.streaming.scaleRequestCounts['0'] ?? 0) > 0);
+  if (orderedScaleLevels.includes(1)) {
+    assert.ok((diagnostics.streaming.scaleRequestCounts['1'] ?? 0) > 0);
+  }
+});

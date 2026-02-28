@@ -675,8 +675,8 @@ const createLayer = (
     occupancyMetadataMismatchBricks: 0
   });
   assert.equal(uniforms.u_adaptiveLodEnabled?.value, 1);
-  assert.equal(uniforms.u_adaptiveLodScale?.value, 1);
-  assert.equal(uniforms.u_adaptiveLodMax?.value, 2);
+  assert.equal(uniforms.u_adaptiveLodScale?.value, 0.35);
+  assert.equal(uniforms.u_adaptiveLodMax?.value, 0.75);
   assert.equal(uniforms.u_brickAtlasEnabled?.value, 1);
   assert.equal(uniforms.u_nearestSampling?.value, 0);
   assert.equal(uniforms.u_windowMin?.value, 0.1);

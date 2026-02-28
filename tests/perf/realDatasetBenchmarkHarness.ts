@@ -24,8 +24,12 @@ const MAX_VOLUME_BYTES_HINT = 512 * 1024 * 1024;
 const DURATION_THRESHOLD_RELATIVE_MARGIN = 1.35;
 const DURATION_THRESHOLD_ABSOLUTE_MARGIN_MS = 8;
 const HIT_RATE_THRESHOLD_MARGIN = 0.08;
+const LOD0_SELECTION_RATIO_THRESHOLD_MARGIN = 0.1;
+const THRASH_RATE_THRESHOLD_RELATIVE_MARGIN = 1.35;
+const THRASH_RATE_THRESHOLD_ABSOLUTE_MARGIN = 2;
+const THRASH_RATE_MIN_WINDOW_MS = 1_000;
 
-export const REAL_DATASET_BASELINE_VERSION = 1;
+export const REAL_DATASET_BASELINE_VERSION = 2;
 export const DEFAULT_REAL_DATASET_BASELINE_PATH = 'docs/performance/real-dataset-baseline.json';
 
 export type RealDatasetBenchmarkCaseId = 'fib_large' | 'npc2_20';
@@ -44,6 +48,9 @@ export type RealDatasetBenchmarkMetrics = {
   warmLoadMs: number;
   transitionLoadMs: number | null;
   sweepLoadMs: number | null;
+  lod0SelectionRatio: number;
+  lod0ReadinessP95Ms: number | null;
+  scaleThrashEventsPerMinute: number;
   chunkHitRate: number;
 };
 
@@ -54,6 +61,9 @@ export type RealDatasetBenchmarkThresholds = {
   warmLoadMsMax: number;
   transitionLoadMsMax: number | null;
   sweepLoadMsMax: number | null;
+  lod0SelectionRatioMin: number;
+  lod0ReadinessP95MsMax: number | null;
+  scaleThrashEventsPerMinuteMax: number;
   chunkHitRateMin: number;
 };
 
@@ -99,6 +109,11 @@ type ViewerLoadSelection = {
   scaleLevel: number;
 };
 
+type BenchmarkLoadSample = {
+  scaleLevel: number;
+  elapsedMs: number;
+};
+
 export const REAL_DATASET_BENCHMARK_CASES: readonly RealDatasetBenchmarkCaseConfig[] = [
   {
     id: 'fib_large',
@@ -141,6 +156,67 @@ function isAllocationLikeError(error: unknown): boolean {
 function roundTo(value: number, digits: number): number {
   const scale = 10 ** digits;
   return Math.round(value * scale) / scale;
+}
+
+function percentile(values: readonly number[], percent: number): number | null {
+  if (values.length === 0) {
+    return null;
+  }
+  const sorted = [...values].sort((left, right) => left - right);
+  const rank = Math.max(0, Math.ceil(sorted.length * percent) - 1);
+  return sorted[Math.min(rank, sorted.length - 1)] ?? null;
+}
+
+function countTransitionThrashEvents(scaleSequence: readonly number[]): number {
+  if (scaleSequence.length < 3) {
+    return 0;
+  }
+  let thrashEvents = 0;
+  let lastDirection = 0;
+  for (let index = 1; index < scaleSequence.length; index += 1) {
+    const previousScale = scaleSequence[index - 1] ?? 0;
+    const currentScale = scaleSequence[index] ?? 0;
+    const delta = currentScale - previousScale;
+    const direction = delta === 0 ? 0 : delta > 0 ? 1 : -1;
+    if (direction === 0) {
+      continue;
+    }
+    if (lastDirection !== 0 && direction !== lastDirection) {
+      thrashEvents += 1;
+    }
+    lastDirection = direction;
+  }
+  return thrashEvents;
+}
+
+function deriveLod0SelectionRatio(samples: readonly BenchmarkLoadSample[]): number {
+  if (samples.length === 0) {
+    return 0;
+  }
+  const lod0Selections = samples.reduce(
+    (count, sample) => count + (sample.scaleLevel === 0 ? 1 : 0),
+    0
+  );
+  return lod0Selections / samples.length;
+}
+
+function deriveLod0ReadinessP95Ms(samples: readonly BenchmarkLoadSample[]): number | null {
+  const lod0Latencies = samples
+    .filter((sample) => sample.scaleLevel === 0)
+    .map((sample) => sample.elapsedMs);
+  return percentile(lod0Latencies, 0.95);
+}
+
+function deriveScaleThrashEventsPerMinute(
+  scaleSequence: readonly number[],
+  measuredWindowMs: number
+): number {
+  const thrashEvents = countTransitionThrashEvents(scaleSequence);
+  if (thrashEvents === 0) {
+    return 0;
+  }
+  const normalizedWindowMs = Math.max(THRASH_RATE_MIN_WINDOW_MS, measuredWindowMs);
+  return (thrashEvents * 60_000) / normalizedWindowMs;
 }
 
 function sanitizeStoragePath(storagePath: string): string {
@@ -342,6 +418,15 @@ export async function runRealDatasetBenchmarkCase(
     maxConcurrentPrefetchLoads: DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS,
   });
 
+  const loadSamples: BenchmarkLoadSample[] = [];
+  const selectedScaleSequence: number[] = [];
+  let measuredSelectionWindowMs = 0;
+  const recordLoadSample = ({ scaleLevel, elapsedMs }: BenchmarkLoadSample): void => {
+    loadSamples.push({ scaleLevel, elapsedMs });
+    selectedScaleSequence.push(scaleLevel);
+    measuredSelectionWindowMs += elapsedMs;
+  };
+
   const coldLoad = await measureAsync(() =>
     loadLayerTimepointLikeViewer({
       provider,
@@ -351,6 +436,10 @@ export async function runRealDatasetBenchmarkCase(
       isPlaying: false,
     })
   );
+  recordLoadSample({
+    scaleLevel: coldLoad.value.scaleLevel,
+    elapsedMs: coldLoad.elapsedMs,
+  });
   const warmLoad = await measureAsync(() =>
     loadLayerTimepointLikeViewer({
       provider,
@@ -360,6 +449,10 @@ export async function runRealDatasetBenchmarkCase(
       isPlaying: false,
     })
   );
+  recordLoadSample({
+    scaleLevel: warmLoad.value.scaleLevel,
+    elapsedMs: warmLoad.elapsedMs,
+  });
 
   let transitionLoadMs: number | null = null;
   if (totalTimepoints > 1) {
@@ -373,18 +466,28 @@ export async function runRealDatasetBenchmarkCase(
       })
     );
     transitionLoadMs = transition.elapsedMs;
+    recordLoadSample({
+      scaleLevel: transition.value.scaleLevel,
+      elapsedMs: transition.elapsedMs,
+    });
   }
 
   let sweepLoadMs: number | null = null;
   if (sweepTimepoints > 1) {
     const sweep = await measureAsync(async () => {
       for (let timepoint = 0; timepoint < sweepTimepoints; timepoint += 1) {
-        await loadLayerTimepointLikeViewer({
-          provider,
-          layer,
-          layerKey,
-          timepoint,
-          isPlaying: false,
+        const sweepStep = await measureAsync(() =>
+          loadLayerTimepointLikeViewer({
+            provider,
+            layer,
+            layerKey,
+            timepoint,
+            isPlaying: false,
+          })
+        );
+        recordLoadSample({
+          scaleLevel: sweepStep.value.scaleLevel,
+          elapsedMs: sweepStep.elapsedMs,
         });
       }
     });
@@ -398,6 +501,12 @@ export async function runRealDatasetBenchmarkCase(
     chunkLookups > 0
       ? (stats.chunkCacheHits + stats.chunkCacheHitInFlight) / chunkLookups
       : 0;
+  const lod0SelectionRatio = deriveLod0SelectionRatio(loadSamples);
+  const lod0ReadinessP95Ms = deriveLod0ReadinessP95Ms(loadSamples);
+  const scaleThrashEventsPerMinute = deriveScaleThrashEventsPerMinute(
+    selectedScaleSequence,
+    measuredSelectionWindowMs
+  );
 
   return {
     id: config.id,
@@ -414,6 +523,9 @@ export async function runRealDatasetBenchmarkCase(
       warmLoadMs: warmLoad.elapsedMs,
       transitionLoadMs,
       sweepLoadMs,
+      lod0SelectionRatio,
+      lod0ReadinessP95Ms,
+      scaleThrashEventsPerMinute,
       chunkHitRate,
     },
     diagnostics: {
@@ -443,6 +555,14 @@ export function deriveThresholds(metrics: RealDatasetBenchmarkMetrics): RealData
     );
   const deriveDurationOptionalMax = (measured: number | null): number | null =>
     measured === null ? null : deriveDurationMax(measured);
+  const deriveThrashRateMax = (measured: number): number =>
+    roundTo(
+      Math.max(
+        measured * THRASH_RATE_THRESHOLD_RELATIVE_MARGIN,
+        measured + THRASH_RATE_THRESHOLD_ABSOLUTE_MARGIN
+      ),
+      3
+    );
 
   return {
     selectedScaleLevel: metrics.selectedScaleLevel,
@@ -451,6 +571,12 @@ export function deriveThresholds(metrics: RealDatasetBenchmarkMetrics): RealData
     warmLoadMsMax: deriveDurationMax(metrics.warmLoadMs),
     transitionLoadMsMax: deriveDurationOptionalMax(metrics.transitionLoadMs),
     sweepLoadMsMax: deriveDurationOptionalMax(metrics.sweepLoadMs),
+    lod0SelectionRatioMin: roundTo(
+      Math.max(0, metrics.lod0SelectionRatio - LOD0_SELECTION_RATIO_THRESHOLD_MARGIN),
+      3
+    ),
+    lod0ReadinessP95MsMax: deriveDurationOptionalMax(metrics.lod0ReadinessP95Ms),
+    scaleThrashEventsPerMinuteMax: deriveThrashRateMax(metrics.scaleThrashEventsPerMinute),
     chunkHitRateMin: roundTo(Math.max(0, metrics.chunkHitRate - HIT_RATE_THRESHOLD_MARGIN), 3),
   };
 }
@@ -472,6 +598,10 @@ export function buildBaselineReport(results: RealDatasetBenchmarkCaseResult[]): 
         transitionLoadMs:
           result.metrics.transitionLoadMs === null ? null : roundTo(result.metrics.transitionLoadMs, 2),
         sweepLoadMs: result.metrics.sweepLoadMs === null ? null : roundTo(result.metrics.sweepLoadMs, 2),
+        lod0SelectionRatio: roundTo(result.metrics.lod0SelectionRatio, 3),
+        lod0ReadinessP95Ms:
+          result.metrics.lod0ReadinessP95Ms === null ? null : roundTo(result.metrics.lod0ReadinessP95Ms, 2),
+        scaleThrashEventsPerMinute: roundTo(result.metrics.scaleThrashEventsPerMinute, 3),
         chunkHitRate: roundTo(result.metrics.chunkHitRate, 3),
       },
       thresholds: deriveThresholds(result.metrics),

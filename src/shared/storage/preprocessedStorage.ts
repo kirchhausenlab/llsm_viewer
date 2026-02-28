@@ -3,6 +3,7 @@ import { ensureArrayBuffer } from '../utils/buffer';
 export type PreprocessedStorage = {
   writeFile(path: string, data: Uint8Array): Promise<void>;
   readFile(path: string): Promise<Uint8Array>;
+  readFileRange?(path: string, offset: number, length: number): Promise<Uint8Array>;
 };
 
 export type PreprocessedStorageBackend = 'opfs' | 'memory' | 'directory';
@@ -220,6 +221,43 @@ async function readFileFromDirectory(
   return new Uint8Array(buffer);
 }
 
+function normalizeRange(offset: number, length: number, totalLength: number): { start: number; end: number } {
+  const safeOffset = Number.isFinite(offset) ? Math.max(0, Math.floor(offset)) : 0;
+  const safeLength = Number.isFinite(length) ? Math.max(0, Math.floor(length)) : 0;
+  const start = Math.min(safeOffset, totalLength);
+  const end = Math.min(totalLength, start + safeLength);
+  return { start, end };
+}
+
+async function readFileRangeFromDirectory(
+  root: FileSystemDirectoryHandleLike,
+  path: string,
+  offset: number,
+  length: number,
+  directoryCache?: DirectoryHandleCache
+): Promise<Uint8Array> {
+  const safePath = assertSafePath(path);
+  const parts = safePath.split('/');
+  const name = parts.pop();
+  if (!name) {
+    throw new Error('Storage file path is missing a file name.');
+  }
+  const directoryPath = parts.join('/');
+  const dir = directoryPath
+    ? directoryCache
+      ? await getDirectoryWithCache({ root, path: directoryPath, create: false, cache: directoryCache })
+      : await getDirectory(root, directoryPath)
+    : root;
+  const handle = await dir.getFileHandle(name);
+  const file = await handle.getFile();
+  const { start, end } = normalizeRange(offset, length, file.size);
+  if (end <= start) {
+    return new Uint8Array(0);
+  }
+  const buffer = await file.slice(start, end).arrayBuffer();
+  return new Uint8Array(buffer);
+}
+
 export async function createOpfsPreprocessedStorage(
   options: { datasetId: string; rootDir: string }
 ): Promise<PreprocessedStorageHandle> {
@@ -236,6 +274,9 @@ export async function createOpfsPreprocessedStorage(
     },
     async readFile(path) {
       return readFileFromDirectory(datasetRoot, path, directoryCache);
+    },
+    async readFileRange(path, offset, length) {
+      return readFileRangeFromDirectory(datasetRoot, path, offset, length, directoryCache);
     }
   };
 
@@ -272,6 +313,9 @@ export async function createDirectoryHandlePreprocessedStorage(
     },
     async readFile(path) {
       return readFileFromDirectory(directory, path, directoryCache);
+    },
+    async readFileRange(path, offset, length) {
+      return readFileRangeFromDirectory(directory, path, offset, length, directoryCache);
     }
   };
 
@@ -294,6 +338,18 @@ export function createInMemoryPreprocessedStorage(options: { datasetId: string }
         throw new Error(`Storage entry not found: ${safePath}`);
       }
       return entry.slice();
+    },
+    async readFileRange(path, offset, length) {
+      const safePath = assertSafePath(path);
+      const entry = files.get(safePath);
+      if (!entry) {
+        throw new Error(`Storage entry not found: ${safePath}`);
+      }
+      const { start, end } = normalizeRange(offset, length, entry.byteLength);
+      if (end <= start) {
+        return new Uint8Array(0);
+      }
+      return entry.slice(start, end);
     }
   };
 

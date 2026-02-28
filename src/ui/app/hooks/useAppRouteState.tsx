@@ -98,6 +98,12 @@ function formatDownsampleSuffix(downsampleFactor: [number, number, number] | nul
   return '';
 }
 
+type ViewerCameraNavigationSample = {
+  distanceToTarget: number;
+  isMoving: boolean;
+  capturedAtMs: number;
+};
+
 export function useAppRouteState(): AppRouteState {
   const {
     channels,
@@ -193,6 +199,7 @@ export function useAppRouteState(): AppRouteState {
   const [hoveredVolumeVoxel, setHoveredVolumeVoxel] = useState<HoveredVoxelInfo | null>(null);
   const [followedVoxel, setFollowedVoxel] = useState<FollowedVoxelTarget | null>(null);
   const [lastHoveredVolumeVoxel, setLastHoveredVolumeVoxel] = useState<HoveredVoxelInfo | null>(null);
+  const [viewerCameraSample, setViewerCameraSample] = useState<ViewerCameraNavigationSample | null>(null);
   const playback = useViewerPlayback();
   const { selectedIndex, setSelectedIndex, isPlaying, fps, setFps, stopPlayback, setIsPlaying } = playback;
   const is3dViewerAvailable = true;
@@ -478,8 +485,10 @@ export function useAppRouteState(): AppRouteState {
     currentLayerPageTables,
     currentLayerBrickAtlases,
     volumeProviderDiagnostics,
+    lodPolicyDiagnostics,
     setCurrentLayerVolumes,
     playbackLayerKeys,
+    playbackAtlasScaleLevelByLayerKey,
     handleLaunchViewer
   } = useRouteLayerVolumes({
     isViewerLaunched,
@@ -493,6 +502,7 @@ export function useAppRouteState(): AppRouteState {
     channelVisibility,
     layerChannelMap,
     preferBrickResidency,
+    viewerCameraSample,
     volumeTimepointCount,
     selectedIndex,
     clearDatasetError,
@@ -514,28 +524,6 @@ export function useAppRouteState(): AppRouteState {
       .filter((layer) => !layer.isSegmentation && layer.depth > 1)
       .map((layer) => layer.key);
   }, [loadedDatasetLayers, preferBrickResidency]);
-  const playbackAtlasScaleLevelByLayerKey = useMemo(() => {
-    const byKey: Record<string, number> = {};
-    const manifest = preprocessedExperiment?.manifest;
-    if (!manifest) {
-      return byKey;
-    }
-
-    const desiredScaleLevel = isPlaying ? 1 : 0;
-    for (const channel of manifest.dataset.channels) {
-      for (const layer of channel.layers) {
-        const levels = Array.from(new Set(layer.zarr.scales.map((scale) => scale.level))).sort((left, right) => left - right);
-        let resolvedScaleLevel = levels[0] ?? 0;
-        for (const level of levels) {
-          if (level <= desiredScaleLevel) {
-            resolvedScaleLevel = level;
-          }
-        }
-        byKey[layer.key] = resolvedScaleLevel;
-      }
-    }
-    return byKey;
-  }, [isPlaying, preprocessedExperiment?.manifest]);
   const layerDownsampleFactorByLevelByKey = useMemo(() => {
     const byLayer = new Map<string, Map<number, [number, number, number]>>();
     const manifest = preprocessedExperiment?.manifest;
@@ -558,9 +546,18 @@ export function useAppRouteState(): AppRouteState {
       return '—';
     }
 
+    const policyScaleByLayerKey = new Map<string, number>();
+    for (const layer of lodPolicyDiagnostics?.layers ?? []) {
+      if (Number.isFinite(layer.activeScaleLevel)) {
+        policyScaleByLayerKey.set(layer.layerKey, Number(layer.activeScaleLevel));
+      }
+    }
+
     const loadedScaleEntries = playbackLayerKeys
       .map((layerKey) => {
+        const policyScaleLevel = policyScaleByLayerKey.get(layerKey);
         const scaleLevel =
+          policyScaleLevel ??
           currentLayerBrickAtlases[layerKey]?.scaleLevel ??
           currentLayerVolumes[layerKey]?.scaleLevel ??
           null;
@@ -601,6 +598,7 @@ export function useAppRouteState(): AppRouteState {
     currentLayerVolumes,
     isViewerLaunched,
     layerDownsampleFactorByLevelByKey,
+    lodPolicyDiagnostics,
     playbackLayerKeys
   ]);
   const { canAdvancePlaybackToIndex } = useRoutePlaybackPrefetch({
@@ -700,6 +698,42 @@ export function useAppRouteState(): AppRouteState {
 
   const handleVolumeStepScaleChange = useCallback((value: number) => {
     volumeStepScaleChangeRef.current?.(value);
+  }, []);
+  const lastViewerCameraSampleRef = useRef<ViewerCameraNavigationSample | null>(null);
+  const handleViewerCameraNavigationSample = useCallback((sample: ViewerCameraNavigationSample) => {
+    const normalizedDistance = Number.isFinite(sample.distanceToTarget)
+      ? Math.max(0, sample.distanceToTarget)
+      : Number.NaN;
+    if (!Number.isFinite(normalizedDistance)) {
+      return;
+    }
+
+    const capturedAtMs =
+      Number.isFinite(sample.capturedAtMs) && sample.capturedAtMs > 0 ? sample.capturedAtMs : Date.now();
+    const nextSample: ViewerCameraNavigationSample = {
+      distanceToTarget: normalizedDistance,
+      isMoving: Boolean(sample.isMoving),
+      capturedAtMs
+    };
+
+    const previous = lastViewerCameraSampleRef.current;
+    const elapsedMs = previous ? capturedAtMs - previous.capturedAtMs : Number.POSITIVE_INFINITY;
+    const absoluteDelta = previous
+      ? Math.abs(previous.distanceToTarget - nextSample.distanceToTarget)
+      : Number.POSITIVE_INFINITY;
+    const relativeDelta =
+      previous && previous.distanceToTarget > 1e-6
+        ? absoluteDelta / previous.distanceToTarget
+        : absoluteDelta;
+    const movementChanged = previous ? previous.isMoving !== nextSample.isMoving : true;
+    const minIntervalMs = nextSample.isMoving ? 100 : 250;
+
+    if (!movementChanged && elapsedMs < minIntervalMs && absoluteDelta < 0.03 && relativeDelta < 0.08) {
+      return;
+    }
+
+    lastViewerCameraSampleRef.current = nextSample;
+    setViewerCameraSample(nextSample);
   }, []);
 
   const handleReturnToLauncher = useCallback(() => {
@@ -1023,10 +1057,12 @@ export function useAppRouteState(): AppRouteState {
           onHoverVoxelChange: handleHoverVoxelChange
         },
         runtimeDiagnostics: volumeProviderDiagnostics,
+        lodPolicyDiagnostics,
         canAdvancePlayback: canAdvancePlaybackToIndex,
         onRegisterReset: handleRegisterReset,
         onVolumeStepScaleChange: handleVolumeStepScaleChange,
-        onRegisterVolumeStepScaleChange: handleRegisterVolumeStepScaleChange
+        onRegisterVolumeStepScaleChange: handleRegisterVolumeStepScaleChange,
+        onCameraNavigationSample: handleViewerCameraNavigationSample
       },
       vr: {
         isVrPassthroughSupported,

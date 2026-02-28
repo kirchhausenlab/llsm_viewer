@@ -103,6 +103,7 @@ export type VolumeViewerLifecycleOptionGroups = {
     | 'followTargetActiveRef'
     | 'followTargetOffsetRef'
     | 'resourcesRef'
+    | 'onCameraNavigationSample'
     | 'rotationTargetRef'
     | 'refreshVrHudPlacementsRef'
     | 'currentDimensionsRef'

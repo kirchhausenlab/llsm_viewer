@@ -29,7 +29,7 @@ async function main(): Promise<void> {
   const results = await runRealDatasetBenchmarks();
   for (const result of results) {
     console.log(
-      `[${result.id}] layer=${result.layerKey} scale=${result.metrics.selectedScaleLevel} mode=${result.metrics.selectedResidencyMode} cold=${result.metrics.coldLoadMs.toFixed(2)}ms warm=${result.metrics.warmLoadMs.toFixed(2)}ms transition=${result.metrics.transitionLoadMs === null ? 'n/a' : `${result.metrics.transitionLoadMs.toFixed(2)}ms`} sweep=${result.metrics.sweepLoadMs === null ? 'n/a' : `${result.metrics.sweepLoadMs.toFixed(2)}ms`} chunkHitRate=${result.metrics.chunkHitRate.toFixed(3)}`
+      `[${result.id}] layer=${result.layerKey} scale=${result.metrics.selectedScaleLevel} mode=${result.metrics.selectedResidencyMode} cold=${result.metrics.coldLoadMs.toFixed(2)}ms warm=${result.metrics.warmLoadMs.toFixed(2)}ms transition=${result.metrics.transitionLoadMs === null ? 'n/a' : `${result.metrics.transitionLoadMs.toFixed(2)}ms`} sweep=${result.metrics.sweepLoadMs === null ? 'n/a' : `${result.metrics.sweepLoadMs.toFixed(2)}ms`} lod0Selection=${result.metrics.lod0SelectionRatio.toFixed(3)} lod0ReadyP95=${result.metrics.lod0ReadinessP95Ms === null ? 'n/a' : `${result.metrics.lod0ReadinessP95Ms.toFixed(2)}ms`} thrashPerMin=${result.metrics.scaleThrashEventsPerMinute.toFixed(3)} chunkHitRate=${result.metrics.chunkHitRate.toFixed(3)}`
     );
   }
 

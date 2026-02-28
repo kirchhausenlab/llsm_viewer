@@ -49,6 +49,7 @@ type UseVolumeViewerLifecycleParams = {
   followTargetActiveRef: RenderLoopOptions['followTargetActiveRef'];
   followTargetOffsetRef: RenderLoopOptions['followTargetOffsetRef'];
   resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
+  onCameraNavigationSample: RenderLoopOptions['onCameraNavigationSample'];
   rotationTargetRef: RenderLoopOptions['rotationTargetRef'];
   refreshVrHudPlacementsRef: MutableRefObject<(() => void) | undefined>;
   currentDimensionsRef: MutableRefObject<{ width: number; height: number; depth: number } | null>;
@@ -140,6 +141,7 @@ export function useVolumeViewerLifecycle({
   followTargetActiveRef,
   followTargetOffsetRef,
   resourcesRef,
+  onCameraNavigationSample,
   rotationTargetRef,
   refreshVrHudPlacementsRef,
   currentDimensionsRef,
@@ -219,6 +221,8 @@ export function useVolumeViewerLifecycle({
   updateControllerRaysRef.current = updateControllerRays;
   const refreshTrackOverlayRef = useRef(refreshTrackOverlay);
   refreshTrackOverlayRef.current = refreshTrackOverlay;
+  const onCameraNavigationSampleRef = useRef(onCameraNavigationSample);
+  onCameraNavigationSampleRef.current = onCameraNavigationSample;
   const updateVoxelHoverRef = useRef(updateVoxelHover);
   updateVoxelHoverRef.current = updateVoxelHover;
   const performHoverHitTestRef = useRef(performHoverHitTest);
@@ -470,6 +474,7 @@ export function useVolumeViewerLifecycle({
       followTargetActiveRef,
       followTargetOffsetRef,
       resourcesRef,
+      onCameraNavigationSample: (sample) => onCameraNavigationSampleRef.current?.(sample),
       advancePlaybackFrame: (timestamp) => advancePlaybackFrameRef.current(timestamp),
       refreshVrHudPlacements: () => refreshVrHudPlacementsRef.current?.(),
       updateControllerRays: () => updateControllerRaysRef.current(),

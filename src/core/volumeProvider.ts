@@ -7,13 +7,22 @@ import type {
 import type { PreprocessedStorage } from '../shared/storage/preprocessedStorage';
 import { createZarrChunkKeyFromCoords } from '../shared/utils/preprocessedDataset/chunkKey';
 import {
-  decodeShardEntry,
+  createShardEntryKey,
+  decodeShardEntryFromIndex,
   getShardChunkLocation,
-  isShardedArrayDescriptor
+  isShardedArrayDescriptor,
+  parseShardEntryIndex,
+  parseShardEntryIndexFromHeaderBytes,
+  type ShardEntryIndex
 } from '../shared/utils/preprocessedDataset/sharding';
 import { getBytesPerValue } from '../types/volume';
 import { ensureArrayBuffer } from '../shared/utils/buffer';
 import { decodeUint32ArrayLE, HISTOGRAM_BINS } from '../shared/utils/histogram';
+import { getLod0FeatureFlags } from '../config/lod0Flags';
+import type {
+  RuntimeShardDecodeInboundMessage,
+  RuntimeShardDecodeOutboundMessage
+} from '../workers/runtimeShardDecodeMessages';
 
 export type VolumeProviderOptions = {
   manifest: PreprocessedManifest;
@@ -239,6 +248,11 @@ type PrefetchRequestState = {
   reason: VolumePrefetchReason;
   cancelled: boolean;
   scaleLevels: number[];
+};
+
+type RuntimeShardDecodePendingRequest = {
+  resolve: (bytes: Uint8Array) => void;
+  reject: (error: unknown) => void;
 };
 
 export const DEFAULT_MAX_CACHED_VOLUMES = 12;
@@ -740,6 +754,7 @@ export function createVolumeProvider({
   maxConcurrentChunkReads: initialMaxConcurrentChunkReads,
   maxConcurrentPrefetchLoads: initialMaxConcurrentPrefetchLoads
 }: VolumeProviderOptions): VolumeProvider {
+  const lod0Flags = getLod0FeatureFlags();
   const normalizedMaxCachedVolumes = Number.isFinite(initialMaxCachedVolumes)
     ? Math.floor(initialMaxCachedVolumes)
     : Number.NaN;
@@ -767,6 +782,7 @@ export function createVolumeProvider({
 
   const cache = new Map<string, CachedVolumeEntry>();
   const chunkCache = new Map<string, CachedChunkEntry>();
+  const shardEntryIndexCache = new Map<string, ShardEntryIndex>();
   const brickPageTableCache = new Map<string, CachedBrickPageTableEntry>();
   const brickAtlasCache = new Map<string, CachedBrickAtlasEntry>();
   const scaleRequestCounts = new Map<number, number>();
@@ -797,6 +813,92 @@ export function createVolumeProvider({
   }
   const activePrefetchRequests = new Map<number, PrefetchRequestState>();
   let nextPrefetchRequestId = 1;
+  let runtimeShardDecodeWorker: Worker | null = null;
+  let runtimeShardDecodeWorkerInitAttempted = false;
+  let nextRuntimeShardDecodeRequestId = 1;
+  const runtimeShardDecodePendingRequests = new Map<number, RuntimeShardDecodePendingRequest>();
+
+  const closeRuntimeShardDecodeWorker = () => {
+    runtimeShardDecodeWorker?.terminate();
+    runtimeShardDecodeWorker = null;
+    runtimeShardDecodeWorkerInitAttempted = true;
+    for (const pending of runtimeShardDecodePendingRequests.values()) {
+      pending.reject(new Error('Runtime shard decode worker stopped.'));
+    }
+    runtimeShardDecodePendingRequests.clear();
+  };
+
+  const ensureRuntimeShardDecodeWorker = (): Worker | null => {
+    if (!lod0Flags.workerizedRuntimeDecode) {
+      return null;
+    }
+    if (runtimeShardDecodeWorker) {
+      return runtimeShardDecodeWorker;
+    }
+    if (runtimeShardDecodeWorkerInitAttempted) {
+      return null;
+    }
+    runtimeShardDecodeWorkerInitAttempted = true;
+    if (typeof Worker === 'undefined') {
+      return null;
+    }
+    try {
+      const worker = new Worker(new URL('../workers/runtimeShardDecode.worker.ts', import.meta.url), {
+        type: 'module'
+      });
+      worker.onmessage = (event: MessageEvent<RuntimeShardDecodeOutboundMessage>) => {
+        const message = event.data;
+        const pending = runtimeShardDecodePendingRequests.get(message.id);
+        if (!pending) {
+          return;
+        }
+        runtimeShardDecodePendingRequests.delete(message.id);
+        if (message.type === 'decoded') {
+          pending.resolve(new Uint8Array(message.bytes));
+          return;
+        }
+        pending.reject(new Error(message.message));
+      };
+      worker.onerror = () => {
+        closeRuntimeShardDecodeWorker();
+      };
+      runtimeShardDecodeWorker = worker;
+      return worker;
+    } catch {
+      runtimeShardDecodeWorker = null;
+      return null;
+    }
+  };
+
+  const decodeShardSliceInWorker = async ({
+    shardBytes,
+    byteStart,
+    byteEnd
+  }: {
+    shardBytes: Uint8Array;
+    byteStart: number;
+    byteEnd: number;
+  }): Promise<Uint8Array | null> => {
+    const worker = ensureRuntimeShardDecodeWorker();
+    if (!worker) {
+      return null;
+    }
+    const requestId = nextRuntimeShardDecodeRequestId++;
+    const transferBuffer = new ArrayBuffer(shardBytes.byteLength);
+    new Uint8Array(transferBuffer).set(shardBytes);
+    const requestMessage: RuntimeShardDecodeInboundMessage = {
+      type: 'decode-shard-entry',
+      id: requestId,
+      shardBytes: transferBuffer,
+      byteStart,
+      byteEnd
+    };
+    const decodedBytes = await new Promise<Uint8Array>((resolve, reject) => {
+      runtimeShardDecodePendingRequests.set(requestId, { resolve, reject });
+      worker.postMessage(requestMessage, [requestMessage.shardBytes]);
+    });
+    return decodedBytes;
+  };
 
   const resolveScaleEntry = (
     layer: LayerIndexEntry,
@@ -1052,31 +1154,22 @@ export function createVolumeProvider({
     const isSharded = isShardedArrayDescriptor(descriptor);
     const shardLocation = isSharded ? getShardChunkLocation(descriptor, chunkCoords) : null;
     const chunkPath = shardLocation ? shardLocation.shardPath : `${descriptor.path}/${createZarrChunkKeyFromCoords(chunkCoords)}`;
-    const cacheKey = createChunkCacheKey(chunkPath);
-
-    const decodeBytes = (storedBytes: Uint8Array): Uint8Array => {
-      if (!shardLocation) {
-        return storedBytes;
-      }
-      return decodeShardEntry({
-        shardBytes: storedBytes,
-        rank: descriptor.shape.length,
-        localChunkCoords: shardLocation.localChunkCoords
-      });
-    };
+    const cacheKey = shardLocation
+      ? createChunkCacheKey(`${chunkPath}#${createShardEntryKey(shardLocation.localChunkCoords)}`)
+      : createChunkCacheKey(chunkPath);
 
     const existing = chunkCache.get(cacheKey);
     if (existing) {
       touchChunk(cacheKey, existing);
       if (existing.bytes) {
         stats.chunkCacheHits += 1;
-        return { bytes: decodeBytes(existing.bytes), bytesRead: 0 };
+        return { bytes: existing.bytes.slice(), bytesRead: 0 };
       }
       if (existing.inFlight) {
         stats.chunkCacheHitInFlight += 1;
         const bytes = await awaitWithAbort(existing.inFlight, signal);
         throwIfAborted(signal);
-        return { bytes: decodeBytes(bytes), bytesRead: 0 };
+        return { bytes: bytes.slice(), bytesRead: 0 };
       }
       chunkCache.delete(cacheKey);
     }
@@ -1090,12 +1183,82 @@ export function createVolumeProvider({
       inFlight: null
     };
 
+    let storageBytesRead = 0;
     const promise = (async () => {
       stats.chunkReadsStarted += 1;
-      const chunkBytes = await storage.readFile(chunkPath);
+      if (shardLocation && typeof storage.readFileRange === 'function') {
+        let shardEntryIndex = shardEntryIndexCache.get(chunkPath);
+        if (!shardEntryIndex) {
+          const headerLengthBytes = await storage.readFileRange(chunkPath, 0, 4);
+          if (headerLengthBytes.byteLength < 4) {
+            throw new Error(`Invalid shard header for ${chunkPath}: missing header length.`);
+          }
+          const headerLengthView = new DataView(
+            headerLengthBytes.buffer,
+            headerLengthBytes.byteOffset,
+            headerLengthBytes.byteLength
+          );
+          const headerLength = headerLengthView.getUint32(0, true);
+          const headerBytes = await storage.readFileRange(chunkPath, 4, headerLength);
+          shardEntryIndex = parseShardEntryIndexFromHeaderBytes(headerBytes, 4 + headerLength);
+          shardEntryIndexCache.set(chunkPath, shardEntryIndex);
+          storageBytesRead += headerLengthBytes.byteLength + headerBytes.byteLength;
+        }
+        const targetKey = createShardEntryKey(shardLocation.localChunkCoords);
+        const targetEntry = shardEntryIndex.entries.get(targetKey);
+        if (!targetEntry) {
+          throw new Error(`Shard entry not found for local chunk ${targetKey}.`);
+        }
+        const entryBytes = await storage.readFileRange(
+          chunkPath,
+          shardEntryIndex.payloadStart + targetEntry.offset,
+          targetEntry.length
+        );
+        storageBytesRead += entryBytes.byteLength;
+        stats.chunkReadsCompleted += 1;
+        stats.chunkBytesRead += storageBytesRead;
+        return entryBytes;
+      }
+
+      const rawChunkBytes = await storage.readFile(chunkPath);
+      storageBytesRead += rawChunkBytes.byteLength;
+      if (!shardLocation) {
+        stats.chunkReadsCompleted += 1;
+        stats.chunkBytesRead += storageBytesRead;
+        return rawChunkBytes;
+      }
+
+      let shardEntryIndex = shardEntryIndexCache.get(chunkPath);
+      if (!shardEntryIndex) {
+        shardEntryIndex = parseShardEntryIndex(rawChunkBytes);
+        shardEntryIndexCache.set(chunkPath, shardEntryIndex);
+      }
+      const targetKey = createShardEntryKey(shardLocation.localChunkCoords);
+      const targetEntry = shardEntryIndex.entries.get(targetKey);
+      if (!targetEntry) {
+        throw new Error(`Shard entry not found for local chunk ${targetKey}.`);
+      }
+      const byteStart = shardEntryIndex.payloadStart + targetEntry.offset;
+      const byteEnd = byteStart + targetEntry.length;
+      if (byteEnd > rawChunkBytes.byteLength) {
+        throw new Error(`Shard entry range for ${targetKey} exceeds shard payload bounds.`);
+      }
+      const workerDecodedBytes = await decodeShardSliceInWorker({
+        shardBytes: rawChunkBytes,
+        byteStart,
+        byteEnd
+      });
+      const decodedChunkBytes =
+        workerDecodedBytes ??
+        decodeShardEntryFromIndex({
+          shardBytes: rawChunkBytes,
+          rank: descriptor.shape.length,
+          localChunkCoords: shardLocation.localChunkCoords,
+          entryIndex: shardEntryIndex
+        });
       stats.chunkReadsCompleted += 1;
-      stats.chunkBytesRead += chunkBytes.byteLength;
-      return chunkBytes;
+      stats.chunkBytesRead += storageBytesRead;
+      return decodedChunkBytes;
     })()
       .then((chunkBytes) => {
         entry.inFlight = null;
@@ -1122,7 +1285,7 @@ export function createVolumeProvider({
     chunkCache.set(cacheKey, entry);
     const chunkBytes = await awaitWithAbort(promise, signal);
     throwIfAborted(signal);
-    return { bytes: decodeBytes(chunkBytes), bytesRead: chunkBytes.byteLength };
+    return { bytes: chunkBytes, bytesRead: storageBytesRead };
   };
 
   const loadVolume = async (
@@ -2054,8 +2217,10 @@ export function createVolumeProvider({
       entry.inFlightAbortController = null;
       entry.inFlightWaiters = 0;
     }
+    closeRuntimeShardDecodeWorker();
     cache.clear();
     chunkCache.clear();
+    shardEntryIndexCache.clear();
     brickPageTableCache.clear();
     brickAtlasCache.clear();
     chunkCacheBytes = 0;

@@ -558,8 +558,98 @@ await (async () => {
   assert.deepStrictEqual(getBrickAtlasCalls[getBrickAtlasCalls.length - 1], {
     layerKey: 'layer-a',
     timeIndex: 2,
-    scaleLevel: 1
+    scaleLevel: 0
   });
+  hook.unmount();
+})();
+
+await (async () => {
+  let viewerCameraSample: { distanceToTarget: number; isMoving: boolean; capturedAtMs: number } | null = {
+    distanceToTarget: 8,
+    isMoving: false,
+    capturedAtMs: 1
+  };
+  const getBrickAtlasCalls: Array<{ layerKey: string; timeIndex: number; scaleLevel: number | undefined }> = [];
+
+  const provider = {
+    getVolume: async (_layerKey: string, timeIndex: number) => createVolume(timeIndex + 55),
+    getBrickAtlas: async (layerKey: string, timeIndex: number, options?: { scaleLevel?: number }) => {
+      getBrickAtlasCalls.push({ layerKey, timeIndex, scaleLevel: options?.scaleLevel });
+      return createBrickAtlas(timeIndex, options?.scaleLevel ?? 0);
+    }
+  } as unknown as VolumeProvider;
+
+  const preprocessedExperiment = {
+    manifest: {
+      dataset: {
+        channels: [
+          {
+            id: 'channel-a',
+            layers: [
+              {
+                key: 'layer-a',
+                zarr: {
+                  scales: [
+                    { level: 0, downsampleFactor: [1, 1, 1] },
+                    { level: 1, downsampleFactor: [2, 2, 2] },
+                    { level: 2, downsampleFactor: [4, 4, 4] }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  } as StagedPreprocessedExperiment;
+
+  const hook = renderHook(() =>
+    useRouteLayerVolumes({
+      isViewerLaunched: true,
+      isLaunchingViewer: false,
+      isPlaying: false,
+      preprocessedExperiment,
+      volumeProvider: provider,
+      loadedChannelIds: ['channel-a'],
+      channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
+        ['channel-a', [createLoadedLayer('layer-a', 'channel-a')]],
+      ]),
+      channelActiveLayer: { 'channel-a': 'layer-a' },
+      channelVisibility: { 'channel-a': true },
+      layerChannelMap: new Map<string, string>([['layer-a', 'channel-a']]),
+      preferBrickResidency: true,
+      viewerCameraSample,
+      volumeTimepointCount: 4,
+      selectedIndex: 1,
+      clearDatasetError: () => {},
+      beginLaunchSession: () => {},
+      setLaunchExpectedVolumeCount: () => {},
+      setLaunchProgress: () => {},
+      completeLaunchSession: () => {},
+      failLaunchSession: () => {},
+      finishLaunchSessionAttempt: () => {},
+      setSelectedIndex: () => {},
+      setIsPlaying: () => {},
+      showLaunchError: () => {}
+    })
+  );
+
+  await flushAsyncWork();
+  assert.deepStrictEqual(getBrickAtlasCalls[0], { layerKey: 'layer-a', timeIndex: 1, scaleLevel: 1 });
+
+  viewerCameraSample = {
+    distanceToTarget: 0.8,
+    isMoving: false,
+    capturedAtMs: 2
+  };
+  hook.rerender();
+  await flushAsyncWork();
+  assert.deepStrictEqual(getBrickAtlasCalls[getBrickAtlasCalls.length - 1], {
+    layerKey: 'layer-a',
+    timeIndex: 1,
+    scaleLevel: 0
+  });
+
   hook.unmount();
 })();
 
@@ -633,12 +723,9 @@ await (async () => {
   );
 
   await flushAsyncWork();
-  assert.deepStrictEqual(getBrickAtlasCalls, [
-    { layerKey: 'layer-a', timeIndex: 1, scaleLevel: 0 },
-    { layerKey: 'layer-a', timeIndex: 1, scaleLevel: 1 }
-  ]);
+  assert.deepStrictEqual(getBrickAtlasCalls, [{ layerKey: 'layer-a', timeIndex: 1, scaleLevel: 0 }]);
   assert.strictEqual(getVolumeCalls, 0);
-  assert.strictEqual(hook.result.currentLayerBrickAtlases['layer-a']?.scaleLevel, 1);
+  assert.strictEqual(hook.result.currentLayerBrickAtlases['layer-a']?.scaleLevel, 0);
   hook.unmount();
 })();
 

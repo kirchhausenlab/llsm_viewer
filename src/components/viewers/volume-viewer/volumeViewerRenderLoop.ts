@@ -25,6 +25,11 @@ type CreateVolumeViewerRenderLoopOptions = {
   followTargetActiveRef: MutableRefObject<boolean>;
   followTargetOffsetRef: MutableRefObject<THREE.Vector3 | null>;
   resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
+  onCameraNavigationSample?: (sample: {
+    distanceToTarget: number;
+    isMoving: boolean;
+    capturedAtMs: number;
+  }) => void;
   advancePlaybackFrame: (timestamp: number) => void;
   refreshVrHudPlacements: () => void;
   updateControllerRays: () => void;
@@ -44,6 +49,7 @@ export function createVolumeViewerRenderLoop({
   followTargetActiveRef,
   followTargetOffsetRef,
   resourcesRef,
+  onCameraNavigationSample,
   advancePlaybackFrame,
   refreshVrHudPlacements,
   updateControllerRays,
@@ -52,6 +58,14 @@ export function createVolumeViewerRenderLoop({
 }: CreateVolumeViewerRenderLoopOptions): (timestamp: number) => void {
   let lastRenderTickSummary: { presenting: boolean; hoveredByController: string | null } | null = null;
   const cameraWorldPosition = new THREE.Vector3();
+  const previousCameraPosition = new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN);
+  const previousTarget = new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN);
+  const adaptiveLodBaseEnabledByMesh = new WeakMap<THREE.Mesh, number>();
+  let lastCameraSampleSentAtMs = Number.NEGATIVE_INFINITY;
+  let lastMovementState = false;
+
+  const CAMERA_MOVEMENT_EPSILON_SQ = 1e-8;
+  const CAMERA_SAMPLE_INTERVAL_MS = 100;
 
   return (timestamp: number) => {
     applyKeyboardRotation(renderer, camera, controls);
@@ -71,12 +85,62 @@ export function createVolumeViewerRenderLoop({
       }
     }
 
+    const hasPreviousCameraPose = Number.isFinite(previousCameraPosition.x) && Number.isFinite(previousTarget.x);
+    const cameraMoved =
+      !hasPreviousCameraPose ||
+      camera.position.distanceToSquared(previousCameraPosition) > CAMERA_MOVEMENT_EPSILON_SQ ||
+      controls.target.distanceToSquared(previousTarget) > CAMERA_MOVEMENT_EPSILON_SQ;
+    previousCameraPosition.copy(camera.position);
+    previousTarget.copy(controls.target);
+
     const resources = resourcesRef.current;
     cameraWorldPosition.setFromMatrixPosition(camera.matrixWorld);
     for (const resource of resources.values()) {
       const { mesh } = resource;
       mesh.updateMatrixWorld();
       resource.updateGpuBrickResidencyForCamera?.(cameraWorldPosition);
+
+      if (resource.mode !== '3d') {
+        continue;
+      }
+      const uniforms = (mesh.material as THREE.ShaderMaterial).uniforms as Record<
+        string,
+        { value: unknown } | undefined
+      >;
+      const adaptiveUniform = uniforms.u_adaptiveLodEnabled;
+      if (!adaptiveUniform || typeof adaptiveUniform.value !== 'number') {
+        continue;
+      }
+      const currentAdaptiveEnabled = Number(adaptiveUniform.value);
+      if (!Number.isFinite(currentAdaptiveEnabled)) {
+        continue;
+      }
+      if (!cameraMoved) {
+        adaptiveLodBaseEnabledByMesh.set(mesh, currentAdaptiveEnabled);
+      }
+      const baseAdaptiveEnabled =
+        adaptiveLodBaseEnabledByMesh.get(mesh) ?? currentAdaptiveEnabled;
+      const nextAdaptiveEnabled =
+        cameraMoved && baseAdaptiveEnabled > 0.5 ? 0 : baseAdaptiveEnabled;
+      if (Math.abs(currentAdaptiveEnabled - nextAdaptiveEnabled) > 1e-6) {
+        adaptiveUniform.value = nextAdaptiveEnabled;
+      }
+    }
+
+    if (onCameraNavigationSample) {
+      const shouldEmitCameraSample =
+        !Number.isFinite(lastCameraSampleSentAtMs) ||
+        timestamp - lastCameraSampleSentAtMs >= CAMERA_SAMPLE_INTERVAL_MS ||
+        cameraMoved !== lastMovementState;
+      if (shouldEmitCameraSample) {
+        lastCameraSampleSentAtMs = timestamp;
+        lastMovementState = cameraMoved;
+        onCameraNavigationSample({
+          distanceToTarget: camera.position.distanceTo(controls.target),
+          isMoving: cameraMoved,
+          capturedAtMs: Date.now()
+        });
+      }
     }
 
     const hoverPulse = 0.5 + 0.5 * Math.sin(timestamp * HOVER_PULSE_SPEED);

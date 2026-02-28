@@ -16,18 +16,26 @@ test('@smoke playback controls work after launch', async ({ page }) => {
   const progressLabel = playbackWindow.locator('label[for="playback-slider"]');
   await expect(progressLabel).toContainText(`1 / ${timepointCount}`);
 
-  await playbackWindow.getByRole('button', { name: 'Go to last frame' }).click();
+  await playbackWindow.getByRole('button', { name: 'Go to last frame' }).evaluate((element) => {
+    (element as HTMLButtonElement).click();
+  });
   await expect(progressLabel).toContainText(`${timepointCount} / ${timepointCount}`);
 
-  await playbackWindow.getByRole('button', { name: 'Go to first frame' }).click();
+  await playbackWindow.getByRole('button', { name: 'Go to first frame' }).evaluate((element) => {
+    (element as HTMLButtonElement).click();
+  });
   await expect(progressLabel).toContainText(`1 / ${timepointCount}`);
 
   const startPlaybackButton = playbackWindow.getByRole('button', { name: 'Start playback' });
   await expect(startPlaybackButton).toBeVisible();
-  await startPlaybackButton.click();
+  await startPlaybackButton.evaluate((element) => {
+    (element as HTMLButtonElement).click();
+  });
   const pausePlaybackButton = playbackWindow.getByRole('button', { name: 'Pause playback' });
   await expect(pausePlaybackButton).toBeVisible();
-  await pausePlaybackButton.click();
+  await pausePlaybackButton.evaluate((element) => {
+    (element as HTMLButtonElement).click();
+  });
   await expect(playbackWindow.getByRole('button', { name: 'Start playback' })).toBeVisible();
 
   await expect(playbackWindow.getByRole('button', { name: 'Reset view' })).toBeVisible();

@@ -24,9 +24,10 @@ export type AdaptiveLodDecisionArgs = {
   nearestSampling: boolean;
   step: [number, number, number];
   size: [number, number, number];
+  projectedFootprint?: number;
   lodScale: number;
   lodMax: number;
-  mode: 'mip' | 'iso';
+  mode: 'mip' | 'iso' | 'bl';
   currentMax?: number;
 };
 
@@ -153,12 +154,19 @@ export function computeAdaptiveLodCpu(args: AdaptiveLodDecisionArgs): number {
       (stepY * sizeY) * (stepY * sizeY) +
       (stepZ * sizeZ) * (stepZ * sizeZ),
   );
-  const baseLod = Math.log2(Math.max(voxelStep, 1));
+  const projectedFootprint = Number.isFinite(args.projectedFootprint) ? Math.max(0, args.projectedFootprint as number) : 0;
+  const footprintVoxels = Math.max(voxelStep, projectedFootprint, 1);
+  const baseLod = Math.log2(footprintVoxels);
   const lodScale = Math.max(0, Number.isFinite(args.lodScale) ? args.lodScale : 0);
   const lodMax = Math.max(0, Number.isFinite(args.lodMax) ? args.lodMax : 0);
   const clampedBase = Math.min(Math.max(baseLod * lodScale, 0), lodMax);
   if (args.mode === 'iso') {
-    return clampedBase;
+    return Math.min(Math.max(clampedBase * 0.95, 0), lodMax);
+  }
+  if (args.mode === 'bl') {
+    const alphaConfidence = clampUnit(Number.isFinite(args.currentMax) ? (args.currentMax as number) : 0);
+    const refined = clampedBase * (0.7 - alphaConfidence * 0.25);
+    return Math.min(Math.max(refined, 0), lodMax);
   }
   const confidence = clampUnit(Number.isFinite(args.currentMax) ? (args.currentMax as number) : 0);
   return Math.min(Math.max(clampedBase * (1 - confidence), 0), lodMax);
@@ -197,6 +205,7 @@ type VolumeUniforms = {
   u_blBackgroundCutoff: { value: number };
   u_blOpacityScale: { value: number };
   u_blEarlyExitAlpha: { value: number };
+  u_blRefinementEnabled: { value: number };
   u_mipEarlyExitThreshold: { value: number };
   u_renderthreshold: { value: number };
   u_clim: { value: Vector2 };
@@ -241,6 +250,7 @@ const uniforms = {
   u_blBackgroundCutoff: { value: 0.08 },
   u_blOpacityScale: { value: 1 },
   u_blEarlyExitAlpha: { value: 0.98 },
+  u_blRefinementEnabled: { value: 1 },
   u_mipEarlyExitThreshold: { value: 0.999 },
   u_renderthreshold: { value: 0.5 },
   u_clim: { value: new Vector2(1, 1) },
@@ -312,6 +322,7 @@ const volumeRenderFragmentShader = /* glsl */ `
     uniform float u_blBackgroundCutoff;
     uniform float u_blOpacityScale;
     uniform float u_blEarlyExitAlpha;
+    uniform float u_blRefinementEnabled;
     uniform float u_mipEarlyExitThreshold;
     uniform float u_renderthreshold;
     uniform vec2 u_clim;
@@ -799,12 +810,14 @@ const volumeRenderFragmentShader = /* glsl */ `
       return normalize_window(value);
     }
 
-    float compute_adaptive_lod_base(vec3 step) {
+    float compute_adaptive_lod_base(vec3 step, vec3 texcoords) {
       if (u_adaptiveLodEnabled <= 0.5 || u_nearestSampling > 0.5) {
         return 0.0;
       }
       float voxelStep = length(step * u_size);
-      float baseLod = max(log2(max(voxelStep, 1.0)), 0.0);
+      vec3 safeVolumeSize = max(u_size, vec3(1.0));
+      float projectedFootprint = length(fwidth(clamp(texcoords, vec3(0.0), vec3(1.0)) * safeVolumeSize));
+      float baseLod = max(log2(max(max(voxelStep, projectedFootprint), 1.0)), 0.0);
       float scaledLod = baseLod * max(u_adaptiveLodScale, 0.0);
       return clamp(scaledLod, 0.0, max(u_adaptiveLodMax, 0.0));
     }
@@ -818,7 +831,13 @@ const volumeRenderFragmentShader = /* glsl */ `
     }
 
     float adaptive_lod_for_iso(float baseLod) {
-      return clamp(baseLod, 0.0, max(u_adaptiveLodMax, 0.0));
+      return clamp(baseLod * 0.95, 0.0, max(u_adaptiveLodMax, 0.0));
+    }
+
+    float adaptive_lod_for_bl(float baseLod, float accumulatedAlpha) {
+      float alphaConfidence = clamp(accumulatedAlpha, 0.0, 1.0);
+      float refined = baseLod * (0.7 - alphaConfidence * 0.25);
+      return clamp(refined, 0.0, max(u_adaptiveLodMax, 0.0));
     }
 
     float adjust_intensity(float value) {
@@ -1046,7 +1065,7 @@ const volumeRenderFragmentShader = /* glsl */ `
       vec4 max_color = vec4(0.0);
       vec3 loc = start_loc;
       vec3 max_loc = start_loc;
-      float baseAdaptiveLod = compute_adaptive_lod_base(step);
+      float baseAdaptiveLod = compute_adaptive_lod_base(step, start_loc);
       vec3 cachedBrickCoord = vec3(-1.0);
       float cachedAtlasIndex = -1.0;
       float cachedOccupancy = 0.0;
@@ -1140,7 +1159,7 @@ const volumeRenderFragmentShader = /* glsl */ `
       vec4 hitColor = vec4(0.0);
       vec3 dstep = 1.5 / u_size;
       vec3 loc = start_loc;
-      float baseAdaptiveLod = compute_adaptive_lod_base(step);
+      float baseAdaptiveLod = compute_adaptive_lod_base(step, start_loc);
       vec3 cachedBrickCoord = vec3(-1.0);
       float cachedAtlasIndex = -1.0;
       float cachedOccupancy = 0.0;
@@ -1218,7 +1237,7 @@ const volumeRenderFragmentShader = /* glsl */ `
       float safeDensity = max(u_blDensityScale, 0.0);
       float safeOpacity = max(u_blOpacityScale, 0.0);
       float stepDistance = max(length(step * u_size), 1e-5);
-      float baseAdaptiveLod = compute_adaptive_lod_base(step);
+      float baseAdaptiveLod = compute_adaptive_lod_base(step, start_loc);
       vec3 cachedBrickCoord = vec3(-1.0);
       float cachedAtlasIndex = -1.0;
       float cachedOccupancy = 0.0;
@@ -1316,10 +1335,29 @@ const volumeRenderFragmentShader = /* glsl */ `
         }
 
         if (!skipVolumeSample) {
-          float adaptiveLod = adaptive_lod_for_iso(baseAdaptiveLod);
+          float adaptiveLod = adaptive_lod_for_bl(baseAdaptiveLod, accumulatedAlpha);
           vec4 colorSample = sample_color_lod(loc, adaptiveLod);
           float rawIntensity = luminance(colorSample);
           float normalizedIntensity = normalize_intensity(rawIntensity);
+
+          if (u_blRefinementEnabled > 0.5 && adaptiveLod > 0.25 && normalizedIntensity > safeBackgroundCutoff + 0.05) {
+            vec3 refineLoc = loc - 0.5 * step;
+            vec3 refineStep = step / float(REFINEMENT_STEPS);
+            float refinedRawIntensity = rawIntensity;
+            vec4 refinedColorSample = colorSample;
+            for (int refineIndex = 0; refineIndex < REFINEMENT_STEPS; refineIndex++) {
+              vec4 localRefineSample = sample_color(refineLoc);
+              float localRefineRaw = luminance(localRefineSample);
+              if (localRefineRaw > refinedRawIntensity) {
+                refinedRawIntensity = localRefineRaw;
+                refinedColorSample = localRefineSample;
+              }
+              refineLoc += refineStep;
+            }
+            rawIntensity = refinedRawIntensity;
+            colorSample = refinedColorSample;
+            normalizedIntensity = normalize_intensity(rawIntensity);
+          }
 
           if (normalizedIntensity > safeBackgroundCutoff) {
             float cutoffAdjustedIntensity = safeBackgroundCutoff >= 1.0

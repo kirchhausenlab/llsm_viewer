@@ -12,6 +12,8 @@ import {
   type RealDatasetBenchmarkCaseConfig,
 } from './realDatasetBenchmarkHarness.ts';
 
+const runningWithCoverage = Boolean(process.env.NODE_V8_COVERAGE);
+
 function loadBaselineReport(): RealDatasetBaselineReport {
   const baselinePath = path.resolve(process.cwd(), DEFAULT_REAL_DATASET_BASELINE_PATH);
   if (!fs.existsSync(baselinePath)) {
@@ -40,9 +42,11 @@ function compareCaseToBaseline({
   return test(
     `performance: ${benchmarkCase.id} remains within baseline thresholds`,
     {
-      skip: !benchmarkDatasetExists(benchmarkCase.datasetPath)
-        ? `Dataset missing: ${benchmarkCase.datasetPath}`
-        : false,
+      skip: runningWithCoverage
+        ? 'Skipped under coverage run; enforced by test:perf:real-datasets.'
+        : !benchmarkDatasetExists(benchmarkCase.datasetPath)
+          ? `Dataset missing: ${benchmarkCase.datasetPath}`
+          : false,
     },
     async () => {
       const result = await runRealDatasetBenchmarkCase(benchmarkCase);
@@ -52,11 +56,6 @@ function compareCaseToBaseline({
         result.metrics.selectedResidencyMode,
         thresholds.selectedResidencyMode,
         `[${benchmarkCase.id}] residency mode changed: expected ${thresholds.selectedResidencyMode}, observed ${result.metrics.selectedResidencyMode}`
-      );
-      assert.equal(
-        result.metrics.selectedScaleLevel,
-        thresholds.selectedScaleLevel,
-        `[${benchmarkCase.id}] selected scale changed: expected L${thresholds.selectedScaleLevel}, observed L${result.metrics.selectedScaleLevel}`
       );
       assert.ok(
         result.metrics.coldLoadMs <= thresholds.coldLoadMsMax,
@@ -90,6 +89,30 @@ function compareCaseToBaseline({
           )} > ${formatMs(thresholds.sweepLoadMsMax)}`
         );
       }
+      assert.ok(
+        result.metrics.lod0SelectionRatio >= thresholds.lod0SelectionRatioMin,
+        `[${benchmarkCase.id}] LOD0 selection ratio regression: ${result.metrics.lod0SelectionRatio.toFixed(
+          3
+        )} < ${thresholds.lod0SelectionRatioMin.toFixed(3)}`
+      );
+      if (thresholds.lod0ReadinessP95MsMax !== null) {
+        assert.ok(
+          result.metrics.lod0ReadinessP95Ms !== null,
+          `[${benchmarkCase.id}] LOD0 readiness metric missing while baseline expects one.`
+        );
+        assert.ok(
+          (result.metrics.lod0ReadinessP95Ms ?? Number.POSITIVE_INFINITY) <= thresholds.lod0ReadinessP95MsMax,
+          `[${benchmarkCase.id}] LOD0 readiness regression: ${formatMs(
+            result.metrics.lod0ReadinessP95Ms ?? Number.POSITIVE_INFINITY
+          )} > ${formatMs(thresholds.lod0ReadinessP95MsMax)}`
+        );
+      }
+      assert.ok(
+        result.metrics.scaleThrashEventsPerMinute <= thresholds.scaleThrashEventsPerMinuteMax,
+        `[${benchmarkCase.id}] scale thrash regression: ${result.metrics.scaleThrashEventsPerMinute.toFixed(
+          3
+        )} > ${thresholds.scaleThrashEventsPerMinuteMax.toFixed(3)}`
+      );
       assert.ok(
         result.metrics.chunkHitRate >= thresholds.chunkHitRateMin,
         `[${benchmarkCase.id}] chunk hit rate regression: ${result.metrics.chunkHitRate.toFixed(3)} < ${thresholds.chunkHitRateMin.toFixed(3)}`

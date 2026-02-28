@@ -12,6 +12,8 @@ Try it [here](https://kirchhausenlab.github.io/llsm_viewer/)! Recommended on Chr
   - `docs/renderstyle-bl-mode/README.md`
 - Active preprocessing acceleration plan:
   - `docs/preprocessing-performance-playbook.md`
+- Native-resolution LOD0 performance program (completed):
+  - `docs/lod0-native-resolution/README.md`
 - Playback/runtime invariants (must-hold behavior + regression checks):
   - `docs/playback-invariants.md`
 - Hover/runtime invariants (must-hold behavior + regression checks):

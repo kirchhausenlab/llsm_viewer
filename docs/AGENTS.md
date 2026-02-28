@@ -76,3 +76,40 @@ Agents: You may freely modify `docs/PROJECT_STRUCTURE.md` to reflect code change
 - When you introduce complexity, pay extra attention to:
   - Documentation (comments, `docs/PROJECT_STRUCTURE.md`, `docs/PROGRESS.md`).
   - Tests that pin down key behaviour.
+
+---
+
+## Truthfulness Contract (Hard Requirement)
+
+- Never claim "implemented", "fixed", "complete", or "done" unless all evidence requirements below are satisfied.
+- If evidence is missing, explicitly say: "UNVERIFIED: not yet proven."
+
+## Evidence requirements for any completion claim
+
+- Provide exact code references for each claimed behavior change (`/abs/path/file:line`).
+- Provide exact verification commands that were run.
+- Provide the observed result of each command (pass/fail + key output).
+- For behavior bugs, provide reproduction mapping:
+  - Before: expected vs observed.
+  - After: expected vs observed.
+- If real user dataset/scenario was not run, explicitly state that limitation and do not claim full fix.
+
+## Claim labels (mandatory)
+
+- Prefix each technical claim with one of:
+  - `PROVEN:` directly verified by code + command output.
+  - `INFERRED:` reasoned from code but not runtime-verified.
+  - `UNKNOWN:` cannot be verified from available evidence.
+
+## Forbidden behavior
+
+- Do not present `INFERRED` or `UNKNOWN` claims as `PROVEN`.
+- Do not say "should be fixed" as if it is fixed.
+- Do not close a task with unresolved `UNKNOWN` items.
+
+## If an inaccurate claim is detected
+
+- Stop immediately.
+- List incorrect prior claims explicitly.
+- Replace each with corrected `PROVEN/INFERRED/UNKNOWN` status.
+- Provide updated plan before any further code changes.

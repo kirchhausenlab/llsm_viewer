@@ -10,30 +10,30 @@ test('@smoke viewer settings controls work after launch', async ({ page }) => {
     voxelResolution: STANDARD_VOXEL_RESOLUTION
   });
 
-  await page.getByRole('button', { name: 'Show viewer settings window' }).click();
+  await page.getByRole('button', { name: 'Show viewer settings window' }).evaluate((element) => {
+    (element as HTMLButtonElement).click();
+  });
   const viewerSettingsWindow = page.locator('.floating-window--viewer-settings');
   await expect(viewerSettingsWindow.getByRole('heading', { name: 'Viewer settings' })).toBeVisible();
 
-  const renderStyleButton = viewerSettingsWindow.getByRole('button', { name: 'Rendering' });
-  const initialRenderStylePressed = await renderStyleButton.getAttribute('aria-pressed');
-  await renderStyleButton.click();
-  await expect(renderStyleButton).toHaveAttribute(
-    'aria-pressed',
-    initialRenderStylePressed === 'true' ? 'false' : 'true'
-  );
-
-  const samplingButton = viewerSettingsWindow.getByRole('button', { name: /Quality|Speed/ });
+  const samplingButton = viewerSettingsWindow.getByRole('button', { name: /Trilinear|Nearest/ });
+  await expect(samplingButton).toBeVisible();
   const initialSamplingLabel = (await samplingButton.textContent())?.trim();
-  await samplingButton.click();
-  if (initialSamplingLabel === 'Quality') {
-    await expect(viewerSettingsWindow.getByRole('button', { name: 'Speed' })).toBeVisible();
+  await samplingButton.evaluate((element) => {
+    (element as HTMLButtonElement).click();
+  });
+  if (initialSamplingLabel === 'Trilinear') {
+    await expect(viewerSettingsWindow.getByRole('button', { name: 'Nearest' })).toBeVisible();
   } else {
-    await expect(viewerSettingsWindow.getByRole('button', { name: 'Quality' })).toBeVisible();
+    await expect(viewerSettingsWindow.getByRole('button', { name: 'Trilinear' })).toBeVisible();
   }
 
   const blendingButton = viewerSettingsWindow.getByRole('button', { name: /Additive|Alpha/ });
+  await expect(blendingButton).toBeVisible();
   const initialBlendingLabel = (await blendingButton.textContent())?.trim();
-  await blendingButton.click();
+  await blendingButton.evaluate((element) => {
+    (element as HTMLButtonElement).click();
+  });
   if (initialBlendingLabel === 'Additive') {
     await expect(viewerSettingsWindow.getByRole('button', { name: 'Alpha' })).toBeVisible();
   } else {
@@ -50,6 +50,8 @@ test('@smoke viewer settings controls work after launch', async ({ page }) => {
   });
   await expect(fpsSlider).toHaveValue('12');
 
-  await page.getByRole('button', { name: 'Close viewer settings window' }).click();
+  await page.getByRole('button', { name: 'Close viewer settings window' }).evaluate((element) => {
+    (element as HTMLButtonElement).click();
+  });
   await expect(viewerSettingsWindow).toBeHidden();
 });

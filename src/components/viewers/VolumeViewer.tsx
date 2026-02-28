@@ -100,6 +100,7 @@ function VolumeViewer({
   loadedVolumes,
   expectedVolumes,
   runtimeDiagnostics,
+  lodPolicyDiagnostics,
   timeIndex,
   totalTimepoints,
   isPlaying,
@@ -112,6 +113,7 @@ function VolumeViewer({
   canAdvancePlayback,
   onFpsChange,
   onRegisterVolumeStepScaleChange,
+  onCameraNavigationSample,
   onRegisterReset,
   onRegisterCaptureTarget,
   trackScale,
@@ -616,6 +618,7 @@ function VolumeViewer({
       followTargetActiveRef,
       followTargetOffsetRef,
       resourcesRef,
+      onCameraNavigationSample,
       rotationTargetRef,
       refreshVrHudPlacementsRef,
       currentDimensionsRef,
@@ -754,6 +757,27 @@ function VolumeViewer({
                   <span>Prefetch</span>
                   <span>{runtimeDiagnostics.activePrefetchRequests.length} active</span>
                 </li>
+                {lodPolicyDiagnostics ? (
+                  <li>
+                    <span>LOD policy</span>
+                    <span>
+                      {lodPolicyDiagnostics.promotedLayers}/{lodPolicyDiagnostics.layerCount} promoted,{' '}
+                      {lodPolicyDiagnostics.warmingLayers} warming
+                    </span>
+                  </li>
+                ) : null}
+                {lodPolicyDiagnostics ? (
+                  <li>
+                    <span>LOD thrash</span>
+                    <span>{lodPolicyDiagnostics.thrashEventsPerMinute.toFixed(2)} / min</span>
+                  </li>
+                ) : null}
+                {lodPolicyDiagnostics?.adaptivePolicyDisabled ? (
+                  <li>
+                    <span>LOD fallback</span>
+                    <span>adaptive selector auto-disabled</span>
+                  </li>
+                ) : null}
                 {gpuResidencySummary ? (
                   <li>
                     <span>GPU bricks</span>

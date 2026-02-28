@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "generatedAt": "2026-02-24T19:36:27.088Z",
+  "version": 2,
+  "generatedAt": "2026-02-28T17:16:50.252Z",
   "environment": {
     "cwd": "/home/jidacf/code/llsm_viewer",
     "node": "v22.22.0",
@@ -18,20 +18,26 @@
       "metrics": {
         "selectedScaleLevel": 3,
         "selectedResidencyMode": "atlas",
-        "coldLoadMs": 221.62,
-        "warmLoadMs": 0.17,
+        "coldLoadMs": 261.43,
+        "warmLoadMs": 0.13,
         "transitionLoadMs": null,
         "sweepLoadMs": null,
-        "chunkHitRate": 0.983
+        "lod0SelectionRatio": 0,
+        "lod0ReadinessP95Ms": null,
+        "scaleThrashEventsPerMinute": 0,
+        "chunkHitRate": 0
       },
       "thresholds": {
         "selectedScaleLevel": 3,
         "selectedResidencyMode": "atlas",
-        "coldLoadMsMax": 299.19,
-        "warmLoadMsMax": 8.17,
+        "coldLoadMsMax": 352.92,
+        "warmLoadMsMax": 8.13,
         "transitionLoadMsMax": null,
         "sweepLoadMsMax": null,
-        "chunkHitRateMin": 0.903
+        "lod0SelectionRatioMin": 0,
+        "lod0ReadinessP95MsMax": null,
+        "scaleThrashEventsPerMinuteMax": 2,
+        "chunkHitRateMin": 0
       }
     },
     "npc2_20": {
@@ -44,20 +50,26 @@
       "metrics": {
         "selectedScaleLevel": 1,
         "selectedResidencyMode": "atlas",
-        "coldLoadMs": 85.06,
-        "warmLoadMs": 0.06,
-        "transitionLoadMs": 73.49,
-        "sweepLoadMs": 971.28,
-        "chunkHitRate": 0.937
+        "coldLoadMs": 153.1,
+        "warmLoadMs": 0.11,
+        "transitionLoadMs": 133.3,
+        "sweepLoadMs": 1995.51,
+        "lod0SelectionRatio": 0,
+        "lod0ReadinessP95Ms": null,
+        "scaleThrashEventsPerMinute": 0,
+        "chunkHitRate": 0
       },
       "thresholds": {
         "selectedScaleLevel": 1,
         "selectedResidencyMode": "atlas",
-        "coldLoadMsMax": 114.83,
-        "warmLoadMsMax": 8.06,
-        "transitionLoadMsMax": 99.21,
-        "sweepLoadMsMax": 1311.22,
-        "chunkHitRateMin": 0.857
+        "coldLoadMsMax": 206.68,
+        "warmLoadMsMax": 8.11,
+        "transitionLoadMsMax": 179.96,
+        "sweepLoadMsMax": 2693.94,
+        "lod0SelectionRatioMin": 0,
+        "lod0ReadinessP95MsMax": null,
+        "scaleThrashEventsPerMinuteMax": 2,
+        "chunkHitRateMin": 0
       }
     }
   }

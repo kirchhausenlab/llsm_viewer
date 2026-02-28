@@ -17,6 +17,7 @@ import type { VolumeResources } from '../VolumeViewer.types';
 import { DESKTOP_VOLUME_STEP_SCALE } from './vr';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import type { VolumeBrickAtlas, VolumeBrickPageTable } from '../../../core/volumeProvider';
+import { getLod0FeatureFlags } from '../../../config/lod0Flags';
 import {
   FALLBACK_BRICK_ATLAS_DATA_TEXTURE,
   FALLBACK_BRICK_ATLAS_INDEX_TEXTURE,
@@ -149,10 +150,14 @@ const FALLBACK_VOLUME_TEXTURE_DATA = new Uint8Array([0]);
 const DEFAULT_MAX_GPU_BRICK_BYTES = 48 * 1024 * 1024;
 const AUTO_EXPANDED_MAX_GPU_BRICK_BYTES = 512 * 1024 * 1024;
 const DEFAULT_MAX_BRICK_UPLOADS_PER_UPDATE = 24;
+const ADAPTIVE_LOD_SCALE_LINEAR = 0.35;
+const ADAPTIVE_LOD_MAX_LINEAR = 0.75;
 const BOOTSTRAP_UPLOAD_BURST_UPDATES = 3;
 const BOOTSTRAP_UPLOAD_BURST_MULTIPLIER = 8;
 const BOOTSTRAP_UPLOAD_BURST_MAX = 256;
+const RESIDENCY_STICKINESS_TICKS = 4;
 const CAMERA_RESIDENCY_EPSILON_SQ = 0.25;
+const LOD0_FLAGS = getLod0FeatureFlags();
 const gpuBrickResidencyStateByResource = new WeakMap<VolumeResources, BrickResidencyState>();
 
 function resolveSamplingModeForRenderStyle(
@@ -235,15 +240,19 @@ function applyAdaptiveLodUniforms(
   uniforms: ShaderUniformMap,
   samplingMode: 'linear' | 'nearest',
 ): void {
-  const adaptiveLodEnabled = samplingMode === 'linear' ? 1 : 0;
+  const adaptiveLodEnabled =
+    samplingMode === 'linear' && LOD0_FLAGS.projectedFootprintShaderLod ? 1 : 0;
   if ('u_adaptiveLodEnabled' in uniforms) {
     uniforms.u_adaptiveLodEnabled.value = adaptiveLodEnabled;
   }
   if ('u_adaptiveLodScale' in uniforms) {
-    uniforms.u_adaptiveLodScale.value = 1;
+    uniforms.u_adaptiveLodScale.value = ADAPTIVE_LOD_SCALE_LINEAR;
   }
   if ('u_adaptiveLodMax' in uniforms) {
-    uniforms.u_adaptiveLodMax.value = 2;
+    uniforms.u_adaptiveLodMax.value = ADAPTIVE_LOD_MAX_LINEAR;
+  }
+  if ('u_blRefinementEnabled' in uniforms) {
+    uniforms.u_blRefinementEnabled.value = LOD0_FLAGS.blRefinement ? 1 : 0;
   }
 }
 
@@ -791,7 +800,7 @@ function updateGpuBrickResidency({
   const configuredBudgetBytes = resolveGpuBrickBudgetBytes();
   const explicitBudget = hasExplicitGpuBrickBudgetBytes();
   const shouldForceFullResidency = forceFullResidency && !explicitBudget;
-  const canAutoExpandBudget = !hasExplicitGpuBrickBudgetBytes() && pageTable.scaleLevel === 0;
+  const canAutoExpandBudget = !hasExplicitGpuBrickBudgetBytes();
   const targetBudgetBytes = shouldForceFullResidency
     ? Math.max(configuredBudgetBytes, bytesPerBrick * pageTable.occupiedBrickCount)
     : canAutoExpandBudget
@@ -803,14 +812,25 @@ function updateGpuBrickResidency({
   const budgetBytes = Math.max(1, targetBudgetBytes);
   const budgetLimitedSlotCapacity = Math.floor(budgetBytes / bytesPerBrick) || 1;
   const maxDepthLimitedSlotCapacity = max3DTextureSize ? Math.floor(max3DTextureSize / chunkDepth) : Number.POSITIVE_INFINITY;
-  const slotCapacity = Math.max(
+  const existing = gpuBrickResidencyStateByResource.get(resource);
+  const requestedSlotCapacity = Math.max(
     1,
     Math.min(pageTable.occupiedBrickCount, budgetLimitedSlotCapacity, maxDepthLimitedSlotCapacity)
   );
+  const canPreserveExistingSlotCapacity =
+    !explicitBudget &&
+    Boolean(
+      existing &&
+      existing.sourceToken === sourceToken &&
+      existing.pageTable === pageTable &&
+      existing.textureFormat === textureFormat
+    );
+  const slotCapacity = canPreserveExistingSlotCapacity
+    ? Math.max(requestedSlotCapacity, existing?.slotCapacity ?? requestedSlotCapacity)
+    : requestedSlotCapacity;
   const residentDepth = chunkDepth * slotCapacity;
   const expectedResidentDataLength = chunkWidth * chunkHeight * residentDepth * components;
   const expectedResidentIndexLength = pageTable.brickAtlasIndices.length;
-  const existing = gpuBrickResidencyStateByResource.get(resource);
   const shouldReset =
     !existing ||
     existing.sourceToken !== sourceToken ||
@@ -875,9 +895,18 @@ function updateGpuBrickResidency({
     .map((entry) => entry.sourceIndex)
     .filter((sourceIndex) => desiredSources.has(sourceIndex) && !state.sourceToSlot.has(sourceIndex));
   const baseUploadBudget = Math.max(1, maxUploadsPerUpdate);
+  const pendingPressureRatio = slotCapacity > 0 ? pendingSources.length / slotCapacity : 0;
+  const adaptiveBurstMultiplier =
+    LOD0_FLAGS.residencyTuning
+      ? pendingPressureRatio >= 0.85
+        ? BOOTSTRAP_UPLOAD_BURST_MULTIPLIER
+        : pendingPressureRatio >= 0.55
+          ? Math.max(2, Math.floor(BOOTSTRAP_UPLOAD_BURST_MULTIPLIER / 2))
+          : 1
+      : BOOTSTRAP_UPLOAD_BURST_MULTIPLIER;
   const boostedUploadBudget =
     allowBootstrapUploadBurst && state.bootstrapUpdatesRemaining > 0
-      ? Math.min(BOOTSTRAP_UPLOAD_BURST_MAX, baseUploadBudget * BOOTSTRAP_UPLOAD_BURST_MULTIPLIER)
+      ? Math.min(BOOTSTRAP_UPLOAD_BURST_MAX, baseUploadBudget * adaptiveBurstMultiplier)
       : baseUploadBudget;
   const forceImmediateUploads = shouldForceFullResidency && !hasExplicitMaxBrickUploadsPerUpdate();
   const pendingLimit = forceImmediateUploads
@@ -893,21 +922,36 @@ function updateGpuBrickResidency({
 
     let replacementSlot = state.slotSourceIndices.indexOf(-1);
     if (replacementSlot < 0) {
-      let oldestTick = Number.POSITIVE_INFINITY;
-      for (let slotIndex = 0; slotIndex < state.slotSourceIndices.length; slotIndex += 1) {
-        const residentSource = state.slotSourceIndices[slotIndex] ?? -1;
-        if (residentSource < 0) {
-          replacementSlot = slotIndex;
-          break;
+      const pickReplacementSlot = (respectStickiness: boolean): number => {
+        let selectedSlot = -1;
+        let oldestTick = Number.POSITIVE_INFINITY;
+        for (let slotIndex = 0; slotIndex < state.slotSourceIndices.length; slotIndex += 1) {
+          const residentSource = state.slotSourceIndices[slotIndex] ?? -1;
+          if (residentSource < 0) {
+            return slotIndex;
+          }
+          if (desiredSources.has(residentSource)) {
+            continue;
+          }
+          const residentTick = state.sourceLastUsedTick.get(residentSource) ?? 0;
+          if (
+            respectStickiness &&
+            LOD0_FLAGS.residencyTuning &&
+            state.tick - residentTick < RESIDENCY_STICKINESS_TICKS
+          ) {
+            continue;
+          }
+          if (residentTick < oldestTick) {
+            oldestTick = residentTick;
+            selectedSlot = slotIndex;
+          }
         }
-        if (desiredSources.has(residentSource)) {
-          continue;
-        }
-        const residentTick = state.sourceLastUsedTick.get(residentSource) ?? 0;
-        if (residentTick < oldestTick) {
-          oldestTick = residentTick;
-          replacementSlot = slotIndex;
-        }
+        return selectedSlot;
+      };
+
+      replacementSlot = pickReplacementSlot(LOD0_FLAGS.residencyTuning);
+      if (replacementSlot < 0 && LOD0_FLAGS.residencyTuning) {
+        replacementSlot = pickReplacementSlot(false);
       }
       if (replacementSlot < 0) {
         // All resident slots are currently desired; avoid churn.
@@ -1940,7 +1984,7 @@ export function useVolumeResources({
                     atlasSize: { width: brickAtlas.width, height: brickAtlas.height, depth: brickAtlas.depth },
                     max3DTextureSize,
                     cameraPosition: residencyCameraPosition,
-                    forceFullResidency: true
+                    forceFullResidency: false
                   }
               : volume
                 ? {
@@ -2095,7 +2139,7 @@ export function useVolumeResources({
                   atlasFormat: directAtlasFormat ?? undefined,
                   atlasSize: { width: brickAtlas.width, height: brickAtlas.height, depth: brickAtlas.depth },
                   max3DTextureSize,
-                  forceFullResidency: true,
+                  forceFullResidency: false,
                 }
                 : undefined,
           );
@@ -2164,7 +2208,7 @@ export function useVolumeResources({
                   atlasSize: { width: brickAtlas.width, height: brickAtlas.height, depth: brickAtlas.depth },
                   max3DTextureSize,
                   cameraPosition: residencyCameraPosition,
-                  forceFullResidency: true
+                  forceFullResidency: false
                 }
               : volume && preparation
                 ? {
@@ -2295,7 +2339,7 @@ export function useVolumeResources({
                   atlasFormat: directAtlasFormat ?? undefined,
                   atlasSize: { width: brickAtlas.width, height: brickAtlas.height, depth: brickAtlas.depth },
                   max3DTextureSize,
-                  forceFullResidency: true,
+                  forceFullResidency: false,
                 }
                 : undefined,
           );

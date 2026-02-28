@@ -5,6 +5,7 @@ import type { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
 
 import type { NormalizedVolume } from '../../core/volumeProcessing';
 import type { VolumeBrickAtlas, VolumeBrickPageTable, VolumeProviderDiagnostics } from '../../core/volumeProvider';
+import type { LODPolicyDiagnosticsSnapshot } from '../../core/lodPolicyDiagnostics';
 import type { FollowedVoxelTarget } from '../../types/follow';
 import type { HoveredVoxelInfo } from '../../types/hover';
 import type { PaintbrushStrokeHandlers } from '../../types/paintbrush';
@@ -150,12 +151,18 @@ export type VolumeViewerProps = {
   loadedVolumes: number;
   expectedVolumes: number;
   runtimeDiagnostics?: VolumeProviderDiagnostics | null;
+  lodPolicyDiagnostics?: LODPolicyDiagnosticsSnapshot | null;
   onTogglePlayback: () => void;
   onTimeIndexChange: (nextIndex: number) => void;
   canAdvancePlayback?: (nextIndex: number) => boolean;
   onFpsChange: (value: number) => void;
   onVolumeStepScaleChange?: (value: number) => void;
   onRegisterVolumeStepScaleChange?: (handler: ((value: number) => void) | null) => void;
+  onCameraNavigationSample?: (sample: {
+    distanceToTarget: number;
+    isMoving: boolean;
+    capturedAtMs: number;
+  }) => void;
   onRegisterReset: (handler: (() => void) | null) => void;
   onRegisterCaptureTarget?: (
     target: HTMLCanvasElement | (() => HTMLCanvasElement | null) | null,
