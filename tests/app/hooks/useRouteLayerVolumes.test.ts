@@ -558,6 +558,16 @@ await (async () => {
   assert.deepStrictEqual(getBrickAtlasCalls[getBrickAtlasCalls.length - 1], {
     layerKey: 'layer-a',
     timeIndex: 2,
+    scaleLevel: 1
+  });
+
+  isPlaying = false;
+  hook.rerender();
+  await flushAsyncWork();
+  assert.strictEqual(getVolumeCalls.length, 0);
+  assert.deepStrictEqual(getBrickAtlasCalls[getBrickAtlasCalls.length - 1], {
+    layerKey: 'layer-a',
+    timeIndex: 2,
     scaleLevel: 0
   });
   hook.unmount();
@@ -968,6 +978,88 @@ await (async () => {
   pendingLoads[1]?.resolve();
   await flushAsyncWork();
   assert.deepStrictEqual(Array.from(hook.result.currentLayerVolumes['layer-a']?.normalized ?? []), Array(8).fill(71));
+  assert.strictEqual(showLaunchErrorCalls, 0);
+  hook.unmount();
+})();
+
+await (async () => {
+  let viewerCameraSample: { distanceToTarget: number; isMoving: boolean; capturedAtMs: number } | null = {
+    distanceToTarget: 1,
+    isMoving: false,
+    capturedAtMs: 1
+  };
+  let showLaunchErrorCalls = 0;
+  const pendingLoads: Array<{
+    timeIndex: number;
+    signal: AbortSignal | null | undefined;
+    resolve: () => void;
+  }> = [];
+
+  const provider = {
+    getVolume: async (_layerKey: string, timeIndex: number, options?: { signal?: AbortSignal | null }) =>
+      new Promise<NormalizedVolume>((resolve) => {
+        pendingLoads.push({
+          timeIndex,
+          signal: options?.signal,
+          resolve: () => resolve(createVolume(timeIndex + 80))
+        });
+      })
+  } as unknown as VolumeProvider;
+
+  const hook = renderHook(() =>
+    useRouteLayerVolumes({
+      isViewerLaunched: true,
+      isLaunchingViewer: false,
+      isPlaying: false,
+      preprocessedExperiment: {} as StagedPreprocessedExperiment,
+      volumeProvider: provider,
+      loadedChannelIds: ['channel-a'],
+      channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
+        ['channel-a', [createLoadedLayer('layer-a', 'channel-a')]]
+      ]),
+      channelActiveLayer: { 'channel-a': 'layer-a' },
+      channelVisibility: { 'channel-a': true },
+      layerChannelMap: new Map<string, string>([['layer-a', 'channel-a']]),
+      preferBrickResidency: false,
+      viewerCameraSample,
+      volumeTimepointCount: 4,
+      selectedIndex: 0,
+      clearDatasetError: () => {},
+      beginLaunchSession: () => {},
+      setLaunchExpectedVolumeCount: () => {},
+      setLaunchProgress: () => {},
+      completeLaunchSession: () => {},
+      failLaunchSession: () => {},
+      finishLaunchSessionAttempt: () => {},
+      setSelectedIndex: () => {},
+      setIsPlaying: () => {},
+      showLaunchError: () => {
+        showLaunchErrorCalls += 1;
+      }
+    })
+  );
+
+  await flushAsyncWork();
+  assert.strictEqual(pendingLoads.length, 1);
+  assert.strictEqual(pendingLoads[0]?.signal?.aborted ?? false, false);
+
+  viewerCameraSample = {
+    distanceToTarget: 1.1,
+    isMoving: false,
+    capturedAtMs: 2
+  };
+  hook.rerender();
+  await flushAsyncWork();
+  assert.strictEqual(
+    pendingLoads.length,
+    1,
+    'camera-only rerender with unchanged load intent should not start a second request'
+  );
+  assert.strictEqual(pendingLoads[0]?.signal?.aborted ?? false, false);
+
+  pendingLoads[0]?.resolve();
+  await flushAsyncWork();
+  assert.deepStrictEqual(Array.from(hook.result.currentLayerVolumes['layer-a']?.normalized ?? []), Array(8).fill(80));
   assert.strictEqual(showLaunchErrorCalls, 0);
   hook.unmount();
 })();

@@ -276,10 +276,10 @@ await (async () => {
   const canAdvance = hook.result.canAdvancePlaybackToIndex(1);
   assert.strictEqual(canAdvance, false);
   await flushAsyncWork();
-  assert.ok(atlasHasCalls.some((entry) => entry.layerKey === 'layer-a' && entry.scaleLevel === 1));
+  assert.ok(atlasHasCalls.some((entry) => entry.layerKey === 'layer-a' && entry.scaleLevel === 0));
   assert.deepStrictEqual(
     atlasPrefetchCalls.map((entry) => entry.scaleLevels),
-    [[1], [1], [1]]
+    [[0], [0], [0]]
   );
   hook.unmount();
 })();

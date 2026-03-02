@@ -473,6 +473,11 @@ function validateLayer({
     if (index === 0 && scale.level !== 0) {
       throw new Error(`Invalid manifest schema at ${path}.zarr.scales[0].level: first scale must be level 0.`);
     }
+    if (index > 0 && scale.level !== previousLevel + 1) {
+      throw new Error(
+        `Invalid manifest schema at ${path}.zarr.scales[${index}].level: levels must be contiguous (expected ${previousLevel + 1}, got ${scale.level}).`
+      );
+    }
     previousLevel = scale.level;
     scales.push(scale);
   }

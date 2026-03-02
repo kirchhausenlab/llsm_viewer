@@ -86,6 +86,13 @@ test('openPreprocessedDatasetFromZarrStorage rejects segmentation fixtures missi
   );
 });
 
+test('openPreprocessedDatasetFromZarrStorage rejects fixtures with non-contiguous scale levels', async () => {
+  await assert.rejects(
+    () => openDatasetFromFixture('invalid-noncontiguous-scale-levels.json'),
+    /levels must be contiguous/
+  );
+});
+
 test('openPreprocessedDatasetFromZarrStorage rejects aggregate dataset totalVolumeCount for multi-layer fixtures', async () => {
   await assert.rejects(
     () => openDatasetFromFixture('invalid-multi-layer-aggregate-volume-count.json'),

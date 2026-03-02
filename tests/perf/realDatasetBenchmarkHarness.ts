@@ -258,14 +258,19 @@ function pickBenchmarkLayer(manifest: PreprocessedManifest): PreprocessedLayerMa
 }
 
 function resolvePreferredAtlasScaleLevel(levels: number[], isPlaying: boolean): number {
-  const desired = isPlaying ? 1 : 0;
   let resolved = levels[0] ?? 0;
   for (const level of levels) {
-    if (level <= desired) {
+    if (level <= 0) {
       resolved = level;
     }
   }
-  return resolved;
+  if (!isPlaying || resolved !== 0) {
+    return resolved;
+  }
+  if (levels.includes(1)) {
+    return 1;
+  }
+  return levels.find((level) => level > 0) ?? 0;
 }
 
 async function loadLayerTimepointLikeViewer({

@@ -111,7 +111,7 @@ export function useRoutePlaybackPrefetch({
 }: UseRoutePlaybackPrefetchOptions): UseRoutePlaybackPrefetchResult {
   const lod0Flags = useMemo(() => getLod0FeatureFlags(), []);
   const brickResidencyLayerKeySet = useMemo(() => new Set(brickResidencyLayerKeys), [brickResidencyLayerKeys]);
-  const fallbackAtlasScaleLevel = isPlaying ? 1 : 0;
+  const fallbackAtlasScaleLevel = 0;
   const atlasScaleLevelByLayerKey = useMemo(() => {
     const map = new Map<string, number>();
     for (const layerKey of playbackLayerKeys) {
