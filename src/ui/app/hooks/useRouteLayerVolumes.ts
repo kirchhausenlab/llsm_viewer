@@ -76,12 +76,15 @@ const LOD_PROMOTE_COOLDOWN_MS = 1_200;
 const LOD_DEMOTE_COOLDOWN_MS = 2_000;
 const LOD_MIN_PROJECTED_PIXELS_PER_VOXEL = 0.75;
 const LOD_THRASH_AUTO_DISABLE_PER_MINUTE = 60;
+const MAX_BRICK_ATLAS_DEPTH_HINT = 2048;
 const MAX_BRICK_ATLAS_BYTES_HINT_INTERACTIVE = 384 * 1024 * 1024;
 const MAX_BRICK_ATLAS_BYTES_HINT_PLAYBACK = 192 * 1024 * 1024;
 const MAX_VOLUME_BYTES_HINT_INTERACTIVE = 384 * 1024 * 1024;
 const MAX_VOLUME_BYTES_HINT_PLAYBACK = 192 * 1024 * 1024;
 const MAX_ADAPTIVE_DOWNSAMPLE_MULTIPLIER_PLAYBACK = 4;
-const MAX_ADAPTIVE_DOWNSAMPLE_MULTIPLIER_INTERACTIVE = 2.5;
+const MAX_ADAPTIVE_DOWNSAMPLE_MULTIPLIER_INTERACTIVE = 8;
+const MAX_ADAPTIVE_DEMOTION_STEPS_PLAYBACK = 3;
+const MAX_ADAPTIVE_DEMOTION_STEPS_INTERACTIVE = 4;
 const CAMERA_PROJECTED_PIXELS_REFERENCE_DISTANCE = 1.2;
 const CAMERA_PROJECTED_PIXELS_AT_REFERENCE = 1.4;
 
@@ -367,8 +370,10 @@ export function useRouteLayerVolumes({
           ? 1.1
           : 1.4;
       const motionPenalty = viewerCameraSample?.isMoving ? (isPlaying ? 0.82 : 0.9) : 1;
+      const pressurePenalty = isPlaying ? 1 - pressure * 0.2 : 1;
+      const missPenalty = isPlaying ? 1 - missRate * 0.1 : 1;
       const projectedPixelsPerVoxel =
-        baseProjectedPixelsPerVoxel * motionPenalty * (1 - pressure * 0.2) * (1 - missRate * 0.1);
+        baseProjectedPixelsPerVoxel * motionPenalty * pressurePenalty * missPenalty;
 
       let projectedChoice = finestLevel;
       for (const level of levels) {
@@ -402,7 +407,8 @@ export function useRouteLayerVolumes({
       }
       const maxAdaptiveDemotionIndex = Math.min(
         levels.length - 1,
-        fallbackIndex + (isPlaying ? 2 : 1),
+        fallbackIndex +
+          (isPlaying ? MAX_ADAPTIVE_DEMOTION_STEPS_PLAYBACK : MAX_ADAPTIVE_DEMOTION_STEPS_INTERACTIVE),
         magnitudeBoundedDemotionIndex
       );
       const projectedChoiceIndex = Math.max(
@@ -410,9 +416,11 @@ export function useRouteLayerVolumes({
         levels.findIndex((level) => level === projectedChoice)
       );
       const pressureDemotionSteps =
-        pressure >= 0.96 || missRate >= 0.92 ? 1 : pressure >= 0.88 || missRate >= 0.8 ? 1 : 0;
+        isPlaying && (pressure >= 0.96 || missRate >= 0.92 || pressure >= 0.88 || missRate >= 0.8)
+          ? 1
+          : 0;
       projectedChoice =
-        levels[Math.min(maxAdaptiveDemotionIndex, projectedChoiceIndex + (isPlaying ? pressureDemotionSteps : Math.min(pressureDemotionSteps, 1)))] ??
+        levels[Math.min(maxAdaptiveDemotionIndex, projectedChoiceIndex + pressureDemotionSteps)] ??
         projectedChoice;
 
       const previousState = layerPolicyStateByLayerKeyRef.current.get(layerKey);
@@ -428,7 +436,11 @@ export function useRouteLayerVolumes({
       const projectedScaleIndex = levels.findIndex((level) => level === projectedChoice);
       if (activeScaleIndex >= 0 && projectedScaleIndex >= 0 && Math.abs(projectedScaleIndex - activeScaleIndex) > 1) {
         const stepDirection = projectedScaleIndex > activeScaleIndex ? 1 : -1;
-        projectedChoice = levels[activeScaleIndex + stepDirection] ?? projectedChoice;
+        const isPromotionToFinerScale = projectedScaleIndex < activeScaleIndex;
+        const shouldStepTransition = !isPromotionToFinerScale || viewerCameraSample?.isMoving;
+        projectedChoice = shouldStepTransition
+          ? levels[activeScaleIndex + stepDirection] ?? projectedChoice
+          : projectedChoice;
       }
 
       const now = nowMs();
@@ -439,7 +451,7 @@ export function useRouteLayerVolumes({
           return activeScaleLevel;
         }
       } else {
-        const pressureAllowsDemotion = pressure >= 0.72;
+        const pressureAllowsDemotion = isPlaying ? pressure >= 0.72 : true;
         const lastPromoteMs = previousState.lastPromoteMs ?? 0;
         if (!pressureAllowsDemotion && now - lastPromoteMs < LOD_DEMOTE_COOLDOWN_MS) {
           return activeScaleLevel;
@@ -659,9 +671,12 @@ export function useRouteLayerVolumes({
           candidateScaleLevels.push(...knownLevels);
         }
 
+        const allowInteractiveVolumeFallbackToDesired = !isPlaying;
+        let shouldFallbackToVolumeAtDesiredScale = false;
         let lastError: unknown = null;
         for (let index = 0; index < candidateScaleLevels.length; index += 1) {
           const scaleLevel = candidateScaleLevels[index] ?? desiredScaleLevel;
+          const isDesiredScaleLevel = scaleLevel === desiredScaleLevel;
           throwIfAborted(signal);
           const scale = layerScalesByLevelByKey.get(layerKey)?.get(scaleLevel) ?? null;
           const sourceChannels = scale?.channels ?? 1;
@@ -673,7 +688,14 @@ export function useRouteLayerVolumes({
             const [chunkDepth, chunkHeight, chunkWidth] = pageTable.chunkShape;
             const estimatedAtlasDepth = chunkDepth * pageTable.occupiedBrickCount;
             const estimatedAtlasBytes = chunkWidth * chunkHeight * estimatedAtlasDepth * textureChannels;
-            if (estimatedAtlasBytes > maxBrickAtlasBytesHint) {
+            if (
+              estimatedAtlasDepth > MAX_BRICK_ATLAS_DEPTH_HINT ||
+              estimatedAtlasBytes > maxBrickAtlasBytesHint
+            ) {
+              if (allowInteractiveVolumeFallbackToDesired && isDesiredScaleLevel) {
+                shouldFallbackToVolumeAtDesiredScale = true;
+                break;
+              }
               continue;
             }
           }
@@ -682,9 +704,24 @@ export function useRouteLayerVolumes({
             const atlas = await volumeProvider!.getBrickAtlas!(layerKey, timeIndex, { scaleLevel, signal });
             throwIfAborted(signal);
             if (!atlas.enabled) {
+              if (allowInteractiveVolumeFallbackToDesired && isDesiredScaleLevel) {
+                shouldFallbackToVolumeAtDesiredScale = true;
+                break;
+              }
               continue;
             }
             if (atlas.data.byteLength > maxBrickAtlasBytesHint) {
+              if (allowInteractiveVolumeFallbackToDesired && isDesiredScaleLevel) {
+                shouldFallbackToVolumeAtDesiredScale = true;
+                break;
+              }
+              continue;
+            }
+            if (atlas.depth > MAX_BRICK_ATLAS_DEPTH_HINT) {
+              if (allowInteractiveVolumeFallbackToDesired && isDesiredScaleLevel) {
+                shouldFallbackToVolumeAtDesiredScale = true;
+                break;
+              }
               continue;
             }
             const readyLatencyMs = Math.max(0, nowMs() - loadStartedAtMs);
@@ -727,16 +764,19 @@ export function useRouteLayerVolumes({
           } catch (error) {
             if (isAllocationLikeError(error)) {
               lastError = error;
+              if (allowInteractiveVolumeFallbackToDesired && isDesiredScaleLevel) {
+                shouldFallbackToVolumeAtDesiredScale = true;
+                break;
+              }
               continue;
             }
             throw error;
           }
         }
 
-        if (lastError instanceof Error) {
+        if (lastError instanceof Error && !shouldFallbackToVolumeAtDesiredScale && isPlaying) {
           throw lastError;
         }
-        throw new Error(`Brick atlas is unavailable for layer "${layerKey}" at timepoint ${timeIndex}.`);
       }
 
       const candidateScaleLevels = knownLevels.filter((level) => level >= desiredScaleLevel);

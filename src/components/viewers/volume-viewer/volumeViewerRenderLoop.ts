@@ -60,6 +60,7 @@ export function createVolumeViewerRenderLoop({
   const cameraWorldPosition = new THREE.Vector3();
   const previousCameraPosition = new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN);
   const previousTarget = new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN);
+  const worldBoundsSphere = new THREE.Sphere();
   const adaptiveLodBaseEnabledByMesh = new WeakMap<THREE.Mesh, number>();
   let lastCameraSampleSentAtMs = Number.NEGATIVE_INFINITY;
   let lastMovementState = false;
@@ -95,6 +96,7 @@ export function createVolumeViewerRenderLoop({
 
     const resources = resourcesRef.current;
     cameraWorldPosition.setFromMatrixPosition(camera.matrixWorld);
+    let nearestVisibleVolumeDistance = Number.POSITIVE_INFINITY;
     for (const resource of resources.values()) {
       const { mesh } = resource;
       mesh.updateMatrixWorld();
@@ -102,6 +104,24 @@ export function createVolumeViewerRenderLoop({
 
       if (resource.mode !== '3d') {
         continue;
+      }
+      if (mesh.visible) {
+        const geometry = mesh.geometry as THREE.BufferGeometry;
+        if (geometry.boundingSphere === null) {
+          geometry.computeBoundingSphere();
+        }
+        const localBoundsSphere = geometry.boundingSphere;
+        if (localBoundsSphere) {
+          worldBoundsSphere.copy(localBoundsSphere);
+          worldBoundsSphere.applyMatrix4(mesh.matrixWorld);
+          const distanceToBounds = Math.max(
+            0,
+            cameraWorldPosition.distanceTo(worldBoundsSphere.center) - worldBoundsSphere.radius
+          );
+          if (distanceToBounds < nearestVisibleVolumeDistance) {
+            nearestVisibleVolumeDistance = distanceToBounds;
+          }
+        }
       }
       const uniforms = (mesh.material as THREE.ShaderMaterial).uniforms as Record<
         string,
@@ -135,8 +155,11 @@ export function createVolumeViewerRenderLoop({
       if (shouldEmitCameraSample) {
         lastCameraSampleSentAtMs = timestamp;
         lastMovementState = cameraMoved;
+        const sampledCameraDistance = Number.isFinite(nearestVisibleVolumeDistance)
+          ? nearestVisibleVolumeDistance
+          : camera.position.distanceTo(controls.target);
         onCameraNavigationSample({
-          distanceToTarget: camera.position.distanceTo(controls.target),
+          distanceToTarget: sampledCameraDistance,
           isMoving: cameraMoved,
           capturedAtMs: Date.now()
         });

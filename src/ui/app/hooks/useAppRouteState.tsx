@@ -556,11 +556,14 @@ export function useAppRouteState(): AppRouteState {
     const loadedScaleEntries = playbackLayerKeys
       .map((layerKey) => {
         const policyScaleLevel = policyScaleByLayerKey.get(layerKey);
-        const scaleLevel =
-          policyScaleLevel ??
+        const loadedScaleLevel =
           currentLayerBrickAtlases[layerKey]?.scaleLevel ??
           currentLayerVolumes[layerKey]?.scaleLevel ??
           null;
+        const scaleLevel =
+          loadedScaleLevel !== null && Number.isFinite(loadedScaleLevel)
+            ? Number(loadedScaleLevel)
+            : policyScaleLevel ?? null;
         if (!Number.isFinite(scaleLevel)) {
           return null;
         }
