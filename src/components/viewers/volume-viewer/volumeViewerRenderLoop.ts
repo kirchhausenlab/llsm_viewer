@@ -61,7 +61,6 @@ export function createVolumeViewerRenderLoop({
   const previousCameraPosition = new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN);
   const previousTarget = new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN);
   const worldBoundsSphere = new THREE.Sphere();
-  const adaptiveLodBaseEnabledByMesh = new WeakMap<THREE.Mesh, number>();
   let lastCameraSampleSentAtMs = Number.NEGATIVE_INFINITY;
   let lastMovementState = false;
 
@@ -122,28 +121,6 @@ export function createVolumeViewerRenderLoop({
             nearestVisibleVolumeDistance = distanceToBounds;
           }
         }
-      }
-      const uniforms = (mesh.material as THREE.ShaderMaterial).uniforms as Record<
-        string,
-        { value: unknown } | undefined
-      >;
-      const adaptiveUniform = uniforms.u_adaptiveLodEnabled;
-      if (!adaptiveUniform || typeof adaptiveUniform.value !== 'number') {
-        continue;
-      }
-      const currentAdaptiveEnabled = Number(adaptiveUniform.value);
-      if (!Number.isFinite(currentAdaptiveEnabled)) {
-        continue;
-      }
-      if (!cameraMoved) {
-        adaptiveLodBaseEnabledByMesh.set(mesh, currentAdaptiveEnabled);
-      }
-      const baseAdaptiveEnabled =
-        adaptiveLodBaseEnabledByMesh.get(mesh) ?? currentAdaptiveEnabled;
-      const nextAdaptiveEnabled =
-        cameraMoved && baseAdaptiveEnabled > 0.5 ? 0 : baseAdaptiveEnabled;
-      if (Math.abs(currentAdaptiveEnabled - nextAdaptiveEnabled) > 1e-6) {
-        adaptiveUniform.value = nextAdaptiveEnabled;
       }
     }
 
