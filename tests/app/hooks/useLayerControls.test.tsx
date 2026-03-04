@@ -7,6 +7,7 @@ import {
   RENDER_STYLE_BL,
   RENDER_STYLE_ISO,
   RENDER_STYLE_MIP,
+  RENDER_STYLE_SLICE,
   createDefaultLayerSettings,
   brightnessContrastModel,
   type LayerSettings,
@@ -122,6 +123,12 @@ function useLayerControlsHarness(initialRenderStyle: RenderStyle = RENDER_STYLE_
     hook.result.controls.handleLayerRenderStyleToggle('layer-a');
   });
   assert.equal(hook.result.layerSettings['layer-a']?.renderStyle, RENDER_STYLE_BL);
+
+  hook.act(() => {
+    hook.result.controls.handleLayerRenderStyleToggle();
+  });
+  assert.equal(hook.result.layerSettings['layer-a']?.renderStyle, RENDER_STYLE_SLICE);
+  assert.equal(hook.result.layerSettings['layer-b']?.renderStyle, RENDER_STYLE_MIP);
 
   hook.act(() => {
     hook.result.controls.handleLayerRenderStyleToggle();

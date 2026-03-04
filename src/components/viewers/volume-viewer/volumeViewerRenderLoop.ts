@@ -101,9 +101,6 @@ export function createVolumeViewerRenderLoop({
       mesh.updateMatrixWorld();
       resource.updateGpuBrickResidencyForCamera?.(cameraWorldPosition);
 
-      if (resource.mode !== '3d') {
-        continue;
-      }
       if (mesh.visible) {
         const geometry = mesh.geometry as THREE.BufferGeometry;
         if (geometry.boundingSphere === null) {

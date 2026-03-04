@@ -1,4 +1,5 @@
 import type { ViewerLayer, VolumeResources } from '../VolumeViewer.types';
+import { RENDER_STYLE_SLICE } from '../../../state/layerSettings';
 
 export type VolumeHoverLayerSelection = {
   hoverableLayers: ViewerLayer[];
@@ -37,7 +38,9 @@ export function resolveVolumeHoverLayerSelection(
       0;
     const hasVolumeDepth = resolvedDepth > 1;
     const viewerMode =
-      layer.mode === 'slice' || layer.mode === '3d'
+      layer.renderStyle === RENDER_STYLE_SLICE
+        ? 'slice'
+        : layer.mode === 'slice' || layer.mode === '3d'
         ? layer.mode
         : hasVolumeDepth
           ? '3d'

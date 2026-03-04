@@ -8,6 +8,7 @@ import {
   RENDER_STYLE_BL,
   RENDER_STYLE_ISO,
   RENDER_STYLE_MIP,
+  RENDER_STYLE_SLICE,
   createDefaultLayerSettings,
 } from '../../src/state/layerSettings.ts';
 
@@ -104,21 +105,29 @@ function findBlInputs(renderer: TestRenderer.ReactTestRenderer) {
   const mipButton = findButtonByLabel(renderer, 'MIP');
   const isoButton = findButtonByLabel(renderer, 'ISO');
   const blButton = findButtonByLabel(renderer, 'BL');
+  const sliceButton = findButtonByLabel(renderer, 'Slice');
   const resetAnglesButtonInMip = findButtonByLabel(renderer, 'Reset angles');
 
   assert.ok(mipButton);
   assert.ok(isoButton);
   assert.ok(blButton);
+  assert.ok(sliceButton);
   assert.equal(resetAnglesButtonInMip, null);
   assert.equal(mipButton?.props['aria-pressed'], true);
   assert.equal(isoButton?.props['aria-pressed'], false);
   assert.equal(blButton?.props['aria-pressed'], false);
+  assert.equal(sliceButton?.props['aria-pressed'], false);
   assert.equal(findBlInputs(renderer).length, 0);
 
   act(() => {
     blButton?.props.onClick();
   });
   assert.deepEqual(renderStyleCall, { layerKey: 'layer-a', renderStyle: RENDER_STYLE_BL });
+
+  act(() => {
+    sliceButton?.props.onClick();
+  });
+  assert.deepEqual(renderStyleCall, { layerKey: 'layer-a', renderStyle: RENDER_STYLE_SLICE });
 
   renderer.update(
     <ChannelsPanel {...(createProps(RENDER_STYLE_BL, () => {}) as any)} />,

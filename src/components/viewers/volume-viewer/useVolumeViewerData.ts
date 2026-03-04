@@ -4,6 +4,7 @@ import type { MutableRefObject } from 'react';
 import { useLoadingOverlay } from '../../../shared/hooks/useLoadingOverlay';
 import { useVolumeResources } from './useVolumeResources';
 import type { VolumeResources, VolumeViewerProps } from '../VolumeViewer.types';
+import { RENDER_STYLE_SLICE } from '../../../state/layerSettings';
 
 export function useVolumeViewerDataState({
   layers,
@@ -50,6 +51,9 @@ export function useVolumeViewerDataState({
   const hasActive3DLayer = useMemo(
     () =>
       layers.some((layer) => {
+        if (layer.renderStyle === RENDER_STYLE_SLICE) {
+          return false;
+        }
         const depth = layer.volume?.depth ?? layer.brickAtlas?.pageTable.volumeShape[0] ?? 0;
         if (depth <= 0) {
           return false;

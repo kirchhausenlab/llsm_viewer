@@ -17,11 +17,13 @@ export type SamplingMode = 'linear' | 'nearest';
 export const RENDER_STYLE_MIP = 0 as const;
 export const RENDER_STYLE_ISO = 1 as const;
 export const RENDER_STYLE_BL = 2 as const;
+export const RENDER_STYLE_SLICE = 3 as const;
 
 export type RenderStyle =
   | typeof RENDER_STYLE_MIP
   | typeof RENDER_STYLE_ISO
-  | typeof RENDER_STYLE_BL;
+  | typeof RENDER_STYLE_BL
+  | typeof RENDER_STYLE_SLICE;
 
 export const DEFAULT_RENDER_STYLE: RenderStyle = RENDER_STYLE_MIP;
 export const DEFAULT_SAMPLING_MODE: SamplingMode = 'linear';

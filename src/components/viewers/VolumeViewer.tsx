@@ -33,6 +33,7 @@ import {
   buildVolumeViewerVrBridgeOptions,
 } from './volume-viewer/volumeViewerRuntimeArgs';
 import { getTrackPlaybackIndexWindow } from '../../shared/utils';
+import { RENDER_STYLE_SLICE } from '../../state/layerSettings';
 
 function formatPercentage(value: number): string {
   if (!Number.isFinite(value)) {
@@ -204,6 +205,9 @@ function VolumeViewer({
           layer.brickAtlas?.pageTable.volumeShape[0] ??
           layer.fullResolutionDepth ??
           0;
+        if (layer.renderStyle === RENDER_STYLE_SLICE) {
+          return depth > 0;
+        }
         const mode =
           layer.mode === 'slice' || layer.mode === '3d'
             ? layer.mode

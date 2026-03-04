@@ -9,6 +9,7 @@ import {
   RENDER_STYLE_BL,
   RENDER_STYLE_ISO,
   RENDER_STYLE_MIP,
+  RENDER_STYLE_SLICE,
   DEFAULT_WINDOW_MAX,
   DEFAULT_WINDOW_MIN,
   type BrightnessContrastState,
@@ -48,6 +49,9 @@ const nextRenderStyle = (current: RenderStyle): RenderStyle => {
   }
   if (current === RENDER_STYLE_ISO) {
     return RENDER_STYLE_BL;
+  }
+  if (current === RENDER_STYLE_BL) {
+    return RENDER_STYLE_SLICE;
   }
   return RENDER_STYLE_MIP;
 };
@@ -595,6 +599,7 @@ export function useLayerControls({
         offsetX: settings.xOffset,
         offsetY: settings.yOffset,
         renderStyle: settings.renderStyle,
+        mode: settings.renderStyle === RENDER_STYLE_SLICE ? ('slice' as const) : undefined,
         blDensityScale: settings.blDensityScale,
         blBackgroundCutoff: settings.blBackgroundCutoff,
         blOpacityScale: settings.blOpacityScale,

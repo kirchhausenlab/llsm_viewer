@@ -17,6 +17,7 @@ import {
   RENDER_STYLE_BL,
   RENDER_STYLE_ISO,
   RENDER_STYLE_MIP,
+  RENDER_STYLE_SLICE,
   DEFAULT_WINDOW_MIN,
   DEFAULT_WINDOW_MAX,
 } from '../../../../state/layerSettings';
@@ -63,6 +64,8 @@ export function drawLayerToggleButtons(params: {
       ? 'ISO'
       : selectedLayer.settings.renderStyle === RENDER_STYLE_BL
         ? 'BL'
+        : selectedLayer.settings.renderStyle === RENDER_STYLE_SLICE
+          ? 'Slice'
         : 'MIP';
 
   const renderX = paddingX;

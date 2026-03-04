@@ -6,6 +6,48 @@ import { FALLBACK_SEGMENTATION_LABEL_TEXTURE } from './fallbackTextures';
 import type { HoveredVoxelInfo } from '../../../types/hover';
 import type { VolumeResources, VolumeViewerProps } from '../VolumeViewer.types';
 
+function clampNumber(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) {
+    return min;
+  }
+  return Math.min(Math.max(value, min), max);
+}
+
+function resolveSliceTextureSize(resource: VolumeResources): { width: number; height: number } {
+  const texture = resource.texture;
+  if (!(texture instanceof THREE.DataTexture)) {
+    return { width: 1, height: 1 };
+  }
+  const image = texture.image as { width?: number; height?: number } | null | undefined;
+  return {
+    width: Math.max(1, Number(image?.width ?? 1)),
+    height: Math.max(1, Number(image?.height ?? 1)),
+  };
+}
+
+function resolveSliceSubdivisions({
+  layer,
+  sliceWidth,
+  sliceHeight,
+}: {
+  layer: VolumeViewerProps['layers'][number] | undefined;
+  sliceWidth: number;
+  sliceHeight: number;
+}): { x: number; y: number } {
+  const fullWidth =
+    Number.isFinite(layer?.fullResolutionWidth) && (layer?.fullResolutionWidth ?? 0) > 0
+      ? Number(layer?.fullResolutionWidth)
+      : sliceWidth;
+  const fullHeight =
+    Number.isFinite(layer?.fullResolutionHeight) && (layer?.fullResolutionHeight ?? 0) > 0
+      ? Number(layer?.fullResolutionHeight)
+      : sliceHeight;
+  return {
+    x: Math.max(1, Math.round(fullWidth / sliceWidth)),
+    y: Math.max(1, Math.round(fullHeight / sliceHeight)),
+  };
+}
+
 export function useVolumeViewerInteractions({
   layersRef,
   resourcesRef,
@@ -36,14 +78,51 @@ export function useVolumeViewerInteractions({
     const layers = layersRef.current ?? [];
     const layersByKey = new Map(layers.map((layer) => [layer.key, layer]));
     for (const [key, resource] of resourcesRef.current?.entries() ?? []) {
+      const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms;
+      const layer = layersByKey.get(key);
+      const isActive = Boolean(layerKey && normalizedPosition && layerKey === key);
+
+      if (resource.mode === 'slice') {
+        if (uniforms.u_hoverActive) {
+          uniforms.u_hoverActive.value = isActive ? 1 : 0;
+        }
+
+        const sliceSize = resolveSliceTextureSize(resource);
+        if (uniforms.u_sliceSize) {
+          (uniforms.u_sliceSize.value as THREE.Vector2).set(sliceSize.width, sliceSize.height);
+        }
+        if (uniforms.u_hoverOutlineColor) {
+          (uniforms.u_hoverOutlineColor.value as THREE.Vector3).set(1.0, 0.95, 0.72);
+        }
+
+        if (uniforms.u_hoverPixel) {
+          if (isActive && normalizedPosition) {
+            const pixelX = Math.floor(clampNumber(normalizedPosition.x * sliceSize.width, 0, sliceSize.width - 1));
+            const pixelY = Math.floor(clampNumber(normalizedPosition.y * sliceSize.height, 0, sliceSize.height - 1));
+            (uniforms.u_hoverPixel.value as THREE.Vector2).set(pixelX, pixelY);
+            if (uniforms.u_hoverGridSubdivisions) {
+              const subdivisions = resolveSliceSubdivisions({
+                layer,
+                sliceWidth: sliceSize.width,
+                sliceHeight: sliceSize.height,
+              });
+              (uniforms.u_hoverGridSubdivisions.value as THREE.Vector2).set(subdivisions.x, subdivisions.y);
+            }
+          } else {
+            (uniforms.u_hoverPixel.value as THREE.Vector2).set(-1, -1);
+            if (uniforms.u_hoverGridSubdivisions) {
+              (uniforms.u_hoverGridSubdivisions.value as THREE.Vector2).set(1, 1);
+            }
+          }
+        }
+        continue;
+      }
+
       if (resource.mode !== '3d') {
         continue;
       }
-      const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms;
-      const layer = layersByKey.get(key);
       const isSegmentationLayer = Boolean(layer?.isSegmentation);
       const hasHoverLabel = Number.isFinite(segmentationLabel);
-      const isActive = Boolean(layerKey && normalizedPosition && layerKey === key);
       if (uniforms.u_hoverActive) {
         uniforms.u_hoverActive.value = isActive ? 1 : 0;
       }

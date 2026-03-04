@@ -8,6 +8,7 @@ import {
   disposeMaterial,
   getExpectedSliceBufferLength,
   prepareSliceTexture,
+  prepareSliceTextureFromBrickAtlas,
 } from './rendering';
 import { SliceRenderShader } from '../../../shaders/sliceRenderShader';
 import { getVolumeRenderShaderVariantKey, VolumeRenderShaderVariants } from '../../../shaders/volumeRenderShader';
@@ -26,7 +27,11 @@ import {
   FALLBACK_BRICK_OCCUPANCY_TEXTURE,
   FALLBACK_SEGMENTATION_LABEL_TEXTURE,
 } from './fallbackTextures';
-import { type LayerSettings } from '../../../state/layerSettings';
+import {
+  RENDER_STYLE_SLICE,
+  type LayerSettings,
+  type RenderStyle,
+} from '../../../state/layerSettings';
 
 type UseVolumeResourcesParams = {
   layers: import('../VolumeViewer.types').VolumeViewerProps['layers'];
@@ -171,7 +176,11 @@ const gpuBrickResidencyStateByResource = new WeakMap<VolumeResources, BrickResid
 
 function resolveSamplingModeForRenderStyle(
   samplingMode: 'linear' | 'nearest',
+  renderStyle: RenderStyle,
 ): 'linear' | 'nearest' {
+  if (renderStyle === RENDER_STYLE_SLICE) {
+    return 'nearest';
+  }
   return samplingMode;
 }
 
@@ -2539,15 +2548,23 @@ export function useVolumeResources({
       let resources: VolumeResources | null = resourcesRef.current.get(layer.key) ?? null;
 
       const viewerMode =
-        layer.mode === 'slice' || layer.mode === '3d'
-          ? layer.mode
-          : depth > 1
-            ? '3d'
-            : 'slice';
-      const zIndex = Number.isFinite(layer.sliceIndex)
+        layer.renderStyle === RENDER_STYLE_SLICE
+          ? 'slice'
+          : layer.mode === 'slice' || layer.mode === '3d'
+            ? layer.mode
+            : depth > 1
+              ? '3d'
+              : 'slice';
+      const hasExplicitSliceIndex = Number.isFinite(layer.sliceIndex);
+      const defaultDisplayIndex = Math.round(safeZClipFront * Math.max(depth - 1, 0));
+      const zIndex = hasExplicitSliceIndex
         ? Number(layer.sliceIndex)
-        : Math.floor(depth / 2);
-      const effectiveSamplingMode = resolveSamplingModeForRenderStyle(layer.samplingMode);
+        : defaultDisplayIndex;
+      const dataDepthForSlice = volume?.depth ?? pageTable?.volumeShape[0] ?? depth;
+      const sliceDataIndex = hasExplicitSliceIndex
+        ? Number(layer.sliceIndex)
+        : Math.round(safeZClipFront * Math.max(dataDepthForSlice - 1, 0));
+      const effectiveSamplingMode = resolveSamplingModeForRenderStyle(layer.samplingMode, layer.renderStyle);
       const layerAdditiveEnabled = resolveLayerAdditiveEnabled(
         additiveBlendingRef.current,
       );
@@ -2733,9 +2750,16 @@ export function useVolumeResources({
 
         resources = resourcesRef.current.get(layer.key) ?? null;
       } else {
-        const maxIndex = Math.max(0, depth - 1);
-        const clampedIndex = Math.min(Math.max(zIndex, 0), maxIndex);
-        const expectedLength = volume ? getExpectedSliceBufferLength(volume) : 0;
+        const maxDisplayIndex = Math.max(0, depth - 1);
+        const clampedIndex = Math.min(Math.max(zIndex, 0), maxDisplayIndex);
+        const maxSliceDataIndex = Math.max(0, dataDepthForSlice - 1);
+        const clampedSliceDataIndex = Math.min(Math.max(sliceDataIndex, 0), maxSliceDataIndex);
+        const expectedLength =
+          volume
+            ? getExpectedSliceBufferLength(volume)
+            : pageTable
+              ? Math.max(1, pageTable.volumeShape[1]) * Math.max(1, pageTable.volumeShape[2]) * 4
+              : 0;
 
         const needsRebuild =
           !resources ||
@@ -2745,13 +2769,55 @@ export function useVolumeResources({
           resources.dimensions.depth !== depth ||
           resources.channels !== channels ||
           !(resources.texture instanceof THREE.DataTexture) ||
-          (volume && (resources.sliceBuffer?.length ?? 0) !== expectedLength);
+          (expectedLength > 0 && (resources.sliceBuffer?.length ?? 0) !== expectedLength);
 
         if (needsRebuild) {
           removeResource(layer.key);
 
           const sliceTexture = (() => {
-            if (!volume) {
+            const isNearestSampling = effectiveSamplingMode === 'nearest';
+            if (volume) {
+              const sliceInfo = prepareSliceTexture(volume, clampedSliceDataIndex, null);
+              const texture = new THREE.DataTexture(
+                sliceInfo.data,
+                volume.width,
+                volume.height,
+                sliceInfo.format,
+              );
+              texture.type = THREE.UnsignedByteType;
+              texture.minFilter = isNearestSampling ? THREE.NearestFilter : THREE.LinearFilter;
+              texture.magFilter = isNearestSampling ? THREE.NearestFilter : THREE.LinearFilter;
+              texture.unpackAlignment = 1;
+              texture.colorSpace = THREE.LinearSRGBColorSpace;
+              texture.needsUpdate = true;
+              return { texture, sliceBuffer: sliceInfo.data };
+            }
+            if (pageTable && brickAtlas?.enabled) {
+              const sliceInfo = prepareSliceTextureFromBrickAtlas(
+                {
+                  pageTable,
+                  atlasData: brickAtlas.data,
+                  textureFormat: brickAtlas.textureFormat,
+                  sourceChannels: brickAtlas.sourceChannels,
+                },
+                clampedSliceDataIndex,
+                null,
+              );
+              const texture = new THREE.DataTexture(
+                sliceInfo.data,
+                sliceInfo.width,
+                sliceInfo.height,
+                sliceInfo.format,
+              );
+              texture.type = THREE.UnsignedByteType;
+              texture.minFilter = isNearestSampling ? THREE.NearestFilter : THREE.LinearFilter;
+              texture.magFilter = isNearestSampling ? THREE.NearestFilter : THREE.LinearFilter;
+              texture.unpackAlignment = 1;
+              texture.colorSpace = THREE.LinearSRGBColorSpace;
+              texture.needsUpdate = true;
+              return { texture, sliceBuffer: sliceInfo.data };
+            }
+            {
               const fallbackTexture = new THREE.DataTexture(
                 FALLBACK_VOLUME_TEXTURE_DATA.slice(),
                 1,
@@ -2759,27 +2825,13 @@ export function useVolumeResources({
                 THREE.RedFormat,
               );
               fallbackTexture.type = THREE.UnsignedByteType;
-              fallbackTexture.minFilter = THREE.LinearFilter;
-              fallbackTexture.magFilter = THREE.LinearFilter;
+              fallbackTexture.minFilter = isNearestSampling ? THREE.NearestFilter : THREE.LinearFilter;
+              fallbackTexture.magFilter = isNearestSampling ? THREE.NearestFilter : THREE.LinearFilter;
               fallbackTexture.unpackAlignment = 1;
               fallbackTexture.colorSpace = THREE.LinearSRGBColorSpace;
               fallbackTexture.needsUpdate = true;
               return { texture: fallbackTexture, sliceBuffer: null as Uint8Array | null };
             }
-            const sliceInfo = prepareSliceTexture(volume, clampedIndex, null);
-            const texture = new THREE.DataTexture(
-              sliceInfo.data,
-              volume.width,
-              volume.height,
-              sliceInfo.format,
-            );
-            texture.type = THREE.UnsignedByteType;
-            texture.minFilter = THREE.LinearFilter;
-            texture.magFilter = THREE.LinearFilter;
-            texture.unpackAlignment = 1;
-            texture.colorSpace = THREE.LinearSRGBColorSpace;
-            texture.needsUpdate = true;
-            return { texture, sliceBuffer: sliceInfo.data };
           })();
 
           const texture = sliceTexture.texture;
@@ -2791,7 +2843,13 @@ export function useVolumeResources({
             (sliceUniforms.u_size.value as THREE.Vector3).set(width, height, depth);
           }
           if ('u_sliceIndex' in sliceUniforms) {
-            sliceUniforms.u_sliceIndex.value = clampedIndex;
+            sliceUniforms.u_sliceIndex.value = clampedSliceDataIndex;
+          }
+          if ('u_sliceSize' in sliceUniforms) {
+            const image = texture.image as { width?: number; height?: number };
+            const sliceWidth = Math.max(1, Number(image.width ?? width));
+            const sliceHeight = Math.max(1, Number(image.height ?? height));
+            (sliceUniforms.u_sliceSize.value as THREE.Vector2).set(sliceWidth, sliceHeight);
           }
           uniforms.u_cmdata.value = colormapTexture;
           uniforms.u_channels.value = channels;
@@ -3050,13 +3108,15 @@ export function useVolumeResources({
           }
         } else {
           resources.updateGpuBrickResidencyForCamera = null;
-          const maxIndex = Math.max(0, depth - 1);
-          const clampedIndex = Math.min(Math.max(zIndex, 0), maxIndex);
+          const maxDisplayIndex = Math.max(0, depth - 1);
+          const clampedIndex = Math.min(Math.max(zIndex, 0), maxDisplayIndex);
+          const maxSliceDataIndex = Math.max(0, dataDepthForSlice - 1);
+          const clampedSliceDataIndex = Math.min(Math.max(sliceDataIndex, 0), maxSliceDataIndex);
           if (materialUniforms.u_size) {
             (materialUniforms.u_size.value as THREE.Vector3).set(width, height, depth);
           }
           if (materialUniforms.u_sliceIndex) {
-            materialUniforms.u_sliceIndex.value = clampedIndex;
+            materialUniforms.u_sliceIndex.value = clampedSliceDataIndex;
           }
 
           const directAtlasFormat = brickAtlas ? getTextureFormatFromBrickAtlas(brickAtlas) : null;
@@ -3076,18 +3136,55 @@ export function useVolumeResources({
                 : undefined,
           );
 
+          const dataTexture = resources.texture as THREE.DataTexture;
+          const shouldUseNearestSampling = effectiveSamplingMode === 'nearest';
+          if (
+            dataTexture.minFilter !== (shouldUseNearestSampling ? THREE.NearestFilter : THREE.LinearFilter) ||
+            dataTexture.magFilter !== (shouldUseNearestSampling ? THREE.NearestFilter : THREE.LinearFilter)
+          ) {
+            dataTexture.minFilter = shouldUseNearestSampling ? THREE.NearestFilter : THREE.LinearFilter;
+            dataTexture.magFilter = shouldUseNearestSampling ? THREE.NearestFilter : THREE.LinearFilter;
+            dataTexture.needsUpdate = true;
+          }
+
           if (volume) {
             const existingBuffer = resources.sliceBuffer ?? null;
-            const sliceInfo = prepareSliceTexture(volume, clampedIndex, existingBuffer);
+            const sliceInfo = prepareSliceTexture(volume, clampedSliceDataIndex, existingBuffer);
             resources.sliceBuffer = sliceInfo.data;
-            const dataTexture = resources.texture as THREE.DataTexture;
             dataTexture.image.data = sliceInfo.data;
             dataTexture.image.width = volume.width;
             dataTexture.image.height = volume.height;
             dataTexture.format = sliceInfo.format;
             dataTexture.needsUpdate = true;
             materialUniforms.u_slice.value = dataTexture;
+          } else if (pageTable && brickAtlas?.enabled) {
+            const existingBuffer = resources.sliceBuffer ?? null;
+            const sliceInfo = prepareSliceTextureFromBrickAtlas(
+              {
+                pageTable,
+                atlasData: brickAtlas.data,
+                textureFormat: brickAtlas.textureFormat,
+                sourceChannels: brickAtlas.sourceChannels,
+              },
+              clampedSliceDataIndex,
+              existingBuffer,
+            );
+            resources.sliceBuffer = sliceInfo.data;
+            dataTexture.image.data = sliceInfo.data;
+            dataTexture.image.width = sliceInfo.width;
+            dataTexture.image.height = sliceInfo.height;
+            dataTexture.format = sliceInfo.format;
+            dataTexture.needsUpdate = true;
+            materialUniforms.u_slice.value = dataTexture;
           }
+          if (materialUniforms.u_sliceSize) {
+            const image = dataTexture.image as { width?: number; height?: number };
+            const sliceWidth = Math.max(1, Number(image.width ?? width));
+            const sliceHeight = Math.max(1, Number(image.height ?? height));
+            (materialUniforms.u_sliceSize.value as THREE.Vector2).set(sliceWidth, sliceHeight);
+          }
+
+          resources.samplingMode = effectiveSamplingMode;
 
           const desiredX = layer.offsetX;
           const desiredY = layer.offsetY;
