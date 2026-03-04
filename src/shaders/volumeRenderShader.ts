@@ -60,6 +60,13 @@ export type LinearAtlasSamplingAnalysis = {
   atlasDataSampleCount: number;
 };
 
+export type AtlasLinearLodBand = {
+  useCoarseSampling: boolean;
+  lowLevel: number;
+  highLevel: number;
+  blend: number;
+};
+
 function normalizeWindowValue(value: number, windowMin: number, windowMax: number): number {
   const range = Math.max(windowMax - windowMin, 1e-5);
   const normalized = (value - windowMin) / range;
@@ -184,6 +191,29 @@ export function computeAdaptiveLodCpu(args: AdaptiveLodDecisionArgs): number {
   }
   const confidence = clampUnit(Number.isFinite(args.currentMax) ? (args.currentMax as number) : 0);
   return Math.min(Math.max(clampedBase * (1 - confidence), 0), lodMax);
+}
+
+export function resolveAtlasLinearLodBandCpu(lod: number, lodMax: number): AtlasLinearLodBand {
+  const safeMax = Math.max(0, Number.isFinite(lodMax) ? lodMax : 0);
+  const safeLod = Math.min(Math.max(Number.isFinite(lod) ? lod : 0, 0), safeMax);
+  if (safeLod < 1) {
+    return {
+      useCoarseSampling: false,
+      lowLevel: 0,
+      highLevel: 0,
+      blend: 0,
+    };
+  }
+  const lowLevel = Math.floor(safeLod);
+  const maxSupportedLevel = Math.floor(safeMax);
+  const highLevel = Math.min(lowLevel + 1, maxSupportedLevel);
+  const blend = highLevel > lowLevel ? clampUnit(safeLod - lowLevel) : 0;
+  return {
+    useCoarseSampling: true,
+    lowLevel,
+    highLevel,
+    blend,
+  };
 }
 
 export function computeSkipHierarchyNodeBoundsCpu(args: SkipHierarchyNodeBoundsArgs): SkipHierarchyNodeBounds {
@@ -934,15 +964,31 @@ const volumeRenderFragmentShader = /* glsl */ `
     }
 
     vec4 sample_brick_atlas_linear_lod(vec3 texcoords, float lod) {
-      if (lod <= 1e-3) {
-        return sample_brick_atlas_linear(texcoords);
-      }
       vec3 safeTexcoords = clamp(texcoords, vec3(0.0), vec3(1.0));
-      float safeLod = clamp(lod, 0.0, max(u_adaptiveLodMax, 0.0));
-      float voxelScale = exp2(safeLod);
+      float safeMaxLod = max(u_adaptiveLodMax, 0.0);
+      float safeLod = clamp(lod, 0.0, safeMaxLod);
+      if (safeLod < 1.0) {
+        // Keep sub-voxel LOD in native trilinear space to avoid distance shimmer.
+        return sample_brick_atlas_linear(safeTexcoords);
+      }
+
+      float lowLod = floor(safeLod);
+      float maxSupportedLod = floor(safeMaxLod);
+      float highLod = min(lowLod + 1.0, maxSupportedLod);
+      float lodBlend = highLod > lowLod ? clamp(safeLod - lowLod, 0.0, 1.0) : 0.0;
+
       vec3 atlasVolumeSize = max(u_brickVolumeSize, vec3(1.0));
-      vec3 coarseVoxel = floor((safeTexcoords * atlasVolumeSize) / voxelScale) * voxelScale;
-      return sample_brick_atlas_voxel(coarseVoxel);
+      float lowVoxelScale = exp2(lowLod);
+      vec3 lowVoxel = floor((safeTexcoords * atlasVolumeSize) / lowVoxelScale) * lowVoxelScale;
+      vec4 lowSample = sample_brick_atlas_voxel(lowVoxel);
+      if (lodBlend <= 1e-3) {
+        return lowSample;
+      }
+
+      float highVoxelScale = exp2(highLod);
+      vec3 highVoxel = floor((safeTexcoords * atlasVolumeSize) / highVoxelScale) * highVoxelScale;
+      vec4 highSample = sample_brick_atlas_voxel(highVoxel);
+      return mix(lowSample, highSample, lodBlend);
     }
 
     vec4 sample_full_volume_color(vec3 texcoords, float lod) {

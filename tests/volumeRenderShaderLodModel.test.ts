@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 
-import { computeAdaptiveLodCpu } from '../src/shaders/volumeRenderShader.ts';
+import {
+  computeAdaptiveLodCpu,
+  resolveAtlasLinearLodBandCpu,
+} from '../src/shaders/volumeRenderShader.ts';
 
 const EPSILON = 1e-6;
 
@@ -16,6 +19,38 @@ const EPSILON = 1e-6;
     currentMax: 0,
   });
   assert.equal(lod, 0);
+})();
+
+(() => {
+  const band = resolveAtlasLinearLodBandCpu(0.75, 0.75);
+  assert.equal(band.useCoarseSampling, false);
+  assert.equal(band.lowLevel, 0);
+  assert.equal(band.highLevel, 0);
+  assert.equal(band.blend, 0);
+})();
+
+(() => {
+  const band = resolveAtlasLinearLodBandCpu(1.25, 2);
+  assert.equal(band.useCoarseSampling, true);
+  assert.equal(band.lowLevel, 1);
+  assert.equal(band.highLevel, 2);
+  assert.ok(Math.abs(band.blend - 0.25) <= EPSILON);
+})();
+
+(() => {
+  const band = resolveAtlasLinearLodBandCpu(2.8, 2.2);
+  assert.equal(band.useCoarseSampling, true);
+  assert.equal(band.lowLevel, 2);
+  assert.equal(band.highLevel, 2);
+  assert.equal(band.blend, 0);
+})();
+
+(() => {
+  const band = resolveAtlasLinearLodBandCpu(Number.NaN, Number.NaN);
+  assert.equal(band.useCoarseSampling, false);
+  assert.equal(band.lowLevel, 0);
+  assert.equal(band.highLevel, 0);
+  assert.equal(band.blend, 0);
 })();
 
 (() => {
