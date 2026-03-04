@@ -20,7 +20,6 @@ type UseRouteVrChannelPanelsOptions = {
   channelNameMap: Map<string, string>;
   channelLayersMap: Map<string, LoadedDatasetLayer[]>;
   channelVisibility: Record<string, boolean>;
-  channelActiveLayer: Record<string, string>;
   layerSettings: Record<string, LayerSettings>;
   currentLayerVolumes: Record<string, NormalizedVolume | null>;
   createLayerDefaultSettings: (layerKey: string) => LayerSettings;
@@ -61,7 +60,6 @@ export function useRouteVrChannelPanels({
   channelNameMap,
   channelLayersMap,
   channelVisibility,
-  channelActiveLayer,
   layerSettings,
   currentLayerVolumes,
   createLayerDefaultSettings
@@ -78,7 +76,7 @@ export function useRouteVrChannelPanels({
       const channelLayers = channelLayersMap.get(channelId) ?? [];
       const name = channelNameMap.get(channelId) ?? 'Untitled channel';
       const visible = channelVisibility[channelId] ?? true;
-      const activeLayerKey = channelActiveLayer[channelId] ?? selectDeterministicLayerKey(channelLayers);
+      const activeLayerKey = selectDeterministicLayerKey(channelLayers);
       const layers = channelLayers.map((layer) => {
         const settings = layerSettings[layer.key] ?? createLayerDefaultSettings(layer.key);
         const volume = currentLayerVolumes[layer.key] ?? null;
@@ -107,7 +105,6 @@ export function useRouteVrChannelPanels({
     channelNameMap,
     channelLayersMap,
     channelVisibility,
-    channelActiveLayer,
     layerSettings,
     currentLayerVolumes,
     createLayerDefaultSettings

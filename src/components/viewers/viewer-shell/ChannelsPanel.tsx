@@ -41,10 +41,8 @@ export default function ChannelsPanel({
   channelLayersMap,
   layerVolumesByKey,
   layerBrickAtlasesByKey,
-  channelActiveLayer,
   layerSettings,
   getLayerDefaultSettings,
-  onChannelLayerSelect,
   onChannelReset,
   onLayerWindowMinChange,
   onLayerWindowMaxChange,
@@ -130,9 +128,7 @@ export default function ChannelsPanel({
           <div className="channel-controls">
             {loadedChannelIds.map((channelId) => {
               const channelLayers = channelLayersMap.get(channelId) ?? [];
-              const selectedLayerKey = channelActiveLayer[channelId] ?? channelLayers[0]?.key ?? null;
-              const selectedLayer =
-                channelLayers.find((layer) => layer.key === selectedLayerKey) ?? channelLayers[0] ?? null;
+              const selectedLayer = channelLayers[0] ?? null;
               const settings = selectedLayer
                 ? layerSettings[selectedLayer.key] ?? getLayerDefaultSettings(selectedLayer.key)
                 : createDefaultLayerSettings();
@@ -170,30 +166,7 @@ export default function ChannelsPanel({
                 >
                   {isActive ? (
                     <>
-                      {channelLayers.length > 1 ? (
-                        <div
-                          className="channel-layer-selector"
-                          role="radiogroup"
-                          aria-label={`${channelNameMap.get(channelId) ?? 'Channel'} volume`}
-                        >
-                          {channelLayers.map((layer) => {
-                            const isSelected = Boolean(selectedLayer && selectedLayer.key === layer.key);
-                            const inputId = `channel-${channelId}-layer-${layer.key}`;
-                            return (
-                              <label key={layer.key} className="channel-layer-option" htmlFor={inputId}>
-                                <input
-                                  type="radio"
-                                  id={inputId}
-                                  name={`channel-layer-${channelId}`}
-                                  checked={isSelected}
-                                  onChange={() => onChannelLayerSelect(channelId, layer.key)}
-                                />
-                                <span>{layer.label}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      ) : channelLayers.length === 0 ? (
+                      {channelLayers.length === 0 ? (
                         <p className="channel-empty-hint">No volume available for this channel.</p>
                       ) : null}
                       {selectedLayer ? (

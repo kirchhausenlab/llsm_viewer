@@ -95,7 +95,6 @@ export type ViewerShellContainerVrProps = Pick<
   | 'onChannelPanelSelect'
   | 'onChannelVisibilityToggle'
   | 'onChannelReset'
-  | 'onChannelLayerSelect'
   | 'onLayerSelect'
   | 'onLayerSoloToggle'
   | 'onLayerContrastChange'

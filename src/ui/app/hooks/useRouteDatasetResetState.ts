@@ -10,7 +10,6 @@ type UseRouteDatasetResetStateOptions = {
   setChannels: Dispatch<SetStateAction<ChannelSource[]>>;
   setTracks: Dispatch<SetStateAction<TrackSetSource[]>>;
   setChannelVisibility: Dispatch<SetStateAction<Record<string, boolean>>>;
-  setChannelActiveLayer: Dispatch<SetStateAction<Record<string, string>>>;
   setLayerSettings: Dispatch<SetStateAction<Record<string, LayerSettings>>>;
   setLayerAutoThresholds: Dispatch<SetStateAction<Record<string, number>>>;
   setCurrentLayerVolumes: Dispatch<SetStateAction<Record<string, NormalizedVolume | null>>>;
@@ -37,7 +36,6 @@ export function useRouteDatasetResetState({
   setChannels,
   setTracks,
   setChannelVisibility,
-  setChannelActiveLayer,
   setLayerSettings,
   setLayerAutoThresholds,
   setCurrentLayerVolumes,
@@ -58,7 +56,6 @@ export function useRouteDatasetResetState({
     setChannels([]);
     setTracks([]);
     setChannelVisibility({});
-    setChannelActiveLayer({});
     setLayerSettings({});
     setLayerAutoThresholds({});
     setCurrentLayerVolumes({});
@@ -83,7 +80,6 @@ export function useRouteDatasetResetState({
     resetPreprocessedState,
     resetTrackState,
     setActiveChannelTabId,
-    setChannelActiveLayer,
     setChannelVisibility,
     setChannels,
     setCurrentLayerVolumes,

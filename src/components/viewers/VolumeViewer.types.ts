@@ -112,7 +112,6 @@ export type VolumeViewerVrProps = {
   onChannelPanelSelect: (channelId: string) => void;
   onChannelVisibilityToggle: (channelId: string) => void;
   onChannelReset: (channelId: string) => void;
-  onChannelLayerSelect: (channelId: string, layerKey: string) => void;
   onLayerSelect?: (layerKey: string) => void;
   onLayerSoloToggle?: (layerKey: string) => void;
   onLayerContrastChange: (layerKey: string, value: number) => void;

@@ -11,17 +11,19 @@ console.log('Starting useRouteDatasetSetupState tests');
 const createChannel = (
   id: string,
   name: string,
-  layerIds: string[] = [],
+  volumeId: string | null = null,
   channelType: ChannelSource['channelType'] = 'channel'
 ): ChannelSource => ({
   id,
   name,
   channelType,
-  layers: layerIds.map((layerId) => ({
-    id: layerId,
-    files: [new File(['data'], `${layerId}.tif`)],
-    isSegmentation: false,
-  })),
+  volume: volumeId
+    ? {
+        id: volumeId,
+        files: [new File(['data'], `${volumeId}.tif`)],
+        isSegmentation: false
+      }
+    : null
 });
 
 const createTrackSet = (id: string, name: string, boundChannelId: string | null): TrackSetSource => ({
@@ -69,7 +71,7 @@ const createTrackSet = (id: string, name: string, boundChannelId: string | null)
         nextId += 1;
         createdChannelIds.push(id);
         createdChannelTypes.push(channelType);
-        return createChannel(id, name, [], channelType ?? 'channel');
+        return createChannel(id, name, null, channelType ?? 'channel');
       },
       queuePendingChannelFocus: (channelId, originalName) => {
         queuedFocus.push({ channelId, originalName });
@@ -136,8 +138,8 @@ const createTrackSet = (id: string, name: string, boundChannelId: string | null)
 
   const hook = renderHook(() => {
     const [channels, setChannels] = React.useState<ChannelSource[]>([
-      createChannel('channel-1', 'First', ['layer-1', 'layer-2']),
-      createChannel('channel-2', 'Second', ['layer-3']),
+      createChannel('channel-1', 'First', 'layer-1'),
+      createChannel('channel-2', 'Second', 'layer-3'),
     ]);
     const [tracks, setTracks] = React.useState<TrackSetSource[]>([
       createTrackSet('track-set-1', 'Track 1', 'channel-1'),
@@ -146,7 +148,6 @@ const createTrackSet = (id: string, name: string, boundChannelId: string | null)
     ]);
     const [layerTimepointCounts, setLayerTimepointCounts] = React.useState<Record<string, number>>({
       'layer-1': 5,
-      'layer-2': 5,
       'layer-3': 7,
     });
 

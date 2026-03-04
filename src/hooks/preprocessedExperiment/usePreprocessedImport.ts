@@ -211,18 +211,24 @@ export function usePreprocessedImport({
 
       setViewerMode('3d');
 
-      const nextChannels = result.channelSummaries.map<ChannelSource>((summary) => ({
-        id: summary.id,
-        name: summary.name,
-        channelType: summary.layers.length > 0 && summary.layers.every((layer) => layer.isSegmentation)
-          ? 'segmentation'
-          : 'channel',
-        layers: summary.layers.map((layer) => ({
-          id: layer.key,
-          files: [],
-          isSegmentation: layer.isSegmentation
-        }))
-      }));
+      const nextChannels = result.channelSummaries.map<ChannelSource>((summary) => {
+        if (summary.layers.length !== 1) {
+          throw new Error(
+            `Channel "${summary.name}" contains ${summary.layers.length} volumes. This build requires exactly one volume per channel.`,
+          );
+        }
+        const layer = summary.layers[0]!;
+        return {
+          id: summary.id,
+          name: summary.name,
+          channelType: layer.isSegmentation ? 'segmentation' : 'channel',
+          volume: {
+            id: layer.key,
+            files: [],
+            isSegmentation: layer.isSegmentation
+          }
+        };
+      });
       const nextTracks = result.trackSummaries.map<TrackSetSource>((set) => ({
         id: set.id,
         name: set.name,

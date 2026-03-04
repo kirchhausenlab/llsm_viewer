@@ -130,7 +130,6 @@ await (async () => {
         ['channel-a', [createLoadedLayer('layer-a', 'channel-a')]],
         ['channel-b', [createLoadedLayer('layer-b', 'channel-b')]],
       ]),
-      channelActiveLayer: {},
       channelVisibility: { 'channel-a': true, 'channel-b': true },
       layerChannelMap: new Map<string, string>([
         ['layer-a', 'channel-a'],
@@ -213,7 +212,6 @@ await (async () => {
       volumeProvider: null,
       loadedChannelIds: [],
       channelLayersMap: new Map<string, LoadedDatasetLayer[]>(),
-      channelActiveLayer: {},
       channelVisibility: {},
       layerChannelMap: new Map<string, string>(),
       preferBrickResidency: false,
@@ -270,10 +268,6 @@ await (async () => {
         ['channel-a', [createLoadedLayer('layer-a-1', 'channel-a'), createLoadedLayer('layer-a-2', 'channel-a')]],
         ['channel-b', [createLoadedLayer('layer-b-1', 'channel-b')]],
       ]),
-      channelActiveLayer: {
-        'channel-a': 'layer-a-2',
-        'channel-b': 'layer-b-1',
-      },
       channelVisibility: {
         'channel-a': true,
         'channel-b': false,
@@ -299,17 +293,17 @@ await (async () => {
     }),
   );
 
-  assert.deepStrictEqual(hook.result.playbackLayerKeys, ['layer-a-2']);
+  assert.deepStrictEqual(hook.result.playbackLayerKeys, ['layer-a-1']);
 
   await flushAsyncWork();
-  assert.ok(hook.result.currentLayerVolumes['layer-a-2']);
-  assert.strictEqual(hook.result.currentLayerPageTables['layer-a-2'], null);
-  assert.deepStrictEqual(getVolumeCalls[0], { layerKey: 'layer-a-2', timeIndex: 1 });
+  assert.ok(hook.result.currentLayerVolumes['layer-a-1']);
+  assert.strictEqual(hook.result.currentLayerPageTables['layer-a-1'], null);
+  assert.deepStrictEqual(getVolumeCalls[0], { layerKey: 'layer-a-1', timeIndex: 1 });
 
   selectedIndex = 3;
   hook.rerender();
   await flushAsyncWork();
-  assert.deepStrictEqual(getVolumeCalls[getVolumeCalls.length - 1], { layerKey: 'layer-a-2', timeIndex: 3 });
+  assert.deepStrictEqual(getVolumeCalls[getVolumeCalls.length - 1], { layerKey: 'layer-a-1', timeIndex: 3 });
 
   hook.unmount();
 })();
@@ -333,7 +327,6 @@ await (async () => {
       channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
         ['channel-a', [createLoadedLayer('layer-a', 'channel-a')]]
       ]),
-      channelActiveLayer: { 'channel-a': 'layer-a' },
       channelVisibility: { 'channel-a': true },
       layerChannelMap: new Map<string, string>([['layer-a', 'channel-a']]),
       preferBrickResidency: false,
@@ -390,7 +383,6 @@ await (async () => {
       channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
         ['channel-a', [createLoadedLayer('layer-a', 'channel-a')]],
       ]),
-      channelActiveLayer: { 'channel-a': 'layer-a' },
       channelVisibility: { 'channel-a': true },
       layerChannelMap: new Map<string, string>([['layer-a', 'channel-a']]),
       preferBrickResidency: true,
@@ -452,7 +444,6 @@ await (async () => {
       channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
         ['channel-a', [createLoadedLayer('layer-a', 'channel-a', true)]],
       ]),
-      channelActiveLayer: { 'channel-a': 'layer-a' },
       channelVisibility: { 'channel-a': true },
       layerChannelMap: new Map<string, string>([['layer-a', 'channel-a']]),
       preferBrickResidency: true,
@@ -527,7 +518,6 @@ await (async () => {
       channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
         ['channel-a', [createLoadedLayer('layer-a', 'channel-a')]],
       ]),
-      channelActiveLayer: { 'channel-a': 'layer-a' },
       channelVisibility: { 'channel-a': true },
       layerChannelMap: new Map<string, string>([['layer-a', 'channel-a']]),
       preferBrickResidency: true,
@@ -624,7 +614,6 @@ await (async () => {
       channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
         ['channel-a', [createLoadedLayer('layer-a', 'channel-a')]],
       ]),
-      channelActiveLayer: { 'channel-a': 'layer-a' },
       channelVisibility: { 'channel-a': true },
       layerChannelMap: new Map<string, string>([['layer-a', 'channel-a']]),
       preferBrickResidency: true,
@@ -713,7 +702,6 @@ await (async () => {
       channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
         ['channel-a', [createLoadedLayer('layer-a', 'channel-a')]],
       ]),
-      channelActiveLayer: { 'channel-a': 'layer-a' },
       channelVisibility: { 'channel-a': true },
       layerChannelMap: new Map<string, string>([['layer-a', 'channel-a']]),
       preferBrickResidency: true,
@@ -793,7 +781,6 @@ await (async () => {
       channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
         ['channel-a', [createLoadedLayer('layer-a', 'channel-a')]],
       ]),
-      channelActiveLayer: { 'channel-a': 'layer-a' },
       channelVisibility: { 'channel-a': true },
       layerChannelMap: new Map<string, string>([['layer-a', 'channel-a']]),
       preferBrickResidency: true,
@@ -882,7 +869,6 @@ await (async () => {
       channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
         ['channel-a', [createLoadedLayer('layer-a', 'channel-a')]],
       ]),
-      channelActiveLayer: { 'channel-a': 'layer-a' },
       channelVisibility: { 'channel-a': true },
       layerChannelMap: new Map<string, string>([['layer-a', 'channel-a']]),
       preferBrickResidency: true,
@@ -939,7 +925,6 @@ await (async () => {
       channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
         ['channel-a', [createLoadedLayer('layer-a', 'channel-a')]]
       ]),
-      channelActiveLayer: { 'channel-a': 'layer-a' },
       channelVisibility: { 'channel-a': true },
       layerChannelMap: new Map<string, string>([['layer-a', 'channel-a']]),
       preferBrickResidency: false,
@@ -1017,7 +1002,6 @@ await (async () => {
       channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
         ['channel-a', [createLoadedLayer('layer-a', 'channel-a')]]
       ]),
-      channelActiveLayer: { 'channel-a': 'layer-a' },
       channelVisibility: { 'channel-a': true },
       layerChannelMap: new Map<string, string>([['layer-a', 'channel-a']]),
       preferBrickResidency: false,

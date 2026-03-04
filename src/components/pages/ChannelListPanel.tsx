@@ -6,24 +6,24 @@ import { ENTITY_NAME_MAX_LENGTH } from '../../constants/naming';
 
 type SetupExperimentType = '3d-movie' | '2d-movie' | 'single-3d-volume';
 
-function isSegmentationChannel(channel: Pick<ChannelSource, 'channelType' | 'layers'>): boolean {
+function isSegmentationChannel(channel: Pick<ChannelSource, 'channelType' | 'volume'>): boolean {
   if (channel.channelType === 'segmentation') {
     return true;
   }
   if (channel.channelType === 'channel') {
     return false;
   }
-  if (channel.layers.length === 0) {
+  if (!channel.volume) {
     return false;
   }
-  return channel.layers.every((layer) => layer.isSegmentation);
+  return channel.volume.isSegmentation;
 }
 
 const getChannelLayerSummary = (channel: ChannelSource): string => {
-  if (channel.layers.length === 0) {
+  if (!channel.volume) {
     return '0 files';
   }
-  const primaryLayer = channel.layers[0];
+  const primaryLayer = channel.volume;
   const totalFiles = primaryLayer.files.length;
   const fileLabel = totalFiles === 1 ? 'file' : 'files';
   return `${totalFiles} ${fileLabel}`;
@@ -45,7 +45,7 @@ const buildChannelTabMeta = (channel: ChannelSource, validation: ChannelValidati
     }
   }
 
-  if (channel.layers.length === 0) {
+  if (!channel.volume) {
     parts.push('add a volume');
   } else if (validation.warnings.length > 0) {
     parts.push('Warnings');

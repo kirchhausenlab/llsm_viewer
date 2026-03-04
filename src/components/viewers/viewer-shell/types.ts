@@ -83,10 +83,8 @@ export type ChannelsPanelProps = {
   channelLayersMap: Map<string, LoadedDatasetLayer[]>;
   layerVolumesByKey: Record<string, NormalizedVolume | null>;
   layerBrickAtlasesByKey: Record<string, VolumeBrickAtlas | null>;
-  channelActiveLayer: Record<string, string>;
   layerSettings: Record<string, LayerSettings>;
   getLayerDefaultSettings: (layerKey: string) => LayerSettings;
-  onChannelLayerSelect: (channelId: string, layerKey: string) => void;
   onChannelReset: (channelId: string) => void;
   onLayerWindowMinChange: (layerKey: string, value: number) => void;
   onLayerWindowMaxChange: (layerKey: string, value: number) => void;

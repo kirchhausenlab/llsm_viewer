@@ -22,7 +22,7 @@ export default function ChannelCard({
   const { state: dropboxState, controls: dropboxControls } = useChannelDropbox({ disabled: isDisabled });
 
   const isDropboxImporting = dropboxState.importTarget !== null;
-  const primaryLayer = channel.layers[0] ?? null;
+  const primaryLayer = channel.volume;
   const hasLayerSelection = primaryLayer !== null;
 
   const layerSelectionSummary = useMemo(() => {

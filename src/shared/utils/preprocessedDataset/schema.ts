@@ -640,8 +640,8 @@ function validateChannel({
   const id = expectString(channel.id, `${path}.id`, { nonEmpty: true });
   const name = expectString(channel.name, `${path}.name`, { nonEmpty: true });
   const layersValue = expectArray(channel.layers, `${path}.layers`);
-  if (layersValue.length === 0) {
-    throw new Error(`Invalid manifest schema at ${path}.layers: expected at least one layer.`);
+  if (layersValue.length !== 1) {
+    throw new Error(`Invalid manifest schema at ${path}.layers: expected exactly one layer.`);
   }
 
   const layers: PreprocessedLayerManifestEntry[] = [];

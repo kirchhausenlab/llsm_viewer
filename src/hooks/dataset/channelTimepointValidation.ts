@@ -4,7 +4,7 @@ type LayerLike = {
 };
 
 type ChannelLike = {
-  layers: LayerLike[];
+  volume: LayerLike | null;
 };
 
 export function getKnownLayerTimepointCount(
@@ -34,16 +34,15 @@ export function computeGlobalTimepointMismatch(
 ): boolean {
   const timepointCounts = new Set<number>();
   for (const channel of channels) {
-    for (const layer of channel.layers) {
-      if (layer.files.length === 0) {
-        continue;
-      }
-      const count = getKnownLayerTimepointCount(layer, layerTimepointCounts);
-      if (count === null || count <= 0) {
-        continue;
-      }
-      timepointCounts.add(count);
+    const layer = channel.volume;
+    if (!layer || layer.files.length === 0) {
+      continue;
     }
+    const count = getKnownLayerTimepointCount(layer, layerTimepointCounts);
+    if (count === null || count <= 0) {
+      continue;
+    }
+    timepointCounts.add(count);
   }
   return timepointCounts.size > 1;
 }

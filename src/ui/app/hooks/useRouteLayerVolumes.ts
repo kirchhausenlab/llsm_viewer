@@ -34,7 +34,6 @@ type UseRouteLayerVolumesOptions = {
   volumeProvider: VolumeProvider | null;
   loadedChannelIds: string[];
   channelLayersMap: Map<string, LoadedDatasetLayer[]>;
-  channelActiveLayer: Record<string, string>;
   channelVisibility: Record<string, boolean>;
   layerChannelMap: Map<string, string>;
   preferBrickResidency: boolean;
@@ -164,8 +163,7 @@ function selectDeterministicLayerKey(layers: ReadonlyArray<{ key: string }>): st
 
 function collectActiveLayerKeys(
   loadedChannelIds: string[],
-  channelLayersMap: Map<string, LoadedDatasetLayer[]>,
-  channelActiveLayer: Record<string, string>
+  channelLayersMap: Map<string, LoadedDatasetLayer[]>
 ): string[] {
   const keys: string[] = [];
   for (const channelId of loadedChannelIds) {
@@ -173,12 +171,7 @@ function collectActiveLayerKeys(
     if (channelLayers.length === 0) {
       continue;
     }
-
-    const selectedLayerKey = channelActiveLayer[channelId];
-    const selectedLayer = selectedLayerKey
-      ? channelLayers.find((layer) => layer.key === selectedLayerKey) ?? null
-      : null;
-    const resolvedLayerKey = selectedLayer?.key ?? selectDeterministicLayerKey(channelLayers);
+    const resolvedLayerKey = selectDeterministicLayerKey(channelLayers);
     if (resolvedLayerKey) {
       keys.push(resolvedLayerKey);
     }
@@ -272,7 +265,6 @@ export function useRouteLayerVolumes({
   volumeProvider,
   loadedChannelIds,
   channelLayersMap,
-  channelActiveLayer,
   channelVisibility,
   layerChannelMap,
   preferBrickResidency,
@@ -872,7 +864,7 @@ export function useRouteLayerVolumes({
       return [] as string[];
     }
 
-    const keys = collectActiveLayerKeys(loadedChannelIds, channelLayersMap, channelActiveLayer).filter((layerKey) => {
+    const keys = collectActiveLayerKeys(loadedChannelIds, channelLayersMap).filter((layerKey) => {
       const channelId = layerChannelMap.get(layerKey);
       if (!channelId) {
         return true;
@@ -884,7 +876,6 @@ export function useRouteLayerVolumes({
     isViewerLaunched,
     loadedChannelIds,
     channelLayersMap,
-    channelActiveLayer,
     layerChannelMap,
     channelVisibility
   ]);
@@ -919,7 +910,7 @@ export function useRouteLayerVolumes({
       clearTextureCache();
 
       const initialTimeIndex = 0;
-      const layerKeys = collectActiveLayerKeys(loadedChannelIds, channelLayersMap, channelActiveLayer);
+      const layerKeys = collectActiveLayerKeys(loadedChannelIds, channelLayersMap);
       setLaunchExpectedVolumeCount(layerKeys.length);
 
       const loadedVolumes: Record<string, NormalizedVolume | null> = {};
@@ -964,7 +955,6 @@ export function useRouteLayerVolumes({
     setIsPlaying,
     loadedChannelIds,
     channelLayersMap,
-    channelActiveLayer,
     setLaunchExpectedVolumeCount,
     setLaunchProgress,
     loadLayerTimepointResources,

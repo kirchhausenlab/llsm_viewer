@@ -57,7 +57,6 @@ const computeInitialWindowForVolume = (
 
 type ChannelLayerLoadBindingKeys =
   | 'setChannelVisibility'
-  | 'setChannelActiveLayer'
   | 'setLayerSettings'
   | 'setLayerAutoThresholds'
   | 'globalRenderStyle'
@@ -76,8 +75,6 @@ export type ChannelLayerState = Omit<ChannelSourcesApi, 'loadSelectedDataset' | 
   setLayers: Dispatch<SetStateAction<LoadedLayer[]>>;
   channelVisibility: Record<string, boolean>;
   setChannelVisibility: Dispatch<SetStateAction<Record<string, boolean>>>;
-  channelActiveLayer: Record<string, string>;
-  setChannelActiveLayer: Dispatch<SetStateAction<Record<string, string>>>;
   layerSettings: Record<string, LayerSettings>;
   setLayerSettings: Dispatch<SetStateAction<Record<string, LayerSettings>>>;
   layerAutoThresholds: Record<string, number>;
@@ -103,7 +100,6 @@ export function useChannelLayerState(): ChannelLayerState {
   const [layers, setLayers] = useState<LoadedLayer[]>([]);
   const layersRef = useRef<LoadedLayer[]>([]);
   const [channelVisibility, setChannelVisibility] = useState<Record<string, boolean>>({});
-  const [channelActiveLayer, setChannelActiveLayer] = useState<Record<string, string>>({});
   const [layerSettings, setLayerSettings] = useState<Record<string, LayerSettings>>({});
   const [layerAutoThresholds, setLayerAutoThresholds] = useState<Record<string, number>>({});
   const [globalRenderStyle, setGlobalRenderStyle] = useState<RenderStyle>(DEFAULT_RENDER_STYLE);
@@ -115,7 +111,7 @@ export function useChannelLayerState(): ChannelLayerState {
 
   const channelDefaultColorMap = useMemo(() => {
     const colorableChannels = channelSources.channels.filter((channel) =>
-      channel.layers.some((layer) => !layer.isSegmentation)
+      channel.volume !== null && !channel.volume.isSegmentation
     );
     if (colorableChannels.length <= 1) {
       return new Map<string, string>();
@@ -163,7 +159,6 @@ export function useChannelLayerState(): ChannelLayerState {
   const baseLoadBindings = useMemo(
     () => ({
       setChannelVisibility,
-      setChannelActiveLayer,
       setLayerSettings,
       setLayerAutoThresholds,
       getChannelDefaultColor,
@@ -174,7 +169,6 @@ export function useChannelLayerState(): ChannelLayerState {
       getChannelDefaultColor,
       globalRenderStyle,
       globalSamplingMode,
-      setChannelActiveLayer,
       setChannelVisibility
     ]
   );
@@ -212,8 +206,6 @@ export function useChannelLayerState(): ChannelLayerState {
     setLayers,
     channelVisibility,
     setChannelVisibility,
-    channelActiveLayer,
-    setChannelActiveLayer,
     layerSettings,
     setLayerSettings,
     layerAutoThresholds,

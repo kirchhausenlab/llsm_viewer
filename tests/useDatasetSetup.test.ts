@@ -25,8 +25,7 @@ await (async () => {
       {
         id: 'channel-1',
         name: 'Channel 1',
-        layers: [{ id: 'layer-1', files: [createFile('initial.tif')], isSegmentation: false }],
-        trackSets: []
+        volume: { id: 'layer-1', files: [createFile('initial.tif')], isSegmentation: false }
       }
     ]);
     const [layerSettings, setLayerSettings] = React.useState<Record<string, ReturnType<typeof createDefaultLayerSettings>>>(
@@ -41,14 +40,13 @@ await (async () => {
     const datasetSetup = useDatasetSetup({
       channels,
       loadedLayers: [],
-      channelActiveLayer: {},
       layerSettings,
       setChannels,
       setLayerSettings,
       setLayerAutoThresholds,
       setLayerTimepointCounts,
       computeLayerTimepointCount: async (files) => files.length,
-      createLayerSource: (files) => ({ id: `layer-${layerCounter.current++}`, files, isSegmentation: false })
+      createVolumeSource: (files) => ({ id: `layer-${layerCounter.current++}`, files, isSegmentation: false })
     });
 
     return {
@@ -78,8 +76,7 @@ await (async () => {
       {
         id: 'channel-1',
         name: 'Channel 1',
-        layers: [],
-        trackSets: []
+        volume: null
       }
     ]);
 
@@ -88,14 +85,13 @@ await (async () => {
     const datasetSetup = useDatasetSetup({
       channels,
       loadedLayers: [],
-      channelActiveLayer: {},
       layerSettings: {},
       setChannels,
       setLayerSettings: React.useState<Record<string, ReturnType<typeof createDefaultLayerSettings>>>({})[1],
       setLayerAutoThresholds: React.useState<Record<string, number>>({})[1],
       setLayerTimepointCounts: React.useState<Record<string, number>>({})[1],
       computeLayerTimepointCount: async (files) => files.length,
-      createLayerSource: (files) => ({ id: `layer-${layerCounter.current++}`, files, isSegmentation: false })
+      createVolumeSource: (files) => ({ id: `layer-${layerCounter.current++}`, files, isSegmentation: false })
     });
 
     return datasetSetup;

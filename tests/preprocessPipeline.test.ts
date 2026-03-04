@@ -93,11 +93,15 @@ function decodeUint32ArrayLE(bytes: Uint8Array): Uint32Array {
   return decoded;
 }
 
-test('preprocessDatasetToStorage writes loadable manifest and chunk data for mixed layers', async () => {
+test('preprocessDatasetToStorage writes loadable manifest and chunk data for mixed channels', async () => {
   const channels: ChannelExportMetadata[] = [
     {
       id: 'channel-a',
       name: 'Channel A'
+    },
+    {
+      id: 'channel-b',
+      name: 'Channel B'
     }
   ];
   const trackSets: TrackSetExportMetadata[] = [
@@ -129,8 +133,8 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
       isSegmentation: false
     },
     {
-      channelId: 'channel-a',
-      channelLabel: 'Channel A',
+      channelId: 'channel-b',
+      channelLabel: 'Channel B',
       key: 'segmentation',
       label: 'Segmentation',
       files: segmentationFiles,
@@ -198,8 +202,8 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
   });
 
   assert.equal(result.totalVolumeCount, 2);
-  assert.equal(result.manifest.dataset.channels.length, 1);
-  assert.equal(result.channelSummaries.length, 1);
+  assert.equal(result.manifest.dataset.channels.length, 2);
+  assert.equal(result.channelSummaries.length, 2);
   assert.equal(result.trackSummaries[0]?.entries.length, 1);
 
   const finalizeIndex = progressEvents.findIndex((event) => event.stage === 'finalize-manifest');
@@ -220,13 +224,13 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
 
   const opened = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
   assert.equal(opened.totalVolumeCount, 2);
-  assert.equal(opened.channelSummaries[0]?.layers.length, 2);
+  for (const summary of opened.channelSummaries) {
+    assert.equal(summary.layers.length, 1);
+  }
   assert.equal(opened.trackSummaries[0]?.entries.length, 1);
 
-  const channel = result.manifest.dataset.channels[0];
-  assert.ok(channel);
-  const intensityLayer = channel.layers.find((layer) => layer.key === 'intensity');
-  const segmentationLayer = channel.layers.find((layer) => layer.key === 'segmentation');
+  const intensityLayer = result.manifest.dataset.channels.find((channel) => channel.id === 'channel-a')?.layers[0];
+  const segmentationLayer = result.manifest.dataset.channels.find((channel) => channel.id === 'channel-b')?.layers[0];
   assert.ok(intensityLayer);
   assert.ok(segmentationLayer);
   assert.equal(intensityLayer?.zarr.scales[0]?.zarr.labels, undefined);
@@ -257,6 +261,66 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
   assert.ok(labelChunk.byteLength >= 4);
   const firstLabel = new DataView(labelChunk.buffer, labelChunk.byteOffset, labelChunk.byteLength).getUint32(0, true);
   assert.equal(firstLabel, 0);
+});
+
+test('preprocessDatasetToStorage rejects multiple volumes assigned to one channel', async () => {
+  const channels: ChannelExportMetadata[] = [{ id: 'channel-a', name: 'Channel A' }];
+  const layers: PreprocessLayerSource[] = [
+    {
+      channelId: 'channel-a',
+      channelLabel: 'Channel A',
+      key: 'layer-a-1',
+      label: 'Layer A1',
+      files: [new File(['volume-0'], 'volume-0.tif', { type: 'image/tiff' })],
+      isSegmentation: false
+    },
+    {
+      channelId: 'channel-a',
+      channelLabel: 'Channel A',
+      key: 'layer-a-2',
+      label: 'Layer A2',
+      files: [new File(['volume-1'], 'volume-1.tif', { type: 'image/tiff' })],
+      isSegmentation: true
+    }
+  ];
+  const volumeByFileName = new Map<string, VolumePayload>([
+    [
+      'volume-0.tif',
+      createSyntheticVolumePayload({
+        width: 2,
+        height: 2,
+        depth: 1,
+        channels: 1,
+        values: [0, 1, 2, 3]
+      })
+    ],
+    [
+      'volume-1.tif',
+      createSyntheticVolumePayload({
+        width: 2,
+        height: 2,
+        depth: 1,
+        channels: 1,
+        values: [3, 2, 1, 0]
+      })
+    ]
+  ]);
+  const storageHandle = createInMemoryPreprocessedStorage({ datasetId: 'preprocess-reject-multi-volume-channel' });
+
+  await assert.rejects(
+    () =>
+      preprocessDatasetToStorage({
+        layers,
+        channels,
+        trackSets: [],
+        voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+        movieMode: '3d',
+        storage: storageHandle.storage,
+        volumeLoader: createLoaderByFileName(volumeByFileName),
+        storageStrategy: { sharding: { enabled: false } }
+      }),
+    /requires exactly one volume per channel/
+  );
 });
 
 test('preprocessDatasetToStorage maps single 3D TIFF to 2D movie timepoints', async () => {

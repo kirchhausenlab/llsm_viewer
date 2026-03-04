@@ -29,8 +29,8 @@ const createLayer = (id: string, filesCount = 1) => ({
 
 (() => {
   const channels = [
-    { layers: [createLayer('layer-a')] },
-    { layers: [createLayer('layer-b')] },
+    { volume: createLayer('layer-a') },
+    { volume: createLayer('layer-b') },
   ];
 
   assert.strictEqual(computeGlobalTimepointMismatch(channels, {}), false);

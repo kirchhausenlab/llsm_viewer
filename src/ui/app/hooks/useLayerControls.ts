@@ -32,10 +32,8 @@ export type LayerControlsParams = {
   createLayerDefaultBrightnessState: (key: string) => BrightnessContrastState;
   layerSettings: Record<string, LayerSettings>;
   setLayerSettings: Dispatch<SetStateAction<Record<string, LayerSettings>>>;
-  setChannelActiveLayer: Dispatch<SetStateAction<Record<string, string>>>;
   setChannelVisibility: Dispatch<SetStateAction<Record<string, boolean>>>;
   channelVisibility: Record<string, boolean>;
-  channelActiveLayer: Record<string, string>;
   channelNameMap: Map<string, string>;
   layerChannelMap: Map<string, string>;
   loadedChannelIds: string[];
@@ -67,10 +65,8 @@ export function useLayerControls({
   createLayerDefaultBrightnessState,
   layerSettings,
   setLayerSettings,
-  setChannelActiveLayer,
   setChannelVisibility,
   channelVisibility,
-  channelActiveLayer,
   channelNameMap,
   layerChannelMap,
   loadedChannelIds,
@@ -92,16 +88,12 @@ export function useLayerControls({
         if (channelLayers.length === 0) {
           continue;
         }
-        const activeLayerKey = channelActiveLayer[channelId];
-        if (activeLayerKey && channelLayers.some((layer) => layer.key === activeLayerKey)) {
-          return activeLayerKey;
-        }
         return channelLayers[0]?.key ?? null;
       }
 
       return [...layers].sort((left, right) => left.key.localeCompare(right.key))[0]?.key ?? null;
     },
-    [channelActiveLayer, layers, loadedChannelIds]
+    [layers, loadedChannelIds]
   );
 
   const handleLayerContrastChange = useCallback(
@@ -440,31 +432,15 @@ export function useLayerControls({
     [createLayerDefaultSettings, setLayerSettings]
   );
 
-  const handleChannelLayerSelectionChange = useCallback(
-    (channelId: string, layerKey: string) => {
-      setChannelActiveLayer((current) => {
-        if (current[channelId] === layerKey) {
-          return current;
-        }
-        return {
-          ...current,
-          [channelId]: layerKey
-        };
-      });
-    },
-    [setChannelActiveLayer]
-  );
-
   const handleLayerSelect = useCallback(
     (layerKey: string) => {
       const channelId = layerChannelMap.get(layerKey);
       if (!channelId) {
         return;
       }
-      handleChannelLayerSelectionChange(channelId, layerKey);
       setActiveChannelTabId((current) => (current === channelId ? current : channelId));
     },
-    [handleChannelLayerSelectionChange, layerChannelMap, setActiveChannelTabId]
+    [layerChannelMap, setActiveChannelTabId]
   );
 
   const handleLayerSoloToggle = useCallback(
@@ -579,13 +555,13 @@ export function useLayerControls({
   const viewerLayers = useMemo(() => {
     const activeLayers: LoadedDatasetLayer[] = [];
     for (const channelId of loadedChannelIds) {
-      const channelLayers = layers.filter((layer) => layer.channelId === channelId);
+      const channelLayers = layers
+        .filter((layer) => layer.channelId === channelId)
+        .sort((left, right) => left.key.localeCompare(right.key));
       if (channelLayers.length === 0) {
         continue;
       }
-      const selectedKey = channelActiveLayer[channelId];
-      const selectedLayer =
-        (selectedKey ? channelLayers.find((layer) => layer.key === selectedKey) : null) ?? channelLayers[0];
+      const selectedLayer = channelLayers[0];
       activeLayers.push(selectedLayer);
     }
 
@@ -634,7 +610,6 @@ export function useLayerControls({
       };
     });
   }, [
-    channelActiveLayer,
     channelNameMap,
     channelVisibility,
     createLayerDefaultSettings,
@@ -666,7 +641,6 @@ export function useLayerControls({
   return {
     viewerLayers,
     computedMaxSliceDepth,
-    handleChannelLayerSelectionChange,
     handleLayerSelect,
     handleLayerSoloToggle,
     handleChannelSliderReset,

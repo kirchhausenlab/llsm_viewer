@@ -4,7 +4,7 @@ import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../../shared/colorMaps/l
 import type { LayerSettings } from '../../state/layerSettings';
 import { useDatasetErrors } from '../useDatasetErrors';
 import { DEFAULT_VOXEL_RESOLUTION, useVoxelResolution, type VoxelResolutionHook } from '../useVoxelResolution';
-import type { ChannelLayerSource, ChannelSource } from './useChannelSources';
+import type { ChannelSource } from './useChannelSources';
 import type { VolumeDataType } from '../../types/volume';
 import {
   collectFilesFromDataTransfer,
@@ -14,17 +14,17 @@ import {
   sortVolumeFiles
 } from '../../shared/utils/appHelpers';
 
-function isSegmentationChannel(channel: Pick<ChannelSource, 'channelType' | 'layers'>): boolean {
+function isSegmentationChannel(channel: Pick<ChannelSource, 'channelType' | 'volume'>): boolean {
   if (channel.channelType === 'segmentation') {
     return true;
   }
   if (channel.channelType === 'channel') {
     return false;
   }
-  if (channel.layers.length === 0) {
+  if (!channel.volume) {
     return false;
   }
-  return channel.layers.every((layer) => layer.isSegmentation);
+  return channel.volume.isSegmentation;
 }
 
 export type LoadedDatasetLayer = {
@@ -45,14 +45,13 @@ export type LoadedDatasetLayer = {
 export type DatasetSetupParams = {
   channels: ChannelSource[];
   loadedLayers: LoadedDatasetLayer[];
-  channelActiveLayer: Record<string, string>;
   layerSettings: Record<string, LayerSettings>;
   setChannels: Dispatch<SetStateAction<ChannelSource[]>>;
   setLayerSettings: Dispatch<SetStateAction<Record<string, LayerSettings>>>;
   setLayerAutoThresholds: Dispatch<SetStateAction<Record<string, number>>>;
   setLayerTimepointCounts: Dispatch<SetStateAction<Record<string, number>>>;
   computeLayerTimepointCount: (files: File[]) => Promise<number>;
-  createLayerSource: (files: File[]) => ChannelLayerSource;
+  createVolumeSource: (files: File[]) => { id: string; files: File[]; isSegmentation: boolean };
 };
 
 export type DatasetSetupHook = {
@@ -74,25 +73,17 @@ export type DatasetSetupHook = {
 export function useDatasetSetup({
   channels,
   loadedLayers,
-  channelActiveLayer,
   layerSettings,
   setChannels,
   setLayerSettings,
   setLayerAutoThresholds,
   setLayerTimepointCounts,
   computeLayerTimepointCount,
-  createLayerSource
+  createVolumeSource
 }: DatasetSetupParams): DatasetSetupHook {
   const voxelResolution = useVoxelResolution(DEFAULT_VOXEL_RESOLUTION);
   const datasetErrors = useDatasetErrors();
   const { reportDatasetError, clearDatasetError } = datasetErrors;
-  const selectDeterministicLayerKey = useCallback((layers: LoadedDatasetLayer[]): string | null => {
-    if (layers.length === 0) {
-      return null;
-    }
-    return [...layers].sort((left, right) => left.key.localeCompare(right.key))[0]?.key ?? null;
-  }, []);
-
   const showInteractionWarning = useCallback(
     (message: string) => {
       reportDatasetError(message, 'interaction');
@@ -135,9 +126,9 @@ export function useDatasetSetup({
     const map = new Map<string, string>();
     for (const channel of channels) {
       const channelLayers = channelLayersMap.get(channel.id) ?? [];
-      const activeLayerKey = channelActiveLayer[channel.id] ?? selectDeterministicLayerKey(channelLayers);
-      if (activeLayerKey) {
-        const settings = layerSettings[activeLayerKey];
+      const primaryLayerKey = channelLayers[0]?.key ?? null;
+      if (primaryLayerKey) {
+        const settings = layerSettings[primaryLayerKey];
         const normalized = normalizeHexColor(settings?.color ?? DEFAULT_LAYER_COLOR, DEFAULT_LAYER_COLOR);
         map.set(channel.id, normalized);
       } else {
@@ -145,7 +136,7 @@ export function useDatasetSetup({
       }
     }
     return map;
-  }, [channelActiveLayer, channelLayersMap, channels, layerSettings, selectDeterministicLayerKey]);
+  }, [channelLayersMap, channels, layerSettings]);
 
   const loadedChannelIds = useMemo(() => {
     const seen = new Set<string>();
@@ -191,108 +182,87 @@ export function useDatasetSetup({
         return;
       }
 
-      let addedAny = false;
-      let ignoredExtraGroups = false;
-      let addedLayer: ChannelLayerSource | null = null;
-      const replacedLayerIds: string[] = [];
+      const grouped = groupFilesIntoLayers(tiffFiles);
+      if (grouped.length === 0) {
+        return;
+      }
+
+      const ignoredExtraGroups = grouped.length > 1;
+      const sorted = sortVolumeFiles(grouped[0]);
+      if (sorted.length === 0) {
+        return;
+      }
+
+      const targetChannel = channels.find((channel) => channel.id === channelId) ?? null;
+      if (!targetChannel) {
+        return;
+      }
+      const replacedVolumeId = targetChannel.volume?.id ?? null;
+      const addedVolume = {
+        ...createVolumeSource(sorted),
+        isSegmentation: isSegmentationChannel(targetChannel)
+      };
 
       setChannels((current) =>
-        current.map((channel) => {
-          if (channel.id !== channelId) {
-            return channel;
-          }
-          const grouped = groupFilesIntoLayers(tiffFiles);
-          if (grouped.length === 0) {
-            return channel;
-          }
-          if (grouped.length > 1) {
-            ignoredExtraGroups = true;
-          }
-          const sorted = sortVolumeFiles(grouped[0]);
-          if (sorted.length === 0) {
-            return channel;
-          }
-          addedAny = true;
-          if (channel.layers.length > 0) {
-            replacedLayerIds.push(channel.layers[0].id);
-          }
-          const nextLayer = {
-            ...createLayerSource(sorted),
-            isSegmentation: isSegmentationChannel(channel)
-          };
-          addedLayer = nextLayer;
-          return { ...channel, layers: [nextLayer] };
-        })
+        current.map((channel) => (channel.id === channelId ? { ...channel, volume: addedVolume } : channel))
       );
 
-      if (addedAny) {
-        if (addedLayer) {
-          const layerForCounts: ChannelLayerSource = addedLayer;
-          try {
-            const timepointCount = await computeLayerTimepointCount(layerForCounts.files);
-            setLayerTimepointCounts((current) => {
-              const next: Record<string, number> = {
-                ...current,
-                [layerForCounts.id]: timepointCount
-              };
-              for (const layerId of replacedLayerIds) {
-                if (layerId in next) {
-                  delete next[layerId];
-                }
-              }
-              return next;
-            });
-          } catch (error) {
-            console.error('Failed to compute timepoint count for layer', error);
-            setLayerTimepointCounts((current) => {
-              const next: Record<string, number> = {
-                ...current,
-                [layerForCounts.id]: layerForCounts.files.length
-              };
-              for (const layerId of replacedLayerIds) {
-                if (layerId in next) {
-                  delete next[layerId];
-                }
-              }
-              return next;
-            });
+      try {
+        const timepointCount = await computeLayerTimepointCount(addedVolume.files);
+        setLayerTimepointCounts((current) => {
+          const next: Record<string, number> = {
+            ...current,
+            [addedVolume.id]: timepointCount
+          };
+          if (replacedVolumeId && replacedVolumeId in next) {
+            delete next[replacedVolumeId];
           }
-        }
-        if (replacedLayerIds.length > 0) {
-          setLayerSettings((current) => {
-            let changed = false;
-            const next = { ...current };
-            for (const layerId of replacedLayerIds) {
-              if (layerId in next) {
-                delete next[layerId];
-                changed = true;
-              }
-            }
-            return changed ? next : current;
-          });
-          setLayerAutoThresholds((current) => {
-            let changed = false;
-            const next = { ...current };
-            for (const layerId of replacedLayerIds) {
-              if (layerId in next) {
-                delete next[layerId];
-                changed = true;
-              }
-            }
-            return changed ? next : current;
-          });
-        }
-        if (ignoredExtraGroups) {
-          showInteractionWarning('Only the first TIFF sequence was added. Additional sequences were ignored.');
-        } else {
-          clearDatasetError();
-        }
+          return next;
+        });
+      } catch (error) {
+        console.error('Failed to compute timepoint count for layer', error);
+        setLayerTimepointCounts((current) => {
+          const next: Record<string, number> = {
+            ...current,
+            [addedVolume.id]: addedVolume.files.length
+          };
+          if (replacedVolumeId && replacedVolumeId in next) {
+            delete next[replacedVolumeId];
+          }
+          return next;
+        });
+      }
+
+      if (replacedVolumeId) {
+        setLayerSettings((current) => {
+          if (!(replacedVolumeId in current)) {
+            return current;
+          }
+          const next = { ...current };
+          delete next[replacedVolumeId];
+          return next;
+        });
+        setLayerAutoThresholds((current) => {
+          if (!(replacedVolumeId in current)) {
+            return current;
+          }
+          const next = { ...current };
+          delete next[replacedVolumeId];
+          return next;
+        });
+      }
+
+      if (ignoredExtraGroups) {
+        showInteractionWarning('Only the first TIFF sequence was added. Additional sequences were ignored.');
+      } else {
+        clearDatasetError();
       }
     },
     [
+      channels,
       clearDatasetError,
       computeLayerTimepointCount,
-      createLayerSource,
+      createVolumeSource,
       setChannels,
       setLayerAutoThresholds,
       setLayerSettings,
@@ -322,12 +292,12 @@ export function useDatasetSetup({
     (channelId: string, layerId: string, value: boolean) => {
       setChannels((current) =>
         current.map((channel) => {
-          if (channel.id !== channelId) {
+          if (channel.id !== channelId || !channel.volume || channel.volume.id !== layerId) {
             return channel;
           }
           return {
             ...channel,
-            layers: channel.layers.map((layer) => (layer.id === layerId ? { ...layer, isSegmentation: value } : layer))
+            volume: { ...channel.volume, isSegmentation: value }
           };
         })
       );
@@ -343,14 +313,13 @@ export function useDatasetSetup({
           if (channel.id !== channelId) {
             return channel;
           }
-          const filtered = channel.layers.filter((layer) => layer.id !== layerId);
-          if (filtered.length === channel.layers.length) {
+          if (!channel.volume || channel.volume.id !== layerId) {
             return channel;
           }
           removed = true;
           return {
             ...channel,
-            layers: filtered
+            volume: null
           };
         })
       );

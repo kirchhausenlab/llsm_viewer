@@ -41,7 +41,6 @@ console.log('Starting volume viewer VR runtime helper tests');
     onChannelPanelSelect: () => {},
     onChannelVisibilityToggle: () => {},
     onChannelReset: () => {},
-    onChannelLayerSelect: () => {},
     onLayerContrastChange: () => {},
     onLayerBrightnessChange: () => {},
     onLayerWindowMinChange: () => {},

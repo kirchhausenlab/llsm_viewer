@@ -33,7 +33,7 @@ type LoadChannelLayer = {
 type LoadChannelSource = {
   id: string;
   name: string;
-  layers: LoadChannelLayer[];
+  volume: LoadChannelLayer | null;
 };
 
 export type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
@@ -53,7 +53,6 @@ export type ChannelDatasetRuntimeOptions = {
 export type ChannelDatasetLayerStateOptions = {
   setLayers: (layers: LoadedLayer[]) => void;
   setChannelVisibility: (value: Record<string, boolean>) => void;
-  setChannelActiveLayer: (value: Record<string, string>) => void;
   setLayerSettings: Dispatch<SetStateAction<Record<string, LayerSettings>>>;
   setLayerAutoThresholds: Dispatch<SetStateAction<Record<string, number>>>;
 };
@@ -125,7 +124,6 @@ export function useChannelDatasetLoader({ getLayerTimepointCount }: UseChannelDa
     (normalizedLayers: LoadedLayer[], expectedVolumeCount: number, options: ApplyLoadedLayersOptions) => {
       const {
         setChannelVisibility,
-        setChannelActiveLayer,
         setLayerSettings,
         setLayerAutoThresholds,
         setSelectedIndex,
@@ -149,12 +147,6 @@ export function useChannelDatasetLoader({ getLayerTimepointCount }: UseChannelDa
         }
         return acc;
       }, {});
-      const activeLayerDefaults = normalizedLayers.reduce<Record<string, string>>((acc, layer) => {
-        if (!(layer.channelId in acc)) {
-          acc[layer.channelId] = layer.key;
-        }
-        return acc;
-      }, {});
       const initialWindows = normalizedLayers.reduce<
         Record<string, ReturnType<typeof computeInitialWindowForVolume>>
       >((acc, layer) => {
@@ -163,7 +155,6 @@ export function useChannelDatasetLoader({ getLayerTimepointCount }: UseChannelDa
       }, {});
 
       setChannelVisibility(visibilityDefaults);
-      setChannelActiveLayer(activeLayerDefaults);
       setLayerSettings(
         normalizedLayers.reduce<Record<string, LayerSettings>>((acc, layer) => {
           acc[layer.key] = computeLayerDefaultSettings(
@@ -187,7 +178,7 @@ export function useChannelDatasetLoader({ getLayerTimepointCount }: UseChannelDa
       }, {});
 
       setSelectedIndex(0);
-      setActiveChannelTabId(Object.keys(activeLayerDefaults)[0] ?? null);
+      setActiveChannelTabId(Object.keys(visibilityDefaults)[0] ?? null);
       setStatus('loaded');
       setLoadedCount(expectedVolumeCount);
       setExpectedVolumeCount(expectedVolumeCount);
@@ -223,7 +214,6 @@ export function useChannelDatasetLoader({ getLayerTimepointCount }: UseChannelDa
       clearDatasetError,
       setLayers,
       setChannelVisibility,
-      setChannelActiveLayer,
       setLayerSettings,
       setLayerAutoThresholds,
       setSelectedIndex,
@@ -242,16 +232,20 @@ export function useChannelDatasetLoader({ getLayerTimepointCount }: UseChannelDa
       const requestId = loadRequestRef.current + 1;
       loadRequestRef.current = requestId;
       const flatLayerSources = channelList
-        .flatMap((channel) =>
-          channel.layers.map((layer) => ({
+        .flatMap((channel) => {
+          const layer = channel.volume;
+          if (!layer) {
+            return [];
+          }
+          return [{
             channelId: channel.id,
             channelLabel: channel.name.trim() || 'Untitled channel',
             key: layer.id,
             label: 'Volume',
             files: sortVolumeFiles(layer.files),
             isSegmentation: layer.isSegmentation
-          }))
-        )
+          }];
+        })
         .filter((entry) => entry.files.length > 0);
 
       if (flatLayerSources.length === 0) {
@@ -265,7 +259,6 @@ export function useChannelDatasetLoader({ getLayerTimepointCount }: UseChannelDa
       clearTextureCache();
       setLayers([]);
       setChannelVisibility({});
-      setChannelActiveLayer({});
       setLayerSettings({});
       setLayerAutoThresholds({});
       setSelectedIndex(0);
@@ -376,7 +369,6 @@ export function useChannelDatasetLoader({ getLayerTimepointCount }: UseChannelDa
         setExpectedVolumeCount(resolvedExpectedVolumes);
         applyLoadedLayers(normalizedLayers, resolvedExpectedVolumes, {
           setChannelVisibility,
-          setChannelActiveLayer,
           setLayerSettings,
           setLayerAutoThresholds,
           setSelectedIndex,
@@ -402,7 +394,6 @@ export function useChannelDatasetLoader({ getLayerTimepointCount }: UseChannelDa
         clearTextureCache();
         setLayers([]);
         setChannelVisibility({});
-        setChannelActiveLayer({});
         setLayerSettings({});
         setLayerAutoThresholds({});
         setSelectedIndex(0);

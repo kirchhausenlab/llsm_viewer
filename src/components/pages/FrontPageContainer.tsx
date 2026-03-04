@@ -306,16 +306,20 @@ export default function FrontPageContainer({
         entries: set.entries
       }));
       const layersToProcess = channels
-        .flatMap((channel) =>
-          channel.layers.map((layer) => ({
+        .flatMap((channel) => {
+          const layer = channel.volume;
+          if (!layer) {
+            return [];
+          }
+          return [{
             channelId: channel.id,
             channelLabel: channel.name.trim(),
             key: layer.id,
             label: 'Volume',
             files: layer.files,
             isSegmentation: layer.isSegmentation
-          }))
-        )
+          }];
+        })
         .filter((layer) => layer.files.length > 0);
 
       let selectedStorageHandle: PreprocessedStorageHandle | null = null;

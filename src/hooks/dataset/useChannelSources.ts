@@ -23,7 +23,7 @@ import {
 
 export type { LoadState } from './useChannelDatasetLoader';
 
-export type ChannelLayerSource = {
+export type ChannelVolumeSource = {
   id: string;
   files: File[];
   isSegmentation: boolean;
@@ -45,21 +45,21 @@ export type TrackSetSource = {
 export type ChannelSource = {
   id: string;
   name: string;
-  layers: ChannelLayerSource[];
+  volume: ChannelVolumeSource | null;
   channelType?: ChannelSourceType;
 };
 
-export function isSegmentationChannelSource(channel: Pick<ChannelSource, 'channelType' | 'layers'>): boolean {
+export function isSegmentationChannelSource(channel: Pick<ChannelSource, 'channelType' | 'volume'>): boolean {
   if (channel.channelType === 'segmentation') {
     return true;
   }
   if (channel.channelType === 'channel') {
     return false;
   }
-  if (channel.layers.length === 0) {
+  if (!channel.volume) {
     return false;
   }
-  return channel.layers.every((layer) => layer.isSegmentation);
+  return channel.volume.isSegmentation;
 }
 
 export type ChannelValidation = {
@@ -93,9 +93,9 @@ export type ChannelSourcesApi = {
   layerIdRef: MutableRefObject<number>;
   trackSetIdRef: MutableRefObject<number>;
   computeLayerTimepointCount: (files: File[]) => Promise<number>;
-  getLayerTimepointCount: (layer: Pick<ChannelLayerSource, 'id' | 'files'> | null | undefined) => number;
+  getLayerTimepointCount: (layer: Pick<ChannelVolumeSource, 'id' | 'files'> | null | undefined) => number;
   createChannelSource: (name: string, channelType?: ChannelSourceType) => ChannelSource;
-  createLayerSource: (files: File[]) => ChannelLayerSource;
+  createVolumeSource: (files: File[]) => ChannelVolumeSource;
   createTrackSetSource: (name: string, boundChannelId: string | null) => TrackSetSource;
   updateChannelIdCounter: (sources: ChannelSource[]) => void;
   updateTrackSetIdCounter: (sources: TrackSetSource[]) => void;
@@ -142,7 +142,7 @@ export function useChannelSources(): ChannelSourcesApi {
   }, []);
 
   const getLayerTimepointCount = useCallback(
-    (layer: Pick<ChannelLayerSource, 'id' | 'files'> | null | undefined): number => {
+    (layer: Pick<ChannelVolumeSource, 'id' | 'files'> | null | undefined): number => {
       if (!layer) {
         return 0;
       }
@@ -151,7 +151,7 @@ export function useChannelSources(): ChannelSourcesApi {
     [layerTimepointCounts]
   );
   const resolveKnownLayerTimepointCount = useCallback(
-    (layer: Pick<ChannelLayerSource, 'id' | 'files'> | null | undefined): number | null => {
+    (layer: Pick<ChannelVolumeSource, 'id' | 'files'> | null | undefined): number | null => {
       return getKnownLayerTimepointCount(layer, layerTimepointCounts);
     },
     [layerTimepointCounts]
@@ -172,12 +172,12 @@ export function useChannelSources(): ChannelSourcesApi {
     return {
       id: `channel-${nextId}`,
       name,
-      layers: [],
+      volume: null,
       channelType
     };
   }, []);
 
-  const createLayerSource = useCallback((files: File[]): ChannelLayerSource => {
+  const createVolumeSource = useCallback((files: File[]): ChannelVolumeSource => {
     const nextId = layerIdRef.current + 1;
     layerIdRef.current = nextId;
     return {
@@ -248,7 +248,7 @@ export function useChannelSources(): ChannelSourcesApi {
         errors.push('Channel name must be unique.');
       }
 
-      const primaryLayer = channel.layers[0] ?? null;
+      const primaryLayer = channel.volume;
       if (!primaryLayer) {
         errors.push('Add a volume to this channel.');
       } else if (primaryLayer.files.length === 0) {
@@ -263,7 +263,7 @@ export function useChannelSources(): ChannelSourcesApi {
         channelId: channel.id,
         errors,
         warnings,
-        layerCount: channel.layers.length,
+        layerCount: channel.volume ? 1 : 0,
         timepointCount: knownTimepointCount ?? 0
       };
     });
@@ -314,7 +314,7 @@ export function useChannelSources(): ChannelSourcesApi {
   }, [channels, layerTimepointCounts]);
 
   const hasAnyLayers = useMemo(
-    () => channels.some((channel) => channel.layers.some((layer) => layer.files.length > 0)),
+    () => channels.some((channel) => (channel.volume?.files.length ?? 0) > 0),
     [channels]
   );
 
@@ -351,7 +351,7 @@ export function useChannelSources(): ChannelSourcesApi {
     computeLayerTimepointCount,
     getLayerTimepointCount,
     createChannelSource,
-    createLayerSource,
+    createVolumeSource,
     createTrackSetSource,
     updateChannelIdCounter,
     updateTrackSetIdCounter,

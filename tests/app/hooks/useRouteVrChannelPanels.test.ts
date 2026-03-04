@@ -40,7 +40,6 @@ const createLayer = (key: string, channelId: string, options?: Partial<LoadedDat
         ['channel-b', [createLayer('layer-b', 'channel-b', { channels: 2, isSegmentation: true })]],
       ]),
       channelVisibility: { 'channel-a': false },
-      channelActiveLayer: { 'channel-a': 'layer-a' },
       layerSettings: {},
       currentLayerVolumes: {
         'layer-a': {

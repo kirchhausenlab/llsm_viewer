@@ -102,7 +102,7 @@ export function useRouteDatasetSetupState({
         const filtered = current.filter((channel) => channel.id !== channelId);
         const removedChannel = current.find((channel) => channel.id === channelId);
         if (removedChannel) {
-          removedLayerIds = removedChannel.layers.map((layer) => layer.id);
+          removedLayerIds = removedChannel.volume ? [removedChannel.volume.id] : [];
         }
         handleChannelRemoved({
           removedChannelId: channelId,

@@ -43,10 +43,6 @@ function useLayerControlsHarness(initialRenderStyle: RenderStyle = RENDER_STYLE_
     'layer-a': 0,
     'layer-b': 0,
   });
-  const [channelActiveLayer, setChannelActiveLayer] = useState<Record<string, string>>({
-    'channel-a': 'layer-a',
-    'channel-b': 'layer-b',
-  });
   const [channelVisibility, setChannelVisibility] = useState<Record<string, boolean>>({
     'channel-a': true,
     'channel-b': true,
@@ -68,10 +64,8 @@ function useLayerControlsHarness(initialRenderStyle: RenderStyle = RENDER_STYLE_
     createLayerDefaultBrightnessState: (_key) => brightnessContrastModel.createState(0, 1),
     layerSettings,
     setLayerSettings,
-    setChannelActiveLayer,
     setChannelVisibility,
     channelVisibility,
-    channelActiveLayer,
     channelNameMap: new Map([
       ['channel-a', 'Channel A'],
       ['channel-b', 'Channel B'],

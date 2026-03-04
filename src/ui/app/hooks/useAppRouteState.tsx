@@ -55,13 +55,6 @@ export type AppRouteState = {
   viewerRouteProps: ViewerRouteProps;
 };
 
-function selectDeterministicLayerKey(layers: ReadonlyArray<{ key: string }>): string | null {
-  if (layers.length === 0) {
-    return null;
-  }
-  return [...layers].sort((left, right) => left.key.localeCompare(right.key))[0]?.key ?? null;
-}
-
 function selectDeterministicId(values: ReadonlyArray<string>): string | null {
   if (values.length === 0) {
     return null;
@@ -116,7 +109,7 @@ export function useAppRouteState(): AppRouteState {
     trackSetIdRef,
     computeLayerTimepointCount,
     createChannelSource,
-    createLayerSource,
+    createVolumeSource,
     createTrackSetSource,
     updateChannelIdCounter,
     updateTrackSetIdCounter,
@@ -129,8 +122,6 @@ export function useAppRouteState(): AppRouteState {
     allTracksValid,
     channelVisibility,
     setChannelVisibility,
-    channelActiveLayer,
-    setChannelActiveLayer,
     layerSettings,
     setLayerSettings,
     layerAutoThresholds,
@@ -171,14 +162,13 @@ export function useAppRouteState(): AppRouteState {
   } = useDatasetSetup({
     channels,
     loadedLayers: loadedDatasetLayers,
-    channelActiveLayer,
     layerSettings,
     setChannels,
     setLayerSettings,
     setLayerAutoThresholds,
     setLayerTimepointCounts,
     computeLayerTimepointCount,
-    createLayerSource
+    createVolumeSource
   });
   const {
     voxelResolution,
@@ -516,7 +506,6 @@ export function useAppRouteState(): AppRouteState {
     volumeProvider,
     loadedChannelIds,
     channelLayersMap,
-    channelActiveLayer,
     channelVisibility,
     layerChannelMap,
     preferBrickResidency,
@@ -796,7 +785,6 @@ export function useAppRouteState(): AppRouteState {
     channelNameMap,
     channelLayersMap,
     channelVisibility,
-    channelActiveLayer,
     layerSettings,
     currentLayerVolumes,
     createLayerDefaultSettings
@@ -807,10 +795,9 @@ export function useAppRouteState(): AppRouteState {
       deriveChannelTrackOffsets({
         channels,
         channelLayersMap,
-        channelActiveLayer,
         layerSettings
       }),
-    [channelActiveLayer, channelLayersMap, channels, layerSettings]
+    [channelLayersMap, channels, layerSettings]
   );
   const {
     handleStartExperimentSetup,
@@ -837,7 +824,6 @@ export function useAppRouteState(): AppRouteState {
     setChannels,
     setTracks,
     setChannelVisibility,
-    setChannelActiveLayer,
     setLayerSettings,
     setLayerAutoThresholds,
     setCurrentLayerVolumes,
@@ -901,50 +887,12 @@ export function useAppRouteState(): AppRouteState {
     });
   }, [trackSets]);
 
-  useEffect(() => {
-    setChannelActiveLayer((current) => {
-      if (loadedChannelIds.length === 0) {
-        if (Object.keys(current).length === 0) {
-          return current;
-        }
-        return {};
-      }
-
-      const next: Record<string, string> = { ...current };
-      let changed = false;
-      const validChannels = new Set<string>(loadedChannelIds);
-
-      for (const channelId of Object.keys(next)) {
-        if (!validChannels.has(channelId)) {
-          delete next[channelId];
-          changed = true;
-        }
-      }
-
-      for (const channelId of loadedChannelIds) {
-        const channelLayers = channelLayersMap.get(channelId) ?? [];
-        const activeKey = next[channelId];
-        const hasActive = activeKey ? channelLayers.some((layer) => layer.key === activeKey) : false;
-        if (!hasActive) {
-          const deterministicLayerKey = selectDeterministicLayerKey(channelLayers);
-          if (deterministicLayerKey) {
-            next[channelId] = deterministicLayerKey;
-            changed = true;
-          }
-        }
-      }
-
-      return changed ? next : current;
-    });
-  }, [channelLayersMap, loadedChannelIds]);
-
   const handleBlendingModeToggle = useCallback(() => {
     setBlendingMode((current) => (current === 'additive' ? 'alpha' : 'additive'));
   }, []);
 
   const {
     viewerLayers,
-    handleChannelLayerSelectionChange,
     handleLayerSelect,
     handleLayerSoloToggle,
     handleChannelSliderReset,
@@ -977,10 +925,8 @@ export function useAppRouteState(): AppRouteState {
     createLayerDefaultBrightnessState,
     layerSettings,
     setLayerSettings,
-    setChannelActiveLayer,
     setChannelVisibility,
     channelVisibility,
-    channelActiveLayer,
     channelNameMap,
     layerChannelMap,
     loadedChannelIds,
@@ -1141,7 +1087,6 @@ export function useAppRouteState(): AppRouteState {
         onChannelPanelSelect: setActiveChannelTabId,
         onChannelVisibilityToggle: handleChannelVisibilityToggle,
         onChannelReset: handleChannelSliderReset,
-        onChannelLayerSelect: handleChannelLayerSelectionChange,
         onLayerSelect: handleLayerSelect,
         onLayerSoloToggle: handleLayerSoloToggle,
         onLayerContrastChange: handleLayerContrastChange,
@@ -1231,10 +1176,8 @@ export function useAppRouteState(): AppRouteState {
         channelLayersMap,
         layerVolumesByKey: currentLayerVolumes,
         layerBrickAtlasesByKey: currentLayerBrickAtlases,
-        channelActiveLayer,
         layerSettings,
         getLayerDefaultSettings: createLayerDefaultSettings,
-        onChannelLayerSelect: handleChannelLayerSelectionChange,
         onChannelReset: handleChannelSliderReset,
         onLayerWindowMinChange: handleLayerWindowMinChange,
         onLayerWindowMaxChange: handleLayerWindowMaxChange,

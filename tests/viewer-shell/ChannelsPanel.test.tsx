@@ -52,7 +52,6 @@ function createProps(
     channelLayersMap: new Map([['channel-a', [layer]]]),
     layerVolumesByKey: { 'layer-a': null },
     layerBrickAtlasesByKey: { 'layer-a': null },
-    channelActiveLayer: { 'channel-a': 'layer-a' },
     layerSettings: {
       'layer-a': {
         ...createDefaultLayerSettings(),
@@ -60,7 +59,6 @@ function createProps(
       },
     },
     getLayerDefaultSettings: (_layerKey: string) => createDefaultLayerSettings(),
-    onChannelLayerSelect: () => {},
     onChannelReset: () => {},
     onLayerWindowMinChange: () => {},
     onLayerWindowMaxChange: () => {},

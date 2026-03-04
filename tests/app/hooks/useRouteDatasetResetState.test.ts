@@ -21,7 +21,6 @@ const createStateSetter = <T>(state: { value: T }) => (next: SetStateAction<T>) 
   const channels = { value: [{ id: 'channel-1' }] as unknown };
   const tracks = { value: [{ id: 'track-set-1' }] as unknown };
   const channelVisibility = { value: { 'channel-1': true } };
-  const channelActiveLayer = { value: { 'channel-1': 'layer-1' } };
   const layerSettings = { value: { 'layer-1': { color: '#ffffff' } } as Record<string, unknown> };
   const layerAutoThresholds = { value: { 'layer-1': 0.4 } };
   const currentLayerVolumes = { value: { 'layer-1': { width: 1 } } as Record<string, unknown> };
@@ -41,7 +40,6 @@ const createStateSetter = <T>(state: { value: T }) => (next: SetStateAction<T>) 
       setChannels: createStateSetter(channels),
       setTracks: createStateSetter(tracks),
       setChannelVisibility: createStateSetter(channelVisibility),
-      setChannelActiveLayer: createStateSetter(channelActiveLayer),
       setLayerSettings: createStateSetter(layerSettings),
       setLayerAutoThresholds: createStateSetter(layerAutoThresholds),
       setCurrentLayerVolumes: createStateSetter(currentLayerVolumes),
@@ -79,7 +77,6 @@ const createStateSetter = <T>(state: { value: T }) => (next: SetStateAction<T>) 
   assert.deepStrictEqual(channels.value, []);
   assert.deepStrictEqual(tracks.value, []);
   assert.deepStrictEqual(channelVisibility.value, {});
-  assert.deepStrictEqual(channelActiveLayer.value, {});
   assert.deepStrictEqual(layerSettings.value, {});
   assert.deepStrictEqual(layerAutoThresholds.value, {});
   assert.deepStrictEqual(currentLayerVolumes.value, {});

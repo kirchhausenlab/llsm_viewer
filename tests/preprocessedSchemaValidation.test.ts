@@ -69,14 +69,11 @@ test('openPreprocessedDatasetFromZarrStorage accepts segmentation fixtures with 
   }
 });
 
-test('openPreprocessedDatasetFromZarrStorage accepts multi-layer fixtures when dataset totalVolumeCount matches per-layer volumeCount', async () => {
-  const opened = await openDatasetFromFixture('valid-multi-layer-volume-count.json');
-  assert.equal(opened.totalVolumeCount, 2);
-  const layers = opened.manifest.dataset.channels[0]?.layers ?? [];
-  assert.equal(layers.length, 2);
-  for (const layer of layers) {
-    assert.equal(layer.volumeCount, 2);
-  }
+test('openPreprocessedDatasetFromZarrStorage rejects multi-layer channel fixtures', async () => {
+  await assert.rejects(
+    () => openDatasetFromFixture('valid-multi-layer-volume-count.json'),
+    /manifest\.dataset\.channels\[0\]\.layers: expected exactly one layer/
+  );
 });
 
 test('openPreprocessedDatasetFromZarrStorage rejects segmentation fixtures missing labels for a higher scale', async () => {
@@ -93,9 +90,9 @@ test('openPreprocessedDatasetFromZarrStorage rejects fixtures with non-contiguou
   );
 });
 
-test('openPreprocessedDatasetFromZarrStorage rejects aggregate dataset totalVolumeCount for multi-layer fixtures', async () => {
+test('openPreprocessedDatasetFromZarrStorage rejects aggregate multi-layer fixtures before volume-count checks', async () => {
   await assert.rejects(
     () => openDatasetFromFixture('invalid-multi-layer-aggregate-volume-count.json'),
-    /manifest\.dataset\.channels\[0\]\.layers\[0\]\.volumeCount: expected 4, got 2/
+    /manifest\.dataset\.channels\[0\]\.layers: expected exactly one layer/
   );
 });

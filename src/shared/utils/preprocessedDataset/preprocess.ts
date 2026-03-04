@@ -2349,6 +2349,35 @@ function groupLayersByChannel(sortedLayerSources: PreprocessLayerSource[]): Map<
   return layersByChannel;
 }
 
+function validateSingleVolumePerChannel({
+  channels,
+  layersByChannel
+}: {
+  channels: ChannelExportMetadata[];
+  layersByChannel: Map<string, PreprocessLayerSource[]>;
+}): void {
+  const channelById = new Map(channels.map((channel) => [channel.id, channel]));
+
+  for (const [channelId, layerSources] of layersByChannel) {
+    const channel = channelById.get(channelId);
+    if (!channel) {
+      throw new Error(`Layer source references unknown channel "${channelId}".`);
+    }
+    if (layerSources.length > 1) {
+      throw new Error(
+        `Channel "${channel.name}" contains ${layerSources.length} volumes. This build requires exactly one volume per channel.`
+      );
+    }
+  }
+
+  for (const channel of channels) {
+    const layerSources = layersByChannel.get(channel.id) ?? [];
+    if (layerSources.length === 0) {
+      throw new Error(`Channel "${channel.name}" has no volume. This build requires exactly one volume per channel.`);
+    }
+  }
+}
+
 function buildManifestFromLayerMetadata({
   channels,
   trackSets,
@@ -4223,6 +4252,8 @@ export async function preprocessDatasetToStorage({
   if (sortedLayerSources.length === 0) {
     throw new Error('No TIFF files were provided for preprocessing.');
   }
+  const layersByChannel = groupLayersByChannel(sortedLayerSources);
+  validateSingleVolumePerChannel({ channels, layersByChannel });
 
   const resolvedInputInterpretation = resolveInputInterpretation(inputInterpretation);
   const requestedExecutionMode = resolvePreprocessExecutionMode(processingStrategy);
@@ -4307,7 +4338,6 @@ export async function preprocessDatasetToStorage({
 
   const totalVolumeCount = expectedTimepoints;
   const totalWritableVolumes = expectedTimepoints * sortedLayerSources.length;
-  const layersByChannel = groupLayersByChannel(sortedLayerSources);
   const shardingStrategy = resolveShardingStrategy(storageStrategy);
   const workerizeNormalizationDownsample =
     datasetExecutionMode === 'in-memory' && resolveWorkerizeNormalizationDownsample(processingStrategy);
