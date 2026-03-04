@@ -1099,7 +1099,7 @@ const createLayer = (
       getContext: () =>
         ({
           MAX_3D_TEXTURE_SIZE: 0x8073,
-          getParameter: (parameter: number) => (parameter === 0x8073 ? 2 : 0),
+          getParameter: (parameter: number) => (parameter === 0x8073 ? 8 : 0),
         }) as unknown as WebGL2RenderingContext,
     } as unknown as THREE.WebGLRenderer,
   };
@@ -1141,19 +1141,18 @@ const createLayer = (
 
   const resource = resourcesRef.current.get('layer-3d');
   assert.ok(resource);
-  assert.ok(resource.gpuBrickResidencyMetrics);
-  assert.equal(resource.gpuBrickResidencyMetrics?.residentBricks, 4);
+  assert.equal(resource.gpuBrickResidencyMetrics, null);
   const atlasImage = resource.brickAtlasDataTexture?.image as
     | { width: number; height: number; depth: number }
     | undefined;
-  assert.deepEqual([atlasImage?.width ?? 0, atlasImage?.height ?? 0, atlasImage?.depth ?? 0], [2, 2, 1]);
+  assert.deepEqual([atlasImage?.width ?? 0, atlasImage?.height ?? 0, atlasImage?.depth ?? 0], [1, 1, 4]);
   const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms as Record<
     string,
     { value: unknown }
   >;
   assert.equal(uniforms.u_brickAtlasEnabled?.value, 1);
-  assert.deepEqual((uniforms.u_brickAtlasSize?.value as THREE.Vector3).toArray(), [2, 2, 1]);
-  assert.deepEqual((uniforms.u_brickAtlasSlotGrid?.value as THREE.Vector3).toArray(), [2, 2, 1]);
+  assert.deepEqual((uniforms.u_brickAtlasSize?.value as THREE.Vector3).toArray(), [1, 1, 4]);
+  assert.deepEqual((uniforms.u_brickAtlasSlotGrid?.value as THREE.Vector3).toArray(), [1, 1, 4]);
 })();
 
 (() => {
@@ -1242,12 +1241,12 @@ const createLayer = (
     const initial = resourcesRef.current.get('layer-3d');
     assert.ok(initial);
     assert.ok(initial.gpuBrickResidencyMetrics);
-    assert.equal(initial.gpuBrickResidencyMetrics?.budgetBytes, 4);
+    assert.equal(initial.gpuBrickResidencyMetrics?.budgetBytes, 72);
     assert.equal(initial.gpuBrickResidencyMetrics?.residentBricks, 2);
     assert.equal(initial.gpuBrickResidencyMetrics?.totalBricks, 2);
     assert.ok((initial.gpuBrickResidencyMetrics?.scheduledUploads ?? 0) <= 2);
     assert.equal(initial.gpuBrickResidencyMetrics?.prioritizedBricks, 2);
-    assert.equal(initial.gpuBrickResidencyMetrics?.residentBytes, 4);
+    assert.equal(initial.gpuBrickResidencyMetrics?.residentBytes, 72);
     const initialIndexData = (
       initial.brickAtlasIndexTexture?.image as { data: Float32Array } | undefined
     )?.data;
@@ -1258,15 +1257,14 @@ const createLayer = (
       | undefined;
     assert.deepEqual(
       [initialAtlasImage?.width ?? 0, initialAtlasImage?.height ?? 0, initialAtlasImage?.depth ?? 0],
-      [2, 1, 2]
+      [4, 3, 6]
     );
     const initialAtlasPayload = Array.from(initialAtlasImage?.data ?? []);
-    const firstSlotPair = initialAtlasPayload.slice(0, 2);
-    const secondSlotPair = initialAtlasPayload.slice(2, 4);
-    const validPairs = new Set(['11,12', '21,22']);
-    assert.ok(validPairs.has(firstSlotPair.join(',')));
-    assert.ok(validPairs.has(secondSlotPair.join(',')));
-    assert.notEqual(firstSlotPair.join(','), secondSlotPair.join(','));
+    const uniqueValues = new Set(initialAtlasPayload);
+    assert.ok(uniqueValues.has(11));
+    assert.ok(uniqueValues.has(12));
+    assert.ok(uniqueValues.has(21));
+    assert.ok(uniqueValues.has(22));
 
     const refreshResidency = initial.updateGpuBrickResidencyForCamera;
     assert.equal(typeof refreshResidency, 'function');
@@ -1337,7 +1335,7 @@ const createLayer = (
     const pageTable: VolumeBrickPageTable = {
       layerKey: 'layer-3d',
       timepoint: 0,
-      scaleLevel: 0,
+      scaleLevel: 1,
       gridShape: [1, 1, brickCount],
       chunkShape: [1, 1, 1],
       volumeShape: [1, 1, brickCount],
@@ -1350,7 +1348,7 @@ const createLayer = (
     const brickAtlas: VolumeBrickAtlas = {
       layerKey: 'layer-3d',
       timepoint: 0,
-      scaleLevel: 0,
+      scaleLevel: 1,
       pageTable,
       width: 1,
       height: 1,

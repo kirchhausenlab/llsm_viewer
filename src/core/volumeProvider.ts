@@ -420,6 +420,139 @@ function normalizeScaleLevelSet(
   return levels;
 }
 
+function flattenGridIndex3d(
+  z: number,
+  y: number,
+  x: number,
+  gridY: number,
+  gridX: number
+): number {
+  return (z * gridY + y) * gridX + x;
+}
+
+function buildConservativeLeafHierarchyLevel(
+  leaf: VolumeBrickPageTable['skipHierarchy']['levels'][number]
+): VolumeBrickPageTable['skipHierarchy']['levels'][number] {
+  const [gridZ, gridY, gridX] = leaf.gridShape;
+  const total = gridZ * gridY * gridX;
+  const occupancy = new Uint8Array(total);
+  const min = new Uint8Array(total);
+  const max = new Uint8Array(total);
+
+  for (let z = 0; z < gridZ; z += 1) {
+    for (let y = 0; y < gridY; y += 1) {
+      for (let x = 0; x < gridX; x += 1) {
+        let anyOccupied = false;
+        let conservativeMin = 255;
+        let conservativeMax = 0;
+        for (let dz = -1; dz <= 1; dz += 1) {
+          const nz = z + dz;
+          if (nz < 0 || nz >= gridZ) {
+            continue;
+          }
+          for (let dy = -1; dy <= 1; dy += 1) {
+            const ny = y + dy;
+            if (ny < 0 || ny >= gridY) {
+              continue;
+            }
+            for (let dx = -1; dx <= 1; dx += 1) {
+              const nx = x + dx;
+              if (nx < 0 || nx >= gridX) {
+                continue;
+              }
+              const neighborIndex = flattenGridIndex3d(nz, ny, nx, gridY, gridX);
+              if ((leaf.occupancy[neighborIndex] ?? 0) <= 0) {
+                continue;
+              }
+              anyOccupied = true;
+              conservativeMin = Math.min(conservativeMin, leaf.min[neighborIndex] ?? 0);
+              conservativeMax = Math.max(conservativeMax, leaf.max[neighborIndex] ?? 0);
+            }
+          }
+        }
+
+        const index = flattenGridIndex3d(z, y, x, gridY, gridX);
+        if (!anyOccupied) {
+          occupancy[index] = 0;
+          min[index] = 0;
+          max[index] = 0;
+          continue;
+        }
+        occupancy[index] = 255;
+        min[index] = conservativeMin === 255 ? 0 : conservativeMin;
+        max[index] = conservativeMax;
+      }
+    }
+  }
+
+  return {
+    level: leaf.level,
+    gridShape: [gridZ, gridY, gridX],
+    occupancy,
+    min,
+    max
+  };
+}
+
+function buildConservativeSkipHierarchyLevels(
+  levels: VolumeBrickPageTable['skipHierarchy']['levels']
+): VolumeBrickPageTable['skipHierarchy']['levels'] {
+  if (levels.length === 0) {
+    return levels;
+  }
+  const conservativeLeaf = buildConservativeLeafHierarchyLevel(levels[0]!);
+  const conservativeLevels: VolumeBrickPageTable['skipHierarchy']['levels'] = [conservativeLeaf];
+  let childLevel = conservativeLeaf;
+
+  for (let levelIndex = 1; levelIndex < levels.length; levelIndex += 1) {
+    const parentTemplate = levels[levelIndex]!;
+    const [childGridZ, childGridY, childGridX] = childLevel.gridShape;
+    const [parentGridZ, parentGridY, parentGridX] = parentTemplate.gridShape;
+    const parentTotal = parentGridZ * parentGridY * parentGridX;
+    const parentOccupancy = new Uint8Array(parentTotal);
+    const parentMin = new Uint8Array(parentTotal);
+    const parentMax = new Uint8Array(parentTotal);
+    parentMin.fill(255);
+
+    for (let childZ = 0; childZ < childGridZ; childZ += 1) {
+      const parentZ = Math.min(Math.floor(childZ / 2), Math.max(parentGridZ - 1, 0));
+      for (let childY = 0; childY < childGridY; childY += 1) {
+        const parentY = Math.min(Math.floor(childY / 2), Math.max(parentGridY - 1, 0));
+        for (let childX = 0; childX < childGridX; childX += 1) {
+          const parentX = Math.min(Math.floor(childX / 2), Math.max(parentGridX - 1, 0));
+          const childIndex = flattenGridIndex3d(childZ, childY, childX, childGridY, childGridX);
+          if ((childLevel.occupancy[childIndex] ?? 0) <= 0) {
+            continue;
+          }
+          const parentIndex = flattenGridIndex3d(parentZ, parentY, parentX, parentGridY, parentGridX);
+          parentOccupancy[parentIndex] = 255;
+          parentMin[parentIndex] = Math.min(parentMin[parentIndex] ?? 255, childLevel.min[childIndex] ?? 0);
+          parentMax[parentIndex] = Math.max(parentMax[parentIndex] ?? 0, childLevel.max[childIndex] ?? 0);
+        }
+      }
+    }
+
+    for (let index = 0; index < parentTotal; index += 1) {
+      if ((parentOccupancy[index] ?? 0) > 0) {
+        continue;
+      }
+      parentMin[index] = 0;
+      parentMax[index] = 0;
+    }
+
+    childLevel = {
+      level: parentTemplate.level,
+      gridShape: [parentGridZ, parentGridY, parentGridX],
+      occupancy: parentOccupancy,
+      min: parentMin,
+      max: parentMax
+    };
+    conservativeLevels.push(childLevel);
+  }
+
+  return conservativeLevels;
+}
+
 function computeElementCount(shape: number[], context: string): number {
   let total = 1;
   for (const dim of shape) {
@@ -1524,24 +1657,25 @@ export function createVolumeProvider({
       });
     }
     stats.bytesRead += hierarchyBytesRead;
-    const leafLevel = skipHierarchyLevels[0];
-    if (!leafLevel) {
+    const rawLeafLevel = skipHierarchyLevels[0];
+    if (!rawLeafLevel) {
       throw new Error(`Skip hierarchy level 0 is missing for layer ${layer.layerKey} at timepoint ${timepoint}.`);
     }
     if (
-      leafLevel.gridShape[0] !== expectedGridShape[0] ||
-      leafLevel.gridShape[1] !== expectedGridShape[1] ||
-      leafLevel.gridShape[2] !== expectedGridShape[2]
+      rawLeafLevel.gridShape[0] !== expectedGridShape[0] ||
+      rawLeafLevel.gridShape[1] !== expectedGridShape[1] ||
+      rawLeafLevel.gridShape[2] !== expectedGridShape[2]
     ) {
       throw new Error(
         `Skip hierarchy leaf grid mismatch for layer ${layer.layerKey} at timepoint ${timepoint}.`
       );
     }
-    const chunkMin = leafLevel.min;
-    const chunkMax = leafLevel.max;
-    const chunkOccupancy = new Float32Array(leafLevel.occupancy.length);
-    for (let index = 0; index < leafLevel.occupancy.length; index += 1) {
-      chunkOccupancy[index] = (leafLevel.occupancy[index] ?? 0) > 0 ? 1 : 0;
+    const effectiveSkipHierarchyLevels = skipHierarchyLevels;
+    const chunkMin = rawLeafLevel.min;
+    const chunkMax = rawLeafLevel.max;
+    const chunkOccupancy = new Float32Array(rawLeafLevel.occupancy.length);
+    for (let index = 0; index < rawLeafLevel.occupancy.length; index += 1) {
+      chunkOccupancy[index] = (rawLeafLevel.occupancy[index] ?? 0) > 0 ? 1 : 0;
     }
     const expectedBrickCount = zChunks * yChunks * xChunks;
     if (
@@ -1574,7 +1708,7 @@ export function createVolumeProvider({
       chunkShape: [chunkDepth, chunkHeight, chunkWidth],
       volumeShape: [scale.depth, scale.height, scale.width],
       skipHierarchy: {
-        levels: skipHierarchyLevels
+        levels: effectiveSkipHierarchyLevels
       },
       brickAtlasIndices,
       chunkMin,

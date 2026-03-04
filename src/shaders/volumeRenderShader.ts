@@ -596,8 +596,10 @@ const volumeRenderFragmentShader = /* glsl */ `
     ) {
       vec3 clampedVoxel = clamp_voxel_coords(voxelCoords, atlasVolumeSize);
       vec3 localVoxel = clampedVoxel - brickCoords * safeChunk;
+      vec3 atlasChunk = max(atlasSize / safeSlotGrid, vec3(1.0));
+      vec3 atlasChunkOffset = max((atlasChunk - safeChunk) * 0.5, vec3(0.0));
       vec3 slotCoords = atlas_slot_coords_from_index(atlasIndex, safeSlotGrid);
-      vec3 atlasVoxel = localVoxel + slotCoords * safeChunk;
+      vec3 atlasVoxel = localVoxel + atlasChunkOffset + slotCoords * atlasChunk;
       ivec3 maxAtlasTexel = ivec3(max(atlasSize - vec3(1.0), vec3(0.0)));
       ivec3 atlasTexel = ivec3(
         clamp(
@@ -679,8 +681,10 @@ const volumeRenderFragmentShader = /* glsl */ `
       vec3 linearVoxel = safeTexcoords * atlasVolumeSize - vec3(0.5);
       vec3 clampedLinearVoxel = clamp_voxel_coords(linearVoxel, atlasVolumeSize);
       vec3 localLinearVoxel = clampedLinearVoxel - brickCoords * safeChunk;
+      vec3 atlasChunk = max(atlasSize / safeSlotGrid, vec3(1.0));
+      vec3 atlasChunkOffset = max((atlasChunk - safeChunk) * 0.5, vec3(0.0));
       vec3 slotCoords = atlas_slot_coords_from_index(atlasIndex, safeSlotGrid);
-      vec3 atlasLinearVoxel = localLinearVoxel + slotCoords * safeChunk;
+      vec3 atlasLinearVoxel = localLinearVoxel + atlasChunkOffset + slotCoords * atlasChunk;
       vec3 atlasTexcoords = (atlasLinearVoxel + vec3(0.5)) / atlasSize;
       return texture(u_brickAtlasData, atlasTexcoords);
     }
@@ -695,6 +699,8 @@ const volumeRenderFragmentShader = /* glsl */ `
       vec3 safeChunk = max(u_brickChunkSize, vec3(1.0));
       vec3 atlasSize = max(u_brickAtlasSize, vec3(1.0));
       vec3 safeSlotGrid = max(u_brickAtlasSlotGrid, vec3(1.0));
+      vec3 atlasChunk = max(atlasSize / safeSlotGrid, vec3(1.0));
+      bool hasAtlasHalo = any(greaterThan(atlasChunk - safeChunk, vec3(0.5)));
       vec3 voxel000 = baseVoxel + vec3(0.0, 0.0, 0.0);
       vec3 voxel100 = baseVoxel + vec3(1.0, 0.0, 0.0);
       vec3 voxel010 = baseVoxel + vec3(0.0, 1.0, 0.0);
@@ -712,6 +718,20 @@ const volumeRenderFragmentShader = /* glsl */ `
       // Fast path: if all trilinear corner samples stay in one brick, resolve atlas index once.
       vec3 baseBrick = brick_coords_for_voxel(voxel000, safeGrid, safeChunk, atlasVolumeSize);
       vec3 farBrick = brick_coords_for_voxel(voxel111, safeGrid, safeChunk, atlasVolumeSize);
+      if (hasAtlasHalo) {
+        float atlasIndex = atlas_index_for_brick(baseBrick, safeGrid);
+        if (atlasIndex >= -0.5) {
+          return sample_brick_atlas_linear_same_brick(
+            safeTexcoords,
+            baseBrick,
+            atlasIndex,
+            safeSlotGrid,
+            safeChunk,
+            atlasSize,
+            atlasVolumeSize
+          );
+        }
+      }
       if (brick_coords_equal(baseBrick, farBrick)) {
         float atlasIndex = atlas_index_for_brick(baseBrick, safeGrid);
         if (atlasIndex < -0.5) {
@@ -862,13 +882,55 @@ const volumeRenderFragmentShader = /* glsl */ `
         atlasVolumeSize
       );
 
-      vec4 c00 = mix(c000, c100, frac.x);
-      vec4 c10 = mix(c010, c110, frac.x);
-      vec4 c01 = mix(c001, c101, frac.x);
-      vec4 c11 = mix(c011, c111, frac.x);
-      vec4 c0 = mix(c00, c10, frac.y);
-      vec4 c1 = mix(c01, c11, frac.y);
-      return mix(c0, c1, frac.z);
+      float wx0 = 1.0 - frac.x;
+      float wy0 = 1.0 - frac.y;
+      float wz0 = 1.0 - frac.z;
+      float wx1 = frac.x;
+      float wy1 = frac.y;
+      float wz1 = frac.z;
+
+      float w000 = wx0 * wy0 * wz0;
+      float w100 = wx1 * wy0 * wz0;
+      float w010 = wx0 * wy1 * wz0;
+      float w110 = wx1 * wy1 * wz0;
+      float w001 = wx0 * wy0 * wz1;
+      float w101 = wx1 * wy0 * wz1;
+      float w011 = wx0 * wy1 * wz1;
+      float w111 = wx1 * wy1 * wz1;
+
+      float m000 = atlas000 < -0.5 ? 0.0 : 1.0;
+      float m100 = atlas100 < -0.5 ? 0.0 : 1.0;
+      float m010 = atlas010 < -0.5 ? 0.0 : 1.0;
+      float m110 = atlas110 < -0.5 ? 0.0 : 1.0;
+      float m001 = atlas001 < -0.5 ? 0.0 : 1.0;
+      float m101 = atlas101 < -0.5 ? 0.0 : 1.0;
+      float m011 = atlas011 < -0.5 ? 0.0 : 1.0;
+      float m111 = atlas111 < -0.5 ? 0.0 : 1.0;
+
+      float ww000 = w000 * m000;
+      float ww100 = w100 * m100;
+      float ww010 = w010 * m010;
+      float ww110 = w110 * m110;
+      float ww001 = w001 * m001;
+      float ww101 = w101 * m101;
+      float ww011 = w011 * m011;
+      float ww111 = w111 * m111;
+      float weightSum = ww000 + ww100 + ww010 + ww110 + ww001 + ww101 + ww011 + ww111;
+
+      if (weightSum <= 1e-6) {
+        return vec4(0.0);
+      }
+
+      vec4 weighted =
+        c000 * ww000 +
+        c100 * ww100 +
+        c010 * ww010 +
+        c110 * ww110 +
+        c001 * ww001 +
+        c101 * ww101 +
+        c011 * ww011 +
+        c111 * ww111;
+      return weighted / weightSum;
     }
 
     vec4 sample_brick_atlas_linear_lod(vec3 texcoords, float lod) {
