@@ -108,6 +108,7 @@ function VolumeViewer({
   playbackLabel,
   fps,
   blendingMode,
+  zClipFrontFraction = 0,
   onTogglePlayback,
   onTimeIndexChange,
   canAdvancePlayback,
@@ -503,6 +504,7 @@ function VolumeViewer({
     layers,
     primaryVolume,
     isAdditiveBlending,
+    zClipFrontFraction,
     renderContextRevision,
     rendererRef,
     sceneRef,
@@ -552,6 +554,7 @@ function VolumeViewer({
     clearVoxelHoverDebug,
     setHoverNotReady,
     isAdditiveBlending,
+    zClipFrontFraction,
   });
   useVolumeViewerResets({
     rendererRef,

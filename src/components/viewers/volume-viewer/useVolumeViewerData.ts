@@ -78,6 +78,7 @@ export function useVolumeViewerResources({
   layers,
   primaryVolume,
   isAdditiveBlending,
+  zClipFrontFraction,
   renderContextRevision,
   rendererRef,
   sceneRef,
@@ -108,6 +109,7 @@ export function useVolumeViewerResources({
   layers: VolumeViewerProps['layers'];
   primaryVolume: ReturnType<typeof useVolumeViewerDataState>['primaryVolume'];
   isAdditiveBlending: boolean;
+  zClipFrontFraction: number;
   renderContextRevision: number;
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
   sceneRef: MutableRefObject<THREE.Scene | null>;
@@ -139,6 +141,7 @@ export function useVolumeViewerResources({
     layers,
     primaryVolume,
     isAdditiveBlending,
+    zClipFrontFraction,
     renderContextRevision,
     rendererRef,
     sceneRef,

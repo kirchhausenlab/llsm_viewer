@@ -69,6 +69,7 @@ export type ViewerShellContainerViewerPanelsProps = {
   layers: ViewerLayerConfig[];
   loading: ViewerPanelsLoadingInput;
   tracks: ViewerPanelsTrackInput;
+  zClipFrontFraction: number;
   runtimeDiagnostics?: VolumeProviderDiagnostics | null;
   lodPolicyDiagnostics?: LODPolicyDiagnosticsSnapshot | null;
   canAdvancePlayback?: ViewerShellProps['volumeViewerProps']['canAdvancePlayback'];
@@ -153,6 +154,7 @@ function mapVolumeViewerProps({
     playbackDisabled: playbackControls.playbackDisabled,
     playbackLabel: playbackControls.playbackLabel,
     fps: playbackControls.fps,
+    zClipFrontFraction: viewerPanels.zClipFrontFraction,
     blendingMode: modeControls.blendingMode,
     onTogglePlayback: playbackControls.onTogglePlayback,
     onTimeIndexChange: playbackControls.onTimeIndexChange,

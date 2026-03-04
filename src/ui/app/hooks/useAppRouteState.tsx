@@ -202,6 +202,7 @@ export function useAppRouteState(): AppRouteState {
   const [viewerCameraSample, setViewerCameraSample] = useState<ViewerCameraNavigationSample | null>(null);
   const playback = useViewerPlayback();
   const { selectedIndex, setSelectedIndex, isPlaying, fps, setFps, stopPlayback, setIsPlaying } = playback;
+  const [zSliderValue, setZSliderValue] = useState(1);
   const is3dViewerAvailable = true;
   const preferBrickResidency = true;
 
@@ -987,6 +988,46 @@ export function useAppRouteState(): AppRouteState {
     setGlobalRenderStyle,
     setGlobalSamplingMode
   });
+  const zSliderMax = useMemo(() => {
+    let depth = 1;
+    for (const layer of viewerLayers) {
+      const resolvedDepth = Math.max(
+        layer.fullResolutionDepth,
+        layer.volume?.depth ?? 0,
+        layer.brickAtlas?.pageTable.volumeShape[0] ?? 0
+      );
+      if (!Number.isFinite(resolvedDepth) || resolvedDepth <= 1) {
+        continue;
+      }
+      depth = Math.max(depth, Math.floor(resolvedDepth));
+    }
+    return Math.max(1, depth);
+  }, [viewerLayers]);
+  useEffect(() => {
+    setZSliderValue((current) => {
+      const clamped = Math.min(Math.max(Math.round(current), 1), zSliderMax);
+      return clamped === current ? current : clamped;
+    });
+  }, [zSliderMax]);
+  const handleZSliderChange = useCallback(
+    (nextValue: number) => {
+      if (!Number.isFinite(nextValue)) {
+        return;
+      }
+      setZSliderValue((current) => {
+        const clamped = Math.min(Math.max(Math.round(nextValue), 1), zSliderMax);
+        return clamped === current ? current : clamped;
+      });
+    },
+    [zSliderMax]
+  );
+  const zClipFrontFraction = useMemo(() => {
+    if (zSliderMax <= 1) {
+      return 0;
+    }
+    const clamped = Math.min(Math.max(zSliderValue, 1), zSliderMax);
+    return (clamped - 1) / (zSliderMax - 1);
+  }, [zSliderMax, zSliderValue]);
 
   const routeDatasetSetup = createRouteDatasetSetupProps({
     state: {
@@ -1054,6 +1095,7 @@ export function useAppRouteState(): AppRouteState {
       viewerMode,
       viewerPanels: {
         layers: viewerLayers,
+        zClipFrontFraction,
         loading: {
           isLoading,
           loadingProgress: loadProgress,
@@ -1157,6 +1199,9 @@ export function useAppRouteState(): AppRouteState {
       playbackControls: {
         fps,
         onFpsChange: setFps,
+        zSliderValue,
+        zSliderMax,
+        onZSliderChange: handleZSliderChange,
         volumeTimepointCount,
         isPlaying,
         playbackLabel,

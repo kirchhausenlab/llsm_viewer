@@ -59,6 +59,7 @@ export type UseVolumeHoverParams = {
   clearVoxelHoverDebug: () => void;
   setHoverNotReady: (message: string) => void;
   isAdditiveBlending: boolean;
+  zClipFrontFraction: number;
 };
 
 const firstPositiveDimension = (...values: number[]): number => {
@@ -126,6 +127,7 @@ export function useVolumeHover({
   clearVoxelHoverDebug,
   setHoverNotReady,
   isAdditiveBlending,
+  zClipFrontFraction,
 }: UseVolumeHoverParams) {
   const hoverTeardownRef = useRef(false);
   const hoverInitializationFailedRef = useRef(false);
@@ -294,6 +296,8 @@ export function useVolumeHover({
         return;
       }
       hoverVolumeSize.set(targetWidth, targetHeight, targetDepth);
+      const clippedFrontFraction = Number.isFinite(zClipFrontFraction) ? clampValue(zClipFrontFraction, 0, 1) : 0;
+      const clippedFrontPlanes = clippedFrontFraction * Math.max(targetDepth - 1, 0);
 
       const useGpuHover = resource?.mode === '3d';
       const useSliceResource = resource?.mode === 'slice' && targetDepth > 1;
@@ -341,18 +345,23 @@ export function useVolumeHover({
         reportVoxelHoverAbort('Unable to compute a bounding box for hover sampling.');
         return;
       }
+      hoverBoundingBox.copy(boundingBox);
+      if (clippedFrontPlanes > 0) {
+        const clippedMinZ = -0.5 + clippedFrontPlanes;
+        hoverBoundingBox.min.z = clampValue(clippedMinZ, hoverBoundingBox.min.z, hoverBoundingBox.max.z);
+      }
 
       hoverPointerVector.set((offsetX / width) * 2 - 1, -(offsetY / height) * 2 + 1);
       raycasterInstance.setFromCamera(hoverPointerVector, cameraInstance);
       hoverLocalRay.copy(raycasterInstance.ray).applyMatrix4(hoverInverseMatrix);
 
-      const isInsideBoundingBox = boundingBox.containsPoint(hoverLocalRay.origin);
+      const isInsideBoundingBox = hoverBoundingBox.containsPoint(hoverLocalRay.origin);
       let hasEntry = false;
       if (isInsideBoundingBox) {
         hoverEntryPoint.copy(hoverLocalRay.origin);
         hasEntry = true;
       } else {
-        const entryHit = hoverLocalRay.intersectBox(boundingBox, hoverEntryPoint);
+        const entryHit = hoverLocalRay.intersectBox(hoverBoundingBox, hoverEntryPoint);
         hasEntry = entryHit !== null;
       }
 
@@ -361,7 +370,7 @@ export function useVolumeHover({
       hoverExitRay.origin.copy(isInsideBoundingBox ? hoverLocalRay.origin : hoverEntryPoint);
       hoverExitRay.origin.add(hoverEntryOffset);
       hoverExitRay.direction.copy(hoverRayDirection);
-      const exitHit = hoverExitRay.intersectBox(boundingBox, hoverExitPoint);
+      const exitHit = hoverExitRay.intersectBox(hoverBoundingBox, hoverExitPoint);
       const hasExit = exitHit !== null;
 
       if (!hasEntry || !hasExit) {
@@ -588,6 +597,7 @@ export function useVolumeHover({
       setHoverNotReady,
       volumeRootGroupRef,
       volumeStepScaleRef,
+      zClipFrontFraction,
       isAdditiveBlending,
     ],
   );

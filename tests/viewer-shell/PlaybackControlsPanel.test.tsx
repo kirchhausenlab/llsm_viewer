@@ -27,6 +27,9 @@ function createProps(playbackDisabled: boolean) {
     playbackControls: {
       fps: 12,
       onFpsChange: () => {},
+      zSliderValue: 2,
+      zSliderMax: 4,
+      onZSliderChange: () => {},
       volumeTimepointCount: 1,
       isPlaying: false,
       playbackLabel: '1 / 1',
@@ -65,6 +68,10 @@ function createProps(playbackDisabled: boolean) {
   const disabledPlaybackSlider = renderer.root.findByProps({ id: 'playback-slider' });
   assert.equal(disabledPlaybackSlider.props.disabled, true);
   assert.equal(disabledPlaybackSlider.props.max, 0);
+  const zSlider = renderer.root.findByProps({ id: 'playback-z-slider' });
+  assert.equal(zSlider.props.disabled, false);
+  assert.equal(zSlider.props.max, 4);
+  assert.equal(zSlider.props.value, 2);
 
   renderer.update(<PlaybackControlsPanel {...(createProps(false) as any)} />);
   const enabledPlaybackSlider = renderer.root.findByProps({ id: 'playback-slider' });

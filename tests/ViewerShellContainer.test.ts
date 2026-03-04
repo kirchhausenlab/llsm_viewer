@@ -16,6 +16,7 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
     closeHelpMenu: noop,
     viewerPanels: {
       layers: [],
+      zClipFrontFraction: 0,
       loading: {
         isLoading: false,
         loadingProgress: 0,

@@ -306,6 +306,7 @@ type VolumeUniforms = {
   u_windowMax: { value: number };
   u_invert: { value: number };
   u_stepScale: { value: number };
+  u_zClipFront: { value: number };
   u_nearestSampling: { value: number };
   u_hoverPos: { value: Vector3 };
   u_hoverScale: { value: Vector3 };
@@ -356,6 +357,7 @@ const uniforms = {
   u_windowMax: { value: 1 },
   u_invert: { value: 0 },
   u_stepScale: { value: 1 },
+  u_zClipFront: { value: 0 },
   u_nearestSampling: { value: 0 },
   u_hoverPos: { value: new Vector3() },
   u_hoverScale: { value: new Vector3() },
@@ -430,6 +432,7 @@ const volumeRenderFragmentShader = /* glsl */ `
     uniform float u_windowMax;
     uniform float u_invert;
     uniform float u_stepScale;
+    uniform float u_zClipFront;
     uniform float u_nearestSampling;
     uniform vec3 u_hoverPos;
     uniform vec3 u_hoverScale;
@@ -1198,6 +1201,9 @@ const volumeRenderFragmentShader = /* glsl */ `
 
       vec3 boxMin = vec3(-0.5);
       vec3 boxMax = u_size - 0.5;
+      float clippedFrontFraction = clamp(u_zClipFront, 0.0, 1.0);
+      float clippedFrontPlanes = clippedFrontFraction * max(u_size.z - 1.0, 0.0);
+      boxMin.z += clippedFrontPlanes;
 
       vec3 tLower;
       vec3 tUpper;

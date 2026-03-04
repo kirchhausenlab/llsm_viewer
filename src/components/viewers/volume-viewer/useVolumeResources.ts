@@ -32,6 +32,7 @@ type UseVolumeResourcesParams = {
   layers: import('../VolumeViewer.types').VolumeViewerProps['layers'];
   primaryVolume: NormalizedVolume | null;
   isAdditiveBlending: boolean;
+  zClipFrontFraction: number;
   renderContextRevision: number;
   rendererRef?: MutableRefObject<THREE.WebGLRenderer | null>;
   sceneRef: MutableRefObject<THREE.Scene | null>;
@@ -2241,6 +2242,7 @@ export function useVolumeResources({
   layers,
   primaryVolume,
   isAdditiveBlending,
+  zClipFrontFraction,
   renderContextRevision,
   rendererRef,
   sceneRef,
@@ -2456,6 +2458,10 @@ export function useVolumeResources({
 
     const seenKeys = new Set<string>();
     const max3DTextureSize = resolveRendererMax3DTextureSize(rendererRef);
+    const safeZClipFront =
+      Number.isFinite(zClipFrontFraction)
+        ? Math.min(1, Math.max(0, zClipFrontFraction))
+        : 0;
 
     const assignGpuResidencyUpdater = ({
       resource,
@@ -2611,6 +2617,9 @@ export function useVolumeResources({
           uniforms.u_windowMax.value = layer.windowMax;
           uniforms.u_invert.value = layer.invert ? 1 : 0;
           uniforms.u_stepScale.value = volumeStepScaleRef.current;
+          if (uniforms.u_zClipFront) {
+            uniforms.u_zClipFront.value = safeZClipFront;
+          }
           uniforms.u_nearestSampling.value = effectiveSamplingMode === 'nearest' ? 1 : 0;
           applyAdaptiveLodUniforms(uniforms as ShaderUniformMap, effectiveSamplingMode);
           applyBeerLambertUniforms(uniforms as ShaderUniformMap, layer);
@@ -2896,6 +2905,9 @@ export function useVolumeResources({
         if (materialUniforms.u_stepScale) {
           materialUniforms.u_stepScale.value = volumeStepScaleRef.current;
         }
+        if (materialUniforms.u_zClipFront) {
+          materialUniforms.u_zClipFront.value = safeZClipFront;
+        }
         if (materialUniforms.u_nearestSampling) {
           materialUniforms.u_nearestSampling.value = effectiveSamplingMode === 'nearest' ? 1 : 0;
         }
@@ -3116,6 +3128,7 @@ export function useVolumeResources({
     trackGroupRef,
     rendererRef,
     sceneRef,
+    zClipFrontFraction,
   ]);
 
   useEffect(() => {

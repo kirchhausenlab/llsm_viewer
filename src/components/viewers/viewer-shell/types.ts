@@ -47,6 +47,9 @@ export type ModeControlsProps = {
 export type PlaybackControlsProps = {
   fps: number;
   onFpsChange: (value: number) => void;
+  zSliderValue?: number;
+  zSliderMax?: number;
+  onZSliderChange?: (value: number) => void;
   recordingBitrateMbps?: number;
   onRecordingBitrateMbpsChange?: (value: number) => void;
   volumeTimepointCount: number;

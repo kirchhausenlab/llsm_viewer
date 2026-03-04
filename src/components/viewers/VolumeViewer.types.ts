@@ -146,6 +146,7 @@ export type VolumeViewerProps = {
   playbackLabel: string;
   fps: number;
   blendingMode: 'alpha' | 'additive';
+  zClipFrontFraction?: number;
   isLoading: boolean;
   loadingProgress: number;
   loadedVolumes: number;

@@ -7,6 +7,7 @@ const MIN_FPS = 1;
 const MAX_FPS = 30;
 
 const clampFps = (value: number) => Math.min(MAX_FPS, Math.max(MIN_FPS, value));
+const clampRangeValue = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 export type PlaybackControlsPanelProps = {
   layout: Pick<LayoutProps, 'windowMargin' | 'controlWindowWidth' | 'controlWindowInitialPosition' | 'resetToken'> & {
@@ -48,6 +49,9 @@ export default function PlaybackControlsPanel({
   const {
     fps,
     onFpsChange,
+    zSliderValue,
+    zSliderMax,
+    onZSliderChange,
     recordingBitrateMbps,
     onRecordingBitrateMbpsChange,
     volumeTimepointCount,
@@ -73,6 +77,9 @@ export default function PlaybackControlsPanel({
     showRenderingQualityControl,
     hasVolumeData
   } = viewerSettings;
+  const resolvedZSliderMax = Math.max(1, Math.floor(zSliderMax ?? 1));
+  const resolvedZSliderValue = clampRangeValue(Math.round(zSliderValue ?? 1), 1, resolvedZSliderMax);
+  const zSliderDisabled = resolvedZSliderMax <= 1 || !onZSliderChange;
 
   return (
     <>
@@ -142,6 +149,22 @@ export default function PlaybackControlsPanel({
                 value={Math.min(selectedIndex, Math.max(0, volumeTimepointCount - 1))}
                 onChange={(event) => onTimeIndexChange(Number(event.target.value))}
                 disabled={playbackDisabled}
+              />
+            </div>
+            <div className="control-group playback-progress">
+              <label htmlFor="playback-z-slider" className="control-label control-label--compact playback-progress__label">
+                Z start <span>{resolvedZSliderValue} / {resolvedZSliderMax}</span>
+              </label>
+              <input
+                id="playback-z-slider"
+                className="playback-slider"
+                type="range"
+                min={1}
+                max={resolvedZSliderMax}
+                step={1}
+                value={resolvedZSliderValue}
+                onChange={(event) => onZSliderChange?.(Number(event.target.value))}
+                disabled={zSliderDisabled}
               />
             </div>
             <div className="playback-button-row">
