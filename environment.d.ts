@@ -47,4 +47,27 @@ declare interface Window {
   showDirectoryPicker?: (options?: { mode?: 'read' | 'readwrite' }) => Promise<FileSystemDirectoryHandle>;
   __LLSM_VOLUME_PROVIDER__?: unknown;
   __LLSM_VOLUME_PROVIDER_DIAGNOSTICS__?: (() => unknown) | null;
+  __LLSM_PREPROCESSED_MANIFEST__?: unknown;
+  __LLSM_VOLUME_RESOURCE_SUMMARY__?: (() => unknown) | null;
+  __LLSM_FORCE_RENDER__?: (() => boolean) | null;
+  __LLSM_PATCH_VOLUME_UNIFORMS__?: (patch: {
+    brickSkipEnabled?: number;
+    brickAtlasEnabled?: number;
+    nearestSampling?: number;
+    adaptiveLodEnabled?: number;
+    adaptiveLodMax?: number;
+    mipEarlyExitThreshold?: number;
+    windowMin?: number;
+    windowMax?: number;
+    renderThreshold?: number;
+    renderStyle?: number;
+    clim?: [number, number];
+  }) => number;
+  __LLSM_CAPTURE_RENDER_TARGET_METRICS__?: (() => {
+    width: number;
+    height: number;
+    nonBlackPixels: number;
+    nonTransparentPixels: number;
+    avgLuma: number;
+  } | null) | null;
 }

@@ -251,7 +251,14 @@ export function computeNormalizationParameters(volumes: VolumePayload[]): Normal
     max = min === 0 ? 1 : min + 1;
   }
   if (min === max) {
-    max = min + 1;
+    // Preserve constant positive signals: avoid collapsing them to zero during uint8 normalization.
+    if (max > 0) {
+      min = 0;
+    } else if (min < 0) {
+      max = 0;
+    } else {
+      max = 1;
+    }
   }
 
   return { min, max };

@@ -209,11 +209,15 @@ export type VolumeResources = {
   brickMaxTexture?: THREE.Data3DTexture | null;
   brickAtlasIndexTexture?: THREE.Data3DTexture | null;
   brickAtlasDataTexture?: THREE.Data3DTexture | null;
+  skipHierarchyTexture?: THREE.Data3DTexture | null;
+  skipHierarchySourcePageTable?: VolumeBrickPageTable | null;
+  skipHierarchyLevelCount?: number;
   brickMetadataSourcePageTable?: VolumeBrickPageTable | null;
   brickAtlasSourceToken?: object | null;
   brickAtlasSourceData?: Uint8Array | null;
   brickAtlasSourceFormat?: THREE.Data3DTexture['format'] | null;
   brickAtlasSourcePageTable?: VolumeBrickPageTable | null;
+  brickAtlasSlotGrid?: { x: number; y: number; z: number } | null;
   brickAtlasBuildVersion?: number;
   gpuBrickResidencyMetrics?: {
     layerKey: string;
@@ -234,12 +238,11 @@ export type VolumeResources = {
     enabled: boolean;
     reason:
       | 'enabled'
-      | 'disabled-by-config'
       | 'missing-page-table'
       | 'invalid-page-table'
-      | 'occupied-bricks-missing-from-atlas'
       | 'invalid-min-max-range'
-      | 'occupancy-metadata-mismatch';
+      | 'invalid-hierarchy-shape'
+      | 'invalid-hierarchy-level-order';
     totalBricks: number;
     emptyBricks: number;
     occupiedBricks: number;

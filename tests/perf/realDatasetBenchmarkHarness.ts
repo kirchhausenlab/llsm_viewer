@@ -16,6 +16,7 @@ import type {
   PreprocessedLayerManifestEntry,
   PreprocessedManifest,
 } from '../../src/shared/utils/preprocessedDataset/types.ts';
+import { PREPROCESSED_DATASET_FORMAT } from '../../src/shared/utils/preprocessedDataset/types.ts';
 
 const MAX_BRICK_ATLAS_DEPTH_HINT = 2048;
 const MAX_BRICK_ATLAS_BYTES_HINT = 512 * 1024 * 1024;
@@ -399,7 +400,27 @@ export function resolveBenchmarkDatasetRoot(datasetPath: string): string {
 }
 
 export function benchmarkDatasetExists(datasetPath: string): boolean {
-  return fs.existsSync(resolveBenchmarkDatasetRoot(datasetPath));
+  const root = resolveBenchmarkDatasetRoot(datasetPath);
+  if (!fs.existsSync(root)) {
+    return false;
+  }
+  try {
+    const rootMetadataPath = path.join(root, 'zarr.json');
+    if (!fs.existsSync(rootMetadataPath)) {
+      return false;
+    }
+    const payload = JSON.parse(fs.readFileSync(rootMetadataPath, 'utf8')) as {
+      attributes?: {
+        llsmViewerPreprocessed?: {
+          format?: string;
+        };
+      };
+    };
+    const format = payload.attributes?.llsmViewerPreprocessed?.format;
+    return format === PREPROCESSED_DATASET_FORMAT;
+  } catch {
+    return false;
+  }
 }
 
 export async function runRealDatasetBenchmarkCase(

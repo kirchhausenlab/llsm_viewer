@@ -15,7 +15,7 @@ export type PreprocessedStorageHandle = {
   dispose?: () => Promise<void>;
 };
 
-export const PREPROCESSED_STORAGE_ROOT_DIR = 'llsm-viewer-preprocessed-vnext';
+export const PREPROCESSED_STORAGE_ROOT_DIR = 'llsm-viewer-preprocessed-vnext-hes1';
 
 function assertSafePath(path: string): string {
   const normalized = path.replace(/^\/+/, '').trim();

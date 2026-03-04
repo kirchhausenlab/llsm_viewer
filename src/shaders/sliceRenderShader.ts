@@ -98,8 +98,8 @@ export const SliceRenderShader = {
     }
 
     void main() {
-      vec4 sample = sample_slice(v_uv);
-      float intensity = luminance(sample);
+      vec4 sliceSample = sample_slice(v_uv);
+      float intensity = luminance(sliceSample);
       float adjusted = adjust_intensity(intensity);
 
       if (u_channels == 1) {
@@ -109,9 +109,9 @@ export const SliceRenderShader = {
       } else {
         vec3 baseColor;
         if (u_channels == 2) {
-          baseColor = vec3(sample.r, sample.g, 0.0);
+          baseColor = vec3(sliceSample.r, sliceSample.g, 0.0);
         } else {
-          baseColor = sample.rgb;
+          baseColor = sliceSample.rgb;
         }
         vec3 adjustedColor = adjust_color(baseColor);
         if (u_channels == 2) {

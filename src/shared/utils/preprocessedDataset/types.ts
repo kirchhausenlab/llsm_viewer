@@ -1,7 +1,7 @@
 import type { VolumeDataType } from '../../../types/volume';
 import type { AnisotropyScaleFactors, VoxelResolutionValues } from '../../../types/voxelResolution';
 
-export const PREPROCESSED_DATASET_FORMAT = 'llsm-viewer-preprocessed-vnext' as const;
+export const PREPROCESSED_DATASET_FORMAT = 'llsm-viewer-preprocessed-vnext-hes1' as const;
 
 export type AnisotropyCorrectionMetadata = {
   scale: AnisotropyScaleFactors;
@@ -43,10 +43,16 @@ export type ZarrArrayShardingPlan = {
   reason?: string;
 };
 
-export type PreprocessedScaleChunkStatsZarrDescriptor = {
+export type PreprocessedScaleSkipHierarchyLevelZarrDescriptor = {
+  level: number;
+  gridShape: [number, number, number];
+  occupancy: ZarrArrayDescriptor;
   min: ZarrArrayDescriptor;
   max: ZarrArrayDescriptor;
-  occupancy: ZarrArrayDescriptor;
+};
+
+export type PreprocessedScaleSkipHierarchyZarrDescriptor = {
+  levels: PreprocessedScaleSkipHierarchyLevelZarrDescriptor[];
 };
 
 export type PreprocessedLayerScaleManifestEntry = {
@@ -59,7 +65,7 @@ export type PreprocessedLayerScaleManifestEntry = {
   zarr: {
     data: ZarrArrayDescriptor;
     labels?: ZarrArrayDescriptor;
-    chunkStats: PreprocessedScaleChunkStatsZarrDescriptor;
+    skipHierarchy: PreprocessedScaleSkipHierarchyZarrDescriptor;
     histogram: ZarrArrayDescriptor;
   };
 };

@@ -12,9 +12,10 @@ export function createColormapTexture(hexColor: string) {
   const data = new Uint8Array(size * 4);
   for (let i = 0; i < size; i++) {
     const intensity = i / (size - 1);
-    data[i * 4 + 0] = Math.round(red * intensity * 255);
-    data[i * 4 + 1] = Math.round(green * intensity * 255);
-    data[i * 4 + 2] = Math.round(blue * intensity * 255);
+    // Keep chroma constant and map intensity through alpha to avoid squaring luminance during blending.
+    data[i * 4 + 0] = Math.round(red * 255);
+    data[i * 4 + 1] = Math.round(green * 255);
+    data[i * 4 + 2] = Math.round(blue * 255);
     data[i * 4 + 3] = Math.round(intensity * 255);
   }
   const texture = new THREE.DataTexture(data, size, 1, THREE.RGBAFormat);

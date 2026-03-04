@@ -23,9 +23,12 @@ const TIMEPOINTS = 3;
 function buildManifest(): PreprocessedManifest {
   const dataPath = 'channels/channel-edge/layer-edge/scales/0/data';
   const histogramPath = 'channels/channel-edge/layer-edge/scales/0/histogram';
-  const chunkMinPath = 'channels/channel-edge/layer-edge/scales/0/chunk-stats/min';
-  const chunkMaxPath = 'channels/channel-edge/layer-edge/scales/0/chunk-stats/max';
-  const chunkOccPath = 'channels/channel-edge/layer-edge/scales/0/chunk-stats/occupancy';
+  const skipLeafMinPath = 'channels/channel-edge/layer-edge/scales/0/skip-hierarchy/levels/0/min';
+  const skipLeafMaxPath = 'channels/channel-edge/layer-edge/scales/0/skip-hierarchy/levels/0/max';
+  const skipLeafOccPath = 'channels/channel-edge/layer-edge/scales/0/skip-hierarchy/levels/0/occupancy';
+  const skipRootMinPath = 'channels/channel-edge/layer-edge/scales/0/skip-hierarchy/levels/1/min';
+  const skipRootMaxPath = 'channels/channel-edge/layer-edge/scales/0/skip-hierarchy/levels/1/max';
+  const skipRootOccPath = 'channels/channel-edge/layer-edge/scales/0/skip-hierarchy/levels/1/occupancy';
 
   return {
     format: PREPROCESSED_DATASET_FORMAT,
@@ -72,25 +75,53 @@ function buildManifest(): PreprocessedManifest {
                         chunkShape: [1, 256],
                         dataType: 'uint32'
                       },
-                      chunkStats: {
-                        min: {
-                          path: chunkMinPath,
-                          shape: [TIMEPOINTS, 2, 1, 2],
-                          chunkShape: [1, 2, 1, 2],
-                          dataType: 'uint8'
-                        },
-                        max: {
-                          path: chunkMaxPath,
-                          shape: [TIMEPOINTS, 2, 1, 2],
-                          chunkShape: [1, 2, 1, 2],
-                          dataType: 'uint8'
-                        },
-                        occupancy: {
-                          path: chunkOccPath,
-                          shape: [TIMEPOINTS, 2, 1, 2],
-                          chunkShape: [1, 2, 1, 2],
-                          dataType: 'float32'
-                        }
+                      skipHierarchy: {
+                        levels: [
+                          {
+                            level: 0,
+                            gridShape: [2, 1, 2],
+                            min: {
+                              path: skipLeafMinPath,
+                              shape: [TIMEPOINTS, 2, 1, 2],
+                              chunkShape: [1, 2, 1, 2],
+                              dataType: 'uint8'
+                            },
+                            max: {
+                              path: skipLeafMaxPath,
+                              shape: [TIMEPOINTS, 2, 1, 2],
+                              chunkShape: [1, 2, 1, 2],
+                              dataType: 'uint8'
+                            },
+                            occupancy: {
+                              path: skipLeafOccPath,
+                              shape: [TIMEPOINTS, 2, 1, 2],
+                              chunkShape: [1, 2, 1, 2],
+                              dataType: 'uint8'
+                            }
+                          },
+                          {
+                            level: 1,
+                            gridShape: [1, 1, 1],
+                            min: {
+                              path: skipRootMinPath,
+                              shape: [TIMEPOINTS, 1, 1, 1],
+                              chunkShape: [1, 1, 1, 1],
+                              dataType: 'uint8'
+                            },
+                            max: {
+                              path: skipRootMaxPath,
+                              shape: [TIMEPOINTS, 1, 1, 1],
+                              chunkShape: [1, 1, 1, 1],
+                              dataType: 'uint8'
+                            },
+                            occupancy: {
+                              path: skipRootOccPath,
+                              shape: [TIMEPOINTS, 1, 1, 1],
+                              chunkShape: [1, 1, 1, 1],
+                              dataType: 'uint8'
+                            }
+                          }
+                        ]
                       }
                     }
                   }
@@ -197,27 +228,29 @@ test('brick atlas loading handles multi-timepoint chunks and edge chunks with pa
     codecs: [],
     fill_value: 0
   });
-  await zarr.create(zarr.root(zarrStore).resolve(scale.zarr.chunkStats.min.path), {
-    shape: scale.zarr.chunkStats.min.shape,
-    data_type: scale.zarr.chunkStats.min.dataType,
-    chunk_shape: scale.zarr.chunkStats.min.chunkShape,
-    codecs: [],
-    fill_value: 0
-  });
-  await zarr.create(zarr.root(zarrStore).resolve(scale.zarr.chunkStats.max.path), {
-    shape: scale.zarr.chunkStats.max.shape,
-    data_type: scale.zarr.chunkStats.max.dataType,
-    chunk_shape: scale.zarr.chunkStats.max.chunkShape,
-    codecs: [],
-    fill_value: 0
-  });
-  await zarr.create(zarr.root(zarrStore).resolve(scale.zarr.chunkStats.occupancy.path), {
-    shape: scale.zarr.chunkStats.occupancy.shape,
-    data_type: scale.zarr.chunkStats.occupancy.dataType,
-    chunk_shape: scale.zarr.chunkStats.occupancy.chunkShape,
-    codecs: [],
-    fill_value: 0
-  });
+  for (const hierarchy of scale.zarr.skipHierarchy.levels) {
+    await zarr.create(zarr.root(zarrStore).resolve(hierarchy.min.path), {
+      shape: hierarchy.min.shape,
+      data_type: hierarchy.min.dataType,
+      chunk_shape: hierarchy.min.chunkShape,
+      codecs: [],
+      fill_value: 0
+    });
+    await zarr.create(zarr.root(zarrStore).resolve(hierarchy.max.path), {
+      shape: hierarchy.max.shape,
+      data_type: hierarchy.max.dataType,
+      chunk_shape: hierarchy.max.chunkShape,
+      codecs: [],
+      fill_value: 0
+    });
+    await zarr.create(zarr.root(zarrStore).resolve(hierarchy.occupancy.path), {
+      shape: hierarchy.occupancy.shape,
+      data_type: hierarchy.occupancy.dataType,
+      chunk_shape: hierarchy.occupancy.chunkShape,
+      codecs: [],
+      fill_value: 0
+    });
+  }
   await zarr.create(zarr.root(zarrStore).resolve(scale.zarr.histogram.path), {
     shape: scale.zarr.histogram.shape,
     data_type: scale.zarr.histogram.dataType,
@@ -241,18 +274,30 @@ test('brick atlas loading handles multi-timepoint chunks and edge chunks with pa
       normalized: frames[timepoint]!
     });
     await storageHandle.storage.writeFile(`${scale.zarr.histogram.path}/c/${timepoint}/0`, encodeUint32ArrayLE(histogram));
-    await storageHandle.storage.writeFile(`${scale.zarr.chunkStats.min.path}/c/${timepoint}/0/0/0`, new Uint8Array([0, 0, 0, 0]));
     await storageHandle.storage.writeFile(
-      `${scale.zarr.chunkStats.max.path}/c/${timepoint}/0/0/0`,
+      `${scale.zarr.skipHierarchy.levels[0]!.min.path}/c/${timepoint}/0/0/0`,
+      new Uint8Array([0, 0, 0, 0])
+    );
+    await storageHandle.storage.writeFile(
+      `${scale.zarr.skipHierarchy.levels[0]!.max.path}/c/${timepoint}/0/0/0`,
       new Uint8Array([255, 255, 255, 255])
     );
-    const occ = new Uint8Array(16);
-    const occView = new DataView(occ.buffer);
-    occView.setFloat32(0, 1, true);
-    occView.setFloat32(4, 1, true);
-    occView.setFloat32(8, 1, true);
-    occView.setFloat32(12, 1, true);
-    await storageHandle.storage.writeFile(`${scale.zarr.chunkStats.occupancy.path}/c/${timepoint}/0/0/0`, occ);
+    await storageHandle.storage.writeFile(
+      `${scale.zarr.skipHierarchy.levels[0]!.occupancy.path}/c/${timepoint}/0/0/0`,
+      new Uint8Array([255, 255, 255, 255])
+    );
+    await storageHandle.storage.writeFile(
+      `${scale.zarr.skipHierarchy.levels[1]!.min.path}/c/${timepoint}/0/0/0`,
+      new Uint8Array([0])
+    );
+    await storageHandle.storage.writeFile(
+      `${scale.zarr.skipHierarchy.levels[1]!.max.path}/c/${timepoint}/0/0/0`,
+      new Uint8Array([255])
+    );
+    await storageHandle.storage.writeFile(
+      `${scale.zarr.skipHierarchy.levels[1]!.occupancy.path}/c/${timepoint}/0/0/0`,
+      new Uint8Array([255])
+    );
   }
 
   for (let timeChunkCoord = 0; timeChunkCoord < Math.ceil(TIMEPOINTS / timeChunkLength); timeChunkCoord += 1) {

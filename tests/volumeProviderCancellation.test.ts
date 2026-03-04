@@ -60,25 +60,31 @@ function buildManifest(): PreprocessedManifest {
                         chunkShape: [1, HISTOGRAM_BINS],
                         dataType: 'uint32'
                       },
-                      chunkStats: {
-                        min: {
-                          path: 'channels/channel-a/layer-a/scales/0/chunk-stats/min',
-                          shape: [1, 1, 1, 1],
-                          chunkShape: [1, 1, 1, 1],
-                          dataType: 'uint8'
-                        },
-                        max: {
-                          path: 'channels/channel-a/layer-a/scales/0/chunk-stats/max',
-                          shape: [1, 1, 1, 1],
-                          chunkShape: [1, 1, 1, 1],
-                          dataType: 'uint8'
-                        },
-                        occupancy: {
-                          path: 'channels/channel-a/layer-a/scales/0/chunk-stats/occupancy',
-                          shape: [1, 1, 1, 1],
-                          chunkShape: [1, 1, 1, 1],
-                          dataType: 'float32'
-                        }
+                      skipHierarchy: {
+                        levels: [
+                          {
+                            level: 0,
+                            gridShape: [1, 1, 1],
+                            min: {
+                              path: 'channels/channel-a/layer-a/scales/0/skip-hierarchy/levels/0/min',
+                              shape: [1, 1, 1, 1],
+                              chunkShape: [1, 1, 1, 1],
+                              dataType: 'uint8'
+                            },
+                            max: {
+                              path: 'channels/channel-a/layer-a/scales/0/skip-hierarchy/levels/0/max',
+                              shape: [1, 1, 1, 1],
+                              chunkShape: [1, 1, 1, 1],
+                              dataType: 'uint8'
+                            },
+                            occupancy: {
+                              path: 'channels/channel-a/layer-a/scales/0/skip-hierarchy/levels/0/occupancy',
+                              shape: [1, 1, 1, 1],
+                              chunkShape: [1, 1, 1, 1],
+                              dataType: 'uint8'
+                            }
+                          }
+                        ]
                       }
                     }
                   }

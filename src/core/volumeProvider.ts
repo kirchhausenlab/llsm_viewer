@@ -129,6 +129,15 @@ export type VolumeBrickPageTable = {
   gridShape: [number, number, number];
   chunkShape: [number, number, number];
   volumeShape: [number, number, number];
+  skipHierarchy: {
+    levels: Array<{
+      level: number;
+      gridShape: [number, number, number];
+      occupancy: Uint8Array;
+      min: Uint8Array;
+      max: Uint8Array;
+    }>;
+  };
   brickAtlasIndices: Int32Array;
   chunkMin: Uint8Array;
   chunkMax: Uint8Array;
@@ -1443,51 +1452,97 @@ export function createVolumeProvider({
     const xChunks = Math.ceil(scale.width / chunkWidth);
     const expectedGridShape: [number, number, number] = [zChunks, yChunks, xChunks];
 
-    const minDescriptor = scale.zarr.chunkStats.min;
-    const maxDescriptor = scale.zarr.chunkStats.max;
-    const occupancyDescriptor = scale.zarr.chunkStats.occupancy;
+    const hierarchyDescriptors = [...scale.zarr.skipHierarchy.levels].sort((left, right) => left.level - right.level);
+    if (hierarchyDescriptors.length === 0) {
+      throw new Error(`Skip hierarchy is missing for layer ${layer.layerKey} at scale ${scale.level}.`);
+    }
 
-    const {
-      bytes: minBytes,
-      bytesRead: minBytesRead
-    } = await readTimepointChunkedArray({
-      descriptor: minDescriptor,
-      timepoint,
-      expectedNonTimeShape: expectedGridShape,
-      maxConcurrentChunkReads,
-      readChunk: (chunkCoords, chunkOptions) => readChunkWithCache(minDescriptor, chunkCoords, chunkOptions),
-      signal
-    });
-    const {
-      bytes: maxBytes,
-      bytesRead: maxBytesRead
-    } = await readTimepointChunkedArray({
-      descriptor: maxDescriptor,
-      timepoint,
-      expectedNonTimeShape: expectedGridShape,
-      maxConcurrentChunkReads,
-      readChunk: (chunkCoords, chunkOptions) => readChunkWithCache(maxDescriptor, chunkCoords, chunkOptions),
-      signal
-    });
-    const {
-      bytes: occupancyBytes,
-      bytesRead: occupancyBytesRead
-    } = await readTimepointChunkedArray({
-      descriptor: occupancyDescriptor,
-      timepoint,
-      expectedNonTimeShape: expectedGridShape,
-      maxConcurrentChunkReads,
-      readChunk: (chunkCoords, chunkOptions) => readChunkWithCache(occupancyDescriptor, chunkCoords, chunkOptions),
-      signal
-    });
-    throwIfAborted(signal);
-
-    stats.bytesRead += minBytesRead + maxBytesRead + occupancyBytesRead;
-
-    const chunkMin = minBytes;
-    const chunkMax = maxBytes;
-    const occupancyBuffer = ensureArrayBuffer(occupancyBytes);
-    const chunkOccupancy = new Float32Array(occupancyBuffer);
+    const skipHierarchyLevels: VolumeBrickPageTable['skipHierarchy']['levels'] = [];
+    let hierarchyBytesRead = 0;
+    for (let hierarchyLevel = 0; hierarchyLevel < hierarchyDescriptors.length; hierarchyLevel += 1) {
+      const hierarchy = hierarchyDescriptors[hierarchyLevel];
+      if (!hierarchy) {
+        continue;
+      }
+      const [expectedLevelZ, expectedLevelY, expectedLevelX] = hierarchy.gridShape;
+      const expectedNonTimeShape: [number, number, number] = [
+        expectedLevelZ,
+        expectedLevelY,
+        expectedLevelX
+      ];
+      const {
+        bytes: minBytes,
+        bytesRead: minBytesRead
+      } = await readTimepointChunkedArray({
+        descriptor: hierarchy.min,
+        timepoint,
+        expectedNonTimeShape,
+        maxConcurrentChunkReads,
+        readChunk: (chunkCoords, chunkOptions) => readChunkWithCache(hierarchy.min, chunkCoords, chunkOptions),
+        signal
+      });
+      const {
+        bytes: maxBytes,
+        bytesRead: maxBytesRead
+      } = await readTimepointChunkedArray({
+        descriptor: hierarchy.max,
+        timepoint,
+        expectedNonTimeShape,
+        maxConcurrentChunkReads,
+        readChunk: (chunkCoords, chunkOptions) => readChunkWithCache(hierarchy.max, chunkCoords, chunkOptions),
+        signal
+      });
+      const {
+        bytes: occupancyBytes,
+        bytesRead: occupancyBytesRead
+      } = await readTimepointChunkedArray({
+        descriptor: hierarchy.occupancy,
+        timepoint,
+        expectedNonTimeShape,
+        maxConcurrentChunkReads,
+        readChunk: (chunkCoords, chunkOptions) => readChunkWithCache(hierarchy.occupancy, chunkCoords, chunkOptions),
+        signal
+      });
+      throwIfAborted(signal);
+      hierarchyBytesRead += minBytesRead + maxBytesRead + occupancyBytesRead;
+      const expectedLevelVoxelCount = expectedLevelZ * expectedLevelY * expectedLevelX;
+      if (
+        minBytes.length !== expectedLevelVoxelCount ||
+        maxBytes.length !== expectedLevelVoxelCount ||
+        occupancyBytes.length !== expectedLevelVoxelCount
+      ) {
+        throw new Error(
+          `Skip hierarchy level size mismatch for layer ${layer.layerKey} at timepoint ${timepoint}, level ${hierarchy.level}.`
+        );
+      }
+      skipHierarchyLevels.push({
+        level: hierarchy.level,
+        gridShape: [expectedLevelZ, expectedLevelY, expectedLevelX],
+        occupancy: occupancyBytes,
+        min: minBytes,
+        max: maxBytes
+      });
+    }
+    stats.bytesRead += hierarchyBytesRead;
+    const leafLevel = skipHierarchyLevels[0];
+    if (!leafLevel) {
+      throw new Error(`Skip hierarchy level 0 is missing for layer ${layer.layerKey} at timepoint ${timepoint}.`);
+    }
+    if (
+      leafLevel.gridShape[0] !== expectedGridShape[0] ||
+      leafLevel.gridShape[1] !== expectedGridShape[1] ||
+      leafLevel.gridShape[2] !== expectedGridShape[2]
+    ) {
+      throw new Error(
+        `Skip hierarchy leaf grid mismatch for layer ${layer.layerKey} at timepoint ${timepoint}.`
+      );
+    }
+    const chunkMin = leafLevel.min;
+    const chunkMax = leafLevel.max;
+    const chunkOccupancy = new Float32Array(leafLevel.occupancy.length);
+    for (let index = 0; index < leafLevel.occupancy.length; index += 1) {
+      chunkOccupancy[index] = (leafLevel.occupancy[index] ?? 0) > 0 ? 1 : 0;
+    }
     const expectedBrickCount = zChunks * yChunks * xChunks;
     if (
       chunkMin.length !== expectedBrickCount ||
@@ -1495,7 +1550,7 @@ export function createVolumeProvider({
       chunkOccupancy.length !== expectedBrickCount
     ) {
       throw new Error(
-        `Chunk-stats size mismatch for layer ${layer.layerKey} at timepoint ${timepoint}.`
+        `Skip hierarchy leaf size mismatch for layer ${layer.layerKey} at timepoint ${timepoint}.`
       );
     }
 
@@ -1518,6 +1573,9 @@ export function createVolumeProvider({
       gridShape: expectedGridShape,
       chunkShape: [chunkDepth, chunkHeight, chunkWidth],
       volumeShape: [scale.depth, scale.height, scale.width],
+      skipHierarchy: {
+        levels: skipHierarchyLevels
+      },
       brickAtlasIndices,
       chunkMin,
       chunkMax,

@@ -28,15 +28,6 @@ function encodeUint32Values(values: Uint32Array): Uint8Array {
   return bytes;
 }
 
-function encodeFloat32Values(values: Float32Array): Uint8Array {
-  const bytes = new Uint8Array(values.length * 4);
-  const view = new DataView(bytes.buffer);
-  for (let index = 0; index < values.length; index += 1) {
-    view.setFloat32(index * 4, values[index] ?? 0, true);
-  }
-  return bytes;
-}
-
 function buildManifest(): PreprocessedManifest {
   return {
     format: PREPROCESSED_DATASET_FORMAT,
@@ -90,25 +81,31 @@ function buildManifest(): PreprocessedManifest {
                         chunkShape: [1, HISTOGRAM_BINS],
                         dataType: 'uint32'
                       },
-                      chunkStats: {
-                        min: {
-                          path: 'channels/channel-a/layer-a/scales/0/chunk-stats/min',
-                          shape: [1, 1, 1, 1],
-                          chunkShape: [1, 1, 1, 1],
-                          dataType: 'uint8'
-                        },
-                        max: {
-                          path: 'channels/channel-a/layer-a/scales/0/chunk-stats/max',
-                          shape: [1, 1, 1, 1],
-                          chunkShape: [1, 1, 1, 1],
-                          dataType: 'uint8'
-                        },
-                        occupancy: {
-                          path: 'channels/channel-a/layer-a/scales/0/chunk-stats/occupancy',
-                          shape: [1, 1, 1, 1],
-                          chunkShape: [1, 1, 1, 1],
-                          dataType: 'float32'
-                        }
+                      skipHierarchy: {
+                        levels: [
+                          {
+                            level: 0,
+                            gridShape: [1, 1, 1],
+                            min: {
+                              path: 'channels/channel-a/layer-a/scales/0/skip-hierarchy/levels/0/min',
+                              shape: [1, 1, 1, 1],
+                              chunkShape: [1, 1, 1, 1],
+                              dataType: 'uint8'
+                            },
+                            max: {
+                              path: 'channels/channel-a/layer-a/scales/0/skip-hierarchy/levels/0/max',
+                              shape: [1, 1, 1, 1],
+                              chunkShape: [1, 1, 1, 1],
+                              dataType: 'uint8'
+                            },
+                            occupancy: {
+                              path: 'channels/channel-a/layer-a/scales/0/skip-hierarchy/levels/0/occupancy',
+                              shape: [1, 1, 1, 1],
+                              chunkShape: [1, 1, 1, 1],
+                              dataType: 'uint8'
+                            }
+                          }
+                        ]
                       }
                     }
                   },
@@ -138,25 +135,31 @@ function buildManifest(): PreprocessedManifest {
                         chunkShape: [1, HISTOGRAM_BINS],
                         dataType: 'uint32'
                       },
-                      chunkStats: {
-                        min: {
-                          path: 'channels/channel-a/layer-a/scales/1/chunk-stats/min',
-                          shape: [1, 1, 1, 1],
-                          chunkShape: [1, 1, 1, 1],
-                          dataType: 'uint8'
-                        },
-                        max: {
-                          path: 'channels/channel-a/layer-a/scales/1/chunk-stats/max',
-                          shape: [1, 1, 1, 1],
-                          chunkShape: [1, 1, 1, 1],
-                          dataType: 'uint8'
-                        },
-                        occupancy: {
-                          path: 'channels/channel-a/layer-a/scales/1/chunk-stats/occupancy',
-                          shape: [1, 1, 1, 1],
-                          chunkShape: [1, 1, 1, 1],
-                          dataType: 'float32'
-                        }
+                      skipHierarchy: {
+                        levels: [
+                          {
+                            level: 0,
+                            gridShape: [1, 1, 1],
+                            min: {
+                              path: 'channels/channel-a/layer-a/scales/1/skip-hierarchy/levels/0/min',
+                              shape: [1, 1, 1, 1],
+                              chunkShape: [1, 1, 1, 1],
+                              dataType: 'uint8'
+                            },
+                            max: {
+                              path: 'channels/channel-a/layer-a/scales/1/skip-hierarchy/levels/0/max',
+                              shape: [1, 1, 1, 1],
+                              chunkShape: [1, 1, 1, 1],
+                              dataType: 'uint8'
+                            },
+                            occupancy: {
+                              path: 'channels/channel-a/layer-a/scales/1/skip-hierarchy/levels/0/occupancy',
+                              shape: [1, 1, 1, 1],
+                              chunkShape: [1, 1, 1, 1],
+                              dataType: 'uint8'
+                            }
+                          }
+                        ]
                       }
                     }
                   }
@@ -221,28 +224,28 @@ async function writeScalePayloads(manifest: PreprocessedManifest, storage: Retur
     encodeUint32ArrayLE(scale1Histogram)
   );
   await storage.writeFile(
-    `${scale0.zarr.chunkStats.min.path}/${createZarrChunkKeyFromCoords([0, 0, 0, 0])}`,
+    `${scale0.zarr.skipHierarchy.levels[0]!.min.path}/${createZarrChunkKeyFromCoords([0, 0, 0, 0])}`,
     new Uint8Array([8])
   );
   await storage.writeFile(
-    `${scale0.zarr.chunkStats.max.path}/${createZarrChunkKeyFromCoords([0, 0, 0, 0])}`,
+    `${scale0.zarr.skipHierarchy.levels[0]!.max.path}/${createZarrChunkKeyFromCoords([0, 0, 0, 0])}`,
     new Uint8Array([240])
   );
   await storage.writeFile(
-    `${scale0.zarr.chunkStats.occupancy.path}/${createZarrChunkKeyFromCoords([0, 0, 0, 0])}`,
-    encodeFloat32Values(new Float32Array([0.5]))
+    `${scale0.zarr.skipHierarchy.levels[0]!.occupancy.path}/${createZarrChunkKeyFromCoords([0, 0, 0, 0])}`,
+    new Uint8Array([255])
   );
   await storage.writeFile(
-    `${scale1.zarr.chunkStats.min.path}/${createZarrChunkKeyFromCoords([0, 0, 0, 0])}`,
+    `${scale1.zarr.skipHierarchy.levels[0]!.min.path}/${createZarrChunkKeyFromCoords([0, 0, 0, 0])}`,
     new Uint8Array([240])
   );
   await storage.writeFile(
-    `${scale1.zarr.chunkStats.max.path}/${createZarrChunkKeyFromCoords([0, 0, 0, 0])}`,
+    `${scale1.zarr.skipHierarchy.levels[0]!.max.path}/${createZarrChunkKeyFromCoords([0, 0, 0, 0])}`,
     new Uint8Array([240])
   );
   await storage.writeFile(
-    `${scale1.zarr.chunkStats.occupancy.path}/${createZarrChunkKeyFromCoords([0, 0, 0, 0])}`,
-    encodeFloat32Values(new Float32Array([1]))
+    `${scale1.zarr.skipHierarchy.levels[0]!.occupancy.path}/${createZarrChunkKeyFromCoords([0, 0, 0, 0])}`,
+    new Uint8Array([255])
   );
 
   return {

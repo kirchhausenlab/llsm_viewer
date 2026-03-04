@@ -9,6 +9,25 @@
 - Viewer, route, VR, and preprocessing hotspots have been decomposed into smaller modules to reduce coupling.
 
 ## Most recent high-signal updates
+- Created a dedicated multi-session hard-cutover implementation dossier for hierarchical empty-space skipping:
+  - `docs/hierarchical-empty-space-skipping/README.md`
+  - `docs/hierarchical-empty-space-skipping/DECISIONS.md`
+  - `docs/hierarchical-empty-space-skipping/IMPLEMENTATION_SPEC.md`
+  - `docs/hierarchical-empty-space-skipping/TRAVERSAL_ALGORITHM.md`
+  - `docs/hierarchical-empty-space-skipping/CUTOVER_CHECKLIST.md`
+  - `docs/hierarchical-empty-space-skipping/ROADMAP.md`
+  - `docs/hierarchical-empty-space-skipping/BACKLOG.md`
+  - `docs/hierarchical-empty-space-skipping/TEST_PLAN.md`
+  - `docs/hierarchical-empty-space-skipping/BENCHMARK_MATRIX.md`
+  - `docs/hierarchical-empty-space-skipping/RISK_REGISTER.md`
+  - `docs/hierarchical-empty-space-skipping/SESSION_HANDOFF.md`
+  - `docs/hierarchical-empty-space-skipping/EXECUTION_LOG.md`
+  - `docs/hierarchical-empty-space-skipping/SESSION_PROMPT.md`
+  - scope is locked to:
+    - no fallback to no-skip runtime behavior
+    - no backward compatibility with old preprocessed format/schema
+    - correctness across `MIP` / `ISO` / `BL`
+    - no Rust/WebGPU migration in this implementation track
 - Completed the native-resolution LOD0 implementation program end-to-end (`docs/lod0-native-resolution/`):
   - all backlog IDs `LOD0-001` through `LOD0-072` are marked `DONE`
   - all roadmap phases are `COMPLETE`

@@ -19,6 +19,7 @@ import type {
   VrHoverState,
 } from './vr/types';
 import type { UseVolumeViewerVrParams, UseVolumeViewerVrResult } from './useVolumeViewerVr';
+import { createVolumeHelpers } from './useVolumeViewerVr/helpers/volume';
 
 export type VolumeViewerVrBridgeOptions = {
   vr: VolumeViewerVrProps | undefined;
@@ -134,6 +135,73 @@ export function useVolumeViewerVrBridge(options: VolumeViewerVrBridgeOptions) {
   } = options;
 
   const [vrIntegration, setVrIntegration] = useState<UseVolumeViewerVrResult | null>(null);
+  const fallbackHandleLocalPointRef = useMemo(() => createMutableRef(new THREE.Vector3()), []);
+  const fallbackHudYawEulerRef = useMemo(
+    () => createMutableRef(new THREE.Euler(0, 0, 0, 'YXZ')),
+    [],
+  );
+  const fallbackHandleQuaternionTempRef = useMemo(
+    () => createMutableRef(new THREE.Quaternion()),
+    [],
+  );
+  const fallbackTranslationHandleRef = useMemo(() => createMutableRef<THREE.Mesh | null>(null), []);
+  const fallbackVolumeScaleHandleRef = useMemo(() => createMutableRef<THREE.Mesh | null>(null), []);
+  const fallbackVolumeYawHandlesRef = useMemo(() => createMutableRef<THREE.Mesh[]>([]), []);
+  const fallbackVolumePitchHandleRef = useMemo(() => createMutableRef<THREE.Mesh | null>(null), []);
+
+  const desktopVolumeHelpers = useMemo(
+    () =>
+      createVolumeHelpers({
+        rendererRef,
+        volumeRootGroupRef,
+        currentDimensionsRef,
+        hasActive3DLayerRef,
+        volumeUserScaleRef,
+        volumeRootCenterUnscaledRef,
+        volumeRootHalfExtentsRef,
+        vrHandleLocalPointRef: fallbackHandleLocalPointRef,
+        vrTranslationHandleRef: fallbackTranslationHandleRef,
+        vrVolumeScaleHandleRef: fallbackVolumeScaleHandleRef,
+        vrVolumeYawHandlesRef: fallbackVolumeYawHandlesRef,
+        vrVolumePitchHandleRef: fallbackVolumePitchHandleRef,
+        volumeRootBaseOffsetRef,
+        volumeRootCenterOffsetRef,
+        volumeRootRotatedCenterTempRef,
+        volumeYawRef,
+        volumePitchRef,
+        vrHudYawEulerRef: fallbackHudYawEulerRef,
+        vrHandleQuaternionTempRef: fallbackHandleQuaternionTempRef,
+        volumeNormalizationScaleRef,
+        volumeAnisotropyScaleRef,
+        volumeStepScaleRef,
+        resourcesRef,
+      }),
+    [
+      rendererRef,
+      volumeRootGroupRef,
+      currentDimensionsRef,
+      hasActive3DLayerRef,
+      volumeUserScaleRef,
+      volumeRootCenterUnscaledRef,
+      volumeRootHalfExtentsRef,
+      fallbackHandleLocalPointRef,
+      fallbackTranslationHandleRef,
+      fallbackVolumeScaleHandleRef,
+      fallbackVolumeYawHandlesRef,
+      fallbackVolumePitchHandleRef,
+      volumeRootBaseOffsetRef,
+      volumeRootCenterOffsetRef,
+      volumeRootRotatedCenterTempRef,
+      volumeYawRef,
+      volumePitchRef,
+      fallbackHudYawEulerRef,
+      fallbackHandleQuaternionTempRef,
+      volumeNormalizationScaleRef,
+      volumeAnisotropyScaleRef,
+      volumeStepScaleRef,
+      resourcesRef,
+    ],
+  );
 
   useEffect(() => {
     if (!vr) {
@@ -262,10 +330,10 @@ export function useVolumeViewerVrBridge(options: VolumeViewerVrBridgeOptions) {
       vrPlaybackHudPlacementRef: createMutableRef(null),
       vrChannelsHudPlacementRef: createMutableRef(null),
       vrTracksHudPlacementRef: createMutableRef(null),
-      vrTranslationHandleRef: createMutableRef(null),
-      vrVolumeScaleHandleRef: createMutableRef(null),
-      vrVolumeYawHandlesRef: createMutableRef<THREE.Mesh[]>([]),
-      vrVolumePitchHandleRef: createMutableRef(null),
+      vrTranslationHandleRef: fallbackTranslationHandleRef,
+      vrVolumeScaleHandleRef: fallbackVolumeScaleHandleRef,
+      vrVolumeYawHandlesRef: fallbackVolumeYawHandlesRef,
+      vrVolumePitchHandleRef: fallbackVolumePitchHandleRef,
       playbackStateRef: createMutableRef<PlaybackState>({
         isPlaying: false,
         playbackDisabled: false,
@@ -304,19 +372,25 @@ export function useVolumeViewerVrBridge(options: VolumeViewerVrBridgeOptions) {
       createVrTracksHud: () => null,
       updateVrChannelsHud: () => {},
       updateVrTracksHud: () => {},
-      updateVolumeHandles: () => {},
+      updateVolumeHandles: desktopVolumeHelpers.updateVolumeHandles,
       updateHudGroupFromPlacement: () => {},
       resetVrPlaybackHudPlacement: () => {},
       resetVrChannelsHudPlacement: () => {},
       resetVrTracksHudPlacement: () => {},
-      applyVolumeRootTransform: () => {},
-      applyVolumeStepScaleToResources: () => {},
+      applyVolumeRootTransform: desktopVolumeHelpers.applyVolumeRootTransform,
+      applyVolumeStepScaleToResources: desktopVolumeHelpers.applyVolumeStepScaleToResources,
       restoreVrFoveation: () => {},
       onRendererInitialized: () => {},
       endVrSessionRequestRef: createMutableRef<(() => Promise<void> | void) | null>(null),
       updateControllerRays: () => {},
     };
-  }, []);
+  }, [
+    fallbackTranslationHandleRef,
+    fallbackVolumeScaleHandleRef,
+    fallbackVolumeYawHandlesRef,
+    fallbackVolumePitchHandleRef,
+    desktopVolumeHelpers,
+  ]);
 
   const vrApi = vrIntegration ?? vrFallback;
 

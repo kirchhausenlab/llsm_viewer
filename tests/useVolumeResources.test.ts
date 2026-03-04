@@ -30,18 +30,205 @@ const createFakeResource = (): VolumeResources => {
   };
 };
 
+type PageTableWithoutHierarchy = Omit<VolumeBrickPageTable, 'skipHierarchy'> & {
+  skipHierarchy?: VolumeBrickPageTable['skipHierarchy'];
+};
+
+type HierarchyLevelBuffers = {
+  gridShape: [number, number, number];
+  min: Uint8Array;
+  max: Uint8Array;
+  occupancy: Uint8Array;
+};
+
+function reduceHierarchyLevel(child: HierarchyLevelBuffers): HierarchyLevelBuffers {
+  const [childZ, childY, childX] = child.gridShape;
+  const parentGridShape: [number, number, number] = [
+    Math.max(1, Math.ceil(childZ / 2)),
+    Math.max(1, Math.ceil(childY / 2)),
+    Math.max(1, Math.ceil(childX / 2)),
+  ];
+  const [parentZ, parentY, parentX] = parentGridShape;
+  const parentCount = parentZ * parentY * parentX;
+  const parentMin = new Uint8Array(parentCount);
+  const parentMax = new Uint8Array(parentCount);
+  const parentOccupancy = new Uint8Array(parentCount);
+  const childPlane = childY * childX;
+  const parentPlane = parentY * parentX;
+
+  for (let z = 0; z < parentZ; z += 1) {
+    for (let y = 0; y < parentY; y += 1) {
+      for (let x = 0; x < parentX; x += 1) {
+        const parentIndex = z * parentPlane + y * parentX + x;
+        const childZStart = z * 2;
+        const childYStart = y * 2;
+        const childXStart = x * 2;
+        let occupied = false;
+        let localMin = 255;
+        let localMax = 0;
+
+        for (let localZ = 0; localZ < 2; localZ += 1) {
+          const sourceZ = childZStart + localZ;
+          if (sourceZ >= childZ) {
+            continue;
+          }
+          for (let localY = 0; localY < 2; localY += 1) {
+            const sourceY = childYStart + localY;
+            if (sourceY >= childY) {
+              continue;
+            }
+            for (let localX = 0; localX < 2; localX += 1) {
+              const sourceX = childXStart + localX;
+              if (sourceX >= childX) {
+                continue;
+              }
+              const childIndex = sourceZ * childPlane + sourceY * childX + sourceX;
+              if ((child.occupancy[childIndex] ?? 0) === 0) {
+                continue;
+              }
+              occupied = true;
+              const childMin = child.min[childIndex] ?? 0;
+              const childMax = child.max[childIndex] ?? 0;
+              if (childMin < localMin) {
+                localMin = childMin;
+              }
+              if (childMax > localMax) {
+                localMax = childMax;
+              }
+            }
+          }
+        }
+
+        if (!occupied) {
+          parentOccupancy[parentIndex] = 0;
+          parentMin[parentIndex] = 0;
+          parentMax[parentIndex] = 0;
+          continue;
+        }
+
+        parentOccupancy[parentIndex] = 255;
+        parentMin[parentIndex] = localMin;
+        parentMax[parentIndex] = localMax;
+      }
+    }
+  }
+
+  return {
+    gridShape: parentGridShape,
+    min: parentMin,
+    max: parentMax,
+    occupancy: parentOccupancy,
+  };
+}
+
+function withSyntheticSkipHierarchy(pageTable: PageTableWithoutHierarchy): VolumeBrickPageTable {
+  if (pageTable.skipHierarchy?.levels?.length) {
+    return pageTable as VolumeBrickPageTable;
+  }
+  const [gridZ, gridY, gridX] = pageTable.gridShape;
+  const leafCount = gridZ * gridY * gridX;
+  const leafMin = new Uint8Array(leafCount);
+  const leafMax = new Uint8Array(leafCount);
+  const leafOccupancy = new Uint8Array(leafCount);
+  for (let index = 0; index < leafCount; index += 1) {
+    leafMin[index] = pageTable.chunkMin[index] ?? 0;
+    leafMax[index] = pageTable.chunkMax[index] ?? 0;
+    leafOccupancy[index] = (pageTable.chunkOccupancy[index] ?? 0) > 0 ? 255 : 0;
+  }
+
+  const levels: VolumeBrickPageTable['skipHierarchy']['levels'] = [];
+  let level = 0;
+  let current: HierarchyLevelBuffers = {
+    gridShape: [gridZ, gridY, gridX],
+    min: leafMin,
+    max: leafMax,
+    occupancy: leafOccupancy,
+  };
+  while (true) {
+    levels.push({
+      level,
+      gridShape: current.gridShape,
+      min: current.min,
+      max: current.max,
+      occupancy: current.occupancy,
+    });
+    if (current.gridShape[0] === 1 && current.gridShape[1] === 1 && current.gridShape[2] === 1) {
+      break;
+    }
+    current = reduceHierarchyLevel(current);
+    level += 1;
+  }
+
+  return {
+    ...pageTable,
+    skipHierarchy: { levels },
+  };
+}
+
+function createSyntheticPageTableFromVolume(volume: NormalizedVolume): VolumeBrickPageTable {
+  let min = 255;
+  let max = 0;
+  let occupied = 0;
+  const normalized = volume.normalized;
+  for (let index = 0; index < normalized.length; index += 1) {
+    const value = normalized[index] ?? 0;
+    if (value < min) {
+      min = value;
+    }
+    if (value > max) {
+      max = value;
+    }
+    if (value > 0) {
+      occupied += 1;
+    }
+  }
+  if (normalized.length === 0) {
+    min = 0;
+    max = 0;
+  }
+
+  return withSyntheticSkipHierarchy({
+    layerKey: 'layer-3d',
+    timepoint: 0,
+    scaleLevel: 0,
+    gridShape: [1, 1, 1],
+    chunkShape: [Math.max(1, volume.depth), Math.max(1, volume.height), Math.max(1, volume.width)],
+    volumeShape: [Math.max(1, volume.depth), Math.max(1, volume.height), Math.max(1, volume.width)],
+    brickAtlasIndices: new Int32Array([0]),
+    chunkMin: new Uint8Array([min]),
+    chunkMax: new Uint8Array([max]),
+    chunkOccupancy: new Float32Array([occupied > 0 ? 1 : 0]),
+    occupiedBrickCount: occupied > 0 ? 1 : 0,
+  });
+}
+
 const createLayer = (
   volume: NormalizedVolume | null,
   brickPageTable: VolumeBrickPageTable | null,
   brickAtlas: VolumeBrickAtlas | null = null,
   samplingMode: 'linear' | 'nearest' = 'linear',
-): ViewerLayer => ({
+): ViewerLayer => {
+  const resolvedPageTable = brickPageTable
+    ? withSyntheticSkipHierarchy(brickPageTable as unknown as PageTableWithoutHierarchy)
+    : brickAtlas?.pageTable
+      ? withSyntheticSkipHierarchy(brickAtlas.pageTable as unknown as PageTableWithoutHierarchy)
+      : volume
+        ? createSyntheticPageTableFromVolume(volume)
+        : null;
+  const resolvedBrickAtlas = brickAtlas
+    ? {
+        ...brickAtlas,
+        pageTable: resolvedPageTable ?? brickAtlas.pageTable,
+      }
+    : null;
+
+  return {
   key: 'layer-3d',
   label: 'Layer 3D',
   channelName: 'channel-a',
-  fullResolutionWidth: volume?.width ?? brickPageTable?.volumeShape[2] ?? brickAtlas?.pageTable.volumeShape[2] ?? 1,
-  fullResolutionHeight: volume?.height ?? brickPageTable?.volumeShape[1] ?? brickAtlas?.pageTable.volumeShape[1] ?? 1,
-  fullResolutionDepth: volume?.depth ?? brickPageTable?.volumeShape[0] ?? brickAtlas?.pageTable.volumeShape[0] ?? 1,
+  fullResolutionWidth: volume?.width ?? resolvedPageTable?.volumeShape[2] ?? resolvedBrickAtlas?.pageTable.volumeShape[2] ?? 1,
+  fullResolutionHeight: volume?.height ?? resolvedPageTable?.volumeShape[1] ?? resolvedBrickAtlas?.pageTable.volumeShape[1] ?? 1,
+  fullResolutionDepth: volume?.depth ?? resolvedPageTable?.volumeShape[0] ?? resolvedBrickAtlas?.pageTable.volumeShape[0] ?? 1,
   volume,
   visible: true,
   sliderRange: 100,
@@ -62,9 +249,10 @@ const createLayer = (
   invert: false,
   samplingMode,
   mode: '3d',
-  brickPageTable,
-  brickAtlas,
-});
+  brickPageTable: resolvedPageTable,
+  brickAtlas: resolvedBrickAtlas,
+  };
+};
 
 (() => {
   const resourcesRef = { current: new Map<string, VolumeResources>([['resource', createFakeResource()]]) };
@@ -418,10 +606,10 @@ const createLayer = (
     string,
     { value: unknown }
   >;
-  assert.equal(firstUniforms.u_brickSkipEnabled?.value, 0);
+  assert.equal(firstUniforms.u_brickSkipEnabled?.value, 1);
   assert.deepEqual(firstResource.brickSkipDiagnostics, {
-    enabled: false,
-    reason: 'occupancy-metadata-mismatch',
+    enabled: true,
+    reason: 'enabled',
     totalBricks: 4,
     emptyBricks: 2,
     occupiedBricks: 2,
@@ -447,7 +635,7 @@ const createLayer = (
   assert.equal(firstUniforms.u_brickAtlasEnabled?.value, 1);
   assert.ok(firstResource.brickAtlasDataTexture);
   assert.equal(firstResource.brickAtlasBuildVersion, 1);
-  assert.strictEqual(firstResource.brickMetadataSourcePageTable, pageTable);
+  assert.strictEqual(firstResource.brickMetadataSourcePageTable, layers[0]?.brickPageTable);
   const atlasTextureShape = firstResource.brickAtlasDataTexture?.image as
     | { width: number; height: number; depth: number }
     | undefined;
@@ -486,8 +674,8 @@ const createLayer = (
   )?.data;
   assert.deepEqual(Array.from(updatedAtlasData ?? []), [1, 2, 0, 0]);
   assert.deepEqual(updatedResource.brickSkipDiagnostics, {
-    enabled: false,
-    reason: 'occupied-bricks-missing-from-atlas',
+    enabled: true,
+    reason: 'enabled',
     totalBricks: 4,
     emptyBricks: 2,
     occupiedBricks: 2,
@@ -496,7 +684,7 @@ const createLayer = (
     occupancyMetadataMismatchBricks: 2
   });
   assert.ok((updatedResource.brickAtlasBuildVersion ?? 0) >= 1);
-  assert.strictEqual(updatedResource.brickMetadataSourcePageTable, updatedPageTable);
+  assert.strictEqual(updatedResource.brickMetadataSourcePageTable, layers[0]?.brickPageTable);
 
   const invalidPageTable: VolumeBrickPageTable = {
     ...pageTable,
@@ -505,72 +693,7 @@ const createLayer = (
     chunkOccupancy: new Float32Array([1, 0, 0]),
   };
   layers = [createLayer(volume, invalidPageTable, null, 'nearest')];
-  hook.rerender();
-
-  const invalidResource = resourcesRef.current.get('layer-3d');
-  assert.ok(invalidResource);
-  const invalidUniforms = (invalidResource.mesh.material as THREE.ShaderMaterial).uniforms as Record<
-    string,
-    { value: unknown }
-  >;
-  assert.equal(invalidUniforms.u_brickSkipEnabled?.value, 0);
-  assert.strictEqual(invalidUniforms.u_brickOccupancy?.value, FALLBACK_BRICK_OCCUPANCY_TEXTURE);
-  assert.strictEqual(invalidUniforms.u_brickMin?.value, FALLBACK_BRICK_MIN_TEXTURE);
-  assert.strictEqual(invalidUniforms.u_brickMax?.value, FALLBACK_BRICK_MAX_TEXTURE);
-  assert.strictEqual(invalidUniforms.u_brickAtlasIndices?.value, FALLBACK_BRICK_ATLAS_INDEX_TEXTURE);
-  assert.equal(invalidUniforms.u_brickAtlasEnabled?.value, 0);
-  assert.strictEqual(invalidUniforms.u_brickAtlasData?.value, FALLBACK_BRICK_ATLAS_DATA_TEXTURE);
-  assert.equal(invalidResource.brickOccupancyTexture, null);
-  assert.equal(invalidResource.brickMinTexture, null);
-  assert.equal(invalidResource.brickMaxTexture, null);
-  assert.equal(invalidResource.brickAtlasIndexTexture, null);
-  assert.equal(invalidResource.brickAtlasDataTexture, null);
-  assert.equal(invalidResource.brickAtlasBuildVersion, 0);
-  assert.equal(invalidResource.brickMetadataSourcePageTable, null);
-  assert.deepEqual(invalidResource.brickSkipDiagnostics, {
-    enabled: false,
-    reason: 'invalid-page-table',
-    totalBricks: 4,
-    emptyBricks: 0,
-    occupiedBricks: 0,
-    occupiedBricksMissingFromAtlas: 0,
-    invalidRangeBricks: 0,
-    occupancyMetadataMismatchBricks: 0
-  });
-
-  layers = [createLayer(volume, null, null, 'nearest')];
-  hook.rerender();
-
-  const secondResource = resourcesRef.current.get('layer-3d');
-  assert.ok(secondResource);
-  const secondUniforms = (secondResource.mesh.material as THREE.ShaderMaterial).uniforms as Record<
-    string,
-    { value: unknown }
-  >;
-  assert.equal(secondUniforms.u_brickSkipEnabled?.value, 0);
-  assert.strictEqual(secondUniforms.u_brickOccupancy?.value, FALLBACK_BRICK_OCCUPANCY_TEXTURE);
-  assert.strictEqual(secondUniforms.u_brickMin?.value, FALLBACK_BRICK_MIN_TEXTURE);
-  assert.strictEqual(secondUniforms.u_brickMax?.value, FALLBACK_BRICK_MAX_TEXTURE);
-  assert.strictEqual(secondUniforms.u_brickAtlasIndices?.value, FALLBACK_BRICK_ATLAS_INDEX_TEXTURE);
-  assert.equal(secondUniforms.u_brickAtlasEnabled?.value, 0);
-  assert.strictEqual(secondUniforms.u_brickAtlasData?.value, FALLBACK_BRICK_ATLAS_DATA_TEXTURE);
-  assert.equal(secondResource.brickOccupancyTexture, null);
-  assert.equal(secondResource.brickMinTexture, null);
-  assert.equal(secondResource.brickMaxTexture, null);
-  assert.equal(secondResource.brickAtlasIndexTexture, null);
-  assert.equal(secondResource.brickAtlasDataTexture, null);
-  assert.equal(secondResource.brickAtlasBuildVersion, 0);
-  assert.equal(secondResource.brickMetadataSourcePageTable, null);
-  assert.deepEqual(secondResource.brickSkipDiagnostics, {
-    enabled: false,
-    reason: 'missing-page-table',
-    totalBricks: 0,
-    emptyBricks: 0,
-    occupiedBricks: 0,
-    occupiedBricksMissingFromAtlas: 0,
-    invalidRangeBricks: 0,
-    occupancyMetadataMismatchBricks: 0
-  });
+  assert.throws(() => hook.rerender(), /hard-cutover violation: invalid-page-table/);
 })();
 
 (() => {
@@ -651,7 +774,7 @@ const createLayer = (
   const initialAtlasBuildVersion = resource.brickAtlasBuildVersion ?? 0;
   const initialMetadataSourcePageTable = resource.brickMetadataSourcePageTable;
   assert.ok(initialAtlasBuildVersion >= 1);
-  assert.strictEqual(initialMetadataSourcePageTable, pageTable);
+  assert.strictEqual(initialMetadataSourcePageTable, baseLayer.brickPageTable);
   assert.equal(resource.brickAtlasDataTexture?.format, THREE.RGFormat);
   const atlasImage = resource.brickAtlasDataTexture?.image as
     | { width: number; height: number; depth: number; data: Uint8Array }
@@ -663,10 +786,10 @@ const createLayer = (
     string,
     { value: unknown }
   >;
-  assert.equal(uniforms.u_brickSkipEnabled?.value, 0);
+  assert.equal(uniforms.u_brickSkipEnabled?.value, 1);
   assert.deepEqual(resource.brickSkipDiagnostics, {
-    enabled: false,
-    reason: 'disabled-by-config',
+    enabled: true,
+    reason: 'enabled',
     totalBricks: 2,
     emptyBricks: 0,
     occupiedBricks: 2,
@@ -700,7 +823,7 @@ const createLayer = (
   assert.ok(updated.brickAtlasDataTexture);
   assert.ok((updated.brickAtlasBuildVersion ?? 0) >= initialAtlasBuildVersion);
   assert.strictEqual(updated.brickAtlasSourceToken, volume.normalized);
-  assert.strictEqual(updated.brickAtlasSourcePageTable, pageTable);
+  assert.strictEqual(updated.brickAtlasSourcePageTable, baseLayer.brickPageTable);
   assert.strictEqual(updated.brickMetadataSourcePageTable, initialMetadataSourcePageTable);
   assert.equal(updated.brickAtlasDataTexture?.format, THREE.RGFormat);
 })();
@@ -1019,17 +1142,18 @@ const createLayer = (
   const resource = resourcesRef.current.get('layer-3d');
   assert.ok(resource);
   assert.ok(resource.gpuBrickResidencyMetrics);
-  assert.equal(resource.gpuBrickResidencyMetrics?.residentBricks, 2);
+  assert.equal(resource.gpuBrickResidencyMetrics?.residentBricks, 4);
   const atlasImage = resource.brickAtlasDataTexture?.image as
     | { width: number; height: number; depth: number }
     | undefined;
-  assert.deepEqual([atlasImage?.width ?? 0, atlasImage?.height ?? 0, atlasImage?.depth ?? 0], [1, 1, 2]);
+  assert.deepEqual([atlasImage?.width ?? 0, atlasImage?.height ?? 0, atlasImage?.depth ?? 0], [2, 2, 1]);
   const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms as Record<
     string,
     { value: unknown }
   >;
   assert.equal(uniforms.u_brickAtlasEnabled?.value, 1);
-  assert.deepEqual((uniforms.u_brickAtlasSize?.value as THREE.Vector3).toArray(), [1, 1, 2]);
+  assert.deepEqual((uniforms.u_brickAtlasSize?.value as THREE.Vector3).toArray(), [2, 2, 1]);
+  assert.deepEqual((uniforms.u_brickAtlasSlotGrid?.value as THREE.Vector3).toArray(), [2, 2, 1]);
 })();
 
 (() => {
@@ -1118,28 +1242,31 @@ const createLayer = (
     const initial = resourcesRef.current.get('layer-3d');
     assert.ok(initial);
     assert.ok(initial.gpuBrickResidencyMetrics);
-    assert.equal(initial.gpuBrickResidencyMetrics?.budgetBytes, 2);
-    assert.equal(initial.gpuBrickResidencyMetrics?.residentBricks, 1);
+    assert.equal(initial.gpuBrickResidencyMetrics?.budgetBytes, 4);
+    assert.equal(initial.gpuBrickResidencyMetrics?.residentBricks, 2);
     assert.equal(initial.gpuBrickResidencyMetrics?.totalBricks, 2);
-    assert.ok((initial.gpuBrickResidencyMetrics?.scheduledUploads ?? 0) <= 1);
+    assert.ok((initial.gpuBrickResidencyMetrics?.scheduledUploads ?? 0) <= 2);
     assert.equal(initial.gpuBrickResidencyMetrics?.prioritizedBricks, 2);
-    assert.ok((initial.gpuBrickResidencyMetrics?.residentBytes ?? 0) <= 2);
+    assert.equal(initial.gpuBrickResidencyMetrics?.residentBytes, 4);
     const initialIndexData = (
       initial.brickAtlasIndexTexture?.image as { data: Float32Array } | undefined
     )?.data;
     const initialIndices = Array.from(initialIndexData ?? []);
-    assert.equal(initialIndices.filter((value) => value > 0).length, 1);
+    assert.equal(initialIndices.filter((value) => value > 0).length, 2);
     const initialAtlasImage = initial.brickAtlasDataTexture?.image as
       | { width: number; height: number; depth: number; data: Uint8Array }
       | undefined;
     assert.deepEqual(
       [initialAtlasImage?.width ?? 0, initialAtlasImage?.height ?? 0, initialAtlasImage?.depth ?? 0],
-      [2, 1, 1]
+      [2, 1, 2]
     );
     const initialAtlasPayload = Array.from(initialAtlasImage?.data ?? []);
-    const initialPayloadMatchesFirst = initialAtlasPayload[0] === 11 && initialAtlasPayload[1] === 12;
-    const initialPayloadMatchesSecond = initialAtlasPayload[0] === 21 && initialAtlasPayload[1] === 22;
-    assert.ok(initialPayloadMatchesFirst || initialPayloadMatchesSecond);
+    const firstSlotPair = initialAtlasPayload.slice(0, 2);
+    const secondSlotPair = initialAtlasPayload.slice(2, 4);
+    const validPairs = new Set(['11,12', '21,22']);
+    assert.ok(validPairs.has(firstSlotPair.join(',')));
+    assert.ok(validPairs.has(secondSlotPair.join(',')));
+    assert.notEqual(firstSlotPair.join(','), secondSlotPair.join(','));
 
     const refreshResidency = initial.updateGpuBrickResidencyForCamera;
     assert.equal(typeof refreshResidency, 'function');
@@ -1169,25 +1296,21 @@ const createLayer = (
     const updated = resourcesRef.current.get('layer-3d');
     assert.ok(updated);
     assert.ok(updated.gpuBrickResidencyMetrics);
-    assert.equal(updated.gpuBrickResidencyMetrics?.residentBricks, 1);
+    assert.equal(updated.gpuBrickResidencyMetrics?.residentBricks, 2);
     assert.equal(updated.gpuBrickResidencyMetrics?.totalBricks, 2);
-    assert.ok((updated.gpuBrickResidencyMetrics?.uploads ?? 0) >= 2);
-    assert.ok((updated.gpuBrickResidencyMetrics?.evictions ?? 0) >= 1);
+    assert.equal(updated.gpuBrickResidencyMetrics?.uploads, initialUploads);
+    assert.equal(updated.gpuBrickResidencyMetrics?.evictions, initialEvictions);
     const updatedIndexData = (
       updated.brickAtlasIndexTexture?.image as { data: Float32Array } | undefined
     )?.data;
     const updatedIndices = Array.from(updatedIndexData ?? []);
-    assert.equal(updatedIndices.filter((value) => value > 0).length, 1);
-    assert.notDeepEqual(updatedIndices, initialIndices);
+    assert.equal(updatedIndices.filter((value) => value > 0).length, 2);
+    assert.deepEqual(updatedIndices, initialIndices);
     const updatedAtlasImage = updated.brickAtlasDataTexture?.image as
       | { width: number; height: number; depth: number; data: Uint8Array }
       | undefined;
     const updatedAtlasPayload = Array.from(updatedAtlasImage?.data ?? []);
-    if (initialPayloadMatchesFirst) {
-      assert.deepEqual(updatedAtlasPayload, [21, 22]);
-    } else {
-      assert.deepEqual(updatedAtlasPayload, [11, 12]);
-    }
+    assert.deepEqual(updatedAtlasPayload, initialAtlasPayload);
     hook.unmount();
   } finally {
     if (previousBudget === undefined) {
@@ -1418,6 +1541,110 @@ const createLayer = (
       13, 13, 13, 255,
       14, 14, 14, 255,
     ],
+  );
+})();
+
+(() => {
+  const stalePageTable: VolumeBrickPageTable = withSyntheticSkipHierarchy({
+    layerKey: 'layer-3d',
+    timepoint: 1,
+    scaleLevel: 0,
+    gridShape: [1, 1, 1],
+    chunkShape: [1, 1, 1],
+    volumeShape: [1, 1, 1],
+    brickAtlasIndices: new Int32Array([0]),
+    chunkMin: new Uint8Array([0]),
+    chunkMax: new Uint8Array([255]),
+    chunkOccupancy: new Float32Array([1]),
+    occupiedBrickCount: 1,
+  } satisfies PageTableWithoutHierarchy);
+  const atlasPageTable: VolumeBrickPageTable = withSyntheticSkipHierarchy({
+    layerKey: 'layer-3d',
+    timepoint: 2,
+    scaleLevel: 0,
+    gridShape: [1, 1, 1],
+    chunkShape: [1, 1, 1],
+    volumeShape: [2, 2, 2],
+    brickAtlasIndices: new Int32Array([0]),
+    chunkMin: new Uint8Array([0]),
+    chunkMax: new Uint8Array([255]),
+    chunkOccupancy: new Float32Array([1]),
+    occupiedBrickCount: 1,
+  } satisfies PageTableWithoutHierarchy);
+  const brickAtlas: VolumeBrickAtlas = {
+    layerKey: 'layer-3d',
+    timepoint: 2,
+    scaleLevel: 0,
+    pageTable: atlasPageTable,
+    width: 1,
+    height: 1,
+    depth: 1,
+    textureFormat: 'red',
+    sourceChannels: 1,
+    data: new Uint8Array([200]),
+    enabled: true,
+  };
+  const layer: ViewerLayer = {
+    ...createLayer(null, stalePageTable, null, 'linear'),
+    brickPageTable: stalePageTable,
+    brickAtlas,
+    fullResolutionWidth: 2,
+    fullResolutionHeight: 2,
+    fullResolutionDepth: 2,
+  };
+
+  const sceneRef = { current: new THREE.Scene() };
+  const cameraRef = { current: new THREE.PerspectiveCamera(75, 1, 0.1, 10) };
+  const controlsRef = {
+    current: {
+      target: new THREE.Vector3(),
+      update: () => {},
+      saveState: () => {},
+    } as unknown as THREE.OrbitControls,
+  };
+  const resourcesRef = { current: new Map<string, VolumeResources>() };
+
+  renderHook(() =>
+    useVolumeResources({
+      layers: [layer],
+      primaryVolume: null,
+      isAdditiveBlending: false,
+      renderContextRevision: 0,
+      sceneRef,
+      cameraRef,
+      controlsRef,
+      rotationTargetRef: { current: new THREE.Vector3() },
+      defaultViewStateRef: { current: null },
+      trackGroupRef: { current: new THREE.Group() },
+      resourcesRef,
+      currentDimensionsRef: { current: null },
+      colormapCacheRef: { current: new Map() },
+      volumeRootGroupRef: { current: new THREE.Group() },
+      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+      volumeNormalizationScaleRef: { current: 1 },
+      volumeUserScaleRef: { current: 1 },
+      volumeStepScaleRef: { current: 1 },
+      volumeYawRef: { current: 0 },
+      volumePitchRef: { current: 0 },
+      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+      applyTrackGroupTransform: () => {},
+      applyVolumeRootTransform: () => {},
+      applyVolumeStepScaleToResources: () => {},
+      applyHoverHighlightToResources: () => {},
+    }),
+  );
+
+  const resource = resourcesRef.current.get('layer-3d');
+  assert.ok(resource);
+  assert.strictEqual(resource.brickMetadataSourcePageTable, atlasPageTable);
+  assert.strictEqual(resource.brickAtlasSourcePageTable, atlasPageTable);
+  const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms as Record<string, { value: unknown }>;
+  assert.deepEqual(
+    (uniforms.u_brickVolumeSize?.value as THREE.Vector3).toArray(),
+    [atlasPageTable.volumeShape[2], atlasPageTable.volumeShape[1], atlasPageTable.volumeShape[0]]
   );
 })();
 

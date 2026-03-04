@@ -57,6 +57,20 @@ const normalizedFloat = normalizeVolume(floatVolume, { min: 0, max: 1 });
 assert.notStrictEqual(normalizedFloat.normalized.buffer, floats.buffer);
 assert.deepEqual(Array.from(normalizedFloat.normalized), [0, 0, 128, 255]);
 
+const constantFloat = new Float32Array([42, 42, 42, 42]);
+const constantFloatVolume: VolumePayload = {
+  width: 4,
+  height: 1,
+  depth: 1,
+  channels: 1,
+  dataType: 'float32',
+  data: constantFloat.buffer,
+  min: 42,
+  max: 42
+};
+const constantNormalization = normalizeVolume(constantFloatVolume, { min: 0, max: 42 });
+assert.deepEqual(Array.from(constantNormalization.normalized), [255, 255, 255, 255]);
+
 const segmentation = new Uint8Array([0, 1, 1, 2]);
 const segmentationVolume: VolumePayload = {
   width: 4,

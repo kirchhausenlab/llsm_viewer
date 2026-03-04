@@ -4,7 +4,7 @@ import type {
   PreprocessedLayerManifestEntry,
   PreprocessedLayerScaleManifestEntry,
   PreprocessedManifest,
-  PreprocessedScaleChunkStatsZarrDescriptor,
+  PreprocessedScaleSkipHierarchyZarrDescriptor,
   PreprocessedTrackSetManifestEntry,
   ZarrArrayDescriptor,
   ZarrArrayShardingPlan
@@ -227,38 +227,114 @@ function validateDescriptor({
   };
 }
 
-function validateChunkStatsDescriptors({
+function validateSkipHierarchyDescriptors({
   value,
   path,
-  expectedShape
+  layerVolumeCount,
+  expectedLeafGridShape
 }: {
   value: unknown;
   path: string;
-  expectedShape: readonly number[];
-}): PreprocessedScaleChunkStatsZarrDescriptor {
-  const chunkStats = expectRecord(value, path);
-  const min = validateDescriptor({
-    value: chunkStats.min,
-    path: `${path}.min`,
-    expectedRank: 4,
-    expectedDataType: 'uint8',
-    expectedShape
-  });
-  const max = validateDescriptor({
-    value: chunkStats.max,
-    path: `${path}.max`,
-    expectedRank: 4,
-    expectedDataType: 'uint8',
-    expectedShape
-  });
-  const occupancy = validateDescriptor({
-    value: chunkStats.occupancy,
-    path: `${path}.occupancy`,
-    expectedRank: 4,
-    expectedDataType: 'float32',
-    expectedShape
-  });
-  return { min, max, occupancy };
+  layerVolumeCount: number;
+  expectedLeafGridShape: readonly number[];
+}): PreprocessedScaleSkipHierarchyZarrDescriptor {
+  const skipHierarchy = expectRecord(value, path);
+  const levelsValue = expectArray(skipHierarchy.levels, `${path}.levels`);
+  if (levelsValue.length === 0) {
+    throw new Error(`Invalid manifest schema at ${path}.levels: expected at least one hierarchy level.`);
+  }
+
+  const levels: PreprocessedScaleSkipHierarchyZarrDescriptor['levels'] = [];
+  let previousLevel = -1;
+  let previousGridShape: [number, number, number] | null = null;
+
+  for (let index = 0; index < levelsValue.length; index += 1) {
+    const levelPath = `${path}.levels[${index}]`;
+    const levelEntry = expectRecord(levelsValue[index], levelPath);
+    const level = expectNonNegativeInteger(levelEntry.level, `${levelPath}.level`);
+    if (index === 0 && level !== 0) {
+      throw new Error(`Invalid manifest schema at ${levelPath}.level: first hierarchy level must be 0.`);
+    }
+    if (level <= previousLevel) {
+      throw new Error(`Invalid manifest schema at ${levelPath}.level: levels must be strictly increasing.`);
+    }
+    if (index > 0 && level !== previousLevel + 1) {
+      throw new Error(
+        `Invalid manifest schema at ${levelPath}.level: levels must be contiguous (expected ${previousLevel + 1}, got ${level}).`
+      );
+    }
+
+    const gridShape = expectIntegerTuple(levelEntry.gridShape, `${levelPath}.gridShape`, 3, {
+      positive: true
+    }) as [number, number, number];
+    const expectedGridShape: [number, number, number] = previousGridShape
+      ? [
+          Math.max(1, Math.ceil((previousGridShape[0] ?? 1) / 2)),
+          Math.max(1, Math.ceil((previousGridShape[1] ?? 1) / 2)),
+          Math.max(1, Math.ceil((previousGridShape[2] ?? 1) / 2))
+        ]
+      : [
+          expectedLeafGridShape[0] ?? 1,
+          expectedLeafGridShape[1] ?? 1,
+          expectedLeafGridShape[2] ?? 1
+        ];
+
+    if (
+      gridShape[0] !== expectedGridShape[0] ||
+      gridShape[1] !== expectedGridShape[1] ||
+      gridShape[2] !== expectedGridShape[2]
+    ) {
+      throw new Error(
+        `Invalid manifest schema at ${levelPath}.gridShape: expected ${expectedGridShape.join('x')}, got ${gridShape.join('x')}.`
+      );
+    }
+
+    const expectedShape = [layerVolumeCount, gridShape[0], gridShape[1], gridShape[2]];
+    const occupancy = validateDescriptor({
+      value: levelEntry.occupancy,
+      path: `${levelPath}.occupancy`,
+      expectedRank: 4,
+      expectedDataType: 'uint8',
+      expectedShape
+    });
+    const min = validateDescriptor({
+      value: levelEntry.min,
+      path: `${levelPath}.min`,
+      expectedRank: 4,
+      expectedDataType: 'uint8',
+      expectedShape
+    });
+    const max = validateDescriptor({
+      value: levelEntry.max,
+      path: `${levelPath}.max`,
+      expectedRank: 4,
+      expectedDataType: 'uint8',
+      expectedShape
+    });
+    levels.push({
+      level,
+      gridShape,
+      occupancy,
+      min,
+      max
+    });
+    previousLevel = level;
+    previousGridShape = gridShape;
+  }
+
+  const root = levels[levels.length - 1];
+  if (
+    !root ||
+    root.gridShape[0] !== 1 ||
+    root.gridShape[1] !== 1 ||
+    root.gridShape[2] !== 1
+  ) {
+    throw new Error(
+      `Invalid manifest schema at ${path}.levels: top hierarchy level must have gridShape [1,1,1].`
+    );
+  }
+
+  return { levels };
 }
 
 function validateScale({
@@ -310,16 +386,16 @@ function validateScale({
   const chunkDepth = data.chunkShape[1] ?? 1;
   const chunkHeight = data.chunkShape[2] ?? 1;
   const chunkWidth = data.chunkShape[3] ?? 1;
-  const expectedStatsShape = [
-    layerVolumeCount,
+  const expectedLeafGridShape = [
     Math.ceil(depth / chunkDepth),
     Math.ceil(height / chunkHeight),
     Math.ceil(width / chunkWidth)
   ];
-  const chunkStats = validateChunkStatsDescriptors({
-    value: zarr.chunkStats,
-    path: `${path}.zarr.chunkStats`,
-    expectedShape: expectedStatsShape
+  const skipHierarchy = validateSkipHierarchyDescriptors({
+    value: zarr.skipHierarchy,
+    path: `${path}.zarr.skipHierarchy`,
+    layerVolumeCount,
+    expectedLeafGridShape
   });
 
   const histogram = validateDescriptor({
@@ -358,7 +434,7 @@ function validateScale({
     zarr: {
       data,
       ...(labels ? { labels } : {}),
-      chunkStats,
+      skipHierarchy,
       histogram
     }
   };

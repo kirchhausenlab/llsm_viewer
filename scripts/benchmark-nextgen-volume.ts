@@ -92,6 +92,13 @@ type BenchmarkMatrixReport = {
   };
 };
 
+type HierarchyLevelBuffers = {
+  gridShape: [number, number, number];
+  min: Uint8Array;
+  max: Uint8Array;
+  occupancy: Uint8Array;
+};
+
 const DEFAULT_OUTPUT_PATH = 'docs/refactor-nextgen-volume/BASELINE_REPORT.json';
 const DEFAULT_MATRIX_CONFIG_PATH = 'docs/refactor-nextgen-volume/BENCHMARK_MATRIX.json';
 const DEFAULT_PROVIDER_MAX_CACHED_CHUNK_BYTES = 64 * 1024 * 1024;
@@ -234,6 +241,122 @@ function extractChunk({
   }
 
   return chunk;
+}
+
+function buildHierarchyGridShapes(leafGridShape: [number, number, number]): [number, number, number][] {
+  const levels: [number, number, number][] = [[...leafGridShape] as [number, number, number]];
+  while (true) {
+    const [z, y, x] = levels[levels.length - 1]!;
+    if (z === 1 && y === 1 && x === 1) {
+      break;
+    }
+    levels.push([
+      Math.max(1, Math.ceil(z / 2)),
+      Math.max(1, Math.ceil(y / 2)),
+      Math.max(1, Math.ceil(x / 2)),
+    ]);
+  }
+  return levels;
+}
+
+function reduceHierarchyLevel(child: HierarchyLevelBuffers): HierarchyLevelBuffers {
+  const [childZ, childY, childX] = child.gridShape;
+  const parentGridShape: [number, number, number] = [
+    Math.max(1, Math.ceil(childZ / 2)),
+    Math.max(1, Math.ceil(childY / 2)),
+    Math.max(1, Math.ceil(childX / 2)),
+  ];
+  const [parentZ, parentY, parentX] = parentGridShape;
+  const parentCount = parentZ * parentY * parentX;
+  const parentMin = new Uint8Array(parentCount);
+  const parentMax = new Uint8Array(parentCount);
+  const parentOccupancy = new Uint8Array(parentCount);
+  const childPlane = childY * childX;
+  const parentPlane = parentY * parentX;
+
+  for (let z = 0; z < parentZ; z += 1) {
+    for (let y = 0; y < parentY; y += 1) {
+      for (let x = 0; x < parentX; x += 1) {
+        const parentIndex = z * parentPlane + y * parentX + x;
+        const childZStart = z * 2;
+        const childYStart = y * 2;
+        const childXStart = x * 2;
+        let occupied = false;
+        let localMin = 255;
+        let localMax = 0;
+
+        for (let localZ = 0; localZ < 2; localZ += 1) {
+          const sourceZ = childZStart + localZ;
+          if (sourceZ >= childZ) {
+            continue;
+          }
+          for (let localY = 0; localY < 2; localY += 1) {
+            const sourceY = childYStart + localY;
+            if (sourceY >= childY) {
+              continue;
+            }
+            for (let localX = 0; localX < 2; localX += 1) {
+              const sourceX = childXStart + localX;
+              if (sourceX >= childX) {
+                continue;
+              }
+              const childIndex = sourceZ * childPlane + sourceY * childX + sourceX;
+              if ((child.occupancy[childIndex] ?? 0) === 0) {
+                continue;
+              }
+              occupied = true;
+              const childMin = child.min[childIndex] ?? 0;
+              const childMax = child.max[childIndex] ?? 0;
+              if (childMin < localMin) {
+                localMin = childMin;
+              }
+              if (childMax > localMax) {
+                localMax = childMax;
+              }
+            }
+          }
+        }
+
+        if (!occupied) {
+          parentOccupancy[parentIndex] = 0;
+          parentMin[parentIndex] = 0;
+          parentMax[parentIndex] = 0;
+          continue;
+        }
+        parentOccupancy[parentIndex] = 255;
+        parentMin[parentIndex] = localMin;
+        parentMax[parentIndex] = localMax;
+      }
+    }
+  }
+
+  return {
+    gridShape: parentGridShape,
+    min: parentMin,
+    max: parentMax,
+    occupancy: parentOccupancy,
+  };
+}
+
+function buildHierarchyLevelsFromLeaf(
+  leafGridShape: [number, number, number],
+  leafMin: Uint8Array,
+  leafMax: Uint8Array,
+  leafOccupancy: Uint8Array,
+  levelCount: number,
+): HierarchyLevelBuffers[] {
+  const levels: HierarchyLevelBuffers[] = [
+    {
+      gridShape: leafGridShape,
+      min: leafMin,
+      max: leafMax,
+      occupancy: leafOccupancy,
+    },
+  ];
+  while (levels.length < levelCount) {
+    levels.push(reduceHierarchyLevel(levels[levels.length - 1]!));
+  }
+  return levels;
 }
 
 async function timed<T>(
@@ -396,6 +519,7 @@ function buildManifest(dataset: BenchmarkDatasetSpec): PreprocessedManifest {
                   const zChunks = Math.ceil(scale.depth / scale.chunkDepth);
                   const yChunks = Math.ceil(scale.height / scale.chunkHeight);
                   const xChunks = Math.ceil(scale.width / scale.chunkWidth);
+                  const hierarchyGridShapes = buildHierarchyGridShapes([zChunks, yChunks, xChunks]);
                   return {
                     level: scale.level,
                     downsampleFactor: scale.downsampleFactor,
@@ -416,25 +540,29 @@ function buildManifest(dataset: BenchmarkDatasetSpec): PreprocessedManifest {
                         chunkShape: [1, 256],
                         dataType: 'uint32'
                       },
-                      chunkStats: {
-                        min: {
-                          path: `channels/channel-a/layer-a/scales/${scale.level}/chunk-stats/min`,
-                          shape: [timepoints, zChunks, yChunks, xChunks],
-                          chunkShape: [1, zChunks, yChunks, xChunks],
-                          dataType: 'uint8'
-                        },
-                        max: {
-                          path: `channels/channel-a/layer-a/scales/${scale.level}/chunk-stats/max`,
-                          shape: [timepoints, zChunks, yChunks, xChunks],
-                          chunkShape: [1, zChunks, yChunks, xChunks],
-                          dataType: 'uint8'
-                        },
-                        occupancy: {
-                          path: `channels/channel-a/layer-a/scales/${scale.level}/chunk-stats/occupancy`,
-                          shape: [timepoints, zChunks, yChunks, xChunks],
-                          chunkShape: [1, zChunks, yChunks, xChunks],
-                          dataType: 'float32'
-                        }
+                      skipHierarchy: {
+                        levels: hierarchyGridShapes.map((gridShape, level) => ({
+                          level,
+                          gridShape,
+                          min: {
+                            path: `channels/channel-a/layer-a/scales/${scale.level}/skip-hierarchy/levels/${level}/min`,
+                            shape: [timepoints, gridShape[0], gridShape[1], gridShape[2]],
+                            chunkShape: [1, gridShape[0], gridShape[1], gridShape[2]],
+                            dataType: 'uint8'
+                          },
+                          max: {
+                            path: `channels/channel-a/layer-a/scales/${scale.level}/skip-hierarchy/levels/${level}/max`,
+                            shape: [timepoints, gridShape[0], gridShape[1], gridShape[2]],
+                            chunkShape: [1, gridShape[0], gridShape[1], gridShape[2]],
+                            dataType: 'uint8'
+                          },
+                          occupancy: {
+                            path: `channels/channel-a/layer-a/scales/${scale.level}/skip-hierarchy/levels/${level}/occupancy`,
+                            shape: [timepoints, gridShape[0], gridShape[1], gridShape[2]],
+                            chunkShape: [1, gridShape[0], gridShape[1], gridShape[2]],
+                            dataType: 'uint8'
+                          }
+                        }))
                       }
                     }
                   };
@@ -476,27 +604,29 @@ async function createSyntheticPreprocessedDataset(
       codecs: [],
       fill_value: 0
     });
-    await zarr.create(root.resolve(scale.zarr.chunkStats.min.path), {
-      shape: scale.zarr.chunkStats.min.shape,
-      data_type: scale.zarr.chunkStats.min.dataType,
-      chunk_shape: scale.zarr.chunkStats.min.chunkShape,
-      codecs: [],
-      fill_value: 0
-    });
-    await zarr.create(root.resolve(scale.zarr.chunkStats.max.path), {
-      shape: scale.zarr.chunkStats.max.shape,
-      data_type: scale.zarr.chunkStats.max.dataType,
-      chunk_shape: scale.zarr.chunkStats.max.chunkShape,
-      codecs: [],
-      fill_value: 0
-    });
-    await zarr.create(root.resolve(scale.zarr.chunkStats.occupancy.path), {
-      shape: scale.zarr.chunkStats.occupancy.shape,
-      data_type: scale.zarr.chunkStats.occupancy.dataType,
-      chunk_shape: scale.zarr.chunkStats.occupancy.chunkShape,
-      codecs: [],
-      fill_value: 0
-    });
+    for (const hierarchy of scale.zarr.skipHierarchy.levels) {
+      await zarr.create(root.resolve(hierarchy.min.path), {
+        shape: hierarchy.min.shape,
+        data_type: hierarchy.min.dataType,
+        chunk_shape: hierarchy.min.chunkShape,
+        codecs: [],
+        fill_value: 0
+      });
+      await zarr.create(root.resolve(hierarchy.max.path), {
+        shape: hierarchy.max.shape,
+        data_type: hierarchy.max.dataType,
+        chunk_shape: hierarchy.max.chunkShape,
+        codecs: [],
+        fill_value: 0
+      });
+      await zarr.create(root.resolve(hierarchy.occupancy.path), {
+        shape: hierarchy.occupancy.shape,
+        data_type: hierarchy.occupancy.dataType,
+        chunk_shape: hierarchy.occupancy.chunkShape,
+        codecs: [],
+        fill_value: 0
+      });
+    }
   }
 
   for (let timepoint = 0; timepoint < dataset.timepoints; timepoint += 1) {
@@ -524,7 +654,7 @@ async function createSyntheticPreprocessedDataset(
       const xChunks = Math.ceil(scaleVolume.width / chunkWidth);
       const chunkMin = new Uint8Array(zChunks * yChunks * xChunks);
       const chunkMax = new Uint8Array(zChunks * yChunks * xChunks);
-      const chunkOcc = new Float32Array(zChunks * yChunks * xChunks);
+      const chunkOcc = new Uint8Array(zChunks * yChunks * xChunks);
 
       for (let zChunk = 0; zChunk < zChunks; zChunk += 1) {
         const zStart = zChunk * chunkDepth;
@@ -570,7 +700,7 @@ async function createSyntheticPreprocessedDataset(
             const chunkIndex = (zChunk * yChunks + yChunk) * xChunks + xChunk;
             chunkMin[chunkIndex] = min;
             chunkMax[chunkIndex] = max;
-            chunkOcc[chunkIndex] = chunk.length > 0 ? occupied / chunk.length : 0;
+            chunkOcc[chunkIndex] = occupied > 0 ? 255 : 0;
           }
         }
       }
@@ -586,23 +716,29 @@ async function createSyntheticPreprocessedDataset(
         `${scale.zarr.histogram.path}/${createZarrChunkKeyFromCoords([timepoint, 0])}`,
         encodeUint32ArrayLE(histogram)
       );
-      await storageHandle.storage.writeFile(
-        `${scale.zarr.chunkStats.min.path}/${createZarrChunkKeyFromCoords([timepoint, 0, 0, 0])}`,
-        chunkMin
+      const hierarchyLevels = buildHierarchyLevelsFromLeaf(
+        [zChunks, yChunks, xChunks],
+        chunkMin,
+        chunkMax,
+        chunkOcc,
+        scale.zarr.skipHierarchy.levels.length
       );
-      await storageHandle.storage.writeFile(
-        `${scale.zarr.chunkStats.max.path}/${createZarrChunkKeyFromCoords([timepoint, 0, 0, 0])}`,
-        chunkMax
-      );
-      const occupancyBytes = new Uint8Array(chunkOcc.length * 4);
-      const occupancyView = new DataView(occupancyBytes.buffer);
-      for (let index = 0; index < chunkOcc.length; index += 1) {
-        occupancyView.setFloat32(index * 4, chunkOcc[index] ?? 0, true);
+      for (let hierarchyLevel = 0; hierarchyLevel < scale.zarr.skipHierarchy.levels.length; hierarchyLevel += 1) {
+        const descriptor = scale.zarr.skipHierarchy.levels[hierarchyLevel]!;
+        const hierarchy = hierarchyLevels[hierarchyLevel]!;
+        await storageHandle.storage.writeFile(
+          `${descriptor.min.path}/${createZarrChunkKeyFromCoords([timepoint, 0, 0, 0])}`,
+          hierarchy.min
+        );
+        await storageHandle.storage.writeFile(
+          `${descriptor.max.path}/${createZarrChunkKeyFromCoords([timepoint, 0, 0, 0])}`,
+          hierarchy.max
+        );
+        await storageHandle.storage.writeFile(
+          `${descriptor.occupancy.path}/${createZarrChunkKeyFromCoords([timepoint, 0, 0, 0])}`,
+          hierarchy.occupancy
+        );
       }
-      await storageHandle.storage.writeFile(
-        `${scale.zarr.chunkStats.occupancy.path}/${createZarrChunkKeyFromCoords([timepoint, 0, 0, 0])}`,
-        occupancyBytes
-      );
     }
   }
 

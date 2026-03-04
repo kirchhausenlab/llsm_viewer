@@ -1,4 +1,4 @@
-import { Vector2, Vector3 } from 'three';
+import { Vector2, Vector3, Vector4 } from 'three';
 import type { Data3DTexture, DataTexture } from 'three';
 import {
   RENDER_STYLE_BL,
@@ -8,7 +8,6 @@ import {
 
 export type BrickSkipDecisionArgs = {
   skipEnabled: boolean;
-  atlasIndex: number;
   occupancy: number;
   brickMinRaw: number;
   brickMaxRaw: number;
@@ -29,6 +28,21 @@ export type AdaptiveLodDecisionArgs = {
   lodMax: number;
   mode: 'mip' | 'iso' | 'bl';
   currentMax?: number;
+};
+
+export type SkipHierarchyNodeBoundsArgs = {
+  voxelCoords: [number, number, number];
+  hierarchyLevel: number;
+  grid: [number, number, number];
+  chunkSize: [number, number, number];
+  volumeSize: [number, number, number];
+};
+
+export type SkipHierarchyNodeBounds = {
+  nodeCoords: [number, number, number];
+  nodeSize: [number, number, number];
+  nodeMin: [number, number, number];
+  nodeMax: [number, number, number];
 };
 
 export type LinearAtlasSamplingAnalysisArgs = {
@@ -172,12 +186,56 @@ export function computeAdaptiveLodCpu(args: AdaptiveLodDecisionArgs): number {
   return Math.min(Math.max(clampedBase * (1 - confidence), 0), lodMax);
 }
 
+export function computeSkipHierarchyNodeBoundsCpu(args: SkipHierarchyNodeBoundsArgs): SkipHierarchyNodeBounds {
+  const safeVolumeSize: [number, number, number] = [
+    clampAtLeastOne(args.volumeSize[0]),
+    clampAtLeastOne(args.volumeSize[1]),
+    clampAtLeastOne(args.volumeSize[2]),
+  ];
+  const safeGrid: [number, number, number] = [
+    clampAtLeastOne(args.grid[0]),
+    clampAtLeastOne(args.grid[1]),
+    clampAtLeastOne(args.grid[2]),
+  ];
+  const safeChunkSize: [number, number, number] = [
+    clampAtLeastOne(args.chunkSize[0]),
+    clampAtLeastOne(args.chunkSize[1]),
+    clampAtLeastOne(args.chunkSize[2]),
+  ];
+  const safeLevel = Math.max(0, Math.floor(Number.isFinite(args.hierarchyLevel) ? args.hierarchyLevel : 0));
+  const levelScale = 2 ** safeLevel;
+  const nodeSize: [number, number, number] = [
+    Math.max(1, safeChunkSize[0] * levelScale),
+    Math.max(1, safeChunkSize[1] * levelScale),
+    Math.max(1, safeChunkSize[2] * levelScale),
+  ];
+
+  const nodeCoords: [number, number, number] = [0, 0, 0];
+  const nodeMin: [number, number, number] = [0, 0, 0];
+  const nodeMax: [number, number, number] = [0, 0, 0];
+
+  for (let axis = 0; axis < 3; axis += 1) {
+    const maxVoxel = Math.max(safeVolumeSize[axis] - 1e-3, 0);
+    const voxel = Math.min(Math.max(args.voxelCoords[axis], 0), maxVoxel);
+    const maxGridCoord = Math.max(0, Math.floor(safeGrid[axis]) - 1);
+    const coord = Math.min(Math.max(Math.floor(voxel / nodeSize[axis]), 0), maxGridCoord);
+    nodeCoords[axis] = coord;
+    const minCoord = coord * nodeSize[axis];
+    nodeMin[axis] = minCoord;
+    nodeMax[axis] = Math.min(minCoord + nodeSize[axis], safeVolumeSize[axis]);
+  }
+
+  return {
+    nodeCoords,
+    nodeSize,
+    nodeMin,
+    nodeMax,
+  };
+}
+
 export function shouldSkipWithBrickStatsCpu(args: BrickSkipDecisionArgs): boolean {
   if (!args.skipEnabled) {
     return false;
-  }
-  if (args.atlasIndex < -0.5) {
-    return true;
   }
   if (args.occupancy <= 0) {
     return true;
@@ -228,6 +286,10 @@ type VolumeUniforms = {
   u_hoverSegmentationMode: { value: number };
   u_segmentationLabels: { value: Data3DTexture | null };
   u_brickSkipEnabled: { value: number };
+  u_skipHierarchyData: { value: Data3DTexture | null };
+  u_skipHierarchyTextureSize: { value: Vector3 };
+  u_skipHierarchyLevelCount: { value: number };
+  u_skipHierarchyLevelMeta: { value: Vector4[] };
   u_brickGridSize: { value: Vector3 };
   u_brickChunkSize: { value: Vector3 };
   u_brickVolumeSize: { value: Vector3 };
@@ -238,6 +300,7 @@ type VolumeUniforms = {
   u_brickAtlasEnabled: { value: number };
   u_brickAtlasData: { value: Data3DTexture | null };
   u_brickAtlasSize: { value: Vector3 };
+  u_brickAtlasSlotGrid: { value: Vector3 };
   u_adaptiveLodEnabled: { value: number };
   u_adaptiveLodScale: { value: number };
   u_adaptiveLodMax: { value: number };
@@ -273,6 +336,10 @@ const uniforms = {
   u_hoverSegmentationMode: { value: 0 },
   u_segmentationLabels: { value: null as Data3DTexture | null },
   u_brickSkipEnabled: { value: 0 },
+  u_skipHierarchyData: { value: null as Data3DTexture | null },
+  u_skipHierarchyTextureSize: { value: new Vector3(1, 1, 1) },
+  u_skipHierarchyLevelCount: { value: 0 },
+  u_skipHierarchyLevelMeta: { value: Array.from({ length: 12 }, () => new Vector4(1, 1, 1, 0)) },
   u_brickGridSize: { value: new Vector3(1, 1, 1) },
   u_brickChunkSize: { value: new Vector3(1, 1, 1) },
   u_brickVolumeSize: { value: new Vector3(1, 1, 1) },
@@ -283,6 +350,7 @@ const uniforms = {
   u_brickAtlasEnabled: { value: 0 },
   u_brickAtlasData: { value: null as Data3DTexture | null },
   u_brickAtlasSize: { value: new Vector3(1, 1, 1) },
+  u_brickAtlasSlotGrid: { value: new Vector3(1, 1, 1) },
   u_adaptiveLodEnabled: { value: 1 },
   u_adaptiveLodScale: { value: 1 },
   u_adaptiveLodMax: { value: 2 }
@@ -342,6 +410,10 @@ const volumeRenderFragmentShader = /* glsl */ `
     uniform float u_hoverSegmentationMode;
     uniform usampler3D u_segmentationLabels;
     uniform float u_brickSkipEnabled;
+    uniform sampler3D u_skipHierarchyData;
+    uniform vec3 u_skipHierarchyTextureSize;
+    uniform float u_skipHierarchyLevelCount;
+    uniform vec4 u_skipHierarchyLevelMeta[12];
     uniform vec3 u_brickGridSize;
     uniform vec3 u_brickChunkSize;
     uniform vec3 u_brickVolumeSize;
@@ -352,6 +424,7 @@ const volumeRenderFragmentShader = /* glsl */ `
     uniform float u_brickAtlasEnabled;
     uniform sampler3D u_brickAtlasData;
     uniform vec3 u_brickAtlasSize;
+    uniform vec3 u_brickAtlasSlotGrid;
     uniform float u_adaptiveLodEnabled;
     uniform float u_adaptiveLodScale;
     uniform float u_adaptiveLodMax;
@@ -365,6 +438,7 @@ const volumeRenderFragmentShader = /* glsl */ `
     varying vec4 v_farpos;
 
     const int MAX_STEPS = 887;
+    const int MAX_SKIP_HIERARCHY_LEVELS = 12;
     const int REFINEMENT_STEPS = 4;
     const float EPSILON = 1e-6;
     const float LARGE = 1e20;
@@ -388,31 +462,13 @@ const volumeRenderFragmentShader = /* glsl */ `
     float normalize_intensity(float value);
     float apply_inversion(float normalized);
 
-    vec3 brick_lookup_coord(vec3 texcoords) {
-      vec3 safeGrid = max(u_brickGridSize, vec3(1.0));
-      vec3 safeChunk = max(u_brickChunkSize, vec3(1.0));
-      vec3 atlasVolumeSize = max(u_brickVolumeSize, vec3(1.0));
-      vec3 voxelCoords = clamp(
-        texcoords * atlasVolumeSize,
-        vec3(0.0),
-        max(atlasVolumeSize - vec3(1e-3), vec3(0.0))
-      );
-      vec3 brickCoords = floor(voxelCoords / safeChunk);
-      brickCoords = clamp(brickCoords, vec3(0.0), safeGrid - vec3(1.0));
-      return (brickCoords + vec3(0.5)) / safeGrid;
-    }
-
     bool should_skip_with_brick_stats_values(
-      float atlasIndex,
       float occupancy,
       float brickMinRaw,
       float brickMaxRaw,
       float currentMax,
       float isoLowThreshold
     ) {
-      if (atlasIndex < -0.5) {
-        return true;
-      }
       if (occupancy <= 0.0) {
         return true;
       }
@@ -432,24 +488,76 @@ const volumeRenderFragmentShader = /* glsl */ `
       return false;
     }
 
-    bool should_skip_with_brick_stats(vec3 texcoords, float currentMax, float isoLowThreshold) {
+    int hierarchy_skip_step_advance(vec3 texcoords, vec3 step, float currentMax, float isoLowThreshold) {
       if (u_brickSkipEnabled <= 0.5) {
-        return false;
+        return 1;
       }
-
-      vec3 brickCoord = brick_lookup_coord(texcoords);
-      float atlasIndex = texture(u_brickAtlasIndices, brickCoord).r - 1.0;
-      float occupancy = texture(u_brickOccupancy, brickCoord).r;
-      float brickMinRaw = texture(u_brickMin, brickCoord).r;
-      float brickMaxRaw = texture(u_brickMax, brickCoord).r;
-      return should_skip_with_brick_stats_values(
-        atlasIndex,
-        occupancy,
-        brickMinRaw,
-        brickMaxRaw,
-        currentMax,
-        isoLowThreshold
+      int levelCount = int(clamp(floor(u_skipHierarchyLevelCount + 0.5), 0.0, float(MAX_SKIP_HIERARCHY_LEVELS)));
+      if (levelCount <= 0) {
+        return 1;
+      }
+      vec3 hierarchyTextureSize = max(u_skipHierarchyTextureSize, vec3(1.0));
+      vec3 safeVolumeSize = max(u_brickVolumeSize, vec3(1.0));
+      vec3 safeChunkSize = max(u_brickChunkSize, vec3(1.0));
+      vec3 voxelCoords = clamp(
+        texcoords * safeVolumeSize,
+        vec3(0.0),
+        max(safeVolumeSize - vec3(1e-3), vec3(0.0))
       );
+      vec3 voxelStep = step * safeVolumeSize;
+
+      for (int hierarchyLevel = MAX_SKIP_HIERARCHY_LEVELS - 1; hierarchyLevel >= 0; hierarchyLevel--) {
+        if (hierarchyLevel >= levelCount) {
+          continue;
+        }
+        vec4 levelMeta = u_skipHierarchyLevelMeta[hierarchyLevel];
+        vec3 grid = max(levelMeta.xyz, vec3(1.0));
+        float zBase = levelMeta.w;
+        float levelScale = exp2(float(hierarchyLevel));
+        vec3 nodeSize = max(vec3(1.0), safeChunkSize * levelScale);
+        vec3 nodeCoords = floor(voxelCoords / nodeSize);
+        nodeCoords = clamp(nodeCoords, vec3(0.0), grid - vec3(1.0));
+        vec3 hierarchySampleCoord = vec3(
+          (nodeCoords.x + 0.5) / hierarchyTextureSize.x,
+          (nodeCoords.y + 0.5) / hierarchyTextureSize.y,
+          (zBase + nodeCoords.z + 0.5) / hierarchyTextureSize.z
+        );
+        vec4 hierarchyStats = texture(u_skipHierarchyData, hierarchySampleCoord);
+        if (!should_skip_with_brick_stats_values(
+          hierarchyStats.r,
+          hierarchyStats.g,
+          hierarchyStats.b,
+          currentMax,
+          isoLowThreshold
+        )) {
+          continue;
+        }
+        vec3 nodeMin = nodeCoords * nodeSize;
+        vec3 nodeMax = min(nodeMin + nodeSize, safeVolumeSize);
+        float exitSteps = LARGE;
+
+        if (voxelStep.x > EPSILON) {
+          exitSteps = min(exitSteps, (nodeMax.x - voxelCoords.x) / voxelStep.x);
+        } else if (voxelStep.x < -EPSILON) {
+          exitSteps = min(exitSteps, (nodeMin.x - voxelCoords.x) / voxelStep.x);
+        }
+        if (voxelStep.y > EPSILON) {
+          exitSteps = min(exitSteps, (nodeMax.y - voxelCoords.y) / voxelStep.y);
+        } else if (voxelStep.y < -EPSILON) {
+          exitSteps = min(exitSteps, (nodeMin.y - voxelCoords.y) / voxelStep.y);
+        }
+        if (voxelStep.z > EPSILON) {
+          exitSteps = min(exitSteps, (nodeMax.z - voxelCoords.z) / voxelStep.z);
+        } else if (voxelStep.z < -EPSILON) {
+          exitSteps = min(exitSteps, (nodeMin.z - voxelCoords.z) / voxelStep.z);
+        }
+
+        if (exitSteps > 1e-4 && exitSteps < LARGE * 0.5) {
+          int skipSteps = int(clamp(floor(exitSteps + 1e-4) + 1.0, 1.0, float(MAX_STEPS)));
+          return max(skipSteps, 1);
+        }
+      }
+      return 1;
     }
 
     vec3 clamp_voxel_coords(vec3 voxelCoords, vec3 atlasVolumeSize) {
@@ -467,19 +575,38 @@ const volumeRenderFragmentShader = /* glsl */ `
       return texture(u_brickAtlasIndices, brickLookup).r - 1.0;
     }
 
+    vec3 atlas_slot_coords_from_index(float atlasIndex, vec3 safeSlotGrid) {
+      float safeAtlasIndex = max(floor(atlasIndex + 0.5), 0.0);
+      float slotsPerLayer = max(safeSlotGrid.x * safeSlotGrid.y, 1.0);
+      float slotZ = floor(safeAtlasIndex / slotsPerLayer);
+      float withinLayer = safeAtlasIndex - slotZ * slotsPerLayer;
+      float slotY = floor(withinLayer / safeSlotGrid.x);
+      float slotX = withinLayer - slotY * safeSlotGrid.x;
+      return vec3(slotX, slotY, slotZ);
+    }
+
     vec4 sample_brick_atlas_voxel_known(
       vec3 voxelCoords,
       vec3 brickCoords,
       float atlasIndex,
+      vec3 safeSlotGrid,
       vec3 safeChunk,
       vec3 atlasSize,
       vec3 atlasVolumeSize
     ) {
       vec3 clampedVoxel = clamp_voxel_coords(voxelCoords, atlasVolumeSize);
       vec3 localVoxel = clampedVoxel - brickCoords * safeChunk;
-      vec3 atlasVoxel = vec3(localVoxel.x, localVoxel.y, localVoxel.z + atlasIndex * safeChunk.z);
-      vec3 atlasTexcoords = (atlasVoxel + vec3(0.5)) / atlasSize;
-      return texture(u_brickAtlasData, atlasTexcoords);
+      vec3 slotCoords = atlas_slot_coords_from_index(atlasIndex, safeSlotGrid);
+      vec3 atlasVoxel = localVoxel + slotCoords * safeChunk;
+      ivec3 maxAtlasTexel = ivec3(max(atlasSize - vec3(1.0), vec3(0.0)));
+      ivec3 atlasTexel = ivec3(
+        clamp(
+          floor(atlasVoxel + vec3(0.5)),
+          vec3(0.0),
+          vec3(maxAtlasTexel)
+        )
+      );
+      return texelFetch(u_brickAtlasData, atlasTexel, 0);
     }
 
     bool brick_coords_equal(vec3 a, vec3 b) {
@@ -494,6 +621,7 @@ const volumeRenderFragmentShader = /* glsl */ `
       vec3 voxelCoords,
       vec3 brickCoords,
       float atlasIndex,
+      vec3 safeSlotGrid,
       vec3 safeChunk,
       vec3 atlasSize,
       vec3 atlasVolumeSize
@@ -505,6 +633,7 @@ const volumeRenderFragmentShader = /* glsl */ `
         voxelCoords,
         brickCoords,
         atlasIndex,
+        safeSlotGrid,
         safeChunk,
         atlasSize,
         atlasVolumeSize
@@ -519,10 +648,12 @@ const volumeRenderFragmentShader = /* glsl */ `
         return vec4(0.0);
       }
       vec3 atlasSize = max(u_brickAtlasSize, vec3(1.0));
+      vec3 safeSlotGrid = max(u_brickAtlasSlotGrid, vec3(1.0));
       return sample_brick_atlas_voxel_known(
         voxelCoords,
         brickCoords,
         atlasIndex,
+        safeSlotGrid,
         safeChunk,
         atlasSize,
         atlasVolumeSize
@@ -539,6 +670,7 @@ const volumeRenderFragmentShader = /* glsl */ `
       vec3 texcoords,
       vec3 brickCoords,
       float atlasIndex,
+      vec3 safeSlotGrid,
       vec3 safeChunk,
       vec3 atlasSize,
       vec3 atlasVolumeSize
@@ -547,11 +679,8 @@ const volumeRenderFragmentShader = /* glsl */ `
       vec3 linearVoxel = safeTexcoords * atlasVolumeSize - vec3(0.5);
       vec3 clampedLinearVoxel = clamp_voxel_coords(linearVoxel, atlasVolumeSize);
       vec3 localLinearVoxel = clampedLinearVoxel - brickCoords * safeChunk;
-      vec3 atlasLinearVoxel = vec3(
-        localLinearVoxel.x,
-        localLinearVoxel.y,
-        localLinearVoxel.z + atlasIndex * safeChunk.z
-      );
+      vec3 slotCoords = atlas_slot_coords_from_index(atlasIndex, safeSlotGrid);
+      vec3 atlasLinearVoxel = localLinearVoxel + slotCoords * safeChunk;
       vec3 atlasTexcoords = (atlasLinearVoxel + vec3(0.5)) / atlasSize;
       return texture(u_brickAtlasData, atlasTexcoords);
     }
@@ -565,6 +694,7 @@ const volumeRenderFragmentShader = /* glsl */ `
       vec3 safeGrid = max(u_brickGridSize, vec3(1.0));
       vec3 safeChunk = max(u_brickChunkSize, vec3(1.0));
       vec3 atlasSize = max(u_brickAtlasSize, vec3(1.0));
+      vec3 safeSlotGrid = max(u_brickAtlasSlotGrid, vec3(1.0));
       vec3 voxel000 = baseVoxel + vec3(0.0, 0.0, 0.0);
       vec3 voxel100 = baseVoxel + vec3(1.0, 0.0, 0.0);
       vec3 voxel010 = baseVoxel + vec3(0.0, 1.0, 0.0);
@@ -592,6 +722,7 @@ const volumeRenderFragmentShader = /* glsl */ `
           safeTexcoords,
           baseBrick,
           atlasIndex,
+          safeSlotGrid,
           safeChunk,
           atlasSize,
           atlasVolumeSize
@@ -658,23 +789,11 @@ const volumeRenderFragmentShader = /* glsl */ `
         }
       }
 
-      if (
-        atlas000 < -0.5 ||
-        atlas100 < -0.5 ||
-        atlas010 < -0.5 ||
-        atlas110 < -0.5 ||
-        atlas001 < -0.5 ||
-        atlas101 < -0.5 ||
-        atlas011 < -0.5 ||
-        atlas111 < -0.5
-      ) {
-        return vec4(0.0);
-      }
-
       vec4 c000 = sample_brick_atlas_voxel_or_missing(
         voxel000,
         brick000,
         atlas000,
+        safeSlotGrid,
         safeChunk,
         atlasSize,
         atlasVolumeSize
@@ -683,6 +802,7 @@ const volumeRenderFragmentShader = /* glsl */ `
         voxel100,
         brick100,
         atlas100,
+        safeSlotGrid,
         safeChunk,
         atlasSize,
         atlasVolumeSize
@@ -691,6 +811,7 @@ const volumeRenderFragmentShader = /* glsl */ `
         voxel010,
         brick010,
         atlas010,
+        safeSlotGrid,
         safeChunk,
         atlasSize,
         atlasVolumeSize
@@ -699,6 +820,7 @@ const volumeRenderFragmentShader = /* glsl */ `
         voxel110,
         brick110,
         atlas110,
+        safeSlotGrid,
         safeChunk,
         atlasSize,
         atlasVolumeSize
@@ -707,6 +829,7 @@ const volumeRenderFragmentShader = /* glsl */ `
         voxel001,
         brick001,
         atlas001,
+        safeSlotGrid,
         safeChunk,
         atlasSize,
         atlasVolumeSize
@@ -715,6 +838,7 @@ const volumeRenderFragmentShader = /* glsl */ `
         voxel101,
         brick101,
         atlas101,
+        safeSlotGrid,
         safeChunk,
         atlasSize,
         atlasVolumeSize
@@ -723,6 +847,7 @@ const volumeRenderFragmentShader = /* glsl */ `
         voxel011,
         brick011,
         atlas011,
+        safeSlotGrid,
         safeChunk,
         atlasSize,
         atlasVolumeSize
@@ -731,6 +856,7 @@ const volumeRenderFragmentShader = /* glsl */ `
         voxel111,
         brick111,
         atlas111,
+        safeSlotGrid,
         safeChunk,
         atlasSize,
         atlasVolumeSize
@@ -1066,40 +1192,18 @@ const volumeRenderFragmentShader = /* glsl */ `
       vec3 loc = start_loc;
       vec3 max_loc = start_loc;
       float baseAdaptiveLod = compute_adaptive_lod_base(step, start_loc);
-      vec3 cachedBrickCoord = vec3(-1.0);
-      float cachedAtlasIndex = -1.0;
-      float cachedOccupancy = 0.0;
-      float cachedBrickMinRaw = 0.0;
-      float cachedBrickMaxRaw = 0.0;
-      bool hasCachedBrick = false;
-
       float safeHighWaterMark = clamp(u_mipEarlyExitThreshold, 0.0, 1.0);
+      int traversedSteps = 0;
 
-      for (int iter = 0; iter < MAX_STEPS; iter++) {
-        if (iter >= nsteps) {
+      for (int guard = 0; guard < MAX_STEPS; guard++) {
+        if (traversedSteps >= nsteps) {
           break;
         }
-        if (u_brickSkipEnabled > 0.5) {
-          vec3 brickCoord = brick_lookup_coord(loc);
-          if (!hasCachedBrick || !brick_coords_equal(brickCoord, cachedBrickCoord)) {
-            cachedBrickCoord = brickCoord;
-            cachedAtlasIndex = texture(u_brickAtlasIndices, brickCoord).r - 1.0;
-            cachedOccupancy = texture(u_brickOccupancy, brickCoord).r;
-            cachedBrickMinRaw = texture(u_brickMin, brickCoord).r;
-            cachedBrickMaxRaw = texture(u_brickMax, brickCoord).r;
-            hasCachedBrick = true;
-          }
-          if (should_skip_with_brick_stats_values(
-            cachedAtlasIndex,
-            cachedOccupancy,
-            cachedBrickMinRaw,
-            cachedBrickMaxRaw,
-            max_val,
-            -1.0
-          )) {
-            loc += step;
-            continue;
-          }
+        int stepAdvance = hierarchy_skip_step_advance(loc, step, max_val, -1.0);
+        if (stepAdvance > 1) {
+          loc += step * float(stepAdvance);
+          traversedSteps += stepAdvance;
+          continue;
         }
         float adaptiveLod = adaptive_lod_for_mip(baseAdaptiveLod, max_val);
         vec4 colorSample = sample_color_lod(loc, adaptiveLod);
@@ -1107,7 +1211,7 @@ const volumeRenderFragmentShader = /* glsl */ `
         float normalizedVal = normalize_intensity(rawVal);
         if (normalizedVal > max_val) {
           max_val = normalizedVal;
-          max_i = iter;
+          max_i = traversedSteps;
           max_color = colorSample;
           max_loc = loc;
 
@@ -1116,6 +1220,7 @@ const volumeRenderFragmentShader = /* glsl */ `
           }
         }
         loc += step;
+        traversedSteps += 1;
       }
 
       vec3 iloc = start_loc + step * (float(max_i) - 0.5);
@@ -1160,41 +1265,20 @@ const volumeRenderFragmentShader = /* glsl */ `
       vec3 dstep = 1.5 / u_size;
       vec3 loc = start_loc;
       float baseAdaptiveLod = compute_adaptive_lod_base(step, start_loc);
-      vec3 cachedBrickCoord = vec3(-1.0);
-      float cachedAtlasIndex = -1.0;
-      float cachedOccupancy = 0.0;
-      float cachedBrickMinRaw = 0.0;
-      float cachedBrickMaxRaw = 0.0;
-      bool hasCachedBrick = false;
 
       float low_threshold = u_renderthreshold - 0.02 * (u_clim[1] - u_clim[0]);
       bool hasHit = false;
+      int traversedSteps = 0;
 
-      for (int iter = 0; iter < MAX_STEPS; iter++) {
-        if (iter >= nsteps) {
+      for (int guard = 0; guard < MAX_STEPS; guard++) {
+        if (traversedSteps >= nsteps) {
           break;
         }
-        if (u_brickSkipEnabled > 0.5) {
-          vec3 brickCoord = brick_lookup_coord(loc);
-          if (!hasCachedBrick || !brick_coords_equal(brickCoord, cachedBrickCoord)) {
-            cachedBrickCoord = brickCoord;
-            cachedAtlasIndex = texture(u_brickAtlasIndices, brickCoord).r - 1.0;
-            cachedOccupancy = texture(u_brickOccupancy, brickCoord).r;
-            cachedBrickMinRaw = texture(u_brickMin, brickCoord).r;
-            cachedBrickMaxRaw = texture(u_brickMax, brickCoord).r;
-            hasCachedBrick = true;
-          }
-          if (should_skip_with_brick_stats_values(
-            cachedAtlasIndex,
-            cachedOccupancy,
-            cachedBrickMinRaw,
-            cachedBrickMaxRaw,
-            -1.0,
-            low_threshold
-          )) {
-            loc += step;
-            continue;
-          }
+        int stepAdvance = hierarchy_skip_step_advance(loc, step, -1.0, low_threshold);
+        if (stepAdvance > 1) {
+          loc += step * float(stepAdvance);
+          traversedSteps += stepAdvance;
+          continue;
         }
 
         float val = sample1_lod(loc, adaptive_lod_for_iso(baseAdaptiveLod));
@@ -1220,6 +1304,7 @@ const volumeRenderFragmentShader = /* glsl */ `
         }
 
         loc += step;
+        traversedSteps += 1;
       }
 
       gl_FragColor = apply_blending_mode(hitColor);
@@ -1238,12 +1323,6 @@ const volumeRenderFragmentShader = /* glsl */ `
       float safeOpacity = max(u_blOpacityScale, 0.0);
       float stepDistance = max(length(step * u_size), 1e-5);
       float baseAdaptiveLod = compute_adaptive_lod_base(step, start_loc);
-      vec3 cachedBrickCoord = vec3(-1.0);
-      float cachedAtlasIndex = -1.0;
-      float cachedOccupancy = 0.0;
-      float cachedBrickMinRaw = 0.0;
-      float cachedBrickMaxRaw = 0.0;
-      bool hasCachedBrick = false;
       bool hoverActive = u_hoverActive > 0.5 && length(u_hoverScale) > 0.0;
       float hoverPulse = clamp(u_hoverPulse, 0.0, 1.0);
       float hoverLineRadius = max(u_hoverRadius * 0.45, 0.55);
@@ -1257,6 +1336,7 @@ const volumeRenderFragmentShader = /* glsl */ `
       bool axisXPending = false;
       bool axisYPending = false;
       bool axisZPending = false;
+      int traversedSteps = 0;
       if (hoverActive && u_hoverRadius > 0.0 && raySpeed > 0.0) {
         axisXEvent = compute_crosshair_axis_event(
           vec2(start_loc.y - u_hoverPos.y, start_loc.z - u_hoverPos.z),
@@ -1288,13 +1368,14 @@ const volumeRenderFragmentShader = /* glsl */ `
       }
       float safeSteps = max(float(nsteps), 1.0);
 
-      for (int iter = 0; iter < MAX_STEPS; iter++) {
-        if (iter >= nsteps) {
+      for (int guard = 0; guard < MAX_STEPS; guard++) {
+        if (traversedSteps >= nsteps) {
           break;
         }
+        int stepAdvance = hierarchy_skip_step_advance(loc, step, -1.0, safeBackgroundCutoff);
         float stepAlpha = 0.0;
         vec3 stepPremultipliedColor = vec3(0.0);
-        float sampleT = (float(iter) + 0.5) / safeSteps;
+        float sampleT = (float(traversedSteps) + 0.5) / safeSteps;
         if (axisXPending && sampleT >= axisXEvent.x) {
           stepPremultipliedColor += (1.0 - stepAlpha) * axisXEvent.y * vec3(1.0, 0.0, 0.0);
           stepAlpha = 1.0 - (1.0 - stepAlpha) * (1.0 - axisXEvent.y);
@@ -1311,28 +1392,7 @@ const volumeRenderFragmentShader = /* glsl */ `
           axisZPending = false;
         }
 
-        bool skipVolumeSample = false;
-        if (u_brickSkipEnabled > 0.5) {
-          vec3 brickCoord = brick_lookup_coord(loc);
-          if (!hasCachedBrick || !brick_coords_equal(brickCoord, cachedBrickCoord)) {
-            cachedBrickCoord = brickCoord;
-            cachedAtlasIndex = texture(u_brickAtlasIndices, brickCoord).r - 1.0;
-            cachedOccupancy = texture(u_brickOccupancy, brickCoord).r;
-            cachedBrickMinRaw = texture(u_brickMin, brickCoord).r;
-            cachedBrickMaxRaw = texture(u_brickMax, brickCoord).r;
-            hasCachedBrick = true;
-          }
-          if (should_skip_with_brick_stats_values(
-            cachedAtlasIndex,
-            cachedOccupancy,
-            cachedBrickMinRaw,
-            cachedBrickMaxRaw,
-            -1.0,
-            -1.0
-          )) {
-            skipVolumeSample = true;
-          }
-        }
+        bool skipVolumeSample = stepAdvance > 1;
 
         if (!skipVolumeSample) {
           float adaptiveLod = adaptive_lod_for_bl(baseAdaptiveLod, accumulatedAlpha);
@@ -1386,7 +1446,8 @@ const volumeRenderFragmentShader = /* glsl */ `
           break;
         }
 
-        loc += step;
+        loc += step * float(stepAdvance);
+        traversedSteps += stepAdvance;
       }
 
       if (axisXPending) {

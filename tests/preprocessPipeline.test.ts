@@ -11,6 +11,13 @@ import { openPreprocessedDatasetFromZarrStorage } from '../src/shared/utils/prep
 import { createZarrChunkKeyFromCoords } from '../src/shared/utils/preprocessedDataset/chunkKey.ts';
 import type { ChannelExportMetadata, TrackSetExportMetadata } from '../src/shared/utils/preprocessedDataset/types.ts';
 import type { VolumePayload } from '../src/types/volume.ts';
+import {
+  createVolumeProvider,
+  DEFAULT_MAX_CACHED_CHUNK_BYTES,
+  DEFAULT_MAX_CACHED_VOLUMES,
+  DEFAULT_MAX_CONCURRENT_CHUNK_READS,
+  DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS
+} from '../src/core/volumeProvider.ts';
 
 type SyntheticVolume = {
   width: number;
@@ -295,6 +302,66 @@ test('preprocessDatasetToStorage maps single 3D TIFF to 2D movie timepoints', as
   assert.ok(layer);
   assert.equal(layer?.volumeCount, 3);
   assert.equal(layer?.depth, 1);
+});
+
+test('preprocessDatasetToStorage writes sharded chunks that volume provider reads correctly', async () => {
+  const channels: ChannelExportMetadata[] = [{ id: 'channel-a', name: 'Channel A' }];
+  const files = [new File(['intensity-0'], 'intensity-t0.tif', { type: 'image/tiff' })];
+  const layers: PreprocessLayerSource[] = [
+    {
+      channelId: 'channel-a',
+      channelLabel: 'Channel A',
+      key: 'layer-a',
+      label: 'Layer A',
+      files,
+      isSegmentation: false,
+    },
+  ];
+
+  const sourceValues = [0, 64, 128, 255];
+  const volumeByFileName = new Map<string, VolumePayload>([
+    [
+      'intensity-t0.tif',
+      createSyntheticVolumePayload({
+        width: 2,
+        height: 2,
+        depth: 1,
+        channels: 1,
+        values: sourceValues,
+      }),
+    ],
+  ]);
+
+  const storageHandle = createInMemoryPreprocessedStorage({ datasetId: 'preprocess-sharded-provider-roundtrip' });
+  const result = await preprocessDatasetToStorage({
+    layers,
+    channels,
+    trackSets: [],
+    voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    movieMode: '3d',
+    storage: storageHandle.storage,
+    volumeLoader: createLoaderByFileName(volumeByFileName),
+    storageStrategy: { sharding: { enabled: true } },
+  });
+
+  const layer = result.manifest.dataset.channels[0]?.layers[0];
+  assert.ok(layer);
+  const scale0 = layer?.zarr.scales[0];
+  assert.ok(scale0);
+  assert.equal(scale0?.zarr.data.sharding?.enabled, true);
+
+  const opened = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
+  const provider = createVolumeProvider({
+    manifest: opened.manifest,
+    storage: storageHandle.storage,
+    maxCachedVolumes: DEFAULT_MAX_CACHED_VOLUMES,
+    maxCachedChunkBytes: DEFAULT_MAX_CACHED_CHUNK_BYTES,
+    maxConcurrentChunkReads: DEFAULT_MAX_CONCURRENT_CHUNK_READS,
+    maxConcurrentPrefetchLoads: DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS,
+  });
+
+  const loaded = await provider.getVolume('layer-a', 0, { scaleLevel: 0 });
+  assert.deepEqual(Array.from(loaded.normalized), sourceValues);
 });
 
 test('preprocessDatasetToStorage stacks 2D TIFF sequence into one single-3D volume', async () => {

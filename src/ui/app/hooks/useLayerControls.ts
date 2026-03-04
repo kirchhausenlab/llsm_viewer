@@ -592,6 +592,8 @@ export function useLayerControls({
     return activeLayers.map((layer) => {
       const settings = layerSettings[layer.key] ?? createLayerDefaultSettings(layer.key);
       const channelVisible = channelVisibility[layer.channelId];
+      const brickAtlas = layerBrickAtlases[layer.key] ?? null;
+      const brickPageTable = brickAtlas?.pageTable ?? layerPageTables[layer.key] ?? null;
       return {
         key: layer.key,
         label: layer.label,
@@ -626,9 +628,9 @@ export function useLayerControls({
         samplingMode: settings.samplingMode,
         isSegmentation: layer.isSegmentation,
         scaleLevel:
-          layerBrickAtlases[layer.key]?.scaleLevel ?? layerVolumes[layer.key]?.scaleLevel ?? 0,
-        brickPageTable: layerPageTables[layer.key] ?? null,
-        brickAtlas: layerBrickAtlases[layer.key] ?? null
+          brickAtlas?.scaleLevel ?? layerVolumes[layer.key]?.scaleLevel ?? 0,
+        brickPageTable,
+        brickAtlas
       };
     });
   }, [

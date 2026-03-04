@@ -44,11 +44,11 @@ test('clearOpfsPreprocessedStorageRoot removes root recursively and ignores miss
         }
       },
       async () => {
-        await clearOpfsPreprocessedStorageRoot({ rootDir: '/llsm-viewer-preprocessed-vnext/' });
+        await clearOpfsPreprocessedStorageRoot({ rootDir: '/llsm-viewer-preprocessed-vnext-hes1/' });
       }
     );
 
-    assert.deepEqual(calls, [{ name: 'llsm-viewer-preprocessed-vnext', recursive: true }]);
+    assert.deepEqual(calls, [{ name: 'llsm-viewer-preprocessed-vnext-hes1', recursive: true }]);
   }
 
   {
@@ -67,7 +67,7 @@ test('clearOpfsPreprocessedStorageRoot removes root recursively and ignores miss
         }
       },
       async () => {
-        await clearOpfsPreprocessedStorageRoot({ rootDir: 'llsm-viewer-preprocessed-vnext' });
+        await clearOpfsPreprocessedStorageRoot({ rootDir: 'llsm-viewer-preprocessed-vnext-hes1' });
       }
     );
 

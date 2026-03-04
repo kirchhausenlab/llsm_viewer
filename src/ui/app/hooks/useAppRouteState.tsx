@@ -347,6 +347,23 @@ export function useAppRouteState(): AppRouteState {
     };
   }, [volumeProvider]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (!import.meta.env?.DEV) {
+      return;
+    }
+
+    const manifest = preprocessedExperiment?.manifest ?? null;
+    window.__LLSM_PREPROCESSED_MANIFEST__ = manifest;
+    return () => {
+      if (window.__LLSM_PREPROCESSED_MANIFEST__ === manifest) {
+        delete window.__LLSM_PREPROCESSED_MANIFEST__;
+      }
+    };
+  }, [preprocessedExperiment]);
+
   const {
     activeChannelId,
     editingChannelId,

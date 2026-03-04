@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 
-import { shouldSkipWithBrickStatsCpu } from '../src/shaders/volumeRenderShader.ts';
+import {
+  computeSkipHierarchyNodeBoundsCpu,
+  shouldSkipWithBrickStatsCpu
+} from '../src/shaders/volumeRenderShader.ts';
 
 function referenceShouldSkipWithBrickStats(args: {
   skipEnabled: boolean;
-  atlasIndex: number;
   occupancy: number;
   brickMinRaw: number;
   brickMaxRaw: number;
@@ -16,9 +18,6 @@ function referenceShouldSkipWithBrickStats(args: {
 }): boolean {
   if (!args.skipEnabled) {
     return false;
-  }
-  if (args.atlasIndex < -0.5) {
-    return true;
   }
   if (args.occupancy <= 0) {
     return true;
@@ -51,7 +50,6 @@ function createPrng(seed: number): () => number {
 (() => {
   const result = shouldSkipWithBrickStatsCpu({
     skipEnabled: false,
-    atlasIndex: -1,
     occupancy: 0,
     brickMinRaw: 255,
     brickMaxRaw: 0,
@@ -67,7 +65,6 @@ function createPrng(seed: number): () => number {
 (() => {
   const result = shouldSkipWithBrickStatsCpu({
     skipEnabled: true,
-    atlasIndex: -1,
     occupancy: 1,
     brickMinRaw: 0,
     brickMaxRaw: 255,
@@ -77,13 +74,12 @@ function createPrng(seed: number): () => number {
     windowMin: 0,
     windowMax: 255,
   });
-  assert.equal(result, true);
+  assert.equal(result, false);
 })();
 
 (() => {
   const result = shouldSkipWithBrickStatsCpu({
     skipEnabled: true,
-    atlasIndex: 0,
     occupancy: 0,
     brickMinRaw: 0,
     brickMaxRaw: 255,
@@ -97,13 +93,68 @@ function createPrng(seed: number): () => number {
 })();
 
 (() => {
+  const args = {
+    hierarchyLevel: 0,
+    grid: [12, 10, 7] as [number, number, number],
+    chunkSize: [64, 64, 16] as [number, number, number],
+    volumeSize: [710, 608, 102] as [number, number, number],
+  };
+  const left = computeSkipHierarchyNodeBoundsCpu({
+    ...args,
+    voxelCoords: [63.9, 0, 0]
+  });
+  assert.deepEqual(left.nodeCoords, [0, 0, 0]);
+  assert.deepEqual(left.nodeMin, [0, 0, 0]);
+  assert.deepEqual(left.nodeMax, [64, 64, 16]);
+
+  const right = computeSkipHierarchyNodeBoundsCpu({
+    ...args,
+    voxelCoords: [64.1, 0, 0]
+  });
+  assert.deepEqual(right.nodeCoords, [1, 0, 0]);
+  assert.deepEqual(right.nodeMin, [64, 0, 0]);
+  assert.deepEqual(right.nodeMax, [128, 64, 16]);
+
+  const tail = computeSkipHierarchyNodeBoundsCpu({
+    ...args,
+    voxelCoords: [709.9, 0, 0]
+  });
+  assert.deepEqual(tail.nodeCoords, [11, 0, 0]);
+  assert.deepEqual(tail.nodeMin, [704, 0, 0]);
+  assert.deepEqual(tail.nodeMax, [710, 64, 16]);
+})();
+
+(() => {
+  const args = {
+    hierarchyLevel: 1,
+    grid: [6, 5, 4] as [number, number, number],
+    chunkSize: [64, 64, 16] as [number, number, number],
+    volumeSize: [710, 608, 102] as [number, number, number],
+  };
+  const left = computeSkipHierarchyNodeBoundsCpu({
+    ...args,
+    voxelCoords: [127.9, 0, 0]
+  });
+  assert.deepEqual(left.nodeCoords, [0, 0, 0]);
+  assert.deepEqual(left.nodeMin, [0, 0, 0]);
+  assert.deepEqual(left.nodeMax, [128, 128, 32]);
+
+  const right = computeSkipHierarchyNodeBoundsCpu({
+    ...args,
+    voxelCoords: [128.1, 0, 0]
+  });
+  assert.deepEqual(right.nodeCoords, [1, 0, 0]);
+  assert.deepEqual(right.nodeMin, [128, 0, 0]);
+  assert.deepEqual(right.nodeMax, [256, 128, 32]);
+})();
+
+(() => {
   const rand = createPrng(0x5eed1234);
   for (let index = 0; index < 2000; index += 1) {
     const windowMin = rand() * 300 - 20;
     const windowMax = windowMin + rand() * 300;
     const args = {
       skipEnabled: rand() > 0.2,
-      atlasIndex: Math.floor(rand() * 8) - 2,
       occupancy: rand() > 0.1 ? rand() : 0,
       brickMinRaw: rand() * 300 - 20,
       brickMaxRaw: rand() * 320 - 20,
@@ -122,7 +173,6 @@ function createPrng(seed: number): () => number {
 (() => {
   const result = shouldSkipWithBrickStatsCpu({
     skipEnabled: true,
-    atlasIndex: 0,
     occupancy: 1,
     brickMinRaw: 0,
     brickMaxRaw: 50,
@@ -138,7 +188,6 @@ function createPrng(seed: number): () => number {
 (() => {
   const result = shouldSkipWithBrickStatsCpu({
     skipEnabled: true,
-    atlasIndex: 0,
     occupancy: 1,
     brickMinRaw: 0,
     brickMaxRaw: 50,
@@ -154,7 +203,6 @@ function createPrng(seed: number): () => number {
 (() => {
   const result = shouldSkipWithBrickStatsCpu({
     skipEnabled: true,
-    atlasIndex: 0,
     occupancy: 1,
     brickMinRaw: 10,
     brickMaxRaw: 240,
@@ -170,7 +218,6 @@ function createPrng(seed: number): () => number {
 (() => {
   const result = shouldSkipWithBrickStatsCpu({
     skipEnabled: true,
-    atlasIndex: 0,
     occupancy: 1,
     brickMinRaw: 10,
     brickMaxRaw: 240,
@@ -186,7 +233,6 @@ function createPrng(seed: number): () => number {
 (() => {
   const result = shouldSkipWithBrickStatsCpu({
     skipEnabled: true,
-    atlasIndex: 0,
     occupancy: 1,
     brickMinRaw: 0,
     brickMaxRaw: 500,
@@ -202,7 +248,6 @@ function createPrng(seed: number): () => number {
 (() => {
   const result = shouldSkipWithBrickStatsCpu({
     skipEnabled: true,
-    atlasIndex: 0,
     occupancy: 1,
     brickMinRaw: 200,
     brickMaxRaw: 100,
@@ -218,7 +263,6 @@ function createPrng(seed: number): () => number {
 (() => {
   const result = shouldSkipWithBrickStatsCpu({
     skipEnabled: true,
-    atlasIndex: 0,
     occupancy: 1,
     brickMinRaw: 10,
     brickMaxRaw: 120,
@@ -234,7 +278,6 @@ function createPrng(seed: number): () => number {
 (() => {
   const result = shouldSkipWithBrickStatsCpu({
     skipEnabled: true,
-    atlasIndex: 0,
     occupancy: 1,
     brickMinRaw: 40,
     brickMaxRaw: 250,
@@ -250,7 +293,6 @@ function createPrng(seed: number): () => number {
 (() => {
   const result = shouldSkipWithBrickStatsCpu({
     skipEnabled: true,
-    atlasIndex: 0,
     occupancy: 1,
     brickMinRaw: 0,
     brickMaxRaw: 255,
@@ -266,7 +308,6 @@ function createPrng(seed: number): () => number {
 (() => {
   const result = shouldSkipWithBrickStatsCpu({
     skipEnabled: true,
-    atlasIndex: 0,
     occupancy: 1,
     brickMinRaw: 255,
     brickMaxRaw: 255,

@@ -189,7 +189,7 @@ export default function FrontPageContainer({
     const now = new Date();
     const stamp = now.toISOString().replace(/[:.]/g, '-');
     const random = Math.random().toString(16).slice(2, 6);
-    return `llsm-viewer-preprocessed-vnext-${stamp}-${random}`;
+    return `llsm-viewer-preprocessed-vnext-hes1-${stamp}-${random}`;
   }, []);
 
   const ensureZarrDirectoryName = useCallback((name: string): string => {
