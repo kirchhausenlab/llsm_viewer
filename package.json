@@ -20,6 +20,7 @@
     "test:e2e": "playwright test --config=playwright.config.ts --project=chromium --grep \"@smoke\"",
     "test:e2e:nightly": "playwright test --config=playwright.config.ts --project=chromium --grep \"@nightly\"",
     "test:e2e:preprocess-perf": "playwright test --config=playwright.config.ts --project=chromium tests/e2e/preprocess-perf.spec.ts",
+    "test:e2e:closeup-perf": "playwright test --config=playwright.config.ts --project=chromium tests/e2e/viewer-closeup-perf.spec.ts",
     "test:e2e:visual": "playwright test --config=playwright.config.ts --project=chromium --grep \"@visual\"",
     "test:e2e:visual:update": "playwright test --config=playwright.config.ts --project=chromium --grep \"@visual\" --update-snapshots",
     "test:e2e:full": "playwright test --config=playwright.config.ts --project=chromium",

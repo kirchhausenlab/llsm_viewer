@@ -2526,7 +2526,7 @@ export function useVolumeResources({
           atlasSize,
           max3DTextureSize,
           cameraPosition: localCameraPosition,
-          forceFullResidency: true,
+          forceFullResidency: false,
         });
       };
     };
@@ -3579,9 +3579,29 @@ export function useVolumeResources({
       }
       return updatedResources;
     };
+    const setCameraDistance = (distance: number) => {
+      if (!Number.isFinite(distance) || distance <= 0) {
+        return false;
+      }
+      const camera = cameraRef.current;
+      const controls = controlsRef.current;
+      if (!camera || !controls) {
+        return false;
+      }
+      const cameraDirection = new THREE.Vector3().subVectors(camera.position, controls.target);
+      if (!Number.isFinite(cameraDirection.lengthSq()) || cameraDirection.lengthSq() < 1e-12) {
+        cameraDirection.set(0, 0, 1);
+      }
+      cameraDirection.normalize();
+      camera.position.copy(controls.target).addScaledVector(cameraDirection, distance);
+      camera.updateMatrixWorld(true);
+      controls.update();
+      return true;
+    };
     window.__LLSM_FORCE_RENDER__ = forceRender;
     window.__LLSM_PATCH_VOLUME_UNIFORMS__ = patchVolumeUniforms;
     window.__LLSM_CAPTURE_RENDER_TARGET_METRICS__ = captureRenderTargetMetrics;
+    window.__LLSM_SET_CAMERA_DISTANCE__ = setCameraDistance;
     return () => {
       if (window.__LLSM_VOLUME_RESOURCE_SUMMARY__ === buildResourceSummary) {
         delete window.__LLSM_VOLUME_RESOURCE_SUMMARY__;
@@ -3594,6 +3614,9 @@ export function useVolumeResources({
       }
       if (window.__LLSM_CAPTURE_RENDER_TARGET_METRICS__ === captureRenderTargetMetrics) {
         delete window.__LLSM_CAPTURE_RENDER_TARGET_METRICS__;
+      }
+      if (window.__LLSM_SET_CAMERA_DISTANCE__ === setCameraDistance) {
+        delete window.__LLSM_SET_CAMERA_DISTANCE__;
       }
     };
   }, [cameraRef, rendererRef, resourcesRef, sceneRef]);

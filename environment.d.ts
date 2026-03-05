@@ -70,4 +70,5 @@ declare interface Window {
     nonTransparentPixels: number;
     avgLuma: number;
   } | null) | null;
+  __LLSM_SET_CAMERA_DISTANCE__?: ((distance: number) => boolean) | null;
 }

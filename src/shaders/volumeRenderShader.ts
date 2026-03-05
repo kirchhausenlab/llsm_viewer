@@ -521,7 +521,48 @@ const volumeRenderFragmentShader = /* glsl */ `
       return false;
     }
 
-    int hierarchy_skip_step_advance(vec3 texcoords, vec3 step, float currentMax, float isoLowThreshold) {
+    bool hierarchy_voxel_within_node_bounds(vec3 voxelCoords, vec3 nodeMin, vec3 nodeMax) {
+      vec3 safeNodeMax = max(nodeMin, nodeMax - vec3(1e-4));
+      return all(greaterThanEqual(voxelCoords, nodeMin)) && all(lessThanEqual(voxelCoords, safeNodeMax));
+    }
+
+    int hierarchy_skip_steps_to_node_exit(vec3 voxelCoords, vec3 voxelStep, vec3 nodeMin, vec3 nodeMax) {
+      float exitSteps = LARGE;
+      if (voxelStep.x > EPSILON) {
+        exitSteps = min(exitSteps, (nodeMax.x - voxelCoords.x) / voxelStep.x);
+      } else if (voxelStep.x < -EPSILON) {
+        exitSteps = min(exitSteps, (nodeMin.x - voxelCoords.x) / voxelStep.x);
+      }
+      if (voxelStep.y > EPSILON) {
+        exitSteps = min(exitSteps, (nodeMax.y - voxelCoords.y) / voxelStep.y);
+      } else if (voxelStep.y < -EPSILON) {
+        exitSteps = min(exitSteps, (nodeMin.y - voxelCoords.y) / voxelStep.y);
+      }
+      if (voxelStep.z > EPSILON) {
+        exitSteps = min(exitSteps, (nodeMax.z - voxelCoords.z) / voxelStep.z);
+      } else if (voxelStep.z < -EPSILON) {
+        exitSteps = min(exitSteps, (nodeMin.z - voxelCoords.z) / voxelStep.z);
+      }
+
+      if (exitSteps > 1e-4 && exitSteps < LARGE * 0.5) {
+        int skipSteps = int(clamp(floor(exitSteps + 1e-4) + 1.0, 1.0, float(MAX_STEPS)));
+        return max(skipSteps, 1);
+      }
+      return 1;
+    }
+
+    int hierarchy_skip_step_advance(
+      vec3 texcoords,
+      vec3 step,
+      float currentMax,
+      float isoLowThreshold,
+      inout float traversalCacheValid,
+      inout vec3 traversalNodeMin,
+      inout vec3 traversalNodeMax,
+      inout float traversalNodeSkippable,
+      inout float traversalNodeCurrentMax,
+      inout float traversalNodeIsoLowThreshold
+    ) {
       if (u_brickSkipEnabled <= 0.5) {
         return 1;
       }
@@ -538,6 +579,33 @@ const volumeRenderFragmentShader = /* glsl */ `
         max(safeVolumeSize - vec3(1e-3), vec3(0.0))
       );
       vec3 voxelStep = step * safeVolumeSize;
+      bool cachedTraversalValid = traversalCacheValid > 0.5;
+      if (cachedTraversalValid) {
+        bool insideCachedNode = hierarchy_voxel_within_node_bounds(voxelCoords, traversalNodeMin, traversalNodeMax);
+        bool thresholdChanged =
+          abs(traversalNodeCurrentMax - currentMax) > 1e-5 ||
+          abs(traversalNodeIsoLowThreshold - isoLowThreshold) > 1e-5;
+        if (insideCachedNode) {
+          if (traversalNodeSkippable > 0.5) {
+            int cachedSkipSteps = hierarchy_skip_steps_to_node_exit(
+              voxelCoords,
+              voxelStep,
+              traversalNodeMin,
+              traversalNodeMax
+            );
+            if (cachedSkipSteps > 1) {
+              return cachedSkipSteps;
+            }
+            traversalCacheValid = 0.0;
+          } else if (!thresholdChanged) {
+            return 1;
+          } else {
+            traversalCacheValid = 0.0;
+          }
+        } else {
+          traversalCacheValid = 0.0;
+        }
+      }
 
       for (int hierarchyLevel = MAX_SKIP_HIERARCHY_LEVELS - 1; hierarchyLevel >= 0; hierarchyLevel--) {
         if (hierarchyLevel >= levelCount) {
@@ -555,6 +623,8 @@ const volumeRenderFragmentShader = /* glsl */ `
           (nodeCoords.y + 0.5) / hierarchyTextureSize.y,
           (zBase + nodeCoords.z + 0.5) / hierarchyTextureSize.z
         );
+        vec3 nodeMin = nodeCoords * nodeSize;
+        vec3 nodeMax = min(nodeMin + nodeSize, safeVolumeSize);
         vec4 hierarchyStats = texture(u_skipHierarchyData, hierarchySampleCoord);
         if (!should_skip_with_brick_stats_values(
           hierarchyStats.r,
@@ -563,32 +633,23 @@ const volumeRenderFragmentShader = /* glsl */ `
           currentMax,
           isoLowThreshold
         )) {
+          if (hierarchyLevel == 0) {
+            traversalCacheValid = 1.0;
+            traversalNodeMin = nodeMin;
+            traversalNodeMax = nodeMax;
+            traversalNodeSkippable = 0.0;
+            traversalNodeCurrentMax = currentMax;
+            traversalNodeIsoLowThreshold = isoLowThreshold;
+          }
           continue;
         }
-        vec3 nodeMin = nodeCoords * nodeSize;
-        vec3 nodeMax = min(nodeMin + nodeSize, safeVolumeSize);
-        float exitSteps = LARGE;
-
-        if (voxelStep.x > EPSILON) {
-          exitSteps = min(exitSteps, (nodeMax.x - voxelCoords.x) / voxelStep.x);
-        } else if (voxelStep.x < -EPSILON) {
-          exitSteps = min(exitSteps, (nodeMin.x - voxelCoords.x) / voxelStep.x);
-        }
-        if (voxelStep.y > EPSILON) {
-          exitSteps = min(exitSteps, (nodeMax.y - voxelCoords.y) / voxelStep.y);
-        } else if (voxelStep.y < -EPSILON) {
-          exitSteps = min(exitSteps, (nodeMin.y - voxelCoords.y) / voxelStep.y);
-        }
-        if (voxelStep.z > EPSILON) {
-          exitSteps = min(exitSteps, (nodeMax.z - voxelCoords.z) / voxelStep.z);
-        } else if (voxelStep.z < -EPSILON) {
-          exitSteps = min(exitSteps, (nodeMin.z - voxelCoords.z) / voxelStep.z);
-        }
-
-        if (exitSteps > 1e-4 && exitSteps < LARGE * 0.5) {
-          int skipSteps = int(clamp(floor(exitSteps + 1e-4) + 1.0, 1.0, float(MAX_STEPS)));
-          return max(skipSteps, 1);
-        }
+        traversalCacheValid = 1.0;
+        traversalNodeMin = nodeMin;
+        traversalNodeMax = nodeMax;
+        traversalNodeSkippable = 1.0;
+        traversalNodeCurrentMax = currentMax;
+        traversalNodeIsoLowThreshold = isoLowThreshold;
+        return hierarchy_skip_steps_to_node_exit(voxelCoords, voxelStep, nodeMin, nodeMax);
       }
       return 1;
     }
@@ -1308,12 +1369,29 @@ const volumeRenderFragmentShader = /* glsl */ `
       float baseAdaptiveLod = compute_adaptive_lod_base(step, start_loc);
       float safeHighWaterMark = clamp(u_mipEarlyExitThreshold, 0.0, 1.0);
       int traversedSteps = 0;
+      float hierarchyTraversalCacheValid = 0.0;
+      vec3 hierarchyTraversalNodeMin = vec3(0.0);
+      vec3 hierarchyTraversalNodeMax = vec3(0.0);
+      float hierarchyTraversalNodeSkippable = 0.0;
+      float hierarchyTraversalNodeCurrentMax = -2.0;
+      float hierarchyTraversalNodeIsoLowThreshold = -2.0;
 
       for (int guard = 0; guard < MAX_STEPS; guard++) {
         if (traversedSteps >= nsteps) {
           break;
         }
-        int stepAdvance = hierarchy_skip_step_advance(loc, step, max_val, -1.0);
+        int stepAdvance = hierarchy_skip_step_advance(
+          loc,
+          step,
+          max_val,
+          -1.0,
+          hierarchyTraversalCacheValid,
+          hierarchyTraversalNodeMin,
+          hierarchyTraversalNodeMax,
+          hierarchyTraversalNodeSkippable,
+          hierarchyTraversalNodeCurrentMax,
+          hierarchyTraversalNodeIsoLowThreshold
+        );
         if (stepAdvance > 1) {
           loc += step * float(stepAdvance);
           traversedSteps += stepAdvance;
@@ -1383,12 +1461,29 @@ const volumeRenderFragmentShader = /* glsl */ `
       float low_threshold = u_renderthreshold - 0.02 * (u_clim[1] - u_clim[0]);
       bool hasHit = false;
       int traversedSteps = 0;
+      float hierarchyTraversalCacheValid = 0.0;
+      vec3 hierarchyTraversalNodeMin = vec3(0.0);
+      vec3 hierarchyTraversalNodeMax = vec3(0.0);
+      float hierarchyTraversalNodeSkippable = 0.0;
+      float hierarchyTraversalNodeCurrentMax = -2.0;
+      float hierarchyTraversalNodeIsoLowThreshold = -2.0;
 
       for (int guard = 0; guard < MAX_STEPS; guard++) {
         if (traversedSteps >= nsteps) {
           break;
         }
-        int stepAdvance = hierarchy_skip_step_advance(loc, step, -1.0, low_threshold);
+        int stepAdvance = hierarchy_skip_step_advance(
+          loc,
+          step,
+          -1.0,
+          low_threshold,
+          hierarchyTraversalCacheValid,
+          hierarchyTraversalNodeMin,
+          hierarchyTraversalNodeMax,
+          hierarchyTraversalNodeSkippable,
+          hierarchyTraversalNodeCurrentMax,
+          hierarchyTraversalNodeIsoLowThreshold
+        );
         if (stepAdvance > 1) {
           loc += step * float(stepAdvance);
           traversedSteps += stepAdvance;
@@ -1451,6 +1546,12 @@ const volumeRenderFragmentShader = /* glsl */ `
       bool axisYPending = false;
       bool axisZPending = false;
       int traversedSteps = 0;
+      float hierarchyTraversalCacheValid = 0.0;
+      vec3 hierarchyTraversalNodeMin = vec3(0.0);
+      vec3 hierarchyTraversalNodeMax = vec3(0.0);
+      float hierarchyTraversalNodeSkippable = 0.0;
+      float hierarchyTraversalNodeCurrentMax = -2.0;
+      float hierarchyTraversalNodeIsoLowThreshold = -2.0;
       if (hoverActive && u_hoverRadius > 0.0 && raySpeed > 0.0) {
         axisXEvent = compute_crosshair_axis_event(
           vec2(start_loc.y - u_hoverPos.y, start_loc.z - u_hoverPos.z),
@@ -1486,7 +1587,18 @@ const volumeRenderFragmentShader = /* glsl */ `
         if (traversedSteps >= nsteps) {
           break;
         }
-        int stepAdvance = hierarchy_skip_step_advance(loc, step, -1.0, safeBackgroundCutoff);
+        int stepAdvance = hierarchy_skip_step_advance(
+          loc,
+          step,
+          -1.0,
+          safeBackgroundCutoff,
+          hierarchyTraversalCacheValid,
+          hierarchyTraversalNodeMin,
+          hierarchyTraversalNodeMax,
+          hierarchyTraversalNodeSkippable,
+          hierarchyTraversalNodeCurrentMax,
+          hierarchyTraversalNodeIsoLowThreshold
+        );
         float stepAlpha = 0.0;
         vec3 stepPremultipliedColor = vec3(0.0);
         float sampleT = (float(traversedSteps) + 0.5) / safeSteps;
