@@ -553,9 +553,13 @@ const volumeRenderFragmentShader = /* glsl */ `
       return 1;
     }
 
-    int hierarchy_skip_step_advance(
-      vec3 texcoords,
-      vec3 step,
+    int hierarchy_skip_step_advance_from_voxel_state(
+      vec3 voxelCoords,
+      vec3 voxelStep,
+      vec3 hierarchyTextureSize,
+      vec3 safeVolumeSize,
+      vec3 safeChunkSize,
+      int levelCount,
       float currentMax,
       float isoLowThreshold,
       inout float traversalCacheValid,
@@ -565,22 +569,6 @@ const volumeRenderFragmentShader = /* glsl */ `
       inout float traversalNodeCurrentMax,
       inout float traversalNodeIsoLowThreshold
     ) {
-      if (u_brickSkipEnabled <= 0.5) {
-        return 1;
-      }
-      int levelCount = int(clamp(floor(u_skipHierarchyLevelCount + 0.5), 0.0, float(MAX_SKIP_HIERARCHY_LEVELS)));
-      if (levelCount <= 0) {
-        return 1;
-      }
-      vec3 hierarchyTextureSize = max(u_skipHierarchyTextureSize, vec3(1.0));
-      vec3 safeVolumeSize = max(u_brickVolumeSize, vec3(1.0));
-      vec3 safeChunkSize = max(u_brickChunkSize, vec3(1.0));
-      vec3 voxelCoords = clamp(
-        texcoords * safeVolumeSize,
-        vec3(0.0),
-        max(safeVolumeSize - vec3(1e-3), vec3(0.0))
-      );
-      vec3 voxelStep = step * safeVolumeSize;
       bool cachedTraversalValid = traversalCacheValid > 0.5;
       if (cachedTraversalValid) {
         bool insideCachedNode = hierarchy_voxel_within_node_bounds(voxelCoords, traversalNodeMin, traversalNodeMax);
@@ -654,6 +642,95 @@ const volumeRenderFragmentShader = /* glsl */ `
         return hierarchy_skip_steps_to_node_exit(voxelCoords, voxelStep, nodeMin, nodeMax);
       }
       return 1;
+    }
+
+    int hierarchy_skip_step_advance(
+      vec3 texcoords,
+      vec3 step,
+      float currentMax,
+      float isoLowThreshold,
+      inout float traversalCacheValid,
+      inout vec3 traversalNodeMin,
+      inout vec3 traversalNodeMax,
+      inout float traversalNodeSkippable,
+      inout float traversalNodeCurrentMax,
+      inout float traversalNodeIsoLowThreshold
+    ) {
+      if (u_brickSkipEnabled <= 0.5) {
+        return 1;
+      }
+      int levelCount = int(clamp(floor(u_skipHierarchyLevelCount + 0.5), 0.0, float(MAX_SKIP_HIERARCHY_LEVELS)));
+      if (levelCount <= 0) {
+        return 1;
+      }
+      vec3 hierarchyTextureSize = max(u_skipHierarchyTextureSize, vec3(1.0));
+      vec3 safeVolumeSize = max(u_brickVolumeSize, vec3(1.0));
+      vec3 safeChunkSize = max(u_brickChunkSize, vec3(1.0));
+      vec3 voxelCoords = clamp(
+        texcoords * safeVolumeSize,
+        vec3(0.0),
+        max(safeVolumeSize - vec3(1e-3), vec3(0.0))
+      );
+      vec3 voxelStep = step * safeVolumeSize;
+      return hierarchy_skip_step_advance_from_voxel_state(
+        voxelCoords,
+        voxelStep,
+        hierarchyTextureSize,
+        safeVolumeSize,
+        safeChunkSize,
+        levelCount,
+        currentMax,
+        isoLowThreshold,
+        traversalCacheValid,
+        traversalNodeMin,
+        traversalNodeMax,
+        traversalNodeSkippable,
+        traversalNodeCurrentMax,
+        traversalNodeIsoLowThreshold
+      );
+    }
+
+    int hierarchy_skip_step_advance_voxel(
+      vec3 sampleVoxelCoords,
+      vec3 sampleToHierarchyScale,
+      vec3 hierarchyVoxelStep,
+      vec3 hierarchyTextureSize,
+      vec3 hierarchyVolumeSize,
+      vec3 hierarchyChunkSize,
+      int levelCount,
+      float currentMax,
+      float isoLowThreshold,
+      inout float traversalCacheValid,
+      inout vec3 traversalNodeMin,
+      inout vec3 traversalNodeMax,
+      inout float traversalNodeSkippable,
+      inout float traversalNodeCurrentMax,
+      inout float traversalNodeIsoLowThreshold
+    ) {
+      if (levelCount <= 0) {
+        return 1;
+      }
+      vec3 voxelCoords = clamp(
+        (sampleVoxelCoords + vec3(0.5)) * sampleToHierarchyScale,
+        vec3(0.0),
+        max(hierarchyVolumeSize - vec3(1e-3), vec3(0.0))
+      );
+      return hierarchy_skip_step_advance_from_voxel_state(
+        voxelCoords,
+        hierarchyVoxelStep,
+        hierarchyTextureSize,
+        hierarchyVolumeSize,
+        hierarchyChunkSize,
+        levelCount,
+        currentMax,
+        isoLowThreshold,
+        traversalCacheValid,
+        traversalNodeMin,
+        traversalNodeMax,
+        traversalNodeSkippable,
+        traversalNodeCurrentMax,
+        traversalNodeIsoLowThreshold
+      );
     }
 
     vec3 clamp_voxel_coords(vec3 voxelCoords, vec3 atlasVolumeSize) {
@@ -1126,50 +1203,40 @@ const volumeRenderFragmentShader = /* glsl */ `
       tDelta = LARGE;
     }
 
-    vec4 sample_nearest_voxel_cached(
+    vec4 sample_nearest_full_volume_voxel(vec3 voxelCoords) {
+      return texelFetch(u_data, ivec3(voxelCoords), 0);
+    }
+
+    vec4 sample_nearest_brick_atlas_voxel_cached(
       vec3 voxelCoords,
-      vec3 safeVolumeSize,
+      vec3 safeGrid,
+      vec3 safeChunk,
+      vec3 atlasVolumeSize,
+      vec3 atlasSize,
+      vec3 safeSlotGrid,
       inout float cachedAtlasValid,
       inout vec3 cachedBrickCoords,
       inout float cachedAtlasIndex
     ) {
-      vec3 clampedVoxel = clamp_voxel_coords(voxelCoords, safeVolumeSize);
-      if (u_brickAtlasEnabled > 0.5) {
-        vec3 safeGrid = max(u_brickGridSize, vec3(1.0));
-        vec3 safeChunk = max(u_brickChunkSize, vec3(1.0));
-        vec3 atlasVolumeSize = max(u_brickVolumeSize, vec3(1.0));
-        vec3 atlasVoxel = clamp_voxel_coords(clampedVoxel, atlasVolumeSize);
-        vec3 brickCoords = brick_coords_for_voxel(atlasVoxel, safeGrid, safeChunk, atlasVolumeSize);
-        bool cacheHit = cachedAtlasValid > 0.5 && brick_coords_equal(cachedBrickCoords, brickCoords);
-        if (!cacheHit) {
-          cachedBrickCoords = brickCoords;
-          cachedAtlasIndex = atlas_index_for_brick(brickCoords, safeGrid);
-          cachedAtlasValid = 1.0;
-        }
-        if (cachedAtlasIndex < -0.5) {
-          return vec4(0.0);
-        }
-        vec3 atlasSize = max(u_brickAtlasSize, vec3(1.0));
-        vec3 safeSlotGrid = max(u_brickAtlasSlotGrid, vec3(1.0));
-        return sample_brick_atlas_voxel_known(
-          atlasVoxel,
-          brickCoords,
-          cachedAtlasIndex,
-          safeSlotGrid,
-          safeChunk,
-          atlasSize,
-          atlasVolumeSize
-        );
+      vec3 brickCoords = clamp(floor(voxelCoords / safeChunk), vec3(0.0), safeGrid - vec3(1.0));
+      bool cacheHit = cachedAtlasValid > 0.5 && brick_coords_equal(cachedBrickCoords, brickCoords);
+      if (!cacheHit) {
+        cachedBrickCoords = brickCoords;
+        cachedAtlasIndex = atlas_index_for_brick(brickCoords, safeGrid);
+        cachedAtlasValid = 1.0;
       }
-      ivec3 maxVoxelTexel = ivec3(max(safeVolumeSize - vec3(1.0), vec3(0.0)));
-      ivec3 voxelTexel = ivec3(
-        clamp(
-          floor(clampedVoxel + vec3(0.5)),
-          vec3(0.0),
-          vec3(maxVoxelTexel)
-        )
+      if (cachedAtlasIndex < -0.5) {
+        return vec4(0.0);
+      }
+      return sample_brick_atlas_voxel_known(
+        voxelCoords,
+        brickCoords,
+        cachedAtlasIndex,
+        safeSlotGrid,
+        safeChunk,
+        atlasSize,
+        atlasVolumeSize
       );
-      return texelFetch(u_data, voxelTexel, 0);
     }
 
     vec3 resolve_nearest_sampling_volume_size() {
@@ -1511,10 +1578,13 @@ const volumeRenderFragmentShader = /* glsl */ `
       float hierarchyTraversalNodeSkippable = 0.0;
       float hierarchyTraversalNodeCurrentMax = -2.0;
       float hierarchyTraversalNodeIsoLowThreshold = -2.0;
+      int hierarchyLevelCount = int(clamp(floor(u_skipHierarchyLevelCount + 0.5), 0.0, float(MAX_SKIP_HIERARCHY_LEVELS)));
+      bool skipTraversalEnabled = u_brickSkipEnabled > 0.5 && hierarchyLevelCount > 0;
       bool useVoxelExactNearest = should_use_voxel_exact_nearest(start_loc, step, nsteps);
 
       if (useVoxelExactNearest) {
         vec3 safeVolumeSize = resolve_nearest_sampling_volume_size();
+        vec3 invSafeVolumeSize = vec3(1.0) / safeVolumeSize;
         vec3 startVoxelCoords = clamp(
           start_loc * safeVolumeSize,
           vec3(0.0),
@@ -1522,6 +1592,31 @@ const volumeRenderFragmentShader = /* glsl */ `
         );
         vec3 voxelStep = step * safeVolumeSize;
         vec3 voxelCoords = floor(startVoxelCoords);
+        bool useBrickAtlas = u_brickAtlasEnabled > 0.5;
+        vec3 safeGrid = vec3(1.0);
+        vec3 safeChunk = vec3(1.0);
+        vec3 atlasVolumeSize = safeVolumeSize;
+        vec3 atlasSize = vec3(1.0);
+        vec3 safeSlotGrid = vec3(1.0);
+        if (useBrickAtlas) {
+          safeGrid = max(u_brickGridSize, vec3(1.0));
+          safeChunk = max(u_brickChunkSize, vec3(1.0));
+          atlasVolumeSize = max(u_brickVolumeSize, vec3(1.0));
+          atlasSize = max(u_brickAtlasSize, vec3(1.0));
+          safeSlotGrid = max(u_brickAtlasSlotGrid, vec3(1.0));
+        }
+        vec3 hierarchyTextureSize = vec3(1.0);
+        vec3 hierarchyVolumeSize = vec3(1.0);
+        vec3 hierarchyChunkSize = vec3(1.0);
+        vec3 hierarchyVoxelStep = vec3(0.0);
+        vec3 sampleToHierarchyScale = vec3(1.0);
+        if (skipTraversalEnabled) {
+          hierarchyTextureSize = max(u_skipHierarchyTextureSize, vec3(1.0));
+          hierarchyVolumeSize = max(u_brickVolumeSize, vec3(1.0));
+          hierarchyChunkSize = max(u_brickChunkSize, vec3(1.0));
+          hierarchyVoxelStep = step * hierarchyVolumeSize;
+          sampleToHierarchyScale = hierarchyVolumeSize * invSafeVolumeSize;
+        }
         float traversedDistance = 0.0;
         float axisStepX;
         float axisStepY;
@@ -1548,52 +1643,66 @@ const volumeRenderFragmentShader = /* glsl */ `
           if (!nearest_voxel_in_bounds(voxelCoords, safeVolumeSize)) {
             break;
           }
-          vec3 locForSkip = (clamp_voxel_coords(voxelCoords, safeVolumeSize) + vec3(0.5)) / safeVolumeSize;
-          int stepAdvance = hierarchy_skip_step_advance(
-            locForSkip,
-            step,
-            max_val,
-            -1.0,
-            hierarchyTraversalCacheValid,
-            hierarchyTraversalNodeMin,
-            hierarchyTraversalNodeMax,
-            hierarchyTraversalNodeSkippable,
-            hierarchyTraversalNodeCurrentMax,
-            hierarchyTraversalNodeIsoLowThreshold
-          );
+          int stepAdvance = 1;
+          if (skipTraversalEnabled) {
+            stepAdvance = hierarchy_skip_step_advance_voxel(
+              voxelCoords,
+              sampleToHierarchyScale,
+              hierarchyVoxelStep,
+              hierarchyTextureSize,
+              hierarchyVolumeSize,
+              hierarchyChunkSize,
+              hierarchyLevelCount,
+              max_val,
+              -1.0,
+              hierarchyTraversalCacheValid,
+              hierarchyTraversalNodeMin,
+              hierarchyTraversalNodeMax,
+              hierarchyTraversalNodeSkippable,
+              hierarchyTraversalNodeCurrentMax,
+              hierarchyTraversalNodeIsoLowThreshold
+            );
+          }
           if (stepAdvance > 1) {
             float remainingDistance = float(nsteps) - traversedDistance;
             float skipDelta = clamp(float(stepAdvance), NEAREST_DDA_ADVANCE_EPSILON, max(remainingDistance, NEAREST_DDA_ADVANCE_EPSILON));
             traversedDistance += skipDelta;
-            vec3 jumpedVoxelCoords = clamp(
-              startVoxelCoords + voxelStep * traversedDistance,
-              vec3(0.0),
-              max(safeVolumeSize - vec3(1e-4), vec3(0.0))
-            );
+            vec3 jumpedVoxelCoords = startVoxelCoords + voxelStep * traversedDistance;
             voxelCoords = floor(jumpedVoxelCoords);
-            nearest_dda_init_axis(jumpedVoxelCoords.x, voxelStep.x, axisStepX, tMaxX, tDeltaX);
-            nearest_dda_init_axis(jumpedVoxelCoords.y, voxelStep.y, axisStepY, tMaxY, tDeltaY);
-            nearest_dda_init_axis(jumpedVoxelCoords.z, voxelStep.z, axisStepZ, tMaxZ, tDeltaZ);
-            tMaxX += traversedDistance;
-            tMaxY += traversedDistance;
-            tMaxZ += traversedDistance;
+            if (traversedDistance < float(nsteps) - NEAREST_DDA_ADVANCE_EPSILON &&
+                nearest_voxel_in_bounds(voxelCoords, safeVolumeSize)) {
+              nearest_dda_init_axis(jumpedVoxelCoords.x, voxelStep.x, axisStepX, tMaxX, tDeltaX);
+              nearest_dda_init_axis(jumpedVoxelCoords.y, voxelStep.y, axisStepY, tMaxY, tDeltaY);
+              nearest_dda_init_axis(jumpedVoxelCoords.z, voxelStep.z, axisStepZ, tMaxZ, tDeltaZ);
+              tMaxX += traversedDistance;
+              tMaxY += traversedDistance;
+              tMaxZ += traversedDistance;
+            }
             continue;
           }
 
-          vec3 sampleLoc = (clamp_voxel_coords(voxelCoords, safeVolumeSize) + vec3(0.5)) / safeVolumeSize;
-          vec4 colorSample = sample_nearest_voxel_cached(
-            voxelCoords,
-            safeVolumeSize,
-            cachedAtlasValid,
-            cachedBrickCoords,
-            cachedAtlasIndex
-          );
+          vec4 colorSample = vec4(0.0);
+          if (useBrickAtlas) {
+            colorSample = sample_nearest_brick_atlas_voxel_cached(
+              voxelCoords,
+              safeGrid,
+              safeChunk,
+              atlasVolumeSize,
+              atlasSize,
+              safeSlotGrid,
+              cachedAtlasValid,
+              cachedBrickCoords,
+              cachedAtlasIndex
+            );
+          } else {
+            colorSample = sample_nearest_full_volume_voxel(voxelCoords);
+          }
           float rawVal = luminance(colorSample);
           float normalizedVal = normalize_intensity(rawVal);
           if (normalizedVal > max_val) {
             max_val = normalizedVal;
             max_color = colorSample;
-            max_loc = sampleLoc;
+            max_loc = (voxelCoords + vec3(0.5)) * invSafeVolumeSize;
             if (max_val >= safeHighWaterMark) {
               break;
             }
@@ -1604,18 +1713,17 @@ const volumeRenderFragmentShader = /* glsl */ `
             float remainingDistance = float(nsteps) - traversedDistance;
             float fallbackStep = clamp(1.0, NEAREST_DDA_ADVANCE_EPSILON, max(remainingDistance, NEAREST_DDA_ADVANCE_EPSILON));
             traversedDistance += fallbackStep;
-            vec3 fallbackVoxelCoords = clamp(
-              startVoxelCoords + voxelStep * traversedDistance,
-              vec3(0.0),
-              max(safeVolumeSize - vec3(1e-4), vec3(0.0))
-            );
+            vec3 fallbackVoxelCoords = startVoxelCoords + voxelStep * traversedDistance;
             voxelCoords = floor(fallbackVoxelCoords);
-            nearest_dda_init_axis(fallbackVoxelCoords.x, voxelStep.x, axisStepX, tMaxX, tDeltaX);
-            nearest_dda_init_axis(fallbackVoxelCoords.y, voxelStep.y, axisStepY, tMaxY, tDeltaY);
-            nearest_dda_init_axis(fallbackVoxelCoords.z, voxelStep.z, axisStepZ, tMaxZ, tDeltaZ);
-            tMaxX += traversedDistance;
-            tMaxY += traversedDistance;
-            tMaxZ += traversedDistance;
+            if (traversedDistance < float(nsteps) - NEAREST_DDA_ADVANCE_EPSILON &&
+                nearest_voxel_in_bounds(voxelCoords, safeVolumeSize)) {
+              nearest_dda_init_axis(fallbackVoxelCoords.x, voxelStep.x, axisStepX, tMaxX, tDeltaX);
+              nearest_dda_init_axis(fallbackVoxelCoords.y, voxelStep.y, axisStepY, tMaxY, tDeltaY);
+              nearest_dda_init_axis(fallbackVoxelCoords.z, voxelStep.z, axisStepZ, tMaxZ, tDeltaZ);
+              tMaxX += traversedDistance;
+              tMaxY += traversedDistance;
+              tMaxZ += traversedDistance;
+            }
             continue;
           }
 
@@ -1642,18 +1750,21 @@ const volumeRenderFragmentShader = /* glsl */ `
           if (traversedSteps >= nsteps) {
             break;
           }
-          int stepAdvance = hierarchy_skip_step_advance(
-            loc,
-            step,
-            max_val,
-            -1.0,
-            hierarchyTraversalCacheValid,
-            hierarchyTraversalNodeMin,
-            hierarchyTraversalNodeMax,
-            hierarchyTraversalNodeSkippable,
-            hierarchyTraversalNodeCurrentMax,
-            hierarchyTraversalNodeIsoLowThreshold
-          );
+          int stepAdvance = 1;
+          if (skipTraversalEnabled) {
+            stepAdvance = hierarchy_skip_step_advance(
+              loc,
+              step,
+              max_val,
+              -1.0,
+              hierarchyTraversalCacheValid,
+              hierarchyTraversalNodeMin,
+              hierarchyTraversalNodeMax,
+              hierarchyTraversalNodeSkippable,
+              hierarchyTraversalNodeCurrentMax,
+              hierarchyTraversalNodeIsoLowThreshold
+            );
+          }
           if (stepAdvance > 1) {
             loc += step * float(stepAdvance);
             traversedSteps += stepAdvance;
@@ -1734,23 +1845,28 @@ const volumeRenderFragmentShader = /* glsl */ `
       float hierarchyTraversalNodeSkippable = 0.0;
       float hierarchyTraversalNodeCurrentMax = -2.0;
       float hierarchyTraversalNodeIsoLowThreshold = -2.0;
+      int hierarchyLevelCount = int(clamp(floor(u_skipHierarchyLevelCount + 0.5), 0.0, float(MAX_SKIP_HIERARCHY_LEVELS)));
+      bool skipTraversalEnabled = u_brickSkipEnabled > 0.5 && hierarchyLevelCount > 0;
 
       for (int guard = 0; guard < MAX_STEPS; guard++) {
         if (traversedSteps >= nsteps) {
           break;
         }
-        int stepAdvance = hierarchy_skip_step_advance(
-          loc,
-          step,
-          -1.0,
-          low_threshold,
-          hierarchyTraversalCacheValid,
-          hierarchyTraversalNodeMin,
-          hierarchyTraversalNodeMax,
-          hierarchyTraversalNodeSkippable,
-          hierarchyTraversalNodeCurrentMax,
-          hierarchyTraversalNodeIsoLowThreshold
-        );
+        int stepAdvance = 1;
+        if (skipTraversalEnabled) {
+          stepAdvance = hierarchy_skip_step_advance(
+            loc,
+            step,
+            -1.0,
+            low_threshold,
+            hierarchyTraversalCacheValid,
+            hierarchyTraversalNodeMin,
+            hierarchyTraversalNodeMax,
+            hierarchyTraversalNodeSkippable,
+            hierarchyTraversalNodeCurrentMax,
+            hierarchyTraversalNodeIsoLowThreshold
+          );
+        }
         if (stepAdvance > 1) {
           loc += step * float(stepAdvance);
           traversedSteps += stepAdvance;
@@ -1823,6 +1939,8 @@ const volumeRenderFragmentShader = /* glsl */ `
       float hierarchyTraversalNodeSkippable = 0.0;
       float hierarchyTraversalNodeCurrentMax = -2.0;
       float hierarchyTraversalNodeIsoLowThreshold = -2.0;
+      int hierarchyLevelCount = int(clamp(floor(u_skipHierarchyLevelCount + 0.5), 0.0, float(MAX_SKIP_HIERARCHY_LEVELS)));
+      bool skipTraversalEnabled = u_brickSkipEnabled > 0.5 && hierarchyLevelCount > 0;
       if (hoverActive && u_hoverRadius > 0.0 && raySpeed > 0.0) {
         axisXEvent = compute_crosshair_axis_event(
           vec2(start_loc.y - u_hoverPos.y, start_loc.z - u_hoverPos.z),
@@ -1858,18 +1976,21 @@ const volumeRenderFragmentShader = /* glsl */ `
         if (traversedSteps >= nsteps) {
           break;
         }
-        int stepAdvance = hierarchy_skip_step_advance(
-          loc,
-          step,
-          -1.0,
-          safeBackgroundCutoff,
-          hierarchyTraversalCacheValid,
-          hierarchyTraversalNodeMin,
-          hierarchyTraversalNodeMax,
-          hierarchyTraversalNodeSkippable,
-          hierarchyTraversalNodeCurrentMax,
-          hierarchyTraversalNodeIsoLowThreshold
-        );
+        int stepAdvance = 1;
+        if (skipTraversalEnabled) {
+          stepAdvance = hierarchy_skip_step_advance(
+            loc,
+            step,
+            -1.0,
+            safeBackgroundCutoff,
+            hierarchyTraversalCacheValid,
+            hierarchyTraversalNodeMin,
+            hierarchyTraversalNodeMax,
+            hierarchyTraversalNodeSkippable,
+            hierarchyTraversalNodeCurrentMax,
+            hierarchyTraversalNodeIsoLowThreshold
+          );
+        }
         float stepAlpha = 0.0;
         vec3 stepPremultipliedColor = vec3(0.0);
         float sampleT = (float(traversedSteps) + 0.5) / safeSteps;

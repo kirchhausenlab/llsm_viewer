@@ -14,6 +14,7 @@ type FrameTimingStats = {
 
 const fixture = resolveDatasetFixture();
 const FRAME_SAMPLE_RENDER_COUNT = 8;
+const RENDER_STYLE_MIP = 0;
 
 function resolveOptionalPositiveNumber(raw: string | undefined): number | null {
   if (!raw) {
@@ -121,6 +122,57 @@ async function setCameraDistance(page: Page, distance: number): Promise<boolean>
   }, distance);
 }
 
+async function forceMipNearestMode(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const patchUniforms = (window as Window & {
+      __LLSM_PATCH_VOLUME_UNIFORMS__?: ((patch: Record<string, unknown>) => number) | null;
+    }).__LLSM_PATCH_VOLUME_UNIFORMS__;
+    const forceRender = (window as Window & { __LLSM_FORCE_RENDER__?: (() => boolean) | null }).__LLSM_FORCE_RENDER__;
+    if (typeof patchUniforms !== 'function') {
+      return 0;
+    }
+    const updated = patchUniforms({
+      renderStyle: 0,
+      nearestSampling: 1,
+      adaptiveLodEnabled: 0,
+    });
+    if (typeof forceRender === 'function') {
+      forceRender();
+      forceRender();
+      forceRender();
+    }
+    return updated;
+  });
+}
+
+async function readActiveRenderingMode(page: Page): Promise<{ renderStyle: number | null; nearestSampling: number | null }> {
+  return page.evaluate(() => {
+    const getter = (window as Window & { __LLSM_VOLUME_RESOURCE_SUMMARY__?: (() => unknown) | null })
+      .__LLSM_VOLUME_RESOURCE_SUMMARY__;
+    if (typeof getter !== 'function') {
+      return { renderStyle: null, nearestSampling: null };
+    }
+    const summary = getter() as {
+      resources?: Array<{
+        mode?: string | null;
+        visible?: boolean;
+        renderStyle?: number | null;
+        uniforms?: {
+          nearestSampling?: number | null;
+        } | null;
+      }> | null;
+    } | null;
+    const active3dResource = summary?.resources?.find((resource) => resource?.mode === '3d' && resource?.visible !== false);
+    return {
+      renderStyle: typeof active3dResource?.renderStyle === 'number' ? active3dResource.renderStyle : null,
+      nearestSampling:
+        typeof active3dResource?.uniforms?.nearestSampling === 'number'
+          ? active3dResource.uniforms.nearestSampling
+          : null,
+    };
+  });
+}
+
 test('@nightly benchmark: close-up viewer frame pacing', async ({ page }) => {
   test.setTimeout(8 * 60_000);
 
@@ -136,6 +188,12 @@ test('@nightly benchmark: close-up viewer frame pacing', async ({ page }) => {
   await expect(canvas).toBeVisible();
 
   await page.waitForTimeout(1200);
+  const patchedResources = await forceMipNearestMode(page);
+  expect(patchedResources).toBeGreaterThanOrEqual(1);
+  await page.waitForTimeout(100);
+  const renderingMode = await readActiveRenderingMode(page);
+  expect(renderingMode.renderStyle).toBe(RENDER_STYLE_MIP);
+  expect(renderingMode.nearestSampling).toBe(1);
   const farDistance = await readCameraDistance(page);
   const farTiming = await sampleFrameTiming(page);
 
