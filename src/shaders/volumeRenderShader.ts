@@ -1203,6 +1203,46 @@ const volumeRenderFragmentShader = /* glsl */ `
       tDelta = LARGE;
     }
 
+    void nearest_dda_advance_axis_to_target(
+      float targetT,
+      inout float voxelCoord,
+      float axisStep,
+      inout float tMax,
+      float tDelta
+    ) {
+      if (axisStep == 0.0 || tDelta >= LARGE * 0.5) {
+        return;
+      }
+      float adjustedTarget = targetT + 1e-5;
+      if (tMax > adjustedTarget) {
+        return;
+      }
+      float crossings = floor((adjustedTarget - tMax) / tDelta) + 1.0;
+      if (!(crossings > 0.0)) {
+        return;
+      }
+      voxelCoord += axisStep * crossings;
+      tMax += tDelta * crossings;
+    }
+
+    void nearest_dda_advance_to_target(
+      float targetT,
+      inout vec3 voxelCoords,
+      float axisStepX,
+      float axisStepY,
+      float axisStepZ,
+      inout float tMaxX,
+      inout float tMaxY,
+      inout float tMaxZ,
+      float tDeltaX,
+      float tDeltaY,
+      float tDeltaZ
+    ) {
+      nearest_dda_advance_axis_to_target(targetT, voxelCoords.x, axisStepX, tMaxX, tDeltaX);
+      nearest_dda_advance_axis_to_target(targetT, voxelCoords.y, axisStepY, tMaxY, tDeltaY);
+      nearest_dda_advance_axis_to_target(targetT, voxelCoords.z, axisStepZ, tMaxZ, tDeltaZ);
+    }
+
     vec4 sample_nearest_full_volume_voxel(vec3 voxelCoords) {
       return texelFetch(u_data, ivec3(voxelCoords), 0);
     }
@@ -1610,12 +1650,14 @@ const volumeRenderFragmentShader = /* glsl */ `
         vec3 hierarchyChunkSize = vec3(1.0);
         vec3 hierarchyVoxelStep = vec3(0.0);
         vec3 sampleToHierarchyScale = vec3(1.0);
+        vec3 hierarchyToSampleScale = vec3(1.0);
         if (skipTraversalEnabled) {
           hierarchyTextureSize = max(u_skipHierarchyTextureSize, vec3(1.0));
           hierarchyVolumeSize = max(u_brickVolumeSize, vec3(1.0));
           hierarchyChunkSize = max(u_brickChunkSize, vec3(1.0));
           hierarchyVoxelStep = step * hierarchyVolumeSize;
           sampleToHierarchyScale = hierarchyVolumeSize * invSafeVolumeSize;
+          hierarchyToSampleScale = safeVolumeSize / hierarchyVolumeSize;
         }
         float traversedDistance = 0.0;
         float axisStepX;
@@ -1627,15 +1669,19 @@ const volumeRenderFragmentShader = /* glsl */ `
         float tDeltaX;
         float tDeltaY;
         float tDeltaZ;
+        float hierarchyLevelValid[MAX_SKIP_HIERARCHY_LEVELS];
+        vec3 hierarchyLevelNodeMin[MAX_SKIP_HIERARCHY_LEVELS];
+        vec3 hierarchyLevelNodeMax[MAX_SKIP_HIERARCHY_LEVELS];
+        vec4 hierarchyLevelStats[MAX_SKIP_HIERARCHY_LEVELS];
+        for (int hierarchyLevel = 0; hierarchyLevel < MAX_SKIP_HIERARCHY_LEVELS; hierarchyLevel++) {
+          hierarchyLevelValid[hierarchyLevel] = 0.0;
+        }
         nearest_dda_init_axis(startVoxelCoords.x, voxelStep.x, axisStepX, tMaxX, tDeltaX);
         nearest_dda_init_axis(startVoxelCoords.y, voxelStep.y, axisStepY, tMaxY, tDeltaY);
         nearest_dda_init_axis(startVoxelCoords.z, voxelStep.z, axisStepZ, tMaxZ, tDeltaZ);
         tMaxX += traversedDistance;
         tMaxY += traversedDistance;
         tMaxZ += traversedDistance;
-        float cachedAtlasValid = 0.0;
-        vec3 cachedBrickCoords = vec3(-1.0);
-        float cachedAtlasIndex = -2.0;
         for (int guard = 0; guard < MAX_STEPS; guard++) {
           if (traversedDistance >= float(nsteps) - NEAREST_DDA_ADVANCE_EPSILON) {
             break;
@@ -1643,104 +1689,197 @@ const volumeRenderFragmentShader = /* glsl */ `
           if (!nearest_voxel_in_bounds(voxelCoords, safeVolumeSize)) {
             break;
           }
-          int stepAdvance = 1;
+          vec3 regionMinSample = vec3(-1.0);
+          vec3 regionMaxSample = safeVolumeSize + vec3(1.0);
+          vec3 brickCoords = vec3(-1.0);
+          float atlasIndex = -2.0;
+          bool skippedNode = false;
           if (skipTraversalEnabled) {
-            stepAdvance = hierarchy_skip_step_advance_voxel(
-              voxelCoords,
-              sampleToHierarchyScale,
-              hierarchyVoxelStep,
-              hierarchyTextureSize,
-              hierarchyVolumeSize,
-              hierarchyChunkSize,
-              hierarchyLevelCount,
-              max_val,
-              -1.0,
-              hierarchyTraversalCacheValid,
-              hierarchyTraversalNodeMin,
-              hierarchyTraversalNodeMax,
-              hierarchyTraversalNodeSkippable,
-              hierarchyTraversalNodeCurrentMax,
-              hierarchyTraversalNodeIsoLowThreshold
-            );
-          }
-          if (stepAdvance > 1) {
-            float remainingDistance = float(nsteps) - traversedDistance;
-            float skipDelta = clamp(float(stepAdvance), NEAREST_DDA_ADVANCE_EPSILON, max(remainingDistance, NEAREST_DDA_ADVANCE_EPSILON));
-            traversedDistance += skipDelta;
-            vec3 jumpedVoxelCoords = startVoxelCoords + voxelStep * traversedDistance;
-            voxelCoords = floor(jumpedVoxelCoords);
-            if (traversedDistance < float(nsteps) - NEAREST_DDA_ADVANCE_EPSILON &&
-                nearest_voxel_in_bounds(voxelCoords, safeVolumeSize)) {
-              nearest_dda_init_axis(jumpedVoxelCoords.x, voxelStep.x, axisStepX, tMaxX, tDeltaX);
-              nearest_dda_init_axis(jumpedVoxelCoords.y, voxelStep.y, axisStepY, tMaxY, tDeltaY);
-              nearest_dda_init_axis(jumpedVoxelCoords.z, voxelStep.z, axisStepZ, tMaxZ, tDeltaZ);
-              tMaxX += traversedDistance;
-              tMaxY += traversedDistance;
-              tMaxZ += traversedDistance;
+            vec3 hierarchyVoxelCoords = (voxelCoords + vec3(0.5)) * sampleToHierarchyScale;
+            for (int hierarchyLevel = MAX_SKIP_HIERARCHY_LEVELS - 1; hierarchyLevel >= 0; hierarchyLevel--) {
+              if (hierarchyLevel >= hierarchyLevelCount) {
+                continue;
+              }
+              if (
+                hierarchyLevelValid[hierarchyLevel] <= 0.5 ||
+                !hierarchy_voxel_within_node_bounds(
+                  hierarchyVoxelCoords,
+                  hierarchyLevelNodeMin[hierarchyLevel],
+                  hierarchyLevelNodeMax[hierarchyLevel]
+                )
+              ) {
+                vec4 levelMeta = u_skipHierarchyLevelMeta[hierarchyLevel];
+                vec3 grid = max(levelMeta.xyz, vec3(1.0));
+                float zBase = levelMeta.w;
+                float levelScale = exp2(float(hierarchyLevel));
+                vec3 nodeSize = max(vec3(1.0), hierarchyChunkSize * levelScale);
+                vec3 nodeCoords = floor(hierarchyVoxelCoords / nodeSize);
+                nodeCoords = clamp(nodeCoords, vec3(0.0), grid - vec3(1.0));
+                vec3 hierarchySampleCoord = vec3(
+                  (nodeCoords.x + 0.5) / hierarchyTextureSize.x,
+                  (nodeCoords.y + 0.5) / hierarchyTextureSize.y,
+                  (zBase + nodeCoords.z + 0.5) / hierarchyTextureSize.z
+                );
+                hierarchyLevelNodeMin[hierarchyLevel] = nodeCoords * nodeSize;
+                hierarchyLevelNodeMax[hierarchyLevel] = min(
+                  hierarchyLevelNodeMin[hierarchyLevel] + nodeSize,
+                  hierarchyVolumeSize
+                );
+                hierarchyLevelStats[hierarchyLevel] = texture(u_skipHierarchyData, hierarchySampleCoord);
+                hierarchyLevelValid[hierarchyLevel] = 1.0;
+              }
+              vec4 hierarchyStats = hierarchyLevelStats[hierarchyLevel];
+              if (should_skip_with_brick_stats_values(
+                hierarchyStats.r,
+                hierarchyStats.g,
+                hierarchyStats.b,
+                max_val,
+                -1.0
+              )) {
+                int stepAdvance = hierarchy_skip_steps_to_node_exit(
+                  hierarchyVoxelCoords,
+                  hierarchyVoxelStep,
+                  hierarchyLevelNodeMin[hierarchyLevel],
+                  hierarchyLevelNodeMax[hierarchyLevel]
+                );
+                if (stepAdvance > 1) {
+                  float targetT = min(
+                    traversedDistance + float(stepAdvance),
+                    float(nsteps)
+                  );
+                  nearest_dda_advance_to_target(
+                    targetT,
+                    voxelCoords,
+                    axisStepX,
+                    axisStepY,
+                    axisStepZ,
+                    tMaxX,
+                    tMaxY,
+                    tMaxZ,
+                    tDeltaX,
+                    tDeltaY,
+                    tDeltaZ
+                  );
+                  traversedDistance = targetT;
+                  skippedNode = true;
+                } else {
+                  regionMinSample = voxelCoords;
+                  regionMaxSample = min(regionMinSample + vec3(1.0), safeVolumeSize);
+                  if (useBrickAtlas) {
+                    brickCoords = brick_coords_for_voxel(
+                      voxelCoords,
+                      safeGrid,
+                      safeChunk,
+                      atlasVolumeSize
+                    );
+                  }
+                }
+                break;
+              }
+              if (hierarchyLevel == 0) {
+                regionMinSample = hierarchyLevelNodeMin[hierarchyLevel] * hierarchyToSampleScale;
+                regionMaxSample = hierarchyLevelNodeMax[hierarchyLevel] * hierarchyToSampleScale;
+                if (useBrickAtlas) {
+                  brickCoords = clamp(
+                    floor(hierarchyLevelNodeMin[hierarchyLevel] / hierarchyChunkSize),
+                    vec3(0.0),
+                    safeGrid - vec3(1.0)
+                  );
+                }
+              }
             }
-            continue;
-          }
-
-          vec4 colorSample = vec4(0.0);
-          if (useBrickAtlas) {
-            colorSample = sample_nearest_brick_atlas_voxel_cached(
+          } else if (useBrickAtlas) {
+            brickCoords = brick_coords_for_voxel(
               voxelCoords,
               safeGrid,
               safeChunk,
-              atlasVolumeSize,
-              atlasSize,
-              safeSlotGrid,
-              cachedAtlasValid,
-              cachedBrickCoords,
-              cachedAtlasIndex
+              atlasVolumeSize
             );
-          } else {
-            colorSample = sample_nearest_full_volume_voxel(voxelCoords);
+            regionMinSample = brickCoords * safeChunk;
+            regionMaxSample = min(regionMinSample + safeChunk, safeVolumeSize);
           }
-          float rawVal = luminance(colorSample);
-          float normalizedVal = normalize_intensity(rawVal);
-          if (normalizedVal > max_val) {
-            max_val = normalizedVal;
-            max_color = colorSample;
-            max_loc = (voxelCoords + vec3(0.5)) * invSafeVolumeSize;
-            if (max_val >= safeHighWaterMark) {
-              break;
-            }
-          }
-
-          float nextBoundaryT = min(tMaxX, min(tMaxY, tMaxZ));
-          if (!(nextBoundaryT > traversedDistance + 1e-6) || nextBoundaryT >= LARGE * 0.5) {
-            float remainingDistance = float(nsteps) - traversedDistance;
-            float fallbackStep = clamp(1.0, NEAREST_DDA_ADVANCE_EPSILON, max(remainingDistance, NEAREST_DDA_ADVANCE_EPSILON));
-            traversedDistance += fallbackStep;
-            vec3 fallbackVoxelCoords = startVoxelCoords + voxelStep * traversedDistance;
-            voxelCoords = floor(fallbackVoxelCoords);
-            if (traversedDistance < float(nsteps) - NEAREST_DDA_ADVANCE_EPSILON &&
-                nearest_voxel_in_bounds(voxelCoords, safeVolumeSize)) {
-              nearest_dda_init_axis(fallbackVoxelCoords.x, voxelStep.x, axisStepX, tMaxX, tDeltaX);
-              nearest_dda_init_axis(fallbackVoxelCoords.y, voxelStep.y, axisStepY, tMaxY, tDeltaY);
-              nearest_dda_init_axis(fallbackVoxelCoords.z, voxelStep.z, axisStepZ, tMaxZ, tDeltaZ);
-              tMaxX += traversedDistance;
-              tMaxY += traversedDistance;
-              tMaxZ += traversedDistance;
-            }
+          if (skippedNode) {
             continue;
           }
-
-          float tieThreshold = nextBoundaryT + 1e-5;
-          if (axisStepX != 0.0 && tMaxX <= tieThreshold) {
-            voxelCoords.x += axisStepX;
-            tMaxX += tDeltaX;
+          if (useBrickAtlas) {
+            if (brickCoords.x < -0.5) {
+              brickCoords = brick_coords_for_voxel(
+                voxelCoords,
+                safeGrid,
+                safeChunk,
+                atlasVolumeSize
+              );
+            }
+            atlasIndex = atlas_index_for_brick(brickCoords, safeGrid);
           }
-          if (axisStepY != 0.0 && tMaxY <= tieThreshold) {
-            voxelCoords.y += axisStepY;
-            tMaxY += tDeltaY;
+          for (int regionGuard = 0; regionGuard < MAX_STEPS; regionGuard++) {
+            if (traversedDistance >= float(nsteps) - NEAREST_DDA_ADVANCE_EPSILON) {
+              break;
+            }
+            if (!nearest_voxel_in_bounds(voxelCoords, safeVolumeSize)) {
+              break;
+            }
+            if (
+              !hierarchy_voxel_within_node_bounds(
+                voxelCoords + vec3(0.5),
+                regionMinSample,
+                regionMaxSample
+              )
+            ) {
+              break;
+            }
+            vec4 colorSample = vec4(0.0);
+            if (useBrickAtlas) {
+              colorSample = sample_brick_atlas_voxel_or_missing(
+                voxelCoords,
+                brickCoords,
+                atlasIndex,
+                safeSlotGrid,
+                safeChunk,
+                atlasSize,
+                atlasVolumeSize
+              );
+            } else {
+              colorSample = sample_nearest_full_volume_voxel(voxelCoords);
+            }
+            float rawVal = luminance(colorSample);
+            float normalizedVal = normalize_intensity(rawVal);
+            if (normalizedVal > max_val) {
+              max_val = normalizedVal;
+              max_color = colorSample;
+              max_loc = (voxelCoords + vec3(0.5)) * invSafeVolumeSize;
+              if (max_val >= safeHighWaterMark) {
+                break;
+              }
+            }
+            float nextBoundaryT = min(tMaxX, min(tMaxY, tMaxZ));
+            float targetT;
+            if (!(nextBoundaryT > traversedDistance + 1e-6) || nextBoundaryT >= LARGE * 0.5) {
+              targetT = min(
+                traversedDistance + 1.0,
+                float(nsteps)
+              );
+            } else {
+              targetT = min(nextBoundaryT + NEAREST_DDA_ADVANCE_EPSILON, float(nsteps));
+            }
+            nearest_dda_advance_to_target(
+              targetT,
+              voxelCoords,
+              axisStepX,
+              axisStepY,
+              axisStepZ,
+              tMaxX,
+              tMaxY,
+              tMaxZ,
+              tDeltaX,
+              tDeltaY,
+              tDeltaZ
+            );
+            traversedDistance = targetT;
           }
-          if (axisStepZ != 0.0 && tMaxZ <= tieThreshold) {
-            voxelCoords.z += axisStepZ;
-            tMaxZ += tDeltaZ;
+          if (max_val >= safeHighWaterMark) {
+            break;
           }
-          traversedDistance = min(nextBoundaryT + NEAREST_DDA_ADVANCE_EPSILON, float(nsteps));
         }
       } else {
         float baseAdaptiveLod = compute_adaptive_lod_base(step, start_loc);
