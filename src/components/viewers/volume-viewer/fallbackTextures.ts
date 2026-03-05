@@ -1,8 +1,11 @@
 import * as THREE from 'three';
 
-function createFallbackByte3dTexture(value: number): THREE.Data3DTexture {
-  const texture = new THREE.Data3DTexture(new Uint8Array([value]), 1, 1, 1);
-  texture.format = THREE.RedFormat;
+function createFallbackByte3dTexture(
+  data: Uint8Array,
+  format: THREE.Data3DTexture['format'] = THREE.RedFormat,
+): THREE.Data3DTexture {
+  const texture = new THREE.Data3DTexture(data, 1, 1, 1);
+  texture.format = format;
   texture.type = THREE.UnsignedByteType;
   texture.minFilter = THREE.NearestFilter;
   texture.magFilter = THREE.NearestFilter;
@@ -12,9 +15,12 @@ function createFallbackByte3dTexture(value: number): THREE.Data3DTexture {
   return texture;
 }
 
-function createFallbackFloat3dTexture(value: number): THREE.Data3DTexture {
-  const texture = new THREE.Data3DTexture(new Float32Array([value]), 1, 1, 1);
-  texture.format = THREE.RedFormat;
+function createFallbackFloat3dTexture(
+  data: Float32Array,
+  format: THREE.Data3DTexture['format'] = THREE.RedFormat,
+): THREE.Data3DTexture {
+  const texture = new THREE.Data3DTexture(data, 1, 1, 1);
+  texture.format = format;
   texture.type = THREE.FloatType;
   texture.minFilter = THREE.NearestFilter;
   texture.magFilter = THREE.NearestFilter;
@@ -36,8 +42,16 @@ export const FALLBACK_SEGMENTATION_LABEL_TEXTURE = (() => {
   return texture;
 })();
 
-export const FALLBACK_BRICK_OCCUPANCY_TEXTURE = createFallbackByte3dTexture(255);
-export const FALLBACK_BRICK_MIN_TEXTURE = createFallbackByte3dTexture(0);
-export const FALLBACK_BRICK_MAX_TEXTURE = createFallbackByte3dTexture(255);
-export const FALLBACK_BRICK_ATLAS_INDEX_TEXTURE = createFallbackFloat3dTexture(1);
-export const FALLBACK_BRICK_ATLAS_DATA_TEXTURE = createFallbackByte3dTexture(0);
+export const FALLBACK_BRICK_OCCUPANCY_TEXTURE = createFallbackByte3dTexture(new Uint8Array([255]));
+export const FALLBACK_BRICK_MIN_TEXTURE = createFallbackByte3dTexture(new Uint8Array([0]));
+export const FALLBACK_BRICK_MAX_TEXTURE = createFallbackByte3dTexture(new Uint8Array([255]));
+export const FALLBACK_BRICK_ATLAS_INDEX_TEXTURE = createFallbackFloat3dTexture(new Float32Array([1]));
+export const FALLBACK_BRICK_ATLAS_DATA_TEXTURE = createFallbackByte3dTexture(new Uint8Array([0]));
+export const FALLBACK_BRICK_ATLAS_BASE_TEXTURE = createFallbackFloat3dTexture(
+  new Float32Array([0, 0, 0, 0]),
+  THREE.RGBAFormat,
+);
+export const FALLBACK_BRICK_SUBCELL_TEXTURE = createFallbackByte3dTexture(
+  new Uint8Array([0, 0, 0, 255]),
+  THREE.RGBAFormat,
+);

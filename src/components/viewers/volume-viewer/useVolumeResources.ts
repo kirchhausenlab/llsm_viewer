@@ -20,11 +20,13 @@ import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import type { VolumeBrickAtlas, VolumeBrickPageTable } from '../../../core/volumeProvider';
 import { getLod0FeatureFlags } from '../../../config/lod0Flags';
 import {
+  FALLBACK_BRICK_ATLAS_BASE_TEXTURE,
   FALLBACK_BRICK_ATLAS_DATA_TEXTURE,
   FALLBACK_BRICK_ATLAS_INDEX_TEXTURE,
   FALLBACK_BRICK_MAX_TEXTURE,
   FALLBACK_BRICK_MIN_TEXTURE,
   FALLBACK_BRICK_OCCUPANCY_TEXTURE,
+  FALLBACK_BRICK_SUBCELL_TEXTURE,
   FALLBACK_SEGMENTATION_LABEL_TEXTURE,
 } from './fallbackTextures';
 import {
@@ -76,6 +78,14 @@ type BrickAtlasBuildResult = {
   depth: number;
   textureFormat: TextureFormat;
   enabled: boolean;
+};
+
+type BrickSubcellTextureBuildResult = {
+  data: Uint8Array;
+  width: number;
+  height: number;
+  depth: number;
+  subcellGrid: { x: number; y: number; z: number };
 };
 
 type BrickResidencyState = {
@@ -171,6 +181,7 @@ const RESIDENCY_STICKINESS_TICKS = 4;
 const CAMERA_RESIDENCY_EPSILON_SQ = 0.25;
 const MAX_SKIP_HIERARCHY_LEVELS = 12;
 const BRICK_ATLAS_HALO_VOXELS = 1;
+const BRICK_SUBCELL_MAX_AXIS = 4;
 const LOD0_FLAGS = getLod0FeatureFlags();
 const gpuBrickResidencyStateByResource = new WeakMap<VolumeResources, BrickResidencyState>();
 
@@ -317,9 +328,10 @@ function createFloat3dTexture(
   width: number,
   height: number,
   depth: number,
+  format: TextureFormat = THREE.RedFormat,
 ): THREE.Data3DTexture {
   const texture = new THREE.Data3DTexture(data, width, height, depth);
-  texture.format = THREE.RedFormat;
+  texture.format = format;
   texture.type = THREE.FloatType;
   texture.minFilter = THREE.NearestFilter;
   texture.magFilter = THREE.NearestFilter;
@@ -428,6 +440,7 @@ function updateOrCreateFloat3dTexture(
   width: number,
   height: number,
   depth: number,
+  format: TextureFormat = THREE.RedFormat,
   forceNeedsUpdate = true,
 ): THREE.Data3DTexture {
   if (existing) {
@@ -444,14 +457,365 @@ function updateOrCreateFloat3dTexture(
       if (!hasSharedBuffer) {
         data.set(source);
       }
-      if (!hasSharedBuffer || forceNeedsUpdate) {
+      const formatChanged = existing.format !== format;
+      existing.format = format;
+      if (!hasSharedBuffer || formatChanged || forceNeedsUpdate) {
         existing.needsUpdate = true;
       }
       return existing;
     }
     existing.dispose();
   }
-  return createFloat3dTexture(source, width, height, depth);
+  return createFloat3dTexture(source, width, height, depth, format);
+}
+
+function resolveBrickSubcellAxisCount(chunkAxis: number): number {
+  if (!Number.isFinite(chunkAxis) || chunkAxis <= 1) {
+    return 1;
+  }
+  return Math.min(BRICK_SUBCELL_MAX_AXIS, Math.max(1, Math.floor(chunkAxis)));
+}
+
+function buildBrickAtlasBaseTextureData({
+  pageTable,
+  atlasIndices,
+  slotGrid,
+  atlasSize,
+}: {
+  pageTable: VolumeBrickPageTable;
+  atlasIndices: Float32Array;
+  slotGrid: { x: number; y: number; z: number };
+  atlasSize: { width: number; height: number; depth: number };
+}): Float32Array {
+  const gridX = Math.max(1, pageTable.gridShape[2]);
+  const gridY = Math.max(1, pageTable.gridShape[1]);
+  const gridZ = Math.max(1, pageTable.gridShape[0]);
+  const safeSlotGridX = Math.max(1, slotGrid.x);
+  const safeSlotGridY = Math.max(1, slotGrid.y);
+  const safeSlotGridZ = Math.max(1, slotGrid.z);
+  const safeAtlasWidth = Math.max(1, atlasSize.width);
+  const safeAtlasHeight = Math.max(1, atlasSize.height);
+  const safeAtlasDepth = Math.max(1, atlasSize.depth);
+  const atlasChunkWidth = safeAtlasWidth / safeSlotGridX;
+  const atlasChunkHeight = safeAtlasHeight / safeSlotGridY;
+  const atlasChunkDepth = safeAtlasDepth / safeSlotGridZ;
+  const atlasChunkOffsetX = Math.max((atlasChunkWidth - Math.max(1, pageTable.chunkShape[2])) * 0.5, 0);
+  const atlasChunkOffsetY = Math.max((atlasChunkHeight - Math.max(1, pageTable.chunkShape[1])) * 0.5, 0);
+  const atlasChunkOffsetZ = Math.max((atlasChunkDepth - Math.max(1, pageTable.chunkShape[0])) * 0.5, 0);
+  const slotsPerLayer = Math.max(1, safeSlotGridX * safeSlotGridY);
+  const data = new Float32Array(gridX * gridY * gridZ * 4);
+
+  for (let index = 0; index < atlasIndices.length; index += 1) {
+    const atlasIndex = (atlasIndices[index] ?? 0) - 1;
+    if (atlasIndex < 0) {
+      continue;
+    }
+    const safeAtlasIndex = Math.max(0, Math.floor(atlasIndex + 0.5));
+    const slotZ = Math.floor(safeAtlasIndex / slotsPerLayer);
+    const withinLayer = safeAtlasIndex - slotZ * slotsPerLayer;
+    const slotY = Math.floor(withinLayer / safeSlotGridX);
+    const slotX = withinLayer - slotY * safeSlotGridX;
+    const targetOffset = index * 4;
+    data[targetOffset] = slotX * atlasChunkWidth + atlasChunkOffsetX;
+    data[targetOffset + 1] = slotY * atlasChunkHeight + atlasChunkOffsetY;
+    data[targetOffset + 2] = slotZ * atlasChunkDepth + atlasChunkOffsetZ;
+    data[targetOffset + 3] = 1;
+  }
+
+  return data;
+}
+
+function buildBrickSubcellTextureData({
+  pageTable,
+  components,
+  max3DTextureSize,
+  readVoxelComponent,
+}: {
+  pageTable: VolumeBrickPageTable;
+  components: number;
+  max3DTextureSize: number | null | undefined;
+  readVoxelComponent: (
+    flatBrickIndex: number,
+    localZ: number,
+    localY: number,
+    localX: number,
+    component: number,
+  ) => number;
+}): BrickSubcellTextureBuildResult | null {
+  if (components <= 0) {
+    return null;
+  }
+
+  const chunkDepth = Math.max(1, pageTable.chunkShape[0]);
+  const chunkHeight = Math.max(1, pageTable.chunkShape[1]);
+  const chunkWidth = Math.max(1, pageTable.chunkShape[2]);
+  const subcellGrid = {
+    x: resolveBrickSubcellAxisCount(chunkWidth),
+    y: resolveBrickSubcellAxisCount(chunkHeight),
+    z: resolveBrickSubcellAxisCount(chunkDepth),
+  };
+  if (subcellGrid.x <= 1 && subcellGrid.y <= 1 && subcellGrid.z <= 1) {
+    return null;
+  }
+
+  const gridX = Math.max(1, pageTable.gridShape[2]);
+  const gridY = Math.max(1, pageTable.gridShape[1]);
+  const gridZ = Math.max(1, pageTable.gridShape[0]);
+  const width = gridX * subcellGrid.x;
+  const height = gridY * subcellGrid.y;
+  const depth = gridZ * subcellGrid.z;
+  if (exceeds3DTextureSizeLimit({ width, height, depth }, max3DTextureSize)) {
+    return null;
+  }
+
+  const data = new Uint8Array(width * height * depth * 4);
+  const xToSubcell = new Int16Array(chunkWidth);
+  const yToSubcell = new Int16Array(chunkHeight);
+  const zToSubcell = new Int16Array(chunkDepth);
+  for (let localX = 0; localX < chunkWidth; localX += 1) {
+    xToSubcell[localX] = Math.min(
+      subcellGrid.x - 1,
+      Math.floor((localX * subcellGrid.x) / chunkWidth),
+    );
+  }
+  for (let localY = 0; localY < chunkHeight; localY += 1) {
+    yToSubcell[localY] = Math.min(
+      subcellGrid.y - 1,
+      Math.floor((localY * subcellGrid.y) / chunkHeight),
+    );
+  }
+  for (let localZ = 0; localZ < chunkDepth; localZ += 1) {
+    zToSubcell[localZ] = Math.min(
+      subcellGrid.z - 1,
+      Math.floor((localZ * subcellGrid.z) / chunkDepth),
+    );
+  }
+
+  const subcellCount = subcellGrid.x * subcellGrid.y * subcellGrid.z;
+  const subcellMin = new Uint8Array(subcellCount);
+  const subcellMax = new Uint8Array(subcellCount);
+  const subcellOccupancy = new Uint8Array(subcellCount);
+  const subcellSeen = new Uint8Array(subcellCount);
+  const planeSize = gridX * gridY;
+
+  for (let flatBrickIndex = 0; flatBrickIndex < pageTable.brickAtlasIndices.length; flatBrickIndex += 1) {
+    if ((pageTable.chunkOccupancy[flatBrickIndex] ?? 0) <= 0) {
+      continue;
+    }
+    subcellMin.fill(255);
+    subcellMax.fill(0);
+    subcellOccupancy.fill(0);
+    subcellSeen.fill(0);
+
+    for (let localZ = 0; localZ < chunkDepth; localZ += 1) {
+      const subcellZ = zToSubcell[localZ] ?? 0;
+      for (let localY = 0; localY < chunkHeight; localY += 1) {
+        const subcellY = yToSubcell[localY] ?? 0;
+        for (let localX = 0; localX < chunkWidth; localX += 1) {
+          const subcellX = xToSubcell[localX] ?? 0;
+          const subcellIndex = (subcellZ * subcellGrid.y + subcellY) * subcellGrid.x + subcellX;
+          let voxelMin = 255;
+          let voxelMax = 0;
+          let voxelOccupied = false;
+          for (let component = 0; component < components; component += 1) {
+            const rawValue = readVoxelComponent(flatBrickIndex, localZ, localY, localX, component);
+            const value = rawValue < 0 ? 0 : rawValue > 255 ? 255 : rawValue;
+            if (value < voxelMin) {
+              voxelMin = value;
+            }
+            if (value > voxelMax) {
+              voxelMax = value;
+            }
+            if (!voxelOccupied && value > 0) {
+              voxelOccupied = true;
+            }
+          }
+          if ((subcellSeen[subcellIndex] ?? 0) === 0) {
+            subcellMin[subcellIndex] = voxelMin;
+            subcellMax[subcellIndex] = voxelMax;
+            subcellSeen[subcellIndex] = 1;
+          } else {
+            if (voxelMin < (subcellMin[subcellIndex] ?? 255)) {
+              subcellMin[subcellIndex] = voxelMin;
+            }
+            if (voxelMax > (subcellMax[subcellIndex] ?? 0)) {
+              subcellMax[subcellIndex] = voxelMax;
+            }
+          }
+          if (voxelOccupied) {
+            subcellOccupancy[subcellIndex] = 255;
+          }
+        }
+      }
+    }
+
+    const brickZ = Math.floor(flatBrickIndex / planeSize);
+    const withinPlane = flatBrickIndex % planeSize;
+    const brickY = Math.floor(withinPlane / gridX);
+    const brickX = withinPlane % gridX;
+    for (let subcellZ = 0; subcellZ < subcellGrid.z; subcellZ += 1) {
+      for (let subcellY = 0; subcellY < subcellGrid.y; subcellY += 1) {
+        for (let subcellX = 0; subcellX < subcellGrid.x; subcellX += 1) {
+          const subcellIndex = (subcellZ * subcellGrid.y + subcellY) * subcellGrid.x + subcellX;
+          const targetIndex =
+            ((((brickZ * subcellGrid.z + subcellZ) * height) + (brickY * subcellGrid.y + subcellY)) * width +
+              (brickX * subcellGrid.x + subcellX)) * 4;
+          if ((subcellSeen[subcellIndex] ?? 0) <= 0) {
+            data[targetIndex + 3] = 255;
+            continue;
+          }
+          data[targetIndex] = subcellOccupancy[subcellIndex] ?? 0;
+          data[targetIndex + 1] = subcellMin[subcellIndex] ?? 0;
+          data[targetIndex + 2] = subcellMax[subcellIndex] ?? 0;
+          data[targetIndex + 3] = 255;
+        }
+      }
+    }
+  }
+
+  return {
+    data,
+    width,
+    height,
+    depth,
+    subcellGrid,
+  };
+}
+
+function buildBrickSubcellTextureDataFromVolume({
+  pageTable,
+  textureData,
+  textureFormat,
+  max3DTextureSize,
+}: {
+  pageTable: VolumeBrickPageTable;
+  textureData: Uint8Array;
+  textureFormat: TextureFormat;
+  max3DTextureSize: number | null | undefined;
+}): BrickSubcellTextureBuildResult | null {
+  const components = getTextureComponentsFromFormat(textureFormat);
+  if (!components) {
+    return null;
+  }
+  const volumeDepth = Math.max(1, pageTable.volumeShape[0]);
+  const volumeHeight = Math.max(1, pageTable.volumeShape[1]);
+  const volumeWidth = Math.max(1, pageTable.volumeShape[2]);
+  const expectedLength = volumeWidth * volumeHeight * volumeDepth * components;
+  if (textureData.length !== expectedLength) {
+    return null;
+  }
+
+  return buildBrickSubcellTextureData({
+    pageTable,
+    components,
+    max3DTextureSize,
+    readVoxelComponent: (flatBrickIndex, localZ, localY, localX, component) => {
+      const gridX = Math.max(1, pageTable.gridShape[2]);
+      const gridY = Math.max(1, pageTable.gridShape[1]);
+      const planeSize = gridX * gridY;
+      const brickZ = Math.floor(flatBrickIndex / planeSize);
+      const withinPlane = flatBrickIndex % planeSize;
+      const brickY = Math.floor(withinPlane / gridX);
+      const brickX = withinPlane % gridX;
+      const globalZ = brickZ * Math.max(1, pageTable.chunkShape[0]) + localZ;
+      const globalY = brickY * Math.max(1, pageTable.chunkShape[1]) + localY;
+      const globalX = brickX * Math.max(1, pageTable.chunkShape[2]) + localX;
+      if (
+        globalZ < 0 || globalZ >= volumeDepth ||
+        globalY < 0 || globalY >= volumeHeight ||
+        globalX < 0 || globalX >= volumeWidth
+      ) {
+        return 0;
+      }
+      const sourceIndex =
+        (((globalZ * volumeHeight + globalY) * volumeWidth + globalX) * components) + component;
+      return textureData[sourceIndex] ?? 0;
+    },
+  });
+}
+
+function buildBrickSubcellTextureDataFromAtlas({
+  pageTable,
+  atlasData,
+  atlasSize,
+  textureFormat,
+  max3DTextureSize,
+}: {
+  pageTable: VolumeBrickPageTable;
+  atlasData: Uint8Array;
+  atlasSize: { width: number; height: number; depth: number };
+  textureFormat: TextureFormat;
+  max3DTextureSize: number | null | undefined;
+}): BrickSubcellTextureBuildResult | null {
+  const components = getTextureComponentsFromFormat(textureFormat);
+  if (!components) {
+    return null;
+  }
+  const atlasWidth = Math.max(1, atlasSize.width);
+  const atlasHeight = Math.max(1, atlasSize.height);
+  const atlasDepth = Math.max(1, atlasSize.depth);
+  const expectedLength = atlasWidth * atlasHeight * atlasDepth * components;
+  if (atlasData.length !== expectedLength) {
+    return null;
+  }
+
+  const chunkDepth = Math.max(1, pageTable.chunkShape[0]);
+  const chunkHeight = Math.max(1, pageTable.chunkShape[1]);
+  const chunkWidth = Math.max(1, pageTable.chunkShape[2]);
+  return buildBrickSubcellTextureData({
+    pageTable,
+    components,
+    max3DTextureSize,
+    readVoxelComponent: (flatBrickIndex, localZ, localY, localX, component) => {
+      const sourceIndex = pageTable.brickAtlasIndices[flatBrickIndex] ?? -1;
+      if (sourceIndex < 0) {
+        return 0;
+      }
+      const atlasZ = sourceIndex * chunkDepth + localZ;
+      if (
+        atlasZ < 0 || atlasZ >= atlasDepth ||
+        localY < 0 || localY >= chunkHeight ||
+        localX < 0 || localX >= chunkWidth
+      ) {
+        return 0;
+      }
+      const sourceOffset =
+        (((atlasZ * atlasHeight + localY) * atlasWidth + localX) * components) + component;
+      return atlasData[sourceOffset] ?? 0;
+    },
+  });
+}
+
+function bindBrickAtlasBaseTexture({
+  resource,
+  uniforms,
+  pageTable,
+  atlasIndices,
+  slotGrid,
+  atlasSize,
+}: {
+  resource: VolumeResources;
+  uniforms: ShaderUniformMap;
+  pageTable: VolumeBrickPageTable;
+  atlasIndices: Float32Array;
+  slotGrid: { x: number; y: number; z: number };
+  atlasSize: { width: number; height: number; depth: number };
+}): void {
+  const atlasBaseData = buildBrickAtlasBaseTextureData({
+    pageTable,
+    atlasIndices,
+    slotGrid,
+    atlasSize,
+  });
+  resource.brickAtlasBaseTexture = updateOrCreateFloat3dTexture(
+    resource.brickAtlasBaseTexture,
+    atlasBaseData,
+    Math.max(1, pageTable.gridShape[2]),
+    Math.max(1, pageTable.gridShape[1]),
+    Math.max(1, pageTable.gridShape[0]),
+    THREE.RGBAFormat,
+  );
+  uniforms.u_brickAtlasBase.value = resource.brickAtlasBaseTexture;
 }
 
 function createFallbackVolumeDataTexture(): THREE.Data3DTexture {
@@ -1490,7 +1854,9 @@ function updateGpuBrickResidency({
 }
 
 function disposeBrickAtlasDataTexture(resource: VolumeResources): void {
+  resource.brickAtlasBaseTexture?.dispose();
   resource.brickAtlasDataTexture?.dispose();
+  resource.brickAtlasBaseTexture = null;
   resource.brickAtlasDataTexture = null;
   resource.brickAtlasSlotGrid = null;
   resource.brickAtlasSourceToken = null;
@@ -1506,17 +1872,22 @@ function disposeBrickPageTableTextures(resource: VolumeResources): void {
   resource.brickOccupancyTexture?.dispose();
   resource.brickMinTexture?.dispose();
   resource.brickMaxTexture?.dispose();
+  resource.brickSubcellTexture?.dispose();
   resource.brickAtlasIndexTexture?.dispose();
   resource.skipHierarchyTexture?.dispose();
   disposeBrickAtlasDataTexture(resource);
   resource.brickOccupancyTexture = null;
   resource.brickMinTexture = null;
   resource.brickMaxTexture = null;
+  resource.brickSubcellTexture = null;
   resource.brickAtlasIndexTexture = null;
   resource.skipHierarchyTexture = null;
   resource.skipHierarchySourcePageTable = null;
   resource.skipHierarchyLevelCount = 0;
   resource.brickMetadataSourcePageTable = null;
+  resource.brickSubcellSourcePageTable = null;
+  resource.brickSubcellSourceToken = null;
+  resource.brickSubcellGrid = null;
 }
 
 function occupancyMaskFromPageTable(pageTable: VolumeBrickPageTable): Uint8Array {
@@ -1788,10 +2159,13 @@ function applyBrickPageTableUniforms(
     !('u_brickMin' in uniforms) ||
     !('u_brickMax' in uniforms) ||
     !('u_brickAtlasIndices' in uniforms) ||
+    !('u_brickAtlasBase' in uniforms) ||
     !('u_brickAtlasEnabled' in uniforms) ||
     !('u_brickAtlasData' in uniforms) ||
     !('u_brickAtlasSize' in uniforms) ||
-    !('u_brickAtlasSlotGrid' in uniforms)
+    !('u_brickAtlasSlotGrid' in uniforms) ||
+    !('u_brickSubcellData' in uniforms) ||
+    !('u_brickSubcellGrid' in uniforms)
   ) {
     resource.brickSkipDiagnostics = null;
     return;
@@ -1810,10 +2184,13 @@ function applyBrickPageTableUniforms(
     uniforms.u_brickMin.value = FALLBACK_BRICK_MIN_TEXTURE;
     uniforms.u_brickMax.value = FALLBACK_BRICK_MAX_TEXTURE;
     uniforms.u_brickAtlasIndices.value = FALLBACK_BRICK_ATLAS_INDEX_TEXTURE;
+    uniforms.u_brickAtlasBase.value = FALLBACK_BRICK_ATLAS_BASE_TEXTURE;
     uniforms.u_brickAtlasEnabled.value = 0;
     uniforms.u_brickAtlasData.value = FALLBACK_BRICK_ATLAS_DATA_TEXTURE;
     (uniforms.u_brickAtlasSize.value as THREE.Vector3).set(1, 1, 1);
     (uniforms.u_brickAtlasSlotGrid.value as THREE.Vector3).set(1, 1, 1);
+    uniforms.u_brickSubcellData.value = FALLBACK_BRICK_SUBCELL_TEXTURE;
+    (uniforms.u_brickSubcellGrid.value as THREE.Vector3).set(1, 1, 1);
     uniforms.u_skipHierarchyData.value = FALLBACK_BRICK_ATLAS_DATA_TEXTURE;
     (uniforms.u_skipHierarchyTextureSize.value as THREE.Vector3).set(1, 1, 1);
     uniforms.u_skipHierarchyLevelCount.value = 0;
@@ -2027,8 +2404,59 @@ function applyBrickPageTableUniforms(
     gridX,
     gridY,
     gridZ,
+    THREE.RedFormat,
     atlasTexturesDirty,
   );
+
+  const canReuseSubcellTexture =
+    resource.brickSubcellTexture !== null &&
+    resource.brickSubcellTexture !== undefined &&
+    resource.brickSubcellSourcePageTable === resolvedPageTable &&
+    resource.brickSubcellSourceToken === atlasSourceToken;
+  if (!canReuseSubcellTexture) {
+    const subcellBuild =
+      options?.atlasData && atlasFormat && options.atlasSize
+        ? buildBrickSubcellTextureDataFromAtlas({
+            pageTable: resolvedPageTable,
+            atlasData: options.atlasData,
+            atlasSize: options.atlasSize,
+            textureFormat: atlasFormat,
+            max3DTextureSize: options.max3DTextureSize,
+          })
+        : options?.textureData && options.textureFormat
+          ? buildBrickSubcellTextureDataFromVolume({
+              pageTable: resolvedPageTable,
+              textureData: options.textureData,
+              textureFormat: options.textureFormat,
+              max3DTextureSize: options.max3DTextureSize,
+            })
+          : null;
+    if (subcellBuild) {
+      resource.brickSubcellTexture = updateOrCreateByte3dTexture(
+        resource.brickSubcellTexture,
+        subcellBuild.data,
+        subcellBuild.width,
+        subcellBuild.height,
+        subcellBuild.depth,
+        THREE.RGBAFormat,
+        'nearest',
+        true,
+      );
+      resource.brickSubcellSourcePageTable = resolvedPageTable;
+      resource.brickSubcellSourceToken =
+        atlasSourceToken !== null &&
+        (typeof atlasSourceToken === 'object' || ArrayBuffer.isView(atlasSourceToken))
+          ? (atlasSourceToken as object | Uint8Array)
+          : null;
+      resource.brickSubcellGrid = subcellBuild.subcellGrid;
+    } else {
+      resource.brickSubcellTexture?.dispose();
+      resource.brickSubcellTexture = null;
+      resource.brickSubcellSourcePageTable = null;
+      resource.brickSubcellSourceToken = null;
+      resource.brickSubcellGrid = null;
+    }
+  }
 
   const brickSkipDiagnostics = analyzeBrickSkipDiagnostics({
     pageTable: resolvedPageTable
@@ -2053,6 +2481,10 @@ function applyBrickPageTableUniforms(
   uniforms.u_brickMin.value = resource.brickMinTexture;
   uniforms.u_brickMax.value = resource.brickMaxTexture;
   uniforms.u_brickAtlasIndices.value = resource.brickAtlasIndexTexture;
+  uniforms.u_brickSubcellData.value = resource.brickSubcellTexture ?? FALLBACK_BRICK_SUBCELL_TEXTURE;
+  const brickSubcellGridUniform = uniforms.u_brickSubcellGrid.value as THREE.Vector3;
+  const brickSubcellGrid = resource.brickSubcellGrid ?? { x: 1, y: 1, z: 1 };
+  brickSubcellGridUniform.set(brickSubcellGrid.x, brickSubcellGrid.y, brickSubcellGrid.z);
 
   const canReuseAtlasTexture =
     !shouldUseGpuResidency &&
@@ -2071,10 +2503,29 @@ function applyBrickPageTableUniforms(
       disposeBrickAtlasDataTexture(resource);
     } else {
       applyByteTextureFilter(atlasTexture, atlasTextureFilterMode);
+      const cachedSlotGrid = resource.brickAtlasSlotGrid;
+      const atlasImage = atlasTexture.image as { width?: number; height?: number; depth?: number } | undefined;
+      bindBrickAtlasBaseTexture({
+        resource,
+        uniforms,
+        pageTable: resolvedPageTable,
+        atlasIndices: atlasIndexData,
+        slotGrid:
+          cachedSlotGrid ??
+          {
+            x: 1,
+            y: 1,
+            z: Math.max(1, Math.ceil((atlasImage?.depth ?? 1) / Math.max(1, resolvedPageTable.chunkShape[0]))),
+          },
+        atlasSize: {
+          width: Math.max(1, atlasImage?.width ?? 1),
+          height: Math.max(1, atlasImage?.height ?? 1),
+          depth: Math.max(1, atlasImage?.depth ?? 1),
+        },
+      });
       uniforms.u_brickAtlasEnabled.value = 1;
       uniforms.u_brickAtlasData.value = atlasTexture;
       (uniforms.u_brickAtlasSize.value as THREE.Vector3).set(width, height, depth);
-      const cachedSlotGrid = resource.brickAtlasSlotGrid;
       if (cachedSlotGrid) {
         (uniforms.u_brickAtlasSlotGrid.value as THREE.Vector3).set(cachedSlotGrid.x, cachedSlotGrid.y, cachedSlotGrid.z);
       } else {
@@ -2131,6 +2582,7 @@ function applyBrickPageTableUniforms(
 
   if (!atlasBuild || !atlasBuild.enabled) {
     disposeBrickAtlasDataTexture(resource);
+    uniforms.u_brickAtlasBase.value = FALLBACK_BRICK_ATLAS_BASE_TEXTURE;
     uniforms.u_brickAtlasEnabled.value = 0;
     uniforms.u_brickAtlasData.value = FALLBACK_BRICK_ATLAS_DATA_TEXTURE;
     (uniforms.u_brickAtlasSize.value as THREE.Vector3).set(1, 1, 1);
@@ -2145,6 +2597,7 @@ function applyBrickPageTableUniforms(
     )
   ) {
     disposeBrickAtlasDataTexture(resource);
+    uniforms.u_brickAtlasBase.value = FALLBACK_BRICK_ATLAS_BASE_TEXTURE;
     uniforms.u_brickAtlasEnabled.value = 0;
     uniforms.u_brickAtlasData.value = FALLBACK_BRICK_ATLAS_DATA_TEXTURE;
     (uniforms.u_brickAtlasSize.value as THREE.Vector3).set(1, 1, 1);
@@ -2168,6 +2621,14 @@ function applyBrickPageTableUniforms(
   resource.brickAtlasSourcePageTable = resolvedPageTable;
   resource.brickAtlasSlotGrid = atlasSlotGrid;
   resource.brickAtlasBuildVersion = (resource.brickAtlasBuildVersion ?? 0) + 1;
+  bindBrickAtlasBaseTexture({
+    resource,
+    uniforms,
+    pageTable: resolvedPageTable,
+    atlasIndices: atlasIndexData,
+    slotGrid: atlasSlotGrid,
+    atlasSize: { width: atlasBuild.width, height: atlasBuild.height, depth: atlasBuild.depth },
+  });
   uniforms.u_brickAtlasEnabled.value = 1;
   uniforms.u_brickAtlasData.value = resource.brickAtlasDataTexture;
   (uniforms.u_brickAtlasSize.value as THREE.Vector3).set(
@@ -2600,6 +3061,7 @@ export function useVolumeResources({
           !resources ||
           resources.mode !== viewerMode ||
           resources.renderStyle !== layer.renderStyle ||
+          resources.samplingMode !== effectiveSamplingMode ||
           resources.dimensions.width !== width ||
           resources.dimensions.height !== height ||
           resources.dimensions.depth !== depth ||
@@ -2621,7 +3083,7 @@ export function useVolumeResources({
           texture.colorSpace = THREE.LinearSRGBColorSpace;
           texture.needsUpdate = true;
 
-          const shader = VolumeRenderShaderVariants[getVolumeRenderShaderVariantKey(layer.renderStyle)];
+          const shader = VolumeRenderShaderVariants[getVolumeRenderShaderVariantKey(layer.renderStyle, effectiveSamplingMode)];
           const uniforms = THREE.UniformsUtils.clone(shader.uniforms);
           uniforms.u_data.value = texture;
           uniforms.u_size.value.set(width, height, depth);
@@ -2701,11 +3163,16 @@ export function useVolumeResources({
             brickMinTexture: null,
             brickMaxTexture: null,
             brickAtlasIndexTexture: null,
+            brickAtlasBaseTexture: null,
             brickAtlasDataTexture: null,
+            brickSubcellTexture: null,
             skipHierarchyTexture: null,
             skipHierarchySourcePageTable: null,
             skipHierarchyLevelCount: 0,
             brickMetadataSourcePageTable: null,
+            brickSubcellSourcePageTable: null,
+            brickSubcellSourceToken: null,
+            brickSubcellGrid: null,
             brickAtlasSourceToken: null,
             brickAtlasSourceData: null,
             brickAtlasSourceFormat: null,
@@ -2900,11 +3367,16 @@ export function useVolumeResources({
             brickMinTexture: null,
             brickMaxTexture: null,
             brickAtlasIndexTexture: null,
+            brickAtlasBaseTexture: null,
             brickAtlasDataTexture: null,
+            brickSubcellTexture: null,
             skipHierarchyTexture: null,
             skipHierarchySourcePageTable: null,
             skipHierarchyLevelCount: 0,
             brickMetadataSourcePageTable: null,
+            brickSubcellSourcePageTable: null,
+            brickSubcellSourceToken: null,
+            brickSubcellGrid: null,
             brickAtlasSourceToken: null,
             brickAtlasSourceData: null,
             brickAtlasSourceFormat: null,

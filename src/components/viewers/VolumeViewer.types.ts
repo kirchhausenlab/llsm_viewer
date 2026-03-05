@@ -208,11 +208,16 @@ export type VolumeResources = {
   brickMinTexture?: THREE.Data3DTexture | null;
   brickMaxTexture?: THREE.Data3DTexture | null;
   brickAtlasIndexTexture?: THREE.Data3DTexture | null;
+  brickAtlasBaseTexture?: THREE.Data3DTexture | null;
   brickAtlasDataTexture?: THREE.Data3DTexture | null;
+  brickSubcellTexture?: THREE.Data3DTexture | null;
   skipHierarchyTexture?: THREE.Data3DTexture | null;
   skipHierarchySourcePageTable?: VolumeBrickPageTable | null;
   skipHierarchyLevelCount?: number;
   brickMetadataSourcePageTable?: VolumeBrickPageTable | null;
+  brickSubcellSourcePageTable?: VolumeBrickPageTable | null;
+  brickSubcellSourceToken?: object | Uint8Array | null;
+  brickSubcellGrid?: { x: number; y: number; z: number } | null;
   brickAtlasSourceToken?: object | null;
   brickAtlasSourceData?: Uint8Array | null;
   brickAtlasSourceFormat?: THREE.Data3DTexture['format'] | null;

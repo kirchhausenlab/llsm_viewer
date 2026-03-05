@@ -67,6 +67,13 @@ export type AtlasLinearLodBand = {
   blend: number;
 };
 
+export type HierarchyNodeExitArgs = {
+  rayVoxelCoords: [number, number, number];
+  voxelStep: [number, number, number];
+  nodeMin: [number, number, number];
+  nodeMax: [number, number, number];
+};
+
 function normalizeWindowValue(value: number, windowMin: number, windowMax: number): number {
   const range = Math.max(windowMax - windowMin, 1e-5);
   const normalized = (value - windowMin) / range;
@@ -286,6 +293,22 @@ export function shouldSkipWithBrickStatsCpu(args: BrickSkipDecisionArgs): boolea
   return false;
 }
 
+export function computeHierarchyNodeExitCpu(args: HierarchyNodeExitArgs): number {
+  let exitSteps = Number.POSITIVE_INFINITY;
+  for (let axis = 0; axis < 3; axis += 1) {
+    const step = Number.isFinite(args.voxelStep[axis]) ? args.voxelStep[axis] : 0;
+    const rayVoxel = Number.isFinite(args.rayVoxelCoords[axis]) ? args.rayVoxelCoords[axis] : 0;
+    const nodeMin = Number.isFinite(args.nodeMin[axis]) ? args.nodeMin[axis] : 0;
+    const nodeMax = Number.isFinite(args.nodeMax[axis]) ? args.nodeMax[axis] : 0;
+    if (step > 1e-6) {
+      exitSteps = Math.min(exitSteps, (nodeMax - rayVoxel) / step);
+    } else if (step < -1e-6) {
+      exitSteps = Math.min(exitSteps, (nodeMin - rayVoxel) / step);
+    }
+  }
+  return exitSteps;
+}
+
 type VolumeUniforms = {
   u_size: { value: Vector3 };
   u_renderstyle: { value: number };
@@ -328,10 +351,13 @@ type VolumeUniforms = {
   u_brickMin: { value: Data3DTexture | null };
   u_brickMax: { value: Data3DTexture | null };
   u_brickAtlasIndices: { value: Data3DTexture | null };
+  u_brickAtlasBase: { value: Data3DTexture | null };
   u_brickAtlasEnabled: { value: number };
   u_brickAtlasData: { value: Data3DTexture | null };
   u_brickAtlasSize: { value: Vector3 };
   u_brickAtlasSlotGrid: { value: Vector3 };
+  u_brickSubcellData: { value: Data3DTexture | null };
+  u_brickSubcellGrid: { value: Vector3 };
   u_adaptiveLodEnabled: { value: number };
   u_adaptiveLodScale: { value: number };
   u_adaptiveLodMax: { value: number };
@@ -379,10 +405,13 @@ const uniforms = {
   u_brickMin: { value: null as Data3DTexture | null },
   u_brickMax: { value: null as Data3DTexture | null },
   u_brickAtlasIndices: { value: null as Data3DTexture | null },
+  u_brickAtlasBase: { value: null as Data3DTexture | null },
   u_brickAtlasEnabled: { value: 0 },
   u_brickAtlasData: { value: null as Data3DTexture | null },
   u_brickAtlasSize: { value: new Vector3(1, 1, 1) },
   u_brickAtlasSlotGrid: { value: new Vector3(1, 1, 1) },
+  u_brickSubcellData: { value: null as Data3DTexture | null },
+  u_brickSubcellGrid: { value: new Vector3(1, 1, 1) },
   u_adaptiveLodEnabled: { value: 1 },
   u_adaptiveLodScale: { value: 1 },
   u_adaptiveLodMax: { value: 2 }
@@ -454,10 +483,13 @@ const volumeRenderFragmentShader = /* glsl */ `
     uniform sampler3D u_brickMin;
     uniform sampler3D u_brickMax;
     uniform sampler3D u_brickAtlasIndices;
+    uniform sampler3D u_brickAtlasBase;
     uniform float u_brickAtlasEnabled;
     uniform sampler3D u_brickAtlasData;
     uniform vec3 u_brickAtlasSize;
     uniform vec3 u_brickAtlasSlotGrid;
+    uniform sampler3D u_brickSubcellData;
+    uniform vec3 u_brickSubcellGrid;
     uniform float u_adaptiveLodEnabled;
     uniform float u_adaptiveLodScale;
     uniform float u_adaptiveLodMax;
@@ -528,7 +560,7 @@ const volumeRenderFragmentShader = /* glsl */ `
       return all(greaterThanEqual(voxelCoords, nodeMin)) && all(lessThanEqual(voxelCoords, safeNodeMax));
     }
 
-    int hierarchy_skip_steps_to_node_exit(vec3 voxelCoords, vec3 voxelStep, vec3 nodeMin, vec3 nodeMax) {
+    float hierarchy_node_exit_t(vec3 voxelCoords, vec3 voxelStep, vec3 nodeMin, vec3 nodeMax) {
       float exitSteps = LARGE;
       if (voxelStep.x > EPSILON) {
         exitSteps = min(exitSteps, (nodeMax.x - voxelCoords.x) / voxelStep.x);
@@ -545,7 +577,11 @@ const volumeRenderFragmentShader = /* glsl */ `
       } else if (voxelStep.z < -EPSILON) {
         exitSteps = min(exitSteps, (nodeMin.z - voxelCoords.z) / voxelStep.z);
       }
+      return exitSteps;
+    }
 
+    int hierarchy_skip_steps_to_node_exit(vec3 voxelCoords, vec3 voxelStep, vec3 nodeMin, vec3 nodeMax) {
+      float exitSteps = hierarchy_node_exit_t(voxelCoords, voxelStep, nodeMin, nodeMax);
       if (exitSteps > 1e-4 && exitSteps < LARGE * 0.5) {
         int skipSteps = int(clamp(floor(exitSteps + 1e-4) + 1.0, 1.0, float(MAX_STEPS)));
         return max(skipSteps, 1);
@@ -608,14 +644,13 @@ const volumeRenderFragmentShader = /* glsl */ `
         vec3 nodeSize = max(vec3(1.0), safeChunkSize * levelScale);
         vec3 nodeCoords = floor(voxelCoords / nodeSize);
         nodeCoords = clamp(nodeCoords, vec3(0.0), grid - vec3(1.0));
-        vec3 hierarchySampleCoord = vec3(
-          (nodeCoords.x + 0.5) / hierarchyTextureSize.x,
-          (nodeCoords.y + 0.5) / hierarchyTextureSize.y,
-          (zBase + nodeCoords.z + 0.5) / hierarchyTextureSize.z
-        );
         vec3 nodeMin = nodeCoords * nodeSize;
         vec3 nodeMax = min(nodeMin + nodeSize, safeVolumeSize);
-        vec4 hierarchyStats = texture(u_skipHierarchyData, hierarchySampleCoord);
+        vec4 hierarchyStats = texelFetch(
+          u_skipHierarchyData,
+          ivec3(nodeCoords.x, nodeCoords.y, zBase + nodeCoords.z),
+          0
+        );
         if (!should_skip_with_brick_stats_values(
           hierarchyStats.r,
           hierarchyStats.g,
@@ -743,36 +778,34 @@ const volumeRenderFragmentShader = /* glsl */ `
       return clamp(brickCoords, vec3(0.0), safeGrid - vec3(1.0));
     }
 
+    ivec3 brick_texture_coords(vec3 brickCoords, vec3 safeGrid) {
+      vec3 clampedBrickCoords = clamp(
+        floor(brickCoords + vec3(0.5)),
+        vec3(0.0),
+        max(safeGrid - vec3(1.0), vec3(0.0))
+      );
+      return ivec3(clampedBrickCoords);
+    }
+
     float atlas_index_for_brick(vec3 brickCoords, vec3 safeGrid) {
-      vec3 brickLookup = (brickCoords + vec3(0.5)) / safeGrid;
-      return texture(u_brickAtlasIndices, brickLookup).r - 1.0;
+      return texelFetch(u_brickAtlasIndices, brick_texture_coords(brickCoords, safeGrid), 0).r - 1.0;
     }
 
-    vec3 atlas_slot_coords_from_index(float atlasIndex, vec3 safeSlotGrid) {
-      float safeAtlasIndex = max(floor(atlasIndex + 0.5), 0.0);
-      float slotsPerLayer = max(safeSlotGrid.x * safeSlotGrid.y, 1.0);
-      float slotZ = floor(safeAtlasIndex / slotsPerLayer);
-      float withinLayer = safeAtlasIndex - slotZ * slotsPerLayer;
-      float slotY = floor(withinLayer / safeSlotGrid.x);
-      float slotX = withinLayer - slotY * safeSlotGrid.x;
-      return vec3(slotX, slotY, slotZ);
+    vec4 atlas_base_for_brick(vec3 brickCoords, vec3 safeGrid) {
+      return texelFetch(u_brickAtlasBase, brick_texture_coords(brickCoords, safeGrid), 0);
     }
 
-    vec4 sample_brick_atlas_voxel_known(
+    vec4 sample_brick_atlas_voxel_known_base(
       vec3 voxelCoords,
       vec3 brickCoords,
-      float atlasIndex,
-      vec3 safeSlotGrid,
+      vec3 atlasBaseTexel,
       vec3 safeChunk,
-      vec3 atlasSize,
       vec3 atlasVolumeSize
     ) {
       vec3 clampedVoxel = clamp_voxel_coords(voxelCoords, atlasVolumeSize);
       vec3 localVoxel = clampedVoxel - brickCoords * safeChunk;
-      vec3 atlasChunk = max(atlasSize / safeSlotGrid, vec3(1.0));
-      vec3 atlasChunkOffset = max((atlasChunk - safeChunk) * 0.5, vec3(0.0));
-      vec3 slotCoords = atlas_slot_coords_from_index(atlasIndex, safeSlotGrid);
-      vec3 atlasVoxel = localVoxel + atlasChunkOffset + slotCoords * atlasChunk;
+      vec3 atlasVoxel = localVoxel + atlasBaseTexel;
+      vec3 atlasSize = max(u_brickAtlasSize, vec3(1.0));
       ivec3 maxAtlasTexel = ivec3(max(atlasSize - vec3(1.0), vec3(0.0)));
       ivec3 atlasTexel = ivec3(
         clamp(
@@ -792,25 +825,21 @@ const volumeRenderFragmentShader = /* glsl */ `
       return mix(lowBrick, highBrick, cornerMask);
     }
 
-    vec4 sample_brick_atlas_voxel_or_missing(
+    vec4 sample_brick_atlas_voxel_or_missing_base(
       vec3 voxelCoords,
       vec3 brickCoords,
-      float atlasIndex,
-      vec3 safeSlotGrid,
+      vec4 atlasBaseInfo,
       vec3 safeChunk,
-      vec3 atlasSize,
       vec3 atlasVolumeSize
     ) {
-      if (atlasIndex < -0.5) {
+      if (atlasBaseInfo.a < 0.5) {
         return vec4(0.0);
       }
-      return sample_brick_atlas_voxel_known(
+      return sample_brick_atlas_voxel_known_base(
         voxelCoords,
         brickCoords,
-        atlasIndex,
-        safeSlotGrid,
+        atlasBaseInfo.rgb,
         safeChunk,
-        atlasSize,
         atlasVolumeSize
       );
     }
@@ -818,19 +847,12 @@ const volumeRenderFragmentShader = /* glsl */ `
     vec4 sample_brick_atlas_voxel_with(vec3 voxelCoords, vec3 safeGrid, vec3 safeChunk) {
       vec3 atlasVolumeSize = max(u_brickVolumeSize, vec3(1.0));
       vec3 brickCoords = brick_coords_for_voxel(voxelCoords, safeGrid, safeChunk, atlasVolumeSize);
-      float atlasIndex = atlas_index_for_brick(brickCoords, safeGrid);
-      if (atlasIndex < -0.5) {
-        return vec4(0.0);
-      }
-      vec3 atlasSize = max(u_brickAtlasSize, vec3(1.0));
-      vec3 safeSlotGrid = max(u_brickAtlasSlotGrid, vec3(1.0));
-      return sample_brick_atlas_voxel_known(
+      vec4 atlasBaseInfo = atlas_base_for_brick(brickCoords, safeGrid);
+      return sample_brick_atlas_voxel_or_missing_base(
         voxelCoords,
         brickCoords,
-        atlasIndex,
-        safeSlotGrid,
+        atlasBaseInfo,
         safeChunk,
-        atlasSize,
         atlasVolumeSize
       );
     }
@@ -841,23 +863,19 @@ const volumeRenderFragmentShader = /* glsl */ `
       return sample_brick_atlas_voxel_with(voxelCoords, safeGrid, safeChunk);
     }
 
-    vec4 sample_brick_atlas_linear_same_brick(
+    vec4 sample_brick_atlas_linear_same_brick_base(
       vec3 texcoords,
       vec3 brickCoords,
-      float atlasIndex,
-      vec3 safeSlotGrid,
+      vec3 atlasBaseTexel,
       vec3 safeChunk,
-      vec3 atlasSize,
       vec3 atlasVolumeSize
     ) {
       vec3 safeTexcoords = clamp(texcoords, vec3(0.0), vec3(1.0));
       vec3 linearVoxel = safeTexcoords * atlasVolumeSize - vec3(0.5);
       vec3 clampedLinearVoxel = clamp_voxel_coords(linearVoxel, atlasVolumeSize);
       vec3 localLinearVoxel = clampedLinearVoxel - brickCoords * safeChunk;
-      vec3 atlasChunk = max(atlasSize / safeSlotGrid, vec3(1.0));
-      vec3 atlasChunkOffset = max((atlasChunk - safeChunk) * 0.5, vec3(0.0));
-      vec3 slotCoords = atlas_slot_coords_from_index(atlasIndex, safeSlotGrid);
-      vec3 atlasLinearVoxel = localLinearVoxel + atlasChunkOffset + slotCoords * atlasChunk;
+      vec3 atlasLinearVoxel = localLinearVoxel + atlasBaseTexel;
+      vec3 atlasSize = max(u_brickAtlasSize, vec3(1.0));
       vec3 atlasTexcoords = (atlasLinearVoxel + vec3(0.5)) / atlasSize;
       return texture(u_brickAtlasData, atlasTexcoords);
     }
@@ -892,32 +910,28 @@ const volumeRenderFragmentShader = /* glsl */ `
       vec3 baseBrick = brick_coords_for_voxel(voxel000, safeGrid, safeChunk, atlasVolumeSize);
       vec3 farBrick = brick_coords_for_voxel(voxel111, safeGrid, safeChunk, atlasVolumeSize);
       if (hasAtlasHalo) {
-        float atlasIndex = atlas_index_for_brick(baseBrick, safeGrid);
-        if (atlasIndex >= -0.5) {
-          return sample_brick_atlas_linear_same_brick(
+        vec4 atlasBaseInfo = atlas_base_for_brick(baseBrick, safeGrid);
+        if (atlasBaseInfo.a >= 0.5) {
+          return sample_brick_atlas_linear_same_brick_base(
             safeTexcoords,
             baseBrick,
-            atlasIndex,
-            safeSlotGrid,
+            atlasBaseInfo.rgb,
             safeChunk,
-            atlasSize,
             atlasVolumeSize
           );
         }
       }
       if (brick_coords_equal(baseBrick, farBrick)) {
-        float atlasIndex = atlas_index_for_brick(baseBrick, safeGrid);
-        if (atlasIndex < -0.5) {
+        vec4 atlasBaseInfo = atlas_base_for_brick(baseBrick, safeGrid);
+        if (atlasBaseInfo.a < 0.5) {
           return vec4(0.0);
         }
         // Within one brick we can use the hardware trilinear filter directly.
-        return sample_brick_atlas_linear_same_brick(
+        return sample_brick_atlas_linear_same_brick_base(
           safeTexcoords,
           baseBrick,
-          atlasIndex,
-          safeSlotGrid,
+          atlasBaseInfo.rgb,
           safeChunk,
-          atlasSize,
           atlasVolumeSize
         );
       }
@@ -935,35 +949,35 @@ const volumeRenderFragmentShader = /* glsl */ `
       float spanY = spanMask.y;
       float spanZ = spanMask.z;
 
-      float atlas000 = atlas_index_for_brick(brick000, safeGrid);
-      float atlas100 = spanX > 0.5 ? atlas_index_for_brick(brick100, safeGrid) : atlas000;
-      float atlas010 = spanY > 0.5 ? atlas_index_for_brick(brick010, safeGrid) : atlas000;
-      float atlas001 = spanZ > 0.5 ? atlas_index_for_brick(brick001, safeGrid) : atlas000;
-      float atlas110 = atlas000;
+      vec4 atlas000 = atlas_base_for_brick(brick000, safeGrid);
+      vec4 atlas100 = spanX > 0.5 ? atlas_base_for_brick(brick100, safeGrid) : atlas000;
+      vec4 atlas010 = spanY > 0.5 ? atlas_base_for_brick(brick010, safeGrid) : atlas000;
+      vec4 atlas001 = spanZ > 0.5 ? atlas_base_for_brick(brick001, safeGrid) : atlas000;
+      vec4 atlas110 = atlas000;
       if (spanX > 0.5 && spanY > 0.5) {
-        atlas110 = atlas_index_for_brick(brick110, safeGrid);
+        atlas110 = atlas_base_for_brick(brick110, safeGrid);
       } else if (spanX > 0.5) {
         atlas110 = atlas100;
       } else if (spanY > 0.5) {
         atlas110 = atlas010;
       }
-      float atlas101 = atlas000;
+      vec4 atlas101 = atlas000;
       if (spanX > 0.5 && spanZ > 0.5) {
-        atlas101 = atlas_index_for_brick(brick101, safeGrid);
+        atlas101 = atlas_base_for_brick(brick101, safeGrid);
       } else if (spanX > 0.5) {
         atlas101 = atlas100;
       } else if (spanZ > 0.5) {
         atlas101 = atlas001;
       }
-      float atlas011 = atlas000;
+      vec4 atlas011 = atlas000;
       if (spanY > 0.5 && spanZ > 0.5) {
-        atlas011 = atlas_index_for_brick(brick011, safeGrid);
+        atlas011 = atlas_base_for_brick(brick011, safeGrid);
       } else if (spanY > 0.5) {
         atlas011 = atlas010;
       } else if (spanZ > 0.5) {
         atlas011 = atlas001;
       }
-      float atlas111 = atlas000;
+      vec4 atlas111 = atlas000;
       if (spanX > 0.5) {
         atlas111 = atlas100;
       }
@@ -972,7 +986,7 @@ const volumeRenderFragmentShader = /* glsl */ `
       }
       if (spanZ > 0.5) {
         if (spanX > 0.5 && spanY > 0.5) {
-          atlas111 = atlas_index_for_brick(brick111, safeGrid);
+          atlas111 = atlas_base_for_brick(brick111, safeGrid);
         } else if (spanX > 0.5) {
           atlas111 = atlas101;
         } else if (spanY > 0.5) {
@@ -982,76 +996,60 @@ const volumeRenderFragmentShader = /* glsl */ `
         }
       }
 
-      vec4 c000 = sample_brick_atlas_voxel_or_missing(
+      vec4 c000 = sample_brick_atlas_voxel_or_missing_base(
         voxel000,
         brick000,
         atlas000,
-        safeSlotGrid,
         safeChunk,
-        atlasSize,
         atlasVolumeSize
       );
-      vec4 c100 = sample_brick_atlas_voxel_or_missing(
+      vec4 c100 = sample_brick_atlas_voxel_or_missing_base(
         voxel100,
         brick100,
         atlas100,
-        safeSlotGrid,
         safeChunk,
-        atlasSize,
         atlasVolumeSize
       );
-      vec4 c010 = sample_brick_atlas_voxel_or_missing(
+      vec4 c010 = sample_brick_atlas_voxel_or_missing_base(
         voxel010,
         brick010,
         atlas010,
-        safeSlotGrid,
         safeChunk,
-        atlasSize,
         atlasVolumeSize
       );
-      vec4 c110 = sample_brick_atlas_voxel_or_missing(
+      vec4 c110 = sample_brick_atlas_voxel_or_missing_base(
         voxel110,
         brick110,
         atlas110,
-        safeSlotGrid,
         safeChunk,
-        atlasSize,
         atlasVolumeSize
       );
-      vec4 c001 = sample_brick_atlas_voxel_or_missing(
+      vec4 c001 = sample_brick_atlas_voxel_or_missing_base(
         voxel001,
         brick001,
         atlas001,
-        safeSlotGrid,
         safeChunk,
-        atlasSize,
         atlasVolumeSize
       );
-      vec4 c101 = sample_brick_atlas_voxel_or_missing(
+      vec4 c101 = sample_brick_atlas_voxel_or_missing_base(
         voxel101,
         brick101,
         atlas101,
-        safeSlotGrid,
         safeChunk,
-        atlasSize,
         atlasVolumeSize
       );
-      vec4 c011 = sample_brick_atlas_voxel_or_missing(
+      vec4 c011 = sample_brick_atlas_voxel_or_missing_base(
         voxel011,
         brick011,
         atlas011,
-        safeSlotGrid,
         safeChunk,
-        atlasSize,
         atlasVolumeSize
       );
-      vec4 c111 = sample_brick_atlas_voxel_or_missing(
+      vec4 c111 = sample_brick_atlas_voxel_or_missing_base(
         voxel111,
         brick111,
         atlas111,
-        safeSlotGrid,
         safeChunk,
-        atlasSize,
         atlasVolumeSize
       );
 
@@ -1071,14 +1069,14 @@ const volumeRenderFragmentShader = /* glsl */ `
       float w011 = wx0 * wy1 * wz1;
       float w111 = wx1 * wy1 * wz1;
 
-      float m000 = atlas000 < -0.5 ? 0.0 : 1.0;
-      float m100 = atlas100 < -0.5 ? 0.0 : 1.0;
-      float m010 = atlas010 < -0.5 ? 0.0 : 1.0;
-      float m110 = atlas110 < -0.5 ? 0.0 : 1.0;
-      float m001 = atlas001 < -0.5 ? 0.0 : 1.0;
-      float m101 = atlas101 < -0.5 ? 0.0 : 1.0;
-      float m011 = atlas011 < -0.5 ? 0.0 : 1.0;
-      float m111 = atlas111 < -0.5 ? 0.0 : 1.0;
+      float m000 = atlas000.a < 0.5 ? 0.0 : 1.0;
+      float m100 = atlas100.a < 0.5 ? 0.0 : 1.0;
+      float m010 = atlas010.a < 0.5 ? 0.0 : 1.0;
+      float m110 = atlas110.a < 0.5 ? 0.0 : 1.0;
+      float m001 = atlas001.a < 0.5 ? 0.0 : 1.0;
+      float m101 = atlas101.a < 0.5 ? 0.0 : 1.0;
+      float m011 = atlas011.a < 0.5 ? 0.0 : 1.0;
+      float m111 = atlas111.a < 0.5 ? 0.0 : 1.0;
 
       float ww000 = w000 * m000;
       float ww100 = w100 * m100;
@@ -1134,6 +1132,31 @@ const volumeRenderFragmentShader = /* glsl */ `
       return mix(lowSample, highSample, lodBlend);
     }
 
+    vec3 brick_subcell_coords_for_local_voxel(vec3 localVoxel, vec3 safeChunk, vec3 subcellGrid) {
+      vec3 safeSubcellGrid = max(subcellGrid, vec3(1.0));
+      return clamp(
+        floor((localVoxel * safeSubcellGrid) / max(safeChunk, vec3(1.0))),
+        vec3(0.0),
+        safeSubcellGrid - vec3(1.0)
+      );
+    }
+
+    vec3 brick_subcell_local_min(vec3 subcellCoords, vec3 safeChunk, vec3 subcellGrid) {
+      return floor((subcellCoords * safeChunk) / max(subcellGrid, vec3(1.0)));
+    }
+
+    vec3 brick_subcell_local_max(vec3 subcellCoords, vec3 safeChunk, vec3 subcellGrid) {
+      return min(
+        floor(((subcellCoords + vec3(1.0)) * safeChunk) / max(subcellGrid, vec3(1.0))),
+        safeChunk
+      );
+    }
+
+    vec4 brick_subcell_stats_for_coords(vec3 brickCoords, vec3 subcellCoords, vec3 subcellGrid) {
+      vec3 textureCoords = brickCoords * subcellGrid + subcellCoords;
+      return texelFetch(u_brickSubcellData, ivec3(textureCoords), 0);
+    }
+
     vec4 sample_full_volume_color(vec3 texcoords, float lod) {
       vec3 safeTexcoords = clamp(texcoords, vec3(0.0), vec3(1.0));
       if (u_adaptiveLodEnabled > 0.5 && u_nearestSampling <= 0.5) {
@@ -1146,6 +1169,14 @@ const volumeRenderFragmentShader = /* glsl */ `
     }
 
     vec4 sample_color_lod(vec3 texcoords, float lod) {
+      #if defined(VOLUME_NEAREST_VARIANT)
+        vec3 safeTexcoords = clamp(texcoords, vec3(0.0), vec3(1.0));
+        if (u_brickAtlasEnabled > 0.5) {
+          vec3 nearestVoxel = floor(safeTexcoords * max(u_brickVolumeSize, vec3(1.0)));
+          return sample_brick_atlas_voxel(nearestVoxel);
+        }
+        return texture(u_data, safeTexcoords);
+      #else
       if (u_brickAtlasEnabled > 0.5) {
         if (u_nearestSampling > 0.5) {
           vec3 safeTexcoords = clamp(texcoords, vec3(0.0), vec3(1.0));
@@ -1155,6 +1186,7 @@ const volumeRenderFragmentShader = /* glsl */ `
         return sample_brick_atlas_linear_lod(texcoords, lod);
       }
       return sample_full_volume_color(texcoords, lod);
+      #endif
     }
 
     vec4 sample_color(vec3 texcoords) {
@@ -1247,35 +1279,16 @@ const volumeRenderFragmentShader = /* glsl */ `
       return texelFetch(u_data, ivec3(voxelCoords), 0);
     }
 
-    vec4 sample_nearest_brick_atlas_voxel_cached(
-      vec3 voxelCoords,
-      vec3 safeGrid,
-      vec3 safeChunk,
-      vec3 atlasVolumeSize,
-      vec3 atlasSize,
-      vec3 safeSlotGrid,
-      inout float cachedAtlasValid,
-      inout vec3 cachedBrickCoords,
-      inout float cachedAtlasIndex
+    vec3 nearest_ray_voxel_position(
+      vec3 startVoxelCoords,
+      vec3 voxelStep,
+      float traversedDistance,
+      vec3 volumeSize
     ) {
-      vec3 brickCoords = clamp(floor(voxelCoords / safeChunk), vec3(0.0), safeGrid - vec3(1.0));
-      bool cacheHit = cachedAtlasValid > 0.5 && brick_coords_equal(cachedBrickCoords, brickCoords);
-      if (!cacheHit) {
-        cachedBrickCoords = brickCoords;
-        cachedAtlasIndex = atlas_index_for_brick(brickCoords, safeGrid);
-        cachedAtlasValid = 1.0;
-      }
-      if (cachedAtlasIndex < -0.5) {
-        return vec4(0.0);
-      }
-      return sample_brick_atlas_voxel_known(
-        voxelCoords,
-        brickCoords,
-        cachedAtlasIndex,
-        safeSlotGrid,
-        safeChunk,
-        atlasSize,
-        atlasVolumeSize
+      return clamp(
+        startVoxelCoords + voxelStep * traversedDistance,
+        vec3(0.0),
+        max(volumeSize - vec3(1e-4), vec3(0.0))
       );
     }
 
@@ -1633,31 +1646,23 @@ const volumeRenderFragmentShader = /* glsl */ `
         vec3 voxelStep = step * safeVolumeSize;
         vec3 voxelCoords = floor(startVoxelCoords);
         bool useBrickAtlas = u_brickAtlasEnabled > 0.5;
-        vec3 safeGrid = vec3(1.0);
-        vec3 safeChunk = vec3(1.0);
+        vec3 safeGrid = max(u_brickGridSize, vec3(1.0));
+        vec3 safeChunk = max(u_brickChunkSize, vec3(1.0));
         vec3 atlasVolumeSize = safeVolumeSize;
-        vec3 atlasSize = vec3(1.0);
-        vec3 safeSlotGrid = vec3(1.0);
         if (useBrickAtlas) {
-          safeGrid = max(u_brickGridSize, vec3(1.0));
-          safeChunk = max(u_brickChunkSize, vec3(1.0));
           atlasVolumeSize = max(u_brickVolumeSize, vec3(1.0));
-          atlasSize = max(u_brickAtlasSize, vec3(1.0));
-          safeSlotGrid = max(u_brickAtlasSlotGrid, vec3(1.0));
         }
         vec3 hierarchyTextureSize = vec3(1.0);
         vec3 hierarchyVolumeSize = vec3(1.0);
         vec3 hierarchyChunkSize = vec3(1.0);
         vec3 hierarchyVoxelStep = vec3(0.0);
         vec3 sampleToHierarchyScale = vec3(1.0);
-        vec3 hierarchyToSampleScale = vec3(1.0);
         if (skipTraversalEnabled) {
           hierarchyTextureSize = max(u_skipHierarchyTextureSize, vec3(1.0));
           hierarchyVolumeSize = max(u_brickVolumeSize, vec3(1.0));
           hierarchyChunkSize = max(u_brickChunkSize, vec3(1.0));
           hierarchyVoxelStep = step * hierarchyVolumeSize;
           sampleToHierarchyScale = hierarchyVolumeSize * invSafeVolumeSize;
-          hierarchyToSampleScale = safeVolumeSize / hierarchyVolumeSize;
         }
         float traversedDistance = 0.0;
         float axisStepX;
@@ -1669,13 +1674,6 @@ const volumeRenderFragmentShader = /* glsl */ `
         float tDeltaX;
         float tDeltaY;
         float tDeltaZ;
-        float hierarchyLevelValid[MAX_SKIP_HIERARCHY_LEVELS];
-        vec3 hierarchyLevelNodeMin[MAX_SKIP_HIERARCHY_LEVELS];
-        vec3 hierarchyLevelNodeMax[MAX_SKIP_HIERARCHY_LEVELS];
-        vec4 hierarchyLevelStats[MAX_SKIP_HIERARCHY_LEVELS];
-        for (int hierarchyLevel = 0; hierarchyLevel < MAX_SKIP_HIERARCHY_LEVELS; hierarchyLevel++) {
-          hierarchyLevelValid[hierarchyLevel] = 0.0;
-        }
         nearest_dda_init_axis(startVoxelCoords.x, voxelStep.x, axisStepX, tMaxX, tDeltaX);
         nearest_dda_init_axis(startVoxelCoords.y, voxelStep.y, axisStepY, tMaxY, tDeltaY);
         nearest_dda_init_axis(startVoxelCoords.z, voxelStep.z, axisStepZ, tMaxZ, tDeltaZ);
@@ -1689,194 +1687,99 @@ const volumeRenderFragmentShader = /* glsl */ `
           if (!nearest_voxel_in_bounds(voxelCoords, safeVolumeSize)) {
             break;
           }
-          vec3 regionMinSample = vec3(-1.0);
-          vec3 regionMaxSample = safeVolumeSize + vec3(1.0);
-          vec3 brickCoords = vec3(-1.0);
-          float atlasIndex = -2.0;
-          bool skippedNode = false;
           if (skipTraversalEnabled) {
-            vec3 hierarchyVoxelCoords = (voxelCoords + vec3(0.5)) * sampleToHierarchyScale;
-            for (int hierarchyLevel = MAX_SKIP_HIERARCHY_LEVELS - 1; hierarchyLevel >= 0; hierarchyLevel--) {
-              if (hierarchyLevel >= hierarchyLevelCount) {
-                continue;
-              }
-              if (
-                hierarchyLevelValid[hierarchyLevel] <= 0.5 ||
-                !hierarchy_voxel_within_node_bounds(
-                  hierarchyVoxelCoords,
-                  hierarchyLevelNodeMin[hierarchyLevel],
-                  hierarchyLevelNodeMax[hierarchyLevel]
-                )
-              ) {
-                vec4 levelMeta = u_skipHierarchyLevelMeta[hierarchyLevel];
-                vec3 grid = max(levelMeta.xyz, vec3(1.0));
-                float zBase = levelMeta.w;
-                float levelScale = exp2(float(hierarchyLevel));
-                vec3 nodeSize = max(vec3(1.0), hierarchyChunkSize * levelScale);
-                vec3 nodeCoords = floor(hierarchyVoxelCoords / nodeSize);
-                nodeCoords = clamp(nodeCoords, vec3(0.0), grid - vec3(1.0));
-                vec3 hierarchySampleCoord = vec3(
-                  (nodeCoords.x + 0.5) / hierarchyTextureSize.x,
-                  (nodeCoords.y + 0.5) / hierarchyTextureSize.y,
-                  (zBase + nodeCoords.z + 0.5) / hierarchyTextureSize.z
-                );
-                hierarchyLevelNodeMin[hierarchyLevel] = nodeCoords * nodeSize;
-                hierarchyLevelNodeMax[hierarchyLevel] = min(
-                  hierarchyLevelNodeMin[hierarchyLevel] + nodeSize,
-                  hierarchyVolumeSize
-                );
-                hierarchyLevelStats[hierarchyLevel] = texture(u_skipHierarchyData, hierarchySampleCoord);
-                hierarchyLevelValid[hierarchyLevel] = 1.0;
-              }
-              vec4 hierarchyStats = hierarchyLevelStats[hierarchyLevel];
-              if (should_skip_with_brick_stats_values(
-                hierarchyStats.r,
-                hierarchyStats.g,
-                hierarchyStats.b,
-                max_val,
-                -1.0
-              )) {
-                int stepAdvance = hierarchy_skip_steps_to_node_exit(
-                  hierarchyVoxelCoords,
-                  hierarchyVoxelStep,
-                  hierarchyLevelNodeMin[hierarchyLevel],
-                  hierarchyLevelNodeMax[hierarchyLevel]
-                );
-                if (stepAdvance > 1) {
-                  float targetT = min(
-                    traversedDistance + float(stepAdvance),
-                    float(nsteps)
-                  );
-                  nearest_dda_advance_to_target(
-                    targetT,
-                    voxelCoords,
-                    axisStepX,
-                    axisStepY,
-                    axisStepZ,
-                    tMaxX,
-                    tMaxY,
-                    tMaxZ,
-                    tDeltaX,
-                    tDeltaY,
-                    tDeltaZ
-                  );
-                  traversedDistance = targetT;
-                  skippedNode = true;
-                } else {
-                  regionMinSample = voxelCoords;
-                  regionMaxSample = min(regionMinSample + vec3(1.0), safeVolumeSize);
-                  if (useBrickAtlas) {
-                    brickCoords = brick_coords_for_voxel(
-                      voxelCoords,
-                      safeGrid,
-                      safeChunk,
-                      atlasVolumeSize
-                    );
-                  }
-                }
-                break;
-              }
-              if (hierarchyLevel == 0) {
-                regionMinSample = hierarchyLevelNodeMin[hierarchyLevel] * hierarchyToSampleScale;
-                regionMaxSample = hierarchyLevelNodeMax[hierarchyLevel] * hierarchyToSampleScale;
-                if (useBrickAtlas) {
-                  brickCoords = clamp(
-                    floor(hierarchyLevelNodeMin[hierarchyLevel] / hierarchyChunkSize),
-                    vec3(0.0),
-                    safeGrid - vec3(1.0)
-                  );
-                }
-              }
+            int stepAdvance = hierarchy_skip_step_advance_voxel(
+              voxelCoords,
+              sampleToHierarchyScale,
+              hierarchyVoxelStep,
+              hierarchyTextureSize,
+              hierarchyVolumeSize,
+              hierarchyChunkSize,
+              hierarchyLevelCount,
+              max_val,
+              -1.0,
+              hierarchyTraversalCacheValid,
+              hierarchyTraversalNodeMin,
+              hierarchyTraversalNodeMax,
+              hierarchyTraversalNodeSkippable,
+              hierarchyTraversalNodeCurrentMax,
+              hierarchyTraversalNodeIsoLowThreshold
+            );
+            if (stepAdvance > 1) {
+              float targetT = min(
+                traversedDistance + float(stepAdvance),
+                float(nsteps)
+              );
+              nearest_dda_advance_to_target(
+                targetT,
+                voxelCoords,
+                axisStepX,
+                axisStepY,
+                axisStepZ,
+                tMaxX,
+                tMaxY,
+                tMaxZ,
+                tDeltaX,
+                tDeltaY,
+                tDeltaZ
+              );
+              traversedDistance = targetT;
+              continue;
             }
-          } else if (useBrickAtlas) {
-            brickCoords = brick_coords_for_voxel(
+          }
+          vec4 colorSample = vec4(0.0);
+          if (useBrickAtlas) {
+            vec3 brickCoords = brick_coords_for_voxel(
               voxelCoords,
               safeGrid,
               safeChunk,
               atlasVolumeSize
             );
-            regionMinSample = brickCoords * safeChunk;
-            regionMaxSample = min(regionMinSample + safeChunk, safeVolumeSize);
-          }
-          if (skippedNode) {
-            continue;
-          }
-          if (useBrickAtlas) {
-            if (brickCoords.x < -0.5) {
-              brickCoords = brick_coords_for_voxel(
-                voxelCoords,
-                safeGrid,
-                safeChunk,
-                atlasVolumeSize
-              );
-            }
-            atlasIndex = atlas_index_for_brick(brickCoords, safeGrid);
-          }
-          for (int regionGuard = 0; regionGuard < MAX_STEPS; regionGuard++) {
-            if (traversedDistance >= float(nsteps) - NEAREST_DDA_ADVANCE_EPSILON) {
-              break;
-            }
-            if (!nearest_voxel_in_bounds(voxelCoords, safeVolumeSize)) {
-              break;
-            }
-            if (
-              !hierarchy_voxel_within_node_bounds(
-                voxelCoords + vec3(0.5),
-                regionMinSample,
-                regionMaxSample
-              )
-            ) {
-              break;
-            }
-            vec4 colorSample = vec4(0.0);
-            if (useBrickAtlas) {
-              colorSample = sample_brick_atlas_voxel_or_missing(
-                voxelCoords,
-                brickCoords,
-                atlasIndex,
-                safeSlotGrid,
-                safeChunk,
-                atlasSize,
-                atlasVolumeSize
-              );
-            } else {
-              colorSample = sample_nearest_full_volume_voxel(voxelCoords);
-            }
-            float rawVal = luminance(colorSample);
-            float normalizedVal = normalize_intensity(rawVal);
-            if (normalizedVal > max_val) {
-              max_val = normalizedVal;
-              max_color = colorSample;
-              max_loc = (voxelCoords + vec3(0.5)) * invSafeVolumeSize;
-              if (max_val >= safeHighWaterMark) {
-                break;
-              }
-            }
-            float nextBoundaryT = min(tMaxX, min(tMaxY, tMaxZ));
-            float targetT;
-            if (!(nextBoundaryT > traversedDistance + 1e-6) || nextBoundaryT >= LARGE * 0.5) {
-              targetT = min(
-                traversedDistance + 1.0,
-                float(nsteps)
-              );
-            } else {
-              targetT = min(nextBoundaryT + NEAREST_DDA_ADVANCE_EPSILON, float(nsteps));
-            }
-            nearest_dda_advance_to_target(
-              targetT,
+            vec4 atlasBaseInfo = atlas_base_for_brick(brickCoords, safeGrid);
+            colorSample = sample_brick_atlas_voxel_or_missing_base(
               voxelCoords,
-              axisStepX,
-              axisStepY,
-              axisStepZ,
-              tMaxX,
-              tMaxY,
-              tMaxZ,
-              tDeltaX,
-              tDeltaY,
-              tDeltaZ
+              brickCoords,
+              atlasBaseInfo,
+              safeChunk,
+              atlasVolumeSize
             );
-            traversedDistance = targetT;
+          } else {
+            colorSample = sample_nearest_full_volume_voxel(voxelCoords);
           }
+          float rawVal = luminance(colorSample);
+          float normalizedVal = normalize_intensity(rawVal);
+          if (normalizedVal > max_val) {
+            max_val = normalizedVal;
+            max_color = colorSample;
+            max_loc = (voxelCoords + vec3(0.5)) * invSafeVolumeSize;
+            if (max_val >= safeHighWaterMark) {
+              break;
+            }
+          }
+          float nextBoundaryT = min(tMaxX, min(tMaxY, tMaxZ));
+          float targetT;
+          if (!(nextBoundaryT > traversedDistance + 1e-6) || nextBoundaryT >= LARGE * 0.5) {
+            targetT = min(
+              traversedDistance + 1.0,
+              float(nsteps)
+            );
+          } else {
+            targetT = min(nextBoundaryT + NEAREST_DDA_ADVANCE_EPSILON, float(nsteps));
+          }
+          nearest_dda_advance_to_target(
+            targetT,
+            voxelCoords,
+            axisStepX,
+            axisStepY,
+            axisStepZ,
+            tMaxX,
+            tMaxY,
+            tMaxZ,
+            tDeltaX,
+            tDeltaY,
+            tDeltaZ
+          );
+          traversedDistance = targetT;
           if (max_val >= safeHighWaterMark) {
             break;
           }
@@ -2268,7 +2171,7 @@ const volumeRenderFragmentShader = /* glsl */ `
     #endif
   `;
 
-export type VolumeRenderShaderVariantKey = 'mip' | 'iso' | 'bl';
+export type VolumeRenderShaderVariantKey = 'mip' | 'mip-nearest' | 'iso' | 'bl';
 
 const createVariantFragmentShader = (variant: VolumeRenderShaderVariantKey): string => {
   if (variant === 'iso') {
@@ -2276,6 +2179,9 @@ const createVariantFragmentShader = (variant: VolumeRenderShaderVariantKey): str
   }
   if (variant === 'bl') {
     return `#define VOLUME_STYLE_BL\n${volumeRenderFragmentShader}`;
+  }
+  if (variant === 'mip-nearest') {
+    return `#define VOLUME_STYLE_MIP\n#define VOLUME_NEAREST_VARIANT\n${volumeRenderFragmentShader}`;
   }
   return `#define VOLUME_STYLE_MIP\n${volumeRenderFragmentShader}`;
 };
@@ -2288,22 +2194,31 @@ const createVolumeRenderShaderVariant = (variant: VolumeRenderShaderVariantKey) 
 
 export const VolumeRenderShaderVariants = {
   mip: createVolumeRenderShaderVariant('mip'),
+  'mip-nearest': createVolumeRenderShaderVariant('mip-nearest'),
   iso: createVolumeRenderShaderVariant('iso'),
   bl: createVolumeRenderShaderVariant('bl')
 } as const;
 
-export const getVolumeRenderShaderVariantKey = (renderStyle: RenderStyle): VolumeRenderShaderVariantKey => {
+export const getVolumeRenderShaderVariantKey = (
+  renderStyle: RenderStyle,
+  samplingMode: 'linear' | 'nearest' = 'linear',
+): VolumeRenderShaderVariantKey => {
   if (renderStyle === RENDER_STYLE_ISO) {
     return 'iso';
   }
   if (renderStyle === RENDER_STYLE_BL) {
     return 'bl';
   }
+  if (samplingMode === 'nearest') {
+    return 'mip-nearest';
+  }
   return 'mip';
 };
 
-export const getVolumeRenderShaderVariant = (renderStyle: RenderStyle) =>
-  VolumeRenderShaderVariants[getVolumeRenderShaderVariantKey(renderStyle)];
+export const getVolumeRenderShaderVariant = (
+  renderStyle: RenderStyle,
+  samplingMode: 'linear' | 'nearest' = 'linear',
+) => VolumeRenderShaderVariants[getVolumeRenderShaderVariantKey(renderStyle, samplingMode)];
 
 // Backward-compatible default variant for existing imports.
 export const VolumeRenderShader = VolumeRenderShaderVariants.mip;

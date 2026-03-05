@@ -508,6 +508,7 @@ const createLayer = (
   layers = [
     {
       ...layers[0],
+      renderStyle: 0,
       samplingMode: 'nearest',
     },
   ];
@@ -518,6 +519,7 @@ const createLayer = (
   assert.ok(nearestResource);
   const nearestMaterial = nearestResource.mesh.material as THREE.ShaderMaterial;
   const nearestUniforms = nearestMaterial.uniforms as Record<string, { value: unknown }>;
+  assert.ok(nearestMaterial.fragmentShader.includes('#define VOLUME_NEAREST_VARIANT'));
   assert.equal(nearestMaterial.transparent, true);
   assert.equal(nearestMaterial.depthWrite, false);
   assert.equal(nearestMaterial.depthTest, true);
@@ -633,8 +635,21 @@ const createLayer = (
     firstResource.brickAtlasIndexTexture?.image as { data: Float32Array } | undefined
   )?.data;
   assert.deepEqual(Array.from(atlasData ?? []), [1, 2, 0, 0]);
+  const atlasBaseData = (
+    firstResource.brickAtlasBaseTexture?.image as { data: Float32Array } | undefined
+  )?.data;
+  assert.deepEqual(Array.from(atlasBaseData ?? []), [0, 0, 0, 1, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0]);
   assert.equal(firstUniforms.u_brickAtlasEnabled?.value, 1);
   assert.ok(firstResource.brickAtlasDataTexture);
+  assert.ok(firstResource.brickSubcellTexture);
+  const subcellTextureShape = firstResource.brickSubcellTexture?.image as
+    | { width: number; height: number; depth: number }
+    | undefined;
+  assert.deepEqual(
+    [subcellTextureShape?.width ?? 0, subcellTextureShape?.height ?? 0, subcellTextureShape?.depth ?? 0],
+    [4, 4, 2],
+  );
+  assert.deepEqual((firstUniforms.u_brickSubcellGrid?.value as THREE.Vector3).toArray(), [2, 2, 2]);
   assert.equal(firstResource.brickAtlasBuildVersion, 1);
   assert.strictEqual(firstResource.brickMetadataSourcePageTable, layers[0]?.brickPageTable);
   const atlasTextureShape = firstResource.brickAtlasDataTexture?.image as

@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 
 import {
   computeSkipHierarchyNodeBoundsCpu,
-  shouldSkipWithBrickStatsCpu
+  computeHierarchyNodeExitCpu,
+  shouldSkipWithBrickStatsCpu,
+  VolumeRenderShaderVariants,
 } from '../src/shaders/volumeRenderShader.ts';
 
 function referenceShouldSkipWithBrickStats(args: {
@@ -75,6 +77,28 @@ function createPrng(seed: number): () => number {
     windowMax: 255,
   });
   assert.equal(result, false);
+})();
+
+(() => {
+  const exitSteps = computeHierarchyNodeExitCpu({
+    rayVoxelCoords: [7.9, 1.25, 1.25],
+    voxelStep: [1, 0.5, 0],
+    nodeMin: [0, 0, 0],
+    nodeMax: [8, 4, 4],
+  });
+  assert.ok(Math.abs(exitSteps - 0.1) <= 1e-6);
+})();
+
+(() => {
+  const nearestShader = VolumeRenderShaderVariants['mip-nearest'].fragmentShader;
+  assert.match(
+    nearestShader,
+    /int stepAdvance = hierarchy_skip_step_advance_voxel\(/,
+  );
+  assert.match(
+    nearestShader,
+    /vec3 brickCoords = brick_coords_for_voxel\(/,
+  );
 })();
 
 (() => {
