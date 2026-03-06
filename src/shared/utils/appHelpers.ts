@@ -10,13 +10,18 @@ export const applyAlphaToHex = (hexColor: string, alpha: number): string => {
   return `rgba(${r}, ${g}, ${b}, ${clampedAlpha})`;
 };
 
-export const getTrackTabTextColor = (hexColor: string): string => {
-  const normalized = normalizeTrackColor(hexColor, '#ffffff');
+export const isLightHexColor = (hexColor: string, fallback = DEFAULT_LAYER_COLOR): boolean => {
+  const normalized = normalizeHexColor(hexColor, fallback);
   const r = Number.parseInt(normalized.slice(1, 3), 16) / 255;
   const g = Number.parseInt(normalized.slice(3, 5), 16) / 255;
   const b = Number.parseInt(normalized.slice(5, 7), 16) / 255;
   const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  return luminance > 0.58 ? '#0b1220' : '#ffffff';
+  return luminance > 0.58;
+};
+
+export const getTrackTabTextColor = (hexColor: string): string => {
+  const normalized = normalizeTrackColor(hexColor, '#ffffff');
+  return isLightHexColor(normalized, '#ffffff') ? '#0b1220' : '#ffffff';
 };
 
 export const createSegmentationSeed = (layerKey: string, volumeIndex: number): number => {

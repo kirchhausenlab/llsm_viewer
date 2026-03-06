@@ -13,6 +13,7 @@ import type { TopMenuProps } from './types';
 import ThemeModeToggle from '../../app/ThemeModeToggle';
 import VolumeChannelTabs from './VolumeChannelTabs';
 import { formatCompactChannelLabel } from './channelLabel';
+import { isLightHexColor } from '../../../shared/utils/appHelpers';
 
 type DropdownMenuId = 'file' | 'view' | 'channels' | 'tracks' | 'help';
 
@@ -525,7 +526,7 @@ export default function TopMenu({
                 </label>
               </div>
               <div className="viewer-top-menu-secondary-group viewer-top-menu-secondary-group--z">
-                <span className="viewer-top-menu-slider-label">Z start</span>
+                <span className="viewer-top-menu-slider-label">Z</span>
                 <label className="viewer-top-menu-slider-group" htmlFor="top-menu-z-slider">
                   <input
                     id="top-menu-z-slider"
@@ -537,7 +538,7 @@ export default function TopMenu({
                     value={resolvedZSliderValue}
                     onChange={(event) => onZSliderChange?.(Number(event.target.value))}
                     disabled={zSliderDisabled}
-                    aria-label="Z start"
+                    aria-label="Z"
                   />
                   <span className="viewer-top-menu-slider-counter viewer-top-menu-slider-counter--z">
                     {resolvedZSliderValue}/{resolvedZSliderMax}
@@ -581,7 +582,11 @@ export default function TopMenu({
                         {resolvedIntensityComponents.map((component) => (
                           <span
                             key={component.key}
-                            className="viewer-top-menu-intensity-entry"
+                            className={
+                              component.color && isLightHexColor(component.color)
+                                ? 'viewer-top-menu-intensity-entry is-light-tint'
+                                : 'viewer-top-menu-intensity-entry'
+                            }
                             style={component.color ? { color: component.color } : undefined}
                             title={component.channelLabel ?? component.fullText}
                           >

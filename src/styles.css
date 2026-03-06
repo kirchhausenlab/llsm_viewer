@@ -100,67 +100,67 @@
 
 :root[data-theme='light'] {
   color-scheme: light;
-  --page-background: #edf2f6;
+  --page-background: #f3ead8;
   --app-background:
-    radial-gradient(circle at 18% 10%, rgba(132, 160, 184, 0.18), transparent 28%),
-    radial-gradient(circle at 84% 8%, rgba(189, 204, 216, 0.26), transparent 30%),
-    linear-gradient(180deg, rgba(244, 247, 250, 0.98), rgba(234, 239, 244, 0.99)),
+    radial-gradient(circle at 18% 10%, rgba(201, 166, 101, 0.16), transparent 28%),
+    radial-gradient(circle at 84% 8%, rgba(223, 197, 147, 0.22), transparent 30%),
+    linear-gradient(180deg, rgba(247, 239, 223, 0.98), rgba(238, 228, 205, 0.99)),
     repeating-linear-gradient(
       90deg,
-      rgba(148, 163, 184, 0.16) 0,
-      rgba(148, 163, 184, 0.16) 1px,
+      rgba(156, 132, 92, 0.14) 0,
+      rgba(156, 132, 92, 0.14) 1px,
       transparent 1px,
       transparent 104px
     ),
     repeating-linear-gradient(
       0deg,
-      rgba(148, 163, 184, 0.12) 0,
-      rgba(148, 163, 184, 0.12) 1px,
+      rgba(156, 132, 92, 0.1) 0,
+      rgba(156, 132, 92, 0.1) 1px,
       transparent 1px,
       transparent 104px
     );
-  --text-primary: #17212c;
-  --text-secondary: #344455;
-  --text-muted: #5a6b7c;
-  --text-subtle: #738599;
-  --accent: #2e6b95;
-  --accent-strong: #214f71;
-  --accent-soft: rgba(46, 107, 149, 0.1);
-  --accent-soft-strong: rgba(46, 107, 149, 0.18);
-  --accent-border: rgba(46, 107, 149, 0.36);
-  --focus-ring: rgba(46, 107, 149, 0.18);
-  --panel-background: rgba(249, 250, 252, 0.97);
-  --panel-background-strong: rgba(255, 255, 255, 0.99);
-  --panel-background-muted: rgba(242, 246, 249, 0.96);
-  --panel-background-subtle: rgba(236, 241, 246, 0.94);
-  --panel-border: rgba(110, 126, 145, 0.22);
-  --panel-border-strong: rgba(94, 110, 129, 0.32);
-  --panel-divider: rgba(120, 136, 155, 0.2);
+  --text-primary: #3a2f21;
+  --text-secondary: #645340;
+  --text-muted: #83705a;
+  --text-subtle: #a18e73;
+  --accent: #8b692f;
+  --accent-strong: #6f5223;
+  --accent-soft: rgba(139, 105, 47, 0.1);
+  --accent-soft-strong: rgba(139, 105, 47, 0.18);
+  --accent-border: rgba(139, 105, 47, 0.34);
+  --focus-ring: rgba(139, 105, 47, 0.18);
+  --panel-background: rgba(249, 243, 231, 0.97);
+  --panel-background-strong: rgba(255, 249, 239, 0.99);
+  --panel-background-muted: rgba(243, 235, 220, 0.96);
+  --panel-background-subtle: rgba(236, 226, 208, 0.94);
+  --panel-border: rgba(131, 111, 82, 0.24);
+  --panel-border-strong: rgba(118, 97, 67, 0.32);
+  --panel-divider: rgba(140, 119, 89, 0.2);
   --panel-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
   --panel-shadow-soft: 0 10px 22px rgba(15, 23, 42, 0.08);
-  --menu-background: rgba(248, 250, 252, 0.99);
-  --menu-background-elevated: rgba(255, 255, 255, 0.99);
+  --menu-background: rgba(249, 243, 230, 0.99);
+  --menu-background-elevated: rgba(255, 249, 239, 0.99);
   --menu-shadow: 0 18px 34px rgba(15, 23, 42, 0.12);
   --titlebar-background:
-    linear-gradient(180deg, rgba(241, 245, 249, 0.99), rgba(248, 250, 252, 0.99));
-  --control-background: rgba(248, 250, 252, 0.98);
-  --control-background-muted: rgba(240, 244, 248, 0.98);
-  --control-hover-background: rgba(237, 242, 247, 1);
-  --control-active-background: rgba(227, 236, 244, 1);
-  --control-border: rgba(110, 126, 145, 0.28);
-  --control-border-strong: rgba(46, 107, 149, 0.42);
-  --control-shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.68);
+    linear-gradient(180deg, rgba(242, 233, 214, 0.99), rgba(249, 243, 230, 0.99));
+  --control-background: rgba(249, 243, 231, 0.98);
+  --control-background-muted: rgba(242, 233, 216, 0.98);
+  --control-hover-background: rgba(237, 227, 207, 1);
+  --control-active-background: rgba(230, 217, 194, 1);
+  --control-border: rgba(131, 111, 82, 0.28);
+  --control-border-strong: rgba(139, 105, 47, 0.42);
+  --control-shadow-inset: inset 0 1px 0 rgba(255, 251, 241, 0.68);
   --dropzone-background:
-    linear-gradient(180deg, rgba(245, 248, 250, 0.99), rgba(236, 241, 246, 0.98));
+    linear-gradient(180deg, rgba(246, 238, 221, 0.99), rgba(237, 227, 208, 0.98));
   --dropzone-accent-background:
-    linear-gradient(180deg, rgba(235, 241, 246, 0.99), rgba(230, 237, 242, 0.99));
-  --dropzone-border: rgba(46, 107, 149, 0.32);
+    linear-gradient(180deg, rgba(239, 229, 209, 0.99), rgba(233, 221, 199, 0.99));
+  --dropzone-border: rgba(139, 105, 47, 0.32);
   --dropzone-shadow: 0 10px 20px rgba(15, 23, 42, 0.07);
-  --primary-button-background: linear-gradient(180deg, #2f719a, #245b7c);
-  --primary-button-background-hover: linear-gradient(180deg, #387ca7, #2a6588);
-  --primary-button-border: rgba(46, 107, 149, 0.28);
-  --primary-button-shadow: 0 10px 18px rgba(39, 88, 119, 0.16);
-  --primary-button-text: #f7fbff;
+  --primary-button-background: linear-gradient(180deg, #9a7440, #7d5c2b);
+  --primary-button-background-hover: linear-gradient(180deg, #ab8250, #8b6733);
+  --primary-button-border: rgba(139, 105, 47, 0.28);
+  --primary-button-shadow: 0 10px 18px rgba(104, 74, 28, 0.16);
+  --primary-button-text: #fffaf1;
   --success-surface: rgba(22, 163, 74, 0.12);
   --success-border: rgba(22, 163, 74, 0.24);
   --success-text: #176142;
@@ -171,9 +171,9 @@
   --danger-surface: rgba(185, 72, 72, 0.12);
   --danger-border: rgba(185, 72, 72, 0.24);
   --danger-text: #fff9f9;
-  --selection-background: rgba(46, 107, 149, 0.16);
-  --selection-foreground: #16202b;
-  --scrollbar-thumb: rgba(108, 124, 143, 0.28);
+  --selection-background: rgba(139, 105, 47, 0.16);
+  --selection-foreground: #2b2419;
+  --scrollbar-thumb: rgba(128, 108, 78, 0.28);
 }
 
 body,

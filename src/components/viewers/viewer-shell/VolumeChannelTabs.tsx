@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 
 import { DEFAULT_LAYER_COLOR } from '../../../shared/colorMaps/layerColors';
-import { applyAlphaToHex } from '../../../shared/utils/appHelpers';
+import { applyAlphaToHex, isLightHexColor } from '../../../shared/utils/appHelpers';
 import type { ChannelPanelStyle, VolumeChannelTabsProps } from './types';
 import { formatCompactChannelLabel } from './channelLabel';
 
@@ -94,10 +94,13 @@ export default function VolumeChannelTabs({
           const compactLabel = formatCompactChannelLabel(label);
           const isActive = channelId === activeChannelId;
           const isVisible = channelVisibility[channelId] ?? true;
+          const tintColor = channelTintMap.get(channelId) ?? DEFAULT_LAYER_COLOR;
+          const isLightTint = isLightHexColor(tintColor);
           const tabClassName = [
             'channel-tab',
             'viewer-top-menu-channel-tab',
             isActive ? 'is-active' : '',
+            isLightTint ? 'is-light-tint' : '',
             !isVisible ? 'is-hidden' : ''
           ]
             .filter(Boolean)
@@ -105,13 +108,13 @@ export default function VolumeChannelTabs({
           const labelClassName = isVisible
             ? 'channel-tab-label'
             : 'channel-tab-label channel-tab-label--hidden';
-          const tintColor = channelTintMap.get(channelId) ?? DEFAULT_LAYER_COLOR;
           const tabStyle: ChannelPanelStyle = {
             '--channel-tab-background': applyAlphaToHex(tintColor, 0.18),
             '--channel-tab-background-active': applyAlphaToHex(tintColor, 0.35),
             '--channel-tab-border': 'rgba(255, 255, 255, 0.15)',
             '--channel-tab-border-active': applyAlphaToHex(tintColor, 0.55),
-            '--channel-tab-highlight': applyAlphaToHex(tintColor, 0.82)
+            '--channel-tab-highlight': applyAlphaToHex(tintColor, 0.82),
+            '--channel-tab-contrast-outline': isLightTint ? 'var(--panel-border-strong)' : 'transparent'
           };
 
           const handleChannelTabClick = (event: MouseEvent<HTMLButtonElement>) => {

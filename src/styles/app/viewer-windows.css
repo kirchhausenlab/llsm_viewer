@@ -251,7 +251,7 @@
   padding: 0.55rem 1.25rem;
   font-weight: 600;
   font-size: 0.9rem;
-  color: #26140f;
+  color: var(--text-primary);
   background: linear-gradient(135deg, #ffd77a, #ff9d7a);
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
