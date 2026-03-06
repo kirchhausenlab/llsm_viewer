@@ -63,15 +63,6 @@
   z-index: 20;
 }
 
-.floating-window--channels .floating-window-header-main {
-  gap: 0.55rem;
-}
-
-.floating-window--channels .floating-window-header-content {
-  margin-top: 0.35rem;
-  padding-top: 0.2rem;
-}
-
 .floating-window--tracks .floating-window-header-main {
   gap: 0.55rem;
 }
@@ -79,10 +70,6 @@
 .floating-window--tracks .floating-window-header-content {
   margin-top: 0.35rem;
   padding-top: 0.2rem;
-}
-
-.floating-window--playback {
-  z-index: 30;
 }
 
 .floating-window.is-dragging {
@@ -195,15 +182,17 @@
   overflow-x: hidden;
   padding-right: 0.25rem;
   margin-right: -0.25rem;
+  scrollbar-width: none;
 }
 
-.floating-window-body > .sidebar::-webkit-scrollbar {
-  width: 0.4rem;
+.floating-window--plot-settings .floating-window-body {
+  scrollbar-width: none;
 }
 
-.floating-window-body > .sidebar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.18);
-  border-radius: 999px;
+.floating-window-body > .sidebar::-webkit-scrollbar,
+.floating-window--plot-settings .floating-window-body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .floating-window.is-minimized .floating-window-body {

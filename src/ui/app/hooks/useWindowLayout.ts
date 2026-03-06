@@ -2,7 +2,6 @@ import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
-  computeControlWindowDefaultPosition,
   computeLayersWindowDefaultPosition,
   computePaintbrushWindowDefaultPosition,
   computePlotSettingsWindowDefaultPosition,
@@ -16,7 +15,6 @@ import {
 
 type UseWindowLayoutResult = {
   layoutResetToken: number;
-  controlWindowInitialPosition: WindowPosition;
   layersWindowInitialPosition: WindowPosition;
   paintbrushWindowInitialPosition: WindowPosition;
   trackWindowInitialPosition: WindowPosition;
@@ -31,7 +29,6 @@ const positionsMatch = (a: WindowPosition, b: WindowPosition) => a.x === b.x && 
 
 export function useWindowLayout(): UseWindowLayoutResult {
   const [layoutResetToken, setLayoutResetToken] = useState(0);
-  const controlWindowInitialPosition = useMemo(computeControlWindowDefaultPosition, []);
   const layersWindowInitialPosition = useMemo(computeLayersWindowDefaultPosition, []);
   const [trackWindowInitialPosition, setTrackWindowInitialPosition] = useState<WindowPosition>(
     () => computeTrackWindowDefaultPosition()
@@ -107,7 +104,6 @@ export function useWindowLayout(): UseWindowLayoutResult {
 
   return {
     layoutResetToken,
-    controlWindowInitialPosition,
     layersWindowInitialPosition,
     paintbrushWindowInitialPosition,
     trackWindowInitialPosition,

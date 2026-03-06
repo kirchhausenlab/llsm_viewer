@@ -31,7 +31,8 @@ test('@nightly can launch with raw and segmentation channels and preserve per-ch
   const channelsWindow = page.locator('.floating-window--channels');
   await expect(channelsWindow.getByRole('heading', { name: 'Channels' })).toBeVisible();
 
-  const channelTabs = channelsWindow.getByRole('tablist', { name: 'Volume channels' });
+  const topMenu = page.locator('.viewer-top-menu');
+  const channelTabs = topMenu.getByRole('tablist', { name: 'Volume channels' });
   await expect(channelTabs.getByRole('tab')).toHaveCount(2);
 
   const rawTab = channelTabs.getByRole('tab').nth(0);
@@ -51,8 +52,6 @@ test('@nightly can launch with raw and segmentation channels and preserve per-ch
   await expect(invertButton).toBeDisabled();
   await expect(invertButton).toHaveAttribute('title', 'Invert LUT is unavailable for segmentation volumes.');
 
-  const playbackWindow = page.locator('.floating-window--playback');
-  await expect(playbackWindow.getByRole('heading', { name: 'Viewer controls' })).toBeVisible();
-  await expect(playbackWindow.getByRole('button', { name: 'Reset view' })).toBeVisible();
+  await expect(topMenu.getByRole('button', { name: 'Reset view' })).toBeVisible();
   await expect(invertButton).toBeDisabled();
 });

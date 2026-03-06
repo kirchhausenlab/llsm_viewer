@@ -88,7 +88,6 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
     },
     layout: {
       resetToken: 0,
-      controlWindowInitialPosition: { x: 0, y: 0 },
       viewerSettingsWindowInitialPosition: { x: 0, y: 0 },
       layersWindowInitialPosition: { x: 0, y: 0 },
       paintbrushWindowInitialPosition: { x: 0, y: 0 },
@@ -121,8 +120,6 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
       onTimeIndexChange: noopWithArgs,
       playbackDisabled: false,
       onTogglePlayback: noop,
-      onJumpToStart: noop,
-      onJumpToEnd: noop,
       error: null,
       onStartRecording: noop,
       onStopRecording: noop,

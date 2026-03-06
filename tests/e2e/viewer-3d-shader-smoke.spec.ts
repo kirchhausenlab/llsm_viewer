@@ -31,8 +31,8 @@ test('@smoke entering 3D view does not trigger shader compile errors', async ({ 
     voxelResolution: STANDARD_VOXEL_RESOLUTION
   });
 
-  const playbackWindow = page.locator('.floating-window--playback');
-  await expect(playbackWindow.getByRole('heading', { name: 'Viewer controls' })).toBeVisible();
+  const topMenu = page.locator('.viewer-top-menu');
+  await expect(topMenu.getByRole('button', { name: 'Reset view' })).toBeVisible();
 
   await page.waitForTimeout(1200);
   expect(shaderErrors, `shader errors observed in browser console:\n${shaderErrors.join('\n')}`).toEqual([]);

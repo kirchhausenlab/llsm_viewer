@@ -2,6 +2,19 @@ import { CSSProperties, ReactNode, useCallback, useEffect, useMemo, useRef, useS
 
 const WINDOW_MARGIN = 16;
 
+const getReservedTopBoundary = (): number => {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return 0;
+  }
+
+  const rawValue = window
+    .getComputedStyle(document.documentElement)
+    .getPropertyValue('--viewer-top-menu-bottom')
+    .trim();
+  const parsedValue = Number.parseFloat(rawValue);
+  return Number.isFinite(parsedValue) ? Math.max(0, parsedValue) : 0;
+};
+
 type FloatingWindowProps = {
   title: string;
   initialPosition?: { x: number; y: number };
@@ -69,6 +82,7 @@ function FloatingWindow({
       const height = options?.height ?? (isMinimized ? headerHeight : rect.height);
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
+      const reservedTop = getReservedTopBoundary();
 
       if (options?.anchorOffset) {
         const anchorX = x + options.anchorOffset.x;
@@ -79,7 +93,7 @@ function FloatingWindow({
           viewportWidth - WINDOW_MARGIN
         );
         const clampedAnchorY = Math.min(
-          Math.max(WINDOW_MARGIN, anchorY),
+          Math.max(reservedTop, anchorY),
           viewportHeight - WINDOW_MARGIN
         );
 
@@ -90,7 +104,7 @@ function FloatingWindow({
       }
 
       const minX = Math.min(WINDOW_MARGIN, Math.max(0, viewportWidth - width));
-      const minY = Math.min(WINDOW_MARGIN, Math.max(0, viewportHeight - height));
+      const minY = Math.max(WINDOW_MARGIN, reservedTop);
       const maxX = Math.max(minX, viewportWidth - width - WINDOW_MARGIN);
       const maxY = Math.max(minY, viewportHeight - height - WINDOW_MARGIN);
 
@@ -132,14 +146,16 @@ function FloatingWindow({
   }, [resetSignal, clampPosition, resolvedInitialPosition]);
 
   useEffect(() => {
-    const handleResize = () => {
+    const handleViewportBoundsChange = () => {
       setPosition((current) => clampPosition(current.x, current.y));
     };
 
     if (typeof window !== 'undefined') {
-      window.addEventListener('resize', handleResize);
+      window.addEventListener('resize', handleViewportBoundsChange);
+      window.addEventListener('viewer-top-menu-boundary-change', handleViewportBoundsChange);
       return () => {
-        window.removeEventListener('resize', handleResize);
+        window.removeEventListener('resize', handleViewportBoundsChange);
+        window.removeEventListener('viewer-top-menu-boundary-change', handleViewportBoundsChange);
       };
     }
     return undefined;
@@ -161,15 +177,14 @@ function FloatingWindow({
       }
 
       const container = containerRef.current;
-      const header = headerRef.current;
-      if (!container || !header) {
+      if (!container) {
         return;
       }
 
       const rect = container.getBoundingClientRect();
       dragOffsetRef.current = { x: event.clientX - rect.left, y: event.clientY - rect.top };
       pointerIdRef.current = event.pointerId;
-      header.setPointerCapture(event.pointerId);
+      event.currentTarget.setPointerCapture(event.pointerId);
       setIsDragging(true);
       event.preventDefault();
     },
@@ -195,8 +210,8 @@ function FloatingWindow({
       if (!isDragging) {
         return;
       }
-      if (pointerIdRef.current !== null) {
-        headerRef.current?.releasePointerCapture(pointerIdRef.current);
+      if (pointerIdRef.current !== null && event.currentTarget.hasPointerCapture(pointerIdRef.current)) {
+        event.currentTarget.releasePointerCapture(pointerIdRef.current);
         pointerIdRef.current = null;
       }
       setIsDragging(false);
@@ -205,6 +220,10 @@ function FloatingWindow({
     },
     [clampPosition, isDragging]
   );
+
+  const stopHeaderActionPointerPropagation = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    event.stopPropagation();
+  }, []);
 
   const toggleMinimize = useCallback(() => {
     const container = containerRef.current;
@@ -279,18 +298,37 @@ function FloatingWindow({
       <div className="floating-window-header-main">
         <h2 className="floating-window-title">{title}</h2>
       </div>
-      <div className="floating-window-header-actions" data-no-drag>
-        {headerActions ? <div className="floating-window-extra-actions">{headerActions}</div> : null}
+      <div
+        className="floating-window-header-actions"
+        data-no-drag
+        onPointerDownCapture={stopHeaderActionPointerPropagation}
+      >
+        {headerActions ? (
+          <div
+            className="floating-window-extra-actions"
+            onPointerDownCapture={stopHeaderActionPointerPropagation}
+          >
+            {headerActions}
+          </div>
+        ) : null}
         <button
           type="button"
           className="floating-window-toggle"
           onClick={toggleMinimize}
+          onPointerDown={stopHeaderActionPointerPropagation}
           aria-label={isMinimized ? `Restore ${title}` : `Minimize ${title}`}
           data-no-drag
         >
           <span aria-hidden="true">{isMinimized ? '▢' : '–'}</span>
         </button>
-        {headerEndActions ? <div className="floating-window-extra-actions">{headerEndActions}</div> : null}
+        {headerEndActions ? (
+          <div
+            className="floating-window-extra-actions"
+            onPointerDownCapture={stopHeaderActionPointerPropagation}
+          >
+            {headerEndActions}
+          </div>
+        ) : null}
       </div>
       {headerContent ? (
         <div className="floating-window-header-content" data-no-drag>

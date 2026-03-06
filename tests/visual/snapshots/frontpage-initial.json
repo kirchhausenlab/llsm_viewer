@@ -29,10 +29,81 @@
                   },
                   "children": [
                     {
-                      "type": "h1",
-                      "props": {},
+                      "type": "div",
+                      "props": {
+                        "className": "front-page-title-copy"
+                      },
                       "children": [
-                        "Mirante4D"
+                        {
+                          "type": "h1",
+                          "props": {},
+                          "children": [
+                            "Mirante4D"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "div",
+                      "props": {
+                        "className": "front-page-header-actions"
+                      },
+                      "children": [
+                        {
+                          "type": "button",
+                          "props": {
+                            "type": "button",
+                            "className": "theme-mode-toggle front-page-theme-toggle",
+                            "aria-label": "Switch to light mode",
+                            "title": "Switch to light mode"
+                          },
+                          "children": [
+                            {
+                              "type": "span",
+                              "props": {
+                                "className": "theme-mode-toggle__copy"
+                              },
+                              "children": [
+                                {
+                                  "type": "span",
+                                  "props": {
+                                    "className": "theme-mode-toggle__label"
+                                  },
+                                  "children": [
+                                    "Dark mode"
+                                  ]
+                                },
+                                {
+                                  "type": "span",
+                                  "props": {
+                                    "className": "theme-mode-toggle__hint"
+                                  },
+                                  "children": [
+                                    "Switch to ",
+                                    "light",
+                                    " mode"
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "span",
+                              "props": {
+                                "aria-hidden": "true",
+                                "className": "theme-mode-toggle__switch is-dark"
+                              },
+                              "children": [
+                                {
+                                  "type": "span",
+                                  "props": {
+                                    "className": "theme-mode-toggle__thumb"
+                                  },
+                                  "children": null
+                                }
+                              ]
+                            }
+                          ]
+                        }
                       ]
                     }
                   ]

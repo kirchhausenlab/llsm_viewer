@@ -10,33 +10,33 @@ test('@smoke playback controls work after launch', async ({ page }) => {
     voxelResolution: STANDARD_VOXEL_RESOLUTION
   });
 
-  const playbackWindow = page.locator('.floating-window--playback');
-  await expect(playbackWindow.getByRole('heading', { name: 'Viewer controls' })).toBeVisible();
+  const topMenu = page.locator('.viewer-top-menu');
+  const playbackCounter = topMenu.locator('.viewer-top-menu-slider-counter--time');
+  await expect(playbackCounter).toHaveText(`1/${timepointCount}`);
 
-  const progressLabel = playbackWindow.locator('label[for="playback-slider"]');
-  await expect(progressLabel).toContainText(`1 / ${timepointCount}`);
+  const timepointSlider = topMenu.getByLabel('Timepoint').first();
+  await timepointSlider.focus();
+  for (let index = 1; index < timepointCount; index += 1) {
+    await page.keyboard.press('ArrowRight');
+  }
+  await expect(playbackCounter).toHaveText(`${timepointCount}/${timepointCount}`);
 
-  await playbackWindow.getByRole('button', { name: 'Go to last frame' }).evaluate((element) => {
-    (element as HTMLButtonElement).click();
-  });
-  await expect(progressLabel).toContainText(`${timepointCount} / ${timepointCount}`);
+  for (let index = 1; index < timepointCount; index += 1) {
+    await page.keyboard.press('ArrowLeft');
+  }
+  await expect(playbackCounter).toHaveText(`1/${timepointCount}`);
 
-  await playbackWindow.getByRole('button', { name: 'Go to first frame' }).evaluate((element) => {
-    (element as HTMLButtonElement).click();
-  });
-  await expect(progressLabel).toContainText(`1 / ${timepointCount}`);
-
-  const startPlaybackButton = playbackWindow.getByRole('button', { name: 'Start playback' });
+  const startPlaybackButton = topMenu.getByRole('button', { name: 'Start playback' });
   await expect(startPlaybackButton).toBeVisible();
   await startPlaybackButton.evaluate((element) => {
     (element as HTMLButtonElement).click();
   });
-  const pausePlaybackButton = playbackWindow.getByRole('button', { name: 'Pause playback' });
+  const pausePlaybackButton = topMenu.getByRole('button', { name: 'Pause playback' });
   await expect(pausePlaybackButton).toBeVisible();
   await pausePlaybackButton.evaluate((element) => {
     (element as HTMLButtonElement).click();
   });
-  await expect(playbackWindow.getByRole('button', { name: 'Start playback' })).toBeVisible();
+  await expect(topMenu.getByRole('button', { name: 'Start playback' })).toBeVisible();
 
-  await expect(playbackWindow.getByRole('button', { name: 'Reset view' })).toBeVisible();
+  await expect(topMenu.getByRole('button', { name: 'Reset view' })).toBeVisible();
 });

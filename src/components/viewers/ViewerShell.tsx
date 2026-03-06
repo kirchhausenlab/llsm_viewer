@@ -4,16 +4,16 @@ import VolumeViewer from './VolumeViewer';
 import ChannelsPanel from './viewer-shell/ChannelsPanel';
 import NavigationHelpWindow, { computeNavigationHelpInitialPosition } from './viewer-shell/NavigationHelpWindow';
 import PaintbrushWindow from './viewer-shell/PaintbrushWindow';
-import PlaybackControlsPanel from './viewer-shell/PlaybackControlsPanel';
 import PlotSettingsPanel from './viewer-shell/PlotSettingsPanel';
 import TopMenu from './viewer-shell/TopMenu';
 import TracksPanel from './viewer-shell/TracksPanel';
+import ViewerSettingsWindow from './viewer-shell/ViewerSettingsWindow';
 import { useViewerModeControls } from './viewer-shell/hooks/useViewerModeControls';
 import { useViewerPaintbrushIntegration } from './viewer-shell/hooks/useViewerPaintbrushIntegration';
 import { useViewerPanelWindows } from './viewer-shell/hooks/useViewerPanelWindows';
-import { useViewerPlaybackControls } from './viewer-shell/hooks/useViewerPlaybackControls';
 import { useViewerRecording } from './viewer-shell/hooks/useViewerRecording';
 import type { ViewerShellProps } from './viewer-shell/types';
+import { formatIntensityValue } from '../../shared/utils/intensityFormatting';
 
 const NAVIGATION_HELP_WINDOW_WIDTH = 420;
 
@@ -36,7 +36,6 @@ function ViewerShell({
     controlWindowWidth,
     selectedTracksWindowWidth,
     resetToken,
-    controlWindowInitialPosition,
     viewerSettingsWindowInitialPosition,
     layersWindowInitialPosition,
     paintbrushWindowInitialPosition,
@@ -62,6 +61,39 @@ function ViewerShell({
     [windowMargin]
   );
   const { isHelpMenuOpen, closeHelpMenu } = topMenu;
+  const hoverCoordinateDigits = useMemo(() => {
+    let maxWidth = 1;
+    let maxHeight = 1;
+    let maxDepth = 1;
+
+    for (const channelLayers of channelLayersMap.values()) {
+      for (const layer of channelLayers) {
+        maxWidth = Math.max(maxWidth, layer.width);
+        maxHeight = Math.max(maxHeight, layer.height);
+        maxDepth = Math.max(maxDepth, layer.depth);
+      }
+    }
+
+    return {
+      x: Math.max(1, String(Math.max(0, maxWidth - 1)).length),
+      y: Math.max(1, String(Math.max(0, maxHeight - 1)).length),
+      z: Math.max(1, String(Math.max(0, maxDepth - 1)).length)
+    };
+  }, [channelLayersMap]);
+  const hoverIntensityValueDigits = useMemo(() => {
+    let maxDigits = 1;
+
+    for (const channelLayers of channelLayersMap.values()) {
+      for (const layer of channelLayers) {
+        const minDigits = formatIntensityValue(layer.min, layer.dataType).length;
+        const maxValueDigits = formatIntensityValue(layer.max, layer.dataType).length;
+        const componentPrefixDigits = layer.channels > 1 ? `C${layer.channels} `.length : 0;
+        maxDigits = Math.max(maxDigits, componentPrefixDigits + minDigits, componentPrefixDigits + maxValueDigits);
+      }
+    }
+
+    return maxDigits;
+  }, [channelLayersMap]);
 
   const [renderingQuality, setRenderingQuality] = useState(1.1);
 
@@ -117,11 +149,50 @@ function ViewerShell({
     hasVolumeData
   });
 
-  const playbackState = useViewerPlaybackControls({ playbackControls: playbackControlsWithRecording });
+  const playbackState = playbackControlsWithRecording;
 
   const topMenuProps = useMemo(
-    () => ({ ...topMenu, onOpenPaintbrush: openPaintbrush }),
-    [openPaintbrush, topMenu]
+    () => ({
+      ...topMenu,
+      onOpenPaintbrush: openPaintbrush,
+      is3dModeAvailable: modeToggle.is3dModeAvailable,
+      resetViewHandler: modeToggle.resetViewHandler,
+      onVrButtonClick: modeToggle.onVrButtonClick,
+      vrButtonDisabled: modeToggle.vrButtonDisabled,
+      vrButtonTitle: modeToggle.vrButtonTitle,
+      vrButtonLabel: modeToggle.vrButtonLabel,
+      isViewerSettingsOpen,
+      onToggleViewerSettings: toggleViewerSettings,
+      volumeTimepointCount: playbackState.volumeTimepointCount,
+      isPlaying: playbackState.isPlaying,
+      selectedIndex: playbackState.selectedIndex,
+      onTimeIndexChange: playbackState.onTimeIndexChange,
+      playbackDisabled: playbackState.playbackDisabled,
+      onTogglePlayback: playbackState.onTogglePlayback,
+      zSliderValue: playbackState.zSliderValue,
+      zSliderMax: playbackState.zSliderMax,
+      onZSliderChange: playbackState.onZSliderChange,
+      loadedChannelIds: channelsPanel.loadedChannelIds,
+      channelNameMap: channelsPanel.channelNameMap,
+      channelVisibility: channelsPanel.channelVisibility,
+      channelTintMap: channelsPanel.channelTintMap,
+      activeChannelId: channelsPanel.activeChannelId,
+      onChannelTabSelect: channelsPanel.onChannelTabSelect,
+      onChannelVisibilityToggle: channelsPanel.onChannelVisibilityToggle,
+      hoverCoordinateDigits,
+      hoverIntensityValueDigits
+    }),
+    [
+      channelsPanel,
+      hoverCoordinateDigits,
+      hoverIntensityValueDigits,
+      isViewerSettingsOpen,
+      modeToggle,
+      openPaintbrush,
+      playbackState,
+      toggleViewerSettings,
+      topMenu
+    ]
   );
 
   return (
@@ -169,20 +240,18 @@ function ViewerShell({
         />
       ) : null}
 
-      <PlaybackControlsPanel
+      <ViewerSettingsWindow
         layout={{
           windowMargin,
           controlWindowWidth,
           resetToken,
-          controlWindowInitialPosition,
           viewerSettingsWindowInitialPosition
         }}
         modeToggle={modeToggle}
         playbackControls={playbackState}
         viewerSettings={viewerSettings}
-        isViewerSettingsOpen={isViewerSettingsOpen}
-        onToggleViewerSettings={toggleViewerSettings}
-        onCloseViewerSettings={closeViewerSettings}
+        isOpen={isViewerSettingsOpen}
+        onClose={closeViewerSettings}
         renderingQuality={renderingQuality}
         onRenderingQualityChange={handleRenderingQualityChange}
       />

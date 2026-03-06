@@ -1,4 +1,5 @@
 import type { FC } from 'react';
+import ThemeModeToggle from '../app/ThemeModeToggle';
 
 type FrontPageHeaderProps = {
   title: string;
@@ -16,17 +17,22 @@ const FrontPageHeader: FC<FrontPageHeaderProps> = ({
   return (
     <header className="front-page-header">
       <div className="front-page-title-row">
-        <h1>{title}</h1>
-        {showReturnButton ? (
-          <button
-            type="button"
-            className="channel-add-button front-page-return-button"
-            onClick={onReturnToStart}
-            disabled={isFrontPageLocked}
-          >
-            ↩ Return
-          </button>
-        ) : null}
+        <div className="front-page-title-copy">
+          <h1>{title}</h1>
+        </div>
+        <div className="front-page-header-actions">
+          <ThemeModeToggle className="front-page-theme-toggle" />
+          {showReturnButton ? (
+            <button
+              type="button"
+              className="channel-add-button front-page-return-button"
+              onClick={onReturnToStart}
+              disabled={isFrontPageLocked}
+            >
+              Return
+            </button>
+          ) : null}
+        </div>
       </div>
     </header>
   );

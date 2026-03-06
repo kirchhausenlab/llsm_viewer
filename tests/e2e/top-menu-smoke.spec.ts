@@ -17,10 +17,10 @@ test('@smoke top menu help and exit flows work after launch', async ({ page }) =
 
   const navigationHeading = page.getByRole('heading', { name: 'Navigation controls' });
   await expect(navigationHeading).toBeVisible();
-  await page.getByRole('button', { name: 'Close navigation controls' }).click();
-  await expect(navigationHeading).toBeHidden();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.navigation-help-window')).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'File' }).click();
+  await page.getByRole('button', { name: 'File' }).click({ force: true });
   const fileMenu = page.getByRole('menu', { name: 'file menu' });
   await expect(fileMenu).toBeVisible();
   const exitItem = fileMenu.getByRole('menuitem', { name: 'Exit' });

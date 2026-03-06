@@ -20,43 +20,45 @@ function NavigationHelpWindow({
   width,
   resetSignal
 }: NavigationHelpWindowProps) {
+  if (!isOpen) {
+    return null;
+  }
+
   return (
-    <div style={{ display: isOpen ? undefined : 'none' }} aria-hidden={!isOpen}>
-      <FloatingWindow
-        title="Navigation controls"
-        initialPosition={initialPosition}
-        width={`min(${width}px, calc(100vw - ${windowMargin * 2}px))`}
-        resetSignal={resetSignal}
-        headerEndActions={
-          <button
-            type="button"
-            className="floating-window-toggle"
-            onClick={onClose}
-            aria-label="Close navigation controls"
-            data-no-drag
-            title="Close"
-          >
-            <span aria-hidden="true">×</span>
-          </button>
-        }
-      >
-        <div className="navigation-help-window">
-          <h3 className="navigation-help-window__title">Viewer tips</h3>
-          <div className="viewer-top-menu-popover-section">
-            <h4>3D volume view</h4>
-            <ul>
-              <li>Use WASD with Space/C to move forward, back, strafe, and rise or descend.</li>
-              <li>Press Q/E to roll the camera counterclockwise/clockwise.</li>
-              <li>Drag to orbit the dataset.</li>
-              <li>
-                Click a track line to select and highlight it. Use the Follow button in the Tracks window to follow that object
-                in time.
-              </li>
-            </ul>
-          </div>
+    <FloatingWindow
+      title="Navigation controls"
+      initialPosition={initialPosition}
+      width={`min(${width}px, calc(100vw - ${windowMargin * 2}px))`}
+      resetSignal={resetSignal}
+      headerEndActions={
+        <button
+          type="button"
+          className="floating-window-toggle"
+          onClick={onClose}
+          aria-label="Close navigation controls"
+          data-no-drag
+          title="Close"
+        >
+          <span aria-hidden="true">×</span>
+        </button>
+      }
+    >
+      <div className="navigation-help-window">
+        <h3 className="navigation-help-window__title">Viewer tips</h3>
+        <div className="viewer-top-menu-popover-section">
+          <h4>3D volume view</h4>
+          <ul>
+            <li>Use WASD with Space/C to move forward, back, strafe, and rise or descend.</li>
+            <li>Press Q/E to roll the camera counterclockwise/clockwise.</li>
+            <li>Drag to orbit the dataset.</li>
+            <li>
+              Click a track line to select and highlight it. Use the Follow button in the Tracks window to follow that object
+              in time.
+            </li>
+          </ul>
         </div>
-      </FloatingWindow>
-    </div>
+      </div>
+    </FloatingWindow>
   );
 }
 

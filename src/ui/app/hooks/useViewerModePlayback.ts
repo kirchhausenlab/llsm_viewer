@@ -65,28 +65,6 @@ export function useViewerModePlayback({
     [playback, playbackWindow, volumeTimepointCount]
   );
 
-  const handleJumpToStart = useCallback(() => {
-    if (volumeTimepointCount === 0) {
-      return;
-    }
-    if (playbackWindow) {
-      handleTimeIndexChange(playbackWindow.minIndex);
-    } else {
-      handleTimeIndexChange(0);
-    }
-  }, [handleTimeIndexChange, playbackWindow, volumeTimepointCount]);
-
-  const handleJumpToEnd = useCallback(() => {
-    if (volumeTimepointCount === 0) {
-      return;
-    }
-    if (playbackWindow) {
-      handleTimeIndexChange(playbackWindow.maxIndex);
-    } else {
-      handleTimeIndexChange(volumeTimepointCount - 1);
-    }
-  }, [handleTimeIndexChange, playbackWindow, volumeTimepointCount]);
-
   useEffect(() => {
     onViewerModeChange?.(viewerControls.viewerMode);
   }, [onViewerModeChange, viewerControls.viewerMode]);
@@ -105,9 +83,7 @@ export function useViewerModePlayback({
     playbackDisabled,
     playbackLabel,
     handleTogglePlayback,
-    handleTimeIndexChange,
-    handleJumpToStart,
-    handleJumpToEnd
+    handleTimeIndexChange
   };
 }
 

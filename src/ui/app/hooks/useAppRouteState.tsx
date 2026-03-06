@@ -209,7 +209,6 @@ export function useAppRouteState(): AppRouteState {
 
   const {
     layoutResetToken,
-    controlWindowInitialPosition,
     layersWindowInitialPosition,
     paintbrushWindowInitialPosition,
     trackWindowInitialPosition,
@@ -646,9 +645,7 @@ export function useAppRouteState(): AppRouteState {
     playbackDisabled,
     playbackLabel,
     handleTogglePlayback,
-    handleTimeIndexChange,
-    handleJumpToStart,
-    handleJumpToEnd
+    handleTimeIndexChange
   } = useViewerModePlayback({
     playback,
     is3dViewerAvailable,
@@ -1137,7 +1134,6 @@ export function useAppRouteState(): AppRouteState {
       },
       layout: {
         resetToken: layoutResetToken,
-        controlWindowInitialPosition,
         viewerSettingsWindowInitialPosition,
         layersWindowInitialPosition,
         paintbrushWindowInitialPosition,
@@ -1173,8 +1169,6 @@ export function useAppRouteState(): AppRouteState {
         onTimeIndexChange: handleTimeIndexChange,
         playbackDisabled,
         onTogglePlayback: handleTogglePlayback,
-        onJumpToStart: handleJumpToStart,
-        onJumpToEnd: handleJumpToEnd,
         error,
         onStartRecording: handleStartRecording,
         onStopRecording: handleStopRecording,

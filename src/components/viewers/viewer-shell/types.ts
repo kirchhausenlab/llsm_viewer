@@ -13,10 +13,9 @@ import type { FollowedVoxelTarget } from '../../../types/follow';
 import type { HoveredVoxelInfo } from '../../../types/hover';
 import type { NumericRange, TrackColorMode, TrackDefinition, TrackPoint } from '../../../types/tracks';
 
-export type TopMenuProps = {
+export type TopMenuChromeProps = {
   onReturnToLauncher: () => void;
   onResetLayout: () => void;
-  onOpenPaintbrush: () => void;
   currentScaleLabel: string;
   isHelpMenuOpen: boolean;
   openHelpMenu: () => void;
@@ -28,6 +27,44 @@ export type TopMenuProps = {
   onStopVoxelFollow: () => void;
   hoveredVoxel: HoveredVoxelInfo | null;
 };
+
+export type VolumeChannelTabsProps = {
+  loadedChannelIds: string[];
+  channelNameMap: Map<string, string>;
+  channelVisibility: Record<string, boolean>;
+  channelTintMap: Map<string, string>;
+  activeChannelId: string | null;
+  onChannelTabSelect: (channelId: string) => void;
+  onChannelVisibilityToggle: (channelId: string) => void;
+};
+
+export type TopMenuProps = TopMenuChromeProps &
+  VolumeChannelTabsProps & {
+    hoverCoordinateDigits: {
+      x: number;
+      y: number;
+      z: number;
+    };
+    hoverIntensityValueDigits: number;
+    onOpenPaintbrush: () => void;
+    is3dModeAvailable: boolean;
+    resetViewHandler: (() => void) | null;
+    onVrButtonClick: () => void;
+    vrButtonDisabled: boolean;
+    vrButtonTitle?: string;
+    vrButtonLabel: string;
+    isViewerSettingsOpen: boolean;
+    onToggleViewerSettings: () => void;
+    volumeTimepointCount: number;
+    isPlaying: boolean;
+    selectedIndex: number;
+    onTimeIndexChange: (index: number) => void;
+    playbackDisabled: boolean;
+    onTogglePlayback: () => void;
+    zSliderValue?: number;
+    zSliderMax?: number;
+    onZSliderChange?: (value: number) => void;
+  };
 
 export type ModeControlsProps = {
   is3dModeAvailable: boolean;
@@ -59,8 +96,6 @@ export type PlaybackControlsProps = {
   onTimeIndexChange: (index: number) => void;
   playbackDisabled: boolean;
   onTogglePlayback: () => void;
-  onJumpToStart: () => void;
-  onJumpToEnd: () => void;
   error: string | null;
   onStartRecording: () => void;
   onStopRecording: () => void;
@@ -71,15 +106,8 @@ export type PlaybackControlsProps = {
 export type ChannelPanelStyle = (CSSProperties & { '--channel-slider-color'?: string }) &
   Record<string, string | number | undefined>;
 
-export type ChannelsPanelProps = {
+export type ChannelsPanelProps = VolumeChannelTabsProps & {
   isPlaying: boolean;
-  loadedChannelIds: string[];
-  channelNameMap: Map<string, string>;
-  channelVisibility: Record<string, boolean>;
-  channelTintMap: Map<string, string>;
-  activeChannelId: string | null;
-  onChannelTabSelect: (channelId: string) => void;
-  onChannelVisibilityToggle: (channelId: string) => void;
   channelLayersMap: Map<string, LoadedDatasetLayer[]>;
   layerVolumesByKey: Record<string, NormalizedVolume | null>;
   layerBrickAtlasesByKey: Record<string, VolumeBrickAtlas | null>;
@@ -194,7 +222,6 @@ export type LayoutProps = {
   controlWindowWidth: number;
   selectedTracksWindowWidth: number;
   resetToken: number;
-  controlWindowInitialPosition: Position;
   viewerSettingsWindowInitialPosition: Position;
   layersWindowInitialPosition: Position;
   paintbrushWindowInitialPosition: Position;
@@ -212,7 +239,7 @@ export type TrackDefaults = {
 export type ViewerShellProps = {
   viewerMode: '3d';
   volumeViewerProps: VolumeViewerProps;
-  topMenu: Omit<TopMenuProps, 'onOpenPaintbrush'>;
+  topMenu: TopMenuChromeProps;
   layout: LayoutProps;
   modeControls: ModeControlsProps;
   playbackControls: PlaybackControlsProps;

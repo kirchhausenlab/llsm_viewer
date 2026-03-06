@@ -1,13 +1,18 @@
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type RefObject
 } from 'react';
 
 import type { TopMenuProps } from './types';
+import ThemeModeToggle from '../../app/ThemeModeToggle';
+import VolumeChannelTabs from './VolumeChannelTabs';
+import { formatCompactChannelLabel } from './channelLabel';
 
 type DropdownMenuId = 'file' | 'view' | 'channels' | 'tracks' | 'help';
 
@@ -16,14 +21,45 @@ type DropdownMenuItem = {
   onSelect?: () => void;
 };
 
+const clampRangeValue = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const HOVER_INTENSITY_VISIBLE_ITEMS = 3;
+const HOVER_INTENSITY_MIN_DURATION_SECONDS = 8;
+const HOVER_INTENSITY_PIXELS_PER_SECOND = 18;
+
 export default function TopMenu({
   onReturnToLauncher,
   onResetLayout,
   onOpenPaintbrush,
+  is3dModeAvailable,
+  resetViewHandler,
+  onVrButtonClick,
+  vrButtonDisabled,
+  vrButtonTitle,
+  vrButtonLabel,
+  isViewerSettingsOpen,
+  onToggleViewerSettings,
   currentScaleLabel,
   isHelpMenuOpen,
   openHelpMenu,
   closeHelpMenu,
+  volumeTimepointCount,
+  isPlaying,
+  selectedIndex,
+  onTimeIndexChange,
+  playbackDisabled,
+  onTogglePlayback,
+  zSliderValue,
+  zSliderMax,
+  onZSliderChange,
+  loadedChannelIds,
+  channelNameMap,
+  channelVisibility,
+  channelTintMap,
+  activeChannelId,
+  onChannelTabSelect,
+  onChannelVisibilityToggle,
+  hoverCoordinateDigits,
+  hoverIntensityValueDigits,
   followedTrackSetId,
   followedTrackId,
   followedVoxel,
@@ -32,6 +68,11 @@ export default function TopMenu({
   hoveredVoxel
 }: TopMenuProps) {
   const [openMenu, setOpenMenu] = useState<DropdownMenuId | null>(null);
+  const [hoverIntensityOverflow, setHoverIntensityOverflow] = useState(0);
+  const topMenuRowRef = useRef<HTMLDivElement | null>(null);
+  const topMenuHeightRef = useRef(0);
+  const hoverIntensityViewportRef = useRef<HTMLSpanElement | null>(null);
+  const hoverIntensityTrackRef = useRef<HTMLSpanElement | null>(null);
   const fileMenuRef = useRef<HTMLDivElement>(null);
   const viewMenuRef = useRef<HTMLDivElement>(null);
   const channelsMenuRef = useRef<HTMLDivElement>(null);
@@ -150,6 +191,50 @@ export default function TopMenu({
     }
   }, [isHelpMenuOpen]);
 
+  useLayoutEffect(() => {
+    if (typeof document === 'undefined') {
+      return undefined;
+    }
+
+    const rootStyle = document.documentElement.style;
+    const updateTopMenuHeight = () => {
+      const height = topMenuRowRef.current?.getBoundingClientRect().height ?? 0;
+      const roundedHeight = Math.max(0, Math.round(height));
+      rootStyle.setProperty('--viewer-top-menu-bottom', `${roundedHeight}px`);
+      if (topMenuHeightRef.current !== roundedHeight) {
+        topMenuHeightRef.current = roundedHeight;
+        window.dispatchEvent(new Event('viewer-top-menu-boundary-change'));
+      }
+    };
+
+    updateTopMenuHeight();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateTopMenuHeight);
+      return () => {
+        window.removeEventListener('resize', updateTopMenuHeight);
+        rootStyle.setProperty('--viewer-top-menu-bottom', '0px');
+      };
+    }
+
+    const observer = new ResizeObserver(() => {
+      updateTopMenuHeight();
+    });
+
+    if (topMenuRowRef.current) {
+      observer.observe(topMenuRowRef.current);
+    }
+
+    window.addEventListener('resize', updateTopMenuHeight);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateTopMenuHeight);
+      rootStyle.setProperty('--viewer-top-menu-bottom', '0px');
+      window.dispatchEvent(new Event('viewer-top-menu-boundary-change'));
+    };
+  }, []);
+
   const handleMenuToggle = (menuId: DropdownMenuId) => {
     setOpenMenu((currentMenu) => (currentMenu === menuId ? null : menuId));
   };
@@ -200,114 +285,353 @@ export default function TopMenu({
     triggerRefs.current[menuId]?.focus();
   };
 
-  const intensityComponents =
-    hoveredVoxel && hoveredVoxel.components.length > 0
-      ? hoveredVoxel.components
-      : hoveredVoxel
-      ? [{ text: hoveredVoxel.intensity, color: null }]
-      : [];
-
+  const intensityComponents = useMemo(
+    () =>
+      hoveredVoxel && hoveredVoxel.components.length > 0
+        ? hoveredVoxel.components
+        : hoveredVoxel
+        ? [{ text: hoveredVoxel.intensity, channelLabel: null, color: null }]
+        : [],
+    [hoveredVoxel]
+  );
+  const resolvedIntensityComponents = useMemo(
+    () =>
+      intensityComponents.map((component, index) => {
+        const channelLabel = component.channelLabel?.trim() || null;
+        const valueText =
+          channelLabel && component.text.startsWith(channelLabel)
+            ? component.text.slice(channelLabel.length).trimStart()
+            : component.text;
+        return {
+          key: `${channelLabel ?? 'value'}-${component.text}-${index}`,
+          channelLabel,
+          displayChannelLabel: channelLabel ? formatCompactChannelLabel(channelLabel) : null,
+          valueText,
+          displayText: channelLabel
+            ? `${formatCompactChannelLabel(channelLabel)} ${valueText}`.trim()
+            : valueText,
+          fullText: component.text,
+          color: component.color ?? null
+        };
+      }),
+    [intensityComponents]
+  );
+  const hoverIntensityMeasureKey = useMemo(
+    () => resolvedIntensityComponents.map((component) => component.key).join('|'),
+    [resolvedIntensityComponents]
+  );
+  const resolvedTimepointCount = Math.max(0, volumeTimepointCount);
+  const playbackMaxIndex = Math.max(0, resolvedTimepointCount - 1);
+  const resolvedSelectedIndex = clampRangeValue(selectedIndex, 0, playbackMaxIndex);
+  const playbackCounterLabel =
+    resolvedTimepointCount === 0 ? '0/0' : `${resolvedSelectedIndex + 1}/${resolvedTimepointCount}`;
+  const resolvedZSliderMax = Math.max(1, Math.floor(zSliderMax ?? 1));
+  const resolvedZSliderValue = clampRangeValue(Math.round(zSliderValue ?? 1), 1, resolvedZSliderMax);
+  const zSliderDisabled = resolvedZSliderMax <= 1 || !onZSliderChange;
   const isTrackFollowActive = followedTrackSetId !== null && followedTrackId !== null;
   const isFollowActive = isTrackFollowActive || followedVoxel !== null;
+  const shouldAnimateHoverIntensity =
+    resolvedIntensityComponents.length > HOVER_INTENSITY_VISIBLE_ITEMS && hoverIntensityOverflow > 0;
+  const hoverIntensityTrackStyle = shouldAnimateHoverIntensity
+    ? ({
+        '--viewer-top-menu-intensity-overflow': `${hoverIntensityOverflow}px`,
+        '--viewer-top-menu-intensity-duration': `${Math.max(
+          HOVER_INTENSITY_MIN_DURATION_SECONDS,
+          hoverIntensityOverflow / HOVER_INTENSITY_PIXELS_PER_SECOND
+        )}s`
+      } as CSSProperties)
+    : undefined;
+
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const updateHoverIntensityOverflow = () => {
+      const viewportWidth = hoverIntensityViewportRef.current?.clientWidth ?? 0;
+      const trackWidth = hoverIntensityTrackRef.current?.scrollWidth ?? 0;
+      const nextOverflow = Math.max(0, Math.ceil(trackWidth - viewportWidth));
+      setHoverIntensityOverflow((currentOverflow) =>
+        currentOverflow === nextOverflow ? currentOverflow : nextOverflow
+      );
+    };
+
+    updateHoverIntensityOverflow();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateHoverIntensityOverflow);
+      return () => {
+        window.removeEventListener('resize', updateHoverIntensityOverflow);
+      };
+    }
+
+    const observer = new ResizeObserver(() => {
+      updateHoverIntensityOverflow();
+    });
+
+    if (hoverIntensityViewportRef.current) {
+      observer.observe(hoverIntensityViewportRef.current);
+    }
+    if (hoverIntensityTrackRef.current) {
+      observer.observe(hoverIntensityTrackRef.current);
+    }
+
+    window.addEventListener('resize', updateHoverIntensityOverflow);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateHoverIntensityOverflow);
+    };
+  }, [hoverIntensityMeasureKey]);
 
   return (
     <div className="viewer-top-menu">
-      <div className="viewer-top-menu-row">
-        <div className="viewer-top-menu-left">
-          <div className="viewer-top-menu-actions">
-            <div className="viewer-top-menu-dropdowns">
-              {(Object.keys(dropdownItems) as DropdownMenuId[]).map((menuId) => (
-                <div key={menuId} className="viewer-top-menu-dropdown" ref={menuRefs[menuId]}>
-                  <button
-                    type="button"
-                    className="viewer-top-menu-button viewer-top-menu-dropdown-trigger"
-                    aria-expanded={openMenu === menuId}
-                    aria-controls={`viewer-${menuId}-menu`}
-                    aria-haspopup="menu"
-                    onClick={() => handleMenuToggle(menuId)}
-                    onKeyDown={(event) => handleTriggerKeyDown(menuId, event)}
-                    ref={(element) => {
-                      triggerRefs.current[menuId] = element;
-                    }}
-                  >
-                    <span className="viewer-top-menu-dropdown-label">{menuId.charAt(0).toUpperCase() + menuId.slice(1)}</span>
-                    <span aria-hidden="true" className="viewer-top-menu-dropdown-caret">
-                      ▾
-                    </span>
-                  </button>
-                  {openMenu === menuId ? (
-                    <div
-                      id={`viewer-${menuId}-menu`}
-                      className="viewer-top-menu-dropdown-menu"
-                      role="menu"
-                      aria-label={`${menuId} menu`}
-                      onKeyDown={(event) => handleMenuKeyDown(menuId, event)}
+      <div className="viewer-top-menu-row" ref={topMenuRowRef}>
+        <div className="viewer-top-menu-strip viewer-top-menu-strip--primary">
+          <div className="viewer-top-menu-strip-left">
+            <div className="viewer-top-menu-actions">
+              <div className="viewer-top-menu-dropdowns">
+                {(Object.keys(dropdownItems) as DropdownMenuId[]).map((menuId) => (
+                  <div key={menuId} className="viewer-top-menu-dropdown" ref={menuRefs[menuId]}>
+                    <button
+                      type="button"
+                      className="viewer-top-menu-button viewer-top-menu-dropdown-trigger"
+                      aria-expanded={openMenu === menuId}
+                      aria-controls={`viewer-${menuId}-menu`}
+                      aria-haspopup="menu"
+                      onClick={() => handleMenuToggle(menuId)}
+                      onKeyDown={(event) => handleTriggerKeyDown(menuId, event)}
+                      ref={(element) => {
+                        triggerRefs.current[menuId] = element;
+                      }}
                     >
-                      <div className="viewer-top-menu-dropdown-list">
-                        {dropdownItems[menuId].map((item, index) => (
-                          <button
-                            key={`${menuId}-${item.label}`}
-                            type="button"
-                            role="menuitem"
-                            className="viewer-top-menu-dropdown-item"
-                            ref={(element) => {
-                              menuItemRefs.current[menuId][index] = element;
-                            }}
-                            onClick={() => handleMenuItemSelect(menuId, item.onSelect)}
-                          >
-                            <span className="viewer-top-menu-dropdown-item-label">{item.label}</span>
-                          </button>
-                        ))}
+                      <span className="viewer-top-menu-dropdown-label">
+                        {menuId.charAt(0).toUpperCase() + menuId.slice(1)}
+                      </span>
+                    </button>
+                    {openMenu === menuId ? (
+                      <div
+                        id={`viewer-${menuId}-menu`}
+                        className="viewer-top-menu-dropdown-menu"
+                        role="menu"
+                        aria-label={`${menuId} menu`}
+                        onKeyDown={(event) => handleMenuKeyDown(menuId, event)}
+                      >
+                        <div className="viewer-top-menu-dropdown-list">
+                          {dropdownItems[menuId].map((item, index) => (
+                            <button
+                              key={`${menuId}-${item.label}`}
+                              type="button"
+                              role="menuitem"
+                              className="viewer-top-menu-dropdown-item"
+                              ref={(element) => {
+                                menuItemRefs.current[menuId][index] = element;
+                              }}
+                              onClick={() => handleMenuItemSelect(menuId, item.onSelect)}
+                            >
+                              <span className="viewer-top-menu-dropdown-item-label">{item.label}</span>
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ) : null}
-                </div>
-              ))}
+                    ) : null}
+                  </div>
+                ))}
+              </div>
             </div>
-            {isFollowActive ? (
+          </div>
+          <div className="viewer-top-menu-strip-right">
+            <button
+              type="button"
+              className="viewer-top-menu-button"
+              onClick={() => resetViewHandler?.()}
+              disabled={!resetViewHandler}
+            >
+              Reset view
+            </button>
+            {is3dModeAvailable ? (
               <button
                 type="button"
-                className="viewer-top-menu-button viewer-top-menu-button--danger"
-                onClick={() =>
-                  isTrackFollowActive
-                    ? onStopTrackFollow(followedTrackSetId ?? undefined)
-                    : onStopVoxelFollow()
-                }
+                className="viewer-top-menu-button"
+                onClick={onVrButtonClick}
+                disabled={vrButtonDisabled}
+                title={vrButtonTitle}
               >
-                Stop following
+                {vrButtonLabel}
               </button>
             ) : null}
+            <button
+              type="button"
+              className="viewer-top-menu-button viewer-top-menu-button--icon"
+              onClick={onToggleViewerSettings}
+              aria-label={isViewerSettingsOpen ? 'Hide viewer settings window' : 'Show viewer settings window'}
+              aria-pressed={isViewerSettingsOpen}
+              title="Viewer settings"
+            >
+              <span aria-hidden="true">⚙</span>
+            </button>
+            <ThemeModeToggle className="viewer-top-menu-theme-toggle" compact />
           </div>
         </div>
-        <div className="viewer-top-menu-center">
-          <div className="viewer-top-menu-scale" role="status" aria-live="polite">
-            <span className="viewer-top-menu-scale-label">Scale</span>
-            <span className="viewer-top-menu-scale-value">{currentScaleLabel}</span>
+        <div className="viewer-top-menu-strip viewer-top-menu-strip--secondary">
+          <div className="viewer-top-menu-strip-left viewer-top-menu-strip-left--secondary">
+            <VolumeChannelTabs
+              loadedChannelIds={loadedChannelIds}
+              channelNameMap={channelNameMap}
+              channelVisibility={channelVisibility}
+              channelTintMap={channelTintMap}
+              activeChannelId={activeChannelId}
+              onChannelTabSelect={onChannelTabSelect}
+              onChannelVisibilityToggle={onChannelVisibilityToggle}
+            />
+            <div className="viewer-top-menu-strip-center viewer-top-menu-strip-center--secondary">
+              <div className="viewer-top-menu-secondary-group viewer-top-menu-secondary-group--playback">
+                <button
+                  type="button"
+                  onClick={onTogglePlayback}
+                  disabled={playbackDisabled}
+                  className={
+                    isPlaying
+                      ? 'playback-button playback-toggle playing viewer-top-menu-playback-button'
+                      : 'playback-button playback-toggle viewer-top-menu-playback-button'
+                  }
+                  aria-label={isPlaying ? 'Pause playback' : 'Start playback'}
+                >
+                  {isPlaying ? (
+                    <svg className="playback-button-icon" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false">
+                      <path d="M9 5a1 1 0 0 1 1 1v12a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Zm6 0a1 1 0 0 1 1 1v12a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Z" />
+                    </svg>
+                  ) : (
+                    <svg className="playback-button-icon" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false">
+                      <path d="M8.5 5.636a1 1 0 0 1 1.53-.848l8.01 5.363a1 1 0 0 1 0 1.698l-8.01 5.363A1 1 0 0 1 8 16.364V7.636a1 1 0 0 1 .5-.868Z" />
+                    </svg>
+                  )}
+                </button>
+                <label className="viewer-top-menu-slider-group" htmlFor="top-menu-playback-slider">
+                  <input
+                    id="top-menu-playback-slider"
+                    className="playback-slider viewer-top-menu-slider"
+                    type="range"
+                    min={0}
+                    max={playbackMaxIndex}
+                    value={resolvedSelectedIndex}
+                    onChange={(event) => onTimeIndexChange(Number(event.target.value))}
+                    disabled={playbackDisabled}
+                    aria-label="Timepoint"
+                  />
+                  <span className="viewer-top-menu-slider-counter viewer-top-menu-slider-counter--time">
+                    {playbackCounterLabel}
+                  </span>
+                </label>
+              </div>
+              <div className="viewer-top-menu-secondary-group viewer-top-menu-secondary-group--z">
+                <span className="viewer-top-menu-slider-label">Z start</span>
+                <label className="viewer-top-menu-slider-group" htmlFor="top-menu-z-slider">
+                  <input
+                    id="top-menu-z-slider"
+                    className="playback-slider viewer-top-menu-slider"
+                    type="range"
+                    min={1}
+                    max={resolvedZSliderMax}
+                    step={1}
+                    value={resolvedZSliderValue}
+                    onChange={(event) => onZSliderChange?.(Number(event.target.value))}
+                    disabled={zSliderDisabled}
+                    aria-label="Z start"
+                  />
+                  <span className="viewer-top-menu-slider-counter viewer-top-menu-slider-counter--z">
+                    {resolvedZSliderValue}/{resolvedZSliderMax}
+                  </span>
+                </label>
+              </div>
+            </div>
           </div>
-        </div>
-        <div className="viewer-top-menu-right">
-          <div className="viewer-top-menu-intensity" role="status" aria-live="polite">
-            {hoveredVoxel ? (
-              <>
-                <span className="viewer-top-menu-coordinates">
-                  ({hoveredVoxel.coordinates.x}, {hoveredVoxel.coordinates.y}, {hoveredVoxel.coordinates.z})
-                </span>
-                <span className="viewer-top-menu-intensity-value">
-                  {intensityComponents.map((component, index) => (
-                    <span key={`${component.text}-${index}`} className="viewer-top-menu-intensity-part">
-                      <span style={component.color ? { color: component.color } : undefined}>{component.text}</span>
-                      {index < intensityComponents.length - 1 ? (
-                        <span className="viewer-top-menu-intensity-separator" aria-hidden="true">
-                          ·
-                        </span>
-                      ) : null}
+          <div className="viewer-top-menu-strip-right viewer-top-menu-strip-right--secondary">
+            <div className="viewer-top-menu-secondary-group viewer-top-menu-secondary-group--status">
+              {isFollowActive ? (
+                <button
+                  type="button"
+                  className="viewer-top-menu-button viewer-top-menu-button--danger"
+                  onClick={() =>
+                    isTrackFollowActive
+                      ? onStopTrackFollow(followedTrackSetId ?? undefined)
+                      : onStopVoxelFollow()
+                  }
+                >
+                  Stop following
+                </button>
+              ) : null}
+              <div className="viewer-top-menu-scale" role="status" aria-live="polite">
+                <span className="viewer-top-menu-scale-label">Scale</span>
+                <span className="viewer-top-menu-scale-value">{currentScaleLabel}</span>
+              </div>
+              <div className="viewer-top-menu-intensity" role="status" aria-live="polite">
+                {hoveredVoxel ? (
+                  <>
+                    <span className="viewer-top-menu-intensity-marquee" ref={hoverIntensityViewportRef}>
+                      <span
+                        className={
+                          shouldAnimateHoverIntensity
+                            ? 'viewer-top-menu-intensity-track is-animated'
+                            : 'viewer-top-menu-intensity-track'
+                        }
+                        ref={hoverIntensityTrackRef}
+                        style={hoverIntensityTrackStyle}
+                      >
+                        {resolvedIntensityComponents.map((component) => (
+                          <span
+                            key={component.key}
+                            className="viewer-top-menu-intensity-entry"
+                            style={component.color ? { color: component.color } : undefined}
+                            title={component.channelLabel ?? component.fullText}
+                          >
+                            {component.channelLabel ? (
+                              <>
+                                <span className="viewer-top-menu-intensity-entry-label">
+                                  {component.displayChannelLabel}
+                                </span>
+                                {component.valueText ? (
+                                  <span
+                                    className="viewer-top-menu-intensity-entry-value"
+                                    style={{ width: `${hoverIntensityValueDigits}ch` }}
+                                  >
+                                    {component.valueText}
+                                  </span>
+                                ) : null}
+                              </>
+                            ) : (
+                              <span
+                                className="viewer-top-menu-intensity-entry-value"
+                                style={{ width: `${hoverIntensityValueDigits}ch` }}
+                              >
+                                {component.valueText}
+                              </span>
+                            )}
+                          </span>
+                        ))}
+                      </span>
                     </span>
-                  ))}
-                </span>
-              </>
-            ) : (
-              <span>—</span>
-            )}
+                    <span className="viewer-top-menu-coordinates">
+                      (
+                      <span className="viewer-top-menu-coordinate-value" style={{ width: `${hoverCoordinateDigits.x}ch` }}>
+                        {hoveredVoxel.coordinates.x}
+                      </span>
+                      ,{' '}
+                      <span className="viewer-top-menu-coordinate-value" style={{ width: `${hoverCoordinateDigits.y}ch` }}>
+                        {hoveredVoxel.coordinates.y}
+                      </span>
+                      ,{' '}
+                      <span className="viewer-top-menu-coordinate-value" style={{ width: `${hoverCoordinateDigits.z}ch` }}>
+                        {hoveredVoxel.coordinates.z}
+                      </span>
+                      )
+                    </span>
+                  </>
+                ) : (
+                  <span className="viewer-top-menu-intensity-empty">—</span>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>

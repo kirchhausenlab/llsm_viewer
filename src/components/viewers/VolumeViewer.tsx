@@ -38,7 +38,12 @@ import {
   buildVolumeViewerVrBridgeOptions,
 } from './volume-viewer/volumeViewerRuntimeArgs';
 import { getTrackPlaybackIndexWindow } from '../../shared/utils';
+import {
+  computeRuntimeDiagnosticsWindowDefaultPosition,
+  RUNTIME_DIAGNOSTICS_WINDOW_WIDTH,
+} from '../../shared/utils/windowLayout';
 import { RENDER_STYLE_SLICE } from '../../state/layerSettings';
+import FloatingWindow from '../widgets/FloatingWindow';
 
 function formatPercentage(value: number): string {
   if (!Number.isFinite(value)) {
@@ -350,6 +355,10 @@ function VolumeViewer({
     target: THREE.Vector3;
   } | null>(null);
   const gpuResidencySummary = summarizeGpuResidency(resourcesRef.current);
+  const runtimeDiagnosticsWindowInitialPosition = useMemo(
+    () => computeRuntimeDiagnosticsWindowDefaultPosition(),
+    []
+  );
 
   const {
     applyHoverHighlightToResources,
@@ -778,91 +787,102 @@ function VolumeViewer({
         <div className={`render-surface${hasMeasured ? ' is-ready' : ''}`} ref={handleContainerRef}>
           <TrackTooltip label={hoveredTrackLabel} position={tooltipPosition} />
           <HoverDebug message={isDevMode ? voxelHoverDebug : null} />
-          {isDevMode && runtimeDiagnostics ? (
-            <aside className="runtime-diagnostics" aria-label="Runtime diagnostics">
-              <div className="runtime-diagnostics__title">Runtime diagnostics</div>
-              <ul>
-                <li>
-                  <span>Cache pressure</span>
-                  <span>
-                    V {formatPercentage(runtimeDiagnostics.cachePressure.volume)} / C{' '}
-                    {formatPercentage(runtimeDiagnostics.cachePressure.chunk)}
-                  </span>
-                </li>
-                <li>
-                  <span>Miss rate</span>
-                  <span>
-                    V {formatPercentage(runtimeDiagnostics.missRates.volume)} / C{' '}
-                    {formatPercentage(runtimeDiagnostics.missRates.chunk)}
-                  </span>
-                </li>
-                <li>
-                  <span>Residency</span>
-                  <span>
-                    Vol {runtimeDiagnostics.residency.cachedVolumes} +{runtimeDiagnostics.residency.inFlightVolumes} / Ch{' '}
-                    {runtimeDiagnostics.residency.cachedChunks} +{runtimeDiagnostics.residency.inFlightChunks}
-                  </span>
-                </li>
-                <li>
-                  <span>Chunk bytes</span>
-                  <span>{formatChunkBytesAsMb(runtimeDiagnostics.residency.chunkBytes)}</span>
-                </li>
-                <li>
-                  <span>Prefetch</span>
-                  <span>{runtimeDiagnostics.activePrefetchRequests.length} active</span>
-                </li>
-                {lodPolicyDiagnostics ? (
-                  <li>
-                    <span>LOD policy</span>
-                    <span>
-                      {lodPolicyDiagnostics.promotedLayers}/{lodPolicyDiagnostics.layerCount} promoted,{' '}
-                      {lodPolicyDiagnostics.warmingLayers} warming
-                    </span>
-                  </li>
-                ) : null}
-                {lodPolicyDiagnostics ? (
-                  <li>
-                    <span>LOD thrash</span>
-                    <span>{lodPolicyDiagnostics.thrashEventsPerMinute.toFixed(2)} / min</span>
-                  </li>
-                ) : null}
-                {lodPolicyDiagnostics?.adaptivePolicyDisabled ? (
-                  <li>
-                    <span>LOD fallback</span>
-                    <span>adaptive selector auto-disabled</span>
-                  </li>
-                ) : null}
-                {gpuResidencySummary ? (
-                  <li>
-                    <span>GPU bricks</span>
-                    <span>
-                      {gpuResidencySummary.residentBricks}/{gpuResidencySummary.totalBricks} (
-                      {gpuResidencySummary.layerCount} layers)
-                    </span>
-                  </li>
-                ) : null}
-                {gpuResidencySummary ? (
-                  <li>
-                    <span>GPU budget</span>
-                    <span>
-                      {formatChunkBytesAsMb(gpuResidencySummary.residentBytes)} /{' '}
-                      {formatChunkBytesAsMb(gpuResidencySummary.budgetBytes)}
-                    </span>
-                  </li>
-                ) : null}
-                {gpuResidencySummary ? (
-                  <li>
-                    <span>GPU scheduler</span>
-                    <span>
-                      up {gpuResidencySummary.uploads} ev {gpuResidencySummary.evictions} p{' '}
-                      {gpuResidencySummary.pendingBricks} / sched {gpuResidencySummary.scheduledUploads}
-                    </span>
-                  </li>
-                ) : null}
-              </ul>
-            </aside>
-          ) : null}
         </div>
+        {isDevMode && runtimeDiagnostics ? (
+          <FloatingWindow
+            title="Runtime diagnostics"
+            className="floating-window--runtime-diagnostics"
+            bodyClassName="runtime-diagnostics-window"
+            width={RUNTIME_DIAGNOSTICS_WINDOW_WIDTH}
+            initialPosition={runtimeDiagnosticsWindowInitialPosition}
+          >
+            <ul className="runtime-diagnostics-list">
+              <li className="runtime-diagnostics-item">
+                <span className="runtime-diagnostics-label">Cache pressure</span>
+                <span className="runtime-diagnostics-value">
+                  V {formatPercentage(runtimeDiagnostics.cachePressure.volume)} / C{' '}
+                  {formatPercentage(runtimeDiagnostics.cachePressure.chunk)}
+                </span>
+              </li>
+              <li className="runtime-diagnostics-item">
+                <span className="runtime-diagnostics-label">Miss rate</span>
+                <span className="runtime-diagnostics-value">
+                  V {formatPercentage(runtimeDiagnostics.missRates.volume)} / C{' '}
+                  {formatPercentage(runtimeDiagnostics.missRates.chunk)}
+                </span>
+              </li>
+              <li className="runtime-diagnostics-item">
+                <span className="runtime-diagnostics-label">Residency</span>
+                <span className="runtime-diagnostics-value">
+                  Vol {runtimeDiagnostics.residency.cachedVolumes} +{runtimeDiagnostics.residency.inFlightVolumes} / Ch{' '}
+                  {runtimeDiagnostics.residency.cachedChunks} +{runtimeDiagnostics.residency.inFlightChunks}
+                </span>
+              </li>
+              <li className="runtime-diagnostics-item">
+                <span className="runtime-diagnostics-label">Chunk bytes</span>
+                <span className="runtime-diagnostics-value">
+                  {formatChunkBytesAsMb(runtimeDiagnostics.residency.chunkBytes)}
+                </span>
+              </li>
+              <li className="runtime-diagnostics-item">
+                <span className="runtime-diagnostics-label">Prefetch</span>
+                <span className="runtime-diagnostics-value">
+                  {runtimeDiagnostics.activePrefetchRequests.length} active
+                </span>
+              </li>
+              {lodPolicyDiagnostics ? (
+                <li className="runtime-diagnostics-item">
+                  <span className="runtime-diagnostics-label">LOD policy</span>
+                  <span className="runtime-diagnostics-value">
+                    {lodPolicyDiagnostics.promotedLayers}/{lodPolicyDiagnostics.layerCount} promoted,{' '}
+                    {lodPolicyDiagnostics.warmingLayers} warming
+                  </span>
+                </li>
+              ) : null}
+              {lodPolicyDiagnostics ? (
+                <li className="runtime-diagnostics-item">
+                  <span className="runtime-diagnostics-label">LOD thrash</span>
+                  <span className="runtime-diagnostics-value">
+                    {lodPolicyDiagnostics.thrashEventsPerMinute.toFixed(2)} / min
+                  </span>
+                </li>
+              ) : null}
+              {lodPolicyDiagnostics?.adaptivePolicyDisabled ? (
+                <li className="runtime-diagnostics-item">
+                  <span className="runtime-diagnostics-label">LOD fallback</span>
+                  <span className="runtime-diagnostics-value">adaptive selector auto-disabled</span>
+                </li>
+              ) : null}
+              {gpuResidencySummary ? (
+                <li className="runtime-diagnostics-item">
+                  <span className="runtime-diagnostics-label">GPU bricks</span>
+                  <span className="runtime-diagnostics-value">
+                    {gpuResidencySummary.residentBricks}/{gpuResidencySummary.totalBricks} (
+                    {gpuResidencySummary.layerCount} layers)
+                  </span>
+                </li>
+              ) : null}
+              {gpuResidencySummary ? (
+                <li className="runtime-diagnostics-item">
+                  <span className="runtime-diagnostics-label">GPU budget</span>
+                  <span className="runtime-diagnostics-value">
+                    {formatChunkBytesAsMb(gpuResidencySummary.residentBytes)} /{' '}
+                    {formatChunkBytesAsMb(gpuResidencySummary.budgetBytes)}
+                  </span>
+                </li>
+              ) : null}
+              {gpuResidencySummary ? (
+                <li className="runtime-diagnostics-item">
+                  <span className="runtime-diagnostics-label">GPU scheduler</span>
+                  <span className="runtime-diagnostics-value">
+                    up {gpuResidencySummary.uploads} ev {gpuResidencySummary.evictions} p{' '}
+                    {gpuResidencySummary.pendingBricks} / sched {gpuResidencySummary.scheduledUploads}
+                  </span>
+                </li>
+              ) : null}
+            </ul>
+          </FloatingWindow>
+        ) : null}
       </section>
     </div>
   );

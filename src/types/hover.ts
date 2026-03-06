@@ -1,4 +1,8 @@
-export type HoveredIntensityComponent = { text: string; color?: string | null };
+export type HoveredIntensityComponent = {
+  text: string;
+  channelLabel?: string | null;
+  color?: string | null;
+};
 
 export type HoveredVoxelInfo = {
   intensity: string;

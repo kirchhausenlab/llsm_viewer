@@ -176,7 +176,11 @@ export function useVolumeViewerInteractions({
         return false;
       }
       for (let i = 0; i < left.length; i++) {
-        if (left[i].text !== right[i].text || left[i].color !== right[i].color) {
+        if (
+          left[i].text !== right[i].text ||
+          left[i].channelLabel !== right[i].channelLabel ||
+          left[i].color !== right[i].color
+        ) {
           return false;
         }
       }

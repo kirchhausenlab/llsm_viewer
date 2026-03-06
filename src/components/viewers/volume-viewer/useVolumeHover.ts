@@ -618,6 +618,7 @@ export function useVolumeHover({
       const intensityParts = samples.flatMap((sample) =>
         formatChannelValuesDetailed(sample.values, sample.type, sample.label, includeLabel).map((entry) => ({
           text: entry.text,
+          channelLabel: entry.channelLabel,
           color: sample.color,
         })),
       );
@@ -631,7 +632,11 @@ export function useVolumeHover({
 
       const hoveredVoxel = {
         intensity: intensityParts.map((entry) => entry.text).join(' · '),
-        components: intensityParts.map((entry) => ({ text: entry.text, color: entry.color })),
+        components: intensityParts.map((entry) => ({
+          text: entry.text,
+          channelLabel: entry.channelLabel,
+          color: entry.color
+        })),
         coordinates: {
           x: sliceCoordinateOverride?.x ?? Math.round(clampValue(hoverMaxPosition.x * targetWidth, 0, targetWidth - 1)),
           y: sliceCoordinateOverride?.y ?? Math.round(clampValue(hoverMaxPosition.y * targetHeight, 0, targetHeight - 1)),
