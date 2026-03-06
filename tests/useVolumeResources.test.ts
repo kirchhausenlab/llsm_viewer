@@ -749,6 +749,102 @@ const createLayer = (
 
 (() => {
   const volume: NormalizedVolume = {
+    width: 2,
+    height: 2,
+    depth: 2,
+    channels: 1,
+    dataType: 'uint8',
+    normalized: new Uint8Array([0, 10, 20, 30, 40, 50, 60, 70]),
+    histogram: new Uint32Array([1, 2]),
+    min: 0,
+    max: 255,
+  };
+  const subcellData = new Uint8Array([
+    255, 1, 11, 255,
+    0, 2, 12, 255,
+    255, 3, 13, 255,
+    0, 4, 14, 255,
+    255, 5, 15, 255,
+    0, 6, 16, 255,
+    255, 7, 17, 255,
+    0, 8, 18, 255,
+  ]);
+  const pageTable: VolumeBrickPageTable = withSyntheticSkipHierarchy({
+    layerKey: 'layer-3d',
+    timepoint: 0,
+    scaleLevel: 0,
+    gridShape: [1, 1, 1],
+    chunkShape: [2, 2, 2],
+    volumeShape: [2, 2, 2],
+    brickAtlasIndices: new Int32Array([0]),
+    chunkMin: new Uint8Array([0]),
+    chunkMax: new Uint8Array([255]),
+    chunkOccupancy: new Float32Array([1]),
+    occupiedBrickCount: 1,
+    subcell: {
+      gridShape: [2, 2, 2],
+      width: 2,
+      height: 2,
+      depth: 2,
+      data: subcellData
+    }
+  });
+
+  const sceneRef = { current: new THREE.Scene() };
+  const cameraRef = { current: new THREE.PerspectiveCamera(75, 1, 0.1, 10) };
+  const controlsRef = {
+    current: {
+      target: new THREE.Vector3(),
+      update: () => {},
+      saveState: () => {},
+    } as unknown as THREE.OrbitControls,
+  };
+  const resourcesRef = { current: new Map<string, VolumeResources>() };
+
+  renderHook(() =>
+    useVolumeResources({
+      layers: [createLayer(volume, pageTable, null, 'nearest')],
+      primaryVolume: volume,
+      isAdditiveBlending: false,
+      renderContextRevision: 0,
+      sceneRef,
+      cameraRef,
+      controlsRef,
+      rotationTargetRef: { current: new THREE.Vector3() },
+      defaultViewStateRef: { current: null },
+      trackGroupRef: { current: new THREE.Group() },
+      resourcesRef,
+      currentDimensionsRef: { current: null },
+      colormapCacheRef: { current: new Map() },
+      volumeRootGroupRef: { current: new THREE.Group() },
+      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+      volumeNormalizationScaleRef: { current: 1 },
+      volumeUserScaleRef: { current: 1 },
+      volumeStepScaleRef: { current: 1 },
+      volumeYawRef: { current: 0 },
+      volumePitchRef: { current: 0 },
+      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+      applyTrackGroupTransform: () => {},
+      applyVolumeRootTransform: () => {},
+      applyVolumeStepScaleToResources: () => {},
+      applyHoverHighlightToResources: () => {},
+    }),
+  );
+
+  const resource = resourcesRef.current.get('layer-3d');
+  assert.ok(resource);
+  assert.ok(resource.brickSubcellTexture);
+  assert.strictEqual(resource.brickSubcellSourcePageTable, pageTable);
+  assert.strictEqual(resource.brickSubcellSourceToken, subcellData);
+  const brickSubcellTextureData = (resource.brickSubcellTexture?.image as { data: Uint8Array } | undefined)?.data;
+  assert.deepEqual(Array.from(brickSubcellTextureData ?? []), Array.from(subcellData));
+})();
+
+(() => {
+  const volume: NormalizedVolume = {
     width: 256,
     height: 256,
     depth: 128,
@@ -758,9 +854,12 @@ const createLayer = (
     histogram: new Uint32Array([1, 2]),
     min: 0,
     max: 255,
-    scaleLevel: 0,
+    scaleLevel: 1,
   };
-  const pageTable = createDenseNativeScalePageTable();
+  const pageTable = {
+    ...createDenseNativeScalePageTable(),
+    scaleLevel: 1
+  };
 
   const sceneRef = { current: new THREE.Scene() };
   const cameraRef = { current: new THREE.PerspectiveCamera(75, 1, 0.1, 10) };
@@ -831,9 +930,12 @@ const createLayer = (
     histogram: new Uint32Array([1, 2]),
     min: 0,
     max: 255,
-    scaleLevel: 0,
+    scaleLevel: 1,
   };
-  const pageTable = createDenseNativeScalePageTable();
+  const pageTable = {
+    ...createDenseNativeScalePageTable(),
+    scaleLevel: 1
+  };
 
   const sceneRef = { current: new THREE.Scene() };
   const cameraRef = { current: new THREE.PerspectiveCamera(75, 1, 0.1, 10) };
@@ -1468,6 +1570,7 @@ const createLayer = (
     const initialEvictions = initial.gpuBrickResidencyMetrics?.evictions ?? 0;
     const initialAtlasDataVersion = initial.brickAtlasDataTexture?.version ?? 0;
     const initialAtlasIndexVersion = initial.brickAtlasIndexTexture?.version ?? 0;
+    const initialAtlasBaseVersion = initial.brickAtlasBaseTexture?.version ?? 0;
 
     // Stable camera: residency should converge and remain stable (no upload/eviction churn).
     refreshResidency?.(new THREE.Vector3(camera.position.x, 0, camera.position.z));
@@ -1484,6 +1587,7 @@ const createLayer = (
     assert.deepEqual(stableIndices, initialIndices);
     assert.equal(stable.brickAtlasDataTexture?.version ?? 0, initialAtlasDataVersion);
     assert.equal(stable.brickAtlasIndexTexture?.version ?? 0, initialAtlasIndexVersion);
+    assert.equal(stable.brickAtlasBaseTexture?.version ?? 0, initialAtlasBaseVersion);
 
     refreshResidency?.(new THREE.Vector3(10, 0, camera.position.z));
 
@@ -1505,6 +1609,7 @@ const createLayer = (
       | undefined;
     const updatedAtlasPayload = Array.from(updatedAtlasImage?.data ?? []);
     assert.deepEqual(updatedAtlasPayload, initialAtlasPayload);
+    assert.equal(updated.brickAtlasBaseTexture?.version ?? 0, initialAtlasBaseVersion);
     hook.unmount();
   } finally {
     if (previousBudget === undefined) {
@@ -1523,7 +1628,7 @@ const createLayer = (
 (() => {
   const previousBudget = process.env.VITE_MAX_GPU_BRICK_BYTES;
   const previousMaxUploads = process.env.VITE_MAX_BRICK_UPLOADS_PER_UPDATE;
-  process.env.VITE_MAX_GPU_BRICK_BYTES = '4';
+  process.env.VITE_MAX_GPU_BRICK_BYTES = '2048';
   process.env.VITE_MAX_BRICK_UPLOADS_PER_UPDATE = '1';
 
   try {
@@ -1728,10 +1833,151 @@ const createLayer = (
     assert.equal(resource.gpuBrickResidencyMetrics?.totalBricks, brickCount);
     assert.equal(resource.gpuBrickResidencyMetrics?.residentBricks, brickCount);
     assert.ok((resource.gpuBrickResidencyMetrics?.uploads ?? 0) >= brickCount);
+    assert.equal(resource.playbackWarmupReady, true);
     const atlasIndices = (
       resource.brickAtlasIndexTexture?.image as { data: Float32Array } | undefined
     )?.data;
     assert.equal(Array.from(atlasIndices ?? []).filter((value) => value > 0).length, brickCount);
+  } finally {
+    if (previousBudget === undefined) {
+      delete process.env.VITE_MAX_GPU_BRICK_BYTES;
+    } else {
+      process.env.VITE_MAX_GPU_BRICK_BYTES = previousBudget;
+    }
+    if (previousMaxUploads === undefined) {
+      delete process.env.VITE_MAX_BRICK_UPLOADS_PER_UPDATE;
+    } else {
+      process.env.VITE_MAX_BRICK_UPLOADS_PER_UPDATE = previousMaxUploads;
+    }
+  }
+})();
+
+(() => {
+  const previousBudget = process.env.VITE_MAX_GPU_BRICK_BYTES;
+  const previousMaxUploads = process.env.VITE_MAX_BRICK_UPLOADS_PER_UPDATE;
+  process.env.VITE_MAX_GPU_BRICK_BYTES = '4';
+  process.env.VITE_MAX_BRICK_UPLOADS_PER_UPDATE = '1';
+
+  try {
+    const brickCount = 24;
+    const createAtlasForTimepoint = (timepoint: number): VolumeBrickAtlas => {
+      const pageTable: VolumeBrickPageTable = {
+        layerKey: 'layer-3d',
+        timepoint,
+        scaleLevel: 1,
+        gridShape: [1, 1, brickCount],
+        chunkShape: [1, 1, 1],
+        volumeShape: [1, 1, brickCount],
+        brickAtlasIndices: Int32Array.from({ length: brickCount }, (_value, index) => index),
+        chunkMin: new Uint8Array(brickCount),
+        chunkMax: new Uint8Array(brickCount).fill(255),
+        chunkOccupancy: new Float32Array(brickCount).fill(1),
+        occupiedBrickCount: brickCount
+      };
+      return {
+        layerKey: 'layer-3d',
+        timepoint,
+        scaleLevel: 1,
+        pageTable,
+        width: 1,
+        height: 1,
+        depth: brickCount,
+        textureFormat: 'red',
+        sourceChannels: 1,
+        data: Uint8Array.from({ length: brickCount }, (_value, index) => ((timepoint + 1) * 10 + index) & 0xff),
+        enabled: true
+      };
+    };
+
+    const currentAtlas = createAtlasForTimepoint(0);
+    const warmupAtlas = createAtlasForTimepoint(1);
+    let visibleLayers = [createLayer(null, currentAtlas.pageTable, currentAtlas, 'linear')];
+    let warmupLayers: ViewerLayer[] = [{
+      ...createLayer(null, warmupAtlas.pageTable, warmupAtlas, 'linear'),
+      key: 'layer-3d::playback-warmup:1',
+      visible: false,
+      playbackWarmupForLayerKey: 'layer-3d',
+      playbackWarmupTimeIndex: 1,
+    }];
+
+    const sceneRef = { current: new THREE.Scene() };
+    const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 100);
+    camera.position.set(0, 0, 2);
+    camera.updateMatrixWorld(true);
+    const cameraRef = { current: camera };
+    const controlsRef = {
+      current: {
+        target: new THREE.Vector3(),
+        update: () => {},
+        saveState: () => {}
+      } as unknown as THREE.OrbitControls
+    };
+    const resourcesRef = { current: new Map<string, VolumeResources>() };
+
+    const hook = renderHook(() =>
+      useVolumeResources({
+        layers: visibleLayers,
+        playbackWarmupLayers: warmupLayers,
+        primaryVolume: null,
+        isAdditiveBlending: false,
+        renderContextRevision: 0,
+        sceneRef,
+        cameraRef,
+        controlsRef,
+        rotationTargetRef: { current: new THREE.Vector3() },
+        defaultViewStateRef: { current: null },
+        trackGroupRef: { current: new THREE.Group() },
+        resourcesRef,
+        currentDimensionsRef: { current: { width: brickCount, height: 1, depth: 1 } },
+        colormapCacheRef: { current: new Map() },
+        volumeRootGroupRef: { current: new THREE.Group() },
+        volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+        volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+        volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+        volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+        volumeNormalizationScaleRef: { current: 1 },
+        volumeUserScaleRef: { current: 1 },
+        volumeStepScaleRef: { current: 1 },
+        volumeYawRef: { current: 0 },
+        volumePitchRef: { current: 0 },
+        volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+        applyTrackGroupTransform: () => {},
+        applyVolumeRootTransform: () => {},
+        applyVolumeStepScaleToResources: () => {},
+        applyHoverHighlightToResources: () => {},
+      })
+    );
+
+    const warmupKey = 'layer-3d::playback-warmup:1';
+    const initialWarmupResource = resourcesRef.current.get(warmupKey);
+    assert.ok(initialWarmupResource);
+    assert.equal(initialWarmupResource.mesh.visible, false);
+    assert.ok(initialWarmupResource.gpuBrickResidencyMetrics);
+    assert.ok(
+      (initialWarmupResource.gpuBrickResidencyMetrics?.scheduledUploads ?? 0) <= 1,
+      `expected incremental warmup upload budget <= 1, observed ${initialWarmupResource.gpuBrickResidencyMetrics?.scheduledUploads ?? 0}`
+    );
+    assert.ok(
+      (initialWarmupResource.gpuBrickResidencyMetrics?.residentBricks ?? 0) <
+        (initialWarmupResource.gpuBrickResidencyMetrics?.totalBricks ?? 0)
+    );
+    const initialWarmupResidentBricks = initialWarmupResource.gpuBrickResidencyMetrics?.residentBricks ?? 0;
+    assert.equal(typeof initialWarmupResource.updateGpuBrickResidencyForCamera, 'function');
+    initialWarmupResource.updateGpuBrickResidencyForCamera?.(new THREE.Vector3(brickCount - 1, 0, 0));
+    const warmedWarmupResource = resourcesRef.current.get(warmupKey);
+    assert.ok(warmedWarmupResource);
+
+    visibleLayers = [createLayer(null, warmupAtlas.pageTable, warmupAtlas, 'linear')];
+    warmupLayers = [];
+    hook.rerender();
+
+    const promotedResource = resourcesRef.current.get('layer-3d');
+    assert.ok(promotedResource);
+    assert.strictEqual(promotedResource, warmedWarmupResource);
+    assert.equal(resourcesRef.current.has(warmupKey), false);
+    assert.equal(promotedResource.mesh.visible, true);
+    assert.equal(promotedResource.gpuBrickResidencyMetrics?.residentBricks, initialWarmupResidentBricks);
+    hook.unmount();
   } finally {
     if (previousBudget === undefined) {
       delete process.env.VITE_MAX_GPU_BRICK_BYTES;

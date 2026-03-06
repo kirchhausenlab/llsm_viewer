@@ -94,8 +94,34 @@ function summarizeGpuResidency(resources: Map<string, VolumeResources>) {
   };
 }
 
+function isPlaybackWarmupEligibleLayer(layer: VolumeViewerProps['layers'][number]): boolean {
+  if (!layer.visible) {
+    return false;
+  }
+  if (layer.renderStyle === RENDER_STYLE_SLICE) {
+    return false;
+  }
+  const scaleLevel = layer.brickAtlas?.scaleLevel ?? layer.scaleLevel ?? 0;
+  return Boolean(layer.brickAtlas?.enabled && scaleLevel > 0);
+}
+
+function isWarmupResourceReady(resource: VolumeResources | undefined): boolean {
+  if (!resource) {
+    return false;
+  }
+  if (typeof resource.playbackWarmupReady === 'boolean') {
+    return resource.playbackWarmupReady;
+  }
+  const metrics = resource.gpuBrickResidencyMetrics;
+  if (!metrics) {
+    return false;
+  }
+  return (metrics.pendingBricks ?? 0) <= 0 && (metrics.scheduledUploads ?? 0) <= 0;
+}
+
 function VolumeViewer({
   layers,
+  playbackWarmupLayers = [],
   isLoading,
   loadingProgress,
   loadedVolumes,
@@ -278,6 +304,33 @@ function VolumeViewer({
     return getTrackPlaybackIndexWindow(track, totalTimepoints);
   }, [followedTrackId, totalTimepoints, tracks]);
 
+  const canAdvancePlaybackWithWarmup = useMemo(() => {
+    const requiredLayerKeys = layers.filter(isPlaybackWarmupEligibleLayer).map((layer) => layer.key);
+    return (nextIndex: number) => {
+      if (canAdvancePlayback && !canAdvancePlayback(nextIndex)) {
+        return false;
+      }
+      if (requiredLayerKeys.length === 0) {
+        return true;
+      }
+      if (playbackWarmupLayers.length === 0) {
+        return false;
+      }
+      const warmupLayerByBaseKey = new Map(
+        playbackWarmupLayers
+          .filter((layer) => layer.playbackWarmupTimeIndex === nextIndex && layer.playbackWarmupForLayerKey)
+          .map((layer) => [layer.playbackWarmupForLayerKey as string, layer]),
+      );
+      return requiredLayerKeys.every((layerKey) => {
+        const warmupLayer = warmupLayerByBaseKey.get(layerKey);
+        if (!warmupLayer) {
+          return false;
+        }
+        return isWarmupResourceReady(resourcesRef.current.get(warmupLayer.key));
+      });
+    };
+  }, [canAdvancePlayback, layers, playbackWarmupLayers]);
+
   const {
     playbackState,
     clampedTimeIndex,
@@ -293,7 +346,7 @@ function VolumeViewer({
     totalTimepoints,
     onTogglePlayback,
     onTimeIndexChange,
-    canAdvancePlayback,
+    canAdvancePlayback: canAdvancePlaybackWithWarmup,
     playbackWindow,
     onFpsChange,
   });
@@ -506,6 +559,7 @@ function VolumeViewer({
   });
   useVolumeViewerResources({
     layers,
+    playbackWarmupLayers,
     primaryVolume,
     isAdditiveBlending,
     zClipFrontFraction,

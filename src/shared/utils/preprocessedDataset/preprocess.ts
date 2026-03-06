@@ -24,6 +24,7 @@ import type {
   PreprocessedMovieMode,
   PreprocessedScaleSkipHierarchyZarrDescriptor,
   PreprocessedScaleSkipHierarchyLevelZarrDescriptor,
+  PreprocessedScaleSubcellZarrDescriptor,
   PreprocessedTrackSetSummary,
   TrackSetExportMetadata,
   ZarrArrayShardingPlan,
@@ -58,6 +59,12 @@ import {
   findMinMaxExcludingBackgroundMask,
   type BackgroundMaskVolume
 } from '../backgroundMask';
+import {
+  buildBrickSubcellChunkData,
+  buildBrickSubcellTextureSize,
+  resolveBrickSubcellGrid,
+  writeBrickSubcellChunkData
+} from '../brickSubcell';
 
 export type PreprocessLayerSource = {
   channelId: string;
@@ -199,6 +206,10 @@ function createZarrScaleSkipHierarchyArrayPath(
 
 function createZarrScaleHistogramArrayPath(channelId: string, layerKey: string, scaleLevel: number): string {
   return `channels/${channelId}/${layerKey}/scales/${scaleLevel}/histogram`;
+}
+
+function createZarrScaleSubcellArrayPath(channelId: string, layerKey: string, scaleLevel: number): string {
+  return `channels/${channelId}/${layerKey}/scales/${scaleLevel}/subcell`;
 }
 
 function createZarrBackgroundMaskArrayPath(scaleLevel: number): string {
@@ -594,6 +605,54 @@ function buildLayerScaleDescriptors({
     const skipHierarchyDescriptor: PreprocessedScaleSkipHierarchyZarrDescriptor = {
       levels: skipHierarchyLevels
     };
+    const subcellGrid = resolveBrickSubcellGrid([dataChunkDepth, dataChunkHeight, dataChunkWidth]);
+    const subcellDescriptor: PreprocessedScaleSubcellZarrDescriptor | undefined = subcellGrid
+      ? (() => {
+          const subcellTextureSize = buildBrickSubcellTextureSize({
+            gridShape: leafGridShape,
+            subcellGrid
+          });
+          return {
+            gridShape: [subcellGrid.z, subcellGrid.y, subcellGrid.x],
+            data: {
+              path: createZarrScaleSubcellArrayPath(layer.channelId, layer.key, level),
+              shape: [
+                expectedTimepoints,
+                subcellTextureSize.depth,
+                subcellTextureSize.height,
+                subcellTextureSize.width,
+                4
+              ],
+              chunkShape: [
+                1,
+                subcellTextureSize.depth,
+                subcellTextureSize.height,
+                subcellTextureSize.width,
+                4
+              ],
+              dataType: 'uint8',
+              sharding: createShardingPlan({
+                shape: [
+                  expectedTimepoints,
+                  subcellTextureSize.depth,
+                  subcellTextureSize.height,
+                  subcellTextureSize.width,
+                  4
+                ],
+                chunkShape: [
+                  1,
+                  subcellTextureSize.depth,
+                  subcellTextureSize.height,
+                  subcellTextureSize.width,
+                  4
+                ],
+                dataType: 'uint8',
+                strategy: shardingStrategy
+              })
+            }
+          };
+        })()
+      : undefined;
     const histogramDescriptor: ZarrArrayDescriptor = {
       path: createZarrScaleHistogramArrayPath(layer.channelId, layer.key, level),
       shape: [expectedTimepoints, HISTOGRAM_BINS],
@@ -641,6 +700,7 @@ function buildLayerScaleDescriptors({
       zarr: {
         data: dataDescriptor,
         skipHierarchy: skipHierarchyDescriptor,
+        ...(subcellDescriptor ? { subcell: subcellDescriptor } : {}),
         histogram: histogramDescriptor,
         ...(labelsDescriptor ? { labels: labelsDescriptor } : {})
       }
@@ -2677,6 +2737,17 @@ async function createManifestZarrArrays({
           fill_value: 0
         });
 
+        if (scale.zarr.subcell) {
+          const subcell = scale.zarr.subcell.data;
+          await zarr.create(root.resolve(subcell.path), {
+            shape: subcell.shape,
+            data_type: subcell.dataType,
+            chunk_shape: subcell.chunkShape,
+            codecs: resolveArrayCodecsForDescriptor(subcell),
+            fill_value: 0
+          });
+        }
+
         if (scale.zarr.labels) {
           const labels = scale.zarr.labels;
           await zarr.create(root.resolve(labels.path), {
@@ -3160,6 +3231,7 @@ async function writeDataChunksForScale({
   chunkWriter,
   descriptor,
   skipHierarchyDescriptor,
+  subcellDescriptor,
   timepoint,
   volume,
   backgroundMask,
@@ -3168,6 +3240,7 @@ async function writeDataChunksForScale({
   chunkWriter: ChunkWriteDispatcher;
   descriptor: ZarrArrayDescriptor;
   skipHierarchyDescriptor?: PreprocessedScaleSkipHierarchyZarrDescriptor;
+  subcellDescriptor?: PreprocessedScaleSubcellZarrDescriptor;
   timepoint: number;
   volume: {
     width: number;
@@ -3251,6 +3324,37 @@ async function writeDataChunksForScale({
     leafOccupancyValues = new Uint8Array(chunkCount);
   }
 
+  let subcellTextureBytes: Uint8Array | null = null;
+  let subcellTextureSize: { width: number; height: number; depth: number } | null = null;
+  let subcellGridShape: [number, number, number] | null = null;
+  if (subcellDescriptor) {
+    const subcellGrid = {
+      x: subcellDescriptor.gridShape[2],
+      y: subcellDescriptor.gridShape[1],
+      z: subcellDescriptor.gridShape[0],
+    };
+    subcellTextureSize = buildBrickSubcellTextureSize({
+      gridShape: leafGridShape,
+      subcellGrid
+    });
+    const expectedTextureLength = subcellTextureSize.width * subcellTextureSize.height * subcellTextureSize.depth * 4;
+    const expectedTimepointShape = [
+      subcellTextureSize.depth,
+      subcellTextureSize.height,
+      subcellTextureSize.width,
+      4
+    ];
+    const actualTimepointShape = subcellDescriptor.data.shape.slice(1);
+    if (
+      actualTimepointShape.length !== expectedTimepointShape.length ||
+      actualTimepointShape.some((value, index) => value !== expectedTimepointShape[index])
+    ) {
+      throw new Error(`Subcell descriptor shape mismatch for ${descriptor.path}.`);
+    }
+    subcellTextureBytes = new Uint8Array(expectedTextureLength);
+    subcellGridShape = subcellDescriptor.gridShape;
+  }
+
   for (let zChunk = 0; zChunk < zChunks; zChunk += 1) {
     const zStart = chunkStart(zChunk, chunkDepth);
     const zLength = chunkLength(volume.depth, zStart, chunkDepth);
@@ -3285,6 +3389,36 @@ async function writeDataChunksForScale({
           leafMinValues[chunkIndex] = stats.min;
           leafMaxValues[chunkIndex] = stats.max;
           leafOccupancyValues[chunkIndex] = stats.occupancy > 0 ? 255 : 0;
+        }
+        if (subcellTextureBytes && subcellTextureSize && subcellGridShape) {
+          const subcellChunk = buildBrickSubcellChunkData({
+            chunkShape: [chunkDepth, chunkHeight, chunkWidth],
+            components: volume.channels,
+            readVoxelComponent: (localZ, localY, localX, component) => {
+              if (localZ < 0 || localZ >= zLength || localY < 0 || localY >= yLength || localX < 0 || localX >= xLength) {
+                return 0;
+              }
+              const sourceIndex = (((localZ * yLength + localY) * xLength + localX) * volume.channels) + component;
+              return chunk[sourceIndex] ?? 0;
+            }
+          });
+          if (!subcellChunk) {
+            throw new Error(`Failed to build subcell texture data for ${descriptor.path}.`);
+          }
+          if (
+            subcellChunk.subcellGrid.z !== subcellGridShape[0] ||
+            subcellChunk.subcellGrid.y !== subcellGridShape[1] ||
+            subcellChunk.subcellGrid.x !== subcellGridShape[2]
+          ) {
+            throw new Error(`Subcell grid mismatch for ${descriptor.path}.`);
+          }
+          writeBrickSubcellChunkData({
+            targetData: subcellTextureBytes,
+            targetSize: subcellTextureSize,
+            brickCoords: { x: xChunk, y: yChunk, z: zChunk },
+            chunkData: subcellChunk.data,
+            subcellGrid: subcellChunk.subcellGrid
+          });
         }
       }
     }
@@ -3337,6 +3471,15 @@ async function writeDataChunksForScale({
         signal
       });
     }
+  }
+
+  if (subcellDescriptor && subcellTextureBytes) {
+    await chunkWriter.writeChunk({
+      descriptor: subcellDescriptor.data,
+      chunkCoords: [timepoint, 0, 0, 0, 0],
+      bytes: subcellTextureBytes,
+      signal
+    });
   }
 
   return histogram;
@@ -3487,6 +3630,7 @@ type StreamingScaleWriteState = {
   dataDescriptor: ZarrArrayDescriptor;
   labelsDescriptor?: ZarrArrayDescriptor;
   skipHierarchyDescriptor?: PreprocessedScaleSkipHierarchyZarrDescriptor;
+  subcellDescriptor?: PreprocessedScaleSubcellZarrDescriptor;
   histogram: Uint32Array;
   chunkDepth: number;
   chunkHeight: number;
@@ -3498,6 +3642,8 @@ type StreamingScaleWriteState = {
   leafMinValues: Uint8Array | null;
   leafMaxValues: Uint8Array | null;
   leafOccupancyValues: Uint8Array | null;
+  subcellTextureBytes: Uint8Array | null;
+  subcellTextureSize: { width: number; height: number; depth: number } | null;
 };
 
 type StreamingScaleTransition = {
@@ -3512,11 +3658,13 @@ type StreamingScaleTransition = {
 function createStreamingScaleWriteState({
   scale,
   backgroundMaskScale,
-  skipHierarchyDescriptor
+  skipHierarchyDescriptor,
+  subcellDescriptor
 }: {
   scale: PreprocessedLayerScaleManifestEntry;
   backgroundMaskScale: BackgroundMaskVolume | null;
   skipHierarchyDescriptor?: PreprocessedScaleSkipHierarchyZarrDescriptor;
+  subcellDescriptor?: PreprocessedScaleSubcellZarrDescriptor;
 }): StreamingScaleWriteState {
   const dataDescriptor = scale.zarr.data;
   if (dataDescriptor.chunkShape.length !== 5) {
@@ -3586,12 +3734,42 @@ function createStreamingScaleWriteState({
     }
   }
 
+  let subcellTextureBytes: Uint8Array | null = null;
+  let subcellTextureSize: { width: number; height: number; depth: number } | null = null;
+  if (subcellDescriptor) {
+    const subcellGrid = {
+      x: subcellDescriptor.gridShape[2],
+      y: subcellDescriptor.gridShape[1],
+      z: subcellDescriptor.gridShape[0]
+    };
+    subcellTextureSize = buildBrickSubcellTextureSize({
+      gridShape: leafGridShape,
+      subcellGrid
+    });
+    const expectedTextureLength = subcellTextureSize.width * subcellTextureSize.height * subcellTextureSize.depth * 4;
+    const expectedTimepointShape = [
+      subcellTextureSize.depth,
+      subcellTextureSize.height,
+      subcellTextureSize.width,
+      4
+    ];
+    const actualTimepointShape = subcellDescriptor.data.shape.slice(1);
+    if (
+      actualTimepointShape.length !== expectedTimepointShape.length ||
+      actualTimepointShape.some((value, index) => value !== expectedTimepointShape[index])
+    ) {
+      throw new Error(`Subcell descriptor shape mismatch for ${dataDescriptor.path}.`);
+    }
+    subcellTextureBytes = new Uint8Array(expectedTextureLength);
+  }
+
   return {
     scale,
     backgroundMaskScale,
     dataDescriptor,
     labelsDescriptor,
     skipHierarchyDescriptor,
+    subcellDescriptor,
     histogram: new Uint32Array(HISTOGRAM_BINS),
     chunkDepth,
     chunkHeight,
@@ -3602,7 +3780,9 @@ function createStreamingScaleWriteState({
     nextSliceIndex: 0,
     leafMinValues,
     leafMaxValues,
-    leafOccupancyValues
+    leafOccupancyValues,
+    subcellTextureBytes,
+    subcellTextureSize
   };
 }
 
@@ -3678,6 +3858,36 @@ async function writeStreamingScaleSlice({
         state.leafMinValues[chunkIndex] = stats.min;
         state.leafMaxValues[chunkIndex] = stats.max;
         state.leafOccupancyValues[chunkIndex] = stats.occupancy > 0 ? 255 : 0;
+      }
+      if (state.subcellDescriptor && state.subcellTextureBytes && state.subcellTextureSize) {
+        const subcellChunk = buildBrickSubcellChunkData({
+          chunkShape: [state.chunkDepth, state.chunkHeight, state.chunkWidth],
+          components: scale.channels,
+          readVoxelComponent: (localZ, localY, localX, component) => {
+            if (localZ !== 0 || localY < 0 || localY >= yLength || localX < 0 || localX >= xLength) {
+              return 0;
+            }
+            const sourceIndex = ((localY * xLength + localX) * scale.channels) + component;
+            return chunk[sourceIndex] ?? 0;
+          }
+        });
+        if (!subcellChunk) {
+          throw new Error(`Failed to build subcell texture data for ${dataDescriptor.path}.`);
+        }
+        if (
+          subcellChunk.subcellGrid.z !== state.subcellDescriptor.gridShape[0] ||
+          subcellChunk.subcellGrid.y !== state.subcellDescriptor.gridShape[1] ||
+          subcellChunk.subcellGrid.x !== state.subcellDescriptor.gridShape[2]
+        ) {
+          throw new Error(`Subcell grid mismatch for ${dataDescriptor.path}.`);
+        }
+        writeBrickSubcellChunkData({
+          targetData: state.subcellTextureBytes,
+          targetSize: state.subcellTextureSize,
+          brickCoords: { x: xChunk, y: yChunk, z: zIndex },
+          chunkData: subcellChunk.data,
+          subcellGrid: subcellChunk.subcellGrid
+        });
       }
 
       if (labelsDescriptor) {
@@ -3761,6 +3971,15 @@ async function finalizeStreamingScaleWriteState({
         signal
       });
     }
+  }
+
+  if (state.subcellDescriptor && state.subcellTextureBytes) {
+    await chunkWriter.writeChunk({
+      descriptor: state.subcellDescriptor.data,
+      chunkCoords: [timepoint, 0, 0, 0, 0],
+      bytes: state.subcellTextureBytes,
+      signal
+    });
   }
 
   await chunkWriter.writeChunk({
@@ -3907,7 +4126,8 @@ async function writeStreamingLayerTimepoint({
             data: backgroundMaskByLevel.get(scale.level)!.data
           }
         : null,
-      skipHierarchyDescriptor: scale.zarr.skipHierarchy
+      skipHierarchyDescriptor: scale.zarr.skipHierarchy,
+      subcellDescriptor: scale.zarr.subcell
     })
   );
   const transitions = sortedScales.slice(0, -1).map((scale, index) => {
@@ -4234,6 +4454,7 @@ async function writeNormalizedLayerTimepoint({
       chunkWriter,
       descriptor: scale.zarr.data,
       skipHierarchyDescriptor: scale.zarr.skipHierarchy,
+      subcellDescriptor: scale.zarr.subcell,
       timepoint,
       volume: volumeForScale,
       backgroundMask: backgroundMaskByLevel.get(scale.level) ?? null,
@@ -4336,6 +4557,7 @@ async function writePrecomputedLayerTimepointScales({
       chunkWriter,
       descriptor: scale.zarr.data,
       skipHierarchyDescriptor: scale.zarr.skipHierarchy,
+      subcellDescriptor: scale.zarr.subcell,
       timepoint,
       volume: {
         width: prepared.width,

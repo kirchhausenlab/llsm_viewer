@@ -15,6 +15,12 @@ import {
   encodeUint32ArrayLE,
   HISTOGRAM_BINS,
 } from '../../src/shared/utils/histogram.ts';
+import {
+  buildBrickSubcellChunkData,
+  buildBrickSubcellTextureSize,
+  resolveBrickSubcellGrid,
+  writeBrickSubcellChunkData,
+} from '../../src/shared/utils/brickSubcell.ts';
 import { createZarrChunkKeyFromCoords } from '../../src/shared/utils/preprocessedDataset/chunkKey.ts';
 import {
   PREPROCESSED_DATASET_FORMAT,
@@ -224,6 +230,14 @@ function buildManifest(spec: DatasetSpec): PreprocessedManifest {
   const yChunks = Math.ceil(height / chunkShape[2]);
   const xChunks = Math.ceil(width / chunkShape[3]);
   const hierarchyGridShapes = buildHierarchyGridShapes([zChunks, yChunks, xChunks]);
+  const subcellGrid = resolveBrickSubcellGrid([chunkShape[1], chunkShape[2], chunkShape[3]]);
+  const subcellTextureSize =
+    subcellGrid
+      ? buildBrickSubcellTextureSize({
+          gridShape: [zChunks, yChunks, xChunks],
+          subcellGrid
+        })
+      : null;
 
   return {
     format: PREPROCESSED_DATASET_FORMAT,
@@ -295,6 +309,31 @@ function buildManifest(spec: DatasetSpec): PreprocessedManifest {
                           },
                         })),
                       },
+                      ...(subcellGrid && subcellTextureSize
+                        ? {
+                            subcell: {
+                              gridShape: [subcellGrid.z, subcellGrid.y, subcellGrid.x] as [number, number, number],
+                              data: {
+                                path: 'channels/channel-a/layer-a/scales/0/subcell',
+                                shape: [
+                                  timepoints,
+                                  subcellTextureSize.depth,
+                                  subcellTextureSize.height,
+                                  subcellTextureSize.width,
+                                  4,
+                                ],
+                                chunkShape: [
+                                  1,
+                                  subcellTextureSize.depth,
+                                  subcellTextureSize.height,
+                                  subcellTextureSize.width,
+                                  4,
+                                ],
+                                dataType: 'uint8',
+                              },
+                            },
+                          }
+                        : {}),
                     },
                   },
                 ],
@@ -331,6 +370,15 @@ async function createSyntheticDataset(spec: DatasetSpec): Promise<SyntheticDatas
     codecs: [],
     fill_value: 0,
   });
+  if (scale.zarr.subcell) {
+    await zarr.create(root.resolve(scale.zarr.subcell.data.path), {
+      shape: scale.zarr.subcell.data.shape,
+      data_type: scale.zarr.subcell.data.dataType,
+      chunk_shape: scale.zarr.subcell.data.chunkShape,
+      codecs: [],
+      fill_value: 0,
+    });
+  }
   for (const hierarchy of scale.zarr.skipHierarchy.levels) {
     await zarr.create(root.resolve(hierarchy.min.path), {
       shape: hierarchy.min.shape,
@@ -359,12 +407,29 @@ async function createSyntheticDataset(spec: DatasetSpec): Promise<SyntheticDatas
   const zChunks = Math.ceil(spec.depth / chunkDepth);
   const yChunks = Math.ceil(spec.height / chunkHeight);
   const xChunks = Math.ceil(spec.width / chunkWidth);
+  const subcellGrid = scale.zarr.subcell
+    ? {
+        x: scale.zarr.subcell.gridShape[2],
+        y: scale.zarr.subcell.gridShape[1],
+        z: scale.zarr.subcell.gridShape[0],
+      }
+    : null;
+  const subcellTextureSize =
+    scale.zarr.subcell && subcellGrid
+      ? buildBrickSubcellTextureSize({
+          gridShape: [zChunks, yChunks, xChunks],
+          subcellGrid
+        })
+      : null;
 
   for (let timepoint = 0; timepoint < spec.timepoints; timepoint += 1) {
     const volume = fillDeterministicVolume(spec, timepoint);
     const chunkMin = new Uint8Array(zChunks * yChunks * xChunks);
     const chunkMax = new Uint8Array(zChunks * yChunks * xChunks);
     const chunkOcc = new Uint8Array(zChunks * yChunks * xChunks);
+    const subcellTexture = subcellTextureSize
+      ? new Uint8Array(subcellTextureSize.width * subcellTextureSize.height * subcellTextureSize.depth * 4)
+      : null;
 
     for (let zChunk = 0; zChunk < zChunks; zChunk += 1) {
       const zStart = zChunk * chunkDepth;
@@ -409,6 +474,27 @@ async function createSyntheticDataset(spec: DatasetSpec): Promise<SyntheticDatas
           chunkMin[chunkIndex] = min;
           chunkMax[chunkIndex] = max;
           chunkOcc[chunkIndex] = occupied > 0 ? 255 : 0;
+          if (subcellTexture && subcellGrid) {
+            const subcellChunk = buildBrickSubcellChunkData({
+              chunkShape: [chunkDepth, chunkHeight, chunkWidth],
+              components: spec.channels,
+              readVoxelComponent: (localZ, localY, localX, component) => {
+                if (localZ < 0 || localZ >= zLength || localY < 0 || localY >= yLength || localX < 0 || localX >= xLength) {
+                  return 0;
+                }
+                const sourceIndex = (((localZ * yLength + localY) * xLength + localX) * spec.channels) + component;
+                return chunk[sourceIndex] ?? 0;
+              }
+            });
+            assert.ok(subcellChunk);
+            writeBrickSubcellChunkData({
+              targetData: subcellTexture,
+              targetSize: subcellTextureSize as { width: number; height: number; depth: number },
+              brickCoords: { x: xChunk, y: yChunk, z: zChunk },
+              chunkData: subcellChunk.data,
+              subcellGrid: subcellChunk.subcellGrid
+            });
+          }
         }
       }
     }
@@ -445,6 +531,12 @@ async function createSyntheticDataset(spec: DatasetSpec): Promise<SyntheticDatas
       await storageHandle.storage.writeFile(
         `${descriptor.occupancy.path}/${createZarrChunkKeyFromCoords([timepoint, 0, 0, 0])}`,
         hierarchy.occupancy,
+      );
+    }
+    if (scale.zarr.subcell && subcellTexture) {
+      await storageHandle.storage.writeFile(
+        `${scale.zarr.subcell.data.path}/${createZarrChunkKeyFromCoords([timepoint, 0, 0, 0, 0])}`,
+        subcellTexture,
       );
     }
   }
@@ -495,6 +587,7 @@ test('performance: nextgen runtime large-volume loading remains within local bud
     atlasMs = performance.now() - startedAtlas;
     assert.ok(atlas.enabled);
     assert.ok(atlas.pageTable.occupiedBrickCount > 0);
+    assert.ok(atlas.pageTable.subcell);
   }
 
   const stats = provider.getStats();

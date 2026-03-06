@@ -9,6 +9,23 @@
 - Viewer, route, VR, and preprocessing hotspots have been decomposed into smaller modules to reduce coupling.
 
 ## Most recent high-signal updates
+- Extended playback/runtime volume selection and metadata precompute to reduce non-visible work during movie playback:
+  - direct-volume sampling is now allowed for fitting non-L0 scales, so dense playback `L1+` frames can bypass the heavier atlas path when they fit the existing volume heuristics
+  - atlas aux textures now reuse their existing GPU textures when the page table and residency mapping have not changed, and playback warmup readiness is based on zero pending residency work plus aux-texture completeness instead of requiring full residency
+  - route background masks are now cached by scale level and reused across current/warmup playback state, which avoids rebuilding equivalent mask maps on every timepoint transition
+  - added/expanded targeted coverage in `tests/lod0Residency.test.ts`, `tests/useVolumeResources.test.ts`, and `tests/preprocessPipeline.test.ts`, including a streaming preprocess round-trip that proves persisted brick-subcell payloads are exposed on `VolumeBrickPageTable`
+  - verification run completed with:
+    - `npm run -s typecheck`
+    - `npm run -s typecheck:tests`
+    - `node --import tsx --test tests/lod0Residency.test.ts tests/useVolumeResources.test.ts tests/app/hooks/useRouteLayerVolumes.test.ts tests/preprocessPipeline.test.ts`
+    - `node --import tsx --test tests/perf/nextgenVolumeRuntimeStress.test.ts`
+    - `node --import tsx --test tests/perf/realDatasetRegression.test.ts`
+  - the close-up Playwright perf benchmark started but did not complete cleanly in this environment during the verification window, so the browser-side benchmark remains unverified here
+- Landed playback GPU-atlas warmup/promotion for atlas-backed playback frames:
+  - route state now preloads one hidden next-frame resource set during playback and reuses it on timepoint advance instead of reloading the same frame again
+  - viewer resource management now builds hidden warmup atlas resources incrementally, keeps them off-screen, and promotes the warmed resource into the visible slot on swap
+  - playback advance is now additionally gated on hidden atlas warmup readiness in the viewer, so displayed playback frames no longer force a full-residency upload spike at swap time
+  - added focused coverage in `tests/useVolumeResources.test.ts` and `tests/app/hooks/useRouteLayerVolumes.test.ts`
 - Created a dedicated multi-session hard-cutover implementation dossier for hierarchical empty-space skipping:
   - `docs/hierarchical-empty-space-skipping/README.md`
   - `docs/hierarchical-empty-space-skipping/DECISIONS.md`

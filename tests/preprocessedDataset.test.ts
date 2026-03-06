@@ -430,7 +430,203 @@ await (async () => {
   assert.equal(diagnostics.cachePressure.volume >= 0 && diagnostics.cachePressure.volume <= 1, true);
   assert.equal(diagnostics.cachePressure.chunk >= 0 && diagnostics.cachePressure.chunk <= 1, true);
 
-  console.log('preprocessed dataset Zarr tests passed');
+console.log('preprocessed dataset Zarr tests passed');
+})();
+
+await (async () => {
+  const storageHandle = createInMemoryPreprocessedStorage({ datasetId: 'preprocessed-dataset-subcell' });
+  const zarrStore = createZarrStoreFromPreprocessedStorage(storageHandle.storage);
+
+  const manifest: PreprocessedManifest = {
+    format: PREPROCESSED_DATASET_FORMAT,
+    generatedAt: new Date().toISOString(),
+    dataset: {
+      movieMode: '3d',
+      totalVolumeCount: 1,
+      trackSets: [],
+      channels: [
+        {
+          id: 'channel-a',
+          name: 'Channel A',
+          layers: [
+            {
+              key: 'layer-subcell',
+              label: 'Layer Subcell',
+              channelId: 'channel-a',
+              isSegmentation: false,
+              volumeCount: 1,
+              width: 2,
+              height: 2,
+              depth: 1,
+              channels: 1,
+              dataType: 'uint8',
+              normalization: { min: 0, max: 255 },
+              zarr: {
+                scales: [
+                  {
+                    level: 0,
+                    downsampleFactor: [1, 1, 1],
+                    width: 2,
+                    height: 2,
+                    depth: 1,
+                    channels: 1,
+                    zarr: {
+                      data: {
+                        path: 'channels/channel-a/layer-subcell/scales/0/data',
+                        shape: [1, 1, 2, 2, 1],
+                        chunkShape: [1, 1, 2, 2, 1],
+                        dataType: 'uint8'
+                      },
+                      histogram: {
+                        path: 'channels/channel-a/layer-subcell/scales/0/histogram',
+                        shape: [1, 256],
+                        chunkShape: [1, 256],
+                        dataType: 'uint32'
+                      },
+                      skipHierarchy: {
+                        levels: [
+                          {
+                            level: 0,
+                            gridShape: [1, 1, 1],
+                            min: {
+                              path: 'channels/channel-a/layer-subcell/scales/0/skip-hierarchy/levels/0/min',
+                              shape: [1, 1, 1, 1],
+                              chunkShape: [1, 1, 1, 1],
+                              dataType: 'uint8'
+                            },
+                            max: {
+                              path: 'channels/channel-a/layer-subcell/scales/0/skip-hierarchy/levels/0/max',
+                              shape: [1, 1, 1, 1],
+                              chunkShape: [1, 1, 1, 1],
+                              dataType: 'uint8'
+                            },
+                            occupancy: {
+                              path: 'channels/channel-a/layer-subcell/scales/0/skip-hierarchy/levels/0/occupancy',
+                              shape: [1, 1, 1, 1],
+                              chunkShape: [1, 1, 1, 1],
+                              dataType: 'uint8'
+                            }
+                          }
+                        ]
+                      },
+                      subcell: {
+                        gridShape: [1, 2, 2],
+                        data: {
+                          path: 'channels/channel-a/layer-subcell/scales/0/subcell',
+                          shape: [1, 1, 2, 2, 4],
+                          chunkShape: [1, 1, 2, 2, 4],
+                          dataType: 'uint8'
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      voxelResolution: null,
+      anisotropyCorrection: null
+    }
+  };
+
+  const root = zarr.root(zarrStore);
+  await zarr.create(root, { attributes: { llsmViewerPreprocessed: manifest } });
+  const scale = manifest.dataset.channels[0]!.layers[0]!.zarr.scales[0]!;
+  await zarr.create(root.resolve(scale.zarr.data.path), {
+    shape: scale.zarr.data.shape,
+    data_type: scale.zarr.data.dataType,
+    chunk_shape: scale.zarr.data.chunkShape,
+    codecs: [],
+    fill_value: 0
+  });
+  await zarr.create(root.resolve(scale.zarr.histogram.path), {
+    shape: scale.zarr.histogram.shape,
+    data_type: scale.zarr.histogram.dataType,
+    chunk_shape: scale.zarr.histogram.chunkShape,
+    codecs: [],
+    fill_value: 0
+  });
+  for (const hierarchy of scale.zarr.skipHierarchy.levels) {
+    await zarr.create(root.resolve(hierarchy.min.path), {
+      shape: hierarchy.min.shape,
+      data_type: hierarchy.min.dataType,
+      chunk_shape: hierarchy.min.chunkShape,
+      codecs: [],
+      fill_value: 0
+    });
+    await zarr.create(root.resolve(hierarchy.max.path), {
+      shape: hierarchy.max.shape,
+      data_type: hierarchy.max.dataType,
+      chunk_shape: hierarchy.max.chunkShape,
+      codecs: [],
+      fill_value: 0
+    });
+    await zarr.create(root.resolve(hierarchy.occupancy.path), {
+      shape: hierarchy.occupancy.shape,
+      data_type: hierarchy.occupancy.dataType,
+      chunk_shape: hierarchy.occupancy.chunkShape,
+      codecs: [],
+      fill_value: 0
+    });
+  }
+  await zarr.create(root.resolve(scale.zarr.subcell!.data.path), {
+    shape: scale.zarr.subcell!.data.shape,
+    data_type: scale.zarr.subcell!.data.dataType,
+    chunk_shape: scale.zarr.subcell!.data.chunkShape,
+    codecs: [],
+    fill_value: 0
+  });
+
+  const volume = new Uint8Array([10, 20, 30, 40]);
+  const histogram = computeUint8VolumeHistogram({
+    width: 2,
+    height: 2,
+    depth: 1,
+    channels: 1,
+    normalized: volume
+  });
+  const subcell = new Uint8Array([
+    255, 10, 10, 255,
+    255, 20, 20, 255,
+    255, 30, 30, 255,
+    255, 40, 40, 255
+  ]);
+
+  await storageHandle.storage.writeFile(`${scale.zarr.data.path}/c/0/0/0/0/0`, volume);
+  await storageHandle.storage.writeFile(`${scale.zarr.histogram.path}/c/0/0`, encodeUint32ArrayLE(histogram));
+  await storageHandle.storage.writeFile(
+    `${scale.zarr.skipHierarchy.levels[0]!.min.path}/c/0/0/0/0`,
+    new Uint8Array([10])
+  );
+  await storageHandle.storage.writeFile(
+    `${scale.zarr.skipHierarchy.levels[0]!.max.path}/c/0/0/0/0`,
+    new Uint8Array([40])
+  );
+  await storageHandle.storage.writeFile(
+    `${scale.zarr.skipHierarchy.levels[0]!.occupancy.path}/c/0/0/0/0`,
+    new Uint8Array([255])
+  );
+  await storageHandle.storage.writeFile(`${scale.zarr.subcell!.data.path}/c/0/0/0/0/0`, subcell);
+
+  const opened = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
+  const provider = createVolumeProvider({
+    manifest: opened.manifest,
+    storage: storageHandle.storage,
+    maxCachedVolumes: 4,
+    maxCachedChunkBytes: DEFAULT_MAX_CACHED_CHUNK_BYTES,
+    maxConcurrentChunkReads: DEFAULT_MAX_CONCURRENT_CHUNK_READS,
+    maxConcurrentPrefetchLoads: DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS
+  });
+  assert.equal(typeof provider.getBrickPageTable, 'function');
+  const pageTable = await provider.getBrickPageTable!('layer-subcell', 0);
+  assert.deepEqual(pageTable.chunkShape, [1, 2, 2]);
+  assert.deepEqual(pageTable.subcell?.gridShape, [1, 2, 2]);
+  assert.equal(pageTable.subcell?.width, 2);
+  assert.equal(pageTable.subcell?.height, 2);
+  assert.equal(pageTable.subcell?.depth, 1);
+  assert.deepEqual(Array.from(pageTable.subcell?.data ?? []), Array.from(subcell));
 })();
 
 await (async () => {

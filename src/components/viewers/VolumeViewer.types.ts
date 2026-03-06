@@ -59,6 +59,8 @@ export type ViewerLayer = {
   brickPageTable?: VolumeBrickPageTable | null;
   brickAtlas?: VolumeBrickAtlas | null;
   backgroundMask?: VolumeBackgroundMask | null;
+  playbackWarmupForLayerKey?: string;
+  playbackWarmupTimeIndex?: number;
 };
 
 export type VolumeViewerVrPanelLayerSettings = {
@@ -144,6 +146,7 @@ export type VolumeViewerVrProps = {
 
 export type VolumeViewerProps = {
   layers: ViewerLayer[];
+  playbackWarmupLayers?: ViewerLayer[];
   timeIndex: number;
   totalTimepoints: number;
   isPlaying: boolean;
@@ -222,6 +225,9 @@ export type VolumeResources = {
   skipHierarchySourcePageTable?: VolumeBrickPageTable | null;
   skipHierarchyLevelCount?: number;
   brickMetadataSourcePageTable?: VolumeBrickPageTable | null;
+  brickAtlasIndexSourcePageTable?: VolumeBrickPageTable | null;
+  brickAtlasBaseSourcePageTable?: VolumeBrickPageTable | null;
+  brickAtlasBaseSourceSignature?: string | null;
   brickSubcellSourcePageTable?: VolumeBrickPageTable | null;
   brickSubcellSourceToken?: object | Uint8Array | null;
   brickSubcellGrid?: { x: number; y: number; z: number } | null;
@@ -233,6 +239,10 @@ export type VolumeResources = {
   brickAtlasBuildVersion?: number;
   backgroundMaskSourceToken?: object | null;
   proxyGeometrySignature?: string | null;
+  playbackWarmupForLayerKey?: string | null;
+  playbackWarmupTimeIndex?: number | null;
+  preferIncrementalResidency?: boolean;
+  playbackWarmupReady?: boolean | null;
   gpuBrickResidencyMetrics?: {
     layerKey: string;
     timepoint: number;

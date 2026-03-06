@@ -67,6 +67,7 @@ type ViewerPanelsTrackInput = Pick<
 
 export type ViewerShellContainerViewerPanelsProps = {
   layers: ViewerLayerConfig[];
+  playbackWarmupLayers?: ViewerLayerConfig[];
   loading: ViewerPanelsLoadingInput;
   tracks: ViewerPanelsTrackInput;
   zClipFrontFraction: number;
@@ -141,6 +142,7 @@ function mapVolumeViewerProps({
 >): ViewerShellProps['volumeViewerProps'] {
   return {
     layers: viewerPanels.layers,
+    playbackWarmupLayers: viewerPanels.playbackWarmupLayers ?? [],
     isLoading: viewerPanels.loading.isLoading,
     loadingProgress: viewerPanels.loading.loadingProgress,
     loadedVolumes: viewerPanels.loading.loadedVolumes,

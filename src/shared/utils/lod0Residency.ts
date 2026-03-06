@@ -1,6 +1,6 @@
-const MIN_DIRECT_L0_VOLUME_TEXTURE_BYTES = 8 * 1024 * 1024;
-const DIRECT_L0_ATLAS_TO_VOLUME_BYTE_RATIO_THRESHOLD = 0.6;
-const DIRECT_L0_OCCUPIED_BRICK_RATIO_THRESHOLD = 0.5;
+const MIN_DIRECT_VOLUME_TEXTURE_BYTES = 8 * 1024 * 1024;
+const DIRECT_ATLAS_TO_VOLUME_BYTE_RATIO_THRESHOLD = 0.6;
+const DIRECT_OCCUPIED_BRICK_RATIO_THRESHOLD = 0.5;
 
 function normalizePositiveInteger(value: number): number | null {
   if (!Number.isFinite(value) || value <= 0) {
@@ -9,7 +9,7 @@ function normalizePositiveInteger(value: number): number | null {
   return Math.max(1, Math.floor(value));
 }
 
-export function shouldPreferDirectL0VolumeSampling(args: {
+export function shouldPreferDirectVolumeSampling(args: {
   scaleLevel: number;
   volumeWidth: number;
   volumeHeight: number;
@@ -19,11 +19,8 @@ export function shouldPreferDirectL0VolumeSampling(args: {
   chunkShape: [number, number, number];
   occupiedBrickCount: number;
   maxDirectVolumeBytes?: number | null;
+  max3DTextureSize?: number | null;
 }): boolean {
-  if (args.scaleLevel !== 0) {
-    return false;
-  }
-
   const volumeWidth = normalizePositiveInteger(args.volumeWidth);
   const volumeHeight = normalizePositiveInteger(args.volumeHeight);
   const volumeDepth = normalizePositiveInteger(args.volumeDepth);
@@ -52,9 +49,19 @@ export function shouldPreferDirectL0VolumeSampling(args: {
     return false;
   }
 
+  if (
+    Number.isFinite(args.max3DTextureSize) &&
+    (args.max3DTextureSize as number) > 0 &&
+    (volumeWidth > (args.max3DTextureSize as number) ||
+      volumeHeight > (args.max3DTextureSize as number) ||
+      volumeDepth > (args.max3DTextureSize as number))
+  ) {
+    return false;
+  }
+
   const estimatedVolumeBytes = volumeWidth * volumeHeight * volumeDepth * textureChannels;
   if (
-    estimatedVolumeBytes < MIN_DIRECT_L0_VOLUME_TEXTURE_BYTES ||
+    estimatedVolumeBytes < MIN_DIRECT_VOLUME_TEXTURE_BYTES ||
     (Number.isFinite(args.maxDirectVolumeBytes) &&
       (args.maxDirectVolumeBytes as number) > 0 &&
       estimatedVolumeBytes > (args.maxDirectVolumeBytes as number))
@@ -76,7 +83,7 @@ export function shouldPreferDirectL0VolumeSampling(args: {
   const atlasToVolumeByteRatio = estimatedAtlasBytes / estimatedVolumeBytes;
 
   return (
-    occupiedBrickRatio >= DIRECT_L0_OCCUPIED_BRICK_RATIO_THRESHOLD &&
-    atlasToVolumeByteRatio >= DIRECT_L0_ATLAS_TO_VOLUME_BYTE_RATIO_THRESHOLD
+    occupiedBrickRatio >= DIRECT_OCCUPIED_BRICK_RATIO_THRESHOLD &&
+    atlasToVolumeByteRatio >= DIRECT_ATLAS_TO_VOLUME_BYTE_RATIO_THRESHOLD
   );
 }

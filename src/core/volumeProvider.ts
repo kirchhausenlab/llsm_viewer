@@ -21,6 +21,7 @@ import {
   computeBackgroundMaskVisibleRegion,
   type BackgroundMaskVisibleRegion
 } from '../shared/utils/backgroundMask';
+import { buildBrickSubcellTextureSize, resolveBrickSubcellGrid } from '../shared/utils/brickSubcell';
 import { decodeUint32ArrayLE, HISTOGRAM_BINS } from '../shared/utils/histogram';
 import { getLod0FeatureFlags } from '../config/lod0Flags';
 import type {
@@ -147,6 +148,13 @@ export type VolumeBrickPageTable = {
   chunkMax: Uint8Array;
   chunkOccupancy: Float32Array;
   occupiedBrickCount: number;
+  subcell?: {
+    gridShape: [number, number, number];
+    width: number;
+    height: number;
+    depth: number;
+    data: Uint8Array;
+  } | null;
 };
 
 export type VolumeBrickAtlasTextureFormat = 'red' | 'rg' | 'rgba';
@@ -1760,6 +1768,51 @@ export function createVolumeProvider({
       );
     }
 
+    let subcell: VolumeBrickPageTable['subcell'] = null;
+    const expectedSubcellGrid = resolveBrickSubcellGrid([chunkDepth, chunkHeight, chunkWidth]);
+    const subcellDescriptor = scale.zarr.subcell;
+    if (subcellDescriptor) {
+      if (!expectedSubcellGrid) {
+        throw new Error(`Subcell data is not expected for layer ${layer.layerKey} at scale ${scale.level}.`);
+      }
+      if (
+        subcellDescriptor.gridShape[0] !== expectedSubcellGrid.z ||
+        subcellDescriptor.gridShape[1] !== expectedSubcellGrid.y ||
+        subcellDescriptor.gridShape[2] !== expectedSubcellGrid.x
+      ) {
+        throw new Error(`Subcell grid mismatch for layer ${layer.layerKey} at timepoint ${timepoint}.`);
+      }
+      const expectedTextureSize = buildBrickSubcellTextureSize({
+        gridShape: expectedGridShape,
+        subcellGrid: expectedSubcellGrid
+      });
+      const {
+        bytes: subcellBytes,
+        bytesRead: subcellBytesRead
+      } = await readTimepointChunkedArray({
+        descriptor: subcellDescriptor.data,
+        timepoint,
+        expectedNonTimeShape: [
+          expectedTextureSize.depth,
+          expectedTextureSize.height,
+          expectedTextureSize.width,
+          4
+        ],
+        maxConcurrentChunkReads,
+        readChunk: (chunkCoords, chunkOptions) => readChunkWithCache(subcellDescriptor.data, chunkCoords, chunkOptions),
+        signal
+      });
+      throwIfAborted(signal);
+      stats.bytesRead += subcellBytesRead;
+      subcell = {
+        gridShape: subcellDescriptor.gridShape,
+        width: expectedTextureSize.width,
+        height: expectedTextureSize.height,
+        depth: expectedTextureSize.depth,
+        data: subcellBytes
+      };
+    }
+
     const brickAtlasIndices = new Int32Array(expectedBrickCount);
     let occupiedBrickCount = 0;
     for (let index = 0; index < expectedBrickCount; index += 1) {
@@ -1786,7 +1839,8 @@ export function createVolumeProvider({
       chunkMin,
       chunkMax,
       chunkOccupancy,
-      occupiedBrickCount
+      occupiedBrickCount,
+      subcell
     };
   };
 

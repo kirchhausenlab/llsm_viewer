@@ -55,6 +55,11 @@ export type PreprocessedScaleSkipHierarchyZarrDescriptor = {
   levels: PreprocessedScaleSkipHierarchyLevelZarrDescriptor[];
 };
 
+export type PreprocessedScaleSubcellZarrDescriptor = {
+  gridShape: [number, number, number];
+  data: ZarrArrayDescriptor;
+};
+
 export type PreprocessedLayerScaleManifestEntry = {
   level: number;
   downsampleFactor: [number, number, number];
@@ -66,6 +71,7 @@ export type PreprocessedLayerScaleManifestEntry = {
     data: ZarrArrayDescriptor;
     labels?: ZarrArrayDescriptor;
     skipHierarchy: PreprocessedScaleSkipHierarchyZarrDescriptor;
+    subcell?: PreprocessedScaleSubcellZarrDescriptor;
     histogram: ZarrArrayDescriptor;
   };
 };

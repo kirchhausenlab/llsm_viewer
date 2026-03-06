@@ -428,6 +428,76 @@ test('preprocessDatasetToStorage writes sharded chunks that volume provider read
   assert.deepEqual(Array.from(loaded.normalized), sourceValues);
 });
 
+test('preprocessDatasetToStorage writes streaming subcell payloads that page tables expose', async () => {
+  const channels: ChannelExportMetadata[] = [{ id: 'channel-a', name: 'Channel A' }];
+  const files = [new File(['intensity-0'], 'intensity-t0.tif', { type: 'image/tiff' })];
+  const layers: PreprocessLayerSource[] = [
+    {
+      channelId: 'channel-a',
+      channelLabel: 'Channel A',
+      key: 'layer-a',
+      label: 'Layer A',
+      files,
+      isSegmentation: false,
+    },
+  ];
+
+  const sourceValues = [
+    0, 1, 2, 3,
+    4, 5, 6, 7,
+    8, 9, 10, 11,
+    12, 13, 14, 15,
+  ];
+  const volumeByFileName = new Map<string, VolumePayload>([
+    [
+      'intensity-t0.tif',
+      createSyntheticVolumePayload({
+        width: 4,
+        height: 4,
+        depth: 1,
+        channels: 1,
+        values: sourceValues,
+      }),
+    ],
+  ]);
+
+  const storageHandle = createInMemoryPreprocessedStorage({ datasetId: 'preprocess-streaming-subcells' });
+  const result = await preprocessDatasetToStorage({
+    layers,
+    channels,
+    trackSets: [],
+    voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    movieMode: '3d',
+    storage: storageHandle.storage,
+    volumeLoader: createLoaderByFileName(volumeByFileName),
+    storageStrategy: { sharding: { enabled: false } },
+    processingStrategy: { executionMode: 'streaming', streamingThresholdBytes: 1 },
+  });
+
+  const scale0 = result.manifest.dataset.channels[0]?.layers[0]?.zarr.scales[0];
+  assert.ok(scale0?.zarr.subcell);
+
+  const opened = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
+  const provider = createVolumeProvider({
+    manifest: opened.manifest,
+    storage: storageHandle.storage,
+    maxCachedVolumes: DEFAULT_MAX_CACHED_VOLUMES,
+    maxCachedChunkBytes: DEFAULT_MAX_CACHED_CHUNK_BYTES,
+    maxConcurrentChunkReads: DEFAULT_MAX_CONCURRENT_CHUNK_READS,
+    maxConcurrentPrefetchLoads: DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS,
+  });
+
+  const pageTable = await provider.getBrickPageTable?.('layer-a', 0, { scaleLevel: 0 });
+  assert.ok(pageTable?.subcell);
+  assert.deepEqual(pageTable?.subcell?.gridShape, [1, 4, 4]);
+  assert.equal(pageTable?.subcell?.width, 4);
+  assert.equal(pageTable?.subcell?.height, 4);
+  assert.equal(pageTable?.subcell?.depth, 1);
+
+  const expectedSubcellData = sourceValues.flatMap((value) => [value > 0 ? 255 : 0, value, value, 255]);
+  assert.deepEqual(Array.from(pageTable?.subcell?.data ?? []), expectedSubcellData);
+});
+
 test('preprocessDatasetToStorage stacks 2D TIFF sequence into one single-3D volume', async () => {
   const channels: ChannelExportMetadata[] = [{ id: 'channel-a', name: 'Channel A' }];
   const layers: PreprocessLayerSource[] = [

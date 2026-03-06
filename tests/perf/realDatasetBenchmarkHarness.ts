@@ -17,6 +17,7 @@ import type {
   PreprocessedManifest,
 } from '../../src/shared/utils/preprocessedDataset/types.ts';
 import { PREPROCESSED_DATASET_FORMAT } from '../../src/shared/utils/preprocessedDataset/types.ts';
+import { shouldPreferDirectVolumeSampling } from '../../src/shared/utils/lod0Residency.ts';
 
 const MAX_BRICK_ATLAS_DEPTH_HINT = 2048;
 const MAX_BRICK_ATLAS_BYTES_HINT = 512 * 1024 * 1024;
@@ -312,6 +313,22 @@ async function loadLayerTimepointLikeViewer({
         const [chunkDepth, chunkHeight, chunkWidth] = pageTable.chunkShape;
         const estimatedAtlasDepth = chunkDepth * pageTable.occupiedBrickCount;
         const estimatedAtlasBytes = chunkWidth * chunkHeight * estimatedAtlasDepth * textureChannels;
+        const shouldPreferDirectVolume =
+          scale !== null &&
+          shouldPreferDirectVolumeSampling({
+            scaleLevel,
+            volumeWidth: scale.width,
+            volumeHeight: scale.height,
+            volumeDepth: scale.depth,
+            textureChannels,
+            gridShape: pageTable.gridShape,
+            chunkShape: pageTable.chunkShape,
+            occupiedBrickCount: pageTable.occupiedBrickCount,
+            maxDirectVolumeBytes: MAX_VOLUME_BYTES_HINT
+          });
+        if (shouldPreferDirectVolume) {
+          break;
+        }
         if (estimatedAtlasDepth > MAX_BRICK_ATLAS_DEPTH_HINT || estimatedAtlasBytes > MAX_BRICK_ATLAS_BYTES_HINT) {
           continue;
         }

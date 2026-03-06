@@ -1,4 +1,5 @@
 import { HISTOGRAM_BINS } from '../histogram';
+import { buildBrickSubcellTextureSize, resolveBrickSubcellGrid } from '../brickSubcell';
 import type {
   PreprocessedBackgroundMaskManifest,
   PreprocessedBackgroundMaskScaleManifestEntry,
@@ -7,6 +8,7 @@ import type {
   PreprocessedLayerScaleManifestEntry,
   PreprocessedManifest,
   PreprocessedScaleSkipHierarchyZarrDescriptor,
+  PreprocessedScaleSubcellZarrDescriptor,
   PreprocessedTrackSetManifestEntry,
   ZarrArrayDescriptor,
   ZarrArrayShardingPlan
@@ -339,6 +341,76 @@ function validateSkipHierarchyDescriptors({
   return { levels };
 }
 
+function validateSubcellDescriptor({
+  value,
+  path,
+  layerVolumeCount,
+  chunkShape,
+  expectedLeafGridShape
+}: {
+  value: unknown;
+  path: string;
+  layerVolumeCount: number;
+  chunkShape: readonly number[];
+  expectedLeafGridShape: readonly number[];
+}): PreprocessedScaleSubcellZarrDescriptor | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const subcell = expectRecord(value, path);
+  const gridShape = expectIntegerTuple(subcell.gridShape, `${path}.gridShape`, 3, {
+    positive: true
+  }) as [number, number, number];
+  const expectedGridShape = resolveBrickSubcellGrid([
+    chunkShape[0] ?? 1,
+    chunkShape[1] ?? 1,
+    chunkShape[2] ?? 1
+  ]);
+  if (!expectedGridShape) {
+    throw new Error(`Invalid manifest schema at ${path}: subcell data is not expected for single-voxel bricks.`);
+  }
+  if (
+    gridShape[0] !== expectedGridShape.z ||
+    gridShape[1] !== expectedGridShape.y ||
+    gridShape[2] !== expectedGridShape.x
+  ) {
+    throw new Error(
+      `Invalid manifest schema at ${path}.gridShape: expected ${[
+        expectedGridShape.z,
+        expectedGridShape.y,
+        expectedGridShape.x
+      ].join('x')}, got ${gridShape.join('x')}.`
+    );
+  }
+
+  const expectedTextureSize = buildBrickSubcellTextureSize({
+    gridShape: [
+      expectedLeafGridShape[0] ?? 1,
+      expectedLeafGridShape[1] ?? 1,
+      expectedLeafGridShape[2] ?? 1
+    ] as [number, number, number],
+    subcellGrid: expectedGridShape
+  });
+  const data = validateDescriptor({
+    value: subcell.data,
+    path: `${path}.data`,
+    expectedRank: 5,
+    expectedDataType: 'uint8',
+    expectedShape: [
+      layerVolumeCount,
+      expectedTextureSize.depth,
+      expectedTextureSize.height,
+      expectedTextureSize.width,
+      4
+    ]
+  });
+
+  return {
+    gridShape,
+    data
+  };
+}
+
 function validateScale({
   value,
   path,
@@ -420,6 +492,14 @@ function validateScale({
     });
   }
 
+  const subcell = validateSubcellDescriptor({
+    value: zarr.subcell,
+    path: `${path}.zarr.subcell`,
+    layerVolumeCount,
+    chunkShape: [chunkDepth, chunkHeight, chunkWidth],
+    expectedLeafGridShape
+  });
+
   if (isSegmentation && !labels) {
     throw new Error(
       `Invalid manifest schema at ${path}.zarr.labels: segmentation layers require labels for every scale.`
@@ -437,6 +517,7 @@ function validateScale({
       data,
       ...(labels ? { labels } : {}),
       skipHierarchy,
+      ...(subcell ? { subcell } : {}),
       histogram
     }
   };

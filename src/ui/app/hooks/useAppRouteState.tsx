@@ -488,11 +488,24 @@ export function useAppRouteState(): AppRouteState {
     setFollowedVoxel(null);
   }, [setFollowedVoxel]);
 
+  const followedTrackPlaybackWindow = useMemo(() => {
+    if (followedTrackId === null) {
+      return null;
+    }
+    const track = trackLookup.get(followedTrackId) ?? null;
+    return getTrackPlaybackIndexWindow(track, volumeTimepointCount);
+  }, [followedTrackId, trackLookup, volumeTimepointCount]);
+
   const {
     currentLayerVolumes,
     currentLayerPageTables,
     currentLayerBrickAtlases,
     currentBackgroundMasksByScale,
+    playbackWarmupTimeIndex,
+    playbackWarmupLayerVolumes,
+    playbackWarmupLayerPageTables,
+    playbackWarmupLayerBrickAtlases,
+    playbackWarmupBackgroundMasksByScale,
     volumeProviderDiagnostics,
     lodPolicyDiagnostics,
     setCurrentLayerVolumes,
@@ -513,6 +526,7 @@ export function useAppRouteState(): AppRouteState {
     viewerCameraSample,
     volumeTimepointCount,
     selectedIndex,
+    playbackWindow: followedTrackPlaybackWindow,
     clearDatasetError,
     beginLaunchSession,
     setLaunchExpectedVolumeCount,
@@ -624,14 +638,6 @@ export function useAppRouteState(): AppRouteState {
     playbackLayerKeys,
     selectedIndex
   });
-
-  const followedTrackPlaybackWindow = useMemo(() => {
-    if (followedTrackId === null) {
-      return null;
-    }
-    const track = trackLookup.get(followedTrackId) ?? null;
-    return getTrackPlaybackIndexWindow(track, volumeTimepointCount);
-  }, [followedTrackId, trackLookup, volumeTimepointCount]);
 
   const {
     viewerControls,
@@ -894,6 +900,7 @@ export function useAppRouteState(): AppRouteState {
 
   const {
     viewerLayers,
+    viewerPlaybackWarmupLayers,
     handleLayerSelect,
     handleLayerSoloToggle,
     handleChannelSliderReset,
@@ -920,6 +927,11 @@ export function useAppRouteState(): AppRouteState {
     layerPageTables: currentLayerPageTables,
     layerBrickAtlases: currentLayerBrickAtlases,
     backgroundMasksByScale: currentBackgroundMasksByScale,
+    playbackWarmupTimeIndex,
+    playbackWarmupLayerVolumes,
+    playbackWarmupLayerPageTables,
+    playbackWarmupLayerBrickAtlases,
+    playbackWarmupBackgroundMasksByScale,
     loadVolume: volumeProvider ? volumeProvider.getVolume : null,
     layerAutoThresholds,
     setLayerAutoThresholds,
@@ -1043,6 +1055,7 @@ export function useAppRouteState(): AppRouteState {
       viewerMode,
       viewerPanels: {
         layers: viewerLayers,
+        playbackWarmupLayers: viewerPlaybackWarmupLayers,
         zClipFrontFraction,
         loading: {
           isLoading,
