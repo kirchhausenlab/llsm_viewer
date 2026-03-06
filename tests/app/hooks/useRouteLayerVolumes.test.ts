@@ -93,6 +93,51 @@ const createBrickAtlas = (seed: number, scaleLevel = 0): VolumeBrickAtlas => {
   };
 };
 
+const createDenseL0BrickPageTable = (
+  seed: number,
+  options?: {
+    layerKey?: string;
+    scaleLevel?: number;
+    gridShape?: [number, number, number];
+    chunkShape?: [number, number, number];
+    occupiedBrickCount?: number;
+    volumeShape?: [number, number, number];
+  }
+): VolumeBrickPageTable => {
+  const gridShape = options?.gridShape ?? [4, 8, 8];
+  const chunkShape = options?.chunkShape ?? [32, 32, 32];
+  const volumeShape = options?.volumeShape ?? [128, 256, 256];
+  const scaleLevel = options?.scaleLevel ?? 0;
+  const totalBricks = gridShape[0] * gridShape[1] * gridShape[2];
+  const occupiedBrickCount = Math.min(options?.occupiedBrickCount ?? 224, totalBricks);
+  const brickAtlasIndices = new Int32Array(totalBricks).fill(-1);
+  const chunkMin = new Uint8Array(totalBricks);
+  const chunkMax = new Uint8Array(totalBricks);
+  const chunkOccupancy = new Float32Array(totalBricks);
+
+  for (let index = 0; index < totalBricks; index += 1) {
+    const occupied = index < occupiedBrickCount;
+    brickAtlasIndices[index] = occupied ? index : -1;
+    chunkMin[index] = occupied ? 1 : 0;
+    chunkMax[index] = occupied ? 255 : 0;
+    chunkOccupancy[index] = occupied ? 1 : 0;
+  }
+
+  return {
+    layerKey: options?.layerKey ?? `dense-layer-${seed}`,
+    timepoint: seed,
+    scaleLevel,
+    gridShape,
+    chunkShape,
+    volumeShape,
+    brickAtlasIndices,
+    chunkMin,
+    chunkMax,
+    chunkOccupancy,
+    occupiedBrickCount
+  };
+};
+
 const createBackgroundMask = (scaleLevel: number): VolumeBackgroundMask => ({
   sourceLayerKey: 'layer-a',
   sourceDataType: 'uint8',
@@ -432,6 +477,96 @@ await (async () => {
     timeIndex: 3
   });
   assert.strictEqual(getVolumeCalls.length, 0);
+  hook.unmount();
+})();
+
+await (async () => {
+  const getVolumeCalls: Array<{ layerKey: string; timeIndex: number; scaleLevel: number | undefined }> = [];
+  const getBrickAtlasCalls: Array<{ layerKey: string; timeIndex: number; scaleLevel: number | undefined }> = [];
+  const getBrickPageTableCalls: Array<{ layerKey: string; timeIndex: number; scaleLevel: number | undefined }> = [];
+
+  const provider = {
+    getVolume: async (layerKey: string, timeIndex: number, options?: { scaleLevel?: number }) => {
+      getVolumeCalls.push({ layerKey, timeIndex, scaleLevel: options?.scaleLevel });
+      return createVolume(timeIndex + 31);
+    },
+    getBrickPageTable: async (layerKey: string, timeIndex: number, options?: { scaleLevel?: number }) => {
+      getBrickPageTableCalls.push({ layerKey, timeIndex, scaleLevel: options?.scaleLevel });
+      return createDenseL0BrickPageTable(timeIndex, {
+        layerKey,
+        scaleLevel: options?.scaleLevel ?? 0
+      });
+    },
+    getBrickAtlas: async (layerKey: string, timeIndex: number, options?: { scaleLevel?: number }) => {
+      getBrickAtlasCalls.push({ layerKey, timeIndex, scaleLevel: options?.scaleLevel });
+      return createBrickAtlas(timeIndex, options?.scaleLevel ?? 0);
+    },
+  } as unknown as VolumeProvider;
+
+  const preprocessedExperiment = {
+    manifest: {
+      dataset: {
+        channels: [
+          {
+            id: 'channel-a',
+            layers: [
+              {
+                key: 'layer-a',
+                zarr: {
+                  scales: [
+                    {
+                      level: 0,
+                      width: 256,
+                      height: 256,
+                      depth: 128,
+                      channels: 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  } as StagedPreprocessedExperiment;
+
+  const hook = renderHook(() =>
+    useRouteLayerVolumes({
+      isViewerLaunched: true,
+      isLaunchingViewer: false,
+      isPlaying: false,
+      preprocessedExperiment,
+      volumeProvider: provider,
+      loadedChannelIds: ['channel-a'],
+      channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
+        ['channel-a', [createLoadedLayer('layer-a', 'channel-a')]],
+      ]),
+      channelVisibility: { 'channel-a': true },
+      layerChannelMap: new Map<string, string>([['layer-a', 'channel-a']]),
+      preferBrickResidency: true,
+      volumeTimepointCount: 4,
+      selectedIndex: 1,
+      clearDatasetError: () => {},
+      beginLaunchSession: () => {},
+      setLaunchExpectedVolumeCount: () => {},
+      setLaunchProgress: () => {},
+      completeLaunchSession: () => {},
+      failLaunchSession: () => {},
+      finishLaunchSessionAttempt: () => {},
+      setSelectedIndex: () => {},
+      setIsPlaying: () => {},
+      showLaunchError: () => {}
+    })
+  );
+
+  await flushAsyncWork();
+  assert.deepStrictEqual(getBrickPageTableCalls, [{ layerKey: 'layer-a', timeIndex: 1, scaleLevel: 0 }]);
+  assert.deepStrictEqual(getVolumeCalls, [{ layerKey: 'layer-a', timeIndex: 1, scaleLevel: 0 }]);
+  assert.strictEqual(getBrickAtlasCalls.length, 0);
+  assert.ok(hook.result.currentLayerVolumes['layer-a']);
+  assert.ok(hook.result.currentLayerPageTables['layer-a']);
+  assert.strictEqual(hook.result.currentLayerBrickAtlases['layer-a'] ?? null, null);
   hook.unmount();
 })();
 

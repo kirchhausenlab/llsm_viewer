@@ -204,6 +204,40 @@ function createSyntheticPageTableFromVolume(volume: NormalizedVolume): VolumeBri
   });
 }
 
+function createDenseNativeScalePageTable(): VolumeBrickPageTable {
+  const gridShape: [number, number, number] = [4, 8, 8];
+  const chunkShape: [number, number, number] = [32, 32, 32];
+  const volumeShape: [number, number, number] = [128, 256, 256];
+  const totalBricks = gridShape[0] * gridShape[1] * gridShape[2];
+  const occupiedBrickCount = 224;
+  const brickAtlasIndices = new Int32Array(totalBricks).fill(-1);
+  const chunkMin = new Uint8Array(totalBricks);
+  const chunkMax = new Uint8Array(totalBricks);
+  const chunkOccupancy = new Float32Array(totalBricks);
+
+  for (let index = 0; index < totalBricks; index += 1) {
+    const occupied = index < occupiedBrickCount;
+    brickAtlasIndices[index] = occupied ? index : -1;
+    chunkMin[index] = occupied ? 1 : 0;
+    chunkMax[index] = occupied ? 255 : 0;
+    chunkOccupancy[index] = occupied ? 1 : 0;
+  }
+
+  return withSyntheticSkipHierarchy({
+    layerKey: 'layer-3d',
+    timepoint: 0,
+    scaleLevel: 0,
+    gridShape,
+    chunkShape,
+    volumeShape,
+    brickAtlasIndices,
+    chunkMin,
+    chunkMax,
+    chunkOccupancy,
+    occupiedBrickCount,
+  });
+}
+
 const createLayer = (
   volume: NormalizedVolume | null,
   brickPageTable: VolumeBrickPageTable | null,
@@ -711,6 +745,151 @@ const createLayer = (
   };
   layers = [createLayer(volume, invalidPageTable, null, 'nearest')];
   assert.throws(() => hook.rerender(), /hard-cutover violation: invalid-page-table/);
+})();
+
+(() => {
+  const volume: NormalizedVolume = {
+    width: 256,
+    height: 256,
+    depth: 128,
+    channels: 1,
+    dataType: 'uint8',
+    normalized: new Uint8Array(128 * 256 * 256).fill(1),
+    histogram: new Uint32Array([1, 2]),
+    min: 0,
+    max: 255,
+    scaleLevel: 0,
+  };
+  const pageTable = createDenseNativeScalePageTable();
+
+  const sceneRef = { current: new THREE.Scene() };
+  const cameraRef = { current: new THREE.PerspectiveCamera(75, 1, 0.1, 10) };
+  const controlsRef = {
+    current: {
+      target: new THREE.Vector3(),
+      update: () => {},
+      saveState: () => {},
+    } as unknown as THREE.OrbitControls,
+  };
+
+  const resourcesRef = { current: new Map<string, VolumeResources>() };
+  const layers: ViewerLayer[] = [createLayer(volume, pageTable, null, 'linear')];
+
+  const hook = renderHook(() =>
+    useVolumeResources({
+      layers,
+      primaryVolume: volume,
+      isAdditiveBlending: false,
+      renderContextRevision: 0,
+      sceneRef,
+      cameraRef,
+      controlsRef,
+      rotationTargetRef: { current: new THREE.Vector3() },
+      defaultViewStateRef: { current: null },
+      trackGroupRef: { current: new THREE.Group() },
+      resourcesRef,
+      currentDimensionsRef: { current: null },
+      colormapCacheRef: { current: new Map() },
+      volumeRootGroupRef: { current: new THREE.Group() },
+      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+      volumeNormalizationScaleRef: { current: 1 },
+      volumeUserScaleRef: { current: 1 },
+      volumeStepScaleRef: { current: 1 },
+      volumeYawRef: { current: 0 },
+      volumePitchRef: { current: 0 },
+      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+      applyTrackGroupTransform: () => {},
+      applyVolumeRootTransform: () => {},
+      applyVolumeStepScaleToResources: () => {},
+      applyHoverHighlightToResources: () => {},
+    }),
+  );
+
+  const resource = resourcesRef.current.get('layer-3d');
+  assert.ok(resource);
+  const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms as Record<string, { value: unknown }>;
+  assert.equal(uniforms.u_brickSkipEnabled?.value, 0);
+  assert.equal(uniforms.u_brickAtlasEnabled?.value, 0);
+  assert.strictEqual(resource.brickAtlasDataTexture ?? null, null);
+  assert.strictEqual(resource.brickAtlasIndexTexture ?? null, null);
+  assert.strictEqual(resource.skipHierarchyTexture ?? null, null);
+  assert.equal(resource.brickSkipDiagnostics?.reason, 'disabled-for-direct-volume-linear');
+  hook.unmount();
+})();
+
+(() => {
+  const volume: NormalizedVolume = {
+    width: 256,
+    height: 256,
+    depth: 128,
+    channels: 1,
+    dataType: 'uint8',
+    normalized: new Uint8Array(128 * 256 * 256).fill(1),
+    histogram: new Uint32Array([1, 2]),
+    min: 0,
+    max: 255,
+    scaleLevel: 0,
+  };
+  const pageTable = createDenseNativeScalePageTable();
+
+  const sceneRef = { current: new THREE.Scene() };
+  const cameraRef = { current: new THREE.PerspectiveCamera(75, 1, 0.1, 10) };
+  const controlsRef = {
+    current: {
+      target: new THREE.Vector3(),
+      update: () => {},
+      saveState: () => {},
+    } as unknown as THREE.OrbitControls,
+  };
+
+  const resourcesRef = { current: new Map<string, VolumeResources>() };
+  const layers: ViewerLayer[] = [createLayer(volume, pageTable, null, 'nearest')];
+
+  const hook = renderHook(() =>
+    useVolumeResources({
+      layers,
+      primaryVolume: volume,
+      isAdditiveBlending: false,
+      renderContextRevision: 0,
+      sceneRef,
+      cameraRef,
+      controlsRef,
+      rotationTargetRef: { current: new THREE.Vector3() },
+      defaultViewStateRef: { current: null },
+      trackGroupRef: { current: new THREE.Group() },
+      resourcesRef,
+      currentDimensionsRef: { current: null },
+      colormapCacheRef: { current: new Map() },
+      volumeRootGroupRef: { current: new THREE.Group() },
+      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+      volumeNormalizationScaleRef: { current: 1 },
+      volumeUserScaleRef: { current: 1 },
+      volumeStepScaleRef: { current: 1 },
+      volumeYawRef: { current: 0 },
+      volumePitchRef: { current: 0 },
+      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+      applyTrackGroupTransform: () => {},
+      applyVolumeRootTransform: () => {},
+      applyVolumeStepScaleToResources: () => {},
+      applyHoverHighlightToResources: () => {},
+    }),
+  );
+
+  const resource = resourcesRef.current.get('layer-3d');
+  assert.ok(resource);
+  const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms as Record<string, { value: unknown }>;
+  assert.equal(uniforms.u_brickSkipEnabled?.value, 1);
+  assert.equal(uniforms.u_brickAtlasEnabled?.value, 0);
+  assert.strictEqual(resource.brickAtlasDataTexture ?? null, null);
+  assert.ok(resource.brickAtlasIndexTexture);
+  assert.ok(resource.skipHierarchyTexture);
+  hook.unmount();
 })();
 
 (() => {

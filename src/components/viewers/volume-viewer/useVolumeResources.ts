@@ -19,6 +19,7 @@ import { DESKTOP_VOLUME_STEP_SCALE } from './vr';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import type { VolumeBrickAtlas, VolumeBrickPageTable } from '../../../core/volumeProvider';
 import { getLod0FeatureFlags } from '../../../config/lod0Flags';
+import { shouldPreferDirectL0VolumeSampling } from '../../../shared/utils/lod0Residency';
 import {
   FALLBACK_BACKGROUND_MASK_TEXTURE,
   FALLBACK_BRICK_ATLAS_BASE_TEXTURE,
@@ -140,6 +141,7 @@ type BrickSkipDiagnostics = {
   enabled: boolean;
   reason:
     | 'enabled'
+    | 'disabled-for-direct-volume-linear'
     | 'missing-page-table'
     | 'invalid-page-table'
     | 'invalid-min-max-range'
@@ -2299,6 +2301,8 @@ function applyBrickPageTableUniforms(
     max3DTextureSize?: number | null;
     cameraPosition?: THREE.Vector3 | null;
     forceFullResidency?: boolean;
+    preferDirectVolumeSampling?: boolean;
+    disableBrickPageTableSampling?: boolean;
   },
 ): void {
   if (
@@ -2326,10 +2330,10 @@ function applyBrickPageTableUniforms(
     return;
   }
 
-  const failBrickSkipping = (
+  const disableBrickPageTableUniforms = (
     reason: BrickSkipDiagnostics['reason'],
     totalBricks = 0,
-  ): never => {
+  ): void => {
     disposeBrickPageTableTextures(resource);
     uniforms.u_brickSkipEnabled.value = 0;
     (uniforms.u_brickGridSize.value as THREE.Vector3).set(1, 1, 1);
@@ -2360,8 +2364,20 @@ function applyBrickPageTableUniforms(
     }
     resource.gpuBrickResidencyMetrics = null;
     resource.brickSkipDiagnostics = createDisabledBrickSkipDiagnostics(reason, totalBricks);
+  };
+
+  const failBrickSkipping = (
+    reason: BrickSkipDiagnostics['reason'],
+    totalBricks = 0,
+  ): never => {
+    disableBrickPageTableUniforms(reason, totalBricks);
     throw new Error(`[brick-skip] hard-cutover violation: ${reason}`);
   };
+
+  if (options?.disableBrickPageTableSampling) {
+    disableBrickPageTableUniforms('disabled-for-direct-volume-linear');
+    return;
+  }
 
   const atlasTokenPageTable = resolveAtlasTokenPageTable(options?.atlasDataToken);
   const resolvedPageTable = atlasTokenPageTable ?? pageTable ?? failBrickSkipping('missing-page-table');
@@ -2640,6 +2656,16 @@ function applyBrickPageTableUniforms(
   const brickSubcellGridUniform = uniforms.u_brickSubcellGrid.value as THREE.Vector3;
   const brickSubcellGrid = resource.brickSubcellGrid ?? { x: 1, y: 1, z: 1 };
   brickSubcellGridUniform.set(brickSubcellGrid.x, brickSubcellGrid.y, brickSubcellGrid.z);
+
+  if (options?.preferDirectVolumeSampling) {
+    disposeBrickAtlasDataTexture(resource);
+    uniforms.u_brickAtlasBase.value = FALLBACK_BRICK_ATLAS_BASE_TEXTURE;
+    uniforms.u_brickAtlasEnabled.value = 0;
+    uniforms.u_brickAtlasData.value = FALLBACK_BRICK_ATLAS_DATA_TEXTURE;
+    (uniforms.u_brickAtlasSize.value as THREE.Vector3).set(1, 1, 1);
+    (uniforms.u_brickAtlasSlotGrid.value as THREE.Vector3).set(1, 1, 1);
+    return;
+  }
 
   const canReuseAtlasTexture =
     !shouldUseGpuResidency &&
@@ -3156,7 +3182,20 @@ export function useVolumeResources({
       }
       const { volume, pageTable, brickAtlas, width, height, depth, channels } = source;
       const sourceUsesVolume = Boolean(volume);
-
+      const directVolumeTextureChannels = channels <= 1 ? 1 : channels === 2 ? 2 : 4;
+      const shouldPreferDirectVolumeSampling =
+        !brickAtlas &&
+        Boolean(volume && pageTable) &&
+        shouldPreferDirectL0VolumeSampling({
+          scaleLevel: pageTable?.scaleLevel ?? volume?.scaleLevel ?? 0,
+          volumeWidth: width,
+          volumeHeight: height,
+          volumeDepth: depth,
+          textureChannels: directVolumeTextureChannels,
+          gridShape: pageTable?.gridShape ?? [1, 1, 1],
+          chunkShape: pageTable?.chunkShape ?? [1, 1, 1],
+          occupiedBrickCount: pageTable?.occupiedBrickCount ?? 0,
+        });
       let cachedPreparation: ReturnType<typeof getCachedTextureData> | null = null;
 
       const isGrayscale = channels === 1;
@@ -3182,6 +3221,8 @@ export function useVolumeResources({
         ? Number(layer.sliceIndex)
         : Math.round(safeZClipFront * Math.max(dataDepthForSlice - 1, 0));
       const effectiveSamplingMode = resolveSamplingModeForRenderStyle(layer.samplingMode, layer.renderStyle);
+      const shouldDisableDirectVolumeBrickPageTableSampling =
+        shouldPreferDirectVolumeSampling && effectiveSamplingMode === 'linear';
       const layerAdditiveEnabled = resolveLayerAdditiveEnabled(
         additiveBlendingRef.current,
       );
@@ -3377,6 +3418,8 @@ export function useVolumeResources({
                     textureData,
                     textureFormat,
                     max3DTextureSize,
+                    preferDirectVolumeSampling: shouldPreferDirectVolumeSampling,
+                    disableBrickPageTableSampling: shouldDisableDirectVolumeBrickPageTableSampling,
                   }
                 : undefined,
           );
@@ -3657,6 +3700,8 @@ export function useVolumeResources({
                     textureData: preparation.data,
                     textureFormat: preparation.format,
                     max3DTextureSize,
+                    preferDirectVolumeSampling: shouldPreferDirectVolumeSampling,
+                    disableBrickPageTableSampling: shouldDisableDirectVolumeBrickPageTableSampling,
                   }
                 : undefined
           );

@@ -19,6 +19,7 @@ import type {
   VolumeProviderDiagnostics
 } from '../../../core/volumeProvider';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
+import { shouldPreferDirectL0VolumeSampling } from '../../../shared/utils/lod0Residency';
 import type { PreprocessedLayerScaleManifestEntry } from '../../../shared/utils/preprocessedDataset/types';
 import type { LoadedDatasetLayer, StagedPreprocessedExperiment } from '../../../hooks/dataset';
 
@@ -688,6 +689,7 @@ export function useRouteLayerVolumes({
         return desiredScaleLevel === 0 ? [0] : [0, desiredScaleLevel];
       })();
       const fallbackScaleLevel = knownLevels[knownLevels.length - 1] ?? desiredScaleLevel;
+      const prefetchedPageTablesByScale = new Map<number, VolumeBrickPageTable>();
       updateLayerPolicyState({
         layerKey,
         desiredScaleLevel,
@@ -717,9 +719,26 @@ export function useRouteLayerVolumes({
           if (typeof volumeProvider?.getBrickPageTable === 'function') {
             const pageTable = await volumeProvider.getBrickPageTable(layerKey, timeIndex, { scaleLevel, signal });
             throwIfAborted(signal);
+            prefetchedPageTablesByScale.set(scaleLevel, pageTable);
             const [chunkDepth, chunkHeight, chunkWidth] = pageTable.chunkShape;
             const estimatedAtlasDepth = chunkDepth * pageTable.occupiedBrickCount;
             const estimatedAtlasBytes = chunkWidth * chunkHeight * estimatedAtlasDepth * textureChannels;
+            const shouldPreferDirectVolume =
+              scale !== null &&
+              shouldPreferDirectL0VolumeSampling({
+                scaleLevel,
+                volumeWidth: scale.width,
+                volumeHeight: scale.height,
+                volumeDepth: scale.depth,
+                textureChannels,
+                gridShape: pageTable.gridShape,
+                chunkShape: pageTable.chunkShape,
+                occupiedBrickCount: pageTable.occupiedBrickCount,
+                maxDirectVolumeBytes: maxVolumeBytesHint
+              });
+            if (shouldPreferDirectVolume) {
+              break;
+            }
             if (
               estimatedAtlasDepth > MAX_BRICK_ATLAS_DEPTH_HINT ||
               estimatedAtlasBytes > maxBrickAtlasBytesHint
@@ -817,9 +836,12 @@ export function useRouteLayerVolumes({
         }
 
         try {
+          const prefetchedPageTable = prefetchedPageTablesByScale.get(scaleLevel) ?? null;
           const [volume, pageTable] = await Promise.all([
             volumeProvider!.getVolume(layerKey, timeIndex, { scaleLevel, signal }),
-            typeof volumeProvider?.getBrickPageTable === 'function'
+            prefetchedPageTable
+              ? Promise.resolve(prefetchedPageTable)
+              : typeof volumeProvider?.getBrickPageTable === 'function'
               ? volumeProvider.getBrickPageTable(layerKey, timeIndex, { scaleLevel, signal })
               : Promise.resolve(null)
           ]);

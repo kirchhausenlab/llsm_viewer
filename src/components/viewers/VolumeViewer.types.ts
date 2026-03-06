@@ -252,6 +252,7 @@ export type VolumeResources = {
     enabled: boolean;
     reason:
       | 'enabled'
+      | 'disabled-for-direct-volume-linear'
       | 'missing-page-table'
       | 'invalid-page-table'
       | 'invalid-min-max-range'
