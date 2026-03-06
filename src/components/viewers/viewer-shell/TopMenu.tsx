@@ -582,14 +582,25 @@ export default function TopMenu({
                         {resolvedIntensityComponents.map((component) => (
                           <span
                             key={component.key}
-                            className={
-                              component.color && isLightHexColor(component.color)
-                                ? 'viewer-top-menu-intensity-entry is-light-tint'
-                                : 'viewer-top-menu-intensity-entry'
+                            className="viewer-top-menu-intensity-entry"
+                            style={
+                              component.color
+                                ? ({
+                                    '--viewer-top-menu-intensity-marker-color': component.color,
+                                    '--viewer-top-menu-intensity-marker-border': isLightHexColor(component.color)
+                                      ? 'var(--panel-border-strong)'
+                                      : 'transparent'
+                                  } as CSSProperties)
+                                : undefined
                             }
-                            style={component.color ? { color: component.color } : undefined}
                             title={component.channelLabel ?? component.fullText}
                           >
+                            {component.channelLabel && component.color ? (
+                              <span
+                                className="viewer-top-menu-intensity-entry-marker"
+                                aria-hidden="true"
+                              />
+                            ) : null}
                             {component.channelLabel ? (
                               <>
                                 <span className="viewer-top-menu-intensity-entry-label">
