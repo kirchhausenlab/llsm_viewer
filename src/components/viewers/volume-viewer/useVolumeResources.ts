@@ -2925,6 +2925,10 @@ function isPlaybackWarmupLayer(layer: ManagedViewerLayer): boolean {
   return typeof layer.playbackWarmupForLayerKey === 'string' && layer.playbackWarmupForLayerKey.length > 0;
 }
 
+function isPlaybackPinnedLayer(layer: ManagedViewerLayer): boolean {
+  return layer.playbackRole === 'warmup' || layer.playbackRole === 'active';
+}
+
 function doesWarmupResourceMatchSource(
   resource: VolumeResources,
   layer: ManagedViewerLayer,
@@ -3247,13 +3251,14 @@ export function useVolumeResources({
           atlasSize,
           max3DTextureSize,
           cameraPosition: localCameraPosition,
-          forceFullResidency: false,
+          forceFullResidency: Boolean(resource.playbackPinnedResidency),
         });
       };
     };
 
     managedLayers.forEach((layer, index) => {
       const isPlaybackWarmup = isPlaybackWarmupLayer(layer);
+      const playbackPinnedResidency = isPlaybackWarmup || isPlaybackPinnedLayer(layer);
       const source = resolveLayerRenderSource(layer);
       if (!source) {
         removeResource(layer.key);
@@ -3281,16 +3286,26 @@ export function useVolumeResources({
       const isGrayscale = channels === 1;
       const colormapTexture = getColormapTexture(isGrayscale ? layer.color : DEFAULT_LAYER_COLOR);
 
-      let resources: VolumeResources | null = resourcesRef.current.get(layer.key) ?? null;
+      const existingVisibleResource = resourcesRef.current.get(layer.key) ?? null;
+      let resources: VolumeResources | null = existingVisibleResource;
       let promotedFromWarmup = false;
       if (!isPlaybackWarmup) {
         const promotableWarmup = findPromotableWarmupResource(resourcesRef.current, layer, source);
         if (promotableWarmup) {
-          removeResource(layer.key);
           resourcesRef.current.delete(promotableWarmup.key);
+          if (existingVisibleResource && existingVisibleResource !== promotableWarmup.resource) {
+            resourcesRef.current.delete(layer.key);
+            existingVisibleResource.mesh.visible = false;
+            existingVisibleResource.playbackWarmupForLayerKey = layer.key;
+            existingVisibleResource.playbackWarmupTimeIndex = null;
+            resourcesRef.current.set(promotableWarmup.key, existingVisibleResource);
+          } else if (existingVisibleResource) {
+            removeResource(layer.key);
+          }
           promotableWarmup.resource.playbackWarmupForLayerKey = null;
           promotableWarmup.resource.playbackWarmupTimeIndex = null;
-          promotableWarmup.resource.preferIncrementalResidency = true;
+          promotableWarmup.resource.preferIncrementalResidency = false;
+          promotableWarmup.resource.playbackPinnedResidency = playbackPinnedResidency;
           resourcesRef.current.set(layer.key, promotableWarmup.resource);
           resources = promotableWarmup.resource;
           promotedFromWarmup = true;
@@ -3490,7 +3505,8 @@ export function useVolumeResources({
             proxyGeometrySignature: proxyVisibleBox.signature,
             playbackWarmupForLayerKey: layer.playbackWarmupForLayerKey ?? null,
             playbackWarmupTimeIndex: layer.playbackWarmupTimeIndex ?? null,
-            preferIncrementalResidency: isPlaybackWarmup,
+            preferIncrementalResidency: isPlaybackWarmup && !playbackPinnedResidency,
+            playbackPinnedResidency,
             playbackWarmupReady: null,
             updateGpuBrickResidencyForCamera: null,
           };
@@ -3511,7 +3527,7 @@ export function useVolumeResources({
                     atlasSize: { width: brickAtlas.width, height: brickAtlas.height, depth: brickAtlas.depth },
                     max3DTextureSize,
                     cameraPosition: residencyCameraPosition,
-                    forceFullResidency: !isPlaybackWarmup,
+                    forceFullResidency: playbackPinnedResidency || !isPlaybackWarmup,
                   }
               : volume
                 ? {
@@ -3710,7 +3726,8 @@ export function useVolumeResources({
             backgroundMaskSourceToken: null,
             playbackWarmupForLayerKey: layer.playbackWarmupForLayerKey ?? null,
             playbackWarmupTimeIndex: layer.playbackWarmupTimeIndex ?? null,
-            preferIncrementalResidency: isPlaybackWarmup,
+            preferIncrementalResidency: isPlaybackWarmup && !playbackPinnedResidency,
+            playbackPinnedResidency,
             playbackWarmupReady: null,
             updateGpuBrickResidencyForCamera: null,
           };
@@ -3727,7 +3744,7 @@ export function useVolumeResources({
                   atlasFormat: directAtlasFormat ?? undefined,
                   atlasSize: { width: brickAtlas.width, height: brickAtlas.height, depth: brickAtlas.depth },
                   max3DTextureSize,
-                  forceFullResidency: !isPlaybackWarmup,
+                  forceFullResidency: playbackPinnedResidency || !isPlaybackWarmup,
                 }
                 : undefined,
           );
@@ -3743,7 +3760,9 @@ export function useVolumeResources({
         resources.renderStyle = layer.renderStyle;
         resources.playbackWarmupForLayerKey = layer.playbackWarmupForLayerKey ?? null;
         resources.playbackWarmupTimeIndex = layer.playbackWarmupTimeIndex ?? null;
-        resources.preferIncrementalResidency = isPlaybackWarmup || promotedFromWarmup;
+        resources.playbackPinnedResidency = playbackPinnedResidency;
+        resources.preferIncrementalResidency =
+          (isPlaybackWarmup || promotedFromWarmup) && !playbackPinnedResidency;
         mesh.visible = isPlaybackWarmup ? false : layer.visible;
         mesh.renderOrder = index;
 
@@ -3803,7 +3822,9 @@ export function useVolumeResources({
                   atlasSize: { width: brickAtlas.width, height: brickAtlas.height, depth: brickAtlas.depth },
                   max3DTextureSize,
                   cameraPosition: residencyCameraPosition,
-                  forceFullResidency: !(resources.preferIncrementalResidency ?? false),
+                  forceFullResidency:
+                    Boolean(resources.playbackPinnedResidency) ||
+                    !(resources.preferIncrementalResidency ?? false),
                 }
               : volume && preparation
                 ? {
@@ -3938,7 +3959,9 @@ export function useVolumeResources({
                   atlasFormat: directAtlasFormat ?? undefined,
                   atlasSize: { width: brickAtlas.width, height: brickAtlas.height, depth: brickAtlas.depth },
                   max3DTextureSize,
-                  forceFullResidency: !(resources.preferIncrementalResidency ?? false),
+                  forceFullResidency:
+                    Boolean(resources.playbackPinnedResidency) ||
+                    !(resources.preferIncrementalResidency ?? false),
                 }
                 : undefined,
           );

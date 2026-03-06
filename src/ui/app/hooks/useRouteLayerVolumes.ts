@@ -66,6 +66,7 @@ type RouteLayerVolumesState = {
   currentLayerPageTables: Record<string, VolumeBrickPageTable | null>;
   currentLayerBrickAtlases: Record<string, VolumeBrickAtlas | null>;
   currentBackgroundMasksByScale: Record<number, VolumeBackgroundMask | null>;
+  playbackWarmupFrames: PlaybackWarmupFrameState[];
   playbackWarmupTimeIndex: number | null;
   playbackWarmupLayerVolumes: Record<string, NormalizedVolume | null>;
   playbackWarmupLayerPageTables: Record<string, VolumeBrickPageTable | null>;
@@ -92,6 +93,7 @@ const MAX_ADAPTIVE_DOWNSAMPLE_MULTIPLIER = 8;
 const MAX_ADAPTIVE_DEMOTION_STEPS = 4;
 const CAMERA_PROJECTED_PIXELS_REFERENCE_DISTANCE = 1.2;
 const CAMERA_PROJECTED_PIXELS_AT_REFERENCE = 1.4;
+const PLAYBACK_WARMUP_SLOT_COUNT = 3;
 
 type LayerPolicyRuntimeState = {
   layerKey: string;
@@ -197,6 +199,16 @@ type LoadedLayerResources = readonly [
   brickAtlas: VolumeBrickAtlas | null
 ];
 
+export type PlaybackWarmupFrameState = {
+  slotIndex: number;
+  timeIndex: number;
+  scaleSignature: string;
+  layerVolumes: Record<string, NormalizedVolume | null>;
+  layerPageTables: Record<string, VolumeBrickPageTable | null>;
+  layerBrickAtlases: Record<string, VolumeBrickAtlas | null>;
+  backgroundMasksByScale: Record<number, VolumeBackgroundMask | null>;
+};
+
 function collectActiveScaleLevels(resources: readonly LoadedLayerResources[]): number[] {
   const levels = new Set<number>();
   for (const [, volume, pageTable, brickAtlas] of resources) {
@@ -210,6 +222,69 @@ function collectActiveScaleLevels(resources: readonly LoadedLayerResources[]): n
     levels.add(Math.max(0, Math.floor(scaleLevel)));
   }
   return [...levels].sort((left, right) => left - right);
+}
+
+function collectPlaybackWarmupTimeIndices(
+  currentIndex: number,
+  totalTimepoints: number,
+  playbackWindow: PlaybackIndexWindow | null,
+  slotCount: number,
+): number[] {
+  if (totalTimepoints <= 1 || slotCount <= 0) {
+    return [];
+  }
+  const indices: number[] = [];
+  const seen = new Set<number>([currentIndex]);
+  let candidate = currentIndex;
+  for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
+    candidate = computeLoopedNextTimeIndex(candidate, totalTimepoints, playbackWindow);
+    if (seen.has(candidate)) {
+      break;
+    }
+    seen.add(candidate);
+    indices.push(candidate);
+  }
+  return indices;
+}
+
+function sortWarmupFramesByTargetOrder(
+  frames: PlaybackWarmupFrameState[],
+  targetTimeIndices: number[],
+): PlaybackWarmupFrameState[] {
+  const orderByTimeIndex = new Map<number, number>();
+  targetTimeIndices.forEach((timeIndex, index) => {
+    orderByTimeIndex.set(timeIndex, index);
+  });
+  return [...frames].sort((left, right) => {
+    const leftOrder = orderByTimeIndex.get(left.timeIndex) ?? Number.POSITIVE_INFINITY;
+    const rightOrder = orderByTimeIndex.get(right.timeIndex) ?? Number.POSITIVE_INFINITY;
+    if (leftOrder !== rightOrder) {
+      return leftOrder - rightOrder;
+    }
+    return left.slotIndex - right.slotIndex;
+  });
+}
+
+function arePlaybackWarmupFramesEquivalent(
+  left: PlaybackWarmupFrameState[],
+  right: PlaybackWarmupFrameState[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((frame, index) => {
+      const other = right[index];
+      return (
+        other !== undefined &&
+        frame.slotIndex === other.slotIndex &&
+        frame.timeIndex === other.timeIndex &&
+        frame.scaleSignature === other.scaleSignature &&
+        frame.layerVolumes === other.layerVolumes &&
+        frame.layerPageTables === other.layerPageTables &&
+        frame.layerBrickAtlases === other.layerBrickAtlases &&
+        frame.backgroundMasksByScale === other.backgroundMasksByScale
+      );
+    })
+  );
 }
 
 function applyPlaybackScaleOverride({
@@ -326,32 +401,18 @@ export function useRouteLayerVolumes({
   const [currentBackgroundMasksByScale, setCurrentBackgroundMasksByScale] = useState<
     Record<number, VolumeBackgroundMask | null>
   >({});
-  const [playbackWarmupTimeIndex, setPlaybackWarmupTimeIndex] = useState<number | null>(null);
-  const [playbackWarmupScaleSignature, setPlaybackWarmupScaleSignature] = useState<string | null>(null);
-  const [playbackWarmupLayerVolumes, setPlaybackWarmupLayerVolumes] = useState<Record<string, NormalizedVolume | null>>(
-    {}
-  );
-  const [playbackWarmupLayerPageTables, setPlaybackWarmupLayerPageTables] = useState<
-    Record<string, VolumeBrickPageTable | null>
-  >({});
-  const [playbackWarmupLayerBrickAtlases, setPlaybackWarmupLayerBrickAtlases] = useState<
-    Record<string, VolumeBrickAtlas | null>
-  >({});
-  const [playbackWarmupBackgroundMasksByScale, setPlaybackWarmupBackgroundMasksByScale] = useState<
-    Record<number, VolumeBackgroundMask | null>
-  >({});
+  const [playbackWarmupFrames, setPlaybackWarmupFrames] = useState<PlaybackWarmupFrameState[]>([]);
   const [volumeProviderDiagnostics, setVolumeProviderDiagnostics] = useState<VolumeProviderDiagnostics | null>(null);
   const [lodPolicyDiagnostics, setLodPolicyDiagnostics] = useState<LODPolicyDiagnosticsSnapshot | null>(null);
   const volumeLoadRequestRef = useRef(0);
   const lastLoadIntentRef = useRef<string | null>(null);
   const volumeLoadAbortControllerRef = useRef<AbortController | null>(null);
-  const playbackWarmupRequestRef = useRef(0);
-  const lastWarmupIntentRef = useRef<string | null>(null);
-  const playbackWarmupAbortControllerRef = useRef<AbortController | null>(null);
-  const playbackWarmupLayerVolumesRef = useRef<Record<string, NormalizedVolume | null>>({});
-  const playbackWarmupLayerPageTablesRef = useRef<Record<string, VolumeBrickPageTable | null>>({});
-  const playbackWarmupLayerBrickAtlasesRef = useRef<Record<string, VolumeBrickAtlas | null>>({});
-  const playbackWarmupBackgroundMasksByScaleRef = useRef<Record<number, VolumeBackgroundMask | null>>({});
+  const playbackWarmupFramesRef = useRef<PlaybackWarmupFrameState[]>([]);
+  const playbackWarmupRequestSequenceRef = useRef(0);
+  const playbackWarmupRequestBySlotRef = useRef<Map<number, { requestId: number; abortController: AbortController }>>(
+    new Map()
+  );
+  const lastWarmupIntentBySlotRef = useRef<Map<number, string>>(new Map());
   const backgroundMaskCacheRef = useRef<Record<number, VolumeBackgroundMask | null>>({});
   const playbackLayerKeysRef = useRef<string[]>([]);
   const previousIsPlayingRef = useRef<boolean>(isPlaying);
@@ -363,16 +424,30 @@ export function useRouteLayerVolumes({
   const lod0Flags = useMemo(() => getLod0FeatureFlags(), []);
   const canUseAtlas = typeof volumeProvider?.getBrickAtlas === 'function';
   useEffect(() => {
-    playbackWarmupLayerVolumesRef.current = playbackWarmupLayerVolumes;
-    playbackWarmupLayerPageTablesRef.current = playbackWarmupLayerPageTables;
-    playbackWarmupLayerBrickAtlasesRef.current = playbackWarmupLayerBrickAtlases;
-    playbackWarmupBackgroundMasksByScaleRef.current = playbackWarmupBackgroundMasksByScale;
-  }, [
-    playbackWarmupBackgroundMasksByScale,
-    playbackWarmupLayerBrickAtlases,
-    playbackWarmupLayerPageTables,
-    playbackWarmupLayerVolumes,
-  ]);
+    playbackWarmupFramesRef.current = playbackWarmupFrames;
+  }, [playbackWarmupFrames]);
+  const primaryPlaybackWarmupFrame = useMemo(() => playbackWarmupFrames[0] ?? null, [playbackWarmupFrames]);
+  const playbackWarmupTimeIndex = primaryPlaybackWarmupFrame?.timeIndex ?? null;
+  const playbackWarmupLayerVolumes = primaryPlaybackWarmupFrame?.layerVolumes ?? {};
+  const playbackWarmupLayerPageTables = primaryPlaybackWarmupFrame?.layerPageTables ?? {};
+  const playbackWarmupLayerBrickAtlases = primaryPlaybackWarmupFrame?.layerBrickAtlases ?? {};
+  const playbackWarmupBackgroundMasksByScale = primaryPlaybackWarmupFrame?.backgroundMasksByScale ?? {};
+  const cancelWarmupSlot = useCallback((slotIndex: number) => {
+    const activeRequest = playbackWarmupRequestBySlotRef.current.get(slotIndex);
+    activeRequest?.abortController.abort();
+    playbackWarmupRequestBySlotRef.current.delete(slotIndex);
+    lastWarmupIntentBySlotRef.current.delete(slotIndex);
+  }, []);
+  const cancelAllWarmupRequests = useCallback(() => {
+    for (const slotIndex of playbackWarmupRequestBySlotRef.current.keys()) {
+      cancelWarmupSlot(slotIndex);
+    }
+  }, [cancelWarmupSlot]);
+  const replacePlaybackWarmupFrames = useCallback((nextFrames: PlaybackWarmupFrameState[]) => {
+    setPlaybackWarmupFrames((current) =>
+      arePlaybackWarmupFramesEquivalent(current, nextFrames) ? current : nextFrames
+    );
+  }, []);
   const layerScaleLevelsByKey = useMemo(() => {
     const map = new Map<string, number[]>();
     const manifest = preprocessedExperiment?.manifest;
@@ -418,6 +493,13 @@ export function useRouteLayerVolumes({
         }
         return resolved;
       })();
+      if (isPlaying) {
+        return applyPlaybackScaleOverride({
+          levels,
+          resolvedScaleLevel: fallbackBaseDesired,
+          isPlaying: true
+        });
+      }
       if (!lod0Flags.adaptiveScaleSelector || adaptivePolicyDisabledRef.current) {
         return applyPlaybackScaleOverride({
           levels,
@@ -1036,12 +1118,8 @@ export function useRouteLayerVolumes({
     setCurrentLayerPageTables({});
     setCurrentLayerBrickAtlases({});
     setCurrentBackgroundMasksByScale({});
-    setPlaybackWarmupTimeIndex(null);
-    setPlaybackWarmupScaleSignature(null);
-    setPlaybackWarmupLayerVolumes({});
-    setPlaybackWarmupLayerPageTables({});
-    setPlaybackWarmupLayerBrickAtlases({});
-    setPlaybackWarmupBackgroundMasksByScale({});
+    cancelAllWarmupRequests();
+    setPlaybackWarmupFrames([]);
     setSelectedIndex(0);
     setIsPlaying(false);
     try {
@@ -1116,7 +1194,8 @@ export function useRouteLayerVolumes({
     loadBackgroundMasksForScaleLevels,
     completeLaunchSession,
     failLaunchSession,
-    finishLaunchSessionAttempt
+    finishLaunchSessionAttempt,
+    cancelAllWarmupRequests
   ]);
 
   useEffect(() => {
@@ -1149,47 +1228,32 @@ export function useRouteLayerVolumes({
     return () => {
       volumeLoadAbortControllerRef.current?.abort();
       volumeLoadAbortControllerRef.current = null;
-      playbackWarmupAbortControllerRef.current?.abort();
-      playbackWarmupAbortControllerRef.current = null;
+      cancelAllWarmupRequests();
     };
-  }, []);
+  }, [cancelAllWarmupRequests]);
 
   useEffect(() => {
     if (!isViewerLaunched || !volumeProvider) {
       volumeLoadAbortControllerRef.current?.abort();
       volumeLoadAbortControllerRef.current = null;
       lastLoadIntentRef.current = null;
-      playbackWarmupAbortControllerRef.current?.abort();
-      playbackWarmupAbortControllerRef.current = null;
-      lastWarmupIntentRef.current = null;
+      cancelAllWarmupRequests();
       backgroundMaskCacheRef.current = {};
       setCurrentBackgroundMasksByScale({});
-      setPlaybackWarmupTimeIndex(null);
-      setPlaybackWarmupScaleSignature(null);
-      setPlaybackWarmupLayerVolumes({});
-      setPlaybackWarmupLayerPageTables({});
-      setPlaybackWarmupLayerBrickAtlases({});
-      setPlaybackWarmupBackgroundMasksByScale({});
+      replacePlaybackWarmupFrames([]);
       return;
     }
     if (volumeTimepointCount === 0 || playbackLayerKeys.length === 0) {
       volumeLoadAbortControllerRef.current?.abort();
       volumeLoadAbortControllerRef.current = null;
       lastLoadIntentRef.current = null;
-      playbackWarmupAbortControllerRef.current?.abort();
-      playbackWarmupAbortControllerRef.current = null;
-      lastWarmupIntentRef.current = null;
+      cancelAllWarmupRequests();
       backgroundMaskCacheRef.current = {};
       setCurrentLayerVolumes({});
       setCurrentLayerPageTables({});
       setCurrentLayerBrickAtlases({});
       setCurrentBackgroundMasksByScale({});
-      setPlaybackWarmupTimeIndex(null);
-      setPlaybackWarmupScaleSignature(null);
-      setPlaybackWarmupLayerVolumes({});
-      setPlaybackWarmupLayerPageTables({});
-      setPlaybackWarmupLayerBrickAtlases({});
-      setPlaybackWarmupBackgroundMasksByScale({});
+      replacePlaybackWarmupFrames([]);
       return;
     }
 
@@ -1201,20 +1265,20 @@ export function useRouteLayerVolumes({
       })
       .join('|');
     const loadIntentKey = `${clampedIndex}|${desiredScaleSignature}`;
-    const shouldPromoteWarmup =
-      playbackWarmupTimeIndex === clampedIndex && playbackWarmupScaleSignature === desiredScaleSignature;
-    if (shouldPromoteWarmup) {
+    const promotableWarmupFrame =
+      playbackWarmupFramesRef.current.find(
+        (frame) => frame.timeIndex === clampedIndex && frame.scaleSignature === desiredScaleSignature
+      ) ?? null;
+    if (promotableWarmupFrame) {
       lastLoadIntentRef.current = loadIntentKey;
-      setCurrentLayerVolumes(playbackWarmupLayerVolumesRef.current);
-      setCurrentLayerPageTables(playbackWarmupLayerPageTablesRef.current);
-      setCurrentLayerBrickAtlases(playbackWarmupLayerBrickAtlasesRef.current);
-      setCurrentBackgroundMasksByScale(playbackWarmupBackgroundMasksByScaleRef.current);
-      setPlaybackWarmupTimeIndex(null);
-      setPlaybackWarmupScaleSignature(null);
-      setPlaybackWarmupLayerVolumes({});
-      setPlaybackWarmupLayerPageTables({});
-      setPlaybackWarmupLayerBrickAtlases({});
-      setPlaybackWarmupBackgroundMasksByScale({});
+      setCurrentLayerVolumes(promotableWarmupFrame.layerVolumes);
+      setCurrentLayerPageTables(promotableWarmupFrame.layerPageTables);
+      setCurrentLayerBrickAtlases(promotableWarmupFrame.layerBrickAtlases);
+      setCurrentBackgroundMasksByScale(promotableWarmupFrame.backgroundMasksByScale);
+      lastWarmupIntentBySlotRef.current.delete(promotableWarmupFrame.slotIndex);
+      replacePlaybackWarmupFrames(
+        playbackWarmupFramesRef.current.filter((frame) => frame.slotIndex !== promotableWarmupFrame.slotIndex)
+      );
       if (typeof volumeProvider.getDiagnostics === 'function') {
         setVolumeProviderDiagnostics(volumeProvider.getDiagnostics());
       }
@@ -1232,6 +1296,7 @@ export function useRouteLayerVolumes({
     volumeLoadAbortControllerRef.current = requestAbortController;
 
     void (async () => {
+      let loadCompleted = false;
       try {
         const entries = await Promise.all(
           playbackLayerKeys.map(async (layerKey) => {
@@ -1285,6 +1350,7 @@ export function useRouteLayerVolumes({
         setCurrentLayerPageTables(nextPageTables);
         setCurrentLayerBrickAtlases(nextBrickAtlases);
         setCurrentBackgroundMasksByScale(nextBackgroundMasksByScale);
+        loadCompleted = true;
         if (typeof volumeProvider.getDiagnostics === 'function') {
           setVolumeProviderDiagnostics(volumeProvider.getDiagnostics());
         }
@@ -1300,6 +1366,13 @@ export function useRouteLayerVolumes({
         lastLoadIntentRef.current = null;
         showLaunchErrorRef.current(error instanceof Error ? error.message : 'Failed to load timepoint volumes.');
       } finally {
+        if (
+          !loadCompleted &&
+          volumeLoadRequestRef.current === requestId &&
+          lastLoadIntentRef.current === loadIntentKey
+        ) {
+          lastLoadIntentRef.current = null;
+        }
         if (volumeLoadAbortControllerRef.current === requestAbortController) {
           volumeLoadAbortControllerRef.current = null;
         }
@@ -1310,12 +1383,13 @@ export function useRouteLayerVolumes({
     volumeProvider,
     volumeTimepointCount,
     playbackLayerKeySignature,
-    playbackWarmupScaleSignature,
-    playbackWarmupTimeIndex,
+    playbackWarmupFrames,
     selectedIndex,
     resolveDesiredScaleLevel,
     loadLayerTimepointResources,
-    loadBackgroundMasksForScaleLevels
+    loadBackgroundMasksForScaleLevels,
+    cancelAllWarmupRequests,
+    replacePlaybackWarmupFrames
   ]);
 
   useEffect(() => {
@@ -1326,30 +1400,21 @@ export function useRouteLayerVolumes({
       volumeTimepointCount <= 1 ||
       playbackLayerKeysRef.current.length === 0
     ) {
-      playbackWarmupAbortControllerRef.current?.abort();
-      playbackWarmupAbortControllerRef.current = null;
-      lastWarmupIntentRef.current = null;
-      setPlaybackWarmupTimeIndex(null);
-      setPlaybackWarmupScaleSignature(null);
-      setPlaybackWarmupLayerVolumes({});
-      setPlaybackWarmupLayerPageTables({});
-      setPlaybackWarmupLayerBrickAtlases({});
-      setPlaybackWarmupBackgroundMasksByScale({});
+      cancelAllWarmupRequests();
+      replacePlaybackWarmupFrames([]);
       return;
     }
 
     const clampedIndex = Math.max(0, Math.min(volumeTimepointCount - 1, selectedIndex));
-    const warmupIndex = computeLoopedNextTimeIndex(clampedIndex, volumeTimepointCount, playbackWindow);
-    if (warmupIndex === clampedIndex) {
-      playbackWarmupAbortControllerRef.current?.abort();
-      playbackWarmupAbortControllerRef.current = null;
-      lastWarmupIntentRef.current = null;
-      setPlaybackWarmupTimeIndex(null);
-      setPlaybackWarmupScaleSignature(null);
-      setPlaybackWarmupLayerVolumes({});
-      setPlaybackWarmupLayerPageTables({});
-      setPlaybackWarmupLayerBrickAtlases({});
-      setPlaybackWarmupBackgroundMasksByScale({});
+    const warmupTimeIndices = collectPlaybackWarmupTimeIndices(
+      clampedIndex,
+      volumeTimepointCount,
+      playbackWindow,
+      PLAYBACK_WARMUP_SLOT_COUNT
+    );
+    if (warmupTimeIndices.length === 0) {
+      cancelAllWarmupRequests();
+      replacePlaybackWarmupFrames([]);
       return;
     }
 
@@ -1360,108 +1425,168 @@ export function useRouteLayerVolumes({
         return `${layerKey}:${desiredScaleLevel}`;
       })
       .join('|');
-    const warmupIntentKey = `${warmupIndex}|${desiredScaleSignature}`;
-    if (
-      playbackWarmupTimeIndex === warmupIndex &&
-      playbackWarmupScaleSignature === desiredScaleSignature &&
-      lastWarmupIntentRef.current === warmupIntentKey
-    ) {
-      return;
-    }
-    if (playbackWarmupTimeIndex === warmupIndex && playbackWarmupScaleSignature === desiredScaleSignature) {
-      lastWarmupIntentRef.current = warmupIntentKey;
-      return;
-    }
-    if (lastWarmupIntentRef.current === warmupIntentKey) {
-      return;
-    }
-    lastWarmupIntentRef.current = warmupIntentKey;
-
-    const requestId = playbackWarmupRequestRef.current + 1;
-    playbackWarmupRequestRef.current = requestId;
-    playbackWarmupAbortControllerRef.current?.abort();
-    const requestAbortController = new AbortController();
-    playbackWarmupAbortControllerRef.current = requestAbortController;
-
-    void (async () => {
-      try {
-        const entries = await Promise.all(
-          warmupLayerKeys.map(async (layerKey) => {
-            const { volume, pageTable, brickAtlas } = await loadLayerTimepointResources(
-              layerKey,
-              warmupIndex,
-              { signal: requestAbortController.signal }
-            );
-            return [layerKey, volume, pageTable, brickAtlas] as const;
-          })
-        );
-
-        if (requestAbortController.signal.aborted || playbackWarmupRequestRef.current !== requestId) {
-          return;
-        }
-
-        const nextVolumes = entries.reduce<Record<string, NormalizedVolume | null>>((acc, [layerKey, volume]) => {
-          acc[layerKey] = volume;
-          return acc;
-        }, {});
-        const nextPageTables = entries.reduce<Record<string, VolumeBrickPageTable | null>>(
-          (acc, [layerKey, _volume, pageTable]) => {
-            acc[layerKey] = pageTable;
-            return acc;
-          },
-          {}
-        );
-        const nextBrickAtlases = entries.reduce<Record<string, VolumeBrickAtlas | null>>(
-          (acc, [layerKey, _volume, _pageTable, brickAtlas]) => {
-            acc[layerKey] = brickAtlas;
-            return acc;
-          },
-          {}
-        );
-        const nextBackgroundMasksByScale = await loadBackgroundMasksForScaleLevels(
-          collectActiveScaleLevels(entries),
-          requestAbortController.signal
-        );
-
-        if (requestAbortController.signal.aborted || playbackWarmupRequestRef.current !== requestId) {
-          return;
-        }
-
-        setPlaybackWarmupTimeIndex(warmupIndex);
-        setPlaybackWarmupScaleSignature(desiredScaleSignature);
-        setPlaybackWarmupLayerVolumes(nextVolumes);
-        setPlaybackWarmupLayerPageTables(nextPageTables);
-        setPlaybackWarmupLayerBrickAtlases(nextBrickAtlases);
-        setPlaybackWarmupBackgroundMasksByScale(nextBackgroundMasksByScale);
-      } catch (error) {
-        if (
-          requestAbortController.signal.aborted ||
-          playbackWarmupRequestRef.current !== requestId ||
-          isAbortLikeError(error)
-        ) {
-          return;
-        }
-        console.error('Failed to load playback warmup volumes', error);
-        lastWarmupIntentRef.current = null;
-      } finally {
-        if (playbackWarmupAbortControllerRef.current === requestAbortController) {
-          playbackWarmupAbortControllerRef.current = null;
-        }
+    const currentWarmupFrames = playbackWarmupFramesRef.current;
+    const retainedFrames = currentWarmupFrames.filter(
+      (frame) =>
+        frame.scaleSignature === desiredScaleSignature &&
+        warmupTimeIndices.includes(frame.timeIndex)
+    );
+    const retainedByTimeIndex = new Map(retainedFrames.map((frame) => [frame.timeIndex, frame]));
+    const usedSlots = new Set(retainedFrames.map((frame) => frame.slotIndex));
+    const availableSlots = Array.from({ length: PLAYBACK_WARMUP_SLOT_COUNT }, (_value, index) => index).filter(
+      (slotIndex) => !usedSlots.has(slotIndex)
+    );
+    const assignments = warmupTimeIndices.flatMap((timeIndex) => {
+      const existingFrame = retainedByTimeIndex.get(timeIndex) ?? null;
+      const slotIndex = existingFrame?.slotIndex ?? availableSlots.shift();
+      if (slotIndex === undefined) {
+        return [];
       }
-    })();
+      return [{ timeIndex, slotIndex, existingFrame }] as const;
+    });
+    const desiredSlotSet = new Set(assignments.map(({ slotIndex }) => slotIndex));
+    for (const frame of currentWarmupFrames) {
+      const shouldRetainFrame =
+        frame.scaleSignature === desiredScaleSignature &&
+        warmupTimeIndices.includes(frame.timeIndex) &&
+        desiredSlotSet.has(frame.slotIndex);
+      if (!shouldRetainFrame) {
+        cancelWarmupSlot(frame.slotIndex);
+      }
+    }
+
+    replacePlaybackWarmupFrames(
+      sortWarmupFramesByTargetOrder(
+        assignments.flatMap(({ existingFrame }) => (existingFrame ? [existingFrame] : [])),
+        warmupTimeIndices
+      )
+    );
+
+    for (const { timeIndex, slotIndex, existingFrame } of assignments) {
+      const warmupIntentKey = `${timeIndex}|${desiredScaleSignature}`;
+      if (existingFrame) {
+        lastWarmupIntentBySlotRef.current.set(slotIndex, warmupIntentKey);
+        continue;
+      }
+      if (lastWarmupIntentBySlotRef.current.get(slotIndex) === warmupIntentKey) {
+        continue;
+      }
+
+      cancelWarmupSlot(slotIndex);
+      lastWarmupIntentBySlotRef.current.set(slotIndex, warmupIntentKey);
+      const requestId = playbackWarmupRequestSequenceRef.current + 1;
+      playbackWarmupRequestSequenceRef.current = requestId;
+      const requestAbortController = new AbortController();
+      playbackWarmupRequestBySlotRef.current.set(slotIndex, {
+        requestId,
+        abortController: requestAbortController
+      });
+
+      void (async () => {
+        let warmupCompleted = false;
+        try {
+          const entries = await Promise.all(
+            warmupLayerKeys.map(async (layerKey) => {
+              const { volume, pageTable, brickAtlas } = await loadLayerTimepointResources(
+                layerKey,
+                timeIndex,
+                { signal: requestAbortController.signal }
+              );
+              return [layerKey, volume, pageTable, brickAtlas] as const;
+            })
+          );
+
+          const activeRequest = playbackWarmupRequestBySlotRef.current.get(slotIndex);
+          if (
+            requestAbortController.signal.aborted ||
+            activeRequest?.requestId !== requestId
+          ) {
+            return;
+          }
+
+          const nextVolumes = entries.reduce<Record<string, NormalizedVolume | null>>((acc, [layerKey, volume]) => {
+            acc[layerKey] = volume;
+            return acc;
+          }, {});
+          const nextPageTables = entries.reduce<Record<string, VolumeBrickPageTable | null>>(
+            (acc, [layerKey, _volume, pageTable]) => {
+              acc[layerKey] = pageTable;
+              return acc;
+            },
+            {}
+          );
+          const nextBrickAtlases = entries.reduce<Record<string, VolumeBrickAtlas | null>>(
+            (acc, [layerKey, _volume, _pageTable, brickAtlas]) => {
+              acc[layerKey] = brickAtlas;
+              return acc;
+            },
+            {}
+          );
+          const nextBackgroundMasksByScale = await loadBackgroundMasksForScaleLevels(
+            collectActiveScaleLevels(entries),
+            requestAbortController.signal
+          );
+
+          if (
+            requestAbortController.signal.aborted ||
+            playbackWarmupRequestBySlotRef.current.get(slotIndex)?.requestId !== requestId
+          ) {
+            return;
+          }
+
+          const nextFrame: PlaybackWarmupFrameState = {
+            slotIndex,
+            timeIndex,
+            scaleSignature: desiredScaleSignature,
+            layerVolumes: nextVolumes,
+            layerPageTables: nextPageTables,
+            layerBrickAtlases: nextBrickAtlases,
+            backgroundMasksByScale: nextBackgroundMasksByScale
+          };
+          setPlaybackWarmupFrames((current) => {
+            const nextFrames = sortWarmupFramesByTargetOrder(
+              [...current.filter((frame) => frame.slotIndex !== slotIndex), nextFrame].filter(
+                (frame) =>
+                  frame.scaleSignature === desiredScaleSignature &&
+                  warmupTimeIndices.includes(frame.timeIndex)
+              ),
+              warmupTimeIndices
+            );
+            return arePlaybackWarmupFramesEquivalent(current, nextFrames) ? current : nextFrames;
+          });
+          warmupCompleted = true;
+        } catch (error) {
+          if (requestAbortController.signal.aborted || isAbortLikeError(error)) {
+            return;
+          }
+          console.error('Failed to load playback warmup volumes', error);
+          lastWarmupIntentBySlotRef.current.delete(slotIndex);
+        } finally {
+          const activeRequest = playbackWarmupRequestBySlotRef.current.get(slotIndex);
+          if (activeRequest?.requestId === requestId) {
+            playbackWarmupRequestBySlotRef.current.delete(slotIndex);
+            if (!warmupCompleted && lastWarmupIntentBySlotRef.current.get(slotIndex) === warmupIntentKey) {
+              lastWarmupIntentBySlotRef.current.delete(slotIndex);
+            }
+          }
+        }
+      })();
+    }
   }, [
     isViewerLaunched,
     isPlaying,
     loadBackgroundMasksForScaleLevels,
     loadLayerTimepointResources,
     playbackLayerKeySignature,
-    playbackWarmupScaleSignature,
-    playbackWarmupTimeIndex,
+    playbackWarmupFrames,
     playbackWindow,
     resolveDesiredScaleLevel,
     selectedIndex,
     volumeProvider,
     volumeTimepointCount,
+    cancelAllWarmupRequests,
+    cancelWarmupSlot,
+    replacePlaybackWarmupFrames,
   ]);
 
   return {
@@ -1469,6 +1594,7 @@ export function useRouteLayerVolumes({
     currentLayerPageTables,
     currentLayerBrickAtlases,
     currentBackgroundMasksByScale,
+    playbackWarmupFrames,
     playbackWarmupTimeIndex,
     playbackWarmupLayerVolumes,
     playbackWarmupLayerPageTables,

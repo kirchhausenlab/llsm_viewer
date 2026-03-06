@@ -1891,13 +1891,18 @@ const createLayer = (
 
     const currentAtlas = createAtlasForTimepoint(0);
     const warmupAtlas = createAtlasForTimepoint(1);
-    let visibleLayers = [createLayer(null, currentAtlas.pageTable, currentAtlas, 'linear')];
+    let visibleLayers = [{
+      ...createLayer(null, currentAtlas.pageTable, currentAtlas, 'linear'),
+      playbackRole: 'active' as const
+    }];
     let warmupLayers: ViewerLayer[] = [{
       ...createLayer(null, warmupAtlas.pageTable, warmupAtlas, 'linear'),
-      key: 'layer-3d::playback-warmup:1',
+      key: 'layer-3d::playback-warmup:slot:0',
       visible: false,
       playbackWarmupForLayerKey: 'layer-3d',
       playbackWarmupTimeIndex: 1,
+      playbackRole: 'warmup',
+      playbackSlotIndex: 0,
     }];
 
     const sceneRef = { current: new THREE.Scene() };
@@ -1948,18 +1953,15 @@ const createLayer = (
       })
     );
 
-    const warmupKey = 'layer-3d::playback-warmup:1';
+    const warmupKey = 'layer-3d::playback-warmup:slot:0';
     const initialWarmupResource = resourcesRef.current.get(warmupKey);
     assert.ok(initialWarmupResource);
     assert.equal(initialWarmupResource.mesh.visible, false);
     assert.ok(initialWarmupResource.gpuBrickResidencyMetrics);
-    assert.ok(
-      (initialWarmupResource.gpuBrickResidencyMetrics?.scheduledUploads ?? 0) <= 1,
-      `expected incremental warmup upload budget <= 1, observed ${initialWarmupResource.gpuBrickResidencyMetrics?.scheduledUploads ?? 0}`
-    );
-    assert.ok(
-      (initialWarmupResource.gpuBrickResidencyMetrics?.residentBricks ?? 0) <
-        (initialWarmupResource.gpuBrickResidencyMetrics?.totalBricks ?? 0)
+    assert.equal(initialWarmupResource.playbackPinnedResidency, true);
+    assert.equal(
+      initialWarmupResource.gpuBrickResidencyMetrics?.residentBricks,
+      initialWarmupResource.gpuBrickResidencyMetrics?.totalBricks
     );
     const initialWarmupResidentBricks = initialWarmupResource.gpuBrickResidencyMetrics?.residentBricks ?? 0;
     assert.equal(typeof initialWarmupResource.updateGpuBrickResidencyForCamera, 'function');
@@ -1967,7 +1969,10 @@ const createLayer = (
     const warmedWarmupResource = resourcesRef.current.get(warmupKey);
     assert.ok(warmedWarmupResource);
 
-    visibleLayers = [createLayer(null, warmupAtlas.pageTable, warmupAtlas, 'linear')];
+    visibleLayers = [{
+      ...createLayer(null, warmupAtlas.pageTable, warmupAtlas, 'linear'),
+      playbackRole: 'active'
+    }];
     warmupLayers = [];
     hook.rerender();
 
@@ -1976,6 +1981,7 @@ const createLayer = (
     assert.strictEqual(promotedResource, warmedWarmupResource);
     assert.equal(resourcesRef.current.has(warmupKey), false);
     assert.equal(promotedResource.mesh.visible, true);
+    assert.equal(promotedResource.playbackPinnedResidency, true);
     assert.equal(promotedResource.gpuBrickResidencyMetrics?.residentBricks, initialWarmupResidentBricks);
     hook.unmount();
   } finally {

@@ -157,6 +157,12 @@ const flushAsyncWork = async (iterations = 8) => {
   }
 };
 
+const createAbortLikeError = (): Error => {
+  const error = new Error('The operation was aborted.');
+  error.name = 'AbortError';
+  return error;
+};
+
 await (async () => {
   const getVolumeCalls: Array<{ layerKey: string; timeIndex: number }> = [];
   const getPageTableCalls: Array<{ layerKey: string; timeIndex: number }> = [];
@@ -703,11 +709,9 @@ await (async () => {
   assert.ok(getBrickAtlasCalls.some((call) =>
     call.layerKey === 'layer-a' && call.timeIndex === 2 && call.scaleLevel === 1
   ));
-  assert.deepStrictEqual(getBrickAtlasCalls[getBrickAtlasCalls.length - 1], {
-    layerKey: 'layer-a',
-    timeIndex: 3,
-    scaleLevel: 1
-  });
+  assert.ok(getBrickAtlasCalls.some((call) =>
+    call.layerKey === 'layer-a' && call.timeIndex === 3 && call.scaleLevel === 1
+  ));
 
   isPlaying = false;
   hook.rerender();
@@ -1041,13 +1045,30 @@ await (async () => {
   );
 
   await flushAsyncWork();
-  assert.deepStrictEqual(getBrickAtlasCalls[0], { layerKey: 'layer-a', timeIndex: 1, scaleLevel: 2 });
+  assert.deepStrictEqual(getBrickAtlasCalls[0], { layerKey: 'layer-a', timeIndex: 1, scaleLevel: 1 });
+
+  viewerCameraSample = {
+    distanceToTarget: 0.8,
+    isMoving: true,
+    capturedAtMs: 2
+  };
+  hook.rerender();
+  await flushAsyncWork();
+  assert.deepStrictEqual(
+    getBrickAtlasCalls.filter((call) => call.timeIndex === 1),
+    [{ layerKey: 'layer-a', timeIndex: 1, scaleLevel: 1 }],
+    'camera movement during playback should not reload the current playback frame at a new scale'
+  );
+  assert.ok(
+    getBrickAtlasCalls.every((call) => call.scaleLevel === 1),
+    'camera movement during playback should keep all playback warmup requests pinned to the playback scale'
+  );
 
   isPlaying = false;
   viewerCameraSample = {
     distanceToTarget: 0.8,
     isMoving: false,
-    capturedAtMs: 2
+    capturedAtMs: 3
   };
   hook.rerender();
   await flushAsyncWork();
@@ -1348,6 +1369,202 @@ await (async () => {
   assert.equal(hook.result.currentBackgroundMasksByScale[1]?.scaleLevel, 1);
   assert.equal(hook.result.currentBackgroundMasksByScale[2]?.scaleLevel, 2);
   assert.equal(hook.result.currentBackgroundMasksByScale[0], undefined);
+  hook.unmount();
+})();
+
+await (async () => {
+  let viewerCameraSample: { distanceToTarget: number; isMoving: boolean; capturedAtMs: number } | null = {
+    distanceToTarget: 10,
+    isMoving: false,
+    capturedAtMs: 1
+  };
+  let warmupAbortCount = 0;
+  const getBrickAtlasCalls: Array<{ layerKey: string; timeIndex: number; scaleLevel: number | undefined }> = [];
+
+  const provider = {
+    getBrickAtlas: async (layerKey: string, timeIndex: number, options?: { scaleLevel?: number }) => {
+      getBrickAtlasCalls.push({ layerKey, timeIndex, scaleLevel: options?.scaleLevel });
+      if (timeIndex === 1 && warmupAbortCount === 0) {
+        warmupAbortCount += 1;
+        throw createAbortLikeError();
+      }
+      return createBrickAtlas(timeIndex, options?.scaleLevel ?? 0);
+    },
+  } as unknown as VolumeProvider;
+
+  const preprocessedExperiment = {
+    manifest: {
+      dataset: {
+        channels: [
+          {
+            id: 'channel-a',
+            layers: [
+              {
+                key: 'layer-a',
+                zarr: {
+                  scales: [{ level: 0 }, { level: 1 }]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  } as StagedPreprocessedExperiment;
+
+  const hook = renderHook(() =>
+    useRouteLayerVolumes({
+      isViewerLaunched: true,
+      isLaunchingViewer: false,
+      isPlaying: true,
+      preprocessedExperiment,
+      volumeProvider: provider,
+      loadedChannelIds: ['channel-a'],
+      channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
+        ['channel-a', [createLoadedLayer('layer-a', 'channel-a')]],
+      ]),
+      channelVisibility: { 'channel-a': true },
+      layerChannelMap: new Map<string, string>([['layer-a', 'channel-a']]),
+      preferBrickResidency: true,
+      viewerCameraSample,
+      volumeTimepointCount: 2,
+      selectedIndex: 0,
+      clearDatasetError: () => {},
+      beginLaunchSession: () => {},
+      setLaunchExpectedVolumeCount: () => {},
+      setLaunchProgress: () => {},
+      completeLaunchSession: () => {},
+      failLaunchSession: () => {},
+      finishLaunchSessionAttempt: () => {},
+      setSelectedIndex: () => {},
+      setIsPlaying: () => {},
+      showLaunchError: () => {}
+    })
+  );
+
+  await flushAsyncWork();
+  assert.strictEqual(
+    getBrickAtlasCalls.filter((call) => call.timeIndex === 1 && call.scaleLevel === 1).length,
+    1,
+    'expected initial warmup request for the next playback frame'
+  );
+  assert.ok(
+    !hook.result.playbackWarmupFrames.some((frame) => frame.timeIndex === 1),
+    'aborted warmup request should not leave behind a completed warmup frame'
+  );
+
+  viewerCameraSample = {
+    distanceToTarget: 10,
+    isMoving: false,
+    capturedAtMs: 2
+  };
+  hook.rerender();
+  await flushAsyncWork();
+
+  assert.strictEqual(
+    getBrickAtlasCalls.filter((call) => call.timeIndex === 1 && call.scaleLevel === 1).length,
+    2,
+    'warmup intent should be cleared after an abort-like failure so the slot can retry'
+  );
+  assert.ok(
+    hook.result.playbackWarmupFrames.some((frame) => frame.timeIndex === 1),
+    'the missing playback warmup frame should be restored after retry'
+  );
+  hook.unmount();
+})();
+
+await (async () => {
+  let viewerCameraSample: { distanceToTarget: number; isMoving: boolean; capturedAtMs: number } | null = {
+    distanceToTarget: 10,
+    isMoving: false,
+    capturedAtMs: 1
+  };
+  let currentAbortCount = 0;
+  const getBrickAtlasCalls: Array<{ layerKey: string; timeIndex: number; scaleLevel: number | undefined }> = [];
+
+  const provider = {
+    getBrickAtlas: async (layerKey: string, timeIndex: number, options?: { scaleLevel?: number }) => {
+      getBrickAtlasCalls.push({ layerKey, timeIndex, scaleLevel: options?.scaleLevel });
+      if (timeIndex === 0 && currentAbortCount === 0) {
+        currentAbortCount += 1;
+        throw createAbortLikeError();
+      }
+      return createBrickAtlas(timeIndex, options?.scaleLevel ?? 0);
+    },
+  } as unknown as VolumeProvider;
+
+  const preprocessedExperiment = {
+    manifest: {
+      dataset: {
+        channels: [
+          {
+            id: 'channel-a',
+            layers: [
+              {
+                key: 'layer-a',
+                zarr: {
+                  scales: [{ level: 0 }, { level: 1 }]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  } as StagedPreprocessedExperiment;
+
+  const hook = renderHook(() =>
+    useRouteLayerVolumes({
+      isViewerLaunched: true,
+      isLaunchingViewer: false,
+      isPlaying: true,
+      preprocessedExperiment,
+      volumeProvider: provider,
+      loadedChannelIds: ['channel-a'],
+      channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
+        ['channel-a', [createLoadedLayer('layer-a', 'channel-a')]],
+      ]),
+      channelVisibility: { 'channel-a': true },
+      layerChannelMap: new Map<string, string>([['layer-a', 'channel-a']]),
+      preferBrickResidency: true,
+      viewerCameraSample,
+      volumeTimepointCount: 1,
+      selectedIndex: 0,
+      clearDatasetError: () => {},
+      beginLaunchSession: () => {},
+      setLaunchExpectedVolumeCount: () => {},
+      setLaunchProgress: () => {},
+      completeLaunchSession: () => {},
+      failLaunchSession: () => {},
+      finishLaunchSessionAttempt: () => {},
+      setSelectedIndex: () => {},
+      setIsPlaying: () => {},
+      showLaunchError: () => {}
+    })
+  );
+
+  await flushAsyncWork();
+  assert.strictEqual(
+    getBrickAtlasCalls.filter((call) => call.timeIndex === 0 && call.scaleLevel === 1).length,
+    1,
+    'expected initial current-frame request at the playback scale'
+  );
+  assert.equal(hook.result.currentLayerBrickAtlases['layer-a'] ?? null, null);
+
+  viewerCameraSample = {
+    distanceToTarget: 10,
+    isMoving: false,
+    capturedAtMs: 2
+  };
+  hook.rerender();
+  await flushAsyncWork();
+
+  assert.strictEqual(
+    getBrickAtlasCalls.filter((call) => call.timeIndex === 0 && call.scaleLevel === 1).length,
+    2,
+    'current-frame intent should be cleared after an abort-like failure so the same frame can retry'
+  );
+  assert.ok(hook.result.currentLayerBrickAtlases['layer-a']);
   hook.unmount();
 })();
 

@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import type { VolumeProvider } from '../../../core/volumeProvider';
+import {
+  DEFAULT_MAX_CACHED_CHUNK_BYTES,
+  DEFAULT_MAX_CACHED_VOLUMES,
+  type VolumeProvider
+} from '../../../core/volumeProvider';
 import { getLod0FeatureFlags } from '../../../config/lod0Flags';
+import type { PlaybackWarmupFrameState } from './useRouteLayerVolumes';
 
 const MIN_CACHED_VOLUMES = 6;
 const PLAYBACK_CACHE_ENTRY_CAP = 64;
+const PLAYBACK_CHUNK_CACHE_BYTE_CAP = 1024 * 1024 * 1024;
+const PLAYBACK_CHUNK_CACHE_BYTES_PER_LAYER_LOOKAHEAD = 64 * 1024 * 1024;
 const PLAYBACK_PREFETCH_MIN_IN_FLIGHT = 1;
 const PLAYBACK_PREFETCH_MAX_IN_FLIGHT = 2;
 const PLAYBACK_LAYER_LOAD_CONCURRENCY = 2;
@@ -27,6 +34,7 @@ type UseRoutePlaybackPrefetchOptions = {
   preferBrickResidency: boolean;
   brickResidencyLayerKeys: string[];
   playbackAtlasScaleLevelByLayerKey?: Record<string, number>;
+  playbackWarmupFrames?: PlaybackWarmupFrameState[];
   volumeProvider: VolumeProvider | null;
   volumeTimepointCount: number;
   playbackLayerKeys: string[];
@@ -104,6 +112,7 @@ export function useRoutePlaybackPrefetch({
   preferBrickResidency,
   brickResidencyLayerKeys,
   playbackAtlasScaleLevelByLayerKey,
+  playbackWarmupFrames = [],
   volumeProvider,
   volumeTimepointCount,
   playbackLayerKeys,
@@ -127,6 +136,13 @@ export function useRoutePlaybackPrefetch({
   const resolveAtlasScaleLevelForLayer = useCallback(
     (layerKey: string) => atlasScaleLevelByLayerKey.get(layerKey) ?? fallbackAtlasScaleLevel,
     [atlasScaleLevelByLayerKey, fallbackAtlasScaleLevel]
+  );
+  const playbackScaleSignature = useMemo(
+    () =>
+      playbackLayerKeys
+        .map((layerKey) => `${layerKey}:${resolveAtlasScaleLevelForLayer(layerKey)}`)
+        .join('|'),
+    [playbackLayerKeys, resolveAtlasScaleLevelForLayer]
   );
 
   const useBrickResidencyPrefetch = useMemo(
@@ -497,15 +513,26 @@ export function useRoutePlaybackPrefetch({
       return;
     }
     const layerCount = playbackLayerKeys.length;
-    if (layerCount === 0) {
-      volumeProvider.setMaxCachedVolumes(MIN_CACHED_VOLUMES);
+    if (!isPlaying || layerCount === 0) {
+      volumeProvider.setMaxCachedVolumes(DEFAULT_MAX_CACHED_VOLUMES);
+      volumeProvider.setMaxCachedChunkBytes(DEFAULT_MAX_CACHED_CHUNK_BYTES);
       return;
     }
 
     const fullCoverageTarget = layerCount * (volumeTimepointCount + 2);
     const desired = Math.max(MIN_CACHED_VOLUMES, Math.min(PLAYBACK_CACHE_ENTRY_CAP, fullCoverageTarget));
+    const desiredChunkCacheBytes = Math.max(
+      DEFAULT_MAX_CACHED_CHUNK_BYTES,
+      Math.min(
+        PLAYBACK_CHUNK_CACHE_BYTE_CAP,
+        layerCount *
+          Math.max(2, playbackPrefetchLookahead) *
+          PLAYBACK_CHUNK_CACHE_BYTES_PER_LAYER_LOOKAHEAD
+      )
+    );
     volumeProvider.setMaxCachedVolumes(desired);
-  }, [playbackLayerKeys.length, volumeProvider, volumeTimepointCount]);
+    volumeProvider.setMaxCachedChunkBytes(desiredChunkCacheBytes);
+  }, [isPlaying, playbackLayerKeys.length, playbackPrefetchLookahead, volumeProvider, volumeTimepointCount]);
 
   const canAdvancePlaybackToIndex = useCallback(
     (nextIndex: number): boolean => {
@@ -522,8 +549,17 @@ export function useRoutePlaybackPrefetch({
             }) ?? false
           : volumeProvider.hasVolume(layerKey, clampedIndex);
       });
+      const hasWarmupFrameReady =
+        playbackWarmupFrames.some(
+          (frame) =>
+            frame.timeIndex === clampedIndex &&
+            frame.scaleSignature === playbackScaleSignature &&
+            playbackLayerKeys.every(
+              (layerKey) => (frame.layerBrickAtlases[layerKey] ?? frame.layerVolumes[layerKey] ?? null) !== null
+            )
+        );
 
-      if (!ready) {
+      if (!ready && !hasWarmupFrameReady) {
         schedulePlaybackPrefetch(clampedIndex);
         return false;
       }
@@ -538,7 +574,9 @@ export function useRoutePlaybackPrefetch({
       useBrickResidencyPrefetch,
       resolveAtlasScaleLevelForLayer,
       volumeProvider,
-      volumeTimepointCount
+      volumeTimepointCount,
+      playbackScaleSignature,
+      playbackWarmupFrames
     ]
   );
 

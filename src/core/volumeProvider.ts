@@ -215,6 +215,7 @@ export type VolumeProvider = {
   hasBrickAtlas?(layerKey: string, timepoint: number, options?: { scaleLevel?: number }): boolean;
   clear(): void;
   setMaxCachedVolumes(maxCachedVolumes: number): void;
+  setMaxCachedChunkBytes(maxCachedChunkBytes: number): void;
   getStats(): VolumeProviderStats;
   getDiagnostics(): VolumeProviderDiagnostics;
   resetStats(): void;
@@ -989,7 +990,7 @@ export function createVolumeProvider({
   const backgroundMaskCache = new Map<string, CachedBackgroundMaskEntry>();
   const scaleRequestCounts = new Map<number, number>();
   let chunkCacheBytes = 0;
-  const maxCachedChunkBytes = Number.isFinite(initialMaxCachedChunkBytes)
+  let maxCachedChunkBytes = Number.isFinite(initialMaxCachedChunkBytes)
     ? Math.floor(initialMaxCachedChunkBytes)
     : Number.NaN;
   if (!Number.isFinite(maxCachedChunkBytes) || maxCachedChunkBytes < 0) {
@@ -2667,6 +2668,17 @@ export function createVolumeProvider({
     evictBrickAtlasCacheIfNeeded();
   };
 
+  const setMaxCachedChunkBytes = (nextMaxCachedChunkBytes: number) => {
+    const normalized = Number.isFinite(nextMaxCachedChunkBytes)
+      ? Math.max(0, Math.floor(nextMaxCachedChunkBytes))
+      : 0;
+    if (normalized === maxCachedChunkBytes) {
+      return;
+    }
+    maxCachedChunkBytes = normalized;
+    evictChunkCacheIfNeeded();
+  };
+
   const getStats = (): VolumeProviderStats => {
     let inFlightCount = 0;
     for (const entry of cache.values()) {
@@ -2797,6 +2809,7 @@ export function createVolumeProvider({
     hasBrickAtlas,
     clear,
     setMaxCachedVolumes,
+    setMaxCachedChunkBytes,
     getStats,
     getDiagnostics,
     resetStats

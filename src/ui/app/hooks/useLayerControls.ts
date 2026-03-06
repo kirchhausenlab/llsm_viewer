@@ -20,14 +20,17 @@ import {
   updateLayerSettings
 } from '../../../state/layerSettings';
 import type { LoadedDatasetLayer } from '../../../hooks/dataset';
+import type { PlaybackWarmupFrameState } from './useRouteLayerVolumes';
 
 export type LayerControlsParams = {
   layers: LoadedDatasetLayer[];
   selectedIndex: number;
+  isPlaying?: boolean;
   layerVolumes: Record<string, NormalizedVolume | null>;
   layerPageTables: Record<string, VolumeBrickPageTable | null>;
   layerBrickAtlases: Record<string, VolumeBrickAtlas | null>;
   backgroundMasksByScale: Record<number, VolumeBackgroundMask | null>;
+  playbackWarmupFrames?: PlaybackWarmupFrameState[];
   playbackWarmupTimeIndex?: number | null;
   playbackWarmupLayerVolumes?: Record<string, NormalizedVolume | null>;
   playbackWarmupLayerPageTables?: Record<string, VolumeBrickPageTable | null>;
@@ -110,7 +113,9 @@ function areViewerLayersEquivalent(left: ViewerLayerConfig | undefined, right: V
     left.brickAtlas === right.brickAtlas &&
     left.backgroundMask === right.backgroundMask &&
     left.playbackWarmupForLayerKey === right.playbackWarmupForLayerKey &&
-    left.playbackWarmupTimeIndex === right.playbackWarmupTimeIndex
+    left.playbackWarmupTimeIndex === right.playbackWarmupTimeIndex &&
+    left.playbackRole === right.playbackRole &&
+    left.playbackSlotIndex === right.playbackSlotIndex
   );
 }
 
@@ -141,10 +146,12 @@ function stabilizeViewerLayerArray(
 export function useLayerControls({
   layers,
   selectedIndex,
+  isPlaying = false,
   layerVolumes,
   layerPageTables,
   layerBrickAtlases,
   backgroundMasksByScale,
+  playbackWarmupFrames = [],
   playbackWarmupTimeIndex = null,
   playbackWarmupLayerVolumes = {},
   playbackWarmupLayerPageTables = {},
@@ -168,6 +175,30 @@ export function useLayerControls({
 }: LayerControlsParams) {
   const viewerLayersCacheRef = useRef<ViewerLayerConfig[]>([]);
   const viewerPlaybackWarmupLayersCacheRef = useRef<ViewerLayerConfig[]>([]);
+  const normalizedPlaybackWarmupFrames = useMemo<PlaybackWarmupFrameState[]>(
+    () =>
+      playbackWarmupFrames.length > 0
+        ? playbackWarmupFrames
+        : playbackWarmupTimeIndex === null
+          ? []
+          : [{
+              slotIndex: 0,
+              timeIndex: playbackWarmupTimeIndex,
+              scaleSignature: '',
+              layerVolumes: playbackWarmupLayerVolumes,
+              layerPageTables: playbackWarmupLayerPageTables,
+              layerBrickAtlases: playbackWarmupLayerBrickAtlases,
+              backgroundMasksByScale: playbackWarmupBackgroundMasksByScale
+            }],
+    [
+      playbackWarmupBackgroundMasksByScale,
+      playbackWarmupFrames,
+      playbackWarmupLayerBrickAtlases,
+      playbackWarmupLayerPageTables,
+      playbackWarmupLayerVolumes,
+      playbackWarmupTimeIndex
+    ]
+  );
   const resolveRenderStyleTargetLayerKey = useCallback(
     (requestedLayerKey?: string): string | null => {
       if (requestedLayerKey && layers.some((layer) => layer.key === requestedLayerKey)) {
@@ -706,7 +737,8 @@ export function useLayerControls({
         scaleLevel,
         brickPageTable,
         brickAtlas,
-        backgroundMask: layer.isSegmentation ? null : (backgroundMasksByScale[scaleLevel] ?? null)
+        backgroundMask: layer.isSegmentation ? null : (backgroundMasksByScale[scaleLevel] ?? null),
+        playbackRole: isPlaying ? 'active' : undefined
       };
     });
     const stableLayers = stabilizeViewerLayerArray(nextLayers, viewerLayersCacheRef.current);
@@ -718,6 +750,7 @@ export function useLayerControls({
     channelNameMap,
     channelVisibility,
     createLayerDefaultSettings,
+    isPlaying,
     layerBrickAtlases,
     layerPageTables,
     layerVolumes,
@@ -725,7 +758,7 @@ export function useLayerControls({
   ]);
 
   const viewerPlaybackWarmupLayers = useMemo(() => {
-    if (playbackWarmupTimeIndex === null) {
+    if (normalizedPlaybackWarmupFrames.length === 0) {
       if (viewerPlaybackWarmupLayersCacheRef.current.length === 0) {
         return viewerPlaybackWarmupLayersCacheRef.current;
       }
@@ -733,62 +766,65 @@ export function useLayerControls({
       return viewerPlaybackWarmupLayersCacheRef.current;
     }
 
-    const nextLayers = activeLayers.flatMap((layer): ViewerLayerConfig[] => {
-      const settings = layerSettings[layer.key] ?? createLayerDefaultSettings(layer.key);
-      const channelVisible = channelVisibility[layer.channelId];
-      if (!(channelVisible ?? true) || settings.renderStyle === RENDER_STYLE_SLICE) {
-        return [];
-      }
-      const brickAtlas = playbackWarmupLayerBrickAtlases[layer.key] ?? null;
-      const brickPageTable = brickAtlas?.pageTable ?? playbackWarmupLayerPageTables[layer.key] ?? null;
-      const scaleLevel =
-        brickAtlas?.scaleLevel ?? playbackWarmupLayerVolumes[layer.key]?.scaleLevel ?? 0;
-      if (!brickAtlas || scaleLevel <= 0) {
-        return [];
-      }
+    const nextLayers = normalizedPlaybackWarmupFrames.flatMap((frame) =>
+      activeLayers.flatMap((layer): ViewerLayerConfig[] => {
+        const settings = layerSettings[layer.key] ?? createLayerDefaultSettings(layer.key);
+        const channelVisible = channelVisibility[layer.channelId];
+        if (!(channelVisible ?? true) || settings.renderStyle === RENDER_STYLE_SLICE) {
+          return [];
+        }
+        const brickAtlas = frame.layerBrickAtlases[layer.key] ?? null;
+        const brickPageTable = brickAtlas?.pageTable ?? frame.layerPageTables[layer.key] ?? null;
+        const scaleLevel = brickAtlas?.scaleLevel ?? frame.layerVolumes[layer.key]?.scaleLevel ?? 0;
+        if (!brickAtlas || scaleLevel <= 0) {
+          return [];
+        }
 
-      return [{
-        key: `${layer.key}::playback-warmup:${playbackWarmupTimeIndex}`,
-        label: layer.label,
-        channelId: layer.channelId,
-        channelName: channelNameMap.get(layer.channelId) ?? 'Untitled channel',
-        fullResolutionWidth: layer.width,
-        fullResolutionHeight: layer.height,
-        fullResolutionDepth: layer.depth,
-        volume: playbackWarmupLayerVolumes[layer.key] ?? null,
-        channels: layer.channels,
-        dataType: layer.dataType,
-        min: layer.min,
-        max: layer.max,
-        visible: false,
-        sliderRange: settings.sliderRange,
-        minSliderIndex: settings.minSliderIndex,
-        maxSliderIndex: settings.maxSliderIndex,
-        brightnessSliderIndex: settings.brightnessSliderIndex,
-        contrastSliderIndex: settings.contrastSliderIndex,
-        windowMin: settings.windowMin,
-        windowMax: settings.windowMax,
-        color: normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR),
-        offsetX: settings.xOffset,
-        offsetY: settings.yOffset,
-        renderStyle: settings.renderStyle,
-        mode: undefined,
-        blDensityScale: settings.blDensityScale,
-        blBackgroundCutoff: settings.blBackgroundCutoff,
-        blOpacityScale: settings.blOpacityScale,
-        blEarlyExitAlpha: settings.blEarlyExitAlpha,
-        mipEarlyExitThreshold: settings.mipEarlyExitThreshold,
-        invert: settings.invert,
-        samplingMode: settings.samplingMode,
-        isSegmentation: layer.isSegmentation,
-        scaleLevel,
-        brickPageTable,
-        brickAtlas,
-        backgroundMask: layer.isSegmentation ? null : (playbackWarmupBackgroundMasksByScale[scaleLevel] ?? null),
-        playbackWarmupForLayerKey: layer.key,
-        playbackWarmupTimeIndex,
-      }];
-    });
+        return [{
+          key: `${layer.key}::playback-warmup:slot:${frame.slotIndex}`,
+          label: layer.label,
+          channelId: layer.channelId,
+          channelName: channelNameMap.get(layer.channelId) ?? 'Untitled channel',
+          fullResolutionWidth: layer.width,
+          fullResolutionHeight: layer.height,
+          fullResolutionDepth: layer.depth,
+          volume: frame.layerVolumes[layer.key] ?? null,
+          channels: layer.channels,
+          dataType: layer.dataType,
+          min: layer.min,
+          max: layer.max,
+          visible: false,
+          sliderRange: settings.sliderRange,
+          minSliderIndex: settings.minSliderIndex,
+          maxSliderIndex: settings.maxSliderIndex,
+          brightnessSliderIndex: settings.brightnessSliderIndex,
+          contrastSliderIndex: settings.contrastSliderIndex,
+          windowMin: settings.windowMin,
+          windowMax: settings.windowMax,
+          color: normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR),
+          offsetX: settings.xOffset,
+          offsetY: settings.yOffset,
+          renderStyle: settings.renderStyle,
+          mode: undefined,
+          blDensityScale: settings.blDensityScale,
+          blBackgroundCutoff: settings.blBackgroundCutoff,
+          blOpacityScale: settings.blOpacityScale,
+          blEarlyExitAlpha: settings.blEarlyExitAlpha,
+          mipEarlyExitThreshold: settings.mipEarlyExitThreshold,
+          invert: settings.invert,
+          samplingMode: settings.samplingMode,
+          isSegmentation: layer.isSegmentation,
+          scaleLevel,
+          brickPageTable,
+          brickAtlas,
+          backgroundMask: layer.isSegmentation ? null : (frame.backgroundMasksByScale[scaleLevel] ?? null),
+          playbackWarmupForLayerKey: layer.key,
+          playbackWarmupTimeIndex: frame.timeIndex,
+          playbackRole: 'warmup',
+          playbackSlotIndex: frame.slotIndex
+        }];
+      })
+    );
     const stableLayers = stabilizeViewerLayerArray(nextLayers, viewerPlaybackWarmupLayersCacheRef.current);
     viewerPlaybackWarmupLayersCacheRef.current = stableLayers;
     return stableLayers;
@@ -798,11 +834,7 @@ export function useLayerControls({
     channelVisibility,
     createLayerDefaultSettings,
     layerSettings,
-    playbackWarmupBackgroundMasksByScale,
-    playbackWarmupLayerBrickAtlases,
-    playbackWarmupLayerPageTables,
-    playbackWarmupLayerVolumes,
-    playbackWarmupTimeIndex,
+    normalizedPlaybackWarmupFrames,
   ]);
 
   const layerDepthMap = useMemo(() => {

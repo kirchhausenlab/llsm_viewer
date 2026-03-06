@@ -61,6 +61,8 @@ export type ViewerLayer = {
   backgroundMask?: VolumeBackgroundMask | null;
   playbackWarmupForLayerKey?: string;
   playbackWarmupTimeIndex?: number;
+  playbackRole?: 'active' | 'warmup';
+  playbackSlotIndex?: number;
 };
 
 export type VolumeViewerVrPanelLayerSettings = {
@@ -242,6 +244,7 @@ export type VolumeResources = {
   playbackWarmupForLayerKey?: string | null;
   playbackWarmupTimeIndex?: number | null;
   preferIncrementalResidency?: boolean;
+  playbackPinnedResidency?: boolean;
   playbackWarmupReady?: boolean | null;
   gpuBrickResidencyMetrics?: {
     layerKey: string;

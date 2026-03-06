@@ -29,6 +29,11 @@ import { useVolumeViewerSurfaceBinding } from './volume-viewer/useVolumeViewerSu
 import { useVolumeViewerTransformBindings } from './volume-viewer/useVolumeViewerTransformBindings';
 import { resolveVolumeViewerVrRuntime } from './volume-viewer/volumeViewerVrRuntime';
 import {
+  resetPlaybackWarmupGateState,
+  shouldAllowPlaybackAdvanceWithWarmup,
+  type PlaybackWarmupGateState,
+} from './volume-viewer/playbackWarmupGate';
+import {
   buildVolumeViewerLifecycleParams,
   buildVolumeViewerVrBridgeOptions,
 } from './volume-viewer/volumeViewerRuntimeArgs';
@@ -105,20 +110,6 @@ function isPlaybackWarmupEligibleLayer(layer: VolumeViewerProps['layers'][number
   return Boolean(layer.brickAtlas?.enabled && scaleLevel > 0);
 }
 
-function isWarmupResourceReady(resource: VolumeResources | undefined): boolean {
-  if (!resource) {
-    return false;
-  }
-  if (typeof resource.playbackWarmupReady === 'boolean') {
-    return resource.playbackWarmupReady;
-  }
-  const metrics = resource.gpuBrickResidencyMetrics;
-  if (!metrics) {
-    return false;
-  }
-  return (metrics.pendingBricks ?? 0) <= 0 && (metrics.scheduledUploads ?? 0) <= 0;
-}
-
 function VolumeViewer({
   layers,
   playbackWarmupLayers = [],
@@ -181,6 +172,10 @@ function VolumeViewer({
   const paintStrokePointerIdRef = useRef<number | null>(null);
 
   const resourcesRef = useRef<Map<string, VolumeResources>>(new Map());
+  const playbackWarmupGateRef = useRef<PlaybackWarmupGateState>({
+    blockedNextIndex: null,
+    blockedAtMs: null,
+  });
   const hoverRaycasterRef = useRef<THREE.Raycaster | null>(null);
   const {
     containerNode,
@@ -308,28 +303,26 @@ function VolumeViewer({
     const requiredLayerKeys = layers.filter(isPlaybackWarmupEligibleLayer).map((layer) => layer.key);
     return (nextIndex: number) => {
       if (canAdvancePlayback && !canAdvancePlayback(nextIndex)) {
+        resetPlaybackWarmupGateState(playbackWarmupGateRef.current);
         return false;
       }
-      if (requiredLayerKeys.length === 0) {
-        return true;
-      }
-      if (playbackWarmupLayers.length === 0) {
-        return false;
-      }
-      const warmupLayerByBaseKey = new Map(
-        playbackWarmupLayers
-          .filter((layer) => layer.playbackWarmupTimeIndex === nextIndex && layer.playbackWarmupForLayerKey)
-          .map((layer) => [layer.playbackWarmupForLayerKey as string, layer]),
-      );
-      return requiredLayerKeys.every((layerKey) => {
-        const warmupLayer = warmupLayerByBaseKey.get(layerKey);
-        if (!warmupLayer) {
-          return false;
-        }
-        return isWarmupResourceReady(resourcesRef.current.get(warmupLayer.key));
+      return shouldAllowPlaybackAdvanceWithWarmup({
+        nextIndex,
+        requiredLayerKeys,
+        playbackWarmupLayers,
+        resources: resourcesRef.current,
+        fps,
+        nowMs: Date.now(),
+        gateState: playbackWarmupGateRef.current,
       });
     };
-  }, [canAdvancePlayback, layers, playbackWarmupLayers]);
+  }, [canAdvancePlayback, fps, layers, playbackWarmupLayers]);
+
+  useEffect(() => {
+    if (!isPlaying) {
+      resetPlaybackWarmupGateState(playbackWarmupGateRef.current);
+    }
+  }, [isPlaying]);
 
   const {
     playbackState,
