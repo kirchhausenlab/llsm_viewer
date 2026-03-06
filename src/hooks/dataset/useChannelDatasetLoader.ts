@@ -291,7 +291,7 @@ export function useChannelDatasetLoader({ getLayerTimepointCount }: UseChannelDa
         const rawLayers = await Promise.all(
           flatLayerSources.map(async (layer) => {
             const volumes = await loadVolumesFromFiles(layer.files, {
-              onVolumeLoaded: (_index, volume) => {
+              onVolumeLoaded: (_index, _volume) => {
                 if (loadRequestRef.current !== requestId) {
                   return;
                 }

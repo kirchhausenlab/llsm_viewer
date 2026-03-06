@@ -4,7 +4,12 @@ import type { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
 import type { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
 
 import type { NormalizedVolume } from '../../core/volumeProcessing';
-import type { VolumeBrickAtlas, VolumeBrickPageTable, VolumeProviderDiagnostics } from '../../core/volumeProvider';
+import type {
+  VolumeBackgroundMask,
+  VolumeBrickAtlas,
+  VolumeBrickPageTable,
+  VolumeProviderDiagnostics
+} from '../../core/volumeProvider';
 import type { LODPolicyDiagnosticsSnapshot } from '../../core/lodPolicyDiagnostics';
 import type { FollowedVoxelTarget } from '../../types/follow';
 import type { HoveredVoxelInfo } from '../../types/hover';
@@ -53,6 +58,7 @@ export type ViewerLayer = {
   scaleLevel?: number;
   brickPageTable?: VolumeBrickPageTable | null;
   brickAtlas?: VolumeBrickAtlas | null;
+  backgroundMask?: VolumeBackgroundMask | null;
 };
 
 export type VolumeViewerVrPanelLayerSettings = {
@@ -210,6 +216,7 @@ export type VolumeResources = {
   brickAtlasIndexTexture?: THREE.Data3DTexture | null;
   brickAtlasBaseTexture?: THREE.Data3DTexture | null;
   brickAtlasDataTexture?: THREE.Data3DTexture | null;
+  backgroundMaskTexture?: THREE.Data3DTexture | null;
   brickSubcellTexture?: THREE.Data3DTexture | null;
   skipHierarchyTexture?: THREE.Data3DTexture | null;
   skipHierarchySourcePageTable?: VolumeBrickPageTable | null;
@@ -224,6 +231,8 @@ export type VolumeResources = {
   brickAtlasSourcePageTable?: VolumeBrickPageTable | null;
   brickAtlasSlotGrid?: { x: number; y: number; z: number } | null;
   brickAtlasBuildVersion?: number;
+  backgroundMaskSourceToken?: object | null;
+  proxyGeometrySignature?: string | null;
   gpuBrickResidencyMetrics?: {
     layerKey: string;
     timepoint: number;

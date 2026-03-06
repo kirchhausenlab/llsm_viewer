@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 
 import type { NormalizedVolume } from '../../../src/core/volumeProcessing.ts';
-import type { VolumeBrickAtlas, VolumeBrickPageTable, VolumeProvider } from '../../../src/core/volumeProvider.ts';
+import type {
+  VolumeBackgroundMask,
+  VolumeBrickAtlas,
+  VolumeBrickPageTable,
+  VolumeProvider
+} from '../../../src/core/volumeProvider.ts';
 import type { LoadedDatasetLayer, StagedPreprocessedExperiment } from '../../../src/hooks/dataset/index.ts';
 import { useRouteLayerVolumes } from '../../../src/ui/app/hooks/useRouteLayerVolumes.ts';
 import { renderHook } from '../../hooks/renderHook.ts';
@@ -87,6 +92,17 @@ const createBrickAtlas = (seed: number, scaleLevel = 0): VolumeBrickAtlas => {
     enabled: true
   };
 };
+
+const createBackgroundMask = (scaleLevel: number): VolumeBackgroundMask => ({
+  sourceLayerKey: 'layer-a',
+  sourceDataType: 'uint8',
+  values: [0],
+  scaleLevel,
+  width: scaleLevel === 0 ? 8 : 4,
+  height: scaleLevel === 0 ? 8 : 4,
+  depth: scaleLevel === 0 ? 8 : 4,
+  data: new Uint8Array((scaleLevel === 0 ? 8 : 4) ** 3),
+});
 
 const flushAsyncWork = async (iterations = 8) => {
   for (let index = 0; index < iterations; index += 1) {
@@ -1045,6 +1061,69 @@ await (async () => {
   await flushAsyncWork();
   assert.deepStrictEqual(Array.from(hook.result.currentLayerVolumes['layer-a']?.normalized ?? []), Array(8).fill(80));
   assert.strictEqual(showLaunchErrorCalls, 0);
+  hook.unmount();
+})();
+
+await (async () => {
+  const getBackgroundMaskCalls: number[] = [];
+  const provider = {
+    getVolume: async (layerKey: string, timeIndex: number) => {
+      const volume = createVolume(timeIndex + 20);
+      return {
+        ...volume,
+        scaleLevel: layerKey === 'layer-a' ? 2 : 1
+      };
+    },
+    getBrickPageTable: async (_layerKey: string, timeIndex: number) => createBrickPageTable(timeIndex),
+    getBackgroundMask: async (options?: { scaleLevel?: number | undefined }) => {
+      const scaleLevel = options?.scaleLevel ?? 0;
+      getBackgroundMaskCalls.push(scaleLevel);
+      return createBackgroundMask(scaleLevel);
+    }
+  } as unknown as VolumeProvider;
+
+  const hook = renderHook(() =>
+    useRouteLayerVolumes({
+      isViewerLaunched: false,
+      isLaunchingViewer: false,
+      preprocessedExperiment: {} as StagedPreprocessedExperiment,
+      volumeProvider: provider,
+      loadedChannelIds: ['channel-a', 'channel-b'],
+      channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
+        ['channel-a', [createLoadedLayer('layer-a', 'channel-a')]],
+        ['channel-b', [createLoadedLayer('layer-b', 'channel-b')]],
+      ]),
+      channelVisibility: { 'channel-a': true, 'channel-b': true },
+      layerChannelMap: new Map<string, string>([
+        ['layer-a', 'channel-a'],
+        ['layer-b', 'channel-b'],
+      ]),
+      preferBrickResidency: false,
+      volumeTimepointCount: 3,
+      selectedIndex: 0,
+      clearDatasetError: () => {},
+      beginLaunchSession: () => {},
+      setLaunchExpectedVolumeCount: () => {},
+      setLaunchProgress: () => {},
+      completeLaunchSession: () => {},
+      failLaunchSession: () => {},
+      finishLaunchSessionAttempt: () => {},
+      setSelectedIndex: () => {},
+      setIsPlaying: () => {},
+      showLaunchError: () => {
+        throw new Error('showLaunchError should not be called in this test');
+      }
+    })
+  );
+
+  await hook.act(async () => {
+    await hook.result.handleLaunchViewer();
+  });
+
+  assert.deepStrictEqual(getBackgroundMaskCalls, [1, 2]);
+  assert.equal(hook.result.currentBackgroundMasksByScale[1]?.scaleLevel, 1);
+  assert.equal(hook.result.currentBackgroundMasksByScale[2]?.scaleLevel, 2);
+  assert.equal(hook.result.currentBackgroundMasksByScale[0], undefined);
   hook.unmount();
 })();
 

@@ -608,3 +608,74 @@ test('preprocessDatasetToStorage validates consistent 2D slice shape in single-3
     /expected 2×2×1/
   );
 });
+
+test('preprocessDatasetToStorage writes and serves a shared background mask', async () => {
+  const channels: ChannelExportMetadata[] = [{ id: 'channel-a', name: 'Channel A' }];
+  const layers: PreprocessLayerSource[] = [
+    {
+      channelId: 'channel-a',
+      channelLabel: 'Channel A',
+      key: 'layer-a',
+      label: 'Layer A',
+      files: [new File(['volume-0'], 'volume-0.tif', { type: 'image/tiff' })],
+      isSegmentation: false
+    }
+  ];
+  const volumeByFileName = new Map<string, VolumePayload>([
+    [
+      'volume-0.tif',
+      createSyntheticVolumePayload({
+        width: 2,
+        height: 2,
+        depth: 1,
+        channels: 1,
+        values: [5, 10, 5, 20]
+      })
+    ]
+  ]);
+  const storageHandle = createInMemoryPreprocessedStorage({ datasetId: 'preprocess-background-mask' });
+
+  const result = await preprocessDatasetToStorage({
+    layers,
+    channels,
+    trackSets: [],
+    voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    movieMode: '3d',
+    backgroundMask: { values: [5] },
+    storage: storageHandle.storage,
+    volumeLoader: createLoaderByFileName(volumeByFileName),
+    storageStrategy: { sharding: { enabled: false } }
+  });
+
+  assert.ok(result.manifest.dataset.backgroundMask);
+  assert.equal(result.manifest.dataset.backgroundMask?.sourceLayerKey, 'layer-a');
+  assert.deepEqual(result.manifest.dataset.backgroundMask?.values, [5]);
+
+  const opened = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
+  const provider = createVolumeProvider({
+    manifest: opened.manifest,
+    storage: storageHandle.storage,
+    maxCachedVolumes: DEFAULT_MAX_CACHED_VOLUMES,
+    maxCachedChunkBytes: DEFAULT_MAX_CACHED_CHUNK_BYTES,
+    maxConcurrentChunkReads: DEFAULT_MAX_CONCURRENT_CHUNK_READS,
+    maxConcurrentPrefetchLoads: DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS,
+  });
+
+  const loadedVolume = await provider.getVolume('layer-a', 0, { scaleLevel: 0 });
+  assert.deepEqual(Array.from(loadedVolume.normalized), [0, 10, 0, 20]);
+
+  const loadedMask = await provider.getBackgroundMask?.({ scaleLevel: 0 });
+  assert.ok(loadedMask);
+  assert.deepEqual(Array.from(loadedMask?.data ?? []), [255, 0, 255, 0]);
+
+  const layer = opened.manifest.dataset.channels[0]?.layers[0];
+  assert.ok(layer);
+  const scale0 = layer?.zarr.scales[0];
+  assert.ok(scale0);
+  const histogramChunk = await storageHandle.storage.readFile(
+    `${scale0?.zarr.histogram.path}/${createZarrChunkKeyFromCoords([0, 0])}`
+  );
+  const histogram = decodeUint32ArrayLE(histogramChunk);
+  const histogramTotal = histogram.reduce((sum, value) => sum + value, 0);
+  assert.equal(histogramTotal, 2);
+});

@@ -1,5 +1,7 @@
 import { HISTOGRAM_BINS } from '../histogram';
 import type {
+  PreprocessedBackgroundMaskManifest,
+  PreprocessedBackgroundMaskScaleManifestEntry,
   PreprocessedChannelManifest,
   PreprocessedLayerManifestEntry,
   PreprocessedLayerScaleManifestEntry,
@@ -440,6 +442,145 @@ function validateScale({
   };
 }
 
+function validateBackgroundMaskScale({
+  value,
+  path,
+  expectedDimensions
+}: {
+  value: unknown;
+  path: string;
+  expectedDimensions: { width: number; height: number; depth: number };
+}): PreprocessedBackgroundMaskScaleManifestEntry {
+  const scale = expectRecord(value, path);
+  const level = expectNonNegativeInteger(scale.level, `${path}.level`);
+  const downsampleFactor = expectIntegerTuple(scale.downsampleFactor, `${path}.downsampleFactor`, 3, {
+    positive: true
+  }) as [number, number, number];
+  const width = expectPositiveInteger(scale.width, `${path}.width`);
+  const height = expectPositiveInteger(scale.height, `${path}.height`);
+  const depth = expectPositiveInteger(scale.depth, `${path}.depth`);
+  const zarr = expectRecord(scale.zarr, `${path}.zarr`);
+  const data = validateDescriptor({
+    value: zarr.data,
+    path: `${path}.zarr.data`,
+    expectedRank: 3,
+    expectedDataType: 'uint8',
+    expectedShape: [depth, height, width]
+  });
+
+  if (
+    level === 0 &&
+    (
+      width !== expectedDimensions.width ||
+      height !== expectedDimensions.height ||
+      depth !== expectedDimensions.depth
+    )
+  ) {
+    throw new Error(
+      `Invalid manifest schema at ${path}: level 0 dimensions must match ${expectedDimensions.width}x${expectedDimensions.height}x${expectedDimensions.depth}.`
+    );
+  }
+
+  return {
+    level,
+    downsampleFactor,
+    width,
+    height,
+    depth,
+    zarr: { data }
+  };
+}
+
+function validateBackgroundMask(
+  value: unknown,
+  path: string
+): PreprocessedBackgroundMaskManifest | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+
+  const backgroundMask = expectRecord(value, path);
+  const sourceLayerKey = expectString(backgroundMask.sourceLayerKey, `${path}.sourceLayerKey`, { nonEmpty: true });
+  const sourceDataType = expectDataType(backgroundMask.sourceDataType, `${path}.sourceDataType`);
+  const rawValues = expectArray(backgroundMask.values, `${path}.values`);
+  if (rawValues.length === 0) {
+    throw new Error(`Invalid manifest schema at ${path}.values: expected at least one value.`);
+  }
+  const values = rawValues.map((entry, index) => expectNumber(entry, `${path}.values[${index}]`));
+  const zarr = expectRecord(backgroundMask.zarr, `${path}.zarr`);
+  const scalesValue = expectArray(zarr.scales, `${path}.zarr.scales`);
+  if (scalesValue.length === 0) {
+    throw new Error(`Invalid manifest schema at ${path}.zarr.scales: expected at least one scale.`);
+  }
+
+  const scales: PreprocessedBackgroundMaskScaleManifestEntry[] = [];
+  let previousLevel = -1;
+  let previousDimensions: { width: number; height: number; depth: number } | null = null;
+  for (let index = 0; index < scalesValue.length; index += 1) {
+    const scale = validateBackgroundMaskScale({
+      value: scalesValue[index],
+      path: `${path}.zarr.scales[${index}]`,
+      expectedDimensions: previousDimensions ?? {
+        width: expectPositiveInteger(
+          expectRecord(scalesValue[0], `${path}.zarr.scales[0]`).width,
+          `${path}.zarr.scales[0].width`
+        ),
+        height: expectPositiveInteger(
+          expectRecord(scalesValue[0], `${path}.zarr.scales[0]`).height,
+          `${path}.zarr.scales[0].height`
+        ),
+        depth: expectPositiveInteger(
+          expectRecord(scalesValue[0], `${path}.zarr.scales[0]`).depth,
+          `${path}.zarr.scales[0].depth`
+        )
+      }
+    });
+    if (index === 0 && scale.level !== 0) {
+      throw new Error(`Invalid manifest schema at ${path}.zarr.scales[0].level: expected 0.`);
+    }
+    if (scale.level <= previousLevel) {
+      throw new Error(`Invalid manifest schema at ${path}.zarr.scales[${index}].level: levels must increase.`);
+    }
+    if (index > 0 && scale.level !== previousLevel + 1) {
+      throw new Error(
+        `Invalid manifest schema at ${path}.zarr.scales[${index}].level: expected ${previousLevel + 1}, got ${scale.level}.`
+      );
+    }
+    if (previousDimensions) {
+      const expectedWidth = Math.max(1, Math.ceil(previousDimensions.width / 2));
+      const expectedHeight = Math.max(1, Math.ceil(previousDimensions.height / 2));
+      const expectedDepth = Math.max(1, Math.ceil(previousDimensions.depth / 2));
+      if (
+        scale.width !== expectedWidth ||
+        scale.height !== expectedHeight ||
+        scale.depth !== expectedDepth
+      ) {
+        throw new Error(
+          `Invalid manifest schema at ${path}.zarr.scales[${index}]: expected ${expectedWidth}x${expectedHeight}x${expectedDepth}, got ${scale.width}x${scale.height}x${scale.depth}.`
+        );
+      }
+    }
+    previousLevel = scale.level;
+    previousDimensions = { width: scale.width, height: scale.height, depth: scale.depth };
+    scales.push(scale);
+  }
+
+  const lastScale = scales[scales.length - 1];
+  if (!lastScale || lastScale.width !== 1 || lastScale.height !== 1 || lastScale.depth !== 1) {
+    throw new Error(`Invalid manifest schema at ${path}.zarr.scales: final scale must be 1x1x1.`);
+  }
+
+  return {
+    sourceLayerKey,
+    sourceDataType,
+    values,
+    zarr: { scales }
+  };
+}
+
 function validateNormalization(value: unknown, path: string): { min: number; max: number } | null {
   if (value === null) {
     return null;
@@ -732,6 +873,12 @@ export function coercePreprocessedManifest(value: unknown): PreprocessedManifest
 
   validateVoxelResolution(dataset.voxelResolution, 'manifest.dataset.voxelResolution');
   validateAnisotropyCorrection(dataset.anisotropyCorrection, 'manifest.dataset.anisotropyCorrection');
+  const backgroundMask = validateBackgroundMask(dataset.backgroundMask, 'manifest.dataset.backgroundMask');
+  if (backgroundMask && !layerKeys.has(backgroundMask.sourceLayerKey)) {
+    throw new Error(
+      `Invalid manifest schema at manifest.dataset.backgroundMask.sourceLayerKey: unknown layer "${backgroundMask.sourceLayerKey}".`
+    );
+  }
 
   return manifest as PreprocessedManifest;
 }

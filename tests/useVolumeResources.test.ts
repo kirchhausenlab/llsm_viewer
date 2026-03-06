@@ -3,9 +3,10 @@ import * as THREE from 'three';
 
 import { useVolumeResources } from '../src/components/viewers/volume-viewer/useVolumeResources.ts';
 import type { NormalizedVolume } from '../src/core/volumeProcessing.ts';
-import type { VolumeBrickAtlas, VolumeBrickPageTable } from '../src/core/volumeProvider.ts';
+import type { VolumeBackgroundMask, VolumeBrickAtlas, VolumeBrickPageTable } from '../src/core/volumeProvider.ts';
 import type { ViewerLayer, VolumeResources } from '../src/components/viewers/VolumeViewer.types.ts';
 import {
+  FALLBACK_BACKGROUND_MASK_TEXTURE,
   FALLBACK_BRICK_ATLAS_DATA_TEXTURE,
   FALLBACK_BRICK_ATLAS_INDEX_TEXTURE,
   FALLBACK_BRICK_MAX_TEXTURE,
@@ -1886,6 +1887,195 @@ const createLayer = (
     (uniforms.u_brickVolumeSize?.value as THREE.Vector3).toArray(),
     [atlasPageTable.volumeShape[2], atlasPageTable.volumeShape[1], atlasPageTable.volumeShape[0]]
   );
+})();
+
+(() => {
+  const volume: NormalizedVolume = {
+    width: 2,
+    height: 2,
+    depth: 2,
+    channels: 1,
+    dataType: 'uint8',
+    normalized: new Uint8Array([5, 10, 5, 20, 0, 30, 0, 40]),
+    min: 0,
+    max: 255,
+  };
+  const backgroundMask: VolumeBackgroundMask = {
+    sourceLayerKey: 'layer-3d',
+    sourceDataType: 'uint8',
+    values: [5],
+    scaleLevel: 0,
+    width: 2,
+    height: 2,
+    depth: 2,
+    data: new Uint8Array([255, 0, 255, 0, 255, 0, 255, 0]),
+    visibleRegion: {
+      hasVisibleVoxels: true,
+      minVoxel: [1, 0, 0],
+      maxVoxel: [1, 1, 1],
+      minFaceFractions: [0.5, 0, 0],
+      maxFaceFractions: [1, 1, 1]
+    }
+  };
+  const layer: ViewerLayer = {
+    ...createLayer(volume, null, null, 'linear'),
+    backgroundMask,
+  };
+
+  const sceneRef = { current: new THREE.Scene() };
+  const cameraRef = { current: new THREE.PerspectiveCamera(75, 1, 0.1, 10) };
+  const controlsRef = {
+    current: {
+      target: new THREE.Vector3(),
+      update: () => {},
+      saveState: () => {},
+    } as unknown as THREE.OrbitControls,
+  };
+  const resourcesRef = { current: new Map<string, VolumeResources>() };
+
+  renderHook(() =>
+    useVolumeResources({
+      layers: [layer],
+      primaryVolume: volume,
+      isAdditiveBlending: false,
+      renderContextRevision: 0,
+      sceneRef,
+      cameraRef,
+      controlsRef,
+      rotationTargetRef: { current: new THREE.Vector3() },
+      defaultViewStateRef: { current: null },
+      trackGroupRef: { current: new THREE.Group() },
+      resourcesRef,
+      currentDimensionsRef: { current: null },
+      colormapCacheRef: { current: new Map() },
+      volumeRootGroupRef: { current: new THREE.Group() },
+      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+      volumeNormalizationScaleRef: { current: 1 },
+      volumeUserScaleRef: { current: 1 },
+      volumeStepScaleRef: { current: 1 },
+      volumeYawRef: { current: 0 },
+      volumePitchRef: { current: 0 },
+      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+      applyTrackGroupTransform: () => {},
+      applyVolumeRootTransform: () => {},
+      applyVolumeStepScaleToResources: () => {},
+      applyHoverHighlightToResources: () => {},
+    }),
+  );
+
+  const resource = resourcesRef.current.get('layer-3d');
+  assert.ok(resource);
+  const material = resource.mesh.material as THREE.ShaderMaterial;
+  const uniforms = material.uniforms as Record<string, { value: unknown }>;
+  assert.equal(uniforms.u_backgroundMaskEnabled?.value, 1);
+  assert.strictEqual(uniforms.u_backgroundMask?.value, resource.backgroundMaskTexture);
+  assert.deepEqual(
+    (uniforms.u_backgroundMaskSize?.value as THREE.Vector3).toArray(),
+    [2, 2, 2]
+  );
+  assert.equal(uniforms.u_backgroundMaskVisibleBoundsEnabled?.value, 1);
+  assert.deepEqual(
+    (uniforms.u_backgroundMaskVisibleBoxMin?.value as THREE.Vector3).toArray(),
+    [0.5, -0.5, -0.5]
+  );
+  assert.deepEqual(
+    (uniforms.u_backgroundMaskVisibleBoxMax?.value as THREE.Vector3).toArray(),
+    [1.5, 1.5, 1.5]
+  );
+  const geometry = resource.mesh.geometry as THREE.BufferGeometry;
+  geometry.computeBoundingBox();
+  assert.deepEqual(geometry.boundingBox?.min.toArray(), [0.5, -0.5, -0.5]);
+  assert.deepEqual(geometry.boundingBox?.max.toArray(), [1.5, 1.5, 1.5]);
+  assert.notStrictEqual(uniforms.u_backgroundMask?.value, FALLBACK_BACKGROUND_MASK_TEXTURE);
+})();
+
+(() => {
+  const volume: NormalizedVolume = {
+    width: 2,
+    height: 2,
+    depth: 2,
+    channels: 1,
+    dataType: 'uint8',
+    normalized: new Uint8Array([5, 10, 5, 20, 0, 30, 0, 40]),
+    min: 0,
+    max: 255,
+  };
+  const backgroundMask: VolumeBackgroundMask = {
+    sourceLayerKey: 'layer-3d',
+    sourceDataType: 'uint8',
+    values: [5],
+    scaleLevel: 0,
+    width: 2,
+    height: 2,
+    depth: 2,
+    data: new Uint8Array([255, 0, 255, 0, 0, 255, 0, 255]),
+  };
+  const layer: ViewerLayer = {
+    ...createLayer(volume, null, null, 'linear'),
+    mode: 'slice',
+    renderStyle: RENDER_STYLE_SLICE,
+    backgroundMask,
+  };
+
+  const sceneRef = { current: new THREE.Scene() };
+  const cameraRef = { current: new THREE.PerspectiveCamera(75, 1, 0.1, 10) };
+  const controlsRef = {
+    current: {
+      target: new THREE.Vector3(),
+      update: () => {},
+      saveState: () => {},
+    } as unknown as THREE.OrbitControls,
+  };
+  const resourcesRef = { current: new Map<string, VolumeResources>() };
+
+  renderHook(() =>
+    useVolumeResources({
+      layers: [layer],
+      primaryVolume: volume,
+      isAdditiveBlending: false,
+      renderContextRevision: 0,
+      sceneRef,
+      cameraRef,
+      controlsRef,
+      rotationTargetRef: { current: new THREE.Vector3() },
+      defaultViewStateRef: { current: null },
+      trackGroupRef: { current: new THREE.Group() },
+      resourcesRef,
+      currentDimensionsRef: { current: null },
+      colormapCacheRef: { current: new Map() },
+      volumeRootGroupRef: { current: new THREE.Group() },
+      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+      volumeNormalizationScaleRef: { current: 1 },
+      volumeUserScaleRef: { current: 1 },
+      volumeStepScaleRef: { current: 1 },
+      volumeYawRef: { current: 0 },
+      volumePitchRef: { current: 0 },
+      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+      applyTrackGroupTransform: () => {},
+      applyVolumeRootTransform: () => {},
+      applyVolumeStepScaleToResources: () => {},
+      applyHoverHighlightToResources: () => {},
+    }),
+  );
+
+  const resource = resourcesRef.current.get('layer-3d');
+  assert.ok(resource);
+  assert.equal(resource.mode, 'slice');
+  const material = resource.mesh.material as THREE.ShaderMaterial;
+  const uniforms = material.uniforms as Record<string, { value: unknown }>;
+  assert.equal(uniforms.u_backgroundMaskEnabled?.value, 1);
+  assert.strictEqual(uniforms.u_backgroundMask?.value, resource.backgroundMaskTexture);
+  assert.deepEqual(
+    (uniforms.u_backgroundMaskSize?.value as THREE.Vector3).toArray(),
+    [2, 2, 2]
+  );
+  assert.notStrictEqual(uniforms.u_backgroundMask?.value, FALLBACK_BACKGROUND_MASK_TEXTURE);
 })();
 
 console.log('useVolumeResources tests passed');

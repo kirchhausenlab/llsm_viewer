@@ -3,10 +3,8 @@ import * as zarr from 'zarrita';
 
 import type { NormalizationParameters, NormalizedVolume } from '../../../core/volumeProcessing';
 import {
-  colorizeSegmentationTypedArray,
   colorizeSegmentationVolume,
   computeNormalizationParameters,
-  normalizeTypedArray,
   normalizeVolume
 } from '../../../core/volumeProcessing';
 import type { PreprocessedStorage } from '../../storage/preprocessedStorage';
@@ -17,6 +15,8 @@ import { createVolumeTypedArray, createWritableVolumeArray, getBytesPerValue } f
 
 import type {
   ChannelExportMetadata,
+  PreprocessedBackgroundMaskManifest,
+  PreprocessedBackgroundMaskScaleManifestEntry,
   PreprocessedChannelSummary,
   PreprocessedLayerManifestEntry,
   PreprocessedLayerScaleManifestEntry,
@@ -50,6 +50,14 @@ import {
   isShardedArrayDescriptor,
   type ShardLayout
 } from './sharding';
+import {
+  applyBackgroundMaskInPlace,
+  buildBackgroundMaskFromTypedArray,
+  coerceBackgroundMaskValuesForDataType,
+  downsampleBackgroundMaskByAllMasked,
+  findMinMaxExcludingBackgroundMask,
+  type BackgroundMaskVolume
+} from '../backgroundMask';
 
 export type PreprocessLayerSource = {
   channelId: string;
@@ -102,8 +110,23 @@ export type PreprocessDatasetToStorageOptions = {
     streamingThresholdBytes?: number;
   };
   inputInterpretation?: PreprocessInputInterpretation;
+  backgroundMask?: {
+    values: number[];
+  } | null;
   signal?: AbortSignal;
   onProgress?: (progress: PreprocessDatasetProgress) => void;
+};
+
+type SharedBackgroundMaskScale = PreprocessedBackgroundMaskScaleManifestEntry & {
+  data: Uint8Array;
+};
+
+type SharedBackgroundMask = {
+  sourceLayerKey: string;
+  sourceDataType: VolumePayload['dataType'];
+  values: number[];
+  maskedVoxelCount: number;
+  scales: SharedBackgroundMaskScale[];
 };
 
 function throwIfAborted(signal: AbortSignal | undefined) {
@@ -178,6 +201,10 @@ function createZarrScaleHistogramArrayPath(channelId: string, layerKey: string, 
   return `channels/${channelId}/${layerKey}/scales/${scaleLevel}/histogram`;
 }
 
+function createZarrBackgroundMaskArrayPath(scaleLevel: number): string {
+  return `background-mask/scales/${scaleLevel}/data`;
+}
+
 function computeLeafGridShapeForScaleDescriptor(dataDescriptor: ZarrArrayDescriptor): [number, number, number] {
   const chunkDepth = dataDescriptor.chunkShape[1] ?? 1;
   const chunkHeight = dataDescriptor.chunkShape[2] ?? 1;
@@ -214,10 +241,6 @@ function buildSkipHierarchyGridShapes(leafGridShape: [number, number, number]): 
 const DEFAULT_CHUNK_TARGET_BYTES = 256 * 1024;
 const DEFAULT_SHARD_TARGET_BYTES = 16 * 1024 * 1024;
 const DEFAULT_SHARD_MAX_CHUNKS_PER_AXIS = 8;
-const DEFAULT_PREPROCESS_DECODE_BATCH_SIZE = 4;
-const MAX_PREPROCESS_DECODE_BATCH_SIZE = 8;
-const DEFAULT_PREPROCESS_IMAGE_COUNT_PROBE_CONCURRENCY = 4;
-const MAX_PREPROCESS_IMAGE_COUNT_PROBE_CONCURRENCY = 8;
 const DEFAULT_PREPROCESS_MAX_IN_FLIGHT_WRITES = 4;
 const DEFAULT_PREPROCESS_EXECUTION_MODE = 'auto' as const;
 const DEFAULT_PREPROCESS_STREAMING_THRESHOLD_BYTES = 512 * 1024 * 1024;
@@ -374,6 +397,97 @@ function chooseSpatialChunkDimensions({
   }
 
   return [chunkDepth, chunkHeight, chunkWidth];
+}
+
+function countMaskedVoxels(mask: Uint8Array): number {
+  let count = 0;
+  for (let index = 0; index < mask.length; index += 1) {
+    if ((mask[index] ?? 0) > 0) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function buildBackgroundMaskScales({
+  baseMask,
+  sourceLayerKey,
+  sourceDataType,
+  values,
+  shardingStrategy
+}: {
+  baseMask: BackgroundMaskVolume;
+  sourceLayerKey: string;
+  sourceDataType: VolumePayload['dataType'];
+  values: number[];
+  shardingStrategy: ShardingStrategy;
+}): SharedBackgroundMask {
+  const geometryLevels = computeMultiscaleGeometryLevels({
+    width: baseMask.width,
+    height: baseMask.height,
+    depth: baseMask.depth
+  });
+  const scales: SharedBackgroundMaskScale[] = [];
+  let maskForLevel = baseMask;
+
+  for (let index = 0; index < geometryLevels.length; index += 1) {
+    const geometryLevel = geometryLevels[index];
+    if (!geometryLevel) {
+      continue;
+    }
+    if (index > 0) {
+      maskForLevel = downsampleBackgroundMaskByAllMasked(maskForLevel);
+    }
+    if (
+      maskForLevel.width !== geometryLevel.width ||
+      maskForLevel.height !== geometryLevel.height ||
+      maskForLevel.depth !== geometryLevel.depth
+    ) {
+      throw new Error(
+        `Background mask geometry mismatch at scale ${geometryLevel.level}: expected ${geometryLevel.width}x${geometryLevel.height}x${geometryLevel.depth}, got ${maskForLevel.width}x${maskForLevel.height}x${maskForLevel.depth}.`
+      );
+    }
+
+    const [chunkDepth, chunkHeight, chunkWidth] = chooseSpatialChunkDimensions({
+      depth: geometryLevel.depth,
+      height: geometryLevel.height,
+      width: geometryLevel.width,
+      bytesPerVoxel: 1,
+      targetChunkBytes: shardingStrategy.chunkTargetBytes
+    });
+    const dataDescriptor: ZarrArrayDescriptor = {
+      path: createZarrBackgroundMaskArrayPath(geometryLevel.level),
+      shape: [geometryLevel.depth, geometryLevel.height, geometryLevel.width],
+      chunkShape: [chunkDepth, chunkHeight, chunkWidth],
+      dataType: 'uint8',
+      sharding: createShardingPlan({
+        shape: [geometryLevel.depth, geometryLevel.height, geometryLevel.width],
+        chunkShape: [chunkDepth, chunkHeight, chunkWidth],
+        dataType: 'uint8',
+        strategy: shardingStrategy
+      })
+    };
+
+    scales.push({
+      level: geometryLevel.level,
+      downsampleFactor: geometryLevel.downsampleFactor,
+      width: geometryLevel.width,
+      height: geometryLevel.height,
+      depth: geometryLevel.depth,
+      zarr: {
+        data: dataDescriptor
+      },
+      data: maskForLevel.data
+    });
+  }
+
+  return {
+    sourceLayerKey,
+    sourceDataType,
+    values,
+    maskedVoxelCount: countMaskedVoxels(baseMask.data),
+    scales
+  };
 }
 
 function buildLayerScaleDescriptors({
@@ -1570,24 +1684,6 @@ function computeNormalizationParametersFromScannedMinMax({
   return { min: normalizedMin, max: normalizedMax };
 }
 
-function scanSliceMinMax(slice: SupportedTypedArray): { min: number; max: number } {
-  let min = Number.POSITIVE_INFINITY;
-  let max = Number.NEGATIVE_INFINITY;
-  for (let i = 0; i < slice.length; i += 1) {
-    const value = slice[i] as number;
-    if (Number.isNaN(value)) {
-      continue;
-    }
-    if (value < min) {
-      min = value;
-    }
-    if (value > max) {
-      max = value;
-    }
-  }
-  return { min, max };
-}
-
 function normalizeSliceToUint8({
   source,
   dataType,
@@ -1923,65 +2019,6 @@ async function prepareLayerSources({
   return prepared;
 }
 
-function resolvePreprocessDecodeBatchSize(fileCount: number): number {
-  const hardwareConcurrency =
-    typeof navigator !== 'undefined' && Number.isFinite(navigator.hardwareConcurrency)
-      ? Math.floor(navigator.hardwareConcurrency)
-      : DEFAULT_PREPROCESS_DECODE_BATCH_SIZE;
-  const fallback = Math.max(1, DEFAULT_PREPROCESS_DECODE_BATCH_SIZE);
-  const normalized = hardwareConcurrency > 0 ? hardwareConcurrency : fallback;
-  return Math.max(1, Math.min(fileCount, normalized, MAX_PREPROCESS_DECODE_BATCH_SIZE));
-}
-
-function resolvePreprocessImageCountProbeConcurrency(fileCount: number): number {
-  const hardwareConcurrency =
-    typeof navigator !== 'undefined' && Number.isFinite(navigator.hardwareConcurrency)
-      ? Math.floor(navigator.hardwareConcurrency)
-      : DEFAULT_PREPROCESS_IMAGE_COUNT_PROBE_CONCURRENCY;
-  const fallback = Math.max(1, DEFAULT_PREPROCESS_IMAGE_COUNT_PROBE_CONCURRENCY);
-  const normalized = hardwareConcurrency > 0 ? hardwareConcurrency : fallback;
-  return Math.max(1, Math.min(fileCount, normalized, MAX_PREPROCESS_IMAGE_COUNT_PROBE_CONCURRENCY));
-}
-
-async function mapWithConcurrencyLimit<T, TResult>({
-  items,
-  concurrency,
-  signal,
-  mapper
-}: {
-  items: readonly T[];
-  concurrency: number;
-  signal?: AbortSignal;
-  mapper: (item: T, index: number) => Promise<TResult>;
-}): Promise<TResult[]> {
-  if (items.length === 0) {
-    return [];
-  }
-
-  const results = new Array<TResult>(items.length);
-  const workerCount = Math.max(1, Math.min(Math.floor(concurrency), items.length));
-  let nextIndex = 0;
-
-  const worker = async () => {
-    while (true) {
-      const index = nextIndex;
-      nextIndex += 1;
-      if (index >= items.length) {
-        return;
-      }
-      throwIfAborted(signal);
-      const item = items[index];
-      if (item === undefined) {
-        throw new Error(`Missing item at index ${index} while mapping with concurrency limit.`);
-      }
-      results[index] = await mapper(item, index);
-    }
-  };
-
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
-  return results;
-}
-
 let cachedDefaultVolumeLoader: LoadVolumesFromFiles | null = null;
 
 async function resolveVolumeLoader(
@@ -1996,104 +2033,6 @@ async function resolveVolumeLoader(
   const module = await import('../../../loaders/volumeLoader');
   cachedDefaultVolumeLoader = module.loadVolumesFromFiles;
   return cachedDefaultVolumeLoader;
-}
-
-type DecodedBatchVolume = {
-  fileIndex: number;
-  volume: VolumePayload;
-};
-
-async function* decodeVolumesInBatchesWithPrefetch({
-  files,
-  loader,
-  batchSize,
-  preloadedVolumesByFileIndex,
-  signal
-}: {
-  files: File[];
-  loader: LoadVolumesFromFiles;
-  batchSize: number;
-  preloadedVolumesByFileIndex?: ReadonlyMap<number, VolumePayload>;
-  signal?: AbortSignal;
-}): AsyncGenerator<DecodedBatchVolume, void, void> {
-  if (files.length === 0) {
-    return;
-  }
-
-  const normalizedBatchSize = Math.max(1, Math.floor(batchSize));
-  const loadBatch = async (start: number): Promise<{ start: number; volumes: VolumePayload[] }> => {
-    throwIfAborted(signal);
-    const batchFiles = files.slice(start, start + normalizedBatchSize);
-    if (batchFiles.length === 0) {
-      return { start, volumes: [] };
-    }
-
-    const volumes = new Array<VolumePayload>(batchFiles.length);
-    const filesToDecode: File[] = [];
-    const decodeOffsets: number[] = [];
-
-    for (let offset = 0; offset < batchFiles.length; offset += 1) {
-      const batchFile = batchFiles[offset];
-      if (!batchFile) {
-        throw new Error(`Missing batch file at index ${start + offset}.`);
-      }
-      const fileIndex = start + offset;
-      const preloaded = preloadedVolumesByFileIndex?.get(fileIndex) ?? null;
-      if (preloaded) {
-        volumes[offset] = preloaded;
-        continue;
-      }
-      filesToDecode.push(batchFile);
-      decodeOffsets.push(offset);
-    }
-
-    if (filesToDecode.length > 0) {
-      const decoded = await loader(filesToDecode);
-      if (decoded.length !== filesToDecode.length) {
-        throw new Error(`Decoded volume count mismatch: expected ${filesToDecode.length}, got ${decoded.length}.`);
-      }
-      for (let index = 0; index < decoded.length; index += 1) {
-        const offset = decodeOffsets[index];
-        if (offset === undefined) {
-          throw new Error(`Missing decode offset while processing batch starting at ${start}.`);
-        }
-        const volume = decoded[index];
-        if (!volume) {
-          throw new Error(`Missing decoded volume at decode batch index ${index}.`);
-        }
-        volumes[offset] = volume;
-      }
-    }
-
-    return { start, volumes };
-  };
-
-  let start = 0;
-  let currentBatchPromise: Promise<{ start: number; volumes: VolumePayload[] }> | null = loadBatch(start);
-
-  while (currentBatchPromise) {
-    const currentBatch = await currentBatchPromise;
-    throwIfAborted(signal);
-
-    start += normalizedBatchSize;
-    const hasNextBatch = start < files.length;
-    currentBatchPromise = hasNextBatch ? loadBatch(start) : null;
-
-    for (let offset = 0; offset < currentBatch.volumes.length; offset += 1) {
-      const volume = currentBatch.volumes[offset];
-      if (!volume) {
-        throw new Error(`Missing decoded volume at batch index ${currentBatch.start + offset}.`);
-      }
-      yield {
-        fileIndex: currentBatch.start + offset,
-        volume
-      };
-    }
-  }
-}
-
-function computeRepresentativeNormalization(volume: VolumePayload): NormalizationParameters {
-  return computeNormalizationParameters([volume]);
 }
 
 type LayerMetadata = {
@@ -2135,14 +2074,147 @@ async function computeLayerTimepointMetadata({
   };
 }
 
+function selectFirstNonSegmentationPreparedLayer<T extends { layer: PreprocessLayerSource }>(
+  preparedLayerSources: T[]
+): T | null {
+  for (const preparedLayer of preparedLayerSources) {
+    if (!preparedLayer.layer.isSegmentation) {
+      return preparedLayer;
+    }
+  }
+  return null;
+}
+
+function computeRepresentativeNormalization(
+  volume: VolumePayload,
+  backgroundMask: BackgroundMaskVolume | null
+): NormalizationParameters {
+  if (!backgroundMask) {
+    return computeNormalizationParameters([volume]);
+  }
+  const source = createVolumeTypedArray(volume.dataType, volume.data);
+  const { min, max } = findMinMaxExcludingBackgroundMask({
+    source,
+    channels: volume.channels,
+    mask: backgroundMask.data
+  });
+  return computeNormalizationParametersFromScannedMinMax({
+    dataType: volume.dataType,
+    min,
+    max
+  });
+}
+
+async function buildBackgroundMaskForPreparedLayers({
+  preparedLayerSources,
+  backgroundMaskValues,
+  shardingStrategy,
+  signal
+}: {
+  preparedLayerSources: PreparedLayerSource[];
+  backgroundMaskValues: number[] | null | undefined;
+  shardingStrategy: ShardingStrategy;
+  signal?: AbortSignal;
+}): Promise<SharedBackgroundMask | null> {
+  if (!backgroundMaskValues || backgroundMaskValues.length === 0) {
+    return null;
+  }
+
+  const preparedLayer = selectFirstNonSegmentationPreparedLayer(preparedLayerSources);
+  if (!preparedLayer) {
+    throw new Error('Background mask requires at least one non-segmentation channel.');
+  }
+
+  const volume = await preparedLayer.getTimepointVolume(0, signal);
+  const coercedValues = coerceBackgroundMaskValuesForDataType(backgroundMaskValues, volume.dataType);
+  const source = createVolumeTypedArray(volume.dataType, volume.data);
+  const baseMask = buildBackgroundMaskFromTypedArray({
+    width: volume.width,
+    height: volume.height,
+    depth: volume.depth,
+    channels: volume.channels,
+    source,
+    values: coercedValues
+  });
+  return buildBackgroundMaskScales({
+    baseMask,
+    sourceLayerKey: preparedLayer.layer.key,
+    sourceDataType: volume.dataType,
+    values: coercedValues,
+    shardingStrategy
+  });
+}
+
+async function buildBackgroundMaskForStreamingPreparedLayers({
+  preparedLayerSources,
+  backgroundMaskValues,
+  shardingStrategy,
+  tiffByFileCache,
+  signal
+}: {
+  preparedLayerSources: StreamingPreparedLayerSource[];
+  backgroundMaskValues: number[] | null | undefined;
+  shardingStrategy: ShardingStrategy;
+  tiffByFileCache: TiffByFileCache;
+  signal?: AbortSignal;
+}): Promise<SharedBackgroundMask | null> {
+  if (!backgroundMaskValues || backgroundMaskValues.length === 0) {
+    return null;
+  }
+
+  const preparedLayer = selectFirstNonSegmentationPreparedLayer(preparedLayerSources);
+  if (!preparedLayer) {
+    throw new Error('Background mask requires at least one non-segmentation channel.');
+  }
+
+  const sourceMetadata = preparedLayer.sourceMetadata;
+  const coercedValues = coerceBackgroundMaskValuesForDataType(backgroundMaskValues, sourceMetadata.dataType);
+  const raw = createWritableVolumeArray(
+    sourceMetadata.dataType,
+    sourceMetadata.width * sourceMetadata.height * sourceMetadata.depth * sourceMetadata.channels
+  ) as VolumeTypedArray;
+  const sliceLength = sourceMetadata.width * sourceMetadata.height * sourceMetadata.channels;
+  const timepointSource = preparedLayer.getTimepointSource(0);
+
+  await forEachSliceInStreamingTimepointSource({
+    layer: preparedLayer.layer,
+    timepoint: 0,
+    source: timepointSource,
+    expectedMetadata: sourceMetadata,
+    tiffByFileCache,
+    signal,
+    onSlice: (slice, z) => {
+      raw.set(slice, z * sliceLength);
+    }
+  });
+
+  const baseMask = buildBackgroundMaskFromTypedArray({
+    width: sourceMetadata.width,
+    height: sourceMetadata.height,
+    depth: sourceMetadata.depth,
+    channels: sourceMetadata.channels,
+    source: raw,
+    values: coercedValues
+  });
+  return buildBackgroundMaskScales({
+    baseMask,
+    sourceLayerKey: preparedLayer.layer.key,
+    sourceDataType: sourceMetadata.dataType,
+    values: coercedValues,
+    shardingStrategy
+  });
+}
+
 async function computeLayerRepresentativeNormalization({
   preparedLayerSources,
   representativeTimepoint,
+  backgroundMask,
   signal,
   onProgress
 }: {
   preparedLayerSources: PreparedLayerSource[];
   representativeTimepoint: number;
+  backgroundMask: SharedBackgroundMask | null;
   signal?: AbortSignal;
   onProgress?: (progress: PreprocessDatasetProgress) => void;
 }): Promise<Map<string, NormalizationParameters>> {
@@ -2158,7 +2230,10 @@ async function computeLayerRepresentativeNormalization({
     onProgress?.({ stage: 'rep-stats', layerKey: layer.key });
 
     const volume = await preparedLayer.getTimepointVolume(representativeTimepoint, signal);
-    normalizationByLayerKey.set(layer.key, computeRepresentativeNormalization(volume));
+    normalizationByLayerKey.set(
+      layer.key,
+      computeRepresentativeNormalization(volume, backgroundMask?.scales[0] ?? null)
+    );
   }
 
   return normalizationByLayerKey;
@@ -2167,12 +2242,14 @@ async function computeLayerRepresentativeNormalization({
 async function computeLayerRepresentativeNormalizationForStreaming({
   preparedLayerSources,
   representativeTimepoint,
+  backgroundMask,
   tiffByFileCache,
   signal,
   onProgress
 }: {
   preparedLayerSources: StreamingPreparedLayerSource[];
   representativeTimepoint: number;
+  backgroundMask: SharedBackgroundMask | null;
   tiffByFileCache: TiffByFileCache;
   signal?: AbortSignal;
   onProgress?: (progress: PreprocessDatasetProgress) => void;
@@ -2191,6 +2268,9 @@ async function computeLayerRepresentativeNormalizationForStreaming({
     let scannedMin = Number.POSITIVE_INFINITY;
     let scannedMax = Number.NEGATIVE_INFINITY;
     let sliceCount = 0;
+    const maskData = backgroundMask?.scales[0]?.data ?? null;
+    const maskSliceLength =
+      (backgroundMask?.scales[0]?.width ?? 0) * (backgroundMask?.scales[0]?.height ?? 0);
 
     await forEachSliceInStreamingTimepointSource({
       layer,
@@ -2199,8 +2279,16 @@ async function computeLayerRepresentativeNormalizationForStreaming({
       expectedMetadata: preparedLayer.sourceMetadata,
       tiffByFileCache,
       signal,
-      onSlice: (slice) => {
-        const { min, max } = scanSliceMinMax(slice);
+      onSlice: (slice, z) => {
+        const maskSlice =
+          maskData && maskSliceLength > 0
+            ? maskData.subarray(z * maskSliceLength, (z + 1) * maskSliceLength)
+            : null;
+        const { min, max } = findMinMaxExcludingBackgroundMask({
+          source: slice,
+          channels: preparedLayer.sourceMetadata.channels,
+          mask: maskSlice
+        });
         if (Number.isFinite(min) && min < scannedMin) {
           scannedMin = min;
         }
@@ -2388,6 +2476,7 @@ function buildManifestFromLayerMetadata({
   movieMode,
   totalVolumeCount,
   voxelResolution,
+  backgroundMask,
   shardingStrategy,
   preferDepthChunkOne
 }: {
@@ -2400,6 +2489,7 @@ function buildManifestFromLayerMetadata({
   movieMode: PreprocessedMovieMode;
   totalVolumeCount: number;
   voxelResolution: NonNullable<PreprocessedManifest['dataset']['voxelResolution']>;
+  backgroundMask: SharedBackgroundMask | null;
   shardingStrategy: ShardingStrategy;
   preferDepthChunkOne?: boolean;
 }): {
@@ -2471,6 +2561,25 @@ function buildManifestFromLayerMetadata({
 
   const anisotropyScale = computeAnisotropyScale(voxelResolution);
   const anisotropyCorrection = anisotropyScale ? { scale: anisotropyScale } : null;
+  const manifestBackgroundMask: PreprocessedBackgroundMaskManifest | null = backgroundMask
+    ? {
+        sourceLayerKey: backgroundMask.sourceLayerKey,
+        sourceDataType: backgroundMask.sourceDataType,
+        values: [...backgroundMask.values],
+        zarr: {
+          scales: backgroundMask.scales.map((scale) => ({
+            level: scale.level,
+            downsampleFactor: scale.downsampleFactor,
+            width: scale.width,
+            height: scale.height,
+            depth: scale.depth,
+            zarr: {
+              data: scale.zarr.data
+            }
+          }))
+        }
+      }
+    : null;
 
   const manifest: PreprocessedManifest = {
     format: PREPROCESSED_DATASET_FORMAT,
@@ -2481,7 +2590,8 @@ function buildManifestFromLayerMetadata({
       channels: manifestChannels,
       trackSets: manifestTrackSets,
       voxelResolution,
-      anisotropyCorrection
+      anisotropyCorrection,
+      backgroundMask: manifestBackgroundMask
     }
   };
 
@@ -2580,6 +2690,17 @@ async function createManifestZarrArrays({
       }
     }
   }
+
+  for (const scale of manifest.dataset.backgroundMask?.zarr.scales ?? []) {
+    const data = scale.zarr.data;
+    await zarr.create(root.resolve(data.path), {
+      shape: data.shape,
+      data_type: data.dataType,
+      chunk_shape: data.chunkShape,
+      codecs: resolveArrayCodecsForDescriptor(data),
+      fill_value: 0
+    });
+  }
 }
 
 function chunkStart(chunkIndex: number, chunkSize: number): number {
@@ -2601,7 +2722,8 @@ function extractDataChunkBytesAndComputeStatistics({
   yLength,
   xStart,
   xLength,
-  histogram
+  histogram,
+  backgroundMask
 }: {
   source: Uint8Array;
   width: number;
@@ -2614,6 +2736,7 @@ function extractDataChunkBytesAndComputeStatistics({
   xStart: number;
   xLength: number;
   histogram: Uint32Array;
+  backgroundMask?: BackgroundMaskVolume | null;
 }): {
   chunk: Uint8Array;
   stats: {
@@ -2633,6 +2756,8 @@ function extractDataChunkBytesAndComputeStatistics({
 
   const rowStride = width * channels;
   const planeStride = height * rowStride;
+  const maskRowStride = width;
+  const maskPlaneStride = height * maskRowStride;
   const lineLength = xLength * channels;
   const chunk = new Uint8Array(zLength * yLength * lineLength);
   if (chunk.length === 0) {
@@ -2641,22 +2766,41 @@ function extractDataChunkBytesAndComputeStatistics({
       stats: { min: 0, max: 0, occupancy: 0 }
     };
   }
+  if (
+    backgroundMask &&
+    (
+      backgroundMask.width !== width ||
+      backgroundMask.height !== height ||
+      backgroundMask.depth < zStart + zLength
+    )
+  ) {
+    throw new Error('Background mask dimensions do not match the chunk source dimensions.');
+  }
 
   let min = 255;
   let max = 0;
   let occupiedVoxelCount = 0;
   const voxelCount = zLength * yLength * xLength;
+  let consideredVoxelCount = 0;
 
   let destinationOffset = 0;
   for (let localZ = 0; localZ < zLength; localZ += 1) {
     const sourceZBase = (zStart + localZ) * planeStride;
+    const maskZBase = backgroundMask ? (zStart + localZ) * maskPlaneStride : 0;
     for (let localY = 0; localY < yLength; localY += 1) {
       const sourceOffset = sourceZBase + (yStart + localY) * rowStride + xStart * channels;
       const sourceLine = source.subarray(sourceOffset, sourceOffset + lineLength);
       chunk.set(sourceLine, destinationOffset);
+      const maskOffset = maskZBase + (yStart + localY) * maskRowStride + xStart;
+      const maskLine = backgroundMask
+        ? backgroundMask.data.subarray(maskOffset, maskOffset + xLength)
+        : null;
 
       if (channels === 1) {
         for (let voxelIndex = 0; voxelIndex < xLength; voxelIndex += 1) {
+          if (maskLine && (maskLine[voxelIndex] ?? 0) > 0) {
+            continue;
+          }
           const value = sourceLine[voxelIndex] ?? 0;
           if (value < min) {
             min = value;
@@ -2668,9 +2812,13 @@ function extractDataChunkBytesAndComputeStatistics({
             occupiedVoxelCount += 1;
           }
           histogram[value] += 1;
+          consideredVoxelCount += 1;
         }
       } else if (channels === 2) {
         for (let voxelIndex = 0; voxelIndex < xLength; voxelIndex += 1) {
+          if (maskLine && (maskLine[voxelIndex] ?? 0) > 0) {
+            continue;
+          }
           const voxelBase = voxelIndex * 2;
           const red = sourceLine[voxelBase] ?? 0;
           const green = sourceLine[voxelBase + 1] ?? 0;
@@ -2690,9 +2838,13 @@ function extractDataChunkBytesAndComputeStatistics({
             occupiedVoxelCount += 1;
           }
           histogram[Math.round((red + green) * 0.5)] += 1;
+          consideredVoxelCount += 1;
         }
       } else {
         for (let voxelIndex = 0; voxelIndex < xLength; voxelIndex += 1) {
+          if (maskLine && (maskLine[voxelIndex] ?? 0) > 0) {
+            continue;
+          }
           const voxelBase = voxelIndex * channels;
           const red = sourceLine[voxelBase] ?? 0;
           const green = sourceLine[voxelBase + 1] ?? 0;
@@ -2741,6 +2893,7 @@ function extractDataChunkBytesAndComputeStatistics({
           if (voxelOccupied) {
             occupiedVoxelCount += 1;
           }
+          consideredVoxelCount += 1;
         }
       }
 
@@ -2751,11 +2904,50 @@ function extractDataChunkBytesAndComputeStatistics({
   return {
     chunk,
     stats: {
-      min,
-      max,
+      min: consideredVoxelCount > 0 ? min : 0,
+      max: consideredVoxelCount > 0 ? max : 0,
       occupancy: voxelCount > 0 ? occupiedVoxelCount / voxelCount : 0
     }
   };
+}
+
+function extractBackgroundMaskChunkBytes({
+  source,
+  width,
+  height,
+  zStart,
+  zLength,
+  yStart,
+  yLength,
+  xStart,
+  xLength
+}: {
+  source: Uint8Array;
+  width: number;
+  height: number;
+  zStart: number;
+  zLength: number;
+  yStart: number;
+  yLength: number;
+  xStart: number;
+  xLength: number;
+}): Uint8Array {
+  const rowStride = width;
+  const planeStride = height * rowStride;
+  const chunk = new Uint8Array(zLength * yLength * xLength);
+
+  let destinationOffset = 0;
+  for (let localZ = 0; localZ < zLength; localZ += 1) {
+    const sourceZBase = (zStart + localZ) * planeStride;
+    for (let localY = 0; localY < yLength; localY += 1) {
+      const sourceOffset = sourceZBase + (yStart + localY) * rowStride + xStart;
+      const sourceLine = source.subarray(sourceOffset, sourceOffset + xLength);
+      chunk.set(sourceLine, destinationOffset);
+      destinationOffset += xLength;
+    }
+  }
+
+  return chunk;
 }
 
 function extractLabelChunkBytes({
@@ -2794,15 +2986,6 @@ function extractLabelChunkBytes({
   }
 
   return new Uint8Array(chunkValues.buffer);
-}
-
-function encodeFloat32ArrayLE(values: Float32Array): Uint8Array {
-  const bytes = new Uint8Array(values.length * 4);
-  const view = new DataView(bytes.buffer);
-  for (let index = 0; index < values.length; index += 1) {
-    view.setFloat32(index * 4, values[index] ?? 0, true);
-  }
-  return bytes;
 }
 
 function assertSkipHierarchyDescriptorMatchesGrid({
@@ -2979,6 +3162,7 @@ async function writeDataChunksForScale({
   skipHierarchyDescriptor,
   timepoint,
   volume,
+  backgroundMask,
   signal
 }: {
   chunkWriter: ChunkWriteDispatcher;
@@ -2992,6 +3176,7 @@ async function writeDataChunksForScale({
     channels: number;
     data: Uint8Array;
   };
+  backgroundMask?: BackgroundMaskVolume | null;
   signal?: AbortSignal;
 }): Promise<Uint32Array> {
   const expectedDataLength = volume.depth * volume.height * volume.width * volume.channels;
@@ -3086,7 +3271,8 @@ async function writeDataChunksForScale({
           yLength,
           xStart,
           xLength,
-          histogram
+          histogram,
+          backgroundMask
         });
         await chunkWriter.writeChunk({
           descriptor,
@@ -3228,8 +3414,76 @@ async function writeLabelChunksForScale({
   }
 }
 
+async function writeBackgroundMaskChunksForScale({
+  chunkWriter,
+  descriptor,
+  mask,
+  signal
+}: {
+  chunkWriter: ChunkWriteDispatcher;
+  descriptor: ZarrArrayDescriptor;
+  mask: BackgroundMaskVolume;
+  signal?: AbortSignal;
+}): Promise<void> {
+  const expectedMaskCount = mask.depth * mask.height * mask.width;
+  if (mask.data.length !== expectedMaskCount) {
+    throw new Error(
+      `Background mask payload size mismatch for ${descriptor.path}: expected ${expectedMaskCount}, got ${mask.data.length}.`
+    );
+  }
+  const [descriptorDepth, descriptorHeight, descriptorWidth] = descriptor.shape;
+  if (
+    descriptorDepth !== mask.depth ||
+    descriptorHeight !== mask.height ||
+    descriptorWidth !== mask.width
+  ) {
+    throw new Error(
+      `Background mask descriptor shape mismatch for ${descriptor.path}: expected ${descriptorDepth}x${descriptorHeight}x${descriptorWidth}, got ${mask.depth}x${mask.height}x${mask.width}.`
+    );
+  }
+  if (descriptor.chunkShape.length !== 3) {
+    throw new Error(`Background mask chunk shape for ${descriptor.path} must have rank 3.`);
+  }
+
+  const [chunkDepth, chunkHeight, chunkWidth] = descriptor.chunkShape;
+  const zChunks = Math.ceil(mask.depth / chunkDepth);
+  const yChunks = Math.ceil(mask.height / chunkHeight);
+  const xChunks = Math.ceil(mask.width / chunkWidth);
+
+  for (let zChunk = 0; zChunk < zChunks; zChunk += 1) {
+    const zStart = chunkStart(zChunk, chunkDepth);
+    const zLength = chunkLength(mask.depth, zStart, chunkDepth);
+    for (let yChunk = 0; yChunk < yChunks; yChunk += 1) {
+      const yStart = chunkStart(yChunk, chunkHeight);
+      const yLength = chunkLength(mask.height, yStart, chunkHeight);
+      for (let xChunk = 0; xChunk < xChunks; xChunk += 1) {
+        const xStart = chunkStart(xChunk, chunkWidth);
+        const xLength = chunkLength(mask.width, xStart, chunkWidth);
+        const chunkBytes = extractBackgroundMaskChunkBytes({
+          source: mask.data,
+          width: mask.width,
+          height: mask.height,
+          zStart,
+          zLength,
+          yStart,
+          yLength,
+          xStart,
+          xLength
+        });
+        await chunkWriter.writeChunk({
+          descriptor,
+          chunkCoords: [zChunk, yChunk, xChunk],
+          bytes: chunkBytes,
+          signal
+        });
+      }
+    }
+  }
+}
+
 type StreamingScaleWriteState = {
   scale: PreprocessedLayerScaleManifestEntry;
+  backgroundMaskScale: BackgroundMaskVolume | null;
   dataDescriptor: ZarrArrayDescriptor;
   labelsDescriptor?: ZarrArrayDescriptor;
   skipHierarchyDescriptor?: PreprocessedScaleSkipHierarchyZarrDescriptor;
@@ -3257,9 +3511,11 @@ type StreamingScaleTransition = {
 
 function createStreamingScaleWriteState({
   scale,
+  backgroundMaskScale,
   skipHierarchyDescriptor
 }: {
   scale: PreprocessedLayerScaleManifestEntry;
+  backgroundMaskScale: BackgroundMaskVolume | null;
   skipHierarchyDescriptor?: PreprocessedScaleSkipHierarchyZarrDescriptor;
 }): StreamingScaleWriteState {
   const dataDescriptor = scale.zarr.data;
@@ -3332,6 +3588,7 @@ function createStreamingScaleWriteState({
 
   return {
     scale,
+    backgroundMaskScale,
     dataDescriptor,
     labelsDescriptor,
     skipHierarchyDescriptor,
@@ -3376,6 +3633,19 @@ async function writeStreamingScaleSlice({
   if (zIndex >= scale.depth) {
     throw new Error(`Received too many slices for scale ${scale.level} (${dataDescriptor.path}).`);
   }
+  const backgroundMaskSlice = (() => {
+    if (!state.backgroundMaskScale) {
+      return null;
+    }
+    const sliceLength = state.backgroundMaskScale.width * state.backgroundMaskScale.height;
+    const start = zIndex * sliceLength;
+    return {
+      width: state.backgroundMaskScale.width,
+      height: state.backgroundMaskScale.height,
+      depth: 1,
+      data: state.backgroundMaskScale.data.subarray(start, start + sliceLength)
+    } satisfies BackgroundMaskVolume;
+  })();
 
   for (let yChunk = 0; yChunk < state.yChunks; yChunk += 1) {
     const yStart = chunkStart(yChunk, state.chunkHeight);
@@ -3394,7 +3664,8 @@ async function writeStreamingScaleSlice({
         yLength,
         xStart,
         xLength,
-        histogram
+        histogram,
+        backgroundMask: backgroundMaskSlice
       });
       await chunkWriter.writeChunk({
         descriptor: dataDescriptor,
@@ -3602,6 +3873,7 @@ async function writeStreamingLayerTimepoint({
   manifestLayer,
   sourceMetadata,
   normalization,
+  backgroundMask,
   tiffByFileCache,
   signal,
   timepoint
@@ -3611,6 +3883,7 @@ async function writeStreamingLayerTimepoint({
   manifestLayer: PreprocessedLayerManifestEntry;
   sourceMetadata: LayerMetadata;
   normalization: NormalizationParameters | null;
+  backgroundMask: SharedBackgroundMask | null;
   tiffByFileCache: TiffByFileCache;
   signal?: AbortSignal;
   timepoint: number;
@@ -3619,10 +3892,21 @@ async function writeStreamingLayerTimepoint({
   if (sortedScales.length === 0) {
     throw new Error(`Layer "${preparedLayer.layer.key}" is missing Zarr scale metadata.`);
   }
+  const backgroundMaskByLevel = new Map<number, SharedBackgroundMaskScale>(
+    (backgroundMask?.scales ?? []).map((scale) => [scale.level, scale])
+  );
 
   const scaleStates = sortedScales.map((scale) =>
     createStreamingScaleWriteState({
       scale,
+      backgroundMaskScale: backgroundMaskByLevel.get(scale.level)
+        ? {
+            width: backgroundMaskByLevel.get(scale.level)!.width,
+            height: backgroundMaskByLevel.get(scale.level)!.height,
+            depth: backgroundMaskByLevel.get(scale.level)!.depth,
+            data: backgroundMaskByLevel.get(scale.level)!.data
+          }
+        : null,
       skipHierarchyDescriptor: scale.zarr.skipHierarchy
     })
   );
@@ -3727,13 +4011,26 @@ async function writeStreamingLayerTimepoint({
       expectedMetadata: sourceMetadata,
       tiffByFileCache,
       signal,
-      onSlice: async (slice) => {
+      onSlice: async (slice, z) => {
         const normalizedSlice = normalizeSliceToUint8({
           source: slice,
           dataType: sourceMetadata.dataType,
           parameters: resolvedNormalization
         });
-        await processScaleSlice(0, normalizedSlice);
+        const maskScale = backgroundMask?.scales[0] ?? null;
+        if (!maskScale || (backgroundMask?.maskedVoxelCount ?? 0) <= 0) {
+          await processScaleSlice(0, normalizedSlice);
+          return;
+        }
+        const maskedSlice = normalizedSlice.slice();
+        const maskSliceLength = maskScale.width * maskScale.height;
+        const maskSlice = maskScale.data.subarray(z * maskSliceLength, (z + 1) * maskSliceLength);
+        applyBackgroundMaskInPlace({
+          target: maskedSlice,
+          channels: sourceMetadata.channels,
+          mask: maskSlice
+        });
+        await processScaleSlice(0, maskedSlice);
       }
     });
   }
@@ -3893,6 +4190,7 @@ async function writeNormalizedLayerTimepoint({
   normalized,
   layer,
   manifestLayer,
+  backgroundMask,
   signal,
   timepoint
 }: {
@@ -3900,6 +4198,7 @@ async function writeNormalizedLayerTimepoint({
   normalized: NormalizedVolume;
   layer: PreprocessLayerSource;
   manifestLayer: PreprocessedLayerManifestEntry;
+  backgroundMask: SharedBackgroundMask | null;
   signal?: AbortSignal;
   timepoint: number;
 }): Promise<void> {
@@ -3925,6 +4224,9 @@ async function writeNormalizedLayerTimepoint({
           labels: normalized.segmentationLabels
         }
       : null;
+  const backgroundMaskByLevel = new Map<number, SharedBackgroundMaskScale>(
+    (backgroundMask?.scales ?? []).map((scale) => [scale.level, scale])
+  );
 
   for (let scaleIndex = 0; scaleIndex < sortedScales.length; scaleIndex += 1) {
     const scale = sortedScales[scaleIndex]!;
@@ -3934,6 +4236,7 @@ async function writeNormalizedLayerTimepoint({
       skipHierarchyDescriptor: scale.zarr.skipHierarchy,
       timepoint,
       volume: volumeForScale,
+      backgroundMask: backgroundMaskByLevel.get(scale.level) ?? null,
       signal
     });
     await chunkWriter.writeChunk({
@@ -4076,6 +4379,7 @@ async function writeLayerVolumesFor3dStreaming({
   manifestLayer,
   sourceMetadata,
   normalizationByLayerKey,
+  backgroundMask,
   tiffByFileCache,
   signal,
   onProgress,
@@ -4087,6 +4391,7 @@ async function writeLayerVolumesFor3dStreaming({
   manifestLayer: PreprocessedLayerManifestEntry;
   sourceMetadata: LayerMetadata;
   normalizationByLayerKey: Map<string, NormalizationParameters>;
+  backgroundMask: SharedBackgroundMask | null;
   tiffByFileCache: TiffByFileCache;
   signal?: AbortSignal;
   onProgress?: (progress: PreprocessDatasetProgress) => void;
@@ -4111,6 +4416,7 @@ async function writeLayerVolumesFor3dStreaming({
       manifestLayer,
       sourceMetadata,
       normalization,
+      backgroundMask,
       tiffByFileCache,
       signal,
       timepoint
@@ -4134,6 +4440,7 @@ async function writeLayerVolumesFor3d({
   sourceMetadata,
   representativeTimepoint,
   normalizationByLayerKey,
+  backgroundMask,
   workerizeNormalizationDownsample,
   signal,
   onProgress,
@@ -4146,6 +4453,7 @@ async function writeLayerVolumesFor3d({
   sourceMetadata: LayerMetadata;
   representativeTimepoint: number;
   normalizationByLayerKey: Map<string, NormalizationParameters>;
+  backgroundMask: SharedBackgroundMask | null;
   workerizeNormalizationDownsample: boolean;
   signal?: AbortSignal;
   onProgress?: (progress: PreprocessDatasetProgress) => void;
@@ -4157,7 +4465,8 @@ async function writeLayerVolumesFor3d({
     ? null
     : normalizationByLayerKey.get(layer.key) ??
       computeRepresentativeNormalization(
-        await preparedLayer.getTimepointVolume(representativeTimepoint, signal)
+        await preparedLayer.getTimepointVolume(representativeTimepoint, signal),
+        backgroundMask?.scales[0] ?? null
       );
   let useWorkerizedNormalizationDownsample =
     workerizeNormalizationDownsample && supportsPreprocessScalePyramidWorker();
@@ -4203,16 +4512,41 @@ async function writeLayerVolumesFor3d({
     if (!wroteWithWorker) {
       const normalized = layer.isSegmentation
         ? colorizeSegmentationVolume(raw, createSegmentationSeed(layer.key, timepoint))
-        : normalizeVolume(raw, normalization ?? computeRepresentativeNormalization(raw));
+        : normalizeVolume(
+            raw,
+            normalization ?? computeRepresentativeNormalization(raw, backgroundMask?.scales[0] ?? null)
+          );
 
-      await writeNormalizedLayerTimepoint({
-        chunkWriter,
-        normalized,
-        layer,
-        manifestLayer,
-        signal,
-        timepoint
-      });
+      if (!layer.isSegmentation && backgroundMask && backgroundMask.maskedVoxelCount > 0) {
+        const maskedNormalized = normalized.normalized.slice();
+        applyBackgroundMaskInPlace({
+          target: maskedNormalized,
+          channels: normalized.channels,
+          mask: backgroundMask.scales[0]!.data
+        });
+        await writeNormalizedLayerTimepoint({
+          chunkWriter,
+          normalized: {
+            ...normalized,
+            normalized: maskedNormalized
+          },
+          layer,
+          manifestLayer,
+          backgroundMask,
+          signal,
+          timepoint
+        });
+      } else {
+        await writeNormalizedLayerTimepoint({
+          chunkWriter,
+          normalized,
+          layer,
+          manifestLayer,
+          backgroundMask,
+          signal,
+          timepoint
+        });
+      }
     }
 
     progressState.processedVolumes += 1;
@@ -4237,6 +4571,7 @@ export async function preprocessDatasetToStorage({
   storageStrategy,
   processingStrategy,
   inputInterpretation,
+  backgroundMask: backgroundMaskConfig,
   signal,
   onProgress
 }: PreprocessDatasetToStorageOptions): Promise<{
@@ -4258,6 +4593,7 @@ export async function preprocessDatasetToStorage({
   const resolvedInputInterpretation = resolveInputInterpretation(inputInterpretation);
   const requestedExecutionMode = resolvePreprocessExecutionMode(processingStrategy);
   const streamingThresholdBytes = resolvePreprocessStreamingThresholdBytes(processingStrategy);
+  const shardingStrategy = resolveShardingStrategy(storageStrategy);
   const canUseStreamingPipeline = typeof FileReader !== 'undefined' && !providedVolumeLoader;
   let datasetExecutionMode: ResolvedPreprocessExecutionMode = 'in-memory';
   let streamingPreparedLayerSources: StreamingPreparedLayerSource[] = [];
@@ -4283,6 +4619,7 @@ export async function preprocessDatasetToStorage({
   let preparedLayerByKey: Map<string, PreparedLayerSource> | null = null;
   let streamingPreparedLayerByKey: Map<string, StreamingPreparedLayerSource> | null = null;
   let tiffByFileCache: TiffByFileCache | null = null;
+  let backgroundMask: SharedBackgroundMask | null = null;
 
   if (datasetExecutionMode === 'in-memory') {
     const volumeLoader = await resolveVolumeLoader(providedVolumeLoader);
@@ -4303,16 +4640,23 @@ export async function preprocessDatasetToStorage({
       signal
     }));
     representativeTimepoint = Math.floor(expectedTimepoints / 2);
-    normalizationByLayerKey = await computeLayerRepresentativeNormalization({
-      preparedLayerSources,
-      representativeTimepoint,
-      signal,
-      onProgress
-    });
     ({ sourceMetadataByLayerKey, layerMetadataByKey } = await collectLayerMetadata({
       preparedLayerSources,
       signal
     }));
+    backgroundMask = await buildBackgroundMaskForPreparedLayers({
+      preparedLayerSources,
+      backgroundMaskValues: backgroundMaskConfig?.values,
+      shardingStrategy,
+      signal
+    });
+    normalizationByLayerKey = await computeLayerRepresentativeNormalization({
+      preparedLayerSources,
+      representativeTimepoint,
+      backgroundMask,
+      signal,
+      onProgress
+    });
   } else {
     streamingPreparedLayerByKey = new Map<string, StreamingPreparedLayerSource>(
       streamingPreparedLayerSources.map((preparedLayer) => [preparedLayer.layer.key, preparedLayer])
@@ -4324,23 +4668,32 @@ export async function preprocessDatasetToStorage({
     }));
     representativeTimepoint = Math.floor(expectedTimepoints / 2);
     tiffByFileCache = new Map<File, Promise<any>>();
+    ({ sourceMetadataByLayerKey, layerMetadataByKey } = collectLayerMetadataFromStreamingSources({
+      preparedLayerSources: streamingPreparedLayerSources
+    }));
+    backgroundMask = await buildBackgroundMaskForStreamingPreparedLayers({
+      preparedLayerSources: streamingPreparedLayerSources,
+      backgroundMaskValues: backgroundMaskConfig?.values,
+      shardingStrategy,
+      tiffByFileCache,
+      signal
+    });
     normalizationByLayerKey = await computeLayerRepresentativeNormalizationForStreaming({
       preparedLayerSources: streamingPreparedLayerSources,
       representativeTimepoint,
+      backgroundMask,
       tiffByFileCache,
       signal,
       onProgress
     });
-    ({ sourceMetadataByLayerKey, layerMetadataByKey } = collectLayerMetadataFromStreamingSources({
-      preparedLayerSources: streamingPreparedLayerSources
-    }));
   }
 
   const totalVolumeCount = expectedTimepoints;
   const totalWritableVolumes = expectedTimepoints * sortedLayerSources.length;
-  const shardingStrategy = resolveShardingStrategy(storageStrategy);
   const workerizeNormalizationDownsample =
-    datasetExecutionMode === 'in-memory' && resolveWorkerizeNormalizationDownsample(processingStrategy);
+    datasetExecutionMode === 'in-memory' &&
+    !backgroundMask &&
+    resolveWorkerizeNormalizationDownsample(processingStrategy);
   const { manifest, layerManifestByKey, trackEntriesByTrackSetId } = buildManifestFromLayerMetadata({
     channels,
     trackSets,
@@ -4351,6 +4704,7 @@ export async function preprocessDatasetToStorage({
     movieMode,
     totalVolumeCount,
     voxelResolution,
+    backgroundMask,
     shardingStrategy,
     preferDepthChunkOne: datasetExecutionMode === 'streaming'
   });
@@ -4367,6 +4721,21 @@ export async function preprocessDatasetToStorage({
   const chunkWriter = createChunkWriteDispatcher(storage, {
     maxInFlightWrites: shardingStrategy.maxInFlightChunkWrites
   });
+  if (backgroundMask) {
+    for (const scale of backgroundMask.scales) {
+      await writeBackgroundMaskChunksForScale({
+        chunkWriter,
+        descriptor: scale.zarr.data,
+        mask: {
+          width: scale.width,
+          height: scale.height,
+          depth: scale.depth,
+          data: scale.data
+        },
+        signal
+      });
+    }
+  }
   const progressState = { processedVolumes: 0 };
   for (const channel of channels) {
     const layerSources = layersByChannel.get(channel.id) ?? [];
@@ -4391,6 +4760,7 @@ export async function preprocessDatasetToStorage({
           sourceMetadata,
           representativeTimepoint,
           normalizationByLayerKey,
+          backgroundMask: layer.isSegmentation ? null : backgroundMask,
           workerizeNormalizationDownsample,
           signal,
           onProgress,
@@ -4411,6 +4781,7 @@ export async function preprocessDatasetToStorage({
           manifestLayer,
           sourceMetadata,
           normalizationByLayerKey,
+          backgroundMask: layer.isSegmentation ? null : backgroundMask,
           tiffByFileCache,
           signal,
           onProgress,

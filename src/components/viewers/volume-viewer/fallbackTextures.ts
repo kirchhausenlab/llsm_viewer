@@ -47,6 +47,7 @@ export const FALLBACK_BRICK_MIN_TEXTURE = createFallbackByte3dTexture(new Uint8A
 export const FALLBACK_BRICK_MAX_TEXTURE = createFallbackByte3dTexture(new Uint8Array([255]));
 export const FALLBACK_BRICK_ATLAS_INDEX_TEXTURE = createFallbackFloat3dTexture(new Float32Array([1]));
 export const FALLBACK_BRICK_ATLAS_DATA_TEXTURE = createFallbackByte3dTexture(new Uint8Array([0]));
+export const FALLBACK_BACKGROUND_MASK_TEXTURE = createFallbackByte3dTexture(new Uint8Array([0]));
 export const FALLBACK_BRICK_ATLAS_BASE_TEXTURE = createFallbackFloat3dTexture(
   new Float32Array([0, 0, 0, 0]),
   THREE.RGBAFormat,

@@ -1,4 +1,4 @@
-import { Vector2, Vector3, type DataTexture } from 'three';
+import { Vector2, Vector3, type Data3DTexture, type DataTexture } from 'three';
 
 type SliceUniforms = {
   u_slice: { value: DataTexture | null };
@@ -8,7 +8,11 @@ type SliceUniforms = {
   u_windowMin: { value: number };
   u_windowMax: { value: number };
   u_invert: { value: number };
+  u_sliceIndex: { value: number };
   u_sliceSize: { value: Vector2 };
+  u_backgroundMaskEnabled: { value: number };
+  u_backgroundMask: { value: Data3DTexture | null };
+  u_backgroundMaskSize: { value: Vector3 };
   u_hoverActive: { value: number };
   u_hoverPixel: { value: Vector2 };
   u_hoverGridSubdivisions: { value: Vector2 };
@@ -23,7 +27,11 @@ const uniforms = {
   u_windowMin: { value: 0 },
   u_windowMax: { value: 1 },
   u_invert: { value: 0 },
+  u_sliceIndex: { value: 0 },
   u_sliceSize: { value: new Vector2(1, 1) },
+  u_backgroundMaskEnabled: { value: 0 },
+  u_backgroundMask: { value: null as Data3DTexture | null },
+  u_backgroundMaskSize: { value: new Vector3(1, 1, 1) },
   u_hoverActive: { value: 0 },
   u_hoverPixel: { value: new Vector2(-1, -1) },
   u_hoverGridSubdivisions: { value: new Vector2(1, 1) },
@@ -49,14 +57,18 @@ export const SliceRenderShader = {
     uniform float u_windowMin;
     uniform float u_windowMax;
     uniform float u_invert;
+    uniform float u_sliceIndex;
+    uniform float u_backgroundMaskEnabled;
     uniform float u_hoverActive;
     uniform vec2 u_sliceSize;
+    uniform vec3 u_backgroundMaskSize;
     uniform vec2 u_hoverPixel;
     uniform vec2 u_hoverGridSubdivisions;
     uniform vec3 u_hoverOutlineColor;
 
     uniform sampler2D u_cmdata;
     uniform sampler2D u_slice;
+    uniform sampler3D u_backgroundMask;
 
     varying vec2 v_uv;
 
@@ -97,6 +109,23 @@ export const SliceRenderShader = {
     vec4 sample_slice(vec2 uv) {
       vec2 clamped = clamp(uv, 0.0, 1.0);
       return texture2D(u_slice, clamped);
+    }
+
+    bool is_background_masked_slice(vec2 uv) {
+      if (u_backgroundMaskEnabled <= 0.5) {
+        return false;
+      }
+      vec2 safeUv = clamp(uv, 0.0, 1.0);
+      vec3 maskSize = max(u_backgroundMaskSize, vec3(1.0));
+      ivec2 maskTexelXY = ivec2(
+        clamp(
+          floor(safeUv * maskSize.xy),
+          vec2(0.0),
+          max(maskSize.xy - vec2(1.0), vec2(0.0))
+        )
+      );
+      int maskTexelZ = int(clamp(floor(u_sliceIndex + 0.5), 0.0, maskSize.z - 1.0));
+      return texelFetch(u_backgroundMask, ivec3(maskTexelXY, maskTexelZ), 0).r > 0.5;
     }
 
     vec4 apply_colormap(float intensity) {
@@ -173,6 +202,11 @@ export const SliceRenderShader = {
     }
 
     void main() {
+      if (is_background_masked_slice(v_uv)) {
+        gl_FragColor = apply_blending_mode(apply_hover_outline(vec4(0.0)));
+        return;
+      }
+
       vec4 sliceSample = sample_slice(v_uv);
       float intensity = luminance(sliceSample);
       float adjusted = adjust_intensity(intensity);

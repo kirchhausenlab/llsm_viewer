@@ -32,6 +32,11 @@ type ExperimentConfigurationProps = {
   onVoxelResolutionUnitChange: (unit: VoxelResolutionUnit) => void;
   onVoxelResolutionTimeUnitChange: (unit: TemporalResolutionUnit) => void;
   onVoxelResolutionAnisotropyToggle: (value: boolean) => void;
+  backgroundMaskEnabled: boolean;
+  backgroundMaskValuesInput: string;
+  backgroundMaskError: string | null;
+  onBackgroundMaskToggle: (value: boolean) => void;
+  onBackgroundMaskValuesInputChange: (value: string) => void;
   isFrontPageLocked: boolean;
 };
 
@@ -42,6 +47,11 @@ const ExperimentConfiguration: FC<ExperimentConfigurationProps> = ({
   onVoxelResolutionUnitChange,
   onVoxelResolutionTimeUnitChange,
   onVoxelResolutionAnisotropyToggle,
+  backgroundMaskEnabled,
+  backgroundMaskValuesInput,
+  backgroundMaskError,
+  onBackgroundMaskToggle,
+  onBackgroundMaskValuesInputChange,
   isFrontPageLocked
 }) => {
   const spatialResolutionAxes = SPATIAL_VOXEL_RESOLUTION_AXES_BY_EXPERIMENT_TYPE[experimentType];
@@ -121,7 +131,32 @@ const ExperimentConfiguration: FC<ExperimentConfigurationProps> = ({
             />
             <strong>Make data isotropic</strong>
           </label>
+          <label className="voxel-resolution-anisotropy voxel-resolution-background-mask">
+            <input
+              type="checkbox"
+              checked={backgroundMaskEnabled}
+              onChange={(event) => onBackgroundMaskToggle(event.target.checked)}
+              disabled={isFrontPageLocked}
+            />
+            <strong>Background mask</strong>
+          </label>
+          {backgroundMaskEnabled ? (
+            <label className="voxel-resolution-background-mask-values">
+              <span className="voxel-resolution-field-label">Values:</span>
+              <input
+                type="text"
+                value={backgroundMaskValuesInput}
+                onChange={(event) => onBackgroundMaskValuesInputChange(event.target.value)}
+                placeholder="0; 65535; -1"
+                disabled={isFrontPageLocked}
+                aria-label="Background mask values"
+              />
+            </label>
+          ) : null}
         </div>
+        {backgroundMaskEnabled && backgroundMaskError ? (
+          <div className="voxel-resolution-background-mask-error">{backgroundMaskError}</div>
+        ) : null}
       </div>
     </>
   );

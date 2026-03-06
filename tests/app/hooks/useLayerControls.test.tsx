@@ -58,6 +58,7 @@ function useLayerControlsHarness(initialRenderStyle: RenderStyle = RENDER_STYLE_
     layerVolumes: {},
     layerPageTables: {},
     layerBrickAtlases: {},
+    backgroundMasksByScale: {},
     loadVolume: null,
     layerAutoThresholds,
     setLayerAutoThresholds,

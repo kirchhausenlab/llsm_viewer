@@ -15,8 +15,12 @@ import {
   parseShardEntryIndexFromHeaderBytes,
   type ShardEntryIndex
 } from '../shared/utils/preprocessedDataset/sharding';
-import { getBytesPerValue } from '../types/volume';
+import { getBytesPerValue, type VolumeDataType } from '../types/volume';
 import { ensureArrayBuffer } from '../shared/utils/buffer';
+import {
+  computeBackgroundMaskVisibleRegion,
+  type BackgroundMaskVisibleRegion
+} from '../shared/utils/backgroundMask';
 import { decodeUint32ArrayLE, HISTOGRAM_BINS } from '../shared/utils/histogram';
 import { getLod0FeatureFlags } from '../config/lod0Flags';
 import type {
@@ -162,6 +166,18 @@ export type VolumeBrickAtlas = {
   enabled: boolean;
 };
 
+export type VolumeBackgroundMask = {
+  sourceLayerKey: string;
+  sourceDataType: VolumeDataType;
+  values: number[];
+  scaleLevel: number;
+  width: number;
+  height: number;
+  depth: number;
+  data: Uint8Array;
+  visibleRegion?: BackgroundMaskVisibleRegion;
+};
+
 export type VolumeProvider = {
   getVolume(
     layerKey: string,
@@ -178,6 +194,9 @@ export type VolumeProvider = {
     timepoint: number,
     options?: { scaleLevel?: number; signal?: AbortSignal | null }
   ): Promise<VolumeBrickAtlas>;
+  getBackgroundMask?(
+    options?: { scaleLevel?: number; signal?: AbortSignal | null }
+  ): Promise<VolumeBackgroundMask | null>;
   prefetchBrickAtlases?(
     layerKeys: string[],
     timepoint: number,
@@ -241,6 +260,15 @@ type CachedBrickAtlasEntry = {
   inFlightWaiters: number;
 };
 
+type CachedBackgroundMaskEntry = {
+  key: string;
+  scaleLevel: number;
+  mask: VolumeBackgroundMask | null;
+  inFlight: Promise<VolumeBackgroundMask | null> | null;
+  inFlightAbortController: AbortController | null;
+  inFlightWaiters: number;
+};
+
 type ChunkReadPlan = {
   chunkCoords: number[];
   chunkPath: string;
@@ -283,6 +311,10 @@ function createBrickPageTableCacheKey(layerKey: string, timepoint: number, scale
 
 function createBrickAtlasCacheKey(layerKey: string, timepoint: number, scaleLevel: number): string {
   return `${layerKey}:${timepoint}:s${scaleLevel}`;
+}
+
+function createBackgroundMaskCacheKey(scaleLevel: number): string {
+  return `background-mask:s${scaleLevel}`;
 }
 
 function isValidTimepoint(timepoint: number): boolean {
@@ -418,139 +450,6 @@ function normalizeScaleLevelSet(
     new Set(requested.map((value) => normalizeScaleLevel(value)))
   ).sort((left, right) => left - right);
   return levels;
-}
-
-function flattenGridIndex3d(
-  z: number,
-  y: number,
-  x: number,
-  gridY: number,
-  gridX: number
-): number {
-  return (z * gridY + y) * gridX + x;
-}
-
-function buildConservativeLeafHierarchyLevel(
-  leaf: VolumeBrickPageTable['skipHierarchy']['levels'][number]
-): VolumeBrickPageTable['skipHierarchy']['levels'][number] {
-  const [gridZ, gridY, gridX] = leaf.gridShape;
-  const total = gridZ * gridY * gridX;
-  const occupancy = new Uint8Array(total);
-  const min = new Uint8Array(total);
-  const max = new Uint8Array(total);
-
-  for (let z = 0; z < gridZ; z += 1) {
-    for (let y = 0; y < gridY; y += 1) {
-      for (let x = 0; x < gridX; x += 1) {
-        let anyOccupied = false;
-        let conservativeMin = 255;
-        let conservativeMax = 0;
-        for (let dz = -1; dz <= 1; dz += 1) {
-          const nz = z + dz;
-          if (nz < 0 || nz >= gridZ) {
-            continue;
-          }
-          for (let dy = -1; dy <= 1; dy += 1) {
-            const ny = y + dy;
-            if (ny < 0 || ny >= gridY) {
-              continue;
-            }
-            for (let dx = -1; dx <= 1; dx += 1) {
-              const nx = x + dx;
-              if (nx < 0 || nx >= gridX) {
-                continue;
-              }
-              const neighborIndex = flattenGridIndex3d(nz, ny, nx, gridY, gridX);
-              if ((leaf.occupancy[neighborIndex] ?? 0) <= 0) {
-                continue;
-              }
-              anyOccupied = true;
-              conservativeMin = Math.min(conservativeMin, leaf.min[neighborIndex] ?? 0);
-              conservativeMax = Math.max(conservativeMax, leaf.max[neighborIndex] ?? 0);
-            }
-          }
-        }
-
-        const index = flattenGridIndex3d(z, y, x, gridY, gridX);
-        if (!anyOccupied) {
-          occupancy[index] = 0;
-          min[index] = 0;
-          max[index] = 0;
-          continue;
-        }
-        occupancy[index] = 255;
-        min[index] = conservativeMin === 255 ? 0 : conservativeMin;
-        max[index] = conservativeMax;
-      }
-    }
-  }
-
-  return {
-    level: leaf.level,
-    gridShape: [gridZ, gridY, gridX],
-    occupancy,
-    min,
-    max
-  };
-}
-
-function buildConservativeSkipHierarchyLevels(
-  levels: VolumeBrickPageTable['skipHierarchy']['levels']
-): VolumeBrickPageTable['skipHierarchy']['levels'] {
-  if (levels.length === 0) {
-    return levels;
-  }
-  const conservativeLeaf = buildConservativeLeafHierarchyLevel(levels[0]!);
-  const conservativeLevels: VolumeBrickPageTable['skipHierarchy']['levels'] = [conservativeLeaf];
-  let childLevel = conservativeLeaf;
-
-  for (let levelIndex = 1; levelIndex < levels.length; levelIndex += 1) {
-    const parentTemplate = levels[levelIndex]!;
-    const [childGridZ, childGridY, childGridX] = childLevel.gridShape;
-    const [parentGridZ, parentGridY, parentGridX] = parentTemplate.gridShape;
-    const parentTotal = parentGridZ * parentGridY * parentGridX;
-    const parentOccupancy = new Uint8Array(parentTotal);
-    const parentMin = new Uint8Array(parentTotal);
-    const parentMax = new Uint8Array(parentTotal);
-    parentMin.fill(255);
-
-    for (let childZ = 0; childZ < childGridZ; childZ += 1) {
-      const parentZ = Math.min(Math.floor(childZ / 2), Math.max(parentGridZ - 1, 0));
-      for (let childY = 0; childY < childGridY; childY += 1) {
-        const parentY = Math.min(Math.floor(childY / 2), Math.max(parentGridY - 1, 0));
-        for (let childX = 0; childX < childGridX; childX += 1) {
-          const parentX = Math.min(Math.floor(childX / 2), Math.max(parentGridX - 1, 0));
-          const childIndex = flattenGridIndex3d(childZ, childY, childX, childGridY, childGridX);
-          if ((childLevel.occupancy[childIndex] ?? 0) <= 0) {
-            continue;
-          }
-          const parentIndex = flattenGridIndex3d(parentZ, parentY, parentX, parentGridY, parentGridX);
-          parentOccupancy[parentIndex] = 255;
-          parentMin[parentIndex] = Math.min(parentMin[parentIndex] ?? 255, childLevel.min[childIndex] ?? 0);
-          parentMax[parentIndex] = Math.max(parentMax[parentIndex] ?? 0, childLevel.max[childIndex] ?? 0);
-        }
-      }
-    }
-
-    for (let index = 0; index < parentTotal; index += 1) {
-      if ((parentOccupancy[index] ?? 0) > 0) {
-        continue;
-      }
-      parentMin[index] = 0;
-      parentMax[index] = 0;
-    }
-
-    childLevel = {
-      level: parentTemplate.level,
-      gridShape: [parentGridZ, parentGridY, parentGridX],
-      occupancy: parentOccupancy,
-      min: parentMin,
-      max: parentMax
-    };
-    conservativeLevels.push(childLevel);
-  }
-
-  return conservativeLevels;
 }
 
 function computeElementCount(shape: number[], context: string): number {
@@ -888,6 +787,158 @@ async function readTimepointChunkedArray({
   return { bytes: outputBytes, bytesRead };
 }
 
+async function readChunkedArray({
+  descriptor,
+  expectedShape,
+  maxConcurrentChunkReads,
+  readChunk,
+  signal
+}: {
+  descriptor: ZarrArrayDescriptor;
+  expectedShape: number[];
+  maxConcurrentChunkReads: number;
+  readChunk: (
+    chunkCoords: number[],
+    options?: { signal?: AbortSignal | null }
+  ) => Promise<{ bytes: Uint8Array; bytesRead: number }>;
+  signal?: AbortSignal | null;
+}): Promise<{ bytes: Uint8Array; bytesRead: number }> {
+  throwIfAborted(signal);
+  if (descriptor.shape.length !== expectedShape.length) {
+    throw new Error(
+      `Unexpected rank for ${descriptor.path} (expected ${expectedShape.length}, got ${descriptor.shape.length}).`
+    );
+  }
+  if (descriptor.shape.length !== descriptor.chunkShape.length) {
+    throw new Error(`Invalid Zarr descriptor at ${descriptor.path}: shape/chunk rank mismatch.`);
+  }
+  for (let axis = 0; axis < expectedShape.length; axis += 1) {
+    if ((descriptor.shape[axis] ?? -1) !== (expectedShape[axis] ?? -1)) {
+      throw new Error(`Unexpected shape for ${descriptor.path}.`);
+    }
+  }
+
+  const bytesPerValue = getBytesPerValue(descriptor.dataType);
+  const outputByteLength = computeElementCount(expectedShape, `output shape for ${descriptor.path}`) * bytesPerValue;
+  const outputBytes = new Uint8Array(outputByteLength);
+  const destinationStrides = computeRowMajorStrides(expectedShape);
+  let bytesRead = 0;
+  const chunkCounts = descriptor.shape.map((shapeDim, axis) => {
+    const chunkDim = descriptor.chunkShape[axis] ?? 0;
+    if (!Number.isFinite(shapeDim) || shapeDim < 0 || Math.floor(shapeDim) !== shapeDim) {
+      throw new Error(`Invalid shape dimension for ${descriptor.path}: ${shapeDim}`);
+    }
+    if (!Number.isFinite(chunkDim) || chunkDim <= 0 || Math.floor(chunkDim) !== chunkDim) {
+      throw new Error(`Invalid chunk dimension for ${descriptor.path}: ${chunkDim}`);
+    }
+    return Math.ceil(shapeDim / chunkDim);
+  });
+  if (chunkCounts.some((count) => count === 0)) {
+    return { bytes: outputBytes, bytesRead };
+  }
+
+  const chunkGridCenters = chunkCounts.map((count) => (count - 1) / 2);
+  const chunkCoords = new Array<number>(expectedShape.length).fill(0);
+  const chunkPlans: ChunkReadPlan[] = [];
+
+  while (true) {
+    const chunkStart = new Array<number>(expectedShape.length);
+    const chunkShape = new Array<number>(expectedShape.length);
+    let priority = 0;
+
+    for (let axis = 0; axis < expectedShape.length; axis += 1) {
+      const axisChunkCoord = chunkCoords[axis] ?? 0;
+      const axisChunkSize = descriptor.chunkShape[axis] ?? 0;
+      const axisStart = axisChunkCoord * axisChunkSize;
+      const axisExtent = Math.min(axisChunkSize, (descriptor.shape[axis] ?? 0) - axisStart);
+      chunkStart[axis] = axisStart;
+      chunkShape[axis] = axisExtent;
+
+      const distanceFromCenter = axisChunkCoord - (chunkGridCenters[axis] ?? 0);
+      priority += distanceFromCenter * distanceFromCenter;
+    }
+
+    const chunkKey = createZarrChunkKeyFromCoords(chunkCoords);
+    chunkPlans.push({
+      chunkCoords: [...chunkCoords],
+      chunkPath: `${descriptor.path}/${chunkKey}`,
+      chunkStart,
+      chunkShape,
+      priority
+    });
+
+    let axis = expectedShape.length - 1;
+    while (axis >= 0) {
+      const nextCoord = (chunkCoords[axis] ?? 0) + 1;
+      if (nextCoord < (chunkCounts[axis] ?? 0)) {
+        chunkCoords[axis] = nextCoord;
+        break;
+      }
+      chunkCoords[axis] = 0;
+      axis -= 1;
+    }
+    if (axis < 0) {
+      break;
+    }
+  }
+
+  chunkPlans.sort((left, right) => {
+    if (left.priority !== right.priority) {
+      return left.priority - right.priority;
+    }
+    return left.chunkPath.localeCompare(right.chunkPath);
+  });
+
+  const normalizedMaxConcurrentChunkReads = Number.isFinite(maxConcurrentChunkReads)
+    ? Math.max(1, Math.floor(maxConcurrentChunkReads))
+    : 1;
+  const workerCount = Math.min(normalizedMaxConcurrentChunkReads, chunkPlans.length);
+  let nextPlanIndex = 0;
+
+  const runWorker = async () => {
+    while (true) {
+      throwIfAborted(signal);
+      const planIndex = nextPlanIndex;
+      nextPlanIndex += 1;
+      if (planIndex >= chunkPlans.length) {
+        return;
+      }
+      const plan = chunkPlans[planIndex];
+      if (!plan) {
+        return;
+      }
+
+      const { bytes: chunkBytes, bytesRead: chunkBytesRead } = await readChunk(plan.chunkCoords, { signal });
+      throwIfAborted(signal);
+      bytesRead += chunkBytesRead;
+      const expectedChunkBytes =
+        computeElementCount(plan.chunkShape, `chunk shape for ${plan.chunkPath}`) * bytesPerValue;
+      if (chunkBytes.byteLength !== expectedChunkBytes) {
+        throw new Error(
+          `Chunk byte length mismatch for ${plan.chunkPath} (expected ${expectedChunkBytes}, got ${chunkBytes.byteLength}).`
+        );
+      }
+      copyChunkSliceToBuffer({
+        destination: outputBytes,
+        destinationShape: expectedShape,
+        destinationStrides,
+        chunkBytes,
+        chunkShape: plan.chunkShape,
+        chunkStart: plan.chunkStart,
+        bytesPerValue,
+        chunkPath: plan.chunkPath
+      });
+    }
+  };
+
+  if (workerCount > 0) {
+    await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+  }
+
+  throwIfAborted(signal);
+  return { bytes: outputBytes, bytesRead };
+}
+
 export function createVolumeProvider({
   manifest,
   storage,
@@ -927,6 +978,7 @@ export function createVolumeProvider({
   const shardEntryIndexCache = new Map<string, ShardEntryIndex>();
   const brickPageTableCache = new Map<string, CachedBrickPageTableEntry>();
   const brickAtlasCache = new Map<string, CachedBrickAtlasEntry>();
+  const backgroundMaskCache = new Map<string, CachedBackgroundMaskEntry>();
   const scaleRequestCounts = new Map<number, number>();
   let chunkCacheBytes = 0;
   const maxCachedChunkBytes = Number.isFinite(initialMaxCachedChunkBytes)
@@ -1059,6 +1111,26 @@ export function createVolumeProvider({
     if (!exact) {
       throw new Error(
         `Requested scale level ${wanted} is unavailable for layer ${layer.layerKey}. Available levels: ${sorted
+          .map((entry) => entry.level)
+          .join(', ')}`
+      );
+    }
+    return exact;
+  };
+
+  const resolveBackgroundMaskScaleEntry = (requestedScaleLevel: number | undefined) => {
+    const scales = [...(manifest.dataset.backgroundMask?.zarr.scales ?? [])].sort((left, right) => left.level - right.level);
+    if (scales.length === 0) {
+      return null;
+    }
+    if (requestedScaleLevel === undefined) {
+      return scales.find((entry) => entry.level === 0) ?? scales[0] ?? null;
+    }
+    const wanted = normalizeScaleLevel(requestedScaleLevel);
+    const exact = scales.find((entry) => entry.level === wanted);
+    if (!exact) {
+      throw new Error(
+        `Requested background-mask scale level ${wanted} is unavailable. Available levels: ${scales
           .map((entry) => entry.level)
           .join(', ')}`
       );
@@ -2106,6 +2178,56 @@ export function createVolumeProvider({
     };
   };
 
+  const loadBackgroundMask = async (
+    requestedScaleLevel: number | undefined,
+    signal: AbortSignal | null
+  ): Promise<VolumeBackgroundMask | null> => {
+    throwIfAborted(signal);
+    const backgroundMask = manifest.dataset.backgroundMask;
+    if (!backgroundMask) {
+      return null;
+    }
+    const scale = resolveBackgroundMaskScaleEntry(requestedScaleLevel);
+    if (!scale) {
+      return null;
+    }
+    const descriptor = scale.zarr.data;
+    if (descriptor.dataType !== 'uint8') {
+      throw new Error(
+        `Unsupported background-mask data type for ${descriptor.path}: expected uint8, got ${descriptor.dataType}.`
+      );
+    }
+    const {
+      bytes,
+      bytesRead
+    } = await readChunkedArray({
+      descriptor,
+      expectedShape: [scale.depth, scale.height, scale.width],
+      maxConcurrentChunkReads,
+      readChunk: (chunkCoords, chunkOptions) => readChunkWithCache(descriptor, chunkCoords, chunkOptions),
+      signal
+    });
+    throwIfAborted(signal);
+    stats.bytesRead += bytesRead;
+    stats.dataBytesRead += bytesRead;
+    return {
+      sourceLayerKey: backgroundMask.sourceLayerKey,
+      sourceDataType: backgroundMask.sourceDataType,
+      values: [...backgroundMask.values],
+      scaleLevel: scale.level,
+      width: scale.width,
+      height: scale.height,
+      depth: scale.depth,
+      data: bytes,
+      visibleRegion: computeBackgroundMaskVisibleRegion({
+        width: scale.width,
+        height: scale.height,
+        depth: scale.depth,
+        data: bytes
+      })
+    };
+  };
+
   const getBrickAtlas = async (
     layerKey: string,
     timepoint: number,
@@ -2183,6 +2305,58 @@ export function createVolumeProvider({
     const key = createBrickAtlasCacheKey(layerKey, timepoint, normalizeScaleLevel(options?.scaleLevel));
     const entry = brickAtlasCache.get(key);
     return Boolean(entry?.atlas);
+  };
+
+  const getBackgroundMask = async (
+    options?: { scaleLevel?: number; signal?: AbortSignal | null }
+  ): Promise<VolumeBackgroundMask | null> => {
+    const signal = options?.signal ?? null;
+    throwIfAborted(signal);
+    const scale = resolveBackgroundMaskScaleEntry(options?.scaleLevel);
+    if (!scale) {
+      return null;
+    }
+    recordScaleRequest(scale.level);
+    const key = createBackgroundMaskCacheKey(scale.level);
+    const existing = backgroundMaskCache.get(key);
+    if (existing) {
+      if (existing.mask) {
+        return existing.mask;
+      }
+      if (existing.inFlight) {
+        return awaitAbortableInFlight(existing, existing.inFlight, signal);
+      }
+    }
+
+    const entry: CachedBackgroundMaskEntry = {
+      key,
+      scaleLevel: scale.level,
+      mask: null,
+      inFlight: null,
+      inFlightAbortController: null,
+      inFlightWaiters: 0
+    };
+    const inFlightAbortController = new AbortController();
+    entry.inFlightAbortController = inFlightAbortController;
+    const promise = loadBackgroundMask(scale.level, inFlightAbortController.signal)
+      .then((mask) => {
+        entry.mask = mask;
+        entry.inFlight = null;
+        entry.inFlightAbortController = null;
+        entry.inFlightWaiters = 0;
+        backgroundMaskCache.set(key, entry);
+        return mask;
+      })
+      .catch((error) => {
+        entry.inFlight = null;
+        entry.inFlightAbortController = null;
+        entry.inFlightWaiters = 0;
+        backgroundMaskCache.delete(key);
+        throw error;
+      });
+    entry.inFlight = promise;
+    backgroundMaskCache.set(key, entry);
+    return awaitAbortableInFlight(entry, promise, signal);
   };
 
   const prefetchBrickAtlases = async (
@@ -2409,12 +2583,18 @@ export function createVolumeProvider({
       entry.inFlightAbortController = null;
       entry.inFlightWaiters = 0;
     }
+    for (const entry of backgroundMaskCache.values()) {
+      entry.inFlightAbortController?.abort('Background-mask cache cleared.');
+      entry.inFlightAbortController = null;
+      entry.inFlightWaiters = 0;
+    }
     closeRuntimeShardDecodeWorker();
     cache.clear();
     chunkCache.clear();
     shardEntryIndexCache.clear();
     brickPageTableCache.clear();
     brickAtlasCache.clear();
+    backgroundMaskCache.clear();
     chunkCacheBytes = 0;
     activePrefetchRequests.clear();
     scaleRequestCounts.clear();
@@ -2556,6 +2736,7 @@ export function createVolumeProvider({
     getVolume,
     getBrickPageTable,
     getBrickAtlas,
+    getBackgroundMask,
     prefetchBrickAtlases,
     prefetch,
     hasVolume,

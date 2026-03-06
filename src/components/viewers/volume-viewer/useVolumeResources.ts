@@ -20,6 +20,7 @@ import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import type { VolumeBrickAtlas, VolumeBrickPageTable } from '../../../core/volumeProvider';
 import { getLod0FeatureFlags } from '../../../config/lod0Flags';
 import {
+  FALLBACK_BACKGROUND_MASK_TEXTURE,
   FALLBACK_BRICK_ATLAS_BASE_TEXTURE,
   FALLBACK_BRICK_ATLAS_DATA_TEXTURE,
   FALLBACK_BRICK_ATLAS_INDEX_TEXTURE,
@@ -184,6 +185,10 @@ const BRICK_ATLAS_HALO_VOXELS = 1;
 const BRICK_SUBCELL_MAX_AXIS = 4;
 const LOD0_FLAGS = getLod0FeatureFlags();
 const gpuBrickResidencyStateByResource = new WeakMap<VolumeResources, BrickResidencyState>();
+const sharedBackgroundMaskTextureCache = new WeakMap<object, {
+  texture: THREE.Data3DTexture;
+  refCount: number;
+}>();
 
 function resolveSamplingModeForRenderStyle(
   samplingMode: 'linear' | 'nearest',
@@ -339,6 +344,158 @@ function createFloat3dTexture(
   texture.generateMipmaps = false;
   texture.needsUpdate = true;
   return texture;
+}
+
+function acquireSharedBackgroundMaskTexture(mask: {
+  data: Uint8Array;
+  width: number;
+  height: number;
+  depth: number;
+}): THREE.Data3DTexture {
+  const key = mask as object;
+  const cached = sharedBackgroundMaskTextureCache.get(key);
+  if (cached) {
+    cached.refCount += 1;
+    return cached.texture;
+  }
+  const texture = createByte3dTexture(
+    mask.data,
+    mask.width,
+    mask.height,
+    mask.depth,
+    THREE.RedFormat,
+    'nearest',
+  );
+  sharedBackgroundMaskTextureCache.set(key, {
+    texture,
+    refCount: 1,
+  });
+  return texture;
+}
+
+function releaseSharedBackgroundMaskTexture(sourceToken: object | null | undefined): void {
+  if (!sourceToken) {
+    return;
+  }
+  const cached = sharedBackgroundMaskTextureCache.get(sourceToken);
+  if (!cached) {
+    return;
+  }
+  cached.refCount -= 1;
+  if (cached.refCount > 0) {
+    return;
+  }
+  cached.texture.dispose();
+  sharedBackgroundMaskTextureCache.delete(sourceToken);
+}
+
+function applyBackgroundMaskUniforms(
+  uniforms: ShaderUniformMap,
+  resource: VolumeResources,
+  backgroundMask: UseVolumeResourcesParams['layers'][number]['backgroundMask'],
+): void {
+  const previousSourceToken = resource.backgroundMaskSourceToken ?? null;
+  const nextSourceToken = backgroundMask ?? null;
+  if (previousSourceToken !== nextSourceToken) {
+    releaseSharedBackgroundMaskTexture(previousSourceToken);
+    resource.backgroundMaskTexture = nextSourceToken
+      ? acquireSharedBackgroundMaskTexture(nextSourceToken)
+      : null;
+    resource.backgroundMaskSourceToken = nextSourceToken;
+  }
+
+  if (!backgroundMask || !resource.backgroundMaskTexture) {
+    if ('u_backgroundMaskEnabled' in uniforms) {
+      uniforms.u_backgroundMaskEnabled.value = 0;
+    }
+    if ('u_backgroundMask' in uniforms) {
+      uniforms.u_backgroundMask.value = FALLBACK_BACKGROUND_MASK_TEXTURE;
+    }
+    if ('u_backgroundMaskSize' in uniforms) {
+      (uniforms.u_backgroundMaskSize.value as THREE.Vector3).set(1, 1, 1);
+    }
+    if ('u_backgroundMaskVisibleBoundsEnabled' in uniforms) {
+      uniforms.u_backgroundMaskVisibleBoundsEnabled.value = 0;
+    }
+    if ('u_backgroundMaskVisibleBoxMin' in uniforms) {
+      (uniforms.u_backgroundMaskVisibleBoxMin.value as THREE.Vector3).set(-0.5, -0.5, -0.5);
+    }
+    if ('u_backgroundMaskVisibleBoxMax' in uniforms) {
+      const { width, height, depth } = resource.dimensions;
+      (uniforms.u_backgroundMaskVisibleBoxMax.value as THREE.Vector3).set(
+        Math.max(width - 0.5, -0.5),
+        Math.max(height - 0.5, -0.5),
+        Math.max(depth - 0.5, -0.5),
+      );
+    }
+    return;
+  }
+
+  if ('u_backgroundMaskEnabled' in uniforms) {
+    uniforms.u_backgroundMaskEnabled.value = 1;
+  }
+  if ('u_backgroundMask' in uniforms) {
+    uniforms.u_backgroundMask.value = resource.backgroundMaskTexture;
+  }
+  if ('u_backgroundMaskSize' in uniforms) {
+    (uniforms.u_backgroundMaskSize.value as THREE.Vector3).set(
+      backgroundMask.width,
+      backgroundMask.height,
+      backgroundMask.depth,
+    );
+  }
+  const visibleBox = resolveBackgroundMaskVisibleBox(backgroundMask, resource.dimensions);
+  if ('u_backgroundMaskVisibleBoundsEnabled' in uniforms) {
+    uniforms.u_backgroundMaskVisibleBoundsEnabled.value = visibleBox.enabled ? 1 : 0;
+  }
+  if ('u_backgroundMaskVisibleBoxMin' in uniforms) {
+    (uniforms.u_backgroundMaskVisibleBoxMin.value as THREE.Vector3).set(...visibleBox.min);
+  }
+  if ('u_backgroundMaskVisibleBoxMax' in uniforms) {
+    (uniforms.u_backgroundMaskVisibleBoxMax.value as THREE.Vector3).set(...visibleBox.max);
+  }
+}
+
+function resolveBackgroundMaskVisibleBox(
+  backgroundMask: UseVolumeResourcesParams['layers'][number]['backgroundMask'],
+  dimensions: { width: number; height: number; depth: number },
+): {
+  enabled: boolean;
+  min: [number, number, number];
+  max: [number, number, number];
+  signature: string;
+} {
+  const fullMin: [number, number, number] = [-0.5, -0.5, -0.5];
+  const fullMax: [number, number, number] = [
+    Math.max(dimensions.width - 0.5, -0.5),
+    Math.max(dimensions.height - 0.5, -0.5),
+    Math.max(dimensions.depth - 0.5, -0.5),
+  ];
+  const visibleRegion = backgroundMask?.visibleRegion ?? null;
+  if (!visibleRegion?.hasVisibleVoxels) {
+    return {
+      enabled: false,
+      min: fullMin,
+      max: fullMax,
+      signature: `full:${dimensions.width}:${dimensions.height}:${dimensions.depth}`,
+    };
+  }
+  const min: [number, number, number] = [
+    -0.5 + visibleRegion.minFaceFractions[0] * dimensions.width,
+    -0.5 + visibleRegion.minFaceFractions[1] * dimensions.height,
+    -0.5 + visibleRegion.minFaceFractions[2] * dimensions.depth,
+  ];
+  const max: [number, number, number] = [
+    -0.5 + visibleRegion.maxFaceFractions[0] * dimensions.width,
+    -0.5 + visibleRegion.maxFaceFractions[1] * dimensions.height,
+    -0.5 + visibleRegion.maxFaceFractions[2] * dimensions.depth,
+  ];
+  return {
+    enabled: true,
+    min,
+    max,
+    signature: `visible:${min.join(',')}:${max.join(',')}`,
+  };
 }
 
 function getTextureComponentsFromFormat(format: TextureFormat): number | null {
@@ -1241,10 +1398,8 @@ function copyBrickIntoResidentAtlas({
   const sourceBrickStride = sourceBrickDepth * sourceSliceStride;
 
   if (haloVoxels <= 0) {
-    const sourceZBase = sourceIndex * sourceBrickDepth;
     const sourceBrickBaseOffset = sourceIndex * sourceBrickStride;
     for (let localZ = 0; localZ < coreChunkDepth; localZ += 1) {
-      const sourceZ = sourceZBase + localZ;
       const destinationZ = destinationZBase + localZ;
       if (destinationZ >= destinationDepth) {
         continue;
@@ -2833,6 +2988,7 @@ export function useVolumeResources({
       disposeMaterial(resource.mesh.material);
       resource.texture.dispose();
       resource.labelTexture?.dispose();
+      releaseSharedBackgroundMaskTexture(resource.backgroundMaskSourceToken ?? null);
       disposeBrickPageTableTextures(resource);
       resourcesRef.current.delete(key);
       flushRendererRenderLists();
@@ -3040,6 +3196,11 @@ export function useVolumeResources({
         const textureData = cachedPreparation?.data ?? FALLBACK_VOLUME_TEXTURE_DATA;
         const textureFormat = cachedPreparation?.format ?? THREE.RedFormat;
         const directAtlasFormat = brickAtlas ? getTextureFormatFromBrickAtlas(brickAtlas) : null;
+        const proxyVisibleBox = resolveBackgroundMaskVisibleBox(layer.backgroundMask ?? null, {
+          width,
+          height,
+          depth,
+        });
 
         let labelTexture: THREE.Data3DTexture | null = null;
         if (layer.isSegmentation && volume?.segmentationLabels) {
@@ -3066,6 +3227,7 @@ export function useVolumeResources({
           resources.dimensions.height !== height ||
           resources.dimensions.depth !== depth ||
           resources.channels !== channels ||
+          resources.proxyGeometrySignature !== proxyVisibleBox.signature ||
           !(resources.texture instanceof THREE.Data3DTexture) ||
           resources.texture.image.data.length !== textureData.length ||
           resources.texture.format !== textureFormat;
@@ -3121,8 +3283,14 @@ export function useVolumeResources({
           material.depthTest = true;
           applyVolumeMaterialState(material, layerMaterialBlending);
 
-          const geometry = new THREE.BoxGeometry(width, height, depth);
-          geometry.translate(width / 2 - 0.5, height / 2 - 0.5, depth / 2 - 0.5);
+          const proxyWidth = Math.max(proxyVisibleBox.max[0] - proxyVisibleBox.min[0], 1e-3);
+          const proxyHeight = Math.max(proxyVisibleBox.max[1] - proxyVisibleBox.min[1], 1e-3);
+          const proxyDepth = Math.max(proxyVisibleBox.max[2] - proxyVisibleBox.min[2], 1e-3);
+          const proxyCenterX = (proxyVisibleBox.min[0] + proxyVisibleBox.max[0]) * 0.5;
+          const proxyCenterY = (proxyVisibleBox.min[1] + proxyVisibleBox.max[1]) * 0.5;
+          const proxyCenterZ = (proxyVisibleBox.min[2] + proxyVisibleBox.max[2]) * 0.5;
+          const geometry = new THREE.BoxGeometry(proxyWidth, proxyHeight, proxyDepth);
+          geometry.translate(proxyCenterX, proxyCenterY, proxyCenterZ);
 
           const mesh = new THREE.Mesh(geometry, material);
           mesh.visible = layer.visible;
@@ -3165,6 +3333,7 @@ export function useVolumeResources({
             brickAtlasIndexTexture: null,
             brickAtlasBaseTexture: null,
             brickAtlasDataTexture: null,
+            backgroundMaskTexture: null,
             brickSubcellTexture: null,
             skipHierarchyTexture: null,
             skipHierarchySourcePageTable: null,
@@ -3179,8 +3348,15 @@ export function useVolumeResources({
             brickAtlasSourcePageTable: null,
             brickAtlasSlotGrid: null,
             brickAtlasBuildVersion: 0,
+            backgroundMaskSourceToken: null,
+            proxyGeometrySignature: proxyVisibleBox.signature,
             updateGpuBrickResidencyForCamera: null,
           };
+          applyBackgroundMaskUniforms(
+            uniforms as ShaderUniformMap,
+            nextResource,
+            layer.backgroundMask ?? null,
+          );
           applyBrickPageTableUniforms(
             uniforms as ShaderUniformMap,
             nextResource,
@@ -3369,6 +3545,7 @@ export function useVolumeResources({
             brickAtlasIndexTexture: null,
             brickAtlasBaseTexture: null,
             brickAtlasDataTexture: null,
+            backgroundMaskTexture: null,
             brickSubcellTexture: null,
             skipHierarchyTexture: null,
             skipHierarchySourcePageTable: null,
@@ -3383,6 +3560,7 @@ export function useVolumeResources({
             brickAtlasSourcePageTable: null,
             brickAtlasSlotGrid: null,
             brickAtlasBuildVersion: 0,
+            backgroundMaskSourceToken: null,
             updateGpuBrickResidencyForCamera: null,
           };
 
@@ -3443,6 +3621,7 @@ export function useVolumeResources({
         }
         applyAdaptiveLodUniforms(materialUniforms, effectiveSamplingMode);
         applyBeerLambertUniforms(materialUniforms, layer);
+        applyBackgroundMaskUniforms(materialUniforms, resources, layer.backgroundMask ?? null);
 
         if (resources.mode === '3d') {
           assignVolumeMeshOnBeforeRender(mesh);

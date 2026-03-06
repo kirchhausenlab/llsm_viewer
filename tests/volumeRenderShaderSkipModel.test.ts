@@ -99,6 +99,34 @@ function createPrng(seed: number): () => number {
     nearestShader,
     /vec3 brickCoords = brick_coords_for_voxel\(/,
   );
+  assert.match(
+    nearestShader,
+    /uniform float u_backgroundMaskEnabled;/,
+  );
+  assert.match(
+    nearestShader,
+    /bool is_background_masked\(vec3 texcoords\)/,
+  );
+  assert.match(
+    nearestShader,
+    /uniform float u_backgroundMaskVisibleBoundsEnabled;/,
+  );
+  assert.match(
+    nearestShader,
+    /uniform vec3 u_backgroundMaskVisibleBoxMin;/,
+  );
+  assert.match(
+    nearestShader,
+    /uniform vec3 u_backgroundMaskVisibleBoxMax;/,
+  );
+})();
+
+(() => {
+  const linearShader = VolumeRenderShaderVariants.mip.fragmentShader;
+  assert.match(
+    linearShader,
+    /if \(hasVisibleSample\) \{\s*vec3 iloc = start_loc \+ step \* \(float\(max_i\) - 0\.5\);/s,
+  );
 })();
 
 (() => {

@@ -37,6 +37,11 @@ export type ExperimentConfigurationState = {
   onVoxelResolutionUnitChange: (unit: VoxelResolutionUnit) => void;
   onVoxelResolutionTimeUnitChange: (unit: TemporalResolutionUnit) => void;
   onVoxelResolutionAnisotropyToggle: (value: boolean) => void;
+  backgroundMaskEnabled: boolean;
+  backgroundMaskValuesInput: string;
+  backgroundMaskError: string | null;
+  onBackgroundMaskToggle: (value: boolean) => void;
+  onBackgroundMaskValuesInputChange: (value: string) => void;
 };
 
 export type PreprocessedSummaryProps = {
@@ -163,6 +168,11 @@ export default function FrontPage({
               onVoxelResolutionUnitChange={experimentConfiguration.onVoxelResolutionUnitChange}
               onVoxelResolutionTimeUnitChange={experimentConfiguration.onVoxelResolutionTimeUnitChange}
               onVoxelResolutionAnisotropyToggle={experimentConfiguration.onVoxelResolutionAnisotropyToggle}
+              backgroundMaskEnabled={experimentConfiguration.backgroundMaskEnabled}
+              backgroundMaskValuesInput={experimentConfiguration.backgroundMaskValuesInput}
+              backgroundMaskError={experimentConfiguration.backgroundMaskError}
+              onBackgroundMaskToggle={experimentConfiguration.onBackgroundMaskToggle}
+              onBackgroundMaskValuesInputChange={experimentConfiguration.onBackgroundMaskValuesInputChange}
               isFrontPageLocked={isFrontPageLocked}
             />
           ) : null}

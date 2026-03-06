@@ -70,6 +70,26 @@ export type PreprocessedLayerScaleManifestEntry = {
   };
 };
 
+export type PreprocessedBackgroundMaskScaleManifestEntry = {
+  level: number;
+  downsampleFactor: [number, number, number];
+  width: number;
+  height: number;
+  depth: number;
+  zarr: {
+    data: ZarrArrayDescriptor;
+  };
+};
+
+export type PreprocessedBackgroundMaskManifest = {
+  sourceLayerKey: string;
+  sourceDataType: VolumeDataType;
+  values: number[];
+  zarr: {
+    scales: PreprocessedBackgroundMaskScaleManifestEntry[];
+  };
+};
+
 export type PreprocessedLayerManifestEntry = {
   key: string;
   label: string;
@@ -118,6 +138,7 @@ export type PreprocessedManifest = {
     trackSets: PreprocessedTrackSetManifestEntry[];
     voxelResolution?: VoxelResolutionValues | null;
     anisotropyCorrection?: AnisotropyCorrectionMetadata | null;
+    backgroundMask?: PreprocessedBackgroundMaskManifest | null;
   };
 };
 

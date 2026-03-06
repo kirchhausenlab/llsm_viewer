@@ -19,6 +19,7 @@ import {
   PREPROCESSED_STORAGE_ROOT_DIR
 } from '../../shared/storage/preprocessedStorage';
 import type { PreprocessedStorageHandle } from '../../shared/storage/preprocessedStorage';
+import { parseBackgroundMaskValues } from '../../shared/utils/backgroundMask';
 
 type TrackSummary = { totalRows: number; uniqueTracks: number };
 const FRONTPAGE_OPFS_DATASET_ID = 'preprocessed-experiment';
@@ -184,6 +185,8 @@ export default function FrontPageContainer({
   const [exportDestinationLabel, setExportDestinationLabel] = useState<string | null>(null);
   const [isExperimentTypeSelectionOpen, setIsExperimentTypeSelectionOpen] = useState(false);
   const [selectedExperimentType, setSelectedExperimentType] = useState<ExperimentType>('single-3d-volume');
+  const [backgroundMaskEnabled, setBackgroundMaskEnabled] = useState(false);
+  const [backgroundMaskValuesInput, setBackgroundMaskValuesInput] = useState('');
 
   const createDefaultExportName = useCallback((): string => {
     const now = new Date();
@@ -268,8 +271,25 @@ export default function FrontPageContainer({
   const handleReturnFromFrontPage = useCallback(() => {
     setIsExperimentTypeSelectionOpen(false);
     setSelectedExperimentType('single-3d-volume');
+    setBackgroundMaskEnabled(false);
+    setBackgroundMaskValuesInput('');
     onReturnToStart();
   }, [onReturnToStart]);
+
+  const handleBackgroundMaskToggle = useCallback((value: boolean) => {
+    setBackgroundMaskEnabled(value);
+  }, []);
+
+  const handleBackgroundMaskValuesInputChange = useCallback((value: string) => {
+    setBackgroundMaskValuesInput(value);
+  }, []);
+
+  const backgroundMaskParseResult = useMemo(() => {
+    if (!backgroundMaskEnabled) {
+      return { values: [], error: null as string | null };
+    }
+    return parseBackgroundMaskValues(backgroundMaskValuesInput);
+  }, [backgroundMaskEnabled, backgroundMaskValuesInput]);
 
   const handlePreprocessExperiment = useCallback(async () => {
     if (
@@ -287,6 +307,11 @@ export default function FrontPageContainer({
 
     if (!canLaunch) {
       showInteractionWarning('Resolve all dataset issues before preprocessing.');
+      return;
+    }
+
+    if (backgroundMaskEnabled && backgroundMaskParseResult.error) {
+      showInteractionWarning(backgroundMaskParseResult.error);
       return;
     }
 
@@ -385,6 +410,11 @@ export default function FrontPageContainer({
         voxelResolution: voxelResolutionValue,
         movieMode: '3d',
         inputInterpretation: selectedExperimentType,
+        backgroundMask: backgroundMaskEnabled
+          ? {
+              values: backgroundMaskParseResult.values
+            }
+          : null,
         storage: selectedStorageHandle.storage,
         storageStrategy: PREPROCESS_STORAGE_STRATEGY
       });
@@ -415,6 +445,9 @@ export default function FrontPageContainer({
     ensureZarrDirectoryName,
     exportName,
     exportWhilePreprocessing,
+    backgroundMaskEnabled,
+    backgroundMaskParseResult.error,
+    backgroundMaskParseResult.values,
     isLaunchingViewer,
     isPreprocessingExperiment,
     isPreprocessedImporting,
@@ -458,7 +491,12 @@ export default function FrontPageContainer({
     onVoxelResolutionAxisChange: handleVoxelResolutionAxisChange,
     onVoxelResolutionUnitChange: handleVoxelResolutionUnitChange,
     onVoxelResolutionTimeUnitChange: handleVoxelResolutionTimeUnitChange,
-    onVoxelResolutionAnisotropyToggle: handleVoxelResolutionAnisotropyToggle
+    onVoxelResolutionAnisotropyToggle: handleVoxelResolutionAnisotropyToggle,
+    backgroundMaskEnabled,
+    backgroundMaskValuesInput,
+    backgroundMaskError: backgroundMaskEnabled ? backgroundMaskParseResult.error : null,
+    onBackgroundMaskToggle: handleBackgroundMaskToggle,
+    onBackgroundMaskValuesInputChange: handleBackgroundMaskValuesInputChange
   };
 
   const preprocessedLoaderProps = {

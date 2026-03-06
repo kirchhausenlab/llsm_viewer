@@ -2,7 +2,7 @@ import { useCallback, useMemo, type Dispatch, type SetStateAction } from 'react'
 import { computeAutoWindow } from '../../../autoContrast';
 import { normalizeHexColor, DEFAULT_LAYER_COLOR } from '../../../shared/colorMaps/layerColors';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
-import type { VolumeBrickAtlas, VolumeBrickPageTable } from '../../../core/volumeProvider';
+import type { VolumeBackgroundMask, VolumeBrickAtlas, VolumeBrickPageTable } from '../../../core/volumeProvider';
 import {
   brightnessContrastModel,
   clampWindowBounds,
@@ -26,6 +26,7 @@ export type LayerControlsParams = {
   layerVolumes: Record<string, NormalizedVolume | null>;
   layerPageTables: Record<string, VolumeBrickPageTable | null>;
   layerBrickAtlases: Record<string, VolumeBrickAtlas | null>;
+  backgroundMasksByScale: Record<number, VolumeBackgroundMask | null>;
   loadVolume: ((layerKey: string, timepoint: number) => Promise<NormalizedVolume>) | null;
   layerAutoThresholds: Record<string, number>;
   setLayerAutoThresholds: Dispatch<SetStateAction<Record<string, number>>>;
@@ -62,6 +63,7 @@ export function useLayerControls({
   layerVolumes,
   layerPageTables,
   layerBrickAtlases,
+  backgroundMasksByScale,
   loadVolume,
   layerAutoThresholds,
   setLayerAutoThresholds,
@@ -574,6 +576,8 @@ export function useLayerControls({
       const channelVisible = channelVisibility[layer.channelId];
       const brickAtlas = layerBrickAtlases[layer.key] ?? null;
       const brickPageTable = brickAtlas?.pageTable ?? layerPageTables[layer.key] ?? null;
+      const scaleLevel =
+        brickAtlas?.scaleLevel ?? layerVolumes[layer.key]?.scaleLevel ?? 0;
       return {
         key: layer.key,
         label: layer.label,
@@ -608,13 +612,14 @@ export function useLayerControls({
         invert: settings.invert,
         samplingMode: settings.samplingMode,
         isSegmentation: layer.isSegmentation,
-        scaleLevel:
-          brickAtlas?.scaleLevel ?? layerVolumes[layer.key]?.scaleLevel ?? 0,
+        scaleLevel,
         brickPageTable,
-        brickAtlas
+        brickAtlas,
+        backgroundMask: layer.isSegmentation ? null : (backgroundMasksByScale[scaleLevel] ?? null)
       };
     });
   }, [
+    backgroundMasksByScale,
     channelNameMap,
     channelVisibility,
     createLayerDefaultSettings,

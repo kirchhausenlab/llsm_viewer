@@ -13,6 +13,7 @@ import type { LODPolicyDiagnosticsSnapshot, LODPromotionState } from '../../../c
 import { getLod0FeatureFlags } from '../../../config/lod0Flags';
 import type {
   VolumeBrickAtlas,
+  VolumeBackgroundMask,
   VolumeBrickPageTable,
   VolumeProvider,
   VolumeProviderDiagnostics
@@ -60,6 +61,7 @@ type RouteLayerVolumesState = {
   currentLayerVolumes: Record<string, NormalizedVolume | null>;
   currentLayerPageTables: Record<string, VolumeBrickPageTable | null>;
   currentLayerBrickAtlases: Record<string, VolumeBrickAtlas | null>;
+  currentBackgroundMasksByScale: Record<number, VolumeBackgroundMask | null>;
   volumeProviderDiagnostics: VolumeProviderDiagnostics | null;
   lodPolicyDiagnostics: LODPolicyDiagnosticsSnapshot | null;
   setCurrentLayerVolumes: Dispatch<SetStateAction<Record<string, NormalizedVolume | null>>>;
@@ -179,6 +181,28 @@ function collectActiveLayerKeys(
   return keys;
 }
 
+type LoadedLayerResources = readonly [
+  layerKey: string,
+  volume: NormalizedVolume | null,
+  pageTable: VolumeBrickPageTable | null,
+  brickAtlas: VolumeBrickAtlas | null
+];
+
+function collectActiveScaleLevels(resources: readonly LoadedLayerResources[]): number[] {
+  const levels = new Set<number>();
+  for (const [, volume, pageTable, brickAtlas] of resources) {
+    const scaleLevel =
+      brickAtlas?.scaleLevel ??
+      volume?.scaleLevel ??
+      pageTable?.scaleLevel;
+    if (typeof scaleLevel !== 'number' || !Number.isFinite(scaleLevel)) {
+      continue;
+    }
+    levels.add(Math.max(0, Math.floor(scaleLevel)));
+  }
+  return [...levels].sort((left, right) => left - right);
+}
+
 function applyPlaybackScaleOverride({
   levels,
   resolvedScaleLevel,
@@ -289,6 +313,9 @@ export function useRouteLayerVolumes({
   const [currentLayerBrickAtlases, setCurrentLayerBrickAtlases] = useState<Record<string, VolumeBrickAtlas | null>>(
     {}
   );
+  const [currentBackgroundMasksByScale, setCurrentBackgroundMasksByScale] = useState<
+    Record<number, VolumeBackgroundMask | null>
+  >({});
   const [volumeProviderDiagnostics, setVolumeProviderDiagnostics] = useState<VolumeProviderDiagnostics | null>(null);
   const [lodPolicyDiagnostics, setLodPolicyDiagnostics] = useState<LODPolicyDiagnosticsSnapshot | null>(null);
   const volumeLoadRequestRef = useRef(0);
@@ -859,6 +886,35 @@ export function useRouteLayerVolumes({
     ]
   );
 
+  const loadBackgroundMasksForScaleLevels = useCallback(
+    async (
+      scaleLevels: readonly number[],
+      signal?: AbortSignal | null
+    ): Promise<Record<number, VolumeBackgroundMask | null>> => {
+      if (!volumeProvider || typeof volumeProvider.getBackgroundMask !== 'function') {
+        return {};
+      }
+      const uniqueScaleLevels = [...new Set(scaleLevels)]
+        .filter((scaleLevel) => Number.isFinite(scaleLevel))
+        .map((scaleLevel) => Math.max(0, Math.floor(scaleLevel)))
+        .sort((left, right) => left - right);
+      if (uniqueScaleLevels.length === 0) {
+        return {};
+      }
+      const loadedMasks = await Promise.all(
+        uniqueScaleLevels.map(async (scaleLevel) => {
+          const mask = await volumeProvider.getBackgroundMask?.({ scaleLevel, signal: signal ?? null });
+          return [scaleLevel, mask ?? null] as const;
+        })
+      );
+      return loadedMasks.reduce<Record<number, VolumeBackgroundMask | null>>((acc, [scaleLevel, mask]) => {
+        acc[scaleLevel] = mask;
+        return acc;
+      }, {});
+    },
+    [volumeProvider]
+  );
+
   const playbackLayerKeys = useMemo(() => {
     if (!isViewerLaunched || loadedChannelIds.length === 0) {
       return [] as string[];
@@ -904,6 +960,7 @@ export function useRouteLayerVolumes({
     setCurrentLayerVolumes({});
     setCurrentLayerPageTables({});
     setCurrentLayerBrickAtlases({});
+    setCurrentBackgroundMasksByScale({});
     setSelectedIndex(0);
     setIsPlaying(false);
     try {
@@ -912,26 +969,43 @@ export function useRouteLayerVolumes({
       const initialTimeIndex = 0;
       const layerKeys = collectActiveLayerKeys(loadedChannelIds, channelLayersMap);
       setLaunchExpectedVolumeCount(layerKeys.length);
-
-      const loadedVolumes: Record<string, NormalizedVolume | null> = {};
-      const loadedPageTables: Record<string, VolumeBrickPageTable | null> = {};
-      const loadedBrickAtlases: Record<string, VolumeBrickAtlas | null> = {};
-      for (let index = 0; index < layerKeys.length; index++) {
+      const loadedEntries: LoadedLayerResources[] = [];
+      for (let index = 0; index < layerKeys.length; index += 1) {
         const layerKey = layerKeys[index];
         const { volume, pageTable, brickAtlas } = await loadLayerTimepointResources(
           layerKey,
           initialTimeIndex
         );
-        loadedVolumes[layerKey] = volume;
-        loadedPageTables[layerKey] = pageTable;
-        loadedBrickAtlases[layerKey] = brickAtlas;
+        loadedEntries.push([layerKey, volume, pageTable, brickAtlas]);
         const nextLoaded = index + 1;
         setLaunchProgress({ loadedCount: nextLoaded, totalCount: layerKeys.length });
       }
+      const loadedBackgroundMasksByScale = await loadBackgroundMasksForScaleLevels(
+        collectActiveScaleLevels(loadedEntries)
+      );
+      const loadedVolumes = loadedEntries.reduce<Record<string, NormalizedVolume | null>>((acc, [layerKey, volume]) => {
+        acc[layerKey] = volume;
+        return acc;
+      }, {});
+      const loadedPageTables = loadedEntries.reduce<Record<string, VolumeBrickPageTable | null>>(
+        (acc, [layerKey, _volume, pageTable]) => {
+          acc[layerKey] = pageTable;
+          return acc;
+        },
+        {}
+      );
+      const loadedBrickAtlases = loadedEntries.reduce<Record<string, VolumeBrickAtlas | null>>(
+        (acc, [layerKey, _volume, _pageTable, brickAtlas]) => {
+          acc[layerKey] = brickAtlas;
+          return acc;
+        },
+        {}
+      );
 
       setCurrentLayerVolumes(loadedVolumes);
       setCurrentLayerPageTables(loadedPageTables);
       setCurrentLayerBrickAtlases(loadedBrickAtlases);
+      setCurrentBackgroundMasksByScale(loadedBackgroundMasksByScale);
       if (typeof volumeProvider.getDiagnostics === 'function') {
         setVolumeProviderDiagnostics(volumeProvider.getDiagnostics());
       }
@@ -958,6 +1032,7 @@ export function useRouteLayerVolumes({
     setLaunchExpectedVolumeCount,
     setLaunchProgress,
     loadLayerTimepointResources,
+    loadBackgroundMasksForScaleLevels,
     completeLaunchSession,
     failLaunchSession,
     finishLaunchSessionAttempt
@@ -1001,6 +1076,7 @@ export function useRouteLayerVolumes({
       volumeLoadAbortControllerRef.current?.abort();
       volumeLoadAbortControllerRef.current = null;
       lastLoadIntentRef.current = null;
+      setCurrentBackgroundMasksByScale({});
       return;
     }
     if (volumeTimepointCount === 0 || playbackLayerKeys.length === 0) {
@@ -1010,6 +1086,7 @@ export function useRouteLayerVolumes({
       setCurrentLayerVolumes({});
       setCurrentLayerPageTables({});
       setCurrentLayerBrickAtlases({});
+      setCurrentBackgroundMasksByScale({});
       return;
     }
 
@@ -1070,10 +1147,22 @@ export function useRouteLayerVolumes({
           },
           {}
         );
+        const nextBackgroundMasksByScale = await loadBackgroundMasksForScaleLevels(
+          collectActiveScaleLevels(entries),
+          requestAbortController.signal
+        );
+
+        if (
+          requestAbortController.signal.aborted ||
+          volumeLoadRequestRef.current !== requestId
+        ) {
+          return;
+        }
 
         setCurrentLayerVolumes(nextVolumes);
         setCurrentLayerPageTables(nextPageTables);
         setCurrentLayerBrickAtlases(nextBrickAtlases);
+        setCurrentBackgroundMasksByScale(nextBackgroundMasksByScale);
         if (typeof volumeProvider.getDiagnostics === 'function') {
           setVolumeProviderDiagnostics(volumeProvider.getDiagnostics());
         }
@@ -1101,13 +1190,15 @@ export function useRouteLayerVolumes({
     playbackLayerKeySignature,
     selectedIndex,
     resolveDesiredScaleLevel,
-    loadLayerTimepointResources
+    loadLayerTimepointResources,
+    loadBackgroundMasksForScaleLevels
   ]);
 
   return {
     currentLayerVolumes,
     currentLayerPageTables,
     currentLayerBrickAtlases,
+    currentBackgroundMasksByScale,
     volumeProviderDiagnostics,
     lodPolicyDiagnostics,
     setCurrentLayerVolumes,

@@ -339,6 +339,12 @@ type VolumeUniforms = {
   u_hoverLabel: { value: number };
   u_hoverSegmentationMode: { value: number };
   u_segmentationLabels: { value: Data3DTexture | null };
+  u_backgroundMaskEnabled: { value: number };
+  u_backgroundMask: { value: Data3DTexture | null };
+  u_backgroundMaskSize: { value: Vector3 };
+  u_backgroundMaskVisibleBoundsEnabled: { value: number };
+  u_backgroundMaskVisibleBoxMin: { value: Vector3 };
+  u_backgroundMaskVisibleBoxMax: { value: Vector3 };
   u_brickSkipEnabled: { value: number };
   u_skipHierarchyData: { value: Data3DTexture | null };
   u_skipHierarchyTextureSize: { value: Vector3 };
@@ -393,6 +399,12 @@ const uniforms = {
   u_hoverLabel: { value: 0 },
   u_hoverSegmentationMode: { value: 0 },
   u_segmentationLabels: { value: null as Data3DTexture | null },
+  u_backgroundMaskEnabled: { value: 0 },
+  u_backgroundMask: { value: null as Data3DTexture | null },
+  u_backgroundMaskSize: { value: new Vector3(1, 1, 1) },
+  u_backgroundMaskVisibleBoundsEnabled: { value: 0 },
+  u_backgroundMaskVisibleBoxMin: { value: new Vector3(-0.5, -0.5, -0.5) },
+  u_backgroundMaskVisibleBoxMax: { value: new Vector3(0.5, 0.5, 0.5) },
   u_brickSkipEnabled: { value: 0 },
   u_skipHierarchyData: { value: null as Data3DTexture | null },
   u_skipHierarchyTextureSize: { value: new Vector3(1, 1, 1) },
@@ -471,6 +483,12 @@ const volumeRenderFragmentShader = /* glsl */ `
     uniform float u_hoverLabel;
     uniform float u_hoverSegmentationMode;
     uniform usampler3D u_segmentationLabels;
+    uniform float u_backgroundMaskEnabled;
+    uniform sampler3D u_backgroundMask;
+    uniform vec3 u_backgroundMaskSize;
+    uniform float u_backgroundMaskVisibleBoundsEnabled;
+    uniform vec3 u_backgroundMaskVisibleBoxMin;
+    uniform vec3 u_backgroundMaskVisibleBoxMax;
     uniform float u_brickSkipEnabled;
     uniform sampler3D u_skipHierarchyData;
     uniform vec3 u_skipHierarchyTextureSize;
@@ -1168,9 +1186,28 @@ const volumeRenderFragmentShader = /* glsl */ `
       return texture(u_data, safeTexcoords);
     }
 
+    bool is_background_masked(vec3 texcoords) {
+      if (u_backgroundMaskEnabled <= 0.5) {
+        return false;
+      }
+      vec3 safeTexcoords = clamp(texcoords, vec3(0.0), vec3(1.0));
+      vec3 maskSize = max(u_backgroundMaskSize, vec3(1.0));
+      ivec3 maskTexel = ivec3(
+        clamp(
+          floor(safeTexcoords * maskSize),
+          vec3(0.0),
+          max(maskSize - vec3(1.0), vec3(0.0))
+        )
+      );
+      return texelFetch(u_backgroundMask, maskTexel, 0).r > 0.5;
+    }
+
     vec4 sample_color_lod(vec3 texcoords, float lod) {
+      vec3 safeTexcoords = clamp(texcoords, vec3(0.0), vec3(1.0));
+      if (is_background_masked(safeTexcoords)) {
+        return vec4(0.0);
+      }
       #if defined(VOLUME_NEAREST_VARIANT)
-        vec3 safeTexcoords = clamp(texcoords, vec3(0.0), vec3(1.0));
         if (u_brickAtlasEnabled > 0.5) {
           vec3 nearestVoxel = floor(safeTexcoords * max(u_brickVolumeSize, vec3(1.0)));
           return sample_brick_atlas_voxel(nearestVoxel);
@@ -1179,7 +1216,6 @@ const volumeRenderFragmentShader = /* glsl */ `
       #else
       if (u_brickAtlasEnabled > 0.5) {
         if (u_nearestSampling > 0.5) {
-          vec3 safeTexcoords = clamp(texcoords, vec3(0.0), vec3(1.0));
           vec3 nearestVoxel = floor(safeTexcoords * max(u_brickVolumeSize, vec3(1.0)));
           return sample_brick_atlas_voxel(nearestVoxel);
         }
@@ -1197,6 +1233,9 @@ const volumeRenderFragmentShader = /* glsl */ `
       vec3 safeVolumeSize = max(u_size, vec3(1.0));
       vec3 clampedVoxel = clamp(floor(voxelCoord + vec3(0.5)), vec3(0.0), safeVolumeSize - vec3(1.0));
       vec3 texcoords = (clampedVoxel + vec3(0.5)) / safeVolumeSize;
+      if (is_background_masked(texcoords)) {
+        return vec4(0.0);
+      }
       if (u_brickAtlasEnabled > 0.5) {
         vec3 atlasVolumeSize = max(u_brickVolumeSize, vec3(1.0));
         vec3 atlasVoxel = floor(clamp(texcoords, vec3(0.0), vec3(1.0)) * atlasVolumeSize);
@@ -1425,12 +1464,18 @@ const volumeRenderFragmentShader = /* glsl */ `
     }
 
     float sample1(vec3 texcoords) {
+      if (is_background_masked(texcoords)) {
+        return 0.0;
+      }
       vec4 colorSample = sample_color_lod(texcoords, 0.0);
       float intensity = luminance(colorSample);
       return adjust_intensity(intensity);
     }
 
     float sample1_lod(vec3 texcoords, float lod) {
+      if (is_background_masked(texcoords)) {
+        return 0.0;
+      }
       vec4 colorSample = sample_color_lod(texcoords, lod);
       float intensity = luminance(colorSample);
       return adjust_intensity(intensity);
@@ -1524,6 +1569,10 @@ const volumeRenderFragmentShader = /* glsl */ `
       float clippedFrontFraction = clamp(u_zClipFront, 0.0, 1.0);
       float clippedFrontPlanes = clippedFrontFraction * max(u_size.z - 1.0, 0.0);
       boxMin.z += clippedFrontPlanes;
+      if (u_backgroundMaskVisibleBoundsEnabled > 0.5) {
+        boxMin = max(boxMin, u_backgroundMaskVisibleBoxMin);
+        boxMax = min(boxMax, u_backgroundMaskVisibleBoxMax);
+      }
 
       vec3 tLower;
       vec3 tUpper;
@@ -1599,7 +1648,7 @@ const volumeRenderFragmentShader = /* glsl */ `
         nsteps = int(travelDistance * safeStepScale + 0.5);
         nsteps = clamp(nsteps, 1, MAX_STEPS);
         step = ((back - front) / u_size) / float(nsteps);
-        start_loc = front / u_size;
+        start_loc = (front + vec3(0.5)) / u_size;
       }
       vec3 view_ray = -rayDir;
 
@@ -1624,6 +1673,7 @@ const volumeRenderFragmentShader = /* glsl */ `
       vec4 max_color = vec4(0.0);
       vec3 loc = start_loc;
       vec3 max_loc = start_loc;
+      bool hasVisibleSample = false;
       float safeHighWaterMark = clamp(u_mipEarlyExitThreshold, 0.0, 1.0);
       float hierarchyTraversalCacheValid = 0.0;
       vec3 hierarchyTraversalNodeMin = vec3(0.0);
@@ -1727,6 +1777,34 @@ const volumeRenderFragmentShader = /* glsl */ `
               continue;
             }
           }
+          vec3 sampleTexcoords = (voxelCoords + vec3(0.5)) * invSafeVolumeSize;
+          if (is_background_masked(sampleTexcoords)) {
+            float nextBoundaryT = min(tMaxX, min(tMaxY, tMaxZ));
+            float targetT;
+            if (!(nextBoundaryT > traversedDistance + 1e-6) || nextBoundaryT >= LARGE * 0.5) {
+              targetT = min(
+                traversedDistance + 1.0,
+                float(nsteps)
+              );
+            } else {
+              targetT = min(nextBoundaryT + NEAREST_DDA_ADVANCE_EPSILON, float(nsteps));
+            }
+            nearest_dda_advance_to_target(
+              targetT,
+              voxelCoords,
+              axisStepX,
+              axisStepY,
+              axisStepZ,
+              tMaxX,
+              tMaxY,
+              tMaxZ,
+              tDeltaX,
+              tDeltaY,
+              tDeltaZ
+            );
+            traversedDistance = targetT;
+            continue;
+          }
           vec4 colorSample = vec4(0.0);
           if (useBrickAtlas) {
             vec3 brickCoords = brick_coords_for_voxel(
@@ -1748,10 +1826,11 @@ const volumeRenderFragmentShader = /* glsl */ `
           }
           float rawVal = luminance(colorSample);
           float normalizedVal = normalize_intensity(rawVal);
+          hasVisibleSample = true;
           if (normalizedVal > max_val) {
             max_val = normalizedVal;
             max_color = colorSample;
-            max_loc = (voxelCoords + vec3(0.5)) * invSafeVolumeSize;
+            max_loc = sampleTexcoords;
             if (max_val >= safeHighWaterMark) {
               break;
             }
@@ -1812,10 +1891,20 @@ const volumeRenderFragmentShader = /* glsl */ `
             traversedSteps += stepAdvance;
             continue;
           }
+          if (is_background_masked(loc)) {
+            int stepDelta = 1;
+            if (u_nearestSampling > 0.5) {
+              stepDelta = nearest_steps_until_voxel_change(loc, step, nsteps - traversedSteps);
+            }
+            loc += step * float(stepDelta);
+            traversedSteps += stepDelta;
+            continue;
+          }
           float adaptiveLod = adaptive_lod_for_mip(baseAdaptiveLod, max_val);
           vec4 colorSample = sample_color_lod(loc, adaptiveLod);
           float rawVal = luminance(colorSample);
           float normalizedVal = normalize_intensity(rawVal);
+          hasVisibleSample = true;
           if (normalizedVal > max_val) {
             max_val = normalizedVal;
             max_i = traversedSteps;
@@ -1834,19 +1923,30 @@ const volumeRenderFragmentShader = /* glsl */ `
           traversedSteps += stepDelta;
         }
 
-        vec3 iloc = start_loc + step * (float(max_i) - 0.5);
-        vec3 istep = step / float(REFINEMENT_STEPS);
-        for (int i = 0; i < REFINEMENT_STEPS; i++) {
-          vec4 colorSample = sample_color(iloc);
-          float refinedRaw = luminance(colorSample);
-          float refined = normalize_intensity(refinedRaw);
-          if (refined > max_val) {
-            max_val = refined;
-            max_color = colorSample;
-            max_loc = iloc;
+        if (hasVisibleSample) {
+          vec3 iloc = start_loc + step * (float(max_i) - 0.5);
+          vec3 istep = step / float(REFINEMENT_STEPS);
+          for (int i = 0; i < REFINEMENT_STEPS; i++) {
+            if (is_background_masked(iloc)) {
+              iloc += istep;
+              continue;
+            }
+            vec4 colorSample = sample_color(iloc);
+            float refinedRaw = luminance(colorSample);
+            float refined = normalize_intensity(refinedRaw);
+            if (refined > max_val) {
+              max_val = refined;
+              max_color = colorSample;
+              max_loc = iloc;
+            }
+            iloc += istep;
           }
-          iloc += istep;
         }
+      }
+
+      if (!hasVisibleSample) {
+        gl_FragColor = vec4(0.0);
+        return;
       }
 
       vec4 color = compose_color(max_val, max_color);
@@ -1921,6 +2021,10 @@ const volumeRenderFragmentShader = /* glsl */ `
           vec3 iloc = loc - 0.5 * step;
           vec3 istep = step / float(REFINEMENT_STEPS);
           for (int i = 0; i < REFINEMENT_STEPS; i++) {
+            if (is_background_masked(iloc)) {
+              iloc += istep;
+              continue;
+            }
             vec4 colorSample = sample_color(iloc);
             float refinedRaw = luminance(colorSample);
             float refined = normalize_intensity(refinedRaw);

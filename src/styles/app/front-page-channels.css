@@ -814,6 +814,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
   width: 100%;
 }
 
@@ -930,6 +932,38 @@
   width: 1rem;
   height: 1rem;
   accent-color: rgba(91, 140, 255, 0.9);
+}
+
+.voxel-resolution-background-mask {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.voxel-resolution-background-mask-values {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.voxel-resolution-background-mask-values input {
+  width: 12rem;
+  max-width: min(12rem, 72vw);
+  padding: 0.35rem 0.5rem;
+  border-radius: 0.35rem;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background-color: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 0.85rem;
+}
+
+.voxel-resolution-background-mask-values input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.voxel-resolution-background-mask-error {
+  color: #ff9d87;
+  font-size: 0.8rem;
+  text-align: center;
 }
 
 @media (max-width: 900px) {
