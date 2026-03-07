@@ -42,6 +42,8 @@ function createProps(
       layersWindowInitialPosition: { x: 0, y: 0 },
       resetToken: 0,
     },
+    isOpen: true,
+    onClose: () => {},
     isPlaying: false,
     loadedChannelIds: ['channel-a'],
     channelNameMap: new Map([['channel-a', 'Channel A']]),

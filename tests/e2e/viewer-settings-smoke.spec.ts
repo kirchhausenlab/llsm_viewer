@@ -10,11 +10,10 @@ test('@smoke viewer settings controls work after launch', async ({ page }) => {
     voxelResolution: STANDARD_VOXEL_RESOLUTION
   });
 
-  await page.getByRole('button', { name: 'Show viewer settings window' }).evaluate((element) => {
-    (element as HTMLButtonElement).click();
-  });
+  await page.getByRole('button', { name: 'View', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Render settings' }).click();
   const viewerSettingsWindow = page.locator('.floating-window--viewer-settings');
-  await expect(viewerSettingsWindow.getByRole('heading', { name: 'Viewer settings' })).toBeVisible();
+  await expect(viewerSettingsWindow.getByRole('heading', { name: 'Render settings' })).toBeVisible();
 
   const samplingButton = viewerSettingsWindow.getByRole('button', { name: /Trilinear|Nearest/ });
   await expect(samplingButton).toBeVisible();
@@ -50,7 +49,7 @@ test('@smoke viewer settings controls work after launch', async ({ page }) => {
   });
   await expect(fpsSlider).toHaveValue('12');
 
-  await page.getByRole('button', { name: 'Close viewer settings window' }).evaluate((element) => {
+  await page.getByRole('button', { name: 'Close Render settings window' }).evaluate((element) => {
     (element as HTMLButtonElement).click();
   });
   await expect(viewerSettingsWindow).toBeHidden();

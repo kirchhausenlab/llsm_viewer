@@ -27,6 +27,7 @@ type FloatingWindowProps = {
   bodyClassName?: string;
   resetSignal?: number;
   headerPosition?: 'top' | 'bottom';
+  onClose?: () => void;
 };
 
 const combineClassNames = (...values: Array<string | false | null | undefined>) =>
@@ -43,7 +44,8 @@ function FloatingWindow({
   className,
   bodyClassName,
   resetSignal,
-  headerPosition = 'top'
+  headerPosition = 'top',
+  onClose
 }: FloatingWindowProps) {
   const resolvedInitialPosition = useMemo(
     () => initialPosition ?? { x: WINDOW_MARGIN, y: WINDOW_MARGIN },
@@ -316,7 +318,7 @@ function FloatingWindow({
           className="floating-window-toggle"
           onClick={toggleMinimize}
           onPointerDown={stopHeaderActionPointerPropagation}
-          aria-label={isMinimized ? `Restore ${title}` : `Minimize ${title}`}
+          aria-label={isMinimized ? `Maximize ${title} window` : `Minimize ${title} window`}
           data-no-drag
         >
           <span aria-hidden="true">{isMinimized ? '▢' : '–'}</span>
@@ -328,6 +330,19 @@ function FloatingWindow({
           >
             {headerEndActions}
           </div>
+        ) : null}
+        {onClose ? (
+          <button
+            type="button"
+            className="floating-window-toggle"
+            onClick={onClose}
+            onPointerDown={stopHeaderActionPointerPropagation}
+            aria-label={`Close ${title} window`}
+            data-no-drag
+            title="Close"
+          >
+            <span aria-hidden="true">×</span>
+          </button>
         ) : null}
       </div>
       {headerContent ? (

@@ -15,16 +15,19 @@ export type TracksPanelWindowProps = TracksPanelProps & {
     LayoutProps,
     'windowMargin' | 'controlWindowWidth' | 'trackWindowInitialPosition' | 'trackSettingsWindowInitialPosition' | 'resetToken'
   >;
+  isOpen: boolean;
+  onClose: () => void;
   trackDefaults: TrackDefaults;
   trackSettings: TrackSettingsProps;
   isTrackSettingsOpen: boolean;
-  onToggleTrackSettings: () => void;
   onCloseTrackSettings: () => void;
   hasTrackData: boolean;
 };
 
 export default function TracksPanel({
   layout,
+  isOpen,
+  onClose,
   hasTrackData,
   trackSets,
   activeTrackSetId,
@@ -57,7 +60,6 @@ export default function TracksPanel({
   trackDefaults,
   trackSettings,
   isTrackSettingsOpen,
-  onToggleTrackSettings,
   onCloseTrackSettings
 }: TracksPanelWindowProps) {
   const {
@@ -70,7 +72,7 @@ export default function TracksPanel({
 
   const selectedTrackOrderMap = new Map(selectedTrackOrder.map((trackId, index) => [trackId, index]));
 
-  if (!hasTrackData) {
+  if (!hasTrackData || !isOpen) {
     return null;
   }
 
@@ -82,19 +84,7 @@ export default function TracksPanel({
         width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
         className="floating-window--tracks"
         resetSignal={resetToken}
-        headerActions={
-          <button
-            type="button"
-            className="floating-window-toggle"
-            onClick={onToggleTrackSettings}
-            aria-label={isTrackSettingsOpen ? 'Hide track settings window' : 'Show track settings window'}
-            aria-pressed={isTrackSettingsOpen}
-            data-no-drag
-            title="Settings"
-          >
-            <span aria-hidden="true">⚙</span>
-          </button>
-        }
+        onClose={onClose}
         headerContent={
           <div className="channel-tabs channel-tabs--header" role="tablist" aria-label="Track sets">
             {trackSets.map((trackSet) => {
@@ -393,23 +383,12 @@ export default function TracksPanel({
 
       <div style={{ display: isTrackSettingsOpen ? undefined : 'none' }} aria-hidden={!isTrackSettingsOpen}>
         <FloatingWindow
-          title="Tracks settings"
+          title="Track settings"
           initialPosition={trackSettingsWindowInitialPosition}
           width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
           className="floating-window--track-settings"
           resetSignal={resetToken}
-          headerEndActions={
-            <button
-              type="button"
-              className="floating-window-toggle"
-              onClick={onCloseTrackSettings}
-              aria-label="Close track settings window"
-              data-no-drag
-              title="Close"
-            >
-              <span aria-hidden="true">×</span>
-            </button>
-          }
+          onClose={onCloseTrackSettings}
         >
           <TrackSettingsWindow {...trackSettings} />
         </FloatingWindow>

@@ -163,6 +163,9 @@ export type VolumeViewerProps = {
   expectedVolumes: number;
   runtimeDiagnostics?: VolumeProviderDiagnostics | null;
   lodPolicyDiagnostics?: LODPolicyDiagnosticsSnapshot | null;
+  isDiagnosticsWindowOpen?: boolean;
+  onCloseDiagnosticsWindow?: () => void;
+  windowResetSignal?: number;
   onTogglePlayback: () => void;
   onTimeIndexChange: (nextIndex: number) => void;
   canAdvancePlayback?: (nextIndex: number) => boolean;

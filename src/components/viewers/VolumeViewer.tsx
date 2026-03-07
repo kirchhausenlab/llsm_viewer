@@ -124,6 +124,9 @@ function VolumeViewer({
   expectedVolumes,
   runtimeDiagnostics,
   lodPolicyDiagnostics,
+  isDiagnosticsWindowOpen = false,
+  onCloseDiagnosticsWindow,
+  windowResetSignal,
   timeIndex,
   totalTimepoints,
   isPlaying,
@@ -788,13 +791,15 @@ function VolumeViewer({
           <TrackTooltip label={hoveredTrackLabel} position={tooltipPosition} />
           <HoverDebug message={isDevMode ? voxelHoverDebug : null} />
         </div>
-        {isDevMode && runtimeDiagnostics ? (
+        {isDiagnosticsWindowOpen && runtimeDiagnostics ? (
           <FloatingWindow
-            title="Runtime diagnostics"
+            title="Diagnostics"
             className="floating-window--runtime-diagnostics"
             bodyClassName="runtime-diagnostics-window"
             width={RUNTIME_DIAGNOSTICS_WINDOW_WIDTH}
             initialPosition={runtimeDiagnosticsWindowInitialPosition}
+            resetSignal={windowResetSignal}
+            onClose={onCloseDiagnosticsWindow}
           >
             <ul className="runtime-diagnostics-list">
               <li className="runtime-diagnostics-item">

@@ -69,23 +69,12 @@ export default function ViewerSettingsWindow({
 
   return (
     <FloatingWindow
-      title="Viewer settings"
+      title="Render settings"
       initialPosition={viewerSettingsWindowInitialPosition}
       width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
       className="floating-window--viewer-settings"
       resetSignal={resetToken}
-      headerEndActions={
-        <button
-          type="button"
-          className="floating-window-toggle"
-          onClick={onClose}
-          aria-label="Close viewer settings window"
-          data-no-drag
-          title="Close"
-        >
-          <span aria-hidden="true">×</span>
-        </button>
-      }
+      onClose={onClose}
     >
       <div className="sidebar sidebar-right">
         <div className="global-controls">

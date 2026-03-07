@@ -121,18 +121,29 @@ function ViewerShell({
   });
 
   const {
+    isChannelsWindowOpen,
+    openChannelsWindow,
+    closeChannelsWindow,
+    isTracksWindowOpen,
+    openTracksWindow,
+    closeTracksWindow,
     isViewerSettingsOpen,
-    toggleViewerSettings,
+    openViewerSettings,
     closeViewerSettings,
+    isAmplitudePlotOpen,
+    openAmplitudePlot,
+    closeAmplitudePlot,
     isPlotSettingsOpen,
-    togglePlotSettings,
     closePlotSettings,
     isTrackSettingsOpen,
-    toggleTrackSettings,
+    openTrackSettings,
     closeTrackSettings,
     isPaintbrushOpen,
     openPaintbrush,
-    closePaintbrush
+    closePaintbrush,
+    isDiagnosticsWindowOpen,
+    openDiagnosticsWindow,
+    closeDiagnosticsWindow
   } = useViewerPanelWindows({
     resetToken,
     hasTrackData,
@@ -154,15 +165,19 @@ function ViewerShell({
   const topMenuProps = useMemo(
     () => ({
       ...topMenu,
+      onOpenChannelsWindow: openChannelsWindow,
       onOpenPaintbrush: openPaintbrush,
+      onOpenRenderSettingsWindow: openViewerSettings,
+      onOpenTracksWindow: openTracksWindow,
+      onOpenAmplitudePlotWindow: openAmplitudePlot,
+      onOpenTrackSettingsWindow: openTrackSettings,
+      onOpenDiagnosticsWindow: openDiagnosticsWindow,
       is3dModeAvailable: modeToggle.is3dModeAvailable,
       resetViewHandler: modeToggle.resetViewHandler,
       onVrButtonClick: modeToggle.onVrButtonClick,
       vrButtonDisabled: modeToggle.vrButtonDisabled,
       vrButtonTitle: modeToggle.vrButtonTitle,
       vrButtonLabel: modeToggle.vrButtonLabel,
-      isViewerSettingsOpen,
-      onToggleViewerSettings: toggleViewerSettings,
       volumeTimepointCount: playbackState.volumeTimepointCount,
       isPlaying: playbackState.isPlaying,
       selectedIndex: playbackState.selectedIndex,
@@ -186,11 +201,15 @@ function ViewerShell({
       channelsPanel,
       hoverCoordinateDigits,
       hoverIntensityValueDigits,
-      isViewerSettingsOpen,
       modeToggle,
+      openAmplitudePlot,
+      openChannelsWindow,
+      openDiagnosticsWindow,
       openPaintbrush,
+      openTrackSettings,
+      openTracksWindow,
+      openViewerSettings,
       playbackState,
-      toggleViewerSettings,
       topMenu
     ]
   );
@@ -198,7 +217,12 @@ function ViewerShell({
   return (
     <div className="app">
       <main className="viewer">
-        <VolumeViewer {...volumeViewerWithCaptureTarget} />
+        <VolumeViewer
+          {...volumeViewerWithCaptureTarget}
+          isDiagnosticsWindowOpen={isDiagnosticsWindowOpen}
+          onCloseDiagnosticsWindow={closeDiagnosticsWindow}
+          windowResetSignal={resetToken}
+        />
       </main>
 
       <TopMenu {...topMenuProps} />
@@ -258,6 +282,8 @@ function ViewerShell({
 
       <ChannelsPanel
         layout={{ windowMargin, controlWindowWidth, layersWindowInitialPosition, resetToken }}
+        isOpen={isChannelsWindowOpen}
+        onClose={closeChannelsWindow}
         {...channelsPanel}
       />
 
@@ -269,11 +295,12 @@ function ViewerShell({
           trackSettingsWindowInitialPosition,
           resetToken
         }}
+        isOpen={isTracksWindowOpen}
+        onClose={closeTracksWindow}
         hasTrackData={hasTrackData}
         trackDefaults={trackDefaults}
         trackSettings={trackSettings}
         isTrackSettingsOpen={isTrackSettingsOpen}
-        onToggleTrackSettings={toggleTrackSettings}
         onCloseTrackSettings={closeTrackSettings}
         {...tracksPanel}
       />
@@ -290,8 +317,9 @@ function ViewerShell({
         selectedTracksPanel={selectedTracksPanel}
         plotSettings={plotSettings}
         isVrActive={modeControls.isVrActive}
+        isPlotWindowOpen={isAmplitudePlotOpen}
+        onClosePlotWindow={closeAmplitudePlot}
         isPlotSettingsOpen={isPlotSettingsOpen}
-        onTogglePlotSettings={togglePlotSettings}
         onClosePlotSettings={closePlotSettings}
       />
     </div>

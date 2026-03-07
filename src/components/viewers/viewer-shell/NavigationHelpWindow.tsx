@@ -30,18 +30,7 @@ function NavigationHelpWindow({
       initialPosition={initialPosition}
       width={`min(${width}px, calc(100vw - ${windowMargin * 2}px))`}
       resetSignal={resetSignal}
-      headerEndActions={
-        <button
-          type="button"
-          className="floating-window-toggle"
-          onClick={onClose}
-          aria-label="Close navigation controls"
-          data-no-drag
-          title="Close"
-        >
-          <span aria-hidden="true">×</span>
-        </button>
-      }
+      onClose={onClose}
     >
       <div className="navigation-help-window">
         <h3 className="navigation-help-window__title">Viewer tips</h3>

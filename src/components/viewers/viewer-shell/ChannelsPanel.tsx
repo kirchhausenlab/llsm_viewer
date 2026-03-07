@@ -24,10 +24,14 @@ const formatBlControlValue = (value: number): string => {
 
 export type ChannelsPanelWindowProps = ChannelsPanelProps & {
   layout: Pick<LayoutProps, 'windowMargin' | 'controlWindowWidth' | 'layersWindowInitialPosition' | 'resetToken'>;
+  isOpen: boolean;
+  onClose: () => void;
 };
 
 export default function ChannelsPanel({
   layout,
+  isOpen,
+  onClose,
   isPlaying,
   loadedChannelIds,
   channelTintMap,
@@ -55,6 +59,10 @@ export default function ChannelsPanel({
 }: ChannelsPanelWindowProps) {
   const { windowMargin, controlWindowWidth, layersWindowInitialPosition, resetToken } = layout;
 
+  if (!isOpen) {
+    return null;
+  }
+
   return (
     <FloatingWindow
       title="Channels"
@@ -62,6 +70,7 @@ export default function ChannelsPanel({
       width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
       className="floating-window--channels"
       resetSignal={resetToken}
+      onClose={onClose}
     >
       <div className="sidebar sidebar-left">
         {loadedChannelIds.length > 0 ? (

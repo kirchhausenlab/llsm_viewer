@@ -15,59 +15,66 @@ import VolumeChannelTabs from './VolumeChannelTabs';
 import { formatCompactChannelLabel } from './channelLabel';
 import { isLightHexColor } from '../../../shared/utils/appHelpers';
 
-type DropdownMenuId = 'file' | 'view' | 'channels' | 'tracks' | 'help';
+type DropdownMenuId = 'file' | 'view' | 'edit' | 'tracks' | 'help';
 
 type DropdownMenuItem = {
   label: string;
   onSelect?: () => void;
 };
 
+const DROPDOWN_MENU_ORDER: DropdownMenuId[] = ['file', 'view', 'edit', 'tracks', 'help'];
+
 const clampRangeValue = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const HOVER_INTENSITY_VISIBLE_ITEMS = 3;
 const HOVER_INTENSITY_MIN_DURATION_SECONDS = 8;
 const HOVER_INTENSITY_PIXELS_PER_SECOND = 18;
 
-export default function TopMenu({
-  onReturnToLauncher,
-  onResetLayout,
-  onOpenPaintbrush,
-  is3dModeAvailable,
-  resetViewHandler,
-  onVrButtonClick,
-  vrButtonDisabled,
-  vrButtonTitle,
-  vrButtonLabel,
-  isViewerSettingsOpen,
-  onToggleViewerSettings,
-  currentScaleLabel,
-  isHelpMenuOpen,
-  openHelpMenu,
-  closeHelpMenu,
-  volumeTimepointCount,
-  isPlaying,
-  selectedIndex,
-  onTimeIndexChange,
-  playbackDisabled,
-  onTogglePlayback,
-  zSliderValue,
-  zSliderMax,
-  onZSliderChange,
-  loadedChannelIds,
-  channelNameMap,
-  channelVisibility,
-  channelTintMap,
-  activeChannelId,
-  onChannelTabSelect,
-  onChannelVisibilityToggle,
-  hoverCoordinateDigits,
-  hoverIntensityValueDigits,
-  followedTrackSetId,
-  followedTrackId,
-  followedVoxel,
-  onStopTrackFollow,
-  onStopVoxelFollow,
-  hoveredVoxel
-}: TopMenuProps) {
+export default function TopMenu(props: TopMenuProps) {
+  const {
+    onReturnToLauncher,
+    onResetLayout,
+    openHelpMenu,
+    onOpenChannelsWindow,
+    onOpenPaintbrush,
+    onOpenRenderSettingsWindow,
+    onOpenTracksWindow,
+    onOpenAmplitudePlotWindow,
+    onOpenTrackSettingsWindow,
+    onOpenDiagnosticsWindow,
+    is3dModeAvailable,
+    resetViewHandler,
+    onVrButtonClick,
+    vrButtonDisabled,
+    vrButtonTitle,
+    vrButtonLabel,
+    currentScaleLabel,
+    isHelpMenuOpen,
+    closeHelpMenu,
+    volumeTimepointCount,
+    isPlaying,
+    selectedIndex,
+    onTimeIndexChange,
+    playbackDisabled,
+    onTogglePlayback,
+    zSliderValue,
+    zSliderMax,
+    onZSliderChange,
+    loadedChannelIds,
+    channelNameMap,
+    channelVisibility,
+    channelTintMap,
+    activeChannelId,
+    onChannelTabSelect,
+    onChannelVisibilityToggle,
+    hoverCoordinateDigits,
+    hoverIntensityValueDigits,
+    followedTrackSetId,
+    followedTrackId,
+    followedVoxel,
+    onStopTrackFollow,
+    onStopVoxelFollow,
+    hoveredVoxel
+  } = props;
   const [openMenu, setOpenMenu] = useState<DropdownMenuId | null>(null);
   const [hoverIntensityOverflow, setHoverIntensityOverflow] = useState(0);
   const topMenuRowRef = useRef<HTMLDivElement | null>(null);
@@ -76,20 +83,20 @@ export default function TopMenu({
   const hoverIntensityTrackRef = useRef<HTMLSpanElement | null>(null);
   const fileMenuRef = useRef<HTMLDivElement>(null);
   const viewMenuRef = useRef<HTMLDivElement>(null);
-  const channelsMenuRef = useRef<HTMLDivElement>(null);
+  const editMenuRef = useRef<HTMLDivElement>(null);
   const tracksMenuRef = useRef<HTMLDivElement>(null);
   const helpMenuRef = useRef<HTMLDivElement>(null);
   const menuRefs: Record<DropdownMenuId, RefObject<HTMLDivElement>> = {
     file: fileMenuRef,
     view: viewMenuRef,
-    channels: channelsMenuRef,
+    edit: editMenuRef,
     tracks: tracksMenuRef,
     help: helpMenuRef
   };
   const triggerRefs = useRef<Record<DropdownMenuId, HTMLButtonElement | null>>({
     file: null,
     view: null,
-    channels: null,
+    edit: null,
     tracks: null,
     help: null
   });
@@ -97,7 +104,7 @@ export default function TopMenu({
     {
       file: [],
       view: [],
-      channels: [],
+      edit: [],
       tracks: [],
       help: []
     }
@@ -105,38 +112,54 @@ export default function TopMenu({
 
   menuItemRefs.current.file = [];
   menuItemRefs.current.view = [];
-  menuItemRefs.current.channels = [];
+  menuItemRefs.current.edit = [];
   menuItemRefs.current.tracks = [];
   menuItemRefs.current.help = [];
 
   const dropdownItems = useMemo<Record<DropdownMenuId, DropdownMenuItem[]>>(
     () => ({
       file: [
-        { label: 'Preferences' },
-        { label: 'Reset layout', onSelect: onResetLayout },
+        { label: 'Save changes' },
+        { label: 'Reset changes' },
+        { label: 'Recenter windows', onSelect: onResetLayout },
+        { label: 'Diagnostics', onSelect: onOpenDiagnosticsWindow },
         { label: 'Exit', onSelect: onReturnToLauncher }
       ],
       view: [
-        { label: '3D view' },
-        { label: 'Paintbrush', onSelect: onOpenPaintbrush },
-        { label: 'Rendering quality' },
-        { label: 'VR mode' }
+        { label: 'Channels window', onSelect: onOpenChannelsWindow },
+        { label: 'Camera' },
+        { label: 'Record' },
+        { label: 'Background' },
+        { label: 'Render settings', onSelect: onOpenRenderSettingsWindow },
+        { label: 'Hover settings' }
       ],
-      channels: [
-        { label: 'Channel tabs' },
-        { label: 'Brightness & contrast' },
-        { label: 'Layer resets' }
+      edit: [
+        { label: 'Props' },
+        { label: 'Paintbrush', onSelect: onOpenPaintbrush },
+        { label: 'Measure' }
       ],
       tracks: [
-        { label: 'Filter tracks' },
-        { label: 'Follow selection' },
-        { label: 'Selected tracks plot' }
+        { label: 'Tracks window', onSelect: onOpenTracksWindow },
+        { label: 'Amplitude plot', onSelect: onOpenAmplitudePlotWindow },
+        { label: 'Tracks settings', onSelect: onOpenTrackSettingsWindow }
       ],
       help: [
+        { label: 'About' },
         { label: 'Navigation controls', onSelect: openHelpMenu }
       ]
     }),
-    [onOpenPaintbrush, onResetLayout, onReturnToLauncher, openHelpMenu]
+    [
+      onOpenAmplitudePlotWindow,
+      onOpenChannelsWindow,
+      onOpenDiagnosticsWindow,
+      onOpenPaintbrush,
+      onOpenRenderSettingsWindow,
+      onOpenTrackSettingsWindow,
+      onOpenTracksWindow,
+      onResetLayout,
+      onReturnToLauncher,
+      openHelpMenu
+    ]
   );
 
   useEffect(() => {
@@ -392,7 +415,7 @@ export default function TopMenu({
           <div className="viewer-top-menu-strip-left">
             <div className="viewer-top-menu-actions">
               <div className="viewer-top-menu-dropdowns">
-                {(Object.keys(dropdownItems) as DropdownMenuId[]).map((menuId) => (
+                {DROPDOWN_MENU_ORDER.map((menuId) => (
                   <div key={menuId} className="viewer-top-menu-dropdown" ref={menuRefs[menuId]}>
                     <button
                       type="button"
@@ -461,16 +484,6 @@ export default function TopMenu({
                 {vrButtonLabel}
               </button>
             ) : null}
-            <button
-              type="button"
-              className="viewer-top-menu-button viewer-top-menu-button--icon"
-              onClick={onToggleViewerSettings}
-              aria-label={isViewerSettingsOpen ? 'Hide viewer settings window' : 'Show viewer settings window'}
-              aria-pressed={isViewerSettingsOpen}
-              title="Viewer settings"
-            >
-              <span aria-hidden="true">⚙</span>
-            </button>
             <ThemeModeToggle className="viewer-top-menu-theme-toggle" compact />
           </div>
         </div>

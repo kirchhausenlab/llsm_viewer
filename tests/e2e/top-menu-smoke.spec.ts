@@ -1,40 +1,73 @@
 import { expect, test } from '@playwright/test';
+
 import { resolveDatasetFixture } from './helpers/dataset';
 import { launchViewerFromFixture, STANDARD_VOXEL_RESOLUTION } from './helpers/workflows';
 
 const fixture = resolveDatasetFixture();
 
-test('@smoke top menu help and exit flows work after launch', async ({ page }) => {
+const expectedMenus = [
+  {
+    buttonLabel: 'File',
+    menuLabel: 'file menu',
+    items: ['Save changes', 'Reset changes', 'Recenter windows', 'Diagnostics', 'Exit']
+  },
+  {
+    buttonLabel: 'View',
+    menuLabel: 'view menu',
+    items: ['Channels window', 'Camera', 'Record', 'Background', 'Render settings', 'Hover settings']
+  },
+  {
+    buttonLabel: 'Edit',
+    menuLabel: 'edit menu',
+    items: ['Props', 'Paintbrush', 'Measure']
+  },
+  {
+    buttonLabel: 'Tracks',
+    menuLabel: 'tracks menu',
+    items: ['Tracks window', 'Amplitude plot', 'Tracks settings']
+  },
+  {
+    buttonLabel: 'Help',
+    menuLabel: 'help menu',
+    items: ['About', 'Navigation controls']
+  }
+] as const;
+
+test('@smoke top menu shows the expected dropdown structure after launch', async ({ page }) => {
   await launchViewerFromFixture(page, fixture, {
     channelName: 'Ch1',
     voxelResolution: STANDARD_VOXEL_RESOLUTION
   });
 
-  await page.getByRole('button', { name: 'Help' }).click();
-  const helpMenu = page.getByRole('menu', { name: 'help menu' });
-  await expect(helpMenu).toBeVisible();
-  await helpMenu.getByRole('menuitem', { name: 'Navigation controls' }).click();
+  await expect(page.locator('.viewer-top-menu-dropdown-trigger')).toHaveText(
+    expectedMenus.map((entry) => entry.buttonLabel)
+  );
 
-  const navigationHeading = page.getByRole('heading', { name: 'Navigation controls' });
-  await expect(navigationHeading).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(page.locator('.navigation-help-window')).toHaveCount(0);
+  for (const entry of expectedMenus) {
+    await page.getByRole('button', { name: entry.buttonLabel, exact: true }).click();
+    const menu = page.getByRole('menu', { name: entry.menuLabel });
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole('menuitem')).toHaveText(entry.items);
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+  }
 
-  await page.getByRole('button', { name: 'File' }).click({ force: true });
-  const fileMenu = page.getByRole('menu', { name: 'file menu' });
-  await expect(fileMenu).toBeVisible();
-  const exitItem = fileMenu.getByRole('menuitem', { name: 'Exit' });
-  await expect(exitItem).toBeVisible();
+  await page.getByRole('button', { name: 'Help', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Navigation controls' }).click();
+  const navigationWindow = page.locator('.navigation-help-window');
+  await expect(navigationWindow).toBeVisible();
+  await page.getByRole('button', { name: 'Close Navigation controls window' }).click();
+  await expect(navigationWindow).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'File', exact: true }).click();
   const dialogHandled = new Promise<void>((resolve) => {
     page.once('dialog', async (dialog) => {
       await dialog.accept();
       resolve();
     });
   });
-  await exitItem.click({ force: true });
+  await page.getByRole('menuitem', { name: 'Exit' }).click();
   await dialogHandled;
-
   await expect(page.getByRole('heading', { name: 'Set up new experiment' })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole('button', { name: 'File', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Preprocess experiment' })).toBeVisible();
 });
