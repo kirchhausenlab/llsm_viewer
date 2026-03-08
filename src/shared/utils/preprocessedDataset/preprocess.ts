@@ -37,7 +37,7 @@ import type {
 import { PREPROCESSED_DATASET_FORMAT } from './types';
 import { createZarrStoreFromPreprocessedStorage } from '../zarrStore';
 import { buildChannelSummariesFromManifest, buildTrackSummariesFromManifest } from './manifest';
-import { createTracksDescriptor, serializeTrackEntriesToCsvBytes } from './tracks';
+import { createTracksDescriptor, encodeCompiledTrackSetFiles } from './tracks';
 import { encodeUint32ArrayLE, HISTOGRAM_BINS } from '../histogram';
 import { encodeInt32ArrayLE } from '../int32';
 import {
@@ -2856,19 +2856,19 @@ function buildManifestFromLayerMetadata({
 }): {
   manifest: PreprocessedManifest;
   layerManifestByKey: Map<string, PreprocessedLayerManifestEntry>;
-  trackEntriesByTrackSetId: Map<string, string[][]>;
+  compiledTrackSetsByTrackSetId: Map<string, TrackSetExportMetadata['compiled']>;
 } {
   const manifestChannels: PreprocessedManifest['dataset']['channels'] = [];
   const layerManifestByKey = new Map<string, PreprocessedLayerManifestEntry>();
-  const trackEntriesByTrackSetId = new Map<string, string[][]>();
+  const compiledTrackSetsByTrackSetId = new Map<string, TrackSetExportMetadata['compiled']>();
   const manifestTrackSets: PreprocessedManifest['dataset']['trackSets'] = trackSets.map((trackSet) => {
-    trackEntriesByTrackSetId.set(trackSet.id, trackSet.entries);
+    compiledTrackSetsByTrackSetId.set(trackSet.id, trackSet.compiled);
     return {
       id: trackSet.id,
       name: trackSet.name,
       fileName: trackSet.fileName,
       boundChannelId: trackSet.boundChannelId,
-      tracks: createTracksDescriptor(`tracks/${encodeURIComponent(trackSet.id)}.csv`)
+      tracks: createTracksDescriptor(trackSet.id, trackSet.compiled.summary)
     };
   });
 
@@ -2960,23 +2960,31 @@ function buildManifestFromLayerMetadata({
   return {
     manifest,
     layerManifestByKey,
-    trackEntriesByTrackSetId
+    compiledTrackSetsByTrackSetId
   };
 }
 
-async function writeTrackSetCsvFiles({
+async function writeTrackSetFiles({
   manifest,
-  trackEntriesByTrackSetId,
+  compiledTrackSetsByTrackSetId,
   storage
 }: {
   manifest: PreprocessedManifest;
-  trackEntriesByTrackSetId: Map<string, string[][]>;
+  compiledTrackSetsByTrackSetId: Map<string, TrackSetExportMetadata['compiled']>;
   storage: PreprocessedStorage;
 }): Promise<void> {
   for (const trackSet of manifest.dataset.trackSets) {
-    const entries = trackEntriesByTrackSetId.get(trackSet.id) ?? [];
-    const payload = serializeTrackEntriesToCsvBytes(entries, { decimalPlaces: trackSet.tracks.decimalPlaces });
-    await storage.writeFile(trackSet.tracks.path, payload);
+    const compiled = compiledTrackSetsByTrackSetId.get(trackSet.id);
+    if (!compiled) {
+      throw new Error(`Missing compiled tracks for track set "${trackSet.id}".`);
+    }
+    const payload = encodeCompiledTrackSetFiles(compiled);
+    await storage.writeFile(trackSet.tracks.summary.path, payload.summaryBytes);
+    await storage.writeFile(trackSet.tracks.pointData.path, payload.pointBytes);
+    await storage.writeFile(trackSet.tracks.segmentPositions.path, payload.segmentPositionBytes);
+    await storage.writeFile(trackSet.tracks.segmentTimes.path, payload.segmentTimeBytes);
+    await storage.writeFile(trackSet.tracks.segmentTrackIndices.path, payload.segmentTrackIndexBytes);
+    await storage.writeFile(trackSet.tracks.centroidData.path, payload.centroidBytes);
   }
 }
 
@@ -5431,7 +5439,7 @@ export async function preprocessDatasetToStorage({
     datasetExecutionMode === 'in-memory' &&
     !backgroundMask &&
     resolveWorkerizeNormalizationDownsample(processingStrategy);
-  const { manifest, layerManifestByKey, trackEntriesByTrackSetId } = buildManifestFromLayerMetadata({
+  const { manifest, layerManifestByKey, compiledTrackSetsByTrackSetId } = buildManifestFromLayerMetadata({
     channels,
     trackSets,
     layersByChannel,
@@ -5453,7 +5461,7 @@ export async function preprocessDatasetToStorage({
   throwIfAborted(signal);
   onProgress?.({ stage: 'finalize-manifest' });
   await zarr.create(root, { attributes: { llsmViewerPreprocessed: manifest } });
-  await writeTrackSetCsvFiles({ manifest, trackEntriesByTrackSetId, storage });
+  await writeTrackSetFiles({ manifest, compiledTrackSetsByTrackSetId, storage });
   await createManifestZarrArrays({ root, manifest });
 
   const chunkWriter = createChunkWriteDispatcher(storage, {
@@ -5532,6 +5540,9 @@ export async function preprocessDatasetToStorage({
   await chunkWriter.flush(signal);
 
   const channelSummaries = buildChannelSummariesFromManifest(manifest);
-  const trackSummaries = buildTrackSummariesFromManifest(manifest, trackEntriesByTrackSetId);
+  const trackSummaryByTrackSetId = new Map(
+    trackSets.map((trackSet) => [trackSet.id, trackSet.compiled.summary] as const)
+  );
+  const trackSummaries = buildTrackSummariesFromManifest(manifest, trackSummaryByTrackSetId);
   return { manifest, channelSummaries, trackSummaries, totalVolumeCount };
 }

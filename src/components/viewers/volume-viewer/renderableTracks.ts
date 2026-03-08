@@ -1,18 +1,22 @@
 import { DEFAULT_TRACK_OPACITY } from './constants';
-import type { TrackDefinition } from '../../../types/tracks';
+import type { TrackSetState } from '../../../types/channelTracks';
+import type { TrackSummary } from '../../../types/tracks';
+import { resolveTrackVisibilityForState } from '../../../shared/utils/trackVisibilityState';
+import { createDefaultTrackSetState } from '../../../hooks/tracks/useTrackStyling';
 
 type RenderableTrackOptions = {
-  trackVisibility: Record<string, boolean>;
+  trackSetStates: Record<string, TrackSetState>;
   trackOpacityByTrackSet: Record<string, number>;
   selectedTrackIds: ReadonlySet<string>;
   followedTrackId: string | null;
 };
 
 export function isTrackRenderable(
-  track: TrackDefinition,
-  { trackVisibility, trackOpacityByTrackSet, selectedTrackIds, followedTrackId }: RenderableTrackOptions,
+  track: TrackSummary,
+  { trackSetStates, trackOpacityByTrackSet, selectedTrackIds, followedTrackId }: RenderableTrackOptions,
 ): boolean {
-  const isExplicitlyVisible = trackVisibility[track.id] ?? true;
+  const trackSetState = trackSetStates[track.trackSetId] ?? createDefaultTrackSetState();
+  const isExplicitlyVisible = resolveTrackVisibilityForState(trackSetState, track.id);
   const isFollowed = followedTrackId === track.id;
   const isSelected = selectedTrackIds.has(track.id);
   const channelOpacity = trackOpacityByTrackSet[track.trackSetId] ?? DEFAULT_TRACK_OPACITY;
@@ -24,14 +28,14 @@ export function isTrackRenderable(
 }
 
 export function resolveRenderableTracks(
-  tracks: TrackDefinition[],
+  tracks: TrackSummary[],
   options: RenderableTrackOptions,
-): TrackDefinition[] {
+): TrackSummary[] {
   if (tracks.length === 0) {
     return tracks;
   }
 
-  const renderable: TrackDefinition[] = [];
+  const renderable: TrackSummary[] = [];
   let allRenderable = true;
 
   for (const track of tracks) {

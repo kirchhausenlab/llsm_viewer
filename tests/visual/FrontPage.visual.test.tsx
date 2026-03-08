@@ -71,7 +71,7 @@ function buildFrontPageProps() {
     },
     preprocessedSummary: {
       preprocessedExperiment: null,
-      computeTrackSummary: () => ({ totalRows: 0, uniqueTracks: 0 })
+      computeTrackSummary: () => ({ totalPoints: 0, totalTracks: 0 })
     },
     launchActions: {
       frontPageMode: 'initial' as const,

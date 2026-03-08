@@ -13,7 +13,7 @@ export type TrackColorMode =
       color: string;
     };
 
-export type TrackDefinition = {
+export type TrackSummary = {
   id: string;
   trackSetId: string;
   trackSetName: string;
@@ -21,15 +21,60 @@ export type TrackDefinition = {
   channelName: string | null;
   trackNumber: number;
   sourceTrackId: number;
+  internalTrackId?: number;
   displayTrackNumber?: string;
   segmentIndex?: number;
-  internalTrackId?: number;
   parentTrackId?: string | null;
   parentInternalTrackId?: number | null;
+  pointCount: number;
+  timeStart: number;
+  timeEnd: number;
+  amplitudeMin: number;
+  amplitudeMax: number;
+};
+
+export type TrackDefinition = TrackSummary & {
   points: TrackPoint[];
 };
 
 export type NumericRange = {
   min: number;
   max: number;
+};
+
+export type CompiledTrackSummary = TrackSummary & {
+  pointOffset: number;
+  segmentOffset: number;
+  segmentCount: number;
+  centroidOffset: number;
+  centroidCount: number;
+};
+
+export type CompiledTrackSetHeader = {
+  trackSetId: string;
+  trackSetName: string;
+  boundChannelId: string | null;
+  totalTracks: number;
+  totalPoints: number;
+  totalSegments: number;
+  totalCentroids: number;
+  time: NumericRange;
+  amplitude: NumericRange;
+};
+
+export type CompiledTrackSetSummary = CompiledTrackSetHeader & {
+  tracks: CompiledTrackSummary[];
+};
+
+export type CompiledTrackSetPayload = {
+  pointData: Float32Array;
+  segmentPositions: Float32Array;
+  segmentTimes: Float32Array;
+  segmentTrackIndices: Uint32Array;
+  centroidData: Float32Array;
+};
+
+export type CompiledTrackSet = {
+  summary: CompiledTrackSetSummary;
+  payload: CompiledTrackSetPayload;
 };

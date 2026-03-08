@@ -33,14 +33,14 @@ export function buildChannelSummariesFromManifest(
 }
 
 export function buildTrackSummariesFromManifest(
-  manifest: PreprocessedManifest,
-  trackEntriesByTrackSetId: Map<string, string[][]>
+  manifest: PreprocessedManifest
 ): PreprocessedTrackSetSummary[] {
   return manifest.dataset.trackSets.map((trackSet) => ({
     id: trackSet.id,
     name: trackSet.name,
     fileName: trackSet.fileName,
     boundChannelId: trackSet.boundChannelId,
-    entries: trackEntriesByTrackSetId.get(trackSet.id) ?? []
+    header: trackSet.tracks.header,
+    tracks: trackSet.tracks
   }));
 }

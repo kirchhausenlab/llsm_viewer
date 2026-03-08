@@ -1,7 +1,48 @@
 import * as THREE from 'three';
 
-import type { TrackLineResource } from '../VolumeViewer.types';
-import { getTrackIdFromObject } from './rendering';
+import type { TrackBatchResource, TrackRenderResource } from '../VolumeViewer.types';
+
+function getTrackIdFromBatchIntersection(
+  resource: TrackBatchResource,
+  segmentIndex: number | undefined
+): string | null {
+  if (!Number.isFinite(segmentIndex)) {
+    return null;
+  }
+
+  const resolvedSegmentIndex = Math.trunc(segmentIndex ?? -1);
+  if (resolvedSegmentIndex < 0 || resolvedSegmentIndex >= resource.segmentTrackIds.length) {
+    return null;
+  }
+
+  const timeBase = resolvedSegmentIndex * 2;
+  const timeStart = resource.segmentTimes[timeBase] ?? Number.POSITIVE_INFINITY;
+  const timeEnd = resource.segmentTimes[timeBase + 1] ?? Number.NEGATIVE_INFINITY;
+  if (timeEnd < resource.visibleTimeMin || timeStart > resource.visibleTimeMax) {
+    return null;
+  }
+
+  return resource.segmentTrackIds[resolvedSegmentIndex] ?? null;
+}
+
+export function resolveTrackIdFromIntersection(
+  intersection: { object: THREE.Object3D; faceIndex?: number | null },
+  trackLines: Map<string, TrackRenderResource>
+): string | null {
+  const resourceKey = intersection.object.userData?.resourceKey;
+  if (typeof resourceKey === 'string') {
+    const resource = trackLines.get(resourceKey);
+    if (resource?.kind === 'overlay') {
+      return resource.trackId;
+    }
+    if (resource?.kind === 'batch') {
+      return getTrackIdFromBatchIntersection(resource, intersection.faceIndex ?? undefined);
+    }
+  }
+
+  const trackId = intersection.object.userData?.trackId;
+  return typeof trackId === 'string' ? trackId : null;
+}
 
 type PerformTrackHoverHitTestOptions = {
   event: PointerEvent;
@@ -9,7 +50,7 @@ type PerformTrackHoverHitTestOptions = {
   trackGroup: THREE.Group | null;
   raycaster: THREE.Raycaster | null;
   renderer: THREE.WebGLRenderer | null;
-  trackLines: Map<string, TrackLineResource>;
+  trackLines: Map<string, TrackRenderResource>;
   clearPointerHover: () => void;
   setPointerHover: (trackId: string, position: { x: number; y: number }) => void;
 };
@@ -54,7 +95,7 @@ export function performTrackHoverHitTest({
     if (resource.line.visible) {
       visibleObjects.push(resource.line);
     }
-    if (resource.endCap.visible) {
+    if (resource.kind === 'overlay' && resource.endCap.visible) {
       visibleObjects.push(resource.endCap);
     }
   }
@@ -70,8 +111,13 @@ export function performTrackHoverHitTest({
     return null;
   }
 
-  const intersection = intersections[0];
-  const trackId = getTrackIdFromObject(intersection.object);
+  let trackId: string | null = null;
+  for (const intersection of intersections) {
+    trackId = resolveTrackIdFromIntersection(intersection, trackLines);
+    if (trackId) {
+      break;
+    }
+  }
   if (trackId === null) {
     clearPointerHover();
     return null;

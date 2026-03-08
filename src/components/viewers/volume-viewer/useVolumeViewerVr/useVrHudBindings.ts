@@ -9,7 +9,9 @@ import {
   getTrackColorHex,
   normalizeTrackColor,
 } from '../../../../shared/colorMaps/trackColors';
-import type { TrackDefinition } from '../../../../types/tracks';
+import { resolveTrackVisibilityForState } from '../../../../shared/utils/trackVisibilityState';
+import { createDefaultTrackSetState } from '../../../../hooks/tracks/useTrackStyling';
+import type { CompiledTrackSummary } from '../../../../types/tracks';
 import type { UseVolumeViewerVrParams } from '../useVolumeViewerVr.types';
 import type { VrChannelsState, VrTracksState } from '../vr';
 
@@ -18,9 +20,10 @@ type UseVrHudBindingsParams = {
   activeChannelPanelId: UseVolumeViewerVrParams['activeChannelPanelId'];
   vrChannelsStateRef: MutableRefObject<VrChannelsState>;
   updateVrChannelsHud: () => void;
+  trackHudEnabled: boolean;
   trackChannels: UseVolumeViewerVrParams['trackChannels'];
   tracks: UseVolumeViewerVrParams['tracks'];
-  trackVisibility: UseVolumeViewerVrParams['trackVisibility'];
+  trackSetStates: UseVolumeViewerVrParams['trackSetStates'];
   trackOpacityByTrackSet: UseVolumeViewerVrParams['trackOpacityByTrackSet'];
   trackLineWidthByTrackSet: UseVolumeViewerVrParams['trackLineWidthByTrackSet'];
   trackColorModesByTrackSet: UseVolumeViewerVrParams['trackColorModesByTrackSet'];
@@ -38,9 +41,9 @@ function selectDeterministicChannelId(channels: ReadonlyArray<{ id: string }>): 
   return [...channels].sort((left, right) => left.id.localeCompare(right.id))[0]?.id ?? null;
 }
 
-function groupTracksByTrackSet(tracks: TrackDefinition[]) {
+function groupTracksByTrackSet(tracks: CompiledTrackSummary[]) {
   return useMemo(() => {
-    const map = new Map<string, TrackDefinition[]>();
+    const map = new Map<string, CompiledTrackSummary[]>();
     for (const track of tracks) {
       const existing = map.get(track.trackSetId);
       if (existing) {
@@ -58,9 +61,10 @@ export function useVrHudBindings({
   activeChannelPanelId,
   vrChannelsStateRef,
   updateVrChannelsHud,
+  trackHudEnabled,
   trackChannels,
   tracks,
-  trackVisibility,
+  trackSetStates,
   trackOpacityByTrackSet,
   trackLineWidthByTrackSet,
   trackColorModesByTrackSet,
@@ -70,7 +74,7 @@ export function useVrHudBindings({
   vrTracksStateRef,
   updateVrTracksHud,
 }: UseVrHudBindingsParams) {
-  const tracksByChannel = groupTracksByTrackSet(tracks);
+  const tracksByChannel = groupTracksByTrackSet(trackHudEnabled ? tracks : []);
 
   useEffect(() => {
     const nextChannels = channelPanels.map((panel) => ({
@@ -116,6 +120,15 @@ export function useVrHudBindings({
   }, [activeChannelPanelId, channelPanels, updateVrChannelsHud, vrChannelsStateRef]);
 
   useEffect(() => {
+    if (!trackHudEnabled) {
+      vrTracksStateRef.current = {
+        channels: [],
+        activeChannelId: null,
+      };
+      updateVrTracksHud();
+      return;
+    }
+
     const previousChannels = new Map(
       vrTracksStateRef.current.channels.map((channel) => [channel.id, channel] as const),
     );
@@ -124,9 +137,10 @@ export function useVrHudBindings({
       const colorMode = trackColorModesByTrackSet[channel.id] ?? { type: 'random' };
       const opacity = trackOpacityByTrackSet[channel.id] ?? DEFAULT_TRACK_OPACITY;
       const lineWidth = trackLineWidthByTrackSet[channel.id] ?? DEFAULT_TRACK_LINE_WIDTH;
+      const trackSetState = trackSetStates[channel.id] ?? createDefaultTrackSetState();
       let visibleTracks = 0;
       const trackEntries = tracksForChannel.map((track) => {
-        const explicitVisible = trackVisibility[track.id] ?? true;
+        const explicitVisible = resolveTrackVisibilityForState(trackSetState, track.id);
         const isFollowed = followedTrackId === track.id;
         const isSelected = selectedTrackIds.has(track.id);
         if (explicitVisible || isFollowed || isSelected) {
@@ -176,11 +190,12 @@ export function useVrHudBindings({
     updateVrTracksHud();
   }, [
     activeTrackChannelId,
+    trackHudEnabled,
     trackColorModesByTrackSet,
     trackChannels,
     trackLineWidthByTrackSet,
     trackOpacityByTrackSet,
-    trackVisibility,
+    trackSetStates,
     tracksByChannel,
     followedTrackId,
     selectedTrackIds,

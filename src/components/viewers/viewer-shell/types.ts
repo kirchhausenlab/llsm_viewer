@@ -9,9 +9,10 @@ import type { LoadedDatasetLayer } from '../../../hooks/dataset';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import type { VolumeBrickAtlas } from '../../../core/volumeProvider';
 import type { LayerSettings, RenderStyle } from '../../../state/layerSettings';
+import type { TrackSetState } from '../../../types/channelTracks';
 import type { FollowedVoxelTarget } from '../../../types/follow';
 import type { HoveredVoxelInfo } from '../../../types/hover';
-import type { NumericRange, TrackColorMode, TrackDefinition, TrackPoint } from '../../../types/tracks';
+import type { NumericRange, TrackColorMode, TrackPoint, TrackSummary } from '../../../types/tracks';
 
 export type TopMenuChromeProps = {
   onReturnToLauncher: () => void;
@@ -135,8 +136,6 @@ export type ChannelsPanelProps = VolumeChannelTabsProps & {
   onLayerInvertToggle: (layerKey: string) => void;
 };
 
-export type TrackSummary = { total: number; visible: number };
-
 export type TrackSettingsProps = {
   isFullTrailEnabled: boolean;
   trailLength: number;
@@ -155,8 +154,8 @@ export type TracksPanelProps = {
   }>;
   activeTrackSetId: string | null;
   onTrackSetTabSelect: (trackSetId: string) => void;
-  parsedTracksByTrackSet: Map<string, TrackDefinition[]>;
-  filteredTracksByTrackSet: Map<string, TrackDefinition[]>;
+  parsedTracksByTrackSet: Map<string, TrackSummary[]>;
+  filteredTracksByTrackSet: Map<string, TrackSummary[]>;
   minimumTrackLength: number;
   pendingMinimumTrackLength: number;
   trackLengthBounds: NumericRange;
@@ -165,12 +164,11 @@ export type TracksPanelProps = {
   trackColorModesByTrackSet: Record<string, TrackColorMode>;
   trackOpacityByTrackSet: Record<string, number>;
   trackLineWidthByTrackSet: Record<string, number>;
-  trackSummaryByTrackSet: Map<string, TrackSummary>;
+  trackSetStates: Record<string, TrackSetState>;
   followedTrackSetId: string | null;
   followedTrackId: string | null;
   onTrackOrderToggle: (trackSetId: string) => void;
   trackOrderModeByTrackSet: Record<string, 'id' | 'length'>;
-  trackVisibility: Record<string, boolean>;
   onTrackVisibilityToggle: (trackId: string) => void;
   onTrackVisibilityAllChange: (trackSetId: string, visible: boolean) => void;
   onTrackOpacityChange: (trackSetId: string, value: number) => void;

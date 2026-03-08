@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, type Dispatch, type SetStateAction } from 'react';
-import type { TrackDefinition } from '../../types/tracks';
+import { useCallback, useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
+import type { CompiledTrackSetPayload, CompiledTrackSummary } from '../../types/tracks';
 import type { ChannelSource, TrackSetSource } from '../dataset';
 import { collectFilesFromDataTransfer, parseTrackCsvFile } from '../../shared/utils/appHelpers';
-import { buildTracksFromCsvEntries } from '../../shared/utils/trackCsvParsing';
 import { normalizeEntityName } from '../../constants/naming';
+import { compileTrackEntries } from '../../shared/utils/compiledTracks';
 
 export type TrackSetDescriptor = {
   id: string;
@@ -28,6 +28,8 @@ export const useParsedTracks = ({
   createTrackSetSource,
   updateTrackSetIdCounter
 }: UseParsedTracksOptions) => {
+  const inFlightCompiledPayloadLoadsRef = useRef<Map<string, Promise<CompiledTrackSetPayload | null>>>(new Map());
+
   useEffect(() => {
     updateTrackSetIdCounter(tracks);
   }, [tracks, updateTrackSetIdCounter]);
@@ -54,32 +56,46 @@ export const useParsedTracks = ({
     });
   }, [channelNameById, tracks]);
 
-  const rawTracksByTrackSet = useMemo(() => {
-    const map = new Map<string, TrackDefinition[]>();
+  const parsedTracksByTrackSet = useMemo(() => {
+    const map = new Map<string, CompiledTrackSummary[]>();
 
     for (const set of tracks) {
-      const entries = set.entries;
-      if (entries.length === 0) {
+      const compiledSummary = set.compiledSummary;
+      if (!compiledSummary) {
         map.set(set.id, []);
         continue;
       }
 
       const boundChannelId = set.boundChannelId;
       const normalizedTrackSetName = normalizeEntityName(set.name);
-      map.set(
-        set.id,
-        buildTracksFromCsvEntries({
-          trackSetId: set.id,
-          trackSetName: normalizedTrackSetName,
-          channelId: boundChannelId,
-          channelName: boundChannelId ? (channelNameById.get(boundChannelId) ?? null) : null,
-          entries
-        })
-      );
+      map.set(set.id, compiledSummary.tracks.map((track) => ({
+        ...track,
+        trackSetName: normalizedTrackSetName,
+        channelId: boundChannelId,
+        channelName: boundChannelId ? (channelNameById.get(boundChannelId) ?? null) : null
+      })));
     }
 
     return map;
   }, [channelNameById, tracks]);
+
+  const compiledPayloadByTrackSet = useMemo(() => {
+    const map = new Map<string, CompiledTrackSetPayload>();
+    for (const set of tracks) {
+      if (set.compiledPayload) {
+        map.set(set.id, set.compiledPayload);
+      }
+    }
+    return map;
+  }, [tracks]);
+
+  const trackSetById = useMemo(() => {
+    const map = new Map<string, TrackSetSource>();
+    for (const set of tracks) {
+      map.set(set.id, set);
+    }
+    return map;
+  }, [tracks]);
 
   const updateTrackSet = useCallback(
     (trackSetId: string, updater: (set: TrackSetSource) => TrackSetSource) => {
@@ -106,18 +122,30 @@ export const useParsedTracks = ({
         fileName: file.name,
         status: 'loading',
         error: null,
-        entries: []
+        compiledSummary: null,
+        compiledPayload: null,
+        loadCompiledPayload: null
       }));
 
       try {
         const rows = await parseTrackCsvFile(file);
+        const normalizedTrackSetName = normalizeEntityName(file.name.replace(/\.csv$/i, '').trim()) || 'Tracks';
+        const compiled = compileTrackEntries({
+          trackSetId,
+          trackSetName: normalizedTrackSetName,
+          channelId: null,
+          channelName: null,
+          entries: rows
+        });
         updateTrackSet(trackSetId, (set) => ({
           ...set,
           file,
           fileName: file.name,
           status: 'loaded',
           error: null,
-          entries: rows
+          compiledSummary: compiled.summary,
+          compiledPayload: compiled.payload,
+          loadCompiledPayload: async () => compiled.payload
         }));
       } catch (err) {
         console.error('Failed to load tracks CSV', err);
@@ -127,7 +155,9 @@ export const useParsedTracks = ({
           file: null,
           status: 'error',
           error: message,
-          entries: []
+          compiledSummary: null,
+          compiledPayload: null,
+          loadCompiledPayload: null
         }));
       }
     },
@@ -174,7 +204,9 @@ export const useParsedTracks = ({
         fileName: '',
         status: 'idle',
         error: null,
-        entries: []
+        compiledSummary: null,
+        compiledPayload: null,
+        loadCompiledPayload: null
       }));
     },
     [updateTrackSet]
@@ -187,9 +219,64 @@ export const useParsedTracks = ({
     [setTracks]
   );
 
+  const ensureCompiledPayloadsLoaded = useCallback(
+    (trackSetIds: Iterable<string>) => {
+      for (const trackSetId of trackSetIds) {
+        const trackSet = trackSetById.get(trackSetId);
+        if (!trackSet || trackSet.compiledPayload || !trackSet.loadCompiledPayload) {
+          continue;
+        }
+        if (inFlightCompiledPayloadLoadsRef.current.has(trackSetId)) {
+          continue;
+        }
+
+        const loadPromise = trackSet.loadCompiledPayload()
+          .then((payload) => {
+            setTracks((current) =>
+              current.map((set) =>
+                set.id === trackSetId
+                  ? {
+                      ...set,
+                      compiledPayload: set.compiledPayload ?? payload,
+                      status: set.status === 'error' ? 'loaded' : set.status,
+                      error: null
+                    }
+                  : set
+              )
+            );
+            return payload;
+          })
+          .catch((error) => {
+            console.error(`Failed to load compiled payload for track set ${trackSetId}`, error);
+            const message = error instanceof Error ? error.message : 'Failed to load compiled track payload.';
+            setTracks((current) =>
+              current.map((set) =>
+                set.id === trackSetId
+                  ? {
+                      ...set,
+                      status: 'error',
+                      error: message
+                    }
+                  : set
+              )
+            );
+            return null;
+          })
+          .finally(() => {
+            inFlightCompiledPayloadLoadsRef.current.delete(trackSetId);
+          });
+
+        inFlightCompiledPayloadLoadsRef.current.set(trackSetId, loadPromise);
+      }
+    },
+    [setTracks, trackSetById]
+  );
+
   return {
     trackSets,
-    rawTracksByTrackSet,
+    parsedTracksByTrackSet,
+    compiledPayloadByTrackSet,
+    ensureCompiledPayloadsLoaded,
     handleAddTrackSet,
     handleTrackFilesAdded,
     handleTrackDrop,

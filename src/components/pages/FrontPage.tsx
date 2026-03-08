@@ -14,7 +14,7 @@ import LaunchActions, { type LaunchActionsProps } from './LaunchActions';
 import WarningsWindow from './WarningsWindow';
 import { formatBytes } from '../../errors';
 
-export type TrackSummary = { totalRows: number; uniqueTracks: number };
+export type TrackSummary = { totalPoints: number; totalTracks: number };
 export type ExperimentType = '3d-movie' | '2d-movie' | 'single-3d-volume';
 
 const EXPERIMENT_TYPE_OPTIONS: ReadonlyArray<{ type: ExperimentType; label: string }> = [
@@ -46,7 +46,7 @@ export type ExperimentConfigurationState = {
 
 export type PreprocessedSummaryProps = {
   preprocessedExperiment: StagedPreprocessedExperiment | null;
-  computeTrackSummary: (entries: string[][]) => TrackSummary;
+  computeTrackSummary: (summary: StagedPreprocessedExperiment['trackSummaries'][number]['summary']) => TrackSummary;
 };
 
 type ExperimentTypeSelectionProps = {
@@ -225,18 +225,18 @@ export default function FrontPage({
                   const trackSummaries = preprocessedSummary.preprocessedExperiment.trackSummaries ?? [];
                   const totals = trackSummaries.reduce(
                     (acc, set) => {
-                      const summary = preprocessedSummary.computeTrackSummary(set.entries);
+                      const summary = preprocessedSummary.computeTrackSummary(set.summary);
                       return {
-                        rows: acc.rows + summary.totalRows,
-                        tracks: acc.tracks + summary.uniqueTracks
+                        points: acc.points + summary.totalPoints,
+                        tracks: acc.tracks + summary.totalTracks
                       };
                     },
-                    { rows: 0, tracks: 0 }
+                    { points: 0, tracks: 0 }
                   );
                   return (
                     <p className="preprocessed-summary-tracks">
                       {trackSummaries.length > 0
-                        ? `${trackSummaries.length} track sets · ${totals.tracks} tracks (${totals.rows} rows)`
+                        ? `${trackSummaries.length} track sets · ${totals.tracks} tracks (${totals.points} points)`
                         : 'No tracks attached'}
                     </p>
                   );

@@ -29,7 +29,6 @@ import { useVolumeViewerAnisotropy } from './volume-viewer/useVolumeViewerAnisot
 import { useVolumeViewerRefSync } from './volume-viewer/useVolumeViewerRefSync';
 import { useVolumeViewerSurfaceBinding } from './volume-viewer/useVolumeViewerSurfaceBinding';
 import { useVolumeViewerTransformBindings } from './volume-viewer/useVolumeViewerTransformBindings';
-import { resolveRenderableTracks } from './volume-viewer/renderableTracks';
 import { resolveVolumeViewerVrRuntime } from './volume-viewer/volumeViewerVrRuntime';
 import {
   resetPlaybackWarmupGateState,
@@ -40,7 +39,6 @@ import {
   buildVolumeViewerLifecycleParams,
   buildVolumeViewerVrBridgeOptions,
 } from './volume-viewer/volumeViewerRuntimeArgs';
-import { getTrackPlaybackIndexWindow } from '../../shared/utils';
 import {
   computeRuntimeDiagnosticsWindowDefaultPosition,
   RUNTIME_DIAGNOSTICS_WINDOW_WIDTH,
@@ -140,6 +138,7 @@ function VolumeViewer({
   zClipFrontFraction = 0,
   onTogglePlayback,
   onTimeIndexChange,
+  playbackWindow = null,
   canAdvancePlayback,
   onFpsChange,
   onRegisterVolumeStepScaleChange,
@@ -148,7 +147,9 @@ function VolumeViewer({
   onRegisterCaptureTarget,
   trackScale,
   tracks,
-  trackVisibility,
+  compiledTrackPayloadByTrackSet,
+  onRequireTrackPayloads,
+  trackSetStates,
   trackOpacityByTrackSet,
   trackLineWidthByTrackSet,
   trackColorModesByTrackSet,
@@ -300,17 +301,6 @@ function VolumeViewer({
     resetHudPlacementCallbackRef,
   });
 
-  const playbackWindow = useMemo(() => {
-    if (!followedTrackId) {
-      return null;
-    }
-    const track = tracks.find((entry) => entry.id === followedTrackId);
-    if (!track) {
-      return null;
-    }
-    return getTrackPlaybackIndexWindow(track, totalTimepoints);
-  }, [followedTrackId, totalTimepoints, tracks]);
-
   const canAdvancePlaybackWithWarmup = useMemo(() => {
     const requiredLayerKeys = layers.filter(isPlaybackWarmupEligibleLayer).map((layer) => layer.key);
     return (nextIndex: number) => {
@@ -394,17 +384,6 @@ function VolumeViewer({
       loadedVolumes,
       expectedVolumes,
     });
-  const renderTracks = useMemo(
-    () =>
-      resolveRenderableTracks(tracks, {
-        trackVisibility,
-        trackOpacityByTrackSet,
-        selectedTrackIds,
-        followedTrackId,
-      }),
-    [followedTrackId, selectedTrackIds, trackOpacityByTrackSet, trackVisibility, tracks],
-  );
-
   const {
     hoveredTrackId,
     tooltipPosition,
@@ -418,8 +397,10 @@ function VolumeViewer({
     refreshTrackOverlay,
     disposeTrackResources,
   } = useTrackRendering({
-    tracks: renderTracks,
-    trackVisibility,
+    tracks,
+    compiledTrackPayloadByTrackSet,
+    onRequireTrackPayloads,
+    trackSetStates,
     trackOpacityByTrackSet,
     trackLineWidthByTrackSet,
     trackColorModesByTrackSet,
@@ -489,8 +470,8 @@ function VolumeViewer({
       activeTrackChannelId,
     },
     trackState: {
-      tracks,
-      trackVisibility,
+      tracks: vr?.isVrActive ? tracks : [],
+      trackSetStates,
       trackOpacityByTrackSet,
       trackLineWidthByTrackSet,
       trackColorModesByTrackSet,
@@ -504,7 +485,7 @@ function VolumeViewer({
       onResetHudPlacement: requestHudPlacementReset,
       onTrackFollowRequest: handleTrackFollowRequest,
       vrLog,
-      onAfterSessionEnd: handleResize,
+        onAfterSessionEnd: handleResize,
     },
   });
   const { vrApi, vrParams, vrIntegration, setVrIntegration } = useVolumeViewerVrBridge(vrBridgeOptions);

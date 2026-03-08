@@ -45,7 +45,7 @@ export type VolumeViewerVrBridgeOptionGroups = {
   trackState: Pick<
     VolumeViewerVrBridgeOptions,
     | 'tracks'
-    | 'trackVisibility'
+    | 'trackSetStates'
     | 'trackOpacityByTrackSet'
     | 'trackLineWidthByTrackSet'
     | 'trackColorModesByTrackSet'

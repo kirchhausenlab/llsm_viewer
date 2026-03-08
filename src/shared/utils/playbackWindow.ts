@@ -1,4 +1,4 @@
-import type { TrackDefinition } from '../../types/tracks';
+import type { TrackSummary } from '../../types/tracks';
 
 export type PlaybackIndexWindow = {
   minIndex: number;
@@ -64,22 +64,15 @@ export function computeLoopedNextTimeIndex(
 }
 
 export function getTrackPlaybackIndexWindow(
-  track: TrackDefinition | null | undefined,
+  track: TrackSummary | null | undefined,
   totalTimepoints: number,
 ): PlaybackIndexWindow | null {
-  if (!track || totalTimepoints <= 0 || track.points.length === 0) {
+  if (!track || totalTimepoints <= 0) {
     return null;
   }
 
-  let min = Number.POSITIVE_INFINITY;
-  let max = Number.NEGATIVE_INFINITY;
-  for (const point of track.points) {
-    if (!Number.isFinite(point.time)) {
-      continue;
-    }
-    min = Math.min(min, point.time);
-    max = Math.max(max, point.time);
-  }
+  const min = track.timeStart;
+  const max = track.timeEnd;
 
   if (!Number.isFinite(min) || !Number.isFinite(max)) {
     return null;
@@ -87,4 +80,3 @@ export function getTrackPlaybackIndexWindow(
 
   return normalizePlaybackIndexWindow({ minIndex: min, maxIndex: max }, totalTimepoints);
 }
-

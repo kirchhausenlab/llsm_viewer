@@ -9,18 +9,24 @@ import {
 } from '../src/core/volumeProvider.ts';
 import { createInMemoryPreprocessedStorage } from '../src/shared/storage/preprocessedStorage.ts';
 import { computeUint8VolumeHistogram, encodeUint32ArrayLE } from '../src/shared/utils/histogram.ts';
+import { compileTrackEntries } from '../src/shared/utils/compiledTracks.ts';
 import { openPreprocessedDatasetFromZarrStorage } from '../src/shared/utils/preprocessedDataset/open.ts';
 import { createShardFilePath, encodeShardEntries } from '../src/shared/utils/preprocessedDataset/sharding.ts';
 import {
   PREPROCESSED_DATASET_FORMAT,
   type PreprocessedManifest
 } from '../src/shared/utils/preprocessedDataset/types.ts';
-import { serializeTrackEntriesToCsvBytes } from '../src/shared/utils/preprocessedDataset/tracks.ts';
+import {
+  createTracksDescriptor,
+  encodeCompiledTrackSetFiles
+} from '../src/shared/utils/preprocessedDataset/tracks.ts';
 import { createZarrStoreFromPreprocessedStorage } from '../src/shared/utils/zarrStore.ts';
 
 console.log('Starting preprocessed dataset Zarr tests');
 
-const makeManifest = (): PreprocessedManifest => {
+const makeManifest = (
+  trackDescriptor: PreprocessedManifest['dataset']['trackSets'][number]['tracks']
+): PreprocessedManifest => {
   const width = 2;
   const height = 2;
   const depth = 1;
@@ -49,7 +55,7 @@ const makeManifest = (): PreprocessedManifest => {
           name: 'Track set A',
           fileName: 'channel-a.csv',
           boundChannelId: 'channel-a',
-          tracks: { path: 'tracks/track-set-a.csv', format: 'csv', columns: 8, decimalPlaces: 3 }
+          tracks: trackDescriptor
         }
       ],
       channels: [
@@ -164,17 +170,36 @@ await (async () => {
   const storageHandle = createInMemoryPreprocessedStorage({ datasetId: 'preprocessed-dataset-main' });
   const zarrStore = createZarrStoreFromPreprocessedStorage(storageHandle.storage);
 
-  const manifest = makeManifest();
+  const compiledTracks = compileTrackEntries({
+    trackSetId: 'track-set-a',
+    trackSetName: 'Track set A',
+    channelId: 'channel-a',
+    channelName: 'Channel A',
+    entries: [['1', '0', '1', '1.123456', '2.100000', '3.987654', '4.000000', '0.000000']]
+  });
+  const manifest = makeManifest(createTracksDescriptor('track-set-a', compiledTracks.summary));
   await zarr.create(zarr.root(zarrStore), { attributes: { llsmViewerPreprocessed: manifest } });
 
   const layer = manifest.dataset.channels[0]!.layers[0]!;
   const baseScale = layer.zarr.scales[0]!;
-  const trackEntries = [
-    ['1', '0', '1', '1.123456', '2.100000', '3.987654', '4.000000', '0.000000']
-  ];
+  const trackFiles = encodeCompiledTrackSetFiles(compiledTracks);
+  await storageHandle.storage.writeFile(manifest.dataset.trackSets[0]!.tracks.summary.path, trackFiles.summaryBytes);
+  await storageHandle.storage.writeFile(manifest.dataset.trackSets[0]!.tracks.pointData.path, trackFiles.pointBytes);
   await storageHandle.storage.writeFile(
-    'tracks/track-set-a.csv',
-    serializeTrackEntriesToCsvBytes(trackEntries, { decimalPlaces: 3 })
+    manifest.dataset.trackSets[0]!.tracks.segmentPositions.path,
+    trackFiles.segmentPositionBytes
+  );
+  await storageHandle.storage.writeFile(
+    manifest.dataset.trackSets[0]!.tracks.segmentTimes.path,
+    trackFiles.segmentTimeBytes
+  );
+  await storageHandle.storage.writeFile(
+    manifest.dataset.trackSets[0]!.tracks.segmentTrackIndices.path,
+    trackFiles.segmentTrackIndexBytes
+  );
+  await storageHandle.storage.writeFile(
+    manifest.dataset.trackSets[0]!.tracks.centroidData.path,
+    trackFiles.centroidBytes
   );
   await zarr.create(zarr.root(zarrStore).resolve(baseScale.zarr.data.path), {
     shape: baseScale.zarr.data.shape,
@@ -323,7 +348,8 @@ await (async () => {
   const opened = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
   assert.equal(opened.totalVolumeCount, 2);
   assert.equal(opened.channelSummaries.length, 1);
-  assert.deepEqual(opened.trackSummaries[0]?.entries, [['1', '0', '1', '1.123', '2.1', '3.988', '4', '0']]);
+  assert.equal(opened.trackSummaries[0]?.summary.totalTracks, 1);
+  assert.equal(opened.trackSummaries[0]?.summary.totalPoints, 1);
 
   const provider = createVolumeProvider({
     manifest: opened.manifest,

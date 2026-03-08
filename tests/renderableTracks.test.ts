@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import { resolveRenderableTracks } from '../src/components/viewers/volume-viewer/renderableTracks.ts';
+import { createDefaultTrackSetState } from '../src/hooks/tracks/useTrackStyling.ts';
 
 console.log('Starting renderableTracks tests');
 
@@ -29,7 +30,7 @@ const tracks = [
 
 (() => {
   const renderable = resolveRenderableTracks(tracks, {
-    trackVisibility: {},
+    trackSetStates: {},
     trackOpacityByTrackSet: { 'track-set-0': 1 },
     selectedTrackIds: new Set(),
     followedTrackId: null,
@@ -40,7 +41,13 @@ const tracks = [
 
 (() => {
   const renderable = resolveRenderableTracks(tracks, {
-    trackVisibility: { 'track-0': false, 'track-1': false },
+    trackSetStates: {
+      'track-set-0': {
+        ...createDefaultTrackSetState(),
+        defaultVisibility: false,
+        visibilityOverrides: {},
+      },
+    },
     trackOpacityByTrackSet: { 'track-set-0': 1 },
     selectedTrackIds: new Set(),
     followedTrackId: null,
@@ -51,7 +58,13 @@ const tracks = [
 
 (() => {
   const renderable = resolveRenderableTracks(tracks, {
-    trackVisibility: { 'track-0': false, 'track-1': false },
+    trackSetStates: {
+      'track-set-0': {
+        ...createDefaultTrackSetState(),
+        defaultVisibility: false,
+        visibilityOverrides: {},
+      },
+    },
     trackOpacityByTrackSet: { 'track-set-0': 0 },
     selectedTrackIds: new Set(['track-1']),
     followedTrackId: 'track-0',

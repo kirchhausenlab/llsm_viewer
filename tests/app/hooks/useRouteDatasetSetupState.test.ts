@@ -34,7 +34,9 @@ const createTrackSet = (id: string, name: string, boundChannelId: string | null)
   fileName: '',
   status: 'idle',
   error: null,
-  entries: [],
+  compiledSummary: null,
+  compiledPayload: null,
+  loadCompiledPayload: null,
 });
 
 (() => {

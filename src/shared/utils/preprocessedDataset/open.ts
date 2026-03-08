@@ -1,8 +1,13 @@
 import type { PreprocessedStorage } from '../../storage/preprocessedStorage';
 import { type OpenPreprocessedDatasetResult } from './types';
 import { buildChannelSummariesFromManifest, buildTrackSummariesFromManifest } from './manifest';
-import { parseTrackEntriesFromCsvBytes } from './tracks';
+import {
+  decodeCompiledTrackSetPayloadFromBytes,
+  parseCompiledTrackSetSummaryFromBytes
+} from './tracks';
 import { coercePreprocessedManifest } from './schema';
+import type { CompiledTrackSetPayload, CompiledTrackSetSummary } from '../../../types/tracks';
+import type { PreprocessedTracksDescriptor } from './types';
 
 const textDecoder = new TextDecoder();
 
@@ -29,15 +34,38 @@ export async function openPreprocessedDatasetFromZarrStorage(storage: Preprocess
   }
   const attrs = metadata.attributes ?? {};
   const manifest = coercePreprocessedManifest(attrs.llsmViewerPreprocessed);
-  const trackEntriesByTrackSetId = new Map<string, string[][]>();
+  const trackSummariesByTrackSetId = new Map<string, CompiledTrackSetSummary>();
 
   for (const trackSet of manifest.dataset.trackSets) {
-    const trackBytes = await storage.readFile(trackSet.tracks.path);
-    const entries = parseTrackEntriesFromCsvBytes(trackBytes);
-    trackEntriesByTrackSetId.set(trackSet.id, entries);
+    const summaryBytes = await storage.readFile(trackSet.tracks.summary.path);
+    const summary = parseCompiledTrackSetSummaryFromBytes(summaryBytes);
+    trackSummariesByTrackSetId.set(trackSet.id, summary);
   }
 
   const channelSummaries = buildChannelSummariesFromManifest(manifest);
-  const trackSummaries = buildTrackSummariesFromManifest(manifest, trackEntriesByTrackSetId);
+  const trackSummaries = buildTrackSummariesFromManifest(manifest, trackSummariesByTrackSetId);
   return { manifest, channelSummaries, trackSummaries, totalVolumeCount: manifest.dataset.totalVolumeCount };
+}
+
+export async function loadCompiledTrackSetPayloadFromStorage(
+  storage: PreprocessedStorage,
+  tracks: PreprocessedTracksDescriptor,
+  summary: CompiledTrackSetSummary
+): Promise<CompiledTrackSetPayload> {
+  const [pointBytes, segmentPositionBytes, segmentTimeBytes, segmentTrackIndexBytes, centroidBytes] =
+    await Promise.all([
+      storage.readFile(tracks.pointData.path),
+      storage.readFile(tracks.segmentPositions.path),
+      storage.readFile(tracks.segmentTimes.path),
+      storage.readFile(tracks.segmentTrackIndices.path),
+      storage.readFile(tracks.centroidData.path)
+    ]);
+
+  return decodeCompiledTrackSetPayloadFromBytes(summary, {
+    pointBytes,
+    segmentPositionBytes,
+    segmentTimeBytes,
+    segmentTrackIndexBytes,
+    centroidBytes
+  });
 }

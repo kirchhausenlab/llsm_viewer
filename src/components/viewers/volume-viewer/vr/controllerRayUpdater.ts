@@ -2,7 +2,7 @@ import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 import { Line2 } from 'three/examples/jsm/lines/Line2';
 
-import type { TrackLineResource } from '../../VolumeViewer.types';
+import type { TrackRenderResource } from '../../VolumeViewer.types';
 import type {
   ControllerEntry,
   PlaybackState,
@@ -36,7 +36,7 @@ export type ControllerRayDependencies = {
   containerRef: MutableRefObject<HTMLElement | null>;
   controllersRef: MutableRefObject<ControllerEntry[]>;
   trackGroupRef: MutableRefObject<THREE.Group | null>;
-  trackLinesRef: MutableRefObject<Map<string, TrackLineResource>>;
+  trackLinesRef: MutableRefObject<Map<string, TrackRenderResource>>;
   playbackStateRef: MutableRefObject<PlaybackState>;
   vrLogRef: MutableRefObject<((...args: Parameters<typeof console.debug>) => void) | null>;
   lastControllerRaySummaryRef: MutableRefObject<ControllerRaySummary | null>;
@@ -412,6 +412,7 @@ export function createControllerRayUpdater(
         const intersectionResolution = resolveControllerTrackIntersection({
           entry,
           visibleLines,
+          trackResources: trackLinesRef.current,
           renderer,
           cameraInstance,
           containerInstance,

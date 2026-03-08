@@ -26,7 +26,7 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
       tracks: {
         trackScale: { x: 1, y: 1, z: 1 },
         tracks: [],
-        trackVisibility: {},
+        trackSetStates: {},
         trackOpacityByTrackSet: {},
         trackLineWidthByTrackSet: {},
         trackColorModesByTrackSet: {},
@@ -45,6 +45,7 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
       onRegisterVolumeStepScaleChange: noopWithArgs
     },
     vr: {
+      isVrActive: false,
       isVrPassthroughSupported: false,
       trackChannels: [],
       onTrackChannelSelect: noopWithArgs,
@@ -170,12 +171,11 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
       trackColorModesByTrackSet: {},
       trackOpacityByTrackSet: {},
       trackLineWidthByTrackSet: {},
-      trackSummaryByTrackSet: new Map(),
+      trackSetStates: {},
       followedTrackSetId: null,
       followedTrackId: null,
       onTrackOrderToggle: noopWithArgs,
       trackOrderModeByTrackSet: {},
-      trackVisibility: {},
       onTrackVisibilityToggle: noopWithArgs,
       onTrackVisibilityAllChange: noopWithArgs,
       onTrackOpacityChange: noopWithArgs,

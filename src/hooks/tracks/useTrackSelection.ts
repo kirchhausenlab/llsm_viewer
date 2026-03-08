@@ -8,7 +8,8 @@ import {
   type SetStateAction
 } from 'react';
 import type { FollowedTrackState, TrackSetState } from '../../types/channelTracks';
-import type { NumericRange, TrackDefinition } from '../../types/tracks';
+import type { CompiledTrackSetPayload, CompiledTrackSummary, NumericRange, TrackSummary } from '../../types/tracks';
+import { resolveTrackVisibilityForState } from '../../shared/utils/trackVisibilityState';
 import { useTracksForDisplay } from './useTracksForDisplay';
 import { createDefaultTrackSetState } from './useTrackStyling';
 
@@ -28,18 +29,24 @@ export type UseTrackSelectionResult = ReturnType<typeof useTrackSelection>;
 
 export type UseTrackSelectionOptions = {
   trackSets: TrackSetDescriptor[];
-  rawTracksByTrackSet: Map<string, TrackDefinition[]>;
+  parsedTracksByTrackSet: Map<string, CompiledTrackSummary[]>;
+  compiledPayloadByTrackSet: Map<string, CompiledTrackSetPayload>;
+  ensureCompiledPayloadsLoaded: (trackSetIds: Iterable<string>) => void;
   volumeTimepointCount: number;
   trackSetStates: Record<string, TrackSetState>;
+  trackOpacityByTrackSet: Record<string, number>;
   setTrackSetStates: Dispatch<SetStateAction<Record<string, TrackSetState>>>;
-  ensureTrackIsVisible: (track: TrackDefinition) => void;
+  ensureTrackIsVisible: (track: TrackSummary) => void;
 };
 
 export const useTrackSelection = ({
   trackSets,
-  rawTracksByTrackSet,
+  parsedTracksByTrackSet: sourceParsedTracksByTrackSet,
+  compiledPayloadByTrackSet,
+  ensureCompiledPayloadsLoaded,
   volumeTimepointCount,
   trackSetStates,
+  trackOpacityByTrackSet,
   setTrackSetStates,
   ensureTrackIsVisible
 }: UseTrackSelectionOptions) => {
@@ -60,29 +67,31 @@ export const useTrackSelection = ({
 
   const {
     parsedTracksByTrackSet,
-    plotTracksByTrackSet,
-    parsedTracks,
     trackLookup,
     filteredTracksByTrackSet,
-    filteredTracks,
-    filteredTrackLookup,
-    plotFilteredTracksByTrackSet,
-    plotFilteredTracks,
-    plotFilteredTrackLookup,
+    renderTracks,
     selectedTrackSeries,
-    trackExtents,
-    selectedTrackExtents
+    selectedTrackExtents,
+    hasParsedTrackData
   } = useTracksForDisplay({
-    rawTracksByTrackSet,
+    parsedTracksByTrackSet: sourceParsedTracksByTrackSet,
+    compiledPayloadByTrackSet,
     trackSets,
+    trackSetStates,
+    trackOpacityByTrackSet,
     selectedTrackOrder,
+    selectedTrackIds,
+    followedTrackId: followedTrack?.id ?? null,
     minimumTrackLength,
-    trackSmoothing,
-    volumeTimepointCount
+    trackSmoothing
   });
 
-  const amplitudeExtent = trackExtents.amplitude;
-  const timeExtent = trackExtents.time;
+  const amplitudeExtent = useMemo<NumericRange>(() => {
+    return selectedTrackExtents.amplitude ?? { min: 0, max: 1 };
+  }, [selectedTrackExtents.amplitude]);
+  const timeExtent = useMemo<NumericRange>(() => {
+    return selectedTrackExtents.time ?? { min: 0, max: Math.max(volumeTimepointCount - 1, 0) };
+  }, [selectedTrackExtents.time, volumeTimepointCount]);
 
   useEffect(() => {
     setSelectedTracksAmplitudeLimits((current) => {
@@ -131,10 +140,9 @@ export const useTrackSelection = ({
   const resolvedTimeLimits = selectedTracksTimeLimits ?? timeExtent;
 
   const trackLengthBounds = useMemo(() => {
-    const min = Math.max(0, Math.floor(timeExtent.min));
-    const max = Math.max(Math.ceil(timeExtent.max), min + 1);
-    return { min, max } as const;
-  }, [timeExtent.max, timeExtent.min]);
+    const max = Math.max(volumeTimepointCount, 1);
+    return { min: 0, max } as const;
+  }, [volumeTimepointCount]);
 
   const clampTrackLength = useCallback(
     (value: number) => Math.min(Math.max(value, trackLengthBounds.min), trackLengthBounds.max),
@@ -147,15 +155,19 @@ export const useTrackSelection = ({
   }, [clampTrackLength]);
 
   useEffect(() => {
-    const available = new Set(filteredTracks.map((track) => track.id));
+    const isTrackAvailable = (trackId: string) => {
+      const track = trackLookup.get(trackId);
+      return !!track && track.pointCount >= minimumTrackLength;
+    };
+
     if (selectedTrackOrder.length > 0) {
       setSelectedTrackOrder((current) => {
-        const filtered = current.filter((id) => available.has(id));
+        const filtered = current.filter(isTrackAvailable);
         return filtered.length === current.length ? current : filtered;
       });
     }
-    setFollowedTrack((current) => (current && !available.has(current.id) ? null : current));
-  }, [filteredTracks, selectedTrackOrder.length]);
+    setFollowedTrack((current) => (current && !isTrackAvailable(current.id) ? null : current));
+  }, [minimumTrackLength, selectedTrackOrder.length, trackLookup]);
 
   useEffect(() => {
     setFollowedTrack((current) => {
@@ -169,36 +181,33 @@ export const useTrackSelection = ({
     });
   }, [trackLookup]);
 
-  const trackSummaryByTrackSet = useMemo(() => {
-    const summary = new Map<string, { total: number; visible: number }>();
-    for (const set of trackSets) {
-      const tracksForSet = filteredTracksByTrackSet.get(set.id) ?? [];
-      const state = trackSetStates[set.id] ?? createDefaultTrackSetState();
-      let visible = 0;
-      for (const track of tracksForSet) {
-        const explicitVisible = state.visibility[track.id] ?? true;
-        const isFollowedTrack = followedTrack?.id === track.id;
-        const isSelectedTrack = selectedTrackIds.has(track.id);
-        if (explicitVisible || isFollowedTrack || isSelectedTrack) {
-          visible += 1;
-        }
+  useEffect(() => {
+    const requiredTrackSetIds = new Set<string>();
+    for (const trackId of selectedTrackOrder) {
+      const track = trackLookup.get(trackId);
+      if (track && track.pointCount >= minimumTrackLength && !compiledPayloadByTrackSet.has(track.trackSetId)) {
+        requiredTrackSetIds.add(track.trackSetId);
       }
-      summary.set(set.id, { total: tracksForSet.length, visible });
     }
-    return summary;
-  }, [filteredTracksByTrackSet, followedTrack, selectedTrackIds, trackSetStates, trackSets]);
 
-  const trackVisibility = useMemo(() => {
-    const visibility: Record<string, boolean> = {};
-    for (const set of trackSets) {
-      const tracksForSet = filteredTracksByTrackSet.get(set.id) ?? [];
-      const state = trackSetStates[set.id] ?? createDefaultTrackSetState();
-      for (const track of tracksForSet) {
-        visibility[track.id] = state.visibility[track.id] ?? true;
+    if (followedTrack?.id) {
+      const followed = trackLookup.get(followedTrack.id);
+      if (followed && followed.pointCount >= minimumTrackLength && !compiledPayloadByTrackSet.has(followed.trackSetId)) {
+        requiredTrackSetIds.add(followed.trackSetId);
       }
     }
-    return visibility;
-  }, [filteredTracksByTrackSet, trackSetStates, trackSets]);
+
+    if (requiredTrackSetIds.size > 0) {
+      ensureCompiledPayloadsLoaded(requiredTrackSetIds);
+    }
+  }, [
+    compiledPayloadByTrackSet,
+    ensureCompiledPayloadsLoaded,
+    followedTrack,
+    minimumTrackLength,
+    selectedTrackOrder,
+    trackLookup
+  ]);
 
   const followedTrackId = followedTrack?.id ?? null;
   const followedTrackSetId = followedTrack?.trackSetId ?? null;
@@ -296,16 +305,19 @@ export const useTrackSelection = ({
       let nextVisible = true;
       setTrackSetStates((current) => {
         const existing = current[track.trackSetId] ?? createDefaultTrackSetState();
-        const previous = existing.visibility[trackId] ?? true;
+        const previous = resolveTrackVisibilityForState(existing, trackId);
         nextVisible = !previous;
+        const visibilityOverrides = { ...existing.visibilityOverrides };
+        if (nextVisible === existing.defaultVisibility) {
+          delete visibilityOverrides[trackId];
+        } else {
+          visibilityOverrides[trackId] = nextVisible;
+        }
         return {
           ...current,
           [track.trackSetId]: {
             ...existing,
-            visibility: {
-              ...existing.visibility,
-              [trackId]: nextVisible
-            }
+            visibilityOverrides
           }
         };
       });
@@ -323,15 +335,15 @@ export const useTrackSelection = ({
       const tracksForSet = parsedTracksByTrackSet.get(trackSetId) ?? [];
       setTrackSetStates((current) => {
         const existing = current[trackSetId] ?? createDefaultTrackSetState();
-        const visibility: Record<string, boolean> = {};
-        for (const track of tracksForSet) {
-          visibility[track.id] = isChecked;
+        if (existing.defaultVisibility === isChecked && Object.keys(existing.visibilityOverrides).length === 0) {
+          return current;
         }
         return {
           ...current,
           [trackSetId]: {
             ...existing,
-            visibility
+            defaultVisibility: isChecked,
+            visibilityOverrides: {}
           }
         };
       });
@@ -431,8 +443,6 @@ export const useTrackSelection = ({
     setActiveTrackSetId(null);
   }, []);
 
-  const hasParsedTrackData = parsedTracks.length > 0;
-
   return {
     trackOrderModeByTrackSet,
     setTrackOrderModeByTrackSet,
@@ -451,25 +461,16 @@ export const useTrackSelection = ({
     activeTrackSetId,
     setActiveTrackSetId,
     parsedTracksByTrackSet,
-    plotTracksByTrackSet,
-    parsedTracks,
     trackLookup,
     filteredTracksByTrackSet,
-    filteredTracks,
-    filteredTrackLookup,
-    plotFilteredTracksByTrackSet,
-    plotFilteredTracks,
-    plotFilteredTrackLookup,
+    renderTracks,
     selectedTrackSeries,
-    trackExtents,
     selectedTrackExtents,
     amplitudeExtent,
     timeExtent,
     resolvedAmplitudeLimits,
     resolvedTimeLimits,
     trackLengthBounds,
-    trackSummaryByTrackSet,
-    trackVisibility,
     followedTrackId,
     followedTrackSetId,
     handleTrackOrderToggle,
@@ -495,4 +496,3 @@ export const useTrackSelection = ({
 };
 
 export default useTrackSelection;
-

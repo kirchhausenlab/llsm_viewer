@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
 import { createVolumeRenderContext, type VolumeRenderContext } from '../../../hooks/useVolumeRenderSetup';
-import type { MovementState, TrackLineResource } from '../VolumeViewer.types';
+import type { MovementState, TrackRenderResource } from '../VolumeViewer.types';
 
 const MOVEMENT_KEY_MAP: Record<string, keyof MovementState> = {
   KeyW: 'moveForward',
@@ -30,7 +30,7 @@ type PointerLookHandlers = {
 };
 
 type UseCameraControlsParams = {
-  trackLinesRef: MutableRefObject<Map<string, TrackLineResource>>;
+  trackLinesRef: MutableRefObject<Map<string, TrackRenderResource>>;
   followTargetActiveRef: MutableRefObject<boolean>;
   setHasMeasured: (hasMeasured: boolean) => void;
   enableKeyboardNavigation?: boolean;
@@ -83,8 +83,10 @@ export function useCameraControls({
       for (const resource of trackLinesRef.current.values()) {
         resource.material.resolution.set(width, height);
         resource.material.needsUpdate = true;
-        resource.outlineMaterial.resolution.set(width, height);
-        resource.outlineMaterial.needsUpdate = true;
+        if (resource.kind === 'overlay') {
+          resource.outlineMaterial.resolution.set(width, height);
+          resource.outlineMaterial.needsUpdate = true;
+        }
       }
     }
     cameraInstance.aspect = width / height;

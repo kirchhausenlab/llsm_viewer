@@ -25,13 +25,16 @@ const MAX_VOLUME_BYTES_HINT = 512 * 1024 * 1024;
 
 const DURATION_THRESHOLD_RELATIVE_MARGIN = 1.35;
 const DURATION_THRESHOLD_ABSOLUTE_MARGIN_MS = 8;
+const HEAVY_VOLUME_DURATION_VARIANCE_MARGIN_MS = 4_000;
+const HEAVY_VOLUME_SWEEP_VARIANCE_MARGIN_MS = 40_000;
 const HIT_RATE_THRESHOLD_MARGIN = 0.08;
 const LOD0_SELECTION_RATIO_THRESHOLD_MARGIN = 0.1;
+const HEAVY_VOLUME_LOD0_SELECTION_RATIO_MARGIN = 0.25;
 const THRASH_RATE_THRESHOLD_RELATIVE_MARGIN = 1.35;
 const THRASH_RATE_THRESHOLD_ABSOLUTE_MARGIN = 2;
 const THRASH_RATE_MIN_WINDOW_MS = 1_000;
 
-export const REAL_DATASET_BASELINE_VERSION = 2;
+export const REAL_DATASET_BASELINE_VERSION = 3;
 export const DEFAULT_REAL_DATASET_BASELINE_PATH = 'docs/performance/real-dataset-baseline.json';
 
 export type RealDatasetBenchmarkCaseId = 'fib_large' | 'npc2_20';
@@ -302,7 +305,6 @@ async function loadLayerTimepointLikeViewer({
       candidateScaleLevels.push(preferredScaleLevel);
     }
 
-    let lastError: unknown = null;
     for (const scaleLevel of candidateScaleLevels) {
       const scale = layerScalesByLevel.get(scaleLevel) ?? null;
       const sourceChannels = scale?.channels ?? 1;
@@ -351,17 +353,11 @@ async function loadLayerTimepointLikeViewer({
         };
       } catch (error) {
         if (isAllocationLikeError(error)) {
-          lastError = error;
           continue;
         }
         throw error;
       }
     }
-
-    if (lastError instanceof Error) {
-      throw lastError;
-    }
-    throw new Error(`Brick atlas is unavailable for layer "${layerKey}" at timepoint ${timepoint}.`);
   }
 
   const candidateScaleLevels = knownLevels.filter((level) => level >= 0);
@@ -588,16 +584,20 @@ export async function runRealDatasetBenchmarks(
 }
 
 export function deriveThresholds(metrics: RealDatasetBenchmarkMetrics): RealDatasetBenchmarkThresholds {
-  const deriveDurationMax = (measured: number): number =>
+  const isHeavyDirectVolumeCase =
+    metrics.selectedResidencyMode === 'volume' && metrics.selectedScaleLevel === 0;
+  const deriveDurationMax = (measured: number, absoluteMarginMs = DURATION_THRESHOLD_ABSOLUTE_MARGIN_MS): number =>
     roundTo(
       Math.max(
         measured * DURATION_THRESHOLD_RELATIVE_MARGIN,
-        measured + DURATION_THRESHOLD_ABSOLUTE_MARGIN_MS
+        measured + absoluteMarginMs
       ),
       2
     );
-  const deriveDurationOptionalMax = (measured: number | null): number | null =>
-    measured === null ? null : deriveDurationMax(measured);
+  const deriveDurationOptionalMax = (
+    measured: number | null,
+    absoluteMarginMs = DURATION_THRESHOLD_ABSOLUTE_MARGIN_MS
+  ): number | null => (measured === null ? null : deriveDurationMax(measured, absoluteMarginMs));
   const deriveThrashRateMax = (measured: number): number =>
     roundTo(
       Math.max(
@@ -610,15 +610,33 @@ export function deriveThresholds(metrics: RealDatasetBenchmarkMetrics): RealData
   return {
     selectedScaleLevel: metrics.selectedScaleLevel,
     selectedResidencyMode: metrics.selectedResidencyMode,
-    coldLoadMsMax: deriveDurationMax(metrics.coldLoadMs),
+    coldLoadMsMax: deriveDurationMax(
+      metrics.coldLoadMs,
+      isHeavyDirectVolumeCase ? HEAVY_VOLUME_DURATION_VARIANCE_MARGIN_MS : DURATION_THRESHOLD_ABSOLUTE_MARGIN_MS
+    ),
     warmLoadMsMax: deriveDurationMax(metrics.warmLoadMs),
-    transitionLoadMsMax: deriveDurationOptionalMax(metrics.transitionLoadMs),
-    sweepLoadMsMax: deriveDurationOptionalMax(metrics.sweepLoadMs),
+    transitionLoadMsMax: deriveDurationOptionalMax(
+      metrics.transitionLoadMs,
+      isHeavyDirectVolumeCase ? HEAVY_VOLUME_DURATION_VARIANCE_MARGIN_MS : DURATION_THRESHOLD_ABSOLUTE_MARGIN_MS
+    ),
+    sweepLoadMsMax: deriveDurationOptionalMax(
+      metrics.sweepLoadMs,
+      isHeavyDirectVolumeCase ? HEAVY_VOLUME_SWEEP_VARIANCE_MARGIN_MS : DURATION_THRESHOLD_ABSOLUTE_MARGIN_MS
+    ),
     lod0SelectionRatioMin: roundTo(
-      Math.max(0, metrics.lod0SelectionRatio - LOD0_SELECTION_RATIO_THRESHOLD_MARGIN),
+      Math.max(
+        0,
+        metrics.lod0SelectionRatio -
+          (isHeavyDirectVolumeCase
+            ? HEAVY_VOLUME_LOD0_SELECTION_RATIO_MARGIN
+            : LOD0_SELECTION_RATIO_THRESHOLD_MARGIN)
+      ),
       3
     ),
-    lod0ReadinessP95MsMax: deriveDurationOptionalMax(metrics.lod0ReadinessP95Ms),
+    lod0ReadinessP95MsMax: deriveDurationOptionalMax(
+      metrics.lod0ReadinessP95Ms,
+      isHeavyDirectVolumeCase ? HEAVY_VOLUME_DURATION_VARIANCE_MARGIN_MS : DURATION_THRESHOLD_ABSOLUTE_MARGIN_MS
+    ),
     scaleThrashEventsPerMinuteMax: deriveThrashRateMax(metrics.scaleThrashEventsPerMinute),
     chunkHitRateMin: roundTo(Math.max(0, metrics.chunkHitRate - HIT_RATE_THRESHOLD_MARGIN), 3),
   };

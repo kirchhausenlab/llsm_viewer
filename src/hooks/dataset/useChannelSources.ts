@@ -20,6 +20,7 @@ import {
   getKnownLayerTimepointCount,
   hasPendingLayerTimepointCount,
 } from './channelTimepointValidation';
+import type { CompiledTrackSetPayload, CompiledTrackSetSummary } from '../../types/tracks';
 
 export type { LoadState } from './useChannelDatasetLoader';
 
@@ -39,7 +40,9 @@ export type TrackSetSource = {
   fileName: string;
   status: LoadState;
   error: string | null;
-  entries: string[][];
+  compiledSummary: CompiledTrackSetSummary | null;
+  compiledPayload: CompiledTrackSetPayload | null;
+  loadCompiledPayload: (() => Promise<CompiledTrackSetPayload>) | null;
 };
 
 export type ChannelSource = {
@@ -198,7 +201,9 @@ export function useChannelSources(): ChannelSourcesApi {
       fileName: '',
       status: 'idle',
       error: null,
-      entries: []
+      compiledSummary: null,
+      compiledPayload: null,
+      loadCompiledPayload: null
     };
   }, []);
 

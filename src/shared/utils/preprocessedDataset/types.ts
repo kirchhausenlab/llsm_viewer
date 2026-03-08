@@ -4,6 +4,7 @@ import type {
   TemporalResolutionMetadata,
   VoxelResolutionValues
 } from '../../../types/voxelResolution';
+import type { CompiledTrackSet, CompiledTrackSetHeader } from '../../../types/tracks';
 
 export const PREPROCESSED_DATASET_FORMAT = 'llsm-viewer-preprocessed-vnext-hes1' as const;
 
@@ -16,7 +17,7 @@ export type TrackSetExportMetadata = {
   name: string;
   fileName: string;
   boundChannelId: string | null;
-  entries: string[][];
+  compiled: CompiledTrackSet;
 };
 
 export type ChannelExportMetadata = {
@@ -152,11 +153,30 @@ export type PreprocessedChannelManifest = {
   layers: PreprocessedLayerManifestEntry[];
 };
 
-export type PreprocessedTracksDescriptor = {
+export type PreprocessedTrackCatalogDescriptor = {
   path: string;
-  format: 'csv';
-  columns: 8;
-  decimalPlaces: 3;
+  format: 'binary';
+  version: 1;
+  strideBytes: 52;
+  count: number;
+};
+
+export type PreprocessedTrackBinaryDescriptor = {
+  path: string;
+  format: 'float32' | 'uint32';
+  stride: number;
+  count: number;
+};
+
+export type PreprocessedTracksDescriptor = {
+  format: 'compiled-v3';
+  header: CompiledTrackSetHeader;
+  catalog: PreprocessedTrackCatalogDescriptor;
+  pointData: PreprocessedTrackBinaryDescriptor;
+  segmentPositions: PreprocessedTrackBinaryDescriptor;
+  segmentTimes: PreprocessedTrackBinaryDescriptor;
+  segmentTrackIndices: PreprocessedTrackBinaryDescriptor;
+  centroidData: PreprocessedTrackBinaryDescriptor;
 };
 
 export type PreprocessedTrackSetManifestEntry = {
@@ -207,7 +227,8 @@ export type PreprocessedTrackSetSummary = {
   name: string;
   fileName: string;
   boundChannelId: string | null;
-  entries: string[][];
+  header: CompiledTrackSetHeader;
+  tracks: PreprocessedTracksDescriptor;
 };
 
 export type OpenPreprocessedDatasetResult = {

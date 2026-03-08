@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import FrontPage, { type ExperimentType } from './FrontPage';
+import FrontPage, { type ExperimentType, type TrackSummary as FrontPageTrackSummary } from './FrontPage';
 import usePreprocessedExperiment from '../../hooks/dataset/usePreprocessedExperiment';
 import type { VoxelResolutionHook } from '../../hooks/useVoxelResolution';
 import type { DatasetErrorHook } from '../../hooks/useDatasetErrors';
@@ -20,8 +20,8 @@ import {
 } from '../../shared/storage/preprocessedStorage';
 import type { PreprocessedStorageHandle } from '../../shared/storage/preprocessedStorage';
 import { parseBackgroundMaskValues } from '../../shared/utils/backgroundMask';
+import type { CompiledTrackSetSummary } from '../../types/tracks';
 
-type TrackSummary = { totalRows: number; uniqueTracks: number };
 const FRONTPAGE_OPFS_DATASET_ID = 'preprocessed-experiment';
 const PREPROCESS_STORAGE_STRATEGY = {
   maxInFlightChunkWrites: 4,
@@ -70,7 +70,7 @@ export type FrontPageContainerProps = {
   setTrackOrderModeByTrackSet: Dispatch<SetStateAction<Record<string, 'id' | 'length'>>>;
   setSelectedTrackOrder: Dispatch<SetStateAction<string[]>>;
   setFollowedTrack: Dispatch<SetStateAction<FollowedTrackState>>;
-  computeTrackSummary: (entries: string[][]) => TrackSummary;
+  computeTrackSummary: (summary: CompiledTrackSetSummary | null | undefined) => FrontPageTrackSummary;
   hasGlobalTimepointMismatch: boolean;
   interactionErrorMessage: string | null;
   launchErrorMessage: string | null;
@@ -339,13 +339,38 @@ export default function FrontPageContainer({
         id: channel.id,
         name: channel.name.trim()
       }));
-      const trackSetsMetadata = (selectedExperimentType === 'single-3d-volume' ? [] : tracks).map((set) => ({
-        id: set.id,
-        name: set.name.trim(),
-        fileName: set.fileName,
-        boundChannelId: set.boundChannelId,
-        entries: set.entries
-      }));
+      const channelNameById = new Map(channels.map((channel) => [channel.id, channel.name.trim() || null] as const));
+      const trackSetsMetadata = (selectedExperimentType === 'single-3d-volume' ? [] : tracks).map((set) => {
+        if (!set.compiledSummary || !set.compiledPayload) {
+          throw new Error(`Track set "${set.name.trim() || set.fileName || set.id}" is missing compiled data.`);
+        }
+
+        const trackSetName = set.name.trim();
+        const boundChannelName = set.boundChannelId ? (channelNameById.get(set.boundChannelId) ?? null) : null;
+
+        return {
+          id: set.id,
+          name: trackSetName,
+          fileName: set.fileName,
+          boundChannelId: set.boundChannelId,
+          compiled: {
+            summary: {
+              ...set.compiledSummary,
+              trackSetId: set.id,
+              trackSetName,
+              boundChannelId: set.boundChannelId,
+              tracks: set.compiledSummary.tracks.map((track) => ({
+                ...track,
+                trackSetId: set.id,
+                trackSetName,
+                channelId: set.boundChannelId,
+                channelName: boundChannelName
+              }))
+            },
+            payload: set.compiledPayload
+          }
+        };
+      });
       const layersToProcess = channels
         .flatMap((channel) => {
           const layer = channel.volume;

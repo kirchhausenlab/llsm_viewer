@@ -44,6 +44,7 @@ export function usePlaybackControls({
   const timeIndexRef = useRef(0);
   const canAdvancePlaybackRef = useRef<((nextIndex: number) => boolean) | null>(null);
   const playbackWindowRef = useRef<PlaybackIndexWindow | null>(null);
+  const lastPropTimeIndexRef = useRef(0);
   const playbackState = useMemo(
     () => ({
       isPlaying,
@@ -75,8 +76,38 @@ export function usePlaybackControls({
   );
 
   useEffect(() => {
+    const previousPropTimeIndex = lastPropTimeIndexRef.current;
+    const localTimeIndex = timeIndexRef.current;
+
+    if (!isPlaying) {
+      timeIndexRef.current = clampedTimeIndex;
+      lastPropTimeIndexRef.current = clampedTimeIndex;
+      return;
+    }
+
+    if (clampedTimeIndex === localTimeIndex) {
+      lastPropTimeIndexRef.current = clampedTimeIndex;
+      return;
+    }
+
+    const expectedNextPropTimeIndex = computeLoopedNextTimeIndex(
+      previousPropTimeIndex,
+      totalTimepoints,
+      playbackWindow,
+    );
+    const isSequentialPropCatchup =
+      expectedNextPropTimeIndex !== previousPropTimeIndex && clampedTimeIndex === expectedNextPropTimeIndex;
+    if (isSequentialPropCatchup) {
+      if (localTimeIndex === previousPropTimeIndex) {
+        timeIndexRef.current = clampedTimeIndex;
+      }
+      lastPropTimeIndexRef.current = clampedTimeIndex;
+      return;
+    }
+
     timeIndexRef.current = clampedTimeIndex;
-  }, [clampedTimeIndex]);
+    lastPropTimeIndexRef.current = clampedTimeIndex;
+  }, [clampedTimeIndex, isPlaying, playbackWindow, totalTimepoints]);
 
   useEffect(() => {
     canAdvancePlaybackRef.current = canAdvancePlayback ?? null;
@@ -119,7 +150,7 @@ export function usePlaybackControls({
     state.playbackDisabled = playbackDisabled;
     state.playbackLabel = playbackLabel;
     state.fps = fps;
-    state.timeIndex = clampedTimeIndex;
+    state.timeIndex = timeIndexRef.current;
     state.totalTimepoints = totalTimepoints;
     state.onTogglePlayback = onTogglePlayback;
     state.onTimeIndexChange = onTimeIndexChange;
@@ -177,11 +208,11 @@ export function usePlaybackControls({
 
             while (playbackLoopState.accumulator >= frameDuration) {
               const nextIndex = computeLoopedNextTimeIndex(
-                playbackStateValue.timeIndex,
+                timeIndexRef.current,
                 playbackStateValue.totalTimepoints,
                 playbackWindowRef.current,
               );
-              if (nextIndex === playbackStateValue.timeIndex) {
+              if (nextIndex === timeIndexRef.current) {
                 playbackLoopState.accumulator = 0;
                 break;
               }

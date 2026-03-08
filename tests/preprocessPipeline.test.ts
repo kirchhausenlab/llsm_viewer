@@ -10,6 +10,7 @@ import {
 import { openPreprocessedDatasetFromZarrStorage } from '../src/shared/utils/preprocessedDataset/open.ts';
 import { createZarrChunkKeyFromCoords } from '../src/shared/utils/preprocessedDataset/chunkKey.ts';
 import type { ChannelExportMetadata, TrackSetExportMetadata } from '../src/shared/utils/preprocessedDataset/types.ts';
+import { compileTrackEntries } from '../src/shared/utils/compiledTracks.ts';
 import type { VolumePayload } from '../src/types/volume.ts';
 import {
   createVolumeProvider,
@@ -79,8 +80,14 @@ function createLoaderByFileName(volumeByFileName: Map<string, VolumePayload>) {
   };
 }
 
-function createTrackEntries(): TrackSetExportMetadata['entries'] {
-  return [['1', '0', '1', '1.000', '2.000', '3.000', '4.000', '0.000']];
+function createCompiledTrackSet(): TrackSetExportMetadata['compiled'] {
+  return compileTrackEntries({
+    trackSetId: 'tracks-a',
+    trackSetName: 'Tracks A',
+    channelId: 'channel-a',
+    channelName: 'Channel A',
+    entries: [['1', '0', '1', '1.000', '2.000', '3.000', '4.000', '0.000']]
+  });
 }
 
 function decodeUint32ArrayLE(bytes: Uint8Array): Uint32Array {
@@ -110,7 +117,7 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
       name: 'Tracks A',
       fileName: 'tracks-a.csv',
       boundChannelId: 'channel-a',
-      entries: createTrackEntries()
+      compiled: createCompiledTrackSet()
     }
   ];
 
@@ -205,7 +212,8 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
   assert.equal(result.totalVolumeCount, 2);
   assert.equal(result.manifest.dataset.channels.length, 2);
   assert.equal(result.channelSummaries.length, 2);
-  assert.equal(result.trackSummaries[0]?.entries.length, 1);
+  assert.equal(result.trackSummaries[0]?.summary.totalTracks, 1);
+  assert.equal(result.trackSummaries[0]?.summary.totalPoints, 1);
   assert.deepEqual(result.manifest.dataset.temporalResolution, {
     interval: 2.3,
     unit: 'ms'
@@ -236,7 +244,8 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
   for (const summary of opened.channelSummaries) {
     assert.equal(summary.layers.length, 1);
   }
-  assert.equal(opened.trackSummaries[0]?.entries.length, 1);
+  assert.equal(opened.trackSummaries[0]?.summary.totalTracks, 1);
+  assert.equal(opened.trackSummaries[0]?.summary.totalPoints, 1);
 
   const intensityLayer = result.manifest.dataset.channels.find((channel) => channel.id === 'channel-a')?.layers[0];
   const segmentationLayer = result.manifest.dataset.channels.find((channel) => channel.id === 'channel-b')?.layers[0];

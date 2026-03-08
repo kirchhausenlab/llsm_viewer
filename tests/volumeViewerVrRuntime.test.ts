@@ -17,6 +17,7 @@ console.log('Starting volume viewer VR runtime helper tests');
 (() => {
   const onRegisterVrSession = () => {};
   const runtime = resolveVolumeViewerVrRuntime({
+    isVrActive: false,
     isVrPassthroughSupported: true,
     trackChannels: [{ id: 'channel-a', name: 'A' }],
     activeTrackChannelId: 'channel-a',

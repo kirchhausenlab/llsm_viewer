@@ -60,7 +60,7 @@ export function useVolumeViewerVr({
   trackChannels,
   activeTrackChannelId,
   tracks,
-  trackVisibility,
+  trackSetStates,
   trackOpacityByTrackSet,
   trackLineWidthByTrackSet,
   trackColorModesByTrackSet,
@@ -285,6 +285,7 @@ export function useVolumeViewerVr({
   const onLayerOffsetChange = vrProps?.onLayerOffsetChange;
   const onTrackOpacityChange = vrProps?.onTrackOpacityChange;
   const onTrackLineWidthChange = vrProps?.onTrackLineWidthChange;
+  const trackHudEnabled = Boolean(vrProps?.isVrActive);
 
   const setControllerVisibility = useCallback<
     UseVolumeViewerVrResult['setControllerVisibility']
@@ -371,9 +372,10 @@ export function useVolumeViewerVr({
     activeChannelPanelId,
     vrChannelsStateRef,
     updateVrChannelsHud,
+    trackHudEnabled,
     trackChannels,
     tracks,
-    trackVisibility,
+    trackSetStates,
     trackOpacityByTrackSet,
     trackLineWidthByTrackSet,
     trackColorModesByTrackSet,

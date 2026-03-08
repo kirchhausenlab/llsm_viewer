@@ -146,6 +146,17 @@ export function buildTracksFromCsvEntries({
         z: point.z,
         amplitude: point.amplitude,
       }));
+      let timeStart = Number.POSITIVE_INFINITY;
+      let timeEnd = Number.NEGATIVE_INFINITY;
+      let amplitudeMin = Number.POSITIVE_INFINITY;
+      let amplitudeMax = Number.NEGATIVE_INFINITY;
+
+      for (const point of adjustedPoints) {
+        timeStart = Math.min(timeStart, point.time);
+        timeEnd = Math.max(timeEnd, point.time);
+        amplitudeMin = Math.min(amplitudeMin, point.amplitude);
+        amplitudeMax = Math.max(amplitudeMax, point.amplitude);
+      }
 
       parsed.push({
         id,
@@ -160,6 +171,11 @@ export function buildTracksFromCsvEntries({
         internalTrackId: segment.internalTrackId,
         parentTrackId,
         parentInternalTrackId: segment.parentInternalTrackId,
+        pointCount: adjustedPoints.length,
+        timeStart: Number.isFinite(timeStart) ? timeStart : 0,
+        timeEnd: Number.isFinite(timeEnd) ? timeEnd : 0,
+        amplitudeMin: Number.isFinite(amplitudeMin) ? amplitudeMin : 0,
+        amplitudeMax: Number.isFinite(amplitudeMax) ? amplitudeMax : 0,
         points: adjustedPoints,
       });
     }

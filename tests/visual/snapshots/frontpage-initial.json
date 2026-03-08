@@ -61,34 +61,6 @@
                             {
                               "type": "span",
                               "props": {
-                                "className": "theme-mode-toggle__copy"
-                              },
-                              "children": [
-                                {
-                                  "type": "span",
-                                  "props": {
-                                    "className": "theme-mode-toggle__label"
-                                  },
-                                  "children": [
-                                    "Dark mode"
-                                  ]
-                                },
-                                {
-                                  "type": "span",
-                                  "props": {
-                                    "className": "theme-mode-toggle__hint"
-                                  },
-                                  "children": [
-                                    "Switch to ",
-                                    "light",
-                                    " mode"
-                                  ]
-                                }
-                              ]
-                            },
-                            {
-                              "type": "span",
-                              "props": {
                                 "aria-hidden": "true",
                                 "className": "theme-mode-toggle__switch is-dark"
                               },
@@ -98,7 +70,27 @@
                                   "props": {
                                     "className": "theme-mode-toggle__thumb"
                                   },
-                                  "children": null
+                                  "children": [
+                                    {
+                                      "type": "svg",
+                                      "props": {
+                                        "className": "theme-mode-toggle__icon",
+                                        "viewBox": "0 0 24 24",
+                                        "focusable": "false",
+                                        "aria-hidden": "true"
+                                      },
+                                      "children": [
+                                        {
+                                          "type": "path",
+                                          "props": {
+                                            "d": "M14.25 4.25a7.5 7.5 0 1 0 5.5 12.6a6.75 6.75 0 1 1-5.5-12.6Z",
+                                            "fill": "currentColor"
+                                          },
+                                          "children": null
+                                        }
+                                      ]
+                                    }
+                                  ]
                                 }
                               ]
                             }

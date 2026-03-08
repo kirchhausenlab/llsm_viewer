@@ -51,7 +51,9 @@ type ViewerPanelsTrackInput = Pick<
   ViewerShellProps['volumeViewerProps'],
   | 'trackScale'
   | 'tracks'
-  | 'trackVisibility'
+  | 'compiledTrackPayloadByTrackSet'
+  | 'onRequireTrackPayloads'
+  | 'trackSetStates'
   | 'trackOpacityByTrackSet'
   | 'trackLineWidthByTrackSet'
   | 'trackColorModesByTrackSet'
@@ -59,6 +61,7 @@ type ViewerPanelsTrackInput = Pick<
   | 'selectedTrackIds'
   | 'followedTrackId'
   | 'followedVoxel'
+  | 'playbackWindow'
   | 'onTrackSelectionToggle'
   | 'onTrackFollowRequest'
   | 'onVoxelFollowRequest'
@@ -84,6 +87,7 @@ export type ViewerShellContainerViewerPanelsProps = {
 
 export type ViewerShellContainerVrProps = Pick<
   VolumeViewerVrProps,
+  | 'isVrActive'
   | 'isVrPassthroughSupported'
   | 'trackChannels'
   | 'onTrackChannelSelect'
@@ -163,6 +167,7 @@ function mapVolumeViewerProps({
     blendingMode: modeControls.blendingMode,
     onTogglePlayback: playbackControls.onTogglePlayback,
     onTimeIndexChange: playbackControls.onTimeIndexChange,
+    playbackWindow: viewerPanels.tracks.playbackWindow ?? null,
     canAdvancePlayback: viewerPanels.canAdvancePlayback,
     onFpsChange: playbackControls.onFpsChange,
     onVolumeStepScaleChange: viewerPanels.onVolumeStepScaleChange,
@@ -171,7 +176,9 @@ function mapVolumeViewerProps({
     onRegisterReset: viewerPanels.onRegisterReset,
     trackScale: viewerPanels.tracks.trackScale,
     tracks: viewerPanels.tracks.tracks,
-    trackVisibility: viewerPanels.tracks.trackVisibility,
+    compiledTrackPayloadByTrackSet: viewerPanels.tracks.compiledTrackPayloadByTrackSet,
+    onRequireTrackPayloads: viewerPanels.tracks.onRequireTrackPayloads,
+    trackSetStates: viewerPanels.tracks.trackSetStates,
     trackOpacityByTrackSet: viewerPanels.tracks.trackOpacityByTrackSet,
     trackLineWidthByTrackSet: viewerPanels.tracks.trackLineWidthByTrackSet,
     trackColorModesByTrackSet: viewerPanels.tracks.trackColorModesByTrackSet,
@@ -225,12 +232,11 @@ function mapTracksPanelProps(tracksPanel: ViewerShellContainerTracksPanelProps):
 
 function mapSelectedTracksPanelProps({
   selectedTracksPanel,
-  modeControls,
-  tracksPanel
-}: Pick<ViewerShellContainerProps, 'selectedTracksPanel' | 'modeControls' | 'tracksPanel'>): ViewerShellProps['selectedTracksPanel'] {
+  modeControls
+}: Pick<ViewerShellContainerProps, 'selectedTracksPanel' | 'modeControls'>): ViewerShellProps['selectedTracksPanel'] {
   return {
     ...selectedTracksPanel,
-    shouldRender: !modeControls.isVrActive && tracksPanel.hasParsedTrackData
+    shouldRender: !modeControls.isVrActive && selectedTracksPanel.series.length > 0
   };
 }
 

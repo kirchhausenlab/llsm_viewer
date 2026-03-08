@@ -835,19 +835,49 @@ function validateTrackSet(value: unknown, path: string): PreprocessedTrackSetMan
     boundChannelId = expectString(trackSet.boundChannelId, `${path}.boundChannelId`, { nonEmpty: true });
   }
   const tracks = expectRecord(trackSet.tracks, `${path}.tracks`);
-  const trackPath = expectString(tracks.path, `${path}.tracks.path`, { nonEmpty: true });
   const format = expectString(tracks.format, `${path}.tracks.format`);
-  if (format !== 'csv') {
-    throw new Error(`Invalid manifest schema at ${path}.tracks.format: expected "csv", got "${format}".`);
+  if (format !== 'compiled-v2') {
+    throw new Error(`Invalid manifest schema at ${path}.tracks.format: expected "compiled-v2", got "${format}".`);
   }
-  const columns = expectInteger(tracks.columns, `${path}.tracks.columns`);
-  if (columns !== 8) {
-    throw new Error(`Invalid manifest schema at ${path}.tracks.columns: expected 8, got ${columns}.`);
+  const summary = expectRecord(tracks.summary, `${path}.tracks.summary`);
+  const summaryPath = expectString(summary.path, `${path}.tracks.summary.path`, { nonEmpty: true });
+  const summaryFormat = expectString(summary.format, `${path}.tracks.summary.format`);
+  if (summaryFormat !== 'json') {
+    throw new Error(`Invalid manifest schema at ${path}.tracks.summary.format: expected "json", got "${summaryFormat}".`);
   }
-  const decimalPlaces = expectInteger(tracks.decimalPlaces, `${path}.tracks.decimalPlaces`);
-  if (decimalPlaces !== 3) {
-    throw new Error(`Invalid manifest schema at ${path}.tracks.decimalPlaces: expected 3, got ${decimalPlaces}.`);
+  const summaryVersion = expectInteger(summary.version, `${path}.tracks.summary.version`);
+  if (summaryVersion !== 1) {
+    throw new Error(`Invalid manifest schema at ${path}.tracks.summary.version: expected 1, got ${summaryVersion}.`);
   }
+
+  const validateBinaryDescriptor = (
+    descriptorValue: unknown,
+    descriptorPath: string,
+    expectedFormat: 'float32' | 'uint32',
+    expectedStride: number,
+  ) => {
+    const descriptor = expectRecord(descriptorValue, descriptorPath);
+    const binaryPath = expectString(descriptor.path, `${descriptorPath}.path`, { nonEmpty: true });
+    const binaryFormat = expectString(descriptor.format, `${descriptorPath}.format`);
+    if (binaryFormat !== expectedFormat) {
+      throw new Error(
+        `Invalid manifest schema at ${descriptorPath}.format: expected "${expectedFormat}", got "${binaryFormat}".`
+      );
+    }
+    const stride = expectPositiveInteger(descriptor.stride, `${descriptorPath}.stride`);
+    if (stride !== expectedStride) {
+      throw new Error(
+        `Invalid manifest schema at ${descriptorPath}.stride: expected ${expectedStride}, got ${stride}.`
+      );
+    }
+    const count = expectNonNegativeInteger(descriptor.count, `${descriptorPath}.count`);
+    return {
+      path: binaryPath,
+      format: expectedFormat,
+      stride: expectedStride,
+      count
+    } as const;
+  };
 
   return {
     id,
@@ -855,10 +885,27 @@ function validateTrackSet(value: unknown, path: string): PreprocessedTrackSetMan
     fileName,
     boundChannelId,
     tracks: {
-      path: trackPath,
-      format: 'csv',
-      columns: 8,
-      decimalPlaces: 3
+      format: 'compiled-v2',
+      summary: {
+        path: summaryPath,
+        format: 'json',
+        version: 1
+      },
+      pointData: validateBinaryDescriptor(tracks.pointData, `${path}.tracks.pointData`, 'float32', 5),
+      segmentPositions: validateBinaryDescriptor(
+        tracks.segmentPositions,
+        `${path}.tracks.segmentPositions`,
+        'float32',
+        6
+      ),
+      segmentTimes: validateBinaryDescriptor(tracks.segmentTimes, `${path}.tracks.segmentTimes`, 'float32', 2),
+      segmentTrackIndices: validateBinaryDescriptor(
+        tracks.segmentTrackIndices,
+        `${path}.tracks.segmentTrackIndices`,
+        'uint32',
+        1
+      ),
+      centroidData: validateBinaryDescriptor(tracks.centroidData, `${path}.tracks.centroidData`, 'float32', 4)
     }
   };
 }

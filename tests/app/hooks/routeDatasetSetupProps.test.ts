@@ -52,7 +52,7 @@ console.log('Starting routeDatasetSetupProps tests');
     setTrackOrderModeByTrackSet: (() => undefined) as RouteDatasetSetupSections['tracks']['setTrackOrderModeByTrackSet'],
     setSelectedTrackOrder: (() => undefined) as RouteDatasetSetupSections['tracks']['setSelectedTrackOrder'],
     setFollowedTrack: (() => undefined) as RouteDatasetSetupSections['tracks']['setFollowedTrack'],
-    computeTrackSummary: () => ({ totalRows: 0, uniqueTracks: 0 })
+    computeTrackSummary: () => ({ totalPoints: 0, totalTracks: 0 })
   } satisfies RouteDatasetSetupSections['tracks'];
 
   const launch = {

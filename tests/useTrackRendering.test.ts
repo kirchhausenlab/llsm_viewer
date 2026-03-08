@@ -1,143 +1,130 @@
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 
+import { compileTrackEntries } from '../src/shared/utils/compiledTracks.ts';
+import type { TrackRenderResource } from '../src/components/viewers/VolumeViewer.types.ts';
 import { useTrackRendering } from '../src/components/viewers/volume-viewer/useTrackRendering.ts';
 import { renderHook } from './hooks/renderHook.ts';
 
 console.log('Starting useTrackRendering tests');
 
-(() => {
+function createCompiledTrackSet(entries: string[][]) {
+  return compileTrackEntries({
+    trackSetId: 'track-set-0',
+    trackSetName: 'Track set 0',
+    channelId: 'channel-0',
+    channelName: 'Channel 0',
+    entries
+  });
+}
+
+function createTrackHook(options?: {
+  tracks?: ReturnType<typeof createCompiledTrackSet>['summary']['tracks'];
+  payloadMap?: ReadonlyMap<string, ReturnType<typeof createCompiledTrackSet>['payload']>;
+  trackOpacityByTrackSet?: Record<string, number>;
+  selectedTrackIds?: ReadonlySet<string>;
+  followedTrackId?: string | null;
+  clampedTimeIndex?: number;
+  isFullTrackTrailEnabled?: boolean;
+  trackTrailLength?: number;
+  hasActive3DLayer?: boolean;
+  onRequireTrackPayloads?: (trackSetIds: Iterable<string>) => void;
+}) {
+  const trackGroupRef = { current: new THREE.Group() } as const;
+  const trackLinesRef = { current: new Map<string, TrackRenderResource>() } as const;
   const hook = renderHook(() =>
     useTrackRendering({
-      tracks: [],
-      trackVisibility: {},
-      trackOpacityByTrackSet: {},
+      tracks: options?.tracks ?? [],
+      compiledTrackPayloadByTrackSet: options?.payloadMap ?? new Map(),
+      onRequireTrackPayloads: options?.onRequireTrackPayloads,
+      trackSetStates: {},
+      trackOpacityByTrackSet: options?.trackOpacityByTrackSet ?? {},
       trackLineWidthByTrackSet: {},
       trackColorModesByTrackSet: {},
       channelTrackOffsets: {},
       trackScale: {},
-      isFullTrackTrailEnabled: true,
-      trackTrailLength: 10,
-      selectedTrackIds: new Set(),
-      followedTrackId: null,
-      clampedTimeIndex: 0,
-      trackGroupRef: { current: new THREE.Group() },
-      trackLinesRef: { current: new Map() },
+      isFullTrackTrailEnabled: options?.isFullTrackTrailEnabled ?? true,
+      trackTrailLength: options?.trackTrailLength ?? 10,
+      selectedTrackIds: options?.selectedTrackIds ?? new Set(),
+      followedTrackId: options?.followedTrackId ?? null,
+      clampedTimeIndex: options?.clampedTimeIndex ?? 0,
+      trackGroupRef,
+      trackLinesRef,
       containerRef: { current: null },
       rendererRef: { current: null },
       cameraRef: { current: null },
       hoverRaycasterRef: { current: null },
       currentDimensionsRef: { current: null },
-      hasActive3DLayer: false,
-    }),
+      hasActive3DLayer: options?.hasActive3DLayer ?? true
+    })
   );
 
-  const { act } = hook;
+  return { hook, trackGroupRef, trackLinesRef };
+}
 
-  act(() => hook.result.updateHoverState('controller-track', { x: 1, y: 2 }, 'controller'));
-  assert.strictEqual(hook.result.hoveredTrackId, 'controller-track');
+(() => {
+  const compiled = createCompiledTrackSet([
+    ['1', '0', '1', '0', '0', '0', '0', '0'],
+    ['1', '1', '1', '1', '1', '0', '0', '0']
+  ]);
+  const trackId = compiled.summary.tracks[0]!.id;
+  const { hook } = createTrackHook({
+    tracks: compiled.summary.tracks,
+    payloadMap: new Map([[compiled.summary.trackSetId, compiled.payload]]),
+    trackOpacityByTrackSet: { 'track-set-0': 1 }
+  });
+
+  hook.act(() => hook.result.updateHoverState(trackId, { x: 1, y: 2 }, 'controller'));
+  assert.strictEqual(hook.result.hoveredTrackId, trackId);
   assert.deepStrictEqual(hook.result.tooltipPosition, { x: 1, y: 2 });
 
-  act(() => hook.result.updateHoverState('pointer-track', { x: 3, y: 4 }, 'pointer'));
-  assert.strictEqual(hook.result.hoveredTrackId, 'pointer-track');
+  hook.act(() => hook.result.updateHoverState(trackId, { x: 3, y: 4 }, 'pointer'));
+  assert.strictEqual(hook.result.hoveredTrackId, trackId);
   assert.deepStrictEqual(hook.result.tooltipPosition, { x: 3, y: 4 });
 
-  act(() => hook.result.clearHoverState('pointer'));
-  assert.strictEqual(hook.result.hoveredTrackId, 'controller-track');
+  hook.act(() => hook.result.clearHoverState('pointer'));
+  assert.strictEqual(hook.result.hoveredTrackId, trackId);
   assert.deepStrictEqual(hook.result.tooltipPosition, { x: 1, y: 2 });
 
-  act(() => hook.result.clearHoverState());
+  hook.act(() => hook.result.clearHoverState());
   assert.strictEqual(hook.result.hoveredTrackId, null);
   assert.strictEqual(hook.result.tooltipPosition, null);
 })();
 
 (() => {
-  const trackGroupRef = { current: new THREE.Group() } as const;
-  const trackLinesRef = { current: new Map() } as const;
-  const track = {
-    id: 'track-0',
-    trackSetId: 'track-set-0',
-    trackSetName: 'Track set 0',
-    channelId: 'channel-0',
-    channelName: 'Channel 0',
-    trackNumber: 1,
-    sourceTrackId: 1,
-    points: [
-      { x: 0, y: 0, z: 0, time: 0, amplitude: 0 },
-      { x: 1, y: 1, z: 0, time: 1, amplitude: 0 },
-    ],
-  };
-
-  let trackOpacityByTrackSet: Record<string, number> = { 'track-set-0': 1 };
-
-  const hook = renderHook(() =>
-    useTrackRendering({
-      tracks: [track],
-      trackVisibility: {},
-      trackOpacityByTrackSet,
-      trackLineWidthByTrackSet: {},
-      trackColorModesByTrackSet: {},
-      channelTrackOffsets: {},
-      trackScale: {},
-      isFullTrackTrailEnabled: true,
-      trackTrailLength: 10,
-      selectedTrackIds: new Set(),
-      followedTrackId: null,
-      clampedTimeIndex: 1,
-      trackGroupRef,
-      trackLinesRef,
-      containerRef: { current: null },
-      rendererRef: { current: null },
-      cameraRef: { current: null },
-      hoverRaycasterRef: { current: null },
-      currentDimensionsRef: { current: null },
-      hasActive3DLayer: true,
-    }),
-  );
-
-  const { act } = hook;
-
-  act(() => hook.result.refreshTrackOverlay());
-
-  const resource = trackLinesRef.current.get('track-0');
-  assert.ok(resource, 'resource should be created');
-  assert.strictEqual(resource.line.visible, true);
-  assert.strictEqual(resource.endCap.visible, true);
-
-  act(() => hook.result.updateHoverState('track-0', { x: 2, y: 3 }, 'pointer'));
-  assert.strictEqual(hook.result.hoveredTrackId, 'track-0');
-
-  act(() => {
-    trackOpacityByTrackSet = { 'track-set-0': 0 };
-    hook.rerender();
+  const compiled = createCompiledTrackSet([
+    ['1', '0', '0', '0.0', '0.0', '0.0', '1.0', '0.0'],
+    ['1', '0', '1', '1.0', '1.0', '0.0', '2.0', '0.0']
+  ]);
+  const { hook, trackLinesRef } = createTrackHook({
+    tracks: compiled.summary.tracks,
+    payloadMap: new Map([['track-set-0', compiled.payload]]),
+    trackOpacityByTrackSet: { 'track-set-0': 1 },
+    clampedTimeIndex: 1
   });
 
-  assert.strictEqual(trackLinesRef.current.has('track-0'), false);
-  assert.strictEqual(hook.result.hoveredTrackId, null);
+  hook.act(() => hook.result.refreshTrackOverlay());
+
+  const batchResource = trackLinesRef.current.get('batch:track-set-0');
+  assert.ok(batchResource && batchResource.kind === 'batch', 'batch resource should be created');
+  assert.strictEqual(batchResource.line.visible, true);
+  assert.strictEqual(batchResource.segmentTrackIds.length, 1);
 })();
 
 (() => {
+  const compiled = createCompiledTrackSet([
+    ['1', '0', '0', '0.0', '0.0', '0.0', '1.0', '0.0'],
+    ['1', '0', '1', '1.0', '1.0', '0.0', '2.0', '0.0']
+  ]);
+  let payloadMap = new Map<string, ReturnType<typeof createCompiledTrackSet>['payload']>();
   const trackGroupRef = { current: new THREE.Group() } as const;
-  const trackLinesRef = { current: new Map() } as const;
-  const track = {
-    id: 'track-hidden',
-    trackSetId: 'track-set-0',
-    trackSetName: 'Track set 0',
-    channelId: 'channel-0',
-    channelName: 'Channel 0',
-    trackNumber: 1,
-    sourceTrackId: 1,
-    points: [
-      { x: 0, y: 0, z: 0, time: 0, amplitude: 0 },
-      { x: 1, y: 1, z: 0, time: 1, amplitude: 0 },
-    ],
-  };
-
+  const trackLinesRef = { current: new Map<string, TrackRenderResource>() } as const;
   const hook = renderHook(() =>
     useTrackRendering({
-      tracks: [track],
-      trackVisibility: {},
-      trackOpacityByTrackSet: { 'track-set-0': 0 },
+      tracks: compiled.summary.tracks,
+      compiledTrackPayloadByTrackSet: payloadMap,
+      trackSetStates: {},
+      trackOpacityByTrackSet: { 'track-set-0': 1 },
       trackLineWidthByTrackSet: {},
       trackColorModesByTrackSet: {},
       channelTrackOffsets: {},
@@ -154,265 +141,154 @@ console.log('Starting useTrackRendering tests');
       cameraRef: { current: null },
       hoverRaycasterRef: { current: null },
       currentDimensionsRef: { current: null },
-      hasActive3DLayer: true,
-    }),
+      hasActive3DLayer: true
+    })
   );
 
-  const { act } = hook;
-
-  act(() => hook.result.refreshTrackOverlay());
-
-  assert.strictEqual(trackLinesRef.current.size, 0);
+  hook.act(() => hook.result.refreshTrackOverlay());
   assert.strictEqual(trackGroupRef.current.visible, false);
-})();
 
-(() => {
-  const trackGroupRef = { current: new THREE.Group() } as const;
-  const trackLinesRef = { current: new Map() } as const;
-  const track = {
-    id: 'track-no-3d',
-    trackSetId: 'track-set-0',
-    trackSetName: 'Track set 0',
-    channelId: 'channel-0',
-    channelName: 'Channel 0',
-    trackNumber: 1,
-    sourceTrackId: 1,
-    points: [
-      { x: 0, y: 0, z: 0, time: 0, amplitude: 0 },
-      { x: 1, y: 1, z: 0, time: 1, amplitude: 0 },
-    ],
-  };
-
-  const hook = renderHook(() =>
-    useTrackRendering({
-      tracks: [track],
-      trackVisibility: {},
-      trackOpacityByTrackSet: { 'track-set-0': 1 },
-      trackLineWidthByTrackSet: {},
-      trackColorModesByTrackSet: {},
-      channelTrackOffsets: {},
-      trackScale: {},
-      isFullTrackTrailEnabled: true,
-      trackTrailLength: 10,
-      selectedTrackIds: new Set(),
-      followedTrackId: null,
-      clampedTimeIndex: 1,
-      trackGroupRef,
-      trackLinesRef,
-      containerRef: { current: null },
-      rendererRef: { current: null },
-      cameraRef: { current: null },
-      hoverRaycasterRef: { current: null },
-      currentDimensionsRef: { current: null },
-      hasActive3DLayer: false,
-    }),
-  );
-
-  const { act } = hook;
-
-  act(() => hook.result.refreshTrackOverlay());
-
-  assert.strictEqual(trackLinesRef.current.size, 0);
-})();
-
-(() => {
-  const trackGroupRef = { current: new THREE.Group() } as const;
-  const trackLinesRef = { current: new Map() } as const;
-  const track = {
-    id: 'track-cached-geometry',
-    trackSetId: 'track-set-0',
-    trackSetName: 'Track set 0',
-    channelId: 'channel-0',
-    channelName: 'Channel 0',
-    trackNumber: 1,
-    sourceTrackId: 1,
-    points: [
-      { x: 0, y: 0, z: 0, time: 0, amplitude: 0 },
-      { x: 1, y: 1, z: 0, time: 1, amplitude: 0 },
-      { x: 2, y: 2, z: 0, time: 2, amplitude: 0 },
-    ],
-  };
-
-  const hook = renderHook(() =>
-    useTrackRendering({
-      tracks: [track],
-      trackVisibility: {},
-      trackOpacityByTrackSet: { 'track-set-0': 1 },
-      trackLineWidthByTrackSet: {},
-      trackColorModesByTrackSet: {},
-      channelTrackOffsets: {},
-      trackScale: {},
-      isFullTrackTrailEnabled: true,
-      trackTrailLength: 10,
-      selectedTrackIds: new Set(),
-      followedTrackId: null,
-      clampedTimeIndex: 2,
-      trackGroupRef,
-      trackLinesRef,
-      containerRef: { current: null },
-      rendererRef: { current: null },
-      cameraRef: { current: null },
-      hoverRaycasterRef: { current: null },
-      currentDimensionsRef: { current: null },
-      hasActive3DLayer: true,
-    }),
-  );
-
-  const { act } = hook;
-
-  act(() => hook.result.refreshTrackOverlay());
-
-  const resource = trackLinesRef.current.get('track-cached-geometry');
-  assert.ok(resource, 'resource should be created');
-
-  const originalSetPositions = resource.geometry.setPositions.bind(resource.geometry);
-  let setPositionsCalls = 0;
-  resource.geometry.setPositions = ((positions: number[] | Float32Array) => {
-    setPositionsCalls += 1;
-    return originalSetPositions(positions);
-  }) as typeof resource.geometry.setPositions;
-
-  act(() => hook.result.refreshTrackOverlay());
-
-  assert.strictEqual(setPositionsCalls, 0);
-})();
-
-(() => {
-  const trackGroupRef = { current: new THREE.Group() } as const;
-  const trackLinesRef = { current: new Map() } as const;
-  const track = {
-    id: 'track-dispose',
-    trackSetId: 'track-set-0',
-    trackSetName: 'Track set 0',
-    channelId: 'channel-0',
-    channelName: 'Channel 0',
-    trackNumber: 1,
-    sourceTrackId: 1,
-    points: [
-      { x: 0, y: 0, z: 0, time: 0, amplitude: 0 },
-      { x: 1, y: 1, z: 0, time: 1, amplitude: 0 },
-    ],
-  };
-
-  let tracks = [track];
-
-  const hook = renderHook(() =>
-    useTrackRendering({
-      tracks,
-      trackVisibility: {},
-      trackOpacityByTrackSet: { 'track-set-0': 1 },
-      trackLineWidthByTrackSet: {},
-      trackColorModesByTrackSet: {},
-      channelTrackOffsets: {},
-      trackScale: {},
-      isFullTrackTrailEnabled: true,
-      trackTrailLength: 10,
-      selectedTrackIds: new Set(),
-      followedTrackId: null,
-      clampedTimeIndex: 1,
-      trackGroupRef,
-      trackLinesRef,
-      containerRef: { current: null },
-      rendererRef: { current: null },
-      cameraRef: { current: null },
-      hoverRaycasterRef: { current: null },
-      currentDimensionsRef: { current: null },
-      hasActive3DLayer: true,
-    }),
-  );
-
-  const { act } = hook;
-
-  act(() => hook.result.refreshTrackOverlay());
-  assert.strictEqual(trackLinesRef.current.size, 1);
-  assert.strictEqual(trackGroupRef.current.children.length, 3);
-
-  act(() => {
-    tracks = [];
+  hook.act(() => {
+    payloadMap = new Map([['track-set-0', compiled.payload]]);
     hook.rerender();
   });
 
-  assert.strictEqual(trackLinesRef.current.size, 0);
-  assert.strictEqual(trackGroupRef.current.children.length, 0);
+  const batchResource = trackLinesRef.current.get('batch:track-set-0');
+  assert.ok(batchResource && batchResource.kind === 'batch', 'batch resource should be created after payload arrives');
+  assert.strictEqual(trackGroupRef.current.visible, true);
 })();
 
 (() => {
-  const trackGroupRef = { current: new THREE.Group() } as const;
-  const trackLinesRef = { current: new Map() } as const;
-
-  const points = Array.from({ length: 11 }, (_, index) => {
-    const time = 10 + index;
-    return { x: time, y: 0, z: 0, time, amplitude: 0 };
+  const compiled = createCompiledTrackSet([
+    ['1', '0', '0', '0.0', '0.0', '0.0', '1.0', '0.0'],
+    ['1', '0', '1', '1.0', '1.0', '0.0', '2.0', '0.0']
+  ]);
+  const trackId = compiled.summary.tracks[0]!.id;
+  const { hook, trackLinesRef } = createTrackHook({
+    tracks: compiled.summary.tracks,
+    payloadMap: new Map([['track-set-0', compiled.payload]]),
+    trackOpacityByTrackSet: { 'track-set-0': 0 },
+    selectedTrackIds: new Set([trackId]),
+    clampedTimeIndex: 1
   });
 
-  const track = {
-    id: 'track-windowed',
-    trackSetId: 'track-set-0',
-    trackSetName: 'Track set 0',
-    channelId: 'channel-0',
-    channelName: 'Channel 0',
-    trackNumber: 1,
-    sourceTrackId: 1,
-    points,
-  };
+  hook.act(() => hook.result.refreshTrackOverlay());
 
-  let clampedTimeIndex = 15;
+  assert.strictEqual(trackLinesRef.current.has('batch:track-set-0'), false);
+  const overlayResource = trackLinesRef.current.get(`track:${trackId}`);
+  assert.ok(overlayResource && overlayResource.kind === 'overlay', 'selected track overlay should be created');
+  assert.strictEqual(overlayResource.line.visible, true);
+  assert.strictEqual(overlayResource.endCap.visible, true);
+})();
 
+(() => {
+  const compiled = createCompiledTrackSet([
+    ['1', '0', '0', '0.0', '0.0', '0.0', '1.0', '0.0'],
+    ['1', '0', '1', '1.0', '1.0', '0.0', '2.0', '0.0']
+  ]);
+  const { hook, trackLinesRef } = createTrackHook({
+    tracks: compiled.summary.tracks,
+    payloadMap: new Map([['track-set-0', compiled.payload]]),
+    trackOpacityByTrackSet: { 'track-set-0': 1 },
+    hasActive3DLayer: false,
+    clampedTimeIndex: 1
+  });
+
+  hook.act(() => hook.result.refreshTrackOverlay());
+  assert.strictEqual(trackLinesRef.current.size, 0);
+})();
+
+(() => {
+  const compiled = createCompiledTrackSet([
+    ['1', '0', '10', '10.0', '0.0', '0.0', '1.0', '0.0'],
+    ['1', '0', '11', '11.0', '0.0', '0.0', '1.0', '0.0'],
+    ['1', '0', '12', '12.0', '0.0', '0.0', '1.0', '0.0'],
+    ['1', '0', '13', '13.0', '0.0', '0.0', '1.0', '0.0']
+  ]);
+  let clampedTimeIndex = 12;
+  const trackGroupRef = { current: new THREE.Group() } as const;
+  const trackLinesRef = { current: new Map<string, TrackRenderResource>() } as const;
+  const payloadMap = new Map([['track-set-0', compiled.payload]]);
+  const trackSetStates = {};
+  const trackOpacityByTrackSet = { 'track-set-0': 1 };
+  const trackLineWidthByTrackSet = {};
+  const trackColorModesByTrackSet = {};
+  const channelTrackOffsets = {};
+  const trackScale = {};
+  const selectedTrackIds = new Set<string>();
+  const containerRef = { current: null } as const;
+  const rendererRef = { current: null } as const;
+  const cameraRef = { current: null } as const;
+  const hoverRaycasterRef = { current: null } as const;
+  const currentDimensionsRef = { current: null } as const;
   const hook = renderHook(() =>
     useTrackRendering({
-      tracks: [track],
-      trackVisibility: {},
-      trackOpacityByTrackSet: { 'track-set-0': 1 },
-      trackLineWidthByTrackSet: {},
-      trackColorModesByTrackSet: {},
-      channelTrackOffsets: {},
-      trackScale: {},
+      tracks: compiled.summary.tracks,
+      compiledTrackPayloadByTrackSet: payloadMap,
+      trackSetStates,
+      trackOpacityByTrackSet,
+      trackLineWidthByTrackSet,
+      trackColorModesByTrackSet,
+      channelTrackOffsets,
+      trackScale,
       isFullTrackTrailEnabled: false,
-      trackTrailLength: 5,
-      selectedTrackIds: new Set(),
+      trackTrailLength: 1,
+      selectedTrackIds,
       followedTrackId: null,
       clampedTimeIndex,
       trackGroupRef,
       trackLinesRef,
-      containerRef: { current: null },
-      rendererRef: { current: null },
-      cameraRef: { current: null },
-      hoverRaycasterRef: { current: null },
-      currentDimensionsRef: { current: null },
-      hasActive3DLayer: true,
-    }),
+      containerRef,
+      rendererRef,
+      cameraRef,
+      hoverRaycasterRef,
+      currentDimensionsRef,
+      hasActive3DLayer: true
+    })
   );
 
-  const { act } = hook;
+  hook.act(() => hook.result.refreshTrackOverlay());
+  hook.act(() => {});
 
-  act(() => hook.result.refreshTrackOverlay());
+  const batchResource = trackLinesRef.current.get('batch:track-set-0');
+  assert.ok(batchResource && batchResource.kind === 'batch');
+  const originalSetPositions = batchResource.geometry.setPositions.bind(batchResource.geometry);
+  let setPositionsCalls = 0;
+  batchResource.geometry.setPositions = ((positions: number[] | Float32Array) => {
+    setPositionsCalls += 1;
+    return originalSetPositions(positions);
+  }) as typeof batchResource.geometry.setPositions;
 
-  const resource = trackLinesRef.current.get('track-windowed');
-  assert.ok(resource, 'resource should be created');
-
-  const readFirstSegmentStartX = () => {
-    const attribute = resource.geometry.getAttribute('instanceStart') as unknown as {
-      data: { array: Float32Array; stride: number };
-      offset: number;
-    };
-    return attribute.data.array[attribute.offset];
-  };
-
-  assert.strictEqual(readFirstSegmentStartX(), 10);
-
-  act(() => {
-    clampedTimeIndex = 16;
+  hook.act(() => {
+    clampedTimeIndex = 13;
     hook.rerender();
   });
 
-  assert.strictEqual(readFirstSegmentStartX(), 11);
+  assert.strictEqual(setPositionsCalls, 0, 'playback window updates must not mutate batch geometry');
+  assert.ok(batchResource.visibleTimeMin <= 12);
+  assert.ok(batchResource.visibleTimeMax >= 13);
+})();
 
-  act(() => {
-    clampedTimeIndex = 30;
-    hook.rerender();
+(() => {
+  const compiled = createCompiledTrackSet([
+    ['1', '0', '0', '0.0', '0.0', '0.0', '1.0', '0.0'],
+    ['1', '0', '1', '1.0', '1.0', '0.0', '2.0', '0.0']
+  ]);
+  const { hook, trackGroupRef, trackLinesRef } = createTrackHook({
+    tracks: compiled.summary.tracks,
+    payloadMap: new Map([['track-set-0', compiled.payload]]),
+    trackOpacityByTrackSet: { 'track-set-0': 1 },
+    selectedTrackIds: new Set([compiled.summary.tracks[0]!.id]),
+    clampedTimeIndex: 1
   });
 
-  assert.strictEqual(resource.hasVisiblePoints, false);
+  hook.act(() => hook.result.refreshTrackOverlay());
+  assert.ok(trackLinesRef.current.size >= 2);
+  assert.ok(trackGroupRef.current.children.length >= 4);
+
+  hook.act(() => hook.result.disposeTrackResources());
+  assert.strictEqual(trackLinesRef.current.size, 0);
+  assert.strictEqual(trackGroupRef.current.children.length, 0);
 })();
 
 console.log('useTrackRendering tests passed');

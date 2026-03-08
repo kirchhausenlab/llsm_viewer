@@ -40,7 +40,7 @@ import { createRouteDatasetSetupProps } from './routeDatasetSetupProps';
 import { createRouteViewerShellProps } from './routeViewerShellProps';
 import { useViewerModePlayback } from './useViewerModePlayback';
 import { useWindowLayout } from './useWindowLayout';
-import { getTrackPlaybackIndexWindow } from '../../../shared/utils';
+import { getTrackPlaybackIndexWindow, snapTimeIndexToWindow } from '../../../shared/utils';
 
 export type DatasetSetupRouteProps = FrontPageContainerProps;
 
@@ -381,9 +381,12 @@ export function useAppRouteState(): AppRouteState {
     activeTrackSetId,
     setActiveTrackSetId,
     parsedTracksByTrackSet,
+    compiledPayloadByTrackSet,
+    ensureCompiledPayloadsLoaded,
     trackLookup,
     filteredTracksByTrackSet,
-    filteredTracks,
+    renderTracks,
+    trackSetStates,
     selectedTrackOrder,
     selectedTrackSeries,
     amplitudeExtent,
@@ -391,8 +394,6 @@ export function useAppRouteState(): AppRouteState {
     resolvedAmplitudeLimits,
     resolvedTimeLimits,
     trackLengthBounds,
-    trackSummaryByTrackSet,
-    trackVisibility,
     trackOpacityByTrackSet,
     trackLineWidthByTrackSet,
     trackColorModesByTrackSet,
@@ -495,6 +496,17 @@ export function useAppRouteState(): AppRouteState {
     const track = trackLookup.get(followedTrackId) ?? null;
     return getTrackPlaybackIndexWindow(track, volumeTimepointCount);
   }, [followedTrackId, trackLookup, volumeTimepointCount]);
+  const resolvedSelectedIndex = useMemo(
+    () => snapTimeIndexToWindow(selectedIndex, volumeTimepointCount, followedTrackPlaybackWindow),
+    [followedTrackPlaybackWindow, selectedIndex, volumeTimepointCount]
+  );
+  const resolvedPlaybackLabel = useMemo(() => {
+    if (volumeTimepointCount === 0) {
+      return '0 / 0';
+    }
+    const currentFrame = Math.min(resolvedSelectedIndex + 1, volumeTimepointCount);
+    return `${currentFrame} / ${volumeTimepointCount}`;
+  }, [resolvedSelectedIndex, volumeTimepointCount]);
 
   const {
     currentLayerVolumes,
@@ -526,7 +538,7 @@ export function useAppRouteState(): AppRouteState {
     preferBrickResidency,
     viewerCameraSample,
     volumeTimepointCount,
-    selectedIndex,
+    selectedIndex: resolvedSelectedIndex,
     playbackWindow: followedTrackPlaybackWindow,
     clearDatasetError,
     beginLaunchSession,
@@ -638,7 +650,7 @@ export function useAppRouteState(): AppRouteState {
     volumeProvider,
     volumeTimepointCount,
     playbackLayerKeys,
-    selectedIndex
+    selectedIndex: resolvedSelectedIndex
   });
 
   const {
@@ -922,7 +934,7 @@ export function useAppRouteState(): AppRouteState {
     handleLayerInvertToggle
   } = useLayerControls({
     layers: loadedDatasetLayers,
-    selectedIndex,
+    selectedIndex: resolvedSelectedIndex,
     isPlaying,
     layerVolumes: currentLayerVolumes,
     layerPageTables: currentLayerPageTables,
@@ -1067,8 +1079,10 @@ export function useAppRouteState(): AppRouteState {
         },
         tracks: {
           trackScale: effectiveTrackScale,
-          tracks: filteredTracks,
-          trackVisibility,
+          tracks: renderTracks,
+          compiledTrackPayloadByTrackSet: compiledPayloadByTrackSet,
+          onRequireTrackPayloads: ensureCompiledPayloadsLoaded,
+          trackSetStates,
           trackOpacityByTrackSet,
           trackLineWidthByTrackSet,
           trackColorModesByTrackSet,
@@ -1076,6 +1090,7 @@ export function useAppRouteState(): AppRouteState {
           selectedTrackIds,
           followedTrackId,
           followedVoxel,
+          playbackWindow: followedTrackPlaybackWindow,
           onTrackSelectionToggle: handleTrackSelectionToggle,
           onTrackFollowRequest: handleTrackFollowFromViewerWithVoxelReset,
           onVoxelFollowRequest: handleVoxelFollowRequest,
@@ -1092,6 +1107,7 @@ export function useAppRouteState(): AppRouteState {
         voxelResolution: preprocessedExperiment?.manifest.dataset.voxelResolution ?? null
       },
       vr: {
+        isVrActive,
         isVrPassthroughSupported,
         trackChannels,
         onTrackChannelSelect: handleTrackSetSelect,
@@ -1168,8 +1184,8 @@ export function useAppRouteState(): AppRouteState {
         onZSliderChange: handleZSliderChange,
         volumeTimepointCount,
         isPlaying,
-        playbackLabel,
-        selectedIndex,
+        playbackLabel: resolvedPlaybackLabel,
+        selectedIndex: resolvedSelectedIndex,
         onTimeIndexChange: handleTimeIndexChange,
         playbackDisabled,
         onTogglePlayback: handleTogglePlayback,
@@ -1225,12 +1241,11 @@ export function useAppRouteState(): AppRouteState {
         trackColorModesByTrackSet,
         trackOpacityByTrackSet,
         trackLineWidthByTrackSet,
-        trackSummaryByTrackSet,
+        trackSetStates,
         followedTrackSetId,
         followedTrackId,
         onTrackOrderToggle: handleTrackOrderToggle,
         trackOrderModeByTrackSet,
-        trackVisibility,
         onTrackVisibilityToggle: handleTrackVisibilityToggle,
         onTrackVisibilityAllChange: handleTrackVisibilityAllChange,
         onTrackOpacityChange: handleTrackOpacityChange,
@@ -1248,7 +1263,7 @@ export function useAppRouteState(): AppRouteState {
         totalTimepoints: volumeTimepointCount,
         amplitudeLimits: resolvedAmplitudeLimits,
         timeLimits: resolvedTimeLimits,
-        currentTimepoint: selectedIndex,
+        currentTimepoint: resolvedSelectedIndex,
         channelTintMap,
         smoothing: trackSmoothing,
         onTrackSelectionToggle: handleTrackSelectionToggle

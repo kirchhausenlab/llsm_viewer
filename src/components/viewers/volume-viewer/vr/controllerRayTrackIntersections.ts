@@ -1,11 +1,14 @@
 import * as THREE from 'three';
 import { Line2 } from 'three/examples/jsm/lines/Line2';
 
+import type { TrackRenderResource } from '../../VolumeViewer.types';
+import { resolveTrackIdFromIntersection } from '../trackHitTesting';
 import type { ControllerEntry } from './types';
 
 export function resolveControllerTrackIntersection(params: {
   entry: ControllerEntry;
   visibleLines: Line2[];
+  trackResources: Map<string, TrackRenderResource>;
   renderer: THREE.WebGLRenderer;
   cameraInstance: THREE.PerspectiveCamera;
   containerInstance: HTMLElement | null;
@@ -20,6 +23,7 @@ export function resolveControllerTrackIntersection(params: {
   const {
     entry,
     visibleLines,
+    trackResources,
     renderer,
     cameraInstance,
     containerInstance,
@@ -44,17 +48,23 @@ export function resolveControllerTrackIntersection(params: {
     object: THREE.Object3D & { userData?: Record<string, unknown> };
     distance: number;
     point: THREE.Vector3;
+    faceIndex?: number | null;
   }>;
 
   if (intersections.length === 0) {
     return { hoverTrackId, hoverPosition, rayLength };
   }
 
-  const intersection = intersections[0];
-  const trackId =
-    intersection.object.userData && typeof intersection.object.userData.trackId === 'string'
-      ? (intersection.object.userData.trackId as string)
-      : null;
+  let intersection = intersections[0]!;
+  let trackId: string | null = null;
+  for (const candidate of intersections) {
+    const resolvedTrackId = resolveTrackIdFromIntersection(candidate, trackResources);
+    if (resolvedTrackId) {
+      intersection = candidate;
+      trackId = resolvedTrackId;
+      break;
+    }
+  }
   if (!trackId) {
     return { hoverTrackId, hoverPosition, rayLength };
   }

@@ -77,7 +77,7 @@ function buildBaseProps() {
     },
     preprocessedSummary: {
       preprocessedExperiment: null,
-      computeTrackSummary: () => ({ totalRows: 0, uniqueTracks: 0 })
+      computeTrackSummary: () => ({ totalPoints: 0, totalTracks: 0 })
     },
     launchActions: {
       frontPageMode: 'initial' as const,
@@ -153,7 +153,7 @@ test('front page preprocessed mode renders launch action', () => {
             }
           ]
         },
-        computeTrackSummary: () => ({ totalRows: 0, uniqueTracks: 0 })
+        computeTrackSummary: () => ({ totalPoints: 0, totalTracks: 0 })
       }}
       launchActions={{
         ...props.launchActions,
@@ -236,7 +236,9 @@ test('front page configuring mode hides tracks section for single 3D volume', ()
             fileName: '',
             status: 'idle',
             error: null,
-            entries: []
+            compiledSummary: null,
+            compiledPayload: null,
+            loadCompiledPayload: null
           }
         ]
       }}

@@ -3,10 +3,11 @@ import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
-import type { TrackColorMode, TrackDefinition } from '../../../types/tracks';
+import type { CompiledTrackSummary, TrackColorMode } from '../../../types/tracks';
+import type { TrackSetState } from '../../../types/channelTracks';
 import type {
   MovementState,
-  TrackLineResource,
+  TrackRenderResource,
   VolumeResources,
   VolumeViewerVrChannelPanel,
   VolumeViewerVrProps,
@@ -45,7 +46,7 @@ export type VolumeViewerVrBridgeOptions = {
   resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
   timeIndexRef: MutableRefObject<number>;
   movementStateRef: MutableRefObject<MovementState>;
-  trackLinesRef: MutableRefObject<Map<string, TrackLineResource>>;
+  trackLinesRef: MutableRefObject<Map<string, TrackRenderResource>>;
   followTargetOffsetRef: MutableRefObject<THREE.Vector3 | null>;
   hasActive3DLayerRef: MutableRefObject<boolean>;
   playbackState: {
@@ -64,8 +65,8 @@ export type VolumeViewerVrBridgeOptions = {
   activeChannelPanelId: string | null;
   trackChannels: Array<{ id: string; name: string }>;
   activeTrackChannelId: string | null;
-  tracks: TrackDefinition[];
-  trackVisibility: Record<string, boolean>;
+  tracks: CompiledTrackSummary[];
+  trackSetStates: Record<string, TrackSetState>;
   trackOpacityByTrackSet: Record<string, number>;
   trackLineWidthByTrackSet: Record<string, number>;
   trackColorModesByTrackSet: Record<string, TrackColorMode>;
@@ -119,7 +120,7 @@ export function useVolumeViewerVrBridge(options: VolumeViewerVrBridgeOptions) {
     trackChannels,
     activeTrackChannelId,
     tracks,
-    trackVisibility,
+    trackSetStates,
     trackOpacityByTrackSet,
     trackLineWidthByTrackSet,
     trackColorModesByTrackSet,
@@ -251,7 +252,7 @@ export function useVolumeViewerVrBridge(options: VolumeViewerVrBridgeOptions) {
             trackChannels,
             activeTrackChannelId,
             tracks,
-            trackVisibility,
+            trackSetStates,
             trackOpacityByTrackSet,
             trackLineWidthByTrackSet,
             trackColorModesByTrackSet,
@@ -300,7 +301,7 @@ export function useVolumeViewerVrBridge(options: VolumeViewerVrBridgeOptions) {
       trackChannels,
       activeTrackChannelId,
       tracks,
-      trackVisibility,
+      trackSetStates,
       trackOpacityByTrackSet,
       trackLineWidthByTrackSet,
       trackColorModesByTrackSet,

@@ -2,6 +2,7 @@ import type * as THREE from 'three';
 import type { Line2 } from 'three/examples/jsm/lines/Line2';
 import type { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
 import type { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
+import type { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry';
 
 import type { NormalizedVolume } from '../../core/volumeProcessing';
 import type {
@@ -14,13 +15,20 @@ import type { LODPolicyDiagnosticsSnapshot } from '../../core/lodPolicyDiagnosti
 import type { FollowedVoxelTarget } from '../../types/follow';
 import type { HoveredVoxelInfo } from '../../types/hover';
 import type { PaintbrushStrokeHandlers } from '../../types/paintbrush';
-import type { TrackColorMode, TrackDefinition } from '../../types/tracks';
+import type {
+  CompiledTrackSetPayload,
+  CompiledTrackSummary,
+  TrackColorMode,
+} from '../../types/tracks';
 import type { VolumeDataType } from '../../types/volume';
 import type { ViewerProp } from '../../types/viewerProps';
 import type { TemporalResolutionMetadata, VoxelResolutionValues } from '../../types/voxelResolution';
 import type { RenderStyle, SamplingMode } from '../../state/layerSettings';
+import type { TrackSetState } from '../../types/channelTracks';
+import type { PlaybackIndexWindow } from '../../shared/utils';
 
 export type InstancedLineGeometry = LineGeometry & { instanceCount: number };
+export type InstancedLineSegmentsGeometry = LineSegmentsGeometry & { instanceCount: number };
 
 export type ViewerLayer = {
   key: string;
@@ -108,6 +116,7 @@ export type VolumeViewerVrChannelPanel = {
 };
 
 export type VolumeViewerVrProps = {
+  isVrActive: boolean;
   isVrPassthroughSupported: boolean;
   trackChannels: Array<{ id: string; name: string }>;
   activeTrackChannelId: string | null;
@@ -185,6 +194,7 @@ export type VolumeViewerProps = {
   windowResetSignal?: number;
   onTogglePlayback: () => void;
   onTimeIndexChange: (nextIndex: number) => void;
+  playbackWindow?: PlaybackIndexWindow | null;
   canAdvancePlayback?: (nextIndex: number) => boolean;
   onFpsChange: (value: number) => void;
   onVolumeStepScaleChange?: (value: number) => void;
@@ -199,8 +209,10 @@ export type VolumeViewerProps = {
     target: HTMLCanvasElement | (() => HTMLCanvasElement | null) | null,
   ) => void;
   trackScale: { x: number; y: number; z: number };
-  tracks: TrackDefinition[];
-  trackVisibility: Record<string, boolean>;
+  tracks: CompiledTrackSummary[];
+  compiledTrackPayloadByTrackSet: ReadonlyMap<string, CompiledTrackSetPayload>;
+  onRequireTrackPayloads?: (trackSetIds: Iterable<string>) => void;
+  trackSetStates: Record<string, TrackSetState>;
   trackOpacityByTrackSet: Record<string, number>;
   trackLineWidthByTrackSet: Record<string, number>;
   trackColorModesByTrackSet: Record<string, TrackColorMode>;
@@ -319,6 +331,9 @@ export type MovementState = {
 };
 
 export type TrackLineResource = {
+  kind: 'overlay';
+  key: string;
+  trackId: string;
   line: Line2;
   outline: Line2;
   geometry: InstancedLineGeometry;
@@ -346,3 +361,18 @@ export type TrackLineResource = {
   shouldShow: boolean;
   needsAppearanceUpdate: boolean;
 };
+
+export type TrackBatchResource = {
+  kind: 'batch';
+  key: string;
+  trackSetId: string;
+  line: Line2;
+  geometry: InstancedLineSegmentsGeometry;
+  material: LineMaterial;
+  segmentTrackIds: string[];
+  segmentTimes: Float32Array;
+  visibleTimeMin: number;
+  visibleTimeMax: number;
+};
+
+export type TrackRenderResource = TrackLineResource | TrackBatchResource;

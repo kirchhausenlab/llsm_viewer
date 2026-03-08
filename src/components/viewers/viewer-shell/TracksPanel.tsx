@@ -1,4 +1,4 @@
-import type { CSSProperties, MouseEvent } from 'react';
+import { useMemo, type CSSProperties, type MouseEvent } from 'react';
 
 import {
   TRACK_COLOR_SWATCHES,
@@ -6,6 +6,8 @@ import {
   normalizeTrackColor
 } from '../../../shared/colorMaps/trackColors';
 import { applyAlphaToHex } from '../../../shared/utils/appHelpers';
+import { resolveTrackVisibilityForState } from '../../../shared/utils/trackVisibilityState';
+import { createDefaultTrackSetState } from '../../../hooks/tracks/useTrackStyling';
 import FloatingWindow from '../../widgets/FloatingWindow';
 import TrackSettingsWindow from '../../widgets/TrackSettingsWindow';
 import type { LayoutProps, TrackDefaults, TrackSettingsProps, TracksPanelProps } from './types';
@@ -42,11 +44,10 @@ export default function TracksPanel({
   trackColorModesByTrackSet,
   trackOpacityByTrackSet,
   trackLineWidthByTrackSet,
-  trackSummaryByTrackSet,
+  trackSetStates,
   followedTrackId,
   onTrackOrderToggle,
   trackOrderModeByTrackSet,
-  trackVisibility,
   onTrackVisibilityToggle,
   onTrackVisibilityAllChange,
   onTrackOpacityChange,
@@ -71,6 +72,24 @@ export default function TracksPanel({
   } = layout;
 
   const selectedTrackOrderMap = new Map(selectedTrackOrder.map((trackId, index) => [trackId, index]));
+  const trackSummaryByTrackSet = useMemo(() => {
+    const summary = new Map<string, { total: number; visible: number }>();
+    for (const trackSet of trackSets) {
+      const state = trackSetStates[trackSet.id] ?? createDefaultTrackSetState();
+      const tracksForSet = filteredTracksByTrackSet.get(trackSet.id) ?? [];
+      let visible = 0;
+      for (const track of tracksForSet) {
+        const explicitVisible = resolveTrackVisibilityForState(state, track.id);
+        const isFollowedTrack = followedTrackId === track.id;
+        const isSelectedTrack = selectedTrackIds.has(track.id);
+        if (explicitVisible || isFollowedTrack || isSelectedTrack) {
+          visible += 1;
+        }
+      }
+      summary.set(trackSet.id, { total: tracksForSet.length, visible });
+    }
+    return summary;
+  }, [filteredTracksByTrackSet, followedTrackId, selectedTrackIds, trackSetStates, trackSets]);
 
   if (!hasTrackData || !isOpen) {
     return null;
@@ -164,6 +183,7 @@ export default function TracksPanel({
                 const hasSetTracks = parsedTracks.length > 0;
                 const opacity = trackOpacityByTrackSet[trackSet.id] ?? trackDefaults.opacity;
                 const lineWidth = trackLineWidthByTrackSet[trackSet.id] ?? trackDefaults.lineWidth;
+                const visibilityState = trackSetStates[trackSet.id] ?? createDefaultTrackSetState();
                 const displayTracks = [...tracksForSet].sort((a, b) => {
                   const selectionIndexA = selectedTrackOrderMap.get(a.id);
                   const selectionIndexB = selectedTrackOrderMap.get(b.id);
@@ -177,7 +197,7 @@ export default function TracksPanel({
                   }
 
                   if (orderMode === 'length') {
-                    return b.points.length - a.points.length;
+                    return b.pointCount - a.pointCount;
                   }
                   const idOrder = a.trackNumber - b.trackNumber;
                   if (idOrder !== 0) {
@@ -311,7 +331,8 @@ export default function TracksPanel({
                             {displayTracks.map((track) => {
                               const isFollowed = followedTrackId === track.id;
                               const isSelected = selectedTrackIds.has(track.id);
-                              const isChecked = isFollowed || isSelected || (trackVisibility[track.id] ?? true);
+                              const isChecked =
+                                isFollowed || isSelected || resolveTrackVisibilityForState(visibilityState, track.id);
                               const trackColor =
                                 colorMode.type === 'uniform'
                                   ? normalizeTrackColor(colorMode.color)

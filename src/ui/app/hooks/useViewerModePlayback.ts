@@ -33,8 +33,11 @@ export function useViewerModePlayback({
       return;
     }
 
-    playback.setSelectedIndex((prev) => snapTimeIndexToWindow(prev, volumeTimepointCount, playbackWindow));
-  }, [playback, playbackWindow, volumeTimepointCount]);
+    playback.setSelectedIndex((prev) => {
+      const next = snapTimeIndexToWindow(prev, volumeTimepointCount, playbackWindow);
+      return next === prev ? prev : next;
+    });
+  }, [playback.setSelectedIndex, playbackWindow, volumeTimepointCount]);
 
   const viewerControls = useViewerControls({
     playback,
@@ -51,7 +54,7 @@ export function useViewerModePlayback({
       }
       return !current;
     });
-  }, [playback, playbackDisabled]);
+  }, [playback.setIsPlaying, playbackDisabled]);
 
   const handleTimeIndexChange = useCallback(
     (nextIndex: number) => {
@@ -59,10 +62,11 @@ export function useViewerModePlayback({
         if (volumeTimepointCount === 0) {
           return prev;
         }
-        return snapTimeIndexToWindow(nextIndex, volumeTimepointCount, playbackWindow);
+        const resolved = snapTimeIndexToWindow(nextIndex, volumeTimepointCount, playbackWindow);
+        return resolved === prev ? prev : resolved;
       });
     },
-    [playback, playbackWindow, volumeTimepointCount]
+    [playback.setSelectedIndex, playbackWindow, volumeTimepointCount]
   );
 
   useEffect(() => {

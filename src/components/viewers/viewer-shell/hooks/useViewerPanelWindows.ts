@@ -44,9 +44,9 @@ export function useViewerPanelWindows({
   const lastCanShowPlotSettingsRef = useRef(canShowPlotSettings);
   const [isChannelsWindowOpen, setIsChannelsWindowOpen] = useState(true);
   const [isPropsWindowOpen, setIsPropsWindowOpen] = useState(false);
-  const [isTracksWindowOpen, setIsTracksWindowOpen] = useState(() => hasTrackData);
+  const [isTracksWindowOpen, setIsTracksWindowOpen] = useState(false);
   const [isViewerSettingsOpen, setIsViewerSettingsOpen] = useState(false);
-  const [isAmplitudePlotOpen, setIsAmplitudePlotOpen] = useState(() => canShowPlotSettings);
+  const [isAmplitudePlotOpen, setIsAmplitudePlotOpen] = useState(false);
   const [isPlotSettingsOpen, setIsPlotSettingsOpen] = useState(false);
   const [isTrackSettingsOpen, setIsTrackSettingsOpen] = useState(false);
   const [isPaintbrushOpen, setIsPaintbrushOpen] = useState(false);
@@ -136,9 +136,9 @@ export function useViewerPanelWindows({
   useEffect(() => {
     setIsChannelsWindowOpen(true);
     setIsPropsWindowOpen(false);
-    setIsTracksWindowOpen(hasTrackData);
+    setIsTracksWindowOpen(false);
     setIsViewerSettingsOpen(false);
-    setIsAmplitudePlotOpen(canShowPlotSettings);
+    setIsAmplitudePlotOpen(false);
     setIsPlotSettingsOpen(false);
     setIsTrackSettingsOpen(false);
     setIsPaintbrushOpen(false);
@@ -149,8 +149,6 @@ export function useViewerPanelWindows({
     if (!canShowPlotSettings) {
       setIsAmplitudePlotOpen(false);
       setIsPlotSettingsOpen(false);
-    } else if (!lastCanShowPlotSettingsRef.current) {
-      setIsAmplitudePlotOpen(true);
     }
     lastCanShowPlotSettingsRef.current = canShowPlotSettings;
   }, [canShowPlotSettings]);
@@ -159,8 +157,6 @@ export function useViewerPanelWindows({
     if (!hasTrackData) {
       setIsTracksWindowOpen(false);
       setIsTrackSettingsOpen(false);
-    } else if (!lastHasTrackDataRef.current) {
-      setIsTracksWindowOpen(true);
     }
     lastHasTrackDataRef.current = hasTrackData;
   }, [hasTrackData]);
