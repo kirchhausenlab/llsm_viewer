@@ -99,6 +99,7 @@ export type PreprocessDatasetToStorageOptions = {
   channels: ChannelExportMetadata[];
   trackSets: TrackSetExportMetadata[];
   voxelResolution: NonNullable<PreprocessedManifest['dataset']['voxelResolution']>;
+  temporalResolution: PreprocessedManifest['dataset']['temporalResolution'];
   movieMode: PreprocessedMovieMode;
   storage: PreprocessedStorage;
   volumeLoader?: LoadVolumesFromFiles;
@@ -2536,6 +2537,7 @@ function buildManifestFromLayerMetadata({
   movieMode,
   totalVolumeCount,
   voxelResolution,
+  temporalResolution,
   backgroundMask,
   shardingStrategy,
   preferDepthChunkOne
@@ -2549,6 +2551,7 @@ function buildManifestFromLayerMetadata({
   movieMode: PreprocessedMovieMode;
   totalVolumeCount: number;
   voxelResolution: NonNullable<PreprocessedManifest['dataset']['voxelResolution']>;
+  temporalResolution: PreprocessedManifest['dataset']['temporalResolution'];
   backgroundMask: SharedBackgroundMask | null;
   shardingStrategy: ShardingStrategy;
   preferDepthChunkOne?: boolean;
@@ -2650,6 +2653,7 @@ function buildManifestFromLayerMetadata({
       channels: manifestChannels,
       trackSets: manifestTrackSets,
       voxelResolution,
+      temporalResolution,
       anisotropyCorrection,
       backgroundMask: manifestBackgroundMask
     }
@@ -4787,6 +4791,7 @@ export async function preprocessDatasetToStorage({
   channels,
   trackSets,
   voxelResolution,
+  temporalResolution,
   movieMode,
   storage,
   volumeLoader: providedVolumeLoader,
@@ -4926,6 +4931,7 @@ export async function preprocessDatasetToStorage({
     movieMode,
     totalVolumeCount,
     voxelResolution,
+    temporalResolution,
     backgroundMask,
     shardingStrategy,
     preferDepthChunkOne: datasetExecutionMode === 'streaming'

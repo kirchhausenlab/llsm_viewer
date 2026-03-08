@@ -68,6 +68,8 @@ type ViewerPanelsTrackInput = Pick<
 export type ViewerShellContainerViewerPanelsProps = {
   layers: ViewerLayerConfig[];
   playbackWarmupLayers?: ViewerLayerConfig[];
+  temporalResolution?: ViewerShellProps['volumeViewerProps']['temporalResolution'];
+  voxelResolution?: ViewerShellProps['volumeViewerProps']['voxelResolution'];
   loading: ViewerPanelsLoadingInput;
   tracks: ViewerPanelsTrackInput;
   zClipFrontFraction: number;
@@ -151,6 +153,8 @@ function mapVolumeViewerProps({
     lodPolicyDiagnostics: viewerPanels.lodPolicyDiagnostics ?? null,
     timeIndex: playbackControls.selectedIndex,
     totalTimepoints: playbackControls.volumeTimepointCount,
+    temporalResolution: viewerPanels.temporalResolution ?? null,
+    voxelResolution: viewerPanels.voxelResolution ?? null,
     isPlaying: playbackControls.isPlaying,
     playbackDisabled: playbackControls.playbackDisabled,
     playbackLabel: playbackControls.playbackLabel,

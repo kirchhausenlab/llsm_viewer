@@ -17,6 +17,7 @@ import type { PaintbrushStrokeHandlers } from '../../types/paintbrush';
 import type { TrackColorMode, TrackDefinition } from '../../types/tracks';
 import type { VolumeDataType } from '../../types/volume';
 import type { ViewerProp } from '../../types/viewerProps';
+import type { TemporalResolutionMetadata, VoxelResolutionValues } from '../../types/voxelResolution';
 import type { RenderStyle, SamplingMode } from '../../state/layerSettings';
 
 export type InstancedLineGeometry = LineGeometry & { instanceCount: number };
@@ -151,8 +152,13 @@ export type ViewerPropsConfig = {
   props: ViewerProp[];
   selectedPropId: string | null;
   isEditing: boolean;
+  currentTimepoint: number;
+  totalTimepoints: number;
+  temporalResolution?: TemporalResolutionMetadata | null;
+  voxelResolution?: VoxelResolutionValues | null;
   onSelectProp: (propId: string) => void;
   onUpdateScreenPosition: (propId: string, nextPosition: { x: number; y: number }) => void;
+  onUpdateWorldPosition: (propId: string, nextPosition: { x: number; y: number }) => void;
 };
 
 export type VolumeViewerProps = {
@@ -160,6 +166,8 @@ export type VolumeViewerProps = {
   playbackWarmupLayers?: ViewerLayer[];
   timeIndex: number;
   totalTimepoints: number;
+  temporalResolution?: TemporalResolutionMetadata | null;
+  voxelResolution?: VoxelResolutionValues | null;
   isPlaying: boolean;
   playbackDisabled: boolean;
   playbackLabel: string;

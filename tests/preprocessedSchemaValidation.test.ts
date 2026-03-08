@@ -30,6 +30,19 @@ async function openDatasetFromFixture(fileName: string) {
   return openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
 }
 
+async function openDatasetFromManifest(manifest: unknown) {
+  const storageHandle = createInMemoryPreprocessedStorage({ datasetId: 'preprocessed-schema-validation-inline' });
+  const zarrStore = createZarrStoreFromPreprocessedStorage(storageHandle.storage);
+
+  await zarr.create(zarr.root(zarrStore), {
+    attributes: {
+      llsmViewerPreprocessed: manifest
+    }
+  });
+
+  return openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
+}
+
 test('openPreprocessedDatasetFromZarrStorage accepts valid non-sharded vNext fixture', async () => {
   const opened = await openDatasetFromFixture('valid-non-sharded.json');
   const baseScale = opened.manifest.dataset.channels[0]?.layers[0]?.zarr.scales[0];
@@ -94,5 +107,29 @@ test('openPreprocessedDatasetFromZarrStorage rejects aggregate multi-layer fixtu
   await assert.rejects(
     () => openDatasetFromFixture('invalid-multi-layer-aggregate-volume-count.json'),
     /manifest\.dataset\.channels\[0\]\.layers: expected exactly one layer/
+  );
+});
+
+test('openPreprocessedDatasetFromZarrStorage rejects fixtures missing spatial resolution metadata', async () => {
+  const manifest = readFixture('valid-non-sharded.json') as {
+    dataset: Record<string, unknown>;
+  };
+  delete manifest.dataset.voxelResolution;
+
+  await assert.rejects(
+    () => openDatasetFromManifest(manifest),
+    /manifest\.dataset\.voxelResolution: expected object/
+  );
+});
+
+test('openPreprocessedDatasetFromZarrStorage rejects fixtures missing temporal resolution metadata', async () => {
+  const manifest = readFixture('valid-non-sharded.json') as {
+    dataset: Record<string, unknown>;
+  };
+  delete manifest.dataset.temporalResolution;
+
+  await assert.rejects(
+    () => openDatasetFromManifest(manifest),
+    /manifest\.dataset\.temporalResolution: expected object/
   );
 });

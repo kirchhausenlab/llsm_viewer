@@ -192,6 +192,7 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
     channels,
     trackSets,
     voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: true },
+    temporalResolution: { interval: 2.3, unit: 'ms' },
     movieMode: '3d',
     storage: storageHandle.storage,
     volumeLoader: createLoaderByFileName(volumeByFileName),
@@ -205,6 +206,10 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
   assert.equal(result.manifest.dataset.channels.length, 2);
   assert.equal(result.channelSummaries.length, 2);
   assert.equal(result.trackSummaries[0]?.entries.length, 1);
+  assert.deepEqual(result.manifest.dataset.temporalResolution, {
+    interval: 2.3,
+    unit: 'ms'
+  });
 
   const finalizeIndex = progressEvents.findIndex((event) => event.stage === 'finalize-manifest');
   const firstWriteIndex = progressEvents.findIndex((event) => event.stage === 'write-volumes');
@@ -224,6 +229,10 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
 
   const opened = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
   assert.equal(opened.totalVolumeCount, 2);
+  assert.deepEqual(opened.manifest.dataset.temporalResolution, {
+    interval: 2.3,
+    unit: 'ms'
+  });
   for (const summary of opened.channelSummaries) {
     assert.equal(summary.layers.length, 1);
   }
@@ -314,6 +323,7 @@ test('preprocessDatasetToStorage rejects multiple volumes assigned to one channe
         channels,
         trackSets: [],
         voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+        temporalResolution: { interval: 2.3, unit: 'ms' },
         movieMode: '3d',
         storage: storageHandle.storage,
         volumeLoader: createLoaderByFileName(volumeByFileName),
@@ -354,6 +364,7 @@ test('preprocessDatasetToStorage maps single 3D TIFF to 2D movie timepoints', as
     channels,
     trackSets: [],
     voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    temporalResolution: { interval: 2.3, unit: 'ms' },
     movieMode: '3d',
     inputInterpretation: '2d-movie',
     storage: storageHandle.storage,
@@ -402,6 +413,7 @@ test('preprocessDatasetToStorage writes sharded chunks that volume provider read
     channels,
     trackSets: [],
     voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    temporalResolution: { interval: 2.3, unit: 'ms' },
     movieMode: '3d',
     storage: storageHandle.storage,
     volumeLoader: createLoaderByFileName(volumeByFileName),
@@ -467,6 +479,7 @@ test('preprocessDatasetToStorage writes streaming subcell payloads that page tab
     channels,
     trackSets: [],
     voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    temporalResolution: { interval: 2.3, unit: 'ms' },
     movieMode: '3d',
     storage: storageHandle.storage,
     volumeLoader: createLoaderByFileName(volumeByFileName),
@@ -553,6 +566,7 @@ test('preprocessDatasetToStorage stacks 2D TIFF sequence into one single-3D volu
     channels,
     trackSets: [],
     voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    temporalResolution: { interval: 2.3, unit: 'ms' },
     movieMode: '3d',
     inputInterpretation: 'single-3d-volume',
     storage: storageHandle.storage,
@@ -613,6 +627,7 @@ test('preprocessDatasetToStorage rejects multiple 3D files in 2D movie mode', as
         channels,
         trackSets: [],
         voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+        temporalResolution: { interval: 2.3, unit: 'ms' },
         movieMode: '3d',
         inputInterpretation: '2d-movie',
         storage: storageHandle.storage,
@@ -669,6 +684,7 @@ test('preprocessDatasetToStorage validates consistent 2D slice shape in single-3
         channels,
         trackSets: [],
         voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+        temporalResolution: { interval: 2.3, unit: 'ms' },
         movieMode: '3d',
         inputInterpretation: 'single-3d-volume',
         storage: storageHandle.storage,
@@ -710,6 +726,7 @@ test('preprocessDatasetToStorage writes and serves a shared background mask', as
     channels,
     trackSets: [],
     voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    temporalResolution: { interval: 2.3, unit: 'ms' },
     movieMode: '3d',
     backgroundMask: { values: [5] },
     storage: storageHandle.storage,

@@ -1087,7 +1087,9 @@ export function useAppRouteState(): AppRouteState {
         onRegisterReset: handleRegisterReset,
         onVolumeStepScaleChange: handleVolumeStepScaleChange,
         onRegisterVolumeStepScaleChange: handleRegisterVolumeStepScaleChange,
-        onCameraNavigationSample: handleViewerCameraNavigationSample
+        onCameraNavigationSample: handleViewerCameraNavigationSample,
+        temporalResolution: preprocessedExperiment?.manifest.dataset.temporalResolution ?? null,
+        voxelResolution: preprocessedExperiment?.manifest.dataset.voxelResolution ?? null
       },
       vr: {
         isVrPassthroughSupported,

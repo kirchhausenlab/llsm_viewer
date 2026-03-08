@@ -565,7 +565,7 @@ function VolumeViewer({
     hasActive3DLayerRef,
     updateVolumeHandles,
   });
-  const { performPropHitTest } = useViewerPropsRendering({
+  const { performPropHitTest, resolvePropDragPosition, refreshWorldProps } = useViewerPropsRendering({
     viewerPropsConfig,
     renderContextRevision,
     volumeRootGroupRef,
@@ -688,6 +688,7 @@ function VolumeViewer({
       applyKeyboardRotation,
       applyKeyboardMovement,
       updateTrackAppearance,
+      refreshViewerProps: refreshWorldProps,
       advancePlaybackFrame,
       updateControllerRays,
       controllersRef,
@@ -720,11 +721,13 @@ function VolumeViewer({
       followedTrackIdRef,
       updateVoxelHover,
       performPropHitTest,
+      resolveWorldPropDragPosition: resolvePropDragPosition,
       performHoverHitTest,
       clearHoverState,
       clearVoxelHover,
       resolveHoveredFollowTarget,
       onPropSelect: viewerPropsConfig?.onSelectProp ?? (() => {}),
+      onWorldPropPositionChange: viewerPropsConfig?.onUpdateWorldPosition ?? (() => {}),
       onTrackSelectionToggle,
       onVoxelFollowRequest,
     },

@@ -25,6 +25,11 @@ export type VoxelResolutionValues = {
   correctAnisotropy: boolean;
 };
 
+export type TemporalResolutionMetadata = {
+  interval: number;
+  unit: TemporalResolutionUnit;
+};
+
 export const VOXEL_RESOLUTION_UNITS: readonly VoxelResolutionUnit[] = ['Å', 'nm', 'μm', 'mm'];
 export const TEMPORAL_RESOLUTION_UNITS: readonly TemporalResolutionUnit[] = ['ns', 'μs', 'ms', 's'];
 

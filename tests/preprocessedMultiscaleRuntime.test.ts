@@ -169,7 +169,8 @@ function buildManifest(): PreprocessedManifest {
           ]
         }
       ],
-      voxelResolution: null,
+      voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+      temporalResolution: { interval: 2.3, unit: 'ms' },
       anisotropyCorrection: null
     }
   };

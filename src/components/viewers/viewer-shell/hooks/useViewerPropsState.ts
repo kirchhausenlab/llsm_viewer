@@ -1,63 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ViewerProp, ViewerPropVolumeDimensions } from '../../../../types/viewerProps';
+import type { VoxelResolutionValues } from '../../../../types/voxelResolution';
+import {
+  buildViewerProp,
+  normalizeViewerPropTimeRange,
+  resolveViewerPropWorldAxisRange,
+} from '../viewerPropDefaults';
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
-
-const clampPositive = (value: number, fallback: number) =>
-  Number.isFinite(value) && value > 0 ? value : fallback;
-
-function buildViewerProp(
-  id: string,
-  labelNumber: number,
-  index: number,
-  volumeDimensions: ViewerPropVolumeDimensions
-): ViewerProp {
-  const width = clampPositive(volumeDimensions.width, 1);
-  const height = clampPositive(volumeDimensions.height, 1);
-  const depth = clampPositive(volumeDimensions.depth, 1);
-  const centerX = width / 2 - 0.5;
-  const centerY = height / 2 - 0.5;
-  const centerZ = depth / 2 - 0.5;
-  const name = `Prop #${labelNumber}`;
-  const text = 'Add text here';
-
-  return {
-    id,
-    name,
-    type: 'text',
-    dimension: '2d',
-    visible: true,
-    color: '#ffffff',
-    text,
-    screen: {
-      x: 0.5,
-      y: 0.5,
-      rotation: 0,
-      fontSize: 30,
-      flipX: false,
-      flipY: false,
-    },
-    world: {
-      x: centerX + index * Math.max(2, width * 0.03),
-      y: centerY + index * Math.max(2, height * 0.03),
-      z: centerZ,
-      roll: 0,
-      pitch: 0,
-      yaw: 0,
-      fontSize: Math.max(6, height * 0.08),
-      flipX: false,
-      flipY: true,
-      flipZ: false,
-      facingMode: 'fixed',
-      occlusionMode: 'always-on-top',
-      unitMode: 'voxel',
-    },
-  };
-}
+const clampNumber = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
 
 export type UseViewerPropsStateOptions = {
   volumeDimensions: ViewerPropVolumeDimensions;
+  totalTimepoints: number;
+  voxelResolution?: VoxelResolutionValues | null;
 };
 
 export type UseViewerPropsStateResult = {
@@ -69,6 +27,7 @@ export type UseViewerPropsStateResult = {
   updateProp: (propId: string, updater: (current: ViewerProp) => ViewerProp) => void;
   updateSelectedProp: (updater: (current: ViewerProp) => ViewerProp) => void;
   updateScreenPosition: (propId: string, nextPosition: { x: number; y: number }) => void;
+  updateWorldPosition: (propId: string, nextPosition: { x: number; y: number }) => void;
   setAllVisible: (visible: boolean) => void;
   clearProps: () => void;
   deleteProp: (propId: string) => void;
@@ -76,6 +35,8 @@ export type UseViewerPropsStateResult = {
 
 export function useViewerPropsState({
   volumeDimensions,
+  totalTimepoints,
+  voxelResolution,
 }: UseViewerPropsStateOptions): UseViewerPropsStateResult {
   const [props, setProps] = useState<ViewerProp[]>([]);
   const [selectedPropId, setSelectedPropId] = useState<string | null>(null);
@@ -92,17 +53,60 @@ export function useViewerPropsState({
     selectedPropIdRef.current = selectedPropId;
   }, [selectedPropId]);
 
+  useEffect(() => {
+    const current = propsRef.current;
+    if (current.length === 0) {
+      return;
+    }
+
+    let changed = false;
+    const next = current.map((entry) => {
+      const normalizedRange = normalizeViewerPropTimeRange(
+        entry.initialTimepoint,
+        entry.finalTimepoint,
+        totalTimepoints
+      );
+      if (
+        normalizedRange.initialTimepoint === entry.initialTimepoint &&
+        normalizedRange.finalTimepoint === entry.finalTimepoint
+      ) {
+        return entry;
+      }
+      changed = true;
+      return {
+        ...entry,
+        ...normalizedRange,
+      };
+    });
+
+    if (!changed) {
+      return;
+    }
+
+    propsRef.current = next;
+    setProps(next);
+  }, [totalTimepoints]);
+
   const createProp = useCallback(() => {
     const index = propsRef.current.length;
     const id = `viewer-prop-${nextIdRef.current}`;
     const labelNumber = nextLabelNumberRef.current;
     nextIdRef.current += 1;
     nextLabelNumberRef.current += 1;
-    const nextProp = buildViewerProp(id, labelNumber, index, volumeDimensions);
-    setProps((current) => [...current, nextProp]);
+    const nextProp = buildViewerProp(
+      id,
+      labelNumber,
+      index,
+      volumeDimensions,
+      totalTimepoints,
+      voxelResolution ?? null
+    );
+    const next = [...propsRef.current, nextProp];
+    propsRef.current = next;
+    setProps(next);
     selectedPropIdRef.current = id;
     setSelectedPropId(id);
-  }, [volumeDimensions]);
+  }, [totalTimepoints, volumeDimensions, voxelResolution]);
 
   const selectProp = useCallback((propId: string) => {
     if (!propsRef.current.some((entry) => entry.id === propId)) {
@@ -113,9 +117,9 @@ export function useViewerPropsState({
   }, []);
 
   const updateProp = useCallback((propId: string, updater: (current: ViewerProp) => ViewerProp) => {
-    setProps((current) =>
-      current.map((entry) => (entry.id === propId ? updater(entry) : entry))
-    );
+    const next = propsRef.current.map((entry) => (entry.id === propId ? updater(entry) : entry));
+    propsRef.current = next;
+    setProps(next);
   }, []);
 
   const updateSelectedProp = useCallback(
@@ -124,9 +128,9 @@ export function useViewerPropsState({
       if (!activeId) {
         return;
       }
-      setProps((current) =>
-        current.map((entry) => (entry.id === activeId ? updater(entry) : entry))
-      );
+      const next = propsRef.current.map((entry) => (entry.id === activeId ? updater(entry) : entry));
+      propsRef.current = next;
+      setProps(next);
     },
     []
   );
@@ -145,14 +149,35 @@ export function useViewerPropsState({
     [updateProp]
   );
 
+  const updateWorldPosition = useCallback(
+    (propId: string, nextPosition: { x: number; y: number }) => {
+      const xRange = resolveViewerPropWorldAxisRange(volumeDimensions, 'x');
+      const yRange = resolveViewerPropWorldAxisRange(volumeDimensions, 'y');
+      updateProp(propId, (current) => ({
+        ...current,
+        world: {
+          ...current.world,
+          x: clampNumber(nextPosition.x, xRange.min, xRange.max),
+          y: clampNumber(nextPosition.y, yRange.min, yRange.max),
+        },
+      }));
+    },
+    [updateProp, volumeDimensions]
+  );
+
   const setAllVisible = useCallback((visible: boolean) => {
-    setProps((current) =>
-      current.map((entry) => (entry.visible === visible ? entry : { ...entry, visible }))
+    const next = propsRef.current.map((entry) =>
+      entry.visible === visible ? entry : { ...entry, visible }
     );
+    propsRef.current = next;
+    setProps(next);
   }, []);
 
   const clearProps = useCallback(() => {
+    propsRef.current = [];
     setProps([]);
+    nextIdRef.current = 1;
+    nextLabelNumberRef.current = 1;
     selectedPropIdRef.current = null;
     setSelectedPropId(null);
   }, []);
@@ -164,6 +189,7 @@ export function useViewerPropsState({
       return;
     }
     const next = current.filter((entry) => entry.id !== propId);
+    propsRef.current = next;
     setProps(next);
 
     if (selectedPropIdRef.current !== propId) {
@@ -194,6 +220,7 @@ export function useViewerPropsState({
     updateProp,
     updateSelectedProp,
     updateScreenPosition,
+    updateWorldPosition,
     setAllVisible,
     clearProps,
     deleteProp,

@@ -42,6 +42,7 @@ type UseVolumeViewerLifecycleParams = {
   applyKeyboardRotation: RenderLoopOptions['applyKeyboardRotation'];
   applyKeyboardMovement: RenderLoopOptions['applyKeyboardMovement'];
   updateTrackAppearance: RenderLoopOptions['updateTrackAppearance'];
+  refreshViewerProps: RenderLoopOptions['refreshViewerProps'];
   advancePlaybackFrame: RenderLoopOptions['advancePlaybackFrame'];
   updateControllerRays: RenderLoopOptions['updateControllerRays'];
   controllersRef: MutableRefObject<ControllerEntry[]>;
@@ -75,11 +76,13 @@ type UseVolumeViewerLifecycleParams = {
   followedTrackIdRef: PointerLifecycleOptions['followedTrackIdRef'];
   updateVoxelHover: PointerLifecycleOptions['updateVoxelHover'];
   performPropHitTest: PointerLifecycleOptions['performPropHitTest'];
+  resolveWorldPropDragPosition: PointerLifecycleOptions['resolveWorldPropDragPosition'];
   performHoverHitTest: PointerLifecycleOptions['performHoverHitTest'];
   clearHoverState: PointerLifecycleOptions['clearHoverState'];
   clearVoxelHover: PointerLifecycleOptions['clearVoxelHover'];
   resolveHoveredFollowTarget: PointerLifecycleOptions['resolveHoveredFollowTarget'];
   onPropSelect: PointerLifecycleOptions['onPropSelect'];
+  onWorldPropPositionChange: PointerLifecycleOptions['onWorldPropPositionChange'];
   onTrackSelectionToggle: PointerLifecycleOptions['onTrackSelectionToggle'];
   onVoxelFollowRequest: PointerLifecycleOptions['onVoxelFollowRequest'];
   resetHoverState: () => void;
@@ -136,6 +139,7 @@ export function useVolumeViewerLifecycle({
   applyKeyboardRotation,
   applyKeyboardMovement,
   updateTrackAppearance,
+  refreshViewerProps,
   advancePlaybackFrame,
   updateControllerRays,
   controllersRef,
@@ -166,11 +170,13 @@ export function useVolumeViewerLifecycle({
   followedTrackIdRef,
   updateVoxelHover,
   performPropHitTest,
+  resolveWorldPropDragPosition,
   performHoverHitTest,
   clearHoverState,
   clearVoxelHover,
   resolveHoveredFollowTarget,
   onPropSelect,
+  onWorldPropPositionChange,
   onTrackSelectionToggle,
   onVoxelFollowRequest,
   resetHoverState,
@@ -219,6 +225,8 @@ export function useVolumeViewerLifecycle({
   applyKeyboardMovementRef.current = applyKeyboardMovement;
   const updateTrackAppearanceRef = useRef(updateTrackAppearance);
   updateTrackAppearanceRef.current = updateTrackAppearance;
+  const refreshViewerPropsRef = useRef(refreshViewerProps);
+  refreshViewerPropsRef.current = refreshViewerProps;
   const advancePlaybackFrameRef = useRef(advancePlaybackFrame);
   advancePlaybackFrameRef.current = advancePlaybackFrame;
   const updateControllerRaysRef = useRef(updateControllerRays);
@@ -231,6 +239,8 @@ export function useVolumeViewerLifecycle({
   updateVoxelHoverRef.current = updateVoxelHover;
   const performPropHitTestRef = useRef(performPropHitTest);
   performPropHitTestRef.current = performPropHitTest;
+  const resolveWorldPropDragPositionRef = useRef(resolveWorldPropDragPosition);
+  resolveWorldPropDragPositionRef.current = resolveWorldPropDragPosition;
   const performHoverHitTestRef = useRef(performHoverHitTest);
   performHoverHitTestRef.current = performHoverHitTest;
   const clearHoverStateRef = useRef(clearHoverState);
@@ -241,6 +251,8 @@ export function useVolumeViewerLifecycle({
   resolveHoveredFollowTargetRef.current = resolveHoveredFollowTarget;
   const onPropSelectRef = useRef(onPropSelect);
   onPropSelectRef.current = onPropSelect;
+  const onWorldPropPositionChangeRef = useRef(onWorldPropPositionChange);
+  onWorldPropPositionChangeRef.current = onWorldPropPositionChange;
   const onTrackSelectionToggleRef = useRef(onTrackSelectionToggle);
   onTrackSelectionToggleRef.current = onTrackSelectionToggle;
   const onVoxelFollowRequestRef = useRef(onVoxelFollowRequest);
@@ -449,11 +461,15 @@ export function useVolumeViewerLifecycle({
       rotationTargetRef,
       updateVoxelHover: (event) => updateVoxelHoverRef.current(event),
       performPropHitTest: (event) => performPropHitTestRef.current(event),
+      resolveWorldPropDragPosition: (propId, event) =>
+        resolveWorldPropDragPositionRef.current(propId, event),
       performHoverHitTest: (event) => performHoverHitTestRef.current(event),
       clearHoverState: (source) => clearHoverStateRef.current(source),
       clearVoxelHover: () => clearVoxelHoverRef.current(),
       resolveHoveredFollowTarget: () => resolveHoveredFollowTargetRef.current(),
       onPropSelect: (propId) => onPropSelectRef.current(propId),
+      onWorldPropPositionChange: (propId, nextPosition) =>
+        onWorldPropPositionChangeRef.current(propId, nextPosition),
       onTrackSelectionToggle: (trackId) => onTrackSelectionToggleRef.current(trackId),
       onVoxelFollowRequest: (target) => onVoxelFollowRequestRef.current(target),
       beginPointerLook,
@@ -481,6 +497,7 @@ export function useVolumeViewerLifecycle({
         applyKeyboardMovementRef.current(rendererInstance, cameraInstance, controlsInstance),
       rotationTargetRef,
       updateTrackAppearance: (timestamp) => updateTrackAppearanceRef.current(timestamp),
+      refreshViewerProps: () => refreshViewerPropsRef.current(),
       followTargetActiveRef,
       followTargetOffsetRef,
       resourcesRef,

@@ -14,7 +14,12 @@ import type {
   ZarrArrayShardingPlan
 } from './types';
 import { PREPROCESSED_DATASET_FORMAT } from './types';
-import { VOXEL_RESOLUTION_UNITS, type VoxelResolutionValues } from '../../../types/voxelResolution';
+import {
+  TEMPORAL_RESOLUTION_UNITS,
+  VOXEL_RESOLUTION_UNITS,
+  type TemporalResolutionMetadata,
+  type VoxelResolutionValues
+} from '../../../types/voxelResolution';
 import type { VolumeDataType } from '../../../types/volume';
 
 type UnknownRecord = Record<string, unknown>;
@@ -798,13 +803,7 @@ function validateLayer({
   };
 }
 
-function validateVoxelResolution(value: unknown, path: string): VoxelResolutionValues | null | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (value === null) {
-    return null;
-  }
+function validateVoxelResolution(value: unknown, path: string): VoxelResolutionValues {
   const resolution = expectRecord(value, path);
   const x = expectNumberField(resolution.x, `${path}.x`);
   const y = expectNumberField(resolution.y, `${path}.y`);
@@ -823,6 +822,25 @@ function validateVoxelResolution(value: unknown, path: string): VoxelResolutionV
     z,
     unit: unit as VoxelResolutionValues['unit'],
     correctAnisotropy
+  };
+}
+
+function validateTemporalResolution(
+  value: unknown,
+  path: string
+): TemporalResolutionMetadata {
+  const resolution = expectRecord(value, path);
+  const interval = expectNumberField(resolution.interval, `${path}.interval`);
+  if (interval <= 0) {
+    throw new Error(`Invalid manifest schema at ${path}.interval: expected positive number.`);
+  }
+  const unit = expectString(resolution.unit, `${path}.unit`);
+  if (!TEMPORAL_RESOLUTION_UNITS.includes(unit as TemporalResolutionMetadata['unit'])) {
+    throw new Error(`Invalid manifest schema at ${path}.unit: unsupported unit "${unit}".`);
+  }
+  return {
+    interval,
+    unit: unit as TemporalResolutionMetadata['unit']
   };
 }
 
@@ -953,6 +971,7 @@ export function coercePreprocessedManifest(value: unknown): PreprocessedManifest
   }
 
   validateVoxelResolution(dataset.voxelResolution, 'manifest.dataset.voxelResolution');
+  validateTemporalResolution(dataset.temporalResolution, 'manifest.dataset.temporalResolution');
   validateAnisotropyCorrection(dataset.anisotropyCorrection, 'manifest.dataset.anisotropyCorrection');
   const backgroundMask = validateBackgroundMask(dataset.backgroundMask, 'manifest.dataset.backgroundMask');
   if (backgroundMask && !layerKeys.has(backgroundMask.sourceLayerKey)) {

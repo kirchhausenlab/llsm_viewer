@@ -81,6 +81,7 @@ test('preprocessing perf: end-to-end smoke check stays under budget', async () =
     channels,
     trackSets: [],
     voxelResolution: { x: 100, y: 100, z: 200, unit: 'nm', correctAnisotropy: true },
+    temporalResolution: { interval: 2.3, unit: 'ms' },
     movieMode: '3d',
     storage: storageHandle.storage,
     volumeLoader: createVolumeLoader(volumeByFileName),

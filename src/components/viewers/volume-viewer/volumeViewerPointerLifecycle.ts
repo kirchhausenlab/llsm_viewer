@@ -30,11 +30,16 @@ type AttachVolumeViewerPointerLifecycleParams = PointerLookHandlers & {
   rotationTargetRef: MutableRefObject<THREE.Vector3>;
   updateVoxelHover: (event: PointerEvent | MouseEvent) => void;
   performPropHitTest: (event: PointerEvent) => string | null;
+  resolveWorldPropDragPosition: (
+    propId: string,
+    event: PointerEvent
+  ) => { x: number; y: number } | null;
   performHoverHitTest: (event: PointerEvent) => string | null;
   clearHoverState: (source?: 'pointer' | 'controller') => void;
   clearVoxelHover: () => void;
   resolveHoveredFollowTarget: () => FollowedVoxelTarget | null;
   onPropSelect: (propId: string) => void;
+  onWorldPropPositionChange: (propId: string, nextPosition: { x: number; y: number }) => void;
   onTrackSelectionToggle: (trackId: string) => void;
   onVoxelFollowRequest: (target: FollowedVoxelTarget) => void;
 };
@@ -54,17 +59,26 @@ export function attachVolumeViewerPointerLifecycle({
   rotationTargetRef,
   updateVoxelHover,
   performPropHitTest,
+  resolveWorldPropDragPosition,
   performHoverHitTest,
   clearHoverState,
   clearVoxelHover,
   resolveHoveredFollowTarget,
   onPropSelect,
+  onWorldPropPositionChange,
   onTrackSelectionToggle,
   onVoxelFollowRequest,
   beginPointerLook,
   updatePointerLook,
   endPointerLook,
 }: AttachVolumeViewerPointerLifecycleParams): () => void {
+  let activeWorldPropDrag:
+    | {
+        propId: string;
+        pointerId: number;
+      }
+    | null = null;
+
   const handlePointerDown = (event: PointerEvent) => {
     if (event.button !== 0) {
       return;
@@ -90,7 +104,17 @@ export function attachVolumeViewerPointerLifecycle({
 
     const hitPropId = performPropHitTest(event);
     if (hitPropId !== null) {
+      event.preventDefault();
       onPropSelect(hitPropId);
+      activeWorldPropDrag = {
+        propId: hitPropId,
+        pointerId: event.pointerId,
+      };
+      try {
+        domElement.setPointerCapture(event.pointerId);
+      } catch {
+        // Ignore: some platforms may reject capture.
+      }
       return;
     }
 
@@ -114,6 +138,15 @@ export function attachVolumeViewerPointerLifecycle({
       const hovered = hoverIntensityRef.current;
       if (hovered) {
         paint.onStrokeApply(hovered.coordinates);
+      }
+      return;
+    }
+
+    if (activeWorldPropDrag && activeWorldPropDrag.pointerId === event.pointerId) {
+      event.preventDefault();
+      const nextPosition = resolveWorldPropDragPosition(activeWorldPropDrag.propId, event);
+      if (nextPosition) {
+        onWorldPropPositionChange(activeWorldPropDrag.propId, nextPosition);
       }
       return;
     }
@@ -149,6 +182,17 @@ export function attachVolumeViewerPointerLifecycle({
       return;
     }
 
+    if (activeWorldPropDrag && activeWorldPropDrag.pointerId === event.pointerId) {
+      event.preventDefault();
+      activeWorldPropDrag = null;
+      try {
+        domElement.releasePointerCapture(event.pointerId);
+      } catch {
+        // Ignore.
+      }
+      return;
+    }
+
     updateVoxelHover(event);
     performHoverHitTest(event);
 
@@ -163,6 +207,14 @@ export function attachVolumeViewerPointerLifecycle({
     if (paint && activePointerId !== null && activePointerId === event.pointerId) {
       paint.onStrokeEnd();
       paintStrokePointerIdRef.current = null;
+    }
+    if (activeWorldPropDrag && activeWorldPropDrag.pointerId === event.pointerId) {
+      activeWorldPropDrag = null;
+      try {
+        domElement.releasePointerCapture(event.pointerId);
+      } catch {
+        // Ignore.
+      }
     }
     clearHoverState('pointer');
     clearVoxelHover();

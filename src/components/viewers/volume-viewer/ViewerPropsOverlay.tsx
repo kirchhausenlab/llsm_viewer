@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ViewerPropsConfig } from '../VolumeViewer.types';
+import {
+  isViewerPropVisibleAtTimepoint,
+  resolveViewerPropDisplayText,
+  resolveViewerPropTypefaceStack,
+} from '../viewer-shell/viewerPropDefaults';
 
 type ViewerPropsOverlayProps = {
   surfaceNode: HTMLDivElement | null;
@@ -31,12 +36,27 @@ export function ViewerPropsOverlay({
     startY: number;
   } | null>(null);
   const editingEnabled = viewerPropsConfig?.isEditing ?? false;
-  const visibleProps = useMemo(
-    () =>
-      (viewerPropsConfig?.props ?? []).filter(
-        (prop) => prop.dimension === '2d' && prop.visible
-      ),
-    [viewerPropsConfig?.props]
+  const renderedProps = useMemo(
+    () => {
+      const currentTimepoint = viewerPropsConfig?.currentTimepoint ?? 1;
+      const totalTimepoints = viewerPropsConfig?.totalTimepoints ?? 1;
+
+      return (viewerPropsConfig?.props ?? []).filter((prop) => {
+        if (prop.dimension !== '2d' || prop.type === 'scalebar') {
+          return false;
+        }
+
+        const contentVisible =
+          prop.visible && isViewerPropVisibleAtTimepoint(prop, currentTimepoint, totalTimepoints);
+        return editingEnabled || contentVisible;
+      });
+    },
+    [
+      editingEnabled,
+      viewerPropsConfig?.currentTimepoint,
+      viewerPropsConfig?.props,
+      viewerPropsConfig?.totalTimepoints,
+    ]
   );
 
   useEffect(() => {
@@ -69,7 +89,7 @@ export function ViewerPropsOverlay({
     return undefined;
   }, [surfaceNode]);
 
-  if (visibleProps.length === 0) {
+  if (renderedProps.length === 0) {
     return null;
   }
 
@@ -82,7 +102,14 @@ export function ViewerPropsOverlay({
       }
       aria-hidden={!editingEnabled}
     >
-      {visibleProps.map((prop) => {
+      {renderedProps.map((prop) => {
+        const contentVisible =
+          prop.visible &&
+          isViewerPropVisibleAtTimepoint(
+            prop,
+            viewerPropsConfig?.currentTimepoint ?? 1,
+            viewerPropsConfig?.totalTimepoints ?? 1
+          );
         const isSelected = prop.id === viewerPropsConfig?.selectedPropId;
         const outlineColor = isSelected
           ? 'rgba(247, 222, 111, 0.96)'
@@ -95,6 +122,12 @@ export function ViewerPropsOverlay({
           `rotate(${prop.screen.rotation}deg)`,
           `scale(${prop.screen.flipX ? -1 : 1}, ${prop.screen.flipY ? -1 : 1})`,
         ].join(' ');
+        const displayText = resolveViewerPropDisplayText(
+          prop,
+          viewerPropsConfig?.currentTimepoint ?? 1,
+          viewerPropsConfig?.totalTimepoints ?? 1,
+          viewerPropsConfig?.temporalResolution ?? null
+        );
 
         return (
           <div
@@ -102,8 +135,12 @@ export function ViewerPropsOverlay({
             className={
               editingEnabled
                 ? isSelected
-                  ? 'viewer-prop viewer-prop--selected'
-                  : 'viewer-prop'
+                  ? contentVisible
+                    ? 'viewer-prop viewer-prop--selected'
+                    : 'viewer-prop viewer-prop--selected viewer-prop--content-hidden'
+                  : contentVisible
+                    ? 'viewer-prop'
+                    : 'viewer-prop viewer-prop--content-hidden'
                 : 'viewer-prop viewer-prop--display-only'
             }
             role={editingEnabled ? 'button' : undefined}
@@ -113,6 +150,11 @@ export function ViewerPropsOverlay({
               top: `${prop.screen.y * 100}%`,
               color: prop.color,
               fontSize: `${fontSize}px`,
+              fontFamily: resolveViewerPropTypefaceStack(prop.typeface),
+              fontWeight: prop.bold ? 900 : 400,
+              fontStyle: prop.italic ? 'italic' : 'normal',
+              textDecorationLine: prop.underline ? 'underline' : 'none',
+              textUnderlineOffset: prop.underline ? '0.14em' : undefined,
               maxWidth: `${Math.max(120, surfaceSize.width * 0.82)}px`,
               padding: `${paddingY}px ${paddingX}px`,
               transform,
@@ -179,7 +221,13 @@ export function ViewerPropsOverlay({
               dragStateRef.current = null;
             }}
           >
-            <div className="viewer-prop-content">{prop.text}</div>
+            <div
+              className="viewer-prop-content"
+              style={{ opacity: contentVisible ? 1 : 0 }}
+              aria-hidden={!contentVisible}
+            >
+              {displayText}
+            </div>
           </div>
         );
       })}

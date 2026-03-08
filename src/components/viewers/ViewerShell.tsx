@@ -130,6 +130,12 @@ function ViewerShell({
     viewerMode,
     playbackControls
   });
+  const playbackState = playbackControlsWithRecording;
+  const totalViewerPropTimepoints = Math.max(1, playbackState.volumeTimepointCount);
+  const currentViewerPropTimepoint = Math.min(
+    totalViewerPropTimepoints,
+    Math.max(1, playbackState.selectedIndex + 1)
+  );
 
   const {
     paintbrushController,
@@ -173,7 +179,11 @@ function ViewerShell({
     hasTrackData,
     canShowPlotSettings: selectedTracksPanel.shouldRender
   });
-  const propsController = useViewerPropsState({ volumeDimensions });
+  const propsController = useViewerPropsState({
+    volumeDimensions,
+    totalTimepoints: totalViewerPropTimepoints,
+    voxelResolution: volumeViewerProps.voxelResolution ?? null,
+  });
 
   const showRenderingQualityControl = modeControls.is3dModeAvailable && modeControls.samplingMode === 'linear';
 
@@ -184,8 +194,6 @@ function ViewerShell({
     onRenderingQualityChange: handleRenderingQualityChange,
     hasVolumeData
   });
-
-  const playbackState = playbackControlsWithRecording;
 
   const topMenuProps = useMemo(
     () => ({
@@ -247,8 +255,13 @@ function ViewerShell({
         props: propsController.props,
         selectedPropId: propsController.selectedPropId,
         isEditing: isPropsWindowOpen,
+        currentTimepoint: currentViewerPropTimepoint,
+        totalTimepoints: totalViewerPropTimepoints,
+        temporalResolution: volumeViewerProps.temporalResolution ?? null,
+        voxelResolution: volumeViewerProps.voxelResolution ?? null,
         onSelectProp: propsController.selectProp,
-        onUpdateScreenPosition: propsController.updateScreenPosition
+        onUpdateScreenPosition: propsController.updateScreenPosition,
+        onUpdateWorldPosition: propsController.updateWorldPosition,
       }
     }),
     [
@@ -257,6 +270,10 @@ function ViewerShell({
       propsController.selectProp,
       propsController.selectedPropId,
       propsController.updateScreenPosition,
+      propsController.updateWorldPosition,
+      currentViewerPropTimepoint,
+      totalViewerPropTimepoints,
+      volumeViewerProps.temporalResolution,
       volumeViewerWithCaptureTarget
     ]
   );
@@ -322,6 +339,10 @@ function ViewerShell({
         props={propsController.props}
         selectedPropId={propsController.selectedPropId}
         volumeDimensions={volumeDimensions}
+        currentTimepoint={currentViewerPropTimepoint}
+        totalTimepoints={totalViewerPropTimepoints}
+        temporalResolution={volumeViewerProps.temporalResolution ?? null}
+        voxelResolution={volumeViewerProps.voxelResolution ?? null}
         onCreateProp={propsController.createProp}
         onSelectProp={propsController.selectProp}
         onUpdateProp={propsController.updateProp}

@@ -136,11 +136,13 @@ function createPointerEvent(
     rotationTargetRef: { current: new THREE.Vector3() },
     updateVoxelHover: () => {},
     performPropHitTest: () => null,
+    resolveWorldPropDragPosition: () => null,
     performHoverHitTest: () => null,
     clearHoverState: () => {},
     clearVoxelHover: () => {},
     resolveHoveredFollowTarget: () => null,
     onPropSelect: () => {},
+    onWorldPropPositionChange: () => {},
     onTrackSelectionToggle: () => {},
     onVoxelFollowRequest: () => {},
     beginPointerLook: () => {
@@ -198,11 +200,13 @@ function createPointerEvent(
     rotationTargetRef: { current: new THREE.Vector3() },
     updateVoxelHover: () => {},
     performPropHitTest: () => null,
+    resolveWorldPropDragPosition: () => null,
     performHoverHitTest: () => null,
     clearHoverState: () => {},
     clearVoxelHover: () => {},
     resolveHoveredFollowTarget: () => null,
     onPropSelect: () => {},
+    onWorldPropPositionChange: () => {},
     onTrackSelectionToggle: () => {},
     onVoxelFollowRequest: () => {},
     beginPointerLook: () => {
@@ -260,6 +264,7 @@ function createPointerEvent(
     rotationTargetRef: { current: new THREE.Vector3() },
     updateVoxelHover: () => {},
     performPropHitTest: () => 'viewer-prop-7',
+    resolveWorldPropDragPosition: () => ({ x: 0, y: 0 }),
     performHoverHitTest: () => null,
     clearHoverState: () => {},
     clearVoxelHover: () => {},
@@ -267,6 +272,7 @@ function createPointerEvent(
     onPropSelect: (propId) => {
       selectedPropId = propId;
     },
+    onWorldPropPositionChange: () => {},
     onTrackSelectionToggle: () => {},
     onVoxelFollowRequest: () => {},
     beginPointerLook: () => {
@@ -284,6 +290,76 @@ function createPointerEvent(
 
   assert.equal(selectedPropId, 'viewer-prop-7', '3D prop hit should select the prop');
   assert.equal(pointerLookCounters.begin, 0, '3D prop hit should suppress pointer-look');
+  detach();
+})();
+
+(() => {
+  const domElement = createFakeCanvas();
+  const controls = { target: new THREE.Vector3() } as unknown as import('three/examples/jsm/controls/OrbitControls').OrbitControls;
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+  const pointerLookCounters = { begin: 0, move: 0, end: 0 };
+  const draggedPositions: Array<{ x: number; y: number }> = [];
+
+  const detach = attachVolumeViewerPointerLifecycle({
+    domElement,
+    camera,
+    controls,
+    layersRef: { current: [] },
+    resourcesRef: { current: new Map<string, VolumeResources>() },
+    volumeRootGroupRef: { current: null },
+    paintbrushRef: {
+      current: {
+        enabled: false,
+        onStrokeStart: () => {},
+        onStrokeApply: () => {},
+        onStrokeEnd: () => {},
+      },
+    },
+    paintStrokePointerIdRef: { current: null },
+    hoverIntensityRef: { current: null },
+    followTargetActiveRef: { current: false },
+    followedTrackIdRef: { current: null },
+    rotationTargetRef: { current: new THREE.Vector3() },
+    updateVoxelHover: () => {},
+    performPropHitTest: () => 'viewer-prop-9',
+    resolveWorldPropDragPosition: (_propId, event) => ({
+      x: event.clientX / 10,
+      y: event.clientY / 10,
+    }),
+    performHoverHitTest: () => null,
+    clearHoverState: () => {},
+    clearVoxelHover: () => {},
+    resolveHoveredFollowTarget: () => null,
+    onPropSelect: () => {},
+    onWorldPropPositionChange: (_propId, nextPosition) => {
+      draggedPositions.push(nextPosition);
+    },
+    onTrackSelectionToggle: () => {},
+    onVoxelFollowRequest: () => {},
+    beginPointerLook: () => {
+      pointerLookCounters.begin += 1;
+    },
+    updatePointerLook: () => {
+      pointerLookCounters.move += 1;
+    },
+    endPointerLook: () => {
+      pointerLookCounters.end += 1;
+    },
+  });
+
+  domElement.emitPointer('pointerdown', createPointerEvent({ pointerId: 11, clientX: 80, clientY: 90 }));
+  domElement.emitPointer('pointermove', createPointerEvent({ pointerId: 11, clientX: 100, clientY: 120 }));
+  domElement.emitPointer('pointerup', createPointerEvent({ pointerId: 11, clientX: 110, clientY: 130 }));
+
+  assert.deepEqual(
+    draggedPositions,
+    [{ x: 10, y: 12 }],
+    '3D prop drag should emit world-space X/Y updates while dragging'
+  );
+  assert.equal(pointerLookCounters.begin, 0, '3D prop drag should suppress pointer-look start');
+  assert.equal(pointerLookCounters.move, 0, '3D prop drag should suppress pointer-look updates');
+  assert.equal(pointerLookCounters.end, 0, '3D prop drag should suppress pointer-look end');
+  assert.equal(domElement.capturedPointers.has(11), false, '3D prop drag should release pointer capture');
   detach();
 })();
 

@@ -1,5 +1,9 @@
 import type { VolumeDataType } from '../../../types/volume';
-import type { AnisotropyScaleFactors, VoxelResolutionValues } from '../../../types/voxelResolution';
+import type {
+  AnisotropyScaleFactors,
+  TemporalResolutionMetadata,
+  VoxelResolutionValues
+} from '../../../types/voxelResolution';
 
 export const PREPROCESSED_DATASET_FORMAT = 'llsm-viewer-preprocessed-vnext-hes1' as const;
 
@@ -142,7 +146,8 @@ export type PreprocessedManifest = {
     totalVolumeCount: number;
     channels: PreprocessedChannelManifest[];
     trackSets: PreprocessedTrackSetManifestEntry[];
-    voxelResolution?: VoxelResolutionValues | null;
+    voxelResolution: VoxelResolutionValues;
+    temporalResolution: TemporalResolutionMetadata;
     anisotropyCorrection?: AnisotropyCorrectionMetadata | null;
     backgroundMask?: PreprocessedBackgroundMaskManifest | null;
   };

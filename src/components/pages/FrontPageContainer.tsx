@@ -150,6 +150,22 @@ export default function FrontPageContainer({
     handleVoxelResolutionTimeUnitChange,
     handleVoxelResolutionAnisotropyToggle
   } = voxelResolution;
+  const temporalResolutionValue = useMemo(() => {
+    const rawValue = voxelResolutionInput.t.trim();
+    if (rawValue.length === 0) {
+      return null;
+    }
+
+    const interval = Number(rawValue);
+    if (!Number.isFinite(interval) || interval <= 0) {
+      return null;
+    }
+
+    return {
+      interval,
+      unit: voxelResolutionInput.timeUnit
+    };
+  }, [voxelResolutionInput.t, voxelResolutionInput.timeUnit]);
 
   const preprocessedState = usePreprocessedExperiment({
     channels,
@@ -300,8 +316,8 @@ export default function FrontPageContainer({
       return;
     }
 
-    if (!voxelResolutionValue) {
-      showInteractionWarning('Fill in all voxel resolution fields before preprocessing.');
+    if (!voxelResolutionValue || !temporalResolutionValue) {
+      showInteractionWarning('Fill in all spatial and temporal resolution fields before preprocessing.');
       return;
     }
 
@@ -408,6 +424,7 @@ export default function FrontPageContainer({
         channels: channelsMetadata,
         trackSets: trackSetsMetadata,
         voxelResolution: voxelResolutionValue,
+        temporalResolution: temporalResolutionValue,
         movieMode: '3d',
         inputInterpretation: selectedExperimentType,
         backgroundMask: backgroundMaskEnabled
@@ -456,6 +473,7 @@ export default function FrontPageContainer({
     showInteractionWarning,
     tracks,
     selectedExperimentType,
+    temporalResolutionValue,
     voxelResolutionValue
   ]);
 

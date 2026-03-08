@@ -8,6 +8,7 @@ test('viewer props state creates sequential prop names and keeps selection in sy
   const hook = renderHook(() =>
     useViewerPropsState({
       volumeDimensions: { width: 120, height: 80, depth: 32 },
+      totalTimepoints: 7,
     })
   );
 
@@ -20,6 +21,13 @@ test('viewer props state creates sequential prop names and keeps selection in sy
   assert.equal(hook.result.props[0].name, 'Prop #1');
   assert.equal(hook.result.props[1].name, 'Prop #2');
   assert.equal(hook.result.props[0].text, 'Add text here');
+  assert.equal(hook.result.props[0].timestampUnits, 'index');
+  assert.equal(hook.result.props[0].scalebar.axis, 'x');
+  assert.equal(hook.result.props[0].scalebar.length, 10);
+  assert.equal(hook.result.props[0].scalebar.unit, 'μm');
+  assert.equal(hook.result.props[0].scalebar.showText, true);
+  assert.equal(hook.result.props[0].initialTimepoint, 1);
+  assert.equal(hook.result.props[0].finalTimepoint, 7);
   assert.equal(hook.result.props[0].screen.x, 0.5);
   assert.equal(hook.result.props[0].screen.y, 0.5);
   assert.equal(hook.result.selectedPropId, hook.result.props[1].id);
@@ -36,10 +44,29 @@ test('viewer props state creates sequential prop names and keeps selection in sy
   hook.unmount();
 });
 
+test('viewer props state seeds scalebar defaults from voxel resolution metadata', () => {
+  const hook = renderHook(() =>
+    useViewerPropsState({
+      volumeDimensions: { width: 120, height: 80, depth: 32 },
+      totalTimepoints: 7,
+      voxelResolution: { x: 10, y: 12, z: 20, unit: 'nm', correctAnisotropy: false },
+    })
+  );
+
+  hook.act(() => {
+    hook.result.createProp();
+  });
+
+  assert.equal(hook.result.props[0].scalebar.length, 150);
+  assert.equal(hook.result.props[0].scalebar.unit, 'nm');
+  hook.unmount();
+});
+
 test('viewer props state clamps screen drag positions', () => {
   const hook = renderHook(() =>
     useViewerPropsState({
       volumeDimensions: { width: 64, height: 64, depth: 16 },
+      totalTimepoints: 5,
     })
   );
 
@@ -61,6 +88,7 @@ test('viewer props state supports bulk visibility and clear all', () => {
   const hook = renderHook(() =>
     useViewerPropsState({
       volumeDimensions: { width: 64, height: 64, depth: 16 },
+      totalTimepoints: 4,
     })
   );
 
@@ -78,5 +106,13 @@ test('viewer props state supports bulk visibility and clear all', () => {
 
   assert.equal(hook.result.props.length, 0);
   assert.equal(hook.result.selectedPropId, null);
+
+  hook.act(() => {
+    hook.result.createProp();
+  });
+
+  assert.equal(hook.result.props.length, 1);
+  assert.equal(hook.result.props[0].id, 'viewer-prop-1');
+  assert.equal(hook.result.props[0].name, 'Prop #1');
   hook.unmount();
 });

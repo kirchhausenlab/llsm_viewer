@@ -22,6 +22,7 @@ type CreateVolumeViewerRenderLoopOptions = {
   ) => void;
   rotationTargetRef: MutableRefObject<THREE.Vector3>;
   updateTrackAppearance: (timestamp: number) => void;
+  refreshViewerProps: () => void;
   followTargetActiveRef: MutableRefObject<boolean>;
   followTargetOffsetRef: MutableRefObject<THREE.Vector3 | null>;
   resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
@@ -46,6 +47,7 @@ export function createVolumeViewerRenderLoop({
   applyKeyboardMovement,
   rotationTargetRef,
   updateTrackAppearance,
+  refreshViewerProps,
   followTargetActiveRef,
   followTargetOffsetRef,
   resourcesRef,
@@ -74,6 +76,7 @@ export function createVolumeViewerRenderLoop({
     rotationTargetRef.current.copy(controls.target);
 
     updateTrackAppearance(timestamp);
+    refreshViewerProps();
 
     if (followTargetActiveRef.current) {
       const rotationTarget = rotationTargetRef.current;
