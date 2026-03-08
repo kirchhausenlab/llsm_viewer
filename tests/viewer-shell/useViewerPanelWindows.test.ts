@@ -14,6 +14,7 @@ test('viewer panel window controls open and close the requested windows', () => 
   );
 
   assert.equal(hook.result.isChannelsWindowOpen, true);
+  assert.equal(hook.result.isPropsWindowOpen, false);
   assert.equal(hook.result.isTracksWindowOpen, true);
   assert.equal(hook.result.isAmplitudePlotOpen, true);
   assert.equal(hook.result.isViewerSettingsOpen, false);
@@ -35,11 +36,13 @@ test('viewer panel window controls open and close the requested windows', () => 
     hook.result.openViewerSettings();
     hook.result.openTrackSettings();
     hook.result.openAmplitudePlot();
+    hook.result.openPropsWindow();
     hook.result.openPaintbrush();
     hook.result.openDiagnosticsWindow();
   });
 
   assert.equal(hook.result.isViewerSettingsOpen, true);
+  assert.equal(hook.result.isPropsWindowOpen, true);
   assert.equal(hook.result.isTracksWindowOpen, true);
   assert.equal(hook.result.isTrackSettingsOpen, true);
   assert.equal(hook.result.isAmplitudePlotOpen, true);
@@ -84,6 +87,7 @@ test('viewer panel windows react to availability changes and reset layout events
 
   hook.act(() => {
     hook.result.closeChannelsWindow();
+    hook.result.openPropsWindow();
     hook.result.closeTracksWindow();
     hook.result.closeAmplitudePlot();
     hook.result.openViewerSettings();
@@ -97,6 +101,7 @@ test('viewer panel windows react to availability changes and reset layout events
   hook.rerender();
 
   assert.equal(hook.result.isChannelsWindowOpen, true);
+  assert.equal(hook.result.isPropsWindowOpen, false);
   assert.equal(hook.result.isTracksWindowOpen, true);
   assert.equal(hook.result.isAmplitudePlotOpen, true);
   assert.equal(hook.result.isViewerSettingsOpen, false);

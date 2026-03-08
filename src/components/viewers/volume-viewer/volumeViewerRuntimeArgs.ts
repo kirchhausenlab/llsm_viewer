@@ -128,10 +128,12 @@ export type VolumeViewerLifecycleOptionGroups = {
     | 'hoverIntensityRef'
     | 'followedTrackIdRef'
     | 'updateVoxelHover'
+    | 'performPropHitTest'
     | 'performHoverHitTest'
     | 'clearHoverState'
     | 'clearVoxelHover'
     | 'resolveHoveredFollowTarget'
+    | 'onPropSelect'
     | 'onTrackSelectionToggle'
     | 'onVoxelFollowRequest'
   >;

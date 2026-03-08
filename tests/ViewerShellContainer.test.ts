@@ -91,6 +91,7 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
       viewerSettingsWindowInitialPosition: { x: 0, y: 0 },
       layersWindowInitialPosition: { x: 0, y: 0 },
       paintbrushWindowInitialPosition: { x: 0, y: 0 },
+      propsWindowInitialPosition: { x: 0, y: 0 },
       trackWindowInitialPosition: { x: 0, y: 0 },
       selectedTracksWindowInitialPosition: { x: 0, y: 0 },
       plotSettingsWindowInitialPosition: { x: 0, y: 0 },

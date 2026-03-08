@@ -9,10 +9,12 @@ import type {
 import { LoadingOverlay } from './volume-viewer/LoadingOverlay';
 import { TrackTooltip } from './volume-viewer/TrackTooltip';
 import { HoverDebug } from './volume-viewer/HoverDebug';
+import { ViewerPropsOverlay } from './volume-viewer/ViewerPropsOverlay';
 import { VolumeViewerVrAdapter } from './volume-viewer/VolumeViewerVrAdapter';
 import { TrackCameraPresenter } from './volume-viewer/TrackCameraPresenter';
 import { useVolumeHover } from './volume-viewer/useVolumeHover';
 import { useVolumeViewerVrBridge } from './volume-viewer/useVolumeViewerVrBridge';
+import { useViewerPropsRendering } from './volume-viewer/useViewerPropsRendering';
 import { useCameraControls } from './volume-viewer/useCameraControls';
 import { useTrackRendering } from './volume-viewer/useTrackRendering';
 import { usePlaybackControls } from './volume-viewer/usePlaybackControls';
@@ -159,6 +161,7 @@ function VolumeViewer({
   onTrackFollowRequest,
   onVoxelFollowRequest,
   onHoverVoxelChange,
+  viewerPropsConfig,
   paintbrush,
   vr
 }: VolumeViewerProps) {
@@ -562,6 +565,14 @@ function VolumeViewer({
     hasActive3DLayerRef,
     updateVolumeHandles,
   });
+  const { performPropHitTest } = useViewerPropsRendering({
+    viewerPropsConfig,
+    renderContextRevision,
+    volumeRootGroupRef,
+    rendererRef,
+    cameraRef,
+    hoverRaycasterRef,
+  });
   useVolumeViewerResources({
     layers,
     playbackWarmupLayers,
@@ -708,10 +719,12 @@ function VolumeViewer({
       hoverIntensityRef,
       followedTrackIdRef,
       updateVoxelHover,
+      performPropHitTest,
       performHoverHitTest,
       clearHoverState,
       clearVoxelHover,
       resolveHoveredFollowTarget,
+      onPropSelect: viewerPropsConfig?.onSelectProp ?? (() => {}),
       onTrackSelectionToggle,
       onVoxelFollowRequest,
     },
@@ -788,6 +801,7 @@ function VolumeViewer({
       <section className="viewer-surface">
         <LoadingOverlay visible={showLoadingOverlay} />
         <div className={`render-surface${hasMeasured ? ' is-ready' : ''}`} ref={handleContainerRef}>
+          <ViewerPropsOverlay surfaceNode={containerNode} viewerPropsConfig={viewerPropsConfig} />
           <TrackTooltip label={hoveredTrackLabel} position={tooltipPosition} />
           <HoverDebug message={isDevMode ? voxelHoverDebug : null} />
         </div>

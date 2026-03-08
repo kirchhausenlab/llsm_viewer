@@ -29,10 +29,12 @@ type AttachVolumeViewerPointerLifecycleParams = PointerLookHandlers & {
   followedTrackIdRef: MutableRefObject<string | null>;
   rotationTargetRef: MutableRefObject<THREE.Vector3>;
   updateVoxelHover: (event: PointerEvent | MouseEvent) => void;
+  performPropHitTest: (event: PointerEvent) => string | null;
   performHoverHitTest: (event: PointerEvent) => string | null;
   clearHoverState: (source?: 'pointer' | 'controller') => void;
   clearVoxelHover: () => void;
   resolveHoveredFollowTarget: () => FollowedVoxelTarget | null;
+  onPropSelect: (propId: string) => void;
   onTrackSelectionToggle: (trackId: string) => void;
   onVoxelFollowRequest: (target: FollowedVoxelTarget) => void;
 };
@@ -51,10 +53,12 @@ export function attachVolumeViewerPointerLifecycle({
   followedTrackIdRef,
   rotationTargetRef,
   updateVoxelHover,
+  performPropHitTest,
   performHoverHitTest,
   clearHoverState,
   clearVoxelHover,
   resolveHoveredFollowTarget,
+  onPropSelect,
   onTrackSelectionToggle,
   onVoxelFollowRequest,
   beginPointerLook,
@@ -81,6 +85,12 @@ export function attachVolumeViewerPointerLifecycle({
       if (hovered) {
         paint.onStrokeApply(hovered.coordinates);
       }
+      return;
+    }
+
+    const hitPropId = performPropHitTest(event);
+    if (hitPropId !== null) {
+      onPropSelect(hitPropId);
       return;
     }
 

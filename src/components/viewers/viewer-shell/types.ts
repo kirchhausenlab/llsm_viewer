@@ -47,6 +47,7 @@ export type TopMenuProps = TopMenuChromeProps &
     };
     hoverIntensityValueDigits: number;
     onOpenChannelsWindow: () => void;
+    onOpenPropsWindow: () => void;
     onOpenPaintbrush: () => void;
     onOpenRenderSettingsWindow: () => void;
     onOpenTracksWindow: () => void;
@@ -229,6 +230,7 @@ export type LayoutProps = {
   viewerSettingsWindowInitialPosition: Position;
   layersWindowInitialPosition: Position;
   paintbrushWindowInitialPosition: Position;
+  propsWindowInitialPosition: Position;
   trackWindowInitialPosition: Position;
   selectedTracksWindowInitialPosition: Position;
   plotSettingsWindowInitialPosition: Position;

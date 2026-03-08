@@ -5,12 +5,14 @@ import ChannelsPanel from './viewer-shell/ChannelsPanel';
 import NavigationHelpWindow, { computeNavigationHelpInitialPosition } from './viewer-shell/NavigationHelpWindow';
 import PaintbrushWindow from './viewer-shell/PaintbrushWindow';
 import PlotSettingsPanel from './viewer-shell/PlotSettingsPanel';
+import PropsWindow from './viewer-shell/PropsWindow';
 import TopMenu from './viewer-shell/TopMenu';
 import TracksPanel from './viewer-shell/TracksPanel';
 import ViewerSettingsWindow from './viewer-shell/ViewerSettingsWindow';
 import { useViewerModeControls } from './viewer-shell/hooks/useViewerModeControls';
 import { useViewerPaintbrushIntegration } from './viewer-shell/hooks/useViewerPaintbrushIntegration';
 import { useViewerPanelWindows } from './viewer-shell/hooks/useViewerPanelWindows';
+import { useViewerPropsState } from './viewer-shell/hooks/useViewerPropsState';
 import { useViewerRecording } from './viewer-shell/hooks/useViewerRecording';
 import type { ViewerShellProps } from './viewer-shell/types';
 import { formatIntensityValue } from '../../shared/utils/intensityFormatting';
@@ -39,6 +41,7 @@ function ViewerShell({
     viewerSettingsWindowInitialPosition,
     layersWindowInitialPosition,
     paintbrushWindowInitialPosition,
+    propsWindowInitialPosition,
     trackWindowInitialPosition,
     selectedTracksWindowInitialPosition,
     plotSettingsWindowInitialPosition,
@@ -94,7 +97,25 @@ function ViewerShell({
 
     return maxDigits;
   }, [channelLayersMap]);
+  const volumeDimensions = useMemo(() => {
+    let maxWidth = 1;
+    let maxHeight = 1;
+    let maxDepth = 1;
 
+    for (const channelLayers of channelLayersMap.values()) {
+      for (const layer of channelLayers) {
+        maxWidth = Math.max(maxWidth, layer.width);
+        maxHeight = Math.max(maxHeight, layer.height);
+        maxDepth = Math.max(maxDepth, layer.depth);
+      }
+    }
+
+    return {
+      width: maxWidth,
+      height: maxHeight,
+      depth: maxDepth
+    };
+  }, [channelLayersMap]);
   const [renderingQuality, setRenderingQuality] = useState(1.1);
 
   const handleRenderingQualityChange = (value: number) => {
@@ -124,6 +145,9 @@ function ViewerShell({
     isChannelsWindowOpen,
     openChannelsWindow,
     closeChannelsWindow,
+    isPropsWindowOpen,
+    openPropsWindow,
+    closePropsWindow,
     isTracksWindowOpen,
     openTracksWindow,
     closeTracksWindow,
@@ -149,6 +173,7 @@ function ViewerShell({
     hasTrackData,
     canShowPlotSettings: selectedTracksPanel.shouldRender
   });
+  const propsController = useViewerPropsState({ volumeDimensions });
 
   const showRenderingQualityControl = modeControls.is3dModeAvailable && modeControls.samplingMode === 'linear';
 
@@ -166,6 +191,7 @@ function ViewerShell({
     () => ({
       ...topMenu,
       onOpenChannelsWindow: openChannelsWindow,
+      onOpenPropsWindow: openPropsWindow,
       onOpenPaintbrush: openPaintbrush,
       onOpenRenderSettingsWindow: openViewerSettings,
       onOpenTracksWindow: openTracksWindow,
@@ -206,6 +232,7 @@ function ViewerShell({
       openChannelsWindow,
       openDiagnosticsWindow,
       openPaintbrush,
+      openPropsWindow,
       openTrackSettings,
       openTracksWindow,
       openViewerSettings,
@@ -213,12 +240,32 @@ function ViewerShell({
       topMenu
     ]
   );
+  const volumeViewerPropsWithViewerProps = useMemo(
+    () => ({
+      ...volumeViewerWithCaptureTarget,
+      viewerPropsConfig: {
+        props: propsController.props,
+        selectedPropId: propsController.selectedPropId,
+        isEditing: isPropsWindowOpen,
+        onSelectProp: propsController.selectProp,
+        onUpdateScreenPosition: propsController.updateScreenPosition
+      }
+    }),
+    [
+      isPropsWindowOpen,
+      propsController.props,
+      propsController.selectProp,
+      propsController.selectedPropId,
+      propsController.updateScreenPosition,
+      volumeViewerWithCaptureTarget
+    ]
+  );
 
   return (
     <div className="app">
       <main className="viewer">
         <VolumeViewer
-          {...volumeViewerWithCaptureTarget}
+          {...volumeViewerPropsWithViewerProps}
           isDiagnosticsWindowOpen={isDiagnosticsWindowOpen}
           onCloseDiagnosticsWindow={closeDiagnosticsWindow}
           windowResetSignal={resetToken}
@@ -263,6 +310,25 @@ function ViewerShell({
           onClose={closePaintbrush}
         />
       ) : null}
+
+      <PropsWindow
+        layout={{
+          windowMargin,
+          propsWindowInitialPosition,
+          resetToken
+        }}
+        isOpen={isPropsWindowOpen}
+        onClose={closePropsWindow}
+        props={propsController.props}
+        selectedPropId={propsController.selectedPropId}
+        volumeDimensions={volumeDimensions}
+        onCreateProp={propsController.createProp}
+        onSelectProp={propsController.selectProp}
+        onUpdateProp={propsController.updateProp}
+        onSetAllVisible={propsController.setAllVisible}
+        onClearProps={propsController.clearProps}
+        onDeleteProp={propsController.deleteProp}
+      />
 
       <ViewerSettingsWindow
         layout={{

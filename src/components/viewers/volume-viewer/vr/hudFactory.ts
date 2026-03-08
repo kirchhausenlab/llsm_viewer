@@ -75,7 +75,7 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
     context.clearRect(0, 0, width, height);
     context.fillStyle = 'rgba(0, 0, 0, 0)';
     context.fillRect(0, 0, width, height);
-    context.font = '600 60px "Inter", "Helvetica Neue", Arial, sans-serif';
+    context.font = '600 60px "Inter", "Segoe UI", sans-serif';
     context.textAlign = 'center';
     context.textBaseline = 'middle';
     context.fillStyle = '#ffffff';

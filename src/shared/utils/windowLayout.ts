@@ -4,6 +4,7 @@ export const WINDOW_MARGIN = 24;
 export const TOP_MENU_HEIGHT = 52;
 export const TOP_MENU_WINDOW_PADDING = 12;
 export const CONTROL_WINDOW_WIDTH = 360;
+export const PROPS_WINDOW_WIDTH = 400;
 export const SELECTED_TRACKS_WINDOW_WIDTH = 1120;
 export const SELECTED_TRACKS_WINDOW_HEIGHT = 220;
 export const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
@@ -43,6 +44,21 @@ export const computeViewerSettingsWindowDefaultPosition = (): WindowPosition => 
   const centeredY = Math.max(WINDOW_MARGIN, Math.round((viewportHeight - estimatedHeight) / 2));
 
   return { x: centeredX, y: centeredY };
+};
+
+export const computePropsWindowDefaultPosition = (): WindowPosition => {
+  const x = computeRightColumnX(PROPS_WINDOW_WIDTH);
+  const y = TOP_MENU_HEIGHT + TOP_MENU_WINDOW_PADDING + 96;
+
+  if (typeof window === 'undefined') {
+    return { x, y };
+  }
+
+  const viewportHeight = window.innerHeight;
+  const estimatedHeight = 560;
+  const maxY = Math.max(WINDOW_MARGIN, viewportHeight - estimatedHeight - WINDOW_MARGIN);
+
+  return { x, y: Math.min(y, maxY) };
 };
 
 export const computeTrackWindowDefaultPosition = (): WindowPosition => {

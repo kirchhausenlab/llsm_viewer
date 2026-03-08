@@ -16,7 +16,7 @@ export const VR_CHANNELS_VERTICAL_OFFSET = 0;
 export const VR_CHANNELS_CAMERA_ANCHOR_OFFSET = new THREE.Vector3(0.4, -0.18, -0.65);
 export const VR_CHANNELS_CANVAS_WIDTH = 1184;
 export const VR_CHANNELS_CANVAS_MIN_HEIGHT = 1184;
-export const VR_CHANNELS_FONT_FAMILY = '"Inter", "Helvetica Neue", Arial, sans-serif';
+export const VR_CHANNELS_FONT_FAMILY = '"Inter", "Segoe UI", sans-serif';
 export const vrChannelsFont = (weight: string, size: number) =>
   `${weight} ${size}px ${VR_CHANNELS_FONT_FAMILY}`;
 export const VR_CHANNELS_FONT_SIZES = {

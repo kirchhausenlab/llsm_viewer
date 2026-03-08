@@ -135,10 +135,12 @@ function createPointerEvent(
     followedTrackIdRef: { current: null },
     rotationTargetRef: { current: new THREE.Vector3() },
     updateVoxelHover: () => {},
+    performPropHitTest: () => null,
     performHoverHitTest: () => null,
     clearHoverState: () => {},
     clearVoxelHover: () => {},
     resolveHoveredFollowTarget: () => null,
+    onPropSelect: () => {},
     onTrackSelectionToggle: () => {},
     onVoxelFollowRequest: () => {},
     beginPointerLook: () => {
@@ -195,10 +197,12 @@ function createPointerEvent(
     followedTrackIdRef: { current: null },
     rotationTargetRef: { current: new THREE.Vector3() },
     updateVoxelHover: () => {},
+    performPropHitTest: () => null,
     performHoverHitTest: () => null,
     clearHoverState: () => {},
     clearVoxelHover: () => {},
     resolveHoveredFollowTarget: () => null,
+    onPropSelect: () => {},
     onTrackSelectionToggle: () => {},
     onVoxelFollowRequest: () => {},
     beginPointerLook: () => {
@@ -224,6 +228,62 @@ function createPointerEvent(
   assert.equal(pointerLookCounters.begin, 1, 'SHIFT drag should start pointer-look');
   assert.equal(pointerLookCounters.move, 1, 'SHIFT drag should update pointer-look');
   assert.equal(pointerLookCounters.end, 1, 'SHIFT drag should end pointer-look');
+  detach();
+})();
+
+(() => {
+  const domElement = createFakeCanvas();
+  const controls = { target: new THREE.Vector3() } as unknown as import('three/examples/jsm/controls/OrbitControls').OrbitControls;
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+  const pointerLookCounters = { begin: 0, move: 0, end: 0 };
+  let selectedPropId: string | null = null;
+
+  const detach = attachVolumeViewerPointerLifecycle({
+    domElement,
+    camera,
+    controls,
+    layersRef: { current: [] },
+    resourcesRef: { current: new Map<string, VolumeResources>() },
+    volumeRootGroupRef: { current: null },
+    paintbrushRef: {
+      current: {
+        enabled: false,
+        onStrokeStart: () => {},
+        onStrokeApply: () => {},
+        onStrokeEnd: () => {},
+      },
+    },
+    paintStrokePointerIdRef: { current: null },
+    hoverIntensityRef: { current: null },
+    followTargetActiveRef: { current: false },
+    followedTrackIdRef: { current: null },
+    rotationTargetRef: { current: new THREE.Vector3() },
+    updateVoxelHover: () => {},
+    performPropHitTest: () => 'viewer-prop-7',
+    performHoverHitTest: () => null,
+    clearHoverState: () => {},
+    clearVoxelHover: () => {},
+    resolveHoveredFollowTarget: () => null,
+    onPropSelect: (propId) => {
+      selectedPropId = propId;
+    },
+    onTrackSelectionToggle: () => {},
+    onVoxelFollowRequest: () => {},
+    beginPointerLook: () => {
+      pointerLookCounters.begin += 1;
+    },
+    updatePointerLook: () => {
+      pointerLookCounters.move += 1;
+    },
+    endPointerLook: () => {
+      pointerLookCounters.end += 1;
+    },
+  });
+
+  domElement.emitPointer('pointerdown', createPointerEvent({ pointerId: 3 }));
+
+  assert.equal(selectedPropId, 'viewer-prop-7', '3D prop hit should select the prop');
+  assert.equal(pointerLookCounters.begin, 0, '3D prop hit should suppress pointer-look');
   detach();
 })();
 

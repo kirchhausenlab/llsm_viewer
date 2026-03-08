@@ -4,6 +4,7 @@ import type { VolumeHandleCandidate } from '../useVolumeViewerVr.types';
 import { VR_UI_TOUCH_DISTANCE, VR_VOLUME_MAX_SCALE, VR_VOLUME_MIN_SCALE } from './constants';
 import { clampUiRayLength } from './controllerHudInteractions';
 import type { ControllerEntry, VrUiTarget } from './types';
+import { resolveVolumeRootScale } from './volume';
 import { computeYawAngleForBasis } from './viewerYaw';
 
 type VolumeDomainVectorTemps = {
@@ -210,11 +211,16 @@ export function resolveVolumeRayDomain({
       const anisX = Number.isFinite(anisotropy?.x) && anisotropy.x > 0 ? anisotropy.x : 1;
       const anisY = Number.isFinite(anisotropy?.y) && anisotropy.y > 0 ? anisotropy.y : 1;
       const anisZ = Number.isFinite(anisotropy?.z) && anisotropy.z > 0 ? anisotropy.z : 1;
-      volumeRootGroup.scale.set(
-        baseScale * nextUserScale * anisX,
-        baseScale * nextUserScale * anisY,
-        baseScale * nextUserScale * anisZ,
-      );
+      const resolvedScale = resolveVolumeRootScale({
+        normalizationScale: baseScale,
+        userScale: nextUserScale,
+        anisotropyScale: {
+          x: anisX,
+          y: anisY,
+          z: anisZ,
+        },
+      });
+      volumeRootGroup.scale.set(resolvedScale.x, resolvedScale.y, resolvedScale.z);
       applyVolumeYawPitch(volumeYawRef.current, volumePitchRef.current);
       scaleHandle.getWorldPosition(scaleHandleWorldPoint);
       entry.hoverUiPoint.copy(scaleHandleWorldPoint);

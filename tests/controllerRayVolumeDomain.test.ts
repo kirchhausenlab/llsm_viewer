@@ -149,8 +149,8 @@ const approxEqual = (actual: number, expected: number, tolerance = 1e-6) => {
 
   approxEqual(volumeUserScaleRef.current, 3);
   approxEqual(volumeRootGroup.scale.x, 3);
-  approxEqual(volumeRootGroup.scale.y, 1.5);
-  approxEqual(volumeRootGroup.scale.z, 4.5);
+  approxEqual(volumeRootGroup.scale.y, -1.5);
+  approxEqual(volumeRootGroup.scale.z, -4.5);
   assert.deepStrictEqual(applyVolumeYawPitchCalls, [{ yaw: 1.2, pitch: -0.4 }]);
   assert.strictEqual(entry.hasHoverUiPoint, true);
   assert.strictEqual(result.handleCandidateTarget?.type, 'volume-scale-handle');

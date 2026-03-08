@@ -139,6 +139,7 @@ function createProps(overrides: Partial<React.ComponentProps<typeof TopMenu>> = 
     hoverCoordinateDigits: { x: 1, y: 1, z: 1 },
     hoverIntensityValueDigits: 1,
     onOpenChannelsWindow: () => {},
+    onOpenPropsWindow: () => {},
     onOpenPaintbrush: () => {},
     onOpenRenderSettingsWindow: () => {},
     onOpenTracksWindow: () => {},
@@ -243,6 +244,7 @@ test('wired dropdown items invoke the expected handlers', () => {
     let exitCalls = 0;
     let resetCalls = 0;
     let channelsCalls = 0;
+    let propsCalls = 0;
     let paintbrushCalls = 0;
     let renderSettingsCalls = 0;
     let tracksCalls = 0;
@@ -260,6 +262,9 @@ test('wired dropdown items invoke the expected handlers', () => {
       },
       onOpenChannelsWindow: () => {
         channelsCalls += 1;
+      },
+      onOpenPropsWindow: () => {
+        propsCalls += 1;
       },
       onOpenPaintbrush: () => {
         paintbrushCalls += 1;
@@ -316,6 +321,13 @@ test('wired dropdown items invoke the expected handlers', () => {
       findDropdownTrigger(renderer, 'Edit').props.onClick();
     });
     act(() => {
+      findMenuItem(renderer, 'Props').props.onClick();
+    });
+
+    act(() => {
+      findDropdownTrigger(renderer, 'Edit').props.onClick();
+    });
+    act(() => {
       findMenuItem(renderer, 'Paintbrush').props.onClick();
     });
 
@@ -357,6 +369,7 @@ test('wired dropdown items invoke the expected handlers', () => {
     assert.equal(resetCalls, 1);
     assert.equal(exitCalls, 1);
     assert.equal(channelsCalls, 1);
+    assert.equal(propsCalls, 1);
     assert.equal(paintbrushCalls, 1);
     assert.equal(renderSettingsCalls, 1);
     assert.equal(tracksCalls, 1);

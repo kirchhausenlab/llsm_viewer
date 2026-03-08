@@ -35,6 +35,7 @@ export default function TopMenu(props: TopMenuProps) {
     onResetLayout,
     openHelpMenu,
     onOpenChannelsWindow,
+    onOpenPropsWindow,
     onOpenPaintbrush,
     onOpenRenderSettingsWindow,
     onOpenTracksWindow,
@@ -134,7 +135,7 @@ export default function TopMenu(props: TopMenuProps) {
         { label: 'Hover settings' }
       ],
       edit: [
-        { label: 'Props' },
+        { label: 'Props', onSelect: onOpenPropsWindow },
         { label: 'Paintbrush', onSelect: onOpenPaintbrush },
         { label: 'Measure' }
       ],
@@ -153,6 +154,7 @@ export default function TopMenu(props: TopMenuProps) {
       onOpenChannelsWindow,
       onOpenDiagnosticsWindow,
       onOpenPaintbrush,
+      onOpenPropsWindow,
       onOpenRenderSettingsWindow,
       onOpenTrackSettingsWindow,
       onOpenTracksWindow,

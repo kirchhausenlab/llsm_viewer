@@ -411,6 +411,68 @@ const createLayer = (
 
 (() => {
   const volume: NormalizedVolume = {
+    width: 4,
+    height: 6,
+    depth: 8,
+    channels: 1,
+    dataType: 'uint8',
+    normalized: new Uint8Array(4 * 6 * 8),
+    min: 0,
+    max: 1,
+  };
+
+  const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 10);
+  const defaultViewStateRef = { current: null as { position: THREE.Vector3; target: THREE.Vector3 } | null };
+  let saveStateCalls = 0;
+  const controls = {
+    target: new THREE.Vector3(),
+    update: () => {},
+    saveState: () => {
+      saveStateCalls += 1;
+    },
+  } as unknown as THREE.OrbitControls;
+
+  renderHook(() =>
+    useVolumeResources({
+      layers: [],
+      primaryVolume: volume,
+      isAdditiveBlending: false,
+      renderContextRevision: 0,
+      sceneRef: { current: new THREE.Scene() },
+      cameraRef: { current: camera },
+      controlsRef: { current: controls },
+      rotationTargetRef: { current: new THREE.Vector3() },
+      defaultViewStateRef,
+      trackGroupRef: { current: new THREE.Group() },
+      resourcesRef: { current: new Map<string, VolumeResources>() },
+      currentDimensionsRef: { current: null },
+      colormapCacheRef: { current: new Map() },
+      volumeRootGroupRef: { current: new THREE.Group() },
+      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+      volumeNormalizationScaleRef: { current: 1 },
+      volumeUserScaleRef: { current: 1 },
+      volumeStepScaleRef: { current: 1 },
+      volumeYawRef: { current: 0 },
+      volumePitchRef: { current: 0 },
+      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+      applyTrackGroupTransform: () => {},
+      applyVolumeRootTransform: () => {},
+      applyVolumeStepScaleToResources: () => {},
+      applyHoverHighlightToResources: () => {},
+    }),
+  );
+
+  assert.ok(camera.position.z > 0);
+  assert.deepStrictEqual(defaultViewStateRef.current?.position.toArray(), camera.position.toArray());
+  assert.deepStrictEqual(defaultViewStateRef.current?.target.toArray(), [0, 0, 0]);
+  assert.strictEqual(saveStateCalls, 1);
+})();
+
+(() => {
+  const volume: NormalizedVolume = {
     width: 2,
     height: 2,
     depth: 2,

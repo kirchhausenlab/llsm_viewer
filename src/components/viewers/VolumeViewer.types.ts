@@ -16,6 +16,7 @@ import type { HoveredVoxelInfo } from '../../types/hover';
 import type { PaintbrushStrokeHandlers } from '../../types/paintbrush';
 import type { TrackColorMode, TrackDefinition } from '../../types/tracks';
 import type { VolumeDataType } from '../../types/volume';
+import type { ViewerProp } from '../../types/viewerProps';
 import type { RenderStyle, SamplingMode } from '../../state/layerSettings';
 
 export type InstancedLineGeometry = LineGeometry & { instanceCount: number };
@@ -146,6 +147,14 @@ export type VolumeViewerVrProps = {
   onVrSessionEnded?: () => void;
 };
 
+export type ViewerPropsConfig = {
+  props: ViewerProp[];
+  selectedPropId: string | null;
+  isEditing: boolean;
+  onSelectProp: (propId: string) => void;
+  onUpdateScreenPosition: (propId: string, nextPosition: { x: number; y: number }) => void;
+};
+
 export type VolumeViewerProps = {
   layers: ViewerLayer[];
   playbackWarmupLayers?: ViewerLayer[];
@@ -197,6 +206,7 @@ export type VolumeViewerProps = {
   onTrackFollowRequest: (trackId: string) => void;
   onVoxelFollowRequest: (voxel: FollowedVoxelTarget) => void;
   onHoverVoxelChange?: (value: HoveredVoxelInfo | null) => void;
+  viewerPropsConfig?: ViewerPropsConfig;
   paintbrush?: PaintbrushStrokeHandlers;
   vr?: VolumeViewerVrProps;
 };

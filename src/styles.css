@@ -2,7 +2,7 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
   --font-ui: 'Inter', 'Segoe UI', sans-serif;
-  --font-mono: 'SFMono-Regular', 'Cascadia Code', 'Liberation Mono', 'Consolas', monospace;
+  --font-mono: 'Inter', 'Segoe UI', sans-serif;
   --radius-sm: 5px;
   --radius-md: 7px;
   --radius-lg: 10px;

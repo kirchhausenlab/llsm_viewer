@@ -4,6 +4,7 @@ import { useWindowLayout } from '../../../src/ui/app/hooks/useWindowLayout.ts';
 import {
   computeLayersWindowDefaultPosition,
   computePlotSettingsWindowDefaultPosition,
+  computePropsWindowDefaultPosition,
   computeSelectedTracksWindowDefaultPosition,
   computeTrackWindowDefaultPosition,
   computeViewerSettingsWindowDefaultPosition
@@ -29,6 +30,7 @@ console.log('Starting useWindowLayout tests');
 
   assert.strictEqual(hook.result.layoutResetToken, 1);
   assert.deepStrictEqual(hook.result.layersWindowInitialPosition, computeLayersWindowDefaultPosition());
+  assert.deepStrictEqual(hook.result.propsWindowInitialPosition, computePropsWindowDefaultPosition());
   assert.deepStrictEqual(hook.result.trackWindowInitialPosition, computeTrackWindowDefaultPosition());
   assert.deepStrictEqual(
     hook.result.viewerSettingsWindowInitialPosition,

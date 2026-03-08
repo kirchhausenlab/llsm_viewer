@@ -74,10 +74,12 @@ type UseVolumeViewerLifecycleParams = {
   hoverIntensityRef: PointerLifecycleOptions['hoverIntensityRef'];
   followedTrackIdRef: PointerLifecycleOptions['followedTrackIdRef'];
   updateVoxelHover: PointerLifecycleOptions['updateVoxelHover'];
+  performPropHitTest: PointerLifecycleOptions['performPropHitTest'];
   performHoverHitTest: PointerLifecycleOptions['performHoverHitTest'];
   clearHoverState: PointerLifecycleOptions['clearHoverState'];
   clearVoxelHover: PointerLifecycleOptions['clearVoxelHover'];
   resolveHoveredFollowTarget: PointerLifecycleOptions['resolveHoveredFollowTarget'];
+  onPropSelect: PointerLifecycleOptions['onPropSelect'];
   onTrackSelectionToggle: PointerLifecycleOptions['onTrackSelectionToggle'];
   onVoxelFollowRequest: PointerLifecycleOptions['onVoxelFollowRequest'];
   resetHoverState: () => void;
@@ -163,10 +165,12 @@ export function useVolumeViewerLifecycle({
   hoverIntensityRef,
   followedTrackIdRef,
   updateVoxelHover,
+  performPropHitTest,
   performHoverHitTest,
   clearHoverState,
   clearVoxelHover,
   resolveHoveredFollowTarget,
+  onPropSelect,
   onTrackSelectionToggle,
   onVoxelFollowRequest,
   resetHoverState,
@@ -225,6 +229,8 @@ export function useVolumeViewerLifecycle({
   onCameraNavigationSampleRef.current = onCameraNavigationSample;
   const updateVoxelHoverRef = useRef(updateVoxelHover);
   updateVoxelHoverRef.current = updateVoxelHover;
+  const performPropHitTestRef = useRef(performPropHitTest);
+  performPropHitTestRef.current = performPropHitTest;
   const performHoverHitTestRef = useRef(performHoverHitTest);
   performHoverHitTestRef.current = performHoverHitTest;
   const clearHoverStateRef = useRef(clearHoverState);
@@ -233,6 +239,8 @@ export function useVolumeViewerLifecycle({
   clearVoxelHoverRef.current = clearVoxelHover;
   const resolveHoveredFollowTargetRef = useRef(resolveHoveredFollowTarget);
   resolveHoveredFollowTargetRef.current = resolveHoveredFollowTarget;
+  const onPropSelectRef = useRef(onPropSelect);
+  onPropSelectRef.current = onPropSelect;
   const onTrackSelectionToggleRef = useRef(onTrackSelectionToggle);
   onTrackSelectionToggleRef.current = onTrackSelectionToggle;
   const onVoxelFollowRequestRef = useRef(onVoxelFollowRequest);
@@ -440,10 +448,12 @@ export function useVolumeViewerLifecycle({
       followedTrackIdRef,
       rotationTargetRef,
       updateVoxelHover: (event) => updateVoxelHoverRef.current(event),
+      performPropHitTest: (event) => performPropHitTestRef.current(event),
       performHoverHitTest: (event) => performHoverHitTestRef.current(event),
       clearHoverState: (source) => clearHoverStateRef.current(source),
       clearVoxelHover: () => clearVoxelHoverRef.current(),
       resolveHoveredFollowTarget: () => resolveHoveredFollowTargetRef.current(),
+      onPropSelect: (propId) => onPropSelectRef.current(propId),
       onTrackSelectionToggle: (trackId) => onTrackSelectionToggleRef.current(trackId),
       onVoxelFollowRequest: (target) => onVoxelFollowRequestRef.current(target),
       beginPointerLook,

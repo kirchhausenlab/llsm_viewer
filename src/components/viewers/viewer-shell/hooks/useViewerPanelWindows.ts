@@ -10,6 +10,9 @@ type UseViewerPanelWindowsResult = {
   isChannelsWindowOpen: boolean;
   openChannelsWindow: () => void;
   closeChannelsWindow: () => void;
+  isPropsWindowOpen: boolean;
+  openPropsWindow: () => void;
+  closePropsWindow: () => void;
   isTracksWindowOpen: boolean;
   openTracksWindow: () => void;
   closeTracksWindow: () => void;
@@ -40,6 +43,7 @@ export function useViewerPanelWindows({
   const lastHasTrackDataRef = useRef(hasTrackData);
   const lastCanShowPlotSettingsRef = useRef(canShowPlotSettings);
   const [isChannelsWindowOpen, setIsChannelsWindowOpen] = useState(true);
+  const [isPropsWindowOpen, setIsPropsWindowOpen] = useState(false);
   const [isTracksWindowOpen, setIsTracksWindowOpen] = useState(() => hasTrackData);
   const [isViewerSettingsOpen, setIsViewerSettingsOpen] = useState(false);
   const [isAmplitudePlotOpen, setIsAmplitudePlotOpen] = useState(() => canShowPlotSettings);
@@ -54,6 +58,14 @@ export function useViewerPanelWindows({
 
   const closeChannelsWindow = useCallback(() => {
     setIsChannelsWindowOpen(false);
+  }, []);
+
+  const openPropsWindow = useCallback(() => {
+    setIsPropsWindowOpen(true);
+  }, []);
+
+  const closePropsWindow = useCallback(() => {
+    setIsPropsWindowOpen(false);
   }, []);
 
   const openTracksWindow = useCallback(() => {
@@ -123,6 +135,7 @@ export function useViewerPanelWindows({
 
   useEffect(() => {
     setIsChannelsWindowOpen(true);
+    setIsPropsWindowOpen(false);
     setIsTracksWindowOpen(hasTrackData);
     setIsViewerSettingsOpen(false);
     setIsAmplitudePlotOpen(canShowPlotSettings);
@@ -156,6 +169,9 @@ export function useViewerPanelWindows({
     isChannelsWindowOpen,
     openChannelsWindow,
     closeChannelsWindow,
+    isPropsWindowOpen,
+    openPropsWindow,
+    closePropsWindow,
     isTracksWindowOpen,
     openTracksWindow,
     closeTracksWindow,
