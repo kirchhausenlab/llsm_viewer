@@ -29,6 +29,7 @@ import { useVolumeViewerAnisotropy } from './volume-viewer/useVolumeViewerAnisot
 import { useVolumeViewerRefSync } from './volume-viewer/useVolumeViewerRefSync';
 import { useVolumeViewerSurfaceBinding } from './volume-viewer/useVolumeViewerSurfaceBinding';
 import { useVolumeViewerTransformBindings } from './volume-viewer/useVolumeViewerTransformBindings';
+import { resolveRenderableTracks } from './volume-viewer/renderableTracks';
 import { resolveVolumeViewerVrRuntime } from './volume-viewer/volumeViewerVrRuntime';
 import {
   resetPlaybackWarmupGateState,
@@ -393,6 +394,16 @@ function VolumeViewer({
       loadedVolumes,
       expectedVolumes,
     });
+  const renderTracks = useMemo(
+    () =>
+      resolveRenderableTracks(tracks, {
+        trackVisibility,
+        trackOpacityByTrackSet,
+        selectedTrackIds,
+        followedTrackId,
+      }),
+    [followedTrackId, selectedTrackIds, trackOpacityByTrackSet, trackVisibility, tracks],
+  );
 
   const {
     hoveredTrackId,
@@ -407,7 +418,7 @@ function VolumeViewer({
     refreshTrackOverlay,
     disposeTrackResources,
   } = useTrackRendering({
-    tracks,
+    tracks: renderTracks,
     trackVisibility,
     trackOpacityByTrackSet,
     trackLineWidthByTrackSet,

@@ -326,7 +326,7 @@ export type TrackLineResource = {
   outlineMaterial: LineMaterial;
   endCap: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>;
   endCapMaterial: THREE.MeshBasicMaterial;
-  times: number[];
+  times: ArrayLike<number>;
   positions: Float32Array;
   geometryPointStartIndex: number | null;
   geometryPointEndIndex: number | null;

@@ -112,9 +112,228 @@ console.log('Starting useTrackRendering tests');
     hook.rerender();
   });
 
-  assert.strictEqual(resource.line.visible, false);
-  assert.strictEqual(resource.endCap.visible, false);
+  assert.strictEqual(trackLinesRef.current.has('track-0'), false);
   assert.strictEqual(hook.result.hoveredTrackId, null);
+})();
+
+(() => {
+  const trackGroupRef = { current: new THREE.Group() } as const;
+  const trackLinesRef = { current: new Map() } as const;
+  const track = {
+    id: 'track-hidden',
+    trackSetId: 'track-set-0',
+    trackSetName: 'Track set 0',
+    channelId: 'channel-0',
+    channelName: 'Channel 0',
+    trackNumber: 1,
+    sourceTrackId: 1,
+    points: [
+      { x: 0, y: 0, z: 0, time: 0, amplitude: 0 },
+      { x: 1, y: 1, z: 0, time: 1, amplitude: 0 },
+    ],
+  };
+
+  const hook = renderHook(() =>
+    useTrackRendering({
+      tracks: [track],
+      trackVisibility: {},
+      trackOpacityByTrackSet: { 'track-set-0': 0 },
+      trackLineWidthByTrackSet: {},
+      trackColorModesByTrackSet: {},
+      channelTrackOffsets: {},
+      trackScale: {},
+      isFullTrackTrailEnabled: true,
+      trackTrailLength: 10,
+      selectedTrackIds: new Set(),
+      followedTrackId: null,
+      clampedTimeIndex: 1,
+      trackGroupRef,
+      trackLinesRef,
+      containerRef: { current: null },
+      rendererRef: { current: null },
+      cameraRef: { current: null },
+      hoverRaycasterRef: { current: null },
+      currentDimensionsRef: { current: null },
+      hasActive3DLayer: true,
+    }),
+  );
+
+  const { act } = hook;
+
+  act(() => hook.result.refreshTrackOverlay());
+
+  assert.strictEqual(trackLinesRef.current.size, 0);
+  assert.strictEqual(trackGroupRef.current.visible, false);
+})();
+
+(() => {
+  const trackGroupRef = { current: new THREE.Group() } as const;
+  const trackLinesRef = { current: new Map() } as const;
+  const track = {
+    id: 'track-no-3d',
+    trackSetId: 'track-set-0',
+    trackSetName: 'Track set 0',
+    channelId: 'channel-0',
+    channelName: 'Channel 0',
+    trackNumber: 1,
+    sourceTrackId: 1,
+    points: [
+      { x: 0, y: 0, z: 0, time: 0, amplitude: 0 },
+      { x: 1, y: 1, z: 0, time: 1, amplitude: 0 },
+    ],
+  };
+
+  const hook = renderHook(() =>
+    useTrackRendering({
+      tracks: [track],
+      trackVisibility: {},
+      trackOpacityByTrackSet: { 'track-set-0': 1 },
+      trackLineWidthByTrackSet: {},
+      trackColorModesByTrackSet: {},
+      channelTrackOffsets: {},
+      trackScale: {},
+      isFullTrackTrailEnabled: true,
+      trackTrailLength: 10,
+      selectedTrackIds: new Set(),
+      followedTrackId: null,
+      clampedTimeIndex: 1,
+      trackGroupRef,
+      trackLinesRef,
+      containerRef: { current: null },
+      rendererRef: { current: null },
+      cameraRef: { current: null },
+      hoverRaycasterRef: { current: null },
+      currentDimensionsRef: { current: null },
+      hasActive3DLayer: false,
+    }),
+  );
+
+  const { act } = hook;
+
+  act(() => hook.result.refreshTrackOverlay());
+
+  assert.strictEqual(trackLinesRef.current.size, 0);
+})();
+
+(() => {
+  const trackGroupRef = { current: new THREE.Group() } as const;
+  const trackLinesRef = { current: new Map() } as const;
+  const track = {
+    id: 'track-cached-geometry',
+    trackSetId: 'track-set-0',
+    trackSetName: 'Track set 0',
+    channelId: 'channel-0',
+    channelName: 'Channel 0',
+    trackNumber: 1,
+    sourceTrackId: 1,
+    points: [
+      { x: 0, y: 0, z: 0, time: 0, amplitude: 0 },
+      { x: 1, y: 1, z: 0, time: 1, amplitude: 0 },
+      { x: 2, y: 2, z: 0, time: 2, amplitude: 0 },
+    ],
+  };
+
+  const hook = renderHook(() =>
+    useTrackRendering({
+      tracks: [track],
+      trackVisibility: {},
+      trackOpacityByTrackSet: { 'track-set-0': 1 },
+      trackLineWidthByTrackSet: {},
+      trackColorModesByTrackSet: {},
+      channelTrackOffsets: {},
+      trackScale: {},
+      isFullTrackTrailEnabled: true,
+      trackTrailLength: 10,
+      selectedTrackIds: new Set(),
+      followedTrackId: null,
+      clampedTimeIndex: 2,
+      trackGroupRef,
+      trackLinesRef,
+      containerRef: { current: null },
+      rendererRef: { current: null },
+      cameraRef: { current: null },
+      hoverRaycasterRef: { current: null },
+      currentDimensionsRef: { current: null },
+      hasActive3DLayer: true,
+    }),
+  );
+
+  const { act } = hook;
+
+  act(() => hook.result.refreshTrackOverlay());
+
+  const resource = trackLinesRef.current.get('track-cached-geometry');
+  assert.ok(resource, 'resource should be created');
+
+  const originalSetPositions = resource.geometry.setPositions.bind(resource.geometry);
+  let setPositionsCalls = 0;
+  resource.geometry.setPositions = ((positions: number[] | Float32Array) => {
+    setPositionsCalls += 1;
+    return originalSetPositions(positions);
+  }) as typeof resource.geometry.setPositions;
+
+  act(() => hook.result.refreshTrackOverlay());
+
+  assert.strictEqual(setPositionsCalls, 0);
+})();
+
+(() => {
+  const trackGroupRef = { current: new THREE.Group() } as const;
+  const trackLinesRef = { current: new Map() } as const;
+  const track = {
+    id: 'track-dispose',
+    trackSetId: 'track-set-0',
+    trackSetName: 'Track set 0',
+    channelId: 'channel-0',
+    channelName: 'Channel 0',
+    trackNumber: 1,
+    sourceTrackId: 1,
+    points: [
+      { x: 0, y: 0, z: 0, time: 0, amplitude: 0 },
+      { x: 1, y: 1, z: 0, time: 1, amplitude: 0 },
+    ],
+  };
+
+  let tracks = [track];
+
+  const hook = renderHook(() =>
+    useTrackRendering({
+      tracks,
+      trackVisibility: {},
+      trackOpacityByTrackSet: { 'track-set-0': 1 },
+      trackLineWidthByTrackSet: {},
+      trackColorModesByTrackSet: {},
+      channelTrackOffsets: {},
+      trackScale: {},
+      isFullTrackTrailEnabled: true,
+      trackTrailLength: 10,
+      selectedTrackIds: new Set(),
+      followedTrackId: null,
+      clampedTimeIndex: 1,
+      trackGroupRef,
+      trackLinesRef,
+      containerRef: { current: null },
+      rendererRef: { current: null },
+      cameraRef: { current: null },
+      hoverRaycasterRef: { current: null },
+      currentDimensionsRef: { current: null },
+      hasActive3DLayer: true,
+    }),
+  );
+
+  const { act } = hook;
+
+  act(() => hook.result.refreshTrackOverlay());
+  assert.strictEqual(trackLinesRef.current.size, 1);
+  assert.strictEqual(trackGroupRef.current.children.length, 3);
+
+  act(() => {
+    tracks = [];
+    hook.rerender();
+  });
+
+  assert.strictEqual(trackLinesRef.current.size, 0);
+  assert.strictEqual(trackGroupRef.current.children.length, 0);
 })();
 
 (() => {

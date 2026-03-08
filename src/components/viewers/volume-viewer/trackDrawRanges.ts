@@ -7,34 +7,66 @@ type UpdateTrackDrawRangesOptions = {
   trackTrailLength: number;
 };
 
+function findFirstIndexAtOrAfter(values: ArrayLike<number>, target: number): number {
+  let low = 0;
+  let high = values.length;
+
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if ((values[mid] ?? Number.POSITIVE_INFINITY) < target) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+
+  return low;
+}
+
+function findLastIndexAtOrBefore(values: ArrayLike<number>, target: number): number {
+  let low = 0;
+  let high = values.length;
+
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if ((values[mid] ?? Number.NEGATIVE_INFINITY) <= target) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+
+  return low - 1;
+}
+
 export function updateTrackDrawRanges({
   lines,
   targetTimeIndex,
   isFullTrackTrailEnabled,
-  trackTrailLength
+  trackTrailLength,
 }: UpdateTrackDrawRangesOptions): void {
-  const maxVisibleTime = targetTimeIndex;
-  const minVisibleTime = isFullTrackTrailEnabled ? -Infinity : targetTimeIndex - trackTrailLength;
+  const epsilon = 1e-3;
+  const maxVisibleTime = targetTimeIndex + epsilon;
+  const minVisibleTime = isFullTrackTrailEnabled ? Number.NEGATIVE_INFINITY : targetTimeIndex - trackTrailLength - epsilon;
 
   for (const resource of lines) {
     const { geometry, times, positions, endCap } = resource;
-    let firstVisibleIndex = -1;
-    let lastVisibleIndex = -1;
-
-    for (let index = 0; index < times.length; index++) {
-      const time = times[index];
-      if (time > maxVisibleTime) {
-        break;
-      }
-      if (time >= minVisibleTime) {
-        if (firstVisibleIndex === -1) {
-          firstVisibleIndex = index;
-        }
-        lastVisibleIndex = index;
-      }
+    if (times.length === 0) {
+      resource.hasVisiblePoints = false;
+      resource.geometryPointStartIndex = null;
+      resource.geometryPointEndIndex = null;
+      geometry.instanceCount = 0;
+      endCap.visible = false;
+      continue;
     }
 
-    const hasVisiblePoints = firstVisibleIndex !== -1 && lastVisibleIndex !== -1;
+    const firstVisibleIndex = isFullTrackTrailEnabled ? 0 : findFirstIndexAtOrAfter(times, minVisibleTime);
+    const lastVisibleIndex = findLastIndexAtOrBefore(times, maxVisibleTime);
+    const hasVisiblePoints =
+      firstVisibleIndex >= 0 &&
+      firstVisibleIndex < times.length &&
+      lastVisibleIndex >= 0 &&
+      lastVisibleIndex >= firstVisibleIndex;
     resource.hasVisiblePoints = hasVisiblePoints;
 
     if (hasVisiblePoints) {
@@ -42,7 +74,7 @@ export function updateTrackDrawRanges({
       endCap.position.set(
         positions[baseIndex] ?? 0,
         positions[baseIndex + 1] ?? 0,
-        positions[baseIndex + 2] ?? 0
+        positions[baseIndex + 2] ?? 0,
       );
     }
 

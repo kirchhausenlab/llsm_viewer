@@ -10,12 +10,12 @@ import {
 import { DEFAULT_TRACK_COLOR } from '../../../shared/colorMaps/trackColors';
 
 type UpdateTrackAppearanceOptions = {
-  trackLines: Map<string, TrackLineResource>;
+  lines: Iterable<TrackLineResource>;
   timestamp: number;
 };
 
 export function updateTrackAppearance({
-  trackLines,
+  lines,
   timestamp
 }: UpdateTrackAppearanceOptions): void {
   const blinkPhase = (timestamp % SELECTED_TRACK_BLINK_PERIOD_MS) / SELECTED_TRACK_BLINK_PERIOD_MS;
@@ -23,7 +23,7 @@ export function updateTrackAppearance({
   const blinkWave = Math.sin(blinkAngle);
   const blinkScale = SELECTED_TRACK_BLINK_BASE + SELECTED_TRACK_BLINK_RANGE * blinkWave;
 
-  for (const resource of trackLines.values()) {
+  for (const resource of lines) {
     const { material, outlineMaterial, endCap, endCapMaterial } = resource;
     const baseColor = resource.baseColor ?? new THREE.Color(DEFAULT_TRACK_COLOR);
     const highlightColor = resource.highlightColor ?? baseColor;
