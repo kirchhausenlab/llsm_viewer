@@ -895,3 +895,171 @@ await (async () => {
   assert.deepEqual(cachedPageTableT0.gridShape, shardedPageTableT0.gridShape);
   assert.deepEqual(Array.from(cachedPageTableT0.brickAtlasIndices), Array.from(shardedPageTableT0.brickAtlasIndices));
 })();
+
+await (async () => {
+  const storageHandle = createInMemoryPreprocessedStorage({ datasetId: 'preprocessed-dataset-sharded-no-range' });
+  const zarrStore = createZarrStoreFromPreprocessedStorage(storageHandle.storage);
+  const dataPath = 'channels/channel-guard/layer-guard/scales/0/data';
+  const histogramPath = 'channels/channel-guard/layer-guard/scales/0/histogram';
+
+  const manifest: PreprocessedManifest = {
+    format: PREPROCESSED_DATASET_FORMAT,
+    generatedAt: new Date().toISOString(),
+    dataset: {
+      movieMode: '3d',
+      totalVolumeCount: 1,
+      trackSets: [],
+      channels: [
+        {
+          id: 'channel-guard',
+          name: 'Channel Guard',
+          layers: [
+            {
+              key: 'layer-guard',
+              label: 'Layer Guard',
+              channelId: 'channel-guard',
+              isSegmentation: false,
+              volumeCount: 1,
+              width: 2,
+              height: 2,
+              depth: 1,
+              channels: 1,
+              dataType: 'uint8',
+              normalization: { min: 0, max: 255 },
+              zarr: {
+                scales: [
+                  {
+                    level: 0,
+                    downsampleFactor: [1, 1, 1],
+                    width: 2,
+                    height: 2,
+                    depth: 1,
+                    channels: 1,
+                    zarr: {
+                      data: {
+                        path: dataPath,
+                        shape: [1, 1, 2, 2, 1],
+                        chunkShape: [1, 1, 1, 1, 1],
+                        dataType: 'uint8',
+                        sharding: {
+                          enabled: true,
+                          targetShardBytes: 4096,
+                          shardShape: [1, 1, 2, 2, 1],
+                          estimatedShardBytes: 4096,
+                          arrayKind: 'volumeData',
+                          allowTemporalAxis: false,
+                          fullReadFallbackMaxBytes: 32
+                        }
+                      },
+                      histogram: {
+                        path: histogramPath,
+                        shape: [1, 256],
+                        chunkShape: [1, 256],
+                        dataType: 'uint32'
+                      },
+                      skipHierarchy: {
+                        levels: [
+                          {
+                            level: 0,
+                            gridShape: [1, 2, 2],
+                            min: {
+                              path: 'channels/channel-guard/layer-guard/scales/0/skip-hierarchy/levels/0/min',
+                              shape: [1, 1, 2, 2],
+                              chunkShape: [1, 1, 2, 2],
+                              dataType: 'uint8'
+                            },
+                            max: {
+                              path: 'channels/channel-guard/layer-guard/scales/0/skip-hierarchy/levels/0/max',
+                              shape: [1, 1, 2, 2],
+                              chunkShape: [1, 1, 2, 2],
+                              dataType: 'uint8'
+                            },
+                            occupancy: {
+                              path: 'channels/channel-guard/layer-guard/scales/0/skip-hierarchy/levels/0/occupancy',
+                              shape: [1, 1, 2, 2],
+                              chunkShape: [1, 1, 2, 2],
+                              dataType: 'uint8'
+                            }
+                          },
+                          {
+                            level: 1,
+                            gridShape: [1, 1, 1],
+                            min: {
+                              path: 'channels/channel-guard/layer-guard/scales/0/skip-hierarchy/levels/1/min',
+                              shape: [1, 1, 1, 1],
+                              chunkShape: [1, 1, 1, 1],
+                              dataType: 'uint8'
+                            },
+                            max: {
+                              path: 'channels/channel-guard/layer-guard/scales/0/skip-hierarchy/levels/1/max',
+                              shape: [1, 1, 1, 1],
+                              chunkShape: [1, 1, 1, 1],
+                              dataType: 'uint8'
+                            },
+                            occupancy: {
+                              path: 'channels/channel-guard/layer-guard/scales/0/skip-hierarchy/levels/1/occupancy',
+                              shape: [1, 1, 1, 1],
+                              chunkShape: [1, 1, 1, 1],
+                              dataType: 'uint8'
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+      temporalResolution: { interval: 2.3, unit: 'ms' },
+      anisotropyCorrection: null
+    }
+  };
+
+  await zarr.create(zarr.root(zarrStore), { attributes: { llsmViewerPreprocessed: manifest } });
+  const baseScale = manifest.dataset.channels[0]!.layers[0]!.zarr.scales[0]!;
+  await zarr.create(zarr.root(zarrStore).resolve(baseScale.zarr.data.path), {
+    shape: baseScale.zarr.data.shape,
+    data_type: baseScale.zarr.data.dataType,
+    chunk_shape: baseScale.zarr.data.chunkShape,
+    codecs: [],
+    fill_value: 0
+  });
+  await zarr.create(zarr.root(zarrStore).resolve(baseScale.zarr.histogram.path), {
+    shape: baseScale.zarr.histogram.shape,
+    data_type: baseScale.zarr.histogram.dataType,
+    chunk_shape: baseScale.zarr.histogram.chunkShape,
+    codecs: [],
+    fill_value: 0
+  });
+
+  const shardBytes = encodeShardEntries(5, [
+    { localChunkCoords: [0, 0, 0, 0, 0], bytes: new Uint8Array([1]) },
+    { localChunkCoords: [0, 0, 0, 1, 0], bytes: new Uint8Array([2]) },
+    { localChunkCoords: [0, 0, 1, 0, 0], bytes: new Uint8Array([3]) },
+    { localChunkCoords: [0, 0, 1, 1, 0], bytes: new Uint8Array([4]) }
+  ]);
+  await storageHandle.storage.writeFile(createShardFilePath(baseScale.zarr.data.path, [0, 0, 0, 0, 0]), shardBytes);
+  await storageHandle.storage.writeFile(`${baseScale.zarr.histogram.path}/c/0/0`, encodeUint32ArrayLE(new Uint32Array(256)));
+
+  const opened = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
+  const provider = createVolumeProvider({
+    manifest: opened.manifest,
+    storage: {
+      writeFile: storageHandle.storage.writeFile,
+      readFile: storageHandle.storage.readFile
+    },
+    maxCachedVolumes: 0,
+    maxCachedChunkBytes: DEFAULT_MAX_CACHED_CHUNK_BYTES,
+    maxConcurrentChunkReads: DEFAULT_MAX_CONCURRENT_CHUNK_READS,
+    maxConcurrentPrefetchLoads: DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS
+  });
+
+  await assert.rejects(
+    () => provider.getVolume('layer-guard', 0),
+    /requires range reads/
+  );
+})();

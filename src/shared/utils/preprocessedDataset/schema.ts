@@ -3,15 +3,19 @@ import { buildBrickSubcellTextureSize, resolveBrickSubcellGrid } from '../brickS
 import type {
   PreprocessedBackgroundMaskManifest,
   PreprocessedBackgroundMaskScaleManifestEntry,
+  PreprocessedBrickAtlasTextureFormat,
   PreprocessedChannelManifest,
   PreprocessedLayerManifestEntry,
   PreprocessedLayerScaleManifestEntry,
   PreprocessedManifest,
+  PreprocessedScalePlaybackAtlasZarrDescriptor,
   PreprocessedScaleSkipHierarchyZarrDescriptor,
   PreprocessedScaleSubcellZarrDescriptor,
+  PreprocessedShardedBlobDescriptor,
   PreprocessedTrackSetManifestEntry,
   ZarrArrayDescriptor,
-  ZarrArrayShardingPlan
+  ZarrArrayShardingPlan,
+  ZarrArrayShardingPlanArrayKind
 } from './types';
 import { PREPROCESSED_DATASET_FORMAT } from './types';
 import {
@@ -34,6 +38,19 @@ const VOLUME_DATA_TYPES: readonly VolumeDataType[] = [
   'float32',
   'float64'
 ];
+
+const SHARDING_ARRAY_KINDS: readonly ZarrArrayShardingPlanArrayKind[] = [
+  'volumeData',
+  'volumeLabels',
+  'skipHierarchy',
+  'histogram',
+  'subcell',
+  'backgroundMask',
+  'playbackAtlasIndices',
+  'playbackAtlasData'
+];
+
+const BRICK_ATLAS_TEXTURE_FORMATS: readonly PreprocessedBrickAtlasTextureFormat[] = ['red', 'rg', 'rgba'];
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -162,6 +179,27 @@ function validateShardingPlan(
   const targetShardBytes = expectPositiveInteger(sharding.targetShardBytes, `${path}.targetShardBytes`);
   const shardShape = expectIntegerTuple(sharding.shardShape, `${path}.shardShape`, rank, { positive: true });
   const estimatedShardBytes = expectPositiveInteger(sharding.estimatedShardBytes, `${path}.estimatedShardBytes`);
+  const arrayKindValue = sharding.arrayKind;
+  const arrayKind =
+    arrayKindValue === undefined
+      ? undefined
+      : (() => {
+          const parsed = expectString(arrayKindValue, `${path}.arrayKind`, { nonEmpty: true });
+          if (!SHARDING_ARRAY_KINDS.includes(parsed as ZarrArrayShardingPlanArrayKind)) {
+            throw new Error(`Invalid manifest schema at ${path}.arrayKind: unsupported value "${parsed}".`);
+          }
+          return parsed as ZarrArrayShardingPlanArrayKind;
+        })();
+  const allowTemporalAxisValue = sharding.allowTemporalAxis;
+  const allowTemporalAxis =
+    allowTemporalAxisValue === undefined
+      ? undefined
+      : expectBoolean(allowTemporalAxisValue, `${path}.allowTemporalAxis`);
+  const fullReadFallbackMaxBytesValue = sharding.fullReadFallbackMaxBytes;
+  const fullReadFallbackMaxBytes =
+    fullReadFallbackMaxBytesValue === undefined
+      ? undefined
+      : expectPositiveInteger(fullReadFallbackMaxBytesValue, `${path}.fullReadFallbackMaxBytes`);
   const reasonValue = sharding.reason;
   const reason =
     reasonValue === undefined
@@ -185,6 +223,9 @@ function validateShardingPlan(
     targetShardBytes,
     shardShape,
     estimatedShardBytes,
+    ...(arrayKind !== undefined ? { arrayKind } : {}),
+    ...(allowTemporalAxis !== undefined ? { allowTemporalAxis } : {}),
+    ...(fullReadFallbackMaxBytes !== undefined ? { fullReadFallbackMaxBytes } : {}),
     ...(reason !== undefined ? { reason } : {})
   };
 }
@@ -416,6 +457,99 @@ function validateSubcellDescriptor({
   };
 }
 
+function validateBlobDescriptor({
+  value,
+  path,
+  entryCount
+}: {
+  value: unknown;
+  path: string;
+  entryCount: number;
+}): PreprocessedShardedBlobDescriptor {
+  const descriptor = expectRecord(value, path);
+  const descriptorPath = expectString(descriptor.path, `${path}.path`, { nonEmpty: true });
+  const actualEntryCount = expectPositiveInteger(descriptor.entryCount, `${path}.entryCount`);
+  if (actualEntryCount !== entryCount) {
+    throw new Error(
+      `Invalid manifest schema at ${path}.entryCount: expected ${entryCount}, got ${actualEntryCount}.`
+    );
+  }
+  const sharding = validateShardingPlan(descriptor.sharding, `${path}.sharding`, 1, [1]);
+  return {
+    path: descriptorPath,
+    entryCount: actualEntryCount,
+    ...(sharding !== undefined ? { sharding } : {})
+  };
+}
+
+function validatePlaybackAtlasDescriptor({
+  value,
+  path,
+  layerVolumeCount,
+  expectedLeafGridShape,
+  chunkShape,
+  channels
+}: {
+  value: unknown;
+  path: string;
+  layerVolumeCount: number;
+  expectedLeafGridShape: readonly number[];
+  chunkShape: readonly number[];
+  channels: number;
+}): PreprocessedScalePlaybackAtlasZarrDescriptor | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const playbackAtlas = expectRecord(value, path);
+  const textureFormat = expectString(playbackAtlas.textureFormat, `${path}.textureFormat`, { nonEmpty: true });
+  if (!BRICK_ATLAS_TEXTURE_FORMATS.includes(textureFormat as PreprocessedBrickAtlasTextureFormat)) {
+    throw new Error(`Invalid manifest schema at ${path}.textureFormat: unsupported value "${textureFormat}".`);
+  }
+  const textureChannels = expectPositiveInteger(playbackAtlas.textureChannels, `${path}.textureChannels`);
+  const expectedTextureChannels =
+    textureFormat === 'red' ? 1 : textureFormat === 'rg' ? 2 : 4;
+  if (textureChannels !== expectedTextureChannels) {
+    throw new Error(
+      `Invalid manifest schema at ${path}.textureChannels: expected ${expectedTextureChannels}, got ${textureChannels}.`
+    );
+  }
+  const brickAtlasIndices = validateDescriptor({
+    value: playbackAtlas.brickAtlasIndices,
+    path: `${path}.brickAtlasIndices`,
+    expectedRank: 4,
+    expectedDataType: 'int32',
+    expectedShape: [
+      layerVolumeCount,
+      expectedLeafGridShape[0] ?? 1,
+      expectedLeafGridShape[1] ?? 1,
+      expectedLeafGridShape[2] ?? 1
+    ]
+  });
+  const data = validateBlobDescriptor({
+    value: playbackAtlas.data,
+    path: `${path}.data`,
+    entryCount: layerVolumeCount
+  });
+  if ((data.sharding?.shardShape.length ?? 1) !== 1) {
+    throw new Error(`Invalid manifest schema at ${path}.data.sharding.shardShape: expected rank 1.`);
+  }
+  const chunkDepth = chunkShape[0] ?? 1;
+  const chunkHeight = chunkShape[1] ?? 1;
+  const chunkWidth = chunkShape[2] ?? 1;
+  if (chunkDepth <= 0 || chunkHeight <= 0 || chunkWidth <= 0) {
+    throw new Error(`Invalid manifest schema at ${path}: playback atlas requires positive chunk dimensions.`);
+  }
+  if (channels <= 0) {
+    throw new Error(`Invalid manifest schema at ${path}: playback atlas requires positive channel count.`);
+  }
+  return {
+    textureFormat: textureFormat as PreprocessedBrickAtlasTextureFormat,
+    textureChannels,
+    brickAtlasIndices,
+    data
+  };
+}
+
 function validateScale({
   value,
   path,
@@ -504,6 +638,14 @@ function validateScale({
     chunkShape: [chunkDepth, chunkHeight, chunkWidth],
     expectedLeafGridShape
   });
+  const playbackAtlas = validatePlaybackAtlasDescriptor({
+    value: zarr.playbackAtlas,
+    path: `${path}.zarr.playbackAtlas`,
+    layerVolumeCount,
+    expectedLeafGridShape,
+    chunkShape: [chunkDepth, chunkHeight, chunkWidth],
+    channels
+  });
 
   if (isSegmentation && !labels) {
     throw new Error(
@@ -523,6 +665,7 @@ function validateScale({
       ...(labels ? { labels } : {}),
       skipHierarchy,
       ...(subcell ? { subcell } : {}),
+      ...(playbackAtlas ? { playbackAtlas } : {}),
       histogram
     }
   };

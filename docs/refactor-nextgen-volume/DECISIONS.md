@@ -44,6 +44,11 @@ Status: **Locked**
 
 - Decision: keep Zarr v3, but use sharding to avoid small-file explosion from multiscale bricks.
 - Initial shard target: ~8 MB to 32 MB objects (tuned by benchmark).
+- Implemented policy:
+  - voxel payloads (`data`, `labels`) stay time-local and shard only across spatial axes
+  - tiny metadata arrays (`histogram`, `skipHierarchy`, `subcell`) may group neighboring timepoints inside a shard
+  - playback-oriented scales also persist prepacked atlas sidecars so runtime can skip raw-chunk atlas assembly
+  - large shards require ranged reads at runtime; unsafe whole-shard fallback is rejected
 - Consequences:
   - preprocessing writes sharded arrays
   - runtime read path must efficiently fetch/decode shard-backed chunks

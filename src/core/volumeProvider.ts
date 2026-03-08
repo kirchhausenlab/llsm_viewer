@@ -2,6 +2,7 @@ import type { NormalizedVolume } from './volumeProcessing';
 import type {
   PreprocessedLayerManifestEntry,
   PreprocessedManifest,
+  PreprocessedShardedBlobDescriptor,
   ZarrArrayDescriptor
 } from '../shared/utils/preprocessedDataset/types';
 import type { PreprocessedStorage } from '../shared/storage/preprocessedStorage';
@@ -23,6 +24,7 @@ import {
 } from '../shared/utils/backgroundMask';
 import { buildBrickSubcellTextureSize, resolveBrickSubcellGrid } from '../shared/utils/brickSubcell';
 import { decodeUint32ArrayLE, HISTOGRAM_BINS } from '../shared/utils/histogram';
+import { decodeInt32ArrayLE } from '../shared/utils/int32';
 import { getLod0FeatureFlags } from '../config/lod0Flags';
 import type {
   RuntimeShardDecodeInboundMessage,
@@ -520,6 +522,16 @@ function mapSourceChannelToTextureChannel(
     return null;
   }
   return sourceChannel;
+}
+
+function createSyntheticDescriptorForBlob(descriptor: PreprocessedShardedBlobDescriptor): ZarrArrayDescriptor {
+  return {
+    path: descriptor.path,
+    shape: [descriptor.entryCount],
+    chunkShape: [1],
+    dataType: 'uint8',
+    ...(descriptor.sharding !== undefined ? { sharding: descriptor.sharding } : {})
+  };
 }
 
 function copyChunkSliceToBuffer({
@@ -1367,6 +1379,21 @@ export function createVolumeProvider({
     }
   };
 
+  const assertShardFallbackIsSafe = (descriptor: ZarrArrayDescriptor, chunkPath: string) => {
+    const sharding = descriptor.sharding;
+    if (!sharding?.enabled || typeof storage.readFileRange === 'function') {
+      return;
+    }
+    const fullReadFallbackMaxBytes = sharding.fullReadFallbackMaxBytes ?? Number.POSITIVE_INFINITY;
+    if (sharding.estimatedShardBytes <= fullReadFallbackMaxBytes) {
+      return;
+    }
+    const shardLabel = sharding.arrayKind ? ` (${sharding.arrayKind})` : '';
+    throw new Error(
+      `Sharded array ${descriptor.path}${shardLabel} requires range reads for ${chunkPath}: estimated shard size ${sharding.estimatedShardBytes} B exceeds fallback limit ${fullReadFallbackMaxBytes} B. Use a storage backend that implements readFileRange or preprocess with smaller shards for this array class.`
+    );
+  };
+
   const readChunkWithCache = async (
     descriptor: ZarrArrayDescriptor,
     chunkCoords: number[],
@@ -1443,6 +1470,9 @@ export function createVolumeProvider({
         return entryBytes;
       }
 
+      if (shardLocation) {
+        assertShardFallbackIsSafe(descriptor, chunkPath);
+      }
       const rawChunkBytes = await storage.readFile(chunkPath);
       storageBytesRead += rawChunkBytes.byteLength;
       if (!shardLocation) {
@@ -1814,15 +1844,55 @@ export function createVolumeProvider({
       };
     }
 
-    const brickAtlasIndices = new Int32Array(expectedBrickCount);
+    let brickAtlasIndices: Int32Array;
     let occupiedBrickCount = 0;
-    for (let index = 0; index < expectedBrickCount; index += 1) {
-      const occupancy = chunkOccupancy[index] ?? 0;
-      if (occupancy > 0) {
-        brickAtlasIndices[index] = occupiedBrickCount;
-        occupiedBrickCount += 1;
-      } else {
-        brickAtlasIndices[index] = -1;
+    const playbackAtlasDescriptor = scale.zarr.playbackAtlas;
+    if (playbackAtlasDescriptor) {
+      const {
+        bytes: brickAtlasIndexBytes,
+        bytesRead: brickAtlasIndexBytesRead
+      } = await readTimepointChunkedArray({
+        descriptor: playbackAtlasDescriptor.brickAtlasIndices,
+        timepoint,
+        expectedNonTimeShape: [expectedGridShape[0], expectedGridShape[1], expectedGridShape[2]],
+        maxConcurrentChunkReads,
+        readChunk: (chunkCoords, chunkOptions) =>
+          readChunkWithCache(playbackAtlasDescriptor.brickAtlasIndices, chunkCoords, chunkOptions),
+        signal
+      });
+      throwIfAborted(signal);
+      stats.bytesRead += brickAtlasIndexBytesRead;
+      brickAtlasIndices = decodeInt32ArrayLE(brickAtlasIndexBytes, expectedBrickCount);
+      let maxAtlasIndex = -1;
+      for (let index = 0; index < expectedBrickCount; index += 1) {
+        const occupancy = chunkOccupancy[index] ?? 0;
+        const atlasIndex = brickAtlasIndices[index] ?? -1;
+        if (occupancy > 0) {
+          if (atlasIndex < 0) {
+            throw new Error(
+              `Playback atlas index mismatch for layer ${layer.layerKey} at timepoint ${timepoint}: occupied brick ${index} is missing an atlas index.`
+            );
+          }
+          if (atlasIndex > maxAtlasIndex) {
+            maxAtlasIndex = atlasIndex;
+          }
+        } else if (atlasIndex !== -1) {
+          throw new Error(
+            `Playback atlas index mismatch for layer ${layer.layerKey} at timepoint ${timepoint}: empty brick ${index} must use atlas index -1.`
+          );
+        }
+      }
+      occupiedBrickCount = maxAtlasIndex + 1;
+    } else {
+      brickAtlasIndices = new Int32Array(expectedBrickCount);
+      for (let index = 0; index < expectedBrickCount; index += 1) {
+        const occupancy = chunkOccupancy[index] ?? 0;
+        if (occupancy > 0) {
+          brickAtlasIndices[index] = occupiedBrickCount;
+          occupiedBrickCount += 1;
+        } else {
+          brickAtlasIndices[index] = -1;
+        }
       }
     }
 
@@ -2060,6 +2130,43 @@ export function createVolumeProvider({
     const atlasWidth = chunkWidth;
     const atlasHeight = chunkHeight;
     const atlasDepth = chunkDepth * pageTable.occupiedBrickCount;
+    const playbackAtlasDescriptor = scale.zarr.playbackAtlas;
+    if (playbackAtlasDescriptor) {
+      if (playbackAtlasDescriptor.textureFormat !== textureFormat) {
+        throw new Error(
+          `Playback atlas texture format mismatch for layer ${layer.layerKey} at scale ${scale.level}: expected ${textureFormat}, got ${playbackAtlasDescriptor.textureFormat}.`
+        );
+      }
+      const blobDescriptor = createSyntheticDescriptorForBlob(playbackAtlasDescriptor.data);
+      const {
+        bytes: atlasBytes,
+        bytesRead: atlasBytesRead
+      } = await readChunkWithCache(blobDescriptor, [timepoint], { signal });
+      throwIfAborted(signal);
+      stats.bytesRead += atlasBytesRead;
+      stats.dataBytesRead += atlasBytesRead;
+      const expectedAtlasBytes = atlasWidth * atlasHeight * atlasDepth * playbackAtlasDescriptor.textureChannels;
+      if (atlasBytes.byteLength !== expectedAtlasBytes) {
+        throw new Error(
+          `Playback atlas byte length mismatch for ${blobDescriptor.path} at timepoint ${timepoint}: expected ${expectedAtlasBytes}, got ${atlasBytes.byteLength}.`
+        );
+      }
+      return {
+        layerKey: layer.layerKey,
+        timepoint,
+        scaleLevel: scale.level,
+        pageTable,
+        histogram,
+        width: atlasWidth,
+        height: atlasHeight,
+        depth: atlasDepth,
+        textureFormat: playbackAtlasDescriptor.textureFormat,
+        sourceChannels: scale.channels,
+        data: atlasBytes,
+        enabled: true
+      };
+    }
+
     const atlasData = new Uint8Array(atlasWidth * atlasHeight * atlasDepth * textureChannels);
 
     const timeChunkLength = dataDescriptor.chunkShape[0] ?? 0;

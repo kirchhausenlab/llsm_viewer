@@ -440,6 +440,266 @@ test('preprocessDatasetToStorage writes sharded chunks that volume provider read
   assert.deepEqual(Array.from(loaded.normalized), sourceValues);
 });
 
+test('preprocessDatasetToStorage applies array-specific sharding policies', async () => {
+  const channels: ChannelExportMetadata[] = [
+    { id: 'channel-a', name: 'Channel A' },
+    { id: 'channel-b', name: 'Channel B' }
+  ];
+  const layers: PreprocessLayerSource[] = [
+    {
+      channelId: 'channel-a',
+      channelLabel: 'Channel A',
+      key: 'intensity',
+      label: 'Intensity',
+      files: [
+        new File(['intensity-0'], 'intensity-t0.tif', { type: 'image/tiff' }),
+        new File(['intensity-1'], 'intensity-t1.tif', { type: 'image/tiff' })
+      ],
+      isSegmentation: false
+    },
+    {
+      channelId: 'channel-b',
+      channelLabel: 'Channel B',
+      key: 'segmentation',
+      label: 'Segmentation',
+      files: [
+        new File(['seg-0'], 'seg-t0.tif', { type: 'image/tiff' }),
+        new File(['seg-1'], 'seg-t1.tif', { type: 'image/tiff' })
+      ],
+      isSegmentation: true
+    }
+  ];
+  const volumeByFileName = new Map<string, VolumePayload>([
+    [
+      'intensity-t0.tif',
+      createSyntheticVolumePayload({
+        width: 2,
+        height: 2,
+        depth: 1,
+        channels: 1,
+        values: [0, 1, 2, 3]
+      })
+    ],
+    [
+      'intensity-t1.tif',
+      createSyntheticVolumePayload({
+        width: 2,
+        height: 2,
+        depth: 1,
+        channels: 1,
+        values: [4, 5, 6, 7]
+      })
+    ],
+    [
+      'seg-t0.tif',
+      createSyntheticVolumePayload({
+        width: 2,
+        height: 2,
+        depth: 1,
+        channels: 1,
+        values: [0, 1, 1, 2]
+      })
+    ],
+    [
+      'seg-t1.tif',
+      createSyntheticVolumePayload({
+        width: 2,
+        height: 2,
+        depth: 1,
+        channels: 1,
+        values: [2, 2, 1, 0]
+      })
+    ]
+  ]);
+
+  const storageHandle = createInMemoryPreprocessedStorage({ datasetId: 'preprocess-sharding-policies' });
+  const result = await preprocessDatasetToStorage({
+    layers,
+    channels,
+    trackSets: [],
+    voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    temporalResolution: { interval: 2.3, unit: 'ms' },
+    movieMode: '3d',
+    storage: storageHandle.storage,
+    volumeLoader: createLoaderByFileName(volumeByFileName),
+    storageStrategy: { sharding: { enabled: true } }
+  });
+
+  const intensityScale = result.manifest.dataset.channels[0]?.layers[0]?.zarr.scales[0];
+  assert.equal(intensityScale?.zarr.data.sharding?.arrayKind, 'volumeData');
+  assert.equal(intensityScale?.zarr.data.sharding?.allowTemporalAxis, false);
+  assert.equal(intensityScale?.zarr.data.sharding?.shardShape[0], 1);
+  assert.equal(intensityScale?.zarr.histogram.sharding?.arrayKind, 'histogram');
+  assert.equal(intensityScale?.zarr.histogram.sharding?.allowTemporalAxis, true);
+  assert.equal(intensityScale?.zarr.histogram.sharding?.shardShape[0], 2);
+  assert.equal(intensityScale?.zarr.skipHierarchy.levels[0]?.occupancy.sharding?.arrayKind, 'skipHierarchy');
+  assert.equal(intensityScale?.zarr.skipHierarchy.levels[0]?.occupancy.sharding?.shardShape[0], 2);
+
+  const segmentationScale = result.manifest.dataset.channels[1]?.layers[0]?.zarr.scales[0];
+  assert.equal(segmentationScale?.zarr.labels?.sharding?.arrayKind, 'volumeLabels');
+  assert.equal(segmentationScale?.zarr.labels?.sharding?.allowTemporalAxis, false);
+  assert.equal(segmentationScale?.zarr.labels?.sharding?.shardShape[0], 1);
+});
+
+test('preprocessDatasetToStorage writes playback atlas sidecars that volumeProvider consumes', async () => {
+  const channels: ChannelExportMetadata[] = [{ id: 'channel-a', name: 'Channel A' }];
+  const layers: PreprocessLayerSource[] = [
+    {
+      channelId: 'channel-a',
+      channelLabel: 'Channel A',
+      key: 'layer-a',
+      label: 'Layer A',
+      files: [new File(['intensity-0'], 'intensity-t0.tif', { type: 'image/tiff' })],
+      isSegmentation: false
+    }
+  ];
+  const sourceValues = [
+    0, 16, 32, 48,
+    64, 80, 96, 112,
+    128, 144, 160, 176,
+    192, 208, 224, 240
+  ];
+  const volumeByFileName = new Map<string, VolumePayload>([
+    [
+      'intensity-t0.tif',
+      createSyntheticVolumePayload({
+        width: 4,
+        height: 4,
+        depth: 1,
+        channels: 1,
+        values: sourceValues
+      })
+    ]
+  ]);
+
+  const storageHandle = createInMemoryPreprocessedStorage({ datasetId: 'preprocess-playback-atlas-sidecar' });
+  const result = await preprocessDatasetToStorage({
+    layers,
+    channels,
+    trackSets: [],
+    voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    temporalResolution: { interval: 2.3, unit: 'ms' },
+    movieMode: '3d',
+    storage: storageHandle.storage,
+    volumeLoader: createLoaderByFileName(volumeByFileName),
+    storageStrategy: { sharding: { enabled: false } }
+  });
+
+  const scale0 = result.manifest.dataset.channels[0]?.layers[0]?.zarr.scales[0];
+  const scale1 = result.manifest.dataset.channels[0]?.layers[0]?.zarr.scales[1];
+  assert.equal(scale0?.zarr.playbackAtlas, undefined);
+  assert.ok(scale1?.zarr.playbackAtlas);
+
+  const opened = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
+  const readFileCalls: string[] = [];
+  const trackedStorage = {
+    async writeFile(path: string, data: Uint8Array) {
+      await storageHandle.storage.writeFile(path, data);
+    },
+    async readFile(path: string) {
+      readFileCalls.push(path);
+      return storageHandle.storage.readFile(path);
+    }
+  };
+  const providerWithSidecar = createVolumeProvider({
+    manifest: opened.manifest,
+    storage: trackedStorage,
+    maxCachedVolumes: DEFAULT_MAX_CACHED_VOLUMES,
+    maxCachedChunkBytes: DEFAULT_MAX_CACHED_CHUNK_BYTES,
+    maxConcurrentChunkReads: DEFAULT_MAX_CONCURRENT_CHUNK_READS,
+    maxConcurrentPrefetchLoads: DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS
+  });
+
+  const manifestWithoutSidecar = structuredClone(opened.manifest);
+  for (const channel of manifestWithoutSidecar.dataset.channels) {
+    for (const layer of channel.layers) {
+      for (const scale of layer.zarr.scales) {
+        delete scale.zarr.playbackAtlas;
+      }
+    }
+  }
+  const providerWithoutSidecar = createVolumeProvider({
+    manifest: manifestWithoutSidecar,
+    storage: storageHandle.storage,
+    maxCachedVolumes: DEFAULT_MAX_CACHED_VOLUMES,
+    maxCachedChunkBytes: DEFAULT_MAX_CACHED_CHUNK_BYTES,
+    maxConcurrentChunkReads: DEFAULT_MAX_CONCURRENT_CHUNK_READS,
+    maxConcurrentPrefetchLoads: DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS
+  });
+
+  const atlasWithSidecar = await providerWithSidecar.getBrickAtlas?.('layer-a', 0, { scaleLevel: 1 });
+  const atlasWithoutSidecar = await providerWithoutSidecar.getBrickAtlas?.('layer-a', 0, { scaleLevel: 1 });
+  assert.ok(atlasWithSidecar);
+  assert.ok(atlasWithoutSidecar);
+  assert.deepEqual(Array.from(atlasWithSidecar?.data ?? []), Array.from(atlasWithoutSidecar?.data ?? []));
+  assert.deepEqual(
+    Array.from(atlasWithSidecar?.pageTable.brickAtlasIndices ?? []),
+    Array.from(atlasWithoutSidecar?.pageTable.brickAtlasIndices ?? [])
+  );
+  assert.equal(
+    readFileCalls.some((path) => path.startsWith(`${scale1?.zarr.data.path}/`)),
+    false
+  );
+  assert.equal(
+    readFileCalls.some((path) => path.startsWith(`${scale1?.zarr.playbackAtlas?.data.path}/`)),
+    true
+  );
+});
+
+test('preprocessDatasetToStorage can shard background masks across the first spatial axis', async () => {
+  const channels: ChannelExportMetadata[] = [{ id: 'channel-a', name: 'Channel A' }];
+  const layers: PreprocessLayerSource[] = [
+    {
+      channelId: 'channel-a',
+      channelLabel: 'Channel A',
+      key: 'layer-a',
+      label: 'Layer A',
+      files: [new File(['volume-0'], 'volume-0.tif', { type: 'image/tiff' })],
+      isSegmentation: false
+    }
+  ];
+  const volumeByFileName = new Map<string, VolumePayload>([
+    [
+      'volume-0.tif',
+      createSyntheticVolumePayload({
+        width: 1,
+        height: 1,
+        depth: 8,
+        channels: 1,
+        values: [0, 1, 0, 1, 0, 1, 0, 1]
+      })
+    ]
+  ]);
+
+  const storageHandle = createInMemoryPreprocessedStorage({ datasetId: 'preprocess-background-mask-first-axis' });
+  const result = await preprocessDatasetToStorage({
+    layers,
+    channels,
+    trackSets: [],
+    voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    temporalResolution: { interval: 2.3, unit: 'ms' },
+    movieMode: '3d',
+    backgroundMask: { values: [0] },
+    storage: storageHandle.storage,
+    volumeLoader: createLoaderByFileName(volumeByFileName),
+    storageStrategy: {
+      chunkTargetBytes: 1,
+      sharding: {
+        enabled: true,
+        arrayPolicies: {
+          backgroundMask: {
+            targetShardBytes: 8
+          }
+        }
+      }
+    }
+  });
+
+  const backgroundMaskScale = result.manifest.dataset.backgroundMask?.zarr.scales[0];
+  assert.equal(backgroundMaskScale?.zarr.data.sharding?.arrayKind, 'backgroundMask');
+  assert.equal(backgroundMaskScale?.zarr.data.sharding?.shardShape[0], 8);
+});
+
 test('preprocessDatasetToStorage writes streaming subcell payloads that page tables expose', async () => {
   const channels: ChannelExportMetadata[] = [{ id: 'channel-a', name: 'Channel A' }];
   const files = [new File(['intensity-0'], 'intensity-t0.tif', { type: 'image/tiff' })];

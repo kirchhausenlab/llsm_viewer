@@ -39,11 +39,24 @@ export type ZarrArrayDescriptor = {
   sharding?: ZarrArrayShardingPlan | null;
 };
 
+export type ZarrArrayShardingPlanArrayKind =
+  | 'volumeData'
+  | 'volumeLabels'
+  | 'skipHierarchy'
+  | 'histogram'
+  | 'subcell'
+  | 'backgroundMask'
+  | 'playbackAtlasIndices'
+  | 'playbackAtlasData';
+
 export type ZarrArrayShardingPlan = {
   enabled: boolean;
   targetShardBytes: number;
   shardShape: number[];
   estimatedShardBytes: number;
+  arrayKind?: ZarrArrayShardingPlanArrayKind;
+  allowTemporalAxis?: boolean;
+  fullReadFallbackMaxBytes?: number;
   reason?: string;
 };
 
@@ -64,6 +77,21 @@ export type PreprocessedScaleSubcellZarrDescriptor = {
   data: ZarrArrayDescriptor;
 };
 
+export type PreprocessedBrickAtlasTextureFormat = 'red' | 'rg' | 'rgba';
+
+export type PreprocessedShardedBlobDescriptor = {
+  path: string;
+  entryCount: number;
+  sharding?: ZarrArrayShardingPlan | null;
+};
+
+export type PreprocessedScalePlaybackAtlasZarrDescriptor = {
+  textureFormat: PreprocessedBrickAtlasTextureFormat;
+  textureChannels: number;
+  brickAtlasIndices: ZarrArrayDescriptor;
+  data: PreprocessedShardedBlobDescriptor;
+};
+
 export type PreprocessedLayerScaleManifestEntry = {
   level: number;
   downsampleFactor: [number, number, number];
@@ -76,6 +104,7 @@ export type PreprocessedLayerScaleManifestEntry = {
     labels?: ZarrArrayDescriptor;
     skipHierarchy: PreprocessedScaleSkipHierarchyZarrDescriptor;
     subcell?: PreprocessedScaleSubcellZarrDescriptor;
+    playbackAtlas?: PreprocessedScalePlaybackAtlasZarrDescriptor;
     histogram: ZarrArrayDescriptor;
   };
 };

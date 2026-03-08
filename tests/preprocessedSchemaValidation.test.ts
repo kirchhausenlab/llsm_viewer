@@ -55,6 +55,8 @@ test('openPreprocessedDatasetFromZarrStorage accepts valid sharded vNext fixture
   const baseScale = opened.manifest.dataset.channels[0]?.layers[0]?.zarr.scales[0];
   assert.equal(opened.totalVolumeCount, 2);
   assert.equal(baseScale?.zarr.data.sharding?.enabled, true);
+  assert.equal(baseScale?.zarr.data.sharding?.arrayKind, 'volumeData');
+  assert.equal(baseScale?.zarr.data.sharding?.allowTemporalAxis, false);
   assert.deepEqual(baseScale?.zarr.data.sharding?.shardShape, [1, 1, 2, 4, 1]);
 });
 

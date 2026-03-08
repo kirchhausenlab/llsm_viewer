@@ -22,19 +22,24 @@ import type {
   PreprocessedLayerScaleManifestEntry,
   PreprocessedManifest,
   PreprocessedMovieMode,
+  PreprocessedBrickAtlasTextureFormat,
   PreprocessedScaleSkipHierarchyZarrDescriptor,
   PreprocessedScaleSkipHierarchyLevelZarrDescriptor,
+  PreprocessedScalePlaybackAtlasZarrDescriptor,
   PreprocessedScaleSubcellZarrDescriptor,
+  PreprocessedShardedBlobDescriptor,
   PreprocessedTrackSetSummary,
   TrackSetExportMetadata,
   ZarrArrayShardingPlan,
-  ZarrArrayDescriptor
+  ZarrArrayDescriptor,
+  ZarrArrayShardingPlanArrayKind
 } from './types';
 import { PREPROCESSED_DATASET_FORMAT } from './types';
 import { createZarrStoreFromPreprocessedStorage } from '../zarrStore';
 import { buildChannelSummariesFromManifest, buildTrackSummariesFromManifest } from './manifest';
 import { createTracksDescriptor, serializeTrackEntriesToCsvBytes } from './tracks';
 import { encodeUint32ArrayLE, HISTOGRAM_BINS } from '../histogram';
+import { encodeInt32ArrayLE } from '../int32';
 import {
   buildPreprocessScalePyramidInWorker,
   supportsPreprocessScalePyramidWorker,
@@ -94,6 +99,13 @@ export type PreprocessDatasetProgress =
 type LoadVolumesFromFiles = (files: File[]) => Promise<VolumePayload[]>;
 export type PreprocessInputInterpretation = '3d-movie' | '2d-movie' | 'single-3d-volume';
 
+export type PreprocessArrayShardingPolicyOverrides = {
+  targetShardBytes?: number;
+  maxChunksPerAxis?: number;
+  allowTemporalAxis?: boolean;
+  fullReadFallbackMaxBytes?: number;
+};
+
 export type PreprocessDatasetToStorageOptions = {
   layers: PreprocessLayerSource[];
   channels: ChannelExportMetadata[];
@@ -110,6 +122,10 @@ export type PreprocessDatasetToStorageOptions = {
       enabled?: boolean;
       targetShardBytes?: number;
       maxChunksPerAxis?: number;
+      fullReadFallbackMaxBytes?: number;
+      arrayPolicies?: Partial<
+        Record<ZarrArrayShardingPlanArrayKind, PreprocessArrayShardingPolicyOverrides>
+      >;
     };
   };
   processingStrategy?: {
@@ -213,6 +229,18 @@ function createZarrScaleSubcellArrayPath(channelId: string, layerKey: string, sc
   return `channels/${channelId}/${layerKey}/scales/${scaleLevel}/subcell`;
 }
 
+function createZarrScalePlaybackAtlasIndicesArrayPath(
+  channelId: string,
+  layerKey: string,
+  scaleLevel: number
+): string {
+  return `channels/${channelId}/${layerKey}/scales/${scaleLevel}/playback-atlas/indices`;
+}
+
+function createZarrScalePlaybackAtlasDataPath(channelId: string, layerKey: string, scaleLevel: number): string {
+  return `channels/${channelId}/${layerKey}/scales/${scaleLevel}/playback-atlas/data`;
+}
+
 function createZarrBackgroundMaskArrayPath(scaleLevel: number): string {
   return `background-mask/scales/${scaleLevel}/data`;
 }
@@ -257,12 +285,78 @@ const DEFAULT_PREPROCESS_MAX_IN_FLIGHT_WRITES = 4;
 const DEFAULT_PREPROCESS_EXECUTION_MODE = 'auto' as const;
 const DEFAULT_PREPROCESS_STREAMING_THRESHOLD_BYTES = 512 * 1024 * 1024;
 
+type ShardingArrayPolicy = {
+  targetShardBytes: number;
+  maxChunksPerAxis: number;
+  allowTemporalAxis: boolean;
+  fullReadFallbackMaxBytes: number;
+  reason: string;
+};
+
+const DEFAULT_SHARDING_POLICY_BY_ARRAY_KIND: Record<ZarrArrayShardingPlanArrayKind, ShardingArrayPolicy> = {
+  volumeData: {
+    targetShardBytes: 12 * 1024 * 1024,
+    maxChunksPerAxis: 8,
+    allowTemporalAxis: false,
+    fullReadFallbackMaxBytes: 1 * 1024 * 1024,
+    reason: 'Dense voxel payloads stay time-local and shard only across spatial axes.'
+  },
+  volumeLabels: {
+    targetShardBytes: 12 * 1024 * 1024,
+    maxChunksPerAxis: 8,
+    allowTemporalAxis: false,
+    fullReadFallbackMaxBytes: 1 * 1024 * 1024,
+    reason: 'Segmentation labels stay time-local to avoid whole-frame playback churn.'
+  },
+  skipHierarchy: {
+    targetShardBytes: 2 * 1024 * 1024,
+    maxChunksPerAxis: 64,
+    allowTemporalAxis: true,
+    fullReadFallbackMaxBytes: 512 * 1024,
+    reason: 'Skip-hierarchy metadata may group neighboring timepoints to collapse file counts.'
+  },
+  histogram: {
+    targetShardBytes: 512 * 1024,
+    maxChunksPerAxis: 256,
+    allowTemporalAxis: true,
+    fullReadFallbackMaxBytes: 512 * 1024,
+    reason: 'Histograms group many tiny timepoint records into compact metadata shards.'
+  },
+  subcell: {
+    targetShardBytes: 2 * 1024 * 1024,
+    maxChunksPerAxis: 8,
+    allowTemporalAxis: true,
+    fullReadFallbackMaxBytes: 1 * 1024 * 1024,
+    reason: 'Subcell metadata can group timepoints when range reads are available.'
+  },
+  playbackAtlasIndices: {
+    targetShardBytes: 2 * 1024 * 1024,
+    maxChunksPerAxis: 64,
+    allowTemporalAxis: true,
+    fullReadFallbackMaxBytes: 512 * 1024,
+    reason: 'Playback atlas indices group neighboring timepoints into compact metadata shards.'
+  },
+  playbackAtlasData: {
+    targetShardBytes: 8 * 1024 * 1024,
+    maxChunksPerAxis: 8,
+    allowTemporalAxis: true,
+    fullReadFallbackMaxBytes: 1 * 1024 * 1024,
+    reason: 'Playback atlas payloads are prepacked into timepoint blobs for direct upload.'
+  },
+  backgroundMask: {
+    targetShardBytes: 4 * 1024 * 1024,
+    maxChunksPerAxis: 8,
+    allowTemporalAxis: false,
+    fullReadFallbackMaxBytes: 1 * 1024 * 1024,
+    reason: 'Background masks shard spatially and never mix unrelated data classes.'
+  }
+};
+
 type ShardingStrategy = {
   chunkTargetBytes: number;
   maxInFlightChunkWrites: number;
   enabled: boolean;
-  targetShardBytes: number;
-  maxChunksPerAxis: number;
+  arrayPolicies: Record<ZarrArrayShardingPlanArrayKind, ShardingArrayPolicy>;
 };
 
 function normalizePositiveInteger(value: number | undefined, fallback: number, label: string): number {
@@ -279,6 +373,60 @@ function resolveShardingStrategy(
   options: PreprocessDatasetToStorageOptions['storageStrategy'] | undefined
 ): ShardingStrategy {
   const sharding = options?.sharding;
+  const sharedTargetShardBytes =
+    sharding?.targetShardBytes === undefined
+      ? undefined
+      : normalizePositiveInteger(
+          sharding.targetShardBytes,
+          DEFAULT_SHARD_TARGET_BYTES,
+          'storageStrategy.sharding.targetShardBytes'
+        );
+  const sharedMaxChunksPerAxis =
+    sharding?.maxChunksPerAxis === undefined
+      ? undefined
+      : normalizePositiveInteger(
+          sharding.maxChunksPerAxis,
+          DEFAULT_SHARD_MAX_CHUNKS_PER_AXIS,
+          'storageStrategy.sharding.maxChunksPerAxis'
+        );
+  const sharedFullReadFallbackMaxBytes =
+    sharding?.fullReadFallbackMaxBytes === undefined
+      ? undefined
+      : normalizePositiveInteger(
+          sharding.fullReadFallbackMaxBytes,
+          DEFAULT_SHARD_TARGET_BYTES,
+          'storageStrategy.sharding.fullReadFallbackMaxBytes'
+        );
+
+  const arrayPolicies = Object.fromEntries(
+    Object.entries(DEFAULT_SHARDING_POLICY_BY_ARRAY_KIND).map(([arrayKind, defaults]) => {
+      const overrides = sharding?.arrayPolicies?.[arrayKind as ZarrArrayShardingPlanArrayKind];
+      const resolvedPolicy: ShardingArrayPolicy = {
+        targetShardBytes: normalizePositiveInteger(
+          overrides?.targetShardBytes,
+          sharedTargetShardBytes ?? defaults.targetShardBytes,
+          `storageStrategy.sharding.arrayPolicies.${arrayKind}.targetShardBytes`
+        ),
+        maxChunksPerAxis: normalizePositiveInteger(
+          overrides?.maxChunksPerAxis,
+          sharedMaxChunksPerAxis ?? defaults.maxChunksPerAxis,
+          `storageStrategy.sharding.arrayPolicies.${arrayKind}.maxChunksPerAxis`
+        ),
+        allowTemporalAxis: overrides?.allowTemporalAxis ?? defaults.allowTemporalAxis,
+        fullReadFallbackMaxBytes: normalizePositiveInteger(
+          overrides?.fullReadFallbackMaxBytes,
+          sharedFullReadFallbackMaxBytes ?? defaults.fullReadFallbackMaxBytes,
+          `storageStrategy.sharding.arrayPolicies.${arrayKind}.fullReadFallbackMaxBytes`
+        ),
+        reason: defaults.reason
+      };
+      return [
+        arrayKind,
+        resolvedPolicy
+      ];
+    })
+  ) as Record<ZarrArrayShardingPlanArrayKind, ShardingArrayPolicy>;
+
   return {
     chunkTargetBytes: normalizePositiveInteger(
       options?.chunkTargetBytes,
@@ -291,16 +439,7 @@ function resolveShardingStrategy(
       'storageStrategy.maxInFlightChunkWrites'
     ),
     enabled: Boolean(sharding?.enabled),
-    targetShardBytes: normalizePositiveInteger(
-      sharding?.targetShardBytes,
-      DEFAULT_SHARD_TARGET_BYTES,
-      'storageStrategy.sharding.targetShardBytes'
-    ),
-    maxChunksPerAxis: normalizePositiveInteger(
-      sharding?.maxChunksPerAxis,
-      DEFAULT_SHARD_MAX_CHUNKS_PER_AXIS,
-      'storageStrategy.sharding.maxChunksPerAxis'
-    )
+    arrayPolicies
   };
 }
 
@@ -309,32 +448,44 @@ function computeChunkStorageBytes(chunkShape: number[], dataType: ZarrArrayDescr
 }
 
 function createShardingPlan({
+  arrayKind,
   shape,
   chunkShape,
   dataType,
-  strategy
+  strategy,
+  temporalAxisIndex
 }: {
+  arrayKind: ZarrArrayShardingPlanArrayKind;
   shape: number[];
   chunkShape: number[];
   dataType: ZarrArrayDescriptor['dataType'];
   strategy: ShardingStrategy;
+  temporalAxisIndex?: number | null;
 }): ZarrArrayShardingPlan {
+  const policy = strategy.arrayPolicies[arrayKind];
   const chunkCounts = shape.map((shapeDim, axis) => {
     const axisChunk = chunkShape[axis] ?? 0;
     return Math.ceil(shapeDim / Math.max(1, axisChunk));
   });
   const multipliers = chunkShape.map(() => 1);
-  const axisCandidates = chunkShape.map((_, axis) => axis).filter((axis) => axis !== 0);
+  const normalizedTemporalAxisIndex =
+    temporalAxisIndex === null || temporalAxisIndex === undefined ? null : temporalAxisIndex;
+  const axisCandidates = chunkShape.map((_, axis) => axis).filter((axis) => {
+    if (policy.allowTemporalAxis) {
+      return true;
+    }
+    return axis !== normalizedTemporalAxisIndex;
+  });
   let estimatedShardBytes = computeChunkStorageBytes(chunkShape, dataType);
 
-  while (estimatedShardBytes < strategy.targetShardBytes) {
+  while (estimatedShardBytes < policy.targetShardBytes) {
     let selectedAxis = -1;
     let selectedCapacity = 0;
 
     for (const axis of axisCandidates) {
       const count = chunkCounts[axis] ?? 1;
       const currentMultiplier = multipliers[axis] ?? 1;
-      const maxMultiplier = Math.min(count, strategy.maxChunksPerAxis);
+      const maxMultiplier = Math.min(count, policy.maxChunksPerAxis);
       if (currentMultiplier >= maxMultiplier) {
         continue;
       }
@@ -350,7 +501,7 @@ function createShardingPlan({
     }
 
     const current = multipliers[selectedAxis] ?? 1;
-    const maxMultiplier = Math.min(chunkCounts[selectedAxis] ?? 1, strategy.maxChunksPerAxis);
+    const maxMultiplier = Math.min(chunkCounts[selectedAxis] ?? 1, policy.maxChunksPerAxis);
     multipliers[selectedAxis] = Math.min(maxMultiplier, current * 2);
     const shardShape = chunkShape.map((dim, axis) => dim * (multipliers[axis] ?? 1));
     estimatedShardBytes = computeChunkStorageBytes(shardShape, dataType);
@@ -359,12 +510,109 @@ function createShardingPlan({
   const shardShape = chunkShape.map((dim, axis) => dim * (multipliers[axis] ?? 1));
   return {
     enabled: strategy.enabled,
-    targetShardBytes: strategy.targetShardBytes,
+    targetShardBytes: policy.targetShardBytes,
     shardShape,
     estimatedShardBytes,
+    arrayKind,
+    allowTemporalAxis: policy.allowTemporalAxis,
+    fullReadFallbackMaxBytes: policy.fullReadFallbackMaxBytes,
     reason: strategy.enabled
-      ? 'Sharded write/read path enabled.'
-      : 'Advisory sharding plan. Enable storageStrategy.sharding.enabled to write/read real shards.'
+      ? policy.reason
+      : `Advisory sharding plan. Enable storageStrategy.sharding.enabled to write/read real shards. ${policy.reason}`
+  };
+}
+
+function shouldCreatePlaybackAtlasSidecar(scaleLevel: number, totalScaleCount: number): boolean {
+  return totalScaleCount === 1 || scaleLevel > 0;
+}
+
+function getPlaybackBrickAtlasTextureFormat(sourceChannels: number): PreprocessedBrickAtlasTextureFormat {
+  if (sourceChannels <= 1) {
+    return 'red';
+  }
+  if (sourceChannels === 2) {
+    return 'rg';
+  }
+  return 'rgba';
+}
+
+function getPlaybackBrickAtlasTextureChannels(textureFormat: PreprocessedBrickAtlasTextureFormat): number {
+  if (textureFormat === 'red') {
+    return 1;
+  }
+  if (textureFormat === 'rg') {
+    return 2;
+  }
+  return 4;
+}
+
+function mapPlaybackSourceChannelToTextureChannel(
+  sourceChannel: number,
+  sourceChannelCount: number,
+  textureFormat: PreprocessedBrickAtlasTextureFormat
+): number | null {
+  if (textureFormat === 'red') {
+    return sourceChannel === 0 ? 0 : null;
+  }
+  if (textureFormat === 'rg') {
+    return sourceChannel >= 0 && sourceChannel <= 1 ? sourceChannel : null;
+  }
+  if (sourceChannel < 0 || sourceChannel > 3) {
+    return null;
+  }
+  if (sourceChannelCount === 3 && sourceChannel === 3) {
+    return null;
+  }
+  return sourceChannel;
+}
+
+function createPlaybackAtlasBlobDescriptor({
+  path,
+  entryCount,
+  estimatedEntryBytes,
+  strategy
+}: {
+  path: string;
+  entryCount: number;
+  estimatedEntryBytes: number;
+  strategy: ShardingStrategy;
+}): PreprocessedShardedBlobDescriptor {
+  const policy = strategy.arrayPolicies.playbackAtlasData;
+  const safeEstimatedEntryBytes = Math.max(1, Math.floor(estimatedEntryBytes));
+  const entriesPerShard = Math.max(
+    1,
+    Math.min(
+      entryCount,
+      policy.maxChunksPerAxis,
+      Math.max(1, Math.floor(policy.targetShardBytes / safeEstimatedEntryBytes))
+    )
+  );
+
+  return {
+    path,
+    entryCount,
+    sharding: {
+      enabled: strategy.enabled,
+      targetShardBytes: policy.targetShardBytes,
+      shardShape: [entriesPerShard],
+      estimatedShardBytes: safeEstimatedEntryBytes * entriesPerShard,
+      arrayKind: 'playbackAtlasData',
+      allowTemporalAxis: true,
+      fullReadFallbackMaxBytes: policy.fullReadFallbackMaxBytes,
+      reason: strategy.enabled
+        ? policy.reason
+        : `Advisory sharding plan. Enable storageStrategy.sharding.enabled to write/read real shards. ${policy.reason}`
+    }
+  };
+}
+
+function createSyntheticDescriptorForBlob(descriptor: PreprocessedShardedBlobDescriptor): ZarrArrayDescriptor {
+  return {
+    path: descriptor.path,
+    shape: [descriptor.entryCount],
+    chunkShape: [1],
+    dataType: 'uint8',
+    ...(descriptor.sharding !== undefined ? { sharding: descriptor.sharding } : {})
   };
 }
 
@@ -473,10 +721,12 @@ function buildBackgroundMaskScales({
       chunkShape: [chunkDepth, chunkHeight, chunkWidth],
       dataType: 'uint8',
       sharding: createShardingPlan({
+        arrayKind: 'backgroundMask',
         shape: [geometryLevel.depth, geometryLevel.height, geometryLevel.width],
         chunkShape: [chunkDepth, chunkHeight, chunkWidth],
         dataType: 'uint8',
-        strategy: shardingStrategy
+        strategy: shardingStrategy,
+        temporalAxisIndex: null
       })
     };
 
@@ -544,10 +794,12 @@ function buildLayerScaleDescriptors({
       chunkShape: [1, dataChunkDepth, dataChunkHeight, dataChunkWidth, layerMetadata.channels],
       dataType: 'uint8',
       sharding: createShardingPlan({
+        arrayKind: 'volumeData',
         shape: [expectedTimepoints, currentDepth, currentHeight, currentWidth, layerMetadata.channels],
         chunkShape: [1, dataChunkDepth, dataChunkHeight, dataChunkWidth, layerMetadata.channels],
         dataType: 'uint8',
-        strategy: shardingStrategy
+        strategy: shardingStrategy,
+        temporalAxisIndex: 0
       })
     };
     const leafGridShape = computeLeafGridShapeForScaleDescriptor(dataDescriptor);
@@ -570,10 +822,12 @@ function buildLayerScaleDescriptors({
             chunkShape,
             dataType: 'uint8',
             sharding: createShardingPlan({
+              arrayKind: 'skipHierarchy',
               shape,
               chunkShape,
               dataType: 'uint8',
-              strategy: shardingStrategy
+              strategy: shardingStrategy,
+              temporalAxisIndex: 0
             })
           },
           min: {
@@ -582,10 +836,12 @@ function buildLayerScaleDescriptors({
             chunkShape,
             dataType: 'uint8',
             sharding: createShardingPlan({
+              arrayKind: 'skipHierarchy',
               shape,
               chunkShape,
               dataType: 'uint8',
-              strategy: shardingStrategy
+              strategy: shardingStrategy,
+              temporalAxisIndex: 0
             })
           },
           max: {
@@ -594,10 +850,12 @@ function buildLayerScaleDescriptors({
             chunkShape,
             dataType: 'uint8',
             sharding: createShardingPlan({
+              arrayKind: 'skipHierarchy',
               shape,
               chunkShape,
               dataType: 'uint8',
-              strategy: shardingStrategy
+              strategy: shardingStrategy,
+              temporalAxisIndex: 0
             })
           }
         };
@@ -633,6 +891,7 @@ function buildLayerScaleDescriptors({
               ],
               dataType: 'uint8',
               sharding: createShardingPlan({
+                arrayKind: 'subcell',
                 shape: [
                   expectedTimepoints,
                   subcellTextureSize.depth,
@@ -648,22 +907,58 @@ function buildLayerScaleDescriptors({
                   4
                 ],
                 dataType: 'uint8',
-                strategy: shardingStrategy
+                strategy: shardingStrategy,
+                temporalAxisIndex: 0
               })
             }
           };
         })()
       : undefined;
+    const playbackAtlasDescriptor: PreprocessedScalePlaybackAtlasZarrDescriptor | undefined =
+      shouldCreatePlaybackAtlasSidecar(level, geometryLevels.length)
+        ? (() => {
+            const textureFormat = getPlaybackBrickAtlasTextureFormat(layerMetadata.channels);
+            const textureChannels = getPlaybackBrickAtlasTextureChannels(textureFormat);
+            const expectedBrickCount = leafGridShape[0] * leafGridShape[1] * leafGridShape[2];
+            const atlasBlockBytes = dataChunkDepth * dataChunkHeight * dataChunkWidth * textureChannels;
+            return {
+              textureFormat,
+              textureChannels,
+              brickAtlasIndices: {
+                path: createZarrScalePlaybackAtlasIndicesArrayPath(layer.channelId, layer.key, level),
+                shape: [expectedTimepoints, leafGridShape[0], leafGridShape[1], leafGridShape[2]],
+                chunkShape: [1, leafGridShape[0], leafGridShape[1], leafGridShape[2]],
+                dataType: 'int32',
+                sharding: createShardingPlan({
+                  arrayKind: 'playbackAtlasIndices',
+                  shape: [expectedTimepoints, leafGridShape[0], leafGridShape[1], leafGridShape[2]],
+                  chunkShape: [1, leafGridShape[0], leafGridShape[1], leafGridShape[2]],
+                  dataType: 'int32',
+                  strategy: shardingStrategy,
+                  temporalAxisIndex: 0
+                })
+              },
+              data: createPlaybackAtlasBlobDescriptor({
+                path: createZarrScalePlaybackAtlasDataPath(layer.channelId, layer.key, level),
+                entryCount: expectedTimepoints,
+                estimatedEntryBytes: atlasBlockBytes * expectedBrickCount,
+                strategy: shardingStrategy
+              })
+            };
+          })()
+        : undefined;
     const histogramDescriptor: ZarrArrayDescriptor = {
       path: createZarrScaleHistogramArrayPath(layer.channelId, layer.key, level),
       shape: [expectedTimepoints, HISTOGRAM_BINS],
       chunkShape: [1, HISTOGRAM_BINS],
       dataType: 'uint32',
       sharding: createShardingPlan({
+        arrayKind: 'histogram',
         shape: [expectedTimepoints, HISTOGRAM_BINS],
         chunkShape: [1, HISTOGRAM_BINS],
         dataType: 'uint32',
-        strategy: shardingStrategy
+        strategy: shardingStrategy,
+        temporalAxisIndex: 0
       })
     };
 
@@ -683,10 +978,12 @@ function buildLayerScaleDescriptors({
         chunkShape: [1, labelsChunkDepth, labelsChunkHeight, labelsChunkWidth],
         dataType: 'uint32',
         sharding: createShardingPlan({
+          arrayKind: 'volumeLabels',
           shape: [expectedTimepoints, currentDepth, currentHeight, currentWidth],
           chunkShape: [1, labelsChunkDepth, labelsChunkHeight, labelsChunkWidth],
           dataType: 'uint32',
-          strategy: shardingStrategy
+          strategy: shardingStrategy,
+          temporalAxisIndex: 0
         })
       };
     }
@@ -702,6 +999,7 @@ function buildLayerScaleDescriptors({
         data: dataDescriptor,
         skipHierarchy: skipHierarchyDescriptor,
         ...(subcellDescriptor ? { subcell: subcellDescriptor } : {}),
+        ...(playbackAtlasDescriptor ? { playbackAtlas: playbackAtlasDescriptor } : {}),
         histogram: histogramDescriptor,
         ...(labelsDescriptor ? { labels: labelsDescriptor } : {})
       }
@@ -2752,6 +3050,17 @@ async function createManifestZarrArrays({
           });
         }
 
+        if (scale.zarr.playbackAtlas) {
+          const indices = scale.zarr.playbackAtlas.brickAtlasIndices;
+          await zarr.create(root.resolve(indices.path), {
+            shape: indices.shape,
+            data_type: indices.dataType,
+            chunk_shape: indices.chunkShape,
+            codecs: resolveArrayCodecsForDescriptor(indices),
+            fill_value: -1
+          });
+        }
+
         if (scale.zarr.labels) {
           const labels = scale.zarr.labels;
           await zarr.create(root.resolve(labels.path), {
@@ -3231,11 +3540,97 @@ function buildSkipHierarchyLevelBuffersFromLeaf({
   return levels;
 }
 
+type PlaybackAtlasWriteState = {
+  descriptor: PreprocessedScalePlaybackAtlasZarrDescriptor;
+  dataEntryDescriptor: ZarrArrayDescriptor;
+  brickAtlasIndices: Int32Array;
+  occupiedBrickCount: number;
+  blockByteLength: number;
+  blocks: Uint8Array[];
+};
+
+function createPlaybackAtlasWriteState({
+  descriptor,
+  chunkDepth,
+  chunkHeight,
+  chunkWidth,
+  expectedBrickCount
+}: {
+  descriptor: PreprocessedScalePlaybackAtlasZarrDescriptor;
+  chunkDepth: number;
+  chunkHeight: number;
+  chunkWidth: number;
+  expectedBrickCount: number;
+}): PlaybackAtlasWriteState {
+  return {
+    descriptor,
+    dataEntryDescriptor: createSyntheticDescriptorForBlob(descriptor.data),
+    brickAtlasIndices: new Int32Array(expectedBrickCount).fill(-1),
+    occupiedBrickCount: 0,
+    blockByteLength: chunkDepth * chunkHeight * chunkWidth * descriptor.textureChannels,
+    blocks: []
+  };
+}
+
+function buildPlaybackAtlasBlock({
+  chunkBytes,
+  zExtent,
+  yExtent,
+  xExtent,
+  sourceChannels,
+  chunkDepth,
+  chunkHeight,
+  chunkWidth,
+  textureFormat,
+  textureChannels
+}: {
+  chunkBytes: Uint8Array;
+  zExtent: number;
+  yExtent: number;
+  xExtent: number;
+  sourceChannels: number;
+  chunkDepth: number;
+  chunkHeight: number;
+  chunkWidth: number;
+  textureFormat: PreprocessedBrickAtlasTextureFormat;
+  textureChannels: number;
+}): Uint8Array {
+  const expectedChunkBytes = zExtent * yExtent * xExtent * sourceChannels;
+  if (chunkBytes.byteLength !== expectedChunkBytes) {
+    throw new Error(`Playback atlas block byte length mismatch: expected ${expectedChunkBytes}, got ${chunkBytes.byteLength}.`);
+  }
+  const block = new Uint8Array(chunkDepth * chunkHeight * chunkWidth * textureChannels);
+  for (let localZ = 0; localZ < zExtent; localZ += 1) {
+    for (let localY = 0; localY < yExtent; localY += 1) {
+      for (let localX = 0; localX < xExtent; localX += 1) {
+        const sourceVoxelOffset = (((localZ * yExtent + localY) * xExtent + localX) * sourceChannels);
+        const atlasVoxelOffset = (((localZ * chunkHeight + localY) * chunkWidth + localX) * textureChannels);
+        if (textureFormat === 'rgba' && sourceChannels === 3) {
+          block[atlasVoxelOffset + 3] = 255;
+        }
+        for (let sourceChannel = 0; sourceChannel < sourceChannels; sourceChannel += 1) {
+          const textureChannel = mapPlaybackSourceChannelToTextureChannel(
+            sourceChannel,
+            sourceChannels,
+            textureFormat
+          );
+          if (textureChannel === null) {
+            continue;
+          }
+          block[atlasVoxelOffset + textureChannel] = chunkBytes[sourceVoxelOffset + sourceChannel] ?? 0;
+        }
+      }
+    }
+  }
+  return block;
+}
+
 async function writeDataChunksForScale({
   chunkWriter,
   descriptor,
   skipHierarchyDescriptor,
   subcellDescriptor,
+  playbackAtlasDescriptor,
   timepoint,
   volume,
   backgroundMask,
@@ -3245,6 +3640,7 @@ async function writeDataChunksForScale({
   descriptor: ZarrArrayDescriptor;
   skipHierarchyDescriptor?: PreprocessedScaleSkipHierarchyZarrDescriptor;
   subcellDescriptor?: PreprocessedScaleSubcellZarrDescriptor;
+  playbackAtlasDescriptor?: PreprocessedScalePlaybackAtlasZarrDescriptor;
   timepoint: number;
   volume: {
     width: number;
@@ -3359,6 +3755,16 @@ async function writeDataChunksForScale({
     subcellGridShape = subcellDescriptor.gridShape;
   }
 
+  const playbackAtlasState = playbackAtlasDescriptor
+    ? createPlaybackAtlasWriteState({
+        descriptor: playbackAtlasDescriptor,
+        chunkDepth,
+        chunkHeight,
+        chunkWidth,
+        expectedBrickCount: chunkCount
+      })
+    : null;
+
   for (let zChunk = 0; zChunk < zChunks; zChunk += 1) {
     const zStart = chunkStart(zChunk, chunkDepth);
     const zLength = chunkLength(volume.depth, zStart, chunkDepth);
@@ -3388,11 +3794,29 @@ async function writeDataChunksForScale({
           bytes: chunk,
           signal
         });
+        const chunkIndex = (zChunk * yChunks + yChunk) * xChunks + xChunk;
         if (leafMinValues && leafMaxValues && leafOccupancyValues) {
-          const chunkIndex = (zChunk * yChunks + yChunk) * xChunks + xChunk;
           leafMinValues[chunkIndex] = stats.min;
           leafMaxValues[chunkIndex] = stats.max;
           leafOccupancyValues[chunkIndex] = stats.occupancy > 0 ? 255 : 0;
+        }
+        if (playbackAtlasState && stats.occupancy > 0) {
+          playbackAtlasState.brickAtlasIndices[chunkIndex] = playbackAtlasState.occupiedBrickCount;
+          playbackAtlasState.occupiedBrickCount += 1;
+          playbackAtlasState.blocks.push(
+            buildPlaybackAtlasBlock({
+              chunkBytes: chunk,
+              zExtent: zLength,
+              yExtent: yLength,
+              xExtent: xLength,
+              sourceChannels: volume.channels,
+              chunkDepth,
+              chunkHeight,
+              chunkWidth,
+              textureFormat: playbackAtlasState.descriptor.textureFormat,
+              textureChannels: playbackAtlasState.descriptor.textureChannels
+            })
+          );
         }
         if (subcellTextureBytes && subcellTextureSize && subcellGridShape) {
           const subcellChunk = buildBrickSubcellChunkData({
@@ -3482,6 +3906,29 @@ async function writeDataChunksForScale({
       descriptor: subcellDescriptor.data,
       chunkCoords: [timepoint, 0, 0, 0, 0],
       bytes: subcellTextureBytes,
+      signal
+    });
+  }
+
+  if (playbackAtlasState) {
+    const atlasBytes = new Uint8Array(playbackAtlasState.occupiedBrickCount * playbackAtlasState.blockByteLength);
+    for (let blockIndex = 0; blockIndex < playbackAtlasState.blocks.length; blockIndex += 1) {
+      const block = playbackAtlasState.blocks[blockIndex];
+      if (!block) {
+        continue;
+      }
+      atlasBytes.set(block, blockIndex * playbackAtlasState.blockByteLength);
+    }
+    await chunkWriter.writeChunk({
+      descriptor: playbackAtlasState.descriptor.brickAtlasIndices,
+      chunkCoords: [timepoint, 0, 0, 0],
+      bytes: encodeInt32ArrayLE(playbackAtlasState.brickAtlasIndices),
+      signal
+    });
+    await chunkWriter.writeChunk({
+      descriptor: playbackAtlasState.dataEntryDescriptor,
+      chunkCoords: [timepoint],
+      bytes: atlasBytes,
       signal
     });
   }
@@ -3635,6 +4082,8 @@ type StreamingScaleWriteState = {
   labelsDescriptor?: ZarrArrayDescriptor;
   skipHierarchyDescriptor?: PreprocessedScaleSkipHierarchyZarrDescriptor;
   subcellDescriptor?: PreprocessedScaleSubcellZarrDescriptor;
+  playbackAtlasDescriptor?: PreprocessedScalePlaybackAtlasZarrDescriptor;
+  playbackAtlasDataEntryDescriptor?: ZarrArrayDescriptor;
   histogram: Uint32Array;
   chunkDepth: number;
   chunkHeight: number;
@@ -3648,6 +4097,10 @@ type StreamingScaleWriteState = {
   leafOccupancyValues: Uint8Array | null;
   subcellTextureBytes: Uint8Array | null;
   subcellTextureSize: { width: number; height: number; depth: number } | null;
+  playbackAtlasIndices: Int32Array | null;
+  playbackAtlasOccupiedBrickCount: number;
+  playbackAtlasBlockByteLength: number;
+  playbackAtlasBlocks: Uint8Array[];
 };
 
 type StreamingScaleTransition = {
@@ -3767,6 +4220,12 @@ function createStreamingScaleWriteState({
     subcellTextureBytes = new Uint8Array(expectedTextureLength);
   }
 
+  const playbackAtlasDescriptor = scale.zarr.playbackAtlas;
+  const playbackAtlasIndices = playbackAtlasDescriptor ? new Int32Array(chunkCount).fill(-1) : null;
+  const playbackAtlasBlockByteLength = playbackAtlasDescriptor
+    ? chunkDepth * chunkHeight * chunkWidth * playbackAtlasDescriptor.textureChannels
+    : 0;
+
   return {
     scale,
     backgroundMaskScale,
@@ -3774,6 +4233,10 @@ function createStreamingScaleWriteState({
     labelsDescriptor,
     skipHierarchyDescriptor,
     subcellDescriptor,
+    playbackAtlasDescriptor,
+    playbackAtlasDataEntryDescriptor: playbackAtlasDescriptor
+      ? createSyntheticDescriptorForBlob(playbackAtlasDescriptor.data)
+      : undefined,
     histogram: new Uint32Array(HISTOGRAM_BINS),
     chunkDepth,
     chunkHeight,
@@ -3786,7 +4249,11 @@ function createStreamingScaleWriteState({
     leafMaxValues,
     leafOccupancyValues,
     subcellTextureBytes,
-    subcellTextureSize
+    subcellTextureSize,
+    playbackAtlasIndices,
+    playbackAtlasOccupiedBrickCount: 0,
+    playbackAtlasBlockByteLength,
+    playbackAtlasBlocks: []
   };
 }
 
@@ -3857,11 +4324,29 @@ async function writeStreamingScaleSlice({
         bytes: chunk,
         signal
       });
+      const chunkIndex = (zIndex * state.yChunks + yChunk) * state.xChunks + xChunk;
       if (state.leafMinValues && state.leafMaxValues && state.leafOccupancyValues) {
-        const chunkIndex = (zIndex * state.yChunks + yChunk) * state.xChunks + xChunk;
         state.leafMinValues[chunkIndex] = stats.min;
         state.leafMaxValues[chunkIndex] = stats.max;
         state.leafOccupancyValues[chunkIndex] = stats.occupancy > 0 ? 255 : 0;
+      }
+      if (state.playbackAtlasDescriptor && state.playbackAtlasIndices && stats.occupancy > 0) {
+        state.playbackAtlasIndices[chunkIndex] = state.playbackAtlasOccupiedBrickCount;
+        state.playbackAtlasOccupiedBrickCount += 1;
+        state.playbackAtlasBlocks.push(
+          buildPlaybackAtlasBlock({
+            chunkBytes: chunk,
+            zExtent: 1,
+            yExtent: yLength,
+            xExtent: xLength,
+            sourceChannels: scale.channels,
+            chunkDepth: state.chunkDepth,
+            chunkHeight: state.chunkHeight,
+            chunkWidth: state.chunkWidth,
+            textureFormat: state.playbackAtlasDescriptor.textureFormat,
+            textureChannels: state.playbackAtlasDescriptor.textureChannels
+          })
+        );
       }
       if (state.subcellDescriptor && state.subcellTextureBytes && state.subcellTextureSize) {
         const subcellChunk = buildBrickSubcellChunkData({
@@ -3982,6 +4467,29 @@ async function finalizeStreamingScaleWriteState({
       descriptor: state.subcellDescriptor.data,
       chunkCoords: [timepoint, 0, 0, 0, 0],
       bytes: state.subcellTextureBytes,
+      signal
+    });
+  }
+
+  if (state.playbackAtlasDescriptor && state.playbackAtlasIndices && state.playbackAtlasDataEntryDescriptor) {
+    const atlasBytes = new Uint8Array(state.playbackAtlasOccupiedBrickCount * state.playbackAtlasBlockByteLength);
+    for (let blockIndex = 0; blockIndex < state.playbackAtlasBlocks.length; blockIndex += 1) {
+      const block = state.playbackAtlasBlocks[blockIndex];
+      if (!block) {
+        continue;
+      }
+      atlasBytes.set(block, blockIndex * state.playbackAtlasBlockByteLength);
+    }
+    await chunkWriter.writeChunk({
+      descriptor: state.playbackAtlasDescriptor.brickAtlasIndices,
+      chunkCoords: [timepoint, 0, 0, 0],
+      bytes: encodeInt32ArrayLE(state.playbackAtlasIndices),
+      signal
+    });
+    await chunkWriter.writeChunk({
+      descriptor: state.playbackAtlasDataEntryDescriptor,
+      chunkCoords: [timepoint],
+      bytes: atlasBytes,
       signal
     });
   }
@@ -4459,6 +4967,7 @@ async function writeNormalizedLayerTimepoint({
       descriptor: scale.zarr.data,
       skipHierarchyDescriptor: scale.zarr.skipHierarchy,
       subcellDescriptor: scale.zarr.subcell,
+      playbackAtlasDescriptor: scale.zarr.playbackAtlas,
       timepoint,
       volume: volumeForScale,
       backgroundMask: backgroundMaskByLevel.get(scale.level) ?? null,
@@ -4562,6 +5071,7 @@ async function writePrecomputedLayerTimepointScales({
       descriptor: scale.zarr.data,
       skipHierarchyDescriptor: scale.zarr.skipHierarchy,
       subcellDescriptor: scale.zarr.subcell,
+      playbackAtlasDescriptor: scale.zarr.playbackAtlas,
       timepoint,
       volume: {
         width: prepared.width,
