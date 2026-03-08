@@ -31,8 +31,12 @@ export const useTrackState = ({
 }: UseTrackStateOptions) => {
   const {
     trackSets,
+    trackHeadersByTrackSet,
+    loadedCompiledCatalogTrackSetIds,
+    loadedCompiledPayloadTrackSetIds,
     parsedTracksByTrackSet,
     compiledPayloadByTrackSet,
+    ensureCompiledCatalogsLoaded,
     ensureCompiledPayloadsLoaded,
     handleAddTrackSet,
     handleTrackFilesAdded,
@@ -49,12 +53,16 @@ export const useTrackState = ({
     updateTrackSetIdCounter
   });
 
-  const styling = useTrackStyling({ trackSets, parsedTracksByTrackSet });
+  const styling = useTrackStyling({ trackSets, trackHeadersByTrackSet, parsedTracksByTrackSet });
 
   const selection = useTrackSelection({
     trackSets,
+    trackHeadersByTrackSet,
+    loadedCompiledCatalogTrackSetIds,
+    loadedCompiledPayloadTrackSetIds,
     parsedTracksByTrackSet,
     compiledPayloadByTrackSet,
+    ensureCompiledCatalogsLoaded,
     ensureCompiledPayloadsLoaded,
     volumeTimepointCount,
     trackSetStates: styling.trackSetStates,
@@ -72,8 +80,12 @@ export const useTrackState = ({
     ...selection,
     ...styling,
     trackSets,
+    trackHeadersByTrackSet,
+    loadedCompiledCatalogTrackSetIds,
+    loadedCompiledPayloadTrackSetIds,
     parsedTracksByTrackSet,
     compiledPayloadByTrackSet,
+    ensureCompiledCatalogsLoaded,
     ensureCompiledPayloadsLoaded,
     handleAddTrackSet,
     handleTrackFilesAdded,

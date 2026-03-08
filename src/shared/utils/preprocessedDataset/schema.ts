@@ -836,19 +836,49 @@ function validateTrackSet(value: unknown, path: string): PreprocessedTrackSetMan
   }
   const tracks = expectRecord(trackSet.tracks, `${path}.tracks`);
   const format = expectString(tracks.format, `${path}.tracks.format`);
-  if (format !== 'compiled-v2') {
-    throw new Error(`Invalid manifest schema at ${path}.tracks.format: expected "compiled-v2", got "${format}".`);
+  if (format !== 'compiled-v3') {
+    throw new Error(`Invalid manifest schema at ${path}.tracks.format: expected "compiled-v3", got "${format}".`);
   }
-  const summary = expectRecord(tracks.summary, `${path}.tracks.summary`);
-  const summaryPath = expectString(summary.path, `${path}.tracks.summary.path`, { nonEmpty: true });
-  const summaryFormat = expectString(summary.format, `${path}.tracks.summary.format`);
-  if (summaryFormat !== 'json') {
-    throw new Error(`Invalid manifest schema at ${path}.tracks.summary.format: expected "json", got "${summaryFormat}".`);
+  const header = expectRecord(tracks.header, `${path}.tracks.header`);
+  const headerTrackSetId = expectString(header.trackSetId, `${path}.tracks.header.trackSetId`, { nonEmpty: true });
+  const headerTrackSetName = expectString(header.trackSetName, `${path}.tracks.header.trackSetName`, { nonEmpty: true });
+  let headerBoundChannelId: string | null;
+  if (header.boundChannelId === null) {
+    headerBoundChannelId = null;
+  } else {
+    headerBoundChannelId = expectString(header.boundChannelId, `${path}.tracks.header.boundChannelId`, { nonEmpty: true });
   }
-  const summaryVersion = expectInteger(summary.version, `${path}.tracks.summary.version`);
-  if (summaryVersion !== 1) {
-    throw new Error(`Invalid manifest schema at ${path}.tracks.summary.version: expected 1, got ${summaryVersion}.`);
+  const totalTracks = expectNonNegativeInteger(header.totalTracks, `${path}.tracks.header.totalTracks`);
+  const totalPoints = expectNonNegativeInteger(header.totalPoints, `${path}.tracks.header.totalPoints`);
+  const totalSegments = expectNonNegativeInteger(header.totalSegments, `${path}.tracks.header.totalSegments`);
+  const totalCentroids = expectNonNegativeInteger(header.totalCentroids, `${path}.tracks.header.totalCentroids`);
+  const time = expectRecord(header.time, `${path}.tracks.header.time`);
+  const timeMin = expectNumber(time.min, `${path}.tracks.header.time.min`);
+  const timeMax = expectNumber(time.max, `${path}.tracks.header.time.max`);
+  if (timeMin > timeMax) {
+    throw new Error(`Invalid manifest schema at ${path}.tracks.header.time: expected min <= max.`);
   }
+  const amplitude = expectRecord(header.amplitude, `${path}.tracks.header.amplitude`);
+  const amplitudeMin = expectNumber(amplitude.min, `${path}.tracks.header.amplitude.min`);
+  const amplitudeMax = expectNumber(amplitude.max, `${path}.tracks.header.amplitude.max`);
+  if (amplitudeMin > amplitudeMax) {
+    throw new Error(`Invalid manifest schema at ${path}.tracks.header.amplitude: expected min <= max.`);
+  }
+  const catalog = expectRecord(tracks.catalog, `${path}.tracks.catalog`);
+  const catalogPath = expectString(catalog.path, `${path}.tracks.catalog.path`, { nonEmpty: true });
+  const catalogFormat = expectString(catalog.format, `${path}.tracks.catalog.format`);
+  if (catalogFormat !== 'binary') {
+    throw new Error(`Invalid manifest schema at ${path}.tracks.catalog.format: expected "binary", got "${catalogFormat}".`);
+  }
+  const catalogVersion = expectInteger(catalog.version, `${path}.tracks.catalog.version`);
+  if (catalogVersion !== 1) {
+    throw new Error(`Invalid manifest schema at ${path}.tracks.catalog.version: expected 1, got ${catalogVersion}.`);
+  }
+  const catalogStrideBytes = expectPositiveInteger(catalog.strideBytes, `${path}.tracks.catalog.strideBytes`);
+  if (catalogStrideBytes !== 52) {
+    throw new Error(`Invalid manifest schema at ${path}.tracks.catalog.strideBytes: expected 52, got ${catalogStrideBytes}.`);
+  }
+  const catalogCount = expectNonNegativeInteger(catalog.count, `${path}.tracks.catalog.count`);
 
   const validateBinaryDescriptor = (
     descriptorValue: unknown,
@@ -885,11 +915,30 @@ function validateTrackSet(value: unknown, path: string): PreprocessedTrackSetMan
     fileName,
     boundChannelId,
     tracks: {
-      format: 'compiled-v2',
-      summary: {
-        path: summaryPath,
-        format: 'json',
-        version: 1
+      format: 'compiled-v3',
+      header: {
+        trackSetId: headerTrackSetId,
+        trackSetName: headerTrackSetName,
+        boundChannelId: headerBoundChannelId,
+        totalTracks,
+        totalPoints,
+        totalSegments,
+        totalCentroids,
+        time: {
+          min: timeMin,
+          max: timeMax
+        },
+        amplitude: {
+          min: amplitudeMin,
+          max: amplitudeMax
+        }
+      },
+      catalog: {
+        path: catalogPath,
+        format: 'binary',
+        version: 1,
+        strideBytes: 52,
+        count: catalogCount
       },
       pointData: validateBinaryDescriptor(tracks.pointData, `${path}.tracks.pointData`, 'float32', 5),
       segmentPositions: validateBinaryDescriptor(

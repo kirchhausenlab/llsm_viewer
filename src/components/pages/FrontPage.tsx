@@ -46,7 +46,7 @@ export type ExperimentConfigurationState = {
 
 export type PreprocessedSummaryProps = {
   preprocessedExperiment: StagedPreprocessedExperiment | null;
-  computeTrackSummary: (summary: StagedPreprocessedExperiment['trackSummaries'][number]['summary']) => TrackSummary;
+  computeTrackSummary: (summary: StagedPreprocessedExperiment['trackSummaries'][number]['header']) => TrackSummary;
 };
 
 type ExperimentTypeSelectionProps = {
@@ -225,7 +225,7 @@ export default function FrontPage({
                   const trackSummaries = preprocessedSummary.preprocessedExperiment.trackSummaries ?? [];
                   const totals = trackSummaries.reduce(
                     (acc, set) => {
-                      const summary = preprocessedSummary.computeTrackSummary(set.summary);
+                      const summary = preprocessedSummary.computeTrackSummary(set.header);
                       return {
                         points: acc.points + summary.totalPoints,
                         tracks: acc.tracks + summary.totalTracks

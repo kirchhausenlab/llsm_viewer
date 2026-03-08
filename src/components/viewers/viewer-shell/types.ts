@@ -152,8 +152,10 @@ export type TracksPanelProps = {
     boundChannelName: string | null;
     fileName: string;
   }>;
+  trackHeadersByTrackSet: Map<string, { totalTracks: number }>;
   activeTrackSetId: string | null;
   onTrackSetTabSelect: (trackSetId: string) => void;
+  onRequireTrackCatalog: (trackSetId: string) => void;
   parsedTracksByTrackSet: Map<string, TrackSummary[]>;
   filteredTracksByTrackSet: Map<string, TrackSummary[]>;
   minimumTrackLength: number;

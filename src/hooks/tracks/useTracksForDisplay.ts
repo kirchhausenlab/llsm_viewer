@@ -33,6 +33,7 @@ export type SelectedTrackExtents = {
 };
 
 type UseTracksForDisplayParams = {
+  trackHeadersByTrackSet: Map<string, { totalTracks: number }>;
   parsedTracksByTrackSet: Map<string, CompiledTrackSummary[]>;
   compiledPayloadByTrackSet: Map<string, CompiledTrackSetPayload>;
   trackSets: Array<{ id: string }>;
@@ -113,6 +114,7 @@ function resolveSelectedTrackExtents(entries: TrackSeriesEntry[], trackSmoothing
 }
 
 export function useTracksForDisplay({
+  trackHeadersByTrackSet,
   parsedTracksByTrackSet,
   compiledPayloadByTrackSet,
   trackSets,
@@ -238,12 +240,12 @@ export function useTracksForDisplay({
 
   const hasParsedTrackData = useMemo(() => {
     for (const set of trackSets) {
-      if ((parsedTracksByTrackSet.get(set.id)?.length ?? 0) > 0) {
+      if ((trackHeadersByTrackSet.get(set.id)?.totalTracks ?? 0) > 0) {
         return true;
       }
     }
     return false;
-  }, [parsedTracksByTrackSet, trackSets]);
+  }, [trackHeadersByTrackSet, trackSets]);
 
   return {
     parsedTracksByTrackSet,

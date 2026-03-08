@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback, type Dispatch, type SetStateAction } from 'react';
 import { TRACK_COLOR_SWATCHES, normalizeTrackColor, type TrackColorOption } from '../../shared/colorMaps/trackColors';
 import type { TrackSetState } from '../../types/channelTracks';
-import type { TrackColorMode, TrackSummary } from '../../types/tracks';
+import type { CompiledTrackSetHeader, TrackColorMode, TrackSummary } from '../../types/tracks';
 
 export const DEFAULT_TRACK_OPACITY = 0.9;
 export const DEFAULT_TRACK_LINE_WIDTH = 1;
@@ -35,9 +35,11 @@ export type UseTrackStylingResult = {
 
 export const useTrackStyling = ({
   trackSets,
+  trackHeadersByTrackSet = new Map<string, CompiledTrackSetHeader>(),
   parsedTracksByTrackSet
 }: {
   trackSets: TrackSetDescriptor[];
+  trackHeadersByTrackSet?: Map<string, CompiledTrackSetHeader>;
   parsedTracksByTrackSet: Map<string, TrackSummary[]>;
 }): UseTrackStylingResult => {
   const [trackSetStates, setTrackSetStates] = useState<Record<string, TrackSetState>>({});
@@ -54,7 +56,7 @@ export const useTrackStyling = ({
       return;
     }
 
-    const setsWithTracks = trackSets.filter((set) => (parsedTracksByTrackSet.get(set.id)?.length ?? 0) > 0);
+    const setsWithTracks = trackSets.filter((set) => (trackHeadersByTrackSet.get(set.id)?.totalTracks ?? 0) > 0);
     if (setsWithTracks.length === 0) {
       return;
     }
@@ -101,7 +103,7 @@ export const useTrackStyling = ({
     });
 
     hasInitializedTrackColorsRef.current = true;
-  }, [parsedTracksByTrackSet, trackSets]);
+  }, [trackHeadersByTrackSet, trackSets]);
 
   useEffect(() => {
     setTrackSetStates((current) => {
@@ -111,7 +113,22 @@ export const useTrackStyling = ({
       for (const set of trackSets) {
         const trackSetId = set.id;
         const existing = current[trackSetId] ?? createDefaultTrackSetState();
+        const totalTracks = trackHeadersByTrackSet.get(trackSetId)?.totalTracks ?? 0;
+        if (totalTracks <= 0) {
+          next[trackSetId] = createDefaultTrackSetState();
+          if (!current[trackSetId]) {
+            changed = true;
+          }
+          continue;
+        }
         const tracks = parsedTracksByTrackSet.get(trackSetId) ?? [];
+        if (tracks.length === 0) {
+          next[trackSetId] = existing;
+          if (!current[trackSetId]) {
+            changed = true;
+          }
+          continue;
+        }
         const knownTrackIds = new Set(tracks.map((track) => track.id));
         const visibilityOverrides: Record<string, boolean> = {};
         let visibilityChanged = false;
@@ -144,7 +161,7 @@ export const useTrackStyling = ({
 
       return changed ? next : current;
     });
-  }, [parsedTracksByTrackSet, trackSets]);
+  }, [parsedTracksByTrackSet, trackHeadersByTrackSet, trackSets]);
 
   const trackOpacityByTrackSet = useMemo(() => {
     const map: Record<string, number> = {};

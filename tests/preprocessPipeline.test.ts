@@ -212,8 +212,8 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
   assert.equal(result.totalVolumeCount, 2);
   assert.equal(result.manifest.dataset.channels.length, 2);
   assert.equal(result.channelSummaries.length, 2);
-  assert.equal(result.trackSummaries[0]?.summary.totalTracks, 1);
-  assert.equal(result.trackSummaries[0]?.summary.totalPoints, 1);
+  assert.equal(result.trackSummaries[0]?.header.totalTracks, 1);
+  assert.equal(result.trackSummaries[0]?.header.totalPoints, 1);
   assert.deepEqual(result.manifest.dataset.temporalResolution, {
     interval: 2.3,
     unit: 'ms'
@@ -244,8 +244,8 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
   for (const summary of opened.channelSummaries) {
     assert.equal(summary.layers.length, 1);
   }
-  assert.equal(opened.trackSummaries[0]?.summary.totalTracks, 1);
-  assert.equal(opened.trackSummaries[0]?.summary.totalPoints, 1);
+  assert.equal(opened.trackSummaries[0]?.header.totalTracks, 1);
+  assert.equal(opened.trackSummaries[0]?.header.totalPoints, 1);
 
   const intensityLayer = result.manifest.dataset.channels.find((channel) => channel.id === 'channel-a')?.layers[0];
   const segmentationLayer = result.manifest.dataset.channels.find((channel) => channel.id === 'channel-b')?.layers[0];

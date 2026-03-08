@@ -1,4 +1,4 @@
-import { useMemo, type CSSProperties, type MouseEvent } from 'react';
+import { useEffect, useMemo, type CSSProperties, type MouseEvent } from 'react';
 
 import {
   TRACK_COLOR_SWATCHES,
@@ -32,8 +32,10 @@ export default function TracksPanel({
   onClose,
   hasTrackData,
   trackSets,
+  trackHeadersByTrackSet,
   activeTrackSetId,
   onTrackSetTabSelect,
+  onRequireTrackCatalog,
   parsedTracksByTrackSet,
   filteredTracksByTrackSet,
   minimumTrackLength,
@@ -71,12 +73,29 @@ export default function TracksPanel({
     resetToken
   } = layout;
 
+  useEffect(() => {
+    if (!isOpen || !activeTrackSetId) {
+      return;
+    }
+    if ((trackHeadersByTrackSet.get(activeTrackSetId)?.totalTracks ?? 0) <= 0) {
+      return;
+    }
+    onRequireTrackCatalog(activeTrackSetId);
+  }, [activeTrackSetId, isOpen, onRequireTrackCatalog, trackHeadersByTrackSet]);
+
   const selectedTrackOrderMap = new Map(selectedTrackOrder.map((trackId, index) => [trackId, index]));
   const trackSummaryByTrackSet = useMemo(() => {
     const summary = new Map<string, { total: number; visible: number }>();
     for (const trackSet of trackSets) {
       const state = trackSetStates[trackSet.id] ?? createDefaultTrackSetState();
       const tracksForSet = filteredTracksByTrackSet.get(trackSet.id) ?? [];
+      if (tracksForSet.length === 0) {
+        const total = trackHeadersByTrackSet.get(trackSet.id)?.totalTracks ?? 0;
+        const visible = state.defaultVisibility ? total : 0;
+        summary.set(trackSet.id, { total, visible });
+        continue;
+      }
+
       let visible = 0;
       for (const track of tracksForSet) {
         const explicitVisible = resolveTrackVisibilityForState(state, track.id);
@@ -89,7 +108,7 @@ export default function TracksPanel({
       summary.set(trackSet.id, { total: tracksForSet.length, visible });
     }
     return summary;
-  }, [filteredTracksByTrackSet, followedTrackId, selectedTrackIds, trackSetStates, trackSets]);
+  }, [filteredTracksByTrackSet, followedTrackId, selectedTrackIds, trackHeadersByTrackSet, trackSetStates, trackSets]);
 
   if (!hasTrackData || !isOpen) {
     return null;
@@ -111,7 +130,7 @@ export default function TracksPanel({
               const displayLabel = label.length > 14 ? `${label.slice(0, 11)}...` : label;
               const isActive = trackSet.id === activeTrackSetId;
               const summary = trackSummaryByTrackSet.get(trackSet.id) ?? { total: 0, visible: 0 };
-              const hasTracksForSet = (parsedTracksByTrackSet.get(trackSet.id)?.length ?? 0) > 0;
+              const hasTracksForSet = (trackHeadersByTrackSet.get(trackSet.id)?.totalTracks ?? 0) > 0;
               const hasVisibleTracks = summary.visible > 0;
               const tabClassName = [
                 'channel-tab',
@@ -180,7 +199,7 @@ export default function TracksPanel({
                 const orderMode = trackOrderModeByTrackSet[trackSet.id] ?? 'id';
                 const colorMode = trackColorModesByTrackSet[trackSet.id] ?? { type: 'random' };
                 const trackColorLabel = colorMode.type === 'uniform' ? 'Uniform' : 'By ID';
-                const hasSetTracks = parsedTracks.length > 0;
+                const hasSetTracks = (trackHeadersByTrackSet.get(trackSet.id)?.totalTracks ?? 0) > 0;
                 const opacity = trackOpacityByTrackSet[trackSet.id] ?? trackDefaults.opacity;
                 const lineWidth = trackLineWidthByTrackSet[trackSet.id] ?? trackDefaults.lineWidth;
                 const visibilityState = trackSetStates[trackSet.id] ?? createDefaultTrackSetState();

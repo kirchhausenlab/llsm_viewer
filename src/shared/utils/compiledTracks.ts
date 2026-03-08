@@ -13,7 +13,6 @@ import { decodeUint32ArrayLE, encodeUint32ArrayLE } from './histogram';
 import { buildTracksFromCsvEntries } from './trackCsvParsing';
 
 const TRACK_TIME_EPSILON = 1e-3;
-const COMPILED_TRACK_CATALOG_VERSION = 1 as const;
 const COMPILED_TRACK_CATALOG_ENTRY_FIELD_COUNT = 13;
 const COMPILED_TRACK_CATALOG_ENTRY_STRIDE_BYTES = COMPILED_TRACK_CATALOG_ENTRY_FIELD_COUNT * 4;
 const MISSING_SEGMENT_INDEX = -1;

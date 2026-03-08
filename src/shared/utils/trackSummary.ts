@@ -1,7 +1,7 @@
-import type { CompiledTrackSetSummary } from '../../types/tracks';
+import type { CompiledTrackSetHeader } from '../../types/tracks';
 
 const computeTrackSummary = (
-  summary: CompiledTrackSetSummary | null | undefined
+  summary: CompiledTrackSetHeader | null | undefined
 ): { totalPoints: number; totalTracks: number } => {
   if (!summary) {
     return { totalPoints: 0, totalTracks: 0 };

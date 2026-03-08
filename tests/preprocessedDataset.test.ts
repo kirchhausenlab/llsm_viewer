@@ -183,7 +183,7 @@ await (async () => {
   const layer = manifest.dataset.channels[0]!.layers[0]!;
   const baseScale = layer.zarr.scales[0]!;
   const trackFiles = encodeCompiledTrackSetFiles(compiledTracks);
-  await storageHandle.storage.writeFile(manifest.dataset.trackSets[0]!.tracks.summary.path, trackFiles.summaryBytes);
+  await storageHandle.storage.writeFile(manifest.dataset.trackSets[0]!.tracks.catalog.path, trackFiles.catalogBytes);
   await storageHandle.storage.writeFile(manifest.dataset.trackSets[0]!.tracks.pointData.path, trackFiles.pointBytes);
   await storageHandle.storage.writeFile(
     manifest.dataset.trackSets[0]!.tracks.segmentPositions.path,
@@ -348,8 +348,8 @@ await (async () => {
   const opened = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
   assert.equal(opened.totalVolumeCount, 2);
   assert.equal(opened.channelSummaries.length, 1);
-  assert.equal(opened.trackSummaries[0]?.summary.totalTracks, 1);
-  assert.equal(opened.trackSummaries[0]?.summary.totalPoints, 1);
+  assert.equal(opened.trackSummaries[0]?.header.totalTracks, 1);
+  assert.equal(opened.trackSummaries[0]?.header.totalPoints, 1);
 
   const provider = createVolumeProvider({
     manifest: opened.manifest,

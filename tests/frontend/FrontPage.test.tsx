@@ -236,8 +236,8 @@ test('front page configuring mode hides tracks section for single 3D volume', ()
             fileName: '',
             status: 'idle',
             error: null,
-            compiledSummary: null,
-            compiledPayload: null,
+            compiledHeader: null,
+            loadCompiledCatalog: null,
             loadCompiledPayload: null
           }
         ]

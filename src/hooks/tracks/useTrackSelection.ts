@@ -8,7 +8,13 @@ import {
   type SetStateAction
 } from 'react';
 import type { FollowedTrackState, TrackSetState } from '../../types/channelTracks';
-import type { CompiledTrackSetPayload, CompiledTrackSummary, NumericRange, TrackSummary } from '../../types/tracks';
+import type {
+  CompiledTrackSetHeader,
+  CompiledTrackSetPayload,
+  CompiledTrackSummary,
+  NumericRange,
+  TrackSummary
+} from '../../types/tracks';
 import { resolveTrackVisibilityForState } from '../../shared/utils/trackVisibilityState';
 import { useTracksForDisplay } from './useTracksForDisplay';
 import { createDefaultTrackSetState } from './useTrackStyling';
@@ -17,6 +23,14 @@ const clampRangeToBounds = (range: NumericRange, bounds: NumericRange): NumericR
   const min = Math.min(Math.max(range.min, bounds.min), bounds.max);
   const max = Math.max(Math.min(range.max, bounds.max), min);
   return { min, max };
+};
+
+const getTrackSetIdFromTrackId = (trackId: string): string | null => {
+  const separatorIndex = trackId.indexOf(':');
+  if (separatorIndex <= 0) {
+    return null;
+  }
+  return trackId.slice(0, separatorIndex);
 };
 
 export const TRACK_SMOOTHING_RANGE: NumericRange = { min: 0, max: 5 };
@@ -29,8 +43,12 @@ export type UseTrackSelectionResult = ReturnType<typeof useTrackSelection>;
 
 export type UseTrackSelectionOptions = {
   trackSets: TrackSetDescriptor[];
+  trackHeadersByTrackSet: Map<string, CompiledTrackSetHeader>;
+  loadedCompiledCatalogTrackSetIds: ReadonlySet<string>;
+  loadedCompiledPayloadTrackSetIds: ReadonlySet<string>;
   parsedTracksByTrackSet: Map<string, CompiledTrackSummary[]>;
   compiledPayloadByTrackSet: Map<string, CompiledTrackSetPayload>;
+  ensureCompiledCatalogsLoaded: (trackSetIds: Iterable<string>) => void;
   ensureCompiledPayloadsLoaded: (trackSetIds: Iterable<string>) => void;
   volumeTimepointCount: number;
   trackSetStates: Record<string, TrackSetState>;
@@ -41,8 +59,12 @@ export type UseTrackSelectionOptions = {
 
 export const useTrackSelection = ({
   trackSets,
+  trackHeadersByTrackSet,
+  loadedCompiledCatalogTrackSetIds,
+  loadedCompiledPayloadTrackSetIds,
   parsedTracksByTrackSet: sourceParsedTracksByTrackSet,
   compiledPayloadByTrackSet,
+  ensureCompiledCatalogsLoaded,
   ensureCompiledPayloadsLoaded,
   volumeTimepointCount,
   trackSetStates,
@@ -74,6 +96,7 @@ export const useTrackSelection = ({
     selectedTrackExtents,
     hasParsedTrackData
   } = useTracksForDisplay({
+    trackHeadersByTrackSet,
     parsedTracksByTrackSet: sourceParsedTracksByTrackSet,
     compiledPayloadByTrackSet,
     trackSets,
@@ -85,6 +108,66 @@ export const useTrackSelection = ({
     minimumTrackLength,
     trackSmoothing
   });
+
+  useEffect(() => {
+    if (trackSets.length === 0) {
+      setActiveTrackSetId((current) => (current === null ? current : null));
+      return;
+    }
+
+    if (activeTrackSetId && trackSets.some((trackSet) => trackSet.id === activeTrackSetId)) {
+      return;
+    }
+
+    const fallbackTrackSet =
+      trackSets.find((trackSet) => (trackHeadersByTrackSet.get(trackSet.id)?.totalTracks ?? 0) > 0) ?? trackSets[0] ?? null;
+    setActiveTrackSetId(fallbackTrackSet?.id ?? null);
+  }, [activeTrackSetId, trackHeadersByTrackSet, trackSets]);
+
+  useEffect(() => {
+    const requiredTrackSetIds = new Set<string>();
+
+    for (const trackSet of trackSets) {
+      if ((trackHeadersByTrackSet.get(trackSet.id)?.totalTracks ?? 0) <= 0) {
+        continue;
+      }
+      if (loadedCompiledCatalogTrackSetIds.has(trackSet.id)) {
+        continue;
+      }
+
+      const state = trackSetStates[trackSet.id] ?? createDefaultTrackSetState();
+      const opacity = trackOpacityByTrackSet[trackSet.id] ?? 1;
+      const hasVisibleOverride = Object.values(state.visibilityOverrides).some(Boolean);
+
+      if ((state.defaultVisibility && opacity > 0) || (opacity > 0 && hasVisibleOverride)) {
+        requiredTrackSetIds.add(trackSet.id);
+      }
+    }
+
+    for (const trackId of selectedTrackOrder) {
+      const trackSetId = getTrackSetIdFromTrackId(trackId);
+      if (trackSetId && !loadedCompiledCatalogTrackSetIds.has(trackSetId)) {
+        requiredTrackSetIds.add(trackSetId);
+      }
+    }
+
+    if (followedTrack?.trackSetId && !loadedCompiledCatalogTrackSetIds.has(followedTrack.trackSetId)) {
+      requiredTrackSetIds.add(followedTrack.trackSetId);
+    }
+
+    if (requiredTrackSetIds.size > 0) {
+      ensureCompiledCatalogsLoaded(requiredTrackSetIds);
+    }
+  }, [
+    ensureCompiledCatalogsLoaded,
+    followedTrack,
+    loadedCompiledCatalogTrackSetIds,
+    selectedTrackOrder,
+    trackHeadersByTrackSet,
+    trackOpacityByTrackSet,
+    trackSetStates,
+    trackSets
+  ]);
 
   const amplitudeExtent = useMemo<NumericRange>(() => {
     return selectedTrackExtents.amplitude ?? { min: 0, max: 1 };
@@ -156,6 +239,10 @@ export const useTrackSelection = ({
 
   useEffect(() => {
     const isTrackAvailable = (trackId: string) => {
+      const trackSetId = getTrackSetIdFromTrackId(trackId);
+      if (trackSetId && !loadedCompiledCatalogTrackSetIds.has(trackSetId) && trackHeadersByTrackSet.has(trackSetId)) {
+        return true;
+      }
       const track = trackLookup.get(trackId);
       return !!track && track.pointCount >= minimumTrackLength;
     };
@@ -167,11 +254,14 @@ export const useTrackSelection = ({
       });
     }
     setFollowedTrack((current) => (current && !isTrackAvailable(current.id) ? null : current));
-  }, [minimumTrackLength, selectedTrackOrder.length, trackLookup]);
+  }, [loadedCompiledCatalogTrackSetIds, minimumTrackLength, selectedTrackOrder.length, trackHeadersByTrackSet, trackLookup]);
 
   useEffect(() => {
     setFollowedTrack((current) => {
       if (!current) {
+        return current;
+      }
+      if (!loadedCompiledCatalogTrackSetIds.has(current.trackSetId) && trackHeadersByTrackSet.has(current.trackSetId)) {
         return current;
       }
       if (trackLookup.has(current.id)) {
@@ -179,20 +269,20 @@ export const useTrackSelection = ({
       }
       return null;
     });
-  }, [trackLookup]);
+  }, [loadedCompiledCatalogTrackSetIds, trackHeadersByTrackSet, trackLookup]);
 
   useEffect(() => {
     const requiredTrackSetIds = new Set<string>();
     for (const trackId of selectedTrackOrder) {
       const track = trackLookup.get(trackId);
-      if (track && track.pointCount >= minimumTrackLength && !compiledPayloadByTrackSet.has(track.trackSetId)) {
+      if (track && track.pointCount >= minimumTrackLength && !loadedCompiledPayloadTrackSetIds.has(track.trackSetId)) {
         requiredTrackSetIds.add(track.trackSetId);
       }
     }
 
     if (followedTrack?.id) {
       const followed = trackLookup.get(followedTrack.id);
-      if (followed && followed.pointCount >= minimumTrackLength && !compiledPayloadByTrackSet.has(followed.trackSetId)) {
+      if (followed && followed.pointCount >= minimumTrackLength && !loadedCompiledPayloadTrackSetIds.has(followed.trackSetId)) {
         requiredTrackSetIds.add(followed.trackSetId);
       }
     }
@@ -201,9 +291,9 @@ export const useTrackSelection = ({
       ensureCompiledPayloadsLoaded(requiredTrackSetIds);
     }
   }, [
-    compiledPayloadByTrackSet,
     ensureCompiledPayloadsLoaded,
     followedTrack,
+    loadedCompiledPayloadTrackSetIds,
     minimumTrackLength,
     selectedTrackOrder,
     trackLookup
@@ -332,7 +422,6 @@ export const useTrackSelection = ({
 
   const handleTrackVisibilityAllChange = useCallback(
     (trackSetId: string, isChecked: boolean) => {
-      const tracksForSet = parsedTracksByTrackSet.get(trackSetId) ?? [];
       setTrackSetStates((current) => {
         const existing = current[trackSetId] ?? createDefaultTrackSetState();
         if (existing.defaultVisibility === isChecked && Object.keys(existing.visibilityOverrides).length === 0) {
@@ -350,17 +439,16 @@ export const useTrackSelection = ({
 
       if (!isChecked) {
         setFollowedTrack((current) => (current && current.trackSetId === trackSetId ? null : current));
-        const trackIdsForSet = new Set(tracksForSet.map((track) => track.id));
         setSelectedTrackOrder((current) => {
           if (current.length === 0) {
             return current;
           }
-          const filtered = current.filter((id) => !trackIdsForSet.has(id));
+          const filtered = current.filter((trackId) => getTrackSetIdFromTrackId(trackId) !== trackSetId);
           return filtered.length === current.length ? current : filtered;
         });
       }
     },
-    [parsedTracksByTrackSet, setTrackSetStates]
+    [setTrackSetStates]
   );
 
   const handleMinimumTrackLengthChange = useCallback(

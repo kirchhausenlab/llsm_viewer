@@ -32,6 +32,7 @@ function createTrack(id: string): TrackSummary {
   const hook = renderHook(() =>
     useTrackStyling({
       trackSets: [{ id: 'set-1', name: 'Tracks' }],
+      trackHeadersByTrackSet: new Map([['set-1', { trackSetId: 'set-1', trackSetName: 'Tracks', boundChannelId: null, totalTracks: 2, totalPoints: 6, totalSegments: 4, totalCentroids: 0, time: { min: 0, max: 2 }, amplitude: { min: 1, max: 3 } }]]),
       parsedTracksByTrackSet,
     }),
   );

@@ -2979,7 +2979,7 @@ async function writeTrackSetFiles({
       throw new Error(`Missing compiled tracks for track set "${trackSet.id}".`);
     }
     const payload = encodeCompiledTrackSetFiles(compiled);
-    await storage.writeFile(trackSet.tracks.summary.path, payload.summaryBytes);
+    await storage.writeFile(trackSet.tracks.catalog.path, payload.catalogBytes);
     await storage.writeFile(trackSet.tracks.pointData.path, payload.pointBytes);
     await storage.writeFile(trackSet.tracks.segmentPositions.path, payload.segmentPositionBytes);
     await storage.writeFile(trackSet.tracks.segmentTimes.path, payload.segmentTimeBytes);
@@ -5540,9 +5540,6 @@ export async function preprocessDatasetToStorage({
   await chunkWriter.flush(signal);
 
   const channelSummaries = buildChannelSummariesFromManifest(manifest);
-  const trackSummaryByTrackSetId = new Map(
-    trackSets.map((trackSet) => [trackSet.id, trackSet.compiled.summary] as const)
-  );
-  const trackSummaries = buildTrackSummariesFromManifest(manifest, trackSummaryByTrackSetId);
+  const trackSummaries = buildTrackSummariesFromManifest(manifest);
   return { manifest, channelSummaries, trackSummaries, totalVolumeCount };
 }

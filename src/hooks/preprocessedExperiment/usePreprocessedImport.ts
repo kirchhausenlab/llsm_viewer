@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import type { FollowedTrackState, TrackSetState } from '../../types/channelTracks';
 import { unzip } from 'fflate';
 import {
+  loadCompiledTrackSetCatalogFromStorage,
   loadCompiledTrackSetPayloadFromStorage,
   openPreprocessedDatasetFromZarrStorage
 } from '../../shared/utils/preprocessedDataset/open';
@@ -240,9 +241,12 @@ export function usePreprocessedImport({
         fileName: set.fileName,
         status: 'loaded',
         error: null,
-        compiledSummary: set.summary,
-        compiledPayload: null,
-        loadCompiledPayload: () => loadCompiledTrackSetPayloadFromStorage(storageHandle.storage, set.tracks, set.summary)
+        compiledHeader: set.header,
+        loadCompiledCatalog: () =>
+          loadCompiledTrackSetCatalogFromStorage(storageHandle.storage, set.tracks, set.header, {
+            trackSetName: set.name
+          }),
+        loadCompiledPayload: () => loadCompiledTrackSetPayloadFromStorage(storageHandle.storage, set.tracks, set.header)
       }));
 
       setChannels(nextChannels);

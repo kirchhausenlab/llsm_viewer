@@ -20,7 +20,7 @@ import {
 } from '../../shared/storage/preprocessedStorage';
 import type { PreprocessedStorageHandle } from '../../shared/storage/preprocessedStorage';
 import { parseBackgroundMaskValues } from '../../shared/utils/backgroundMask';
-import type { CompiledTrackSetSummary } from '../../types/tracks';
+import type { CompiledTrackSetHeader } from '../../types/tracks';
 
 const FRONTPAGE_OPFS_DATASET_ID = 'preprocessed-experiment';
 const PREPROCESS_STORAGE_STRATEGY = {
@@ -70,7 +70,7 @@ export type FrontPageContainerProps = {
   setTrackOrderModeByTrackSet: Dispatch<SetStateAction<Record<string, 'id' | 'length'>>>;
   setSelectedTrackOrder: Dispatch<SetStateAction<string[]>>;
   setFollowedTrack: Dispatch<SetStateAction<FollowedTrackState>>;
-  computeTrackSummary: (summary: CompiledTrackSetSummary | null | undefined) => FrontPageTrackSummary;
+  computeTrackSummary: (summary: CompiledTrackSetHeader | null | undefined) => FrontPageTrackSummary;
   hasGlobalTimepointMismatch: boolean;
   interactionErrorMessage: string | null;
   launchErrorMessage: string | null;
@@ -340,11 +340,15 @@ export default function FrontPageContainer({
         name: channel.name.trim()
       }));
       const channelNameById = new Map(channels.map((channel) => [channel.id, channel.name.trim() || null] as const));
-      const trackSetsMetadata = (selectedExperimentType === 'single-3d-volume' ? [] : tracks).map((set) => {
-        if (!set.compiledSummary || !set.compiledPayload) {
+      const trackSetsMetadata = await Promise.all((selectedExperimentType === 'single-3d-volume' ? [] : tracks).map(async (set) => {
+        if (!set.compiledHeader || !set.loadCompiledCatalog || !set.loadCompiledPayload) {
           throw new Error(`Track set "${set.name.trim() || set.fileName || set.id}" is missing compiled data.`);
         }
 
+        const [compiledCatalog, compiledPayload] = await Promise.all([
+          set.loadCompiledCatalog(),
+          set.loadCompiledPayload()
+        ]);
         const trackSetName = set.name.trim();
         const boundChannelName = set.boundChannelId ? (channelNameById.get(set.boundChannelId) ?? null) : null;
 
@@ -355,11 +359,11 @@ export default function FrontPageContainer({
           boundChannelId: set.boundChannelId,
           compiled: {
             summary: {
-              ...set.compiledSummary,
+              ...set.compiledHeader,
               trackSetId: set.id,
               trackSetName,
               boundChannelId: set.boundChannelId,
-              tracks: set.compiledSummary.tracks.map((track) => ({
+              tracks: compiledCatalog.map((track) => ({
                 ...track,
                 trackSetId: set.id,
                 trackSetName,
@@ -367,10 +371,10 @@ export default function FrontPageContainer({
                 channelName: boundChannelName
               }))
             },
-            payload: set.compiledPayload
+            payload: compiledPayload
           }
         };
-      });
+      }));
       const layersToProcess = channels
         .flatMap((channel) => {
           const layer = channel.volume;
