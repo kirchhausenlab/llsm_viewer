@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { getVolumeHistogram, HISTOGRAM_FIRST_VALID_BIN } from '../../autoContrast';
-import type { NormalizedVolume } from '../../core/volumeProcessing';
+import { isIntensityVolume, type NormalizedVolume } from '../../core/volumeProcessing';
 import { applyAlphaToHex } from '../../shared/utils/appHelpers';
 
 const HISTOGRAM_WIDTH = 255;
@@ -38,6 +38,9 @@ type HistogramShape = {
 };
 
 function computeApproxHistogram(volume: NormalizedVolume): Uint32Array {
+  if (!isIntensityVolume(volume)) {
+    return new Uint32Array(HISTOGRAM_BINS);
+  }
   const { normalized, width, height, depth } = volume;
   const channels = Math.max(1, volume.channels);
   const voxelCount = width * height * depth;
@@ -205,6 +208,12 @@ function BrightnessContrastHistogram({
     }
 
     if (histogramVolumeRef.current === volume) {
+      return;
+    }
+
+    if (!isIntensityVolume(volume)) {
+      histogramVolumeRef.current = volume;
+      setHistogram(null);
       return;
     }
 

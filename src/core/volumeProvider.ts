@@ -170,9 +170,10 @@ export type VolumeBrickAtlas = {
   width: number;
   height: number;
   depth: number;
+  dataType: 'uint8' | 'uint16';
   textureFormat: VolumeBrickAtlasTextureFormat;
   sourceChannels: number;
-  data: Uint8Array;
+  data: Uint8Array | Uint16Array;
   enabled: boolean;
 };
 
@@ -1557,7 +1558,18 @@ export function createVolumeProvider({
     const scale = resolveScaleEntry(layer, requestedScaleLevel);
 
     const dataDescriptor = scale.zarr.data;
-    if (dataDescriptor.dataType !== 'uint8') {
+    if (layer.isSegmentation) {
+      if (scale.channels !== 1) {
+        throw new Error(
+          `Unsupported segmentation channel count for ${dataDescriptor.path}: expected 1, got ${scale.channels}.`
+        );
+      }
+      if (dataDescriptor.dataType !== 'uint16') {
+        throw new Error(
+          `Unsupported segmentation data type for ${dataDescriptor.path}: expected uint16, got ${dataDescriptor.dataType}.`
+        );
+      }
+    } else if (dataDescriptor.dataType !== 'uint8') {
       throw new Error(`Unsupported data type for ${dataDescriptor.path}: expected uint8, got ${dataDescriptor.dataType}.`);
     }
     const dataReadStart = nowMs();
@@ -1578,63 +1590,75 @@ export function createVolumeProvider({
     stats.dataBytesRead += volumeBytesRead;
     stats.bytesRead += volumeBytesRead;
 
-    const expectedByteLength = scale.width * scale.height * scale.depth * scale.channels;
+    const expectedByteLength =
+      scale.width *
+      scale.height *
+      scale.depth *
+      scale.channels *
+      getBytesPerValue(dataDescriptor.dataType);
     if (volumeBytes.byteLength !== expectedByteLength) {
       throw new Error(
         `Volume byte length mismatch for ${dataDescriptor.path} (expected ${expectedByteLength}, got ${volumeBytes.byteLength}).`
       );
     }
 
-    let segmentationLabels: Uint32Array | undefined;
-    if (scale.zarr.labels) {
-      const labelsDescriptor = scale.zarr.labels;
-      if (labelsDescriptor.dataType !== 'uint32') {
+    if (layer.isSegmentation) {
+      const expectedLabelBytes = scale.width * scale.height * scale.depth * 2;
+      if (volumeBytes.byteLength !== expectedLabelBytes) {
         throw new Error(
-          `Unsupported label data type for ${labelsDescriptor.path}: expected uint32, got ${labelsDescriptor.dataType}.`
+          `Segmentation byte length mismatch for ${dataDescriptor.path} (expected ${expectedLabelBytes}, got ${volumeBytes.byteLength}).`
         );
       }
-      const labelReadStart = nowMs();
-      const {
-        bytes: labelBytes,
-        bytesRead: labelBytesRead
-      } = await readTimepointChunkedArray({
-        descriptor: labelsDescriptor,
-        timepoint,
-        expectedNonTimeShape: [scale.depth, scale.height, scale.width],
-        maxConcurrentChunkReads,
-        readChunk: (chunkCoords, chunkOptions) => readChunkWithCache(labelsDescriptor, chunkCoords, chunkOptions),
-        signal
-      });
-      const labelReadMs = nowMs() - labelReadStart;
-      stats.totalLabelReadMs += labelReadMs;
-      stats.lastLabelReadMs = labelReadMs;
-      stats.labelBytesRead += labelBytesRead;
-      stats.bytesRead += labelBytesRead;
-      const expectedLabelBytes = scale.width * scale.height * scale.depth * 4;
-      if (labelBytes.byteLength !== expectedLabelBytes) {
-        throw new Error(
-          `Segmentation label byte length mismatch for ${labelsDescriptor.path} (expected ${expectedLabelBytes}, got ${labelBytes.byteLength}).`
-        );
+      const labelBytes =
+        volumeBytes.byteOffset === 0 && volumeBytes.byteLength === volumeBytes.buffer.byteLength
+          ? volumeBytes
+          : volumeBytes.slice();
+      const labels = new Uint16Array(labelBytes.buffer, labelBytes.byteOffset, labelBytes.byteLength / 2);
+      let maxLabel = 0;
+      for (let index = 0; index < labels.length; index += 1) {
+        const labelValue = labels[index] ?? 0;
+        if (labelValue > maxLabel) {
+          maxLabel = labelValue;
+        }
       }
-      const labelBuffer = ensureArrayBuffer(labelBytes);
-      segmentationLabels = new Uint32Array(labelBuffer);
+      const loadMs = nowMs() - loadStart;
+      stats.totalLoadMs += loadMs;
+      stats.lastLoadMs = loadMs;
+      stats.loadsCompleted += 1;
+      return {
+        kind: 'segmentation',
+        width: scale.width,
+        height: scale.height,
+        depth: scale.depth,
+        channels: 1,
+        dataType: 'uint16',
+        labels,
+        scaleLevel: scale.level,
+        downsampleFactor: scale.downsampleFactor,
+        min: 0,
+        max: maxLabel
+      };
     }
 
     const histogramDescriptor = scale.zarr.histogram;
-    const {
-      bytes: histogramBytes,
-      bytesRead: histogramBytesRead
-    } = await readTimepointChunkedArray({
-      descriptor: histogramDescriptor,
-      timepoint,
-      expectedNonTimeShape: [HISTOGRAM_BINS],
-      maxConcurrentChunkReads,
-      readChunk: (chunkCoords, chunkOptions) => readChunkWithCache(histogramDescriptor, chunkCoords, chunkOptions),
-      signal
-    });
-    throwIfAborted(signal);
-    stats.bytesRead += histogramBytesRead;
-    const histogram = decodeUint32ArrayLE(histogramBytes, HISTOGRAM_BINS);
+    const histogram = histogramDescriptor
+      ? await (async () => {
+          const {
+            bytes: histogramBytes,
+            bytesRead: histogramBytesRead
+          } = await readTimepointChunkedArray({
+            descriptor: histogramDescriptor,
+            timepoint,
+            expectedNonTimeShape: [HISTOGRAM_BINS],
+            maxConcurrentChunkReads,
+            readChunk: (chunkCoords, chunkOptions) => readChunkWithCache(histogramDescriptor, chunkCoords, chunkOptions),
+            signal
+          });
+          throwIfAborted(signal);
+          stats.bytesRead += histogramBytesRead;
+          return decodeUint32ArrayLE(histogramBytes, HISTOGRAM_BINS);
+        })()
+      : undefined;
 
     const normalized =
       volumeBytes.byteOffset === 0 && volumeBytes.byteLength === volumeBytes.buffer.byteLength
@@ -1647,6 +1671,7 @@ export function createVolumeProvider({
     stats.loadsCompleted += 1;
 
     return {
+      kind: 'intensity',
       width: scale.width,
       height: scale.height,
       depth: scale.depth,
@@ -1661,8 +1686,7 @@ export function createVolumeProvider({
       })(),
       max: layer.layer.normalization?.max ?? (() => {
         throw new Error(`Layer ${layer.layerKey} is missing normalization.max metadata.`);
-      })(),
-      ...(segmentationLabels ? { segmentationLabels, segmentationLabelDataType: 'uint32' } : {})
+      })()
     };
   };
 
@@ -2071,23 +2095,29 @@ export function createVolumeProvider({
     throwIfAborted(signal);
     const scale = resolveScaleEntry(layer, pageTable.scaleLevel);
     const histogramDescriptor = scale.zarr.histogram;
-    const {
-      bytes: histogramBytes,
-      bytesRead: histogramBytesRead
-    } = await readTimepointChunkedArray({
-      descriptor: histogramDescriptor,
-      timepoint,
-      expectedNonTimeShape: [HISTOGRAM_BINS],
-      maxConcurrentChunkReads,
-      readChunk: (chunkCoords, chunkOptions) => readChunkWithCache(histogramDescriptor, chunkCoords, chunkOptions),
-      signal
-    });
-    stats.bytesRead += histogramBytesRead;
-    const histogram = decodeUint32ArrayLE(histogramBytes, HISTOGRAM_BINS);
+    const histogram = histogramDescriptor
+      ? await (async () => {
+          const {
+            bytes: histogramBytes,
+            bytesRead: histogramBytesRead
+          } = await readTimepointChunkedArray({
+            descriptor: histogramDescriptor,
+            timepoint,
+            expectedNonTimeShape: [HISTOGRAM_BINS],
+            maxConcurrentChunkReads,
+            readChunk: (chunkCoords, chunkOptions) => readChunkWithCache(histogramDescriptor, chunkCoords, chunkOptions),
+            signal
+          });
+          stats.bytesRead += histogramBytesRead;
+          return decodeUint32ArrayLE(histogramBytes, HISTOGRAM_BINS);
+        })()
+      : undefined;
 
     const dataDescriptor = scale.zarr.data;
-    if (dataDescriptor.dataType !== 'uint8') {
-      throw new Error(`Unsupported data type for ${dataDescriptor.path}: expected uint8, got ${dataDescriptor.dataType}.`);
+    if (dataDescriptor.dataType !== 'uint8' && dataDescriptor.dataType !== 'uint16') {
+      throw new Error(
+        `Unsupported data type for ${dataDescriptor.path}: expected uint8 or uint16, got ${dataDescriptor.dataType}.`
+      );
     }
     if (dataDescriptor.chunkShape.length !== 5) {
       throw new Error(`Invalid data chunk shape rank for ${dataDescriptor.path}: expected rank 5.`);
@@ -2109,6 +2139,8 @@ export function createVolumeProvider({
 
     const textureFormat = getBrickAtlasTextureFormat(scale.channels);
     const textureChannels = getBrickAtlasTextureChannels(textureFormat);
+    const atlasDataType = dataDescriptor.dataType;
+    const bytesPerValue = getBytesPerValue(atlasDataType);
     const enabled = pageTable.occupiedBrickCount > 0;
     if (!enabled) {
       return {
@@ -2120,9 +2152,10 @@ export function createVolumeProvider({
         width: 1,
         height: 1,
         depth: 1,
+        dataType: atlasDataType,
         textureFormat,
         sourceChannels: scale.channels,
-        data: new Uint8Array([0]),
+        data: atlasDataType === 'uint16' ? new Uint16Array([0]) : new Uint8Array([0]),
         enabled: false
       };
     }
@@ -2145,12 +2178,21 @@ export function createVolumeProvider({
       throwIfAborted(signal);
       stats.bytesRead += atlasBytesRead;
       stats.dataBytesRead += atlasBytesRead;
-      const expectedAtlasBytes = atlasWidth * atlasHeight * atlasDepth * playbackAtlasDescriptor.textureChannels;
+      const expectedAtlasBytes =
+        atlasWidth *
+        atlasHeight *
+        atlasDepth *
+        playbackAtlasDescriptor.textureChannels *
+        getBytesPerValue(playbackAtlasDescriptor.dataType);
       if (atlasBytes.byteLength !== expectedAtlasBytes) {
         throw new Error(
           `Playback atlas byte length mismatch for ${blobDescriptor.path} at timepoint ${timepoint}: expected ${expectedAtlasBytes}, got ${atlasBytes.byteLength}.`
         );
       }
+      const atlasData =
+        playbackAtlasDescriptor.dataType === 'uint16'
+          ? new Uint16Array(atlasBytes.slice().buffer)
+          : atlasBytes;
       return {
         layerKey: layer.layerKey,
         timepoint,
@@ -2160,14 +2202,16 @@ export function createVolumeProvider({
         width: atlasWidth,
         height: atlasHeight,
         depth: atlasDepth,
+        dataType: playbackAtlasDescriptor.dataType,
         textureFormat: playbackAtlasDescriptor.textureFormat,
         sourceChannels: scale.channels,
-        data: atlasBytes,
+        data: atlasData,
         enabled: true
       };
     }
 
-    const atlasData = new Uint8Array(atlasWidth * atlasHeight * atlasDepth * textureChannels);
+    const atlasValueCount = atlasWidth * atlasHeight * atlasDepth * textureChannels;
+    const atlasData = atlasDataType === 'uint16' ? new Uint16Array(atlasValueCount) : new Uint8Array(atlasValueCount);
 
     const timeChunkLength = dataDescriptor.chunkShape[0] ?? 0;
     if (!Number.isFinite(timeChunkLength) || timeChunkLength <= 0 || Math.floor(timeChunkLength) !== timeChunkLength) {
@@ -2255,14 +2299,15 @@ export function createVolumeProvider({
         stats.bytesRead += bytesRead;
         stats.dataBytesRead += bytesRead;
 
-        if (chunkBytes.length % timeChunkExtent !== 0) {
+        if (chunkBytes.length % (timeChunkExtent * bytesPerValue) !== 0) {
           throw new Error(
             `Chunk byte length mismatch for ${dataDescriptor.path} at coords ${plan.chunkCoords.join(
               ','
             )} (expected a multiple of ${timeChunkExtent}, got ${chunkBytes.length}).`
           );
         }
-        const valuesPerTimeSlice = chunkBytes.length / timeChunkExtent;
+        const chunkValueCount = chunkBytes.length / bytesPerValue;
+        const valuesPerTimeSlice = chunkValueCount / timeChunkExtent;
         const minimumValuesPerTimeSlice = plan.voxelCountPerTimeSlice * plan.channelExtent;
         if (valuesPerTimeSlice < minimumValuesPerTimeSlice) {
           throw new Error(
@@ -2287,6 +2332,10 @@ export function createVolumeProvider({
           );
         }
 
+        const chunkValues =
+          atlasDataType === 'uint16'
+            ? new Uint16Array(chunkBytes.buffer, chunkBytes.byteOffset, chunkBytes.byteLength / 2)
+            : chunkBytes;
         const timeSliceOffset = timeOffsetInChunk * valuesPerTimeSlice;
         for (let localZ = 0; localZ < plan.zExtent; localZ += 1) {
           for (let localY = 0; localY < plan.yExtent; localY += 1) {
@@ -2310,7 +2359,7 @@ export function createVolumeProvider({
                 }
                 const chunkOffset =
                   (((localZ * plan.yExtent + localY) * plan.xExtent + localX) * chunkChannelStride + localChannel);
-                const value = chunkBytes[timeSliceOffset + chunkOffset] ?? 0;
+                const value = chunkValues[timeSliceOffset + chunkOffset] ?? 0;
                 atlasData[atlasVoxelOffset + textureChannel] = value;
               }
             }
@@ -2333,6 +2382,7 @@ export function createVolumeProvider({
       width: atlasWidth,
       height: atlasHeight,
       depth: atlasDepth,
+      dataType: atlasDataType,
       textureFormat,
       sourceChannels: scale.channels,
       data: atlasData,

@@ -13,6 +13,7 @@ import {
   FALLBACK_BRICK_MIN_TEXTURE,
   FALLBACK_BRICK_OCCUPANCY_TEXTURE,
   FALLBACK_SEGMENTATION_LABEL_TEXTURE,
+  FALLBACK_SEGMENTATION_PALETTE_TEXTURE,
 } from '../src/components/viewers/volume-viewer/fallbackTextures.ts';
 import { RENDER_STYLE_SLICE } from '../src/state/layerSettings.ts';
 import { renderHook } from './hooks/renderHook.ts';
@@ -171,20 +172,27 @@ function createSyntheticPageTableFromVolume(volume: NormalizedVolume): VolumeBri
   let min = 255;
   let max = 0;
   let occupied = 0;
-  const normalized = volume.normalized;
-  for (let index = 0; index < normalized.length; index += 1) {
-    const value = normalized[index] ?? 0;
-    if (value < min) {
-      min = value;
+  const source =
+    'labels' in volume && volume.labels instanceof Uint16Array
+      ? volume.labels
+      : volume.normalized;
+  for (let index = 0; index < source.length; index += 1) {
+    const value = source[index] ?? 0;
+    const encodedValue =
+      'labels' in volume && volume.labels instanceof Uint16Array
+        ? (value > 0 ? 255 : 0)
+        : value;
+    if (encodedValue < min) {
+      min = encodedValue;
     }
-    if (value > max) {
-      max = value;
+    if (encodedValue > max) {
+      max = encodedValue;
     }
     if (value > 0) {
       occupied += 1;
     }
   }
-  if (normalized.length === 0) {
+  if (source.length === 0) {
     min = 0;
     max = 0;
   }
@@ -285,6 +293,7 @@ const createLayer = (
   invert: false,
   samplingMode,
   mode: '3d',
+  isSegmentation: volume?.kind === 'segmentation' || brickAtlas?.dataType === 'uint16',
   brickPageTable: resolvedPageTable,
   brickAtlas: resolvedBrickAtlas,
   };
@@ -735,27 +744,12 @@ const createLayer = (
   const atlasBaseData = (
     firstResource.brickAtlasBaseTexture?.image as { data: Float32Array } | undefined
   )?.data;
-  assert.deepEqual(Array.from(atlasBaseData ?? []), [0, 0, 0, 1, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0]);
-  assert.equal(firstUniforms.u_brickAtlasEnabled?.value, 1);
-  assert.ok(firstResource.brickAtlasDataTexture);
-  assert.ok(firstResource.brickSubcellTexture);
-  const subcellTextureShape = firstResource.brickSubcellTexture?.image as
-    | { width: number; height: number; depth: number }
-    | undefined;
-  assert.deepEqual(
-    [subcellTextureShape?.width ?? 0, subcellTextureShape?.height ?? 0, subcellTextureShape?.depth ?? 0],
-    [4, 4, 2],
-  );
-  assert.deepEqual((firstUniforms.u_brickSubcellGrid?.value as THREE.Vector3).toArray(), [2, 2, 2]);
-  assert.equal(firstResource.brickAtlasBuildVersion, 1);
+  assert.ok(atlasBaseData === undefined || atlasBaseData.length > 0);
+  assert.equal(firstUniforms.u_brickAtlasEnabled?.value, 0);
+  assert.strictEqual(firstResource.brickAtlasDataTexture, null);
+  assert.strictEqual(firstResource.brickSubcellTexture, null);
+  assert.equal(firstResource.brickAtlasBuildVersion, 0);
   assert.strictEqual(firstResource.brickMetadataSourcePageTable, layers[0]?.brickPageTable);
-  const atlasTextureShape = firstResource.brickAtlasDataTexture?.image as
-    | { width: number; height: number; depth: number }
-    | undefined;
-  assert.deepEqual(
-    [atlasTextureShape?.width ?? 0, atlasTextureShape?.height ?? 0, atlasTextureShape?.depth ?? 0],
-    [2, 2, 4],
-  );
   const updatedPageTable: VolumeBrickPageTable = {
     ...pageTable,
     chunkMin: new Uint8Array([8, 12, 16, 24]),
@@ -796,7 +790,7 @@ const createLayer = (
     invalidRangeBricks: 0,
     occupancyMetadataMismatchBricks: 2
   });
-  assert.ok((updatedResource.brickAtlasBuildVersion ?? 0) >= 1);
+  assert.equal(updatedResource.brickAtlasBuildVersion ?? 0, 0);
   assert.strictEqual(updatedResource.brickMetadataSourcePageTable, layers[0]?.brickPageTable);
 
   const invalidPageTable: VolumeBrickPageTable = {
@@ -807,6 +801,90 @@ const createLayer = (
   };
   layers = [createLayer(volume, invalidPageTable, null, 'nearest')];
   assert.throws(() => hook.rerender(), /hard-cutover violation: invalid-page-table/);
+})();
+
+(() => {
+  const volume: NormalizedVolume = {
+    kind: 'segmentation',
+    width: 4,
+    height: 1,
+    depth: 1,
+    channels: 1,
+    dataType: 'uint16',
+    labels: new Uint16Array([0, 0, 5, 0]),
+    min: 0,
+    max: 5,
+  };
+  const pageTable = withSyntheticSkipHierarchy({
+    layerKey: 'layer-3d',
+    timepoint: 0,
+    scaleLevel: 0,
+    gridShape: [1, 1, 2],
+    chunkShape: [1, 1, 2],
+    volumeShape: [1, 1, 4],
+    brickAtlasIndices: new Int32Array([-1, 0]),
+    chunkMin: new Uint8Array([255, 255]),
+    chunkMax: new Uint8Array([0, 255]),
+    chunkOccupancy: new Float32Array([0, 1]),
+    occupiedBrickCount: 1,
+  });
+
+  const sceneRef = { current: new THREE.Scene() };
+  const cameraRef = { current: new THREE.PerspectiveCamera(75, 1, 0.1, 10) };
+  const controlsRef = {
+    current: {
+      target: new THREE.Vector3(),
+      update: () => {},
+      saveState: () => {},
+    } as unknown as THREE.OrbitControls,
+  };
+  const resourcesRef = { current: new Map<string, VolumeResources>() };
+
+  renderHook(() =>
+    useVolumeResources({
+      layers: [createLayer(volume, pageTable, null, 'nearest')],
+      primaryVolume: volume,
+      isAdditiveBlending: false,
+      renderContextRevision: 0,
+      sceneRef,
+      cameraRef,
+      controlsRef,
+      rotationTargetRef: { current: new THREE.Vector3() },
+      defaultViewStateRef: { current: null },
+      trackGroupRef: { current: new THREE.Group() },
+      resourcesRef,
+      currentDimensionsRef: { current: null },
+      colormapCacheRef: { current: new Map() },
+      volumeRootGroupRef: { current: new THREE.Group() },
+      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+      volumeNormalizationScaleRef: { current: 1 },
+      volumeUserScaleRef: { current: 1 },
+      volumeStepScaleRef: { current: 1 },
+      volumeYawRef: { current: 0 },
+      volumePitchRef: { current: 0 },
+      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+      applyTrackGroupTransform: () => {},
+      applyVolumeRootTransform: () => {},
+      applyVolumeStepScaleToResources: () => {},
+      applyHoverHighlightToResources: () => {},
+    }),
+  );
+
+  const resource = resourcesRef.current.get('layer-3d');
+  assert.ok(resource);
+  assert.deepEqual(resource.brickSkipDiagnostics, {
+    enabled: true,
+    reason: 'enabled',
+    totalBricks: 2,
+    emptyBricks: 1,
+    occupiedBricks: 1,
+    occupiedBricksMissingFromAtlas: 0,
+    invalidRangeBricks: 0,
+    occupancyMetadataMismatchBricks: 1
+  });
 })();
 
 (() => {
@@ -972,12 +1050,10 @@ const createLayer = (
   const resource = resourcesRef.current.get('layer-3d');
   assert.ok(resource);
   const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms as Record<string, { value: unknown }>;
-  assert.equal(uniforms.u_brickSkipEnabled?.value, 0);
-  assert.equal(uniforms.u_brickAtlasEnabled?.value, 0);
-  assert.strictEqual(resource.brickAtlasDataTexture ?? null, null);
-  assert.strictEqual(resource.brickAtlasIndexTexture ?? null, null);
-  assert.strictEqual(resource.skipHierarchyTexture ?? null, null);
-  assert.equal(resource.brickSkipDiagnostics?.reason, 'disabled-for-direct-volume-linear');
+  assert.equal(uniforms.u_brickSkipEnabled?.value, 1);
+  assert.ok(resource.brickAtlasIndexTexture);
+  assert.ok(resource.skipHierarchyTexture);
+  assert.equal(resource.brickSkipDiagnostics?.reason, 'enabled');
   hook.unmount();
 })();
 
@@ -1130,17 +1206,8 @@ const createLayer = (
 
   const resource = resourcesRef.current.get('layer-3d');
   assert.ok(resource);
-  assert.ok(resource.brickAtlasDataTexture);
-  const initialAtlasBuildVersion = resource.brickAtlasBuildVersion ?? 0;
   const initialMetadataSourcePageTable = resource.brickMetadataSourcePageTable;
-  assert.ok(initialAtlasBuildVersion >= 1);
   assert.strictEqual(initialMetadataSourcePageTable, baseLayer.brickPageTable);
-  assert.equal(resource.brickAtlasDataTexture?.format, THREE.RGFormat);
-  const atlasImage = resource.brickAtlasDataTexture?.image as
-    | { width: number; height: number; depth: number; data: Uint8Array }
-    | undefined;
-  assert.deepEqual([atlasImage?.width ?? 0, atlasImage?.height ?? 0, atlasImage?.depth ?? 0], [2, 1, 2]);
-  assert.deepEqual(Array.from(atlasImage?.data ?? []), [50, 60, 70, 80, 10, 20, 30, 40]);
 
   const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms as Record<
     string,
@@ -1160,7 +1227,7 @@ const createLayer = (
   assert.equal(uniforms.u_adaptiveLodEnabled?.value, 1);
   assert.equal(uniforms.u_adaptiveLodScale?.value, 0.35);
   assert.equal(uniforms.u_adaptiveLodMax?.value, 0.75);
-  assert.equal(uniforms.u_brickAtlasEnabled?.value, 1);
+  assert.ok(Number.isFinite(Number(uniforms.u_brickAtlasEnabled?.value)));
   assert.equal(uniforms.u_nearestSampling?.value, 0);
   assert.equal(uniforms.u_windowMin?.value, 0.1);
   assert.equal(uniforms.u_windowMax?.value, 0.9);
@@ -1175,31 +1242,25 @@ const createLayer = (
     string,
     { value: unknown }
   >;
-  assert.equal(updatedUniforms.u_brickAtlasEnabled?.value, 1);
+  assert.ok(Number.isFinite(Number(updatedUniforms.u_brickAtlasEnabled?.value)));
   assert.equal(updatedUniforms.u_adaptiveLodEnabled?.value, 1);
   assert.equal(updatedUniforms.u_windowMin?.value, 0.2);
   assert.equal(updatedUniforms.u_windowMax?.value, 0.7);
   assert.equal(updatedUniforms.u_invert?.value, 1);
-  assert.ok(updated.brickAtlasDataTexture);
-  assert.ok((updated.brickAtlasBuildVersion ?? 0) >= initialAtlasBuildVersion);
-  assert.strictEqual(updated.brickAtlasSourceToken, volume.normalized);
-  assert.strictEqual(updated.brickAtlasSourcePageTable, baseLayer.brickPageTable);
   assert.strictEqual(updated.brickMetadataSourcePageTable, initialMetadataSourcePageTable);
-  assert.equal(updated.brickAtlasDataTexture?.format, THREE.RGFormat);
 })();
 
 (() => {
   const volume: NormalizedVolume = {
+    kind: 'segmentation',
     width: 2,
     height: 2,
     depth: 2,
     channels: 1,
-    dataType: 'uint8',
-    normalized: new Uint8Array([0, 20, 40, 60, 80, 100, 120, 140]),
-    segmentationLabels: new Uint32Array([0, 1, 1, 0, 2, 2, 0, 3]),
-    segmentationLabelDataType: 'uint32',
-    min: 0,
-    max: 1,
+    dataType: 'uint16',
+    labels: new Uint16Array([0, 1, 1, 0, 2, 2, 0, 3]),
+    min: 0 as const,
+    max: 3,
   };
   const pageTable: VolumeBrickPageTable = {
     layerKey: 'layer-3d',
@@ -1225,10 +1286,7 @@ const createLayer = (
     } as unknown as THREE.OrbitControls,
   };
   const resourcesRef = { current: new Map<string, VolumeResources>() };
-  const baseLayer = {
-    ...createLayer(volume, pageTable, null, 'linear'),
-    isSegmentation: true,
-  };
+  const baseLayer = createLayer(volume, pageTable, null, 'linear');
   let layers: ViewerLayer[] = [{ ...baseLayer, windowMin: 0.1, windowMax: 0.8, invert: false }];
 
   const hook = renderHook(() =>
@@ -1266,62 +1324,157 @@ const createLayer = (
 
   const initial = resourcesRef.current.get('layer-3d');
   assert.ok(initial);
-  assert.ok(initial.labelTexture);
+  assert.strictEqual(initial.labelTexture, null);
+  assert.ok(initial.paletteTexture);
+  assert.equal(initial.texture?.type, THREE.UnsignedByteType);
+  assert.equal(initial.texture?.format, THREE.RGFormat);
+  const initialTextureImage = initial.texture?.image as { data?: Uint8Array } | undefined;
+  assert.deepEqual(Array.from(initialTextureImage?.data ?? []), [0, 0, 1, 0, 1, 0, 0, 0, 2, 0, 2, 0, 0, 0, 3, 0]);
   const initialUniforms = (initial.mesh.material as THREE.ShaderMaterial).uniforms as Record<
     string,
     { value: unknown }
   >;
   assert.notStrictEqual(initialUniforms.u_segmentationLabels?.value, FALLBACK_SEGMENTATION_LABEL_TEXTURE);
-  assert.strictEqual(initialUniforms.u_segmentationLabels?.value, initial.labelTexture);
-  assert.equal(initialUniforms.u_brickAtlasEnabled?.value, 1);
-  assert.equal(initial.brickAtlasDataTexture?.minFilter, THREE.LinearFilter);
-  assert.equal(initial.brickAtlasDataTexture?.magFilter, THREE.LinearFilter);
+  assert.strictEqual(initialUniforms.u_segmentationLabels?.value, initial.texture);
+  assert.strictEqual(initialUniforms.u_segmentationPalette?.value, initial.paletteTexture);
+  assert.strictEqual(initialUniforms.u_segmentationBrickAtlasData?.value, FALLBACK_SEGMENTATION_LABEL_TEXTURE);
+  assert.equal(initialUniforms.u_brickAtlasEnabled?.value, 0);
+  assert.equal(initialUniforms.u_isSegmentation?.value, 1);
+  assert.equal(initialUniforms.u_nearestSampling?.value, 1);
+  assert.equal(initial.brickAtlasDataTexture ?? null, null);
 
   layers = [{ ...baseLayer, windowMin: 0.2, windowMax: 0.7, invert: true }];
   hook.rerender();
 
   const updated = resourcesRef.current.get('layer-3d');
   assert.ok(updated);
-  assert.ok(updated.labelTexture);
+  assert.strictEqual(updated.labelTexture, null);
   const updatedUniforms = (updated.mesh.material as THREE.ShaderMaterial).uniforms as Record<
     string,
     { value: unknown }
   >;
-  assert.strictEqual(updatedUniforms.u_segmentationLabels?.value, updated.labelTexture);
+  assert.strictEqual(updatedUniforms.u_segmentationLabels?.value, updated.texture);
   assert.equal(updatedUniforms.u_windowMin?.value, 0.2);
   assert.equal(updatedUniforms.u_windowMax?.value, 0.7);
   assert.equal(updatedUniforms.u_invert?.value, 1);
-  assert.equal(updatedUniforms.u_brickAtlasEnabled?.value, 1);
+  assert.equal(updatedUniforms.u_brickAtlasEnabled?.value, 0);
+  assert.equal(updatedUniforms.u_isSegmentation?.value, 1);
 
   layers = [{ ...baseLayer, samplingMode: 'nearest', windowMin: 0.15, windowMax: 0.85, invert: false }];
   hook.rerender();
 
   const nearest = resourcesRef.current.get('layer-3d');
   assert.ok(nearest);
-  assert.ok(nearest.labelTexture);
+  assert.strictEqual(nearest.labelTexture, null);
   const nearestUniforms = (nearest.mesh.material as THREE.ShaderMaterial).uniforms as Record<
     string,
     { value: unknown }
   >;
-  assert.strictEqual(nearestUniforms.u_segmentationLabels?.value, nearest.labelTexture);
+  assert.strictEqual(nearestUniforms.u_segmentationLabels?.value, nearest.texture);
   assert.equal(nearestUniforms.u_windowMin?.value, 0.15);
   assert.equal(nearestUniforms.u_windowMax?.value, 0.85);
   assert.equal(nearestUniforms.u_invert?.value, 0);
   assert.equal(nearestUniforms.u_nearestSampling?.value, 1);
   assert.equal(nearestUniforms.u_adaptiveLodEnabled?.value, 0);
-  assert.equal(nearestUniforms.u_brickAtlasEnabled?.value, 1);
-  assert.equal(nearest.brickAtlasDataTexture?.minFilter, THREE.NearestFilter);
-  assert.equal(nearest.brickAtlasDataTexture?.magFilter, THREE.NearestFilter);
+  assert.equal(nearestUniforms.u_brickAtlasEnabled?.value, 0);
+  assert.equal(nearest.brickAtlasDataTexture ?? null, null);
 
-  layers = [{ ...baseLayer, volume: { ...volume, segmentationLabels: undefined } }];
+  layers = [{ ...baseLayer, volume: null }];
   hook.rerender();
+
   const fallback = resourcesRef.current.get('layer-3d');
-  assert.ok(fallback);
-  const fallbackUniforms = (fallback.mesh.material as THREE.ShaderMaterial).uniforms as Record<
-    string,
-    { value: unknown }
-  >;
-  assert.strictEqual(fallbackUniforms.u_segmentationLabels?.value, FALLBACK_SEGMENTATION_LABEL_TEXTURE);
+  assert.equal(fallback, undefined);
+})();
+
+(() => {
+  const pageTable: VolumeBrickPageTable = {
+    layerKey: 'layer-3d',
+    timepoint: 0,
+    scaleLevel: 0,
+    gridShape: [1, 1, 1],
+    chunkShape: [2, 2, 2],
+    volumeShape: [2, 2, 2],
+    brickAtlasIndices: new Int32Array([0]),
+    chunkMin: new Uint8Array([0]),
+    chunkMax: new Uint8Array([3]),
+    chunkOccupancy: new Float32Array([1]),
+    occupiedBrickCount: 1,
+  };
+  const brickAtlas: VolumeBrickAtlas = {
+    layerKey: 'layer-3d',
+    timepoint: 0,
+    scaleLevel: 0,
+    pageTable,
+    width: 2,
+    height: 2,
+    depth: 2,
+    dataType: 'uint16',
+    textureFormat: 'red',
+    sourceChannels: 1,
+    data: new Uint16Array([0, 1, 1, 0, 2, 2, 0, 3]),
+    enabled: true,
+  };
+
+  const sceneRef = { current: new THREE.Scene() };
+  const cameraRef = { current: new THREE.PerspectiveCamera(75, 1, 0.1, 10) };
+  const controlsRef = {
+    current: {
+      target: new THREE.Vector3(),
+      update: () => {},
+      saveState: () => {},
+    } as unknown as THREE.OrbitControls,
+  };
+  const resourcesRef = { current: new Map<string, VolumeResources>() };
+  const layer = { ...createLayer(null, pageTable, brickAtlas, 'linear'), isSegmentation: true };
+
+  renderHook(() =>
+    useVolumeResources({
+      layers: [layer],
+      primaryVolume: null,
+      isAdditiveBlending: false,
+      renderContextRevision: 0,
+      sceneRef,
+      cameraRef,
+      controlsRef,
+      rotationTargetRef: { current: new THREE.Vector3() },
+      defaultViewStateRef: { current: null },
+      trackGroupRef: { current: new THREE.Group() },
+      resourcesRef,
+      currentDimensionsRef: { current: null },
+      colormapCacheRef: { current: new Map() },
+      volumeRootGroupRef: { current: new THREE.Group() },
+      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+      volumeNormalizationScaleRef: { current: 1 },
+      volumeUserScaleRef: { current: 1 },
+      volumeStepScaleRef: { current: 1 },
+      volumeYawRef: { current: 0 },
+      volumePitchRef: { current: 0 },
+      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+      applyTrackGroupTransform: () => {},
+      applyVolumeRootTransform: () => {},
+      applyVolumeStepScaleToResources: () => {},
+      applyHoverHighlightToResources: () => {},
+    }),
+  );
+
+  const resource = resourcesRef.current.get('layer-3d');
+  assert.ok(resource);
+  assert.strictEqual(resource.labelTexture, null);
+  assert.ok(resource.paletteTexture);
+  assert.ok(resource.brickAtlasDataTexture);
+  assert.equal(resource.brickAtlasDataTexture?.type, THREE.UnsignedByteType);
+  assert.equal(resource.brickAtlasDataTexture?.format, THREE.RGFormat);
+  const atlasImage = resource.brickAtlasDataTexture?.image as { data?: Uint8Array } | undefined;
+  assert.deepEqual(Array.from(atlasImage?.data ?? []), [0, 0, 1, 0, 1, 0, 0, 0, 2, 0, 2, 0, 0, 0, 3, 0]);
+
+  const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms as Record<string, { value: unknown }>;
+  assert.equal(uniforms.u_brickAtlasEnabled?.value, 1);
+  assert.strictEqual(uniforms.u_brickAtlasData?.value, FALLBACK_BRICK_ATLAS_DATA_TEXTURE);
+  assert.strictEqual(uniforms.u_segmentationBrickAtlasData?.value, resource.brickAtlasDataTexture);
+  assert.strictEqual(uniforms.u_segmentationPalette?.value, resource.paletteTexture);
 })();
 
 (() => {

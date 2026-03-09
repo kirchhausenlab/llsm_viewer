@@ -18,7 +18,7 @@ import type {
   VolumeProvider,
   VolumeProviderDiagnostics
 } from '../../../core/volumeProvider';
-import type { NormalizedVolume } from '../../../core/volumeProcessing';
+import { isIntensityVolume, type NormalizedVolume } from '../../../core/volumeProcessing';
 import { shouldPreferDirectVolumeSampling } from '../../../shared/utils/lod0Residency';
 import type { PlaybackIndexWindow } from '../../../shared/utils';
 import { computeLoopedNextTimeIndex } from '../../../shared/utils';
@@ -341,7 +341,7 @@ function isPromotionReadyForResource({
     return brickAtlas.enabled && brickAtlas.pageTable.occupiedBrickCount > 0;
   }
   if (volume) {
-    return volume.normalized.byteLength > 0;
+    return isIntensityVolume(volume) ? volume.normalized.byteLength > 0 : volume.labels.byteLength > 0;
   }
   return pageTable ? pageTable.occupiedBrickCount > 0 : false;
 }
@@ -358,7 +358,7 @@ function buildLayerResidencyModeMap({
   const modeByKey = new Map<string, 'volume' | 'atlas'>();
   for (const layers of channelLayersMap.values()) {
     for (const layer of layers) {
-      const useAtlas = preferBrickResidency && canUseAtlas && layer.depth > 1 && !layer.isSegmentation;
+      const useAtlas = preferBrickResidency && canUseAtlas && layer.depth > 1;
       modeByKey.set(layer.key, useAtlas ? 'atlas' : 'volume');
     }
   }

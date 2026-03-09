@@ -5,10 +5,16 @@ import {
   type VolumeTypedArray
 } from '../types/volume';
 
-export type NormalizedVolume = {
+type BaseViewerVolume = {
   width: number;
   height: number;
   depth: number;
+  scaleLevel?: number;
+  downsampleFactor?: [number, number, number];
+};
+
+export type IntensityVolume = BaseViewerVolume & {
+  kind: 'intensity';
   channels: number;
   dataType: VolumeDataType;
   /**
@@ -22,18 +28,31 @@ export type NormalizedVolume = {
    * viewer's intensity definition (1ch=R, 2ch=avg(R,G), >=3ch=luminance(R,G,B)).
    */
   histogram?: Uint32Array;
-  scaleLevel?: number;
-  downsampleFactor?: [number, number, number];
   min: number;
   max: number;
-  segmentationLabels?: Uint32Array;
-  segmentationLabelDataType?: VolumeDataType;
+  readonly labels?: never;
 };
+
+export type SegmentationVolume = BaseViewerVolume & {
+  kind: 'segmentation';
+  channels: 1;
+  dataType: 'uint16';
+  readonly labels: Uint16Array;
+  readonly normalized?: never;
+  histogram?: never;
+  min: 0;
+  max: number;
+};
+
+export type NormalizedVolume = IntensityVolume | SegmentationVolume;
 
 export type NormalizationParameters = {
   min: number;
   max: number;
 };
+
+export const MAX_SEGMENTATION_LABEL_ID = 0xffff;
+export const SEGMENTATION_PALETTE_SIZE = MAX_SEGMENTATION_LABEL_ID + 1;
 
 const createDeterministicRng = (seed: number): (() => number) => {
   let state = seed >>> 0;
@@ -89,131 +108,120 @@ const hsvToRgb = (h: number, s: number, v: number): [number, number, number] => 
   return [toByte(r1), toByte(g1), toByte(b1)];
 };
 
-const createSegmentationColorTable = (maxLabel: number, seed: number): Uint8Array => {
-  const table = new Uint8Array((maxLabel + 1) * 3);
-  // Ensure label 0 is always mapped to black so it renders transparent.
+export const isSegmentationVolume = (volume: NormalizedVolume): volume is SegmentationVolume =>
+  volume.kind === 'segmentation';
+
+export const isIntensityVolume = (volume: NormalizedVolume): volume is IntensityVolume =>
+  volume.kind === 'intensity';
+
+export function toSegmentationLabelId(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  if (value <= 0) {
+    return 0;
+  }
+  const rounded = Math.round(value);
+  if (rounded <= 0) {
+    return 0;
+  }
+  if (rounded > MAX_SEGMENTATION_LABEL_ID) {
+    throw new Error(
+      `Segmentation label ${rounded} exceeds the supported uint16 range (${MAX_SEGMENTATION_LABEL_ID}).`
+    );
+  }
+  return rounded;
+}
+
+export const createSegmentationColorTable = (seed: number): Uint8Array => {
+  const table = new Uint8Array(SEGMENTATION_PALETTE_SIZE * 4);
   table[0] = 0;
   table[1] = 0;
   table[2] = 0;
+  table[3] = 0;
 
-  if (maxLabel === 0) {
-    return table;
-  }
   const rng = createDeterministicRng(seed);
-  for (let label = 1; label <= maxLabel; label++) {
+  for (let label = 1; label < SEGMENTATION_PALETTE_SIZE; label += 1) {
     const hue = rng() * 360;
     const [r, g, b] = hsvToRgb(hue, 1, 1);
-    const index = label * 3;
+    const index = label * 4;
     table[index] = r;
     table[index + 1] = g;
     table[index + 2] = b;
+    table[index + 3] = 255;
   }
   return table;
 };
 
-function colorizeSegmentationFromSource({
+function canonicalizeSegmentationFromSource({
   width,
   height,
   depth,
-  dataType,
-  source,
-  seed
+  source
 }: {
   width: number;
   height: number;
   depth: number;
-  dataType: VolumeDataType;
   source: SourceArray;
-  seed: number;
-}): NormalizedVolume {
+}): SegmentationVolume {
   const voxelCount = source.length;
-  const toLabelId = (value: number): number => {
-    if (!Number.isFinite(value)) {
-      return 0;
-    }
-    if (value <= 0) {
-      return 0;
-    }
-    const rounded = Math.round(value);
-    return rounded <= 0 ? 0 : rounded;
-  };
-
   let maxLabel = 0;
   for (let i = 0; i < voxelCount; i++) {
-    const label = toLabelId(source[i]);
+    const label = toSegmentationLabelId(source[i]);
     if (label > maxLabel) {
       maxLabel = label;
     }
   }
 
-  const colorTable = createSegmentationColorTable(maxLabel, seed);
-  const normalized = new Uint8Array(voxelCount * 4);
-  const segmentationLabels = new Uint32Array(voxelCount);
+  const labels = new Uint16Array(voxelCount);
 
   for (let i = 0; i < voxelCount; i++) {
-    const rawLabel = toLabelId(source[i]);
-    const label = rawLabel > maxLabel ? maxLabel : rawLabel;
-    segmentationLabels[i] = label;
-    const tableIndex = label * 3;
-    const destIndex = i * 4;
-    const red = colorTable[tableIndex];
-    const green = colorTable[tableIndex + 1];
-    const blue = colorTable[tableIndex + 2];
-    normalized[destIndex] = red;
-    normalized[destIndex + 1] = green;
-    normalized[destIndex + 2] = blue;
-    normalized[destIndex + 3] = label === 0 ? 0 : 255;
+    labels[i] = toSegmentationLabelId(source[i]);
   }
 
   return {
+    kind: 'segmentation',
     width,
     height,
     depth,
-    channels: 4,
-    dataType: 'uint8',
-    normalized,
+    channels: 1,
+    dataType: 'uint16',
+    labels,
     min: 0,
-    max: 255,
-    segmentationLabels,
-    segmentationLabelDataType: dataType
+    max: maxLabel
   };
 }
 
-export function colorizeSegmentationVolume(volume: VolumePayload, seed: number): NormalizedVolume {
+export function canonicalizeSegmentationVolume(volume: VolumePayload): SegmentationVolume {
   const { width, height, depth, dataType } = volume;
   const source = createSourceArray(volume.data, dataType);
-  return colorizeSegmentationFromSource({
+  return canonicalizeSegmentationFromSource({
     width,
     height,
     depth,
-    dataType,
-    source,
-    seed
+    source
   });
 }
 
-export function colorizeSegmentationTypedArray({
+export function canonicalizeSegmentationTypedArray({
   width,
   height,
   depth,
   dataType,
-  source,
-  seed
+  source
 }: {
   width: number;
   height: number;
   depth: number;
   dataType: VolumeDataType;
   source: VolumeTypedArray;
-  seed: number;
-}): NormalizedVolume {
-  return colorizeSegmentationFromSource({
+}): SegmentationVolume {
+  void dataType;
+  return canonicalizeSegmentationFromSource({
     width,
     height,
     depth,
-    dataType,
-    source,
-    seed
+    source
   });
 }
 
@@ -290,6 +298,7 @@ function normalizeFromSource({
     source instanceof Uint8Array
   ) {
     return {
+      kind: 'intensity',
       width,
       height,
       depth,
@@ -312,6 +321,7 @@ function normalizeFromSource({
   }
 
   return {
+    kind: 'intensity',
     width,
     height,
     depth,

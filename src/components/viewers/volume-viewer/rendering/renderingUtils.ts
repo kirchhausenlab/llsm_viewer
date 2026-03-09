@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { NormalizedVolume } from '../../../../core/volumeProcessing';
+import { isSegmentationVolume, type NormalizedVolume } from '../../../../core/volumeProcessing';
 import type { VolumeBrickAtlasTextureFormat, VolumeBrickPageTable } from '../../../../core/volumeProvider';
 
 export function disposeMaterial(material: THREE.Material | THREE.Material[] | null | undefined) {
@@ -19,8 +19,9 @@ export function prepareSliceTexture(
   volume: NormalizedVolume,
   sliceIndex: number,
   existingBuffer: Uint8Array | null,
+  segmentationColorTable: Uint8Array | null = null,
 ) {
-  const { width, height, depth, channels, normalized } = volume;
+  const { width, height, depth } = volume;
   const pixelCount = width * height;
   const targetLength = pixelCount * 4;
 
@@ -31,6 +32,29 @@ export function prepareSliceTexture(
 
   const maxIndex = Math.max(0, depth - 1);
   const clampedIndex = Math.min(Math.max(sliceIndex, 0), maxIndex);
+  if (isSegmentationVolume(volume)) {
+    const sliceOffset = clampedIndex * pixelCount;
+    for (let i = 0; i < pixelCount; i += 1) {
+      const label = volume.labels[sliceOffset + i] ?? 0;
+      const targetOffset = i * 4;
+      if (segmentationColorTable) {
+        const colorOffset = label * 4;
+        buffer[targetOffset] = segmentationColorTable[colorOffset] ?? 0;
+        buffer[targetOffset + 1] = segmentationColorTable[colorOffset + 1] ?? 0;
+        buffer[targetOffset + 2] = segmentationColorTable[colorOffset + 2] ?? 0;
+        buffer[targetOffset + 3] = segmentationColorTable[colorOffset + 3] ?? 0;
+      } else {
+        const clamped = Math.min(label, 255);
+        buffer[targetOffset] = clamped;
+        buffer[targetOffset + 1] = clamped;
+        buffer[targetOffset + 2] = clamped;
+        buffer[targetOffset + 3] = label > 0 ? 255 : 0;
+      }
+    }
+    return { data: buffer, format: THREE.RGBAFormat } as const;
+  }
+
+  const { channels, normalized } = volume;
   const sliceStride = pixelCount * channels;
   const sliceOffset = clampedIndex * sliceStride;
 
@@ -71,9 +95,10 @@ export function prepareSliceTexture(
 
 type BrickAtlasSliceSource = {
   pageTable: Pick<VolumeBrickPageTable, 'gridShape' | 'chunkShape' | 'volumeShape' | 'brickAtlasIndices'>;
-  atlasData: Uint8Array;
+  atlasData: Uint8Array | Uint16Array;
   textureFormat: VolumeBrickAtlasTextureFormat;
   sourceChannels: number;
+  dataType: 'uint8' | 'uint16';
 };
 
 function getBrickAtlasTextureChannels(textureFormat: VolumeBrickAtlasTextureFormat): number {
@@ -106,7 +131,7 @@ function mapSourceChannelToTextureChannel(
   return sourceChannel;
 }
 
-function sampleBrickAtlasVoxelByte(
+function sampleBrickAtlasVoxelValue(
   source: BrickAtlasSliceSource,
   voxelX: number,
   voxelY: number,
@@ -164,6 +189,7 @@ export function prepareSliceTextureFromBrickAtlas(
   source: BrickAtlasSliceSource,
   sliceIndex: number,
   existingBuffer: Uint8Array | null,
+  segmentationColorTable: Uint8Array | null = null,
 ) {
   const depth = Math.max(1, source.pageTable.volumeShape[0]);
   const height = Math.max(1, source.pageTable.volumeShape[1]);
@@ -180,13 +206,42 @@ export function prepareSliceTextureFromBrickAtlas(
   const maxIndex = Math.max(0, depth - 1);
   const clampedIndex = Math.min(Math.max(sliceIndex, 0), maxIndex);
 
+  if (source.dataType === 'uint16') {
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const targetOffset = (y * width + x) * 4;
+        const label = sampleBrickAtlasVoxelValue(source, x, y, clampedIndex, 0);
+        if (segmentationColorTable) {
+          const colorOffset = label * 4;
+          buffer[targetOffset] = segmentationColorTable[colorOffset] ?? 0;
+          buffer[targetOffset + 1] = segmentationColorTable[colorOffset + 1] ?? 0;
+          buffer[targetOffset + 2] = segmentationColorTable[colorOffset + 2] ?? 0;
+          buffer[targetOffset + 3] = segmentationColorTable[colorOffset + 3] ?? 0;
+        } else {
+          const clamped = Math.min(label, 255);
+          buffer[targetOffset] = clamped;
+          buffer[targetOffset + 1] = clamped;
+          buffer[targetOffset + 2] = clamped;
+          buffer[targetOffset + 3] = label > 0 ? 255 : 0;
+        }
+      }
+    }
+    return {
+      data: buffer,
+      width,
+      height,
+      depth,
+      format: THREE.RGBAFormat
+    } as const;
+  }
+
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const targetOffset = (y * width + x) * 4;
-      const red = sampleBrickAtlasVoxelByte(source, x, y, clampedIndex, 0);
-      const green = channels > 1 ? sampleBrickAtlasVoxelByte(source, x, y, clampedIndex, 1) : red;
-      const blue = channels > 2 ? sampleBrickAtlasVoxelByte(source, x, y, clampedIndex, 2) : green;
-      const alpha = channels > 3 ? sampleBrickAtlasVoxelByte(source, x, y, clampedIndex, 3) : 255;
+      const red = sampleBrickAtlasVoxelValue(source, x, y, clampedIndex, 0);
+      const green = channels > 1 ? sampleBrickAtlasVoxelValue(source, x, y, clampedIndex, 1) : red;
+      const blue = channels > 2 ? sampleBrickAtlasVoxelValue(source, x, y, clampedIndex, 2) : green;
+      const alpha = channels > 3 ? sampleBrickAtlasVoxelValue(source, x, y, clampedIndex, 3) : 255;
 
       if (channels === 1) {
         buffer[targetOffset] = red;

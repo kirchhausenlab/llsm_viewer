@@ -7,7 +7,6 @@ export type PreprocessScaleSpecMessage = {
   height: number;
   depth: number;
   channels: number;
-  hasLabels: boolean;
 };
 
 export type BuildPreprocessScalePyramidMessage = {
@@ -15,7 +14,6 @@ export type BuildPreprocessScalePyramidMessage = {
   requestId: number;
   layerKey: string;
   isSegmentation: boolean;
-  segmentationSeed: number;
   normalization: NormalizationParameters | null;
   rawVolume: {
     width: number;
@@ -41,7 +39,6 @@ export type PreprocessScalePyramidReadyMessage = {
     depth: number;
     channels: number;
     data: ArrayBuffer;
-    labels?: ArrayBuffer;
   }>;
 };
 
@@ -56,4 +53,3 @@ export type PreprocessScalePyramidWorkerInboundMessage = BuildPreprocessScalePyr
 export type PreprocessScalePyramidWorkerOutboundMessage =
   | PreprocessScalePyramidReadyMessage
   | PreprocessScalePyramidErrorMessage;
-

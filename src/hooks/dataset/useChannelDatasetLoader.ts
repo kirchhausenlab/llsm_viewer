@@ -3,12 +3,12 @@ import { VolumeTooLargeError, formatBytes } from '../../errors';
 import { loadVolumesFromFiles } from '../../loaders/volumeLoader';
 import { clearTextureCache } from '../../core/textureCache';
 import {
-  colorizeSegmentationVolume,
+  canonicalizeSegmentationVolume,
   computeNormalizationParameters,
   normalizeVolume
 } from '../../core/volumeProcessing';
 import { computeAutoWindow } from '../../autoContrast';
-import { createSegmentationSeed, sortVolumeFiles } from '../../shared/utils/appHelpers';
+import { sortVolumeFiles } from '../../shared/utils/appHelpers';
 import { DEFAULT_LAYER_COLOR } from '../../shared/colorMaps/layerColors';
 import {
   clampWindowBounds,
@@ -342,9 +342,7 @@ export function useChannelDatasetLoader({ getLayerTimepointCount }: UseChannelDa
 
         const normalizedLayers: LoadedLayer[] = rawLayers.map(({ layer, volumes }) => {
           const normalizedVolumes = layer.isSegmentation
-            ? volumes.map((rawVolume, volumeIndex) =>
-                colorizeSegmentationVolume(rawVolume, createSegmentationSeed(layer.key, volumeIndex))
-              )
+            ? volumes.map((rawVolume) => canonicalizeSegmentationVolume(rawVolume))
             : (() => {
                 const normalizationParameters = computeNormalizationParameters(volumes);
                 return volumes.map((rawVolume) => normalizeVolume(rawVolume, normalizationParameters));

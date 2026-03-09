@@ -74,13 +74,15 @@ test('openPreprocessedDatasetFromZarrStorage rejects invalid sharded descriptor 
   );
 });
 
-test('openPreprocessedDatasetFromZarrStorage accepts segmentation fixtures with labels at every scale', async () => {
+test('openPreprocessedDatasetFromZarrStorage accepts segmentation fixtures with uint16 label data at every scale', async () => {
   const opened = await openDatasetFromFixture('valid-segmentation-multiscale-labels.json');
   const layer = opened.manifest.dataset.channels[0]?.layers[0];
   assert.equal(layer?.isSegmentation, true);
   assert.equal(layer?.zarr.scales.length, 2);
   for (const scale of layer?.zarr.scales ?? []) {
-    assert.ok(scale.zarr.labels);
+    assert.equal(scale.channels, 1);
+    assert.equal(scale.zarr.data.dataType, 'uint16');
+    assert.equal(scale.zarr.histogram, undefined);
   }
 });
 
@@ -91,10 +93,10 @@ test('openPreprocessedDatasetFromZarrStorage rejects multi-layer channel fixture
   );
 });
 
-test('openPreprocessedDatasetFromZarrStorage rejects segmentation fixtures missing labels for a higher scale', async () => {
+test('openPreprocessedDatasetFromZarrStorage rejects segmentation fixtures with a non-uint16 scale payload', async () => {
   await assert.rejects(
     () => openDatasetFromFixture('invalid-segmentation-missing-label-scale1.json'),
-    /segmentation layers require labels for every scale/
+    /manifest\.dataset\.channels\[0\]\.layers\[0\]\.zarr\.scales\[1\]\.zarr\.data\.dataType/
   );
 });
 

@@ -19,10 +19,10 @@
             "height": 3,
             "depth": 2,
             "channels": 1,
-            "dataType": "uint16",
+            "dataType": "uint8",
             "normalization": {
               "min": 0,
-              "max": 65535
+              "max": 255
             },
             "zarr": {
               "scales": [

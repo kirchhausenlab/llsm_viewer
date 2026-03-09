@@ -20,10 +20,7 @@
             "depth": 1,
             "channels": 1,
             "dataType": "uint16",
-            "normalization": {
-              "min": 0,
-              "max": 65535
-            },
+            "normalization": null,
             "zarr": {
               "scales": [
                 {
@@ -54,35 +51,7 @@
                         2,
                         1
                       ],
-                      "dataType": "uint8"
-                    },
-                    "labels": {
-                      "path": "channels/channel-seg/layer-seg/scales/0/labels",
-                      "shape": [
-                        1,
-                        1,
-                        2,
-                        4
-                      ],
-                      "chunkShape": [
-                        1,
-                        1,
-                        1,
-                        2
-                      ],
-                      "dataType": "uint32"
-                    },
-                    "histogram": {
-                      "path": "channels/channel-seg/layer-seg/scales/0/histogram",
-                      "shape": [
-                        1,
-                        256
-                      ],
-                      "chunkShape": [
-                        1,
-                        256
-                      ],
-                      "dataType": "uint32"
+                      "dataType": "uint16"
                     },
                     "skipHierarchy": {
                       "levels": [
@@ -231,18 +200,6 @@
                         1
                       ],
                       "dataType": "uint8"
-                    },
-                    "histogram": {
-                      "path": "channels/channel-seg/layer-seg/scales/1/histogram",
-                      "shape": [
-                        1,
-                        256
-                      ],
-                      "chunkShape": [
-                        1,
-                        256
-                      ],
-                      "dataType": "uint32"
                     },
                     "skipHierarchy": {
                       "levels": [

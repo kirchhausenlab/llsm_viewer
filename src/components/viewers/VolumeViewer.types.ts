@@ -237,6 +237,7 @@ export type VolumeResources = {
   mesh: THREE.Mesh;
   texture: THREE.Data3DTexture | THREE.DataTexture;
   labelTexture?: THREE.Data3DTexture | null;
+  paletteTexture?: THREE.DataTexture | null;
   dimensions: {
     width: number;
     height: number;
@@ -267,7 +268,7 @@ export type VolumeResources = {
   brickSubcellSourceToken?: object | Uint8Array | null;
   brickSubcellGrid?: { x: number; y: number; z: number } | null;
   brickAtlasSourceToken?: object | null;
-  brickAtlasSourceData?: Uint8Array | null;
+  brickAtlasSourceData?: Uint8Array | Uint16Array | null;
   brickAtlasSourceFormat?: THREE.Data3DTexture['format'] | null;
   brickAtlasSourcePageTable?: VolumeBrickPageTable | null;
   brickAtlasSlotGrid?: { x: number; y: number; z: number } | null;

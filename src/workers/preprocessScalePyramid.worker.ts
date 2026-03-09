@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 import {
-  colorizeSegmentationVolume,
+  canonicalizeSegmentationVolume,
   computeNormalizationParameters,
   normalizeVolume
 } from '../core/volumeProcessing';
@@ -27,9 +27,6 @@ ctx.onmessage = async (event: MessageEvent<PreprocessScalePyramidWorkerInboundMe
     const transferList: ArrayBuffer[] = [];
     for (const scale of ready.scales) {
       transferList.push(scale.data);
-      if (scale.labels) {
-        transferList.push(scale.labels);
-      }
     }
     ctx.postMessage(ready, transferList);
   } catch (error) {
@@ -54,79 +51,90 @@ function buildScalePyramid(
     ...message.rawVolume,
     data: message.rawVolume.data
   };
-  const normalized = message.isSegmentation
-    ? colorizeSegmentationVolume(rawVolume, message.segmentationSeed)
-    : normalizeVolume(
-        rawVolume,
-        message.normalization ?? computeNormalizationParameters([rawVolume])
-      );
-
-  let volumeForScale = {
-    width: normalized.width,
-    height: normalized.height,
-    depth: normalized.depth,
-    channels: normalized.channels,
-    data: normalized.normalized
-  };
-  let labelsForScale =
-    message.isSegmentation && normalized.segmentationLabels
-      ? {
-          width: normalized.width,
-          height: normalized.height,
-          depth: normalized.depth,
-          labels: normalized.segmentationLabels
-        }
-      : null;
-
   const encodedScales: PreprocessScalePyramidReadyMessage['scales'] = [];
-
-  for (let scaleIndex = 0; scaleIndex < sortedScales.length; scaleIndex += 1) {
-    const scale = sortedScales[scaleIndex]!;
-    if (
-      volumeForScale.width !== scale.width ||
-      volumeForScale.height !== scale.height ||
-      volumeForScale.depth !== scale.depth ||
-      volumeForScale.channels !== scale.channels
-    ) {
-      throw new Error(
-        `Generated mip dimensions for layer "${message.layerKey}" scale ${scale.level} do not match manifest metadata.`
-      );
-    }
-
-    const encodedScale: PreprocessScalePyramidReadyMessage['scales'][number] = {
-      level: scale.level,
-      width: volumeForScale.width,
-      height: volumeForScale.height,
-      depth: volumeForScale.depth,
-      channels: volumeForScale.channels,
-      data: toTransferableArrayBuffer(volumeForScale.data)
+  if (message.isSegmentation) {
+    const normalized = canonicalizeSegmentationVolume(rawVolume);
+    let volumeForScale = {
+      width: normalized.width,
+      height: normalized.height,
+      depth: normalized.depth,
+      channels: normalized.channels,
+      data: normalized.labels
     };
-    if (scale.hasLabels) {
-      if (!labelsForScale) {
-        throw new Error(`Layer "${message.layerKey}" scale ${scale.level} is missing label data.`);
-      }
+
+    for (let scaleIndex = 0; scaleIndex < sortedScales.length; scaleIndex += 1) {
+      const scale = sortedScales[scaleIndex]!;
       if (
-        labelsForScale.width !== scale.width ||
-        labelsForScale.height !== scale.height ||
-        labelsForScale.depth !== scale.depth
+        volumeForScale.width !== scale.width ||
+        volumeForScale.height !== scale.height ||
+        volumeForScale.depth !== scale.depth ||
+        volumeForScale.channels !== scale.channels
       ) {
         throw new Error(
-          `Generated label mip dimensions for layer "${message.layerKey}" scale ${scale.level} do not match manifest metadata.`
+          `Generated mip dimensions for layer "${message.layerKey}" scale ${scale.level} do not match manifest metadata.`
         );
       }
-      encodedScale.labels = toTransferableArrayBuffer(labelsForScale.labels);
-    }
-    encodedScales.push(encodedScale);
 
-    const hasNextScale = scaleIndex < sortedScales.length - 1;
-    if (!hasNextScale) {
-      continue;
-    }
+      encodedScales.push({
+        level: scale.level,
+        width: volumeForScale.width,
+        height: volumeForScale.height,
+        depth: volumeForScale.depth,
+        channels: volumeForScale.channels,
+        data: toTransferableArrayBuffer(volumeForScale.data)
+      });
 
-    volumeForScale = downsampleDataByMaxPooling(volumeForScale);
-    const nextScale = sortedScales[scaleIndex + 1]!;
-    if (labelsForScale && nextScale.hasLabels) {
-      labelsForScale = downsampleLabelsByMode(labelsForScale);
+      if (scaleIndex < sortedScales.length - 1) {
+        volumeForScale = downsampleLabelsByMode(volumeForScale);
+      }
+    }
+  } else {
+    const normalized = normalizeVolume(
+      rawVolume,
+      message.normalization ?? computeNormalizationParameters([rawVolume])
+    );
+    if (normalized.kind !== 'intensity') {
+      throw new Error(`Layer "${message.layerKey}" produced a non-intensity payload in the intensity worker path.`);
+    }
+    let volumeForScale: {
+      width: number;
+      height: number;
+      depth: number;
+      channels: number;
+      data: Uint8Array;
+    } = {
+      width: normalized.width,
+      height: normalized.height,
+      depth: normalized.depth,
+      channels: normalized.channels,
+      data: normalized.normalized
+    };
+
+    for (let scaleIndex = 0; scaleIndex < sortedScales.length; scaleIndex += 1) {
+      const scale = sortedScales[scaleIndex]!;
+      if (
+        volumeForScale.width !== scale.width ||
+        volumeForScale.height !== scale.height ||
+        volumeForScale.depth !== scale.depth ||
+        volumeForScale.channels !== scale.channels
+      ) {
+        throw new Error(
+          `Generated mip dimensions for layer "${message.layerKey}" scale ${scale.level} do not match manifest metadata.`
+        );
+      }
+
+      encodedScales.push({
+        level: scale.level,
+        width: volumeForScale.width,
+        height: volumeForScale.height,
+        depth: volumeForScale.depth,
+        channels: volumeForScale.channels,
+        data: toTransferableArrayBuffer(volumeForScale.data)
+      });
+
+      if (scaleIndex < sortedScales.length - 1) {
+        volumeForScale = downsampleDataByMaxPooling(volumeForScale);
+      }
     }
   }
 
@@ -198,17 +206,19 @@ function downsampleLabelsByMode(volume: {
   width: number;
   height: number;
   depth: number;
-  labels: Uint32Array;
+  channels: 1;
+  data: Uint16Array;
 }): {
   width: number;
   height: number;
   depth: number;
-  labels: Uint32Array;
+  channels: 1;
+  data: Uint16Array;
 } {
   const nextDepth = Math.max(1, Math.ceil(volume.depth / 2));
   const nextHeight = Math.max(1, Math.ceil(volume.height / 2));
   const nextWidth = Math.max(1, Math.ceil(volume.width / 2));
-  const downsampled = new Uint32Array(nextDepth * nextHeight * nextWidth);
+  const downsampled = new Uint16Array(nextDepth * nextHeight * nextWidth);
 
   for (let z = 0; z < nextDepth; z += 1) {
     const sourceZStart = z * 2;
@@ -221,7 +231,7 @@ function downsampleLabelsByMode(volume: {
         const sourceXEnd = Math.min(volume.width, sourceXStart + 2);
         const destinationIndex = (z * nextHeight + y) * nextWidth + x;
 
-        const candidateLabels = new Uint32Array(8);
+        const candidateLabels = new Uint16Array(8);
         const candidateCounts = new Uint8Array(8);
         let candidateSize = 0;
         let bestLabel = 0;
@@ -230,7 +240,7 @@ function downsampleLabelsByMode(volume: {
           for (let sourceY = sourceYStart; sourceY < sourceYEnd; sourceY += 1) {
             for (let sourceX = sourceXStart; sourceX < sourceXEnd; sourceX += 1) {
               const sourceIndex = (sourceZ * volume.height + sourceY) * volume.width + sourceX;
-              const label = volume.labels[sourceIndex] ?? 0;
+              const label = volume.data[sourceIndex] ?? 0;
               let slot = -1;
               for (let candidateIndex = 0; candidateIndex < candidateSize; candidateIndex += 1) {
                 if ((candidateLabels[candidateIndex] ?? 0) === label) {
@@ -266,11 +276,12 @@ function downsampleLabelsByMode(volume: {
     width: nextWidth,
     height: nextHeight,
     depth: nextDepth,
-    labels: downsampled
+    channels: 1,
+    data: downsampled
   };
 }
 
-function toTransferableArrayBuffer(view: Uint8Array | Uint32Array): ArrayBuffer {
+function toTransferableArrayBuffer(view: Uint8Array | Uint16Array): ArrayBuffer {
   const { buffer, byteOffset, byteLength } = view;
   if (buffer instanceof ArrayBuffer && byteOffset === 0 && byteLength === buffer.byteLength) {
     return buffer;
@@ -279,4 +290,3 @@ function toTransferableArrayBuffer(view: Uint8Array | Uint32Array): ArrayBuffer 
 }
 
 export {};
-

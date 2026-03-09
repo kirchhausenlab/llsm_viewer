@@ -8,25 +8,11 @@ import {
   DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS
 } from '../src/core/volumeProvider.ts';
 import { createInMemoryPreprocessedStorage } from '../src/shared/storage/preprocessedStorage.ts';
-import {
-  computeUint8VolumeHistogram,
-  encodeUint32ArrayLE,
-  HISTOGRAM_BINS
-} from '../src/shared/utils/histogram.ts';
 import { createZarrChunkKeyFromCoords } from '../src/shared/utils/preprocessedDataset/chunkKey.ts';
 import {
   PREPROCESSED_DATASET_FORMAT,
   type PreprocessedManifest
 } from '../src/shared/utils/preprocessedDataset/types.ts';
-
-function encodeUint32Values(values: Uint32Array): Uint8Array {
-  const bytes = new Uint8Array(values.length * 4);
-  const view = new DataView(bytes.buffer);
-  for (let index = 0; index < values.length; index += 1) {
-    view.setUint32(index * 4, values[index] ?? 0, true);
-  }
-  return bytes;
-}
 
 function buildManifest(): PreprocessedManifest {
   return {
@@ -51,8 +37,8 @@ function buildManifest(): PreprocessedManifest {
               height: 1,
               depth: 1,
               channels: 1,
-              dataType: 'uint8',
-              normalization: { min: 0, max: 255 },
+              dataType: 'uint16',
+              normalization: null,
               zarr: {
                 scales: [
                   {
@@ -67,19 +53,7 @@ function buildManifest(): PreprocessedManifest {
                         path: 'channels/channel-a/layer-a/scales/0/data',
                         shape: [1, 1, 1, 2, 1],
                         chunkShape: [1, 1, 1, 2, 1],
-                        dataType: 'uint8'
-                      },
-                      labels: {
-                        path: 'channels/channel-a/layer-a/scales/0/labels',
-                        shape: [1, 1, 1, 2],
-                        chunkShape: [1, 1, 1, 2],
-                        dataType: 'uint32'
-                      },
-                      histogram: {
-                        path: 'channels/channel-a/layer-a/scales/0/histogram',
-                        shape: [1, HISTOGRAM_BINS],
-                        chunkShape: [1, HISTOGRAM_BINS],
-                        dataType: 'uint32'
+                        dataType: 'uint16'
                       },
                       skipHierarchy: {
                         levels: [
@@ -121,19 +95,7 @@ function buildManifest(): PreprocessedManifest {
                         path: 'channels/channel-a/layer-a/scales/1/data',
                         shape: [1, 1, 1, 1, 1],
                         chunkShape: [1, 1, 1, 1, 1],
-                        dataType: 'uint8'
-                      },
-                      labels: {
-                        path: 'channels/channel-a/layer-a/scales/1/labels',
-                        shape: [1, 1, 1, 1],
-                        chunkShape: [1, 1, 1, 1],
-                        dataType: 'uint32'
-                      },
-                      histogram: {
-                        path: 'channels/channel-a/layer-a/scales/1/histogram',
-                        shape: [1, HISTOGRAM_BINS],
-                        chunkShape: [1, HISTOGRAM_BINS],
-                        dataType: 'uint32'
+                        dataType: 'uint16'
                       },
                       skipHierarchy: {
                         levels: [
@@ -181,56 +143,24 @@ async function writeScalePayloads(manifest: PreprocessedManifest, storage: Retur
   const scale0 = layer.zarr.scales[0]!;
   const scale1 = layer.zarr.scales[1]!;
 
-  const scale0Data = new Uint8Array([8, 240]);
-  const scale1Data = new Uint8Array([240]);
-  const scale0Labels = new Uint32Array([0, 7]);
-  const scale1Labels = new Uint32Array([7]);
-  const scale0Histogram = computeUint8VolumeHistogram({
-    width: 2,
-    height: 1,
-    depth: 1,
-    channels: 1,
-    normalized: scale0Data
-  });
-  const scale1Histogram = computeUint8VolumeHistogram({
-    width: 1,
-    height: 1,
-    depth: 1,
-    channels: 1,
-    normalized: scale1Data
-  });
+  const scale0Data = new Uint16Array([0, 7]);
+  const scale1Data = new Uint16Array([7]);
 
   await storage.writeFile(
     `${scale0.zarr.data.path}/${createZarrChunkKeyFromCoords([0, 0, 0, 0, 0])}`,
-    scale0Data
+    new Uint8Array(scale0Data.buffer, scale0Data.byteOffset, scale0Data.byteLength)
   );
   await storage.writeFile(
     `${scale1.zarr.data.path}/${createZarrChunkKeyFromCoords([0, 0, 0, 0, 0])}`,
-    scale1Data
-  );
-  await storage.writeFile(
-    `${scale0.zarr.labels!.path}/${createZarrChunkKeyFromCoords([0, 0, 0, 0])}`,
-    encodeUint32Values(scale0Labels)
-  );
-  await storage.writeFile(
-    `${scale1.zarr.labels!.path}/${createZarrChunkKeyFromCoords([0, 0, 0, 0])}`,
-    encodeUint32Values(scale1Labels)
-  );
-  await storage.writeFile(
-    `${scale0.zarr.histogram.path}/${createZarrChunkKeyFromCoords([0, 0])}`,
-    encodeUint32ArrayLE(scale0Histogram)
-  );
-  await storage.writeFile(
-    `${scale1.zarr.histogram.path}/${createZarrChunkKeyFromCoords([0, 0])}`,
-    encodeUint32ArrayLE(scale1Histogram)
+    new Uint8Array(scale1Data.buffer, scale1Data.byteOffset, scale1Data.byteLength)
   );
   await storage.writeFile(
     `${scale0.zarr.skipHierarchy.levels[0]!.min.path}/${createZarrChunkKeyFromCoords([0, 0, 0, 0])}`,
-    new Uint8Array([8])
+    new Uint8Array([7])
   );
   await storage.writeFile(
     `${scale0.zarr.skipHierarchy.levels[0]!.max.path}/${createZarrChunkKeyFromCoords([0, 0, 0, 0])}`,
-    new Uint8Array([240])
+    new Uint8Array([7])
   );
   await storage.writeFile(
     `${scale0.zarr.skipHierarchy.levels[0]!.occupancy.path}/${createZarrChunkKeyFromCoords([0, 0, 0, 0])}`,
@@ -238,11 +168,11 @@ async function writeScalePayloads(manifest: PreprocessedManifest, storage: Retur
   );
   await storage.writeFile(
     `${scale1.zarr.skipHierarchy.levels[0]!.min.path}/${createZarrChunkKeyFromCoords([0, 0, 0, 0])}`,
-    new Uint8Array([240])
+    new Uint8Array([7])
   );
   await storage.writeFile(
     `${scale1.zarr.skipHierarchy.levels[0]!.max.path}/${createZarrChunkKeyFromCoords([0, 0, 0, 0])}`,
-    new Uint8Array([240])
+    new Uint8Array([7])
   );
   await storage.writeFile(
     `${scale1.zarr.skipHierarchy.levels[0]!.occupancy.path}/${createZarrChunkKeyFromCoords([0, 0, 0, 0])}`,
@@ -252,14 +182,10 @@ async function writeScalePayloads(manifest: PreprocessedManifest, storage: Retur
   return {
     scale0Data,
     scale1Data,
-    scale0Labels,
-    scale1Labels,
-    scale0Histogram,
-    scale1Histogram
   };
 }
 
-test('volume provider resolves requested multiscale data/histogram/labels', async () => {
+test('volume provider resolves requested multiscale segmentation labels', async () => {
   const manifest = buildManifest();
   const storageHandle = createInMemoryPreprocessedStorage({ datasetId: 'preprocessed-multiscale-resolve' });
   const written = await writeScalePayloads(manifest, storageHandle.storage);
@@ -275,16 +201,16 @@ test('volume provider resolves requested multiscale data/histogram/labels', asyn
   const scale0Volume = await provider.getVolume('layer-a', 0, { scaleLevel: 0 });
   assert.equal(scale0Volume.scaleLevel, 0);
   assert.equal(scale0Volume.width, 2);
-  assert.deepEqual(Array.from(scale0Volume.normalized), Array.from(written.scale0Data));
-  assert.deepEqual(Array.from(scale0Volume.segmentationLabels ?? []), Array.from(written.scale0Labels));
-  assert.deepEqual(Array.from(scale0Volume.histogram ?? []), Array.from(written.scale0Histogram));
+  assert.equal(scale0Volume.kind, 'segmentation');
+  assert.deepEqual(Array.from(scale0Volume.labels), Array.from(written.scale0Data));
+  assert.equal(scale0Volume.histogram, undefined);
 
   const scale1Volume = await provider.getVolume('layer-a', 0, { scaleLevel: 1 });
   assert.equal(scale1Volume.scaleLevel, 1);
   assert.equal(scale1Volume.width, 1);
-  assert.deepEqual(Array.from(scale1Volume.normalized), Array.from(written.scale1Data));
-  assert.deepEqual(Array.from(scale1Volume.segmentationLabels ?? []), Array.from(written.scale1Labels));
-  assert.deepEqual(Array.from(scale1Volume.histogram ?? []), Array.from(written.scale1Histogram));
+  assert.equal(scale1Volume.kind, 'segmentation');
+  assert.deepEqual(Array.from(scale1Volume.labels), Array.from(written.scale1Data));
+  assert.equal(scale1Volume.histogram, undefined);
 
   await assert.rejects(
     () => provider.getVolume('layer-a', 0, { scaleLevel: 9 }),

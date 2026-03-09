@@ -13,7 +13,13 @@ import {
 import { SliceRenderShader } from '../../../shaders/sliceRenderShader';
 import { getVolumeRenderShaderVariantKey, VolumeRenderShaderVariants } from '../../../shaders/volumeRenderShader';
 import { getCachedTextureData } from '../../../core/textureCache';
-import type { NormalizedVolume } from '../../../core/volumeProcessing';
+import {
+  createSegmentationColorTable,
+  isIntensityVolume,
+  isSegmentationVolume,
+  type IntensityVolume,
+  type NormalizedVolume
+} from '../../../core/volumeProcessing';
 import type { VolumeResources } from '../VolumeViewer.types';
 import { DESKTOP_VOLUME_STEP_SCALE } from './vr';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
@@ -36,12 +42,14 @@ import {
   FALLBACK_BRICK_OCCUPANCY_TEXTURE,
   FALLBACK_BRICK_SUBCELL_TEXTURE,
   FALLBACK_SEGMENTATION_LABEL_TEXTURE,
+  FALLBACK_SEGMENTATION_PALETTE_TEXTURE,
 } from './fallbackTextures';
 import {
   RENDER_STYLE_SLICE,
   type LayerSettings,
   type RenderStyle,
 } from '../../../state/layerSettings';
+import { createSegmentationSeed } from '../../../shared/utils/appHelpers';
 
 type UseVolumeResourcesParams = {
   layers: import('../VolumeViewer.types').VolumeViewerProps['layers'];
@@ -81,9 +89,10 @@ type ManagedViewerLayer = UseVolumeResourcesParams['layers'][number];
 
 type ShaderUniformMap = Record<string, { value: unknown }>;
 type TextureFormat = THREE.Data3DTexture['format'];
+type TextureSourceArray = Uint8Array | Uint16Array;
 type ByteTextureFilterMode = 'nearest' | 'linear';
 type BrickAtlasBuildResult = {
-  data: Uint8Array;
+  data: TextureSourceArray;
   width: number;
   height: number;
   depth: number;
@@ -200,11 +209,17 @@ const sharedBackgroundMaskTextureCache = new WeakMap<object, {
   refCount: number;
 }>();
 const brickAtlasIndexDataCache = new WeakMap<VolumeBrickPageTable, Float32Array>();
+const segmentationPaletteTextureCache = new Map<string, THREE.DataTexture>();
+const packedSegmentationTextureDataCache = new WeakMap<Uint16Array, Uint8Array>();
 
 function resolveSamplingModeForRenderStyle(
   samplingMode: 'linear' | 'nearest',
   renderStyle: RenderStyle,
+  isSegmentation = false,
 ): 'linear' | 'nearest' {
+  if (isSegmentation) {
+    return 'nearest';
+  }
   if (renderStyle === RENDER_STYLE_SLICE) {
     return 'nearest';
   }
@@ -323,7 +338,7 @@ function applyBeerLambertUniforms(uniforms: ShaderUniformMap, layer: Pick<
 }
 
 function createByte3dTexture(
-  data: Uint8Array,
+  data: TextureSourceArray,
   width: number,
   height: number,
   depth: number,
@@ -332,7 +347,7 @@ function createByte3dTexture(
 ): THREE.Data3DTexture {
   const texture = new THREE.Data3DTexture(data, width, height, depth);
   texture.format = format;
-  texture.type = THREE.UnsignedByteType;
+  texture.type = data instanceof Uint16Array ? THREE.UnsignedShortType : THREE.UnsignedByteType;
   applyByteTextureFilter(texture, filterMode);
   texture.unpackAlignment = 1;
   texture.needsUpdate = true;
@@ -382,6 +397,61 @@ function acquireSharedBackgroundMaskTexture(mask: {
     refCount: 1,
   });
   return texture;
+}
+
+function getSegmentationPaletteTexture(layerKey: string): THREE.DataTexture {
+  const cached = segmentationPaletteTextureCache.get(layerKey);
+  if (cached) {
+    return cached;
+  }
+  const seed = createSegmentationSeed(layerKey);
+  const paletteData = createSegmentationColorTable(seed);
+  const texture = new THREE.DataTexture(paletteData, 256, 256, THREE.RGBAFormat);
+  texture.type = THREE.UnsignedByteType;
+  texture.minFilter = THREE.NearestFilter;
+  texture.magFilter = THREE.NearestFilter;
+  texture.unpackAlignment = 1;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  segmentationPaletteTextureCache.set(layerKey, texture);
+  return texture;
+}
+
+function packSegmentationLabelTextureData(labels: Uint16Array): Uint8Array {
+  const cached = packedSegmentationTextureDataCache.get(labels);
+  if (cached) {
+    return cached;
+  }
+  const packed = new Uint8Array(labels.length * 2);
+  for (let index = 0; index < labels.length; index += 1) {
+    const label = labels[index] ?? 0;
+    const targetOffset = index * 2;
+    packed[targetOffset] = label & 0xff;
+    packed[targetOffset + 1] = (label >>> 8) & 0xff;
+  }
+  packedSegmentationTextureDataCache.set(labels, packed);
+  return packed;
+}
+
+function normalizeSegmentationTextureUpload({
+  data,
+  format,
+  isSegmentation,
+}: {
+  data: TextureSourceArray | null | undefined;
+  format: TextureFormat | null | undefined;
+  isSegmentation: boolean;
+}): {
+  data: TextureSourceArray | null | undefined;
+  format: TextureFormat | null | undefined;
+} {
+  if (!isSegmentation || !(data instanceof Uint16Array) || format !== THREE.RedFormat) {
+    return { data, format };
+  }
+  return {
+    data: packSegmentationLabelTextureData(data),
+    format: THREE.RGFormat,
+  };
 }
 
 function releaseSharedBackgroundMaskTexture(sourceToken: object | null | undefined): void {
@@ -567,7 +637,7 @@ function applyByteTextureFilter(texture: THREE.Data3DTexture, filterMode: ByteTe
 
 function updateOrCreateByte3dTexture(
   existing: THREE.Data3DTexture | null | undefined,
-  source: Uint8Array,
+  source: TextureSourceArray,
   width: number,
   height: number,
   depth: number,
@@ -582,7 +652,8 @@ function updateOrCreateByte3dTexture(
       currentWidth === width &&
       currentHeight === height &&
       currentDepth === depth &&
-      data instanceof Uint8Array &&
+      ((data instanceof Uint8Array && source instanceof Uint8Array) ||
+        (data instanceof Uint16Array && source instanceof Uint16Array)) &&
       data.length === source.length
     ) {
       const hasSharedBuffer = data === source;
@@ -590,9 +661,12 @@ function updateOrCreateByte3dTexture(
         data.set(source);
       }
       const formatChanged = existing.format !== format;
+      const nextType = source instanceof Uint16Array ? THREE.UnsignedShortType : THREE.UnsignedByteType;
+      const typeChanged = existing.type !== nextType;
       existing.format = format;
+      existing.type = nextType;
       applyByteTextureFilter(existing, filterMode);
-      if (!hasSharedBuffer || formatChanged || forceNeedsUpdate) {
+      if (!hasSharedBuffer || formatChanged || typeChanged || forceNeedsUpdate) {
         existing.needsUpdate = true;
       }
       return existing;
@@ -779,7 +853,7 @@ function buildBrickSubcellTextureDataFromVolume({
   max3DTextureSize,
 }: {
   pageTable: VolumeBrickPageTable;
-  textureData: Uint8Array;
+  textureData: TextureSourceArray;
   textureFormat: TextureFormat;
   max3DTextureSize: number | null | undefined;
 }): BrickSubcellTextureBuildResult | null {
@@ -832,7 +906,7 @@ function buildBrickSubcellTextureDataFromAtlas({
   max3DTextureSize,
 }: {
   pageTable: VolumeBrickPageTable;
-  atlasData: Uint8Array;
+  atlasData: TextureSourceArray;
   atlasSize: { width: number; height: number; depth: number };
   textureFormat: TextureFormat;
   max3DTextureSize: number | null | undefined;
@@ -1093,9 +1167,6 @@ function analyzeBrickSkipDiagnostics({
     const max = pageTable.chunkMax[brickIndex] ?? 0;
     const atlasIndex = pageTable.brickAtlasIndices[brickIndex] ?? -1;
 
-    if (max < min) {
-      invalidRangeBricks += 1;
-    }
     if (occupancy <= 0) {
       emptyBricks += 1;
       if (max > 0 || min > 0) {
@@ -1105,6 +1176,9 @@ function analyzeBrickSkipDiagnostics({
     }
 
     occupiedBricks += 1;
+    if (max < min) {
+      invalidRangeBricks += 1;
+    }
     if (atlasIndex < 0) {
       occupiedBricksMissingFromAtlas += 1;
     }
@@ -2150,7 +2224,7 @@ function buildBrickAtlasDataTexture({
   textureFormat,
 }: {
   pageTable: VolumeBrickPageTable;
-  textureData: Uint8Array;
+  textureData: TextureSourceArray;
   textureFormat: TextureFormat;
 }): BrickAtlasBuildResult | null {
   const components = getTextureComponentsFromFormat(textureFormat);
@@ -2185,7 +2259,9 @@ function buildBrickAtlasDataTexture({
   const atlasWidth = chunkWidth;
   const atlasHeight = chunkHeight;
   const atlasDepth = chunkDepth * occupiedBrickCount;
-  const atlasData = new Uint8Array(atlasWidth * atlasHeight * atlasDepth * components);
+  const atlasData = textureData instanceof Uint16Array
+    ? new Uint16Array(atlasWidth * atlasHeight * atlasDepth * components)
+    : new Uint8Array(atlasWidth * atlasHeight * atlasDepth * components);
   const gridZ = pageTable.gridShape[0];
   const gridY = pageTable.gridShape[1];
   const gridX = pageTable.gridShape[2];
@@ -2287,10 +2363,10 @@ function applyBrickPageTableUniforms(
   pageTable: VolumeBrickPageTable | null | undefined,
   options?: {
     textureDataToken?: object;
-    textureData?: Uint8Array;
+    textureData?: TextureSourceArray;
     textureFormat?: TextureFormat;
     atlasDataToken?: object;
-    atlasData?: Uint8Array;
+    atlasData?: TextureSourceArray;
     atlasFormat?: TextureFormat;
     atlasSize?: { width: number; height: number; depth: number };
     max3DTextureSize?: number | null;
@@ -2298,6 +2374,7 @@ function applyBrickPageTableUniforms(
     forceFullResidency?: boolean;
     preferDirectVolumeSampling?: boolean;
     disableBrickPageTableSampling?: boolean;
+    isSegmentation?: boolean;
   },
 ): void {
   if (
@@ -2341,6 +2418,9 @@ function applyBrickPageTableUniforms(
     uniforms.u_brickAtlasBase.value = FALLBACK_BRICK_ATLAS_BASE_TEXTURE;
     uniforms.u_brickAtlasEnabled.value = 0;
     uniforms.u_brickAtlasData.value = FALLBACK_BRICK_ATLAS_DATA_TEXTURE;
+    if ('u_segmentationBrickAtlasData' in uniforms) {
+      uniforms.u_segmentationBrickAtlasData.value = FALLBACK_SEGMENTATION_LABEL_TEXTURE;
+    }
     (uniforms.u_brickAtlasSize.value as THREE.Vector3).set(1, 1, 1);
     (uniforms.u_brickAtlasSlotGrid.value as THREE.Vector3).set(1, 1, 1);
     uniforms.u_brickSubcellData.value = FALLBACK_BRICK_SUBCELL_TEXTURE;
@@ -2367,6 +2447,20 @@ function applyBrickPageTableUniforms(
   ): never => {
     disableBrickPageTableUniforms(reason, totalBricks);
     throw new Error(`[brick-skip] hard-cutover violation: ${reason}`);
+  };
+
+  const bindBrickAtlasDataUniform = (texture: THREE.Data3DTexture): void => {
+    if (options?.isSegmentation) {
+      uniforms.u_brickAtlasData.value = FALLBACK_BRICK_ATLAS_DATA_TEXTURE;
+      if ('u_segmentationBrickAtlasData' in uniforms) {
+        uniforms.u_segmentationBrickAtlasData.value = texture;
+      }
+      return;
+    }
+    uniforms.u_brickAtlasData.value = texture;
+    if ('u_segmentationBrickAtlasData' in uniforms) {
+      uniforms.u_segmentationBrickAtlasData.value = FALLBACK_SEGMENTATION_LABEL_TEXTURE;
+    }
   };
 
   if (options?.disableBrickPageTableSampling) {
@@ -2502,6 +2596,17 @@ function applyBrickPageTableUniforms(
     uniforms.u_skipHierarchyLevelCount.value = resource.skipHierarchyLevelCount ?? 0;
   }
 
+  const normalizedAtlasUpload = normalizeSegmentationTextureUpload({
+    data: options?.atlasData,
+    format: options?.atlasFormat ?? options?.textureFormat,
+    isSegmentation: Boolean(options?.isSegmentation),
+  });
+  const normalizedTextureUpload = normalizeSegmentationTextureUpload({
+    data: options?.textureData,
+    format: options?.textureFormat,
+    isSegmentation: Boolean(options?.isSegmentation),
+  });
+
   const atlasSourceToken =
     options?.atlasDataToken ??
     options?.textureDataToken ??
@@ -2509,41 +2614,51 @@ function applyBrickPageTableUniforms(
     options?.textureData ??
     null;
   const atlasTextureFilterMode = resolveAtlasTextureFilterMode(uniforms);
-  const atlasFormat = options?.atlasFormat ?? options?.textureFormat;
+  const atlasFormat = normalizedAtlasUpload.format ?? normalizedTextureUpload.format;
+  const atlasSize = options?.atlasSize;
+  const max3DTextureSize = options?.max3DTextureSize ?? null;
+  const cameraPosition = options?.cameraPosition ?? null;
+  const forceFullResidency = options?.forceFullResidency ?? false;
+  const byteAtlasData = normalizedAtlasUpload.data instanceof Uint8Array ? normalizedAtlasUpload.data : null;
   const shouldUseGpuResidency =
-    Boolean(options?.atlasData && atlasFormat && options.atlasSize && resolvedPageTable.scaleLevel > 0);
+    Boolean(
+      byteAtlasData &&
+      atlasFormat &&
+      atlasSize &&
+      resolvedPageTable.scaleLevel > 0
+    );
 
   let atlasIndexData = atlasIndexTextureDataFromPageTable(resolvedPageTable);
   let atlasBuild: BrickAtlasBuildResult | null = null;
   let atlasTexturesDirty = false;
   let atlasSlotGrid = { x: 1, y: 1, z: Math.max(1, resolvedPageTable.occupiedBrickCount) };
 
-  if (shouldUseGpuResidency && options?.atlasData && atlasFormat && options.atlasSize) {
+  if (shouldUseGpuResidency && byteAtlasData && atlasFormat && atlasSize) {
     const components = getTextureComponentsFromFormat(atlasFormat);
     const expectedLength =
-      options.atlasSize.width * options.atlasSize.height * options.atlasSize.depth * (components ?? 0);
+      atlasSize.width * atlasSize.height * atlasSize.depth * (components ?? 0);
     if (
       components &&
-      options.atlasSize.width > 0 &&
-      options.atlasSize.height > 0 &&
-      options.atlasSize.depth > 0 &&
+      atlasSize.width > 0 &&
+      atlasSize.height > 0 &&
+      atlasSize.depth > 0 &&
       expectedLength > 0 &&
-      options.atlasData.length === expectedLength
+      byteAtlasData.length === expectedLength
     ) {
       const residency = updateGpuBrickResidency({
         resource,
         pageTable: resolvedPageTable,
-        sourceData: options.atlasData,
+        sourceData: byteAtlasData,
         sourceToken: typeof atlasSourceToken === 'object' && atlasSourceToken !== null ? atlasSourceToken : null,
         textureFormat: atlasFormat,
-        cameraPosition: options.cameraPosition ?? null,
-        atlasSize: options.atlasSize,
-        max3DTextureSize: options.max3DTextureSize ?? null,
+        cameraPosition,
+        atlasSize,
+        max3DTextureSize,
         layerKey: resolvedPageTable.layerKey,
         timepoint: resolvedPageTable.timepoint,
         maxUploadsPerUpdate: resolveMaxBrickUploadsPerUpdate(),
         allowBootstrapUploadBurst: !hasExplicitMaxBrickUploadsPerUpdate(),
-        forceFullResidency: options.forceFullResidency ?? false
+        forceFullResidency
       });
       atlasIndexData = residency.atlasIndices;
       atlasBuild = {
@@ -2583,7 +2698,9 @@ function applyBrickPageTableUniforms(
   }
 
   const precomputedSubcell = resolvedPageTable.subcell ?? null;
+  const allowSubcellTexture = !options?.isSegmentation;
   const canUsePrecomputedSubcell =
+    allowSubcellTexture &&
     precomputedSubcell !== null &&
     !exceeds3DTextureSizeLimit(
       {
@@ -2600,7 +2717,9 @@ function applyBrickPageTableUniforms(
     resource.brickSubcellSourcePageTable === resolvedPageTable &&
     resource.brickSubcellSourceToken === subcellSourceToken;
   if (!canReuseSubcellTexture) {
-    const subcellBuild = canUsePrecomputedSubcell
+    const subcellBuild = !allowSubcellTexture
+      ? null
+      : canUsePrecomputedSubcell
       ? {
           data: precomputedSubcell.data,
           width: precomputedSubcell.width,
@@ -2689,6 +2808,9 @@ function applyBrickPageTableUniforms(
     uniforms.u_brickAtlasBase.value = FALLBACK_BRICK_ATLAS_BASE_TEXTURE;
     uniforms.u_brickAtlasEnabled.value = 0;
     uniforms.u_brickAtlasData.value = FALLBACK_BRICK_ATLAS_DATA_TEXTURE;
+    if ('u_segmentationBrickAtlasData' in uniforms) {
+      uniforms.u_segmentationBrickAtlasData.value = FALLBACK_SEGMENTATION_LABEL_TEXTURE;
+    }
     (uniforms.u_brickAtlasSize.value as THREE.Vector3).set(1, 1, 1);
     (uniforms.u_brickAtlasSlotGrid.value as THREE.Vector3).set(1, 1, 1);
     resource.playbackWarmupReady = resolvePlaybackWarmupReady(resource);
@@ -2734,7 +2856,7 @@ function applyBrickPageTableUniforms(
         forceRebuild: atlasTexturesDirty,
       });
       uniforms.u_brickAtlasEnabled.value = 1;
-      uniforms.u_brickAtlasData.value = atlasTexture;
+      bindBrickAtlasDataUniform(atlasTexture);
       (uniforms.u_brickAtlasSize.value as THREE.Vector3).set(width, height, depth);
       if (cachedSlotGrid) {
         (uniforms.u_brickAtlasSlotGrid.value as THREE.Vector3).set(cachedSlotGrid.x, cachedSlotGrid.y, cachedSlotGrid.z);
@@ -2749,7 +2871,7 @@ function applyBrickPageTableUniforms(
 
   if (!atlasBuild) {
     atlasBuild = (() => {
-      if (options?.atlasData && atlasFormat && options.atlasSize) {
+      if (normalizedAtlasUpload.data && atlasFormat && options.atlasSize) {
         const components = getTextureComponentsFromFormat(atlasFormat);
         const expectedLength =
           options.atlasSize.width * options.atlasSize.height * options.atlasSize.depth * (components ?? 0);
@@ -2759,10 +2881,10 @@ function applyBrickPageTableUniforms(
           options.atlasSize.height > 0 &&
           options.atlasSize.depth > 0 &&
           expectedLength > 0 &&
-          options.atlasData.length === expectedLength
+          normalizedAtlasUpload.data.length === expectedLength
         ) {
           return {
-            data: options.atlasData,
+            data: normalizedAtlasUpload.data,
             width: options.atlasSize.width,
             height: options.atlasSize.height,
             depth: options.atlasSize.depth,
@@ -2773,11 +2895,11 @@ function applyBrickPageTableUniforms(
         return null;
       }
 
-      if (options?.textureData && options.textureFormat) {
+      if (normalizedTextureUpload.data && normalizedTextureUpload.format) {
         return buildBrickAtlasDataTexture({
           pageTable: resolvedPageTable,
-          textureData: options.textureData,
-          textureFormat: options.textureFormat,
+          textureData: normalizedTextureUpload.data,
+          textureFormat: normalizedTextureUpload.format,
         });
       }
 
@@ -2796,6 +2918,9 @@ function applyBrickPageTableUniforms(
     uniforms.u_brickAtlasBase.value = FALLBACK_BRICK_ATLAS_BASE_TEXTURE;
     uniforms.u_brickAtlasEnabled.value = 0;
     uniforms.u_brickAtlasData.value = FALLBACK_BRICK_ATLAS_DATA_TEXTURE;
+    if ('u_segmentationBrickAtlasData' in uniforms) {
+      uniforms.u_segmentationBrickAtlasData.value = FALLBACK_SEGMENTATION_LABEL_TEXTURE;
+    }
     (uniforms.u_brickAtlasSize.value as THREE.Vector3).set(1, 1, 1);
     (uniforms.u_brickAtlasSlotGrid.value as THREE.Vector3).set(1, 1, 1);
     return;
@@ -2811,6 +2936,9 @@ function applyBrickPageTableUniforms(
     uniforms.u_brickAtlasBase.value = FALLBACK_BRICK_ATLAS_BASE_TEXTURE;
     uniforms.u_brickAtlasEnabled.value = 0;
     uniforms.u_brickAtlasData.value = FALLBACK_BRICK_ATLAS_DATA_TEXTURE;
+    if ('u_segmentationBrickAtlasData' in uniforms) {
+      uniforms.u_segmentationBrickAtlasData.value = FALLBACK_SEGMENTATION_LABEL_TEXTURE;
+    }
     (uniforms.u_brickAtlasSize.value as THREE.Vector3).set(1, 1, 1);
     (uniforms.u_brickAtlasSlotGrid.value as THREE.Vector3).set(1, 1, 1);
     return;
@@ -2827,7 +2955,7 @@ function applyBrickPageTableUniforms(
     atlasTexturesDirty,
   );
   resource.brickAtlasSourceToken = atlasSourceToken;
-  resource.brickAtlasSourceData = options?.atlasData ?? options?.textureData ?? null;
+  resource.brickAtlasSourceData = normalizedAtlasUpload.data ?? normalizedTextureUpload.data ?? null;
   resource.brickAtlasSourceFormat = atlasFormat ?? null;
   resource.brickAtlasSourcePageTable = resolvedPageTable;
   resource.brickAtlasSlotGrid = atlasSlotGrid;
@@ -2842,7 +2970,7 @@ function applyBrickPageTableUniforms(
     forceRebuild: atlasTexturesDirty,
   });
   uniforms.u_brickAtlasEnabled.value = 1;
-  uniforms.u_brickAtlasData.value = resource.brickAtlasDataTexture;
+  bindBrickAtlasDataUniform(resource.brickAtlasDataTexture);
   (uniforms.u_brickAtlasSize.value as THREE.Vector3).set(
     atlasBuild.width,
     atlasBuild.height,
@@ -3252,6 +3380,7 @@ export function useVolumeResources({
           max3DTextureSize,
           cameraPosition: localCameraPosition,
           forceFullResidency: Boolean(resource.playbackPinnedResidency),
+          isSegmentation: brickAtlas.dataType === 'uint16',
         });
       };
     };
@@ -3329,7 +3458,16 @@ export function useVolumeResources({
       const sliceDataIndex = hasExplicitSliceIndex
         ? Number(layer.sliceIndex)
         : Math.round(safeZClipFront * Math.max(dataDepthForSlice - 1, 0));
-      const effectiveSamplingMode = resolveSamplingModeForRenderStyle(layer.samplingMode, layer.renderStyle);
+      const intensityVolume = volume && isIntensityVolume(volume) ? volume : null;
+      const segmentationVolume = volume && isSegmentationVolume(volume) ? volume : null;
+      const segmentationPaletteTexture = layer.isSegmentation
+        ? getSegmentationPaletteTexture(layer.key)
+        : null;
+      const effectiveSamplingMode = resolveSamplingModeForRenderStyle(
+        layer.samplingMode,
+        layer.renderStyle,
+        Boolean(layer.isSegmentation),
+      );
       const shouldDisableDirectVolumeBrickPageTableSampling =
         preferDirectVolumeSampling && effectiveSamplingMode === 'linear';
       const layerAdditiveEnabled = resolveLayerAdditiveEnabled(
@@ -3340,33 +3478,29 @@ export function useVolumeResources({
         : THREE.NormalBlending;
 
       if (viewerMode === '3d') {
-        if (volume) {
-          cachedPreparation = getCachedTextureData(volume);
+        if (intensityVolume) {
+          cachedPreparation = getCachedTextureData(intensityVolume);
         }
-        const textureData = cachedPreparation?.data ?? FALLBACK_VOLUME_TEXTURE_DATA;
-        const textureFormat = cachedPreparation?.format ?? THREE.RedFormat;
+        const packedSegmentationTextureData = segmentationVolume
+          ? packSegmentationLabelTextureData(segmentationVolume.labels)
+          : null;
+        const textureData = intensityVolume
+          ? (cachedPreparation?.data ?? FALLBACK_VOLUME_TEXTURE_DATA)
+          : segmentationVolume
+            ? (packedSegmentationTextureData ?? new Uint8Array([0, 0]))
+            : FALLBACK_VOLUME_TEXTURE_DATA;
+        const textureFormat = intensityVolume
+          ? (cachedPreparation?.format ?? THREE.RedFormat)
+          : segmentationVolume
+            ? THREE.RGFormat
+            : THREE.RedFormat;
+        const textureType = THREE.UnsignedByteType;
         const directAtlasFormat = brickAtlas ? getTextureFormatFromBrickAtlas(brickAtlas) : null;
         const proxyVisibleBox = resolveBackgroundMaskVisibleBox(layer.backgroundMask ?? null, {
           width,
           height,
           depth,
         });
-
-        let labelTexture: THREE.Data3DTexture | null = null;
-        if (layer.isSegmentation && volume?.segmentationLabels) {
-          labelTexture = new THREE.Data3DTexture(
-            volume.segmentationLabels,
-            volume.width,
-            volume.height,
-            volume.depth,
-          );
-          labelTexture.format = THREE.RedIntegerFormat;
-          labelTexture.type = THREE.UnsignedIntType;
-          labelTexture.minFilter = THREE.NearestFilter;
-          labelTexture.magFilter = THREE.NearestFilter;
-          labelTexture.unpackAlignment = 1;
-          labelTexture.needsUpdate = true;
-        }
 
         const needsRebuild =
           !resources ||
@@ -3380,7 +3514,8 @@ export function useVolumeResources({
           resources.proxyGeometrySignature !== proxyVisibleBox.signature ||
           !(resources.texture instanceof THREE.Data3DTexture) ||
           resources.texture.image.data.length !== textureData.length ||
-          resources.texture.format !== textureFormat;
+          resources.texture.format !== textureFormat ||
+          resources.texture.type !== textureType;
 
         if (needsRebuild) {
           removeResource(layer.key);
@@ -3389,15 +3524,20 @@ export function useVolumeResources({
             ? new THREE.Data3DTexture(textureData, width, height, depth)
             : createFallbackVolumeDataTexture();
           texture.format = sourceUsesVolume ? textureFormat : THREE.RedFormat;
-          texture.type = THREE.UnsignedByteType;
+          texture.type = sourceUsesVolume ? textureType : THREE.UnsignedByteType;
           applyVolumeTextureSampling(texture, effectiveSamplingMode);
           texture.unpackAlignment = 1;
-          texture.colorSpace = THREE.LinearSRGBColorSpace;
+          if (!layer.isSegmentation) {
+            texture.colorSpace = THREE.LinearSRGBColorSpace;
+          }
           texture.needsUpdate = true;
 
           const shader = VolumeRenderShaderVariants[getVolumeRenderShaderVariantKey(layer.renderStyle, effectiveSamplingMode)];
           const uniforms = THREE.UniformsUtils.clone(shader.uniforms);
           uniforms.u_data.value = texture;
+          if (uniforms.u_isSegmentation) {
+            uniforms.u_isSegmentation.value = layer.isSegmentation ? 1 : 0;
+          }
           uniforms.u_size.value.set(width, height, depth);
           uniforms.u_clim.value.set(0, 1);
           uniforms.u_renderstyle.value = layer.renderStyle;
@@ -3415,7 +3555,14 @@ export function useVolumeResources({
           applyAdaptiveLodUniforms(uniforms as ShaderUniformMap, effectiveSamplingMode);
           applyBeerLambertUniforms(uniforms as ShaderUniformMap, layer);
           if (uniforms.u_segmentationLabels) {
-            uniforms.u_segmentationLabels.value = labelTexture ?? FALLBACK_SEGMENTATION_LABEL_TEXTURE;
+            uniforms.u_segmentationLabels.value = layer.isSegmentation ? texture : FALLBACK_SEGMENTATION_LABEL_TEXTURE;
+          }
+          if (uniforms.u_segmentationBrickAtlasData) {
+            uniforms.u_segmentationBrickAtlasData.value = FALLBACK_SEGMENTATION_LABEL_TEXTURE;
+          }
+          if (uniforms.u_segmentationPalette) {
+            uniforms.u_segmentationPalette.value =
+              segmentationPaletteTexture ?? FALLBACK_SEGMENTATION_PALETTE_TEXTURE;
           }
           if (uniforms.u_additive) {
             uniforms.u_additive.value = layerAdditiveEnabled ? 1 : 0;
@@ -3470,7 +3617,8 @@ export function useVolumeResources({
           const nextResource: VolumeResources = {
             mesh,
             texture,
-            labelTexture,
+            labelTexture: null,
+            paletteTexture: segmentationPaletteTexture,
             dimensions: { width, height, depth },
             channels,
             mode: viewerMode,
@@ -3528,15 +3676,17 @@ export function useVolumeResources({
                     max3DTextureSize,
                     cameraPosition: residencyCameraPosition,
                     forceFullResidency: playbackPinnedResidency || !isPlaybackWarmup,
+                    isSegmentation: layer.isSegmentation,
                   }
-              : volume
+              : intensityVolume
                 ? {
-                    textureDataToken: volume.normalized,
+                    textureDataToken: intensityVolume.normalized,
                     textureData,
                     textureFormat,
                     max3DTextureSize,
                     preferDirectVolumeSampling,
                     disableBrickPageTableSampling: shouldDisableDirectVolumeBrickPageTableSampling,
+                    isSegmentation: false,
                   }
                 : undefined,
           );
@@ -3580,7 +3730,12 @@ export function useVolumeResources({
           const sliceTexture = (() => {
             const isNearestSampling = effectiveSamplingMode === 'nearest';
             if (volume) {
-              const sliceInfo = prepareSliceTexture(volume, clampedSliceDataIndex, null);
+              const sliceInfo = prepareSliceTexture(
+                volume,
+                clampedSliceDataIndex,
+                null,
+                segmentationPaletteTexture ? (segmentationPaletteTexture.image.data as Uint8Array) : null,
+              );
               const texture = new THREE.DataTexture(
                 sliceInfo.data,
                 volume.width,
@@ -3602,9 +3757,11 @@ export function useVolumeResources({
                   atlasData: brickAtlas.data,
                   textureFormat: brickAtlas.textureFormat,
                   sourceChannels: brickAtlas.sourceChannels,
+                  dataType: brickAtlas.dataType,
                 },
                 clampedSliceDataIndex,
                 null,
+                segmentationPaletteTexture ? (segmentationPaletteTexture.image.data as Uint8Array) : null,
               );
               const texture = new THREE.DataTexture(
                 sliceInfo.data,
@@ -3692,6 +3849,8 @@ export function useVolumeResources({
           const nextResource: VolumeResources = {
             mesh,
             texture,
+            labelTexture: null,
+            paletteTexture: segmentationPaletteTexture,
             dimensions: { width, height, depth },
             channels,
             mode: viewerMode,
@@ -3745,6 +3904,7 @@ export function useVolumeResources({
                   atlasSize: { width: brickAtlas.width, height: brickAtlas.height, depth: brickAtlas.depth },
                   max3DTextureSize,
                   forceFullResidency: playbackPinnedResidency || !isPlaybackWarmup,
+                  isSegmentation: layer.isSegmentation,
                 }
                 : undefined,
           );
@@ -3763,6 +3923,7 @@ export function useVolumeResources({
         resources.playbackPinnedResidency = playbackPinnedResidency;
         resources.preferIncrementalResidency =
           (isPlaybackWarmup || promotedFromWarmup) && !playbackPinnedResidency;
+        resources.paletteTexture = segmentationPaletteTexture;
         mesh.visible = isPlaybackWarmup ? false : layer.visible;
         mesh.renderOrder = index;
 
@@ -3798,7 +3959,7 @@ export function useVolumeResources({
 
         if (resources.mode === '3d') {
           assignVolumeMeshOnBeforeRender(mesh);
-          const preparation = volume ? cachedPreparation ?? getCachedTextureData(volume) : null;
+          const preparation = intensityVolume ? cachedPreparation ?? getCachedTextureData(intensityVolume) : null;
           const directAtlasFormat = brickAtlas ? getTextureFormatFromBrickAtlas(brickAtlas) : null;
           const residencyCameraPosition = (() => {
             const activeCamera = cameraRef.current;
@@ -3825,15 +3986,17 @@ export function useVolumeResources({
                   forceFullResidency:
                     Boolean(resources.playbackPinnedResidency) ||
                     !(resources.preferIncrementalResidency ?? false),
+                  isSegmentation: layer.isSegmentation,
                 }
-              : volume && preparation
+              : intensityVolume && preparation
                 ? {
-                    textureDataToken: volume.normalized,
+                    textureDataToken: intensityVolume.normalized,
                     textureData: preparation.data,
                     textureFormat: preparation.format,
                     max3DTextureSize,
                     preferDirectVolumeSampling,
                     disableBrickPageTableSampling: shouldDisableDirectVolumeBrickPageTableSampling,
+                    isSegmentation: false,
                   }
                 : undefined
           );
@@ -3851,27 +4014,45 @@ export function useVolumeResources({
             dataTexture.needsUpdate = true;
             resources.samplingMode = effectiveSamplingMode;
           }
-          const nextTextureData = preparation ? preparation.data : FALLBACK_VOLUME_TEXTURE_DATA;
-          const nextTextureWidth = preparation ? width : 1;
-          const nextTextureHeight = preparation ? height : 1;
-          const nextTextureDepth = preparation ? depth : 1;
-          const nextTextureFormat = preparation ? preparation.format : THREE.RedFormat;
+          const nextTextureData = preparation
+            ? preparation.data
+            : segmentationVolume
+              ? packSegmentationLabelTextureData(segmentationVolume.labels)
+              : FALLBACK_VOLUME_TEXTURE_DATA;
+          const nextTextureWidth = preparation || segmentationVolume ? width : 1;
+          const nextTextureHeight = preparation || segmentationVolume ? height : 1;
+          const nextTextureDepth = preparation || segmentationVolume ? depth : 1;
+          const nextTextureFormat = preparation
+            ? preparation.format
+            : segmentationVolume
+              ? THREE.RGFormat
+              : THREE.RedFormat;
+          const nextTextureType = THREE.UnsignedByteType;
           const textureSourceChanged =
             dataTexture.image.data !== nextTextureData ||
             dataTexture.image.width !== nextTextureWidth ||
             dataTexture.image.height !== nextTextureHeight ||
             dataTexture.image.depth !== nextTextureDepth ||
-            dataTexture.format !== nextTextureFormat;
+            dataTexture.format !== nextTextureFormat ||
+            dataTexture.type !== nextTextureType;
           if (textureSourceChanged) {
             dataTexture.image.data = nextTextureData;
             dataTexture.image.width = nextTextureWidth;
             dataTexture.image.height = nextTextureHeight;
             dataTexture.image.depth = nextTextureDepth;
             dataTexture.format = nextTextureFormat;
+            dataTexture.type = nextTextureType;
             dataTexture.needsUpdate = true;
           }
           if (materialUniforms.u_data.value !== dataTexture) {
             materialUniforms.u_data.value = dataTexture;
+          }
+          if (materialUniforms.u_isSegmentation) {
+            materialUniforms.u_isSegmentation.value = layer.isSegmentation ? 1 : 0;
+          }
+          if (materialUniforms.u_segmentationPalette) {
+            materialUniforms.u_segmentationPalette.value =
+              segmentationPaletteTexture ?? FALLBACK_SEGMENTATION_PALETTE_TEXTURE;
           }
           if (materialUniforms.u_size) {
             const sizeUniform = materialUniforms.u_size.value as THREE.Vector3;
@@ -3879,50 +4060,14 @@ export function useVolumeResources({
               sizeUniform.set(width, height, depth);
             }
           }
-          if (layer.isSegmentation && volume?.segmentationLabels) {
-            const expectedLength = volume.segmentationLabels.length;
-            let labelTexture = resources.labelTexture ?? null;
-            const needsLabelTextureRebuild =
-              !labelTexture ||
-              !(labelTexture.image?.data instanceof Uint32Array) ||
-              labelTexture.image.data.length !== expectedLength;
-
-            if (needsLabelTextureRebuild) {
-              labelTexture?.dispose();
-              labelTexture = new THREE.Data3DTexture(
-                volume.segmentationLabels,
-                volume.width,
-                volume.height,
-                volume.depth,
-              );
-              labelTexture.format = THREE.RedIntegerFormat;
-              labelTexture.type = THREE.UnsignedIntType;
-              labelTexture.minFilter = THREE.NearestFilter;
-              labelTexture.magFilter = THREE.NearestFilter;
-              labelTexture.unpackAlignment = 1;
-              labelTexture.needsUpdate = true;
-            } else if (labelTexture) {
-              const labelsChanged =
-                labelTexture.image.data !== volume.segmentationLabels ||
-                labelTexture.image.width !== volume.width ||
-                labelTexture.image.height !== volume.height ||
-                labelTexture.image.depth !== volume.depth;
-              if (labelsChanged) {
-                labelTexture.image.data = volume.segmentationLabels;
-                labelTexture.image.width = volume.width;
-                labelTexture.image.height = volume.height;
-                labelTexture.image.depth = volume.depth;
-                labelTexture.needsUpdate = true;
-              }
-            }
-            resources.labelTexture = labelTexture;
-            if (materialUniforms.u_segmentationLabels) {
-              materialUniforms.u_segmentationLabels.value = labelTexture;
-            }
-          } else if (materialUniforms.u_segmentationLabels) {
-            materialUniforms.u_segmentationLabels.value = FALLBACK_SEGMENTATION_LABEL_TEXTURE;
-            resources.labelTexture?.dispose();
-            resources.labelTexture = null;
+          resources.paletteTexture = segmentationPaletteTexture;
+          resources.labelTexture = null;
+          if (materialUniforms.u_segmentationLabels) {
+            materialUniforms.u_segmentationLabels.value =
+              layer.isSegmentation ? dataTexture : FALLBACK_SEGMENTATION_LABEL_TEXTURE;
+          }
+          if (materialUniforms.u_segmentationBrickAtlasData && !brickAtlas) {
+            materialUniforms.u_segmentationBrickAtlasData.value = FALLBACK_SEGMENTATION_LABEL_TEXTURE;
           }
           if (materialUniforms.u_renderstyle) {
             materialUniforms.u_renderstyle.value = layer.renderStyle;
@@ -3962,6 +4107,7 @@ export function useVolumeResources({
                   forceFullResidency:
                     Boolean(resources.playbackPinnedResidency) ||
                     !(resources.preferIncrementalResidency ?? false),
+                  isSegmentation: layer.isSegmentation,
                 }
                 : undefined,
           );
@@ -3979,7 +4125,12 @@ export function useVolumeResources({
 
           if (volume) {
             const existingBuffer = resources.sliceBuffer ?? null;
-            const sliceInfo = prepareSliceTexture(volume, clampedSliceDataIndex, existingBuffer);
+            const sliceInfo = prepareSliceTexture(
+              volume,
+              clampedSliceDataIndex,
+              existingBuffer,
+              segmentationPaletteTexture ? (segmentationPaletteTexture.image.data as Uint8Array) : null,
+            );
             resources.sliceBuffer = sliceInfo.data;
             dataTexture.image.data = sliceInfo.data;
             dataTexture.image.width = volume.width;
@@ -3995,9 +4146,11 @@ export function useVolumeResources({
                 atlasData: brickAtlas.data,
                 textureFormat: brickAtlas.textureFormat,
                 sourceChannels: brickAtlas.sourceChannels,
+                dataType: brickAtlas.dataType,
               },
               clampedSliceDataIndex,
               existingBuffer,
+              segmentationPaletteTexture ? (segmentationPaletteTexture.image.data as Uint8Array) : null,
             );
             resources.sliceBuffer = sliceInfo.data;
             dataTexture.image.data = sliceInfo.data;

@@ -12,6 +12,7 @@ const createVolume = (): NormalizedVolume => {
   histogram[128] = 16;
 
   return {
+    kind: 'intensity',
     width: 4,
     height: 4,
     depth: 1,

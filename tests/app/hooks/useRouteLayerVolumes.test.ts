@@ -29,6 +29,7 @@ const createLoadedLayer = (key: string, channelId: string, isSegmentation = fals
 });
 
 const createVolume = (seed: number): NormalizedVolume => ({
+  kind: 'intensity',
   width: 2,
   height: 2,
   depth: 2,
@@ -624,10 +625,12 @@ await (async () => {
   );
 
   await flushAsyncWork();
-  assert.deepStrictEqual(getVolumeCalls[0], { layerKey: 'layer-a', timeIndex: 1 });
-  assert.strictEqual(getBrickAtlasCalls.length, 0);
-  assert.ok(hook.result.currentLayerVolumes['layer-a']);
-  assert.strictEqual(hook.result.currentLayerBrickAtlases['layer-a'] ?? null, null);
+  assert.strictEqual(getVolumeCalls.length, 0);
+  assert.strictEqual(getBrickAtlasCalls.length, 1);
+  assert.strictEqual(getBrickAtlasCalls[0]?.layerKey, 'layer-a');
+  assert.strictEqual(getBrickAtlasCalls[0]?.timeIndex, 1);
+  assert.strictEqual(hook.result.currentLayerVolumes['layer-a'] ?? null, null);
+  assert.ok(hook.result.currentLayerBrickAtlases['layer-a']);
   hook.unmount();
 })();
 

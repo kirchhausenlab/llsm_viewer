@@ -32,17 +32,14 @@ const makeManifest = (
   const depth = 1;
   const timepoints = 2;
 
-  const segChannels = 4;
+  const segChannels = 1;
   const segDataPath = 'channels/channel-a/seg/data';
-  const segLabelsPath = 'channels/channel-a/seg/labels';
   const segLeafMinPath = 'channels/channel-a/seg/scales/0/skip-hierarchy/levels/0/min';
   const segLeafMaxPath = 'channels/channel-a/seg/scales/0/skip-hierarchy/levels/0/max';
   const segLeafOccupancyPath = 'channels/channel-a/seg/scales/0/skip-hierarchy/levels/0/occupancy';
   const segRootMinPath = 'channels/channel-a/seg/scales/0/skip-hierarchy/levels/1/min';
   const segRootMaxPath = 'channels/channel-a/seg/scales/0/skip-hierarchy/levels/1/max';
   const segRootOccupancyPath = 'channels/channel-a/seg/scales/0/skip-hierarchy/levels/1/occupancy';
-  const segHistogramPath = 'channels/channel-a/seg/scales/0/histogram';
-
   return {
     format: PREPROCESSED_DATASET_FORMAT,
     generatedAt: new Date().toISOString(),
@@ -73,8 +70,8 @@ const makeManifest = (
               height,
               depth,
               channels: segChannels,
-              dataType: 'uint8',
-              normalization: { min: 0, max: 255 },
+              dataType: 'uint16',
+              normalization: null,
               zarr: {
                 scales: [
                   {
@@ -89,19 +86,7 @@ const makeManifest = (
                         path: segDataPath,
                         shape: [timepoints, depth, height, width, segChannels],
                         chunkShape: [1, depth, 1, 1, segChannels],
-                        dataType: 'uint8'
-                      },
-                      histogram: {
-                        path: segHistogramPath,
-                        shape: [timepoints, 256],
-                        chunkShape: [1, 256],
-                        dataType: 'uint32'
-                      },
-                      labels: {
-                        path: segLabelsPath,
-                        shape: [timepoints, depth, height, width],
-                        chunkShape: [1, depth, 1, 1],
-                        dataType: 'uint32'
+                        dataType: 'uint16'
                       },
                       skipHierarchy: {
                         levels: [
@@ -208,13 +193,6 @@ await (async () => {
     codecs: [],
     fill_value: 0
   });
-  await zarr.create(zarr.root(zarrStore).resolve(baseScale.zarr.labels!.path), {
-    shape: baseScale.zarr.labels!.shape,
-    data_type: baseScale.zarr.labels!.dataType,
-    chunk_shape: baseScale.zarr.labels!.chunkShape,
-    codecs: [],
-    fill_value: 0
-  });
   for (const hierarchy of baseScale.zarr.skipHierarchy.levels) {
     await zarr.create(zarr.root(zarrStore).resolve(hierarchy.min.path), {
       shape: hierarchy.min.shape,
@@ -238,38 +216,16 @@ await (async () => {
       fill_value: 0
     });
   }
-  await zarr.create(zarr.root(zarrStore).resolve(baseScale.zarr.histogram.path), {
-    shape: baseScale.zarr.histogram.shape,
-    data_type: baseScale.zarr.histogram.dataType,
-    chunk_shape: baseScale.zarr.histogram.chunkShape,
-    codecs: [],
-    fill_value: 0
-  });
+  const segT0 = new Uint16Array([0, 1, 2, 3]);
+  const segT1 = new Uint16Array([3, 2, 1, 0]);
 
-  const segT0 = new Uint8Array([0, 0, 0, 0, 255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255]);
-  const segT1 = new Uint8Array([255, 255, 255, 255, 10, 20, 30, 255, 40, 50, 60, 255, 0, 0, 0, 0]);
-  const labelsT0 = new Uint32Array([0, 1, 2, 3]);
-  const labelsT1 = new Uint32Array([3, 2, 1, 0]);
-
-  const writeSpatialDataChunks = async (timepoint: number, volume: Uint8Array) => {
+  const writeSpatialDataChunks = async (timepoint: number, labels: Uint16Array) => {
     let voxelIndex = 0;
     for (let y = 0; y < layer.height; y += 1) {
       for (let x = 0; x < layer.width; x += 1) {
-        const chunkStart = voxelIndex * layer.channels;
-        const chunkBytes = volume.slice(chunkStart, chunkStart + layer.channels);
+        const chunkBytes = new Uint8Array(2);
+        new DataView(chunkBytes.buffer).setUint16(0, labels[voxelIndex] ?? 0, true);
         await storageHandle.storage.writeFile(`${baseScale.zarr.data.path}/c/${timepoint}/0/${y}/${x}/0`, chunkBytes);
-        voxelIndex += 1;
-      }
-    }
-  };
-
-  const writeSpatialLabelChunks = async (timepoint: number, labels: Uint32Array) => {
-    let voxelIndex = 0;
-    for (let y = 0; y < layer.height; y += 1) {
-      for (let x = 0; x < layer.width; x += 1) {
-        const chunkBytes = new Uint8Array(4);
-        new DataView(chunkBytes.buffer).setUint32(0, labels[voxelIndex] ?? 0, true);
-        await storageHandle.storage.writeFile(`${baseScale.zarr.labels!.path}/c/${timepoint}/0/${y}/${x}`, chunkBytes);
         voxelIndex += 1;
       }
     }
@@ -277,32 +233,13 @@ await (async () => {
 
   await writeSpatialDataChunks(0, segT0);
   await writeSpatialDataChunks(1, segT1);
-  await writeSpatialLabelChunks(0, labelsT0);
-  await writeSpatialLabelChunks(1, labelsT1);
-
-  const histogramT0 = computeUint8VolumeHistogram({
-    width: layer.width,
-    height: layer.height,
-    depth: layer.depth,
-    channels: layer.channels,
-    normalized: segT0
-  });
-  const histogramT1 = computeUint8VolumeHistogram({
-    width: layer.width,
-    height: layer.height,
-    depth: layer.depth,
-    channels: layer.channels,
-    normalized: segT1
-  });
-  await storageHandle.storage.writeFile(`${baseScale.zarr.histogram.path}/c/0/0`, encodeUint32ArrayLE(histogramT0));
-  await storageHandle.storage.writeFile(`${baseScale.zarr.histogram.path}/c/1/0`, encodeUint32ArrayLE(histogramT1));
   await storageHandle.storage.writeFile(
     `${baseScale.zarr.skipHierarchy.levels[0]!.min.path}/c/0/0/0/0`,
-    new Uint8Array([0, 0, 0, 0])
+    new Uint8Array([0, 1, 2, 3])
   );
   await storageHandle.storage.writeFile(
     `${baseScale.zarr.skipHierarchy.levels[0]!.max.path}/c/0/0/0/0`,
-    new Uint8Array([0, 255, 255, 255])
+    new Uint8Array([0, 1, 2, 3])
   );
   await storageHandle.storage.writeFile(
     `${baseScale.zarr.skipHierarchy.levels[0]!.occupancy.path}/c/0/0/0/0`,
@@ -310,11 +247,11 @@ await (async () => {
   );
   await storageHandle.storage.writeFile(
     `${baseScale.zarr.skipHierarchy.levels[1]!.min.path}/c/0/0/0/0`,
-    new Uint8Array([0])
+    new Uint8Array([1])
   );
   await storageHandle.storage.writeFile(
     `${baseScale.zarr.skipHierarchy.levels[1]!.max.path}/c/0/0/0/0`,
-    new Uint8Array([255])
+    new Uint8Array([3])
   );
   await storageHandle.storage.writeFile(
     `${baseScale.zarr.skipHierarchy.levels[1]!.occupancy.path}/c/0/0/0/0`,
@@ -322,11 +259,11 @@ await (async () => {
   );
   await storageHandle.storage.writeFile(
     `${baseScale.zarr.skipHierarchy.levels[0]!.min.path}/c/1/0/0/0`,
-    new Uint8Array([255, 10, 40, 0])
+    new Uint8Array([3, 2, 1, 0])
   );
   await storageHandle.storage.writeFile(
     `${baseScale.zarr.skipHierarchy.levels[0]!.max.path}/c/1/0/0/0`,
-    new Uint8Array([255, 255, 255, 0])
+    new Uint8Array([3, 2, 1, 0])
   );
   await storageHandle.storage.writeFile(
     `${baseScale.zarr.skipHierarchy.levels[0]!.occupancy.path}/c/1/0/0/0`,
@@ -334,11 +271,11 @@ await (async () => {
   );
   await storageHandle.storage.writeFile(
     `${baseScale.zarr.skipHierarchy.levels[1]!.min.path}/c/1/0/0/0`,
-    new Uint8Array([10])
+    new Uint8Array([1])
   );
   await storageHandle.storage.writeFile(
     `${baseScale.zarr.skipHierarchy.levels[1]!.max.path}/c/1/0/0/0`,
-    new Uint8Array([255])
+    new Uint8Array([3])
   );
   await storageHandle.storage.writeFile(
     `${baseScale.zarr.skipHierarchy.levels[1]!.occupancy.path}/c/1/0/0/0`,
@@ -360,56 +297,51 @@ await (async () => {
     maxConcurrentPrefetchLoads: DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS
   });
   const volume0 = await provider.getVolume('seg', 0);
-  assert.deepEqual(Array.from(volume0.normalized), Array.from(segT0));
-  assert.deepEqual(Array.from(volume0.segmentationLabels ?? []), Array.from(labelsT0));
-  assert.deepEqual(Array.from(volume0.histogram ?? []), Array.from(histogramT0));
+  assert.equal(volume0.kind, 'segmentation');
+  assert.deepEqual(Array.from(volume0.labels), Array.from(segT0));
+  assert.equal(volume0.histogram, undefined);
 
   const volume1 = await provider.getVolume('seg', 1);
-  assert.deepEqual(Array.from(volume1.normalized), Array.from(segT1));
-  assert.deepEqual(Array.from(volume1.segmentationLabels ?? []), Array.from(labelsT1));
-  assert.deepEqual(Array.from(volume1.histogram ?? []), Array.from(histogramT1));
+  assert.equal(volume1.kind, 'segmentation');
+  assert.deepEqual(Array.from(volume1.labels), Array.from(segT1));
+  assert.equal(volume1.histogram, undefined);
 
   assert.equal(typeof provider.getBrickPageTable, 'function');
   const pageTableT0 = await provider.getBrickPageTable!('seg', 0);
   assert.deepEqual(pageTableT0.gridShape, [1, 2, 2]);
   assert.deepEqual(pageTableT0.chunkShape, [1, 1, 1]);
   assert.deepEqual(Array.from(pageTableT0.brickAtlasIndices), [-1, 0, 1, 2]);
-  assert.deepEqual(Array.from(pageTableT0.chunkMin), [0, 0, 0, 0]);
-  assert.deepEqual(Array.from(pageTableT0.chunkMax), [0, 255, 255, 255]);
+  assert.deepEqual(Array.from(pageTableT0.chunkMin), [0, 1, 2, 3]);
+  assert.deepEqual(Array.from(pageTableT0.chunkMax), [0, 1, 2, 3]);
   assert.equal(pageTableT0.occupiedBrickCount, 3);
 
   const pageTableT1 = await provider.getBrickPageTable!('seg', 1);
   assert.deepEqual(Array.from(pageTableT1.brickAtlasIndices), [0, 1, 2, -1]);
-  assert.deepEqual(Array.from(pageTableT1.chunkMin), [255, 10, 40, 0]);
-  assert.deepEqual(Array.from(pageTableT1.chunkMax), [255, 255, 255, 0]);
+  assert.deepEqual(Array.from(pageTableT1.chunkMin), [3, 2, 1, 0]);
+  assert.deepEqual(Array.from(pageTableT1.chunkMax), [3, 2, 1, 0]);
   assert.equal(pageTableT1.occupiedBrickCount, 3);
 
   assert.equal(typeof provider.getBrickAtlas, 'function');
   assert.equal(provider.hasBrickAtlas?.('seg', 0), false);
   const brickAtlasT0 = await provider.getBrickAtlas!('seg', 0);
   assert.equal(brickAtlasT0.enabled, true);
-  assert.equal(brickAtlasT0.textureFormat, 'rgba');
-  assert.equal(brickAtlasT0.sourceChannels, 4);
+  assert.equal(brickAtlasT0.textureFormat, 'red');
+  assert.equal(brickAtlasT0.dataType, 'uint16');
+  assert.equal(brickAtlasT0.sourceChannels, 1);
   assert.equal(brickAtlasT0.width, 1);
   assert.equal(brickAtlasT0.height, 1);
   assert.equal(brickAtlasT0.depth, 3);
   assert.deepEqual(Array.from(brickAtlasT0.pageTable.brickAtlasIndices), [-1, 0, 1, 2]);
-  assert.deepEqual(
-    Array.from(brickAtlasT0.data),
-    [255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255]
-  );
+  assert.deepEqual(Array.from(brickAtlasT0.data), [1, 2, 3]);
   assert.equal(provider.hasBrickAtlas?.('seg', 0), true);
 
   const brickAtlasT1 = await provider.getBrickAtlas!('seg', 1);
   assert.equal(brickAtlasT1.enabled, true);
-  assert.equal(brickAtlasT1.textureFormat, 'rgba');
+  assert.equal(brickAtlasT1.textureFormat, 'red');
   assert.equal(brickAtlasT1.width, 1);
   assert.equal(brickAtlasT1.height, 1);
   assert.equal(brickAtlasT1.depth, 3);
-  assert.deepEqual(
-    Array.from(brickAtlasT1.data),
-    [255, 255, 255, 255, 10, 20, 30, 255, 40, 50, 60, 255]
-  );
+  assert.deepEqual(Array.from(brickAtlasT1.data), [3, 2, 1]);
   provider.setMaxCachedVolumes(1);
   assert.equal(provider.hasBrickAtlas?.('seg', 1), true);
   assert.equal(provider.hasBrickAtlas?.('seg', 0), false);

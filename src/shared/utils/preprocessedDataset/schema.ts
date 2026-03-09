@@ -41,7 +41,6 @@ const VOLUME_DATA_TYPES: readonly VolumeDataType[] = [
 
 const SHARDING_ARRAY_KINDS: readonly ZarrArrayShardingPlanArrayKind[] = [
   'volumeData',
-  'volumeLabels',
   'skipHierarchy',
   'histogram',
   'subcell',
@@ -488,7 +487,8 @@ function validatePlaybackAtlasDescriptor({
   layerVolumeCount,
   expectedLeafGridShape,
   chunkShape,
-  channels
+  channels,
+  dataType
 }: {
   value: unknown;
   path: string;
@@ -496,6 +496,7 @@ function validatePlaybackAtlasDescriptor({
   expectedLeafGridShape: readonly number[];
   chunkShape: readonly number[];
   channels: number;
+  dataType: 'uint8' | 'uint16';
 }): PreprocessedScalePlaybackAtlasZarrDescriptor | undefined {
   if (value === undefined) {
     return undefined;
@@ -511,6 +512,12 @@ function validatePlaybackAtlasDescriptor({
   if (textureChannels !== expectedTextureChannels) {
     throw new Error(
       `Invalid manifest schema at ${path}.textureChannels: expected ${expectedTextureChannels}, got ${textureChannels}.`
+    );
+  }
+  const atlasDataType = expectString(playbackAtlas.dataType, `${path}.dataType`, { nonEmpty: true });
+  if (atlasDataType !== dataType) {
+    throw new Error(
+      `Invalid manifest schema at ${path}.dataType: expected ${dataType}, got ${atlasDataType}.`
     );
   }
   const brickAtlasIndices = validateDescriptor({
@@ -545,6 +552,7 @@ function validatePlaybackAtlasDescriptor({
   return {
     textureFormat: textureFormat as PreprocessedBrickAtlasTextureFormat,
     textureChannels,
+    dataType,
     brickAtlasIndices,
     data
   };
@@ -554,14 +562,19 @@ function validateScale({
   value,
   path,
   layerVolumeCount,
-  layerDimensions,
-  isSegmentation
+  layerDimensions
 }: {
   value: unknown;
   path: string;
   layerVolumeCount: number;
-  layerDimensions: { width: number; height: number; depth: number; channels: number };
-  isSegmentation: boolean;
+  layerDimensions: {
+    width: number;
+    height: number;
+    depth: number;
+    channels: number;
+    dataType: VolumeDataType;
+    isSegmentation: boolean;
+  };
 }): PreprocessedLayerScaleManifestEntry {
   const scale = expectRecord(value, path);
   const level = expectNonNegativeInteger(scale.level, `${path}.level`);
@@ -588,11 +601,12 @@ function validateScale({
   }
 
   const expectedDataShape = [layerVolumeCount, depth, height, width, channels];
+  const expectedStoredDataType: VolumeDataType = layerDimensions.isSegmentation ? 'uint16' : 'uint8';
   const data = validateDescriptor({
     value: zarr.data,
     path: `${path}.zarr.data`,
     expectedRank: 5,
-    expectedDataType: 'uint8',
+    expectedDataType: expectedStoredDataType,
     expectedShape: expectedDataShape
   });
 
@@ -611,23 +625,15 @@ function validateScale({
     expectedLeafGridShape
   });
 
-  const histogram = validateDescriptor({
-    value: zarr.histogram,
-    path: `${path}.zarr.histogram`,
-    expectedRank: 2,
-    expectedDataType: 'uint32',
-    expectedShape: [layerVolumeCount, HISTOGRAM_BINS]
-  });
-
-  const labelsValue = zarr.labels;
-  let labels: ZarrArrayDescriptor | undefined;
-  if (labelsValue !== undefined) {
-    labels = validateDescriptor({
-      value: labelsValue,
-      path: `${path}.zarr.labels`,
-      expectedRank: 4,
+  const histogramValue = zarr.histogram;
+  let histogram: ZarrArrayDescriptor | undefined;
+  if (histogramValue !== undefined) {
+    histogram = validateDescriptor({
+      value: histogramValue,
+      path: `${path}.zarr.histogram`,
+      expectedRank: 2,
       expectedDataType: 'uint32',
-      expectedShape: [layerVolumeCount, depth, height, width]
+      expectedShape: [layerVolumeCount, HISTOGRAM_BINS]
     });
   }
 
@@ -644,14 +650,9 @@ function validateScale({
     layerVolumeCount,
     expectedLeafGridShape,
     chunkShape: [chunkDepth, chunkHeight, chunkWidth],
-    channels
+    channels,
+    dataType: data.dataType as 'uint8' | 'uint16'
   });
-
-  if (isSegmentation && !labels) {
-    throw new Error(
-      `Invalid manifest schema at ${path}.zarr.labels: segmentation layers require labels for every scale.`
-    );
-  }
 
   return {
     level,
@@ -662,11 +663,10 @@ function validateScale({
     channels,
     zarr: {
       data,
-      ...(labels ? { labels } : {}),
       skipHierarchy,
       ...(subcell ? { subcell } : {}),
       ...(playbackAtlas ? { playbackAtlas } : {}),
-      histogram
+      ...(histogram ? { histogram } : {})
     }
   };
 }
@@ -1006,8 +1006,7 @@ function validateLayer({
       value: scalesValue[index],
       path: `${path}.zarr.scales[${index}]`,
       layerVolumeCount: volumeCount,
-      layerDimensions: { width, height, depth, channels },
-      isSegmentation
+      layerDimensions: { width, height, depth, channels, dataType, isSegmentation }
     });
     if (scale.level <= previousLevel) {
       throw new Error(`Invalid manifest schema at ${path}.zarr.scales[${index}].level: levels must be strictly increasing.`);

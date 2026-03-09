@@ -3,12 +3,14 @@ import * as zarr from 'zarrita';
 
 import type { NormalizationParameters, NormalizedVolume } from '../../../core/volumeProcessing';
 import {
-  colorizeSegmentationVolume,
+  canonicalizeSegmentationVolume,
   computeNormalizationParameters,
-  normalizeVolume
+  isSegmentationVolume,
+  normalizeVolume,
+  toSegmentationLabelId
 } from '../../../core/volumeProcessing';
 import type { PreprocessedStorage } from '../../storage/preprocessedStorage';
-import { createSegmentationSeed, sortVolumeFiles } from '../appHelpers';
+import { sortVolumeFiles } from '../appHelpers';
 import { computeAnisotropyScale } from '../anisotropyCorrection';
 import type { VolumePayload, VolumeTypedArray } from '../../../types/volume';
 import { createVolumeTypedArray, createWritableVolumeArray, getBytesPerValue } from '../../../types/volume';
@@ -300,13 +302,6 @@ const DEFAULT_SHARDING_POLICY_BY_ARRAY_KIND: Record<ZarrArrayShardingPlanArrayKi
     allowTemporalAxis: false,
     fullReadFallbackMaxBytes: 1 * 1024 * 1024,
     reason: 'Dense voxel payloads stay time-local and shard only across spatial axes.'
-  },
-  volumeLabels: {
-    targetShardBytes: 12 * 1024 * 1024,
-    maxChunksPerAxis: 8,
-    allowTemporalAxis: false,
-    fullReadFallbackMaxBytes: 1 * 1024 * 1024,
-    reason: 'Segmentation labels stay time-local to avoid whole-frame playback churn.'
   },
   skipHierarchy: {
     targetShardBytes: 2 * 1024 * 1024,
@@ -778,12 +773,13 @@ function buildLayerScaleDescriptors({
     const currentWidth = geometryLevel.width;
     const level = geometryLevel.level;
     const downsampleFactor = geometryLevel.downsampleFactor;
+    const storedDataType: 'uint8' | 'uint16' = layer.isSegmentation ? 'uint16' : 'uint8';
 
     const [dataChunkDepth, dataChunkHeight, dataChunkWidth] = chooseSpatialChunkDimensions({
       depth: currentDepth,
       height: currentHeight,
       width: currentWidth,
-      bytesPerVoxel: Math.max(1, layerMetadata.channels),
+      bytesPerVoxel: Math.max(1, layerMetadata.channels) * getBytesPerValue(storedDataType),
       targetChunkBytes: shardingStrategy.chunkTargetBytes,
       preferDepthChunkOne
     });
@@ -792,12 +788,12 @@ function buildLayerScaleDescriptors({
       path: createZarrScaleDataArrayPath(layer.channelId, layer.key, level),
       shape: [expectedTimepoints, currentDepth, currentHeight, currentWidth, layerMetadata.channels],
       chunkShape: [1, dataChunkDepth, dataChunkHeight, dataChunkWidth, layerMetadata.channels],
-      dataType: 'uint8',
+      dataType: storedDataType,
       sharding: createShardingPlan({
         arrayKind: 'volumeData',
         shape: [expectedTimepoints, currentDepth, currentHeight, currentWidth, layerMetadata.channels],
         chunkShape: [1, dataChunkDepth, dataChunkHeight, dataChunkWidth, layerMetadata.channels],
-        dataType: 'uint8',
+        dataType: storedDataType,
         strategy: shardingStrategy,
         temporalAxisIndex: 0
       })
@@ -864,7 +860,9 @@ function buildLayerScaleDescriptors({
     const skipHierarchyDescriptor: PreprocessedScaleSkipHierarchyZarrDescriptor = {
       levels: skipHierarchyLevels
     };
-    const subcellGrid = resolveBrickSubcellGrid([dataChunkDepth, dataChunkHeight, dataChunkWidth]);
+    const subcellGrid = layer.isSegmentation
+      ? null
+      : resolveBrickSubcellGrid([dataChunkDepth, dataChunkHeight, dataChunkWidth]);
     const subcellDescriptor: PreprocessedScaleSubcellZarrDescriptor | undefined = subcellGrid
       ? (() => {
           const subcellTextureSize = buildBrickSubcellTextureSize({
@@ -920,10 +918,16 @@ function buildLayerScaleDescriptors({
             const textureFormat = getPlaybackBrickAtlasTextureFormat(layerMetadata.channels);
             const textureChannels = getPlaybackBrickAtlasTextureChannels(textureFormat);
             const expectedBrickCount = leafGridShape[0] * leafGridShape[1] * leafGridShape[2];
-            const atlasBlockBytes = dataChunkDepth * dataChunkHeight * dataChunkWidth * textureChannels;
+            const atlasBlockBytes =
+              dataChunkDepth *
+              dataChunkHeight *
+              dataChunkWidth *
+              textureChannels *
+              getBytesPerValue(storedDataType);
             return {
               textureFormat,
               textureChannels,
+              dataType: storedDataType,
               brickAtlasIndices: {
                 path: createZarrScalePlaybackAtlasIndicesArrayPath(layer.channelId, layer.key, level),
                 shape: [expectedTimepoints, leafGridShape[0], leafGridShape[1], leafGridShape[2]],
@@ -947,46 +951,22 @@ function buildLayerScaleDescriptors({
             };
           })()
         : undefined;
-    const histogramDescriptor: ZarrArrayDescriptor = {
-      path: createZarrScaleHistogramArrayPath(layer.channelId, layer.key, level),
-      shape: [expectedTimepoints, HISTOGRAM_BINS],
-      chunkShape: [1, HISTOGRAM_BINS],
-      dataType: 'uint32',
-      sharding: createShardingPlan({
-        arrayKind: 'histogram',
-        shape: [expectedTimepoints, HISTOGRAM_BINS],
-        chunkShape: [1, HISTOGRAM_BINS],
-        dataType: 'uint32',
-        strategy: shardingStrategy,
-        temporalAxisIndex: 0
-      })
-    };
-
-    let labelsDescriptor: ZarrArrayDescriptor | undefined;
-    if (layer.isSegmentation) {
-      const [labelsChunkDepth, labelsChunkHeight, labelsChunkWidth] = chooseSpatialChunkDimensions({
-        depth: currentDepth,
-        height: currentHeight,
-        width: currentWidth,
-        bytesPerVoxel: 4,
-        targetChunkBytes: shardingStrategy.chunkTargetBytes,
-        preferDepthChunkOne
-      });
-      labelsDescriptor = {
-        path: createZarrScaleLabelsArrayPath(layer.channelId, layer.key, level),
-        shape: [expectedTimepoints, currentDepth, currentHeight, currentWidth],
-        chunkShape: [1, labelsChunkDepth, labelsChunkHeight, labelsChunkWidth],
-        dataType: 'uint32',
-        sharding: createShardingPlan({
-          arrayKind: 'volumeLabels',
-          shape: [expectedTimepoints, currentDepth, currentHeight, currentWidth],
-          chunkShape: [1, labelsChunkDepth, labelsChunkHeight, labelsChunkWidth],
+    const histogramDescriptor: ZarrArrayDescriptor | undefined = layer.isSegmentation
+      ? undefined
+      : {
+          path: createZarrScaleHistogramArrayPath(layer.channelId, layer.key, level),
+          shape: [expectedTimepoints, HISTOGRAM_BINS],
+          chunkShape: [1, HISTOGRAM_BINS],
           dataType: 'uint32',
-          strategy: shardingStrategy,
-          temporalAxisIndex: 0
-        })
-      };
-    }
+          sharding: createShardingPlan({
+            arrayKind: 'histogram',
+            shape: [expectedTimepoints, HISTOGRAM_BINS],
+            chunkShape: [1, HISTOGRAM_BINS],
+            dataType: 'uint32',
+            strategy: shardingStrategy,
+            temporalAxisIndex: 0
+          })
+        };
 
     scales.push({
       level,
@@ -1000,8 +980,7 @@ function buildLayerScaleDescriptors({
         skipHierarchy: skipHierarchyDescriptor,
         ...(subcellDescriptor ? { subcell: subcellDescriptor } : {}),
         ...(playbackAtlasDescriptor ? { playbackAtlas: playbackAtlasDescriptor } : {}),
-        histogram: histogramDescriptor,
-        ...(labelsDescriptor ? { labels: labelsDescriptor } : {})
+        ...(histogramDescriptor ? { histogram: histogramDescriptor } : {})
       }
     });
   }
@@ -1479,90 +1458,6 @@ function ensureTypedArrayMatchesExpectedDataType(
   return array;
 }
 
-function toSegmentationLabelId(value: number): number {
-  if (!Number.isFinite(value) || value <= 0) {
-    return 0;
-  }
-  const rounded = Math.round(value);
-  return rounded <= 0 ? 0 : rounded;
-}
-
-function createDeterministicRng(seed: number): () => number {
-  let state = seed >>> 0;
-  if (state === 0) {
-    state = 0x6d2b79f5;
-  }
-  return () => {
-    state = (state + 0x6d2b79f5) | 0;
-    let t = Math.imul(state ^ (state >>> 15), 1 | state);
-    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
-  const hue = ((h % 360) + 360) % 360;
-  const chroma = v * s;
-  const hueSector = hue / 60;
-  const intermediate = chroma * (1 - Math.abs((hueSector % 2) - 1));
-
-  let r1 = 0;
-  let g1 = 0;
-  let b1 = 0;
-
-  if (hueSector >= 0 && hueSector < 1) {
-    r1 = chroma;
-    g1 = intermediate;
-  } else if (hueSector >= 1 && hueSector < 2) {
-    r1 = intermediate;
-    g1 = chroma;
-  } else if (hueSector >= 2 && hueSector < 3) {
-    g1 = chroma;
-    b1 = intermediate;
-  } else if (hueSector >= 3 && hueSector < 4) {
-    g1 = intermediate;
-    b1 = chroma;
-  } else if (hueSector >= 4 && hueSector < 5) {
-    r1 = intermediate;
-    b1 = chroma;
-  } else {
-    r1 = chroma;
-    b1 = intermediate;
-  }
-
-  const match = v - chroma;
-  const toByte = (value: number): number => {
-    const adjusted = value + match;
-    const clamped = Math.max(0, Math.min(1, adjusted));
-    return Math.round(clamped * 255);
-  };
-
-  return [toByte(r1), toByte(g1), toByte(b1)];
-}
-
-function createSegmentationColorTable(maxLabel: number, seed: number): Uint8Array {
-  const table = new Uint8Array((maxLabel + 1) * 3);
-  table[0] = 0;
-  table[1] = 0;
-  table[2] = 0;
-
-  if (maxLabel === 0) {
-    return table;
-  }
-
-  const rng = createDeterministicRng(seed);
-  for (let label = 1; label <= maxLabel; label += 1) {
-    const hue = rng() * 360;
-    const [r, g, b] = hsvToRgb(hue, 1, 1);
-    const index = label * 3;
-    table[index] = r;
-    table[index + 1] = g;
-    table[index + 2] = b;
-  }
-
-  return table;
-}
-
 function resolveInputInterpretation(
   mode: PreprocessDatasetToStorageOptions['inputInterpretation']
 ): PreprocessInputInterpretation {
@@ -1607,9 +1502,8 @@ function estimatePreparedLayerVolumeBytes(layer: StreamingPreparedLayerSource): 
   const metadata = layer.sourceMetadata;
   const voxelCount = metadata.width * metadata.height * metadata.depth;
   const sourceBytes = voxelCount * metadata.channels * getBytesPerValue(metadata.dataType);
-  const normalizedChannels = layer.layer.isSegmentation ? 4 : metadata.channels;
-  const normalizedBytes = voxelCount * normalizedChannels;
-  return sourceBytes + normalizedBytes * 2;
+  const outputBytes = voxelCount * metadata.channels * getBytesPerValue(layer.layer.isSegmentation ? 'uint16' : 'uint8');
+  return sourceBytes + outputBytes * 2;
 }
 
 function resolveDatasetExecutionMode({
@@ -2066,28 +1960,12 @@ function normalizeSliceToUint8({
   return normalized;
 }
 
-function colorizeSegmentationSlice({
-  source,
-  colorTable
-}: {
-  source: SupportedTypedArray;
-  colorTable: Uint8Array;
-}): { normalized: Uint8Array; labels: Uint32Array } {
-  const labels = new Uint32Array(source.length);
-  const normalized = new Uint8Array(source.length * 4);
-  const maxLabel = Math.floor(colorTable.length / 3) - 1;
+function canonicalizeSegmentationSlice(source: SupportedTypedArray): Uint16Array {
+  const labels = new Uint16Array(source.length);
   for (let i = 0; i < source.length; i += 1) {
-    const rawLabel = toSegmentationLabelId(source[i] as number);
-    const label = rawLabel > maxLabel ? maxLabel : rawLabel;
-    labels[i] = label;
-    const tableIndex = label * 3;
-    const destination = i * 4;
-    normalized[destination] = colorTable[tableIndex] ?? 0;
-    normalized[destination + 1] = colorTable[tableIndex + 1] ?? 0;
-    normalized[destination + 2] = colorTable[tableIndex + 2] ?? 0;
-    normalized[destination + 3] = label === 0 ? 0 : 255;
+    labels[i] = toSegmentationLabelId(source[i] as number);
   }
-  return { normalized, labels };
+  return labels;
 }
 
 function downsampleDataSliceXYByMax({
@@ -2142,20 +2020,20 @@ function mergeDataSlicesByMaxInPlace(target: Uint8Array, candidate: Uint8Array):
   }
 }
 
-function downsampleLabelSlicesByMode({
+function downsampleSegmentationSlicesByMode({
   first,
   second,
   width,
   height
 }: {
-  first: Uint32Array;
-  second: Uint32Array | null;
+  first: Uint16Array;
+  second: Uint16Array | null;
   width: number;
   height: number;
-}): Uint32Array {
+}): Uint16Array {
   const nextWidth = Math.max(1, Math.ceil(width / 2));
   const nextHeight = Math.max(1, Math.ceil(height / 2));
-  const downsampled = new Uint32Array(nextWidth * nextHeight);
+  const downsampled = new Uint16Array(nextWidth * nextHeight);
 
   for (let y = 0; y < nextHeight; y += 1) {
     const sourceYStart = y * 2;
@@ -2165,13 +2043,13 @@ function downsampleLabelSlicesByMode({
       const sourceXEnd = Math.min(width, sourceXStart + 2);
       const destinationIndex = y * nextWidth + x;
 
-      const candidateLabels = new Uint32Array(8);
+      const candidateLabels = new Uint16Array(8);
       const candidateCounts = new Uint8Array(8);
       let candidateSize = 0;
       let bestLabel = 0;
       let bestCount = -1;
 
-      const accumulate = (slice: Uint32Array) => {
+      const accumulate = (slice: Uint16Array) => {
         for (let sourceY = sourceYStart; sourceY < sourceYEnd; sourceY += 1) {
           for (let sourceX = sourceXStart; sourceX < sourceXEnd; sourceX += 1) {
             const label = slice[sourceY * width + sourceX] ?? 0;
@@ -2705,8 +2583,8 @@ async function collectLayerMetadata({
       width: firstVolume.width,
       height: firstVolume.height,
       depth: firstVolume.depth,
-      channels: layer.isSegmentation ? 4 : firstVolume.channels,
-      dataType: layer.isSegmentation ? 'uint8' : firstVolume.dataType
+      channels: layer.isSegmentation ? 1 : firstVolume.channels,
+      dataType: layer.isSegmentation ? 'uint16' : firstVolume.dataType
     });
     if (!referenceShape3d) {
       referenceShape3d = {
@@ -2757,8 +2635,8 @@ function collectLayerMetadataFromStreamingSources({
       width: source.width,
       height: source.height,
       depth: source.depth,
-      channels: layer.isSegmentation ? 4 : source.channels,
-      dataType: layer.isSegmentation ? 'uint8' : source.dataType
+      channels: layer.isSegmentation ? 1 : source.channels,
+      dataType: layer.isSegmentation ? 'uint16' : source.dataType
     });
 
     if (!referenceShape3d) {
@@ -2902,7 +2780,7 @@ function buildManifestFromLayerMetadata({
         channels: layerMetadata.channels,
         dataType: layerMetadata.dataType,
         normalization: layer.isSegmentation
-          ? { min: 0, max: 255 }
+          ? null
           : (normalizationByLayerKey.get(layer.key) ?? null),
         zarr: {
           scales
@@ -3038,14 +2916,16 @@ async function createManifestZarrArrays({
           });
         }
 
-        const histogram = scale.zarr.histogram;
-        await zarr.create(root.resolve(histogram.path), {
-          shape: histogram.shape,
-          data_type: histogram.dataType,
-          chunk_shape: histogram.chunkShape,
-          codecs: resolveArrayCodecsForDescriptor(histogram),
-          fill_value: 0
-        });
+        if (scale.zarr.histogram) {
+          const histogram = scale.zarr.histogram;
+          await zarr.create(root.resolve(histogram.path), {
+            shape: histogram.shape,
+            data_type: histogram.dataType,
+            chunk_shape: histogram.chunkShape,
+            codecs: resolveArrayCodecsForDescriptor(histogram),
+            fill_value: 0
+          });
+        }
 
         if (scale.zarr.subcell) {
           const subcell = scale.zarr.subcell.data;
@@ -3066,17 +2946,6 @@ async function createManifestZarrArrays({
             chunk_shape: indices.chunkShape,
             codecs: resolveArrayCodecsForDescriptor(indices),
             fill_value: -1
-          });
-        }
-
-        if (scale.zarr.labels) {
-          const labels = scale.zarr.labels;
-          await zarr.create(root.resolve(labels.path), {
-            shape: labels.shape,
-            data_type: labels.dataType,
-            chunk_shape: labels.chunkShape,
-            codecs: resolveArrayCodecsForDescriptor(labels),
-            fill_value: 0
           });
         }
       }
@@ -3105,6 +2974,7 @@ function chunkLength(totalSize: number, start: number, chunkSize: number): numbe
 
 function extractDataChunkBytesAndComputeStatistics({
   source,
+  dataType,
   width,
   height,
   channels,
@@ -3117,7 +2987,8 @@ function extractDataChunkBytesAndComputeStatistics({
   histogram,
   backgroundMask
 }: {
-  source: Uint8Array;
+  source: Uint8Array | Uint16Array;
+  dataType: 'uint8' | 'uint16';
   width: number;
   height: number;
   channels: number;
@@ -3127,7 +2998,7 @@ function extractDataChunkBytesAndComputeStatistics({
   yLength: number;
   xStart: number;
   xLength: number;
-  histogram: Uint32Array;
+  histogram?: Uint32Array;
   backgroundMask?: BackgroundMaskVolume | null;
 }): {
   chunk: Uint8Array;
@@ -3140,7 +3011,7 @@ function extractDataChunkBytesAndComputeStatistics({
   if (channels <= 0) {
     throw new Error(`Invalid channel count while computing chunk statistics: ${channels}.`);
   }
-  if (histogram.length !== HISTOGRAM_BINS) {
+  if (histogram && histogram.length !== HISTOGRAM_BINS) {
     throw new Error(
       `Histogram length mismatch while computing chunk statistics: expected ${HISTOGRAM_BINS}, got ${histogram.length}.`
     );
@@ -3151,10 +3022,13 @@ function extractDataChunkBytesAndComputeStatistics({
   const maskRowStride = width;
   const maskPlaneStride = height * maskRowStride;
   const lineLength = xLength * channels;
-  const chunk = new Uint8Array(zLength * yLength * lineLength);
-  if (chunk.length === 0) {
+  const chunkValueCount = zLength * yLength * lineLength;
+  const chunkValues = dataType === 'uint16'
+    ? new Uint16Array(chunkValueCount)
+    : new Uint8Array(chunkValueCount);
+  if (chunkValues.length === 0) {
     return {
-      chunk,
+      chunk: new Uint8Array(0),
       stats: { min: 0, max: 0, occupancy: 0 }
     };
   }
@@ -3182,13 +3056,26 @@ function extractDataChunkBytesAndComputeStatistics({
     for (let localY = 0; localY < yLength; localY += 1) {
       const sourceOffset = sourceZBase + (yStart + localY) * rowStride + xStart * channels;
       const sourceLine = source.subarray(sourceOffset, sourceOffset + lineLength);
-      chunk.set(sourceLine, destinationOffset);
+      chunkValues.set(sourceLine, destinationOffset);
       const maskOffset = maskZBase + (yStart + localY) * maskRowStride + xStart;
       const maskLine = backgroundMask
         ? backgroundMask.data.subarray(maskOffset, maskOffset + xLength)
         : null;
 
-      if (channels === 1) {
+      if (!histogram) {
+        for (let voxelIndex = 0; voxelIndex < xLength; voxelIndex += 1) {
+          if (maskLine && (maskLine[voxelIndex] ?? 0) > 0) {
+            continue;
+          }
+          const value = sourceLine[voxelIndex] ?? 0;
+          if (value > 0) {
+            occupiedVoxelCount += 1;
+            min = 255;
+            max = 255;
+          }
+          consideredVoxelCount += 1;
+        }
+      } else if (channels === 1) {
         for (let voxelIndex = 0; voxelIndex < xLength; voxelIndex += 1) {
           if (maskLine && (maskLine[voxelIndex] ?? 0) > 0) {
             continue;
@@ -3293,6 +3180,12 @@ function extractDataChunkBytesAndComputeStatistics({
     }
   }
 
+  if (!histogram && occupiedVoxelCount === 0) {
+    min = 0;
+    max = 0;
+  }
+
+  const chunk = new Uint8Array(chunkValues.buffer, chunkValues.byteOffset, chunkValues.byteLength);
   return {
     chunk,
     stats: {
@@ -3340,44 +3233,6 @@ function extractBackgroundMaskChunkBytes({
   }
 
   return chunk;
-}
-
-function extractLabelChunkBytes({
-  source,
-  width,
-  height,
-  zStart,
-  zLength,
-  yStart,
-  yLength,
-  xStart,
-  xLength
-}: {
-  source: Uint32Array;
-  width: number;
-  height: number;
-  zStart: number;
-  zLength: number;
-  yStart: number;
-  yLength: number;
-  xStart: number;
-  xLength: number;
-}): Uint8Array {
-  const rowStride = width;
-  const planeStride = height * rowStride;
-  const chunkValues = new Uint32Array(zLength * yLength * xLength);
-
-  let destinationOffset = 0;
-  for (let localZ = 0; localZ < zLength; localZ += 1) {
-    const sourceZBase = (zStart + localZ) * planeStride;
-    for (let localY = 0; localY < yLength; localY += 1) {
-      const sourceOffset = sourceZBase + (yStart + localY) * rowStride + xStart;
-      chunkValues.set(source.subarray(sourceOffset, sourceOffset + xLength), destinationOffset);
-      destinationOffset += xLength;
-    }
-  }
-
-  return new Uint8Array(chunkValues.buffer);
 }
 
 function assertSkipHierarchyDescriptorMatchesGrid({
@@ -3575,13 +3430,19 @@ function createPlaybackAtlasWriteState({
     dataEntryDescriptor: createSyntheticDescriptorForBlob(descriptor.data),
     brickAtlasIndices: new Int32Array(expectedBrickCount).fill(-1),
     occupiedBrickCount: 0,
-    blockByteLength: chunkDepth * chunkHeight * chunkWidth * descriptor.textureChannels,
+    blockByteLength:
+      chunkDepth *
+      chunkHeight *
+      chunkWidth *
+      descriptor.textureChannels *
+      getBytesPerValue(descriptor.dataType),
     blocks: []
   };
 }
 
 function buildPlaybackAtlasBlock({
   chunkBytes,
+  dataType,
   zExtent,
   yExtent,
   xExtent,
@@ -3593,6 +3454,7 @@ function buildPlaybackAtlasBlock({
   textureChannels
 }: {
   chunkBytes: Uint8Array;
+  dataType: 'uint8' | 'uint16';
   zExtent: number;
   yExtent: number;
   xExtent: number;
@@ -3603,18 +3465,25 @@ function buildPlaybackAtlasBlock({
   textureFormat: PreprocessedBrickAtlasTextureFormat;
   textureChannels: number;
 }): Uint8Array {
-  const expectedChunkBytes = zExtent * yExtent * xExtent * sourceChannels;
+  const bytesPerValue = getBytesPerValue(dataType);
+  const expectedChunkBytes = zExtent * yExtent * xExtent * sourceChannels * bytesPerValue;
   if (chunkBytes.byteLength !== expectedChunkBytes) {
     throw new Error(`Playback atlas block byte length mismatch: expected ${expectedChunkBytes}, got ${chunkBytes.byteLength}.`);
   }
-  const block = new Uint8Array(chunkDepth * chunkHeight * chunkWidth * textureChannels);
+  const blockValueCount = chunkDepth * chunkHeight * chunkWidth * textureChannels;
+  const blockValues = dataType === 'uint16'
+    ? new Uint16Array(blockValueCount)
+    : new Uint8Array(blockValueCount);
+  const chunkValues = dataType === 'uint16'
+    ? new Uint16Array(chunkBytes.buffer, chunkBytes.byteOffset, chunkBytes.byteLength / 2)
+    : chunkBytes;
   for (let localZ = 0; localZ < zExtent; localZ += 1) {
     for (let localY = 0; localY < yExtent; localY += 1) {
       for (let localX = 0; localX < xExtent; localX += 1) {
         const sourceVoxelOffset = (((localZ * yExtent + localY) * xExtent + localX) * sourceChannels);
         const atlasVoxelOffset = (((localZ * chunkHeight + localY) * chunkWidth + localX) * textureChannels);
         if (textureFormat === 'rgba' && sourceChannels === 3) {
-          block[atlasVoxelOffset + 3] = 255;
+          blockValues[atlasVoxelOffset + 3] = 255;
         }
         for (let sourceChannel = 0; sourceChannel < sourceChannels; sourceChannel += 1) {
           const textureChannel = mapPlaybackSourceChannelToTextureChannel(
@@ -3625,12 +3494,12 @@ function buildPlaybackAtlasBlock({
           if (textureChannel === null) {
             continue;
           }
-          block[atlasVoxelOffset + textureChannel] = chunkBytes[sourceVoxelOffset + sourceChannel] ?? 0;
+          blockValues[atlasVoxelOffset + textureChannel] = chunkValues[sourceVoxelOffset + sourceChannel] ?? 0;
         }
       }
     }
   }
-  return block;
+  return new Uint8Array(blockValues.buffer, blockValues.byteOffset, blockValues.byteLength);
 }
 
 async function writeDataChunksForScale({
@@ -3655,15 +3524,15 @@ async function writeDataChunksForScale({
     height: number;
     depth: number;
     channels: number;
-    data: Uint8Array;
+    data: Uint8Array | Uint16Array;
   };
   backgroundMask?: BackgroundMaskVolume | null;
   signal?: AbortSignal;
-}): Promise<Uint32Array> {
+}): Promise<Uint32Array | null> {
   const expectedDataLength = volume.depth * volume.height * volume.width * volume.channels;
   if (volume.data.length !== expectedDataLength) {
     throw new Error(
-      `Scale payload size mismatch for ${descriptor.path}: expected ${expectedDataLength} bytes, got ${volume.data.length}.`
+      `Scale payload size mismatch for ${descriptor.path}: expected ${expectedDataLength} values, got ${volume.data.length}.`
     );
   }
 
@@ -3695,7 +3564,7 @@ async function writeDataChunksForScale({
   const chunkCount = zChunks * yChunks * xChunks;
   const leafGridShape: [number, number, number] = [zChunks, yChunks, xChunks];
   const expectedTimepoints = descriptor.shape[0] ?? 0;
-  const histogram = new Uint32Array(HISTOGRAM_BINS);
+  const histogram = descriptor.dataType === 'uint8' ? new Uint32Array(HISTOGRAM_BINS) : null;
 
   let leafMinValues: Uint8Array | null = null;
   let leafMaxValues: Uint8Array | null = null;
@@ -3784,6 +3653,7 @@ async function writeDataChunksForScale({
         const xLength = chunkLength(volume.width, xStart, chunkWidth);
         const { chunk, stats } = extractDataChunkBytesAndComputeStatistics({
           source: volume.data,
+          dataType: descriptor.dataType as 'uint8' | 'uint16',
           width: volume.width,
           height: volume.height,
           channels: volume.channels,
@@ -3793,7 +3663,7 @@ async function writeDataChunksForScale({
           yLength,
           xStart,
           xLength,
-          histogram,
+          histogram: histogram ?? undefined,
           backgroundMask
         });
         await chunkWriter.writeChunk({
@@ -3814,6 +3684,7 @@ async function writeDataChunksForScale({
           playbackAtlasState.blocks.push(
             buildPlaybackAtlasBlock({
               chunkBytes: chunk,
+              dataType: playbackAtlasState.descriptor.dataType,
               zExtent: zLength,
               yExtent: yLength,
               xExtent: xLength,
@@ -3944,78 +3815,6 @@ async function writeDataChunksForScale({
   return histogram;
 }
 
-async function writeLabelChunksForScale({
-  chunkWriter,
-  descriptor,
-  timepoint,
-  labels,
-  depth,
-  height,
-  width,
-  signal
-}: {
-  chunkWriter: ChunkWriteDispatcher;
-  descriptor: ZarrArrayDescriptor;
-  timepoint: number;
-  labels: Uint32Array;
-  depth: number;
-  height: number;
-  width: number;
-  signal?: AbortSignal;
-}): Promise<void> {
-  const expectedLabelCount = depth * height * width;
-  if (labels.length !== expectedLabelCount) {
-    throw new Error(
-      `Label payload size mismatch for ${descriptor.path}: expected ${expectedLabelCount} values, got ${labels.length}.`
-    );
-  }
-
-  const [, descriptorDepth, descriptorHeight, descriptorWidth] = descriptor.shape;
-  if (descriptorDepth !== depth || descriptorHeight !== height || descriptorWidth !== width) {
-    throw new Error(
-      `Label descriptor shape mismatch for ${descriptor.path}: expected ${descriptorDepth}x${descriptorHeight}x${descriptorWidth}, got ${depth}x${height}x${width}.`
-    );
-  }
-  if (descriptor.chunkShape.length !== 4) {
-    throw new Error(`Label chunk shape for ${descriptor.path} must have rank 4.`);
-  }
-
-  const [, chunkDepth, chunkHeight, chunkWidth] = descriptor.chunkShape;
-  const zChunks = Math.ceil(depth / chunkDepth);
-  const yChunks = Math.ceil(height / chunkHeight);
-  const xChunks = Math.ceil(width / chunkWidth);
-
-  for (let zChunk = 0; zChunk < zChunks; zChunk += 1) {
-    const zStart = chunkStart(zChunk, chunkDepth);
-    const zLength = chunkLength(depth, zStart, chunkDepth);
-    for (let yChunk = 0; yChunk < yChunks; yChunk += 1) {
-      const yStart = chunkStart(yChunk, chunkHeight);
-      const yLength = chunkLength(height, yStart, chunkHeight);
-      for (let xChunk = 0; xChunk < xChunks; xChunk += 1) {
-        const xStart = chunkStart(xChunk, chunkWidth);
-        const xLength = chunkLength(width, xStart, chunkWidth);
-        const chunkBytes = extractLabelChunkBytes({
-          source: labels,
-          width,
-          height,
-          zStart,
-          zLength,
-          yStart,
-          yLength,
-          xStart,
-          xLength
-        });
-        await chunkWriter.writeChunk({
-          descriptor,
-          chunkCoords: [timepoint, zChunk, yChunk, xChunk],
-          bytes: chunkBytes,
-          signal
-        });
-      }
-    }
-  }
-}
-
 async function writeBackgroundMaskChunksForScale({
   chunkWriter,
   descriptor,
@@ -4087,12 +3886,11 @@ type StreamingScaleWriteState = {
   scale: PreprocessedLayerScaleManifestEntry;
   backgroundMaskScale: BackgroundMaskVolume | null;
   dataDescriptor: ZarrArrayDescriptor;
-  labelsDescriptor?: ZarrArrayDescriptor;
   skipHierarchyDescriptor?: PreprocessedScaleSkipHierarchyZarrDescriptor;
   subcellDescriptor?: PreprocessedScaleSubcellZarrDescriptor;
   playbackAtlasDescriptor?: PreprocessedScalePlaybackAtlasZarrDescriptor;
   playbackAtlasDataEntryDescriptor?: ZarrArrayDescriptor;
-  histogram: Uint32Array;
+  histogram: Uint32Array | null;
   chunkDepth: number;
   chunkHeight: number;
   chunkWidth: number;
@@ -4111,14 +3909,22 @@ type StreamingScaleWriteState = {
   playbackAtlasBlocks: Uint8Array[];
 };
 
-type StreamingScaleTransition = {
-  pendingDataSlice: Uint8Array | null;
-  pendingLabelSlice: Uint32Array | null;
+type StreamingIntensityScaleTransition = {
+  isSegmentation: false;
+  pendingSlice: Uint8Array | null;
   sourceWidth: number;
   sourceHeight: number;
   sourceChannels: number;
-  expectsLabels: boolean;
 };
+
+type StreamingSegmentationScaleTransition = {
+  isSegmentation: true;
+  pendingSlice: Uint16Array | null;
+  sourceWidth: number;
+  sourceHeight: number;
+};
+
+type StreamingScaleTransition = StreamingIntensityScaleTransition | StreamingSegmentationScaleTransition;
 
 function createStreamingScaleWriteState({
   scale,
@@ -4186,19 +3992,6 @@ function createStreamingScaleWriteState({
     leafOccupancyValues = new Uint8Array(chunkCount);
   }
 
-  const labelsDescriptor = scale.zarr.labels;
-  if (labelsDescriptor) {
-    if (labelsDescriptor.chunkShape.length !== 4) {
-      throw new Error(`Label chunk shape for ${labelsDescriptor.path} must have rank 4.`);
-    }
-    const [, labelsChunkDepth] = labelsDescriptor.chunkShape;
-    if (labelsChunkDepth !== 1) {
-      throw new Error(
-        `Streaming preprocessing requires depth chunk size of 1 for ${labelsDescriptor.path}, got ${labelsChunkDepth}.`
-      );
-    }
-  }
-
   let subcellTextureBytes: Uint8Array | null = null;
   let subcellTextureSize: { width: number; height: number; depth: number } | null = null;
   if (subcellDescriptor) {
@@ -4231,21 +4024,24 @@ function createStreamingScaleWriteState({
   const playbackAtlasDescriptor = scale.zarr.playbackAtlas;
   const playbackAtlasIndices = playbackAtlasDescriptor ? new Int32Array(chunkCount).fill(-1) : null;
   const playbackAtlasBlockByteLength = playbackAtlasDescriptor
-    ? chunkDepth * chunkHeight * chunkWidth * playbackAtlasDescriptor.textureChannels
+    ? chunkDepth *
+      chunkHeight *
+      chunkWidth *
+      playbackAtlasDescriptor.textureChannels *
+      getBytesPerValue(playbackAtlasDescriptor.dataType)
     : 0;
 
   return {
     scale,
     backgroundMaskScale,
     dataDescriptor,
-    labelsDescriptor,
     skipHierarchyDescriptor,
     subcellDescriptor,
     playbackAtlasDescriptor,
     playbackAtlasDataEntryDescriptor: playbackAtlasDescriptor
       ? createSyntheticDescriptorForBlob(playbackAtlasDescriptor.data)
       : undefined,
-    histogram: new Uint32Array(HISTOGRAM_BINS),
+    histogram: scale.zarr.histogram ? new Uint32Array(HISTOGRAM_BINS) : null,
     chunkDepth,
     chunkHeight,
     chunkWidth,
@@ -4270,17 +4066,15 @@ async function writeStreamingScaleSlice({
   state,
   timepoint,
   dataSlice,
-  labelsSlice,
   signal
 }: {
   chunkWriter: ChunkWriteDispatcher;
   state: StreamingScaleWriteState;
   timepoint: number;
-  dataSlice: Uint8Array;
-  labelsSlice?: Uint32Array;
+  dataSlice: Uint8Array | Uint16Array;
   signal?: AbortSignal;
 }): Promise<void> {
-  const { scale, dataDescriptor, labelsDescriptor, histogram } = state;
+  const { scale, dataDescriptor, histogram } = state;
   const sliceLength = scale.width * scale.height * scale.channels;
   if (dataSlice.length !== sliceLength) {
     throw new Error(
@@ -4314,6 +4108,7 @@ async function writeStreamingScaleSlice({
       const xLength = chunkLength(scale.width, xStart, state.chunkWidth);
       const { chunk, stats } = extractDataChunkBytesAndComputeStatistics({
         source: dataSlice,
+        dataType: dataDescriptor.dataType as 'uint8' | 'uint16',
         width: scale.width,
         height: scale.height,
         channels: scale.channels,
@@ -4323,7 +4118,7 @@ async function writeStreamingScaleSlice({
         yLength,
         xStart,
         xLength,
-        histogram,
+        histogram: histogram ?? undefined,
         backgroundMask: backgroundMaskSlice
       });
       await chunkWriter.writeChunk({
@@ -4344,6 +4139,7 @@ async function writeStreamingScaleSlice({
         state.playbackAtlasBlocks.push(
           buildPlaybackAtlasBlock({
             chunkBytes: chunk,
+            dataType: state.playbackAtlasDescriptor.dataType,
             zExtent: 1,
             yExtent: yLength,
             xExtent: xLength,
@@ -4378,37 +4174,14 @@ async function writeStreamingScaleSlice({
         ) {
           throw new Error(`Subcell grid mismatch for ${dataDescriptor.path}.`);
         }
-        writeBrickSubcellChunkData({
-          targetData: state.subcellTextureBytes,
-          targetSize: state.subcellTextureSize,
-          brickCoords: { x: xChunk, y: yChunk, z: zIndex },
-          chunkData: subcellChunk.data,
-          subcellGrid: subcellChunk.subcellGrid
-        });
-      }
-
-      if (labelsDescriptor) {
-        if (!labelsSlice) {
-          throw new Error(`Missing label slice for segmentation scale ${labelsDescriptor.path}.`);
+          writeBrickSubcellChunkData({
+            targetData: state.subcellTextureBytes,
+            targetSize: state.subcellTextureSize,
+            brickCoords: { x: xChunk, y: yChunk, z: zIndex },
+            chunkData: subcellChunk.data,
+            subcellGrid: subcellChunk.subcellGrid
+          });
         }
-        const labelChunkBytes = extractLabelChunkBytes({
-          source: labelsSlice,
-          width: scale.width,
-          height: scale.height,
-          zStart: 0,
-          zLength: 1,
-          yStart,
-          yLength,
-          xStart,
-          xLength
-        });
-        await chunkWriter.writeChunk({
-          descriptor: labelsDescriptor,
-          chunkCoords: [timepoint, zIndex, yChunk, xChunk],
-          bytes: labelChunkBytes,
-          signal
-        });
-      }
     }
   }
 }
@@ -4502,40 +4275,68 @@ async function finalizeStreamingScaleWriteState({
     });
   }
 
-  await chunkWriter.writeChunk({
-    descriptor: state.scale.zarr.histogram,
-    chunkCoords: [timepoint, 0],
-    bytes: encodeUint32ArrayLE(state.histogram),
-    signal
-  });
+  if (state.scale.zarr.histogram && state.histogram) {
+    await chunkWriter.writeChunk({
+      descriptor: state.scale.zarr.histogram,
+      chunkCoords: [timepoint, 0],
+      bytes: encodeUint32ArrayLE(state.histogram),
+      signal
+    });
+  }
 }
 
 function createStreamingScaleTransition({
   fromScale,
-  expectsLabels
+  isSegmentation
 }: {
   fromScale: PreprocessedLayerScaleManifestEntry;
-  expectsLabels: boolean;
+  isSegmentation: boolean;
 }): StreamingScaleTransition {
+  if (isSegmentation) {
+    return {
+      isSegmentation: true,
+      pendingSlice: null,
+      sourceWidth: fromScale.width,
+      sourceHeight: fromScale.height
+    };
+  }
   return {
-    pendingDataSlice: null,
-    pendingLabelSlice: null,
+    isSegmentation: false,
+    pendingSlice: null,
     sourceWidth: fromScale.width,
     sourceHeight: fromScale.height,
-    sourceChannels: fromScale.channels,
-    expectsLabels
+    sourceChannels: fromScale.channels
   };
 }
 
 function pushStreamingScaleTransitionSlice({
   transition,
-  dataSlice,
-  labelsSlice
+  dataSlice
 }: {
   transition: StreamingScaleTransition;
-  dataSlice: Uint8Array;
-  labelsSlice?: Uint32Array;
-}): { data: Uint8Array; labels?: Uint32Array } | null {
+  dataSlice: Uint8Array | Uint16Array;
+}): { data: Uint8Array | Uint16Array } | null {
+  if (transition.isSegmentation) {
+    if (!(dataSlice instanceof Uint16Array)) {
+      throw new Error('Segmentation streaming transition expects uint16 slices.');
+    }
+    if (transition.pendingSlice === null) {
+      transition.pendingSlice = dataSlice;
+      return null;
+    }
+    const outputLabels = downsampleSegmentationSlicesByMode({
+      first: transition.pendingSlice,
+      second: dataSlice,
+      width: transition.sourceWidth,
+      height: transition.sourceHeight
+    });
+    transition.pendingSlice = null;
+    return { data: outputLabels };
+  }
+
+  if (!(dataSlice instanceof Uint8Array)) {
+    throw new Error('Intensity streaming transition expects uint8 slices.');
+  }
   const xyDownsampledData = downsampleDataSliceXYByMax({
     source: dataSlice,
     width: transition.sourceWidth,
@@ -4543,67 +4344,38 @@ function pushStreamingScaleTransitionSlice({
     channels: transition.sourceChannels
   });
 
-  if (transition.pendingDataSlice === null) {
-    transition.pendingDataSlice = xyDownsampledData;
-    if (transition.expectsLabels) {
-      if (!labelsSlice) {
-        throw new Error('Missing segmentation labels while building streaming scale pyramid.');
-      }
-      transition.pendingLabelSlice = labelsSlice;
-    }
+  if (transition.pendingSlice === null) {
+    transition.pendingSlice = xyDownsampledData;
     return null;
   }
 
-  mergeDataSlicesByMaxInPlace(transition.pendingDataSlice, xyDownsampledData);
-  const outputData = transition.pendingDataSlice;
-  transition.pendingDataSlice = null;
-
-  if (!transition.expectsLabels) {
-    return { data: outputData };
-  }
-  if (!transition.pendingLabelSlice || !labelsSlice) {
-    throw new Error('Missing segmentation labels while finalizing streaming scale pyramid pair.');
-  }
-  const outputLabels = downsampleLabelSlicesByMode({
-    first: transition.pendingLabelSlice,
-    second: labelsSlice,
-    width: transition.sourceWidth,
-    height: transition.sourceHeight
-  });
-  transition.pendingLabelSlice = null;
-  return {
-    data: outputData,
-    labels: outputLabels
-  };
+  mergeDataSlicesByMaxInPlace(transition.pendingSlice, xyDownsampledData);
+  const outputData = transition.pendingSlice;
+  transition.pendingSlice = null;
+  return { data: outputData };
 }
 
 function flushStreamingScaleTransition(
   transition: StreamingScaleTransition
-): { data: Uint8Array; labels?: Uint32Array } | null {
-  if (!transition.pendingDataSlice) {
+): { data: Uint8Array | Uint16Array } | null {
+  if (!transition.pendingSlice) {
     return null;
   }
 
-  const outputData = transition.pendingDataSlice;
-  transition.pendingDataSlice = null;
+  if (transition.isSegmentation) {
+    const outputLabels = downsampleSegmentationSlicesByMode({
+      first: transition.pendingSlice,
+      second: null,
+      width: transition.sourceWidth,
+      height: transition.sourceHeight
+    });
+    transition.pendingSlice = null;
+    return { data: outputLabels };
+  }
 
-  if (!transition.expectsLabels) {
-    return { data: outputData };
-  }
-  if (!transition.pendingLabelSlice) {
-    throw new Error('Missing pending segmentation labels while flushing streaming scale transition.');
-  }
-  const outputLabels = downsampleLabelSlicesByMode({
-    first: transition.pendingLabelSlice,
-    second: null,
-    width: transition.sourceWidth,
-    height: transition.sourceHeight
-  });
-  transition.pendingLabelSlice = null;
-  return {
-    data: outputData,
-    labels: outputLabels
-  };
+  const outputData = transition.pendingSlice;
+  transition.pendingSlice = null;
+  return { data: outputData };
 }
 
 async function writeStreamingLayerTimepoint({
@@ -4657,14 +4429,13 @@ async function writeStreamingLayerTimepoint({
     }
     return createStreamingScaleTransition({
       fromScale: scale,
-      expectsLabels: Boolean(nextScale.zarr.labels)
+      isSegmentation: preparedLayer.layer.isSegmentation
     });
   });
 
   const processScaleSlice = async (
     scaleIndex: number,
-    dataSlice: Uint8Array,
-    labelsSlice?: Uint32Array
+    dataSlice: Uint8Array | Uint16Array
   ): Promise<void> => {
     const state = scaleStates[scaleIndex];
     if (!state) {
@@ -4675,7 +4446,6 @@ async function writeStreamingLayerTimepoint({
       state,
       timepoint,
       dataSlice,
-      labelsSlice,
       signal
     });
     const transition = transitions[scaleIndex];
@@ -4684,11 +4454,10 @@ async function writeStreamingLayerTimepoint({
     }
     const produced = pushStreamingScaleTransitionSlice({
       transition,
-      dataSlice,
-      labelsSlice
+      dataSlice
     });
     if (produced) {
-      await processScaleSlice(scaleIndex + 1, produced.data, produced.labels);
+      await processScaleSlice(scaleIndex + 1, produced.data);
     }
   };
 
@@ -4700,29 +4469,6 @@ async function writeStreamingLayerTimepoint({
         `Segmentation layer "${preparedLayer.layer.channelLabel}" must decode to exactly one source channel.`
       );
     }
-
-    let maxLabel = 0;
-    await forEachSliceInStreamingTimepointSource({
-      layer: preparedLayer.layer,
-      timepoint,
-      source: timepointSource,
-      expectedMetadata: sourceMetadata,
-      tiffByFileCache,
-      signal,
-      onSlice: (slice) => {
-        for (let i = 0; i < slice.length; i += 1) {
-          const label = toSegmentationLabelId(slice[i] as number);
-          if (label > maxLabel) {
-            maxLabel = label;
-          }
-        }
-      }
-    });
-
-    const colorTable = createSegmentationColorTable(
-      maxLabel,
-      createSegmentationSeed(preparedLayer.layer.key, timepoint)
-    );
     await forEachSliceInStreamingTimepointSource({
       layer: preparedLayer.layer,
       timepoint,
@@ -4731,11 +4477,7 @@ async function writeStreamingLayerTimepoint({
       tiffByFileCache,
       signal,
       onSlice: async (slice) => {
-        const colorized = colorizeSegmentationSlice({
-          source: slice,
-          colorTable
-        });
-        await processScaleSlice(0, colorized.normalized, colorized.labels);
+        await processScaleSlice(0, canonicalizeSegmentationSlice(slice));
       }
     });
   } else {
@@ -4778,7 +4520,7 @@ async function writeStreamingLayerTimepoint({
   for (let index = 0; index < transitions.length; index += 1) {
     const produced = flushStreamingScaleTransition(transitions[index]!);
     if (produced) {
-      await processScaleSlice(index + 1, produced.data, produced.labels);
+      await processScaleSlice(index + 1, produced.data);
     }
   }
 
@@ -4853,17 +4595,19 @@ function downsampleLabelsByMode(volume: {
   width: number;
   height: number;
   depth: number;
-  labels: Uint32Array;
+  channels: 1;
+  data: Uint16Array;
 }): {
   width: number;
   height: number;
   depth: number;
-  labels: Uint32Array;
+  channels: 1;
+  data: Uint16Array;
 } {
   const nextDepth = Math.max(1, Math.ceil(volume.depth / 2));
   const nextHeight = Math.max(1, Math.ceil(volume.height / 2));
   const nextWidth = Math.max(1, Math.ceil(volume.width / 2));
-  const downsampled = new Uint32Array(nextDepth * nextHeight * nextWidth);
+  const downsampled = new Uint16Array(nextDepth * nextHeight * nextWidth);
 
   for (let z = 0; z < nextDepth; z += 1) {
     const sourceZStart = z * 2;
@@ -4876,7 +4620,7 @@ function downsampleLabelsByMode(volume: {
         const sourceXEnd = Math.min(volume.width, sourceXStart + 2);
         const destinationIndex = (z * nextHeight + y) * nextWidth + x;
 
-        const candidateLabels = new Uint32Array(8);
+        const candidateLabels = new Uint16Array(8);
         const candidateCounts = new Uint8Array(8);
         let candidateSize = 0;
         let bestLabel = 0;
@@ -4885,7 +4629,7 @@ function downsampleLabelsByMode(volume: {
           for (let sourceY = sourceYStart; sourceY < sourceYEnd; sourceY += 1) {
             for (let sourceX = sourceXStart; sourceX < sourceXEnd; sourceX += 1) {
               const sourceIndex = (sourceZ * volume.height + sourceY) * volume.width + sourceX;
-              const label = volume.labels[sourceIndex] ?? 0;
+              const label = volume.data[sourceIndex] ?? 0;
               let slot = -1;
               for (let candidateIndex = 0; candidateIndex < candidateSize; candidateIndex += 1) {
                 if ((candidateLabels[candidateIndex] ?? 0) === label) {
@@ -4921,7 +4665,8 @@ function downsampleLabelsByMode(volume: {
     width: nextWidth,
     height: nextHeight,
     depth: nextDepth,
-    labels: downsampled
+    channels: 1,
+    data: downsampled
   };
 }
 
@@ -4948,22 +4693,23 @@ async function writeNormalizedLayerTimepoint({
     throw new Error(`Layer "${layer.key}" is missing level 0 Zarr scale metadata.`);
   }
 
-  let volumeForScale = {
-    width: normalized.width,
-    height: normalized.height,
-    depth: normalized.depth,
-    channels: normalized.channels,
-    data: normalized.normalized
-  };
-  let labelsForScale =
-    layer.isSegmentation && normalized.segmentationLabels
-      ? {
-          width: normalized.width,
-          height: normalized.height,
-          depth: normalized.depth,
-          labels: normalized.segmentationLabels
-        }
-      : null;
+  let volumeForScale = isSegmentationVolume(normalized)
+    ? {
+        width: normalized.width,
+        height: normalized.height,
+        depth: normalized.depth,
+        channels: normalized.channels,
+        data: normalized.labels,
+        isSegmentation: true as const
+      }
+    : {
+        width: normalized.width,
+        height: normalized.height,
+        depth: normalized.depth,
+        channels: normalized.channels,
+        data: normalized.normalized,
+        isSegmentation: false as const
+      };
   const backgroundMaskByLevel = new Map<number, SharedBackgroundMaskScale>(
     (backgroundMask?.scales ?? []).map((scale) => [scale.level, scale])
   );
@@ -4981,21 +4727,11 @@ async function writeNormalizedLayerTimepoint({
       backgroundMask: backgroundMaskByLevel.get(scale.level) ?? null,
       signal
     });
-    await chunkWriter.writeChunk({
-      descriptor: scale.zarr.histogram,
-      chunkCoords: [timepoint, 0],
-      bytes: encodeUint32ArrayLE(histogram),
-      signal
-    });
-    if (scale.zarr.labels && labelsForScale) {
-      await writeLabelChunksForScale({
-        chunkWriter,
-        descriptor: scale.zarr.labels,
-        timepoint,
-        labels: labelsForScale.labels,
-        depth: labelsForScale.depth,
-        height: labelsForScale.height,
-        width: labelsForScale.width,
+    if (scale.zarr.histogram && histogram) {
+      await chunkWriter.writeChunk({
+        descriptor: scale.zarr.histogram,
+        chunkCoords: [timepoint, 0],
+        bytes: encodeUint32ArrayLE(histogram),
         signal
       });
     }
@@ -5005,7 +4741,15 @@ async function writeNormalizedLayerTimepoint({
       continue;
     }
 
-    volumeForScale = downsampleDataByMaxPooling(volumeForScale);
+    volumeForScale = volumeForScale.isSegmentation
+      ? {
+          ...downsampleLabelsByMode(volumeForScale),
+          isSegmentation: true as const
+        }
+      : {
+          ...downsampleDataByMaxPooling(volumeForScale),
+          isSegmentation: false as const
+        };
     const nextScale = sortedScales[scaleIndex + 1]!;
     if (
       volumeForScale.depth !== nextScale.depth ||
@@ -5016,18 +4760,6 @@ async function writeNormalizedLayerTimepoint({
       throw new Error(
         `Generated mip dimensions for layer "${layer.key}" scale ${nextScale.level} do not match manifest metadata.`
       );
-    }
-    if (labelsForScale && nextScale.zarr.labels) {
-      labelsForScale = downsampleLabelsByMode(labelsForScale);
-      if (
-        labelsForScale.depth !== nextScale.depth ||
-        labelsForScale.height !== nextScale.height ||
-        labelsForScale.width !== nextScale.width
-      ) {
-        throw new Error(
-          `Generated label mip dimensions for layer "${layer.key}" scale ${nextScale.level} do not match manifest metadata.`
-        );
-      }
     }
   }
 }
@@ -5090,27 +4822,11 @@ async function writePrecomputedLayerTimepointScales({
       },
       signal
     });
-    await chunkWriter.writeChunk({
-      descriptor: scale.zarr.histogram,
-      chunkCoords: [timepoint, 0],
-      bytes: encodeUint32ArrayLE(histogram),
-      signal
-    });
-
-    if (scale.zarr.labels) {
-      if (!prepared.labels) {
-        throw new Error(
-          `Missing precomputed labels for layer "${layer.key}" scale ${scale.level} at timepoint ${timepoint}.`
-        );
-      }
-      await writeLabelChunksForScale({
-        chunkWriter,
-        descriptor: scale.zarr.labels,
-        timepoint,
-        labels: prepared.labels,
-        depth: prepared.depth,
-        height: prepared.height,
-        width: prepared.width,
+    if (scale.zarr.histogram && histogram) {
+      await chunkWriter.writeChunk({
+        descriptor: scale.zarr.histogram,
+        chunkCoords: [timepoint, 0],
+        bytes: encodeUint32ArrayLE(histogram),
         signal
       });
     }
@@ -5228,7 +4944,6 @@ async function writeLayerVolumesFor3d({
           scales: manifestLayer.zarr.scales,
           layerKey: layer.key,
           isSegmentation: layer.isSegmentation,
-          segmentationSeed: createSegmentationSeed(layer.key, timepoint),
           normalization,
           signal
         });
@@ -5255,13 +4970,13 @@ async function writeLayerVolumesFor3d({
 
     if (!wroteWithWorker) {
       const normalized = layer.isSegmentation
-        ? colorizeSegmentationVolume(raw, createSegmentationSeed(layer.key, timepoint))
+        ? canonicalizeSegmentationVolume(raw)
         : normalizeVolume(
             raw,
             normalization ?? computeRepresentativeNormalization(raw, backgroundMask?.scales[0] ?? null)
           );
 
-      if (!layer.isSegmentation && backgroundMask && backgroundMask.maskedVoxelCount > 0) {
+      if (normalized.kind === 'intensity' && backgroundMask && backgroundMask.maskedVoxelCount > 0) {
         const maskedNormalized = normalized.normalized.slice();
         applyBackgroundMaskInPlace({
           target: maskedNormalized,

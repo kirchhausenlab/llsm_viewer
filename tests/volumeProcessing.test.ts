@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 
 import {
-  colorizeSegmentationTypedArray,
-  colorizeSegmentationVolume,
+  canonicalizeSegmentationTypedArray,
+  canonicalizeSegmentationVolume,
+  createSegmentationColorTable,
   normalizeTypedArray,
   normalizeVolume
 } from '../src/core/volumeProcessing.ts';
@@ -31,6 +32,7 @@ function normalize(
 
 const raw = new Uint8Array([0, 64, 128, 192, 255]);
 const identity = normalize(raw.buffer, 'uint8', { min: 0, max: 255 });
+assert.strictEqual(identity.kind, 'intensity');
 assert.strictEqual(identity.min, 0);
 assert.strictEqual(identity.max, 255);
 assert.strictEqual(identity.normalized.length, raw.length);
@@ -38,6 +40,7 @@ assert.strictEqual(identity.normalized.buffer, raw.buffer);
 assert.deepEqual(Array.from(identity.normalized), Array.from(raw));
 
 const windowed = normalize(raw.buffer, 'uint8', { min: 64, max: 192 });
+assert.strictEqual(windowed.kind, 'intensity');
 assert.notStrictEqual(windowed.normalized.buffer, raw.buffer);
 assert.deepEqual(Array.from(windowed.normalized), [0, 0, 128, 255, 255]);
 
@@ -54,6 +57,7 @@ const floatVolume: VolumePayload = {
 };
 
 const normalizedFloat = normalizeVolume(floatVolume, { min: 0, max: 1 });
+assert.strictEqual(normalizedFloat.kind, 'intensity');
 assert.notStrictEqual(normalizedFloat.normalized.buffer, floats.buffer);
 assert.deepEqual(Array.from(normalizedFloat.normalized), [0, 0, 128, 255]);
 
@@ -69,6 +73,7 @@ const constantFloatVolume: VolumePayload = {
   max: 42
 };
 const constantNormalization = normalizeVolume(constantFloatVolume, { min: 0, max: 42 });
+assert.strictEqual(constantNormalization.kind, 'intensity');
 assert.deepEqual(Array.from(constantNormalization.normalized), [255, 255, 255, 255]);
 
 const segmentation = new Uint8Array([0, 1, 1, 2]);
@@ -83,25 +88,29 @@ const segmentationVolume: VolumePayload = {
   max: 2
 };
 
+const canonicalized = canonicalizeSegmentationVolume(segmentationVolume);
+assert.strictEqual(canonicalized.kind, 'segmentation');
+assert.strictEqual(canonicalized.channels, 1);
+assert.strictEqual(canonicalized.dataType, 'uint16');
+assert.deepEqual(Array.from(canonicalized.labels), [0, 1, 1, 2]);
+assert.strictEqual(canonicalized.min, 0);
+assert.strictEqual(canonicalized.max, 2);
+
 const seed = 12345;
-const colorized = colorizeSegmentationVolume(segmentationVolume, seed);
-assert.strictEqual(colorized.channels, 4);
-assert.strictEqual(colorized.normalized.length, segmentation.length * 4);
-assert.deepEqual(Array.from(colorized.normalized.slice(0, 4)), [0, 0, 0, 0]);
-
-const firstLabelColor = Array.from(colorized.normalized.slice(4, 8));
-const repeatedLabelColor = Array.from(colorized.normalized.slice(8, 12));
+const colorTable = createSegmentationColorTable(seed);
+assert.deepEqual(Array.from(colorTable.slice(0, 4)), [0, 0, 0, 0]);
+const firstLabelColor = Array.from(colorTable.slice(4, 8));
+const repeatedLabelColor = Array.from(colorTable.slice(4, 8));
 assert.deepEqual(firstLabelColor, repeatedLabelColor);
-
-const secondLabelColor = Array.from(colorized.normalized.slice(12, 16));
+const secondLabelColor = Array.from(colorTable.slice(8, 12));
 assert.notDeepStrictEqual(firstLabelColor, secondLabelColor);
 assert.ok(secondLabelColor.some((value) => value !== 0));
 assert.strictEqual(secondLabelColor[3], 255);
 
-const rerun = colorizeSegmentationVolume(segmentationVolume, seed);
-assert.deepEqual(Array.from(rerun.normalized), Array.from(colorized.normalized));
+const rerunColorTable = createSegmentationColorTable(seed);
+assert.deepEqual(Array.from(rerunColorTable), Array.from(colorTable));
 
-const fractionalSegmentation = new Float32Array([0, 0.2, 0.8, 1.2, 1.6]);
+const fractionalSegmentation = new Float32Array([-1, 0.2, 0.8, 1.2, 1.6]);
 const fractionalVolume: VolumePayload = {
   width: fractionalSegmentation.length,
   height: 1,
@@ -109,30 +118,13 @@ const fractionalVolume: VolumePayload = {
   channels: 1,
   dataType: 'float32',
   data: fractionalSegmentation.buffer,
-  min: 0,
+  min: -1,
   max: 2
 };
 
-const fractionalColorized = colorizeSegmentationVolume(fractionalVolume, seed);
-assert.strictEqual(
-  fractionalColorized.normalized.length,
-  fractionalSegmentation.length * 4
-);
-
-const zeroLabelColor = Array.from(fractionalColorized.normalized.slice(0, 4));
-assert.deepEqual(zeroLabelColor, [0, 0, 0, 0]);
-
-const roundedLabelColor = Array.from(fractionalColorized.normalized.slice(8, 12));
-assert.ok(roundedLabelColor.some((value) => value !== 0));
-
-const repeatedRoundedLabelColor = Array.from(
-  fractionalColorized.normalized.slice(12, 16)
-);
-assert.deepEqual(roundedLabelColor, repeatedRoundedLabelColor);
-
-const higherLabelColor = Array.from(fractionalColorized.normalized.slice(16, 20));
-assert.ok(higherLabelColor.some((value) => value !== 0));
-assert.notDeepStrictEqual(roundedLabelColor, higherLabelColor);
+const fractionalCanonicalized = canonicalizeSegmentationVolume(fractionalVolume);
+assert.deepEqual(Array.from(fractionalCanonicalized.labels), [0, 0, 1, 1, 2]);
+assert.strictEqual(fractionalCanonicalized.max, 2);
 
 const offsetUint8 = new Uint8Array([99, 0, 64, 128, 255, 77]);
 const offsetUint8View = offsetUint8.subarray(1, 5);
@@ -145,6 +137,7 @@ const identityFromView = normalizeTypedArray({
   source: offsetUint8View,
   parameters: { min: 0, max: 255 }
 });
+assert.strictEqual(identityFromView.kind, 'intensity');
 assert.strictEqual(identityFromView.normalized, offsetUint8View);
 assert.deepEqual(Array.from(identityFromView.normalized), [0, 64, 128, 255]);
 
@@ -159,15 +152,15 @@ const normalizedFromView = normalizeTypedArray({
   source: offsetUint16View,
   parameters: { min: 10, max: 50 }
 });
+assert.strictEqual(normalizedFromView.kind, 'intensity');
 assert.deepEqual(Array.from(normalizedFromView.normalized), [0, 64, 128, 191, 255]);
 
-const segmentedFromView = colorizeSegmentationTypedArray({
+const segmentedFromView = canonicalizeSegmentationTypedArray({
   width: 4,
   height: 1,
   depth: 1,
   dataType: 'uint8',
-  source: offsetUint8View,
-  seed
+  source: offsetUint8View
 });
 const offsetSegmentationVolume: VolumePayload = {
   width: 4,
@@ -179,11 +172,7 @@ const offsetSegmentationVolume: VolumePayload = {
   min: 0,
   max: 255
 };
-const segmentedFromVolume = colorizeSegmentationVolume(offsetSegmentationVolume, seed);
-assert.deepEqual(Array.from(segmentedFromView.normalized), Array.from(segmentedFromVolume.normalized));
-assert.deepEqual(
-  Array.from(segmentedFromView.segmentationLabels ?? []),
-  Array.from(segmentedFromVolume.segmentationLabels ?? [])
-);
+const segmentedFromVolume = canonicalizeSegmentationVolume(offsetSegmentationVolume);
+assert.deepEqual(Array.from(segmentedFromView.labels), Array.from(segmentedFromVolume.labels));
 
 console.log('volumeProcessing normalization tests passed');

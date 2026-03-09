@@ -12,11 +12,11 @@ export type PreprocessScalePyramidWorkerResultScale = {
   height: number;
   depth: number;
   channels: number;
-  data: Uint8Array;
-  labels?: Uint32Array;
+  data: Uint8Array | Uint16Array;
 };
 
 type PendingScalePyramidRequest = {
+  isSegmentation: boolean;
   resolve: (scales: PreprocessScalePyramidWorkerResultScale[]) => void;
   reject: (error: Error) => void;
 };
@@ -110,8 +110,7 @@ function handleWorkerMessage(event: MessageEvent<PreprocessScalePyramidWorkerOut
       height: scale.height,
       depth: scale.depth,
       channels: scale.channels,
-      data: new Uint8Array(scale.data),
-      ...(scale.labels ? { labels: new Uint32Array(scale.labels) } : {})
+      data: pending.isSegmentation ? new Uint16Array(scale.data) : new Uint8Array(scale.data)
     }))
   );
 }
@@ -176,7 +175,6 @@ export async function buildPreprocessScalePyramidInWorker({
   scales,
   layerKey,
   isSegmentation,
-  segmentationSeed,
   normalization,
   signal
 }: {
@@ -184,7 +182,6 @@ export async function buildPreprocessScalePyramidInWorker({
   scales: PreprocessedLayerScaleManifestEntry[];
   layerKey: string;
   isSegmentation: boolean;
-  segmentationSeed: number;
   normalization: NormalizationParameters | null;
   signal?: AbortSignal;
 }): Promise<PreprocessScalePyramidWorkerResultScale[]> {
@@ -197,6 +194,7 @@ export async function buildPreprocessScalePyramidInWorker({
 
   return new Promise<PreprocessScalePyramidWorkerResultScale[]>((resolve, reject) => {
     pendingRequests.set(requestId, {
+      isSegmentation,
       resolve,
       reject
     });
@@ -236,7 +234,6 @@ export async function buildPreprocessScalePyramidInWorker({
       requestId,
       layerKey,
       isSegmentation,
-      segmentationSeed,
       normalization,
       rawVolume: {
         width: rawVolume.width,
@@ -254,8 +251,7 @@ export async function buildPreprocessScalePyramidInWorker({
         width: scale.width,
         height: scale.height,
         depth: scale.depth,
-        channels: scale.channels,
-        hasLabels: Boolean(scale.zarr.labels)
+        channels: scale.channels
       }))
     };
 

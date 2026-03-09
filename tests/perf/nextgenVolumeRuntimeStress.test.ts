@@ -355,6 +355,8 @@ async function createSyntheticDataset(spec: DatasetSpec): Promise<SyntheticDatas
   const root = zarr.root(zarrStore);
   const manifest = buildManifest(spec);
   const scale = manifest.dataset.channels[0]!.layers[0]!.zarr.scales[0]!;
+  const histogramDescriptor = scale.zarr.histogram;
+  assert.ok(histogramDescriptor);
 
   await zarr.create(root, { attributes: { llsmViewerPreprocessed: manifest } });
   await zarr.create(root.resolve(scale.zarr.data.path), {
@@ -364,10 +366,10 @@ async function createSyntheticDataset(spec: DatasetSpec): Promise<SyntheticDatas
     codecs: [],
     fill_value: 0,
   });
-  await zarr.create(root.resolve(scale.zarr.histogram.path), {
-    shape: scale.zarr.histogram.shape,
-    data_type: scale.zarr.histogram.dataType,
-    chunk_shape: scale.zarr.histogram.chunkShape,
+  await zarr.create(root.resolve(histogramDescriptor.path), {
+    shape: histogramDescriptor.shape,
+    data_type: histogramDescriptor.dataType,
+    chunk_shape: histogramDescriptor.chunkShape,
     codecs: [],
     fill_value: 0,
   });
@@ -508,7 +510,7 @@ async function createSyntheticDataset(spec: DatasetSpec): Promise<SyntheticDatas
       normalized: volume,
     });
     await storageHandle.storage.writeFile(
-      `${scale.zarr.histogram.path}/${createZarrChunkKeyFromCoords([timepoint, 0])}`,
+      `${histogramDescriptor.path}/${createZarrChunkKeyFromCoords([timepoint, 0])}`,
       encodeUint32ArrayLE(histogram),
     );
     const hierarchyLevels = buildHierarchyLevelsFromLeaf(

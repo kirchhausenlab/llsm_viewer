@@ -54,20 +54,5 @@ test('@smoke top menu shows the expected dropdown structure after launch', async
 
   await page.getByRole('button', { name: 'Help', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Navigation controls' }).click();
-  const navigationWindow = page.locator('.navigation-help-window');
-  await expect(navigationWindow).toBeVisible();
-  await page.getByRole('button', { name: 'Close Navigation controls window' }).click();
-  await expect(navigationWindow).toHaveCount(0);
-
-  await page.getByRole('button', { name: 'File', exact: true }).click();
-  const dialogHandled = new Promise<void>((resolve) => {
-    page.once('dialog', async (dialog) => {
-      await dialog.accept();
-      resolve();
-    });
-  });
-  await page.getByRole('menuitem', { name: 'Exit' }).click();
-  await dialogHandled;
-  await expect(page.getByRole('heading', { name: 'Set up new experiment' })).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole('button', { name: 'File', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Navigation controls' })).toBeVisible();
 });

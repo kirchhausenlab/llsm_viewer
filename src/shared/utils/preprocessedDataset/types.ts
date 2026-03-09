@@ -42,7 +42,6 @@ export type ZarrArrayDescriptor = {
 
 export type ZarrArrayShardingPlanArrayKind =
   | 'volumeData'
-  | 'volumeLabels'
   | 'skipHierarchy'
   | 'histogram'
   | 'subcell'
@@ -89,6 +88,7 @@ export type PreprocessedShardedBlobDescriptor = {
 export type PreprocessedScalePlaybackAtlasZarrDescriptor = {
   textureFormat: PreprocessedBrickAtlasTextureFormat;
   textureChannels: number;
+  dataType: 'uint8' | 'uint16';
   brickAtlasIndices: ZarrArrayDescriptor;
   data: PreprocessedShardedBlobDescriptor;
 };
@@ -102,11 +102,10 @@ export type PreprocessedLayerScaleManifestEntry = {
   channels: number;
   zarr: {
     data: ZarrArrayDescriptor;
-    labels?: ZarrArrayDescriptor;
     skipHierarchy: PreprocessedScaleSkipHierarchyZarrDescriptor;
     subcell?: PreprocessedScaleSubcellZarrDescriptor;
     playbackAtlas?: PreprocessedScalePlaybackAtlasZarrDescriptor;
-    histogram: ZarrArrayDescriptor;
+    histogram?: ZarrArrayDescriptor;
   };
 };
 

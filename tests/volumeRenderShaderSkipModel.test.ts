@@ -93,7 +93,19 @@ function createPrng(seed: number): () => number {
   const nearestShader = VolumeRenderShaderVariants['mip-nearest'].fragmentShader;
   assert.match(
     nearestShader,
+    /const int MAX_SEGMENTATION_STEPS = 4096;/,
+  );
+  assert.match(
+    nearestShader,
     /int stepAdvance = hierarchy_skip_step_advance_voxel\(/,
+  );
+  assert.match(
+    nearestShader,
+    /int maxRaySteps = u_isSegmentation > 0\.5 \? MAX_SEGMENTATION_STEPS : MAX_STEPS;/,
+  );
+  assert.match(
+    nearestShader,
+    /vec3 nearestTraversalSize = u_isSegmentation > 0\.5 \? resolve_nearest_sampling_volume_size\(\) : u_size;/,
   );
   assert.match(
     nearestShader,
@@ -118,6 +130,10 @@ function createPrng(seed: number): () => number {
   assert.match(
     nearestShader,
     /uniform vec3 u_backgroundMaskVisibleBoxMax;/,
+  );
+  assert.match(
+    nearestShader,
+    /void cast_segmentation\(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray\) \{[\s\S]*for \(int guard = 0; guard < MAX_SEGMENTATION_STEPS; guard\+\+\)/,
   );
 })();
 

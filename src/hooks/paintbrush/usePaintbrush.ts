@@ -235,6 +235,7 @@ export function usePaintbrush({
     const voxelCount = dimensions.width * dimensions.height * dimensions.depth;
     const rgba = new Uint8Array(voxelCount * 4);
     const volume: NormalizedVolume = {
+      kind: 'intensity',
       width: dimensions.width,
       height: dimensions.height,
       depth: dimensions.depth,

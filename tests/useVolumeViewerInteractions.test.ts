@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 
 import { useVolumeViewerInteractions } from '../src/components/viewers/volume-viewer/useVolumeViewerInteractions.ts';
-import { FALLBACK_SEGMENTATION_LABEL_TEXTURE } from '../src/components/viewers/volume-viewer/fallbackTextures.ts';
 import type { VolumeResources } from '../src/components/viewers/VolumeViewer.types.ts';
 import { renderHook } from './hooks/renderHook.ts';
 
@@ -61,7 +60,7 @@ console.log('Starting useVolumeViewerInteractions tests');
   result.applyHoverHighlightToResources();
 
   const uniforms = (material as THREE.ShaderMaterial).uniforms;
-  assert.strictEqual(uniforms.u_segmentationLabels.value, FALLBACK_SEGMENTATION_LABEL_TEXTURE);
+  assert.strictEqual(uniforms.u_segmentationLabels.value, null);
 })();
 
 (() => {

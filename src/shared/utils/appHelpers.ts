@@ -24,13 +24,13 @@ export const getTrackTabTextColor = (hexColor: string): string => {
   return isLightHexColor(normalized, '#ffffff') ? '#0b1220' : '#ffffff';
 };
 
-export const createSegmentationSeed = (layerKey: string, volumeIndex: number): number => {
+export const createSegmentationSeed = (layerKey: string): number => {
   let hash = 2166136261;
   for (let i = 0; i < layerKey.length; i++) {
     hash ^= layerKey.charCodeAt(i);
     hash = Math.imul(hash, 16777619);
   }
-  const mixed = (hash ^ Math.imul(volumeIndex + 1, 0x9e3779b1)) >>> 0;
+  const mixed = hash >>> 0;
   return mixed === 0 ? 0xdeadbeef : mixed;
 };
 

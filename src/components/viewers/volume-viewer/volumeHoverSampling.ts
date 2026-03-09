@@ -1,6 +1,6 @@
 import { denormalizeValue } from '../../../shared/utils/intensityFormatting';
 import { clampValue } from '../../../shared/utils/hoverSampling';
-import type { NormalizedVolume } from '../../../core/volumeProcessing';
+import { isSegmentationVolume, type NormalizedVolume } from '../../../core/volumeProcessing';
 import type { VolumeBrickAtlasTextureFormat, VolumeBrickPageTable } from '../../../core/volumeProvider';
 import type { VolumeDataType } from '../../../types/volume';
 
@@ -8,7 +8,7 @@ type VectorLike = { x: number; y: number; z: number };
 
 type BrickAtlasSampleSource = {
   pageTable: Pick<VolumeBrickPageTable, 'gridShape' | 'chunkShape' | 'volumeShape' | 'brickAtlasIndices'>;
-  atlasData: Uint8Array;
+  atlasData: Uint8Array | Uint16Array;
   textureFormat: VolumeBrickAtlasTextureFormat;
   sourceChannels: number;
   dataType: VolumeDataType;
@@ -46,7 +46,7 @@ function mapSourceChannelToTextureChannel(
   return sourceChannel;
 }
 
-function sampleBrickAtlasVoxelByte(
+function sampleBrickAtlasVoxelValue(
   source: BrickAtlasSampleSource,
   voxelX: number,
   voxelY: number,
@@ -104,6 +104,14 @@ export function sampleBrickAtlasAtNormalizedPosition(
   source: BrickAtlasSampleSource,
   coords: VectorLike,
 ): { normalizedValues: number[]; rawValues: number[] } {
+  if (source.dataType === 'uint16') {
+    const label = sampleBrickAtlasLabelAtNormalizedPosition(source, coords);
+    return {
+      normalizedValues: [label > 0 ? 1 : 0],
+      rawValues: [label]
+    };
+  }
+
   const channels = Math.max(1, source.sourceChannels);
   const volumeDepth = Math.max(1, source.pageTable.volumeShape[0]);
   const volumeHeight = Math.max(1, source.pageTable.volumeShape[1]);
@@ -144,14 +152,14 @@ export function sampleBrickAtlasAtNormalizedPosition(
   const rawValues: number[] = [];
 
   for (let channelIndex = 0; channelIndex < channels; channelIndex += 1) {
-    const topLeftFront = sampleBrickAtlasVoxelByte(source, leftX, topY, frontZ, channelIndex);
-    const topRightFront = sampleBrickAtlasVoxelByte(source, rightX, topY, frontZ, channelIndex);
-    const bottomLeftFront = sampleBrickAtlasVoxelByte(source, leftX, bottomY, frontZ, channelIndex);
-    const bottomRightFront = sampleBrickAtlasVoxelByte(source, rightX, bottomY, frontZ, channelIndex);
-    const topLeftBack = sampleBrickAtlasVoxelByte(source, leftX, topY, backZ, channelIndex);
-    const topRightBack = sampleBrickAtlasVoxelByte(source, rightX, topY, backZ, channelIndex);
-    const bottomLeftBack = sampleBrickAtlasVoxelByte(source, leftX, bottomY, backZ, channelIndex);
-    const bottomRightBack = sampleBrickAtlasVoxelByte(source, rightX, bottomY, backZ, channelIndex);
+    const topLeftFront = sampleBrickAtlasVoxelValue(source, leftX, topY, frontZ, channelIndex);
+    const topRightFront = sampleBrickAtlasVoxelValue(source, rightX, topY, frontZ, channelIndex);
+    const bottomLeftFront = sampleBrickAtlasVoxelValue(source, leftX, bottomY, frontZ, channelIndex);
+    const bottomRightFront = sampleBrickAtlasVoxelValue(source, rightX, bottomY, frontZ, channelIndex);
+    const topLeftBack = sampleBrickAtlasVoxelValue(source, leftX, topY, backZ, channelIndex);
+    const topRightBack = sampleBrickAtlasVoxelValue(source, rightX, topY, backZ, channelIndex);
+    const bottomLeftBack = sampleBrickAtlasVoxelValue(source, leftX, bottomY, backZ, channelIndex);
+    const bottomRightBack = sampleBrickAtlasVoxelValue(source, rightX, bottomY, backZ, channelIndex);
 
     const interpolated =
       topLeftFront * weight000 +
@@ -174,6 +182,14 @@ export function sampleVolumeAtNormalizedPosition(
   volume: NormalizedVolume,
   coords: VectorLike,
 ): { normalizedValues: number[]; rawValues: number[] } {
+  if (isSegmentationVolume(volume)) {
+    const label = sampleVolumeLabelAtNormalizedPosition(volume, coords);
+    return {
+      normalizedValues: [label > 0 ? 1 : 0],
+      rawValues: [label]
+    };
+  }
+
   const channels = Math.max(1, volume.channels);
   const sliceStride = volume.width * volume.height * channels;
   const rowStride = volume.width * channels;
@@ -242,6 +258,32 @@ export function sampleVolumeAtNormalizedPosition(
   }
 
   return { normalizedValues, rawValues };
+}
+
+export function sampleBrickAtlasLabelAtNormalizedPosition(
+  source: BrickAtlasSampleSource,
+  coords: VectorLike,
+): number {
+  const volumeDepth = Math.max(1, source.pageTable.volumeShape[0]);
+  const volumeHeight = Math.max(1, source.pageTable.volumeShape[1]);
+  const volumeWidth = Math.max(1, source.pageTable.volumeShape[2]);
+  const voxelX = Math.round(clampValue(coords.x * volumeWidth, 0, volumeWidth - 1));
+  const voxelY = Math.round(clampValue(coords.y * volumeHeight, 0, volumeHeight - 1));
+  const voxelZ = Math.round(clampValue(coords.z * volumeDepth, 0, volumeDepth - 1));
+  return sampleBrickAtlasVoxelValue(source, voxelX, voxelY, voxelZ, 0);
+}
+
+export function sampleVolumeLabelAtNormalizedPosition(
+  volume: NormalizedVolume,
+  coords: VectorLike,
+): number {
+  if (!isSegmentationVolume(volume)) {
+    return 0;
+  }
+  const voxelX = Math.round(clampValue(coords.x * volume.width, 0, volume.width - 1));
+  const voxelY = Math.round(clampValue(coords.y * volume.height, 0, volume.height - 1));
+  const voxelZ = Math.round(clampValue(coords.z * volume.depth, 0, volume.depth - 1));
+  return volume.labels[(voxelZ * volume.height + voxelY) * volume.width + voxelX] ?? 0;
 }
 
 export function computeVolumeLuminance(values: number[], channels: number): number {

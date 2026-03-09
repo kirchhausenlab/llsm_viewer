@@ -31,9 +31,20 @@ function createFallbackFloat3dTexture(
 }
 
 export const FALLBACK_SEGMENTATION_LABEL_TEXTURE = (() => {
-  const texture = new THREE.Data3DTexture(new Uint32Array([0]), 1, 1, 1);
-  texture.format = THREE.RedIntegerFormat;
-  texture.type = THREE.UnsignedIntType;
+  const texture = new THREE.Data3DTexture(new Uint8Array([0, 0]), 1, 1, 1);
+  texture.format = THREE.RGFormat;
+  texture.type = THREE.UnsignedByteType;
+  texture.minFilter = THREE.NearestFilter;
+  texture.magFilter = THREE.NearestFilter;
+  texture.unpackAlignment = 1;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  return texture;
+})();
+
+export const FALLBACK_SEGMENTATION_PALETTE_TEXTURE = (() => {
+  const texture = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1, THREE.RGBAFormat);
+  texture.type = THREE.UnsignedByteType;
   texture.minFilter = THREE.NearestFilter;
   texture.magFilter = THREE.NearestFilter;
   texture.unpackAlignment = 1;

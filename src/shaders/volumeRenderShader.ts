@@ -322,6 +322,8 @@ type VolumeUniforms = {
   u_clim: { value: Vector2 };
   u_data: { value: Data3DTexture | null };
   u_cmdata: { value: DataTexture | null };
+  u_isSegmentation: { value: number };
+  u_segmentationPalette: { value: DataTexture | null };
   u_channels: { value: number };
   u_additive: { value: number };
   u_cameraPos: { value: Vector3 };
@@ -339,6 +341,7 @@ type VolumeUniforms = {
   u_hoverLabel: { value: number };
   u_hoverSegmentationMode: { value: number };
   u_segmentationLabels: { value: Data3DTexture | null };
+  u_segmentationBrickAtlasData: { value: Data3DTexture | null };
   u_backgroundMaskEnabled: { value: number };
   u_backgroundMask: { value: Data3DTexture | null };
   u_backgroundMaskSize: { value: Vector3 };
@@ -382,6 +385,8 @@ const uniforms = {
   u_clim: { value: new Vector2(1, 1) },
   u_data: { value: null as Data3DTexture | null },
   u_cmdata: { value: null as DataTexture | null },
+  u_isSegmentation: { value: 0 },
+  u_segmentationPalette: { value: null as DataTexture | null },
   u_channels: { value: 1 },
   u_additive: { value: 0 },
   u_cameraPos: { value: new Vector3() },
@@ -399,6 +404,7 @@ const uniforms = {
   u_hoverLabel: { value: 0 },
   u_hoverSegmentationMode: { value: 0 },
   u_segmentationLabels: { value: null as Data3DTexture | null },
+  u_segmentationBrickAtlasData: { value: null as Data3DTexture | null },
   u_backgroundMaskEnabled: { value: 0 },
   u_backgroundMask: { value: null as Data3DTexture | null },
   u_backgroundMaskSize: { value: new Vector3(1, 1, 1) },
@@ -467,6 +473,7 @@ const volumeRenderFragmentShader = /* glsl */ `
     uniform float u_mipEarlyExitThreshold;
     uniform float u_renderthreshold;
     uniform vec2 u_clim;
+    uniform float u_isSegmentation;
     uniform int u_channels;
     uniform float u_additive;
     uniform float u_windowMin;
@@ -482,7 +489,9 @@ const volumeRenderFragmentShader = /* glsl */ `
     uniform float u_hoverPulse;
     uniform float u_hoverLabel;
     uniform float u_hoverSegmentationMode;
-    uniform usampler3D u_segmentationLabels;
+    uniform sampler3D u_segmentationLabels;
+    uniform sampler3D u_segmentationBrickAtlasData;
+    uniform sampler2D u_segmentationPalette;
     uniform float u_backgroundMaskEnabled;
     uniform sampler3D u_backgroundMask;
     uniform vec3 u_backgroundMaskSize;
@@ -521,12 +530,14 @@ const volumeRenderFragmentShader = /* glsl */ `
     varying vec4 v_farpos;
 
     const int MAX_STEPS = 887;
+    const int MAX_SEGMENTATION_STEPS = 4096;
     const int MAX_SKIP_HIERARCHY_LEVELS = 12;
     const int REFINEMENT_STEPS = 4;
     const float NEAREST_DDA_CLOSEUP_MAX_FOOTPRINT = 0.85;
     const float NEAREST_DDA_ADVANCE_EPSILON = 1e-4;
     const float EPSILON = 1e-6;
     const float LARGE = 1e20;
+    const vec2 SEGMENTATION_PALETTE_DIMENSIONS = vec2(256.0, 256.0);
     const float shininess = 40.0;
     const float ambientStrength = 0.2;
     const float diffuseStrength = 0.8;
@@ -538,6 +549,7 @@ const volumeRenderFragmentShader = /* glsl */ `
     #if defined(VOLUME_STYLE_MIP)
       void cast_mip(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
     #endif
+    void cast_segmentation(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
     #if defined(VOLUME_STYLE_ISO)
       void cast_iso(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray);
     #endif
@@ -1229,6 +1241,101 @@ const volumeRenderFragmentShader = /* glsl */ `
       return sample_color_lod(texcoords, 0.0);
     }
 
+    float decode_segmentation_label(vec4 packedLabelSample) {
+      float lowByte = floor(clamp(packedLabelSample.r, 0.0, 1.0) * 255.0 + 0.5);
+      float highByte = floor(clamp(packedLabelSample.g, 0.0, 1.0) * 255.0 + 0.5);
+      return lowByte + highByte * 256.0;
+    }
+
+    vec4 segmentation_color_from_label(float labelValue) {
+      if (labelValue < 0.5) {
+        return vec4(0.0);
+      }
+      float paletteX = mod(labelValue, SEGMENTATION_PALETTE_DIMENSIONS.x);
+      float paletteY = floor(labelValue / SEGMENTATION_PALETTE_DIMENSIONS.x);
+      vec2 uv = (vec2(paletteX, paletteY) + vec2(0.5)) / SEGMENTATION_PALETTE_DIMENSIONS;
+      return texture2D(u_segmentationPalette, uv);
+    }
+
+    float sample_segmentation_brick_atlas_voxel_known_base(
+      vec3 voxelCoords,
+      vec3 brickCoords,
+      vec3 atlasBaseTexel,
+      vec3 safeChunk,
+      vec3 atlasVolumeSize
+    ) {
+      vec3 clampedVoxel = clamp_voxel_coords(voxelCoords, atlasVolumeSize);
+      vec3 localVoxel = clampedVoxel - brickCoords * safeChunk;
+      vec3 atlasVoxel = localVoxel + atlasBaseTexel;
+      vec3 atlasSize = max(u_brickAtlasSize, vec3(1.0));
+      ivec3 maxAtlasTexel = ivec3(max(atlasSize - vec3(1.0), vec3(0.0)));
+      ivec3 atlasTexel = ivec3(
+        clamp(
+          floor(atlasVoxel + vec3(0.5)),
+          vec3(0.0),
+          vec3(maxAtlasTexel)
+        )
+      );
+      return decode_segmentation_label(texelFetch(u_segmentationBrickAtlasData, atlasTexel, 0));
+    }
+
+    float sample_segmentation_brick_atlas_voxel_or_missing_base(
+      vec3 voxelCoords,
+      vec3 brickCoords,
+      vec4 atlasBaseInfo,
+      vec3 safeChunk,
+      vec3 atlasVolumeSize
+    ) {
+      if (atlasBaseInfo.a < 0.5) {
+        return 0.0;
+      }
+      return sample_segmentation_brick_atlas_voxel_known_base(
+        voxelCoords,
+        brickCoords,
+        atlasBaseInfo.rgb,
+        safeChunk,
+        atlasVolumeSize
+      );
+    }
+
+    float sample_segmentation_brick_atlas_voxel(vec3 voxelCoords) {
+      vec3 safeGrid = max(u_brickGridSize, vec3(1.0));
+      vec3 safeChunk = max(u_brickChunkSize, vec3(1.0));
+      vec3 atlasVolumeSize = max(u_brickVolumeSize, vec3(1.0));
+      vec3 brickCoords = brick_coords_for_voxel(voxelCoords, safeGrid, safeChunk, atlasVolumeSize);
+      vec4 atlasBaseInfo = atlas_base_for_brick(brickCoords, safeGrid);
+      return sample_segmentation_brick_atlas_voxel_or_missing_base(
+        voxelCoords,
+        brickCoords,
+        atlasBaseInfo,
+        safeChunk,
+        atlasVolumeSize
+      );
+    }
+
+    float sample_segmentation_full_volume_label(vec3 texcoords) {
+      return decode_segmentation_label(texture(u_segmentationLabels, clamp(texcoords, vec3(0.0), vec3(1.0))));
+    }
+
+    float sample_segmentation_label_at_voxel(vec3 voxelCoords) {
+      if (u_brickAtlasEnabled > 0.5) {
+        return sample_segmentation_brick_atlas_voxel(voxelCoords);
+      }
+      vec3 safeVolumeSize = max(u_size, vec3(1.0));
+      vec3 clampedVoxel = clamp(floor(voxelCoords + vec3(0.5)), vec3(0.0), safeVolumeSize - vec3(1.0));
+      vec3 texcoords = (clampedVoxel + vec3(0.5)) / safeVolumeSize;
+      return sample_segmentation_full_volume_label(texcoords);
+    }
+
+    float sample_segmentation_label(vec3 texcoords) {
+      vec3 safeTexcoords = clamp(texcoords, vec3(0.0), vec3(1.0));
+      if (u_brickAtlasEnabled > 0.5) {
+        vec3 nearestVoxel = floor(safeTexcoords * max(u_brickVolumeSize, vec3(1.0)));
+        return sample_segmentation_brick_atlas_voxel(nearestVoxel);
+      }
+      return sample_segmentation_full_volume_label(safeTexcoords);
+    }
+
     vec4 sample_color_voxel(vec3 voxelCoord) {
       vec3 safeVolumeSize = max(u_size, vec3(1.0));
       vec3 clampedVoxel = clamp(floor(voxelCoord + vec3(0.5)), vec3(0.0), safeVolumeSize - vec3(1.0));
@@ -1639,10 +1746,12 @@ const volumeRenderFragmentShader = /* glsl */ `
       vec3 start_loc;
 
       if (u_nearestSampling > 0.5) {
-        vec3 frontCenter = floor(front) + vec3(0.5);
-        start_loc = frontCenter / u_size;
-        step = rayDir / u_size;
-        nsteps = clamp(int(travelDistance) + 1, 1, MAX_STEPS);
+        vec3 nearestTraversalSize = u_isSegmentation > 0.5 ? resolve_nearest_sampling_volume_size() : u_size;
+        int maxRaySteps = u_isSegmentation > 0.5 ? MAX_SEGMENTATION_STEPS : MAX_STEPS;
+        vec3 frontCenter = floor(((front + vec3(0.5)) / u_size) * nearestTraversalSize);
+        start_loc = (frontCenter + vec3(0.5)) / nearestTraversalSize;
+        step = rayDir / nearestTraversalSize;
+        nsteps = clamp(int(travelDistance) + 1, 1, maxRaySteps);
       } else {
         float safeStepScale = max(u_stepScale, 1e-3);
         nsteps = int(travelDistance * safeStepScale + 0.5);
@@ -1652,15 +1761,19 @@ const volumeRenderFragmentShader = /* glsl */ `
       }
       vec3 view_ray = -rayDir;
 
-      #if defined(VOLUME_STYLE_MIP)
-        cast_mip(start_loc, step, nsteps, view_ray);
-      #elif defined(VOLUME_STYLE_ISO)
-        cast_iso(start_loc, step, nsteps, view_ray);
-      #elif defined(VOLUME_STYLE_BL)
-        cast_bl(start_loc, step, nsteps, view_ray);
-      #else
-        cast_mip(start_loc, step, nsteps, view_ray);
-      #endif
+      if (u_isSegmentation > 0.5) {
+        cast_segmentation(start_loc, step, nsteps, view_ray);
+      } else {
+        #if defined(VOLUME_STYLE_MIP)
+          cast_mip(start_loc, step, nsteps, view_ray);
+        #elif defined(VOLUME_STYLE_ISO)
+          cast_iso(start_loc, step, nsteps, view_ray);
+        #elif defined(VOLUME_STYLE_BL)
+          cast_bl(start_loc, step, nsteps, view_ray);
+        #else
+          cast_mip(start_loc, step, nsteps, view_ray);
+        #endif
+      }
 
       if (gl_FragColor.a < 0.05) {
         discard;
@@ -1955,8 +2068,8 @@ const volumeRenderFragmentShader = /* glsl */ `
         float pulse = clamp(u_hoverPulse, 0.0, 1.0);
         bool segmentationHover = u_hoverSegmentationMode > 0.5;
         if (segmentationHover) {
-          uint sampleLabel = texture(u_segmentationLabels, max_loc).r;
-          if (abs(float(sampleLabel) - u_hoverLabel) <= 0.5) {
+          float sampleLabel = sample_segmentation_label(max_loc);
+          if (abs(sampleLabel - u_hoverLabel) <= 0.5) {
             color.rgb = mix(color.rgb, vec3(1.0), pulse * 0.6);
           }
         } else if (u_hoverRadius > 0.0) {
@@ -1970,6 +2083,165 @@ const volumeRenderFragmentShader = /* glsl */ `
       gl_FragColor = apply_blending_mode(color);
     }
     #endif
+
+    void cast_segmentation(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray) {
+      vec3 loc = start_loc;
+      vec3 hitLoc = start_loc;
+      float hitLabel = 0.0;
+      bool hasHit = false;
+      float hierarchyTraversalCacheValid = 0.0;
+      vec3 hierarchyTraversalNodeMin = vec3(0.0);
+      vec3 hierarchyTraversalNodeMax = vec3(0.0);
+      float hierarchyTraversalNodeSkippable = 0.0;
+      float hierarchyTraversalNodeCurrentMax = -2.0;
+      float hierarchyTraversalNodeIsoLowThreshold = -2.0;
+      int hierarchyLevelCount = int(clamp(floor(u_skipHierarchyLevelCount + 0.5), 0.0, float(MAX_SKIP_HIERARCHY_LEVELS)));
+      bool skipTraversalEnabled = u_brickSkipEnabled > 0.5 && hierarchyLevelCount > 0;
+      vec3 safeVolumeSize = resolve_nearest_sampling_volume_size();
+      vec3 invSafeVolumeSize = vec3(1.0) / safeVolumeSize;
+      vec3 startVoxelCoords = clamp(
+        start_loc * safeVolumeSize,
+        vec3(0.0),
+        max(safeVolumeSize - vec3(1e-4), vec3(0.0))
+      );
+      vec3 voxelStep = step * safeVolumeSize;
+      vec3 voxelCoords = floor(startVoxelCoords);
+      vec3 hierarchyTextureSize = max(u_skipHierarchyTextureSize, vec3(1.0));
+      vec3 hierarchyVolumeSize = max(u_brickVolumeSize, vec3(1.0));
+      vec3 hierarchyChunkSize = max(u_brickChunkSize, vec3(1.0));
+      vec3 hierarchyVoxelStep = step * hierarchyVolumeSize;
+      vec3 sampleToHierarchyScale = hierarchyVolumeSize * invSafeVolumeSize;
+      float traversedDistance = 0.0;
+      float axisStepX;
+      float axisStepY;
+      float axisStepZ;
+      float tMaxX;
+      float tMaxY;
+      float tMaxZ;
+      float tDeltaX;
+      float tDeltaY;
+      float tDeltaZ;
+      nearest_dda_init_axis(startVoxelCoords.x, voxelStep.x, axisStepX, tMaxX, tDeltaX);
+      nearest_dda_init_axis(startVoxelCoords.y, voxelStep.y, axisStepY, tMaxY, tDeltaY);
+      nearest_dda_init_axis(startVoxelCoords.z, voxelStep.z, axisStepZ, tMaxZ, tDeltaZ);
+      tMaxX += traversedDistance;
+      tMaxY += traversedDistance;
+      tMaxZ += traversedDistance;
+      for (int guard = 0; guard < MAX_SEGMENTATION_STEPS; guard++) {
+        if (traversedDistance >= float(nsteps) - NEAREST_DDA_ADVANCE_EPSILON) {
+          break;
+        }
+        if (!nearest_voxel_in_bounds(voxelCoords, safeVolumeSize)) {
+          break;
+        }
+        if (skipTraversalEnabled) {
+          int stepAdvance = hierarchy_skip_step_advance_voxel(
+            voxelCoords,
+            sampleToHierarchyScale,
+            hierarchyVoxelStep,
+            hierarchyTextureSize,
+            hierarchyVolumeSize,
+            hierarchyChunkSize,
+            hierarchyLevelCount,
+            -1.0,
+            -1.0,
+            hierarchyTraversalCacheValid,
+            hierarchyTraversalNodeMin,
+            hierarchyTraversalNodeMax,
+            hierarchyTraversalNodeSkippable,
+            hierarchyTraversalNodeCurrentMax,
+            hierarchyTraversalNodeIsoLowThreshold
+          );
+          if (stepAdvance > 1) {
+            float targetT = min(traversedDistance + float(stepAdvance), float(nsteps));
+            nearest_dda_advance_to_target(
+              targetT,
+              voxelCoords,
+              axisStepX,
+              axisStepY,
+              axisStepZ,
+              tMaxX,
+              tMaxY,
+              tMaxZ,
+              tDeltaX,
+              tDeltaY,
+              tDeltaZ
+            );
+            traversedDistance = targetT;
+            continue;
+          }
+        }
+        vec3 sampleTexcoords = (voxelCoords + vec3(0.5)) * invSafeVolumeSize;
+        if (is_background_masked(sampleTexcoords)) {
+          float nextBoundaryT = min(tMaxX, min(tMaxY, tMaxZ));
+          float targetT = (!(nextBoundaryT > traversedDistance + 1e-6) || nextBoundaryT >= LARGE * 0.5)
+            ? min(traversedDistance + 1.0, float(nsteps))
+            : min(nextBoundaryT + NEAREST_DDA_ADVANCE_EPSILON, float(nsteps));
+          nearest_dda_advance_to_target(
+            targetT,
+            voxelCoords,
+            axisStepX,
+            axisStepY,
+            axisStepZ,
+            tMaxX,
+            tMaxY,
+            tMaxZ,
+            tDeltaX,
+            tDeltaY,
+            tDeltaZ
+          );
+          traversedDistance = targetT;
+          continue;
+        }
+        hitLabel = sample_segmentation_label_at_voxel(voxelCoords);
+        if (hitLabel > 0.5) {
+          hasHit = true;
+          hitLoc = sampleTexcoords;
+          break;
+        }
+        float nextBoundaryT = min(tMaxX, min(tMaxY, tMaxZ));
+        float targetT = (!(nextBoundaryT > traversedDistance + 1e-6) || nextBoundaryT >= LARGE * 0.5)
+          ? min(traversedDistance + 1.0, float(nsteps))
+          : min(nextBoundaryT + NEAREST_DDA_ADVANCE_EPSILON, float(nsteps));
+        nearest_dda_advance_to_target(
+          targetT,
+          voxelCoords,
+          axisStepX,
+          axisStepY,
+          axisStepZ,
+          tMaxX,
+          tMaxY,
+          tMaxZ,
+          tDeltaX,
+          tDeltaY,
+          tDeltaZ
+        );
+        traversedDistance = targetT;
+      }
+
+      if (!hasHit) {
+        gl_FragColor = vec4(0.0);
+        return;
+      }
+
+      vec4 color = segmentation_color_from_label(hitLabel);
+      if (u_hoverActive > 0.5 && length(u_hoverScale) > 0.0) {
+        float pulse = clamp(u_hoverPulse, 0.0, 1.0);
+        bool segmentationHover = u_hoverSegmentationMode > 0.5;
+        if (segmentationHover) {
+          if (abs(hitLabel - u_hoverLabel) <= 0.5) {
+            color.rgb = mix(color.rgb, vec3(1.0), pulse * 0.6);
+          }
+        } else if (u_hoverRadius > 0.0) {
+          vec3 delta = (hitLoc - u_hoverPos) * u_hoverScale;
+          float falloff = smoothstep(0.0, u_hoverRadius, length(delta));
+          float highlight = (1.0 - falloff) * pulse;
+          color.rgb = mix(color.rgb, vec3(1.0), highlight * 0.6);
+        }
+      }
+
+      gl_FragColor = apply_blending_mode(color);
+    }
 
     #if defined(VOLUME_STYLE_ISO)
     void cast_iso(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray) {

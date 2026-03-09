@@ -34,6 +34,7 @@ test('performance: normalizeVolume stays within local budget', () => {
   const normalized = normalizeVolume(payload, { min: 0, max: 4095 });
   const elapsedMs = performance.now() - startedAt;
 
+  assert.equal(normalized.kind, 'intensity');
   assert.equal(normalized.normalized.length, voxelCount);
   assert.ok(
     elapsedMs <= NORMALIZE_MS_BUDGET,
