@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "DEPLOY_BASE_PATH=/ vite",
-    "build": "DEPLOY_BASE_PATH=/ vite build",
-    "preview": "DEPLOY_BASE_PATH=/ vite preview",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json",
     "typecheck:strict-unused": "tsc --noEmit -p tsconfig.strict-unused.json",

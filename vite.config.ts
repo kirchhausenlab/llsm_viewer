@@ -2,20 +2,35 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 
-function requireEnv(name: string): string {
-  const raw = process.env[name];
-  if (typeof raw !== 'string' || raw.trim() === '') {
-    throw new Error(`Missing required environment variable ${name}.`);
-  }
-  return raw.trim();
-}
-
 function normalizeBasePath(basePath: string): string {
+  if (basePath === '/') {
+    return '/';
+  }
   const prefixed = basePath.startsWith('/') ? basePath : `/${basePath}`;
   return prefixed.endsWith('/') ? prefixed : `${prefixed}/`;
 }
 
-const deployBasePath = normalizeBasePath(requireEnv('DEPLOY_BASE_PATH'));
+function resolveDeployBasePath(): string {
+  const explicit = process.env.DEPLOY_BASE_PATH?.trim();
+  if (explicit) {
+    return normalizeBasePath(explicit);
+  }
+
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    const repository = process.env.GITHUB_REPOSITORY?.trim() ?? '';
+    const [owner = '', repoName = ''] = repository.split('/');
+    if (repoName) {
+      if (owner && repoName.toLowerCase() === `${owner.toLowerCase()}.github.io`) {
+        return '/';
+      }
+      return normalizeBasePath(repoName);
+    }
+  }
+
+  return '/';
+}
+
+const deployBasePath = resolveDeployBasePath();
 
 export default defineConfig({
   base: deployBasePath,
