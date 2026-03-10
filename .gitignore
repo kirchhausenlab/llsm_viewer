@@ -8,6 +8,8 @@ data/
 # C extensions
 *.so
 
+data/
+test-results/
 # Distribution / packaging
 .Python
 build/
