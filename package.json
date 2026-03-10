@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx tests/runTests.ts"
+    "test": "node scripts/run-tests.mjs"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
