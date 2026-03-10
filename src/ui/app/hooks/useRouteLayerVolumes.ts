@@ -24,6 +24,7 @@ import type { PlaybackIndexWindow } from '../../../shared/utils';
 import { computeLoopedNextTimeIndex } from '../../../shared/utils';
 import type { PreprocessedLayerScaleManifestEntry } from '../../../shared/utils/preprocessedDataset/types';
 import type { LoadedDatasetLayer, StagedPreprocessedExperiment } from '../../../hooks/dataset';
+import { getBytesPerValue } from '../../../types/volume';
 
 type SetLaunchProgressOptions = {
   loadedCount: number;
@@ -35,6 +36,7 @@ type UseRouteLayerVolumesOptions = {
   isLaunchingViewer: boolean;
   isPlaying?: boolean;
   preprocessedExperiment: StagedPreprocessedExperiment | null;
+  preferRemoteStartupScale?: boolean;
   volumeProvider: VolumeProvider | null;
   loadedChannelIds: string[];
   channelLayersMap: Map<string, LoadedDatasetLayer[]>;
@@ -91,6 +93,8 @@ const MAX_BRICK_ATLAS_BYTES_HINT = 384 * 1024 * 1024;
 const MAX_VOLUME_BYTES_HINT = 384 * 1024 * 1024;
 const MAX_ADAPTIVE_DOWNSAMPLE_MULTIPLIER = 8;
 const MAX_ADAPTIVE_DEMOTION_STEPS = 4;
+const REMOTE_STARTUP_PLAYBACK_ATLAS_MAX_BYTES = 24 * 1024 * 1024;
+const REMOTE_STARTUP_VOLUME_MAX_BYTES = 24 * 1024 * 1024;
 const CAMERA_PROJECTED_PIXELS_REFERENCE_DISTANCE = 1.2;
 const CAMERA_PROJECTED_PIXELS_AT_REFERENCE = 1.4;
 const PLAYBACK_WARMUP_SLOT_COUNT = 3;
@@ -365,11 +369,63 @@ function buildLayerResidencyModeMap({
   return modeByKey;
 }
 
+function estimateScaleVolumeBytes(scale: PreprocessedLayerScaleManifestEntry | null): number {
+  if (!scale) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return (
+    scale.width *
+    scale.height *
+    scale.depth *
+    scale.channels *
+    getBytesPerValue(scale.zarr.data.dataType)
+  );
+}
+
+function estimateScalePlaybackAtlasBytes(scale: PreprocessedLayerScaleManifestEntry | null): number | null {
+  const estimatedBytes = scale?.zarr.playbackAtlas?.data.sharding?.estimatedShardBytes;
+  if (typeof estimatedBytes !== 'number' || !Number.isFinite(estimatedBytes) || estimatedBytes <= 0) {
+    return null;
+  }
+  return estimatedBytes;
+}
+
+export function resolveRemoteStartupScaleLevel({
+  levels,
+  scalesByLevel
+}: {
+  levels: number[];
+  scalesByLevel: Map<number, PreprocessedLayerScaleManifestEntry> | null;
+}): number | null {
+  const coarserLevels = levels.slice(1);
+  if (coarserLevels.length === 0) {
+    return null;
+  }
+
+  for (const level of coarserLevels) {
+    const scale = scalesByLevel?.get(level) ?? null;
+    const playbackAtlasBytes = estimateScalePlaybackAtlasBytes(scale);
+    if (playbackAtlasBytes !== null && playbackAtlasBytes <= REMOTE_STARTUP_PLAYBACK_ATLAS_MAX_BYTES) {
+      return level;
+    }
+  }
+
+  for (const level of coarserLevels) {
+    const scale = scalesByLevel?.get(level) ?? null;
+    if (estimateScaleVolumeBytes(scale) <= REMOTE_STARTUP_VOLUME_MAX_BYTES) {
+      return level;
+    }
+  }
+
+  return coarserLevels[0] ?? null;
+}
+
 export function useRouteLayerVolumes({
   isViewerLaunched,
   isLaunchingViewer,
   isPlaying = false,
   preprocessedExperiment,
+  preferRemoteStartupScale = false,
   volumeProvider,
   loadedChannelIds,
   channelLayersMap,
@@ -483,8 +539,20 @@ export function useRouteLayerVolumes({
     (layerKey: string): number => {
       const levels = layerScaleLevelsByKey.get(layerKey) ?? [0];
       const finestLevel = levels[0] ?? 0;
+      const previousState = layerPolicyStateByLayerKeyRef.current.get(layerKey) ?? null;
+      const remoteStartupScaleLevel =
+        preferRemoteStartupScale &&
+        !isViewerLaunched &&
+        !isPlaying &&
+        !viewerCameraSample &&
+        !previousState
+          ? resolveRemoteStartupScaleLevel({
+              levels,
+              scalesByLevel: layerScalesByLevelByKey.get(layerKey) ?? null
+            })
+          : null;
       const fallbackBaseDesired = (() => {
-        const desired = 0;
+        const desired = remoteStartupScaleLevel ?? 0;
         let resolved = finestLevel;
         for (const level of levels) {
           if (level <= desired) {
@@ -563,7 +631,6 @@ export function useRouteLayerVolumes({
       );
       projectedChoice = levels[Math.min(maxAdaptiveDemotionIndex, projectedChoiceIndex)] ?? projectedChoice;
 
-      const previousState = layerPolicyStateByLayerKeyRef.current.get(layerKey);
       if (!previousState || previousState.activeScaleLevel === null) {
         return applyPlaybackScaleOverride({
           levels,
@@ -813,6 +880,17 @@ export function useRouteLayerVolumes({
         }
         return desiredScaleLevel === 0 ? [0] : [0, desiredScaleLevel];
       })();
+      const remoteStartupScaleLevel =
+        preferRemoteStartupScale &&
+        !isViewerLaunched &&
+        !isPlaying &&
+        !viewerCameraSample &&
+        !layerPolicyStateByLayerKeyRef.current.get(layerKey)
+          ? resolveRemoteStartupScaleLevel({
+              levels: knownLevels,
+              scalesByLevel: layerScalesByLevelByKey.get(layerKey) ?? null
+            })
+          : null;
       const fallbackScaleLevel = knownLevels[knownLevels.length - 1] ?? desiredScaleLevel;
       const prefetchedPageTablesByScale = new Map<number, VolumeBrickPageTable>();
       updateLayerPolicyState({
@@ -861,7 +939,11 @@ export function useRouteLayerVolumes({
                 occupiedBrickCount: pageTable.occupiedBrickCount,
                 maxDirectVolumeBytes: maxVolumeBytesHint
               });
-            if (shouldPreferDirectVolume) {
+            const shouldForceRemoteStartupAtlas =
+              remoteStartupScaleLevel !== null &&
+              scaleLevel === remoteStartupScaleLevel &&
+              Boolean(scale?.zarr.playbackAtlas);
+            if (shouldPreferDirectVolume && !shouldForceRemoteStartupAtlas) {
               break;
             }
             if (

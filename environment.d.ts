@@ -3,6 +3,7 @@
 declare interface ImportMetaEnv {
   readonly VITE_DROPBOX_APP_KEY?: string;
   readonly VITE_MAX_VOLUME_BYTES?: string;
+  readonly VITE_PUBLIC_EXPERIMENTS_CATALOG_URL?: string;
 }
 
 declare interface ImportMeta {

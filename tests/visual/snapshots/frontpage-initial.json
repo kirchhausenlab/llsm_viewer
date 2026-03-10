@@ -135,6 +135,26 @@
                       "children": [
                         "Load preprocessed experiment"
                       ]
+                    },
+                    {
+                      "type": "button",
+                      "props": {
+                        "type": "button",
+                        "className": "channel-add-button channel-add-button-public",
+                        "disabled": false
+                      },
+                      "children": [
+                        "Load public experiments"
+                      ]
+                    },
+                    {
+                      "type": "p",
+                      "props": {
+                        "className": "channel-add-public-note"
+                      },
+                      "children": [
+                        "Try hosted reference datasets that stream on demand from the lab's public S3 bucket."
+                      ]
                     }
                   ]
                 }

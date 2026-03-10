@@ -2,6 +2,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import type { FollowedTrackState, TrackSetState } from '../../types/channelTracks';
 import type { ChannelSource, StagedPreprocessedExperiment, TrackSetSource } from './useChannelSources';
 import { usePreprocessedImport } from '../preprocessedExperiment/usePreprocessedImport';
+import type { PublicExperimentCatalogEntry } from '../../shared/utils/publicExperimentCatalog';
 
 export type UsePreprocessedExperimentOptions = {
   channels: ChannelSource[];
@@ -26,10 +27,20 @@ export type UsePreprocessedExperimentResult = {
   preprocessedExperiment: StagedPreprocessedExperiment | null;
   setPreprocessedExperiment: (experiment: StagedPreprocessedExperiment | null) => void;
   isPreprocessedLoaderOpen: boolean;
+  isPublicExperimentLoaderOpen: boolean;
+  isPublicExperimentCatalogLoading: boolean;
+  publicExperimentCatalog: PublicExperimentCatalogEntry[];
+  publicExperimentCatalogError: string | null;
+  activePublicExperimentId: string | null;
+  publicExperimentCatalogUrl: string;
   isPreprocessedImporting: boolean;
   preprocessedImportError: string | null;
   handlePreprocessedLoaderOpen: () => void;
   handlePreprocessedLoaderClose: () => void;
+  handlePublicExperimentLoaderOpen: () => void;
+  handlePublicExperimentLoaderClose: () => void;
+  handlePublicExperimentCatalogRefresh: () => Promise<void>;
+  handlePublicExperimentLoad: (experimentId: string) => Promise<void>;
   handlePreprocessedBrowse: () => Promise<void>;
   handlePreprocessedArchiveBrowse: () => Promise<void>;
   handlePreprocessedArchiveDrop: (file: File) => Promise<void>;
@@ -77,10 +88,20 @@ export default function usePreprocessedExperiment({
     preprocessedExperiment: importState.preprocessedExperiment,
     setPreprocessedExperiment: importState.setPreprocessedExperiment,
     isPreprocessedLoaderOpen: importState.isPreprocessedLoaderOpen,
+    isPublicExperimentLoaderOpen: importState.isPublicExperimentLoaderOpen,
+    isPublicExperimentCatalogLoading: importState.isPublicExperimentCatalogLoading,
+    publicExperimentCatalog: importState.publicExperimentCatalog,
+    publicExperimentCatalogError: importState.publicExperimentCatalogError,
+    activePublicExperimentId: importState.activePublicExperimentId,
+    publicExperimentCatalogUrl: importState.publicExperimentCatalogUrl,
     isPreprocessedImporting: importState.isPreprocessedImporting,
     preprocessedImportError: importState.preprocessedImportError,
     handlePreprocessedLoaderOpen: importState.handlePreprocessedLoaderOpen,
     handlePreprocessedLoaderClose: importState.handlePreprocessedLoaderClose,
+    handlePublicExperimentLoaderOpen: importState.handlePublicExperimentLoaderOpen,
+    handlePublicExperimentLoaderClose: importState.handlePublicExperimentLoaderClose,
+    handlePublicExperimentCatalogRefresh: importState.handlePublicExperimentCatalogRefresh,
+    handlePublicExperimentLoad: importState.handlePublicExperimentLoad,
     handlePreprocessedBrowse: importState.handlePreprocessedBrowse,
     handlePreprocessedArchiveBrowse: importState.handlePreprocessedArchiveBrowse,
     handlePreprocessedArchiveDrop: importState.handlePreprocessedArchiveDrop,

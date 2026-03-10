@@ -71,3 +71,34 @@ test('@smoke setup flow steps back through chooser before front page', async ({ 
   await page.getByRole('button', { name: 'Return' }).click();
   await expect(page.getByRole('heading', { name: 'Mirante4D' })).toBeVisible();
 });
+
+test('@smoke public experiments page opens and returns to the front page', async ({ page }) => {
+  await page.route('https://mirante4d.s3.us-east-1.amazonaws.com/examples/catalog.json', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        version: 1,
+        examples: [
+          {
+            id: 'ap2',
+            label: 'AP2',
+            description: '1 timepoint, 3 channels (raw, PCA, instance segmentation).',
+            baseUrl: 'https://mirante4d.s3.us-east-1.amazonaws.com/examples/datasets/ap2.zarr',
+            timepoints: 1
+          }
+        ]
+      })
+    });
+  });
+
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Load public experiments' }).click();
+
+  await expect(page.getByRole('heading', { name: 'Load public experiments' })).toBeVisible();
+  await expect(page.getByText('Start with hosted datasets')).toBeVisible();
+  await expect(page.getByText('AP2')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Return' }).click();
+  await expect(page.getByRole('heading', { name: 'Mirante4D' })).toBeVisible();
+});

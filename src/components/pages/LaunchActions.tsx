@@ -1,7 +1,7 @@
 import type { FC } from 'react';
 
 type LaunchActionsProps = {
-  frontPageMode: 'initial' | 'experimentTypeSelection' | 'configuring' | 'preprocessed';
+  frontPageMode: 'initial' | 'experimentTypeSelection' | 'configuring' | 'preprocessed' | 'publicExperiments';
   hasGlobalTimepointMismatch: boolean;
   interactionErrorMessage: string | null;
   launchErrorMessage: string | null;

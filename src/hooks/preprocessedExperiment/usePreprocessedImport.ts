@@ -1,7 +1,8 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { FollowedTrackState, TrackSetState } from '../../types/channelTracks';
 import { unzip } from 'fflate';
+import { PUBLIC_EXPERIMENTS_CATALOG_URL } from '../../config/publicExperiments';
 import {
   loadCompiledTrackSetCatalogFromStorage,
   loadCompiledTrackSetPayloadFromStorage,
@@ -9,10 +10,15 @@ import {
 } from '../../shared/utils/preprocessedDataset/open';
 import {
   createDirectoryHandlePreprocessedStorage,
+  createHttpPreprocessedStorage,
   createOpfsPreprocessedStorage,
   PREPROCESSED_STORAGE_ROOT_DIR
 } from '../../shared/storage/preprocessedStorage';
 import type { PreprocessedStorageHandle } from '../../shared/storage/preprocessedStorage';
+import {
+  loadPublicExperimentCatalog,
+  type PublicExperimentCatalogEntry
+} from '../../shared/utils/publicExperimentCatalog';
 import type { ChannelSource, StagedPreprocessedExperiment, TrackSetSource } from '../dataset';
 
 export type UsePreprocessedImportOptions = {
@@ -34,10 +40,20 @@ export type UsePreprocessedImportResult = {
   preprocessedExperiment: StagedPreprocessedExperiment | null;
   setPreprocessedExperiment: Dispatch<SetStateAction<StagedPreprocessedExperiment | null>>;
   isPreprocessedLoaderOpen: boolean;
+  isPublicExperimentLoaderOpen: boolean;
+  isPublicExperimentCatalogLoading: boolean;
+  publicExperimentCatalog: PublicExperimentCatalogEntry[];
+  publicExperimentCatalogError: string | null;
+  activePublicExperimentId: string | null;
+  publicExperimentCatalogUrl: string;
   isPreprocessedImporting: boolean;
   preprocessedImportError: string | null;
   handlePreprocessedLoaderOpen: () => void;
   handlePreprocessedLoaderClose: () => void;
+  handlePublicExperimentLoaderOpen: () => void;
+  handlePublicExperimentLoaderClose: () => void;
+  handlePublicExperimentCatalogRefresh: () => Promise<void>;
+  handlePublicExperimentLoad: (experimentId: string) => Promise<void>;
   handlePreprocessedBrowse: () => Promise<void>;
   handlePreprocessedArchiveBrowse: () => Promise<void>;
   handlePreprocessedArchiveDrop: (file: File) => Promise<void>;
@@ -52,6 +68,16 @@ type ArchiveExtractionResult = {
 
 function canUseDirectoryPicker(): boolean {
   return typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function';
+}
+
+function isAbortLikeError(error: unknown): boolean {
+  if (error instanceof DOMException) {
+    return error.name === 'AbortError';
+  }
+  if (error instanceof Error) {
+    return error.name === 'AbortError' || /aborted/i.test(error.message);
+  }
+  return false;
 }
 
 async function requestArchiveFile(): Promise<File | null> {
@@ -171,30 +197,33 @@ export function usePreprocessedImport({
   const [preprocessedExperiment, setPreprocessedExperiment] =
     useState<StagedPreprocessedExperiment | null>(null);
   const [isPreprocessedLoaderOpen, setIsPreprocessedLoaderOpen] = useState(false);
+  const [isPublicExperimentLoaderOpen, setIsPublicExperimentLoaderOpen] = useState(false);
+  const [isPublicExperimentCatalogLoading, setIsPublicExperimentCatalogLoading] = useState(false);
+  const [publicExperimentCatalog, setPublicExperimentCatalog] = useState<PublicExperimentCatalogEntry[]>([]);
+  const [publicExperimentCatalogError, setPublicExperimentCatalogError] = useState<string | null>(null);
+  const [activePublicExperimentId, setActivePublicExperimentId] = useState<string | null>(null);
   const [isPreprocessedImporting, setIsPreprocessedImporting] = useState(false);
   const [preprocessedImportError, setPreprocessedImportError] = useState<string | null>(null);
+  const publicCatalogAbortRef = useRef<AbortController | null>(null);
+  const publicCatalogRequestIdRef = useRef(0);
 
-  const resetPreprocessedState = useCallback(() => {
-    setPreprocessedExperiment(null);
-    setPreprocessedImportError(null);
-    setIsPreprocessedLoaderOpen(false);
+  useEffect(() => {
+    return () => {
+      publicCatalogAbortRef.current?.abort();
+    };
   }, []);
 
-  const handlePreprocessedLoaderOpen = useCallback(() => {
-    if (isPreprocessedImporting) {
-      return;
-    }
-    setIsPreprocessedLoaderOpen(true);
+  const resetPreprocessedState = useCallback(() => {
+    publicCatalogAbortRef.current?.abort();
+    publicCatalogAbortRef.current = null;
+    setPreprocessedExperiment(null);
     setPreprocessedImportError(null);
-  }, [isPreprocessedImporting]);
-
-  const handlePreprocessedLoaderClose = useCallback(() => {
-    if (isPreprocessedImporting) {
-      return;
-    }
+    setPublicExperimentCatalogError(null);
     setIsPreprocessedLoaderOpen(false);
-    setPreprocessedImportError(null);
-  }, [isPreprocessedImporting]);
+    setIsPublicExperimentLoaderOpen(false);
+    setIsPublicExperimentCatalogLoading(false);
+    setActivePublicExperimentId(null);
+  }, []);
 
   const stagePreprocessedDataset = useCallback(
     (
@@ -261,6 +290,9 @@ export function usePreprocessedImport({
       setPreprocessedExperiment(staged);
       setIsExperimentSetupStarted(false);
       setIsPreprocessedLoaderOpen(false);
+      setIsPublicExperimentLoaderOpen(false);
+      setPublicExperimentCatalogError(null);
+      setActivePublicExperimentId(null);
       clearDatasetError();
     },
     [
@@ -276,6 +308,147 @@ export function usePreprocessedImport({
       setTracks,
       setViewerMode,
       updateChannelIdCounter
+    ]
+  );
+
+  const loadPublicExperimentCatalogEntries = useCallback(
+    async ({ force }: { force: boolean }) => {
+      if (!force && publicExperimentCatalog.length > 0) {
+        setPublicExperimentCatalogError(null);
+        return;
+      }
+
+      if (typeof fetch !== 'function') {
+        setPublicExperimentCatalogError('Fetching public experiments is not supported in this browser.');
+        return;
+      }
+
+      publicCatalogAbortRef.current?.abort();
+      const abortController = new AbortController();
+      publicCatalogAbortRef.current = abortController;
+      const requestId = publicCatalogRequestIdRef.current + 1;
+      publicCatalogRequestIdRef.current = requestId;
+      setIsPublicExperimentCatalogLoading(true);
+      setPublicExperimentCatalogError(null);
+
+      try {
+        const catalog = await loadPublicExperimentCatalog({
+          catalogUrl: PUBLIC_EXPERIMENTS_CATALOG_URL,
+          signal: abortController.signal
+        });
+
+        if (publicCatalogRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setPublicExperimentCatalog(catalog.examples);
+      } catch (error) {
+        if (publicCatalogRequestIdRef.current !== requestId || isAbortLikeError(error)) {
+          return;
+        }
+        console.error('Failed to load public experiment catalog', error);
+        const message = error instanceof Error ? error.message : 'Failed to load public experiment catalog.';
+        setPublicExperimentCatalogError(message);
+      } finally {
+        if (publicCatalogRequestIdRef.current === requestId) {
+          setIsPublicExperimentCatalogLoading(false);
+          if (publicCatalogAbortRef.current === abortController) {
+            publicCatalogAbortRef.current = null;
+          }
+        }
+      }
+    },
+    [publicExperimentCatalog.length]
+  );
+
+  const handlePreprocessedLoaderOpen = useCallback(() => {
+    if (isPreprocessedImporting) {
+      return;
+    }
+    setIsPublicExperimentLoaderOpen(false);
+    setIsPreprocessedLoaderOpen(true);
+    setPreprocessedImportError(null);
+  }, [isPreprocessedImporting]);
+
+  const handlePreprocessedLoaderClose = useCallback(() => {
+    if (isPreprocessedImporting) {
+      return;
+    }
+    setIsPreprocessedLoaderOpen(false);
+    setPreprocessedImportError(null);
+  }, [isPreprocessedImporting]);
+
+  const handlePublicExperimentLoaderOpen = useCallback(() => {
+    if (isPreprocessedImporting) {
+      return;
+    }
+    setIsPreprocessedLoaderOpen(false);
+    setIsPublicExperimentLoaderOpen(true);
+    setPublicExperimentCatalogError(null);
+    void loadPublicExperimentCatalogEntries({ force: false });
+  }, [isPreprocessedImporting, loadPublicExperimentCatalogEntries]);
+
+  const handlePublicExperimentLoaderClose = useCallback(() => {
+    if (isPreprocessedImporting) {
+      return;
+    }
+    publicCatalogAbortRef.current?.abort();
+    publicCatalogAbortRef.current = null;
+    setIsPublicExperimentCatalogLoading(false);
+    setIsPublicExperimentLoaderOpen(false);
+    setPublicExperimentCatalogError(null);
+    setActivePublicExperimentId(null);
+  }, [isPreprocessedImporting]);
+
+  const handlePublicExperimentCatalogRefresh = useCallback(async () => {
+    await loadPublicExperimentCatalogEntries({ force: true });
+  }, [loadPublicExperimentCatalogEntries]);
+
+  const handlePublicExperimentLoad = useCallback(
+    async (experimentId: string) => {
+      if (isPreprocessedImporting) {
+        return;
+      }
+
+      const experiment = publicExperimentCatalog.find((entry) => entry.id === experimentId);
+      if (!experiment) {
+        setPublicExperimentCatalogError(`Public experiment "${experimentId}" is not available in the catalog.`);
+        return;
+      }
+
+      setIsPreprocessedImporting(true);
+      setPreprocessedImportError(null);
+      setPublicExperimentCatalogError(null);
+      setActivePublicExperimentId(experiment.id);
+
+      try {
+        const storageHandle = createHttpPreprocessedStorage({
+          id: experiment.id,
+          baseUrl: experiment.baseUrl
+        });
+        const result = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
+        stagePreprocessedDataset(result, storageHandle, `Public example: ${experiment.label}`, null);
+      } catch (error) {
+        console.error('Failed to load public experiment', error);
+        const message = error instanceof Error ? error.message : 'Failed to load public experiment.';
+        setPublicExperimentCatalogError(message);
+        setPreprocessedExperiment(null);
+        setChannels([]);
+        setTracks([]);
+        setIsExperimentSetupStarted(false);
+      } finally {
+        setIsPreprocessedImporting(false);
+        setActivePublicExperimentId(null);
+      }
+    },
+    [
+      isPreprocessedImporting,
+      publicExperimentCatalog,
+      setChannels,
+      setIsExperimentSetupStarted,
+      setTracks,
+      setPreprocessedExperiment,
+      stagePreprocessedDataset
     ]
   );
 
@@ -305,7 +478,7 @@ export function usePreprocessedImport({
       const result = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
       stagePreprocessedDataset(result, storageHandle, null, null);
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
+      if (isAbortLikeError(error)) {
         return;
       }
       console.error('Failed to load preprocessed dataset', error);
@@ -400,10 +573,20 @@ export function usePreprocessedImport({
     preprocessedExperiment,
     setPreprocessedExperiment,
     isPreprocessedLoaderOpen,
+    isPublicExperimentLoaderOpen,
+    isPublicExperimentCatalogLoading,
+    publicExperimentCatalog,
+    publicExperimentCatalogError,
+    activePublicExperimentId,
+    publicExperimentCatalogUrl: PUBLIC_EXPERIMENTS_CATALOG_URL,
     isPreprocessedImporting,
     preprocessedImportError,
     handlePreprocessedLoaderOpen,
     handlePreprocessedLoaderClose,
+    handlePublicExperimentLoaderOpen,
+    handlePublicExperimentLoaderClose,
+    handlePublicExperimentCatalogRefresh,
+    handlePublicExperimentLoad,
     handlePreprocessedBrowse,
     handlePreprocessedArchiveBrowse,
     handlePreprocessedArchiveDrop,

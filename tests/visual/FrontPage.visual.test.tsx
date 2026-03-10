@@ -19,6 +19,7 @@ function buildFrontPageProps() {
       isFrontPageLocked: false,
       onStartExperimentSetup: noop,
       onOpenPreprocessedLoader: noop,
+      onOpenPublicExperimentLoader: noop,
       isPreprocessedImporting: false
     },
     experimentTypeSelection: {
@@ -40,6 +41,17 @@ function buildFrontPageProps() {
       onPreprocessedArchiveBrowse: noop,
       onPreprocessedArchiveDrop: noop,
       preprocessedImportError: null
+    },
+    publicExperimentLoader: {
+      isOpen: false,
+      catalogUrl: 'https://mirante4d.s3.us-east-1.amazonaws.com/examples/catalog.json',
+      publicExperiments: [],
+      isCatalogLoading: false,
+      isPreprocessedImporting: false,
+      activePublicExperimentId: null,
+      publicExperimentError: null,
+      onRefreshPublicExperiments: noop,
+      onLoadPublicExperiment: noop
     },
     channelListPanel: {
       channels: [],
@@ -107,6 +119,39 @@ test('visual snapshot: front page initial state', () => {
   const renderer = TestRenderer.create(<FrontPage {...(buildFrontPageProps() as any)} />);
   const tree = renderer.toJSON();
   assertVisualSnapshot('frontpage-initial', `${JSON.stringify(tree, null, 2)}\n`);
+  renderer.unmount();
+});
+
+test('visual snapshot: public experiments page', () => {
+  const props = buildFrontPageProps();
+  const renderer = TestRenderer.create(
+    <FrontPage
+      {...(props as any)}
+      frontPageMode="publicExperiments"
+      publicExperimentLoader={{
+        ...props.publicExperimentLoader,
+        isOpen: true,
+        publicExperiments: [
+          {
+            id: 'ap2',
+            label: 'AP2',
+            description: '1 timepoint, 3 channels (raw, PCA, instance segmentation).',
+            baseUrl: 'https://mirante4d.s3.us-east-1.amazonaws.com/examples/datasets/ap2.zarr',
+            timepoints: 1
+          },
+          {
+            id: 'npc1',
+            label: 'NPC1',
+            description: '5 timepoints, 1 channel (raw), tracks.',
+            baseUrl: 'https://mirante4d.s3.us-east-1.amazonaws.com/examples/datasets/npc2_5.zarr',
+            timepoints: 5
+          }
+        ]
+      }}
+    />
+  );
+  const tree = renderer.toJSON();
+  assertVisualSnapshot('frontpage-public-experiments', `${JSON.stringify(tree, null, 2)}\n`);
   renderer.unmount();
 });
 

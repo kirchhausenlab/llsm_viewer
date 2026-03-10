@@ -25,6 +25,7 @@ function buildBaseProps() {
       isFrontPageLocked: false,
       onStartExperimentSetup: noop,
       onOpenPreprocessedLoader: noop,
+      onOpenPublicExperimentLoader: noop,
       isPreprocessedImporting: false
     },
     experimentTypeSelection: {
@@ -46,6 +47,17 @@ function buildBaseProps() {
       onPreprocessedArchiveBrowse: noop,
       onPreprocessedArchiveDrop: noop,
       preprocessedImportError: null
+    },
+    publicExperimentLoader: {
+      isOpen: false,
+      catalogUrl: 'https://mirante4d.s3.us-east-1.amazonaws.com/examples/catalog.json',
+      publicExperiments: [],
+      isCatalogLoading: false,
+      isPreprocessedImporting: false,
+      activePublicExperimentId: null,
+      publicExperimentError: null,
+      onRefreshPublicExperiments: noop,
+      onLoadPublicExperiment: noop
     },
     channelListPanel: {
       channels: [],
@@ -116,6 +128,46 @@ test('front page initial mode renders setup choices', () => {
   assert.match(text, /Mirante4D/);
   assert.match(text, /Set up new experiment/);
   assert.match(text, /Load preprocessed experiment/);
+  assert.match(text, /Load public experiments/);
+
+  renderer.unmount();
+});
+
+test('front page public experiments mode renders hosted example cards', () => {
+  const props = buildBaseProps();
+  const renderer = TestRenderer.create(
+    <FrontPage
+      {...(props as any)}
+      frontPageMode="publicExperiments"
+      publicExperimentLoader={{
+        ...props.publicExperimentLoader,
+        isOpen: true,
+        publicExperiments: [
+          {
+            id: 'ap2',
+            label: 'AP2',
+            description: '1 timepoint, 3 channels (raw, PCA, instance segmentation).',
+            baseUrl: 'https://mirante4d.s3.us-east-1.amazonaws.com/examples/datasets/ap2.zarr',
+            timepoints: 1
+          },
+          {
+            id: 'npc1',
+            label: 'NPC1',
+            description: '5 timepoints, 1 channel (raw), tracks.',
+            baseUrl: 'https://mirante4d.s3.us-east-1.amazonaws.com/examples/datasets/npc2_5.zarr',
+            timepoints: 5
+          }
+        ]
+      }}
+    />
+  );
+
+  const text = collectText(renderer);
+  assert.match(text, /Load public experiments/);
+  assert.match(text, /Start with hosted datasets/);
+  assert.match(text, /AP2/);
+  assert.match(text, /NPC1/);
+  assert.match(text, /Load example/);
 
   renderer.unmount();
 });

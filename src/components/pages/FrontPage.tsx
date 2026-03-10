@@ -9,6 +9,7 @@ import type {
 import FrontPageHeader from './FrontPageHeader';
 import ExperimentConfiguration from './ExperimentConfiguration';
 import PreprocessedLoader, { type PreprocessedLoaderProps } from './PreprocessedLoader';
+import PublicExperimentLoader, { type PublicExperimentLoaderProps } from './PublicExperimentLoader';
 import ChannelListPanel, { type ChannelListPanelProps } from './ChannelListPanel';
 import LaunchActions, { type LaunchActionsProps } from './LaunchActions';
 import WarningsWindow from './WarningsWindow';
@@ -27,6 +28,7 @@ export type InitialActionsProps = {
   isFrontPageLocked: boolean;
   onStartExperimentSetup: () => void;
   onOpenPreprocessedLoader: () => void;
+  onOpenPublicExperimentLoader: () => void;
   isPreprocessedImporting: boolean;
 };
 
@@ -61,12 +63,13 @@ type HeaderProps = {
 
 type FrontPageProps = {
   isFrontPageLocked: boolean;
-  frontPageMode: 'initial' | 'experimentTypeSelection' | 'configuring' | 'preprocessed';
+  frontPageMode: 'initial' | 'experimentTypeSelection' | 'configuring' | 'preprocessed' | 'publicExperiments';
   header: HeaderProps;
   initialActions: InitialActionsProps;
   experimentTypeSelection: ExperimentTypeSelectionProps;
   experimentConfiguration: ExperimentConfigurationState;
   preprocessedLoader: PreprocessedLoaderProps;
+  publicExperimentLoader: PublicExperimentLoaderProps;
   channelListPanel: Omit<ChannelListPanelProps, 'experimentType'>;
   preprocessedSummary: PreprocessedSummaryProps;
   launchActions: LaunchActionsProps;
@@ -87,6 +90,7 @@ export default function FrontPage({
   experimentTypeSelection,
   experimentConfiguration,
   preprocessedLoader,
+  publicExperimentLoader,
   channelListPanel,
   preprocessedSummary,
   launchActions,
@@ -95,6 +99,9 @@ export default function FrontPage({
   const headerTitle = useMemo(() => {
     if (frontPageMode === 'preprocessed') {
       return 'Loaded preprocessed experiment';
+    }
+    if (frontPageMode === 'publicExperiments') {
+      return 'Load public experiments';
     }
     if (frontPageMode === 'configuring' || frontPageMode === 'experimentTypeSelection') {
       return 'Set up new experiment';
@@ -139,6 +146,19 @@ export default function FrontPage({
                 >
                   Load preprocessed experiment
                 </button>
+                <button
+                  type="button"
+                  className="channel-add-button channel-add-button-public"
+                  onClick={initialActions.onOpenPublicExperimentLoader}
+                  disabled={
+                    initialActions.isFrontPageLocked || initialActions.isPreprocessedImporting
+                  }
+                >
+                  Load public experiments
+                </button>
+                <p className="channel-add-public-note">
+                  Try hosted reference datasets that stream on demand from the lab&apos;s public S3 bucket.
+                </p>
               </div>
             </div>
           ) : null}
@@ -176,7 +196,10 @@ export default function FrontPage({
               isFrontPageLocked={isFrontPageLocked}
             />
           ) : null}
-          {frontPageMode !== 'preprocessed' ? <PreprocessedLoader {...preprocessedLoader} /> : null}
+          {frontPageMode !== 'preprocessed' && frontPageMode !== 'publicExperiments' ? (
+            <PreprocessedLoader {...preprocessedLoader} />
+          ) : null}
+          {frontPageMode === 'publicExperiments' ? <PublicExperimentLoader {...publicExperimentLoader} /> : null}
           {frontPageMode === 'configuring' ? (
             <ChannelListPanel
               experimentType={experimentConfiguration.experimentType}

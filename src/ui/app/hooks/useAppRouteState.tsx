@@ -532,6 +532,7 @@ export function useAppRouteState(): AppRouteState {
     isLaunchingViewer,
     isPlaying,
     preprocessedExperiment,
+    preferRemoteStartupScale: preprocessedExperiment?.storageHandle.backend === 'http',
     volumeProvider,
     loadedChannelIds,
     channelLayersMap,

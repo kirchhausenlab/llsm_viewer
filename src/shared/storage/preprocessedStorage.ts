@@ -6,7 +6,7 @@ export type PreprocessedStorage = {
   readFileRange?(path: string, offset: number, length: number): Promise<Uint8Array>;
 };
 
-export type PreprocessedStorageBackend = 'opfs' | 'memory' | 'directory';
+export type PreprocessedStorageBackend = 'opfs' | 'memory' | 'directory' | 'http';
 
 export type PreprocessedStorageHandle = {
   backend: PreprocessedStorageBackend;
@@ -47,6 +47,17 @@ function requireNonEmptyName(value: string, label: string): string {
   return trimmed;
 }
 
+function normalizeHttpBaseUrl(baseUrl: string): string {
+  const trimmed = requireNonEmptyName(baseUrl, 'baseUrl');
+  try {
+    const url = new URL(trimmed);
+    url.pathname = url.pathname.replace(/\/+$/, '');
+    return url.toString().replace(/\/+$/, '');
+  } catch {
+    throw new Error(`Invalid baseUrl "${baseUrl}".`);
+  }
+}
+
 type FileSystemDirectoryHandleLike = {
   getDirectoryHandle(name: string, options?: { create?: boolean }): Promise<FileSystemDirectoryHandleLike>;
   getFileHandle(name: string, options?: { create?: boolean }): Promise<FileSystemFileHandleLike>;
@@ -64,6 +75,7 @@ type FileSystemWritableFileStreamLike = {
 };
 
 type DirectoryHandleCache = Map<string, Promise<FileSystemDirectoryHandleLike>>;
+type FetchLike = typeof fetch;
 
 async function getOpfsRoot(): Promise<FileSystemDirectoryHandleLike> {
   if (typeof navigator === 'undefined' || !navigator.storage?.getDirectory) {
@@ -229,6 +241,90 @@ function normalizeRange(offset: number, length: number, totalLength: number): { 
   return { start, end };
 }
 
+function normalizeOpenEndedRange(offset: number, length: number): { start: number; endInclusive: number } | null {
+  const start = Number.isFinite(offset) ? Math.max(0, Math.floor(offset)) : 0;
+  const safeLength = Number.isFinite(length) ? Math.max(0, Math.floor(length)) : 0;
+  if (safeLength <= 0) {
+    return null;
+  }
+  return {
+    start,
+    endInclusive: start + safeLength - 1
+  };
+}
+
+function buildHttpStorageUrl(baseUrl: string, path: string): string {
+  const safePath = assertSafePath(path);
+  return new URL(safePath, `${baseUrl}/`).toString();
+}
+
+function createMissingStorageEntryError(path: string): Error {
+  return new Error(`Storage entry not found: ${path}`);
+}
+
+async function readHttpResponseBytes(response: Response): Promise<Uint8Array> {
+  const buffer = await response.arrayBuffer();
+  return new Uint8Array(buffer);
+}
+
+async function readFileFromHttpStorage(fetchImpl: FetchLike, baseUrl: string, path: string): Promise<Uint8Array> {
+  const safePath = assertSafePath(path);
+  const response = await fetchImpl(buildHttpStorageUrl(baseUrl, safePath), {
+    method: 'GET'
+  });
+
+  if (response.status === 404) {
+    throw createMissingStorageEntryError(safePath);
+  }
+  if (!response.ok) {
+    throw new Error(
+      `Failed to read "${safePath}" from remote storage (${response.status}${response.statusText ? ` ${response.statusText}` : ''}).`
+    );
+  }
+
+  return readHttpResponseBytes(response);
+}
+
+async function readFileRangeFromHttpStorage(
+  fetchImpl: FetchLike,
+  baseUrl: string,
+  path: string,
+  offset: number,
+  length: number
+): Promise<Uint8Array> {
+  const safePath = assertSafePath(path);
+  const range = normalizeOpenEndedRange(offset, length);
+  if (!range) {
+    return new Uint8Array(0);
+  }
+
+  const response = await fetchImpl(buildHttpStorageUrl(baseUrl, safePath), {
+    method: 'GET',
+    headers: {
+      Range: `bytes=${range.start}-${range.endInclusive}`
+    }
+  });
+
+  if (response.status === 404) {
+    throw createMissingStorageEntryError(safePath);
+  }
+  if (response.status === 206) {
+    return readHttpResponseBytes(response);
+  }
+  if (response.status === 200) {
+    const bytes = await readHttpResponseBytes(response);
+    const end = Math.min(bytes.byteLength, range.endInclusive + 1);
+    if (range.start >= bytes.byteLength) {
+      return new Uint8Array(0);
+    }
+    return bytes.slice(range.start, end);
+  }
+
+  throw new Error(
+    `Failed to range-read "${safePath}" from remote storage (${response.status}${response.statusText ? ` ${response.statusText}` : ''}).`
+  );
+}
+
 async function readFileRangeFromDirectory(
   root: FileSystemDirectoryHandleLike,
   path: string,
@@ -354,4 +450,36 @@ export function createInMemoryPreprocessedStorage(options: { datasetId: string }
   };
 
   return { backend: 'memory', id: datasetId, storage };
+}
+
+export function createHttpPreprocessedStorage(options: {
+  id: string;
+  baseUrl: string;
+  fetchImpl?: FetchLike;
+}): PreprocessedStorageHandle {
+  const id = requireNonEmptyName(options.id, 'id');
+  const baseUrl = normalizeHttpBaseUrl(options.baseUrl);
+  const fetchImpl = options.fetchImpl ?? fetch;
+
+  if (typeof fetchImpl !== 'function') {
+    throw new Error('HTTP preprocessed storage requires fetch support.');
+  }
+
+  const storage: PreprocessedStorage = {
+    async writeFile() {
+      throw new Error('Remote HTTP preprocessed storage is read-only.');
+    },
+    async readFile(path) {
+      return readFileFromHttpStorage(fetchImpl, baseUrl, path);
+    },
+    async readFileRange(path, offset, length) {
+      return readFileRangeFromHttpStorage(fetchImpl, baseUrl, path, offset, length);
+    }
+  };
+
+  return {
+    backend: 'http',
+    id,
+    storage
+  };
 }

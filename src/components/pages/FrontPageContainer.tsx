@@ -266,9 +266,12 @@ export default function FrontPageContainer({
     }
   }, [preprocessedExperiment]);
 
-  const frontPageMode = useMemo<'initial' | 'experimentTypeSelection' | 'configuring' | 'preprocessed'>(() => {
+  const frontPageMode = useMemo<'initial' | 'experimentTypeSelection' | 'configuring' | 'preprocessed' | 'publicExperiments'>(() => {
     if (preprocessedExperiment) {
       return 'preprocessed';
+    }
+    if (preprocessedState.isPublicExperimentLoaderOpen) {
+      return 'publicExperiments';
     }
     if (isExperimentTypeSelectionOpen) {
       return 'experimentTypeSelection';
@@ -281,7 +284,8 @@ export default function FrontPageContainer({
     channels.length,
     isExperimentSetupStarted,
     isExperimentTypeSelectionOpen,
-    preprocessedExperiment
+    preprocessedExperiment,
+    preprocessedState.isPublicExperimentLoaderOpen
   ]);
 
   const handleReturnFromFrontPage = useCallback(() => {
@@ -524,6 +528,7 @@ export default function FrontPageContainer({
     isFrontPageLocked,
     onStartExperimentSetup: handleOpenExperimentTypeSelection,
     onOpenPreprocessedLoader: preprocessedState.handlePreprocessedLoaderOpen,
+    onOpenPublicExperimentLoader: preprocessedState.handlePublicExperimentLoaderOpen,
     isPreprocessedImporting: preprocessedState.isPreprocessedImporting
   };
 
@@ -553,6 +558,18 @@ export default function FrontPageContainer({
     onPreprocessedArchiveBrowse: preprocessedState.handlePreprocessedArchiveBrowse,
     onPreprocessedArchiveDrop: preprocessedState.handlePreprocessedArchiveDrop,
     preprocessedImportError: preprocessedState.preprocessedImportError
+  };
+
+  const publicExperimentLoaderProps = {
+    isOpen: preprocessedState.isPublicExperimentLoaderOpen,
+    catalogUrl: preprocessedState.publicExperimentCatalogUrl,
+    publicExperiments: preprocessedState.publicExperimentCatalog,
+    isCatalogLoading: preprocessedState.isPublicExperimentCatalogLoading,
+    isPreprocessedImporting: preprocessedState.isPreprocessedImporting,
+    activePublicExperimentId: preprocessedState.activePublicExperimentId,
+    publicExperimentError: preprocessedState.publicExperimentCatalogError,
+    onRefreshPublicExperiments: preprocessedState.handlePublicExperimentCatalogRefresh,
+    onLoadPublicExperiment: preprocessedState.handlePublicExperimentLoad
   };
 
   const channelListPanelProps = {
@@ -630,6 +647,7 @@ export default function FrontPageContainer({
       experimentTypeSelection={experimentTypeSelectionProps}
       experimentConfiguration={experimentConfigurationProps}
       preprocessedLoader={preprocessedLoaderProps}
+      publicExperimentLoader={publicExperimentLoaderProps}
       channelListPanel={channelListPanelProps}
       preprocessedSummary={preprocessedSummaryProps}
       launchActions={launchActionsProps}
