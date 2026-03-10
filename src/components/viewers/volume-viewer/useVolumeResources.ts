@@ -2871,23 +2871,23 @@ function applyBrickPageTableUniforms(
 
   if (!atlasBuild) {
     atlasBuild = (() => {
-      if (normalizedAtlasUpload.data && atlasFormat && options.atlasSize) {
+      if (normalizedAtlasUpload.data && atlasFormat && atlasSize) {
         const components = getTextureComponentsFromFormat(atlasFormat);
         const expectedLength =
-          options.atlasSize.width * options.atlasSize.height * options.atlasSize.depth * (components ?? 0);
+          atlasSize.width * atlasSize.height * atlasSize.depth * (components ?? 0);
         if (
           components &&
-          options.atlasSize.width > 0 &&
-          options.atlasSize.height > 0 &&
-          options.atlasSize.depth > 0 &&
+          atlasSize.width > 0 &&
+          atlasSize.height > 0 &&
+          atlasSize.depth > 0 &&
           expectedLength > 0 &&
           normalizedAtlasUpload.data.length === expectedLength
         ) {
           return {
             data: normalizedAtlasUpload.data,
-            width: options.atlasSize.width,
-            height: options.atlasSize.height,
-            depth: options.atlasSize.depth,
+            width: atlasSize.width,
+            height: atlasSize.height,
+            depth: atlasSize.depth,
             textureFormat: atlasFormat,
             enabled: true,
           } satisfies BrickAtlasBuildResult;
