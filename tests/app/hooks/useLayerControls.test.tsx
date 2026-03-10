@@ -51,6 +51,11 @@ function useLayerControlsHarness(initialRenderStyle: RenderStyle = RENDER_STYLE_
   const [activeChannelTabId, setActiveChannelTabId] = useState<string | null>('channel-a');
   const [globalRenderStyle, setGlobalRenderStyle] = useState<RenderStyle>(RENDER_STYLE_MIP);
   const [globalSamplingMode, setGlobalSamplingMode] = useState<SamplingMode>('linear');
+  const [globalBlDensityScale, setGlobalBlDensityScale] = useState(1);
+  const [globalBlBackgroundCutoff, setGlobalBlBackgroundCutoff] = useState(0.08);
+  const [globalBlOpacityScale, setGlobalBlOpacityScale] = useState(1);
+  const [globalBlEarlyExitAlpha, setGlobalBlEarlyExitAlpha] = useState(0.98);
+  const [globalMipEarlyExitThreshold, setGlobalMipEarlyExitThreshold] = useState(0.999);
 
   const controls = useLayerControls({
     layers,
@@ -80,6 +85,11 @@ function useLayerControlsHarness(initialRenderStyle: RenderStyle = RENDER_STYLE_
     setActiveChannelTabId,
     setGlobalRenderStyle,
     setGlobalSamplingMode,
+    setGlobalBlDensityScale,
+    setGlobalBlBackgroundCutoff,
+    setGlobalBlOpacityScale,
+    setGlobalBlEarlyExitAlpha,
+    setGlobalMipEarlyExitThreshold,
   });
 
   return {
@@ -87,6 +97,11 @@ function useLayerControlsHarness(initialRenderStyle: RenderStyle = RENDER_STYLE_
     layerSettings,
     globalRenderStyle,
     globalSamplingMode,
+    globalBlDensityScale,
+    globalBlBackgroundCutoff,
+    globalBlOpacityScale,
+    globalBlEarlyExitAlpha,
+    globalMipEarlyExitThreshold,
     activeChannelTabId,
   };
 }
@@ -110,9 +125,24 @@ function useLayerControlsHarness(initialRenderStyle: RenderStyle = RENDER_STYLE_
   });
 
   assert.equal(hook.result.layerSettings['layer-a']?.blDensityScale, 2.4);
+  assert.equal(hook.result.layerSettings['layer-b']?.blDensityScale, 2.4);
   assert.equal(hook.result.layerSettings['layer-a']?.blBackgroundCutoff, 0.2);
+  assert.equal(hook.result.layerSettings['layer-b']?.blBackgroundCutoff, 0.2);
   assert.equal(hook.result.layerSettings['layer-a']?.blOpacityScale, 1.8);
+  assert.equal(hook.result.layerSettings['layer-b']?.blOpacityScale, 1.8);
   assert.equal(hook.result.layerSettings['layer-a']?.blEarlyExitAlpha, 0.9);
+  assert.equal(hook.result.layerSettings['layer-b']?.blEarlyExitAlpha, 0.9);
+  assert.equal(hook.result.globalBlDensityScale, 2.4);
+  assert.equal(hook.result.globalBlBackgroundCutoff, 0.2);
+  assert.equal(hook.result.globalBlOpacityScale, 1.8);
+  assert.equal(hook.result.globalBlEarlyExitAlpha, 0.9);
+
+  hook.act(() => {
+    hook.result.controls.handleLayerMipEarlyExitThresholdChange('layer-b', 0.77);
+  });
+  assert.equal(hook.result.layerSettings['layer-a']?.mipEarlyExitThreshold, 0.77);
+  assert.equal(hook.result.layerSettings['layer-b']?.mipEarlyExitThreshold, 0.77);
+  assert.equal(hook.result.globalMipEarlyExitThreshold, 0.77);
 
   hook.unmount();
 })();

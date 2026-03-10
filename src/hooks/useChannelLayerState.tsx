@@ -21,6 +21,11 @@ import {
   brightnessContrastModel,
   clampWindowBounds,
   createDefaultLayerSettings,
+  DEFAULT_BL_BACKGROUND_CUTOFF,
+  DEFAULT_BL_DENSITY_SCALE,
+  DEFAULT_BL_EARLY_EXIT_ALPHA,
+  DEFAULT_BL_OPACITY_SCALE,
+  DEFAULT_MIP_EARLY_EXIT_THRESHOLD,
   DEFAULT_RENDER_STYLE,
   DEFAULT_SAMPLING_MODE,
   DEFAULT_WINDOW_MAX,
@@ -61,6 +66,11 @@ type ChannelLayerLoadBindingKeys =
   | 'setLayerAutoThresholds'
   | 'globalRenderStyle'
   | 'globalSamplingMode'
+  | 'globalBlDensityScale'
+  | 'globalBlBackgroundCutoff'
+  | 'globalBlOpacityScale'
+  | 'globalBlEarlyExitAlpha'
+  | 'globalMipEarlyExitThreshold'
   | 'getChannelDefaultColor';
 
 export type ApplyLoadedLayersOptions = Omit<ChannelSourcesApplyLoadedLayersOptions, ChannelLayerLoadBindingKeys>;
@@ -83,6 +93,16 @@ export type ChannelLayerState = Omit<ChannelSourcesApi, 'loadSelectedDataset' | 
   setGlobalRenderStyle: Dispatch<SetStateAction<RenderStyle>>;
   globalSamplingMode: SamplingMode;
   setGlobalSamplingMode: Dispatch<SetStateAction<SamplingMode>>;
+  globalBlDensityScale: number;
+  setGlobalBlDensityScale: Dispatch<SetStateAction<number>>;
+  globalBlBackgroundCutoff: number;
+  setGlobalBlBackgroundCutoff: Dispatch<SetStateAction<number>>;
+  globalBlOpacityScale: number;
+  setGlobalBlOpacityScale: Dispatch<SetStateAction<number>>;
+  globalBlEarlyExitAlpha: number;
+  setGlobalBlEarlyExitAlpha: Dispatch<SetStateAction<number>>;
+  globalMipEarlyExitThreshold: number;
+  setGlobalMipEarlyExitThreshold: Dispatch<SetStateAction<number>>;
   channelDefaultColorMap: Map<string, string>;
   getChannelDefaultColor: (channelId: string) => string;
   createLayerDefaultSettings: (layerKey: string) => LayerSettings;
@@ -104,6 +124,11 @@ export function useChannelLayerState(): ChannelLayerState {
   const [layerAutoThresholds, setLayerAutoThresholds] = useState<Record<string, number>>({});
   const [globalRenderStyle, setGlobalRenderStyle] = useState<RenderStyle>(DEFAULT_RENDER_STYLE);
   const [globalSamplingMode, setGlobalSamplingMode] = useState<SamplingMode>(DEFAULT_SAMPLING_MODE);
+  const [globalBlDensityScale, setGlobalBlDensityScale] = useState(DEFAULT_BL_DENSITY_SCALE);
+  const [globalBlBackgroundCutoff, setGlobalBlBackgroundCutoff] = useState(DEFAULT_BL_BACKGROUND_CUTOFF);
+  const [globalBlOpacityScale, setGlobalBlOpacityScale] = useState(DEFAULT_BL_OPACITY_SCALE);
+  const [globalBlEarlyExitAlpha, setGlobalBlEarlyExitAlpha] = useState(DEFAULT_BL_EARLY_EXIT_ALPHA);
+  const [globalMipEarlyExitThreshold, setGlobalMipEarlyExitThreshold] = useState(DEFAULT_MIP_EARLY_EXIT_THRESHOLD);
 
   useEffect(() => {
     layersRef.current = layers;
@@ -145,10 +170,24 @@ export function useChannelLayerState(): ChannelLayerState {
         ...createDefaultLayerSettings({ windowMin, windowMax }),
         color: defaultColor,
         renderStyle: globalRenderStyle,
-        samplingMode: globalSamplingMode
+        samplingMode: globalSamplingMode,
+        blDensityScale: globalBlDensityScale,
+        blBackgroundCutoff: globalBlBackgroundCutoff,
+        blOpacityScale: globalBlOpacityScale,
+        blEarlyExitAlpha: globalBlEarlyExitAlpha,
+        mipEarlyExitThreshold: globalMipEarlyExitThreshold
       };
     },
-    [getChannelDefaultColor, globalRenderStyle, globalSamplingMode]
+    [
+      getChannelDefaultColor,
+      globalBlBackgroundCutoff,
+      globalBlDensityScale,
+      globalBlEarlyExitAlpha,
+      globalBlOpacityScale,
+      globalMipEarlyExitThreshold,
+      globalRenderStyle,
+      globalSamplingMode
+    ]
   );
 
   const createLayerDefaultBrightnessState = useCallback(
@@ -163,10 +202,20 @@ export function useChannelLayerState(): ChannelLayerState {
       setLayerAutoThresholds,
       getChannelDefaultColor,
       globalRenderStyle,
-      globalSamplingMode
+      globalSamplingMode,
+      globalBlDensityScale,
+      globalBlBackgroundCutoff,
+      globalBlOpacityScale,
+      globalBlEarlyExitAlpha,
+      globalMipEarlyExitThreshold
     }),
     [
       getChannelDefaultColor,
+      globalBlBackgroundCutoff,
+      globalBlDensityScale,
+      globalBlEarlyExitAlpha,
+      globalBlOpacityScale,
+      globalMipEarlyExitThreshold,
       globalRenderStyle,
       globalSamplingMode,
       setChannelVisibility
@@ -214,6 +263,16 @@ export function useChannelLayerState(): ChannelLayerState {
     setGlobalRenderStyle,
     globalSamplingMode,
     setGlobalSamplingMode,
+    globalBlDensityScale,
+    setGlobalBlDensityScale,
+    globalBlBackgroundCutoff,
+    setGlobalBlBackgroundCutoff,
+    globalBlOpacityScale,
+    setGlobalBlOpacityScale,
+    globalBlEarlyExitAlpha,
+    setGlobalBlEarlyExitAlpha,
+    globalMipEarlyExitThreshold,
+    setGlobalMipEarlyExitThreshold,
     channelDefaultColorMap,
     getChannelDefaultColor,
     createLayerDefaultSettings,

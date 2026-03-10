@@ -13,6 +13,11 @@ import { DEFAULT_LAYER_COLOR } from '../../shared/colorMaps/layerColors';
 import {
   clampWindowBounds,
   createDefaultLayerSettings,
+  DEFAULT_BL_BACKGROUND_CUTOFF,
+  DEFAULT_BL_DENSITY_SCALE,
+  DEFAULT_BL_EARLY_EXIT_ALPHA,
+  DEFAULT_BL_OPACITY_SCALE,
+  DEFAULT_MIP_EARLY_EXIT_THRESHOLD,
   DEFAULT_RENDER_STYLE,
   DEFAULT_SAMPLING_MODE,
   DEFAULT_WINDOW_MAX,
@@ -60,6 +65,11 @@ export type ChannelDatasetLayerStateOptions = {
 export type ChannelDatasetAppearanceOptions = {
   globalRenderStyle: RenderStyle;
   globalSamplingMode: SamplingMode;
+  globalBlDensityScale: number;
+  globalBlBackgroundCutoff: number;
+  globalBlOpacityScale: number;
+  globalBlEarlyExitAlpha: number;
+  globalMipEarlyExitThreshold: number;
   getChannelDefaultColor: (channelId: string) => string;
 };
 
@@ -104,6 +114,11 @@ const computeLayerDefaultSettings = (
   layer: LoadedLayer,
   globalRenderStyle: RenderStyle,
   globalSamplingMode: SamplingMode,
+  globalBlDensityScale: number,
+  globalBlBackgroundCutoff: number,
+  globalBlOpacityScale: number,
+  globalBlEarlyExitAlpha: number,
+  globalMipEarlyExitThreshold: number,
   getChannelDefaultColor: (channelId: string) => string
 ): LayerSettings => {
   const { windowMin, windowMax } = computeInitialWindowForVolume(layer.volumes[0]);
@@ -112,7 +127,12 @@ const computeLayerDefaultSettings = (
     ...createDefaultLayerSettings({ windowMin, windowMax }),
     color: defaultColor,
     renderStyle: globalRenderStyle,
-    samplingMode: globalSamplingMode
+    samplingMode: globalSamplingMode,
+    blDensityScale: globalBlDensityScale,
+    blBackgroundCutoff: globalBlBackgroundCutoff,
+    blOpacityScale: globalBlOpacityScale,
+    blEarlyExitAlpha: globalBlEarlyExitAlpha,
+    mipEarlyExitThreshold: globalMipEarlyExitThreshold
   };
 };
 
@@ -137,6 +157,11 @@ export function useChannelDatasetLoader({ getLayerTimepointCount }: UseChannelDa
         setError,
         globalRenderStyle,
         globalSamplingMode,
+        globalBlDensityScale,
+        globalBlBackgroundCutoff,
+        globalBlOpacityScale,
+        globalBlEarlyExitAlpha,
+        globalMipEarlyExitThreshold,
         getChannelDefaultColor
       } = options;
 
@@ -161,6 +186,11 @@ export function useChannelDatasetLoader({ getLayerTimepointCount }: UseChannelDa
             layer,
             globalRenderStyle,
             globalSamplingMode,
+            globalBlDensityScale,
+            globalBlBackgroundCutoff,
+            globalBlOpacityScale,
+            globalBlEarlyExitAlpha,
+            globalMipEarlyExitThreshold,
             getChannelDefaultColor
           );
           return acc;
@@ -197,7 +227,12 @@ export function useChannelDatasetLoader({ getLayerTimepointCount }: UseChannelDa
         ...createDefaultLayerSettings({ windowMin, windowMax }),
         color: DEFAULT_LAYER_COLOR,
         renderStyle: DEFAULT_RENDER_STYLE,
-        samplingMode: DEFAULT_SAMPLING_MODE
+        samplingMode: DEFAULT_SAMPLING_MODE,
+        blDensityScale: DEFAULT_BL_DENSITY_SCALE,
+        blBackgroundCutoff: DEFAULT_BL_BACKGROUND_CUTOFF,
+        blOpacityScale: DEFAULT_BL_OPACITY_SCALE,
+        blEarlyExitAlpha: DEFAULT_BL_EARLY_EXIT_ALPHA,
+        mipEarlyExitThreshold: DEFAULT_MIP_EARLY_EXIT_THRESHOLD
       };
     },
     []
@@ -225,7 +260,12 @@ export function useChannelDatasetLoader({ getLayerTimepointCount }: UseChannelDa
       showLaunchError,
       getChannelDefaultColor,
       globalRenderStyle,
-      globalSamplingMode
+      globalSamplingMode,
+      globalBlDensityScale,
+      globalBlBackgroundCutoff,
+      globalBlOpacityScale,
+      globalBlEarlyExitAlpha,
+      globalMipEarlyExitThreshold
     }: LoadSelectedDatasetOptions) => {
       clearDatasetError();
       preprocessingSettingsRef.current = voxelResolution;
@@ -380,6 +420,11 @@ export function useChannelDatasetLoader({ getLayerTimepointCount }: UseChannelDa
           setError,
           globalRenderStyle,
           globalSamplingMode,
+          globalBlDensityScale,
+          globalBlBackgroundCutoff,
+          globalBlOpacityScale,
+          globalBlEarlyExitAlpha,
+          globalMipEarlyExitThreshold,
           getChannelDefaultColor
         });
         return normalizedLayers;

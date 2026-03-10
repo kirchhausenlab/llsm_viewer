@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type Dispatch, type FC, type Muta
 import ChannelCard from './ChannelCard';
 import TrackCard from './TrackCard';
 import type { ChannelSource, ChannelValidation, TrackSetSource, TrackValidation } from '../../hooks/dataset';
-import { ENTITY_NAME_MAX_LENGTH } from '../../constants/naming';
+import { CHANNEL_NAME_MAX_LENGTH, TRACK_NAME_MAX_LENGTH } from '../../constants/naming';
 
 type SetupExperimentType = '3d-movie' | '2d-movie' | 'single-3d-volume';
 
@@ -290,7 +290,7 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
                 type="text"
                 value={channel.name}
                 className="channel-name-input"
-                maxLength={ENTITY_NAME_MAX_LENGTH}
+                maxLength={CHANNEL_NAME_MAX_LENGTH}
                 onChange={(event) => onChannelNameChange(channel.id, event.target.value)}
                 onBlur={() => setEditingChannelId(null)}
                 onKeyDown={(event) => {
@@ -482,7 +482,7 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
                         type="text"
                         value={trackSet.name}
                         className="channel-name-input"
-                        maxLength={ENTITY_NAME_MAX_LENGTH}
+                        maxLength={TRACK_NAME_MAX_LENGTH}
                         onChange={(event) => onTrackSetNameChange(trackSet.id, event.target.value)}
                         onBlur={() => setEditingTrackId(null)}
                         onKeyDown={(event) => {

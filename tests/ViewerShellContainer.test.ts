@@ -155,6 +155,7 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
       onLayerBlBackgroundCutoffChange: noopWithArgs,
       onLayerBlOpacityScaleChange: noopWithArgs,
       onLayerBlEarlyExitAlphaChange: noopWithArgs,
+      onLayerMipEarlyExitThresholdChange: noopWithArgs,
       onLayerInvertToggle: noopWithArgs
     },
     tracksPanel: {

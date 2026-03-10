@@ -51,6 +51,11 @@ export type LayerControlsParams = {
   setActiveChannelTabId: Dispatch<SetStateAction<string | null>>;
   setGlobalRenderStyle: Dispatch<SetStateAction<RenderStyle>>;
   setGlobalSamplingMode: Dispatch<SetStateAction<SamplingMode>>;
+  setGlobalBlDensityScale: Dispatch<SetStateAction<number>>;
+  setGlobalBlBackgroundCutoff: Dispatch<SetStateAction<number>>;
+  setGlobalBlOpacityScale: Dispatch<SetStateAction<number>>;
+  setGlobalBlEarlyExitAlpha: Dispatch<SetStateAction<number>>;
+  setGlobalMipEarlyExitThreshold: Dispatch<SetStateAction<number>>;
 };
 
 const nextRenderStyle = (current: RenderStyle): RenderStyle => {
@@ -171,7 +176,12 @@ export function useLayerControls({
   loadedChannelIds,
   setActiveChannelTabId,
   setGlobalRenderStyle,
-  setGlobalSamplingMode
+  setGlobalSamplingMode,
+  setGlobalBlDensityScale,
+  setGlobalBlBackgroundCutoff,
+  setGlobalBlOpacityScale,
+  setGlobalBlEarlyExitAlpha,
+  setGlobalMipEarlyExitThreshold
 }: LayerControlsParams) {
   const viewerLayersCacheRef = useRef<ViewerLayerConfig[]>([]);
   const viewerPlaybackWarmupLayersCacheRef = useRef<ViewerLayerConfig[]>([]);
@@ -458,103 +468,138 @@ export function useLayerControls({
   );
 
   const handleLayerBlDensityScaleChange = useCallback(
-    (key: string, value: number) => {
+    (_key: string, value: number) => {
       const clamped = Math.max(0, value);
+      setGlobalBlDensityScale((current) => (current === clamped ? current : clamped));
       setLayerSettings((current) => {
-        const previous = current[key] ?? createLayerDefaultSettings(key);
-        if (previous.blDensityScale === clamped) {
-          return current;
-        }
-        return {
-          ...current,
-          [key]: {
+        let changed = false;
+        const next: Record<string, LayerSettings> = { ...current };
+        for (const layer of layers) {
+          const previous = current[layer.key] ?? createLayerDefaultSettings(layer.key);
+          if (previous.blDensityScale === clamped) {
+            continue;
+          }
+          next[layer.key] = {
             ...previous,
             blDensityScale: clamped
-          }
-        };
+          };
+          changed = true;
+        }
+        if (!changed) {
+          return current;
+        }
+        return next;
       });
     },
-    [createLayerDefaultSettings, setLayerSettings]
+    [createLayerDefaultSettings, layers, setGlobalBlDensityScale, setLayerSettings]
   );
 
   const handleLayerBlBackgroundCutoffChange = useCallback(
-    (key: string, value: number) => {
+    (_key: string, value: number) => {
       const clamped = Math.min(Math.max(value, 0), 1);
+      setGlobalBlBackgroundCutoff((current) => (current === clamped ? current : clamped));
       setLayerSettings((current) => {
-        const previous = current[key] ?? createLayerDefaultSettings(key);
-        if (previous.blBackgroundCutoff === clamped) {
-          return current;
-        }
-        return {
-          ...current,
-          [key]: {
+        let changed = false;
+        const next: Record<string, LayerSettings> = { ...current };
+        for (const layer of layers) {
+          const previous = current[layer.key] ?? createLayerDefaultSettings(layer.key);
+          if (previous.blBackgroundCutoff === clamped) {
+            continue;
+          }
+          next[layer.key] = {
             ...previous,
             blBackgroundCutoff: clamped
-          }
-        };
+          };
+          changed = true;
+        }
+        if (!changed) {
+          return current;
+        }
+        return next;
       });
     },
-    [createLayerDefaultSettings, setLayerSettings]
+    [createLayerDefaultSettings, layers, setGlobalBlBackgroundCutoff, setLayerSettings]
   );
 
   const handleLayerBlOpacityScaleChange = useCallback(
-    (key: string, value: number) => {
+    (_key: string, value: number) => {
       const clamped = Math.max(0, value);
+      setGlobalBlOpacityScale((current) => (current === clamped ? current : clamped));
       setLayerSettings((current) => {
-        const previous = current[key] ?? createLayerDefaultSettings(key);
-        if (previous.blOpacityScale === clamped) {
-          return current;
-        }
-        return {
-          ...current,
-          [key]: {
+        let changed = false;
+        const next: Record<string, LayerSettings> = { ...current };
+        for (const layer of layers) {
+          const previous = current[layer.key] ?? createLayerDefaultSettings(layer.key);
+          if (previous.blOpacityScale === clamped) {
+            continue;
+          }
+          next[layer.key] = {
             ...previous,
             blOpacityScale: clamped
-          }
-        };
+          };
+          changed = true;
+        }
+        if (!changed) {
+          return current;
+        }
+        return next;
       });
     },
-    [createLayerDefaultSettings, setLayerSettings]
+    [createLayerDefaultSettings, layers, setGlobalBlOpacityScale, setLayerSettings]
   );
 
   const handleLayerBlEarlyExitAlphaChange = useCallback(
-    (key: string, value: number) => {
+    (_key: string, value: number) => {
       const clamped = Math.min(Math.max(value, 0), 1);
+      setGlobalBlEarlyExitAlpha((current) => (current === clamped ? current : clamped));
       setLayerSettings((current) => {
-        const previous = current[key] ?? createLayerDefaultSettings(key);
-        if (previous.blEarlyExitAlpha === clamped) {
-          return current;
-        }
-        return {
-          ...current,
-          [key]: {
+        let changed = false;
+        const next: Record<string, LayerSettings> = { ...current };
+        for (const layer of layers) {
+          const previous = current[layer.key] ?? createLayerDefaultSettings(layer.key);
+          if (previous.blEarlyExitAlpha === clamped) {
+            continue;
+          }
+          next[layer.key] = {
             ...previous,
             blEarlyExitAlpha: clamped
-          }
-        };
+          };
+          changed = true;
+        }
+        if (!changed) {
+          return current;
+        }
+        return next;
       });
     },
-    [createLayerDefaultSettings, setLayerSettings]
+    [createLayerDefaultSettings, layers, setGlobalBlEarlyExitAlpha, setLayerSettings]
   );
 
   const handleLayerMipEarlyExitThresholdChange = useCallback(
-    (key: string, value: number) => {
+    (_key: string, value: number) => {
       const clamped = Math.min(Math.max(value, 0), 1);
+      setGlobalMipEarlyExitThreshold((current) => (current === clamped ? current : clamped));
       setLayerSettings((current) => {
-        const previous = current[key] ?? createLayerDefaultSettings(key);
-        if (previous.mipEarlyExitThreshold === clamped) {
-          return current;
-        }
-        return {
-          ...current,
-          [key]: {
+        let changed = false;
+        const next: Record<string, LayerSettings> = { ...current };
+        for (const layer of layers) {
+          const previous = current[layer.key] ?? createLayerDefaultSettings(layer.key);
+          if (previous.mipEarlyExitThreshold === clamped) {
+            continue;
+          }
+          next[layer.key] = {
             ...previous,
             mipEarlyExitThreshold: clamped
-          }
-        };
+          };
+          changed = true;
+        }
+        if (!changed) {
+          return current;
+        }
+        return next;
       });
     },
-    [createLayerDefaultSettings, setLayerSettings]
+    [createLayerDefaultSettings, layers, setGlobalMipEarlyExitThreshold, setLayerSettings]
   );
 
   const handleLayerSelect = useCallback(

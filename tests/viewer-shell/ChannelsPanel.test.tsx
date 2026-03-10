@@ -34,6 +34,7 @@ type RenderStyleCall = { layerKey: string; renderStyle: number } | null;
 function createProps(
   renderStyle: number,
   onRenderStyleCall: (value: RenderStyleCall) => void,
+  onVisibilityToggle: (channelId: string) => void = () => {},
 ) {
   return {
     layout: {
@@ -63,6 +64,7 @@ function createProps(
     },
     getLayerDefaultSettings: (_layerKey: string) => createDefaultLayerSettings(),
     onChannelReset: () => {},
+    onChannelVisibilityToggle: onVisibilityToggle,
     onLayerWindowMinChange: () => {},
     onLayerWindowMaxChange: () => {},
     onLayerBrightnessChange: () => {},
@@ -77,6 +79,7 @@ function createProps(
     onLayerBlBackgroundCutoffChange: () => {},
     onLayerBlOpacityScaleChange: () => {},
     onLayerBlEarlyExitAlphaChange: () => {},
+    onLayerMipEarlyExitThresholdChange: () => {},
     onLayerInvertToggle: () => {},
   };
 }
@@ -96,11 +99,27 @@ function findBlInputs(renderer: TestRenderer.ReactTestRenderer) {
   );
 }
 
+function findMipInputs(renderer: TestRenderer.ReactTestRenderer) {
+  return renderer.root.findAll(
+    (node) =>
+      node.type === 'input' &&
+      typeof node.props.id === 'string' &&
+      node.props.id.startsWith('layer-mip-early-exit-'),
+  );
+}
+
+function findNodeByClassName(renderer: TestRenderer.ReactTestRenderer, className: string) {
+  return renderer.root.findAll((node) => node.props.className === className)[0] ?? null;
+}
+
 (() => {
   let renderStyleCall: RenderStyleCall = null;
+  let visibilityToggleChannelId: string | null = null;
   const renderer = TestRenderer.create(
     <ChannelsPanel {...(createProps(RENDER_STYLE_MIP, (value) => {
       renderStyleCall = value;
+    }, (channelId) => {
+      visibilityToggleChannelId = channelId;
     }) as any)} />,
   );
 
@@ -108,18 +127,28 @@ function findBlInputs(renderer: TestRenderer.ReactTestRenderer) {
   const isoButton = findButtonByLabel(renderer, 'ISO');
   const blButton = findButtonByLabel(renderer, 'BL');
   const sliceButton = findButtonByLabel(renderer, 'Slice');
+  const hideShowButton = findButtonByLabel(renderer, 'Hide/Show');
+  const currentChannelTitle = findNodeByClassName(renderer, 'channel-current-title');
   const resetAnglesButtonInMip = findButtonByLabel(renderer, 'Reset angles');
 
   assert.ok(mipButton);
   assert.ok(isoButton);
   assert.ok(blButton);
   assert.ok(sliceButton);
+  assert.ok(hideShowButton);
+  assert.equal(currentChannelTitle?.children.join(''), 'Channel A');
   assert.equal(resetAnglesButtonInMip, null);
   assert.equal(mipButton?.props['aria-pressed'], true);
   assert.equal(isoButton?.props['aria-pressed'], false);
   assert.equal(blButton?.props['aria-pressed'], false);
   assert.equal(sliceButton?.props['aria-pressed'], false);
   assert.equal(findBlInputs(renderer).length, 0);
+  assert.equal(findMipInputs(renderer).length, 0);
+
+  act(() => {
+    hideShowButton?.props.onClick();
+  });
+  assert.equal(visibilityToggleChannelId, 'channel-a');
 
   act(() => {
     blButton?.props.onClick();
@@ -134,12 +163,14 @@ function findBlInputs(renderer: TestRenderer.ReactTestRenderer) {
   renderer.update(
     <ChannelsPanel {...(createProps(RENDER_STYLE_BL, () => {}) as any)} />,
   );
-  assert.equal(findBlInputs(renderer).length, 4);
+  assert.equal(findBlInputs(renderer).length, 0);
+  assert.equal(findMipInputs(renderer).length, 0);
 
   renderer.update(
     <ChannelsPanel {...(createProps(RENDER_STYLE_ISO, () => {}) as any)} />,
   );
   assert.equal(findBlInputs(renderer).length, 0);
+  assert.equal(findMipInputs(renderer).length, 0);
   assert.equal(findButtonByLabel(renderer, 'Reset angles'), null);
 
   renderer.unmount();

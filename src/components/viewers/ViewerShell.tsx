@@ -15,6 +15,7 @@ import { useViewerPanelWindows } from './viewer-shell/hooks/useViewerPanelWindow
 import { useViewerPropsState } from './viewer-shell/hooks/useViewerPropsState';
 import { useViewerRecording } from './viewer-shell/hooks/useViewerRecording';
 import type { ViewerShellProps } from './viewer-shell/types';
+import { createDefaultLayerSettings } from '../../state/layerSettings';
 import { formatIntensityValue } from '../../shared/utils/intensityFormatting';
 
 const NAVIGATION_HELP_WINDOW_WIDTH = 420;
@@ -186,6 +187,36 @@ function ViewerShell({
   });
 
   const showRenderingQualityControl = modeControls.is3dModeAvailable && modeControls.samplingMode === 'linear';
+  const globalRenderControls = useMemo(() => {
+    const fallbackSettings = createDefaultLayerSettings();
+    const firstChannelId = channelsPanel.loadedChannelIds[0] ?? null;
+    const firstLayer = firstChannelId ? (channelsPanel.channelLayersMap.get(firstChannelId) ?? [])[0] ?? null : null;
+    const settings = firstLayer
+      ? channelsPanel.layerSettings[firstLayer.key] ?? channelsPanel.getLayerDefaultSettings(firstLayer.key)
+      : fallbackSettings;
+    const controlLayerKey = firstLayer?.key ?? null;
+
+    const withLayerKey = (callback: ((layerKey: string, value: number) => void) | undefined) => (value: number) => {
+      if (!callback || !controlLayerKey) {
+        return;
+      }
+      callback(controlLayerKey, value);
+    };
+
+    return {
+      disabled: !firstLayer || firstLayer.volumeCount === 0,
+      mipEarlyExitThreshold: settings.mipEarlyExitThreshold,
+      blDensityScale: settings.blDensityScale,
+      blBackgroundCutoff: settings.blBackgroundCutoff,
+      blOpacityScale: settings.blOpacityScale,
+      blEarlyExitAlpha: settings.blEarlyExitAlpha,
+      onBlDensityScaleChange: withLayerKey(channelsPanel.onLayerBlDensityScaleChange),
+      onBlBackgroundCutoffChange: withLayerKey(channelsPanel.onLayerBlBackgroundCutoffChange),
+      onBlOpacityScaleChange: withLayerKey(channelsPanel.onLayerBlOpacityScaleChange),
+      onBlEarlyExitAlphaChange: withLayerKey(channelsPanel.onLayerBlEarlyExitAlphaChange),
+      onMipEarlyExitThresholdChange: withLayerKey(channelsPanel.onLayerMipEarlyExitThresholdChange)
+    };
+  }, [channelsPanel]);
 
   const { modeToggle, viewerSettings } = useViewerModeControls({
     modeControls,
@@ -365,6 +396,7 @@ function ViewerShell({
         onClose={closeViewerSettings}
         renderingQuality={renderingQuality}
         onRenderingQualityChange={handleRenderingQualityChange}
+        globalRenderControls={globalRenderControls}
       />
 
       <ChannelsPanel

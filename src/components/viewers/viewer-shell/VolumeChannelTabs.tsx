@@ -128,6 +128,9 @@ export default function VolumeChannelTabs({
             if (event.button === 1) {
               event.preventDefault();
               onChannelVisibilityToggle(channelId);
+              if (!isVisible) {
+                onChannelTabSelect(channelId);
+              }
             }
           };
 

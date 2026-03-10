@@ -17,11 +17,6 @@ const formatNormalizedIntensity = (value: number): string => {
   return fixed.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
 };
 
-const formatBlControlValue = (value: number): string => {
-  const fixed = value.toFixed(2);
-  return fixed.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
-};
-
 export type ChannelsPanelWindowProps = ChannelsPanelProps & {
   layout: Pick<LayoutProps, 'windowMargin' | 'controlWindowWidth' | 'layersWindowInitialPosition' | 'resetToken'>;
   isOpen: boolean;
@@ -34,14 +29,17 @@ export default function ChannelsPanel({
   onClose,
   isPlaying,
   loadedChannelIds,
+  channelNameMap,
+  channelVisibility,
   channelTintMap,
   activeChannelId,
+  onChannelReset,
+  onChannelVisibilityToggle,
   channelLayersMap,
   layerVolumesByKey,
   layerBrickAtlasesByKey,
   layerSettings,
   getLayerDefaultSettings,
-  onChannelReset,
   onLayerWindowMinChange,
   onLayerWindowMaxChange,
   onLayerBrightnessChange,
@@ -50,14 +48,11 @@ export default function ChannelsPanel({
   onLayerOffsetChange,
   onLayerColorChange,
   onLayerRenderStyleChange,
-  onLayerBlDensityScaleChange,
-  onLayerBlBackgroundCutoffChange,
-  onLayerBlOpacityScaleChange,
-  onLayerBlEarlyExitAlphaChange,
-  onLayerMipEarlyExitThresholdChange,
   onLayerInvertToggle
 }: ChannelsPanelWindowProps) {
   const { windowMargin, controlWindowWidth, layersWindowInitialPosition, resetToken } = layout;
+  const activeChannelLabel = activeChannelId ? channelNameMap.get(activeChannelId) ?? 'Untitled channel' : null;
+  const activeChannelVisible = activeChannelId ? (channelVisibility[activeChannelId] ?? true) : true;
 
   if (!isOpen) {
     return null;
@@ -75,6 +70,24 @@ export default function ChannelsPanel({
       <div className="sidebar sidebar-left">
         {loadedChannelIds.length > 0 ? (
           <div className="channel-controls">
+            {activeChannelLabel ? (
+              <div className="channel-current-row">
+                <span className="channel-current-title">{activeChannelLabel}</span>
+                <button
+                  type="button"
+                  className="channel-action-button channel-current-visibility-button"
+                  onClick={() => {
+                    if (!activeChannelId) {
+                      return;
+                    }
+                    onChannelVisibilityToggle(activeChannelId);
+                  }}
+                  title={activeChannelVisible ? 'Hide current channel' : 'Show current channel'}
+                >
+                  Hide/Show
+                </button>
+              </div>
+            ) : null}
             {loadedChannelIds.map((channelId) => {
               const channelLayers = channelLayersMap.get(channelId) ?? [];
               const selectedLayer = channelLayers[0] ?? null;
@@ -92,8 +105,6 @@ export default function ChannelsPanel({
               const normalizedColor = normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR);
               const displayColor = normalizedColor.toUpperCase();
               const isActive = channelId === activeChannelId;
-              const showMipControls = settings.renderStyle === RENDER_STYLE_MIP;
-              const showBlControls = settings.renderStyle === RENDER_STYLE_BL;
               const invertDisabled = sliderDisabled || Boolean(selectedLayer?.isSegmentation);
               const invertTitle = selectedLayer?.isSegmentation
                 ? 'Invert LUT is unavailable for segmentation volumes.'
@@ -294,103 +305,6 @@ export default function ChannelsPanel({
                           />
                         </div>
                       </div>
-                      {showMipControls ? (
-                        <div className="slider-control slider-control--pair">
-                          <div className="slider-control slider-control--inline">
-                            <label htmlFor={`layer-mip-early-exit-${selectedLayer.key}`}>
-                              MIP early exit <span>{formatNormalizedIntensity(settings.mipEarlyExitThreshold)}</span>
-                            </label>
-                            <input
-                              id={`layer-mip-early-exit-${selectedLayer.key}`}
-                              type="range"
-                              min={0}
-                              max={1}
-                              step={0.001}
-                              value={settings.mipEarlyExitThreshold}
-                              onChange={(event) =>
-                                onLayerMipEarlyExitThresholdChange(selectedLayer.key, Number(event.target.value))
-                              }
-                              disabled={sliderDisabled}
-                            />
-                          </div>
-                        </div>
-                      ) : null}
-                      {showBlControls ? (
-                        <>
-                          <div className="slider-control slider-control--pair">
-                            <div className="slider-control slider-control--inline">
-                              <label htmlFor={`layer-bl-density-${selectedLayer.key}`}>
-                                BL density <span>{formatBlControlValue(settings.blDensityScale)}</span>
-                              </label>
-                              <input
-                                id={`layer-bl-density-${selectedLayer.key}`}
-                                type="range"
-                                min={0}
-                                max={8}
-                                step={0.05}
-                                value={settings.blDensityScale}
-                                onChange={(event) =>
-                                  onLayerBlDensityScaleChange(selectedLayer.key, Number(event.target.value))
-                                }
-                                disabled={sliderDisabled}
-                              />
-                            </div>
-                            <div className="slider-control slider-control--inline">
-                              <label htmlFor={`layer-bl-background-cutoff-${selectedLayer.key}`}>
-                                BL cutoff <span>{formatNormalizedIntensity(settings.blBackgroundCutoff)}</span>
-                              </label>
-                              <input
-                                id={`layer-bl-background-cutoff-${selectedLayer.key}`}
-                                type="range"
-                                min={0}
-                                max={1}
-                                step={0.005}
-                                value={settings.blBackgroundCutoff}
-                                onChange={(event) =>
-                                  onLayerBlBackgroundCutoffChange(selectedLayer.key, Number(event.target.value))
-                                }
-                                disabled={sliderDisabled}
-                              />
-                            </div>
-                          </div>
-                          <div className="slider-control slider-control--pair">
-                            <div className="slider-control slider-control--inline">
-                              <label htmlFor={`layer-bl-opacity-${selectedLayer.key}`}>
-                                BL opacity <span>{formatBlControlValue(settings.blOpacityScale)}</span>
-                              </label>
-                              <input
-                                id={`layer-bl-opacity-${selectedLayer.key}`}
-                                type="range"
-                                min={0}
-                                max={8}
-                                step={0.05}
-                                value={settings.blOpacityScale}
-                                onChange={(event) =>
-                                  onLayerBlOpacityScaleChange(selectedLayer.key, Number(event.target.value))
-                                }
-                                disabled={sliderDisabled}
-                              />
-                            </div>
-                            <div className="slider-control slider-control--inline">
-                              <label htmlFor={`layer-bl-early-exit-${selectedLayer.key}`}>
-                                BL early exit <span>{formatNormalizedIntensity(settings.blEarlyExitAlpha)}</span>
-                              </label>
-                              <input
-                                id={`layer-bl-early-exit-${selectedLayer.key}`}
-                                type="range"
-                                min={0}
-                                max={1}
-                                step={0.005}
-                                value={settings.blEarlyExitAlpha}
-                                onChange={(event) =>
-                                  onLayerBlEarlyExitAlphaChange(selectedLayer.key, Number(event.target.value))
-                                }
-                                disabled={sliderDisabled}
-                              />
-                            </div>
-                          </div>
-                        </>
-                      ) : null}
                       {isGrayscale ? (
                         <div className="color-control">
                           <div className="color-control-header">

@@ -136,6 +136,20 @@ export type ChannelsPanelProps = VolumeChannelTabsProps & {
   onLayerInvertToggle: (layerKey: string) => void;
 };
 
+export type GlobalRenderControls = {
+  disabled: boolean;
+  mipEarlyExitThreshold: number;
+  blDensityScale: number;
+  blBackgroundCutoff: number;
+  blOpacityScale: number;
+  blEarlyExitAlpha: number;
+  onBlDensityScaleChange: (value: number) => void;
+  onBlBackgroundCutoffChange: (value: number) => void;
+  onBlOpacityScaleChange: (value: number) => void;
+  onBlEarlyExitAlphaChange: (value: number) => void;
+  onMipEarlyExitThresholdChange: (value: number) => void;
+};
+
 export type TrackSettingsProps = {
   isFullTrailEnabled: boolean;
   trailLength: number;

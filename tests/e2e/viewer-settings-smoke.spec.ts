@@ -49,6 +49,8 @@ test('@smoke viewer settings controls work after launch', async ({ page }) => {
   });
   await expect(fpsSlider).toHaveValue('12');
 
+  await expect(viewerSettingsWindow.getByLabel(/MIP early exit/)).toBeVisible();
+
   await page.getByRole('button', { name: 'Close Render settings window' }).evaluate((element) => {
     (element as HTMLButtonElement).click();
   });

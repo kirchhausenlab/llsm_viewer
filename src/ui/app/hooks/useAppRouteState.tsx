@@ -129,6 +129,11 @@ export function useAppRouteState(): AppRouteState {
     setGlobalRenderStyle,
     globalSamplingMode,
     setGlobalSamplingMode,
+    setGlobalBlDensityScale,
+    setGlobalBlBackgroundCutoff,
+    setGlobalBlOpacityScale,
+    setGlobalBlEarlyExitAlpha,
+    setGlobalMipEarlyExitThreshold,
     createLayerDefaultSettings,
     createLayerDefaultBrightnessState,
   } = useChannelLayerStateContext();
@@ -963,7 +968,12 @@ export function useAppRouteState(): AppRouteState {
     loadedChannelIds,
     setActiveChannelTabId,
     setGlobalRenderStyle,
-    setGlobalSamplingMode
+    setGlobalSamplingMode,
+    setGlobalBlDensityScale,
+    setGlobalBlBackgroundCutoff,
+    setGlobalBlOpacityScale,
+    setGlobalBlEarlyExitAlpha,
+    setGlobalMipEarlyExitThreshold
   });
   const zSliderMax = useMemo(() => {
     let depth = 1;

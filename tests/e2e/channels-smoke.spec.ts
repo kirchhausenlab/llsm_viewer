@@ -12,6 +12,7 @@ test('@smoke channels panel controls work after launch', async ({ page }) => {
 
   const channelsWindow = page.locator('.floating-window--channels');
   await expect(channelsWindow.getByRole('heading', { name: 'Channels' })).toBeVisible();
+  await expect(channelsWindow.getByRole('button', { name: 'Hide/Show' })).toBeVisible();
 
   const invertButton = channelsWindow.getByRole('button', { name: 'Invert' });
   await expect(invertButton).toHaveAttribute('aria-pressed', 'false');

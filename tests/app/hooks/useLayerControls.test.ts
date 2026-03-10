@@ -86,6 +86,11 @@ const createAtlas = (timepoint: number, scaleLevel = 1): VolumeBrickAtlas => ({
       setActiveChannelTabId: () => {},
       setGlobalRenderStyle: () => {},
       setGlobalSamplingMode: () => {},
+      setGlobalBlDensityScale: () => {},
+      setGlobalBlBackgroundCutoff: () => {},
+      setGlobalBlOpacityScale: () => {},
+      setGlobalBlEarlyExitAlpha: () => {},
+      setGlobalMipEarlyExitThreshold: () => {},
     })
   );
 
