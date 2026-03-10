@@ -2469,7 +2469,11 @@ function applyBrickPageTableUniforms(
   }
 
   const atlasTokenPageTable = resolveAtlasTokenPageTable(options?.atlasDataToken);
-  const resolvedPageTable = atlasTokenPageTable ?? pageTable ?? failBrickSkipping('missing-page-table');
+  const resolvedPageTable = atlasTokenPageTable ?? pageTable ?? null;
+  if (!resolvedPageTable) {
+    disableBrickPageTableUniforms('missing-page-table');
+    return;
+  }
   if (
     atlasTokenPageTable &&
     pageTable &&
