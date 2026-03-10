@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import { useWindowLayout } from '../../../src/ui/app/hooks/useWindowLayout.ts';
 import {
   computeLayersWindowDefaultPosition,
+  computePaintbrushWindowRecenterPosition,
   computePlotSettingsWindowDefaultPosition,
-  computePropsWindowDefaultPosition,
+  computePropsWindowRecenterPosition,
   computeSelectedTracksWindowDefaultPosition,
+  computeTrackSettingsWindowRecenterPosition,
   computeTrackWindowDefaultPosition,
   computeViewerSettingsWindowDefaultPosition
 } from '../../../src/shared/utils/windowLayout.ts';
@@ -30,8 +32,9 @@ console.log('Starting useWindowLayout tests');
 
   assert.strictEqual(hook.result.layoutResetToken, 1);
   assert.deepStrictEqual(hook.result.layersWindowInitialPosition, computeLayersWindowDefaultPosition());
-  assert.deepStrictEqual(hook.result.propsWindowInitialPosition, computePropsWindowDefaultPosition());
+  assert.deepStrictEqual(hook.result.propsWindowInitialPosition, computePropsWindowRecenterPosition());
   assert.deepStrictEqual(hook.result.trackWindowInitialPosition, computeTrackWindowDefaultPosition());
+  assert.deepStrictEqual(hook.result.paintbrushWindowInitialPosition, computePaintbrushWindowRecenterPosition());
   assert.deepStrictEqual(
     hook.result.viewerSettingsWindowInitialPosition,
     computeViewerSettingsWindowDefaultPosition()
@@ -41,6 +44,10 @@ console.log('Starting useWindowLayout tests');
     computeSelectedTracksWindowDefaultPosition()
   );
   assert.deepStrictEqual(hook.result.plotSettingsWindowInitialPosition, computePlotSettingsWindowDefaultPosition());
+  assert.deepStrictEqual(
+    hook.result.trackSettingsWindowInitialPosition,
+    computeTrackSettingsWindowRecenterPosition()
+  );
 
   globalThis.window = originalWindow;
 })();

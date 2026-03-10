@@ -6,7 +6,7 @@
     radial-gradient(120% 120% at 20% 20%, rgba(91, 140, 255, 0.08), transparent 45%),
     radial-gradient(110% 140% at 80% 5%, rgba(143, 92, 255, 0.08), transparent 40%),
     linear-gradient(165deg, #0f1726 0%, #0b101c 60%, #090c14 100%);
-  overflow-x: hidden;
+  overflow: hidden;
 }
 
 .app.front-page-mode {
@@ -15,6 +15,7 @@
     radial-gradient(110% 140% at 82% 8%, rgba(143, 92, 255, 0.12), transparent 36%),
     linear-gradient(160deg, #131c2d 0%, #0d1422 55%, #0a0f19 100%);
   color: rgba(255, 255, 255, 0.95);
+  overflow-x: hidden;
   overflow-y: auto;
 }
 

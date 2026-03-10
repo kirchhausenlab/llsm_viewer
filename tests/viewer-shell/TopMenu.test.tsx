@@ -167,6 +167,11 @@ function createProps(overrides: Partial<React.ComponentProps<typeof TopMenu>> = 
     activeChannelId: null,
     onChannelTabSelect: () => {},
     onChannelVisibilityToggle: () => {},
+    trackSets: [],
+    trackHeadersByTrackSet: new Map(),
+    activeTrackSetId: null,
+    trackColorModesByTrackSet: {},
+    onTrackSetTabSelect: () => {},
     ...overrides
   };
 }
@@ -377,6 +382,43 @@ test('wired dropdown items invoke the expected handlers', () => {
     assert.equal(trackSettingsCalls, 1);
     assert.equal(diagnosticsCalls, 1);
     assert.equal(helpCalls, 1);
+
+    renderer.unmount();
+  });
+});
+
+test('top menu renders and switches track tabs', () => {
+  withEnvironmentMocks(() => {
+    const selectedTrackSetIds: string[] = [];
+    const renderer = renderTopMenu({
+      trackSets: [
+        { id: 'set-a', name: 'Tracks A' },
+        { id: 'set-b', name: 'Tracks B' }
+      ],
+      trackHeadersByTrackSet: new Map([
+        ['set-a', { totalTracks: 12 }],
+        ['set-b', { totalTracks: 8 }]
+      ]),
+      activeTrackSetId: 'set-a',
+      onTrackSetTabSelect: (trackSetId) => {
+        selectedTrackSetIds.push(trackSetId);
+      }
+    });
+
+    const trackTab = renderer.root.findAll(
+      (node) =>
+        node.type === 'button' &&
+        node.props.role === 'tab' &&
+        node.props.id === 'top-menu-track-tab-set-b'
+    )[0];
+
+    assert.ok(trackTab);
+
+    act(() => {
+      trackTab.props.onClick({ button: 0 });
+    });
+
+    assert.deepEqual(selectedTrackSetIds, ['set-b']);
 
     renderer.unmount();
   });

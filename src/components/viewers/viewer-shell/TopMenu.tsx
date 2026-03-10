@@ -12,6 +12,7 @@ import {
 import type { TopMenuProps } from './types';
 import ThemeModeToggle from '../../app/ThemeModeToggle';
 import VolumeChannelTabs from './VolumeChannelTabs';
+import VolumeTrackTabs from './VolumeTrackTabs';
 import { formatCompactChannelLabel } from './channelLabel';
 import { isLightHexColor } from '../../../shared/utils/appHelpers';
 
@@ -67,6 +68,11 @@ export default function TopMenu(props: TopMenuProps) {
     activeChannelId,
     onChannelTabSelect,
     onChannelVisibilityToggle,
+    trackSets,
+    trackHeadersByTrackSet,
+    activeTrackSetId,
+    trackColorModesByTrackSet,
+    onTrackSetTabSelect,
     hoverCoordinateDigits,
     hoverIntensityValueDigits,
     followedTrackSetId,
@@ -491,15 +497,6 @@ export default function TopMenu(props: TopMenuProps) {
         </div>
         <div className="viewer-top-menu-strip viewer-top-menu-strip--secondary">
           <div className="viewer-top-menu-strip-left viewer-top-menu-strip-left--secondary">
-            <VolumeChannelTabs
-              loadedChannelIds={loadedChannelIds}
-              channelNameMap={channelNameMap}
-              channelVisibility={channelVisibility}
-              channelTintMap={channelTintMap}
-              activeChannelId={activeChannelId}
-              onChannelTabSelect={onChannelTabSelect}
-              onChannelVisibilityToggle={onChannelVisibilityToggle}
-            />
             <div className="viewer-top-menu-strip-center viewer-top-menu-strip-center--secondary">
               <div className="viewer-top-menu-secondary-group viewer-top-menu-secondary-group--playback">
                 <button
@@ -560,6 +557,24 @@ export default function TopMenu(props: TopMenuProps) {
                   </span>
                 </label>
               </div>
+            </div>
+            <div className="viewer-top-menu-tab-widgets">
+              <VolumeChannelTabs
+                loadedChannelIds={loadedChannelIds}
+                channelNameMap={channelNameMap}
+                channelVisibility={channelVisibility}
+                channelTintMap={channelTintMap}
+                activeChannelId={activeChannelId}
+                onChannelTabSelect={onChannelTabSelect}
+                onChannelVisibilityToggle={onChannelVisibilityToggle}
+              />
+              <VolumeTrackTabs
+                trackSets={trackSets}
+                trackHeadersByTrackSet={trackHeadersByTrackSet}
+                activeTrackSetId={activeTrackSetId}
+                trackColorModesByTrackSet={trackColorModesByTrackSet}
+                onTrackSetTabSelect={onTrackSetTabSelect}
+              />
             </div>
           </div>
           <div className="viewer-top-menu-strip-right viewer-top-menu-strip-right--secondary">

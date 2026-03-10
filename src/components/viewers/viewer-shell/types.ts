@@ -39,8 +39,20 @@ export type VolumeChannelTabsProps = {
   onChannelVisibilityToggle: (channelId: string) => void;
 };
 
+export type VolumeTrackTabsProps = {
+  trackSets: Array<{
+    id: string;
+    name: string;
+  }>;
+  trackHeadersByTrackSet: Map<string, { totalTracks: number }>;
+  activeTrackSetId: string | null;
+  trackColorModesByTrackSet: Record<string, TrackColorMode>;
+  onTrackSetTabSelect: (trackSetId: string) => void;
+};
+
 export type TopMenuProps = TopMenuChromeProps &
-  VolumeChannelTabsProps & {
+  VolumeChannelTabsProps &
+  VolumeTrackTabsProps & {
     hoverCoordinateDigits: {
       x: number;
       y: number;

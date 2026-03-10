@@ -79,40 +79,20 @@ function FloatingWindow({
       }
 
       const rect = container.getBoundingClientRect();
-      const headerHeight = header?.getBoundingClientRect().height ?? rect.height;
-      const width = options?.width ?? rect.width;
-      const height = options?.height ?? (isMinimized ? headerHeight : rect.height);
-      const viewportWidth = window.innerWidth;
-      const viewportHeight = window.innerHeight;
       const reservedTop = getReservedTopBoundary();
+      const minY = Math.max(WINDOW_MARGIN, reservedTop);
 
       if (options?.anchorOffset) {
-        const anchorX = x + options.anchorOffset.x;
         const anchorY = y + options.anchorOffset.y;
-
-        const clampedAnchorX = Math.min(
-          Math.max(WINDOW_MARGIN, anchorX),
-          viewportWidth - WINDOW_MARGIN
-        );
-        const clampedAnchorY = Math.min(
-          Math.max(reservedTop, anchorY),
-          viewportHeight - WINDOW_MARGIN
-        );
+        const clampedAnchorY = Math.max(minY, anchorY);
 
         return {
-          x: clampedAnchorX - options.anchorOffset.x,
+          x,
           y: clampedAnchorY - options.anchorOffset.y
         };
       }
 
-      const minX = Math.min(WINDOW_MARGIN, Math.max(0, viewportWidth - width));
-      const minY = Math.max(WINDOW_MARGIN, reservedTop);
-      const maxX = Math.max(minX, viewportWidth - width - WINDOW_MARGIN);
-      const maxY = Math.max(minY, viewportHeight - height - WINDOW_MARGIN);
-
-      const clampedX = Math.min(Math.max(minX, x), maxX);
-      const clampedY = Math.min(Math.max(minY, y), maxY);
-      return { x: clampedX, y: clampedY };
+      return { x, y: Math.max(minY, y) };
     },
     [isMinimized]
   );

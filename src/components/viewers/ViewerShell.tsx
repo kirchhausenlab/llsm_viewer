@@ -259,6 +259,11 @@ function ViewerShell({
       activeChannelId: channelsPanel.activeChannelId,
       onChannelTabSelect: channelsPanel.onChannelTabSelect,
       onChannelVisibilityToggle: channelsPanel.onChannelVisibilityToggle,
+      trackSets: tracksPanel.trackSets,
+      trackHeadersByTrackSet: tracksPanel.trackHeadersByTrackSet,
+      activeTrackSetId: tracksPanel.activeTrackSetId,
+      trackColorModesByTrackSet: tracksPanel.trackColorModesByTrackSet,
+      onTrackSetTabSelect: tracksPanel.onTrackSetTabSelect,
       hoverCoordinateDigits,
       hoverIntensityValueDigits
     }),
@@ -276,6 +281,7 @@ function ViewerShell({
       openTracksWindow,
       openViewerSettings,
       playbackState,
+      tracksPanel,
       topMenu
     ]
   );

@@ -3,10 +3,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
   computeLayersWindowDefaultPosition,
+  computePaintbrushWindowRecenterPosition,
   computePaintbrushWindowDefaultPosition,
   computePlotSettingsWindowDefaultPosition,
+  computePropsWindowRecenterPosition,
   computePropsWindowDefaultPosition,
   computeSelectedTracksWindowDefaultPosition,
+  computeTrackSettingsWindowRecenterPosition,
   computeTrackSettingsWindowDefaultPosition,
   computeTrackWindowDefaultPosition,
   computeViewerSettingsWindowDefaultPosition,
@@ -103,13 +106,13 @@ export function useWindowLayout(): UseWindowLayoutResult {
 
   const resetLayout = useCallback(() => {
     setLayoutResetToken(nextLayoutResetToken);
-    setPropsWindowInitialPosition(computePropsWindowDefaultPosition());
+    setPropsWindowInitialPosition(computePropsWindowRecenterPosition());
     setTrackWindowInitialPosition(computeTrackWindowDefaultPosition());
-    setPaintbrushWindowInitialPosition(computePaintbrushWindowDefaultPosition());
+    setPaintbrushWindowInitialPosition(computePaintbrushWindowRecenterPosition());
     setViewerSettingsWindowInitialPosition(computeViewerSettingsWindowDefaultPosition());
     setSelectedTracksWindowInitialPosition(computeSelectedTracksWindowDefaultPosition());
     setPlotSettingsWindowInitialPosition(computePlotSettingsWindowDefaultPosition());
-    setTrackSettingsWindowInitialPosition(computeTrackSettingsWindowDefaultPosition());
+    setTrackSettingsWindowInitialPosition(computeTrackSettingsWindowRecenterPosition());
   }, []);
 
   return {
