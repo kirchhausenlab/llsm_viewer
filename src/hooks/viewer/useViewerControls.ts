@@ -1,25 +1,19 @@
 import type React from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import useVrLifecycle from './useVrLifecycle';
 import { useViewerPlayback, type ViewerPlaybackHook } from './useViewerPlayback';
 
-export type ViewerMode = '3d' | '2d';
+export type ViewerMode = '3d';
 
 export type UseViewerControlsParams = {
   playback?: ViewerPlaybackHook;
-  initialViewerMode?: ViewerMode;
   is3dViewerAvailable: boolean;
-  maxSliceDepth: number;
   onBeforeEnterVr: () => void;
-  onViewerModeToggle?: (nextMode: ViewerMode) => void;
 };
 
 export type UseViewerControlsResult = {
   viewerMode: ViewerMode;
   setViewerMode: React.Dispatch<React.SetStateAction<ViewerMode>>;
-  toggleViewerMode: () => void;
-  sliceIndex: number;
-  handleSliceIndexChange: (index: number) => void;
   playback: ViewerPlaybackHook;
   vr: ReturnType<typeof useVrLifecycle> & {
     vrButtonDisabled: boolean;
@@ -30,66 +24,14 @@ export type UseViewerControlsResult = {
 
 export const useViewerControls = ({
   playback: providedPlayback,
-  initialViewerMode = '3d',
   is3dViewerAvailable,
-  maxSliceDepth,
-  onBeforeEnterVr,
-  onViewerModeToggle
+  onBeforeEnterVr
 }: UseViewerControlsParams): UseViewerControlsResult => {
   const playback = providedPlayback ?? useViewerPlayback();
 
-  const [viewerMode, setViewerMode] = useState<ViewerMode>(initialViewerMode);
-  const [sliceIndex, setSliceIndex] = useState(0);
-  const hasInitializedSliceIndexRef = useRef(false);
+  const [viewerMode, setViewerMode] = useState<ViewerMode>('3d');
 
-  useEffect(() => {
-    if (!is3dViewerAvailable && viewerMode === '3d') {
-      setViewerMode('2d');
-    }
-  }, [is3dViewerAvailable, viewerMode]);
-
-  useEffect(() => {
-    if (hasInitializedSliceIndexRef.current) {
-      return;
-    }
-    if (maxSliceDepth > 0) {
-      const middleIndex = Math.floor(maxSliceDepth / 2);
-      setSliceIndex(middleIndex);
-      hasInitializedSliceIndexRef.current = true;
-    }
-  }, [maxSliceDepth]);
-
-  useEffect(() => {
-    if (maxSliceDepth <= 0) {
-      if (sliceIndex !== 0) {
-        setSliceIndex(0);
-      }
-      return;
-    }
-    if (sliceIndex >= maxSliceDepth) {
-      setSliceIndex(maxSliceDepth - 1);
-    }
-    if (sliceIndex < 0) {
-      setSliceIndex(0);
-    }
-  }, [maxSliceDepth, sliceIndex]);
-
-  const toggleViewerMode = useCallback(() => {
-    if (!is3dViewerAvailable) {
-      return;
-    }
-    setViewerMode((current) => {
-      const nextMode: ViewerMode = current === '3d' ? '2d' : '3d';
-      onViewerModeToggle?.(nextMode);
-      return nextMode;
-    });
-  }, [is3dViewerAvailable, onViewerModeToggle]);
-
-  const handleSliceIndexChange = useCallback((index: number) => {
-    setSliceIndex(index);
-  }, []);
-
-  const vrLifecycle = useVrLifecycle({ viewerMode, onBeforeEnter: onBeforeEnterVr });
+  const vrLifecycle = useVrLifecycle({ onBeforeEnter: onBeforeEnterVr });
 
   const handleVrButtonClick = useCallback(() => {
     if (vrLifecycle.isVrActive) {
@@ -120,9 +62,6 @@ export const useViewerControls = ({
     if (!vrLifecycle.isVrSupported) {
       return 'WebXR immersive VR is not supported in this browser.';
     }
-    if (viewerMode !== '3d') {
-      return 'Switch to the 3D view to enable VR.';
-    }
     if (!vrLifecycle.hasVrSessionHandlers) {
       return 'Viewer is still initializing.';
     }
@@ -136,16 +75,12 @@ export const useViewerControls = ({
     vrLifecycle.isVrActive,
     vrLifecycle.isVrRequesting,
     vrLifecycle.isVrSupportChecked,
-    vrLifecycle.isVrSupported,
-    viewerMode
+    vrLifecycle.isVrSupported
   ]);
 
   return {
     viewerMode,
     setViewerMode,
-    toggleViewerMode,
-    sliceIndex,
-    handleSliceIndexChange,
     playback,
     vr: {
       ...vrLifecycle,

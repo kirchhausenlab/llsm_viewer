@@ -6,8 +6,6 @@ import type { VolumeDataType, VolumeTypedArray } from '../types/volume';
 import { getBytesPerValue } from '../types/volume';
 import type {
   VolumeLoadedMessage,
-  VolumeSliceMessage,
-  VolumeStartMessage,
   VolumeWorkerCompleteMessage,
   VolumeWorkerErrorMessage
 } from './volumeLoaderMessages';
@@ -159,13 +157,7 @@ async function loadVolumeFromFile(
     });
   }
 
-  const startMessage: VolumeStartMessage = {
-    type: 'volume-start',
-    requestId,
-    index,
-    metadata: { width, height, depth: imageCount, channels, dataType, bytesPerValue }
-  };
-  ctx.postMessage(startMessage);
+  const volumeValues = createWritableArray(dataType, totalValues);
 
   let globalMin = Number.POSITIVE_INFINITY;
   let globalMax = Number.NEGATIVE_INFINITY;
@@ -174,15 +166,15 @@ async function loadVolumeFromFile(
     throw new Error(`File "${file.name}" returned an unexpected slice length.`);
   }
 
-  scanAndPostSlice(typedFirstRaster, 0);
+  scanAndCopySlice(typedFirstRaster, 0);
 
-  for (let index = 1; index < imageCount; index += 1) {
-    const image = await tiff.getImage(index);
+  for (let sliceIndex = 1; sliceIndex < imageCount; sliceIndex += 1) {
+    const image = await tiff.getImage(sliceIndex);
     if (image.getWidth() !== width || image.getHeight() !== height) {
-      throw new Error(`Slice ${index + 1} in file "${file.name}" has mismatched dimensions.`);
+      throw new Error(`Slice ${sliceIndex + 1} in file "${file.name}" has mismatched dimensions.`);
     }
     if (image.getSamplesPerPixel() !== channels) {
-      throw new Error(`Slice ${index + 1} in file "${file.name}" has a different channel count.`);
+      throw new Error(`Slice ${sliceIndex + 1} in file "${file.name}" has a different channel count.`);
     }
 
     const rasterRaw = (await image.readRasters({ interleave: true })) as unknown;
@@ -190,12 +182,12 @@ async function loadVolumeFromFile(
       throw new Error(`File "${file.name}" does not provide raster data as a typed array.`);
     }
 
-    const raster = ensureTypedArray(rasterRaw as SupportedTypedArray, dataType, file.name, index);
+    const raster = ensureTypedArray(rasterRaw as SupportedTypedArray, dataType, file.name, sliceIndex);
     if (raster.length !== sliceLength) {
-      throw new Error(`Slice ${index + 1} in file "${file.name}" returned an unexpected slice length.`);
+      throw new Error(`Slice ${sliceIndex + 1} in file "${file.name}" returned an unexpected slice length.`);
     }
 
-    scanAndPostSlice(raster, index);
+    scanAndCopySlice(raster, sliceIndex);
   }
 
   if (!Number.isFinite(globalMin) || globalMin === Number.POSITIVE_INFINITY) {
@@ -219,11 +211,12 @@ async function loadVolumeFromFile(
       dataType,
       min: globalMin,
       max: globalMax
-    }
+    },
+    buffer: toTransferableBuffer(volumeValues)
   };
-  ctx.postMessage(loadedMessage);
+  ctx.postMessage(loadedMessage, [loadedMessage.buffer]);
 
-  function scanAndPostSlice(array: SupportedTypedArray, sliceIndex: number) {
+  function scanAndCopySlice(array: SupportedTypedArray, sliceIndex: number) {
     let sliceMin = Number.POSITIVE_INFINITY;
     let sliceMax = Number.NEGATIVE_INFINITY;
 
@@ -246,17 +239,32 @@ async function loadVolumeFromFile(
     if (Number.isFinite(sliceMax) && sliceMax > globalMax) {
       globalMax = sliceMax;
     }
+    volumeValues.set(array, sliceIndex * sliceLength);
+  }
+}
 
-    const transferable = toTransferableBuffer(array);
-    const message: VolumeSliceMessage = {
-      type: 'volume-slice',
-      requestId,
-      index,
-      sliceIndex,
-      sliceCount: imageCount,
-      buffer: transferable
-    };
-    ctx.postMessage(message, [transferable]);
+function createWritableArray(dataType: VolumeDataType, length: number): SupportedTypedArray {
+  switch (dataType) {
+    case 'uint8':
+      return new Uint8Array(length);
+    case 'int8':
+      return new Int8Array(length);
+    case 'uint16':
+      return new Uint16Array(length);
+    case 'int16':
+      return new Int16Array(length);
+    case 'uint32':
+      return new Uint32Array(length);
+    case 'int32':
+      return new Int32Array(length);
+    case 'float32':
+      return new Float32Array(length);
+    case 'float64':
+      return new Float64Array(length);
+    default: {
+      const exhaustiveCheck: never = dataType;
+      throw new Error(`Unsupported volume data type: ${exhaustiveCheck}`);
+    }
   }
 }
 

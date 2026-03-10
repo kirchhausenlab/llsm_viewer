@@ -1,15 +1,15 @@
 import * as THREE from 'three';
 import { clearHistogramCache } from '../autoContrast';
-import type { NormalizedVolume } from './volumeProcessing';
+import type { IntensityVolume } from './volumeProcessing';
 
 export type PreparedTexture = {
   data: Uint8Array;
   format: THREE.Data3DTexture['format'];
 };
 
-let cache = new WeakMap<NormalizedVolume, PreparedTexture>();
+let cache = new WeakMap<IntensityVolume, PreparedTexture>();
 
-function computeTextureData(volume: NormalizedVolume): PreparedTexture {
+function computeTextureData(volume: IntensityVolume): PreparedTexture {
   const { normalized, width, height, depth, channels } = volume;
   const voxelCount = width * height * depth;
 
@@ -24,12 +24,6 @@ function computeTextureData(volume: NormalizedVolume): PreparedTexture {
   }
 
   if (channels === 3) {
-    const runtimeRgbFormat = (THREE as unknown as { RGBFormat?: unknown }).RGBFormat;
-    if (typeof runtimeRgbFormat === 'number') {
-      const data = isTightlyPacked ? normalized : normalized.slice();
-      return { data, format: runtimeRgbFormat as PreparedTexture['format'] };
-    }
-
     const packed = new Uint8Array(voxelCount * 4);
     for (let index = 0; index < voxelCount; index++) {
       const srcBase = index * 3;
@@ -76,7 +70,7 @@ function computeTextureData(volume: NormalizedVolume): PreparedTexture {
   return { data: packed, format: THREE.RGBAFormat };
 }
 
-export function getCachedTextureData(volume: NormalizedVolume): PreparedTexture {
+export function getCachedTextureData(volume: IntensityVolume): PreparedTexture {
   const cached = cache.get(volume);
   if (cached) {
     return cached;
@@ -87,6 +81,6 @@ export function getCachedTextureData(volume: NormalizedVolume): PreparedTexture 
 }
 
 export function clearTextureCache() {
-  cache = new WeakMap<NormalizedVolume, PreparedTexture>();
+  cache = new WeakMap<IntensityVolume, PreparedTexture>();
   clearHistogramCache();
 }

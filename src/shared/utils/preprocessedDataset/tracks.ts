@@ -1,78 +1,111 @@
+import type {
+  CompiledTrackSet,
+  CompiledTrackSetHeader,
+  CompiledTrackSetPayload,
+  CompiledTrackSetSummary,
+  CompiledTrackSummary
+} from '../../../types/tracks';
+import {
+  decodeCompiledTrackSetPayload,
+  buildCompiledTrackSetHeader,
+  encodeCompiledTrackCatalog,
+  encodeCompiledTrackSetPayload,
+  parseCompiledTrackCatalogBytes
+} from '../compiledTracks';
 import type { PreprocessedTracksDescriptor } from './types';
 
-const textEncoder = new TextEncoder();
-const textDecoder = new TextDecoder();
-
-export function createTracksDescriptor(path: string): PreprocessedTracksDescriptor {
-  return { path, format: 'csv', columns: 8, decimalPlaces: 3 };
+function createTrackArtifactBasePath(trackSetId: string): string {
+  return `tracks/${encodeURIComponent(trackSetId)}`;
 }
 
-function trimTrailingZeros(value: string): string {
-  const trimmed = value.replace(/(?:\.0+|(\.\d+?)0+)$/, '$1');
-  if (trimmed === '-0') {
-    return '0';
-  }
-  return trimmed;
-}
-
-function capDecimalStringToPlaces(raw: string, places: number): string {
-  const value = raw.trim();
-  const match = /^-?\d+\.(\d+)$/.exec(value);
-  if (!match) {
-    return value;
-  }
-  const fractional = match[1] ?? '';
-  if (fractional.length <= places) {
-    return value;
-  }
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return value;
-  }
-  return trimTrailingZeros(numeric.toFixed(places));
-}
-
-export function serializeTrackEntriesToCsvBytes(
-  entries: string[][],
-  options?: { decimalPlaces?: number }
-): Uint8Array {
-  const decimalPlaces = options?.decimalPlaces ?? 3;
-  if (!Number.isFinite(decimalPlaces) || decimalPlaces < 0) {
-    throw new Error(`Invalid decimal place cap: ${String(decimalPlaces)}`);
-  }
-
-  const lines: string[] = [];
-  for (const row of entries) {
-    if (row.length === 0) {
-      continue;
+export function createTracksDescriptor(
+  trackSetId: string,
+  summary: CompiledTrackSetSummary
+): PreprocessedTracksDescriptor {
+  const basePath = createTrackArtifactBasePath(trackSetId);
+  return {
+    format: 'compiled-v3',
+    header: buildCompiledTrackSetHeader(summary),
+    catalog: {
+      path: `${basePath}/catalog.bin`,
+      format: 'binary',
+      version: 1,
+      strideBytes: 52,
+      count: summary.totalTracks
+    },
+    pointData: {
+      path: `${basePath}/points.bin`,
+      format: 'float32',
+      stride: 5,
+      count: summary.totalPoints
+    },
+    segmentPositions: {
+      path: `${basePath}/segment-positions.bin`,
+      format: 'float32',
+      stride: 6,
+      count: summary.totalSegments
+    },
+    segmentTimes: {
+      path: `${basePath}/segment-times.bin`,
+      format: 'float32',
+      stride: 2,
+      count: summary.totalSegments
+    },
+    segmentTrackIndices: {
+      path: `${basePath}/segment-track-indices.bin`,
+      format: 'uint32',
+      stride: 1,
+      count: summary.totalSegments
+    },
+    centroidData: {
+      path: `${basePath}/centroids.bin`,
+      format: 'float32',
+      stride: 4,
+      count: summary.totalCentroids
     }
-    if (row.length !== 8) {
-      throw new Error('Track CSV rows must contain exactly 8 columns.');
-    }
-    const capped = row.map((value) => capDecimalStringToPlaces(value, decimalPlaces));
-    lines.push(capped.join(','));
-  }
-  const csv = `${lines.join('\n')}${lines.length > 0 ? '\n' : ''}`;
-  return textEncoder.encode(csv);
+  };
 }
 
-export function parseTrackEntriesFromCsvBytes(bytes: Uint8Array): string[][] {
-  const contents = textDecoder.decode(bytes);
-  const lines = contents.split(/\r?\n/);
-  const rows: string[][] = [];
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line) {
-      continue;
-    }
-    const columns = line.split(',');
-    if (columns.length !== 8) {
-      throw new Error('Track CSV payload must contain exactly 8 comma-separated columns per row.');
-    }
-    rows.push(columns.map((value) => value.trim()));
-  }
-
-  return rows;
+export function encodeCompiledTrackSetFiles(compiled: CompiledTrackSet): {
+  catalogBytes: Uint8Array;
+  pointBytes: Uint8Array;
+  segmentPositionBytes: Uint8Array;
+  segmentTimeBytes: Uint8Array;
+  segmentTrackIndexBytes: Uint8Array;
+  centroidBytes: Uint8Array;
+} {
+  const encodedPayload = encodeCompiledTrackSetPayload(compiled.payload);
+  return {
+    catalogBytes: encodeCompiledTrackCatalog(compiled.summary.tracks),
+    pointBytes: encodedPayload.pointBytes,
+    segmentPositionBytes: encodedPayload.segmentPositionBytes,
+    segmentTimeBytes: encodedPayload.segmentTimeBytes,
+    segmentTrackIndexBytes: encodedPayload.segmentTrackIndexBytes,
+    centroidBytes: encodedPayload.centroidBytes
+  };
 }
 
+export function parseCompiledTrackSetCatalogFromBytes(
+  bytes: Uint8Array,
+  header: CompiledTrackSetHeader,
+  options?: {
+    trackSetName?: string;
+    channelId?: string | null;
+    channelName?: string | null;
+  }
+): CompiledTrackSummary[] {
+  return parseCompiledTrackCatalogBytes(bytes, header, options);
+}
+
+export function decodeCompiledTrackSetPayloadFromBytes(
+  header: CompiledTrackSetHeader,
+  encoded: {
+    pointBytes: Uint8Array;
+    segmentPositionBytes: Uint8Array;
+    segmentTimeBytes: Uint8Array;
+    segmentTrackIndexBytes: Uint8Array;
+    centroidBytes: Uint8Array;
+  }
+): CompiledTrackSetPayload {
+  return decodeCompiledTrackSetPayload(header, encoded);
+}

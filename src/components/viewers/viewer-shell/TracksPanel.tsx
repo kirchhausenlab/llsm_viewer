@@ -1,4 +1,4 @@
-import type { CSSProperties, MouseEvent } from 'react';
+import { useEffect, useMemo, type CSSProperties, type MouseEvent } from 'react';
 
 import {
   TRACK_COLOR_SWATCHES,
@@ -6,6 +6,8 @@ import {
   normalizeTrackColor
 } from '../../../shared/colorMaps/trackColors';
 import { applyAlphaToHex } from '../../../shared/utils/appHelpers';
+import { resolveTrackVisibilityForState } from '../../../shared/utils/trackVisibilityState';
+import { createDefaultTrackSetState } from '../../../hooks/tracks/useTrackStyling';
 import FloatingWindow from '../../widgets/FloatingWindow';
 import TrackSettingsWindow from '../../widgets/TrackSettingsWindow';
 import type { LayoutProps, TrackDefaults, TrackSettingsProps, TracksPanelProps } from './types';
@@ -15,20 +17,25 @@ export type TracksPanelWindowProps = TracksPanelProps & {
     LayoutProps,
     'windowMargin' | 'controlWindowWidth' | 'trackWindowInitialPosition' | 'trackSettingsWindowInitialPosition' | 'resetToken'
   >;
+  isOpen: boolean;
+  onClose: () => void;
   trackDefaults: TrackDefaults;
   trackSettings: TrackSettingsProps;
   isTrackSettingsOpen: boolean;
-  onToggleTrackSettings: () => void;
   onCloseTrackSettings: () => void;
   hasTrackData: boolean;
 };
 
 export default function TracksPanel({
   layout,
+  isOpen,
+  onClose,
   hasTrackData,
   trackSets,
+  trackHeadersByTrackSet,
   activeTrackSetId,
   onTrackSetTabSelect,
+  onRequireTrackCatalog,
   parsedTracksByTrackSet,
   filteredTracksByTrackSet,
   minimumTrackLength,
@@ -39,12 +46,10 @@ export default function TracksPanel({
   trackColorModesByTrackSet,
   trackOpacityByTrackSet,
   trackLineWidthByTrackSet,
-  trackSummaryByTrackSet,
-  followedTrackSetId,
+  trackSetStates,
   followedTrackId,
   onTrackOrderToggle,
   trackOrderModeByTrackSet,
-  trackVisibility,
   onTrackVisibilityToggle,
   onTrackVisibilityAllChange,
   onTrackOpacityChange,
@@ -58,7 +63,6 @@ export default function TracksPanel({
   trackDefaults,
   trackSettings,
   isTrackSettingsOpen,
-  onToggleTrackSettings,
   onCloseTrackSettings
 }: TracksPanelWindowProps) {
   const {
@@ -69,9 +73,44 @@ export default function TracksPanel({
     resetToken
   } = layout;
 
-  const selectedTrackOrderMap = new Map(selectedTrackOrder.map((trackId, index) => [trackId, index]));
+  useEffect(() => {
+    if (!isOpen || !activeTrackSetId) {
+      return;
+    }
+    if ((trackHeadersByTrackSet.get(activeTrackSetId)?.totalTracks ?? 0) <= 0) {
+      return;
+    }
+    onRequireTrackCatalog(activeTrackSetId);
+  }, [activeTrackSetId, isOpen, onRequireTrackCatalog, trackHeadersByTrackSet]);
 
-  if (!hasTrackData) {
+  const selectedTrackOrderMap = new Map(selectedTrackOrder.map((trackId, index) => [trackId, index]));
+  const trackSummaryByTrackSet = useMemo(() => {
+    const summary = new Map<string, { total: number; visible: number }>();
+    for (const trackSet of trackSets) {
+      const state = trackSetStates[trackSet.id] ?? createDefaultTrackSetState();
+      const tracksForSet = filteredTracksByTrackSet.get(trackSet.id) ?? [];
+      if (tracksForSet.length === 0) {
+        const total = trackHeadersByTrackSet.get(trackSet.id)?.totalTracks ?? 0;
+        const visible = state.defaultVisibility ? total : 0;
+        summary.set(trackSet.id, { total, visible });
+        continue;
+      }
+
+      let visible = 0;
+      for (const track of tracksForSet) {
+        const explicitVisible = resolveTrackVisibilityForState(state, track.id);
+        const isFollowedTrack = followedTrackId === track.id;
+        const isSelectedTrack = selectedTrackIds.has(track.id);
+        if (explicitVisible || isFollowedTrack || isSelectedTrack) {
+          visible += 1;
+        }
+      }
+      summary.set(trackSet.id, { total: tracksForSet.length, visible });
+    }
+    return summary;
+  }, [filteredTracksByTrackSet, followedTrackId, selectedTrackIds, trackHeadersByTrackSet, trackSetStates, trackSets]);
+
+  if (!hasTrackData || !isOpen) {
     return null;
   }
 
@@ -83,19 +122,7 @@ export default function TracksPanel({
         width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
         className="floating-window--tracks"
         resetSignal={resetToken}
-        headerActions={
-          <button
-            type="button"
-            className="floating-window-toggle"
-            onClick={onToggleTrackSettings}
-            aria-label={isTrackSettingsOpen ? 'Hide track settings window' : 'Show track settings window'}
-            aria-pressed={isTrackSettingsOpen}
-            data-no-drag
-            title="Settings"
-          >
-            <span aria-hidden="true">⚙</span>
-          </button>
-        }
+        onClose={onClose}
         headerContent={
           <div className="channel-tabs channel-tabs--header" role="tablist" aria-label="Track sets">
             {trackSets.map((trackSet) => {
@@ -103,7 +130,7 @@ export default function TracksPanel({
               const displayLabel = label.length > 14 ? `${label.slice(0, 11)}...` : label;
               const isActive = trackSet.id === activeTrackSetId;
               const summary = trackSummaryByTrackSet.get(trackSet.id) ?? { total: 0, visible: 0 };
-              const hasTracksForSet = (parsedTracksByTrackSet.get(trackSet.id)?.length ?? 0) > 0;
+              const hasTracksForSet = (trackHeadersByTrackSet.get(trackSet.id)?.totalTracks ?? 0) > 0;
               const hasVisibleTracks = summary.visible > 0;
               const tabClassName = [
                 'channel-tab',
@@ -172,9 +199,10 @@ export default function TracksPanel({
                 const orderMode = trackOrderModeByTrackSet[trackSet.id] ?? 'id';
                 const colorMode = trackColorModesByTrackSet[trackSet.id] ?? { type: 'random' };
                 const trackColorLabel = colorMode.type === 'uniform' ? 'Uniform' : 'By ID';
-                const hasSetTracks = parsedTracks.length > 0;
+                const hasSetTracks = (trackHeadersByTrackSet.get(trackSet.id)?.totalTracks ?? 0) > 0;
                 const opacity = trackOpacityByTrackSet[trackSet.id] ?? trackDefaults.opacity;
                 const lineWidth = trackLineWidthByTrackSet[trackSet.id] ?? trackDefaults.lineWidth;
+                const visibilityState = trackSetStates[trackSet.id] ?? createDefaultTrackSetState();
                 const displayTracks = [...tracksForSet].sort((a, b) => {
                   const selectionIndexA = selectedTrackOrderMap.get(a.id);
                   const selectionIndexB = selectedTrackOrderMap.get(b.id);
@@ -188,7 +216,7 @@ export default function TracksPanel({
                   }
 
                   if (orderMode === 'length') {
-                    return b.points.length - a.points.length;
+                    return b.pointCount - a.pointCount;
                   }
                   const idOrder = a.trackNumber - b.trackNumber;
                   if (idOrder !== 0) {
@@ -322,7 +350,8 @@ export default function TracksPanel({
                             {displayTracks.map((track) => {
                               const isFollowed = followedTrackId === track.id;
                               const isSelected = selectedTrackIds.has(track.id);
-                              const isChecked = isFollowed || isSelected || (trackVisibility[track.id] ?? true);
+                              const isChecked =
+                                isFollowed || isSelected || resolveTrackVisibilityForState(visibilityState, track.id);
                               const trackColor =
                                 colorMode.type === 'uniform'
                                   ? normalizeTrackColor(colorMode.color)
@@ -394,23 +423,12 @@ export default function TracksPanel({
 
       <div style={{ display: isTrackSettingsOpen ? undefined : 'none' }} aria-hidden={!isTrackSettingsOpen}>
         <FloatingWindow
-          title="Tracks settings"
+          title="Track settings"
           initialPosition={trackSettingsWindowInitialPosition}
           width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
           className="floating-window--track-settings"
           resetSignal={resetToken}
-          headerEndActions={
-            <button
-              type="button"
-              className="floating-window-toggle"
-              onClick={onCloseTrackSettings}
-              aria-label="Close track settings window"
-              data-no-drag
-              title="Close"
-            >
-              <span aria-hidden="true">×</span>
-            </button>
-          }
+          onClose={onCloseTrackSettings}
         >
           <TrackSettingsWindow {...trackSettings} />
         </FloatingWindow>

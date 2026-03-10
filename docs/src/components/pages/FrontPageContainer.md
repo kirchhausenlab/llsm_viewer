@@ -1,0 +1,67 @@
+# FrontPage container contract
+
+This file summarizes the pieces of app state that drive `<FrontPage />` and outlines a minimal prop contract for `FrontPageContainer`.
+
+## App state by concern
+
+### Voxel resolution
+- A complete voxel resolution value is required before preprocessing.
+
+### Dataset error handling
+- `useDatasetErrors` provides `reportDatasetError`, `clearDatasetError`, and a reset signal used by the front page warnings window.
+
+### Preprocessing and preprocessed dataset loading
+- `usePreprocessedExperiment` supplies:
+  - staged `preprocessedExperiment` (manifest + summaries + OPFS storage handle)
+  - loader state (`isPreprocessedLoaderOpen`, `isPreprocessedImporting`, `preprocessedImportError`)
+  - `handlePreprocessedBrowse` to load a preprocessed dataset from a user-selected folder (Zarr v3)
+  - `resetPreprocessedState` to discard the staged dataset
+- `FrontPageContainer` implements preprocessing:
+  - always writes a Zarr v3 store into OPFS
+  - optionally “tees” writes to a user-selected folder when “Export to folder while preprocessing” is enabled (exported dataset folder uses the `.zarr` directory naming convention)
+  - when exporting, the app prompts for a parent folder and creates `<exportName>.zarr/` inside it
+
+## Minimal `FrontPageContainer` prop contract
+
+This contract mirrors the current prop usage without exposing unrelated app state:
+
+```ts
+import type { VoxelResolutionInput, VoxelResolutionUnit } from '../../types/voxelResolution';
+import type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment } from '../../hooks/dataset';
+
+export type FrontPageContainerProps = {
+  channels: ChannelSource[];
+  activeChannelId: string | null;
+  activeChannel: ChannelSource | null;
+  channelValidationMap: Map<string, ChannelValidation>;
+  editingChannelId: string | null;
+  editingChannelInputRef: React.MutableRefObject<HTMLInputElement | null>;
+  editingChannelOriginalNameRef: React.MutableRefObject<string>;
+
+  isExperimentSetupStarted: boolean;
+  onStartExperimentSetup: () => void;
+  onReturnToStart: () => void;
+
+  voxelResolution: VoxelResolutionInput;
+  onVoxelResolutionAxisChange: (axis: 'x' | 'y' | 'z', value: string) => void;
+  onVoxelResolutionUnitChange: (unit: VoxelResolutionUnit) => void;
+  onVoxelResolutionAnisotropyToggle: (value: boolean) => void;
+
+  isPreprocessedLoaderOpen: boolean;
+  isPreprocessedImporting: boolean;
+  onPreprocessedBrowse: () => Promise<void>;
+  preprocessedImportError: string | null;
+
+  preprocessedExperiment: StagedPreprocessedExperiment | null;
+
+  onPreprocessExperiment: () => void;
+  exportWhilePreprocessing: boolean;
+  onExportWhilePreprocessingChange: (value: boolean) => void;
+  exportName: string;
+  onExportNameChange: (value: string) => void;
+
+  onLaunchViewer: () => void;
+  isLaunchingViewer: boolean;
+  canLaunch: boolean;
+};
+```

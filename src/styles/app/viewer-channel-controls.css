@@ -238,7 +238,7 @@
 
 .brightness-contrast-histogram__mapping {
   fill: none;
-  stroke: #f5f7ff;
+  stroke: var(--text-primary);
   stroke-width: 2.4;
   stroke-linejoin: round;
   stroke-linecap: round;

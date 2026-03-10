@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback, type Dispatch, type SetStateAction } from 'react';
 import { TRACK_COLOR_SWATCHES, normalizeTrackColor, type TrackColorOption } from '../../shared/colorMaps/trackColors';
 import type { TrackSetState } from '../../types/channelTracks';
-import type { TrackColorMode, TrackDefinition } from '../../types/tracks';
+import type { CompiledTrackSetHeader, TrackColorMode, TrackSummary } from '../../types/tracks';
 
 export const DEFAULT_TRACK_OPACITY = 0.9;
 export const DEFAULT_TRACK_LINE_WIDTH = 1;
@@ -9,7 +9,8 @@ export const DEFAULT_TRACK_LINE_WIDTH = 1;
 export const createDefaultTrackSetState = (): TrackSetState => ({
   opacity: DEFAULT_TRACK_OPACITY,
   lineWidth: DEFAULT_TRACK_LINE_WIDTH,
-  visibility: {},
+  defaultVisibility: true,
+  visibilityOverrides: {},
   colorMode: { type: 'random' }
 });
 
@@ -24,7 +25,7 @@ export type UseTrackStylingResult = {
   trackOpacityByTrackSet: Record<string, number>;
   trackLineWidthByTrackSet: Record<string, number>;
   trackColorModesByTrackSet: Record<string, TrackColorMode>;
-  ensureTrackIsVisible: (track: TrackDefinition) => void;
+  ensureTrackIsVisible: (track: TrackSummary) => void;
   handleTrackOpacityChange: (trackSetId: string, value: number) => void;
   handleTrackLineWidthChange: (trackSetId: string, value: number) => void;
   handleTrackColorSelect: (trackSetId: string, color: string | TrackColorOption) => void;
@@ -34,10 +35,12 @@ export type UseTrackStylingResult = {
 
 export const useTrackStyling = ({
   trackSets,
+  trackHeadersByTrackSet = new Map<string, CompiledTrackSetHeader>(),
   parsedTracksByTrackSet
 }: {
   trackSets: TrackSetDescriptor[];
-  parsedTracksByTrackSet: Map<string, TrackDefinition[]>;
+  trackHeadersByTrackSet?: Map<string, CompiledTrackSetHeader>;
+  parsedTracksByTrackSet: Map<string, TrackSummary[]>;
 }): UseTrackStylingResult => {
   const [trackSetStates, setTrackSetStates] = useState<Record<string, TrackSetState>>({});
   const hasInitializedTrackColorsRef = useRef(false);
@@ -53,7 +56,7 @@ export const useTrackStyling = ({
       return;
     }
 
-    const setsWithTracks = trackSets.filter((set) => (parsedTracksByTrackSet.get(set.id)?.length ?? 0) > 0);
+    const setsWithTracks = trackSets.filter((set) => (trackHeadersByTrackSet.get(set.id)?.totalTracks ?? 0) > 0);
     if (setsWithTracks.length === 0) {
       return;
     }
@@ -100,7 +103,7 @@ export const useTrackStyling = ({
     });
 
     hasInitializedTrackColorsRef.current = true;
-  }, [parsedTracksByTrackSet, trackSets]);
+  }, [trackHeadersByTrackSet, trackSets]);
 
   useEffect(() => {
     setTrackSetStates((current) => {
@@ -110,28 +113,40 @@ export const useTrackStyling = ({
       for (const set of trackSets) {
         const trackSetId = set.id;
         const existing = current[trackSetId] ?? createDefaultTrackSetState();
-        const tracks = parsedTracksByTrackSet.get(trackSetId) ?? [];
-
-        const visibility: Record<string, boolean> = {};
-        let visibilityChanged = false;
-        for (const track of tracks) {
-          const previous = existing.visibility[track.id];
-          if (previous === undefined) {
-            visibilityChanged = true;
+        const totalTracks = trackHeadersByTrackSet.get(trackSetId)?.totalTracks ?? 0;
+        if (totalTracks <= 0) {
+          next[trackSetId] = createDefaultTrackSetState();
+          if (!current[trackSetId]) {
+            changed = true;
           }
-          visibility[track.id] = previous ?? true;
+          continue;
         }
-
-        for (const key of Object.keys(existing.visibility)) {
-          if (!(key in visibility)) {
-            visibilityChanged = true;
-            break;
+        const tracks = parsedTracksByTrackSet.get(trackSetId) ?? [];
+        if (tracks.length === 0) {
+          next[trackSetId] = existing;
+          if (!current[trackSetId]) {
+            changed = true;
           }
+          continue;
+        }
+        const knownTrackIds = new Set(tracks.map((track) => track.id));
+        const visibilityOverrides: Record<string, boolean> = {};
+        let visibilityChanged = false;
+        for (const [trackId, isVisible] of Object.entries(existing.visibilityOverrides)) {
+          if (!knownTrackIds.has(trackId)) {
+            visibilityChanged = true;
+            continue;
+          }
+          if (isVisible === existing.defaultVisibility) {
+            visibilityChanged = true;
+            continue;
+          }
+          visibilityOverrides[trackId] = isVisible;
         }
 
         let nextState = existing;
         if (visibilityChanged) {
-          nextState = { ...nextState, visibility };
+          nextState = { ...nextState, visibilityOverrides };
         }
 
         next[trackSetId] = nextState;
@@ -146,7 +161,7 @@ export const useTrackStyling = ({
 
       return changed ? next : current;
     });
-  }, [parsedTracksByTrackSet, trackSets]);
+  }, [parsedTracksByTrackSet, trackHeadersByTrackSet, trackSets]);
 
   const trackOpacityByTrackSet = useMemo(() => {
     const map: Record<string, number> = {};
@@ -175,20 +190,28 @@ export const useTrackStyling = ({
     return map;
   }, [trackSetStates, trackSets]);
 
-  const ensureTrackIsVisible = useCallback((track: TrackDefinition) => {
+  const ensureTrackIsVisible = useCallback((track: TrackSummary) => {
     setTrackSetStates((current) => {
       const existing = current[track.trackSetId] ?? createDefaultTrackSetState();
-      if (existing.visibility[track.id] ?? true) {
+      if (existing.defaultVisibility) {
+        if (existing.visibilityOverrides[track.id] === undefined) {
+          return current;
+        }
+      } else if (existing.visibilityOverrides[track.id] === true) {
         return current;
+      }
+
+      const visibilityOverrides = { ...existing.visibilityOverrides };
+      if (existing.defaultVisibility) {
+        delete visibilityOverrides[track.id];
+      } else {
+        visibilityOverrides[track.id] = true;
       }
       return {
         ...current,
         [track.trackSetId]: {
           ...existing,
-          visibility: {
-            ...existing.visibility,
-            [track.id]: true
-          }
+          visibilityOverrides
         }
       };
     });
@@ -280,4 +303,3 @@ export const useTrackStyling = ({
 };
 
 export default useTrackStyling;
-

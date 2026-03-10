@@ -1,23 +1,41 @@
-import { useCallback, useMemo, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
 import { computeAutoWindow } from '../../../autoContrast';
 import { normalizeHexColor, DEFAULT_LAYER_COLOR } from '../../../shared/colorMaps/layerColors';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
+import type { VolumeBackgroundMask, VolumeBrickAtlas, VolumeBrickPageTable } from '../../../core/volumeProvider';
+import type { ViewerLayer } from '../../../components/viewers/VolumeViewer.types';
 import {
   brightnessContrastModel,
   clampWindowBounds,
+  RENDER_STYLE_BL,
+  RENDER_STYLE_ISO,
+  RENDER_STYLE_MIP,
+  RENDER_STYLE_SLICE,
   DEFAULT_WINDOW_MAX,
   DEFAULT_WINDOW_MIN,
   type BrightnessContrastState,
   type LayerSettings,
+  type RenderStyle,
   type SamplingMode,
   updateLayerSettings
 } from '../../../state/layerSettings';
 import type { LoadedDatasetLayer } from '../../../hooks/dataset';
+import type { PlaybackWarmupFrameState } from './useRouteLayerVolumes';
 
 export type LayerControlsParams = {
   layers: LoadedDatasetLayer[];
   selectedIndex: number;
+  isPlaying?: boolean;
   layerVolumes: Record<string, NormalizedVolume | null>;
+  layerPageTables: Record<string, VolumeBrickPageTable | null>;
+  layerBrickAtlases: Record<string, VolumeBrickAtlas | null>;
+  backgroundMasksByScale: Record<number, VolumeBackgroundMask | null>;
+  playbackWarmupFrames?: PlaybackWarmupFrameState[];
+  playbackWarmupTimeIndex?: number | null;
+  playbackWarmupLayerVolumes?: Record<string, NormalizedVolume | null>;
+  playbackWarmupLayerPageTables?: Record<string, VolumeBrickPageTable | null>;
+  playbackWarmupLayerBrickAtlases?: Record<string, VolumeBrickAtlas | null>;
+  playbackWarmupBackgroundMasksByScale?: Record<number, VolumeBackgroundMask | null>;
   loadVolume: ((layerKey: string, timepoint: number) => Promise<NormalizedVolume>) | null;
   layerAutoThresholds: Record<string, number>;
   setLayerAutoThresholds: Dispatch<SetStateAction<Record<string, number>>>;
@@ -25,22 +43,120 @@ export type LayerControlsParams = {
   createLayerDefaultBrightnessState: (key: string) => BrightnessContrastState;
   layerSettings: Record<string, LayerSettings>;
   setLayerSettings: Dispatch<SetStateAction<Record<string, LayerSettings>>>;
-  setChannelActiveLayer: Dispatch<SetStateAction<Record<string, string>>>;
   setChannelVisibility: Dispatch<SetStateAction<Record<string, boolean>>>;
   channelVisibility: Record<string, boolean>;
-  channelActiveLayer: Record<string, string>;
   channelNameMap: Map<string, string>;
   layerChannelMap: Map<string, string>;
   loadedChannelIds: string[];
   setActiveChannelTabId: Dispatch<SetStateAction<string | null>>;
-  setGlobalRenderStyle: Dispatch<SetStateAction<0 | 1>>;
+  setGlobalRenderStyle: Dispatch<SetStateAction<RenderStyle>>;
   setGlobalSamplingMode: Dispatch<SetStateAction<SamplingMode>>;
 };
+
+const nextRenderStyle = (current: RenderStyle): RenderStyle => {
+  if (current === RENDER_STYLE_MIP) {
+    return RENDER_STYLE_ISO;
+  }
+  if (current === RENDER_STYLE_ISO) {
+    return RENDER_STYLE_BL;
+  }
+  if (current === RENDER_STYLE_BL) {
+    return RENDER_STYLE_SLICE;
+  }
+  return RENDER_STYLE_MIP;
+};
+
+type ViewerLayerConfig = ViewerLayer & {
+  channelId?: string;
+};
+
+function areViewerLayersEquivalent(left: ViewerLayerConfig | undefined, right: ViewerLayerConfig): boolean {
+  if (!left) {
+    return false;
+  }
+  return (
+    left.key === right.key &&
+    left.label === right.label &&
+    left.channelId === right.channelId &&
+    left.channelName === right.channelName &&
+    left.fullResolutionWidth === right.fullResolutionWidth &&
+    left.fullResolutionHeight === right.fullResolutionHeight &&
+    left.fullResolutionDepth === right.fullResolutionDepth &&
+    left.volume === right.volume &&
+    left.channels === right.channels &&
+    left.dataType === right.dataType &&
+    left.min === right.min &&
+    left.max === right.max &&
+    left.visible === right.visible &&
+    left.sliderRange === right.sliderRange &&
+    left.minSliderIndex === right.minSliderIndex &&
+    left.maxSliderIndex === right.maxSliderIndex &&
+    left.brightnessSliderIndex === right.brightnessSliderIndex &&
+    left.contrastSliderIndex === right.contrastSliderIndex &&
+    left.windowMin === right.windowMin &&
+    left.windowMax === right.windowMax &&
+    left.color === right.color &&
+    left.offsetX === right.offsetX &&
+    left.offsetY === right.offsetY &&
+    left.renderStyle === right.renderStyle &&
+    left.mode === right.mode &&
+    left.blDensityScale === right.blDensityScale &&
+    left.blBackgroundCutoff === right.blBackgroundCutoff &&
+    left.blOpacityScale === right.blOpacityScale &&
+    left.blEarlyExitAlpha === right.blEarlyExitAlpha &&
+    left.mipEarlyExitThreshold === right.mipEarlyExitThreshold &&
+    left.invert === right.invert &&
+    left.samplingMode === right.samplingMode &&
+    left.isSegmentation === right.isSegmentation &&
+    left.scaleLevel === right.scaleLevel &&
+    left.brickPageTable === right.brickPageTable &&
+    left.brickAtlas === right.brickAtlas &&
+    left.backgroundMask === right.backgroundMask &&
+    left.playbackWarmupForLayerKey === right.playbackWarmupForLayerKey &&
+    left.playbackWarmupTimeIndex === right.playbackWarmupTimeIndex &&
+    left.playbackRole === right.playbackRole &&
+    left.playbackSlotIndex === right.playbackSlotIndex
+  );
+}
+
+function stabilizeViewerLayerArray(
+  nextLayers: ViewerLayerConfig[],
+  previousLayers: ViewerLayerConfig[],
+): ViewerLayerConfig[] {
+  const previousByKey = new Map(previousLayers.map((layer) => [layer.key, layer]));
+  let changed = nextLayers.length !== previousLayers.length;
+  const stableLayers = nextLayers.map((layer) => {
+    const previous = previousByKey.get(layer.key);
+    if (areViewerLayersEquivalent(previous, layer)) {
+      return previous as ViewerLayerConfig;
+    }
+    changed = true;
+    return layer;
+  });
+  if (
+    !changed &&
+    stableLayers.length === previousLayers.length &&
+    stableLayers.every((layer, index) => layer === previousLayers[index])
+  ) {
+    return previousLayers;
+  }
+  return stableLayers;
+}
 
 export function useLayerControls({
   layers,
   selectedIndex,
+  isPlaying = false,
   layerVolumes,
+  layerPageTables,
+  layerBrickAtlases,
+  backgroundMasksByScale,
+  playbackWarmupFrames = [],
+  playbackWarmupTimeIndex = null,
+  playbackWarmupLayerVolumes = {},
+  playbackWarmupLayerPageTables = {},
+  playbackWarmupLayerBrickAtlases = {},
+  playbackWarmupBackgroundMasksByScale = {},
   loadVolume,
   layerAutoThresholds,
   setLayerAutoThresholds,
@@ -48,10 +164,8 @@ export function useLayerControls({
   createLayerDefaultBrightnessState,
   layerSettings,
   setLayerSettings,
-  setChannelActiveLayer,
   setChannelVisibility,
   channelVisibility,
-  channelActiveLayer,
   channelNameMap,
   layerChannelMap,
   loadedChannelIds,
@@ -59,6 +173,54 @@ export function useLayerControls({
   setGlobalRenderStyle,
   setGlobalSamplingMode
 }: LayerControlsParams) {
+  const viewerLayersCacheRef = useRef<ViewerLayerConfig[]>([]);
+  const viewerPlaybackWarmupLayersCacheRef = useRef<ViewerLayerConfig[]>([]);
+  const normalizedPlaybackWarmupFrames = useMemo<PlaybackWarmupFrameState[]>(
+    () =>
+      playbackWarmupFrames.length > 0
+        ? playbackWarmupFrames
+        : playbackWarmupTimeIndex === null
+          ? []
+          : [{
+              slotIndex: 0,
+              timeIndex: playbackWarmupTimeIndex,
+              scaleSignature: '',
+              layerVolumes: playbackWarmupLayerVolumes,
+              layerPageTables: playbackWarmupLayerPageTables,
+              layerBrickAtlases: playbackWarmupLayerBrickAtlases,
+              backgroundMasksByScale: playbackWarmupBackgroundMasksByScale
+            }],
+    [
+      playbackWarmupBackgroundMasksByScale,
+      playbackWarmupFrames,
+      playbackWarmupLayerBrickAtlases,
+      playbackWarmupLayerPageTables,
+      playbackWarmupLayerVolumes,
+      playbackWarmupTimeIndex
+    ]
+  );
+  const resolveRenderStyleTargetLayerKey = useCallback(
+    (requestedLayerKey?: string): string | null => {
+      if (requestedLayerKey && layers.some((layer) => layer.key === requestedLayerKey)) {
+        return requestedLayerKey;
+      }
+
+      const sortedChannelIds = [...loadedChannelIds].sort((left, right) => left.localeCompare(right));
+      for (const channelId of sortedChannelIds) {
+        const channelLayers = layers
+          .filter((layer) => layer.channelId === channelId)
+          .sort((left, right) => left.key.localeCompare(right.key));
+        if (channelLayers.length === 0) {
+          continue;
+        }
+        return channelLayers[0]?.key ?? null;
+      }
+
+      return [...layers].sort((left, right) => left.key.localeCompare(right.key))[0]?.key ?? null;
+    },
+    [layers, loadedChannelIds]
+  );
+
   const handleLayerContrastChange = useCallback(
     (key: string, sliderIndex: number) => {
       updateLayerSettings(key, setLayerSettings, createLayerDefaultSettings, ({ previous }) => {
@@ -219,23 +381,43 @@ export function useLayerControls({
     [createLayerDefaultSettings, setLayerSettings]
   );
 
-  const handleLayerRenderStyleToggle = useCallback(() => {
-    setGlobalRenderStyle((current) => {
-      const nextStyle: 0 | 1 = current === 1 ? 0 : 1;
-      setLayerSettings((settings) => {
-        let changed = false;
-        const nextSettings: Record<string, LayerSettings> = { ...settings };
-        for (const [layerKey, previous] of Object.entries(settings)) {
-          if (previous.renderStyle !== nextStyle) {
-            nextSettings[layerKey] = { ...previous, renderStyle: nextStyle };
-            changed = true;
-          }
+  const handleLayerRenderStyleChange = useCallback(
+    (layerKey: string, renderStyle: RenderStyle) => {
+      setLayerSettings((current) => {
+        const previous = current[layerKey] ?? createLayerDefaultSettings(layerKey);
+        if (previous.renderStyle === renderStyle) {
+          return current;
         }
-        return changed ? nextSettings : settings;
+        return {
+          ...current,
+          [layerKey]: {
+            ...previous,
+            renderStyle,
+          }
+        };
       });
-      return nextStyle;
-    });
-  }, [setGlobalRenderStyle, setLayerSettings]);
+      setGlobalRenderStyle(renderStyle);
+    },
+    [createLayerDefaultSettings, setGlobalRenderStyle, setLayerSettings]
+  );
+
+  const handleLayerRenderStyleToggle = useCallback(
+    (layerKey?: string) => {
+      const targetLayerKey = resolveRenderStyleTargetLayerKey(layerKey);
+      if (!targetLayerKey) {
+        return;
+      }
+      const currentStyle = (layerSettings[targetLayerKey] ?? createLayerDefaultSettings(targetLayerKey)).renderStyle;
+      const nextStyle = nextRenderStyle(currentStyle);
+      handleLayerRenderStyleChange(targetLayerKey, nextStyle);
+    },
+    [
+      createLayerDefaultSettings,
+      handleLayerRenderStyleChange,
+      layerSettings,
+      resolveRenderStyleTargetLayerKey
+    ]
+  );
 
   const handleLayerSamplingModeToggle = useCallback(() => {
     setGlobalSamplingMode((current) => {
@@ -275,19 +457,104 @@ export function useLayerControls({
     [createLayerDefaultSettings, setLayerSettings]
   );
 
-  const handleChannelLayerSelectionChange = useCallback(
-    (channelId: string, layerKey: string) => {
-      setChannelActiveLayer((current) => {
-        if (current[channelId] === layerKey) {
+  const handleLayerBlDensityScaleChange = useCallback(
+    (key: string, value: number) => {
+      const clamped = Math.max(0, value);
+      setLayerSettings((current) => {
+        const previous = current[key] ?? createLayerDefaultSettings(key);
+        if (previous.blDensityScale === clamped) {
           return current;
         }
         return {
           ...current,
-          [channelId]: layerKey
+          [key]: {
+            ...previous,
+            blDensityScale: clamped
+          }
         };
       });
     },
-    [setChannelActiveLayer]
+    [createLayerDefaultSettings, setLayerSettings]
+  );
+
+  const handleLayerBlBackgroundCutoffChange = useCallback(
+    (key: string, value: number) => {
+      const clamped = Math.min(Math.max(value, 0), 1);
+      setLayerSettings((current) => {
+        const previous = current[key] ?? createLayerDefaultSettings(key);
+        if (previous.blBackgroundCutoff === clamped) {
+          return current;
+        }
+        return {
+          ...current,
+          [key]: {
+            ...previous,
+            blBackgroundCutoff: clamped
+          }
+        };
+      });
+    },
+    [createLayerDefaultSettings, setLayerSettings]
+  );
+
+  const handleLayerBlOpacityScaleChange = useCallback(
+    (key: string, value: number) => {
+      const clamped = Math.max(0, value);
+      setLayerSettings((current) => {
+        const previous = current[key] ?? createLayerDefaultSettings(key);
+        if (previous.blOpacityScale === clamped) {
+          return current;
+        }
+        return {
+          ...current,
+          [key]: {
+            ...previous,
+            blOpacityScale: clamped
+          }
+        };
+      });
+    },
+    [createLayerDefaultSettings, setLayerSettings]
+  );
+
+  const handleLayerBlEarlyExitAlphaChange = useCallback(
+    (key: string, value: number) => {
+      const clamped = Math.min(Math.max(value, 0), 1);
+      setLayerSettings((current) => {
+        const previous = current[key] ?? createLayerDefaultSettings(key);
+        if (previous.blEarlyExitAlpha === clamped) {
+          return current;
+        }
+        return {
+          ...current,
+          [key]: {
+            ...previous,
+            blEarlyExitAlpha: clamped
+          }
+        };
+      });
+    },
+    [createLayerDefaultSettings, setLayerSettings]
+  );
+
+  const handleLayerMipEarlyExitThresholdChange = useCallback(
+    (key: string, value: number) => {
+      const clamped = Math.min(Math.max(value, 0), 1);
+      setLayerSettings((current) => {
+        const previous = current[key] ?? createLayerDefaultSettings(key);
+        if (previous.mipEarlyExitThreshold === clamped) {
+          return current;
+        }
+        return {
+          ...current,
+          [key]: {
+            ...previous,
+            mipEarlyExitThreshold: clamped
+          }
+        };
+      });
+    },
+    [createLayerDefaultSettings, setLayerSettings]
   );
 
   const handleLayerSelect = useCallback(
@@ -296,10 +563,9 @@ export function useLayerControls({
       if (!channelId) {
         return;
       }
-      handleChannelLayerSelectionChange(channelId, layerKey);
       setActiveChannelTabId((current) => (current === channelId ? current : channelId));
     },
-    [handleChannelLayerSelectionChange, layerChannelMap, setActiveChannelTabId]
+    [layerChannelMap, setActiveChannelTabId]
   );
 
   const handleLayerSoloToggle = useCallback(
@@ -411,28 +677,42 @@ export function useLayerControls({
     ]
   );
 
-  const viewerLayers = useMemo(() => {
-    const activeLayers: LoadedDatasetLayer[] = [];
+  const activeLayers = useMemo(() => {
+    const nextActiveLayers: LoadedDatasetLayer[] = [];
     for (const channelId of loadedChannelIds) {
-      const channelLayers = layers.filter((layer) => layer.channelId === channelId);
+      const channelLayers = layers
+        .filter((layer) => layer.channelId === channelId)
+        .sort((left, right) => left.key.localeCompare(right.key));
       if (channelLayers.length === 0) {
         continue;
       }
-      const selectedKey = channelActiveLayer[channelId];
-      const selectedLayer =
-        (selectedKey ? channelLayers.find((layer) => layer.key === selectedKey) : null) ?? channelLayers[0];
-      activeLayers.push(selectedLayer);
+      const selectedLayer = channelLayers[0];
+      nextActiveLayers.push(selectedLayer);
     }
+    return nextActiveLayers;
+  }, [layers, loadedChannelIds]);
 
-    return activeLayers.map((layer) => {
+  const viewerLayers = useMemo(() => {
+    const nextLayers: ViewerLayerConfig[] = activeLayers.map((layer) => {
       const settings = layerSettings[layer.key] ?? createLayerDefaultSettings(layer.key);
       const channelVisible = channelVisibility[layer.channelId];
+      const brickAtlas = layerBrickAtlases[layer.key] ?? null;
+      const brickPageTable = brickAtlas?.pageTable ?? layerPageTables[layer.key] ?? null;
+      const scaleLevel =
+        brickAtlas?.scaleLevel ?? layerVolumes[layer.key]?.scaleLevel ?? 0;
       return {
         key: layer.key,
         label: layer.label,
         channelId: layer.channelId,
         channelName: channelNameMap.get(layer.channelId) ?? 'Untitled channel',
+        fullResolutionWidth: layer.width,
+        fullResolutionHeight: layer.height,
+        fullResolutionDepth: layer.depth,
         volume: layerVolumes[layer.key] ?? null,
+        channels: layer.channels,
+        dataType: layer.dataType,
+        min: layer.min,
+        max: layer.max,
         visible: channelVisible ?? true,
         sliderRange: settings.sliderRange,
         minSliderIndex: settings.minSliderIndex,
@@ -445,20 +725,116 @@ export function useLayerControls({
         offsetX: settings.xOffset,
         offsetY: settings.yOffset,
         renderStyle: settings.renderStyle,
+        mode: undefined,
+        blDensityScale: settings.blDensityScale,
+        blBackgroundCutoff: settings.blBackgroundCutoff,
+        blOpacityScale: settings.blOpacityScale,
+        blEarlyExitAlpha: settings.blEarlyExitAlpha,
+        mipEarlyExitThreshold: settings.mipEarlyExitThreshold,
         invert: settings.invert,
         samplingMode: settings.samplingMode,
-        isSegmentation: layer.isSegmentation
+        isSegmentation: layer.isSegmentation,
+        scaleLevel,
+        brickPageTable,
+        brickAtlas,
+        backgroundMask: layer.isSegmentation ? null : (backgroundMasksByScale[scaleLevel] ?? null),
+        playbackRole: isPlaying ? 'active' : undefined
       };
     });
+    const stableLayers = stabilizeViewerLayerArray(nextLayers, viewerLayersCacheRef.current);
+    viewerLayersCacheRef.current = stableLayers;
+    return stableLayers;
   }, [
-    channelActiveLayer,
+    activeLayers,
+    backgroundMasksByScale,
     channelNameMap,
     channelVisibility,
     createLayerDefaultSettings,
+    isPlaying,
+    layerBrickAtlases,
+    layerPageTables,
     layerVolumes,
+    layerSettings
+  ]);
+
+  const viewerPlaybackWarmupLayers = useMemo(() => {
+    if (normalizedPlaybackWarmupFrames.length === 0) {
+      if (viewerPlaybackWarmupLayersCacheRef.current.length === 0) {
+        return viewerPlaybackWarmupLayersCacheRef.current;
+      }
+      viewerPlaybackWarmupLayersCacheRef.current = [];
+      return viewerPlaybackWarmupLayersCacheRef.current;
+    }
+
+    const nextLayers = normalizedPlaybackWarmupFrames.flatMap((frame) =>
+      activeLayers.flatMap((layer): ViewerLayerConfig[] => {
+        const settings = layerSettings[layer.key] ?? createLayerDefaultSettings(layer.key);
+        const channelVisible = channelVisibility[layer.channelId];
+        if (!(channelVisible ?? true) || settings.renderStyle === RENDER_STYLE_SLICE) {
+          return [];
+        }
+        const brickAtlas = frame.layerBrickAtlases[layer.key] ?? null;
+        const brickPageTable = brickAtlas?.pageTable ?? frame.layerPageTables[layer.key] ?? null;
+        const scaleLevel = brickAtlas?.scaleLevel ?? frame.layerVolumes[layer.key]?.scaleLevel ?? 0;
+        if (!brickAtlas || scaleLevel <= 0) {
+          return [];
+        }
+
+        return [{
+          key: `${layer.key}::playback-warmup:slot:${frame.slotIndex}`,
+          label: layer.label,
+          channelId: layer.channelId,
+          channelName: channelNameMap.get(layer.channelId) ?? 'Untitled channel',
+          fullResolutionWidth: layer.width,
+          fullResolutionHeight: layer.height,
+          fullResolutionDepth: layer.depth,
+          volume: frame.layerVolumes[layer.key] ?? null,
+          channels: layer.channels,
+          dataType: layer.dataType,
+          min: layer.min,
+          max: layer.max,
+          visible: false,
+          sliderRange: settings.sliderRange,
+          minSliderIndex: settings.minSliderIndex,
+          maxSliderIndex: settings.maxSliderIndex,
+          brightnessSliderIndex: settings.brightnessSliderIndex,
+          contrastSliderIndex: settings.contrastSliderIndex,
+          windowMin: settings.windowMin,
+          windowMax: settings.windowMax,
+          color: normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR),
+          offsetX: settings.xOffset,
+          offsetY: settings.yOffset,
+          renderStyle: settings.renderStyle,
+          mode: undefined,
+          blDensityScale: settings.blDensityScale,
+          blBackgroundCutoff: settings.blBackgroundCutoff,
+          blOpacityScale: settings.blOpacityScale,
+          blEarlyExitAlpha: settings.blEarlyExitAlpha,
+          mipEarlyExitThreshold: settings.mipEarlyExitThreshold,
+          invert: settings.invert,
+          samplingMode: settings.samplingMode,
+          isSegmentation: layer.isSegmentation,
+          scaleLevel,
+          brickPageTable,
+          brickAtlas,
+          backgroundMask: layer.isSegmentation ? null : (frame.backgroundMasksByScale[scaleLevel] ?? null),
+          playbackWarmupForLayerKey: layer.key,
+          playbackWarmupTimeIndex: frame.timeIndex,
+          playbackRole: 'warmup',
+          playbackSlotIndex: frame.slotIndex
+        }];
+      })
+    );
+    const stableLayers = stabilizeViewerLayerArray(nextLayers, viewerPlaybackWarmupLayersCacheRef.current);
+    viewerPlaybackWarmupLayersCacheRef.current = stableLayers;
+    return stableLayers;
+  }, [
+    activeLayers,
+    channelNameMap,
+    channelVisibility,
+    createLayerDefaultSettings,
     layerSettings,
-    layers,
-    loadedChannelIds
+    normalizedPlaybackWarmupFrames,
   ]);
 
   const layerDepthMap = useMemo(() => {
@@ -480,8 +856,8 @@ export function useLayerControls({
 
   return {
     viewerLayers,
+    viewerPlaybackWarmupLayers,
     computedMaxSliceDepth,
-    handleChannelLayerSelectionChange,
     handleLayerSelect,
     handleLayerSoloToggle,
     handleChannelSliderReset,
@@ -492,7 +868,13 @@ export function useLayerControls({
     handleLayerAutoContrast,
     handleLayerOffsetChange,
     handleLayerColorChange,
+    handleLayerRenderStyleChange,
     handleLayerRenderStyleToggle,
+    handleLayerBlDensityScaleChange,
+    handleLayerBlBackgroundCutoffChange,
+    handleLayerBlOpacityScaleChange,
+    handleLayerBlEarlyExitAlphaChange,
+    handleLayerMipEarlyExitThresholdChange,
     handleLayerSamplingModeToggle,
     handleLayerInvertToggle
   };

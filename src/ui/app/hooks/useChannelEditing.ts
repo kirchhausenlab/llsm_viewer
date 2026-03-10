@@ -37,6 +37,13 @@ export function useChannelEditing({ channels, isLaunchingViewer }: UseChannelEdi
     editingChannelOriginalNameRef.current = originalName;
   }, []);
 
+  const selectDeterministicChannelId = useCallback((channelList: ChannelSource[]): string | null => {
+    if (channelList.length === 0) {
+      return null;
+    }
+    return [...channelList].sort((left, right) => left.id.localeCompare(right.id))[0]?.id ?? null;
+  }, []);
+
   const handleChannelRemoved = useCallback(
     ({ removedChannelId, previousChannels, nextChannels }: ChannelRemovalContext) => {
       setActiveChannelId((previousActiveId) => {
@@ -50,18 +57,18 @@ export function useChannelEditing({ channels, isLaunchingViewer }: UseChannelEdi
 
         const removedIndex = previousChannels.findIndex((channel) => channel.id === removedChannelId);
         if (removedIndex <= 0) {
-          return nextChannels[0].id;
+          return selectDeterministicChannelId(nextChannels);
         }
 
         const fallbackIndex = Math.min(removedIndex - 1, nextChannels.length - 1);
-        return nextChannels[fallbackIndex]?.id ?? nextChannels[0].id;
+        return nextChannels[fallbackIndex]?.id ?? selectDeterministicChannelId(nextChannels);
       });
 
       if (editingChannelId === removedChannelId) {
         setEditingChannelId(null);
       }
     },
-    [editingChannelId]
+    [editingChannelId, selectDeterministicChannelId]
   );
 
   useEffect(() => {
@@ -79,9 +86,9 @@ export function useChannelEditing({ channels, isLaunchingViewer }: UseChannelEdi
     }
 
     if (!activeChannelId || !channels.some((channel) => channel.id === activeChannelId)) {
-      setActiveChannelId(channels[0].id);
+      setActiveChannelId(selectDeterministicChannelId(channels));
     }
-  }, [activeChannelId, channels]);
+  }, [activeChannelId, channels, selectDeterministicChannelId]);
 
   useEffect(() => {
     const pendingChannelId = pendingChannelFocusIdRef.current;

@@ -1,23 +1,45 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import type { Dispatch, MutableRefObject, SetStateAction, ChangeEvent, DragEvent, FormEvent } from 'react';
-import FrontPage from './FrontPage';
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import FrontPage, { type ExperimentType, type TrackSummary as FrontPageTrackSummary } from './FrontPage';
 import usePreprocessedExperiment from '../../hooks/dataset/usePreprocessedExperiment';
-import { type ExperimentDimension, type VoxelResolutionHook } from '../../hooks/useVoxelResolution';
+import type { VoxelResolutionHook } from '../../hooks/useVoxelResolution';
 import type { DatasetErrorHook } from '../../hooks/useDatasetErrors';
 import type { FollowedTrackState, TrackSetState } from '../../types/channelTracks';
-import type { ChannelSource, ChannelValidation, StagedPreprocessedExperiment } from '../../hooks/dataset';
+import type {
+  ChannelSource,
+  ChannelValidation,
+  StagedPreprocessedExperiment,
+  TrackSetSource,
+  TrackValidation
+} from '../../hooks/dataset';
 import { preprocessDatasetToStorage } from '../../shared/utils/preprocessedDataset';
-import { createDirectoryHandlePreprocessedStorage, createOpfsPreprocessedStorage } from '../../shared/storage/preprocessedStorage';
+import {
+  createDirectoryHandlePreprocessedStorage,
+  createOpfsPreprocessedStorage,
+  PREPROCESSED_STORAGE_ROOT_DIR
+} from '../../shared/storage/preprocessedStorage';
+import type { PreprocessedStorageHandle } from '../../shared/storage/preprocessedStorage';
+import { parseBackgroundMaskValues } from '../../shared/utils/backgroundMask';
+import type { CompiledTrackSetHeader } from '../../types/tracks';
 
-type TrackSummary = { totalRows: number; uniqueTracks: number };
+const FRONTPAGE_OPFS_DATASET_ID = 'preprocessed-experiment';
+const PREPROCESS_STORAGE_STRATEGY = {
+  maxInFlightChunkWrites: 4,
+  sharding: {
+    enabled: true
+  }
+} as const;
 
 export type FrontPageContainerProps = {
   isExperimentSetupStarted: boolean;
   channels: ChannelSource[];
   setChannels: Dispatch<SetStateAction<ChannelSource[]>>;
+  tracks: TrackSetSource[];
+  setTracks: Dispatch<SetStateAction<TrackSetSource[]>>;
   activeChannelId: string | null;
   activeChannel: ChannelSource | null;
   channelValidationMap: Map<string, ChannelValidation>;
+  trackValidationMap: Map<string, TrackValidation>;
   editingChannelId: string | null;
   editingChannelInputRef: MutableRefObject<HTMLInputElement | null>;
   editingChannelOriginalNameRef: MutableRefObject<string>;
@@ -25,19 +47,22 @@ export type FrontPageContainerProps = {
   setEditingChannelId: Dispatch<SetStateAction<string | null>>;
   onStartExperimentSetup: () => void;
   onAddChannel: () => void;
+  onAddSegmentationChannel: () => void;
   onReturnToStart: () => void;
   onChannelNameChange: (channelId: string, name: string) => void;
   onRemoveChannel: (channelId: string) => void;
   onChannelLayerFilesAdded: (channelId: string, files: File[]) => void | Promise<void>;
   onChannelLayerDrop: (channelId: string, dataTransfer: DataTransfer) => void;
-  onChannelLayerSegmentationToggle: (channelId: string, layerId: string, value: boolean) => void;
   onChannelLayerRemove: (channelId: string, layerId: string) => void;
-  onChannelTrackFilesAdded: (channelId: string, files: File[]) => void | Promise<void>;
-  onChannelTrackDrop: (channelId: string, dataTransfer: DataTransfer) => void;
-  onChannelTrackSetNameChange: (channelId: string, trackSetId: string, name: string) => void;
-  onChannelTrackSetRemove: (channelId: string, trackSetId: string) => void;
+  onAddTrack: () => void;
+  onTrackFilesAdded: (trackSetId: string, files: File[]) => void | Promise<void>;
+  onTrackDrop: (trackSetId: string, dataTransfer: DataTransfer) => void;
+  onTrackSetNameChange: (trackSetId: string, name: string) => void;
+  onTrackSetBoundChannelChange: (trackSetId: string, channelId: string | null) => void;
+  onTrackSetClearFile: (trackSetId: string) => void;
+  onTrackSetRemove: (trackSetId: string) => void;
   setIsExperimentSetupStarted: Dispatch<SetStateAction<boolean>>;
-  setViewerMode: Dispatch<SetStateAction<'3d' | '2d'>>;
+  setViewerMode: Dispatch<SetStateAction<'3d'>>;
   updateChannelIdCounter: (sources: ChannelSource[]) => void;
   showInteractionWarning: (message: string) => void;
   isLaunchingViewer: boolean;
@@ -45,7 +70,7 @@ export type FrontPageContainerProps = {
   setTrackOrderModeByTrackSet: Dispatch<SetStateAction<Record<string, 'id' | 'length'>>>;
   setSelectedTrackOrder: Dispatch<SetStateAction<string[]>>;
   setFollowedTrack: Dispatch<SetStateAction<FollowedTrackState>>;
-  computeTrackSummary: (entries: string[][]) => TrackSummary;
+  computeTrackSummary: (summary: CompiledTrackSetHeader | null | undefined) => FrontPageTrackSummary;
   hasGlobalTimepointMismatch: boolean;
   interactionErrorMessage: string | null;
   launchErrorMessage: string | null;
@@ -65,9 +90,12 @@ export default function FrontPageContainer({
   isExperimentSetupStarted,
   channels,
   setChannels,
+  tracks,
+  setTracks,
   activeChannelId,
   activeChannel,
   channelValidationMap,
+  trackValidationMap,
   editingChannelId,
   editingChannelInputRef,
   editingChannelOriginalNameRef,
@@ -75,17 +103,20 @@ export default function FrontPageContainer({
   setEditingChannelId,
   onStartExperimentSetup,
   onAddChannel,
+  onAddSegmentationChannel,
   onReturnToStart,
   onChannelNameChange,
   onRemoveChannel,
   onChannelLayerFilesAdded,
   onChannelLayerDrop,
-  onChannelLayerSegmentationToggle,
   onChannelLayerRemove,
-  onChannelTrackFilesAdded,
-  onChannelTrackDrop,
-  onChannelTrackSetNameChange,
-  onChannelTrackSetRemove,
+  onAddTrack,
+  onTrackFilesAdded,
+  onTrackDrop,
+  onTrackSetNameChange,
+  onTrackSetBoundChannelChange,
+  onTrackSetClearFile,
+  onTrackSetRemove,
   setIsExperimentSetupStarted,
   setViewerMode,
   updateChannelIdCounter,
@@ -108,30 +139,39 @@ export default function FrontPageContainer({
   voxelResolution
 }: FrontPageContainerProps) {
   const {
-    datasetError,
-    datasetErrorContext,
     datasetErrorResetSignal,
-    reportDatasetError,
-    clearDatasetError,
-    bumpDatasetErrorResetSignal
+    clearDatasetError
   } = datasetErrors;
   const {
     voxelResolutionInput,
     voxelResolution: voxelResolutionValue,
-    anisotropyScale,
-    experimentDimension,
-    trackScale,
     handleVoxelResolutionAxisChange,
     handleVoxelResolutionUnitChange,
-    handleVoxelResolutionAnisotropyToggle,
-    handleExperimentDimensionChange,
-    setExperimentDimension,
-    setVoxelResolutionInput
+    handleVoxelResolutionTimeUnitChange,
+    handleVoxelResolutionAnisotropyToggle
   } = voxelResolution;
+  const temporalResolutionValue = useMemo(() => {
+    const rawValue = voxelResolutionInput.t.trim();
+    if (rawValue.length === 0) {
+      return null;
+    }
+
+    const interval = Number(rawValue);
+    if (!Number.isFinite(interval) || interval <= 0) {
+      return null;
+    }
+
+    return {
+      interval,
+      unit: voxelResolutionInput.timeUnit
+    };
+  }, [voxelResolutionInput.t, voxelResolutionInput.timeUnit]);
 
   const preprocessedState = usePreprocessedExperiment({
     channels,
     setChannels,
+    tracks,
+    setTracks,
     setActiveChannelId,
     setEditingChannelId,
     setTrackSetStates,
@@ -139,7 +179,6 @@ export default function FrontPageContainer({
     setSelectedTrackOrder,
     setFollowedTrack,
     setIsExperimentSetupStarted,
-    setExperimentDimension,
     setViewerMode,
     clearDatasetError,
     updateChannelIdCounter,
@@ -160,12 +199,16 @@ export default function FrontPageContainer({
   const [exportWhilePreprocessing, setExportWhilePreprocessing] = useState(false);
   const [exportName, setExportName] = useState('');
   const [exportDestinationLabel, setExportDestinationLabel] = useState<string | null>(null);
+  const [isExperimentTypeSelectionOpen, setIsExperimentTypeSelectionOpen] = useState(false);
+  const [selectedExperimentType, setSelectedExperimentType] = useState<ExperimentType>('single-3d-volume');
+  const [backgroundMaskEnabled, setBackgroundMaskEnabled] = useState(false);
+  const [backgroundMaskValuesInput, setBackgroundMaskValuesInput] = useState('');
 
   const createDefaultExportName = useCallback((): string => {
     const now = new Date();
     const stamp = now.toISOString().replace(/[:.]/g, '-');
     const random = Math.random().toString(16).slice(2, 6);
-    return `llsm-viewer-preprocessed-${stamp}-${random}`;
+    return `llsm-viewer-preprocessed-vnext-hes1-${stamp}-${random}`;
   }, []);
 
   const ensureZarrDirectoryName = useCallback((name: string): string => {
@@ -192,6 +235,24 @@ export default function FrontPageContainer({
     setExportDestinationLabel(null);
   }, []);
 
+  const handleOpenExperimentTypeSelection = useCallback(() => {
+    resetPreprocessedState();
+    setIsExperimentTypeSelectionOpen(true);
+    clearDatasetError();
+  }, [clearDatasetError, resetPreprocessedState]);
+
+  const handleExperimentTypeSelected = useCallback((experimentType: ExperimentType) => {
+    setSelectedExperimentType(experimentType);
+    if (experimentType === '2d-movie') {
+      handleVoxelResolutionAxisChange('z', '1.0');
+    }
+    if (experimentType === 'single-3d-volume') {
+      setTracks([]);
+    }
+    setIsExperimentTypeSelectionOpen(false);
+    onStartExperimentSetup();
+  }, [handleVoxelResolutionAxisChange, onStartExperimentSetup, setTracks]);
+
   useLayoutEffect(() => {
     onPreprocessedStateChange?.({
       preprocessedExperiment,
@@ -205,15 +266,50 @@ export default function FrontPageContainer({
     }
   }, [preprocessedExperiment]);
 
-  const frontPageMode = useMemo<'initial' | 'configuring' | 'preprocessed'>(() => {
+  const frontPageMode = useMemo<'initial' | 'experimentTypeSelection' | 'configuring' | 'preprocessed' | 'publicExperiments'>(() => {
     if (preprocessedExperiment) {
       return 'preprocessed';
+    }
+    if (preprocessedState.isPublicExperimentLoaderOpen) {
+      return 'publicExperiments';
+    }
+    if (isExperimentTypeSelectionOpen) {
+      return 'experimentTypeSelection';
     }
     if (channels.length > 0 || isExperimentSetupStarted) {
       return 'configuring';
     }
     return 'initial';
-  }, [channels.length, isExperimentSetupStarted, preprocessedExperiment]);
+  }, [
+    channels.length,
+    isExperimentSetupStarted,
+    isExperimentTypeSelectionOpen,
+    preprocessedExperiment,
+    preprocessedState.isPublicExperimentLoaderOpen
+  ]);
+
+  const handleReturnFromFrontPage = useCallback(() => {
+    setIsExperimentTypeSelectionOpen(false);
+    setSelectedExperimentType('single-3d-volume');
+    setBackgroundMaskEnabled(false);
+    setBackgroundMaskValuesInput('');
+    onReturnToStart();
+  }, [onReturnToStart]);
+
+  const handleBackgroundMaskToggle = useCallback((value: boolean) => {
+    setBackgroundMaskEnabled(value);
+  }, []);
+
+  const handleBackgroundMaskValuesInputChange = useCallback((value: string) => {
+    setBackgroundMaskValuesInput(value);
+  }, []);
+
+  const backgroundMaskParseResult = useMemo(() => {
+    if (!backgroundMaskEnabled) {
+      return { values: [], error: null as string | null };
+    }
+    return parseBackgroundMaskValues(backgroundMaskValuesInput);
+  }, [backgroundMaskEnabled, backgroundMaskValuesInput]);
 
   const handlePreprocessExperiment = useCallback(async () => {
     if (
@@ -224,13 +320,18 @@ export default function FrontPageContainer({
       return;
     }
 
-    if (!voxelResolutionValue) {
-      showInteractionWarning('Fill in all voxel resolution fields before preprocessing.');
+    if (!voxelResolutionValue || !temporalResolutionValue) {
+      showInteractionWarning('Fill in all spatial and temporal resolution fields before preprocessing.');
       return;
     }
 
     if (!canLaunch) {
       showInteractionWarning('Resolve all dataset issues before preprocessing.');
+      return;
+    }
+
+    if (backgroundMaskEnabled && backgroundMaskParseResult.error) {
+      showInteractionWarning(backgroundMaskParseResult.error);
       return;
     }
 
@@ -240,39 +341,72 @@ export default function FrontPageContainer({
       setIsExperimentSetupStarted(true);
       const channelsMetadata = channels.map((channel) => ({
         id: channel.id,
-        name: channel.name.trim() || 'Untitled channel',
-        trackSets: channel.trackSets.map((set) => ({
+        name: channel.name.trim()
+      }));
+      const channelNameById = new Map(channels.map((channel) => [channel.id, channel.name.trim() || null] as const));
+      const trackSetsMetadata = await Promise.all((selectedExperimentType === 'single-3d-volume' ? [] : tracks).map(async (set) => {
+        if (!set.compiledHeader || !set.loadCompiledCatalog || !set.loadCompiledPayload) {
+          throw new Error(`Track set "${set.name.trim() || set.fileName || set.id}" is missing compiled data.`);
+        }
+
+        const [compiledCatalog, compiledPayload] = await Promise.all([
+          set.loadCompiledCatalog(),
+          set.loadCompiledPayload()
+        ]);
+        const trackSetName = set.name.trim();
+        const boundChannelName = set.boundChannelId ? (channelNameById.get(set.boundChannelId) ?? null) : null;
+
+        return {
           id: set.id,
-          name: set.name.trim() || 'Tracks',
+          name: trackSetName,
           fileName: set.fileName,
-          entries: set.entries
-        }))
+          boundChannelId: set.boundChannelId,
+          compiled: {
+            summary: {
+              ...set.compiledHeader,
+              trackSetId: set.id,
+              trackSetName,
+              boundChannelId: set.boundChannelId,
+              tracks: compiledCatalog.map((track) => ({
+                ...track,
+                trackSetId: set.id,
+                trackSetName,
+                channelId: set.boundChannelId,
+                channelName: boundChannelName
+              }))
+            },
+            payload: compiledPayload
+          }
+        };
       }));
       const layersToProcess = channels
-        .flatMap((channel) =>
-          channel.layers.map((layer) => ({
+        .flatMap((channel) => {
+          const layer = channel.volume;
+          if (!layer) {
+            return [];
+          }
+          return [{
             channelId: channel.id,
-            channelLabel: channel.name.trim() || 'Untitled channel',
+            channelLabel: channel.name.trim(),
             key: layer.id,
             label: 'Volume',
             files: layer.files,
             isSegmentation: layer.isSegmentation
-          }))
-        )
+          }];
+        })
         .filter((layer) => layer.files.length > 0);
 
-      const opfsStorageHandle = await createOpfsPreprocessedStorage();
-      let storage = opfsStorageHandle.storage;
+      let selectedStorageHandle: PreprocessedStorageHandle | null = null;
 
       if (exportWhilePreprocessing) {
-        if (typeof window === 'undefined' || typeof (window as any).showDirectoryPicker !== 'function') {
+        if (typeof window === 'undefined' || typeof window.showDirectoryPicker !== 'function') {
           showInteractionWarning('Folder export is not supported in this browser.');
           return;
         }
 
-        let directoryHandle: any;
+        let directoryHandle: FileSystemDirectoryHandle;
         try {
-          directoryHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
+          directoryHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
         } catch (error) {
           if (error instanceof DOMException && error.name === 'AbortError') {
             return;
@@ -286,7 +420,7 @@ export default function FrontPageContainer({
           return;
         }
 
-        let exportDirectoryHandle: any;
+        let exportDirectoryHandle: FileSystemDirectoryHandle;
         try {
           await directoryHandle.getDirectoryHandle(exportDirectoryName);
           showInteractionWarning(`A folder named "${exportDirectoryName}" already exists in the selected location.`);
@@ -304,39 +438,43 @@ export default function FrontPageContainer({
         exportDirectoryHandle = await directoryHandle.getDirectoryHandle(exportDirectoryName, { create: true });
         setExportDestinationLabel(`${directoryHandle.name}/${exportDirectoryName}/`);
 
-        const exportStorageHandle = await createDirectoryHandlePreprocessedStorage(exportDirectoryHandle);
-        storage = {
-          async writeFile(path, data) {
-            await Promise.all([
-              opfsStorageHandle.storage.writeFile(path, data),
-              exportStorageHandle.storage.writeFile(path, data)
-            ]);
-          },
-          async readFile(path) {
-            return opfsStorageHandle.storage.readFile(path);
-          },
-          async finalizeManifest(manifest) {
-            await Promise.all([
-              opfsStorageHandle.storage.finalizeManifest(manifest),
-              exportStorageHandle.storage.finalizeManifest(manifest)
-            ]);
-          }
-        };
+        selectedStorageHandle = await createDirectoryHandlePreprocessedStorage(exportDirectoryHandle, {
+          id: exportDirectoryName
+        });
+      } else {
+        selectedStorageHandle = await createOpfsPreprocessedStorage({
+          datasetId: FRONTPAGE_OPFS_DATASET_ID,
+          rootDir: PREPROCESSED_STORAGE_ROOT_DIR
+        });
       }
 
-      const { manifest, channelSummaries, totalVolumeCount } = await preprocessDatasetToStorage({
+      if (!selectedStorageHandle) {
+        throw new Error('Preprocessed storage handle was not initialized.');
+      }
+
+      const { manifest, channelSummaries, trackSummaries, totalVolumeCount } = await preprocessDatasetToStorage({
         layers: layersToProcess,
         channels: channelsMetadata,
+        trackSets: trackSetsMetadata,
         voxelResolution: voxelResolutionValue,
-        movieMode: experimentDimension,
-        storage
+        temporalResolution: temporalResolutionValue,
+        movieMode: '3d',
+        inputInterpretation: selectedExperimentType,
+        backgroundMask: backgroundMaskEnabled
+          ? {
+              values: backgroundMaskParseResult.values
+            }
+          : null,
+        storage: selectedStorageHandle.storage,
+        storageStrategy: PREPROCESS_STORAGE_STRATEGY
       });
 
       setPreprocessedExperiment({
         manifest,
         channelSummaries,
+        trackSummaries,
         totalVolumeCount,
-        storageHandle: opfsStorageHandle,
+        storageHandle: selectedStorageHandle,
         sourceName: 'experiment',
         sourceSize: null
       });
@@ -355,15 +493,20 @@ export default function FrontPageContainer({
     channels,
     clearDatasetError,
     ensureZarrDirectoryName,
-    experimentDimension,
     exportName,
     exportWhilePreprocessing,
+    backgroundMaskEnabled,
+    backgroundMaskParseResult.error,
+    backgroundMaskParseResult.values,
     isLaunchingViewer,
     isPreprocessingExperiment,
     isPreprocessedImporting,
     setIsExperimentSetupStarted,
     setPreprocessedExperiment,
     showInteractionWarning,
+    tracks,
+    selectedExperimentType,
+    temporalResolutionValue,
     voxelResolutionValue
   ]);
 
@@ -377,24 +520,35 @@ export default function FrontPageContainer({
   const launchButtonLaunchable: 'true' | 'false' = launchButtonEnabled ? 'true' : 'false';
 
   const headerProps = {
-    onReturnToStart,
+    onReturnToStart: handleReturnFromFrontPage,
     isFrontPageLocked
   };
 
   const initialActions = {
     isFrontPageLocked,
-    onStartExperimentSetup,
+    onStartExperimentSetup: handleOpenExperimentTypeSelection,
     onOpenPreprocessedLoader: preprocessedState.handlePreprocessedLoaderOpen,
+    onOpenPublicExperimentLoader: preprocessedState.handlePublicExperimentLoaderOpen,
     isPreprocessedImporting: preprocessedState.isPreprocessedImporting
   };
 
+  const experimentTypeSelectionProps = {
+    onSelectExperimentType: handleExperimentTypeSelected,
+    isFrontPageLocked
+  };
+
   const experimentConfigurationProps = {
-    experimentDimension,
-    onExperimentDimensionChange: handleExperimentDimensionChange,
+    experimentType: selectedExperimentType,
     voxelResolution: voxelResolutionInput,
     onVoxelResolutionAxisChange: handleVoxelResolutionAxisChange,
     onVoxelResolutionUnitChange: handleVoxelResolutionUnitChange,
-    onVoxelResolutionAnisotropyToggle: handleVoxelResolutionAnisotropyToggle
+    onVoxelResolutionTimeUnitChange: handleVoxelResolutionTimeUnitChange,
+    onVoxelResolutionAnisotropyToggle: handleVoxelResolutionAnisotropyToggle,
+    backgroundMaskEnabled,
+    backgroundMaskValuesInput,
+    backgroundMaskError: backgroundMaskEnabled ? backgroundMaskParseResult.error : null,
+    onBackgroundMaskToggle: handleBackgroundMaskToggle,
+    onBackgroundMaskValuesInputChange: handleBackgroundMaskValuesInputChange
   };
 
   const preprocessedLoaderProps = {
@@ -406,9 +560,23 @@ export default function FrontPageContainer({
     preprocessedImportError: preprocessedState.preprocessedImportError
   };
 
+  const publicExperimentLoaderProps = {
+    isOpen: preprocessedState.isPublicExperimentLoaderOpen,
+    catalogUrl: preprocessedState.publicExperimentCatalogUrl,
+    publicExperiments: preprocessedState.publicExperimentCatalog,
+    isCatalogLoading: preprocessedState.isPublicExperimentCatalogLoading,
+    isPreprocessedImporting: preprocessedState.isPreprocessedImporting,
+    activePublicExperimentId: preprocessedState.activePublicExperimentId,
+    publicExperimentError: preprocessedState.publicExperimentCatalogError,
+    onRefreshPublicExperiments: preprocessedState.handlePublicExperimentCatalogRefresh,
+    onLoadPublicExperiment: preprocessedState.handlePublicExperimentLoad
+  };
+
   const channelListPanelProps = {
     channels,
+    tracks,
     channelValidationMap,
+    trackValidationMap,
     activeChannelId,
     activeChannel,
     editingChannelId,
@@ -417,17 +585,19 @@ export default function FrontPageContainer({
     setActiveChannelId,
     setEditingChannelId,
     onAddChannel,
+    onAddSegmentationChannel,
     onChannelNameChange,
     onRemoveChannel,
     onChannelLayerFilesAdded,
     onChannelLayerDrop,
-    onChannelLayerSegmentationToggle,
     onChannelLayerRemove,
-    onChannelTrackFilesAdded,
-    onChannelTrackDrop,
-    onChannelTrackSetNameChange,
-    onChannelTrackSetRemove,
-    experimentDimension,
+    onAddTrack,
+    onTrackFilesAdded,
+    onTrackDrop,
+    onTrackSetNameChange,
+    onTrackSetBoundChannelChange,
+    onTrackSetClearFile,
+    onTrackSetRemove,
     isFrontPageLocked
   };
 
@@ -438,10 +608,12 @@ export default function FrontPageContainer({
 
   const launchActionsProps = {
     frontPageMode,
-    hasGlobalTimepointMismatch,
+    hasGlobalTimepointMismatch:
+      selectedExperimentType === 'single-3d-volume' ? false : hasGlobalTimepointMismatch,
     interactionErrorMessage,
     launchErrorMessage,
-    showLaunchViewerButton: frontPageMode !== 'initial' || isPreprocessedLoaderOpen,
+    showLaunchViewerButton:
+      frontPageMode === 'configuring' || frontPageMode === 'preprocessed' || isPreprocessedLoaderOpen,
     onPreprocessExperiment: handlePreprocessExperiment,
     isPreprocessingExperiment,
     preprocessButtonEnabled: canLaunch,
@@ -472,8 +644,10 @@ export default function FrontPageContainer({
       frontPageMode={frontPageMode}
       header={headerProps}
       initialActions={initialActions}
+      experimentTypeSelection={experimentTypeSelectionProps}
       experimentConfiguration={experimentConfigurationProps}
       preprocessedLoader={preprocessedLoaderProps}
+      publicExperimentLoader={publicExperimentLoaderProps}
       channelListPanel={channelListPanelProps}
       preprocessedSummary={preprocessedSummaryProps}
       launchActions={launchActionsProps}

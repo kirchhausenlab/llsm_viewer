@@ -1,8 +1,179 @@
-:root {
+:root,
+:root[data-theme='dark'] {
   color-scheme: dark;
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background-color: #0b0d10;
-  color: #f5f5f5;
+  --font-ui: 'Inter', 'Segoe UI', sans-serif;
+  --font-mono: 'Inter', 'Segoe UI', sans-serif;
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --type-size-display: clamp(2rem, 2.8vw, 2.85rem);
+  --type-size-title-lg: 1.05rem;
+  --type-size-title: 1rem;
+  --type-size-body: 0.95rem;
+  --type-size-label: 0.85rem;
+  --type-size-meta: 0.78rem;
+  --type-weight-display: 650;
+  --type-weight-body: 500;
+  --type-weight-label: 600;
+  --type-weight-strong: 700;
+  --type-tracking-tight: -0.03em;
+  --type-tracking-ui: 0.01em;
+  --type-tracking-overline: 0.1em;
+  --type-line-tight: 1.2;
+  --type-line-ui: 1.35;
+  --type-line-body: 1.5;
+  --viewer-top-menu-bottom: 0px;
+  --page-background: #08111b;
+  --app-background:
+    radial-gradient(circle at 18% 10%, rgba(111, 143, 192, 0.18), transparent 30%),
+    radial-gradient(circle at 84% 10%, rgba(80, 108, 163, 0.16), transparent 28%),
+    linear-gradient(180deg, rgba(8, 17, 27, 0.98), rgba(6, 11, 19, 0.99)),
+    repeating-linear-gradient(
+      90deg,
+      rgba(132, 149, 183, 0.05) 0,
+      rgba(132, 149, 183, 0.05) 1px,
+      transparent 1px,
+      transparent 104px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(132, 149, 183, 0.04) 0,
+      rgba(132, 149, 183, 0.04) 1px,
+      transparent 1px,
+      transparent 104px
+    );
+  --text-primary: rgba(231, 237, 247, 0.96);
+  --text-secondary: rgba(183, 195, 212, 0.88);
+  --text-muted: rgba(132, 148, 168, 0.78);
+  --text-subtle: rgba(101, 117, 138, 0.74);
+  --accent: #6f8fc0;
+  --accent-strong: #5675a3;
+  --accent-soft: rgba(111, 143, 192, 0.14);
+  --accent-soft-strong: rgba(111, 143, 192, 0.24);
+  --accent-border: rgba(111, 143, 192, 0.46);
+  --focus-ring: rgba(111, 143, 192, 0.26);
+  --panel-background: rgba(15, 26, 40, 0.94);
+  --panel-background-strong: rgba(21, 35, 52, 0.98);
+  --panel-background-muted: rgba(25, 40, 58, 0.9);
+  --panel-background-subtle: rgba(31, 48, 69, 0.72);
+  --panel-border: rgba(117, 136, 169, 0.22);
+  --panel-border-strong: rgba(151, 169, 198, 0.22);
+  --panel-divider: rgba(117, 136, 169, 0.16);
+  --panel-shadow: 0 24px 60px rgba(0, 0, 0, 0.36);
+  --panel-shadow-soft: 0 14px 30px rgba(0, 0, 0, 0.28);
+  --menu-background: rgba(11, 20, 31, 0.96);
+  --menu-background-elevated: rgba(16, 28, 41, 0.99);
+  --menu-shadow: 0 20px 40px rgba(0, 0, 0, 0.34);
+  --titlebar-background: linear-gradient(180deg, rgba(20, 34, 50, 0.98), rgba(13, 24, 37, 0.96));
+  --control-background: rgba(20, 34, 50, 0.9);
+  --control-background-muted: rgba(26, 42, 60, 0.78);
+  --control-hover-background: rgba(33, 51, 72, 0.98);
+  --control-active-background: rgba(42, 62, 87, 0.96);
+  --control-border: rgba(117, 136, 169, 0.26);
+  --control-border-strong: rgba(111, 143, 192, 0.5);
+  --control-shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  --dropzone-background: linear-gradient(180deg, rgba(17, 30, 44, 0.96), rgba(11, 22, 33, 0.98));
+  --dropzone-accent-background:
+    linear-gradient(180deg, rgba(26, 43, 62, 0.98), rgba(17, 29, 43, 0.98));
+  --dropzone-border: rgba(111, 143, 192, 0.38);
+  --dropzone-shadow: 0 14px 28px rgba(0, 0, 0, 0.22);
+  --primary-button-background: linear-gradient(180deg, #7a98c7, #5f7fab);
+  --primary-button-background-hover: linear-gradient(180deg, #89a5d2, #6c8db8);
+  --primary-button-border: rgba(154, 177, 218, 0.35);
+  --primary-button-shadow: 0 12px 24px rgba(22, 40, 70, 0.3);
+  --primary-button-text: #f7fbff;
+  --success-surface: rgba(34, 197, 94, 0.14);
+  --success-border: rgba(74, 222, 128, 0.3);
+  --success-text: #a8e7bf;
+  --warning-surface: rgba(245, 158, 11, 0.16);
+  --warning-border: rgba(245, 158, 11, 0.28);
+  --warning-text: #f6d39c;
+  --danger-background: #8f3737;
+  --danger-surface: rgba(185, 72, 72, 0.18);
+  --danger-border: rgba(214, 98, 98, 0.32);
+  --danger-text: #fff1f1;
+  --selection-background: rgba(111, 143, 192, 0.22);
+  --selection-foreground: #f7fbff;
+  --scrollbar-thumb: rgba(132, 149, 183, 0.28);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --page-background: #f3ead8;
+  --app-background:
+    radial-gradient(circle at 18% 10%, rgba(201, 166, 101, 0.16), transparent 28%),
+    radial-gradient(circle at 84% 8%, rgba(223, 197, 147, 0.22), transparent 30%),
+    linear-gradient(180deg, rgba(247, 239, 223, 0.98), rgba(238, 228, 205, 0.99)),
+    repeating-linear-gradient(
+      90deg,
+      rgba(156, 132, 92, 0.14) 0,
+      rgba(156, 132, 92, 0.14) 1px,
+      transparent 1px,
+      transparent 104px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(156, 132, 92, 0.1) 0,
+      rgba(156, 132, 92, 0.1) 1px,
+      transparent 1px,
+      transparent 104px
+    );
+  --text-primary: #3a2f21;
+  --text-secondary: #645340;
+  --text-muted: #83705a;
+  --text-subtle: #a18e73;
+  --accent: #8b692f;
+  --accent-strong: #6f5223;
+  --accent-soft: rgba(139, 105, 47, 0.1);
+  --accent-soft-strong: rgba(139, 105, 47, 0.18);
+  --accent-border: rgba(139, 105, 47, 0.34);
+  --focus-ring: rgba(139, 105, 47, 0.18);
+  --panel-background: rgba(249, 243, 231, 0.97);
+  --panel-background-strong: rgba(255, 249, 239, 0.99);
+  --panel-background-muted: rgba(243, 235, 220, 0.96);
+  --panel-background-subtle: rgba(236, 226, 208, 0.94);
+  --panel-border: rgba(131, 111, 82, 0.24);
+  --panel-border-strong: rgba(118, 97, 67, 0.32);
+  --panel-divider: rgba(140, 119, 89, 0.2);
+  --panel-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
+  --panel-shadow-soft: 0 10px 22px rgba(15, 23, 42, 0.08);
+  --menu-background: rgba(249, 243, 230, 0.99);
+  --menu-background-elevated: rgba(255, 249, 239, 0.99);
+  --menu-shadow: 0 18px 34px rgba(15, 23, 42, 0.12);
+  --titlebar-background:
+    linear-gradient(180deg, rgba(242, 233, 214, 0.99), rgba(249, 243, 230, 0.99));
+  --control-background: rgba(249, 243, 231, 0.98);
+  --control-background-muted: rgba(242, 233, 216, 0.98);
+  --control-hover-background: rgba(237, 227, 207, 1);
+  --control-active-background: rgba(230, 217, 194, 1);
+  --control-border: rgba(131, 111, 82, 0.28);
+  --control-border-strong: rgba(139, 105, 47, 0.42);
+  --control-shadow-inset: inset 0 1px 0 rgba(255, 251, 241, 0.68);
+  --dropzone-background:
+    linear-gradient(180deg, rgba(246, 238, 221, 0.99), rgba(237, 227, 208, 0.98));
+  --dropzone-accent-background:
+    linear-gradient(180deg, rgba(239, 229, 209, 0.99), rgba(233, 221, 199, 0.99));
+  --dropzone-border: rgba(139, 105, 47, 0.32);
+  --dropzone-shadow: 0 10px 20px rgba(15, 23, 42, 0.07);
+  --primary-button-background: linear-gradient(180deg, #9a7440, #7d5c2b);
+  --primary-button-background-hover: linear-gradient(180deg, #ab8250, #8b6733);
+  --primary-button-border: rgba(139, 105, 47, 0.28);
+  --primary-button-shadow: 0 10px 18px rgba(104, 74, 28, 0.16);
+  --primary-button-text: #fffaf1;
+  --success-surface: rgba(22, 163, 74, 0.12);
+  --success-border: rgba(22, 163, 74, 0.24);
+  --success-text: #176142;
+  --warning-surface: rgba(217, 119, 6, 0.14);
+  --warning-border: rgba(217, 119, 6, 0.24);
+  --warning-text: #8d5c14;
+  --danger-background: #c76161;
+  --danger-surface: rgba(185, 72, 72, 0.12);
+  --danger-border: rgba(185, 72, 72, 0.24);
+  --danger-text: #fff9f9;
+  --selection-background: rgba(139, 105, 47, 0.16);
+  --selection-foreground: #2b2419;
+  --scrollbar-thumb: rgba(128, 108, 78, 0.28);
 }
 
 body,
@@ -14,10 +185,19 @@ html {
   overflow: hidden;
 }
 
+html,
+body {
+  background: var(--page-background);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  line-height: var(--type-line-body);
+}
+
 #root {
   min-height: 100vh;
   height: 100%;
   display: flex;
+  background: var(--page-background);
 }
 
 button,
@@ -25,4 +205,17 @@ input,
 select,
 textarea {
   font: inherit;
+  color: inherit;
+  line-height: var(--type-line-ui);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: var(--selection-background);
+  color: var(--selection-foreground);
 }

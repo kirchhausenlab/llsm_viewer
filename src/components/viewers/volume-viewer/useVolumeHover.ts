@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 
-import { denormalizeValue, formatChannelValuesDetailed } from '../../../shared/utils/intensityFormatting';
+import { formatChannelValuesDetailed } from '../../../shared/utils/intensityFormatting';
 import { clampValue, sampleRawValuesAtPosition, sampleSegmentationLabel } from '../../../shared/utils/hoverSampling';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
+import type { VolumeBrickPageTable } from '../../../core/volumeProvider';
 import type { HoveredVoxelInfo } from '../../../types/hover';
 import type { ViewerLayer, VolumeResources } from '../VolumeViewer.types';
 import {
@@ -30,23 +31,22 @@ import {
   MIP_MAX_STEPS,
   MIP_REFINEMENT_STEPS,
 } from './rendering';
+import { resolveVolumeHoverLayerSelection } from './volumeHoverTargetLayer';
+import {
+  adjustWindowedIntensity,
+  computeVolumeLuminance,
+  sampleBrickAtlasAtNormalizedPosition,
+  sampleBrickAtlasLabelAtNormalizedPosition,
+  sampleVolumeAtNormalizedPosition,
+  sampleVolumeLabelAtNormalizedPosition,
+} from './volumeHoverSampling';
 
 export type UseVolumeHoverParams = {
   layersRef: MutableRefObject<ViewerLayer[]>;
   resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
   hoverRaycasterRef: MutableRefObject<THREE.Raycaster | null>;
   volumeRootGroupRef: MutableRefObject<THREE.Group | null>;
-  volumeRootBaseOffsetRef: MutableRefObject<THREE.Vector3>;
-  volumeRootCenterOffsetRef: MutableRefObject<THREE.Vector3>;
-  volumeRootCenterUnscaledRef: MutableRefObject<THREE.Vector3>;
-  volumeRootHalfExtentsRef: MutableRefObject<THREE.Vector3>;
-  volumeNormalizationScaleRef: MutableRefObject<number>;
-  volumeUserScaleRef: MutableRefObject<number>;
   volumeStepScaleRef: MutableRefObject<number>;
-  volumeYawRef: MutableRefObject<number>;
-  volumePitchRef: MutableRefObject<number>;
-  volumeRootRotatedCenterTempRef: MutableRefObject<THREE.Vector3>;
-  currentDimensionsRef: MutableRefObject<{ width: number; height: number; depth: number } | null>;
   hoveredVoxelRef: MutableRefObject<{
     layerKey: string | null;
     normalizedPosition: THREE.Vector3 | null;
@@ -61,24 +61,64 @@ export type UseVolumeHoverParams = {
   clearVoxelHoverDebug: () => void;
   setHoverNotReady: (message: string) => void;
   isAdditiveBlending: boolean;
+  zClipFrontFraction: number;
 };
+
+const firstPositiveDimension = (...values: number[]): number => {
+  for (const value of values) {
+    if (Number.isFinite(value) && value > 0) {
+      return value;
+    }
+  }
+  return 0;
+};
+
+export function resolveHoverSpaceDimensions({
+  targetLayer,
+  resource,
+  targetVolume,
+  targetAtlasPageTable,
+}: {
+  targetLayer: ViewerLayer | null;
+  resource: VolumeResources | null;
+  targetVolume: NormalizedVolume | null;
+  targetAtlasPageTable: Pick<VolumeBrickPageTable, 'volumeShape'> | null;
+}): { width: number; height: number; depth: number } {
+  const atlasDepth = targetAtlasPageTable?.volumeShape[0] ?? 0;
+  const atlasHeight = targetAtlasPageTable?.volumeShape[1] ?? 0;
+  const atlasWidth = targetAtlasPageTable?.volumeShape[2] ?? 0;
+
+  const sampleDepth = firstPositiveDimension(targetVolume?.depth ?? 0, atlasDepth);
+  const sampleHeight = firstPositiveDimension(targetVolume?.height ?? 0, atlasHeight);
+  const sampleWidth = firstPositiveDimension(targetVolume?.width ?? 0, atlasWidth);
+
+  return {
+    // In atlas mode, meshes are often built in full-resolution world space while samples
+    // come from downsampled atlas volumes. Prefer render-space dimensions for ray mapping.
+    width: firstPositiveDimension(
+      resource?.dimensions.width ?? 0,
+      targetLayer?.fullResolutionWidth ?? 0,
+      sampleWidth,
+    ),
+    height: firstPositiveDimension(
+      resource?.dimensions.height ?? 0,
+      targetLayer?.fullResolutionHeight ?? 0,
+      sampleHeight,
+    ),
+    depth: firstPositiveDimension(
+      resource?.dimensions.depth ?? 0,
+      targetLayer?.fullResolutionDepth ?? 0,
+      sampleDepth,
+    ),
+  };
+}
 
 export function useVolumeHover({
   layersRef,
   resourcesRef,
   hoverRaycasterRef,
   volumeRootGroupRef,
-  volumeRootBaseOffsetRef,
-  volumeRootCenterOffsetRef,
-  volumeRootCenterUnscaledRef,
-  volumeRootHalfExtentsRef,
-  volumeNormalizationScaleRef,
-  volumeUserScaleRef,
   volumeStepScaleRef,
-  volumeYawRef,
-  volumePitchRef,
-  volumeRootRotatedCenterTempRef,
-  currentDimensionsRef,
   hoveredVoxelRef,
   rendererRef,
   cameraRef,
@@ -89,6 +129,7 @@ export function useVolumeHover({
   clearVoxelHoverDebug,
   setHoverNotReady,
   isAdditiveBlending,
+  zClipFrontFraction,
 }: UseVolumeHoverParams) {
   const hoverTeardownRef = useRef(false);
   const hoverInitializationFailedRef = useRef(false);
@@ -200,66 +241,68 @@ export function useVolumeHover({
         return;
       }
 
-      const layersSnapshot = layersRef.current;
-      const hoverableLayers: (typeof layersSnapshot)[number][] = [];
-      let targetLayer: (typeof layersSnapshot)[number] | null = null;
-      let resource: VolumeResources | null = null;
-      let cpuFallbackLayer: (typeof layersSnapshot)[number] | null = null;
+      const { hoverableLayers, targetLayer, resource } = resolveVolumeHoverLayerSelection(
+        layersRef.current,
+        resourcesRef.current,
+      );
 
-      for (const layer of layersSnapshot) {
-        if (layer.isHoverTarget === false) {
-          continue;
-        }
-        const volume = layer.volume;
-        if (!volume || !layer.visible) {
-          continue;
-        }
+      const targetVolume = targetLayer?.volume ?? null;
+      const targetAtlasPageTable =
+        targetLayer?.brickAtlas?.pageTable ??
+        targetLayer?.brickPageTable ??
+        resource?.brickAtlasSourcePageTable ??
+        null;
+      const targetAtlasData =
+        targetLayer?.brickAtlas?.data ??
+        resource?.brickAtlasSourceData ??
+        null;
+      const targetAtlasTextureFormat = targetLayer?.brickAtlas?.textureFormat ?? null;
+      const targetSourceChannels =
+        targetVolume?.channels ??
+        targetLayer?.channels ??
+        targetLayer?.brickAtlas?.sourceChannels ??
+        1;
+      const targetDataType =
+        (targetVolume?.dataType ?? targetLayer?.dataType ?? 'uint8') as NormalizedVolume['dataType'];
+      const targetMin = targetVolume?.min ?? targetLayer?.min ?? 0;
+      const targetMax = targetVolume?.max ?? targetLayer?.max ?? 255;
+      const targetAtlasSource =
+        !targetVolume &&
+        targetAtlasPageTable &&
+        targetAtlasData &&
+        targetAtlasTextureFormat
+          ? {
+              pageTable: targetAtlasPageTable,
+              atlasData: targetAtlasData,
+              textureFormat: targetAtlasTextureFormat,
+              sourceChannels: targetSourceChannels,
+              dataType: targetDataType,
+              min: targetMin,
+              max: targetMax,
+            }
+          : null;
 
-        const hasVolumeDepth = volume.depth > 1;
-        const viewerMode =
-          layer.mode === 'slice' || layer.mode === '3d'
-            ? layer.mode
-            : hasVolumeDepth
-              ? '3d'
-              : 'slice';
-
-        const canSampleLayer = viewerMode === '3d' || hasVolumeDepth;
-
-        if (!canSampleLayer) {
-          continue;
-        }
-
-        hoverableLayers.push(layer);
-
-        const candidate = resourcesRef.current.get(layer.key) ?? null;
-        const isSliceResource = candidate?.mode === 'slice' && hasVolumeDepth;
-        const has3dResource = candidate?.mode === '3d';
-
-        if (has3dResource && (!resource || resource.mode !== '3d')) {
-          targetLayer = layer;
-          resource = candidate;
-        } else if (isSliceResource && (!resource || resource.mode !== '3d') && !targetLayer) {
-          targetLayer = layer;
-          resource = candidate;
-        } else if (!cpuFallbackLayer) {
-          cpuFallbackLayer = layer;
-        }
-      }
-
-      if (!targetLayer && cpuFallbackLayer) {
-        targetLayer = cpuFallbackLayer;
-      }
-
-      if (!targetLayer || !targetLayer.volume) {
+      if (!targetLayer || (!targetVolume && !targetAtlasSource)) {
         reportVoxelHoverAbort('No visible 3D-capable volume layer is available.');
         return;
       }
 
-      const volume = targetLayer.volume;
-      hoverVolumeSize.set(volume.width, volume.height, volume.depth);
+      const { width: targetWidth, height: targetHeight, depth: targetDepth } = resolveHoverSpaceDimensions({
+        targetLayer,
+        resource,
+        targetVolume,
+        targetAtlasPageTable,
+      });
+      if (targetWidth <= 0 || targetHeight <= 0 || targetDepth <= 0) {
+        reportVoxelHoverAbort('No visible 3D-capable volume layer is available.');
+        return;
+      }
+      hoverVolumeSize.set(targetWidth, targetHeight, targetDepth);
+      const clippedFrontFraction = Number.isFinite(zClipFrontFraction) ? clampValue(zClipFrontFraction, 0, 1) : 0;
+      const clippedFrontPlanes = clippedFrontFraction * Math.max(targetDepth - 1, 0);
 
       const useGpuHover = resource?.mode === '3d';
-      const useSliceResource = resource?.mode === 'slice' && volume.depth > 1;
+      const useSliceResource = resource?.mode === 'slice' && targetDepth > 1;
       let boundingBox: THREE.Box3 | null = null;
 
       if (useGpuHover && resource) {
@@ -283,9 +326,9 @@ export function useVolumeHover({
       } else {
         hoverBoundingBox.min.set(-0.5, -0.5, -0.5);
         hoverBoundingBox.max.set(
-          volume.width - 0.5,
-          volume.height - 0.5,
-          volume.depth - 0.5,
+          targetWidth - 0.5,
+          targetHeight - 0.5,
+          targetDepth - 0.5,
         );
         boundingBox = hoverBoundingBox;
 
@@ -304,183 +347,203 @@ export function useVolumeHover({
         reportVoxelHoverAbort('Unable to compute a bounding box for hover sampling.');
         return;
       }
+      hoverBoundingBox.copy(boundingBox);
+      if (clippedFrontPlanes > 0) {
+        const clippedMinZ = -0.5 + clippedFrontPlanes;
+        hoverBoundingBox.min.z = clampValue(clippedMinZ, hoverBoundingBox.min.z, hoverBoundingBox.max.z);
+      }
 
       hoverPointerVector.set((offsetX / width) * 2 - 1, -(offsetY / height) * 2 + 1);
       raycasterInstance.setFromCamera(hoverPointerVector, cameraInstance);
       hoverLocalRay.copy(raycasterInstance.ray).applyMatrix4(hoverInverseMatrix);
 
-      const isInsideBoundingBox = boundingBox.containsPoint(hoverLocalRay.origin);
+      const isInsideBoundingBox = hoverBoundingBox.containsPoint(hoverLocalRay.origin);
       let hasEntry = false;
       if (isInsideBoundingBox) {
         hoverEntryPoint.copy(hoverLocalRay.origin);
         hasEntry = true;
       } else {
-        const entryHit = hoverLocalRay.intersectBox(boundingBox, hoverEntryPoint);
+        const entryHit = hoverLocalRay.intersectBox(hoverBoundingBox, hoverEntryPoint);
         hasEntry = entryHit !== null;
       }
 
-      hoverRayDirection.copy(hoverLocalRay.direction).normalize();
-      hoverEntryOffset.copy(hoverRayDirection).multiplyScalar(1e-4);
-      hoverExitRay.origin.copy(isInsideBoundingBox ? hoverLocalRay.origin : hoverEntryPoint);
-      hoverExitRay.origin.add(hoverEntryOffset);
-      hoverExitRay.direction.copy(hoverRayDirection);
-      const exitHit = hoverExitRay.intersectBox(boundingBox, hoverExitPoint);
-      const hasExit = exitHit !== null;
+      if (useSliceResource) {
+        if (!hasEntry) {
+          reportVoxelHoverAbort('Ray does not intersect the target volume.');
+          return;
+        }
+        // Slice resources are rendered as a zero-thickness XY plane; treat the
+        // entry point as the full sample segment instead of requiring an exit.
+        hoverStart.copy(hoverEntryPoint);
+        hoverEnd.copy(hoverEntryPoint);
+      } else {
+        hoverRayDirection.copy(hoverLocalRay.direction).normalize();
+        hoverEntryOffset.copy(hoverRayDirection).multiplyScalar(1e-4);
+        hoverExitRay.origin.copy(isInsideBoundingBox ? hoverLocalRay.origin : hoverEntryPoint);
+        hoverExitRay.origin.add(hoverEntryOffset);
+        hoverExitRay.direction.copy(hoverRayDirection);
+        const exitHit = hoverExitRay.intersectBox(hoverBoundingBox, hoverExitPoint);
+        const hasExit = exitHit !== null;
 
-      if (!hasEntry || !hasExit) {
-        reportVoxelHoverAbort('Ray does not intersect the target volume.');
-        return;
+        if (!hasEntry || !hasExit) {
+          reportVoxelHoverAbort('Ray does not intersect the target volume.');
+          return;
+        }
+
+        const entryDistance = hoverLocalRay.origin.distanceTo(hoverEntryPoint);
+        const exitDistance = hoverLocalRay.origin.distanceTo(hoverExitPoint);
+        hoverStart.copy(entryDistance <= exitDistance ? hoverEntryPoint : hoverExitPoint);
+        hoverEnd.copy(entryDistance <= exitDistance ? hoverExitPoint : hoverEntryPoint);
       }
-
-      const entryDistance = hoverLocalRay.origin.distanceTo(hoverEntryPoint);
-      const exitDistance = hoverLocalRay.origin.distanceTo(hoverExitPoint);
-      hoverStart.copy(entryDistance <= exitDistance ? hoverEntryPoint : hoverExitPoint);
-      hoverEnd.copy(entryDistance <= exitDistance ? hoverExitPoint : hoverEntryPoint);
 
       const safeStepScale = Math.max(volumeStepScaleRef.current, 1e-3);
       const travelDistance = hoverEnd.distanceTo(hoverStart);
       let nsteps = Math.round(travelDistance * safeStepScale);
       nsteps = clampValue(nsteps, 1, MIP_MAX_STEPS);
 
-      hoverStartNormalized.copy(hoverStart).divide(hoverVolumeSize);
-      hoverStep.copy(hoverEnd).sub(hoverStart).divide(hoverVolumeSize).divideScalar(nsteps);
-      hoverSample.copy(hoverStartNormalized);
-
-      const channels = Math.max(1, volume.channels);
-      const sliceStride = volume.width * volume.height * channels;
-      const rowStride = volume.width * channels;
-
-      const sampleVolume = (coords: THREE.Vector3) => {
-        const x = clampValue(coords.x * volume.width, 0, volume.width - 1);
-        const y = clampValue(coords.y * volume.height, 0, volume.height - 1);
-        const z = clampValue(coords.z * volume.depth, 0, volume.depth - 1);
-
-        const leftX = Math.floor(x);
-        const rightX = Math.min(volume.width - 1, leftX + 1);
-        const topY = Math.floor(y);
-        const bottomY = Math.min(volume.height - 1, topY + 1);
-        const frontZ = Math.floor(z);
-        const backZ = Math.min(volume.depth - 1, frontZ + 1);
-
-        const tX = x - leftX;
-        const tY = y - topY;
-        const tZ = z - frontZ;
-        const invTX = 1 - tX;
-        const invTY = 1 - tY;
-        const invTZ = 1 - tZ;
-
-        const weight000 = invTX * invTY * invTZ;
-        const weight100 = tX * invTY * invTZ;
-        const weight010 = invTX * tY * invTZ;
-        const weight110 = tX * tY * invTZ;
-        const weight001 = invTX * invTY * tZ;
-        const weight101 = tX * invTY * tZ;
-        const weight011 = invTX * tY * tZ;
-        const weight111 = tX * tY * tZ;
-
-        const frontOffset = frontZ * sliceStride;
-        const backOffset = backZ * sliceStride;
-        const topFrontOffset = frontOffset + topY * rowStride;
-        const bottomFrontOffset = frontOffset + bottomY * rowStride;
-        const topBackOffset = backOffset + topY * rowStride;
-        const bottomBackOffset = backOffset + bottomY * rowStride;
-
-        const normalizedValues: number[] = [];
-        const rawValues: number[] = [];
-
-        for (let channelIndex = 0; channelIndex < channels; channelIndex++) {
-          const baseChannelOffset = channelIndex;
-          const topLeftFront = volume.normalized[topFrontOffset + leftX * channels + baseChannelOffset] ?? 0;
-          const topRightFront = volume.normalized[topFrontOffset + rightX * channels + baseChannelOffset] ?? 0;
-          const bottomLeftFront = volume.normalized[bottomFrontOffset + leftX * channels + baseChannelOffset] ?? 0;
-          const bottomRightFront = volume.normalized[bottomFrontOffset + rightX * channels + baseChannelOffset] ?? 0;
-
-          const topLeftBack = volume.normalized[topBackOffset + leftX * channels + baseChannelOffset] ?? 0;
-          const topRightBack = volume.normalized[topBackOffset + rightX * channels + baseChannelOffset] ?? 0;
-          const bottomLeftBack = volume.normalized[bottomBackOffset + leftX * channels + baseChannelOffset] ?? 0;
-          const bottomRightBack = volume.normalized[bottomBackOffset + rightX * channels + baseChannelOffset] ?? 0;
-
-          const interpolated =
-            topLeftFront * weight000 +
-            topRightFront * weight100 +
-            bottomLeftFront * weight010 +
-            bottomRightFront * weight110 +
-            topLeftBack * weight001 +
-            topRightBack * weight101 +
-            bottomLeftBack * weight011 +
-            bottomRightBack * weight111;
-
-          normalizedValues.push(interpolated / 255);
-          rawValues.push(denormalizeValue(interpolated, volume));
-        }
-
-        return { normalizedValues, rawValues };
-      };
-
-      const computeLuminance = (values: number[]) => {
-        if (channels === 1) {
-          return values[0] ?? 0;
-        }
-        if (channels === 2) {
-          return 0.5 * ((values[0] ?? 0) + (values[1] ?? 0));
-        }
-        if (channels === 3) {
-          return 0.2126 * (values[0] ?? 0) + 0.7152 * (values[1] ?? 0) + 0.0722 * (values[2] ?? 0);
-        }
-        return Math.max(...values, 0);
-      };
-
-      const adjustIntensity = (value: number) => {
-        const range = Math.max(targetLayer.windowMax - targetLayer.windowMin, 1e-5);
-        const normalized = clampValue((value - targetLayer.windowMin) / range, 0, 1);
-        return targetLayer.invert ? 1 - normalized : normalized;
-      };
+      const channels = Math.max(1, targetSourceChannels);
+      const targetIsSegmentation = Boolean(targetLayer.isSegmentation);
 
       let maxValue = -Infinity;
-      let maxIndex = 0;
-      hoverMaxPosition.copy(hoverSample);
       let maxRawValues: number[] = [];
-      let maxNormalizedValues: number[] = [];
+      let targetSamplePositionForLabels = new THREE.Vector3(0, 0, 0);
+      let sliceCoordinateOverride: { x: number; y: number; z: number } | null = null;
 
-      const highWaterMark = targetLayer.invert ? 0.001 : 0.999;
+      if (useSliceResource) {
+        const dataWidth = Math.max(1, targetVolume?.width ?? targetAtlasPageTable?.volumeShape[2] ?? targetWidth);
+        const dataHeight = Math.max(1, targetVolume?.height ?? targetAtlasPageTable?.volumeShape[1] ?? targetHeight);
+        const dataDepth = Math.max(1, targetVolume?.depth ?? targetAtlasPageTable?.volumeShape[0] ?? targetDepth);
+        const maxDisplaySliceIndex = Math.max(0, targetDepth - 1);
+        const maxDataSliceIndex = Math.max(0, dataDepth - 1);
+        const hasExplicitSliceIndex = Number.isFinite(targetLayer.sliceIndex);
+        const displaySliceIndex = hasExplicitSliceIndex
+          ? Number(targetLayer.sliceIndex)
+          : Math.round(clippedFrontFraction * maxDisplaySliceIndex);
+        const dataSliceIndex = hasExplicitSliceIndex
+          ? Number(targetLayer.sliceIndex)
+          : Math.round(clippedFrontFraction * maxDataSliceIndex);
+        const clampedDisplaySliceIndex = Math.min(Math.max(displaySliceIndex, 0), maxDisplaySliceIndex);
+        const clampedDataSliceIndex = Math.min(Math.max(dataSliceIndex, 0), maxDataSliceIndex);
 
-      for (let i = 0; i < nsteps; i++) {
-        const sample = sampleVolume(hoverSample);
-        const luminance = computeLuminance(sample.normalizedValues);
-        const adjusted = adjustIntensity(luminance);
-        if (adjusted > maxValue) {
-          maxValue = adjusted;
-          maxIndex = i;
-          hoverMaxPosition.copy(hoverSample);
+        const displayPixelX = Math.floor(clampValue(hoverStart.x + 0.5, 0, Math.max(0, targetWidth - 1)));
+        const displayPixelY = Math.floor(clampValue(hoverStart.y + 0.5, 0, Math.max(0, targetHeight - 1)));
+        const displayNormalizedX = displayPixelX / Math.max(1, targetWidth);
+        const displayNormalizedY = displayPixelY / Math.max(1, targetHeight);
+        const displayNormalizedZ = clampedDisplaySliceIndex / Math.max(1, targetDepth);
+        hoverMaxPosition.set(displayNormalizedX, displayNormalizedY, displayNormalizedZ);
+
+        const dataPixelX = Math.floor(
+          clampValue((displayPixelX / Math.max(1, targetWidth)) * dataWidth, 0, Math.max(0, dataWidth - 1))
+        );
+        const dataPixelY = Math.floor(
+          clampValue((displayPixelY / Math.max(1, targetHeight)) * dataHeight, 0, Math.max(0, dataHeight - 1))
+        );
+        targetSamplePositionForLabels.set(
+          dataPixelX / Math.max(1, dataWidth),
+          dataPixelY / Math.max(1, dataHeight),
+          clampedDataSliceIndex / Math.max(1, dataDepth),
+        );
+
+        if (targetIsSegmentation) {
+          const labelValue = targetVolume
+            ? sampleVolumeLabelAtNormalizedPosition(targetVolume, targetSamplePositionForLabels)
+            : sampleBrickAtlasLabelAtNormalizedPosition(targetAtlasSource!, targetSamplePositionForLabels);
+          maxRawValues = [labelValue];
+          maxValue = labelValue > 0 ? 1 : 0;
+        } else {
+          const sample = targetVolume
+            ? sampleVolumeAtNormalizedPosition(targetVolume, targetSamplePositionForLabels)
+            : sampleBrickAtlasAtNormalizedPosition(targetAtlasSource!, targetSamplePositionForLabels);
           maxRawValues = sample.rawValues;
-          maxNormalizedValues = sample.normalizedValues;
+          maxValue = adjustWindowedIntensity(
+            computeVolumeLuminance(sample.normalizedValues, channels),
+            targetLayer.windowMin,
+            targetLayer.windowMax,
+            targetLayer.invert,
+          );
+        }
+        sliceCoordinateOverride = {
+          x: displayPixelX,
+          y: displayPixelY,
+          z: clampedDisplaySliceIndex,
+        };
+      } else {
+        hoverStartNormalized.copy(hoverStart).divide(hoverVolumeSize);
+        hoverStep.copy(hoverEnd).sub(hoverStart).divide(hoverVolumeSize).divideScalar(nsteps);
+        hoverSample.copy(hoverStartNormalized);
+        hoverMaxPosition.copy(hoverSample);
+        if (targetIsSegmentation) {
+          for (let i = 0; i < nsteps; i++) {
+            const labelValue = targetVolume
+              ? sampleVolumeLabelAtNormalizedPosition(targetVolume, hoverSample)
+              : sampleBrickAtlasLabelAtNormalizedPosition(targetAtlasSource!, hoverSample);
+            if (labelValue > 0) {
+              maxValue = 1;
+              hoverMaxPosition.copy(hoverSample);
+              maxRawValues = [labelValue];
+              break;
+            }
+            hoverSample.add(hoverStep);
+          }
+        } else {
+          const highWaterMark = targetLayer.invert ? 0.001 : 0.999;
+          let maxIndex = 0;
 
-          if ((!targetLayer.invert && maxValue >= highWaterMark) || (targetLayer.invert && maxValue <= highWaterMark)) {
-            break;
+          for (let i = 0; i < nsteps; i++) {
+            const sample = targetVolume
+              ? sampleVolumeAtNormalizedPosition(targetVolume, hoverSample)
+              : sampleBrickAtlasAtNormalizedPosition(targetAtlasSource!, hoverSample);
+            const luminance = computeVolumeLuminance(sample.normalizedValues, channels);
+            const adjusted = adjustWindowedIntensity(
+              luminance,
+              targetLayer.windowMin,
+              targetLayer.windowMax,
+              targetLayer.invert,
+            );
+            if (adjusted > maxValue) {
+              maxValue = adjusted;
+              maxIndex = i;
+              hoverMaxPosition.copy(hoverSample);
+              maxRawValues = sample.rawValues;
+
+              if ((!targetLayer.invert && maxValue >= highWaterMark) || (targetLayer.invert && maxValue <= highWaterMark)) {
+                break;
+              }
+            }
+            hoverSample.add(hoverStep);
+          }
+
+          hoverSample.copy(hoverStartNormalized).addScaledVector(hoverStep, maxIndex - 0.5);
+          hoverRefineStep.copy(hoverStep).divideScalar(MIP_REFINEMENT_STEPS);
+
+          for (let i = 0; i < MIP_REFINEMENT_STEPS; i++) {
+            const sample = targetVolume
+              ? sampleVolumeAtNormalizedPosition(targetVolume, hoverSample)
+              : sampleBrickAtlasAtNormalizedPosition(targetAtlasSource!, hoverSample);
+            const luminance = computeVolumeLuminance(sample.normalizedValues, channels);
+            const adjusted = adjustWindowedIntensity(
+              luminance,
+              targetLayer.windowMin,
+              targetLayer.windowMax,
+              targetLayer.invert,
+            );
+            if (adjusted > maxValue) {
+              maxValue = adjusted;
+              hoverMaxPosition.copy(hoverSample);
+              maxRawValues = sample.rawValues;
+            }
+            hoverSample.add(hoverRefineStep);
           }
         }
-
-        hoverSample.add(hoverStep);
-      }
-
-      hoverSample.copy(hoverStartNormalized).addScaledVector(hoverStep, maxIndex - 0.5);
-      hoverRefineStep.copy(hoverStep).divideScalar(MIP_REFINEMENT_STEPS);
-
-      for (let i = 0; i < MIP_REFINEMENT_STEPS; i++) {
-        const sample = sampleVolume(hoverSample);
-        const luminance = computeLuminance(sample.normalizedValues);
-        const adjusted = adjustIntensity(luminance);
-        if (adjusted > maxValue) {
-          maxValue = adjusted;
-          hoverMaxPosition.copy(hoverSample);
-          maxRawValues = sample.rawValues;
-          maxNormalizedValues = sample.normalizedValues;
-        }
-        hoverSample.add(hoverRefineStep);
+        targetSamplePositionForLabels = hoverMaxPosition.clone();
       }
 
       if (!Number.isFinite(maxValue) || maxRawValues.length === 0) {
-        reportVoxelHoverAbort('No finite intensity was found along the hover ray.');
+        reportVoxelHoverAbort(
+          targetIsSegmentation
+            ? 'No foreground segmentation label was found along the hover ray.'
+            : 'No finite intensity was found along the hover ray.'
+        );
         return;
       }
 
@@ -491,8 +554,14 @@ export function useVolumeHover({
       );
 
       const hoveredSegmentationLabel =
-        targetLayer.isSegmentation && targetLayer.volume?.segmentationLabels
-          ? sampleSegmentationLabel(targetLayer.volume, hoverMaxPosition)
+        targetLayer.isSegmentation
+          ? (
+              targetVolume
+                ? sampleVolumeLabelAtNormalizedPosition(targetVolume, targetSamplePositionForLabels)
+                : targetAtlasSource
+                  ? sampleBrickAtlasLabelAtNormalizedPosition(targetAtlasSource, targetSamplePositionForLabels)
+                  : null
+            )
           : null;
 
       const displayLayers = isAdditiveBlending && hoverableLayers.length > 0 ? hoverableLayers : [targetLayer];
@@ -506,36 +575,97 @@ export function useVolumeHover({
 
       for (const layer of displayLayers) {
         const layerVolume = layer.volume;
-        if (!layerVolume) {
-          continue;
-        }
-
         let displayValues: number[] | null = null;
+        let displayType: NormalizedVolume['dataType'] | null = null;
 
-        if (layer.isSegmentation && layerVolume.segmentationLabels) {
+        if (layer.isSegmentation) {
           const labelValue =
             layer.key === targetLayer.key && hoveredSegmentationLabel !== null
               ? hoveredSegmentationLabel
-              : sampleSegmentationLabel(layerVolume, hoverMaxPosition);
+              : layerVolume
+                ? sampleSegmentationLabel(layerVolume, hoverMaxPosition)
+                : (() => {
+                    const layerResource = resourcesRef.current.get(layer.key) ?? null;
+                    const layerAtlasPageTable =
+                      layer.brickAtlas?.pageTable ??
+                      layer.brickPageTable ??
+                      layerResource?.brickAtlasSourcePageTable ??
+                      null;
+                    const layerAtlasData =
+                      layer.brickAtlas?.data ??
+                      layerResource?.brickAtlasSourceData ??
+                      null;
+                    const layerAtlasTextureFormat = layer.brickAtlas?.textureFormat ?? null;
+                    return layerAtlasPageTable && layerAtlasData && layerAtlasTextureFormat
+                      ? sampleBrickAtlasLabelAtNormalizedPosition(
+                          {
+                            pageTable: layerAtlasPageTable,
+                            atlasData: layerAtlasData,
+                            textureFormat: layerAtlasTextureFormat,
+                            sourceChannels: layer.channels ?? layer.brickAtlas?.sourceChannels ?? 1,
+                            dataType: (layer.dataType ?? 'uint16') as NormalizedVolume['dataType'],
+                            min: layer.min ?? 0,
+                            max: layer.max ?? 0,
+                          },
+                          hoverMaxPosition
+                        )
+                      : null;
+                  })();
           if (labelValue !== null) {
             displayValues = [labelValue];
+            displayType = (layerVolume?.dataType ?? layer.dataType ?? 'uint16') as NormalizedVolume['dataType'];
           }
         }
 
         if (!displayValues) {
-          displayValues = layer.key === targetLayer.key
-            ? maxRawValues
-            : sampleRawValuesAtPosition(layerVolume, hoverMaxPosition);
+          if (layer.key === targetLayer.key) {
+            displayValues = maxRawValues;
+            displayType = targetDataType;
+          } else if (layerVolume) {
+            displayValues = sampleRawValuesAtPosition(layerVolume, hoverMaxPosition);
+            displayType = layerVolume.dataType;
+          } else {
+            const layerResource = resourcesRef.current.get(layer.key) ?? null;
+            const layerAtlasPageTable =
+              layer.brickAtlas?.pageTable ??
+              layer.brickPageTable ??
+              layerResource?.brickAtlasSourcePageTable ??
+              null;
+            const layerAtlasData =
+              layer.brickAtlas?.data ??
+              layerResource?.brickAtlasSourceData ??
+              null;
+            const layerAtlasTextureFormat = layer.brickAtlas?.textureFormat ?? null;
+            if (layerAtlasPageTable && layerAtlasData && layerAtlasTextureFormat) {
+              const atlasSample = sampleBrickAtlasAtNormalizedPosition(
+                {
+                  pageTable: layerAtlasPageTable,
+                  atlasData: layerAtlasData,
+                  textureFormat: layerAtlasTextureFormat,
+                  sourceChannels:
+                    layer.channels ??
+                    layer.brickAtlas?.sourceChannels ??
+                    targetSourceChannels,
+                  dataType: (layer.dataType ?? targetDataType) as NormalizedVolume['dataType'],
+                  min: layer.min ?? targetMin,
+                  max: layer.max ?? targetMax,
+                },
+                hoverMaxPosition
+              );
+              displayValues = atlasSample.rawValues;
+              displayType = (layer.dataType ?? targetDataType) as NormalizedVolume['dataType'];
+            }
+          }
         }
 
-        if (!displayValues || displayValues.length === 0) {
+        if (!displayValues || displayValues.length === 0 || !displayType) {
           continue;
         }
 
         const channelLabel = layer.channelName?.trim() || layer.label?.trim() || null;
         samples.push({
           values: displayValues,
-          type: layerVolume.dataType,
+          type: displayType,
           label: useLayerLabels ? channelLabel : null,
           color: layer.color,
         });
@@ -551,6 +681,7 @@ export function useVolumeHover({
       const intensityParts = samples.flatMap((sample) =>
         formatChannelValuesDetailed(sample.values, sample.type, sample.label, includeLabel).map((entry) => ({
           text: entry.text,
+          channelLabel: entry.channelLabel,
           color: sample.color,
         })),
       );
@@ -564,11 +695,15 @@ export function useVolumeHover({
 
       const hoveredVoxel = {
         intensity: intensityParts.map((entry) => entry.text).join(' · '),
-        components: intensityParts.map((entry) => ({ text: entry.text, color: entry.color })),
+        components: intensityParts.map((entry) => ({
+          text: entry.text,
+          channelLabel: entry.channelLabel,
+          color: entry.color
+        })),
         coordinates: {
-          x: Math.round(clampValue(hoverMaxPosition.x * volume.width, 0, volume.width - 1)),
-          y: Math.round(clampValue(hoverMaxPosition.y * volume.height, 0, volume.height - 1)),
-          z: Math.round(clampValue(hoverMaxPosition.z * volume.depth, 0, volume.depth - 1))
+          x: sliceCoordinateOverride?.x ?? Math.round(clampValue(hoverMaxPosition.x * targetWidth, 0, targetWidth - 1)),
+          y: sliceCoordinateOverride?.y ?? Math.round(clampValue(hoverMaxPosition.y * targetHeight, 0, targetHeight - 1)),
+          z: sliceCoordinateOverride?.z ?? Math.round(clampValue(hoverMaxPosition.z * targetDepth, 0, targetDepth - 1))
         }
       } satisfies HoveredVoxelInfo;
 
@@ -595,6 +730,7 @@ export function useVolumeHover({
       setHoverNotReady,
       volumeRootGroupRef,
       volumeStepScaleRef,
+      zClipFrontFraction,
       isAdditiveBlending,
     ],
   );

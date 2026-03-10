@@ -4,6 +4,7 @@ import type { MutableRefObject } from 'react';
 import { useLoadingOverlay } from '../../../shared/hooks/useLoadingOverlay';
 import { useVolumeResources } from './useVolumeResources';
 import type { VolumeResources, VolumeViewerProps } from '../VolumeViewer.types';
+import { RENDER_STYLE_SLICE } from '../../../state/layerSettings';
 
 export function useVolumeViewerDataState({
   layers,
@@ -35,16 +36,32 @@ export function useVolumeViewerDataState({
   }, [layers]);
 
   const hasRenderableLayer = Boolean(primaryVolume);
+  const hasAtlasOnlyLayer = useMemo(
+    () =>
+      layers.some(
+        (layer) =>
+          !layer.volume &&
+          layer.brickAtlas?.enabled &&
+          layer.brickAtlas.pageTable.volumeShape[0] > 0 &&
+          layer.brickAtlas.pageTable.volumeShape[1] > 0 &&
+          layer.brickAtlas.pageTable.volumeShape[2] > 0
+      ),
+    [layers]
+  );
   const hasActive3DLayer = useMemo(
     () =>
       layers.some((layer) => {
-        if (!layer.volume) {
+        if (layer.renderStyle === RENDER_STYLE_SLICE) {
+          return false;
+        }
+        const depth = layer.volume?.depth ?? layer.brickAtlas?.pageTable.volumeShape[0] ?? 0;
+        if (depth <= 0) {
           return false;
         }
         const viewerMode =
           layer.mode === 'slice' || layer.mode === '3d'
             ? layer.mode
-            : layer.volume.depth > 1
+            : depth > 1
               ? '3d'
               : 'slice';
 
@@ -53,14 +70,22 @@ export function useVolumeViewerDataState({
     [layers],
   );
 
-  return { showLoadingOverlay, primaryVolume, hasRenderableLayer, hasActive3DLayer } as const;
+  return {
+    showLoadingOverlay,
+    primaryVolume,
+    hasRenderableLayer: hasRenderableLayer || hasAtlasOnlyLayer,
+    hasActive3DLayer
+  } as const;
 }
 
 export function useVolumeViewerResources({
   layers,
+  playbackWarmupLayers,
   primaryVolume,
   isAdditiveBlending,
+  zClipFrontFraction,
   renderContextRevision,
+  rendererRef,
   sceneRef,
   cameraRef,
   controlsRef,
@@ -87,9 +112,12 @@ export function useVolumeViewerResources({
   applyHoverHighlightToResources,
 }: {
   layers: VolumeViewerProps['layers'];
+  playbackWarmupLayers?: VolumeViewerProps['playbackWarmupLayers'];
   primaryVolume: ReturnType<typeof useVolumeViewerDataState>['primaryVolume'];
   isAdditiveBlending: boolean;
+  zClipFrontFraction: number;
   renderContextRevision: number;
+  rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
   sceneRef: MutableRefObject<THREE.Scene | null>;
   cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
   controlsRef: MutableRefObject<any>;
@@ -117,9 +145,12 @@ export function useVolumeViewerResources({
 }) {
   const { getColormapTexture } = useVolumeResources({
     layers,
+    playbackWarmupLayers,
     primaryVolume,
     isAdditiveBlending,
+    zClipFrontFraction,
     renderContextRevision,
+    rendererRef,
     sceneRef,
     cameraRef,
     controlsRef,

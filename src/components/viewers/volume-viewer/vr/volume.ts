@@ -47,6 +47,12 @@ export type ApplyVolumeRootTransformParams = ApplyVolumeYawPitchParams & {
   volumeAnisotropyScaleRef: MutableRefObject<{ x: number; y: number; z: number }>;
 };
 
+const VOLUME_WORLD_AXIS_SIGN = {
+  x: 1,
+  y: -1,
+  z: -1,
+} as const;
+
 function resolveAxisScale(value: unknown): number {
   const numeric = typeof value === 'number' ? value : Number.NaN;
   return Number.isFinite(numeric) && numeric > 0 ? numeric : 1;
@@ -65,6 +71,24 @@ function resolveAnisotropyScale(value: { x: number; y: number; z: number } | nul
   };
 }
 
+export function resolveVolumeRootScale({
+  normalizationScale,
+  userScale,
+  anisotropyScale,
+}: {
+  normalizationScale: number;
+  userScale: number;
+  anisotropyScale: { x: number; y: number; z: number };
+}) {
+  const safeNormalization = Number.isFinite(normalizationScale) && normalizationScale > 0 ? normalizationScale : 1;
+  const safeUser = Number.isFinite(userScale) && userScale > 0 ? userScale : 1;
+  return {
+    x: safeNormalization * safeUser * anisotropyScale.x * VOLUME_WORLD_AXIS_SIGN.x,
+    y: safeNormalization * safeUser * anisotropyScale.y * VOLUME_WORLD_AXIS_SIGN.y,
+    z: safeNormalization * safeUser * anisotropyScale.z * VOLUME_WORLD_AXIS_SIGN.z,
+  };
+}
+
 function applyVolumeRootScale({
   volumeRootGroup,
   normalizationScale,
@@ -76,13 +100,12 @@ function applyVolumeRootScale({
   userScale: number;
   anisotropyScale: { x: number; y: number; z: number };
 }) {
-  const safeNormalization = Number.isFinite(normalizationScale) && normalizationScale > 0 ? normalizationScale : 1;
-  const safeUser = Number.isFinite(userScale) && userScale > 0 ? userScale : 1;
-  volumeRootGroup.scale.set(
-    safeNormalization * safeUser * anisotropyScale.x,
-    safeNormalization * safeUser * anisotropyScale.y,
-    safeNormalization * safeUser * anisotropyScale.z,
-  );
+  const resolvedScale = resolveVolumeRootScale({
+    normalizationScale,
+    userScale,
+    anisotropyScale,
+  });
+  volumeRootGroup.scale.set(resolvedScale.x, resolvedScale.y, resolvedScale.z);
 }
 
 export function updateVolumeHandles(params: UpdateVolumeHandlesParams) {
@@ -316,9 +339,9 @@ export function applyVolumeRootTransform(
 
   const centerOffset = params.volumeRootCenterOffsetRef.current;
   centerOffset.set(
-    centerUnscaled.x * scale * anisotropyScale.x,
-    centerUnscaled.y * scale * anisotropyScale.y,
-    centerUnscaled.z * scale * anisotropyScale.z,
+    centerUnscaled.x * scale * anisotropyScale.x * VOLUME_WORLD_AXIS_SIGN.x,
+    centerUnscaled.y * scale * anisotropyScale.y * VOLUME_WORLD_AXIS_SIGN.y,
+    centerUnscaled.z * scale * anisotropyScale.z * VOLUME_WORLD_AXIS_SIGN.z,
   );
 
   const halfExtents = params.volumeRootHalfExtentsRef.current;

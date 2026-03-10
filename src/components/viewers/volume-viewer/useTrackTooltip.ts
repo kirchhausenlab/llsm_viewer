@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
 
-import type { TrackDefinition } from '../../../types/tracks';
+import type { TrackSummary } from '../../../types/tracks';
 
 export type UseTrackTooltipParams = {
   hoveredTrackId: string | null;
-  trackLookup: Map<string, TrackDefinition>;
+  trackLookup: Map<string, TrackSummary>;
 };
 
 export function useTrackTooltip({ hoveredTrackId, trackLookup }: UseTrackTooltipParams) {

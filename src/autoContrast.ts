@@ -1,4 +1,4 @@
-import type { NormalizedVolume } from './core/volumeProcessing';
+import { isIntensityVolume, type NormalizedVolume } from './core/volumeProcessing';
 import { MIN_WINDOW_WIDTH } from './state/layerSettings';
 import { computeUint8VolumeHistogram, HISTOGRAM_BINS } from './shared/utils/histogram';
 
@@ -28,6 +28,16 @@ type CachedHistogram = {
 let histogramCache = new WeakMap<NormalizedVolume, CachedHistogram>();
 
 function computeHistogram(volume: NormalizedVolume): CachedHistogram {
+  if (!isIntensityVolume(volume)) {
+    return {
+      histogram: new Uint32Array(HISTOGRAM_BINS),
+      width: volume.width,
+      height: volume.height,
+      depth: volume.depth,
+      channels: volume.channels,
+      length: 0
+    };
+  }
   const { width, height, depth } = volume;
   const channels = Math.max(1, volume.channels);
   const histogram = computeUint8VolumeHistogram(volume);
@@ -35,6 +45,9 @@ function computeHistogram(volume: NormalizedVolume): CachedHistogram {
 }
 
 function getCachedHistogram(volume: NormalizedVolume): Uint32Array {
+  if (!isIntensityVolume(volume)) {
+    return new Uint32Array(HISTOGRAM_BINS);
+  }
   if (volume.histogram && volume.histogram.length === HISTOGRAM_BINS) {
     return volume.histogram;
   }
@@ -66,6 +79,16 @@ export function computeAutoWindow(
   volume: NormalizedVolume,
   previousThreshold = 0
 ): AutoWindowResult {
+  if (!isIntensityVolume(volume)) {
+    return {
+      windowMin: 0,
+      windowMax: 1,
+      nextThreshold:
+        previousThreshold < 10
+          ? DEFAULT_AUTO_THRESHOLD_DENOMINATOR
+          : Math.max(1, Math.floor(previousThreshold / 2))
+    };
+  }
   const histogram = getCachedHistogram(volume);
   const bins = histogram.length;
   let totalCount = 0;
@@ -168,6 +191,9 @@ export function computeHistogramQuantileWindow(
   lowerQuantile = DEFAULT_LOWER_QUANTILE,
   upperQuantile = DEFAULT_UPPER_QUANTILE
 ): { windowMin: number; windowMax: number } | null {
+  if (!isIntensityVolume(volume)) {
+    return null;
+  }
   const histogram = getCachedHistogram(volume);
   const bins = histogram.length;
 

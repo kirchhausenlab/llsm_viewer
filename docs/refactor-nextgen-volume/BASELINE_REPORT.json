@@ -1,0 +1,256 @@
+{
+  "generatedAt": "2026-02-19T02:18:07.980Z",
+  "matrixConfigPath": "docs/refactor-nextgen-volume/BENCHMARK_MATRIX.json",
+  "matrixVersion": "1.1.0",
+  "matrixApproval": {
+    "status": "approved",
+    "approvedAt": "2026-02-13",
+    "approvedBy": "nextgen-volume-program",
+    "notes": "Tier-A local acceptance targets approved for benchmark threshold enforcement. Recalibrate if hardware class changes."
+  },
+  "environment": {
+    "platform": "linux",
+    "arch": "x64",
+    "nodeVersion": "v22.22.0",
+    "cpus": 16,
+    "cpuModel": "AMD Ryzen 7 6800H with Radeon Graphics",
+    "runtimeOverrides": {}
+  },
+  "cases": [
+    {
+      "caseId": "tier-a-single-channel",
+      "caseName": "Tier A baseline single-channel volume",
+      "tierId": "dev-laptop-tier-a",
+      "dataset": {
+        "width": 96,
+        "height": 96,
+        "depth": 48,
+        "channels": 1,
+        "timepoints": 3,
+        "chunkShape": [
+          1,
+          16,
+          64,
+          64,
+          1
+        ]
+      },
+      "generationMs": 100.010309,
+      "loadSteps": [
+        {
+          "label": "volume_t0_cold",
+          "elapsedMs": 44.611909000000026,
+          "normalizedBytes": 442368
+        },
+        {
+          "label": "volume_t0_chunk_warm",
+          "elapsedMs": 27.189918000000034,
+          "normalizedBytes": 442368
+        },
+        {
+          "label": "volume_t1_mixed_cache",
+          "elapsedMs": 27.140285000000006,
+          "normalizedBytes": 442368
+        }
+      ],
+      "atlasSteps": [
+        {
+          "label": "atlas_t0_scale0",
+          "elapsedMs": 18.922595,
+          "atlasBytes": 786432,
+          "residentBricks": 12
+        },
+        {
+          "label": "atlas_t0_scale1",
+          "elapsedMs": 1.4236190000000306,
+          "atlasBytes": 73728,
+          "residentBricks": 2
+        }
+      ],
+      "providerStats": {
+        "getVolumeCalls": 3,
+        "prefetchCalls": 0,
+        "prefetchSkippedCached": 0,
+        "prefetchSkippedInFlight": 0,
+        "prefetchLoadsStarted": 0,
+        "prefetchLoadsCompleted": 0,
+        "prefetchLoadsFailed": 0,
+        "prefetchLoadsCancelled": 0,
+        "prefetchRequestsAborted": 0,
+        "cacheHits": 0,
+        "cacheHitInFlight": 0,
+        "cacheMisses": 3,
+        "loadsStarted": 3,
+        "loadsCompleted": 3,
+        "loadsFailed": 0,
+        "bytesRead": 943188,
+        "dataBytesRead": 940032,
+        "labelBytesRead": 0,
+        "totalLoadMs": 98.17237799999998,
+        "totalDataReadMs": 97.58446800000002,
+        "totalLabelReadMs": 0,
+        "lastLoadMs": 26.97507300000001,
+        "lastDataReadMs": 26.87868100000003,
+        "lastLabelReadMs": null,
+        "chunkCacheHits": 26,
+        "chunkCacheHitInFlight": 0,
+        "chunkCacheMisses": 35,
+        "chunkReadsStarted": 35,
+        "chunkReadsCompleted": 35,
+        "chunkReadsFailed": 0,
+        "chunkBytesRead": 943188,
+        "chunkCacheEvictions": 0,
+        "prefetchActiveRequests": 0,
+        "maxCachedVolumes": 0,
+        "cacheSize": 0,
+        "inFlightCount": 0,
+        "maxCachedChunkBytes": 67108864,
+        "chunkCacheBytes": 943188,
+        "chunkCacheSize": 35,
+        "chunkInFlightCount": 0
+      },
+      "acceptance": {
+        "passed": true,
+        "failures": [],
+        "thresholds": {
+          "generationMaxMs": 160,
+          "loadStepMaxMs": {
+            "volume_t0_cold": 140,
+            "volume_t0_chunk_warm": 90,
+            "volume_t1_mixed_cache": 100
+          },
+          "atlasStepMaxMs": {
+            "atlas_t0_scale0": 160,
+            "atlas_t0_scale1": 120
+          },
+          "chunkHitRateMin": 0.3,
+          "scale1RequestMin": 1
+        },
+        "observed": {
+          "chunkHitRate": 0.4262295081967213,
+          "scale1Requests": 2
+        }
+      }
+    },
+    {
+      "caseId": "tier-a-multichannel",
+      "caseName": "Tier A multichannel/high-timepoint stress slice",
+      "tierId": "dev-laptop-tier-a",
+      "dataset": {
+        "width": 128,
+        "height": 128,
+        "depth": 64,
+        "channels": 2,
+        "timepoints": 4,
+        "chunkShape": [
+          1,
+          16,
+          64,
+          64,
+          2
+        ]
+      },
+      "generationMs": 206.692747,
+      "loadSteps": [
+        {
+          "label": "volume_t0_cold",
+          "elapsedMs": 57.28000199999997,
+          "normalizedBytes": 2097152
+        },
+        {
+          "label": "volume_t0_chunk_warm",
+          "elapsedMs": 41.912120999999956,
+          "normalizedBytes": 2097152
+        },
+        {
+          "label": "volume_t1_mixed_cache",
+          "elapsedMs": 43.04318699999999,
+          "normalizedBytes": 2097152
+        }
+      ],
+      "atlasSteps": [
+        {
+          "label": "atlas_t0_scale0",
+          "elapsedMs": 19.77727900000002,
+          "atlasBytes": 2097152,
+          "residentBricks": 16
+        },
+        {
+          "label": "atlas_t0_scale1",
+          "elapsedMs": 1.784960999999953,
+          "atlasBytes": 262144,
+          "residentBricks": 2
+        }
+      ],
+      "providerStats": {
+        "getVolumeCalls": 3,
+        "prefetchCalls": 0,
+        "prefetchSkippedCached": 0,
+        "prefetchSkippedInFlight": 0,
+        "prefetchLoadsStarted": 0,
+        "prefetchLoadsCompleted": 0,
+        "prefetchLoadsFailed": 0,
+        "prefetchLoadsCancelled": 0,
+        "prefetchRequestsAborted": 0,
+        "cacheHits": 0,
+        "cacheHitInFlight": 0,
+        "cacheMisses": 3,
+        "loadsStarted": 3,
+        "loadsCompleted": 3,
+        "loadsFailed": 0,
+        "bytesRead": 4459628,
+        "dataBytesRead": 4456448,
+        "labelBytesRead": 0,
+        "totalLoadMs": 142.11057399999993,
+        "totalDataReadMs": 141.79365499999994,
+        "totalLabelReadMs": 0,
+        "lastLoadMs": 43.006437000000005,
+        "lastDataReadMs": 42.87594999999999,
+        "lastLabelReadMs": null,
+        "chunkCacheHits": 34,
+        "chunkCacheHitInFlight": 0,
+        "chunkCacheMisses": 43,
+        "chunkReadsStarted": 43,
+        "chunkReadsCompleted": 43,
+        "chunkReadsFailed": 0,
+        "chunkBytesRead": 4459628,
+        "chunkCacheEvictions": 0,
+        "prefetchActiveRequests": 0,
+        "maxCachedVolumes": 0,
+        "cacheSize": 0,
+        "inFlightCount": 0,
+        "maxCachedChunkBytes": 67108864,
+        "chunkCacheBytes": 4459628,
+        "chunkCacheSize": 43,
+        "chunkInFlightCount": 0
+      },
+      "acceptance": {
+        "passed": true,
+        "failures": [],
+        "thresholds": {
+          "generationMaxMs": 650,
+          "loadStepMaxMs": {
+            "volume_t0_cold": 300,
+            "volume_t0_chunk_warm": 220,
+            "volume_t1_mixed_cache": 240
+          },
+          "atlasStepMaxMs": {
+            "atlas_t0_scale0": 320,
+            "atlas_t0_scale1": 240
+          },
+          "chunkHitRateMin": 0.3,
+          "scale1RequestMin": 1
+        },
+        "observed": {
+          "chunkHitRate": 0.44155844155844154,
+          "scale1Requests": 2
+        }
+      }
+    }
+  ],
+  "summary": {
+    "totalCases": 2,
+    "passedCases": 2,
+    "failedCases": 0
+  }
+}

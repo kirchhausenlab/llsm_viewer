@@ -8,8 +8,9 @@ export type PlotSettingsPanelProps = {
   selectedTracksPanel: SelectedTracksPanelProps;
   plotSettings: PlotSettingsProps;
   isVrActive: boolean;
+  isPlotWindowOpen: boolean;
+  onClosePlotWindow: () => void;
   isPlotSettingsOpen: boolean;
-  onTogglePlotSettings: () => void;
   onClosePlotSettings: () => void;
 };
 
@@ -18,8 +19,9 @@ export default function PlotSettingsPanel({
   selectedTracksPanel,
   plotSettings,
   isVrActive,
+  isPlotWindowOpen,
+  onClosePlotWindow,
   isPlotSettingsOpen,
-  onTogglePlotSettings,
   onClosePlotSettings
 }: PlotSettingsPanelProps) {
   const {
@@ -41,58 +43,37 @@ export default function PlotSettingsPanel({
 
   return (
     <>
-      <FloatingWindow
-        title="Amplitude plot"
-        initialPosition={selectedTracksWindowInitialPosition}
-        width={`min(${selectedTracksWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
-        className="floating-window--selected-tracks"
-        bodyClassName="floating-window-body--selected-tracks"
-        resetSignal={resetToken}
-        headerPosition="bottom"
-        headerActions={
-          <button
-            type="button"
-            className="floating-window-toggle"
-            onClick={onTogglePlotSettings}
-            aria-label={isPlotSettingsOpen ? 'Hide plot settings window' : 'Show plot settings window'}
-            aria-pressed={isPlotSettingsOpen}
-            data-no-drag
-            title="Settings"
-          >
-            <span aria-hidden="true">⚙</span>
-          </button>
-        }
-      >
-        <SelectedTracksWindow
-          series={series}
-          totalTimepoints={totalTimepoints}
-          amplitudeLimits={amplitudeLimits}
-          timeLimits={timeLimits}
-          currentTimepoint={currentTimepoint}
-          channelTintMap={channelTintMap}
-          smoothing={smoothing}
-          onTrackSelectionToggle={onTrackSelectionToggle}
-        />
-      </FloatingWindow>
-      <div style={{ display: isPlotSettingsOpen ? undefined : 'none' }} aria-hidden={!isPlotSettingsOpen}>
+      {isPlotWindowOpen ? (
+        <FloatingWindow
+          title="Amplitude plot"
+          initialPosition={selectedTracksWindowInitialPosition}
+          width={`min(${selectedTracksWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
+          className="floating-window--selected-tracks"
+          bodyClassName="floating-window-body--selected-tracks"
+          resetSignal={resetToken}
+          headerPosition="bottom"
+          onClose={onClosePlotWindow}
+        >
+          <SelectedTracksWindow
+            series={series}
+            totalTimepoints={totalTimepoints}
+            amplitudeLimits={amplitudeLimits}
+            timeLimits={timeLimits}
+            currentTimepoint={currentTimepoint}
+            channelTintMap={channelTintMap}
+            smoothing={smoothing}
+            onTrackSelectionToggle={onTrackSelectionToggle}
+          />
+        </FloatingWindow>
+      ) : null}
+      {isPlotWindowOpen && isPlotSettingsOpen ? (
         <FloatingWindow
           title="Plot settings"
           initialPosition={plotSettingsWindowInitialPosition}
           width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
           className="floating-window--plot-settings"
           resetSignal={resetToken}
-          headerEndActions={
-            <button
-              type="button"
-              className="floating-window-toggle"
-              onClick={onClosePlotSettings}
-              aria-label="Close plot settings window"
-              data-no-drag
-              title="Close"
-            >
-              <span aria-hidden="true">×</span>
-            </button>
-          }
+          onClose={onClosePlotSettings}
         >
           <PlotSettingsWindow
             amplitudeExtent={amplitudeExtent}
@@ -108,7 +89,7 @@ export default function PlotSettingsPanel({
             onClearSelection={onClearSelection}
           />
         </FloatingWindow>
-      </div>
+      ) : null}
     </>
   );
 }

@@ -4,12 +4,13 @@ import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
 import type {
   MovementState,
-  TrackLineResource,
+  TrackRenderResource,
   VolumeResources,
   VolumeViewerVrChannelPanel,
   VolumeViewerVrProps,
 } from '../VolumeViewer.types';
-import type { TrackColorMode, TrackDefinition } from '../../../types/tracks';
+import type { TrackSetState } from '../../../types/channelTracks';
+import type { CompiledTrackSummary, TrackColorMode } from '../../../types/tracks';
 import type {
   ControllerEntry,
   RaycasterLike,
@@ -47,7 +48,7 @@ export type UseVolumeViewerVrParams = {
   resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
   timeIndexRef: MutableRefObject<number>;
   movementStateRef: MutableRefObject<MovementState>;
-  trackLinesRef: MutableRefObject<Map<string, TrackLineResource>>;
+  trackLinesRef: MutableRefObject<Map<string, TrackRenderResource>>;
   followTargetOffsetRef: MutableRefObject<THREE.Vector3 | null>;
   hasActive3DLayerRef: MutableRefObject<boolean>;
   playbackState: {
@@ -66,8 +67,8 @@ export type UseVolumeViewerVrParams = {
   activeChannelPanelId: string | null;
   trackChannels: Array<{ id: string; name: string }>;
   activeTrackChannelId: string | null;
-  tracks: TrackDefinition[];
-  trackVisibility: Record<string, boolean>;
+  tracks: CompiledTrackSummary[];
+  trackSetStates: Record<string, TrackSetState>;
   trackOpacityByTrackSet: Record<string, number>;
   trackLineWidthByTrackSet: Record<string, number>;
   trackColorModesByTrackSet: Record<string, TrackColorMode>;

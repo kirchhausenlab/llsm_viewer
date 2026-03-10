@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { DESKTOP_VOLUME_STEP_SCALE } from './vr';
 import type {
   FollowedVoxelTarget,
-  TrackLineResource,
+  TrackRenderResource,
   VolumeViewerProps,
 } from '../VolumeViewer.types';
 import type { HoveredVoxelInfo } from '../../../types/hover';
@@ -26,7 +26,7 @@ export function useVolumeViewerState() {
   const volumePitchRef = useRef(0);
   const volumeRootRotatedCenterTempRef = useRef(new THREE.Vector3());
   const trackGroupRef = useRef<THREE.Group | null>(null);
-  const trackLinesRef = useRef<Map<string, TrackLineResource>>(new Map());
+  const trackLinesRef = useRef<Map<string, TrackRenderResource>>(new Map());
   const followedTrackIdRef = useRef<string | null>(null);
   const followTargetOffsetRef = useRef<THREE.Vector3 | null>(null);
   const previousFollowTargetKeyRef = useRef<string | null>(null);

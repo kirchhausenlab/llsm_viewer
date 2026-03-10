@@ -1,7 +1,13 @@
 import type { PreprocessedStorage } from '../../storage/preprocessedStorage';
-import type { OpenPreprocessedDatasetResult, PreprocessedManifest } from './types';
-import { buildChannelSummariesFromManifest } from './manifest';
-import { parseTrackEntriesFromCsvBytes } from './tracks';
+import { type OpenPreprocessedDatasetResult } from './types';
+import { buildChannelSummariesFromManifest, buildTrackSummariesFromManifest } from './manifest';
+import {
+  parseCompiledTrackSetCatalogFromBytes,
+  decodeCompiledTrackSetPayloadFromBytes,
+} from './tracks';
+import { coercePreprocessedManifest } from './schema';
+import type { CompiledTrackSetHeader, CompiledTrackSetPayload, CompiledTrackSummary } from '../../../types/tracks';
+import type { PreprocessedTracksDescriptor } from './types';
 
 const textDecoder = new TextDecoder();
 
@@ -16,17 +22,6 @@ function parseJson(bytes: Uint8Array): unknown {
   return JSON.parse(text);
 }
 
-function coerceManifest(value: unknown): PreprocessedManifest {
-  if (!value || typeof value !== 'object') {
-    throw new Error('Missing preprocessed manifest in Zarr attributes.');
-  }
-  const candidate = value as Partial<PreprocessedManifest>;
-  if (candidate.format !== 'llsm-viewer-preprocessed') {
-    throw new Error('Unsupported preprocessed dataset format.');
-  }
-  return candidate as PreprocessedManifest;
-}
-
 export async function openPreprocessedDatasetFromZarrStorage(storage: PreprocessedStorage): Promise<OpenPreprocessedDatasetResult> {
   const bytes = await storage.readFile('zarr.json');
   const metadataRaw = parseJson(bytes);
@@ -38,17 +33,45 @@ export async function openPreprocessedDatasetFromZarrStorage(storage: Preprocess
     throw new Error('Unsupported Zarr root node.');
   }
   const attrs = metadata.attributes ?? {};
-  const manifest = coerceManifest(attrs.llsmViewerPreprocessed);
-  const trackEntriesByTrackSetId = new Map<string, string[][]>();
+  const manifest = coercePreprocessedManifest(attrs.llsmViewerPreprocessed);
+  const channelSummaries = buildChannelSummariesFromManifest(manifest);
+  const trackSummaries = buildTrackSummariesFromManifest(manifest);
+  return { manifest, channelSummaries, trackSummaries, totalVolumeCount: manifest.dataset.totalVolumeCount };
+}
 
-  for (const channel of manifest.dataset.channels) {
-    for (const trackSet of channel.trackSets ?? []) {
-      const trackBytes = await storage.readFile(trackSet.tracks.path);
-      const entries = parseTrackEntriesFromCsvBytes(trackBytes);
-      trackEntriesByTrackSetId.set(trackSet.id, entries);
-    }
+export async function loadCompiledTrackSetCatalogFromStorage(
+  storage: PreprocessedStorage,
+  tracks: PreprocessedTracksDescriptor,
+  header: CompiledTrackSetHeader,
+  options?: {
+    trackSetName?: string;
+    channelId?: string | null;
+    channelName?: string | null;
   }
+): Promise<CompiledTrackSummary[]> {
+  const catalogBytes = await storage.readFile(tracks.catalog.path);
+  return parseCompiledTrackSetCatalogFromBytes(catalogBytes, header, options);
+}
 
-  const channelSummaries = buildChannelSummariesFromManifest(manifest, trackEntriesByTrackSetId);
-  return { manifest, channelSummaries, totalVolumeCount: manifest.dataset.totalVolumeCount };
+export async function loadCompiledTrackSetPayloadFromStorage(
+  storage: PreprocessedStorage,
+  tracks: PreprocessedTracksDescriptor,
+  header: CompiledTrackSetHeader
+): Promise<CompiledTrackSetPayload> {
+  const [pointBytes, segmentPositionBytes, segmentTimeBytes, segmentTrackIndexBytes, centroidBytes] =
+    await Promise.all([
+      storage.readFile(tracks.pointData.path),
+      storage.readFile(tracks.segmentPositions.path),
+      storage.readFile(tracks.segmentTimes.path),
+      storage.readFile(tracks.segmentTrackIndices.path),
+      storage.readFile(tracks.centroidData.path)
+    ]);
+
+  return decodeCompiledTrackSetPayloadFromBytes(header, {
+    pointBytes,
+    segmentPositionBytes,
+    segmentTimeBytes,
+    segmentTrackIndexBytes,
+    centroidBytes
+  });
 }

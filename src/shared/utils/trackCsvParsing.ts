@@ -21,11 +21,11 @@ function isBreakSentinel(value: string): boolean {
   return Number.isNaN(Number(trimmed));
 }
 
-function makeTrackId(channelId: string, sourceTrackId: number, segmentIndex: number): string {
+function makeTrackId(trackSetId: string, sourceTrackId: number, segmentIndex: number): string {
   if (segmentIndex <= 0) {
-    return `${channelId}:${sourceTrackId}`;
+    return `${trackSetId}:${sourceTrackId}`;
   }
-  return `${channelId}:${sourceTrackId}-${segmentIndex}`;
+  return `${trackSetId}:${sourceTrackId}-${segmentIndex}`;
 }
 
 function makeDisplayTrackNumber(sourceTrackId: number, segmentIndex: number): string {
@@ -38,10 +38,9 @@ function makeDisplayTrackNumber(sourceTrackId: number, segmentIndex: number): st
 export type BuildTracksFromCsvEntriesOptions = {
   trackSetId: string;
   trackSetName: string;
-  channelId: string;
-  channelName: string;
+  channelId: string | null;
+  channelName: string | null;
   entries: string[][];
-  experimentDimension: '2d' | '3d';
 };
 
 export function buildTracksFromCsvEntries({
@@ -49,11 +48,9 @@ export function buildTracksFromCsvEntries({
   trackSetName,
   channelId,
   channelName,
-  entries,
-  experimentDimension,
+  entries
 }: BuildTracksFromCsvEntriesOptions): TrackDefinition[] {
-  const is2dExperiment = experimentDimension === '2d';
-  const minimumColumns = is2dExperiment ? 6 : 7;
+  const minimumColumns = 7;
 
   const trackStates = new Map<number, TrackAccumulator>();
   let nextInternalTrackId = 1;
@@ -78,7 +75,7 @@ export function buildTracksFromCsvEntries({
     const rawFrame = row[2] ?? '';
     const rawX = row[3] ?? '';
     const rawY = row[4] ?? '';
-    const rawZ = is2dExperiment ? (row.length >= 7 ? (row[5] ?? '') : '') : (row[5] ?? '');
+    const rawZ = row[5] ?? '';
     const isBreakRow =
       isBreakSentinel(rawFrame) && isBreakSentinel(rawX) && isBreakSentinel(rawY) && isBreakSentinel(rawZ);
     if (isBreakRow) {
@@ -89,19 +86,19 @@ export function buildTracksFromCsvEntries({
     const frame = Number(rawFrame);
     const x = Number(rawX);
     const y = Number(rawY);
-    const amplitudeIndex = is2dExperiment && row.length < 7 ? 5 : 6;
-    const zRaw = is2dExperiment ? (row.length >= 7 ? Number(row[5]) : 0) : Number(row[5]);
+    const amplitudeIndex = 6;
+    const zRaw = Number(row[5]);
     const amplitudeRaw = Number(row[amplitudeIndex]);
 
     const hasValidZ = Number.isFinite(zRaw);
-    const z = is2dExperiment ? (hasValidZ ? zRaw : 0) : zRaw;
+    const z = zRaw;
 
     if (
       !Number.isFinite(frame) ||
       !Number.isFinite(x) ||
       !Number.isFinite(y) ||
       !Number.isFinite(amplitudeRaw) ||
-      (!is2dExperiment && !hasValidZ)
+      !hasValidZ
     ) {
       continue;
     }
@@ -134,12 +131,12 @@ export function buildTracksFromCsvEntries({
         continue;
       }
 
-      const id = makeTrackId(`${trackSetId}:${channelId}`, sourceTrackId, segment.segmentIndex);
+      const id = makeTrackId(trackSetId, sourceTrackId, segment.segmentIndex);
       const displayTrackNumber = makeDisplayTrackNumber(sourceTrackId, segment.segmentIndex);
       const parentTrackId =
         segment.segmentIndex <= 0
           ? null
-          : makeTrackId(`${trackSetId}:${channelId}`, sourceTrackId, segment.segmentIndex - 1);
+          : makeTrackId(trackSetId, sourceTrackId, segment.segmentIndex - 1);
 
       const sortedPoints = [...segment.points].sort((a, b) => a.time - b.time);
       const adjustedPoints = sortedPoints.map<TrackPoint>((point) => ({
@@ -149,13 +146,24 @@ export function buildTracksFromCsvEntries({
         z: point.z,
         amplitude: point.amplitude,
       }));
+      let timeStart = Number.POSITIVE_INFINITY;
+      let timeEnd = Number.NEGATIVE_INFINITY;
+      let amplitudeMin = Number.POSITIVE_INFINITY;
+      let amplitudeMax = Number.NEGATIVE_INFINITY;
+
+      for (const point of adjustedPoints) {
+        timeStart = Math.min(timeStart, point.time);
+        timeEnd = Math.max(timeEnd, point.time);
+        amplitudeMin = Math.min(amplitudeMin, point.amplitude);
+        amplitudeMax = Math.max(amplitudeMax, point.amplitude);
+      }
 
       parsed.push({
         id,
         trackSetId,
         trackSetName,
         channelId,
-        channelName: channelName.trim() || 'Untitled channel',
+        channelName: channelName?.trim() || null,
         trackNumber: sourceTrackId,
         sourceTrackId,
         displayTrackNumber,
@@ -163,6 +171,11 @@ export function buildTracksFromCsvEntries({
         internalTrackId: segment.internalTrackId,
         parentTrackId,
         parentInternalTrackId: segment.parentInternalTrackId,
+        pointCount: adjustedPoints.length,
+        timeStart: Number.isFinite(timeStart) ? timeStart : 0,
+        timeEnd: Number.isFinite(timeEnd) ? timeEnd : 0,
+        amplitudeMin: Number.isFinite(amplitudeMin) ? amplitudeMin : 0,
+        amplitudeMax: Number.isFinite(amplitudeMax) ? amplitudeMax : 0,
         points: adjustedPoints,
       });
     }

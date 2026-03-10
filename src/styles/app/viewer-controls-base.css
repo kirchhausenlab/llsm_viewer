@@ -1,0 +1,85 @@
+.global-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.global-controls .control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.global-controls .control-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.35rem;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.2;
+}
+
+.global-controls .control-label--compact {
+  font-size: 0.78rem;
+}
+
+.global-controls .control-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.global-controls .control-row .control-group--slider {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.global-controls .viewer-mode-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.global-controls .viewer-mode-row button {
+  flex: 1 1 0;
+  text-align: center;
+}
+
+.global-controls button {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.85rem;
+  background: rgba(12, 16, 24, 0.8);
+  color: inherit;
+  font-size: var(--overlay-button-font-size);
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+  text-align: left;
+}
+
+.global-controls button:not(:disabled):hover {
+  border-color: rgba(91, 140, 255, 0.7);
+  background: rgba(91, 140, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.global-controls button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.global-controls label:not(.control-label) {
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.global-controls input[type='range'] {
+  width: 100%;
+  accent-color: #5b8cff;
+}

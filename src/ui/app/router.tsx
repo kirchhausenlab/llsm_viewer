@@ -7,7 +7,7 @@ function AppRouter() {
   const { isViewerLaunched, datasetSetupProps, viewerRouteProps } = useAppRouteState();
 
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<div role="status">Loading application…</div>}>
       {isViewerLaunched ? (
         <ViewerRoute {...viewerRouteProps} />
       ) : (

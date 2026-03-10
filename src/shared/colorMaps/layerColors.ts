@@ -19,9 +19,10 @@ export function normalizeHexColor(
   input: string | null | undefined,
   fallback: string = DEFAULT_LAYER_COLOR
 ): string {
-  const fallbackHex = /^#[0-9a-fA-F]{6}$/.test(fallback)
-    ? fallback.toLowerCase()
-    : DEFAULT_LAYER_COLOR;
+  if (!/^#[0-9a-fA-F]{6}$/.test(fallback)) {
+    throw new Error(`Invalid fallback color: ${fallback}`);
+  }
+  const fallbackHex = fallback.toLowerCase();
 
   if (!input) {
     return fallbackHex;

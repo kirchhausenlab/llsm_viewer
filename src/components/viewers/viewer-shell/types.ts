@@ -1,26 +1,23 @@
-import type { ComponentProps, CSSProperties, MouseEvent } from 'react';
+import type { ComponentProps, CSSProperties } from 'react';
 
 import type BrightnessContrastHistogram from '../BrightnessContrastHistogram';
 import type FloatingWindow from '../../widgets/FloatingWindow';
-import type PlanarViewer from '../PlanarViewer';
 import type PlotSettingsWindow from '../../widgets/PlotSettingsWindow';
 import type SelectedTracksWindow from '../../widgets/SelectedTracksWindow';
-import type VolumeViewer from '../VolumeViewer';
 import type { VolumeViewerProps } from '../VolumeViewer.types';
-import type { ChannelSource } from '../../../hooks/dataset';
 import type { LoadedDatasetLayer } from '../../../hooks/dataset';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
-import type { LayerSettings } from '../../../state/layerSettings';
+import type { VolumeBrickAtlas } from '../../../core/volumeProvider';
+import type { LayerSettings, RenderStyle } from '../../../state/layerSettings';
+import type { TrackSetState } from '../../../types/channelTracks';
 import type { FollowedVoxelTarget } from '../../../types/follow';
 import type { HoveredVoxelInfo } from '../../../types/hover';
-import type { NumericRange, TrackColorMode, TrackDefinition, TrackPoint } from '../../../types/tracks';
+import type { NumericRange, TrackColorMode, TrackPoint, TrackSummary } from '../../../types/tracks';
 
-export type PlanarViewerProps = ComponentProps<typeof PlanarViewer>;
-
-export type TopMenuProps = {
+export type TopMenuChromeProps = {
   onReturnToLauncher: () => void;
   onResetLayout: () => void;
-  onOpenPaintbrush: () => void;
+  currentScaleLabel: string;
   isHelpMenuOpen: boolean;
   openHelpMenu: () => void;
   closeHelpMenu: () => void;
@@ -32,19 +29,59 @@ export type TopMenuProps = {
   hoveredVoxel: HoveredVoxelInfo | null;
 };
 
+export type VolumeChannelTabsProps = {
+  loadedChannelIds: string[];
+  channelNameMap: Map<string, string>;
+  channelVisibility: Record<string, boolean>;
+  channelTintMap: Map<string, string>;
+  activeChannelId: string | null;
+  onChannelTabSelect: (channelId: string) => void;
+  onChannelVisibilityToggle: (channelId: string) => void;
+};
+
+export type TopMenuProps = TopMenuChromeProps &
+  VolumeChannelTabsProps & {
+    hoverCoordinateDigits: {
+      x: number;
+      y: number;
+      z: number;
+    };
+    hoverIntensityValueDigits: number;
+    onOpenChannelsWindow: () => void;
+    onOpenPropsWindow: () => void;
+    onOpenPaintbrush: () => void;
+    onOpenRenderSettingsWindow: () => void;
+    onOpenTracksWindow: () => void;
+    onOpenAmplitudePlotWindow: () => void;
+    onOpenTrackSettingsWindow: () => void;
+    onOpenDiagnosticsWindow: () => void;
+    is3dModeAvailable: boolean;
+    resetViewHandler: (() => void) | null;
+    onVrButtonClick: () => void;
+    vrButtonDisabled: boolean;
+    vrButtonTitle?: string;
+    vrButtonLabel: string;
+    volumeTimepointCount: number;
+    isPlaying: boolean;
+    selectedIndex: number;
+    onTimeIndexChange: (index: number) => void;
+    playbackDisabled: boolean;
+    onTogglePlayback: () => void;
+    zSliderValue?: number;
+    zSliderMax?: number;
+    onZSliderChange?: (value: number) => void;
+  };
+
 export type ModeControlsProps = {
   is3dModeAvailable: boolean;
   isVrActive: boolean;
   isVrRequesting: boolean;
   resetViewHandler: (() => void) | null;
-  onToggleViewerMode: () => void;
   onVrButtonClick: () => void;
   vrButtonDisabled: boolean;
   vrButtonTitle?: string;
   vrButtonLabel: string;
-  renderStyle: 0 | 1;
   samplingMode: 'linear' | 'nearest';
-  onRenderStyleToggle: () => void;
   onSamplingModeToggle: () => void;
   blendingMode: 'alpha' | 'additive';
   onBlendingModeToggle: () => void;
@@ -53,20 +90,18 @@ export type ModeControlsProps = {
 export type PlaybackControlsProps = {
   fps: number;
   onFpsChange: (value: number) => void;
+  zSliderValue?: number;
+  zSliderMax?: number;
+  onZSliderChange?: (value: number) => void;
   recordingBitrateMbps?: number;
   onRecordingBitrateMbpsChange?: (value: number) => void;
   volumeTimepointCount: number;
-  sliceIndex: number;
-  maxSliceDepth: number;
-  onSliceIndexChange: (index: number) => void;
   isPlaying: boolean;
   playbackLabel: string;
   selectedIndex: number;
   onTimeIndexChange: (index: number) => void;
   playbackDisabled: boolean;
   onTogglePlayback: () => void;
-  onJumpToStart: () => void;
-  onJumpToEnd: () => void;
   error: string | null;
   onStartRecording: () => void;
   onStopRecording: () => void;
@@ -77,21 +112,13 @@ export type PlaybackControlsProps = {
 export type ChannelPanelStyle = (CSSProperties & { '--channel-slider-color'?: string }) &
   Record<string, string | number | undefined>;
 
-export type ChannelsPanelProps = {
+export type ChannelsPanelProps = VolumeChannelTabsProps & {
   isPlaying: boolean;
-  loadedChannelIds: string[];
-  channelNameMap: Map<string, string>;
-  channelVisibility: Record<string, boolean>;
-  channelTintMap: Map<string, string>;
-  activeChannelId: string | null;
-  onChannelTabSelect: (channelId: string) => void;
-  onChannelVisibilityToggle: (channelId: string) => void;
   channelLayersMap: Map<string, LoadedDatasetLayer[]>;
   layerVolumesByKey: Record<string, NormalizedVolume | null>;
-  channelActiveLayer: Record<string, string>;
+  layerBrickAtlasesByKey: Record<string, VolumeBrickAtlas | null>;
   layerSettings: Record<string, LayerSettings>;
   getLayerDefaultSettings: (layerKey: string) => LayerSettings;
-  onChannelLayerSelect: (channelId: string, layerKey: string) => void;
   onChannelReset: (channelId: string) => void;
   onLayerWindowMinChange: (layerKey: string, value: number) => void;
   onLayerWindowMaxChange: (layerKey: string, value: number) => void;
@@ -100,10 +127,14 @@ export type ChannelsPanelProps = {
   onLayerAutoContrast: (layerKey: string) => void;
   onLayerOffsetChange: (layerKey: string, axis: 'x' | 'y', value: number) => void;
   onLayerColorChange: (layerKey: string, color: string) => void;
+  onLayerRenderStyleChange: (layerKey: string, renderStyle: RenderStyle) => void;
+  onLayerBlDensityScaleChange: (layerKey: string, value: number) => void;
+  onLayerBlBackgroundCutoffChange: (layerKey: string, value: number) => void;
+  onLayerBlOpacityScaleChange: (layerKey: string, value: number) => void;
+  onLayerBlEarlyExitAlphaChange: (layerKey: string, value: number) => void;
+  onLayerMipEarlyExitThresholdChange: (layerKey: string, value: number) => void;
   onLayerInvertToggle: (layerKey: string) => void;
 };
-
-export type TrackSummary = { total: number; visible: number };
 
 export type TrackSettingsProps = {
   isFullTrailEnabled: boolean;
@@ -114,11 +145,19 @@ export type TrackSettingsProps = {
 };
 
 export type TracksPanelProps = {
-  trackSets: Array<{ id: string; name: string; channelId: string; channelName: string }>;
+  trackSets: Array<{
+    id: string;
+    name: string;
+    boundChannelId: string | null;
+    boundChannelName: string | null;
+    fileName: string;
+  }>;
+  trackHeadersByTrackSet: Map<string, { totalTracks: number }>;
   activeTrackSetId: string | null;
   onTrackSetTabSelect: (trackSetId: string) => void;
-  parsedTracksByTrackSet: Map<string, TrackDefinition[]>;
-  filteredTracksByTrackSet: Map<string, TrackDefinition[]>;
+  onRequireTrackCatalog: (trackSetId: string) => void;
+  parsedTracksByTrackSet: Map<string, TrackSummary[]>;
+  filteredTracksByTrackSet: Map<string, TrackSummary[]>;
   minimumTrackLength: number;
   pendingMinimumTrackLength: number;
   trackLengthBounds: NumericRange;
@@ -127,12 +166,11 @@ export type TracksPanelProps = {
   trackColorModesByTrackSet: Record<string, TrackColorMode>;
   trackOpacityByTrackSet: Record<string, number>;
   trackLineWidthByTrackSet: Record<string, number>;
-  trackSummaryByTrackSet: Map<string, TrackSummary>;
+  trackSetStates: Record<string, TrackSetState>;
   followedTrackSetId: string | null;
   followedTrackId: string | null;
   onTrackOrderToggle: (trackSetId: string) => void;
   trackOrderModeByTrackSet: Record<string, 'id' | 'length'>;
-  trackVisibility: Record<string, boolean>;
   onTrackVisibilityToggle: (trackId: string) => void;
   onTrackVisibilityAllChange: (trackSetId: string, visible: boolean) => void;
   onTrackOpacityChange: (trackSetId: string, value: number) => void;
@@ -149,8 +187,8 @@ export type SelectedTracksPanelProps = {
   shouldRender: boolean;
   series: Array<{
     id: string;
-    channelId: string;
-    channelName: string;
+    channelId: string | null;
+    channelName: string | null;
     trackSetId: string;
     trackSetName: string;
     trackNumber: number;
@@ -189,10 +227,10 @@ export type LayoutProps = {
   controlWindowWidth: number;
   selectedTracksWindowWidth: number;
   resetToken: number;
-  controlWindowInitialPosition: Position;
   viewerSettingsWindowInitialPosition: Position;
   layersWindowInitialPosition: Position;
   paintbrushWindowInitialPosition: Position;
+  propsWindowInitialPosition: Position;
   trackWindowInitialPosition: Position;
   selectedTracksWindowInitialPosition: Position;
   plotSettingsWindowInitialPosition: Position;
@@ -205,10 +243,9 @@ export type TrackDefaults = {
 };
 
 export type ViewerShellProps = {
-  viewerMode: '3d' | '2d';
+  viewerMode: '3d';
   volumeViewerProps: VolumeViewerProps;
-  planarViewerProps: PlanarViewerProps;
-  topMenu: Omit<TopMenuProps, 'onOpenPaintbrush'>;
+  topMenu: TopMenuChromeProps;
   layout: LayoutProps;
   modeControls: ModeControlsProps;
   playbackControls: PlaybackControlsProps;

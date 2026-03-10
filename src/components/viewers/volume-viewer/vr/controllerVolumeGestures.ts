@@ -11,10 +11,9 @@ export function computeYawRotation(
   direction: THREE.Vector3,
   basisForward: THREE.Vector3,
   basisRight: THREE.Vector3,
-  fallback: number,
-): number {
+): number | null {
   if (direction.lengthSq() <= 1e-6) {
-    return fallback;
+    return null;
   }
   return computeYawAngleForBasis(direction, basisForward, basisRight);
 }
@@ -22,10 +21,9 @@ export function computeYawRotation(
 export function computePitchRotation(
   direction: THREE.Vector3,
   basisForward: THREE.Vector3,
-  fallback: number,
-): number {
+): number | null {
   if (direction.lengthSq() <= 1e-6) {
-    return fallback;
+    return null;
   }
   const forwardComponent = direction.dot(basisForward);
   return Math.atan2(direction.y, forwardComponent);

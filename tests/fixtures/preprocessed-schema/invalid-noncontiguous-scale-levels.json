@@ -1,0 +1,286 @@
+{
+  "format": "llsm-viewer-preprocessed-vnext-hes1",
+  "generatedAt": "2026-02-13T00:00:00.000Z",
+  "dataset": {
+    "movieMode": "3d",
+    "totalVolumeCount": 1,
+    "channels": [
+      {
+        "id": "channel-seg",
+        "name": "Segmentation Channel",
+        "layers": [
+          {
+            "key": "layer-seg",
+            "label": "Layer Segmentation",
+            "channelId": "channel-seg",
+            "isSegmentation": true,
+            "volumeCount": 1,
+            "width": 4,
+            "height": 2,
+            "depth": 1,
+            "channels": 1,
+            "dataType": "uint16",
+            "normalization": null,
+            "zarr": {
+              "scales": [
+                {
+                  "level": 0,
+                  "downsampleFactor": [
+                    1,
+                    1,
+                    1
+                  ],
+                  "width": 4,
+                  "height": 2,
+                  "depth": 1,
+                  "channels": 1,
+                  "zarr": {
+                    "data": {
+                      "path": "channels/channel-seg/layer-seg/scales/0/data",
+                      "shape": [
+                        1,
+                        1,
+                        2,
+                        4,
+                        1
+                      ],
+                      "chunkShape": [
+                        1,
+                        1,
+                        1,
+                        2,
+                        1
+                      ],
+                      "dataType": "uint16"
+                    },
+                    "skipHierarchy": {
+                      "levels": [
+                        {
+                          "level": 0,
+                          "gridShape": [
+                            1,
+                            2,
+                            2
+                          ],
+                          "min": {
+                            "path": "channels/channel-seg/layer-seg/scales/0/skip-hierarchy/levels/0/min",
+                            "shape": [
+                              1,
+                              1,
+                              2,
+                              2
+                            ],
+                            "chunkShape": [
+                              1,
+                              1,
+                              2,
+                              2
+                            ],
+                            "dataType": "uint8"
+                          },
+                          "max": {
+                            "path": "channels/channel-seg/layer-seg/scales/0/skip-hierarchy/levels/0/max",
+                            "shape": [
+                              1,
+                              1,
+                              2,
+                              2
+                            ],
+                            "chunkShape": [
+                              1,
+                              1,
+                              2,
+                              2
+                            ],
+                            "dataType": "uint8"
+                          },
+                          "occupancy": {
+                            "path": "channels/channel-seg/layer-seg/scales/0/skip-hierarchy/levels/0/occupancy",
+                            "shape": [
+                              1,
+                              1,
+                              2,
+                              2
+                            ],
+                            "chunkShape": [
+                              1,
+                              1,
+                              2,
+                              2
+                            ],
+                            "dataType": "uint8"
+                          }
+                        },
+                        {
+                          "level": 1,
+                          "gridShape": [
+                            1,
+                            1,
+                            1
+                          ],
+                          "min": {
+                            "path": "channels/channel-seg/layer-seg/scales/0/skip-hierarchy/levels/1/min",
+                            "shape": [
+                              1,
+                              1,
+                              1,
+                              1
+                            ],
+                            "chunkShape": [
+                              1,
+                              1,
+                              1,
+                              1
+                            ],
+                            "dataType": "uint8"
+                          },
+                          "max": {
+                            "path": "channels/channel-seg/layer-seg/scales/0/skip-hierarchy/levels/1/max",
+                            "shape": [
+                              1,
+                              1,
+                              1,
+                              1
+                            ],
+                            "chunkShape": [
+                              1,
+                              1,
+                              1,
+                              1
+                            ],
+                            "dataType": "uint8"
+                          },
+                          "occupancy": {
+                            "path": "channels/channel-seg/layer-seg/scales/0/skip-hierarchy/levels/1/occupancy",
+                            "shape": [
+                              1,
+                              1,
+                              1,
+                              1
+                            ],
+                            "chunkShape": [
+                              1,
+                              1,
+                              1,
+                              1
+                            ],
+                            "dataType": "uint8"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "level": 2,
+                  "downsampleFactor": [
+                    1,
+                    2,
+                    2
+                  ],
+                  "width": 2,
+                  "height": 1,
+                  "depth": 1,
+                  "channels": 1,
+                  "zarr": {
+                    "data": {
+                      "path": "channels/channel-seg/layer-seg/scales/1/data",
+                      "shape": [
+                        1,
+                        1,
+                        1,
+                        2,
+                        1
+                      ],
+                      "chunkShape": [
+                        1,
+                        1,
+                        1,
+                        2,
+                        1
+                      ],
+                      "dataType": "uint16"
+                    },
+                    "skipHierarchy": {
+                      "levels": [
+                        {
+                          "level": 0,
+                          "gridShape": [
+                            1,
+                            1,
+                            1
+                          ],
+                          "min": {
+                            "path": "channels/channel-seg/layer-seg/scales/1/skip-hierarchy/levels/0/min",
+                            "shape": [
+                              1,
+                              1,
+                              1,
+                              1
+                            ],
+                            "chunkShape": [
+                              1,
+                              1,
+                              1,
+                              1
+                            ],
+                            "dataType": "uint8"
+                          },
+                          "max": {
+                            "path": "channels/channel-seg/layer-seg/scales/1/skip-hierarchy/levels/0/max",
+                            "shape": [
+                              1,
+                              1,
+                              1,
+                              1
+                            ],
+                            "chunkShape": [
+                              1,
+                              1,
+                              1,
+                              1
+                            ],
+                            "dataType": "uint8"
+                          },
+                          "occupancy": {
+                            "path": "channels/channel-seg/layer-seg/scales/1/skip-hierarchy/levels/0/occupancy",
+                            "shape": [
+                              1,
+                              1,
+                              1,
+                              1
+                            ],
+                            "chunkShape": [
+                              1,
+                              1,
+                              1,
+                              1
+                            ],
+                            "dataType": "uint8"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "trackSets": [],
+    "voxelResolution": {
+      "x": 120,
+      "y": 120,
+      "z": 300,
+      "unit": "nm",
+      "correctAnisotropy": false
+    },
+    "temporalResolution": {
+      "interval": 2.3,
+      "unit": "ms"
+    },
+    "anisotropyCorrection": null
+  }
+}

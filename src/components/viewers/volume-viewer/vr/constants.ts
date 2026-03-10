@@ -16,7 +16,7 @@ export const VR_CHANNELS_VERTICAL_OFFSET = 0;
 export const VR_CHANNELS_CAMERA_ANCHOR_OFFSET = new THREE.Vector3(0.4, -0.18, -0.65);
 export const VR_CHANNELS_CANVAS_WIDTH = 1184;
 export const VR_CHANNELS_CANVAS_MIN_HEIGHT = 1184;
-export const VR_CHANNELS_FONT_FAMILY = '"Inter", "Helvetica Neue", Arial, sans-serif';
+export const VR_CHANNELS_FONT_FAMILY = '"Inter", "Segoe UI", sans-serif';
 export const vrChannelsFont = (weight: string, size: number) =>
   `${weight} ${size}px ${VR_CHANNELS_FONT_FAMILY}`;
 export const VR_CHANNELS_FONT_SIZES = {
@@ -68,7 +68,7 @@ export const VR_SCALE_HANDLE_OFFSET = 0.04;
 export const VR_VOLUME_MIN_SCALE = 0.2;
 export const VR_VOLUME_MAX_SCALE = 5;
 export const VR_VOLUME_STEP_SCALE = 1;
-export const DESKTOP_VOLUME_STEP_SCALE = 1;
+export const DESKTOP_VOLUME_STEP_SCALE = 1.1;
 export const XR_TARGET_FOVEATION = 0.6;
 export const VR_HUD_TRANSLATE_HANDLE_RADIUS = 0.018;
 export const VR_HUD_TRANSLATE_HANDLE_OFFSET = VR_HUD_TRANSLATE_HANDLE_RADIUS;

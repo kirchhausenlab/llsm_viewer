@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-import type { NormalizedVolume } from '../../core/volumeProcessing';
+import { isSegmentationVolume, type NormalizedVolume } from '../../core/volumeProcessing';
 import { denormalizeValue } from './intensityFormatting';
 
 export const clampValue = (value: number, min: number, max: number): number => {
@@ -17,7 +17,7 @@ export const sampleSegmentationLabel = (
   volume: NormalizedVolume,
   normalizedPosition: THREE.Vector3,
 ) => {
-  if (!volume.segmentationLabels) {
+  if (!isSegmentationVolume(volume)) {
     return null;
   }
 
@@ -27,13 +27,18 @@ export const sampleSegmentationLabel = (
 
   const sliceStride = volume.width * volume.height;
   const index = z * sliceStride + y * volume.width + x;
-  return volume.segmentationLabels[index] ?? null;
+  return volume.labels[index] ?? null;
 };
 
 export const sampleRawValuesAtPosition = (
   volume: NormalizedVolume,
   normalizedPosition: THREE.Vector3,
 ) => {
+  if (isSegmentationVolume(volume)) {
+    const label = sampleSegmentationLabel(volume, normalizedPosition);
+    return label === null ? [] : [label];
+  }
+
   const channels = Math.max(1, volume.channels);
   const sliceStride = volume.width * volume.height * channels;
   const rowStride = volume.width * channels;

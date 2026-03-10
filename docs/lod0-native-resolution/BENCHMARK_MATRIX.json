@@ -1,0 +1,45 @@
+{
+  "version": "1.0.0",
+  "updatedAt": "2026-02-28",
+  "approval": {
+    "status": "approved",
+    "approvedAt": "2026-02-28",
+    "approvedBy": "lod0-native-resolution-session",
+    "notes": "First full calibration and regression pass completed in closure session."
+  },
+  "hardwareTiers": [
+    {
+      "id": "dev-laptop-tier-a",
+      "label": "Developer Laptop Tier A",
+      "notes": "Modern x86_64 laptop/desktop with SSD and >=16 GB RAM."
+    }
+  ],
+  "cases": [
+    {
+      "id": "fib_large",
+      "name": "FIB large single-volume",
+      "tierId": "dev-laptop-tier-a",
+      "datasetPath": "data/test_fib_large.zarr",
+      "acceptance": {
+        "pausedLod0SelectionRateMin": 0.9,
+        "pausedLod0ReadyP95MsMax": 1200,
+        "playbackLod0SelectionRateMin": 0.5,
+        "scaleThrashEventsPerMinuteMax": 6,
+        "chunkHitRateMin": 0.8
+      }
+    },
+    {
+      "id": "npc2_20",
+      "name": "NPC2 20-timepoint sequence",
+      "tierId": "dev-laptop-tier-a",
+      "datasetPath": "data/test_npc2_20.zarr",
+      "acceptance": {
+        "pausedLod0SelectionRateMin": 0.85,
+        "pausedLod0ReadyP95MsMax": 900,
+        "playbackLod0SelectionRateMin": 0.35,
+        "scaleThrashEventsPerMinuteMax": 8,
+        "chunkHitRateMin": 0.8
+      }
+    }
+  ]
+}

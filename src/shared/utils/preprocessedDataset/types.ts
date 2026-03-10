@@ -1,5 +1,12 @@
 import type { VolumeDataType } from '../../../types/volume';
-import type { AnisotropyScaleFactors, VoxelResolutionValues } from '../../../types/voxelResolution';
+import type {
+  AnisotropyScaleFactors,
+  TemporalResolutionMetadata,
+  VoxelResolutionValues
+} from '../../../types/voxelResolution';
+import type { CompiledTrackSet, CompiledTrackSetHeader } from '../../../types/tracks';
+
+export const PREPROCESSED_DATASET_FORMAT = 'llsm-viewer-preprocessed-vnext-hes1' as const;
 
 export type AnisotropyCorrectionMetadata = {
   scale: AnisotropyScaleFactors;
@@ -9,16 +16,16 @@ export type TrackSetExportMetadata = {
   id: string;
   name: string;
   fileName: string;
-  entries: string[][];
+  boundChannelId: string | null;
+  compiled: CompiledTrackSet;
 };
 
 export type ChannelExportMetadata = {
   id: string;
   name: string;
-  trackSets: TrackSetExportMetadata[];
 };
 
-export type PreprocessedMovieMode = '2d' | '3d';
+export type PreprocessedMovieMode = '3d';
 
 export type NormalizationMetadata = {
   min: number;
@@ -30,6 +37,96 @@ export type ZarrArrayDescriptor = {
   shape: number[];
   chunkShape: number[];
   dataType: VolumeDataType;
+  sharding?: ZarrArrayShardingPlan | null;
+};
+
+export type ZarrArrayShardingPlanArrayKind =
+  | 'volumeData'
+  | 'skipHierarchy'
+  | 'histogram'
+  | 'subcell'
+  | 'backgroundMask'
+  | 'playbackAtlasIndices'
+  | 'playbackAtlasData';
+
+export type ZarrArrayShardingPlan = {
+  enabled: boolean;
+  targetShardBytes: number;
+  shardShape: number[];
+  estimatedShardBytes: number;
+  arrayKind?: ZarrArrayShardingPlanArrayKind;
+  allowTemporalAxis?: boolean;
+  fullReadFallbackMaxBytes?: number;
+  reason?: string;
+};
+
+export type PreprocessedScaleSkipHierarchyLevelZarrDescriptor = {
+  level: number;
+  gridShape: [number, number, number];
+  occupancy: ZarrArrayDescriptor;
+  min: ZarrArrayDescriptor;
+  max: ZarrArrayDescriptor;
+};
+
+export type PreprocessedScaleSkipHierarchyZarrDescriptor = {
+  levels: PreprocessedScaleSkipHierarchyLevelZarrDescriptor[];
+};
+
+export type PreprocessedScaleSubcellZarrDescriptor = {
+  gridShape: [number, number, number];
+  data: ZarrArrayDescriptor;
+};
+
+export type PreprocessedBrickAtlasTextureFormat = 'red' | 'rg' | 'rgba';
+
+export type PreprocessedShardedBlobDescriptor = {
+  path: string;
+  entryCount: number;
+  sharding?: ZarrArrayShardingPlan | null;
+};
+
+export type PreprocessedScalePlaybackAtlasZarrDescriptor = {
+  textureFormat: PreprocessedBrickAtlasTextureFormat;
+  textureChannels: number;
+  dataType: 'uint8' | 'uint16';
+  brickAtlasIndices: ZarrArrayDescriptor;
+  data: PreprocessedShardedBlobDescriptor;
+};
+
+export type PreprocessedLayerScaleManifestEntry = {
+  level: number;
+  downsampleFactor: [number, number, number];
+  width: number;
+  height: number;
+  depth: number;
+  channels: number;
+  zarr: {
+    data: ZarrArrayDescriptor;
+    skipHierarchy: PreprocessedScaleSkipHierarchyZarrDescriptor;
+    subcell?: PreprocessedScaleSubcellZarrDescriptor;
+    playbackAtlas?: PreprocessedScalePlaybackAtlasZarrDescriptor;
+    histogram?: ZarrArrayDescriptor;
+  };
+};
+
+export type PreprocessedBackgroundMaskScaleManifestEntry = {
+  level: number;
+  downsampleFactor: [number, number, number];
+  width: number;
+  height: number;
+  depth: number;
+  zarr: {
+    data: ZarrArrayDescriptor;
+  };
+};
+
+export type PreprocessedBackgroundMaskManifest = {
+  sourceLayerKey: string;
+  sourceDataType: VolumeDataType;
+  values: number[];
+  zarr: {
+    scales: PreprocessedBackgroundMaskScaleManifestEntry[];
+  };
 };
 
 export type PreprocessedLayerManifestEntry = {
@@ -45,9 +142,7 @@ export type PreprocessedLayerManifestEntry = {
   dataType: VolumeDataType;
   normalization: NormalizationMetadata | null;
   zarr: {
-    data: ZarrArrayDescriptor;
-    labels?: ZarrArrayDescriptor;
-    histogram: ZarrArrayDescriptor;
+    scales: PreprocessedLayerScaleManifestEntry[];
   };
 };
 
@@ -57,37 +152,54 @@ export type PreprocessedChannelManifest = {
   layers: PreprocessedLayerManifestEntry[];
 };
 
-export type PreprocessedTracksDescriptor = {
+export type PreprocessedTrackCatalogDescriptor = {
   path: string;
-  format: 'csv';
-  columns: 8;
-  decimalPlaces: 3;
+  format: 'binary';
+  version: 1;
+  strideBytes: 52;
+  count: number;
+};
+
+export type PreprocessedTrackBinaryDescriptor = {
+  path: string;
+  format: 'float32' | 'uint32';
+  stride: number;
+  count: number;
+};
+
+export type PreprocessedTracksDescriptor = {
+  format: 'compiled-v3';
+  header: CompiledTrackSetHeader;
+  catalog: PreprocessedTrackCatalogDescriptor;
+  pointData: PreprocessedTrackBinaryDescriptor;
+  segmentPositions: PreprocessedTrackBinaryDescriptor;
+  segmentTimes: PreprocessedTrackBinaryDescriptor;
+  segmentTrackIndices: PreprocessedTrackBinaryDescriptor;
+  centroidData: PreprocessedTrackBinaryDescriptor;
 };
 
 export type PreprocessedTrackSetManifestEntry = {
   id: string;
   name: string;
   fileName: string;
+  boundChannelId: string | null;
   tracks: PreprocessedTracksDescriptor;
 };
 
-export type PreprocessedChannelManifestV5 = PreprocessedChannelManifest & {
-  trackSets: PreprocessedTrackSetManifestEntry[];
-};
-
-export type PreprocessedManifestV5 = {
-  format: 'llsm-viewer-preprocessed';
+export type PreprocessedManifest = {
+  format: typeof PREPROCESSED_DATASET_FORMAT;
   generatedAt: string;
   dataset: {
     movieMode: PreprocessedMovieMode;
     totalVolumeCount: number;
-    channels: PreprocessedChannelManifestV5[];
-    voxelResolution?: VoxelResolutionValues | null;
+    channels: PreprocessedChannelManifest[];
+    trackSets: PreprocessedTrackSetManifestEntry[];
+    voxelResolution: VoxelResolutionValues;
+    temporalResolution: TemporalResolutionMetadata;
     anisotropyCorrection?: AnisotropyCorrectionMetadata | null;
+    backgroundMask?: PreprocessedBackgroundMaskManifest | null;
   };
 };
-
-export type PreprocessedManifest = PreprocessedManifestV5;
 
 export type PreprocessedLayerSummary = {
   key: string;
@@ -106,17 +218,21 @@ export type PreprocessedLayerSummary = {
 export type PreprocessedChannelSummary = {
   id: string;
   name: string;
-  trackSets: Array<{
-    id: string;
-    name: string;
-    fileName: string;
-    entries: string[][];
-  }>;
   layers: PreprocessedLayerSummary[];
+};
+
+export type PreprocessedTrackSetSummary = {
+  id: string;
+  name: string;
+  fileName: string;
+  boundChannelId: string | null;
+  header: CompiledTrackSetHeader;
+  tracks: PreprocessedTracksDescriptor;
 };
 
 export type OpenPreprocessedDatasetResult = {
   manifest: PreprocessedManifest;
   channelSummaries: PreprocessedChannelSummary[];
+  trackSummaries: PreprocessedTrackSetSummary[];
   totalVolumeCount: number;
 };

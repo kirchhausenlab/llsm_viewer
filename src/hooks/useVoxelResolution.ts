@@ -1,50 +1,51 @@
 import { useCallback, useMemo, useState } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 
 import { computeAnisotropyScale } from '../shared/utils/anisotropyCorrection';
-import type { VoxelResolutionAxis, VoxelResolutionInput, VoxelResolutionUnit, VoxelResolutionValues } from '../types/voxelResolution';
+import type {
+  TemporalResolutionUnit,
+  VoxelResolutionAxis,
+  VoxelResolutionInput,
+  VoxelResolutionUnit,
+  VoxelResolutionValues
+} from '../types/voxelResolution';
+import type { AnisotropyScaleFactors } from '../types/voxelResolution';
 
 const DEFAULT_VOXEL_RESOLUTION: VoxelResolutionInput = {
   x: '1.0',
   y: '1.0',
   z: '1.0',
+  t: '1.0',
   unit: 'μm',
+  timeUnit: 's',
   correctAnisotropy: false
 };
 
-const DEFAULT_EXPERIMENT_DIMENSION: '3d' | '2d' = '3d';
-
-export type ExperimentDimension = '3d' | '2d';
+const SPATIAL_VOXEL_RESOLUTION_AXES: ReadonlyArray<keyof AnisotropyScaleFactors> = ['x', 'y', 'z'];
 
 export type VoxelResolutionState = {
   voxelResolutionInput: VoxelResolutionInput;
   voxelResolution: VoxelResolutionValues | null;
   anisotropyScale: { x: number; y: number; z: number } | null;
-  experimentDimension: ExperimentDimension;
   trackScale: { x: number; y: number; z: number };
 };
 
 export type VoxelResolutionActions = {
   handleVoxelResolutionAxisChange: (axis: VoxelResolutionAxis, value: string) => void;
   handleVoxelResolutionUnitChange: (unit: VoxelResolutionUnit) => void;
+  handleVoxelResolutionTimeUnitChange: (unit: TemporalResolutionUnit) => void;
   handleVoxelResolutionAnisotropyToggle: (value: boolean) => void;
-  handleExperimentDimensionChange: (dimension: ExperimentDimension) => void;
-  setExperimentDimension: React.Dispatch<React.SetStateAction<ExperimentDimension>>;
-  setVoxelResolutionInput: React.Dispatch<React.SetStateAction<VoxelResolutionInput>>;
+  setVoxelResolutionInput: Dispatch<SetStateAction<VoxelResolutionInput>>;
 };
 
 export type VoxelResolutionHook = VoxelResolutionState & VoxelResolutionActions;
 
-export function useVoxelResolution(
-  initial: VoxelResolutionInput = DEFAULT_VOXEL_RESOLUTION,
-  initialDimension: ExperimentDimension = DEFAULT_EXPERIMENT_DIMENSION
-): VoxelResolutionHook {
+export function useVoxelResolution(initial: VoxelResolutionInput = DEFAULT_VOXEL_RESOLUTION): VoxelResolutionHook {
   const [voxelResolutionInput, setVoxelResolutionInput] = useState<VoxelResolutionInput>(initial);
-  const [experimentDimension, setExperimentDimension] = useState<ExperimentDimension>(initialDimension);
 
   const voxelResolution = useMemo<VoxelResolutionValues | null>(() => {
-    const axes: VoxelResolutionAxis[] = experimentDimension === '2d' ? ['x', 'y'] : ['x', 'y', 'z'];
-    const parsed: Partial<Record<VoxelResolutionAxis, number>> = {};
-    for (const axis of axes) {
+    const parsed: Partial<Record<'x' | 'y' | 'z', number>> = {};
+    for (const axis of SPATIAL_VOXEL_RESOLUTION_AXES) {
       const rawValue = voxelResolutionInput[axis].trim();
       if (!rawValue) {
         return null;
@@ -56,32 +57,14 @@ export function useVoxelResolution(
       parsed[axis] = numericValue;
     }
 
-    let resolvedZ: number | undefined = parsed.z;
-    if (experimentDimension === '2d') {
-      const rawZ = voxelResolutionInput.z.trim();
-      if (rawZ) {
-        const numericZ = Number(rawZ);
-        if (!Number.isFinite(numericZ)) {
-          return null;
-        }
-        resolvedZ = numericZ;
-      } else {
-        resolvedZ = parsed.y ?? parsed.x;
-      }
-    }
-
-    if (resolvedZ === undefined) {
-      return null;
-    }
-
     return {
       x: parsed.x ?? 0,
       y: parsed.y ?? 0,
-      z: resolvedZ,
+      z: parsed.z ?? 0,
       unit: voxelResolutionInput.unit,
       correctAnisotropy: voxelResolutionInput.correctAnisotropy
     };
-  }, [experimentDimension, voxelResolutionInput]);
+  }, [voxelResolutionInput]);
 
   const anisotropyScale = useMemo(() => computeAnisotropyScale(voxelResolution), [voxelResolution]);
 
@@ -106,6 +89,15 @@ export function useVoxelResolution(
     });
   }, []);
 
+  const handleVoxelResolutionTimeUnitChange = useCallback((unit: TemporalResolutionUnit) => {
+    setVoxelResolutionInput((current) => {
+      if (current.timeUnit === unit) {
+        return current;
+      }
+      return { ...current, timeUnit: unit };
+    });
+  }, []);
+
   const handleVoxelResolutionAnisotropyToggle = useCallback((value: boolean) => {
     setVoxelResolutionInput((current) => {
       if (current.correctAnisotropy === value) {
@@ -115,23 +107,17 @@ export function useVoxelResolution(
     });
   }, []);
 
-  const handleExperimentDimensionChange = useCallback((dimension: ExperimentDimension) => {
-    setExperimentDimension((current) => (current === dimension ? current : dimension));
-  }, []);
-
   return {
     voxelResolutionInput,
     voxelResolution,
     anisotropyScale,
     trackScale,
-    experimentDimension,
     handleVoxelResolutionAxisChange,
     handleVoxelResolutionUnitChange,
+    handleVoxelResolutionTimeUnitChange,
     handleVoxelResolutionAnisotropyToggle,
-    handleExperimentDimensionChange,
-    setExperimentDimension,
     setVoxelResolutionInput
   };
 }
 
-export { DEFAULT_VOXEL_RESOLUTION, DEFAULT_EXPERIMENT_DIMENSION };
+export { DEFAULT_VOXEL_RESOLUTION };

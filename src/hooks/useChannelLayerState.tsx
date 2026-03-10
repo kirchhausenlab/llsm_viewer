@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
   type Dispatch,
-  type MutableRefObject,
   type ReactNode,
   type SetStateAction
 } from 'react';
@@ -17,6 +16,7 @@ import {
   GRAYSCALE_COLOR_SWATCHES,
   normalizeHexColor
 } from '../shared/colorMaps/layerColors';
+import { getTrackColorHex } from '../shared/colorMaps/trackColors';
 import {
   brightnessContrastModel,
   clampWindowBounds,
@@ -26,12 +26,15 @@ import {
   DEFAULT_WINDOW_MAX,
   DEFAULT_WINDOW_MIN,
   type LayerSettings,
+  type RenderStyle,
   type SamplingMode
 } from '../state/layerSettings';
 import type { LoadedLayer } from '../types/layers';
-import type { VoxelResolutionValues } from '../types/voxelResolution';
-import type { ExperimentDimension } from './useVoxelResolution';
-import { type ChannelSourcesApi, type LoadState, useChannelSources } from './dataset';
+import { type ChannelSourcesApi, useChannelSources } from './dataset';
+import type {
+  ApplyLoadedLayersOptions as ChannelSourcesApplyLoadedLayersOptions,
+  LoadSelectedDatasetOptions as ChannelSourcesLoadSelectedDatasetOptions
+} from './dataset/useChannelDatasetLoader';
 
 const DEFAULT_RESET_WINDOW = { windowMin: DEFAULT_WINDOW_MIN, windowMax: DEFAULT_WINDOW_MAX };
 
@@ -52,48 +55,32 @@ const computeInitialWindowForVolume = (
   };
 };
 
-export type ApplyLoadedLayersOptions = {
-  setSelectedIndex: (index: number) => void;
-  setActiveChannelTabId: (id: string | null) => void;
-  setStatus: (state: LoadState) => void;
-  setLoadedCount: Dispatch<SetStateAction<number>>;
-  setExpectedVolumeCount: (count: number) => void;
-  setLoadProgress: (progress: number) => void;
-  setIsPlaying: (value: boolean) => void;
-  clearDatasetError: () => void;
-  setError: (message: string | null) => void;
-};
+type ChannelLayerLoadBindingKeys =
+  | 'setChannelVisibility'
+  | 'setLayerSettings'
+  | 'setLayerAutoThresholds'
+  | 'globalRenderStyle'
+  | 'globalSamplingMode'
+  | 'getChannelDefaultColor';
 
-export type LoadSelectedDatasetOptions = {
-  voxelResolution: VoxelResolutionValues | null;
-  anisotropyScale: { x: number; y: number; z: number } | null;
-  experimentDimension: ExperimentDimension;
-  preprocessingSettingsRef: MutableRefObject<VoxelResolutionValues | null>;
-  setStatus: (state: LoadState) => void;
-  setError: (message: string | null) => void;
-  clearDatasetError: () => void;
-  setSelectedIndex: (index: number) => void;
-  setIsPlaying: (value: boolean) => void;
-  setLoadProgress: (value: number) => void;
-  setLoadedCount: Dispatch<SetStateAction<number>>;
-  setExpectedVolumeCount: (value: number) => void;
-  setActiveChannelTabId: (value: string | null) => void;
-  showLaunchError: (message: string) => void;
-};
+export type ApplyLoadedLayersOptions = Omit<ChannelSourcesApplyLoadedLayersOptions, ChannelLayerLoadBindingKeys>;
+
+export type LoadSelectedDatasetOptions = Omit<
+  ChannelSourcesLoadSelectedDatasetOptions,
+  ChannelLayerLoadBindingKeys | 'setLayers' | 'channels'
+>;
 
 export type ChannelLayerState = Omit<ChannelSourcesApi, 'loadSelectedDataset' | 'applyLoadedLayers'> & {
   layers: LoadedLayer[];
   setLayers: Dispatch<SetStateAction<LoadedLayer[]>>;
   channelVisibility: Record<string, boolean>;
   setChannelVisibility: Dispatch<SetStateAction<Record<string, boolean>>>;
-  channelActiveLayer: Record<string, string>;
-  setChannelActiveLayer: Dispatch<SetStateAction<Record<string, string>>>;
   layerSettings: Record<string, LayerSettings>;
   setLayerSettings: Dispatch<SetStateAction<Record<string, LayerSettings>>>;
   layerAutoThresholds: Record<string, number>;
   setLayerAutoThresholds: Dispatch<SetStateAction<Record<string, number>>>;
-  globalRenderStyle: 0 | 1;
-  setGlobalRenderStyle: Dispatch<SetStateAction<0 | 1>>;
+  globalRenderStyle: RenderStyle;
+  setGlobalRenderStyle: Dispatch<SetStateAction<RenderStyle>>;
   globalSamplingMode: SamplingMode;
   setGlobalSamplingMode: Dispatch<SetStateAction<SamplingMode>>;
   channelDefaultColorMap: Map<string, string>;
@@ -113,10 +100,9 @@ export function useChannelLayerState(): ChannelLayerState {
   const [layers, setLayers] = useState<LoadedLayer[]>([]);
   const layersRef = useRef<LoadedLayer[]>([]);
   const [channelVisibility, setChannelVisibility] = useState<Record<string, boolean>>({});
-  const [channelActiveLayer, setChannelActiveLayer] = useState<Record<string, string>>({});
   const [layerSettings, setLayerSettings] = useState<Record<string, LayerSettings>>({});
   const [layerAutoThresholds, setLayerAutoThresholds] = useState<Record<string, number>>({});
-  const [globalRenderStyle, setGlobalRenderStyle] = useState<0 | 1>(DEFAULT_RENDER_STYLE);
+  const [globalRenderStyle, setGlobalRenderStyle] = useState<RenderStyle>(DEFAULT_RENDER_STYLE);
   const [globalSamplingMode, setGlobalSamplingMode] = useState<SamplingMode>(DEFAULT_SAMPLING_MODE);
 
   useEffect(() => {
@@ -125,19 +111,19 @@ export function useChannelLayerState(): ChannelLayerState {
 
   const channelDefaultColorMap = useMemo(() => {
     const colorableChannels = channelSources.channels.filter((channel) =>
-      channel.layers.some((layer) => !layer.isSegmentation)
+      channel.volume !== null && !channel.volume.isSegmentation
     );
     if (colorableChannels.length <= 1) {
       return new Map<string, string>();
     }
 
-    const fallbackSwatch = GRAYSCALE_COLOR_SWATCHES[0];
     const shiftedSwatches = GRAYSCALE_COLOR_SWATCHES.slice(1);
 
     const map = new Map<string, string>();
     colorableChannels.forEach((channel, index) => {
-      const swatch = index < shiftedSwatches.length ? shiftedSwatches[index] : fallbackSwatch;
-      map.set(channel.id, normalizeHexColor(swatch?.value, DEFAULT_LAYER_COLOR));
+      const swatch = shiftedSwatches[index];
+      const explicitColor = swatch ? swatch.value : getTrackColorHex(channel.id);
+      map.set(channel.id, normalizeHexColor(explicitColor, DEFAULT_LAYER_COLOR));
     });
     return map;
   }, [channelSources.channels]);
@@ -170,26 +156,38 @@ export function useChannelLayerState(): ChannelLayerState {
     []
   );
 
+  const baseLoadBindings = useMemo(
+    () => ({
+      setChannelVisibility,
+      setLayerSettings,
+      setLayerAutoThresholds,
+      getChannelDefaultColor,
+      globalRenderStyle,
+      globalSamplingMode
+    }),
+    [
+      getChannelDefaultColor,
+      globalRenderStyle,
+      globalSamplingMode,
+      setChannelVisibility
+    ]
+  );
+
+  const loadSelectedDatasetBindings = useMemo(
+    () => ({
+      ...baseLoadBindings,
+      setLayers
+    }),
+    [baseLoadBindings]
+  );
+
   const applyLoadedLayers: ChannelLayerState['applyLoadedLayers'] = useCallback(
     (normalizedLayers, expectedVolumeCount, options) =>
       channelSources.applyLoadedLayers(normalizedLayers, expectedVolumeCount, {
         ...options,
-        setChannelVisibility,
-        setChannelActiveLayer,
-        setLayerSettings,
-        setLayerAutoThresholds,
-        globalRenderStyle,
-        globalSamplingMode,
-        getChannelDefaultColor
+        ...baseLoadBindings
       }),
-    [
-      channelSources,
-      getChannelDefaultColor,
-      globalRenderStyle,
-      globalSamplingMode,
-      setChannelActiveLayer,
-      setChannelVisibility
-    ]
+    [baseLoadBindings, channelSources]
   );
 
   const loadSelectedDataset: ChannelLayerState['loadSelectedDataset'] = useCallback(
@@ -197,23 +195,9 @@ export function useChannelLayerState(): ChannelLayerState {
       channelSources.loadSelectedDataset({
         ...options,
         channels: channelSources.channels,
-        setLayers,
-        setChannelVisibility,
-        setChannelActiveLayer,
-        setLayerSettings,
-        setLayerAutoThresholds,
-        getChannelDefaultColor,
-        globalRenderStyle,
-        globalSamplingMode
+        ...loadSelectedDatasetBindings
       }),
-    [
-      channelSources,
-      getChannelDefaultColor,
-      globalRenderStyle,
-      globalSamplingMode,
-      setChannelActiveLayer,
-      setChannelVisibility
-    ]
+    [channelSources, loadSelectedDatasetBindings]
   );
 
   return {
@@ -222,8 +206,6 @@ export function useChannelLayerState(): ChannelLayerState {
     setLayers,
     channelVisibility,
     setChannelVisibility,
-    channelActiveLayer,
-    setChannelActiveLayer,
     layerSettings,
     setLayerSettings,
     layerAutoThresholds,

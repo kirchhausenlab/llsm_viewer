@@ -1,0 +1,76 @@
+{
+  "version": 3,
+  "generatedAt": "2026-02-28T19:06:42.563Z",
+  "environment": {
+    "cwd": "/home/jidacf/code/llsm_viewer",
+    "node": "v22.22.0",
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "cases": {
+    "fib_large": {
+      "id": "fib_large",
+      "name": "FIB large single-volume",
+      "datasetPath": "data/test_fib_large.zarr",
+      "layerKey": "layer-1",
+      "totalTimepoints": 1,
+      "sweepTimepoints": 1,
+      "metrics": {
+        "selectedScaleLevel": 3,
+        "selectedResidencyMode": "atlas",
+        "coldLoadMs": 277.98,
+        "warmLoadMs": 0.14,
+        "transitionLoadMs": null,
+        "sweepLoadMs": null,
+        "lod0SelectionRatio": 0,
+        "lod0ReadinessP95Ms": null,
+        "scaleThrashEventsPerMinute": 0,
+        "chunkHitRate": 0
+      },
+      "thresholds": {
+        "selectedScaleLevel": 3,
+        "selectedResidencyMode": "atlas",
+        "coldLoadMsMax": 375.27,
+        "warmLoadMsMax": 8.14,
+        "transitionLoadMsMax": null,
+        "sweepLoadMsMax": null,
+        "lod0SelectionRatioMin": 0,
+        "lod0ReadinessP95MsMax": null,
+        "scaleThrashEventsPerMinuteMax": 2,
+        "chunkHitRateMin": 0
+      }
+    },
+    "npc2_20": {
+      "id": "npc2_20",
+      "name": "NPC2 20-timepoint sequence",
+      "datasetPath": "data/test_npc2_20.zarr",
+      "layerKey": "layer-1",
+      "totalTimepoints": 20,
+      "sweepTimepoints": 20,
+      "metrics": {
+        "selectedScaleLevel": 0,
+        "selectedResidencyMode": "volume",
+        "coldLoadMs": 3653.28,
+        "warmLoadMs": 0.27,
+        "transitionLoadMs": 3564.82,
+        "sweepLoadMs": 68277.87,
+        "lod0SelectionRatio": 1,
+        "lod0ReadinessP95Ms": 3916.17,
+        "scaleThrashEventsPerMinute": 0,
+        "chunkHitRate": 0
+      },
+      "thresholds": {
+        "selectedScaleLevel": 0,
+        "selectedResidencyMode": "volume",
+        "coldLoadMsMax": 7653.28,
+        "warmLoadMsMax": 8.27,
+        "transitionLoadMsMax": 7564.82,
+        "sweepLoadMsMax": 108277.87,
+        "lod0SelectionRatioMin": 0.75,
+        "lod0ReadinessP95MsMax": 7916.17,
+        "scaleThrashEventsPerMinuteMax": 2,
+        "chunkHitRateMin": 0
+      }
+    }
+  }
+}

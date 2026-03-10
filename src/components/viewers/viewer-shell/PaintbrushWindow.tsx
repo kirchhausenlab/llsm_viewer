@@ -81,18 +81,7 @@ export default function PaintbrushWindow({
       initialPosition={initialPosition}
       width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
       resetSignal={resetSignal}
-      headerEndActions={
-        <button
-          type="button"
-          className="floating-window-toggle"
-          onClick={handleClose}
-          aria-label="Close paintbrush window"
-          data-no-drag
-          title="Close"
-        >
-          <span aria-hidden="true">×</span>
-        </button>
-      }
+      onClose={handleClose}
     >
       <div className="global-controls paintbrush-window">
         <div className="control-row paintbrush-button-row">
@@ -101,7 +90,7 @@ export default function PaintbrushWindow({
             className="paintbrush-toggle"
             onClick={() => onEnabledChange(!enabled)}
             aria-pressed={enabled}
-            title="Hold Shift + Left-click/drag in the viewer to paint/erase"
+            title="Hold Ctrl + Left-click/drag in the viewer to paint/erase"
           >
             {enabled ? 'Enabled' : 'Disabled'}
           </button>

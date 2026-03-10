@@ -1,13 +1,12 @@
-import type { PreprocessedManifest } from '../utils/preprocessedDataset/types';
 import { ensureArrayBuffer } from '../utils/buffer';
 
 export type PreprocessedStorage = {
   writeFile(path: string, data: Uint8Array): Promise<void>;
   readFile(path: string): Promise<Uint8Array>;
-  finalizeManifest(manifest: PreprocessedManifest): Promise<void>;
+  readFileRange?(path: string, offset: number, length: number): Promise<Uint8Array>;
 };
 
-export type PreprocessedStorageBackend = 'opfs' | 'memory' | 'directory';
+export type PreprocessedStorageBackend = 'opfs' | 'memory' | 'directory' | 'http';
 
 export type PreprocessedStorageHandle = {
   backend: PreprocessedStorageBackend;
@@ -15,6 +14,8 @@ export type PreprocessedStorageHandle = {
   storage: PreprocessedStorage;
   dispose?: () => Promise<void>;
 };
+
+export const PREPROCESSED_STORAGE_ROOT_DIR = 'llsm-viewer-preprocessed-vnext-hes1';
 
 function assertSafePath(path: string): string {
   const normalized = path.replace(/^\/+/, '').trim();
@@ -30,13 +31,6 @@ function assertSafePath(path: string): string {
   return parts.join('/');
 }
 
-function createDatasetId(prefix: string): string {
-  const now = new Date();
-  const stamp = now.toISOString().replace(/[:.]/g, '-');
-  const random = Math.random().toString(16).slice(2, 10);
-  return `${prefix}-${stamp}-${random}`;
-}
-
 function ensureZarrDirectoryName(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) {
@@ -45,9 +39,29 @@ function ensureZarrDirectoryName(name: string): string {
   return trimmed.toLowerCase().endsWith('.zarr') ? trimmed : `${trimmed}.zarr`;
 }
 
+function requireNonEmptyName(value: string, label: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(`${label} must not be empty.`);
+  }
+  return trimmed;
+}
+
+function normalizeHttpBaseUrl(baseUrl: string): string {
+  const trimmed = requireNonEmptyName(baseUrl, 'baseUrl');
+  try {
+    const url = new URL(trimmed);
+    url.pathname = url.pathname.replace(/\/+$/, '');
+    return url.toString().replace(/\/+$/, '');
+  } catch {
+    throw new Error(`Invalid baseUrl "${baseUrl}".`);
+  }
+}
+
 type FileSystemDirectoryHandleLike = {
   getDirectoryHandle(name: string, options?: { create?: boolean }): Promise<FileSystemDirectoryHandleLike>;
   getFileHandle(name: string, options?: { create?: boolean }): Promise<FileSystemFileHandleLike>;
+  removeEntry(name: string, options?: { recursive?: boolean }): Promise<void>;
 };
 
 type FileSystemFileHandleLike = {
@@ -59,6 +73,9 @@ type FileSystemWritableFileStreamLike = {
   write(data: BufferSource | Blob | string): Promise<void> | void;
   close(): Promise<void> | void;
 };
+
+type DirectoryHandleCache = Map<string, Promise<FileSystemDirectoryHandleLike>>;
+type FetchLike = typeof fetch;
 
 async function getOpfsRoot(): Promise<FileSystemDirectoryHandleLike> {
   if (typeof navigator === 'undefined' || !navigator.storage?.getDirectory) {
@@ -80,6 +97,16 @@ async function getOrCreateDirectory(
   return current;
 }
 
+function isMissingStorageEntryError(error: unknown): boolean {
+  if (typeof DOMException !== 'undefined' && error instanceof DOMException) {
+    return error.name === 'NotFoundError';
+  }
+  if (error instanceof Error) {
+    return /not found/i.test(error.message);
+  }
+  return false;
+}
+
 async function getDirectory(
   root: FileSystemDirectoryHandleLike,
   path: string
@@ -93,10 +120,53 @@ async function getDirectory(
   return current;
 }
 
+async function getDirectoryWithCache({
+  root,
+  path,
+  create,
+  cache
+}: {
+  root: FileSystemDirectoryHandleLike;
+  path: string;
+  create: boolean;
+  cache: DirectoryHandleCache;
+}): Promise<FileSystemDirectoryHandleLike> {
+  const safePath = assertSafePath(path);
+  const existing = cache.get(safePath);
+  if (existing) {
+    return existing;
+  }
+
+  const parts = safePath.split('/').filter(Boolean);
+  let current = root;
+  let currentPath = '';
+  for (const part of parts) {
+    currentPath = currentPath ? `${currentPath}/${part}` : part;
+    const cachedSegment = cache.get(currentPath);
+    if (cachedSegment) {
+      current = await cachedSegment;
+      continue;
+    }
+
+    let segmentPromise: Promise<FileSystemDirectoryHandleLike>;
+    const segmentPath = currentPath;
+    segmentPromise = current
+      .getDirectoryHandle(part, create ? { create: true } : undefined)
+      .catch((error) => {
+        cache.delete(segmentPath);
+        throw error;
+      });
+    cache.set(segmentPath, segmentPromise);
+    current = await segmentPromise;
+  }
+  return current;
+}
+
 async function writeFileToDirectory(
   root: FileSystemDirectoryHandleLike,
   path: string,
-  data: Uint8Array
+  data: Uint8Array,
+  directoryCache?: DirectoryHandleCache
 ): Promise<void> {
   const safePath = assertSafePath(path);
   const parts = safePath.split('/');
@@ -104,116 +174,252 @@ async function writeFileToDirectory(
   if (!name) {
     throw new Error('Storage file path is missing a file name.');
   }
-  const dir = parts.length > 0 ? await getOrCreateDirectory(root, parts.join('/')) : root;
+  const directoryPath = parts.join('/');
+  const dir = directoryPath
+    ? directoryCache
+      ? await getDirectoryWithCache({ root, path: directoryPath, create: true, cache: directoryCache })
+      : await getOrCreateDirectory(root, directoryPath)
+    : root;
   const handle = await dir.getFileHandle(name, { create: true });
   const writable = await handle.createWritable();
   await writable.write(ensureArrayBuffer(data));
   await writable.close();
 }
 
-async function readFileFromDirectory(root: FileSystemDirectoryHandleLike, path: string): Promise<Uint8Array> {
+async function removeEntryFromDirectory(
+  root: FileSystemDirectoryHandleLike,
+  path: string,
+  options?: { recursive?: boolean }
+): Promise<void> {
+  const safePath = assertSafePath(path);
+  const parts = safePath.split('/');
+  const name = parts.pop();
+  if (!name) {
+    throw new Error('Storage entry path is missing a name.');
+  }
+  const directoryPath = parts.join('/');
+
+  try {
+    const dir = directoryPath ? await getDirectory(root, directoryPath) : root;
+    await dir.removeEntry(name, options);
+  } catch (error) {
+    if (isMissingStorageEntryError(error)) {
+      return;
+    }
+    throw error;
+  }
+}
+
+async function readFileFromDirectory(
+  root: FileSystemDirectoryHandleLike,
+  path: string,
+  directoryCache?: DirectoryHandleCache
+): Promise<Uint8Array> {
   const safePath = assertSafePath(path);
   const parts = safePath.split('/');
   const name = parts.pop();
   if (!name) {
     throw new Error('Storage file path is missing a file name.');
   }
-  const dir = parts.length > 0 ? await getDirectory(root, parts.join('/')) : root;
+  const directoryPath = parts.join('/');
+  const dir = directoryPath
+    ? directoryCache
+      ? await getDirectoryWithCache({ root, path: directoryPath, create: false, cache: directoryCache })
+      : await getDirectory(root, directoryPath)
+    : root;
   const handle = await dir.getFileHandle(name);
   const file = await handle.getFile();
   const buffer = await file.arrayBuffer();
   return new Uint8Array(buffer);
 }
 
-function resolveRootDir(rootDir: string | undefined, fallback: string): string {
-  return rootDir?.trim() ? rootDir.trim() : fallback;
+function normalizeRange(offset: number, length: number, totalLength: number): { start: number; end: number } {
+  const safeOffset = Number.isFinite(offset) ? Math.max(0, Math.floor(offset)) : 0;
+  const safeLength = Number.isFinite(length) ? Math.max(0, Math.floor(length)) : 0;
+  const start = Math.min(safeOffset, totalLength);
+  const end = Math.min(totalLength, start + safeLength);
+  return { start, end };
+}
+
+function normalizeOpenEndedRange(offset: number, length: number): { start: number; endInclusive: number } | null {
+  const start = Number.isFinite(offset) ? Math.max(0, Math.floor(offset)) : 0;
+  const safeLength = Number.isFinite(length) ? Math.max(0, Math.floor(length)) : 0;
+  if (safeLength <= 0) {
+    return null;
+  }
+  return {
+    start,
+    endInclusive: start + safeLength - 1
+  };
+}
+
+function buildHttpStorageUrl(baseUrl: string, path: string): string {
+  const safePath = assertSafePath(path);
+  return new URL(safePath, `${baseUrl}/`).toString();
+}
+
+function createMissingStorageEntryError(path: string): Error {
+  return new Error(`Storage entry not found: ${path}`);
+}
+
+async function readHttpResponseBytes(response: Response): Promise<Uint8Array> {
+  const buffer = await response.arrayBuffer();
+  return new Uint8Array(buffer);
+}
+
+async function readFileFromHttpStorage(fetchImpl: FetchLike, baseUrl: string, path: string): Promise<Uint8Array> {
+  const safePath = assertSafePath(path);
+  const response = await fetchImpl(buildHttpStorageUrl(baseUrl, safePath), {
+    method: 'GET'
+  });
+
+  if (response.status === 404) {
+    throw createMissingStorageEntryError(safePath);
+  }
+  if (!response.ok) {
+    throw new Error(
+      `Failed to read "${safePath}" from remote storage (${response.status}${response.statusText ? ` ${response.statusText}` : ''}).`
+    );
+  }
+
+  return readHttpResponseBytes(response);
+}
+
+async function readFileRangeFromHttpStorage(
+  fetchImpl: FetchLike,
+  baseUrl: string,
+  path: string,
+  offset: number,
+  length: number
+): Promise<Uint8Array> {
+  const safePath = assertSafePath(path);
+  const range = normalizeOpenEndedRange(offset, length);
+  if (!range) {
+    return new Uint8Array(0);
+  }
+
+  const response = await fetchImpl(buildHttpStorageUrl(baseUrl, safePath), {
+    method: 'GET',
+    headers: {
+      Range: `bytes=${range.start}-${range.endInclusive}`
+    }
+  });
+
+  if (response.status === 404) {
+    throw createMissingStorageEntryError(safePath);
+  }
+  if (response.status === 206) {
+    return readHttpResponseBytes(response);
+  }
+  if (response.status === 200) {
+    const bytes = await readHttpResponseBytes(response);
+    const end = Math.min(bytes.byteLength, range.endInclusive + 1);
+    if (range.start >= bytes.byteLength) {
+      return new Uint8Array(0);
+    }
+    return bytes.slice(range.start, end);
+  }
+
+  throw new Error(
+    `Failed to range-read "${safePath}" from remote storage (${response.status}${response.statusText ? ` ${response.statusText}` : ''}).`
+  );
+}
+
+async function readFileRangeFromDirectory(
+  root: FileSystemDirectoryHandleLike,
+  path: string,
+  offset: number,
+  length: number,
+  directoryCache?: DirectoryHandleCache
+): Promise<Uint8Array> {
+  const safePath = assertSafePath(path);
+  const parts = safePath.split('/');
+  const name = parts.pop();
+  if (!name) {
+    throw new Error('Storage file path is missing a file name.');
+  }
+  const directoryPath = parts.join('/');
+  const dir = directoryPath
+    ? directoryCache
+      ? await getDirectoryWithCache({ root, path: directoryPath, create: false, cache: directoryCache })
+      : await getDirectory(root, directoryPath)
+    : root;
+  const handle = await dir.getFileHandle(name);
+  const file = await handle.getFile();
+  const { start, end } = normalizeRange(offset, length, file.size);
+  if (end <= start) {
+    return new Uint8Array(0);
+  }
+  const buffer = await file.slice(start, end).arrayBuffer();
+  return new Uint8Array(buffer);
 }
 
 export async function createOpfsPreprocessedStorage(
-  options?: { datasetId?: string; rootDir?: string }
+  options: { datasetId: string; rootDir: string }
 ): Promise<PreprocessedStorageHandle> {
   const root = await getOpfsRoot();
-  const datasetId = options?.datasetId ?? createDatasetId('preprocessed');
-  const rootDir = resolveRootDir(options?.rootDir, 'llsm-viewer-preprocessed');
+  const datasetId = requireNonEmptyName(options.datasetId, 'datasetId');
+  const rootDir = requireNonEmptyName(options.rootDir, 'rootDir');
   const datasetDirName = ensureZarrDirectoryName(datasetId);
   const datasetRoot = await getOrCreateDirectory(root, `${rootDir}/${datasetDirName}`);
+  const directoryCache: DirectoryHandleCache = new Map();
 
   const storage: PreprocessedStorage = {
     async writeFile(path, data) {
-      await writeFileToDirectory(datasetRoot, path, data);
+      await writeFileToDirectory(datasetRoot, path, data, directoryCache);
     },
     async readFile(path) {
-      return readFileFromDirectory(datasetRoot, path);
+      return readFileFromDirectory(datasetRoot, path, directoryCache);
     },
-    async finalizeManifest(manifest) {
-      const encoder = new TextEncoder();
-      const bytes = encoder.encode(JSON.stringify(manifest));
-      await writeFileToDirectory(datasetRoot, 'manifest.json', bytes);
+    async readFileRange(path, offset, length) {
+      return readFileRangeFromDirectory(datasetRoot, path, offset, length, directoryCache);
     }
   };
 
-  return { backend: 'opfs', id: datasetId, storage };
+  return {
+    backend: 'opfs',
+    id: datasetId,
+    storage,
+    async dispose() {
+      await removeEntryFromDirectory(root, `${rootDir}/${datasetDirName}`, { recursive: true });
+    }
+  };
 }
 
-export async function createDirectoryPreprocessedStorage(
-  directory: FileSystemDirectoryHandleLike,
-  options?: { datasetId?: string; rootDir?: string }
-): Promise<PreprocessedStorageHandle> {
-  if (!directory) {
-    throw new Error('Missing directory handle for preprocessed storage.');
-  }
-
-  const datasetId = options?.datasetId ?? createDatasetId('preprocessed-export');
-  const rootDir = resolveRootDir(options?.rootDir, 'llsm-viewer-preprocessed');
-  const datasetDirName = ensureZarrDirectoryName(datasetId);
-  const datasetRoot = await getOrCreateDirectory(directory, `${rootDir}/${datasetDirName}`);
-
-  const storage: PreprocessedStorage = {
-    async writeFile(path, data) {
-      await writeFileToDirectory(datasetRoot, path, data);
-    },
-    async readFile(path) {
-      return readFileFromDirectory(datasetRoot, path);
-    },
-    async finalizeManifest(manifest) {
-      const encoder = new TextEncoder();
-      const bytes = encoder.encode(JSON.stringify(manifest));
-      await writeFileToDirectory(datasetRoot, 'manifest.json', bytes);
-    }
-  };
-
-  return { backend: 'directory', id: datasetId, storage };
+export async function clearOpfsPreprocessedStorageRoot(options: { rootDir: string }): Promise<void> {
+  const rootDir = requireNonEmptyName(options.rootDir, 'rootDir');
+  const root = await getOpfsRoot();
+  await removeEntryFromDirectory(root, rootDir, { recursive: true });
 }
 
 export async function createDirectoryHandlePreprocessedStorage(
   directory: FileSystemDirectoryHandleLike,
-  options?: { id?: string }
+  options: { id: string }
 ): Promise<PreprocessedStorageHandle> {
   if (!directory) {
     throw new Error('Missing directory handle for preprocessed storage.');
   }
 
-  const id = options?.id?.trim() ? options.id.trim() : createDatasetId('preprocessed-folder');
+  const id = requireNonEmptyName(options.id, 'id');
+  const directoryCache: DirectoryHandleCache = new Map();
 
   const storage: PreprocessedStorage = {
     async writeFile(path, data) {
-      await writeFileToDirectory(directory, path, data);
+      await writeFileToDirectory(directory, path, data, directoryCache);
     },
     async readFile(path) {
-      return readFileFromDirectory(directory, path);
+      return readFileFromDirectory(directory, path, directoryCache);
     },
-    async finalizeManifest(manifest) {
-      const encoder = new TextEncoder();
-      const bytes = encoder.encode(JSON.stringify(manifest));
-      await writeFileToDirectory(directory, 'manifest.json', bytes);
+    async readFileRange(path, offset, length) {
+      return readFileRangeFromDirectory(directory, path, offset, length, directoryCache);
     }
   };
 
   return { backend: 'directory', id, storage };
 }
 
-export function createInMemoryPreprocessedStorage(options?: { datasetId?: string }): PreprocessedStorageHandle {
-  const datasetId = options?.datasetId ?? createDatasetId('preprocessed-memory');
+export function createInMemoryPreprocessedStorage(options: { datasetId: string }): PreprocessedStorageHandle {
+  const datasetId = requireNonEmptyName(options.datasetId, 'datasetId');
   const files = new Map<string, Uint8Array>();
 
   const storage: PreprocessedStorage = {
@@ -229,11 +435,51 @@ export function createInMemoryPreprocessedStorage(options?: { datasetId?: string
       }
       return entry.slice();
     },
-    async finalizeManifest(manifest) {
-      const encoder = new TextEncoder();
-      files.set('manifest.json', encoder.encode(JSON.stringify(manifest)));
+    async readFileRange(path, offset, length) {
+      const safePath = assertSafePath(path);
+      const entry = files.get(safePath);
+      if (!entry) {
+        throw new Error(`Storage entry not found: ${safePath}`);
+      }
+      const { start, end } = normalizeRange(offset, length, entry.byteLength);
+      if (end <= start) {
+        return new Uint8Array(0);
+      }
+      return entry.slice(start, end);
     }
   };
 
   return { backend: 'memory', id: datasetId, storage };
+}
+
+export function createHttpPreprocessedStorage(options: {
+  id: string;
+  baseUrl: string;
+  fetchImpl?: FetchLike;
+}): PreprocessedStorageHandle {
+  const id = requireNonEmptyName(options.id, 'id');
+  const baseUrl = normalizeHttpBaseUrl(options.baseUrl);
+  const fetchImpl = options.fetchImpl ?? fetch;
+
+  if (typeof fetchImpl !== 'function') {
+    throw new Error('HTTP preprocessed storage requires fetch support.');
+  }
+
+  const storage: PreprocessedStorage = {
+    async writeFile() {
+      throw new Error('Remote HTTP preprocessed storage is read-only.');
+    },
+    async readFile(path) {
+      return readFileFromHttpStorage(fetchImpl, baseUrl, path);
+    },
+    async readFileRange(path, offset, length) {
+      return readFileRangeFromHttpStorage(fetchImpl, baseUrl, path, offset, length);
+    }
+  };
+
+  return {
+    backend: 'http',
+    id,
+    storage
+  };
 }

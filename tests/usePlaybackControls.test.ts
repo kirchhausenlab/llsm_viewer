@@ -185,4 +185,71 @@ console.log('Starting usePlaybackControls tests');
   assert.strictEqual(onTimeIndexChangeCalls[0], 4);
 })();
 
+(() => {
+  let timeIndexProp = 0;
+  let callbackRevision = 0;
+  const onTimeIndexChangeCalls: number[] = [];
+  const playbackState: PlaybackState = {
+    isPlaying: true,
+    playbackDisabled: false,
+    playbackLabel: '1 / 4',
+    fps: VR_PLAYBACK_MIN_FPS,
+    timeIndex: 0,
+    totalTimepoints: 4,
+    onTogglePlayback: () => {},
+    onTimeIndexChange: (index) => onTimeIndexChangeCalls.push(index),
+    onFpsChange: () => {},
+  };
+
+  const playbackLoopState: PlaybackLoopState = {
+    lastTimestamp: null,
+    accumulator: 0,
+  };
+
+  const vrHoverState: VrHoverState = {
+    playbackSliderActive: false,
+    hoverTrackIds: [],
+    hoverUiTarget: null,
+  };
+
+  const hook = renderHook(() => {
+    const onTimeIndexChange = (index: number) => {
+      callbackRevision;
+      onTimeIndexChangeCalls.push(index);
+    };
+
+    return usePlaybackControls({
+      isPlaying: playbackState.isPlaying,
+      playbackDisabled: playbackState.playbackDisabled,
+      playbackLabel: playbackState.playbackLabel,
+      fps: playbackState.fps,
+      timeIndex: timeIndexProp,
+      totalTimepoints: playbackState.totalTimepoints,
+      onTogglePlayback: playbackState.onTogglePlayback,
+      onTimeIndexChange,
+      onFpsChange: playbackState.onFpsChange,
+    });
+  });
+
+  hook.result.registerPlaybackRefs({
+    playbackStateRef: { current: playbackState },
+    playbackLoopRef: { current: playbackLoopState },
+    vrHoverStateRef: { current: vrHoverState },
+  });
+
+  const frameDuration = Math.ceil(1000 / VR_PLAYBACK_MIN_FPS) + 1;
+  hook.result.advancePlaybackFrame(0);
+  hook.result.advancePlaybackFrame(frameDuration);
+
+  assert.deepStrictEqual(onTimeIndexChangeCalls, [1]);
+  assert.strictEqual(playbackState.timeIndex, 1);
+
+  callbackRevision += 1;
+  hook.rerender();
+  hook.result.advancePlaybackFrame(frameDuration * 2);
+
+  assert.deepStrictEqual(onTimeIndexChangeCalls, [1, 2]);
+  assert.strictEqual(playbackState.timeIndex, 2);
+})();
+
 console.log('usePlaybackControls tests passed');

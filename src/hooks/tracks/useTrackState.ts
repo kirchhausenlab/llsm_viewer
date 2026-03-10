@@ -1,6 +1,5 @@
 import { useCallback, type Dispatch, type SetStateAction } from 'react';
-import type { ChannelSource } from '../dataset';
-import type { ExperimentDimension } from '../useVoxelResolution';
+import type { ChannelSource, TrackSetSource } from '../dataset';
 import useParsedTracks from './useParsedTracks';
 import useTrackStyling, {
   DEFAULT_TRACK_LINE_WIDTH,
@@ -15,33 +14,59 @@ import useTrackSelection, {
 
 export type UseTrackStateOptions = {
   channels: ChannelSource[];
-  setChannels: Dispatch<SetStateAction<ChannelSource[]>>;
-  experimentDimension: ExperimentDimension;
+  tracks: TrackSetSource[];
+  setTracks: Dispatch<SetStateAction<TrackSetSource[]>>;
+  createTrackSetSource: (name: string, boundChannelId: string | null) => TrackSetSource;
+  updateTrackSetIdCounter: (sources: TrackSetSource[]) => void;
   volumeTimepointCount: number;
 };
 
 export const useTrackState = ({
   channels,
-  setChannels,
-  experimentDimension,
+  tracks,
+  setTracks,
+  createTrackSetSource,
+  updateTrackSetIdCounter,
   volumeTimepointCount
 }: UseTrackStateOptions) => {
   const {
     trackSets,
-    rawTracksByTrackSet,
-    handleChannelTrackFilesAdded,
-    handleChannelTrackDrop,
+    trackHeadersByTrackSet,
+    loadedCompiledCatalogTrackSetIds,
+    loadedCompiledPayloadTrackSetIds,
+    parsedTracksByTrackSet,
+    compiledPayloadByTrackSet,
+    ensureCompiledCatalogsLoaded,
+    ensureCompiledPayloadsLoaded,
+    handleAddTrackSet,
+    handleTrackFilesAdded,
+    handleTrackDrop,
     handleTrackSetNameChange,
+    handleTrackSetBoundChannelChange,
+    handleTrackSetClearFile,
     handleTrackSetRemove
-  } = useParsedTracks({ channels, setChannels, experimentDimension });
+  } = useParsedTracks({
+    tracks,
+    setTracks,
+    channels,
+    createTrackSetSource,
+    updateTrackSetIdCounter
+  });
 
-  const styling = useTrackStyling({ trackSets, parsedTracksByTrackSet: rawTracksByTrackSet });
+  const styling = useTrackStyling({ trackSets, trackHeadersByTrackSet, parsedTracksByTrackSet });
 
   const selection = useTrackSelection({
     trackSets,
-    rawTracksByTrackSet,
+    trackHeadersByTrackSet,
+    loadedCompiledCatalogTrackSetIds,
+    loadedCompiledPayloadTrackSetIds,
+    parsedTracksByTrackSet,
+    compiledPayloadByTrackSet,
+    ensureCompiledCatalogsLoaded,
+    ensureCompiledPayloadsLoaded,
     volumeTimepointCount,
     trackSetStates: styling.trackSetStates,
+    trackOpacityByTrackSet: styling.trackOpacityByTrackSet,
     setTrackSetStates: styling.setTrackSetStates,
     ensureTrackIsVisible: styling.ensureTrackIsVisible
   });
@@ -55,10 +80,19 @@ export const useTrackState = ({
     ...selection,
     ...styling,
     trackSets,
-    rawTracksByTrackSet,
-    handleChannelTrackFilesAdded,
-    handleChannelTrackDrop,
+    trackHeadersByTrackSet,
+    loadedCompiledCatalogTrackSetIds,
+    loadedCompiledPayloadTrackSetIds,
+    parsedTracksByTrackSet,
+    compiledPayloadByTrackSet,
+    ensureCompiledCatalogsLoaded,
+    ensureCompiledPayloadsLoaded,
+    handleAddTrackSet,
+    handleTrackFilesAdded,
+    handleTrackDrop,
     handleTrackSetNameChange,
+    handleTrackSetBoundChannelChange,
+    handleTrackSetClearFile,
     handleTrackSetRemove,
     resetTrackState
   };

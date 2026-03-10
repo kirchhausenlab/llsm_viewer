@@ -1,28 +1,25 @@
 export type WindowPosition = { x: number; y: number };
 
 export const WINDOW_MARGIN = 24;
-export const TOP_MENU_HEIGHT = 72;
-export const TOP_MENU_WINDOW_PADDING = 8;
+export const TOP_MENU_HEIGHT = 52;
+export const TOP_MENU_WINDOW_PADDING = 12;
 export const CONTROL_WINDOW_WIDTH = 360;
+export const PROPS_WINDOW_WIDTH = 400;
 export const SELECTED_TRACKS_WINDOW_WIDTH = 1120;
 export const SELECTED_TRACKS_WINDOW_HEIGHT = 220;
 export const LAYERS_WINDOW_VERTICAL_OFFSET = 420;
 export const PAINTBRUSH_WINDOW_VERTICAL_OFFSET = 220;
 export const WARNING_WINDOW_WIDTH = 360;
+export const RUNTIME_DIAGNOSTICS_WINDOW_WIDTH = 320;
 
-const computeRightColumnX = (): number => {
+const computeRightColumnX = (preferredWidth = CONTROL_WINDOW_WIDTH): number => {
   if (typeof window === 'undefined') {
     return WINDOW_MARGIN;
   }
 
-  const windowWidth = Math.min(CONTROL_WINDOW_WIDTH, window.innerWidth - WINDOW_MARGIN * 2);
+  const windowWidth = Math.min(preferredWidth, window.innerWidth - WINDOW_MARGIN * 2);
   return Math.max(WINDOW_MARGIN, window.innerWidth - windowWidth - WINDOW_MARGIN);
 };
-
-export const computeControlWindowDefaultPosition = (): WindowPosition => ({
-  x: WINDOW_MARGIN,
-  y: TOP_MENU_HEIGHT + TOP_MENU_WINDOW_PADDING
-});
 
 export const computeLayersWindowDefaultPosition = (): WindowPosition => ({
   x: WINDOW_MARGIN,
@@ -47,6 +44,21 @@ export const computeViewerSettingsWindowDefaultPosition = (): WindowPosition => 
   const centeredY = Math.max(WINDOW_MARGIN, Math.round((viewportHeight - estimatedHeight) / 2));
 
   return { x: centeredX, y: centeredY };
+};
+
+export const computePropsWindowDefaultPosition = (): WindowPosition => {
+  const x = computeRightColumnX(PROPS_WINDOW_WIDTH);
+  const y = TOP_MENU_HEIGHT + TOP_MENU_WINDOW_PADDING + 96;
+
+  if (typeof window === 'undefined') {
+    return { x, y };
+  }
+
+  const viewportHeight = window.innerHeight;
+  const estimatedHeight = 560;
+  const maxY = Math.max(WINDOW_MARGIN, viewportHeight - estimatedHeight - WINDOW_MARGIN);
+
+  return { x, y: Math.min(y, maxY) };
 };
 
 export const computeTrackWindowDefaultPosition = (): WindowPosition => {
@@ -108,5 +120,10 @@ export const computeTrackSettingsWindowDefaultPosition = (): WindowPosition => {
 
   return { x, y: Math.min(baseY, maxY) };
 };
+
+export const computeRuntimeDiagnosticsWindowDefaultPosition = (): WindowPosition => ({
+  x: computeRightColumnX(RUNTIME_DIAGNOSTICS_WINDOW_WIDTH),
+  y: TOP_MENU_HEIGHT + TOP_MENU_WINDOW_PADDING
+});
 
 export const nextLayoutResetToken = (token: number): number => token + 1;

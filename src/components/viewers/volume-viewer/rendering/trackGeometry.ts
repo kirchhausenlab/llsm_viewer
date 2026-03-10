@@ -29,5 +29,23 @@ export function getTrackIdFromObject(object: THREE.Object3D): string | null {
   return typeof trackId === 'string' ? trackId : null;
 }
 
+export function getTrackIdFromIntersection(
+  object: THREE.Object3D,
+  faceIndex?: number | null,
+): string | null {
+  const directTrackId = getTrackIdFromObject(object);
+  if (directTrackId) {
+    return directTrackId;
+  }
+
+  const segmentTrackIds = object.userData?.segmentTrackIds;
+  if (!Array.isArray(segmentTrackIds) || typeof faceIndex !== 'number') {
+    return null;
+  }
+
+  const trackId = segmentTrackIds[faceIndex];
+  return typeof trackId === 'string' && trackId.length > 0 ? trackId : null;
+}
+
 export const trackColorTemp = new THREE.Color();
 export const trackBlinkColorTemp = new THREE.Color();

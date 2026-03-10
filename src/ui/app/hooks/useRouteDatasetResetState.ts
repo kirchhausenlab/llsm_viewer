@@ -1,0 +1,102 @@
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { clearTextureCache } from '../../../core/textureCache';
+import type { NormalizedVolume } from '../../../core/volumeProcessing';
+import type { ChannelSource, StagedPreprocessedExperiment, TrackSetSource } from '../../../hooks/dataset';
+import type { LayerSettings } from '../../../state/layerSettings';
+
+type UseRouteDatasetResetStateOptions = {
+  resetPreprocessedState: () => void;
+  setPreprocessedExperiment: Dispatch<SetStateAction<StagedPreprocessedExperiment | null>>;
+  setChannels: Dispatch<SetStateAction<ChannelSource[]>>;
+  setTracks: Dispatch<SetStateAction<TrackSetSource[]>>;
+  setChannelVisibility: Dispatch<SetStateAction<Record<string, boolean>>>;
+  setLayerSettings: Dispatch<SetStateAction<Record<string, LayerSettings>>>;
+  setLayerAutoThresholds: Dispatch<SetStateAction<Record<string, number>>>;
+  setCurrentLayerVolumes: Dispatch<SetStateAction<Record<string, NormalizedVolume | null>>>;
+  setSelectedIndex: Dispatch<SetStateAction<number>>;
+  resetChannelEditingState: () => void;
+  setActiveChannelTabId: Dispatch<SetStateAction<string | null>>;
+  resetTrackState: () => void;
+  resetLaunchState: () => void;
+  setIsExperimentSetupStarted: Dispatch<SetStateAction<boolean>>;
+  channelIdRef: MutableRefObject<number>;
+  layerIdRef: MutableRefObject<number>;
+  trackSetIdRef: MutableRefObject<number>;
+  clearDatasetError: () => void;
+};
+
+type RouteDatasetResetState = {
+  handleDiscardPreprocessedExperiment: () => void;
+  handleReturnToFrontPage: () => void;
+};
+
+export function useRouteDatasetResetState({
+  resetPreprocessedState,
+  setPreprocessedExperiment,
+  setChannels,
+  setTracks,
+  setChannelVisibility,
+  setLayerSettings,
+  setLayerAutoThresholds,
+  setCurrentLayerVolumes,
+  setSelectedIndex,
+  resetChannelEditingState,
+  setActiveChannelTabId,
+  resetTrackState,
+  resetLaunchState,
+  setIsExperimentSetupStarted,
+  channelIdRef,
+  layerIdRef,
+  trackSetIdRef,
+  clearDatasetError
+}: UseRouteDatasetResetStateOptions): RouteDatasetResetState {
+  const handleDiscardPreprocessedExperiment = useCallback(() => {
+    resetPreprocessedState();
+    setPreprocessedExperiment(null);
+    setChannels([]);
+    setTracks([]);
+    setChannelVisibility({});
+    setLayerSettings({});
+    setLayerAutoThresholds({});
+    setCurrentLayerVolumes({});
+    setSelectedIndex(0);
+    resetChannelEditingState();
+    setActiveChannelTabId(null);
+    resetTrackState();
+    resetLaunchState();
+    setIsExperimentSetupStarted(false);
+    channelIdRef.current = 0;
+    layerIdRef.current = 0;
+    trackSetIdRef.current = 0;
+    clearTextureCache();
+    clearDatasetError();
+  }, [
+    channelIdRef,
+    clearDatasetError,
+    layerIdRef,
+    trackSetIdRef,
+    resetChannelEditingState,
+    resetLaunchState,
+    resetPreprocessedState,
+    resetTrackState,
+    setActiveChannelTabId,
+    setChannelVisibility,
+    setChannels,
+    setCurrentLayerVolumes,
+    setIsExperimentSetupStarted,
+    setLayerAutoThresholds,
+    setLayerSettings,
+    setPreprocessedExperiment,
+    setTracks,
+    setSelectedIndex
+  ]);
+
+  const handleReturnToFrontPage = useCallback(() => {
+    handleDiscardPreprocessedExperiment();
+  }, [handleDiscardPreprocessedExperiment]);
+
+  return {
+    handleDiscardPreprocessedExperiment,
+    handleReturnToFrontPage
+  };
+}

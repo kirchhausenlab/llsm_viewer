@@ -24,7 +24,7 @@ export function setVrPlaybackLabel(hud: VrPlaybackHud, text: string) {
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = 'rgba(0, 0, 0, 0)';
   ctx.fillRect(0, 0, width, height);
-  ctx.font = '600 36px "Inter", "Helvetica Neue", Arial, sans-serif';
+  ctx.font = '600 36px "Inter", "Segoe UI", sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#ffffff';
@@ -56,7 +56,7 @@ export function setVrPlaybackFpsLabel(hud: VrPlaybackHud, text: string) {
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = 'rgba(0, 0, 0, 0)';
   ctx.fillRect(0, 0, width, height);
-  ctx.font = '500 32px "Inter", "Helvetica Neue", Arial, sans-serif';
+  ctx.font = '500 32px "Inter", "Segoe UI", sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#ffffff';
@@ -79,7 +79,7 @@ export function setVrPlaybackModeLabel(hud: VrPlaybackHud, text: string) {
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = 'rgba(0, 0, 0, 0)';
   ctx.fillRect(0, 0, width, height);
-  ctx.font = '600 60px "Inter", "Helvetica Neue", Arial, sans-serif';
+  ctx.font = '600 60px "Inter", "Segoe UI", sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#ffffff';

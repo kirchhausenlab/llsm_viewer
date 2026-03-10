@@ -10,22 +10,27 @@ export const applyAlphaToHex = (hexColor: string, alpha: number): string => {
   return `rgba(${r}, ${g}, ${b}, ${clampedAlpha})`;
 };
 
-export const getTrackTabTextColor = (hexColor: string): string => {
-  const normalized = normalizeTrackColor(hexColor, '#ffffff');
+export const isLightHexColor = (hexColor: string, fallback = DEFAULT_LAYER_COLOR): boolean => {
+  const normalized = normalizeHexColor(hexColor, fallback);
   const r = Number.parseInt(normalized.slice(1, 3), 16) / 255;
   const g = Number.parseInt(normalized.slice(3, 5), 16) / 255;
   const b = Number.parseInt(normalized.slice(5, 7), 16) / 255;
   const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  return luminance > 0.58 ? '#0b1220' : '#ffffff';
+  return luminance > 0.58;
 };
 
-export const createSegmentationSeed = (layerKey: string, volumeIndex: number): number => {
+export const getTrackTabTextColor = (hexColor: string): string => {
+  const normalized = normalizeTrackColor(hexColor, '#ffffff');
+  return isLightHexColor(normalized, '#ffffff') ? '#0b1220' : '#ffffff';
+};
+
+export const createSegmentationSeed = (layerKey: string): number => {
   let hash = 2166136261;
   for (let i = 0; i < layerKey.length; i++) {
     hash ^= layerKey.charCodeAt(i);
     hash = Math.imul(hash, 16777619);
   }
-  const mixed = (hash ^ Math.imul(volumeIndex + 1, 0x9e3779b1)) >>> 0;
+  const mixed = hash >>> 0;
   return mixed === 0 ? 0xdeadbeef : mixed;
 };
 
@@ -63,7 +68,7 @@ const isDirectoryEntry = (entry: FileSystemEntryLike): entry is FileSystemDirect
   entry.isDirectory;
 
 async function getFilesFromFileEntry(entry: FileSystemFileEntryLike): Promise<File[]> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     entry.file(
       (file) => {
         const relativePath = entry.fullPath.replace(/^\//, '');
@@ -80,8 +85,7 @@ async function getFilesFromFileEntry(entry: FileSystemFileEntryLike): Promise<Fi
         resolve([file]);
       },
       (error) => {
-        console.warn('Failed to read file entry', error);
-        resolve([]);
+        reject(new Error(`Failed to read file entry "${entry.fullPath}": ${error.message}`));
       }
     );
   });
@@ -90,7 +94,7 @@ async function getFilesFromFileEntry(entry: FileSystemFileEntryLike): Promise<Fi
 async function readAllDirectoryEntries(
   reader: FileSystemDirectoryReaderLike
 ): Promise<FileSystemEntryLike[]> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     reader.readEntries(
       async (entries) => {
         if (entries.length === 0) {
@@ -101,8 +105,7 @@ async function readAllDirectoryEntries(
         resolve([...entries, ...remainder]);
       },
       (error) => {
-        console.warn('Failed to read directory entries', error);
-        resolve([]);
+        reject(new Error(`Failed to read directory entries: ${error.message}`));
       }
     );
   });
@@ -243,4 +246,3 @@ export async function parseTrackCsvFile(file: File): Promise<string[][]> {
 
   return rows;
 }
-

@@ -1,36 +1,59 @@
 import { useMemo } from 'react';
 import type { StagedPreprocessedExperiment } from '../../hooks/dataset';
-import type { ExperimentDimension } from '../../hooks/useVoxelResolution';
-import type { VoxelResolutionInput, VoxelResolutionUnit } from '../../types/voxelResolution';
+import type {
+  TemporalResolutionUnit,
+  VoxelResolutionAxis,
+  VoxelResolutionInput,
+  VoxelResolutionUnit
+} from '../../types/voxelResolution';
 import FrontPageHeader from './FrontPageHeader';
-import ExperimentConfiguration, { type VoxelResolutionAxis } from './ExperimentConfiguration';
+import ExperimentConfiguration from './ExperimentConfiguration';
 import PreprocessedLoader, { type PreprocessedLoaderProps } from './PreprocessedLoader';
+import PublicExperimentLoader, { type PublicExperimentLoaderProps } from './PublicExperimentLoader';
 import ChannelListPanel, { type ChannelListPanelProps } from './ChannelListPanel';
 import LaunchActions, { type LaunchActionsProps } from './LaunchActions';
 import WarningsWindow from './WarningsWindow';
 import { formatBytes } from '../../errors';
 
-export type TrackSummary = { totalRows: number; uniqueTracks: number };
+export type TrackSummary = { totalPoints: number; totalTracks: number };
+export type ExperimentType = '3d-movie' | '2d-movie' | 'single-3d-volume';
+
+const EXPERIMENT_TYPE_OPTIONS: ReadonlyArray<{ type: ExperimentType; label: string }> = [
+  { type: '3d-movie', label: '3D movie' },
+  { type: '2d-movie', label: '2D movie' },
+  { type: 'single-3d-volume', label: 'Single 3D volume' }
+];
 
 export type InitialActionsProps = {
   isFrontPageLocked: boolean;
   onStartExperimentSetup: () => void;
   onOpenPreprocessedLoader: () => void;
+  onOpenPublicExperimentLoader: () => void;
   isPreprocessedImporting: boolean;
 };
 
 export type ExperimentConfigurationState = {
-  experimentDimension: ExperimentDimension;
-  onExperimentDimensionChange: (dimension: ExperimentDimension) => void;
+  experimentType: ExperimentType;
   voxelResolution: VoxelResolutionInput;
   onVoxelResolutionAxisChange: (axis: VoxelResolutionAxis, value: string) => void;
   onVoxelResolutionUnitChange: (unit: VoxelResolutionUnit) => void;
+  onVoxelResolutionTimeUnitChange: (unit: TemporalResolutionUnit) => void;
   onVoxelResolutionAnisotropyToggle: (value: boolean) => void;
+  backgroundMaskEnabled: boolean;
+  backgroundMaskValuesInput: string;
+  backgroundMaskError: string | null;
+  onBackgroundMaskToggle: (value: boolean) => void;
+  onBackgroundMaskValuesInputChange: (value: string) => void;
 };
 
 export type PreprocessedSummaryProps = {
   preprocessedExperiment: StagedPreprocessedExperiment | null;
-  computeTrackSummary: (entries: string[][]) => TrackSummary;
+  computeTrackSummary: (summary: StagedPreprocessedExperiment['trackSummaries'][number]['header']) => TrackSummary;
+};
+
+type ExperimentTypeSelectionProps = {
+  onSelectExperimentType: (type: ExperimentType) => void;
+  isFrontPageLocked: boolean;
 };
 
 type HeaderProps = {
@@ -40,12 +63,14 @@ type HeaderProps = {
 
 type FrontPageProps = {
   isFrontPageLocked: boolean;
-  frontPageMode: 'initial' | 'configuring' | 'preprocessed';
+  frontPageMode: 'initial' | 'experimentTypeSelection' | 'configuring' | 'preprocessed' | 'publicExperiments';
   header: HeaderProps;
   initialActions: InitialActionsProps;
+  experimentTypeSelection: ExperimentTypeSelectionProps;
   experimentConfiguration: ExperimentConfigurationState;
   preprocessedLoader: PreprocessedLoaderProps;
-  channelListPanel: ChannelListPanelProps;
+  publicExperimentLoader: PublicExperimentLoaderProps;
+  channelListPanel: Omit<ChannelListPanelProps, 'experimentType'>;
   preprocessedSummary: PreprocessedSummaryProps;
   launchActions: LaunchActionsProps;
   warningsWindow: {
@@ -62,8 +87,10 @@ export default function FrontPage({
   frontPageMode,
   header,
   initialActions,
+  experimentTypeSelection,
   experimentConfiguration,
   preprocessedLoader,
+  publicExperimentLoader,
   channelListPanel,
   preprocessedSummary,
   launchActions,
@@ -73,13 +100,16 @@ export default function FrontPage({
     if (frontPageMode === 'preprocessed') {
       return 'Loaded preprocessed experiment';
     }
-    if (frontPageMode === 'configuring') {
+    if (frontPageMode === 'publicExperiments') {
+      return 'Load public experiments';
+    }
+    if (frontPageMode === 'configuring' || frontPageMode === 'experimentTypeSelection') {
       return 'Set up new experiment';
     }
     if (preprocessedLoader.isOpen) {
       return 'Load preprocessed experiment';
     }
-    return '4D viewer';
+    return 'Mirante4D';
   }, [frontPageMode, preprocessedLoader.isOpen]);
 
   const showReturnButton = frontPageMode !== 'initial' || preprocessedLoader.isOpen;
@@ -116,25 +146,67 @@ export default function FrontPage({
                 >
                   Load preprocessed experiment
                 </button>
+                <button
+                  type="button"
+                  className="channel-add-button channel-add-button-public"
+                  onClick={initialActions.onOpenPublicExperimentLoader}
+                  disabled={
+                    initialActions.isFrontPageLocked || initialActions.isPreprocessedImporting
+                  }
+                >
+                  Load public experiments
+                </button>
+                <p className="channel-add-public-note">
+                  Try hosted reference datasets that stream on demand from the lab&apos;s public S3 bucket.
+                </p>
+              </div>
+            </div>
+          ) : null}
+          {frontPageMode === 'experimentTypeSelection' ? (
+            <div className="experiment-type-selection">
+              <p className="experiment-type-selection-title">Choose the type of experiment:</p>
+              <div className="experiment-type-selection-buttons">
+                {EXPERIMENT_TYPE_OPTIONS.map((option) => (
+                  <button
+                    key={option.type}
+                    type="button"
+                    className="channel-add-button experiment-type-selection-button"
+                    onClick={() => experimentTypeSelection.onSelectExperimentType(option.type)}
+                    disabled={experimentTypeSelection.isFrontPageLocked}
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
             </div>
           ) : null}
           {frontPageMode === 'configuring' ? (
             <ExperimentConfiguration
-              experimentDimension={experimentConfiguration.experimentDimension}
-              onExperimentDimensionChange={experimentConfiguration.onExperimentDimensionChange}
+              experimentType={experimentConfiguration.experimentType}
               voxelResolution={experimentConfiguration.voxelResolution}
               onVoxelResolutionAxisChange={experimentConfiguration.onVoxelResolutionAxisChange}
               onVoxelResolutionUnitChange={experimentConfiguration.onVoxelResolutionUnitChange}
+              onVoxelResolutionTimeUnitChange={experimentConfiguration.onVoxelResolutionTimeUnitChange}
               onVoxelResolutionAnisotropyToggle={experimentConfiguration.onVoxelResolutionAnisotropyToggle}
+              backgroundMaskEnabled={experimentConfiguration.backgroundMaskEnabled}
+              backgroundMaskValuesInput={experimentConfiguration.backgroundMaskValuesInput}
+              backgroundMaskError={experimentConfiguration.backgroundMaskError}
+              onBackgroundMaskToggle={experimentConfiguration.onBackgroundMaskToggle}
+              onBackgroundMaskValuesInputChange={experimentConfiguration.onBackgroundMaskValuesInputChange}
               isFrontPageLocked={isFrontPageLocked}
             />
           ) : null}
-          {frontPageMode !== 'preprocessed' ? <PreprocessedLoader {...preprocessedLoader} /> : null}
+          {frontPageMode !== 'preprocessed' && frontPageMode !== 'publicExperiments' ? (
+            <PreprocessedLoader {...preprocessedLoader} />
+          ) : null}
+          {frontPageMode === 'publicExperiments' ? <PublicExperimentLoader {...publicExperimentLoader} /> : null}
           {frontPageMode === 'configuring' ? (
             <ChannelListPanel
+              experimentType={experimentConfiguration.experimentType}
               channels={channelListPanel.channels}
+              tracks={channelListPanel.tracks}
               channelValidationMap={channelListPanel.channelValidationMap}
+              trackValidationMap={channelListPanel.trackValidationMap}
               activeChannelId={channelListPanel.activeChannelId}
               activeChannel={channelListPanel.activeChannel}
               editingChannelId={channelListPanel.editingChannelId}
@@ -143,17 +215,19 @@ export default function FrontPage({
               setActiveChannelId={channelListPanel.setActiveChannelId}
               setEditingChannelId={channelListPanel.setEditingChannelId}
               onAddChannel={channelListPanel.onAddChannel}
+              onAddSegmentationChannel={channelListPanel.onAddSegmentationChannel}
               onChannelNameChange={channelListPanel.onChannelNameChange}
               onRemoveChannel={channelListPanel.onRemoveChannel}
               onChannelLayerFilesAdded={channelListPanel.onChannelLayerFilesAdded}
               onChannelLayerDrop={channelListPanel.onChannelLayerDrop}
-              onChannelLayerSegmentationToggle={channelListPanel.onChannelLayerSegmentationToggle}
               onChannelLayerRemove={channelListPanel.onChannelLayerRemove}
-              onChannelTrackFilesAdded={channelListPanel.onChannelTrackFilesAdded}
-              onChannelTrackDrop={channelListPanel.onChannelTrackDrop}
-              onChannelTrackSetNameChange={channelListPanel.onChannelTrackSetNameChange}
-              onChannelTrackSetRemove={channelListPanel.onChannelTrackSetRemove}
-              experimentDimension={channelListPanel.experimentDimension}
+              onAddTrack={channelListPanel.onAddTrack}
+              onTrackFilesAdded={channelListPanel.onTrackFilesAdded}
+              onTrackDrop={channelListPanel.onTrackDrop}
+              onTrackSetNameChange={channelListPanel.onTrackSetNameChange}
+              onTrackSetBoundChannelChange={channelListPanel.onTrackSetBoundChannelChange}
+              onTrackSetClearFile={channelListPanel.onTrackSetClearFile}
+              onTrackSetRemove={channelListPanel.onTrackSetRemove}
               isFrontPageLocked={channelListPanel.isFrontPageLocked}
             />
           ) : null}
@@ -170,16 +244,31 @@ export default function FrontPage({
                     ? ` · ${preprocessedSummary.preprocessedExperiment.totalVolumeCount} volumes`
                     : ''}
                 </p>
+                {(() => {
+                  const trackSummaries = preprocessedSummary.preprocessedExperiment.trackSummaries ?? [];
+                  const totals = trackSummaries.reduce(
+                    (acc, set) => {
+                      const summary = preprocessedSummary.computeTrackSummary(set.header);
+                      return {
+                        points: acc.points + summary.totalPoints,
+                        tracks: acc.tracks + summary.totalTracks
+                      };
+                    },
+                    { points: 0, tracks: 0 }
+                  );
+                  return (
+                    <p className="preprocessed-summary-tracks">
+                      {trackSummaries.length > 0
+                        ? `${trackSummaries.length} track sets · ${totals.tracks} tracks (${totals.points} points)`
+                        : 'No tracks attached'}
+                    </p>
+                  );
+                })()}
               </div>
               <ul className="preprocessed-summary-list">
                 {preprocessedSummary.preprocessedExperiment.channelSummaries.map((
                   summary: StagedPreprocessedExperiment['channelSummaries'][number]
                 ) => {
-                  const trackSummaries = summary.trackSets.map((set) =>
-                    preprocessedSummary.computeTrackSummary(set.entries)
-                  );
-                  const totalRows = trackSummaries.reduce((acc, current) => acc + current.totalRows, 0);
-                  const totalTracks = trackSummaries.reduce((acc, current) => acc + current.uniqueTracks, 0);
                   return (
                     <li key={summary.id} className="preprocessed-summary-item">
                       <div className="preprocessed-summary-channel">
@@ -203,11 +292,6 @@ export default function FrontPage({
                             </li>
                           ))}
                         </ul>
-                        <p className="preprocessed-summary-tracks">
-                          {summary.trackSets.length > 0
-                            ? `${summary.trackSets.length} track sets · ${totalTracks} tracks (${totalRows} rows)`
-                            : 'No tracks attached'}
-                        </p>
                       </div>
                     </li>
                   );

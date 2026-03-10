@@ -143,6 +143,22 @@ export function resetHudPlacement({
     return;
   }
 
+  const existingPlacement = placementRef.current;
+  if (existingPlacement) {
+    target.copy(existingPlacement.position);
+    setHudPlacement(
+      placementRef,
+      dragTargetRef,
+      hudRef,
+      target,
+      existingPlacement.yaw,
+      existingPlacement.pitch,
+      yawEuler,
+      yawQuaternion,
+    );
+    return;
+  }
+
   target.copy(fallbackOffset);
   const q = camera.quaternion;
   const sinYaw = 2 * (q.w * q.y + q.x * q.z);
