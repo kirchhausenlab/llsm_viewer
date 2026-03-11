@@ -22,18 +22,14 @@ function createProps(isOpen: boolean) {
     playbackControls: {
       fps: 12,
       onFpsChange: () => {},
-      volumeTimepointCount: 3,
-      onStartRecording: () => {},
-      onStopRecording: () => {},
-      isRecording: false,
-      canRecord: true
+      volumeTimepointCount: 3
     },
     viewerSettings: {
       samplingMode: 'linear' as const,
       onSamplingModeToggle: () => {},
       blendingMode: 'alpha' as const,
       onBlendingModeToggle: () => {},
-      showRenderingQualityControl: false,
+      showRenderingQualityControl: true,
       hasVolumeData: true
     },
     isOpen,
@@ -77,10 +73,26 @@ function createProps(isOpen: boolean) {
     <ViewerSettingsWindow {...(createProps(true) as any)} />
   );
   const fpsSlider = openRenderer.root.findByProps({ id: 'fps-slider' });
+  const qualitySlider = openRenderer.root.findByProps({ id: 'volume-steps-slider' });
   const mipSlider = openRenderer.root.findByProps({ id: 'global-mip-early-exit' });
   assert.equal(fpsSlider.props.disabled, false);
   assert.equal(fpsSlider.props.max, 30);
+  assert.equal(qualitySlider.props.value, 1);
   assert.equal(mipSlider.props.value, 0.875);
+  assert.equal(
+    openRenderer.root.findAll(
+      (node) => node.type === 'button' && node.children.join('') === 'Alpha color blending'
+    ).length,
+    1
+  );
+  assert.equal(
+    openRenderer.root.findAll((node) => node.type === 'button' && node.children.join('') === 'Record').length,
+    0
+  );
+  assert.equal(
+    openRenderer.root.findAll((node) => node.type === 'button' && node.children.join('') === 'Stop').length,
+    0
+  );
 
   openRenderer.unmount();
 })();

@@ -22,6 +22,7 @@ import {
   DEFAULT_SAMPLING_MODE,
   DEFAULT_WINDOW_MAX,
   DEFAULT_WINDOW_MIN,
+  resolveLayerSamplingMode,
   type LayerSettings,
   type RenderStyle,
   type SamplingMode
@@ -127,7 +128,7 @@ const computeLayerDefaultSettings = (
     ...createDefaultLayerSettings({ windowMin, windowMax }),
     color: defaultColor,
     renderStyle: globalRenderStyle,
-    samplingMode: globalSamplingMode,
+    samplingMode: resolveLayerSamplingMode(globalRenderStyle, globalSamplingMode, layer.isSegmentation),
     blDensityScale: globalBlDensityScale,
     blBackgroundCutoff: globalBlBackgroundCutoff,
     blOpacityScale: globalBlOpacityScale,

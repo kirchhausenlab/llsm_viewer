@@ -141,6 +141,7 @@ function createProps(overrides: Partial<React.ComponentProps<typeof TopMenu>> = 
     onOpenChannelsWindow: () => {},
     onOpenPropsWindow: () => {},
     onOpenPaintbrush: () => {},
+    onOpenRecordWindow: () => {},
     onOpenRenderSettingsWindow: () => {},
     onOpenTracksWindow: () => {},
     onOpenAmplitudePlotWindow: () => {},
@@ -252,6 +253,7 @@ test('wired dropdown items invoke the expected handlers', () => {
     let channelsCalls = 0;
     let propsCalls = 0;
     let paintbrushCalls = 0;
+    let recordCalls = 0;
     let renderSettingsCalls = 0;
     let tracksCalls = 0;
     let amplitudePlotCalls = 0;
@@ -275,6 +277,9 @@ test('wired dropdown items invoke the expected handlers', () => {
       },
       onOpenPaintbrush: () => {
         paintbrushCalls += 1;
+      },
+      onOpenRecordWindow: () => {
+        recordCalls += 1;
       },
       onOpenRenderSettingsWindow: () => {
         renderSettingsCalls += 1;
@@ -318,6 +323,13 @@ test('wired dropdown items invoke the expected handlers', () => {
     });
     act(() => {
       findMenuItem(renderer, 'Channels window').props.onClick();
+    });
+
+    act(() => {
+      findDropdownTrigger(renderer, 'View').props.onClick();
+    });
+    act(() => {
+      findMenuItem(renderer, 'Record').props.onClick();
     });
 
     act(() => {
@@ -388,6 +400,7 @@ test('wired dropdown items invoke the expected handlers', () => {
     assert.equal(channelsCalls, 1);
     assert.equal(propsCalls, 1);
     assert.equal(paintbrushCalls, 1);
+    assert.equal(recordCalls, 1);
     assert.equal(renderSettingsCalls, 1);
     assert.equal(tracksCalls, 1);
     assert.equal(amplitudePlotCalls, 1);

@@ -6,6 +6,7 @@ import NavigationHelpWindow, { computeNavigationHelpInitialPosition } from './vi
 import PaintbrushWindow from './viewer-shell/PaintbrushWindow';
 import PlotSettingsPanel from './viewer-shell/PlotSettingsPanel';
 import PropsWindow from './viewer-shell/PropsWindow';
+import RecordWindow from './viewer-shell/RecordWindow';
 import TopMenu from './viewer-shell/TopMenu';
 import TracksPanel from './viewer-shell/TracksPanel';
 import ViewerSettingsWindow from './viewer-shell/ViewerSettingsWindow';
@@ -40,6 +41,7 @@ function ViewerShell({
     selectedTracksWindowWidth,
     resetToken,
     viewerSettingsWindowInitialPosition,
+    recordWindowInitialPosition,
     layersWindowInitialPosition,
     paintbrushWindowInitialPosition,
     propsWindowInitialPosition,
@@ -161,6 +163,9 @@ function ViewerShell({
     isViewerSettingsOpen,
     openViewerSettings,
     closeViewerSettings,
+    isRecordWindowOpen,
+    openRecordWindow,
+    closeRecordWindow,
     isAmplitudePlotOpen,
     openAmplitudePlot,
     closeAmplitudePlot,
@@ -187,7 +192,7 @@ function ViewerShell({
     voxelResolution: volumeViewerProps.voxelResolution ?? null,
   });
 
-  const showRenderingQualityControl = modeControls.is3dModeAvailable && modeControls.samplingMode === 'linear';
+  const showRenderingQualityControl = modeControls.is3dModeAvailable;
   const globalRenderControls = useMemo(() => {
     const fallbackSettings = createDefaultLayerSettings();
     const firstChannelId = channelsPanel.loadedChannelIds[0] ?? null;
@@ -233,6 +238,7 @@ function ViewerShell({
       onOpenChannelsWindow: openChannelsWindow,
       onOpenPropsWindow: openPropsWindow,
       onOpenPaintbrush: openPaintbrush,
+      onOpenRecordWindow: openRecordWindow,
       onOpenRenderSettingsWindow: openViewerSettings,
       onOpenTracksWindow: openTracksWindow,
       onOpenAmplitudePlotWindow: openAmplitudePlot,
@@ -279,6 +285,7 @@ function ViewerShell({
       openChannelsWindow,
       openDiagnosticsWindow,
       openPaintbrush,
+      openRecordWindow,
       openPropsWindow,
       openTrackSettings,
       openTracksWindow,
@@ -406,6 +413,18 @@ function ViewerShell({
         renderingQuality={renderingQuality}
         onRenderingQualityChange={handleRenderingQualityChange}
         globalRenderControls={globalRenderControls}
+      />
+
+      <RecordWindow
+        layout={{
+          windowMargin,
+          controlWindowWidth,
+          resetToken,
+          recordWindowInitialPosition
+        }}
+        playbackControls={playbackState}
+        isOpen={isRecordWindowOpen}
+        onClose={closeRecordWindow}
       />
 
       <ChannelsPanel

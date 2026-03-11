@@ -30,6 +30,7 @@ import {
   DEFAULT_SAMPLING_MODE,
   DEFAULT_WINDOW_MAX,
   DEFAULT_WINDOW_MIN,
+  resolveLayerSamplingMode,
   type LayerSettings,
   type RenderStyle,
   type SamplingMode
@@ -170,7 +171,7 @@ export function useChannelLayerState(): ChannelLayerState {
         ...createDefaultLayerSettings({ windowMin, windowMax }),
         color: defaultColor,
         renderStyle: globalRenderStyle,
-        samplingMode: globalSamplingMode,
+        samplingMode: resolveLayerSamplingMode(globalRenderStyle, globalSamplingMode, layer?.isSegmentation === true),
         blDensityScale: globalBlDensityScale,
         blBackgroundCutoff: globalBlBackgroundCutoff,
         blOpacityScale: globalBlOpacityScale,

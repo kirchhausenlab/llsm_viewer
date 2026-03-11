@@ -13,6 +13,7 @@ export type { BrightnessContrastState } from './brightnessContrastModel';
 export { DEFAULT_WINDOW_MIN, DEFAULT_WINDOW_MAX, MIN_WINDOW_WIDTH } from './brightnessContrastModel';
 
 export type SamplingMode = 'linear' | 'nearest';
+export type IntensityRenderModeValue = 'mip' | 'mip-v' | 'iso' | 'bl' | 'slice';
 
 export const RENDER_STYLE_MIP = 0 as const;
 export const RENDER_STYLE_ISO = 1 as const;
@@ -64,6 +65,54 @@ export const createDefaultLayerSettings = (initialWindow?: WindowBounds | null):
   invert: false,
   samplingMode: DEFAULT_SAMPLING_MODE
 });
+
+export function resolveLayerSamplingMode(
+  renderStyle: RenderStyle,
+  samplingMode: SamplingMode,
+  isSegmentation = false,
+): SamplingMode {
+  if (renderStyle === RENDER_STYLE_SLICE) {
+    return 'nearest';
+  }
+  if (isSegmentation || renderStyle === RENDER_STYLE_ISO || renderStyle === RENDER_STYLE_BL) {
+    return 'linear';
+  }
+  return samplingMode;
+}
+
+export function resolveIntensityRenderModeValue(
+  renderStyle: RenderStyle,
+  samplingMode: SamplingMode,
+): IntensityRenderModeValue {
+  if (renderStyle === RENDER_STYLE_SLICE) {
+    return 'slice';
+  }
+  if (renderStyle === RENDER_STYLE_ISO) {
+    return 'iso';
+  }
+  if (renderStyle === RENDER_STYLE_BL) {
+    return 'bl';
+  }
+  return samplingMode === 'nearest' ? 'mip-v' : 'mip';
+}
+
+export function resolveIntensityRenderModeConfig(
+  mode: IntensityRenderModeValue,
+): { renderStyle: RenderStyle; samplingMode: SamplingMode } {
+  if (mode === 'mip-v') {
+    return { renderStyle: RENDER_STYLE_MIP, samplingMode: 'nearest' };
+  }
+  if (mode === 'iso') {
+    return { renderStyle: RENDER_STYLE_ISO, samplingMode: 'linear' };
+  }
+  if (mode === 'bl') {
+    return { renderStyle: RENDER_STYLE_BL, samplingMode: 'linear' };
+  }
+  if (mode === 'slice') {
+    return { renderStyle: RENDER_STYLE_SLICE, samplingMode: 'nearest' };
+  }
+  return { renderStyle: RENDER_STYLE_MIP, samplingMode: 'linear' };
+}
 
 export const brightnessContrastModel = DEFAULT_BRIGHTNESS_CONTRAST_MODEL;
 

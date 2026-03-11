@@ -301,6 +301,7 @@ function createMockCanvasContext(): MockCanvasContext {
   );
   assert.ok(!ctx.__fillTextCalls.includes('Render: BL'));
   assert.ok(hud.regions.some((region) => region.targetType === 'channels-render-style'));
+  assert.ok(!hud.regions.some((region) => region.targetType === 'channels-sampling'));
 
   ctx.__fillTextCalls.length = 0;
   state.channels[0]!.layers[0]!.settings.renderStyle = RENDER_STYLE_SLICE;
@@ -386,10 +387,20 @@ function createMockCanvasContext(): MockCanvasContext {
   assert.ok(hud.regions.some((region) => region.targetType === 'channels-tab'));
   assert.ok(hud.regions.some((region) => region.targetType === 'channels-slider'));
   assert.ok(hud.regions.some((region) => region.targetType === 'channels-color'));
+  assert.ok(hud.regions.some((region) => region.targetType === 'channels-render-style'));
+  assert.ok(!hud.regions.some((region) => region.targetType === 'channels-sampling'));
   assert.equal(hud.hoverRegion, null, 'stale hover region should be cleared when no longer valid');
   if (desiredHeight === null) {
     assert.equal((hud.panelTexture as unknown as { needsUpdate: boolean }).needsUpdate, true);
   }
+
+  ctx.__fillTextCalls.length = 0;
+  state.channels[0]!.layers[0]!.settings.samplingMode = 'nearest';
+  renderVrChannelsHud(hud, state);
+  assert.ok(
+    ctx.__fillTextCalls.includes('Render: MIP-V'),
+    'expected nearest MIP to be labeled as MIP-V in the VR HUD',
+  );
 })();
 
 console.log('hudRenderers tests passed');

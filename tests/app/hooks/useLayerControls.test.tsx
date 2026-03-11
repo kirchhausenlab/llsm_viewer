@@ -44,12 +44,17 @@ const defaultLayers = [createLayer('layer-a', 'channel-a'), createLayer('layer-b
 function useLayerControlsHarness(
   initialRenderStyle: RenderStyle = RENDER_STYLE_MIP,
   harnessLayers: LoadedDatasetLayer[] = defaultLayers,
+  initialSamplingMode: SamplingMode = 'linear',
 ) {
   const sortedChannelIds = [...new Set(harnessLayers.map((layer) => layer.channelId))];
   const channelNameEntries = sortedChannelIds.map((channelId) => [channelId, channelId]) as Array<[string, string]>;
   const layerChannelEntries = harnessLayers.map((layer) => [layer.key, layer.channelId]) as Array<[string, string]>;
   const [layerSettings, setLayerSettings] = useState<Record<string, LayerSettings>>(() => ({
-    [harnessLayers[0]?.key ?? 'layer-a']: { ...createDefaultLayerSettings(), renderStyle: initialRenderStyle },
+    [harnessLayers[0]?.key ?? 'layer-a']: {
+      ...createDefaultLayerSettings(),
+      renderStyle: initialRenderStyle,
+      samplingMode: initialSamplingMode,
+    },
     ...Object.fromEntries(
       harnessLayers.slice(1).map((layer) => [layer.key, createDefaultLayerSettings()]),
     ),
@@ -62,7 +67,7 @@ function useLayerControlsHarness(
   );
   const [activeChannelTabId, setActiveChannelTabId] = useState<string | null>(sortedChannelIds[0] ?? null);
   const [globalRenderStyle, setGlobalRenderStyle] = useState<RenderStyle>(RENDER_STYLE_MIP);
-  const [globalSamplingMode, setGlobalSamplingMode] = useState<SamplingMode>('linear');
+  const [globalSamplingMode, setGlobalSamplingMode] = useState<SamplingMode>(initialSamplingMode);
   const [globalBlDensityScale, setGlobalBlDensityScale] = useState(1);
   const [globalBlBackgroundCutoff, setGlobalBlBackgroundCutoff] = useState(0.08);
   const [globalBlOpacityScale, setGlobalBlOpacityScale] = useState(1);
@@ -122,6 +127,21 @@ function useLayerControlsHarness(
   assert.equal(hook.result.layerSettings['layer-a']?.renderStyle, RENDER_STYLE_BL);
   assert.equal(hook.result.layerSettings['layer-b']?.renderStyle, RENDER_STYLE_MIP);
   assert.equal(hook.result.globalRenderStyle, RENDER_STYLE_BL);
+  assert.equal(hook.result.layerSettings['layer-a']?.samplingMode, 'linear');
+
+  hook.act(() => {
+    hook.result.controls.handleLayerRenderStyleChange('layer-a', RENDER_STYLE_MIP, 'nearest');
+  });
+  assert.equal(hook.result.layerSettings['layer-a']?.renderStyle, RENDER_STYLE_MIP);
+  assert.equal(hook.result.layerSettings['layer-a']?.samplingMode, 'nearest');
+  assert.equal(hook.result.globalSamplingMode, 'nearest');
+
+  hook.act(() => {
+    hook.result.controls.handleLayerRenderStyleChange('layer-a', RENDER_STYLE_ISO);
+  });
+  assert.equal(hook.result.layerSettings['layer-a']?.renderStyle, RENDER_STYLE_ISO);
+  assert.equal(hook.result.layerSettings['layer-a']?.samplingMode, 'linear');
+  assert.equal(hook.result.globalSamplingMode, 'linear');
 
   hook.act(() => {
     hook.result.controls.handleLayerBlDensityScaleChange('layer-a', 2.4);
@@ -154,23 +174,37 @@ function useLayerControlsHarness(
 })();
 
 (() => {
-  const hook = renderHook(() => useLayerControlsHarness(RENDER_STYLE_ISO));
+  const hook = renderHook(() => useLayerControlsHarness(RENDER_STYLE_MIP));
 
   hook.act(() => {
     hook.result.controls.handleLayerRenderStyleToggle('layer-a');
   });
-  assert.equal(hook.result.layerSettings['layer-a']?.renderStyle, RENDER_STYLE_BL);
+  assert.equal(hook.result.layerSettings['layer-a']?.renderStyle, RENDER_STYLE_MIP);
+  assert.equal(hook.result.layerSettings['layer-a']?.samplingMode, 'nearest');
 
   hook.act(() => {
     hook.result.controls.handleLayerRenderStyleToggle();
   });
-  assert.equal(hook.result.layerSettings['layer-a']?.renderStyle, RENDER_STYLE_SLICE);
+  assert.equal(hook.result.layerSettings['layer-a']?.renderStyle, RENDER_STYLE_ISO);
+  assert.equal(hook.result.layerSettings['layer-a']?.samplingMode, 'linear');
   assert.equal(hook.result.layerSettings['layer-b']?.renderStyle, RENDER_STYLE_MIP);
 
   hook.act(() => {
     hook.result.controls.handleLayerRenderStyleToggle();
   });
+  assert.equal(hook.result.layerSettings['layer-a']?.renderStyle, RENDER_STYLE_BL);
+  assert.equal(hook.result.layerSettings['layer-a']?.samplingMode, 'linear');
+
+  hook.act(() => {
+    hook.result.controls.handleLayerRenderStyleToggle();
+  });
+  assert.equal(hook.result.layerSettings['layer-a']?.renderStyle, RENDER_STYLE_SLICE);
+
+  hook.act(() => {
+    hook.result.controls.handleLayerRenderStyleToggle();
+  });
   assert.equal(hook.result.layerSettings['layer-a']?.renderStyle, RENDER_STYLE_MIP);
+  assert.equal(hook.result.layerSettings['layer-a']?.samplingMode, 'linear');
   assert.equal(hook.result.layerSettings['layer-b']?.renderStyle, RENDER_STYLE_MIP);
 
   hook.unmount();
@@ -181,7 +215,13 @@ function useLayerControlsHarness(
     createSegmentationLayer('layer-seg', 'channel-a'),
     createLayer('layer-raw', 'channel-b'),
   ];
-  const hook = renderHook(() => useLayerControlsHarness(RENDER_STYLE_ISO, segmentationLayers));
+  const hook = renderHook(() => useLayerControlsHarness(RENDER_STYLE_MIP, segmentationLayers, 'nearest'));
+
+  hook.act(() => {
+    hook.result.controls.handleLayerRenderStyleChange('layer-seg', RENDER_STYLE_MIP);
+  });
+  assert.equal(hook.result.layerSettings['layer-seg']?.samplingMode, 'linear');
+  assert.equal(hook.result.globalSamplingMode, 'linear');
 
   hook.act(() => {
     hook.result.controls.handleLayerRenderStyleToggle('layer-seg');

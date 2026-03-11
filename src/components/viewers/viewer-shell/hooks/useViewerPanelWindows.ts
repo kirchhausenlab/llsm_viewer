@@ -19,6 +19,9 @@ type UseViewerPanelWindowsResult = {
   isViewerSettingsOpen: boolean;
   openViewerSettings: () => void;
   closeViewerSettings: () => void;
+  isRecordWindowOpen: boolean;
+  openRecordWindow: () => void;
+  closeRecordWindow: () => void;
   isAmplitudePlotOpen: boolean;
   openAmplitudePlot: () => void;
   closeAmplitudePlot: () => void;
@@ -46,6 +49,7 @@ export function useViewerPanelWindows({
   const [isPropsWindowOpen, setIsPropsWindowOpen] = useState(false);
   const [isTracksWindowOpen, setIsTracksWindowOpen] = useState(hasTrackData);
   const [isViewerSettingsOpen, setIsViewerSettingsOpen] = useState(false);
+  const [isRecordWindowOpen, setIsRecordWindowOpen] = useState(false);
   const [isAmplitudePlotOpen, setIsAmplitudePlotOpen] = useState(false);
   const [isPlotSettingsOpen, setIsPlotSettingsOpen] = useState(false);
   const [isTrackSettingsOpen, setIsTrackSettingsOpen] = useState(false);
@@ -86,6 +90,14 @@ export function useViewerPanelWindows({
 
   const closeViewerSettings = useCallback(() => {
     setIsViewerSettingsOpen(false);
+  }, []);
+
+  const openRecordWindow = useCallback(() => {
+    setIsRecordWindowOpen(true);
+  }, []);
+
+  const closeRecordWindow = useCallback(() => {
+    setIsRecordWindowOpen(false);
   }, []);
 
   const openPaintbrush = useCallback(() => {
@@ -175,6 +187,9 @@ export function useViewerPanelWindows({
     isViewerSettingsOpen,
     openViewerSettings,
     closeViewerSettings,
+    isRecordWindowOpen,
+    openRecordWindow,
+    closeRecordWindow,
     isAmplitudePlotOpen,
     openAmplitudePlot,
     closeAmplitudePlot,

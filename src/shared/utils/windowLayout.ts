@@ -11,6 +11,7 @@ export const PAINTBRUSH_WINDOW_VERTICAL_OFFSET = 220;
 export const WARNING_WINDOW_WIDTH = 360;
 export const RUNTIME_DIAGNOSTICS_WINDOW_WIDTH = 320;
 export const VIEWER_SETTINGS_WINDOW_ESTIMATED_HEIGHT = 320;
+export const RECORD_WINDOW_ESTIMATED_HEIGHT = 220;
 export const PROPS_WINDOW_ESTIMATED_HEIGHT = 560;
 export const PAINTBRUSH_WINDOW_ESTIMATED_HEIGHT = 420;
 export const TRACK_WINDOW_ESTIMATED_HEIGHT = 360;
@@ -44,6 +45,33 @@ export const computeCenteredWindowPosition = (
   return { x: centeredX, y: centeredY };
 };
 
+const computeTopWindowY = (estimatedHeight: number): number => {
+  const preferredY = TOP_MENU_HEIGHT + TOP_MENU_WINDOW_PADDING;
+
+  if (typeof window === 'undefined') {
+    return preferredY;
+  }
+
+  const viewportHeight = window.innerHeight;
+  const maxY = Math.max(WINDOW_MARGIN, viewportHeight - estimatedHeight - WINDOW_MARGIN);
+  return Math.min(preferredY, maxY);
+};
+
+export const computeTopCenteredWindowPosition = (
+  preferredWidth: number,
+  estimatedHeight: number
+): WindowPosition => {
+  if (typeof window === 'undefined') {
+    return { x: WINDOW_MARGIN, y: TOP_MENU_HEIGHT + TOP_MENU_WINDOW_PADDING };
+  }
+
+  const viewportWidth = window.innerWidth;
+  const windowWidth = Math.min(preferredWidth, viewportWidth - WINDOW_MARGIN * 2);
+  const centeredX = Math.max(WINDOW_MARGIN, Math.round((viewportWidth - windowWidth) / 2));
+
+  return { x: centeredX, y: computeTopWindowY(estimatedHeight) };
+};
+
 export const computeLayersWindowDefaultPosition = (): WindowPosition => ({
   x: WINDOW_MARGIN,
   y: TOP_MENU_HEIGHT + TOP_MENU_WINDOW_PADDING
@@ -55,8 +83,11 @@ export const computePaintbrushWindowDefaultPosition = (): WindowPosition => ({
 });
 
 export const computeViewerSettingsWindowDefaultPosition = (): WindowPosition => {
-  return computeCenteredWindowPosition(CONTROL_WINDOW_WIDTH, VIEWER_SETTINGS_WINDOW_ESTIMATED_HEIGHT);
+  return computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, VIEWER_SETTINGS_WINDOW_ESTIMATED_HEIGHT);
 };
+
+export const computeRecordWindowDefaultPosition = (): WindowPosition =>
+  computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, RECORD_WINDOW_ESTIMATED_HEIGHT);
 
 export const computePropsWindowDefaultPosition = (): WindowPosition => {
   const x = computeRightColumnX(PROPS_WINDOW_WIDTH);
@@ -135,16 +166,16 @@ export const computeRuntimeDiagnosticsWindowDefaultPosition = (): WindowPosition
 });
 
 export const computePropsWindowRecenterPosition = (): WindowPosition =>
-  computeCenteredWindowPosition(PROPS_WINDOW_WIDTH, PROPS_WINDOW_ESTIMATED_HEIGHT);
+  computeTopCenteredWindowPosition(PROPS_WINDOW_WIDTH, PROPS_WINDOW_ESTIMATED_HEIGHT);
 
 export const computePaintbrushWindowRecenterPosition = (): WindowPosition =>
-  computeCenteredWindowPosition(CONTROL_WINDOW_WIDTH, PAINTBRUSH_WINDOW_ESTIMATED_HEIGHT);
+  computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, PAINTBRUSH_WINDOW_ESTIMATED_HEIGHT);
 
 export const computeTrackSettingsWindowRecenterPosition = (): WindowPosition =>
-  computeCenteredWindowPosition(CONTROL_WINDOW_WIDTH, TRACK_SETTINGS_WINDOW_ESTIMATED_HEIGHT);
+  computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, TRACK_SETTINGS_WINDOW_ESTIMATED_HEIGHT);
 
 export const computeRuntimeDiagnosticsWindowRecenterPosition = (): WindowPosition =>
-  computeCenteredWindowPosition(
+  computeTopCenteredWindowPosition(
     RUNTIME_DIAGNOSTICS_WINDOW_WIDTH,
     RUNTIME_DIAGNOSTICS_WINDOW_ESTIMATED_HEIGHT
   );

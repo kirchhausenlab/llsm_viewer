@@ -6,6 +6,7 @@ import {
   computePaintbrushWindowRecenterPosition,
   computePlotSettingsWindowDefaultPosition,
   computePropsWindowRecenterPosition,
+  computeRecordWindowDefaultPosition,
   computeSelectedTracksWindowDefaultPosition,
   computeTrackSettingsWindowRecenterPosition,
   computeTrackWindowDefaultPosition,
@@ -35,6 +36,7 @@ console.log('Starting useWindowLayout tests');
   assert.deepStrictEqual(hook.result.propsWindowInitialPosition, computePropsWindowRecenterPosition());
   assert.deepStrictEqual(hook.result.trackWindowInitialPosition, computeTrackWindowDefaultPosition());
   assert.deepStrictEqual(hook.result.paintbrushWindowInitialPosition, computePaintbrushWindowRecenterPosition());
+  assert.deepStrictEqual(hook.result.recordWindowInitialPosition, computeRecordWindowDefaultPosition());
   assert.deepStrictEqual(
     hook.result.viewerSettingsWindowInitialPosition,
     computeViewerSettingsWindowDefaultPosition()

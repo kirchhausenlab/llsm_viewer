@@ -1447,7 +1447,7 @@ const createLayer = (
   const nearest = resourcesRef.current.get('layer-3d');
   assert.ok(nearest);
   assert.strictEqual(nearest.labelTexture, null);
-  assert.equal(nearest.texture?.magFilter, THREE.NearestFilter);
+  assert.equal(nearest.texture?.magFilter, THREE.LinearFilter);
   const nearestUniforms = (nearest.mesh.material as THREE.ShaderMaterial).uniforms as Record<
     string,
     { value: unknown }
@@ -1456,11 +1456,12 @@ const createLayer = (
   assert.equal(nearestUniforms.u_windowMin?.value, 0.15);
   assert.equal(nearestUniforms.u_windowMax?.value, 0.85);
   assert.equal(nearestUniforms.u_invert?.value, 0);
-  assert.equal(nearestUniforms.u_nearestSampling?.value, 1);
-  assert.equal(nearestUniforms.u_adaptiveLodEnabled?.value, 0);
+  assert.equal(nearestUniforms.u_nearestSampling?.value, 0);
+  assert.equal(nearestUniforms.u_adaptiveLodEnabled?.value, 1);
   assert.equal(nearestUniforms.u_brickAtlasEnabled?.value, 0);
   assert.equal(nearestUniforms.u_brickSkipEnabled?.value, 0);
   assert.equal(nearest.brickAtlasDataTexture ?? null, null);
+  assert.equal(nearest.samplingMode, 'linear');
 
   layers = [{ ...baseLayer, volume: null }];
   hook.rerender();

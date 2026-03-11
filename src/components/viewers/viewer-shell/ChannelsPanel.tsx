@@ -1,11 +1,12 @@
 import {
   DEFAULT_WINDOW_MAX,
   DEFAULT_WINDOW_MIN,
-  RENDER_STYLE_BL,
-  RENDER_STYLE_ISO,
   RENDER_STYLE_MIP,
   RENDER_STYLE_SLICE,
-  createDefaultLayerSettings
+  createDefaultLayerSettings,
+  resolveIntensityRenderModeConfig,
+  resolveIntensityRenderModeValue,
+  type IntensityRenderModeValue
 } from '../../../state/layerSettings';
 import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from '../../../shared/colorMaps/layerColors';
 import BrightnessContrastHistogram from '../BrightnessContrastHistogram';
@@ -108,6 +109,9 @@ export default function ChannelsPanel({
               const segmentation3dActive = Boolean(
                 selectedLayer?.isSegmentation && settings.renderStyle !== RENDER_STYLE_SLICE,
               );
+              const intensityRenderMode = selectedLayer?.isSegmentation
+                ? null
+                : resolveIntensityRenderModeValue(settings.renderStyle, settings.samplingMode);
               const invertDisabled = sliderDisabled || Boolean(selectedLayer?.isSegmentation);
               const invertTitle = selectedLayer?.isSegmentation
                 ? 'Invert LUT is unavailable for segmentation volumes.'
@@ -134,102 +138,99 @@ export default function ChannelsPanel({
                       ) : null}
                       {selectedLayer ? (
                         <>
-                      <div className="channel-primary-actions">
-                        <div className="channel-primary-actions-row">
-                          <button
-                            type="button"
-                            className="channel-action-button"
-                            onClick={() => onChannelReset(channelId)}
-                            disabled={channelLayers.length === 0}
-                          >
-                            Reset
-                          </button>
-                          <button
-                            type="button"
-                            className="channel-action-button"
-                            onClick={() => onLayerInvertToggle(selectedLayer.key)}
-                            disabled={invertDisabled}
-                            aria-pressed={settings.invert}
-                            title={invertTitle}
-                          >
-                            Invert
-                          </button>
-                          <button
-                            type="button"
-                            className="channel-action-button"
-                            onClick={() => onLayerAutoContrast(selectedLayer.key)}
-                            disabled={sliderDisabled}
-                          >
-                            Auto
-                          </button>
-                        </div>
-                      </div>
-                      <div className="channel-primary-actions">
-                        <div className="channel-primary-actions-row" role="group" aria-label="Render style">
-                          {selectedLayer.isSegmentation ? (
-                            <button
-                              type="button"
-                              className="channel-action-button"
-                              onClick={() => onLayerRenderStyleChange(selectedLayer.key, RENDER_STYLE_MIP)}
-                              disabled={renderStyleDisabled}
-                              aria-pressed={segmentation3dActive}
-                            >
-                              3D
-                            </button>
-                          ) : (
-                            <>
+                          <div className="channel-primary-actions">
+                            <div className="channel-primary-actions-row" role="group" aria-label="Render style">
+                              {selectedLayer.isSegmentation ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="channel-action-button"
+                                    onClick={() => onLayerRenderStyleChange(selectedLayer.key, RENDER_STYLE_MIP)}
+                                    disabled={renderStyleDisabled}
+                                    aria-pressed={segmentation3dActive}
+                                  >
+                                    3D
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="channel-action-button"
+                                    onClick={() => onLayerRenderStyleChange(selectedLayer.key, RENDER_STYLE_SLICE)}
+                                    disabled={renderStyleDisabled}
+                                    aria-pressed={settings.renderStyle === RENDER_STYLE_SLICE}
+                                  >
+                                    Slice
+                                  </button>
+                                </>
+                              ) : (
+                                <div className="channel-render-mode-control">
+                                  <select
+                                    id={`layer-render-mode-${selectedLayer.key}`}
+                                    className="channel-render-mode-select"
+                                    value={intensityRenderMode ?? 'mip'}
+                                    onChange={(event) => {
+                                      const nextMode = event.target.value as IntensityRenderModeValue;
+                                      const nextConfig = resolveIntensityRenderModeConfig(nextMode);
+                                      onLayerRenderStyleChange(
+                                        selectedLayer.key,
+                                        nextConfig.renderStyle,
+                                        nextConfig.samplingMode
+                                      );
+                                    }}
+                                    disabled={renderStyleDisabled}
+                                    aria-label="Render mode"
+                                  >
+                                    <option value="mip">Max Int Projection (MIP)</option>
+                                    <option value="mip-v">Max Int Projection (MIP) - Voxel</option>
+                                    <option value="iso">Isosurfaces (ISO)</option>
+                                    <option value="bl">Beer-Lambert (BL)</option>
+                                    <option value="slice">2D Slices (XY)</option>
+                                  </select>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="channel-primary-actions">
+                            <div className="channel-primary-actions-row">
                               <button
                                 type="button"
                                 className="channel-action-button"
-                                onClick={() => onLayerRenderStyleChange(selectedLayer.key, RENDER_STYLE_MIP)}
-                                disabled={renderStyleDisabled}
-                                aria-pressed={settings.renderStyle === RENDER_STYLE_MIP}
+                                onClick={() => onChannelReset(channelId)}
+                                disabled={channelLayers.length === 0}
                               >
-                                MIP
+                                Reset
                               </button>
                               <button
                                 type="button"
                                 className="channel-action-button"
-                                onClick={() => onLayerRenderStyleChange(selectedLayer.key, RENDER_STYLE_ISO)}
-                                disabled={renderStyleDisabled}
-                                aria-pressed={settings.renderStyle === RENDER_STYLE_ISO}
+                                onClick={() => onLayerInvertToggle(selectedLayer.key)}
+                                disabled={invertDisabled}
+                                aria-pressed={settings.invert}
+                                title={invertTitle}
                               >
-                                ISO
+                                Invert
                               </button>
                               <button
                                 type="button"
                                 className="channel-action-button"
-                                onClick={() => onLayerRenderStyleChange(selectedLayer.key, RENDER_STYLE_BL)}
-                                disabled={renderStyleDisabled}
-                                aria-pressed={settings.renderStyle === RENDER_STYLE_BL}
+                                onClick={() => onLayerAutoContrast(selectedLayer.key)}
+                                disabled={sliderDisabled}
                               >
-                                BL
+                                Auto
                               </button>
-                            </>
-                          )}
-                          <button
-                            type="button"
-                            className="channel-action-button"
-                            onClick={() => onLayerRenderStyleChange(selectedLayer.key, RENDER_STYLE_SLICE)}
-                            disabled={renderStyleDisabled}
-                            aria-pressed={settings.renderStyle === RENDER_STYLE_SLICE}
-                          >
-                            Slice
-                          </button>
-                        </div>
-                      </div>
-                      <BrightnessContrastHistogram
-                        className="channel-histogram"
-                        volume={currentVolume}
-                        histogram={currentHistogram}
-                        isPlaying={isPlaying}
-                        windowMin={settings.windowMin}
-                        windowMax={settings.windowMax}
-                        defaultMin={DEFAULT_WINDOW_MIN}
-                        defaultMax={DEFAULT_WINDOW_MAX}
-                        sliderRange={settings.sliderRange}
-                        tintColor={channelTint}
-                      />
+                            </div>
+                          </div>
+                          <BrightnessContrastHistogram
+                            className="channel-histogram"
+                            volume={currentVolume}
+                            histogram={currentHistogram}
+                            isPlaying={isPlaying}
+                            windowMin={settings.windowMin}
+                            windowMax={settings.windowMax}
+                            defaultMin={DEFAULT_WINDOW_MIN}
+                            defaultMax={DEFAULT_WINDOW_MAX}
+                            sliderRange={settings.sliderRange}
+                            tintColor={channelTint}
+                          />
                       <div className="slider-control slider-control--pair">
                         <div className="slider-control slider-control--inline">
                           <label htmlFor={`layer-window-min-${selectedLayer.key}`}>
@@ -290,6 +291,57 @@ export default function ChannelsPanel({
                           />
                         </div>
                       </div>
+                      {isGrayscale ? (
+                        <div className="color-control">
+                          <div className="color-control-header">
+                            <span id={`layer-color-label-${selectedLayer.key}`}>Tint color</span>
+                            <span>{displayColor}</span>
+                          </div>
+                          <div className="color-swatch-row">
+                            <div
+                              className="color-swatch-grid"
+                              role="radiogroup"
+                              aria-labelledby={`layer-color-label-${selectedLayer.key}`}
+                            >
+                              {GRAYSCALE_COLOR_SWATCHES.map((swatch) => {
+                                const normalized = normalizeHexColor(swatch.value, DEFAULT_LAYER_COLOR);
+                                const isSelected = normalized === normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR);
+                                return (
+                                  <button
+                                    key={swatch.label}
+                                    type="button"
+                                    className={isSelected ? 'color-swatch-button is-selected' : 'color-swatch-button'}
+                                    style={{ backgroundColor: swatch.value }}
+                                    onClick={() => onLayerColorChange(selectedLayer.key, swatch.value)}
+                                    aria-pressed={isSelected}
+                                    aria-label={swatch.label}
+                                    disabled={sliderDisabled}
+                                  />
+                                );
+                              })}
+                            </div>
+                            <label
+                              className={sliderDisabled ? 'color-picker-trigger is-disabled' : 'color-picker-trigger'}
+                              htmlFor={`layer-color-custom-${selectedLayer.key}`}
+                            >
+                              <input
+                                id={`layer-color-custom-${selectedLayer.key}`}
+                                type="color"
+                                value={normalizedColor}
+                                onChange={(event) => onLayerColorChange(selectedLayer.key, event.target.value)}
+                                disabled={sliderDisabled}
+                                aria-label="Choose custom tint color"
+                                className="color-picker-input"
+                              />
+                              <span
+                                className="color-picker-indicator"
+                                style={{ backgroundColor: normalizedColor }}
+                                aria-hidden="true"
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      ) : null}
                       <div className="slider-control slider-control--pair">
                         <div className="slider-control slider-control--inline">
                           <label htmlFor={`layer-offset-x-${selectedLayer.key}`}>
@@ -322,51 +374,6 @@ export default function ChannelsPanel({
                           />
                         </div>
                       </div>
-                      {isGrayscale ? (
-                        <div className="color-control">
-                          <div className="color-control-header">
-                            <span id={`layer-color-label-${selectedLayer.key}`}>Tint color</span>
-                            <span>{displayColor}</span>
-                          </div>
-                          <div className="color-swatches" role="radiogroup" aria-labelledby={`layer-color-label-${selectedLayer.key}`}>
-                            {GRAYSCALE_COLOR_SWATCHES.map((swatch) => {
-                              const normalized = normalizeHexColor(swatch.value, DEFAULT_LAYER_COLOR);
-                              const isSelected = normalized === normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR);
-                              return (
-                                <button
-                                  key={swatch.label}
-                                  type="button"
-                                  className={isSelected ? 'color-swatch-button is-selected' : 'color-swatch-button'}
-                                  style={{ backgroundColor: swatch.value }}
-                                  onClick={() => onLayerColorChange(selectedLayer.key, swatch.value)}
-                                  aria-pressed={isSelected}
-                                  aria-label={swatch.label}
-                                  disabled={sliderDisabled}
-                                />
-                              );
-                            })}
-                          </div>
-                          <label
-                            className={sliderDisabled ? 'color-picker-trigger is-disabled' : 'color-picker-trigger'}
-                            htmlFor={`layer-color-custom-${selectedLayer.key}`}
-                          >
-                            <input
-                              id={`layer-color-custom-${selectedLayer.key}`}
-                              type="color"
-                              value={normalizedColor}
-                              onChange={(event) => onLayerColorChange(selectedLayer.key, event.target.value)}
-                              disabled={sliderDisabled}
-                              aria-label="Choose custom tint color"
-                              className="color-picker-input"
-                            />
-                            <span
-                              className="color-picker-indicator"
-                              style={{ backgroundColor: normalizedColor }}
-                              aria-hidden="true"
-                            />
-                          </label>
-                        </div>
-                      ) : null}
                         </>
                       ) : null}
                     </>

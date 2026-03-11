@@ -14,12 +14,10 @@ import {
   normalizeHexColor,
 } from '../../../../shared/colorMaps/layerColors';
 import {
-  RENDER_STYLE_BL,
-  RENDER_STYLE_ISO,
-  RENDER_STYLE_MIP,
   RENDER_STYLE_SLICE,
   DEFAULT_WINDOW_MIN,
   DEFAULT_WINDOW_MAX,
+  resolveIntensityRenderModeValue,
 } from '../../../../state/layerSettings';
 import { drawRoundedRect, drawRoundedRectCompat } from './hudCanvas';
 import {
@@ -47,38 +45,45 @@ export function drawLayerToggleButtons(params: {
 
   const actionButtonHeight = 60;
   const actionButtonRadius = 16;
-  const actionSpacing = 24;
   const availableRowWidth = canvasWidth - paddingX * 2;
-  const maxActionButtonWidth = 280;
-  const renderSamplingWidth = Math.max(
-    0,
-    Math.min(maxActionButtonWidth, (availableRowWidth - actionSpacing) / 2),
-  );
+  const renderButtonWidth = Math.max(0, availableRowWidth);
 
   const renderStyleDisabled = !selectedLayer.hasData;
-  const samplingDisabled = renderStyleDisabled;
   const renderStyleActive = selectedLayer.isSegmentation
     ? selectedLayer.settings.renderStyle !== RENDER_STYLE_SLICE
-    : selectedLayer.settings.renderStyle !== RENDER_STYLE_MIP;
-  const samplingActive = selectedLayer.settings.samplingMode === 'nearest';
+    : resolveIntensityRenderModeValue(
+        selectedLayer.settings.renderStyle,
+        selectedLayer.settings.samplingMode,
+      ) !== 'mip';
   const renderStyleLabel =
     selectedLayer.isSegmentation
       ? selectedLayer.settings.renderStyle === RENDER_STYLE_SLICE
         ? 'Slice'
         : '3D'
-      : selectedLayer.settings.renderStyle === RENDER_STYLE_ISO
-        ? 'ISO'
-        : selectedLayer.settings.renderStyle === RENDER_STYLE_BL
-          ? 'BL'
-          : selectedLayer.settings.renderStyle === RENDER_STYLE_SLICE
-            ? 'Slice'
-            : 'MIP';
+      : (() => {
+          const intensityMode = resolveIntensityRenderModeValue(
+            selectedLayer.settings.renderStyle,
+            selectedLayer.settings.samplingMode,
+          );
+          if (intensityMode === 'mip-v') {
+            return 'MIP-V';
+          }
+          if (intensityMode === 'iso') {
+            return 'ISO';
+          }
+          if (intensityMode === 'bl') {
+            return 'BL';
+          }
+          if (intensityMode === 'slice') {
+            return 'Slice';
+          }
+          return 'MIP';
+        })();
   const renderStylePrefix = selectedLayer.isSegmentation ? 'Mode' : 'Render';
 
   const renderX = paddingX;
-  const samplingX = renderX + renderSamplingWidth + actionSpacing;
 
-  drawRoundedRect(ctx, renderX, currentY, renderSamplingWidth, actionButtonHeight, actionButtonRadius);
+  drawRoundedRect(ctx, renderX, currentY, renderButtonWidth, actionButtonHeight, actionButtonRadius);
   ctx.fillStyle = renderStyleDisabled ? 'rgba(45, 60, 74, 0.6)' : renderStyleActive ? '#2b5fa6' : '#2b3340';
   ctx.fill();
 
@@ -89,24 +94,7 @@ export function drawLayerToggleButtons(params: {
     hud.hoverRegion.layerKey === selectedLayer.key
   ) {
     ctx.save();
-    drawRoundedRect(ctx, renderX, currentY, renderSamplingWidth, actionButtonHeight, actionButtonRadius);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
-    ctx.fill();
-    ctx.restore();
-  }
-
-  drawRoundedRect(ctx, samplingX, currentY, renderSamplingWidth, actionButtonHeight, actionButtonRadius);
-  ctx.fillStyle = samplingDisabled ? 'rgba(45, 60, 74, 0.6)' : samplingActive ? '#2b5fa6' : '#2b3340';
-  ctx.fill();
-
-  if (
-    hud.hoverRegion &&
-    hud.hoverRegion.targetType === 'channels-sampling' &&
-    hud.hoverRegion.channelId === activeChannel.id &&
-    hud.hoverRegion.layerKey === selectedLayer.key
-  ) {
-    ctx.save();
-    drawRoundedRect(ctx, samplingX, currentY, renderSamplingWidth, actionButtonHeight, actionButtonRadius);
+    drawRoundedRect(ctx, renderX, currentY, renderButtonWidth, actionButtonHeight, actionButtonRadius);
     ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
     ctx.fill();
     ctx.restore();
@@ -118,11 +106,9 @@ export function drawLayerToggleButtons(params: {
   ctx.fillStyle = renderStyleDisabled ? '#7b8795' : '#f3f6fc';
   ctx.fillText(
     `${renderStylePrefix}: ${renderStyleLabel}`,
-    renderX + renderSamplingWidth / 2,
+    renderX + renderButtonWidth / 2,
     currentY + actionButtonHeight / 2,
   );
-  ctx.fillStyle = samplingDisabled ? '#7b8795' : '#f3f6fc';
-  ctx.fillText('Sampling mode', samplingX + renderSamplingWidth / 2, currentY + actionButtonHeight / 2);
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
 
@@ -133,20 +119,7 @@ export function drawLayerToggleButtons(params: {
     disabled: renderStyleDisabled,
     bounds: {
       minX: toPanelX(renderX),
-      maxX: toPanelX(renderX + renderSamplingWidth),
-      minY: Math.min(toPanelY(currentY), toPanelY(currentY + actionButtonHeight)),
-      maxY: Math.max(toPanelY(currentY), toPanelY(currentY + actionButtonHeight)),
-    },
-  });
-
-  regions.push({
-    targetType: 'channels-sampling',
-    channelId: activeChannel.id,
-    layerKey: selectedLayer.key,
-    disabled: samplingDisabled,
-    bounds: {
-      minX: toPanelX(samplingX),
-      maxX: toPanelX(samplingX + renderSamplingWidth),
+      maxX: toPanelX(renderX + renderButtonWidth),
       minY: Math.min(toPanelY(currentY), toPanelY(currentY + actionButtonHeight)),
       maxY: Math.max(toPanelY(currentY), toPanelY(currentY + actionButtonHeight)),
     },

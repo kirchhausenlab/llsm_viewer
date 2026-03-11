@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import type { LoadedDatasetLayer } from '../../../hooks/dataset';
 import type { LayerSettings } from '../../../state/layerSettings';
-import { DEFAULT_WINDOW_MAX, DEFAULT_WINDOW_MIN } from '../../../state/layerSettings';
+import { DEFAULT_WINDOW_MAX, DEFAULT_WINDOW_MIN, resolveLayerSamplingMode } from '../../../state/layerSettings';
 
 const DEFAULT_RESET_WINDOW = { windowMin: DEFAULT_WINDOW_MIN, windowMax: DEFAULT_WINDOW_MAX };
 
@@ -80,6 +80,11 @@ export function useRouteVrChannelPanels({
       const layers = channelLayers.map((layer) => {
         const settings = layerSettings[layer.key] ?? createLayerDefaultSettings(layer.key);
         const volume = currentLayerVolumes[layer.key] ?? null;
+        const samplingMode = resolveLayerSamplingMode(
+          settings.renderStyle,
+          settings.samplingMode,
+          layer.isSegmentation
+        );
         return {
           key: layer.key,
           label: layer.label,
@@ -88,7 +93,10 @@ export function useRouteVrChannelPanels({
           isSegmentation: layer.isSegmentation,
           defaultWindow: DEFAULT_RESET_WINDOW,
           histogram: volume?.histogram ?? null,
-          settings
+          settings: {
+            ...settings,
+            samplingMode
+          }
         };
       });
 

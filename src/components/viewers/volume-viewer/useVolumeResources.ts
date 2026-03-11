@@ -17,7 +17,6 @@ import {
   createSegmentationColorTable,
   isIntensityVolume,
   isSegmentationVolume,
-  type IntensityVolume,
   type NormalizedVolume
 } from '../../../core/volumeProcessing';
 import type { VolumeResources } from '../VolumeViewer.types';
@@ -46,6 +45,7 @@ import {
 } from './fallbackTextures';
 import {
   RENDER_STYLE_SLICE,
+  resolveLayerSamplingMode,
   type LayerSettings,
   type RenderStyle,
 } from '../../../state/layerSettings';
@@ -215,11 +215,9 @@ const packedSegmentationTextureDataCache = new WeakMap<Uint16Array, Uint8Array>(
 function resolveSamplingModeForRenderStyle(
   samplingMode: 'linear' | 'nearest',
   renderStyle: RenderStyle,
+  isSegmentation = false,
 ): 'linear' | 'nearest' {
-  if (renderStyle === RENDER_STYLE_SLICE) {
-    return 'nearest';
-  }
-  return samplingMode;
+  return resolveLayerSamplingMode(renderStyle, samplingMode, isSegmentation);
 }
 
 function resolveLayerAdditiveEnabled(
@@ -3478,6 +3476,7 @@ export function useVolumeResources({
       const effectiveSamplingMode = resolveSamplingModeForRenderStyle(
         layer.samplingMode,
         layer.renderStyle,
+        layer.isSegmentation === true,
       );
       const shouldDisableDirectVolumeBrickPageTableSampling =
         layer.isSegmentation ||

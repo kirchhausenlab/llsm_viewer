@@ -38,6 +38,7 @@ export default function TopMenu(props: TopMenuProps) {
     onOpenChannelsWindow,
     onOpenPropsWindow,
     onOpenPaintbrush,
+    onOpenRecordWindow,
     onOpenRenderSettingsWindow,
     onOpenTracksWindow,
     onOpenAmplitudePlotWindow,
@@ -136,7 +137,7 @@ export default function TopMenu(props: TopMenuProps) {
       view: [
         { label: 'Channels window', onSelect: onOpenChannelsWindow },
         { label: 'Camera' },
-        { label: 'Record' },
+        { label: 'Record', onSelect: onOpenRecordWindow },
         { label: 'Background' },
         { label: 'Render settings', onSelect: onOpenRenderSettingsWindow },
         { label: 'Hover settings' }
@@ -164,6 +165,7 @@ export default function TopMenu(props: TopMenuProps) {
       onOpenPaintbrush,
       onOpenPlotSettingsWindow,
       onOpenPropsWindow,
+      onOpenRecordWindow,
       onOpenRenderSettingsWindow,
       onOpenTrackSettingsWindow,
       onOpenTracksWindow,
