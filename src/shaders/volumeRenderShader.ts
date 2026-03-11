@@ -74,6 +74,24 @@ export type HierarchyNodeExitArgs = {
   nodeMax: [number, number, number];
 };
 
+export type NearestEntryStartArgs = {
+  front: [number, number, number];
+  size: [number, number, number];
+  traversalSize: [number, number, number];
+  rayDir: [number, number, number];
+};
+
+export type NearestEntryStart = {
+  voxelCoords: [number, number, number];
+  texcoords: [number, number, number];
+};
+
+export type NearestDdaAxisInit = {
+  axisStep: number;
+  tMax: number;
+  tDelta: number;
+};
+
 export type SegmentationFieldSampleArgs = {
   labels: Uint16Array;
   size: [number, number, number];
@@ -320,6 +338,70 @@ export function computeHierarchyNodeExitCpu(args: HierarchyNodeExitArgs): number
     }
   }
   return exitSteps;
+}
+
+function resolveNearestEntryAxisNudge(direction: number): number {
+  if (!Number.isFinite(direction) || Math.abs(direction) <= 1e-6) {
+    return 0;
+  }
+  return direction > 0 ? 1e-4 : -1e-4;
+}
+
+export function resolveNearestEntryStartCpu(args: NearestEntryStartArgs): NearestEntryStart {
+  const safeSize: [number, number, number] = [
+    clampAtLeastOne(args.size[0]),
+    clampAtLeastOne(args.size[1]),
+    clampAtLeastOne(args.size[2]),
+  ];
+  const safeTraversalSize: [number, number, number] = [
+    clampAtLeastOne(args.traversalSize[0]),
+    clampAtLeastOne(args.traversalSize[1]),
+    clampAtLeastOne(args.traversalSize[2]),
+  ];
+  const voxelCoords: [number, number, number] = [0, 0, 0];
+  const texcoords: [number, number, number] = [0, 0, 0];
+
+  for (let axis = 0; axis < 3; axis += 1) {
+    const front = Number.isFinite(args.front[axis]) ? args.front[axis] : -0.5;
+    const entryVoxel =
+      ((front + 0.5) / safeSize[axis]) * safeTraversalSize[axis] +
+      resolveNearestEntryAxisNudge(args.rayDir[axis]);
+    const maxVoxel = Math.max(safeTraversalSize[axis] - 1e-4, 0);
+    const clampedVoxel = Math.min(Math.max(entryVoxel, 0), maxVoxel);
+    voxelCoords[axis] = clampedVoxel;
+    texcoords[axis] = clampedVoxel / safeTraversalSize[axis];
+  }
+
+  return {
+    voxelCoords,
+    texcoords,
+  };
+}
+
+export function initializeNearestDdaAxisCpu(voxelCoord: number, voxelStep: number): NearestDdaAxisInit {
+  if (voxelStep > 1e-6) {
+    const axisStep = 1;
+    const nextBoundary = Math.floor(voxelCoord) + 1;
+    return {
+      axisStep,
+      tMax: Math.max((nextBoundary - voxelCoord) / voxelStep, 0),
+      tDelta: 1 / voxelStep,
+    };
+  }
+  if (voxelStep < -1e-6) {
+    const axisStep = -1;
+    const previousBoundary = Math.floor(voxelCoord);
+    return {
+      axisStep,
+      tMax: Math.max((previousBoundary - voxelCoord) / voxelStep, 0),
+      tDelta: 1 / Math.abs(voxelStep),
+    };
+  }
+  return {
+    axisStep: 0,
+    tMax: Number.POSITIVE_INFINITY,
+    tDelta: Number.POSITIVE_INFINITY,
+  };
 }
 
 function segmentationLabelAtVoxelCpu(
@@ -1681,6 +1763,17 @@ const volumeRenderFragmentShader = /* glsl */ `
       return max(u_size, vec3(1.0));
     }
 
+    vec3 resolve_nearest_entry_voxel_coords(vec3 front, vec3 traversalSize, vec3 rayDir) {
+      vec3 safeSize = max(u_size, vec3(1.0));
+      vec3 entryVoxel = ((front + vec3(0.5)) / safeSize) * traversalSize;
+      vec3 inwardNudge = sign(rayDir) * 1e-4;
+      return clamp(
+        entryVoxel + inwardNudge,
+        vec3(0.0),
+        max(traversalSize - vec3(1e-4), vec3(0.0))
+      );
+    }
+
     float nearest_axis_steps_to_boundary(float voxelCoord, float voxelStep) {
       if (voxelStep > EPSILON) {
         float nextBoundary = floor(voxelCoord) + 1.0;
@@ -1989,8 +2082,12 @@ const volumeRenderFragmentShader = /* glsl */ `
         start_loc = (front + vec3(0.5)) / u_size;
       } else if (u_nearestSampling > 0.5) {
         vec3 nearestTraversalSize = resolve_nearest_sampling_volume_size();
-        vec3 frontCenter = floor(((front + vec3(0.5)) / u_size) * nearestTraversalSize);
-        start_loc = (frontCenter + vec3(0.5)) / nearestTraversalSize;
+        vec3 nearestEntryVoxelCoords = resolve_nearest_entry_voxel_coords(
+          front,
+          nearestTraversalSize,
+          rayDir
+        );
+        start_loc = nearestEntryVoxelCoords / nearestTraversalSize;
         step = rayDir / nearestTraversalSize;
         nsteps = clamp(int(travelDistance) + 1, 1, MAX_STEPS);
       } else {

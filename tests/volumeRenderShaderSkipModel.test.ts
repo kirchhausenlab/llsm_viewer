@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
   computeSkipHierarchyNodeBoundsCpu,
   computeHierarchyNodeExitCpu,
+  initializeNearestDdaAxisCpu,
+  resolveNearestEntryStartCpu,
   sampleSegmentationNearestLabelCpu,
   sampleSegmentationOccupancyCpu,
   shouldSkipWithBrickStatsCpu,
@@ -111,6 +113,14 @@ function createPrng(seed: number): () => number {
   );
   assert.match(
     nearestShader,
+    /vec3 resolve_nearest_entry_voxel_coords\(vec3 front, vec3 traversalSize, vec3 rayDir\)/,
+  );
+  assert.match(
+    nearestShader,
+    /vec3 nearestEntryVoxelCoords = resolve_nearest_entry_voxel_coords\(\s*front,\s*nearestTraversalSize,\s*rayDir\s*\);/s,
+  );
+  assert.match(
+    nearestShader,
     /if \(!segmentation_texcoords_in_bounds\(texcoords\)\) \{\s*return 0\.0;\s*\}/s,
   );
   assert.match(
@@ -153,6 +163,30 @@ function createPrng(seed: number): () => number {
     nearestShader,
     /if \(gradientMagnitude <= EPSILON\) \{\s*return vec3\(0\.0\);\s*\}/s,
   );
+})();
+
+(() => {
+  const start = resolveNearestEntryStartCpu({
+    front: [1.4, 0, 0],
+    size: [8, 1, 1],
+    traversalSize: [4, 1, 1],
+    rayDir: [1, 0, 0],
+  });
+  assert.ok(Math.abs(start.voxelCoords[0] - 0.9501) <= 1e-4);
+  assert.ok(Math.abs(start.texcoords[0] - 0.237525) <= 1e-6);
+})();
+
+(() => {
+  const start = resolveNearestEntryStartCpu({
+    front: [1.4, 0, 0],
+    size: [8, 1, 1],
+    traversalSize: [4, 1, 1],
+    rayDir: [1, 0, 0],
+  });
+  const axis = initializeNearestDdaAxisCpu(start.voxelCoords[0], 1);
+  assert.equal(axis.axisStep, 1);
+  assert.ok(Math.abs(axis.tMax - 0.0499) <= 1e-4);
+  assert.equal(axis.tDelta, 1);
 })();
 
 (() => {
