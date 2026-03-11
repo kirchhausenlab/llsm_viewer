@@ -953,14 +953,14 @@ const createLayer = (
   const resource = resourcesRef.current.get('layer-3d');
   assert.ok(resource);
   assert.deepEqual(resource.brickSkipDiagnostics, {
-    enabled: true,
-    reason: 'enabled',
-    totalBricks: 2,
-    emptyBricks: 1,
-    occupiedBricks: 1,
+    enabled: false,
+    reason: 'disabled-for-direct-volume-linear',
+    totalBricks: 0,
+    emptyBricks: 0,
+    occupiedBricks: 0,
     occupiedBricksMissingFromAtlas: 0,
     invalidRangeBricks: 0,
-    occupancyMetadataMismatchBricks: 1
+    occupancyMetadataMismatchBricks: 0
   });
 })();
 
@@ -1405,6 +1405,7 @@ const createLayer = (
   assert.ok(initial.paletteTexture);
   assert.equal(initial.texture?.type, THREE.UnsignedByteType);
   assert.equal(initial.texture?.format, THREE.RGFormat);
+  assert.equal(initial.texture?.magFilter, THREE.LinearFilter);
   const initialTextureImage = initial.texture?.image as { data?: Uint8Array } | undefined;
   assert.deepEqual(Array.from(initialTextureImage?.data ?? []), [0, 0, 1, 0, 1, 0, 0, 0, 2, 0, 2, 0, 0, 0, 3, 0]);
   const initialUniforms = (initial.mesh.material as THREE.ShaderMaterial).uniforms as Record<
@@ -1416,8 +1417,10 @@ const createLayer = (
   assert.strictEqual(initialUniforms.u_segmentationPalette?.value, initial.paletteTexture);
   assert.strictEqual(initialUniforms.u_segmentationBrickAtlasData?.value, FALLBACK_SEGMENTATION_LABEL_TEXTURE);
   assert.equal(initialUniforms.u_brickAtlasEnabled?.value, 0);
+  assert.equal(initialUniforms.u_brickSkipEnabled?.value, 0);
   assert.equal(initialUniforms.u_isSegmentation?.value, 1);
-  assert.equal(initialUniforms.u_nearestSampling?.value, 1);
+  assert.equal(initialUniforms.u_nearestSampling?.value, 0);
+  assert.equal(initialUniforms.u_adaptiveLodEnabled?.value, 1);
   assert.equal(initial.brickAtlasDataTexture ?? null, null);
 
   layers = [{ ...baseLayer, windowMin: 0.2, windowMax: 0.7, invert: true }];
@@ -1435,6 +1438,7 @@ const createLayer = (
   assert.equal(updatedUniforms.u_windowMax?.value, 0.7);
   assert.equal(updatedUniforms.u_invert?.value, 1);
   assert.equal(updatedUniforms.u_brickAtlasEnabled?.value, 0);
+  assert.equal(updatedUniforms.u_brickSkipEnabled?.value, 0);
   assert.equal(updatedUniforms.u_isSegmentation?.value, 1);
 
   layers = [{ ...baseLayer, samplingMode: 'nearest', windowMin: 0.15, windowMax: 0.85, invert: false }];
@@ -1443,6 +1447,7 @@ const createLayer = (
   const nearest = resourcesRef.current.get('layer-3d');
   assert.ok(nearest);
   assert.strictEqual(nearest.labelTexture, null);
+  assert.equal(nearest.texture?.magFilter, THREE.NearestFilter);
   const nearestUniforms = (nearest.mesh.material as THREE.ShaderMaterial).uniforms as Record<
     string,
     { value: unknown }
@@ -1454,6 +1459,7 @@ const createLayer = (
   assert.equal(nearestUniforms.u_nearestSampling?.value, 1);
   assert.equal(nearestUniforms.u_adaptiveLodEnabled?.value, 0);
   assert.equal(nearestUniforms.u_brickAtlasEnabled?.value, 0);
+  assert.equal(nearestUniforms.u_brickSkipEnabled?.value, 0);
   assert.equal(nearest.brickAtlasDataTexture ?? null, null);
 
   layers = [{ ...baseLayer, volume: null }];
@@ -1461,6 +1467,99 @@ const createLayer = (
 
   const fallback = resourcesRef.current.get('layer-3d');
   assert.equal(fallback, undefined);
+})();
+
+(() => {
+  const intensityVolume: NormalizedVolume = {
+    kind: 'intensity',
+    width: 2,
+    height: 2,
+    depth: 2,
+    channels: 1,
+    dataType: 'uint8',
+    normalized: new Uint8Array([0, 16, 32, 48, 64, 80, 96, 112]),
+    min: 0,
+    max: 112,
+  };
+  const segmentationVolume: NormalizedVolume = {
+    kind: 'segmentation',
+    width: 2,
+    height: 2,
+    depth: 2,
+    channels: 1,
+    dataType: 'uint16',
+    labels: new Uint16Array([0, 1, 1, 0, 2, 2, 0, 3]),
+    min: 0 as const,
+    max: 3,
+  };
+
+  const sceneRef = { current: new THREE.Scene() };
+  const cameraRef = { current: new THREE.PerspectiveCamera(75, 1, 0.1, 10) };
+  const controlsRef = {
+    current: {
+      target: new THREE.Vector3(),
+      update: () => {},
+      saveState: () => {},
+    } as unknown as THREE.OrbitControls,
+  };
+  const resourcesRef = { current: new Map<string, VolumeResources>() };
+  const intensityLayer: ViewerLayer = {
+    ...createLayer(intensityVolume, null, null, 'linear'),
+    key: 'layer-raw',
+    label: 'Raw',
+    channelName: 'raw',
+    brickPageTable: null,
+  };
+  const segmentationLayer: ViewerLayer = {
+    ...createLayer(segmentationVolume, null, null, 'linear'),
+    key: 'layer-seg',
+    label: 'Segmentation',
+    channelName: 'seg',
+    brickPageTable: null,
+  };
+  const layers = [intensityLayer, segmentationLayer];
+
+  renderHook(() =>
+    useVolumeResources({
+      layers,
+      primaryVolume: intensityVolume,
+      isAdditiveBlending: false,
+      renderContextRevision: 0,
+      sceneRef,
+      cameraRef,
+      controlsRef,
+      rotationTargetRef: { current: new THREE.Vector3() },
+      defaultViewStateRef: { current: null },
+      trackGroupRef: { current: new THREE.Group() },
+      resourcesRef,
+      currentDimensionsRef: { current: null },
+      colormapCacheRef: { current: new Map() },
+      volumeRootGroupRef: { current: new THREE.Group() },
+      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+      volumeNormalizationScaleRef: { current: 1 },
+      volumeUserScaleRef: { current: 1 },
+      volumeStepScaleRef: { current: 1 },
+      volumeYawRef: { current: 0 },
+      volumePitchRef: { current: 0 },
+      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+      applyTrackGroupTransform: () => {},
+      applyVolumeRootTransform: () => {},
+      applyVolumeStepScaleToResources: () => {},
+      applyHoverHighlightToResources: () => {},
+    }),
+  );
+
+  const rawResource = resourcesRef.current.get('layer-raw');
+  const segmentationResource = resourcesRef.current.get('layer-seg');
+  assert.ok(rawResource);
+  assert.ok(segmentationResource);
+  assert.ok(
+    segmentationResource.mesh.renderOrder > rawResource.mesh.renderOrder,
+    'expected 3D segmentation to render after intensity volumes so it remains visible as an overlay',
+  );
 })();
 
 (() => {
@@ -2403,6 +2502,100 @@ const createLayer = (
       12, 12, 12, 255,
       13, 13, 13, 255,
       14, 14, 14, 255,
+    ],
+  );
+})();
+
+(() => {
+  const volume: NormalizedVolume = {
+    kind: 'segmentation',
+    width: 2,
+    height: 2,
+    depth: 1,
+    channels: 1,
+    dataType: 'uint16',
+    labels: new Uint16Array([0, 1, 2, 0]),
+    min: 0 as const,
+    max: 2,
+  };
+  const layer: ViewerLayer = {
+    ...createLayer(volume, null, null, 'linear'),
+    key: 'layer-slice-seg',
+    renderStyle: RENDER_STYLE_SLICE,
+  };
+
+  const sceneRef = { current: new THREE.Scene() };
+  const cameraRef = { current: new THREE.PerspectiveCamera(75, 1, 0.1, 10) };
+  const controlsRef = {
+    current: {
+      target: new THREE.Vector3(),
+      update: () => {},
+      saveState: () => {},
+    } as unknown as THREE.OrbitControls,
+  };
+  const resourcesRef = { current: new Map<string, VolumeResources>() };
+
+  renderHook(() =>
+    useVolumeResources({
+      layers: [layer],
+      primaryVolume: volume,
+      isAdditiveBlending: false,
+      zClipFrontFraction: 0,
+      renderContextRevision: 0,
+      sceneRef,
+      cameraRef,
+      controlsRef,
+      rotationTargetRef: { current: new THREE.Vector3() },
+      defaultViewStateRef: { current: null },
+      trackGroupRef: { current: new THREE.Group() },
+      resourcesRef,
+      currentDimensionsRef: { current: null },
+      colormapCacheRef: { current: new Map() },
+      volumeRootGroupRef: { current: new THREE.Group() },
+      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+      volumeNormalizationScaleRef: { current: 1 },
+      volumeUserScaleRef: { current: 1 },
+      volumeStepScaleRef: { current: 1 },
+      volumeYawRef: { current: 0 },
+      volumePitchRef: { current: 0 },
+      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+      applyTrackGroupTransform: () => {},
+      applyVolumeRootTransform: () => {},
+      applyVolumeStepScaleToResources: () => {},
+      applyHoverHighlightToResources: () => {},
+    }),
+  );
+
+  const resource = resourcesRef.current.get('layer-slice-seg');
+  assert.ok(resource);
+  assert.equal(resource.mode, 'slice');
+  const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms as Record<string, { value: unknown }>;
+  assert.equal(uniforms.u_isSegmentation?.value, 1);
+  const paletteData = resource.paletteTexture?.image.data as Uint8Array | undefined;
+  assert.ok(paletteData);
+  const data = Array.from((resource.texture as THREE.DataTexture).image.data as Uint8Array);
+  assert.deepEqual(
+    data,
+    [
+      paletteData?.[0] ?? 0,
+      paletteData?.[1] ?? 0,
+      paletteData?.[2] ?? 0,
+      paletteData?.[3] ?? 0,
+      paletteData?.[4] ?? 0,
+      paletteData?.[5] ?? 0,
+      paletteData?.[6] ?? 0,
+      paletteData?.[7] ?? 0,
+      paletteData?.[8] ?? 0,
+      paletteData?.[9] ?? 0,
+      paletteData?.[10] ?? 0,
+      paletteData?.[11] ?? 0,
+      paletteData?.[0] ?? 0,
+      paletteData?.[1] ?? 0,
+      paletteData?.[2] ?? 0,
+      paletteData?.[3] ?? 0,
     ],
   );
 })();

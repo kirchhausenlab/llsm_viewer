@@ -71,6 +71,9 @@ const nextRenderStyle = (current: RenderStyle): RenderStyle => {
   return RENDER_STYLE_MIP;
 };
 
+const nextSegmentationRenderStyle = (current: RenderStyle): RenderStyle =>
+  current === RENDER_STYLE_SLICE ? RENDER_STYLE_MIP : RENDER_STYLE_SLICE;
+
 type ViewerLayerConfig = ViewerLayer & {
   channelId?: string;
 };
@@ -418,13 +421,17 @@ export function useLayerControls({
         return;
       }
       const currentStyle = (layerSettings[targetLayerKey] ?? createLayerDefaultSettings(targetLayerKey)).renderStyle;
-      const nextStyle = nextRenderStyle(currentStyle);
+      const targetLayer = layers.find((layer) => layer.key === targetLayerKey);
+      const nextStyle = targetLayer?.isSegmentation
+        ? nextSegmentationRenderStyle(currentStyle)
+        : nextRenderStyle(currentStyle);
       handleLayerRenderStyleChange(targetLayerKey, nextStyle);
     },
     [
       createLayerDefaultSettings,
       handleLayerRenderStyleChange,
       layerSettings,
+      layers,
       resolveRenderStyleTargetLayerKey
     ]
   );

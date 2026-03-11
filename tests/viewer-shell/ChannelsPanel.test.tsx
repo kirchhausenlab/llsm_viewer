@@ -29,12 +29,21 @@ const layer: LoadedDatasetLayer = {
   max: 255,
 };
 
+const segmentationLayer: LoadedDatasetLayer = {
+  ...layer,
+  key: 'layer-seg',
+  label: 'Segmentation Layer',
+  isSegmentation: true,
+  dataType: 'uint16',
+};
+
 type RenderStyleCall = { layerKey: string; renderStyle: number } | null;
 
 function createProps(
   renderStyle: number,
   onRenderStyleCall: (value: RenderStyleCall) => void,
   onVisibilityToggle: (channelId: string) => void = () => {},
+  selectedLayer: LoadedDatasetLayer = layer,
 ) {
   return {
     layout: {
@@ -53,11 +62,11 @@ function createProps(
     activeChannelId: 'channel-a',
     onChannelTabSelect: () => {},
     onChannelVisibilityToggle: () => {},
-    channelLayersMap: new Map([['channel-a', [layer]]]),
-    layerVolumesByKey: { 'layer-a': null },
-    layerBrickAtlasesByKey: { 'layer-a': null },
+    channelLayersMap: new Map([['channel-a', [selectedLayer]]]),
+    layerVolumesByKey: { [selectedLayer.key]: null },
+    layerBrickAtlasesByKey: { [selectedLayer.key]: null },
     layerSettings: {
-      'layer-a': {
+      [selectedLayer.key]: {
         ...createDefaultLayerSettings(),
         renderStyle,
       },
@@ -172,6 +181,51 @@ function findNodeByClassName(renderer: TestRenderer.ReactTestRenderer, className
   assert.equal(findBlInputs(renderer).length, 0);
   assert.equal(findMipInputs(renderer).length, 0);
   assert.equal(findButtonByLabel(renderer, 'Reset angles'), null);
+
+  renderer.unmount();
+})();
+
+(() => {
+  let renderStyleCall: RenderStyleCall = null;
+  const renderer = TestRenderer.create(
+    <ChannelsPanel
+      {...(createProps(
+        RENDER_STYLE_BL,
+        (value) => {
+          renderStyleCall = value;
+        },
+        () => {},
+        segmentationLayer,
+      ) as any)}
+    />,
+  );
+
+  const segmentation3dButton = findButtonByLabel(renderer, '3D');
+  const sliceButton = findButtonByLabel(renderer, 'Slice');
+
+  assert.ok(segmentation3dButton);
+  assert.ok(sliceButton);
+  assert.equal(findButtonByLabel(renderer, 'MIP'), null);
+  assert.equal(findButtonByLabel(renderer, 'ISO'), null);
+  assert.equal(findButtonByLabel(renderer, 'BL'), null);
+  assert.equal(segmentation3dButton?.props['aria-pressed'], true);
+  assert.equal(sliceButton?.props['aria-pressed'], false);
+
+  act(() => {
+    segmentation3dButton?.props.onClick();
+  });
+  assert.deepEqual(renderStyleCall, { layerKey: 'layer-seg', renderStyle: RENDER_STYLE_MIP });
+
+  act(() => {
+    sliceButton?.props.onClick();
+  });
+  assert.deepEqual(renderStyleCall, { layerKey: 'layer-seg', renderStyle: RENDER_STYLE_SLICE });
+
+  renderer.update(
+    <ChannelsPanel {...(createProps(RENDER_STYLE_SLICE, () => {}, () => {}, segmentationLayer) as any)} />,
+  );
+  assert.equal(findButtonByLabel(renderer, '3D')?.props['aria-pressed'], false);
+  assert.equal(findButtonByLabel(renderer, 'Slice')?.props['aria-pressed'], true);
 
   renderer.unmount();
 })();

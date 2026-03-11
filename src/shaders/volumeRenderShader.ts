@@ -74,6 +74,19 @@ export type HierarchyNodeExitArgs = {
   nodeMax: [number, number, number];
 };
 
+export type SegmentationFieldSampleArgs = {
+  labels: Uint16Array;
+  size: [number, number, number];
+  texcoords: [number, number, number];
+  samplingMode: 'linear' | 'nearest';
+};
+
+export type SegmentationNearestLabelArgs = {
+  labels: Uint16Array;
+  size: [number, number, number];
+  texcoords: [number, number, number];
+};
+
 function normalizeWindowValue(value: number, windowMin: number, windowMax: number): number {
   const range = Math.max(windowMax - windowMin, 1e-5);
   const normalized = (value - windowMin) / range;
@@ -309,6 +322,90 @@ export function computeHierarchyNodeExitCpu(args: HierarchyNodeExitArgs): number
   return exitSteps;
 }
 
+function segmentationLabelAtVoxelCpu(
+  labels: Uint16Array,
+  size: [number, number, number],
+  voxelCoords: [number, number, number],
+): number {
+  const safeSize: [number, number, number] = [
+    clampAtLeastOne(size[0]),
+    clampAtLeastOne(size[1]),
+    clampAtLeastOne(size[2]),
+  ];
+  const x = Math.min(Math.max(Math.floor(voxelCoords[0]), 0), safeSize[0] - 1);
+  const y = Math.min(Math.max(Math.floor(voxelCoords[1]), 0), safeSize[1] - 1);
+  const z = Math.min(Math.max(Math.floor(voxelCoords[2]), 0), safeSize[2] - 1);
+  const index = x + safeSize[0] * (y + safeSize[1] * z);
+  return labels[index] ?? 0;
+}
+
+export function sampleSegmentationNearestLabelCpu(args: SegmentationNearestLabelArgs): number {
+  const safeTexcoords: [number, number, number] = [
+    clampUnit(Number.isFinite(args.texcoords[0]) ? args.texcoords[0] : 0),
+    clampUnit(Number.isFinite(args.texcoords[1]) ? args.texcoords[1] : 0),
+    clampUnit(Number.isFinite(args.texcoords[2]) ? args.texcoords[2] : 0),
+  ];
+  const safeSize: [number, number, number] = [
+    clampAtLeastOne(args.size[0]),
+    clampAtLeastOne(args.size[1]),
+    clampAtLeastOne(args.size[2]),
+  ];
+  return segmentationLabelAtVoxelCpu(args.labels, safeSize, [
+    Math.floor(safeTexcoords[0] * safeSize[0]),
+    Math.floor(safeTexcoords[1] * safeSize[1]),
+    Math.floor(safeTexcoords[2] * safeSize[2]),
+  ]);
+}
+
+export function sampleSegmentationOccupancyCpu(args: SegmentationFieldSampleArgs): number {
+  if (args.samplingMode === 'nearest') {
+    return sampleSegmentationNearestLabelCpu(args) > 0 ? 1 : 0;
+  }
+
+  const safeTexcoords: [number, number, number] = [
+    clampUnit(Number.isFinite(args.texcoords[0]) ? args.texcoords[0] : 0),
+    clampUnit(Number.isFinite(args.texcoords[1]) ? args.texcoords[1] : 0),
+    clampUnit(Number.isFinite(args.texcoords[2]) ? args.texcoords[2] : 0),
+  ];
+  const safeSize: [number, number, number] = [
+    clampAtLeastOne(args.size[0]),
+    clampAtLeastOne(args.size[1]),
+    clampAtLeastOne(args.size[2]),
+  ];
+  const linearVoxel: [number, number, number] = [
+    safeTexcoords[0] * safeSize[0] - 0.5,
+    safeTexcoords[1] * safeSize[1] - 0.5,
+    safeTexcoords[2] * safeSize[2] - 0.5,
+  ];
+  const baseVoxel: [number, number, number] = [
+    Math.floor(linearVoxel[0]),
+    Math.floor(linearVoxel[1]),
+    Math.floor(linearVoxel[2]),
+  ];
+  const frac: [number, number, number] = [
+    clampUnit(linearVoxel[0] - baseVoxel[0]),
+    clampUnit(linearVoxel[1] - baseVoxel[1]),
+    clampUnit(linearVoxel[2] - baseVoxel[2]),
+  ];
+  let occupancy = 0;
+  for (let dz = 0; dz <= 1; dz += 1) {
+    for (let dy = 0; dy <= 1; dy += 1) {
+      for (let dx = 0; dx <= 1; dx += 1) {
+        const label = segmentationLabelAtVoxelCpu(args.labels, safeSize, [
+          baseVoxel[0] + dx,
+          baseVoxel[1] + dy,
+          baseVoxel[2] + dz,
+        ]);
+        const wx = dx === 0 ? 1 - frac[0] : frac[0];
+        const wy = dy === 0 ? 1 - frac[1] : frac[1];
+        const wz = dz === 0 ? 1 - frac[2] : frac[2];
+        occupancy += (label > 0 ? 1 : 0) * wx * wy * wz;
+      }
+    }
+  }
+  return occupancy;
+}
+
 type VolumeUniforms = {
   u_size: { value: Vector3 };
   u_renderstyle: { value: number };
@@ -533,6 +630,7 @@ const volumeRenderFragmentShader = /* glsl */ `
     const int MAX_SEGMENTATION_STEPS = 4096;
     const int MAX_SKIP_HIERARCHY_LEVELS = 12;
     const int REFINEMENT_STEPS = 4;
+    const int SEGMENTATION_SURFACE_REFINEMENT_STEPS = 5;
     const float NEAREST_DDA_CLOSEUP_MAX_FOOTPRINT = 0.85;
     const float NEAREST_DDA_ADVANCE_EPSILON = 1e-4;
     const float EPSILON = 1e-6;
@@ -1313,8 +1411,24 @@ const volumeRenderFragmentShader = /* glsl */ `
       );
     }
 
+    vec3 segmentation_sample_volume_size() {
+      if (u_brickAtlasEnabled > 0.5) {
+        return max(u_brickVolumeSize, vec3(1.0));
+      }
+      return max(u_size, vec3(1.0));
+    }
+
     float sample_segmentation_full_volume_label(vec3 texcoords) {
-      return decode_segmentation_label(texture(u_segmentationLabels, clamp(texcoords, vec3(0.0), vec3(1.0))));
+      vec3 safeTexcoords = clamp(texcoords, vec3(0.0), vec3(1.0));
+      vec3 safeVolumeSize = max(u_size, vec3(1.0));
+      ivec3 labelTexel = ivec3(
+        clamp(
+          floor(safeTexcoords * safeVolumeSize),
+          vec3(0.0),
+          max(safeVolumeSize - vec3(1.0), vec3(0.0))
+        )
+      );
+      return decode_segmentation_label(texelFetch(u_segmentationLabels, labelTexel, 0));
     }
 
     float sample_segmentation_label_at_voxel(vec3 voxelCoords) {
@@ -1334,6 +1448,128 @@ const volumeRenderFragmentShader = /* glsl */ `
         return sample_segmentation_brick_atlas_voxel(nearestVoxel);
       }
       return sample_segmentation_full_volume_label(safeTexcoords);
+    }
+
+    bool segmentation_texcoords_in_bounds(vec3 texcoords) {
+      return all(greaterThanEqual(texcoords, vec3(0.0))) && all(lessThanEqual(texcoords, vec3(1.0)));
+    }
+
+    float segmentation_label_to_occupancy(float labelValue) {
+      return labelValue > 0.5 ? 1.0 : 0.0;
+    }
+
+    float sample_segmentation_occupancy(vec3 texcoords) {
+      if (!segmentation_texcoords_in_bounds(texcoords)) {
+        return 0.0;
+      }
+      vec3 safeTexcoords = texcoords;
+      if (is_background_masked(safeTexcoords)) {
+        return 0.0;
+      }
+      if (u_nearestSampling > 0.5) {
+        return segmentation_label_to_occupancy(sample_segmentation_label(safeTexcoords));
+      }
+
+      vec3 sampleVolumeSize = segmentation_sample_volume_size();
+      vec3 linearVoxel = safeTexcoords * sampleVolumeSize - vec3(0.5);
+      vec3 baseVoxel = floor(linearVoxel);
+      vec3 frac = clamp(linearVoxel - baseVoxel, vec3(0.0), vec3(1.0));
+
+      vec3 voxel000 = baseVoxel + vec3(0.0, 0.0, 0.0);
+      vec3 voxel100 = baseVoxel + vec3(1.0, 0.0, 0.0);
+      vec3 voxel010 = baseVoxel + vec3(0.0, 1.0, 0.0);
+      vec3 voxel110 = baseVoxel + vec3(1.0, 1.0, 0.0);
+      vec3 voxel001 = baseVoxel + vec3(0.0, 0.0, 1.0);
+      vec3 voxel101 = baseVoxel + vec3(1.0, 0.0, 1.0);
+      vec3 voxel011 = baseVoxel + vec3(0.0, 1.0, 1.0);
+      vec3 voxel111 = baseVoxel + vec3(1.0, 1.0, 1.0);
+
+      float o000 = segmentation_label_to_occupancy(sample_segmentation_label_at_voxel(voxel000));
+      float o100 = segmentation_label_to_occupancy(sample_segmentation_label_at_voxel(voxel100));
+      float o010 = segmentation_label_to_occupancy(sample_segmentation_label_at_voxel(voxel010));
+      float o110 = segmentation_label_to_occupancy(sample_segmentation_label_at_voxel(voxel110));
+      float o001 = segmentation_label_to_occupancy(sample_segmentation_label_at_voxel(voxel001));
+      float o101 = segmentation_label_to_occupancy(sample_segmentation_label_at_voxel(voxel101));
+      float o011 = segmentation_label_to_occupancy(sample_segmentation_label_at_voxel(voxel011));
+      float o111 = segmentation_label_to_occupancy(sample_segmentation_label_at_voxel(voxel111));
+
+      float wx0 = 1.0 - frac.x;
+      float wy0 = 1.0 - frac.y;
+      float wz0 = 1.0 - frac.z;
+      float wx1 = frac.x;
+      float wy1 = frac.y;
+      float wz1 = frac.z;
+
+      return
+        o000 * wx0 * wy0 * wz0 +
+        o100 * wx1 * wy0 * wz0 +
+        o010 * wx0 * wy1 * wz0 +
+        o110 * wx1 * wy1 * wz0 +
+        o001 * wx0 * wy0 * wz1 +
+        o101 * wx1 * wy0 * wz1 +
+        o011 * wx0 * wy1 * wz1 +
+        o111 * wx1 * wy1 * wz1;
+    }
+
+    vec3 segmentation_surface_gradient(vec3 texcoords) {
+      vec3 delta = vec3(0.75) / segmentation_sample_volume_size();
+      float negX = sample_segmentation_occupancy(texcoords - vec3(delta.x, 0.0, 0.0));
+      float posX = sample_segmentation_occupancy(texcoords + vec3(delta.x, 0.0, 0.0));
+      float negY = sample_segmentation_occupancy(texcoords - vec3(0.0, delta.y, 0.0));
+      float posY = sample_segmentation_occupancy(texcoords + vec3(0.0, delta.y, 0.0));
+      float negZ = sample_segmentation_occupancy(texcoords - vec3(0.0, 0.0, delta.z));
+      float posZ = sample_segmentation_occupancy(texcoords + vec3(0.0, 0.0, delta.z));
+      return vec3(posX - negX, posY - negY, posZ - negZ);
+    }
+
+    vec3 segmentation_surface_normal(vec3 texcoords, vec3 view_ray) {
+      vec3 gradient = segmentation_surface_gradient(texcoords);
+      float gradientMagnitude = length(gradient);
+      if (gradientMagnitude <= EPSILON) {
+        return vec3(0.0);
+      }
+      vec3 V = normalize(view_ray);
+      if (length(V) <= EPSILON) {
+        V = vec3(0.0, 0.0, 1.0);
+      }
+      vec3 N = normalize(-gradient);
+      if (dot(N, V) < 0.0) {
+        N = -N;
+      }
+      return N;
+    }
+
+    vec3 segmentation_refine_surface_hit(vec3 outsideLoc, vec3 insideLoc) {
+      vec3 low = clamp(outsideLoc, vec3(0.0), vec3(1.0));
+      vec3 high = clamp(insideLoc, vec3(0.0), vec3(1.0));
+      for (int refineIndex = 0; refineIndex < SEGMENTATION_SURFACE_REFINEMENT_STEPS; refineIndex++) {
+        vec3 mid = mix(low, high, 0.5);
+        if (sample_segmentation_occupancy(mid) > 0.5) {
+          high = mid;
+        } else {
+          low = mid;
+        }
+      }
+      return high;
+    }
+
+    float resolve_segmentation_surface_label(vec3 hitLoc, vec3 step) {
+      vec3 stepDir = length(step) > EPSILON ? normalize(step) : vec3(0.0, 0.0, 1.0);
+      vec3 sampleVolumeSize = segmentation_sample_volume_size();
+      float insideNudge = max(
+        length(step) * 1.5,
+        0.75 / max(max(sampleVolumeSize.x, sampleVolumeSize.y), sampleVolumeSize.z)
+      );
+      vec3 insideLoc = clamp(hitLoc + stepDir * insideNudge, vec3(0.0), vec3(1.0));
+      float label = sample_segmentation_label(insideLoc);
+      if (label <= 0.5) {
+        vec3 deeperLoc = clamp(hitLoc + stepDir * insideNudge * 2.0, vec3(0.0), vec3(1.0));
+        label = sample_segmentation_label(deeperLoc);
+      }
+      if (label <= 0.5) {
+        label = sample_segmentation_label(hitLoc);
+      }
+      return label;
     }
 
     vec4 sample_color_voxel(vec3 voxelCoord) {
@@ -1745,13 +1981,18 @@ const volumeRenderFragmentShader = /* glsl */ `
       vec3 step;
       vec3 start_loc;
 
-      if (u_nearestSampling > 0.5) {
-        vec3 nearestTraversalSize = u_isSegmentation > 0.5 ? resolve_nearest_sampling_volume_size() : u_size;
-        int maxRaySteps = u_isSegmentation > 0.5 ? MAX_SEGMENTATION_STEPS : MAX_STEPS;
+      if (u_isSegmentation > 0.5) {
+        float safeStepScale = max(u_stepScale, 2.0);
+        nsteps = int(travelDistance * safeStepScale + 0.5);
+        nsteps = clamp(nsteps, 1, MAX_SEGMENTATION_STEPS);
+        step = ((back - front) / u_size) / float(nsteps);
+        start_loc = (front + vec3(0.5)) / u_size;
+      } else if (u_nearestSampling > 0.5) {
+        vec3 nearestTraversalSize = resolve_nearest_sampling_volume_size();
         vec3 frontCenter = floor(((front + vec3(0.5)) / u_size) * nearestTraversalSize);
         start_loc = (frontCenter + vec3(0.5)) / nearestTraversalSize;
         step = rayDir / nearestTraversalSize;
-        nsteps = clamp(int(travelDistance) + 1, 1, maxRaySteps);
+        nsteps = clamp(int(travelDistance) + 1, 1, MAX_STEPS);
       } else {
         float safeStepScale = max(u_stepScale, 1e-3);
         nsteps = int(travelDistance * safeStepScale + 0.5);
@@ -2089,6 +2330,9 @@ const volumeRenderFragmentShader = /* glsl */ `
       vec3 hitLoc = start_loc;
       float hitLabel = 0.0;
       bool hasHit = false;
+      vec3 lastOutsideLoc = start_loc;
+      bool hasOutsideSample = false;
+      int traversedSteps = 0;
       float hierarchyTraversalCacheValid = 0.0;
       vec3 hierarchyTraversalNodeMin = vec3(0.0);
       vec3 hierarchyTraversalNodeMax = vec3(0.0);
@@ -2097,52 +2341,15 @@ const volumeRenderFragmentShader = /* glsl */ `
       float hierarchyTraversalNodeIsoLowThreshold = -2.0;
       int hierarchyLevelCount = int(clamp(floor(u_skipHierarchyLevelCount + 0.5), 0.0, float(MAX_SKIP_HIERARCHY_LEVELS)));
       bool skipTraversalEnabled = u_brickSkipEnabled > 0.5 && hierarchyLevelCount > 0;
-      vec3 safeVolumeSize = resolve_nearest_sampling_volume_size();
-      vec3 invSafeVolumeSize = vec3(1.0) / safeVolumeSize;
-      vec3 startVoxelCoords = clamp(
-        start_loc * safeVolumeSize,
-        vec3(0.0),
-        max(safeVolumeSize - vec3(1e-4), vec3(0.0))
-      );
-      vec3 voxelStep = step * safeVolumeSize;
-      vec3 voxelCoords = floor(startVoxelCoords);
-      vec3 hierarchyTextureSize = max(u_skipHierarchyTextureSize, vec3(1.0));
-      vec3 hierarchyVolumeSize = max(u_brickVolumeSize, vec3(1.0));
-      vec3 hierarchyChunkSize = max(u_brickChunkSize, vec3(1.0));
-      vec3 hierarchyVoxelStep = step * hierarchyVolumeSize;
-      vec3 sampleToHierarchyScale = hierarchyVolumeSize * invSafeVolumeSize;
-      float traversedDistance = 0.0;
-      float axisStepX;
-      float axisStepY;
-      float axisStepZ;
-      float tMaxX;
-      float tMaxY;
-      float tMaxZ;
-      float tDeltaX;
-      float tDeltaY;
-      float tDeltaZ;
-      nearest_dda_init_axis(startVoxelCoords.x, voxelStep.x, axisStepX, tMaxX, tDeltaX);
-      nearest_dda_init_axis(startVoxelCoords.y, voxelStep.y, axisStepY, tMaxY, tDeltaY);
-      nearest_dda_init_axis(startVoxelCoords.z, voxelStep.z, axisStepZ, tMaxZ, tDeltaZ);
-      tMaxX += traversedDistance;
-      tMaxY += traversedDistance;
-      tMaxZ += traversedDistance;
       for (int guard = 0; guard < MAX_SEGMENTATION_STEPS; guard++) {
-        if (traversedDistance >= float(nsteps) - NEAREST_DDA_ADVANCE_EPSILON) {
+        if (traversedSteps >= nsteps) {
           break;
         }
-        if (!nearest_voxel_in_bounds(voxelCoords, safeVolumeSize)) {
-          break;
-        }
+        int stepAdvance = 1;
         if (skipTraversalEnabled) {
-          int stepAdvance = hierarchy_skip_step_advance_voxel(
-            voxelCoords,
-            sampleToHierarchyScale,
-            hierarchyVoxelStep,
-            hierarchyTextureSize,
-            hierarchyVolumeSize,
-            hierarchyChunkSize,
-            hierarchyLevelCount,
+          stepAdvance = hierarchy_skip_step_advance(
+            loc,
+            step,
             -1.0,
             -1.0,
             hierarchyTraversalCacheValid,
@@ -2152,71 +2359,27 @@ const volumeRenderFragmentShader = /* glsl */ `
             hierarchyTraversalNodeCurrentMax,
             hierarchyTraversalNodeIsoLowThreshold
           );
-          if (stepAdvance > 1) {
-            float targetT = min(traversedDistance + float(stepAdvance), float(nsteps));
-            nearest_dda_advance_to_target(
-              targetT,
-              voxelCoords,
-              axisStepX,
-              axisStepY,
-              axisStepZ,
-              tMaxX,
-              tMaxY,
-              tMaxZ,
-              tDeltaX,
-              tDeltaY,
-              tDeltaZ
-            );
-            traversedDistance = targetT;
-            continue;
-          }
         }
-        vec3 sampleTexcoords = (voxelCoords + vec3(0.5)) * invSafeVolumeSize;
-        if (is_background_masked(sampleTexcoords)) {
-          float nextBoundaryT = min(tMaxX, min(tMaxY, tMaxZ));
-          float targetT = (!(nextBoundaryT > traversedDistance + 1e-6) || nextBoundaryT >= LARGE * 0.5)
-            ? min(traversedDistance + 1.0, float(nsteps))
-            : min(nextBoundaryT + NEAREST_DDA_ADVANCE_EPSILON, float(nsteps));
-          nearest_dda_advance_to_target(
-            targetT,
-            voxelCoords,
-            axisStepX,
-            axisStepY,
-            axisStepZ,
-            tMaxX,
-            tMaxY,
-            tMaxZ,
-            tDeltaX,
-            tDeltaY,
-            tDeltaZ
-          );
-          traversedDistance = targetT;
+        if (stepAdvance > 1) {
+          lastOutsideLoc = clamp(loc + step * float(stepAdvance - 1), vec3(0.0), vec3(1.0));
+          hasOutsideSample = true;
+          loc += step * float(stepAdvance);
+          traversedSteps += stepAdvance;
           continue;
         }
-        hitLabel = sample_segmentation_label_at_voxel(voxelCoords);
-        if (hitLabel > 0.5) {
-          hasHit = true;
-          hitLoc = sampleTexcoords;
+
+        float occupancy = sample_segmentation_occupancy(loc);
+        if (occupancy > 0.5) {
+          hitLoc = hasOutsideSample ? segmentation_refine_surface_hit(lastOutsideLoc, loc) : loc;
+          hitLabel = resolve_segmentation_surface_label(hitLoc, step);
+          hasHit = hitLabel > 0.5;
           break;
         }
-        float nextBoundaryT = min(tMaxX, min(tMaxY, tMaxZ));
-        float targetT = (!(nextBoundaryT > traversedDistance + 1e-6) || nextBoundaryT >= LARGE * 0.5)
-          ? min(traversedDistance + 1.0, float(nsteps))
-          : min(nextBoundaryT + NEAREST_DDA_ADVANCE_EPSILON, float(nsteps));
-        nearest_dda_advance_to_target(
-          targetT,
-          voxelCoords,
-          axisStepX,
-          axisStepY,
-          axisStepZ,
-          tMaxX,
-          tMaxY,
-          tMaxZ,
-          tDeltaX,
-          tDeltaY,
-          tDeltaZ
-        );
-        traversedDistance = targetT;
+
+        lastOutsideLoc = loc;
+        hasOutsideSample = true;
+        loc += step;
+        traversedSteps += 1;
       }
 
       if (!hasHit) {
@@ -2225,6 +2388,18 @@ const volumeRenderFragmentShader = /* glsl */ `
       }
 
       vec4 color = segmentation_color_from_label(hitLabel);
+      vec3 V = normalize(view_ray);
+      if (length(V) <= EPSILON) {
+        V = vec3(0.0, 0.0, 1.0);
+      }
+      vec3 N = segmentation_surface_normal(hitLoc, view_ray);
+      if (length(N) > EPSILON) {
+        vec3 L = V;
+        vec3 H = normalize(L + V);
+        float lambertTerm = clamp(dot(N, L), 0.0, 1.0);
+        float specularTerm = pow(max(dot(H, N), 0.0), shininess);
+        color.rgb = color.rgb * (ambientStrength + diffuseStrength * lambertTerm) + specularTerm * specularColor;
+      }
       if (u_hoverActive > 0.5 && length(u_hoverScale) > 0.0) {
         float pulse = clamp(u_hoverPulse, 0.0, 1.0);
         bool segmentationHover = u_hoverSegmentationMode > 0.5;

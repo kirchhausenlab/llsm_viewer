@@ -105,6 +105,9 @@ export default function ChannelsPanel({
               const normalizedColor = normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR);
               const displayColor = normalizedColor.toUpperCase();
               const isActive = channelId === activeChannelId;
+              const segmentation3dActive = Boolean(
+                selectedLayer?.isSegmentation && settings.renderStyle !== RENDER_STYLE_SLICE,
+              );
               const invertDisabled = sliderDisabled || Boolean(selectedLayer?.isSegmentation);
               const invertTitle = selectedLayer?.isSegmentation
                 ? 'Invert LUT is unavailable for segmentation volumes.'
@@ -163,33 +166,47 @@ export default function ChannelsPanel({
                       </div>
                       <div className="channel-primary-actions">
                         <div className="channel-primary-actions-row" role="group" aria-label="Render style">
-                          <button
-                            type="button"
-                            className="channel-action-button"
-                            onClick={() => onLayerRenderStyleChange(selectedLayer.key, RENDER_STYLE_MIP)}
-                            disabled={renderStyleDisabled}
-                            aria-pressed={settings.renderStyle === RENDER_STYLE_MIP}
-                          >
-                            MIP
-                          </button>
-                          <button
-                            type="button"
-                            className="channel-action-button"
-                            onClick={() => onLayerRenderStyleChange(selectedLayer.key, RENDER_STYLE_ISO)}
-                            disabled={renderStyleDisabled}
-                            aria-pressed={settings.renderStyle === RENDER_STYLE_ISO}
-                          >
-                            ISO
-                          </button>
-                          <button
-                            type="button"
-                            className="channel-action-button"
-                            onClick={() => onLayerRenderStyleChange(selectedLayer.key, RENDER_STYLE_BL)}
-                            disabled={renderStyleDisabled}
-                            aria-pressed={settings.renderStyle === RENDER_STYLE_BL}
-                          >
-                            BL
-                          </button>
+                          {selectedLayer.isSegmentation ? (
+                            <button
+                              type="button"
+                              className="channel-action-button"
+                              onClick={() => onLayerRenderStyleChange(selectedLayer.key, RENDER_STYLE_MIP)}
+                              disabled={renderStyleDisabled}
+                              aria-pressed={segmentation3dActive}
+                            >
+                              3D
+                            </button>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                className="channel-action-button"
+                                onClick={() => onLayerRenderStyleChange(selectedLayer.key, RENDER_STYLE_MIP)}
+                                disabled={renderStyleDisabled}
+                                aria-pressed={settings.renderStyle === RENDER_STYLE_MIP}
+                              >
+                                MIP
+                              </button>
+                              <button
+                                type="button"
+                                className="channel-action-button"
+                                onClick={() => onLayerRenderStyleChange(selectedLayer.key, RENDER_STYLE_ISO)}
+                                disabled={renderStyleDisabled}
+                                aria-pressed={settings.renderStyle === RENDER_STYLE_ISO}
+                              >
+                                ISO
+                              </button>
+                              <button
+                                type="button"
+                                className="channel-action-button"
+                                onClick={() => onLayerRenderStyleChange(selectedLayer.key, RENDER_STYLE_BL)}
+                                disabled={renderStyleDisabled}
+                                aria-pressed={settings.renderStyle === RENDER_STYLE_BL}
+                              >
+                                BL
+                              </button>
+                            </>
+                          )}
                           <button
                             type="button"
                             className="channel-action-button"

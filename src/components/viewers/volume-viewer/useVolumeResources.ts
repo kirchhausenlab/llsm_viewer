@@ -215,11 +215,7 @@ const packedSegmentationTextureDataCache = new WeakMap<Uint16Array, Uint8Array>(
 function resolveSamplingModeForRenderStyle(
   samplingMode: 'linear' | 'nearest',
   renderStyle: RenderStyle,
-  isSegmentation = false,
 ): 'linear' | 'nearest' {
-  if (isSegmentation) {
-    return 'nearest';
-  }
   if (renderStyle === RENDER_STYLE_SLICE) {
     return 'nearest';
   }
@@ -230,6 +226,18 @@ function resolveLayerAdditiveEnabled(
   isAdditiveBlending: boolean,
 ): boolean {
   return isAdditiveBlending;
+}
+
+const SEGMENTATION_RENDER_ORDER_OFFSET = 100;
+
+function resolveLayerRenderOrder(
+  index: number,
+  layer: Pick<ManagedViewerLayer, 'isSegmentation' | 'renderStyle'>,
+): number {
+  if (layer.isSegmentation === true && layer.renderStyle !== RENDER_STYLE_SLICE) {
+    return index + SEGMENTATION_RENDER_ORDER_OFFSET;
+  }
+  return index;
 }
 
 function applyVolumeMaterialState(
@@ -3470,10 +3478,10 @@ export function useVolumeResources({
       const effectiveSamplingMode = resolveSamplingModeForRenderStyle(
         layer.samplingMode,
         layer.renderStyle,
-        Boolean(layer.isSegmentation),
       );
       const shouldDisableDirectVolumeBrickPageTableSampling =
-        preferDirectVolumeSampling && effectiveSamplingMode === 'linear';
+        layer.isSegmentation ||
+        (preferDirectVolumeSampling && effectiveSamplingMode === 'linear');
       const layerAdditiveEnabled = resolveLayerAdditiveEnabled(
         additiveBlendingRef.current,
       );
@@ -3595,7 +3603,7 @@ export function useVolumeResources({
 
           const mesh = new THREE.Mesh(geometry, material);
           mesh.visible = isPlaybackWarmup ? false : layer.visible;
-          mesh.renderOrder = index;
+          mesh.renderOrder = resolveLayerRenderOrder(index, layer);
           mesh.position.set(layer.offsetX, layer.offsetY, 0);
           assignVolumeMeshOnBeforeRender(mesh);
 
@@ -3692,6 +3700,11 @@ export function useVolumeResources({
                     disableBrickPageTableSampling: shouldDisableDirectVolumeBrickPageTableSampling,
                     isSegmentation: false,
                   }
+                : segmentationVolume
+                  ? {
+                      disableBrickPageTableSampling: true,
+                      isSegmentation: true,
+                    }
                 : undefined,
           );
           assignGpuResidencyUpdater({
@@ -3817,6 +3830,9 @@ export function useVolumeResources({
           }
           uniforms.u_cmdata.value = colormapTexture;
           uniforms.u_channels.value = channels;
+          if (uniforms.u_isSegmentation) {
+            uniforms.u_isSegmentation.value = layer.isSegmentation ? 1 : 0;
+          }
           uniforms.u_windowMin.value = layer.windowMin;
           uniforms.u_windowMax.value = layer.windowMax;
           uniforms.u_invert.value = layer.invert ? 1 : 0;
@@ -3841,7 +3857,7 @@ export function useVolumeResources({
           const mesh = new THREE.Mesh(geometry, material);
           mesh.position.set(layer.offsetX, layer.offsetY, clampedIndex);
           mesh.visible = isPlaybackWarmup ? false : layer.visible;
-          mesh.renderOrder = index;
+          mesh.renderOrder = resolveLayerRenderOrder(index, layer);
           const volumeRootGroup = volumeRootGroupRef.current;
           if (volumeRootGroup) {
             volumeRootGroup.add(mesh);
@@ -3929,7 +3945,7 @@ export function useVolumeResources({
           (isPlaybackWarmup || promotedFromWarmup) && !playbackPinnedResidency;
         resources.paletteTexture = segmentationPaletteTexture;
         mesh.visible = isPlaybackWarmup ? false : layer.visible;
-        mesh.renderOrder = index;
+        mesh.renderOrder = resolveLayerRenderOrder(index, layer);
 
         const materialUniforms = (mesh.material as THREE.ShaderMaterial).uniforms as ShaderUniformMap;
         materialUniforms.u_channels.value = channels;
@@ -3937,6 +3953,9 @@ export function useVolumeResources({
         materialUniforms.u_windowMax.value = layer.windowMax;
         materialUniforms.u_invert.value = layer.invert ? 1 : 0;
         materialUniforms.u_cmdata.value = colormapTexture;
+        if (materialUniforms.u_isSegmentation) {
+          materialUniforms.u_isSegmentation.value = layer.isSegmentation ? 1 : 0;
+        }
         if (materialUniforms.u_additive) {
           materialUniforms.u_additive.value = layerAdditiveEnabled ? 1 : 0;
         }
@@ -4002,6 +4021,11 @@ export function useVolumeResources({
                     disableBrickPageTableSampling: shouldDisableDirectVolumeBrickPageTableSampling,
                     isSegmentation: false,
                   }
+                : segmentationVolume
+                  ? {
+                      disableBrickPageTableSampling: true,
+                      isSegmentation: true,
+                    }
                 : undefined
           );
           assignGpuResidencyUpdater({

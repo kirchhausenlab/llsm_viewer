@@ -33,22 +33,34 @@ const createLayer = (key: string, channelId: string): LoadedDatasetLayer => ({
   max: 255,
 });
 
-const layers = [createLayer('layer-a', 'channel-a'), createLayer('layer-b', 'channel-b')];
+const createSegmentationLayer = (key: string, channelId: string): LoadedDatasetLayer => ({
+  ...createLayer(key, channelId),
+  isSegmentation: true,
+  dataType: 'uint16',
+});
 
-function useLayerControlsHarness(initialRenderStyle: RenderStyle = RENDER_STYLE_MIP) {
+const defaultLayers = [createLayer('layer-a', 'channel-a'), createLayer('layer-b', 'channel-b')];
+
+function useLayerControlsHarness(
+  initialRenderStyle: RenderStyle = RENDER_STYLE_MIP,
+  harnessLayers: LoadedDatasetLayer[] = defaultLayers,
+) {
+  const sortedChannelIds = [...new Set(harnessLayers.map((layer) => layer.channelId))];
+  const channelNameEntries = sortedChannelIds.map((channelId) => [channelId, channelId]) as Array<[string, string]>;
+  const layerChannelEntries = harnessLayers.map((layer) => [layer.key, layer.channelId]) as Array<[string, string]>;
   const [layerSettings, setLayerSettings] = useState<Record<string, LayerSettings>>(() => ({
-    'layer-a': { ...createDefaultLayerSettings(), renderStyle: initialRenderStyle },
-    'layer-b': createDefaultLayerSettings(),
+    [harnessLayers[0]?.key ?? 'layer-a']: { ...createDefaultLayerSettings(), renderStyle: initialRenderStyle },
+    ...Object.fromEntries(
+      harnessLayers.slice(1).map((layer) => [layer.key, createDefaultLayerSettings()]),
+    ),
   }));
-  const [layerAutoThresholds, setLayerAutoThresholds] = useState<Record<string, number>>({
-    'layer-a': 0,
-    'layer-b': 0,
-  });
-  const [channelVisibility, setChannelVisibility] = useState<Record<string, boolean>>({
-    'channel-a': true,
-    'channel-b': true,
-  });
-  const [activeChannelTabId, setActiveChannelTabId] = useState<string | null>('channel-a');
+  const [layerAutoThresholds, setLayerAutoThresholds] = useState<Record<string, number>>(
+    () => Object.fromEntries(harnessLayers.map((layer) => [layer.key, 0])),
+  );
+  const [channelVisibility, setChannelVisibility] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(sortedChannelIds.map((channelId) => [channelId, true])),
+  );
+  const [activeChannelTabId, setActiveChannelTabId] = useState<string | null>(sortedChannelIds[0] ?? null);
   const [globalRenderStyle, setGlobalRenderStyle] = useState<RenderStyle>(RENDER_STYLE_MIP);
   const [globalSamplingMode, setGlobalSamplingMode] = useState<SamplingMode>('linear');
   const [globalBlDensityScale, setGlobalBlDensityScale] = useState(1);
@@ -58,7 +70,7 @@ function useLayerControlsHarness(initialRenderStyle: RenderStyle = RENDER_STYLE_
   const [globalMipEarlyExitThreshold, setGlobalMipEarlyExitThreshold] = useState(0.999);
 
   const controls = useLayerControls({
-    layers,
+    layers: harnessLayers,
     selectedIndex: 0,
     layerVolumes: {},
     layerPageTables: {},
@@ -73,15 +85,9 @@ function useLayerControlsHarness(initialRenderStyle: RenderStyle = RENDER_STYLE_
     setLayerSettings,
     setChannelVisibility,
     channelVisibility,
-    channelNameMap: new Map([
-      ['channel-a', 'Channel A'],
-      ['channel-b', 'Channel B'],
-    ]),
-    layerChannelMap: new Map([
-      ['layer-a', 'channel-a'],
-      ['layer-b', 'channel-b'],
-    ]),
-    loadedChannelIds: ['channel-a', 'channel-b'],
+    channelNameMap: new Map(channelNameEntries),
+    layerChannelMap: new Map(layerChannelEntries),
+    loadedChannelIds: sortedChannelIds,
     setActiveChannelTabId,
     setGlobalRenderStyle,
     setGlobalSamplingMode,
@@ -166,6 +172,34 @@ function useLayerControlsHarness(initialRenderStyle: RenderStyle = RENDER_STYLE_
   });
   assert.equal(hook.result.layerSettings['layer-a']?.renderStyle, RENDER_STYLE_MIP);
   assert.equal(hook.result.layerSettings['layer-b']?.renderStyle, RENDER_STYLE_MIP);
+
+  hook.unmount();
+})();
+
+(() => {
+  const segmentationLayers = [
+    createSegmentationLayer('layer-seg', 'channel-a'),
+    createLayer('layer-raw', 'channel-b'),
+  ];
+  const hook = renderHook(() => useLayerControlsHarness(RENDER_STYLE_ISO, segmentationLayers));
+
+  hook.act(() => {
+    hook.result.controls.handleLayerRenderStyleToggle('layer-seg');
+  });
+  assert.equal(hook.result.layerSettings['layer-seg']?.renderStyle, RENDER_STYLE_SLICE);
+  assert.equal(hook.result.globalRenderStyle, RENDER_STYLE_SLICE);
+
+  hook.act(() => {
+    hook.result.controls.handleLayerRenderStyleToggle('layer-seg');
+  });
+  assert.equal(hook.result.layerSettings['layer-seg']?.renderStyle, RENDER_STYLE_MIP);
+  assert.equal(hook.result.globalRenderStyle, RENDER_STYLE_MIP);
+
+  hook.act(() => {
+    hook.result.controls.handleLayerRenderStyleToggle();
+  });
+  assert.equal(hook.result.layerSettings['layer-seg']?.renderStyle, RENDER_STYLE_SLICE);
+  assert.equal(hook.result.layerSettings['layer-raw']?.renderStyle, RENDER_STYLE_MIP);
 
   hook.unmount();
 })();

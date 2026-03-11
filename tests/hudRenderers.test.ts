@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 
 import { renderVrTracksHud } from '../src/components/viewers/volume-viewer/vr/hudRenderersTracks.ts';
 import { renderVrChannelsHud } from '../src/components/viewers/volume-viewer/vr/hudRenderersChannels.ts';
+import {
+  RENDER_STYLE_BL,
+  RENDER_STYLE_SLICE,
+} from '../src/state/layerSettings.ts';
 import type {
   VrChannelsHud,
   VrChannelsInteractiveRegion,
@@ -13,13 +17,20 @@ import type {
 
 console.log('Starting hudRenderers tests');
 
-type MockCanvasContext = CanvasRenderingContext2D & { __roundRectCalls: number };
+type MockCanvasContext = CanvasRenderingContext2D & {
+  __roundRectCalls: number;
+  __fillTextCalls: string[];
+};
 
 function createMockCanvasContext(): MockCanvasContext {
   const target: Record<string, unknown> = {
     __roundRectCalls: 0,
+    __fillTextCalls: [],
     roundRect: () => {
       target.__roundRectCalls = ((target.__roundRectCalls as number) ?? 0) + 1;
+    },
+    fillText: (text: string) => {
+      (target.__fillTextCalls as string[]).push(text);
     },
     measureText: () => ({ width: 120 }),
     imageSmoothingEnabled: false,
@@ -41,7 +52,6 @@ function createMockCanvasContext(): MockCanvasContext {
     'save',
     'scale',
     'fillRect',
-    'fillText',
     'restore',
     'beginPath',
     'rect',
@@ -216,6 +226,90 @@ function createMockCanvasContext(): MockCanvasContext {
   assert.ok(typeof desiredHeight === 'number' && desiredHeight > hud.panelDisplayHeight);
   assert.deepStrictEqual(hud.regions, []);
   assert.equal(hud.hoverRegion, null);
+})();
+
+(() => {
+  const ctx = createMockCanvasContext();
+  const hoverRegion: VrChannelsInteractiveRegion = {
+    targetType: 'channels-render-style',
+    channelId: 'channel-1',
+    layerKey: 'layer-1',
+    bounds: { minX: 0, maxX: 1, minY: 0, maxY: 1 },
+  };
+
+  const hud = {
+    panelCanvas: { width: 1024, height: 1800 },
+    panelContext: ctx,
+    panelDisplayWidth: 1024,
+    panelDisplayHeight: 1800,
+    panelTexture: { needsUpdate: false },
+    pixelRatio: 1,
+    width: 1.4,
+    height: 1,
+    regions: [],
+    hoverRegion,
+  } as unknown as VrChannelsHud;
+
+  const state: VrChannelsState = {
+    channels: [
+      {
+        id: 'channel-1',
+        name: 'Channel 1',
+        visible: true,
+        activeLayerKey: 'layer-1',
+        layers: [
+          {
+            key: 'layer-1',
+            label: 'Layer 1',
+            hasData: true,
+            isGrayscale: true,
+            isSegmentation: true,
+            defaultWindow: { windowMin: 0, windowMax: 1 },
+            histogram: new Uint32Array([0, 1, 3, 2, 1]),
+            settings: {
+              sliderRange: 20,
+              minSliderIndex: 0,
+              maxSliderIndex: 20,
+              brightnessSliderIndex: 10,
+              contrastSliderIndex: 10,
+              windowMin: 0.15,
+              windowMax: 0.85,
+              color: '#ffffff',
+              xOffset: 0,
+              yOffset: 0,
+              renderStyle: RENDER_STYLE_BL,
+              blDensityScale: 1,
+              blBackgroundCutoff: 0.08,
+              blOpacityScale: 1,
+              blEarlyExitAlpha: 0.98,
+              mipEarlyExitThreshold: 0.999,
+              invert: false,
+              samplingMode: 'linear',
+            },
+          },
+        ],
+      },
+    ],
+    activeChannelId: 'channel-1',
+  };
+
+  renderVrChannelsHud(hud, state);
+
+  assert.ok(
+    ctx.__fillTextCalls.includes('Mode: 3D'),
+    'expected segmentation layers to expose a generic 3D mode label in the VR HUD',
+  );
+  assert.ok(!ctx.__fillTextCalls.includes('Render: BL'));
+  assert.ok(hud.regions.some((region) => region.targetType === 'channels-render-style'));
+
+  ctx.__fillTextCalls.length = 0;
+  state.channels[0]!.layers[0]!.settings.renderStyle = RENDER_STYLE_SLICE;
+  renderVrChannelsHud(hud, state);
+
+  assert.ok(
+    ctx.__fillTextCalls.includes('Mode: Slice'),
+    'expected segmentation layers to keep Slice mode visible in the VR HUD',
+  );
 })();
 
 (() => {

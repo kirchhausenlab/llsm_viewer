@@ -57,16 +57,23 @@ export function drawLayerToggleButtons(params: {
 
   const renderStyleDisabled = !selectedLayer.hasData;
   const samplingDisabled = renderStyleDisabled;
-  const renderStyleActive = selectedLayer.settings.renderStyle !== RENDER_STYLE_MIP;
+  const renderStyleActive = selectedLayer.isSegmentation
+    ? selectedLayer.settings.renderStyle !== RENDER_STYLE_SLICE
+    : selectedLayer.settings.renderStyle !== RENDER_STYLE_MIP;
   const samplingActive = selectedLayer.settings.samplingMode === 'nearest';
   const renderStyleLabel =
-    selectedLayer.settings.renderStyle === RENDER_STYLE_ISO
-      ? 'ISO'
-      : selectedLayer.settings.renderStyle === RENDER_STYLE_BL
-        ? 'BL'
-        : selectedLayer.settings.renderStyle === RENDER_STYLE_SLICE
-          ? 'Slice'
-        : 'MIP';
+    selectedLayer.isSegmentation
+      ? selectedLayer.settings.renderStyle === RENDER_STYLE_SLICE
+        ? 'Slice'
+        : '3D'
+      : selectedLayer.settings.renderStyle === RENDER_STYLE_ISO
+        ? 'ISO'
+        : selectedLayer.settings.renderStyle === RENDER_STYLE_BL
+          ? 'BL'
+          : selectedLayer.settings.renderStyle === RENDER_STYLE_SLICE
+            ? 'Slice'
+            : 'MIP';
+  const renderStylePrefix = selectedLayer.isSegmentation ? 'Mode' : 'Render';
 
   const renderX = paddingX;
   const samplingX = renderX + renderSamplingWidth + actionSpacing;
@@ -109,7 +116,11 @@ export function drawLayerToggleButtons(params: {
   ctx.textBaseline = 'middle';
   ctx.font = vrChannelsFont('600', VR_CHANNELS_FONT_SIZES.small);
   ctx.fillStyle = renderStyleDisabled ? '#7b8795' : '#f3f6fc';
-  ctx.fillText(`Render: ${renderStyleLabel}`, renderX + renderSamplingWidth / 2, currentY + actionButtonHeight / 2);
+  ctx.fillText(
+    `${renderStylePrefix}: ${renderStyleLabel}`,
+    renderX + renderSamplingWidth / 2,
+    currentY + actionButtonHeight / 2,
+  );
   ctx.fillStyle = samplingDisabled ? '#7b8795' : '#f3f6fc';
   ctx.fillText('Sampling mode', samplingX + renderSamplingWidth / 2, currentY + actionButtonHeight / 2);
   ctx.textAlign = 'left';
