@@ -6,6 +6,7 @@ import type {
   VoxelResolutionInput,
   VoxelResolutionUnit
 } from '../../types/voxelResolution';
+import ThemeModeToggle from '../app/ThemeModeToggle';
 import FrontPageHeader from './FrontPageHeader';
 import ExperimentConfiguration from './ExperimentConfiguration';
 import PreprocessedLoader, { type PreprocessedLoaderProps } from './PreprocessedLoader';
@@ -114,9 +115,11 @@ export default function FrontPage({
 
   const showReturnButton = frontPageMode !== 'initial' || preprocessedLoader.isOpen;
   const showLaunchViewerButton = frontPageMode !== 'initial' || preprocessedLoader.isOpen;
+  const showAboutFooter = frontPageMode === 'initial' && !preprocessedLoader.isOpen;
 
   return (
     <div className="app front-page-mode">
+      <ThemeModeToggle className="front-page-theme-toggle" />
       <div className="front-page">
         <div className={`front-page-card${isFrontPageLocked ? ' is-loading' : ''}`}>
           <FrontPageHeader
@@ -156,9 +159,6 @@ export default function FrontPage({
                 >
                   Load public experiments
                 </button>
-                <p className="channel-add-public-note">
-                  Try hosted reference datasets that stream on demand from the lab&apos;s public S3 bucket.
-                </p>
               </div>
             </div>
           ) : null}
@@ -319,6 +319,33 @@ export default function FrontPage({
             launchButtonEnabled={launchActions.launchButtonEnabled}
             launchButtonLaunchable={launchActions.launchButtonLaunchable}
           />
+          {showAboutFooter ? (
+            <footer className="front-page-about">
+              <p>
+                Developed by{' '}
+                <a href="https://github.com/josedacostafilho" target="_blank" rel="noreferrer">
+                  Jose Inacio Costa-Filho
+                </a>{' '}
+                in the{' '}
+                <a href="https://kirchhausen.hms.harvard.edu/" target="_blank" rel="noreferrer">
+                  Kirchhausen Lab
+                </a>
+                . Source code in{' '}
+                <a href="https://github.com/kirchhausenlab/llsm_viewer" target="_blank" rel="noreferrer">
+                  GitHub
+                </a>
+                . If you use Mirante4D in academic work, please cite{' '}
+                <a
+                  href="https://www.biorxiv.org/content/10.64898/2025.12.31.697247v2"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  SpatialDINO
+                </a>
+                .
+              </p>
+            </footer>
+          ) : null}
         </div>
         <WarningsWindow
           title="Cannot launch viewer"

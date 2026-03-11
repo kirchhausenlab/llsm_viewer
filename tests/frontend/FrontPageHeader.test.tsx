@@ -16,8 +16,7 @@ test('front page header hides return button when not needed', () => {
   );
 
   const buttons = renderer.root.findAllByType('button');
-  assert.equal(buttons.length, 1);
-  assert.equal(buttons[0].props.className, 'theme-mode-toggle front-page-theme-toggle');
+  assert.equal(buttons.length, 0);
 
   renderer.unmount();
 });
@@ -32,7 +31,7 @@ test('front page header shows return button when requested', () => {
     />
   );
 
-  const returnButton = renderer.root.findAllByType('button')[1];
+  const returnButton = renderer.root.findAllByType('button')[0];
   assert.ok(returnButton);
   assert.equal(returnButton.props.children, 'Return');
 

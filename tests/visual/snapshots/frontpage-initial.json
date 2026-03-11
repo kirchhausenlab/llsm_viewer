@@ -5,6 +5,53 @@
   },
   "children": [
     {
+      "type": "button",
+      "props": {
+        "type": "button",
+        "className": "theme-mode-toggle front-page-theme-toggle",
+        "aria-label": "Switch to light mode",
+        "title": "Switch to light mode"
+      },
+      "children": [
+        {
+          "type": "span",
+          "props": {
+            "aria-hidden": "true",
+            "className": "theme-mode-toggle__switch is-dark"
+          },
+          "children": [
+            {
+              "type": "span",
+              "props": {
+                "className": "theme-mode-toggle__thumb"
+              },
+              "children": [
+                {
+                  "type": "svg",
+                  "props": {
+                    "className": "theme-mode-toggle__icon",
+                    "viewBox": "0 0 24 24",
+                    "focusable": "false",
+                    "aria-hidden": "true"
+                  },
+                  "children": [
+                    {
+                      "type": "path",
+                      "props": {
+                        "d": "M14.25 4.25a7.5 7.5 0 1 0 5.5 12.6a6.75 6.75 0 1 1-5.5-12.6Z",
+                        "fill": "currentColor"
+                      },
+                      "children": null
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "type": "div",
       "props": {
         "className": "front-page"
@@ -48,55 +95,7 @@
                       "props": {
                         "className": "front-page-header-actions"
                       },
-                      "children": [
-                        {
-                          "type": "button",
-                          "props": {
-                            "type": "button",
-                            "className": "theme-mode-toggle front-page-theme-toggle",
-                            "aria-label": "Switch to light mode",
-                            "title": "Switch to light mode"
-                          },
-                          "children": [
-                            {
-                              "type": "span",
-                              "props": {
-                                "aria-hidden": "true",
-                                "className": "theme-mode-toggle__switch is-dark"
-                              },
-                              "children": [
-                                {
-                                  "type": "span",
-                                  "props": {
-                                    "className": "theme-mode-toggle__thumb"
-                                  },
-                                  "children": [
-                                    {
-                                      "type": "svg",
-                                      "props": {
-                                        "className": "theme-mode-toggle__icon",
-                                        "viewBox": "0 0 24 24",
-                                        "focusable": "false",
-                                        "aria-hidden": "true"
-                                      },
-                                      "children": [
-                                        {
-                                          "type": "path",
-                                          "props": {
-                                            "d": "M14.25 4.25a7.5 7.5 0 1 0 5.5 12.6a6.75 6.75 0 1 1-5.5-12.6Z",
-                                            "fill": "currentColor"
-                                          },
-                                          "children": null
-                                        }
-                                      ]
-                                    }
-                                  ]
-                                }
-                              ]
-                            }
-                          ]
-                        }
-                      ]
+                      "children": null
                     }
                   ]
                 }
@@ -146,16 +145,75 @@
                       "children": [
                         "Load public experiments"
                       ]
-                    },
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "footer",
+              "props": {
+                "className": "front-page-about"
+              },
+              "children": [
+                {
+                  "type": "p",
+                  "props": {},
+                  "children": [
+                    "Developed by",
+                    " ",
                     {
-                      "type": "p",
+                      "type": "a",
                       "props": {
-                        "className": "channel-add-public-note"
+                        "href": "https://github.com/josedacostafilho",
+                        "target": "_blank",
+                        "rel": "noreferrer"
                       },
                       "children": [
-                        "Try hosted reference datasets that stream on demand from the lab's public S3 bucket."
+                        "Jose Inacio Costa-Filho"
                       ]
-                    }
+                    },
+                    " ",
+                    "in the",
+                    " ",
+                    {
+                      "type": "a",
+                      "props": {
+                        "href": "https://kirchhausen.hms.harvard.edu/",
+                        "target": "_blank",
+                        "rel": "noreferrer"
+                      },
+                      "children": [
+                        "Kirchhausen Lab"
+                      ]
+                    },
+                    ". Source code in",
+                    " ",
+                    {
+                      "type": "a",
+                      "props": {
+                        "href": "https://github.com/kirchhausenlab/llsm_viewer",
+                        "target": "_blank",
+                        "rel": "noreferrer"
+                      },
+                      "children": [
+                        "GitHub"
+                      ]
+                    },
+                    ". If you use Mirante4D in academic work, please cite",
+                    " ",
+                    {
+                      "type": "a",
+                      "props": {
+                        "href": "https://www.biorxiv.org/content/10.64898/2025.12.31.697247v2",
+                        "target": "_blank",
+                        "rel": "noreferrer"
+                      },
+                      "children": [
+                        "SpatialDINO"
+                      ]
+                    },
+                    "."
                   ]
                 }
               ]

@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 test('@visual front page initial state', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Mirante4D' })).toBeVisible();
+  await expect(page.getByText('Developed by Jose Inacio Costa-Filho')).toBeVisible();
 
   await expect(page).toHaveScreenshot('frontpage-initial.png', {
     fullPage: true
@@ -49,7 +50,7 @@ test('@visual front page public experiments mode', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Load public experiments' }).click();
   await expect(page.getByRole('heading', { name: 'Load public experiments' })).toBeVisible();
-  await expect(page.getByText('Start with hosted datasets')).toBeVisible();
+  await expect(page.getByText('Visualize the experiments used in the SpatialDINO paper.')).toBeVisible();
 
   await expect(page).toHaveScreenshot('frontpage-public-experiments.png', {
     fullPage: true

@@ -4,6 +4,10 @@
   color: var(--text-primary);
 }
 
+.app.front-page-mode {
+  overflow: hidden;
+}
+
 .front-page-card,
 .floating-window,
 .viewer-top-menu-row,
@@ -114,13 +118,25 @@
 }
 
 .front-page {
-  align-items: flex-start;
-  padding: clamp(1.25rem, 3.2vw, 3rem);
+  --front-page-shell-gap: clamp(1rem, 2.1vw, 1.45rem);
+  --front-page-shell-gap-x: clamp(1rem, 2.6vw, 2rem);
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  padding:
+    max(var(--front-page-shell-gap), env(safe-area-inset-top))
+    max(var(--front-page-shell-gap-x), env(safe-area-inset-right))
+    max(var(--front-page-shell-gap), env(safe-area-inset-bottom))
+    max(var(--front-page-shell-gap-x), env(safe-area-inset-left));
+  overflow: hidden;
 }
 
 .front-page-card {
   max-width: min(1200px, 100%);
   margin: 0;
+  height: calc(100dvh - (max(var(--front-page-shell-gap), env(safe-area-inset-top)) + max(var(--front-page-shell-gap), env(safe-area-inset-bottom))));
+  max-height: calc(100dvh - (max(var(--front-page-shell-gap), env(safe-area-inset-top)) + max(var(--front-page-shell-gap), env(safe-area-inset-bottom))));
   padding: 1.5rem 1.6rem 1.75rem;
   border-radius: var(--radius-lg);
   border: 1px solid var(--panel-border-strong);
@@ -128,7 +144,10 @@
   color: var(--text-primary);
   backdrop-filter: none;
   box-shadow: var(--panel-shadow);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .front-page-header {
@@ -158,6 +177,13 @@
   flex: 0 0 auto;
 }
 
+.front-page-theme-toggle {
+  position: fixed;
+  top: max(var(--front-page-shell-gap, 1rem), env(safe-area-inset-top));
+  right: max(var(--front-page-shell-gap-x, 1rem), env(safe-area-inset-right));
+  z-index: 4;
+}
+
 .front-page-header h1 {
   font-size: var(--type-size-display);
   font-weight: var(--type-weight-display);
@@ -170,6 +196,36 @@
   font-size: var(--type-size-body);
   font-weight: var(--type-weight-body);
   color: var(--text-secondary);
+}
+
+.front-page-about {
+  margin-top: auto;
+  padding-top: 1rem;
+  border-top: 1px solid var(--panel-divider);
+}
+
+.front-page-about p {
+  margin: 0;
+  font-size: var(--type-size-meta);
+  font-weight: var(--type-weight-body);
+  line-height: var(--type-line-body);
+  color: var(--text-muted);
+}
+
+.front-page-about strong {
+  color: var(--text-secondary);
+}
+
+.front-page-about a {
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-decoration-color: var(--accent-border);
+  text-underline-offset: 0.14em;
+}
+
+.front-page-about a:hover {
+  color: var(--text-primary);
+  text-decoration-color: var(--control-border-strong);
 }
 
 .front-page-return-button {
@@ -290,6 +346,7 @@
 .preprocessed-summary-header h2,
 .preprocessed-summary-channel h3,
 .preprocessed-summary-layer-title,
+.public-experiment-card h3,
 .channel-tab-name,
 .channel-tab-title-row h3,
 .warning-window-intro,
@@ -317,6 +374,8 @@
 
 .front-page-header p,
 .preprocessed-loader-subtitle,
+.public-experiment-loader-subtitle,
+.public-experiment-card-description,
 .warning-window-message,
 .sidebar header p,
 .selected-tracks-empty,
@@ -363,6 +422,7 @@
 .preprocessed-summary-layer-range,
 .preprocessed-summary-tracks,
 .preprocessed-loader-status,
+.public-experiment-loader-status,
 .preprocessed-dropbox-config-hint,
 .hint,
 .track-empty-hint,
@@ -415,6 +475,18 @@
   text-transform: uppercase;
 }
 
+.public-experiment-card-pill {
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  font-size: var(--type-size-meta);
+  font-weight: var(--type-weight-strong);
+  letter-spacing: var(--type-tracking-overline);
+  line-height: var(--type-line-ui);
+  text-transform: uppercase;
+}
+
 .channel-tab,
 .channel-controls .channel-tab,
 .channel-tabs--header .channel-tab {
@@ -463,6 +535,7 @@
 .preprocessed-summary,
 .preprocessed-summary-item,
 .preprocessed-summary-layer,
+.public-experiment-card,
 .sidebar-panel {
   border-color: var(--panel-border);
   background: var(--panel-background-muted);

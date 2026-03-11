@@ -1,5 +1,4 @@
 import type { FC } from 'react';
-import ThemeModeToggle from '../app/ThemeModeToggle';
 
 type FrontPageHeaderProps = {
   title: string;
@@ -21,7 +20,6 @@ const FrontPageHeader: FC<FrontPageHeaderProps> = ({
           <h1>{title}</h1>
         </div>
         <div className="front-page-header-actions">
-          <ThemeModeToggle className="front-page-theme-toggle" />
           {showReturnButton ? (
             <button
               type="button"
