@@ -23,6 +23,7 @@ type UseViewerPanelWindowsResult = {
   openAmplitudePlot: () => void;
   closeAmplitudePlot: () => void;
   isPlotSettingsOpen: boolean;
+  openPlotSettings: () => void;
   closePlotSettings: () => void;
   isTrackSettingsOpen: boolean;
   openTrackSettings: () => void;
@@ -103,6 +104,14 @@ export function useViewerPanelWindows({
     setIsPlotSettingsOpen(true);
   }, [canShowPlotSettings]);
 
+  const openPlotSettings = useCallback(() => {
+    if (!canShowPlotSettings) {
+      return;
+    }
+    setIsAmplitudePlotOpen(true);
+    setIsPlotSettingsOpen(true);
+  }, [canShowPlotSettings]);
+
   const closeAmplitudePlot = useCallback(() => {
     setIsAmplitudePlotOpen(false);
     setIsPlotSettingsOpen(false);
@@ -170,6 +179,7 @@ export function useViewerPanelWindows({
     openAmplitudePlot,
     closeAmplitudePlot,
     isPlotSettingsOpen,
+    openPlotSettings,
     closePlotSettings,
     isTrackSettingsOpen,
     openTrackSettings,

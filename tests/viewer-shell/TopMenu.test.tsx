@@ -144,6 +144,7 @@ function createProps(overrides: Partial<React.ComponentProps<typeof TopMenu>> = 
     onOpenRenderSettingsWindow: () => {},
     onOpenTracksWindow: () => {},
     onOpenAmplitudePlotWindow: () => {},
+    onOpenPlotSettingsWindow: () => {},
     onOpenTrackSettingsWindow: () => {},
     onOpenDiagnosticsWindow: () => {},
     is3dModeAvailable: false,
@@ -224,7 +225,7 @@ test('top menu renders the requested dropdown order and items', () => {
       ['File', ['Save changes', 'Reset changes', 'Recenter windows', 'Diagnostics', 'Exit']],
       ['View', ['Channels window', 'Camera', 'Record', 'Background', 'Render settings', 'Hover settings']],
       ['Edit', ['Props', 'Paintbrush', 'Measure']],
-      ['Tracks', ['Tracks window', 'Amplitude plot', 'Tracks settings']],
+      ['Tracks', ['Tracks window', 'Amplitude plot', 'Plot settings', 'Tracks settings']],
       ['Help', ['About', 'Navigation controls']]
     ]);
 
@@ -254,6 +255,7 @@ test('wired dropdown items invoke the expected handlers', () => {
     let renderSettingsCalls = 0;
     let tracksCalls = 0;
     let amplitudePlotCalls = 0;
+    let plotSettingsCalls = 0;
     let trackSettingsCalls = 0;
     let diagnosticsCalls = 0;
     let helpCalls = 0;
@@ -282,6 +284,9 @@ test('wired dropdown items invoke the expected handlers', () => {
       },
       onOpenAmplitudePlotWindow: () => {
         amplitudePlotCalls += 1;
+      },
+      onOpenPlotSettingsWindow: () => {
+        plotSettingsCalls += 1;
       },
       onOpenTrackSettingsWindow: () => {
         trackSettingsCalls += 1;
@@ -365,6 +370,13 @@ test('wired dropdown items invoke the expected handlers', () => {
     });
 
     act(() => {
+      findDropdownTrigger(renderer, 'Tracks').props.onClick();
+    });
+    act(() => {
+      findMenuItem(renderer, 'Plot settings').props.onClick();
+    });
+
+    act(() => {
       findDropdownTrigger(renderer, 'Help').props.onClick();
     });
     act(() => {
@@ -379,6 +391,7 @@ test('wired dropdown items invoke the expected handlers', () => {
     assert.equal(renderSettingsCalls, 1);
     assert.equal(tracksCalls, 1);
     assert.equal(amplitudePlotCalls, 1);
+    assert.equal(plotSettingsCalls, 1);
     assert.equal(trackSettingsCalls, 1);
     assert.equal(diagnosticsCalls, 1);
     assert.equal(helpCalls, 1);

@@ -36,6 +36,7 @@ test('viewer panel window controls open and close the requested windows', () => 
     hook.result.openViewerSettings();
     hook.result.openTrackSettings();
     hook.result.openAmplitudePlot();
+    hook.result.openPlotSettings();
     hook.result.openPropsWindow();
     hook.result.openPaintbrush();
     hook.result.openDiagnosticsWindow();

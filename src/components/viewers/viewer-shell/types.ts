@@ -65,6 +65,7 @@ export type TopMenuProps = TopMenuChromeProps &
     onOpenRenderSettingsWindow: () => void;
     onOpenTracksWindow: () => void;
     onOpenAmplitudePlotWindow: () => void;
+    onOpenPlotSettingsWindow: () => void;
     onOpenTrackSettingsWindow: () => void;
     onOpenDiagnosticsWindow: () => void;
     is3dModeAvailable: boolean;

@@ -25,6 +25,7 @@
   --type-line-body: 1.5;
   --viewer-top-menu-bottom: 0px;
   --page-background: #08111b;
+  --viewer-render-background: #040607;
   --app-background:
     radial-gradient(circle at 18% 10%, rgba(111, 143, 192, 0.18), transparent 30%),
     radial-gradient(circle at 84% 10%, rgba(80, 108, 163, 0.16), transparent 28%),
@@ -101,6 +102,7 @@
 :root[data-theme='light'] {
   color-scheme: light;
   --page-background: #f3ead8;
+  --viewer-render-background: #ffffff;
   --app-background:
     radial-gradient(circle at 18% 10%, rgba(201, 166, 101, 0.16), transparent 28%),
     radial-gradient(circle at 84% 8%, rgba(223, 197, 147, 0.22), transparent 30%),

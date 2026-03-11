@@ -41,6 +41,7 @@ export default function TopMenu(props: TopMenuProps) {
     onOpenRenderSettingsWindow,
     onOpenTracksWindow,
     onOpenAmplitudePlotWindow,
+    onOpenPlotSettingsWindow,
     onOpenTrackSettingsWindow,
     onOpenDiagnosticsWindow,
     is3dModeAvailable,
@@ -148,6 +149,7 @@ export default function TopMenu(props: TopMenuProps) {
       tracks: [
         { label: 'Tracks window', onSelect: onOpenTracksWindow },
         { label: 'Amplitude plot', onSelect: onOpenAmplitudePlotWindow },
+        { label: 'Plot settings', onSelect: onOpenPlotSettingsWindow },
         { label: 'Tracks settings', onSelect: onOpenTrackSettingsWindow }
       ],
       help: [
@@ -160,6 +162,7 @@ export default function TopMenu(props: TopMenuProps) {
       onOpenChannelsWindow,
       onOpenDiagnosticsWindow,
       onOpenPaintbrush,
+      onOpenPlotSettingsWindow,
       onOpenPropsWindow,
       onOpenRenderSettingsWindow,
       onOpenTrackSettingsWindow,
