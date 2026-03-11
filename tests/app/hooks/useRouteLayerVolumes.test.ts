@@ -258,14 +258,153 @@ await (async () => {
     { layerKey: 'layer-a', timeIndex: 0 },
     { layerKey: 'layer-b', timeIndex: 0 },
   ]);
-  assert.deepStrictEqual(getPageTableCalls, [
-    { layerKey: 'layer-a', timeIndex: 0 },
-    { layerKey: 'layer-b', timeIndex: 0 },
-  ]);
+  assert.deepStrictEqual(getPageTableCalls, []);
   assert.ok(hook.result.currentLayerVolumes['layer-a']);
   assert.ok(hook.result.currentLayerVolumes['layer-b']);
-  assert.ok(hook.result.currentLayerPageTables['layer-a']);
-  assert.ok(hook.result.currentLayerPageTables['layer-b']);
+  assert.strictEqual(hook.result.currentLayerPageTables['layer-a'], null);
+  assert.strictEqual(hook.result.currentLayerPageTables['layer-b'], null);
+  hook.unmount();
+})();
+
+await (async () => {
+  const startedLayerKeys: string[] = [];
+  const progressCalls: Array<{ loadedCount: number; totalCount: number }> = [];
+  const resolvers = new Map<string, () => void>();
+  let completeLaunchCalls = 0;
+
+  const provider = {
+    getVolume: (layerKey: string, timeIndex: number) =>
+      new Promise<NormalizedVolume>((resolve) => {
+        startedLayerKeys.push(layerKey);
+        resolvers.set(layerKey, () => resolve(createVolume(timeIndex + (layerKey === 'layer-a' ? 1 : 10))));
+      })
+  } as unknown as VolumeProvider;
+
+  const hook = renderHook(() =>
+    useRouteLayerVolumes({
+      isViewerLaunched: false,
+      isLaunchingViewer: false,
+      preprocessedExperiment: {} as StagedPreprocessedExperiment,
+      volumeProvider: provider,
+      loadedChannelIds: ['channel-a', 'channel-b'],
+      channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
+        ['channel-a', [createLoadedLayer('layer-a', 'channel-a')]],
+        ['channel-b', [createLoadedLayer('layer-b', 'channel-b')]],
+      ]),
+      channelVisibility: { 'channel-a': true, 'channel-b': true },
+      layerChannelMap: new Map<string, string>([
+        ['layer-a', 'channel-a'],
+        ['layer-b', 'channel-b'],
+      ]),
+      preferBrickResidency: false,
+      volumeTimepointCount: 3,
+      selectedIndex: 0,
+      clearDatasetError: () => {},
+      beginLaunchSession: () => {},
+      setLaunchExpectedVolumeCount: () => {},
+      setLaunchProgress: (options) => {
+        progressCalls.push(options);
+      },
+      completeLaunchSession: () => {
+        completeLaunchCalls += 1;
+      },
+      failLaunchSession: () => {
+        throw new Error('Launch should not fail in this test');
+      },
+      finishLaunchSessionAttempt: () => {},
+      setSelectedIndex: () => {},
+      setIsPlaying: () => {},
+      showLaunchError: () => {
+        throw new Error('showLaunchError should not be called in this test');
+      },
+    }),
+  );
+
+  let launchPromise: Promise<void> | null = null;
+  await hook.act(async () => {
+    launchPromise = hook.result.handleLaunchViewer();
+    await Promise.resolve();
+  });
+
+  assert.deepStrictEqual([...startedLayerKeys].sort(), ['layer-a', 'layer-b']);
+  assert.strictEqual(completeLaunchCalls, 0);
+
+  await hook.act(async () => {
+    resolvers.get('layer-b')?.();
+    await Promise.resolve();
+  });
+
+  assert.deepStrictEqual(progressCalls, [{ loadedCount: 1, totalCount: 2 }]);
+  assert.strictEqual(completeLaunchCalls, 0);
+
+  await hook.act(async () => {
+    resolvers.get('layer-a')?.();
+    await launchPromise;
+  });
+
+  assert.deepStrictEqual(progressCalls, [
+    { loadedCount: 1, totalCount: 2 },
+    { loadedCount: 2, totalCount: 2 },
+  ]);
+  assert.strictEqual(completeLaunchCalls, 1);
+  hook.unmount();
+})();
+
+await (async () => {
+  const getVolumeCalls: Array<{ layerKey: string; timeIndex: number }> = [];
+  let launchExpectedVolumeCount = -1;
+
+  const provider = {
+    getVolume: async (layerKey: string, timeIndex: number) => {
+      getVolumeCalls.push({ layerKey, timeIndex });
+      return createVolume(timeIndex + 1);
+    }
+  } as unknown as VolumeProvider;
+
+  const hook = renderHook(() =>
+    useRouteLayerVolumes({
+      isViewerLaunched: false,
+      isLaunchingViewer: false,
+      preprocessedExperiment: {} as StagedPreprocessedExperiment,
+      volumeProvider: provider,
+      loadedChannelIds: ['channel-a', 'channel-b'],
+      channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
+        ['channel-a', [createLoadedLayer('layer-a', 'channel-a')]],
+        ['channel-b', [createLoadedLayer('layer-b', 'channel-b')]],
+      ]),
+      channelVisibility: { 'channel-a': true, 'channel-b': false },
+      layerChannelMap: new Map<string, string>([
+        ['layer-a', 'channel-a'],
+        ['layer-b', 'channel-b'],
+      ]),
+      preferBrickResidency: false,
+      volumeTimepointCount: 3,
+      selectedIndex: 0,
+      clearDatasetError: () => {},
+      beginLaunchSession: () => {},
+      setLaunchExpectedVolumeCount: (count) => {
+        launchExpectedVolumeCount = count;
+      },
+      setLaunchProgress: () => {},
+      completeLaunchSession: () => {},
+      failLaunchSession: () => {
+        throw new Error('Launch should not fail in this test');
+      },
+      finishLaunchSessionAttempt: () => {},
+      setSelectedIndex: () => {},
+      setIsPlaying: () => {},
+      showLaunchError: () => {
+        throw new Error('showLaunchError should not be called in this test');
+      },
+    }),
+  );
+
+  await hook.act(async () => {
+    await hook.result.handleLaunchViewer();
+  });
+
+  assert.strictEqual(launchExpectedVolumeCount, 1);
+  assert.deepStrictEqual(getVolumeCalls, [{ layerKey: 'layer-a', timeIndex: 0 }]);
   hook.unmount();
 })();
 
@@ -1366,10 +1505,8 @@ await (async () => {
     await hook.result.handleLaunchViewer();
   });
 
-  assert.deepStrictEqual(getBackgroundMaskCalls, [1, 2]);
-  assert.equal(hook.result.currentBackgroundMasksByScale[1]?.scaleLevel, 1);
-  assert.equal(hook.result.currentBackgroundMasksByScale[2]?.scaleLevel, 2);
-  assert.equal(hook.result.currentBackgroundMasksByScale[0], undefined);
+  assert.deepStrictEqual(getBackgroundMaskCalls, []);
+  assert.deepStrictEqual(hook.result.currentBackgroundMasksByScale, {});
   hook.unmount();
 })();
 
