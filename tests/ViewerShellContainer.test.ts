@@ -90,6 +90,7 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
     layout: {
       resetToken: 0,
       viewerSettingsWindowInitialPosition: { x: 0, y: 0 },
+      recordWindowInitialPosition: { x: 0, y: 0 },
       layersWindowInitialPosition: { x: 0, y: 0 },
       paintbrushWindowInitialPosition: { x: 0, y: 0 },
       propsWindowInitialPosition: { x: 0, y: 0 },

@@ -125,6 +125,20 @@
   gap: 0.5rem;
 }
 
+.channel-controls .channel-render-mode-control {
+  display: flex;
+  flex: 1 1 100%;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.channel-controls .channel-render-mode-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.72);
+}
+
 .channel-controls .channel-primary-actions-row .channel-action-button {
   flex: 1 1 calc((100% - 1rem) / 3);
   min-width: 0;
@@ -142,15 +156,35 @@
   transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
 }
 
+.channel-controls .channel-render-mode-select {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.5rem;
+  padding: 0.55rem 0.85rem;
+  background: rgba(12, 16, 24, 0.75);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+}
+
 .channel-controls .channel-action-button:not(:disabled):hover,
-.channel-controls .channel-action-button:not(:disabled):focus-visible {
+.channel-controls .channel-action-button:not(:disabled):focus-visible,
+.channel-controls .channel-render-mode-select:not(:disabled):hover,
+.channel-controls .channel-render-mode-select:not(:disabled):focus-visible {
   border-color: rgba(91, 140, 255, 0.7);
   background: rgba(91, 140, 255, 0.18);
   color: rgba(255, 255, 255, 0.95);
+}
+
+.channel-controls .channel-action-button:not(:disabled):hover,
+.channel-controls .channel-action-button:not(:disabled):focus-visible {
   transform: translateY(-1px);
 }
 
-.channel-controls .channel-action-button:disabled {
+.channel-controls .channel-action-button:disabled,
+.channel-controls .channel-render-mode-select:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;
@@ -337,6 +371,7 @@
 
 .channel-controls .color-picker-trigger {
   position: relative;
+  flex: 0 0 auto;
   width: 1.75rem;
   height: 1.75rem;
   border-radius: 0.45rem;
@@ -345,7 +380,6 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  margin-left: auto;
   cursor: pointer;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }

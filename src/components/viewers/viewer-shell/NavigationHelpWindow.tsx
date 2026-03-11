@@ -1,7 +1,7 @@
 import FloatingWindow from '../../widgets/FloatingWindow';
 import type { Position } from './types';
 
-const NAVIGATION_HELP_WINDOW_HEIGHT = 360;
+const NAVIGATION_HELP_WINDOW_HEIGHT = 440;
 
 interface NavigationHelpWindowProps {
   isOpen: boolean;
@@ -33,17 +33,27 @@ function NavigationHelpWindow({
       onClose={onClose}
     >
       <div className="navigation-help-window">
-        <h3 className="navigation-help-window__title">Viewer tips</h3>
+        <h3 className="navigation-help-window__title">Desktop viewer</h3>
         <div className="viewer-top-menu-popover-section">
-          <h4>3D volume view</h4>
+          <h4>Navigation</h4>
           <ul>
-            <li>Use WASD with Space/C to move forward, back, strafe, and rise or descend.</li>
-            <li>Press Q/E to roll the camera counterclockwise/clockwise.</li>
-            <li>Drag to orbit the dataset.</li>
-            <li>
-              Click a track line to select and highlight it. Use the Follow button in the Tracks window to follow that object
-              in time.
-            </li>
+            <li>Left-click and drag to look around the volume.</li>
+            <li>Scroll to zoom in or out.</li>
+            <li>Use the arrow keys to look left, right, up, and down.</li>
+            <li>Use W/A/S/D to move. Press Space to rise and C to descend.</li>
+            <li>Hold Shift to move faster.</li>
+            <li>Press Q/E to roll the camera counterclockwise or clockwise.</li>
+            <li>Use Reset view in the top bar to restore the default camera.</li>
+          </ul>
+        </div>
+        <div className="viewer-top-menu-popover-section">
+          <h4>Selection and follow</h4>
+          <ul>
+            <li>Click a track line to select and highlight it.</li>
+            <li>Use Follow in the Tracks window to keep the camera on a selected track over time.</li>
+            <li>Double-click a hovered voxel to follow that point in the volume.</li>
+            <li>While following a target, drag or use the arrow keys to orbit around it.</li>
+            <li>W/A/S/D, Space, C, and Shift movement are disabled while following.</li>
           </ul>
         </div>
       </div>

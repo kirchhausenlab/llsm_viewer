@@ -45,6 +45,10 @@
   z-index: 18;
 }
 
+.floating-window--record {
+  z-index: 18;
+}
+
 .floating-window--props {
   z-index: 19;
 }

@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import {
   computeSkipHierarchyNodeBoundsCpu,
   computeHierarchyNodeExitCpu,
+  initializeNearestDdaAxisCpu,
+  resolveNearestEntryStartCpu,
+  sampleSegmentationNearestLabelCpu,
+  sampleSegmentationOccupancyCpu,
   shouldSkipWithBrickStatsCpu,
   VolumeRenderShaderVariants,
 } from '../src/shaders/volumeRenderShader.ts';
@@ -101,11 +105,31 @@ function createPrng(seed: number): () => number {
   );
   assert.match(
     nearestShader,
-    /int maxRaySteps = u_isSegmentation > 0\.5 \? MAX_SEGMENTATION_STEPS : MAX_STEPS;/,
+    /bool segmentation_texcoords_in_bounds\(vec3 texcoords\)/,
   );
   assert.match(
     nearestShader,
-    /vec3 nearestTraversalSize = u_isSegmentation > 0\.5 \? resolve_nearest_sampling_volume_size\(\) : u_size;/,
+    /float sample_segmentation_occupancy\(vec3 texcoords\)/,
+  );
+  assert.match(
+    nearestShader,
+    /vec3 resolve_nearest_entry_voxel_coords\(vec3 front, vec3 traversalSize, vec3 rayDir\)/,
+  );
+  assert.match(
+    nearestShader,
+    /vec3 nearestEntryVoxelCoords = resolve_nearest_entry_voxel_coords\(\s*front,\s*nearestTraversalSize,\s*rayDir\s*\);/s,
+  );
+  assert.match(
+    nearestShader,
+    /if \(!segmentation_texcoords_in_bounds\(texcoords\)\) \{\s*return 0\.0;\s*\}/s,
+  );
+  assert.match(
+    nearestShader,
+    /vec3 segmentation_refine_surface_hit\(vec3 outsideLoc, vec3 insideLoc\)/,
+  );
+  assert.match(
+    nearestShader,
+    /float resolve_segmentation_surface_label\(vec3 hitLoc, vec3 step\)/,
   );
   assert.match(
     nearestShader,
@@ -133,8 +157,36 @@ function createPrng(seed: number): () => number {
   );
   assert.match(
     nearestShader,
-    /void cast_segmentation\(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray\) \{[\s\S]*for \(int guard = 0; guard < MAX_SEGMENTATION_STEPS; guard\+\+\)/,
+    /void cast_segmentation\(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray\) \{[\s\S]*float occupancy = sample_segmentation_occupancy\(loc\);[\s\S]*hitLabel = resolve_segmentation_surface_label\(hitLoc, step\);/s,
   );
+  assert.match(
+    nearestShader,
+    /if \(gradientMagnitude <= EPSILON\) \{\s*return vec3\(0\.0\);\s*\}/s,
+  );
+})();
+
+(() => {
+  const start = resolveNearestEntryStartCpu({
+    front: [1.4, 0, 0],
+    size: [8, 1, 1],
+    traversalSize: [4, 1, 1],
+    rayDir: [1, 0, 0],
+  });
+  assert.ok(Math.abs(start.voxelCoords[0] - 0.9501) <= 1e-4);
+  assert.ok(Math.abs(start.texcoords[0] - 0.237525) <= 1e-6);
+})();
+
+(() => {
+  const start = resolveNearestEntryStartCpu({
+    front: [1.4, 0, 0],
+    size: [8, 1, 1],
+    traversalSize: [4, 1, 1],
+    rayDir: [1, 0, 0],
+  });
+  const axis = initializeNearestDdaAxisCpu(start.voxelCoords[0], 1);
+  assert.equal(axis.axisStep, 1);
+  assert.ok(Math.abs(axis.tMax - 0.0499) <= 1e-4);
+  assert.equal(axis.tDelta, 1);
 })();
 
 (() => {
@@ -158,6 +210,44 @@ function createPrng(seed: number): () => number {
     windowMax: 255,
   });
   assert.equal(result, true);
+})();
+
+(() => {
+  const labels = new Uint16Array([1, 2]);
+  const occupancy = sampleSegmentationOccupancyCpu({
+    labels,
+    size: [2, 1, 1],
+    texcoords: [0.5, 0.5, 0.5],
+    samplingMode: 'linear',
+  });
+  assert.equal(occupancy, 1);
+  assert.equal(
+    sampleSegmentationNearestLabelCpu({
+      labels,
+      size: [2, 1, 1],
+      texcoords: [0.49, 0.5, 0.5],
+    }),
+    1,
+  );
+  assert.equal(
+    sampleSegmentationNearestLabelCpu({
+      labels,
+      size: [2, 1, 1],
+      texcoords: [0.51, 0.5, 0.5],
+    }),
+    2,
+  );
+})();
+
+(() => {
+  const labels = new Uint16Array([0, 4]);
+  const occupancy = sampleSegmentationOccupancyCpu({
+    labels,
+    size: [2, 1, 1],
+    texcoords: [0.5, 0.5, 0.5],
+    samplingMode: 'linear',
+  });
+  assert.ok(Math.abs(occupancy - 0.5) <= 1e-6);
 })();
 
 (() => {

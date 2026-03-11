@@ -219,6 +219,7 @@ export function useAppRouteState(): AppRouteState {
     propsWindowInitialPosition,
     trackWindowInitialPosition,
     viewerSettingsWindowInitialPosition,
+    recordWindowInitialPosition,
     selectedTracksWindowInitialPosition,
     plotSettingsWindowInitialPosition,
     trackSettingsWindowInitialPosition,
@@ -1167,6 +1168,7 @@ export function useAppRouteState(): AppRouteState {
       layout: {
         resetToken: layoutResetToken,
         viewerSettingsWindowInitialPosition,
+        recordWindowInitialPosition,
         layersWindowInitialPosition,
         paintbrushWindowInitialPosition,
         propsWindowInitialPosition,

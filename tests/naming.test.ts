@@ -6,7 +6,7 @@ console.log('Starting naming tests');
 
 (() => {
   assert.equal(CHANNEL_NAME_MAX_LENGTH, 20);
-  assert.equal(TRACK_NAME_MAX_LENGTH, 9);
+  assert.equal(TRACK_NAME_MAX_LENGTH, 20);
 })();
 
 console.log('naming tests passed');

@@ -5,6 +5,7 @@ type SliceUniforms = {
   u_cmdata: { value: DataTexture | null };
   u_channels: { value: number };
   u_additive: { value: number };
+  u_isSegmentation: { value: number };
   u_windowMin: { value: number };
   u_windowMax: { value: number };
   u_invert: { value: number };
@@ -24,6 +25,7 @@ const uniforms = {
   u_cmdata: { value: null as DataTexture | null },
   u_channels: { value: 1 },
   u_additive: { value: 0 },
+  u_isSegmentation: { value: 0 },
   u_windowMin: { value: 0 },
   u_windowMax: { value: 1 },
   u_invert: { value: 0 },
@@ -54,6 +56,7 @@ export const SliceRenderShader = {
 
     uniform int u_channels;
     uniform float u_additive;
+    uniform float u_isSegmentation;
     uniform float u_windowMin;
     uniform float u_windowMax;
     uniform float u_invert;
@@ -208,6 +211,10 @@ export const SliceRenderShader = {
       }
 
       vec4 sliceSample = sample_slice(v_uv);
+      if (u_isSegmentation > 0.5) {
+        gl_FragColor = apply_blending_mode(apply_hover_outline(sliceSample));
+        return;
+      }
       float intensity = luminance(sliceSample);
       float adjusted = adjust_intensity(intensity);
 

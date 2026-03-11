@@ -96,7 +96,7 @@ test('@smoke public experiments page opens and returns to the front page', async
   await page.getByRole('button', { name: 'Load public experiments' }).click();
 
   await expect(page.getByRole('heading', { name: 'Load public experiments' })).toBeVisible();
-  await expect(page.getByText('Start with hosted datasets')).toBeVisible();
+  await expect(page.getByText('Visualize the experiments used in the SpatialDINO paper.')).toBeVisible();
   await expect(page.getByText('AP2')).toBeVisible();
 
   await page.getByRole('button', { name: 'Return' }).click();

@@ -24,18 +24,7 @@ const formatBlControlValue = (value: number): string => {
 export type ViewerSettingsWindowProps = {
   layout: Pick<LayoutProps, 'windowMargin' | 'controlWindowWidth' | 'viewerSettingsWindowInitialPosition' | 'resetToken'>;
   modeToggle: ModeToggleState;
-  playbackControls: Pick<
-    PlaybackControlsProps,
-    | 'fps'
-    | 'onFpsChange'
-    | 'recordingBitrateMbps'
-    | 'onRecordingBitrateMbpsChange'
-    | 'volumeTimepointCount'
-    | 'onStartRecording'
-    | 'onStopRecording'
-    | 'isRecording'
-    | 'canRecord'
-  >;
+  playbackControls: Pick<PlaybackControlsProps, 'fps' | 'onFpsChange' | 'volumeTimepointCount'>;
   viewerSettings: ViewerSettingsControls;
   isOpen: boolean;
   onClose: () => void;
@@ -62,17 +51,9 @@ export default function ViewerSettingsWindow({
   const {
     fps,
     onFpsChange,
-    recordingBitrateMbps,
-    onRecordingBitrateMbpsChange,
-    volumeTimepointCount,
-    onStartRecording,
-    onStopRecording,
-    isRecording,
-    canRecord
+    volumeTimepointCount
   } = playbackControls;
   const {
-    samplingMode,
-    onSamplingModeToggle,
     blendingMode,
     onBlendingModeToggle,
     showRenderingQualityControl,
@@ -112,21 +93,12 @@ export default function ViewerSettingsWindow({
               <div className="viewer-mode-row">
                 <button
                   type="button"
-                  className={samplingMode === 'linear' ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
-                  onClick={onSamplingModeToggle}
-                  disabled={!hasVolumeData}
-                  aria-pressed={samplingMode === 'linear'}
-                >
-                  {samplingMode === 'linear' ? 'Trilinear' : 'Nearest'}
-                </button>
-                <button
-                  type="button"
                   className={blendingMode === 'additive' ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
                   onClick={onBlendingModeToggle}
                   disabled={!hasVolumeData}
                   aria-pressed={blendingMode === 'additive'}
                 >
-                  {blendingMode === 'additive' ? 'Additive' : 'Alpha'}
+                  {blendingMode === 'additive' ? 'Additive color blending' : 'Alpha color blending'}
                 </button>
               </div>
             </div>
@@ -190,60 +162,6 @@ export default function ViewerSettingsWindow({
               />
             </div>
           )}
-
-          <div className="control-group viewer-settings-recording-row">
-            <div className="viewer-mode-row">
-              <button
-                type="button"
-                className={
-                  isRecording
-                    ? 'playback-button playback-toggle playing'
-                    : 'playback-button playback-toggle'
-                }
-                onClick={onStartRecording}
-                disabled={!canRecord || isRecording}
-                aria-pressed={isRecording}
-              >
-                Record
-              </button>
-              <button
-                type="button"
-                className="playback-button"
-                onClick={onStopRecording}
-                disabled={!isRecording}
-              >
-                Stop
-              </button>
-            </div>
-          </div>
-
-          {typeof recordingBitrateMbps === 'number' && onRecordingBitrateMbpsChange ? (
-            <div className="control-group control-group--slider">
-              <label htmlFor="recording-bitrate-slider">
-                Recording bitrate (Mbps) <span>{recordingBitrateMbps}</span>
-              </label>
-              <div className="double-range-input">
-                <input
-                  id="recording-bitrate-slider"
-                  type="range"
-                  min={1}
-                  max={100}
-                  step={1}
-                  value={recordingBitrateMbps}
-                  onChange={(event) => onRecordingBitrateMbpsChange(Number(event.target.value))}
-                  disabled={isRecording}
-                />
-                <input
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={recordingBitrateMbps}
-                  onChange={(event) => onRecordingBitrateMbpsChange(Number(event.target.value))}
-                  disabled={isRecording}
-                />
-              </div>
-            </div>
-          ) : null}
 
           <div className="render-settings-section">
             <span className="control-label control-label--compact">Global MIP / BL</span>

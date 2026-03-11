@@ -8,7 +8,7 @@ import type { VolumeViewerProps } from '../VolumeViewer.types';
 import type { LoadedDatasetLayer } from '../../../hooks/dataset';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import type { VolumeBrickAtlas } from '../../../core/volumeProvider';
-import type { LayerSettings, RenderStyle } from '../../../state/layerSettings';
+import type { LayerSettings, RenderStyle, SamplingMode } from '../../../state/layerSettings';
 import type { TrackSetState } from '../../../types/channelTracks';
 import type { FollowedVoxelTarget } from '../../../types/follow';
 import type { HoveredVoxelInfo } from '../../../types/hover';
@@ -39,8 +39,20 @@ export type VolumeChannelTabsProps = {
   onChannelVisibilityToggle: (channelId: string) => void;
 };
 
+export type VolumeTrackTabsProps = {
+  trackSets: Array<{
+    id: string;
+    name: string;
+  }>;
+  trackHeadersByTrackSet: Map<string, { totalTracks: number }>;
+  activeTrackSetId: string | null;
+  trackColorModesByTrackSet: Record<string, TrackColorMode>;
+  onTrackSetTabSelect: (trackSetId: string) => void;
+};
+
 export type TopMenuProps = TopMenuChromeProps &
-  VolumeChannelTabsProps & {
+  VolumeChannelTabsProps &
+  VolumeTrackTabsProps & {
     hoverCoordinateDigits: {
       x: number;
       y: number;
@@ -50,9 +62,11 @@ export type TopMenuProps = TopMenuChromeProps &
     onOpenChannelsWindow: () => void;
     onOpenPropsWindow: () => void;
     onOpenPaintbrush: () => void;
+    onOpenRecordWindow: () => void;
     onOpenRenderSettingsWindow: () => void;
     onOpenTracksWindow: () => void;
     onOpenAmplitudePlotWindow: () => void;
+    onOpenPlotSettingsWindow: () => void;
     onOpenTrackSettingsWindow: () => void;
     onOpenDiagnosticsWindow: () => void;
     is3dModeAvailable: boolean;
@@ -127,7 +141,7 @@ export type ChannelsPanelProps = VolumeChannelTabsProps & {
   onLayerAutoContrast: (layerKey: string) => void;
   onLayerOffsetChange: (layerKey: string, axis: 'x' | 'y', value: number) => void;
   onLayerColorChange: (layerKey: string, color: string) => void;
-  onLayerRenderStyleChange: (layerKey: string, renderStyle: RenderStyle) => void;
+  onLayerRenderStyleChange: (layerKey: string, renderStyle: RenderStyle, samplingMode?: SamplingMode) => void;
   onLayerBlDensityScaleChange: (layerKey: string, value: number) => void;
   onLayerBlBackgroundCutoffChange: (layerKey: string, value: number) => void;
   onLayerBlOpacityScaleChange: (layerKey: string, value: number) => void;
@@ -242,6 +256,7 @@ export type LayoutProps = {
   selectedTracksWindowWidth: number;
   resetToken: number;
   viewerSettingsWindowInitialPosition: Position;
+  recordWindowInitialPosition: Position;
   layersWindowInitialPosition: Position;
   paintbrushWindowInitialPosition: Position;
   propsWindowInitialPosition: Position;

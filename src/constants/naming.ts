@@ -1,5 +1,5 @@
 export const CHANNEL_NAME_MAX_LENGTH = 20;
-export const TRACK_NAME_MAX_LENGTH = 9;
+export const TRACK_NAME_MAX_LENGTH = CHANNEL_NAME_MAX_LENGTH;
 
 export function normalizeEntityName(name: string): string {
   return name.trim();

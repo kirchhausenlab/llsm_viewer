@@ -7,16 +7,18 @@ import type { ViewerLayer } from '../../../components/viewers/VolumeViewer.types
 import {
   brightnessContrastModel,
   clampWindowBounds,
-  RENDER_STYLE_BL,
-  RENDER_STYLE_ISO,
   RENDER_STYLE_MIP,
   RENDER_STYLE_SLICE,
   DEFAULT_WINDOW_MAX,
   DEFAULT_WINDOW_MIN,
   type BrightnessContrastState,
+  type IntensityRenderModeValue,
   type LayerSettings,
   type RenderStyle,
   type SamplingMode,
+  resolveIntensityRenderModeConfig,
+  resolveIntensityRenderModeValue,
+  resolveLayerSamplingMode,
   updateLayerSettings
 } from '../../../state/layerSettings';
 import type { LoadedDatasetLayer } from '../../../hooks/dataset';
@@ -58,18 +60,24 @@ export type LayerControlsParams = {
   setGlobalMipEarlyExitThreshold: Dispatch<SetStateAction<number>>;
 };
 
-const nextRenderStyle = (current: RenderStyle): RenderStyle => {
-  if (current === RENDER_STYLE_MIP) {
-    return RENDER_STYLE_ISO;
+const nextIntensityRenderMode = (current: IntensityRenderModeValue): IntensityRenderModeValue => {
+  if (current === 'mip') {
+    return 'mip-v';
   }
-  if (current === RENDER_STYLE_ISO) {
-    return RENDER_STYLE_BL;
+  if (current === 'mip-v') {
+    return 'iso';
   }
-  if (current === RENDER_STYLE_BL) {
-    return RENDER_STYLE_SLICE;
+  if (current === 'iso') {
+    return 'bl';
   }
-  return RENDER_STYLE_MIP;
+  if (current === 'bl') {
+    return 'slice';
+  }
+  return 'mip';
 };
+
+const nextSegmentationRenderStyle = (current: RenderStyle): RenderStyle =>
+  current === RENDER_STYLE_SLICE ? RENDER_STYLE_MIP : RENDER_STYLE_SLICE;
 
 type ViewerLayerConfig = ViewerLayer & {
   channelId?: string;
@@ -392,23 +400,43 @@ export function useLayerControls({
   );
 
   const handleLayerRenderStyleChange = useCallback(
-    (layerKey: string, renderStyle: RenderStyle) => {
+    (layerKey: string, renderStyle: RenderStyle, samplingMode?: SamplingMode) => {
+      const targetLayer = layers.find((layer) => layer.key === layerKey);
+      const isSegmentation = targetLayer?.isSegmentation === true;
+      const previous = layerSettings[layerKey] ?? createLayerDefaultSettings(layerKey);
+      const nextSamplingMode = resolveLayerSamplingMode(
+        renderStyle,
+        samplingMode ?? previous.samplingMode,
+        isSegmentation
+      );
       setLayerSettings((current) => {
-        const previous = current[layerKey] ?? createLayerDefaultSettings(layerKey);
-        if (previous.renderStyle === renderStyle) {
+        const currentSettings = current[layerKey] ?? createLayerDefaultSettings(layerKey);
+        if (
+          currentSettings.renderStyle === renderStyle &&
+          currentSettings.samplingMode === nextSamplingMode
+        ) {
           return current;
         }
         return {
           ...current,
           [layerKey]: {
-            ...previous,
+            ...currentSettings,
             renderStyle,
+            samplingMode: nextSamplingMode,
           }
         };
       });
       setGlobalRenderStyle(renderStyle);
+      setGlobalSamplingMode((current) => (current === nextSamplingMode ? current : nextSamplingMode));
     },
-    [createLayerDefaultSettings, setGlobalRenderStyle, setLayerSettings]
+    [
+      createLayerDefaultSettings,
+      layerSettings,
+      layers,
+      setGlobalRenderStyle,
+      setGlobalSamplingMode,
+      setLayerSettings
+    ]
   );
 
   const handleLayerRenderStyleToggle = useCallback(
@@ -418,34 +446,51 @@ export function useLayerControls({
         return;
       }
       const currentStyle = (layerSettings[targetLayerKey] ?? createLayerDefaultSettings(targetLayerKey)).renderStyle;
-      const nextStyle = nextRenderStyle(currentStyle);
-      handleLayerRenderStyleChange(targetLayerKey, nextStyle);
+      const targetLayer = layers.find((layer) => layer.key === targetLayerKey);
+      if (targetLayer?.isSegmentation) {
+        const nextStyle = nextSegmentationRenderStyle(currentStyle);
+        handleLayerRenderStyleChange(targetLayerKey, nextStyle);
+        return;
+      }
+      const currentSettings = layerSettings[targetLayerKey] ?? createLayerDefaultSettings(targetLayerKey);
+      const nextMode = nextIntensityRenderMode(
+        resolveIntensityRenderModeValue(currentSettings.renderStyle, currentSettings.samplingMode)
+      );
+      const nextConfig = resolveIntensityRenderModeConfig(nextMode);
+      handleLayerRenderStyleChange(targetLayerKey, nextConfig.renderStyle, nextConfig.samplingMode);
     },
     [
       createLayerDefaultSettings,
       handleLayerRenderStyleChange,
       layerSettings,
+      layers,
       resolveRenderStyleTargetLayerKey
     ]
   );
 
   const handleLayerSamplingModeToggle = useCallback(() => {
     setGlobalSamplingMode((current) => {
-      const nextMode: SamplingMode = current === 'nearest' ? 'linear' : 'nearest';
+      const requestedSamplingMode: SamplingMode = current === 'nearest' ? 'linear' : 'nearest';
       setLayerSettings((settings) => {
         let changed = false;
         const nextSettings: Record<string, LayerSettings> = { ...settings };
-        for (const [layerKey, previous] of Object.entries(settings)) {
-          if (previous.samplingMode !== nextMode) {
-            nextSettings[layerKey] = { ...previous, samplingMode: nextMode };
+        for (const layer of layers) {
+          const previous = settings[layer.key] ?? createLayerDefaultSettings(layer.key);
+          const nextSamplingMode = resolveLayerSamplingMode(
+            previous.renderStyle,
+            requestedSamplingMode,
+            layer.isSegmentation
+          );
+          if (previous.samplingMode !== nextSamplingMode) {
+            nextSettings[layer.key] = { ...previous, samplingMode: nextSamplingMode };
             changed = true;
           }
         }
         return changed ? nextSettings : settings;
       });
-      return nextMode;
+      return requestedSamplingMode;
     });
-  }, [setGlobalSamplingMode, setLayerSettings]);
+  }, [createLayerDefaultSettings, layers, setGlobalSamplingMode, setLayerSettings]);
 
   const handleLayerInvertToggle = useCallback(
     (key: string) => {
@@ -740,6 +785,11 @@ export function useLayerControls({
   const viewerLayers = useMemo(() => {
     const nextLayers: ViewerLayerConfig[] = activeLayers.map((layer) => {
       const settings = layerSettings[layer.key] ?? createLayerDefaultSettings(layer.key);
+      const effectiveSamplingMode = resolveLayerSamplingMode(
+        settings.renderStyle,
+        settings.samplingMode,
+        layer.isSegmentation
+      );
       const channelVisible = channelVisibility[layer.channelId];
       const brickAtlas = layerBrickAtlases[layer.key] ?? null;
       const brickPageTable = brickAtlas?.pageTable ?? layerPageTables[layer.key] ?? null;
@@ -777,7 +827,7 @@ export function useLayerControls({
         blEarlyExitAlpha: settings.blEarlyExitAlpha,
         mipEarlyExitThreshold: settings.mipEarlyExitThreshold,
         invert: settings.invert,
-        samplingMode: settings.samplingMode,
+        samplingMode: effectiveSamplingMode,
         isSegmentation: layer.isSegmentation,
         scaleLevel,
         brickPageTable,
@@ -814,6 +864,11 @@ export function useLayerControls({
     const nextLayers = normalizedPlaybackWarmupFrames.flatMap((frame) =>
       activeLayers.flatMap((layer): ViewerLayerConfig[] => {
         const settings = layerSettings[layer.key] ?? createLayerDefaultSettings(layer.key);
+        const effectiveSamplingMode = resolveLayerSamplingMode(
+          settings.renderStyle,
+          settings.samplingMode,
+          layer.isSegmentation
+        );
         const channelVisible = channelVisibility[layer.channelId];
         if (!(channelVisible ?? true) || settings.renderStyle === RENDER_STYLE_SLICE) {
           return [];
@@ -857,7 +912,7 @@ export function useLayerControls({
           blEarlyExitAlpha: settings.blEarlyExitAlpha,
           mipEarlyExitThreshold: settings.mipEarlyExitThreshold,
           invert: settings.invert,
-          samplingMode: settings.samplingMode,
+          samplingMode: effectiveSamplingMode,
           isSegmentation: layer.isSegmentation,
           scaleLevel,
           brickPageTable,

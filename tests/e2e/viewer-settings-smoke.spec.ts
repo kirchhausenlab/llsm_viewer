@@ -15,32 +15,27 @@ test('@smoke viewer settings controls work after launch', async ({ page }) => {
   const viewerSettingsWindow = page.locator('.floating-window--viewer-settings');
   await expect(viewerSettingsWindow.getByRole('heading', { name: 'Render settings' })).toBeVisible();
 
-  const samplingButton = viewerSettingsWindow.getByRole('button', { name: /Trilinear|Nearest/ });
-  await expect(samplingButton).toBeVisible();
-  const initialSamplingLabel = (await samplingButton.textContent())?.trim();
-  await samplingButton.evaluate((element) => {
-    (element as HTMLButtonElement).click();
+  const blendingButton = viewerSettingsWindow.getByRole('button', {
+    name: /Additive color blending|Alpha color blending/
   });
-  if (initialSamplingLabel === 'Trilinear') {
-    await expect(viewerSettingsWindow.getByRole('button', { name: 'Nearest' })).toBeVisible();
-  } else {
-    await expect(viewerSettingsWindow.getByRole('button', { name: 'Trilinear' })).toBeVisible();
-  }
-
-  const blendingButton = viewerSettingsWindow.getByRole('button', { name: /Additive|Alpha/ });
   await expect(blendingButton).toBeVisible();
   const initialBlendingLabel = (await blendingButton.textContent())?.trim();
   await blendingButton.evaluate((element) => {
     (element as HTMLButtonElement).click();
   });
-  if (initialBlendingLabel === 'Additive') {
-    await expect(viewerSettingsWindow.getByRole('button', { name: 'Alpha' })).toBeVisible();
+  if (initialBlendingLabel === 'Additive color blending') {
+    await expect(
+      viewerSettingsWindow.getByRole('button', { name: 'Alpha color blending' })
+    ).toBeVisible();
   } else {
-    await expect(viewerSettingsWindow.getByRole('button', { name: 'Additive' })).toBeVisible();
+    await expect(
+      viewerSettingsWindow.getByRole('button', { name: 'Additive color blending' })
+    ).toBeVisible();
   }
 
   const fpsSlider = viewerSettingsWindow.locator('#fps-slider');
   await expect(fpsSlider).toBeVisible();
+  await expect(viewerSettingsWindow.locator('#volume-steps-slider')).toBeVisible();
   await fpsSlider.evaluate((element) => {
     const input = element as HTMLInputElement;
     input.value = '12';

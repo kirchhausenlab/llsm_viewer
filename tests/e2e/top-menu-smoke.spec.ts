@@ -24,7 +24,7 @@ const expectedMenus = [
   {
     buttonLabel: 'Tracks',
     menuLabel: 'tracks menu',
-    items: ['Tracks window', 'Amplitude plot', 'Tracks settings']
+    items: ['Tracks window', 'Amplitude plot', 'Plot settings', 'Tracks settings']
   },
   {
     buttonLabel: 'Help',

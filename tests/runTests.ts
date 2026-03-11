@@ -16,6 +16,7 @@ import './useVolumeViewerInteractions.test.ts';
 import './textureCache.test.ts';
 import './vrInputMath.test.ts';
 import './ViewerShellContainer.test.ts';
+import './viewer-shell/NavigationHelpWindow.test.tsx';
 import './usePaintbrush.test.ts';
 import './PaintbrushWindow.test.tsx';
 import './tiffWriter.test.ts';

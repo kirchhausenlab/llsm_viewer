@@ -5,6 +5,53 @@
   },
   "children": [
     {
+      "type": "button",
+      "props": {
+        "type": "button",
+        "className": "theme-mode-toggle front-page-theme-toggle",
+        "aria-label": "Switch to light mode",
+        "title": "Switch to light mode"
+      },
+      "children": [
+        {
+          "type": "span",
+          "props": {
+            "aria-hidden": "true",
+            "className": "theme-mode-toggle__switch is-dark"
+          },
+          "children": [
+            {
+              "type": "span",
+              "props": {
+                "className": "theme-mode-toggle__thumb"
+              },
+              "children": [
+                {
+                  "type": "svg",
+                  "props": {
+                    "className": "theme-mode-toggle__icon",
+                    "viewBox": "0 0 24 24",
+                    "focusable": "false",
+                    "aria-hidden": "true"
+                  },
+                  "children": [
+                    {
+                      "type": "path",
+                      "props": {
+                        "d": "M14.25 4.25a7.5 7.5 0 1 0 5.5 12.6a6.75 6.75 0 1 1-5.5-12.6Z",
+                        "fill": "currentColor"
+                      },
+                      "children": null
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "type": "div",
       "props": {
         "className": "front-page"
@@ -53,53 +100,6 @@
                           "type": "button",
                           "props": {
                             "type": "button",
-                            "className": "theme-mode-toggle front-page-theme-toggle",
-                            "aria-label": "Switch to light mode",
-                            "title": "Switch to light mode"
-                          },
-                          "children": [
-                            {
-                              "type": "span",
-                              "props": {
-                                "aria-hidden": "true",
-                                "className": "theme-mode-toggle__switch is-dark"
-                              },
-                              "children": [
-                                {
-                                  "type": "span",
-                                  "props": {
-                                    "className": "theme-mode-toggle__thumb"
-                                  },
-                                  "children": [
-                                    {
-                                      "type": "svg",
-                                      "props": {
-                                        "className": "theme-mode-toggle__icon",
-                                        "viewBox": "0 0 24 24",
-                                        "focusable": "false",
-                                        "aria-hidden": "true"
-                                      },
-                                      "children": [
-                                        {
-                                          "type": "path",
-                                          "props": {
-                                            "d": "M14.25 4.25a7.5 7.5 0 1 0 5.5 12.6a6.75 6.75 0 1 1-5.5-12.6Z",
-                                            "fill": "currentColor"
-                                          },
-                                          "children": null
-                                        }
-                                      ]
-                                    }
-                                  ]
-                                }
-                              ]
-                            }
-                          ]
-                        },
-                        {
-                          "type": "button",
-                          "props": {
-                            "type": "button",
                             "className": "channel-add-button front-page-return-button",
                             "disabled": false
                           },
@@ -123,156 +123,27 @@
                 {
                   "type": "div",
                   "props": {
-                    "className": "public-experiment-loader-hero"
+                    "className": "public-experiment-loader-toolbar"
                   },
                   "children": [
                     {
-                      "type": "div",
+                      "type": "p",
                       "props": {
-                        "className": "public-experiment-loader-copy"
+                        "className": "public-experiment-loader-subtitle"
                       },
                       "children": [
-                        {
-                          "type": "p",
-                          "props": {
-                            "className": "public-experiment-loader-kicker"
-                          },
-                          "children": [
-                            "Public experiments"
-                          ]
-                        },
-                        {
-                          "type": "h2",
-                          "props": {},
-                          "children": [
-                            "Start with hosted datasets"
-                          ]
-                        },
-                        {
-                          "type": "p",
-                          "props": {
-                            "className": "public-experiment-loader-subtitle"
-                          },
-                          "children": [
-                            "Curated examples stream directly from public S3 storage. The viewer requests only the chunks it needs, so you can inspect the pipeline without preparing local files first."
-                          ]
-                        }
+                        "Visualize the experiments used in the SpatialDINO paper."
                       ]
                     },
                     {
-                      "type": "div",
+                      "type": "button",
                       "props": {
-                        "className": "public-experiment-loader-actions"
+                        "type": "button",
+                        "className": "channel-add-button public-experiment-refresh-button",
+                        "disabled": false
                       },
                       "children": [
-                        {
-                          "type": "button",
-                          "props": {
-                            "type": "button",
-                            "className": "channel-add-button public-experiment-refresh-button",
-                            "disabled": false
-                          },
-                          "children": [
-                            "Refresh list"
-                          ]
-                        },
-                        {
-                          "type": "p",
-                          "props": {
-                            "className": "public-experiment-loader-host"
-                          },
-                          "children": [
-                            "Catalog source: ",
-                            "mirante4d.s3.us-east-1.amazonaws.com"
-                          ]
-                        }
-                      ]
-                    }
-                  ]
-                },
-                {
-                  "type": "div",
-                  "props": {
-                    "className": "public-experiment-loader-facts",
-                    "aria-label": "Public experiment facts"
-                  },
-                  "children": [
-                    {
-                      "type": "div",
-                      "props": {
-                        "className": "public-experiment-loader-fact"
-                      },
-                      "children": [
-                        {
-                          "type": "span",
-                          "props": {
-                            "className": "public-experiment-loader-fact-label"
-                          },
-                          "children": [
-                            "Streaming"
-                          ]
-                        },
-                        {
-                          "type": "span",
-                          "props": {
-                            "className": "public-experiment-loader-fact-value"
-                          },
-                          "children": [
-                            "Remote chunks are fetched on demand."
-                          ]
-                        }
-                      ]
-                    },
-                    {
-                      "type": "div",
-                      "props": {
-                        "className": "public-experiment-loader-fact"
-                      },
-                      "children": [
-                        {
-                          "type": "span",
-                          "props": {
-                            "className": "public-experiment-loader-fact-label"
-                          },
-                          "children": [
-                            "No local prep"
-                          ]
-                        },
-                        {
-                          "type": "span",
-                          "props": {
-                            "className": "public-experiment-loader-fact-value"
-                          },
-                          "children": [
-                            "Use the same viewer path without copying data first."
-                          ]
-                        }
-                      ]
-                    },
-                    {
-                      "type": "div",
-                      "props": {
-                        "className": "public-experiment-loader-fact"
-                      },
-                      "children": [
-                        {
-                          "type": "span",
-                          "props": {
-                            "className": "public-experiment-loader-fact-label"
-                          },
-                          "children": [
-                            "Best use"
-                          ]
-                        },
-                        {
-                          "type": "span",
-                          "props": {
-                            "className": "public-experiment-loader-fact-value"
-                          },
-                          "children": [
-                            "Quick smoke tests, demos, and regression checks."
-                          ]
-                        }
+                        "Refresh list"
                       ]
                     }
                   ]
@@ -297,7 +168,9 @@
                           "children": [
                             {
                               "type": "div",
-                              "props": {},
+                              "props": {
+                                "className": "public-experiment-card-copy"
+                              },
                               "children": [
                                 {
                                   "type": "h3",
@@ -316,25 +189,7 @@
                                   ]
                                 }
                               ]
-                            },
-                            {
-                              "type": "span",
-                              "props": {
-                                "className": "public-experiment-card-pill"
-                              },
-                              "children": [
-                                "1 timepoint"
-                              ]
                             }
-                          ]
-                        },
-                        {
-                          "type": "p",
-                          "props": {
-                            "className": "public-experiment-card-meta"
-                          },
-                          "children": [
-                            "Loads through the same preprocessed runtime used for local `.zarr` datasets."
                           ]
                         },
                         {
@@ -345,7 +200,7 @@
                             "disabled": false
                           },
                           "children": [
-                            "Load example"
+                            "Load experiment"
                           ]
                         }
                       ]
@@ -364,7 +219,9 @@
                           "children": [
                             {
                               "type": "div",
-                              "props": {},
+                              "props": {
+                                "className": "public-experiment-card-copy"
+                              },
                               "children": [
                                 {
                                   "type": "h3",
@@ -383,25 +240,7 @@
                                   ]
                                 }
                               ]
-                            },
-                            {
-                              "type": "span",
-                              "props": {
-                                "className": "public-experiment-card-pill"
-                              },
-                              "children": [
-                                "5 timepoints"
-                              ]
                             }
-                          ]
-                        },
-                        {
-                          "type": "p",
-                          "props": {
-                            "className": "public-experiment-card-meta"
-                          },
-                          "children": [
-                            "Loads through the same preprocessed runtime used for local `.zarr` datasets."
                           ]
                         },
                         {
@@ -412,7 +251,7 @@
                             "disabled": false
                           },
                           "children": [
-                            "Load example"
+                            "Load experiment"
                           ]
                         }
                       ]

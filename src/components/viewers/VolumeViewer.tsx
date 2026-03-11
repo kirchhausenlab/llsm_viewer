@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import './viewerCommon.css';
 import './VolumeViewer.css';
@@ -41,6 +41,7 @@ import {
 } from './volume-viewer/volumeViewerRuntimeArgs';
 import {
   computeRuntimeDiagnosticsWindowDefaultPosition,
+  computeRuntimeDiagnosticsWindowRecenterPosition,
   RUNTIME_DIAGNOSTICS_WINDOW_WIDTH,
 } from '../../shared/utils/windowLayout';
 import { RENDER_STYLE_SLICE } from '../../state/layerSettings';
@@ -352,10 +353,22 @@ function VolumeViewer({
     target: THREE.Vector3;
   } | null>(null);
   const gpuResidencySummary = summarizeGpuResidency(resourcesRef.current);
-  const runtimeDiagnosticsWindowInitialPosition = useMemo(
-    () => computeRuntimeDiagnosticsWindowDefaultPosition(),
-    []
+  const [runtimeDiagnosticsWindowInitialPosition, setRuntimeDiagnosticsWindowInitialPosition] = useState(
+    () => computeRuntimeDiagnosticsWindowDefaultPosition()
   );
+  const lastWindowResetSignalRef = useRef(windowResetSignal);
+
+  useEffect(() => {
+    if (windowResetSignal === undefined) {
+      lastWindowResetSignalRef.current = windowResetSignal;
+      return;
+    }
+    if (lastWindowResetSignalRef.current === windowResetSignal) {
+      return;
+    }
+    lastWindowResetSignalRef.current = windowResetSignal;
+    setRuntimeDiagnosticsWindowInitialPosition(computeRuntimeDiagnosticsWindowRecenterPosition());
+  }, [windowResetSignal]);
 
   const {
     applyHoverHighlightToResources,

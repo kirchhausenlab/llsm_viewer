@@ -141,9 +141,11 @@ function createProps(overrides: Partial<React.ComponentProps<typeof TopMenu>> = 
     onOpenChannelsWindow: () => {},
     onOpenPropsWindow: () => {},
     onOpenPaintbrush: () => {},
+    onOpenRecordWindow: () => {},
     onOpenRenderSettingsWindow: () => {},
     onOpenTracksWindow: () => {},
     onOpenAmplitudePlotWindow: () => {},
+    onOpenPlotSettingsWindow: () => {},
     onOpenTrackSettingsWindow: () => {},
     onOpenDiagnosticsWindow: () => {},
     is3dModeAvailable: false,
@@ -167,6 +169,11 @@ function createProps(overrides: Partial<React.ComponentProps<typeof TopMenu>> = 
     activeChannelId: null,
     onChannelTabSelect: () => {},
     onChannelVisibilityToggle: () => {},
+    trackSets: [],
+    trackHeadersByTrackSet: new Map(),
+    activeTrackSetId: null,
+    trackColorModesByTrackSet: {},
+    onTrackSetTabSelect: () => {},
     ...overrides
   };
 }
@@ -219,7 +226,7 @@ test('top menu renders the requested dropdown order and items', () => {
       ['File', ['Save changes', 'Reset changes', 'Recenter windows', 'Diagnostics', 'Exit']],
       ['View', ['Channels window', 'Camera', 'Record', 'Background', 'Render settings', 'Hover settings']],
       ['Edit', ['Props', 'Paintbrush', 'Measure']],
-      ['Tracks', ['Tracks window', 'Amplitude plot', 'Tracks settings']],
+      ['Tracks', ['Tracks window', 'Amplitude plot', 'Plot settings', 'Tracks settings']],
       ['Help', ['About', 'Navigation controls']]
     ]);
 
@@ -246,9 +253,11 @@ test('wired dropdown items invoke the expected handlers', () => {
     let channelsCalls = 0;
     let propsCalls = 0;
     let paintbrushCalls = 0;
+    let recordCalls = 0;
     let renderSettingsCalls = 0;
     let tracksCalls = 0;
     let amplitudePlotCalls = 0;
+    let plotSettingsCalls = 0;
     let trackSettingsCalls = 0;
     let diagnosticsCalls = 0;
     let helpCalls = 0;
@@ -269,6 +278,9 @@ test('wired dropdown items invoke the expected handlers', () => {
       onOpenPaintbrush: () => {
         paintbrushCalls += 1;
       },
+      onOpenRecordWindow: () => {
+        recordCalls += 1;
+      },
       onOpenRenderSettingsWindow: () => {
         renderSettingsCalls += 1;
       },
@@ -277,6 +289,9 @@ test('wired dropdown items invoke the expected handlers', () => {
       },
       onOpenAmplitudePlotWindow: () => {
         amplitudePlotCalls += 1;
+      },
+      onOpenPlotSettingsWindow: () => {
+        plotSettingsCalls += 1;
       },
       onOpenTrackSettingsWindow: () => {
         trackSettingsCalls += 1;
@@ -308,6 +323,13 @@ test('wired dropdown items invoke the expected handlers', () => {
     });
     act(() => {
       findMenuItem(renderer, 'Channels window').props.onClick();
+    });
+
+    act(() => {
+      findDropdownTrigger(renderer, 'View').props.onClick();
+    });
+    act(() => {
+      findMenuItem(renderer, 'Record').props.onClick();
     });
 
     act(() => {
@@ -360,6 +382,13 @@ test('wired dropdown items invoke the expected handlers', () => {
     });
 
     act(() => {
+      findDropdownTrigger(renderer, 'Tracks').props.onClick();
+    });
+    act(() => {
+      findMenuItem(renderer, 'Plot settings').props.onClick();
+    });
+
+    act(() => {
       findDropdownTrigger(renderer, 'Help').props.onClick();
     });
     act(() => {
@@ -371,12 +400,51 @@ test('wired dropdown items invoke the expected handlers', () => {
     assert.equal(channelsCalls, 1);
     assert.equal(propsCalls, 1);
     assert.equal(paintbrushCalls, 1);
+    assert.equal(recordCalls, 1);
     assert.equal(renderSettingsCalls, 1);
     assert.equal(tracksCalls, 1);
     assert.equal(amplitudePlotCalls, 1);
+    assert.equal(plotSettingsCalls, 1);
     assert.equal(trackSettingsCalls, 1);
     assert.equal(diagnosticsCalls, 1);
     assert.equal(helpCalls, 1);
+
+    renderer.unmount();
+  });
+});
+
+test('top menu renders and switches track tabs', () => {
+  withEnvironmentMocks(() => {
+    const selectedTrackSetIds: string[] = [];
+    const renderer = renderTopMenu({
+      trackSets: [
+        { id: 'set-a', name: 'Tracks A' },
+        { id: 'set-b', name: 'Tracks B' }
+      ],
+      trackHeadersByTrackSet: new Map([
+        ['set-a', { totalTracks: 12 }],
+        ['set-b', { totalTracks: 8 }]
+      ]),
+      activeTrackSetId: 'set-a',
+      onTrackSetTabSelect: (trackSetId) => {
+        selectedTrackSetIds.push(trackSetId);
+      }
+    });
+
+    const trackTab = renderer.root.findAll(
+      (node) =>
+        node.type === 'button' &&
+        node.props.role === 'tab' &&
+        node.props.id === 'top-menu-track-tab-set-b'
+    )[0];
+
+    assert.ok(trackTab);
+
+    act(() => {
+      trackTab.props.onClick({ button: 0 });
+    });
+
+    assert.deepEqual(selectedTrackSetIds, ['set-b']);
 
     renderer.unmount();
   });

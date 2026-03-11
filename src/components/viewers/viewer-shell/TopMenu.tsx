@@ -12,6 +12,7 @@ import {
 import type { TopMenuProps } from './types';
 import ThemeModeToggle from '../../app/ThemeModeToggle';
 import VolumeChannelTabs from './VolumeChannelTabs';
+import VolumeTrackTabs from './VolumeTrackTabs';
 import { formatCompactChannelLabel } from './channelLabel';
 import { isLightHexColor } from '../../../shared/utils/appHelpers';
 
@@ -37,9 +38,11 @@ export default function TopMenu(props: TopMenuProps) {
     onOpenChannelsWindow,
     onOpenPropsWindow,
     onOpenPaintbrush,
+    onOpenRecordWindow,
     onOpenRenderSettingsWindow,
     onOpenTracksWindow,
     onOpenAmplitudePlotWindow,
+    onOpenPlotSettingsWindow,
     onOpenTrackSettingsWindow,
     onOpenDiagnosticsWindow,
     is3dModeAvailable,
@@ -67,6 +70,11 @@ export default function TopMenu(props: TopMenuProps) {
     activeChannelId,
     onChannelTabSelect,
     onChannelVisibilityToggle,
+    trackSets,
+    trackHeadersByTrackSet,
+    activeTrackSetId,
+    trackColorModesByTrackSet,
+    onTrackSetTabSelect,
     hoverCoordinateDigits,
     hoverIntensityValueDigits,
     followedTrackSetId,
@@ -129,7 +137,7 @@ export default function TopMenu(props: TopMenuProps) {
       view: [
         { label: 'Channels window', onSelect: onOpenChannelsWindow },
         { label: 'Camera' },
-        { label: 'Record' },
+        { label: 'Record', onSelect: onOpenRecordWindow },
         { label: 'Background' },
         { label: 'Render settings', onSelect: onOpenRenderSettingsWindow },
         { label: 'Hover settings' }
@@ -142,6 +150,7 @@ export default function TopMenu(props: TopMenuProps) {
       tracks: [
         { label: 'Tracks window', onSelect: onOpenTracksWindow },
         { label: 'Amplitude plot', onSelect: onOpenAmplitudePlotWindow },
+        { label: 'Plot settings', onSelect: onOpenPlotSettingsWindow },
         { label: 'Tracks settings', onSelect: onOpenTrackSettingsWindow }
       ],
       help: [
@@ -154,7 +163,9 @@ export default function TopMenu(props: TopMenuProps) {
       onOpenChannelsWindow,
       onOpenDiagnosticsWindow,
       onOpenPaintbrush,
+      onOpenPlotSettingsWindow,
       onOpenPropsWindow,
+      onOpenRecordWindow,
       onOpenRenderSettingsWindow,
       onOpenTrackSettingsWindow,
       onOpenTracksWindow,
@@ -491,15 +502,6 @@ export default function TopMenu(props: TopMenuProps) {
         </div>
         <div className="viewer-top-menu-strip viewer-top-menu-strip--secondary">
           <div className="viewer-top-menu-strip-left viewer-top-menu-strip-left--secondary">
-            <VolumeChannelTabs
-              loadedChannelIds={loadedChannelIds}
-              channelNameMap={channelNameMap}
-              channelVisibility={channelVisibility}
-              channelTintMap={channelTintMap}
-              activeChannelId={activeChannelId}
-              onChannelTabSelect={onChannelTabSelect}
-              onChannelVisibilityToggle={onChannelVisibilityToggle}
-            />
             <div className="viewer-top-menu-strip-center viewer-top-menu-strip-center--secondary">
               <div className="viewer-top-menu-secondary-group viewer-top-menu-secondary-group--playback">
                 <button
@@ -560,6 +562,24 @@ export default function TopMenu(props: TopMenuProps) {
                   </span>
                 </label>
               </div>
+            </div>
+            <div className="viewer-top-menu-tab-widgets">
+              <VolumeChannelTabs
+                loadedChannelIds={loadedChannelIds}
+                channelNameMap={channelNameMap}
+                channelVisibility={channelVisibility}
+                channelTintMap={channelTintMap}
+                activeChannelId={activeChannelId}
+                onChannelTabSelect={onChannelTabSelect}
+                onChannelVisibilityToggle={onChannelVisibilityToggle}
+              />
+              <VolumeTrackTabs
+                trackSets={trackSets}
+                trackHeadersByTrackSet={trackHeadersByTrackSet}
+                activeTrackSetId={activeTrackSetId}
+                trackColorModesByTrackSet={trackColorModesByTrackSet}
+                onTrackSetTabSelect={onTrackSetTabSelect}
+              />
             </div>
           </div>
           <div className="viewer-top-menu-strip-right viewer-top-menu-strip-right--secondary">

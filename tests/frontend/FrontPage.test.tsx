@@ -124,11 +124,27 @@ function buildBaseProps() {
 test('front page initial mode renders setup choices', () => {
   const renderer = TestRenderer.create(<FrontPage {...(buildBaseProps() as any)} />);
   const text = collectText(renderer);
+  const links = renderer.root.findAllByType('a');
 
   assert.match(text, /Mirante4D/);
   assert.match(text, /Set up new experiment/);
   assert.match(text, /Load preprocessed experiment/);
   assert.match(text, /Load public experiments/);
+  assert.match(text, /Developed by/);
+  assert.match(text, /Jose Inacio Costa-Filho/);
+  assert.match(text, /Kirchhausen Lab/);
+  assert.match(text, /GitHub/);
+  assert.match(text, /If you use Mirante4D in academic work, please cite/);
+  assert.match(text, /SpatialDINO/);
+  assert.deepEqual(
+    links.map((link: any) => link.props.href),
+    [
+      'https://github.com/josedacostafilho',
+      'https://kirchhausen.hms.harvard.edu/',
+      'https://github.com/kirchhausenlab/llsm_viewer',
+      'https://www.biorxiv.org/content/10.64898/2025.12.31.697247v2'
+    ]
+  );
 
   renderer.unmount();
 });
@@ -164,10 +180,11 @@ test('front page public experiments mode renders hosted example cards', () => {
 
   const text = collectText(renderer);
   assert.match(text, /Load public experiments/);
-  assert.match(text, /Start with hosted datasets/);
+  assert.match(text, /Visualize the experiments used in the SpatialDINO paper\./);
   assert.match(text, /AP2/);
   assert.match(text, /NPC1/);
-  assert.match(text, /Load example/);
+  assert.match(text, /Load experiment/);
+  assert.doesNotMatch(text, /About Mirante4D:/);
 
   renderer.unmount();
 });

@@ -362,7 +362,7 @@ function buildLayerResidencyModeMap({
   const modeByKey = new Map<string, 'volume' | 'atlas'>();
   for (const layers of channelLayersMap.values()) {
     for (const layer of layers) {
-      const useAtlas = preferBrickResidency && canUseAtlas && layer.depth > 1;
+      const useAtlas = preferBrickResidency && canUseAtlas && layer.depth > 1 && !layer.isSegmentation;
       modeByKey.set(layer.key, useAtlas ? 'atlas' : 'volume');
     }
   }
