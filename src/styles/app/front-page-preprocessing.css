@@ -127,15 +127,22 @@
 
 .public-experiment-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
+  align-items: stretch;
+}
+
+@media (max-width: 720px) {
+  .public-experiment-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .public-experiment-card {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  min-height: 100%;
+  height: 100%;
   min-width: 0;
   padding: 1rem;
   border: 1px solid transparent;
@@ -169,13 +176,6 @@
 
 .public-experiment-card-description {
   margin: 0;
-}
-
-.public-experiment-card-pill {
-  display: inline-flex;
-  align-items: center;
-  align-self: flex-start;
-  padding: 0.32rem 0.68rem;
 }
 
 .public-experiment-card-button {

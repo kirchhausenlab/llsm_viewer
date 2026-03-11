@@ -475,18 +475,6 @@
   text-transform: uppercase;
 }
 
-.public-experiment-card-pill {
-  border: 1px solid var(--accent-border);
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--text-primary);
-  font-size: var(--type-size-meta);
-  font-weight: var(--type-weight-strong);
-  letter-spacing: var(--type-tracking-overline);
-  line-height: var(--type-line-ui);
-  text-transform: uppercase;
-}
-
 .channel-tab,
 .channel-controls .channel-tab,
 .channel-tabs--header .channel-tab {

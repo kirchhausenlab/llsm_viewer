@@ -13,10 +13,6 @@ type PublicExperimentLoaderProps = {
   onLoadPublicExperiment: (experimentId: string) => void | Promise<void>;
 };
 
-function formatTimepoints(count: number): string {
-  return `${count} timepoint${count === 1 ? '' : 's'}`;
-}
-
 const PublicExperimentLoader: FC<PublicExperimentLoaderProps> = ({
   isOpen,
   publicExperiments,
@@ -67,7 +63,6 @@ const PublicExperimentLoader: FC<PublicExperimentLoaderProps> = ({
                     <h3>{experiment.label}</h3>
                     <p className="public-experiment-card-description">{experiment.description}</p>
                   </div>
-                  <span className="public-experiment-card-pill">{formatTimepoints(experiment.timepoints)}</span>
                 </div>
                 <button
                   type="button"

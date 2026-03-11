@@ -189,15 +189,6 @@
                                   ]
                                 }
                               ]
-                            },
-                            {
-                              "type": "span",
-                              "props": {
-                                "className": "public-experiment-card-pill"
-                              },
-                              "children": [
-                                "1 timepoint"
-                              ]
                             }
                           ]
                         },
@@ -248,15 +239,6 @@
                                     "5 timepoints, 1 channel (raw), tracks."
                                   ]
                                 }
-                              ]
-                            },
-                            {
-                              "type": "span",
-                              "props": {
-                                "className": "public-experiment-card-pill"
-                              },
-                              "children": [
-                                "5 timepoints"
                               ]
                             }
                           ]
