@@ -222,12 +222,15 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
 }
 
 (() => {
-  const viewerShellProps = useViewerShellProps(createViewerShellContainerProps());
+  const props = createViewerShellContainerProps();
+  props.topMenu.initialScaleWarningMessage = 'temporary scale';
+  const viewerShellProps = useViewerShellProps(props);
 
   assert.strictEqual(viewerShellProps.layout.windowMargin, WINDOW_MARGIN);
   assert.strictEqual(viewerShellProps.layout.controlWindowWidth, CONTROL_WINDOW_WIDTH);
   assert.strictEqual(viewerShellProps.layout.selectedTracksWindowWidth, SELECTED_TRACKS_WINDOW_WIDTH);
   assert.strictEqual(viewerShellProps.topMenu.currentScaleLabel, '—');
+  assert.strictEqual(viewerShellProps.topMenu.initialScaleWarningMessage, 'temporary scale');
   assert.deepStrictEqual(viewerShellProps.trackDefaults, {
     opacity: DEFAULT_TRACK_OPACITY,
     lineWidth: DEFAULT_TRACK_LINE_WIDTH

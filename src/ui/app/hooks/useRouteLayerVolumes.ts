@@ -30,6 +30,8 @@ type SetLaunchProgressOptions = {
   totalCount: number;
 };
 
+type LaunchResourceLoadStrategy = 'default' | 'http-initial';
+
 type UseRouteLayerVolumesOptions = {
   isViewerLaunched: boolean;
   isLaunchingViewer: boolean;
@@ -94,6 +96,7 @@ const MAX_ADAPTIVE_DEMOTION_STEPS = 4;
 const CAMERA_PROJECTED_PIXELS_REFERENCE_DISTANCE = 1.2;
 const CAMERA_PROJECTED_PIXELS_AT_REFERENCE = 1.4;
 const PLAYBACK_WARMUP_SLOT_COUNT = 3;
+const HTTP_INITIAL_LAUNCH_MAX_DATA_CHUNKS = 32;
 
 type LayerPolicyRuntimeState = {
   layerKey: string;
@@ -218,6 +221,32 @@ type LoadedLayerResources = readonly [
   pageTable: VolumeBrickPageTable | null,
   brickAtlas: VolumeBrickAtlas | null
 ];
+
+function normalizeChunkDimension(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.max(1, Math.floor(value)) : null;
+}
+
+function estimateDataChunkCount(scale: PreprocessedLayerScaleManifestEntry | null | undefined): number | null {
+  const descriptor = scale?.zarr?.data;
+  if (!descriptor || !Array.isArray(descriptor.shape) || !Array.isArray(descriptor.chunkShape)) {
+    return null;
+  }
+  if (descriptor.shape.length !== descriptor.chunkShape.length || descriptor.shape.length <= 1) {
+    return null;
+  }
+
+  let chunkCount = 1;
+  for (let axis = 1; axis < descriptor.shape.length; axis += 1) {
+    const shapeDim = normalizeChunkDimension(descriptor.shape[axis]);
+    const chunkDim = normalizeChunkDimension(descriptor.chunkShape[axis]);
+    if (shapeDim === null || chunkDim === null) {
+      return null;
+    }
+    chunkCount *= Math.ceil(shapeDim / chunkDim);
+  }
+
+  return chunkCount;
+}
 
 export type PlaybackWarmupFrameState = {
   slotIndex: number;
@@ -805,16 +834,42 @@ export function useRouteLayerVolumes({
     async (
       layerKey: string,
       timeIndex: number,
-      options?: { signal?: AbortSignal | null }
+      options?: { signal?: AbortSignal | null; strategy?: LaunchResourceLoadStrategy }
     ): Promise<{
       volume: NormalizedVolume | null;
       pageTable: VolumeBrickPageTable | null;
       brickAtlas: VolumeBrickAtlas | null;
     }> => {
       const signal = options?.signal ?? null;
+      const strategy = options?.strategy ?? 'default';
       throwIfAborted(signal);
       const loadStartedAtMs = nowMs();
-      const desiredScaleLevel = resolveDesiredScaleLevel(layerKey);
+      const baseDesiredScaleLevel = resolveDesiredScaleLevel(layerKey);
+      const desiredScaleLevel =
+        strategy === 'http-initial'
+          ? (() => {
+              const levels = layerScaleLevelsByKey.get(layerKey) ?? [baseDesiredScaleLevel];
+              let hasChunkMetadata = false;
+              for (const level of levels) {
+                if (level < baseDesiredScaleLevel) {
+                  continue;
+                }
+                const scale = layerScalesByLevelByKey.get(layerKey)?.get(level) ?? null;
+                const estimatedChunkCount = estimateDataChunkCount(scale);
+                if (estimatedChunkCount === null) {
+                  continue;
+                }
+                hasChunkMetadata = true;
+                if (estimatedChunkCount <= HTTP_INITIAL_LAUNCH_MAX_DATA_CHUNKS) {
+                  return level;
+                }
+              }
+              if (!hasChunkMetadata) {
+                return baseDesiredScaleLevel;
+              }
+              return levels[levels.length - 1] ?? baseDesiredScaleLevel;
+            })()
+          : baseDesiredScaleLevel;
       const maxBrickAtlasBytesHint = MAX_BRICK_ATLAS_BYTES_HINT;
       const maxVolumeBytesHint = MAX_VOLUME_BYTES_HINT;
       const knownLevels = (() => {
@@ -835,7 +890,9 @@ export function useRouteLayerVolumes({
       });
       const residencyMode = layerResidencyModeByKeyRef.current.get(layerKey) ?? 'volume';
       const shouldLoadBrickAtlas =
-        residencyMode === 'atlas' && typeof volumeProvider?.getBrickAtlas === 'function';
+        strategy !== 'http-initial' &&
+        residencyMode === 'atlas' &&
+        typeof volumeProvider?.getBrickAtlas === 'function';
 
       if (shouldLoadBrickAtlas) {
         // Prefer atlas/page-table path first; fall back to volume path when needed.
@@ -1033,6 +1090,8 @@ export function useRouteLayerVolumes({
       layerScalesByLevelByKey,
       resolveDesiredScaleLevel,
       updateLayerPolicyState,
+      layerScaleLevelsByKey,
+      layerScalesByLevelByKey,
       volumeProvider,
       lod0Flags.promotionStateMachine,
       volumeProviderDiagnostics
@@ -1136,6 +1195,8 @@ export function useRouteLayerVolumes({
         layerChannelMap,
         channelVisibility
       });
+      const launchStrategy: LaunchResourceLoadStrategy =
+        preprocessedExperiment.storageHandle?.backend === 'http' ? 'http-initial' : 'default';
       setLaunchExpectedVolumeCount(layerKeys.length);
       let completedLayerCount = 0;
       // Only gate launch on the resources required for the first frame. The
@@ -1144,7 +1205,8 @@ export function useRouteLayerVolumes({
         layerKeys.map(async (layerKey) => {
           const { volume, pageTable, brickAtlas } = await loadLayerTimepointResources(
             layerKey,
-            initialTimeIndex
+            initialTimeIndex,
+            { strategy: launchStrategy }
           );
           completedLayerCount += 1;
           setLaunchProgress({ loadedCount: completedLayerCount, totalCount: layerKeys.length });

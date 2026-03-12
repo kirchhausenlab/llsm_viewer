@@ -246,6 +246,27 @@ test('top menu renders the requested dropdown order and items', () => {
   });
 });
 
+test('top menu renders the initial loading warning when provided', () => {
+  withEnvironmentMocks(() => {
+    const renderer = renderTopMenu({
+      currentScaleLabel: 'L2 (4x)',
+      initialScaleWarningMessage: 'temporary scale'
+    });
+
+    const warning = renderer.root.findAll(
+      (node) =>
+        typeof node.props.className === 'string' &&
+        node.props.className.includes('viewer-top-menu-warning')
+    )[0];
+
+    assert.ok(warning);
+    assert.match(extractText(warning), /Initial loadingtemporary scale/);
+    assert.strictEqual(warning.props.title, 'Viewer opened at a temporary coarse scale and will sharpen automatically.');
+
+    renderer.unmount();
+  });
+});
+
 test('wired dropdown items invoke the expected handlers', () => {
   withEnvironmentMocks(() => {
     let exitCalls = 0;

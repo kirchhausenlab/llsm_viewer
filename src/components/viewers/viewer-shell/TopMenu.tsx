@@ -52,6 +52,7 @@ export default function TopMenu(props: TopMenuProps) {
     vrButtonTitle,
     vrButtonLabel,
     currentScaleLabel,
+    initialScaleWarningMessage,
     isHelpMenuOpen,
     closeHelpMenu,
     volumeTimepointCount,
@@ -601,6 +602,17 @@ export default function TopMenu(props: TopMenuProps) {
                 <span className="viewer-top-menu-scale-label">Scale</span>
                 <span className="viewer-top-menu-scale-value">{currentScaleLabel}</span>
               </div>
+              {initialScaleWarningMessage ? (
+                <div
+                  className="viewer-top-menu-warning"
+                  role="status"
+                  aria-live="polite"
+                  title="Viewer opened at a temporary coarse scale and will sharpen automatically."
+                >
+                  <span className="viewer-top-menu-warning-label">Initial loading</span>
+                  <span className="viewer-top-menu-warning-message">{initialScaleWarningMessage}</span>
+                </div>
+              ) : null}
               <div className="viewer-top-menu-intensity" role="status" aria-live="polite">
                 {hoveredVoxel ? (
                   <>

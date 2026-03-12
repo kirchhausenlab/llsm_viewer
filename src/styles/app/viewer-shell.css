@@ -159,6 +159,31 @@
   font-variant-numeric: tabular-nums;
 }
 
+.viewer-top-menu-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.65rem;
+  border: 1px solid rgba(245, 158, 11, 0.38);
+  border-radius: 999px;
+  background: rgba(120, 53, 15, 0.28);
+  color: #fef3c7;
+  font-weight: 700;
+  font-size: var(--overlay-button-font-size);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.viewer-top-menu-warning-label {
+  color: #fbbf24;
+  font-weight: 700;
+}
+
+.viewer-top-menu-warning-message {
+  color: #fef3c7;
+  font-weight: 600;
+}
+
 .viewer-top-menu-intensity-value {
   display: inline-flex;
   align-items: baseline;
