@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, type CSSProperties, type MouseEvent } from 'react';
+import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 
 import { normalizeTrackColor } from '../../../shared/colorMaps/trackColors';
-import { applyAlphaToHex, isLightHexColor } from '../../../shared/utils/appHelpers';
+import { isLightHexColor } from '../../../shared/utils/appHelpers';
+import { buildRainbowTabStyle, buildTintedTabStyle } from './tabStyles';
 import type { VolumeTrackTabsProps } from './types';
 import { formatCompactChannelLabel } from './channelLabel';
 
@@ -30,7 +31,9 @@ export default function VolumeTrackTabs({
   trackHeadersByTrackSet,
   activeTrackSetId,
   trackColorModesByTrackSet,
-  onTrackSetTabSelect
+  trackVisibilitySummaryByTrackSet,
+  onTrackSetTabSelect,
+  onTrackVisibilityAllChange
 }: VolumeTrackTabsProps) {
   const trackSetIds = useMemo(() => trackSets.map((trackSet) => trackSet.id), [trackSets]);
   const maxTabOffset = Math.max(0, trackSetIds.length - MAX_VISIBLE_TRACK_TABS);
@@ -96,6 +99,8 @@ export default function VolumeTrackTabs({
           const compactLabel = formatCompactChannelLabel(label);
           const isActive = trackSet.id === activeTrackSetId;
           const hasTracks = (trackHeadersByTrackSet.get(trackSet.id)?.totalTracks ?? 0) > 0;
+          const summary = trackVisibilitySummaryByTrackSet.get(trackSet.id) ?? { total: 0, visible: 0 };
+          const isHidden = hasTracks && summary.visible === 0;
           const colorMode = trackColorModesByTrackSet[trackSet.id] ?? { type: 'random' as const };
           const tintColor =
             colorMode.type === 'uniform' ? normalizeTrackColor(colorMode.color) : null;
@@ -105,30 +110,36 @@ export default function VolumeTrackTabs({
             'viewer-top-menu-track-tab',
             isActive ? 'is-active' : '',
             isLightTint ? 'is-light-tint' : '',
-            !hasTracks ? 'is-hidden' : ''
+            !hasTracks || isHidden ? 'is-hidden' : ''
           ]
             .filter(Boolean)
             .join(' ');
-          const labelClassName = hasTracks
-            ? 'channel-tab-label'
-            : 'channel-tab-label channel-tab-label--crossed';
+          const labelClassName = !hasTracks
+            ? 'channel-tab-label channel-tab-label--crossed'
+            : isHidden
+              ? 'channel-tab-label channel-tab-label--hidden'
+              : 'channel-tab-label';
           const tabStyle =
             tintColor === null
-              ? undefined
-              : ({
-                  '--channel-tab-background': applyAlphaToHex(tintColor, 0.18),
-                  '--channel-tab-background-active': applyAlphaToHex(tintColor, 0.35),
-                  '--channel-tab-border': 'rgba(255, 255, 255, 0.15)',
-                  '--channel-tab-border-active': applyAlphaToHex(tintColor, 0.55),
-                  '--channel-tab-highlight': applyAlphaToHex(tintColor, 0.82),
-                  '--channel-tab-contrast-outline': isLightTint ? 'var(--panel-border-strong)' : 'transparent'
-                } as CSSProperties & Record<string, string>);
+              ? buildRainbowTabStyle()
+              : buildTintedTabStyle(tintColor, isLightTint);
 
           const handleTrackTabClick = (event: MouseEvent<HTMLButtonElement>) => {
             if (event.button !== 0) {
               return;
             }
             onTrackSetTabSelect(trackSet.id);
+          };
+
+          const handleTrackTabAuxClick = (event: MouseEvent<HTMLButtonElement>) => {
+            if (event.button !== 1) {
+              return;
+            }
+
+            const currentSummary = trackVisibilitySummaryByTrackSet.get(trackSet.id) ?? { total: 0, visible: 0 };
+            onTrackVisibilityAllChange(trackSet.id, currentSummary.visible === 0);
+            event.preventDefault();
+            event.stopPropagation();
           };
 
           return (
@@ -138,6 +149,7 @@ export default function VolumeTrackTabs({
               className={tabClassName}
               style={tabStyle}
               onClick={handleTrackTabClick}
+              onAuxClick={handleTrackTabAuxClick}
               title={label}
               role="tab"
               id={`top-menu-track-tab-${trackSet.id}`}

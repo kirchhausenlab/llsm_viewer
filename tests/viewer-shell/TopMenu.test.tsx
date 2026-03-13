@@ -166,6 +166,7 @@ function createProps(overrides: Partial<React.ComponentProps<typeof TopMenu>> = 
     channelNameMap: new Map(),
     channelVisibility: {},
     channelTintMap: new Map(),
+    segmentationChannelIds: new Set(),
     activeChannelId: null,
     onChannelTabSelect: () => {},
     onChannelVisibilityToggle: () => {},
@@ -173,7 +174,9 @@ function createProps(overrides: Partial<React.ComponentProps<typeof TopMenu>> = 
     trackHeadersByTrackSet: new Map(),
     activeTrackSetId: null,
     trackColorModesByTrackSet: {},
+    trackVisibilitySummaryByTrackSet: new Map(),
     onTrackSetTabSelect: () => {},
+    onTrackVisibilityAllChange: () => {},
     ...overrides
   };
 }
@@ -466,6 +469,43 @@ test('top menu renders and switches track tabs', () => {
     });
 
     assert.deepEqual(selectedTrackSetIds, ['set-b']);
+
+    renderer.unmount();
+  });
+});
+
+test('top menu track tabs support middle-click visibility toggles', () => {
+  withEnvironmentMocks(() => {
+    const visibilityCalls: Array<{ trackSetId: string; visible: boolean }> = [];
+    const renderer = renderTopMenu({
+      trackSets: [{ id: 'set-a', name: 'Tracks A' }],
+      trackHeadersByTrackSet: new Map([['set-a', { totalTracks: 12 }]]),
+      activeTrackSetId: 'set-a',
+      trackVisibilitySummaryByTrackSet: new Map([['set-a', { total: 12, visible: 5 }]]),
+      onTrackVisibilityAllChange: (trackSetId, visible) => {
+        visibilityCalls.push({ trackSetId, visible });
+      }
+    });
+
+    const trackTab = renderer.root.findByProps({ id: 'top-menu-track-tab-set-a' });
+    let prevented = false;
+    let stopped = false;
+
+    act(() => {
+      trackTab.props.onAuxClick({
+        button: 1,
+        preventDefault() {
+          prevented = true;
+        },
+        stopPropagation() {
+          stopped = true;
+        }
+      });
+    });
+
+    assert.equal(prevented, true);
+    assert.equal(stopped, true);
+    assert.deepEqual(visibilityCalls, [{ trackSetId: 'set-a', visible: false }]);
 
     renderer.unmount();
   });

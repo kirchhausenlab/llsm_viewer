@@ -21,6 +21,7 @@ function createProps(overrides: Partial<React.ComponentProps<typeof VolumeChanne
       ['channel-a', '#ffffff'],
       ['channel-b', '#ffffff'],
     ]),
+    segmentationChannelIds: new Set<string>(),
     activeChannelId: 'channel-b',
     onChannelTabSelect: () => {},
     onChannelVisibilityToggle: () => {},

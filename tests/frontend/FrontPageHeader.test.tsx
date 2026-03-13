@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import React from 'react';
 import TestRenderer from 'react-test-renderer';
+import type { ReactTestInstance } from 'react-test-renderer';
 
 import FrontPageHeader from '../../src/components/pages/FrontPageHeader.tsx';
 
@@ -40,9 +41,12 @@ test('front page header renders version and performance note when provided', () 
     />
   );
 
-  const text = renderer.root.findAllByType('p').map((node) => node.children.join(' ')).join(' ');
+  const text = renderer.root
+    .findAllByType('p')
+    .map((node: ReactTestInstance) => node.children.join(' '))
+    .join(' ');
   const version = renderer.root.findAll(
-    (node) => node.type === 'span' && node.props.className === 'front-page-version-label'
+    (node: ReactTestInstance) => node.type === 'span' && node.props.className === 'front-page-version-label'
   )[0];
 
   assert.ok(version);

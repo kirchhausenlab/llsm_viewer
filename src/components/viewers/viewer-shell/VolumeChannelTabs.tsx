@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 
 import { DEFAULT_LAYER_COLOR } from '../../../shared/colorMaps/layerColors';
-import { applyAlphaToHex, isLightHexColor } from '../../../shared/utils/appHelpers';
-import type { ChannelPanelStyle, VolumeChannelTabsProps } from './types';
+import { isLightHexColor } from '../../../shared/utils/appHelpers';
+import { buildRainbowTabStyle, buildTintedTabStyle } from './tabStyles';
+import type { VolumeChannelTabsProps } from './types';
 import { formatCompactChannelLabel } from './channelLabel';
 
 const MAX_VISIBLE_CHANNEL_TABS = 5;
@@ -27,6 +28,7 @@ export default function VolumeChannelTabs({
   channelNameMap,
   channelVisibility,
   channelTintMap,
+  segmentationChannelIds = new Set<string>(),
   activeChannelId,
   onChannelTabSelect,
   onChannelVisibilityToggle
@@ -95,6 +97,7 @@ export default function VolumeChannelTabs({
           const isActive = channelId === activeChannelId;
           const isVisible = channelVisibility[channelId] ?? true;
           const tintColor = channelTintMap.get(channelId) ?? DEFAULT_LAYER_COLOR;
+          const isSegmentationChannel = segmentationChannelIds.has(channelId);
           const isLightTint = isLightHexColor(tintColor);
           const tabClassName = [
             'channel-tab',
@@ -108,14 +111,9 @@ export default function VolumeChannelTabs({
           const labelClassName = isVisible
             ? 'channel-tab-label'
             : 'channel-tab-label channel-tab-label--hidden';
-          const tabStyle: ChannelPanelStyle = {
-            '--channel-tab-background': applyAlphaToHex(tintColor, 0.18),
-            '--channel-tab-background-active': applyAlphaToHex(tintColor, 0.35),
-            '--channel-tab-border': 'rgba(255, 255, 255, 0.15)',
-            '--channel-tab-border-active': applyAlphaToHex(tintColor, 0.55),
-            '--channel-tab-highlight': applyAlphaToHex(tintColor, 0.82),
-            '--channel-tab-contrast-outline': isLightTint ? 'var(--panel-border-strong)' : 'transparent'
-          };
+          const tabStyle = isSegmentationChannel
+            ? buildRainbowTabStyle()
+            : buildTintedTabStyle(tintColor, isLightTint);
 
           const handleChannelTabClick = (event: MouseEvent<HTMLButtonElement>) => {
             if (event.button !== 0) {

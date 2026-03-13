@@ -26,7 +26,6 @@ type DropdownMenuItem = {
 const DROPDOWN_MENU_ORDER: DropdownMenuId[] = ['file', 'view', 'edit', 'tracks', 'help'];
 
 const clampRangeValue = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-const HOVER_INTENSITY_VISIBLE_ITEMS = 3;
 const HOVER_INTENSITY_MIN_DURATION_SECONDS = 8;
 const HOVER_INTENSITY_PIXELS_PER_SECOND = 18;
 
@@ -68,6 +67,7 @@ export default function TopMenu(props: TopMenuProps) {
     channelNameMap,
     channelVisibility,
     channelTintMap,
+    segmentationChannelIds,
     activeChannelId,
     onChannelTabSelect,
     onChannelVisibilityToggle,
@@ -75,7 +75,9 @@ export default function TopMenu(props: TopMenuProps) {
     trackHeadersByTrackSet,
     activeTrackSetId,
     trackColorModesByTrackSet,
+    trackVisibilitySummaryByTrackSet,
     onTrackSetTabSelect,
+    onTrackVisibilityAllChange,
     hoverCoordinateDigits,
     hoverIntensityValueDigits,
     followedTrackSetId,
@@ -366,10 +368,10 @@ export default function TopMenu(props: TopMenuProps) {
   const resolvedZSliderMax = Math.max(1, Math.floor(zSliderMax ?? 1));
   const resolvedZSliderValue = clampRangeValue(Math.round(zSliderValue ?? 1), 1, resolvedZSliderMax);
   const zSliderDisabled = resolvedZSliderMax <= 1 || !onZSliderChange;
+  const hasTrackTabs = trackSets.length > 0;
   const isTrackFollowActive = followedTrackSetId !== null && followedTrackId !== null;
   const isFollowActive = isTrackFollowActive || followedVoxel !== null;
-  const shouldAnimateHoverIntensity =
-    resolvedIntensityComponents.length > HOVER_INTENSITY_VISIBLE_ITEMS && hoverIntensityOverflow > 0;
+  const shouldAnimateHoverIntensity = hoverIntensityOverflow > 0;
   const hoverIntensityTrackStyle = shouldAnimateHoverIntensity
     ? ({
         '--viewer-top-menu-intensity-overflow': `${hoverIntensityOverflow}px`,
@@ -478,6 +480,7 @@ export default function TopMenu(props: TopMenuProps) {
               </div>
             </div>
           </div>
+          <span className="viewer-top-menu-divider viewer-top-menu-divider--primary" aria-hidden="true" />
           <div className="viewer-top-menu-strip-right">
             <button
               type="button"
@@ -564,23 +567,33 @@ export default function TopMenu(props: TopMenuProps) {
                 </label>
               </div>
             </div>
+            <span className="viewer-top-menu-divider viewer-top-menu-divider--secondary" aria-hidden="true" />
             <div className="viewer-top-menu-tab-widgets">
               <VolumeChannelTabs
                 loadedChannelIds={loadedChannelIds}
                 channelNameMap={channelNameMap}
                 channelVisibility={channelVisibility}
                 channelTintMap={channelTintMap}
+                segmentationChannelIds={segmentationChannelIds}
                 activeChannelId={activeChannelId}
                 onChannelTabSelect={onChannelTabSelect}
                 onChannelVisibilityToggle={onChannelVisibilityToggle}
               />
-              <VolumeTrackTabs
-                trackSets={trackSets}
-                trackHeadersByTrackSet={trackHeadersByTrackSet}
-                activeTrackSetId={activeTrackSetId}
-                trackColorModesByTrackSet={trackColorModesByTrackSet}
-                onTrackSetTabSelect={onTrackSetTabSelect}
-              />
+              <span className="viewer-top-menu-divider viewer-top-menu-divider--tabs" aria-hidden="true" />
+              {hasTrackTabs ? (
+                <>
+                  <VolumeTrackTabs
+                    trackSets={trackSets}
+                    trackHeadersByTrackSet={trackHeadersByTrackSet}
+                    activeTrackSetId={activeTrackSetId}
+                    trackColorModesByTrackSet={trackColorModesByTrackSet}
+                    trackVisibilitySummaryByTrackSet={trackVisibilitySummaryByTrackSet}
+                    onTrackSetTabSelect={onTrackSetTabSelect}
+                    onTrackVisibilityAllChange={onTrackVisibilityAllChange}
+                  />
+                  <span className="viewer-top-menu-divider viewer-top-menu-divider--tabs" aria-hidden="true" />
+                </>
+              ) : null}
             </div>
           </div>
           <div className="viewer-top-menu-strip-right viewer-top-menu-strip-right--secondary">
