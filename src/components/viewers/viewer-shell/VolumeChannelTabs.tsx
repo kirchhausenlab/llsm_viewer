@@ -6,7 +6,7 @@ import { buildRainbowTabStyle, buildTintedTabStyle } from './tabStyles';
 import type { VolumeChannelTabsProps } from './types';
 import { formatCompactChannelLabel } from './channelLabel';
 
-const MAX_VISIBLE_CHANNEL_TABS = 5;
+const MAX_VISIBLE_CHANNEL_TABS = 4;
 
 const clampRangeValue = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 

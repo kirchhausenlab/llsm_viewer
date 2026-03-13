@@ -122,6 +122,10 @@ function extractText(node: ReactTestInstance | string): string {
   return node.children.map((child) => extractText(child as ReactTestInstance | string)).join('');
 }
 
+function hasClassName(node: ReactTestInstance, className: string): boolean {
+  return typeof node.props.className === 'string' && node.props.className.includes(className);
+}
+
 function createProps(overrides: Partial<React.ComponentProps<typeof TopMenu>> = {}): React.ComponentProps<typeof TopMenu> {
   return {
     onReturnToLauncher: () => {},
@@ -256,13 +260,26 @@ test('top menu renders the initial loading warning when provided', () => {
       initialScaleWarningMessage: 'temporary scale'
     });
 
+    const menuRow = renderer.root.findAll(
+      (node) => node.type === 'div' && hasClassName(node, 'viewer-top-menu-row')
+    )[0];
+    const warningAnchor = renderer.root.findAll(
+      (node) => node.type === 'div' && hasClassName(node, 'viewer-top-menu-floating-warning')
+    )[0];
     const warning = renderer.root.findAll(
       (node) =>
         typeof node.props.className === 'string' &&
         node.props.className.includes('viewer-top-menu-warning')
     )[0];
 
+    assert.ok(warningAnchor);
     assert.ok(warning);
+    assert.equal(
+      menuRow.findAll(
+        (node) => typeof node.props.className === 'string' && node.props.className.includes('viewer-top-menu-warning')
+      ).length,
+      0
+    );
     assert.match(extractText(warning), /Initial loadingtemporary scale/);
     assert.strictEqual(warning.props.title, 'Viewer opened at a temporary coarse scale and will sharpen automatically.');
 
@@ -506,6 +523,78 @@ test('top menu track tabs support middle-click visibility toggles', () => {
     assert.equal(prevented, true);
     assert.equal(stopped, true);
     assert.deepEqual(visibilityCalls, [{ trackSetId: 'set-a', visible: false }]);
+
+    renderer.unmount();
+  });
+});
+
+test('top menu keeps playback and Z controls in the top-row second column', () => {
+  withEnvironmentMocks(() => {
+    const renderer = renderTopMenu({
+      volumeTimepointCount: 5,
+      playbackDisabled: false,
+      zSliderMax: 8,
+      onZSliderChange: () => {}
+    });
+
+    const topSecondColumn = renderer.root.findAll(
+      (node) =>
+        node.type === 'div' &&
+        hasClassName(node, 'viewer-top-menu-cell--top') &&
+        hasClassName(node, 'viewer-top-menu-cell--column-2')
+    )[0];
+    const topFourthColumn = renderer.root.findAll(
+      (node) =>
+        node.type === 'div' &&
+        hasClassName(node, 'viewer-top-menu-cell--top') &&
+        hasClassName(node, 'viewer-top-menu-cell--column-4')
+    )[0];
+    const bottomSecondColumn = renderer.root.findAll(
+      (node) =>
+        node.type === 'div' &&
+        hasClassName(node, 'viewer-top-menu-cell--bottom') &&
+        hasClassName(node, 'viewer-top-menu-cell--column-2')
+    )[0];
+
+    assert.ok(topSecondColumn.findByProps({ id: 'top-menu-playback-slider' }));
+    assert.ok(topSecondColumn.findByProps({ id: 'top-menu-z-slider' }));
+    assert.equal(topFourthColumn.findAllByProps({ id: 'top-menu-playback-slider' }).length, 0);
+    assert.equal(topFourthColumn.findAllByProps({ id: 'top-menu-z-slider' }).length, 0);
+    assert.equal(bottomSecondColumn.findAllByProps({ id: 'top-menu-playback-slider' }).length, 0);
+    assert.equal(bottomSecondColumn.findAllByProps({ id: 'top-menu-z-slider' }).length, 0);
+
+    renderer.unmount();
+  });
+});
+
+test('top menu keeps all three shared column dividers even when track tabs are absent', () => {
+  withEnvironmentMocks(() => {
+    const renderer = renderTopMenu({
+      loadedChannelIds: ['channel-a'],
+      channelNameMap: new Map([['channel-a', 'Channel A']]),
+      channelVisibility: { 'channel-a': true },
+      channelTintMap: new Map([['channel-a', '#ffffff']])
+    });
+
+    const bottomFirstColumn = renderer.root.findAll(
+      (node) =>
+        node.type === 'div' &&
+        hasClassName(node, 'viewer-top-menu-cell--bottom') &&
+        hasClassName(node, 'viewer-top-menu-cell--column-1')
+    )[0];
+    const bottomSecondColumn = renderer.root.findAll(
+      (node) =>
+        node.type === 'div' &&
+        hasClassName(node, 'viewer-top-menu-cell--bottom') &&
+        hasClassName(node, 'viewer-top-menu-cell--column-2')
+    )[0];
+    const columnDividers = renderer.root.findAll(
+      (node) => node.type === 'span' && hasClassName(node, 'viewer-top-menu-column-divider')
+    );
+
+    assert.ok(bottomFirstColumn.findByProps({ id: 'channel-tab-channel-a' }));
+    assert.equal(bottomSecondColumn.findAll((node) => node.props.role === 'tab').length, 0);
+    assert.equal(columnDividers.length, 3);
 
     renderer.unmount();
   });

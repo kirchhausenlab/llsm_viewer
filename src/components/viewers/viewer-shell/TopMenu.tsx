@@ -368,6 +368,7 @@ export default function TopMenu(props: TopMenuProps) {
   const resolvedZSliderMax = Math.max(1, Math.floor(zSliderMax ?? 1));
   const resolvedZSliderValue = clampRangeValue(Math.round(zSliderValue ?? 1), 1, resolvedZSliderMax);
   const zSliderDisabled = resolvedZSliderMax <= 1 || !onZSliderChange;
+  const hasChannelTabs = loadedChannelIds.length > 0;
   const hasTrackTabs = trackSets.length > 0;
   const isTrackFollowActive = followedTrackSetId !== null && followedTrackId !== null;
   const isFollowActive = isTrackFollowActive || followedVoxel !== null;
@@ -427,8 +428,12 @@ export default function TopMenu(props: TopMenuProps) {
   return (
     <div className="viewer-top-menu">
       <div className="viewer-top-menu-row" ref={topMenuRowRef}>
-        <div className="viewer-top-menu-strip viewer-top-menu-strip--primary">
-          <div className="viewer-top-menu-strip-left">
+        <span className="viewer-top-menu-column-divider viewer-top-menu-column-divider--1" aria-hidden="true" />
+        <span className="viewer-top-menu-column-divider viewer-top-menu-column-divider--2" aria-hidden="true" />
+        <span className="viewer-top-menu-column-divider viewer-top-menu-column-divider--3" aria-hidden="true" />
+
+        <div className="viewer-top-menu-cell viewer-top-menu-cell--top viewer-top-menu-cell--column-1">
+          <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--start">
             <div className="viewer-top-menu-actions">
               <div className="viewer-top-menu-dropdowns">
                 {DROPDOWN_MENU_ORDER.map((menuId) => (
@@ -480,8 +485,79 @@ export default function TopMenu(props: TopMenuProps) {
               </div>
             </div>
           </div>
-          <span className="viewer-top-menu-divider viewer-top-menu-divider--primary" aria-hidden="true" />
-          <div className="viewer-top-menu-strip-right">
+        </div>
+
+        <div className="viewer-top-menu-cell viewer-top-menu-cell--top viewer-top-menu-cell--column-2">
+          <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--start viewer-top-menu-playback-controls">
+            <div className="viewer-top-menu-secondary-group viewer-top-menu-secondary-group--playback">
+              <button
+                type="button"
+                onClick={onTogglePlayback}
+                disabled={playbackDisabled}
+                className={
+                  isPlaying
+                    ? 'playback-button playback-toggle playing viewer-top-menu-playback-button'
+                    : 'playback-button playback-toggle viewer-top-menu-playback-button'
+                }
+                aria-label={isPlaying ? 'Pause playback' : 'Start playback'}
+              >
+                {isPlaying ? (
+                  <svg className="playback-button-icon" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false">
+                    <path d="M9 5a1 1 0 0 1 1 1v12a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Zm6 0a1 1 0 0 1 1 1v12a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Z" />
+                  </svg>
+                ) : (
+                  <svg className="playback-button-icon" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false">
+                    <path d="M8.5 5.636a1 1 0 0 1 1.53-.848l8.01 5.363a1 1 0 0 1 0 1.698l-8.01 5.363A1 1 0 0 1 8 16.364V7.636a1 1 0 0 1 .5-.868Z" />
+                  </svg>
+                )}
+              </button>
+              <label className="viewer-top-menu-slider-group" htmlFor="top-menu-playback-slider">
+                <input
+                  id="top-menu-playback-slider"
+                  className="playback-slider viewer-top-menu-slider"
+                  type="range"
+                  min={0}
+                  max={playbackMaxIndex}
+                  value={resolvedSelectedIndex}
+                  onChange={(event) => onTimeIndexChange(Number(event.target.value))}
+                  disabled={playbackDisabled}
+                  aria-label="Timepoint"
+                />
+                <span className="viewer-top-menu-slider-counter viewer-top-menu-slider-counter--time">
+                  {playbackCounterLabel}
+                </span>
+              </label>
+            </div>
+            <div className="viewer-top-menu-secondary-group viewer-top-menu-secondary-group--z">
+              <span className="viewer-top-menu-slider-label">Z</span>
+              <label className="viewer-top-menu-slider-group" htmlFor="top-menu-z-slider">
+                <input
+                  id="top-menu-z-slider"
+                  className="playback-slider viewer-top-menu-slider"
+                  type="range"
+                  min={1}
+                  max={resolvedZSliderMax}
+                  step={1}
+                  value={resolvedZSliderValue}
+                  onChange={(event) => onZSliderChange?.(Number(event.target.value))}
+                  disabled={zSliderDisabled}
+                  aria-label="Z"
+                />
+                <span className="viewer-top-menu-slider-counter viewer-top-menu-slider-counter--z">
+                  {resolvedZSliderValue}/{resolvedZSliderMax}
+                </span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div
+          className="viewer-top-menu-cell viewer-top-menu-cell--top viewer-top-menu-cell--column-3"
+          aria-hidden="true"
+        />
+
+        <div className="viewer-top-menu-cell viewer-top-menu-cell--top viewer-top-menu-cell--column-4">
+          <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--end viewer-top-menu-primary-actions">
             <button
               type="button"
               className="viewer-top-menu-button"
@@ -504,71 +580,10 @@ export default function TopMenu(props: TopMenuProps) {
             <ThemeModeToggle className="viewer-top-menu-theme-toggle" compact />
           </div>
         </div>
-        <div className="viewer-top-menu-strip viewer-top-menu-strip--secondary">
-          <div className="viewer-top-menu-strip-left viewer-top-menu-strip-left--secondary">
-            <div className="viewer-top-menu-strip-center viewer-top-menu-strip-center--secondary">
-              <div className="viewer-top-menu-secondary-group viewer-top-menu-secondary-group--playback">
-                <button
-                  type="button"
-                  onClick={onTogglePlayback}
-                  disabled={playbackDisabled}
-                  className={
-                    isPlaying
-                      ? 'playback-button playback-toggle playing viewer-top-menu-playback-button'
-                      : 'playback-button playback-toggle viewer-top-menu-playback-button'
-                  }
-                  aria-label={isPlaying ? 'Pause playback' : 'Start playback'}
-                >
-                  {isPlaying ? (
-                    <svg className="playback-button-icon" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false">
-                      <path d="M9 5a1 1 0 0 1 1 1v12a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Zm6 0a1 1 0 0 1 1 1v12a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Z" />
-                    </svg>
-                  ) : (
-                    <svg className="playback-button-icon" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false">
-                      <path d="M8.5 5.636a1 1 0 0 1 1.53-.848l8.01 5.363a1 1 0 0 1 0 1.698l-8.01 5.363A1 1 0 0 1 8 16.364V7.636a1 1 0 0 1 .5-.868Z" />
-                    </svg>
-                  )}
-                </button>
-                <label className="viewer-top-menu-slider-group" htmlFor="top-menu-playback-slider">
-                  <input
-                    id="top-menu-playback-slider"
-                    className="playback-slider viewer-top-menu-slider"
-                    type="range"
-                    min={0}
-                    max={playbackMaxIndex}
-                    value={resolvedSelectedIndex}
-                    onChange={(event) => onTimeIndexChange(Number(event.target.value))}
-                    disabled={playbackDisabled}
-                    aria-label="Timepoint"
-                  />
-                  <span className="viewer-top-menu-slider-counter viewer-top-menu-slider-counter--time">
-                    {playbackCounterLabel}
-                  </span>
-                </label>
-              </div>
-              <div className="viewer-top-menu-secondary-group viewer-top-menu-secondary-group--z">
-                <span className="viewer-top-menu-slider-label">Z</span>
-                <label className="viewer-top-menu-slider-group" htmlFor="top-menu-z-slider">
-                  <input
-                    id="top-menu-z-slider"
-                    className="playback-slider viewer-top-menu-slider"
-                    type="range"
-                    min={1}
-                    max={resolvedZSliderMax}
-                    step={1}
-                    value={resolvedZSliderValue}
-                    onChange={(event) => onZSliderChange?.(Number(event.target.value))}
-                    disabled={zSliderDisabled}
-                    aria-label="Z"
-                  />
-                  <span className="viewer-top-menu-slider-counter viewer-top-menu-slider-counter--z">
-                    {resolvedZSliderValue}/{resolvedZSliderMax}
-                  </span>
-                </label>
-              </div>
-            </div>
-            <span className="viewer-top-menu-divider viewer-top-menu-divider--secondary" aria-hidden="true" />
-            <div className="viewer-top-menu-tab-widgets">
+
+        <div className="viewer-top-menu-cell viewer-top-menu-cell--bottom viewer-top-menu-cell--column-1">
+          <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--start">
+            {hasChannelTabs ? (
               <VolumeChannelTabs
                 loadedChannelIds={loadedChannelIds}
                 channelNameMap={channelNameMap}
@@ -579,138 +594,147 @@ export default function TopMenu(props: TopMenuProps) {
                 onChannelTabSelect={onChannelTabSelect}
                 onChannelVisibilityToggle={onChannelVisibilityToggle}
               />
-              <span className="viewer-top-menu-divider viewer-top-menu-divider--tabs" aria-hidden="true" />
-              {hasTrackTabs ? (
-                <>
-                  <VolumeTrackTabs
-                    trackSets={trackSets}
-                    trackHeadersByTrackSet={trackHeadersByTrackSet}
-                    activeTrackSetId={activeTrackSetId}
-                    trackColorModesByTrackSet={trackColorModesByTrackSet}
-                    trackVisibilitySummaryByTrackSet={trackVisibilitySummaryByTrackSet}
-                    onTrackSetTabSelect={onTrackSetTabSelect}
-                    onTrackVisibilityAllChange={onTrackVisibilityAllChange}
-                  />
-                  <span className="viewer-top-menu-divider viewer-top-menu-divider--tabs" aria-hidden="true" />
-                </>
-              ) : null}
-            </div>
+            ) : null}
           </div>
-          <div className="viewer-top-menu-strip-right viewer-top-menu-strip-right--secondary">
-            <div className="viewer-top-menu-secondary-group viewer-top-menu-secondary-group--status">
-              {isFollowActive ? (
-                <button
-                  type="button"
-                  className="viewer-top-menu-button viewer-top-menu-button--danger"
-                  onClick={() =>
-                    isTrackFollowActive
-                      ? onStopTrackFollow(followedTrackSetId ?? undefined)
-                      : onStopVoxelFollow()
-                  }
-                >
-                  Stop following
-                </button>
-              ) : null}
-              <div className="viewer-top-menu-scale" role="status" aria-live="polite">
-                <span className="viewer-top-menu-scale-label">Scale</span>
-                <span className="viewer-top-menu-scale-value">{currentScaleLabel}</span>
-              </div>
-              {initialScaleWarningMessage ? (
-                <div
-                  className="viewer-top-menu-warning"
-                  role="status"
-                  aria-live="polite"
-                  title="Viewer opened at a temporary coarse scale and will sharpen automatically."
-                >
-                  <span className="viewer-top-menu-warning-label">Initial loading</span>
-                  <span className="viewer-top-menu-warning-message">{initialScaleWarningMessage}</span>
-                </div>
-              ) : null}
-              <div className="viewer-top-menu-intensity" role="status" aria-live="polite">
-                {hoveredVoxel ? (
-                  <>
-                    <span className="viewer-top-menu-intensity-marquee" ref={hoverIntensityViewportRef}>
-                      <span
-                        className={
-                          shouldAnimateHoverIntensity
-                            ? 'viewer-top-menu-intensity-track is-animated'
-                            : 'viewer-top-menu-intensity-track'
-                        }
-                        ref={hoverIntensityTrackRef}
-                        style={hoverIntensityTrackStyle}
-                      >
-                        {resolvedIntensityComponents.map((component) => (
-                          <span
-                            key={component.key}
-                            className="viewer-top-menu-intensity-entry"
-                            style={
-                              component.color
-                                ? ({
-                                    '--viewer-top-menu-intensity-marker-color': component.color,
-                                    '--viewer-top-menu-intensity-marker-border': isLightHexColor(component.color)
-                                      ? 'var(--panel-border-strong)'
-                                      : 'transparent'
-                                  } as CSSProperties)
-                                : undefined
-                            }
-                            title={component.channelLabel ?? component.fullText}
-                          >
-                            {component.channelLabel && component.color ? (
-                              <span
-                                className="viewer-top-menu-intensity-entry-marker"
-                                aria-hidden="true"
-                              />
-                            ) : null}
-                            {component.channelLabel ? (
-                              <>
-                                <span className="viewer-top-menu-intensity-entry-label">
-                                  {component.displayChannelLabel}
-                                </span>
-                                {component.valueText ? (
-                                  <span
-                                    className="viewer-top-menu-intensity-entry-value"
-                                    style={{ width: `${hoverIntensityValueDigits}ch` }}
-                                  >
-                                    {component.valueText}
-                                  </span>
-                                ) : null}
-                              </>
-                            ) : (
-                              <span
-                                className="viewer-top-menu-intensity-entry-value"
-                                style={{ width: `${hoverIntensityValueDigits}ch` }}
-                              >
-                                {component.valueText}
+        </div>
+
+        <div className="viewer-top-menu-cell viewer-top-menu-cell--bottom viewer-top-menu-cell--column-2">
+          <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--start">
+            {hasTrackTabs ? (
+              <VolumeTrackTabs
+                trackSets={trackSets}
+                trackHeadersByTrackSet={trackHeadersByTrackSet}
+                activeTrackSetId={activeTrackSetId}
+                trackColorModesByTrackSet={trackColorModesByTrackSet}
+                trackVisibilitySummaryByTrackSet={trackVisibilitySummaryByTrackSet}
+                onTrackSetTabSelect={onTrackSetTabSelect}
+                onTrackVisibilityAllChange={onTrackVisibilityAllChange}
+              />
+            ) : null}
+          </div>
+        </div>
+
+        <div className="viewer-top-menu-cell viewer-top-menu-cell--bottom viewer-top-menu-cell--column-3">
+          <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--start">
+            {isFollowActive ? (
+              <button
+                type="button"
+                className="viewer-top-menu-button viewer-top-menu-button--danger"
+                onClick={() =>
+                  isTrackFollowActive
+                    ? onStopTrackFollow(followedTrackSetId ?? undefined)
+                    : onStopVoxelFollow()
+                }
+              >
+                Stop following
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="viewer-top-menu-cell viewer-top-menu-cell--bottom viewer-top-menu-cell--column-4">
+          <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--end viewer-top-menu-status-group">
+            <div className="viewer-top-menu-scale" role="status" aria-live="polite">
+              <span className="viewer-top-menu-scale-label">Scale</span>
+              <span className="viewer-top-menu-scale-value">{currentScaleLabel}</span>
+            </div>
+            <div className="viewer-top-menu-intensity" role="status" aria-live="polite">
+              {hoveredVoxel ? (
+                <>
+                  <span className="viewer-top-menu-intensity-marquee" ref={hoverIntensityViewportRef}>
+                    <span
+                      className={
+                        shouldAnimateHoverIntensity
+                          ? 'viewer-top-menu-intensity-track is-animated'
+                          : 'viewer-top-menu-intensity-track'
+                      }
+                      ref={hoverIntensityTrackRef}
+                      style={hoverIntensityTrackStyle}
+                    >
+                      {resolvedIntensityComponents.map((component) => (
+                        <span
+                          key={component.key}
+                          className="viewer-top-menu-intensity-entry"
+                          style={
+                            component.color
+                              ? ({
+                                  '--viewer-top-menu-intensity-marker-color': component.color,
+                                  '--viewer-top-menu-intensity-marker-border': isLightHexColor(component.color)
+                                    ? 'var(--panel-border-strong)'
+                                    : 'transparent'
+                                } as CSSProperties)
+                              : undefined
+                          }
+                          title={component.channelLabel ?? component.fullText}
+                        >
+                          {component.channelLabel && component.color ? (
+                            <span
+                              className="viewer-top-menu-intensity-entry-marker"
+                              aria-hidden="true"
+                            />
+                          ) : null}
+                          {component.channelLabel ? (
+                            <>
+                              <span className="viewer-top-menu-intensity-entry-label">
+                                {component.displayChannelLabel}
                               </span>
-                            )}
-                          </span>
-                        ))}
-                      </span>
+                              {component.valueText ? (
+                                <span
+                                  className="viewer-top-menu-intensity-entry-value"
+                                  style={{ width: `${hoverIntensityValueDigits}ch` }}
+                                >
+                                  {component.valueText}
+                                </span>
+                              ) : null}
+                            </>
+                          ) : (
+                            <span
+                              className="viewer-top-menu-intensity-entry-value"
+                              style={{ width: `${hoverIntensityValueDigits}ch` }}
+                            >
+                              {component.valueText}
+                            </span>
+                          )}
+                        </span>
+                      ))}
                     </span>
-                    <span className="viewer-top-menu-coordinates">
-                      (
-                      <span className="viewer-top-menu-coordinate-value" style={{ width: `${hoverCoordinateDigits.x}ch` }}>
-                        {hoveredVoxel.coordinates.x}
-                      </span>
-                      ,{' '}
-                      <span className="viewer-top-menu-coordinate-value" style={{ width: `${hoverCoordinateDigits.y}ch` }}>
-                        {hoveredVoxel.coordinates.y}
-                      </span>
-                      ,{' '}
-                      <span className="viewer-top-menu-coordinate-value" style={{ width: `${hoverCoordinateDigits.z}ch` }}>
-                        {hoveredVoxel.coordinates.z}
-                      </span>
-                      )
+                  </span>
+                  <span className="viewer-top-menu-coordinates">
+                    (
+                    <span className="viewer-top-menu-coordinate-value" style={{ width: `${hoverCoordinateDigits.x}ch` }}>
+                      {hoveredVoxel.coordinates.x}
                     </span>
-                  </>
-                ) : (
-                  <span className="viewer-top-menu-intensity-empty">—</span>
-                )}
-              </div>
+                    ,{' '}
+                    <span className="viewer-top-menu-coordinate-value" style={{ width: `${hoverCoordinateDigits.y}ch` }}>
+                      {hoveredVoxel.coordinates.y}
+                    </span>
+                    ,{' '}
+                    <span className="viewer-top-menu-coordinate-value" style={{ width: `${hoverCoordinateDigits.z}ch` }}>
+                      {hoveredVoxel.coordinates.z}
+                    </span>
+                    )
+                  </span>
+                </>
+              ) : (
+                <span className="viewer-top-menu-intensity-empty">—</span>
+              )}
             </div>
           </div>
         </div>
       </div>
+      {initialScaleWarningMessage ? (
+        <div className="viewer-top-menu-floating-warning">
+          <div
+            className="viewer-top-menu-warning"
+            role="status"
+            aria-live="polite"
+            title="Viewer opened at a temporary coarse scale and will sharpen automatically."
+          >
+            <span className="viewer-top-menu-warning-label">Initial loading</span>
+            <span className="viewer-top-menu-warning-message">{initialScaleWarningMessage}</span>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
