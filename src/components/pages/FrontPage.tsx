@@ -60,6 +60,11 @@ type ExperimentTypeSelectionProps = {
 type HeaderProps = {
   onReturnToStart: () => void;
   isFrontPageLocked: boolean;
+  versionLabel?: string | null;
+  performanceNotice?: {
+    title: string;
+    lines: string[];
+  } | null;
 };
 
 type FrontPageProps = {
@@ -127,6 +132,8 @@ export default function FrontPage({
             showReturnButton={showReturnButton}
             onReturnToStart={header.onReturnToStart}
             isFrontPageLocked={header.isFrontPageLocked}
+            versionLabel={header.versionLabel}
+            performanceNotice={header.performanceNotice}
           />
           {frontPageMode === 'initial' && !preprocessedLoader.isOpen ? (
             <div className="channel-add-actions">
@@ -315,6 +322,7 @@ export default function FrontPage({
             onExportNameChange={launchActions.onExportNameChange}
             exportDestinationLabel={launchActions.exportDestinationLabel}
             onLaunchViewer={launchActions.onLaunchViewer}
+            onLaunchViewerInPerformanceMode={launchActions.onLaunchViewerInPerformanceMode}
             isLaunchingViewer={launchActions.isLaunchingViewer}
             launchButtonEnabled={launchActions.launchButtonEnabled}
             launchButtonLaunchable={launchActions.launchButtonLaunchable}

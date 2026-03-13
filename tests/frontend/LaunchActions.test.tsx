@@ -21,6 +21,7 @@ const makeProps = (overrides: Partial<LaunchActionsProps> = {}): LaunchActionsPr
   onExportNameChange: () => {},
   exportDestinationLabel: null,
   onLaunchViewer: () => {},
+  onLaunchViewerInPerformanceMode: () => {},
   isLaunchingViewer: false,
   launchButtonEnabled: true,
   launchButtonLaunchable: 'true',
@@ -57,9 +58,38 @@ test('preprocessed mode shows launch button', () => {
   const launchButton = buttonByText(renderer, 'Launch viewer');
   assert.ok(launchButton);
   assert.equal(launchButton.props.disabled, false);
+  const performanceButton = buttonByText(renderer, 'Launch in Performance Mode');
+  assert.ok(performanceButton);
+  assert.equal(performanceButton.props.disabled, false);
 
   const preprocessButton = buttonByText(renderer, 'Preprocess experiment');
   assert.equal(preprocessButton, undefined);
+
+  renderer.unmount();
+});
+
+test('preprocessed mode wires the performance launch action separately', () => {
+  let defaultLaunches = 0;
+  let performanceLaunches = 0;
+  const renderer = TestRenderer.create(
+    <LaunchActions
+      {...makeProps({
+        frontPageMode: 'preprocessed',
+        onLaunchViewer: () => {
+          defaultLaunches += 1;
+        },
+        onLaunchViewerInPerformanceMode: () => {
+          performanceLaunches += 1;
+        }
+      })}
+    />
+  );
+
+  buttonByText(renderer, 'Launch viewer')?.props.onClick();
+  buttonByText(renderer, 'Launch in Performance Mode')?.props.onClick();
+
+  assert.equal(defaultLaunches, 1);
+  assert.equal(performanceLaunches, 1);
 
   renderer.unmount();
 });

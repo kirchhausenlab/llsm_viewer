@@ -1471,6 +1471,101 @@ const createLayer = (
 })();
 
 (() => {
+  const volume: NormalizedVolume = {
+    kind: 'segmentation',
+    width: 2,
+    height: 2,
+    depth: 2,
+    channels: 1,
+    dataType: 'uint16',
+    labels: new Uint16Array([0, 1, 1, 0, 2, 2, 0, 3]),
+    min: 0 as const,
+    max: 3,
+  };
+  const pageTable: VolumeBrickPageTable = {
+    layerKey: 'layer-3d',
+    timepoint: 0,
+    scaleLevel: 1,
+    gridShape: [1, 1, 1],
+    chunkShape: [2, 2, 2],
+    volumeShape: [2, 2, 2],
+    brickAtlasIndices: new Int32Array([0]),
+    chunkMin: new Uint8Array([0]),
+    chunkMax: new Uint8Array([255]),
+    chunkOccupancy: new Float32Array([1]),
+    occupiedBrickCount: 1,
+  };
+
+  const sceneRef = { current: new THREE.Scene() };
+  const cameraRef = { current: new THREE.PerspectiveCamera(75, 1, 0.1, 10) };
+  const controlsRef = {
+    current: {
+      target: new THREE.Vector3(),
+      update: () => {},
+      saveState: () => {},
+    } as unknown as THREE.OrbitControls,
+  };
+  const resourcesRef = { current: new Map<string, VolumeResources>() };
+  const layer: ViewerLayer = {
+    ...createLayer(volume, pageTable, null, 'linear'),
+    fullResolutionWidth: 4,
+    fullResolutionHeight: 4,
+    fullResolutionDepth: 4,
+  };
+
+  renderHook(() =>
+    useVolumeResources({
+      layers: [layer],
+      primaryVolume: volume,
+      isAdditiveBlending: false,
+      renderContextRevision: 0,
+      sceneRef,
+      cameraRef,
+      controlsRef,
+      rotationTargetRef: { current: new THREE.Vector3() },
+      defaultViewStateRef: { current: null },
+      trackGroupRef: { current: new THREE.Group() },
+      resourcesRef,
+      currentDimensionsRef: { current: null },
+      colormapCacheRef: { current: new Map() },
+      volumeRootGroupRef: { current: new THREE.Group() },
+      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+      volumeNormalizationScaleRef: { current: 1 },
+      volumeUserScaleRef: { current: 1 },
+      volumeStepScaleRef: { current: 1 },
+      volumeYawRef: { current: 0 },
+      volumePitchRef: { current: 0 },
+      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+      applyTrackGroupTransform: () => {},
+      applyVolumeRootTransform: () => {},
+      applyVolumeStepScaleToResources: () => {},
+      applyHoverHighlightToResources: () => {},
+    }),
+  );
+
+  const resource = resourcesRef.current.get('layer-3d');
+  assert.ok(resource);
+  assert.deepStrictEqual(resource.dimensions, { width: 4, height: 4, depth: 4 });
+  const textureImage = resource.texture.image as { width: number; height: number; depth: number };
+  assert.deepStrictEqual(
+    { width: textureImage.width, height: textureImage.height, depth: textureImage.depth },
+    { width: 2, height: 2, depth: 2 }
+  );
+  const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms as Record<string, { value: unknown }>;
+  assert.deepStrictEqual(
+    ((uniforms.u_size?.value as THREE.Vector3) ?? new THREE.Vector3()).toArray(),
+    [4, 4, 4]
+  );
+  assert.deepStrictEqual(
+    ((uniforms.u_segmentationVolumeSize?.value as THREE.Vector3) ?? new THREE.Vector3()).toArray(),
+    [2, 2, 2]
+  );
+})();
+
+(() => {
   const intensityVolume: NormalizedVolume = {
     kind: 'intensity',
     width: 2,

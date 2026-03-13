@@ -11,6 +11,10 @@ type SetLaunchProgressOptions = {
   totalCount: number;
 };
 
+type BeginLaunchSessionOptions = {
+  performanceMode?: boolean;
+};
+
 export type RouteLaunchSessionState = {
   status: LaunchStatus;
   error: string | null;
@@ -20,8 +24,9 @@ export type RouteLaunchSessionState = {
   isViewerLaunched: boolean;
   isLaunchingViewer: boolean;
   isLoading: boolean;
+  isPerformanceMode: boolean;
   resetLaunchState: () => void;
-  beginLaunchSession: () => void;
+  beginLaunchSession: (options?: BeginLaunchSessionOptions) => void;
   setLaunchExpectedVolumeCount: (count: number) => void;
   setLaunchProgress: (options: SetLaunchProgressOptions) => void;
   completeLaunchSession: (totalCount: number) => void;
@@ -40,6 +45,7 @@ export function useRouteLaunchSessionState({
   const [expectedVolumeCount, setExpectedVolumeCount] = useState(0);
   const [isViewerLaunched, setIsViewerLaunched] = useState(false);
   const [isLaunchingViewer, setIsLaunchingViewer] = useState(false);
+  const [isPerformanceMode, setIsPerformanceMode] = useState(false);
 
   const resetLaunchState = useCallback(() => {
     setStatus('idle');
@@ -50,9 +56,11 @@ export function useRouteLaunchSessionState({
     stopPlayback();
     setIsViewerLaunched(false);
     setIsLaunchingViewer(false);
+    setIsPerformanceMode(false);
   }, [stopPlayback]);
 
-  const beginLaunchSession = useCallback(() => {
+  const beginLaunchSession = useCallback((options?: BeginLaunchSessionOptions) => {
+    setIsPerformanceMode(Boolean(options?.performanceMode));
     setIsLaunchingViewer(true);
     setStatus('loading');
     setError(null);
@@ -89,6 +97,7 @@ export function useRouteLaunchSessionState({
   const endViewerSession = useCallback(() => {
     stopPlayback();
     setIsViewerLaunched(false);
+    setIsPerformanceMode(false);
   }, [stopPlayback]);
 
   return {
@@ -100,6 +109,7 @@ export function useRouteLaunchSessionState({
     isViewerLaunched,
     isLaunchingViewer,
     isLoading: status === 'loading',
+    isPerformanceMode,
     resetLaunchState,
     beginLaunchSession,
     setLaunchExpectedVolumeCount,

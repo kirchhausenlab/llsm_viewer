@@ -18,6 +18,8 @@ import { useViewerRecording } from './viewer-shell/hooks/useViewerRecording';
 import type { ViewerShellProps } from './viewer-shell/types';
 import { createDefaultLayerSettings } from '../../state/layerSettings';
 import { formatIntensityValue } from '../../shared/utils/intensityFormatting';
+import { createDefaultTrackSetState } from '../../hooks/tracks/useTrackStyling';
+import { resolveTrackVisibilityForState } from '../../shared/utils/trackVisibilityState';
 
 const NAVIGATION_HELP_WINDOW_WIDTH = 420;
 
@@ -231,6 +233,53 @@ function ViewerShell({
     onRenderingQualityChange: handleRenderingQualityChange,
     hasVolumeData
   });
+  const segmentationChannelIds = useMemo(() => {
+    const next = new Set<string>();
+
+    for (const channelId of channelsPanel.loadedChannelIds) {
+      const channelLayers = channelsPanel.channelLayersMap.get(channelId) ?? [];
+      if (channelLayers.length > 0 && channelLayers.every((layer) => layer.isSegmentation)) {
+        next.add(channelId);
+      }
+    }
+
+    return next;
+  }, [channelsPanel.channelLayersMap, channelsPanel.loadedChannelIds]);
+  const trackVisibilitySummaryByTrackSet = useMemo(() => {
+    const summary = new Map<string, { total: number; visible: number }>();
+
+    for (const trackSet of tracksPanel.trackSets) {
+      const state = tracksPanel.trackSetStates[trackSet.id] ?? createDefaultTrackSetState();
+      const tracksForSet = tracksPanel.filteredTracksByTrackSet.get(trackSet.id) ?? [];
+      if (tracksForSet.length === 0) {
+        const total = tracksPanel.trackHeadersByTrackSet.get(trackSet.id)?.totalTracks ?? 0;
+        const visible = state.defaultVisibility ? total : 0;
+        summary.set(trackSet.id, { total, visible });
+        continue;
+      }
+
+      let visible = 0;
+      for (const track of tracksForSet) {
+        const explicitVisible = resolveTrackVisibilityForState(state, track.id);
+        const isFollowedTrack = tracksPanel.followedTrackId === track.id;
+        const isSelectedTrack = tracksPanel.selectedTrackIds.has(track.id);
+        if (explicitVisible || isFollowedTrack || isSelectedTrack) {
+          visible += 1;
+        }
+      }
+
+      summary.set(trackSet.id, { total: tracksForSet.length, visible });
+    }
+
+    return summary;
+  }, [
+    tracksPanel.filteredTracksByTrackSet,
+    tracksPanel.followedTrackId,
+    tracksPanel.selectedTrackIds,
+    tracksPanel.trackHeadersByTrackSet,
+    tracksPanel.trackSetStates,
+    tracksPanel.trackSets
+  ]);
 
   const topMenuProps = useMemo(
     () => ({
@@ -264,6 +313,7 @@ function ViewerShell({
       channelNameMap: channelsPanel.channelNameMap,
       channelVisibility: channelsPanel.channelVisibility,
       channelTintMap: channelsPanel.channelTintMap,
+      segmentationChannelIds,
       activeChannelId: channelsPanel.activeChannelId,
       onChannelTabSelect: channelsPanel.onChannelTabSelect,
       onChannelVisibilityToggle: channelsPanel.onChannelVisibilityToggle,
@@ -271,7 +321,9 @@ function ViewerShell({
       trackHeadersByTrackSet: tracksPanel.trackHeadersByTrackSet,
       activeTrackSetId: tracksPanel.activeTrackSetId,
       trackColorModesByTrackSet: tracksPanel.trackColorModesByTrackSet,
+      trackVisibilitySummaryByTrackSet,
       onTrackSetTabSelect: tracksPanel.onTrackSetTabSelect,
+      onTrackVisibilityAllChange: tracksPanel.onTrackVisibilityAllChange,
       hoverCoordinateDigits,
       hoverIntensityValueDigits
     }),
@@ -291,6 +343,8 @@ function ViewerShell({
       openTracksWindow,
       openViewerSettings,
       playbackState,
+      segmentationChannelIds,
+      trackVisibilitySummaryByTrackSet,
       tracksPanel,
       topMenu
     ]

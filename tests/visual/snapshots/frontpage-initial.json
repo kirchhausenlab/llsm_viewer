@@ -66,7 +66,7 @@
             {
               "type": "header",
               "props": {
-                "className": "front-page-header"
+                "className": "front-page-header front-page-header--with-performance-note"
               },
               "children": [
                 {
@@ -82,10 +82,27 @@
                       },
                       "children": [
                         {
-                          "type": "h1",
-                          "props": {},
+                          "type": "div",
+                          "props": {
+                            "className": "front-page-title-heading"
+                          },
                           "children": [
-                            "Mirante4D"
+                            {
+                              "type": "h1",
+                              "props": {},
+                              "children": [
+                                "Mirante4D"
+                              ]
+                            },
+                            {
+                              "type": "span",
+                              "props": {
+                                "className": "front-page-version-label"
+                              },
+                              "children": [
+                                "v0.2.0"
+                              ]
+                            }
                           ]
                         }
                       ]
@@ -96,6 +113,51 @@
                         "className": "front-page-header-actions"
                       },
                       "children": null
+                    }
+                  ]
+                },
+                {
+                  "type": "aside",
+                  "props": {
+                    "className": "front-page-performance-note",
+                    "aria-label": "Performance note"
+                  },
+                  "children": [
+                    {
+                      "type": "p",
+                      "props": {
+                        "className": "front-page-performance-note-title"
+                      },
+                      "children": [
+                        "Performance note"
+                      ]
+                    },
+                    {
+                      "type": "p",
+                      "props": {
+                        "className": "front-page-performance-note-line"
+                      },
+                      "children": [
+                        "Mirante4D works best in Chrome."
+                      ]
+                    },
+                    {
+                      "type": "p",
+                      "props": {
+                        "className": "front-page-performance-note-line"
+                      },
+                      "children": [
+                        "It makes heavy use of the user's GPUs."
+                      ]
+                    },
+                    {
+                      "type": "p",
+                      "props": {
+                        "className": "front-page-performance-note-line"
+                      },
+                      "children": [
+                        "This is an early build still being optimized: browser performance and stability may be affected."
+                      ]
                     }
                   ]
                 }

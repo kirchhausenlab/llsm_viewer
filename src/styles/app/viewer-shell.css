@@ -149,6 +149,13 @@
   white-space: nowrap;
 }
 
+.viewer-top-menu-scale-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .viewer-top-menu-scale-label {
   color: var(--text-muted);
   font-weight: 600;
@@ -157,6 +164,31 @@
 .viewer-top-menu-scale-value {
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
+}
+
+.viewer-top-menu-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.65rem;
+  border: 1px solid rgba(245, 158, 11, 0.38);
+  border-radius: 999px;
+  background: rgba(120, 53, 15, 0.28);
+  color: #fef3c7;
+  font-weight: 700;
+  font-size: var(--overlay-button-font-size);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.viewer-top-menu-warning-label {
+  color: #fbbf24;
+  font-weight: 700;
+}
+
+.viewer-top-menu-warning-message {
+  color: #fef3c7;
+  font-weight: 600;
 }
 
 .viewer-top-menu-intensity-value {
@@ -355,17 +387,80 @@
   margin: 0;
 }
 
-.navigation-help-window {
+.controls-help-window {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  padding: 0.35rem 0.25rem 0.15rem;
+  min-height: 0;
+  height: 100%;
 }
 
-.navigation-help-window__title {
+.controls-help-window__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.controls-help-window__tab {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  padding: 0.4rem 0.8rem;
+  background: rgba(18, 24, 36, 0.72);
+  color: rgba(236, 243, 255, 0.82);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.controls-help-window__tab:hover {
+  border-color: rgba(120, 158, 255, 0.5);
+  background: rgba(44, 74, 150, 0.28);
+  color: rgba(246, 249, 255, 0.96);
+  transform: translateY(-1px);
+}
+
+.controls-help-window__tab.is-active {
+  border-color: rgba(120, 158, 255, 0.7);
+  background: rgba(72, 108, 196, 0.36);
+  color: rgba(255, 255, 255, 0.98);
+  box-shadow: inset 0 0 0 1px rgba(176, 204, 255, 0.22);
+}
+
+.controls-help-window__panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.95rem;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0.2rem 0.25rem 0.15rem 0;
+  margin-right: -0.25rem;
+  scrollbar-width: none;
+}
+
+.controls-help-window__panel::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.controls-help-window__panel-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.controls-help-window__title {
   margin: 0;
   font-size: 1.05rem;
   letter-spacing: 0.01em;
+}
+
+.controls-help-window__description {
+  margin: 0;
+  color: rgba(221, 231, 255, 0.78);
+  font-size: 0.88rem;
+  line-height: 1.45;
 }
 
 .viewer-toolbar {

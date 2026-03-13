@@ -18,6 +18,8 @@ export type TopMenuChromeProps = {
   onReturnToLauncher: () => void;
   onResetLayout: () => void;
   currentScaleLabel: string;
+  initialScaleWarningMessage?: string | null;
+  isPerformanceMode?: boolean;
   isHelpMenuOpen: boolean;
   openHelpMenu: () => void;
   closeHelpMenu: () => void;
@@ -34,6 +36,7 @@ export type VolumeChannelTabsProps = {
   channelNameMap: Map<string, string>;
   channelVisibility: Record<string, boolean>;
   channelTintMap: Map<string, string>;
+  segmentationChannelIds?: ReadonlySet<string>;
   activeChannelId: string | null;
   onChannelTabSelect: (channelId: string) => void;
   onChannelVisibilityToggle: (channelId: string) => void;
@@ -47,7 +50,9 @@ export type VolumeTrackTabsProps = {
   trackHeadersByTrackSet: Map<string, { totalTracks: number }>;
   activeTrackSetId: string | null;
   trackColorModesByTrackSet: Record<string, TrackColorMode>;
+  trackVisibilitySummaryByTrackSet: Map<string, { total: number; visible: number }>;
   onTrackSetTabSelect: (trackSetId: string) => void;
+  onTrackVisibilityAllChange: (trackSetId: string, visible: boolean) => void;
 };
 
 export type TopMenuProps = TopMenuChromeProps &

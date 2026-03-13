@@ -5,7 +5,6 @@ import type {
   LoadedDatasetLayer,
   StagedPreprocessedExperiment
 } from '../../../hooks/dataset';
-import { clearTextureCache } from '../../../core/textureCache';
 import { deriveChannelTrackOffsets } from '../../../state/channelTrackOffsets';
 import type { FollowedVoxelTarget } from '../../../types/follow';
 import type { HoveredVoxelInfo } from '../../../types/hover';
@@ -17,6 +16,10 @@ import {
   clearOpfsPreprocessedStorageRoot,
   PREPROCESSED_STORAGE_ROOT_DIR
 } from '../../../shared/storage/preprocessedStorage';
+import {
+  createAllVisibleChannelVisibility,
+  createInitialChannelVisibility
+} from '../../../hooks/dataset/channelVisibility';
 import {
   createVolumeProvider,
   DEFAULT_MAX_CACHED_CHUNK_BYTES,
@@ -40,6 +43,9 @@ import { createRouteDatasetSetupProps } from './routeDatasetSetupProps';
 import { createRouteViewerShellProps } from './routeViewerShellProps';
 import { useViewerModePlayback } from './useViewerModePlayback';
 import { useWindowLayout } from './useWindowLayout';
+import {
+  collectInitialHttpLaunchTrackedTargets
+} from './initialHttpLaunch';
 import { getTrackPlaybackIndexWindow, snapTimeIndexToWindow } from '../../../shared/utils';
 
 export type DatasetSetupRouteProps = FrontPageContainerProps;
@@ -89,6 +95,25 @@ function formatDownsampleSuffix(downsampleFactor: [number, number, number] | nul
     return ` (${depth}x)`;
   }
   return '';
+}
+
+function getResolvedLoadedScaleLevel({
+  layerKey,
+  currentLayerVolumes,
+  currentLayerPageTables,
+  currentLayerBrickAtlases
+}: {
+  layerKey: string;
+  currentLayerVolumes: Record<string, { scaleLevel?: number } | null>;
+  currentLayerPageTables: Record<string, { scaleLevel?: number } | null>;
+  currentLayerBrickAtlases: Record<string, { scaleLevel?: number } | null>;
+}): number | null {
+  const scaleLevel =
+    currentLayerBrickAtlases[layerKey]?.scaleLevel ??
+    currentLayerVolumes[layerKey]?.scaleLevel ??
+    currentLayerPageTables[layerKey]?.scaleLevel ??
+    null;
+  return typeof scaleLevel === 'number' && Number.isFinite(scaleLevel) ? Number(scaleLevel) : null;
 }
 
 type ViewerCameraNavigationSample = {
@@ -195,6 +220,9 @@ export function useAppRouteState(): AppRouteState {
   const [followedVoxel, setFollowedVoxel] = useState<FollowedVoxelTarget | null>(null);
   const [lastHoveredVolumeVoxel, setLastHoveredVolumeVoxel] = useState<HoveredVoxelInfo | null>(null);
   const [viewerCameraSample, setViewerCameraSample] = useState<ViewerCameraNavigationSample | null>(null);
+  const initialHttpLaunchScaleTargetsRef = useRef<Map<string, number>>(new Map());
+  const initialHttpLaunchObservationDoneRef = useRef(false);
+  const [isInitialHttpLaunchLoading, setIsInitialHttpLaunchLoading] = useState(false);
   const playback = useViewerPlayback();
   const { selectedIndex, setSelectedIndex, isPlaying, fps, setFps, stopPlayback, setIsPlaying } = playback;
   const [zSliderValue, setZSliderValue] = useState(1);
@@ -253,6 +281,7 @@ export function useAppRouteState(): AppRouteState {
     isViewerLaunched,
     isLaunchingViewer,
     isLoading,
+    isPerformanceMode,
     resetLaunchState,
     beginLaunchSession,
     setLaunchExpectedVolumeCount,
@@ -260,7 +289,6 @@ export function useAppRouteState(): AppRouteState {
     completeLaunchSession,
     failLaunchSession,
     finishLaunchSessionAttempt,
-    endViewerSession
   } = useRouteLaunchSessionState({ stopPlayback });
 
   const volumeProvider = useMemo(() => {
@@ -532,10 +560,11 @@ export function useAppRouteState(): AppRouteState {
     setCurrentLayerVolumes,
     playbackLayerKeys,
     playbackAtlasScaleLevelByLayerKey,
-    handleLaunchViewer
+    handleLaunchViewer: handleRouteLaunchViewer
   } = useRouteLayerVolumes({
     isViewerLaunched,
     isLaunchingViewer,
+    isPerformanceMode,
     isPlaying,
     preprocessedExperiment,
     volumeProvider,
@@ -559,6 +588,14 @@ export function useAppRouteState(): AppRouteState {
     setIsPlaying,
     showLaunchError
   });
+  const handleLaunchViewer = useCallback(
+    () => handleRouteLaunchViewer({ performanceMode: false }),
+    [handleRouteLaunchViewer]
+  );
+  const handleLaunchViewerInPerformanceMode = useCallback(
+    () => handleRouteLaunchViewer({ performanceMode: true }),
+    [handleRouteLaunchViewer]
+  );
   const brickResidencyLayerKeys = useMemo(() => {
     if (!preferBrickResidency) {
       return [] as string[];
@@ -580,6 +617,25 @@ export function useAppRouteState(): AppRouteState {
           byLevel.set(scale.level, scale.downsampleFactor);
         }
         byLayer.set(layer.key, byLevel);
+      }
+    }
+    return byLayer;
+  }, [preprocessedExperiment?.manifest]);
+  const finestScaleLevelByLayerKey = useMemo(() => {
+    const byLayer = new Map<string, number>();
+    const manifest = preprocessedExperiment?.manifest;
+    if (!manifest) {
+      return byLayer;
+    }
+    for (const channel of manifest.dataset.channels) {
+      for (const layer of channel.layers) {
+        const levels = layer.zarr.scales
+          .map((scale) => scale.level)
+          .filter((level) => Number.isFinite(level));
+        if (levels.length === 0) {
+          continue;
+        }
+        byLayer.set(layer.key, Math.min(...levels));
       }
     }
     return byLayer;
@@ -647,6 +703,89 @@ export function useAppRouteState(): AppRouteState {
     lodPolicyDiagnostics,
     playbackLayerKeys
   ]);
+  useEffect(() => {
+    if (!isViewerLaunched || preprocessedExperiment?.storageHandle.backend !== 'http') {
+      initialHttpLaunchScaleTargetsRef.current.clear();
+      initialHttpLaunchObservationDoneRef.current = false;
+      setIsInitialHttpLaunchLoading(false);
+      return;
+    }
+
+    const trackedTargets = initialHttpLaunchScaleTargetsRef.current;
+    const visibleLoadedLayerKeys = playbackLayerKeys.filter(
+      (layerKey) =>
+        getResolvedLoadedScaleLevel({
+          layerKey,
+          currentLayerVolumes,
+          currentLayerPageTables,
+          currentLayerBrickAtlases
+        }) !== null
+    );
+
+    if (!initialHttpLaunchObservationDoneRef.current) {
+      if (visibleLoadedLayerKeys.length === 0) {
+        return;
+      }
+      trackedTargets.clear();
+      const trackedTargetsByLayerKey = collectInitialHttpLaunchTrackedTargets({
+        layerKeys: playbackLayerKeys,
+        loadedScaleLevelByLayerKey: Object.fromEntries(
+          playbackLayerKeys.map((layerKey) => [
+            layerKey,
+            getResolvedLoadedScaleLevel({
+              layerKey,
+              currentLayerVolumes,
+              currentLayerPageTables,
+              currentLayerBrickAtlases
+            })
+          ])
+        ),
+        desiredScaleLevelByLayerKey: playbackAtlasScaleLevelByLayerKey,
+        finestScaleLevelByLayerKey
+      });
+      for (const [layerKey, targetScaleLevel] of trackedTargetsByLayerKey.entries()) {
+        trackedTargets.set(layerKey, targetScaleLevel);
+      }
+      initialHttpLaunchObservationDoneRef.current = true;
+      setIsInitialHttpLaunchLoading(trackedTargets.size > 0);
+      if (trackedTargets.size === 0) {
+        return;
+      }
+    }
+
+    if (trackedTargets.size === 0) {
+      setIsInitialHttpLaunchLoading(false);
+      return;
+    }
+
+    const stillPending = [...trackedTargets.entries()].some(([layerKey, targetScaleLevel]) => {
+      const loadedScaleLevel = getResolvedLoadedScaleLevel({
+        layerKey,
+        currentLayerVolumes,
+        currentLayerPageTables,
+        currentLayerBrickAtlases
+      });
+      return loadedScaleLevel === null || loadedScaleLevel > targetScaleLevel;
+    });
+
+    if (stillPending) {
+      setIsInitialHttpLaunchLoading(true);
+      return;
+    }
+
+    trackedTargets.clear();
+    setIsInitialHttpLaunchLoading(false);
+  }, [
+    currentLayerBrickAtlases,
+    currentLayerPageTables,
+    currentLayerVolumes,
+    finestScaleLevelByLayerKey,
+    isViewerLaunched,
+    playbackAtlasScaleLevelByLayerKey,
+    playbackLayerKeys,
+    preprocessedExperiment?.storageHandle.backend
+  ]);
+  const initialScaleWarningMessage = isInitialHttpLaunchLoading ? 'temporary scale' : null;
   const { canAdvancePlaybackToIndex } = useRoutePlaybackPrefetch({
     isViewerLaunched,
     isPlaying,
@@ -773,21 +912,6 @@ export function useAppRouteState(): AppRouteState {
     setViewerCameraSample(nextSample);
   }, []);
 
-  const handleReturnToLauncher = useCallback(() => {
-    if (typeof window !== 'undefined') {
-      const confirmed = window.confirm(
-        'Do you really want to return? The current session will be discarded'
-      );
-      if (!confirmed) {
-        return;
-      }
-    }
-    endViewerSession();
-    volumeProvider?.clear();
-    setCurrentLayerVolumes({});
-    clearTextureCache();
-  }, [endViewerSession, volumeProvider]);
-
   useEffect(() => {
     setFollowedTrack((current) => {
       if (!current) {
@@ -865,6 +989,19 @@ export function useAppRouteState(): AppRouteState {
     trackSetIdRef,
     clearDatasetError
   });
+  const handleReturnToLauncher = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      const confirmed = window.confirm(
+        'Do you really want to return? The current session will be discarded'
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    volumeProvider?.clear();
+    handleReturnToFrontPage();
+  }, [handleReturnToFrontPage, volumeProvider]);
   const canLaunch = hasAnyLayers && allChannelsValid && allTracksValid && !hasLoadingTracks && voxelResolution !== null;
 
   const activeChannel = useMemo(
@@ -887,6 +1024,28 @@ export function useAppRouteState(): AppRouteState {
   }, []);
 
   useEffect(() => {
+    if (!preprocessedExperiment) {
+      return;
+    }
+
+    const initialVisibility =
+      preprocessedExperiment.storageHandle.backend === 'http'
+        ? createAllVisibleChannelVisibility(loadedDatasetLayers)
+        : createInitialChannelVisibility(loadedDatasetLayers);
+    setChannelVisibility((current) => {
+      const initialChannelIds = Object.keys(initialVisibility);
+      if (
+        Object.keys(current).length === initialChannelIds.length &&
+        initialChannelIds.every((channelId) => current[channelId] === initialVisibility[channelId])
+      ) {
+        return current;
+      }
+      return initialVisibility;
+    });
+    setActiveChannelTabId(loadedChannelIds[0] ?? null);
+  }, [loadedChannelIds, loadedDatasetLayers, preprocessedExperiment, setChannelVisibility]);
+
+  useEffect(() => {
     if (loadedChannelIds.length === 0) {
       setActiveChannelTabId(null);
       return;
@@ -896,7 +1055,7 @@ export function useAppRouteState(): AppRouteState {
       if (current && loadedChannelIds.includes(current)) {
         return current;
       }
-      return selectDeterministicId(loadedChannelIds);
+      return loadedChannelIds[0] ?? null;
     });
   }, [loadedChannelIds]);
 
@@ -1068,6 +1227,7 @@ export function useAppRouteState(): AppRouteState {
       interactionErrorMessage,
       launchErrorMessage,
       onLaunchViewer: handleLaunchViewer,
+      onLaunchViewerInPerformanceMode: handleLaunchViewerInPerformanceMode,
       canLaunch
     },
     preprocess: {
@@ -1157,6 +1317,8 @@ export function useAppRouteState(): AppRouteState {
         onReturnToLauncher: handleReturnToLauncher,
         onResetLayout: handleResetWindowLayout,
         currentScaleLabel,
+        initialScaleWarningMessage,
+        isPerformanceMode,
         hoveredVoxel: hoveredVolumeVoxel ?? lastHoveredVolumeVoxel,
         followedTrackSetId,
         followedTrackId,

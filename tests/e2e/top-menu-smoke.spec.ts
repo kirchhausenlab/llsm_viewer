@@ -29,7 +29,7 @@ const expectedMenus = [
   {
     buttonLabel: 'Help',
     menuLabel: 'help menu',
-    items: ['About', 'Navigation controls']
+    items: ['About', 'Controls']
   }
 ] as const;
 
@@ -53,6 +53,6 @@ test('@smoke top menu shows the expected dropdown structure after launch', async
   }
 
   await page.getByRole('button', { name: 'Help', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Navigation controls' }).click();
-  await expect(page.getByRole('heading', { name: 'Navigation controls' })).toBeVisible();
+  await page.getByRole('menuitem', { name: 'Controls' }).click();
+  await expect(page.getByRole('heading', { name: 'Controls' })).toBeVisible();
 });

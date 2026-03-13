@@ -1,11 +1,10 @@
-import { useEffect, useMemo, type CSSProperties, type MouseEvent } from 'react';
+import { useEffect, useMemo } from 'react';
 
 import {
   TRACK_COLOR_SWATCHES,
   getTrackColorHex,
   normalizeTrackColor
 } from '../../../shared/colorMaps/trackColors';
-import { applyAlphaToHex } from '../../../shared/utils/appHelpers';
 import { resolveTrackVisibilityForState } from '../../../shared/utils/trackVisibilityState';
 import { createDefaultTrackSetState } from '../../../hooks/tracks/useTrackStyling';
 import FloatingWindow from '../../widgets/FloatingWindow';
@@ -34,9 +33,7 @@ export default function TracksPanel({
   trackSets,
   trackHeadersByTrackSet,
   activeTrackSetId,
-  onTrackSetTabSelect,
   onRequireTrackCatalog,
-  parsedTracksByTrackSet,
   filteredTracksByTrackSet,
   minimumTrackLength,
   pendingMinimumTrackLength,
@@ -51,7 +48,6 @@ export default function TracksPanel({
   onTrackOrderToggle,
   trackOrderModeByTrackSet,
   onTrackVisibilityToggle,
-  onTrackVisibilityAllChange,
   onTrackOpacityChange,
   onTrackLineWidthChange,
   onTrackColorSelect,
@@ -123,77 +119,12 @@ export default function TracksPanel({
         className="floating-window--tracks"
         resetSignal={resetToken}
         onClose={onClose}
-        headerContent={
-          <div className="channel-tabs channel-tabs--header" role="tablist" aria-label="Track sets">
-            {trackSets.map((trackSet) => {
-              const label = trackSet.name || 'Tracks';
-              const displayLabel = label.length > 14 ? `${label.slice(0, 11)}...` : label;
-              const isActive = trackSet.id === activeTrackSetId;
-              const summary = trackSummaryByTrackSet.get(trackSet.id) ?? { total: 0, visible: 0 };
-              const hasTracksForSet = (trackHeadersByTrackSet.get(trackSet.id)?.totalTracks ?? 0) > 0;
-              const hasVisibleTracks = summary.visible > 0;
-              const tabClassName = [
-                'channel-tab',
-                isActive ? 'is-active' : '',
-                !hasTracksForSet ? 'is-hidden' : ''
-              ]
-                .filter(Boolean)
-                .join(' ');
-              const labelClassName = hasVisibleTracks
-                ? 'channel-tab-label'
-                : 'channel-tab-label channel-tab-label--crossed';
-              const colorMode = trackColorModesByTrackSet[trackSet.id] ?? { type: 'random' };
-              const tabStyle: CSSProperties & Record<string, string> | undefined =
-                colorMode.type === 'uniform'
-                  ? {
-                      '--channel-tab-background': applyAlphaToHex(normalizeTrackColor(colorMode.color), 0.18),
-                      '--channel-tab-background-active': applyAlphaToHex(normalizeTrackColor(colorMode.color), 0.35),
-                      '--channel-tab-border': 'rgba(255, 255, 255, 0.15)',
-                      '--channel-tab-border-active': applyAlphaToHex(normalizeTrackColor(colorMode.color), 0.55)
-                    }
-                  : undefined;
-
-              const handleTrackTabClick = (event: MouseEvent<HTMLButtonElement>) => {
-                if (event.button !== 0) return;
-                onTrackSetTabSelect(trackSet.id);
-              };
-
-              const handleTrackTabAuxClick = (event: MouseEvent<HTMLButtonElement>) => {
-                const currentSummary = trackSummaryByTrackSet.get(trackSet.id) ?? { total: 0, visible: 0 };
-                const nextHasVisibleTracks = currentSummary.visible === 0;
-                if (event.button === 1) {
-                  onTrackVisibilityAllChange(trackSet.id, nextHasVisibleTracks);
-                  event.preventDefault();
-                  event.stopPropagation();
-                }
-              };
-
-              return (
-                <button
-                  key={trackSet.id}
-                  id={`track-tab-${trackSet.id}`}
-                  type="button"
-                  role="tab"
-                  className={tabClassName}
-                  aria-selected={isActive}
-                  aria-controls={`track-panel-${trackSet.id}`}
-                  onClick={handleTrackTabClick}
-                  onAuxClick={handleTrackTabAuxClick}
-                  style={tabStyle}
-                >
-                  <span className={labelClassName}>{displayLabel}</span>
-                </button>
-              );
-            })}
-          </div>
-        }
       >
         <div className="sidebar sidebar-left">
           {trackSets.length > 0 ? (
             <div className="track-controls">
               {trackSets.map((trackSet) => {
                 const tracksForSet = filteredTracksByTrackSet.get(trackSet.id) ?? [];
-                const parsedTracks = parsedTracksByTrackSet.get(trackSet.id) ?? [];
                 const summary = trackSummaryByTrackSet.get(trackSet.id) ?? { total: 0, visible: 0 };
                 const isActive = trackSet.id === activeTrackSetId;
                 const orderMode = trackOrderModeByTrackSet[trackSet.id] ?? 'id';
@@ -230,7 +161,7 @@ export default function TracksPanel({
                     key={trackSet.id}
                     id={`track-panel-${trackSet.id}`}
                     role="tabpanel"
-                    aria-labelledby={`track-tab-${trackSet.id}`}
+                    aria-label={`${trackSet.name || 'Tracks'} controls`}
                     className={isActive ? 'track-panel is-active' : 'track-panel'}
                     hidden={!isActive}
                   >

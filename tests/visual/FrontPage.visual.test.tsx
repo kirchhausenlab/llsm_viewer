@@ -101,6 +101,7 @@ function buildFrontPageProps() {
       onExportNameChange: noop,
       exportDestinationLabel: null,
       onLaunchViewer: noop,
+      onLaunchViewerInPerformanceMode: noop,
       isLaunchingViewer: false,
       launchButtonEnabled: false,
       launchButtonLaunchable: 'false' as const
@@ -116,7 +117,24 @@ function buildFrontPageProps() {
 }
 
 test('visual snapshot: front page initial state', () => {
-  const renderer = TestRenderer.create(<FrontPage {...(buildFrontPageProps() as any)} />);
+  const props = buildFrontPageProps();
+  const renderer = TestRenderer.create(
+    <FrontPage
+      {...(props as any)}
+      header={{
+        ...props.header,
+        versionLabel: 'v0.2.0',
+        performanceNotice: {
+          title: 'Performance note',
+          lines: [
+            'Mirante4D works best in Chrome.',
+            'It makes heavy use of the user\'s GPUs.',
+            'This is an early build still being optimized: browser performance and stability may be affected.'
+          ]
+        }
+      }}
+    />
+  );
   const tree = renderer.toJSON();
   assertVisualSnapshot('frontpage-initial', `${JSON.stringify(tree, null, 2)}\n`);
   renderer.unmount();
@@ -173,6 +191,7 @@ test('visual snapshot: launch actions configuring state', () => {
       onExportNameChange={() => {}}
       exportDestinationLabel={null}
       onLaunchViewer={() => {}}
+      onLaunchViewerInPerformanceMode={() => {}}
       isLaunchingViewer={false}
       launchButtonEnabled={false}
       launchButtonLaunchable="false"

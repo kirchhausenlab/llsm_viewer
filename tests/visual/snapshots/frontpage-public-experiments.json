@@ -82,10 +82,18 @@
                       },
                       "children": [
                         {
-                          "type": "h1",
-                          "props": {},
+                          "type": "div",
+                          "props": {
+                            "className": "front-page-title-heading"
+                          },
                           "children": [
-                            "Load public experiments"
+                            {
+                              "type": "h1",
+                              "props": {},
+                              "children": [
+                                "Load public experiments"
+                              ]
+                            }
                           ]
                         }
                       ]
