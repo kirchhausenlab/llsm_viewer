@@ -567,6 +567,60 @@ test('top menu keeps playback and Z controls in the top-row second column', () =
   });
 });
 
+test('top menu places scale, hover, and follow status in their updated columns', () => {
+  withEnvironmentMocks(() => {
+    const renderer = renderTopMenu({
+      currentScaleLabel: '1.25x',
+      followedTrackSetId: 'set-a',
+      followedTrackId: 'track-1',
+      hoveredVoxel: {
+        coordinates: { x: '1', y: '2', z: '3' },
+        intensity: '7',
+        components: [{ text: '7', channelLabel: null, color: null }]
+      }
+    });
+
+    const topThirdColumn = renderer.root.findAll(
+      (node) =>
+        node.type === 'div' &&
+        hasClassName(node, 'viewer-top-menu-cell--top') &&
+        hasClassName(node, 'viewer-top-menu-cell--column-3')
+    )[0];
+    const bottomThirdColumn = renderer.root.findAll(
+      (node) =>
+        node.type === 'div' &&
+        hasClassName(node, 'viewer-top-menu-cell--bottom') &&
+        hasClassName(node, 'viewer-top-menu-cell--column-3')
+    )[0];
+    const bottomFourthColumn = renderer.root.findAll(
+      (node) =>
+        node.type === 'div' &&
+        hasClassName(node, 'viewer-top-menu-cell--bottom') &&
+        hasClassName(node, 'viewer-top-menu-cell--column-4')
+    )[0];
+
+    assert.ok(
+      topThirdColumn.findAll((node) => hasClassName(node, 'viewer-top-menu-scale')).length > 0
+    );
+    assert.ok(
+      bottomThirdColumn.findAll((node) => hasClassName(node, 'viewer-top-menu-intensity')).length > 0
+    );
+    assert.ok(
+      bottomThirdColumn.findAll((node) => hasClassName(node, 'viewer-top-menu-hover-column')).length > 0
+    );
+    assert.equal(
+      bottomFourthColumn.findAll((node) => node.type === 'button' && extractText(node) === 'Stop following').length,
+      1
+    );
+    assert.equal(
+      bottomFourthColumn.findAll((node) => hasClassName(node, 'viewer-top-menu-intensity')).length,
+      0
+    );
+
+    renderer.unmount();
+  });
+});
+
 test('top menu keeps all three shared column dividers even when track tabs are absent', () => {
   withEnvironmentMocks(() => {
     const renderer = renderTopMenu({

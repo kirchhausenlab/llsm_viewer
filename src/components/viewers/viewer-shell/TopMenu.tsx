@@ -367,6 +367,8 @@ export default function TopMenu(props: TopMenuProps) {
     resolvedTimepointCount === 0 ? '0/0' : `${resolvedSelectedIndex + 1}/${resolvedTimepointCount}`;
   const resolvedZSliderMax = Math.max(1, Math.floor(zSliderMax ?? 1));
   const resolvedZSliderValue = clampRangeValue(Math.round(zSliderValue ?? 1), 1, resolvedZSliderMax);
+  const zSliderCounterLabel = `${resolvedZSliderValue}/${resolvedZSliderMax}`;
+  const playbackCounterWidthCh = Math.max(playbackCounterLabel.length, zSliderCounterLabel.length) + 0.5;
   const zSliderDisabled = resolvedZSliderMax <= 1 || !onZSliderChange;
   const hasChannelTabs = loadedChannelIds.length > 0;
   const hasTrackTabs = trackSets.length > 0;
@@ -431,6 +433,7 @@ export default function TopMenu(props: TopMenuProps) {
         <span className="viewer-top-menu-column-divider viewer-top-menu-column-divider--1" aria-hidden="true" />
         <span className="viewer-top-menu-column-divider viewer-top-menu-column-divider--2" aria-hidden="true" />
         <span className="viewer-top-menu-column-divider viewer-top-menu-column-divider--3" aria-hidden="true" />
+        <span className="viewer-top-menu-row-divider" aria-hidden="true" />
 
         <div className="viewer-top-menu-cell viewer-top-menu-cell--top viewer-top-menu-cell--column-1">
           <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--start">
@@ -488,73 +491,86 @@ export default function TopMenu(props: TopMenuProps) {
         </div>
 
         <div className="viewer-top-menu-cell viewer-top-menu-cell--top viewer-top-menu-cell--column-2">
-          <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--start viewer-top-menu-playback-controls">
-            <div className="viewer-top-menu-secondary-group viewer-top-menu-secondary-group--playback">
-              <button
-                type="button"
-                onClick={onTogglePlayback}
+          <div
+            className="viewer-top-menu-cell-content viewer-top-menu-cell-content--start viewer-top-menu-playback-controls"
+            style={
+              {
+                '--viewer-top-menu-playback-counter-width': `${playbackCounterWidthCh}ch`
+              } as CSSProperties
+            }
+          >
+            <button
+              type="button"
+              onClick={onTogglePlayback}
+              disabled={playbackDisabled}
+              className={
+                isPlaying
+                  ? 'playback-button playback-toggle playing viewer-top-menu-playback-button'
+                  : 'playback-button playback-toggle viewer-top-menu-playback-button'
+              }
+              aria-label={isPlaying ? 'Pause playback' : 'Start playback'}
+            >
+              {isPlaying ? (
+                <svg className="playback-button-icon" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false">
+                  <path d="M9 5a1 1 0 0 1 1 1v12a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Zm6 0a1 1 0 0 1 1 1v12a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Z" />
+                </svg>
+              ) : (
+                <svg className="playback-button-icon" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false">
+                  <path d="M8.5 5.636a1 1 0 0 1 1.53-.848l8.01 5.363a1 1 0 0 1 0 1.698l-8.01 5.363A1 1 0 0 1 8 16.364V7.636a1 1 0 0 1 .5-.868Z" />
+                </svg>
+              )}
+            </button>
+            <label
+              className="viewer-top-menu-slider-group viewer-top-menu-slider-group--time"
+              htmlFor="top-menu-playback-slider"
+            >
+              <input
+                id="top-menu-playback-slider"
+                className="playback-slider viewer-top-menu-slider"
+                type="range"
+                min={0}
+                max={playbackMaxIndex}
+                value={resolvedSelectedIndex}
+                onChange={(event) => onTimeIndexChange(Number(event.target.value))}
                 disabled={playbackDisabled}
-                className={
-                  isPlaying
-                    ? 'playback-button playback-toggle playing viewer-top-menu-playback-button'
-                    : 'playback-button playback-toggle viewer-top-menu-playback-button'
-                }
-                aria-label={isPlaying ? 'Pause playback' : 'Start playback'}
-              >
-                {isPlaying ? (
-                  <svg className="playback-button-icon" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false">
-                    <path d="M9 5a1 1 0 0 1 1 1v12a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Zm6 0a1 1 0 0 1 1 1v12a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Z" />
-                  </svg>
-                ) : (
-                  <svg className="playback-button-icon" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false">
-                    <path d="M8.5 5.636a1 1 0 0 1 1.53-.848l8.01 5.363a1 1 0 0 1 0 1.698l-8.01 5.363A1 1 0 0 1 8 16.364V7.636a1 1 0 0 1 .5-.868Z" />
-                  </svg>
-                )}
-              </button>
-              <label className="viewer-top-menu-slider-group" htmlFor="top-menu-playback-slider">
-                <input
-                  id="top-menu-playback-slider"
-                  className="playback-slider viewer-top-menu-slider"
-                  type="range"
-                  min={0}
-                  max={playbackMaxIndex}
-                  value={resolvedSelectedIndex}
-                  onChange={(event) => onTimeIndexChange(Number(event.target.value))}
-                  disabled={playbackDisabled}
-                  aria-label="Timepoint"
-                />
-                <span className="viewer-top-menu-slider-counter viewer-top-menu-slider-counter--time">
-                  {playbackCounterLabel}
-                </span>
-              </label>
-            </div>
-            <div className="viewer-top-menu-secondary-group viewer-top-menu-secondary-group--z">
-              <span className="viewer-top-menu-slider-label">Z</span>
-              <label className="viewer-top-menu-slider-group" htmlFor="top-menu-z-slider">
-                <input
-                  id="top-menu-z-slider"
-                  className="playback-slider viewer-top-menu-slider"
-                  type="range"
-                  min={1}
-                  max={resolvedZSliderMax}
-                  step={1}
-                  value={resolvedZSliderValue}
-                  onChange={(event) => onZSliderChange?.(Number(event.target.value))}
-                  disabled={zSliderDisabled}
-                  aria-label="Z"
-                />
-                <span className="viewer-top-menu-slider-counter viewer-top-menu-slider-counter--z">
-                  {resolvedZSliderValue}/{resolvedZSliderMax}
-                </span>
-              </label>
-            </div>
+                aria-label="Timepoint"
+              />
+              <span className="viewer-top-menu-slider-counter viewer-top-menu-slider-counter--time">
+                {playbackCounterLabel}
+              </span>
+            </label>
+            <span className="viewer-top-menu-slider-label">Z</span>
+            <label
+              className="viewer-top-menu-slider-group viewer-top-menu-slider-group--z"
+              htmlFor="top-menu-z-slider"
+            >
+              <input
+                id="top-menu-z-slider"
+                className="playback-slider viewer-top-menu-slider"
+                type="range"
+                min={1}
+                max={resolvedZSliderMax}
+                step={1}
+                value={resolvedZSliderValue}
+                onChange={(event) => onZSliderChange?.(Number(event.target.value))}
+                disabled={zSliderDisabled}
+                aria-label="Z"
+              />
+              <span className="viewer-top-menu-slider-counter viewer-top-menu-slider-counter--z">
+                {zSliderCounterLabel}
+              </span>
+            </label>
           </div>
         </div>
 
-        <div
-          className="viewer-top-menu-cell viewer-top-menu-cell--top viewer-top-menu-cell--column-3"
-          aria-hidden="true"
-        />
+        <div className="viewer-top-menu-cell viewer-top-menu-cell--top viewer-top-menu-cell--column-3">
+          <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--start">
+            <div className="viewer-top-menu-scale" role="status" aria-live="polite">
+              <span className="viewer-top-menu-scale-label">Scale</span>
+              <span className="viewer-top-menu-scale-value">{currentScaleLabel}</span>
+            </div>
+          </div>
+        </div>
 
         <div className="viewer-top-menu-cell viewer-top-menu-cell--top viewer-top-menu-cell--column-4">
           <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--end viewer-top-menu-primary-actions">
@@ -615,29 +631,7 @@ export default function TopMenu(props: TopMenuProps) {
         </div>
 
         <div className="viewer-top-menu-cell viewer-top-menu-cell--bottom viewer-top-menu-cell--column-3">
-          <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--start">
-            {isFollowActive ? (
-              <button
-                type="button"
-                className="viewer-top-menu-button viewer-top-menu-button--danger"
-                onClick={() =>
-                  isTrackFollowActive
-                    ? onStopTrackFollow(followedTrackSetId ?? undefined)
-                    : onStopVoxelFollow()
-                }
-              >
-                Stop following
-              </button>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="viewer-top-menu-cell viewer-top-menu-cell--bottom viewer-top-menu-cell--column-4">
-          <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--end viewer-top-menu-status-group">
-            <div className="viewer-top-menu-scale" role="status" aria-live="polite">
-              <span className="viewer-top-menu-scale-label">Scale</span>
-              <span className="viewer-top-menu-scale-value">{currentScaleLabel}</span>
-            </div>
+          <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--start viewer-top-menu-hover-column">
             <div className="viewer-top-menu-intensity" role="status" aria-live="polite">
               {hoveredVoxel ? (
                 <>
@@ -719,6 +713,24 @@ export default function TopMenu(props: TopMenuProps) {
                 <span className="viewer-top-menu-intensity-empty">—</span>
               )}
             </div>
+          </div>
+        </div>
+
+        <div className="viewer-top-menu-cell viewer-top-menu-cell--bottom viewer-top-menu-cell--column-4">
+          <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--end">
+            {isFollowActive ? (
+              <button
+                type="button"
+                className="viewer-top-menu-button viewer-top-menu-button--danger"
+                onClick={() =>
+                  isTrackFollowActive
+                    ? onStopTrackFollow(followedTrackSetId ?? undefined)
+                    : onStopVoxelFollow()
+                }
+              >
+                Stop following
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
