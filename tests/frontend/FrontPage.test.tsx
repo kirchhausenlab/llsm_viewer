@@ -118,6 +118,7 @@ function buildBaseProps() {
       onExportNameChange: noop,
       exportDestinationLabel: null,
       onLaunchViewer: noop,
+      onLaunchViewerInPerformanceMode: noop,
       isLaunchingViewer: false,
       launchButtonEnabled: false,
       launchButtonLaunchable: 'false' as const
@@ -270,7 +271,11 @@ test('front page preprocessed mode renders launch action', () => {
   const launchButton = renderer.root
     .findAllByType('button')
     .find((button: any) => button.props.children === 'Launch viewer');
+  const performanceButton = renderer.root
+    .findAllByType('button')
+    .find((button: any) => button.props.children === 'Launch in Performance Mode');
   assert.ok(launchButton);
+  assert.ok(performanceButton);
 
   renderer.unmount();
 });

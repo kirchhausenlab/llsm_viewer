@@ -75,6 +75,7 @@ export type FrontPageContainerProps = {
   interactionErrorMessage: string | null;
   launchErrorMessage: string | null;
   onLaunchViewer: () => void;
+  onLaunchViewerInPerformanceMode: () => void;
   canLaunch: boolean;
   warningWindowInitialPosition: { x: number; y: number };
   warningWindowWidth: number;
@@ -131,6 +132,7 @@ export default function FrontPageContainer({
   interactionErrorMessage,
   launchErrorMessage,
   onLaunchViewer,
+  onLaunchViewerInPerformanceMode,
   canLaunch,
   warningWindowInitialPosition,
   warningWindowWidth,
@@ -636,6 +638,7 @@ export default function FrontPageContainer({
     onExportNameChange: handleExportNameChange,
     exportDestinationLabel,
     onLaunchViewer,
+    onLaunchViewerInPerformanceMode,
     isLaunchingViewer,
     launchButtonEnabled,
     launchButtonLaunchable,

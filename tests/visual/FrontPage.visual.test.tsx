@@ -101,6 +101,7 @@ function buildFrontPageProps() {
       onExportNameChange: noop,
       exportDestinationLabel: null,
       onLaunchViewer: noop,
+      onLaunchViewerInPerformanceMode: noop,
       isLaunchingViewer: false,
       launchButtonEnabled: false,
       launchButtonLaunchable: 'false' as const
@@ -190,6 +191,7 @@ test('visual snapshot: launch actions configuring state', () => {
       onExportNameChange={() => {}}
       exportDestinationLabel={null}
       onLaunchViewer={() => {}}
+      onLaunchViewerInPerformanceMode={() => {}}
       isLaunchingViewer={false}
       launchButtonEnabled={false}
       launchButtonLaunchable="false"

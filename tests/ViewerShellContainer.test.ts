@@ -80,6 +80,7 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
       onReturnToLauncher: noop,
       onResetLayout: noop,
       currentScaleLabel: '—',
+      isPerformanceMode: false,
       followedTrackSetId: null,
       followedTrackId: null,
       followedVoxel: null,
@@ -224,6 +225,7 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
 (() => {
   const props = createViewerShellContainerProps();
   props.topMenu.initialScaleWarningMessage = 'temporary scale';
+  props.topMenu.isPerformanceMode = true;
   const viewerShellProps = useViewerShellProps(props);
 
   assert.strictEqual(viewerShellProps.layout.windowMargin, WINDOW_MARGIN);
@@ -231,6 +233,7 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
   assert.strictEqual(viewerShellProps.layout.selectedTracksWindowWidth, SELECTED_TRACKS_WINDOW_WIDTH);
   assert.strictEqual(viewerShellProps.topMenu.currentScaleLabel, '—');
   assert.strictEqual(viewerShellProps.topMenu.initialScaleWarningMessage, 'temporary scale');
+  assert.strictEqual(viewerShellProps.topMenu.isPerformanceMode, true);
   assert.deepStrictEqual(viewerShellProps.trackDefaults, {
     opacity: DEFAULT_TRACK_OPACITY,
     lineWidth: DEFAULT_TRACK_LINE_WIDTH

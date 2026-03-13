@@ -58,6 +58,7 @@ type RouteDatasetSetupLaunchSection = Pick<
   | 'interactionErrorMessage'
   | 'launchErrorMessage'
   | 'onLaunchViewer'
+  | 'onLaunchViewerInPerformanceMode'
   | 'canLaunch'
 >;
 

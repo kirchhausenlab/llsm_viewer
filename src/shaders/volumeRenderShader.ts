@@ -520,6 +520,7 @@ type VolumeUniforms = {
   u_hoverLabel: { value: number };
   u_hoverSegmentationMode: { value: number };
   u_segmentationLabels: { value: Data3DTexture | null };
+  u_segmentationVolumeSize: { value: Vector3 };
   u_segmentationBrickAtlasData: { value: Data3DTexture | null };
   u_backgroundMaskEnabled: { value: number };
   u_backgroundMask: { value: Data3DTexture | null };
@@ -583,6 +584,7 @@ const uniforms = {
   u_hoverLabel: { value: 0 },
   u_hoverSegmentationMode: { value: 0 },
   u_segmentationLabels: { value: null as Data3DTexture | null },
+  u_segmentationVolumeSize: { value: new Vector3(1, 1, 1) },
   u_segmentationBrickAtlasData: { value: null as Data3DTexture | null },
   u_backgroundMaskEnabled: { value: 0 },
   u_backgroundMask: { value: null as Data3DTexture | null },
@@ -669,6 +671,7 @@ const volumeRenderFragmentShader = /* glsl */ `
     uniform float u_hoverLabel;
     uniform float u_hoverSegmentationMode;
     uniform sampler3D u_segmentationLabels;
+    uniform vec3 u_segmentationVolumeSize;
     uniform sampler3D u_segmentationBrickAtlasData;
     uniform sampler2D u_segmentationPalette;
     uniform float u_backgroundMaskEnabled;
@@ -1497,12 +1500,12 @@ const volumeRenderFragmentShader = /* glsl */ `
       if (u_brickAtlasEnabled > 0.5) {
         return max(u_brickVolumeSize, vec3(1.0));
       }
-      return max(u_size, vec3(1.0));
+      return max(u_segmentationVolumeSize, vec3(1.0));
     }
 
     float sample_segmentation_full_volume_label(vec3 texcoords) {
       vec3 safeTexcoords = clamp(texcoords, vec3(0.0), vec3(1.0));
-      vec3 safeVolumeSize = max(u_size, vec3(1.0));
+      vec3 safeVolumeSize = max(u_segmentationVolumeSize, vec3(1.0));
       ivec3 labelTexel = ivec3(
         clamp(
           floor(safeTexcoords * safeVolumeSize),
@@ -1517,7 +1520,7 @@ const volumeRenderFragmentShader = /* glsl */ `
       if (u_brickAtlasEnabled > 0.5) {
         return sample_segmentation_brick_atlas_voxel(voxelCoords);
       }
-      vec3 safeVolumeSize = max(u_size, vec3(1.0));
+      vec3 safeVolumeSize = max(u_segmentationVolumeSize, vec3(1.0));
       vec3 clampedVoxel = clamp(floor(voxelCoords + vec3(0.5)), vec3(0.0), safeVolumeSize - vec3(1.0));
       vec3 texcoords = (clampedVoxel + vec3(0.5)) / safeVolumeSize;
       return sample_segmentation_full_volume_label(texcoords);

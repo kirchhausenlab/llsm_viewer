@@ -62,6 +62,7 @@ console.log('Starting routeDatasetSetupProps tests');
     interactionErrorMessage: 'interaction-warning',
     launchErrorMessage: 'launch-error',
     onLaunchViewer: () => undefined,
+    onLaunchViewerInPerformanceMode: () => undefined,
     canLaunch: true
   } satisfies RouteDatasetSetupSections['launch'];
 
@@ -85,6 +86,7 @@ console.log('Starting routeDatasetSetupProps tests');
   assert.strictEqual(result.onTrackSetClearFile, handlers.onTrackSetClearFile);
   assert.strictEqual(result.setTrackSetStates, tracks.setTrackSetStates);
   assert.strictEqual(result.launchErrorMessage, launch.launchErrorMessage);
+  assert.strictEqual(result.onLaunchViewerInPerformanceMode, launch.onLaunchViewerInPerformanceMode);
   assert.strictEqual(result.datasetErrors, preprocess.datasetErrors);
   assert.strictEqual(result.voxelResolution, preprocess.voxelResolution);
 })();

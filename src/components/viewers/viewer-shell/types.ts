@@ -19,6 +19,7 @@ export type TopMenuChromeProps = {
   onResetLayout: () => void;
   currentScaleLabel: string;
   initialScaleWarningMessage?: string | null;
+  isPerformanceMode?: boolean;
   isHelpMenuOpen: boolean;
   openHelpMenu: () => void;
   closeHelpMenu: () => void;

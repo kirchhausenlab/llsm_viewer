@@ -286,6 +286,9 @@ type LayerRenderSource = {
   width: number;
   height: number;
   depth: number;
+  dataWidth: number;
+  dataHeight: number;
+  dataDepth: number;
   channels: number;
   volume: NormalizedVolume | null;
   pageTable: VolumeBrickPageTable | null;
@@ -3032,10 +3035,16 @@ function resolveLayerRenderSource(
     );
   }
   if (volume) {
+    const depth = layer.fullResolutionDepth > 0 ? layer.fullResolutionDepth : volume.depth;
+    const height = layer.fullResolutionHeight > 0 ? layer.fullResolutionHeight : volume.height;
+    const width = layer.fullResolutionWidth > 0 ? layer.fullResolutionWidth : volume.width;
     return {
-      width: volume.width,
-      height: volume.height,
-      depth: volume.depth,
+      width,
+      height,
+      depth,
+      dataWidth: volume.width,
+      dataHeight: volume.height,
+      dataDepth: volume.depth,
       channels: volume.channels,
       volume,
       pageTable,
@@ -3050,6 +3059,9 @@ function resolveLayerRenderSource(
       width,
       height,
       depth,
+      dataWidth: pageTable.volumeShape[2],
+      dataHeight: pageTable.volumeShape[1],
+      dataDepth: pageTable.volumeShape[0],
       channels: brickAtlas.sourceChannels,
       volume: null,
       pageTable,
@@ -3403,7 +3415,7 @@ export function useVolumeResources({
         removeResource(layer.key);
         return;
       }
-      const { volume, pageTable, brickAtlas, width, height, depth, channels } = source;
+      const { volume, pageTable, brickAtlas, width, height, depth, dataWidth, dataHeight, dataDepth, channels } = source;
       const sourceUsesVolume = Boolean(volume);
       const directVolumeTextureChannels = channels <= 1 ? 1 : channels === 2 ? 2 : 4;
       const preferDirectVolumeSampling =
@@ -3411,9 +3423,9 @@ export function useVolumeResources({
         Boolean(volume && pageTable) &&
         shouldPreferDirectVolumeSampling({
           scaleLevel: pageTable?.scaleLevel ?? volume?.scaleLevel ?? 0,
-          volumeWidth: width,
-          volumeHeight: height,
-          volumeDepth: depth,
+          volumeWidth: dataWidth,
+          volumeHeight: dataHeight,
+          volumeDepth: dataDepth,
           textureChannels: directVolumeTextureChannels,
           gridShape: pageTable?.gridShape ?? [1, 1, 1],
           chunkShape: pageTable?.chunkShape ?? [1, 1, 1],
@@ -3532,7 +3544,7 @@ export function useVolumeResources({
           removeResource(layer.key);
 
           const texture = sourceUsesVolume
-            ? new THREE.Data3DTexture(textureData, width, height, depth)
+            ? new THREE.Data3DTexture(textureData, dataWidth, dataHeight, dataDepth)
             : createFallbackVolumeDataTexture();
           texture.format = sourceUsesVolume ? textureFormat : THREE.RedFormat;
           texture.type = sourceUsesVolume ? textureType : THREE.UnsignedByteType;
@@ -3550,6 +3562,9 @@ export function useVolumeResources({
             uniforms.u_isSegmentation.value = layer.isSegmentation ? 1 : 0;
           }
           uniforms.u_size.value.set(width, height, depth);
+          if (uniforms.u_segmentationVolumeSize) {
+            uniforms.u_segmentationVolumeSize.value.set(dataWidth, dataHeight, dataDepth);
+          }
           uniforms.u_clim.value.set(0, 1);
           uniforms.u_renderstyle.value = layer.renderStyle;
           uniforms.u_renderthreshold.value = 0.5;
@@ -4046,9 +4061,9 @@ export function useVolumeResources({
             : segmentationVolume
               ? packSegmentationLabelTextureData(segmentationVolume.labels)
               : FALLBACK_VOLUME_TEXTURE_DATA;
-          const nextTextureWidth = preparation || segmentationVolume ? width : 1;
-          const nextTextureHeight = preparation || segmentationVolume ? height : 1;
-          const nextTextureDepth = preparation || segmentationVolume ? depth : 1;
+          const nextTextureWidth = preparation || segmentationVolume ? dataWidth : 1;
+          const nextTextureHeight = preparation || segmentationVolume ? dataHeight : 1;
+          const nextTextureDepth = preparation || segmentationVolume ? dataDepth : 1;
           const nextTextureFormat = preparation
             ? preparation.format
             : segmentationVolume
@@ -4085,6 +4100,16 @@ export function useVolumeResources({
             const sizeUniform = materialUniforms.u_size.value as THREE.Vector3;
             if (sizeUniform.x !== width || sizeUniform.y !== height || sizeUniform.z !== depth) {
               sizeUniform.set(width, height, depth);
+            }
+          }
+          if (materialUniforms.u_segmentationVolumeSize) {
+            const segmentationVolumeSize = materialUniforms.u_segmentationVolumeSize.value as THREE.Vector3;
+            if (
+              segmentationVolumeSize.x !== dataWidth ||
+              segmentationVolumeSize.y !== dataHeight ||
+              segmentationVolumeSize.z !== dataDepth
+            ) {
+              segmentationVolumeSize.set(dataWidth, dataHeight, dataDepth);
             }
           }
           resources.paletteTexture = segmentationPaletteTexture;

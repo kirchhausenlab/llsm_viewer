@@ -52,8 +52,8 @@ export default function TopMenu(props: TopMenuProps) {
     vrButtonLabel,
     currentScaleLabel,
     initialScaleWarningMessage,
+    isPerformanceMode = false,
     isHelpMenuOpen,
-    closeHelpMenu,
     volumeTimepointCount,
     isPlaying,
     selectedIndex,
@@ -158,7 +158,7 @@ export default function TopMenu(props: TopMenuProps) {
       ],
       help: [
         { label: 'About' },
-        { label: 'Navigation controls', onSelect: openHelpMenu }
+        { label: 'Controls', onSelect: openHelpMenu }
       ]
     }),
     [
@@ -216,14 +216,6 @@ export default function TopMenu(props: TopMenuProps) {
     const [firstItem] = menuItemRefs.current[openMenu];
     firstItem?.focus();
   }, [openMenu]);
-
-  useEffect(() => {
-    if (!openMenu || !isHelpMenuOpen) {
-      return;
-    }
-
-    closeHelpMenu();
-  }, [closeHelpMenu, isHelpMenuOpen, openMenu]);
 
   useEffect(() => {
     if (isHelpMenuOpen) {
@@ -565,9 +557,21 @@ export default function TopMenu(props: TopMenuProps) {
 
         <div className="viewer-top-menu-cell viewer-top-menu-cell--top viewer-top-menu-cell--column-3">
           <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--start">
-            <div className="viewer-top-menu-scale" role="status" aria-live="polite">
-              <span className="viewer-top-menu-scale-label">Scale</span>
-              <span className="viewer-top-menu-scale-value">{currentScaleLabel}</span>
+            <div className="viewer-top-menu-scale-row">
+              <div className="viewer-top-menu-scale" role="status" aria-live="polite">
+                <span className="viewer-top-menu-scale-label">Scale</span>
+                <span className="viewer-top-menu-scale-value">{currentScaleLabel}</span>
+              </div>
+              {isPerformanceMode ? (
+                <div
+                  className="viewer-top-menu-warning viewer-top-menu-warning--performance"
+                  role="status"
+                  aria-live="polite"
+                  title="Performance mode raises all requested LOD scales by one level. Scale L0 is disabled in this session."
+                >
+                  <span className="viewer-top-menu-warning-label">Performance Mode</span>
+                </div>
+              ) : null}
             </div>
           </div>
         </div>

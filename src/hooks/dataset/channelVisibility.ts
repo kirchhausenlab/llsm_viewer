@@ -25,3 +25,12 @@ export function createInitialChannelVisibility(layers: ReadonlyArray<LayerChanne
     return acc;
   }, {});
 }
+
+export function createAllVisibleChannelVisibility(layers: ReadonlyArray<LayerChannelId>): Record<string, boolean> {
+  const orderedChannelIds = collectOrderedChannelIds(layers);
+
+  return orderedChannelIds.reduce<Record<string, boolean>>((acc, channelId) => {
+    acc[channelId] = true;
+    return acc;
+  }, {});
+}

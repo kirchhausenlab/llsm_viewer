@@ -322,6 +322,7 @@ export default function FrontPage({
             onExportNameChange={launchActions.onExportNameChange}
             exportDestinationLabel={launchActions.exportDestinationLabel}
             onLaunchViewer={launchActions.onLaunchViewer}
+            onLaunchViewerInPerformanceMode={launchActions.onLaunchViewerInPerformanceMode}
             isLaunchingViewer={launchActions.isLaunchingViewer}
             launchButtonEnabled={launchActions.launchButtonEnabled}
             launchButtonLaunchable={launchActions.launchButtonLaunchable}

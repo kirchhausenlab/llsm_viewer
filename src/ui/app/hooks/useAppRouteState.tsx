@@ -16,7 +16,10 @@ import {
   clearOpfsPreprocessedStorageRoot,
   PREPROCESSED_STORAGE_ROOT_DIR
 } from '../../../shared/storage/preprocessedStorage';
-import { createInitialChannelVisibility } from '../../../hooks/dataset/channelVisibility';
+import {
+  createAllVisibleChannelVisibility,
+  createInitialChannelVisibility
+} from '../../../hooks/dataset/channelVisibility';
 import {
   createVolumeProvider,
   DEFAULT_MAX_CACHED_CHUNK_BYTES,
@@ -40,6 +43,9 @@ import { createRouteDatasetSetupProps } from './routeDatasetSetupProps';
 import { createRouteViewerShellProps } from './routeViewerShellProps';
 import { useViewerModePlayback } from './useViewerModePlayback';
 import { useWindowLayout } from './useWindowLayout';
+import {
+  collectInitialHttpLaunchTrackedTargets
+} from './initialHttpLaunch';
 import { getTrackPlaybackIndexWindow, snapTimeIndexToWindow } from '../../../shared/utils';
 
 export type DatasetSetupRouteProps = FrontPageContainerProps;
@@ -275,6 +281,7 @@ export function useAppRouteState(): AppRouteState {
     isViewerLaunched,
     isLaunchingViewer,
     isLoading,
+    isPerformanceMode,
     resetLaunchState,
     beginLaunchSession,
     setLaunchExpectedVolumeCount,
@@ -553,10 +560,11 @@ export function useAppRouteState(): AppRouteState {
     setCurrentLayerVolumes,
     playbackLayerKeys,
     playbackAtlasScaleLevelByLayerKey,
-    handleLaunchViewer
+    handleLaunchViewer: handleRouteLaunchViewer
   } = useRouteLayerVolumes({
     isViewerLaunched,
     isLaunchingViewer,
+    isPerformanceMode,
     isPlaying,
     preprocessedExperiment,
     volumeProvider,
@@ -580,6 +588,14 @@ export function useAppRouteState(): AppRouteState {
     setIsPlaying,
     showLaunchError
   });
+  const handleLaunchViewer = useCallback(
+    () => handleRouteLaunchViewer({ performanceMode: false }),
+    [handleRouteLaunchViewer]
+  );
+  const handleLaunchViewerInPerformanceMode = useCallback(
+    () => handleRouteLaunchViewer({ performanceMode: true }),
+    [handleRouteLaunchViewer]
+  );
   const brickResidencyLayerKeys = useMemo(() => {
     if (!preferBrickResidency) {
       return [] as string[];
@@ -711,20 +727,24 @@ export function useAppRouteState(): AppRouteState {
         return;
       }
       trackedTargets.clear();
-      for (const layerKey of playbackLayerKeys) {
-        const loadedScaleLevel = getResolvedLoadedScaleLevel({
-          layerKey,
-          currentLayerVolumes,
-          currentLayerPageTables,
-          currentLayerBrickAtlases
-        });
-        const finestScaleLevel = finestScaleLevelByLayerKey.get(layerKey);
-        if (loadedScaleLevel === null || typeof finestScaleLevel !== 'number') {
-          continue;
-        }
-        if (loadedScaleLevel > finestScaleLevel) {
-          trackedTargets.set(layerKey, finestScaleLevel);
-        }
+      const trackedTargetsByLayerKey = collectInitialHttpLaunchTrackedTargets({
+        layerKeys: playbackLayerKeys,
+        loadedScaleLevelByLayerKey: Object.fromEntries(
+          playbackLayerKeys.map((layerKey) => [
+            layerKey,
+            getResolvedLoadedScaleLevel({
+              layerKey,
+              currentLayerVolumes,
+              currentLayerPageTables,
+              currentLayerBrickAtlases
+            })
+          ])
+        ),
+        desiredScaleLevelByLayerKey: playbackAtlasScaleLevelByLayerKey,
+        finestScaleLevelByLayerKey
+      });
+      for (const [layerKey, targetScaleLevel] of trackedTargetsByLayerKey.entries()) {
+        trackedTargets.set(layerKey, targetScaleLevel);
       }
       initialHttpLaunchObservationDoneRef.current = true;
       setIsInitialHttpLaunchLoading(trackedTargets.size > 0);
@@ -761,6 +781,7 @@ export function useAppRouteState(): AppRouteState {
     currentLayerVolumes,
     finestScaleLevelByLayerKey,
     isViewerLaunched,
+    playbackAtlasScaleLevelByLayerKey,
     playbackLayerKeys,
     preprocessedExperiment?.storageHandle.backend
   ]);
@@ -1007,7 +1028,10 @@ export function useAppRouteState(): AppRouteState {
       return;
     }
 
-    const initialVisibility = createInitialChannelVisibility(loadedDatasetLayers);
+    const initialVisibility =
+      preprocessedExperiment.storageHandle.backend === 'http'
+        ? createAllVisibleChannelVisibility(loadedDatasetLayers)
+        : createInitialChannelVisibility(loadedDatasetLayers);
     setChannelVisibility((current) => {
       const initialChannelIds = Object.keys(initialVisibility);
       if (
@@ -1203,6 +1227,7 @@ export function useAppRouteState(): AppRouteState {
       interactionErrorMessage,
       launchErrorMessage,
       onLaunchViewer: handleLaunchViewer,
+      onLaunchViewerInPerformanceMode: handleLaunchViewerInPerformanceMode,
       canLaunch
     },
     preprocess: {
@@ -1293,6 +1318,7 @@ export function useAppRouteState(): AppRouteState {
         onResetLayout: handleResetWindowLayout,
         currentScaleLabel,
         initialScaleWarningMessage,
+        isPerformanceMode,
         hoveredVoxel: hoveredVolumeVoxel ?? lastHoveredVolumeVoxel,
         followedTrackSetId,
         followedTrackId,

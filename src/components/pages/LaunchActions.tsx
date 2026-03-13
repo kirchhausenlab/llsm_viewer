@@ -16,6 +16,7 @@ type LaunchActionsProps = {
   onExportNameChange: (value: string) => void;
   exportDestinationLabel: string | null;
   onLaunchViewer: () => void;
+  onLaunchViewerInPerformanceMode: () => void;
   isLaunchingViewer: boolean;
   launchButtonEnabled: boolean;
   launchButtonLaunchable: 'true' | 'false';
@@ -45,6 +46,7 @@ const LaunchActions: FC<LaunchActionsProps> = ({
   onExportNameChange,
   exportDestinationLabel,
   onLaunchViewer,
+  onLaunchViewerInPerformanceMode,
   isLaunchingViewer,
   launchButtonEnabled,
   launchButtonLaunchable
@@ -110,15 +112,27 @@ const LaunchActions: FC<LaunchActionsProps> = ({
             </>
           ) : null}
           {frontPageMode === 'preprocessed' ? (
-            <button
-              type="button"
-              className="launch-viewer-button"
-              onClick={onLaunchViewer}
-              disabled={isLaunchingViewer || !launchButtonEnabled}
-              data-launchable={launchButtonLaunchable}
-            >
-              {isLaunchingViewer ? 'Loading…' : 'Launch viewer'}
-            </button>
+            <div className="launch-button-row">
+              <button
+                type="button"
+                className="launch-viewer-button"
+                onClick={onLaunchViewer}
+                disabled={isLaunchingViewer || !launchButtonEnabled}
+                data-launchable={launchButtonLaunchable}
+              >
+                {isLaunchingViewer ? 'Loading…' : 'Launch viewer'}
+              </button>
+              <button
+                type="button"
+                className="launch-viewer-button launch-viewer-button--performance"
+                onClick={onLaunchViewerInPerformanceMode}
+                disabled={isLaunchingViewer || !launchButtonEnabled}
+                data-launchable={launchButtonLaunchable}
+                title="Launch with all LOD scale requests shifted one level coarser. Scale L0 is disabled in this mode."
+              >
+                {isLaunchingViewer ? 'Loading…' : 'Launch in Performance Mode'}
+              </button>
+            </div>
           ) : null}
         </div>
       ) : null}

@@ -18,9 +18,10 @@ console.log('Starting useRouteLaunchSessionState tests');
   assert.strictEqual(hook.result.status, 'idle');
   assert.strictEqual(hook.result.isViewerLaunched, false);
   assert.strictEqual(hook.result.isLaunchingViewer, false);
+  assert.strictEqual(hook.result.isPerformanceMode, false);
 
   hook.act(() => {
-    hook.result.beginLaunchSession();
+    hook.result.beginLaunchSession({ performanceMode: true });
     hook.result.setLaunchExpectedVolumeCount(5);
     hook.result.setLaunchProgress({ loadedCount: 2, totalCount: 5 });
   });
@@ -28,6 +29,7 @@ console.log('Starting useRouteLaunchSessionState tests');
   assert.strictEqual(hook.result.status, 'loading');
   assert.strictEqual(hook.result.isLoading, true);
   assert.strictEqual(hook.result.isLaunchingViewer, true);
+  assert.strictEqual(hook.result.isPerformanceMode, true);
   assert.strictEqual(hook.result.expectedVolumeCount, 5);
   assert.strictEqual(hook.result.loadedCount, 2);
   assert.strictEqual(hook.result.loadProgress, 0.4);
@@ -48,6 +50,7 @@ console.log('Starting useRouteLaunchSessionState tests');
   });
 
   assert.strictEqual(hook.result.isViewerLaunched, false);
+  assert.strictEqual(hook.result.isPerformanceMode, false);
   assert.strictEqual(stopPlaybackCalls, 1);
   hook.unmount();
 })();
@@ -63,7 +66,7 @@ console.log('Starting useRouteLaunchSessionState tests');
   );
 
   hook.act(() => {
-    hook.result.beginLaunchSession();
+    hook.result.beginLaunchSession({ performanceMode: true });
     hook.result.failLaunchSession('Launch failed');
     hook.result.finishLaunchSessionAttempt();
   });
@@ -73,6 +76,7 @@ console.log('Starting useRouteLaunchSessionState tests');
   assert.strictEqual(hook.result.isViewerLaunched, false);
   assert.strictEqual(hook.result.isLaunchingViewer, false);
   assert.strictEqual(hook.result.isLoading, false);
+  assert.strictEqual(hook.result.isPerformanceMode, true);
 
   hook.act(() => {
     hook.result.resetLaunchState();
@@ -85,6 +89,7 @@ console.log('Starting useRouteLaunchSessionState tests');
   assert.strictEqual(hook.result.loadProgress, 0);
   assert.strictEqual(hook.result.isViewerLaunched, false);
   assert.strictEqual(hook.result.isLaunchingViewer, false);
+  assert.strictEqual(hook.result.isPerformanceMode, false);
   assert.strictEqual(stopPlaybackCalls, 1);
   hook.unmount();
 })();

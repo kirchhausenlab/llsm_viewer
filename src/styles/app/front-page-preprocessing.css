@@ -400,6 +400,14 @@
   flex-wrap: wrap;
 }
 
+.launch-button-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
 .launch-viewer-button {
   padding: 0.85rem 1.75rem;
   border-radius: 0.75rem;
@@ -410,6 +418,10 @@
   background: linear-gradient(135deg, #5b8cff, #5b52ff);
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.launch-viewer-button--performance {
+  background: linear-gradient(135deg, #b4721f, #934134);
 }
 
 .launch-viewer-button[data-launchable='false'] {
@@ -428,6 +440,10 @@
 .launch-viewer-button:hover {
   transform: translateY(-1px);
   box-shadow: 0 15px 35px rgba(91, 140, 255, 0.35);
+}
+
+.launch-viewer-button--performance:hover {
+  box-shadow: 0 15px 35px rgba(180, 114, 31, 0.28);
 }
 
 .launch-viewer-button:active {

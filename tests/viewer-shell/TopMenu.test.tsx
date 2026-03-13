@@ -159,6 +159,7 @@ function createProps(overrides: Partial<React.ComponentProps<typeof TopMenu>> = 
     vrButtonLabel: 'Enter VR',
     volumeTimepointCount: 1,
     isPlaying: false,
+    isPerformanceMode: false,
     selectedIndex: 0,
     onTimeIndexChange: () => {},
     playbackDisabled: true,
@@ -234,7 +235,7 @@ test('top menu renders the requested dropdown order and items', () => {
       ['View', ['Channels window', 'Camera', 'Record', 'Background', 'Render settings', 'Hover settings']],
       ['Edit', ['Props', 'Paintbrush', 'Measure']],
       ['Tracks', ['Tracks window', 'Amplitude plot', 'Plot settings', 'Tracks settings']],
-      ['Help', ['About', 'Navigation controls']]
+      ['Help', ['About', 'Controls']]
     ]);
 
     for (const [label, expectedItems] of expectedMenus) {
@@ -433,7 +434,7 @@ test('wired dropdown items invoke the expected handlers', () => {
       findDropdownTrigger(renderer, 'Help').props.onClick();
     });
     act(() => {
-      findMenuItem(renderer, 'Navigation controls').props.onClick();
+      findMenuItem(renderer, 'Controls').props.onClick();
     });
 
     assert.equal(resetCalls, 1);
@@ -449,6 +450,42 @@ test('wired dropdown items invoke the expected handlers', () => {
     assert.equal(trackSettingsCalls, 1);
     assert.equal(diagnosticsCalls, 1);
     assert.equal(helpCalls, 1);
+
+    renderer.unmount();
+  });
+});
+
+test('top menu does not close the controls window when another menu opens', () => {
+  withEnvironmentMocks(() => {
+    let closeHelpCalls = 0;
+    let renderer!: TestRenderer.ReactTestRenderer;
+
+    act(() => {
+      renderer = renderTopMenu({
+        isHelpMenuOpen: true,
+        closeHelpMenu: () => {
+          closeHelpCalls += 1;
+        }
+      });
+    });
+
+    act(() => {
+      findDropdownTrigger(renderer, 'View').props.onClick();
+    });
+
+    const renderedItems = renderer.root
+      .findAll((node) => node.type === 'button' && node.props.role === 'menuitem')
+      .map((node) => extractText(node));
+
+    assert.deepEqual(renderedItems, [
+      'Channels window',
+      'Camera',
+      'Record',
+      'Background',
+      'Render settings',
+      'Hover settings'
+    ]);
+    assert.equal(closeHelpCalls, 0);
 
     renderer.unmount();
   });
@@ -571,6 +608,7 @@ test('top menu places scale, hover, and follow status in their updated columns',
   withEnvironmentMocks(() => {
     const renderer = renderTopMenu({
       currentScaleLabel: '1.25x',
+      isPerformanceMode: true,
       followedTrackSetId: 'set-a',
       followedTrackId: 'track-1',
       hoveredVoxel: {
@@ -601,6 +639,15 @@ test('top menu places scale, hover, and follow status in their updated columns',
 
     assert.ok(
       topThirdColumn.findAll((node) => hasClassName(node, 'viewer-top-menu-scale')).length > 0
+    );
+    assert.equal(
+      topThirdColumn.findAll(
+        (node) =>
+          node.type === 'div' &&
+          hasClassName(node, 'viewer-top-menu-warning--performance') &&
+          extractText(node).includes('Performance Mode')
+      ).length,
+      1
     );
     assert.ok(
       bottomThirdColumn.findAll((node) => hasClassName(node, 'viewer-top-menu-intensity')).length > 0
