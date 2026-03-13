@@ -4,7 +4,7 @@ import { launchViewerFromFixture, STANDARD_VOXEL_RESOLUTION } from './helpers/wo
 
 const fixture = resolveDatasetFixture();
 
-test('@smoke can preprocess local TIFF fixture and launch viewer', async ({ page }) => {
+test('@smoke can preprocess local TIFF fixture, launch viewer, and exit to the front page', async ({ page }) => {
   await launchViewerFromFixture(page, fixture, {
     channelName: 'Ch1',
     voxelResolution: STANDARD_VOXEL_RESOLUTION
@@ -12,6 +12,16 @@ test('@smoke can preprocess local TIFF fixture and launch viewer', async ({ page
   await expect(
     page.getByRole('button', { name: /Start playback|Pause playback/ })
   ).toBeVisible();
+
+  page.once('dialog', async (dialog) => {
+    await dialog.accept();
+  });
+  await page.getByRole('button', { name: 'File', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Exit' }).click();
+
+  await expect(page.getByRole('heading', { name: 'Mirante4D' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Set up new experiment' })).toBeVisible();
+  await expect(page.getByText('Choose the type of experiment:')).toHaveCount(0);
 });
 
 test('@smoke setup flow steps back through chooser before front page', async ({ page }) => {
@@ -26,6 +36,9 @@ test('@smoke setup flow steps back through chooser before front page', async ({ 
   };
 
   await page.goto('/');
+  await expect(page.getByText('Performance note')).toBeVisible();
+  await expect(page.getByText('Mirante4D works best in Chrome.')).toBeVisible();
+  await expect(page.getByText('v0.2.0')).toBeVisible();
   await page.getByRole('button', { name: 'Set up new experiment' }).click();
 
   await expect(page.getByText('Choose the type of experiment:')).toBeVisible();

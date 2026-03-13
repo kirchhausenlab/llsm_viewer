@@ -7,9 +7,20 @@ import FrontPage from '../../src/components/pages/FrontPage.tsx';
 
 (import.meta as any).env = (import.meta as any).env ?? {};
 
-function collectText(renderer: any): string {
-  const textNodes = renderer.root.findAll((node: any) => typeof node.children?.[0] === 'string');
-  return textNodes.flatMap((node: any) => node.children).join(' ');
+function collectText(node: any): string {
+  if (node == null) {
+    return '';
+  }
+  if (typeof node === 'string') {
+    return node;
+  }
+  if (Array.isArray(node)) {
+    return node.map((child) => collectText(child)).join(' ');
+  }
+  if (typeof node.toJSON === 'function') {
+    return collectText(node.toJSON());
+  }
+  return collectText(node.children);
 }
 
 function buildBaseProps() {
@@ -122,14 +133,36 @@ function buildBaseProps() {
 }
 
 test('front page initial mode renders setup choices', () => {
-  const renderer = TestRenderer.create(<FrontPage {...(buildBaseProps() as any)} />);
+  const props = buildBaseProps();
+  const renderer = TestRenderer.create(
+    <FrontPage
+      {...(props as any)}
+      header={{
+        ...props.header,
+        versionLabel: 'v0.2.0',
+        performanceNotice: {
+          title: 'Performance note',
+          lines: [
+            'Mirante4D works best in Chrome.',
+            'It makes heavy use of the user\'s GPUs.',
+            'This is an early build still being optimized: browser performance and stability may be affected.'
+          ]
+        }
+      }}
+    />
+  );
   const text = collectText(renderer);
   const links = renderer.root.findAllByType('a');
 
   assert.match(text, /Mirante4D/);
+  assert.match(text, /v0.2.0/);
   assert.match(text, /Set up new experiment/);
   assert.match(text, /Load preprocessed experiment/);
   assert.match(text, /Load public experiments/);
+  assert.match(text, /Performance note/);
+  assert.match(text, /Mirante4D works best in Chrome\./);
+  assert.match(text, /It makes heavy use of the user's GPUs\./);
+  assert.match(text, /early build still being optimized: browser performance and stability may be affected\./);
   assert.match(text, /Developed by/);
   assert.match(text, /Jose Inacio Costa-Filho/);
   assert.match(text, /Kirchhausen Lab/);

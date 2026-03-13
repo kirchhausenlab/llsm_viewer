@@ -5,7 +5,6 @@ import type {
   LoadedDatasetLayer,
   StagedPreprocessedExperiment
 } from '../../../hooks/dataset';
-import { clearTextureCache } from '../../../core/textureCache';
 import { deriveChannelTrackOffsets } from '../../../state/channelTrackOffsets';
 import type { FollowedVoxelTarget } from '../../../types/follow';
 import type { HoveredVoxelInfo } from '../../../types/hover';
@@ -282,7 +281,6 @@ export function useAppRouteState(): AppRouteState {
     completeLaunchSession,
     failLaunchSession,
     finishLaunchSessionAttempt,
-    endViewerSession
   } = useRouteLaunchSessionState({ stopPlayback });
 
   const volumeProvider = useMemo(() => {
@@ -892,21 +890,6 @@ export function useAppRouteState(): AppRouteState {
     setViewerCameraSample(nextSample);
   }, []);
 
-  const handleReturnToLauncher = useCallback(() => {
-    if (typeof window !== 'undefined') {
-      const confirmed = window.confirm(
-        'Do you really want to return? The current session will be discarded'
-      );
-      if (!confirmed) {
-        return;
-      }
-    }
-    endViewerSession();
-    volumeProvider?.clear();
-    setCurrentLayerVolumes({});
-    clearTextureCache();
-  }, [endViewerSession, volumeProvider]);
-
   useEffect(() => {
     setFollowedTrack((current) => {
       if (!current) {
@@ -984,6 +967,19 @@ export function useAppRouteState(): AppRouteState {
     trackSetIdRef,
     clearDatasetError
   });
+  const handleReturnToLauncher = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      const confirmed = window.confirm(
+        'Do you really want to return? The current session will be discarded'
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    volumeProvider?.clear();
+    handleReturnToFrontPage();
+  }, [handleReturnToFrontPage, volumeProvider]);
   const canLaunch = hasAnyLayers && allChannelsValid && allTracksValid && !hasLoadingTracks && voxelResolution !== null;
 
   const activeChannel = useMemo(

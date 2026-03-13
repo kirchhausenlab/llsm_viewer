@@ -521,7 +521,19 @@ export default function FrontPageContainer({
 
   const headerProps = {
     onReturnToStart: handleReturnFromFrontPage,
-    isFrontPageLocked
+    isFrontPageLocked,
+    versionLabel: frontPageMode === 'initial' && !preprocessedState.isPreprocessedLoaderOpen ? 'v0.2.0' : null,
+    performanceNotice:
+      frontPageMode === 'initial' && !preprocessedState.isPreprocessedLoaderOpen
+        ? {
+            title: 'Performance note',
+            lines: [
+              'Mirante4D works best in Chrome.',
+              'It makes heavy use of the user\'s GPUs.',
+              'This is an early build still being optimized: browser performance and stability may be affected.'
+            ]
+          }
+        : null
   };
 
   const initialActions = {
