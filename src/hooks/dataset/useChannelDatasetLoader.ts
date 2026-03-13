@@ -29,6 +29,7 @@ import {
 } from '../../state/layerSettings';
 import type { LoadedLayer } from '../../types/layers';
 import type { VoxelResolutionValues } from '../../types/voxelResolution';
+import { collectOrderedChannelIds, createInitialChannelVisibility } from './channelVisibility';
 
 type LoadChannelLayer = {
   id: string;
@@ -167,12 +168,8 @@ export function useChannelDatasetLoader({ getLayerTimepointCount }: UseChannelDa
       } = options;
 
       clearTextureCache();
-      const visibilityDefaults = normalizedLayers.reduce<Record<string, boolean>>((acc, layer) => {
-        if (!(layer.channelId in acc)) {
-          acc[layer.channelId] = true;
-        }
-        return acc;
-      }, {});
+      const orderedChannelIds = collectOrderedChannelIds(normalizedLayers);
+      const visibilityDefaults = createInitialChannelVisibility(normalizedLayers);
       const initialWindows = normalizedLayers.reduce<
         Record<string, ReturnType<typeof computeInitialWindowForVolume>>
       >((acc, layer) => {
@@ -209,7 +206,7 @@ export function useChannelDatasetLoader({ getLayerTimepointCount }: UseChannelDa
       }, {});
 
       setSelectedIndex(0);
-      setActiveChannelTabId(Object.keys(visibilityDefaults)[0] ?? null);
+      setActiveChannelTabId(orderedChannelIds[0] ?? null);
       setStatus('loaded');
       setLoadedCount(expectedVolumeCount);
       setExpectedVolumeCount(expectedVolumeCount);

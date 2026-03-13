@@ -16,6 +16,7 @@ import {
   clearOpfsPreprocessedStorageRoot,
   PREPROCESSED_STORAGE_ROOT_DIR
 } from '../../../shared/storage/preprocessedStorage';
+import { createInitialChannelVisibility } from '../../../hooks/dataset/channelVisibility';
 import {
   createVolumeProvider,
   DEFAULT_MAX_CACHED_CHUNK_BYTES,
@@ -1002,6 +1003,25 @@ export function useAppRouteState(): AppRouteState {
   }, []);
 
   useEffect(() => {
+    if (!preprocessedExperiment) {
+      return;
+    }
+
+    const initialVisibility = createInitialChannelVisibility(loadedDatasetLayers);
+    setChannelVisibility((current) => {
+      const initialChannelIds = Object.keys(initialVisibility);
+      if (
+        Object.keys(current).length === initialChannelIds.length &&
+        initialChannelIds.every((channelId) => current[channelId] === initialVisibility[channelId])
+      ) {
+        return current;
+      }
+      return initialVisibility;
+    });
+    setActiveChannelTabId(loadedChannelIds[0] ?? null);
+  }, [loadedChannelIds, loadedDatasetLayers, preprocessedExperiment, setChannelVisibility]);
+
+  useEffect(() => {
     if (loadedChannelIds.length === 0) {
       setActiveChannelTabId(null);
       return;
@@ -1011,7 +1031,7 @@ export function useAppRouteState(): AppRouteState {
       if (current && loadedChannelIds.includes(current)) {
         return current;
       }
-      return selectDeterministicId(loadedChannelIds);
+      return loadedChannelIds[0] ?? null;
     });
   }, [loadedChannelIds]);
 
