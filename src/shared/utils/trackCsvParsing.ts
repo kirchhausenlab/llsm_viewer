@@ -1,4 +1,4 @@
-import type { TrackDefinition, TrackPoint } from '../../types/tracks';
+import type { TrackDefinition, TrackPoint, TrackTimepointConvention } from '../../types/tracks';
 
 type SegmentAccumulator = {
   segmentIndex: number;
@@ -41,26 +41,109 @@ export type BuildTracksFromCsvEntriesOptions = {
   channelId: string | null;
   channelName: string | null;
   entries: string[][];
+  timepointConvention?: TrackTimepointConvention;
 };
+
+type TrackCsvColumnMapping = {
+  dataRowStartIndex: number;
+  trackIdIndex: number;
+  startIndex: number | null;
+  timeIndex: number;
+  xIndex: number;
+  yIndex: number;
+  zIndex: number;
+  amplitudeIndex: number;
+};
+
+function normalizeTrackCsvHeader(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function resolveTrackCsvColumnMapping(entries: string[][]): TrackCsvColumnMapping {
+  const firstRow = entries[0] ?? null;
+  if (firstRow && firstRow.length >= 8) {
+    const normalizedHeaders = firstRow.map((value) => normalizeTrackCsvHeader(value));
+    const trackIdIndex = normalizedHeaders.indexOf('track_id');
+    const startIndex = normalizedHeaders.indexOf('start');
+    const timeIndex = normalizedHeaders.indexOf('t');
+    const xIndex = normalizedHeaders.indexOf('x');
+    const yIndex = normalizedHeaders.indexOf('y');
+    const zIndex = normalizedHeaders.indexOf('z');
+    const amplitudeIndex = normalizedHeaders.indexOf('a');
+
+    if (
+      trackIdIndex >= 0 &&
+      startIndex >= 0 &&
+      timeIndex >= 0 &&
+      xIndex >= 0 &&
+      yIndex >= 0 &&
+      zIndex >= 0 &&
+      amplitudeIndex >= 0
+    ) {
+      return {
+        dataRowStartIndex: 1,
+        trackIdIndex,
+        startIndex,
+        timeIndex,
+        xIndex,
+        yIndex,
+        zIndex,
+        amplitudeIndex
+      };
+    }
+  }
+
+  return {
+    dataRowStartIndex: 0,
+    trackIdIndex: 0,
+    startIndex: null,
+    timeIndex: 2,
+    xIndex: 3,
+    yIndex: 4,
+    zIndex: 5,
+    amplitudeIndex: 6
+  };
+}
+
+function normalizeTrackTimepoint(
+  value: number,
+  timepointConvention: TrackTimepointConvention,
+  rowIndex: number,
+  label: string
+): number {
+  if (timepointConvention === 'one-based') {
+    if (value < 1) {
+      throw new Error(
+        `Track CSV row ${rowIndex + 1} uses ${label} ${value}, but this file is configured as starting at 1.`
+      );
+    }
+    return value - 1;
+  }
+
+  return value;
+}
 
 export function buildTracksFromCsvEntries({
   trackSetId,
   trackSetName,
   channelId,
   channelName,
-  entries
+  entries,
+  timepointConvention = 'zero-based'
 }: BuildTracksFromCsvEntriesOptions): TrackDefinition[] {
   const minimumColumns = 7;
+  const columnMapping = resolveTrackCsvColumnMapping(entries);
 
   const trackStates = new Map<number, TrackAccumulator>();
   let nextInternalTrackId = 1;
 
-  for (const row of entries) {
+  for (let rowIndex = columnMapping.dataRowStartIndex; rowIndex < entries.length; rowIndex += 1) {
+    const row = entries[rowIndex]!;
     if (row.length < minimumColumns) {
       continue;
     }
 
-    const rawId = Number(row[0]);
+    const rawId = Number(row[columnMapping.trackIdIndex]);
     if (!Number.isFinite(rawId)) {
       continue;
     }
@@ -72,10 +155,10 @@ export function buildTracksFromCsvEntries({
       trackStates.set(sourceTrackId, state);
     }
 
-    const rawFrame = row[2] ?? '';
-    const rawX = row[3] ?? '';
-    const rawY = row[4] ?? '';
-    const rawZ = row[5] ?? '';
+    const rawFrame = row[columnMapping.timeIndex] ?? '';
+    const rawX = row[columnMapping.xIndex] ?? '';
+    const rawY = row[columnMapping.yIndex] ?? '';
+    const rawZ = row[columnMapping.zIndex] ?? '';
     const isBreakRow =
       isBreakSentinel(rawFrame) && isBreakSentinel(rawX) && isBreakSentinel(rawY) && isBreakSentinel(rawZ);
     if (isBreakRow) {
@@ -86,15 +169,16 @@ export function buildTracksFromCsvEntries({
     const frame = Number(rawFrame);
     const x = Number(rawX);
     const y = Number(rawY);
-    const amplitudeIndex = 6;
-    const zRaw = Number(row[5]);
-    const amplitudeRaw = Number(row[amplitudeIndex]);
+    const zRaw = Number(row[columnMapping.zIndex]);
+    const amplitudeRaw = Number(row[columnMapping.amplitudeIndex]);
+    const startRaw = columnMapping.startIndex === null ? Number.NaN : Number(row[columnMapping.startIndex]);
 
     const hasValidZ = Number.isFinite(zRaw);
     const z = zRaw;
 
     if (
       !Number.isFinite(frame) ||
+      (columnMapping.startIndex !== null && !Number.isFinite(startRaw)) ||
       !Number.isFinite(x) ||
       !Number.isFinite(y) ||
       !Number.isFinite(amplitudeRaw) ||
@@ -103,7 +187,10 @@ export function buildTracksFromCsvEntries({
       continue;
     }
 
-    const normalizedTime = Math.max(0, frame);
+    const normalizedTime =
+      columnMapping.startIndex === null
+        ? Math.max(0, normalizeTrackTimepoint(frame, timepointConvention, rowIndex, 'frame'))
+        : Math.max(0, startRaw + normalizeTrackTimepoint(frame, timepointConvention, rowIndex, 'frame'));
     const amplitude = Math.max(0, amplitudeRaw);
     const point: TrackPoint = { time: normalizedTime, x, y, z, amplitude };
 

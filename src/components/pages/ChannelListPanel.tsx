@@ -116,6 +116,10 @@ type ChannelListPanelProps = {
   onTrackDrop: (trackSetId: string, dataTransfer: DataTransfer) => void;
   onTrackSetNameChange: (trackSetId: string, name: string) => void;
   onTrackSetBoundChannelChange: (trackSetId: string, channelId: string | null) => void;
+  onTrackSetTimepointConventionChange: (
+    trackSetId: string,
+    timepointConvention: TrackSetSource['timepointConvention']
+  ) => void | Promise<void>;
   onTrackSetClearFile: (trackSetId: string) => void;
   onTrackSetRemove: (trackSetId: string) => void;
   isFrontPageLocked: boolean;
@@ -146,6 +150,7 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
   onTrackDrop,
   onTrackSetNameChange,
   onTrackSetBoundChannelChange,
+  onTrackSetTimepointConventionChange,
   onTrackSetClearFile,
   onTrackSetRemove,
   isFrontPageLocked
@@ -547,6 +552,7 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
                       onTrackFilesAdded={onTrackFilesAdded}
                       onTrackDrop={onTrackDrop}
                       onTrackSetBoundChannelChange={onTrackSetBoundChannelChange}
+                      onTrackSetTimepointConventionChange={onTrackSetTimepointConventionChange}
                       onTrackSetClearFile={onTrackSetClearFile}
                     />
                   </div>

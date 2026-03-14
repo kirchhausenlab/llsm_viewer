@@ -20,7 +20,12 @@ import {
   getKnownLayerTimepointCount,
   hasPendingLayerTimepointCount,
 } from './channelTimepointValidation';
-import type { CompiledTrackSetHeader, CompiledTrackSetPayload, CompiledTrackSummary } from '../../types/tracks';
+import type {
+  CompiledTrackSetHeader,
+  CompiledTrackSetPayload,
+  CompiledTrackSummary,
+  TrackTimepointConvention
+} from '../../types/tracks';
 
 export type { LoadState } from './useChannelDatasetLoader';
 
@@ -36,6 +41,7 @@ export type TrackSetSource = {
   id: string;
   name: string;
   boundChannelId: string | null;
+  timepointConvention: TrackTimepointConvention;
   file: File | null;
   fileName: string;
   status: LoadState;
@@ -197,6 +203,7 @@ export function useChannelSources(): ChannelSourcesApi {
       id: `track-set-${nextId}`,
       name,
       boundChannelId,
+      timepointConvention: 'zero-based',
       file: null,
       fileName: '',
       status: 'idle',

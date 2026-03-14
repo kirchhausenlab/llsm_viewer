@@ -85,7 +85,7 @@ export default function ChannelsPanel({
                   }}
                   title={activeChannelVisible ? 'Hide current channel' : 'Show current channel'}
                 >
-                  Hide/Show
+                  {activeChannelVisible ? 'Hide' : 'Show'}
                 </button>
               </div>
             ) : null}

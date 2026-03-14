@@ -37,6 +37,7 @@ type RouteDatasetSetupHandlersSection = Pick<
   | 'onTrackDrop'
   | 'onTrackSetNameChange'
   | 'onTrackSetBoundChannelChange'
+  | 'onTrackSetTimepointConventionChange'
   | 'onTrackSetClearFile'
   | 'onTrackSetRemove'
 >;

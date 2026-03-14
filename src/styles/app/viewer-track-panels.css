@@ -4,6 +4,28 @@
   gap: 0.85rem;
 }
 
+.track-current-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-bottom: 0.2rem;
+}
+
+.track-current-title {
+  min-width: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.track-current-visibility-button {
+  flex: 0 0 auto;
+}
+
 .track-follow-controls {
   display: flex;
   flex-direction: column;

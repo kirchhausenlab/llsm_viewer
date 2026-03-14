@@ -6,6 +6,7 @@ import './preprocessedDataset.test.ts';
 import './anisotropyCorrection.test.ts';
 import './trackSmoothing.test.ts';
 import './trackCsvParsing.test.ts';
+import './useParsedTracks.test.ts';
 import './useVoxelResolution.test.ts';
 import './useViewerPlayback.test.ts';
 import './useDatasetErrors.test.ts';

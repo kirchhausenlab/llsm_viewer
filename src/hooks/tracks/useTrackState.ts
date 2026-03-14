@@ -43,6 +43,7 @@ export const useTrackState = ({
     handleTrackDrop,
     handleTrackSetNameChange,
     handleTrackSetBoundChannelChange,
+    handleTrackSetTimepointConventionChange,
     handleTrackSetClearFile,
     handleTrackSetRemove
   } = useParsedTracks({
@@ -92,6 +93,7 @@ export const useTrackState = ({
     handleTrackDrop,
     handleTrackSetNameChange,
     handleTrackSetBoundChannelChange,
+    handleTrackSetTimepointConventionChange,
     handleTrackSetClearFile,
     handleTrackSetRemove,
     resetTrackState

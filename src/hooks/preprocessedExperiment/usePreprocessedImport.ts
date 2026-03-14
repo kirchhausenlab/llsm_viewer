@@ -266,6 +266,7 @@ export function usePreprocessedImport({
         id: set.id,
         name: set.name,
         boundChannelId: set.boundChannelId,
+        timepointConvention: 'zero-based',
         file: null,
         fileName: set.fileName,
         status: 'loaded',

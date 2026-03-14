@@ -46,6 +46,7 @@ function createProps(
   onVisibilityToggle: (channelId: string) => void = () => {},
   selectedLayer: LoadedDatasetLayer = layer,
   samplingMode: SamplingMode = 'linear',
+  channelVisible = true,
 ) {
   return {
     layout: {
@@ -59,7 +60,7 @@ function createProps(
     isPlaying: false,
     loadedChannelIds: ['channel-a'],
     channelNameMap: new Map([['channel-a', 'Channel A']]),
-    channelVisibility: { 'channel-a': true },
+    channelVisibility: { 'channel-a': channelVisible },
     channelTintMap: new Map([['channel-a', '#ffffff']]),
     activeChannelId: 'channel-a',
     onChannelTabSelect: () => {},
@@ -148,12 +149,12 @@ function findNodesByText(renderer: TestRenderer.ReactTestRenderer, text: string)
   );
 
   const renderModeSelect = findRenderModeSelect(renderer);
-  const hideShowButton = findButtonByLabel(renderer, 'Hide/Show');
+  const hideButton = findButtonByLabel(renderer, 'Hide');
   const currentChannelTitle = findNodeByClassName(renderer, 'channel-current-title');
   const resetAnglesButtonInMip = findButtonByLabel(renderer, 'Reset angles');
 
   assert.ok(renderModeSelect);
-  assert.ok(hideShowButton);
+  assert.ok(hideButton);
   assert.equal(currentChannelTitle?.children.join(''), 'Channel A');
   assert.equal(resetAnglesButtonInMip, null);
   assert.equal(renderModeSelect?.props.value, 'mip');
@@ -183,7 +184,7 @@ function findNodesByText(renderer: TestRenderer.ReactTestRenderer, text: string)
   assert.equal(findButtonByLabel(renderer, 'Slice'), null);
 
   act(() => {
-    hideShowButton?.props.onClick();
+    hideButton?.props.onClick();
   });
   assert.equal(visibilityToggleChannelId, 'channel-a');
 
@@ -211,6 +212,7 @@ function findNodesByText(renderer: TestRenderer.ReactTestRenderer, text: string)
   assert.equal(findRenderModeSelect(renderer)?.props.value, 'mip-v');
   assert.equal(findBlInputs(renderer).length, 0);
   assert.equal(findMipInputs(renderer).length, 0);
+  assert.ok(findButtonByLabel(renderer, 'Hide'));
 
   renderer.update(
     <ChannelsPanel {...(createProps(RENDER_STYLE_ISO, () => {}) as any)} />,
@@ -219,6 +221,11 @@ function findNodesByText(renderer: TestRenderer.ReactTestRenderer, text: string)
   assert.equal(findBlInputs(renderer).length, 0);
   assert.equal(findMipInputs(renderer).length, 0);
   assert.equal(findButtonByLabel(renderer, 'Reset angles'), null);
+
+  renderer.update(
+    <ChannelsPanel {...(createProps(RENDER_STYLE_MIP, () => {}, () => {}, layer, 'linear', false) as any)} />,
+  );
+  assert.ok(findButtonByLabel(renderer, 'Show'));
 
   renderer.unmount();
 })();

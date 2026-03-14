@@ -43,6 +43,7 @@ console.log('Starting routeDatasetSetupProps tests');
     onTrackDrop: () => undefined,
     onTrackSetNameChange: () => undefined,
     onTrackSetBoundChannelChange: () => undefined,
+    onTrackSetTimepointConventionChange: () => undefined,
     onTrackSetClearFile: () => undefined,
     onTrackSetRemove: () => undefined
   } satisfies RouteDatasetSetupSections['handlers'];

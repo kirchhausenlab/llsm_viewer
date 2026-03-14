@@ -48,6 +48,7 @@ export default function TracksPanel({
   onTrackOrderToggle,
   trackOrderModeByTrackSet,
   onTrackVisibilityToggle,
+  onTrackVisibilityAllChange,
   onTrackOpacityChange,
   onTrackLineWidthChange,
   onTrackColorSelect,
@@ -105,6 +106,11 @@ export default function TracksPanel({
     }
     return summary;
   }, [filteredTracksByTrackSet, followedTrackId, selectedTrackIds, trackHeadersByTrackSet, trackSetStates, trackSets]);
+  const activeTrackSet = activeTrackSetId ? trackSets.find((trackSet) => trackSet.id === activeTrackSetId) ?? null : null;
+  const activeTrackSetSummary = activeTrackSet
+    ? trackSummaryByTrackSet.get(activeTrackSet.id) ?? { total: 0, visible: 0 }
+    : null;
+  const activeTrackSetVisible = (activeTrackSetSummary?.visible ?? 0) > 0;
 
   if (!hasTrackData || !isOpen) {
     return null;
@@ -123,6 +129,19 @@ export default function TracksPanel({
         <div className="sidebar sidebar-left">
           {trackSets.length > 0 ? (
             <div className="track-controls">
+              {activeTrackSet ? (
+                <div className="track-current-row">
+                  <span className="track-current-title">{activeTrackSet.name || 'Tracks'}</span>
+                  <button
+                    type="button"
+                    className="track-order-toggle track-current-visibility-button"
+                    onClick={() => onTrackVisibilityAllChange(activeTrackSet.id, !activeTrackSetVisible)}
+                    title={activeTrackSetVisible ? 'Hide current track set' : 'Show current track set'}
+                  >
+                    {activeTrackSetVisible ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+              ) : null}
               {trackSets.map((trackSet) => {
                 const tracksForSet = filteredTracksByTrackSet.get(trackSet.id) ?? [];
                 const summary = trackSummaryByTrackSet.get(trackSet.id) ?? { total: 0, visible: 0 };

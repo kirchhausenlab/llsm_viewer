@@ -442,6 +442,7 @@ export function useAppRouteState(): AppRouteState {
     handleTrackDrop,
     handleTrackSetNameChange,
     handleTrackSetBoundChannelChange,
+    handleTrackSetTimepointConventionChange,
     handleTrackSetClearFile,
     handleTrackSetRemove,
     handleTrackVisibilityToggle,
@@ -1210,6 +1211,7 @@ export function useAppRouteState(): AppRouteState {
       onTrackDrop: handleTrackDrop,
       onTrackSetNameChange: handleTrackSetNameChange,
       onTrackSetBoundChannelChange: handleTrackSetBoundChannelChange,
+      onTrackSetTimepointConventionChange: handleTrackSetTimepointConventionChange,
       onTrackSetClearFile: handleTrackSetClearFile,
       onTrackSetRemove: handleTrackSetRemove
     },

@@ -77,6 +77,7 @@ function buildFrontPageProps() {
       onTrackDrop: noop,
       onTrackSetNameChange: noop,
       onTrackSetBoundChannelChange: noop,
+      onTrackSetTimepointConventionChange: noop,
       onTrackSetClearFile: noop,
       onTrackSetRemove: noop,
       isFrontPageLocked: false

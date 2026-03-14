@@ -94,6 +94,7 @@ function buildBaseProps() {
       onTrackDrop: noop,
       onTrackSetNameChange: noop,
       onTrackSetBoundChannelChange: noop,
+      onTrackSetTimepointConventionChange: noop,
       onTrackSetClearFile: noop,
       onTrackSetRemove: noop,
       isFrontPageLocked: false
@@ -339,6 +340,7 @@ test('front page configuring mode hides tracks section for single 3D volume', ()
             id: 'track-set-1',
             name: 'Track set',
             boundChannelId: null,
+            timepointConvention: 'zero-based',
             file: null,
             fileName: '',
             status: 'idle',
@@ -355,5 +357,45 @@ test('front page configuring mode hides tracks section for single 3D volume', ()
   const text = collectText(renderer);
   assert.match(text, /Upload single 3D file or sequence of 2D files \(\.tif\/\.tiff\)/);
   assert.doesNotMatch(text, /\bTracks\b/);
+  renderer.unmount();
+});
+
+test('front page configuring mode shows the track timepoint convention selector for selected files', () => {
+  const props = buildBaseProps();
+  const renderer = TestRenderer.create(
+    <FrontPage
+      {...(props as any)}
+      frontPageMode="configuring"
+      experimentConfiguration={{
+        ...props.experimentConfiguration,
+        experimentType: '3d-movie'
+      }}
+      channelListPanel={{
+        ...props.channelListPanel,
+        channels: [{ id: 'channel-1', name: 'Channel 1', volume: null, channelType: 'channel' }],
+        tracks: [
+          {
+            id: 'track-set-1',
+            name: 'Track set',
+            boundChannelId: 'channel-1',
+            timepointConvention: 'one-based',
+            file: new File(['track-data'], 'tracks.csv'),
+            fileName: 'tracks.csv',
+            status: 'loaded',
+            error: null,
+            compiledHeader: null,
+            loadCompiledCatalog: null,
+            loadCompiledPayload: null
+          }
+        ]
+      }}
+    />
+  );
+
+  const text = collectText(renderer);
+  assert.match(text, /Bind to:/);
+  assert.match(text, /Convention:/);
+  assert.match(text, /CSV 0 -> movie 0/);
+  assert.match(text, /CSV 1 -> movie 0/);
   renderer.unmount();
 });

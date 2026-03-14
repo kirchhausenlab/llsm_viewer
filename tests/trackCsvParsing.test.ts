@@ -112,4 +112,110 @@ console.log('Starting trackCsvParsing tests');
   );
 })();
 
+(() => {
+  const tracks = buildTracksFromCsvEntries({
+    trackSetId: 'track-set-1',
+    trackSetName: 'Set 1',
+    channelId: 'c',
+    channelName: 'C',
+    timepointConvention: 'one-based',
+    entries: [
+      ['track_id', 'start', 't', 'x', 'y', 'z', 'A', 'track_length'],
+      ['1', '1', '1', '0', '0', '0', '0', '2'],
+      ['1', '1', '2', '1', '1', '1', '0', '2'],
+      ['2', '13', '1', '2', '2', '2', '0', '2'],
+      ['2', '13', '2', '3', '3', '3', '0', '2'],
+    ],
+  });
+
+  assert.strictEqual(tracks.length, 2);
+  assert.deepStrictEqual(
+    tracks[0]?.points.map((point) => point.time),
+    [1, 2],
+  );
+  assert.deepStrictEqual(
+    tracks[1]?.points.map((point) => point.time),
+    [13, 14],
+  );
+})();
+
+(() => {
+  const tracks = buildTracksFromCsvEntries({
+    trackSetId: 'track-set-1',
+    trackSetName: 'Set 1',
+    channelId: 'c',
+    channelName: 'C',
+    timepointConvention: 'zero-based',
+    entries: [
+      ['track_id', 'start', 't', 'x', 'y', 'z', 'A', 'track_length'],
+      ['1', '0', '0', '0', '0', '0', '0', '2'],
+      ['1', '0', '1', '1', '1', '1', '0', '2'],
+      ['2', '12', '0', '2', '2', '2', '0', '2'],
+      ['2', '12', '1', '3', '3', '3', '0', '2'],
+    ],
+  });
+
+  assert.strictEqual(tracks.length, 2);
+  assert.deepStrictEqual(
+    tracks[0]?.points.map((point) => point.time),
+    [0, 1],
+  );
+  assert.deepStrictEqual(
+    tracks[1]?.points.map((point) => point.time),
+    [12, 13],
+  );
+})();
+
+(() => {
+  const tracks = buildTracksFromCsvEntries({
+    trackSetId: 'track-set-1',
+    trackSetName: 'Set 1',
+    channelId: 'c',
+    channelName: 'C',
+    timepointConvention: 'one-based',
+    entries: [
+      ['1', '0', '1', '0', '0', '0', '0', '0'],
+      ['1', '0', '2', '1', '1', '1', '0', '0'],
+    ],
+  });
+
+  assert.deepStrictEqual(
+    tracks[0]?.points.map((point) => point.time),
+    [0, 1],
+  );
+})();
+
+(() => {
+  assert.throws(
+    () =>
+      buildTracksFromCsvEntries({
+        trackSetId: 'track-set-1',
+        trackSetName: 'Set 1',
+        channelId: 'c',
+        channelName: 'C',
+        timepointConvention: 'one-based',
+        entries: [['1', '0', '0', '0', '0', '0', '0', '0']],
+      }),
+    /configured as starting at 1/,
+  );
+})();
+
+(() => {
+  assert.throws(
+    () =>
+      buildTracksFromCsvEntries({
+        trackSetId: 'track-set-1',
+        trackSetName: 'Set 1',
+        channelId: 'c',
+        channelName: 'C',
+        timepointConvention: 'one-based',
+        entries: [
+          ['track_id', 'start', 't', 'x', 'y', 'z', 'A', 'track_length'],
+          ['1', '0', '0', '0', '0', '0', '0', '1'],
+        ],
+      }),
+    /uses frame 0/,
+  );
+})();
+
 console.log('trackCsvParsing tests passed');

@@ -233,6 +233,7 @@ export default function FrontPage({
               onTrackDrop={channelListPanel.onTrackDrop}
               onTrackSetNameChange={channelListPanel.onTrackSetNameChange}
               onTrackSetBoundChannelChange={channelListPanel.onTrackSetBoundChannelChange}
+              onTrackSetTimepointConventionChange={channelListPanel.onTrackSetTimepointConventionChange}
               onTrackSetClearFile={channelListPanel.onTrackSetClearFile}
               onTrackSetRemove={channelListPanel.onTrackSetRemove}
               isFrontPageLocked={channelListPanel.isFrontPageLocked}

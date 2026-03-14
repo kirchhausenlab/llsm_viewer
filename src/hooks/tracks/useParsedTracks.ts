@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import type { CompiledTrackSetHeader, CompiledTrackSetPayload, CompiledTrackSummary } from '../../types/tracks';
+import type {
+  CompiledTrackSetHeader,
+  CompiledTrackSetPayload,
+  CompiledTrackSummary,
+  TrackTimepointConvention
+} from '../../types/tracks';
 import type { ChannelSource, TrackSetSource } from '../dataset';
 import { collectFilesFromDataTransfer, parseTrackCsvFile } from '../../shared/utils/appHelpers';
 import { normalizeEntityName } from '../../constants/naming';
@@ -202,19 +207,22 @@ export const useParsedTracks = ({
     setTracks((current) => [...current, createTrackSetSource('', null)]);
   }, [createTrackSetSource, setTracks]);
 
-  const handleTrackFilesAdded = useCallback(
-    async (trackSetId: string, files: File[]) => {
-      const csvFiles = files.filter((file) => file.name.toLowerCase().endsWith('.csv'));
-      if (csvFiles.length === 0) {
-        return;
-      }
-
-      const file = csvFiles[0];
+  const compileTrackFile = useCallback(
+    async ({
+      trackSetId,
+      file,
+      timepointConvention
+    }: {
+      trackSetId: string;
+      file: File;
+      timepointConvention: TrackTimepointConvention;
+    }) => {
       clearTrackSetCaches(trackSetId);
       updateTrackSet(trackSetId, (set) => ({
         ...set,
         file,
         fileName: file.name,
+        timepointConvention,
         status: 'loading',
         error: null,
         compiledHeader: null,
@@ -230,13 +238,15 @@ export const useParsedTracks = ({
           trackSetName: normalizedTrackSetName,
           channelId: null,
           channelName: null,
-          entries: rows
+          entries: rows,
+          timepointConvention
         });
         const compiledHeader = buildCompiledTrackSetHeader(compiled.summary);
         updateTrackSet(trackSetId, (set) => ({
           ...set,
           file,
           fileName: file.name,
+          timepointConvention,
           status: 'loaded',
           error: null,
           compiledHeader,
@@ -248,7 +258,9 @@ export const useParsedTracks = ({
         const message = err instanceof Error ? err.message : 'Failed to load tracks.';
         updateTrackSet(trackSetId, (set) => ({
           ...set,
-          file: null,
+          file,
+          fileName: file.name,
+          timepointConvention,
           status: 'error',
           error: message,
           compiledHeader: null,
@@ -258,6 +270,27 @@ export const useParsedTracks = ({
       }
     },
     [clearTrackSetCaches, updateTrackSet]
+  );
+
+  const handleTrackFilesAdded = useCallback(
+    async (trackSetId: string, files: File[]) => {
+      const csvFiles = files.filter((file) => file.name.toLowerCase().endsWith('.csv'));
+      if (csvFiles.length === 0) {
+        return;
+      }
+
+      const trackSet = trackSetById.get(trackSetId);
+      if (!trackSet) {
+        return;
+      }
+
+      await compileTrackFile({
+        trackSetId,
+        file: csvFiles[0]!,
+        timepointConvention: trackSet.timepointConvention
+      });
+    },
+    [compileTrackFile, trackSetById]
   );
 
   const handleTrackDrop = useCallback(
@@ -290,6 +323,27 @@ export const useParsedTracks = ({
       updateTrackSet(trackSetId, (set) => ({ ...set, boundChannelId }));
     },
     [updateTrackSet]
+  );
+
+  const handleTrackSetTimepointConventionChange = useCallback(
+    async (trackSetId: string, timepointConvention: TrackTimepointConvention) => {
+      const trackSet = trackSetById.get(trackSetId);
+      if (!trackSet || trackSet.timepointConvention === timepointConvention) {
+        return;
+      }
+
+      if (!trackSet.file) {
+        updateTrackSet(trackSetId, (set) => ({ ...set, timepointConvention }));
+        return;
+      }
+
+      await compileTrackFile({
+        trackSetId,
+        file: trackSet.file,
+        timepointConvention
+      });
+    },
+    [compileTrackFile, trackSetById, updateTrackSet]
   );
 
   const handleTrackSetClearFile = useCallback(
@@ -443,6 +497,7 @@ export const useParsedTracks = ({
     handleTrackDrop,
     handleTrackSetNameChange,
     handleTrackSetBoundChannelChange,
+    handleTrackSetTimepointConventionChange,
     handleTrackSetClearFile,
     handleTrackSetRemove
   };

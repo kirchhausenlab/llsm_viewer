@@ -59,6 +59,10 @@ export type FrontPageContainerProps = {
   onTrackDrop: (trackSetId: string, dataTransfer: DataTransfer) => void;
   onTrackSetNameChange: (trackSetId: string, name: string) => void;
   onTrackSetBoundChannelChange: (trackSetId: string, channelId: string | null) => void;
+  onTrackSetTimepointConventionChange: (
+    trackSetId: string,
+    timepointConvention: TrackSetSource['timepointConvention']
+  ) => void | Promise<void>;
   onTrackSetClearFile: (trackSetId: string) => void;
   onTrackSetRemove: (trackSetId: string) => void;
   setIsExperimentSetupStarted: Dispatch<SetStateAction<boolean>>;
@@ -116,6 +120,7 @@ export default function FrontPageContainer({
   onTrackDrop,
   onTrackSetNameChange,
   onTrackSetBoundChannelChange,
+  onTrackSetTimepointConventionChange,
   onTrackSetClearFile,
   onTrackSetRemove,
   setIsExperimentSetupStarted,
@@ -610,6 +615,7 @@ export default function FrontPageContainer({
     onTrackDrop,
     onTrackSetNameChange,
     onTrackSetBoundChannelChange,
+    onTrackSetTimepointConventionChange,
     onTrackSetClearFile,
     onTrackSetRemove,
     isFrontPageLocked

@@ -11,6 +11,10 @@ type TrackCardProps = {
   onTrackFilesAdded: (trackSetId: string, files: File[]) => void | Promise<void>;
   onTrackDrop: (trackSetId: string, dataTransfer: DataTransfer) => void;
   onTrackSetBoundChannelChange: (trackSetId: string, channelId: string | null) => void;
+  onTrackSetTimepointConventionChange: (
+    trackSetId: string,
+    timepointConvention: TrackSetSource['timepointConvention']
+  ) => void | Promise<void>;
   onTrackSetClearFile: (trackSetId: string) => void;
 };
 
@@ -21,6 +25,7 @@ export default function TrackCard({
   onTrackFilesAdded,
   onTrackDrop,
   onTrackSetBoundChannelChange,
+  onTrackSetTimepointConventionChange,
   onTrackSetClearFile
 }: TrackCardProps) {
   const { state: dropboxState, controls: dropboxControls } = useChannelDropbox({ disabled: isDisabled });
@@ -90,7 +95,7 @@ export default function TrackCard({
         hasTrackSelection ? (
           <div className="track-card-selected-controls">
             <label className="track-card-bind-label" htmlFor={`track-bind-${trackSet.id}`}>
-              Bind to channel:
+              Bind to:
             </label>
             <select
               id={`track-bind-${trackSet.id}`}
@@ -108,6 +113,24 @@ export default function TrackCard({
                 </option>
               ))}
             </select>
+            <label className="track-card-bind-label" htmlFor={`track-timepoint-convention-${trackSet.id}`}>
+              Convention:
+            </label>
+            <select
+              id={`track-timepoint-convention-${trackSet.id}`}
+              className="track-card-bind-select"
+              value={trackSet.timepointConvention}
+              onChange={(event) =>
+                onTrackSetTimepointConventionChange(
+                  trackSet.id,
+                  event.target.value as TrackSetSource['timepointConvention']
+                )
+              }
+              disabled={isDisabled || isDropboxImporting}
+            >
+              <option value="zero-based">CSV 0 -&gt; movie 0</option>
+              <option value="one-based">CSV 1 -&gt; movie 0</option>
+            </select>
             <button
               type="button"
               className="channel-track-clear"
@@ -120,7 +143,11 @@ export default function TrackCard({
         ) : null
       }
       statusSlot={
-        !hasTrackSelection ? (
+        hasTrackSelection && trackSet.error ? (
+          <div className="track-card-status-row">
+            <p className="channel-tracks-status">{trackSet.error}</p>
+          </div>
+        ) : !hasTrackSelection ? (
           <ChannelDropboxSection
             channelId={trackSet.id}
             variant="tracks"

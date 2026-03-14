@@ -6,6 +6,8 @@ export type TrackPoint = {
   amplitude: number;
 };
 
+export type TrackTimepointConvention = 'zero-based' | 'one-based';
+
 export type TrackColorMode =
   | { type: 'random' }
   | {

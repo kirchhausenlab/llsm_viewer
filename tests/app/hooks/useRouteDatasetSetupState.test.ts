@@ -30,6 +30,7 @@ const createTrackSet = (id: string, name: string, boundChannelId: string | null)
   id,
   name,
   boundChannelId,
+  timepointConvention: 'zero-based',
   file: null,
   fileName: '',
   status: 'idle',

@@ -6,7 +6,8 @@ import type {
   CompiledTrackSummary,
   TrackDefinition,
   TrackPoint,
-  TrackSummary
+  TrackSummary,
+  TrackTimepointConvention
 } from '../../types/tracks';
 import { ensureArrayBuffer } from './buffer';
 import { decodeUint32ArrayLE, encodeUint32ArrayLE } from './histogram';
@@ -274,6 +275,7 @@ export function compileTrackEntries(options: {
   channelId: string | null;
   channelName: string | null;
   entries: string[][];
+  timepointConvention?: TrackTimepointConvention;
 }): CompiledTrackSet {
   const tracks = buildTracksFromCsvEntries(options);
   return compileTrackDefinitions(tracks, {
