@@ -16,6 +16,7 @@ import type { VolumeResources, VolumeViewerProps } from '../VolumeViewer.types';
 import { destroyVolumeRenderContext } from '../../../hooks/useVolumeRenderSetup';
 import { attachVolumeViewerPointerLifecycle } from './volumeViewerPointerLifecycle';
 import { createVolumeViewerRenderLoop } from './volumeViewerRenderLoop';
+import { disposeVolumeResources } from './useVolumeResources';
 import { disposeMaterial } from './rendering';
 
 type RenderLoopOptions = Parameters<typeof createVolumeViewerRenderLoop>[0];
@@ -590,14 +591,7 @@ export function useVolumeViewerLifecycle({
         vrTracksHudPlacementRef.current = null;
       }
 
-      const resources = resourcesRef.current;
-      for (const resource of resources.values()) {
-        scene.remove(resource.mesh);
-        resource.mesh.geometry.dispose();
-        disposeMaterial(resource.mesh.material);
-        resource.texture.dispose();
-      }
-      resources.clear();
+      disposeVolumeResources(resourcesRef.current, { scene, renderer });
 
       const mountedTrackGroup = trackGroupRef.current;
       if (mountedTrackGroup) {

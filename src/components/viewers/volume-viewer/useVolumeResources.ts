@@ -173,6 +173,11 @@ type BrickSkipDiagnostics = {
   occupancyMetadataMismatchBricks: number;
 };
 
+export type DisposeVolumeResourceOptions = {
+  scene?: THREE.Scene | null;
+  renderer?: THREE.WebGLRenderer | null;
+};
+
 function createDisabledBrickSkipDiagnostics(
   reason: BrickSkipDiagnostics['reason'],
   totalBricks = 0,
@@ -2120,6 +2125,40 @@ function disposeBrickPageTableTextures(resource: VolumeResources): void {
   resource.playbackWarmupReady = null;
 }
 
+export function disposeVolumeResource(
+  resource: VolumeResources,
+  options: DisposeVolumeResourceOptions = {},
+): void {
+  const parent = resource.mesh.parent;
+  if (parent) {
+    parent.remove(resource.mesh);
+  } else if (options.scene) {
+    options.scene.remove(resource.mesh);
+  }
+
+  resource.mesh.geometry.dispose();
+  disposeMaterial(resource.mesh.material);
+  resource.texture.dispose();
+  resource.labelTexture?.dispose();
+  resource.labelTexture = null;
+  releaseSharedBackgroundMaskTexture(resource.backgroundMaskSourceToken ?? null);
+  resource.backgroundMaskSourceToken = null;
+  resource.backgroundMaskTexture = null;
+  resource.updateGpuBrickResidencyForCamera = null;
+  disposeBrickPageTableTextures(resource);
+  options.renderer?.renderLists?.dispose?.();
+}
+
+export function disposeVolumeResources(
+  resources: Map<string, VolumeResources>,
+  options: DisposeVolumeResourceOptions = {},
+): void {
+  for (const [key, resource] of Array.from(resources.entries())) {
+    disposeVolumeResource(resource, options);
+    resources.delete(key);
+  }
+}
+
 function occupancyMaskFromPageTable(pageTable: VolumeBrickPageTable): Uint8Array {
   const mask = new Uint8Array(pageTable.chunkOccupancy.length);
   for (let index = 0; index < pageTable.chunkOccupancy.length; index += 1) {
@@ -3232,29 +3271,18 @@ export function useVolumeResources({
       if (!resource) {
         return;
       }
-      const parent = resource.mesh.parent;
-      if (parent) {
-        parent.remove(resource.mesh);
-      } else {
-        const activeScene = sceneRef.current;
-        if (activeScene) {
-          activeScene.remove(resource.mesh);
-        }
-      }
-      resource.mesh.geometry.dispose();
-      disposeMaterial(resource.mesh.material);
-      resource.texture.dispose();
-      resource.labelTexture?.dispose();
-      releaseSharedBackgroundMaskTexture(resource.backgroundMaskSourceToken ?? null);
-      disposeBrickPageTableTextures(resource);
+      disposeVolumeResource(resource, {
+        scene: sceneRef.current,
+        renderer: rendererRef?.current ?? null,
+      });
       resourcesRef.current.delete(key);
-      flushRendererRenderLists();
     };
 
     const removeAllResources = () => {
-      for (const key of Array.from(resourcesRef.current.keys())) {
-        removeResource(key);
-      }
+      disposeVolumeResources(resourcesRef.current, {
+        scene: sceneRef.current,
+        renderer: rendererRef?.current ?? null,
+      });
     };
 
     const scene = sceneRef.current;
