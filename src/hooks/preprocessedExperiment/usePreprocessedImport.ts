@@ -19,6 +19,10 @@ import {
   loadPublicExperimentCatalog,
   type PublicExperimentCatalogEntry
 } from '../../shared/utils/publicExperimentCatalog';
+import {
+  getDirectoryPickerUnavailableMessage,
+  inspectDirectoryPickerSupport
+} from '../../shared/utils/directoryPickerSupport';
 import type { ChannelSource, StagedPreprocessedExperiment, TrackSetSource } from '../dataset';
 
 export type UsePreprocessedImportOptions = {
@@ -65,10 +69,6 @@ type ArchiveEntries = Record<string, Uint8Array>;
 type ArchiveExtractionResult = {
   files: Array<{ path: string; data: Uint8Array }>;
 };
-
-function canUseDirectoryPicker(): boolean {
-  return typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function';
-}
 
 function isAbortLikeError(error: unknown): boolean {
   if (error instanceof DOMException) {
@@ -458,20 +458,23 @@ export function usePreprocessedImport({
       return;
     }
 
-    if (!canUseDirectoryPicker()) {
-      setPreprocessedImportError('Folder selection is not supported in this browser.');
+    const directoryPickerSupport = inspectDirectoryPickerSupport();
+    if (!directoryPickerSupport.supported) {
+      setPreprocessedImportError(getDirectoryPickerUnavailableMessage(directoryPickerSupport));
       return;
     }
 
     setIsPreprocessedImporting(true);
     setPreprocessedImportError(null);
     try {
-      const directoryHandle = await window.showDirectoryPicker?.({
+      const showDirectoryPicker = window.showDirectoryPicker;
+      if (typeof showDirectoryPicker !== 'function') {
+        throw new Error(getDirectoryPickerUnavailableMessage(inspectDirectoryPickerSupport()));
+      }
+
+      const directoryHandle = await showDirectoryPicker({
         mode: 'read'
       });
-      if (!directoryHandle) {
-        throw new Error('Folder selection is not supported in this browser.');
-      }
 
       const storageHandle = await createDirectoryHandlePreprocessedStorage(directoryHandle, {
         id: directoryHandle.name

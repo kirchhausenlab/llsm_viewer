@@ -20,6 +20,10 @@ import {
 } from '../../shared/storage/preprocessedStorage';
 import type { PreprocessedStorageHandle } from '../../shared/storage/preprocessedStorage';
 import { parseBackgroundMaskValues } from '../../shared/utils/backgroundMask';
+import {
+  getDirectoryPickerUnavailableMessage,
+  inspectDirectoryPickerSupport
+} from '../../shared/utils/directoryPickerSupport';
 import type { CompiledTrackSetHeader } from '../../types/tracks';
 
 const FRONTPAGE_OPFS_DATASET_ID = 'preprocessed-experiment';
@@ -406,14 +410,24 @@ export default function FrontPageContainer({
       let selectedStorageHandle: PreprocessedStorageHandle | null = null;
 
       if (exportWhilePreprocessing) {
-        if (typeof window === 'undefined' || typeof window.showDirectoryPicker !== 'function') {
-          showInteractionWarning('Folder export is not supported in this browser.');
+        const directoryPickerSupport = inspectDirectoryPickerSupport();
+        if (!directoryPickerSupport.supported) {
+          showInteractionWarning(
+            getDirectoryPickerUnavailableMessage(directoryPickerSupport, { feature: 'Folder export' })
+          );
           return;
         }
 
         let directoryHandle: FileSystemDirectoryHandle;
         try {
-          directoryHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+          const showDirectoryPicker = window.showDirectoryPicker;
+          if (typeof showDirectoryPicker !== 'function') {
+            showInteractionWarning(
+              getDirectoryPickerUnavailableMessage(inspectDirectoryPickerSupport(), { feature: 'Folder export' })
+            );
+            return;
+          }
+          directoryHandle = await showDirectoryPicker({ mode: 'readwrite' });
         } catch (error) {
           if (error instanceof DOMException && error.name === 'AbortError') {
             return;
