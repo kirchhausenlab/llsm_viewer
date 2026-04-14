@@ -24,6 +24,11 @@ If you change playback, prefetch, atlas loading, or GPU residency code, preserve
 5. Playback progression should be gated by prefetch/readiness checks, not a hard "current frame fully loaded" lock.
    - Hard frame-lock gating collapses effective playback FPS under load.
 
+6. Atlas playback scale policy is intentionally coarser than paused-view policy when a coarser scale exists.
+   - Paused/interactive view may adapt toward `L0`.
+   - Active atlas playback should keep using the route-selected playback scale instead of promoting the current frame back to `L0` from camera proximity alone.
+   - Warmup and prefetch paths must use the same playback scale policy as the visible playback frame.
+
 ## Regression Coverage
 
 These tests are intended to fail if the above behavior regresses:
@@ -37,6 +42,8 @@ These tests are intended to fail if the above behavior regresses:
   - Asserts playback prefetch scheduling/readiness behavior.
 - `tests/app/hooks/useViewerModePlayback.test.ts`
 - `tests/usePlaybackControls.test.ts`
+- `tests/app/hooks/useRouteLayerVolumes.test.ts`
+  - Asserts active playback requests and warmup frames stay pinned to the playback scale.
 
 ## Change Checklist
 

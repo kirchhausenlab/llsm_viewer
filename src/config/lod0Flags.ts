@@ -8,7 +8,7 @@ export type LOD0FeatureFlags = {
   workerizedRuntimeDecode: boolean;
 };
 
-const DEFAULT_LOD0_FEATURE_FLAGS: LOD0FeatureFlags = {
+export const DEFAULT_LOD0_FEATURE_FLAGS: LOD0FeatureFlags = {
   adaptiveScaleSelector: true,
   promotionStateMachine: true,
   advancedPrefetchScheduler: true,
@@ -20,12 +20,15 @@ const DEFAULT_LOD0_FEATURE_FLAGS: LOD0FeatureFlags = {
 
 type LOD0FeatureFlagOverrides = Partial<LOD0FeatureFlags>;
 
-function readBooleanLike(value: unknown): boolean | null {
+function readBooleanLike(value: unknown): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
   if (typeof value === 'boolean') {
     return value;
   }
   if (typeof value !== 'string') {
-    return null;
+    throw new Error(`Expected a boolean-like LOD0 feature flag override, got ${String(value)}.`);
   }
   const normalized = value.trim().toLowerCase();
   if (normalized === '1' || normalized === 'true' || normalized === 'on' || normalized === 'yes') {
@@ -34,29 +37,61 @@ function readBooleanLike(value: unknown): boolean | null {
   if (normalized === '0' || normalized === 'false' || normalized === 'off' || normalized === 'no') {
     return false;
   }
-  return null;
+  throw new Error(`Invalid boolean-like LOD0 feature flag override: ${value}.`);
 }
 
-function readEnvOverrides(): LOD0FeatureFlagOverrides {
-  const env = ((import.meta as unknown as { env?: Record<string, unknown> }).env ?? {}) as Record<string, unknown>;
-  const resolveEnvFlag = (key: string): boolean | null => readBooleanLike(env[key]);
+function readOverrideValue(
+  value: unknown,
+  label: string
+): boolean | undefined {
+  try {
+    return readBooleanLike(value);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Invalid override value.';
+    throw new Error(`Invalid LOD0 feature flag override for ${label}: ${message}`);
+  }
+}
+
+function readEnvOverrides(env: Record<string, unknown>): LOD0FeatureFlagOverrides {
+  const resolveEnvFlag = (key: string): boolean | undefined =>
+    Object.prototype.hasOwnProperty.call(env, key) ? readOverrideValue(env[key], key) : undefined;
   return {
-    adaptiveScaleSelector: resolveEnvFlag('VITE_LOD0_ADAPTIVE_SCALE_SELECTOR') ?? undefined,
-    promotionStateMachine: resolveEnvFlag('VITE_LOD0_PROMOTION_STATE_MACHINE') ?? undefined,
-    advancedPrefetchScheduler: resolveEnvFlag('VITE_LOD0_ADVANCED_PREFETCH_SCHEDULER') ?? undefined,
-    residencyTuning: resolveEnvFlag('VITE_LOD0_RESIDENCY_TUNING') ?? undefined,
-    projectedFootprintShaderLod: resolveEnvFlag('VITE_LOD0_PROJECTED_FOOTPRINT_SHADER_LOD') ?? undefined,
-    blRefinement: resolveEnvFlag('VITE_LOD0_BL_REFINEMENT') ?? undefined,
-    workerizedRuntimeDecode: resolveEnvFlag('VITE_LOD0_WORKERIZED_RUNTIME_DECODE') ?? undefined
+    adaptiveScaleSelector: resolveEnvFlag('VITE_LOD0_ADAPTIVE_SCALE_SELECTOR'),
+    promotionStateMachine: resolveEnvFlag('VITE_LOD0_PROMOTION_STATE_MACHINE'),
+    advancedPrefetchScheduler: resolveEnvFlag('VITE_LOD0_ADVANCED_PREFETCH_SCHEDULER'),
+    residencyTuning: resolveEnvFlag('VITE_LOD0_RESIDENCY_TUNING'),
+    projectedFootprintShaderLod: resolveEnvFlag('VITE_LOD0_PROJECTED_FOOTPRINT_SHADER_LOD'),
+    blRefinement: resolveEnvFlag('VITE_LOD0_BL_REFINEMENT'),
+    workerizedRuntimeDecode: resolveEnvFlag('VITE_LOD0_WORKERIZED_RUNTIME_DECODE')
   };
 }
 
-function readRuntimeOverrides(): LOD0FeatureFlagOverrides {
-  const runtimeOverrides = (globalThis as { __LLSM_LOD0_FLAGS__?: LOD0FeatureFlagOverrides }).__LLSM_LOD0_FLAGS__;
+function readRuntimeOverrides(runtimeOverrides: unknown): LOD0FeatureFlagOverrides {
   if (!runtimeOverrides) {
     return {};
   }
-  return runtimeOverrides;
+  if (typeof runtimeOverrides !== 'object' || Array.isArray(runtimeOverrides)) {
+    throw new Error('Invalid LOD0 runtime overrides: expected an object.');
+  }
+  const overrides = runtimeOverrides as Record<string, unknown>;
+  return {
+    adaptiveScaleSelector: readOverrideValue(overrides.adaptiveScaleSelector, '__LLSM_LOD0_FLAGS__.adaptiveScaleSelector'),
+    promotionStateMachine: readOverrideValue(overrides.promotionStateMachine, '__LLSM_LOD0_FLAGS__.promotionStateMachine'),
+    advancedPrefetchScheduler: readOverrideValue(
+      overrides.advancedPrefetchScheduler,
+      '__LLSM_LOD0_FLAGS__.advancedPrefetchScheduler'
+    ),
+    residencyTuning: readOverrideValue(overrides.residencyTuning, '__LLSM_LOD0_FLAGS__.residencyTuning'),
+    projectedFootprintShaderLod: readOverrideValue(
+      overrides.projectedFootprintShaderLod,
+      '__LLSM_LOD0_FLAGS__.projectedFootprintShaderLod'
+    ),
+    blRefinement: readOverrideValue(overrides.blRefinement, '__LLSM_LOD0_FLAGS__.blRefinement'),
+    workerizedRuntimeDecode: readOverrideValue(
+      overrides.workerizedRuntimeDecode,
+      '__LLSM_LOD0_FLAGS__.workerizedRuntimeDecode'
+    )
+  };
 }
 
 function applyDefinedOverrides(
@@ -73,7 +108,20 @@ function applyDefinedOverrides(
   return next;
 }
 
+export function resolveLod0FeatureFlags({
+  env,
+  runtimeOverrides
+}: {
+  env?: Record<string, unknown>;
+  runtimeOverrides?: unknown;
+} = {}): LOD0FeatureFlags {
+  const withEnvOverrides = applyDefinedOverrides(DEFAULT_LOD0_FEATURE_FLAGS, readEnvOverrides(env ?? {}));
+  return applyDefinedOverrides(withEnvOverrides, readRuntimeOverrides(runtimeOverrides));
+}
+
 export function getLod0FeatureFlags(): LOD0FeatureFlags {
-  const withEnvOverrides = applyDefinedOverrides(DEFAULT_LOD0_FEATURE_FLAGS, readEnvOverrides());
-  return applyDefinedOverrides(withEnvOverrides, readRuntimeOverrides());
+  return resolveLod0FeatureFlags({
+    env: ((import.meta as unknown as { env?: Record<string, unknown> }).env ?? {}) as Record<string, unknown>,
+    runtimeOverrides: (globalThis as { __LLSM_LOD0_FLAGS__?: LOD0FeatureFlagOverrides }).__LLSM_LOD0_FLAGS__
+  });
 }

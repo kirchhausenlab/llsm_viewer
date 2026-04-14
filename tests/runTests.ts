@@ -24,3 +24,4 @@ import './tiffWriter.test.ts';
 import './app/hooks/useChannelEditing.test.ts';
 import './app/hooks/useViewerModePlayback.test.ts';
 import './app/hooks/useWindowLayout.test.ts';
+import './app/hooks/layerDefaults.test.ts';

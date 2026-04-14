@@ -3,7 +3,7 @@ import { computeAutoWindow } from '../../../autoContrast';
 import { normalizeHexColor, DEFAULT_LAYER_COLOR } from '../../../shared/colorMaps/layerColors';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import type { VolumeBackgroundMask, VolumeBrickAtlas, VolumeBrickPageTable } from '../../../core/volumeProvider';
-import type { ViewerLayer } from '../../../components/viewers/VolumeViewer.types';
+import type { ViewerLayer } from '../../contracts/viewerLayer';
 import {
   brightnessContrastModel,
   clampWindowBounds,
@@ -51,7 +51,6 @@ export type LayerControlsParams = {
   layerChannelMap: Map<string, string>;
   loadedChannelIds: string[];
   setActiveChannelTabId: Dispatch<SetStateAction<string | null>>;
-  setGlobalRenderStyle: Dispatch<SetStateAction<RenderStyle>>;
   setGlobalSamplingMode: Dispatch<SetStateAction<SamplingMode>>;
   setGlobalBlDensityScale: Dispatch<SetStateAction<number>>;
   setGlobalBlBackgroundCutoff: Dispatch<SetStateAction<number>>;
@@ -183,7 +182,6 @@ export function useLayerControls({
   layerChannelMap,
   loadedChannelIds,
   setActiveChannelTabId,
-  setGlobalRenderStyle,
   setGlobalSamplingMode,
   setGlobalBlDensityScale,
   setGlobalBlBackgroundCutoff,
@@ -422,18 +420,16 @@ export function useLayerControls({
           [layerKey]: {
             ...currentSettings,
             renderStyle,
-            samplingMode: nextSamplingMode,
+            samplingMode: nextSamplingMode
           }
         };
       });
-      setGlobalRenderStyle(renderStyle);
       setGlobalSamplingMode((current) => (current === nextSamplingMode ? current : nextSamplingMode));
     },
     [
       createLayerDefaultSettings,
       layerSettings,
       layers,
-      setGlobalRenderStyle,
       setGlobalSamplingMode,
       setLayerSettings
     ]

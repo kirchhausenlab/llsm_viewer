@@ -13,15 +13,15 @@ Status legend: `OPEN`, `MONITORING`, `MITIGATED`, `CLOSED`
   - hysteresis bands + minimum dwell timers
   - diagnostics counter and automatic fallback mode
 
-## R-LOD0-002: LOD0 starvation under playback
+## R-LOD0-002: Playback scale instability or over-aggressive promotion
 
 - Status: `MONITORING`
 - Trigger:
-  - prefetch queue dominated by coarse/speculative tasks
+  - playback requests/prefetch drift away from the conservative playback-scale policy
 - Impact:
-  - LOD0 rarely available during motion
+  - current-frame reload churn, unstable playback throughput, and inconsistent warmup behavior
 - Mitigation:
-  - priority classes and visible-now reservation budget
+  - route-selected playback scale, aligned warmup/prefetch scale usage, and visible-now reservation budget
 
 ## R-LOD0-003: GPU residency churn
 

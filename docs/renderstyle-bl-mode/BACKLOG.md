@@ -10,7 +10,6 @@ Status legend: `TODO`, `IN_PROGRESS`, `DONE`, `BLOCKED`
   - Evidence (target):
     - `src/state/layerSettings.ts`
     - `src/hooks/useChannelLayerState.tsx`
-    - `src/hooks/dataset/useChannelDatasetLoader.ts`
     - `src/components/viewers/VolumeViewer.types.ts`
     - `src/components/viewers/viewer-shell/types.ts`
     - `src/components/viewers/volume-viewer/vr/types.ts`
@@ -18,11 +17,10 @@ Status legend: `TODO`, `IN_PROGRESS`, `DONE`, `BLOCKED`
 - `BLR-002` (`DONE`): add BL setting fields and defaults in layer settings.
   - Scope:
     - `blDensityScale`, `blBackgroundCutoff`, `blOpacityScale`, `blEarlyExitAlpha`
-    - include in create/reset/load flows
+    - include in defaults and shared control flows
   - Evidence (target):
     - `src/state/layerSettings.ts`
     - `src/hooks/useChannelLayerState.tsx`
-    - `src/hooks/dataset/useChannelDatasetLoader.ts`
     - `src/ui/app/hooks/useLayerControls.ts`
 
 - `BLR-003` (`DONE`): convert render-style control logic from global to per-layer.
@@ -39,13 +37,13 @@ Status legend: `TODO`, `IN_PROGRESS`, `DONE`, `BLOCKED`
     - remove global render-style source usage in viewer settings panel
   - Evidence (target):
     - `src/components/viewers/viewer-shell/ChannelsPanel.tsx`
-    - `src/components/viewers/viewer-shell/PlaybackControlsPanel.tsx`
+    - `src/components/viewers/viewer-shell/ViewerSettingsWindow.tsx`
     - `src/components/viewers/viewer-shell/types.ts`
 
 - `BLR-005` (`DONE`): expose BL controls in desktop UI.
   - Scope:
     - add slider controls for BL parameters in `ChannelsPanel`
-    - add callback props plumbing for BL parameters
+    - add callback props plumbing for shared BL parameter updates
   - Evidence (target):
     - `src/components/viewers/viewer-shell/ChannelsPanel.tsx`
     - `src/components/viewers/viewer-shell/types.ts`

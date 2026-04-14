@@ -1,5 +1,14 @@
 # Execution Log
 
+## 2026-04-14
+
+- Documentation cleanup:
+  - clarified that render style is per-layer but BL tuning controls are shared global values
+  - shortened README/spec/roadmap language to describe implemented behavior instead of future implementation plans
+  - fixed malformed decision numbering and stale wording in handoff/test-plan docs
+- Verification:
+  - not run (documentation-only cleanup)
+
 ## 2026-02-18
 
 - Created the multi-session implementation workspace for per-layer render style + BL:

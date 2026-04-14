@@ -455,6 +455,48 @@ test('wired dropdown items invoke the expected handlers', () => {
   });
 });
 
+test('top menu placeholder actions render as inactive buttons', () => {
+  withEnvironmentMocks(() => {
+    const renderer = renderTopMenu();
+    const inactiveItems = [
+      'Save changes',
+      'Reset changes',
+      'Camera',
+      'Background',
+      'Hover settings',
+      'Measure',
+      'About'
+    ];
+
+    for (const [menuLabel, itemLabel] of [
+      ['File', 'Save changes'],
+      ['View', 'Camera'],
+      ['Edit', 'Measure'],
+      ['Help', 'About']
+    ] as const) {
+      act(() => {
+        findDropdownTrigger(renderer, menuLabel).props.onClick();
+      });
+
+      for (const label of inactiveItems.filter((value) =>
+        menuLabel === 'File'
+          ? value === 'Save changes' || value === 'Reset changes'
+          : menuLabel === 'View'
+            ? value === 'Camera' || value === 'Background' || value === 'Hover settings'
+            : menuLabel === 'Edit'
+              ? value === 'Measure'
+              : value === 'About'
+      )) {
+        assert.equal(findMenuItem(renderer, label).props.disabled, true);
+      }
+
+      assert.equal(findMenuItem(renderer, itemLabel).props.disabled, true);
+    }
+
+    renderer.unmount();
+  });
+});
+
 test('top menu does not close the controls window when another menu opens', () => {
   withEnvironmentMocks(() => {
     let closeHelpCalls = 0;

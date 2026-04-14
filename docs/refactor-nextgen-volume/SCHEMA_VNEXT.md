@@ -7,7 +7,7 @@ This document describes the implemented and validated preprocessed dataset contr
 ## Format identifier
 
 - Manifest root `format`:
-  - `llsm-viewer-preprocessed-vnext`
+  - `llsm-viewer-preprocessed-vnext-hes1`
 - Reader behavior:
   - rejects any non-vNext format value
   - no backward-compat fallback path
@@ -23,17 +23,19 @@ Per scale:
 - `zarr.data` descriptor (`uint8`)
 - `zarr.histogram` descriptor (`uint32`, shape `[timepoints, 256]`)
 - segmentation layers: `zarr.labels` descriptor (`uint32`) **required for every scale**
-- `zarr.chunkStats` descriptors:
+- `zarr.skipHierarchy.levels[]` descriptors:
+  - `occupancy` (`uint8`)
   - `min` (`uint8`)
   - `max` (`uint8`)
-  - `occupancy` (`float32`)
+- optional `zarr.subcell` descriptor
+- optional `zarr.playbackAtlas` descriptors
 
 ## Chunk key coordinates
 
 - Data chunk key: `[t, z, y, x, c]`
 - Label chunk key: `[t, z, y, x]`
 - Histogram chunk key: `[t, 0]`
-- Chunk-stats key: `[t, 0, 0, 0]`
+- Skip-hierarchy key: `[t, z, y, x]`
 
 Chunk path form:
 
@@ -49,7 +51,7 @@ Sharded descriptor path form (when enabled):
 - Full multiscale pyramid generation with explicit uncapped policy (terminal `1x1x1`).
 - Max-pooled mip generation for normalized intensity data.
 - Segmentation label mip generation for every emitted scale.
-- Per-scale histogram and per-scale chunk-stat arrays emitted for every timepoint.
+- Per-scale histogram and per-scale skip-hierarchy arrays emitted for every timepoint.
 - Real shard payload writing is supported when `storageStrategy.sharding.enabled=true`.
 
 ## Runtime behavior (final)
@@ -59,7 +61,7 @@ Sharded descriptor path form (when enabled):
   - `getBrickPageTable(layerKey, timepoint, { scaleLevel })`
   - `getBrickAtlas(layerKey, timepoint, { scaleLevel })`
   - scale-aware `has*` and prefetch APIs (`scaleLevels[]`)
-- Route/playback selects and prefetches multiple scales in active 3D atlas-residency workflows.
+- Paused/interactive route policy can adapt toward `L0`; active atlas playback intentionally stays on a coarser playback scale when one is available, with warmup/prefetch aligned to that scale.
 - Shader/render path supports adaptive LOD and atlas/page-table-driven sampling.
 - 3D intensity rendering uses GPU brick residency with incremental paging, explicit budgeting, and deterministic eviction.
 

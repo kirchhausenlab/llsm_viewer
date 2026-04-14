@@ -3,7 +3,7 @@ import type { PublicExperimentCatalogEntry } from '../../shared/utils/publicExpe
 
 type PublicExperimentLoaderProps = {
   isOpen: boolean;
-  catalogUrl: string;
+  catalogUrl: string | null;
   publicExperiments: PublicExperimentCatalogEntry[];
   isCatalogLoading: boolean;
   isPreprocessedImporting: boolean;

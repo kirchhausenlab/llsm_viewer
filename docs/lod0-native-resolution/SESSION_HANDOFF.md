@@ -14,9 +14,10 @@ Last updated: **2026-02-28**
 ## Locked scope reminders
 
 1. Shader brick-skip remains disabled for this program (`u_brickSkipEnabled` not re-enabled).
-2. LOD policy is adaptive and view-driven with hysteresis/readiness diagnostics.
-3. Coarse-to-fine transitions preserve continuity during promotions.
-4. Benchmark gates validate outcome metrics (not fixed selected-scale equality).
+2. Paused/interactive LOD policy is adaptive and view-driven with hysteresis/readiness diagnostics.
+3. Active atlas playback intentionally uses a coarser playback scale when available, and warmup/prefetch stay aligned with that scale.
+4. Coarse-to-fine transitions preserve continuity during promotions.
+5. Benchmark gates validate outcome metrics (not fixed selected-scale equality).
 
 ## Closure summary
 

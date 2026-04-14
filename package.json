@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "check:architecture": "node scripts/check-import-boundaries.mjs",
     "typecheck": "tsc --noEmit",
     "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json",
     "typecheck:strict-unused": "tsc --noEmit -p tsconfig.strict-unused.json",
@@ -30,7 +31,7 @@
     "benchmark:nextgen-volume": "node --import tsx scripts/benchmark-nextgen-volume.ts",
     "benchmark:real-datasets": "node --import tsx scripts/benchmark-real-datasets.ts",
     "benchmark:preprocess:fixture": "node --import tsx scripts/benchmark-preprocess-fixture.ts",
-    "verify:fast": "npm run typecheck && npm run typecheck:tests && npm run test:coverage && npm run test:coverage:hotspots && npm run build",
+    "verify:fast": "npm run check:architecture && npm run typecheck && npm run typecheck:tests && npm run test:coverage && npm run test:coverage:hotspots && npm run build",
     "verify:ui": "npm run test:frontend && npm run test:visual && npm run test:e2e && npm run test:e2e:visual",
     "verify:full": "npm run verify:fast && npm run verify:ui && npm run test:perf",
     "verify:nightly": "bash scripts/local-nightly.sh"

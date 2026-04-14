@@ -4,10 +4,10 @@ This spec defines a hard-cutover implementation for hierarchical empty-space ski
 
 ## 1) Current-state diagnosis (why prior brick skipping artifacted)
 
-### 1.1 Skip is currently disabled at runtime
+### 1.1 Skip is enabled at runtime under the hard-cutover contract
 
-- `u_brickSkipEnabled` is forced to `0` in `useVolumeResources`.
-- Diagnostics are computed but not used to enable skip.
+- `u_brickSkipEnabled` is bound from validated hierarchy/page-table data in `useVolumeResources`.
+- Invalid hierarchy/page-table inputs fail fast instead of silently disabling skip.
 - Touchpoints:
   - `src/components/viewers/volume-viewer/useVolumeResources.ts`
   - `tests/useVolumeResources.test.ts`

@@ -2,8 +2,8 @@
 
 This document describes the **current project structure** and is intended to be updated by agents and humans as the code evolves.
 
-It is the **single source of truth** for how the repo is organized.  
-Agents: you are encouraged to keep this up to date as you refactor.
+Treat it as a living orientation guide for the current layout and major runtime paths.  
+Agents: keep it up to date as the code evolves.
 
 ---
 
@@ -36,8 +36,8 @@ The main responsibilities are:
 - Front-end UI for local/Dropbox uploads and preprocessed dataset import.
 - **Preprocessing is mandatory**: raw TIFF decoding happens only during preprocessing.
 - Raw TIFF decoding via `src/loaders/volumeLoader.ts` → worker decode → `VolumePayload`.
-- Streaming preprocessing via `src/shared/utils/preprocessedDataset/preprocess.ts` now emits a strict vNext Zarr v3 layout (`llsm-viewer-preprocessed-vnext`) with spatial chunking and multiscale `zarr.scales[]` descriptors per layer.
-- Preprocessing writes per-timepoint 256-bin histograms, max-pooled mip levels (currently capped), and per-scale chunk-stat arrays (`min`/`max`/`occupancy`) for downstream scheduling/skip strategies.
+- Streaming preprocessing via `src/shared/utils/preprocessedDataset/preprocess.ts` now emits the strict `llsm-viewer-preprocessed-vnext-hes1` Zarr v3 layout with spatial chunking and multiscale `zarr.scales[]` descriptors per layer.
+- Preprocessing writes per-timepoint 256-bin histograms, max-pooled mip levels, and per-scale skip-hierarchy metadata for downstream scheduling/skip strategies.
 - Core processing (`src/core/volumeProcessing.ts`) handles normalization + segmentation colorization; GPU texture packing is cached via `src/core/textureCache.ts`.
 
 
@@ -47,7 +47,7 @@ The main responsibilities are:
 
 - Central dataset and layer state: `useChannelLayerState` and `state/*`.
 - Channel source/validation state: `hooks/dataset/useChannelSources.ts`.
-- Dataset load/apply lifecycle for channel sources: `hooks/dataset/useChannelDatasetLoader.ts`.
+- Channel setup state feeds preprocessing/import flows; direct raw-TIFF viewer launch is no longer part of the runtime architecture.
 - Playback and viewer interaction: `hooks/viewer/useViewerPlayback.ts`, `hooks/viewer/useViewerControls.ts`, and app-level
   helpers such as `useViewerModePlayback` (mode + playback wiring).
 - Tracks: hooks under `hooks/tracks/*` feed both planar and volume viewers.
@@ -90,7 +90,7 @@ The main responsibilities are:
 - `docs/refactor-nextgen-volume/*`
   Active multi-session plan and tracking docs for the next-gen 3D volume pipeline refactor (spatial chunking + mips + renderer/runtime rewrite).
 - `docs/renderstyle-bl-mode/*`
-  Active multi-session plan and tracking docs for per-layer 3D render-style selection and Beer-Lambert (`BL`) mode implementation.
+  Completed implementation record for per-layer 3D render-style selection and Beer-Lambert (`BL`) mode.
 - `docs/lod0-native-resolution/*`
   Multi-session implementation program for stable LOD0 native-resolution rendering and long-term runtime performance/stability hardening.
 - `docs/hierarchical-empty-space-skipping/*`
@@ -213,8 +213,6 @@ The main responsibilities are:
   Owns channel/layer source authoring state, IDs, and setup-time validation (timepoints, track attachment, channel readiness).
 - `hooks/dataset/channelTimepointValidation.ts`
   Pure helpers for setup-time timepoint-count resolution/pending-state detection and global mismatch computation; used by `useChannelSources` and isolated for focused testing.
-- `hooks/dataset/useChannelDatasetLoader.ts`
-  Owns dataset load/apply runtime lifecycle for channel sources (volume decode/normalization, shape checks, state reset/apply transitions, and launch error mapping).
 - `hooks/viewer/useViewerPlayback.ts`, `hooks/viewer/useViewerControls.ts`
   Timeline playback + viewer UI/control state.
 - `hooks/tracks/*`  
@@ -246,7 +244,7 @@ The main responsibilities are:
 ### Load/save preprocessed datasets (Zarr v3 folders)
 
 - `src/shared/utils/preprocessedDataset/*`
-  Zarr-backed preprocessed dataset format + manifest/types + open/preprocess helpers (now strict vNext schema with multiscale layer descriptors).
+  Zarr-backed preprocessed dataset format + manifest/types + open/preprocess helpers (now strict `llsm-viewer-preprocessed-vnext-hes1` schema with multiscale layer descriptors).
   Preprocess pipeline boundaries inside `preprocess.ts`:
   - layer timepoint indexing + validation
   - representative normalization sampling

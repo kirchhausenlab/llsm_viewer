@@ -124,12 +124,19 @@ export function useRoutePlaybackPrefetch({
   const atlasScaleLevelByLayerKey = useMemo(() => {
     const map = new Map<string, number>();
     for (const layerKey of playbackLayerKeys) {
+      const hasConfiguredScaleLevel = Boolean(
+        playbackAtlasScaleLevelByLayerKey && Object.prototype.hasOwnProperty.call(playbackAtlasScaleLevelByLayerKey, layerKey)
+      );
       const configuredScaleLevel = playbackAtlasScaleLevelByLayerKey?.[layerKey];
-      const normalizedScaleLevel =
-        Number.isFinite(configuredScaleLevel) && configuredScaleLevel !== undefined
-          ? Math.max(0, Math.floor(configuredScaleLevel))
-          : Number.NaN;
-      map.set(layerKey, Number.isFinite(normalizedScaleLevel) ? normalizedScaleLevel : fallbackAtlasScaleLevel);
+      if (hasConfiguredScaleLevel) {
+        const resolvedScaleLevel = configuredScaleLevel;
+        if (resolvedScaleLevel === undefined || !Number.isFinite(resolvedScaleLevel)) {
+          throw new Error(`Invalid playback atlas scale level for layer "${layerKey}": ${String(configuredScaleLevel)}`);
+        }
+        map.set(layerKey, Math.max(0, Math.floor(resolvedScaleLevel)));
+        continue;
+      }
+      map.set(layerKey, fallbackAtlasScaleLevel);
     }
     return map;
   }, [fallbackAtlasScaleLevel, playbackAtlasScaleLevelByLayerKey, playbackLayerKeys]);

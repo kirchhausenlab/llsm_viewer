@@ -5,7 +5,7 @@
     "status": "approved",
     "approvedAt": "2026-02-28",
     "approvedBy": "lod0-native-resolution-session",
-    "notes": "First full calibration and regression pass completed in closure session."
+    "notes": "First full calibration and regression pass completed in closure session. The retained playbackLod0SelectionRateMin fields are historical matrix artifacts and do not describe the current atlas playback policy."
   },
   "hardwareTiers": [
     {

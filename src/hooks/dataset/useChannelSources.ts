@@ -1,4 +1,13 @@
-import { useCallback, useMemo, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction
+} from 'react';
 import { fromBlob } from 'geotiff';
 import { findDuplicateEntityNameKeys, normalizeEntityName, normalizeEntityNameKey } from '../../constants/naming';
 import type {
@@ -7,16 +16,9 @@ import type {
   PreprocessedTrackSetSummary
 } from '../../shared/utils/preprocessedDataset';
 import type { PreprocessedStorageHandle } from '../../shared/storage/preprocessedStorage';
-import type { LayerSettings } from '../../state/layerSettings';
-import type { LoadedLayer } from '../../types/layers';
-import {
-  useChannelDatasetLoader,
-  type ApplyLoadedLayersOptions,
-  type LoadSelectedDatasetOptions,
-  type LoadState
-} from './useChannelDatasetLoader';
 import {
   computeGlobalTimepointMismatch,
+  getLayerTimepointCountError,
   getKnownLayerTimepointCount,
   hasPendingLayerTimepointCount,
 } from './channelTimepointValidation';
@@ -26,8 +28,9 @@ import type {
   CompiledTrackSummary,
   TrackTimepointConvention
 } from '../../types/tracks';
+export { isSegmentationChannelSource } from './channelClassification';
 
-export type { LoadState } from './useChannelDatasetLoader';
+export type LoadState = 'idle' | 'loading' | 'loaded' | 'error';
 
 export type ChannelVolumeSource = {
   id: string;
@@ -58,19 +61,6 @@ export type ChannelSource = {
   channelType?: ChannelSourceType;
 };
 
-export function isSegmentationChannelSource(channel: Pick<ChannelSource, 'channelType' | 'volume'>): boolean {
-  if (channel.channelType === 'segmentation') {
-    return true;
-  }
-  if (channel.channelType === 'channel') {
-    return false;
-  }
-  if (!channel.volume) {
-    return false;
-  }
-  return channel.volume.isSegmentation;
-}
-
 export type ChannelValidation = {
   errors: string[];
   warnings: string[];
@@ -98,6 +88,8 @@ export type ChannelSourcesApi = {
   setTracks: Dispatch<SetStateAction<TrackSetSource[]>>;
   layerTimepointCounts: Record<string, number>;
   setLayerTimepointCounts: Dispatch<SetStateAction<Record<string, number>>>;
+  layerTimepointCountErrors: Record<string, string>;
+  setLayerTimepointCountErrors: Dispatch<SetStateAction<Record<string, string>>>;
   channelIdRef: MutableRefObject<number>;
   layerIdRef: MutableRefObject<number>;
   trackSetIdRef: MutableRefObject<number>;
@@ -123,20 +115,13 @@ export type ChannelSourcesApi = {
   hasTrackErrors: boolean;
   allChannelsValid: boolean;
   allTracksValid: boolean;
-  applyLoadedLayers: (
-    normalizedLayers: LoadedLayer[],
-    expectedVolumeCount: number,
-    options: ApplyLoadedLayersOptions
-  ) => void;
-  loadSelectedDataset: (options: LoadSelectedDatasetOptions) => Promise<LoadedLayer[] | null>;
-  createLayerDefaultSettings: (layerKey: string) => LayerSettings;
-  layerAutoThresholdsRef: MutableRefObject<Record<string, number>>;
 };
 
 export function useChannelSources(): ChannelSourcesApi {
   const [channels, setChannels] = useState<ChannelSource[]>([]);
   const [tracks, setTracks] = useState<TrackSetSource[]>([]);
   const [layerTimepointCounts, setLayerTimepointCounts] = useState<Record<string, number>>({});
+  const [layerTimepointCountErrors, setLayerTimepointCountErrors] = useState<Record<string, string>>({});
   const channelIdRef = useRef(0);
   const layerIdRef = useRef(0);
   const trackSetIdRef = useRef(0);
@@ -147,6 +132,9 @@ export function useChannelSources(): ChannelSourcesApi {
       const tiff = await fromBlob(file);
       totalSlices += await tiff.getImageCount();
     }
+    if (!Number.isFinite(totalSlices) || Math.floor(totalSlices) !== totalSlices || totalSlices <= 0) {
+      throw new Error('TIFF sequence did not expose a valid positive timepoint count.');
+    }
     return totalSlices;
   }, []);
 
@@ -155,25 +143,49 @@ export function useChannelSources(): ChannelSourcesApi {
       if (!layer) {
         return 0;
       }
-      return layerTimepointCounts[layer.id] ?? layer.files.length;
+      return layerTimepointCounts[layer.id] ?? 0;
     },
     [layerTimepointCounts]
   );
   const resolveKnownLayerTimepointCount = useCallback(
     (layer: Pick<ChannelVolumeSource, 'id' | 'files'> | null | undefined): number | null => {
-      return getKnownLayerTimepointCount(layer, layerTimepointCounts);
+      return getKnownLayerTimepointCount(layer, layerTimepointCounts, layerTimepointCountErrors);
     },
-    [layerTimepointCounts]
+    [layerTimepointCountErrors, layerTimepointCounts]
   );
 
-  const {
-    layerAutoThresholdsRef,
-    applyLoadedLayers,
-    loadSelectedDataset,
-    createLayerDefaultSettings
-  } = useChannelDatasetLoader({
-    getLayerTimepointCount
-  });
+  useEffect(() => {
+    const knownLayerIds = new Set<string>();
+    for (const channel of channels) {
+      if (channel.volume) {
+        knownLayerIds.add(channel.volume.id);
+      }
+    }
+    setLayerTimepointCounts((current) => {
+      let changed = false;
+      const next: Record<string, number> = {};
+      for (const [layerId, count] of Object.entries(current)) {
+        if (!knownLayerIds.has(layerId)) {
+          changed = true;
+          continue;
+        }
+        next[layerId] = count;
+      }
+      return changed ? next : current;
+    });
+    setLayerTimepointCountErrors((current) => {
+      let changed = false;
+      const next: Record<string, string> = {};
+      for (const [layerId, message] of Object.entries(current)) {
+        if (!knownLayerIds.has(layerId)) {
+          changed = true;
+          continue;
+        }
+        next[layerId] = message;
+      }
+      return changed ? next : current;
+    });
+  }, [channels]);
 
   const createChannelSource = useCallback((name: string, channelType: ChannelSourceType = 'channel'): ChannelSource => {
     const nextId = channelIdRef.current + 1;
@@ -267,7 +279,10 @@ export function useChannelSources(): ChannelSourcesApi {
         errors.push('Add files to the volume in this channel.');
       }
       const knownTimepointCount = resolveKnownLayerTimepointCount(primaryLayer);
-      if (hasPendingLayerTimepointCount(primaryLayer, layerTimepointCounts)) {
+      const timepointCountError = getLayerTimepointCountError(primaryLayer, layerTimepointCountErrors);
+      if (timepointCountError) {
+        errors.push(timepointCountError);
+      } else if (hasPendingLayerTimepointCount(primaryLayer, layerTimepointCounts, layerTimepointCountErrors)) {
         warnings.push('Timepoint count is still being calculated.');
       }
 
@@ -279,7 +294,7 @@ export function useChannelSources(): ChannelSourcesApi {
         timepointCount: knownTimepointCount ?? 0
       };
     });
-  }, [channels, layerTimepointCounts, resolveKnownLayerTimepointCount]);
+  }, [channels, layerTimepointCountErrors, layerTimepointCounts, resolveKnownLayerTimepointCount]);
 
   const trackValidationList = useMemo(() => {
     const duplicateTrackNameKeys = findDuplicateEntityNameKeys(tracks.map((trackSet) => trackSet.name));
@@ -322,8 +337,8 @@ export function useChannelSources(): ChannelSourcesApi {
   }, [trackValidationList]);
 
   const hasGlobalTimepointMismatch = useMemo(() => {
-    return computeGlobalTimepointMismatch(channels, layerTimepointCounts);
-  }, [channels, layerTimepointCounts]);
+    return computeGlobalTimepointMismatch(channels, layerTimepointCounts, layerTimepointCountErrors);
+  }, [channels, layerTimepointCountErrors, layerTimepointCounts]);
 
   const hasAnyLayers = useMemo(
     () => channels.some((channel) => (channel.volume?.files.length ?? 0) > 0),
@@ -357,6 +372,8 @@ export function useChannelSources(): ChannelSourcesApi {
     setTracks,
     layerTimepointCounts,
     setLayerTimepointCounts,
+    layerTimepointCountErrors,
+    setLayerTimepointCountErrors,
     channelIdRef,
     layerIdRef,
     trackSetIdRef,
@@ -376,9 +393,5 @@ export function useChannelSources(): ChannelSourcesApi {
     hasTrackErrors,
     allChannelsValid,
     allTracksValid,
-    applyLoadedLayers,
-    loadSelectedDataset,
-    createLayerDefaultSettings,
-    layerAutoThresholdsRef
   };
 }

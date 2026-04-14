@@ -1,16 +1,10 @@
-import type { FrontPageContainerProps } from '../../../components/pages/FrontPageContainer';
-import type { ViewerShellContainerProps } from '../../../components/viewers/ViewerShellContainer';
 import { WARNING_WINDOW_WIDTH, WINDOW_MARGIN } from '../../../shared/utils/windowLayout';
+import type { FrontPageContainerProps } from '../../contracts/frontPage';
+import type { RouteDatasetSetupProps } from '../../contracts/routes';
+import type { ViewerShellRouteProps } from '../../contracts/viewerShell';
 
-export type ViewerShellRouteProps = Omit<
-  ViewerShellContainerProps,
-  'isHelpMenuOpen' | 'openHelpMenu' | 'closeHelpMenu'
->;
-
-export type RouteDatasetSetupProps = Omit<
-  FrontPageContainerProps,
-  'warningWindowInitialPosition' | 'warningWindowWidth'
->;
+export type { RouteDatasetSetupProps } from '../../contracts/routes';
+export type { ViewerShellRouteProps } from '../../contracts/viewerShell';
 
 type UseRouteViewerPropsOptions = {
   datasetSetup: RouteDatasetSetupProps;

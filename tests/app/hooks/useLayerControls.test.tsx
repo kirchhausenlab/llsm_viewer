@@ -66,7 +66,6 @@ function useLayerControlsHarness(
     () => Object.fromEntries(sortedChannelIds.map((channelId) => [channelId, true])),
   );
   const [activeChannelTabId, setActiveChannelTabId] = useState<string | null>(sortedChannelIds[0] ?? null);
-  const [globalRenderStyle, setGlobalRenderStyle] = useState<RenderStyle>(RENDER_STYLE_MIP);
   const [globalSamplingMode, setGlobalSamplingMode] = useState<SamplingMode>(initialSamplingMode);
   const [globalBlDensityScale, setGlobalBlDensityScale] = useState(1);
   const [globalBlBackgroundCutoff, setGlobalBlBackgroundCutoff] = useState(0.08);
@@ -94,7 +93,6 @@ function useLayerControlsHarness(
     layerChannelMap: new Map(layerChannelEntries),
     loadedChannelIds: sortedChannelIds,
     setActiveChannelTabId,
-    setGlobalRenderStyle,
     setGlobalSamplingMode,
     setGlobalBlDensityScale,
     setGlobalBlBackgroundCutoff,
@@ -106,7 +104,6 @@ function useLayerControlsHarness(
   return {
     controls,
     layerSettings,
-    globalRenderStyle,
     globalSamplingMode,
     globalBlDensityScale,
     globalBlBackgroundCutoff,
@@ -126,7 +123,6 @@ function useLayerControlsHarness(
 
   assert.equal(hook.result.layerSettings['layer-a']?.renderStyle, RENDER_STYLE_BL);
   assert.equal(hook.result.layerSettings['layer-b']?.renderStyle, RENDER_STYLE_MIP);
-  assert.equal(hook.result.globalRenderStyle, RENDER_STYLE_BL);
   assert.equal(hook.result.layerSettings['layer-a']?.samplingMode, 'linear');
 
   hook.act(() => {
@@ -227,13 +223,11 @@ function useLayerControlsHarness(
     hook.result.controls.handleLayerRenderStyleToggle('layer-seg');
   });
   assert.equal(hook.result.layerSettings['layer-seg']?.renderStyle, RENDER_STYLE_SLICE);
-  assert.equal(hook.result.globalRenderStyle, RENDER_STYLE_SLICE);
 
   hook.act(() => {
     hook.result.controls.handleLayerRenderStyleToggle('layer-seg');
   });
   assert.equal(hook.result.layerSettings['layer-seg']?.renderStyle, RENDER_STYLE_MIP);
-  assert.equal(hook.result.globalRenderStyle, RENDER_STYLE_MIP);
 
   hook.act(() => {
     hook.result.controls.handleLayerRenderStyleToggle();

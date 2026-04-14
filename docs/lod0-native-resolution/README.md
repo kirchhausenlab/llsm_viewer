@@ -8,11 +8,11 @@ This folder is the source of truth for delivering stable native-resolution (`LOD
 
 ## Program objective
 
-Render `LOD0` by default whenever feasible while preserving interactive performance and visual stability across playback, scrubbing, and camera motion.
+Render `LOD0` by default whenever feasible in paused/interactive viewing while preserving smooth playback, stable coarse-to-fine transitions, and visual stability across playback, scrubbing, and camera motion.
 
 ## Scope
 
-- Replace binary play/pause scale policy with adaptive, view-driven multiscale selection.
+- Use adaptive, view-driven multiscale selection for paused/interactive viewing while keeping active atlas playback on an intentionally coarser playback scale when available.
 - Keep coarse scales visible while finer scales stream in; avoid blank holes.
 - Redesign prefetch scheduling around motion + scale + timepoint priority.
 - Improve GPU brick residency behavior for stable, low-churn LOD0 operation.

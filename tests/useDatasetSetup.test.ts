@@ -35,6 +35,7 @@ await (async () => {
     );
     const [layerAutoThresholds, setLayerAutoThresholds] = React.useState<Record<string, number>>({ 'layer-1': 0.2 });
     const [layerTimepointCounts, setLayerTimepointCounts] = React.useState<Record<string, number>>({ 'layer-1': 1 });
+    const [layerTimepointCountErrors, setLayerTimepointCountErrors] = React.useState<Record<string, string>>({});
     const layerCounter = React.useRef(2);
 
     const datasetSetup = useDatasetSetup({
@@ -45,6 +46,7 @@ await (async () => {
       setLayerSettings,
       setLayerAutoThresholds,
       setLayerTimepointCounts,
+      setLayerTimepointCountErrors,
       computeLayerTimepointCount: async (files) => files.length,
       createVolumeSource: (files) => ({ id: `layer-${layerCounter.current++}`, files, isSegmentation: false })
     });
@@ -54,7 +56,8 @@ await (async () => {
       channels,
       layerSettings,
       layerAutoThresholds,
-      layerTimepointCounts
+      layerTimepointCounts,
+      layerTimepointCountErrors
     };
   });
 
@@ -68,6 +71,7 @@ await (async () => {
   assert.ok(!('layer-1' in hook.result.layerSettings));
   assert.ok(!('layer-1' in hook.result.layerAutoThresholds));
   assert.ok(!('layer-1' in hook.result.layerTimepointCounts));
+  assert.ok(!('layer-1' in hook.result.layerTimepointCountErrors));
 })();
 
 await (async () => {
@@ -90,6 +94,7 @@ await (async () => {
       setLayerSettings: React.useState<Record<string, ReturnType<typeof createDefaultLayerSettings>>>({})[1],
       setLayerAutoThresholds: React.useState<Record<string, number>>({})[1],
       setLayerTimepointCounts: React.useState<Record<string, number>>({})[1],
+      setLayerTimepointCountErrors: React.useState<Record<string, string>>({})[1],
       computeLayerTimepointCount: async (files) => files.length,
       createVolumeSource: (files) => ({ id: `layer-${layerCounter.current++}`, files, isSegmentation: false })
     });
@@ -108,6 +113,61 @@ await (async () => {
   assert.strictEqual(
     hook.result.datasetErrors.datasetError,
     'Only the first TIFF sequence was added. Additional sequences were ignored.'
+  );
+  assert.strictEqual(hook.result.datasetErrors.datasetErrorContext, 'interaction');
+})();
+
+await (async () => {
+  const hook = renderHook(() => {
+    const [channels, setChannels] = React.useState([
+      {
+        id: 'channel-1',
+        name: 'Channel 1',
+        volume: null
+      }
+    ]);
+    const [layerTimepointCounts, setLayerTimepointCounts] = React.useState<Record<string, number>>({});
+    const [layerTimepointCountErrors, setLayerTimepointCountErrors] = React.useState<Record<string, string>>({});
+    const layerCounter = React.useRef(1);
+
+    const datasetSetup = useDatasetSetup({
+      channels,
+      loadedLayers: [],
+      layerSettings: {},
+      setChannels,
+      setLayerSettings: React.useState<Record<string, ReturnType<typeof createDefaultLayerSettings>>>({})[1],
+      setLayerAutoThresholds: React.useState<Record<string, number>>({})[1],
+      setLayerTimepointCounts,
+      setLayerTimepointCountErrors,
+      computeLayerTimepointCount: async () => {
+        throw new Error('Decoder exploded.');
+      },
+      createVolumeSource: (files) => ({ id: `layer-${layerCounter.current++}`, files, isSegmentation: false })
+    });
+
+    return {
+      ...datasetSetup,
+      channels,
+      layerTimepointCounts,
+      layerTimepointCountErrors
+    };
+  });
+
+  const { act } = hook;
+  await act(async () => {
+    await hook.result.handleChannelLayerFilesAdded('channel-1', [createFile('broken.tif')]);
+  });
+
+  const volume = hook.result.channels[0]?.volume;
+  assert.ok(volume);
+  assert.deepStrictEqual(hook.result.layerTimepointCounts, {});
+  assert.strictEqual(
+    hook.result.layerTimepointCountErrors[volume.id],
+    'Failed to read TIFF timepoint count: Decoder exploded.'
+  );
+  assert.strictEqual(
+    hook.result.datasetErrors.datasetError,
+    'Failed to read TIFF timepoint count: Decoder exploded.'
   );
   assert.strictEqual(hook.result.datasetErrors.datasetErrorContext, 'interaction');
 })();

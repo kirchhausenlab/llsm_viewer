@@ -1,6 +1,6 @@
 # Test Plan
 
-This plan defines required verification for BL mode and per-layer render-style changes.
+This plan defines required verification for BL mode and render-style changes.
 
 ## Minimum required checks per implementation session
 
@@ -19,7 +19,8 @@ If relevant files were changed, include:
 ### A. Per-layer style behavior
 
 - Changing render style for layer A does not change layer B.
-- Persisted layer settings preserve mode and BL controls when switching selected layers/channels.
+- Persisted layer settings preserve per-layer mode when switching selected layers/channels.
+- Shared BL tuning controls remain stable when switching selected layers/channels.
 - Channel reset keeps render style behavior consistent with locked decisions.
 
 ### B. Desktop UI behavior
@@ -27,6 +28,7 @@ If relevant files were changed, include:
 - `ChannelsPanel` shows explicit `MIP`, `ISO`, `BL` buttons.
 - Active style button reflects selected layer state.
 - BL controls are visible only when selected layer style is BL.
+- BL control changes apply consistently across layers.
 
 ### C. VR behavior
 
@@ -59,4 +61,3 @@ For each session, log this in `EXECUTION_LOG.md`:
   - failing command
   - root cause
   - follow-up backlog item id
-

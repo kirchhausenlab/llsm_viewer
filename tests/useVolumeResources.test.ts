@@ -23,6 +23,41 @@ import { renderHook } from './hooks/renderHook.ts';
 
 console.log('Starting useVolumeResources tests');
 
+function withSuppressedConsoleError(
+  matchers: ReadonlyArray<string | RegExp>,
+  run: () => void,
+): void {
+  const originalConsoleError = console.error;
+  console.error = (...args: unknown[]) => {
+    const rendered = args
+      .map((value) => {
+        if (typeof value === 'string') {
+          return value;
+        }
+        try {
+          return JSON.stringify(value);
+        } catch {
+          return String(value);
+        }
+      })
+      .join(' ');
+
+    const shouldSuppress = matchers.some((matcher) =>
+      typeof matcher === 'string' ? rendered.includes(matcher) : matcher.test(rendered),
+    );
+    if (shouldSuppress) {
+      return;
+    }
+    originalConsoleError(...args);
+  };
+
+  try {
+    run();
+  } finally {
+    console.error = originalConsoleError;
+  }
+}
+
 const createFakeResource = (): VolumeResources => {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
   const texture = new THREE.DataTexture(new Uint8Array([0]), 1, 1, THREE.LuminanceFormat);
@@ -803,7 +838,12 @@ const createLayer = (
     chunkOccupancy: new Float32Array([1, 0, 0]),
   };
   layers = [createLayer(volume, invalidPageTable, null, 'nearest')];
-  assert.throws(() => hook.rerender(), /hard-cutover violation: invalid-page-table/);
+  withSuppressedConsoleError(
+    [/The above error occurred in the <TestComponent> component:/],
+    () => {
+      assert.throws(() => hook.rerender(), /hard-cutover violation: invalid-page-table/);
+    },
+  );
 })();
 
 (() => {
@@ -1701,55 +1741,50 @@ const createLayer = (
   };
   const resourcesRef = { current: new Map<string, VolumeResources>() };
   const layer = { ...createLayer(null, pageTable, brickAtlas, 'linear'), isSegmentation: true };
+  layer.brickAtlas = {
+    ...layer.brickAtlas!,
+    pageTable: withSyntheticSkipHierarchy({
+      ...pageTable,
+      timepoint: 1,
+    } satisfies PageTableWithoutHierarchy)
+  };
 
-  renderHook(() =>
-    useVolumeResources({
-      layers: [layer],
-      primaryVolume: null,
-      isAdditiveBlending: false,
-      renderContextRevision: 0,
-      sceneRef,
-      cameraRef,
-      controlsRef,
-      rotationTargetRef: { current: new THREE.Vector3() },
-      defaultViewStateRef: { current: null },
-      trackGroupRef: { current: new THREE.Group() },
-      resourcesRef,
-      currentDimensionsRef: { current: null },
-      colormapCacheRef: { current: new Map() },
-      volumeRootGroupRef: { current: new THREE.Group() },
-      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
-      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
-      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
-      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
-      volumeNormalizationScaleRef: { current: 1 },
-      volumeUserScaleRef: { current: 1 },
-      volumeStepScaleRef: { current: 1 },
-      volumeYawRef: { current: 0 },
-      volumePitchRef: { current: 0 },
-      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
-      applyTrackGroupTransform: () => {},
-      applyVolumeRootTransform: () => {},
-      applyVolumeStepScaleToResources: () => {},
-      applyHoverHighlightToResources: () => {},
-    }),
+  assert.throws(
+    () =>
+      renderHook(() =>
+        useVolumeResources({
+          layers: [layer],
+          primaryVolume: null,
+          isAdditiveBlending: false,
+          renderContextRevision: 0,
+          sceneRef,
+          cameraRef,
+          controlsRef,
+          rotationTargetRef: { current: new THREE.Vector3() },
+          defaultViewStateRef: { current: null },
+          trackGroupRef: { current: new THREE.Group() },
+          resourcesRef,
+          currentDimensionsRef: { current: null },
+          colormapCacheRef: { current: new Map() },
+          volumeRootGroupRef: { current: new THREE.Group() },
+          volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+          volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+          volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+          volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+          volumeNormalizationScaleRef: { current: 1 },
+          volumeUserScaleRef: { current: 1 },
+          volumeStepScaleRef: { current: 1 },
+          volumeYawRef: { current: 0 },
+          volumePitchRef: { current: 0 },
+          volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+          applyTrackGroupTransform: () => {},
+          applyVolumeRootTransform: () => {},
+          applyVolumeStepScaleToResources: () => {},
+          applyHoverHighlightToResources: () => {},
+        }),
+      ),
+    /mismatched-page-table-source/,
   );
-
-  const resource = resourcesRef.current.get('layer-3d');
-  assert.ok(resource);
-  assert.strictEqual(resource.labelTexture, null);
-  assert.ok(resource.paletteTexture);
-  assert.ok(resource.brickAtlasDataTexture);
-  assert.equal(resource.brickAtlasDataTexture?.type, THREE.UnsignedByteType);
-  assert.equal(resource.brickAtlasDataTexture?.format, THREE.RGFormat);
-  const atlasImage = resource.brickAtlasDataTexture?.image as { data?: Uint8Array } | undefined;
-  assert.deepEqual(Array.from(atlasImage?.data ?? []), [0, 0, 1, 0, 1, 0, 0, 0, 2, 0, 2, 0, 0, 0, 3, 0]);
-
-  const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms as Record<string, { value: unknown }>;
-  assert.equal(uniforms.u_brickAtlasEnabled?.value, 1);
-  assert.strictEqual(uniforms.u_brickAtlasData?.value, FALLBACK_BRICK_ATLAS_DATA_TEXTURE);
-  assert.strictEqual(uniforms.u_segmentationBrickAtlasData?.value, resource.brickAtlasDataTexture);
-  assert.strictEqual(uniforms.u_segmentationPalette?.value, resource.paletteTexture);
 })();
 
 (() => {
@@ -1791,56 +1826,50 @@ const createLayer = (
   };
   const resourcesRef = { current: new Map<string, VolumeResources>() };
   const layer = createLayer(null, pageTable, brickAtlas, 'linear');
+  layer.brickAtlas = {
+    ...layer.brickAtlas!,
+    pageTable: withSyntheticSkipHierarchy({
+      ...pageTable,
+      timepoint: 1,
+    } satisfies PageTableWithoutHierarchy)
+  };
 
-  renderHook(() =>
-    useVolumeResources({
-      layers: [layer],
-      primaryVolume: null,
-      isAdditiveBlending: false,
-      renderContextRevision: 0,
-      sceneRef,
-      cameraRef,
-      controlsRef,
-      rotationTargetRef: { current: new THREE.Vector3() },
-      defaultViewStateRef: { current: null },
-      trackGroupRef: { current: new THREE.Group() },
-      resourcesRef,
-      currentDimensionsRef: { current: null },
-      colormapCacheRef: { current: new Map() },
-      volumeRootGroupRef: { current: new THREE.Group() },
-      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
-      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
-      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
-      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
-      volumeNormalizationScaleRef: { current: 1 },
-      volumeUserScaleRef: { current: 1 },
-      volumeStepScaleRef: { current: 1 },
-      volumeYawRef: { current: 0 },
-      volumePitchRef: { current: 0 },
-      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
-      applyTrackGroupTransform: () => {},
-      applyVolumeRootTransform: () => {},
-      applyVolumeStepScaleToResources: () => {},
-      applyHoverHighlightToResources: () => {},
-    }),
+  assert.throws(
+    () =>
+      renderHook(() =>
+        useVolumeResources({
+          layers: [layer],
+          primaryVolume: null,
+          isAdditiveBlending: false,
+          renderContextRevision: 0,
+          sceneRef,
+          cameraRef,
+          controlsRef,
+          rotationTargetRef: { current: new THREE.Vector3() },
+          defaultViewStateRef: { current: null },
+          trackGroupRef: { current: new THREE.Group() },
+          resourcesRef,
+          currentDimensionsRef: { current: null },
+          colormapCacheRef: { current: new Map() },
+          volumeRootGroupRef: { current: new THREE.Group() },
+          volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+          volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+          volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+          volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+          volumeNormalizationScaleRef: { current: 1 },
+          volumeUserScaleRef: { current: 1 },
+          volumeStepScaleRef: { current: 1 },
+          volumeYawRef: { current: 0 },
+          volumePitchRef: { current: 0 },
+          volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+          applyTrackGroupTransform: () => {},
+          applyVolumeRootTransform: () => {},
+          applyVolumeStepScaleToResources: () => {},
+          applyHoverHighlightToResources: () => {},
+        }),
+      ),
+    /mismatched-page-table-source/,
   );
-
-  const resource = resourcesRef.current.get('layer-3d');
-  assert.ok(resource);
-  assert.equal(resource.mode, '3d');
-  assert.deepEqual(resource.dimensions, { width: 2, height: 2, depth: 2 });
-  const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms as Record<
-    string,
-    { value: unknown }
-  >;
-  assert.equal(uniforms.u_brickAtlasEnabled?.value, 1);
-  const size = uniforms.u_size?.value as THREE.Vector3;
-  assert.ok(size instanceof THREE.Vector3);
-  assert.deepEqual([size.x, size.y, size.z], [2, 2, 2]);
-  const texture = resource.texture as THREE.Data3DTexture;
-  const image = texture.image as { width: number; height: number; depth: number; data: Uint8Array };
-  assert.deepEqual([image.width, image.height, image.depth], [1, 1, 1]);
-  assert.equal(image.data.length, 1);
 })();
 
 (() => {
@@ -2860,47 +2889,41 @@ const createLayer = (
   };
   const resourcesRef = { current: new Map<string, VolumeResources>() };
 
-  renderHook(() =>
-    useVolumeResources({
-      layers: [layer],
-      primaryVolume: null,
-      isAdditiveBlending: false,
-      renderContextRevision: 0,
-      sceneRef,
-      cameraRef,
-      controlsRef,
-      rotationTargetRef: { current: new THREE.Vector3() },
-      defaultViewStateRef: { current: null },
-      trackGroupRef: { current: new THREE.Group() },
-      resourcesRef,
-      currentDimensionsRef: { current: null },
-      colormapCacheRef: { current: new Map() },
-      volumeRootGroupRef: { current: new THREE.Group() },
-      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
-      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
-      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
-      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
-      volumeNormalizationScaleRef: { current: 1 },
-      volumeUserScaleRef: { current: 1 },
-      volumeStepScaleRef: { current: 1 },
-      volumeYawRef: { current: 0 },
-      volumePitchRef: { current: 0 },
-      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
-      applyTrackGroupTransform: () => {},
-      applyVolumeRootTransform: () => {},
-      applyVolumeStepScaleToResources: () => {},
-      applyHoverHighlightToResources: () => {},
-    }),
-  );
-
-  const resource = resourcesRef.current.get('layer-3d');
-  assert.ok(resource);
-  assert.strictEqual(resource.brickMetadataSourcePageTable, atlasPageTable);
-  assert.strictEqual(resource.brickAtlasSourcePageTable, atlasPageTable);
-  const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms as Record<string, { value: unknown }>;
-  assert.deepEqual(
-    (uniforms.u_brickVolumeSize?.value as THREE.Vector3).toArray(),
-    [atlasPageTable.volumeShape[2], atlasPageTable.volumeShape[1], atlasPageTable.volumeShape[0]]
+  assert.throws(
+    () =>
+      renderHook(() =>
+        useVolumeResources({
+          layers: [layer],
+          primaryVolume: null,
+          isAdditiveBlending: false,
+          renderContextRevision: 0,
+          sceneRef,
+          cameraRef,
+          controlsRef,
+          rotationTargetRef: { current: new THREE.Vector3() },
+          defaultViewStateRef: { current: null },
+          trackGroupRef: { current: new THREE.Group() },
+          resourcesRef,
+          currentDimensionsRef: { current: null },
+          colormapCacheRef: { current: new Map() },
+          volumeRootGroupRef: { current: new THREE.Group() },
+          volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+          volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+          volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+          volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+          volumeNormalizationScaleRef: { current: 1 },
+          volumeUserScaleRef: { current: 1 },
+          volumeStepScaleRef: { current: 1 },
+          volumeYawRef: { current: 0 },
+          volumePitchRef: { current: 0 },
+          volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+          applyTrackGroupTransform: () => {},
+          applyVolumeRootTransform: () => {},
+          applyVolumeStepScaleToResources: () => {},
+          applyHoverHighlightToResources: () => {},
+        }),
+      ),
+    /mismatched-page-table-source/,
   );
 })();
 

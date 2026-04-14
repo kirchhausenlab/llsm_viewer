@@ -1,23 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type FC, type MutableRefObject, type SetStateAction } from 'react';
 import ChannelCard from './ChannelCard';
 import TrackCard from './TrackCard';
-import type { ChannelSource, ChannelValidation, TrackSetSource, TrackValidation } from '../../hooks/dataset';
+import { isSegmentationChannelSource, type ChannelSource, type ChannelValidation, type TrackSetSource, type TrackValidation } from '../../hooks/dataset';
 import { CHANNEL_NAME_MAX_LENGTH, TRACK_NAME_MAX_LENGTH } from '../../constants/naming';
 
 type SetupExperimentType = '3d-movie' | '2d-movie' | 'single-3d-volume';
-
-function isSegmentationChannel(channel: Pick<ChannelSource, 'channelType' | 'volume'>): boolean {
-  if (channel.channelType === 'segmentation') {
-    return true;
-  }
-  if (channel.channelType === 'channel') {
-    return false;
-  }
-  if (!channel.volume) {
-    return false;
-  }
-  return channel.volume.isSegmentation;
-}
 
 const getChannelLayerSummary = (channel: ChannelSource): string => {
   if (!channel.volume) {
@@ -175,12 +162,12 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
   }, [channels]);
 
   const standardChannels = useMemo(
-    () => channels.filter((channel) => !isSegmentationChannel(channel)),
+    () => channels.filter((channel) => !isSegmentationChannelSource(channel)),
     [channels]
   );
 
   const segmentationChannels = useMemo(
-    () => channels.filter((channel) => isSegmentationChannel(channel)),
+    () => channels.filter((channel) => isSegmentationChannelSource(channel)),
     [channels]
   );
 
@@ -384,6 +371,7 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
             <ChannelCard
               key={channel.id}
               channel={channel}
+              validation={validation}
               isDisabled={isFrontPageLocked}
               onLayerFilesAdded={onChannelLayerFilesAdded}
               onLayerDrop={onChannelLayerDrop}

@@ -1,17 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import FrontPage, { type ExperimentType, type TrackSummary as FrontPageTrackSummary } from './FrontPage';
+import FrontPage, { type ExperimentType } from './FrontPage';
 import usePreprocessedExperiment from '../../hooks/dataset/usePreprocessedExperiment';
-import type { VoxelResolutionHook } from '../../hooks/useVoxelResolution';
-import type { DatasetErrorHook } from '../../hooks/useDatasetErrors';
-import type { FollowedTrackState, TrackSetState } from '../../types/channelTracks';
-import type {
-  ChannelSource,
-  ChannelValidation,
-  StagedPreprocessedExperiment,
-  TrackSetSource,
-  TrackValidation
-} from '../../hooks/dataset';
 import { preprocessDatasetToStorage } from '../../shared/utils/preprocessedDataset';
 import {
   createDirectoryHandlePreprocessedStorage,
@@ -24,7 +13,7 @@ import {
   getDirectoryPickerUnavailableMessage,
   inspectDirectoryPickerSupport
 } from '../../shared/utils/directoryPickerSupport';
-import type { CompiledTrackSetHeader } from '../../types/tracks';
+import type { FrontPageContainerProps } from '../../ui/contracts/frontPage';
 
 const FRONTPAGE_OPFS_DATASET_ID = 'preprocessed-experiment';
 const PREPROCESS_STORAGE_STRATEGY = {
@@ -33,67 +22,6 @@ const PREPROCESS_STORAGE_STRATEGY = {
     enabled: true
   }
 } as const;
-
-export type FrontPageContainerProps = {
-  isExperimentSetupStarted: boolean;
-  channels: ChannelSource[];
-  setChannels: Dispatch<SetStateAction<ChannelSource[]>>;
-  tracks: TrackSetSource[];
-  setTracks: Dispatch<SetStateAction<TrackSetSource[]>>;
-  activeChannelId: string | null;
-  activeChannel: ChannelSource | null;
-  channelValidationMap: Map<string, ChannelValidation>;
-  trackValidationMap: Map<string, TrackValidation>;
-  editingChannelId: string | null;
-  editingChannelInputRef: MutableRefObject<HTMLInputElement | null>;
-  editingChannelOriginalNameRef: MutableRefObject<string>;
-  setActiveChannelId: Dispatch<SetStateAction<string | null>>;
-  setEditingChannelId: Dispatch<SetStateAction<string | null>>;
-  onStartExperimentSetup: () => void;
-  onAddChannel: () => void;
-  onAddSegmentationChannel: () => void;
-  onReturnToStart: () => void;
-  onChannelNameChange: (channelId: string, name: string) => void;
-  onRemoveChannel: (channelId: string) => void;
-  onChannelLayerFilesAdded: (channelId: string, files: File[]) => void | Promise<void>;
-  onChannelLayerDrop: (channelId: string, dataTransfer: DataTransfer) => void;
-  onChannelLayerRemove: (channelId: string, layerId: string) => void;
-  onAddTrack: () => void;
-  onTrackFilesAdded: (trackSetId: string, files: File[]) => void | Promise<void>;
-  onTrackDrop: (trackSetId: string, dataTransfer: DataTransfer) => void;
-  onTrackSetNameChange: (trackSetId: string, name: string) => void;
-  onTrackSetBoundChannelChange: (trackSetId: string, channelId: string | null) => void;
-  onTrackSetTimepointConventionChange: (
-    trackSetId: string,
-    timepointConvention: TrackSetSource['timepointConvention']
-  ) => void | Promise<void>;
-  onTrackSetClearFile: (trackSetId: string) => void;
-  onTrackSetRemove: (trackSetId: string) => void;
-  setIsExperimentSetupStarted: Dispatch<SetStateAction<boolean>>;
-  setViewerMode: Dispatch<SetStateAction<'3d'>>;
-  updateChannelIdCounter: (sources: ChannelSource[]) => void;
-  showInteractionWarning: (message: string) => void;
-  isLaunchingViewer: boolean;
-  setTrackSetStates: Dispatch<SetStateAction<Record<string, TrackSetState>>>;
-  setTrackOrderModeByTrackSet: Dispatch<SetStateAction<Record<string, 'id' | 'length'>>>;
-  setSelectedTrackOrder: Dispatch<SetStateAction<string[]>>;
-  setFollowedTrack: Dispatch<SetStateAction<FollowedTrackState>>;
-  computeTrackSummary: (summary: CompiledTrackSetHeader | null | undefined) => FrontPageTrackSummary;
-  hasGlobalTimepointMismatch: boolean;
-  interactionErrorMessage: string | null;
-  launchErrorMessage: string | null;
-  onLaunchViewer: () => void;
-  onLaunchViewerInPerformanceMode: () => void;
-  canLaunch: boolean;
-  warningWindowInitialPosition: { x: number; y: number };
-  warningWindowWidth: number;
-  onPreprocessedStateChange?: (state: {
-    preprocessedExperiment: StagedPreprocessedExperiment | null;
-    resetPreprocessedState: () => void;
-  }) => void;
-  datasetErrors: DatasetErrorHook;
-  voxelResolution: VoxelResolutionHook;
-};
 
 export default function FrontPageContainer({
   isExperimentSetupStarted,
@@ -690,3 +618,5 @@ export default function FrontPageContainer({
     />
   );
 }
+
+export type { FrontPageContainerProps } from '../../ui/contracts/frontPage';

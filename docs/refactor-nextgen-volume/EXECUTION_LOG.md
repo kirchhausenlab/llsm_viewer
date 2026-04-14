@@ -34,7 +34,7 @@
 - Added per-scale chunk-stat metadata arrays (`min`, `max`, `occupancy`) to preprocessing output.
 - Added runtime chunk-cache + prioritized center-first bounded-concurrency chunk scheduling.
 - Added advisory sharding strategy/config metadata and explicit guard for unsupported shard writing.
-- Updated default OPFS/export naming to `llsm-viewer-preprocessed-vnext` prefixes.
+- Updated default OPFS/export naming to `llsm-viewer-preprocessed-vnext` prefixes. This lineage was later superseded by `llsm-viewer-preprocessed-vnext-hes1` during the hierarchical empty-space skipping cutover.
 - Updated `tests/preprocessedDataset.test.ts` to vNext schema/chunk path expectations.
 - Added `SCHEMA_VNEXT.md` and refreshed backlog/handoff with completed tasks and next targets.
 - Added synthetic baseline harness `scripts/benchmark-nextgen-volume.ts`.

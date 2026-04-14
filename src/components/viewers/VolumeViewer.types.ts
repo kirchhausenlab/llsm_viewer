@@ -4,14 +4,12 @@ import type { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
 import type { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
 import type { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry';
 
-import type { NormalizedVolume } from '../../core/volumeProcessing';
 import type {
-  VolumeBackgroundMask,
-  VolumeBrickAtlas,
   VolumeBrickPageTable,
   VolumeProviderDiagnostics
 } from '../../core/volumeProvider';
 import type { LODPolicyDiagnosticsSnapshot } from '../../core/lodPolicyDiagnostics';
+import type { ViewerLayer } from '../../ui/contracts/viewerLayer';
 import type { FollowedVoxelTarget } from '../../types/follow';
 import type { HoveredVoxelInfo } from '../../types/hover';
 import type { PaintbrushStrokeHandlers } from '../../types/paintbrush';
@@ -20,7 +18,6 @@ import type {
   CompiledTrackSummary,
   TrackColorMode,
 } from '../../types/tracks';
-import type { VolumeDataType } from '../../types/volume';
 import type { ViewerProp } from '../../types/viewerProps';
 import type { TemporalResolutionMetadata, VoxelResolutionValues } from '../../types/voxelResolution';
 import type { RenderStyle, SamplingMode } from '../../state/layerSettings';
@@ -29,51 +26,6 @@ import type { PlaybackIndexWindow } from '../../shared/utils';
 
 export type InstancedLineGeometry = LineGeometry & { instanceCount: number };
 export type InstancedLineSegmentsGeometry = LineSegmentsGeometry & { instanceCount: number };
-
-export type ViewerLayer = {
-  key: string;
-  label: string;
-  channelName: string;
-  fullResolutionWidth: number;
-  fullResolutionHeight: number;
-  fullResolutionDepth: number;
-  volume: NormalizedVolume | null;
-  channels?: number;
-  dataType?: VolumeDataType;
-  min?: number;
-  max?: number;
-  visible: boolean;
-  isHoverTarget?: boolean;
-  sliderRange: number;
-  minSliderIndex: number;
-  maxSliderIndex: number;
-  brightnessSliderIndex: number;
-  contrastSliderIndex: number;
-  windowMin: number;
-  windowMax: number;
-  color: string;
-  offsetX: number;
-  offsetY: number;
-  renderStyle: RenderStyle;
-  blDensityScale: number;
-  blBackgroundCutoff: number;
-  blOpacityScale: number;
-  blEarlyExitAlpha: number;
-  mipEarlyExitThreshold: number;
-  invert: boolean;
-  samplingMode: SamplingMode;
-  isSegmentation?: boolean;
-  mode?: '3d' | 'slice';
-  sliceIndex?: number;
-  scaleLevel?: number;
-  brickPageTable?: VolumeBrickPageTable | null;
-  brickAtlas?: VolumeBrickAtlas | null;
-  backgroundMask?: VolumeBackgroundMask | null;
-  playbackWarmupForLayerKey?: string;
-  playbackWarmupTimeIndex?: number;
-  playbackRole?: 'active' | 'warmup';
-  playbackSlotIndex?: number;
-};
 
 export type VolumeViewerVrPanelLayerSettings = {
   sliderRange: number;
@@ -232,6 +184,7 @@ export type VolumeViewerProps = {
 };
 
 export type { FollowedVoxelTarget };
+export type { ViewerLayer } from '../../ui/contracts/viewerLayer';
 
 export type VolumeResources = {
   mesh: THREE.Mesh;
@@ -301,6 +254,7 @@ export type VolumeResources = {
       | 'enabled'
       | 'disabled-for-direct-volume-linear'
       | 'missing-page-table'
+      | 'mismatched-page-table-source'
       | 'invalid-page-table'
       | 'invalid-min-max-range'
       | 'invalid-hierarchy-shape'

@@ -2,10 +2,11 @@ import { useCallback, useMemo } from 'react';
 import ChannelDropboxSection from './ChannelDropboxSection';
 import ChannelUploads from './ChannelUploads';
 import useChannelDropbox from '../../hooks/useChannelDropbox';
-import type { ChannelSource } from '../../hooks/dataset';
+import type { ChannelSource, ChannelValidation } from '../../hooks/dataset';
 
 export type ChannelCardProps = {
   channel: ChannelSource;
+  validation: ChannelValidation;
   isDisabled: boolean;
   onLayerFilesAdded: (id: string, files: File[]) => void | Promise<void>;
   onLayerDrop: (id: string, dataTransfer: DataTransfer) => void;
@@ -14,6 +15,7 @@ export type ChannelCardProps = {
 
 export default function ChannelCard({
   channel,
+  validation,
   isDisabled,
   onLayerFilesAdded,
   onLayerDrop,
@@ -101,7 +103,20 @@ export default function ChannelCard({
         ) : null
       }
       statusSlot={
-        !hasLayerSelection ? (
+        hasLayerSelection && (validation.errors.length > 0 || validation.warnings.length > 0) ? (
+          <div className="track-card-status-row">
+            {validation.errors.map((message, index) => (
+              <p key={`error-${index}`} className="channel-tracks-error">
+                {message}
+              </p>
+            ))}
+            {validation.warnings.map((message, index) => (
+              <p key={`warning-${index}`} className="channel-layer-status">
+                {message}
+              </p>
+            ))}
+          </div>
+        ) : !hasLayerSelection ? (
           <ChannelDropboxSection
             channelId={channel.id}
             variant="layers"

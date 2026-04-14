@@ -14,6 +14,7 @@ type UseRouteDatasetSetupStateOptions = {
   startEditingChannel: (channelId: string, originalName: string) => void;
   handleChannelRemoved: (context: ChannelRemovalContext) => void;
   setLayerTimepointCounts: Dispatch<SetStateAction<Record<string, number>>>;
+  setLayerTimepointCountErrors: Dispatch<SetStateAction<Record<string, string>>>;
 };
 
 type RouteDatasetSetupState = {
@@ -35,7 +36,8 @@ export function useRouteDatasetSetupState({
   queuePendingChannelFocus,
   startEditingChannel,
   handleChannelRemoved,
-  setLayerTimepointCounts
+  setLayerTimepointCounts,
+  setLayerTimepointCountErrors
 }: UseRouteDatasetSetupStateOptions): RouteDatasetSetupState {
   const handleStartExperimentSetup = useCallback(() => {
     resetPreprocessedState();
@@ -123,6 +125,17 @@ export function useRouteDatasetSetupState({
           }
           return changed ? next : current;
         });
+        setLayerTimepointCountErrors((current) => {
+          let changed = false;
+          const next = { ...current };
+          for (const layerId of removedLayerIds) {
+            if (layerId in next) {
+              delete next[layerId];
+              changed = true;
+            }
+          }
+          return changed ? next : current;
+        });
       }
       setTracks((current) => {
         let changed = false;
@@ -140,7 +153,14 @@ export function useRouteDatasetSetupState({
       });
       clearDatasetError();
     },
-    [clearDatasetError, handleChannelRemoved, setChannels, setLayerTimepointCounts, setTracks]
+    [
+      clearDatasetError,
+      handleChannelRemoved,
+      setChannels,
+      setLayerTimepointCountErrors,
+      setLayerTimepointCounts,
+      setTracks
+    ]
   );
 
   return {

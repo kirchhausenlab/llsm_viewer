@@ -388,4 +388,26 @@ await (async () => {
   hook.unmount();
 })();
 
+(() => {
+  const { provider } = createProviderHarness();
+  assert.throws(
+    () =>
+      renderHook(() =>
+        useRoutePlaybackPrefetch({
+          isViewerLaunched: true,
+          isPlaying: false,
+          fps: 24,
+          preferBrickResidency: true,
+          brickResidencyLayerKeys: ['layer-a'],
+          playbackAtlasScaleLevelByLayerKey: { 'layer-a': Number.NaN },
+          volumeProvider: provider,
+          volumeTimepointCount: 3,
+          playbackLayerKeys: ['layer-a'],
+          selectedIndex: 0,
+        }),
+      ),
+    /Invalid playback atlas scale level for layer "layer-a"/,
+  );
+})();
+
 console.log('useRoutePlaybackPrefetch tests passed');

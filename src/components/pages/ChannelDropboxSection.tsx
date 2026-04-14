@@ -1,7 +1,6 @@
 import type { FormEvent } from 'react';
 import type { DropboxAppKeySource } from '../../integrations/dropbox';
-
-export type DropboxTarget = 'layers' | 'tracks';
+import type { DropboxTarget } from '../../types/dropbox';
 
 export type ChannelDropboxSectionProps = {
   channelId: string;

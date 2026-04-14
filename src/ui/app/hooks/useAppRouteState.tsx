@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { FrontPageContainerProps } from '../../../components/pages/FrontPageContainer';
-import type { ViewerShellContainerProps } from '../../../components/viewers/ViewerShellContainer';
+import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import type {
   LoadedDatasetLayer,
   StagedPreprocessedExperiment
 } from '../../../hooks/dataset';
+import type { LayerSettings } from '../../../state/layerSettings';
 import { deriveChannelTrackOffsets } from '../../../state/channelTrackOffsets';
+import {
+  createLayerAutoThresholdRecord,
+  createVolumeDerivedBrightnessState,
+  createLayerDefaultSettingsRecord,
+  createLayerDefaultSettingsFromLayer,
+  layerBrightnessStatesMatch
+} from './layerDefaults';
 import type { FollowedVoxelTarget } from '../../../types/follow';
 import type { HoveredVoxelInfo } from '../../../types/hover';
 import { computeTrackSummary } from '../../../shared/utils/trackSummary';
@@ -47,19 +54,7 @@ import {
   collectInitialHttpLaunchTrackedTargets
 } from './initialHttpLaunch';
 import { getTrackPlaybackIndexWindow, snapTimeIndexToWindow } from '../../../shared/utils';
-
-export type DatasetSetupRouteProps = FrontPageContainerProps;
-
-export type ViewerRouteProps = {
-  viewerShellProps: Omit<ViewerShellContainerProps, 'isHelpMenuOpen' | 'openHelpMenu' | 'closeHelpMenu'>;
-  isViewerLaunched: boolean;
-};
-
-export type AppRouteState = {
-  isViewerLaunched: boolean;
-  datasetSetupProps: DatasetSetupRouteProps;
-  viewerRouteProps: ViewerRouteProps;
-};
+import type { AppRouteState } from '../../contracts/routes';
 
 function selectDeterministicId(values: ReadonlyArray<string>): string | null {
   if (values.length === 0) {
@@ -129,6 +124,7 @@ export function useAppRouteState(): AppRouteState {
     tracks,
     setTracks,
     setLayerTimepointCounts,
+    setLayerTimepointCountErrors,
     channelIdRef,
     layerIdRef,
     trackSetIdRef,
@@ -151,15 +147,19 @@ export function useAppRouteState(): AppRouteState {
     setLayerSettings,
     layerAutoThresholds,
     setLayerAutoThresholds,
-    setGlobalRenderStyle,
+    getChannelDefaultColor,
     globalSamplingMode,
     setGlobalSamplingMode,
+    globalBlDensityScale,
     setGlobalBlDensityScale,
+    globalBlBackgroundCutoff,
     setGlobalBlBackgroundCutoff,
+    globalBlOpacityScale,
     setGlobalBlOpacityScale,
+    globalBlEarlyExitAlpha,
     setGlobalBlEarlyExitAlpha,
+    globalMipEarlyExitThreshold,
     setGlobalMipEarlyExitThreshold,
-    createLayerDefaultSettings,
     createLayerDefaultBrightnessState,
   } = useChannelLayerStateContext();
   const [preprocessedExperiment, setPreprocessedExperiment] = useState<StagedPreprocessedExperiment | null>(null);
@@ -175,6 +175,10 @@ export function useAppRouteState(): AppRouteState {
       }))
     );
   }, [preprocessedExperiment]);
+  const loadedDatasetLayerByKey = useMemo(
+    () => new Map(loadedDatasetLayers.map((layer) => [layer.key, layer])),
+    [loadedDatasetLayers]
+  );
   const [isExperimentSetupStarted, setIsExperimentSetupStarted] = useState(false);
   const {
     voxelResolution: voxelResolutionHook,
@@ -197,6 +201,7 @@ export function useAppRouteState(): AppRouteState {
     setLayerSettings,
     setLayerAutoThresholds,
     setLayerTimepointCounts,
+    setLayerTimepointCountErrors,
     computeLayerTimepointCount,
     createVolumeSource
   });
@@ -220,6 +225,7 @@ export function useAppRouteState(): AppRouteState {
   const [followedVoxel, setFollowedVoxel] = useState<FollowedVoxelTarget | null>(null);
   const [lastHoveredVolumeVoxel, setLastHoveredVolumeVoxel] = useState<HoveredVoxelInfo | null>(null);
   const [viewerCameraSample, setViewerCameraSample] = useState<ViewerCameraNavigationSample | null>(null);
+  const initializedPreprocessedLayerDefaultsRef = useRef<StagedPreprocessedExperiment | null>(null);
   const initialHttpLaunchScaleTargetsRef = useRef<Map<string, number>>(new Map());
   const initialHttpLaunchObservationDoneRef = useRef(false);
   const [isInitialHttpLaunchLoading, setIsInitialHttpLaunchLoading] = useState(false);
@@ -239,6 +245,91 @@ export function useAppRouteState(): AppRouteState {
     }
     return saved;
   }, [preprocessedExperiment, trackScale]);
+  const createLayerDefaultSettings = useCallback(
+    (layerKey: string): LayerSettings =>
+      createLayerDefaultSettingsFromLayer({
+        layer: loadedDatasetLayerByKey.get(layerKey) ?? null,
+        getChannelDefaultColor,
+        globalSamplingMode,
+        globalBlDensityScale,
+        globalBlBackgroundCutoff,
+        globalBlOpacityScale,
+        globalBlEarlyExitAlpha,
+        globalMipEarlyExitThreshold
+      }),
+    [
+      getChannelDefaultColor,
+      globalBlBackgroundCutoff,
+      globalBlDensityScale,
+      globalBlEarlyExitAlpha,
+      globalBlOpacityScale,
+      globalMipEarlyExitThreshold,
+      globalSamplingMode,
+      loadedDatasetLayerByKey
+    ]
+  );
+  const handleLaunchLayerVolumesResolved = useCallback(
+    (loadedVolumes: Record<string, NormalizedVolume | null>) => {
+      const derivedByLayerKey = new Map<
+        string,
+        ReturnType<typeof createVolumeDerivedBrightnessState>
+      >();
+      for (const layer of loadedDatasetLayers) {
+        const volume = loadedVolumes[layer.key] ?? null;
+        if (!volume) {
+          continue;
+        }
+        derivedByLayerKey.set(layer.key, createVolumeDerivedBrightnessState(volume));
+      }
+
+      if (derivedByLayerKey.size === 0) {
+        return;
+      }
+
+      setLayerSettings((current) => {
+        let changed = false;
+        const next: Record<string, LayerSettings> = { ...current };
+        for (const layer of loadedDatasetLayers) {
+          const derived = derivedByLayerKey.get(layer.key);
+          if (!derived) {
+            continue;
+          }
+          const defaultSettings = createLayerDefaultSettings(layer.key);
+          const previous = current[layer.key] ?? defaultSettings;
+          if (!layerBrightnessStatesMatch(previous, defaultSettings)) {
+            continue;
+          }
+          if (layerBrightnessStatesMatch(previous, derived.brightnessState)) {
+            continue;
+          }
+          next[layer.key] = {
+            ...previous,
+            ...derived.brightnessState
+          };
+          changed = true;
+        }
+        return changed ? next : current;
+      });
+
+      setLayerAutoThresholds((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const layer of loadedDatasetLayers) {
+          const derived = derivedByLayerKey.get(layer.key);
+          if (!derived || derived.autoThreshold <= 0) {
+            continue;
+          }
+          if ((current[layer.key] ?? 0) !== 0) {
+            continue;
+          }
+          next[layer.key] = derived.autoThreshold;
+          changed = true;
+        }
+        return changed ? next : current;
+      });
+    },
+    [createLayerDefaultSettings, loadedDatasetLayers, setLayerAutoThresholds, setLayerSettings]
+  );
 
   const {
     layoutResetToken,
@@ -587,8 +678,15 @@ export function useAppRouteState(): AppRouteState {
     finishLaunchSessionAttempt,
     setSelectedIndex,
     setIsPlaying,
-    showLaunchError
+    showLaunchError,
+    onLaunchLayerVolumesResolved: handleLaunchLayerVolumesResolved
   });
+  useEffect(() => {
+    if (!isViewerLaunched) {
+      return;
+    }
+    handleLaunchLayerVolumesResolved(currentLayerVolumes);
+  }, [currentLayerVolumes, handleLaunchLayerVolumesResolved, isViewerLaunched]);
   const handleLaunchViewer = useCallback(
     () => handleRouteLaunchViewer({ performanceMode: false }),
     [handleRouteLaunchViewer]
@@ -804,7 +902,6 @@ export function useAppRouteState(): AppRouteState {
   const {
     viewerControls,
     playbackDisabled,
-    playbackLabel,
     handleTogglePlayback,
     handleTimeIndexChange
   } = useViewerModePlayback({
@@ -968,7 +1065,8 @@ export function useAppRouteState(): AppRouteState {
     queuePendingChannelFocus,
     startEditingChannel,
     handleChannelRemoved,
-    setLayerTimepointCounts
+    setLayerTimepointCounts,
+    setLayerTimepointCountErrors
   });
   const { handleReturnToFrontPage } = useRouteDatasetResetState({
     resetPreprocessedState,
@@ -1023,6 +1121,42 @@ export function useAppRouteState(): AppRouteState {
       };
     });
   }, []);
+
+  useEffect(() => {
+    if (!preprocessedExperiment) {
+      initializedPreprocessedLayerDefaultsRef.current = null;
+      return;
+    }
+    if (initializedPreprocessedLayerDefaultsRef.current === preprocessedExperiment) {
+      return;
+    }
+    initializedPreprocessedLayerDefaultsRef.current = preprocessedExperiment;
+    setLayerSettings(
+      createLayerDefaultSettingsRecord({
+        layers: loadedDatasetLayers,
+        getChannelDefaultColor,
+        globalSamplingMode,
+        globalBlDensityScale,
+        globalBlBackgroundCutoff,
+        globalBlOpacityScale,
+        globalBlEarlyExitAlpha,
+        globalMipEarlyExitThreshold
+      })
+    );
+    setLayerAutoThresholds(createLayerAutoThresholdRecord(loadedDatasetLayers));
+  }, [
+    getChannelDefaultColor,
+    globalBlBackgroundCutoff,
+    globalBlDensityScale,
+    globalBlEarlyExitAlpha,
+    globalBlOpacityScale,
+    globalMipEarlyExitThreshold,
+    globalSamplingMode,
+    loadedDatasetLayers,
+    preprocessedExperiment,
+    setLayerAutoThresholds,
+    setLayerSettings
+  ]);
 
   useEffect(() => {
     if (!preprocessedExperiment) {
@@ -1127,7 +1261,6 @@ export function useAppRouteState(): AppRouteState {
     layerChannelMap,
     loadedChannelIds,
     setActiveChannelTabId,
-    setGlobalRenderStyle,
     setGlobalSamplingMode,
     setGlobalBlDensityScale,
     setGlobalBlBackgroundCutoff,

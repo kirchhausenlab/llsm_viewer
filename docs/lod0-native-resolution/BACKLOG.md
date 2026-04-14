@@ -45,9 +45,9 @@ Status legend: `TODO`, `IN_PROGRESS`, `DONE`, `BLOCKED`
     - `src/ui/app/hooks/useRouteLayerVolumes.ts`
     - `tests/app/hooks/useRouteLayerVolumes.test.ts`
 
-- `LOD0-012` (`DONE`): unify playback prefetch scale policy with adaptive selector.
+- `LOD0-012` (`DONE`): unify playback prefetch scale policy with route-selected playback scale.
   - Scope delivered:
-    - replaced fixed `0/1` route mapping with per-layer selector output wiring into playback prefetch
+    - wired playback prefetch to the same route-selected playback scale used by active playback frames
   - Evidence:
     - `src/ui/app/hooks/useAppRouteState.tsx`
     - `src/ui/app/hooks/useRouteLayerVolumes.ts`

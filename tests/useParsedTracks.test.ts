@@ -102,4 +102,72 @@ await (async () => {
   hook.unmount();
 })();
 
+await (async () => {
+  let nextTrackSetId = 0;
+
+  const hook = renderHook(() => {
+    const [tracks, setTracks] = React.useState<TrackSetSource[]>([]);
+
+    const createTrackSetSource = React.useCallback((name: string, boundChannelId: string | null): TrackSetSource => {
+      nextTrackSetId += 1;
+      return {
+        id: `track-set-${nextTrackSetId}`,
+        name,
+        boundChannelId,
+        timepointConvention: 'zero-based',
+        file: null,
+        fileName: '',
+        status: 'idle',
+        error: null,
+        compiledHeader: null,
+        loadCompiledCatalog: null,
+        loadCompiledPayload: null
+      };
+    }, []);
+
+    const parsedTracks = useParsedTracks({
+      tracks,
+      setTracks,
+      channels,
+      createTrackSetSource,
+      updateTrackSetIdCounter: () => undefined
+    });
+
+    return {
+      tracks,
+      ...parsedTracks
+    };
+  });
+
+  const invalidFile = new File(
+    [
+      'track_id,start,t,x,y,z,A,track_length\n' +
+        '1,0,0,0,0,0,0,2\n' +
+        '1,0,NaN,1,1,1,0,2'
+    ],
+    'invalid-tracks.csv',
+    { type: 'text/csv' }
+  );
+
+  hook.act(() => {
+    hook.result.handleAddTrackSet();
+  });
+
+  const originalConsoleError = console.error;
+  console.error = () => undefined;
+  try {
+    await hook.act(async () => {
+      await hook.result.handleTrackFilesAdded('track-set-1', [invalidFile]);
+    });
+  } finally {
+    console.error = originalConsoleError;
+  }
+
+  assert.strictEqual(hook.result.tracks[0]?.status, 'error');
+  assert.match(hook.result.tracks[0]?.error ?? '', /invalid t value "NaN"/);
+  assert.strictEqual(hook.result.tracks[0]?.compiledHeader, null);
+
+  hook.unmount();
+})();
+
 console.log('useParsedTracks tests passed');

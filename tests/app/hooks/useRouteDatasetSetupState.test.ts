@@ -55,6 +55,7 @@ const createTrackSet = (id: string, name: string, boundChannelId: string | null)
     const [tracks, setTracks] = React.useState<TrackSetSource[]>([]);
     const [isExperimentSetupStarted, setIsExperimentSetupStarted] = React.useState(false);
     const [layerTimepointCounts, setLayerTimepointCounts] = React.useState<Record<string, number>>({});
+    const [layerTimepointCountErrors, setLayerTimepointCountErrors] = React.useState<Record<string, string>>({});
 
     const route = useRouteDatasetSetupState({
       resetPreprocessedState: () => {
@@ -84,6 +85,7 @@ const createTrackSet = (id: string, name: string, boundChannelId: string | null)
       },
       handleChannelRemoved: () => {},
       setLayerTimepointCounts,
+      setLayerTimepointCountErrors,
     });
 
     return {
@@ -92,6 +94,7 @@ const createTrackSet = (id: string, name: string, boundChannelId: string | null)
       tracks,
       isExperimentSetupStarted,
       layerTimepointCounts,
+      layerTimepointCountErrors,
     };
   });
 
@@ -153,6 +156,9 @@ const createTrackSet = (id: string, name: string, boundChannelId: string | null)
       'layer-1': 5,
       'layer-3': 7,
     });
+    const [layerTimepointCountErrors, setLayerTimepointCountErrors] = React.useState<Record<string, string>>({
+      'layer-1': 'Failed to read TIFF timepoint count.'
+    });
 
     const route = useRouteDatasetSetupState({
       resetPreprocessedState: () => {},
@@ -176,6 +182,7 @@ const createTrackSet = (id: string, name: string, boundChannelId: string | null)
         });
       },
       setLayerTimepointCounts,
+      setLayerTimepointCountErrors,
     });
 
     return {
@@ -183,6 +190,7 @@ const createTrackSet = (id: string, name: string, boundChannelId: string | null)
       channels,
       tracks,
       layerTimepointCounts,
+      layerTimepointCountErrors,
     };
   });
 
@@ -195,6 +203,7 @@ const createTrackSet = (id: string, name: string, boundChannelId: string | null)
   ]);
   assert.strictEqual(hook.result.channels.length, 1);
   assert.deepStrictEqual(hook.result.layerTimepointCounts, { 'layer-3': 7 });
+  assert.deepStrictEqual(hook.result.layerTimepointCountErrors, {});
   assert.deepStrictEqual(
     hook.result.tracks.map((track) => ({ id: track.id, boundChannelId: track.boundChannelId })),
     [

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import {
   computeGlobalTimepointMismatch,
+  getLayerTimepointCountError,
   getKnownLayerTimepointCount,
   hasPendingLayerTimepointCount,
 } from '../src/hooks/dataset/channelTimepointValidation.ts';
@@ -24,7 +25,20 @@ const createLayer = (id: string, filesCount = 1) => ({
   const layer = createLayer('layer-a');
   assert.strictEqual(hasPendingLayerTimepointCount(layer, {}), true);
   assert.strictEqual(hasPendingLayerTimepointCount(layer, { 'layer-a': 3 }), false);
+  assert.strictEqual(
+    hasPendingLayerTimepointCount(layer, {}, { 'layer-a': 'Failed to read TIFF timepoint count.' }),
+    false,
+  );
   assert.strictEqual(hasPendingLayerTimepointCount({ id: 'layer-empty', files: [] }, {}), false);
+})();
+
+(() => {
+  const layer = createLayer('layer-a');
+  assert.strictEqual(
+    getLayerTimepointCountError(layer, { 'layer-a': 'Failed to read TIFF timepoint count.' }),
+    'Failed to read TIFF timepoint count.'
+  );
+  assert.strictEqual(getLayerTimepointCountError(layer, {}), null);
 })();
 
 (() => {
@@ -45,6 +59,19 @@ const createLayer = (id: string, filesCount = 1) => ({
     computeGlobalTimepointMismatch(channels, {
       'layer-a': 4,
     }),
+    false,
+  );
+  assert.strictEqual(
+    computeGlobalTimepointMismatch(
+      channels,
+      {
+        'layer-a': 4,
+        'layer-b': 6,
+      },
+      {
+        'layer-b': 'Failed to read TIFF timepoint count.'
+      }
+    ),
     false,
   );
 })();

@@ -13,19 +13,7 @@ import {
   hasTiffExtension,
   sortVolumeFiles
 } from '../../shared/utils/appHelpers';
-
-function isSegmentationChannel(channel: Pick<ChannelSource, 'channelType' | 'volume'>): boolean {
-  if (channel.channelType === 'segmentation') {
-    return true;
-  }
-  if (channel.channelType === 'channel') {
-    return false;
-  }
-  if (!channel.volume) {
-    return false;
-  }
-  return channel.volume.isSegmentation;
-}
+import { isSegmentationChannelSource } from './channelClassification';
 
 export type LoadedDatasetLayer = {
   key: string;
@@ -50,6 +38,7 @@ export type DatasetSetupParams = {
   setLayerSettings: Dispatch<SetStateAction<Record<string, LayerSettings>>>;
   setLayerAutoThresholds: Dispatch<SetStateAction<Record<string, number>>>;
   setLayerTimepointCounts: Dispatch<SetStateAction<Record<string, number>>>;
+  setLayerTimepointCountErrors: Dispatch<SetStateAction<Record<string, string>>>;
   computeLayerTimepointCount: (files: File[]) => Promise<number>;
   createVolumeSource: (files: File[]) => { id: string; files: File[]; isSegmentation: boolean };
 };
@@ -78,6 +67,7 @@ export function useDatasetSetup({
   setLayerSettings,
   setLayerAutoThresholds,
   setLayerTimepointCounts,
+  setLayerTimepointCountErrors,
   computeLayerTimepointCount,
   createVolumeSource
 }: DatasetSetupParams): DatasetSetupHook {
@@ -200,13 +190,35 @@ export function useDatasetSetup({
       const replacedVolumeId = targetChannel.volume?.id ?? null;
       const addedVolume = {
         ...createVolumeSource(sorted),
-        isSegmentation: isSegmentationChannel(targetChannel)
+        isSegmentation: isSegmentationChannelSource(targetChannel)
       };
 
       setChannels((current) =>
         current.map((channel) => (channel.id === channelId ? { ...channel, volume: addedVolume } : channel))
       );
+      setLayerTimepointCounts((current) => {
+        if (!replacedVolumeId || !(replacedVolumeId in current)) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[replacedVolumeId];
+        return next;
+      });
+      setLayerTimepointCountErrors((current) => {
+        const hasAddedError = addedVolume.id in current;
+        const hasReplacedError = Boolean(replacedVolumeId && replacedVolumeId in current);
+        if (!hasAddedError && !hasReplacedError) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[addedVolume.id];
+        if (replacedVolumeId) {
+          delete next[replacedVolumeId];
+        }
+        return next;
+      });
 
+      let hasTimepointCountError = false;
       try {
         const timepointCount = await computeLayerTimepointCount(addedVolume.files);
         setLayerTimepointCounts((current) => {
@@ -219,18 +231,47 @@ export function useDatasetSetup({
           }
           return next;
         });
+        setLayerTimepointCountErrors((current) => {
+          const hasAddedError = addedVolume.id in current;
+          const hasReplacedError = Boolean(replacedVolumeId && replacedVolumeId in current);
+          if (!hasAddedError && !hasReplacedError) {
+            return current;
+          }
+          const next = { ...current };
+          delete next[addedVolume.id];
+          if (replacedVolumeId) {
+            delete next[replacedVolumeId];
+          }
+          return next;
+        });
       } catch (error) {
         console.error('Failed to compute timepoint count for layer', error);
+        hasTimepointCountError = true;
+        const message = `Failed to read TIFF timepoint count: ${
+          error instanceof Error ? error.message : 'The dropped files could not be parsed as a TIFF sequence.'
+        }`;
         setLayerTimepointCounts((current) => {
-          const next: Record<string, number> = {
+          if (!(addedVolume.id in current) && (!replacedVolumeId || !(replacedVolumeId in current))) {
+            return current;
+          }
+          const next = { ...current };
+          delete next[addedVolume.id];
+          if (replacedVolumeId) {
+            delete next[replacedVolumeId];
+          }
+          return next;
+        });
+        setLayerTimepointCountErrors((current) => {
+          const next: Record<string, string> = {
             ...current,
-            [addedVolume.id]: addedVolume.files.length
+            [addedVolume.id]: message
           };
           if (replacedVolumeId && replacedVolumeId in next) {
             delete next[replacedVolumeId];
           }
           return next;
         });
+        showInteractionWarning(message);
       }
 
       if (replacedVolumeId) {
@@ -252,9 +293,9 @@ export function useDatasetSetup({
         });
       }
 
-      if (ignoredExtraGroups) {
+      if (ignoredExtraGroups && !hasTimepointCountError) {
         showInteractionWarning('Only the first TIFF sequence was added. Additional sequences were ignored.');
-      } else {
+      } else if (!hasTimepointCountError) {
         clearDatasetError();
       }
     },
@@ -267,6 +308,7 @@ export function useDatasetSetup({
       setLayerAutoThresholds,
       setLayerSettings,
       setLayerTimepointCounts,
+      setLayerTimepointCountErrors,
       showInteractionWarning
     ]
   );
@@ -279,7 +321,7 @@ export function useDatasetSetup({
           showInteractionWarning('No TIFF files detected in the dropped selection.');
           return;
         }
-        handleChannelLayerFilesAdded(channelId, files);
+        await handleChannelLayerFilesAdded(channelId, files);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to read dropped files.';
         showInteractionWarning(message);
@@ -348,6 +390,14 @@ export function useDatasetSetup({
           delete next[layerId];
           return next;
         });
+        setLayerTimepointCountErrors((current) => {
+          if (!(layerId in current)) {
+            return current;
+          }
+          const next = { ...current };
+          delete next[layerId];
+          return next;
+        });
         clearDatasetError();
       }
     },
@@ -356,6 +406,7 @@ export function useDatasetSetup({
       setChannels,
       setLayerAutoThresholds,
       setLayerSettings,
+      setLayerTimepointCountErrors,
       setLayerTimepointCounts
     ]
   );
