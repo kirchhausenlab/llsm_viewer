@@ -36,6 +36,9 @@ export type ChannelVolumeSource = {
   id: string;
   files: File[];
   isSegmentation: boolean;
+  sourceChannels?: number;
+  componentIndex?: number;
+  multichannelOwnerChannelId?: string | null;
 };
 
 export type ChannelSourceType = 'channel' | 'segmentation';
@@ -60,6 +63,68 @@ export type ChannelSource = {
   volume: ChannelVolumeSource | null;
   channelType?: ChannelSourceType;
 };
+
+export function getChannelVolumeSourceChannels(volume: Pick<ChannelVolumeSource, 'sourceChannels'> | null | undefined): number {
+  const sourceChannels = volume?.sourceChannels;
+  if (typeof sourceChannels === 'number' && Number.isFinite(sourceChannels) && sourceChannels >= 1) {
+    return Math.floor(sourceChannels);
+  }
+  return 1;
+}
+
+export function getChannelVolumeComponentIndex(
+  volume: Pick<ChannelVolumeSource, 'componentIndex'> | null | undefined
+): number {
+  const componentIndex = volume?.componentIndex;
+  if (typeof componentIndex === 'number' && Number.isFinite(componentIndex) && componentIndex >= 0) {
+    return Math.floor(componentIndex);
+  }
+  return 0;
+}
+
+export function getChannelVolumeMultichannelOwnerId(
+  volume: Pick<ChannelVolumeSource, 'multichannelOwnerChannelId'> | null | undefined
+): string | null {
+  return typeof volume?.multichannelOwnerChannelId === 'string' && volume.multichannelOwnerChannelId.length > 0
+    ? volume.multichannelOwnerChannelId
+    : null;
+}
+
+export function isMultichannelVolumeSource(volume: ChannelVolumeSource | null | undefined): boolean {
+  return getChannelVolumeSourceChannels(volume) > 1;
+}
+
+export function isMultichannelDerivedChannelSource(channel: ChannelSource | null | undefined): boolean {
+  if (!channel?.volume || !isMultichannelVolumeSource(channel.volume)) {
+    return false;
+  }
+  const ownerId = getChannelVolumeMultichannelOwnerId(channel.volume);
+  return ownerId !== null && ownerId !== channel.id;
+}
+
+export function isMultichannelOwnerChannelSource(channel: ChannelSource | null | undefined): boolean {
+  if (!channel?.volume || !isMultichannelVolumeSource(channel.volume)) {
+    return false;
+  }
+  const ownerId = getChannelVolumeMultichannelOwnerId(channel.volume);
+  return ownerId === channel.id && getChannelVolumeComponentIndex(channel.volume) === 0;
+}
+
+export function getOwnedMultichannelDerivedChannels(
+  channels: readonly ChannelSource[],
+  ownerChannelId: string
+): ChannelSource[] {
+  return channels
+    .filter((channel) => {
+      if (!channel.volume || !isMultichannelVolumeSource(channel.volume)) {
+        return false;
+      }
+      return getChannelVolumeMultichannelOwnerId(channel.volume) === ownerChannelId && channel.id !== ownerChannelId;
+    })
+    .sort((left, right) => {
+      return getChannelVolumeComponentIndex(left.volume) - getChannelVolumeComponentIndex(right.volume);
+    });
+}
 
 export type ChannelValidation = {
   errors: string[];
@@ -204,7 +269,10 @@ export function useChannelSources(): ChannelSourcesApi {
     return {
       id: `layer-${nextId}`,
       files,
-      isSegmentation: false
+      isSegmentation: false,
+      sourceChannels: 1,
+      componentIndex: 0,
+      multichannelOwnerChannelId: null
     };
   }, []);
 

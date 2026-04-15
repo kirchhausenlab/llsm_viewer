@@ -11,6 +11,7 @@ import {
 } from '../../../core/volumeProcessing';
 import type { PreprocessedStorage } from '../../storage/preprocessedStorage';
 import { sortVolumeFiles } from '../appHelpers';
+import { resolveImagejPageChannelLayout, type ImagejHyperstackLayout } from '../tiffHyperstack';
 import { computeAnisotropyScale } from '../anisotropyCorrection';
 import type { VolumePayload, VolumeTypedArray } from '../../../types/volume';
 import { createVolumeTypedArray, createWritableVolumeArray, getBytesPerValue } from '../../../types/volume';
@@ -102,6 +103,8 @@ export type PreprocessLayerSource = {
   label: string;
   files: File[];
   isSegmentation: boolean;
+  sourceChannelCount?: number;
+  sourceChannelIndex?: number | null;
 };
 
 export type PreprocessDatasetProgress =
@@ -122,6 +125,27 @@ export type PreprocessDatasetProgress =
 
 type LoadVolumesFromFiles = (files: File[]) => Promise<VolumePayload[]>;
 export type PreprocessInputInterpretation = '3d-movie' | '2d-movie' | 'single-3d-volume';
+
+function getLogicalSourceChannelCount(
+  layer: Pick<PreprocessLayerSource, 'isSegmentation' | 'sourceChannelCount' | 'sourceChannelIndex'>,
+  rawChannels: number
+): number {
+  if (!layer.isSegmentation && rawChannels > 1 && typeof layer.sourceChannelIndex === 'number') {
+    return 1;
+  }
+  return rawChannels;
+}
+
+function getResolvedSourceChannelIndex(
+  layer: Pick<PreprocessLayerSource, 'isSegmentation' | 'sourceChannelIndex'>,
+): number | null {
+  if (layer.isSegmentation) {
+    return null;
+  }
+  return typeof layer.sourceChannelIndex === 'number' && Number.isFinite(layer.sourceChannelIndex)
+    ? Math.max(0, Math.floor(layer.sourceChannelIndex))
+    : null;
+}
 
 export type PreprocessArrayShardingPolicyOverrides = {
   targetShardBytes?: number;
@@ -973,7 +997,10 @@ async function loadLayerVolumeByFileIndex({
   if (!file) {
     throw new Error(`Missing source file #${fileIndex + 1} for layer "${layer.key}".`);
   }
-  const volume = await loadVolumeFor3dTimepoint(file, loader, signal);
+  const volume = extractSelectedSourceChannelFromVolumePayload(
+    await loadVolumeFor3dTimepoint(file, loader, signal),
+    layer
+  );
   cacheLayerVolume(decodedVolumeCacheByLayerKey, layer.key, fileIndex, volume);
   return volume;
 }
@@ -1111,7 +1138,9 @@ type StreamingTimepointSliceSource =
 type StreamingPreparedLayerSource = {
   layer: PreprocessLayerSource;
   timepointCount: number;
+  rawSourceMetadata: LayerMetadata;
   sourceMetadata: LayerMetadata;
+  imagejPageChannelLayout: ImagejHyperstackLayout | null;
   getTimepointSource: (timepoint: number) => StreamingTimepointSliceSource;
 };
 
@@ -1121,6 +1150,7 @@ type ProbedTiffFileMetadata = {
   depth: number;
   channels: number;
   dataType: VolumePayload['dataType'];
+  imagejPageChannelLayout: ImagejHyperstackLayout | null;
 };
 
 type SupportedTypedArray = VolumeTypedArray;
@@ -1166,6 +1196,81 @@ function ensureTypedArrayMatchesExpectedDataType(
   return array;
 }
 
+function extractSelectedSourceChannelFromTypedArray({
+  source,
+  sourceChannels,
+  channelIndex,
+  dataType,
+  context
+}: {
+  source: SupportedTypedArray;
+  sourceChannels: number;
+  channelIndex: number;
+  dataType: VolumePayload['dataType'];
+  context: string;
+}): SupportedTypedArray {
+  if (sourceChannels <= 1) {
+    if (channelIndex > 0) {
+      throw new Error(`${context} cannot select channel ${channelIndex + 1} from a single-channel source.`);
+    }
+    return source;
+  }
+  if (channelIndex < 0 || channelIndex >= sourceChannels) {
+    throw new Error(`${context} requested source channel ${channelIndex + 1} of ${sourceChannels}.`);
+  }
+  if (source.length % sourceChannels !== 0) {
+    throw new Error(`${context} returned a sample count that is not divisible by its channel count.`);
+  }
+
+  const voxelCount = Math.floor(source.length / sourceChannels);
+  const extracted = createWritableVolumeArray(dataType, voxelCount) as SupportedTypedArray;
+  for (let voxelIndex = 0; voxelIndex < voxelCount; voxelIndex += 1) {
+    extracted[voxelIndex] = source[voxelIndex * sourceChannels + channelIndex] ?? 0;
+  }
+  return extracted;
+}
+
+function extractSelectedSourceChannelFromVolumePayload(
+  volume: VolumePayload,
+  layer: Pick<PreprocessLayerSource, 'channelLabel' | 'sourceChannelCount' | 'sourceChannelIndex' | 'isSegmentation'>
+): VolumePayload {
+  const channelIndex = getResolvedSourceChannelIndex(layer);
+  if (channelIndex === null) {
+    return volume;
+  }
+
+  const expectedSourceChannels =
+    typeof layer.sourceChannelCount === 'number' && Number.isFinite(layer.sourceChannelCount)
+      ? Math.max(1, Math.floor(layer.sourceChannelCount))
+      : volume.channels;
+  if (volume.channels !== expectedSourceChannels) {
+    throw new Error(
+      `Layer "${layer.channelLabel}" expected ${expectedSourceChannels} source channels but decoded ${volume.channels}.`
+    );
+  }
+
+  const source = createVolumeTypedArray(volume.dataType, volume.data);
+  const extracted = extractSelectedSourceChannelFromTypedArray({
+    source,
+    sourceChannels: volume.channels,
+    channelIndex,
+    dataType: volume.dataType,
+    context: `Layer "${layer.channelLabel}"`
+  });
+  const { min, max } = computeSliceMinMax(extracted);
+
+  return {
+    width: volume.width,
+    height: volume.height,
+    depth: volume.depth,
+    channels: 1,
+    dataType: volume.dataType,
+    min,
+    max,
+    data: extracted.buffer.slice(extracted.byteOffset, extracted.byteOffset + extracted.byteLength)
+  };
+}
+
 function resolveInputInterpretation(
   mode: PreprocessDatasetToStorageOptions['inputInterpretation']
 ): PreprocessInputInterpretation {
@@ -1185,6 +1290,11 @@ async function probeTiffFileMetadata(file: File, signal?: AbortSignal): Promise<
   const width = firstImage.getWidth();
   const height = firstImage.getHeight();
   const channels = firstImage.getSamplesPerPixel();
+  const imagejPageChannelLayout = resolveImagejPageChannelLayout({
+    samplesPerPixel: channels,
+    imageCount,
+    imageDescription: firstImage.fileDirectory.ImageDescription ?? null
+  });
   const firstRasterRaw = (await firstImage.readRasters({ interleave: true })) as unknown;
   if (!ArrayBuffer.isView(firstRasterRaw)) {
     throw new Error(`File "${file.name}" does not provide raster data as a typed array.`);
@@ -1202,14 +1312,16 @@ async function probeTiffFileMetadata(file: File, signal?: AbortSignal): Promise<
     height,
     depth: imageCount,
     channels,
-    dataType
+    dataType,
+    imagejPageChannelLayout
   };
 }
 
 function estimatePreparedLayerVolumeBytes(layer: StreamingPreparedLayerSource): number {
+  const rawMetadata = layer.rawSourceMetadata;
   const metadata = layer.sourceMetadata;
   const voxelCount = metadata.width * metadata.height * metadata.depth;
-  const sourceBytes = voxelCount * metadata.channels * getBytesPerValue(metadata.dataType);
+  const sourceBytes = voxelCount * rawMetadata.channels * getBytesPerValue(rawMetadata.dataType);
   const outputBytes = voxelCount * metadata.channels * getBytesPerValue(layer.layer.isSegmentation ? 'uint16' : 'uint8');
   return sourceBytes + outputBytes * 2;
 }
@@ -1255,19 +1367,36 @@ async function prepareStreamingLayerSources({
       throw new Error(`Layer "${layer.channelLabel}" does not contain TIFF files.`);
     }
     const firstMetadata = await probeTiffFileMetadata(firstFile, signal);
+    const rawSourceMetadata: LayerMetadata = {
+      width: firstMetadata.width,
+      height: firstMetadata.height,
+      depth: firstMetadata.depth,
+      channels: firstMetadata.channels,
+      dataType: firstMetadata.dataType
+    };
+    const sourceChannelCount = firstMetadata.imagejPageChannelLayout?.channels ?? firstMetadata.channels;
+    const logicalDepth = firstMetadata.imagejPageChannelLayout?.slices ?? firstMetadata.depth;
+    const resolvedSourceChannelIndex = getResolvedSourceChannelIndex(layer);
+    if (resolvedSourceChannelIndex !== null && resolvedSourceChannelIndex >= sourceChannelCount) {
+      throw new Error(
+        `Layer "${layer.channelLabel}" requested source channel ${resolvedSourceChannelIndex + 1} of ${sourceChannelCount}.`
+      );
+    }
+    const logicalSourceMetadata: LayerMetadata = {
+      width: firstMetadata.width,
+      height: firstMetadata.height,
+      depth: logicalDepth,
+      channels: getLogicalSourceChannelCount(layer, sourceChannelCount),
+      dataType: firstMetadata.dataType
+    };
 
     if (inputInterpretation === '3d-movie') {
-      const sourceMetadata: LayerMetadata = {
-        width: firstMetadata.width,
-        height: firstMetadata.height,
-        depth: firstMetadata.depth,
-        channels: firstMetadata.channels,
-        dataType: firstMetadata.dataType
-      };
       const prepared: StreamingPreparedLayerSource = {
         layer,
         timepointCount: layer.files.length,
-        sourceMetadata,
+        rawSourceMetadata,
+        sourceMetadata: logicalSourceMetadata,
+        imagejPageChannelLayout: firstMetadata.imagejPageChannelLayout,
         getTimepointSource: (timepoint) => {
           const file = layer.files[timepoint];
           if (!file) {
@@ -1277,8 +1406,8 @@ async function prepareStreamingLayerSources({
             kind: 'single-file',
             file,
             startSlice: 0,
-            depth: sourceMetadata.depth,
-            expectedFileDepth: sourceMetadata.depth,
+            depth: rawSourceMetadata.depth,
+            expectedFileDepth: rawSourceMetadata.depth,
             depthValidation: 'shape'
           };
         }
@@ -1294,17 +1423,19 @@ async function prepareStreamingLayerSources({
           width: firstMetadata.width,
           height: firstMetadata.height,
           depth: 1,
-          channels: firstMetadata.channels,
+          channels: getLogicalSourceChannelCount(layer, sourceChannelCount),
           dataType: firstMetadata.dataType
         };
-        const timepointCount = firstMetadata.depth;
+        const timepointCount = logicalDepth;
         if (timepointCount <= 0) {
           throw new Error(`Layer "${layer.channelLabel}" did not decode any image planes.`);
         }
         const prepared: StreamingPreparedLayerSource = {
           layer,
           timepointCount,
+          rawSourceMetadata,
           sourceMetadata,
+          imagejPageChannelLayout: firstMetadata.imagejPageChannelLayout,
           getTimepointSource: (timepoint) => ({
             kind: 'single-file',
             file: firstFile,
@@ -1322,9 +1453,9 @@ async function prepareStreamingLayerSources({
         continue;
       }
 
-      if (firstMetadata.depth !== 1) {
+      if (logicalDepth !== 1) {
         throw new Error(
-          `Layer "${layer.channelLabel}" in 2D movie mode accepts either a single 3D TIFF or a sequence of 2D TIFFs. File "${firstFile.name}" is 3D (depth ${firstMetadata.depth}).`
+          `Layer "${layer.channelLabel}" in 2D movie mode accepts either a single 3D TIFF or a sequence of 2D TIFFs. File "${firstFile.name}" is 3D (depth ${logicalDepth}).`
         );
       }
 
@@ -1332,13 +1463,15 @@ async function prepareStreamingLayerSources({
         width: firstMetadata.width,
         height: firstMetadata.height,
         depth: 1,
-        channels: firstMetadata.channels,
+        channels: getLogicalSourceChannelCount(layer, sourceChannelCount),
         dataType: firstMetadata.dataType
       };
       const prepared: StreamingPreparedLayerSource = {
         layer,
         timepointCount: layer.files.length,
+        rawSourceMetadata,
         sourceMetadata,
+        imagejPageChannelLayout: firstMetadata.imagejPageChannelLayout,
         getTimepointSource: (timepoint) => {
           const file = layer.files[timepoint];
           if (!file) {
@@ -1363,14 +1496,16 @@ async function prepareStreamingLayerSources({
       const sourceMetadata: LayerMetadata = {
         width: firstMetadata.width,
         height: firstMetadata.height,
-        depth: firstMetadata.depth,
-        channels: firstMetadata.channels,
+        depth: logicalDepth,
+        channels: getLogicalSourceChannelCount(layer, sourceChannelCount),
         dataType: firstMetadata.dataType
       };
       const prepared: StreamingPreparedLayerSource = {
         layer,
         timepointCount: 1,
+        rawSourceMetadata,
         sourceMetadata,
+        imagejPageChannelLayout: firstMetadata.imagejPageChannelLayout,
         getTimepointSource: () => ({
           kind: 'single-file',
           file: firstFile,
@@ -1385,9 +1520,9 @@ async function prepareStreamingLayerSources({
       continue;
     }
 
-    if (firstMetadata.depth !== 1) {
+    if (logicalDepth !== 1) {
       throw new Error(
-        `Layer "${layer.channelLabel}" in Single 3D volume mode accepts either a single 3D TIFF or a sequence of 2D TIFFs. File "${firstFile.name}" is 3D (depth ${firstMetadata.depth}).`
+        `Layer "${layer.channelLabel}" in Single 3D volume mode accepts either a single 3D TIFF or a sequence of 2D TIFFs. File "${firstFile.name}" is 3D (depth ${logicalDepth}).`
       );
     }
 
@@ -1395,13 +1530,15 @@ async function prepareStreamingLayerSources({
       width: firstMetadata.width,
       height: firstMetadata.height,
       depth: layer.files.length,
-      channels: firstMetadata.channels,
+      channels: getLogicalSourceChannelCount(layer, sourceChannelCount),
       dataType: firstMetadata.dataType
     };
     const prepared: StreamingPreparedLayerSource = {
       layer,
       timepointCount: 1,
+      rawSourceMetadata,
       sourceMetadata,
+      imagejPageChannelLayout: firstMetadata.imagejPageChannelLayout,
       getTimepointSource: () => ({
         kind: 'multi-file-depth1',
         files: layer.files,
@@ -1479,7 +1616,10 @@ async function forEachSliceInStreamingTimepointSource({
   layer,
   timepoint,
   source,
-  expectedMetadata,
+  rawExpectedMetadata,
+  outputMetadata,
+  selectedSourceChannelIndex,
+  imagejPageChannelLayout,
   tiffByFileCache,
   signal,
   onSlice
@@ -1487,12 +1627,17 @@ async function forEachSliceInStreamingTimepointSource({
   layer: PreprocessLayerSource;
   timepoint: number;
   source: StreamingTimepointSliceSource;
-  expectedMetadata: LayerMetadata;
+  rawExpectedMetadata: LayerMetadata;
+  outputMetadata: LayerMetadata;
+  selectedSourceChannelIndex: number | null;
+  imagejPageChannelLayout: ImagejHyperstackLayout | null;
   tiffByFileCache: TiffByFileCache;
   signal?: AbortSignal;
   onSlice: (slice: SupportedTypedArray, z: number) => Promise<void> | void;
 }): Promise<void> {
-  const expectedSliceLength = expectedMetadata.width * expectedMetadata.height * expectedMetadata.channels;
+  const rawExpectedSliceLength =
+    rawExpectedMetadata.width * rawExpectedMetadata.height * rawExpectedMetadata.channels;
+  const outputSliceLength = outputMetadata.width * outputMetadata.height * outputMetadata.channels;
 
   if (source.kind === 'single-file') {
     const tiff = await getCachedTiffForFile(source.file, tiffByFileCache, signal);
@@ -1514,28 +1659,31 @@ async function forEachSliceInStreamingTimepointSource({
         createShapeMismatchErrorMessage({
           layer,
           timepoint,
-          width: expectedMetadata.width,
-          height: expectedMetadata.height,
+          width: rawExpectedMetadata.width,
+          height: rawExpectedMetadata.height,
           depth: imageCount,
-          channels: expectedMetadata.channels,
-          dataType: expectedMetadata.dataType,
-          expected: expectedMetadata
+          channels: rawExpectedMetadata.channels,
+          dataType: rawExpectedMetadata.dataType,
+          expected: rawExpectedMetadata
         })
       );
     }
 
-    if (source.startSlice < 0 || source.startSlice + source.depth > imageCount) {
+    const availableDepth = imagejPageChannelLayout ? imagejPageChannelLayout.slices : imageCount;
+    if (source.startSlice < 0 || source.startSlice + source.depth > availableDepth) {
       throw new Error(`Layer "${layer.channelLabel}" timepoint ${timepoint + 1} is out of range.`);
     }
 
-    for (let localZ = 0; localZ < source.depth; localZ += 1) {
-      throwIfAborted(signal);
-      const imageIndex = source.startSlice + localZ;
-      const image = await tiff.getImage(imageIndex);
+    const readRawPage = async (pageIndex: number): Promise<SupportedTypedArray> => {
+      const image = await tiff.getImage(pageIndex);
       const width = image.getWidth();
       const height = image.getHeight();
       const channels = image.getSamplesPerPixel();
-      if (width !== expectedMetadata.width || height !== expectedMetadata.height || channels !== expectedMetadata.channels) {
+      if (
+        width !== rawExpectedMetadata.width ||
+        height !== rawExpectedMetadata.height ||
+        channels !== rawExpectedMetadata.channels
+      ) {
         throw new Error(
           createShapeMismatchErrorMessage({
             layer,
@@ -1544,8 +1692,8 @@ async function forEachSliceInStreamingTimepointSource({
             height,
             depth: source.depth,
             channels,
-            dataType: expectedMetadata.dataType,
-            expected: expectedMetadata
+            dataType: rawExpectedMetadata.dataType,
+            expected: rawExpectedMetadata
           })
         );
       }
@@ -1556,14 +1704,73 @@ async function forEachSliceInStreamingTimepointSource({
       }
       const typed = ensureTypedArrayMatchesExpectedDataType(
         rasterRaw as SupportedTypedArray,
-        expectedMetadata.dataType,
+        rawExpectedMetadata.dataType,
         source.file.name,
-        imageIndex
+        pageIndex
       );
-      if (typed.length !== expectedSliceLength) {
+      if (typed.length !== rawExpectedSliceLength) {
+        throw new Error(`Slice ${pageIndex + 1} in file "${source.file.name}" returned an unexpected slice length.`);
+      }
+      return typed;
+    };
+
+    if (imagejPageChannelLayout) {
+      const logicalChannelCount = imagejPageChannelLayout.channels;
+      for (let localZ = 0; localZ < source.depth; localZ += 1) {
+        const logicalSliceIndex = source.startSlice + localZ;
+        if (selectedSourceChannelIndex !== null) {
+          const pageIndex = logicalSliceIndex * logicalChannelCount + selectedSourceChannelIndex;
+          const preparedSlice = await readRawPage(pageIndex);
+          if (preparedSlice.length !== outputSliceLength) {
+            throw new Error(`Slice ${pageIndex + 1} in file "${source.file.name}" returned an unexpected extracted slice length.`);
+          }
+          await onSlice(preparedSlice, localZ);
+          continue;
+        }
+
+        if (outputMetadata.channels !== logicalChannelCount) {
+          throw new Error(
+            `Layer "${layer.channelLabel}" requires ${logicalChannelCount} logical channels but has no selected source channel.`
+          );
+        }
+
+        const combined = createWritableVolumeArray(
+          rawExpectedMetadata.dataType,
+          outputSliceLength
+        ) as SupportedTypedArray;
+        const voxelCount = rawExpectedSliceLength;
+        for (let channelIndex = 0; channelIndex < logicalChannelCount; channelIndex += 1) {
+          const pageIndex = logicalSliceIndex * logicalChannelCount + channelIndex;
+          const channelSlice = await readRawPage(pageIndex);
+          for (let voxelIndex = 0; voxelIndex < voxelCount; voxelIndex += 1) {
+            combined[voxelIndex * logicalChannelCount + channelIndex] = channelSlice[voxelIndex] ?? 0;
+          }
+        }
+        await onSlice(combined, localZ);
+      }
+      return;
+    }
+
+    for (let localZ = 0; localZ < source.depth; localZ += 1) {
+      throwIfAborted(signal);
+      const imageIndex = source.startSlice + localZ;
+      const typed = await readRawPage(imageIndex);
+      if (typed.length !== rawExpectedSliceLength) {
         throw new Error(`Slice ${imageIndex + 1} in file "${source.file.name}" returned an unexpected slice length.`);
       }
-      await onSlice(typed, localZ);
+      const preparedSlice = selectedSourceChannelIndex === null
+        ? typed
+        : extractSelectedSourceChannelFromTypedArray({
+            source: typed,
+            sourceChannels: rawExpectedMetadata.channels,
+            channelIndex: selectedSourceChannelIndex,
+            dataType: rawExpectedMetadata.dataType,
+            context: `Slice ${imageIndex + 1} in file "${source.file.name}"`
+          });
+      if (preparedSlice.length !== outputSliceLength) {
+        throw new Error(`Slice ${imageIndex + 1} in file "${source.file.name}" returned an unexpected extracted slice length.`);
+      }
+      await onSlice(preparedSlice, localZ);
     }
     return;
   }
@@ -1586,7 +1793,11 @@ async function forEachSliceInStreamingTimepointSource({
     const width = image.getWidth();
     const height = image.getHeight();
     const channels = image.getSamplesPerPixel();
-    if (width !== expectedMetadata.width || height !== expectedMetadata.height || channels !== expectedMetadata.channels) {
+    if (
+      width !== rawExpectedMetadata.width ||
+      height !== rawExpectedMetadata.height ||
+      channels !== rawExpectedMetadata.channels
+    ) {
       throw new Error(
         createShapeMismatchErrorMessage({
           layer,
@@ -1595,8 +1806,8 @@ async function forEachSliceInStreamingTimepointSource({
           height,
           depth: source.files.length,
           channels,
-          dataType: expectedMetadata.dataType,
-          expected: expectedMetadata
+          dataType: rawExpectedMetadata.dataType,
+          expected: rawExpectedMetadata
         })
       );
     }
@@ -1607,14 +1818,26 @@ async function forEachSliceInStreamingTimepointSource({
     }
     const typed = ensureTypedArrayMatchesExpectedDataType(
       rasterRaw as SupportedTypedArray,
-      expectedMetadata.dataType,
+      rawExpectedMetadata.dataType,
       file.name,
       0
     );
-    if (typed.length !== expectedSliceLength) {
+    if (typed.length !== rawExpectedSliceLength) {
       throw new Error(`Slice 1 in file "${file.name}" returned an unexpected slice length.`);
     }
-    await onSlice(typed, z);
+    const preparedSlice = selectedSourceChannelIndex === null
+      ? typed
+      : extractSelectedSourceChannelFromTypedArray({
+          source: typed,
+          sourceChannels: rawExpectedMetadata.channels,
+          channelIndex: selectedSourceChannelIndex,
+          dataType: rawExpectedMetadata.dataType,
+          context: `Slice 1 in file "${file.name}"`
+        });
+    if (preparedSlice.length !== outputSliceLength) {
+      throw new Error(`Slice 1 in file "${file.name}" returned an unexpected extracted slice length.`);
+    }
+    await onSlice(preparedSlice, z);
   }
 }
 
@@ -2125,7 +2348,10 @@ async function buildBackgroundMaskForStreamingPreparedLayers({
     layer: preparedLayer.layer,
     timepoint: 0,
     source: timepointSource,
-    expectedMetadata: sourceMetadata,
+    rawExpectedMetadata: preparedLayer.rawSourceMetadata,
+    outputMetadata: sourceMetadata,
+    selectedSourceChannelIndex: getResolvedSourceChannelIndex(preparedLayer.layer),
+    imagejPageChannelLayout: preparedLayer.imagejPageChannelLayout,
     tiffByFileCache,
     signal,
     onSlice: (slice, z) => {
@@ -2221,7 +2447,10 @@ async function computeLayerRepresentativeNormalizationForStreaming({
       layer,
       timepoint: representativeTimepoint,
       source,
-      expectedMetadata: preparedLayer.sourceMetadata,
+      rawExpectedMetadata: preparedLayer.rawSourceMetadata,
+      outputMetadata: preparedLayer.sourceMetadata,
+      selectedSourceChannelIndex: getResolvedSourceChannelIndex(preparedLayer.layer),
+      imagejPageChannelLayout: preparedLayer.imagejPageChannelLayout,
       tiffByFileCache,
       signal,
       onSlice: (slice, z) => {
@@ -3263,7 +3492,10 @@ async function writeStreamingLayerTimepoint({
       layer: preparedLayer.layer,
       timepoint,
       source: timepointSource,
-      expectedMetadata: sourceMetadata,
+      rawExpectedMetadata: preparedLayer.rawSourceMetadata,
+      outputMetadata: sourceMetadata,
+      selectedSourceChannelIndex: null,
+      imagejPageChannelLayout: preparedLayer.imagejPageChannelLayout,
       tiffByFileCache,
       signal,
       onSlice: async (slice) => {
@@ -3280,7 +3512,10 @@ async function writeStreamingLayerTimepoint({
       layer: preparedLayer.layer,
       timepoint,
       source: timepointSource,
-      expectedMetadata: sourceMetadata,
+      rawExpectedMetadata: preparedLayer.rawSourceMetadata,
+      outputMetadata: sourceMetadata,
+      selectedSourceChannelIndex: getResolvedSourceChannelIndex(preparedLayer.layer),
+      imagejPageChannelLayout: preparedLayer.imagejPageChannelLayout,
       tiffByFileCache,
       signal,
       onSlice: async (slice, z) => {

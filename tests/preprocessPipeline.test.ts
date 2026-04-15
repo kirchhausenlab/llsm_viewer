@@ -285,6 +285,82 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
   assert.equal(firstLabel, 0);
 });
 
+test('preprocessDatasetToStorage splits regular multichannel sources into independent single-channel outputs', async () => {
+  const channels: ChannelExportMetadata[] = [
+    { id: 'channel-a', name: 'Channel A' },
+    { id: 'channel-b', name: 'Channel B' }
+  ];
+  const sharedFile = new File(['multi'], 'multi-t0.tif', { type: 'image/tiff' });
+  const layers: PreprocessLayerSource[] = [
+    {
+      channelId: 'channel-a',
+      channelLabel: 'Channel A',
+      key: 'layer-a',
+      label: 'Volume',
+      files: [sharedFile],
+      isSegmentation: false,
+      sourceChannelCount: 2,
+      sourceChannelIndex: 0
+    },
+    {
+      channelId: 'channel-b',
+      channelLabel: 'Channel B',
+      key: 'layer-b',
+      label: 'Volume',
+      files: [sharedFile],
+      isSegmentation: false,
+      sourceChannelCount: 2,
+      sourceChannelIndex: 1
+    }
+  ];
+  const volumeByFileName = new Map<string, VolumePayload>([
+    [
+      sharedFile.name,
+      createSyntheticVolumePayload({
+        width: 2,
+        height: 1,
+        depth: 1,
+        channels: 2,
+        values: [10, 100, 20, 200]
+      })
+    ]
+  ]);
+
+  const storageHandle = createInMemoryPreprocessedStorage({ datasetId: 'preprocess-multichannel-split' });
+  const result = await preprocessDatasetToStorage({
+    layers,
+    channels,
+    trackSets: [],
+    voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    temporalResolution: { interval: 1, unit: 'ms' },
+    movieMode: '3d',
+    storage: storageHandle.storage,
+    volumeLoader: createLoaderByFileName(volumeByFileName),
+    storageStrategy: { sharding: { enabled: false } }
+  });
+
+  assert.equal(result.manifest.dataset.channels.length, 2);
+  assert.equal(result.manifest.dataset.channels[0]?.layers[0]?.channels, 1);
+  assert.equal(result.manifest.dataset.channels[1]?.layers[0]?.channels, 1);
+
+  const opened = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
+  const provider = createVolumeProvider({
+    manifest: opened.manifest,
+    storage: storageHandle.storage,
+    maxCachedVolumes: DEFAULT_MAX_CACHED_VOLUMES,
+    maxCachedChunkBytes: DEFAULT_MAX_CACHED_CHUNK_BYTES,
+    maxConcurrentChunkReads: DEFAULT_MAX_CONCURRENT_CHUNK_READS,
+    maxConcurrentPrefetchLoads: DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS
+  });
+
+  const loadedA = await provider.getVolume('layer-a', 0, { scaleLevel: 0 });
+  const loadedB = await provider.getVolume('layer-b', 0, { scaleLevel: 0 });
+  assert.equal(loadedA.channels, 1);
+  assert.equal(loadedB.channels, 1);
+  assert.deepEqual(Array.from(loadedA.normalized), [10, 20]);
+  assert.deepEqual(Array.from(loadedB.normalized), [100, 200]);
+});
+
 test('preprocessDatasetToStorage emits valid skip metadata for sparse segmentation chunks', async () => {
   const channels: ChannelExportMetadata[] = [
     {

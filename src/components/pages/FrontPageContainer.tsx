@@ -330,7 +330,10 @@ export default function FrontPageContainer({
             key: layer.id,
             label: 'Volume',
             files: layer.files,
-            isSegmentation: layer.isSegmentation
+            isSegmentation: layer.isSegmentation,
+            sourceChannelCount: layer.sourceChannels,
+            sourceChannelIndex:
+              typeof layer.componentIndex === 'number' && (layer.sourceChannels ?? 1) > 1 ? layer.componentIndex : null
           }];
         })
         .filter((layer) => layer.files.length > 0);

@@ -1,8 +1,15 @@
 import { useCallback, type Dispatch, type SetStateAction } from 'react';
-import type { ChannelSource, ChannelSourceType, TrackSetSource } from '../../../hooks/dataset';
+import {
+  getOwnedMultichannelDerivedChannels,
+  isMultichannelOwnerChannelSource,
+  type ChannelSource,
+  type ChannelSourceType,
+  type TrackSetSource
+} from '../../../hooks/dataset';
 import type { ChannelRemovalContext } from './useChannelEditing';
 
 type UseRouteDatasetSetupStateOptions = {
+  channels: ChannelSource[];
   resetPreprocessedState: () => void;
   setIsExperimentSetupStarted: Dispatch<SetStateAction<boolean>>;
   resetChannelEditingState: () => void;
@@ -26,6 +33,7 @@ type RouteDatasetSetupState = {
 };
 
 export function useRouteDatasetSetupState({
+  channels,
   resetPreprocessedState,
   setIsExperimentSetupStarted,
   resetChannelEditingState,
@@ -99,19 +107,26 @@ export function useRouteDatasetSetupState({
 
   const handleRemoveChannel = useCallback(
     (channelId: string) => {
-      let removedLayerIds: string[] = [];
-      setChannels((current) => {
-        const filtered = current.filter((channel) => channel.id !== channelId);
-        const removedChannel = current.find((channel) => channel.id === channelId);
-        if (removedChannel) {
-          removedLayerIds = removedChannel.volume ? [removedChannel.volume.id] : [];
-        }
-        handleChannelRemoved({
-          removedChannelId: channelId,
-          previousChannels: current,
-          nextChannels: filtered
-        });
-        return filtered;
+      const removedChannel = channels.find((channel) => channel.id === channelId) ?? null;
+      if (!removedChannel) {
+        return;
+      }
+      const removedChildren = isMultichannelOwnerChannelSource(removedChannel)
+        ? getOwnedMultichannelDerivedChannels(channels, channelId)
+        : [];
+      const removedLayerIds = [
+        removedChannel.volume?.id ?? null,
+        ...removedChildren.map((channel) => channel.volume?.id ?? null)
+      ].filter((value): value is string => value !== null);
+      const removedChannelIds = removedChildren.map((channel) => channel.id);
+      const removedChannelIdSet = new Set([channelId, ...removedChannelIds]);
+      const filtered = channels.filter((channel) => !removedChannelIdSet.has(channel.id));
+
+      setChannels(filtered);
+      handleChannelRemoved({
+        removedChannelId: channelId,
+        previousChannels: channels,
+        nextChannels: filtered
       });
       if (removedLayerIds.length > 0) {
         setLayerTimepointCounts((current) => {
@@ -139,8 +154,9 @@ export function useRouteDatasetSetupState({
       }
       setTracks((current) => {
         let changed = false;
+        const removedChannelIdSet = new Set([channelId, ...removedChannelIds]);
         const next = current.map((trackSet) => {
-          if (trackSet.boundChannelId !== channelId) {
+          if (!trackSet.boundChannelId || !removedChannelIdSet.has(trackSet.boundChannelId)) {
             return trackSet;
           }
           changed = true;
@@ -154,6 +170,7 @@ export function useRouteDatasetSetupState({
       clearDatasetError();
     },
     [
+      channels,
       clearDatasetError,
       handleChannelRemoved,
       setChannels,

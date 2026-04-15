@@ -1,10 +1,19 @@
 import { useCallback, useMemo, type Dispatch, type SetStateAction } from 'react';
+import { fromBlob } from 'geotiff';
 
 import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../../shared/colorMaps/layerColors';
+import { resolveImagejPageChannelLayout } from '../../shared/utils/tiffHyperstack';
 import type { LayerSettings } from '../../state/layerSettings';
 import { useDatasetErrors } from '../useDatasetErrors';
 import { DEFAULT_VOXEL_RESOLUTION, useVoxelResolution, type VoxelResolutionHook } from '../useVoxelResolution';
-import type { ChannelSource } from './useChannelSources';
+import {
+  getChannelVolumeComponentIndex,
+  getOwnedMultichannelDerivedChannels,
+  isMultichannelDerivedChannelSource,
+  isMultichannelOwnerChannelSource,
+  type ChannelSource,
+  type TrackSetSource
+} from './useChannelSources';
 import type { VolumeDataType } from '../../types/volume';
 import {
   collectFilesFromDataTransfer,
@@ -32,6 +41,7 @@ export type LoadedDatasetLayer = {
 
 export type DatasetSetupParams = {
   channels: ChannelSource[];
+  setTracks: Dispatch<SetStateAction<TrackSetSource[]>>;
   loadedLayers: LoadedDatasetLayer[];
   layerSettings: Record<string, LayerSettings>;
   setChannels: Dispatch<SetStateAction<ChannelSource[]>>;
@@ -40,7 +50,9 @@ export type DatasetSetupParams = {
   setLayerTimepointCounts: Dispatch<SetStateAction<Record<string, number>>>;
   setLayerTimepointCountErrors: Dispatch<SetStateAction<Record<string, string>>>;
   computeLayerTimepointCount: (files: File[]) => Promise<number>;
+  createChannelSource: (name: string, channelType?: ChannelSource['channelType']) => ChannelSource;
   createVolumeSource: (files: File[]) => { id: string; files: File[]; isSegmentation: boolean };
+  probeVolumeSourceChannels?: (files: File[]) => Promise<number>;
 };
 
 export type DatasetSetupHook = {
@@ -59,8 +71,59 @@ export type DatasetSetupHook = {
   showInteractionWarning: (message: string) => void;
 };
 
+async function probeVolumeSourceChannelsDefault(files: File[]): Promise<number> {
+  let expectedChannels: number | null = null;
+
+  for (const file of files) {
+    const tiff = await fromBlob(file);
+    const imageCount = await tiff.getImageCount();
+    if (imageCount <= 0) {
+      throw new Error(`File "${file.name}" does not contain any images.`);
+    }
+
+    const firstImage = await tiff.getImage(0);
+    const firstImageChannels =
+      resolveImagejPageChannelLayout({
+        samplesPerPixel: firstImage.getSamplesPerPixel(),
+        imageCount,
+        imageDescription: firstImage.fileDirectory.ImageDescription ?? null
+      })?.channels ?? firstImage.getSamplesPerPixel();
+    if (!Number.isFinite(firstImageChannels) || firstImageChannels <= 0) {
+      throw new Error(`File "${file.name}" has an invalid channel count.`);
+    }
+
+    if (expectedChannels === null) {
+      expectedChannels = firstImageChannels;
+    } else if (firstImageChannels !== expectedChannels) {
+      throw new Error(
+        `TIFF channel counts must match across the uploaded selection. File "${file.name}" has ${firstImageChannels} channels, expected ${expectedChannels}.`
+      );
+    }
+
+    if (firstImageChannels > 1 && imageCount > 1) {
+      continue;
+    }
+
+    for (let imageIndex = 1; imageIndex < imageCount; imageIndex += 1) {
+      const image = await tiff.getImage(imageIndex);
+      const channels = image.getSamplesPerPixel();
+      if (!Number.isFinite(channels) || channels <= 0) {
+        throw new Error(`File "${file.name}" has an invalid channel count at image ${imageIndex + 1}.`);
+      }
+      if (channels !== firstImage.getSamplesPerPixel()) {
+        throw new Error(
+          `TIFF channel counts must match across the uploaded selection. File "${file.name}" image ${imageIndex + 1} has ${channels} channels, expected ${firstImage.getSamplesPerPixel()}.`
+        );
+      }
+    }
+  }
+
+  return expectedChannels ?? 1;
+}
+
 export function useDatasetSetup({
   channels,
+  setTracks,
   loadedLayers,
   layerSettings,
   setChannels,
@@ -69,7 +132,9 @@ export function useDatasetSetup({
   setLayerTimepointCounts,
   setLayerTimepointCountErrors,
   computeLayerTimepointCount,
-  createVolumeSource
+  createChannelSource,
+  createVolumeSource,
+  probeVolumeSourceChannels = probeVolumeSourceChannelsDefault
 }: DatasetSetupParams): DatasetSetupHook {
   const voxelResolution = useVoxelResolution(DEFAULT_VOXEL_RESOLUTION);
   const datasetErrors = useDatasetErrors();
@@ -164,6 +229,85 @@ export function useDatasetSetup({
     });
   }, [loadedLayers]);
 
+  const clearLayerDerivedState = useCallback(
+    (layerIds: string[]) => {
+      if (layerIds.length === 0) {
+        return;
+      }
+      const uniqueLayerIds = new Set(layerIds);
+
+      setLayerSettings((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const layerId of uniqueLayerIds) {
+          if (layerId in next) {
+            delete next[layerId];
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+      setLayerAutoThresholds((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const layerId of uniqueLayerIds) {
+          if (layerId in next) {
+            delete next[layerId];
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+      setLayerTimepointCounts((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const layerId of uniqueLayerIds) {
+          if (layerId in next) {
+            delete next[layerId];
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+      setLayerTimepointCountErrors((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const layerId of uniqueLayerIds) {
+          if (layerId in next) {
+            delete next[layerId];
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+    },
+    [setLayerAutoThresholds, setLayerSettings, setLayerTimepointCountErrors, setLayerTimepointCounts]
+  );
+
+  const clearTrackBindingsForRemovedChannels = useCallback(
+    (removedChannelIds: string[]) => {
+      if (removedChannelIds.length === 0) {
+        return;
+      }
+      const removedChannelIdSet = new Set(removedChannelIds);
+      setTracks((current) => {
+        let changed = false;
+        const next = current.map((trackSet) => {
+          if (!trackSet.boundChannelId || !removedChannelIdSet.has(trackSet.boundChannelId)) {
+            return trackSet;
+          }
+          changed = true;
+          return {
+            ...trackSet,
+            boundChannelId: null
+          };
+        });
+        return changed ? next : current;
+      });
+    },
+    [setTracks]
+  );
+
   const handleChannelLayerFilesAdded = useCallback(
     async (channelId: string, incomingFiles: File[]) => {
       const tiffFiles = dedupeFiles(incomingFiles.filter((file) => hasTiffExtension(file.name)));
@@ -187,62 +331,151 @@ export function useDatasetSetup({
       if (!targetChannel) {
         return;
       }
-      const replacedVolumeId = targetChannel.volume?.id ?? null;
-      const addedVolume = {
-        ...createVolumeSource(sorted),
-        isSegmentation: isSegmentationChannelSource(targetChannel)
-      };
 
-      setChannels((current) =>
-        current.map((channel) => (channel.id === channelId ? { ...channel, volume: addedVolume } : channel))
-      );
-      setLayerTimepointCounts((current) => {
-        if (!replacedVolumeId || !(replacedVolumeId in current)) {
+      if (isMultichannelDerivedChannelSource(targetChannel)) {
+        showInteractionWarning('Upload files to the multichannel parent row above.');
+        return;
+      }
+
+      const targetIsSegmentation = isSegmentationChannelSource(targetChannel);
+      let sourceChannels: number;
+      try {
+        sourceChannels = await probeVolumeSourceChannels(sorted);
+      } catch (error) {
+        const message = `Failed to inspect TIFF channels: ${
+          error instanceof Error ? error.message : 'The dropped files could not be parsed as a TIFF sequence.'
+        }`;
+        showInteractionWarning(message);
+        return;
+      }
+
+      if (targetIsSegmentation && sourceChannels > 1) {
+        showInteractionWarning(
+          `Segmentation channels require single-channel TIFF volumes. The uploaded selection has ${sourceChannels} channels.`
+        );
+        return;
+      }
+
+      const desiredLogicalChannelCount = targetIsSegmentation ? 1 : Math.max(1, sourceChannels);
+      let removedVolumeIds: string[] = [];
+      let removedChannelIds: string[] = [];
+      const addedVolumes: Array<{ id: string }> = [];
+
+      setChannels((current) => {
+        const targetIndex = current.findIndex((channel) => channel.id === channelId);
+        if (targetIndex < 0) {
           return current;
         }
-        const next = { ...current };
-        delete next[replacedVolumeId];
-        return next;
-      });
-      setLayerTimepointCountErrors((current) => {
-        const hasAddedError = addedVolume.id in current;
-        const hasReplacedError = Boolean(replacedVolumeId && replacedVolumeId in current);
-        if (!hasAddedError && !hasReplacedError) {
-          return current;
+
+        const currentTarget = current[targetIndex]!;
+        const currentDerivedChannels = isMultichannelOwnerChannelSource(currentTarget)
+          ? getOwnedMultichannelDerivedChannels(current, channelId)
+          : [];
+        const currentDerivedByComponentIndex = new Map(
+          currentDerivedChannels.map((channel) => [getChannelVolumeComponentIndex(channel.volume), channel] as const)
+        );
+
+        removedVolumeIds = [
+          currentTarget.volume?.id ?? null,
+          ...currentDerivedChannels.map((channel) => channel.volume?.id ?? null)
+        ].filter((value): value is string => value !== null);
+        removedChannelIds = currentDerivedChannels.map((channel) => channel.id);
+
+        const parentVolume = {
+          ...createVolumeSource(sorted),
+          isSegmentation: targetIsSegmentation,
+          sourceChannels,
+          componentIndex: 0,
+          multichannelOwnerChannelId: desiredLogicalChannelCount > 1 ? currentTarget.id : null
+        };
+        addedVolumes.push({ id: parentVolume.id });
+
+        const nextTarget: ChannelSource = {
+          ...currentTarget,
+          volume: parentVolume
+        };
+
+        const nextDerivedChannels: ChannelSource[] = [];
+        for (let componentIndex = 1; componentIndex < desiredLogicalChannelCount; componentIndex += 1) {
+          const existingChannel = currentDerivedByComponentIndex.get(componentIndex) ?? null;
+          const volume = {
+            ...createVolumeSource(sorted),
+            isSegmentation: false,
+            sourceChannels,
+            componentIndex,
+            multichannelOwnerChannelId: currentTarget.id
+          };
+          addedVolumes.push({ id: volume.id });
+          if (existingChannel) {
+            nextDerivedChannels.push({
+              ...existingChannel,
+              volume
+            });
+            continue;
+          }
+
+          const childChannel = createChannelSource('', 'channel');
+          nextDerivedChannels.push({
+            ...childChannel,
+            volume
+          });
         }
-        const next = { ...current };
-        delete next[addedVolume.id];
-        if (replacedVolumeId) {
-          delete next[replacedVolumeId];
+
+        const removedChildIds = new Set(currentDerivedChannels.map((channel) => channel.id));
+        const nextChannels: ChannelSource[] = [];
+        for (let index = 0; index < current.length; index += 1) {
+          const channel = current[index]!;
+          if (channel.id === currentTarget.id) {
+            nextChannels.push(nextTarget, ...nextDerivedChannels);
+            continue;
+          }
+          if (removedChildIds.has(channel.id)) {
+            continue;
+          }
+          nextChannels.push(channel);
         }
-        return next;
+        return nextChannels;
       });
+
+      clearLayerDerivedState(removedVolumeIds);
+      clearTrackBindingsForRemovedChannels(removedChannelIds);
 
       let hasTimepointCountError = false;
       try {
-        const timepointCount = await computeLayerTimepointCount(addedVolume.files);
+        const timepointCount = await computeLayerTimepointCount(sorted);
         setLayerTimepointCounts((current) => {
-          const next: Record<string, number> = {
-            ...current,
-            [addedVolume.id]: timepointCount
-          };
-          if (replacedVolumeId && replacedVolumeId in next) {
-            delete next[replacedVolumeId];
+          let changed = false;
+          const next: Record<string, number> = { ...current };
+          for (const entry of addedVolumes) {
+            if (next[entry.id] !== timepointCount) {
+              next[entry.id] = timepointCount;
+              changed = true;
+            }
           }
-          return next;
+          for (const layerId of removedVolumeIds) {
+            if (layerId in next) {
+              delete next[layerId];
+              changed = true;
+            }
+          }
+          return changed ? next : current;
         });
         setLayerTimepointCountErrors((current) => {
-          const hasAddedError = addedVolume.id in current;
-          const hasReplacedError = Boolean(replacedVolumeId && replacedVolumeId in current);
-          if (!hasAddedError && !hasReplacedError) {
-            return current;
-          }
+          let changed = false;
           const next = { ...current };
-          delete next[addedVolume.id];
-          if (replacedVolumeId) {
-            delete next[replacedVolumeId];
+          for (const entry of addedVolumes) {
+            if (entry.id in next) {
+              delete next[entry.id];
+              changed = true;
+            }
           }
-          return next;
+          for (const layerId of removedVolumeIds) {
+            if (layerId in next) {
+              delete next[layerId];
+              changed = true;
+            }
+          }
+          return changed ? next : current;
         });
       } catch (error) {
         console.error('Failed to compute timepoint count for layer', error);
@@ -251,46 +484,40 @@ export function useDatasetSetup({
           error instanceof Error ? error.message : 'The dropped files could not be parsed as a TIFF sequence.'
         }`;
         setLayerTimepointCounts((current) => {
-          if (!(addedVolume.id in current) && (!replacedVolumeId || !(replacedVolumeId in current))) {
-            return current;
-          }
+          let changed = false;
           const next = { ...current };
-          delete next[addedVolume.id];
-          if (replacedVolumeId) {
-            delete next[replacedVolumeId];
+          for (const entry of addedVolumes) {
+            if (entry.id in next) {
+              delete next[entry.id];
+              changed = true;
+            }
           }
-          return next;
+          for (const layerId of removedVolumeIds) {
+            if (layerId in next) {
+              delete next[layerId];
+              changed = true;
+            }
+          }
+          return changed ? next : current;
         });
         setLayerTimepointCountErrors((current) => {
-          const next: Record<string, string> = {
-            ...current,
-            [addedVolume.id]: message
-          };
-          if (replacedVolumeId && replacedVolumeId in next) {
-            delete next[replacedVolumeId];
+          let changed = false;
+          const next: Record<string, string> = { ...current };
+          for (const entry of addedVolumes) {
+            if (next[entry.id] !== message) {
+              next[entry.id] = message;
+              changed = true;
+            }
           }
-          return next;
+          for (const layerId of removedVolumeIds) {
+            if (layerId in next) {
+              delete next[layerId];
+              changed = true;
+            }
+          }
+          return changed ? next : current;
         });
         showInteractionWarning(message);
-      }
-
-      if (replacedVolumeId) {
-        setLayerSettings((current) => {
-          if (!(replacedVolumeId in current)) {
-            return current;
-          }
-          const next = { ...current };
-          delete next[replacedVolumeId];
-          return next;
-        });
-        setLayerAutoThresholds((current) => {
-          if (!(replacedVolumeId in current)) {
-            return current;
-          }
-          const next = { ...current };
-          delete next[replacedVolumeId];
-          return next;
-        });
       }
 
       if (ignoredExtraGroups && !hasTimepointCountError) {
@@ -302,13 +529,15 @@ export function useDatasetSetup({
     [
       channels,
       clearDatasetError,
+      clearLayerDerivedState,
+      clearTrackBindingsForRemovedChannels,
       computeLayerTimepointCount,
+      createChannelSource,
       createVolumeSource,
       setChannels,
-      setLayerAutoThresholds,
-      setLayerSettings,
       setLayerTimepointCounts,
       setLayerTimepointCountErrors,
+      probeVolumeSourceChannels,
       showInteractionWarning
     ]
   );
@@ -349,66 +578,54 @@ export function useDatasetSetup({
 
   const handleChannelLayerRemove = useCallback(
     (channelId: string, layerId: string) => {
-      let removed = false;
-      setChannels((current) =>
-        current.map((channel) => {
-          if (channel.id !== channelId) {
-            return channel;
-          }
-          if (!channel.volume || channel.volume.id !== layerId) {
-            return channel;
-          }
-          removed = true;
-          return {
-            ...channel,
-            volume: null
-          };
-        })
-      );
-      if (removed) {
-        setLayerSettings((current) => {
-          if (!(layerId in current)) {
-            return current;
-          }
-          const next = { ...current };
-          delete next[layerId];
-          return next;
-        });
-        setLayerAutoThresholds((current) => {
-          if (!(layerId in current)) {
-            return current;
-          }
-          const next = { ...current };
-          delete next[layerId];
-          return next;
-        });
-        setLayerTimepointCounts((current) => {
-          if (!(layerId in current)) {
-            return current;
-          }
-          const next = { ...current };
-          delete next[layerId];
-          return next;
-        });
-        setLayerTimepointCountErrors((current) => {
-          if (!(layerId in current)) {
-            return current;
-          }
-          const next = { ...current };
-          delete next[layerId];
-          return next;
-        });
-        clearDatasetError();
+      const targetChannel = channels.find((channel) => channel.id === channelId) ?? null;
+      if (!targetChannel?.volume || targetChannel.volume.id !== layerId) {
+        return;
       }
+
+      const removedChildren = isMultichannelOwnerChannelSource(targetChannel)
+        ? getOwnedMultichannelDerivedChannels(channels, channelId)
+        : [];
+      const removedLayerIds = [
+        layerId,
+        ...removedChildren.map((channel) => channel.volume?.id ?? null)
+      ].filter((value): value is string => value !== null);
+      const removedChannelIds = removedChildren.map((channel) => channel.id);
+
+      setChannels((current) => {
+        if (removedChannelIds.length === 0) {
+          return current.map((channel) => {
+            if (channel.id !== channelId) {
+              return channel;
+            }
+            return {
+              ...channel,
+              volume: null
+            };
+          });
+        }
+
+        const removedChildIds = new Set(removedChannelIds);
+        return current.flatMap((channel) => {
+          if (removedChildIds.has(channel.id)) {
+            return [];
+          }
+          if (channel.id !== channelId) {
+            return [channel];
+          }
+          return [
+            {
+              ...channel,
+              volume: null
+            }
+          ];
+        });
+      });
+      clearLayerDerivedState(removedLayerIds);
+      clearTrackBindingsForRemovedChannels(removedChannelIds);
+      clearDatasetError();
     },
-    [
-      clearDatasetError,
-      setChannels,
-      setLayerAutoThresholds,
-      setLayerSettings,
-      setLayerTimepointCountErrors,
-      setLayerTimepointCounts
-    ]
+    [channels, clearDatasetError, clearLayerDerivedState, clearTrackBindingsForRemovedChannels, setChannels]
   );
 
   return {

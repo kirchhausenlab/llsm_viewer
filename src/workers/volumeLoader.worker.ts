@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import { fromBlob } from 'geotiff';
 import { MAX_VOLUME_BYTES } from '../shared/constants/volumeLimits';
+import { resolveImagejPageChannelLayout } from '../shared/utils/tiffHyperstack';
 import { VolumeTooLargeError } from '../errors';
 import type { VolumeDataType, VolumeTypedArray } from '../types/volume';
 import { getBytesPerValue } from '../types/volume';
@@ -135,9 +136,17 @@ async function loadVolumeFromFile(
   const width = firstImage.getWidth();
   const height = firstImage.getHeight();
   const channels = firstImage.getSamplesPerPixel();
+  const imagejPageChannelLayout = resolveImagejPageChannelLayout({
+    samplesPerPixel: channels,
+    imageCount,
+    imageDescription: firstImage.fileDirectory.ImageDescription ?? null
+  });
+  const logicalChannels = imagejPageChannelLayout?.channels ?? channels;
+  const logicalDepth = imagejPageChannelLayout?.slices ?? imageCount;
 
-  const sliceLength = width * height * channels;
-  const totalValues = sliceLength * imageCount;
+  const rawSliceLength = width * height * channels;
+  const logicalSliceLength = width * height * logicalChannels;
+  const totalValues = logicalSliceLength * logicalDepth;
 
   const firstRasterRaw = (await firstImage.readRasters({ interleave: true })) as unknown;
   if (!ArrayBuffer.isView(firstRasterRaw)) {
@@ -152,7 +161,7 @@ async function loadVolumeFromFile(
     throw new VolumeTooLargeError({
       requiredBytes: totalBytes,
       maxBytes: MAX_VOLUME_BYTES,
-      dimensions: { width, height, depth: imageCount, channels, dataType },
+      dimensions: { width, height, depth: logicalDepth, channels: logicalChannels, dataType },
       fileName: file.name
     });
   }
@@ -162,13 +171,11 @@ async function loadVolumeFromFile(
   let globalMin = Number.POSITIVE_INFINITY;
   let globalMax = Number.NEGATIVE_INFINITY;
 
-  if (typedFirstRaster.length !== sliceLength) {
+  if (typedFirstRaster.length !== rawSliceLength) {
     throw new Error(`File "${file.name}" returned an unexpected slice length.`);
   }
 
-  scanAndCopySlice(typedFirstRaster, 0);
-
-  for (let sliceIndex = 1; sliceIndex < imageCount; sliceIndex += 1) {
+  const readRawSlice = async (sliceIndex: number): Promise<SupportedTypedArray> => {
     const image = await tiff.getImage(sliceIndex);
     if (image.getWidth() !== width || image.getHeight() !== height) {
       throw new Error(`Slice ${sliceIndex + 1} in file "${file.name}" has mismatched dimensions.`);
@@ -183,11 +190,27 @@ async function loadVolumeFromFile(
     }
 
     const raster = ensureTypedArray(rasterRaw as SupportedTypedArray, dataType, file.name, sliceIndex);
-    if (raster.length !== sliceLength) {
+    if (raster.length !== rawSliceLength) {
       throw new Error(`Slice ${sliceIndex + 1} in file "${file.name}" returned an unexpected slice length.`);
     }
+    return raster;
+  };
 
-    scanAndCopySlice(raster, sliceIndex);
+  if (imagejPageChannelLayout) {
+    for (let logicalSliceIndex = 0; logicalSliceIndex < logicalDepth; logicalSliceIndex += 1) {
+      for (let channelIndex = 0; channelIndex < logicalChannels; channelIndex += 1) {
+        const pageIndex = logicalSliceIndex * logicalChannels + channelIndex;
+        const raster = pageIndex === 0 ? typedFirstRaster : await readRawSlice(pageIndex);
+        scanAndCopyPageChannel(raster, logicalSliceIndex, channelIndex);
+      }
+    }
+  } else {
+    scanAndCopySlice(typedFirstRaster, 0);
+
+    for (let sliceIndex = 1; sliceIndex < imageCount; sliceIndex += 1) {
+      const raster = await readRawSlice(sliceIndex);
+      scanAndCopySlice(raster, sliceIndex);
+    }
   }
 
   if (!Number.isFinite(globalMin) || globalMin === Number.POSITIVE_INFINITY) {
@@ -206,8 +229,8 @@ async function loadVolumeFromFile(
     metadata: {
       width,
       height,
-      depth: imageCount,
-      channels,
+      depth: logicalDepth,
+      channels: logicalChannels,
       dataType,
       min: globalMin,
       max: globalMax
@@ -239,7 +262,34 @@ async function loadVolumeFromFile(
     if (Number.isFinite(sliceMax) && sliceMax > globalMax) {
       globalMax = sliceMax;
     }
-    volumeValues.set(array, sliceIndex * sliceLength);
+    volumeValues.set(array, sliceIndex * rawSliceLength);
+  }
+
+  function scanAndCopyPageChannel(array: SupportedTypedArray, logicalSliceIndex: number, channelIndex: number) {
+    let sliceMin = Number.POSITIVE_INFINITY;
+    let sliceMax = Number.NEGATIVE_INFINITY;
+
+    for (let i = 0; i < array.length; i += 1) {
+      const rawValue = array[i] as number;
+      if (Number.isNaN(rawValue)) {
+        continue;
+      }
+      if (rawValue < sliceMin) {
+        sliceMin = rawValue;
+      }
+      if (rawValue > sliceMax) {
+        sliceMax = rawValue;
+      }
+      const destinationIndex = logicalSliceIndex * logicalSliceLength + i * logicalChannels + channelIndex;
+      volumeValues[destinationIndex] = rawValue as any;
+    }
+
+    if (Number.isFinite(sliceMin) && sliceMin < globalMin) {
+      globalMin = sliceMin;
+    }
+    if (Number.isFinite(sliceMax) && sliceMax > globalMax) {
+      globalMax = sliceMax;
+    }
   }
 }
 

@@ -195,6 +195,7 @@ export function useAppRouteState(): AppRouteState {
     showInteractionWarning
   } = useDatasetSetup({
     channels,
+    setTracks,
     loadedLayers: loadedDatasetLayers,
     layerSettings,
     setChannels,
@@ -203,6 +204,7 @@ export function useAppRouteState(): AppRouteState {
     setLayerTimepointCounts,
     setLayerTimepointCountErrors,
     computeLayerTimepointCount,
+    createChannelSource,
     createVolumeSource
   });
   const {
@@ -1055,6 +1057,7 @@ export function useAppRouteState(): AppRouteState {
     handleChannelNameChange,
     handleRemoveChannel
   } = useRouteDatasetSetupState({
+    channels,
     resetPreprocessedState,
     setIsExperimentSetupStarted,
     resetChannelEditingState,

@@ -58,6 +58,7 @@ const createTrackSet = (id: string, name: string, boundChannelId: string | null)
     const [layerTimepointCountErrors, setLayerTimepointCountErrors] = React.useState<Record<string, string>>({});
 
     const route = useRouteDatasetSetupState({
+      channels,
       resetPreprocessedState: () => {
         resetPreprocessedStateCalls += 1;
       },
@@ -161,6 +162,7 @@ const createTrackSet = (id: string, name: string, boundChannelId: string | null)
     });
 
     const route = useRouteDatasetSetupState({
+      channels,
       resetPreprocessedState: () => {},
       setIsExperimentSetupStarted: (value) => {
         void value;
@@ -213,6 +215,117 @@ const createTrackSet = (id: string, name: string, boundChannelId: string | null)
     ],
   );
   assert.strictEqual(clearDatasetErrorCalls, 1);
+  hook.unmount();
+})();
+
+(() => {
+  const removedContexts: Array<{ removedChannelId: string; previousCount: number; nextCount: number }> = [];
+
+  const hook = renderHook(() => {
+    const [channels, setChannels] = React.useState<ChannelSource[]>([
+      {
+        id: 'channel-1',
+        name: 'Owner',
+        channelType: 'channel',
+        volume: {
+          id: 'layer-1',
+          files: [new File(['data'], 'owner.tif')],
+          isSegmentation: false,
+          sourceChannels: 3,
+          componentIndex: 0,
+          multichannelOwnerChannelId: 'channel-1'
+        }
+      },
+      {
+        id: 'channel-2',
+        name: 'Derived 2',
+        channelType: 'channel',
+        volume: {
+          id: 'layer-2',
+          files: [new File(['data'], 'owner.tif')],
+          isSegmentation: false,
+          sourceChannels: 3,
+          componentIndex: 1,
+          multichannelOwnerChannelId: 'channel-1'
+        }
+      },
+      {
+        id: 'channel-3',
+        name: 'Derived 3',
+        channelType: 'channel',
+        volume: {
+          id: 'layer-3',
+          files: [new File(['data'], 'owner.tif')],
+          isSegmentation: false,
+          sourceChannels: 3,
+          componentIndex: 2,
+          multichannelOwnerChannelId: 'channel-1'
+        }
+      },
+      createChannel('channel-4', 'Standalone', 'layer-4'),
+    ]);
+    const [tracks, setTracks] = React.useState<TrackSetSource[]>([
+      createTrackSet('track-set-1', 'Track 1', 'channel-2'),
+      createTrackSet('track-set-2', 'Track 2', 'channel-4'),
+    ]);
+    const [layerTimepointCounts, setLayerTimepointCounts] = React.useState<Record<string, number>>({
+      'layer-1': 5,
+      'layer-2': 5,
+      'layer-3': 5,
+      'layer-4': 7,
+    });
+    const [layerTimepointCountErrors, setLayerTimepointCountErrors] = React.useState<Record<string, string>>({});
+
+    const route = useRouteDatasetSetupState({
+      channels,
+      resetPreprocessedState: () => {},
+      setIsExperimentSetupStarted: (value) => {
+        void value;
+      },
+      resetChannelEditingState: () => {},
+      clearDatasetError: () => {},
+      setChannels,
+      setTracks,
+      createChannelSource: () => createChannel('channel-x', ''),
+      queuePendingChannelFocus: () => {},
+      startEditingChannel: () => {},
+      handleChannelRemoved: ({ removedChannelId, previousChannels, nextChannels }) => {
+        removedContexts.push({
+          removedChannelId,
+          previousCount: previousChannels.length,
+          nextCount: nextChannels.length,
+        });
+      },
+      setLayerTimepointCounts,
+      setLayerTimepointCountErrors,
+    });
+
+    return {
+      ...route,
+      channels,
+      tracks,
+      layerTimepointCounts,
+      layerTimepointCountErrors,
+    };
+  });
+
+  hook.act(() => {
+    hook.result.handleRemoveChannel('channel-1');
+  });
+
+  assert.deepStrictEqual(removedContexts, [
+    { removedChannelId: 'channel-1', previousCount: 4, nextCount: 1 },
+  ]);
+  assert.deepStrictEqual(hook.result.channels.map((channel) => channel.id), ['channel-4']);
+  assert.deepStrictEqual(hook.result.layerTimepointCounts, { 'layer-4': 7 });
+  assert.deepStrictEqual(
+    hook.result.tracks.map((track) => ({ id: track.id, boundChannelId: track.boundChannelId })),
+    [
+      { id: 'track-set-1', boundChannelId: null },
+      { id: 'track-set-2', boundChannelId: 'channel-4' },
+    ],
+  );
+
   hook.unmount();
 })();
 

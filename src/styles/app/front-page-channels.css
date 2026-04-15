@@ -232,6 +232,13 @@
   box-shadow: none;
 }
 
+.channel-layer-drop--linked {
+  border-style: solid;
+  background:
+    linear-gradient(135deg, rgba(46, 64, 107, 0.38), rgba(31, 38, 67, 0.44)),
+    rgba(12, 16, 24, 0.7);
+}
+
 .file-drop-input {
   display: none;
 }
