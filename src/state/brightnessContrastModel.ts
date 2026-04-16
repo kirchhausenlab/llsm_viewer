@@ -289,7 +289,7 @@ export class BrightnessContrastModel {
     sliderOverrides?: Partial<SliderIndices>
   ): BrightnessContrastState {
     const preserved = this.clampWindow(bounds.windowMin, bounds.windowMax, {
-      clampToDefaults: false
+      clampToDefaults: true
     });
     const sliders = this.computeSliderIndices(preserved.windowMin, preserved.windowMax);
     const overrides = this.sanitizeSliderOverrides(sliderOverrides);

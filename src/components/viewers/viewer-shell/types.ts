@@ -102,6 +102,8 @@ export type ModeControlsProps = {
   vrButtonDisabled: boolean;
   vrButtonTitle?: string;
   vrButtonLabel: string;
+  projectionMode: 'perspective' | 'orthographic';
+  onProjectionModeChange: (projectionMode: 'perspective' | 'orthographic') => void;
   samplingMode: 'linear' | 'nearest';
   onSamplingModeToggle: () => void;
   blendingMode: 'alpha' | 'additive';

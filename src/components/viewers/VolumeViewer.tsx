@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import * as THREE from 'three';
 import './viewerCommon.css';
 import './VolumeViewer.css';
+import { createEmptyDesktopViewStateMap } from '../../hooks/useVolumeRenderSetup';
 import type {
   VolumeResources,
   VolumeViewerProps,
@@ -121,6 +122,7 @@ function isPlaybackWarmupEligibleLayer(layer: VolumeViewerProps['layers'][number
 function VolumeViewer({
   layers,
   playbackWarmupLayers = [],
+  projectionMode = 'perspective',
   isLoading,
   loadingProgress,
   loadedVolumes,
@@ -265,6 +267,8 @@ function VolumeViewer({
     controlsRef,
     rotationTargetRef,
     defaultViewStateRef,
+    projectionViewStateRef,
+    currentProjectionModeRef,
     movementStateRef,
     endPointerLookRef,
     handleResize,
@@ -277,6 +281,7 @@ function VolumeViewer({
     roiLinesRef,
     followTargetActiveRef,
     setHasMeasured,
+    projectionMode,
     enableKeyboardNavigation,
   });
   const isDevMode = Boolean(import.meta.env?.DEV);
@@ -353,10 +358,7 @@ function VolumeViewer({
   });
 
   const isAdditiveBlending = blendingMode === 'additive';
-  const preservedViewStateRef = useRef<{
-    position: THREE.Vector3;
-    target: THREE.Vector3;
-  } | null>(null);
+  const preservedViewStateRef = useRef(createEmptyDesktopViewStateMap());
   const gpuResidencySummary = summarizeGpuResidency(resourcesRef.current);
   const [runtimeDiagnosticsWindowInitialPosition, setRuntimeDiagnosticsWindowInitialPosition] = useState(
     () => computeRuntimeDiagnosticsWindowDefaultPosition()
@@ -483,7 +485,7 @@ function VolumeViewer({
     refs: {
       containerRef,
       rendererRef,
-      cameraRef,
+      cameraRef: cameraRef as unknown as MutableRefObject<THREE.PerspectiveCamera | null>,
       controlsRef,
       sceneRef,
       volumeRootGroupRef,
@@ -617,6 +619,7 @@ function VolumeViewer({
     primaryVolume,
     isAdditiveBlending,
     zClipFrontFraction,
+    projectionMode,
     renderContextRevision,
     rendererRef,
     sceneRef,
@@ -624,6 +627,7 @@ function VolumeViewer({
     controlsRef,
     rotationTargetRef,
     defaultViewStateRef,
+    projectionViewStateRef,
     trackGroupRef,
     resourcesRef,
     currentDimensionsRef,
@@ -669,10 +673,12 @@ function VolumeViewer({
     zClipFrontFraction,
   });
   useVolumeViewerResets({
+    projectionMode,
     rendererRef,
     cameraRef,
     controlsRef,
     defaultViewStateRef,
+    projectionViewStateRef,
     rotationTargetRef,
     currentDimensionsRef,
     volumeRootBaseOffsetRef,
@@ -749,6 +755,7 @@ function VolumeViewer({
       applyVolumeRootTransformRef,
       applyTrackGroupTransformRef,
       preservedViewStateRef,
+      currentProjectionModeRef,
       setRenderContextRevision,
       refreshTrackOverlay,
     },

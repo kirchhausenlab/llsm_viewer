@@ -119,6 +119,7 @@ export type VolumeViewerLifecycleOptionGroups = {
     | 'applyVolumeRootTransformRef'
     | 'applyTrackGroupTransformRef'
     | 'preservedViewStateRef'
+    | 'currentProjectionModeRef'
     | 'setRenderContextRevision'
     | 'refreshTrackOverlay'
   >;

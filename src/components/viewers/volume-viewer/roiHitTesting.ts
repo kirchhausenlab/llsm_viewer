@@ -4,7 +4,7 @@ import type { RoiRenderResource } from '../VolumeViewer.types';
 
 type PerformRoiHoverHitTestOptions = {
   event: PointerEvent;
-  camera: THREE.PerspectiveCamera | null;
+  camera: THREE.Camera | null;
   roiGroup: THREE.Group | null;
   raycaster: THREE.Raycaster | null;
   renderer: THREE.WebGLRenderer | null;

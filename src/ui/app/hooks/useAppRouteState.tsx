@@ -50,6 +50,7 @@ import { createRouteDatasetSetupProps } from './routeDatasetSetupProps';
 import { createRouteViewerShellProps } from './routeViewerShellProps';
 import { useViewerModePlayback } from './useViewerModePlayback';
 import { useWindowLayout } from './useWindowLayout';
+import type { ViewerCameraNavigationSample } from '../../../hooks/useVolumeRenderSetup';
 import {
   collectInitialHttpLaunchTrackedTargets
 } from './initialHttpLaunch';
@@ -111,11 +112,17 @@ function getResolvedLoadedScaleLevel({
   return typeof scaleLevel === 'number' && Number.isFinite(scaleLevel) ? Number(scaleLevel) : null;
 }
 
-type ViewerCameraNavigationSample = {
-  distanceToTarget: number;
-  isMoving: boolean;
-  capturedAtMs: number;
-};
+export type ProjectionMode = 'perspective' | 'orthographic';
+
+export function normalizeProjectionModeForVr(
+  projectionMode: ProjectionMode,
+  isVrActive: boolean
+): ProjectionMode {
+  if (isVrActive && projectionMode === 'orthographic') {
+    return 'perspective';
+  }
+  return projectionMode;
+}
 
 export function useAppRouteState(): AppRouteState {
   const {
@@ -219,6 +226,7 @@ export function useAppRouteState(): AppRouteState {
     bumpDatasetErrorResetSignal
   } = datasetErrors;
   const [blendingMode, setBlendingMode] = useState<'alpha' | 'additive'>('additive');
+  const [projectionMode, setProjectionMode] = useState<ProjectionMode>('perspective');
   const resetPreprocessedStateRef = useRef<() => void>(() => {});
   const hasScheduledOpfsCleanupRef = useRef(false);
   const [resetViewHandler, setResetViewHandler] = useState<(() => void) | null>(null);
@@ -575,6 +583,7 @@ export function useAppRouteState(): AppRouteState {
   const handleBeforeEnterVr = useCallback(() => {
     setFollowedTrack(null);
     setFollowedVoxel(null);
+    setProjectionMode('perspective');
   }, [setFollowedTrack, setFollowedVoxel]);
 
   const resetHoveredVoxel = useCallback(() => {
@@ -669,6 +678,7 @@ export function useAppRouteState(): AppRouteState {
     channelVisibility,
     layerChannelMap,
     preferBrickResidency,
+    projectionMode,
     viewerCameraSample,
     volumeTimepointCount,
     selectedIndex: resolvedSelectedIndex,
@@ -957,6 +967,22 @@ export function useAppRouteState(): AppRouteState {
   } = viewerControls;
 
   useEffect(() => {
+    setProjectionMode((current) => normalizeProjectionModeForVr(current, isVrActive));
+  }, [isVrActive]);
+
+  const handleProjectionModeChange = useCallback(
+    (nextProjectionMode: ProjectionMode) => {
+      setProjectionMode((current) => {
+        if (isVrActive && nextProjectionMode === 'orthographic') {
+          return 'perspective';
+        }
+        return current === nextProjectionMode ? current : nextProjectionMode;
+      });
+    },
+    [isVrActive]
+  );
+
+  useEffect(() => {
     if (datasetError && datasetErrorContext === 'launch') {
       bumpDatasetErrorResetSignal();
     }
@@ -982,14 +1008,19 @@ export function useAppRouteState(): AppRouteState {
     const normalizedDistance = Number.isFinite(sample.distanceToTarget)
       ? Math.max(0, sample.distanceToTarget)
       : Number.NaN;
-    if (!Number.isFinite(normalizedDistance)) {
+    const normalizedProjectedPixels = Number.isFinite(sample.projectedPixelsPerVoxel)
+      ? Math.max(0, sample.projectedPixelsPerVoxel)
+      : Number.NaN;
+    if (!Number.isFinite(normalizedDistance) || !Number.isFinite(normalizedProjectedPixels)) {
       return;
     }
 
     const capturedAtMs =
       Number.isFinite(sample.capturedAtMs) && sample.capturedAtMs > 0 ? sample.capturedAtMs : Date.now();
     const nextSample: ViewerCameraNavigationSample = {
+      projectionMode: sample.projectionMode,
       distanceToTarget: normalizedDistance,
+      projectedPixelsPerVoxel: normalizedProjectedPixels,
       isMoving: Boolean(sample.isMoving),
       capturedAtMs
     };
@@ -999,14 +1030,30 @@ export function useAppRouteState(): AppRouteState {
     const absoluteDelta = previous
       ? Math.abs(previous.distanceToTarget - nextSample.distanceToTarget)
       : Number.POSITIVE_INFINITY;
+    const projectedPixelsDelta = previous
+      ? Math.abs(previous.projectedPixelsPerVoxel - nextSample.projectedPixelsPerVoxel)
+      : Number.POSITIVE_INFINITY;
     const relativeDelta =
       previous && previous.distanceToTarget > 1e-6
         ? absoluteDelta / previous.distanceToTarget
         : absoluteDelta;
+    const relativeProjectedDelta =
+      previous && previous.projectedPixelsPerVoxel > 1e-6
+        ? projectedPixelsDelta / previous.projectedPixelsPerVoxel
+        : projectedPixelsDelta;
     const movementChanged = previous ? previous.isMoving !== nextSample.isMoving : true;
+    const projectionChanged = previous ? previous.projectionMode !== nextSample.projectionMode : true;
     const minIntervalMs = nextSample.isMoving ? 100 : 250;
 
-    if (!movementChanged && elapsedMs < minIntervalMs && absoluteDelta < 0.03 && relativeDelta < 0.08) {
+    if (
+      !movementChanged &&
+      !projectionChanged &&
+      elapsedMs < minIntervalMs &&
+      absoluteDelta < 0.03 &&
+      relativeDelta < 0.08 &&
+      projectedPixelsDelta < 0.05 &&
+      relativeProjectedDelta < 0.08
+    ) {
       return;
     }
 
@@ -1489,6 +1536,8 @@ export function useAppRouteState(): AppRouteState {
         vrButtonDisabled,
         vrButtonTitle,
         vrButtonLabel,
+        projectionMode: normalizeProjectionModeForVr(projectionMode, isVrActive),
+        onProjectionModeChange: handleProjectionModeChange,
         samplingMode: globalSamplingMode,
         onSamplingModeToggle: () => handleLayerSamplingModeToggle(),
         blendingMode,

@@ -66,6 +66,7 @@ test('keyboard movement defaults to the old shift speed and ignores shift key pr
         roiLinesRef: { current: new Map() },
         followTargetActiveRef: { current: false },
         setHasMeasured: () => {},
+        projectionMode: 'perspective',
       }),
     );
 

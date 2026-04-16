@@ -1,0 +1,114 @@
+# Execution Log
+
+## 2026-04-15 - Program documentation initialized
+
+- Scope:
+  - created the initial orthographic projection program packet
+  - documented architecture, rollout order, regression guardrails, and benchmark expectations
+- Files added:
+  - `docs/orthographic-projection-mode/README.md`
+  - `docs/orthographic-projection-mode/DECISIONS.md`
+  - `docs/orthographic-projection-mode/IMPLEMENTATION_SPEC.md`
+  - `docs/orthographic-projection-mode/ROADMAP.md`
+  - `docs/orthographic-projection-mode/BACKLOG.md`
+  - `docs/orthographic-projection-mode/TEST_PLAN.md`
+  - `docs/orthographic-projection-mode/BENCHMARK_MATRIX.md`
+  - `docs/orthographic-projection-mode/RISK_REGISTER.md`
+  - `docs/orthographic-projection-mode/SESSION_HANDOFF.md`
+  - `docs/orthographic-projection-mode/SESSION_PROMPT.md`
+  - `docs/orthographic-projection-mode/EXECUTION_LOG.md`
+- Design highlights captured:
+  - desktop-only orthographic scope
+  - perspective non-regression as a release blocker
+  - projection-specific saved camera state
+  - projection-specific shader/material path recommendation
+  - projection-aware LOD policy requirement
+- Verification:
+  - documentation-only session; no code or test execution performed
+- Next recommended actions:
+  - finalize baseline benchmark scenarios
+  - add explicit projection mode state and UI plumbing
+  - begin camera/control abstraction work
+
+## 2026-04-15 - Projection mode UI/state plumbing implemented
+
+- Scope:
+  - added explicit `projectionMode: 'perspective' | 'orthographic'` state to the viewer-shell/app route contract
+  - exposed perspective/orthographic controls in render settings
+  - enforced the VR guard so orthographic cannot remain active while VR is live
+- Files changed:
+  - `src/components/viewers/viewer-shell/types.ts`
+  - `src/components/viewers/viewer-shell/hooks/useViewerModeControls.ts`
+  - `src/components/viewers/viewer-shell/ViewerSettingsWindow.tsx`
+  - `src/ui/app/hooks/useAppRouteState.tsx`
+  - `tests/ViewerShellContainer.test.ts`
+  - `tests/viewer-shell/ViewerSettingsWindow.test.tsx`
+  - `tests/viewer-shell/useViewerModeControls.test.ts`
+  - `tests/app/hooks/useAppRouteState.test.ts`
+  - `docs/orthographic-projection-mode/BACKLOG.md`
+  - `docs/orthographic-projection-mode/ROADMAP.md`
+  - `docs/orthographic-projection-mode/SESSION_HANDOFF.md`
+- Verification:
+  - `npm run -s test -- tests/viewer-shell/ViewerSettingsWindow.test.tsx tests/viewer-shell/useViewerModeControls.test.ts tests/ViewerShellContainer.test.ts tests/app/hooks/useAppRouteState.test.ts` -> PASS
+  - `npm run -s test` -> PASS
+  - `npm run -s typecheck:tests` -> blocked by a pre-existing worktree deletion of `src/hooks/useVolumeRenderSetup.ts` that is unrelated to this change
+- Notes:
+  - orthographic is normalized back to perspective when VR activates
+  - the exposed viewer-shell state surface now carries projection mode through the route plumbing
+
+## 2026-04-15 - Full orthographic projection delivery completed
+
+- Scope:
+  - implemented runtime desktop projection switching between perspective and orthographic
+  - introduced shared desktop camera/view-state helpers and projection-aware camera persistence
+  - updated 3D volume rendering to use projection-specific shader/material variants
+  - generalized hover, picking, ROI, world props, and follow plumbing to desktop projection-aware camera types
+  - updated camera navigation sampling and adaptive LOD policy to use projected pixels per voxel
+  - added projection-specific unit/integration coverage and Playwright smoke coverage
+  - updated smoke E2E helpers to remain robust with the current setup UI
+- Primary files changed:
+  - `src/hooks/useVolumeRenderSetup.ts`
+  - `src/components/viewers/VolumeViewer.tsx`
+  - `src/components/viewers/VolumeViewer.types.ts`
+  - `src/components/viewers/useViewerShellProps.ts`
+  - `src/components/viewers/volume-viewer/useCameraControls.ts`
+  - `src/components/viewers/volume-viewer/useVolumeViewerLifecycle.ts`
+  - `src/components/viewers/volume-viewer/volumeViewerRenderLoop.ts`
+  - `src/components/viewers/volume-viewer/useVolumeResources.ts`
+  - `src/components/viewers/volume-viewer/useVolumeViewerResets.ts`
+  - `src/components/viewers/volume-viewer/useVolumeViewerData.ts`
+  - `src/components/viewers/volume-viewer/useVolumeHover.ts`
+  - `src/components/viewers/volume-viewer/useRoiRendering.ts`
+  - `src/components/viewers/volume-viewer/useViewerPropsRendering.ts`
+  - `src/components/viewers/volume-viewer/TrackCameraPresenter.tsx`
+  - `src/components/viewers/volume-viewer/trackHitTesting.ts`
+  - `src/components/viewers/volume-viewer/roiHitTesting.ts`
+  - `src/components/viewers/volume-viewer/volumeViewerPointerLifecycle.ts`
+  - `src/components/viewers/volume-viewer/useTrackRendering.ts`
+  - `src/shaders/volumeRenderShader.ts`
+  - `src/ui/app/hooks/useAppRouteState.tsx`
+  - `src/ui/app/volume-loading/lodPolicyController.ts`
+  - `src/ui/app/volume-loading/types.ts`
+  - `tests/useVolumeRenderSetup.test.ts`
+  - `tests/useCameraControls.test.ts`
+  - `tests/volumeViewerRenderLoop.test.ts`
+  - `tests/useVolumeResources.test.ts`
+  - `tests/volumeRenderShaderSkipModel.test.ts`
+  - `tests/e2e/projection-mode-smoke.spec.ts`
+  - `tests/e2e/channels-smoke.spec.ts`
+  - `tests/e2e/helpers/workflows.ts`
+- Verification:
+  - `npm run -s typecheck` -> PASS
+  - `npm run -s typecheck:tests` -> PASS
+  - `npm run -s test -- tests/useVolumeRenderSetup.test.ts tests/useCameraControls.test.ts tests/volumeViewerRenderLoop.test.ts tests/volumeRenderShaderSkipModel.test.ts tests/useVolumeResources.test.ts` -> PASS
+  - `npm run -s test` -> PASS
+  - `npm run -s test:perf` -> PASS (`11 passed`, `1 skipped`)
+  - `npm run -s verify:fast` -> PASS
+  - `npx playwright test --config=playwright.config.ts --project=chromium tests/e2e/projection-mode-smoke.spec.ts` -> PASS
+  - `TEST_DATA_DIR=/tmp/llsm-e2e-smoke npm run -s test:e2e` -> PASS
+- Benchmark / non-regression notes:
+  - perspective path remained green under the full test suite and `verify:fast`
+  - the projection-aware shader split keeps perspective on a dedicated compile-time path
+  - smoke E2E validation confirmed runtime switching on a launched viewer session
+- Completion result:
+  - orthographic projection mode program complete

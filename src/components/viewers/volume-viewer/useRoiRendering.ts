@@ -5,6 +5,7 @@ import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry';
 
+import type { DesktopViewerCamera } from '../../../hooks/useVolumeRenderSetup';
 import type { ViewerLayer } from '../VolumeViewer.types';
 import type { RoiRenderResource, ViewerRoiConfig } from '../VolumeViewer.types';
 import type { RoiDefinition, RoiDimensionMode, RoiPoint, RoiShape, SavedRoi } from '../../../types/roi';
@@ -26,7 +27,7 @@ type UseRoiRenderingParams = {
   currentDimensionsRef: MutableRefObject<{ width: number; height: number; depth: number } | null>;
   containerRef: MutableRefObject<HTMLDivElement | null>;
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
-  cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
+  cameraRef: MutableRefObject<DesktopViewerCamera | null>;
   volumeRootGroupRef: MutableRefObject<THREE.Group | null>;
 };
 
@@ -160,7 +161,7 @@ function resolveLocalRay({
 }: {
   event: PointerEvent;
   renderer: THREE.WebGLRenderer;
-  camera: THREE.PerspectiveCamera;
+  camera: THREE.Camera;
   volumeRootGroup: THREE.Group;
 }) {
   const rect = renderer.domElement.getBoundingClientRect();

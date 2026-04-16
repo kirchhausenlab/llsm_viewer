@@ -4,6 +4,19 @@ import * as THREE from 'three';
 
 import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../../../shared/colorMaps/layerColors';
 import {
+  applyDesktopViewState,
+  captureDesktopViewState,
+  cloneDesktopViewStateMap,
+  createDesktopCamera,
+  createEmptyDesktopViewStateMap,
+  createOrthographicViewStateFromPerspective,
+  getProjectionModeForCamera,
+  isPerspectiveDesktopCamera,
+  type DesktopViewStateMap,
+  type DesktopViewerCamera,
+  type ViewerProjectionMode,
+} from '../../../hooks/useVolumeRenderSetup';
+import {
   createColormapTexture,
   disposeMaterial,
   getExpectedSliceBufferLength,
@@ -76,10 +89,12 @@ type UseVolumeResourcesParams = {
   renderContextRevision: number;
   rendererRef?: MutableRefObject<THREE.WebGLRenderer | null>;
   sceneRef: MutableRefObject<THREE.Scene | null>;
-  cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
+  cameraRef: MutableRefObject<DesktopViewerCamera | null>;
   controlsRef: MutableRefObject<OrbitControls | null>;
   rotationTargetRef: MutableRefObject<THREE.Vector3>;
-  defaultViewStateRef: MutableRefObject<{ position: THREE.Vector3; target: THREE.Vector3 } | null>;
+  defaultViewStateRef: MutableRefObject<DesktopViewStateMap>;
+  projectionViewStateRef?: MutableRefObject<DesktopViewStateMap>;
+  projectionMode?: ViewerProjectionMode;
   trackGroupRef: MutableRefObject<THREE.Group | null>;
   resourcesRef?: MutableRefObject<Map<string, VolumeResources>>;
   currentDimensionsRef?: MutableRefObject<{ width: number; height: number; depth: number } | null>;
@@ -176,6 +191,59 @@ const brickAtlasIndexDataCache = new WeakMap<VolumeBrickPageTable, Float32Array>
 const segmentationPaletteTextureCache = new Map<string, THREE.DataTexture>();
 const packedSegmentationTextureDataCache = new WeakMap<Uint16Array, Uint8Array>();
 
+function resolveRendererSurfaceSize(
+  rendererRef?: MutableRefObject<THREE.WebGLRenderer | null>,
+): { width: number; height: number } {
+  const renderer = rendererRef?.current ?? null;
+  const width = renderer?.domElement?.clientWidth ?? 1;
+  const height = renderer?.domElement?.clientHeight ?? 1;
+  return {
+    width: Math.max(1, width),
+    height: Math.max(1, height),
+  };
+}
+
+function buildDefaultViewStatesForDimensions({
+  width,
+  height,
+  depth,
+  viewportWidth,
+  viewportHeight,
+}: {
+  width: number;
+  height: number;
+  depth: number;
+  viewportWidth: number;
+  viewportHeight: number;
+}): {
+  defaultStates: DesktopViewStateMap;
+  nearDistance: number;
+  farDistance: number;
+} {
+  const defaultStates = createEmptyDesktopViewStateMap();
+  const maxDimension = Math.max(width, height, depth);
+  const scale = 1 / maxDimension;
+  const boundingRadius = Math.sqrt(width * width + height * height + depth * depth) * scale * 0.5;
+  const perspectiveCamera = createDesktopCamera('perspective', viewportWidth, viewportHeight);
+  const fovInRadians = THREE.MathUtils.degToRad(perspectiveCamera.fov * 0.5);
+  const distance = boundingRadius / Math.sin(fovInRadians);
+  const safeDistance = Number.isFinite(distance) ? distance * 1.2 : 2.5;
+  const nearDistance = Math.max(0.0001, boundingRadius * 0.00025);
+  const farDistance = Math.max(safeDistance * 5, boundingRadius * 10);
+  perspectiveCamera.near = nearDistance;
+  perspectiveCamera.far = farDistance;
+  perspectiveCamera.position.set(0, 0, safeDistance);
+  perspectiveCamera.updateProjectionMatrix();
+  const target = new THREE.Vector3(0, 0, 0);
+  defaultStates.perspective = captureDesktopViewState(perspectiveCamera, target, 'perspective');
+  defaultStates.orthographic = createOrthographicViewStateFromPerspective(perspectiveCamera, target);
+  return {
+    defaultStates,
+    nearDistance,
+    farDistance,
+  };
+}
+
 function resolveSamplingModeForRenderStyle(
   samplingMode: 'linear' | 'nearest',
   renderStyle: RenderStyle,
@@ -259,9 +327,14 @@ function applyVolumeTextureSampling(
 function applyAdaptiveLodUniforms(
   uniforms: ShaderUniformMap,
   samplingMode: 'linear' | 'nearest',
+  projectionMode: ViewerProjectionMode,
 ): void {
   const adaptiveLodEnabled =
-    samplingMode === 'linear' && LOD0_FLAGS.projectedFootprintShaderLod ? 1 : 0;
+    samplingMode === 'linear' &&
+    projectionMode === 'perspective' &&
+    LOD0_FLAGS.projectedFootprintShaderLod
+      ? 1
+      : 0;
   if ('u_adaptiveLodEnabled' in uniforms) {
     uniforms.u_adaptiveLodEnabled.value = adaptiveLodEnabled;
   }
@@ -2105,6 +2178,8 @@ export function useVolumeResources({
   controlsRef,
   rotationTargetRef,
   defaultViewStateRef,
+  projectionViewStateRef: providedProjectionViewStateRef,
+  projectionMode = 'perspective',
   trackGroupRef,
   resourcesRef: providedResourcesRef,
   currentDimensionsRef: providedCurrentDimensionsRef,
@@ -2130,6 +2205,8 @@ export function useVolumeResources({
   const currentDimensionsRef =
     providedCurrentDimensionsRef ??
     useRef<{ width: number; height: number; depth: number } | null>(null);
+  const projectionViewStateRef =
+    providedProjectionViewStateRef ?? useRef<DesktopViewStateMap>(createEmptyDesktopViewStateMap());
   const colormapCacheRef = providedColormapCacheRef ?? useRef<Map<string, THREE.DataTexture>>(new Map());
   const volumeRootGroupRef = providedVolumeRootGroupRef ?? useRef<THREE.Group | null>(null);
   const volumeRootBaseOffsetRef = providedVolumeRootBaseOffsetRef ?? useRef(new THREE.Vector3());
@@ -2248,10 +2325,8 @@ export function useVolumeResources({
       rotationTargetRef.current.set(0, 0, 0);
       controls.target.set(0, 0, 0);
       controls.update();
-      defaultViewStateRef.current = {
-        position: camera.position.clone(),
-        target: controls.target.clone(),
-      };
+      defaultViewStateRef.current = createEmptyDesktopViewStateMap();
+      projectionViewStateRef.current = createEmptyDesktopViewStateMap();
       const trackGroup = trackGroupRef.current;
       if (trackGroup) {
         trackGroup.visible = false;
@@ -2273,28 +2348,30 @@ export function useVolumeResources({
       currentDimensionsRef.current = { width, height, depth };
       volumeUserScaleRef.current = 1;
 
-      const maxDimension = Math.max(width, height, depth);
-      const scale = 1 / maxDimension;
-      const boundingRadius = Math.sqrt(width * width + height * height + depth * depth) * scale * 0.5;
-      const fovInRadians = THREE.MathUtils.degToRad(camera.fov * 0.5);
-      const distance = boundingRadius / Math.sin(fovInRadians);
-      const safeDistance = Number.isFinite(distance) ? distance * 1.2 : 2.5;
-      const nearDistance = Math.max(0.0001, boundingRadius * 0.00025);
-      const farDistance = Math.max(safeDistance * 5, boundingRadius * 10);
+      const viewport = resolveRendererSurfaceSize(rendererRef);
+      const {
+        defaultStates,
+        nearDistance,
+        farDistance,
+      } = buildDefaultViewStatesForDimensions({
+        width,
+        height,
+        depth,
+        viewportWidth: viewport.width,
+        viewportHeight: viewport.height,
+      });
       if (camera.near !== nearDistance || camera.far !== farDistance) {
         camera.near = nearDistance;
         camera.far = farDistance;
         camera.updateProjectionMatrix();
       }
-      camera.position.set(0, 0, safeDistance);
-      const rotationTarget = rotationTargetRef.current;
-      rotationTarget.set(0, 0, 0);
-      controls.target.copy(rotationTarget);
-      controls.update();
-      defaultViewStateRef.current = {
-        position: camera.position.clone(),
-        target: controls.target.clone(),
-      };
+      const activeDefaultState = defaultStates[projectionMode] ?? defaultStates.perspective;
+      if (activeDefaultState) {
+        applyDesktopViewState(camera, controls, activeDefaultState, viewport.width, viewport.height);
+        rotationTargetRef.current.copy(activeDefaultState.target);
+      }
+      defaultViewStateRef.current = cloneDesktopViewStateMap(defaultStates);
+      projectionViewStateRef.current = cloneDesktopViewStateMap(defaultStates);
       controls.saveState();
 
       applyTrackGroupTransform({ width, height, depth });
@@ -2517,7 +2594,10 @@ export function useVolumeResources({
           }
           texture.needsUpdate = true;
 
-          const shader = VolumeRenderShaderVariants[getVolumeRenderShaderVariantKey(layer.renderStyle, effectiveSamplingMode)];
+          const shader =
+            VolumeRenderShaderVariants[
+              getVolumeRenderShaderVariantKey(layer.renderStyle, effectiveSamplingMode, projectionMode)
+            ];
           const uniforms = THREE.UniformsUtils.clone(shader.uniforms);
           uniforms.u_data.value = texture;
           if (uniforms.u_isSegmentation) {
@@ -2540,7 +2620,7 @@ export function useVolumeResources({
             uniforms.u_zClipFront.value = safeZClipFront;
           }
           uniforms.u_nearestSampling.value = effectiveSamplingMode === 'nearest' ? 1 : 0;
-          applyAdaptiveLodUniforms(uniforms as ShaderUniformMap, effectiveSamplingMode);
+          applyAdaptiveLodUniforms(uniforms as ShaderUniformMap, effectiveSamplingMode, projectionMode);
           applyBeerLambertUniforms(uniforms as ShaderUniformMap, layer);
           if (uniforms.u_segmentationLabels) {
             uniforms.u_segmentationLabels.value = layer.isSegmentation ? texture : FALLBACK_SEGMENTATION_LABEL_TEXTURE;
@@ -2611,6 +2691,7 @@ export function useVolumeResources({
             channels,
             mode: viewerMode,
             renderStyle: layer.renderStyle,
+            projectionMode,
             samplingMode: effectiveSamplingMode,
             brickPageTable: pageTable,
             brickOccupancyTexture: null,
@@ -2914,6 +2995,7 @@ export function useVolumeResources({
         const { mesh } = resources;
         resources.brickPageTable = pageTable;
         resources.renderStyle = layer.renderStyle;
+        resources.projectionMode = resources.projectionMode ?? projectionMode;
         resources.playbackWarmupForLayerKey = layer.playbackWarmupForLayerKey ?? null;
         resources.playbackWarmupTimeIndex = layer.playbackWarmupTimeIndex ?? null;
         resources.playbackPinnedResidency = playbackPinnedResidency;
@@ -2922,6 +3004,29 @@ export function useVolumeResources({
         resources.paletteTexture = segmentationPaletteTexture;
         mesh.visible = isPlaybackWarmup ? false : layer.visible;
         mesh.renderOrder = resolveLayerRenderOrder(index, layer);
+
+        if (resources.mode === '3d' && resources.projectionMode !== projectionMode) {
+          const previousMaterial = mesh.material as THREE.ShaderMaterial;
+          const shader =
+            VolumeRenderShaderVariants[
+              getVolumeRenderShaderVariantKey(layer.renderStyle, effectiveSamplingMode, projectionMode)
+            ];
+          const nextMaterial = new THREE.ShaderMaterial({
+            uniforms: previousMaterial.uniforms,
+            vertexShader: shader.vertexShader,
+            fragmentShader: shader.fragmentShader,
+            side: THREE.BackSide,
+            transparent: true,
+            blending: layerMaterialBlending,
+          });
+          nextMaterial.depthWrite = false;
+          nextMaterial.depthTest = true;
+          applyVolumeMaterialState(nextMaterial, layerMaterialBlending);
+          mesh.material = nextMaterial;
+          disposeMaterial(previousMaterial);
+          resources.projectionMode = projectionMode;
+          flushRendererRenderLists();
+        }
 
         const materialUniforms = (mesh.material as THREE.ShaderMaterial).uniforms as ShaderUniformMap;
         materialUniforms.u_channels.value = channels;
@@ -2952,7 +3057,7 @@ export function useVolumeResources({
         if (materialUniforms.u_nearestSampling) {
           materialUniforms.u_nearestSampling.value = effectiveSamplingMode === 'nearest' ? 1 : 0;
         }
-        applyAdaptiveLodUniforms(materialUniforms, effectiveSamplingMode);
+        applyAdaptiveLodUniforms(materialUniforms, effectiveSamplingMode, projectionMode);
         applyBeerLambertUniforms(materialUniforms, layer);
         applyBackgroundMaskUniforms(materialUniforms, resources, layer.backgroundMask ?? null);
 
@@ -3252,6 +3357,7 @@ export function useVolumeResources({
       const projectionMatrix = new THREE.Matrix4();
       const cameraSummary = camera
         ? {
+            projectionMode: getProjectionModeForCamera(camera),
             position: [camera.position.x, camera.position.y, camera.position.z],
             direction: (() => {
               camera.getWorldDirection(cameraDirection);
@@ -3259,7 +3365,8 @@ export function useVolumeResources({
             })(),
             near: camera.near,
             far: camera.far,
-            fov: camera.fov,
+            fov: isPerspectiveDesktopCamera(camera) ? camera.fov : null,
+            zoom: camera.zoom,
             target: controls ? [controls.target.x, controls.target.y, controls.target.z] : null
           }
         : null;

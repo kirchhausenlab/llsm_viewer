@@ -1,5 +1,6 @@
 import { Vector2, Vector3, Vector4 } from 'three';
 import type { Data3DTexture, DataTexture } from 'three';
+import type { ViewerProjectionMode } from '../hooks/useVolumeRenderSetup';
 import {
   RENDER_STYLE_BL,
   RENDER_STYLE_ISO,
@@ -622,20 +623,20 @@ const volumeRenderVertexShader = /* glsl */ `
     varying vec3 v_position;
 
     void main() {
-      mat4 viewtransformf = modelViewMatrix;
-      mat4 viewtransformi = inverse(modelViewMatrix);
+      mat4 clipFromLocal = projectionMatrix * modelViewMatrix;
+      mat4 localFromClip = inverse(clipFromLocal);
 
       vec4 position4 = vec4(position, 1.0);
-      vec4 pos_in_cam = viewtransformf * position4;
+      vec4 clipPos = clipFromLocal * position4;
 
-      pos_in_cam.z = -pos_in_cam.w;
-      v_nearpos = viewtransformi * pos_in_cam;
+      vec4 nearClip = vec4(clipPos.xy, -clipPos.w, clipPos.w);
+      v_nearpos = localFromClip * nearClip;
 
-      pos_in_cam.z = pos_in_cam.w;
-      v_farpos = viewtransformi * pos_in_cam;
+      vec4 farClip = vec4(clipPos.xy, clipPos.w, clipPos.w);
+      v_farpos = localFromClip * farClip;
 
       v_position = position;
-      gl_Position = projectionMatrix * viewMatrix * modelMatrix * position4;
+      gl_Position = clipPos;
     }
   `;
 
@@ -1995,8 +1996,13 @@ const volumeRenderFragmentShader = /* glsl */ `
       vec3 farpos = v_farpos.xyz / v_farpos.w;
       vec3 nearpos = v_nearpos.xyz / v_nearpos.w;
 
-      vec3 rayOrigin = u_cameraPos;
-      vec3 rawDir = v_position - rayOrigin;
+      #if defined(VOLUME_CAMERA_ORTHOGRAPHIC)
+        vec3 rayOrigin = nearpos;
+        vec3 rawDir = farpos - nearpos;
+      #else
+        vec3 rayOrigin = u_cameraPos;
+        vec3 rawDir = v_position - rayOrigin;
+      #endif
       float rawDirLength = length(rawDir);
       if (rawDirLength < EPSILON) {
         discard;
@@ -2822,19 +2828,28 @@ const volumeRenderFragmentShader = /* glsl */ `
     #endif
   `;
 
-export type VolumeRenderShaderVariantKey = 'mip' | 'mip-nearest' | 'iso' | 'bl';
+export type VolumeRenderShaderVariantKey =
+  | 'mip'
+  | 'mip-nearest'
+  | 'iso'
+  | 'bl'
+  | 'mip-orthographic'
+  | 'mip-nearest-orthographic'
+  | 'iso-orthographic'
+  | 'bl-orthographic';
 
 const createVariantFragmentShader = (variant: VolumeRenderShaderVariantKey): string => {
-  if (variant === 'iso') {
-    return `#define VOLUME_STYLE_ISO\n${volumeRenderFragmentShader}`;
+  const orthographicDefine = variant.includes('orthographic') ? '#define VOLUME_CAMERA_ORTHOGRAPHIC\n' : '';
+  if (variant === 'iso' || variant === 'iso-orthographic') {
+    return `${orthographicDefine}#define VOLUME_STYLE_ISO\n${volumeRenderFragmentShader}`;
   }
-  if (variant === 'bl') {
-    return `#define VOLUME_STYLE_BL\n${volumeRenderFragmentShader}`;
+  if (variant === 'bl' || variant === 'bl-orthographic') {
+    return `${orthographicDefine}#define VOLUME_STYLE_BL\n${volumeRenderFragmentShader}`;
   }
-  if (variant === 'mip-nearest') {
-    return `#define VOLUME_STYLE_MIP\n#define VOLUME_NEAREST_VARIANT\n${volumeRenderFragmentShader}`;
+  if (variant === 'mip-nearest' || variant === 'mip-nearest-orthographic') {
+    return `${orthographicDefine}#define VOLUME_STYLE_MIP\n#define VOLUME_NEAREST_VARIANT\n${volumeRenderFragmentShader}`;
   }
-  return `#define VOLUME_STYLE_MIP\n${volumeRenderFragmentShader}`;
+  return `${orthographicDefine}#define VOLUME_STYLE_MIP\n${volumeRenderFragmentShader}`;
 };
 
 const createVolumeRenderShaderVariant = (variant: VolumeRenderShaderVariantKey) => ({
@@ -2845,31 +2860,38 @@ const createVolumeRenderShaderVariant = (variant: VolumeRenderShaderVariantKey) 
 
 export const VolumeRenderShaderVariants = {
   mip: createVolumeRenderShaderVariant('mip'),
+  'mip-orthographic': createVolumeRenderShaderVariant('mip-orthographic'),
   'mip-nearest': createVolumeRenderShaderVariant('mip-nearest'),
+  'mip-nearest-orthographic': createVolumeRenderShaderVariant('mip-nearest-orthographic'),
   iso: createVolumeRenderShaderVariant('iso'),
-  bl: createVolumeRenderShaderVariant('bl')
+  'iso-orthographic': createVolumeRenderShaderVariant('iso-orthographic'),
+  bl: createVolumeRenderShaderVariant('bl'),
+  'bl-orthographic': createVolumeRenderShaderVariant('bl-orthographic'),
 } as const;
 
 export const getVolumeRenderShaderVariantKey = (
   renderStyle: RenderStyle,
   samplingMode: 'linear' | 'nearest' = 'linear',
+  projectionMode: ViewerProjectionMode = 'perspective',
 ): VolumeRenderShaderVariantKey => {
+  const orthographicSuffix = projectionMode === 'orthographic' ? '-orthographic' : '';
   if (renderStyle === RENDER_STYLE_ISO) {
-    return 'iso';
+    return `iso${orthographicSuffix}` as VolumeRenderShaderVariantKey;
   }
   if (renderStyle === RENDER_STYLE_BL) {
-    return 'bl';
+    return `bl${orthographicSuffix}` as VolumeRenderShaderVariantKey;
   }
   if (samplingMode === 'nearest') {
-    return 'mip-nearest';
+    return `mip-nearest${orthographicSuffix}` as VolumeRenderShaderVariantKey;
   }
-  return 'mip';
+  return `mip${orthographicSuffix}` as VolumeRenderShaderVariantKey;
 };
 
 export const getVolumeRenderShaderVariant = (
   renderStyle: RenderStyle,
   samplingMode: 'linear' | 'nearest' = 'linear',
-) => VolumeRenderShaderVariants[getVolumeRenderShaderVariantKey(renderStyle, samplingMode)];
+  projectionMode: ViewerProjectionMode = 'perspective',
+) => VolumeRenderShaderVariants[getVolumeRenderShaderVariantKey(renderStyle, samplingMode, projectionMode)];
 
 // Backward-compatible default variant for existing imports.
 export const VolumeRenderShader = VolumeRenderShaderVariants.mip;

@@ -6,6 +6,7 @@ import type {
   LODPromotionState
 } from '../../../core/lodPolicyDiagnostics';
 import type { PreprocessedLayerScaleManifestEntry } from '../../../shared/utils/preprocessedDataset/types';
+import type { ViewerCameraNavigationSample } from '../../../hooks/useVolumeRenderSetup';
 import type { LaunchViewerOptions } from './types';
 import {
   CAMERA_PROJECTED_PIXELS_AT_REFERENCE,
@@ -29,11 +30,7 @@ type CreateLodPolicyControllerOptions = {
   layerScalesByLevelByKey: Map<string, Map<number, PreprocessedLayerScaleManifestEntry>>;
   isPerformanceMode: boolean;
   isPlaying: boolean;
-  viewerCameraSample: {
-    distanceToTarget: number;
-    isMoving: boolean;
-    capturedAtMs: number;
-  } | null;
+  viewerCameraSample: ViewerCameraNavigationSample | null;
   lod0Flags: {
     adaptiveScaleSelector: boolean;
     promotionStateMachine: boolean;
@@ -205,7 +202,7 @@ export function createLodPolicyController({
     const cameraDistance = Number.isFinite(viewerCameraSample?.distanceToTarget)
       ? Math.max(0.05, Number(viewerCameraSample?.distanceToTarget))
       : Number.NaN;
-    const projectedPixelsFromCamera = Number.isFinite(cameraDistance)
+    const legacyProjectedPixelsFromCamera = Number.isFinite(cameraDistance)
       ? Math.max(
           0.2,
           Math.min(
@@ -214,7 +211,11 @@ export function createLodPolicyController({
           )
         )
       : Number.NaN;
-    const baseProjectedPixelsPerVoxel = Number.isFinite(projectedPixelsFromCamera) ? projectedPixelsFromCamera : 1.4;
+    const baseProjectedPixelsPerVoxel = Number.isFinite(viewerCameraSample?.projectedPixelsPerVoxel)
+      ? Math.max(0.2, Math.min(6, Number(viewerCameraSample?.projectedPixelsPerVoxel)))
+      : Number.isFinite(legacyProjectedPixelsFromCamera)
+        ? legacyProjectedPixelsFromCamera
+        : 1.4;
     const motionPenalty = viewerCameraSample?.isMoving ? 0.9 : 1;
     const projectedPixelsPerVoxel = baseProjectedPixelsPerVoxel * motionPenalty;
 

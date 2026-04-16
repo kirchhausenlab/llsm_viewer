@@ -9,6 +9,7 @@ console.log('Starting ViewerSettingsWindow tests');
 function createProps(isOpen: boolean) {
   let densityCalls = 0;
   let mipCalls = 0;
+  let projectionCalls: Array<'perspective' | 'orthographic'> = [];
   return {
     layout: {
       windowMargin: 16,
@@ -18,6 +19,16 @@ function createProps(isOpen: boolean) {
     },
     modeToggle: {
       is3dModeAvailable: true,
+      isVrActive: false,
+      isVrRequesting: false,
+      resetViewHandler: null,
+      onVrButtonClick: () => {},
+      vrButtonDisabled: false,
+      vrButtonLabel: 'Enter VR',
+      projectionMode: 'perspective' as const,
+      onProjectionModeChange: (value: 'perspective' | 'orthographic') => {
+        projectionCalls.push(value);
+      }
     },
     playbackControls: {
       fps: 12,
@@ -58,6 +69,9 @@ function createProps(isOpen: boolean) {
     },
     get mipCalls() {
       return mipCalls;
+    },
+    get projectionCalls() {
+      return projectionCalls;
     }
   };
 }
@@ -72,9 +86,17 @@ function createProps(isOpen: boolean) {
   const openRenderer = TestRenderer.create(
     <ViewerSettingsWindow {...(createProps(true) as any)} />
   );
+  const projectionPerspectiveButton = openRenderer.root.findAll(
+    (node) => node.type === 'button' && node.children.join('') === 'Perspective'
+  )[0];
+  const projectionOrthographicButton = openRenderer.root.findAll(
+    (node) => node.type === 'button' && node.children.join('') === 'Orthographic'
+  )[0];
   const fpsSlider = openRenderer.root.findByProps({ id: 'fps-slider' });
   const qualitySlider = openRenderer.root.findByProps({ id: 'volume-steps-slider' });
   const mipSlider = openRenderer.root.findByProps({ id: 'global-mip-early-exit' });
+  assert.equal(projectionPerspectiveButton.props['aria-pressed'], true);
+  assert.equal(projectionOrthographicButton.props['aria-pressed'], false);
   assert.equal(fpsSlider.props.disabled, false);
   assert.equal(fpsSlider.props.max, 30);
   assert.equal(qualitySlider.props.value, 1);
@@ -93,6 +115,20 @@ function createProps(isOpen: boolean) {
     openRenderer.root.findAll((node) => node.type === 'button' && node.children.join('') === 'Stop').length,
     0
   );
+
+  const projectionClickProps = createProps(true);
+  const projectionClickRenderer = TestRenderer.create(
+    <ViewerSettingsWindow {...(projectionClickProps as any)} />
+  );
+  const projectionClickButton = projectionClickRenderer.root.findAll(
+    (node) => node.type === 'button' && node.children.join('') === 'Orthographic'
+  )[0];
+  act(() => {
+    projectionClickButton.props.onClick();
+  });
+  assert.deepEqual(projectionClickProps.projectionCalls, ['orthographic']);
+
+  projectionClickRenderer.unmount();
 
   openRenderer.unmount();
 })();
@@ -121,6 +157,26 @@ function createProps(isOpen: boolean) {
     mipInput?.props.onChange({ target: { value: '0.91' } });
   });
   assert.equal(props.mipCalls, 1);
+  assert.deepEqual(props.projectionCalls, []);
+
+  renderer.unmount();
+})();
+
+(() => {
+  const props = createProps(true);
+  props.modeToggle.isVrActive = true;
+  const renderer = TestRenderer.create(
+    <ViewerSettingsWindow {...(props as any)} />
+  );
+  const orthographicButton = renderer.root.findAll(
+    (node) => node.type === 'button' && node.children.join('') === 'Orthographic'
+  )[0];
+
+  assert.equal(orthographicButton.props.disabled, true);
+  assert.equal(
+    renderer.root.findAll((node) => node.children.join('') === 'Orthographic projection is unavailable while VR is active.').length,
+    1
+  );
 
   renderer.unmount();
 })();

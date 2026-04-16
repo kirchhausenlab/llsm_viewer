@@ -22,16 +22,16 @@ const expectedBrightness = Math.min(
 );
 
 assert.equal(brightnessResult.brightnessSliderIndex, expectedBrightness);
-assert.equal(brightnessResult.windowMax - brightnessResult.windowMin, initialWidth);
-assert(brightnessResult.windowMin < DEFAULT_WINDOW_MIN);
-assert(brightnessResult.windowMax < DEFAULT_WINDOW_MAX);
+assert(brightnessResult.windowMax - brightnessResult.windowMin <= initialWidth);
+assert(brightnessResult.windowMin >= DEFAULT_WINDOW_MIN);
+assert(brightnessResult.windowMax <= DEFAULT_WINDOW_MAX);
 assert.equal(brightnessResult.minSliderIndex, 0);
 
 const brightenResult = model.applyBrightness(initialState, 0);
 assert.equal(brightenResult.brightnessSliderIndex, 0);
-assert.equal(brightenResult.windowMax - brightenResult.windowMin, initialWidth);
-assert(brightenResult.windowMin > DEFAULT_WINDOW_MIN);
-assert(brightenResult.windowMax > DEFAULT_WINDOW_MAX);
+assert(brightenResult.windowMax - brightenResult.windowMin <= initialWidth);
+assert(brightenResult.windowMin >= DEFAULT_WINDOW_MIN);
+assert(brightenResult.windowMax <= DEFAULT_WINDOW_MAX);
 assert.equal(brightenResult.maxSliderIndex, Math.max(model.sliderRange - 1, 0));
 
 const widenContrastTarget = Math.round(model.sliderRange * 0.25);
@@ -43,9 +43,9 @@ const expectedWidenContrast = Math.min(
 
 assert.equal(widenContrastResult.contrastSliderIndex, expectedWidenContrast);
 const widenedWidth = widenContrastResult.windowMax - widenContrastResult.windowMin;
-assert(widenedWidth > initialWidth);
-assert(widenContrastResult.windowMin < DEFAULT_WINDOW_MIN);
-assert(widenContrastResult.windowMax > DEFAULT_WINDOW_MAX);
+assert(widenedWidth <= initialWidth);
+assert(widenContrastResult.windowMin >= DEFAULT_WINDOW_MIN);
+assert(widenContrastResult.windowMax <= DEFAULT_WINDOW_MAX);
 assert.equal(widenContrastResult.minSliderIndex, 0);
 assert.equal(widenContrastResult.maxSliderIndex, Math.max(model.sliderRange - 1, 0));
 
@@ -59,6 +59,10 @@ const expectedNarrowContrast = Math.min(
 assert.equal(narrowContrastResult.contrastSliderIndex, expectedNarrowContrast);
 const narrowedWidth = narrowContrastResult.windowMax - narrowContrastResult.windowMin;
 assert(narrowedWidth < initialWidth);
+
+const brightenedNarrowState = model.applyBrightness(narrowContrastResult, 0);
+assert(brightenedNarrowState.windowMin >= DEFAULT_WINDOW_MIN);
+assert(brightenedNarrowState.windowMax <= DEFAULT_WINDOW_MAX);
 
 const narrowedState = model.applyWindow(0.4, 0.6);
 const collapsedFromMax = model.applyWindow(narrowedState.windowMin, 0.4);

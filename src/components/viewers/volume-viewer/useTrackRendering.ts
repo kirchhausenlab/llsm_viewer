@@ -18,6 +18,7 @@ import type {
   CompiledTrackSummary,
   TrackColorMode
 } from '../../../types/tracks';
+import type { DesktopViewerCamera } from '../../../hooks/useVolumeRenderSetup';
 import { createDefaultTrackSetState } from '../../../hooks/tracks/useTrackStyling';
 import type {
   InstancedLineGeometry,
@@ -270,7 +271,7 @@ export type UseTrackRenderingParams = {
   trackLinesRef: MutableRefObject<Map<string, TrackRenderResource>>;
   containerRef: MutableRefObject<HTMLDivElement | null>;
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
-  cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
+  cameraRef: MutableRefObject<DesktopViewerCamera | null>;
   hoverRaycasterRef: MutableRefObject<THREE.Raycaster | null>;
   currentDimensionsRef: MutableRefObject<{ width: number; height: number; depth: number } | null>;
   hasActive3DLayer: boolean;

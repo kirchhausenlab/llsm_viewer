@@ -297,16 +297,23 @@ export function isPromotionReadyForResource({
 export function buildLayerResidencyModeMap({
   channelLayersMap,
   preferBrickResidency,
-  canUseAtlas
+  canUseAtlas,
+  forceVolumeMode = false,
 }: {
   channelLayersMap: Map<string, LoadedDatasetLayer[]>;
   preferBrickResidency: boolean;
   canUseAtlas: boolean;
+  forceVolumeMode?: boolean;
 }): Map<string, 'volume' | 'atlas'> {
   const modeByKey = new Map<string, 'volume' | 'atlas'>();
   for (const layers of channelLayersMap.values()) {
     for (const layer of layers) {
-      const useAtlas = preferBrickResidency && canUseAtlas && layer.depth > 1 && !layer.isSegmentation;
+      const useAtlas =
+        !forceVolumeMode &&
+        preferBrickResidency &&
+        canUseAtlas &&
+        layer.depth > 1 &&
+        !layer.isSegmentation;
       modeByKey.set(layer.key, useAtlas ? 'atlas' : 'volume');
     }
   }

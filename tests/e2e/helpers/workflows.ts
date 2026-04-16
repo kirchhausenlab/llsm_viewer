@@ -115,7 +115,7 @@ export async function launchViewerFromChannelFixtures(
       await expect(trackRow.locator('.channel-tracks-subtitle')).toContainText('1 file selected');
     }
 
-    const bindSelect = trackRow.locator('.track-card-bind-select');
+    const bindSelect = trackRow.getByLabel('Bind to:');
     await bindSelect.selectOption({ label: channel.name });
   }
 

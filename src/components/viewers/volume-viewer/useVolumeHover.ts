@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 
+import type { DesktopViewerCamera } from '../../../hooks/useVolumeRenderSetup';
 import { formatChannelValuesDetailed } from '../../../shared/utils/intensityFormatting';
 import { clampValue, sampleRawValuesAtPosition, sampleSegmentationLabel } from '../../../shared/utils/hoverSampling';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
@@ -53,7 +54,7 @@ export type UseVolumeHoverParams = {
     segmentationLabel: number | null;
   }>;
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
-  cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
+  cameraRef: MutableRefObject<DesktopViewerCamera | null>;
   applyHoverHighlightToResources: () => void;
   emitHoverVoxel: (hovered: HoveredVoxelInfo | null) => void;
   clearVoxelHover: () => void;

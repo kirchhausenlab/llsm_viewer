@@ -25,6 +25,13 @@ import type { TemporalResolutionMetadata, VoxelResolutionValues } from '../../ty
 import type { RenderStyle, SamplingMode } from '../../state/layerSettings';
 import type { TrackSetState } from '../../types/channelTracks';
 import type { PlaybackIndexWindow } from '../../shared/utils';
+import type {
+  DesktopViewState,
+  DesktopViewStateMap,
+  DesktopViewerCamera,
+  ViewerCameraNavigationSample,
+  ViewerProjectionMode,
+} from '../../hooks/useVolumeRenderSetup';
 
 export type InstancedLineGeometry = LineGeometry & { instanceCount: number };
 export type InstancedLineSegmentsGeometry = LineSegmentsGeometry & { instanceCount: number };
@@ -141,6 +148,7 @@ export type ViewerRoiConfig = {
 export type VolumeViewerProps = {
   layers: ViewerLayer[];
   playbackWarmupLayers?: ViewerLayer[];
+  projectionMode?: ViewerProjectionMode;
   timeIndex: number;
   totalTimepoints: number;
   temporalResolution?: TemporalResolutionMetadata | null;
@@ -167,11 +175,7 @@ export type VolumeViewerProps = {
   onFpsChange: (value: number) => void;
   onVolumeStepScaleChange?: (value: number) => void;
   onRegisterVolumeStepScaleChange?: (handler: ((value: number) => void) | null) => void;
-  onCameraNavigationSample?: (sample: {
-    distanceToTarget: number;
-    isMoving: boolean;
-    capturedAtMs: number;
-  }) => void;
+  onCameraNavigationSample?: (sample: ViewerCameraNavigationSample) => void;
   onRegisterReset: (handler: (() => void) | null) => void;
   onRegisterCaptureTarget?: (
     target: HTMLCanvasElement | (() => HTMLCanvasElement | null) | null,
@@ -216,6 +220,7 @@ export type VolumeResources = {
   channels: number;
   mode: '3d' | 'slice';
   renderStyle?: RenderStyle;
+  projectionMode?: ViewerProjectionMode;
   samplingMode: 'linear' | 'nearest';
   sliceBuffer?: Uint8Array | null;
   brickPageTable?: VolumeBrickPageTable | null;
@@ -301,6 +306,8 @@ export type MovementState = {
   rollLeft: boolean;
   rollRight: boolean;
 };
+
+export type { ViewerProjectionMode, DesktopViewerCamera, DesktopViewState, DesktopViewStateMap, ViewerCameraNavigationSample };
 
 export type TrackLineResource = {
   kind: 'overlay';

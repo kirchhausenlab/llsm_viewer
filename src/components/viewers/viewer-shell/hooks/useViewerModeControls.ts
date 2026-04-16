@@ -9,6 +9,8 @@ export type ModeToggleState = {
   vrButtonDisabled: boolean;
   vrButtonTitle?: string;
   vrButtonLabel: string;
+  projectionMode: ModeControlsProps['projectionMode'];
+  onProjectionModeChange: ModeControlsProps['onProjectionModeChange'];
 };
 
 export type ViewerSettingsControls = {
@@ -43,7 +45,9 @@ export function useViewerModeControls({
     onVrButtonClick: modeControls.onVrButtonClick,
     vrButtonDisabled: modeControls.vrButtonDisabled,
     vrButtonLabel: modeControls.vrButtonLabel,
-    vrButtonTitle: modeControls.vrButtonTitle
+    vrButtonTitle: modeControls.vrButtonTitle,
+    projectionMode: modeControls.projectionMode,
+    onProjectionModeChange: modeControls.onProjectionModeChange
   };
 
   const viewerSettings: ViewerSettingsControls = {

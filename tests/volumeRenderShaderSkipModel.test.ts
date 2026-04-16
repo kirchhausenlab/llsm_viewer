@@ -198,6 +198,15 @@ function createPrng(seed: number): () => number {
 })();
 
 (() => {
+  const orthographicShader = VolumeRenderShaderVariants['mip-orthographic'].fragmentShader;
+  assert.match(orthographicShader, /#define VOLUME_CAMERA_ORTHOGRAPHIC/);
+  assert.match(
+    orthographicShader,
+    /vec3 rayOrigin = nearpos;\s*vec3 rawDir = farpos - nearpos;/s,
+  );
+})();
+
+(() => {
   const result = shouldSkipWithBrickStatsCpu({
     skipEnabled: true,
     occupancy: 0,

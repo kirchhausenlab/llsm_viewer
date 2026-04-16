@@ -2,6 +2,7 @@ import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
+import type { DesktopViewerCamera } from '../../../hooks/useVolumeRenderSetup';
 import type {
   FollowedVoxelTarget,
   VolumeResources,
@@ -17,8 +18,9 @@ type PointerLookHandlers = {
 
 type AttachVolumeViewerPointerLifecycleParams = PointerLookHandlers & {
   domElement: HTMLCanvasElement;
-  camera: THREE.PerspectiveCamera;
-  controls: OrbitControls;
+  camera: DesktopViewerCamera;
+  controlsRef?: MutableRefObject<OrbitControls | null>;
+  controls?: OrbitControls;
   layersRef: MutableRefObject<VolumeViewerProps['layers']>;
   resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
   volumeRootGroupRef: MutableRefObject<THREE.Group | null>;
@@ -52,7 +54,8 @@ type AttachVolumeViewerPointerLifecycleParams = PointerLookHandlers & {
 export function attachVolumeViewerPointerLifecycle({
   domElement,
   camera: _camera,
-  controls,
+  controlsRef,
+  controls: staticControls,
   layersRef: _layersRef,
   resourcesRef: _resourcesRef,
   volumeRootGroupRef: _volumeRootGroupRef,
@@ -82,6 +85,7 @@ export function attachVolumeViewerPointerLifecycle({
   updatePointerLook,
   endPointerLook,
 }: AttachVolumeViewerPointerLifecycleParams): () => void {
+  const resolveControls = () => controlsRef?.current ?? staticControls ?? null;
   let activeWorldPropDrag:
     | {
         propId: string;
@@ -133,7 +137,10 @@ export function attachVolumeViewerPointerLifecycle({
       return;
     }
 
-    rotationTargetRef.current.copy(controls.target);
+    const controls = resolveControls();
+    if (controls) {
+      rotationTargetRef.current.copy(controls.target);
+    }
     if (!followTargetActiveRef.current) {
       beginPointerLook(event);
     }
@@ -173,7 +180,10 @@ export function attachVolumeViewerPointerLifecycle({
     }
 
     if (followTargetActiveRef.current) {
-      rotationTargetRef.current.copy(controls.target);
+      const controls = resolveControls();
+      if (controls) {
+        rotationTargetRef.current.copy(controls.target);
+      }
     }
 
     if (!followTargetActiveRef.current) {

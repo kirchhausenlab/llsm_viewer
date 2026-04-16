@@ -36,6 +36,7 @@ function mapVolumeViewerProps({
     playbackDisabled: playbackControls.playbackDisabled,
     playbackLabel: playbackControls.playbackLabel,
     fps: playbackControls.fps,
+    projectionMode: modeControls.projectionMode,
     zClipFrontFraction: viewerPanels.zClipFrontFraction,
     blendingMode: modeControls.blendingMode,
     onTogglePlayback: playbackControls.onTogglePlayback,

@@ -3,6 +3,14 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
+import {
+  applyDesktopViewState,
+  captureDesktopViewState,
+  type DesktopViewStateMap,
+  type DesktopViewerCamera,
+  type ViewerProjectionMode,
+  type VolumeRenderContext,
+} from '../../../hooks/useVolumeRenderSetup';
 import type {
   ControllerEntry,
   RaycasterLike,
@@ -21,13 +29,6 @@ import { disposeMaterial } from './rendering';
 
 type RenderLoopOptions = Parameters<typeof createVolumeViewerRenderLoop>[0];
 type PointerLifecycleOptions = Parameters<typeof attachVolumeViewerPointerLifecycle>[0];
-
-type VolumeRenderContext = {
-  renderer: THREE.WebGLRenderer;
-  scene: THREE.Scene;
-  camera: THREE.PerspectiveCamera;
-  controls: OrbitControls;
-};
 
 type PointerLookHandlers = Pick<
   PointerLifecycleOptions,
@@ -57,7 +58,7 @@ type UseVolumeViewerLifecycleParams = {
   currentDimensionsRef: MutableRefObject<{ width: number; height: number; depth: number } | null>;
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
   sceneRef: MutableRefObject<THREE.Scene | null>;
-  cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
+  cameraRef: MutableRefObject<DesktopViewerCamera | null>;
   controlsRef: MutableRefObject<OrbitControls | null>;
   raycasterRef: MutableRefObject<RaycasterLike | null>;
   volumeRootGroupRef: MutableRefObject<THREE.Group | null>;
@@ -65,10 +66,8 @@ type UseVolumeViewerLifecycleParams = {
   roiGroupRef: MutableRefObject<THREE.Group | null>;
   applyVolumeRootTransformRef: MutableRefObject<((dimensions: { width: number; height: number; depth: number } | null) => void) | undefined>;
   applyTrackGroupTransformRef: MutableRefObject<((dimensions: { width: number; height: number; depth: number } | null) => void) | undefined>;
-  preservedViewStateRef: MutableRefObject<{
-    position: THREE.Vector3;
-    target: THREE.Vector3;
-  } | null>;
+  preservedViewStateRef: MutableRefObject<DesktopViewStateMap>;
+  currentProjectionModeRef: MutableRefObject<ViewerProjectionMode>;
   setRenderContextRevision: Dispatch<SetStateAction<number>>;
   refreshTrackOverlay: () => void;
   layersRef: PointerLifecycleOptions['layersRef'];
@@ -170,6 +169,7 @@ export function useVolumeViewerLifecycle({
   applyVolumeRootTransformRef,
   applyTrackGroupTransformRef,
   preservedViewStateRef,
+  currentProjectionModeRef,
   setRenderContextRevision,
   refreshTrackOverlay,
   layersRef,
@@ -342,12 +342,16 @@ export function useVolumeViewerLifecycle({
 
     const { renderer, scene, camera, controls } = renderContext;
 
-    const preservedViewState = preservedViewStateRef.current;
+    const preservedViewState = preservedViewStateRef.current[currentProjectionModeRef.current];
     if (preservedViewState) {
-      camera.position.copy(preservedViewState.position);
-      controls.target.copy(preservedViewState.target);
+      applyDesktopViewState(
+        camera,
+        controls,
+        preservedViewState,
+        container.clientWidth,
+        container.clientHeight,
+      );
       rotationTargetRef.current.copy(preservedViewState.target);
-      controls.update();
     }
 
     const volumeRootGroup = new THREE.Group();
@@ -482,7 +486,7 @@ export function useVolumeViewerLifecycle({
     const detachPointerLifecycle = attachVolumeViewerPointerLifecycle({
       domElement,
       camera,
-      controls,
+      controlsRef,
       layersRef,
       resourcesRef,
       volumeRootGroupRef,
@@ -527,8 +531,8 @@ export function useVolumeViewerLifecycle({
     const renderLoop = createVolumeViewerRenderLoop({
       renderer,
       scene,
-      camera,
-      controls,
+      cameraRef,
+      controlsRef,
       applyKeyboardRotation: (rendererInstance, cameraInstance, controlsInstance) =>
         applyKeyboardRotationRef.current(rendererInstance, cameraInstance, controlsInstance),
       applyKeyboardMovement: (rendererInstance, cameraInstance, controlsInstance) =>
@@ -539,6 +543,7 @@ export function useVolumeViewerLifecycle({
       followTargetActiveRef,
       followTargetOffsetRef,
       resourcesRef,
+      currentDimensionsRef,
       onCameraNavigationSample: (sample) => onCameraNavigationSampleRef.current?.(sample),
       advancePlaybackFrame: (timestamp) => advancePlaybackFrameRef.current(timestamp),
       refreshVrHudPlacements: () => refreshVrHudPlacementsRef.current?.(),
@@ -554,10 +559,11 @@ export function useVolumeViewerLifecycle({
       restoreVrFoveationRef.current();
       applyVolumeStepScaleToResourcesRef.current(DESKTOP_VOLUME_STEP_SCALE);
 
-      preservedViewStateRef.current = {
-        position: camera.position.clone(),
-        target: controls.target.clone(),
-      };
+      preservedViewStateRef.current[currentProjectionModeRef.current] = captureDesktopViewState(
+        camera,
+        controls.target,
+        currentProjectionModeRef.current,
+      );
       renderer.setAnimationLoop(null);
       detachPointerLifecycle();
       resizeObserver.disconnect();

@@ -469,7 +469,15 @@ const createLayer = (
   };
 
   const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 10);
-  const defaultViewStateRef = { current: null as { position: THREE.Vector3; target: THREE.Vector3 } | null };
+  const defaultViewStateRef = {
+    current: {
+      perspective: null,
+      orthographic: null,
+    } as {
+      perspective: { position: THREE.Vector3; target: THREE.Vector3 } | null;
+      orthographic: { position: THREE.Vector3; target: THREE.Vector3; zoom: number } | null;
+    }
+  };
   let saveStateCalls = 0;
   const controls = {
     target: new THREE.Vector3(),
@@ -513,8 +521,9 @@ const createLayer = (
   );
 
   assert.ok(camera.position.z > 0);
-  assert.deepStrictEqual(defaultViewStateRef.current?.position.toArray(), camera.position.toArray());
-  assert.deepStrictEqual(defaultViewStateRef.current?.target.toArray(), [0, 0, 0]);
+  assert.deepStrictEqual(defaultViewStateRef.current.perspective?.position.toArray(), camera.position.toArray());
+  assert.deepStrictEqual(defaultViewStateRef.current.perspective?.target.toArray(), [0, 0, 0]);
+  assert.ok((defaultViewStateRef.current.orthographic?.zoom ?? 0) > 0);
   assert.strictEqual(saveStateCalls, 1);
 })();
 
@@ -1368,6 +1377,77 @@ const createLayer = (
   assert.equal(updatedUniforms.u_windowMax?.value, 0.7);
   assert.equal(updatedUniforms.u_invert?.value, 1);
   assert.strictEqual(updated.brickMetadataSourcePageTable, initialMetadataSourcePageTable);
+})();
+
+(() => {
+  const volume: NormalizedVolume = {
+    width: 4,
+    height: 6,
+    depth: 8,
+    channels: 1,
+    dataType: 'uint8',
+    normalized: new Uint8Array(4 * 6 * 8),
+    min: 0,
+    max: 1,
+  };
+
+  const layer = {
+    key: 'layer-ortho',
+    visible: true,
+    renderStyle: 'mip' as const,
+    samplingMode: 'linear' as const,
+    windowMin: 0.1,
+    windowMax: 0.9,
+    invert: false,
+    mode: '3d' as const,
+    offsetX: 0,
+    offsetY: 0,
+    volume,
+    channels: 1,
+  } as any;
+
+  const resourcesRef = { current: new Map<string, VolumeResources>() };
+  const cameraRef = { current: new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10) };
+  const controlsRef = { current: { target: new THREE.Vector3(), update: () => {}, saveState: () => {} } as any };
+
+  renderHook(() =>
+    useVolumeResources({
+      layers: [layer],
+      primaryVolume: volume,
+      isAdditiveBlending: false,
+      projectionMode: 'orthographic',
+      renderContextRevision: 0,
+      sceneRef: { current: new THREE.Scene() },
+      cameraRef,
+      controlsRef,
+      rotationTargetRef: { current: new THREE.Vector3() },
+      defaultViewStateRef: { current: { perspective: null, orthographic: null } as any },
+      trackGroupRef: { current: new THREE.Group() },
+      resourcesRef,
+      currentDimensionsRef: { current: null },
+      colormapCacheRef: { current: new Map() },
+      volumeRootGroupRef: { current: new THREE.Group() },
+      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+      volumeNormalizationScaleRef: { current: 1 },
+      volumeUserScaleRef: { current: 1 },
+      volumeStepScaleRef: { current: 1 },
+      volumeYawRef: { current: 0 },
+      volumePitchRef: { current: 0 },
+      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+      applyTrackGroupTransform: () => {},
+      applyVolumeRootTransform: () => {},
+      applyVolumeStepScaleToResources: () => {},
+      applyHoverHighlightToResources: () => {},
+    }),
+  );
+
+  const resource = resourcesRef.current.get('layer-ortho');
+  assert.ok(resource);
+  const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms as Record<string, { value: unknown }>;
+  assert.equal(uniforms.u_adaptiveLodEnabled?.value, 0);
 })();
 
 (() => {

@@ -61,6 +61,7 @@ export function useRouteLayerVolumes({
   channelVisibility,
   layerChannelMap,
   preferBrickResidency,
+  projectionMode = 'perspective',
   viewerCameraSample = null,
   volumeTimepointCount,
   selectedIndex,
@@ -109,6 +110,7 @@ export function useRouteLayerVolumes({
   const adaptivePolicyDisabledRef = useRef(false);
   const lod0Flags = useMemo(() => getLod0FeatureFlags(), []);
   const canUseAtlas = typeof volumeProvider?.getBrickAtlas === 'function';
+  const forceVolumeResidency = projectionMode === 'orthographic';
   useEffect(() => {
     playbackWarmupFramesRef.current = playbackWarmupFrames;
   }, [playbackWarmupFrames]);
@@ -194,7 +196,12 @@ export function useRouteLayerVolumes({
     ]
   );
   const layerResidencyModeByKeyRef = useRef<Map<string, 'volume' | 'atlas'>>(
-    buildLayerResidencyModeMap({ channelLayersMap, preferBrickResidency, canUseAtlas })
+    buildLayerResidencyModeMap({
+      channelLayersMap,
+      preferBrickResidency,
+      canUseAtlas,
+      forceVolumeMode: forceVolumeResidency,
+    })
   );
 
   useEffect(() => {
@@ -205,9 +212,10 @@ export function useRouteLayerVolumes({
     layerResidencyModeByKeyRef.current = buildLayerResidencyModeMap({
       channelLayersMap,
       preferBrickResidency,
-      canUseAtlas
+      canUseAtlas,
+      forceVolumeMode: forceVolumeResidency,
     });
-  }, [canUseAtlas, channelLayersMap, preferBrickResidency]);
+  }, [canUseAtlas, channelLayersMap, forceVolumeResidency, preferBrickResidency]);
 
   useEffect(() => {
     if (isViewerLaunched) {
@@ -487,6 +495,7 @@ export function useRouteLayerVolumes({
       throw new Error(`Volume is unavailable for layer "${layerKey}" at timepoint ${timeIndex}.`);
     },
     [
+      forceVolumeResidency,
       isPerformanceMode,
       layerScaleLevelsByKey,
       layerScalesByLevelByKey,
@@ -734,7 +743,8 @@ export function useRouteLayerVolumes({
     const desiredScaleSignature = playbackLayerKeys
       .map((layerKey) => {
         const desiredScaleLevel = resolveDesiredScaleLevel(layerKey);
-        return `${layerKey}:${desiredScaleLevel}`;
+        const residencyMode = layerResidencyModeByKeyRef.current.get(layerKey) ?? 'volume';
+        return `${layerKey}:${desiredScaleLevel}:${residencyMode}`;
       })
       .join('|');
     const loadIntentKey = `${clampedIndex}|${desiredScaleSignature}`;
@@ -857,13 +867,14 @@ export function useRouteLayerVolumes({
     volumeTimepointCount,
     playbackLayerKeySignature,
     playbackWarmupFrames,
-    selectedIndex,
-    resolveDesiredScaleLevel,
-    loadLayerTimepointResources,
-    loadBackgroundMasksForScaleLevels,
-    cancelAllWarmupRequests,
-    replacePlaybackWarmupFrames
-  ]);
+      selectedIndex,
+      resolveDesiredScaleLevel,
+      loadLayerTimepointResources,
+      loadBackgroundMasksForScaleLevels,
+      cancelAllWarmupRequests,
+      replacePlaybackWarmupFrames,
+      projectionMode,
+    ]);
 
   useEffect(() => {
     if (
@@ -895,7 +906,8 @@ export function useRouteLayerVolumes({
     const desiredScaleSignature = warmupLayerKeys
       .map((layerKey) => {
         const desiredScaleLevel = resolveDesiredScaleLevel(layerKey);
-        return `${layerKey}:${desiredScaleLevel}`;
+        const residencyMode = layerResidencyModeByKeyRef.current.get(layerKey) ?? 'volume';
+        return `${layerKey}:${desiredScaleLevel}:${residencyMode}`;
       })
       .join('|');
     const currentWarmupFrames = playbackWarmupFramesRef.current;
@@ -1060,6 +1072,7 @@ export function useRouteLayerVolumes({
     cancelAllWarmupRequests,
     cancelWarmupSlot,
     replacePlaybackWarmupFrames,
+    projectionMode,
   ]);
 
   return {

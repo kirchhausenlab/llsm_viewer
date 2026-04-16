@@ -11,6 +11,8 @@ import type {
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import type { LoadedDatasetLayer, StagedPreprocessedExperiment } from '../../../hooks/dataset';
 import type { PlaybackIndexWindow } from '../../../shared/utils';
+import type { ViewerCameraNavigationSample } from '../../../hooks/useVolumeRenderSetup';
+import type { ViewerProjectionMode } from '../../../hooks/useVolumeRenderSetup';
 
 export type SetLaunchProgressOptions = {
   loadedCount: number;
@@ -45,11 +47,8 @@ export type UseRouteLayerVolumesOptions = {
   channelVisibility: Record<string, boolean>;
   layerChannelMap: Map<string, string>;
   preferBrickResidency: boolean;
-  viewerCameraSample?: {
-    distanceToTarget: number;
-    isMoving: boolean;
-    capturedAtMs: number;
-  } | null;
+  projectionMode?: ViewerProjectionMode;
+  viewerCameraSample?: ViewerCameraNavigationSample | null;
   volumeTimepointCount: number;
   selectedIndex: number;
   playbackWindow?: PlaybackIndexWindow | null;
