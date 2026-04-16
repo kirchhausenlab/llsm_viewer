@@ -135,6 +135,11 @@ function createPointerEvent(
     followedTrackIdRef: { current: null },
     rotationTargetRef: { current: new THREE.Vector3() },
     updateVoxelHover: () => {},
+    isRoiDrawToolActiveRef: { current: false },
+    handleRoiPointerDown: () => false,
+    handleRoiPointerMove: () => false,
+    handleRoiPointerUp: () => false,
+    handleRoiPointerLeave: () => false,
     performPropHitTest: () => null,
     resolveWorldPropDragPosition: () => null,
     performHoverHitTest: () => null,
@@ -199,6 +204,11 @@ function createPointerEvent(
     followedTrackIdRef: { current: null },
     rotationTargetRef: { current: new THREE.Vector3() },
     updateVoxelHover: () => {},
+    isRoiDrawToolActiveRef: { current: false },
+    handleRoiPointerDown: () => false,
+    handleRoiPointerMove: () => false,
+    handleRoiPointerUp: () => false,
+    handleRoiPointerLeave: () => false,
     performPropHitTest: () => null,
     resolveWorldPropDragPosition: () => null,
     performHoverHitTest: () => null,
@@ -263,6 +273,11 @@ function createPointerEvent(
     followedTrackIdRef: { current: null },
     rotationTargetRef: { current: new THREE.Vector3() },
     updateVoxelHover: () => {},
+    isRoiDrawToolActiveRef: { current: false },
+    handleRoiPointerDown: () => false,
+    handleRoiPointerMove: () => false,
+    handleRoiPointerUp: () => false,
+    handleRoiPointerLeave: () => false,
     performPropHitTest: () => 'viewer-prop-7',
     resolveWorldPropDragPosition: () => ({ x: 0, y: 0 }),
     performHoverHitTest: () => null,
@@ -321,6 +336,11 @@ function createPointerEvent(
     followedTrackIdRef: { current: null },
     rotationTargetRef: { current: new THREE.Vector3() },
     updateVoxelHover: () => {},
+    isRoiDrawToolActiveRef: { current: false },
+    handleRoiPointerDown: () => false,
+    handleRoiPointerMove: () => false,
+    handleRoiPointerUp: () => false,
+    handleRoiPointerLeave: () => false,
     performPropHitTest: () => 'viewer-prop-9',
     resolveWorldPropDragPosition: (_propId, event) => ({
       x: event.clientX / 10,
@@ -360,6 +380,94 @@ function createPointerEvent(
   assert.equal(pointerLookCounters.move, 0, '3D prop drag should suppress pointer-look updates');
   assert.equal(pointerLookCounters.end, 0, '3D prop drag should suppress pointer-look end');
   assert.equal(domElement.capturedPointers.has(11), false, '3D prop drag should release pointer capture');
+  detach();
+})();
+
+(() => {
+  const domElement = createFakeCanvas();
+  const controls = { target: new THREE.Vector3() } as unknown as import('three/examples/jsm/controls/OrbitControls').OrbitControls;
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+  const pointerLookCounters = { begin: 0, move: 0, end: 0 };
+  const roiCounters = { down: 0, move: 0, up: 0, leave: 0 };
+  let propHitTests = 0;
+  let trackSelections = 0;
+
+  const detach = attachVolumeViewerPointerLifecycle({
+    domElement,
+    camera,
+    controls,
+    layersRef: { current: [] },
+    resourcesRef: { current: new Map<string, VolumeResources>() },
+    volumeRootGroupRef: { current: null },
+    paintbrushRef: {
+      current: {
+        enabled: false,
+        onStrokeStart: () => {},
+        onStrokeApply: () => {},
+        onStrokeEnd: () => {},
+      },
+    },
+    paintStrokePointerIdRef: { current: null },
+    hoverIntensityRef: { current: null },
+    followTargetActiveRef: { current: false },
+    followedTrackIdRef: { current: null },
+    rotationTargetRef: { current: new THREE.Vector3() },
+    updateVoxelHover: () => {},
+    isRoiDrawToolActiveRef: { current: true },
+    handleRoiPointerDown: () => {
+      roiCounters.down += 1;
+      return true;
+    },
+    handleRoiPointerMove: () => {
+      roiCounters.move += 1;
+      return true;
+    },
+    handleRoiPointerUp: () => {
+      roiCounters.up += 1;
+      return true;
+    },
+    handleRoiPointerLeave: () => {
+      roiCounters.leave += 1;
+      return true;
+    },
+    performPropHitTest: () => {
+      propHitTests += 1;
+      return 'viewer-prop-12';
+    },
+    resolveWorldPropDragPosition: () => null,
+    performHoverHitTest: () => null,
+    clearHoverState: () => {},
+    clearVoxelHover: () => {},
+    resolveHoveredFollowTarget: () => null,
+    onPropSelect: () => {},
+    onWorldPropPositionChange: () => {},
+    onTrackSelectionToggle: () => {
+      trackSelections += 1;
+    },
+    onVoxelFollowRequest: () => {},
+    beginPointerLook: () => {
+      pointerLookCounters.begin += 1;
+    },
+    updatePointerLook: () => {
+      pointerLookCounters.move += 1;
+    },
+    endPointerLook: () => {
+      pointerLookCounters.end += 1;
+    },
+  });
+
+  domElement.emitPointer('pointerdown', createPointerEvent({ pointerId: 21 }));
+  domElement.emitPointer('pointermove', createPointerEvent({ pointerId: 21, clientX: 120 }));
+  domElement.emitPointer('pointerup', createPointerEvent({ pointerId: 21, clientX: 135 }));
+  domElement.emitPointer('pointerleave', createPointerEvent({ pointerId: 21, clientX: 140 }));
+
+  assert.deepEqual(roiCounters, { down: 1, move: 1, up: 1, leave: 1 });
+  assert.equal(propHitTests, 0, 'ROI draw mode should suppress prop hit tests');
+  assert.equal(trackSelections, 0, 'ROI draw mode should suppress track selection');
+  assert.equal(pointerLookCounters.begin, 0, 'ROI draw mode should suppress pointer-look start');
+  assert.equal(pointerLookCounters.move, 0, 'ROI draw mode should suppress pointer-look updates');
+  assert.equal(pointerLookCounters.end, 0, 'ROI draw mode should suppress pointer-look end');
+
   detach();
 })();
 

@@ -2,6 +2,7 @@ import type * as THREE from 'three';
 import type { Line2 } from 'three/examples/jsm/lines/Line2';
 import type { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
 import type { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
+import type { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2';
 import type { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry';
 
 import type {
@@ -13,6 +14,7 @@ import type { ViewerLayer } from '../../ui/contracts/viewerLayer';
 import type { FollowedVoxelTarget } from '../../types/follow';
 import type { HoveredVoxelInfo } from '../../types/hover';
 import type { PaintbrushStrokeHandlers } from '../../types/paintbrush';
+import type { RoiDefinition, RoiDimensionMode, RoiTool, SavedRoi } from '../../types/roi';
 import type {
   CompiledTrackSetPayload,
   CompiledTrackSummary,
@@ -122,6 +124,20 @@ export type ViewerPropsConfig = {
   onUpdateWorldPosition: (propId: string, nextPosition: { x: number; y: number }) => void;
 };
 
+export type ViewerRoiConfig = {
+  isDrawWindowOpen: boolean;
+  tool: RoiTool;
+  dimensionMode: RoiDimensionMode;
+  selectedZIndex: number;
+  defaultColor: string;
+  workingRoi: RoiDefinition | null;
+  savedRois: SavedRoi[];
+  activeSavedRoiId: string | null;
+  editingSavedRoiId: string | null;
+  showAllSavedRois: boolean;
+  onWorkingRoiChange: (roi: RoiDefinition | null) => void;
+};
+
 export type VolumeViewerProps = {
   layers: ViewerLayer[];
   playbackWarmupLayers?: ViewerLayer[];
@@ -179,6 +195,7 @@ export type VolumeViewerProps = {
   onVoxelFollowRequest: (voxel: FollowedVoxelTarget) => void;
   onHoverVoxelChange?: (value: HoveredVoxelInfo | null) => void;
   viewerPropsConfig?: ViewerPropsConfig;
+  roiConfig?: ViewerRoiConfig;
   paintbrush?: PaintbrushStrokeHandlers;
   vr?: VolumeViewerVrProps;
 };
@@ -331,3 +348,16 @@ export type TrackBatchResource = {
 };
 
 export type TrackRenderResource = TrackLineResource | TrackBatchResource;
+
+export type RoiRenderResource = {
+  key: string;
+  roiId: string;
+  line: LineSegments2;
+  geometry: InstancedLineSegmentsGeometry;
+  material: LineMaterial;
+  color: THREE.Color;
+  baseOpacity: number;
+  isActive: boolean;
+  isInvalid: boolean;
+  shouldBlink: boolean;
+};

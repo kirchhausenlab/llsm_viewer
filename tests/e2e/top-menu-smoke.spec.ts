@@ -19,7 +19,7 @@ const expectedMenus = [
   {
     buttonLabel: 'Edit',
     menuLabel: 'edit menu',
-    items: ['Props', 'Paintbrush', 'Measure']
+    items: ['Props', 'Paintbrush', 'Draw ROI', 'ROI Manager']
   },
   {
     buttonLabel: 'Tracks',

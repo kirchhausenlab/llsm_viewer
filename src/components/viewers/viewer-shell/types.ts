@@ -67,6 +67,8 @@ export type TopMenuProps = TopMenuChromeProps &
     onOpenChannelsWindow: () => void;
     onOpenPropsWindow: () => void;
     onOpenPaintbrush: () => void;
+    onOpenDrawRoiWindow: () => void;
+    onOpenRoiManagerWindow: () => void;
     onOpenRecordWindow: () => void;
     onOpenRenderSettingsWindow: () => void;
     onOpenTracksWindow: () => void;
@@ -264,7 +266,9 @@ export type LayoutProps = {
   recordWindowInitialPosition: Position;
   layersWindowInitialPosition: Position;
   paintbrushWindowInitialPosition: Position;
+  drawRoiWindowInitialPosition: Position;
   propsWindowInitialPosition: Position;
+  roiManagerWindowInitialPosition: Position;
   trackWindowInitialPosition: Position;
   selectedTracksWindowInitialPosition: Position;
   plotSettingsWindowInitialPosition: Position;

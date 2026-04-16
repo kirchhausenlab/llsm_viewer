@@ -145,6 +145,8 @@ function createProps(overrides: Partial<React.ComponentProps<typeof TopMenu>> = 
     onOpenChannelsWindow: () => {},
     onOpenPropsWindow: () => {},
     onOpenPaintbrush: () => {},
+    onOpenDrawRoiWindow: () => {},
+    onOpenRoiManagerWindow: () => {},
     onOpenRecordWindow: () => {},
     onOpenRenderSettingsWindow: () => {},
     onOpenTracksWindow: () => {},
@@ -233,7 +235,7 @@ test('top menu renders the requested dropdown order and items', () => {
     const expectedMenus = new Map<string, string[]>([
       ['File', ['Save changes', 'Reset changes', 'Recenter windows', 'Diagnostics', 'Exit']],
       ['View', ['Channels window', 'Camera', 'Record', 'Background', 'Render settings', 'Hover settings']],
-      ['Edit', ['Props', 'Paintbrush', 'Measure']],
+      ['Edit', ['Props', 'Paintbrush', 'Draw ROI', 'ROI Manager']],
       ['Tracks', ['Tracks window', 'Amplitude plot', 'Plot settings', 'Tracks settings']],
       ['Help', ['About', 'Controls']]
     ]);
@@ -295,6 +297,8 @@ test('wired dropdown items invoke the expected handlers', () => {
     let channelsCalls = 0;
     let propsCalls = 0;
     let paintbrushCalls = 0;
+    let drawRoiCalls = 0;
+    let roiManagerCalls = 0;
     let recordCalls = 0;
     let renderSettingsCalls = 0;
     let tracksCalls = 0;
@@ -319,6 +323,12 @@ test('wired dropdown items invoke the expected handlers', () => {
       },
       onOpenPaintbrush: () => {
         paintbrushCalls += 1;
+      },
+      onOpenDrawRoiWindow: () => {
+        drawRoiCalls += 1;
+      },
+      onOpenRoiManagerWindow: () => {
+        roiManagerCalls += 1;
       },
       onOpenRecordWindow: () => {
         recordCalls += 1;
@@ -396,6 +406,20 @@ test('wired dropdown items invoke the expected handlers', () => {
     });
 
     act(() => {
+      findDropdownTrigger(renderer, 'Edit').props.onClick();
+    });
+    act(() => {
+      findMenuItem(renderer, 'Draw ROI').props.onClick();
+    });
+
+    act(() => {
+      findDropdownTrigger(renderer, 'Edit').props.onClick();
+    });
+    act(() => {
+      findMenuItem(renderer, 'ROI Manager').props.onClick();
+    });
+
+    act(() => {
       findDropdownTrigger(renderer, 'View').props.onClick();
     });
     act(() => {
@@ -442,6 +466,8 @@ test('wired dropdown items invoke the expected handlers', () => {
     assert.equal(channelsCalls, 1);
     assert.equal(propsCalls, 1);
     assert.equal(paintbrushCalls, 1);
+    assert.equal(drawRoiCalls, 1);
+    assert.equal(roiManagerCalls, 1);
     assert.equal(recordCalls, 1);
     assert.equal(renderSettingsCalls, 1);
     assert.equal(tracksCalls, 1);
@@ -464,14 +490,12 @@ test('top menu placeholder actions render as inactive buttons', () => {
       'Camera',
       'Background',
       'Hover settings',
-      'Measure',
       'About'
     ];
 
     for (const [menuLabel, itemLabel] of [
       ['File', 'Save changes'],
       ['View', 'Camera'],
-      ['Edit', 'Measure'],
       ['Help', 'About']
     ] as const) {
       act(() => {
@@ -483,9 +507,7 @@ test('top menu placeholder actions render as inactive buttons', () => {
           ? value === 'Save changes' || value === 'Reset changes'
           : menuLabel === 'View'
             ? value === 'Camera' || value === 'Background' || value === 'Hover settings'
-            : menuLabel === 'Edit'
-              ? value === 'Measure'
-              : value === 'About'
+            : value === 'About'
       )) {
         assert.equal(findMenuItem(renderer, label).props.disabled, true);
       }

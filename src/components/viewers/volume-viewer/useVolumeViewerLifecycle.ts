@@ -62,6 +62,7 @@ type UseVolumeViewerLifecycleParams = {
   raycasterRef: MutableRefObject<RaycasterLike | null>;
   volumeRootGroupRef: MutableRefObject<THREE.Group | null>;
   trackGroupRef: MutableRefObject<THREE.Group | null>;
+  roiGroupRef: MutableRefObject<THREE.Group | null>;
   applyVolumeRootTransformRef: MutableRefObject<((dimensions: { width: number; height: number; depth: number } | null) => void) | undefined>;
   applyTrackGroupTransformRef: MutableRefObject<((dimensions: { width: number; height: number; depth: number } | null) => void) | undefined>;
   preservedViewStateRef: MutableRefObject<{
@@ -76,6 +77,11 @@ type UseVolumeViewerLifecycleParams = {
   hoverIntensityRef: PointerLifecycleOptions['hoverIntensityRef'];
   followedTrackIdRef: PointerLifecycleOptions['followedTrackIdRef'];
   updateVoxelHover: PointerLifecycleOptions['updateVoxelHover'];
+  isRoiDrawToolActiveRef: PointerLifecycleOptions['isRoiDrawToolActiveRef'];
+  handleRoiPointerDown: PointerLifecycleOptions['handleRoiPointerDown'];
+  handleRoiPointerMove: PointerLifecycleOptions['handleRoiPointerMove'];
+  handleRoiPointerUp: PointerLifecycleOptions['handleRoiPointerUp'];
+  handleRoiPointerLeave: PointerLifecycleOptions['handleRoiPointerLeave'];
   performPropHitTest: PointerLifecycleOptions['performPropHitTest'];
   resolveWorldPropDragPosition: PointerLifecycleOptions['resolveWorldPropDragPosition'];
   performHoverHitTest: PointerLifecycleOptions['performHoverHitTest'];
@@ -129,6 +135,7 @@ type UseVolumeViewerLifecycleParams = {
   vrVolumeYawHandlesRef: MutableRefObject<THREE.Mesh[]>;
   vrVolumePitchHandleRef: MutableRefObject<THREE.Mesh | null>;
   disposeTrackResources: () => void;
+  disposeRoiResources: () => void;
 };
 
 export function useVolumeViewerLifecycle({
@@ -159,6 +166,7 @@ export function useVolumeViewerLifecycle({
   raycasterRef,
   volumeRootGroupRef,
   trackGroupRef,
+  roiGroupRef,
   applyVolumeRootTransformRef,
   applyTrackGroupTransformRef,
   preservedViewStateRef,
@@ -170,6 +178,11 @@ export function useVolumeViewerLifecycle({
   hoverIntensityRef,
   followedTrackIdRef,
   updateVoxelHover,
+  isRoiDrawToolActiveRef,
+  handleRoiPointerDown,
+  handleRoiPointerMove,
+  handleRoiPointerUp,
+  handleRoiPointerLeave,
   performPropHitTest,
   resolveWorldPropDragPosition,
   performHoverHitTest,
@@ -213,6 +226,7 @@ export function useVolumeViewerLifecycle({
   vrVolumeYawHandlesRef,
   vrVolumePitchHandleRef,
   disposeTrackResources,
+  disposeRoiResources,
 }: UseVolumeViewerLifecycleParams) {
   const initializeRenderContextRef = useRef(initializeRenderContext);
   initializeRenderContextRef.current = initializeRenderContext;
@@ -238,6 +252,16 @@ export function useVolumeViewerLifecycle({
   onCameraNavigationSampleRef.current = onCameraNavigationSample;
   const updateVoxelHoverRef = useRef(updateVoxelHover);
   updateVoxelHoverRef.current = updateVoxelHover;
+  const isRoiDrawToolActiveRefRef = useRef(isRoiDrawToolActiveRef);
+  isRoiDrawToolActiveRefRef.current = isRoiDrawToolActiveRef;
+  const handleRoiPointerDownRef = useRef(handleRoiPointerDown);
+  handleRoiPointerDownRef.current = handleRoiPointerDown;
+  const handleRoiPointerMoveRef = useRef(handleRoiPointerMove);
+  handleRoiPointerMoveRef.current = handleRoiPointerMove;
+  const handleRoiPointerUpRef = useRef(handleRoiPointerUp);
+  handleRoiPointerUpRef.current = handleRoiPointerUp;
+  const handleRoiPointerLeaveRef = useRef(handleRoiPointerLeave);
+  handleRoiPointerLeaveRef.current = handleRoiPointerLeave;
   const performPropHitTestRef = useRef(performPropHitTest);
   performPropHitTestRef.current = performPropHitTest;
   const resolveWorldPropDragPositionRef = useRef(resolveWorldPropDragPosition);
@@ -292,6 +316,8 @@ export function useVolumeViewerLifecycle({
   onRendererInitializedRef.current = onRendererInitialized;
   const disposeTrackResourcesRef = useRef(disposeTrackResources);
   disposeTrackResourcesRef.current = disposeTrackResources;
+  const disposeRoiResourcesRef = useRef(disposeRoiResources);
+  disposeRoiResourcesRef.current = disposeRoiResources;
 
   useEffect(() => {
     resetHoverStateRef.current();
@@ -392,6 +418,12 @@ export function useVolumeViewerLifecycle({
     volumeRootGroup.add(trackGroup);
     trackGroupRef.current = trackGroup;
 
+    const roiGroup = new THREE.Group();
+    roiGroup.name = 'RoiOverlay';
+    roiGroup.visible = false;
+    volumeRootGroup.add(roiGroup);
+    roiGroupRef.current = roiGroup;
+
     applyTrackGroupTransformRef.current?.(currentDimensionsRef.current);
     refreshTrackOverlayRef.current();
     setRenderContextRevision((revision) => revision + 1);
@@ -461,6 +493,11 @@ export function useVolumeViewerLifecycle({
       followedTrackIdRef,
       rotationTargetRef,
       updateVoxelHover: (event) => updateVoxelHoverRef.current(event),
+      isRoiDrawToolActiveRef: isRoiDrawToolActiveRefRef.current,
+      handleRoiPointerDown: (event, canvas) => handleRoiPointerDownRef.current(event, canvas),
+      handleRoiPointerMove: (event) => handleRoiPointerMoveRef.current(event),
+      handleRoiPointerUp: (event, canvas) => handleRoiPointerUpRef.current(event, canvas),
+      handleRoiPointerLeave: (event, canvas) => handleRoiPointerLeaveRef.current(event, canvas),
       performPropHitTest: (event) => performPropHitTestRef.current(event),
       resolveWorldPropDragPosition: (propId, event) =>
         resolveWorldPropDragPositionRef.current(propId, event),
@@ -598,11 +635,19 @@ export function useVolumeViewerLifecycle({
         disposeTrackResourcesRef.current();
       }
       trackGroupRef.current = null;
+      const mountedRoiGroup = roiGroupRef.current;
+      if (mountedRoiGroup) {
+        disposeRoiResourcesRef.current();
+      }
+      roiGroupRef.current = null;
 
       const mountedVolumeRootGroup = volumeRootGroupRef.current;
       if (mountedVolumeRootGroup) {
         if (mountedTrackGroup && mountedTrackGroup.parent === mountedVolumeRootGroup) {
           mountedVolumeRootGroup.remove(mountedTrackGroup);
+        }
+        if (mountedRoiGroup && mountedRoiGroup.parent === mountedVolumeRootGroup) {
+          mountedVolumeRootGroup.remove(mountedRoiGroup);
         }
         mountedVolumeRootGroup.clear();
         if (mountedVolumeRootGroup.parent) {

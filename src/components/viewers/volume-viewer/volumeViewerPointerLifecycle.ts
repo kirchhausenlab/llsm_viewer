@@ -29,6 +29,11 @@ type AttachVolumeViewerPointerLifecycleParams = PointerLookHandlers & {
   followedTrackIdRef: MutableRefObject<string | null>;
   rotationTargetRef: MutableRefObject<THREE.Vector3>;
   updateVoxelHover: (event: PointerEvent | MouseEvent) => void;
+  isRoiDrawToolActiveRef: MutableRefObject<boolean>;
+  handleRoiPointerDown: (event: PointerEvent, domElement: HTMLCanvasElement) => boolean;
+  handleRoiPointerMove: (event: PointerEvent) => boolean;
+  handleRoiPointerUp: (event: PointerEvent, domElement: HTMLCanvasElement) => boolean;
+  handleRoiPointerLeave: (event: PointerEvent | undefined, domElement: HTMLCanvasElement | null) => boolean;
   performPropHitTest: (event: PointerEvent) => string | null;
   resolveWorldPropDragPosition: (
     propId: string,
@@ -58,6 +63,11 @@ export function attachVolumeViewerPointerLifecycle({
   followedTrackIdRef,
   rotationTargetRef,
   updateVoxelHover,
+  isRoiDrawToolActiveRef,
+  handleRoiPointerDown,
+  handleRoiPointerMove,
+  handleRoiPointerUp,
+  handleRoiPointerLeave,
   performPropHitTest,
   resolveWorldPropDragPosition,
   performHoverHitTest,
@@ -102,6 +112,11 @@ export function attachVolumeViewerPointerLifecycle({
       return;
     }
 
+    if (isRoiDrawToolActiveRef.current) {
+      handleRoiPointerDown(event, domElement);
+      return;
+    }
+
     const hitPropId = performPropHitTest(event);
     if (hitPropId !== null) {
       event.preventDefault();
@@ -139,6 +154,12 @@ export function attachVolumeViewerPointerLifecycle({
       if (hovered) {
         paint.onStrokeApply(hovered.coordinates);
       }
+      return;
+    }
+
+    if (isRoiDrawToolActiveRef.current) {
+      updateVoxelHover(event);
+      handleRoiPointerMove(event);
       return;
     }
 
@@ -182,6 +203,12 @@ export function attachVolumeViewerPointerLifecycle({
       return;
     }
 
+    if (isRoiDrawToolActiveRef.current) {
+      updateVoxelHover(event);
+      handleRoiPointerUp(event, domElement);
+      return;
+    }
+
     if (activeWorldPropDrag && activeWorldPropDrag.pointerId === event.pointerId) {
       event.preventDefault();
       activeWorldPropDrag = null;
@@ -215,6 +242,12 @@ export function attachVolumeViewerPointerLifecycle({
       } catch {
         // Ignore.
       }
+    }
+    if (isRoiDrawToolActiveRef.current) {
+      handleRoiPointerLeave(event, domElement);
+      clearHoverState('pointer');
+      clearVoxelHover();
+      return;
     }
     clearHoverState('pointer');
     clearVoxelHover();

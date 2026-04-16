@@ -38,6 +38,8 @@ export default function TopMenu(props: TopMenuProps) {
     onOpenChannelsWindow,
     onOpenPropsWindow,
     onOpenPaintbrush,
+    onOpenDrawRoiWindow,
+    onOpenRoiManagerWindow,
     onOpenRecordWindow,
     onOpenRenderSettingsWindow,
     onOpenTracksWindow,
@@ -149,7 +151,8 @@ export default function TopMenu(props: TopMenuProps) {
       edit: [
         { label: 'Props', onSelect: onOpenPropsWindow },
         { label: 'Paintbrush', onSelect: onOpenPaintbrush },
-        { label: 'Measure', disabled: true }
+        { label: 'Draw ROI', onSelect: onOpenDrawRoiWindow },
+        { label: 'ROI Manager', onSelect: onOpenRoiManagerWindow }
       ],
       tracks: [
         { label: 'Tracks window', onSelect: onOpenTracksWindow },
@@ -166,11 +169,13 @@ export default function TopMenu(props: TopMenuProps) {
       onOpenAmplitudePlotWindow,
       onOpenChannelsWindow,
       onOpenDiagnosticsWindow,
+      onOpenDrawRoiWindow,
       onOpenPaintbrush,
       onOpenPlotSettingsWindow,
       onOpenPropsWindow,
       onOpenRecordWindow,
       onOpenRenderSettingsWindow,
+      onOpenRoiManagerWindow,
       onOpenTrackSettingsWindow,
       onOpenTracksWindow,
       onResetLayout,

@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
+import DrawRoiWindow from './viewer-shell/DrawRoiWindow';
 import VolumeViewer from './VolumeViewer';
 import ChannelsPanel from './viewer-shell/ChannelsPanel';
 import NavigationHelpWindow, { computeNavigationHelpInitialPosition } from './viewer-shell/NavigationHelpWindow';
@@ -7,6 +8,7 @@ import PaintbrushWindow from './viewer-shell/PaintbrushWindow';
 import PlotSettingsPanel from './viewer-shell/PlotSettingsPanel';
 import PropsWindow from './viewer-shell/PropsWindow';
 import RecordWindow from './viewer-shell/RecordWindow';
+import RoiManagerWindow from './viewer-shell/RoiManagerWindow';
 import TopMenu from './viewer-shell/TopMenu';
 import TracksPanel from './viewer-shell/TracksPanel';
 import ViewerSettingsWindow from './viewer-shell/ViewerSettingsWindow';
@@ -14,6 +16,7 @@ import { useViewerModeControls } from './viewer-shell/hooks/useViewerModeControl
 import { useViewerPaintbrushIntegration } from './viewer-shell/hooks/useViewerPaintbrushIntegration';
 import { useViewerPanelWindows } from './viewer-shell/hooks/useViewerPanelWindows';
 import { useViewerPropsState } from './viewer-shell/hooks/useViewerPropsState';
+import { useViewerRoiState } from './viewer-shell/hooks/useViewerRoiState';
 import { useViewerRecording } from './viewer-shell/hooks/useViewerRecording';
 import type { ViewerShellProps } from './viewer-shell/types';
 import { createDefaultLayerSettings } from '../../state/layerSettings';
@@ -46,7 +49,9 @@ function ViewerShell({
     recordWindowInitialPosition,
     layersWindowInitialPosition,
     paintbrushWindowInitialPosition,
+    drawRoiWindowInitialPosition,
     propsWindowInitialPosition,
+    roiManagerWindowInitialPosition,
     trackWindowInitialPosition,
     selectedTracksWindowInitialPosition,
     plotSettingsWindowInitialPosition,
@@ -180,6 +185,12 @@ function ViewerShell({
     isPaintbrushOpen,
     openPaintbrush,
     closePaintbrush,
+    isDrawRoiWindowOpen,
+    openDrawRoiWindow,
+    closeDrawRoiWindow,
+    isRoiManagerWindowOpen,
+    openRoiManagerWindow,
+    closeRoiManagerWindow,
     isDiagnosticsWindowOpen,
     openDiagnosticsWindow,
     closeDiagnosticsWindow
@@ -193,6 +204,61 @@ function ViewerShell({
     totalTimepoints: totalViewerPropTimepoints,
     voxelResolution: volumeViewerProps.voxelResolution ?? null,
   });
+  const {
+    tool: roiTool,
+    dimensionMode: roiDimensionMode,
+    defaultColor: roiDefaultColor,
+    workingRoi,
+    savedRois,
+    activeSavedRoiId,
+    editingSavedRoiId,
+    showAllSavedRois,
+    setTool: setRoiTool,
+    setDimensionMode: setRoiDimensionMode,
+    setDefaultColor: setRoiDefaultColor,
+    setWorkingRoi,
+    updateWorkingRoi,
+    selectSavedRoi,
+    addWorkingRoi,
+    deleteActiveSavedRoi,
+    renameActiveSavedRoi,
+    updateActiveSavedRoiFromWorking,
+    setShowAllSavedRois,
+  } = useViewerRoiState({
+    volumeDimensions,
+  });
+  const currentRoiColor = workingRoi?.color ?? roiDefaultColor;
+  const activeSavedRoi = useMemo(
+    () => savedRois.find((roi) => roi.id === activeSavedRoiId) ?? null,
+    [activeSavedRoiId, savedRois]
+  );
+
+  const handleRoiColorChange = useCallback(
+    (color: string) => {
+      setRoiDefaultColor(color);
+      if (workingRoi) {
+        updateWorkingRoi((current) => ({
+          ...current,
+          color,
+        }));
+      }
+    },
+    [setRoiDefaultColor, updateWorkingRoi, workingRoi]
+  );
+
+  const handleRenameActiveRoi = useCallback(() => {
+    if (!activeSavedRoi) {
+      return;
+    }
+    const nextName =
+      typeof window !== 'undefined' && typeof window.prompt === 'function'
+        ? window.prompt('Rename ROI', activeSavedRoi.name)
+        : activeSavedRoi.name;
+    if (nextName === null) {
+      return;
+    }
+    renameActiveSavedRoi(nextName);
+  }, [activeSavedRoi, renameActiveSavedRoi]);
 
   const showRenderingQualityControl = modeControls.is3dModeAvailable;
   const globalRenderControls = useMemo(() => {
@@ -287,6 +353,8 @@ function ViewerShell({
       onOpenChannelsWindow: openChannelsWindow,
       onOpenPropsWindow: openPropsWindow,
       onOpenPaintbrush: openPaintbrush,
+      onOpenDrawRoiWindow: openDrawRoiWindow,
+      onOpenRoiManagerWindow: openRoiManagerWindow,
       onOpenRecordWindow: openRecordWindow,
       onOpenRenderSettingsWindow: openViewerSettings,
       onOpenTracksWindow: openTracksWindow,
@@ -337,7 +405,9 @@ function ViewerShell({
       openChannelsWindow,
       openDiagnosticsWindow,
       openPaintbrush,
+      openDrawRoiWindow,
       openRecordWindow,
+      openRoiManagerWindow,
       openPropsWindow,
       openTrackSettings,
       openTracksWindow,
@@ -363,10 +433,26 @@ function ViewerShell({
         onSelectProp: propsController.selectProp,
         onUpdateScreenPosition: propsController.updateScreenPosition,
         onUpdateWorldPosition: propsController.updateWorldPosition,
-      }
+      },
+      roiConfig: {
+        isDrawWindowOpen: isDrawRoiWindowOpen,
+        tool: roiTool,
+        dimensionMode: roiDimensionMode,
+        selectedZIndex: Math.max(0, (playbackState.zSliderValue ?? 1) - 1),
+        defaultColor: roiDefaultColor,
+        workingRoi,
+        savedRois,
+        activeSavedRoiId,
+        editingSavedRoiId,
+        showAllSavedRois,
+        onWorkingRoiChange: setWorkingRoi,
+      },
     }),
     [
+      activeSavedRoiId,
+      editingSavedRoiId,
       isPropsWindowOpen,
+      isDrawRoiWindowOpen,
       propsController.props,
       propsController.selectProp,
       propsController.selectedPropId,
@@ -374,8 +460,16 @@ function ViewerShell({
       propsController.updateWorldPosition,
       currentViewerPropTimepoint,
       totalViewerPropTimepoints,
+      roiDefaultColor,
+      roiDimensionMode,
+      roiTool,
+      savedRois,
+      setWorkingRoi,
+      showAllSavedRois,
       volumeViewerProps.temporalResolution,
-      volumeViewerWithCaptureTarget
+      volumeViewerWithCaptureTarget,
+      workingRoi,
+      playbackState.zSliderValue,
     ]
   );
 
@@ -426,6 +520,25 @@ function ViewerShell({
           onClear={paintbrushController.clear}
           onSave={handleSavePainting}
           onClose={closePaintbrush}
+        />
+      ) : null}
+
+      {isDrawRoiWindowOpen ? (
+        <DrawRoiWindow
+          initialPosition={drawRoiWindowInitialPosition}
+          windowMargin={windowMargin}
+          controlWindowWidth={controlWindowWidth}
+          resetSignal={resetToken}
+          volumeDimensions={volumeDimensions}
+          tool={roiTool}
+          dimensionMode={roiDimensionMode}
+          currentColor={currentRoiColor}
+          workingRoi={workingRoi}
+          onToolChange={setRoiTool}
+          onDimensionModeChange={setRoiDimensionMode}
+          onColorChange={handleRoiColorChange}
+          onUpdateWorkingRoi={updateWorkingRoi}
+          onClose={closeDrawRoiWindow}
         />
       ) : null}
 
@@ -480,6 +593,29 @@ function ViewerShell({
         isOpen={isRecordWindowOpen}
         onClose={closeRecordWindow}
       />
+
+      {isRoiManagerWindowOpen ? (
+        <RoiManagerWindow
+          initialPosition={roiManagerWindowInitialPosition}
+          windowMargin={windowMargin}
+          controlWindowWidth={controlWindowWidth}
+          resetSignal={resetToken}
+          savedRois={savedRois}
+          activeSavedRoiId={activeSavedRoiId}
+          showAllSavedRois={showAllSavedRois}
+          canAdd={workingRoi !== null}
+          canUpdate={workingRoi !== null && activeSavedRoiId !== null}
+          onSelectRoi={selectSavedRoi}
+          onAdd={() => {
+            addWorkingRoi();
+          }}
+          onDelete={deleteActiveSavedRoi}
+          onRename={handleRenameActiveRoi}
+          onUpdate={updateActiveSavedRoiFromWorking}
+          onShowAllChange={setShowAllSavedRois}
+          onClose={closeRoiManagerWindow}
+        />
+      ) : null}
 
       <ChannelsPanel
         layout={{ windowMargin, controlWindowWidth, layersWindowInitialPosition, resetToken }}

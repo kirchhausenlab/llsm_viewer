@@ -2,6 +2,8 @@ import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
+  computeDrawRoiWindowDefaultPosition,
+  computeDrawRoiWindowRecenterPosition,
   computeLayersWindowDefaultPosition,
   computePaintbrushWindowRecenterPosition,
   computePaintbrushWindowDefaultPosition,
@@ -9,6 +11,8 @@ import {
   computePropsWindowRecenterPosition,
   computePropsWindowDefaultPosition,
   computeRecordWindowDefaultPosition,
+  computeRoiManagerWindowDefaultPosition,
+  computeRoiManagerWindowRecenterPosition,
   computeSelectedTracksWindowDefaultPosition,
   computeTrackSettingsWindowRecenterPosition,
   computeTrackSettingsWindowDefaultPosition,
@@ -23,7 +27,9 @@ type UseWindowLayoutResult = {
   layersWindowInitialPosition: WindowPosition;
   recordWindowInitialPosition: WindowPosition;
   paintbrushWindowInitialPosition: WindowPosition;
+  drawRoiWindowInitialPosition: WindowPosition;
   propsWindowInitialPosition: WindowPosition;
+  roiManagerWindowInitialPosition: WindowPosition;
   trackWindowInitialPosition: WindowPosition;
   viewerSettingsWindowInitialPosition: WindowPosition;
   selectedTracksWindowInitialPosition: WindowPosition;
@@ -46,8 +52,14 @@ export function useWindowLayout(): UseWindowLayoutResult {
   const [paintbrushWindowInitialPosition, setPaintbrushWindowInitialPosition] = useState<WindowPosition>(
     () => computePaintbrushWindowDefaultPosition()
   );
+  const [drawRoiWindowInitialPosition, setDrawRoiWindowInitialPosition] = useState<WindowPosition>(
+    () => computeDrawRoiWindowDefaultPosition()
+  );
   const [recordWindowInitialPosition, setRecordWindowInitialPosition] = useState<WindowPosition>(
     () => computeRecordWindowDefaultPosition()
+  );
+  const [roiManagerWindowInitialPosition, setRoiManagerWindowInitialPosition] = useState<WindowPosition>(
+    () => computeRoiManagerWindowDefaultPosition()
   );
   const [viewerSettingsWindowInitialPosition, setViewerSettingsWindowInitialPosition] =
     useState<WindowPosition>(() => computeViewerSettingsWindowDefaultPosition());
@@ -82,6 +94,13 @@ export function useWindowLayout(): UseWindowLayoutResult {
 
   useEffect(() => {
     updatePositionToDefault(
+      computeDrawRoiWindowDefaultPosition,
+      setDrawRoiWindowInitialPosition
+    );
+  }, [updatePositionToDefault]);
+
+  useEffect(() => {
+    updatePositionToDefault(
       computeViewerSettingsWindowDefaultPosition,
       setViewerSettingsWindowInitialPosition
     );
@@ -89,6 +108,13 @@ export function useWindowLayout(): UseWindowLayoutResult {
 
   useEffect(() => {
     updatePositionToDefault(computeRecordWindowDefaultPosition, setRecordWindowInitialPosition);
+  }, [updatePositionToDefault]);
+
+  useEffect(() => {
+    updatePositionToDefault(
+      computeRoiManagerWindowDefaultPosition,
+      setRoiManagerWindowInitialPosition
+    );
   }, [updatePositionToDefault]);
 
   useEffect(() => {
@@ -118,6 +144,8 @@ export function useWindowLayout(): UseWindowLayoutResult {
     setPropsWindowInitialPosition(computePropsWindowRecenterPosition());
     setTrackWindowInitialPosition(computeTrackWindowDefaultPosition());
     setPaintbrushWindowInitialPosition(computePaintbrushWindowRecenterPosition());
+    setDrawRoiWindowInitialPosition(computeDrawRoiWindowRecenterPosition());
+    setRoiManagerWindowInitialPosition(computeRoiManagerWindowRecenterPosition());
     setViewerSettingsWindowInitialPosition(computeViewerSettingsWindowDefaultPosition());
     setRecordWindowInitialPosition(computeRecordWindowDefaultPosition());
     setSelectedTracksWindowInitialPosition(computeSelectedTracksWindowDefaultPosition());
@@ -130,7 +158,9 @@ export function useWindowLayout(): UseWindowLayoutResult {
     layersWindowInitialPosition,
     recordWindowInitialPosition,
     paintbrushWindowInitialPosition,
+    drawRoiWindowInitialPosition,
     propsWindowInitialPosition,
+    roiManagerWindowInitialPosition,
     trackWindowInitialPosition,
     viewerSettingsWindowInitialPosition,
     selectedTracksWindowInitialPosition,

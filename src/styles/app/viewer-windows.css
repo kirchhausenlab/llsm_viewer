@@ -690,6 +690,163 @@
   line-height: 1;
 }
 
+.floating-window--draw-roi,
+.floating-window--roi-manager {
+  z-index: 19;
+}
+
+.draw-roi-window {
+  gap: 0.85rem;
+}
+
+.draw-roi-toggle-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.draw-roi-toggle-row:first-of-type {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.draw-roi-toggle-button,
+.draw-roi-tool-button,
+.roi-manager-toggle {
+  justify-content: center;
+  text-align: center;
+}
+
+.draw-roi-toggle-button.is-active,
+.draw-roi-tool-button.is-active,
+.roi-manager-toggle.is-active,
+.roi-manager-list-item.is-active {
+  border-color: rgba(91, 140, 255, 0.75);
+  background: rgba(91, 140, 255, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(91, 140, 255, 0.28);
+}
+
+.draw-roi-tool-button {
+  min-height: 2.5rem;
+  padding: 0.4rem;
+}
+
+.roi-tool-icon {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+.draw-roi-current-label {
+  margin: 0;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.draw-roi-slider-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.draw-roi-slider-section-title {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.draw-roi-color-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.draw-roi-color-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.draw-roi-color-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.draw-roi-window .color-swatch-grid {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.draw-roi-window .color-swatch-button {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.45rem;
+  border: 2px solid rgba(255, 255, 255, 0.16);
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  outline: none;
+}
+
+.draw-roi-window .color-swatch-button:is(:hover, :focus-visible) {
+  border-color: rgba(255, 255, 255, 0.48);
+  box-shadow: 0 0 0 3px rgba(91, 140, 255, 0.18);
+  transform: translateY(-1px);
+}
+
+.draw-roi-window .color-swatch-button.is-selected {
+  border-color: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 0 2px rgba(91, 140, 255, 0.32);
+}
+
+.draw-roi-color-picker {
+  margin-left: auto;
+}
+
+.roi-manager-window {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 116px;
+  gap: 0.9rem;
+  min-height: 240px;
+}
+
+.roi-manager-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+}
+
+.roi-manager-list-item {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.roi-manager-empty-state {
+  margin: 0;
+  font-size: 0.84rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.roi-manager-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
 .props-text-style-symbol--bold {
   font-weight: 800;
 }

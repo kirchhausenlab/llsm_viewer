@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import './viewerCommon.css';
 import './VolumeViewer.css';
@@ -17,6 +17,7 @@ import { useVolumeViewerVrBridge } from './volume-viewer/useVolumeViewerVrBridge
 import { useViewerPropsRendering } from './volume-viewer/useViewerPropsRendering';
 import { useCameraControls } from './volume-viewer/useCameraControls';
 import { useTrackRendering } from './volume-viewer/useTrackRendering';
+import { useRoiRendering } from './volume-viewer/useRoiRendering';
 import { usePlaybackControls } from './volume-viewer/usePlaybackControls';
 import { useTrackTooltip } from './volume-viewer/useTrackTooltip';
 import { useVolumeViewerState } from './volume-viewer/useVolumeViewerState';
@@ -165,6 +166,7 @@ function VolumeViewer({
   onVoxelFollowRequest,
   onHoverVoxelChange,
   viewerPropsConfig,
+  roiConfig,
   paintbrush,
   vr
 }: VolumeViewerProps) {
@@ -211,7 +213,9 @@ function VolumeViewer({
     volumePitchRef,
     volumeRootRotatedCenterTempRef,
     trackGroupRef,
+    roiGroupRef,
     trackLinesRef,
+    roiLinesRef,
     followedTrackIdRef,
     followTargetOffsetRef,
     previousFollowTargetKeyRef,
@@ -270,6 +274,7 @@ function VolumeViewer({
     initializeRenderContext,
   } = useCameraControls({
     trackLinesRef,
+    roiLinesRef,
     followTargetActiveRef,
     setHasMeasured,
     enableKeyboardNavigation,
@@ -438,6 +443,34 @@ function VolumeViewer({
     hoveredTrackId,
     trackLookup,
   });
+  const {
+    isDrawToolActiveRef,
+    handlePointerDown: handleRoiPointerDown,
+    handlePointerMove: handleRoiPointerMove,
+    handlePointerUp: handleRoiPointerUp,
+    handlePointerLeave: handleRoiPointerLeave,
+    updateRoiAppearance,
+    disposeRoiResources,
+  } = useRoiRendering({
+    roiConfig,
+    renderContextRevision,
+    roiGroupRef,
+    roiLinesRef,
+    layersRef,
+    hoveredVoxelRef,
+    currentDimensionsRef,
+    containerRef,
+    rendererRef,
+    cameraRef,
+    volumeRootGroupRef,
+  });
+  const updateOverlayAppearance = useCallback(
+    (timestamp: number) => {
+      updateTrackAppearance(timestamp);
+      updateRoiAppearance(timestamp);
+    },
+    [updateRoiAppearance, updateTrackAppearance]
+  );
 
   const { computeFollowedVoxelPosition, resolveHoveredFollowTarget } = useVolumeViewerFollowTarget({
     layersRef,
@@ -692,7 +725,7 @@ function VolumeViewer({
     renderLoop: {
       applyKeyboardRotation,
       applyKeyboardMovement,
-      updateTrackAppearance,
+      updateTrackAppearance: updateOverlayAppearance,
       refreshViewerProps: refreshWorldProps,
       advancePlaybackFrame,
       updateControllerRays,
@@ -712,6 +745,7 @@ function VolumeViewer({
       raycasterRef,
       volumeRootGroupRef,
       trackGroupRef,
+      roiGroupRef,
       applyVolumeRootTransformRef,
       applyTrackGroupTransformRef,
       preservedViewStateRef,
@@ -725,6 +759,11 @@ function VolumeViewer({
       hoverIntensityRef,
       followedTrackIdRef,
       updateVoxelHover,
+      isRoiDrawToolActiveRef: isDrawToolActiveRef,
+      handleRoiPointerDown,
+      handleRoiPointerMove,
+      handleRoiPointerUp,
+      handleRoiPointerLeave,
       performPropHitTest,
       resolveWorldPropDragPosition: resolvePropDragPosition,
       performHoverHitTest,
@@ -772,6 +811,7 @@ function VolumeViewer({
       vrVolumeYawHandlesRef,
       vrVolumePitchHandleRef,
       disposeTrackResources,
+      disposeRoiResources,
     },
   });
   useVolumeViewerLifecycle(lifecycleParams);

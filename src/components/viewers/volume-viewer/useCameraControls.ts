@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
 import { createVolumeRenderContext, type VolumeRenderContext } from '../../../hooks/useVolumeRenderSetup';
-import type { MovementState, TrackRenderResource } from '../VolumeViewer.types';
+import type { MovementState, RoiRenderResource, TrackRenderResource } from '../VolumeViewer.types';
 
 const MOVEMENT_KEY_MAP: Record<string, keyof MovementState> = {
   KeyW: 'moveForward',
@@ -21,8 +21,6 @@ const ROLL_KEY_MAP: Record<string, keyof MovementState> = {
 
 const LOOK_KEY_CODES = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
 
-const SHIFT_KEY_CODES = new Set(['ShiftLeft', 'ShiftRight']);
-
 type PointerLookHandlers = {
   beginPointerLook: (event: PointerEvent) => void;
   updatePointerLook: (event: PointerEvent) => void;
@@ -31,6 +29,7 @@ type PointerLookHandlers = {
 
 type UseCameraControlsParams = {
   trackLinesRef: MutableRefObject<Map<string, TrackRenderResource>>;
+  roiLinesRef: MutableRefObject<Map<string, RoiRenderResource>>;
   followTargetActiveRef: MutableRefObject<boolean>;
   setHasMeasured: (hasMeasured: boolean) => void;
   enableKeyboardNavigation?: boolean;
@@ -38,6 +37,7 @@ type UseCameraControlsParams = {
 
 export function useCameraControls({
   trackLinesRef,
+  roiLinesRef,
   followTargetActiveRef,
   setHasMeasured,
   enableKeyboardNavigation = true,
@@ -88,10 +88,14 @@ export function useCameraControls({
           resource.outlineMaterial.needsUpdate = true;
         }
       }
+      for (const resource of roiLinesRef.current.values()) {
+        resource.material.resolution.set(width, height);
+        resource.material.needsUpdate = true;
+      }
     }
     cameraInstance.aspect = width / height;
     cameraInstance.updateProjectionMatrix();
-  }, [setHasMeasured, trackLinesRef]);
+  }, [roiLinesRef, setHasMeasured, trackLinesRef]);
 
   const worldUp = useMemo(() => new THREE.Vector3(0, 1, 0), []);
   const lookDirectionRef = useRef(new THREE.Vector3());
@@ -108,7 +112,6 @@ export function useCameraControls({
     rotateUp: false,
     rotateDown: false,
   });
-  const isShiftPressedRef = useRef(false);
 
   const ROLL_SPEED = 0.02;
   const LOOK_SENSITIVITY = 0.0025;
@@ -153,8 +156,7 @@ export function useCameraControls({
 
       const rotationTarget = rotationTargetRef.current;
       const distance = rotationTarget.distanceTo(camera.position);
-      const baseMovementScale = Math.max(distance * 0.0025, 0.0006);
-      const movementScale = baseMovementScale * (isShiftPressedRef.current ? 2 : 1);
+      const movementScale = Math.max(distance * 0.0025, 0.0006) * 2;
 
       const horizontalForward = horizontalForwardRef.current;
       horizontalForward.copy(forwardVector).projectOnPlane(worldUp);
@@ -356,7 +358,6 @@ export function useCameraControls({
       lookState.rotateRight = false;
       lookState.rotateUp = false;
       lookState.rotateDown = false;
-      isShiftPressedRef.current = false;
       return;
     }
 
@@ -364,8 +365,7 @@ export function useCameraControls({
       const movementKey = MOVEMENT_KEY_MAP[event.code];
       const rollKey = ROLL_KEY_MAP[event.code];
       const lookKey = LOOK_KEY_CODES.has(event.code);
-      const isShiftKey = SHIFT_KEY_CODES.has(event.code);
-      if (!movementKey && !rollKey && !isShiftKey && !lookKey) {
+      if (!movementKey && !rollKey && !lookKey) {
         return;
       }
 
@@ -397,7 +397,7 @@ export function useCameraControls({
         }
       }
 
-      if (followTargetActiveRef.current && (movementKey || isShiftKey)) {
+      if (followTargetActiveRef.current && movementKey) {
         return;
       }
 
@@ -406,9 +406,6 @@ export function useCameraControls({
       }
       if (rollKey) {
         movementState[rollKey] = isPressed;
-      }
-      if (isShiftKey) {
-        isShiftPressedRef.current = isPressed;
       }
     };
 
@@ -442,7 +439,6 @@ export function useCameraControls({
       lookState.rotateRight = false;
       lookState.rotateUp = false;
       lookState.rotateDown = false;
-      isShiftPressedRef.current = false;
     };
   }, [enableKeyboardNavigation, followTargetActiveRef]);
 

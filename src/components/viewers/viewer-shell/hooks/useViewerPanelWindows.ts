@@ -34,6 +34,12 @@ type UseViewerPanelWindowsResult = {
   isPaintbrushOpen: boolean;
   openPaintbrush: () => void;
   closePaintbrush: () => void;
+  isDrawRoiWindowOpen: boolean;
+  openDrawRoiWindow: () => void;
+  closeDrawRoiWindow: () => void;
+  isRoiManagerWindowOpen: boolean;
+  openRoiManagerWindow: () => void;
+  closeRoiManagerWindow: () => void;
   isDiagnosticsWindowOpen: boolean;
   openDiagnosticsWindow: () => void;
   closeDiagnosticsWindow: () => void;
@@ -54,6 +60,8 @@ export function useViewerPanelWindows({
   const [isPlotSettingsOpen, setIsPlotSettingsOpen] = useState(false);
   const [isTrackSettingsOpen, setIsTrackSettingsOpen] = useState(false);
   const [isPaintbrushOpen, setIsPaintbrushOpen] = useState(false);
+  const [isDrawRoiWindowOpen, setIsDrawRoiWindowOpen] = useState(false);
+  const [isRoiManagerWindowOpen, setIsRoiManagerWindowOpen] = useState(false);
   const [isDiagnosticsWindowOpen, setIsDiagnosticsWindowOpen] = useState(false);
 
   const openChannelsWindow = useCallback(() => {
@@ -106,6 +114,22 @@ export function useViewerPanelWindows({
 
   const closePaintbrush = useCallback(() => {
     setIsPaintbrushOpen(false);
+  }, []);
+
+  const openDrawRoiWindow = useCallback(() => {
+    setIsDrawRoiWindowOpen(true);
+  }, []);
+
+  const closeDrawRoiWindow = useCallback(() => {
+    setIsDrawRoiWindowOpen(false);
+  }, []);
+
+  const openRoiManagerWindow = useCallback(() => {
+    setIsRoiManagerWindowOpen(true);
+  }, []);
+
+  const closeRoiManagerWindow = useCallback(() => {
+    setIsRoiManagerWindowOpen(false);
   }, []);
 
   const openAmplitudePlot = useCallback(() => {
@@ -202,6 +226,12 @@ export function useViewerPanelWindows({
     isPaintbrushOpen,
     openPaintbrush,
     closePaintbrush,
+    isDrawRoiWindowOpen,
+    openDrawRoiWindow,
+    closeDrawRoiWindow,
+    isRoiManagerWindowOpen,
+    openRoiManagerWindow,
+    closeRoiManagerWindow,
     isDiagnosticsWindowOpen,
     openDiagnosticsWindow,
     closeDiagnosticsWindow

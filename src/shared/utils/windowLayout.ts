@@ -14,7 +14,9 @@ export const VIEWER_SETTINGS_WINDOW_ESTIMATED_HEIGHT = 320;
 export const RECORD_WINDOW_ESTIMATED_HEIGHT = 220;
 export const PROPS_WINDOW_ESTIMATED_HEIGHT = 560;
 export const PAINTBRUSH_WINDOW_ESTIMATED_HEIGHT = 420;
+export const DRAW_ROI_WINDOW_ESTIMATED_HEIGHT = 520;
 export const TRACK_WINDOW_ESTIMATED_HEIGHT = 360;
+export const ROI_MANAGER_WINDOW_ESTIMATED_HEIGHT = 420;
 export const PLOT_SETTINGS_WINDOW_ESTIMATED_HEIGHT = 260;
 export const TRACK_SETTINGS_WINDOW_ESTIMATED_HEIGHT = 180;
 export const RUNTIME_DIAGNOSTICS_WINDOW_ESTIMATED_HEIGHT = 260;
@@ -89,6 +91,9 @@ export const computeViewerSettingsWindowDefaultPosition = (): WindowPosition => 
 export const computeRecordWindowDefaultPosition = (): WindowPosition =>
   computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, RECORD_WINDOW_ESTIMATED_HEIGHT);
 
+export const computeDrawRoiWindowDefaultPosition = (): WindowPosition =>
+  computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, DRAW_ROI_WINDOW_ESTIMATED_HEIGHT);
+
 export const computePropsWindowDefaultPosition = (): WindowPosition => {
   const x = computeRightColumnX(PROPS_WINDOW_WIDTH);
   const y = TOP_MENU_HEIGHT + TOP_MENU_WINDOW_PADDING + 96;
@@ -115,6 +120,20 @@ export const computeTrackWindowDefaultPosition = (): WindowPosition => {
   const maxY = Math.max(WINDOW_MARGIN, viewportHeight - TRACK_WINDOW_ESTIMATED_HEIGHT - WINDOW_MARGIN);
 
   return { x, y: Math.min(y, maxY) };
+};
+
+export const computeRoiManagerWindowDefaultPosition = (): WindowPosition => {
+  const x = computeRightColumnX();
+  const baseY = TOP_MENU_HEIGHT + TOP_MENU_WINDOW_PADDING + 96;
+
+  if (typeof window === 'undefined') {
+    return { x, y: baseY };
+  }
+
+  const viewportHeight = window.innerHeight;
+  const maxY = Math.max(WINDOW_MARGIN, viewportHeight - ROI_MANAGER_WINDOW_ESTIMATED_HEIGHT - WINDOW_MARGIN);
+
+  return { x, y: Math.min(baseY, maxY) };
 };
 
 export const computeSelectedTracksWindowDefaultPosition = (): WindowPosition => {
@@ -171,8 +190,14 @@ export const computePropsWindowRecenterPosition = (): WindowPosition =>
 export const computePaintbrushWindowRecenterPosition = (): WindowPosition =>
   computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, PAINTBRUSH_WINDOW_ESTIMATED_HEIGHT);
 
+export const computeDrawRoiWindowRecenterPosition = (): WindowPosition =>
+  computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, DRAW_ROI_WINDOW_ESTIMATED_HEIGHT);
+
 export const computeTrackSettingsWindowRecenterPosition = (): WindowPosition =>
   computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, TRACK_SETTINGS_WINDOW_ESTIMATED_HEIGHT);
+
+export const computeRoiManagerWindowRecenterPosition = (): WindowPosition =>
+  computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, ROI_MANAGER_WINDOW_ESTIMATED_HEIGHT);
 
 export const computeRuntimeDiagnosticsWindowRecenterPosition = (): WindowPosition =>
   computeTopCenteredWindowPosition(
