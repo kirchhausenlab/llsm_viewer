@@ -135,6 +135,11 @@ export type ViewerPropsConfig = {
   onUpdateWorldPosition: (propId: string, nextPosition: { x: number; y: number }) => void;
 };
 
+export type VolumeViewerCaptureTarget = {
+  canvas: HTMLCanvasElement | null;
+  captureImage?: () => Promise<Blob | null>;
+};
+
 export type ViewerRoiConfig = {
   isDrawWindowOpen: boolean;
   tool: RoiTool;
@@ -187,7 +192,11 @@ export type VolumeViewerProps = {
   onRegisterCameraWindowController?: (controller: CameraWindowController | null) => void;
   onRegisterReset: (handler: (() => void) | null) => void;
   onRegisterCaptureTarget?: (
-    target: HTMLCanvasElement | (() => HTMLCanvasElement | null) | null,
+    target:
+      | VolumeViewerCaptureTarget
+      | HTMLCanvasElement
+      | (() => VolumeViewerCaptureTarget | HTMLCanvasElement | null)
+      | null,
   ) => void;
   trackScale: { x: number; y: number; z: number };
   tracks: CompiledTrackSummary[];

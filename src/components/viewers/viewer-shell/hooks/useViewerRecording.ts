@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { PlaybackControlsProps, RecordingStatus, ViewerMode } from '../types';
+import type { VolumeViewerCaptureTarget } from '../../VolumeViewer.types';
 
-type CaptureTargetGetter = () => HTMLCanvasElement | null;
-type CaptureTarget = HTMLCanvasElement | CaptureTargetGetter | null;
+type CaptureTargetValue = VolumeViewerCaptureTarget | HTMLCanvasElement | null;
+type CaptureTargetGetter = () => VolumeViewerCaptureTarget | null;
+type CaptureTarget =
+  | CaptureTargetValue
+  | (() => VolumeViewerCaptureTarget | HTMLCanvasElement | null)
+  | null;
 type PendingRecordingAction = 'start' | 'resume';
 
 const DEFAULT_RECORDING_BITRATE_MBPS = 20;
@@ -13,14 +18,28 @@ const RECORDING_COUNTDOWN_RANGE_SECONDS = { min: 0, max: 5 } as const;
 const DEFAULT_RECORDING_FRAME_PUMP_FPS = 30;
 const MAX_RECORDING_FRAME_PUMP_FPS = 60;
 
+function normalizeCaptureTargetValue(target: CaptureTargetValue): VolumeViewerCaptureTarget | null {
+  if (!target) {
+    return null;
+  }
+  if (typeof target === 'object' && 'canvas' in target) {
+    return {
+      canvas: target.canvas ?? null,
+      captureImage: typeof target.captureImage === 'function' ? target.captureImage : undefined,
+    };
+  }
+  return { canvas: target };
+}
+
 function normalizeCaptureTarget(target: CaptureTarget): CaptureTargetGetter | null {
   if (!target) {
     return null;
   }
   if (typeof target === 'function') {
-    return target;
+    return () => normalizeCaptureTargetValue(target());
   }
-  return () => target;
+  const normalized = normalizeCaptureTargetValue(target);
+  return normalized ? () => normalized : null;
 }
 
 function formatTimestampSegment(timestamp: Date): string {
@@ -265,7 +284,7 @@ export function useViewerRecording({
   }, []);
 
   const activeCaptureTarget = viewerMode === '3d' && typeof captureTarget === 'function' ? captureTarget : null;
-  const canCapture = Boolean(playbackControls.canRecord && activeCaptureTarget?.());
+  const canCapture = Boolean(playbackControls.canRecord && activeCaptureTarget?.()?.canvas);
 
   const handleStopRecording = useCallback(() => {
     const currentStatus = recordingStatusRef.current;
@@ -305,7 +324,8 @@ export function useViewerRecording({
       return;
     }
 
-    const canvas = activeCaptureTarget();
+    const target = activeCaptureTarget();
+    const canvas = target?.canvas ?? null;
     if (!canvas || typeof canvas.captureStream !== 'function') {
       setRecordingError('Recording unavailable: capture target not ready.');
       setRecordingStatus('idle');
@@ -566,14 +586,17 @@ export function useViewerRecording({
       return;
     }
 
-    const canvas = activeCaptureTarget();
-    if (!canvas) {
+    const target = activeCaptureTarget();
+    const canvas = target?.canvas ?? null;
+    if (!target || !canvas) {
       setRecordingError('Screenshot unavailable: capture target not ready.');
       return;
     }
 
     setRecordingError(null);
-    const blob = await captureCanvasPng(canvas);
+    const blob = target.captureImage
+      ? await target.captureImage()
+      : await captureCanvasPng(canvas);
     if (!blob) {
       setRecordingError('Screenshot unavailable: failed to capture canvas.');
       return;

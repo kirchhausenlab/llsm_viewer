@@ -4,9 +4,14 @@ import { usePaintbrush, type PaintbrushController } from '../../../../hooks/pain
 import { DEFAULT_MIP_EARLY_EXIT_THRESHOLD } from '../../../../state/layerSettings';
 import { encodeRgbTiffStack } from '../../../../shared/utils/tiffWriter';
 import type { ViewerShellProps } from '../types';
+import type { VolumeViewerCaptureTarget } from '../../VolumeViewer.types';
 
 type CaptureTargetRegistration = (
-  target: HTMLCanvasElement | (() => HTMLCanvasElement | null) | null
+  target:
+    | VolumeViewerCaptureTarget
+    | HTMLCanvasElement
+    | (() => VolumeViewerCaptureTarget | HTMLCanvasElement | null)
+    | null
 ) => void;
 
 type UseViewerPaintbrushIntegrationOptions = {
