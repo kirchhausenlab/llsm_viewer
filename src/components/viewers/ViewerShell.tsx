@@ -169,6 +169,13 @@ function ViewerShell({
     playbackControls
   });
   const playbackState = playbackControlsWithRecording;
+  const recordingIndicatorState =
+    playbackState.recordingStatus === 'recording'
+      ? 'recording'
+      : playbackState.recordingStatus === 'paused' || playbackState.recordingStatus === 'pending-resume'
+        ? 'paused'
+        : null;
+  const countdownValue = playbackState.countdownRemainingSeconds;
   const totalViewerPropTimepoints = Math.max(1, playbackState.volumeTimepointCount);
   const currentViewerPropTimepoint = Math.min(
     totalViewerPropTimepoints,
@@ -942,6 +949,19 @@ function ViewerShell({
       </main>
 
       <TopMenu {...topMenuProps} />
+
+      {recordingIndicatorState ? (
+        <div
+          className={`viewer-capture-indicator viewer-capture-indicator--${recordingIndicatorState}`}
+          aria-hidden="true"
+        />
+      ) : null}
+
+      {typeof countdownValue === 'number' && countdownValue > 0 ? (
+        <div className="viewer-capture-countdown" role="status" aria-live="assertive">
+          <span className="viewer-capture-countdown__value">{countdownValue}</span>
+        </div>
+      ) : null}
 
       <NavigationHelpWindow
         isOpen={isHelpMenuOpen}

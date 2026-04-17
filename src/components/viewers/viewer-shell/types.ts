@@ -111,6 +111,13 @@ export type ModeControlsProps = {
   onBlendingModeToggle: () => void;
 };
 
+export type RecordingStatus =
+  | 'idle'
+  | 'pending-start'
+  | 'recording'
+  | 'paused'
+  | 'pending-resume';
+
 export type PlaybackControlsProps = {
   fps: number;
   onFpsChange: (value: number) => void;
@@ -119,6 +126,8 @@ export type PlaybackControlsProps = {
   onZSliderChange?: (value: number) => void;
   recordingBitrateMbps?: number;
   onRecordingBitrateMbpsChange?: (value: number) => void;
+  countdownSeconds?: number;
+  onCountdownSecondsChange?: (value: number) => void;
   volumeTimepointCount: number;
   isPlaying: boolean;
   playbackLabel: string;
@@ -127,8 +136,12 @@ export type PlaybackControlsProps = {
   playbackDisabled: boolean;
   onTogglePlayback: () => void;
   error: string | null;
-  onStartRecording: () => void;
+  onTakeScreenshot: () => void;
+  canTakeScreenshot: boolean;
+  onRecordingPrimaryAction: () => void;
   onStopRecording: () => void;
+  recordingStatus: RecordingStatus;
+  countdownRemainingSeconds: number | null;
   isRecording: boolean;
   canRecord: boolean;
 };

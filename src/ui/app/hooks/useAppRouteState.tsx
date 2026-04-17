@@ -930,26 +930,7 @@ export function useAppRouteState(): AppRouteState {
     playbackWindow: followedTrackPlaybackWindow
   });
 
-  const [isRecording, setIsRecording] = useState(false);
   const canRecord = volumeTimepointCount > 0 && !isLoading;
-
-  const handleStartRecording = useCallback(() => {
-    if (!canRecord) {
-      return;
-    }
-
-    setIsRecording(true);
-  }, [canRecord]);
-
-  const handleStopRecording = useCallback(() => {
-    setIsRecording(false);
-  }, []);
-
-  useEffect(() => {
-    if (!canRecord) {
-      setIsRecording(false);
-    }
-  }, [canRecord]);
 
   const {
     viewerMode,
@@ -1562,9 +1543,15 @@ export function useAppRouteState(): AppRouteState {
         playbackDisabled,
         onTogglePlayback: handleTogglePlayback,
         error,
-        onStartRecording: handleStartRecording,
-        onStopRecording: handleStopRecording,
-        isRecording,
+        onTakeScreenshot: () => {},
+        canTakeScreenshot: canRecord,
+        onRecordingPrimaryAction: () => {},
+        onStopRecording: () => {},
+        recordingStatus: 'idle',
+        countdownSeconds: 0,
+        onCountdownSecondsChange: (_value: number) => {},
+        countdownRemainingSeconds: null,
+        isRecording: false,
         canRecord,
       }
     },
