@@ -120,6 +120,7 @@ export type ViewerShellContainerVrProps = Pick<
 
 export type ViewerShellContainerProps = ViewerShellContainerHelpMenuProps & {
   viewerMode: ViewerShellProps['viewerMode'];
+  loadMeasurementVolume: ViewerShellProps['loadMeasurementVolume'];
   viewerPanels: ViewerShellContainerViewerPanelsProps;
   vr: ViewerShellContainerVrProps;
   topMenu: ViewerShellContainerTopMenuProps;

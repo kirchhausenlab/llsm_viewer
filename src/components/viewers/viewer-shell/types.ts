@@ -275,6 +275,8 @@ export type LayoutProps = {
   selectedTracksWindowInitialPosition: Position;
   plotSettingsWindowInitialPosition: Position;
   trackSettingsWindowInitialPosition: Position;
+  measurementsWindowInitialPosition: Position;
+  setMeasurementsWindowInitialPosition: Position;
 };
 
 export type TrackDefaults = {
@@ -285,6 +287,7 @@ export type TrackDefaults = {
 export type ViewerShellProps = {
   viewerMode: '3d';
   volumeViewerProps: VolumeViewerProps;
+  loadMeasurementVolume: ((layerKey: string, timepoint: number) => Promise<NormalizedVolume>) | null;
   topMenu: TopMenuChromeProps;
   layout: LayoutProps;
   modeControls: ModeControlsProps;

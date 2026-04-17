@@ -15,6 +15,7 @@ type DrawRoiWindowProps = {
   };
   tool: RoiTool;
   dimensionMode: RoiDimensionMode;
+  currentRoiName: string;
   currentColor: string;
   workingRoi: RoiDefinition | null;
   onToolChange: (tool: RoiTool) => void;
@@ -23,21 +24,6 @@ type DrawRoiWindowProps = {
   onUpdateWorkingRoi: (updater: (current: RoiDefinition) => RoiDefinition) => void;
   onClose: () => void;
 };
-
-function HandIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="roi-tool-icon" aria-hidden="true">
-      <path
-        d="M8 12V5a1 1 0 0 1 2 0v5h1V4a1 1 0 0 1 2 0v6h1V5a1 1 0 0 1 2 0v6h1V7a1 1 0 0 1 2 0v8c0 3.3-2.7 6-6 6h-2.2A5.8 5.8 0 0 1 5 15.2l-.8-2a1.3 1.3 0 0 1 2.4-.9L8 15v-3Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 function LineIcon() {
   return (
@@ -75,20 +61,6 @@ const clampCoordinate = (value: number, axis: AxisKey, volumeDimensions: DrawRoi
   return Math.min(max, Math.max(0, Math.round(value)));
 };
 
-const formatCurrentRoiLabel = (workingRoi: RoiDefinition | null) => {
-  if (!workingRoi) {
-    return 'No ROI';
-  }
-
-  const mode = workingRoi.mode === '2d' ? '2D' : '3D';
-  const shape = workingRoi.shape === 'line'
-    ? 'Line'
-    : workingRoi.shape === 'rectangle'
-      ? 'Rectangle'
-      : 'Ellipse';
-  return `${mode} ${shape}`;
-};
-
 export default function DrawRoiWindow({
   initialPosition,
   windowMargin,
@@ -97,6 +69,7 @@ export default function DrawRoiWindow({
   volumeDimensions,
   tool,
   dimensionMode,
+  currentRoiName,
   currentColor,
   workingRoi,
   onToolChange,
@@ -141,98 +114,103 @@ export default function DrawRoiWindow({
       onClose={onClose}
     >
       <div className="global-controls draw-roi-window">
-        <div className="control-row draw-roi-toggle-row" role="group" aria-label="ROI dimension">
-          {(['2d', '3d'] as const).map((mode) => {
-            const isSelected = dimensionMode === mode;
-            return (
-              <button
-                key={mode}
-                type="button"
-                className={isSelected ? 'draw-roi-toggle-button is-active' : 'draw-roi-toggle-button'}
-                aria-pressed={isSelected}
-                onClick={() => onDimensionModeChange(mode)}
-              >
-                {mode.toUpperCase()}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="control-row draw-roi-toggle-row" role="group" aria-label="ROI drawing tool">
-          <button
-            type="button"
-            className={tool === 'hand' ? 'draw-roi-tool-button is-active' : 'draw-roi-tool-button'}
-            aria-pressed={tool === 'hand'}
-            onClick={() => onToolChange('hand')}
-            title="Hand"
+        <div className="control-row draw-roi-toolbar">
+          <div
+            className="draw-roi-segmented-control draw-roi-segmented-control--mode"
+            role="group"
+            aria-label="ROI dimension"
           >
-            <HandIcon />
-          </button>
-          <button
-            type="button"
-            className={tool === 'line' ? 'draw-roi-tool-button is-active' : 'draw-roi-tool-button'}
-            aria-pressed={tool === 'line'}
-            onClick={() => onToolChange('line')}
-            title="Line"
-          >
-            <LineIcon />
-          </button>
-          <button
-            type="button"
-            className={tool === 'rectangle' ? 'draw-roi-tool-button is-active' : 'draw-roi-tool-button'}
-            aria-pressed={tool === 'rectangle'}
-            onClick={() => onToolChange('rectangle')}
-            title="Rectangle"
-          >
-            <RectangleIcon />
-          </button>
-          <button
-            type="button"
-            className={tool === 'ellipse' ? 'draw-roi-tool-button is-active' : 'draw-roi-tool-button'}
-            aria-pressed={tool === 'ellipse'}
-            onClick={() => onToolChange('ellipse')}
-            title="Ellipse"
-          >
-            <EllipseIcon />
-          </button>
-        </div>
-
-        <p className="draw-roi-current-label" aria-live="polite">
-          Current ROI: <strong>{formatCurrentRoiLabel(workingRoi)}</strong>
-        </p>
-
-        {(['start', 'end'] as const).map((pointKey) => (
-          <div key={pointKey} className="draw-roi-slider-section">
-            <div className="draw-roi-slider-section-title">{pointKey === 'start' ? 'Start' : 'End'}</div>
-            {(['x', 'y', 'z'] as const).map((axis) => {
-              const max =
-                axis === 'x'
-                  ? Math.max(0, volumeDimensions.width - 1)
-                  : axis === 'y'
-                    ? Math.max(0, volumeDimensions.height - 1)
-                    : Math.max(0, volumeDimensions.depth - 1);
-              const value = workingRoi ? workingRoi[pointKey][axis] : 0;
-              const disabled = pointKey === 'end' && axis === 'z' ? endZDisabled : slidersDisabled;
+            {(['2d', '3d'] as const).map((mode) => {
+              const isSelected = dimensionMode === mode;
               return (
-                <div key={`${pointKey}-${axis}`} className="control-group control-group--slider draw-roi-slider-group">
-                  <label htmlFor={`draw-roi-${pointKey}-${axis}-slider`}>
-                    {axis.toUpperCase()} <span>{value}</span>
-                  </label>
-                  <input
-                    id={`draw-roi-${pointKey}-${axis}-slider`}
-                    type="range"
-                    min={0}
-                    max={max}
-                    step={1}
-                    value={value}
-                    disabled={disabled}
-                    onChange={(event) => handlePointCoordinateChange(pointKey, axis, Number(event.target.value))}
-                  />
-                </div>
+                <button
+                  key={mode}
+                  type="button"
+                  className={isSelected ? 'draw-roi-segment-button is-active' : 'draw-roi-segment-button'}
+                  aria-pressed={isSelected}
+                  onClick={() => onDimensionModeChange(mode)}
+                >
+                  {mode.toUpperCase()}
+                </button>
               );
             })}
           </div>
-        ))}
+
+          <div
+            className="draw-roi-segmented-control draw-roi-segmented-control--shape"
+            role="group"
+            aria-label="ROI drawing tool"
+          >
+            <button
+              type="button"
+              className={tool === 'line' ? 'draw-roi-segment-button draw-roi-tool-button is-active' : 'draw-roi-segment-button draw-roi-tool-button'}
+              aria-pressed={tool === 'line'}
+              aria-label="Line"
+              onClick={() => onToolChange('line')}
+              title="Line"
+            >
+              <LineIcon />
+            </button>
+            <button
+              type="button"
+              className={tool === 'rectangle' ? 'draw-roi-segment-button draw-roi-tool-button is-active' : 'draw-roi-segment-button draw-roi-tool-button'}
+              aria-pressed={tool === 'rectangle'}
+              aria-label="Rectangle"
+              onClick={() => onToolChange('rectangle')}
+              title="Rectangle"
+            >
+              <RectangleIcon />
+            </button>
+            <button
+              type="button"
+              className={tool === 'ellipse' ? 'draw-roi-segment-button draw-roi-tool-button is-active' : 'draw-roi-segment-button draw-roi-tool-button'}
+              aria-pressed={tool === 'ellipse'}
+              aria-label="Ellipse"
+              onClick={() => onToolChange('ellipse')}
+              title="Ellipse"
+            >
+              <EllipseIcon />
+            </button>
+          </div>
+        </div>
+
+        <div className="draw-roi-sliders" role="group" aria-label="ROI coordinates">
+          <div className="draw-roi-name-row">
+            <span>ROI name</span>
+            <span>{currentRoiName}</span>
+          </div>
+          {(['x', 'y', 'z'] as const).map((axis) => (
+            <div key={axis} className="control-row draw-roi-slider-row">
+              {(['start', 'end'] as const).map((pointKey) => {
+                const max =
+                  axis === 'x'
+                    ? Math.max(0, volumeDimensions.width - 1)
+                    : axis === 'y'
+                      ? Math.max(0, volumeDimensions.height - 1)
+                      : Math.max(0, volumeDimensions.depth - 1);
+                const value = workingRoi ? workingRoi[pointKey][axis] : 0;
+                const disabled = pointKey === 'end' && axis === 'z' ? endZDisabled : slidersDisabled;
+                return (
+                  <div key={`${pointKey}-${axis}`} className="control-group control-group--slider draw-roi-slider-group">
+                    <label htmlFor={`draw-roi-${pointKey}-${axis}-slider`}>
+                      {axis.toUpperCase()} {pointKey === 'start' ? 'Start' : 'End'} <span>{value}</span>
+                    </label>
+                    <input
+                      id={`draw-roi-${pointKey}-${axis}-slider`}
+                      type="range"
+                      min={0}
+                      max={max}
+                      step={1}
+                      value={value}
+                      disabled={disabled}
+                      onChange={(event) => handlePointCoordinateChange(pointKey, axis, Number(event.target.value))}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
 
         <div className="draw-roi-color-section">
           <div className="draw-roi-color-header">
@@ -256,15 +234,19 @@ export default function DrawRoiWindow({
                 );
               })}
             </div>
-            <label className="paintbrush-color-picker draw-roi-color-picker" htmlFor="draw-roi-color-input">
-              <span>Picker</span>
+            <label className="color-picker-trigger draw-roi-color-picker" htmlFor="draw-roi-color-input">
               <input
                 id="draw-roi-color-input"
-                className="paintbrush-color-input"
+                className="color-picker-input"
                 type="color"
                 value={currentColor}
                 onChange={(event) => onColorChange(event.target.value)}
                 aria-label="Choose ROI color"
+              />
+              <span
+                className="color-picker-indicator"
+                style={{ backgroundColor: currentColor }}
+                aria-hidden="true"
               />
             </label>
           </div>

@@ -1,8 +1,8 @@
 import { GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from '../shared/colorMaps/layerColors';
 
-export type RoiTool = 'hand' | 'line' | 'rectangle' | 'ellipse';
+export type RoiTool = 'line' | 'rectangle' | 'ellipse';
 export type RoiDimensionMode = '2d' | '3d';
-export type RoiShape = Exclude<RoiTool, 'hand'>;
+export type RoiShape = RoiTool;
 
 export type RoiPoint = {
   x: number;

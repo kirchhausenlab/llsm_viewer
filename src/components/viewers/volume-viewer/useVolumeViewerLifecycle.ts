@@ -44,6 +44,7 @@ type UseVolumeViewerLifecycleParams = {
   applyKeyboardRotation: RenderLoopOptions['applyKeyboardRotation'];
   applyKeyboardMovement: RenderLoopOptions['applyKeyboardMovement'];
   updateTrackAppearance: RenderLoopOptions['updateTrackAppearance'];
+  renderRoiBlOcclusionPass: RenderLoopOptions['renderRoiBlOcclusionPass'];
   refreshViewerProps: RenderLoopOptions['refreshViewerProps'];
   advancePlaybackFrame: RenderLoopOptions['advancePlaybackFrame'];
   updateControllerRays: RenderLoopOptions['updateControllerRays'];
@@ -77,10 +78,14 @@ type UseVolumeViewerLifecycleParams = {
   followedTrackIdRef: PointerLifecycleOptions['followedTrackIdRef'];
   updateVoxelHover: PointerLifecycleOptions['updateVoxelHover'];
   isRoiDrawToolActiveRef: PointerLifecycleOptions['isRoiDrawToolActiveRef'];
+  isRoiDrawPreviewActiveRef: PointerLifecycleOptions['isRoiDrawPreviewActiveRef'];
+  isRoiMoveInteractionActiveRef: PointerLifecycleOptions['isRoiMoveInteractionActiveRef'];
+  isRoiMoveActiveRef: PointerLifecycleOptions['isRoiMoveActiveRef'];
   handleRoiPointerDown: PointerLifecycleOptions['handleRoiPointerDown'];
   handleRoiPointerMove: PointerLifecycleOptions['handleRoiPointerMove'];
   handleRoiPointerUp: PointerLifecycleOptions['handleRoiPointerUp'];
   handleRoiPointerLeave: PointerLifecycleOptions['handleRoiPointerLeave'];
+  performRoiHitTest: PointerLifecycleOptions['performRoiHitTest'];
   performPropHitTest: PointerLifecycleOptions['performPropHitTest'];
   resolveWorldPropDragPosition: PointerLifecycleOptions['resolveWorldPropDragPosition'];
   performHoverHitTest: PointerLifecycleOptions['performHoverHitTest'];
@@ -146,6 +151,7 @@ export function useVolumeViewerLifecycle({
   applyKeyboardRotation,
   applyKeyboardMovement,
   updateTrackAppearance,
+  renderRoiBlOcclusionPass,
   refreshViewerProps,
   advancePlaybackFrame,
   updateControllerRays,
@@ -179,10 +185,14 @@ export function useVolumeViewerLifecycle({
   followedTrackIdRef,
   updateVoxelHover,
   isRoiDrawToolActiveRef,
+  isRoiDrawPreviewActiveRef,
+  isRoiMoveInteractionActiveRef,
+  isRoiMoveActiveRef,
   handleRoiPointerDown,
   handleRoiPointerMove,
   handleRoiPointerUp,
   handleRoiPointerLeave,
+  performRoiHitTest,
   performPropHitTest,
   resolveWorldPropDragPosition,
   performHoverHitTest,
@@ -240,6 +250,8 @@ export function useVolumeViewerLifecycle({
   applyKeyboardMovementRef.current = applyKeyboardMovement;
   const updateTrackAppearanceRef = useRef(updateTrackAppearance);
   updateTrackAppearanceRef.current = updateTrackAppearance;
+  const renderRoiBlOcclusionPassRef = useRef(renderRoiBlOcclusionPass);
+  renderRoiBlOcclusionPassRef.current = renderRoiBlOcclusionPass;
   const refreshViewerPropsRef = useRef(refreshViewerProps);
   refreshViewerPropsRef.current = refreshViewerProps;
   const advancePlaybackFrameRef = useRef(advancePlaybackFrame);
@@ -254,6 +266,12 @@ export function useVolumeViewerLifecycle({
   updateVoxelHoverRef.current = updateVoxelHover;
   const isRoiDrawToolActiveRefRef = useRef(isRoiDrawToolActiveRef);
   isRoiDrawToolActiveRefRef.current = isRoiDrawToolActiveRef;
+  const isRoiDrawPreviewActiveRefRef = useRef(isRoiDrawPreviewActiveRef);
+  isRoiDrawPreviewActiveRefRef.current = isRoiDrawPreviewActiveRef;
+  const isRoiMoveInteractionActiveRefRef = useRef(isRoiMoveInteractionActiveRef);
+  isRoiMoveInteractionActiveRefRef.current = isRoiMoveInteractionActiveRef;
+  const isRoiMoveActiveRefRef = useRef(isRoiMoveActiveRef);
+  isRoiMoveActiveRefRef.current = isRoiMoveActiveRef;
   const handleRoiPointerDownRef = useRef(handleRoiPointerDown);
   handleRoiPointerDownRef.current = handleRoiPointerDown;
   const handleRoiPointerMoveRef = useRef(handleRoiPointerMove);
@@ -262,6 +280,8 @@ export function useVolumeViewerLifecycle({
   handleRoiPointerUpRef.current = handleRoiPointerUp;
   const handleRoiPointerLeaveRef = useRef(handleRoiPointerLeave);
   handleRoiPointerLeaveRef.current = handleRoiPointerLeave;
+  const performRoiHitTestRef = useRef(performRoiHitTest);
+  performRoiHitTestRef.current = performRoiHitTest;
   const performPropHitTestRef = useRef(performPropHitTest);
   performPropHitTestRef.current = performPropHitTest;
   const resolveWorldPropDragPositionRef = useRef(resolveWorldPropDragPosition);
@@ -498,10 +518,14 @@ export function useVolumeViewerLifecycle({
       rotationTargetRef,
       updateVoxelHover: (event) => updateVoxelHoverRef.current(event),
       isRoiDrawToolActiveRef: isRoiDrawToolActiveRefRef.current,
+      isRoiDrawPreviewActiveRef: isRoiDrawPreviewActiveRefRef.current,
+      isRoiMoveInteractionActiveRef: isRoiMoveInteractionActiveRefRef.current,
+      isRoiMoveActiveRef: isRoiMoveActiveRefRef.current,
       handleRoiPointerDown: (event, canvas) => handleRoiPointerDownRef.current(event, canvas),
       handleRoiPointerMove: (event) => handleRoiPointerMoveRef.current(event),
       handleRoiPointerUp: (event, canvas) => handleRoiPointerUpRef.current(event, canvas),
       handleRoiPointerLeave: (event, canvas) => handleRoiPointerLeaveRef.current(event, canvas),
+      performRoiHitTest: (event) => performRoiHitTestRef.current(event),
       performPropHitTest: (event) => performPropHitTestRef.current(event),
       resolveWorldPropDragPosition: (propId, event) =>
         resolveWorldPropDragPositionRef.current(propId, event),
@@ -539,9 +563,12 @@ export function useVolumeViewerLifecycle({
         applyKeyboardMovementRef.current(rendererInstance, cameraInstance, controlsInstance),
       rotationTargetRef,
       updateTrackAppearance: (timestamp) => updateTrackAppearanceRef.current(timestamp),
+      renderRoiBlOcclusionPass: (rendererInstance, cameraInstance) =>
+        renderRoiBlOcclusionPassRef.current?.(rendererInstance, cameraInstance),
       refreshViewerProps: () => refreshViewerPropsRef.current(),
       followTargetActiveRef,
       followTargetOffsetRef,
+      roiGroupRef,
       resourcesRef,
       currentDimensionsRef,
       onCameraNavigationSample: (sample) => onCameraNavigationSampleRef.current?.(sample),

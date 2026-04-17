@@ -57,6 +57,7 @@ import {
   FALLBACK_SEGMENTATION_PALETTE_TEXTURE,
 } from './fallbackTextures';
 import {
+  RENDER_STYLE_BL,
   RENDER_STYLE_SLICE,
   resolveLayerSamplingMode,
   type LayerSettings,
@@ -96,6 +97,7 @@ type UseVolumeResourcesParams = {
   projectionViewStateRef?: MutableRefObject<DesktopViewStateMap>;
   projectionMode?: ViewerProjectionMode;
   trackGroupRef: MutableRefObject<THREE.Group | null>;
+  roiBlOcclusionAlphaSceneRef?: MutableRefObject<THREE.Scene | null>;
   resourcesRef?: MutableRefObject<Map<string, VolumeResources>>;
   currentDimensionsRef?: MutableRefObject<{ width: number; height: number; depth: number } | null>;
   colormapCacheRef?: MutableRefObject<Map<string, THREE.DataTexture>>;
@@ -301,6 +303,8 @@ function assignVolumeMeshOnBeforeRender(
 ): void {
   const worldCameraPosition = new THREE.Vector3();
   const localCameraPosition = new THREE.Vector3();
+  const modelViewProjectionMatrix = new THREE.Matrix4();
+  const modelViewMatrix = new THREE.Matrix4();
   mesh.onBeforeRender = (_renderer, _scene, renderCamera) => {
     const shaderMaterial = mesh.material as THREE.ShaderMaterial;
     const uniforms = shaderMaterial.uniforms as ShaderUniformMap | undefined;
@@ -311,7 +315,61 @@ function assignVolumeMeshOnBeforeRender(
       mesh.worldToLocal(localCameraPosition);
       cameraUniform.copy(localCameraPosition);
     }
+    const modelViewProjectionUniform = uniforms?.u_modelViewProjectionMatrix?.value as THREE.Matrix4 | undefined;
+    if (modelViewProjectionUniform) {
+      modelViewProjectionMatrix.multiplyMatrices(renderCamera.projectionMatrix, mesh.modelViewMatrix);
+      modelViewProjectionUniform.copy(modelViewProjectionMatrix);
+    }
+    const modelViewUniform = uniforms?.u_modelViewMatrixVolume?.value as THREE.Matrix4 | undefined;
+    if (modelViewUniform) {
+      modelViewMatrix.copy(mesh.modelViewMatrix);
+      modelViewUniform.copy(modelViewMatrix);
+    }
+    const nearFarUniform = uniforms?.u_cameraNearFar?.value as THREE.Vector2 | undefined;
+    const cameraWithClipPlanes = renderCamera as THREE.Camera & { near: number; far: number };
+    if (nearFarUniform) {
+      nearFarUniform.set(cameraWithClipPlanes.near, cameraWithClipPlanes.far);
+    }
   };
+}
+
+const ROI_BL_OCCLUSION_ALPHA_DEFINE = '#define VOLUME_ROI_OCCLUSION_ALPHA_PASS\n';
+
+function createRoiBlOcclusionMaterial(
+  shader: { vertexShader: string; fragmentShader: string },
+  uniforms: ShaderUniformMap,
+): THREE.ShaderMaterial {
+  const material = new THREE.ShaderMaterial({
+    uniforms,
+    vertexShader: shader.vertexShader,
+    fragmentShader: `${ROI_BL_OCCLUSION_ALPHA_DEFINE}${shader.fragmentShader}`,
+    side: THREE.BackSide,
+    transparent: true,
+    blending: THREE.NormalBlending,
+    depthWrite: false,
+    depthTest: true,
+  });
+  material.toneMapped = false;
+  material.blending = THREE.CustomBlending;
+  material.blendEquation = THREE.AddEquation;
+  material.blendSrc = THREE.ZeroFactor;
+  material.blendDst = THREE.SrcColorFactor;
+  material.blendEquationAlpha = THREE.AddEquation;
+  material.blendSrcAlpha = THREE.ZeroFactor;
+  material.blendDstAlpha = THREE.OneFactor;
+  return material;
+}
+
+function syncRoiBlOcclusionMeshTransform(targetMesh: THREE.Mesh | null | undefined, sourceMesh: THREE.Mesh): void {
+  if (!targetMesh) {
+    return;
+  }
+  sourceMesh.updateMatrixWorld(true);
+  targetMesh.matrixAutoUpdate = false;
+  targetMesh.matrix.copy(sourceMesh.matrixWorld);
+  targetMesh.matrixWorld.copy(sourceMesh.matrixWorld);
+  targetMesh.matrixWorldNeedsUpdate = false;
+  targetMesh.visible = sourceMesh.visible;
 }
 
 function applyVolumeTextureSampling(
@@ -1276,6 +1334,13 @@ export function disposeVolumeResource(
   resource: VolumeResources,
   options: DisposeVolumeResourceOptions = {},
 ): void {
+  const roiBlOcclusionAlphaParent = resource.roiBlOcclusionAlphaMesh?.parent ?? null;
+  if (roiBlOcclusionAlphaParent) {
+    roiBlOcclusionAlphaParent.remove(resource.roiBlOcclusionAlphaMesh!);
+  }
+  disposeMaterial(resource.roiBlOcclusionAlphaMesh?.material ?? null);
+  resource.roiBlOcclusionAlphaMesh = null;
+
   const parent = resource.mesh.parent;
   if (parent) {
     parent.remove(resource.mesh);
@@ -2181,6 +2246,7 @@ export function useVolumeResources({
   projectionViewStateRef: providedProjectionViewStateRef,
   projectionMode = 'perspective',
   trackGroupRef,
+  roiBlOcclusionAlphaSceneRef,
   resourcesRef: providedResourcesRef,
   currentDimensionsRef: providedCurrentDimensionsRef,
   colormapCacheRef: providedColormapCacheRef,
@@ -2684,6 +2750,7 @@ export function useVolumeResources({
 
           const nextResource: VolumeResources = {
             mesh,
+            roiBlOcclusionAlphaMesh: null,
             texture,
             labelTexture: null,
             paletteTexture: segmentationPaletteTexture,
@@ -2727,6 +2794,15 @@ export function useVolumeResources({
             playbackWarmupReady: null,
             updateGpuBrickResidencyForCamera: null,
           };
+          if (layer.renderStyle === RENDER_STYLE_BL) {
+            const alphaMaterial = createRoiBlOcclusionMaterial(shader, uniforms as ShaderUniformMap);
+            const alphaMesh = new THREE.Mesh(mesh.geometry, alphaMaterial);
+            assignVolumeMeshOnBeforeRender(alphaMesh);
+            alphaMesh.frustumCulled = false;
+            syncRoiBlOcclusionMeshTransform(alphaMesh, mesh);
+            roiBlOcclusionAlphaSceneRef?.current?.add(alphaMesh);
+            nextResource.roiBlOcclusionAlphaMesh = alphaMesh;
+          }
           applyBackgroundMaskUniforms(
             uniforms as ShaderUniformMap,
             nextResource,
@@ -3005,6 +3081,29 @@ export function useVolumeResources({
         mesh.visible = isPlaybackWarmup ? false : layer.visible;
         mesh.renderOrder = resolveLayerRenderOrder(index, layer);
 
+        if (resources.mode === '3d' && layer.renderStyle === RENDER_STYLE_BL) {
+          if (!resources.roiBlOcclusionAlphaMesh) {
+            const shader =
+              VolumeRenderShaderVariants[
+                getVolumeRenderShaderVariantKey(layer.renderStyle, effectiveSamplingMode, projectionMode)
+              ];
+            const materialUniforms = (mesh.material as THREE.ShaderMaterial).uniforms as ShaderUniformMap;
+            const alphaMaterial = createRoiBlOcclusionMaterial(shader, materialUniforms);
+            const alphaMesh = new THREE.Mesh(mesh.geometry, alphaMaterial);
+            assignVolumeMeshOnBeforeRender(alphaMesh);
+            alphaMesh.frustumCulled = false;
+            roiBlOcclusionAlphaSceneRef?.current?.add(alphaMesh);
+            resources.roiBlOcclusionAlphaMesh = alphaMesh;
+          }
+          syncRoiBlOcclusionMeshTransform(resources.roiBlOcclusionAlphaMesh, mesh);
+        } else {
+          if (resources.roiBlOcclusionAlphaMesh) {
+            resources.roiBlOcclusionAlphaMesh.parent?.remove(resources.roiBlOcclusionAlphaMesh);
+            disposeMaterial(resources.roiBlOcclusionAlphaMesh.material);
+            resources.roiBlOcclusionAlphaMesh = null;
+          }
+        }
+
         if (resources.mode === '3d' && resources.projectionMode !== projectionMode) {
           const previousMaterial = mesh.material as THREE.ShaderMaterial;
           const shader =
@@ -3025,6 +3124,12 @@ export function useVolumeResources({
           mesh.material = nextMaterial;
           disposeMaterial(previousMaterial);
           resources.projectionMode = projectionMode;
+          if (resources.roiBlOcclusionAlphaMesh && resources.roiBlOcclusionAlphaMesh.material) {
+            const previousAlphaMaterial = resources.roiBlOcclusionAlphaMesh.material as THREE.ShaderMaterial;
+            const nextAlphaMaterial = createRoiBlOcclusionMaterial(shader, nextMaterial.uniforms as ShaderUniformMap);
+            resources.roiBlOcclusionAlphaMesh.material = nextAlphaMaterial;
+            disposeMaterial(previousAlphaMaterial);
+          }
           flushRendererRenderLists();
         }
 

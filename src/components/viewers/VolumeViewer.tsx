@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import * as THREE from 'three';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
+import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2';
 import './viewerCommon.css';
 import './VolumeViewer.css';
 import { createEmptyDesktopViewStateMap } from '../../hooks/useVolumeRenderSetup';
@@ -46,7 +48,7 @@ import {
   computeRuntimeDiagnosticsWindowRecenterPosition,
   RUNTIME_DIAGNOSTICS_WINDOW_WIDTH,
 } from '../../shared/utils/windowLayout';
-import { RENDER_STYLE_SLICE } from '../../state/layerSettings';
+import { RENDER_STYLE_BL, RENDER_STYLE_SLICE } from '../../state/layerSettings';
 import FloatingWindow from '../widgets/FloatingWindow';
 
 function formatPercentage(value: number): string {
@@ -106,6 +108,63 @@ function summarizeGpuResidency(resources: Map<string, VolumeResources>) {
     pendingBricks,
     scheduledUploads
   };
+}
+
+const ROI_COMPOSITE_SHADER_KEY = 'roi-composite-transmittance-v1';
+const ROI_PREPASS_SHADER_KEY = 'roi-prepass-depth-v1';
+const ROI_TRANSMITTANCE_FALLBACK_TEXTURE = (() => {
+  const texture = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat);
+  texture.type = THREE.UnsignedByteType;
+  texture.needsUpdate = true;
+  return texture;
+})();
+
+function ensureRoiCompositeShader(
+  material: LineMaterial,
+  uniforms: {
+    enabled: { value: number };
+    transmittanceTexture: { value: THREE.Texture };
+    viewport: { value: THREE.Vector2 };
+  }
+) {
+  material.transparent = true;
+  material.depthTest = false;
+  material.depthWrite = false;
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.roiCompositeEnabled = uniforms.enabled;
+    shader.uniforms.roiCompositeTransmittance = uniforms.transmittanceTexture;
+    shader.uniforms.roiCompositeViewport = uniforms.viewport;
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        'uniform float linewidth;\n',
+        'uniform float linewidth;\nuniform float roiCompositeEnabled;\nuniform sampler2D roiCompositeTransmittance;\nuniform vec2 roiCompositeViewport;\n'
+      )
+      .replace(
+        'float alpha = opacity;\n',
+        `float alpha = opacity;
+			if (roiCompositeEnabled > 0.5 && roiCompositeViewport.x > 0.0 && roiCompositeViewport.y > 0.0) {
+				vec2 roiCompositeUv = clamp(gl_FragCoord.xy / roiCompositeViewport, vec2(0.0), vec2(1.0));
+				float roiCompositeTrans = texture2D(roiCompositeTransmittance, roiCompositeUv).r;
+				alpha *= clamp(roiCompositeTrans, 0.0, 1.0);
+			}\n`
+      );
+  };
+  material.customProgramCacheKey = () => ROI_COMPOSITE_SHADER_KEY;
+  material.needsUpdate = true;
+}
+
+function ensureRoiPrepassShader(material: LineMaterial) {
+  material.transparent = false;
+  material.depthTest = false;
+  material.depthWrite = false;
+  material.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      'gl_FragColor = vec4( diffuseColor.rgb, alpha );',
+      'gl_FragColor = vec4(vec3(gl_FragCoord.z), 1.0);'
+    );
+  };
+  material.customProgramCacheKey = () => ROI_PREPASS_SHADER_KEY;
+  material.needsUpdate = true;
 }
 
 function isPlaybackWarmupEligibleLayer(layer: VolumeViewerProps['layers'][number]): boolean {
@@ -188,6 +247,22 @@ function VolumeViewer({
   } = resolveVolumeViewerVrRuntime(vr);
   const paintbrushRef = useRef(paintbrush);
   const paintStrokePointerIdRef = useRef<number | null>(null);
+  const roiBlOcclusionAlphaSceneRef = useRef<THREE.Scene | null>(new THREE.Scene());
+  const roiBlOcclusionDepthSceneRef = useRef<THREE.Scene | null>(new THREE.Scene());
+  const roiBlOcclusionAlphaTargetRef = useRef<THREE.WebGLRenderTarget | null>(null);
+  const roiBlOcclusionDepthTargetRef = useRef<THREE.WebGLRenderTarget | null>(null);
+  const roiBlOcclusionSizeRef = useRef({ width: 0, height: 0 });
+  const roiPrepassSceneRef = useRef<THREE.Scene | null>(new THREE.Scene());
+  const roiPrepassLineRef = useRef<LineSegments2 | null>(null);
+  const roiPrepassTargetRef = useRef<THREE.WebGLRenderTarget | null>(null);
+  const roiCompositeSceneRef = useRef<THREE.Scene | null>(new THREE.Scene());
+  const roiCompositeLineRef = useRef<LineSegments2 | null>(null);
+  const roiCompositeLineMaterialRef = useRef<LineMaterial | null>(null);
+  const roiCompositeUniformsRef = useRef({
+    enabled: { value: 0 },
+    transmittanceTexture: { value: ROI_TRANSMITTANCE_FALLBACK_TEXTURE as THREE.Texture },
+    viewport: { value: new THREE.Vector2(1, 1) },
+  });
 
   const resourcesRef = useRef<Map<string, VolumeResources>>(new Map());
   const playbackWarmupGateRef = useRef<PlaybackWarmupGateState>({
@@ -447,6 +522,10 @@ function VolumeViewer({
   });
   const {
     isDrawToolActiveRef,
+    isDrawPreviewActiveRef,
+    isRoiMoveInteractionActiveRef,
+    isRoiMoveActiveRef,
+    performHoverHitTest: performRoiHitTest,
     handlePointerDown: handleRoiPointerDown,
     handlePointerMove: handleRoiPointerMove,
     handlePointerUp: handleRoiPointerUp,
@@ -472,6 +551,221 @@ function VolumeViewer({
       updateRoiAppearance(timestamp);
     },
     [updateRoiAppearance, updateTrackAppearance]
+  );
+  const ensureRoiPrepassHelpers = useCallback((renderer: THREE.WebGLRenderer) => {
+    const bufferSize = new THREE.Vector2();
+    renderer.getDrawingBufferSize(bufferSize);
+    const width = Math.max(1, Math.floor(bufferSize.x));
+    const height = Math.max(1, Math.floor(bufferSize.y));
+    const prepassScene = roiPrepassSceneRef.current;
+    const compositeScene = roiCompositeSceneRef.current;
+    if (!prepassScene || !compositeScene) {
+      return null;
+    }
+
+    if (!roiPrepassLineRef.current) {
+      const material = new LineMaterial({
+        color: new THREE.Color(0xffffff),
+        linewidth: 1,
+        transparent: false,
+        opacity: 1,
+        depthTest: false,
+        depthWrite: false,
+      });
+      material.resolution.set(width, height);
+      ensureRoiPrepassShader(material);
+      const line = new LineSegments2(undefined as never, material);
+      line.frustumCulled = false;
+      line.visible = false;
+      line.matrixAutoUpdate = false;
+      roiPrepassLineRef.current = line;
+      prepassScene.add(line);
+    }
+
+    if (!roiCompositeLineRef.current) {
+      const material = new LineMaterial({
+        color: new THREE.Color(0xffffff),
+        linewidth: 1,
+        transparent: true,
+        opacity: 1,
+        depthTest: false,
+        depthWrite: false,
+      });
+      material.resolution.set(width, height);
+      ensureRoiCompositeShader(material, roiCompositeUniformsRef.current);
+      const line = new LineSegments2(undefined as never, material);
+      line.frustumCulled = false;
+      line.visible = false;
+      line.matrixAutoUpdate = false;
+      roiCompositeLineRef.current = line;
+      roiCompositeLineMaterialRef.current = material;
+      compositeScene.add(line);
+    }
+
+    roiPrepassLineRef.current.material.resolution.set(width, height);
+    roiCompositeLineMaterialRef.current?.resolution.set(width, height);
+    roiCompositeUniformsRef.current.viewport.value.set(width, height);
+
+    return {
+      width,
+      height,
+      prepassLine: roiPrepassLineRef.current,
+      compositeLine: roiCompositeLineRef.current,
+    };
+  }, []);
+  const ensureRoiRenderTargets = useCallback((renderer: THREE.WebGLRenderer) => {
+    const bufferSize = new THREE.Vector2();
+    renderer.getDrawingBufferSize(bufferSize);
+    const width = Math.max(1, Math.floor(bufferSize.x));
+    const height = Math.max(1, Math.floor(bufferSize.y));
+    if (
+      roiBlOcclusionAlphaTargetRef.current &&
+      roiPrepassTargetRef.current &&
+      roiBlOcclusionSizeRef.current.width === width &&
+      roiBlOcclusionSizeRef.current.height === height
+    ) {
+      return {
+        width,
+        height,
+        alphaTarget: roiBlOcclusionAlphaTargetRef.current,
+        prepassTarget: roiPrepassTargetRef.current,
+      };
+    }
+
+    roiBlOcclusionAlphaTargetRef.current?.dispose();
+    roiBlOcclusionDepthTargetRef.current?.dispose();
+    roiPrepassTargetRef.current?.dispose();
+
+    const alphaTarget = new THREE.WebGLRenderTarget(width, height, {
+      depthBuffer: false,
+      stencilBuffer: false,
+      format: THREE.RGBAFormat,
+      type: THREE.UnsignedByteType,
+    });
+    alphaTarget.texture.minFilter = THREE.LinearFilter;
+    alphaTarget.texture.magFilter = THREE.LinearFilter;
+    alphaTarget.texture.generateMipmaps = false;
+
+    const prepassTarget = new THREE.WebGLRenderTarget(width, height, {
+      depthBuffer: false,
+      stencilBuffer: false,
+      format: THREE.RGBAFormat,
+      type: THREE.FloatType,
+    });
+    prepassTarget.texture.minFilter = THREE.NearestFilter;
+    prepassTarget.texture.magFilter = THREE.NearestFilter;
+    prepassTarget.texture.generateMipmaps = false;
+
+    roiBlOcclusionAlphaTargetRef.current = alphaTarget;
+    roiPrepassTargetRef.current = prepassTarget;
+    roiBlOcclusionSizeRef.current = { width, height };
+
+    return { width, height, alphaTarget, prepassTarget };
+  }, []);
+  const renderRoiBlOcclusionPass = useCallback(
+    (renderer: THREE.WebGLRenderer, camera: THREE.Camera) => {
+      const alphaScene = roiBlOcclusionAlphaSceneRef.current;
+      const helperBundle = ensureRoiPrepassHelpers(renderer);
+      if (!alphaScene || !helperBundle) {
+        return;
+      }
+
+      const blResources = Array.from(resourcesRef.current.values()).filter(
+        (resource) =>
+          resource.mode === '3d' &&
+          resource.renderStyle === RENDER_STYLE_BL &&
+          resource.roiBlOcclusionAlphaMesh
+      );
+
+      for (const resource of blResources) {
+        resource.mesh.updateMatrixWorld(true);
+        const alphaMesh = resource.roiBlOcclusionAlphaMesh!;
+        alphaMesh.matrixAutoUpdate = false;
+        alphaMesh.matrix.copy(resource.mesh.matrixWorld);
+        alphaMesh.matrixWorld.copy(resource.mesh.matrixWorld);
+        alphaMesh.matrixWorldNeedsUpdate = false;
+        alphaMesh.visible = resource.mesh.visible;
+      }
+
+      const visibleBlResources = blResources.filter((resource) => resource.mesh.visible);
+      const visibleRoiResources = Array.from(roiLinesRef.current.values()).filter((resource) => resource.line.visible);
+
+      if (visibleRoiResources.length === 0) {
+        return;
+      }
+
+      const { width, height, alphaTarget, prepassTarget } = ensureRoiRenderTargets(renderer);
+      const { prepassLine, compositeLine } = helperBundle;
+      const previousRenderTarget = renderer.getRenderTarget();
+      const previousAutoClear = renderer.autoClear;
+      const previousClearColor = new THREE.Color();
+      renderer.getClearColor(previousClearColor);
+      const previousClearAlpha = renderer.getClearAlpha();
+
+      for (const roiResource of visibleRoiResources) {
+        const prepassMaterial = prepassLine.material as LineMaterial;
+        prepassMaterial.color.copy(roiResource.material.color);
+        prepassMaterial.opacity = roiResource.material.opacity;
+        prepassMaterial.linewidth = roiResource.material.linewidth;
+        prepassMaterial.resolution.set(width, height);
+        prepassLine.geometry = roiResource.geometry;
+        prepassLine.matrix.copy(roiResource.line.matrixWorld);
+        prepassLine.matrixWorld.copy(roiResource.line.matrixWorld);
+        prepassLine.matrixWorldNeedsUpdate = false;
+        prepassLine.visible = true;
+
+        renderer.setRenderTarget(prepassTarget);
+        renderer.autoClear = true;
+        renderer.setClearColor(0x000000, 0);
+        renderer.clear(true, true, true);
+        renderer.render(roiPrepassSceneRef.current!, camera);
+
+        if (visibleBlResources.length > 0) {
+          for (const resource of visibleBlResources) {
+            const uniforms = (resource.roiBlOcclusionAlphaMesh!.material as THREE.ShaderMaterial).uniforms as Record<string, { value: unknown }>;
+            if (uniforms.u_roiOcclusionDepthTexture) {
+              uniforms.u_roiOcclusionDepthTexture.value = prepassTarget.texture;
+            }
+            if (uniforms.u_roiOcclusionViewport) {
+              (uniforms.u_roiOcclusionViewport.value as THREE.Vector2).set(width, height);
+            }
+          }
+
+          renderer.setRenderTarget(alphaTarget);
+          renderer.autoClear = true;
+          renderer.setClearColor(0xffffff, 1);
+          renderer.clear(true, true, true);
+          renderer.render(alphaScene, camera);
+        }
+
+        const compositeMaterial = roiCompositeLineMaterialRef.current!;
+        compositeMaterial.color.copy(roiResource.material.color);
+        compositeMaterial.opacity = roiResource.material.opacity;
+        compositeMaterial.linewidth = roiResource.material.linewidth;
+        compositeMaterial.resolution.set(width, height);
+        roiCompositeUniformsRef.current.enabled.value = visibleBlResources.length > 0 ? 1 : 0;
+        roiCompositeUniformsRef.current.transmittanceTexture.value =
+          visibleBlResources.length > 0 ? alphaTarget.texture : ROI_TRANSMITTANCE_FALLBACK_TEXTURE;
+        compositeLine.geometry = roiResource.geometry;
+        compositeLine.matrix.copy(roiResource.line.matrixWorld);
+        compositeLine.matrixWorld.copy(roiResource.line.matrixWorld);
+        compositeLine.matrixWorldNeedsUpdate = false;
+        compositeLine.visible = true;
+
+        renderer.setRenderTarget(previousRenderTarget);
+        renderer.autoClear = false;
+        renderer.render(roiCompositeSceneRef.current!, camera);
+      }
+
+      renderer.setRenderTarget(previousRenderTarget);
+      renderer.autoClear = previousAutoClear;
+      renderer.setClearColor(previousClearColor, previousClearAlpha);
+
+      prepassLine.visible = false;
+      compositeLine.visible = false;
+      roiCompositeUniformsRef.current.enabled.value = 0;
+    },
+    [ensureRoiPrepassHelpers, ensureRoiRenderTargets, resourcesRef, roiLinesRef]
   );
 
   const { computeFollowedVoxelPosition, resolveHoveredFollowTarget } = useVolumeViewerFollowTarget({
@@ -629,6 +923,8 @@ function VolumeViewer({
     defaultViewStateRef,
     projectionViewStateRef,
     trackGroupRef,
+    roiBlOcclusionAlphaSceneRef,
+    roiBlOcclusionDepthSceneRef,
     resourcesRef,
     currentDimensionsRef,
     colormapCacheRef,
@@ -732,6 +1028,7 @@ function VolumeViewer({
       applyKeyboardRotation,
       applyKeyboardMovement,
       updateTrackAppearance: updateOverlayAppearance,
+      renderRoiBlOcclusionPass,
       refreshViewerProps: refreshWorldProps,
       advancePlaybackFrame,
       updateControllerRays,
@@ -767,10 +1064,14 @@ function VolumeViewer({
       followedTrackIdRef,
       updateVoxelHover,
       isRoiDrawToolActiveRef: isDrawToolActiveRef,
+      isRoiDrawPreviewActiveRef: isDrawPreviewActiveRef,
+      isRoiMoveInteractionActiveRef,
+      isRoiMoveActiveRef,
       handleRoiPointerDown,
       handleRoiPointerMove,
       handleRoiPointerUp,
       handleRoiPointerLeave,
+      performRoiHitTest,
       performPropHitTest,
       resolveWorldPropDragPosition: resolvePropDragPosition,
       performHoverHitTest,
@@ -824,8 +1125,95 @@ function VolumeViewer({
   useVolumeViewerLifecycle(lifecycleParams);
 
   useEffect(() => {
+    if (typeof window === 'undefined' || !import.meta.env?.DEV) {
+      return;
+    }
+
+    const captureRoiOcclusionMetrics = () => {
+      const renderer = rendererRef.current;
+      const alphaTarget = roiBlOcclusionAlphaTargetRef.current;
+      const prepassTarget = roiPrepassTargetRef.current;
+      if (!renderer || !alphaTarget || !prepassTarget) {
+        return null;
+      }
+
+      const width = alphaTarget.width;
+      const height = alphaTarget.height;
+      const alphaPixels = new Uint8Array(width * height * 4);
+      renderer.readRenderTargetPixels(alphaTarget, 0, 0, width, height, alphaPixels);
+
+      let alphaNonWhite = 0;
+      for (let offset = 0; offset < alphaPixels.length; offset += 4) {
+        const r = alphaPixels[offset] ?? 255;
+        if (r < 250) {
+          alphaNonWhite += 1;
+        }
+      }
+
+      const prepassPixels = new Float32Array(prepassTarget.width * prepassTarget.height * 4);
+      renderer.readRenderTargetPixels(
+        prepassTarget,
+        0,
+        0,
+        prepassTarget.width,
+        prepassTarget.height,
+        prepassPixels
+      );
+      let prepassNonBlack = 0;
+      let sampleX = -1;
+      let sampleY = -1;
+      let sampleDepthValue = 0;
+      for (let offset = 0; offset < prepassPixels.length; offset += 4) {
+        const r = prepassPixels[offset] ?? 0;
+        const g = prepassPixels[offset + 1] ?? 0;
+        const b = prepassPixels[offset + 2] ?? 0;
+        const a = prepassPixels[offset + 3] ?? 0;
+        if (r > 1e-5 || g > 1e-5 || b > 1e-5 || a > 1e-5) {
+          prepassNonBlack += 1;
+          if (sampleX < 0) {
+            const pixelIndex = Math.floor(offset / 4);
+            sampleX = pixelIndex % prepassTarget.width;
+            sampleY = Math.floor(pixelIndex / prepassTarget.width);
+            sampleDepthValue = r;
+          }
+        }
+      }
+
+      let sampledTransmittance = 0;
+      if (sampleX >= 0 && sampleY >= 0) {
+        const sampleOffset = (sampleY * width + sampleX) * 4;
+        sampledTransmittance = alphaPixels[sampleOffset] ?? 0;
+      }
+
+      return {
+        width,
+        height,
+        alphaNonWhite,
+        prepassNonBlack,
+        sampleX,
+        sampleY,
+        sampleDepthValue,
+        sampledTransmittance,
+      };
+    };
+
+    (window as Window & { __LLSM_CAPTURE_ROI_OCCLUSION_METRICS__?: (() => unknown) | null }).__LLSM_CAPTURE_ROI_OCCLUSION_METRICS__ =
+      captureRoiOcclusionMetrics;
+
+    return () => {
+      const target = window as Window & { __LLSM_CAPTURE_ROI_OCCLUSION_METRICS__?: (() => unknown) | null };
+      if (target.__LLSM_CAPTURE_ROI_OCCLUSION_METRICS__ === captureRoiOcclusionMetrics) {
+        delete target.__LLSM_CAPTURE_ROI_OCCLUSION_METRICS__;
+      }
+    };
+  }, [rendererRef]);
+
+  useEffect(() => {
     return () => {
       emitHoverVoxel(null);
+      roiBlOcclusionAlphaTargetRef.current?.dispose();
+      roiBlOcclusionDepthTargetRef.current?.dispose();
+      roiPrepassTargetRef.current?.dispose();
     };
   }, [emitHoverVoxel]);
 

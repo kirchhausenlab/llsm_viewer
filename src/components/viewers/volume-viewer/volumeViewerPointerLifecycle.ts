@@ -32,10 +32,14 @@ type AttachVolumeViewerPointerLifecycleParams = PointerLookHandlers & {
   rotationTargetRef: MutableRefObject<THREE.Vector3>;
   updateVoxelHover: (event: PointerEvent | MouseEvent) => void;
   isRoiDrawToolActiveRef: MutableRefObject<boolean>;
+  isRoiDrawPreviewActiveRef: MutableRefObject<boolean>;
+  isRoiMoveInteractionActiveRef: MutableRefObject<boolean>;
+  isRoiMoveActiveRef: MutableRefObject<boolean>;
   handleRoiPointerDown: (event: PointerEvent, domElement: HTMLCanvasElement) => boolean;
   handleRoiPointerMove: (event: PointerEvent) => boolean;
   handleRoiPointerUp: (event: PointerEvent, domElement: HTMLCanvasElement) => boolean;
   handleRoiPointerLeave: (event: PointerEvent | undefined, domElement: HTMLCanvasElement | null) => boolean;
+  performRoiHitTest: (event: PointerEvent) => string | null;
   performPropHitTest: (event: PointerEvent) => string | null;
   resolveWorldPropDragPosition: (
     propId: string,
@@ -67,10 +71,14 @@ export function attachVolumeViewerPointerLifecycle({
   rotationTargetRef,
   updateVoxelHover,
   isRoiDrawToolActiveRef,
+  isRoiDrawPreviewActiveRef,
+  isRoiMoveInteractionActiveRef,
+  isRoiMoveActiveRef,
   handleRoiPointerDown,
   handleRoiPointerMove,
   handleRoiPointerUp,
   handleRoiPointerLeave,
+  performRoiHitTest,
   performPropHitTest,
   resolveWorldPropDragPosition,
   performHoverHitTest,
@@ -86,6 +94,24 @@ export function attachVolumeViewerPointerLifecycle({
   endPointerLook,
 }: AttachVolumeViewerPointerLifecycleParams): () => void {
   const resolveControls = () => controlsRef?.current ?? staticControls ?? null;
+  const updateRoiCursor = (event?: PointerEvent) => {
+    if (isRoiMoveActiveRef.current) {
+      domElement.style.cursor = 'grabbing';
+      return;
+    }
+
+    if (isRoiMoveInteractionActiveRef.current) {
+      domElement.style.cursor = 'grab';
+      return;
+    }
+
+    if (!isRoiDrawToolActiveRef.current || !event || event.buttons !== 0) {
+      domElement.style.cursor = '';
+      return;
+    }
+
+    domElement.style.cursor = performRoiHitTest(event) ? 'grab' : '';
+  };
   let activeWorldPropDrag:
     | {
         propId: string;
@@ -101,6 +127,7 @@ export function attachVolumeViewerPointerLifecycle({
     const paint = paintbrushRef.current;
     const shouldPaint = Boolean(paint?.enabled && event.ctrlKey);
     if (shouldPaint && paint) {
+      domElement.style.cursor = '';
       paintStrokePointerIdRef.current = event.pointerId;
       try {
         domElement.setPointerCapture(event.pointerId);
@@ -116,9 +143,20 @@ export function attachVolumeViewerPointerLifecycle({
       return;
     }
 
-    if (isRoiDrawToolActiveRef.current) {
-      handleRoiPointerDown(event, domElement);
-      return;
+    if (isRoiDrawToolActiveRef.current && event.shiftKey) {
+      domElement.style.cursor = '';
+      updateVoxelHover(event);
+      if (handleRoiPointerDown(event, domElement)) {
+        return;
+      }
+    }
+
+    if (isRoiDrawToolActiveRef.current && !event.shiftKey) {
+      updateVoxelHover(event);
+      if (performRoiHitTest(event) && handleRoiPointerDown(event, domElement)) {
+        updateRoiCursor(event);
+        return;
+      }
     }
 
     const hitPropId = performPropHitTest(event);
@@ -134,6 +172,7 @@ export function attachVolumeViewerPointerLifecycle({
       } catch {
         // Ignore: some platforms may reject capture.
       }
+      domElement.style.cursor = '';
       return;
     }
 
@@ -150,12 +189,14 @@ export function attachVolumeViewerPointerLifecycle({
     if (hitTrackId !== null) {
       onTrackSelectionToggle(hitTrackId);
     }
+    updateRoiCursor(event);
   };
 
   const handlePointerMove = (event: PointerEvent) => {
     const paint = paintbrushRef.current;
     const isPainting = paintStrokePointerIdRef.current !== null;
     if (paint && isPainting && paintStrokePointerIdRef.current === event.pointerId) {
+      domElement.style.cursor = '';
       updateVoxelHover(event);
       const hovered = hoverIntensityRef.current;
       if (hovered) {
@@ -164,13 +205,16 @@ export function attachVolumeViewerPointerLifecycle({
       return;
     }
 
-    if (isRoiDrawToolActiveRef.current) {
+    if (isRoiDrawPreviewActiveRef.current) {
       updateVoxelHover(event);
-      handleRoiPointerMove(event);
-      return;
+      if (handleRoiPointerMove(event)) {
+        updateRoiCursor(event);
+        return;
+      }
     }
 
     if (activeWorldPropDrag && activeWorldPropDrag.pointerId === event.pointerId) {
+      domElement.style.cursor = '';
       event.preventDefault();
       const nextPosition = resolveWorldPropDragPosition(activeWorldPropDrag.propId, event);
       if (nextPosition) {
@@ -192,12 +236,14 @@ export function attachVolumeViewerPointerLifecycle({
 
     updateVoxelHover(event);
     performHoverHitTest(event);
+    updateRoiCursor(event);
   };
 
   const handlePointerUp = (event: PointerEvent) => {
     const paint = paintbrushRef.current;
     const activePointerId = paintStrokePointerIdRef.current;
     if (paint && activePointerId !== null && activePointerId === event.pointerId) {
+      domElement.style.cursor = '';
       updateVoxelHover(event);
       const hovered = hoverIntensityRef.current;
       if (hovered) {
@@ -213,13 +259,16 @@ export function attachVolumeViewerPointerLifecycle({
       return;
     }
 
-    if (isRoiDrawToolActiveRef.current) {
+    if (isRoiDrawPreviewActiveRef.current) {
       updateVoxelHover(event);
-      handleRoiPointerUp(event, domElement);
-      return;
+      if (handleRoiPointerUp(event, domElement)) {
+        updateRoiCursor(event);
+        return;
+      }
     }
 
     if (activeWorldPropDrag && activeWorldPropDrag.pointerId === event.pointerId) {
+      domElement.style.cursor = '';
       event.preventDefault();
       activeWorldPropDrag = null;
       try {
@@ -232,6 +281,7 @@ export function attachVolumeViewerPointerLifecycle({
 
     updateVoxelHover(event);
     performHoverHitTest(event);
+    updateRoiCursor(event);
 
     if (!followTargetActiveRef.current) {
       endPointerLook(event);
@@ -239,6 +289,7 @@ export function attachVolumeViewerPointerLifecycle({
   };
 
   const handlePointerLeave = (event: PointerEvent) => {
+    domElement.style.cursor = '';
     const paint = paintbrushRef.current;
     const activePointerId = paintStrokePointerIdRef.current;
     if (paint && activePointerId !== null && activePointerId === event.pointerId) {
@@ -253,7 +304,7 @@ export function attachVolumeViewerPointerLifecycle({
         // Ignore.
       }
     }
-    if (isRoiDrawToolActiveRef.current) {
+    if (isRoiDrawPreviewActiveRef.current) {
       handleRoiPointerLeave(event, domElement);
       clearHoverState('pointer');
       clearVoxelHover();

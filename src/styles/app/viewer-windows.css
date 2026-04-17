@@ -699,62 +699,105 @@
   gap: 0.85rem;
 }
 
-.draw-roi-toggle-row {
+.draw-roi-toolbar {
+  align-items: stretch;
+  gap: 0.55rem;
+  justify-content: flex-start;
+}
+
+.draw-roi-segmented-control {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.5rem;
+  gap: 0.14rem;
+  padding: 0.14rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.54rem;
+  background: rgba(255, 255, 255, 0.06);
+  min-width: 0;
+  flex: 0 0 auto;
 }
 
-.draw-roi-toggle-row:first-of-type {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.draw-roi-segmented-control--mode {
+  grid-template-columns: repeat(2, 2.6rem);
 }
 
-.draw-roi-toggle-button,
-.draw-roi-tool-button,
+.draw-roi-segmented-control--shape {
+  grid-template-columns: repeat(3, 2.6rem);
+}
+
+.draw-roi-segment-button,
 .roi-manager-toggle {
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
+  min-width: 0;
   text-align: center;
 }
 
-.draw-roi-toggle-button.is-active,
-.draw-roi-tool-button.is-active,
+.draw-roi-segment-button {
+  border: 0;
+  border-radius: 0.4rem;
+  min-height: 2.35rem;
+  padding: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  transform: none;
+}
+
+.draw-roi-segment-button:not(:disabled):hover {
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.06);
+  transform: none;
+}
+
+.draw-roi-segment-button.is-active,
 .roi-manager-toggle.is-active,
 .roi-manager-list-item.is-active {
-  border-color: rgba(91, 140, 255, 0.75);
-  background: rgba(91, 140, 255, 0.18);
-  box-shadow: inset 0 0 0 1px rgba(91, 140, 255, 0.28);
+  background: rgba(91, 140, 255, 0.24);
+  color: rgba(255, 255, 255, 0.96);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 6px 16px rgba(0, 0, 0, 0.18);
 }
 
 .draw-roi-tool-button {
-  min-height: 2.5rem;
-  padding: 0.4rem;
+  line-height: 0;
 }
 
 .roi-tool-icon {
+  display: block;
+  flex: 0 0 auto;
   width: 1.2rem;
   height: 1.2rem;
 }
 
-.draw-roi-current-label {
-  margin: 0;
-  font-size: 0.82rem;
-  color: rgba(255, 255, 255, 0.72);
-}
-
-.draw-roi-slider-section {
+.draw-roi-sliders {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.6rem;
   padding-top: 0.65rem;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.draw-roi-slider-section-title {
-  font-size: 0.76rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.62);
+.draw-roi-name-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.draw-roi-slider-row {
+  gap: 0.65rem;
+  align-items: flex-start;
+}
+
+.draw-roi-slider-group {
+  min-width: 0;
+}
+
+.draw-roi-slider-group label {
+  font-size: 0.78rem;
+  gap: 0.35rem;
 }
 
 .draw-roi-color-section {
@@ -776,21 +819,24 @@
 .draw-roi-color-row {
   display: flex;
   align-items: center;
-  gap: 0.7rem;
-  flex-wrap: wrap;
+  gap: 0.5rem;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .draw-roi-window .color-swatch-grid {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 0.45rem;
-  flex-wrap: wrap;
+  gap: 0.35rem;
+  flex-wrap: nowrap;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .draw-roi-window .color-swatch-button {
-  width: 1.75rem;
-  height: 1.75rem;
-  border-radius: 0.45rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.4rem;
   border: 2px solid rgba(255, 255, 255, 0.16);
   background: transparent;
   padding: 0;
@@ -811,7 +857,47 @@
 }
 
 .draw-roi-color-picker {
-  margin-left: auto;
+  position: relative;
+  flex: 0 0 auto;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.4rem;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  background: rgba(12, 16, 24, 0.55);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.draw-roi-window .color-picker-trigger:is(:hover, :focus-within) {
+  border-color: rgba(91, 140, 255, 0.85);
+  box-shadow: 0 0 0 2px rgba(91, 140, 255, 0.35);
+  transform: translateY(-1px);
+}
+
+.draw-roi-window .color-picker-input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.draw-roi-window .color-picker-indicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: block;
+  width: 0.95rem;
+  height: 0.95rem;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.2);
+  pointer-events: none;
 }
 
 .roi-manager-window {
@@ -831,8 +917,45 @@
 }
 
 .roi-manager-list-item {
-  justify-content: flex-start;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
   text-align: left;
+}
+
+.roi-manager-list-item-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roi-manager-list-item.is-selected:not(.is-active) {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.roi-manager-selection-badge {
+  flex: 0 0 auto;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.roi-manager-selection-badge.is-active {
+  color: rgba(255, 255, 255, 0.98);
+  background: rgba(91, 140, 255, 0.42);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 
 .roi-manager-empty-state {
@@ -845,6 +968,107 @@
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
+}
+
+.measurements-window,
+.set-measurements-window {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  min-height: 0;
+}
+
+.measurements-window-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.measurements-channel-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 0.9rem;
+  align-items: center;
+}
+
+.measurements-channel-toggle,
+.set-measurements-option,
+.set-measurements-decimals-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.84rem;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.measurements-channel-toggle input,
+.set-measurements-option input {
+  margin: 0;
+}
+
+.measurements-table-scroll {
+  min-height: 0;
+  max-height: min(52vh, 460px);
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.65rem;
+  background: rgba(8, 12, 18, 0.38);
+}
+
+.measurements-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.measurements-table th,
+.measurements-table td {
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.measurements-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(12, 16, 24, 0.96);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.measurements-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.measurements-table tbody tr td {
+  color: inherit;
+}
+
+.measurements-empty-state {
+  margin: 0;
+  font-size: 0.84rem;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.set-measurements-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.set-measurements-decimals-row {
+  justify-content: space-between;
+}
+
+.set-measurements-decimals-row input {
+  width: 4rem;
+}
+
+.set-measurements-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.55rem;
 }
 
 .props-text-style-symbol--bold {

@@ -1,14 +1,16 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import DrawRoiWindow from './viewer-shell/DrawRoiWindow';
 import VolumeViewer from './VolumeViewer';
 import ChannelsPanel from './viewer-shell/ChannelsPanel';
+import MeasurementsWindow from './viewer-shell/MeasurementsWindow';
 import NavigationHelpWindow, { computeNavigationHelpInitialPosition } from './viewer-shell/NavigationHelpWindow';
 import PaintbrushWindow from './viewer-shell/PaintbrushWindow';
 import PlotSettingsPanel from './viewer-shell/PlotSettingsPanel';
 import PropsWindow from './viewer-shell/PropsWindow';
 import RecordWindow from './viewer-shell/RecordWindow';
 import RoiManagerWindow from './viewer-shell/RoiManagerWindow';
+import SetMeasurementsWindow from './viewer-shell/SetMeasurementsWindow';
 import TopMenu from './viewer-shell/TopMenu';
 import TracksPanel from './viewer-shell/TracksPanel';
 import ViewerSettingsWindow from './viewer-shell/ViewerSettingsWindow';
@@ -21,14 +23,29 @@ import { useViewerRecording } from './viewer-shell/hooks/useViewerRecording';
 import type { ViewerShellProps } from './viewer-shell/types';
 import { createDefaultLayerSettings } from '../../state/layerSettings';
 import { formatIntensityValue } from '../../shared/utils/intensityFormatting';
+import {
+  buildRoiMeasurementsCsv,
+  buildRoiMeasurementsSnapshot,
+} from '../../shared/utils/roiMeasurements';
+import { parseRoiManagerStateFromJson, serializeRoiManagerState } from '../../shared/utils/roiPersistence';
 import { createDefaultTrackSetState } from '../../hooks/tracks/useTrackStyling';
 import { resolveTrackVisibilityForState } from '../../shared/utils/trackVisibilityState';
+import {
+  DEFAULT_ROI_MEASUREMENT_SETTINGS,
+  type RoiMeasurementSettings,
+  type RoiMeasurementsSnapshot,
+} from '../../types/roiMeasurements';
+import {
+  MEASUREMENTS_WINDOW_WIDTH,
+  SET_MEASUREMENTS_WINDOW_WIDTH,
+} from '../../shared/utils/windowLayout';
 
 const NAVIGATION_HELP_WINDOW_WIDTH = 420;
 
 function ViewerShell({
   viewerMode,
   volumeViewerProps,
+  loadMeasurementVolume,
   topMenu,
   layout,
   modeControls,
@@ -55,7 +72,9 @@ function ViewerShell({
     trackWindowInitialPosition,
     selectedTracksWindowInitialPosition,
     plotSettingsWindowInitialPosition,
-    trackSettingsWindowInitialPosition
+    trackSettingsWindowInitialPosition,
+    measurementsWindowInitialPosition,
+    setMeasurementsWindowInitialPosition,
   } = layout;
   const { loadedChannelIds, channelLayersMap } = channelsPanel;
 
@@ -210,6 +229,7 @@ function ViewerShell({
     defaultColor: roiDefaultColor,
     workingRoi,
     savedRois,
+    selectedSavedRoiIds,
     activeSavedRoiId,
     editingSavedRoiId,
     showAllSavedRois,
@@ -218,12 +238,14 @@ function ViewerShell({
     setDefaultColor: setRoiDefaultColor,
     setWorkingRoi,
     updateWorkingRoi,
+    activateSavedRoi,
     selectSavedRoi,
     addWorkingRoi,
     deleteActiveSavedRoi,
     renameActiveSavedRoi,
     updateActiveSavedRoiFromWorking,
     setShowAllSavedRois,
+    replaceState,
   } = useViewerRoiState({
     volumeDimensions,
   });
@@ -232,6 +254,51 @@ function ViewerShell({
     () => savedRois.find((roi) => roi.id === activeSavedRoiId) ?? null,
     [activeSavedRoiId, savedRois]
   );
+  const currentRoiName = activeSavedRoi?.name ?? 'Unsaved ROI';
+  const selectedSavedRois = useMemo(
+    () =>
+      selectedSavedRoiIds
+        .map((roiId) => savedRois.find((roi) => roi.id === roiId) ?? null)
+        .filter((roi): roi is (typeof savedRois)[number] => roi !== null),
+    [savedRois, selectedSavedRoiIds]
+  );
+  const viewerLayerVolumeByKey = useMemo(
+    () => new Map(volumeViewerProps.layers.map((layer) => [layer.key, layer.volume ?? null])),
+    [volumeViewerProps.layers]
+  );
+  const measurableChannelSources = useMemo(
+    () =>
+      loadedChannelIds.flatMap((channelId) => {
+        const channelLayers = channelLayersMap.get(channelId) ?? [];
+        const selectedLayer = channelLayers[0] ?? null;
+        if (!selectedLayer || selectedLayer.isSegmentation) {
+          return [];
+        }
+        return [{
+          id: channelId,
+          name: channelsPanel.channelNameMap.get(channelId) ?? 'Untitled channel',
+          layerKey: selectedLayer.key,
+          volume: viewerLayerVolumeByKey.get(selectedLayer.key) ?? null,
+        }];
+      }),
+    [channelLayersMap, channelsPanel.channelNameMap, loadedChannelIds, viewerLayerVolumeByKey]
+  );
+  const canMeasureRois = selectedSavedRois.length > 0 && measurableChannelSources.length > 0;
+  const canSaveRois = savedRois.length > 0;
+  const canLoadRois = loadedChannelIds.length > 0;
+  const [measurementDefaults, setMeasurementDefaults] = useState<RoiMeasurementSettings>(
+    DEFAULT_ROI_MEASUREMENT_SETTINGS
+  );
+  const [measurementsSnapshot, setMeasurementsSnapshot] = useState<RoiMeasurementsSnapshot | null>(null);
+  const [measurementsSettings, setMeasurementsSettings] = useState<RoiMeasurementSettings>(
+    DEFAULT_ROI_MEASUREMENT_SETTINGS
+  );
+  const [measurementVisibleChannelIds, setMeasurementVisibleChannelIds] = useState<string[]>([]);
+  const [measurementSettingsDraft, setMeasurementSettingsDraft] = useState<RoiMeasurementSettings>(
+    DEFAULT_ROI_MEASUREMENT_SETTINGS
+  );
+  const [isSetMeasurementsWindowOpen, setIsSetMeasurementsWindowOpen] = useState(false);
+  const roiLoadInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleRoiColorChange = useCallback(
     (color: string) => {
@@ -259,6 +326,328 @@ function ViewerShell({
     }
     renameActiveSavedRoi(nextName);
   }, [activeSavedRoi, renameActiveSavedRoi]);
+
+  const buildTimestampedFileName = useCallback((prefix: string, extension: string) => {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    return `${prefix}_${timestamp}.${extension}`;
+  }, []);
+
+  const downloadTextFile = useCallback((content: string, fileName: string, mimeType: string) => {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    link.rel = 'noopener';
+    link.style.position = 'fixed';
+    link.style.left = '-9999px';
+    link.style.top = '-9999px';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, []);
+
+  const saveTextFile = useCallback(
+    async (content: string, fileName: string, mimeType: string, accept: Record<string, string[]>) => {
+      const target = window as Window & {
+        showSaveFilePicker?: (options?: {
+          suggestedName?: string;
+          types?: Array<{
+            description?: string;
+            accept: Record<string, string[]>;
+          }>;
+        }) => Promise<FileSystemFileHandle>;
+      };
+
+      if (typeof target.showSaveFilePicker === 'function') {
+        try {
+          const fileHandle = await target.showSaveFilePicker({
+            suggestedName: fileName,
+            types: [{ accept }],
+          });
+          const writable = await fileHandle.createWritable();
+          await writable.write(content);
+          await writable.close();
+          return;
+        } catch (error) {
+          if (error instanceof DOMException && error.name === 'AbortError') {
+            return;
+          }
+          // Fall back to a normal browser download below.
+        }
+      }
+
+      downloadTextFile(content, fileName, mimeType);
+    },
+    [downloadTextFile]
+  );
+
+  const closeMeasurementsWindow = useCallback(() => {
+    setMeasurementsSnapshot(null);
+    setMeasurementVisibleChannelIds([]);
+    setIsSetMeasurementsWindowOpen(false);
+  }, []);
+
+  const handleOpenMeasurementsWindow = useCallback(async () => {
+    if (!canMeasureRois) {
+      return;
+    }
+
+    const resolvedChannels = await Promise.all(
+      measurableChannelSources.map(async (channel) => {
+        if (channel.volume !== null || !loadMeasurementVolume) {
+          return channel;
+        }
+
+        try {
+          const loadedVolume = await loadMeasurementVolume(channel.layerKey, playbackState.selectedIndex);
+          return {
+            ...channel,
+            volume: loadedVolume,
+          };
+        } catch {
+          return channel;
+        }
+      })
+    );
+
+    const snapshot = buildRoiMeasurementsSnapshot({
+      selectedRois: selectedSavedRois,
+      channels: resolvedChannels,
+      timepoint: currentViewerPropTimepoint,
+    });
+
+    if (snapshot.rows.length === 0) {
+      return;
+    }
+
+    setMeasurementsSnapshot(snapshot);
+    setMeasurementsSettings(measurementDefaults);
+    setMeasurementSettingsDraft(measurementDefaults);
+    setMeasurementVisibleChannelIds(snapshot.channels.map((channel) => channel.id));
+    setIsSetMeasurementsWindowOpen(false);
+  }, [
+    canMeasureRois,
+    currentViewerPropTimepoint,
+    loadMeasurementVolume,
+    measurableChannelSources,
+    measurementDefaults,
+    playbackState.selectedIndex,
+    selectedSavedRois,
+  ]);
+
+  const handleOpenSetMeasurementsWindow = useCallback(() => {
+    if (!measurementsSnapshot) {
+      return;
+    }
+    setMeasurementSettingsDraft(measurementsSettings);
+    setIsSetMeasurementsWindowOpen(true);
+  }, [measurementsSettings, measurementsSnapshot]);
+
+  const handleCancelSetMeasurementsWindow = useCallback(() => {
+    setMeasurementSettingsDraft(measurementsSettings);
+    setIsSetMeasurementsWindowOpen(false);
+  }, [measurementsSettings]);
+
+  const handleConfirmSetMeasurementsWindow = useCallback(() => {
+    setMeasurementsSettings(measurementSettingsDraft);
+    setMeasurementDefaults(measurementSettingsDraft);
+    setIsSetMeasurementsWindowOpen(false);
+  }, [measurementSettingsDraft]);
+
+  const handleSaveMeasurements = useCallback(async () => {
+    if (!measurementsSnapshot) {
+      return;
+    }
+
+    const csv = buildRoiMeasurementsCsv({
+      snapshot: measurementsSnapshot,
+      settings: measurementsSettings,
+      visibleChannelIds: measurementVisibleChannelIds,
+    });
+    await saveTextFile(
+      csv,
+      buildTimestampedFileName(`measurements_t${measurementsSnapshot.timepoint}`, 'csv'),
+      'text/csv',
+      { 'text/csv': ['.csv'] },
+    );
+  }, [
+    buildTimestampedFileName,
+    measurementVisibleChannelIds,
+    measurementsSettings,
+    measurementsSnapshot,
+    saveTextFile,
+  ]);
+
+  const handleSaveRois = useCallback(async () => {
+    if (!canSaveRois) {
+      return;
+    }
+
+    const serialized = serializeRoiManagerState({
+      savedRois,
+      selectedSavedRoiIds,
+      activeSavedRoiId,
+      defaultColor: roiDefaultColor,
+      dimensionMode: roiDimensionMode,
+      tool: roiTool,
+    });
+
+    await saveTextFile(
+      serialized,
+      buildTimestampedFileName('rois', 'json'),
+      'application/json',
+      { 'application/json': ['.json'] },
+    );
+  }, [
+    activeSavedRoiId,
+    buildTimestampedFileName,
+    canSaveRois,
+    roiDefaultColor,
+    roiDimensionMode,
+    roiTool,
+    saveTextFile,
+    savedRois,
+    selectedSavedRoiIds,
+  ]);
+
+  const handleLoadRoiFile = useCallback(
+    async (file: File) => {
+      try {
+        const loadedState = parseRoiManagerStateFromJson(await file.text(), volumeDimensions);
+        replaceState(loadedState);
+      } catch (error) {
+        if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+          window.alert(error instanceof Error ? error.message : 'Failed to load ROI file.');
+        }
+      }
+    },
+    [replaceState, volumeDimensions]
+  );
+
+  const confirmRoiReplacement = useCallback(() => {
+    if (
+      savedRois.length > 0 &&
+      typeof window !== 'undefined' &&
+      typeof window.confirm === 'function'
+    ) {
+      return window.confirm('Load ROI file and replace the current ROI state?');
+    }
+    return true;
+  }, [savedRois.length]);
+
+  const handleLoadRois = useCallback(async () => {
+    if (!canLoadRois) {
+      return;
+    }
+
+    const target = window as Window & {
+      showOpenFilePicker?: (options?: {
+        multiple?: boolean;
+        types?: Array<{
+          description?: string;
+          accept: Record<string, string[]>;
+        }>;
+      }) => Promise<FileSystemFileHandle[]>;
+    };
+
+    if (typeof target.showOpenFilePicker === 'function') {
+      try {
+        const [fileHandle] = await target.showOpenFilePicker({
+          multiple: false,
+          types: [{ accept: { 'application/json': ['.json'] } }],
+        });
+        if (!fileHandle) {
+          return;
+        }
+        const file = await fileHandle.getFile();
+        if (!confirmRoiReplacement()) {
+          return;
+        }
+        await handleLoadRoiFile(file);
+        return;
+      } catch {
+        // Fall back to the file input below.
+      }
+    }
+
+    const input = roiLoadInputRef.current;
+    if (!input) {
+      return;
+    }
+    const pickerInput = input as HTMLInputElement & { showPicker?: () => void };
+    input.value = '';
+    if (typeof pickerInput.showPicker === 'function') {
+      try {
+        pickerInput.showPicker();
+        return;
+      } catch {
+        // Fall through to input.click() below.
+      }
+    }
+    try {
+      input.click();
+    } catch (error) {
+      if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+        window.alert(
+          error instanceof Error ? error.message : 'Failed to open ROI file picker.'
+        );
+      }
+    }
+  }, [canLoadRois, confirmRoiReplacement, handleLoadRoiFile]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !import.meta.env?.DEV) {
+      return;
+    }
+
+    const setWorkingRoiForTests = (nextRoi: typeof workingRoi) => {
+      setWorkingRoi(nextRoi);
+      if (nextRoi?.color) {
+        setRoiDefaultColor(nextRoi.color);
+      }
+      return true;
+    };
+
+    (window as Window & { __LLSM_SET_WORKING_ROI__?: ((roi: typeof workingRoi) => boolean) | null }).__LLSM_SET_WORKING_ROI__ =
+      setWorkingRoiForTests;
+
+    return () => {
+      const target = window as Window & { __LLSM_SET_WORKING_ROI__?: ((roi: typeof workingRoi) => boolean) | null };
+      if (target.__LLSM_SET_WORKING_ROI__ === setWorkingRoiForTests) {
+        delete target.__LLSM_SET_WORKING_ROI__;
+      }
+    };
+  }, [setRoiDefaultColor, setWorkingRoi, workingRoi]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !import.meta.env?.DEV) {
+      return;
+    }
+
+    const getMeasurementChannelStateForTests = () =>
+      measurableChannelSources.map((channel) => ({
+        id: channel.id,
+        name: channel.name,
+        hasVolume: channel.volume !== null,
+      }));
+
+    (
+      window as Window & {
+        __LLSM_MEASUREMENT_CHANNEL_SOURCES__?: (() => Array<{ id: string; name: string; hasVolume: boolean }>) | null;
+      }
+    ).__LLSM_MEASUREMENT_CHANNEL_SOURCES__ = getMeasurementChannelStateForTests;
+
+    return () => {
+      const target = window as Window & {
+        __LLSM_MEASUREMENT_CHANNEL_SOURCES__?: (() => Array<{ id: string; name: string; hasVolume: boolean }>) | null;
+      };
+      if (target.__LLSM_MEASUREMENT_CHANNEL_SOURCES__ === getMeasurementChannelStateForTests) {
+        delete target.__LLSM_MEASUREMENT_CHANNEL_SOURCES__;
+      }
+    };
+  }, [measurableChannelSources]);
 
   const showRenderingQualityControl = modeControls.is3dModeAvailable;
   const globalRenderControls = useMemo(() => {
@@ -446,6 +835,7 @@ function ViewerShell({
         editingSavedRoiId,
         showAllSavedRois,
         onWorkingRoiChange: setWorkingRoi,
+        onSavedRoiActivate: activateSavedRoi,
       },
     }),
     [
@@ -453,6 +843,7 @@ function ViewerShell({
       editingSavedRoiId,
       isPropsWindowOpen,
       isDrawRoiWindowOpen,
+      activateSavedRoi,
       propsController.props,
       propsController.selectProp,
       propsController.selectedPropId,
@@ -475,6 +866,32 @@ function ViewerShell({
 
   return (
     <div className="app">
+      <input
+        ref={roiLoadInputRef}
+        type="file"
+        accept=".json,application/json"
+        style={{
+          position: 'fixed',
+          left: '-9999px',
+          top: '-9999px',
+          width: '1px',
+          height: '1px',
+          opacity: 0,
+          pointerEvents: 'none',
+        }}
+        onChange={async (event) => {
+          const file = event.target.files?.[0] ?? null;
+          event.target.value = '';
+          if (!file) {
+            return;
+          }
+          if (!confirmRoiReplacement()) {
+            return;
+          }
+          await handleLoadRoiFile(file);
+        }}
+      />
+
       <main className="viewer">
         <VolumeViewer
           {...volumeViewerPropsWithViewerProps}
@@ -532,6 +949,7 @@ function ViewerShell({
           volumeDimensions={volumeDimensions}
           tool={roiTool}
           dimensionMode={roiDimensionMode}
+          currentRoiName={currentRoiName}
           currentColor={currentRoiColor}
           workingRoi={workingRoi}
           onToolChange={setRoiTool}
@@ -601,10 +1019,14 @@ function ViewerShell({
           controlWindowWidth={controlWindowWidth}
           resetSignal={resetToken}
           savedRois={savedRois}
+          selectedSavedRoiIds={selectedSavedRoiIds}
           activeSavedRoiId={activeSavedRoiId}
           showAllSavedRois={showAllSavedRois}
           canAdd={workingRoi !== null}
           canUpdate={workingRoi !== null && activeSavedRoiId !== null}
+          canMeasure={canMeasureRois}
+          canSave={canSaveRois}
+          canLoad={canLoadRois}
           onSelectRoi={selectSavedRoi}
           onAdd={() => {
             addWorkingRoi();
@@ -612,8 +1034,43 @@ function ViewerShell({
           onDelete={deleteActiveSavedRoi}
           onRename={handleRenameActiveRoi}
           onUpdate={updateActiveSavedRoiFromWorking}
+          onMeasure={handleOpenMeasurementsWindow}
+          onSave={handleSaveRois}
+          onLoad={handleLoadRois}
           onShowAllChange={setShowAllSavedRois}
           onClose={closeRoiManagerWindow}
+        />
+      ) : null}
+
+      {measurementsSnapshot ? (
+        <MeasurementsWindow
+          initialPosition={measurementsWindowInitialPosition}
+          windowMargin={windowMargin}
+          width={MEASUREMENTS_WINDOW_WIDTH}
+          resetSignal={resetToken}
+          snapshot={measurementsSnapshot}
+          settings={measurementsSettings}
+          visibleChannelIds={measurementVisibleChannelIds}
+          channelColorsById={channelsPanel.channelTintMap}
+          onVisibleChannelIdsChange={setMeasurementVisibleChannelIds}
+          onOpenSettings={handleOpenSetMeasurementsWindow}
+          onSave={handleSaveMeasurements}
+          onClose={closeMeasurementsWindow}
+        />
+      ) : null}
+
+      {measurementsSnapshot && isSetMeasurementsWindowOpen ? (
+        <SetMeasurementsWindow
+          initialPosition={setMeasurementsWindowInitialPosition}
+          windowMargin={windowMargin}
+          width={SET_MEASUREMENTS_WINDOW_WIDTH}
+          resetSignal={resetToken}
+          settings={measurementSettingsDraft}
+          onSettingsChange={setMeasurementSettingsDraft}
+          onHelp={() => {}}
+          onCancel={handleCancelSetMeasurementsWindow}
+          onConfirm={handleConfirmSetMeasurementsWindow}
+          onClose={handleCancelSetMeasurementsWindow}
         />
       ) : null}
 

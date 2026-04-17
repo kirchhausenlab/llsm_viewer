@@ -354,6 +354,8 @@ export function useAppRouteState(): AppRouteState {
     selectedTracksWindowInitialPosition,
     plotSettingsWindowInitialPosition,
     trackSettingsWindowInitialPosition,
+    measurementsWindowInitialPosition,
+    setMeasurementsWindowInitialPosition,
     resetLayout: handleResetWindowLayout
   } = useWindowLayout();
 
@@ -1427,6 +1429,7 @@ export function useAppRouteState(): AppRouteState {
   const routeViewerShell = createRouteViewerShellProps({
     viewer: {
       viewerMode,
+      loadMeasurementVolume: volumeProvider ? volumeProvider.getVolume : null,
       viewerPanels: {
         layers: viewerLayers,
         playbackWarmupLayers: viewerPlaybackWarmupLayers,
@@ -1525,7 +1528,9 @@ export function useAppRouteState(): AppRouteState {
         trackWindowInitialPosition,
         selectedTracksWindowInitialPosition,
         plotSettingsWindowInitialPosition,
-        trackSettingsWindowInitialPosition
+        trackSettingsWindowInitialPosition,
+        measurementsWindowInitialPosition,
+        setMeasurementsWindowInitialPosition,
       },
       modeControls: {
         is3dModeAvailable: is3dViewerAvailable,

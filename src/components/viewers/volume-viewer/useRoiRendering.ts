@@ -9,6 +9,7 @@ import type { DesktopViewerCamera } from '../../../hooks/useVolumeRenderSetup';
 import type { ViewerLayer } from '../VolumeViewer.types';
 import type { RoiRenderResource, ViewerRoiConfig } from '../VolumeViewer.types';
 import type { RoiDefinition, RoiDimensionMode, RoiPoint, RoiShape, SavedRoi } from '../../../types/roi';
+import { cloneRoiDefinition } from '../../../types/roi';
 import { buildRoiSegmentPositions } from './roiGeometry';
 import { updateRoiAppearance as applyRoiAppearance } from './roiAppearance';
 import { performRoiHoverHitTest } from './roiHitTesting';
@@ -43,6 +44,21 @@ type PreviewState = {
   isValid: boolean;
 };
 
+type MoveSession = {
+  pointerId: number;
+  roiId: string;
+  sourceRoi: RoiDefinition;
+  planeZ: number;
+  anchorPoint: THREE.Vector3;
+  originClientX: number;
+  originClientY: number;
+  previewStart: THREE.Vector3;
+  previewEnd: THREE.Vector3;
+  offsetX: number;
+  offsetY: number;
+  hasMoved: boolean;
+};
+
 type VisibleRoiSpec = {
   key: string;
   roiId: string;
@@ -55,20 +71,40 @@ type VisibleRoiSpec = {
   shouldBlink: boolean;
 };
 
+type RoiBlOcclusionUniforms = {
+  roiBlOcclusionEnabled: { value: number };
+  roiBlAlphaTexture: { value: THREE.Texture };
+  roiBlDepthTexture: { value: THREE.Texture };
+  roiBlViewport: { value: THREE.Vector2 };
+  roiBlDepthBias: { value: number };
+};
+
 const ROI_LINE_WIDTH = 2;
 const ROI_BASE_OPACITY = 0.92;
 const ROI_WORKING_KEY = 'roi:working';
 const LINE_RAYCAST_THRESHOLD = 0.02;
+const ROI_DRAG_START_DISTANCE_PX = 3;
 const tempPointer = new THREE.Vector2();
 const tempInverseMatrix = new THREE.Matrix4();
 const tempLocalRay = new THREE.Ray();
 const tempRaycaster = new THREE.Raycaster();
-const tempIntersectionPoint = new THREE.Vector3();
-const tempPreviewPoint = new THREE.Vector3();
-const tempBoxCenter = new THREE.Vector3();
+const tempDragPoint = new THREE.Vector3();
+const ROI_BL_OCCLUSION_SHADER_KEY = 'roi-bl-occlusion-v1';
+const ROI_BL_OCCLUSION_ALPHA_FALLBACK_TEXTURE = (() => {
+  const texture = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1, THREE.RGBAFormat);
+  texture.type = THREE.UnsignedByteType;
+  texture.needsUpdate = true;
+  return texture;
+})();
+const ROI_BL_OCCLUSION_DEPTH_FALLBACK_TEXTURE = (() => {
+  const texture = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat);
+  texture.type = THREE.UnsignedByteType;
+  texture.needsUpdate = true;
+  return texture;
+})();
 
 function isDrawToolActive(roiConfig: ViewerRoiConfig | undefined): boolean {
-  return Boolean(roiConfig?.isDrawWindowOpen && roiConfig.tool !== 'hand');
+  return Boolean(roiConfig?.isDrawWindowOpen);
 }
 
 function setLineMaterialResolution(
@@ -88,6 +124,36 @@ function setLineMaterialResolution(
   }
 
   material.resolution.set(1, 1);
+}
+
+function ensureRoiBlOcclusionShader(material: LineMaterial, uniforms: RoiBlOcclusionUniforms): void {
+  material.transparent = true;
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.roiBlOcclusionEnabled = uniforms.roiBlOcclusionEnabled;
+    shader.uniforms.roiBlAlphaTexture = uniforms.roiBlAlphaTexture;
+    shader.uniforms.roiBlDepthTexture = uniforms.roiBlDepthTexture;
+    shader.uniforms.roiBlViewport = uniforms.roiBlViewport;
+    shader.uniforms.roiBlDepthBias = uniforms.roiBlDepthBias;
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        'uniform float linewidth;\n',
+        'uniform float linewidth;\nuniform float roiBlOcclusionEnabled;\nuniform sampler2D roiBlAlphaTexture;\nuniform sampler2D roiBlDepthTexture;\nuniform vec2 roiBlViewport;\nuniform float roiBlDepthBias;\n'
+      )
+      .replace(
+        'float alpha = opacity;\n',
+        `float alpha = opacity;
+			if (roiBlOcclusionEnabled > 0.5 && roiBlViewport.x > 0.0 && roiBlViewport.y > 0.0) {
+				vec2 roiBlUv = clamp(gl_FragCoord.xy / roiBlViewport, vec2(0.0), vec2(1.0));
+				float roiBlFrontDepth = texture2D(roiBlDepthTexture, roiBlUv).r;
+				float roiBlAlpha = texture2D(roiBlAlphaTexture, roiBlUv).a;
+				if (roiBlAlpha > 1e-4 && roiBlFrontDepth < 0.999999 && gl_FragCoord.z > roiBlFrontDepth + roiBlDepthBias) {
+					alpha *= max(0.0, 1.0 - roiBlAlpha);
+				}
+			}\n`
+      );
+  };
+  material.customProgramCacheKey = () => ROI_BL_OCCLUSION_SHADER_KEY;
+  material.needsUpdate = true;
 }
 
 function resolveVolumeBounds(dimensions: { width: number; height: number; depth: number } | null) {
@@ -131,10 +197,10 @@ function resolveLayerDimensions(layer: ViewerLayer | undefined) {
   return { width, height, depth };
 }
 
-function resolveHoveredVoxelPoint(
+function resolveHoveredVoxelPreviewPoint(
   hoveredVoxelRef: UseRoiRenderingParams['hoveredVoxelRef'],
   layersRef: UseRoiRenderingParams['layersRef']
-): RoiPoint | null {
+): { point: THREE.Vector3; dimensions: { width: number; height: number; depth: number } } | null {
   const hovered = hoveredVoxelRef.current;
   if (!hovered.layerKey || !hovered.normalizedPosition) {
     return null;
@@ -147,9 +213,12 @@ function resolveHoveredVoxelPoint(
   }
 
   return {
-    x: THREE.MathUtils.clamp(Math.round(hovered.normalizedPosition.x * dimensions.width), 0, dimensions.width - 1),
-    y: THREE.MathUtils.clamp(Math.round(hovered.normalizedPosition.y * dimensions.height), 0, dimensions.height - 1),
-    z: THREE.MathUtils.clamp(Math.round(hovered.normalizedPosition.z * dimensions.depth), 0, dimensions.depth - 1),
+    point: new THREE.Vector3(
+      THREE.MathUtils.clamp(hovered.normalizedPosition.x * dimensions.width, 0, dimensions.width - 1),
+      THREE.MathUtils.clamp(hovered.normalizedPosition.y * dimensions.height, 0, dimensions.height - 1),
+      THREE.MathUtils.clamp(hovered.normalizedPosition.z * dimensions.depth, 0, dimensions.depth - 1),
+    ),
+    dimensions,
   };
 }
 
@@ -186,29 +255,6 @@ function resolveLocalRay({
   return tempLocalRay;
 }
 
-function resolveNearestPointOnBounds(ray: THREE.Ray, bounds: THREE.Box3) {
-  const targetPoint = tempPreviewPoint.copy(bounds.getCenter(tempBoxCenter));
-  const direction = ray.direction;
-  const denom = direction.lengthSq();
-  const t = denom > 1e-8 ? targetPoint.sub(ray.origin).dot(direction) / denom : 0;
-  return targetPoint.copy(ray.direction).multiplyScalar(Math.max(0, t)).add(ray.origin).clamp(bounds.min, bounds.max);
-}
-
-function resolve3dPreviewPoint(ray: THREE.Ray, bounds: THREE.Box3) {
-  const hit = ray.intersectBox(bounds, tempIntersectionPoint);
-  if (hit) {
-    return {
-      point: tempIntersectionPoint.clone(),
-      isValid: true,
-    };
-  }
-
-  return {
-    point: resolveNearestPointOnBounds(ray, bounds).clone(),
-    isValid: false,
-  };
-}
-
 function resolve2dPreviewPoint(ray: THREE.Ray, bounds: THREE.Box3, zIndex: number) {
   const planeZ = THREE.MathUtils.clamp(zIndex, 0, Math.max(0, Math.floor(bounds.max.z)));
   const denominator = ray.direction.z;
@@ -231,6 +277,54 @@ function resolve2dPreviewPoint(ray: THREE.Ray, bounds: THREE.Box3, zIndex: numbe
   };
 }
 
+function resolvePlanePoint(ray: THREE.Ray, planeZ: number) {
+  const denominator = ray.direction.z;
+  const parameter = Math.abs(denominator) > 1e-8 ? (planeZ - ray.origin.z) / denominator : 0;
+  return tempDragPoint.copy(ray.direction).multiplyScalar(Math.max(0, parameter)).add(ray.origin);
+}
+
+function clampRoiTranslationDelta(
+  roi: RoiDefinition,
+  offsetX: number,
+  offsetY: number,
+  dimensions: { width: number; height: number; depth: number }
+) {
+  const minX = Math.min(roi.start.x, roi.end.x);
+  const maxX = Math.max(roi.start.x, roi.end.x);
+  const minY = Math.min(roi.start.y, roi.end.y);
+  const maxY = Math.max(roi.start.y, roi.end.y);
+  const maxWidth = Math.max(0, dimensions.width - 1);
+  const maxHeight = Math.max(0, dimensions.height - 1);
+
+  return {
+    x: THREE.MathUtils.clamp(offsetX, -minX, maxWidth - maxX),
+    y: THREE.MathUtils.clamp(offsetY, -minY, maxHeight - maxY),
+  };
+}
+
+function translateRoiByOffset(roi: RoiDefinition, offsetX: number, offsetY: number) {
+  return {
+    ...roi,
+    start: {
+      x: roi.start.x + offsetX,
+      y: roi.start.y + offsetY,
+      z: roi.start.z,
+    },
+    end: {
+      x: roi.end.x + offsetX,
+      y: roi.end.y + offsetY,
+      z: roi.end.z,
+    },
+  };
+}
+
+function resolveRoiDragPlaneZ(roi: RoiDefinition) {
+  if (roi.mode === '2d') {
+    return roi.start.z;
+  }
+  return (roi.start.z + roi.end.z) / 2;
+}
+
 function toPoint3(value: RoiPoint | THREE.Vector3) {
   return {
     x: value.x,
@@ -239,9 +333,31 @@ function toPoint3(value: RoiPoint | THREE.Vector3) {
   };
 }
 
+function buildRoiLineGeometry(spec: VisibleRoiSpec): RoiRenderResource['geometry'] {
+  const geometry = new LineSegmentsGeometry() as unknown as RoiRenderResource['geometry'];
+  const positions = buildRoiSegmentPositions({
+    shape: spec.shape,
+    mode: spec.mode,
+    start: toPoint3(spec.start),
+    end: toPoint3(spec.end),
+  });
+  geometry.setPositions(positions);
+  geometry.instanceCount = positions.length / 6;
+  return geometry;
+}
+
+export function updateRoiResourceGeometry(resource: RoiRenderResource, spec: VisibleRoiSpec) {
+  const nextGeometry = buildRoiLineGeometry(spec);
+  resource.line.geometry.dispose();
+  resource.line.geometry = nextGeometry;
+  resource.geometry = nextGeometry;
+  resource.line.computeLineDistances();
+}
+
 function buildVisibleRoiSpecs(
   roiConfig: ViewerRoiConfig | undefined,
-  previewState: PreviewState | null
+  previewState: PreviewState | null,
+  moveSession: MoveSession | null
 ): VisibleRoiSpec[] {
   if (!roiConfig) {
     return [];
@@ -265,6 +381,18 @@ function buildVisibleRoiSpecs(
       isInvalid: !previewState.isValid,
       shouldBlink: roiConfig.activeSavedRoiId !== null && roiConfig.editingSavedRoiId === roiConfig.activeSavedRoiId,
     });
+  } else if (moveSession?.hasMoved) {
+    visible.push({
+      key: ROI_WORKING_KEY,
+      roiId: ROI_WORKING_KEY,
+      shape: moveSession.sourceRoi.shape,
+      mode: moveSession.sourceRoi.mode,
+      start: moveSession.previewStart,
+      end: moveSession.previewEnd,
+      color: moveSession.sourceRoi.color,
+      isInvalid: false,
+      shouldBlink: workingRepresentsActiveSaved,
+    });
   } else if (roiConfig.workingRoi) {
     visible.push({
       key: ROI_WORKING_KEY,
@@ -286,7 +414,7 @@ function buildVisibleRoiSpecs(
     if (!shouldShowSavedRoi(roi)) {
       continue;
     }
-    if ((previewState || roiConfig.workingRoi) && roi.id === roiConfig.editingSavedRoiId) {
+    if ((previewState || moveSession?.hasMoved || roiConfig.workingRoi) && roi.id === roiConfig.editingSavedRoiId) {
       continue;
     }
     visible.push({
@@ -308,17 +436,10 @@ function buildVisibleRoiSpecs(
 export function createRoiResource(
   spec: VisibleRoiSpec,
   containerRef: UseRoiRenderingParams['containerRef'],
-  rendererRef: UseRoiRenderingParams['rendererRef']
+  rendererRef: UseRoiRenderingParams['rendererRef'],
+  blOcclusionUniforms: RoiBlOcclusionUniforms,
 ): RoiRenderResource {
-  const geometry = new LineSegmentsGeometry() as unknown as RoiRenderResource['geometry'];
-  const positions = buildRoiSegmentPositions({
-    shape: spec.shape,
-    mode: spec.mode,
-    start: toPoint3(spec.start),
-    end: toPoint3(spec.end),
-  });
-  geometry.setPositions(positions);
-  geometry.instanceCount = positions.length / 6;
+  const geometry = buildRoiLineGeometry(spec);
 
   const material = new LineMaterial({
     color: new THREE.Color(spec.color),
@@ -329,6 +450,7 @@ export function createRoiResource(
     depthWrite: false,
   });
   setLineMaterialResolution(material, containerRef.current, rendererRef.current);
+  ensureRoiBlOcclusionShader(material, blOcclusionUniforms);
 
   const line = new LineSegments2(geometry, material);
   line.computeLineDistances();
@@ -371,11 +493,22 @@ export function useRoiRendering({
   cameraRef,
   volumeRootGroupRef,
 }: UseRoiRenderingParams) {
+  const blOcclusionUniformsRef = useRef<RoiBlOcclusionUniforms>({
+    roiBlOcclusionEnabled: { value: 0 },
+    roiBlAlphaTexture: { value: ROI_BL_OCCLUSION_ALPHA_FALLBACK_TEXTURE },
+    roiBlDepthTexture: { value: ROI_BL_OCCLUSION_DEPTH_FALLBACK_TEXTURE },
+    roiBlViewport: { value: new THREE.Vector2(1, 1) },
+    roiBlDepthBias: { value: 0.0005 },
+  });
   const roiConfigRef = useRef(roiConfig);
   roiConfigRef.current = roiConfig;
   const previewStateRef = useRef<PreviewState | null>(null);
   const isDrawToolActiveRef = useRef(isDrawToolActive(roiConfig));
   isDrawToolActiveRef.current = isDrawToolActive(roiConfig);
+  const moveSessionRef = useRef<MoveSession | null>(null);
+  const isDrawPreviewActiveRef = useRef(false);
+  const isRoiMoveInteractionActiveRef = useRef(false);
+  const isRoiMoveActiveRef = useRef(false);
 
   const syncRoiResources = useCallback(() => {
     const roiGroup = roiGroupRef.current;
@@ -383,26 +516,18 @@ export function useRoiRendering({
       return;
     }
 
-    const visibleSpecs = buildVisibleRoiSpecs(roiConfigRef.current, previewStateRef.current);
+    const visibleSpecs = buildVisibleRoiSpecs(roiConfigRef.current, previewStateRef.current, moveSessionRef.current);
     const nextKeys = new Set<string>();
 
     for (const spec of visibleSpecs) {
       nextKeys.add(spec.key);
       let resource = roiLinesRef.current.get(spec.key);
       if (!resource) {
-        resource = createRoiResource(spec, containerRef, rendererRef);
+        resource = createRoiResource(spec, containerRef, rendererRef, blOcclusionUniformsRef.current);
         roiGroup.add(resource.line);
         roiLinesRef.current.set(spec.key, resource);
       } else {
-        const positions = buildRoiSegmentPositions({
-          shape: spec.shape,
-          mode: spec.mode,
-          start: toPoint3(spec.start),
-          end: toPoint3(spec.end),
-        });
-        resource.geometry.setPositions(positions);
-        resource.geometry.instanceCount = positions.length / 6;
-        resource.line.computeLineDistances();
+        updateRoiResourceGeometry(resource, spec);
         resource.color.set(spec.color);
         resource.isInvalid = spec.isInvalid;
         resource.shouldBlink = spec.shouldBlink;
@@ -424,6 +549,10 @@ export function useRoiRendering({
 
   const clearPreview = useCallback(() => {
     previewStateRef.current = null;
+    moveSessionRef.current = null;
+    isDrawPreviewActiveRef.current = false;
+    isRoiMoveInteractionActiveRef.current = false;
+    isRoiMoveActiveRef.current = false;
     syncRoiResources();
   }, [syncRoiResources]);
 
@@ -435,7 +564,7 @@ export function useRoiRendering({
     if (isDrawToolActive(roiConfig)) {
       return;
     }
-    if (previewStateRef.current) {
+    if (previewStateRef.current || moveSessionRef.current) {
       clearPreview();
     }
   }, [clearPreview, roiConfig]);
@@ -448,6 +577,33 @@ export function useRoiRendering({
       applyRoiAppearance(roiLinesRef.current.values(), timestamp);
     },
     [roiLinesRef]
+  );
+
+  const setBlOcclusionState = useCallback(
+    ({
+      enabled,
+      alphaTexture,
+      depthTexture,
+      viewport,
+    }: {
+      enabled: boolean;
+      alphaTexture?: THREE.Texture | null;
+      depthTexture?: THREE.Texture | null;
+      viewport?: { width: number; height: number } | null;
+    }) => {
+      blOcclusionUniformsRef.current.roiBlOcclusionEnabled.value = enabled ? 1 : 0;
+      blOcclusionUniformsRef.current.roiBlAlphaTexture.value =
+        alphaTexture ?? ROI_BL_OCCLUSION_ALPHA_FALLBACK_TEXTURE;
+      blOcclusionUniformsRef.current.roiBlDepthTexture.value =
+        depthTexture ?? ROI_BL_OCCLUSION_DEPTH_FALLBACK_TEXTURE;
+      const viewportWidth = viewport?.width ?? 1;
+      const viewportHeight = viewport?.height ?? 1;
+      blOcclusionUniformsRef.current.roiBlViewport.value.set(
+        Math.max(1, viewportWidth),
+        Math.max(1, viewportHeight)
+      );
+    },
+    []
   );
 
   const performHoverHitTest = useCallback(
@@ -477,6 +633,71 @@ export function useRoiRendering({
     []
   );
 
+  const resolveSourceRoi = useCallback((roiId: string, config: ViewerRoiConfig) => {
+    if (roiId === ROI_WORKING_KEY) {
+      return config.workingRoi ? cloneRoiDefinition(config.workingRoi) : null;
+    }
+
+    const savedRoi = config.savedRois.find((roi) => roi.id === roiId);
+    return savedRoi ? cloneRoiDefinition(savedRoi) : null;
+  }, []);
+
+  const beginMoveInteraction = useCallback(
+    (event: PointerEvent, domElement: HTMLCanvasElement, roiId: string) => {
+      const config = roiConfigRef.current;
+      const renderer = rendererRef.current;
+      const camera = cameraRef.current;
+      const volumeRootGroup = volumeRootGroupRef.current;
+      const dimensions = currentDimensionsRef.current;
+      if (!config || !renderer || !camera || !volumeRootGroup || !dimensions) {
+        return false;
+      }
+
+      const sourceRoi = resolveSourceRoi(roiId, config);
+      if (!sourceRoi) {
+        return false;
+      }
+
+      if (roiId !== ROI_WORKING_KEY) {
+        config.onSavedRoiActivate(roiId);
+      }
+
+      const localRay = resolveLocalRay({ event, renderer, camera, volumeRootGroup });
+      if (!localRay) {
+        return true;
+      }
+
+      const planeZ = resolveRoiDragPlaneZ(sourceRoi);
+      const anchorPoint = resolvePlanePoint(localRay, planeZ).clone();
+      moveSessionRef.current = {
+        pointerId: event.pointerId,
+        roiId,
+        sourceRoi,
+        planeZ,
+        anchorPoint,
+        originClientX: event.clientX,
+        originClientY: event.clientY,
+        previewStart: new THREE.Vector3(sourceRoi.start.x, sourceRoi.start.y, sourceRoi.start.z),
+        previewEnd: new THREE.Vector3(sourceRoi.end.x, sourceRoi.end.y, sourceRoi.end.z),
+        offsetX: 0,
+        offsetY: 0,
+        hasMoved: false,
+      };
+      isDrawPreviewActiveRef.current = true;
+      isRoiMoveInteractionActiveRef.current = true;
+      isRoiMoveActiveRef.current = false;
+
+      try {
+        domElement.setPointerCapture(event.pointerId);
+      } catch {
+        // Ignore capture failures on unsupported platforms.
+      }
+
+      return true;
+    },
+    [cameraRef, currentDimensionsRef, rendererRef, resolveSourceRoi, volumeRootGroupRef]
+  );
+
   const beginDrawing = useCallback(
     (event: PointerEvent, domElement: HTMLCanvasElement) => {
       const config = roiConfigRef.current;
@@ -491,12 +712,6 @@ export function useRoiRendering({
         return false;
       }
 
-      const localRay = resolveLocalRay({ event, renderer, camera, volumeRootGroup });
-      const bounds = resolveVolumeBounds(dimensions);
-      if (!localRay || !bounds) {
-        return true;
-      }
-
       let committedStart: RoiPoint | null = null;
       let previewStart: THREE.Vector3 | null = null;
       let previewEnd: THREE.Vector3 | null = null;
@@ -504,16 +719,24 @@ export function useRoiRendering({
       let lockedMode: RoiDimensionMode = config.dimensionMode;
 
       if (config.dimensionMode === '3d') {
-        const hoveredPoint = resolveHoveredVoxelPoint(hoveredVoxelRef, layersRef);
-        if (!hoveredPoint) {
+        const hoveredPreview = resolveHoveredVoxelPreviewPoint(hoveredVoxelRef, layersRef);
+        if (!hoveredPreview) {
           return true;
         }
-        const preview = resolve3dPreviewPoint(localRay, bounds);
-        committedStart = hoveredPoint;
-        previewStart = preview.point.clone();
-        previewEnd = preview.point.clone();
+        committedStart = {
+          x: THREE.MathUtils.clamp(Math.round(hoveredPreview.point.x), 0, hoveredPreview.dimensions.width - 1),
+          y: THREE.MathUtils.clamp(Math.round(hoveredPreview.point.y), 0, hoveredPreview.dimensions.height - 1),
+          z: THREE.MathUtils.clamp(Math.round(hoveredPreview.point.z), 0, hoveredPreview.dimensions.depth - 1),
+        };
+        previewStart = hoveredPreview.point.clone();
+        previewEnd = hoveredPreview.point.clone();
         previewValid = true;
       } else {
+        const localRay = resolveLocalRay({ event, renderer, camera, volumeRootGroup });
+        const bounds = resolveVolumeBounds(dimensions);
+        if (!localRay || !bounds) {
+          return true;
+        }
         const preview = resolve2dPreviewPoint(localRay, bounds, config.selectedZIndex);
         if (!preview.isValid) {
           return true;
@@ -531,7 +754,7 @@ export function useRoiRendering({
 
       previewStateRef.current = {
         pointerId: event.pointerId,
-        shape: config.tool as RoiShape,
+        shape: config.tool,
         mode: lockedMode,
         color: config.defaultColor,
         committedStart,
@@ -540,6 +763,7 @@ export function useRoiRendering({
         previewEnd,
         isValid: previewValid,
       };
+      isDrawPreviewActiveRef.current = true;
       syncRoiResources();
 
       try {
@@ -572,21 +796,23 @@ export function useRoiRendering({
         return false;
       }
 
-      const localRay = resolveLocalRay({ event, renderer, camera, volumeRootGroup });
-      const bounds = resolveVolumeBounds(dimensions);
-      if (!localRay || !bounds) {
-        return true;
-      }
-
       if (session.mode === '3d') {
-        const preview = resolve3dPreviewPoint(localRay, bounds);
-        const hoveredPoint = resolveHoveredVoxelPoint(hoveredVoxelRef, layersRef);
-        session.previewEnd.copy(preview.point);
-        session.isValid = hoveredPoint !== null;
-        if (hoveredPoint) {
-          session.committedEnd = hoveredPoint;
+        const hoveredPreview = resolveHoveredVoxelPreviewPoint(hoveredVoxelRef, layersRef);
+        session.isValid = hoveredPreview !== null;
+        if (hoveredPreview) {
+          session.previewEnd.copy(hoveredPreview.point);
+          session.committedEnd = {
+            x: THREE.MathUtils.clamp(Math.round(hoveredPreview.point.x), 0, hoveredPreview.dimensions.width - 1),
+            y: THREE.MathUtils.clamp(Math.round(hoveredPreview.point.y), 0, hoveredPreview.dimensions.height - 1),
+            z: THREE.MathUtils.clamp(Math.round(hoveredPreview.point.z), 0, hoveredPreview.dimensions.depth - 1),
+          };
         }
       } else {
+        const localRay = resolveLocalRay({ event, renderer, camera, volumeRootGroup });
+        const bounds = resolveVolumeBounds(dimensions);
+        if (!localRay || !bounds) {
+          return true;
+        }
         const preview = resolve2dPreviewPoint(localRay, bounds, session.committedStart.z);
         session.previewEnd.copy(preview.point);
         session.isValid = preview.isValid;
@@ -599,6 +825,55 @@ export function useRoiRendering({
       return true;
     },
     [cameraRef, currentDimensionsRef, hoveredVoxelRef, layersRef, rendererRef, syncRoiResources, volumeRootGroupRef]
+  );
+
+  const updateMoveInteraction = useCallback(
+    (event: PointerEvent) => {
+      const session = moveSessionRef.current;
+      const renderer = rendererRef.current;
+      const camera = cameraRef.current;
+      const volumeRootGroup = volumeRootGroupRef.current;
+      const dimensions = currentDimensionsRef.current;
+      if (!session || session.pointerId !== event.pointerId || !renderer || !camera || !volumeRootGroup || !dimensions) {
+        return false;
+      }
+
+      const distance = Math.hypot(event.clientX - session.originClientX, event.clientY - session.originClientY);
+      if (!session.hasMoved && distance < ROI_DRAG_START_DISTANCE_PX) {
+        return true;
+      }
+
+      const localRay = resolveLocalRay({ event, renderer, camera, volumeRootGroup });
+      if (!localRay) {
+        return true;
+      }
+
+      const dragPoint = resolvePlanePoint(localRay, session.planeZ);
+      const clampedOffset = clampRoiTranslationDelta(
+        session.sourceRoi,
+        dragPoint.x - session.anchorPoint.x,
+        dragPoint.y - session.anchorPoint.y,
+        dimensions
+      );
+
+      session.offsetX = clampedOffset.x;
+      session.offsetY = clampedOffset.y;
+      session.previewStart.set(
+        session.sourceRoi.start.x + clampedOffset.x,
+        session.sourceRoi.start.y + clampedOffset.y,
+        session.sourceRoi.start.z,
+      );
+      session.previewEnd.set(
+        session.sourceRoi.end.x + clampedOffset.x,
+        session.sourceRoi.end.y + clampedOffset.y,
+        session.sourceRoi.end.z,
+      );
+      session.hasMoved = true;
+      isRoiMoveActiveRef.current = true;
+      syncRoiResources();
+      return true;
+    },
+    [cameraRef, currentDimensionsRef, rendererRef, syncRoiResources, volumeRootGroupRef]
   );
 
   const endDrawing = useCallback(
@@ -628,6 +903,7 @@ export function useRoiRendering({
         : null;
 
       previewStateRef.current = null;
+      isDrawPreviewActiveRef.current = false;
       commitPreviewRoi(nextWorkingRoi);
 
       if (event && domElement && domElement.hasPointerCapture(event.pointerId)) {
@@ -643,6 +919,47 @@ export function useRoiRendering({
     [commitPreviewRoi, syncRoiResources]
   );
 
+  const endMoveInteraction = useCallback(
+    (event: PointerEvent | undefined, domElement: HTMLCanvasElement | null) => {
+      const session = moveSessionRef.current;
+      const dimensions = currentDimensionsRef.current;
+      if (!session) {
+        return false;
+      }
+
+      if (event && session.pointerId !== event.pointerId) {
+        return false;
+      }
+
+      if (session.hasMoved && dimensions) {
+        const roundedOffset = clampRoiTranslationDelta(
+          session.sourceRoi,
+          Math.round(session.offsetX),
+          Math.round(session.offsetY),
+          dimensions
+        );
+        commitPreviewRoi(translateRoiByOffset(session.sourceRoi, roundedOffset.x, roundedOffset.y));
+      }
+
+      moveSessionRef.current = null;
+      isDrawPreviewActiveRef.current = false;
+      isRoiMoveInteractionActiveRef.current = false;
+      isRoiMoveActiveRef.current = false;
+      syncRoiResources();
+
+      if (event && domElement && domElement.hasPointerCapture(event.pointerId)) {
+        try {
+          domElement.releasePointerCapture(event.pointerId);
+        } catch {
+          // Ignore.
+        }
+      }
+
+      return true;
+    },
+    [commitPreviewRoi, currentDimensionsRef, syncRoiResources]
+  );
+
   const handlePointerDown = useCallback(
     (event: PointerEvent, domElement: HTMLCanvasElement) => {
       if (!isDrawToolActiveRef.current) {
@@ -651,34 +968,45 @@ export function useRoiRendering({
 
       const hitRoiId = performHoverHitTest(event);
       if (hitRoiId) {
-        return true;
+        return beginMoveInteraction(event, domElement, hitRoiId);
       }
 
       return beginDrawing(event, domElement);
     },
-    [beginDrawing, performHoverHitTest]
+    [beginDrawing, beginMoveInteraction, performHoverHitTest]
   );
 
   const handlePointerMove = useCallback(
     (event: PointerEvent) => {
-      if (!isDrawToolActiveRef.current && !previewStateRef.current) {
+      if (!isDrawToolActiveRef.current && !previewStateRef.current && !moveSessionRef.current) {
         return false;
+      }
+      if (moveSessionRef.current) {
+        return updateMoveInteraction(event);
       }
       if (!previewStateRef.current) {
         return false;
       }
       return updateDrawing(event);
     },
-    [updateDrawing]
+    [updateDrawing, updateMoveInteraction]
   );
 
   const handlePointerUp = useCallback(
-    (event: PointerEvent, domElement: HTMLCanvasElement) => endDrawing(event, domElement),
-    [endDrawing]
+    (event: PointerEvent, domElement: HTMLCanvasElement) => {
+      if (moveSessionRef.current) {
+        return endMoveInteraction(event, domElement);
+      }
+      return endDrawing(event, domElement);
+    },
+    [endDrawing, endMoveInteraction]
   );
 
   const handlePointerLeave = useCallback(
     (_event: PointerEvent | undefined, _domElement: HTMLCanvasElement | null) => {
+      if (moveSessionRef.current) {
+        return true;
+      }
       const session = previewStateRef.current;
       if (!session) {
         return false;
@@ -699,13 +1027,21 @@ export function useRoiRendering({
     }
     roiLinesRef.current.clear();
     previewStateRef.current = null;
+    moveSessionRef.current = null;
+    isDrawPreviewActiveRef.current = false;
+    isRoiMoveInteractionActiveRef.current = false;
+    isRoiMoveActiveRef.current = false;
   }, [roiGroupRef, roiLinesRef]);
 
   return useMemo(
     () => ({
       isDrawToolActiveRef,
+      isDrawPreviewActiveRef,
+      isRoiMoveInteractionActiveRef,
+      isRoiMoveActiveRef,
       performHoverHitTest,
       updateRoiAppearance,
+      setBlOcclusionState,
       handlePointerDown,
       handlePointerMove,
       handlePointerUp,
@@ -720,8 +1056,12 @@ export function useRoiRendering({
       handlePointerLeave,
       handlePointerMove,
       handlePointerUp,
+      isDrawPreviewActiveRef,
+      isRoiMoveActiveRef,
+      isRoiMoveInteractionActiveRef,
       performHoverHitTest,
       updateRoiAppearance,
+      setBlOcclusionState,
     ]
   );
 }

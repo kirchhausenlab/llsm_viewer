@@ -119,3 +119,31 @@ export function createSyntheticVolumeMovieTiffPaths(options?: {
   }
   return paths;
 }
+
+export function createCustomVolumeTiffPath(options: {
+  width: number;
+  height: number;
+  depth: number;
+  fill: (x: number, y: number, z: number) => number;
+  label?: string;
+}): string {
+  const { width, height, depth, fill, label = 'custom' } = options;
+  const data = new Uint8Array(width * height * depth);
+
+  for (let z = 0; z < depth; z += 1) {
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const index = ((z * height) + y) * width + x;
+        const value = fill(x, y, z);
+        data[index] = Math.max(0, Math.min(255, Math.round(value)));
+      }
+    }
+  }
+
+  const filePath = path.join(
+    os.tmpdir(),
+    `llsm-viewer-${label}-${process.pid}-${Date.now()}.tiff`
+  );
+  fs.writeFileSync(filePath, encodeGrayscaleTiffStack(width, height, depth, data));
+  return filePath;
+}

@@ -1,4 +1,4 @@
-import { Vector2, Vector3, Vector4 } from 'three';
+import { Matrix4, Vector2, Vector3, Vector4 } from 'three';
 import type { Data3DTexture, DataTexture } from 'three';
 import type { ViewerProjectionMode } from '../hooks/useVolumeRenderSetup';
 import {
@@ -520,6 +520,11 @@ type VolumeUniforms = {
   u_hoverPulse: { value: number };
   u_hoverLabel: { value: number };
   u_hoverSegmentationMode: { value: number };
+  u_modelViewProjectionMatrix: { value: Matrix4 };
+  u_modelViewMatrixVolume: { value: Matrix4 };
+  u_cameraNearFar: { value: Vector2 };
+  u_roiOcclusionDepthTexture: { value: DataTexture | null };
+  u_roiOcclusionViewport: { value: Vector2 };
   u_segmentationLabels: { value: Data3DTexture | null };
   u_segmentationVolumeSize: { value: Vector3 };
   u_segmentationBrickAtlasData: { value: Data3DTexture | null };
@@ -584,6 +589,11 @@ const uniforms = {
   u_hoverPulse: { value: 0 },
   u_hoverLabel: { value: 0 },
   u_hoverSegmentationMode: { value: 0 },
+  u_modelViewProjectionMatrix: { value: new Matrix4() },
+  u_modelViewMatrixVolume: { value: new Matrix4() },
+  u_cameraNearFar: { value: new Vector2(0.0001, 1000) },
+  u_roiOcclusionDepthTexture: { value: null as DataTexture | null },
+  u_roiOcclusionViewport: { value: new Vector2(1, 1) },
   u_segmentationLabels: { value: null as Data3DTexture | null },
   u_segmentationVolumeSize: { value: new Vector3(1, 1, 1) },
   u_segmentationBrickAtlasData: { value: null as Data3DTexture | null },
@@ -671,6 +681,11 @@ const volumeRenderFragmentShader = /* glsl */ `
     uniform float u_hoverPulse;
     uniform float u_hoverLabel;
     uniform float u_hoverSegmentationMode;
+    uniform mat4 u_modelViewProjectionMatrix;
+    uniform mat4 u_modelViewMatrixVolume;
+    uniform vec2 u_cameraNearFar;
+    uniform sampler2D u_roiOcclusionDepthTexture;
+    uniform vec2 u_roiOcclusionViewport;
     uniform sampler3D u_segmentationLabels;
     uniform vec3 u_segmentationVolumeSize;
     uniform sampler3D u_segmentationBrickAtlasData;
@@ -1992,6 +2007,21 @@ const volumeRenderFragmentShader = /* glsl */ `
       return vec2(eventT, clamp(alpha, 0.0, 1.0));
     }
 
+    float volume_texcoords_to_clip_depth(vec3 texcoords) {
+      vec3 localPos = texcoords * u_size - vec3(0.5);
+      vec4 clipPos = u_modelViewProjectionMatrix * vec4(localPos, 1.0);
+      float safeW = max(abs(clipPos.w), 1e-6);
+      float ndcDepth = clipPos.z / safeW;
+      return clamp(ndcDepth * 0.5 + 0.5, 0.0, 1.0);
+    }
+
+    float linearize_depth(float depthValue) {
+      float nearPlane = max(u_cameraNearFar.x, 1e-6);
+      float farPlane = max(u_cameraNearFar.y, nearPlane + 1e-6);
+      float z = depthValue * 2.0 - 1.0;
+      return (2.0 * nearPlane * farPlane) / max(farPlane + nearPlane - z * (farPlane - nearPlane), 1e-6);
+    }
+
     void main() {
       vec3 farpos = v_farpos.xyz / v_farpos.w;
       vec3 nearpos = v_nearpos.xyz / v_nearpos.w;
@@ -2618,10 +2648,28 @@ const volumeRenderFragmentShader = /* glsl */ `
       float safeOpacity = max(u_blOpacityScale, 0.0);
       float stepDistance = max(length(step * u_size), 1e-5);
       float baseAdaptiveLod = compute_adaptive_lod_base(step, start_loc);
-      bool hoverActive = u_hoverActive > 0.5 && length(u_hoverScale) > 0.0;
-      float hoverPulse = clamp(u_hoverPulse, 0.0, 1.0);
-      float hoverLineRadius = max(u_hoverRadius * 0.45, 0.55);
-      float hoverAxisDensity = mix(2.6, 3.4, hoverPulse);
+      bool roiOcclusionPass = false;
+      float roiOcclusionDepth = 1.0;
+#if defined(VOLUME_ROI_OCCLUSION_ALPHA_PASS)
+      roiOcclusionPass = true;
+      vec2 safeOcclusionViewport = max(u_roiOcclusionViewport, vec2(1.0));
+      vec2 roiOcclusionUv = clamp(gl_FragCoord.xy / safeOcclusionViewport, vec2(0.0), vec2(1.0));
+      roiOcclusionDepth = texture2D(u_roiOcclusionDepthTexture, roiOcclusionUv).r;
+      if (roiOcclusionDepth <= 1e-6 || roiOcclusionDepth >= 0.999999) {
+        discard;
+      }
+      roiOcclusionDepth = linearize_depth(roiOcclusionDepth);
+#endif
+      bool hoverActive = false;
+      float hoverPulse = 0.0;
+      float hoverLineRadius = 0.0;
+      float hoverAxisDensity = 0.0;
+#if !defined(VOLUME_ROI_OCCLUSION_ALPHA_PASS)
+      hoverActive = u_hoverActive > 0.5 && length(u_hoverScale) > 0.0;
+      hoverPulse = clamp(u_hoverPulse, 0.0, 1.0);
+      hoverLineRadius = max(u_hoverRadius * 0.45, 0.55);
+      hoverAxisDensity = mix(2.6, 3.4, hoverPulse);
+#endif
       vec3 rayDelta = step * float(nsteps);
       float raySpeed = length(rayDelta * u_hoverScale);
 
@@ -2716,6 +2764,7 @@ const volumeRenderFragmentShader = /* glsl */ `
           vec4 colorSample = sample_color_lod(loc, adaptiveLod);
           float rawIntensity = luminance(colorSample);
           float normalizedIntensity = normalize_intensity(rawIntensity);
+          vec3 sampleLoc = loc;
 
           if (u_blRefinementEnabled > 0.5 && adaptiveLod > 0.25 && normalizedIntensity > safeBackgroundCutoff + 0.05) {
             vec3 refineLoc = loc - 0.5 * step;
@@ -2728,12 +2777,20 @@ const volumeRenderFragmentShader = /* glsl */ `
               if (localRefineRaw > refinedRawIntensity) {
                 refinedRawIntensity = localRefineRaw;
                 refinedColorSample = localRefineSample;
+                sampleLoc = refineLoc;
               }
               refineLoc += refineStep;
             }
             rawIntensity = refinedRawIntensity;
             colorSample = refinedColorSample;
             normalizedIntensity = normalize_intensity(rawIntensity);
+          }
+
+          if (roiOcclusionPass) {
+            float sampleDepth = linearize_depth(volume_texcoords_to_clip_depth(sampleLoc));
+            if (sampleDepth >= roiOcclusionDepth - 1e-5) {
+              break;
+            }
           }
 
           if (normalizedIntensity > safeBackgroundCutoff) {
@@ -2783,7 +2840,11 @@ const volumeRenderFragmentShader = /* glsl */ `
         accumulatedAlpha = 1.0 - transmittance;
       }
 
+#if defined(VOLUME_ROI_OCCLUSION_ALPHA_PASS)
+      gl_FragColor = vec4(vec3(transmittance), 1.0);
+#else
       gl_FragColor = apply_blending_mode(vec4(accumulatedColor, accumulatedAlpha));
+#endif
     }
     #endif
 

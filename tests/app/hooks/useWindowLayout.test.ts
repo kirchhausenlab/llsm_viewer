@@ -4,11 +4,13 @@ import { useWindowLayout } from '../../../src/ui/app/hooks/useWindowLayout.ts';
 import {
   computeDrawRoiWindowRecenterPosition,
   computeLayersWindowDefaultPosition,
+  computeMeasurementsWindowRecenterPosition,
   computePaintbrushWindowRecenterPosition,
   computePlotSettingsWindowDefaultPosition,
   computePropsWindowRecenterPosition,
   computeRecordWindowDefaultPosition,
   computeRoiManagerWindowRecenterPosition,
+  computeSetMeasurementsWindowRecenterPosition,
   computeSelectedTracksWindowDefaultPosition,
   computeTrackSettingsWindowRecenterPosition,
   computeTrackWindowDefaultPosition,
@@ -53,6 +55,14 @@ console.log('Starting useWindowLayout tests');
   assert.deepStrictEqual(
     hook.result.trackSettingsWindowInitialPosition,
     computeTrackSettingsWindowRecenterPosition()
+  );
+  assert.deepStrictEqual(
+    hook.result.measurementsWindowInitialPosition,
+    computeMeasurementsWindowRecenterPosition()
+  );
+  assert.deepStrictEqual(
+    hook.result.setMeasurementsWindowInitialPosition,
+    computeSetMeasurementsWindowRecenterPosition()
   );
 
   globalThis.window = originalWindow;

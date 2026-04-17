@@ -143,6 +143,7 @@ export type ViewerRoiConfig = {
   editingSavedRoiId: string | null;
   showAllSavedRois: boolean;
   onWorkingRoiChange: (roi: RoiDefinition | null) => void;
+  onSavedRoiActivate: (roiId: string) => void;
 };
 
 export type VolumeViewerProps = {
@@ -209,6 +210,7 @@ export type { ViewerLayer } from '../../ui/contracts/viewerLayer';
 
 export type VolumeResources = {
   mesh: THREE.Mesh;
+  roiBlOcclusionAlphaMesh?: THREE.Mesh | null;
   texture: THREE.Data3DTexture | THREE.DataTexture;
   labelTexture?: THREE.Data3DTexture | null;
   paletteTexture?: THREE.DataTexture | null;

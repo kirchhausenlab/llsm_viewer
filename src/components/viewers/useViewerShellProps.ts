@@ -125,6 +125,7 @@ export function useViewerShellProps(props: ViewerShellContainerProps): ViewerShe
   return {
     viewerMode: props.viewerMode,
     volumeViewerProps: mapVolumeViewerProps(props),
+    loadMeasurementVolume: props.loadMeasurementVolume,
     topMenu: mapTopMenuProps(props),
     layout: mapLayoutProps(props.layout),
     modeControls: props.modeControls,

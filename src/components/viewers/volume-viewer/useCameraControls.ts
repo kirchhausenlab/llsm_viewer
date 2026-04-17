@@ -6,7 +6,6 @@ import {
   applyDesktopViewState,
   captureDesktopViewState,
   computeOrthographicVisibleHeight,
-  computePerspectiveVisibleHeight,
   createDesktopCamera,
   createDesktopControls,
   createEmptyDesktopViewStateMap,

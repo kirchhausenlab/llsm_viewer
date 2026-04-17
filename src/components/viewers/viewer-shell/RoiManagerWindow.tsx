@@ -8,15 +8,22 @@ type RoiManagerWindowProps = {
   controlWindowWidth: number;
   resetSignal: number;
   savedRois: SavedRoi[];
+  selectedSavedRoiIds: string[];
   activeSavedRoiId: string | null;
   showAllSavedRois: boolean;
   canAdd: boolean;
   canUpdate: boolean;
-  onSelectRoi: (roiId: string) => void;
+  canMeasure: boolean;
+  canSave: boolean;
+  canLoad: boolean;
+  onSelectRoi: (roiId: string, additive?: boolean) => void;
   onAdd: () => void;
   onDelete: () => void;
   onRename: () => void;
   onUpdate: () => void;
+  onMeasure: () => void;
+  onSave: () => void;
+  onLoad: () => void;
   onShowAllChange: (value: boolean) => void;
   onClose: () => void;
 };
@@ -27,15 +34,22 @@ export default function RoiManagerWindow({
   controlWindowWidth,
   resetSignal,
   savedRois,
+  selectedSavedRoiIds,
   activeSavedRoiId,
   showAllSavedRois,
   canAdd,
   canUpdate,
+  canMeasure,
+  canSave,
+  canLoad,
   onSelectRoi,
   onAdd,
   onDelete,
   onRename,
   onUpdate,
+  onMeasure,
+  onSave,
+  onLoad,
   onShowAllChange,
   onClose,
 }: RoiManagerWindowProps) {
@@ -51,19 +65,35 @@ export default function RoiManagerWindow({
       onClose={onClose}
     >
       <div className="roi-manager-window">
-        <div className="roi-manager-list" role="listbox" aria-label="Saved ROIs">
+        <div className="roi-manager-list" role="listbox" aria-label="Saved ROIs" aria-multiselectable="true">
           {savedRois.length > 0 ? (
             savedRois.map((roi) => {
+              const selectionIndex = selectedSavedRoiIds.indexOf(roi.id);
+              const isSelected = selectionIndex !== -1;
               const isActive = roi.id === activeSavedRoiId;
               return (
                 <button
                   key={roi.id}
                   type="button"
-                  className={isActive ? 'roi-manager-list-item is-active' : 'roi-manager-list-item'}
-                  aria-selected={isActive}
-                  onClick={() => onSelectRoi(roi.id)}
+                  className={[
+                    'roi-manager-list-item',
+                    isSelected ? 'is-selected' : '',
+                    isActive ? 'is-active' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  aria-selected={isSelected}
+                  onClick={(event) => onSelectRoi(roi.id, event.shiftKey)}
                 >
-                  {roi.name}
+                  <span className="roi-manager-list-item-label">{roi.name}</span>
+                  {isSelected ? (
+                    <span
+                      className={isActive ? 'roi-manager-selection-badge is-active' : 'roi-manager-selection-badge'}
+                      aria-hidden="true"
+                    >
+                      {selectionIndex + 1}
+                    </span>
+                  ) : null}
                 </button>
               );
             })
@@ -85,11 +115,14 @@ export default function RoiManagerWindow({
           <button type="button" onClick={onUpdate} disabled={!canUpdate}>
             Update
           </button>
-          <button type="button" disabled>
+          <button type="button" onClick={onMeasure} disabled={!canMeasure}>
             Measure
           </button>
-          <button type="button" disabled>
-            Properties
+          <button type="button" onClick={onSave} disabled={!canSave}>
+            Save
+          </button>
+          <button type="button" onClick={onLoad} disabled={!canLoad}>
+            Load
           </button>
           <button
             type="button"

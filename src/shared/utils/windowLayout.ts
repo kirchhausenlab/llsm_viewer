@@ -20,6 +20,10 @@ export const ROI_MANAGER_WINDOW_ESTIMATED_HEIGHT = 420;
 export const PLOT_SETTINGS_WINDOW_ESTIMATED_HEIGHT = 260;
 export const TRACK_SETTINGS_WINDOW_ESTIMATED_HEIGHT = 180;
 export const RUNTIME_DIAGNOSTICS_WINDOW_ESTIMATED_HEIGHT = 260;
+export const MEASUREMENTS_WINDOW_WIDTH = 760;
+export const SET_MEASUREMENTS_WINDOW_WIDTH = 320;
+export const MEASUREMENTS_WINDOW_ESTIMATED_HEIGHT = 420;
+export const SET_MEASUREMENTS_WINDOW_ESTIMATED_HEIGHT = 360;
 
 const computeRightColumnX = (preferredWidth = CONTROL_WINDOW_WIDTH): number => {
   if (typeof window === 'undefined') {
@@ -184,6 +188,12 @@ export const computeRuntimeDiagnosticsWindowDefaultPosition = (): WindowPosition
   y: TOP_MENU_HEIGHT + TOP_MENU_WINDOW_PADDING
 });
 
+export const computeMeasurementsWindowDefaultPosition = (): WindowPosition =>
+  computeTopCenteredWindowPosition(MEASUREMENTS_WINDOW_WIDTH, MEASUREMENTS_WINDOW_ESTIMATED_HEIGHT);
+
+export const computeSetMeasurementsWindowDefaultPosition = (): WindowPosition =>
+  computeTopCenteredWindowPosition(SET_MEASUREMENTS_WINDOW_WIDTH, SET_MEASUREMENTS_WINDOW_ESTIMATED_HEIGHT);
+
 export const computePropsWindowRecenterPosition = (): WindowPosition =>
   computeTopCenteredWindowPosition(PROPS_WINDOW_WIDTH, PROPS_WINDOW_ESTIMATED_HEIGHT);
 
@@ -204,5 +214,11 @@ export const computeRuntimeDiagnosticsWindowRecenterPosition = (): WindowPositio
     RUNTIME_DIAGNOSTICS_WINDOW_WIDTH,
     RUNTIME_DIAGNOSTICS_WINDOW_ESTIMATED_HEIGHT
   );
+
+export const computeMeasurementsWindowRecenterPosition = (): WindowPosition =>
+  computeTopCenteredWindowPosition(MEASUREMENTS_WINDOW_WIDTH, MEASUREMENTS_WINDOW_ESTIMATED_HEIGHT);
+
+export const computeSetMeasurementsWindowRecenterPosition = (): WindowPosition =>
+  computeTopCenteredWindowPosition(SET_MEASUREMENTS_WINDOW_WIDTH, SET_MEASUREMENTS_WINDOW_ESTIMATED_HEIGHT);
 
 export const nextLayoutResetToken = (token: number): number => token + 1;

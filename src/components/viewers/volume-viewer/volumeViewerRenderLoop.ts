@@ -30,9 +30,11 @@ type CreateVolumeViewerRenderLoopOptions = {
   ) => void;
   rotationTargetRef: MutableRefObject<THREE.Vector3>;
   updateTrackAppearance: (timestamp: number) => void;
+  renderRoiBlOcclusionPass?: (renderer: THREE.WebGLRenderer, camera: THREE.Camera) => void;
   refreshViewerProps: () => void;
   followTargetActiveRef: MutableRefObject<boolean>;
   followTargetOffsetRef: MutableRefObject<THREE.Vector3 | null>;
+  roiGroupRef?: MutableRefObject<THREE.Group | null>;
   resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
   currentDimensionsRef?: MutableRefObject<{ width: number; height: number; depth: number } | null>;
   onCameraNavigationSample?: (sample: ViewerCameraNavigationSample) => void;
@@ -54,9 +56,11 @@ export function createVolumeViewerRenderLoop({
   applyKeyboardMovement,
   rotationTargetRef,
   updateTrackAppearance,
+  renderRoiBlOcclusionPass,
   refreshViewerProps,
   followTargetActiveRef,
   followTargetOffsetRef,
+  roiGroupRef,
   resourcesRef,
   currentDimensionsRef,
   onCameraNavigationSample,
@@ -196,6 +200,15 @@ export function createVolumeViewerRenderLoop({
       vrLog('[VR] render tick', renderSummary);
     }
     lastRenderTickSummary = renderSummary;
+    const roiGroup = roiGroupRef?.current ?? null;
+    const previousRoiVisibility = roiGroup?.visible ?? false;
+    if (roiGroup) {
+      roiGroup.visible = false;
+    }
     renderer.render(scene, camera);
+    if (roiGroup) {
+      roiGroup.visible = previousRoiVisibility;
+    }
+    renderRoiBlOcclusionPass?.(renderer, camera);
   };
 }

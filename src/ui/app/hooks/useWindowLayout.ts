@@ -8,11 +8,15 @@ import {
   computePaintbrushWindowRecenterPosition,
   computePaintbrushWindowDefaultPosition,
   computePlotSettingsWindowDefaultPosition,
+  computeMeasurementsWindowDefaultPosition,
+  computeMeasurementsWindowRecenterPosition,
   computePropsWindowRecenterPosition,
   computePropsWindowDefaultPosition,
   computeRecordWindowDefaultPosition,
   computeRoiManagerWindowDefaultPosition,
   computeRoiManagerWindowRecenterPosition,
+  computeSetMeasurementsWindowDefaultPosition,
+  computeSetMeasurementsWindowRecenterPosition,
   computeSelectedTracksWindowDefaultPosition,
   computeTrackSettingsWindowRecenterPosition,
   computeTrackSettingsWindowDefaultPosition,
@@ -35,6 +39,8 @@ type UseWindowLayoutResult = {
   selectedTracksWindowInitialPosition: WindowPosition;
   plotSettingsWindowInitialPosition: WindowPosition;
   trackSettingsWindowInitialPosition: WindowPosition;
+  measurementsWindowInitialPosition: WindowPosition;
+  setMeasurementsWindowInitialPosition: WindowPosition;
   resetLayout: () => void;
 };
 
@@ -69,6 +75,10 @@ export function useWindowLayout(): UseWindowLayoutResult {
     useState<WindowPosition>(() => computePlotSettingsWindowDefaultPosition());
   const [trackSettingsWindowInitialPosition, setTrackSettingsWindowInitialPosition] =
     useState<WindowPosition>(() => computeTrackSettingsWindowDefaultPosition());
+  const [measurementsWindowInitialPosition, setMeasurementsWindowInitialPosition] =
+    useState<WindowPosition>(() => computeMeasurementsWindowDefaultPosition());
+  const [setMeasurementsDialogWindowInitialPosition, setSetMeasurementsWindowInitialPosition] =
+    useState<WindowPosition>(() => computeSetMeasurementsWindowDefaultPosition());
 
   const updatePositionToDefault = useCallback(
     (
@@ -139,6 +149,17 @@ export function useWindowLayout(): UseWindowLayoutResult {
     );
   }, [updatePositionToDefault]);
 
+  useEffect(() => {
+    updatePositionToDefault(computeMeasurementsWindowDefaultPosition, setMeasurementsWindowInitialPosition);
+  }, [updatePositionToDefault]);
+
+  useEffect(() => {
+    updatePositionToDefault(
+      computeSetMeasurementsWindowDefaultPosition,
+      setSetMeasurementsWindowInitialPosition
+    );
+  }, [updatePositionToDefault]);
+
   const resetLayout = useCallback(() => {
     setLayoutResetToken(nextLayoutResetToken);
     setPropsWindowInitialPosition(computePropsWindowRecenterPosition());
@@ -151,6 +172,8 @@ export function useWindowLayout(): UseWindowLayoutResult {
     setSelectedTracksWindowInitialPosition(computeSelectedTracksWindowDefaultPosition());
     setPlotSettingsWindowInitialPosition(computePlotSettingsWindowDefaultPosition());
     setTrackSettingsWindowInitialPosition(computeTrackSettingsWindowRecenterPosition());
+    setMeasurementsWindowInitialPosition(computeMeasurementsWindowRecenterPosition());
+    setSetMeasurementsWindowInitialPosition(computeSetMeasurementsWindowRecenterPosition());
   }, []);
 
   return {
@@ -166,6 +189,8 @@ export function useWindowLayout(): UseWindowLayoutResult {
     selectedTracksWindowInitialPosition,
     plotSettingsWindowInitialPosition,
     trackSettingsWindowInitialPosition,
+    measurementsWindowInitialPosition,
+    setMeasurementsWindowInitialPosition: setMeasurementsDialogWindowInitialPosition,
     resetLayout
   };
 }

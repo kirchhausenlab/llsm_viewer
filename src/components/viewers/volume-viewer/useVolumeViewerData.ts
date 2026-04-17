@@ -99,6 +99,7 @@ export function useVolumeViewerResources({
   defaultViewStateRef,
   projectionViewStateRef,
   trackGroupRef,
+  roiBlOcclusionAlphaSceneRef,
   resourcesRef,
   currentDimensionsRef,
   colormapCacheRef,
@@ -133,6 +134,8 @@ export function useVolumeViewerResources({
   defaultViewStateRef: MutableRefObject<DesktopViewStateMap>;
   projectionViewStateRef: MutableRefObject<DesktopViewStateMap>;
   trackGroupRef: MutableRefObject<THREE.Group | null>;
+  roiBlOcclusionAlphaSceneRef: MutableRefObject<THREE.Scene | null>;
+  roiBlOcclusionDepthSceneRef: MutableRefObject<THREE.Scene | null>;
   resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
   currentDimensionsRef: MutableRefObject<{ width: number; height: number; depth: number } | null>;
   colormapCacheRef: MutableRefObject<Map<string, THREE.DataTexture>>;
@@ -168,6 +171,7 @@ export function useVolumeViewerResources({
     defaultViewStateRef,
     projectionViewStateRef,
     trackGroupRef,
+    roiBlOcclusionAlphaSceneRef,
     resourcesRef,
     currentDimensionsRef,
     colormapCacheRef,
