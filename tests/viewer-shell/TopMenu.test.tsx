@@ -685,6 +685,7 @@ test('top menu places scale, hover, and follow status in their updated columns',
     const renderer = renderTopMenu({
       currentScaleLabel: '1.25x',
       isPerformanceMode: true,
+      trackSets: [{ id: 'set-a', name: 'Tracks A' }],
       followedTrackSetId: 'set-a',
       followedTrackId: 'track-1',
       hoveredVoxel: {
@@ -732,7 +733,21 @@ test('top menu places scale, hover, and follow status in their updated columns',
       bottomThirdColumn.findAll((node) => hasClassName(node, 'viewer-top-menu-hover-column')).length > 0
     );
     assert.equal(
-      bottomFourthColumn.findAll((node) => node.type === 'button' && extractText(node) === 'Stop following').length,
+      bottomFourthColumn.findAll((node) => hasClassName(node, 'viewer-top-menu-follow-target')).length,
+      1
+    );
+    assert.equal(
+      bottomFourthColumn.findAll(
+        (node) => node.type === 'button' && extractText(node) === 'Stop'
+      ).length,
+      1
+    );
+    assert.equal(
+      bottomFourthColumn.findAll(
+        (node) =>
+          hasClassName(node, 'viewer-top-menu-follow-target') &&
+          extractText(node) === 'Following Tracks A track #1'
+      ).length,
       1
     );
     assert.equal(
@@ -772,6 +787,29 @@ test('top menu keeps all three shared column dividers even when track tabs are a
     assert.ok(bottomFirstColumn.findByProps({ id: 'channel-tab-channel-a' }));
     assert.equal(bottomSecondColumn.findAll((node) => node.props.role === 'tab').length, 0);
     assert.equal(columnDividers.length, 3);
+
+    renderer.unmount();
+  });
+});
+
+test('top menu reports followed voxel coordinates next to the stop control', () => {
+  withEnvironmentMocks(() => {
+    const renderer = renderTopMenu({
+      followedVoxel: {
+        coordinates: { x: 12, y: 34, z: 56 },
+        layerKey: 'layer-a'
+      }
+    });
+
+    const followTargets = renderer.root.findAll(
+      (node) => hasClassName(node, 'viewer-top-menu-follow-target') && extractText(node) === 'Following voxel (12, 34, 56)'
+    );
+    const stopButtons = renderer.root.findAll(
+      (node) => node.type === 'button' && extractText(node) === 'Stop'
+    );
+
+    assert.equal(followTargets.length, 1);
+    assert.equal(stopButtons.length, 1);
 
     renderer.unmount();
   });

@@ -138,22 +138,24 @@ export default function PaintbrushWindow({
               onChange={(event) => onRadiusChange(Number(event.target.value))}
             />
           </div>
-          <div
-            className="paintbrush-color-preview"
-            aria-label={`Selected color: ${color}`}
-            style={{ backgroundColor: color }}
-          />
-          <label className="paintbrush-color-picker" htmlFor="paintbrush-color-input">
-            <span>Color</span>
-            <input
-              id="paintbrush-color-input"
-              className="paintbrush-color-input"
-              type="color"
-              value={color}
-              onChange={(event) => onColorChange(event.target.value)}
-              aria-label="Choose paintbrush color"
-            />
-          </label>
+          <div className="paintbrush-color-row">
+            <span className="paintbrush-color-label">Color</span>
+            <label className="color-picker-trigger paintbrush-color-picker" htmlFor="paintbrush-color-input">
+              <input
+                id="paintbrush-color-input"
+                className="paintbrush-color-input color-picker-input"
+                type="color"
+                value={color}
+                onChange={(event) => onColorChange(event.target.value)}
+                aria-label="Choose paintbrush color"
+              />
+              <span
+                className="color-picker-indicator"
+                style={{ backgroundColor: color }}
+                aria-hidden="true"
+              />
+            </label>
+          </div>
           <button type="button" onClick={onRandomColor}>
             Random
           </button>

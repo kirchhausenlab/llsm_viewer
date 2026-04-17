@@ -39,15 +39,12 @@ import {
 import {
   computeHoverSettingsWindowDefaultPosition,
   MEASUREMENTS_WINDOW_WIDTH,
-  SET_MEASUREMENTS_WINDOW_WIDTH,
 } from '../../shared/utils/windowLayout';
 import {
   DEFAULT_HOVER_SETTINGS,
   clampHoverSliderValue,
 } from '../../shared/utils/hoverSettings';
 import type { HoverSettings, HoverType } from '../../types/hover';
-
-const NAVIGATION_HELP_WINDOW_WIDTH = 420;
 
 function ViewerShell({
   viewerMode,
@@ -95,9 +92,9 @@ function ViewerShell({
     () =>
       computeNavigationHelpInitialPosition({
         windowMargin,
-        windowWidth: NAVIGATION_HELP_WINDOW_WIDTH
+        windowWidth: controlWindowWidth
       }),
-    [windowMargin]
+    [controlWindowWidth, windowMargin]
   );
   const { isHelpMenuOpen, closeHelpMenu } = topMenu;
   const hoverCoordinateDigits = useMemo(() => {
@@ -951,7 +948,7 @@ function ViewerShell({
         onClose={closeHelpMenu}
         initialPosition={navigationHelpInitialPosition}
         windowMargin={windowMargin}
-        width={NAVIGATION_HELP_WINDOW_WIDTH}
+        width={controlWindowWidth}
         resetSignal={resetToken}
       />
 
@@ -1124,7 +1121,7 @@ function ViewerShell({
         <SetMeasurementsWindow
           initialPosition={setMeasurementsWindowInitialPosition}
           windowMargin={windowMargin}
-          width={SET_MEASUREMENTS_WINDOW_WIDTH}
+          width={controlWindowWidth}
           resetSignal={resetToken}
           settings={measurementSettingsDraft}
           onSettingsChange={setMeasurementSettingsDraft}

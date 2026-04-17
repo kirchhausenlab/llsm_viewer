@@ -294,7 +294,7 @@ export default function ChannelsPanel({
                       {isGrayscale ? (
                         <div className="color-control">
                           <div className="color-control-header">
-                            <span id={`layer-color-label-${selectedLayer.key}`}>Tint color</span>
+                            <span id={`layer-color-label-${selectedLayer.key}`}>Color</span>
                             <span>{displayColor}</span>
                           </div>
                           <div className="color-swatch-row">
@@ -319,26 +319,26 @@ export default function ChannelsPanel({
                                   />
                                 );
                               })}
+                              <label
+                                className={sliderDisabled ? 'color-picker-trigger is-disabled' : 'color-picker-trigger'}
+                                htmlFor={`layer-color-custom-${selectedLayer.key}`}
+                              >
+                                <input
+                                  id={`layer-color-custom-${selectedLayer.key}`}
+                                  type="color"
+                                  value={normalizedColor}
+                                  onChange={(event) => onLayerColorChange(selectedLayer.key, event.target.value)}
+                                  disabled={sliderDisabled}
+                                  aria-label="Choose custom color"
+                                  className="color-picker-input"
+                                />
+                                <span
+                                  className="color-picker-indicator"
+                                  style={{ backgroundColor: normalizedColor }}
+                                  aria-hidden="true"
+                                />
+                              </label>
                             </div>
-                            <label
-                              className={sliderDisabled ? 'color-picker-trigger is-disabled' : 'color-picker-trigger'}
-                              htmlFor={`layer-color-custom-${selectedLayer.key}`}
-                            >
-                              <input
-                                id={`layer-color-custom-${selectedLayer.key}`}
-                                type="color"
-                                value={normalizedColor}
-                                onChange={(event) => onLayerColorChange(selectedLayer.key, event.target.value)}
-                                disabled={sliderDisabled}
-                                aria-label="Choose custom tint color"
-                                className="color-picker-input"
-                              />
-                              <span
-                                className="color-picker-indicator"
-                                style={{ backgroundColor: normalizedColor }}
-                                aria-hidden="true"
-                              />
-                            </label>
                           </div>
                         </div>
                       ) : null}

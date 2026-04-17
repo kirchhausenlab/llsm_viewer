@@ -196,8 +196,9 @@ function createProp(): ViewerProp {
   assert.equal(spans.some((span) => span.props.children === 'Size:'), true);
   assert.equal(spans.some((span) => span.props.children === 'Text size:'), false);
   assert.equal(spans.some((span) => span.props.children === 'Color:'), true);
-  assert.equal(spans.some((span) => span.props.children === 'Initial time:'), true);
-  assert.equal(spans.some((span) => span.props.children === 'Final time:'), true);
+  assert.equal(spans.some((span) => span.props.children === 'Start/end times:'), true);
+  assert.equal(spans.some((span) => span.props.children === 'Initial time:'), false);
+  assert.equal(spans.some((span) => span.props.children === 'Final time:'), false);
   assert.equal(spans.some((span) => span.props.children === 'Font:'), true);
 
   const doubleSliderGrid = renderer.root.findByProps({
@@ -356,6 +357,7 @@ function createProp(): ViewerProp {
   const italicButton = renderer.root.findByProps({ 'aria-label': 'Toggle italic' });
   const underlineButton = renderer.root.findByProps({ 'aria-label': 'Toggle underline' });
   const yellowSwatch = renderer.root.findByProps({ 'aria-label': 'Yellow prop color' });
+  const customColorInput = renderer.root.findByProps({ id: 'props-color-input' });
   const initialTimeInput = renderer.root.findByProps({ id: 'props-initial-timepoint-input' });
   const finalTimeInput = renderer.root.findByProps({ id: 'props-final-timepoint-input' });
 
@@ -365,6 +367,7 @@ function createProp(): ViewerProp {
   act(() => italicButton.props.onClick());
   act(() => underlineButton.props.onClick());
   act(() => yellowSwatch.props.onClick());
+  act(() => customColorInput.props.onChange({ target: { value: '#ff00ff' } }));
   act(() => initialTimeInput.props.onChange({ target: { value: '3' } }));
   act(() => finalTimeInput.props.onChange({ target: { value: '5' } }));
   act(() => modeButton.props.onClick());
@@ -374,7 +377,7 @@ function createProp(): ViewerProp {
   assert.equal(updatedProp.bold, true);
   assert.equal(updatedProp.italic, true);
   assert.equal(updatedProp.underline, true);
-  assert.equal(updatedProp.color, '#ffff00');
+  assert.equal(updatedProp.color, '#ff00ff');
   assert.equal(updatedProp.initialTimepoint, 3);
   assert.equal(updatedProp.finalTimepoint, 5);
   assert.equal(updatedProp.world.fontSize, 48);

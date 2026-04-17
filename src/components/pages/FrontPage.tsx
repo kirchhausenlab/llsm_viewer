@@ -1,9 +1,11 @@
 import { useMemo } from 'react';
 import type { StagedPreprocessedExperiment } from '../../hooks/dataset';
 import type {
+  TemporalResolutionMetadata,
   TemporalResolutionUnit,
   VoxelResolutionAxis,
   VoxelResolutionInput,
+  VoxelResolutionValues,
   VoxelResolutionUnit
 } from '../../types/voxelResolution';
 import ThemeModeToggle from '../app/ThemeModeToggle';
@@ -24,6 +26,32 @@ const EXPERIMENT_TYPE_OPTIONS: ReadonlyArray<{ type: ExperimentType; label: stri
   { type: '2d-movie', label: '2D movie' },
   { type: 'single-3d-volume', label: 'Single 3D volume' }
 ];
+
+const formatSummaryNumber = (value: number): string => {
+  if (!Number.isFinite(value)) {
+    return 'Unavailable';
+  }
+  if (Number.isInteger(value)) {
+    return value.toString();
+  }
+  return Number(value.toFixed(3)).toString();
+};
+
+const formatVoxelSize = (voxelResolution: VoxelResolutionValues | null | undefined): string | null => {
+  if (!voxelResolution) {
+    return null;
+  }
+  return `${formatSummaryNumber(voxelResolution.x)} × ${formatSummaryNumber(voxelResolution.y)} × ${formatSummaryNumber(voxelResolution.z)} ${voxelResolution.unit}`;
+};
+
+const formatFrameInterval = (
+  temporalResolution: TemporalResolutionMetadata | null | undefined
+): string | null => {
+  if (!temporalResolution) {
+    return null;
+  }
+  return `${formatSummaryNumber(temporalResolution.interval)} ${temporalResolution.unit}`;
+};
 
 export type InitialActionsProps = {
   isFrontPageLocked: boolean;
@@ -121,6 +149,86 @@ export default function FrontPage({
   const showReturnButton = frontPageMode !== 'initial' || preprocessedLoader.isOpen;
   const showLaunchViewerButton = frontPageMode !== 'initial' || preprocessedLoader.isOpen;
   const showAboutFooter = frontPageMode === 'initial' && !preprocessedLoader.isOpen;
+  const preprocessedOverview = useMemo(() => {
+    const experiment = preprocessedSummary.preprocessedExperiment;
+    if (!experiment) {
+      return null;
+    }
+
+    const channelSummaries = experiment.channelSummaries ?? [];
+    const trackSummaries = experiment.trackSummaries ?? [];
+    const allLayers = channelSummaries.flatMap((channel) => channel.layers ?? []);
+    const manifestDataset = experiment.manifest?.dataset;
+    const shapeLabels = [...new Set(allLayers.map((layer) => `${layer.width} × ${layer.height} × ${layer.depth}`))];
+    const totalTimepoints =
+      experiment.totalVolumeCount > 0
+        ? experiment.totalVolumeCount
+        : allLayers[0]?.volumeCount ?? 0;
+    const trackTotals = trackSummaries.reduce(
+      (acc, trackSet) => {
+        const summary = preprocessedSummary.computeTrackSummary(trackSet.header);
+        return {
+          points: acc.points + summary.totalPoints,
+          tracks: acc.tracks + summary.totalTracks
+        };
+      },
+      { points: 0, tracks: 0 }
+    );
+    const boundTrackNamesByChannel = new Map<string, string[]>();
+    const unboundTrackNames: string[] = [];
+
+    for (const trackSet of trackSummaries) {
+      const trackName = trackSet.name.trim() || trackSet.fileName.trim() || 'Unnamed track set';
+      if (!trackSet.boundChannelId) {
+        unboundTrackNames.push(trackName);
+        continue;
+      }
+      const boundTracks = boundTrackNamesByChannel.get(trackSet.boundChannelId) ?? [];
+      boundTracks.push(trackName);
+      boundTrackNamesByChannel.set(trackSet.boundChannelId, boundTracks);
+    }
+
+    const facts = [
+      {
+        label: 'Timepoints',
+        value: totalTimepoints > 0 ? formatSummaryNumber(totalTimepoints) : 'Unavailable'
+      },
+      {
+        label: 'Shape (XYZ)',
+        value:
+          shapeLabels.length === 1
+            ? shapeLabels[0] ?? 'Unavailable'
+            : shapeLabels.length > 1
+              ? 'Varies by channel'
+              : 'Unavailable'
+      },
+      {
+        label: 'Channels',
+        value: formatSummaryNumber(channelSummaries.length)
+      }
+    ];
+    const voxelSize = formatVoxelSize(manifestDataset?.voxelResolution ?? null);
+    const frameInterval = formatFrameInterval(manifestDataset?.temporalResolution ?? null);
+
+    if (voxelSize) {
+      facts.push({ label: 'Voxel size', value: voxelSize });
+    }
+    if (frameInterval) {
+      facts.push({ label: 'Frame interval', value: frameInterval });
+    }
+    if (trackSummaries.length > 0) {
+      facts.push({
+        label: 'Track sets',
+        value: `${trackSummaries.length} · ${trackTotals.tracks} tracks (${trackTotals.points} points)`
+      });
+    }
+
+    return {
+      boundTrackNamesByChannel,
+      facts,
+      unboundTrackNames
+    };
+  }, [preprocessedSummary.computeTrackSummary, preprocessedSummary.preprocessedExperiment]);
 
   return (
     <div className="app front-page-mode">
@@ -248,58 +356,43 @@ export default function FrontPage({
                   {typeof preprocessedSummary.preprocessedExperiment.sourceSize === 'number'
                     ? ` · ${formatBytes(preprocessedSummary.preprocessedExperiment.sourceSize)}`
                     : ''}
-                  {preprocessedSummary.preprocessedExperiment.totalVolumeCount > 0
-                    ? ` · ${preprocessedSummary.preprocessedExperiment.totalVolumeCount} volumes`
-                    : ''}
                 </p>
-                {(() => {
-                  const trackSummaries = preprocessedSummary.preprocessedExperiment.trackSummaries ?? [];
-                  const totals = trackSummaries.reduce(
-                    (acc, set) => {
-                      const summary = preprocessedSummary.computeTrackSummary(set.header);
-                      return {
-                        points: acc.points + summary.totalPoints,
-                        tracks: acc.tracks + summary.totalTracks
-                      };
-                    },
-                    { points: 0, tracks: 0 }
-                  );
-                  return (
-                    <p className="preprocessed-summary-tracks">
-                      {trackSummaries.length > 0
-                        ? `${trackSummaries.length} track sets · ${totals.tracks} tracks (${totals.points} points)`
-                        : 'No tracks attached'}
-                    </p>
-                  );
-                })()}
+                {preprocessedOverview ? (
+                  <ul className="preprocessed-summary-facts">
+                    {preprocessedOverview.facts.map((fact) => (
+                      <li key={fact.label} className="preprocessed-summary-fact">
+                        <span className="preprocessed-summary-fact-label">{fact.label}</span>
+                        <span className="preprocessed-summary-fact-value">{fact.value}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                {preprocessedOverview && preprocessedOverview.unboundTrackNames.length > 0 ? (
+                  <p className="preprocessed-summary-unbound-tracks">
+                    Unbound track sets: {preprocessedOverview.unboundTrackNames.join(', ')}
+                  </p>
+                ) : null}
               </div>
               <ul className="preprocessed-summary-list">
                 {preprocessedSummary.preprocessedExperiment.channelSummaries.map((
                   summary: StagedPreprocessedExperiment['channelSummaries'][number]
                 ) => {
+                  const boundTrackNames = preprocessedOverview?.boundTrackNamesByChannel.get(summary.id) ?? [];
+                  const isSegmentation = summary.layers.some((layer: (typeof summary.layers)[number]) => layer.isSegmentation);
                   return (
                     <li key={summary.id} className="preprocessed-summary-item">
                       <div className="preprocessed-summary-channel">
-                        <h3>{summary.name}</h3>
-                        <ul className="preprocessed-summary-layer-list">
-                          {summary.layers.map((layer: (typeof summary.layers)[number]) => (
-                            <li key={layer.key} className="preprocessed-summary-layer">
-                              <span className="preprocessed-summary-layer-title">
-                                {layer.label}
-                                {layer.isSegmentation ? (
-                                  <span className="preprocessed-summary-layer-flag">Segmentation</span>
-                                ) : null}
-                              </span>
-                              <span className="preprocessed-summary-layer-meta">
-                                {layer.volumeCount} timepoints · {layer.width}×{layer.height}×{layer.depth} · {layer.channels}{' '}
-                                channels
-                              </span>
-                              <span className="preprocessed-summary-layer-range">
-                                Range: {layer.min}–{layer.max}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
+                        <div className="preprocessed-summary-channel-header">
+                          <h3>{summary.name}</h3>
+                          {isSegmentation ? (
+                            <span className="preprocessed-summary-layer-flag">Segmentation</span>
+                          ) : null}
+                        </div>
+                        {boundTrackNames.length > 0 ? (
+                          <p className="preprocessed-summary-channel-meta">
+                            Tracks: {boundTrackNames.join(', ')}
+                          </p>
+                        ) : null}
                       </div>
                     </li>
                   );

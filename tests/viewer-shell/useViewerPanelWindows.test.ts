@@ -87,6 +87,17 @@ test('viewer panel windows react to availability changes and reset layout events
   assert.equal(hook.result.isTracksWindowOpen, false);
   assert.equal(hook.result.isAmplitudePlotOpen, false);
 
+  hook.act(() => {
+    hook.result.openAmplitudePlot();
+  });
+
+  assert.equal(hook.result.isAmplitudePlotOpen, true);
+  assert.equal(hook.result.isPlotSettingsOpen, false);
+
+  hook.act(() => {
+    hook.result.closeAmplitudePlot();
+  });
+
   options = {
     ...options,
     hasTrackData: true,

@@ -128,7 +128,7 @@ export async function launchViewerFromChannelFixtures(
   await expect(launchButton).toBeEnabled({ timeout: 240_000 });
   await launchButton.click();
 
-  await expect(page.getByRole('button', { name: 'File' })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole('button', { name: 'File', exact: true })).toBeVisible({ timeout: 60_000 });
 
   return { timepointCount: channels[0].tiffPaths.length };
 }

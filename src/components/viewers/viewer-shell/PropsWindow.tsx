@@ -492,6 +492,38 @@ function PropsWindow({
     selectedPropDimension === '2d'
       ? SCREEN_FONT_SIZE_MAX
       : Math.max(worldFontSizeBounds.max, displayedWorldFontSize);
+  const timeRangeControls =
+    selectedProp?.type === 'text' ? (
+      <div className="control-row props-editor-section-toolbar">
+        <div className="props-timepoint-controls" role="group" aria-label="Prop time range">
+          <span className="voxel-resolution-field-label">Start/end times:</span>
+          <div className="props-timepoint-input-row">
+            <input
+              id="props-initial-timepoint-input"
+              type="number"
+              inputMode="numeric"
+              step={1}
+              min={1}
+              max={resolvedTimepointLimit}
+              value={selectedProp.initialTimepoint}
+              onChange={(event) => handleInitialTimepointChange(event.target.value)}
+              aria-label="Initial time"
+            />
+            <input
+              id="props-final-timepoint-input"
+              type="number"
+              inputMode="numeric"
+              step={1}
+              min={1}
+              max={resolvedTimepointLimit}
+              value={selectedProp.finalTimepoint}
+              onChange={(event) => handleFinalTimepointChange(event.target.value)}
+              aria-label="Final time"
+            />
+          </div>
+        </div>
+      </div>
+    ) : null;
 
   return (
     <FloatingWindow
@@ -673,7 +705,7 @@ function PropsWindow({
                   </div>
                 ) : null}
 
-                <div className="control-row props-editor-inline-row props-editor-span-2">
+                <div className="control-row props-editor-inline-row props-editor-inline-row--size-color props-editor-span-2">
                   <label
                     className="props-font-size-field props-editor-inline-control"
                     htmlFor="props-font-size-input"
@@ -699,46 +731,53 @@ function PropsWindow({
                     />
                   </label>
 
-                  <div
-                    className="props-color-picker props-editor-inline-control"
-                  >
+                  <div className="props-color-picker props-editor-inline-control">
                     <span className="voxel-resolution-field-label">Color:</span>
-                    <div className="props-color-swatch-grid" role="group" aria-label="Preset prop colors">
-                      {PRESET_PROP_COLORS.map((swatch) => {
-                        const isSelected = selectedProp.color.toLowerCase() === swatch.value;
-                        return (
-                          <button
-                            key={swatch.value}
-                            type="button"
-                            className={
-                              isSelected
-                                ? 'color-swatch-button is-selected'
-                                : 'color-swatch-button'
+                    <div className="color-swatch-row">
+                      <div className="color-swatch-grid" role="group" aria-label="Preset prop colors">
+                        {PRESET_PROP_COLORS.map((swatch) => {
+                          const isSelected = selectedProp.color.toLowerCase() === swatch.value;
+                          return (
+                            <button
+                              key={swatch.value}
+                              type="button"
+                              className={
+                                isSelected
+                                  ? 'color-swatch-button is-selected'
+                                  : 'color-swatch-button'
+                              }
+                              style={{ backgroundColor: swatch.value }}
+                              onClick={() =>
+                                updateSelectedProp((current) => ({
+                                  ...current,
+                                  color: swatch.value,
+                                }))
+                              }
+                              aria-pressed={isSelected}
+                              aria-label={`${swatch.label} prop color`}
+                              title={swatch.label}
+                            />
+                          );
+                        })}
+                        <label className="color-picker-trigger" htmlFor="props-color-input">
+                          <input
+                            id="props-color-input"
+                            className="color-picker-input"
+                            type="color"
+                            value={selectedProp.color}
+                            onChange={(event) =>
+                              updateSelectedProp((current) => ({ ...current, color: event.target.value }))
                             }
-                            style={{ backgroundColor: swatch.value }}
-                            onClick={() =>
-                              updateSelectedProp((current) => ({
-                                ...current,
-                                color: swatch.value,
-                              }))
-                            }
-                            aria-pressed={isSelected}
-                            aria-label={`${swatch.label} prop color`}
-                            title={swatch.label}
+                            aria-label="Choose prop color"
                           />
-                        );
-                      })}
+                          <span
+                            className="color-picker-indicator"
+                            style={{ backgroundColor: selectedProp.color }}
+                            aria-hidden="true"
+                          />
+                        </label>
+                      </div>
                     </div>
-                    <input
-                      id="props-color-input"
-                      className="props-color-input"
-                      type="color"
-                      value={selectedProp.color}
-                      onChange={(event) =>
-                        updateSelectedProp((current) => ({ ...current, color: event.target.value }))
-                      }
-                      aria-label="Choose prop color"
-                    />
                   </div>
                 </div>
 
@@ -972,38 +1011,7 @@ function PropsWindow({
 
                 {selectedPropDimension === '2d' ? (
                   <div className="props-editor-section props-editor-span-2">
-                    {selectedProp.type === 'text' ? (
-                      <div className="control-row props-editor-section-toolbar">
-                        <div className="props-timepoint-controls" role="group" aria-label="Prop time range">
-                          <label className="props-timepoint-field" htmlFor="props-initial-timepoint-input">
-                            <span className="voxel-resolution-field-label">Initial time:</span>
-                            <input
-                              id="props-initial-timepoint-input"
-                              type="number"
-                              inputMode="numeric"
-                              step={1}
-                              min={1}
-                              max={resolvedTimepointLimit}
-                              value={selectedProp.initialTimepoint}
-                              onChange={(event) => handleInitialTimepointChange(event.target.value)}
-                            />
-                          </label>
-                          <label className="props-timepoint-field" htmlFor="props-final-timepoint-input">
-                            <span className="voxel-resolution-field-label">Final time:</span>
-                            <input
-                              id="props-final-timepoint-input"
-                              type="number"
-                              inputMode="numeric"
-                              step={1}
-                              min={1}
-                              max={resolvedTimepointLimit}
-                              value={selectedProp.finalTimepoint}
-                              onChange={(event) => handleFinalTimepointChange(event.target.value)}
-                            />
-                          </label>
-                        </div>
-                      </div>
-                    ) : null}
+                    {timeRangeControls}
                     <div className="props-slider-grid props-slider-grid--double">
                       <div className="control-group control-group--slider props-editor-group">
                         <label htmlFor="props-2d-x-slider">
@@ -1083,38 +1091,7 @@ function PropsWindow({
                   </div>
                 ) : (
                   <div className="props-editor-section props-editor-span-2">
-                    {selectedProp.type === 'text' ? (
-                      <div className="control-row props-editor-section-toolbar">
-                        <div className="props-timepoint-controls" role="group" aria-label="Prop time range">
-                          <label className="props-timepoint-field" htmlFor="props-initial-timepoint-input">
-                            <span className="voxel-resolution-field-label">Initial time:</span>
-                            <input
-                              id="props-initial-timepoint-input"
-                              type="number"
-                              inputMode="numeric"
-                              step={1}
-                              min={1}
-                              max={resolvedTimepointLimit}
-                              value={selectedProp.initialTimepoint}
-                              onChange={(event) => handleInitialTimepointChange(event.target.value)}
-                            />
-                          </label>
-                          <label className="props-timepoint-field" htmlFor="props-final-timepoint-input">
-                            <span className="voxel-resolution-field-label">Final time:</span>
-                            <input
-                              id="props-final-timepoint-input"
-                              type="number"
-                              inputMode="numeric"
-                              step={1}
-                              min={1}
-                              max={resolvedTimepointLimit}
-                              value={selectedProp.finalTimepoint}
-                              onChange={(event) => handleFinalTimepointChange(event.target.value)}
-                            />
-                          </label>
-                        </div>
-                      </div>
-                    ) : null}
+                    {timeRangeControls}
                     <div className="props-slider-grid props-slider-grid--triple">
                       {(['x', 'y', 'z'] as const).map((axis) => {
                         const axisRange = resolveWorldAxisRange(axis);

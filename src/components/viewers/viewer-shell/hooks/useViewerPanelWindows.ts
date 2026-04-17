@@ -145,12 +145,8 @@ export function useViewerPanelWindows({
   }, []);
 
   const openAmplitudePlot = useCallback(() => {
-    if (!canShowPlotSettings) {
-      return;
-    }
     setIsAmplitudePlotOpen(true);
-    setIsPlotSettingsOpen(true);
-  }, [canShowPlotSettings]);
+  }, []);
 
   const openPlotSettings = useCallback(() => {
     if (!canShowPlotSettings) {
@@ -195,7 +191,6 @@ export function useViewerPanelWindows({
 
   useEffect(() => {
     if (!canShowPlotSettings) {
-      setIsAmplitudePlotOpen(false);
       setIsPlotSettingsOpen(false);
     }
   }, [canShowPlotSettings]);

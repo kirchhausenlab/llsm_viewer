@@ -362,7 +362,7 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
             >
               <div className="channel-tab-content">
                 <div className="channel-tab-title-row">
-                  <h3 onDoubleClick={startEditingChannelName}>{channel.name.trim() || 'Name required'}</h3>
+                  <h3 onDoubleClick={startEditingChannelName}>{channel.name.trim() || ' '}</h3>
                   {canRemoveChannel ? (
                     <button
                       className="channel-tab-remove"

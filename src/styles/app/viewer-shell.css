@@ -452,15 +452,12 @@
 
 .controls-help-window__title {
   margin: 0;
-  font-size: 1.05rem;
   letter-spacing: 0.01em;
 }
 
 .controls-help-window__description {
   margin: 0;
   color: rgba(221, 231, 255, 0.78);
-  font-size: 0.88rem;
-  line-height: 1.45;
 }
 
 .viewer-toolbar {
@@ -478,7 +475,6 @@
 }
 
 .viewer-following-label {
-  font-size: 0.9rem;
   color: rgba(255, 255, 255, 0.65);
 }
 
